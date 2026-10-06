@@ -1,0 +1,200 @@
+{
+  "repo": "mobile",
+  "number": 428,
+  "head": "95119e5bcd02fb4e9db3c319deb57bf5b1b3f660",
+  "base": "a1904f2f4e8d175a38d6eb627303a2312e2b1ace",
+  "title": "fix(community): coaches reach the report queue; Hall keeps a New post button (AUDIT-10-125, T4)",
+  "body": "Tier: T4\nWhy: Apple 1.2 (UGC) store compliance: member reports must reach a moderator; this exposes the existing coach moderation queue (Hide / Warn / Ban / Dismiss) in the store build.\nT4 trigger scan: store/legal compliance (Apple 1.2 report-and-respond) and a coach privilege surface (moderation actions). Server authorization is unchanged: GET /community/moderation/flagged is coach/owner only and scoped to the coach's own workspaces; PATCH /community/moderation/items/:id keeps assertModerator. No auth, money, PII-shape, schema or data change.\nT3 trigger scan: none (reuses existing screens, hooks and routes; no new contract).\nBounded T1: NO (runtime behaviour and a privileged surface).\nCanonical builder: Claude Opus 5.5 (AUDIT-10-125, agent 125)\nParent owner: operator agent 125\nAcceptance evidence: new src/screens/coach/__tests__/CommunityReportsEntry.test.tsx (hidden on 503, count + navigation to ClientsStack/CoachCommunityModeration, no badge at zero); CommunitySpaceScreen.test.tsx new case (feed with posts shows New post -> CommunityComposer {mode:'post'}; fails on main, where the testID does not exist); coachCommunityScreens.test.tsx reason label assertions updated; full mobile CI on this PR.\nPromotion triggers: any change to backend moderation authorization, or turning on the coach Community tab (its Home calls /community/coach/dashboard, which the backend does not serve).\n\nWorks against the CURRENT production backend (ec12a4b3): GET /community/moderation/flagged, PATCH /community/moderation/items/:id, GET /community/coach/empty-states and GET /community/posts/:id are all live with FEATURE_COMMUNITY_API on. If the community API is off (503) or the route is missing (404), the Reports entry hides (same probe pattern as BroadcastsEntry). No new flag.\n\n## Fixes\n\n- **B-1 (Apple 1.2, false claim)**: A client reports an abusive Hall post or comment; the report lands in the moderation queue, but the coach Community tab is off in the 10-07 build (EXPO_PUBLIC_FF_COACH_COMMUNITY unset), so no coach screen can open it and the \"reviewed within 24 hours by your coach\" promise in Community safety is not met. Fix: a \"Reports\" button with the open count in the coach Messages header (MessagesScreen and CoachInboxV2), opening the existing CoachCommunityModerationScreen and its post detail, now registered in the Clients stack. Header rows wrap so title + Reports + Broadcasts never clip on narrow phones.\n- **B-2 (core community flow dead-ends)**: A client opens the Hall after anyone has posted and finds no way to write a post; the only composer entry was the empty state's \"Be the first to post\". Fix: a \"New post\" button above the feed in CommunitySpaceScreen (Hall and Cohorts).\n- **U-1**: The report queue showed the stored reason code (\"self_harm\") to the coach. It now shows the label the member picked (\"Self-harm or suicide\").\n\nOverlap: none with open PRs (m#402, m#404-m#415 touch no community or coach Messages header files; checked file lists).\n",
+  "state": "open",
+  "draft": false,
+  "additions": 264,
+  "deletions": 7,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/428",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/428#issuecomment-6025601464",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-10-125, agent 125) \u2014 growth-project-mobile#428 @ 95119e5bcd02fb4e9db3c319deb57bf5b1b3f660 \u2014 READY FOR AUDIT\n\n- Size: 264 additions + 7 deletions = 271 lines (10 files, tests included). Tier T4 (Apple 1.2 store compliance; coach moderation surface; server authorization unchanged).\n- CI at this head: Typecheck, lint, test = success (lint, typecheck, test all green); CodeQL = success.\n- B-1: coach Messages header \"Reports\" entry (open count) opens the existing moderation queue + reported post, now registered in the Clients stack; the coach Community tab is off in the 10-07 build, so no coach screen reached member reports before.\n- B-2: Hall/Cohorts feed with posts has a \"New post\" button (the only composer entry was the empty state).\n- U-1: queue shows the member-facing reason label instead of the stored code.\n- Works on the current production backend (all routes used are live); the entry hides on 503/404. No new flag, no dependency, no lockfile change.\n- Overlap: none with open PRs.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112503400925",
+      "id": 112503400925,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A428+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112503400925/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531843936/job/112502900025",
+      "id": 112502900025,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502900025/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531843929/job/112502899828",
+      "id": 112502899828,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502899828/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531843936/job/112502899668",
+      "id": 112502899668,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502899668/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "5bd7e691a8e575c05f54d9bfa1f6fa893d679716",
+      "filename": "src/navigation/CoachNavigator.tsx",
+      "status": "modified",
+      "additions": 19,
+      "deletions": 0,
+      "changes": 19,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fnavigation%2FCoachNavigator.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fnavigation%2FCoachNavigator.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fnavigation%2FCoachNavigator.tsx?ref=95119e5bcd02fb4e9db3c319deb57bf5b1b3f660",
+      "patch": "@@ -45,6 +45,11 @@ import { featureFlags } from '../config/featureFlags';\n // bottom-tab ONLY when `featureFlags.coachCommunity` is true; when the flag is\n // OFF the tab does not render and none of the six routes register.\n import CoachCommunityNavigator from './CoachCommunityNavigator';\n+// AUDIT-10-125 B-1: the community report queue is reachable from the coach\n+// Messages header (CommunityReportsEntry) even while the coach Community tab\n+// is off, so member reports always have a moderator screen (Apple 1.2).\n+import CoachCommunityModerationScreen from '../screens/community/CoachCommunityModerationScreen';\n+import CoachCommunityPostDetailScreen from '../screens/community/CoachCommunityPostDetailScreen';\n import CommunityWearablePromptsScreen from '../screens/community/CommunityWearablePromptsScreen';\n // Stage 3 \u2014 cross-pillar federated coach surface. Mounted as a nested\n // navigator so the practice-selection picker, dashboard, roster, detail\n@@ -205,6 +210,9 @@ export type ClientsStackParamList = {\n   /** M-BCAST-123 \u2014 coach broadcasts list and composer (server flag FEATURE_COACH_BROADCASTS). */\n   CoachBroadcasts:          undefined;\n   CoachBroadcastComposer:   undefined;\n+  /** AUDIT-10-125 B-1 \u2014 community report queue and the reported post. */\n+  CoachCommunityModeration: undefined;\n+  CoachCommunityPostDetail: { postId: string; flagged?: boolean };\n   /** M-FEATURED-123 \u2014 owner-only featured coach editor. */\n   FeaturedCoachEditor:      undefined;\n   /** Coach AI v1 \u2014 review/edit/approve AI-generated workout program draft. */\n@@ -448,6 +456,17 @@ function ClientsStackNavigator() {\n         component={BroadcastComposerScreen}\n         options={{ headerShown: true, title: 'New broadcast', headerBackTitle: 'Back' }}\n       />\n+      {/* AUDIT-10-125 B-1 \u2014 opened from CommunityReportsEntry (coach Messages header). */}\n+      <ClientsStack.Screen\n+        name=\"CoachCommunityModeration\"\n+        component={CoachCommunityModerationScreen}\n+        options={{ headerShown: true, title: 'Community reports', headerBackTitle: 'Back' }}\n+      />\n+      <ClientsStack.Screen\n+        name=\"CoachCommunityPostDetail\"\n+        component={CoachCommunityPostDetailScreen}\n+        options={{ headerShown: true, title: 'Reported post', headerBackTitle: 'Back' }}\n+      />\n       {/* Coach AI v1 \u2014 companion routes for the per-client generate/edit/approve flow. */}\n       <ClientsStack.Screen\n         name=\"AIWorkoutDraft\""
+    },
+    {
+      "sha": "a70b9024d728e825dafb1f8648c18232cf61343c",
+      "filename": "src/screens/coach/CoachInboxV2.tsx",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 2,
+      "changes": 10,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcoach%2FCoachInboxV2.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcoach%2FCoachInboxV2.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FCoachInboxV2.tsx?ref=95119e5bcd02fb4e9db3c319deb57bf5b1b3f660",
+      "patch": "@@ -48,6 +48,7 @@ import {\n   type MuteDuration,\n } from '../../api/messagingV2Api';\n import { BroadcastsEntry } from './broadcasts/BroadcastsEntry';\n+import { CommunityReportsEntry } from './CommunityReportsEntry';\n \n const FALLBACK_POLL_MS = 60000;\n const PAGE_LIMIT = 50;\n@@ -314,7 +315,10 @@ export default function CoachInboxV2({ onFeatureDisabled }: CoachInboxV2Props) {\n       <View style={styles.header}>\n         <View style={styles.headerRow}>\n           <Text style={styles.title}>Messages</Text>\n-          <BroadcastsEntry />\n+          <View style={styles.headerEntries}>\n+            <CommunityReportsEntry />\n+            <BroadcastsEntry />\n+          </View>\n         </View>\n         {totalUnread > 0 ? (\n           <Text style={styles.unreadSummary}>\n@@ -397,7 +401,9 @@ const makeStyles = (colors: ThemeColors) =>\n   StyleSheet.create({\n     container: { flex: 1, backgroundColor: colors.background },\n     header: { paddingHorizontal: 24, paddingTop: 60, marginBottom: 8 },\n-    headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },\n+    // Title + Reports + Broadcasts can be wider than a phone: wrap, never clip.\n+    headerRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12 },\n+    headerEntries: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },\n     title: { fontFamily: 'CormorantGaramond_400Regular', fontSize: 32, lineHeight: 35, letterSpacing: 0.6, fontWeight: '400', color: colors.textPrimary },\n     unreadSummary: { fontSize: 13, color: colors.primary, fontWeight: '600', marginTop: 2 },\n     searchContainer: { paddingHorizontal: 24, marginBottom: 8, gap: 10 },"
+    },
+    {
+      "sha": "ef9fbb48bd5dc972785d5313fcaf83f5f3e36ba7",
+      "filename": "src/screens/coach/CommunityReportsEntry.tsx",
+      "status": "added",
+      "additions": 79,
+      "deletions": 0,
+      "changes": 79,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcoach%2FCommunityReportsEntry.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcoach%2FCommunityReportsEntry.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FCommunityReportsEntry.tsx?ref=95119e5bcd02fb4e9db3c319deb57bf5b1b3f660",
+      "patch": "@@ -0,0 +1,79 @@\n+import React from 'react';\n+import { Pressable, StyleSheet, Text, View } from 'react-native';\n+import { Ionicons } from '@expo/vector-icons';\n+import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';\n+import { useCoachFlagged } from '../../hooks/useCoachCommunity';\n+import { spacing, typography } from '../../theme/tokens';\n+import { useTheme } from '../../theme/ThemeProvider';\n+\n+/**\n+ * \"Reports\" button in the coach Messages header (AUDIT-10-125 B-1, Apple 1.2).\n+ *\n+ * Members report posts, comments and wins from every community surface, and\n+ * Community safety promises a review within 24 hours. The coach Community tab\n+ * is off in the store build, so without this entry no coach screen opened the\n+ * report queue. It opens the existing moderation queue (Hide / Warn / Ban /\n+ * Dismiss) registered in the Clients stack and shows the open count.\n+ *\n+ * Shown only when GET /community/moderation/flagged answers: hidden while the\n+ * community API is off (503), on a backend without the route (404), and while\n+ * the probe is loading or failed, the same pattern as BroadcastsEntry.\n+ */\n+export function CommunityReportsEntry() {\n+  const { colors } = useTheme();\n+  const navigation = useNavigation<NavigationProp<ParamListBase>>();\n+  const flagged = useCoachFlagged();\n+  if (!Array.isArray(flagged.data)) return null;\n+  const open = flagged.data.length;\n+  const label =\n+    open === 0\n+      ? 'Open community reports, none waiting'\n+      : `Open community reports, ${open} waiting for review`;\n+  return (\n+    <Pressable\n+      // `initial: false` keeps the client list under the queue, so a Clients\n+      // stack opened here for the first time still has its root.\n+      onPress={() =>\n+        navigation.navigate('ClientsStack', { screen: 'CoachCommunityModeration', initial: false })\n+      }\n+      accessibilityRole=\"button\"\n+      accessibilityLabel={label}\n+      style={[styles.button, { borderColor: open > 0 ? colors.error : colors.border }]}\n+      testID=\"messages-community-reports-entry\"\n+    >\n+      <Ionicons name=\"flag-outline\" size={16} color={open > 0 ? colors.error : colors.textPrimary} />\n+      <Text style={[typography.bodySmall, { color: colors.textPrimary }]}>Reports</Text>\n+      {open > 0 ? (\n+        <View style={[styles.count, { backgroundColor: colors.error }]}>\n+          <Text\n+            style={[typography.bodySmall, styles.countText, { color: colors.textOnPrimary }]}\n+            testID=\"messages-community-reports-count\"\n+          >\n+            {open > 99 ? '99+' : String(open)}\n+          </Text>\n+        </View>\n+      ) : null}\n+    </Pressable>\n+  );\n+}\n+\n+const styles = StyleSheet.create({\n+  button: {\n+    minHeight: 44,\n+    flexDirection: 'row',\n+    alignItems: 'center',\n+    gap: spacing.xs,\n+    borderWidth: 1,\n+    borderRadius: 2,\n+    paddingHorizontal: spacing.md,\n+  },\n+  count: {\n+    minWidth: 20,\n+    height: 20,\n+    borderRadius: 10,\n+    alignItems: 'center',\n+    justifyContent: 'center',\n+    paddingHorizontal: 5,\n+  },\n+  countText: { fontWeight: '600' },\n+});"
+    },
+    {
+      "sha": "7723f2efbacb155fa41f57ebab9ddff067abb662",
+      "filename": "src/screens/coach/MessagesScreen.tsx",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 1,
+      "changes": 10,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcoach%2FMessagesScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcoach%2FMessagesScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FMessagesScreen.tsx?ref=95119e5bcd02fb4e9db3c319deb57bf5b1b3f660",
+      "patch": "@@ -19,6 +19,7 @@ import { EmptyStateNoClients, EmptyStateNoResults } from '../../ui/empty-states'\n import { useFeatureFlags } from '../../hooks/useFeatureFlags';\n import CoachInboxV2 from './CoachInboxV2';\n import { BroadcastsEntry } from './broadcasts/BroadcastsEntry';\n+import { CommunityReportsEntry } from './CommunityReportsEntry';\n \n // Backstop poll \u2014 Realtime broadcasts drive most refreshes now. Was 30s.\n const FALLBACK_POLL_MS = 60000;\n@@ -124,7 +125,10 @@ function LegacyCoachMessages() {\n             </Text>\n           )}\n         </View>\n-        <BroadcastsEntry />\n+        <View style={styles.headerEntries}>\n+          <CommunityReportsEntry />\n+          <BroadcastsEntry />\n+        </View>\n       </View>\n \n       <View style={styles.searchContainer}>\n@@ -220,10 +224,14 @@ const makeStyles = (colors: ThemeColors) =>\n     flexDirection: 'row',\n     justifyContent: 'space-between',\n     alignItems: 'flex-start',\n+    // Title + Reports + Broadcasts can be wider than a phone: wrap, never clip.\n+    flexWrap: 'wrap',\n+    gap: 8,\n     paddingHorizontal: 24,\n     paddingTop: 60,\n     marginBottom: 8,\n   },\n+  headerEntries: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },\n   title: { fontFamily: 'CormorantGaramond_400Regular', fontSize: 32, lineHeight: 35, letterSpacing: 0.6, fontWeight: '400', color: colors.textPrimary },\n   unreadSummary: { fontSize: 13, color: colors.primary, fontWeight: '600', marginTop: 2 },\n   searchContainer: { paddingHorizontal: 24, marginBottom: 8 },"
+    },
+    {
+      "sha": "600020219c303a8fd28fe158c1e9fbb2b5f32fc0",
+      "filename": "src/screens/coach/__tests__/CoachInboxV2.test.tsx",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 0,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcoach%2F__tests__%2FCoachInboxV2.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcoach%2F__tests__%2FCoachInboxV2.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2F__tests__%2FCoachInboxV2.test.tsx?ref=95119e5bcd02fb4e9db3c319deb57bf5b1b3f660",
+      "patch": "@@ -21,6 +21,8 @@ jest.mock('../../../services/api', () => ({\n jest.mock('../../../tutorial/tutorialEvents', () => ({ emitTutorialSignal: jest.fn() }));\n // The Broadcasts header entry has its own probe and tests (broadcasts.test.tsx).\n jest.mock('../broadcasts/BroadcastsEntry', () => ({ BroadcastsEntry: () => null }));\n+// The community Reports entry has its own probe and tests (CommunityReportsEntry.test.tsx).\n+jest.mock('../CommunityReportsEntry', () => ({ CommunityReportsEntry: () => null }));\n const mockSubscribe = jest.fn((..._args: unknown[]) => () => undefined);\n jest.mock('../../../services/realtime', () => ({\n   subscribeToMessages: (...args: unknown[]) => mockSubscribe(...args),"
+    },
+    {
+      "sha": "77f22576592fae5d22c858d1a5df48c6cf7e0828",
+      "filename": "src/screens/coach/__tests__/CommunityReportsEntry.test.tsx",
+      "status": "added",
+      "additions": 84,
+      "deletions": 0,
+      "changes": 84,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcoach%2F__tests__%2FCommunityReportsEntry.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcoach%2F__tests__%2FCommunityReportsEntry.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2F__tests__%2FCommunityReportsEntry.test.tsx?ref=95119e5bcd02fb4e9db3c319deb57bf5b1b3f660",
+      "patch": "@@ -0,0 +1,84 @@\n+/**\n+ * CommunityReportsEntry (AUDIT-10-125 B-1): the coach Messages header opens the\n+ * community report queue, which no coach screen reached while the coach\n+ * Community tab is off in the store build. Hidden when the queue route does\n+ * not answer (community API off), shows the open count, and opens the queue\n+ * registered in the Clients stack.\n+ */\n+import React from 'react';\n+import { fireEvent, render, waitFor } from '@testing-library/react-native';\n+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';\n+\n+jest.mock('../../../theme/ThemeProvider', () => ({\n+  useTheme: () => ({ colors: new Proxy({}, { get: () => '#000000' }) }),\n+}));\n+jest.mock('../../../services/api', () => ({\n+  __esModule: true,\n+  default: { get: jest.fn(), post: jest.fn(), put: jest.fn(), patch: jest.fn(), delete: jest.fn() },\n+}));\n+const mockNavigate = jest.fn();\n+jest.mock('@react-navigation/native', () => {\n+  const actual = jest.requireActual('@react-navigation/native');\n+  return { ...actual, useNavigation: () => ({ navigate: mockNavigate }) };\n+});\n+\n+import api from '../../../services/api';\n+import { CommunityReportsEntry } from '../CommunityReportsEntry';\n+\n+const http = { get: api.get as jest.Mock };\n+\n+const item = (id: string) => ({\n+  id,\n+  workspace_id: '00000000-0000-4000-8000-000000000001',\n+  target_type: 'post',\n+  target_id: '00000000-0000-4000-8000-0000000000aa',\n+  content: 'Reported text',\n+  media: null,\n+  removed: false,\n+  respond_by: '2026-10-07T20:00:00.000Z',\n+  overdue: false,\n+  author_user_id: '00000000-0000-4000-8000-0000000000bb',\n+  author_name: 'Sam Member',\n+  cohort_name: null,\n+  reason: 'harassment',\n+  notes: null,\n+  created_at: '2026-10-06T20:00:00.000Z',\n+});\n+\n+function renderQ(node: React.ReactElement) {\n+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });\n+  return render(<QueryClientProvider client={qc}>{node}</QueryClientProvider>);\n+}\n+\n+beforeEach(() => {\n+  mockNavigate.mockReset();\n+  http.get.mockReset();\n+});\n+\n+describe('CommunityReportsEntry', () => {\n+  it('is hidden while the community API is off', async () => {\n+    http.get.mockRejectedValue({ isAxiosError: true, response: { status: 503, data: { code: 'community.disabled' } } });\n+    const r = await renderQ(<CommunityReportsEntry />);\n+    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/community/moderation/flagged'));\n+    expect(r.queryByTestId('messages-community-reports-entry')).toBeNull();\n+  });\n+\n+  it('shows the open report count and opens the queue in the Clients stack', async () => {\n+    http.get.mockResolvedValue({ data: { items: [item('00000000-0000-4000-8000-000000000011'), item('00000000-0000-4000-8000-000000000012')] } });\n+    const r = await renderQ(<CommunityReportsEntry />);\n+    await waitFor(() => expect(r.getByTestId('messages-community-reports-entry')).toBeTruthy());\n+    expect(r.getByTestId('messages-community-reports-count').props.children).toBe('2');\n+    await fireEvent.press(r.getByTestId('messages-community-reports-entry'));\n+    expect(mockNavigate).toHaveBeenCalledWith('ClientsStack', {\n+      screen: 'CoachCommunityModeration',\n+      initial: false,\n+    });\n+  });\n+\n+  it('stays reachable with no open reports (no count badge)', async () => {\n+    http.get.mockResolvedValue({ data: { items: [] } });\n+    const r = await renderQ(<CommunityReportsEntry />);\n+    await waitFor(() => expect(r.getByTestId('messages-community-reports-entry')).toBeTruthy());\n+    expect(r.queryByTestId('messages-community-reports-count')).toBeNull();\n+  });\n+});"
+    },
+    {
+      "sha": "8b170f8f1bccc076b94eb93e8350fe12473509ac",
+      "filename": "src/screens/community/CoachCommunityModerationScreen.tsx",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 1,
+      "changes": 12,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcommunity%2FCoachCommunityModerationScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcommunity%2FCoachCommunityModerationScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcommunity%2FCoachCommunityModerationScreen.tsx?ref=95119e5bcd02fb4e9db3c319deb57bf5b1b3f660",
+      "patch": "@@ -63,6 +63,16 @@ import type {\n   CoachModerationOutcome,\n } from '../../api/coachCommunityApi';\n import VoiceNotePlayer from '../../components/community/VoiceNotePlayer';\n+import { COMMUNITY_REPORT_REASONS } from '../../api/communitySafetyApi';\n+\n+/**\n+ * The reviewer-facing label for a stored report reason code (\"self_harm\" ->\n+ * \"Self-harm or suicide\"), the same labels the member picked from. An unknown\n+ * code is shown as stored.\n+ */\n+export function reportReasonLabel(reason: string): string {\n+  return COMMUNITY_REPORT_REASONS.find((r) => r.code === reason)?.label ?? reason;\n+}\n \n /** Reviewer-facing noun for each reported content type. */\n export const TARGET_NOUN: Record<CoachFlaggedItem['target_type'], string> = {\n@@ -248,7 +258,7 @@ export default function CoachCommunityModerationScreen(): React.ReactElement {\n             </Text>\n           </View>\n           <Text style={[styles.meta, { color: semanticColors.textMuted }]} numberOfLines={1}>\n-            {(item.cohort_name ? `${item.cohort_name} \u00b7 ` : '') + `${noun} \u00b7 ${item.reason}`}\n+            {(item.cohort_name ? `${item.cohort_name} \u00b7 ` : '') + `${noun} \u00b7 ${reportReasonLabel(item.reason)}`}\n           </Text>\n           {due ? (\n             <Text"
+    },
+    {
+      "sha": "68080844f80df0b9830b4d47442028dd5e7f4f97",
+      "filename": "src/screens/community/CommunitySpaceScreen.tsx",
+      "status": "modified",
+      "additions": 32,
+      "deletions": 1,
+      "changes": 33,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcommunity%2FCommunitySpaceScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcommunity%2FCommunitySpaceScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcommunity%2FCommunitySpaceScreen.tsx?ref=95119e5bcd02fb4e9db3c319deb57bf5b1b3f660",
+      "patch": "@@ -4,6 +4,8 @@\n  * Cohort. The Lab/Hall is a POST feed, not a chat (\u00a72.3).\n  *\n  * Empty state uses Roman voice + a primary action (\"Be the first to post\").\n+ * A feed with posts carries a \"New post\" button above the list, so the\n+ * composer stays reachable after the first post (AUDIT-10-125 B-2).\n  * Tapping a post opens its thread. Standardized on semanticColors / tokens.ts.\n  *\n  * The workspace prerequisite (useCommunityMe) is resolved BEFORE any post empty\n@@ -269,7 +271,24 @@ export default function CommunitySpaceScreen({\n           testID=\"community-space-screen\"\n           data={data}\n           keyExtractor={(p) => p.id}\n-          ListHeaderComponent={voiceSection}\n+          ListHeaderComponent={\n+            <>\n+              {voiceSection}\n+              <HapticPressable\n+                intent=\"light\"\n+                onPress={compose}\n+                accessibilityRole=\"button\"\n+                accessibilityLabel=\"Write a new post\"\n+                testID=\"community-space-new-post\"\n+                style={[styles.newPost, { borderColor: semanticColors.accent }]}\n+              >\n+                <Ionicons name=\"create-outline\" size={18} color={semanticColors.accentText} />\n+                <Text style={[styles.retryLabel, { color: semanticColors.accentText }]}>\n+                  New post\n+                </Text>\n+              </HapticPressable>\n+            </>\n+          }\n           renderItem={({ item }) => (\n             <PostCard\n               post={item}\n@@ -316,4 +335,16 @@ const styles = StyleSheet.create({\n   },\n   retryLabel: { fontSize: 14, fontWeight: '600' },\n   list: { paddingVertical: 8 },\n+  newPost: {\n+    flexDirection: 'row',\n+    alignItems: 'center',\n+    alignSelf: 'flex-start',\n+    gap: spacing.xs,\n+    marginHorizontal: spacing.lg,\n+    marginBottom: spacing.sm,\n+    borderWidth: StyleSheet.hairlineWidth,\n+    borderRadius: radius.pill,\n+    paddingHorizontal: spacing.lg,\n+    minHeight: 44,\n+  },\n });"
+    },
+    {
+      "sha": "8f5e1b170f33e161776699b7bb1c4ef91ac877a8",
+      "filename": "src/screens/community/__tests__/CommunitySpaceScreen.test.tsx",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 0,
+      "changes": 18,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcommunity%2F__tests__%2FCommunitySpaceScreen.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcommunity%2F__tests__%2FCommunitySpaceScreen.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcommunity%2F__tests__%2FCommunitySpaceScreen.test.tsx?ref=95119e5bcd02fb4e9db3c319deb57bf5b1b3f660",
+      "patch": "@@ -218,6 +218,24 @@ describe.each(['hall', 'cohort'] as const)(\n       expect(mockNavigate).not.toHaveBeenCalledWith('CommunityComposer', expect.anything());\n     });\n \n+    it('a feed with posts keeps a New post button that opens the composer (AUDIT-10-125 B-2)', async () => {\n+      // Before this fix the only composer entry was the empty state's\n+      // \"Be the first to post\": once one post existed nobody could post again.\n+      mockPosts.data = [{ id: 'p-1' }, { id: 'p-2' }];\n+      await render(\n+        <CommunitySpaceScreen\n+          embedded\n+          space={space}\n+          workspaceId=\"ws-resolved\"\n+          prerequisiteLoading={false}\n+          prerequisiteError={false}\n+        />,\n+      );\n+      expect(screen.getByTestId('post-card-p-1')).toBeTruthy();\n+      await fireEvent.press(screen.getByTestId('community-space-new-post'));\n+      expect(mockNavigate).toHaveBeenCalledWith('CommunityComposer', { mode: 'post' });\n+    });\n+\n     it('opened as a route, it reads the workspace from /community/me (B-E2E-1)', async () => {\n       mockMe.data = { workspace_id: 'ws-me' };\n       mockPosts.data = [{ id: 'p-route' }];"
+    },
+    {
+      "sha": "971a7c857b182d038a55daa6d556df823ca16f16",
+      "filename": "src/screens/community/__tests__/coachCommunityScreens.test.tsx",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcommunity%2F__tests__%2FcoachCommunityScreens.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/95119e5bcd02fb4e9db3c319deb57bf5b1b3f660/src%2Fscreens%2Fcommunity%2F__tests__%2FcoachCommunityScreens.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcommunity%2F__tests__%2FcoachCommunityScreens.test.tsx?ref=95119e5bcd02fb4e9db3c319deb57bf5b1b3f660",
+      "patch": "@@ -923,7 +923,7 @@ describe('Coach mutations \u2014 create / invite / remove / ack / hide', () => {\n     expect(getByTestId(`coach-community-flagged-due-${id}`).props.children).toBe(\n       'Review within 5h',\n     );\n-    expect(getByText('Spring block \u00b7 voice note \u00b7 spam')).toBeTruthy();\n+    expect(getByText('Spring block \u00b7 voice note \u00b7 Spam or scams')).toBeTruthy();\n     // Opening a decision names the voice note, not a raw enum.\n     await fireEvent.press(getByTestId(`coach-community-flagged-hide-${id}`));\n     expect(getByText(/Hide this voice note from Bob\\?/)).toBeTruthy();\n@@ -955,7 +955,7 @@ describe('Coach mutations \u2014 create / invite / remove / ack / hide', () => {\n     const { getByTestId, getByText, queryByTestId } = await render(\n       <CoachCommunityModerationScreen />,\n     );\n-    expect(getByText('Spring block \u00b7 win \u00b7 spam')).toBeTruthy();\n+    expect(getByText('Spring block \u00b7 win \u00b7 Spam or scams')).toBeTruthy();\n     expect(\n       getByTestId('coach-community-flagged-due-cccccccc-cccc-cccc-cccc-ccccccccccc1').props\n         .children,"
+    }
+  ]
+}

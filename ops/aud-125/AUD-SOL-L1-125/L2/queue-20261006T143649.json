@@ -1,0 +1,236 @@
+{
+  "observed_at": "2026-10-06T14:36:49.756763-07:00",
+  "rows": [
+    {
+      "repo": "mobile",
+      "number": 434,
+      "head": "9d4cfb53557c3ed1990c41ec6e1697c0abc3885f",
+      "title": "fix(deliverables): purchased PDFs and videos open; a delivered meal plan opens that plan (B-DELIV-125, T4)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "mobile",
+      "number": 433,
+      "head": "88da53118bcd3788b7b41b9669b987ef4f7138fa",
+      "title": "fix(coach-home): Overview rows open the client, failed loads show an error not zeros, risk board works for every coach (AUDIT-13-125)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "mobile",
+      "number": 432,
+      "head": "f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b",
+      "title": "fix(push): a tap on a push without a target screen opens Community, Workouts or the notification center (AUDIT-09-125)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "mobile",
+      "number": 427,
+      "head": "28888f83527a64c75477fa7513a831e31a466c04",
+      "title": "fix(coach-ai): AI meal plan review shows and saves what the client gets; approve uses the loaded draft id (AUDIT-08-125)",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/427#issuecomment-6025681247",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-08-125, agent 125) \u2014 growth-project-mobile#427 @ 28888f83527a64c75477fa7513a831e31a466c04 \u2014 READY FOR AUDIT\n\n- CI at this head: Typecheck, lint, test = success; CodeQL + Analyze = success.\n- Size: +342 / -74 = 416 lines (tests 228 of them).\n- Fixes: B (AI meal plan and workout Save/Approve/Reject posted to /coach/ai/drafts/undefined/... because GET /coach/ai/drafts/:id returns `id`, not `draftId`; now the route draftId), B (AI-written `coach_notes` reached the client without the review showing them; now shown and editable as \"Notes <client> sees\"), U (meal slot / serving / day totals rendered blank and edits to them were dropped; now read and write the backend fields; day totals follow item macro edits; dead \"Meal name\" and \"Day notes\" inputs removed).\n- Works against the current production backend (no API change). Not affected by the clinic build profile: the coach AI section is not flag-gated.\n- AIWorkoutDraftScreen: only the three draftId lines; the rest of that screen belongs to AUDIT-14-125.\n"
+        }
+      ],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/427#issuecomment-6025736405"
+      ]
+    },
+    {
+      "repo": "mobile",
+      "number": 424,
+      "head": "f69f200ec84e7ed3657621f3fb8c922e80ee12a0",
+      "title": "fix(roman): a used-up coach AI credit pool gets its own copy, not a retry (AUDIT-05-125)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "mobile",
+      "number": 416,
+      "head": "45a117a7fed0384f29fb7d8a81cb7f1b1afbc742",
+      "title": "fix(polish): readable tabs, safe-area spacing and screen-reader controls",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/416#issuecomment-6025593551",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-20-125, agent 125) \u2014 growth-project-mobile#416 @ 45a117a7fed0384f29fb7d8a81cb7f1b1afbc742 \u2014 READY FOR AUDIT\n\nTier T2. B=0; five highest-value U fixes in this PR; C=0.\n\n- Readable light/dark primary tabs and preserved content above the bottom safe-area inset.\n- Shared actionable press controls expose button semantics; explicit roles and non-actionable content are preserved.\n- Selected exercise filters and error foregrounds use the correct contrast tokens; the Home message label can wrap for large text.\n\n148 changed lines: 38 source + 110 tests (134 additions, 14 deletions), below the operator's revised under-150-line U-only cap.\n\nAcceptance: lint, typecheck, release guards, and the full suite passed: 603 suites / 8,288 tests, including all four changed regression files. Both CodeQL analysis jobs passed. [Final PR CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531749222)\n\nTests-only main baseline reproduced 11 regression failures with 6 existing/preservation assertions passing. [Baseline proof](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37530694949)\n\nThe opening CI caught the removed legacy `colors` import still needed by unchanged stack headers; restored it and pushed again before this READY comment. Tests were condensed to meet the updated size limit.\n\nNo backend, flags, dependencies, lockfiles, migrations, builds, merges, deploys, or production changes. No overlap with agent 124's open PR files.\n\nAudit report also records a lower-priority legacy-screen dark-appearance migration, intentionally not expanded into this launch slice. Recommended default: defer that broad migration, and retain the normal device dark-mode/large-text/VoiceOver smoke pass.\n"
+        }
+      ],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/416#issuecomment-6025698369"
+      ]
+    },
+    {
+      "repo": "backend",
+      "number": 798,
+      "head": "3de021eb766f84f70e4d84fad88eca1ac1ed8613",
+      "title": "fix(lessons): Learn shows only the client's own coach's lessons; buyers can open purchased PDFs and videos (B-DELIV-125, T4)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 797,
+      "head": "ea742c5f02e288c17e4a1429b7005fc38600e867",
+      "title": "fix(cross-pillar): coach search and client profile only reach the coach's own clients (AUDIT-13-125, T4)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 796,
+      "head": "43072020b93303af1e7faaad6fa7d93042a1330d",
+      "title": "fix(meal-plans): coach edits of an AI-approved meal plan reach the client (AUDIT-08-125)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 795,
+      "head": "f85de9b83441ff5dce910375c8aeb877df3ed978",
+      "title": "fix(roman): gym talk is not sent to 911; crisis section in the client reply contract (AUDIT-05-125, T4)",
+      "ready": [],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/795#issuecomment-6025909162"
+      ]
+    },
+    {
+      "repo": "backend",
+      "number": 794,
+      "head": "d8352fe1eba11a07971ea92b1184a24e1d73a10e",
+      "title": "fix(invite-codes): Who joined reads the redemption ledger; Resend really re-sends (AUDIT-17-125)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 793,
+      "head": "5bfe51f4243f373cebc5b873439b3087de8885d3",
+      "title": "fix(coach-ai): Save edits on AI workout and meal drafts is accepted (AUDIT-14-125)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 792,
+      "head": "25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "title": "fix(notifications): coach alert, new purchase and content pushes honour mute and keep names off the lock screen (AUDIT-09-125)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 791,
+      "head": "4c74404e1642ac47f34ad7516c458b11c04fdee0",
+      "title": "fix(packages): pricing the free setup package stops the invite link giving it away (AUDIT-02-125)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 790,
+      "head": "a9fee4d4d59755ee98899c3cb35d9df8abaac2fb",
+      "title": "fix(scheduling): a welcome call that has happened is not offered again (AUDIT-04-125)",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/790#issuecomment-6025845367",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-04-125, agent 125) \u2014 growth-project-backend#790 @ a9fee4d4d59755ee98899c3cb35d9df8abaac2fb \u2014 READY FOR AUDIT\n\nTier T2. 2 files, +45 / -1 (tests included). PR CI green at this head: build-and-test (lint, type-check, build, full test suite incl. the two new my-coaches cases), CodeQL, Banned cast tokens, Schema parity, rls-floor-guard, rls-live-tests, community-live-tests, mwb-3-live-tests, danger, size-label, npm audit, build-sbom, test-deploy-readiness. deploy-readiness-gate SKIPPED (normal for a PR); comment-deploy-readiness is a bot comment job still queued.\n\nFixes U-04-1: a client who already had their welcome call is no longer asked to book it again. listMyCoaches now counts a welcome session as had when it is completed, or confirmed (scheduled / pending_provider) with its end time passed. No-show, cancelled, declined, expired and unanswered welcome calls stay bookable. Read-only query change; same client_id and bookable-coach scoping as before. No mobile change needed (mobile already reads welcome.completed_at). Local jest was not run (sandbox slot timeout); CI is the proof.\n"
+        }
+      ],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/790#issuecomment-6025899219"
+      ]
+    },
+    {
+      "repo": "backend",
+      "number": 789,
+      "head": "a28c474c8ed4fe9e23535458b5d91071cf45d4b7",
+      "title": "fix(messaging): reading a thread clears its new-message notifications (AUDIT-03-125)",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/789#issuecomment-6025819041",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-03-125, agent 125) \u2014 growth-project-backend#789 @ a28c474c8ed4fe9e23535458b5d91071cf45d4b7 \u2014 READY FOR AUDIT\n\n- CI at this head: build-and-test SUCCESS (893 suites passed, 15701 tests passed; the new spec test/messaging/messaging-read-clears-notifications.spec.ts passes), Banned cast tokens, danger, Schema parity, rls-live-tests, community-live-tests, mwb-3-live-tests, rls-floor-guard, CodeQL, npm audit SUCCESS. deploy-readiness-gate skipped (not a release branch); comment-deploy-readiness is a queued comment job, not a test.\n- Fix: U4. markReadByClient / markReadByCoach also mark the reader's own message_received Notification rows for that thread (deep_link tgp://messages/<clientId>) read, so the bell stops counting messages the reader has just read. Best effort: logged, never fails the read.\n- 87 changed lines, no migration, no flag. Mobile companion growth-project-mobile#429 is independent and works without this.\n"
+        }
+      ],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/789#issuecomment-6025899201"
+      ]
+    },
+    {
+      "repo": "backend",
+      "number": 788,
+      "head": "20d430ad7923d8c52a5a07e3da1000140088b99c",
+      "title": "fix(exercise-catalog): accept browser queries and common lift names (AUDIT-18-125)",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/788#issuecomment-6025597046",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-18-125, agent 125) \u2014 growth-project-backend#788 @ 20d430ad7923d8c52a5a07e3da1000140088b99c \u2014 READY FOR AUDIT\n\nT2. 77 changed lines (75 additions + 2 deletions), including 61 test lines; no lockfile/generated changes. All required PR checks green, including build-and-test (run 37531109151), live RLS/community/MWB, Danger, schema parity and R75. The expected production-environment deploy-readiness gate is skipped. B1 fixed by numeric query conversion; common lift words/abbreviations and seed source IDs resolve. Playback authorization and writes unchanged. Companion mobile #418 works without deploying this PR. No extra pushes were needed."
+        }
+      ],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/788#issuecomment-6025726362"
+      ]
+    },
+    {
+      "repo": "backend",
+      "number": 787,
+      "head": "1f32a2c1cd7ba6f0e4d7db0c75c75102a6cc742e",
+      "title": "fix(help): correct support channel instructions (AUDIT-19-125)",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/787#issuecomment-6025602972",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-19-125, agent 125) \u2014 growth-project-backend#787 @ 1f32a2c1cd7ba6f0e4d7db0c75c75102a6cc742e \u2014 READY FOR AUDIT\n\nT1. B19-1 corrected: Contact support no longer falsely says there is no chat; it describes the existing Settings -> Support chat and email alternative.\n\n26 changed lines (25 additions, 1 deletion), including the renderer test. All current PR checks are green (deploy-readiness-gate is correctly skipped). Tests-only main-baseline run 37530707188 fails both new assertions; fixed-head PR CI build-and-test passes, including this spec.\n\nSame-file overlap with #784 is minimal and disclosed: #784 fixes account-deletion instructions/last-reviewed date, while #787 changes only the contact-page footnote. No auth, tenancy, PII handling, money, production flags, merge or deploy changes.\n"
+        }
+      ],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/787#issuecomment-6025698919"
+      ]
+    },
+    {
+      "repo": "backend",
+      "number": 786,
+      "head": "5812a267c3b94959ede42005dd73a894002f36f8",
+      "title": "fix(coach): stable timeline meal paging",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/786#issuecomment-6025634453",
+          "body": "FIX ROUND 1 (OPENING) (FIX-Q1-125, agent 125) \u2014 growth-project-backend#786 @ 5812a267c3b94959ede42005dd73a894002f36f8 \u2014 READY FOR AUDIT\n\nThis is D1 from the Claude Opus 5.5 verdict on growth-project-mobile#404 @ ab6d426b. T2. 2 files, +21/-1.\n\n**B-404-O1 (server half)** \u2014 a coach opens a client who logs about four foods a day and taps 30 on the food review; on the day where a 100-entry page ends, foods showed twice and that day's totals were too high.\n- `src/coach/coach.service.ts` `getClientTimeline`: the meals slice changes from `orderBy: { date: 'desc' }` to `orderBy: [{ date: 'desc' }, { id: 'desc' }]`, so `mealsCursor` pages use a unique order. The response shape, consent gating, tenant scope, `take: 100`, `cursor` and `skip: 1` are all unchanged.\n- Test: `test/coach-timeline.spec.ts` \"pages the meals slice on a unique order (date, then id)\" asserts the findMany args (orderBy array, cursor, skip 1, take 100). It fails on main, where orderBy is the object `{ date: 'desc' }`; test commit 63f24720, fix commit 5812a267.\n- CI green at this head: build-and-test (15678 passed) https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37530895914 ; Banned cast tokens, danger, Schema parity, RLS/community/MWB live tests and CodeQL are also green.\n\nOverlap: growth-project-backend#777 edits a different method in the same file (roster activity); no textual conflict expected. The mobile dedupe on growth-project-mobile#404 is still required, because the 10-07 build may talk to the current production server.\n\nNo migration, dependency, lockfile change or flag. Nothing merged or deployed.\n"
+        }
+      ],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/786#issuecomment-6025899263"
+      ]
+    },
+    {
+      "repo": "backend",
+      "number": 785,
+      "head": "39865147daa2859225a5d7349620b2364ff16d32",
+      "title": "fix(auth): confirmation recovery and shared-network sign-up",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 778,
+      "head": "52fbaaebea99673750e1226e90c89e9ebacadc58",
+      "title": "fix(money): real package statistics and paused subscription pricing (T4)",
+      "ready": [],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/778#issuecomment-6025315964"
+      ]
+    },
+    {
+      "repo": "backend",
+      "number": 776,
+      "head": "d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "title": "fix(money): refunds pause billing; repeat cancels and live-contract lifecycle (T4)",
+      "ready": [],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/776#issuecomment-6025292807"
+      ]
+    }
+  ]
+}

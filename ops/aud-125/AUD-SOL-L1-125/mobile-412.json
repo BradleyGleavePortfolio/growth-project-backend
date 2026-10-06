@@ -1,0 +1,308 @@
+{
+  "repo": "mobile",
+  "number": 412,
+  "head": "234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+  "base": "321274f36939e25a2cdf19ec2b840bda4b395967",
+  "title": "fix(store): hide Android digital Stripe purchase surfaces (T4)",
+  "body": "## Summary\n\nHUNT-10-124, agent 124 \u2014 T4 (store-payment compliance and purchase navigation).\n\n- Fix **B-HUNT10-1**: an Android coach can ordinarily tap Buy credits or Start subscription and be sent to Stripe for digital AI/software capacity. Google Play requires the applicable store billing or enrolled alternative-billing integration; a Stripe browser/webview by itself is not that integration.\n- Add a **digital-only** release decision, reused by the credit-pack route, AI meter/banner/tutorial/pause/options, coach software billing/invoices, team upgrade messaging and budget notification destination.\n- Preserve the existing iOS/native gate, web and Android-development checkout, account/usage status, and client real-time one-to-one human coaching (including recurring packages). No client payment, package or entitlement source file changes.\n\nPolicy: [Google Play Payments](https://support.google.com/googleplay/android-developer/answer/9858738?hl=en), [one-to-one coaching exception](https://support.google.com/googleplay/android-developer/answer/10281818?hl=en), [Apple review guidelines](https://developer.apple.com/app-store/review/guidelines/).\n\n## Failing-first proof\n\nTests were committed before implementation in `9baf193a`.\n\n[Baseline regression lane](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37522369835): **14 Android behavior assertions fail** with unchanged source (checkout mounts, pack options show, meter is a buy button, banner/tutorial/pause offer packs, team offers upgrade); **156 tests pass**. Four additional iOS direct-route tests hit an incomplete new theme mock, not a production defect; the final test supplies the existing component's colors/typography contract.\n\nFinal normal PR CI runs full lint, typecheck and test. New coverage also checks Android software billing across six states, disabled payable-invoice links, budget notification destination, iOS decision parity, development/web behavior, and unchanged client recurring-coaching checkout. Only one extra ci-lane was used; no local full suite, native build or provider call.\n\n## Documentation\n\n- Updated coach release/purchase-policy README and affected policy comments.\n- Mechanically refreshed the existing purchase-policy SHA-256 to the changed policy file; no dependency lockfile changes.\n- No new user-visible first-person copy, emojis, exclamation marks, upgrade instructions or external purchase links in hidden surfaces.\n\n## Backend dependencies\n\nNone. No endpoint, server flag, schema, provider setting or payment settlement changes.\n\n## Owner steps and decisions\n\n1. Default: keep Android digital AI/software purchases hidden for this launch; re-enable only through a separately reviewed store-billing or applicable enrolled-program integration.\n2. Verify actual paid coaching offers satisfy the real-time 1:1 service exception; Google additionally requires that the paid session is not replayable in the Play app. The synthetic free review grant proves access, not payment-policy eligibility.\n3. Supply both private reviewer logins and verify seeded data in the submitted binary; do not submit blank/unverified access or copy credentials into GitHub. Complete store health/privacy/access forms against that exact binary.\n\nNo production writes, sign-ups, sign-ins to reviewer accounts, Stripe calls, build, spend, merge, deployment or CI cancellations.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 251,
+  "deletions": 55,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/412",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/412#issuecomment-6024545796",
+      "body": "FIX ROUND 1 (HUNT-10-124, agent 124) \u2014 growth-project-mobile#412 @ 213caf22180d5f611664d40c7aaf9623415e302e\n\nB-HUNT10-1 implementation passed the Android gate, checkout/billing and unchanged coaching tests. [Full CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37523044378) passed lint/typecheck and **8,305 tests**, but two newly added Android seat-copy assertions still compared against the intentionally separate iOS/P2P expectation.\n\nThe scoped correction changes those two assertions to the digital-purchase expectation; no application-code change. One correction push, no extra ci-lane or rerun. READY FOR AUDIT will follow at the new exact head once regular CI is green.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112477910720",
+      "id": 112477910720,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A412+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112477910720/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37524430931/job/112477712008",
+      "id": 112477712008,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112477712008/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37524430827/job/112477711708",
+      "id": 112477711708,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112477711708/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37524430827/job/112477711153",
+      "id": 112477711153,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112477711153/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "d03b6c807a4e9b9f018ddd5615651666c998a3f9",
+      "filename": "scripts/purchase-policy.sha256",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/scripts%2Fpurchase-policy.sha256",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/scripts%2Fpurchase-policy.sha256",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/scripts%2Fpurchase-policy.sha256?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -1 +1 @@\n-493550ba3e0e7e0ddb8cc1f5e03d9abc2bf25cd320b815e1c25394107c4159a4\n+6b5f397c25553a525a126fbe6ab0be432b440496a06b65d89aab27a6d8484d8a"
+    },
+    {
+      "sha": "9ce4a7176390f93283eec5808e5d335f5691cdbf",
+      "filename": "src/__tests__/iosHideNonP2PPurchases.test.tsx",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2F__tests__%2FiosHideNonP2PPurchases.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2F__tests__%2FiosHideNonP2PPurchases.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FiosHideNonP2PPurchases.test.tsx?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -12,7 +12,7 @@ import * as path from 'path';\n let mockHidden = true;\n jest.mock('../config/purchaseSurfaces', () => {\n   const actual = jest.requireActual('../config/purchaseSurfaces');\n-  return { ...actual, nonP2PPurchasesHidden: () => mockHidden };\n+  return { ...actual, nonP2PPurchasesHidden: () => mockHidden, digitalPurchasesHidden: () => mockHidden };\n });\n const mockColors = new Proxy({}, { get: () => '#000000' });\n jest.mock('../theme/ThemeProvider', () => ({ useTheme: () => ({ colors: mockColors, semanticColors: mockColors }) }));"
+    },
+    {
+      "sha": "420944961e52b2d11719cc2c5deede09c2f32799",
+      "filename": "src/__tests__/iosNonP2PSurfacesMatrix.test.tsx",
+      "status": "modified",
+      "additions": 55,
+      "deletions": 15,
+      "changes": 70,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2F__tests__%2FiosNonP2PSurfacesMatrix.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2F__tests__%2FiosNonP2PSurfacesMatrix.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FiosNonP2PSurfacesMatrix.test.tsx?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -6,11 +6,12 @@\n  *   hidden rows: iOS + flag true; iOS + flag false + native build >= 6 (an\n  *                OTA bundle that flips the flag); iOS + flag false + native\n  *                build unreadable\n- *   shown rows:  iOS + flag false + native build 5 (pre-OTA binary);\n- *                Android + flag true\n+ *   shown rows:  iOS + flag false + native build 5 (pre-OTA binary).\n+ * Android release hides digital AI/software purchases, independently of\n+ * the existing iOS-only human-coaching purchase/feature-link posture.\n  */\n import React from 'react';\n-import { Linking, Platform } from 'react-native';\n+import { Linking, Platform, Text } from 'react-native';\n import { act, fireEvent, render } from '@testing-library/react-native';\n \n const mockState: { flag: boolean; build: string | null } = { flag: true, build: '6' };\n@@ -63,7 +64,13 @@ let mockBudget: Record<string, unknown> | undefined;\n jest.mock('../hooks/useAIBudget', () => ({ useAIBudget: () => ({ data: mockBudget }) }));\n jest.mock('../theme/useTheme', () => {\n   const { lightTokens } = jest.requireActual('../theme/tokens');\n-  return { useTheme: () => ({ colorScheme: 'light', semanticColors: lightTokens }) };\n+  return {\n+    useTheme: () => ({\n+      colorScheme: 'light', semanticColors: lightTokens,\n+      colors: { background: '#F5EFE4', textPrimary: '#1A1A18', textSecondary: '#6B6B6B' },\n+      tokens: { typography: { h2: { fontSize: 24 }, body: { fontSize: 16 } } },\n+    }),\n+  };\n });\n jest.mock('react-native-safe-area-context', () => {\n   const actual = jest.requireActual('react-native-safe-area-context');\n@@ -87,18 +94,25 @@ import { AIBudgetTutorialModal } from '../components/coach/ai-budget/AIBudgetTut\n import { UpgradeGate } from '../screens/coach/TeamManagementScreen';\n import { seatLimitMessage } from '../screens/coach/SubCoachInviteModal';\n import CommunityEventDetailScreen from '../screens/community/CommunityEventDetailScreen';\n-import { nonP2PPurchasesHidden, externalLinkAllowed, isPaymentUrl } from '../config/purchaseSurfaces';\n+import { digitalPurchasesHidden, nonP2PPurchasesHidden, externalLinkAllowed, isPaymentUrl } from '../config/purchaseSurfaces';\n+import { withNonP2PPurchaseGate } from '../components/purchases/withNonP2PPurchaseGate';\n+import { PackOptionsRow } from '../components/coach/ai-budget/PackOptionsRow';\n+import { COACH_PUSH_ROUTES } from '../services/pushTapRouter';\n \n const BUY = /buy|top up|top-up|pack|upgrade|checkout|purchase/i;\n \n-type Row = { name: string; os: 'ios' | 'android'; flag: boolean; build: string | null; hidden: boolean };\n+type Row = {\n+  name: string; os: 'ios' | 'android'; flag: boolean; build: string | null;\n+  hidden: boolean; digitalHidden?: boolean;\n+};\n const ROWS: Row[] = [\n   { name: 'iOS, flag on, build 6', os: 'ios', flag: true, build: '6', hidden: true },\n   { name: 'iOS, OTA flips flag off, build 6', os: 'ios', flag: false, build: '6', hidden: true },\n   { name: 'iOS, OTA flips flag off, build 7', os: 'ios', flag: false, build: '7', hidden: true },\n   { name: 'iOS, flag off, unreadable build', os: 'ios', flag: false, build: null, hidden: true },\n   { name: 'iOS, flag off, pre-OTA build 5', os: 'ios', flag: false, build: '5', hidden: false },\n-  { name: 'Android, flag on', os: 'android', flag: true, build: '5', hidden: false },\n+  { name: 'Android release, flag on', os: 'android', flag: true, build: '5', hidden: false, digitalHidden: true },\n+  { name: 'Android release, iOS flag off', os: 'android', flag: false, build: '5', hidden: false, digitalHidden: true },\n ];\n \n function budget(pct: number) {\n@@ -128,6 +142,7 @@ const g = globalThis as { __DEV__?: boolean };\n const realDev = g.__DEV__;\n \n describe.each(ROWS)('$name', (row) => {\n+  const digitalHidden = row.digitalHidden ?? row.hidden;\n   beforeEach(async () => {\n     mockState.flag = row.flag;\n     mockState.build = row.build;\n@@ -143,13 +158,38 @@ describe.each(ROWS)('$name', (row) => {\n \n   it('gate decision', () => {\n     expect(nonP2PPurchasesHidden()).toBe(row.hidden);\n+    expect(digitalPurchasesHidden()).toBe(digitalHidden);\n+  });\n+\n+  it('a budget notification routes to Settings rather than hidden checkout', () => {\n+    expect(COACH_PUSH_ROUTES.CreditPackCheckout()).toEqual({\n+      root: 'SettingsStack',\n+      screen: digitalHidden ? 'SettingsHome' : 'CreditPackCheckout',\n+    });\n+  });\n+\n+  it('direct credit-pack navigation cannot mount checkout when digital purchases are hidden', async () => {\n+    const checkoutMounted = jest.fn();\n+    const Checkout = () => {\n+      checkoutMounted();\n+      return <Text>Digital checkout</Text>;\n+    };\n+    const Gated = withNonP2PPurchaseGate(Checkout);\n+    const utils = await render(<Gated />);\n+    expect(utils.queryByText('Digital checkout') === null).toBe(digitalHidden);\n+    expect(checkoutMounted.mock.calls.length > 0).toBe(!digitalHidden);\n+  });\n+\n+  it('standalone pack options are absent when digital purchases are hidden', async () => {\n+    const utils = await render(<PackOptionsRow options={[1000]} onSelect={jest.fn()} />);\n+    expect(utils.queryByTestId('ai-pack-option-1000') === null).toBe(digitalHidden);\n   });\n \n   it('meter chip: interactive buy affordance only when shown', async () => {\n     mockBudget = budget(60);\n     const { getByTestId } = await render(<AIBudgetMount />);\n     const meter = getByTestId('ai-budget-mount-chip');\n-    if (row.hidden) {\n+    if (digitalHidden) {\n       expect(meter.props.accessibilityRole).toBe('text');\n       expect(meter.props.accessibilityLabel).not.toMatch(BUY);\n       expect(meter.props.accessibilityHint).toBeUndefined();\n@@ -162,14 +202,14 @@ describe.each(ROWS)('$name', (row) => {\n   it('95% banner: Buy credits only when shown', async () => {\n     mockBudget = budget(96);\n     const { queryByText } = await render(<AIBudgetMount />);\n-    expect(queryByText('Buy credits') === null).toBe(row.hidden);\n+    expect(queryByText('Buy credits') === null).toBe(digitalHidden);\n   });\n \n   it('hard pause (mounted): neutral notice when hidden, packs when shown', async () => {\n     mockBudget = budget(100);\n     const utils = await render(<AIBudgetMount />);\n     const text = allText(utils.toJSON());\n-    if (row.hidden) {\n+    if (digitalHidden) {\n       expect(utils.getByTestId('ai-hard-pause-neutral')).toBeTruthy();\n       expect(text).not.toMatch(/Top up|credit pack/);\n       expect(utils.queryByTestId('ai-pack-option-1000')).toBeNull();\n@@ -197,7 +237,7 @@ describe.each(ROWS)('$name', (row) => {\n         });\n       }\n       const joined = seen.join('\\n');\n-      if (row.hidden) {\n+      if (digitalHidden) {\n         expect(joined).not.toMatch(/How packs work|Buy credits|Pick a pack|buy later|top up/i);\n         expect(utils.queryByTestId('ai-tutorial-later')).toBeNull();\n         await fireEvent.press(utils.getByTestId('ai-tutorial-done'));\n@@ -216,13 +256,13 @@ describe.each(ROWS)('$name', (row) => {\n \n   it('Team gate: no upgrade instruction when hidden', async () => {\n     const { toJSON } = await render(<UpgradeGate />);\n-    expect(/Upgrade/.test(allText(toJSON()))).toBe(!row.hidden);\n+    expect(/Upgrade/.test(allText(toJSON()))).toBe(!digitalHidden);\n   });\n \n   it('exhausted / partial seat messages: no upgrade instruction when hidden', () => {\n-    const hidden = nonP2PPurchasesHidden();\n-    expect(/upgrade/i.test(seatLimitMessage(0, hidden))).toBe(!row.hidden);\n-    expect(/upgrade/i.test(seatLimitMessage(2, hidden))).toBe(!row.hidden);\n+    const hidden = digitalPurchasesHidden();\n+    expect(/upgrade/i.test(seatLimitMessage(0, hidden))).toBe(!digitalHidden);\n+    expect(/upgrade/i.test(seatLimitMessage(2, hidden))).toBe(!digitalHidden);\n     expect(seatLimitMessage(0, hidden)).toMatch(/Revoke an existing sub-coach|revoke an existing sub-coach/);\n   });\n "
+    },
+    {
+      "sha": "ca620119fa32bfe9ebf7d24bfd6f1dd646535efe",
+      "filename": "src/components/coach/ai-budget/AIBudgetHardPauseModal.tsx",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3,
+      "changes": 6,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fcomponents%2Fcoach%2Fai-budget%2FAIBudgetHardPauseModal.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fcomponents%2Fcoach%2Fai-budget%2FAIBudgetHardPauseModal.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fcoach%2Fai-budget%2FAIBudgetHardPauseModal.tsx?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';\n import HapticPressable from '../../HapticPressable';\n import { useTheme, type ThemeColors } from '../../../theme/ThemeProvider';\n import { PackOptionsRow } from './PackOptionsRow';\n-import { nonP2PPurchasesHidden } from '../../../config/purchaseSurfaces';\n+import { digitalPurchasesHidden } from '../../../config/purchaseSurfaces';\n import {\n   formatCents,\n   type CoachAIBudgetResponse,\n@@ -30,7 +30,7 @@ export interface AIBudgetHardPauseModalProps {\n   budget: CoachAIBudgetResponse;\n   onClose: () => void;\n   onSelectPack: (amountCents: number | 'custom') => void;\n-  /** iOS with non-P2P purchases hidden: neutral pause notice, no packs. */\n+  /** Digital purchases hidden: neutral pause notice, no packs. */\n   purchasesHidden?: boolean;\n   testID?: string;\n }\n@@ -40,7 +40,7 @@ export function AIBudgetHardPauseModal({\n   budget,\n   onClose,\n   onSelectPack,\n-  purchasesHidden = nonP2PPurchasesHidden(),\n+  purchasesHidden = digitalPurchasesHidden(),\n   testID,\n }: AIBudgetHardPauseModalProps): React.ReactElement {\n   const { colors } = useTheme();"
+    },
+    {
+      "sha": "495e7d69018dcea133a55892659a3b29a2d90211",
+      "filename": "src/components/coach/ai-budget/AIBudgetMount.tsx",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3,
+      "changes": 6,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fcomponents%2Fcoach%2Fai-budget%2FAIBudgetMount.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fcomponents%2Fcoach%2Fai-budget%2FAIBudgetMount.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fcoach%2Fai-budget%2FAIBudgetMount.tsx?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -37,7 +37,7 @@ import { AIBudgetBanner } from './AIBudgetBanner';\n import { AIBudgetTutorialModal, tutorialSeenKey } from './AIBudgetTutorialModal';\n import { AIBudgetHardPauseModal } from './AIBudgetHardPauseModal';\n import { surfaceFor, type CoachAIBudgetResponse } from '../../../api/types/coachAIBudget';\n-import { nonP2PPurchasesHidden } from '../../../config/purchaseSurfaces';\n+import { digitalPurchasesHidden } from '../../../config/purchaseSurfaces';\n \n export interface AIBudgetMountProps {\n   /**\n@@ -71,8 +71,8 @@ export function AIBudgetMount({\n   const navigation = useNavigation<NavigationProp<ParamListBase>>();\n \n   const surface = useMemo(() => surfaceFor(budget), [budget]);\n-  // iOS: AI credit packs are not a 1:1 service, so no buy entry points.\n-  const purchasesHidden = nonP2PPurchasesHidden();\n+  // Store builds: AI credit packs are digital services, not human coaching.\n+  const purchasesHidden = digitalPurchasesHidden();\n \n   // Tutorial-seen state. Resolved per period_start: a new period (after\n   // monthly rollover) resets the \"seen\" flag automatically because the key"
+    },
+    {
+      "sha": "b41731a5a71715404eb136dd9a072de3caa4f9a5",
+      "filename": "src/components/coach/ai-budget/AIBudgetTutorialModal.tsx",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fcomponents%2Fcoach%2Fai-budget%2FAIBudgetTutorialModal.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fcomponents%2Fcoach%2Fai-budget%2FAIBudgetTutorialModal.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fcoach%2Fai-budget%2FAIBudgetTutorialModal.tsx?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -52,7 +52,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';\n import HapticPressable from '../../HapticPressable';\n import { useTheme, type ThemeColors } from '../../../theme/ThemeProvider';\n import { PackOptionsRow } from './PackOptionsRow';\n-import { nonP2PPurchasesHidden } from '../../../config/purchaseSurfaces';\n+import { digitalPurchasesHidden } from '../../../config/purchaseSurfaces';\n import {\n   formatCents,\n   type CoachAIBudgetResponse,\n@@ -135,7 +135,7 @@ export function AIBudgetTutorialModal({\n   budget,\n   onClose,\n   onSelectPack,\n-  purchasesHidden = nonP2PPurchasesHidden(),\n+  purchasesHidden = digitalPurchasesHidden(),\n   testID,\n }: AIBudgetTutorialModalProps): React.ReactElement {\n   const { colors } = useTheme();"
+    },
+    {
+      "sha": "f92c3a5828be0ae0138c67a0bcfe2041908e16c2",
+      "filename": "src/components/coach/ai-budget/PackOptionsRow.tsx",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3,
+      "changes": 6,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fcomponents%2Fcoach%2Fai-budget%2FPackOptionsRow.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fcomponents%2Fcoach%2Fai-budget%2FPackOptionsRow.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fcoach%2Fai-budget%2FPackOptionsRow.tsx?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -15,7 +15,7 @@ import { View, Text, StyleSheet, type ViewStyle } from 'react-native';\n import HapticPressable from '../../HapticPressable';\n import { useTheme, type ThemeColors } from '../../../theme/ThemeProvider';\n import { formatCents } from '../../../api/types/coachAIBudget';\n-import { nonP2PPurchasesHidden } from '../../../config/purchaseSurfaces';\n+import { digitalPurchasesHidden } from '../../../config/purchaseSurfaces';\n \n export interface PackOptionsRowProps {\n   /** Pack option face-values in cents (server-provided). */\n@@ -33,9 +33,9 @@ export function PackOptionsRow({\n }: PackOptionsRowProps): React.ReactElement | null {\n   const { colors } = useTheme();\n   const styles = useMemo(() => makeStyles(colors), [colors]);\n-  // iOS: credit packs are not a 1:1 service (purchaseSurfaces.ts). Covers the\n+  // Store builds: credit packs are digital services (purchaseSurfaces.ts). Covers the\n   // tutorial and hard-pause modals, which both render this row.\n-  if (nonP2PPurchasesHidden()) return null;\n+  if (digitalPurchasesHidden()) return null;\n \n   return (\n     <View style={[styles.row, style]} testID={testID ?? 'ai-pack-options'}>"
+    },
+    {
+      "sha": "f1248b40fbfe4538df143400b7d82909b631f476",
+      "filename": "src/components/purchases/NonP2PPurchaseHidden.tsx",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fcomponents%2Fpurchases%2FNonP2PPurchaseHidden.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fcomponents%2Fpurchases%2FNonP2PPurchaseHidden.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fpurchases%2FNonP2PPurchaseHidden.tsx?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -1,6 +1,6 @@\n /**\n  * Neutral state rendered in place of a purchase that is not a 1:1\n- * person-to-person service when the iOS build hides those purchases\n+ * person-to-person service when the store build hides those purchases\n  * (see src/config/purchaseSurfaces.ts). No price, no link out, no call to\n  * buy elsewhere.\n  */"
+    },
+    {
+      "sha": "af8e208091390971cdce9dcccffa82a73d9aa9a5",
+      "filename": "src/components/purchases/withNonP2PPurchaseGate.tsx",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3,
+      "changes": 6,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fcomponents%2Fpurchases%2FwithNonP2PPurchaseGate.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fcomponents%2Fpurchases%2FwithNonP2PPurchaseGate.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fpurchases%2FwithNonP2PPurchaseGate.tsx?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -1,18 +1,18 @@\n /**\n  * HOC for routes that sell something other than a 1:1 person-to-person\n- * service (coach AI credit packs). When the iOS build hides those purchases\n+ * service (coach AI credit packs). When the store build hides those purchases\n  * the route renders NonP2PPurchaseHidden, so a push tap (ai-budget push\n  * targets CreditPackCheckout) or a stale navigate() can never reach checkout.\n  */\n import React from 'react';\n-import { nonP2PPurchasesHidden } from '../../config/purchaseSurfaces';\n+import { digitalPurchasesHidden } from '../../config/purchaseSurfaces';\n import NonP2PPurchaseHidden from './NonP2PPurchaseHidden';\n \n export function withNonP2PPurchaseGate<P extends object>(\n   Component: React.ComponentType<P>,\n ): React.ComponentType<P> {\n   const Wrapped: React.FC<P> = (props) =>\n-    nonP2PPurchasesHidden() ? <NonP2PPurchaseHidden /> : <Component {...props} />;\n+    digitalPurchasesHidden() ? <NonP2PPurchaseHidden /> : <Component {...props} />;\n   Wrapped.displayName = `withNonP2PPurchaseGate(${Component.displayName || Component.name || 'Component'})`;\n   return Wrapped;\n }"
+    },
+    {
+      "sha": "5836b3b15abcaf86c299491c807dc1249503064f",
+      "filename": "src/config/__tests__/androidDigitalPurchases.test.ts",
+      "status": "added",
+      "additions": 50,
+      "deletions": 0,
+      "changes": 50,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fconfig%2F__tests__%2FandroidDigitalPurchases.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fconfig%2F__tests__%2FandroidDigitalPurchases.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fconfig%2F__tests__%2FandroidDigitalPurchases.test.ts?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -0,0 +1,50 @@\n+import * as fs from 'fs';\n+import * as path from 'path';\n+import { digitalPurchasesHidden, nonP2PPurchasesHidden } from '../purchaseSurfaces';\n+\n+describe('Android digital software purchases (Google Play Payments)', () => {\n+  it.each([true, false])('release hides digital checkout regardless of the iOS flag (%s)', (flag) => {\n+    expect(digitalPurchasesHidden('android', flag, 5, false)).toBe(true);\n+    expect(digitalPurchasesHidden('android', flag, null, false)).toBe(true);\n+  });\n+\n+  it('development retains checkout for engineering without a release opt-out', () => {\n+    expect(digitalPurchasesHidden('android', true, 5, true)).toBe(false);\n+  });\n+\n+  it('does not change the separate real-time 1:1 human-coaching posture', () => {\n+    expect(nonP2PPurchasesHidden('android', true, 5, false)).toBe(false);\n+    expect(nonP2PPurchasesHidden('android', false, 5, false)).toBe(false);\n+  });\n+\n+  it.each([\n+    [true, 6, false],\n+    [false, 6, false],\n+    [false, null, false],\n+    [false, 5, false],\n+    [false, 6, true],\n+  ])('preserves the iOS native/flag gate (%s, %s, %s)', (flag, nativeBuild, dev) => {\n+    expect(digitalPurchasesHidden('ios', flag as boolean, nativeBuild as number | null, dev as boolean))\n+      .toBe(nonP2PPurchasesHidden('ios', flag as boolean, nativeBuild as number | null, dev as boolean));\n+  });\n+\n+  it('does not disable web digital purchases', () => {\n+    expect(digitalPurchasesHidden('web', true, null, false)).toBe(false);\n+  });\n+\n+  it('keeps client recurring coaching checkout ungated and feature-paywall behavior separate', () => {\n+    const read = (file: string) => fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');\n+    for (const file of [\n+      'screens/client/ClientPackagesScreen.tsx',\n+      'screens/client/PackageCheckoutScreen.tsx',\n+      'hooks/usePackagePurchase.ts',\n+      'lib/packagePromptGate.ts',\n+      'entitlements/PaywallSheet.tsx',\n+      'entitlements/ProtectedScreen.tsx',\n+    ]) {\n+      expect(read(file)).not.toContain('digitalPurchasesHidden');\n+    }\n+    expect(read('navigation/ClientNavigator.tsx'))\n+      .toMatch(/name=\"PackageCheckout\"\\s+component=\\{PackageCheckoutScreen\\}/);\n+  });\n+});"
+    },
+    {
+      "sha": "12f58483cdd1470436cb734e9ba1a974221ef6c7",
+      "filename": "src/config/purchaseSurfaces.ts",
+      "status": "modified",
+      "additions": 22,
+      "deletions": 1,
+      "changes": 23,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fconfig%2FpurchaseSurfaces.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fconfig%2FpurchaseSurfaces.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fconfig%2FpurchaseSurfaces.ts?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -73,6 +73,27 @@ export function nonP2PPurchasesHidden(\n   return nativeBuild >= IOS_P2P_ONLY_MIN_NATIVE_BUILD;\n }\n \n+/**\n+ * Digital AI packs and coach software subscriptions need store billing (or\n+ * an enrolled, correctly integrated alternative-billing program). Neither\n+ * purchase route is integrated here, so Android release builds expose usage\n+ * and existing account status, not Stripe checkout or upgrade instructions.\n+ * Development builds retain the checkout path for engineering.\n+ *\n+ * Keep this separate from nonP2PPurchasesHidden: that existing iOS posture\n+ * also governs feature paywalls and attendance links. Client purchases of\n+ * real-time 1:1 human coaching, including recurring packages, are unchanged.\n+ */\n+export function digitalPurchasesHidden(\n+  platform: string = Platform.OS,\n+  flag: boolean = featureFlags.iosHideNonP2PPurchases,\n+  nativeBuild: number | null = nativeBuildNumber(),\n+  dev: boolean = __DEV__,\n+): boolean {\n+  if (platform === 'android') return !dev;\n+  return nonP2PPurchasesHidden(platform, flag, nativeBuild, dev);\n+}\n+\n /** Value for the X-Client-Purchase-Policy request header. */\n export function purchasePolicyHeader(): 'p2p-only' | 'all' {\n   return nonP2PPurchasesHidden() ? 'p2p-only' : 'all';\n@@ -82,7 +103,7 @@ export function purchasePolicyHeader(): 'p2p-only' | 'all' {\n // the web\", with no link, URL or instruction to buy elsewhere (3.1.1 / 3.1.3).\n export const NON_P2P_HIDDEN_TITLE = 'Managed on the web';\n export const NON_P2P_HIDDEN_BODY =\n-  'This is not available in the iOS app. Your account and anything you already have are unchanged.';\n+  'This is not available in this app. Your account and anything you already have are unchanged.';\n \n /** Copy for 1:1 package checkout: names the individual coach and the 1:1 nature. */\n export function oneToOneCoachingLabel(coachName?: string | null): string {"
+    },
+    {
+      "sha": "ff660eae10a4ab1dc0111c253bbee43e10f16f0d",
+      "filename": "src/screens/coach/CoachBillingScreen.tsx",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 5,
+      "changes": 10,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fscreens%2Fcoach%2FCoachBillingScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fscreens%2Fcoach%2FCoachBillingScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FCoachBillingScreen.tsx?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -20,7 +20,7 @@ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';\n import { errorMessage, errorStatus } from '../../types/common';\n import { assertStripeUrl } from '../../utils/stripeUrlValidator';\n import type { NavigationProp, ParamListBase } from '@react-navigation/native';\n-import { nonP2PPurchasesHidden } from '../../config/purchaseSurfaces';\n+import { digitalPurchasesHidden } from '../../config/purchaseSurfaces';\n \n interface Props {\n   navigation: NavigationProp<ParamListBase>;\n@@ -69,14 +69,14 @@ function formatDate(iso?: string | null): string | null {\n   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });\n }\n \n-// iOS builds hide subscription CTAs; the status copy must not ask the coach\n+// Store builds hide digital subscription CTAs; the copy must not ask the coach\n // to subscribe or update a card either.\n-const IOS_BILLING_NOTE = 'Your coach account status is shown here. Billing changes are not made in the iOS app.';\n+const IOS_BILLING_NOTE = 'Your coach account status is shown here. Billing changes are not made in this app.';\n \n export default function CoachBillingScreen({ navigation }: Props) {\n   const { colors } = useTheme();\n   const styles = useMemo(() => makeStyles(colors), [colors]);\n-  const purchasesHidden = nonP2PPurchasesHidden();\n+  const purchasesHidden = digitalPurchasesHidden();\n   const [status, setStatus] = useState<CoachBillingStatus | null>(null);\n   const [invoices, setInvoices] = useState<CoachInvoice[]>([]);\n   const [loading, setLoading] = useState(true);\n@@ -290,7 +290,7 @@ export default function CoachBillingScreen({ navigation }: Props) {\n           )}\n         </View>\n \n-        {/* iOS: coach subscription / seat CTAs are not a 1:1 person-to-person\n+        {/* Coach subscription / seat CTAs are not a 1:1 person-to-person\n             service, so they are hidden (purchaseSurfaces.ts). */}\n         {purchasesHidden ? null : (\n           <>"
+    },
+    {
+      "sha": "a71649b4ff2470a11d3ee45303085406a0f0062a",
+      "filename": "src/screens/coach/CreditPackCheckoutScreen.tsx",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 5,
+      "changes": 10,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fscreens%2Fcoach%2FCreditPackCheckoutScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fscreens%2Fcoach%2FCreditPackCheckoutScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FCreditPackCheckoutScreen.tsx?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -1,12 +1,12 @@\n /**\n  * CreditPackCheckoutScreen \u2014 Stripe-webview entry point for AI credit packs.\n  *\n- * AI credit packs are NOT a 1:1 person-to-person service. On iOS this route\n+ * AI credit packs are NOT a 1:1 person-to-person service. In store builds this route\n  * is replaced by the neutral NonP2PPurchaseHidden state (withNonP2PPurchaseGate\n- * in CoachNavigator, flag EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES plus the\n- * native-build anchor in config/purchaseSurfaces). On other platforms packs\n- * are billed through Stripe Checkout in a webview. The webview transport is\n- * not an App Review basis for anything.\n+ * in CoachNavigator). digitalPurchasesHidden preserves the iOS flag/native\n+ * gate and hides Android release purchases pending store billing. Development\n+ * Android and web retain Stripe Checkout; a webview is not a store-policy\n+ * exception.\n  *\n  * Two-phase flow:\n  *   1. Selection phase \u2014 render `<PackOptionsRow />` plus a custom-amount"
+    },
+    {
+      "sha": "add3ddc0d1ca124fca1ebc54735331cff521917a",
+      "filename": "src/screens/coach/README.md",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 2,
+      "changes": 16,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fscreens%2Fcoach%2FREADME.md",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fscreens%2Fcoach%2FREADME.md",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FREADME.md?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -175,7 +175,7 @@ These rows belong in `docs/RELEASE_SMOKE.md`'s real-device-proof section; captur\n - For Play / App Store review, supply both a coach test account *and* a client test account so reviewers can exercise the full bidirectional flow (`PLAY_STORE_READINESS.md` \u00a79).\n - The InviteCodes screen is the only place an invite URL is produced. If the universal-link host ever changes, that share string and `app.json \u2192 expo.android.intentFilters` must change together.\n - \"Become a coach\" is **not** a self-serve action. The role is granted server-side; there is no surface in the mobile app that flips a client into a coach.\n-- Coach billing is in-app only as a status surface and a portal handoff. There is no in-app card capture, no in-app price list, no Stripe Elements. Coaches who churn do so through the same portal a coach who upgrades does. If a future iteration introduces in-app purchase, it must declare against Play Billing / StoreKit and add the corresponding Play data-safety entry.\n+- Coach billing in store builds is a status surface, without software-subscription purchase, portal or payable-invoice links. Android development and web retain the existing portal handoff. Any future store purchase path needs the applicable store billing or enrolled alternative-billing integration.\n \n ## iOS: purchases that are not 1:1 services (clinic launch)\n \n@@ -184,4 +184,16 @@ With `EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES` on (default in release builds;\n - The \"Buy credits\" banner CTA, the meter chip tap, and `PackOptionsRow` in the tutorial and hard-pause modals.\n - The \"Start subscription\" / \"Manage billing\" button and invoice links in `CoachBillingScreen`. The status copy switches to a neutral note.\n \n-Android and web are unchanged. See `src/config/purchaseSurfaces.ts`.\n+Android release builds hide the same digital AI/software purchase surfaces through\n+`digitalPurchasesHidden`; Android development and web remain unchanged. Direct navigation\n+and budget notifications use the same decision as the visible buttons. Client real-time\n+1:1 human-coaching purchases, including recurring packages, remain available and are\n+not routed through this digital-only gate. See `src/config/purchaseSurfaces.ts`.\n+\n+Google Play generally requires Play Billing for in-app digital goods, cloud software\n+and subscriptions unless an applicable enrolled alternative-billing program is\n+correctly integrated; a Stripe webview alone is not that integration.\n+[Google Play Payments](https://support.google.com/googleplay/android-developer/answer/9858738?hl=en).\n+The exception for 1:1 online coaching requires two individuals and no replay of the\n+paid session in a Play-distributed app.\n+[Google Play's policy explanation](https://support.google.com/googleplay/android-developer/answer/10281818?hl=en)."
+    },
+    {
+      "sha": "1c65b49f6456bee86b90c22d7ecea94396f64194",
+      "filename": "src/screens/coach/SubCoachInviteModal.tsx",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fscreens%2Fcoach%2FSubCoachInviteModal.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fscreens%2Fcoach%2FSubCoachInviteModal.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FSubCoachInviteModal.tsx?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -27,7 +27,7 @@ import { Ionicons } from '@expo/vector-icons';\n import { useTheme, ThemeColors } from '../../theme/ThemeProvider';\n import { subCoachApi, type SubCoachInviteResult } from '../../api/subCoachApi';\n import { errorMessage } from '../../types/common';\n-import { nonP2PPurchasesHidden } from '../../config/purchaseSurfaces';\n+import { digitalPurchasesHidden } from '../../config/purchaseSurfaces';\n \n /**\n  * Seat-limit copy. With non-P2P purchases hidden (iOS) it never tells the\n@@ -141,7 +141,7 @@ export default function SubCoachInviteModal({\n       // ceiling. Surface a structured Rule-9 message naming the exact\n       // headroom so the head coach knows what to do.\n       if (typeof remainingSeats === 'number' && n > remainingSeats) {\n-        setError(seatLimitMessage(remainingSeats, nonP2PPurchasesHidden()));\n+        setError(seatLimitMessage(remainingSeats, digitalPurchasesHidden()));\n         return;\n       }\n       maxClientsNum = n;"
+    },
+    {
+      "sha": "1500fa337b0fb9c45db86f56b204211db6928ba3",
+      "filename": "src/screens/coach/TeamManagementScreen.tsx",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 4,
+      "changes": 7,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fscreens%2Fcoach%2FTeamManagementScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fscreens%2Fcoach%2FTeamManagementScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FTeamManagementScreen.tsx?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -29,7 +29,7 @@ import { coachTeamApi } from '../../api/coachTeamApi';\n import { authApi } from '../../services/api';\n import type { TeamStackParamList } from '../../navigation/CoachNavigator';\n import SubCoachInviteModal from './SubCoachInviteModal';\n-import { nonP2PPurchasesHidden } from '../../config/purchaseSurfaces';\n+import { digitalPurchasesHidden } from '../../config/purchaseSurfaces';\n \n const SCALE_TIERS = ['scale', 'enterprise'];\n \n@@ -135,9 +135,8 @@ function SubCoachRow({\n   );\n }\n \n-export function UpgradeGate({ purchasesHidden = nonP2PPurchasesHidden() }: { purchasesHidden?: boolean } = {}) {\n-  // iOS with non-P2P purchases hidden: neutral access information only, no\n-  // instruction to upgrade (plan changes are not offered in the iOS app).\n+export function UpgradeGate({ purchasesHidden = digitalPurchasesHidden() }: { purchasesHidden?: boolean } = {}) {\n+  // Digital purchases hidden: neutral access information only, no upgrade instruction.\n   if (purchasesHidden) {\n     return (\n       <View style={styles.gate} testID=\"team-gate-neutral\">"
+    },
+    {
+      "sha": "0c3ca2b31be89aea191a400ce3832b0572d7f4d3",
+      "filename": "src/screens/coach/__tests__/CoachBillingScreenAndroidPolicy.test.tsx",
+      "status": "added",
+      "additions": 74,
+      "deletions": 0,
+      "changes": 74,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fscreens%2Fcoach%2F__tests__%2FCoachBillingScreenAndroidPolicy.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fscreens%2Fcoach%2F__tests__%2FCoachBillingScreenAndroidPolicy.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2F__tests__%2FCoachBillingScreenAndroidPolicy.test.tsx?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -0,0 +1,74 @@\n+import React from 'react';\n+import { Platform } from 'react-native';\n+import { fireEvent, render } from '@testing-library/react-native';\n+\n+const mockGetStatus = jest.fn();\n+const mockGetFull = jest.fn();\n+const mockCreatePortalSession = jest.fn();\n+const mockOpenBrowser = jest.fn();\n+const mockOpenAuth = jest.fn();\n+jest.mock('../../../services/api', () => ({\n+  coachBillingApi: {\n+    getStatus: () => mockGetStatus(),\n+    getFull: () => mockGetFull(),\n+    createPortalSession: () => mockCreatePortalSession(),\n+  },\n+}));\n+jest.mock('expo-web-browser', () => ({\n+  openBrowserAsync: (...args: unknown[]) => mockOpenBrowser(...args),\n+  openAuthSessionAsync: (...args: unknown[]) => mockOpenAuth(...args),\n+  WebBrowserPresentationStyle: { PAGE_SHEET: 'pageSheet' },\n+}));\n+jest.mock('../../../lib/analytics', () => ({ track: jest.fn() }));\n+jest.mock('../../../utils/haptics', () => ({ mediumTap: jest.fn() }));\n+const mockColors = new Proxy({}, { get: () => '#000000' });\n+jest.mock('../../../theme/ThemeProvider', () => ({\n+  useTheme: () => ({ colors: mockColors }),\n+}));\n+\n+import CoachBillingScreen from '../CoachBillingScreen';\n+\n+const realOS = Platform.OS;\n+const globals = globalThis as { __DEV__?: boolean };\n+const realDev = globals.__DEV__;\n+\n+beforeEach(() => {\n+  Object.defineProperty(Platform, 'OS', { configurable: true, get: () => 'android' });\n+  globals.__DEV__ = false;\n+  jest.clearAllMocks();\n+  mockGetFull.mockResolvedValue({\n+    data: {\n+      invoices: [{\n+        id: 'invoice-review', hosted_invoice_url: 'https://invoice.stripe.com/i/review-placeholder',\n+        amount_paid_cents: 4900, amount_due_cents: 0, currency: 'usd', status: 'paid',\n+        created_at: '2026-10-01T00:00:00Z',\n+      }],\n+    },\n+  });\n+});\n+\n+afterEach(() => {\n+  Object.defineProperty(Platform, 'OS', { configurable: true, get: () => realOS });\n+  globals.__DEV__ = realDev;\n+});\n+\n+describe('Android release coach software billing', () => {\n+  it.each(['none', 'paused', 'canceled', 'active', 'past_due', 'trialing'])(\n+    '%s keeps status but exposes no Stripe purchase/portal or payable invoice link',\n+    async (state) => {\n+      mockGetStatus.mockResolvedValue({ data: { state, summary: 'Upgrade your digital plan' } });\n+      const view = await render(<CoachBillingScreen navigation={{ goBack: jest.fn() } as never} />);\n+      expect(await view.findByText('Your coach account status is shown here. Billing changes are not made in this app.'))\n+        .toBeTruthy();\n+      expect(view.queryByLabelText('Start subscription')).toBeNull();\n+      expect(view.queryByLabelText('Manage billing')).toBeNull();\n+      expect(view.queryByText('Upgrade your digital plan')).toBeNull();\n+      const invoice = view.getByLabelText(/Invoice.*paid/);\n+      expect(invoice).toBeDisabled();\n+      await fireEvent.press(invoice);\n+      expect(mockCreatePortalSession).not.toHaveBeenCalled();\n+      expect(mockOpenBrowser).not.toHaveBeenCalled();\n+      expect(mockOpenAuth).not.toHaveBeenCalled();\n+    },\n+  );\n+});"
+    },
+    {
+      "sha": "618b073e893b4562a372ae31cae54a31a36c4a54",
+      "filename": "src/services/__tests__/pushTapRouter.test.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fservices%2F__tests__%2FpushTapRouter.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fservices%2F__tests__%2FpushTapRouter.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fservices%2F__tests__%2FpushTapRouter.test.ts?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -13,7 +13,7 @@ jest.mock('../../config/featureFlags', () => ({\n \n let mockHidden = false;\n jest.mock('../../config/purchaseSurfaces', () => ({\n-  nonP2PPurchasesHidden: () => mockHidden,\n+  digitalPurchasesHidden: () => mockHidden,\n }));\n \n import {"
+    },
+    {
+      "sha": "7b8c731cf67a05a29fccb5f109348ee45c7411f6",
+      "filename": "src/services/pushTapRouter.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3,
+      "changes": 6,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fservices%2FpushTapRouter.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/234a7e1a2505fd23a8ff8fff714636d3b47a3de5/src%2Fservices%2FpushTapRouter.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fservices%2FpushTapRouter.ts?ref=234a7e1a2505fd23a8ff8fff714636d3b47a3de5",
+      "patch": "@@ -25,7 +25,7 @@\n  *    is bounded.\n  */\n import { featureFlags } from '../config/featureFlags';\n-import { nonP2PPurchasesHidden } from '../config/purchaseSurfaces';\n+import { digitalPurchasesHidden } from '../config/purchaseSurfaces';\n \n export interface PushNavigator {\n   isReady(): boolean;\n@@ -100,11 +100,11 @@ export const COACH_PUSH_ROUTES: Record<string, Resolver> = {\n     featureFlags.coachBrief\n       ? { root: 'SettingsStack', screen: 'CoachBrief', initial: false }\n       : null,\n-  // AI credit top-ups are not purchasable on hidden iOS builds: a budget\n+  // Digital AI credit top-ups are not purchasable in store builds: a budget\n   // push lands on Settings, never on the checkout route (whose gated\n   // wrapper would only say \"Managed on the web\").\n   CreditPackCheckout: () =>\n-    nonP2PPurchasesHidden()\n+    digitalPurchasesHidden()\n       ? { root: 'SettingsStack', screen: 'SettingsHome' }\n       : { root: 'SettingsStack', screen: 'CreditPackCheckout' },\n   CommunityEventDetail: () =>"
+    }
+  ]
+}

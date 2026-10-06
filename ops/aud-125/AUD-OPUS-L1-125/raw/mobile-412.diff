@@ -1,0 +1,673 @@
+diff --git a/scripts/purchase-policy.sha256 b/scripts/purchase-policy.sha256
+index 043b7f50..d03b6c80 100644
+--- a/scripts/purchase-policy.sha256
++++ b/scripts/purchase-policy.sha256
+@@ -1 +1 @@
+-493550ba3e0e7e0ddb8cc1f5e03d9abc2bf25cd320b815e1c25394107c4159a4
++6b5f397c25553a525a126fbe6ab0be432b440496a06b65d89aab27a6d8484d8a
+diff --git a/src/__tests__/iosHideNonP2PPurchases.test.tsx b/src/__tests__/iosHideNonP2PPurchases.test.tsx
+index 67a059b2..9ce4a717 100644
+--- a/src/__tests__/iosHideNonP2PPurchases.test.tsx
++++ b/src/__tests__/iosHideNonP2PPurchases.test.tsx
+@@ -12,7 +12,7 @@ import * as path from 'path';
+ let mockHidden = true;
+ jest.mock('../config/purchaseSurfaces', () => {
+   const actual = jest.requireActual('../config/purchaseSurfaces');
+-  return { ...actual, nonP2PPurchasesHidden: () => mockHidden };
++  return { ...actual, nonP2PPurchasesHidden: () => mockHidden, digitalPurchasesHidden: () => mockHidden };
+ });
+ const mockColors = new Proxy({}, { get: () => '#000000' });
+ jest.mock('../theme/ThemeProvider', () => ({ useTheme: () => ({ colors: mockColors, semanticColors: mockColors }) }));
+diff --git a/src/__tests__/iosNonP2PSurfacesMatrix.test.tsx b/src/__tests__/iosNonP2PSurfacesMatrix.test.tsx
+index fdca6dbf..42094496 100644
+--- a/src/__tests__/iosNonP2PSurfacesMatrix.test.tsx
++++ b/src/__tests__/iosNonP2PSurfacesMatrix.test.tsx
+@@ -6,11 +6,12 @@
+  *   hidden rows: iOS + flag true; iOS + flag false + native build >= 6 (an
+  *                OTA bundle that flips the flag); iOS + flag false + native
+  *                build unreadable
+- *   shown rows:  iOS + flag false + native build 5 (pre-OTA binary);
+- *                Android + flag true
++ *   shown rows:  iOS + flag false + native build 5 (pre-OTA binary).
++ * Android release hides digital AI/software purchases, independently of
++ * the existing iOS-only human-coaching purchase/feature-link posture.
+  */
+ import React from 'react';
+-import { Linking, Platform } from 'react-native';
++import { Linking, Platform, Text } from 'react-native';
+ import { act, fireEvent, render } from '@testing-library/react-native';
+ 
+ const mockState: { flag: boolean; build: string | null } = { flag: true, build: '6' };
+@@ -63,7 +64,13 @@ let mockBudget: Record<string, unknown> | undefined;
+ jest.mock('../hooks/useAIBudget', () => ({ useAIBudget: () => ({ data: mockBudget }) }));
+ jest.mock('../theme/useTheme', () => {
+   const { lightTokens } = jest.requireActual('../theme/tokens');
+-  return { useTheme: () => ({ colorScheme: 'light', semanticColors: lightTokens }) };
++  return {
++    useTheme: () => ({
++      colorScheme: 'light', semanticColors: lightTokens,
++      colors: { background: '#F5EFE4', textPrimary: '#1A1A18', textSecondary: '#6B6B6B' },
++      tokens: { typography: { h2: { fontSize: 24 }, body: { fontSize: 16 } } },
++    }),
++  };
+ });
+ jest.mock('react-native-safe-area-context', () => {
+   const actual = jest.requireActual('react-native-safe-area-context');
+@@ -87,18 +94,25 @@ import { AIBudgetTutorialModal } from '../components/coach/ai-budget/AIBudgetTut
+ import { UpgradeGate } from '../screens/coach/TeamManagementScreen';
+ import { seatLimitMessage } from '../screens/coach/SubCoachInviteModal';
+ import CommunityEventDetailScreen from '../screens/community/CommunityEventDetailScreen';
+-import { nonP2PPurchasesHidden, externalLinkAllowed, isPaymentUrl } from '../config/purchaseSurfaces';
++import { digitalPurchasesHidden, nonP2PPurchasesHidden, externalLinkAllowed, isPaymentUrl } from '../config/purchaseSurfaces';
++import { withNonP2PPurchaseGate } from '../components/purchases/withNonP2PPurchaseGate';
++import { PackOptionsRow } from '../components/coach/ai-budget/PackOptionsRow';
++import { COACH_PUSH_ROUTES } from '../services/pushTapRouter';
+ 
+ const BUY = /buy|top up|top-up|pack|upgrade|checkout|purchase/i;
+ 
+-type Row = { name: string; os: 'ios' | 'android'; flag: boolean; build: string | null; hidden: boolean };
++type Row = {
++  name: string; os: 'ios' | 'android'; flag: boolean; build: string | null;
++  hidden: boolean; digitalHidden?: boolean;
++};
+ const ROWS: Row[] = [
+   { name: 'iOS, flag on, build 6', os: 'ios', flag: true, build: '6', hidden: true },
+   { name: 'iOS, OTA flips flag off, build 6', os: 'ios', flag: false, build: '6', hidden: true },
+   { name: 'iOS, OTA flips flag off, build 7', os: 'ios', flag: false, build: '7', hidden: true },
+   { name: 'iOS, flag off, unreadable build', os: 'ios', flag: false, build: null, hidden: true },
+   { name: 'iOS, flag off, pre-OTA build 5', os: 'ios', flag: false, build: '5', hidden: false },
+-  { name: 'Android, flag on', os: 'android', flag: true, build: '5', hidden: false },
++  { name: 'Android release, flag on', os: 'android', flag: true, build: '5', hidden: false, digitalHidden: true },
++  { name: 'Android release, iOS flag off', os: 'android', flag: false, build: '5', hidden: false, digitalHidden: true },
+ ];
+ 
+ function budget(pct: number) {
+@@ -128,6 +142,7 @@ const g = globalThis as { __DEV__?: boolean };
+ const realDev = g.__DEV__;
+ 
+ describe.each(ROWS)('$name', (row) => {
++  const digitalHidden = row.digitalHidden ?? row.hidden;
+   beforeEach(async () => {
+     mockState.flag = row.flag;
+     mockState.build = row.build;
+@@ -143,13 +158,38 @@ describe.each(ROWS)('$name', (row) => {
+ 
+   it('gate decision', () => {
+     expect(nonP2PPurchasesHidden()).toBe(row.hidden);
++    expect(digitalPurchasesHidden()).toBe(digitalHidden);
++  });
++
++  it('a budget notification routes to Settings rather than hidden checkout', () => {
++    expect(COACH_PUSH_ROUTES.CreditPackCheckout()).toEqual({
++      root: 'SettingsStack',
++      screen: digitalHidden ? 'SettingsHome' : 'CreditPackCheckout',
++    });
++  });
++
++  it('direct credit-pack navigation cannot mount checkout when digital purchases are hidden', async () => {
++    const checkoutMounted = jest.fn();
++    const Checkout = () => {
++      checkoutMounted();
++      return <Text>Digital checkout</Text>;
++    };
++    const Gated = withNonP2PPurchaseGate(Checkout);
++    const utils = await render(<Gated />);
++    expect(utils.queryByText('Digital checkout') === null).toBe(digitalHidden);
++    expect(checkoutMounted.mock.calls.length > 0).toBe(!digitalHidden);
++  });
++
++  it('standalone pack options are absent when digital purchases are hidden', async () => {
++    const utils = await render(<PackOptionsRow options={[1000]} onSelect={jest.fn()} />);
++    expect(utils.queryByTestId('ai-pack-option-1000') === null).toBe(digitalHidden);
+   });
+ 
+   it('meter chip: interactive buy affordance only when shown', async () => {
+     mockBudget = budget(60);
+     const { getByTestId } = await render(<AIBudgetMount />);
+     const meter = getByTestId('ai-budget-mount-chip');
+-    if (row.hidden) {
++    if (digitalHidden) {
+       expect(meter.props.accessibilityRole).toBe('text');
+       expect(meter.props.accessibilityLabel).not.toMatch(BUY);
+       expect(meter.props.accessibilityHint).toBeUndefined();
+@@ -162,14 +202,14 @@ describe.each(ROWS)('$name', (row) => {
+   it('95% banner: Buy credits only when shown', async () => {
+     mockBudget = budget(96);
+     const { queryByText } = await render(<AIBudgetMount />);
+-    expect(queryByText('Buy credits') === null).toBe(row.hidden);
++    expect(queryByText('Buy credits') === null).toBe(digitalHidden);
+   });
+ 
+   it('hard pause (mounted): neutral notice when hidden, packs when shown', async () => {
+     mockBudget = budget(100);
+     const utils = await render(<AIBudgetMount />);
+     const text = allText(utils.toJSON());
+-    if (row.hidden) {
++    if (digitalHidden) {
+       expect(utils.getByTestId('ai-hard-pause-neutral')).toBeTruthy();
+       expect(text).not.toMatch(/Top up|credit pack/);
+       expect(utils.queryByTestId('ai-pack-option-1000')).toBeNull();
+@@ -197,7 +237,7 @@ describe.each(ROWS)('$name', (row) => {
+         });
+       }
+       const joined = seen.join('\n');
+-      if (row.hidden) {
++      if (digitalHidden) {
+         expect(joined).not.toMatch(/How packs work|Buy credits|Pick a pack|buy later|top up/i);
+         expect(utils.queryByTestId('ai-tutorial-later')).toBeNull();
+         await fireEvent.press(utils.getByTestId('ai-tutorial-done'));
+@@ -216,13 +256,13 @@ describe.each(ROWS)('$name', (row) => {
+ 
+   it('Team gate: no upgrade instruction when hidden', async () => {
+     const { toJSON } = await render(<UpgradeGate />);
+-    expect(/Upgrade/.test(allText(toJSON()))).toBe(!row.hidden);
++    expect(/Upgrade/.test(allText(toJSON()))).toBe(!digitalHidden);
+   });
+ 
+   it('exhausted / partial seat messages: no upgrade instruction when hidden', () => {
+-    const hidden = nonP2PPurchasesHidden();
+-    expect(/upgrade/i.test(seatLimitMessage(0, hidden))).toBe(!row.hidden);
+-    expect(/upgrade/i.test(seatLimitMessage(2, hidden))).toBe(!row.hidden);
++    const hidden = digitalPurchasesHidden();
++    expect(/upgrade/i.test(seatLimitMessage(0, hidden))).toBe(!digitalHidden);
++    expect(/upgrade/i.test(seatLimitMessage(2, hidden))).toBe(!digitalHidden);
+     expect(seatLimitMessage(0, hidden)).toMatch(/Revoke an existing sub-coach|revoke an existing sub-coach/);
+   });
+ 
+diff --git a/src/components/coach/ai-budget/AIBudgetHardPauseModal.tsx b/src/components/coach/ai-budget/AIBudgetHardPauseModal.tsx
+index 60d3d677..ca620119 100644
+--- a/src/components/coach/ai-budget/AIBudgetHardPauseModal.tsx
++++ b/src/components/coach/ai-budget/AIBudgetHardPauseModal.tsx
+@@ -19,7 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
+ import HapticPressable from '../../HapticPressable';
+ import { useTheme, type ThemeColors } from '../../../theme/ThemeProvider';
+ import { PackOptionsRow } from './PackOptionsRow';
+-import { nonP2PPurchasesHidden } from '../../../config/purchaseSurfaces';
++import { digitalPurchasesHidden } from '../../../config/purchaseSurfaces';
+ import {
+   formatCents,
+   type CoachAIBudgetResponse,
+@@ -30,7 +30,7 @@ export interface AIBudgetHardPauseModalProps {
+   budget: CoachAIBudgetResponse;
+   onClose: () => void;
+   onSelectPack: (amountCents: number | 'custom') => void;
+-  /** iOS with non-P2P purchases hidden: neutral pause notice, no packs. */
++  /** Digital purchases hidden: neutral pause notice, no packs. */
+   purchasesHidden?: boolean;
+   testID?: string;
+ }
+@@ -40,7 +40,7 @@ export function AIBudgetHardPauseModal({
+   budget,
+   onClose,
+   onSelectPack,
+-  purchasesHidden = nonP2PPurchasesHidden(),
++  purchasesHidden = digitalPurchasesHidden(),
+   testID,
+ }: AIBudgetHardPauseModalProps): React.ReactElement {
+   const { colors } = useTheme();
+diff --git a/src/components/coach/ai-budget/AIBudgetMount.tsx b/src/components/coach/ai-budget/AIBudgetMount.tsx
+index 93aad5e1..495e7d69 100644
+--- a/src/components/coach/ai-budget/AIBudgetMount.tsx
++++ b/src/components/coach/ai-budget/AIBudgetMount.tsx
+@@ -37,7 +37,7 @@ import { AIBudgetBanner } from './AIBudgetBanner';
+ import { AIBudgetTutorialModal, tutorialSeenKey } from './AIBudgetTutorialModal';
+ import { AIBudgetHardPauseModal } from './AIBudgetHardPauseModal';
+ import { surfaceFor, type CoachAIBudgetResponse } from '../../../api/types/coachAIBudget';
+-import { nonP2PPurchasesHidden } from '../../../config/purchaseSurfaces';
++import { digitalPurchasesHidden } from '../../../config/purchaseSurfaces';
+ 
+ export interface AIBudgetMountProps {
+   /**
+@@ -71,8 +71,8 @@ export function AIBudgetMount({
+   const navigation = useNavigation<NavigationProp<ParamListBase>>();
+ 
+   const surface = useMemo(() => surfaceFor(budget), [budget]);
+-  // iOS: AI credit packs are not a 1:1 service, so no buy entry points.
+-  const purchasesHidden = nonP2PPurchasesHidden();
++  // Store builds: AI credit packs are digital services, not human coaching.
++  const purchasesHidden = digitalPurchasesHidden();
+ 
+   // Tutorial-seen state. Resolved per period_start: a new period (after
+   // monthly rollover) resets the "seen" flag automatically because the key
+diff --git a/src/components/coach/ai-budget/AIBudgetTutorialModal.tsx b/src/components/coach/ai-budget/AIBudgetTutorialModal.tsx
+index a00dc290..b41731a5 100644
+--- a/src/components/coach/ai-budget/AIBudgetTutorialModal.tsx
++++ b/src/components/coach/ai-budget/AIBudgetTutorialModal.tsx
+@@ -52,7 +52,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
+ import HapticPressable from '../../HapticPressable';
+ import { useTheme, type ThemeColors } from '../../../theme/ThemeProvider';
+ import { PackOptionsRow } from './PackOptionsRow';
+-import { nonP2PPurchasesHidden } from '../../../config/purchaseSurfaces';
++import { digitalPurchasesHidden } from '../../../config/purchaseSurfaces';
+ import {
+   formatCents,
+   type CoachAIBudgetResponse,
+@@ -135,7 +135,7 @@ export function AIBudgetTutorialModal({
+   budget,
+   onClose,
+   onSelectPack,
+-  purchasesHidden = nonP2PPurchasesHidden(),
++  purchasesHidden = digitalPurchasesHidden(),
+   testID,
+ }: AIBudgetTutorialModalProps): React.ReactElement {
+   const { colors } = useTheme();
+diff --git a/src/components/coach/ai-budget/PackOptionsRow.tsx b/src/components/coach/ai-budget/PackOptionsRow.tsx
+index d178e558..f92c3a58 100644
+--- a/src/components/coach/ai-budget/PackOptionsRow.tsx
++++ b/src/components/coach/ai-budget/PackOptionsRow.tsx
+@@ -15,7 +15,7 @@ import { View, Text, StyleSheet, type ViewStyle } from 'react-native';
+ import HapticPressable from '../../HapticPressable';
+ import { useTheme, type ThemeColors } from '../../../theme/ThemeProvider';
+ import { formatCents } from '../../../api/types/coachAIBudget';
+-import { nonP2PPurchasesHidden } from '../../../config/purchaseSurfaces';
++import { digitalPurchasesHidden } from '../../../config/purchaseSurfaces';
+ 
+ export interface PackOptionsRowProps {
+   /** Pack option face-values in cents (server-provided). */
+@@ -33,9 +33,9 @@ export function PackOptionsRow({
+ }: PackOptionsRowProps): React.ReactElement | null {
+   const { colors } = useTheme();
+   const styles = useMemo(() => makeStyles(colors), [colors]);
+-  // iOS: credit packs are not a 1:1 service (purchaseSurfaces.ts). Covers the
++  // Store builds: credit packs are digital services (purchaseSurfaces.ts). Covers the
+   // tutorial and hard-pause modals, which both render this row.
+-  if (nonP2PPurchasesHidden()) return null;
++  if (digitalPurchasesHidden()) return null;
+ 
+   return (
+     <View style={[styles.row, style]} testID={testID ?? 'ai-pack-options'}>
+diff --git a/src/components/purchases/NonP2PPurchaseHidden.tsx b/src/components/purchases/NonP2PPurchaseHidden.tsx
+index 86db7276..f1248b40 100644
+--- a/src/components/purchases/NonP2PPurchaseHidden.tsx
++++ b/src/components/purchases/NonP2PPurchaseHidden.tsx
+@@ -1,6 +1,6 @@
+ /**
+  * Neutral state rendered in place of a purchase that is not a 1:1
+- * person-to-person service when the iOS build hides those purchases
++ * person-to-person service when the store build hides those purchases
+  * (see src/config/purchaseSurfaces.ts). No price, no link out, no call to
+  * buy elsewhere.
+  */
+diff --git a/src/components/purchases/withNonP2PPurchaseGate.tsx b/src/components/purchases/withNonP2PPurchaseGate.tsx
+index 5599b3bc..af8e2080 100644
+--- a/src/components/purchases/withNonP2PPurchaseGate.tsx
++++ b/src/components/purchases/withNonP2PPurchaseGate.tsx
+@@ -1,18 +1,18 @@
+ /**
+  * HOC for routes that sell something other than a 1:1 person-to-person
+- * service (coach AI credit packs). When the iOS build hides those purchases
++ * service (coach AI credit packs). When the store build hides those purchases
+  * the route renders NonP2PPurchaseHidden, so a push tap (ai-budget push
+  * targets CreditPackCheckout) or a stale navigate() can never reach checkout.
+  */
+ import React from 'react';
+-import { nonP2PPurchasesHidden } from '../../config/purchaseSurfaces';
++import { digitalPurchasesHidden } from '../../config/purchaseSurfaces';
+ import NonP2PPurchaseHidden from './NonP2PPurchaseHidden';
+ 
+ export function withNonP2PPurchaseGate<P extends object>(
+   Component: React.ComponentType<P>,
+ ): React.ComponentType<P> {
+   const Wrapped: React.FC<P> = (props) =>
+-    nonP2PPurchasesHidden() ? <NonP2PPurchaseHidden /> : <Component {...props} />;
++    digitalPurchasesHidden() ? <NonP2PPurchaseHidden /> : <Component {...props} />;
+   Wrapped.displayName = `withNonP2PPurchaseGate(${Component.displayName || Component.name || 'Component'})`;
+   return Wrapped;
+ }
+diff --git a/src/config/__tests__/androidDigitalPurchases.test.ts b/src/config/__tests__/androidDigitalPurchases.test.ts
+new file mode 100644
+index 00000000..5836b3b1
+--- /dev/null
++++ b/src/config/__tests__/androidDigitalPurchases.test.ts
+@@ -0,0 +1,50 @@
++import * as fs from 'fs';
++import * as path from 'path';
++import { digitalPurchasesHidden, nonP2PPurchasesHidden } from '../purchaseSurfaces';
++
++describe('Android digital software purchases (Google Play Payments)', () => {
++  it.each([true, false])('release hides digital checkout regardless of the iOS flag (%s)', (flag) => {
++    expect(digitalPurchasesHidden('android', flag, 5, false)).toBe(true);
++    expect(digitalPurchasesHidden('android', flag, null, false)).toBe(true);
++  });
++
++  it('development retains checkout for engineering without a release opt-out', () => {
++    expect(digitalPurchasesHidden('android', true, 5, true)).toBe(false);
++  });
++
++  it('does not change the separate real-time 1:1 human-coaching posture', () => {
++    expect(nonP2PPurchasesHidden('android', true, 5, false)).toBe(false);
++    expect(nonP2PPurchasesHidden('android', false, 5, false)).toBe(false);
++  });
++
++  it.each([
++    [true, 6, false],
++    [false, 6, false],
++    [false, null, false],
++    [false, 5, false],
++    [false, 6, true],
++  ])('preserves the iOS native/flag gate (%s, %s, %s)', (flag, nativeBuild, dev) => {
++    expect(digitalPurchasesHidden('ios', flag as boolean, nativeBuild as number | null, dev as boolean))
++      .toBe(nonP2PPurchasesHidden('ios', flag as boolean, nativeBuild as number | null, dev as boolean));
++  });
++
++  it('does not disable web digital purchases', () => {
++    expect(digitalPurchasesHidden('web', true, null, false)).toBe(false);
++  });
++
++  it('keeps client recurring coaching checkout ungated and feature-paywall behavior separate', () => {
++    const read = (file: string) => fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
++    for (const file of [
++      'screens/client/ClientPackagesScreen.tsx',
++      'screens/client/PackageCheckoutScreen.tsx',
++      'hooks/usePackagePurchase.ts',
++      'lib/packagePromptGate.ts',
++      'entitlements/PaywallSheet.tsx',
++      'entitlements/ProtectedScreen.tsx',
++    ]) {
++      expect(read(file)).not.toContain('digitalPurchasesHidden');
++    }
++    expect(read('navigation/ClientNavigator.tsx'))
++      .toMatch(/name="PackageCheckout"\s+component=\{PackageCheckoutScreen\}/);
++  });
++});
+diff --git a/src/config/purchaseSurfaces.ts b/src/config/purchaseSurfaces.ts
+index 27c17e9b..12f58483 100644
+--- a/src/config/purchaseSurfaces.ts
++++ b/src/config/purchaseSurfaces.ts
+@@ -73,6 +73,27 @@ export function nonP2PPurchasesHidden(
+   return nativeBuild >= IOS_P2P_ONLY_MIN_NATIVE_BUILD;
+ }
+ 
++/**
++ * Digital AI packs and coach software subscriptions need store billing (or
++ * an enrolled, correctly integrated alternative-billing program). Neither
++ * purchase route is integrated here, so Android release builds expose usage
++ * and existing account status, not Stripe checkout or upgrade instructions.
++ * Development builds retain the checkout path for engineering.
++ *
++ * Keep this separate from nonP2PPurchasesHidden: that existing iOS posture
++ * also governs feature paywalls and attendance links. Client purchases of
++ * real-time 1:1 human coaching, including recurring packages, are unchanged.
++ */
++export function digitalPurchasesHidden(
++  platform: string = Platform.OS,
++  flag: boolean = featureFlags.iosHideNonP2PPurchases,
++  nativeBuild: number | null = nativeBuildNumber(),
++  dev: boolean = __DEV__,
++): boolean {
++  if (platform === 'android') return !dev;
++  return nonP2PPurchasesHidden(platform, flag, nativeBuild, dev);
++}
++
+ /** Value for the X-Client-Purchase-Policy request header. */
+ export function purchasePolicyHeader(): 'p2p-only' | 'all' {
+   return nonP2PPurchasesHidden() ? 'p2p-only' : 'all';
+@@ -82,7 +103,7 @@ export function purchasePolicyHeader(): 'p2p-only' | 'all' {
+ // the web", with no link, URL or instruction to buy elsewhere (3.1.1 / 3.1.3).
+ export const NON_P2P_HIDDEN_TITLE = 'Managed on the web';
+ export const NON_P2P_HIDDEN_BODY =
+-  'This is not available in the iOS app. Your account and anything you already have are unchanged.';
++  'This is not available in this app. Your account and anything you already have are unchanged.';
+ 
+ /** Copy for 1:1 package checkout: names the individual coach and the 1:1 nature. */
+ export function oneToOneCoachingLabel(coachName?: string | null): string {
+diff --git a/src/screens/coach/CoachBillingScreen.tsx b/src/screens/coach/CoachBillingScreen.tsx
+index c94e7fd3..ff660eae 100644
+--- a/src/screens/coach/CoachBillingScreen.tsx
++++ b/src/screens/coach/CoachBillingScreen.tsx
+@@ -20,7 +20,7 @@ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+ import { errorMessage, errorStatus } from '../../types/common';
+ import { assertStripeUrl } from '../../utils/stripeUrlValidator';
+ import type { NavigationProp, ParamListBase } from '@react-navigation/native';
+-import { nonP2PPurchasesHidden } from '../../config/purchaseSurfaces';
++import { digitalPurchasesHidden } from '../../config/purchaseSurfaces';
+ 
+ interface Props {
+   navigation: NavigationProp<ParamListBase>;
+@@ -69,14 +69,14 @@ function formatDate(iso?: string | null): string | null {
+   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+ }
+ 
+-// iOS builds hide subscription CTAs; the status copy must not ask the coach
++// Store builds hide digital subscription CTAs; the copy must not ask the coach
+ // to subscribe or update a card either.
+-const IOS_BILLING_NOTE = 'Your coach account status is shown here. Billing changes are not made in the iOS app.';
++const IOS_BILLING_NOTE = 'Your coach account status is shown here. Billing changes are not made in this app.';
+ 
+ export default function CoachBillingScreen({ navigation }: Props) {
+   const { colors } = useTheme();
+   const styles = useMemo(() => makeStyles(colors), [colors]);
+-  const purchasesHidden = nonP2PPurchasesHidden();
++  const purchasesHidden = digitalPurchasesHidden();
+   const [status, setStatus] = useState<CoachBillingStatus | null>(null);
+   const [invoices, setInvoices] = useState<CoachInvoice[]>([]);
+   const [loading, setLoading] = useState(true);
+@@ -290,7 +290,7 @@ export default function CoachBillingScreen({ navigation }: Props) {
+           )}
+         </View>
+ 
+-        {/* iOS: coach subscription / seat CTAs are not a 1:1 person-to-person
++        {/* Coach subscription / seat CTAs are not a 1:1 person-to-person
+             service, so they are hidden (purchaseSurfaces.ts). */}
+         {purchasesHidden ? null : (
+           <>
+diff --git a/src/screens/coach/CreditPackCheckoutScreen.tsx b/src/screens/coach/CreditPackCheckoutScreen.tsx
+index 9e672c8f..a71649b4 100644
+--- a/src/screens/coach/CreditPackCheckoutScreen.tsx
++++ b/src/screens/coach/CreditPackCheckoutScreen.tsx
+@@ -1,12 +1,12 @@
+ /**
+  * CreditPackCheckoutScreen — Stripe-webview entry point for AI credit packs.
+  *
+- * AI credit packs are NOT a 1:1 person-to-person service. On iOS this route
++ * AI credit packs are NOT a 1:1 person-to-person service. In store builds this route
+  * is replaced by the neutral NonP2PPurchaseHidden state (withNonP2PPurchaseGate
+- * in CoachNavigator, flag EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES plus the
+- * native-build anchor in config/purchaseSurfaces). On other platforms packs
+- * are billed through Stripe Checkout in a webview. The webview transport is
+- * not an App Review basis for anything.
++ * in CoachNavigator). digitalPurchasesHidden preserves the iOS flag/native
++ * gate and hides Android release purchases pending store billing. Development
++ * Android and web retain Stripe Checkout; a webview is not a store-policy
++ * exception.
+  *
+  * Two-phase flow:
+  *   1. Selection phase — render `<PackOptionsRow />` plus a custom-amount
+diff --git a/src/screens/coach/README.md b/src/screens/coach/README.md
+index 3c82d17e..add3ddc0 100644
+--- a/src/screens/coach/README.md
++++ b/src/screens/coach/README.md
+@@ -175,7 +175,7 @@ These rows belong in `docs/RELEASE_SMOKE.md`'s real-device-proof section; captur
+ - For Play / App Store review, supply both a coach test account *and* a client test account so reviewers can exercise the full bidirectional flow (`PLAY_STORE_READINESS.md` §9).
+ - The InviteCodes screen is the only place an invite URL is produced. If the universal-link host ever changes, that share string and `app.json → expo.android.intentFilters` must change together.
+ - "Become a coach" is **not** a self-serve action. The role is granted server-side; there is no surface in the mobile app that flips a client into a coach.
+-- Coach billing is in-app only as a status surface and a portal handoff. There is no in-app card capture, no in-app price list, no Stripe Elements. Coaches who churn do so through the same portal a coach who upgrades does. If a future iteration introduces in-app purchase, it must declare against Play Billing / StoreKit and add the corresponding Play data-safety entry.
++- Coach billing in store builds is a status surface, without software-subscription purchase, portal or payable-invoice links. Android development and web retain the existing portal handoff. Any future store purchase path needs the applicable store billing or enrolled alternative-billing integration.
+ 
+ ## iOS: purchases that are not 1:1 services (clinic launch)
+ 
+@@ -184,4 +184,16 @@ With `EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES` on (default in release builds;
+ - The "Buy credits" banner CTA, the meter chip tap, and `PackOptionsRow` in the tutorial and hard-pause modals.
+ - The "Start subscription" / "Manage billing" button and invoice links in `CoachBillingScreen`. The status copy switches to a neutral note.
+ 
+-Android and web are unchanged. See `src/config/purchaseSurfaces.ts`.
++Android release builds hide the same digital AI/software purchase surfaces through
++`digitalPurchasesHidden`; Android development and web remain unchanged. Direct navigation
++and budget notifications use the same decision as the visible buttons. Client real-time
++1:1 human-coaching purchases, including recurring packages, remain available and are
++not routed through this digital-only gate. See `src/config/purchaseSurfaces.ts`.
++
++Google Play generally requires Play Billing for in-app digital goods, cloud software
++and subscriptions unless an applicable enrolled alternative-billing program is
++correctly integrated; a Stripe webview alone is not that integration.
++[Google Play Payments](https://support.google.com/googleplay/android-developer/answer/9858738?hl=en).
++The exception for 1:1 online coaching requires two individuals and no replay of the
++paid session in a Play-distributed app.
++[Google Play's policy explanation](https://support.google.com/googleplay/android-developer/answer/10281818?hl=en).
+diff --git a/src/screens/coach/SubCoachInviteModal.tsx b/src/screens/coach/SubCoachInviteModal.tsx
+index a8f72908..1c65b49f 100644
+--- a/src/screens/coach/SubCoachInviteModal.tsx
++++ b/src/screens/coach/SubCoachInviteModal.tsx
+@@ -27,7 +27,7 @@ import { Ionicons } from '@expo/vector-icons';
+ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+ import { subCoachApi, type SubCoachInviteResult } from '../../api/subCoachApi';
+ import { errorMessage } from '../../types/common';
+-import { nonP2PPurchasesHidden } from '../../config/purchaseSurfaces';
++import { digitalPurchasesHidden } from '../../config/purchaseSurfaces';
+ 
+ /**
+  * Seat-limit copy. With non-P2P purchases hidden (iOS) it never tells the
+@@ -141,7 +141,7 @@ export default function SubCoachInviteModal({
+       // ceiling. Surface a structured Rule-9 message naming the exact
+       // headroom so the head coach knows what to do.
+       if (typeof remainingSeats === 'number' && n > remainingSeats) {
+-        setError(seatLimitMessage(remainingSeats, nonP2PPurchasesHidden()));
++        setError(seatLimitMessage(remainingSeats, digitalPurchasesHidden()));
+         return;
+       }
+       maxClientsNum = n;
+diff --git a/src/screens/coach/TeamManagementScreen.tsx b/src/screens/coach/TeamManagementScreen.tsx
+index e8627c97..1500fa33 100644
+--- a/src/screens/coach/TeamManagementScreen.tsx
++++ b/src/screens/coach/TeamManagementScreen.tsx
+@@ -29,7 +29,7 @@ import { coachTeamApi } from '../../api/coachTeamApi';
+ import { authApi } from '../../services/api';
+ import type { TeamStackParamList } from '../../navigation/CoachNavigator';
+ import SubCoachInviteModal from './SubCoachInviteModal';
+-import { nonP2PPurchasesHidden } from '../../config/purchaseSurfaces';
++import { digitalPurchasesHidden } from '../../config/purchaseSurfaces';
+ 
+ const SCALE_TIERS = ['scale', 'enterprise'];
+ 
+@@ -135,9 +135,8 @@ function SubCoachRow({
+   );
+ }
+ 
+-export function UpgradeGate({ purchasesHidden = nonP2PPurchasesHidden() }: { purchasesHidden?: boolean } = {}) {
+-  // iOS with non-P2P purchases hidden: neutral access information only, no
+-  // instruction to upgrade (plan changes are not offered in the iOS app).
++export function UpgradeGate({ purchasesHidden = digitalPurchasesHidden() }: { purchasesHidden?: boolean } = {}) {
++  // Digital purchases hidden: neutral access information only, no upgrade instruction.
+   if (purchasesHidden) {
+     return (
+       <View style={styles.gate} testID="team-gate-neutral">
+diff --git a/src/screens/coach/__tests__/CoachBillingScreenAndroidPolicy.test.tsx b/src/screens/coach/__tests__/CoachBillingScreenAndroidPolicy.test.tsx
+new file mode 100644
+index 00000000..0c3ca2b3
+--- /dev/null
++++ b/src/screens/coach/__tests__/CoachBillingScreenAndroidPolicy.test.tsx
+@@ -0,0 +1,74 @@
++import React from 'react';
++import { Platform } from 'react-native';
++import { fireEvent, render } from '@testing-library/react-native';
++
++const mockGetStatus = jest.fn();
++const mockGetFull = jest.fn();
++const mockCreatePortalSession = jest.fn();
++const mockOpenBrowser = jest.fn();
++const mockOpenAuth = jest.fn();
++jest.mock('../../../services/api', () => ({
++  coachBillingApi: {
++    getStatus: () => mockGetStatus(),
++    getFull: () => mockGetFull(),
++    createPortalSession: () => mockCreatePortalSession(),
++  },
++}));
++jest.mock('expo-web-browser', () => ({
++  openBrowserAsync: (...args: unknown[]) => mockOpenBrowser(...args),
++  openAuthSessionAsync: (...args: unknown[]) => mockOpenAuth(...args),
++  WebBrowserPresentationStyle: { PAGE_SHEET: 'pageSheet' },
++}));
++jest.mock('../../../lib/analytics', () => ({ track: jest.fn() }));
++jest.mock('../../../utils/haptics', () => ({ mediumTap: jest.fn() }));
++const mockColors = new Proxy({}, { get: () => '#000000' });
++jest.mock('../../../theme/ThemeProvider', () => ({
++  useTheme: () => ({ colors: mockColors }),
++}));
++
++import CoachBillingScreen from '../CoachBillingScreen';
++
++const realOS = Platform.OS;
++const globals = globalThis as { __DEV__?: boolean };
++const realDev = globals.__DEV__;
++
++beforeEach(() => {
++  Object.defineProperty(Platform, 'OS', { configurable: true, get: () => 'android' });
++  globals.__DEV__ = false;
++  jest.clearAllMocks();
++  mockGetFull.mockResolvedValue({
++    data: {
++      invoices: [{
++        id: 'invoice-review', hosted_invoice_url: 'https://invoice.stripe.com/i/review-placeholder',
++        amount_paid_cents: 4900, amount_due_cents: 0, currency: 'usd', status: 'paid',
++        created_at: '2026-10-01T00:00:00Z',
++      }],
++    },
++  });
++});
++
++afterEach(() => {
++  Object.defineProperty(Platform, 'OS', { configurable: true, get: () => realOS });
++  globals.__DEV__ = realDev;
++});
++
++describe('Android release coach software billing', () => {
++  it.each(['none', 'paused', 'canceled', 'active', 'past_due', 'trialing'])(
++    '%s keeps status but exposes no Stripe purchase/portal or payable invoice link',
++    async (state) => {
++      mockGetStatus.mockResolvedValue({ data: { state, summary: 'Upgrade your digital plan' } });
++      const view = await render(<CoachBillingScreen navigation={{ goBack: jest.fn() } as never} />);
++      expect(await view.findByText('Your coach account status is shown here. Billing changes are not made in this app.'))
++        .toBeTruthy();
++      expect(view.queryByLabelText('Start subscription')).toBeNull();
++      expect(view.queryByLabelText('Manage billing')).toBeNull();
++      expect(view.queryByText('Upgrade your digital plan')).toBeNull();
++      const invoice = view.getByLabelText(/Invoice.*paid/);
++      expect(invoice).toBeDisabled();
++      await fireEvent.press(invoice);
++      expect(mockCreatePortalSession).not.toHaveBeenCalled();
++      expect(mockOpenBrowser).not.toHaveBeenCalled();
++      expect(mockOpenAuth).not.toHaveBeenCalled();
++    },
++  );
++});
+diff --git a/src/services/__tests__/pushTapRouter.test.ts b/src/services/__tests__/pushTapRouter.test.ts
+index b15179ac..618b073e 100644
+--- a/src/services/__tests__/pushTapRouter.test.ts
++++ b/src/services/__tests__/pushTapRouter.test.ts
+@@ -13,7 +13,7 @@ jest.mock('../../config/featureFlags', () => ({
+ 
+ let mockHidden = false;
+ jest.mock('../../config/purchaseSurfaces', () => ({
+-  nonP2PPurchasesHidden: () => mockHidden,
++  digitalPurchasesHidden: () => mockHidden,
+ }));
+ 
+ import {
+diff --git a/src/services/pushTapRouter.ts b/src/services/pushTapRouter.ts
+index 5518be8b..7b8c731c 100644
+--- a/src/services/pushTapRouter.ts
++++ b/src/services/pushTapRouter.ts
+@@ -25,7 +25,7 @@
+  *    is bounded.
+  */
+ import { featureFlags } from '../config/featureFlags';
+-import { nonP2PPurchasesHidden } from '../config/purchaseSurfaces';
++import { digitalPurchasesHidden } from '../config/purchaseSurfaces';
+ 
+ export interface PushNavigator {
+   isReady(): boolean;
+@@ -100,11 +100,11 @@ export const COACH_PUSH_ROUTES: Record<string, Resolver> = {
+     featureFlags.coachBrief
+       ? { root: 'SettingsStack', screen: 'CoachBrief', initial: false }
+       : null,
+-  // AI credit top-ups are not purchasable on hidden iOS builds: a budget
++  // Digital AI credit top-ups are not purchasable in store builds: a budget
+   // push lands on Settings, never on the checkout route (whose gated
+   // wrapper would only say "Managed on the web").
+   CreditPackCheckout: () =>
+-    nonP2PPurchasesHidden()
++    digitalPurchasesHidden()
+       ? { root: 'SettingsStack', screen: 'SettingsHome' }
+       : { root: 'SettingsStack', screen: 'CreditPackCheckout' },
+   CommunityEventDetail: () =>

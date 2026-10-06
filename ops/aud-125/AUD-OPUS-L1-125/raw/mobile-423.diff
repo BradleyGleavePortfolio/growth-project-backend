@@ -1,0 +1,262 @@
+diff --git a/src/__tests__/coachInvitesScreen.test.tsx b/src/__tests__/coachInvitesScreen.test.tsx
+index 6bf46ed3..974ead1f 100644
+--- a/src/__tests__/coachInvitesScreen.test.tsx
++++ b/src/__tests__/coachInvitesScreen.test.tsx
+@@ -13,7 +13,8 @@
+  */
+ 
+ import React from 'react';
+-import { render, waitFor } from '@testing-library/react-native';
++import { Alert } from 'react-native';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
+ 
+ const mockListInvites = jest.fn();
+ jest.mock('../api/invites', () => ({
+@@ -24,6 +25,8 @@ jest.mock('../api/invites', () => ({
+   },
+ }));
+ 
++jest.mock('../utils/haptics', () => ({ mediumTap: jest.fn(), successTap: jest.fn(), warningTap: jest.fn() }));
++
+ jest.mock('expo-clipboard', () => ({
+   setStringAsync: jest.fn().mockResolvedValue(undefined),
+ }));
+@@ -44,6 +47,7 @@ jest.mock('../theme/ThemeProvider', () => ({
+ 
+ import CoachInvitesScreen from '../screens/coach/CoachInvitesScreen';
+ import type { Invite } from '../types/invites';
++import { invitesApi, type ResendEmailStatus } from '../api/invites';
+ 
+ // Build a navigation-prop stub that satisfies the typed nav prop. We
+ // only assert against the rendered text so the inner shape can be a
+@@ -158,3 +162,22 @@ describe('CoachInvitesScreen — R26 render mapping (client_email + last_email_s
+   });
+ 
+ });
++
++// AUDIT-17-125 — a 200 from /send can be `skipped` (the email key is already
++// spent: every resend on today's backend) or `failed`; only `sent` is a resend.
++describe('CoachInvitesScreen resend honesty (AUDIT-17-125)', () => {
++  const cases: Array<[ResendEmailStatus, string, RegExp]> = [
++    ['skipped', 'No new email sent', /no new email was sent/],
++    ['failed', 'Email not sent', /did not send/],
++    ['sent', 'Invite re-sent', /^Invite re-sent to alice@example.com\.$/],
++  ];
++  it.each(cases)('a %s send shows "%s"', async (emailStatus, title, body) => {
++    mockListInvites.mockResolvedValue([{ id: 'inv-r', code: 'GP-RSND23', clientEmail: 'alice@example.com', status: 'PENDING', createdAt: new Date().toISOString(), lastEmailStatus: null }]);
++    jest.mocked(invitesApi.resendInvite).mockResolvedValue({ supported: true, emailStatus });
++    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++    const { findByTestId } = await render(<CoachInvitesScreen navigation={makeNavigation()} />);
++    await fireEvent.press(await findByTestId('invite-resend-inv-r'));
++    await waitFor(() => expect(alert).toHaveBeenCalledWith(title, expect.stringMatching(body)));
++    alert.mockRestore();
++  });
++});
+diff --git a/src/__tests__/invitesApi.test.ts b/src/__tests__/invitesApi.test.ts
+index fe366fd7..8c436ae7 100644
+--- a/src/__tests__/invitesApi.test.ts
++++ b/src/__tests__/invitesApi.test.ts
+@@ -441,7 +441,7 @@ describe('invitesApi.resendInvite', () => {
+   it('hits the /send route with the recipient email body', async () => {
+     mockedApi.post.mockResolvedValueOnce({ data: {} });
+     const out = await invitesApi.resendInvite('inv_1', 'alice@ex.com');
+-    expect(out).toEqual({ supported: true });
++    expect(out).toEqual({ supported: true, emailStatus: null });
+     expect(mockedApi.post).toHaveBeenCalledWith(
+       '/coach/invite-codes/inv_1/send',
+       { email: 'alice@ex.com' },
+@@ -460,6 +460,13 @@ describe('invitesApi.resendInvite', () => {
+     );
+   });
+ 
++  it('passes the backend send outcome through (AUDIT-17-125)', async () => {
++    for (const status of ['skipped', 'failed', 'sent']) {
++      mockedApi.post.mockResolvedValueOnce({ data: { status } });
++      expect(await invitesApi.resendInvite('inv_1', 'a@ex.com')).toEqual({ supported: true, emailStatus: status });
++    }
++  });
++
+   it('returns { supported: false } on 404', async () => {
+     mockedApi.post.mockRejectedValueOnce({ response: { status: 404 } });
+     const out = await invitesApi.resendInvite('inv_1', 'alice@ex.com');
+diff --git a/src/api/invites.ts b/src/api/invites.ts
+index 868ee143..bd31d0c9 100644
+--- a/src/api/invites.ts
++++ b/src/api/invites.ts
+@@ -252,20 +252,27 @@ export const invitesApi = {
+    * request body — that is the contract documented on the backend
+    * controller. Returns `{ supported: false }` on 404 so the UI can hide
+    * the affordance when the backend hasn't rolled the route yet.
++   * `emailStatus` is the backend send outcome; a 200 can still be `skipped`
++   * or `failed` (AUDIT-17-125).
+    */
+   resendInvite: async (
+     id: string,
+     email: string,
+     opts?: { name?: string; note?: string },
+-  ): Promise<{ supported: true } | { supported: false }> => {
++  ): Promise<
++    { supported: true; emailStatus: ResendEmailStatus | null } | { supported: false }
++  > => {
+     if (!email) throw new Error('email is required to resend an invite');
+     try {
+-      await api.post(`/coach/invite-codes/${id}/send`, {
+-        email,
+-        ...(opts?.name ? { name: opts.name } : {}),
+-        ...(opts?.note ? { note: opts.note } : {}),
+-      });
+-      return { supported: true };
++      const res = await api.post<{ status?: unknown } | null>(
++        `/coach/invite-codes/${id}/send`,
++        {
++          email,
++          ...(opts?.name ? { name: opts.name } : {}),
++          ...(opts?.note ? { note: opts.note } : {}),
++        },
++      );
++      return { supported: true, emailStatus: readResendEmailStatus(res?.data) };
+     } catch (err) {
+       if (isNotFound(err)) return { supported: false };
+       throw err;
+@@ -310,6 +317,16 @@ export const invitesApi = {
+   },
+ };
+ 
++export type ResendEmailStatus = 'sent' | 'logged' | 'skipped' | 'failed';
++
++function readResendEmailStatus(data: unknown): ResendEmailStatus | null {
++  if (!data || typeof data !== 'object') return null;
++  const status = (data as { status?: unknown }).status;
++  return status === 'sent' || status === 'logged' || status === 'skipped' || status === 'failed'
++    ? status
++    : null;
++}
++
+ /** Axios 404 detector — kept private so the surface stays clean. */
+ function isNotFound(err: unknown): boolean {
+   if (!err || typeof err !== 'object') return false;
+diff --git a/src/lib/__tests__/inviteAttachOutcome.test.ts b/src/lib/__tests__/inviteAttachOutcome.test.ts
+index 4688c600..9c906aae 100644
+--- a/src/lib/__tests__/inviteAttachOutcome.test.ts
++++ b/src/lib/__tests__/inviteAttachOutcome.test.ts
+@@ -47,6 +47,13 @@ describe('inviteAttachErrorMessage', () => {
+     expect(inviteAttachErrorMessage('already_attached_to_different_coach')).toMatch(/different coach/);
+   });
+ 
++  it('names the emailed-invite address mismatch instead of the generic retry copy (AUDIT-17-125)', () => {
++    const msg = inviteAttachErrorMessage('invite_intended_email_mismatch');
++    expect(msg).toMatch(/sent to a different email address/);
++    expect(msg).toMatch(/coach code/);
++    expect(msg).not.toBe(DEFAULT_INVITE_ATTACH_MESSAGE);
++  });
++
+   it('never echoes an unknown raw server string', () => {
+     const raw = 'PrismaClientKnownRequestError at /app/src/x.ts:42';
+     expect(inviteAttachErrorMessage(raw)).toBe(DEFAULT_INVITE_ATTACH_MESSAGE);
+diff --git a/src/lib/inviteAttachOutcome.ts b/src/lib/inviteAttachOutcome.ts
+index 47f8016c..b05f058f 100644
+--- a/src/lib/inviteAttachOutcome.ts
++++ b/src/lib/inviteAttachOutcome.ts
+@@ -41,6 +41,14 @@ export function inviteAttachFailed(data: unknown): boolean {
+ }
+ 
+ const MESSAGES: Array<{ test: RegExp; message: string }> = [
++  {
++    // invite_intended_email_mismatch: an emailed (bulk) invite only works for
++    // the address it was sent to, e.g. not for a Sign in with Apple hidden
++    // email (AUDIT-17-125). Retrying the same code can never work.
++    test: /email_mismatch|intended_email/i,
++    message:
++      'That invite was sent to a different email address. Sign up with the email the invite was sent to, or ask your coach for their coach code and enter it below.',
++  },
+   {
+     // code_revoked: the coach turned the code off (revoke, or a rotation with no grace period).
+     test: /revoked|turned_off/i,
+diff --git a/src/screens/coach/CoachCodesScreen.tsx b/src/screens/coach/CoachCodesScreen.tsx
+index 1def6ef6..9fafb5af 100644
+--- a/src/screens/coach/CoachCodesScreen.tsx
++++ b/src/screens/coach/CoachCodesScreen.tsx
+@@ -188,7 +188,7 @@ export default function CoachCodesScreen({
+         <CreateCode styles={styles} onCreated={(c) => applyChange(c)} />
+         <TouchableOpacity
+           style={styles.action}
+-          onPress={() => navigation.navigate('CoachBulkInvite')}
++          onPress={() => navigation.navigate('BulkInvite')}
+           accessibilityRole="button"
+           testID="coach-codes-bulk-invite"
+         >
+diff --git a/src/screens/coach/CoachInvitesScreen.tsx b/src/screens/coach/CoachInvitesScreen.tsx
+index e0ce5a00..9edbb99c 100644
+--- a/src/screens/coach/CoachInvitesScreen.tsx
++++ b/src/screens/coach/CoachInvitesScreen.tsx
+@@ -189,28 +189,46 @@ export default function CoachInvitesScreen({
+           invite.clientEmail,
+         );
+         if (!result.supported) {
+-          setResendSupported(false);
++          // The send route is live; a 404 means this invite is no longer on
++          // the coach's account (AUDIT-17-125).
+           Alert.alert(
+-            'Not available',
+-            'Resend isn\'t supported by the backend yet. Use "Copy link" to share the invite directly.',
++            'Invite not found',
++            'This invite is no longer on your account. Your list is refreshing.',
+           );
++          void load();
+           return;
+         }
+         setResendSupported(true);
++        // A 200 is not proof an email went out (AUDIT-17-125): only `sent`
++        // (or the dev `logged` transport) is a resend.
++        if (result.emailStatus === 'skipped') {
++          Alert.alert(
++            'No new email sent',
++            `An invite email already went to ${invite.clientEmail}, so no new email was sent. Use "Copy link" to send the invite yourself.`,
++          );
++          return;
++        }
++        if (result.emailStatus === 'failed') {
++          Alert.alert(
++            'Email not sent',
++            `The invite email to ${invite.clientEmail} did not send. Use "Copy link" to send the invite yourself, or try again in a few minutes.`,
++          );
++          return;
++        }
+         successTap();
+-        Alert.alert('Queued', `Invite re-sent to ${invite.clientEmail}.`);
++        Alert.alert('Invite re-sent', `Invite re-sent to ${invite.clientEmail}.`);
+       } catch (err) {
+         console.error(
+           'CoachInvitesScreen: resend failed',
+           errorMessage(err),
+         );
+         Alert.alert(
+-          'Could not complete this action',
+-          'Please try again.',
++          'Resend did not go through',
++          'The invite email was not sent. Check your connection and try again.',
+         );
+       }
+     },
+-    [],
++    [load],
+   );
+ 
+   const handleCopyLink = useCallback(async (invite: Invite) => {
+diff --git a/src/screens/coach/__tests__/CoachCodesScreen.test.tsx b/src/screens/coach/__tests__/CoachCodesScreen.test.tsx
+index 420e064f..1ddc45ce 100644
+--- a/src/screens/coach/__tests__/CoachCodesScreen.test.tsx
++++ b/src/screens/coach/__tests__/CoachCodesScreen.test.tsx
+@@ -118,10 +118,10 @@ describe('CoachCodesScreen', () => {
+     expect(queryByTestId('coach-code-revoke-GP-LINK22')).toBeNull();
+   });
+ 
+-  it('keeps the legacy screen\'s bulk invite and who-joined links', async () => {
++  it('opens the per-email bulk invite (AUDIT-17-125) and who-joined links', async () => {
+     const { getByTestId, queryByTestId } = await renderEntry();
+     await fireEvent.press(getByTestId('coach-codes-bulk-invite'));
+-    expect(nav.navigate).toHaveBeenCalledWith('CoachBulkInvite');
++    expect(nav.navigate).toHaveBeenCalledWith('BulkInvite');
+     await fireEvent.press(getByTestId('coach-code-joined-GP-ROW234'));
+     expect(nav.navigate).toHaveBeenCalledWith('InviteCodeRedeemers', { inviteCodeId: 'row-1', code: 'GP-ROW234' });
+     expect(queryByTestId('coach-code-joined-GP-LINK22')).toBeNull();

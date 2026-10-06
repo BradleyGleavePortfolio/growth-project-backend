@@ -1,0 +1,200 @@
+{
+  "observed_at": "2026-10-06T14:42:17.665683-07:00",
+  "rows": [
+    {
+      "repo": "mobile",
+      "number": 434,
+      "head": "9d4cfb53557c3ed1990c41ec6e1697c0abc3885f",
+      "title": "fix(deliverables): purchased PDFs and videos open; a delivered meal plan opens that plan (B-DELIV-125, T4)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "mobile",
+      "number": 433,
+      "head": "88da53118bcd3788b7b41b9669b987ef4f7138fa",
+      "title": "fix(coach-home): Overview rows open the client, failed loads show an error not zeros, risk board works for every coach (AUDIT-13-125)",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/433#issuecomment-6025963018",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-13-125, agent 125) \u2014 growth-project-mobile#433 @ 88da53118bcd3788b7b41b9669b987ef4f7138fa \u2014 READY FOR AUDIT\n\n- CI at this head is green: Typecheck, lint, test; Analyze; CodeQL.\n- Size: 5 files, +159/-53 (212 lines, tests included).\n- Fixes U-A13-1..4 (see the PR body). Tier T2. Works against the current production backend: no new routes.\n- Tests: the new `src/__tests__/coachHomeAudit13.test.tsx` (7) fails on main, where the API resolves zeros and the at-risk row tap never navigates. `RiskBoardScreen.test.tsx` was updated (16 pass).\n- No overlap with m#414 / m#408 files.\n"
+        }
+      ],
+      "own_current": []
+    },
+    {
+      "repo": "mobile",
+      "number": 427,
+      "head": "28888f83527a64c75477fa7513a831e31a466c04",
+      "title": "fix(coach-ai): AI meal plan review shows and saves what the client gets; approve uses the loaded draft id (AUDIT-08-125)",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/427#issuecomment-6025681247",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-08-125, agent 125) \u2014 growth-project-mobile#427 @ 28888f83527a64c75477fa7513a831e31a466c04 \u2014 READY FOR AUDIT\n\n- CI at this head: Typecheck, lint, test = success; CodeQL + Analyze = success.\n- Size: +342 / -74 = 416 lines (tests 228 of them).\n- Fixes: B (AI meal plan and workout Save/Approve/Reject posted to /coach/ai/drafts/undefined/... because GET /coach/ai/drafts/:id returns `id`, not `draftId`; now the route draftId), B (AI-written `coach_notes` reached the client without the review showing them; now shown and editable as \"Notes <client> sees\"), U (meal slot / serving / day totals rendered blank and edits to them were dropped; now read and write the backend fields; day totals follow item macro edits; dead \"Meal name\" and \"Day notes\" inputs removed).\n- Works against the current production backend (no API change). Not affected by the clinic build profile: the coach AI section is not flag-gated.\n- AIWorkoutDraftScreen: only the three draftId lines; the rest of that screen belongs to AUDIT-14-125.\n"
+        }
+      ],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/427#issuecomment-6025736405"
+      ]
+    },
+    {
+      "repo": "mobile",
+      "number": 424,
+      "head": "f69f200ec84e7ed3657621f3fb8c922e80ee12a0",
+      "title": "fix(roman): a used-up coach AI credit pool gets its own copy, not a retry (AUDIT-05-125)",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/424#issuecomment-6025915013",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-05-125, agent 125) \u2014 growth-project-mobile#424 @ f69f200ec84e7ed3657621f3fb8c922e80ee12a0 \u2014 READY FOR AUDIT\n\n- CI at this head: \"Typecheck, lint, test\" SUCCESS. CodeQL \"Analyze (actions)\" and \"Analyze (javascript-typescript)\" were still queued on the shared runners at 14:36 PDT.\n- Second push: the first head 9d5292c failed Typecheck on my own test (the fetch Headers stub cast); f69f200 types it the way src/api/__tests__/romanApiAiRefusal.test.ts does. No source change between the two heads.\n- Local, one file each at this head: src/__tests__/romanPoolEmpty125.test.tsx 6/6, src/__tests__/aiDailyCapSurfaces.test.tsx 4/4.\n- Fixes U1 (AUDIT-05-125): a used-up coach AI credit pool (402 COACH_AI_BUDGET_EXHAUSTED, already in production) now shows its own copy with no Send again button, instead of \"That request did not complete. Send it once more\".\n- Size: +204 -7 (49 source lines, the rest is the test). Holds under the clinic build profile (EXPO_PUBLIC_FF_ROMAN_CHAT is on there).\n"
+        }
+      ],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/424#issuecomment-6025927185"
+      ]
+    },
+    {
+      "repo": "mobile",
+      "number": 416,
+      "head": "45a117a7fed0384f29fb7d8a81cb7f1b1afbc742",
+      "title": "fix(polish): readable tabs, safe-area spacing and screen-reader controls",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/416#issuecomment-6025593551",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-20-125, agent 125) \u2014 growth-project-mobile#416 @ 45a117a7fed0384f29fb7d8a81cb7f1b1afbc742 \u2014 READY FOR AUDIT\n\nTier T2. B=0; five highest-value U fixes in this PR; C=0.\n\n- Readable light/dark primary tabs and preserved content above the bottom safe-area inset.\n- Shared actionable press controls expose button semantics; explicit roles and non-actionable content are preserved.\n- Selected exercise filters and error foregrounds use the correct contrast tokens; the Home message label can wrap for large text.\n\n148 changed lines: 38 source + 110 tests (134 additions, 14 deletions), below the operator's revised under-150-line U-only cap.\n\nAcceptance: lint, typecheck, release guards, and the full suite passed: 603 suites / 8,288 tests, including all four changed regression files. Both CodeQL analysis jobs passed. [Final PR CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531749222)\n\nTests-only main baseline reproduced 11 regression failures with 6 existing/preservation assertions passing. [Baseline proof](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37530694949)\n\nThe opening CI caught the removed legacy `colors` import still needed by unchanged stack headers; restored it and pushed again before this READY comment. Tests were condensed to meet the updated size limit.\n\nNo backend, flags, dependencies, lockfiles, migrations, builds, merges, deploys, or production changes. No overlap with agent 124's open PR files.\n\nAudit report also records a lower-priority legacy-screen dark-appearance migration, intentionally not expanded into this launch slice. Recommended default: defer that broad migration, and retain the normal device dark-mode/large-text/VoiceOver smoke pass.\n"
+        }
+      ],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/416#issuecomment-6025698369"
+      ]
+    },
+    {
+      "repo": "backend",
+      "number": 799,
+      "head": "aa2aa40c116116f7fa1d0b4e1fb0e1676743feb5",
+      "title": "fix(wearables): server-driven cloud tracker list; OAuth callback reachable from the provider redirect (B-WEARLIST-125, T4)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 798,
+      "head": "3de021eb766f84f70e4d84fad88eca1ac1ed8613",
+      "title": "fix(lessons): Learn shows only the client's own coach's lessons; buyers can open purchased PDFs and videos (B-DELIV-125, T4)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 797,
+      "head": "ea742c5f02e288c17e4a1429b7005fc38600e867",
+      "title": "fix(cross-pillar): coach search and client profile only reach the coach's own clients (AUDIT-13-125, T4)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 796,
+      "head": "43072020b93303af1e7faaad6fa7d93042a1330d",
+      "title": "fix(meal-plans): coach edits of an AI-approved meal plan reach the client (AUDIT-08-125)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 795,
+      "head": "933f325011f67e9a56a9d7980cb9c66532b1f5c0",
+      "title": "fix(roman): gym talk is not sent to 911; crisis section in the client reply contract (AUDIT-05-125, T4)",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/795#issuecomment-6025973353",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-05-125, agent 125) \u2014 growth-project-backend#795 @ 933f325011f67e9a56a9d7980cb9c66532b1f5c0 \u2014 READY FOR AUDIT\n\n- CI: build-and-test at the first head f85de9b was red from my change: 1 of 16,050 tests, `test/roman/r11-seams.spec.ts` \"no augments -> the prompt hash equals main\", which pins sha256 of the client system prompt. The new crisis section changes that prompt on purpose. 933f325 re-pins the three client hashes (coach hash unchanged) and changes nothing else. CI at 933f325 was queued at 14:41 PDT, so it is not green yet; the operator time box ends at 14:45.\n- Local, one file each at 933f325: test/roman/r11-seams.spec.ts 17/17, test/crisis-router-gym-talk-125.spec.ts 25/25, test/crisis-router-not-breathing.spec.ts 73/73, test/crisis-router-gym-talk.spec.ts 122/122, test/ai-crisis-router.spec.ts 50/50, test/roman/roman-guardrails.spec.ts 25/25.\n- Fixes B1 (past near-faint and breathing-technique gym talk no longer get the 911 template on Roman or the AI guide; present-tense cases stay 911) and B2 (the client reply contract, now roman-client-v4, gives 988/911 for a crisis message the router does not match).\n- Size: about +124 -9 (25 source lines). Does not depend on the mobile build profile.\n"
+        }
+      ],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 794,
+      "head": "d8352fe1eba11a07971ea92b1184a24e1d73a10e",
+      "title": "fix(invite-codes): Who joined reads the redemption ledger; Resend really re-sends (AUDIT-17-125)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 793,
+      "head": "5bfe51f4243f373cebc5b873439b3087de8885d3",
+      "title": "fix(coach-ai): Save edits on AI workout and meal drafts is accepted (AUDIT-14-125)",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/793#issuecomment-6025923417",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-14-125, agent 125) \u2014 growth-project-backend#793 @ 5bfe51f4243f373cebc5b873439b3087de8885d3 \u2014 READY FOR AUDIT\n\nCI at this head: build-and-test, danger, Banned cast tokens, Schema parity, rls-floor-guard, rls/community/mwb-3 live tests, CodeQL, npm audit, build-sbom, size-label all SUCCESS (comment-deploy-readiness still queued; deploy-readiness-gate skipped). 36 changed lines, tests included.\n\nFix: U3, \"Save edits\" on AI workout and meal drafts always returned 400 \"property patch should not exist\" (EditDraftDto.patch had no class-validator decorator under the global whitelist + forbidNonWhitelisted pipe). Now @IsObject(); ownership and status checks in CoachAIService.editDraft unchanged.\nEvidence: test/coach-ai-edit-draft-dto.spec.ts fails on main (1 of 2) and passes here.\nCompanion mobile PR: growth-project-mobile#425 (READY).\n"
+        }
+      ],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/793#issuecomment-6025942348"
+      ]
+    },
+    {
+      "repo": "backend",
+      "number": 792,
+      "head": "25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "title": "fix(notifications): coach alert, new purchase and content pushes honour mute and keep names off the lock screen (AUDIT-09-125)",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/792#issuecomment-6025920491",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-09-125, agent 125) \u2014 growth-project-backend#792 @ 25f882cf6f01c03ef087445cfd51974bb1c5fd8f \u2014 READY FOR AUDIT\n\n- Tier T4 (lock-screen PII on coach alert, coach new-purchase and content-unlocked pushes). 13 files, +151/-107 (258 lines, tests included). No schema, migration, flag or money logic.\n- Fixes B-A09-1 (coach alert push: client name and risk percentage on the coach lock screen, raw alert type as body, Mute all and quiet hours ignored, no tap target), B-A09-2 (new-purchase push: buyer name and amount on the lock screen, Mute all ignored), B-A09-3 (content-unlocked push: Mute all and the drip switch ignored, coach-written title on the lock screen). All three now go through `NotificationsService.sendPush` (coach alerts via the existing `CoachAlertEmitter`).\n- CI: all 16 checks green at this head (build-and-test incl. lint, type-check, full test suite; live-test lanes; CodeQL; Danger; size).\n- Rebased once on main ef5e514a (b#762 merge, flags file only) before the first push; no other pushes.\n- Needs both lenses at this exact head (T4).\n"
+        }
+      ],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/792#issuecomment-6025949645"
+      ]
+    },
+    {
+      "repo": "backend",
+      "number": 791,
+      "head": "4c74404e1642ac47f34ad7516c458b11c04fdee0",
+      "title": "fix(packages): pricing the free setup package stops the invite link giving it away (AUDIT-02-125)",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/791#issuecomment-6025937637",
+          "body": "FIX ROUND 1 (OPENING) (AUDIT-02-125, agent 125) \u2014 growth-project-backend#791 @ 4c74404e1642ac47f34ad7516c458b11c04fdee0 \u2014 READY FOR AUDIT\n\n- Tier T4 (money). One B: B-A02-1, a coach who prices the free setup package (bound to the invite link with grant_mode free) kept giving it away for $0 to every new joiner. Fix: the price-change transaction in PackagesService.update clears that package's `free` bindings (CoachProfile link + InviteCode rows) when it goes from free to paid; existing grants and `prepaid` bindings unchanged.\n- Size: +178/-1, 2 files (42 src, 136 test). No schema, migration, flag, lockfile or contract change.\n- Proof: test/package-free-invite-binding-release.spec.ts 4/4 at this head; on main 2 of 4 fail (binding stays). test/packages.service.spec.ts 69/69 and test/packages-pricing-http.spec.ts 12/12 locally. PR CI at this head: every check green (build-and-test, type-check, lint, R75 banned casts, schema parity, CodeQL, rls/community/mwb live tests, danger, size).\n- Overlap: same file as open b#776 and b#778; this PR adds one helper above the class and two lines after `tx.coachPackage.update` in the lock transaction, not the predicate, archive, create or read methods.\n"
+        }
+      ],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 785,
+      "head": "39865147daa2859225a5d7349620b2364ff16d32",
+      "title": "fix(auth): confirmation recovery and shared-network sign-up",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/785#issuecomment-6025938025",
+          "body": "FIX ROUND 2 (FIX-Q1-125, agent 125) \u2014 growth-project-backend#785 @ 39865147daa2859225a5d7349620b2364ff16d32 \u2014 READY FOR DELTA AUDIT\n\nFixes A-785-1 and A-785-2 from the GPT-6.1 Sol verdict at f64275e4. Both were CI failures caused by the PR; the Sol lens found no B. Delta f64275e4..39865147 is one commit: 6 files, +54/-47. PR total +294/-59 = 353 changed lines. No change to the PR's behaviour.\n\n**A-785-2: Banned cast tokens (R75 / R100.A2)** (was net +1 `as any`, +2 `as unknown as`, +6 `as never`)\n- `src/auth/auth.service.ts`: a private `anonAuthClient()` is now the single anon-key client construction for `forgotPassword` and `resendVerification`. The existing `WS as any` transport line moved into it, so the net change is 0. The transport, keys and redirects are unchanged.\n- `test/hunt02-auth-recovery.spec.ts`:\n  - The ExecutionContext double is a typed `ExecutionContextHost`, the same pattern as test/wearables/wearables-throttle-isolation.spec.ts.\n  - The AuthService doubles use the `asCtorArgs` + reasoned `@ts-expect-error` pattern from test/invite-attach-reliability.spec.ts.\n  - `resendVerification` is called directly, with no cast.\n- Checker at this head: `as any +27 -27 net 0 ... OK \u2014 no positive token change`, https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37533122638\n\n**A-785-1: build-and-test.** Four specs pinned the pre-PR contract and now match the PR's intended limits:\n- `test/invite-attach-reliability.spec.ts`: the codeless baseline is read from `THROTTLER_ROUTE_LIMITS.AUTH_SIGNUP_PER_HOUR` (100 by default) and hammered with baseline+1. It still proves the code-bearing and codeless buckets are independent, a malformed code never unlocks the burst bucket, and the 40-patient clinic case holds.\n- `test/rate-limit.spec.ts`: auth-login-per-min is 60 and auth-signup is 100 (config table and handler metadata for register and signup-with-code). Bootstrap-owner keeps 5/hour, pinned in hunt02-auth-recovery.spec.ts.\n- `test/throttler-isolation.spec.ts`: POST /auth/register allows 100 per hour and the 101st gets 429.\n- `test/dunning-v2-lockout-allowlist-route-table.spec.ts`: `auth/resend-verification` is added to the reviewed reachable set. It is a public, anonymous recovery route like `auth/forgot-password`.\n- Result: build-and-test green, 895 suites, 15721 tests passed, https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37533122516 . The five touched specs PASS in that log.\n\nAll other checks are green at this head: danger, npm audit, schema parity, RLS floor/live, community and MWB live tests, test-deploy-readiness, CodeQL.\n\nThe PR's own B-HUNT02-1 and B-HUNT02-2 and its tests are unchanged. No dependency, lockfile, migration or flag change. Nothing merged or deployed, and no provider call. Needs both backend T4 lenses at this exact head.\n"
+        }
+      ],
+      "own_current": []
+    },
+    {
+      "repo": "backend",
+      "number": 778,
+      "head": "52fbaaebea99673750e1226e90c89e9ebacadc58",
+      "title": "fix(money): real package statistics and paused subscription pricing (T4)",
+      "ready": [],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/778#issuecomment-6025315964"
+      ]
+    },
+    {
+      "repo": "backend",
+      "number": 776,
+      "head": "d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "title": "fix(money): refunds pause billing; repeat cancels and live-contract lifecycle (T4)",
+      "ready": [],
+      "own_current": [
+        "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/776#issuecomment-6025292807"
+      ]
+    }
+  ]
+}

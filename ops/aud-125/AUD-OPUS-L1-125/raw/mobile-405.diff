@@ -1,0 +1,375 @@
+diff --git a/src/__tests__/moneyRefund124.test.tsx b/src/__tests__/moneyRefund124.test.tsx
+new file mode 100644
+index 00000000..b404036d
+--- /dev/null
++++ b/src/__tests__/moneyRefund124.test.tsx
+@@ -0,0 +1,120 @@
++import React from 'react';
++import { Alert } from 'react-native';
++import { render, waitFor, fireEvent } from '@testing-library/react-native';
++import type { ThemeColors } from '../theme/ThemeProvider';
++import { normalizeDunningStatus } from '../entitlements/dunning/dunningApi';
++import { lockoutSummary, lockoutNextStep, isDisputeCycle } from '../entitlements/dunning/DunningLockoutScreen';
++import { bannerCopy } from '../entitlements/dunning/DunningBanner';
++import { updateCardIntro } from '../entitlements/dunning/UpdateCardScreen';
++import { loadDisputePausedPlans, isDisputePaused } from '../entitlements/dunning/coachDisputeRestart';
++import { DisputePausedPlansCard, restartConfirmBody } from '../components/coach/DisputePausedPlansCard';
++
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../services/api', () => ({
++  __esModule: true,
++  default: { get: (...args: unknown[]) => mockGet(...args), post: (...args: unknown[]) => mockPost(...args) },
++}));
++jest.mock('../theme/ThemeProvider', () => {
++  const tokens = jest.requireActual('../theme/tokens').default;
++  return { useTheme: () => ({ semanticColors: tokens.lightTokens, tokens, colorScheme: 'light' }) };
++});
++jest.mock('../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('../services/queryClient', () => ({ queryClient: { invalidateQueries: jest.fn() } }));
++jest.mock('@stripe/stripe-react-native', () => ({
++  initStripe: jest.fn(), initPaymentSheet: jest.fn(), presentPaymentSheet: jest.fn(),
++}));
++
++const RAW = {
++  enabled: true, state: 'locked', kind: 'refund', reason: 'refund_paused',
++  purchase_id: 'purchase', amount_cents: null, currency: 'usd',
++  locked_at: '2026-10-06T12:00:00.000Z', lockout_at: null,
++  coach_name: 'Morgan', billing_paused: true,
++};
++const DETAIL = {
++  purchase: {
++    id: 'purchase', billing_type: 'recurring', status: 'refunded',
++    amount_cents: 1000, currency: 'usd',
++  },
++  dunning: {
++    status: 'active', last_failure_reason: 'charge_refunded',
++    entered_at: '2026-10-06T12:00:00.000Z',
++  },
++};
++
++beforeEach(() => {
++  mockGet.mockReset();
++  mockPost.mockReset();
++});
++
++function serveRefund() {
++  mockGet.mockImplementation(async (route: string) => ({
++    data: route === '/v1/coach/purchases' ? {
++      purchases: [{
++        id: 'purchase', client_user_id: 'client', billing_type: 'recurring',
++        status: 'refunded', entitlement_active: false,
++      }],
++      next_cursor: null,
++    } : DETAIL,
++  }));
++}
++
++describe('MONEY-REFUND-124 refund pause is not failed payment or a bank dispute', () => {
++  it('preserves the backend refund reason and keeps the coach-restart action gates', () => {
++    const status = normalizeDunningStatus(RAW);
++    expect(status).toMatchObject({ kind: 'refund', reason: 'refund_paused', lockout_at: null });
++    expect(isDisputeCycle(status)).toBe(true);
++  });
++
++  it('client lockout explains the refund and points to the coach, never a card charge', () => {
++    const status = normalizeDunningStatus(RAW);
++    expect(lockoutSummary(status)).toMatch(/fully refunded/);
++    expect(lockoutSummary(status)).toMatch(/billing is paused/);
++    expect(lockoutSummary(status)).not.toMatch(/bank opened|has not gone through|10 days/);
++    expect(lockoutNextStep(status)).toMatch(/Message Morgan/);
++    expect(lockoutNextStep(status)).not.toMatch(/Update card|charged right away/);
++  });
++
++  it('a refund pause not yet confirmed by Stripe does not claim billing is paused', () => {
++    const status = normalizeDunningStatus({ ...RAW, billing_paused: false });
++    expect(lockoutSummary(status)).toMatch(/billing pause is being completed/);
++    expect(lockoutSummary(status)).not.toMatch(/billing is paused/);
++  });
++
++  it('banner and card screen distinguish a full refund from a decline or dispute', () => {
++    const status = normalizeDunningStatus(RAW);
++    expect(bannerCopy(status).title).toMatch(/full refund/);
++    expect(bannerCopy(status).body).not.toMatch(/bank opened|did not go through/);
++    expect(updateCardIntro(status)).toMatch(/fully refunded/);
++    expect(updateCardIntro(status)).not.toMatch(/bank opened|charged.*right away/);
++  });
++
++  it('coach roster can load a refund-paused plan for the existing restart route', async () => {
++    serveRefund();
++    expect(isDisputePaused(DETAIL)).toBe(true);
++    await expect(loadDisputePausedPlans('client')).resolves.toEqual([expect.objectContaining({
++      purchaseId: 'purchase', pauseReason: 'refund',
++    })]);
++  });
++
++  it('coach card offers restart with clear renewed-billing consent after a refund', async () => {
++    serveRefund();
++    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++    const colors = new Proxy({}, { get: () => '#000000' }) as ThemeColors;
++    const view = await render(<DisputePausedPlansCard clientUserId="client" clientName="Taylor" colors={colors} />);
++    await waitFor(() => expect(view.getByText('Plan paused after a full refund')).toBeTruthy());
++    await fireEvent.press(view.getByTestId('dispute-restart-purchase'));
++    expect(alert).toHaveBeenCalledWith(
++      'Restart this plan?', expect.stringMatching(/refund is not reversed.*agreeing with the client/),
++      expect.any(Array),
++    );
++    expect(mockPost).not.toHaveBeenCalled();
++    alert.mockRestore();
++  });
++
++  it('existing disputes keep their original explanation and restart confirmation', () => {
++    const status = normalizeDunningStatus({ ...RAW, kind: 'dispute', reason: 'dispute_paused' });
++    expect(lockoutSummary(status)).toMatch(/bank opened a dispute or inquiry/);
++    expect(restartConfirmBody('Taylor')).toMatch(/payment dispute or inquiry is resolved or settled/);
++  });
++});
+diff --git a/src/components/coach/DisputePausedPlansCard.tsx b/src/components/coach/DisputePausedPlansCard.tsx
+index a331d2ea..caf24bb4 100644
+--- a/src/components/coach/DisputePausedPlansCard.tsx
++++ b/src/components/coach/DisputePausedPlansCard.tsx
+@@ -25,7 +25,10 @@ interface Props {
+ }
+ 
+ export const RESTART_CONFIRM_TITLE = 'Restart this plan?';
+-export function restartConfirmBody(clientName: string): string {
++export function restartConfirmBody(clientName: string, pauseReason?: 'refund' | 'dispute'): string {
++  if (pauseReason === 'refund') {
++    return `Billing for ${clientName || 'the client'} resumes on the plan's usual schedule and access to the plan returns. The refund is not reversed. Restart only after agreeing with the client to continue the plan.`;
++  }
+   return `Billing for ${clientName || 'the client'} resumes on the plan's usual schedule and access to the plan returns. Restart only once the payment dispute or inquiry is resolved or settled.`;
+ }
+ 
+@@ -58,12 +61,13 @@ export function DisputePausedPlansCard({ clientUserId, clientName, reloadKey = 0
+ 
+   const confirmRestart = useCallback(
+     (purchaseId: string) => {
+-      Alert.alert(RESTART_CONFIRM_TITLE, restartConfirmBody(clientName), [
++      const plan = plans.find((p) => p.purchaseId === purchaseId);
++      Alert.alert(RESTART_CONFIRM_TITLE, restartConfirmBody(clientName, plan?.pauseReason), [
+         { text: 'Cancel', style: 'cancel' },
+         { text: 'Restart plan', onPress: () => void restart(purchaseId) },
+       ]);
+     },
+-    [clientName, restart],
++    [clientName, restart, plans],
+   );
+ 
+   if (plans.length === 0) return null;
+@@ -78,11 +82,14 @@ export function DisputePausedPlansCard({ clientUserId, clientName, reloadKey = 0
+         return (
+           <View key={plan.purchaseId} style={styles.plan}>
+             <Text style={[styles.title, { color: colors.noticeWarningText }]}>
+-              {out?.ok ? 'Plan restarted' : 'Plan paused after a payment dispute or inquiry'}
++              {out?.ok ? 'Plan restarted' : plan.pauseReason === 'refund'
++                ? 'Plan paused after a full refund' : 'Plan paused after a payment dispute or inquiry'}
+             </Text>
+             {out?.ok ? null : (
+               <Text style={[styles.body, { color: colors.textSecondary }]}>
+-                {`The bank opened a dispute or inquiry about a payment on this plan${
++                {plan.pauseReason === 'refund'
++                  ? 'A full refund was completed. Access to this plan has ended and its billing is paused until the plan is restarted.'
++                  : `The bank opened a dispute or inquiry about a payment on this plan${
+                   amount ? ` (${amount})` : ''
+                 }. Access to this plan has ended and its billing is paused until the plan is restarted.`}
+               </Text>
+diff --git a/src/entitlements/dunning/DunningBanner.tsx b/src/entitlements/dunning/DunningBanner.tsx
+index 5600dc0c..77e8a546 100644
+--- a/src/entitlements/dunning/DunningBanner.tsx
++++ b/src/entitlements/dunning/DunningBanner.tsx
+@@ -5,7 +5,7 @@ import type { SemanticTokens } from '../../theme/tokens';
+ import { formatDunningAmount, formatDunningDate, type ClientDunningStatus } from './dunningApi';
+ import { disputePauseFacts } from './dunningErrorCopy';
+ import { useDunning } from './DunningLockoutProvider';
+-import { isDisputeCycle } from './DunningLockoutScreen';
++import { isDisputeCycle, isRefundCycle } from './DunningLockoutScreen';
+ 
+ /**
+  * The lock date, only while it is still ahead and the lock is not waived
+@@ -22,6 +22,14 @@ function upcomingLockDate(status: ClientDunningStatus, now: number): string | nu
+ export function bannerCopy(status: ClientDunningStatus, now: number = Date.now()): { title: string; body: string } {
+   const amount = formatDunningAmount(status.amount_cents, status.currency);
+   const lockOn = upcomingLockDate(status, now);
++  if (isRefundCycle(status)) {
++    return {
++      title: 'Your plan is paused after a full refund',
++      body: status.billing_paused === false
++        ? 'A full refund was completed. Access to this plan has ended. The billing pause is being completed; pull down to refresh or message your coach.'
++        : `A full refund was completed. ${disputePauseFacts(status.coach_name, 'plan')}`,
++    };
++  }
+   if (isDisputeCycle(status)) {
+     // R-DISPUTE-PAUSE (B-353-3 / B-353-6): access to the disputed plan has
+     // already ended, so no lock date, no condition and no card fix. B-353-8:
+diff --git a/src/entitlements/dunning/DunningLockoutScreen.tsx b/src/entitlements/dunning/DunningLockoutScreen.tsx
+index 3f7e00d2..9493c57b 100644
+--- a/src/entitlements/dunning/DunningLockoutScreen.tsx
++++ b/src/entitlements/dunning/DunningLockoutScreen.tsx
+@@ -45,7 +45,13 @@ export interface DunningLockoutScreenProps {
+  * inquiry moves none), so no surface claims a reversal (B-353-8).
+  */
+ export function isDisputeCycle(status: ClientDunningStatus | null | undefined): boolean {
+-  return status?.kind === 'dispute' || status?.reason === 'dispute_paused';
++  // Compatibility name shared by the action gates: both pauses require
++  // the coach to restart, never a card update or an automatic recovery.
++  return status?.kind === 'dispute' || status?.reason === 'dispute_paused' || isRefundCycle(status);
++}
++
++export function isRefundCycle(status: ClientDunningStatus | null | undefined): boolean {
++  return status?.kind === 'refund' || status?.reason === 'refund_paused';
+ }
+ 
+ /** 'account' when the dispute locks the whole app, 'plan' when another plan keeps access. */
+@@ -68,6 +74,12 @@ export function lockoutSummary(status: ClientDunningStatus | null): string {
+   if (!status) return `Your plan is paused because of a payment problem. ${safe}`;
+   const amount = formatDunningAmount(status.amount_cents ?? null, status.currency ?? null);
+   const coach = status.coach_name ?? 'your coach';
++  if (isRefundCycle(status)) {
++    const facts = status.billing_paused === false
++      ? 'Access to this plan has ended. The billing pause is being completed; pull down to refresh or message your coach.'
++      : disputePauseFacts(status.coach_name, disputeScope(status));
++    return `A payment for your plan with ${coach} was fully refunded. ${facts} ${safe}`;
++  }
+   if (isDisputeCycle(status)) {
+     // R-DISPUTE-PAUSE (B-353-3 / B-353-6): the three facts, no lock date, no card fix.
+     return `Your bank opened a dispute or inquiry about a payment${amount ? ` of ${amount}` : ''} to ${coach}. ${disputePauseFacts(
+diff --git a/src/entitlements/dunning/UpdateCardScreen.tsx b/src/entitlements/dunning/UpdateCardScreen.tsx
+index 74be5d7e..21ae6ca5 100644
+--- a/src/entitlements/dunning/UpdateCardScreen.tsx
++++ b/src/entitlements/dunning/UpdateCardScreen.tsx
+@@ -41,6 +41,7 @@ import {
+   disputeScope,
+   endPlanAlertBody,
+   isDisputeCycle,
++  isRefundCycle,
+ } from './DunningLockoutScreen';
+ import { confirmWithBank, handleStripeReturnUrl, runNativeCardUpdate } from './updateCard';
+ 
+@@ -85,6 +86,14 @@ function inDunning(status: ClientDunningStatus | null | undefined): boolean {
+ export function updateCardIntro(status: ClientDunningStatus | null | undefined): string {
+   const amount = formatDunningAmount(status?.amount_cents ?? null, status?.currency ?? null);
+   const coach = status?.coach_name ?? 'your coach';
++  if (inDunning(status) && isRefundCycle(status)) {
++    if (status?.billing_paused === false) {
++      return 'A full refund was completed. Access to this plan has ended. The billing pause is being completed; pull down to refresh or message your coach. Updating a card does not restart the plan.';
++    }
++    return `A payment for your plan with ${coach} was fully refunded. ${disputePauseFacts(
++      status?.coach_name, disputeScope(status),
++    )} Updating a card does not restart it.`;
++  }
+   if (inDunning(status) && isDisputeCycle(status)) {
+     // R-DISPUTE-PAUSE (B-353-3 / B-353-7): the three facts; no charge, no
+     // comeback, no support fix and no future-payment line are promised.
+diff --git a/src/entitlements/dunning/__tests__/coachDisputeRestart.test.tsx b/src/entitlements/dunning/__tests__/coachDisputeRestart.test.tsx
+index 6dd4b6bb..dac28d9e 100644
+--- a/src/entitlements/dunning/__tests__/coachDisputeRestart.test.tsx
++++ b/src/entitlements/dunning/__tests__/coachDisputeRestart.test.tsx
+@@ -162,7 +162,7 @@ describe('restart', () => {
+ 
+   it.each([
+     [404, 'PURCHASE_NOT_FOUND', 'That plan is not on your roster, so nothing was changed. Pull down to refresh, then try again.', true],
+-    [409, 'PLAN_NOT_DISPUTE_PAUSED', 'This plan is not paused by a payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.', true],
++    [409, 'PLAN_NOT_DISPUTE_PAUSED', 'This plan is not paused by a refund, payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.', true],
+     [409, 'PLAN_ENDED', 'This plan has ended, so it cannot be restarted. The client can buy the package again.', true],
+     [409, 'OTHER_LIVE_PLAN', 'The client already has another active plan for this package, so restarting this one would bill them twice. Nothing was changed.', true],
+     [409, 'NEW_DISPUTE', 'The bank opened another payment dispute or inquiry on this plan, so it stays paused and nothing was charged.', false],
+diff --git a/src/entitlements/dunning/coachDisputeRestart.ts b/src/entitlements/dunning/coachDisputeRestart.ts
+index 46d02f32..31bf49f1 100644
+--- a/src/entitlements/dunning/coachDisputeRestart.ts
++++ b/src/entitlements/dunning/coachDisputeRestart.ts
+@@ -20,6 +20,7 @@ import api from '../../services/api';
+ 
+ /** Backend DUNNING_V2_REVERSAL_REASON. */
+ export const DISPUTE_PAUSE_REASON = 'charge_disputed';
++export const REFUND_PAUSE_REASON = 'charge_refunded';
+ 
+ /** Purchase statuses the backend treats as ended (restart refused). */
+ const PLAN_ENDED_STATUSES = new Set(['canceled', 'expired', 'incomplete_expired']);
+@@ -32,6 +33,7 @@ export interface DisputePausedPlan {
+   amountCents: number | null;
+   currency: string | null;
+   pausedAt: string | null;
++  pauseReason?: 'refund' | 'dispute';
+ }
+ 
+ interface RosterPurchase {
+@@ -68,7 +70,9 @@ export function isDisputePaused(detail: PurchaseDetail | null | undefined): bool
+   if (!p || !d) return false;
+   if (p.billing_type !== 'recurring') return false;
+   if (typeof p.status === 'string' && PLAN_ENDED_STATUSES.has(p.status)) return false;
+-  return d.status === 'active' && d.last_failure_reason === DISPUTE_PAUSE_REASON && str(d.entered_at) !== null;
++  return d.status === 'active' &&
++    (d.last_failure_reason === DISPUTE_PAUSE_REASON || d.last_failure_reason === REFUND_PAUSE_REASON) &&
++    str(d.entered_at) !== null;
+ }
+ 
+ /** A roster row that could be dispute-paused (recurring, access off, not ended). */
+@@ -109,6 +113,7 @@ export async function loadDisputePausedPlans(clientUserId: string): Promise<Disp
+       amountCents: typeof amount === 'number' ? amount : null,
+       currency: str(detail?.purchase?.currency),
+       pausedAt: str(detail?.dunning?.entered_at),
++      ...(detail?.dunning?.last_failure_reason === REFUND_PAUSE_REASON ? { pauseReason: 'refund' as const } : {}),
+     });
+   }
+   return out;
+@@ -130,7 +135,7 @@ const REFUSAL_COPY: Record<string, { message: string; final: boolean }> = {
+   },
+   PLAN_NOT_DISPUTE_PAUSED: {
+     message:
+-      'This plan is not paused by a payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.',
++      'This plan is not paused by a refund, payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.',
+     final: true,
+   },
+   PLAN_ENDED: {
+diff --git a/src/entitlements/dunning/dunningApi.ts b/src/entitlements/dunning/dunningApi.ts
+index 5e8b3fb5..a5f3cf7d 100644
+--- a/src/entitlements/dunning/dunningApi.ts
++++ b/src/entitlements/dunning/dunningApi.ts
+@@ -19,13 +19,14 @@ export interface ClientDunningStatus {
+    * Under R-DISPUTE-PAUSE that plan's access has ended and its billing is
+    * paused until its coach restarts it; a card update never ends it.
+    */
+-  kind?: 'payment' | 'dispute' | null;
++  kind?: 'payment' | 'dispute' | 'refund' | null;
+   /**
+    * Backend D2c (#705): 'dispute_paused' for a dispute pause (no lock date,
+    * no card or cancel path, `restart_by: 'coach'`); 'payment_failed' for a
+    * failed renewal. Absent on older backends (null).
+    */
+-  reason?: 'dispute_paused' | 'payment_failed' | null;
++  reason?: 'dispute_paused' | 'refund_paused' | 'payment_failed' | null;
++  billing_paused?: boolean;
+   /** The cycle is locked but another live plan keeps access (show the banner, not the lock). */
+   lock_waived?: boolean;
+   purchase_id: string | null;
+@@ -79,11 +80,13 @@ export function normalizeDunningStatus(raw: unknown): ClientDunningStatus {
+   }
+   const state: DunningState = r.state;
+   if (state !== 'none' && !str(r.purchase_id)) throw new DunningResponseShapeError(ROUTE_STATUS);
+-  const reason = r.reason === 'dispute_paused' || r.reason === 'payment_failed' ? r.reason : null;
++  const reason = r.reason === 'dispute_paused' || r.reason === 'refund_paused' || r.reason === 'payment_failed' ? r.reason : null;
+   // R-DISPUTE-PAUSE: a dispute pause is a dispute whatever `kind` says, and a
+   // dispute never carries a lock date (an older backend's grace-period date
+   // is dropped here, so no surface can show one).
+-  const kind = r.kind === 'dispute' || reason === 'dispute_paused' ? 'dispute' : r.kind === 'payment' ? 'payment' : null;
++  const kind = r.kind === 'refund' || reason === 'refund_paused' ? 'refund'
++    : r.kind === 'dispute' || reason === 'dispute_paused' ? 'dispute'
++      : r.kind === 'payment' ? 'payment' : null;
+   return {
+     enabled: r.enabled,
+     state,
+@@ -94,12 +97,13 @@ export function normalizeDunningStatus(raw: unknown): ClientDunningStatus {
+     amount_cents: cents(r.amount_cents),
+     currency: str(r.currency),
+     failed_at: str(r.failed_at),
+-    lockout_at: kind === 'dispute' ? null : str(r.lockout_at),
++    lockout_at: kind === 'dispute' || kind === 'refund' ? null : str(r.lockout_at),
+     locked_at: str(r.locked_at),
+     day: num(r.day),
+     coach_name: str(r.coach_name),
+     card_last4: str(r.card_last4),
+     card_brand: str(r.card_brand),
++    ...(typeof r.billing_paused === 'boolean' ? { billing_paused: r.billing_paused } : {}),
+   };
+ }
+ 

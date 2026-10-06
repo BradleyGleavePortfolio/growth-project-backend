@@ -1,0 +1,583 @@
+diff --git a/prod-switches.yml b/prod-switches.yml
+index d4d57b3ea..f6dfdfcb9 100644
+--- a/prod-switches.yml
++++ b/prod-switches.yml
+@@ -124,18 +124,24 @@ switches:
+     auto_flip_on_in_prod: false
+     owner: auth
+     description: "Phase 10 / C14 — per-IP POST /auth/login attempts per hour. Never reset by a successful login. Defaults to 200; clamped to [1, 5000]."
++  - name: AUTH_SIGNUP_PER_HOUR
++    tier: optional
++    prod_default: STUB_ALLOWED
++    auto_flip_on_in_prod: false
++    owner: auth
++    description: "HUNT-02 — codeless /auth/register and /auth/signup-with-code attempts per hour per IP. Defaults to 100 for shared-network launch intake; clamped to [5, 500]. Bootstrap-owner retains its 5/hour limit."
+   - name: AUTH_SIGNUP_WITH_CODE_PER_HOUR
+     tier: optional
+     prod_default: STUB_ALLOWED
+     auto_flip_on_in_prod: false
+     owner: auth
+-    description: "Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups keep the 5/hour auth-signup baseline. Defaults to 100 (a 40+ patient clinic event on one Wi-Fi IP inside an hour, with retries); clamped to [5, 500]."
++    description: "Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups use AUTH_SIGNUP_PER_HOUR. Defaults to 100; clamped to [5, 500]."
+   - name: AUTH_LOGIN_PER_MIN
+     tier: optional
+     prod_default: STUB_ALLOWED
+     auto_flip_on_in_prod: false
+     owner: auth
+-    description: "Phase 10 — per-IP login attempts per minute (POST /auth/login, /auth/apple, /auth/google). Defaults to 5; clamped to [1, 1000]. A successful"
++    description: "HUNT-02 — per-IP password login attempts per minute (POST /auth/login). Defaults to 60; clamped to [1, 1000]. Never reset by success; the per-account password failure lock is unchanged."
+   - name: AUTH_OAUTH_PER_HOUR
+     tier: optional
+     prod_default: STUB_ALLOWED
+diff --git a/src/auth/README.md b/src/auth/README.md
+index ecb5725c3..39b547bf7 100644
+--- a/src/auth/README.md
++++ b/src/auth/README.md
+@@ -133,10 +133,14 @@ gates pass. Deleted accounts never produce a signal.
+ 
+ ## Throttling
+ 
+-- `POST /auth/register`: 10 / hour / IP. Loose enough for shared NAT,
+-  tight enough to kill enumeration loops.
+-- `POST /auth/login`: 10 / minute / IP.
+-- `POST /auth/signup-with-code`: 5 / hour / IP without a code (`auth-signup`);
++- `POST /auth/register`: 100 / hour / IP by default (`AUTH_SIGNUP_PER_HOUR`).
++- `POST /auth/login`: 60 / minute / IP by default; 200 / hour plus the
++  unchanged per-account password failure lock.
++- `POST /auth/resend-verification`: 100 / hour / IP; anonymous submission
++  copy, never account existence or a delivery promise. Uses the same
++  confirmation redirect as register; advertised by
++  `email_confirmation_resend: true` in signup-policy.
++- `POST /auth/signup-with-code`: 100 / hour / IP without a code (`auth-signup`, `AUTH_SIGNUP_PER_HOUR`);
+   100 / hour / IP when the body carries a well-formed invite code
+   (`auth-signup-with-code`, `AUTH_SIGNUP_WITH_CODE_PER_HOUR`). The higher cap
+   lets a 40+ patient clinic event sign up from one clinic Wi-Fi IP inside an
+@@ -261,7 +265,7 @@ honoured **only** on the branch that inserts a brand-new `User` row
+   in-memory adapter and live Redis in `test/oauth-coach-signup-ceiling.spec.ts`. No successful sign-in (password, Google
+   or Apple, new or returning) resets any per-IP counter (C14 fix round).
+ - **Login throttling (C14).** `POST /auth/login` has never-reset per-IP
+-  windows (`AUTH_LOGIN_PER_MIN` 20, `AUTH_LOGIN_PER_HOUR` 200) plus a
++  windows (`AUTH_LOGIN_PER_MIN` 60, `AUTH_LOGIN_PER_HOUR` 200) plus a
+   **per-account failure lock**: `AUTH_LOGIN_ACCOUNT_FAILURES` (default 10)
+   failed passwords for one email within 15 min lock that email for 15 min
+   from any IP — the lock is checked *before* the password, so even the right
+diff --git a/src/auth/auth.controller.ts b/src/auth/auth.controller.ts
+index 6534db9e4..dca50c752 100644
+--- a/src/auth/auth.controller.ts
++++ b/src/auth/auth.controller.ts
+@@ -70,14 +70,14 @@ export class AuthController {
+       'Creates a Supabase user and the corresponding application User row. ' +
+       'Optional intended_role (client | coach, default client) fixes the role at creation; ' +
+       'coach provisions a free/active CoachSubscription. ' +
+-      'Rate-limited to 5/hour/IP to blunt enumeration and spam signup loops.',
++      'Rate-limited by AUTH_SIGNUP_PER_HOUR per IP, with a bounded shared-network allowance.',
+   })
+   @ApiResponse({ status: 200, description: 'Session tokens for the new user.' })
+   @ApiResponse({ status: 400, description: 'Validation error.' })
+   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
+   @Public()
+   @Post('register')
+-  @Throttle({ [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: 5 } })
++  @Throttle({ [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: THROTTLER_ROUTE_LIMITS.AUTH_SIGNUP_PER_HOUR } })
+   async register(@Body() body: RegisterDto, @Request() req: AuditableRequest) {
+     return this.authService.register(body, auditContext(req));
+   }
+@@ -345,6 +345,24 @@ export class AuthController {
+     return this.authService.forgotPassword(body.email);
+   }
+ 
++  @ApiOperation({
++    summary: 'Request another signup confirmation link',
++    description: 'Anonymous submission response; never confirms account existence or email delivery.',
++  })
++  @ApiResponse({ status: 200, description: 'Verification request submitted.' })
++  @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
++  @Public()
++  @Post('resend-verification')
++  @Throttle({
++    [THROTTLER_NAMES.AUTH_CONFIRMATION_RESEND]: {
++      ttl: 3_600_000, limit: THROTTLER_ROUTE_LIMITS.AUTH_CONFIRMATION_RESEND_PER_HOUR,
++    },
++  })
++  @HttpCode(HttpStatus.OK)
++  async resendVerification(@Body() body: ForgotPasswordDto) {
++    return this.authService.resendVerification(body.email);
++  }
++
+   @ApiBearerAuth('bearer')
+   @ApiOperation({ summary: 'Get the authenticated user' })
+   @ApiResponse({ status: 200, description: 'Caller profile.' })
+@@ -380,7 +398,7 @@ export class AuthController {
+   @ApiResponse({ status: 429, description: 'Rate limit exceeded.' })
+   @Public()
+   @Post('signup-with-code')
+-  // C03: codeless signups keep the 5/hour/IP baseline; requests carrying a
++  // C03: codeless signups keep the bounded AUTH_SIGNUP_PER_HOUR baseline; requests carrying a
+   // well-formed invite code are counted in the burst bucket instead
+   // (AUTH_SIGNUP_WITH_CODE_PER_HOUR, default 100/hour/IP). The two skipIf
+   // predicates in throttler.config.ts make the buckets mutually exclusive.
+@@ -391,7 +409,7 @@ export class AuthController {
+   // on the storefront join route for the same isolation).
+   @SkipThrottle(SIGNUP_WITH_CODE_SKIP_THROTTLERS)
+   @Throttle({
+-    [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: 5 },
++    [THROTTLER_NAMES.AUTH_SIGNUP]: { ttl: 3_600_000, limit: THROTTLER_ROUTE_LIMITS.AUTH_SIGNUP_PER_HOUR },
+     [THROTTLER_NAMES.AUTH_SIGNUP_WITH_CODE]: {
+       ttl: 3_600_000,
+       limit: THROTTLER_ROUTE_LIMITS.AUTH_SIGNUP_WITH_CODE_PER_HOUR,
+diff --git a/src/auth/auth.dto.ts b/src/auth/auth.dto.ts
+index b09528884..764d5b671 100644
+--- a/src/auth/auth.dto.ts
++++ b/src/auth/auth.dto.ts
+@@ -11,6 +11,7 @@ import {
+ import { Transform } from 'class-transformer';
+ import { BadRequestException } from '@nestjs/common';
+ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
++import { normalizeEmail } from './email-normalize';
+ 
+ // SECURITY: DTOs for high-risk auth endpoints that touch the User model and/or
+ // the `role` field. The global ValidationPipe (src/main.ts) is configured with
+@@ -38,6 +39,7 @@ const INTENDED_ROLE_API = {
+ 
+ export class RegisterDto {
+   @ApiProperty({ example: 'jane@example.com', format: 'email' })
++  @Transform(({ value }) => typeof value === 'string' ? normalizeEmail(value) : value)
+   @IsEmail()
+   email!: string;
+ 
+@@ -73,6 +75,7 @@ export class RegisterDto {
+ 
+ export class LoginDto {
+   @ApiProperty({ example: 'jane@example.com', format: 'email' })
++  @Transform(({ value }) => typeof value === 'string' ? normalizeEmail(value) : value)
+   @IsEmail()
+   email!: string;
+ 
+@@ -325,6 +328,7 @@ export class ValidateInviteCodePublicDto {
+ 
+ export class ForgotPasswordDto {
+   @ApiProperty({ example: 'jane@example.com', format: 'email' })
++  @Transform(({ value }) => typeof value === 'string' ? normalizeEmail(value) : value)
+   @IsEmail()
+   email!: string;
+ }
+@@ -347,6 +351,7 @@ export class BecomeCoachDto {
+ // flow falls back to ordinary register + later attach.
+ export class SignupWithCodeDto {
+   @ApiProperty({ example: 'jane@example.com', format: 'email' })
++  @Transform(({ value }) => typeof value === 'string' ? normalizeEmail(value) : value)
+   @IsEmail()
+   email!: string;
+ 
+diff --git a/src/auth/auth.service.ts b/src/auth/auth.service.ts
+index 6ecb33af6..9d8ac84b9 100644
+--- a/src/auth/auth.service.ts
++++ b/src/auth/auth.service.ts
+@@ -959,6 +959,7 @@ export class AuthService {
+       require_invite_code: gateEnabled,
+       google_signin_enabled: googleEnabled,
+       apple_signin_enabled: appleEnabled,
++      email_confirmation_resend: true,
+       invite_code_field: 'invite_code',
+       invite_code: {
+         min_length: INVITE_CODE_MIN_LENGTH,
+@@ -1459,6 +1460,27 @@ export class AuthService {
+     };
+   }
+ 
++  async resendVerification(email: string) {
++    // Like recovery, the public response must not reveal whether the
++    // address exists, is already confirmed, or the provider refused mail.
++    try {
++      const supaClient = createClient(
++        process.env.SUPABASE_URL || '',
++        process.env.SUPABASE_ANON_KEY || '',
++        { realtime: { transport: WS as any } },
++      );
++      const { error } = await supaClient.auth.resend({
++        type: 'signup',
++        email: normalizeEmail(email),
++        options: { emailRedirectTo: process.env.SUPABASE_REDIRECT_URL || 'tgp://verified' },
++      });
++      if (error) this.logger.warn(`confirmation resend refused: ${describeFailure(error)}`);
++    } catch {
++      this.logger.warn('confirmation resend failed: provider request unavailable');
++    }
++    return { message: 'Verification request submitted. Check your inbox and spam folder.' };
++  }
++
+   async forgotPassword(email: string) {
+     const supaClient = createClient(
+       process.env.SUPABASE_URL || '',
+diff --git a/src/common/env-validation.ts b/src/common/env-validation.ts
+index b783b6a23..709b9fdf6 100644
+--- a/src/common/env-validation.ts
++++ b/src/common/env-validation.ts
+@@ -641,7 +641,7 @@ export const ENV_RULES: EnvRule[] = [
+   {
+     name: 'AUTH_LOGIN_PER_MIN',
+     tier: 'optional',
+-    reason: 'Phase 10 / C14 — per-IP POST /auth/login attempts per minute. Never reset by a successful login. Defaults to 20 (a room on one network); clamped to [1, 1000]. Per-account guessing is bounded by AUTH_LOGIN_ACCOUNT_FAILURES.',
++    reason: 'Phase 10 / HUNT-02 — per-IP POST /auth/login attempts per minute. Never reset by a successful login. Defaults to 60 (a 40-person room on one network); clamped to [1, 1000]. Per-account guessing is bounded by AUTH_LOGIN_ACCOUNT_FAILURES.',
+   },
+   {
+     name: 'AUTH_LOGIN_PER_HOUR',
+@@ -680,11 +680,17 @@ export const ENV_RULES: EnvRule[] = [
+     default: "on (unset = on; only 'false', '0' or 'off' turn it off)",
+     reason: "Clinic C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker.",
+   },
++  {
++    name: 'AUTH_SIGNUP_PER_HOUR',
++    tier: 'optional',
++    default: '100 per IP per hour (unset, empty or unparseable fall back to 100; clamped to [5, 500])',
++    reason: 'HUNT-02 — codeless email signup allowance for ordinary shared-network launch intake. Applies to /auth/register and codeless /auth/signup-with-code; bootstrap-owner retains 5/hour. The per-account password failure lock is unchanged.',
++  },
+   {
+     name: 'AUTH_SIGNUP_WITH_CODE_PER_HOUR',
+     tier: 'optional',
+     default: '100 per IP per hour (unset, empty or unparseable fall back to 100; clamped to [5, 500])',
+-    reason: 'Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups keep the 5/hour auth-signup baseline. Defaults to 100 (a 40+ patient clinic event on one Wi-Fi IP inside an hour, with retries); clamped to [5, 500].',
++    reason: 'Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups use AUTH_SIGNUP_PER_HOUR. Defaults to 100 (a 40+ patient clinic event on one Wi-Fi IP inside an hour, with retries); clamped to [5, 500].',
+   },
+   {
+     name: 'AUTH_PWD_RESET_PER_HOUR',
+diff --git a/src/throttler/README.md b/src/throttler/README.md
+index c910f42bb..87af632ed 100644
+--- a/src/throttler/README.md
++++ b/src/throttler/README.md
+@@ -37,7 +37,7 @@ attack budget behind that IP (and on the production Redis wrapper it was a
+ silent no-op that *added* hits). Instead:
+ 
+ - `/auth/login` per-IP windows are sized for a room on one network
+-  (`AUTH_LOGIN_PER_MIN` 20, `AUTH_LOGIN_PER_HOUR` 200).
++  (`AUTH_LOGIN_PER_MIN` 60, `AUTH_LOGIN_PER_HOUR` 200).
+ - Password guessing is bounded per **account**: `LoginThrottleResetService`
+   counts failures under `auth-login-account:<sha256(email)>`
+   (`AUTH_LOGIN_ACCOUNT_FAILURES`, default 10 / 15 min → 15-min lock, any IP),
+@@ -87,8 +87,9 @@ Redis in CI), `test/throttler-isolation.spec.ts` (40-person room).
+ | `POST /auth/google`                       | POST   | `auth-oauth-per-min`    | 60    | 1 min  | IP (never reset)       |
+ | `POST /auth/google`                       | POST   | `auth-oauth-per-hour`   | 400   | 1 hr   | IP (never reset)       |
+ | `POST /auth/forgot-password`              | POST   | `auth-password-reset`   | 3     | 1 hr   | IP (unauthenticated)   |
+-| `POST /auth/register`                     | POST   | `auth-signup`           | 5     | 1 hr   | IP (unauthenticated)   |
+-| `POST /auth/signup-with-code` (no well-formed code) | POST | `auth-signup`   | 5     | 1 hr   | IP (unauthenticated)   |
++| `POST /auth/resend-verification`          | POST   | `auth-confirmation-resend` | 100 | 1 hr | IP (unauthenticated) |
++| `POST /auth/register`                     | POST   | `auth-signup`           | 100 (`AUTH_SIGNUP_PER_HOUR`) | 1 hr | IP (unauthenticated) |
++| `POST /auth/signup-with-code` (no well-formed code) | POST | `auth-signup` | 100 (`AUTH_SIGNUP_PER_HOUR`) | 1 hr | IP (unauthenticated) |
+ | `POST /auth/signup-with-code` (well-formed `invite_code`) | POST | `auth-signup-with-code` | 100 (`AUTH_SIGNUP_WITH_CODE_PER_HOUR`) | 1 hr | IP (unauthenticated) |
+ | `POST /coach/clients/:id/messages`        | POST   | `coach-messages`        | 30    | 1 min  | user-id (authenticated)|
+ | `POST /coach/clients/:id/messages/voice-upload` | POST | `coach-messages`   | 20    | 1 min  | user-id (authenticated)|
+@@ -139,10 +140,11 @@ restart. Every var has a safe default that is production-appropriate.
+ | `RATELIMIT_AUTHED_PER_MIN`    | `300`   | 1   | 10 000 | Default limit for authenticated requests per user per minute. |
+ | `RATELIMIT_ANON_PER_MIN`      | `100`   | 1   | 10 000 | Default limit for unauthenticated requests per IP per minute. |
+ | `PUBLIC_READS_PER_MIN`        | `240`   | 10  | 5 000  | Per-IP limit on public reads (`GET /auth/signup-policy`, `GET /invite/:code/preview`) via `public-reads`. |
+-| `AUTH_LOGIN_PER_MIN`          | `5`     | 1   | 1 000  | Per-IP login attempts per minute (all login endpoints share this). |
++| `AUTH_LOGIN_PER_MIN`          | `60`    | 1   | 1 000  | Per-IP password login attempts per minute. |
+ | `AUTH_LOGIN_PER_HOUR`         | `30`    | 1   | 5 000  | Per-IP login attempts per hour (sustained-attack brake). |
+ | `AUTH_PWD_RESET_PER_HOUR`     | `3`     | 1   | 1 000  | Per-IP password-reset emails per hour.                      |
+-| `AUTH_SIGNUP_WITH_CODE_PER_HOUR` | `100` | 5 | 500    | Per-IP `POST /auth/signup-with-code` requests per hour that carry a well-formed invite code. Sized for a 40+ patient clinic event on one Wi-Fi IP (retries included). Codeless signups keep the 5/hour `auth-signup` baseline; `previewCode` still gates account creation. |
++| `AUTH_SIGNUP_PER_HOUR`        | `100`   | 5   | 500    | Codeless register/signup-with-code attempts per hour per IP. Bootstrap-owner keeps 5/hour. |
++| `AUTH_SIGNUP_WITH_CODE_PER_HOUR` | `100` | 5 | 500    | Per-IP `POST /auth/signup-with-code` requests per hour that carry a well-formed invite code. Codeless signups use `AUTH_SIGNUP_PER_HOUR`; `previewCode` still gates account creation. |
+ | `COACH_MESSAGES_PER_MIN`      | `30`    | 1   | 1 000  | Per-user coach message sends per minute.                    |
+ | `NOTIF_PREFS_PER_MIN`         | `30`    | 1   | 1 000  | Per-user notification preference writes per minute.         |
+ | `BLOODWORK_WRITE_PER_MIN`     | `30`    | 1   | 1 000  | Per-user bloodwork POST writes per minute.                  |
+diff --git a/src/throttler/throttler.config.ts b/src/throttler/throttler.config.ts
+index b381a6377..0f6f77719 100644
+--- a/src/throttler/throttler.config.ts
++++ b/src/throttler/throttler.config.ts
+@@ -32,7 +32,7 @@ import {
+ // POST /auth/google, /auth/apple            | auth-oauth-per-min      | AUTH_OAUTH_PER_MIN / min (IP, never reset)
+ //                                           | auth-oauth-per-hour     | AUTH_OAUTH_PER_HOUR / hour (IP, never reset)
+ // POST /auth/forgot-password                | auth-password-reset     | AUTH_PWD_RESET_PER_HOUR / hour (IP)
+-// POST /auth/register                       | auth-signup             | 5 / hour (IP)
++// POST /auth/register                       | auth-signup             | AUTH_SIGNUP_PER_HOUR / hour (IP)
+ // POST /auth/signup-with-code (no code)     | auth-signup             | shared (IP)
+ // POST /auth/signup-with-code (with code)   | auth-signup-with-code   | AUTH_SIGNUP_WITH_CODE_PER_HOUR / hour (IP)
+ // POST /coach/clients/:id/messages          | coach-messages          | COACH_MESSAGES_PER_MIN / min (user)
+@@ -57,6 +57,8 @@ export const THROTTLER_NAMES = {
+   AUTH_LOGIN_PER_HOUR: 'auth-login-per-hour',
+   /** Per-hour cap on password-reset requests — keyed by IP, future: by email. */
+   AUTH_PASSWORD_RESET: 'auth-password-reset',
++  /** Confirmation-link recovery has its own bounded shared-network budget. */
++  AUTH_CONFIRMATION_RESEND: 'auth-confirmation-resend',
+   /** Per-hour cap on signup attempts per IP. */
+   AUTH_SIGNUP: 'auth-signup',
+   /** C03 — per-hour cap on signup attempts per IP that carry a well-formed
+@@ -165,10 +167,10 @@ const PUBLIC_READS_PER_MIN      = readIntEnv('PUBLIC_READS_PER_MIN', PUBLIC_READ
+ 
+ // Auth route overrides
+ // C14 fix round: per-IP password-login ceilings are never reset, so they are
+-// sized for a room of ~40 people signing in on one network (20/min, 200/h).
++// sized for a room of ~40 people signing in on one network (60/min, 200/h).
+ // Guessing against any one account is bounded separately by the per-account
+ // failure lock (AUTH_LOGIN_ACCOUNT_FAILURES, LoginThrottleResetService).
+-const AUTH_LOGIN_PER_MIN        = readIntEnv('AUTH_LOGIN_PER_MIN',   20,   1, 1_000);
++const AUTH_LOGIN_PER_MIN        = readIntEnv('AUTH_LOGIN_PER_MIN',   60,   1, 1_000);
+ const AUTH_LOGIN_PER_HOUR       = readIntEnv('AUTH_LOGIN_PER_HOUR', 200,   1, 5_000);
+ // C14 fix round: Google / Apple token exchanges get their OWN per-IP buckets.
+ // The identity token is provider-signed (nothing to guess), so the ceiling
+@@ -177,12 +179,16 @@ const AUTH_LOGIN_PER_HOUR       = readIntEnv('AUTH_LOGIN_PER_HOUR', 200,   1, 5_
+ const AUTH_OAUTH_PER_MIN        = readIntEnv('AUTH_OAUTH_PER_MIN',   60,   5, 5_000);
+ const AUTH_OAUTH_PER_HOUR       = readIntEnv('AUTH_OAUTH_PER_HOUR', 400,  20, 20_000);
+ const AUTH_PWD_RESET_PER_HOUR   = readIntEnv('AUTH_PWD_RESET_PER_HOUR', 3, 1, 1_000);
++// Codeless client signup is a normal advertised launch path. Six people on
++// one Wi-Fi must not exhaust an hour's budget; retain a bounded IP ceiling.
++const AUTH_SIGNUP_PER_HOUR = readIntEnv('AUTH_SIGNUP_PER_HOUR', 100, 5, 500);
++const AUTH_CONFIRMATION_RESEND_PER_HOUR = 100;
+ // C03 — signup-with-code burst cap for requests carrying a well-formed invite
+ // code. 100/hour/IP by default, clamped to [5, 500]. Sized for a clinic event:
+ // 40+ patients sign up from the clinic Wi-Fi (one public IP) inside the same
+ // hour, and retries / mistyped passwords draw from the same bucket, so the
+ // default leaves ~2.5x headroom over a 40-person room. Abuse stays bounded:
+-// codeless signups keep the 5/hour auth-signup baseline, and every request
++// codeless signups keep their own bounded auth-signup budget, and every request
+ // still has to pass previewCode before any account is created.
+ export const AUTH_SIGNUP_WITH_CODE_PER_HOUR_DEFAULT = 100;
+ const AUTH_SIGNUP_WITH_CODE_PER_HOUR = readIntEnv(
+@@ -290,6 +296,8 @@ export const THROTTLER_ROUTE_LIMITS = {
+   AUTH_OAUTH_PER_MIN,
+   AUTH_OAUTH_PER_HOUR,
+   AUTH_PWD_RESET_PER_HOUR,
++  AUTH_SIGNUP_PER_HOUR,
++  AUTH_CONFIRMATION_RESEND_PER_HOUR,
+   AUTH_SIGNUP_WITH_CODE_PER_HOUR,
+   COACH_MESSAGES_PER_MIN,
+   NOTIF_PREFS_PER_MIN,
+@@ -322,10 +330,11 @@ export const THROTTLER_LIMITS = [
+   { name: THROTTLER_NAMES.AUTH_OAUTH_PER_HOUR, ttl: 3_600_000,    limit: AUTH_OAUTH_PER_HOUR },
+   // Password-reset: 3/hour by default, keyed by IP
+   { name: THROTTLER_NAMES.AUTH_PASSWORD_RESET, ttl: 3_600_000,    limit: AUTH_PWD_RESET_PER_HOUR },
+-  // Signup: 5/hour/IP (unchanged from original). C03: on
++  { name: THROTTLER_NAMES.AUTH_CONFIRMATION_RESEND, ttl: 3_600_000, limit: AUTH_CONFIRMATION_RESEND_PER_HOUR },
++  // Signup: bounded shared-network allowance. C03: on
+   // POST /auth/signup-with-code a request carrying a well-formed invite code
+   // is skipped here and counted in auth-signup-with-code instead.
+-  { name: THROTTLER_NAMES.AUTH_SIGNUP,         ttl: 3_600_000,    limit: 5,
++  { name: THROTTLER_NAMES.AUTH_SIGNUP,         ttl: 3_600_000,    limit: AUTH_SIGNUP_PER_HOUR,
+     skipIf: skipSignupBaselineWhenCodePresent },
+   // C03 — signup WITH a well-formed invite code. The GLOBAL baseline is
+   // non-biting (10_000/hour) for the same reason as STOREFRONT_JOIN_IP below;
+@@ -710,4 +719,4 @@ export async function buildThrottlerOptions(
+       ...degradeHooks,
+     }),
+   };
+-}
+\ No newline at end of file
++}
+diff --git a/test/hunt02-auth-recovery.spec.ts b/test/hunt02-auth-recovery.spec.ts
+new file mode 100644
+index 000000000..856e19c1e
+--- /dev/null
++++ b/test/hunt02-auth-recovery.spec.ts
+@@ -0,0 +1,156 @@
++import 'reflect-metadata';
++import { ExecutionContext, Logger } from '@nestjs/common';
++import { Reflector } from '@nestjs/core';
++import { ThrottlerException, ThrottlerStorageService } from '@nestjs/throttler';
++import { plainToInstance } from 'class-transformer';
++import { validate } from 'class-validator';
++import { AuthController } from '../src/auth/auth.controller';
++import { ForgotPasswordDto, LoginDto, RegisterDto, SignupWithCodeDto } from '../src/auth/auth.dto';
++import { AuthService } from '../src/auth/auth.service';
++import { THROTTLER_LIMITS } from '../src/throttler/throttler.config';
++import { UserThrottlerGuard } from '../src/throttler/user-throttler.guard';
++
++const mockResend = jest.fn();
++jest.mock('@supabase/supabase-js', () => ({
++  createClient: jest.fn(() => ({ auth: { resend: mockResend } })),
++}));
++
++const storages: ThrottlerStorageService[] = [];
++afterEach(() => {
++  for (const storage of storages.splice(0)) storage.onApplicationShutdown();
++  jest.restoreAllMocks();
++});
++
++async function guard() {
++  const storage = new ThrottlerStorageService();
++  storages.push(storage);
++  const result = new UserThrottlerGuard(
++    { throttlers: THROTTLER_LIMITS.map((t) => ({ ...t })) },
++    storage,
++    new Reflector(),
++  );
++  await result.onModuleInit();
++  return result;
++}
++
++function context(route: 'register' | 'signupWithCode' | 'login', n: number): ExecutionContext {
++  const path = route === 'signupWithCode' ? '/auth/signup-with-code' : `/auth/${route}`;
++  const req = {
++    route: { path }, url: path, ip: '203.0.113.42', headers: {},
++    body: { email: `person${n}@example.com`, password: 'Str0ng!pass', name: 'Person' },
++  };
++  return {
++    getHandler: () => AuthController.prototype[route],
++    getClass: () => AuthController,
++    getType: () => 'http',
++    switchToHttp: () => ({ getRequest: () => req, getResponse: () => ({ header: jest.fn() }) }),
++  } as unknown as ExecutionContext;
++}
++
++describe('HUNT-02: normal shared-network authentication', () => {
++  it.each(['register', 'signupWithCode'] as const)(
++    'allows 40 ordinary codeless %s requests on one network, but bounds abuse',
++    async (route) => {
++      const g = await guard();
++      for (let n = 0; n < 40; n++) {
++        await expect(g.canActivate(context(route, n))).resolves.toBe(true);
++      }
++      for (let n = 40; n < 100; n++) await g.canActivate(context(route, n));
++      await expect(g.canActivate(context(route, 100))).rejects.toBeInstanceOf(ThrottlerException);
++    },
++  );
++
++  it('allows 40 ordinary password sign-ins, but still has a per-minute IP ceiling', async () => {
++    const g = await guard();
++    for (let n = 0; n < 40; n++) await expect(g.canActivate(context('login', n))).resolves.toBe(true);
++    for (let n = 40; n < 60; n++) await g.canActivate(context('login', n));
++    await expect(g.canActivate(context('login', 60))).rejects.toBeInstanceOf(ThrottlerException);
++  });
++
++  it('keeps first-owner bootstrap at its original 5/hour IP ceiling', () => {
++    expect(Reflect.getMetadata('THROTTLER:LIMITauth-signup', AuthController.prototype.bootstrapOwner)).toBe(5);
++  });
++
++  it('isolates anonymous resend from password-reset, signup and password-login buckets', () => {
++    const handler = AuthController.prototype.resendVerification;
++    expect(Reflect.getMetadata('THROTTLER:LIMITauth-confirmation-resend', handler)).toBe(100);
++    expect(Reflect.getMetadata('THROTTLER:LIMITauth-password-reset', handler)).toBeUndefined();
++    expect(Reflect.getMetadata('THROTTLER:LIMITauth-signup', handler)).toBeUndefined();
++    expect(Reflect.getMetadata('THROTTLER:LIMITauth-login-per-min', handler)).toBeUndefined();
++  });
++});
++
++describe('HUNT-02: confirmation recovery', () => {
++  function service() {
++    const verifier = { isConfigured: () => true };
++    return new AuthService(
++      {} as never, {} as never, { capture: jest.fn() } as never,
++      { write: jest.fn() } as never, verifier as never, verifier as never,
++    );
++  }
++
++  async function resend(s: AuthService, email: string) {
++    const method = (s as unknown as { resendVerification?: (email: string) => Promise<unknown> }).resendVerification;
++    expect(typeof method).toBe('function');
++    return method!.call(s, email);
++  }
++
++  beforeEach(() => {
++    mockResend.mockReset().mockResolvedValue({ data: {}, error: null });
++  });
++
++  it('requests an existing signup link with the same configured registration redirect', async () => {
++    const previous = process.env.SUPABASE_REDIRECT_URL;
++    process.env.SUPABASE_REDIRECT_URL = 'tgp://verified';
++    try {
++      await resend(service(), ' Person+Launch@Example.COM ');
++      expect(mockResend).toHaveBeenCalledWith({
++        type: 'signup', email: 'person+launch@example.com',
++        options: { emailRedirectTo: 'tgp://verified' },
++      });
++    } finally {
++      if (previous === undefined) delete process.env.SUPABASE_REDIRECT_URL;
++      else process.env.SUPABASE_REDIRECT_URL = previous;
++    }
++  });
++
++  it('returns identical submission copy for a missing, confirmed or unconfirmed account', async () => {
++    const s = service();
++    const pending = await resend(s, 'pending@example.com');
++    mockResend.mockResolvedValue({ data: {}, error: { status: 400, code: 'user_not_found', message: 'missing@example.com' } });
++    const missing = await resend(s, 'missing@example.com');
++    mockResend.mockResolvedValue({ data: {}, error: { status: 400, code: 'email_already_confirmed' } });
++    const confirmed = await resend(s, 'confirmed@example.com');
++    expect(missing).toEqual(pending);
++    expect(confirmed).toEqual(pending);
++    expect(JSON.stringify(pending)).toContain('request submitted');
++    expect(JSON.stringify(pending)).not.toMatch(/has been sent|email sent|missing@example/);
++  });
++
++  it('does not leak mail refusal or thrown provider errors, nor claim delivery', async () => {
++    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => {});
++    mockResend.mockResolvedValue({ error: { status: 429, code: 'over_email_send_rate_limit', message: 'private@example.com' } });
++    const first = await resend(service(), 'private@example.com');
++    mockResend.mockRejectedValue(new Error('private@example.com provider transport'));
++    expect(await resend(service(), 'private@example.com')).toEqual(first);
++    expect(JSON.stringify(warn.mock.calls)).not.toContain('private@example.com');
++  });
++
++  it('advertises resend so a new app does not call an endpoint absent from an older backend', () => {
++    const policy = service().getSignupPolicy();
++    expect(policy).toMatchObject({ email_confirmation_resend: true });
++  });
++});
++
++describe('HUNT-02: ordinary email spelling reaches validation', () => {
++  it.each([RegisterDto, LoginDto, SignupWithCodeDto, ForgotPasswordDto])(
++    '%p trims email whitespace, folds case, and keeps the plus suffix',
++    async (Dto) => {
++      const dto = plainToInstance(Dto, {
++        email: ' Person+Launch@Example.COM ', password: 'Str0ng!pass', name: 'Person',
++      });
++      expect((await validate(dto)).filter((e) => e.property === 'email')).toEqual([]);
++      expect(dto.email).toBe('person+launch@example.com');
++    },
++  );
++});
+diff --git a/test/redis-throttler.spec.ts b/test/redis-throttler.spec.ts
+index 609906186..3b35c0639 100644
+--- a/test/redis-throttler.spec.ts
++++ b/test/redis-throttler.spec.ts
+@@ -23,7 +23,7 @@ describe('throttler.config -- named limits', () => {
+     const byName = Object.fromEntries(THROTTLER_LIMITS.map((t) => [t.name, t]));
+     expect(byName[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toMatchObject({
+       ttl: 60_000,
+-      limit: 20,
++      limit: 60,
+     });
+     expect(byName[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]).toMatchObject({
+       ttl: 3_600_000,
+@@ -31,7 +31,7 @@ describe('throttler.config -- named limits', () => {
+     });
+     expect(byName[THROTTLER_NAMES.AUTH_SIGNUP]).toMatchObject({
+       ttl: 3_600_000,
+-      limit: 5,
++      limit: 100,
+     });
+     expect(byName[THROTTLER_NAMES.AUTH_PASSWORD_RESET]).toMatchObject({
+       ttl: 3_600_000,
+@@ -68,10 +68,10 @@ describe('AuthController @Throttle metadata routes through named throttlers', ()
+     return out;
+   };
+ 
+-  it('uses auth-login-per-min (20/min) on POST /auth/login', () => {
++  it('uses auth-login-per-min (60/min) on POST /auth/login', () => {
+     const meta = readThrottle(AuthController.prototype.login);
+     expect(meta).toHaveProperty(THROTTLER_NAMES.AUTH_LOGIN_PER_MIN);
+-    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toEqual({ ttl: 60_000, limit: 20 });
++    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toEqual({ ttl: 60_000, limit: 60 });
+   });
+ 
+   it('uses auth-login-per-hour (200/hr) on POST /auth/login', () => {
+@@ -80,16 +80,16 @@ describe('AuthController @Throttle metadata routes through named throttlers', ()
+     expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_HOUR]).toEqual({ ttl: 3_600_000, limit: 200 });
+   });
+ 
+-  it('uses auth-signup (5/hour) on POST /auth/register', () => {
++  it('uses auth-signup (100/hour) on POST /auth/register', () => {
+     const meta = readThrottle(AuthController.prototype.register);
+     expect(meta).toHaveProperty(THROTTLER_NAMES.AUTH_SIGNUP);
+-    expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 5 });
++    expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 100 });
+   });
+ 
+-  it('uses auth-signup (5/hour) on POST /auth/signup-with-code', () => {
++  it('uses auth-signup (100/hour) on POST /auth/signup-with-code', () => {
+     const meta = readThrottle(AuthController.prototype.signupWithCode);
+     expect(meta).toHaveProperty(THROTTLER_NAMES.AUTH_SIGNUP);
+-    expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 5 });
++    expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 100 });
+   });
+ 
+   it('uses auth-password-reset (3/hr) on POST /auth/forgot-password', () => {

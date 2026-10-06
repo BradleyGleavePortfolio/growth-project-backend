@@ -1,0 +1,16 @@
+backend#797 @ ea742c5f APPROVE B=0
+backend#794 @ d8352fe1 APPROVE B=0
+backend#785 @ 39865147 APPROVE B=0
+backend#798 @ 3de021eb APPROVE B=0
+backend#796 @ 43072020 APPROVE B=0
+backend#800 @ 3052a7e6 APPROVE B=0
+backend#778 @ 22846813 APPROVE B=0
+backend#801 @ ec717a97 APPROVE B=0
+backend#776 @ c357feb1 APPROVE B=0
+backend#799 @ 5fa5e8a9 APPROVE B=0
+backend#802 @ 63eecfe0 REQUEST CHANGES B=0 (CI red from PR: build-and-test Type-check in new spec)
+backend#803 @ 4019326b REQUEST CHANGES B=0 (CI red from PR: build-and-test roman-rmn2-fixes + mwb-3 roman-spend-admission, stale 3/15 test math)
+backend#804 @ 7b54b145 APPROVE B=0
+backend#802 @ d13fdacd APPROVE B=0
+backend#803 @ f8fc690f APPROVE B=0
+done | verdicts: backend#797 ea742c5f, #794 d8352fe1, #785 39865147, #798 3de021eb, #796 43072020, #800 3052a7e6, #778 22846813, #801 ec717a97, #776 c357feb1, #799 5fa5e8a9, #804 7b54b145, #802 d13fdacd, #803 f8fc690f all APPROVE B=0; RC (CI only) #802 63eecfe0, #803 4019326b | B=0 total | report ops/reports/AUD-OPUS-L3-125.md

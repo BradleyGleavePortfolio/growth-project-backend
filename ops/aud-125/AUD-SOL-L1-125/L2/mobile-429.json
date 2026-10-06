@@ -1,0 +1,188 @@
+{
+  "repo": "mobile",
+  "number": 429,
+  "head": "ed57be76588012ea62e2d927f4165f3aec98fded",
+  "base": "a1904f2f4e8d175a38d6eb627303a2312e2b1ace",
+  "title": "fix(messaging): DM reports always file; live reads and Home unread count (AUDIT-03-125)",
+  "body": "**Tier:** T3\n**Why:** Safety and App Store 1.2 surface (DM abuse reports) plus two read-state fixes on the coach/client 1:1 thread. No auth, tenancy, money, credential or destructive-data change.\n**T4 trigger scan:** none. No auth/RLS/tenancy change, no PII newly shown (the Home count is the signed-in client's own unread total from an existing route), no money, no credentials, no deletes.\n**T3 trigger scan:** safety reporting path (report reason wire values, crisis line copy), cross-screen read state.\n**Bounded T1:** copy and a badge on HomeHeaderActions.\n**Canonical builder:** AUDIT-03-125 (agent 125, Claude Opus 5.5).\n**Acceptance evidence:** jest specs below fail on main and pass here; works against the CURRENT production backend (only reasons the deployed DTO accepts are sent; `/messages/unread-count` and `/coach/clients/:id/messages/read` already exist). No backend change, no flag, no dependency, no lockfile.\n\n### Fixes\n- **B1 (safety / App Store 1.2):** A client or coach who reports a message as \"Hate speech\", \"Violence or threats\" or \"Misinformation\" was told \"Sending your report could not be confirmed. Check your connection\" and the report was never filed, because the backend accepts only `spam | harassment | sexual | self_harm | other` (backend `src/messages-safety/dto/report-message.dto.ts`). Now every category is sent as an accepted reason (`hate_speech`, `violence` -> `harassment`; `misinformation` -> `other`) with the picked category first in `details`, so the reviewer still sees it. The sheet also gains \"Self-harm or suicide\" (backend and community sheet already have it) and shows the owner-approved 911 / 988 line for self-harm and violence.\n- **U1:** A coach chatting live saw the client's new message appear, but it stayed unread (Messages badge kept counting it, the client never saw \"Read\") until the coach left and reopened the thread. The coach-channel ping and the 60 s backstop now refetch and mark read up to the newest client message, like the client side already does.\n- **U2:** A client on Home had no sign the coach replied: \"Message <coach>\" now carries the unread coach-message count (badge + accessibility label), refreshed on Home focus, foreground and every 30 s.\n\n### Tests\n- `src/api/__tests__/messagesApi.test.ts`: every sheet category is sent as a backend-accepted reason; folded categories keep their label in details; self-harm is offered and sent verbatim. (The old test asserted the broken values and \"not self_harm\".)\n- `src/components/messaging/__tests__/ReportMessageSheet.test.tsx`: Self-harm option; 911 / 988 line shown for self-harm and violence only.\n- `src/screens/coach/__tests__/ClientMessagesScreenV2.test.tsx`: a client message arriving on the coach channel is marked read up to that message.\n- `src/components/home/__tests__/HomeHeaderActions.test.tsx`: \"Message Bradley, 2 unread\".\n- `HomeScreen.macroMode.test.tsx`: navigation mock gains `useFocusEffect`.\n\nSize: about 215 changed lines. Overlap with open PRs: none (m#402-m#415 touch none of these files).\n",
+  "state": "open",
+  "draft": false,
+  "additions": 185,
+  "deletions": 28,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/429",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/429#issuecomment-6025617814",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-03-125, agent 125) \u2014 growth-project-mobile#429 @ ed57be76588012ea62e2d927f4165f3aec98fded \u2014 READY FOR AUDIT\n\n- CI at this head: Typecheck, lint, test SUCCESS (Test Suites 600 passed, Tests 8289 passed; the five touched specs pass), CodeQL / Analyze SUCCESS.\n- Fixes: B1 DM report reasons (hate speech / violence / misinformation were a 400 and never filed; now mapped to the reasons the deployed backend accepts, category kept in details; Self-harm option + 911/988 line). U1 coach live read on the coach-channel ping and backstop poll. U2 unread coach-message count on Home \"Message <coach>\".\n- Works against the current production backend; no backend dependency. Size about 215 lines. Commit 2 only rewords a comment.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112503788397",
+      "id": 112503788397,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A429+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112503788397/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531982153/job/112503365977",
+      "id": 112503365977,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112503365977/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531981965/job/112503365972",
+      "id": 112503365972,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112503365972/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531981965/job/112503365501",
+      "id": 112503365501,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112503365501/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "47e6150543b9f9918cc5e985cd3c887180b4d30c",
+      "filename": "src/api/__tests__/messagesApi.test.ts",
+      "status": "modified",
+      "additions": 33,
+      "deletions": 17,
+      "changes": 50,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fapi%2F__tests__%2FmessagesApi.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fapi%2F__tests__%2FmessagesApi.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fapi%2F__tests__%2FmessagesApi.test.ts?ref=ed57be76588012ea62e2d927f4165f3aec98fded",
+      "patch": "@@ -7,7 +7,9 @@\n  *\n  * Coverage:\n  *   - report(): POST /messages/report with { messageId, reason, details }\n- *   - report(): every ReportReason value is exactly what backend accepts\n+ *   - report(): every sheet category is sent as a reason the backend DTO accepts\n+ *     (spam | harassment | sexual | self_harm | other); folded categories keep\n+ *     their label in details (AUDIT-03-125 B1)\n  *   - report(): details truncated to DETAILS_MAX (1000)\n  *   - report(): non-2xx throws (no soft-success / no swallowed 4xx)\n  *   - block(): POST /users/:id/block\n@@ -18,9 +20,13 @@ import {\n   messagesModerationApi,\n   REPORT_REASON_OPTIONS,\n   DETAILS_MAX,\n+  REPORT_WIRE_REASON,\n   ReportReason,\n } from '../messagesApi';\n \n+// Mirror of backend src/messages-safety/dto/report-message.dto.ts REPORT_REASONS.\n+const BACKEND_REPORT_REASONS = ['spam', 'harassment', 'sexual', 'self_harm', 'other'];\n+\n jest.mock('../../services/api', () => ({\n   __esModule: true,\n   default: {\n@@ -70,31 +76,41 @@ describe('messagesModerationApi.report', () => {\n   });\n \n   it.each(REPORT_REASON_OPTIONS.map((o) => o.value))(\n-    'sends reason \"%s\" verbatim (no rewrites or drift)',\n+    'sends category \"%s\" as a reason the backend accepts',\n     async (reason: ReportReason) => {\n       api.post.mockResolvedValueOnce({ data: {} });\n       await messagesModerationApi.report('msg-1', { reason });\n-      expect(api.post.mock.calls[0][1].reason).toBe(reason);\n+      const sent = api.post.mock.calls[0][1].reason;\n+      expect(BACKEND_REPORT_REASONS).toContain(sent);\n+      expect(sent).toBe(REPORT_WIRE_REASON[reason]);\n     },\n   );\n \n-  it('uses backend reason \"sexual\" (never legacy \"sexual_content\")', () => {\n+  it.each([\n+    ['hate_speech', 'harassment', 'Hate speech.'],\n+    ['violence', 'harassment', 'Violence or threats.'],\n+    ['misinformation', 'other', 'Misinformation.'],\n+  ] as const)('folds \"%s\" into \"%s\" and keeps the category in details', async (reason, wire, label) => {\n+    api.post.mockResolvedValueOnce({ data: {} });\n+    await messagesModerationApi.report('msg-1', { reason, details: 'said it twice' });\n+    expect(api.post.mock.calls[0][1]).toEqual({\n+      messageId: 'msg-1',\n+      reason: wire,\n+      details: `${label} said it twice`,\n+    });\n+    api.post.mockResolvedValueOnce({ data: {} });\n+    await messagesModerationApi.report('msg-2', { reason });\n+    expect(api.post.mock.calls[1][1].details).toBe(label);\n+  });\n+\n+  it('offers self-harm and sends it verbatim; never legacy \"sexual_content\"', async () => {\n     const values = REPORT_REASON_OPTIONS.map((o) => o.value);\n     expect(values).toContain('sexual');\n     expect(values).not.toContain('sexual_content');\n-    expect(values).not.toContain('self_harm');\n-    // Backend-accepted reasons from PR #263.\n-    expect(values).toEqual(\n-      expect.arrayContaining([\n-        'spam',\n-        'harassment',\n-        'sexual',\n-        'hate_speech',\n-        'violence',\n-        'misinformation',\n-        'other',\n-      ]),\n-    );\n+    expect(values).toContain('self_harm');\n+    api.post.mockResolvedValueOnce({ data: {} });\n+    await messagesModerationApi.report('msg-1', { reason: 'self_harm' });\n+    expect(api.post.mock.calls[0][1]).toEqual({ messageId: 'msg-1', reason: 'self_harm', details: undefined });\n   });\n \n   it('caps details at DETAILS_MAX (1000)', async () => {"
+    },
+    {
+      "sha": "2ce87305e5d350e47eebca8598498394ae3e1f71",
+      "filename": "src/api/messagesApi.ts",
+      "status": "modified",
+      "additions": 42,
+      "deletions": 2,
+      "changes": 44,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fapi%2FmessagesApi.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fapi%2FmessagesApi.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fapi%2FmessagesApi.ts?ref=ed57be76588012ea62e2d927f4165f3aec98fded",
+      "patch": "@@ -25,25 +25,57 @@ import api from '../services/api';\n import type { AxiosResponse } from 'axios';\n import { emitTutorialSignal } from '../tutorial/tutorialEvents';\n \n+/**\n+ * The categories the report sheet offers. The backend DTO\n+ * (messages-safety/dto/report-message.dto.ts) accepts only\n+ * spam | harassment | sexual | self_harm | other, so `report()` sends\n+ * REPORT_WIRE_REASON[reason] and keeps the finer category in `details`.\n+ * Sending a category verbatim (hate_speech, violence, misinformation) was a\n+ * 400 and no report was filed (AUDIT-03-125 B1).\n+ */\n export type ReportReason =\n   | 'spam'\n   | 'harassment'\n   | 'sexual'\n   | 'hate_speech'\n   | 'violence'\n+  | 'self_harm'\n   | 'misinformation'\n   | 'other';\n \n+/** Reasons the production backend accepts on POST /messages/report. */\n+export type ReportWireReason = 'spam' | 'harassment' | 'sexual' | 'self_harm' | 'other';\n+\n export const REPORT_REASON_OPTIONS: ReadonlyArray<{ value: ReportReason; label: string }> = [\n   { value: 'spam', label: 'Spam' },\n   { value: 'harassment', label: 'Harassment or bullying' },\n   { value: 'sexual', label: 'Sexual content' },\n   { value: 'hate_speech', label: 'Hate speech' },\n   { value: 'violence', label: 'Violence or threats' },\n+  { value: 'self_harm', label: 'Self-harm or suicide' },\n   { value: 'misinformation', label: 'Misinformation' },\n   { value: 'other', label: 'Something else' },\n ];\n \n+export const REPORT_WIRE_REASON: Readonly<Record<ReportReason, ReportWireReason>> = {\n+  spam: 'spam',\n+  harassment: 'harassment',\n+  sexual: 'sexual',\n+  hate_speech: 'harassment',\n+  violence: 'harassment',\n+  self_harm: 'self_harm',\n+  misinformation: 'other',\n+  other: 'other',\n+};\n+\n+/** Shown with reasons that can mean someone is at risk right now. */\n+export const REPORT_EMERGENCY_NOTE =\n+  'Reports are not for emergencies. If you are in danger, call 911. If you are struggling emotionally, call or text 988.';\n+\n+export function reportNeedsEmergencyNote(reason: ReportReason | null): boolean {\n+  return reason === 'self_harm' || reason === 'violence';\n+}\n+\n /** Backend cap for the optional free-text context, per PR #263. */\n export const DETAILS_MAX = 1000;\n \n@@ -92,10 +124,18 @@ async function report(\n   payload: ReportMessagePayload,\n ): Promise<ReportMessageResponse> {\n   if (!messageId) throw new Error('messageId required');\n+  const wire = REPORT_WIRE_REASON[payload.reason];\n+  // A category the backend folds into a wider reason keeps its label first in\n+  // details so the reviewer still sees what was picked.\n+  const label =\n+    wire === payload.reason\n+      ? null\n+      : REPORT_REASON_OPTIONS.find((o) => o.value === payload.reason)?.label ?? null;\n+  const details = label ? (payload.details ? `${label}. ${payload.details}` : `${label}.`) : payload.details;\n   const body = {\n     messageId,\n-    reason: payload.reason,\n-    details: payload.details?.slice(0, DETAILS_MAX),\n+    reason: wire,\n+    details: details?.slice(0, DETAILS_MAX),\n   };\n   const res: AxiosResponse<unknown> = await api.post('/messages/report', body);\n   const data = (res.data ?? {}) as { id?: string; report_id?: string };"
+    },
+    {
+      "sha": "013447cc251c92e0da8a0c4c3204a8df6d0a998e",
+      "filename": "src/components/home/HomeHeaderActions.tsx",
+      "status": "modified",
+      "additions": 38,
+      "deletions": 4,
+      "changes": 42,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fcomponents%2Fhome%2FHomeHeaderActions.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fcomponents%2Fhome%2FHomeHeaderActions.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fhome%2FHomeHeaderActions.tsx?ref=ed57be76588012ea62e2d927f4165f3aec98fded",
+      "patch": "@@ -11,16 +11,17 @@\n  * The coach name comes from `GET /v1/clients/me/coach` (same endpoint as\n  * CoachIntroductionBanner); any failure keeps the generic label.\n  */\n-import React, { useEffect, useState } from 'react';\n-import { Pressable, StyleSheet, Text, View } from 'react-native';\n+import React, { useCallback, useEffect, useState } from 'react';\n+import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';\n import { Ionicons } from '@expo/vector-icons';\n-import { useNavigation, NavigationProp, ParamListBase } from '@react-navigation/native';\n+import { useFocusEffect, useNavigation, NavigationProp, ParamListBase } from '@react-navigation/native';\n import api from '../../services/api';\n import { useCurrentUser } from '../../hooks/useCurrentUser';\n import { useClientUnreadCount } from '../../hooks/useClientUnreadCount';\n import NotificationBadge from '../NotificationBadge';\n import { useTheme } from '../../theme/ThemeProvider';\n import { typography } from '../../theme/tokens';\n+import { logger } from '../../utils/logger';\n \n export function messageCoachLabel(coachName?: string | null): string {\n   const first = typeof coachName === 'string' ? coachName.trim().split(/\\s+/)[0] : '';\n@@ -52,7 +53,38 @@ export default function HomeHeaderActions() {\n     };\n   }, [coachId]);\n \n+  // Unread coach messages on the message entry (AUDIT-03-125 U2): without it a\n+  // client on Home had no sign the coach replied. GET /messages/unread-count\n+  // is live in production; refreshed on Home focus, foreground and every 30 s.\n+  const [unreadMessages, setUnreadMessages] = useState(0);\n+  const refreshUnreadMessages = useCallback(() => {\n+    if (!coachId) {\n+      setUnreadMessages(0);\n+      return;\n+    }\n+    api\n+      .get<{ total?: number }>('/messages/unread-count')\n+      .then((res) => {\n+        const n = Number(res?.data?.total ?? 0);\n+        setUnreadMessages(Number.isFinite(n) && n > 0 ? n : 0);\n+      })\n+      .catch((error: unknown) => logger.warn('homeHeader.unread-messages', { error: String(error) }));\n+  }, [coachId]);\n+  useFocusEffect(refreshUnreadMessages);\n+  useEffect(() => {\n+    const id = setInterval(refreshUnreadMessages, 30000);\n+    const sub = AppState.addEventListener('change', (state) => {\n+      if (state === 'active') refreshUnreadMessages();\n+    });\n+    return () => {\n+      clearInterval(id);\n+      sub.remove();\n+    };\n+  }, [refreshUnreadMessages]);\n+\n   const label = messageCoachLabel(coachName);\n+  const messageLabel =\n+    unreadMessages > 0 ? `${label}, ${unreadMessages > 99 ? '99+' : unreadMessages} unread` : label;\n   const bellLabel =\n     unreadCount > 0\n       ? `Notifications, ${unreadCount > 99 ? '99+' : unreadCount} unread`\n@@ -63,7 +95,7 @@ export default function HomeHeaderActions() {\n       <Pressable\n         onPress={() => navigation.navigate('Messages')}\n         accessibilityRole=\"button\"\n-        accessibilityLabel={label}\n+        accessibilityLabel={messageLabel}\n         testID=\"home-message-coach\"\n         style={({ pressed }) => [\n           styles.message,\n@@ -74,6 +106,7 @@ export default function HomeHeaderActions() {\n         <Text style={[typography.bodySmall, styles.messageText, { color: sc.textPrimary }]} numberOfLines={1}>\n           {label}\n         </Text>\n+        <NotificationBadge count={unreadMessages} />\n       </Pressable>\n       <Pressable\n         onPress={() => navigation.navigate('NotificationCenter')}\n@@ -101,6 +134,7 @@ const styles = StyleSheet.create({\n     minHeight: 44,\n     flexShrink: 1,\n     marginRight: 12,\n+    position: 'relative',\n   },\n   messageText: { marginLeft: 8, flexShrink: 1 },\n   bell: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', position: 'relative' },"
+    },
+    {
+      "sha": "d7db3ae9d370352869f2a77ddb50a3e0d2671ac3",
+      "filename": "src/components/home/__tests__/HomeHeaderActions.test.tsx",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 1,
+      "changes": 18,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fcomponents%2Fhome%2F__tests__%2FHomeHeaderActions.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fcomponents%2Fhome%2F__tests__%2FHomeHeaderActions.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fhome%2F__tests__%2FHomeHeaderActions.test.tsx?ref=ed57be76588012ea62e2d927f4165f3aec98fded",
+      "patch": "@@ -4,7 +4,13 @@ import * as fs from 'fs';\n import * as path from 'path';\n \n const mockNavigate = jest.fn();\n-jest.mock('@react-navigation/native', () => ({ useNavigation: () => ({ navigate: mockNavigate }) }));\n+jest.mock('@react-navigation/native', () => ({\n+  useNavigation: () => ({ navigate: mockNavigate }),\n+  useFocusEffect: (cb: () => void) => {\n+    const R = require('react');\n+    R.useEffect(() => cb(), [cb]);\n+  },\n+}));\n const mockUser = jest.fn();\n jest.mock('../../../hooks/useCurrentUser', () => ({ useCurrentUser: () => mockUser() }));\n jest.mock('../../../hooks/useClientUnreadCount', () => ({ useClientUnreadCount: () => 3 }));\n@@ -47,6 +53,16 @@ describe('HomeHeaderActions', () => {\n     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('NotificationCenter'));\n   });\n \n+  it('shows the unread coach-message count on the message entry (AUDIT-03-125 U2)', async () => {\n+    mockUser.mockReturnValue({ id: 'u1', coach_id: 'c1' });\n+    mockGet.mockImplementation(async (u: string) =>\n+      u === '/messages/unread-count' ? { data: { total: 2 } } : { data: { name: 'Bradley Gleave' } },\n+    );\n+    const { findByLabelText } = await render(<HomeHeaderActions />);\n+    expect(await findByLabelText('Message Bradley, 2 unread')).toBeTruthy();\n+    expect(mockGet).toHaveBeenCalledWith('/messages/unread-count');\n+  });\n+\n   it('HomeScreen mounts the actions and the deferred push card; ClientNavigator has no dead headerRight bell', () => {\n     const home = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'screens', 'client', 'HomeScreen.tsx'), 'utf8');\n     expect(home).toMatch(/<HomeHeaderActions \\/>/);"
+    },
+    {
+      "sha": "47cb6024f9434f0115a6e345574a0d66a084c0ec",
+      "filename": "src/components/messaging/ReportMessageSheet.tsx",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 1,
+      "changes": 15,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fcomponents%2Fmessaging%2FReportMessageSheet.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fcomponents%2Fmessaging%2FReportMessageSheet.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fmessaging%2FReportMessageSheet.tsx?ref=ed57be76588012ea62e2d927f4165f3aec98fded",
+      "patch": "@@ -11,7 +11,13 @@ import React, { useMemo, useState, useCallback } from 'react';\n import { Modal, View, Text, Pressable, TextInput, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';\n import { Ionicons } from '@expo/vector-icons';\n import { useTheme, ThemeColors } from '../../theme/ThemeProvider';\n-import { REPORT_REASON_OPTIONS, ReportReason, DETAILS_MAX } from '../../api/messagesApi';\n+import {\n+  REPORT_REASON_OPTIONS,\n+  REPORT_EMERGENCY_NOTE,\n+  ReportReason,\n+  DETAILS_MAX,\n+  reportNeedsEmergencyNote,\n+} from '../../api/messagesApi';\n \n export interface ReportMessageSheetProps {\n   visible: boolean;\n@@ -128,6 +134,12 @@ export function ReportMessageSheet({\n             );\n           })}\n \n+          {reportNeedsEmergencyNote(reason) ? (\n+            <Text style={styles.emergency} accessibilityRole=\"alert\" testID=\"report-emergency-note\">\n+              {REPORT_EMERGENCY_NOTE}\n+            </Text>\n+          ) : null}\n+\n           <Text style={styles.sectionLabel}>More details (optional)</Text>\n           <TextInput\n             style={styles.detailsInput}\n@@ -186,6 +198,7 @@ const makeStyles = (colors: ThemeColors) =>\n     title: { fontSize: 16, fontWeight: '600', color: colors.textPrimary },\n     content: { padding: 20, gap: 12 },\n     lede: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },\n+    emergency: { fontSize: 13, color: colors.textPrimary, lineHeight: 18, fontWeight: '600' },\n \n     previewWrap: {\n       backgroundColor: colors.surface,"
+    },
+    {
+      "sha": "1fc1c1bdbc9deeaebeeb8100630b1f798856a7c9",
+      "filename": "src/components/messaging/__tests__/ReportMessageSheet.test.tsx",
+      "status": "modified",
+      "additions": 15,
+      "deletions": 0,
+      "changes": 15,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fcomponents%2Fmessaging%2F__tests__%2FReportMessageSheet.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fcomponents%2Fmessaging%2F__tests__%2FReportMessageSheet.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fmessaging%2F__tests__%2FReportMessageSheet.test.tsx?ref=ed57be76588012ea62e2d927f4165f3aec98fded",
+      "patch": "@@ -58,6 +58,7 @@ describe('ReportMessageSheet', () => {\n     ['Sexual content', 'sexual'],\n     ['Hate speech', 'hate_speech'],\n     ['Violence or threats', 'violence'],\n+    ['Self-harm or suicide', 'self_harm'],\n     ['Misinformation', 'misinformation'],\n     ['Something else', 'other'],\n   ])('maps UI label \"%s\" to backend reason \"%s\"', async (label, value) => {\n@@ -76,6 +77,20 @@ describe('ReportMessageSheet', () => {\n     expect(onSubmit.mock.calls[0][0]).toMatchObject({ reason: value });\n   });\n \n+  it.each([\n+    ['Self-harm or suicide', true],\n+    ['Violence or threats', true],\n+    ['Spam', false],\n+  ])('shows the 911 / 988 line for \"%s\": %s', async (label, shown) => {\n+    const { getByLabelText, queryByTestId } = await render(\n+      <ReportMessageSheet visible messagePreview=\"\" onSubmit={jest.fn()} onClose={jest.fn()} />,\n+    );\n+    expect(queryByTestId('report-emergency-note')).toBeNull();\n+    await fireEvent.press(getByLabelText(label));\n+    if (shown) expect(queryByTestId('report-emergency-note')).not.toBeNull();\n+    else expect(queryByTestId('report-emergency-note')).toBeNull();\n+  });\n+\n   it('passes trimmed free-text details to onSubmit when supplied', async () => {\n     const onSubmit = jest.fn().mockResolvedValue(undefined);\n     const { getByLabelText } = await render("
+    },
+    {
+      "sha": "4ada9027864c42290bd7e6f4adf4a5d7e1136836",
+      "filename": "src/screens/client/__tests__/HomeScreen.macroMode.test.tsx",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 0,
+      "changes": 1,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fscreens%2Fclient%2F__tests__%2FHomeScreen.macroMode.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fscreens%2Fclient%2F__tests__%2FHomeScreen.macroMode.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2F__tests__%2FHomeScreen.macroMode.test.tsx?ref=ed57be76588012ea62e2d927f4165f3aec98fded",
+      "patch": "@@ -26,6 +26,7 @@ jest.mock('../../../store/clientStore', () => ({\n }));\n jest.mock('@react-navigation/native', () => ({\n   useNavigation: () => ({ navigate: jest.fn() }),\n+  useFocusEffect: () => undefined,\n }));\n jest.mock('../../../services/api', () => ({\n   workoutApi: { getAll: () => Promise.resolve({ data: [] }) },"
+    },
+    {
+      "sha": "3d23c766b28daf58c3c3c3b8db7afa6ce9b7cf68",
+      "filename": "src/screens/coach/ClientMessagesScreen.tsx",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 2,
+      "changes": 9,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fscreens%2Fcoach%2FClientMessagesScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fscreens%2Fcoach%2FClientMessagesScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FClientMessagesScreen.tsx?ref=ed57be76588012ea62e2d927f4165f3aec98fded",
+      "patch": "@@ -179,10 +179,15 @@ export default function ClientMessagesScreen() {\n       const unsubClient = subscribeToMessages(clientId, () => {\n         loadSinceNewest().then(markRead);\n       });\n+      // A client message lands on the coach's own channel: it is on screen,\n+      // so it is read (AUDIT-03-125 U1; was a refetch that left it unread).\n+      const refetchAndRead = () => {\n+        void loadSinceNewest().then(markRead);\n+      };\n       const unsubSelf = currentUser?.id\n         ? subscribeToMessages(\n             currentUser.id,\n-            loadSinceNewest,\n+            refetchAndRead,\n             thread.enabled\n               ? (ping) => {\n                   // The backend's public-channel ping carries no ids, so every\n@@ -196,7 +201,7 @@ export default function ClientMessagesScreen() {\n           )\n         : () => {};\n \n-      pollRef.current = setInterval(loadSinceNewest, FALLBACK_POLL_MS);\n+      pollRef.current = setInterval(refetchAndRead, FALLBACK_POLL_MS);\n       return () => {\n         unsubClient();\n         unsubSelf();"
+    },
+    {
+      "sha": "189230506326ae1dd1c2cc2ac723b843faadf833",
+      "filename": "src/screens/coach/__tests__/ClientMessagesScreenV2.test.tsx",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 1,
+      "changes": 19,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fscreens%2Fcoach%2F__tests__%2FClientMessagesScreenV2.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/ed57be76588012ea62e2d927f4165f3aec98fded/src%2Fscreens%2Fcoach%2F__tests__%2FClientMessagesScreenV2.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2F__tests__%2FClientMessagesScreenV2.test.tsx?ref=ed57be76588012ea62e2d927f4165f3aec98fded",
+      "patch": "@@ -39,7 +39,13 @@ jest.mock('../../../services/api', () => ({\n     sendClientMessage: (...a: unknown[]) => mockLegacySend(...(a as [string, string])),\n   },\n }));\n-jest.mock('../../../services/realtime', () => ({ subscribeToMessages: () => () => undefined }));\n+const mockSubs: Array<{ userId: string; onPing: () => void }> = [];\n+jest.mock('../../../services/realtime', () => ({\n+  subscribeToMessages: (userId: string, onPing: () => void) => {\n+    mockSubs.push({ userId, onPing });\n+    return () => undefined;\n+  },\n+}));\n jest.mock('../../../hooks/useCurrentUser', () => ({ useCurrentUser: () => ({ id: 'coach-1' }) }));\n jest.mock('../../../hooks/useBlockedUsersHydration', () => ({\n   useBlockedUsersHydration: () => ({ serverHydrationComplete: true }),\n@@ -92,6 +98,17 @@ const sentRow = (body: Record<string, unknown>) => ({\n });\n \n describe('ClientMessagesScreen with messaging_core_v2 ON', () => {\n+  it('a client message that arrives while the thread is open is marked read (AUDIT-03-125 U1)', async () => {\n+    mockSubs.length = 0;\n+    await render(<ClientMessagesScreen />);\n+    await waitFor(() => expect(postMock).toHaveBeenCalledWith(`${BASE}/read`, { up_to_message_id: 'm3' }, expect.anything()));\n+    mockRows.push(row({ id: 'm4', sender_id: 'client-1', body: 'are you there', created_at: new Date().toISOString() }));\n+    const self = mockSubs.filter((x) => x.userId === 'coach-1').pop();\n+    expect(self).toBeTruthy();\n+    self?.onPing();\n+    await waitFor(() => expect(postMock).toHaveBeenCalledWith(`${BASE}/read`, { up_to_message_id: 'm4' }, expect.anything()));\n+  });\n+\n   it('sides from sender_id: client message offers report, own message edit and delete; tombstone, Edited, read-up-to', async () => {\n     const { findByLabelText, getByLabelText, queryByLabelText, getByText } = await render(<ClientMessagesScreen />);\n     expect(getByText('Message deleted')).toBeTruthy();"
+    }
+  ]
+}

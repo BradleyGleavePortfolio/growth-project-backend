@@ -1,0 +1,443 @@
+diff --git a/src/navigation/CoachNavigator.tsx b/src/navigation/CoachNavigator.tsx
+index 0fdaa9af..5bd7e691 100644
+--- a/src/navigation/CoachNavigator.tsx
++++ b/src/navigation/CoachNavigator.tsx
+@@ -45,6 +45,11 @@ import { featureFlags } from '../config/featureFlags';
+ // bottom-tab ONLY when `featureFlags.coachCommunity` is true; when the flag is
+ // OFF the tab does not render and none of the six routes register.
+ import CoachCommunityNavigator from './CoachCommunityNavigator';
++// AUDIT-10-125 B-1: the community report queue is reachable from the coach
++// Messages header (CommunityReportsEntry) even while the coach Community tab
++// is off, so member reports always have a moderator screen (Apple 1.2).
++import CoachCommunityModerationScreen from '../screens/community/CoachCommunityModerationScreen';
++import CoachCommunityPostDetailScreen from '../screens/community/CoachCommunityPostDetailScreen';
+ import CommunityWearablePromptsScreen from '../screens/community/CommunityWearablePromptsScreen';
+ // Stage 3 — cross-pillar federated coach surface. Mounted as a nested
+ // navigator so the practice-selection picker, dashboard, roster, detail
+@@ -205,6 +210,9 @@ export type ClientsStackParamList = {
+   /** M-BCAST-123 — coach broadcasts list and composer (server flag FEATURE_COACH_BROADCASTS). */
+   CoachBroadcasts:          undefined;
+   CoachBroadcastComposer:   undefined;
++  /** AUDIT-10-125 B-1 — community report queue and the reported post. */
++  CoachCommunityModeration: undefined;
++  CoachCommunityPostDetail: { postId: string; flagged?: boolean };
+   /** M-FEATURED-123 — owner-only featured coach editor. */
+   FeaturedCoachEditor:      undefined;
+   /** Coach AI v1 — review/edit/approve AI-generated workout program draft. */
+@@ -448,6 +456,17 @@ function ClientsStackNavigator() {
+         component={BroadcastComposerScreen}
+         options={{ headerShown: true, title: 'New broadcast', headerBackTitle: 'Back' }}
+       />
++      {/* AUDIT-10-125 B-1 — opened from CommunityReportsEntry (coach Messages header). */}
++      <ClientsStack.Screen
++        name="CoachCommunityModeration"
++        component={CoachCommunityModerationScreen}
++        options={{ headerShown: true, title: 'Community reports', headerBackTitle: 'Back' }}
++      />
++      <ClientsStack.Screen
++        name="CoachCommunityPostDetail"
++        component={CoachCommunityPostDetailScreen}
++        options={{ headerShown: true, title: 'Reported post', headerBackTitle: 'Back' }}
++      />
+       {/* Coach AI v1 — companion routes for the per-client generate/edit/approve flow. */}
+       <ClientsStack.Screen
+         name="AIWorkoutDraft"
+diff --git a/src/screens/coach/CoachInboxV2.tsx b/src/screens/coach/CoachInboxV2.tsx
+index ba47ad1a..a70b9024 100644
+--- a/src/screens/coach/CoachInboxV2.tsx
++++ b/src/screens/coach/CoachInboxV2.tsx
+@@ -48,6 +48,7 @@ import {
+   type MuteDuration,
+ } from '../../api/messagingV2Api';
+ import { BroadcastsEntry } from './broadcasts/BroadcastsEntry';
++import { CommunityReportsEntry } from './CommunityReportsEntry';
+ 
+ const FALLBACK_POLL_MS = 60000;
+ const PAGE_LIMIT = 50;
+@@ -314,7 +315,10 @@ export default function CoachInboxV2({ onFeatureDisabled }: CoachInboxV2Props) {
+       <View style={styles.header}>
+         <View style={styles.headerRow}>
+           <Text style={styles.title}>Messages</Text>
+-          <BroadcastsEntry />
++          <View style={styles.headerEntries}>
++            <CommunityReportsEntry />
++            <BroadcastsEntry />
++          </View>
+         </View>
+         {totalUnread > 0 ? (
+           <Text style={styles.unreadSummary}>
+@@ -397,7 +401,9 @@ const makeStyles = (colors: ThemeColors) =>
+   StyleSheet.create({
+     container: { flex: 1, backgroundColor: colors.background },
+     header: { paddingHorizontal: 24, paddingTop: 60, marginBottom: 8 },
+-    headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
++    // Title + Reports + Broadcasts can be wider than a phone: wrap, never clip.
++    headerRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
++    headerEntries: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+     title: { fontFamily: 'CormorantGaramond_400Regular', fontSize: 32, lineHeight: 35, letterSpacing: 0.6, fontWeight: '400', color: colors.textPrimary },
+     unreadSummary: { fontSize: 13, color: colors.primary, fontWeight: '600', marginTop: 2 },
+     searchContainer: { paddingHorizontal: 24, marginBottom: 8, gap: 10 },
+diff --git a/src/screens/coach/CommunityReportsEntry.tsx b/src/screens/coach/CommunityReportsEntry.tsx
+new file mode 100644
+index 00000000..ef9fbb48
+--- /dev/null
++++ b/src/screens/coach/CommunityReportsEntry.tsx
+@@ -0,0 +1,79 @@
++import React from 'react';
++import { Pressable, StyleSheet, Text, View } from 'react-native';
++import { Ionicons } from '@expo/vector-icons';
++import { useNavigation, type NavigationProp, type ParamListBase } from '@react-navigation/native';
++import { useCoachFlagged } from '../../hooks/useCoachCommunity';
++import { spacing, typography } from '../../theme/tokens';
++import { useTheme } from '../../theme/ThemeProvider';
++
++/**
++ * "Reports" button in the coach Messages header (AUDIT-10-125 B-1, Apple 1.2).
++ *
++ * Members report posts, comments and wins from every community surface, and
++ * Community safety promises a review within 24 hours. The coach Community tab
++ * is off in the store build, so without this entry no coach screen opened the
++ * report queue. It opens the existing moderation queue (Hide / Warn / Ban /
++ * Dismiss) registered in the Clients stack and shows the open count.
++ *
++ * Shown only when GET /community/moderation/flagged answers: hidden while the
++ * community API is off (503), on a backend without the route (404), and while
++ * the probe is loading or failed, the same pattern as BroadcastsEntry.
++ */
++export function CommunityReportsEntry() {
++  const { colors } = useTheme();
++  const navigation = useNavigation<NavigationProp<ParamListBase>>();
++  const flagged = useCoachFlagged();
++  if (!Array.isArray(flagged.data)) return null;
++  const open = flagged.data.length;
++  const label =
++    open === 0
++      ? 'Open community reports, none waiting'
++      : `Open community reports, ${open} waiting for review`;
++  return (
++    <Pressable
++      // `initial: false` keeps the client list under the queue, so a Clients
++      // stack opened here for the first time still has its root.
++      onPress={() =>
++        navigation.navigate('ClientsStack', { screen: 'CoachCommunityModeration', initial: false })
++      }
++      accessibilityRole="button"
++      accessibilityLabel={label}
++      style={[styles.button, { borderColor: open > 0 ? colors.error : colors.border }]}
++      testID="messages-community-reports-entry"
++    >
++      <Ionicons name="flag-outline" size={16} color={open > 0 ? colors.error : colors.textPrimary} />
++      <Text style={[typography.bodySmall, { color: colors.textPrimary }]}>Reports</Text>
++      {open > 0 ? (
++        <View style={[styles.count, { backgroundColor: colors.error }]}>
++          <Text
++            style={[typography.bodySmall, styles.countText, { color: colors.textOnPrimary }]}
++            testID="messages-community-reports-count"
++          >
++            {open > 99 ? '99+' : String(open)}
++          </Text>
++        </View>
++      ) : null}
++    </Pressable>
++  );
++}
++
++const styles = StyleSheet.create({
++  button: {
++    minHeight: 44,
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: spacing.xs,
++    borderWidth: 1,
++    borderRadius: 2,
++    paddingHorizontal: spacing.md,
++  },
++  count: {
++    minWidth: 20,
++    height: 20,
++    borderRadius: 10,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 5,
++  },
++  countText: { fontWeight: '600' },
++});
+diff --git a/src/screens/coach/MessagesScreen.tsx b/src/screens/coach/MessagesScreen.tsx
+index 502d6b1e..7723f2ef 100644
+--- a/src/screens/coach/MessagesScreen.tsx
++++ b/src/screens/coach/MessagesScreen.tsx
+@@ -19,6 +19,7 @@ import { EmptyStateNoClients, EmptyStateNoResults } from '../../ui/empty-states'
+ import { useFeatureFlags } from '../../hooks/useFeatureFlags';
+ import CoachInboxV2 from './CoachInboxV2';
+ import { BroadcastsEntry } from './broadcasts/BroadcastsEntry';
++import { CommunityReportsEntry } from './CommunityReportsEntry';
+ 
+ // Backstop poll — Realtime broadcasts drive most refreshes now. Was 30s.
+ const FALLBACK_POLL_MS = 60000;
+@@ -124,7 +125,10 @@ function LegacyCoachMessages() {
+             </Text>
+           )}
+         </View>
+-        <BroadcastsEntry />
++        <View style={styles.headerEntries}>
++          <CommunityReportsEntry />
++          <BroadcastsEntry />
++        </View>
+       </View>
+ 
+       <View style={styles.searchContainer}>
+@@ -220,10 +224,14 @@ const makeStyles = (colors: ThemeColors) =>
+     flexDirection: 'row',
+     justifyContent: 'space-between',
+     alignItems: 'flex-start',
++    // Title + Reports + Broadcasts can be wider than a phone: wrap, never clip.
++    flexWrap: 'wrap',
++    gap: 8,
+     paddingHorizontal: 24,
+     paddingTop: 60,
+     marginBottom: 8,
+   },
++  headerEntries: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+   title: { fontFamily: 'CormorantGaramond_400Regular', fontSize: 32, lineHeight: 35, letterSpacing: 0.6, fontWeight: '400', color: colors.textPrimary },
+   unreadSummary: { fontSize: 13, color: colors.primary, fontWeight: '600', marginTop: 2 },
+   searchContainer: { paddingHorizontal: 24, marginBottom: 8 },
+diff --git a/src/screens/coach/__tests__/CoachInboxV2.test.tsx b/src/screens/coach/__tests__/CoachInboxV2.test.tsx
+index d8b45454..60002021 100644
+--- a/src/screens/coach/__tests__/CoachInboxV2.test.tsx
++++ b/src/screens/coach/__tests__/CoachInboxV2.test.tsx
+@@ -21,6 +21,8 @@ jest.mock('../../../services/api', () => ({
+ jest.mock('../../../tutorial/tutorialEvents', () => ({ emitTutorialSignal: jest.fn() }));
+ // The Broadcasts header entry has its own probe and tests (broadcasts.test.tsx).
+ jest.mock('../broadcasts/BroadcastsEntry', () => ({ BroadcastsEntry: () => null }));
++// The community Reports entry has its own probe and tests (CommunityReportsEntry.test.tsx).
++jest.mock('../CommunityReportsEntry', () => ({ CommunityReportsEntry: () => null }));
+ const mockSubscribe = jest.fn((..._args: unknown[]) => () => undefined);
+ jest.mock('../../../services/realtime', () => ({
+   subscribeToMessages: (...args: unknown[]) => mockSubscribe(...args),
+diff --git a/src/screens/coach/__tests__/CommunityReportsEntry.test.tsx b/src/screens/coach/__tests__/CommunityReportsEntry.test.tsx
+new file mode 100644
+index 00000000..77f22576
+--- /dev/null
++++ b/src/screens/coach/__tests__/CommunityReportsEntry.test.tsx
+@@ -0,0 +1,84 @@
++/**
++ * CommunityReportsEntry (AUDIT-10-125 B-1): the coach Messages header opens the
++ * community report queue, which no coach screen reached while the coach
++ * Community tab is off in the store build. Hidden when the queue route does
++ * not answer (community API off), shows the open count, and opens the queue
++ * registered in the Clients stack.
++ */
++import React from 'react';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
++
++jest.mock('../../../theme/ThemeProvider', () => ({
++  useTheme: () => ({ colors: new Proxy({}, { get: () => '#000000' }) }),
++}));
++jest.mock('../../../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn(), post: jest.fn(), put: jest.fn(), patch: jest.fn(), delete: jest.fn() },
++}));
++const mockNavigate = jest.fn();
++jest.mock('@react-navigation/native', () => {
++  const actual = jest.requireActual('@react-navigation/native');
++  return { ...actual, useNavigation: () => ({ navigate: mockNavigate }) };
++});
++
++import api from '../../../services/api';
++import { CommunityReportsEntry } from '../CommunityReportsEntry';
++
++const http = { get: api.get as jest.Mock };
++
++const item = (id: string) => ({
++  id,
++  workspace_id: '00000000-0000-4000-8000-000000000001',
++  target_type: 'post',
++  target_id: '00000000-0000-4000-8000-0000000000aa',
++  content: 'Reported text',
++  media: null,
++  removed: false,
++  respond_by: '2026-10-07T20:00:00.000Z',
++  overdue: false,
++  author_user_id: '00000000-0000-4000-8000-0000000000bb',
++  author_name: 'Sam Member',
++  cohort_name: null,
++  reason: 'harassment',
++  notes: null,
++  created_at: '2026-10-06T20:00:00.000Z',
++});
++
++function renderQ(node: React.ReactElement) {
++  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
++  return render(<QueryClientProvider client={qc}>{node}</QueryClientProvider>);
++}
++
++beforeEach(() => {
++  mockNavigate.mockReset();
++  http.get.mockReset();
++});
++
++describe('CommunityReportsEntry', () => {
++  it('is hidden while the community API is off', async () => {
++    http.get.mockRejectedValue({ isAxiosError: true, response: { status: 503, data: { code: 'community.disabled' } } });
++    const r = await renderQ(<CommunityReportsEntry />);
++    await waitFor(() => expect(http.get).toHaveBeenCalledWith('/community/moderation/flagged'));
++    expect(r.queryByTestId('messages-community-reports-entry')).toBeNull();
++  });
++
++  it('shows the open report count and opens the queue in the Clients stack', async () => {
++    http.get.mockResolvedValue({ data: { items: [item('00000000-0000-4000-8000-000000000011'), item('00000000-0000-4000-8000-000000000012')] } });
++    const r = await renderQ(<CommunityReportsEntry />);
++    await waitFor(() => expect(r.getByTestId('messages-community-reports-entry')).toBeTruthy());
++    expect(r.getByTestId('messages-community-reports-count').props.children).toBe('2');
++    await fireEvent.press(r.getByTestId('messages-community-reports-entry'));
++    expect(mockNavigate).toHaveBeenCalledWith('ClientsStack', {
++      screen: 'CoachCommunityModeration',
++      initial: false,
++    });
++  });
++
++  it('stays reachable with no open reports (no count badge)', async () => {
++    http.get.mockResolvedValue({ data: { items: [] } });
++    const r = await renderQ(<CommunityReportsEntry />);
++    await waitFor(() => expect(r.getByTestId('messages-community-reports-entry')).toBeTruthy());
++    expect(r.queryByTestId('messages-community-reports-count')).toBeNull();
++  });
++});
+diff --git a/src/screens/community/CoachCommunityModerationScreen.tsx b/src/screens/community/CoachCommunityModerationScreen.tsx
+index 93c44515..8b170f8f 100644
+--- a/src/screens/community/CoachCommunityModerationScreen.tsx
++++ b/src/screens/community/CoachCommunityModerationScreen.tsx
+@@ -63,6 +63,16 @@ import type {
+   CoachModerationOutcome,
+ } from '../../api/coachCommunityApi';
+ import VoiceNotePlayer from '../../components/community/VoiceNotePlayer';
++import { COMMUNITY_REPORT_REASONS } from '../../api/communitySafetyApi';
++
++/**
++ * The reviewer-facing label for a stored report reason code ("self_harm" ->
++ * "Self-harm or suicide"), the same labels the member picked from. An unknown
++ * code is shown as stored.
++ */
++export function reportReasonLabel(reason: string): string {
++  return COMMUNITY_REPORT_REASONS.find((r) => r.code === reason)?.label ?? reason;
++}
+ 
+ /** Reviewer-facing noun for each reported content type. */
+ export const TARGET_NOUN: Record<CoachFlaggedItem['target_type'], string> = {
+@@ -248,7 +258,7 @@ export default function CoachCommunityModerationScreen(): React.ReactElement {
+             </Text>
+           </View>
+           <Text style={[styles.meta, { color: semanticColors.textMuted }]} numberOfLines={1}>
+-            {(item.cohort_name ? `${item.cohort_name} · ` : '') + `${noun} · ${item.reason}`}
++            {(item.cohort_name ? `${item.cohort_name} · ` : '') + `${noun} · ${reportReasonLabel(item.reason)}`}
+           </Text>
+           {due ? (
+             <Text
+diff --git a/src/screens/community/CommunitySpaceScreen.tsx b/src/screens/community/CommunitySpaceScreen.tsx
+index b7229caf..68080844 100644
+--- a/src/screens/community/CommunitySpaceScreen.tsx
++++ b/src/screens/community/CommunitySpaceScreen.tsx
+@@ -4,6 +4,8 @@
+  * Cohort. The Lab/Hall is a POST feed, not a chat (§2.3).
+  *
+  * Empty state uses Roman voice + a primary action ("Be the first to post").
++ * A feed with posts carries a "New post" button above the list, so the
++ * composer stays reachable after the first post (AUDIT-10-125 B-2).
+  * Tapping a post opens its thread. Standardized on semanticColors / tokens.ts.
+  *
+  * The workspace prerequisite (useCommunityMe) is resolved BEFORE any post empty
+@@ -269,7 +271,24 @@ export default function CommunitySpaceScreen({
+           testID="community-space-screen"
+           data={data}
+           keyExtractor={(p) => p.id}
+-          ListHeaderComponent={voiceSection}
++          ListHeaderComponent={
++            <>
++              {voiceSection}
++              <HapticPressable
++                intent="light"
++                onPress={compose}
++                accessibilityRole="button"
++                accessibilityLabel="Write a new post"
++                testID="community-space-new-post"
++                style={[styles.newPost, { borderColor: semanticColors.accent }]}
++              >
++                <Ionicons name="create-outline" size={18} color={semanticColors.accentText} />
++                <Text style={[styles.retryLabel, { color: semanticColors.accentText }]}>
++                  New post
++                </Text>
++              </HapticPressable>
++            </>
++          }
+           renderItem={({ item }) => (
+             <PostCard
+               post={item}
+@@ -316,4 +335,16 @@ const styles = StyleSheet.create({
+   },
+   retryLabel: { fontSize: 14, fontWeight: '600' },
+   list: { paddingVertical: 8 },
++  newPost: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    alignSelf: 'flex-start',
++    gap: spacing.xs,
++    marginHorizontal: spacing.lg,
++    marginBottom: spacing.sm,
++    borderWidth: StyleSheet.hairlineWidth,
++    borderRadius: radius.pill,
++    paddingHorizontal: spacing.lg,
++    minHeight: 44,
++  },
+ });
+diff --git a/src/screens/community/__tests__/CommunitySpaceScreen.test.tsx b/src/screens/community/__tests__/CommunitySpaceScreen.test.tsx
+index 1b3b7bd3..8f5e1b17 100644
+--- a/src/screens/community/__tests__/CommunitySpaceScreen.test.tsx
++++ b/src/screens/community/__tests__/CommunitySpaceScreen.test.tsx
+@@ -218,6 +218,24 @@ describe.each(['hall', 'cohort'] as const)(
+       expect(mockNavigate).not.toHaveBeenCalledWith('CommunityComposer', expect.anything());
+     });
+ 
++    it('a feed with posts keeps a New post button that opens the composer (AUDIT-10-125 B-2)', async () => {
++      // Before this fix the only composer entry was the empty state's
++      // "Be the first to post": once one post existed nobody could post again.
++      mockPosts.data = [{ id: 'p-1' }, { id: 'p-2' }];
++      await render(
++        <CommunitySpaceScreen
++          embedded
++          space={space}
++          workspaceId="ws-resolved"
++          prerequisiteLoading={false}
++          prerequisiteError={false}
++        />,
++      );
++      expect(screen.getByTestId('post-card-p-1')).toBeTruthy();
++      await fireEvent.press(screen.getByTestId('community-space-new-post'));
++      expect(mockNavigate).toHaveBeenCalledWith('CommunityComposer', { mode: 'post' });
++    });
++
+     it('opened as a route, it reads the workspace from /community/me (B-E2E-1)', async () => {
+       mockMe.data = { workspace_id: 'ws-me' };
+       mockPosts.data = [{ id: 'p-route' }];
+diff --git a/src/screens/community/__tests__/coachCommunityScreens.test.tsx b/src/screens/community/__tests__/coachCommunityScreens.test.tsx
+index e69de3a2..971a7c85 100644
+--- a/src/screens/community/__tests__/coachCommunityScreens.test.tsx
++++ b/src/screens/community/__tests__/coachCommunityScreens.test.tsx
+@@ -923,7 +923,7 @@ describe('Coach mutations — create / invite / remove / ack / hide', () => {
+     expect(getByTestId(`coach-community-flagged-due-${id}`).props.children).toBe(
+       'Review within 5h',
+     );
+-    expect(getByText('Spring block · voice note · spam')).toBeTruthy();
++    expect(getByText('Spring block · voice note · Spam or scams')).toBeTruthy();
+     // Opening a decision names the voice note, not a raw enum.
+     await fireEvent.press(getByTestId(`coach-community-flagged-hide-${id}`));
+     expect(getByText(/Hide this voice note from Bob\?/)).toBeTruthy();
+@@ -955,7 +955,7 @@ describe('Coach mutations — create / invite / remove / ack / hide', () => {
+     const { getByTestId, getByText, queryByTestId } = await render(
+       <CoachCommunityModerationScreen />,
+     );
+-    expect(getByText('Spring block · win · spam')).toBeTruthy();
++    expect(getByText('Spring block · win · Spam or scams')).toBeTruthy();
+     expect(
+       getByTestId('coach-community-flagged-due-cccccccc-cccc-cccc-cccc-ccccccccccc1').props
+         .children,

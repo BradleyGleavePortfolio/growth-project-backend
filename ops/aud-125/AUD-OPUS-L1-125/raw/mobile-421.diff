@@ -1,0 +1,544 @@
+diff --git a/src/config/featureFlags.ts b/src/config/featureFlags.ts
+index 97a4c0a1..2a74c64e 100644
+--- a/src/config/featureFlags.ts
++++ b/src/config/featureFlags.ts
+@@ -108,8 +108,9 @@ export const featureFlags = {
+   /**
+    * The action-gated Roman tour after the plan reveal, the pinned macro and
+    * plan explanation cards on Home and Train, the Home "Message your coach"
+-   * row, the Profile and more "Connected devices" / "Health and sleep" rows,
+-   * and Settings > Tutorial. OFF by default unconditionally (owner decision
++   * row, the Profile and more "Connected devices" / "Health and sleep" rows at
++   * the top of the list (AUDIT-11-125: without it they still show after the
++   * plan rows on iPhone and in Health Connect builds), and Settings > Tutorial. OFF by default unconditionally (owner decision
+    * T-1); ON only in the `clinic` EAS build profile. Turning it off is the
+    * whole rollback: no overlay, no cards, no rows, and startClientTutorial()
+    * returns false. See src/tutorial/README.md for the companion flags the
+diff --git a/src/screens/client/MoreScreen.tsx b/src/screens/client/MoreScreen.tsx
+index 39633287..0c8fe446 100644
+--- a/src/screens/client/MoreScreen.tsx
++++ b/src/screens/client/MoreScreen.tsx
+@@ -9,6 +9,7 @@ import {
+   StyleSheet,
+   ScrollView,
+   SafeAreaView,
++  Platform,
+ } from 'react-native';
+ import HapticPressable from '../../components/HapticPressable';
+ import { Ionicons } from '@expo/vector-icons';
+@@ -16,6 +17,7 @@ import { useNavigation, NavigationProp, ParamListBase } from '@react-navigation/
+ import { Spacing, Radius } from '../../theme/index';
+ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+ import { featureFlags } from '../../config/featureFlags';
++import { isAndroidHealthConnectEnabled } from '../../config/healthConnect';
+ // FACE+VOICE contract (D-012): the Roman entry row is a Roman-branded surface,
+ // so it carries Roman's actual face rather than a disembodied sparkles glyph.
+ // Canonical avatar lives in the roman/ lane (D-013).
+@@ -202,12 +204,25 @@ const ROMAN_MORE_ITEM: MoreItem = {
+ };
+ 
+ /**
+- * Clinic tutorial rows (featureFlags.clientTutorial, default OFF): the
+- * wearable Connections hub and the Health shell (Fitness + Recovery / sleep)
+- * are registered in MoreStack but had no menu entry. The tutorial's wearable
+- * step points at these two rows, so they ship behind the same flag.
++ * Wearables rows: the Connections hub and the Health shell (Fitness +
++ * Recovery / sleep). The clinic tutorial's wearable step spotlights them.
++ *
++ * AUDIT-11-125: they used to ship only with featureFlags.clientTutorial,
++ * which the iOS store (production) profile leaves off, so an iPhone client
++ * had no way to connect Apple Health and the binary carried HealthKit with no
++ * HealthKit screen (App Review 2.5.1). They now show wherever this build can
++ * read a phone health store: always on iPhone, and on Android only in a build
++ * with Health Connect (the clinic profile), or with the tutorial on as before.
+  */
+-const TUTORIAL_MORE_ITEMS: MoreItem[] = [
++function showsWearableRows(): boolean {
++  return (
++    featureFlags.clientTutorial ||
++    Platform.OS === 'ios' ||
++    isAndroidHealthConnectEnabled()
++  );
++}
++
++const WEARABLE_MORE_ITEMS: MoreItem[] = [
+   {
+     icon: 'heart-outline',
+     label: 'Health and sleep',
+@@ -232,12 +247,14 @@ export default function MoreScreen() {
+   const navigation = useNavigation<NavigationProp<ParamListBase>>();
+   const items = useMemo<MoreItem[]>(
+     () => {
+-      const base = [
+-        ...(featureFlags.romanChat ? [ROMAN_MORE_ITEM] : []),
+-        ...PLAN_MORE_ITEMS,
+-        ...MORE_ITEMS,
+-      ];
+-      return featureFlags.clientTutorial ? [...TUTORIAL_MORE_ITEMS, ...base] : base;
++      const roman = featureFlags.romanChat ? [ROMAN_MORE_ITEM] : [];
++      // The clinic tutorial spotlights the wearables rows, so they stay at the
++      // top there (unchanged); elsewhere they follow the plan rows.
++      if (featureFlags.clientTutorial) {
++        return [...WEARABLE_MORE_ITEMS, ...roman, ...PLAN_MORE_ITEMS, ...MORE_ITEMS];
++      }
++      const wearables = showsWearableRows() ? WEARABLE_MORE_ITEMS : [];
++      return [...roman, ...PLAN_MORE_ITEMS, ...wearables, ...MORE_ITEMS];
+     },
+     [],
+   );
+diff --git a/src/screens/client/__tests__/MoreScreen.reach.test.tsx b/src/screens/client/__tests__/MoreScreen.reach.test.tsx
+index bb24de70..2aefb25d 100644
+--- a/src/screens/client/__tests__/MoreScreen.reach.test.tsx
++++ b/src/screens/client/__tests__/MoreScreen.reach.test.tsx
+@@ -26,6 +26,10 @@ jest.mock("../../../config/featureFlags", () => ({
+     { get: (_t, k: string) => mockFlags[k] ?? false },
+   ),
+ }));
++let mockHealthConnectBuild = false;
++jest.mock("../../../config/healthConnect", () => ({
++  isAndroidHealthConnectEnabled: () => mockHealthConnectBuild,
++}));
+ jest.mock("../../../theme/ThemeProvider", () => ({
+   useTheme: () => ({
+     colors: new Proxy({}, { get: () => "#000000" }),
+@@ -45,6 +49,7 @@ jest.mock("../../../components/HapticPressable", () => {
+   return Pressable;
+ });
+ 
++import { Platform } from "react-native";
+ import MoreScreen, { PLAN_MORE_ITEMS } from "../MoreScreen";
+ 
+ const NAV = fs.readFileSync(
+@@ -127,3 +132,62 @@ describe("More: your plan rows (S-REACH)", () => {
+     expect(labels[1]).toBe("Meal plan");
+   });
+ });
++
++// AUDIT-11-125: the wearables rows were tied to the clinic tutorial flag, which
++// the iOS store build leaves off, so an iPhone client had no way to reach Apple Health.
++describe("More: Health and sleep / Connected devices (AUDIT-11-125)", () => {
++  const originalOS = Platform.OS;
++  function setOS(os: string) {
++    Object.defineProperty(Platform, "OS", { configurable: true, value: os });
++  }
++  beforeEach(() => {
++    jest.clearAllMocks();
++    mockFlags.romanChat = true;
++    mockFlags.clientTutorial = false;
++    mockHealthConnectBuild = false;
++  });
++  afterEach(() => {
++    setOS(originalOS);
++    mockFlags.romanChat = false;
++    mockFlags.clientTutorial = false;
++  });
++
++  function labels(): string[] {
++    return screen.getAllByRole("button").map((b) => b.props.accessibilityLabel);
++  }
++
++  it("iPhone store build (tutorial off): both rows show after the plan rows and open their screens", async () => {
++    setOS("ios");
++    await render(<MoreScreen />);
++    const l = labels();
++    expect(l[0]).toBe("Roman");
++    expect(l.indexOf("Health and sleep")).toBeGreaterThan(l.indexOf("Exercise library"));
++    expect(l.indexOf("Connected devices")).toBe(l.indexOf("Health and sleep") + 1);
++    await fireEvent.press(screen.getByLabelText("Connected devices"));
++    expect(mockNavigate).toHaveBeenCalledWith("Connections");
++    await fireEvent.press(screen.getByLabelText("Health and sleep"));
++    expect(mockNavigate).toHaveBeenCalledWith("Health");
++  });
++
++  it("Android build without Health Connect (tutorial off): no wearables rows", async () => {
++    setOS("android");
++    await render(<MoreScreen />);
++    expect(screen.queryByLabelText("Connected devices")).toBeNull();
++    expect(screen.queryByLabelText("Health and sleep")).toBeNull();
++  });
++
++  it("Android build with Health Connect: both rows show", async () => {
++    setOS("android");
++    mockHealthConnectBuild = true;
++    await render(<MoreScreen />);
++    expect(screen.getByLabelText("Connected devices")).toBeTruthy();
++    expect(screen.getByLabelText("Health and sleep")).toBeTruthy();
++  });
++
++  it("clinic tutorial on: the rows stay first, as before", async () => {
++    setOS("android");
++    mockFlags.clientTutorial = true;
++    await render(<MoreScreen />);
++    expect(labels().slice(0, 3)).toEqual(["Health and sleep", "Connected devices", "Roman"]);
++  });
++});
+diff --git a/src/screens/client/wearables/ConnectionsScreen.tsx b/src/screens/client/wearables/ConnectionsScreen.tsx
+index 96d02e40..1e977eb7 100644
+--- a/src/screens/client/wearables/ConnectionsScreen.tsx
++++ b/src/screens/client/wearables/ConnectionsScreen.tsx
+@@ -16,9 +16,10 @@
+  *   • a primary action — Connect / Reconnect / Disconnect.
+  *
+  * Data comes from `useWearableConnections` (cache key ['wearable-connections']).
+- * The list is the join of the user's existing connections with the full
+- * provider catalog so providers the user has not connected yet still appear
+- * with a Connect button. Tapping Connect / Reconnect opens
++ * The list is the join of the user's existing connections with the sources
++ * this phone can connect (AUDIT-11-125: Apple Health on iPhone, Health Connect
++ * and Samsung Health on Android), so those appear with a Connect button even
++ * before a first connect. Tapping Connect / Reconnect opens
+  * `ConnectProviderSheet`; Disconnect asks first (DisconnectConfirmDialog, S14 round 4b) and then calls the soft-disconnect mutation.
+  *
+  * States: loading skeleton, error-with-retry, and a per-row pending state on
+@@ -144,14 +145,30 @@ interface ProviderRow {
+ }
+ 
+ /**
+- * Build the flat row list: every provider in the catalog, enriched with the
+- * user's connection status when one exists. Connected/expired/error rows sort
+- * first (they need attention or are active); not-connected rows follow. Within
+- * a tier, alphabetical by display name for stable ordering.
++ * AUDIT-11-125: true when this phone can connect the provider itself: Apple
++ * Health on an iPhone, Health Connect (and Samsung Health, which shares
++ * through it) on Android. The cloud services in the catalog (Garmin, Oura,
++ * WHOOP, ...) are not switched on for launch, so offering Connect for them, or
++ * for the other platform's store, only ever ended in "isn't switched on yet".
++ */
++function connectableHere(provider: WearableProvider, here: WearableProvider | null): boolean {
++  if (here == null) return false;
++  if (provider === here) return true;
++  return here === 'HEALTH_CONNECT' && provider === 'SAMSUNG_HEALTH';
++}
++
++/**
++ * Build the flat row list: the sources this phone can connect, plus any other
++ * provider the person already has a connection for (so it can still be
++ * reconnected or disconnected), enriched with the connection status.
++ * Connected/expired/error rows sort first (they need attention or are
++ * active); not-connected rows follow. Within a tier, alphabetical by display
++ * name for stable ordering.
+  */
+ export function buildRows(
+   connections: WearableConnection[],
+   local?: { provider: WearableProvider; connectionId: string | null } | null,
++  here: WearableProvider | null = deviceSourceForPlatform(),
+ ): ProviderRow[] {
+   const byProvider = new Map<WearableProvider, WearableConnection>();
+   for (const c of connections) {
+@@ -186,7 +203,7 @@ export function buildRows(
+   // as an active source.
+   const rows: ProviderRow[] = WEARABLE_PROVIDERS.map((provider) =>
+     provider === 'SAMSUNG_HEALTH' ? { ...rowFor('HEALTH_CONNECT'), provider } : rowFor(provider),
+-  );
++  ).filter((row) => row.status !== 'disconnected' || connectableHere(row.provider, here));
+ 
+   const tier = (s: BadgeTone): number =>
+     s === 'connected' ? 0 : s === 'error' || s === 'expired' || s === 'notSyncing' ? 1 : 2;
+diff --git a/src/screens/client/wearables/HealthFitnessScreen.tsx b/src/screens/client/wearables/HealthFitnessScreen.tsx
+index 8170df93..9b0a9bef 100644
+--- a/src/screens/client/wearables/HealthFitnessScreen.tsx
++++ b/src/screens/client/wearables/HealthFitnessScreen.tsx
+@@ -159,6 +159,10 @@ export default function HealthFitnessScreen({
+     navigation.navigate('Connections');
+   }, [navigation]);
+ 
++  // AUDIT-11-125: the coach embed (clientId) is not in the client navigator, so
++  // it has no Connections or Metric Detail route; its cards are read-only.
++  const isCoachEmbed = clientId != null;
++
+   const goToMetricDetail = useCallback(
+     (metric: WearableMetricType) => {
+       navigation.navigate('WearableMetricDetail', {
+@@ -268,7 +272,7 @@ export default function HealthFitnessScreen({
+         <HealthFitnessEmptyState
+           tone={tone}
+           reduceMotion={reduceMotion}
+-          onConnect={goToConnections}
++          onConnect={isCoachEmbed ? undefined : goToConnections}
+         />
+         {aiPanelSlot}
+       </ScrollView>
+@@ -315,25 +319,25 @@ export default function HealthFitnessScreen({
+           findSeries(data, 'RESTING_HEART_RATE_BPM')
+         }
+         tone={tone}
+-        onPress={() => goToMetricDetail('RESTING_HEART_RATE_BPM')}
++        onPress={isCoachEmbed ? undefined : () => goToMetricDetail('RESTING_HEART_RATE_BPM')}
+       />
+       <WorkoutsCard
+         workoutSeries={findSeries(data, 'WORKOUT_DURATION_MIN')}
+         tone={tone}
+-        onPress={() => goToMetricDetail('WORKOUT_DURATION_MIN')}
++        onPress={isCoachEmbed ? undefined : () => goToMetricDetail('WORKOUT_DURATION_MIN')}
+       />
+       <BodyCard
+         weightSeries={findSeries(data, 'BODY_WEIGHT_KG')}
+         bodyFatSeries={findSeries(data, 'BODY_FAT_PCT')}
+         tone={tone}
+-        onPress={() => goToMetricDetail('BODY_WEIGHT_KG')}
++        onPress={isCoachEmbed ? undefined : () => goToMetricDetail('BODY_WEIGHT_KG')}
+       />
+       <FitnessTrendCard
+         series={findSeries(data, 'STEPS')}
+         metric="STEPS"
+         tone={tone}
+         reduceMotion={reduceMotion}
+-        onPress={() => goToMetricDetail('STEPS')}
++        onPress={isCoachEmbed ? undefined : () => goToMetricDetail('STEPS')}
+       />
+ 
+       {aiPanelSlot}
+diff --git a/src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx b/src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx
+index c90258c6..df817065 100644
+--- a/src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx
++++ b/src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx
+@@ -63,7 +63,7 @@ jest.mock('../../../../lib/consultation/report', () => ({
+ }));
+ 
+ import ConnectionsScreen, { buildRows } from '../ConnectionsScreen';
+-import { configFor, WEARABLE_PROVIDERS } from '../../../../api/wearablesConnectionsApi';
++import { configFor } from '../../../../api/wearablesConnectionsApi';
+ import { disconnectConfirmCopy } from '../disconnectCopy';
+ import { emptyImportMessage } from '../onDeviceCopy';
+ import { OnDeviceSessionChangedError } from '../../../../services/health/sessionFence';
+@@ -113,18 +113,17 @@ beforeEach(() => {
+ });
+ 
+ describe('ConnectionsScreen — list + badges', () => {
+-  it('renders a row for every provider in the catalog', async () => {
++  // AUDIT-11-125: only what this phone can connect is offered. The cloud
++  // services are not switched on for launch; their Connect only ever said
++  // "isn't switched on yet".
++  it('on an iPhone with nothing connected, offers Apple Health only', async () => {
+     mockUseWearableConnections.mockReturnValue(queryResult({ data: [] }));
+     await render(<ConnectionsScreen />);
+-    // Every provider's display name appears (Apple Health, Oura, WHOOP, …).
+-    expect(screen.getByText('Apple Health')).toBeTruthy();
+-    expect(screen.getByText('Oura')).toBeTruthy();
+-    expect(screen.getByText('WHOOP')).toBeTruthy();
+-    // Sanity: the number of rendered Connect/Reconnect/Disconnect actions
+-    // equals the catalog size (one primary action per provider row).
+-    const actions = screen.getAllByRole('button');
+-    // Header has no buttons; each row has exactly one action button.
+-    expect(actions.length).toBeGreaterThanOrEqual(WEARABLE_PROVIDERS.length);
++    expect(screen.getByLabelText('Connect Apple Health')).toBeTruthy();
++    for (const name of ['Oura', 'WHOOP', 'Garmin', 'Strava', 'Peloton', 'Health Connect', 'Samsung Health']) {
++      expect(screen.queryByText(name)).toBeNull();
++    }
++    expect(screen.getAllByRole('button')).toHaveLength(1);
+   });
+ 
+   it('shows the Connected badge + relative sync time for a connected provider', async () => {
+@@ -160,8 +159,9 @@ describe('ConnectionsScreen — list + badges', () => {
+   it('shows the Not connected badge + Connect action for an unconnected provider', async () => {
+     mockUseWearableConnections.mockReturnValue(queryResult({ data: [] }));
+     await render(<ConnectionsScreen />);
+-    // Strava is not connected → "Connect Strava".
+-    expect(screen.getByLabelText('Connect Strava')).toBeTruthy();
++    // Apple Health is not connected → "Connect Apple Health".
++    expect(screen.getByText('Not connected')).toBeTruthy();
++    expect(screen.getByLabelText('Connect Apple Health')).toBeTruthy();
+   });
+ });
+ 
+@@ -169,9 +169,9 @@ describe('ConnectionsScreen — interactions', () => {
+   it('opens the connect sheet with the tapped provider on Connect', async () => {
+     mockUseWearableConnections.mockReturnValue(queryResult({ data: [] }));
+     await render(<ConnectionsScreen />);
+-    await fireEvent.press(screen.getByLabelText('Connect Strava'));
++    await fireEvent.press(screen.getByLabelText('Connect Apple Health'));
+     expect(sheetProps.visible).toBe(true);
+-    expect(sheetProps.provider).toBe('STRAVA');
++    expect(sheetProps.provider).toBe('APPLE_HEALTHKIT');
+   });
+ 
+   // Opus C-317-4 / owner ruling 2026-10-02: Disconnect asks first.
+@@ -392,7 +392,7 @@ describe('ConnectionsScreen — Samsung Health row (B-364-1)', () => {
+     ['a stored Samsung row only', [legacy], none],
+     ['a stored Samsung row and Health Connect', [legacy, hc], here],
+   ])('mirrors Health Connect: %s', (_case, conns, local) => {
+-    const rows = buildRows(conns as Conns, local);
++    const rows = buildRows(conns as Conns, local, 'HEALTH_CONNECT');
+     const samsung = rows.find((r) => r.provider === 'SAMSUNG_HEALTH');
+     expect({ ...samsung, provider: 'HEALTH_CONNECT' }).toEqual(
+       rows.find((r) => r.provider === 'HEALTH_CONNECT'),
+@@ -423,3 +423,34 @@ describe('ConnectionsScreen — Samsung Health row (B-364-1)', () => {
+     expect(empty).toContain('In Samsung Health, open Settings, then Health Connect');
+   });
+ });
++
++// AUDIT-11-125: Connect is offered only for what this phone can connect; a
++// provider the person already has a connection for stays listed to manage.
++describe('ConnectionsScreen — sources offered on this phone (AUDIT-11-125)', () => {
++  type Conns = Parameters<typeof buildRows>[0];
++  const names = (rows: ReturnType<typeof buildRows>) => rows.map((r) => r.provider).sort();
++
++  it('Android offers Health Connect and Samsung Health, no cloud service and no Apple Health', () => {
++    expect(names(buildRows([], null, 'HEALTH_CONNECT'))).toEqual(['HEALTH_CONNECT', 'SAMSUNG_HEALTH']);
++  });
++
++  it('iPhone offers Apple Health only', () => {
++    expect(names(buildRows([], null, 'APPLE_HEALTHKIT'))).toEqual(['APPLE_HEALTHKIT']);
++  });
++
++  it('keeps a provider with an existing connection, and drops one that is disconnected', () => {
++    const conns = [
++      connection('OURA', 'connected'),
++      connection('GARMIN', 'expired'),
++      connection('STRAVA', 'disconnected'),
++      connection('HEALTH_CONNECT', 'connected'),
++    ] as Conns;
++    expect(names(buildRows(conns, null, 'APPLE_HEALTHKIT'))).toEqual([
++      'APPLE_HEALTHKIT',
++      'GARMIN',
++      'HEALTH_CONNECT',
++      'OURA',
++      'SAMSUNG_HEALTH',
++    ]);
++  });
++});
+diff --git a/src/screens/client/wearables/__tests__/HealthFitnessEmptyState.test.tsx b/src/screens/client/wearables/__tests__/HealthFitnessEmptyState.test.tsx
+new file mode 100644
+index 00000000..875fbab9
+--- /dev/null
++++ b/src/screens/client/wearables/__tests__/HealthFitnessEmptyState.test.tsx
+@@ -0,0 +1,48 @@
++/**
++ * AUDIT-11-125: the Health empty state names only what this phone can connect
++ * (cloud trackers are not switched on for launch), and the coach embed shows
++ * coach copy with no Connect button (a coach's client view has no Connections
++ * route, so the button did nothing).
++ */
++import React from 'react';
++import { Platform } from 'react-native';
++import { fireEvent, render, screen } from '@testing-library/react-native';
++
++jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
++jest.mock('../cards/ThreeRingHero', () => ({ __esModule: true, default: () => null }));
++
++import HealthFitnessEmptyState from '../empty/HealthFitnessEmptyState';
++
++const originalOS = Platform.OS;
++function setOS(os: string) {
++  Object.defineProperty(Platform, 'OS', { configurable: true, value: os });
++}
++afterEach(() => setOS(originalOS));
++
++describe('HealthFitnessEmptyState (AUDIT-11-125)', () => {
++  it('iPhone: names Apple Health only, and Connect opens Connections', async () => {
++    setOS('ios');
++    const onConnect = jest.fn();
++    await render(<HealthFitnessEmptyState tone="warm" reduceMotion onConnect={onConnect} />);
++    expect(
++      screen.getByText(
++        'Connect Apple Health to fill your rings and watch your heart, workouts and body trends come to life.',
++      ),
++    ).toBeTruthy();
++    expect(screen.queryByText(/Garmin|Fitbit/)).toBeNull();
++    await fireEvent.press(screen.getByLabelText('Connect a tracker'));
++    expect(onConnect).toHaveBeenCalledTimes(1);
++  });
++
++  it('Android: names Health Connect', async () => {
++    setOS('android');
++    await render(<HealthFitnessEmptyState tone="warm" reduceMotion onConnect={jest.fn()} />);
++    expect(screen.getByText(/^Connect Health Connect to fill your rings/)).toBeTruthy();
++  });
++
++  it('coach embed (no onConnect): coach copy and no Connect button', async () => {
++    await render(<HealthFitnessEmptyState tone="warm" reduceMotion />);
++    expect(screen.getByText('No health data from this client yet')).toBeTruthy();
++    expect(screen.queryByLabelText('Connect a tracker')).toBeNull();
++  });
++});
+diff --git a/src/screens/client/wearables/empty/HealthFitnessEmptyState.tsx b/src/screens/client/wearables/empty/HealthFitnessEmptyState.tsx
+index 0045e1c7..b9499fee 100644
+--- a/src/screens/client/wearables/empty/HealthFitnessEmptyState.tsx
++++ b/src/screens/client/wearables/empty/HealthFitnessEmptyState.tsx
+@@ -11,7 +11,7 @@
+  */
+ 
+ import React from 'react';
+-import { Pressable, StyleSheet, Text, View } from 'react-native';
++import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+ import { Ionicons } from '@expo/vector-icons';
+ import {
+   colors,
+@@ -25,7 +25,21 @@ import ThreeRingHero, { type RingDatum } from '../cards/ThreeRingHero';
+ interface Props {
+   readonly tone: BucketTone;
+   readonly reduceMotion: boolean;
+-  readonly onConnect: () => void;
++  /**
++   * Opens Connections. AUDIT-11-125: omitted in the coach embed (a coach's
++   * client view has no Connections route), which then shows coach copy and no
++   * button.
++   */
++  readonly onConnect?: () => void;
++}
++
++/**
++ * AUDIT-11-125: name only what this phone can connect. Cloud trackers are not
++ * switched on for launch, so "Garmin, Fitbit or any tracker" was not true.
++ */
++function connectBody(): string {
++  const store = Platform.OS === 'android' ? 'Health Connect' : 'Apple Health';
++  return `Connect ${store} to fill your rings and watch your heart, workouts and body trends come to life.`;
+ }
+ 
+ export default function HealthFitnessEmptyState({
+@@ -53,25 +67,36 @@ export default function HealthFitnessEmptyState({
+         empty
+       />
+ 
+-      <Text style={styles.title}>See your fitness in one place</Text>
+-      <Text style={styles.body}>
+-        Connect Apple Health, Garmin, Fitbit or any tracker to fill your rings
+-        and watch your heart, workouts and body trends come to life.
+-      </Text>
++      {onConnect == null ? (
++        <>
++          <Text style={styles.title}>No health data from this client yet</Text>
++          <Text style={styles.body}>
++            When your client connects Apple Health or Health Connect in the app, their activity,
++            heart rate and workouts show here.
++          </Text>
++        </>
++      ) : (
++        <>
++          <Text style={styles.title}>See your fitness in one place</Text>
++          <Text style={styles.body}>{connectBody()}</Text>
++        </>
++      )}
+ 
+-      <Pressable
+-        onPress={onConnect}
+-        accessibilityRole="button"
+-        accessibilityLabel="Connect a tracker"
+-        style={({ pressed }) => [
+-          styles.cta,
+-          { backgroundColor: toneTk.accent },
+-          pressed && styles.ctaPressed,
+-        ]}
+-      >
+-        <Ionicons name="add-circle-outline" size={18} color={colors.bone} />
+-        <Text style={styles.ctaText}>Connect a tracker</Text>
+-      </Pressable>
++      {onConnect != null && (
++        <Pressable
++          onPress={onConnect}
++          accessibilityRole="button"
++          accessibilityLabel="Connect a tracker"
++          style={({ pressed }) => [
++            styles.cta,
++            { backgroundColor: toneTk.accent },
++            pressed && styles.ctaPressed,
++          ]}
++        >
++          <Ionicons name="add-circle-outline" size={18} color={colors.bone} />
++          <Text style={styles.ctaText}>Connect a tracker</Text>
++        </Pressable>
++      )}
+     </View>
+   );
+ }

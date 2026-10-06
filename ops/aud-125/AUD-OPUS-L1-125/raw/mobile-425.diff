@@ -1,0 +1,300 @@
+diff --git a/src/__tests__/coachAi.test.tsx b/src/__tests__/coachAi.test.tsx
+index 1d0a5a22..9616c215 100644
+--- a/src/__tests__/coachAi.test.tsx
++++ b/src/__tests__/coachAi.test.tsx
+@@ -236,6 +236,36 @@ describe('CoachAiSection', () => {
+   });
+ });
+ 
++describe('CoachAiSection meal-plan body (AUDIT-14-125)', () => {
++  it('sends only the keys the backend allow-list accepts, with allergies inside notes', async () => {
++    // GenerateMealPlanDto (backend, forbidNonWhitelisted) accepts clientId,
++    // days and notes. Extra keys such as allergies or dietary_restrictions
++    // are refused with a 400, which failed every generation.
++    mockedGet.mockResolvedValue(ok({ ready: true, modelUsed: 'claude-opus-4-7' }));
++    mockedPost.mockResolvedValueOnce(ok({ draftId: 'm1', type: 'MEAL_PLAN', clientId: 'c1' }));
++    const { findByTestId, findByText } = await renderWithNav(
++      <CoachAiSection
++        clientId="c1"
++        clientName="Jane Doe"
++        clientAllergies={['peanuts']}
++        clientDietaryRestrictions={['gluten']}
++      />,
++    );
++    const cta = await findByTestId('coach-ai-cta-meal');
++    await waitFor(() =>
++      expect(cta.props.accessibilityState).toEqual(expect.objectContaining({ disabled: false })),
++    );
++    fireEvent.press(cta);
++    fireEvent.press(await findByText('Generate'));
++    await waitFor(() => expect(mockedPost).toHaveBeenCalled());
++    const [url, body] = mockedPost.mock.calls[0];
++    expect(url).toBe('/coach/ai/meal-plan');
++    expect(Object.keys(body).sort()).toEqual(['clientId', 'days', 'notes']);
++    expect(body.notes).toContain('Allergies: peanuts.');
++    expect(body.notes).toContain('Dietary restrictions: gluten.');
++  });
++});
++
+ // ─── 5. AIWorkoutDraftScreen — edit/save flow ────────────────────────────────
+ 
+ import AIWorkoutDraftScreen from '../screens/coach/AIWorkoutDraftScreen';
+diff --git a/src/components/coach/CoachAiSection.tsx b/src/components/coach/CoachAiSection.tsx
+index fec902e3..4e11882a 100644
+--- a/src/components/coach/CoachAiSection.tsx
++++ b/src/components/coach/CoachAiSection.tsx
+@@ -281,9 +281,11 @@ export default function CoachAiSection({
+       const res = await coachAiApi.generateMealPlan({
+         clientId,
+         days,
++        // The safety fields travel inside `notes` only: the backend body
++        // allow-list (GenerateMealPlanDto, forbidNonWhitelisted) refuses any
++        // other key with a 400, so sending them as their own keys failed
++        // every generation.
+         notes: composedNotes || undefined,
+-        allergies: clientAllergies,
+-        dietary_restrictions: clientDietaryRestrictions,
+       });
+       const draftId = res.data.draftId;
+       closeModal();
+diff --git a/src/screens/coach/AIWorkoutDraftScreen.tsx b/src/screens/coach/AIWorkoutDraftScreen.tsx
+index f6793216..1c7d2f05 100644
+--- a/src/screens/coach/AIWorkoutDraftScreen.tsx
++++ b/src/screens/coach/AIWorkoutDraftScreen.tsx
+@@ -7,7 +7,8 @@
+  *   2. Render the WorkoutPayload as an editable structure
+  *      (weeks → days → exercises). Inline edits update local state.
+  *   3. "Save edits" → POST /coach/ai/drafts/:draftId/edit { patch }
+- *   4. "Approve & assign" → POST /coach/ai/drafts/:draftId/approve →
++ *   4. "Approve" → POST /coach/ai/drafts/:draftId/approve → truthful
++ *      saved/assigned alert (aiWorkoutApproveCopy) →
+  *      navigate back to ClientDetail (workouts tab).
+  *   5. "Reject" → reason modal → POST /coach/ai/drafts/:draftId/reject.
+  *
+@@ -43,6 +44,7 @@ import type {
+   WorkoutPayload,
+ } from '../../types/coachAi';
+ import { errorMessage } from '../../types/common';
++import { aiWorkoutApproveCopy } from '../../utils/coach/aiWorkoutApproveCopy';
+ 
+ type Nav = NativeStackNavigationProp<ClientsStackParamList, 'AIWorkoutDraft'>;
+ type R = RouteProp<ClientsStackParamList, 'AIWorkoutDraft'>;
+@@ -244,10 +246,11 @@ export default function AIWorkoutDraftScreen() {
+     if (!draft) return;
+     setApproving(true);
+     try {
+-      await coachAiApi.approveDraft(draft.draftId);
++      const res = await coachAiApi.approveDraft(draft.draftId);
++      const copy = aiWorkoutApproveCopy(clientName, res?.data);
+       Alert.alert(
+-        'Approved',
+-        `Workout program assigned to ${clientName}.`,
++        copy.title,
++        copy.body,
+         [
+           {
+             text: 'OK',
+@@ -466,10 +469,10 @@ export default function AIWorkoutDraftScreen() {
+             onPress={handleApprove}
+             disabled={approving}
+             accessibilityRole="button"
+-            accessibilityLabel="Approve and assign"
++            accessibilityLabel="Approve draft"
+           >
+             <Text style={styles.btnApproveText}>
+-              {approving ? 'Approving…' : 'Approve & assign'}
++              {approving ? 'Approving…' : 'Approve'}
+             </Text>
+           </TouchableOpacity>
+         </View>
+diff --git a/src/screens/coach/ClientDetailScreen.tsx b/src/screens/coach/ClientDetailScreen.tsx
+index e2e99677..17a67d14 100644
+--- a/src/screens/coach/ClientDetailScreen.tsx
++++ b/src/screens/coach/ClientDetailScreen.tsx
+@@ -472,7 +472,6 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
+               })
+             }
+             onOpenWorkoutBuilder={() => navigation.navigate('CoachWorkoutBuilder', undefined)}
+-            onOpenAskAi={() => setAskAiVisible(true)}
+             colors={colors}
+             styles={styles}
+           />
+@@ -612,7 +611,12 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
+         styles={styles}
+       />
+ 
+-      {/* Stream 2 — Ask-AI sheet for the four execution capabilities.
++      {/* AUDIT-14-125: the Ask AI pill is not wired (SummaryTab hides it).
++          Every draft it creates names the coach as requester, and the
++          gateway refuses a decision by the requester (403), so the coach
++          could never approve or reject the nudge it created. The sheet
++          stays mounted, closed, until the approval rule supports it.
++          Stream 2 — Ask-AI sheet for the four execution capabilities.
+           Mounted always; `visible` controls render. On a successful
+           submit the sheet closes and we navigate to the pending-drafts
+           inbox so the coach sees their new draft land. */}
+diff --git a/src/screens/coach/client-detail/SummaryTab.tsx b/src/screens/coach/client-detail/SummaryTab.tsx
+index 20069d60..77aec22a 100644
+--- a/src/screens/coach/client-detail/SummaryTab.tsx
++++ b/src/screens/coach/client-detail/SummaryTab.tsx
+@@ -41,7 +41,7 @@ export function SummaryTab({
+    * Stream 2 — opens the AskAiActionSheet for this client. Optional so
+    * existing usages of SummaryTab in other contexts (e.g. unit tests
+    * that don't mount the sheet wiring) don't have to supply it. When
+-   * omitted, the "Ask AI" pill renders disabled.
++   * omitted, the "Ask AI" pill is not shown.
+    */
+   onOpenAskAi?: () => void;
+   colors: ThemeColors;
+@@ -152,18 +152,20 @@ export function SummaryTab({
+           <Ionicons name="barbell-outline" size={18} color={colors.primary} />
+           <Text style={styles.actionPillText}>Workouts</Text>
+         </TouchableOpacity>
+-        {/* Stream 2 — opens the four-capability Ask-AI sheet. */}
+-        <TouchableOpacity
+-          style={[styles.actionPill, !onOpenAskAi && { opacity: 0.5 }]}
+-          onPress={onOpenAskAi}
+-          disabled={!onOpenAskAi}
+-          accessibilityRole="button"
+-          accessibilityLabel="Ask AI to draft a message, workout, meal plan, or nudge"
+-          testID="summary-tab-ask-ai-pill"
+-        >
+-          <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
+-          <Text style={styles.actionPillText}>Ask AI</Text>
+-        </TouchableOpacity>
++        {/* Stream 2 — opens the Ask-AI sheet. Shown only when a caller wires
++            it; ClientDetailScreen does not (see the note there). */}
++        {onOpenAskAi ? (
++          <TouchableOpacity
++            style={styles.actionPill}
++            onPress={onOpenAskAi}
++            accessibilityRole="button"
++            accessibilityLabel="Ask AI to draft a check-in nudge"
++            testID="summary-tab-ask-ai-pill"
++          >
++            <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
++            <Text style={styles.actionPillText}>Ask AI</Text>
++          </TouchableOpacity>
++        ) : null}
+       </View>
+       {nudgeSuccess && (
+         <View style={styles.successBanner} accessibilityLiveRegion="polite">
+diff --git a/src/types/coachAi.ts b/src/types/coachAi.ts
+index cc26a25d..01073d99 100644
+--- a/src/types/coachAi.ts
++++ b/src/types/coachAi.ts
+@@ -155,20 +155,12 @@ export interface GenerateMealPlanInput {
+   clientId: string;
+   /** 1-14 inclusive. */
+   days: number;
+-  notes?: string;
+   /**
+-   * B14: explicit safety fields. The backend already reads the client's
+-   * stored profile, but a missing-by-default field in a prompt is a silent
+-   * way to drop an allergy on the floor. We mirror these into the request
+-   * so:
+-   *   - the generator sees them in the API contract (not just from a DB
+-   *     side-channel),
+-   *   - the values are auditable on the wire (Sentry / server logs),
+-   *   - any field added on mobile is immediately usable without a backend
+-   *     deploy.
++   * B14: the client's allergies and dietary restrictions are mirrored into
++   * `notes` by CoachAiSection. The backend body allow-list accepts only
++   * clientId, days and notes; any other key is refused with a 400.
+    */
+-  allergies?: string[];
+-  dietary_restrictions?: string[];
++  notes?: string;
+ }
+ 
+ export interface GenerateInsightInput {
+@@ -182,6 +174,9 @@ export interface GenerateInsightInput {
+ export interface ApproveResult {
+   approvedAsId: string;
+   approvedType: CoachAiDraftType;
++  /** Workouts scheduled for the client by a backend that assigns AI program
++   *  days on approval. Absent on the production backend (library save only). */
++  assigned_count?: number;
+ }
+ 
+ export interface RejectInput {
+diff --git a/src/utils/coach/__tests__/aiWorkoutApproveCopy.test.ts b/src/utils/coach/__tests__/aiWorkoutApproveCopy.test.ts
+new file mode 100644
+index 00000000..8208e54f
+--- /dev/null
++++ b/src/utils/coach/__tests__/aiWorkoutApproveCopy.test.ts
+@@ -0,0 +1,34 @@
++import { aiWorkoutApproveCopy } from '../aiWorkoutApproveCopy';
++
++describe('aiWorkoutApproveCopy (AUDIT-14-125)', () => {
++  it('does not claim the program was assigned when the backend only saved it to the library', () => {
++    // Production approve response today: the AIDraft row, no assigned_count.
++    const copy = aiWorkoutApproveCopy('Sam', { approvedAsId: 'plan-1' } as { assigned_count?: unknown });
++    expect(copy.title).toBe('Saved to library');
++    expect(copy.body).toBe(
++      'The program is saved to your workout library. Sam does not see it until it is assigned.',
++    );
++    expect(copy.body).not.toMatch(/assigned to Sam/);
++  });
++
++  it('says assigned only when the backend reports scheduled workouts', () => {
++    expect(aiWorkoutApproveCopy('Sam', { assigned_count: 12 })).toEqual({
++      title: 'Assigned',
++      body: '12 workouts assigned to Sam.',
++    });
++    expect(aiWorkoutApproveCopy('Sam', { assigned_count: 1 }).body).toBe('1 workout assigned to Sam.');
++  });
++
++  it('treats zero, missing or malformed counts as saved to the library', () => {
++    for (const r of [undefined, null, {}, { assigned_count: 0 }, { assigned_count: '3' }, { assigned_count: 2.5 }]) {
++      expect(aiWorkoutApproveCopy('Sam', r).title).toBe('Saved to library');
++    }
++  });
++
++  it('has no first person and no exclamation marks', () => {
++    const all = [aiWorkoutApproveCopy('Sam', {}), aiWorkoutApproveCopy('Sam', { assigned_count: 2 })];
++    for (const c of all) {
++      expect(`${c.title} ${c.body}`).not.toMatch(/!|\bI\b|\bwe\b|\bour\b/i);
++    }
++  });
++});
+diff --git a/src/utils/coach/aiWorkoutApproveCopy.ts b/src/utils/coach/aiWorkoutApproveCopy.ts
+new file mode 100644
+index 00000000..0800a8e1
+--- /dev/null
++++ b/src/utils/coach/aiWorkoutApproveCopy.ts
+@@ -0,0 +1,34 @@
++/**
++ * AUDIT-14-125 — truthful copy after a coach approves an AI workout program.
++ *
++ * POST /coach/ai/drafts/:id/approve on the production backend saves each
++ * program day as a workout plan in the coach's library and assigns nothing
++ * to the client. The screen used to say "Workout program assigned to <name>",
++ * so the coach believed the client had a program they never received.
++ *
++ * A backend that also assigns the days returns `assigned_count` (number of
++ * workouts scheduled for the client); only then does the copy say
++ * "assigned". Any other response reads as saved to the library.
++ */
++export interface AiWorkoutApproveCopy {
++  title: string;
++  body: string;
++}
++
++export function aiWorkoutApproveCopy(
++  clientName: string,
++  result: { assigned_count?: unknown } | null | undefined,
++): AiWorkoutApproveCopy {
++  const raw = result?.assigned_count;
++  const assigned = typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? raw : 0;
++  if (assigned > 0) {
++    return {
++      title: 'Assigned',
++      body: `${assigned} ${assigned === 1 ? 'workout' : 'workouts'} assigned to ${clientName}.`,
++    };
++  }
++  return {
++    title: 'Saved to library',
++    body: `The program is saved to your workout library. ${clientName} does not see it until it is assigned.`,
++  };
++}

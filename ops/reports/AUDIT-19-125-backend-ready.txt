@@ -1,0 +1,7 @@
+FIX ROUND 1 (OPENING) (AUDIT-19-125, agent 125) — growth-project-backend#787 @ 1f32a2c1cd7ba6f0e4d7db0c75c75102a6cc742e — READY FOR AUDIT
+
+T1. B19-1 corrected: Contact support no longer falsely says there is no chat; it describes the existing Settings -> Support chat and email alternative.
+
+26 changed lines (25 additions, 1 deletion), including the renderer test. All current PR checks are green (deploy-readiness-gate is correctly skipped). Tests-only main-baseline run 37530707188 fails both new assertions; fixed-head PR CI build-and-test passes, including this spec.
+
+Same-file overlap with #784 is minimal and disclosed: #784 fixes account-deletion instructions/last-reviewed date, while #787 changes only the contact-page footnote. No auth, tenancy, PII handling, money, production flags, merge or deploy changes.

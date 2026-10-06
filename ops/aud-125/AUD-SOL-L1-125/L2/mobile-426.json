@@ -1,0 +1,152 @@
+{
+  "repo": "mobile",
+  "number": 426,
+  "head": "0f4e80da96d9931a3f216b2c0a03c49b8eb11235",
+  "base": "a1904f2f4e8d175a38d6eb627303a2312e2b1ace",
+  "title": "fix(profile): completed profiles read the server's field names; drop dead Personalization row (AUDIT-12-125)",
+  "body": "Tier: T2 (client display and copy only; no auth, money, tenancy, PII routing, credentials or destructive data paths)\nWhy: AUDIT-12-125 (Settings and account) found three happy-path defects every iOS client sees on the 10-07 build.\nT4 trigger scan: none. No auth, RLS/tenancy, PII exposure, money, credentials or deletion code touched. Reads fields the client already receives about itself.\nT3 trigger scan: none. No API, schema, payload, navigation-route or flag change. The Preferences route stays registered; only its Settings entry row is removed.\nBounded T1: n/a.\nCanonical builder: AUDIT-12-125 (agent 125, Claude Opus 5.5).\nAcceptance evidence: new cases in `src/lib/__tests__/profileCompletion.test.ts` fail on main (`resolveProfileFields` missing; a completed server-named profile reports 7 of 11 fields missing) and pass here. Full Jest, typecheck and lint come from this PR's CI.\n\n## What it fixes\n\n- **U-12-1 (Home nudge + Edit Profile blanks).** A client finishes onboarding, signs in again, and Home keeps saying \"Finish your profile: Date of birth, Target weight, and 5 more\". Edit Profile then opens with their date of birth, weights, diet, gym, goal and allergies blank. Cause: sign-in and `/auth/me` return the stored `UserProfile` row (`date_of_birth`, `current_weight_lbs`, `target_weight_lbs`, `dietary_pattern`, `has_gym_membership`, `goal_type`, `dietary_restrictions`), but `getProfileCompletion` and `EditProfileScreen.profileToForm` only read the older app names (`dob`, `current_weight`, ...). Fix: `resolveProfileFields()` reads the app name first, then the server column, mapped back to the Edit Profile choices. An empty server restrictions list still counts as unanswered, so the allergy safety prompt stays. Works against the current production backend because the backend already sends these columns.\n- **U-12-2 (dead controls).** A client opens Settings > Personalization, picks Notifications \"Off\", hides the Community Feed, or switches units, and nothing changes. Nothing in the app or on the backend reads `UserPreferences`; only the Preferences screen itself does (HeroAction even ignores the tone). Fix: remove the Settings row that opens it. The real Notification preferences row stays, now under \"Notification settings\".\n- **U-12-3 (copy rule).** Settings > Privacy > Roman and AI said \"I could not reach the server...\" (first person). It now says \"The app could not reach the server...\", the wording used elsewhere in the app.\n\n## Size\n\n6 files, +110 / -22 (132 lines including tests).\n\nNo overlap with open PRs (m#409 touches `authActions.ts`; m#414/#415 touch coach settings only).\n",
+  "state": "open",
+  "draft": false,
+  "additions": 110,
+  "deletions": 22,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/426",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/426#issuecomment-6025586261",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-12-125, agent 125) \u2014 growth-project-mobile#426 @ 0f4e80da96d9931a3f216b2c0a03c49b8eb11235 \u2014 READY FOR AUDIT\n\n- CI at this head: Typecheck, lint, test SUCCESS; CodeQL SUCCESS; Analyze (actions, javascript-typescript) SUCCESS.\n- Tier T2, 132 changed lines (+110/-22, 6 files including tests). No API, schema, flag, route or dependency change; works against the current production backend (it already sends the server profile columns).\n- Fixes U-12-1 (Home \"Finish your profile\" nag and blank Edit Profile after sign-in), U-12-2 (dead Personalization row), U-12-3 (first-person copy on Roman and AI).\n- New cases in src/lib/__tests__/profileCompletion.test.ts fail on main and pass here.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112503167034",
+      "id": 112503167034,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A426+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112503167034/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531736094/job/112502532546",
+      "id": 112502532546,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502532546/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531736243/job/112502532477",
+      "id": 112502532477,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502532477/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531736243/job/112502532206",
+      "id": 112502532206,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502532206/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "0a553d9bcfe7f3093acfefa2a1e5493d28d0c062",
+      "filename": "src/hooks/useCurrentUser.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 0,
+      "changes": 8,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/0f4e80da96d9931a3f216b2c0a03c49b8eb11235/src%2Fhooks%2FuseCurrentUser.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/0f4e80da96d9931a3f216b2c0a03c49b8eb11235/src%2Fhooks%2FuseCurrentUser.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fhooks%2FuseCurrentUser.ts?ref=0f4e80da96d9931a3f216b2c0a03c49b8eb11235",
+      "patch": "@@ -30,6 +30,14 @@ export interface CurrentUser {\n     diet_restrictions?: string[] | string;\n     workout_days_per_week?: number;\n     gym_membership?: string;\n+    /** Server column names, as sign-in and /auth/me return the profile row. */\n+    date_of_birth?: string | null;\n+    current_weight_lbs?: number | null;\n+    target_weight_lbs?: number | null;\n+    dietary_pattern?: string | null;\n+    has_gym_membership?: boolean | null;\n+    goal_type?: string | null;\n+    dietary_restrictions?: string[] | null;\n     /** Backend field name (UserProfile.onboardingCompleted). Read it with profileOnboardingCompleted(). */\n     onboardingCompleted?: boolean | null;\n     /** Older payloads and fixtures only; the server sends onboardingCompleted. */"
+    },
+    {
+      "sha": "d74c08967498de31c8802ac86e60753a0723e372",
+      "filename": "src/lib/__tests__/profileCompletion.test.ts",
+      "status": "modified",
+      "additions": 45,
+      "deletions": 0,
+      "changes": 45,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/0f4e80da96d9931a3f216b2c0a03c49b8eb11235/src%2Flib%2F__tests__%2FprofileCompletion.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/0f4e80da96d9931a3f216b2c0a03c49b8eb11235/src%2Flib%2F__tests__%2FprofileCompletion.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Flib%2F__tests__%2FprofileCompletion.test.ts?ref=0f4e80da96d9931a3f216b2c0a03c49b8eb11235",
+      "patch": "@@ -8,6 +8,7 @@ import {\n   getProfileCompletion,\n   summarizeMissing,\n   buildProfileUpdatePayload,\n+  resolveProfileFields,\n   FIELD_LABEL,\n } from '../profileCompletion';\n import type { CurrentUser } from '../../hooks/useCurrentUser';\n@@ -262,3 +263,47 @@ describe('buildProfileUpdatePayload', () => {\n     ).toEqual({ diet_restrictions: ['Nut Allergy', 'Vegan'] });\n   });\n });\n+\n+// AUDIT-12-125: sign-in and /auth/me return the stored profile row, whose\n+// columns use the server names. Answers given in onboarding must still count.\n+describe('server column names (sign-in / auth/me profile row)', () => {\n+  const serverRow = {\n+    sex: 'female',\n+    date_of_birth: '1992-04-15T00:00:00.000Z',\n+    target_weight_lbs: 165,\n+    dietary_pattern: 'none',\n+    workout_days_per_week: 4,\n+    has_gym_membership: true,\n+    current_weight_lbs: 172,\n+    height_cm: 168,\n+    activity_level: 'moderate',\n+    goal_type: 'maintenance',\n+    dietary_restrictions: ['Nut Allergy'],\n+  };\n+\n+  it('counts a completed server profile as complete (no Home nudge)', () => {\n+    const r = getProfileCompletion(userWith(serverRow));\n+    expect(r.missing).toEqual([]);\n+    expect(r.isComplete).toBe(true);\n+  });\n+\n+  it('maps server columns onto the Edit Profile vocabulary', () => {\n+    const f = resolveProfileFields(serverRow);\n+    expect(f.dob).toBe('1992-04-15');\n+    expect(f.target_weight).toBe(165);\n+    expect(f.current_weight).toBe(172);\n+    expect(f.diet_type).toBe('omnivore');\n+    expect(f.gym_membership).toBe('yes_regular');\n+    expect(f.primary_goal).toBe('maintain');\n+    expect(f.diet_restrictions).toEqual(['Nut Allergy']);\n+  });\n+\n+  it('prefers the app names and keeps an empty server restrictions list unanswered', () => {\n+    const f = resolveProfileFields({ ...serverRow, primary_goal: 'lose_fast', dietary_restrictions: [] });\n+    expect(f.primary_goal).toBe('lose_fast');\n+    expect(f.diet_restrictions).toBeUndefined();\n+    expect(getProfileCompletion(userWith({ ...serverRow, dietary_restrictions: [] })).missing).toEqual([\n+      'diet_restrictions',\n+    ]);\n+  });\n+});"
+    },
+    {
+      "sha": "14defcface337cee4fa0cba453d07ba35c872cda",
+      "filename": "src/lib/profileCompletion.ts",
+      "status": "modified",
+      "additions": 47,
+      "deletions": 2,
+      "changes": 49,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/0f4e80da96d9931a3f216b2c0a03c49b8eb11235/src%2Flib%2FprofileCompletion.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/0f4e80da96d9931a3f216b2c0a03c49b8eb11235/src%2Flib%2FprofileCompletion.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Flib%2FprofileCompletion.ts?ref=0f4e80da96d9931a3f216b2c0a03c49b8eb11235",
+      "patch": "@@ -64,15 +64,60 @@ function hasValue(v: unknown): boolean {\n   return true;\n }\n \n+const DIET_FROM_PATTERN: Record<string, string> = {\n+  none: 'omnivore',\n+  vegetarian: 'vegetarian',\n+  vegan: 'vegan',\n+  pescatarian: 'pescatarian',\n+  keto: 'keto',\n+  paleo: 'paleo',\n+  other: 'other',\n+};\n+const GOAL_FROM_TYPE: Record<string, string> = {\n+  fat_loss: 'lose_moderate',\n+  maintenance: 'maintain',\n+  muscle_gain: 'gain',\n+};\n+\n+/**\n+ * Sign-in and /auth/me return the stored profile row, whose columns use the\n+ * server names (date_of_birth, current_weight_lbs, goal_type, ...). The app's\n+ * own writes use the older names. Read the older name first, then the server\n+ * column, so answers given in onboarding still count after the next sign-in.\n+ * An empty server restrictions list stays unanswered (safety prompt).\n+ */\n+export function resolveProfileFields(\n+  p: NonNullable<CurrentUser['profile']>,\n+): Record<ProfileField, unknown> {\n+  const dobIso = typeof p.date_of_birth === 'string' ? p.date_of_birth.slice(0, 10) : undefined;\n+  const serverRestrictions =\n+    Array.isArray(p.dietary_restrictions) && p.dietary_restrictions.length > 0\n+      ? p.dietary_restrictions\n+      : undefined;\n+  return {\n+    sex: p.sex,\n+    dob: p.dob ?? dobIso,\n+    target_weight: p.target_weight ?? p.target_weight_lbs,\n+    diet_type: p.diet_type ?? (p.dietary_pattern ? DIET_FROM_PATTERN[p.dietary_pattern] : undefined),\n+    workout_days_per_week: p.workout_days_per_week,\n+    gym_membership: p.gym_membership ?? (p.has_gym_membership === true ? 'yes_regular' : undefined),\n+    current_weight: p.current_weight ?? p.current_weight_lbs,\n+    height_cm: p.height_cm,\n+    activity_level: p.activity_level,\n+    primary_goal: p.primary_goal ?? (p.goal_type ? GOAL_FROM_TYPE[p.goal_type] : undefined),\n+    diet_restrictions: p.diet_restrictions ?? serverRestrictions,\n+  };\n+}\n+\n export function getProfileCompletion(\n   user: Pick<CurrentUser, 'profile'> | null | undefined,\n ): ProfileCompletionStatus {\n-  const profile = user?.profile;\n+  const profile = user?.profile ? resolveProfileFields(user.profile) : undefined;\n   const filled: ProfileField[] = [];\n   const missing: ProfileField[] = [];\n \n   for (const field of REQUIRED_FIELDS) {\n-    const value = profile ? (profile as Record<string, unknown>)[field] : undefined;\n+    const value = profile ? profile[field] : undefined;\n     // diet_restrictions has special semantics: a *present* array \u2014 even an\n     // empty one \u2014 is an explicit answer (\"I have no restrictions\"). Only\n     // an undefined / null / non-array value counts as unanswered. This is"
+    },
+    {
+      "sha": "316fd8b288c22bd9b00bee56fa3b1575c9bfd029",
+      "filename": "src/screens/client/EditProfileScreen.tsx",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 2,
+      "changes": 6,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/0f4e80da96d9931a3f216b2c0a03c49b8eb11235/src%2Fscreens%2Fclient%2FEditProfileScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/0f4e80da96d9931a3f216b2c0a03c49b8eb11235/src%2Fscreens%2Fclient%2FEditProfileScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2FEditProfileScreen.tsx?ref=0f4e80da96d9931a3f216b2c0a03c49b8eb11235",
+      "patch": "@@ -38,6 +38,7 @@ import { MoreStackParamList } from '../../navigation/ClientNavigator';\n import {\n   getProfileCompletion,\n   buildProfileUpdatePayload,\n+  resolveProfileFields,\n   ProfileField,\n } from '../../lib/profileCompletion';\n import { calcBMR, calcTDEE, calcMacros, calculateAge } from '../../utils/nutrition';\n@@ -153,7 +154,8 @@ interface FormState {\n }\n \n function profileToForm(user: CurrentUser | null): FormState {\n-  const p = user?.profile;\n+  // Older names first, then the server columns (resolveProfileFields).\n+  const p = user?.profile ? resolveProfileFields(user.profile) : undefined;\n   const sexRaw = p?.sex;\n   const dietRaw = p?.diet_type;\n   const gymRaw = p?.gym_membership;\n@@ -188,7 +190,7 @@ function profileToForm(user: CurrentUser | null): FormState {\n \n   return {\n     sex,\n-    dob: p?.dob ?? '',\n+    dob: typeof p?.dob === 'string' ? p.dob : '',\n     targetWeight: typeof p?.target_weight === 'number' ? String(p.target_weight) : '',\n     dietType,\n     workoutDaysPerWeek:"
+    },
+    {
+      "sha": "0533172b3d21ea3bd5535696e79a35e8c978f651",
+      "filename": "src/screens/client/SettingsScreen.tsx",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 16,
+      "changes": 20,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/0f4e80da96d9931a3f216b2c0a03c49b8eb11235/src%2Fscreens%2Fclient%2FSettingsScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/0f4e80da96d9931a3f216b2c0a03c49b8eb11235/src%2Fscreens%2Fclient%2FSettingsScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2FSettingsScreen.tsx?ref=0f4e80da96d9931a3f216b2c0a03c49b8eb11235",
+      "patch": "@@ -363,23 +363,11 @@ export default function SettingsScreen({ navigation }: { navigation: NavigationP\n           <BiometricUnlockSetting />\n         </View>\n \n-        {/* Personalization \u2014 Psych #4 */}\n-        <Text style={styles.sectionLabel}>Personalization</Text>\n+        {/* AUDIT-12-125: the Personalization row is not offered. Nothing in the\n+            app or on the server reads those choices (home modules, cadence\n+            incl. \"Off\", tone, units, week start), so they had no effect. */}\n+        <Text style={styles.sectionLabel}>Notification settings</Text>\n         <View style={styles.card}>\n-          <HapticPressable\n-            intent=\"light\"\n-            style={styles.row}\n-            onPress={() => navigation.navigate('Preferences')}\n-            accessibilityRole=\"button\"\n-            accessibilityLabel=\"Personalization\"\n-            accessibilityHint=\"Opens preference controls for home modules, notifications, tone, and units\"\n-          >\n-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>\n-              <Ionicons name=\"options-outline\" size={18} color={colors.primary} />\n-              <Text style={styles.rowLabel}>Personalization</Text>\n-            </View>\n-            <Ionicons name=\"chevron-forward\" size={18} color={colors.textMuted} />\n-          </HapticPressable>\n           {/* Audit P1: surface the canonical NotificationPreferences screen\n               from Settings. The local Notifications switches above only\n               control the legacy useSettings flags; full channel + quiet-hour"
+    },
+    {
+      "sha": "5bc5d5d02159f0555041d4c31ff619d17ffd9268",
+      "filename": "src/screens/settings/RomanAiConsentScreen.tsx",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/0f4e80da96d9931a3f216b2c0a03c49b8eb11235/src%2Fscreens%2Fsettings%2FRomanAiConsentScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/0f4e80da96d9931a3f216b2c0a03c49b8eb11235/src%2Fscreens%2Fsettings%2FRomanAiConsentScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fsettings%2FRomanAiConsentScreen.tsx?ref=0f4e80da96d9931a3f216b2c0a03c49b8eb11235",
+      "patch": "@@ -62,11 +62,11 @@ export const ROMAN_AI_COPY = {\n   updateApp: 'This choice has been updated since this version of the app. Please update the app to change it.',\n   notSent: 'You were signed out before this choice was saved, so nothing changed. Sign in and choose again.',\n   unavailable: `The Roman and AI setting is switched off by The Growth Project at the moment, so it cannot be changed here yet. Nothing is recorded. You can check back later, or write to support at ${SUPPORT_EMAIL}.`,\n-  loadOffline: 'I could not reach the server to load your choice. Check your connection, then tap Try again.',\n+  loadOffline: 'The app could not reach the server to load your choice. Check your connection, then tap Try again.',\n   loadServer: (ref: string | null) =>\n     `The server could not load your choice. Tap Try again. If it keeps happening, write to support at ${SUPPORT_EMAIL}${ref ? ` and mention reference ${ref}` : ''}.`,\n   actionOffline:\n-    'I could not reach the server, so your change is not confirmed. The choice shown above is the current one. Check your connection, then try again.',\n+    'The app could not reach the server, so your change is not confirmed. The choice shown above is the current one. Check your connection, then try again.',\n   actionBusy: 'Your choice was changed several times in a row, so this change was not saved. Wait a minute, then try again.',\n   actionConflict: 'Your choice was being changed somewhere else at the same moment, so this change was not saved. The choice shown above is the current one. You can change it again.',\n   actionServer: (ref: string | null) =>"
+    }
+  ]
+}

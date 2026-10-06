@@ -1,0 +1,125 @@
+diff --git a/src/messaging/messaging.service.ts b/src/messaging/messaging.service.ts
+index 2c929f84e..5e72b08e0 100644
+--- a/src/messaging/messaging.service.ts
++++ b/src/messaging/messaging.service.ts
+@@ -21,6 +21,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
+ import { Events } from '../analytics/events';
+ import { PtmService } from '../ptm/ptm.service';
+ import { MessageReceivedEmitter } from '../notifications/emitters/message-received.emitter';
++import { NotificationKind } from '../notifications/notification-kind';
+ import { AuditService } from '../audit/audit.service';
+ import { ClientAIContextService } from '../ai/client-ai-context.service';
+ // Apple 1.2 — server-side defence-in-depth for the mobile blocklist. Used
+@@ -1028,6 +1029,7 @@ export class MessagingService {
+       },
+       data: { read_at: new Date() },
+     });
++    await this.markMessageNotificationsRead(coachId, clientId);
+     // A3-MSG-CORE: live read receipt for the client (v2, ID-only ping).
+     if (result.count > 0 && isMessagingCoreV2Enabled()) {
+       this.notifyThreadUpdated(
+@@ -1064,6 +1066,28 @@ export class MessagingService {
+     return { updated: result.count };
+   }
+ 
++  /**
++   * AUDIT-03-125 U4: opening a thread also reads the reader's "New message"
++   * inbox rows for that thread (MessageReceivedEmitter deep link
++   * tgp://messages/<clientId>), so the notification bell stops counting
++   * messages the reader has just read. Best effort: never fails the read.
++   */
++  private async markMessageNotificationsRead(readerId: string, clientId: string): Promise<void> {
++    try {
++      await this.prisma.notification.updateMany({
++        where: {
++          user_id: readerId,
++          kind: NotificationKind.MESSAGE_RECEIVED,
++          deep_link: `tgp://messages/${clientId}`,
++          read_at: null,
++        },
++        data: { read_at: new Date() },
++      });
++    } catch (err) {
++      this.logger.warn(`message notification read failed: ${describeFailure(err)}`);
++    }
++  }
++
+   // ED.6 — upsert the (coach, client) thread review marker to now(). Idempotent
+   // per thread via the (coach_id, client_id) unique key; concurrent reads just
+   // re-stamp the same row (no read-modify-write race — the new value is now(),
+@@ -1151,6 +1175,7 @@ export class MessagingService {
+       },
+       data: { read_at: new Date() },
+     });
++    await this.markMessageNotificationsRead(clientId, clientId);
+     // A3-MSG-CORE: live read receipt for the coach (v2, ID-only ping).
+     if (result.count > 0 && isMessagingCoreV2Enabled()) {
+       this.notifyThreadUpdated(
+diff --git a/test/messaging/messaging-read-clears-notifications.spec.ts b/test/messaging/messaging-read-clears-notifications.spec.ts
+new file mode 100644
+index 000000000..4b8226e6c
+--- /dev/null
++++ b/test/messaging/messaging-read-clears-notifications.spec.ts
+@@ -0,0 +1,62 @@
++import { Logger } from '@nestjs/common';
++import { MessagingService } from '../../src/messaging/messaging.service';
++
++/**
++ * AUDIT-03-125 U4: reading a thread also reads the reader's "New message"
++ * inbox rows for that thread, so the notification bell stops counting
++ * messages that were just read. Best effort: a notification failure never
++ * fails the read.
++ */
++describe('MessagingService read clears the thread message notifications', () => {
++  const notificationUpdate = jest.fn();
++  const messageUpdate = jest.fn();
++  const prisma = {
++    user: {
++      findUnique: jest.fn(async () => ({ coach_id: 'coach-A' })),
++      findFirst: jest.fn(async () => ({ id: 'client-1', coach_id: 'coach-A' })),
++    },
++    coachMessage: { updateMany: messageUpdate },
++    notification: { updateMany: notificationUpdate },
++  };
++
++  function service(): MessagingService {
++    const svc: MessagingService = Object.create(MessagingService.prototype);
++    return Object.assign(svc, { prisma, logger: new Logger('test') });
++  }
++
++  beforeEach(() => {
++    notificationUpdate.mockReset().mockResolvedValue({ count: 2 });
++    messageUpdate.mockReset().mockResolvedValue({ count: 1 });
++  });
++
++  it('client read marks the client\'s message_received rows for the thread read', async () => {
++    await expect(service().markReadByClient('client-1')).resolves.toEqual({ updated: 1 });
++    expect(notificationUpdate).toHaveBeenCalledWith({
++      where: {
++        user_id: 'client-1',
++        kind: 'message_received',
++        deep_link: 'tgp://messages/client-1',
++        read_at: null,
++      },
++      data: { read_at: expect.any(Date) },
++    });
++  });
++
++  it('coach read marks only that client thread\'s rows for the coach', async () => {
++    await expect(service().markReadByCoach('coach-A', 'client-1')).resolves.toEqual({ updated: 1 });
++    expect(notificationUpdate).toHaveBeenCalledWith({
++      where: {
++        user_id: 'coach-A',
++        kind: 'message_received',
++        deep_link: 'tgp://messages/client-1',
++        read_at: null,
++      },
++      data: { read_at: expect.any(Date) },
++    });
++  });
++
++  it('a notification failure never fails the read', async () => {
++    notificationUpdate.mockRejectedValueOnce(new Error('db down'));
++    await expect(service().markReadByClient('client-1')).resolves.toEqual({ updated: 1 });
++  });
++});

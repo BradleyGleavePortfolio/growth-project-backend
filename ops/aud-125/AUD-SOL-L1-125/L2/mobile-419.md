@@ -1,0 +1,8 @@
+AUDIT GPT-6.1 Sol — growth-project-mobile#419 @ 59525ec2342fbafa5682589d6c170cd55550602d — VERDICT: APPROVE
+
+A=0 B=0 C=0
+
+- Habit creation now matches today's DTO instead of sending rejected display fields, saved quantities read `value`, and recorded week indicators use the returned logs with honest loading/error/empty states; no ordinary-user blocker found in the changed habit flow. ([useApi.ts](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/59525ec2342fbafa5682589d6c170cd55550602d/src%2Fhooks%2FuseApi.ts), [HabitsScreen.tsx](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/59525ec2342fbafa5682589d6c170cd55550602d/src%2Fscreens%2Fclient%2FHabitsScreen.tsx))
+- Fasting history derives the selected target from the persisted protocol and uses the same completion threshold for the early-end warning, completed count and streak eligibility, rather than awarding completion for every ended fast. ([FastingScreen.tsx:89–145 and 264–286](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/59525ec2342fbafa5682589d6c170cd55550602d/src%2Fscreens%2Fclient%2FFastingScreen.tsx))
+- The daily check-in payload failure is covered separately by m#430; preserve its payload/form changes when landing the shared Habits-screen/API files. ([m#430 Sol review](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/430#issuecomment-6025725439))
+- Typecheck, lint, tests and CodeQL are successful at this head. ([mobile CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532039051/job/112503560370), [CodeQL](https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112504073066))

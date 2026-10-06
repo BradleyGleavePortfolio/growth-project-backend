@@ -1,0 +1,198 @@
+diff --git a/src/__tests__/moneyClient124.test.tsx b/src/__tests__/moneyClient124.test.tsx
+index 6433ca43..4d98a986 100644
+--- a/src/__tests__/moneyClient124.test.tsx
++++ b/src/__tests__/moneyClient124.test.tsx
+@@ -11,11 +11,16 @@
+  * U-MC-3: another plan says the renewing one keeps charging alongside it.
+  * U-MC-4: a past-due plan offers Update card on the plan itself.
+  * U-MC-5: the plans screen has a back control (the More stack hides headers).
++ * B-402-1 (Sol): after End my plan / Keep my plan succeeds, Current plan and
++ * the second-plan notice follow the new state without a pull to refresh.
++ * B-402-2 (Opus): the Ends date under Current plan is the billing-period end
++ * (the date Your plans shows), not the padded access expiry.
+  *
+  * Real clientPaymentsApi and ClientPackagesScreen; only HTTP is mocked.
+  */
+ import React from 'react';
+-import { fireEvent, render, waitFor } from '@testing-library/react-native';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
++import { Alert } from 'react-native';
+ 
+ jest.mock('../theme/ThemeProvider', () => {
+   const realTokens = jest.requireActual('../theme/tokens').default;
+@@ -132,14 +137,32 @@ describe('B-MC-1: a plan that ended is not the current plan', () => {
+   });
+ });
+ 
++// A real paid recurring row: access_expires_at = current_period_end + 24 h.
++const PERIOD_END = '2030-11-02T12:00:00.000Z';
++const ACCESS_PAD = '2030-11-03T12:00:00.000Z';
++const livePlan = (ending: boolean) => ({
++  purchase_id: 'purchase-1', package_id: 'pkg-monthly', package_name: 'Monthly coaching',
++  state: 'active', entitlement_active: true, amount_cents: 4900, currency: 'usd',
++  interval: 'month', interval_count: 1, next_charge_at: ending ? null : PERIOD_END,
++  cancel_at_period_end: ending, access_ends_at: ending ? PERIOD_END : null,
++  can_cancel: !ending, can_resume: ending,
++});
++const paidRow = (ending: boolean) =>
++  purchase({ cancel_at_period_end: ending, current_period_end: PERIOD_END, access_expires_at: ACCESS_PAD });
++
+ describe('B-MC-2: an ending plan never says Renews', () => {
+   it('cancel at period end reads "Ends <date>. Nothing more is charged."', async () => {
+-    purchases = [purchase({ cancel_at_period_end: true })];
++    purchases = [paidRow(true)];
++    plans = [livePlan(true)];
+     const r = await render(<ClientPackagesScreen />);
+     await waitFor(() => expect(r.getByTestId('current-plan-line')).toBeTruthy());
++    // B-402-2: the period end, the same day Your plans shows, not the padded expiry.
+     expect(r.getByTestId('current-plan-line').props.children).toBe(
+-      'Ends Nov 2, 2026. Nothing more is charged.',
++      'Ends Nov 2, 2030. Nothing more is charged.',
+     );
++    await waitFor(() => expect(r.getByTestId('your-plan-line-purchase-1').props.children).toContain(
++      'November 2, 2030',
++    ));
+     // It will not renew, so no "keeps renewing" notice on the other plan.
+     expect(r.queryByTestId('plan-second-pkg-quarterly')).toBeNull();
+   });
+@@ -193,3 +216,62 @@ describe('U-MC-5: the plans screen has a back control', () => {
+     expect(r.queryByTestId('client-packages-back')).toBeNull();
+   });
+ });
++
++describe('B-402-1: End my plan / Keep my plan update the charge summary', () => {
++  it('after End my plan succeeds, Current plan says Ends and the other plan has no renewing notice', async () => {
++    purchases = [paidRow(false)];
++    plans = [livePlan(false)];
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === '/v1/checkout/subscriptions/purchase-1/cancel') {
++        purchases = [paidRow(true)];
++        plans = [livePlan(true)];
++        return { data: {
++          purchase_id: 'purchase-1', outcome: 'scheduled', access_ends_at: PERIOD_END,
++          voided_invoice_count: 0, voided_amount_cents: 0, currency: 'usd', paid_period_kept: false,
++        } };
++      }
++      throw new Error(`unexpected POST ${url}`);
++    });
++    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++    try {
++      const r = await render(<ClientPackagesScreen />);
++      await waitFor(() => expect(r.getByTestId('your-plan-end-purchase-1')).toBeTruthy());
++      expect(r.getByTestId('current-plan-line').props.children).toBe('Renews Nov 2, 2030');
++      expect(r.getByTestId('plan-second-pkg-quarterly')).toBeTruthy();
++      await fireEvent.press(r.getByTestId('your-plan-end-purchase-1'));
++      const confirm = alert.mock.calls[0][2]?.find((b) => b.style === 'destructive');
++      expect(confirm?.onPress).toBeTruthy();
++      await act(async () => { confirm?.onPress?.(); });
++      await waitFor(() => expect(r.getByTestId('your-plan-line-purchase-1').props.children).toContain('will not renew'));
++      await waitFor(() => expect(r.getByTestId('current-plan-line').props.children).toBe(
++        'Ends Nov 2, 2030. Nothing more is charged.',
++      ));
++      expect(r.queryByTestId('plan-second-pkg-quarterly')).toBeNull();
++      // The cancel receipt in Your plans survives the summary refresh.
++      expect(r.getByTestId('your-plan-line-purchase-1').props.children).toContain('will not renew');
++    } finally {
++      alert.mockRestore();
++    }
++  });
++
++  it('after Keep my plan succeeds, Current plan says Renews and the other plan shows the renewing notice', async () => {
++    purchases = [paidRow(true)];
++    plans = [livePlan(true)];
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === '/v1/checkout/subscriptions/purchase-1/resume') {
++        purchases = [paidRow(false)];
++        plans = [livePlan(false)];
++        return { data: livePlan(false) };
++      }
++      throw new Error(`unexpected POST ${url}`);
++    });
++    const r = await render(<ClientPackagesScreen />);
++    await waitFor(() => expect(r.getByTestId('your-plan-keep-purchase-1')).toBeTruthy());
++    expect(r.getByTestId('current-plan-line').props.children).toBe('Ends Nov 2, 2030. Nothing more is charged.');
++    expect(r.queryByTestId('plan-second-pkg-quarterly')).toBeNull();
++    await fireEvent.press(r.getByTestId('your-plan-keep-purchase-1'));
++    await waitFor(() => expect(r.getByTestId('your-plan-line-purchase-1').props.children).toContain('Next charge of'));
++    await waitFor(() => expect(r.getByTestId('current-plan-line').props.children).toBe('Renews Nov 2, 2030'));
++    expect(r.getByTestId('plan-second-pkg-quarterly')).toBeTruthy();
++  });
++});
+diff --git a/src/components/purchase/YourPlansPanel.tsx b/src/components/purchase/YourPlansPanel.tsx
+index 54f19769..7fd11639 100644
+--- a/src/components/purchase/YourPlansPanel.tsx
++++ b/src/components/purchase/YourPlansPanel.tsx
+@@ -139,10 +139,13 @@ const agrees = (r: Receipt, p: ClientPlan | undefined) =>
+ export default function YourPlansPanel({
+   reloadKey = 0,
+   onUpdateCard,
++  onPlanChanged,
+ }: {
+   reloadKey?: number;
+   /** Opens the native Update card screen; absent keeps the coach copy. */
+   onUpdateCard?: () => void;
++  /** B-402-1: End / Keep succeeded, so the screen's own plan summary re-reads. */
++  onPlanChanged?: () => void;
+ }) {
+   const { semanticColors, tokens } = useTheme();
+   const styles = useMemo(
+@@ -249,6 +252,7 @@ export default function YourPlansPanel({
+           });
+         }
+         await load();
++        if (mounted.current) onPlanChanged?.();
+       } catch (err) {
+         if (!mounted.current) return;
+         const n = describePlanActionFailure(err, action);
+@@ -259,7 +263,7 @@ export default function YourPlansPanel({
+         if (mounted.current) setBusyId(null);
+       }
+     },
+-    [load],
++    [load, onPlanChanged],
+   );
+ 
+   const stale = list.kind === "failed" || list.kind === "unavailable";
+diff --git a/src/screens/client/ClientPackagesScreen.tsx b/src/screens/client/ClientPackagesScreen.tsx
+index b25fbc1a..e2d287e0 100644
+--- a/src/screens/client/ClientPackagesScreen.tsx
++++ b/src/screens/client/ClientPackagesScreen.tsx
+@@ -106,7 +106,9 @@ function formatDate(iso: string | null): string | null {
+ export function currentPlanLine(d: ClientPaymentStatus): string {
+   if (d.state === 'past_due') return 'The last payment did not go through.';
+   if (d.state === 'canceled' || d.cancel_at_period_end) {
+-    const ends = formatDate(d.access_expires_at ?? null) ?? formatDate(d.current_period_end);
++    // B-402-2: access ends with the billing period (Your plans shows that
++    // date); access_expires_at carries a 24 h renewal pad on paid rows.
++    const ends = formatDate(d.current_period_end) ?? formatDate(d.access_expires_at ?? null);
+     return ends
+       ? `Ends ${ends}. Nothing more is charged.`
+       : 'Ends at the close of this period. Nothing more is charged.';
+@@ -223,6 +225,14 @@ export default function ClientPackagesScreen() {
+   }, [load]);
+ 
+   const { refreshEntitlement } = useEntitlement();
++
++  // B-402-1: after End my plan / Keep my plan succeeds, Current plan, the
++  // buy buttons and the second-plan notice re-read payment status. Only the
++  // status is re-read: bumping plansTick would clear the panel's receipt.
++  const onPlanChanged = useCallback(() => {
++    void clientPaymentsApi.getPaymentStatus().then(setStatus);
++    void refreshEntitlement().catch(() => false);
++  }, [refreshEntitlement]);
+   const { appearance, colorScheme } = usePaymentSheetAppearance();
+   const purchase = usePackagePurchase({
+     surface: 'plans',
+@@ -330,7 +340,11 @@ export default function ClientPackagesScreen() {
+       <SmartDunningBanner surface="ClientPackagesScreen" />
+ 
+       {/* Renewing plans: next charge, End my plan / Keep my plan */}
+-      <YourPlansPanel reloadKey={plansTick} onUpdateCard={handleUpdateCard} />
++      <YourPlansPanel
++        reloadKey={plansTick}
++        onUpdateCard={handleUpdateCard}
++        onPlanChanged={onPlanChanged}
++      />
+ 
+       {/* Current plan summary */}
+       {status.ok && status.data.state !== 'none' && status.data.package_name ? (

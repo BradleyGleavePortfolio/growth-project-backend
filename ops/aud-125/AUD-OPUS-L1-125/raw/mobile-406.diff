@@ -1,0 +1,1609 @@
+diff --git a/src/__tests__/syncEngine.test.ts b/src/__tests__/syncEngine.test.ts
+index f20006af..535b334a 100644
+--- a/src/__tests__/syncEngine.test.ts
++++ b/src/__tests__/syncEngine.test.ts
+@@ -72,7 +72,7 @@ function mockCreateDatabase(): MockDatabase {
+     rows,
+     execAsync: async (sql: string) => {
+       if (
+-        /CREATE TABLE|CREATE INDEX|PRAGMA|ALTER TABLE/i.test(sql) ||
++        /CREATE TABLE|CREATE (UNIQUE )?INDEX|PRAGMA|ALTER TABLE/i.test(sql) ||
+         sql.trim() === ''
+       ) {
+         return;
+diff --git a/src/__tests__/workoutSync124.engine.test.ts b/src/__tests__/workoutSync124.engine.test.ts
+new file mode 100644
+index 00000000..42504b57
+--- /dev/null
++++ b/src/__tests__/workoutSync124.engine.test.ts
+@@ -0,0 +1,344 @@
++/**
++ * WORKOUT-SYNC-124 (agent 124): a workout finished with no signal reaches the
++ * server exactly once, with its sets, and the coach assignment is completed.
++ *
++ * The fake server below applies the same rules as the backend's
++ * CreateWorkoutDto under ValidationPipe({ whitelist, forbidNonWhitelisted }):
++ * workout_name and workout_type are required, every exercise needs a known
++ * muscle_group, and unknown keys (the old `local_id`) are refused with a 400.
++ */
++
++interface Row {
++  id: string;
++  exercise_id: string;
++  sets_data: string;
++  sync_status: 'pending' | 'synced' | 'conflict' | 'dead_letter';
++  logged_at: number;
++  server_id: string | null;
++  session_name: string | null;
++  duration_minutes: number | null;
++  user_id: string | null;
++  payload: string | null;
++  client_key: string | null;
++  assignment_json: string | null;
++}
++
++const mockDb: { rows: Row[] } = { rows: [] };
++
++function mockFakeDatabase() {
++  const rows = mockDb.rows;
++  const norm = (sql: string) => sql.replace(/\s+/g, ' ').trim();
++  return {
++    execAsync: async () => undefined,
++    closeAsync: async () => undefined,
++    runAsync: async (raw: string, params: unknown[] = []) => {
++      const sql = norm(raw);
++      if (/^INSERT INTO workout_logs .*payload, client_key, assignment_json\)/.test(sql)) {
++        const [id, logged_at, session_name, duration_minutes, user_id, payload, client_key, assignment_json] =
++          params as [string, number, string | null, number | null, string | null, string, string, string | null];
++        if (rows.some((r) => r.client_key === client_key)) {
++          throw new Error('UNIQUE constraint failed: workout_logs.client_key');
++        }
++        rows.push({
++          id, exercise_id: 'session', sets_data: '[]', sync_status: 'pending', logged_at,
++          server_id: null, session_name, duration_minutes, user_id, payload, client_key, assignment_json,
++        });
++        return { changes: 1 };
++      }
++      if (/^INSERT INTO workout_logs/.test(sql)) {
++        const [id, exercise_id, sets_data, logged_at, session_name, duration_minutes, user_id] =
++          params as [string, string, string, number, string | null, number | null, string | null];
++        rows.push({
++          id, exercise_id, sets_data, sync_status: 'pending', logged_at, server_id: null,
++          session_name, duration_minutes, user_id, payload: null, client_key: null, assignment_json: null,
++        });
++        return { changes: 1 };
++      }
++      if (/^UPDATE workout_logs SET payload = \?, assignment_json = \?, sync_status = 'pending'/.test(sql)) {
++        const [payload, assignment_json, duration_minutes, user_id, id] =
++          params as [string, string | null, number | null, string | null, string];
++        const r = rows.find((x) => x.id === id);
++        if (r) Object.assign(r, { payload, assignment_json, duration_minutes, user_id, sync_status: 'pending' });
++        return { changes: r ? 1 : 0 };
++      }
++      if (/^UPDATE workout_logs SET sync_status = 'synced', server_id = \?, assignment_json = NULL WHERE client_key = \?$/.test(sql)) {
++        const [server_id, key] = params as [string, string];
++        const r = rows.find((x) => x.client_key === key);
++        if (r) Object.assign(r, { sync_status: 'synced', server_id, assignment_json: null });
++        return { changes: r ? 1 : 0 };
++      }
++      if (/^UPDATE workout_logs SET sync_status = 'dead_letter' WHERE client_key = \? AND sync_status = 'pending'$/.test(sql)) {
++        const [key] = params as [string];
++        const r = rows.find((x) => x.client_key === key && x.sync_status === 'pending');
++        if (r) r.sync_status = 'dead_letter';
++        return { changes: r ? 1 : 0 };
++      }
++      if (/^UPDATE workout_logs SET sync_status = 'synced', server_id = \? WHERE id = \?$/.test(sql)) {
++        const [server_id, id] = params as [string, string];
++        const r = rows.find((x) => x.id === id);
++        if (r) Object.assign(r, { sync_status: 'synced', server_id });
++        return { changes: r ? 1 : 0 };
++      }
++      if (/^UPDATE workout_logs SET sync_status = '(dead_letter|conflict)' WHERE id = \?$/.test(sql)) {
++        const status = /'(dead_letter|conflict)'/.exec(sql)![1] as Row['sync_status'];
++        const r = rows.find((x) => x.id === (params[0] as string));
++        if (r) r.sync_status = status;
++        return { changes: r ? 1 : 0 };
++      }
++      if (/^UPDATE workout_logs SET assignment_json = NULL WHERE id = \?$/.test(sql)) {
++        const r = rows.find((x) => x.id === (params[0] as string));
++        if (r) r.assignment_json = null;
++        return { changes: r ? 1 : 0 };
++      }
++      throw new Error(`[fake-sqlite] runAsync: ${sql}`);
++    },
++    getAllAsync: async (raw: string, params: unknown[] = []) => {
++      const sql = norm(raw);
++      if (/^PRAGMA table_info/.test(sql)) {
++        return [
++          'id', 'exercise_id', 'sets_data', 'sync_status', 'logged_at', 'server_id', 'session_name',
++          'duration_minutes', 'user_id', 'payload', 'client_key', 'assignment_json',
++        ].map((name) => ({ name }));
++      }
++      if (/FROM workout_logs WHERE sync_status = 'pending' AND user_id = \?$/.test(sql)) {
++        return rows.filter((r) => r.sync_status === 'pending' && r.user_id === params[0]).map((r) => ({ ...r }));
++      }
++      if (/FROM workout_logs WHERE assignment_json IS NOT NULL AND sync_status = 'synced' AND user_id = \?$/.test(sql)) {
++        return rows
++          .filter((r) => r.assignment_json != null && r.sync_status === 'synced' && r.user_id === params[0])
++          .map((r) => ({ ...r }));
++      }
++      throw new Error(`[fake-sqlite] getAllAsync: ${sql}`);
++    },
++    getFirstAsync: async (raw: string, params: unknown[] = []) => {
++      const sql = norm(raw);
++      if (/WHERE client_key = \? LIMIT 1$/.test(sql)) {
++        const r = rows.find((x) => x.client_key === params[0]);
++        return r ? { id: r.id, sync_status: r.sync_status, server_id: r.server_id } : null;
++      }
++      if (/^SELECT COUNT\(\*\) AS n FROM workout_logs WHERE payload IS NOT NULL AND sync_status = 'pending' AND user_id = \?$/.test(sql)) {
++        return { n: rows.filter((r) => r.payload != null && r.sync_status === 'pending' && r.user_id === params[0]).length };
++      }
++      if (/WHERE server_id = \? LIMIT 1$/.test(sql)) {
++        const r = rows.find((x) => x.server_id === params[0]);
++        return r ? { id: r.id } : null;
++      }
++      throw new Error(`[fake-sqlite] getFirstAsync: ${sql}`);
++    },
++  };
++}
++
++jest.mock('expo-sqlite', () => ({
++  openDatabaseAsync: jest.fn(async () => mockFakeDatabase()),
++}));
++
++// ── Fake server: CreateWorkoutDto rules ──────────────────────────────────────
++const MUSCLE_GROUPS = ['chest', 'back', 'legs', 'shoulders', 'arms', 'core', 'cardio', 'full_body'];
++const WORKOUT_KEYS = ['date', 'workout_name', 'workout_type', 'duration_minutes', 'intensity', 'notes', 'exercises'];
++const EXERCISE_KEYS = ['exercise_name', 'muscle_group', 'sets_completed', 'reps_per_set', 'weight_per_set', 'rpe', 'notes', 'video_url'];
++function mockHttpError(status: number) {
++  return Object.assign(new Error(`HTTP ${status}`), { response: { status, data: {} } });
++}
++function mockValidateWorkout(body: Record<string, unknown>): void {
++  const bad =
++    Object.keys(body).some((k) => !WORKOUT_KEYS.includes(k)) ||
++    typeof body.workout_name !== 'string' ||
++    typeof body.workout_type !== 'string' ||
++    !Array.isArray(body.exercises) ||
++    (body.exercises as Array<Record<string, unknown>>).some(
++      (e) =>
++        Object.keys(e).some((k) => !EXERCISE_KEYS.includes(k)) ||
++        !MUSCLE_GROUPS.includes(String(e.muscle_group)) ||
++        typeof e.exercise_name !== 'string',
++    );
++  if (bad) throw mockHttpError(400);
++}
++const mockServer: { workouts: Array<Record<string, unknown>>; offline: boolean } = { workouts: [], offline: false };
++const mockCreate = jest.fn(async (body: Record<string, unknown>) => {
++  if (mockServer.offline) throw new Error('Network Error');
++  mockValidateWorkout(body);
++  const id = `srv-${mockServer.workouts.length + 1}`;
++  mockServer.workouts.push({ id, ...body });
++  return { data: { id } };
++});
++jest.mock('../services/api', () => ({
++  workoutApi: {
++    create: (body: Record<string, unknown>) => mockCreate(body),
++    getAll: jest.fn(async () => ({ data: [] })),
++  },
++}));
++
++const mockCompleteAssignment = jest.fn(async (_id: string, _input: Record<string, unknown>) => {
++  if (mockServer.offline) throw new Error('Network Error');
++  return { data: {} };
++});
++jest.mock('../api/workoutBuilderApi', () => ({
++  workoutBuilderApi: {
++    completeMyAssignment: (id: string, input: Record<string, unknown>) => mockCompleteAssignment(id, input),
++  },
++}));
++
++jest.mock('../lib/userCache', () => ({
++  readUserCacheSync: jest.fn(() => ({ id: 'client-1' })),
++  readUserCache: jest.fn(async () => ({ id: 'client-1' })),
++}));
++
++import { __resetDatabaseForTests } from '../offline/database';
++import {
++  queueWorkout,
++  settleQueuedWorkout,
++  releaseQueuedWorkout,
++  countQueuedWorkouts,
++  pushQueuedWorkouts,
++  triggerSync,
++  writeWorkoutLog,
++  workoutSyncEvents,
++} from '../offline/sync/sync-engine';
++
++// The body ActiveWorkoutScreen builds for "Push Day" (bench 135x8, 145x6).
++function pushDayBody() {
++  return {
++    date: '2026-10-06',
++    workout_name: 'Push Day',
++    workout_type: 'strength',
++    duration_minutes: 42,
++    notes: 'Push Day',
++    exercises: [
++      {
++        exercise_name: 'Bench Press',
++        muscle_group: 'chest',
++        sets_completed: 2,
++        weight_per_set: [135, 145],
++        reps_per_set: [8, 6],
++      },
++    ],
++  };
++}
++
++let keySeq = 0;
++const nextKey = () => `client-1:${1_760_000_000_000 + ++keySeq}`;
++
++beforeEach(async () => {
++  mockDb.rows.length = 0;
++  mockServer.workouts = [];
++  mockServer.offline = false;
++  mockCreate.mockClear();
++  mockCompleteAssignment.mockClear();
++  await __resetDatabaseForTests();
++});
++
++describe('workout finished with no signal', () => {
++  it('reaches the server with every set once the phone is back online', async () => {
++    const key = nextKey();
++    // Finish tapped in the gym basement: stored, the screen's own POST fails.
++    await queueWorkout({ clientKey: key, payload: pushDayBody(), userId: 'client-1', sessionName: 'Push Day', durationMinutes: 42 });
++    await releaseQueuedWorkout(key);
++    expect(await countQueuedWorkouts('client-1')).toBe(1);
++
++    const synced = jest.fn();
++    workoutSyncEvents.on('synced', synced);
++    try {
++      await triggerSync();
++    } finally {
++      workoutSyncEvents.off('synced', synced);
++    }
++
++    expect(mockServer.workouts).toHaveLength(1);
++    expect(mockServer.workouts[0]).toMatchObject({
++      workout_name: 'Push Day',
++      exercises: [{ exercise_name: 'Bench Press', weight_per_set: [135, 145], reps_per_set: [8, 6] }],
++    });
++    expect(mockDb.rows[0].sync_status).toBe('synced');
++    expect(await countQueuedWorkouts('client-1')).toBe(0);
++    expect(synced).toHaveBeenCalledTimes(1);
++  });
++
++  it('the old per-exercise rows are what the server refused (regression anchor)', async () => {
++    // Pre-fix path: one row per exercise, body rebuilt without workout_name /
++    // muscle_group and with local_id. The fake server refuses it exactly like
++    // the real one, which is why offline workouts never reached the coach.
++    await writeWorkoutLog({ exerciseId: 'bench-press', setsData: JSON.stringify([{ reps: 8, weight: 135, completed: true }]), sessionName: 'Push Day', durationMinutes: 42 });
++    await triggerSync();
++    expect(mockServer.workouts).toHaveLength(0);
++    expect(mockDb.rows[0].sync_status).toBe('dead_letter');
++  });
++
++  it('stays queued while there is still no signal and goes out on the next sync', async () => {
++    const key = nextKey();
++    await queueWorkout({ clientKey: key, payload: pushDayBody(), userId: 'client-1' });
++    await releaseQueuedWorkout(key);
++
++    mockServer.offline = true;
++    await triggerSync();
++    expect(mockDb.rows[0].sync_status).toBe('pending');
++
++    mockServer.offline = false;
++    await pushQueuedWorkouts();
++    expect(mockServer.workouts).toHaveLength(1);
++    expect(mockDb.rows[0].sync_status).toBe('synced');
++  });
++
++  it('marks the coach assignment complete after the workout is on the server', async () => {
++    const key = nextKey();
++    const input = {
++      completion_payload: { exercises: [{ exerciseName: 'Bench Press', sets: [] }] },
++      idempotency_key: '0b6f2a3e-4b1c-4d2e-9f00-1a2b3c4d5e6f',
++      started_at: '2026-10-06T17:00:00.000Z',
++    };
++    await queueWorkout({ clientKey: key, payload: pushDayBody(), userId: 'client-1', assignment: { assignmentId: 'asg-1', input } });
++    await releaseQueuedWorkout(key);
++
++    await triggerSync();
++
++    expect(mockServer.workouts).toHaveLength(1);
++    expect(mockCompleteAssignment).toHaveBeenCalledTimes(1);
++    expect(mockCompleteAssignment).toHaveBeenCalledWith('asg-1', input);
++    expect(mockDb.rows[0].assignment_json).toBeNull();
++  });
++});
++
++describe('exactly once', () => {
++  it('Finish tapped again for the same workout keeps one queued copy and one server workout', async () => {
++    const key = nextKey();
++    await queueWorkout({ clientKey: key, payload: pushDayBody(), userId: 'client-1' });
++    await releaseQueuedWorkout(key);
++    await queueWorkout({ clientKey: key, payload: pushDayBody(), userId: 'client-1' });
++    await releaseQueuedWorkout(key);
++    expect(mockDb.rows).toHaveLength(1);
++
++    await triggerSync();
++    await triggerSync();
++    expect(mockCreate).toHaveBeenCalledTimes(1);
++    expect(mockServer.workouts).toHaveLength(1);
++  });
++
++  it('the background sync never sends a workout the screen is still saving, nor after it saved', async () => {
++    const key = nextKey();
++    await queueWorkout({ clientKey: key, payload: pushDayBody(), userId: 'client-1' });
++    // Screen POST in flight: a reconnect / foreground sync fires meanwhile.
++    await triggerSync();
++    expect(mockCreate).not.toHaveBeenCalled();
++
++    // Screen POST succeeded.
++    await settleQueuedWorkout(key, 'srv-screen');
++    await triggerSync();
++    expect(mockCreate).not.toHaveBeenCalled();
++    expect(mockDb.rows[0]).toMatchObject({ sync_status: 'synced', server_id: 'srv-screen' });
++
++    // Same session finished again (app closed before the screen cleared).
++    const again = await queueWorkout({ clientKey: key, payload: pushDayBody(), userId: 'client-1' });
++    expect(again).toMatchObject({ alreadySynced: true, serverId: 'srv-screen' });
++    await triggerSync();
++    expect(mockCreate).not.toHaveBeenCalled();
++  });
++
++  it('a body the server refuses is parked, not retried on every sync', async () => {
++    const key = nextKey();
++    await queueWorkout({ clientKey: key, payload: { ...pushDayBody(), workout_type: undefined }, userId: 'client-1' });
++    await releaseQueuedWorkout(key);
++    await triggerSync();
++    await triggerSync();
++    expect(mockCreate).toHaveBeenCalledTimes(1);
++    expect(mockDb.rows[0].sync_status).toBe('dead_letter');
++  });
++});
+diff --git a/src/__tests__/workoutSync124.screen.test.tsx b/src/__tests__/workoutSync124.screen.test.tsx
+new file mode 100644
+index 00000000..5a37184b
+--- /dev/null
++++ b/src/__tests__/workoutSync124.screen.test.tsx
+@@ -0,0 +1,271 @@
++/**
++ * WORKOUT-SYNC-124 (agent 124): the Finish path and the Workouts tab cards.
++ *
++ *   - Finish with no signal: the whole workout is queued on the phone, the
++ *     client is told it is saved and will be sent, and the screen closes
++ *     (it used to say "not saved yet" and keep the client stuck retrying).
++ *   - Finish again after a server refusal updates the same queued workout.
++ *   - A coach-assigned workout queues its completion with the workout.
++ *   - The Workouts tab shows a workout left in progress (app closed or killed)
++ *     and reopens it with its sets, name and coach assignment.
++ */
++import React from 'react';
++import { Alert } from 'react-native';
++import { render, act, waitFor, fireEvent } from '@testing-library/react-native';
++
++jest.mock('../config/featureFlags', () => ({
++  featureFlags: { coachBrief: true, romanChat: false },
++}));
++
++jest.mock('../hooks/useCurrentUser', () => ({
++  useCurrentUser: () => ({ id: 'c1', email: 'm@x.io', role: 'client', firstName: 'Marcus' }),
++}));
++
++let mockRouteParams: Record<string, unknown> = {};
++const mockNavigate = jest.fn();
++const mockGoBack = jest.fn();
++jest.mock('@react-navigation/native', () => {
++  const actual = jest.requireActual('@react-navigation/native');
++  const ReactLib = jest.requireActual('react');
++  return {
++    ...actual,
++    useNavigation: () => ({
++      navigate: mockNavigate,
++      goBack: mockGoBack,
++      setParams: jest.fn(),
++      getParent: () => ({ navigate: mockNavigate }),
++      addListener: () => () => undefined,
++    }),
++    useRoute: () => ({ params: mockRouteParams }),
++    useFocusEffect: (cb: () => undefined | (() => void)) => {
++      ReactLib.useEffect(() => {
++        const cleanup = cb();
++        return typeof cleanup === 'function' ? cleanup : undefined;
++        // eslint-disable-next-line react-hooks/exhaustive-deps
++      }, []);
++    },
++  };
++});
++
++let capturedMutateOptions: { onSuccess?: (data: unknown) => void; onError?: (e: unknown) => void } | null = null;
++const mockMutate = jest.fn((_vars: unknown, options: typeof capturedMutateOptions) => {
++  capturedMutateOptions = options;
++});
++jest.mock('../hooks/useApi', () => ({
++  useCreateWorkout: () => ({ mutate: mockMutate }),
++}));
++
++const mockLoadActiveWorkoutSession = jest.fn();
++const mockSaveActiveWorkoutSession = jest.fn(async (..._a: unknown[]) => undefined);
++jest.mock('../storage/activeWorkoutSession', () => ({
++  loadActiveWorkoutSession: (...a: unknown[]) => mockLoadActiveWorkoutSession(...a),
++  saveActiveWorkoutSession: (...a: unknown[]) => mockSaveActiveWorkoutSession(...a),
++  clearActiveWorkoutSession: jest.fn(async () => undefined),
++}));
++
++jest.mock('../services/api', () => ({
++  workoutApi: { getRoutines: jest.fn(), getAll: jest.fn(async () => ({ data: [] })), getVolume: jest.fn() },
++}));
++
++jest.mock('../db/workoutDb', () => ({
++  getAllExercises: jest.fn(async () => []),
++}));
++
++const mockCompleteMyAssignment = jest.fn(async (..._a: unknown[]) => undefined);
++jest.mock('../api/workoutBuilderApi', () => ({
++  workoutBuilderApi: { completeMyAssignment: (...a: unknown[]) => mockCompleteMyAssignment(...a) },
++}));
++
++const mockQueueWorkout = jest.fn(async (..._a: unknown[]) => ({ id: 'q1', alreadySynced: false, serverId: null }));
++const mockSettle = jest.fn(async (..._a: unknown[]) => undefined);
++const mockRelease = jest.fn(async (..._a: unknown[]) => undefined);
++const mockCountQueued = jest.fn(async (..._a: unknown[]) => 0);
++const mockPushQueued = jest.fn(async () => undefined);
++jest.mock('../offline', () => ({
++  queueWorkout: (...a: unknown[]) => mockQueueWorkout(...a),
++  settleQueuedWorkout: (...a: unknown[]) => mockSettle(...a),
++  releaseQueuedWorkout: (...a: unknown[]) => mockRelease(...a),
++  countQueuedWorkouts: (...a: unknown[]) => mockCountQueued(...a),
++  pushQueuedWorkouts: () => mockPushQueued(),
++  triggerSync: jest.fn(async () => undefined),
++  workoutSyncEvents: { on: jest.fn(), off: jest.fn() },
++}));
++
++import ActiveWorkoutScreen from '../screens/client/ActiveWorkoutScreen';
++import WorkoutSyncCards from '../components/workout/WorkoutSyncCards';
++
++const STARTED_AT = Date.now() - 40 * 60 * 1000;
++const SERVER_MUSCLE_GROUPS = ['chest', 'back', 'legs', 'shoulders', 'arms', 'core', 'cardio', 'full_body'];
++
++function storedSession(extra: Record<string, unknown> = {}) {
++  return {
++    isStale: false,
++    session: {
++      version: 1,
++      startedAtMs: STARTED_AT,
++      updatedAtMs: STARTED_AT,
++      routineName: 'Push Day',
++      exercisesJson: '[]',
++      idempotencyKey: '0b6f2a3e-4b1c-4d2e-9f00-1a2b3c4d5e6f',
++      sessionExercises: [
++        {
++          exerciseId: 'ex-1',
++          exerciseName: 'Bench Press',
++          sets: [
++            { weight: 135, reps: 8, completed: true },
++            { weight: 145, reps: 6, completed: true },
++          ],
++        },
++      ],
++      ...extra,
++    },
++  };
++}
++
++let alertTitles: string[] = [];
++let alertSpy: jest.SpyInstance;
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  capturedMutateOptions = null;
++  alertTitles = [];
++  mockRouteParams = { routineName: 'Push Day', exercises: '[]' };
++  mockLoadActiveWorkoutSession.mockResolvedValue(storedSession());
++  alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((title, _body, buttons) => {
++    alertTitles.push(String(title));
++    const press = (buttons ?? []).find((b) => b.text === 'Resume' || b.text === 'Finish');
++    press?.onPress?.();
++  });
++});
++
++afterEach(() => {
++  alertSpy.mockRestore();
++});
++
++async function finishOnce(view: Awaited<ReturnType<typeof render>>) {
++  await act(async () => {
++    await fireEvent.press(view.getByText('Finish'));
++    for (let i = 0; i < 6; i++) await Promise.resolve();
++  });
++}
++
++describe('Finish with no signal', () => {
++  it('queues the whole workout, says it is saved and will be sent, and closes the screen', async () => {
++    const view = await render(<ActiveWorkoutScreen />);
++    await waitFor(() => expect(view.getByText('Bench Press')).toBeTruthy());
++
++    await finishOnce(view);
++
++    expect(mockQueueWorkout).toHaveBeenCalledTimes(1);
++    const queued = mockQueueWorkout.mock.calls[0][0] as {
++      clientKey: string;
++      payload: { workout_name: string; workout_type: string; exercises: Array<Record<string, unknown>> };
++    };
++    expect(queued.clientKey).toBe(`c1:${STARTED_AT}`);
++    expect(queued.payload).toMatchObject({
++      workout_name: 'Push Day',
++      workout_type: 'strength',
++      exercises: [{ exercise_name: 'Bench Press', weight_per_set: [135, 145], reps_per_set: [8, 6], sets_completed: 2 }],
++    });
++    expect(SERVER_MUSCLE_GROUPS).toContain(queued.payload.exercises[0].muscle_group);
++    expect(queued.payload).not.toHaveProperty('local_id');
++    // The screen's POST carries the same body.
++    expect(mockMutate.mock.calls[0][0]).toEqual(queued.payload);
++
++    // No signal: the request never got an answer.
++    await act(async () => {
++      capturedMutateOptions!.onError!(new Error('Network Error'));
++      await Promise.resolve();
++    });
++
++    expect(mockRelease).toHaveBeenCalledWith(`c1:${STARTED_AT}`);
++    expect(mockGoBack).toHaveBeenCalledTimes(1);
++    expect(alertTitles).toContain('Saved on this phone');
++    expect(alertTitles).not.toContain('Workout not saved yet');
++  });
++
++  it('marks the queued copy sent when the screen save succeeds', async () => {
++    const view = await render(<ActiveWorkoutScreen />);
++    await waitFor(() => expect(view.getByText('Bench Press')).toBeTruthy());
++    await finishOnce(view);
++    await act(async () => {
++      capturedMutateOptions!.onSuccess!({ id: 'srv-9' });
++      await Promise.resolve();
++    });
++    expect(mockSettle).toHaveBeenCalledWith(`c1:${STARTED_AT}`, 'srv-9');
++  });
++
++  it('a server refusal parks the copy; Finish again re-queues the same workout', async () => {
++    const view = await render(<ActiveWorkoutScreen />);
++    await waitFor(() => expect(view.getByText('Bench Press')).toBeTruthy());
++    await finishOnce(view);
++    await act(async () => {
++      capturedMutateOptions!.onError!(Object.assign(new Error('Bad Request'), { response: { status: 400, data: {} } }));
++      await Promise.resolve();
++    });
++    expect(mockRelease).toHaveBeenCalledWith(`c1:${STARTED_AT}`, { rejected: true });
++    expect(mockGoBack).not.toHaveBeenCalled();
++    expect(alertTitles).toContain('Workout not saved yet');
++
++    await finishOnce(view);
++    expect(mockQueueWorkout).toHaveBeenCalledTimes(2);
++    const keys = mockQueueWorkout.mock.calls.map((c) => (c[0] as { clientKey: string }).clientKey);
++    expect(new Set(keys).size).toBe(1);
++  });
++
++  it('a coach-assigned workout queues its completion with the workout', async () => {
++    mockRouteParams = { routineName: 'Push Day', exercises: '[]', assignmentId: 'asg-1' };
++    mockLoadActiveWorkoutSession.mockResolvedValue(storedSession({ assignmentId: 'asg-1' }));
++    const view = await render(<ActiveWorkoutScreen />);
++    await waitFor(() => expect(view.getByText('Bench Press')).toBeTruthy());
++    await finishOnce(view);
++
++    const queued = mockQueueWorkout.mock.calls[0][0] as {
++      assignment: { assignmentId: string; input: { idempotency_key: string; completion_payload: unknown; started_at: string } };
++    };
++    expect(queued.assignment.assignmentId).toBe('asg-1');
++    expect(queued.assignment.input.idempotency_key).toBe('0b6f2a3e-4b1c-4d2e-9f00-1a2b3c4d5e6f');
++    expect(queued.assignment.input.started_at).toBe(new Date(STARTED_AT).toISOString());
++    expect(queued.assignment.input.completion_payload).toMatchObject({
++      exercises: [{ exerciseName: 'Bench Press', sets: [{ actual_weight_lbs: 135, actual_reps: 8, status: 'completed' }, { actual_weight_lbs: 145, actual_reps: 6 }] }],
++    });
++  });
++});
++
++describe('app closed mid-workout', () => {
++  it('the Workouts tab offers the workout in progress and reopens it with its name and assignment', async () => {
++    mockLoadActiveWorkoutSession.mockResolvedValue(storedSession({ assignmentId: 'asg-1' }));
++    const { findByTestId, getByText } = await render(<WorkoutSyncCards userId="c1" />);
++    const card = await findByTestId('workout-resume-card');
++    expect(getByText('Workout in progress')).toBeTruthy();
++    expect(getByText(/2 sets logged/)).toBeTruthy();
++
++    await act(async () => {
++      await fireEvent.press(card);
++    });
++    expect(mockNavigate).toHaveBeenCalledWith('ActiveWorkout', {
++      routineName: 'Push Day',
++      exercises: '[]',
++      assignmentId: 'asg-1',
++      resume: true,
++    });
++    // Queued workouts are sent on every visit to the tab.
++    expect(mockPushQueued).toHaveBeenCalled();
++  });
++
++  it('reopening from the card restores the sets without asking again', async () => {
++    mockRouteParams = { routineName: 'Push Day', exercises: '[]', resume: true };
++    const { getByText } = await render(<ActiveWorkoutScreen />);
++    await waitFor(() => expect(getByText('Bench Press')).toBeTruthy());
++    expect(alertTitles).not.toContain('Resume workout?');
++  });
++
++  it('says how many finished workouts are waiting to be sent', async () => {
++    mockLoadActiveWorkoutSession.mockResolvedValue(null);
++    mockCountQueued.mockResolvedValue(1);
++    const { findByTestId, queryByTestId } = await render(<WorkoutSyncCards userId="c1" />);
++    const notice = await findByTestId('workout-queued-notice');
++    expect(notice).toBeTruthy();
++    expect(queryByTestId('workout-resume-card')).toBeNull();
++  });
++});
+diff --git a/src/components/roman/__tests__/romanP3FlagOffFinishWorkout.test.tsx b/src/components/roman/__tests__/romanP3FlagOffFinishWorkout.test.tsx
+index c72950b3..0f1375c9 100644
+--- a/src/components/roman/__tests__/romanP3FlagOffFinishWorkout.test.tsx
++++ b/src/components/roman/__tests__/romanP3FlagOffFinishWorkout.test.tsx
+@@ -105,6 +105,12 @@ jest.mock('../../../offline', () => ({
+   writeWorkoutLog: jest.fn(async () => undefined),
+   triggerSync: jest.fn(async () => undefined),
+   markSessionSyncedBySessionName: jest.fn(async () => undefined),
++  queueWorkout: jest.fn(async () => ({ id: 'q1', alreadySynced: false, serverId: null })),
++  settleQueuedWorkout: jest.fn(async () => undefined),
++  releaseQueuedWorkout: jest.fn(async () => undefined),
++  countQueuedWorkouts: jest.fn(async () => 0),
++  pushQueuedWorkouts: jest.fn(async () => undefined),
++  workoutSyncEvents: { on: jest.fn(), off: jest.fn() },
+ }));
+ 
+ // ── WorkoutScreen dependency mocks (landing data sources) ────────────────────
+diff --git a/src/components/workout/WorkoutSyncCards.tsx b/src/components/workout/WorkoutSyncCards.tsx
+new file mode 100644
+index 00000000..ca8b5d97
+--- /dev/null
++++ b/src/components/workout/WorkoutSyncCards.tsx
+@@ -0,0 +1,212 @@
++/**
++ * WORKOUT-SYNC-124 (agent 124): two small cards at the top of the Workouts
++ * tab.
++ *
++ *   - "Workout in progress": the app was closed or killed mid-workout. The
++ *     saved session used to be reachable only by starting some workout and
++ *     answering a "Resume?" prompt, so a client reopening the app saw no sign
++ *     of the sets already logged. Tapping Resume reopens the same workout
++ *     (same name, same coach assignment) with every logged set.
++ *   - "Waiting to send": workouts finished without signal. They are stored
++ *     on the phone and sent automatically; the card says so and disappears
++ *     once they are on the server.
++ *
++ * Every focus of the tab also sends queued workouts (a cold start online has
++ * no reconnect event to do it).
++ */
++import React, { useCallback, useEffect, useMemo, useState } from 'react';
++import { StyleSheet, Text, View } from 'react-native';
++import { Ionicons } from '@expo/vector-icons';
++import {
++  useFocusEffect,
++  useNavigation,
++  NavigationProp,
++  ParamListBase,
++} from '@react-navigation/native';
++import HapticPressable from '../HapticPressable';
++import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
++import {
++  loadActiveWorkoutSession,
++  type PersistedActiveWorkoutSession,
++} from '../../storage/activeWorkoutSession';
++import {
++  countQueuedWorkouts,
++  pushQueuedWorkouts,
++  workoutSyncEvents,
++} from '../../offline';
++
++export function useWorkoutSyncState(
++  userId: string | undefined,
++  onSynced?: () => void,
++) {
++  const [session, setSession] = useState<PersistedActiveWorkoutSession | null>(null);
++  const [queuedCount, setQueuedCount] = useState(0);
++
++  const refresh = useCallback(async () => {
++    if (!userId) return;
++    try {
++      const result = await loadActiveWorkoutSession(userId);
++      setSession(result ? result.session : null);
++    } catch {
++      setSession(null);
++    }
++    try {
++      await pushQueuedWorkouts();
++    } catch {
++      // Stays queued; the next focus or reconnect tries again.
++    }
++    try {
++      setQueuedCount(await countQueuedWorkouts(userId));
++    } catch {
++      setQueuedCount(0);
++    }
++  }, [userId]);
++
++  useFocusEffect(
++    useCallback(() => {
++      refresh();
++      return undefined;
++    }, [refresh]),
++  );
++
++  useEffect(() => {
++    const handler = () => {
++      if (!userId) return;
++      countQueuedWorkouts(userId)
++        .then(setQueuedCount)
++        .catch(() => undefined);
++      onSynced?.();
++    };
++    workoutSyncEvents.on('synced', handler);
++    return () => {
++      workoutSyncEvents.off('synced', handler);
++    };
++  }, [userId, onSynced]);
++
++  return { session, queuedCount, refresh };
++}
++
++function startedAgo(startedAtMs: number, nowMs: number): string {
++  const minutes = Math.max(0, Math.round((nowMs - startedAtMs) / 60000));
++  if (minutes < 1) return 'Started just now';
++  if (minutes < 60) return `Started ${minutes} min ago`;
++  const hours = Math.floor(minutes / 60);
++  return `Started ${hours} h ${minutes % 60} min ago`;
++}
++
++export function resumeParams(session: PersistedActiveWorkoutSession) {
++  return {
++    routineName: session.routineName || 'Workout',
++    exercises: session.exercisesJson || '[]',
++    ...(session.assignmentId ? { assignmentId: session.assignmentId } : {}),
++    resume: true,
++  };
++}
++
++export default function WorkoutSyncCards({
++  userId,
++  onSynced,
++}: {
++  userId: string | undefined;
++  onSynced?: () => void;
++}) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const navigation = useNavigation<NavigationProp<ParamListBase>>();
++  const { session, queuedCount } = useWorkoutSyncState(userId, onSynced);
++
++  const loggedSets = session
++    ? session.sessionExercises.reduce(
++        (sum, ex) => sum + ex.sets.filter((s) => s.completed).length,
++        0,
++      )
++    : 0;
++
++  return (
++    <>
++      {session ? (
++        <HapticPressable
++          intent="medium"
++          onPress={() => navigation.navigate('ActiveWorkout', resumeParams(session))}
++          accessibilityRole="button"
++          accessibilityLabel={`Resume workout: ${session.routineName || 'Workout'}`}
++          style={styles.card}
++          testID="workout-resume-card"
++        >
++          <View style={{ flex: 1 }}>
++            <Text style={styles.label}>Workout in progress</Text>
++            <Text style={styles.title}>{session.routineName || 'Workout'}</Text>
++            <Text style={styles.detail}>
++              {`${startedAgo(session.startedAtMs, Date.now())} · ${loggedSets} ${
++                loggedSets === 1 ? 'set' : 'sets'
++              } logged`}
++            </Text>
++          </View>
++          <Text style={styles.action}>Resume</Text>
++          <Ionicons name="chevron-forward" size={22} color={colors.primary} />
++        </HapticPressable>
++      ) : null}
++      {queuedCount > 0 ? (
++        <View
++          style={[styles.card, styles.noticeCard]}
++          accessibilityRole="text"
++          testID="workout-queued-notice"
++        >
++          <Ionicons name="cloud-upload-outline" size={20} color={colors.textSecondary} />
++          <Text style={styles.notice}>
++            {queuedCount === 1
++              ? '1 workout is saved on this phone and will be sent to your coach once the phone is back online.'
++              : `${queuedCount} workouts are saved on this phone and will be sent to your coach once the phone is back online.`}
++          </Text>
++        </View>
++      ) : null}
++    </>
++  );
++}
++
++const makeStyles = (colors: ThemeColors) =>
++  StyleSheet.create({
++    card: {
++      flexDirection: 'row',
++      alignItems: 'center',
++      marginHorizontal: 24,
++      marginBottom: 16,
++      paddingHorizontal: 16,
++      paddingVertical: 14,
++      borderRadius: 4,
++      backgroundColor: colors.surface,
++      borderWidth: 1,
++      borderColor: colors.primary,
++      gap: 8,
++    },
++    noticeCard: {
++      borderColor: colors.border,
++    },
++    label: {
++      fontSize: 11,
++      color: colors.textSecondary,
++      textTransform: 'uppercase',
++      letterSpacing: 1,
++      marginBottom: 2,
++    },
++    title: {
++      fontSize: 15,
++      fontWeight: '500',
++      color: colors.textPrimary,
++    },
++    detail: {
++      fontSize: 13,
++      color: colors.textSecondary,
++      marginTop: 2,
++    },
++    action: {
++      fontSize: 15,
++      fontWeight: '500',
++      color: colors.primary,
++    },
++    notice: {
++      flex: 1,
++      fontSize: 13,
++      color: colors.textSecondary,
++    },
++  });
+diff --git a/src/offline/database.ts b/src/offline/database.ts
+index ae61018a..69554b4a 100644
+--- a/src/offline/database.ts
++++ b/src/offline/database.ts
+@@ -23,6 +23,8 @@
+  *       shared device cannot leak User A's pending pushes onto User B's JWT).
+  *   v3: add status TEXT (pending|dead_letter|synced) so permanent 4xx push
+  *       failures stop hammering the server forever (Hunt P1-1).
++ *   v4: add payload / client_key / assignment_json TEXT so a finished workout
++ *       is queued as one row and reaches the server exactly once.
+  *
+  * @see docs/offline-architecture.md
+  */
+@@ -90,6 +92,20 @@ async function bootstrap(db: SQLite.SQLiteDatabase): Promise<void> {
+     );
+   }
+ 
++  // v4 (WORKOUT-SYNC-124): one row per finished workout. `payload` is the
++  // exact POST /workouts body, `client_key` identifies the workout session
++  // (unique, so tapping Finish again updates the same row instead of queueing
++  // a second copy) and `assignment_json` is the coach-assignment completion
++  // still to send once the workout itself is on the server.
++  for (const column of ['payload', 'client_key', 'assignment_json']) {
++    if (!(await tableHasColumn(db, 'workout_logs', column))) {
++      await db.execAsync(`ALTER TABLE workout_logs ADD COLUMN ${column} TEXT;`);
++    }
++  }
++  await db.execAsync(
++    `CREATE UNIQUE INDEX IF NOT EXISTS idx_workout_logs_client_key ON workout_logs(client_key);`,
++  );
++
+   // v3: status column for dead-letter tracking. sync_status already exists for
+   // the original tri-state machine (pending|synced|conflict); we extend that
+   // column to add 'dead_letter' rather than adding a parallel column — the
+diff --git a/src/offline/index.ts b/src/offline/index.ts
+index bc4a5cd6..7d90a7a4 100644
+--- a/src/offline/index.ts
++++ b/src/offline/index.ts
+@@ -26,6 +26,17 @@ export {
+   pullFromServer,
+   conflictToastEvents,
+   markSessionSyncedBySessionName,
++  queueWorkout,
++  settleQueuedWorkout,
++  releaseQueuedWorkout,
++  countQueuedWorkouts,
++  pushQueuedWorkouts,
++  workoutSyncEvents,
+   __isSyncInProgress,
+ } from './sync/sync-engine';
+-export type { WriteWorkoutPayload } from './sync/sync-engine';
++export type {
++  WriteWorkoutPayload,
++  QueueWorkoutInput,
++  QueueWorkoutResult,
++  QueuedAssignmentCompletion,
++} from './sync/sync-engine';
+diff --git a/src/offline/sync/sync-engine.ts b/src/offline/sync/sync-engine.ts
+index 521a18fc..0b2749b4 100644
+--- a/src/offline/sync/sync-engine.ts
++++ b/src/offline/sync/sync-engine.ts
+@@ -38,8 +38,10 @@ import {
+   toServerPayload,
+ } from '../models/WorkoutLog';
+ import { workoutApi } from '../../services/api';
++import { workoutBuilderApi } from '../../api/workoutBuilderApi';
++import type { CompleteAssignmentInput } from '../../api/workoutBuilderApi';
+ import { generateId } from '../../utils/date';
+-import { readUserCacheSync } from '../../lib/userCache';
++import { readUserCache, readUserCacheSync } from '../../lib/userCache';
+ 
+ // ---------------------------------------------------------------------------
+ // Conflict toast event bus
+@@ -59,11 +61,19 @@ export const conflictToastEvents = new EventEmitter();
+ // visible via Sentry breadcrumbs (logged in pushPending below).
+ export const deadLetterEvents = new EventEmitter();
+ 
++// Emitted after queued workouts reach the server so open screens (the
++// Workouts tab, the "From your coach" card) can refresh.
++export const workoutSyncEvents = new EventEmitter();
++
+ // ---------------------------------------------------------------------------
+ // Internal state
+ // ---------------------------------------------------------------------------
+ let syncInProgress = false;
+ 
++// Client keys whose POST is in flight right now (from the Finish screen or
++// from this engine). A held row is never sent a second time in parallel.
++const heldKeys = new Set<string>();
++
+ // ---------------------------------------------------------------------------
+ // Write path
+ // ---------------------------------------------------------------------------
+@@ -130,6 +140,157 @@ export async function writeWorkoutLog(
+   };
+ }
+ 
++// ---------------------------------------------------------------------------
++// Whole-workout queue (WORKOUT-SYNC-124)
++// ---------------------------------------------------------------------------
++//
++// A finished workout is stored as ONE row holding the exact POST /workouts
++// body. The old path stored one row per exercise and rebuilt a body from it
++// (no workout_name / workout_type / muscle_group, plus an unknown local_id),
++// so the server's strict validation rejected every workout saved without
++// signal and the row was dead-lettered: the workout never reached the coach.
++
++export interface QueuedAssignmentCompletion {
++  assignmentId: string;
++  input: CompleteAssignmentInput;
++}
++
++export interface QueueWorkoutInput {
++  /** Stable per workout session; the same key never queues a second row. */
++  clientKey: string;
++  /** Exact POST /workouts body. */
++  payload: Record<string, unknown>;
++  userId?: string | null;
++  sessionName?: string | null;
++  durationMinutes?: number | null;
++  /** Coach assignment to mark complete once the workout is on the server. */
++  assignment?: QueuedAssignmentCompletion | null;
++}
++
++export interface QueueWorkoutResult {
++  id: string;
++  /** True when this session already reached the server (nothing to send). */
++  alreadySynced: boolean;
++  serverId: string | null;
++}
++
++/**
++ * Store a finished workout durably before any network call. Calling it again
++ * for the same `clientKey` (Finish tapped again after a failed save) updates
++ * the one queued row instead of adding a copy. The row is held until the
++ * caller reports the outcome with `settleQueuedWorkout` or
++ * `releaseQueuedWorkout`, so the background sync never sends it in parallel.
++ */
++export async function queueWorkout(
++  input: QueueWorkoutInput,
++): Promise<QueueWorkoutResult> {
++  const clientKey = (input.clientKey ?? '').trim();
++  if (!clientKey) {
++    throw new Error('queueWorkout: clientKey is required');
++  }
++  const db = await getDatabase();
++  const userId = input.userId || readUserCacheSync()?.id || null;
++  const payloadJson = JSON.stringify(input.payload);
++  const assignmentJson = input.assignment ? JSON.stringify(input.assignment) : null;
++
++  const existing = await db.getFirstAsync<{
++    id: string;
++    sync_status: string;
++    server_id: string | null;
++  }>(
++    `SELECT id, sync_status, server_id FROM workout_logs WHERE client_key = ? LIMIT 1`,
++    [clientKey],
++  );
++  if (existing && existing.sync_status === 'synced') {
++    return { id: existing.id, alreadySynced: true, serverId: existing.server_id };
++  }
++
++  heldKeys.add(clientKey);
++  if (existing) {
++    await db.runAsync(
++      `UPDATE workout_logs
++          SET payload = ?, assignment_json = ?, sync_status = 'pending',
++              duration_minutes = ?, user_id = ?
++        WHERE id = ?`,
++      [payloadJson, assignmentJson, input.durationMinutes ?? null, userId, existing.id],
++    );
++    return { id: existing.id, alreadySynced: false, serverId: null };
++  }
++
++  const id = generateId();
++  await db.runAsync(
++    `INSERT INTO workout_logs
++       (id, exercise_id, sets_data, sync_status, logged_at, server_id,
++        session_name, duration_minutes, user_id, payload, client_key, assignment_json)
++     VALUES (?, 'session', '[]', 'pending', ?, NULL, ?, ?, ?, ?, ?, ?)`,
++    [
++      id,
++      Date.now(),
++      input.sessionName ?? null,
++      input.durationMinutes ?? null,
++      userId,
++      payloadJson,
++      clientKey,
++      assignmentJson,
++    ],
++  );
++  return { id, alreadySynced: false, serverId: null };
++}
++
++/**
++ * The Finish screen's own POST succeeded: mark the queued row sent so the
++ * background sync never posts it again. The screen sends the assignment
++ * completion itself on this path, so the stored copy is dropped.
++ */
++export async function settleQueuedWorkout(
++  clientKey: string,
++  serverId: string,
++): Promise<void> {
++  try {
++    const db = await getDatabase();
++    await db.runAsync(
++      `UPDATE workout_logs SET sync_status = 'synced', server_id = ?, assignment_json = NULL WHERE client_key = ?`,
++      [serverId, clientKey],
++    );
++  } finally {
++    heldKeys.delete(clientKey);
++  }
++}
++
++/**
++ * The Finish screen's POST failed. With no answer from the server (no signal,
++ * timeout, 5xx) the row stays queued for the background sync. When the server
++ * refused the body (`rejected`), the row is parked so it is not retried; a
++ * later Finish for the same session re-queues it.
++ */
++export async function releaseQueuedWorkout(
++  clientKey: string,
++  opts: { rejected?: boolean } = {},
++): Promise<void> {
++  try {
++    if (opts.rejected) {
++      const db = await getDatabase();
++      await db.runAsync(
++        `UPDATE workout_logs SET sync_status = 'dead_letter' WHERE client_key = ? AND sync_status = 'pending'`,
++        [clientKey],
++      );
++    }
++  } finally {
++    heldKeys.delete(clientKey);
++  }
++}
++
++/** Number of finished workouts on this phone still waiting to be sent. */
++export async function countQueuedWorkouts(userId: string): Promise<number> {
++  if (!userId) return 0;
++  const db = await getDatabase();
++  const row = await db.getFirstAsync<{ n: number }>(
++    `SELECT COUNT(*) AS n FROM workout_logs WHERE payload IS NOT NULL AND sync_status = 'pending' AND user_id = ?`,
++    [userId],
++  );
++  return Number(row?.n ?? 0);
++}
++
+ // ---------------------------------------------------------------------------
+ // Internal mutators (used by the sync loop and exposed for direct testing)
+ // ---------------------------------------------------------------------------
+@@ -247,25 +408,33 @@ async function pushPending(): Promise<void> {
+   // with a foreign user_id stay in the DB (we want account switching to
+   // resume gracefully), but they must never be POSTed under another user's
+   // JWT.
+-  const currentUserId = readUserCacheSync()?.id;
++  const currentUserId = await currentUserIdForPush();
+   if (!currentUserId) {
+     // No signed-in user → nothing to push. Don't even read the table.
+     return;
+   }
+ 
+-  const rows = await db.getAllAsync<Parameters<typeof rowToWorkoutLog>[0]>(
++  const rows = await db.getAllAsync<QueuedRow>(
+     `SELECT id, exercise_id, sets_data, sync_status, logged_at,
+-            server_id, session_name, duration_minutes, user_id
++            server_id, session_name, duration_minutes, user_id,
++            payload, client_key, assignment_json
+        FROM workout_logs
+       WHERE sync_status = 'pending'
+         AND user_id = ?`,
+     [currentUserId],
+   );
+-  const pending: WorkoutLog[] = rows.map(rowToWorkoutLog);
+ 
+   let deadLettered = 0;
+-
+-  for (const log of pending) {
++  let sent = 0;
++
++  for (const row of rows) {
++    if (typeof row.payload === 'string' && row.payload) {
++      const outcome = await pushQueuedRow(row);
++      if (outcome === 'sent') sent++;
++      if (outcome === 'dead_letter') deadLettered++;
++      continue;
++    }
++    const log: WorkoutLog = rowToWorkoutLog(row);
+     try {
+       const serverPayload = toServerPayload(log);
+       const response = await workoutApi.create(
+@@ -301,9 +470,138 @@ async function pushPending(): Promise<void> {
+     }
+   }
+ 
++  sent += await retryAssignmentCompletions(currentUserId);
++
+   if (deadLettered > 0) {
+     deadLetterEvents.emit('dead_letter', { count: deadLettered });
+   }
++  if (sent > 0) {
++    workoutSyncEvents.emit('synced', { count: sent });
++  }
++}
++
++type QueuedRow = Parameters<typeof rowToWorkoutLog>[0] & {
++  payload?: string | null;
++  client_key?: string | null;
++  assignment_json?: string | null;
++};
++
++async function currentUserIdForPush(): Promise<string | undefined> {
++  const cached = readUserCacheSync()?.id;
++  if (cached) return cached;
++  // Cold start: the synchronous mirror may not be hydrated yet.
++  try {
++    return (await readUserCache())?.id ?? undefined;
++  } catch {
++    return undefined;
++  }
++}
++
++/** POST one queued whole workout, then its coach-assignment completion. */
++async function pushQueuedRow(
++  row: QueuedRow,
++): Promise<'sent' | 'dead_letter' | 'kept'> {
++  const key = row.client_key ?? '';
++  if (key && heldKeys.has(key)) return 'kept';
++  if (key) heldKeys.add(key);
++  try {
++    let body: Record<string, unknown>;
++    try {
++      body = JSON.parse(row.payload as string) as Record<string, unknown>;
++    } catch {
++      await markDeadLetter(row.id);
++      return 'dead_letter';
++    }
++    try {
++      const response = await workoutApi.create(body);
++      const data = response.data as { id?: string; workout?: { id?: string } };
++      await markSynced(row.id, data?.id ?? data?.workout?.id ?? '');
++    } catch (err: unknown) {
++      const errorClass = classifyPushError(err);
++      if (errorClass === 'transient') return 'kept';
++      // A queued workout is created fresh, so a 409 is a refusal too.
++      await markDeadLetter(row.id);
++      if (__DEV__) {
++        console.warn('[SyncEngine] queued workout refused', row.id, err);
++      }
++      return 'dead_letter';
++    }
++    if (row.assignment_json) {
++      await sendAssignmentCompletion(row.id, row.assignment_json);
++    }
++    return 'sent';
++  } finally {
++    if (key) heldKeys.delete(key);
++  }
++}
++
++/**
++ * Mark the coach's assignment complete for a workout that is already on the
++ * server. Clears the stored request on success or on a refusal; keeps it for
++ * the next cycle when there was no answer.
++ */
++async function sendAssignmentCompletion(
++  rowId: string,
++  assignmentJson: string,
++): Promise<boolean> {
++  const db = await getDatabase();
++  let parsed: QueuedAssignmentCompletion | null = null;
++  try {
++    parsed = JSON.parse(assignmentJson) as QueuedAssignmentCompletion;
++  } catch {
++    parsed = null;
++  }
++  if (parsed?.assignmentId) {
++    try {
++      await workoutBuilderApi.completeMyAssignment(parsed.assignmentId, parsed.input);
++    } catch (err: unknown) {
++      if (classifyPushError(err) === 'transient') return false;
++      if (__DEV__) {
++        console.warn('[SyncEngine] assignment completion refused', rowId, err);
++      }
++    }
++  }
++  await db.runAsync(
++    `UPDATE workout_logs SET assignment_json = NULL WHERE id = ?`,
++    [rowId],
++  );
++  return true;
++}
++
++/** Retry assignment completions whose workout reached the server earlier. */
++async function retryAssignmentCompletions(userId: string): Promise<number> {
++  let sent = 0;
++  try {
++    const db = await getDatabase();
++    const rows = await db.getAllAsync<{ id: string; assignment_json: string; client_key: string | null }>(
++      `SELECT id, assignment_json, client_key FROM workout_logs
++        WHERE assignment_json IS NOT NULL AND sync_status = 'synced' AND user_id = ?`,
++      [userId],
++    );
++    for (const row of rows) {
++      if (row.client_key && heldKeys.has(row.client_key)) continue;
++      if (await sendAssignmentCompletion(row.id, row.assignment_json)) sent++;
++    }
++  } catch (err) {
++    if (__DEV__) {
++      console.warn('[SyncEngine] assignment retry failed', err);
++    }
++  }
++  return sent;
++}
++
++/**
++ * Send queued workouts without the pull step. Safe to call on every screen
++ * focus: it shares the in-progress guard with `triggerSync`.
++ */
++export async function pushQueuedWorkouts(): Promise<void> {
++  if (syncInProgress) return;
++  syncInProgress = true;
++  try {
++    await pushPending();
++  } finally {
++    syncInProgress = false;
++  }
+ }
+ 
+ // ---------------------------------------------------------------------------
+diff --git a/src/screens/client/ActiveWorkoutScreen.tsx b/src/screens/client/ActiveWorkoutScreen.tsx
+index 651d5fcf..c7f458be 100644
+--- a/src/screens/client/ActiveWorkoutScreen.tsx
++++ b/src/screens/client/ActiveWorkoutScreen.tsx
+@@ -44,9 +44,10 @@ import { assignmentIdempotencyKey, localCalendarDate } from '../../utils/workout
+ // sync_status='pending'. The sync engine pushes it to the server when
+ // connectivity allows.
+ import {
+-  writeWorkoutLog,
++  queueWorkout,
++  settleQueuedWorkout,
++  releaseQueuedWorkout,
+   triggerSync,
+-  markSessionSyncedBySessionName,
+ } from '../../offline';
+ 
+ // NB: the local exercise_logs SQLite table (logExerciseWithVolume) is
+@@ -113,6 +114,9 @@ export default function ActiveWorkoutScreen() {
+   const route = useRoute<RouteProp<RouteParams, 'ActiveWorkout'>>();
+   const navigation = useNavigation<NavigationProp<ParamListBase>>();
+   const { routineName, exercises: exercisesJson, assignmentId } = route.params;
++  // Set by the Workouts tab "Resume workout" card: adopt the saved session
++  // without asking again.
++  const resumeRequested = (route.params as { resume?: boolean }).resume === true;
+   // Per-R15 the persisted session key is scoped to the current user
+   // (`active_workout_session:<userId>`). The user id resolves
+   // asynchronously on cold start (useCurrentUser reads from MMKV/Async),
+@@ -147,6 +151,9 @@ export default function ActiveWorkoutScreen() {
+   // Stable idempotency key generated once at session start. Held in a
+   // ref so it can be swapped on resume without re-rendering.
+   const idempotencyKeyRef = useRef<string>(assignmentId ? randomUuid() : '');
++  // Offline queue key for this workout session. Fixed at the first Finish so
++  // tapping Finish again updates the one queued copy instead of adding one.
++  const queueKeyRef = useRef<string>('');
+   // Gates the persistence effect until we've decided whether we are
+   // creating a fresh session or restoring a stored one. Without this
+   // gate the initial empty `sessionExercises` value would overwrite a
+@@ -288,6 +295,11 @@ export default function ActiveWorkoutScreen() {
+         return;
+       }
+       const { session, isStale } = result;
++      if (resumeRequested) {
++        adoptPersistedSession(session);
++        setHydrated(true);
++        return;
++      }
+       const promptTitle = isStale ? 'Resume earlier workout?' : 'Resume workout?';
+       const promptBody = isStale
+         ? `Found an unfinished workout from over 12 hours ago${
+@@ -665,14 +677,14 @@ export default function ActiveWorkoutScreen() {
+         // describing the deleted WatermelonDB stack — current
+         // implementation is built on expo-sqlite via src/offline,
+         // see docs/offline-architecture.md):
+-        //   1. Write each exercise group as a row in the local
+-        //      expo-sqlite store with sync_status='pending'.
++        //   1. Queue the whole workout (the exact POST body) as one
++        //      row in the local expo-sqlite store, keyed by session.
+         //   2. Attempt the server POST via createWorkout.mutate
+         //      (network-optional).
+-        //   3. If the network call succeeds the sync engine marks
+-        //      the row 'synced'.
+-        //   4. If offline the rows stay 'pending' and triggerSync()
+-        //      fires on reconnect via NetInfo.
++        //   3. If the network call succeeds the row is marked 'synced'.
++        //   4. With no answer the row stays 'pending', the client is
++        //      told it is saved, and the sync engine sends it (and any
++        //      coach assignment completion) on reconnect / foreground.
+         onPress: async () => {
+           // Suppress the debounced persistence write that would
+           // otherwise race the post-durable-write clear() and re-create
+@@ -728,32 +740,70 @@ export default function ActiveWorkoutScreen() {
+             completedSetCount: completedSets,
+           };
+ 
+-          // Write each exercise as a separate row in the local
+-          // expo-sqlite store (one row per exercise group). A
+-          // workout session that spans multiple exercises produces N
+-          // rows — the sync engine batches them together via
+-          // session_name when pushing to the server. Schema stays
+-          // flat; no nested JSON blob in a single row.
++          // The exact POST /workouts body. Queued on the phone first (one row
++          // for the whole workout) and sent as-is, now or by the background
++          // sync once there is signal.
++          const workoutPayload = {
++            // The server keeps a calendar date (@db.Date). Sending the
++            // client's own calendar day keeps the history card on the day
++            // the client trained instead of the UTC day.
++            date: localCalendarDate(new Date()),
++            workout_name: routineName || 'Workout',
++            workout_type: 'strength',
++            duration_minutes: durationMinutes,
++            notes: workoutNotes,
++            exercises: completedExercises.map(completedExercisePayload),
++          };
++          // Coach assignment completion (full exercise/set detail).
++          const completionPayload = {
++            exercises: sessionExercises.map((ex) => ({
++              exerciseName: ex.exerciseName,
++              workoutPlanExerciseId: ex.workoutPlanExerciseId ?? null,
++              sets: ex.sets.map((s, i) => ({
++                set_index: i + 1,
++                status: s.completed ? 'completed' : 'skipped',
++                actual_reps: s.reps,
++                actual_weight_lbs: s.weight,
++              })),
++            })),
++          };
++          if (assignmentId) {
++            idempotencyKeyRef.current = assignmentIdempotencyKey(idempotencyKeyRef.current);
++          }
++          if (!queueKeyRef.current) {
++            queueKeyRef.current = `${userId || 'local'}:${sessionStartMsRef.current}`;
++          }
++          const queueKey = queueKeyRef.current;
++          let queued = false;
++
+           try {
+-            for (const ex of completedExercises) {
+-              // B2: never write an empty exerciseId — fall back to a stable
+-              // session-scoped slug derived from the exercise name. The
+-              // server route will still receive the human-readable name via
+-              // the createWorkout payload below.
+-              const slug = (ex.exerciseName || 'exercise')
+-                .toLowerCase()
+-                .replace(/[^a-z0-9]+/g, '-')
+-                .replace(/^-+|-+$/g, '') || 'exercise';
+-              const exerciseId =
+-                (ex.exerciseId && ex.exerciseId.trim()) ||
+-                `session:${routineName || 'workout'}/${slug}`;
+-              await writeWorkoutLog({
+-                exerciseId,
+-                setsData: JSON.stringify(ex.sets),
+-                sessionName: routineName,
+-                durationMinutes,
+-              });
++            const result = await queueWorkout({
++              clientKey: queueKey,
++              payload: workoutPayload,
++              userId: userId || null,
++              sessionName: routineName,
++              durationMinutes,
++              assignment: assignmentId
++                ? {
++                    assignmentId,
++                    input: {
++                      completion_payload: completionPayload,
++                      idempotency_key: idempotencyKeyRef.current,
++                      started_at: sessionStartTimeRef.current.toISOString(),
++                    },
++                  }
++                : null,
++            });
++            if (result.alreadySynced) {
++              // This session already reached the server (saved earlier, then
++              // the app was closed before the screen cleared). Never send it
++              // a second time.
++              if (userId) await clearActiveWorkoutSession(userId);
++              setSaving(false);
++              navigation.goBack();
++              return;
+             }
++            queued = true;
+             localWriteSucceeded = true;
+             // R18: local SQLite write is the first durable checkpoint.
+             // Now that at least one durable replacement save has
+@@ -788,20 +838,10 @@ export default function ActiveWorkoutScreen() {
+             exercise_count: completedExercises.length,
+           });
+ 
+-          // Attempt server sync. If offline, the pending WDB records will be
+-          // pushed by the sync engine on the next network-available event.
++          // Attempt the server save now. Without signal the queued row is
++          // sent by the sync engine on the next reconnect / foreground.
+           createWorkout.mutate(
+-            {
+-              // The server keeps a calendar date (@db.Date). Sending the
+-              // client's own calendar day keeps the history card on the day
+-              // the client trained instead of the UTC day.
+-              date: localCalendarDate(new Date()),
+-              workout_name: routineName || 'Workout',
+-              workout_type: 'strength',
+-              duration_minutes: durationMinutes,
+-              notes: workoutNotes,
+-              exercises: completedExercises.map(completedExercisePayload),
+-            },
++            workoutPayload,
+             {
+               onSuccess: (data: unknown) => {
+                 if (timerRef.current) clearInterval(timerRef.current);
+@@ -843,24 +883,20 @@ export default function ActiveWorkoutScreen() {
+                   sets_completed: completedSets,
+                   exercise_count: sessionExercises.filter((e) => e.sets.some((s) => s.completed)).length,
+                 });
+-                // W-1 fix: the parent mutate just succeeded, so the N
+-                // pending local rows we wrote in the loop above must be
+-                // marked synced — otherwise the next `triggerSync()` cycle
+-                // re-POSTs each of them as an additional single-exercise
+-                // workout on the server.
+-                if (serverId && routineName) {
+-                  markSessionSyncedBySessionName(routineName, serverId).catch((error: unknown) => {
+-                    // Best-effort; pending rows will reconcile on the next pull.
+-                    // Surfaced (not swallowed) so a persistent mismatch is
+-                    // diagnosable rather than silent.
+-                    logger.warn('mwb.completion.mark-session-synced', {
+-                      ...buildCompletionLogBase({ ...completionLogBaseCtx, justCompletedId }),
+-                      ...completionLogExtra,
+-                      checkpoint: 'mark-session-synced',
+-                      serverId: serverId || undefined,
+-                      error: normalizeError(error),
++                // The queued copy of this workout is now on the server: mark it
++                // sent so the background sync never posts it a second time.
++                if (queued) {
++                  Promise.resolve()
++                    .then(() => settleQueuedWorkout(queueKey, serverId))
++                    .catch((error: unknown) => {
++                      logger.warn('mwb.completion.mark-session-synced', {
++                        ...buildCompletionLogBase({ ...completionLogBaseCtx, justCompletedId }),
++                        ...completionLogExtra,
++                        checkpoint: 'mark-session-synced',
++                        serverId: serverId || undefined,
++                        error: normalizeError(error),
++                      });
+                     });
+-                  });
+                 }
+                 // Trigger sync so the newly created server record is
+                 // pulled back. Pending rows have been marked above so this
+@@ -881,19 +917,6 @@ export default function ActiveWorkoutScreen() {
+                 // assignment completion endpoint with the full exercise/set
+                 // payload. Non-fatal — the generic workout is already saved.
+                 if (assignmentId) {
+-                  const completionPayload = {
+-                    exercises: sessionExercises.map((ex) => ({
+-                      exerciseName: ex.exerciseName,
+-                      workoutPlanExerciseId: ex.workoutPlanExerciseId ?? null,
+-                      sets: ex.sets.map((s, i) => ({
+-                        set_index: i + 1,
+-                        status: s.completed ? 'completed' : 'skipped',
+-                        actual_reps: s.reps,
+-                        actual_weight_lbs: s.weight,
+-                      })),
+-                    })),
+-                  };
+-                  idempotencyKeyRef.current = assignmentIdempotencyKey(idempotencyKeyRef.current);
+                   workoutBuilderApi.completeMyAssignment(assignmentId, {
+                     completion_payload: completionPayload,
+                     idempotency_key: idempotencyKeyRef.current,
+@@ -941,9 +964,34 @@ export default function ActiveWorkoutScreen() {
+                 }
+               },
+               onError: (err) => {
++                setSaving(false);
++                const status = (err as { response?: { status?: number } } | null)?.response?.status;
++                const noAnswer = typeof status !== 'number' || status >= 500;
++                if (queued && noAnswer) {
++                  // No signal (or the server did not answer): the whole
++                  // workout is already stored on the phone and the sync
++                  // engine sends it, with the coach assignment, once the
++                  // phone is back online. Nothing for the client to redo.
++                  Promise.resolve()
++                    .then(() => releaseQueuedWorkout(queueKey))
++                    .catch(() => undefined);
++                  HapticService.heavyImpact();
++                  navigation.goBack();
++                  Alert.alert(
++                    'Saved on this phone',
++                    'No connection right now. The workout will be sent to your coach automatically once the phone is back online.',
++                  );
++                  return;
++                }
++                if (queued) {
++                  // The server refused this body; park the queued copy so it is
++                  // not retried. Tapping Finish again re-queues the same row.
++                  Promise.resolve()
++                    .then(() => releaseQueuedWorkout(queueKey, { rejected: true }))
++                    .catch(() => undefined);
++                }
+                 // Phase 11 / Track 3: error haptic on failed API action
+                 HapticService.error();
+-                setSaving(false);
+                 // The Finish path cleared the persisted session and disabled
+                 // future writes by setting finishingRef. If the server save
+                 // fails the user is told to retry, but without resetting
+diff --git a/src/screens/client/WorkoutScreen.tsx b/src/screens/client/WorkoutScreen.tsx
+index 4647ee43..0b1f020e 100644
+--- a/src/screens/client/WorkoutScreen.tsx
++++ b/src/screens/client/WorkoutScreen.tsx
+@@ -42,6 +42,7 @@ import { useMyWorkoutAssignments } from '../../hooks/useWorkoutBuilder';
+ // Clinic tutorial (C08): pinned plan explanation card; flag-gated, renders
+ // nothing unless featureFlags.clientTutorial and a program exists.
+ import PlanExplanationCard from '../../components/tutorial/PlanExplanationCard';
++import WorkoutSyncCards from '../../components/workout/WorkoutSyncCards';
+ import { featureFlags } from '../../config/featureFlags';
+ // §2.8 Workout complete + §2.10 generic error — Roman speaks beside his face
+ // (both components co-locate <RomanAvatar />). Gated behind
+@@ -632,6 +633,8 @@ export default function WorkoutScreen() {
+ 
+         <PlanExplanationCard />
+ 
++        <WorkoutSyncCards userId={currentUser?.id} onSynced={loadData} />
++
+         {pendingAssignments.length > 0 ? (
+           <HapticPressable
+             intent="medium"

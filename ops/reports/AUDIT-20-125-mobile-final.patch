@@ -1,0 +1,286 @@
+diff --git a/src/components/HapticPressable.tsx b/src/components/HapticPressable.tsx
+index 5c9ba68..05b641a 100644
+--- a/src/components/HapticPressable.tsx
++++ b/src/components/HapticPressable.tsx
+@@ -84,6 +84,7 @@ export default function HapticPressable({
+   pressScale = 0.97,
+   pressOpacity = 0.85,
+   disableAnimation = false,
++  accessibilityRole,
+   ...rest
+ }: HapticPressableProps) {
+   // GLOBAL reduce-motion gate (R4 P2): every HapticPressable — the client Roman
+@@ -170,6 +171,7 @@ export default function HapticPressable({
+       style={{ transform: [{ scale: scaleAnim }], opacity: opacityAnim }}
+     >
+       <Pressable
++        accessibilityRole={accessibilityRole ?? (onPress || rest.onLongPress ? 'button' : undefined)}
+         onPress={handlePress}
+         onPressIn={handlePressIn}
+         onPressOut={handlePressOut}
+diff --git a/src/components/__tests__/HapticPressable.accessibility125.test.tsx b/src/components/__tests__/HapticPressable.accessibility125.test.tsx
+new file mode 100644
+index 0000000..e0f80b3
+--- /dev/null
++++ b/src/components/__tests__/HapticPressable.accessibility125.test.tsx
+@@ -0,0 +1,32 @@
++import React from 'react';
++import { Text } from 'react-native';
++import { fireEvent, render } from '@testing-library/react-native';
++import HapticPressable from '../HapticPressable';
++
++jest.mock('../../screens/client/wearables/components/useReduceMotion', () => ({ useReduceMotion: () => true }));
++jest.mock('expo-haptics', () => ({
++  impactAsync: jest.fn().mockResolvedValue(undefined), ImpactFeedbackStyle: { Light: 'light' },
++}));
++
++describe('shared press controls — screen-reader semantics', () => {
++  it('exposes an actionable control as a button and keeps its handler', async () => {
++    const onPress = jest.fn();
++    const view = await render(<HapticPressable onPress={onPress}><Text>Save changes</Text></HapticPressable>);
++    await fireEvent.press(view.getByRole('button', { name: 'Save changes' }));
++    expect(onPress).toHaveBeenCalledTimes(1);
++  });
++
++  it('keeps explicit roles, labels and selected state', async () => {
++    const view = await render(
++      <HapticPressable onPress={jest.fn()} accessibilityRole="radio" accessibilityLabel="Dark appearance"
++        accessibilityState={{ selected: true }}><Text>Dark</Text></HapticPressable>,
++    );
++    expect(view.getByRole('radio', { name: 'Dark appearance', selected: true })).toBeTruthy();
++    expect(view.queryByRole('button')).toBeNull();
++  });
++
++  it('does not announce non-actionable content as a button', async () => {
++    const view = await render(<HapticPressable><Text>Summary</Text></HapticPressable>);
++    expect(view.queryByRole('button')).toBeNull();
++  });
++});
+diff --git a/src/components/home/HomeHeaderActions.tsx b/src/components/home/HomeHeaderActions.tsx
+index 0884c3d..2de63f4 100644
+--- a/src/components/home/HomeHeaderActions.tsx
++++ b/src/components/home/HomeHeaderActions.tsx
+@@ -71,7 +71,7 @@ export default function HomeHeaderActions() {
+         ]}
+       >
+         <Ionicons name="chatbubble-ellipses-outline" size={18} color={sc.textPrimary} />
+-        <Text style={[typography.bodySmall, styles.messageText, { color: sc.textPrimary }]} numberOfLines={1}>
++        <Text style={[typography.bodySmall, styles.messageText, { color: sc.textPrimary }]}>
+           {label}
+         </Text>
+       </Pressable>
+diff --git a/src/components/home/__tests__/HomeHeaderActions.test.tsx b/src/components/home/__tests__/HomeHeaderActions.test.tsx
+index 125c7e1..fec1cff 100644
+--- a/src/components/home/__tests__/HomeHeaderActions.test.tsx
++++ b/src/components/home/__tests__/HomeHeaderActions.test.tsx
+@@ -36,6 +36,14 @@ describe('HomeHeaderActions', () => {
+     expect(messageCoachLabel('  ')).toBe('Message your coach');
+   });
+ 
++  it('lets the message action label wrap at larger text sizes', async () => {
++    mockUser.mockReturnValue({ id: 'u1', coach_id: null });
++    const view = await render(<HomeHeaderActions />);
++    const label = view.getByText('Message your coach');
++    expect(label.props.numberOfLines).toBeUndefined();
++    expect(label.props.allowFontScaling).not.toBe(false);
++  });
++
+   it('message entry opens Messages; bell opens NotificationCenter with unread label', async () => {
+     mockUser.mockReturnValue({ id: 'u1', coach_id: 'c1' });
+     mockGet.mockRejectedValue(new Error('404'));
+diff --git a/src/navigation/ClientNavigator.tsx b/src/navigation/ClientNavigator.tsx
+index 209d58b..e4b9cbf 100644
+--- a/src/navigation/ClientNavigator.tsx
++++ b/src/navigation/ClientNavigator.tsx
+@@ -24,6 +24,7 @@ import { View } from 'react-native';
+ import { StyleSheet } from 'react-native';
+ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+ import { createNativeStackNavigator } from '@react-navigation/native-stack';
++import { useSafeAreaInsets } from 'react-native-safe-area-context';
+ import { Ionicons } from '@expo/vector-icons';
+ import HomeScreen from '../screens/client/HomeScreen';
+ import HabitsScreen from '../screens/client/HabitsScreen';
+@@ -126,6 +127,7 @@ import WearablesShell from '../screens/client/wearables/WearablesShell';
+ import MetricDetailScreen from '../screens/client/wearables/MetricDetailScreen';
+ import type { WearableMetricBucket, WearableMetricType } from '../api/wearablesSamplesApi';
+ import { colors } from '../theme/tokens';
++import { useTheme } from '../theme/ThemeProvider';
+ // v1-5 Community client tab. The whole stack + tab are gated behind
+ // featureFlags.communityTab (default OFF). When the flag is OFF the tab is not
+ // rendered and the deep-link route is not registered (see CommunityTabBarIcon
+@@ -629,6 +631,8 @@ const TUTORIAL_TABS = [
+ ];
+ 
+ export default function ClientNavigator() {
++  const { semanticColors: sc } = useTheme();
++  const insets = useSafeAreaInsets();
+   // Sol B-310-5: a Roman and AI withdrawal from onboarding that the ledger
+   // has not confirmed yet is sent when the app opens.
+   useAiWithdrawalDrain();
+@@ -653,13 +657,13 @@ export default function ClientNavigator() {
+         headerShown: false,
+         tabBarShowLabel: false,
+         tabBarHideOnKeyboard: true,
+-        tabBarActiveTintColor:   colors.ink,
+-        tabBarInactiveTintColor: colors.stone,
++        tabBarActiveTintColor:   sc.textPrimary,
++        tabBarInactiveTintColor: sc.textMuted,
+         tabBarStyle: {
+-          backgroundColor: colors.bone,
++          backgroundColor: sc.bgPrimary,
+           borderTopWidth: 0.5,
+-          borderTopColor: colors.stone,
+-          height: 64,
++          borderTopColor: sc.border,
++          height: 64 + insets.bottom,
+         },
+       }}
+       screenListeners={({ navigation }) => {
+diff --git a/src/navigation/CoachNavigator.tsx b/src/navigation/CoachNavigator.tsx
+index 0fdaa9a..90ffd4f 100644
+--- a/src/navigation/CoachNavigator.tsx
++++ b/src/navigation/CoachNavigator.tsx
+@@ -137,6 +137,8 @@ import BlockedUsersScreen from '../screens/settings/BlockedUsersScreen';
+ import RomanConversationsScreen, { type RomanConversationParams } from '../screens/settings/RomanConversationsScreen';
+ import RomanConversationScreen from '../screens/settings/RomanConversationScreen';
+ import { Colors } from '../constants/colors';
++import { useTheme } from '../theme/ThemeProvider';
++import { useSafeAreaInsets } from 'react-native-safe-area-context';
+ import { useCoachRoleType } from '../hooks/useCoachRoleType';
+ 
+ export type CoachTabParamList = {
+@@ -645,6 +647,8 @@ function useCoachUnreadPolling(): number {
+ }
+ 
+ export default function CoachNavigator() {
++  const { semanticColors: sc } = useTheme();
++  const insets = useSafeAreaInsets();
+   const unreadCount = useCoachUnreadPolling();
+   // P0-1: TeamStack must only mount for head coaches. Sub-coaches who land
+   // on team-management surfaces hit `/sub-coaches` 403s the screen treats as
+@@ -665,15 +669,15 @@ export default function CoachNavigator() {
+       initialRouteName={initialTab}
+       screenOptions={{
+         headerShown: false,
+-        tabBarActiveTintColor: Colors.primary,
+-        tabBarInactiveTintColor: Colors.textMuted,
++        tabBarActiveTintColor: sc.accentText,
++        tabBarInactiveTintColor: sc.textMuted,
+         tabBarStyle: {
+-          backgroundColor: Colors.surface,
+-          borderTopColor: Colors.border,
++          backgroundColor: sc.bgSurface,
++          borderTopColor: sc.border,
+           borderTopWidth: 1,
+-          paddingBottom: 4,
++          paddingBottom: 4 + insets.bottom,
+           paddingTop: 4,
+-          height: 60,
++          height: 60 + insets.bottom,
+         },
+         tabBarLabelStyle: {
+           fontSize: 10,
+diff --git a/src/navigation/__tests__/tabBarPolish125.test.ts b/src/navigation/__tests__/tabBarPolish125.test.ts
+new file mode 100644
+index 0000000..7496f8b
+--- /dev/null
++++ b/src/navigation/__tests__/tabBarPolish125.test.ts
+@@ -0,0 +1,21 @@
++import * as fs from 'fs';
++import * as path from 'path';
++
++const src = (name: string) => fs.readFileSync(path.join(__dirname, '..', name), 'utf8');
++
++describe('primary tab-bar appearance and safe-area contracts', () => {
++  it.each([
++    ['ClientNavigator.tsx', 'textPrimary', 'bgPrimary', 64],
++    ['CoachNavigator.tsx', 'accentText', 'bgSurface', 60],
++  ] as const)('%s uses readable tokens and preserves content above the safe inset', (name, active, bg, height) => {
++    const nav = src(name);
++    expect(nav).toMatch(/semanticColors:\s*sc/);
++    expect(nav).toMatch(new RegExp(`tabBarActiveTintColor:\\s*sc\\.${active}`));
++    expect(nav).toMatch(/tabBarInactiveTintColor:\s*sc\.textMuted/);
++    expect(nav).toMatch(new RegExp(`backgroundColor:\\s*sc\\.${bg}`));
++    expect(nav).toMatch(/borderTopColor:\s*sc\.border/);
++    expect(nav).toMatch(/const insets = useSafeAreaInsets\(\)/);
++    expect(nav).toMatch(new RegExp(`height:\\s*${height}\\s*\\+\\s*insets\\.bottom`));
++    if (name === 'CoachNavigator.tsx') expect(nav).toMatch(/paddingBottom:\s*4\s*\+\s*insets\.bottom/);
++  });
++});
+diff --git a/src/screens/client/ExerciseLibraryScreen.tsx b/src/screens/client/ExerciseLibraryScreen.tsx
+index 2986a9f..888bd06 100644
+--- a/src/screens/client/ExerciseLibraryScreen.tsx
++++ b/src/screens/client/ExerciseLibraryScreen.tsx
+@@ -319,7 +319,7 @@ function makeStyles(sc: SemanticTokens) {
+       textTransform: 'capitalize',
+     },
+     chipTextActive: {
+-      color: sc.bgSurface,
++      color: sc.textOnAccent,
+     },
+     listContent: {
+       paddingBottom: spacing.xl,
+@@ -351,7 +351,7 @@ function makeStyles(sc: SemanticTokens) {
+     },
+     errorText: {
+       ...typography.body,
+-      color: sc.accent,
++      color: sc.accentText,
+     },
+     footerWrap: {
+       paddingVertical: spacing.lg,
+diff --git a/src/screens/client/__tests__/ExerciseLibraryPolish125.test.tsx b/src/screens/client/__tests__/ExerciseLibraryPolish125.test.tsx
+new file mode 100644
+index 0000000..c6bbc26
+--- /dev/null
++++ b/src/screens/client/__tests__/ExerciseLibraryPolish125.test.tsx
+@@ -0,0 +1,49 @@
++import React from 'react';
++import { AxiosHeaders } from 'axios';
++import { StyleSheet } from 'react-native';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++import { NavigationContainer } from '@react-navigation/native';
++import { createNativeStackNavigator } from '@react-navigation/native-stack';
++import ExerciseLibraryScreen from '../ExerciseLibraryScreen';
++import { exerciseCatalogApi } from '../../../api/exerciseCatalog';
++import { darkTokens, lightTokens } from '../../../theme/tokens';
++import type { WorkoutStackParamList } from '../../../navigation/ClientNavigator';
++
++let mockColorScheme: 'light' | 'dark' = 'dark';
++jest.mock('../../../theme/ThemeProvider', () => ({
++  useTheme: () => ({ semanticColors: require('../../../theme/tokens')[`${mockColorScheme}Tokens`] }),
++}));
++jest.mock('../../../api/exerciseCatalog', () => ({ exerciseCatalogApi: { list: jest.fn() } }));
++
++const list = jest.mocked(exerciseCatalogApi.list);
++const Stack = createNativeStackNavigator<WorkoutStackParamList>();
++const renderLibrary = () => render(
++  <NavigationContainer><Stack.Navigator><Stack.Screen name="ExerciseLibrary"
++    component={ExerciseLibraryScreen} /></Stack.Navigator></NavigationContainer>,
++);
++
++beforeEach(() => {
++  mockColorScheme = 'dark';
++  list.mockReset();
++  list.mockResolvedValue({
++    data: { items: [], nextCursor: null, total: 0 }, status: 200, statusText: 'OK',
++    headers: {}, config: { headers: new AxiosHeaders() },
++  });
++});
++describe('exercise library contrast', () => {
++  it.each(['light', 'dark'] as const)('uses the on-accent label in %s appearance', async (scheme) => {
++    mockColorScheme = scheme;
++    const tokens = scheme === 'dark' ? darkTokens : lightTokens;
++    const view = await renderLibrary();
++    await waitFor(() => expect(view.getByText('No exercises match.')).toBeTruthy());
++    await fireEvent.press(view.getByRole('button', { name: 'strength' }));
++    expect(StyleSheet.flatten(view.getByText('strength').props.style).color).toBe(tokens.textOnAccent);
++  });
++
++  it('uses the readable accent foreground for a load error in dark appearance', async () => {
++    list.mockRejectedValue(new Error('Cannot load exercises. Check the connection.'));
++    const view = await renderLibrary();
++    const error = await view.findByText('Cannot load exercises. Check the connection.');
++    expect(StyleSheet.flatten(error.props.style).color).toBe(darkTokens.accentText);
++  });
++});

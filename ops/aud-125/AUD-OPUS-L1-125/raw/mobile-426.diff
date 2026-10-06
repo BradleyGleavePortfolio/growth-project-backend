@@ -1,0 +1,227 @@
+diff --git a/src/hooks/useCurrentUser.ts b/src/hooks/useCurrentUser.ts
+index e1c29d11..0a553d9b 100644
+--- a/src/hooks/useCurrentUser.ts
++++ b/src/hooks/useCurrentUser.ts
+@@ -30,6 +30,14 @@ export interface CurrentUser {
+     diet_restrictions?: string[] | string;
+     workout_days_per_week?: number;
+     gym_membership?: string;
++    /** Server column names, as sign-in and /auth/me return the profile row. */
++    date_of_birth?: string | null;
++    current_weight_lbs?: number | null;
++    target_weight_lbs?: number | null;
++    dietary_pattern?: string | null;
++    has_gym_membership?: boolean | null;
++    goal_type?: string | null;
++    dietary_restrictions?: string[] | null;
+     /** Backend field name (UserProfile.onboardingCompleted). Read it with profileOnboardingCompleted(). */
+     onboardingCompleted?: boolean | null;
+     /** Older payloads and fixtures only; the server sends onboardingCompleted. */
+diff --git a/src/lib/__tests__/profileCompletion.test.ts b/src/lib/__tests__/profileCompletion.test.ts
+index 7bef8f6f..d74c0896 100644
+--- a/src/lib/__tests__/profileCompletion.test.ts
++++ b/src/lib/__tests__/profileCompletion.test.ts
+@@ -8,6 +8,7 @@ import {
+   getProfileCompletion,
+   summarizeMissing,
+   buildProfileUpdatePayload,
++  resolveProfileFields,
+   FIELD_LABEL,
+ } from '../profileCompletion';
+ import type { CurrentUser } from '../../hooks/useCurrentUser';
+@@ -262,3 +263,47 @@ describe('buildProfileUpdatePayload', () => {
+     ).toEqual({ diet_restrictions: ['Nut Allergy', 'Vegan'] });
+   });
+ });
++
++// AUDIT-12-125: sign-in and /auth/me return the stored profile row, whose
++// columns use the server names. Answers given in onboarding must still count.
++describe('server column names (sign-in / auth/me profile row)', () => {
++  const serverRow = {
++    sex: 'female',
++    date_of_birth: '1992-04-15T00:00:00.000Z',
++    target_weight_lbs: 165,
++    dietary_pattern: 'none',
++    workout_days_per_week: 4,
++    has_gym_membership: true,
++    current_weight_lbs: 172,
++    height_cm: 168,
++    activity_level: 'moderate',
++    goal_type: 'maintenance',
++    dietary_restrictions: ['Nut Allergy'],
++  };
++
++  it('counts a completed server profile as complete (no Home nudge)', () => {
++    const r = getProfileCompletion(userWith(serverRow));
++    expect(r.missing).toEqual([]);
++    expect(r.isComplete).toBe(true);
++  });
++
++  it('maps server columns onto the Edit Profile vocabulary', () => {
++    const f = resolveProfileFields(serverRow);
++    expect(f.dob).toBe('1992-04-15');
++    expect(f.target_weight).toBe(165);
++    expect(f.current_weight).toBe(172);
++    expect(f.diet_type).toBe('omnivore');
++    expect(f.gym_membership).toBe('yes_regular');
++    expect(f.primary_goal).toBe('maintain');
++    expect(f.diet_restrictions).toEqual(['Nut Allergy']);
++  });
++
++  it('prefers the app names and keeps an empty server restrictions list unanswered', () => {
++    const f = resolveProfileFields({ ...serverRow, primary_goal: 'lose_fast', dietary_restrictions: [] });
++    expect(f.primary_goal).toBe('lose_fast');
++    expect(f.diet_restrictions).toBeUndefined();
++    expect(getProfileCompletion(userWith({ ...serverRow, dietary_restrictions: [] })).missing).toEqual([
++      'diet_restrictions',
++    ]);
++  });
++});
+diff --git a/src/lib/profileCompletion.ts b/src/lib/profileCompletion.ts
+index 5a8f590f..14defcfa 100644
+--- a/src/lib/profileCompletion.ts
++++ b/src/lib/profileCompletion.ts
+@@ -64,15 +64,60 @@ function hasValue(v: unknown): boolean {
+   return true;
+ }
+ 
++const DIET_FROM_PATTERN: Record<string, string> = {
++  none: 'omnivore',
++  vegetarian: 'vegetarian',
++  vegan: 'vegan',
++  pescatarian: 'pescatarian',
++  keto: 'keto',
++  paleo: 'paleo',
++  other: 'other',
++};
++const GOAL_FROM_TYPE: Record<string, string> = {
++  fat_loss: 'lose_moderate',
++  maintenance: 'maintain',
++  muscle_gain: 'gain',
++};
++
++/**
++ * Sign-in and /auth/me return the stored profile row, whose columns use the
++ * server names (date_of_birth, current_weight_lbs, goal_type, ...). The app's
++ * own writes use the older names. Read the older name first, then the server
++ * column, so answers given in onboarding still count after the next sign-in.
++ * An empty server restrictions list stays unanswered (safety prompt).
++ */
++export function resolveProfileFields(
++  p: NonNullable<CurrentUser['profile']>,
++): Record<ProfileField, unknown> {
++  const dobIso = typeof p.date_of_birth === 'string' ? p.date_of_birth.slice(0, 10) : undefined;
++  const serverRestrictions =
++    Array.isArray(p.dietary_restrictions) && p.dietary_restrictions.length > 0
++      ? p.dietary_restrictions
++      : undefined;
++  return {
++    sex: p.sex,
++    dob: p.dob ?? dobIso,
++    target_weight: p.target_weight ?? p.target_weight_lbs,
++    diet_type: p.diet_type ?? (p.dietary_pattern ? DIET_FROM_PATTERN[p.dietary_pattern] : undefined),
++    workout_days_per_week: p.workout_days_per_week,
++    gym_membership: p.gym_membership ?? (p.has_gym_membership === true ? 'yes_regular' : undefined),
++    current_weight: p.current_weight ?? p.current_weight_lbs,
++    height_cm: p.height_cm,
++    activity_level: p.activity_level,
++    primary_goal: p.primary_goal ?? (p.goal_type ? GOAL_FROM_TYPE[p.goal_type] : undefined),
++    diet_restrictions: p.diet_restrictions ?? serverRestrictions,
++  };
++}
++
+ export function getProfileCompletion(
+   user: Pick<CurrentUser, 'profile'> | null | undefined,
+ ): ProfileCompletionStatus {
+-  const profile = user?.profile;
++  const profile = user?.profile ? resolveProfileFields(user.profile) : undefined;
+   const filled: ProfileField[] = [];
+   const missing: ProfileField[] = [];
+ 
+   for (const field of REQUIRED_FIELDS) {
+-    const value = profile ? (profile as Record<string, unknown>)[field] : undefined;
++    const value = profile ? profile[field] : undefined;
+     // diet_restrictions has special semantics: a *present* array — even an
+     // empty one — is an explicit answer ("I have no restrictions"). Only
+     // an undefined / null / non-array value counts as unanswered. This is
+diff --git a/src/screens/client/EditProfileScreen.tsx b/src/screens/client/EditProfileScreen.tsx
+index 7f142a4d..316fd8b2 100644
+--- a/src/screens/client/EditProfileScreen.tsx
++++ b/src/screens/client/EditProfileScreen.tsx
+@@ -38,6 +38,7 @@ import { MoreStackParamList } from '../../navigation/ClientNavigator';
+ import {
+   getProfileCompletion,
+   buildProfileUpdatePayload,
++  resolveProfileFields,
+   ProfileField,
+ } from '../../lib/profileCompletion';
+ import { calcBMR, calcTDEE, calcMacros, calculateAge } from '../../utils/nutrition';
+@@ -153,7 +154,8 @@ interface FormState {
+ }
+ 
+ function profileToForm(user: CurrentUser | null): FormState {
+-  const p = user?.profile;
++  // Older names first, then the server columns (resolveProfileFields).
++  const p = user?.profile ? resolveProfileFields(user.profile) : undefined;
+   const sexRaw = p?.sex;
+   const dietRaw = p?.diet_type;
+   const gymRaw = p?.gym_membership;
+@@ -188,7 +190,7 @@ function profileToForm(user: CurrentUser | null): FormState {
+ 
+   return {
+     sex,
+-    dob: p?.dob ?? '',
++    dob: typeof p?.dob === 'string' ? p.dob : '',
+     targetWeight: typeof p?.target_weight === 'number' ? String(p.target_weight) : '',
+     dietType,
+     workoutDaysPerWeek:
+diff --git a/src/screens/client/SettingsScreen.tsx b/src/screens/client/SettingsScreen.tsx
+index 5516d134..0533172b 100644
+--- a/src/screens/client/SettingsScreen.tsx
++++ b/src/screens/client/SettingsScreen.tsx
+@@ -363,23 +363,11 @@ export default function SettingsScreen({ navigation }: { navigation: NavigationP
+           <BiometricUnlockSetting />
+         </View>
+ 
+-        {/* Personalization — Psych #4 */}
+-        <Text style={styles.sectionLabel}>Personalization</Text>
++        {/* AUDIT-12-125: the Personalization row is not offered. Nothing in the
++            app or on the server reads those choices (home modules, cadence
++            incl. "Off", tone, units, week start), so they had no effect. */}
++        <Text style={styles.sectionLabel}>Notification settings</Text>
+         <View style={styles.card}>
+-          <HapticPressable
+-            intent="light"
+-            style={styles.row}
+-            onPress={() => navigation.navigate('Preferences')}
+-            accessibilityRole="button"
+-            accessibilityLabel="Personalization"
+-            accessibilityHint="Opens preference controls for home modules, notifications, tone, and units"
+-          >
+-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+-              <Ionicons name="options-outline" size={18} color={colors.primary} />
+-              <Text style={styles.rowLabel}>Personalization</Text>
+-            </View>
+-            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+-          </HapticPressable>
+           {/* Audit P1: surface the canonical NotificationPreferences screen
+               from Settings. The local Notifications switches above only
+               control the legacy useSettings flags; full channel + quiet-hour
+diff --git a/src/screens/settings/RomanAiConsentScreen.tsx b/src/screens/settings/RomanAiConsentScreen.tsx
+index 2d11fe93..5bc5d5d0 100644
+--- a/src/screens/settings/RomanAiConsentScreen.tsx
++++ b/src/screens/settings/RomanAiConsentScreen.tsx
+@@ -62,11 +62,11 @@ export const ROMAN_AI_COPY = {
+   updateApp: 'This choice has been updated since this version of the app. Please update the app to change it.',
+   notSent: 'You were signed out before this choice was saved, so nothing changed. Sign in and choose again.',
+   unavailable: `The Roman and AI setting is switched off by The Growth Project at the moment, so it cannot be changed here yet. Nothing is recorded. You can check back later, or write to support at ${SUPPORT_EMAIL}.`,
+-  loadOffline: 'I could not reach the server to load your choice. Check your connection, then tap Try again.',
++  loadOffline: 'The app could not reach the server to load your choice. Check your connection, then tap Try again.',
+   loadServer: (ref: string | null) =>
+     `The server could not load your choice. Tap Try again. If it keeps happening, write to support at ${SUPPORT_EMAIL}${ref ? ` and mention reference ${ref}` : ''}.`,
+   actionOffline:
+-    'I could not reach the server, so your change is not confirmed. The choice shown above is the current one. Check your connection, then try again.',
++    'The app could not reach the server, so your change is not confirmed. The choice shown above is the current one. Check your connection, then try again.',
+   actionBusy: 'Your choice was changed several times in a row, so this change was not saved. Wait a minute, then try again.',
+   actionConflict: 'Your choice was being changed somewhere else at the same moment, so this change was not saved. The choice shown above is the current one. You can change it again.',
+   actionServer: (ref: string | null) =>

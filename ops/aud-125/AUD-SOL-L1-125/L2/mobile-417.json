@@ -1,0 +1,200 @@
+{
+  "repo": "mobile",
+  "number": 417,
+  "head": "8302adc0465072c2674490a5c0e39884acec293d",
+  "base": "a1904f2f4e8d175a38d6eb627303a2312e2b1ace",
+  "title": "fix(help): actionable failures and support problem reporting (AUDIT-19-125)",
+  "body": "Tier: T2\nWhy: Shared presentation-only failure handling and recovery controls for day-data reads and support.\nT4 trigger scan: No auth/session, tenancy/RLS, credentials, payment operations, API transport, data deletion or server writes changed. Crisp ownership and fail-closed opening remain untouched. Existing food/water reads retain their contracts.\nT3 trigger scan: No new contracts, dependencies, feature flags or backend capabilities. Works against the current production backend.\nBounded T1: Multiple presentation paths share error-state behavior, so targeted behavioral tests warrant T2 rather than a copy-only T1.\nCanonical builder: GPT-6.1 Sol, AUDIT-19-125, agent 125.\nAcceptance evidence: Tests-only main-baseline run [37530539554](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37530539554) reproduces all three findings: 19 behavioral failures, 9 existing/compatibility tests passing. [Fixed targeted run](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531085675) passed 29/30 assertions; its one faulty CONTINUE test assertion and a test-navigation TS2352 from PR CI were corrected at 8302adc0465072c2674490a5c0e39884acec293d. [Current PR CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532663392) checks that exact head. No additional lane dispatched after the operator override.\n\n## U fixes\n- U19-1: A client opens Home or Food Log during an ordinary network/server failure and sees empty or stale numbers without a failed-read notice; now both reuse the existing CoachErrorState with a working retry, disabled while loading, and a water-only read failure no longer silently becomes zero.\n- U19-2: A person saving food, weight, a routine or another API-backed action gets raw `Network Error`, timeout text or `Internal Server Error`; the shared message helper now explains connection, timeout and temporary-service failures while preserving specific 4xx/domain messages.\n- U19-3: A person opens Support but cannot use the native chat overlay and has no email alternative when the SDK reports it opened; a discoverable Report a problem by email action now uses the existing selectable-address, copy and retry fallback.\n\n## Scope and overlap\n- No overlap with #415's help-link/config/settings changes or #406's offline workout sync.\n- Existing Home macro-mode and Food Log speed tests receive only recovery assertions and state setup; no food/workout write behavior changed.\n- 334 changed lines (307 additions, 27 deletions), including tests; opened before the 14:05 budget/time-box override alongside the confirmed B fix in backend #787.\n- No merge, deployment, build, production access or production flag changes.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 307,
+  "deletions": 27,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/417",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/417#issuecomment-6025699286",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-19-125, agent 125) \u2014 growth-project-mobile#417 @ 8302adc0465072c2674490a5c0e39884acec293d \u2014 READY FOR AUDIT\n\nT2. U19-1: Home/Food Log show a distinct failed-read state and working retry via the existing CoachErrorState; a failed water read does not silently zero the displayed amount.\nU19-2: Shared error copy explains ordinary 5xx, network and timeout failures without raw Axios/HTML text; specific 4xx/domain messages remain.\nU19-3: Support offers Report a problem by email even when the SDK reports its overlay opened, with the existing selectable address, Copy and Try again fallback.\n\n334 changed lines (307 additions, 27 deletions), tests included. Tests-only main-baseline CI reproduced 19 failures and passed 9 compatibility tests (37530539554). Fixed targeted run passed 29/30 assertions (37531085675); its faulty unconditional CONTINUE assertion and the test-navigation TS2352 in opening PR CI were corrected and pushed at this exact head. Full corrected-head PR CI is green.\n\nCodeQL Actions has passed; the separate JavaScript/TypeScript analysis is queued. No failing check remains.\n\nNo auth/session/tenancy, Crisp ownership, payment operations, backend contracts, production flags, merge, deploy or build changes. Works against the current production backend. No duplicate of #415 help links or #406 workout sync.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112507745908",
+      "id": 112507745908,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A417+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112507745908/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532663305/job/112505672992",
+      "id": 112505672992,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112505672992/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532663305/job/112505672769",
+      "id": 112505672769,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112505672769/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532663392/job/112505672752",
+      "id": 112505672752,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112505672752/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "d01f7d39a9f6653546233f19aa2b3e53370e7052",
+      "filename": "src/screens/client/HomeScreen.tsx",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 1,
+      "changes": 12,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/8302adc0465072c2674490a5c0e39884acec293d/src%2Fscreens%2Fclient%2FHomeScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/8302adc0465072c2674490a5c0e39884acec293d/src%2Fscreens%2Fclient%2FHomeScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2FHomeScreen.tsx?ref=8302adc0465072c2674490a5c0e39884acec293d",
+      "patch": "@@ -57,6 +57,7 @@ import {\n } from '../../lib/profileCompletion';\n import { getTodayString } from '../../utils/date';\n import { isWorkoutDoneToday, type WorkoutRowLike } from '../../utils/workout/workoutDoneToday';\n+import CoachErrorState from '../../components/community/coach/CoachErrorState';\n \n // \u2500\u2500\u2500 Date-as-poetry helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n \n@@ -155,6 +156,8 @@ export default function HomeScreen() {\n     foodLogs,\n     dailyTotals,\n     waterOz,\n+    isLoading,\n+    loadError,\n     loadDayData,\n     loadProfile,\n   } = useClientStore();\n@@ -326,6 +329,14 @@ export default function HomeScreen() {\n         }\n       >\n         <HomeHeaderActions />\n+        {loadError ? (\n+          <CoachErrorState\n+            message={loadError}\n+            onRetry={() => void onRefresh()}\n+            retrying={isLoading || refreshing}\n+            testID=\"home-day-data-error\"\n+          />\n+        ) : null}\n         <DunningBanner surface=\"HomeScreen\" />\n         <CoachlessHomeSlot />\n         <PendingInviteBanner />\n@@ -451,4 +462,3 @@ export default function HomeScreen() {\n     </SafeAreaView>\n   );\n }\n-"
+    },
+    {
+      "sha": "9ca2e3beb8ffbc0953d0bc6130935d019b66cb8b",
+      "filename": "src/screens/client/LogScreen.tsx",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 0,
+      "changes": 12,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/8302adc0465072c2674490a5c0e39884acec293d/src%2Fscreens%2Fclient%2FLogScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/8302adc0465072c2674490a5c0e39884acec293d/src%2Fscreens%2Fclient%2FLogScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2FLogScreen.tsx?ref=8302adc0465072c2674490a5c0e39884acec293d",
+      "patch": "@@ -46,6 +46,7 @@ import { HapticService } from '../../ui/haptics/haptics.service';\n import { AnalyticsEvents } from '../../analytics/events';\n import { useTheme, ThemeColors } from '../../theme/ThemeProvider';\n import { errorMessage } from '../../types/common';\n+import CoachErrorState from '../../components/community/coach/CoachErrorState';\n \n export default function LogScreen() {\n   const { colors } = useTheme();\n@@ -63,6 +64,8 @@ export default function LogScreen() {\n     foodLogs,\n     dailyTotals,\n     waterOz,\n+    isLoading,\n+    loadError,\n     setSelectedDate,\n     loadDayData,\n     logWater,\n@@ -543,6 +546,15 @@ export default function LogScreen() {\n \n         <DaySelector selectedDate={selectedDate} onDateChange={handleDateChange} />\n \n+        {loadError ? (\n+          <CoachErrorState\n+            message={loadError}\n+            onRetry={() => void onRefresh()}\n+            retrying={isLoading || refreshing}\n+            testID=\"log-day-data-error\"\n+          />\n+        ) : null}\n+\n         <DailySummaryBar dailyTotals={dailyTotals} remaining={remaining} targets={macroTargets} mode={macroMode} />\n         {savedMessage ? (\n           <Text style={styles.savedMessage} accessibilityLiveRegion=\"polite\">{savedMessage}</Text>"
+    },
+    {
+      "sha": "a66aa92641243475c1192c071b9812aa191b687f",
+      "filename": "src/screens/client/__tests__/HomeScreen.macroMode.test.tsx",
+      "status": "modified",
+      "additions": 36,
+      "deletions": 8,
+      "changes": 44,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/8302adc0465072c2674490a5c0e39884acec293d/src%2Fscreens%2Fclient%2F__tests__%2FHomeScreen.macroMode.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/8302adc0465072c2674490a5c0e39884acec293d/src%2Fscreens%2Fclient%2F__tests__%2FHomeScreen.macroMode.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2F__tests__%2FHomeScreen.macroMode.test.tsx?ref=8302adc0465072c2674490a5c0e39884acec293d",
+      "patch": "@@ -6,7 +6,17 @@\n  */\n import React from 'react';\n import AsyncStorage from '@react-native-async-storage/async-storage';\n-import { render, screen } from '@testing-library/react-native';\n+import { fireEvent, render, screen } from '@testing-library/react-native';\n+\n+const mockDayState = {\n+  foodLogs: [],\n+  dailyTotals: { calories: 600, protein: 40, carbs: 70, fat: 20 },\n+  waterOz: 0,\n+  isLoading: false,\n+  loadError: null as string | null,\n+  loadDayData: jest.fn().mockResolvedValue(undefined),\n+  loadProfile: jest.fn().mockResolvedValue(undefined),\n+};\n \n jest.mock('../../../hooks/useCurrentUser', () => ({\n   useCurrentUser: () => ({\n@@ -16,13 +26,7 @@ jest.mock('../../../hooks/useCurrentUser', () => ({\n   }),\n }));\n jest.mock('../../../store/clientStore', () => ({\n-  useClientStore: () => ({\n-    foodLogs: [],\n-    dailyTotals: { calories: 600, protein: 40, carbs: 70, fat: 20 },\n-    waterOz: 0,\n-    loadDayData: jest.fn(),\n-    loadProfile: jest.fn(),\n-  }),\n+  useClientStore: () => mockDayState,\n }));\n jest.mock('@react-navigation/native', () => ({\n   useNavigation: () => ({ navigate: jest.fn() }),\n@@ -45,10 +49,34 @@ import {\n } from '../../../macros/macroDisplayStore';\n \n beforeEach(async () => {\n+  jest.clearAllMocks();\n+  mockDayState.loadError = null;\n+  mockDayState.isLoading = false;\n   await AsyncStorage.clear();\n   __resetMacroDisplayStoreForTests();\n });\n \n+describe('Home day-data failure state', () => {\n+  it('shows a specific failure and a working retry without losing navigation', async () => {\n+    mockDayState.loadError = 'Food and water data could not refresh. Check your connection and try again.';\n+    await render(<HomeScreen />);\n+    expect(screen.getByText(mockDayState.loadError)).toBeTruthy();\n+    expect(screen.getByTestId('home-day-data-error')).toBeTruthy();\n+    await fireEvent.press(screen.getByTestId('home-day-data-error-retry'));\n+    expect(mockDayState.loadDayData).toHaveBeenCalledTimes(2);\n+    expect(screen.getByTestId('home-number-grid')).toBeTruthy();\n+  });\n+\n+  it('keeps retry disabled while the refresh is loading', async () => {\n+    mockDayState.loadError = 'Water data could not refresh. Check your connection and try again.';\n+    mockDayState.isLoading = true;\n+    await render(<HomeScreen />);\n+    expect(screen.getByTestId('home-day-data-error-retry').props.accessibilityState).toMatchObject({\n+      disabled: true,\n+    });\n+  });\n+});\n+\n describe('HomeScreen macro display mode', () => {\n   it('keeps the existing grid when the backend sends no mode', async () => {\n     await render(<HomeScreen />);"
+    },
+    {
+      "sha": "8f6d6a69261d566905e7ea0f15e578851423503c",
+      "filename": "src/screens/client/__tests__/LogScreen.foodSpeed.test.tsx",
+      "status": "modified",
+      "additions": 24,
+      "deletions": 0,
+      "changes": 24,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/8302adc0465072c2674490a5c0e39884acec293d/src%2Fscreens%2Fclient%2F__tests__%2FLogScreen.foodSpeed.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/8302adc0465072c2674490a5c0e39884acec293d/src%2Fscreens%2Fclient%2F__tests__%2FLogScreen.foodSpeed.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2F__tests__%2FLogScreen.foodSpeed.test.tsx?ref=8302adc0465072c2674490a5c0e39884acec293d",
+      "patch": "@@ -39,6 +39,7 @@ const mockLog: FoodLog = {\n const mockStore = {\n   selectedDate: mockToday, foodLogs: [mockLog],\n   dailyTotals: { calories: 248, protein: 47, carbs: 0, fat: 5 }, waterOz: 0,\n+  isLoading: false, loadError: null as string | null,\n   setSelectedDate: jest.fn(), loadDayData: jest.fn().mockResolvedValue(undefined), logWater: jest.fn(),\n   removeFoodLogLocally: jest.fn(),\n };\n@@ -71,12 +72,35 @@ const ok: AxiosResponse = { data: {}, status: 200, statusText: 'OK', headers: {}\n \n beforeEach(() => {\n   jest.clearAllMocks();\n+  mockStore.loadError = null;\n+  mockStore.isLoading = false;\n   jest.mocked(logApi.logFood).mockResolvedValue(ok);\n   jest.mocked(logApi.deleteEntry).mockResolvedValue(ok);\n   // The catalog search never answers here: local matches must not wait for it.\n   jest.mocked(foodApi.search).mockReturnValue(new Promise<never>(() => {}));\n });\n \n+describe('Food Log day-data failure state', () => {\n+  it('shows a failed read with retry while Add Food remains available', async () => {\n+    mockStore.loadError = 'Food and water data could not refresh. Check your connection and try again.';\n+    await render(<LogScreen />);\n+    expect(screen.getByText(mockStore.loadError)).toBeTruthy();\n+    await fireEvent.press(screen.getByTestId('log-day-data-error-retry'));\n+    expect(mockStore.loadDayData).toHaveBeenCalledWith('user', mockToday);\n+    expect(mockStore.loadDayData).toHaveBeenCalledTimes(2);\n+    expect(screen.getAllByText('Add Food')).not.toHaveLength(0);\n+  });\n+\n+  it('keeps retry disabled while day data is loading', async () => {\n+    mockStore.loadError = 'Water data could not refresh. Check your connection and try again.';\n+    mockStore.isLoading = true;\n+    await render(<LogScreen />);\n+    expect(screen.getByTestId('log-day-data-error-retry').props.accessibilityState).toMatchObject({\n+      disabled: true,\n+    });\n+  });\n+});\n+\n async function openBreakfast() {\n   await render(<LogScreen />);\n   await act(async () => {"
+    },
+    {
+      "sha": "a19968c5f337d17eec189d0ce6ab7939aa0fd038",
+      "filename": "src/screens/support/SupportInboxScreen.tsx",
+      "status": "modified",
+      "additions": 31,
+      "deletions": 10,
+      "changes": 41,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/8302adc0465072c2674490a5c0e39884acec293d/src%2Fscreens%2Fsupport%2FSupportInboxScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/8302adc0465072c2674490a5c0e39884acec293d/src%2Fscreens%2Fsupport%2FSupportInboxScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fsupport%2FSupportInboxScreen.tsx?ref=8302adc0465072c2674490a5c0e39884acec293d",
+      "patch": "@@ -20,7 +20,6 @@ import {\n   View,\n   Text,\n   StyleSheet,\n-  ActivityIndicator,\n } from 'react-native';\n import { useTheme, ThemeColors } from '../../theme/ThemeProvider';\n import HapticPressable from '../../components/HapticPressable';\n@@ -33,7 +32,7 @@ import { SUPPORT_EMAIL } from '../../constants/support';\n import { SupportEmailFallback, useSupportEmail } from '../../components/support/SupportEmailFallback';\n \n interface Props {\n-  navigation: NavigationProp<ParamListBase>;\n+  navigation: Pick<NavigationProp<ParamListBase>, 'goBack'>;\n   /**\n    * Opened from the auth stack (nobody signed in). The chat session is reset\n    * first unless it is already this device's anonymous one, so a previous\n@@ -57,6 +56,7 @@ export default function SupportInboxScreen({ navigation, preSignIn = false }: Pr\n   const [unavailable, setUnavailable] = useState(false);\n   // Sol B-324-1: a failed email launch is shown, never swallowed.\n   const supportEmail = useSupportEmail('Support request');\n+  const problemEmail = useSupportEmail('Report a problem');\n   const open = () => {\n     const result = openSupportChat({ preSignIn });\n     setBlocked(result === 'blocked');\n@@ -145,15 +145,25 @@ export default function SupportInboxScreen({ navigation, preSignIn = false }: Pr\n           <Text style={styles.openBtnText}>{blocked ? 'Try again' : 'Open Support Chat'}</Text>\n         </HapticPressable>\n         )}\n-        {unavailable ? (\n-          <SupportEmailFallback\n-            handle={supportEmail}\n-            textStyle={styles.body_text}\n-            linkColor={colors.primary}\n-            testID=\"support-email-fallback\"\n-            centered\n-          />\n+        {!unavailable ? (\n+          <HapticPressable\n+            intent=\"light\"\n+            style={styles.emailAction}\n+            onPress={() => void problemEmail.open()}\n+            accessibilityRole=\"button\"\n+            accessibilityLabel=\"Report a problem by email\"\n+            testID=\"support-report-problem\"\n+          >\n+            <Text style={styles.emailActionText}>Report a problem by email</Text>\n+          </HapticPressable>\n         ) : null}\n+        <SupportEmailFallback\n+          handle={unavailable ? supportEmail : problemEmail}\n+          textStyle={styles.body_text}\n+          linkColor={colors.primary}\n+          testID=\"support-email-fallback\"\n+          centered\n+        />\n \n         <Text style={styles.note}>\n           Support is separate from Coach AI and the Client Bot. A human\n@@ -231,6 +241,17 @@ function makeStyles(colors: ThemeColors) {\n       fontWeight: '500',\n       color: colors.textOnPrimary,\n     },\n+    emailAction: {\n+      minHeight: 44,\n+      justifyContent: 'center',\n+      paddingHorizontal: 16,\n+    },\n+    emailActionText: {\n+      color: colors.primary,\n+      fontSize: 15,\n+      fontWeight: '500',\n+      textDecorationLine: 'underline',\n+    },\n     note: {\n       fontSize: 13,\n       color: colors.textMuted,"
+    },
+    {
+      "sha": "afdc78529419284569484c6ac621baa4ccfba316",
+      "filename": "src/screens/support/__tests__/SupportInboxReportProblem.test.tsx",
+      "status": "added",
+      "additions": 43,
+      "deletions": 0,
+      "changes": 43,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/8302adc0465072c2674490a5c0e39884acec293d/src%2Fscreens%2Fsupport%2F__tests__%2FSupportInboxReportProblem.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/8302adc0465072c2674490a5c0e39884acec293d/src%2Fscreens%2Fsupport%2F__tests__%2FSupportInboxReportProblem.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fsupport%2F__tests__%2FSupportInboxReportProblem.test.tsx?ref=8302adc0465072c2674490a5c0e39884acec293d",
+      "patch": "@@ -0,0 +1,43 @@\n+import React from 'react';\n+import { Linking } from 'react-native';\n+import { fireEvent, render, waitFor } from '@testing-library/react-native';\n+import SupportInboxScreen from '../SupportInboxScreen';\n+\n+const mockOpenChat = jest.fn();\n+jest.mock('../../../services/support/crisp.service', () => ({\n+  openSupportChat: (...args: unknown[]) => mockOpenChat(...args),\n+}));\n+jest.mock('../../../theme/ThemeProvider', () => ({\n+  useTheme: () => ({ colors: new Proxy({}, { get: () => '#000000' }) }),\n+}));\n+jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn().mockResolvedValue(true) }));\n+\n+const navigation = { goBack: jest.fn() };\n+\n+describe('Support problem reporting', () => {\n+  beforeEach(() => {\n+    jest.clearAllMocks();\n+    mockOpenChat.mockReturnValue('opened');\n+  });\n+  afterEach(() => jest.restoreAllMocks());\n+\n+  it('offers email problem reporting even when the SDK says the chat opened', async () => {\n+    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);\n+    const screen = await render(<SupportInboxScreen navigation={navigation} />);\n+    expect(screen.getByTestId('support-chat-open')).toBeTruthy();\n+    await fireEvent.press(screen.getByRole('button', { name: 'Report a problem by email' }));\n+    expect(openURL).toHaveBeenCalledWith(\n+      'mailto:Bradleyapple1031@gmail.com?subject=Report%20a%20problem',\n+    );\n+  });\n+\n+  it('offers the existing selectable address and retry if problem reporting cannot open an email app', async () => {\n+    jest.spyOn(Linking, 'openURL').mockRejectedValue(new Error('no mail app'));\n+    const screen = await render(<SupportInboxScreen navigation={navigation} />);\n+    await fireEvent.press(screen.getByRole('button', { name: 'Report a problem by email' }));\n+    await waitFor(() => expect(screen.getByTestId('support-email-fallback')).toBeTruthy());\n+    expect(screen.getByTestId('support-email-fallback-address').props.selectable).toBe(true);\n+    expect(screen.getByTestId('support-email-fallback-copy')).toBeTruthy();\n+    expect(screen.getByTestId('support-email-fallback-retry')).toBeTruthy();\n+  });\n+});"
+    },
+    {
+      "sha": "f3dc9fd7fe0ce637a742c17a387476ab27b67726",
+      "filename": "src/store/__tests__/clientStore.failureStates.test.ts",
+      "status": "added",
+      "additions": 63,
+      "deletions": 0,
+      "changes": 63,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/8302adc0465072c2674490a5c0e39884acec293d/src%2Fstore%2F__tests__%2FclientStore.failureStates.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/8302adc0465072c2674490a5c0e39884acec293d/src%2Fstore%2F__tests__%2FclientStore.failureStates.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fstore%2F__tests__%2FclientStore.failureStates.test.ts?ref=8302adc0465072c2674490a5c0e39884acec293d",
+      "patch": "@@ -0,0 +1,63 @@\n+import { useClientStore } from '../clientStore';\n+\n+const mockGetFood = jest.fn();\n+const mockGetWater = jest.fn();\n+\n+jest.mock('../../services/api', () => ({\n+  logApi: { getDaily: (...args: unknown[]) => mockGetFood(...args) },\n+  waterApi: { getDaily: (...args: unknown[]) => mockGetWater(...args) },\n+}));\n+jest.mock('../../utils/logger', () => ({ logger: { error: jest.fn() } }));\n+\n+const foodDay = {\n+  data: {\n+    entries: [],\n+    total_calories: 420, total_protein_g: 30, total_carbs_g: 50, total_fat_g: 11,\n+  },\n+};\n+\n+describe('client day data failure state', () => {\n+  beforeEach(() => {\n+    jest.clearAllMocks();\n+    useClientStore.getState().reset();\n+    mockGetFood.mockResolvedValue(foodDay);\n+    mockGetWater.mockResolvedValue({ data: { total_ml: 591.47 } });\n+  });\n+\n+  it('distinguishes a failed read from an empty food log and stops loading', async () => {\n+    mockGetFood.mockRejectedValue(new Error('Network Error'));\n+    await useClientStore.getState().loadDayData('client', '2026-10-06');\n+    expect(useClientStore.getState()).toMatchObject({\n+      isLoading: false,\n+      loadError: 'Food and water data could not refresh. Check your connection and try again.',\n+    });\n+  });\n+\n+  it('keeps previously displayed data on failure and clears the notice after a successful retry', async () => {\n+    await useClientStore.getState().loadDayData('client', '2026-10-06');\n+    mockGetFood.mockRejectedValueOnce(new Error('Request failed with status code 503'));\n+    await useClientStore.getState().loadDayData('client', '2026-10-06');\n+    expect(useClientStore.getState().dailyTotals.calories).toBe(420);\n+    expect(useClientStore.getState()).toMatchObject({ loadError: expect.any(String) });\n+    await useClientStore.getState().loadDayData('client', '2026-10-06');\n+    expect(useClientStore.getState()).toMatchObject({ isLoading: false, loadError: null });\n+  });\n+\n+  it('does not turn a water-read failure into an unlabelled zero', async () => {\n+    await useClientStore.getState().loadDayData('client', '2026-10-06');\n+    mockGetWater.mockRejectedValueOnce(new Error('Network Error'));\n+    await useClientStore.getState().loadDayData('client', '2026-10-06');\n+    expect(useClientStore.getState()).toMatchObject({\n+      waterOz: 20, isLoading: false,\n+      loadError: 'Water data could not refresh. Check your connection and try again.',\n+    });\n+    expect(useClientStore.getState().dailyTotals.calories).toBe(420);\n+  });\n+\n+  it('removes a failed-read notice when resetting the store', async () => {\n+    mockGetFood.mockRejectedValueOnce(new Error('Network Error'));\n+    await useClientStore.getState().loadDayData('client');\n+    useClientStore.getState().reset();\n+    expect(useClientStore.getState()).toMatchObject({ loadError: null, isLoading: false });\n+  });\n+});"
+    },
+    {
+      "sha": "62e1657ee4fbd78a396d04bd281f90afd5b4a763",
+      "filename": "src/store/clientStore.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 6,
+      "changes": 23,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/8302adc0465072c2674490a5c0e39884acec293d/src%2Fstore%2FclientStore.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/8302adc0465072c2674490a5c0e39884acec293d/src%2Fstore%2FclientStore.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fstore%2FclientStore.ts?ref=8302adc0465072c2674490a5c0e39884acec293d",
+      "patch": "@@ -18,6 +18,7 @@ interface ClientStore {\n   dailyTotals: DailyTotals;\n   waterOz: number;\n   isLoading: boolean;\n+  loadError: string | null;\n \n   setSelectedDate: (date: string) => void;\n   loadDayData: (userId: string, date?: string) => Promise<void>;\n@@ -45,6 +46,7 @@ const initialClientState = {\n   dailyTotals: { calories: 0, protein: 0, carbs: 0, fat: 0 },\n   waterOz: 0,\n   isLoading: false,\n+  loadError: null as string | null,\n };\n \n export const useClientStore = create<ClientStore>((set, get) => ({\n@@ -62,7 +64,10 @@ export const useClientStore = create<ClientStore>((set, get) => ({\n       // Fetch food logs and water in parallel\n       const [foodResponse, waterResponse] = await Promise.all([\n         logApi.getDaily(d),\n-        waterApi.getDaily(d).catch(() => ({ data: { total_ml: 0 } })),\n+        waterApi.getDaily(d).catch((err: unknown) => {\n+          logger.error('ClientStore', 'water data load failed', err);\n+          return null;\n+        }),\n       ]);\n       const data = foodResponse.data;\n \n@@ -125,8 +130,8 @@ export const useClientStore = create<ClientStore>((set, get) => ({\n       });\n \n       // Convert ml to oz for display (1 oz = 29.5735 ml)\n-      const totalMl = waterResponse.data?.total_ml || 0;\n-      const waterOz = Math.round(totalMl / 29.5735);\n+      const totalMl = waterResponse?.data?.total_ml || 0;\n+      const waterOz = waterResponse ? Math.round(totalMl / 29.5735) : get().waterOz;\n \n       set({\n         foodLogs: logs,\n@@ -139,12 +144,18 @@ export const useClientStore = create<ClientStore>((set, get) => ({\n         waterOz,\n         selectedDate: d,\n         isLoading: false,\n+        loadError: waterResponse\n+          ? null\n+          : 'Water data could not refresh. Check your connection and try again.',\n       });\n     } catch (err) {\n-      // Read-only day data aggregation. Empty totals are acceptable; the\n-      // UI falls back to zeros and the user can retry via pull-to-refresh.\n+      // Preserve the last data, but mark this as a failed read rather than\n+      // presenting empty/stale values as a successfully loaded day.\n       logger.error('ClientStore', 'loadDayData failed', err);\n-      set({ isLoading: false });\n+      set({\n+        isLoading: false,\n+        loadError: 'Food and water data could not refresh. Check your connection and try again.',\n+      });\n     }\n   },\n "
+    },
+    {
+      "sha": "d8446f1b345c45ab712c69251d28742bfe6093fa",
+      "filename": "src/types/__tests__/common.failureCopy.test.ts",
+      "status": "added",
+      "additions": 50,
+      "deletions": 0,
+      "changes": 50,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/8302adc0465072c2674490a5c0e39884acec293d/src%2Ftypes%2F__tests__%2Fcommon.failureCopy.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/8302adc0465072c2674490a5c0e39884acec293d/src%2Ftypes%2F__tests__%2Fcommon.failureCopy.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Ftypes%2F__tests__%2Fcommon.failureCopy.test.ts?ref=8302adc0465072c2674490a5c0e39884acec293d",
+      "patch": "@@ -0,0 +1,50 @@\n+import { errorMessage } from '../common';\n+\n+describe('shared API failure copy', () => {\n+  it.each([500, 502, 503, 504])('describes HTTP %s without exposing generic server text', (status) => {\n+    expect(errorMessage({\n+      message: `Request failed with status code ${status}`,\n+      response: { status, data: { message: 'Internal Server Error' } },\n+    }, 'Could not load food.')).toBe(\n+      'The service is temporarily unavailable. Try again in a moment.',\n+    );\n+  });\n+\n+  it('does not show a gateway HTML body to the person', () => {\n+    expect(errorMessage({\n+      response: { status: 502, data: '<html>Bad Gateway</html>' },\n+    })).toBe('The service is temporarily unavailable. Try again in a moment.');\n+  });\n+\n+  it('explains a network failure', () => {\n+    expect(errorMessage({ code: 'ERR_NETWORK', message: 'Network Error' })).toBe(\n+      'The service could not be reached. Check your connection and try again.',\n+    );\n+  });\n+\n+  it.each(['ECONNABORTED', 'ETIMEDOUT'])('explains timeout code %s', (code) => {\n+    expect(errorMessage({ code, message: 'timeout of 30000ms exceeded' })).toBe(\n+      'The request timed out. Check your connection and try again.',\n+    );\n+  });\n+\n+  it('keeps a specific validation or permission response', () => {\n+    expect(errorMessage({\n+      response: { status: 400, data: { message: 'Choose a serving unit.' } },\n+    })).toBe('Choose a serving unit.');\n+    expect(errorMessage({\n+      response: { status: 403, data: { message: 'Your coach must approve this change.' } },\n+    })).toBe('Your coach must approve this change.');\n+  });\n+\n+  it('keeps the callers specific fallback and local error details', () => {\n+    expect(errorMessage(null, 'The entry could not be loaded.')).toBe('The entry could not be loaded.');\n+    expect(errorMessage(new Error('The saved routine has no exercises.'))).toBe(\n+      'The saved routine has no exercises.',\n+    );\n+  });\n+\n+  it('has an actionable default when no detail is available', () => {\n+    expect(errorMessage(null)).toBe('The request could not be completed. Try again in a moment.');\n+  });\n+});"
+    },
+    {
+      "sha": "89ed2f91a45faf7270c8a11f7063ce8c99df4cc5",
+      "filename": "src/types/common.ts",
+      "status": "modified",
+      "additions": 20,
+      "deletions": 2,
+      "changes": 22,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/8302adc0465072c2674490a5c0e39884acec293d/src%2Ftypes%2Fcommon.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/8302adc0465072c2674490a5c0e39884acec293d/src%2Ftypes%2Fcommon.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Ftypes%2Fcommon.ts?ref=8302adc0465072c2674490a5c0e39884acec293d",
+      "patch": "@@ -34,9 +34,27 @@ export interface ApiErrorLike {\n // Extract a human-readable message from an unknown error without using `any`.\n // Axios response body wins over Error.message \u2014 the backend message is more\n // specific than the generic JS error message.\n-export function errorMessage(err: unknown, fallback = 'Something went wrong'): string {\n+export function errorMessage(\n+  err: unknown,\n+  fallback = 'The request could not be completed. Try again in a moment.',\n+): string {\n   if (err && typeof err === 'object') {\n-    const e = err as { response?: { data?: unknown }; message?: string };\n+    const e = err as {\n+      response?: { data?: unknown; status?: number };\n+      message?: string;\n+      code?: string;\n+    };\n+    // Transport/server failures carry technical Axios text or a gateway HTML\n+    // body, not a useful instruction. Keep specific 4xx/domain copy below.\n+    if (typeof e.response?.status === 'number' && e.response.status >= 500) {\n+      return 'The service is temporarily unavailable. Try again in a moment.';\n+    }\n+    if (e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT') {\n+      return 'The request timed out. Check your connection and try again.';\n+    }\n+    if (e.code === 'ERR_NETWORK' || e.message === 'Network Error') {\n+      return 'The service could not be reached. Check your connection and try again.';\n+    }\n     const data = e.response?.data;\n     if (data && typeof data === 'object') {\n       const d = data as Record<string, unknown>;"
+    }
+  ]
+}

@@ -1,0 +1,1671 @@
+﻿2026-10-06T20:59:05.1499451Z Current runner version: '2.337.0'
+2026-10-06T20:59:05.1517426Z ##[group]Runner Image Provisioner
+2026-10-06T20:59:05.1517976Z Hosted Compute Agent
+2026-10-06T20:59:05.1518374Z Version: 20261002.596
+2026-10-06T20:59:05.1518769Z Commit: c3d12f3313a95f25162a1503be624f3b0617f8c0
+2026-10-06T20:59:05.1519198Z Build Date: 2026-10-02T22:28:27Z
+2026-10-06T20:59:05.1519681Z Worker ID: {47347e91-96e6-4b73-836b-f3d5665921c7}
+2026-10-06T20:59:05.1520091Z Region: centralus
+2026-10-06T20:59:05.1520564Z Cloud: Azure
+2026-10-06T20:59:05.1520900Z ##[endgroup]
+2026-10-06T20:59:05.1521767Z ##[group]Operating System
+2026-10-06T20:59:05.1522195Z Ubuntu
+2026-10-06T20:59:05.1522505Z 24.04.5
+2026-10-06T20:59:05.1522802Z LTS
+2026-10-06T20:59:05.1523155Z ##[endgroup]
+2026-10-06T20:59:05.1523477Z ##[group]Runner Image
+2026-10-06T20:59:05.1523922Z Image: ubuntu-24.04
+2026-10-06T20:59:05.1524258Z Version: 20261004.327.1
+2026-10-06T20:59:05.1525054Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261004.327/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-06T20:59:05.1525943Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261004.327
+2026-10-06T20:59:05.1526520Z ##[endgroup]
+2026-10-06T20:59:05.1527193Z ##[group]GITHUB_TOKEN Permissions
+2026-10-06T20:59:05.1528772Z Contents: read
+2026-10-06T20:59:05.1529108Z Metadata: read
+2026-10-06T20:59:05.1529459Z Packages: read
+2026-10-06T20:59:05.1529843Z ##[endgroup]
+2026-10-06T20:59:05.1531284Z Secret source: Actions
+2026-10-06T20:59:05.1531874Z Cache mode: write
+2026-10-06T20:59:05.1532435Z Prepare workflow directory
+2026-10-06T20:59:05.1730813Z Prepare all required actions
+2026-10-06T20:59:05.1760807Z Getting action download info
+2026-10-06T20:59:05.4478653Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-06T20:59:05.6478006Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-06T20:59:06.1134700Z Complete job name: targeted
+2026-10-06T20:59:06.2282337Z ##[group]Run actions/checkout@v6
+2026-10-06T20:59:06.2282822Z with:
+2026-10-06T20:59:06.2283161Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-06T20:59:06.2285548Z   token: ***
+2026-10-06T20:59:06.2285812Z   ssh-strict: true
+2026-10-06T20:59:06.2286132Z   ssh-user: git
+2026-10-06T20:59:06.2286541Z   persist-credentials: true
+2026-10-06T20:59:06.2286928Z   clean: true
+2026-10-06T20:59:06.2287201Z   sparse-checkout-cone-mode: true
+2026-10-06T20:59:06.2287519Z   fetch-depth: 1
+2026-10-06T20:59:06.2287795Z   fetch-tags: false
+2026-10-06T20:59:06.2288075Z   show-progress: true
+2026-10-06T20:59:06.2288347Z   lfs: false
+2026-10-06T20:59:06.2288612Z   submodules: false
+2026-10-06T20:59:06.2288899Z   set-safe-directory: true
+2026-10-06T20:59:06.2289211Z   allow-unsafe-pr-checkout: false
+2026-10-06T20:59:06.2289624Z ##[endgroup]
+2026-10-06T20:59:06.2936089Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-06T20:59:06.2937451Z ##[group]Getting Git version info
+2026-10-06T20:59:06.2937954Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-06T20:59:06.2938685Z [command]/usr/bin/git version
+2026-10-06T20:59:06.2995924Z git version 2.55.0
+2026-10-06T20:59:06.3009555Z ##[endgroup]
+2026-10-06T20:59:06.3019441Z Temporarily overriding HOME='/home/runner/work/_temp/ccd64319-9243-40b5-872c-8a39363c9da1' before making global git config changes
+2026-10-06T20:59:06.3020230Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-06T20:59:06.3023369Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-06T20:59:06.3405211Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-06T20:59:06.3408965Z ##[group]Determining repository object format
+2026-10-06T20:59:06.3410730Z ##[endgroup]
+2026-10-06T20:59:06.3411176Z ##[group]Initializing the repository
+2026-10-06T20:59:06.3414621Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-06T20:59:06.4503907Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-06T20:59:06.4505022Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-06T20:59:06.4507509Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-06T20:59:06.4508034Z hint: call:
+2026-10-06T20:59:06.4508347Z hint:
+2026-10-06T20:59:06.4508765Z hint: 	git config --global init.defaultBranch <name>
+2026-10-06T20:59:06.4509209Z hint:
+2026-10-06T20:59:06.4509624Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-06T20:59:06.4510233Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-06T20:59:06.4510917Z hint:
+2026-10-06T20:59:06.4511357Z hint: 	git branch -m <name>
+2026-10-06T20:59:06.4511819Z hint:
+2026-10-06T20:59:06.4512321Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-06T20:59:06.4513811Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-06T20:59:06.4516520Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-06T20:59:06.4694112Z ##[endgroup]
+2026-10-06T20:59:06.4694585Z ##[group]Disabling automatic garbage collection
+2026-10-06T20:59:06.4696673Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-06T20:59:06.4787363Z ##[endgroup]
+2026-10-06T20:59:06.4788154Z ##[group]Setting up auth
+2026-10-06T20:59:06.4788753Z Removing SSH command configuration
+2026-10-06T20:59:06.4793886Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-06T20:59:06.4818110Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-06T20:59:06.5153353Z Removing HTTP extra header
+2026-10-06T20:59:06.5157753Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-06T20:59:06.5184326Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-06T20:59:06.5351296Z Removing includeIf entries pointing to credentials config files
+2026-10-06T20:59:06.5355347Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-06T20:59:06.5378773Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-06T20:59:06.5547802Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-06T20:59:06.5579295Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config
+2026-10-06T20:59:06.5607391Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config
+2026-10-06T20:59:06.5995953Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config
+2026-10-06T20:59:06.6188491Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config
+2026-10-06T20:59:06.6284035Z ##[endgroup]
+2026-10-06T20:59:06.6284940Z ##[group]Fetching the repository
+2026-10-06T20:59:06.6290920Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +72aff218da7aa1c76e355051a1c871bc3baccdfb:refs/remotes/origin/ci/AUDIT-19-125-mainfail
+2026-10-06T20:59:08.3402084Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-06T20:59:08.3402767Z  * [new ref]         72aff218da7aa1c76e355051a1c871bc3baccdfb -> origin/ci/AUDIT-19-125-mainfail
+2026-10-06T20:59:08.3415190Z [command]/usr/bin/git branch --list --remote origin/ci/AUDIT-19-125-mainfail
+2026-10-06T20:59:08.3430002Z   origin/ci/AUDIT-19-125-mainfail
+2026-10-06T20:59:08.3436301Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/AUDIT-19-125-mainfail
+2026-10-06T20:59:08.3452784Z 72aff218da7aa1c76e355051a1c871bc3baccdfb
+2026-10-06T20:59:08.3455502Z ##[endgroup]
+2026-10-06T20:59:08.3455849Z ##[group]Determining the checkout info
+2026-10-06T20:59:08.3456386Z ##[endgroup]
+2026-10-06T20:59:08.3458806Z [command]/usr/bin/git sparse-checkout disable
+2026-10-06T20:59:08.3629767Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-06T20:59:08.3829506Z ##[group]Checking out the ref
+2026-10-06T20:59:08.3832477Z [command]/usr/bin/git checkout --progress --force -B ci/AUDIT-19-125-mainfail refs/remotes/origin/ci/AUDIT-19-125-mainfail
+2026-10-06T20:59:08.4924908Z Switched to a new branch 'ci/AUDIT-19-125-mainfail'
+2026-10-06T20:59:08.4925946Z branch 'ci/AUDIT-19-125-mainfail' set up to track 'origin/ci/AUDIT-19-125-mainfail'.
+2026-10-06T20:59:08.4933914Z ##[endgroup]
+2026-10-06T20:59:08.4971648Z [command]/usr/bin/git log -1 --format=%H
+2026-10-06T20:59:08.4989712Z 72aff218da7aa1c76e355051a1c871bc3baccdfb
+2026-10-06T20:59:08.5251990Z ##[group]Run actions/setup-node@v6
+2026-10-06T20:59:08.5252208Z with:
+2026-10-06T20:59:08.5252352Z   node-version: 22.13
+2026-10-06T20:59:08.5252501Z   cache: npm
+2026-10-06T20:59:08.5252643Z   check-latest: false
+2026-10-06T20:59:08.5254083Z   token: ***
+2026-10-06T20:59:08.5254243Z   package-manager-cache: true
+2026-10-06T20:59:08.5254422Z ##[endgroup]
+2026-10-06T20:59:08.6168630Z Attempting to download 22.13...
+2026-10-06T20:59:09.2987122Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-06T20:59:09.7357459Z Extracting ...
+2026-10-06T20:59:09.7443624Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/2be3ff2b-318e-4b65-8941-c82efd13f565 -f /home/runner/work/_temp/b4930b07-79f5-4b7f-bddc-7b4bcadc02d9
+2026-10-06T20:59:10.5752782Z Adding to the cache ...
+2026-10-06T20:59:12.3178925Z ##[group]Environment details
+2026-10-06T20:59:12.4652861Z node: v22.13.1
+2026-10-06T20:59:12.4653130Z npm: 10.9.2
+2026-10-06T20:59:12.4653325Z yarn: 1.22.22
+2026-10-06T20:59:12.4653746Z ##[endgroup]
+2026-10-06T20:59:12.4666296Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-06T20:59:12.5248358Z /home/runner/.npm
+2026-10-06T20:59:12.6976420Z Cache hit for: node-cache-Linux-x64-npm-73b8c5392fe66c132d819fae91e82c2568aa0bf72eece35e2bb64b643944e426
+2026-10-06T20:59:13.8335603Z Received 109051904 of 242722566 (44.9%), 104.0 MBs/sec
+2026-10-06T20:59:14.4701397Z Received 242722566 of 242722566 (100.0%), 141.5 MBs/sec
+2026-10-06T20:59:14.4702028Z Cache Size: ~231 MB (242722566 B)
+2026-10-06T20:59:14.4721032Z [command]/usr/bin/tar -xf /home/runner/work/_temp/6d60e2d8-8ee7-485d-9d1b-a7724fe1b90d/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-06T20:59:15.1911259Z Cache restored successfully
+2026-10-06T20:59:15.2016199Z Cache restored from key: node-cache-Linux-x64-npm-73b8c5392fe66c132d819fae91e82c2568aa0bf72eece35e2bb64b643944e426
+2026-10-06T20:59:15.3311311Z ##[group]Run npm ci
+2026-10-06T20:59:15.3311725Z [36;1mnpm ci[0m
+2026-10-06T20:59:15.4638003Z shell: /usr/bin/bash -e {0}
+2026-10-06T20:59:15.4638210Z ##[endgroup]
+2026-10-06T20:59:18.4769314Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-06T20:59:18.5899779Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-06T20:59:18.6004188Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-06T20:59:18.6030619Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-06T20:59:18.6184113Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-06T20:59:18.6885130Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-06T20:59:18.6908991Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T20:59:18.6913439Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T20:59:18.6982378Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T20:59:18.6988413Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T20:59:18.6996358Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T20:59:18.7169115Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T20:59:18.7489202Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-06T20:59:18.9835912Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-06T20:59:19.5228161Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-06T20:59:21.6870984Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-06T20:59:26.0712875Z 
+2026-10-06T20:59:26.0713599Z > growth-project-app@1.0.0 postinstall
+2026-10-06T20:59:26.0714049Z > node scripts/patch-react-native-health.js
+2026-10-06T20:59:26.0714270Z 
+2026-10-06T20:59:26.1103065Z Applied react-native-health RN 0.85 compatibility patch
+2026-10-06T20:59:26.1228670Z 
+2026-10-06T20:59:26.1229321Z added 1109 packages, and audited 1110 packages in 11s
+2026-10-06T20:59:26.1229606Z 
+2026-10-06T20:59:26.1229768Z 187 packages are looking for funding
+2026-10-06T20:59:26.1230651Z   run `npm fund` for details
+2026-10-06T20:59:26.3578133Z 
+2026-10-06T20:59:26.3578931Z 92 vulnerabilities (1 low, 18 moderate, 72 high, 1 critical)
+2026-10-06T20:59:26.3591066Z 
+2026-10-06T20:59:26.3591565Z To address issues that do not require attention, run:
+2026-10-06T20:59:26.3591908Z   npm audit fix
+2026-10-06T20:59:26.3592019Z 
+2026-10-06T20:59:26.3592461Z To address all issues (including breaking changes), run:
+2026-10-06T20:59:26.3592814Z   npm audit fix --force
+2026-10-06T20:59:26.3592940Z 
+2026-10-06T20:59:26.3593049Z Run `npm audit` for details.
+2026-10-06T20:59:26.5359724Z ##[group]Run set -euo pipefail
+2026-10-06T20:59:26.5359936Z [36;1mset -euo pipefail[0m
+2026-10-06T20:59:26.5360155Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-06T20:59:26.5360607Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-06T20:59:26.5360845Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-06T20:59:26.5360994Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-06T20:59:26.5412833Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-06T20:59:26.5413025Z ##[endgroup]
+2026-10-06T20:59:26.5489039Z specs: src/types/__tests__/common.failureCopy.test.ts src/store/__tests__/clientStore.failureStates.test.ts src/screens/support/__tests__/SupportInboxReportProblem.test.tsx src/screens/client/__tests__/HomeScreen.macroMode.test.tsx src/screens/client/__tests__/LogScreen.foodSpeed.test.tsx
+2026-10-06T20:59:30.1001987Z FAIL src/store/__tests__/clientStore.failureStates.test.ts
+2026-10-06T20:59:30.1003547Z   ● client day data failure state › distinguishes a failed read from an empty food log and stops loading
+2026-10-06T20:59:30.1040608Z 
+2026-10-06T20:59:30.1071571Z     expect(received).toMatchObject(expected)
+2026-10-06T20:59:30.1106705Z 
+2026-10-06T20:59:30.1151492Z     - Expected  - 1
+2026-10-06T20:59:30.1167036Z     + Received  + 0
+2026-10-06T20:59:30.1250804Z 
+2026-10-06T20:59:30.1271035Z       Object {
+2026-10-06T20:59:30.1301168Z         "isLoading": false,
+2026-10-06T20:59:30.1326503Z     -   "loadError": "Food and water data could not refresh. Check your connection and try again.",
+2026-10-06T20:59:30.1384133Z       }
+2026-10-06T20:59:30.1443895Z 
+2026-10-06T20:59:30.1462185Z     [0m [90m 28 |[39m     mockGetFood[33m.[39mmockRejectedValue([36mnew[39m [33mError[39m([32m'Network Error'[39m))[33m;[39m
+2026-10-06T20:59:30.1491560Z      [90m 29 |[39m     [36mawait[39m useClientStore[33m.[39mgetState()[33m.[39mloadDayData([32m'client'[39m[33m,[39m [32m'2026-10-06'[39m)[33m;[39m
+2026-10-06T20:59:30.1521365Z     [31m[1m>[22m[39m[90m 30 |[39m     expect(useClientStore[33m.[39mgetState())[33m.[39mtoMatchObject({
+2026-10-06T20:59:30.1537430Z      [90m    |[39m                                       [31m[1m^[22m[39m
+2026-10-06T20:59:30.1551198Z      [90m 31 |[39m       isLoading[33m:[39m [36mfalse[39m[33m,[39m
+2026-10-06T20:59:30.1581454Z      [90m 32 |[39m       loadError[33m:[39m [32m'Food and water data could not refresh. Check your connection and try again.'[39m[33m,[39m
+2026-10-06T20:59:30.1641008Z      [90m 33 |[39m     })[33m;[39m[0m
+2026-10-06T20:59:30.1705686Z 
+2026-10-06T20:59:30.1706424Z       at Object.toMatchObject (src/store/__tests__/clientStore.failureStates.test.ts:30:39)
+2026-10-06T20:59:30.1707347Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T20:59:30.1708089Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T20:59:30.1708543Z 
+2026-10-06T20:59:30.1709300Z   ● client day data failure state › keeps previously displayed data on failure and clears the notice after a successful retry
+2026-10-06T20:59:30.1709851Z 
+2026-10-06T20:59:30.1710130Z     expect(received).toMatchObject(expected)
+2026-10-06T20:59:30.1710597Z 
+2026-10-06T20:59:30.1710824Z     - Expected  -  1
+2026-10-06T20:59:30.1711159Z     + Received  + 17
+2026-10-06T20:59:30.1711403Z 
+2026-10-06T20:59:30.1711616Z       Object {
+2026-10-06T20:59:30.1711993Z     -   "loadError": Any<String>,
+2026-10-06T20:59:30.1712385Z     +   "dailyTotals": Object {
+2026-10-06T20:59:30.1712740Z     +     "calories": 420,
+2026-10-06T20:59:30.1735527Z     +     "carbs": 50,
+2026-10-06T20:59:30.1736070Z     +     "fat": 11,
+2026-10-06T20:59:30.1736607Z     +     "protein": 30,
+2026-10-06T20:59:30.1753781Z     +   },
+2026-10-06T20:59:30.1754192Z     +   "foodLogs": Array [],
+2026-10-06T20:59:30.1754580Z     +   "isLoading": false,
+2026-10-06T20:59:30.1755015Z     +   "loadDayData": [Function loadDayData],
+2026-10-06T20:59:30.1755806Z     +   "loadProfile": [Function loadProfile],
+2026-10-06T20:59:30.1756252Z     +   "logFood": [Function logFood],
+2026-10-06T20:59:30.1756808Z     +   "logWater": [Function logWater],
+2026-10-06T20:59:30.1757349Z     +   "removeFoodLogLocally": [Function removeFoodLogLocally],
+2026-10-06T20:59:30.1771396Z     +   "reset": [Function reset],
+2026-10-06T20:59:30.1771861Z     +   "selectedDate": "2026-10-06",
+2026-10-06T20:59:30.1772321Z     +   "setSelectedDate": [Function setSelectedDate],
+2026-10-06T20:59:30.1772747Z     +   "waterOz": 20,
+2026-10-06T20:59:30.1773079Z       }
+2026-10-06T20:59:30.1773316Z 
+2026-10-06T20:59:30.1774161Z     [0m [90m 39 |[39m     [36mawait[39m useClientStore[33m.[39mgetState()[33m.[39mloadDayData([32m'client'[39m[33m,[39m [32m'2026-10-06'[39m)[33m;[39m
+2026-10-06T20:59:30.1775285Z      [90m 40 |[39m     expect(useClientStore[33m.[39mgetState()[33m.[39mdailyTotals[33m.[39mcalories)[33m.[39mtoBe([35m420[39m)[33m;[39m
+2026-10-06T20:59:30.1776515Z     [31m[1m>[22m[39m[90m 41 |[39m     expect(useClientStore[33m.[39mgetState())[33m.[39mtoMatchObject({ loadError[33m:[39m expect[33m.[39many([33mString[39m) })[33m;[39m
+2026-10-06T20:59:30.1777401Z      [90m    |[39m                                       [31m[1m^[22m[39m
+2026-10-06T20:59:30.1778302Z      [90m 42 |[39m     [36mawait[39m useClientStore[33m.[39mgetState()[33m.[39mloadDayData([32m'client'[39m[33m,[39m [32m'2026-10-06'[39m)[33m;[39m
+2026-10-06T20:59:30.1779552Z      [90m 43 |[39m     expect(useClientStore[33m.[39mgetState())[33m.[39mtoMatchObject({ isLoading[33m:[39m [36mfalse[39m[33m,[39m loadError[33m:[39m [36mnull[39m })[33m;[39m
+2026-10-06T20:59:30.1780545Z      [90m 44 |[39m   })[33m;[39m[0m
+2026-10-06T20:59:30.1780875Z 
+2026-10-06T20:59:30.1781308Z       at Object.toMatchObject (src/store/__tests__/clientStore.failureStates.test.ts:41:39)
+2026-10-06T20:59:30.1782049Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T20:59:30.1782719Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T20:59:30.1783126Z 
+2026-10-06T20:59:30.1783648Z   ● client day data failure state › does not turn a water-read failure into an unlabelled zero
+2026-10-06T20:59:30.1784109Z 
+2026-10-06T20:59:30.1784383Z     expect(received).toMatchObject(expected)
+2026-10-06T20:59:30.1784716Z 
+2026-10-06T20:59:30.1784949Z     - Expected  - 2
+2026-10-06T20:59:30.1785284Z     + Received  + 1
+2026-10-06T20:59:30.1785538Z 
+2026-10-06T20:59:30.1785884Z       Object {
+2026-10-06T20:59:30.1791467Z         "isLoading": false,
+2026-10-06T20:59:30.1792074Z     -   "loadError": "Water data could not refresh. Check your connection and try again.",
+2026-10-06T20:59:30.1792635Z     -   "waterOz": 20,
+2026-10-06T20:59:30.1792981Z     +   "waterOz": 0,
+2026-10-06T20:59:30.1793310Z       }
+2026-10-06T20:59:30.1793550Z 
+2026-10-06T20:59:30.1794304Z     [0m [90m 48 |[39m     mockGetWater[33m.[39mmockRejectedValueOnce([36mnew[39m [33mError[39m([32m'Network Error'[39m))[33m;[39m
+2026-10-06T20:59:30.1795563Z      [90m 49 |[39m     [36mawait[39m useClientStore[33m.[39mgetState()[33m.[39mloadDayData([32m'client'[39m[33m,[39m [32m'2026-10-06'[39m)[33m;[39m
+2026-10-06T20:59:30.1796638Z     [31m[1m>[22m[39m[90m 50 |[39m     expect(useClientStore[33m.[39mgetState())[33m.[39mtoMatchObject({
+2026-10-06T20:59:30.1797420Z      [90m    |[39m                                       [31m[1m^[22m[39m
+2026-10-06T20:59:30.1798152Z      [90m 51 |[39m       waterOz[33m:[39m [35m20[39m[33m,[39m isLoading[33m:[39m [36mfalse[39m[33m,[39m
+2026-10-06T20:59:30.1799093Z      [90m 52 |[39m       loadError[33m:[39m [32m'Water data could not refresh. Check your connection and try again.'[39m[33m,[39m
+2026-10-06T20:59:30.1800072Z      [90m 53 |[39m     })[33m;[39m[0m
+2026-10-06T20:59:30.1800623Z 
+2026-10-06T20:59:30.1801256Z       at Object.toMatchObject (src/store/__tests__/clientStore.failureStates.test.ts:50:39)
+2026-10-06T20:59:30.1802024Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T20:59:30.1802701Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T20:59:30.1803093Z 
+2026-10-06T20:59:30.1803580Z   ● client day data failure state › removes a failed-read notice when resetting the store
+2026-10-06T20:59:30.1804024Z 
+2026-10-06T20:59:30.1804278Z     expect(received).toMatchObject(expected)
+2026-10-06T20:59:30.1804581Z 
+2026-10-06T20:59:30.1804788Z     - Expected  - 1
+2026-10-06T20:59:30.1805107Z     + Received  + 0
+2026-10-06T20:59:30.1805339Z 
+2026-10-06T20:59:30.1805533Z       Object {
+2026-10-06T20:59:30.1805842Z         "isLoading": false,
+2026-10-06T20:59:30.1806205Z     -   "loadError": null,
+2026-10-06T20:59:30.1806661Z       }
+2026-10-06T20:59:30.1808666Z 
+2026-10-06T20:59:30.1809350Z     [0m [90m 59 |[39m     [36mawait[39m useClientStore[33m.[39mgetState()[33m.[39mloadDayData([32m'client'[39m)[33m;[39m
+2026-10-06T20:59:30.1810184Z      [90m 60 |[39m     useClientStore[33m.[39mgetState()[33m.[39mreset()[33m;[39m
+2026-10-06T20:59:30.1811413Z     [31m[1m>[22m[39m[90m 61 |[39m     expect(useClientStore[33m.[39mgetState())[33m.[39mtoMatchObject({ loadError[33m:[39m [36mnull[39m[33m,[39m isLoading[33m:[39m [36mfalse[39m })[33m;[39m
+2026-10-06T20:59:30.1812343Z      [90m    |[39m                                       [31m[1m^[22m[39m
+2026-10-06T20:59:30.1812805Z      [90m 62 |[39m   })[33m;[39m
+2026-10-06T20:59:30.1813217Z      [90m 63 |[39m })[33m;[39m
+2026-10-06T20:59:30.1813654Z      [90m 64 |[39m[0m
+2026-10-06T20:59:30.1813907Z 
+2026-10-06T20:59:30.1814326Z       at Object.toMatchObject (src/store/__tests__/clientStore.failureStates.test.ts:61:39)
+2026-10-06T20:59:30.1815052Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T20:59:30.1815670Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T20:59:30.1816044Z 
+2026-10-06T20:59:33.5142544Z FAIL src/screens/support/__tests__/SupportInboxReportProblem.test.tsx
+2026-10-06T20:59:33.5172094Z   ● Support problem reporting › offers email problem reporting even when the SDK says the chat opened
+2026-10-06T20:59:33.5200857Z 
+2026-10-06T20:59:33.5231286Z     Unable to find an element with role: button, name: Report a problem by email
+2026-10-06T20:59:33.5231841Z 
+2026-10-06T20:59:33.5241640Z     [36m<View>[39m
+2026-10-06T20:59:33.5242151Z       [36m<View>[39m
+2026-10-06T20:59:33.5242469Z         [36m<View>[39m
+2026-10-06T20:59:33.5242779Z           [36m<View[39m
+2026-10-06T20:59:33.5243203Z             [33maccessibilityLabel[39m=[32m"Go back"[39m
+2026-10-06T20:59:33.5243739Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.5244189Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.5244552Z           [36m>[39m
+2026-10-06T20:59:33.5244845Z             [36m<Text>[39m
+2026-10-06T20:59:33.5245674Z               [0m[0m
+2026-10-06T20:59:33.5246136Z             [36m</Text>[39m
+2026-10-06T20:59:33.5246450Z           [36m</View>[39m
+2026-10-06T20:59:33.5246758Z         [36m</View>[39m
+2026-10-06T20:59:33.5247061Z         [36m<Text[39m
+2026-10-06T20:59:33.5247438Z           [33maccessibilityRole[39m=[32m"header"[39m
+2026-10-06T20:59:33.5247794Z         [36m>[39m
+2026-10-06T20:59:33.5248084Z           [0mSupport[0m
+2026-10-06T20:59:33.5248388Z         [36m</Text>[39m
+2026-10-06T20:59:33.5248692Z         [36m<View />[39m
+2026-10-06T20:59:33.5248999Z       [36m</View>[39m
+2026-10-06T20:59:33.5249290Z       [36m<View>[39m
+2026-10-06T20:59:33.5249578Z         [36m<View>[39m
+2026-10-06T20:59:33.5250497Z           [36m<Text>[39m
+2026-10-06T20:59:33.5250813Z             [0m[0m
+2026-10-06T20:59:33.5251108Z           [36m</Text>[39m
+2026-10-06T20:59:33.5251427Z         [36m</View>[39m
+2026-10-06T20:59:33.5251903Z         [36m<Text>[39m
+2026-10-06T20:59:33.5252245Z           [0mLive Support[0m
+2026-10-06T20:59:33.5252559Z         [36m</Text>[39m
+2026-10-06T20:59:33.5252853Z         [36m<Text>[39m
+2026-10-06T20:59:33.5253623Z           [0mConnect with the support team via the chat overlay. The window should open automatically. If it did not appear, tap the button below.[0m
+2026-10-06T20:59:33.5254283Z         [36m</Text>[39m
+2026-10-06T20:59:33.5254581Z         [36m<View>[39m
+2026-10-06T20:59:33.5254883Z           [36m<View[39m
+2026-10-06T20:59:33.5255413Z             [33maccessibilityHint[39m=[32m"Opens the Crisp live support chat overlay"[39m
+2026-10-06T20:59:33.5256039Z             [33maccessibilityLabel[39m=[32m"Open support chat"[39m
+2026-10-06T20:59:33.5256541Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.5256981Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.5257428Z             [33mtestID[39m=[32m"support-chat-open"[39m
+2026-10-06T20:59:33.5257792Z           [36m>[39m
+2026-10-06T20:59:33.5258089Z             [36m<Text>[39m
+2026-10-06T20:59:33.5258511Z               [0mOpen Support Chat[0m
+2026-10-06T20:59:33.5258856Z             [36m</Text>[39m
+2026-10-06T20:59:33.5259163Z           [36m</View>[39m
+2026-10-06T20:59:33.5259464Z         [36m</View>[39m
+2026-10-06T20:59:33.5259752Z         [36m<Text>[39m
+2026-10-06T20:59:33.5260493Z           [0mSupport is separate from Coach AI and the Client Bot. A human operator will respond during business hours.[0m
+2026-10-06T20:59:33.5261096Z         [36m</Text>[39m
+2026-10-06T20:59:33.5261387Z       [36m</View>[39m
+2026-10-06T20:59:33.5261679Z     [36m</View>[39m
+2026-10-06T20:59:33.5261874Z 
+2026-10-06T20:59:33.5262661Z     [0m [90m 27 |[39m     [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mSupportInboxScreen[39m navigation[33m=[39m{navigation} [33m/[39m[33m>[39m)[33m;[39m
+2026-10-06T20:59:33.5263770Z      [90m 28 |[39m     expect(screen[33m.[39mgetByTestId([32m'support-chat-open'[39m))[33m.[39mtoBeTruthy()[33m;[39m
+2026-10-06T20:59:33.5264954Z     [31m[1m>[22m[39m[90m 29 |[39m     [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByRole([32m'button'[39m[33m,[39m { name[33m:[39m [32m'Report a problem by email'[39m }))[33m;[39m
+2026-10-06T20:59:33.5265825Z      [90m    |[39m                                  [31m[1m^[22m[39m
+2026-10-06T20:59:33.5266354Z      [90m 30 |[39m     expect(openURL)[33m.[39mtoHaveBeenCalledWith(
+2026-10-06T20:59:33.5267077Z      [90m 31 |[39m       [32m'mailto:Bradleyapple1031@gmail.com?subject=Report%20a%20problem'[39m[33m,[39m
+2026-10-06T20:59:33.5267649Z      [90m 32 |[39m     )[33m;[39m[0m
+2026-10-06T20:59:33.5267880Z 
+2026-10-06T20:59:33.5268287Z       at Object.getByRole (src/screens/support/__tests__/SupportInboxReportProblem.test.tsx:29:34)
+2026-10-06T20:59:33.5268981Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T20:59:33.5269580Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T20:59:33.5269928Z 
+2026-10-06T20:59:33.5270650Z   ● Support problem reporting › offers the existing selectable address and retry if problem reporting cannot open an email app
+2026-10-06T20:59:33.5271185Z 
+2026-10-06T20:59:33.5271502Z     Unable to find an element with role: button, name: Report a problem by email
+2026-10-06T20:59:33.5271863Z 
+2026-10-06T20:59:33.5272041Z     [36m<View>[39m
+2026-10-06T20:59:33.5272341Z       [36m<View>[39m
+2026-10-06T20:59:33.5272668Z         [36m<View>[39m
+2026-10-06T20:59:33.5272972Z           [36m<View[39m
+2026-10-06T20:59:33.5273375Z             [33maccessibilityLabel[39m=[32m"Go back"[39m
+2026-10-06T20:59:33.5274062Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.5274506Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.5274867Z           [36m>[39m
+2026-10-06T20:59:33.5275339Z             [36m<Text>[39m
+2026-10-06T20:59:33.5275658Z               [0m[0m
+2026-10-06T20:59:33.5275967Z             [36m</Text>[39m
+2026-10-06T20:59:33.5276289Z           [36m</View>[39m
+2026-10-06T20:59:33.5276601Z         [36m</View>[39m
+2026-10-06T20:59:33.5276906Z         [36m<Text[39m
+2026-10-06T20:59:33.5277298Z           [33maccessibilityRole[39m=[32m"header"[39m
+2026-10-06T20:59:33.5277673Z         [36m>[39m
+2026-10-06T20:59:33.5277970Z           [0mSupport[0m
+2026-10-06T20:59:33.5278282Z         [36m</Text>[39m
+2026-10-06T20:59:33.5278590Z         [36m<View />[39m
+2026-10-06T20:59:33.5278903Z       [36m</View>[39m
+2026-10-06T20:59:33.5279204Z       [36m<View>[39m
+2026-10-06T20:59:33.5279502Z         [36m<View>[39m
+2026-10-06T20:59:33.5279813Z           [36m<Text>[39m
+2026-10-06T20:59:33.5280128Z             [0m[0m
+2026-10-06T20:59:33.5280625Z           [36m</Text>[39m
+2026-10-06T20:59:33.5280925Z         [36m</View>[39m
+2026-10-06T20:59:33.5281236Z         [36m<Text>[39m
+2026-10-06T20:59:33.5281568Z           [0mLive Support[0m
+2026-10-06T20:59:33.5281897Z         [36m</Text>[39m
+2026-10-06T20:59:33.5282202Z         [36m<Text>[39m
+2026-10-06T20:59:33.5282983Z           [0mConnect with the support team via the chat overlay. The window should open automatically. If it did not appear, tap the button below.[0m
+2026-10-06T20:59:33.5283658Z         [36m</Text>[39m
+2026-10-06T20:59:33.5283959Z         [36m<View>[39m
+2026-10-06T20:59:33.5284261Z           [36m<View[39m
+2026-10-06T20:59:33.5284814Z             [33maccessibilityHint[39m=[32m"Opens the Crisp live support chat overlay"[39m
+2026-10-06T20:59:33.5285452Z             [33maccessibilityLabel[39m=[32m"Open support chat"[39m
+2026-10-06T20:59:33.5285970Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.5286422Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.5286879Z             [33mtestID[39m=[32m"support-chat-open"[39m
+2026-10-06T20:59:33.5287265Z           [36m>[39m
+2026-10-06T20:59:33.5287566Z             [36m<Text>[39m
+2026-10-06T20:59:33.5287922Z               [0mOpen Support Chat[0m
+2026-10-06T20:59:33.5288279Z             [36m</Text>[39m
+2026-10-06T20:59:33.5288599Z           [36m</View>[39m
+2026-10-06T20:59:33.5288879Z         [36m</View>[39m
+2026-10-06T20:59:33.5289185Z         [36m<Text>[39m
+2026-10-06T20:59:33.5289858Z           [0mSupport is separate from Coach AI and the Client Bot. A human operator will respond during business hours.[0m
+2026-10-06T20:59:33.5290526Z         [36m</Text>[39m
+2026-10-06T20:59:33.5290833Z       [36m</View>[39m
+2026-10-06T20:59:33.5291106Z     [36m</View>[39m
+2026-10-06T20:59:33.5291291Z 
+2026-10-06T20:59:33.5292032Z     [0m [90m 36 |[39m     jest[33m.[39mspyOn([33mLinking[39m[33m,[39m [32m'openURL'[39m)[33m.[39mmockRejectedValue([36mnew[39m [33mError[39m([32m'no mail app'[39m))[33m;[39m
+2026-10-06T20:59:33.5293265Z      [90m 37 |[39m     [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mSupportInboxScreen[39m navigation[33m=[39m{navigation} [33m/[39m[33m>[39m)[33m;[39m
+2026-10-06T20:59:33.5294556Z     [31m[1m>[22m[39m[90m 38 |[39m     [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByRole([32m'button'[39m[33m,[39m { name[33m:[39m [32m'Report a problem by email'[39m }))[33m;[39m
+2026-10-06T20:59:33.5295386Z      [90m    |[39m                                  [31m[1m^[22m[39m
+2026-10-06T20:59:33.5296287Z      [90m 39 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByTestId([32m'support-email-fallback'[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-06T20:59:33.5297561Z      [90m 40 |[39m     expect(screen[33m.[39mgetByTestId([32m'support-email-fallback-address'[39m)[33m.[39mprops[33m.[39mselectable)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+2026-10-06T20:59:33.5299007Z      [90m 41 |[39m     expect(screen[33m.[39mgetByTestId([32m'support-email-fallback-copy'[39m))[33m.[39mtoBeTruthy()[33m;[39m[0m
+2026-10-06T20:59:33.5299530Z 
+2026-10-06T20:59:33.5299930Z       at Object.getByRole (src/screens/support/__tests__/SupportInboxReportProblem.test.tsx:38:34)
+2026-10-06T20:59:33.5300776Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T20:59:33.5301591Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T20:59:33.5301860Z 
+2026-10-06T20:59:33.6111836Z FAIL src/types/__tests__/common.failureCopy.test.ts
+2026-10-06T20:59:33.6113197Z   ● shared API failure copy › describes HTTP 500 without exposing generic server text
+2026-10-06T20:59:33.6113679Z 
+2026-10-06T20:59:33.6114061Z     expect(received).toBe(expected) // Object.is equality
+2026-10-06T20:59:33.6114468Z 
+2026-10-06T20:59:33.6114830Z     Expected: "The service is temporarily unavailable. Try again in a moment."
+2026-10-06T20:59:33.6115398Z     Received: "Internal Server Error"
+2026-10-06T20:59:33.6115741Z 
+2026-10-06T20:59:33.6116261Z     [0m [90m  6 |[39m       message[33m:[39m [32m`Request failed with status code ${status}`[39m[33m,[39m
+2026-10-06T20:59:33.6117253Z      [90m  7 |[39m       response[33m:[39m { status[33m,[39m data[33m:[39m { message[33m:[39m [32m'Internal Server Error'[39m } }[33m,[39m
+2026-10-06T20:59:33.6118143Z     [31m[1m>[22m[39m[90m  8 |[39m     }[33m,[39m [32m'Could not load food.'[39m))[33m.[39mtoBe(
+2026-10-06T20:59:33.6118808Z      [90m    |[39m                                 [31m[1m^[22m[39m
+2026-10-06T20:59:33.6119552Z      [90m  9 |[39m       [32m'The service is temporarily unavailable. Try again in a moment.'[39m[33m,[39m
+2026-10-06T20:59:33.6120176Z      [90m 10 |[39m     )[33m;[39m
+2026-10-06T20:59:33.6120821Z      [90m 11 |[39m   })[33m;[39m[0m
+2026-10-06T20:59:33.6121134Z 
+2026-10-06T20:59:33.6121442Z       at toBe (src/types/__tests__/common.failureCopy.test.ts:8:33)
+2026-10-06T20:59:33.6121831Z 
+2026-10-06T20:59:33.6122264Z   ● shared API failure copy › describes HTTP 502 without exposing generic server text
+2026-10-06T20:59:33.6122714Z 
+2026-10-06T20:59:33.6122996Z     expect(received).toBe(expected) // Object.is equality
+2026-10-06T20:59:33.6123361Z 
+2026-10-06T20:59:33.6123702Z     Expected: "The service is temporarily unavailable. Try again in a moment."
+2026-10-06T20:59:33.6124239Z     Received: "Internal Server Error"
+2026-10-06T20:59:33.6124555Z 
+2026-10-06T20:59:33.6125035Z     [0m [90m  6 |[39m       message[33m:[39m [32m`Request failed with status code ${status}`[39m[33m,[39m
+2026-10-06T20:59:33.6125989Z      [90m  7 |[39m       response[33m:[39m { status[33m,[39m data[33m:[39m { message[33m:[39m [32m'Internal Server Error'[39m } }[33m,[39m
+2026-10-06T20:59:33.6126865Z     [31m[1m>[22m[39m[90m  8 |[39m     }[33m,[39m [32m'Could not load food.'[39m))[33m.[39mtoBe(
+2026-10-06T20:59:33.6127514Z      [90m    |[39m                                 [31m[1m^[22m[39m
+2026-10-06T20:59:33.6128229Z      [90m  9 |[39m       [32m'The service is temporarily unavailable. Try again in a moment.'[39m[33m,[39m
+2026-10-06T20:59:33.6128839Z      [90m 10 |[39m     )[33m;[39m
+2026-10-06T20:59:33.6129279Z      [90m 11 |[39m   })[33m;[39m[0m
+2026-10-06T20:59:33.6129590Z 
+2026-10-06T20:59:33.6129894Z       at toBe (src/types/__tests__/common.failureCopy.test.ts:8:33)
+2026-10-06T20:59:33.6130283Z 
+2026-10-06T20:59:33.6130810Z   ● shared API failure copy › describes HTTP 503 without exposing generic server text
+2026-10-06T20:59:33.6131256Z 
+2026-10-06T20:59:33.6131532Z     expect(received).toBe(expected) // Object.is equality
+2026-10-06T20:59:33.6131901Z 
+2026-10-06T20:59:33.6132241Z     Expected: "The service is temporarily unavailable. Try again in a moment."
+2026-10-06T20:59:33.6133079Z     Received: "Internal Server Error"
+2026-10-06T20:59:33.6133398Z 
+2026-10-06T20:59:33.6134029Z     [0m [90m  6 |[39m       message[33m:[39m [32m`Request failed with status code ${status}`[39m[33m,[39m
+2026-10-06T20:59:33.6134990Z      [90m  7 |[39m       response[33m:[39m { status[33m,[39m data[33m:[39m { message[33m:[39m [32m'Internal Server Error'[39m } }[33m,[39m
+2026-10-06T20:59:33.6136157Z     [31m[1m>[22m[39m[90m  8 |[39m     }[33m,[39m [32m'Could not load food.'[39m))[33m.[39mtoBe(
+2026-10-06T20:59:33.6136796Z      [90m    |[39m                                 [31m[1m^[22m[39m
+2026-10-06T20:59:33.6137531Z      [90m  9 |[39m       [32m'The service is temporarily unavailable. Try again in a moment.'[39m[33m,[39m
+2026-10-06T20:59:33.6138152Z      [90m 10 |[39m     )[33m;[39m
+2026-10-06T20:59:33.6138600Z      [90m 11 |[39m   })[33m;[39m[0m
+2026-10-06T20:59:33.6138914Z 
+2026-10-06T20:59:33.6139225Z       at toBe (src/types/__tests__/common.failureCopy.test.ts:8:33)
+2026-10-06T20:59:33.6139632Z 
+2026-10-06T20:59:33.6140271Z   ● shared API failure copy › describes HTTP 504 without exposing generic server text
+2026-10-06T20:59:33.6140832Z 
+2026-10-06T20:59:33.6141104Z     expect(received).toBe(expected) // Object.is equality
+2026-10-06T20:59:33.6141459Z 
+2026-10-06T20:59:33.6141793Z     Expected: "The service is temporarily unavailable. Try again in a moment."
+2026-10-06T20:59:33.6142322Z     Received: "Internal Server Error"
+2026-10-06T20:59:33.6142640Z 
+2026-10-06T20:59:33.6143100Z     [0m [90m  6 |[39m       message[33m:[39m [32m`Request failed with status code ${status}`[39m[33m,[39m
+2026-10-06T20:59:33.6144029Z      [90m  7 |[39m       response[33m:[39m { status[33m,[39m data[33m:[39m { message[33m:[39m [32m'Internal Server Error'[39m } }[33m,[39m
+2026-10-06T20:59:33.6144884Z     [31m[1m>[22m[39m[90m  8 |[39m     }[33m,[39m [32m'Could not load food.'[39m))[33m.[39mtoBe(
+2026-10-06T20:59:33.6145548Z      [90m    |[39m                                 [31m[1m^[22m[39m
+2026-10-06T20:59:33.6146281Z      [90m  9 |[39m       [32m'The service is temporarily unavailable. Try again in a moment.'[39m[33m,[39m
+2026-10-06T20:59:33.6146913Z      [90m 10 |[39m     )[33m;[39m
+2026-10-06T20:59:33.6147349Z      [90m 11 |[39m   })[33m;[39m[0m
+2026-10-06T20:59:33.6147655Z 
+2026-10-06T20:59:33.6147963Z       at toBe (src/types/__tests__/common.failureCopy.test.ts:8:33)
+2026-10-06T20:59:33.6148366Z 
+2026-10-06T20:59:33.6148781Z   ● shared API failure copy › does not show a gateway HTML body to the person
+2026-10-06T20:59:33.6149206Z 
+2026-10-06T20:59:33.6149481Z     expect(received).toBe(expected) // Object.is equality
+2026-10-06T20:59:33.6149845Z 
+2026-10-06T20:59:33.6150259Z     Expected: "The service is temporarily unavailable. Try again in a moment."
+2026-10-06T20:59:33.6150951Z     Received: "<html>Bad Gateway</html>"
+2026-10-06T20:59:33.6151272Z 
+2026-10-06T20:59:33.6151567Z     [0m [90m 14 |[39m     expect(errorMessage({
+2026-10-06T20:59:33.6152420Z      [90m 15 |[39m       response[33m:[39m { status[33m:[39m [35m502[39m[33m,[39m data[33m:[39m [32m'<html>Bad Gateway</html>'[39m }[33m,[39m
+2026-10-06T20:59:33.6153473Z     [31m[1m>[22m[39m[90m 16 |[39m     }))[33m.[39mtoBe([32m'The service is temporarily unavailable. Try again in a moment.'[39m)[33m;[39m
+2026-10-06T20:59:33.6154200Z      [90m    |[39m         [31m[1m^[22m[39m
+2026-10-06T20:59:33.6154657Z      [90m 17 |[39m   })[33m;[39m
+2026-10-06T20:59:33.6155055Z      [90m 18 |[39m
+2026-10-06T20:59:33.6155637Z      [90m 19 |[39m   it([32m'explains a network failure'[39m[33m,[39m () [33m=>[39m {[0m
+2026-10-06T20:59:33.6156065Z 
+2026-10-06T20:59:33.6156392Z       at Object.toBe (src/types/__tests__/common.failureCopy.test.ts:16:9)
+2026-10-06T20:59:33.6156800Z 
+2026-10-06T20:59:33.6157121Z   ● shared API failure copy › explains a network failure
+2026-10-06T20:59:33.6157637Z 
+2026-10-06T20:59:33.6159321Z     expect(received).toBe(expected) // Object.is equality
+2026-10-06T20:59:33.6159530Z 
+2026-10-06T20:59:33.6160076Z     Expected: "The service could not be reached. Check your connection and try again."
+2026-10-06T20:59:33.6160544Z     Received: "Network Error"
+2026-10-06T20:59:33.6160637Z 
+2026-10-06T20:59:33.6160746Z     [0m [90m 18 |[39m
+2026-10-06T20:59:33.6161004Z      [90m 19 |[39m   it([32m'explains a network failure'[39m[33m,[39m () [33m=>[39m {
+2026-10-06T20:59:33.6161511Z     [31m[1m>[22m[39m[90m 20 |[39m     expect(errorMessage({ code[33m:[39m [32m'ERR_NETWORK'[39m[33m,[39m message[33m:[39m [32m'Network Error'[39m }))[33m.[39mtoBe(
+2026-10-06T20:59:33.6161967Z      [90m    |[39m                                                                             [31m[1m^[22m[39m
+2026-10-06T20:59:33.6162342Z      [90m 21 |[39m       [32m'The service could not be reached. Check your connection and try again.'[39m[33m,[39m
+2026-10-06T20:59:33.6162622Z      [90m 22 |[39m     )[33m;[39m
+2026-10-06T20:59:33.6162804Z      [90m 23 |[39m   })[33m;[39m[0m
+2026-10-06T20:59:33.6162898Z 
+2026-10-06T20:59:33.6163037Z       at Object.toBe (src/types/__tests__/common.failureCopy.test.ts:20:77)
+2026-10-06T20:59:33.6163194Z 
+2026-10-06T20:59:33.6163336Z   ● shared API failure copy › explains timeout code ECONNABORTED
+2026-10-06T20:59:33.6163474Z 
+2026-10-06T20:59:33.6163572Z     expect(received).toBe(expected) // Object.is equality
+2026-10-06T20:59:33.6163700Z 
+2026-10-06T20:59:33.6163824Z     Expected: "The request timed out. Check your connection and try again."
+2026-10-06T20:59:33.6164051Z     Received: "timeout of 30000ms exceeded"
+2026-10-06T20:59:33.6164150Z 
+2026-10-06T20:59:33.6164217Z     [0m [90m 24 |[39m
+2026-10-06T20:59:33.6164649Z      [90m 25 |[39m   it[33m.[39meach([[32m'ECONNABORTED'[39m[33m,[39m [32m'ETIMEDOUT'[39m])([32m'explains timeout code %s'[39m[33m,[39m (code) [33m=>[39m {
+2026-10-06T20:59:33.6165222Z     [31m[1m>[22m[39m[90m 26 |[39m     expect(errorMessage({ code[33m,[39m message[33m:[39m [32m'timeout of 30000ms exceeded'[39m }))[33m.[39mtoBe(
+2026-10-06T20:59:33.6165648Z      [90m    |[39m                                                                            [31m[1m^[22m[39m
+2026-10-06T20:59:33.6165998Z      [90m 27 |[39m       [32m'The request timed out. Check your connection and try again.'[39m[33m,[39m
+2026-10-06T20:59:33.6166260Z      [90m 28 |[39m     )[33m;[39m
+2026-10-06T20:59:33.6166432Z      [90m 29 |[39m   })[33m;[39m[0m
+2026-10-06T20:59:33.6166527Z 
+2026-10-06T20:59:33.6166642Z       at toBe (src/types/__tests__/common.failureCopy.test.ts:26:76)
+2026-10-06T20:59:33.6166781Z 
+2026-10-06T20:59:33.6166911Z   ● shared API failure copy › explains timeout code ETIMEDOUT
+2026-10-06T20:59:33.6167043Z 
+2026-10-06T20:59:33.6167137Z     expect(received).toBe(expected) // Object.is equality
+2026-10-06T20:59:33.6167261Z 
+2026-10-06T20:59:33.6167545Z     Expected: "The request timed out. Check your connection and try again."
+2026-10-06T20:59:33.6183329Z     Received: "timeout of 30000ms exceeded"
+2026-10-06T20:59:33.6183499Z 
+2026-10-06T20:59:33.6183634Z     [0m [90m 24 |[39m
+2026-10-06T20:59:33.6184274Z      [90m 25 |[39m   it[33m.[39meach([[32m'ECONNABORTED'[39m[33m,[39m [32m'ETIMEDOUT'[39m])([32m'explains timeout code %s'[39m[33m,[39m (code) [33m=>[39m {
+2026-10-06T20:59:33.6185197Z     [31m[1m>[22m[39m[90m 26 |[39m     expect(errorMessage({ code[33m,[39m message[33m:[39m [32m'timeout of 30000ms exceeded'[39m }))[33m.[39mtoBe(
+2026-10-06T20:59:33.6185885Z      [90m    |[39m                                                                            [31m[1m^[22m[39m
+2026-10-06T20:59:33.6186456Z      [90m 27 |[39m       [32m'The request timed out. Check your connection and try again.'[39m[33m,[39m
+2026-10-06T20:59:33.6186884Z      [90m 28 |[39m     )[33m;[39m
+2026-10-06T20:59:33.6187159Z      [90m 29 |[39m   })[33m;[39m[0m
+2026-10-06T20:59:33.6187484Z 
+2026-10-06T20:59:33.6187669Z       at toBe (src/types/__tests__/common.failureCopy.test.ts:26:76)
+2026-10-06T20:59:33.6187899Z 
+2026-10-06T20:59:33.6188296Z   ● shared API failure copy › has an actionable default when no detail is available
+2026-10-06T20:59:33.6188567Z 
+2026-10-06T20:59:33.6188713Z     expect(received).toBe(expected) // Object.is equality
+2026-10-06T20:59:33.6188842Z 
+2026-10-06T20:59:33.6188971Z     Expected: "The request could not be completed. Try again in a moment."
+2026-10-06T20:59:33.6189190Z     Received: "Something went wrong"
+2026-10-06T20:59:33.6189286Z 
+2026-10-06T20:59:33.6189353Z     [0m [90m 46 |[39m
+2026-10-06T20:59:33.6189672Z      [90m 47 |[39m   it([32m'has an actionable default when no detail is available'[39m[33m,[39m () [33m=>[39m {
+2026-10-06T20:59:33.6190216Z     [31m[1m>[22m[39m[90m 48 |[39m     expect(errorMessage([36mnull[39m))[33m.[39mtoBe([32m'The request could not be completed. Try again in a moment.'[39m)[33m;[39m
+2026-10-06T20:59:33.6190783Z      [90m    |[39m                                [31m[1m^[22m[39m
+2026-10-06T20:59:33.6190985Z      [90m 49 |[39m   })[33m;[39m
+2026-10-06T20:59:33.6191159Z      [90m 50 |[39m })[33m;[39m
+2026-10-06T20:59:33.6191311Z      [90m 51 |[39m[0m
+2026-10-06T20:59:33.6191390Z 
+2026-10-06T20:59:33.6191522Z       at Object.toBe (src/types/__tests__/common.failureCopy.test.ts:48:32)
+2026-10-06T20:59:33.6191676Z 
+2026-10-06T20:59:33.8543347Z FAIL src/screens/client/__tests__/HomeScreen.macroMode.test.tsx (6.046 s)
+2026-10-06T20:59:33.8715630Z   ● Console
+2026-10-06T20:59:33.8715751Z 
+2026-10-06T20:59:33.8715812Z     console.warn
+2026-10-06T20:59:33.8716342Z       SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/AppAndFlow/react-native-safe-area-context
+2026-10-06T20:59:33.8716718Z 
+2026-10-06T20:59:33.8716808Z     [0m [90m 314 |[39m
+2026-10-06T20:59:33.8716997Z      [90m 315 |[39m   [36mreturn[39m (
+2026-10-06T20:59:33.8717548Z     [31m[1m>[22m[39m[90m 316 |[39m     [33m<[39m[33mSafeAreaView[39m style[33m=[39m{{ flex[33m:[39m [35m1[39m[33m,[39m backgroundColor[33m:[39m sc[33m.[39mbgPrimary }}[33m>[39m
+2026-10-06T20:59:33.8717946Z      [90m     |[39m      [31m[1m^[22m[39m
+2026-10-06T20:59:33.8718170Z      [90m 317 |[39m       [33m<[39m[33mScrollView[39m
+2026-10-06T20:59:33.8718686Z      [90m 318 |[39m         contentContainerStyle[33m=[39m{{ paddingHorizontal[33m:[39m [35m32[39m[33m,[39m paddingTop[33m:[39m [35m64[39m[33m,[39m paddingBottom[33m:[39m [35m96[39m }}
+2026-10-06T20:59:33.8719180Z      [90m 319 |[39m         showsVerticalScrollIndicator[33m=[39m{[36mfalse[39m}[0m
+2026-10-06T20:59:33.8719348Z 
+2026-10-06T20:59:33.8719485Z       at warn (node_modules/react-native/Libraries/Utilities/warnOnce.js:27:11)
+2026-10-06T20:59:33.8719799Z       at Object.warnOnce [as SafeAreaView] (node_modules/react-native/index.js:101:5)
+2026-10-06T20:59:33.8720076Z       at SafeAreaView (src/screens/client/HomeScreen.tsx:316:6)
+2026-10-06T20:59:33.8720653Z       at Object.react_stack_bottom_frame (node_modules/react-reconciler/cjs/react-reconciler.development.js:17596:20)
+2026-10-06T20:59:33.8721320Z       at renderWithHooks (node_modules/react-reconciler/cjs/react-reconciler.development.js:5335:22)
+2026-10-06T20:59:33.8721989Z       at updateFunctionComponent (node_modules/react-reconciler/cjs/react-reconciler.development.js:7720:19)
+2026-10-06T20:59:33.8722616Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9277:18)
+2026-10-06T20:59:33.8723227Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-06T20:59:33.8723864Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+2026-10-06T20:59:33.8724489Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+2026-10-06T20:59:33.8725594Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+2026-10-06T20:59:33.8726286Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+2026-10-06T20:59:33.8726713Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+2026-10-06T20:59:33.8727074Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+2026-10-06T20:59:33.8727326Z       at node_modules/react/cjs/react.development.js:847:21
+2026-10-06T20:59:33.8727456Z 
+2026-10-06T20:59:33.8727711Z   ● Home day-data failure state › shows a specific failure and a working retry without losing navigation
+2026-10-06T20:59:33.8727917Z 
+2026-10-06T20:59:33.8728118Z     Unable to find an element with text: Food and water data could not refresh. Check your connection and try again.
+2026-10-06T20:59:33.8728383Z 
+2026-10-06T20:59:33.8728477Z     [36m<RCTSafeAreaView>[39m
+2026-10-06T20:59:33.8728660Z       [36m<RCTScrollView>[39m
+2026-10-06T20:59:33.8728838Z         [36m<RCTRefreshControl />[39m
+2026-10-06T20:59:33.8729013Z         [36m<View>[39m
+2026-10-06T20:59:33.8729165Z           [36m<View>[39m
+2026-10-06T20:59:33.8729316Z             [36m<View[39m
+2026-10-06T20:59:33.8729554Z               [33maccessibilityLabel[39m=[32m"Message your coach"[39m
+2026-10-06T20:59:33.8729813Z               [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.8730041Z               [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.8730274Z               [33mtestID[39m=[32m"home-message-coach"[39m
+2026-10-06T20:59:33.8730534Z             [36m>[39m
+2026-10-06T20:59:33.8730687Z               [36m<Text>[39m
+2026-10-06T20:59:33.8730894Z                 [0m[0m
+2026-10-06T20:59:33.8731051Z               [36m</Text>[39m
+2026-10-06T20:59:33.8731213Z               [36m<Text>[39m
+2026-10-06T20:59:33.8731388Z                 [0mMessage your coach[0m
+2026-10-06T20:59:33.8731571Z               [36m</Text>[39m
+2026-10-06T20:59:33.8731725Z             [36m</View>[39m
+2026-10-06T20:59:33.8731875Z             [36m<View[39m
+2026-10-06T20:59:33.8732105Z               [33maccessibilityLabel[39m=[32m"Notifications"[39m
+2026-10-06T20:59:33.8732353Z               [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.8732568Z               [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.8732807Z               [33mtestID[39m=[32m"home-notification-bell"[39m
+2026-10-06T20:59:33.8732996Z             [36m>[39m
+2026-10-06T20:59:33.8733151Z               [36m<Text>[39m
+2026-10-06T20:59:33.8733305Z                 [0m[0m
+2026-10-06T20:59:33.8733457Z               [36m</Text>[39m
+2026-10-06T20:59:33.8733608Z             [36m</View>[39m
+2026-10-06T20:59:33.8733760Z           [36m</View>[39m
+2026-10-06T20:59:33.8733905Z           [36m<View[39m
+2026-10-06T20:59:33.8734102Z             [33mtestID[39m=[32m"push-permission-card"[39m
+2026-10-06T20:59:33.8734298Z           [36m>[39m
+2026-10-06T20:59:33.8734439Z             [36m<Text>[39m
+2026-10-06T20:59:33.8734609Z               [0mSTAY IN TOUCH[0m
+2026-10-06T20:59:33.8734775Z             [36m</Text>[39m
+2026-10-06T20:59:33.8734927Z             [36m<Text>[39m
+2026-10-06T20:59:33.8735197Z               [0mTurn on notifications so you see messages and plan updates from your coach.[0m
+2026-10-06T20:59:33.8735440Z             [36m</Text>[39m
+2026-10-06T20:59:33.8735591Z             [36m<View>[39m
+2026-10-06T20:59:33.8735736Z               [36m<View[39m
+2026-10-06T20:59:33.8735969Z                 [33maccessibilityLabel[39m=[32m"Turn on notifications"[39m
+2026-10-06T20:59:33.8736235Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.8736456Z                 [33maccessibilityState[39m=[32m{
+2026-10-06T20:59:33.8736617Z                   {
+2026-10-06T20:59:33.8736760Z                     "disabled": false,
+2026-10-06T20:59:33.8737009Z                   }
+2026-10-06T20:59:33.8737141Z                 }[39m
+2026-10-06T20:59:33.8737327Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.8737718Z                 [33mtestID[39m=[32m"push-permission-enable"[39m
+2026-10-06T20:59:33.8737915Z               [36m>[39m
+2026-10-06T20:59:33.8738075Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8738244Z                   [0mTurn on[0m
+2026-10-06T20:59:33.8738410Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8738574Z               [36m</View>[39m
+2026-10-06T20:59:33.8738729Z               [36m<View[39m
+2026-10-06T20:59:33.8738934Z                 [33maccessibilityLabel[39m=[32m"Not now"[39m
+2026-10-06T20:59:33.8739175Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.8739399Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.8739634Z                 [33mtestID[39m=[32m"push-permission-dismiss"[39m
+2026-10-06T20:59:33.8739827Z               [36m>[39m
+2026-10-06T20:59:33.8739988Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8740151Z                   [0mNot now[0m
+2026-10-06T20:59:33.8740318Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8740688Z               [36m</View>[39m
+2026-10-06T20:59:33.8740839Z             [36m</View>[39m
+2026-10-06T20:59:33.8740994Z           [36m</View>[39m
+2026-10-06T20:59:33.8741139Z           [36m<View[39m
+2026-10-06T20:59:33.8741451Z             [33maccessibilityLabel[39m=[32m"Complete your profile. Missing Sex, Date of birth, and 9 more."[39m
+2026-10-06T20:59:33.8741770Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.8741985Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.8742151Z           [36m>[39m
+2026-10-06T20:59:33.8742287Z             [36m<Text>[39m
+2026-10-06T20:59:33.8742463Z               [0mFINISH YOUR PROFILE[0m
+2026-10-06T20:59:33.8742626Z             [36m</Text>[39m
+2026-10-06T20:59:33.8742774Z             [36m<Text>[39m
+2026-10-06T20:59:33.8743018Z               [0mAdd Sex, Date of birth, and 9 more so your plan reflects you.[0m
+2026-10-06T20:59:33.8743235Z             [36m</Text>[39m
+2026-10-06T20:59:33.8743388Z             [36m<Text>[39m
+2026-10-06T20:59:33.8743546Z               [0m0% complete[0m
+2026-10-06T20:59:33.8743700Z             [36m</Text>[39m
+2026-10-06T20:59:33.8743845Z           [36m</View>[39m
+2026-10-06T20:59:33.8743989Z           [36m<Text>[39m
+2026-10-06T20:59:33.8744154Z             [0mTHE GROWTH PROJECT[0m
+2026-10-06T20:59:33.8744313Z           [36m</Text>[39m
+2026-10-06T20:59:33.8744455Z           [36m<Text>[39m
+2026-10-06T20:59:33.8744619Z             [0mTuesday, the sixth.[0m
+2026-10-06T20:59:33.8744780Z           [36m</Text>[39m
+2026-10-06T20:59:33.8744925Z           [36m<Text>[39m
+2026-10-06T20:59:33.8745090Z             [0mA clean slate.[0m
+2026-10-06T20:59:33.8745249Z           [36m</Text>[39m
+2026-10-06T20:59:33.8745391Z           [36m<View[39m
+2026-10-06T20:59:33.8745609Z             [33maccessibilityLabel[39m=[32m"Explore the app"[39m
+2026-10-06T20:59:33.8745854Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.8746069Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.8746287Z             [33mtestID[39m=[32m"home-explore-cta"[39m
+2026-10-06T20:59:33.8746471Z           [36m>[39m
+2026-10-06T20:59:33.8746610Z             [36m<Text>[39m
+2026-10-06T20:59:33.8746785Z               [0mExplore the app →[0m
+2026-10-06T20:59:33.8746954Z             [36m</Text>[39m
+2026-10-06T20:59:33.8747102Z           [36m</View>[39m
+2026-10-06T20:59:33.8747250Z           [36m<View />[39m
+2026-10-06T20:59:33.8747460Z           [36m<View[39m
+2026-10-06T20:59:33.8747646Z             [33mtestID[39m=[32m"home-number-grid"[39m
+2026-10-06T20:59:33.8747823Z           [36m>[39m
+2026-10-06T20:59:33.8747958Z             [36m<View>[39m
+2026-10-06T20:59:33.8748113Z               [36m<View>[39m
+2026-10-06T20:59:33.8748374Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8748538Z                   [0mPROTEIN[0m
+2026-10-06T20:59:33.8748703Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8748948Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8749100Z                   [0m40g[0m
+2026-10-06T20:59:33.8749258Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8749418Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8749580Z                   [0mof 150g[0m
+2026-10-06T20:59:33.8749740Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8749898Z               [36m</View>[39m
+2026-10-06T20:59:33.8750050Z             [36m</View>[39m
+2026-10-06T20:59:33.8750197Z             [36m<View>[39m
+2026-10-06T20:59:33.8750419Z               [36m<View>[39m
+2026-10-06T20:59:33.8750580Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8750739Z                   [0mCARBS[0m
+2026-10-06T20:59:33.8750896Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8751059Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8751214Z                   [0m70g[0m
+2026-10-06T20:59:33.8751369Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8751528Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8751694Z                   [0mof 185g[0m
+2026-10-06T20:59:33.8751855Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8752013Z               [36m</View>[39m
+2026-10-06T20:59:33.8752162Z             [36m</View>[39m
+2026-10-06T20:59:33.8752307Z             [36m<View>[39m
+2026-10-06T20:59:33.8752461Z               [36m<View>[39m
+2026-10-06T20:59:33.8752685Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8752914Z                   [0mFAT[0m
+2026-10-06T20:59:33.8753164Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8753432Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8753681Z                   [0m20g[0m
+2026-10-06T20:59:33.8753941Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8754205Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8754485Z                   [0mof 50g[0m
+2026-10-06T20:59:33.8754760Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8755036Z               [36m</View>[39m
+2026-10-06T20:59:33.8755298Z             [36m</View>[39m
+2026-10-06T20:59:33.8755529Z             [36m<View>[39m
+2026-10-06T20:59:33.8755773Z               [36m<View>[39m
+2026-10-06T20:59:33.8756032Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8756293Z                   [0mWATER[0m
+2026-10-06T20:59:33.8756554Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8756825Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8757132Z                   [0m0.0L[0m
+2026-10-06T20:59:33.8757392Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8757662Z               [36m</View>[39m
+2026-10-06T20:59:33.8757907Z             [36m</View>[39m
+2026-10-06T20:59:33.8758148Z           [36m</View>[39m
+2026-10-06T20:59:33.8758388Z         [36m</View>[39m
+2026-10-06T20:59:33.8758653Z       [36m</RCTScrollView>[39m
+2026-10-06T20:59:33.8758946Z     [36m</RCTSafeAreaView>[39m
+2026-10-06T20:59:33.8759109Z 
+2026-10-06T20:59:33.8759734Z     [0m [90m 61 |[39m     mockDayState[33m.[39mloadError [33m=[39m [32m'Food and water data could not refresh. Check your connection and try again.'[39m[33m;[39m
+2026-10-06T20:59:33.8760738Z      [90m 62 |[39m     [36mawait[39m render([33m<[39m[33mHomeScreen[39m [33m/[39m[33m>[39m)[33m;[39m
+2026-10-06T20:59:33.8761592Z     [31m[1m>[22m[39m[90m 63 |[39m     expect(screen[33m.[39mgetByText(mockDayState[33m.[39mloadError))[33m.[39mtoBeTruthy()[33m;[39m
+2026-10-06T20:59:33.8762198Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-06T20:59:33.8762880Z      [90m 64 |[39m     expect(screen[33m.[39mgetByTestId([32m'home-day-data-error'[39m))[33m.[39mtoBeTruthy()[33m;[39m
+2026-10-06T20:59:33.8763836Z      [90m 65 |[39m     [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByTestId([32m'home-day-data-error-retry'[39m))[33m;[39m
+2026-10-06T20:59:33.8764933Z      [90m 66 |[39m     expect(mockDayState[33m.[39mloadDayData)[33m.[39mtoHaveBeenCalledTimes([35m2[39m)[33m;[39m[0m
+2026-10-06T20:59:33.8765372Z 
+2026-10-06T20:59:33.8765800Z       at Object.getByText (src/screens/client/__tests__/HomeScreen.macroMode.test.tsx:63:19)
+2026-10-06T20:59:33.8766434Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T20:59:33.8766986Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T20:59:33.8767275Z 
+2026-10-06T20:59:33.8767586Z   ● Home day-data failure state › keeps retry disabled while the refresh is loading
+2026-10-06T20:59:33.8767883Z 
+2026-10-06T20:59:33.8768088Z     Unable to find an element with testID: home-day-data-error-retry
+2026-10-06T20:59:33.8768333Z 
+2026-10-06T20:59:33.8768478Z     [36m<RCTSafeAreaView>[39m
+2026-10-06T20:59:33.8768769Z       [36m<RCTScrollView>[39m
+2026-10-06T20:59:33.8769077Z         [36m<RCTRefreshControl />[39m
+2026-10-06T20:59:33.8769385Z         [36m<View>[39m
+2026-10-06T20:59:33.8769622Z           [36m<View>[39m
+2026-10-06T20:59:33.8769880Z             [36m<View[39m
+2026-10-06T20:59:33.8770312Z               [33maccessibilityLabel[39m=[32m"Message your coach"[39m
+2026-10-06T20:59:33.8770898Z               [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.8771327Z               [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.8771758Z               [33mtestID[39m=[32m"home-message-coach"[39m
+2026-10-06T20:59:33.8772081Z             [36m>[39m
+2026-10-06T20:59:33.8772340Z               [36m<Text>[39m
+2026-10-06T20:59:33.8772612Z                 [0m[0m
+2026-10-06T20:59:33.8772877Z               [36m</Text>[39m
+2026-10-06T20:59:33.8773140Z               [36m<Text>[39m
+2026-10-06T20:59:33.8773426Z                 [0mMessage your coach[0m
+2026-10-06T20:59:33.8773731Z               [36m</Text>[39m
+2026-10-06T20:59:33.8773980Z             [36m</View>[39m
+2026-10-06T20:59:33.8774238Z             [36m<View[39m
+2026-10-06T20:59:33.8774636Z               [33maccessibilityLabel[39m=[32m"Notifications"[39m
+2026-10-06T20:59:33.8775093Z               [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.8775494Z               [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.8775892Z               [33mtestID[39m=[32m"home-notification-bell"[39m
+2026-10-06T20:59:33.8776213Z             [36m>[39m
+2026-10-06T20:59:33.8776481Z               [36m<Text>[39m
+2026-10-06T20:59:33.8776737Z                 [0m[0m
+2026-10-06T20:59:33.8777005Z               [36m</Text>[39m
+2026-10-06T20:59:33.8777284Z             [36m</View>[39m
+2026-10-06T20:59:33.8777533Z           [36m</View>[39m
+2026-10-06T20:59:33.8777783Z           [36m<View[39m
+2026-10-06T20:59:33.8778122Z             [33mtestID[39m=[32m"push-permission-card"[39m
+2026-10-06T20:59:33.8778452Z           [36m>[39m
+2026-10-06T20:59:33.8778703Z             [36m<Text>[39m
+2026-10-06T20:59:33.8778988Z               [0mSTAY IN TOUCH[0m
+2026-10-06T20:59:33.8779254Z             [36m</Text>[39m
+2026-10-06T20:59:33.8779517Z             [36m<Text>[39m
+2026-10-06T20:59:33.8780039Z               [0mTurn on notifications so you see messages and plan updates from your coach.[0m
+2026-10-06T20:59:33.8780567Z             [36m</Text>[39m
+2026-10-06T20:59:33.8780808Z             [36m<View>[39m
+2026-10-06T20:59:33.8781046Z               [36m<View[39m
+2026-10-06T20:59:33.8781441Z                 [33maccessibilityLabel[39m=[32m"Turn on notifications"[39m
+2026-10-06T20:59:33.8781893Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.8782270Z                 [33maccessibilityState[39m=[32m{
+2026-10-06T20:59:33.8782531Z                   {
+2026-10-06T20:59:33.8782768Z                     "disabled": false,
+2026-10-06T20:59:33.8783004Z                   }
+2026-10-06T20:59:33.8783217Z                 }[39m
+2026-10-06T20:59:33.8783507Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.8784051Z                 [33mtestID[39m=[32m"push-permission-enable"[39m
+2026-10-06T20:59:33.8784392Z               [36m>[39m
+2026-10-06T20:59:33.8784793Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8785072Z                   [0mTurn on[0m
+2026-10-06T20:59:33.8785361Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8785627Z               [36m</View>[39m
+2026-10-06T20:59:33.8785877Z               [36m<View[39m
+2026-10-06T20:59:33.8786228Z                 [33maccessibilityLabel[39m=[32m"Not now"[39m
+2026-10-06T20:59:33.8786629Z                 [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.8786997Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.8787404Z                 [33mtestID[39m=[32m"push-permission-dismiss"[39m
+2026-10-06T20:59:33.8787737Z               [36m>[39m
+2026-10-06T20:59:33.8787999Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8788281Z                   [0mNot now[0m
+2026-10-06T20:59:33.8788554Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8788837Z               [36m</View>[39m
+2026-10-06T20:59:33.8789094Z             [36m</View>[39m
+2026-10-06T20:59:33.8789352Z           [36m</View>[39m
+2026-10-06T20:59:33.8789589Z           [36m<View[39m
+2026-10-06T20:59:33.8790127Z             [33maccessibilityLabel[39m=[32m"Complete your profile. Missing Sex, Date of birth, and 9 more."[39m
+2026-10-06T20:59:33.8790818Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.8791183Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.8791462Z           [36m>[39m
+2026-10-06T20:59:33.8791684Z             [36m<Text>[39m
+2026-10-06T20:59:33.8791953Z               [0mFINISH YOUR PROFILE[0m
+2026-10-06T20:59:33.8792226Z             [36m</Text>[39m
+2026-10-06T20:59:33.8792470Z             [36m<Text>[39m
+2026-10-06T20:59:33.8792882Z               [0mAdd Sex, Date of birth, and 9 more so your plan reflects you.[0m
+2026-10-06T20:59:33.8793255Z             [36m</Text>[39m
+2026-10-06T20:59:33.8793487Z             [36m<Text>[39m
+2026-10-06T20:59:33.8793758Z               [0m0% complete[0m
+2026-10-06T20:59:33.8794024Z             [36m</Text>[39m
+2026-10-06T20:59:33.8794292Z           [36m</View>[39m
+2026-10-06T20:59:33.8794527Z           [36m<Text>[39m
+2026-10-06T20:59:33.8794797Z             [0mTHE GROWTH PROJECT[0m
+2026-10-06T20:59:33.8795051Z           [36m</Text>[39m
+2026-10-06T20:59:33.8795286Z           [36m<Text>[39m
+2026-10-06T20:59:33.8795566Z             [0mTuesday, the sixth.[0m
+2026-10-06T20:59:33.8795842Z           [36m</Text>[39m
+2026-10-06T20:59:33.8796080Z           [36m<Text>[39m
+2026-10-06T20:59:33.8796351Z             [0mA clean slate.[0m
+2026-10-06T20:59:33.8796613Z           [36m</Text>[39m
+2026-10-06T20:59:33.8796873Z           [36m<View[39m
+2026-10-06T20:59:33.8797259Z             [33maccessibilityLabel[39m=[32m"Explore the app"[39m
+2026-10-06T20:59:33.8797680Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:33.8798049Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:33.8798431Z             [33mtestID[39m=[32m"home-explore-cta"[39m
+2026-10-06T20:59:33.8798728Z           [36m>[39m
+2026-10-06T20:59:33.8798964Z             [36m<Text>[39m
+2026-10-06T20:59:33.8799246Z               [0mExplore the app →[0m
+2026-10-06T20:59:33.8799519Z             [36m</Text>[39m
+2026-10-06T20:59:33.8799758Z           [36m</View>[39m
+2026-10-06T20:59:33.8799991Z           [36m<View />[39m
+2026-10-06T20:59:33.8804994Z           [36m<View[39m
+2026-10-06T20:59:33.8805455Z             [33mtestID[39m=[32m"home-number-grid"[39m
+2026-10-06T20:59:33.8805761Z           [36m>[39m
+2026-10-06T20:59:33.8805992Z             [36m<View>[39m
+2026-10-06T20:59:33.8806257Z               [36m<View>[39m
+2026-10-06T20:59:33.8806519Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8806756Z                   [0mPROTEIN[0m
+2026-10-06T20:59:33.8807102Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8807266Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8807423Z                   [0m40g[0m
+2026-10-06T20:59:33.8807674Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8807836Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8808000Z                   [0mof 150g[0m
+2026-10-06T20:59:33.8808163Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8808330Z               [36m</View>[39m
+2026-10-06T20:59:33.8808484Z             [36m</View>[39m
+2026-10-06T20:59:33.8808635Z             [36m<View>[39m
+2026-10-06T20:59:33.8808792Z               [36m<View>[39m
+2026-10-06T20:59:33.8808949Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8809109Z                   [0mCARBS[0m
+2026-10-06T20:59:33.8809269Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8809427Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8809574Z                   [0m70g[0m
+2026-10-06T20:59:33.8809731Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8809899Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8810059Z                   [0mof 185g[0m
+2026-10-06T20:59:33.8810222Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8810578Z               [36m</View>[39m
+2026-10-06T20:59:33.8810732Z             [36m</View>[39m
+2026-10-06T20:59:33.8810883Z             [36m<View>[39m
+2026-10-06T20:59:33.8811040Z               [36m<View>[39m
+2026-10-06T20:59:33.8811198Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8811349Z                   [0mFAT[0m
+2026-10-06T20:59:33.8811508Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8811670Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8811819Z                   [0m20g[0m
+2026-10-06T20:59:33.8811978Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8812136Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8812294Z                   [0mof 50g[0m
+2026-10-06T20:59:33.8812454Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8812614Z               [36m</View>[39m
+2026-10-06T20:59:33.8812765Z             [36m</View>[39m
+2026-10-06T20:59:33.8812916Z             [36m<View>[39m
+2026-10-06T20:59:33.8829164Z               [36m<View>[39m
+2026-10-06T20:59:33.8829355Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8829525Z                   [0mWATER[0m
+2026-10-06T20:59:33.8829693Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8829857Z                 [36m<Text>[39m
+2026-10-06T20:59:33.8830018Z                   [0m0.0L[0m
+2026-10-06T20:59:33.8830182Z                 [36m</Text>[39m
+2026-10-06T20:59:33.8830467Z               [36m</View>[39m
+2026-10-06T20:59:33.8830714Z             [36m</View>[39m
+2026-10-06T20:59:33.8830949Z           [36m</View>[39m
+2026-10-06T20:59:33.8831097Z         [36m</View>[39m
+2026-10-06T20:59:33.8831280Z       [36m</RCTScrollView>[39m
+2026-10-06T20:59:33.8831551Z     [36m</RCTSafeAreaView>[39m
+2026-10-06T20:59:33.8831698Z 
+2026-10-06T20:59:33.8832032Z     [0m [90m 72 |[39m     mockDayState[33m.[39misLoading [33m=[39m [36mtrue[39m[33m;[39m
+2026-10-06T20:59:33.8832542Z      [90m 73 |[39m     [36mawait[39m render([33m<[39m[33mHomeScreen[39m [33m/[39m[33m>[39m)[33m;[39m
+2026-10-06T20:59:33.8833133Z     [31m[1m>[22m[39m[90m 74 |[39m     expect(screen[33m.[39mgetByTestId([32m'home-day-data-error-retry'[39m)[33m.[39mprops[33m.[39maccessibilityState)[33m.[39mtoMatchObject({
+2026-10-06T20:59:33.8833567Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-06T20:59:33.8833823Z      [90m 75 |[39m       disabled[33m:[39m [36mtrue[39m[33m,[39m
+2026-10-06T20:59:33.8834043Z      [90m 76 |[39m     })[33m;[39m
+2026-10-06T20:59:33.8834218Z      [90m 77 |[39m   })[33m;[39m[0m
+2026-10-06T20:59:33.8834313Z 
+2026-10-06T20:59:33.8834492Z       at Object.getByTestId (src/screens/client/__tests__/HomeScreen.macroMode.test.tsx:74:19)
+2026-10-06T20:59:33.8834844Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T20:59:33.8835477Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T20:59:33.8835644Z 
+2026-10-06T20:59:35.6312469Z FAIL src/screens/client/__tests__/LogScreen.foodSpeed.test.tsx (7.805 s)
+2026-10-06T20:59:35.6313570Z   ● Food Log day-data failure state › shows a failed read with retry while Add Food remains available
+2026-10-06T20:59:35.6313907Z 
+2026-10-06T20:59:35.6314313Z     Unable to find an element with text: Food and water data could not refresh. Check your connection and try again.
+2026-10-06T20:59:35.6314691Z 
+2026-10-06T20:59:35.6314820Z     [36m<View>[39m
+2026-10-06T20:59:35.6315103Z       [36m<RCTScrollView>[39m
+2026-10-06T20:59:35.6315409Z         [36m<RCTRefreshControl />[39m
+2026-10-06T20:59:35.6315680Z         [36m<View>[39m
+2026-10-06T20:59:35.6315912Z           [36m<View>[39m
+2026-10-06T20:59:35.6316145Z             [36m<Text>[39m
+2026-10-06T20:59:35.6316313Z               [0mFood Log[0m
+2026-10-06T20:59:35.6316470Z             [36m</Text>[39m
+2026-10-06T20:59:35.6316640Z           [36m</View>[39m
+2026-10-06T20:59:35.6316792Z           [36m<View[39m
+2026-10-06T20:59:35.6316987Z             [33maccessible[39m=[32m{false}[39m
+2026-10-06T20:59:35.6317168Z           [36m>[39m
+2026-10-06T20:59:35.6317309Z             [36m<View[39m
+2026-10-06T20:59:35.6317533Z               [33maccessibilityLabel[39m=[32m"Previous day"[39m
+2026-10-06T20:59:35.6317795Z               [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:35.6318023Z               [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6318199Z             [36m>[39m
+2026-10-06T20:59:35.6318358Z               [36m<Text>[39m
+2026-10-06T20:59:35.6318562Z                 [0m[0m
+2026-10-06T20:59:35.6318745Z               [36m</Text>[39m
+2026-10-06T20:59:35.6318902Z             [36m</View>[39m
+2026-10-06T20:59:35.6319054Z             [36m<View[39m
+2026-10-06T20:59:35.6319270Z               [33maccessibilityLabel[39m=[32m"Viewing today"[39m
+2026-10-06T20:59:35.6319533Z               [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:35.6319758Z               [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6319938Z             [36m>[39m
+2026-10-06T20:59:35.6320094Z               [36m<Text>[39m
+2026-10-06T20:59:35.6320250Z                 [0mToday[0m
+2026-10-06T20:59:35.6320623Z               [36m</Text>[39m
+2026-10-06T20:59:35.6320809Z             [36m</View>[39m
+2026-10-06T20:59:35.6320965Z             [36m<View[39m
+2026-10-06T20:59:35.6321171Z               [33maccessibilityLabel[39m=[32m"Next day"[39m
+2026-10-06T20:59:35.6321435Z               [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:35.6321671Z               [33maccessibilityState[39m=[32m{
+2026-10-06T20:59:35.6321832Z                 {
+2026-10-06T20:59:35.6321970Z                   "disabled": true,
+2026-10-06T20:59:35.6322115Z                 }
+2026-10-06T20:59:35.6322244Z               }[39m
+2026-10-06T20:59:35.6322425Z               [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6322598Z             [36m>[39m
+2026-10-06T20:59:35.6322756Z               [36m<Text>[39m
+2026-10-06T20:59:35.6322923Z                 [0m[0m
+2026-10-06T20:59:35.6323079Z               [36m</Text>[39m
+2026-10-06T20:59:35.6323235Z             [36m</View>[39m
+2026-10-06T20:59:35.6323387Z           [36m</View>[39m
+2026-10-06T20:59:35.6323533Z           [36m<View[39m
+2026-10-06T20:59:35.6323734Z             [33mtestID[39m=[32m"daily-summary-full"[39m
+2026-10-06T20:59:35.6323921Z           [36m>[39m
+2026-10-06T20:59:35.6324064Z             [36m<View>[39m
+2026-10-06T20:59:35.6324228Z               [36m<Text>[39m
+2026-10-06T20:59:35.6324380Z                 [0m248[0m
+2026-10-06T20:59:35.6324537Z               [36m</Text>[39m
+2026-10-06T20:59:35.6324743Z               [36m<Text>[39m
+2026-10-06T20:59:35.6324918Z                 [0mEaten (kcal)[0m
+2026-10-06T20:59:35.6325094Z               [36m</Text>[39m
+2026-10-06T20:59:35.6325444Z             [36m</View>[39m
+2026-10-06T20:59:35.6325606Z             [36m<View />[39m
+2026-10-06T20:59:35.6325761Z             [36m<View>[39m
+2026-10-06T20:59:35.6326014Z               [36m<Text>[39m
+2026-10-06T20:59:35.6326175Z                 [0m—[0m
+2026-10-06T20:59:35.6326352Z               [36m</Text>[39m
+2026-10-06T20:59:35.6326517Z               [36m<Text>[39m
+2026-10-06T20:59:35.6326685Z                 [0mNo target[0m
+2026-10-06T20:59:35.6326850Z               [36m</Text>[39m
+2026-10-06T20:59:35.6327006Z             [36m</View>[39m
+2026-10-06T20:59:35.6327168Z             [36m<View />[39m
+2026-10-06T20:59:35.6327320Z             [36m<View>[39m
+2026-10-06T20:59:35.6327481Z               [36m<Text>[39m
+2026-10-06T20:59:35.6327629Z                 [0m47[0m
+2026-10-06T20:59:35.6327774Z                 [0mg[0m
+2026-10-06T20:59:35.6327930Z               [36m</Text>[39m
+2026-10-06T20:59:35.6328090Z               [36m<Text>[39m
+2026-10-06T20:59:35.6328256Z                 [0mProtein[0m
+2026-10-06T20:59:35.6328421Z               [36m</Text>[39m
+2026-10-06T20:59:35.6328577Z             [36m</View>[39m
+2026-10-06T20:59:35.6328767Z             [36m<View />[39m
+2026-10-06T20:59:35.6328920Z             [36m<View>[39m
+2026-10-06T20:59:35.6329080Z               [36m<Text>[39m
+2026-10-06T20:59:35.6329229Z                 [0m0[0m
+2026-10-06T20:59:35.6329371Z                 [0mg[0m
+2026-10-06T20:59:35.6329526Z               [36m</Text>[39m
+2026-10-06T20:59:35.6329684Z               [36m<Text>[39m
+2026-10-06T20:59:35.6329835Z                 [0mCarbs[0m
+2026-10-06T20:59:35.6329995Z               [36m</Text>[39m
+2026-10-06T20:59:35.6330148Z             [36m</View>[39m
+2026-10-06T20:59:35.6330307Z             [36m<View />[39m
+2026-10-06T20:59:35.6330629Z             [36m<View>[39m
+2026-10-06T20:59:35.6330791Z               [36m<Text>[39m
+2026-10-06T20:59:35.6330940Z                 [0m5[0m
+2026-10-06T20:59:35.6331082Z                 [0mg[0m
+2026-10-06T20:59:35.6331245Z               [36m</Text>[39m
+2026-10-06T20:59:35.6331404Z               [36m<Text>[39m
+2026-10-06T20:59:35.6331552Z                 [0mFat[0m
+2026-10-06T20:59:35.6331716Z               [36m</Text>[39m
+2026-10-06T20:59:35.6331868Z             [36m</View>[39m
+2026-10-06T20:59:35.6332037Z           [36m</View>[39m
+2026-10-06T20:59:35.6332202Z           [36m<View>[39m
+2026-10-06T20:59:35.6332354Z             [36m<View>[39m
+2026-10-06T20:59:35.6332529Z               [36m<View>[39m
+2026-10-06T20:59:35.6332711Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6332892Z                   [0m[0m
+2026-10-06T20:59:35.6333060Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6333249Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6333439Z                   [0mBreakfast[0m
+2026-10-06T20:59:35.6333629Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6333812Z               [36m</View>[39m
+2026-10-06T20:59:35.6333978Z               [36m<Text />[39m
+2026-10-06T20:59:35.6334158Z             [36m</View>[39m
+2026-10-06T20:59:35.6334327Z             [36m<Text>[39m
+2026-10-06T20:59:35.6334549Z               [0mNo foods logged. Use Add Food below.[0m
+2026-10-06T20:59:35.6334756Z             [36m</Text>[39m
+2026-10-06T20:59:35.6334924Z             [36m<View>[39m
+2026-10-06T20:59:35.6335088Z               [36m<View[39m
+2026-10-06T20:59:35.6335283Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6335481Z               [36m>[39m
+2026-10-06T20:59:35.6335649Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6335821Z                   [0m[0m
+2026-10-06T20:59:35.6336074Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6336256Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6336430Z                   [0mAdd Food[0m
+2026-10-06T20:59:35.6336619Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6336802Z               [36m</View>[39m
+2026-10-06T20:59:35.6336970Z             [36m</View>[39m
+2026-10-06T20:59:35.6337262Z           [36m</View>[39m
+2026-10-06T20:59:35.6337428Z           [36m<View>[39m
+2026-10-06T20:59:35.6337588Z             [36m<View>[39m
+2026-10-06T20:59:35.6337855Z               [36m<View>[39m
+2026-10-06T20:59:35.6338037Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6338205Z                   [0m[0m
+2026-10-06T20:59:35.6338375Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6338557Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6338733Z                   [0mLunch[0m
+2026-10-06T20:59:35.6338905Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6339087Z               [36m</View>[39m
+2026-10-06T20:59:35.6339261Z               [36m<Text>[39m
+2026-10-06T20:59:35.6339426Z                 [0m248 kcal[0m
+2026-10-06T20:59:35.6339609Z               [36m</Text>[39m
+2026-10-06T20:59:35.6339778Z             [36m</View>[39m
+2026-10-06T20:59:35.6339930Z             [36m<Text>[39m
+2026-10-06T20:59:35.6340159Z               [0mTap an entry to edit, move or delete it.[0m
+2026-10-06T20:59:35.6340521Z             [36m</Text>[39m
+2026-10-06T20:59:35.6340690Z             [36m<View>[39m
+2026-10-06T20:59:35.6340843Z               [36m<View[39m
+2026-10-06T20:59:35.6341206Z                 [33maccessibilityLabel[39m=[32m"Chicken breast, 150 g. Tap to edit, long-press to delete."[39m
+2026-10-06T20:59:35.6341538Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6341736Z               [36m>[39m
+2026-10-06T20:59:35.6341907Z                 [36m<View>[39m
+2026-10-06T20:59:35.6342084Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6342291Z                     [0mChicken breast[0m
+2026-10-06T20:59:35.6342492Z                     [36m<Text>[39m
+2026-10-06T20:59:35.6342708Z                       [0m · [0m
+2026-10-06T20:59:35.6342891Z                       [0m150 g[0m
+2026-10-06T20:59:35.6343075Z                     [36m</Text>[39m
+2026-10-06T20:59:35.6343267Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6343460Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6343674Z                     [0mP: 47g · C: 0g · F: 5g[0m
+2026-10-06T20:59:35.6343884Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6344065Z                 [36m</View>[39m
+2026-10-06T20:59:35.6344252Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6344409Z                   [0m248[0m
+2026-10-06T20:59:35.6344590Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6344775Z               [36m</View>[39m
+2026-10-06T20:59:35.6344931Z             [36m</View>[39m
+2026-10-06T20:59:35.6345098Z             [36m<View>[39m
+2026-10-06T20:59:35.6345265Z               [36m<View[39m
+2026-10-06T20:59:35.6345471Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6345667Z               [36m>[39m
+2026-10-06T20:59:35.6345827Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6346003Z                   [0m[0m
+2026-10-06T20:59:35.6346178Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6346356Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6346543Z                   [0mAdd Food[0m
+2026-10-06T20:59:35.6346727Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6346903Z               [36m</View>[39m
+2026-10-06T20:59:35.6347076Z             [36m</View>[39m
+2026-10-06T20:59:35.6347244Z           [36m</View>[39m
+2026-10-06T20:59:35.6347394Z           [36m<View>[39m
+2026-10-06T20:59:35.6347560Z             [36m<View>[39m
+2026-10-06T20:59:35.6347736Z               [36m<View>[39m
+2026-10-06T20:59:35.6347901Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6348075Z                   [0m[0m
+2026-10-06T20:59:35.6348253Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6348424Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6348606Z                   [0mDinner[0m
+2026-10-06T20:59:35.6348789Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6348967Z               [36m</View>[39m
+2026-10-06T20:59:35.6349136Z               [36m<Text />[39m
+2026-10-06T20:59:35.6349478Z             [36m</View>[39m
+2026-10-06T20:59:35.6349636Z             [36m<Text>[39m
+2026-10-06T20:59:35.6349850Z               [0mNo foods logged. Use Add Food below.[0m
+2026-10-06T20:59:35.6350147Z             [36m</Text>[39m
+2026-10-06T20:59:35.6350323Z             [36m<View>[39m
+2026-10-06T20:59:35.6350614Z               [36m<View[39m
+2026-10-06T20:59:35.6350815Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6351008Z               [36m>[39m
+2026-10-06T20:59:35.6351168Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6351343Z                   [0m[0m
+2026-10-06T20:59:35.6351528Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6351709Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6351880Z                   [0mAdd Food[0m
+2026-10-06T20:59:35.6352070Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6352251Z               [36m</View>[39m
+2026-10-06T20:59:35.6352417Z             [36m</View>[39m
+2026-10-06T20:59:35.6352570Z           [36m</View>[39m
+2026-10-06T20:59:35.6352749Z           [36m<View>[39m
+2026-10-06T20:59:35.6352922Z             [36m<View>[39m
+2026-10-06T20:59:35.6361041Z               [36m<View>[39m
+2026-10-06T20:59:35.6361261Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6361445Z                   [0m[0m
+2026-10-06T20:59:35.6361614Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6361809Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6361996Z                   [0mSnacks[0m
+2026-10-06T20:59:35.6362184Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6362370Z               [36m</View>[39m
+2026-10-06T20:59:35.6362545Z               [36m<Text />[39m
+2026-10-06T20:59:35.6362720Z             [36m</View>[39m
+2026-10-06T20:59:35.6362892Z             [36m<Text>[39m
+2026-10-06T20:59:35.6363117Z               [0mNo foods logged. Use Add Food below.[0m
+2026-10-06T20:59:35.6363329Z             [36m</Text>[39m
+2026-10-06T20:59:35.6363501Z             [36m<View>[39m
+2026-10-06T20:59:35.6363664Z               [36m<View[39m
+2026-10-06T20:59:35.6363874Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6364074Z               [36m>[39m
+2026-10-06T20:59:35.6364260Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6364437Z                   [0m[0m
+2026-10-06T20:59:35.6364625Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6364813Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6365004Z                   [0mAdd Food[0m
+2026-10-06T20:59:35.6365194Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6365378Z               [36m</View>[39m
+2026-10-06T20:59:35.6365540Z             [36m</View>[39m
+2026-10-06T20:59:35.6365742Z           [36m</View>[39m
+2026-10-06T20:59:35.6365988Z           [36m<View>[39m
+2026-10-06T20:59:35.6366163Z             [36m<View>[39m
+2026-10-06T20:59:35.6366344Z               [36m<View>[39m
+2026-10-06T20:59:35.6366523Z                 [36m<View>[39m
+2026-10-06T20:59:35.6366701Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6366889Z                     [0m[0m
+2026-10-06T20:59:35.6367075Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6367264Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6367450Z                     [0mWater[0m
+2026-10-06T20:59:35.6367639Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6367832Z                 [36m</View>[39m
+2026-10-06T20:59:35.6368020Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6368191Z                   [0m0[0m
+2026-10-06T20:59:35.6368346Z                   [0m / [0m
+2026-10-06T20:59:35.6368521Z                   [0m128[0m
+2026-10-06T20:59:35.6368688Z                   [0m oz[0m
+2026-10-06T20:59:35.6368853Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6369040Z               [36m</View>[39m
+2026-10-06T20:59:35.6369211Z               [36m<View[39m
+2026-10-06T20:59:35.6369459Z                 [33maccessibilityLabel[39m=[32m"Water progress"[39m
+2026-10-06T20:59:35.6369755Z                 [33maccessibilityRole[39m=[32m"progressbar"[39m
+2026-10-06T20:59:35.6370192Z                 [33maccessibilityValue[39m=[32m{
+2026-10-06T20:59:35.6370542Z                   {
+2026-10-06T20:59:35.6370783Z                     "max": 128,
+2026-10-06T20:59:35.6370932Z                     "min": 0,
+2026-10-06T20:59:35.6371083Z                     "now": 0,
+2026-10-06T20:59:35.6371256Z                     "text": "0 of 128 ounces",
+2026-10-06T20:59:35.6371416Z                   }
+2026-10-06T20:59:35.6371569Z                 }[39m
+2026-10-06T20:59:35.6371770Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6371956Z               [36m>[39m
+2026-10-06T20:59:35.6372139Z                 [36m<View />[39m
+2026-10-06T20:59:35.6372329Z               [36m</View>[39m
+2026-10-06T20:59:35.6372510Z               [36m<View>[39m
+2026-10-06T20:59:35.6372678Z                 [36m<View[39m
+2026-10-06T20:59:35.6372939Z                   [33maccessibilityLabel[39m=[32m"Add 8 ounces of water"[39m
+2026-10-06T20:59:35.6373253Z                   [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:35.6373507Z                   [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6373712Z                 [36m>[39m
+2026-10-06T20:59:35.6373882Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6374065Z                     [0m+[0m
+2026-10-06T20:59:35.6374230Z                     [0m8[0m
+2026-10-06T20:59:35.6374396Z                     [0moz[0m
+2026-10-06T20:59:35.6374587Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6374780Z                 [36m</View>[39m
+2026-10-06T20:59:35.6374949Z                 [36m<View[39m
+2026-10-06T20:59:35.6375233Z                   [33maccessibilityLabel[39m=[32m"Add 12 ounces of water"[39m
+2026-10-06T20:59:35.6375526Z                   [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:35.6375780Z                   [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6375982Z                 [36m>[39m
+2026-10-06T20:59:35.6376158Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6376334Z                     [0m+[0m
+2026-10-06T20:59:35.6376519Z                     [0m12[0m
+2026-10-06T20:59:35.6376701Z                     [0moz[0m
+2026-10-06T20:59:35.6376873Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6377067Z                 [36m</View>[39m
+2026-10-06T20:59:35.6377256Z                 [36m<View[39m
+2026-10-06T20:59:35.6377517Z                   [33maccessibilityLabel[39m=[32m"Add 16 ounces of water"[39m
+2026-10-06T20:59:35.6377810Z                   [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:35.6378063Z                   [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6378264Z                 [36m>[39m
+2026-10-06T20:59:35.6378447Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6378628Z                     [0m+[0m
+2026-10-06T20:59:35.6378791Z                     [0m16[0m
+2026-10-06T20:59:35.6378972Z                     [0moz[0m
+2026-10-06T20:59:35.6379168Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6379360Z                 [36m</View>[39m
+2026-10-06T20:59:35.6379531Z               [36m</View>[39m
+2026-10-06T20:59:35.6379721Z               [36m<Text>[39m
+2026-10-06T20:59:35.6379888Z                 [0m0[0m
+2026-10-06T20:59:35.6380064Z                 [0m glasses today[0m
+2026-10-06T20:59:35.6380258Z               [36m</Text>[39m
+2026-10-06T20:59:35.6380578Z             [36m</View>[39m
+2026-10-06T20:59:35.6380748Z           [36m</View>[39m
+2026-10-06T20:59:35.6380903Z         [36m</View>[39m
+2026-10-06T20:59:35.6381092Z       [36m</RCTScrollView>[39m
+2026-10-06T20:59:35.6381251Z     [36m</View>[39m
+2026-10-06T20:59:35.6381333Z 
+2026-10-06T20:59:35.6381705Z     [0m [90m 85 |[39m     mockStore[33m.[39mloadError [33m=[39m [32m'Food and water data could not refresh. Check your connection and try again.'[39m[33m;[39m
+2026-10-06T20:59:35.6382252Z      [90m 86 |[39m     [36mawait[39m render([33m<[39m[33mLogScreen[39m [33m/[39m[33m>[39m)[33m;[39m
+2026-10-06T20:59:35.6382989Z     [31m[1m>[22m[39m[90m 87 |[39m     expect(screen[33m.[39mgetByText(mockStore[33m.[39mloadError))[33m.[39mtoBeTruthy()[33m;[39m
+2026-10-06T20:59:35.6383373Z      [90m    |[39m                   [31m[1m^[22m[39m
+2026-10-06T20:59:35.6383824Z      [90m 88 |[39m     [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByTestId([32m'log-day-data-error-retry'[39m))[33m;[39m
+2026-10-06T20:59:35.6384411Z      [90m 89 |[39m     expect(mockStore[33m.[39mloadDayData)[33m.[39mtoHaveBeenCalledWith([32m'user'[39m[33m,[39m mockToday)[33m;[39m
+2026-10-06T20:59:35.6384959Z      [90m 90 |[39m     expect(mockStore[33m.[39mloadDayData)[33m.[39mtoHaveBeenCalledTimes([35m2[39m)[33m;[39m[0m
+2026-10-06T20:59:35.6385201Z 
+2026-10-06T20:59:35.6385395Z       at Object.getByText (src/screens/client/__tests__/LogScreen.foodSpeed.test.tsx:87:19)
+2026-10-06T20:59:35.6385792Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T20:59:35.6386135Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T20:59:35.6386319Z 
+2026-10-06T20:59:35.6386538Z   ● Food Log day-data failure state › keeps retry disabled while day data is loading
+2026-10-06T20:59:35.6386722Z 
+2026-10-06T20:59:35.6386864Z     Unable to find an element with testID: log-day-data-error-retry
+2026-10-06T20:59:35.6387011Z 
+2026-10-06T20:59:35.6387099Z     [36m<View>[39m
+2026-10-06T20:59:35.6387261Z       [36m<RCTScrollView>[39m
+2026-10-06T20:59:35.6387467Z         [36m<RCTRefreshControl />[39m
+2026-10-06T20:59:35.6387660Z         [36m<View>[39m
+2026-10-06T20:59:35.6387826Z           [36m<View>[39m
+2026-10-06T20:59:35.6387985Z             [36m<Text>[39m
+2026-10-06T20:59:35.6388169Z               [0mFood Log[0m
+2026-10-06T20:59:35.6388352Z             [36m</Text>[39m
+2026-10-06T20:59:35.6388504Z           [36m</View>[39m
+2026-10-06T20:59:35.6388669Z           [36m<View[39m
+2026-10-06T20:59:35.6388877Z             [33maccessible[39m=[32m{false}[39m
+2026-10-06T20:59:35.6389066Z           [36m>[39m
+2026-10-06T20:59:35.6389217Z             [36m<View[39m
+2026-10-06T20:59:35.6389450Z               [33maccessibilityLabel[39m=[32m"Previous day"[39m
+2026-10-06T20:59:35.6389724Z               [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:35.6389968Z               [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6390162Z             [36m>[39m
+2026-10-06T20:59:35.6390445Z               [36m<Text>[39m
+2026-10-06T20:59:35.6390624Z                 [0m[0m
+2026-10-06T20:59:35.6390800Z               [36m</Text>[39m
+2026-10-06T20:59:35.6390972Z             [36m</View>[39m
+2026-10-06T20:59:35.6391128Z             [36m<View[39m
+2026-10-06T20:59:35.6391361Z               [33maccessibilityLabel[39m=[32m"Viewing today"[39m
+2026-10-06T20:59:35.6391635Z               [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:35.6391882Z               [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6392075Z             [36m>[39m
+2026-10-06T20:59:35.6392246Z               [36m<Text>[39m
+2026-10-06T20:59:35.6392406Z                 [0mToday[0m
+2026-10-06T20:59:35.6392586Z               [36m</Text>[39m
+2026-10-06T20:59:35.6392761Z             [36m</View>[39m
+2026-10-06T20:59:35.6392925Z             [36m<View[39m
+2026-10-06T20:59:35.6393132Z               [33maccessibilityLabel[39m=[32m"Next day"[39m
+2026-10-06T20:59:35.6393393Z               [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:35.6393637Z               [33maccessibilityState[39m=[32m{
+2026-10-06T20:59:35.6393812Z                 {
+2026-10-06T20:59:35.6393963Z                   "disabled": true,
+2026-10-06T20:59:35.6394106Z                 }
+2026-10-06T20:59:35.6394252Z               }[39m
+2026-10-06T20:59:35.6394443Z               [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6394633Z             [36m>[39m
+2026-10-06T20:59:35.6394906Z               [36m<Text>[39m
+2026-10-06T20:59:35.6395064Z                 [0m[0m
+2026-10-06T20:59:35.6395243Z               [36m</Text>[39m
+2026-10-06T20:59:35.6395499Z             [36m</View>[39m
+2026-10-06T20:59:35.6395667Z           [36m</View>[39m
+2026-10-06T20:59:35.6395826Z           [36m<View[39m
+2026-10-06T20:59:35.6396033Z             [33mtestID[39m=[32m"daily-summary-full"[39m
+2026-10-06T20:59:35.6396237Z           [36m>[39m
+2026-10-06T20:59:35.6396400Z             [36m<View>[39m
+2026-10-06T20:59:35.6396564Z               [36m<Text>[39m
+2026-10-06T20:59:35.6396733Z                 [0m248[0m
+2026-10-06T20:59:35.6396906Z               [36m</Text>[39m
+2026-10-06T20:59:35.6397082Z               [36m<Text>[39m
+2026-10-06T20:59:35.6397255Z                 [0mEaten (kcal)[0m
+2026-10-06T20:59:35.6397445Z               [36m</Text>[39m
+2026-10-06T20:59:35.6397618Z             [36m</View>[39m
+2026-10-06T20:59:35.6397792Z             [36m<View />[39m
+2026-10-06T20:59:35.6397957Z             [36m<View>[39m
+2026-10-06T20:59:35.6398136Z               [36m<Text>[39m
+2026-10-06T20:59:35.6398320Z                 [0m—[0m
+2026-10-06T20:59:35.6398494Z               [36m</Text>[39m
+2026-10-06T20:59:35.6398661Z               [36m<Text>[39m
+2026-10-06T20:59:35.6398846Z                 [0mNo target[0m
+2026-10-06T20:59:35.6399032Z               [36m</Text>[39m
+2026-10-06T20:59:35.6399196Z             [36m</View>[39m
+2026-10-06T20:59:35.6399366Z             [36m<View />[39m
+2026-10-06T20:59:35.6399533Z             [36m<View>[39m
+2026-10-06T20:59:35.6399707Z               [36m<Text>[39m
+2026-10-06T20:59:35.6399862Z                 [0m47[0m
+2026-10-06T20:59:35.6400026Z                 [0mg[0m
+2026-10-06T20:59:35.6400196Z               [36m</Text>[39m
+2026-10-06T20:59:35.6400500Z               [36m<Text>[39m
+2026-10-06T20:59:35.6400692Z                 [0mProtein[0m
+2026-10-06T20:59:35.6400873Z               [36m</Text>[39m
+2026-10-06T20:59:35.6401046Z             [36m</View>[39m
+2026-10-06T20:59:35.6401210Z             [36m<View />[39m
+2026-10-06T20:59:35.6401378Z             [36m<View>[39m
+2026-10-06T20:59:35.6401554Z               [36m<Text>[39m
+2026-10-06T20:59:35.6401709Z                 [0m0[0m
+2026-10-06T20:59:35.6401871Z                 [0mg[0m
+2026-10-06T20:59:35.6402025Z               [36m</Text>[39m
+2026-10-06T20:59:35.6402203Z               [36m<Text>[39m
+2026-10-06T20:59:35.6402375Z                 [0mCarbs[0m
+2026-10-06T20:59:35.6402549Z               [36m</Text>[39m
+2026-10-06T20:59:35.6402704Z             [36m</View>[39m
+2026-10-06T20:59:35.6402882Z             [36m<View />[39m
+2026-10-06T20:59:35.6403048Z             [36m<View>[39m
+2026-10-06T20:59:35.6403210Z               [36m<Text>[39m
+2026-10-06T20:59:35.6403380Z                 [0m5[0m
+2026-10-06T20:59:35.6403535Z                 [0mg[0m
+2026-10-06T20:59:35.6403691Z               [36m</Text>[39m
+2026-10-06T20:59:35.6403870Z               [36m<Text>[39m
+2026-10-06T20:59:35.6404043Z                 [0mFat[0m
+2026-10-06T20:59:35.6404203Z               [36m</Text>[39m
+2026-10-06T20:59:35.6404373Z             [36m</View>[39m
+2026-10-06T20:59:35.6404546Z           [36m</View>[39m
+2026-10-06T20:59:35.6404698Z           [36m<View>[39m
+2026-10-06T20:59:35.6404863Z             [36m<View>[39m
+2026-10-06T20:59:35.6405041Z               [36m<View>[39m
+2026-10-06T20:59:35.6405219Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6405382Z                   [0m[0m
+2026-10-06T20:59:35.6405566Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6405753Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6405924Z                   [0mBreakfast[0m
+2026-10-06T20:59:35.6406118Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6406303Z               [36m</View>[39m
+2026-10-06T20:59:35.6406480Z               [36m<Text />[39m
+2026-10-06T20:59:35.6406639Z             [36m</View>[39m
+2026-10-06T20:59:35.6406812Z             [36m<Text>[39m
+2026-10-06T20:59:35.6407166Z               [0mNo foods logged. Use Add Food below.[0m
+2026-10-06T20:59:35.6407372Z             [36m</Text>[39m
+2026-10-06T20:59:35.6407634Z             [36m<View>[39m
+2026-10-06T20:59:35.6407801Z               [36m<View[39m
+2026-10-06T20:59:35.6407994Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6408193Z               [36m>[39m
+2026-10-06T20:59:35.6408368Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6408535Z                   [0m[0m
+2026-10-06T20:59:35.6408702Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6408885Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6409069Z                   [0mAdd Food[0m
+2026-10-06T20:59:35.6409254Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6409425Z               [36m</View>[39m
+2026-10-06T20:59:35.6409594Z             [36m</View>[39m
+2026-10-06T20:59:35.6409757Z           [36m</View>[39m
+2026-10-06T20:59:35.6409913Z           [36m<View>[39m
+2026-10-06T20:59:35.6410084Z             [36m<View>[39m
+2026-10-06T20:59:35.6410254Z               [36m<View>[39m
+2026-10-06T20:59:35.6410546Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6410730Z                   [0m[0m
+2026-10-06T20:59:35.6410908Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6411087Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6411257Z                   [0mLunch[0m
+2026-10-06T20:59:35.6411442Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6411623Z               [36m</View>[39m
+2026-10-06T20:59:35.6411804Z               [36m<Text>[39m
+2026-10-06T20:59:35.6411971Z                 [0m248 kcal[0m
+2026-10-06T20:59:35.6412152Z               [36m</Text>[39m
+2026-10-06T20:59:35.6412325Z             [36m</View>[39m
+2026-10-06T20:59:35.6412491Z             [36m<Text>[39m
+2026-10-06T20:59:35.6412701Z               [0mTap an entry to edit, move or delete it.[0m
+2026-10-06T20:59:35.6412916Z             [36m</Text>[39m
+2026-10-06T20:59:35.6413089Z             [36m<View>[39m
+2026-10-06T20:59:35.6413238Z               [36m<View[39m
+2026-10-06T20:59:35.6413599Z                 [33maccessibilityLabel[39m=[32m"Chicken breast, 150 g. Tap to edit, long-press to delete."[39m
+2026-10-06T20:59:35.6413934Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6414152Z               [36m>[39m
+2026-10-06T20:59:35.6414327Z                 [36m<View>[39m
+2026-10-06T20:59:35.6414512Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6414711Z                     [0mChicken breast[0m
+2026-10-06T20:59:35.6414902Z                     [36m<Text>[39m
+2026-10-06T20:59:35.6415114Z                       [0m · [0m
+2026-10-06T20:59:35.6415302Z                       [0m150 g[0m
+2026-10-06T20:59:35.6415498Z                     [36m</Text>[39m
+2026-10-06T20:59:35.6415679Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6415869Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6416084Z                     [0mP: 47g · C: 0g · F: 5g[0m
+2026-10-06T20:59:35.6416301Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6416485Z                 [36m</View>[39m
+2026-10-06T20:59:35.6416656Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6416835Z                   [0m248[0m
+2026-10-06T20:59:35.6417018Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6417198Z               [36m</View>[39m
+2026-10-06T20:59:35.6417363Z             [36m</View>[39m
+2026-10-06T20:59:35.6417539Z             [36m<View>[39m
+2026-10-06T20:59:35.6417713Z               [36m<View[39m
+2026-10-06T20:59:35.6417918Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6418100Z               [36m>[39m
+2026-10-06T20:59:35.6418275Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6418451Z                   [0m[0m
+2026-10-06T20:59:35.6418620Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6418804Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6418991Z                   [0mAdd Food[0m
+2026-10-06T20:59:35.6419289Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6419474Z               [36m</View>[39m
+2026-10-06T20:59:35.6419643Z             [36m</View>[39m
+2026-10-06T20:59:35.6419912Z           [36m</View>[39m
+2026-10-06T20:59:35.6420072Z           [36m<View>[39m
+2026-10-06T20:59:35.6420240Z             [36m<View>[39m
+2026-10-06T20:59:35.6420557Z               [36m<View>[39m
+2026-10-06T20:59:35.6420737Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6420896Z                   [0m[0m
+2026-10-06T20:59:35.6421077Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6421263Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6421442Z                   [0mDinner[0m
+2026-10-06T20:59:35.6421612Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6421801Z               [36m</View>[39m
+2026-10-06T20:59:35.6421984Z               [36m<Text />[39m
+2026-10-06T20:59:35.6422161Z             [36m</View>[39m
+2026-10-06T20:59:35.6422320Z             [36m<Text>[39m
+2026-10-06T20:59:35.6422550Z               [0mNo foods logged. Use Add Food below.[0m
+2026-10-06T20:59:35.6422758Z             [36m</Text>[39m
+2026-10-06T20:59:35.6422929Z             [36m<View>[39m
+2026-10-06T20:59:35.6423103Z               [36m<View[39m
+2026-10-06T20:59:35.6423310Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6423491Z               [36m>[39m
+2026-10-06T20:59:35.6423668Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6423839Z                   [0m[0m
+2026-10-06T20:59:35.6424008Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6424195Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6424383Z                   [0mAdd Food[0m
+2026-10-06T20:59:35.6424572Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6424757Z               [36m</View>[39m
+2026-10-06T20:59:35.6424919Z             [36m</View>[39m
+2026-10-06T20:59:35.6425087Z           [36m</View>[39m
+2026-10-06T20:59:35.6425239Z           [36m<View>[39m
+2026-10-06T20:59:35.6425409Z             [36m<View>[39m
+2026-10-06T20:59:35.6425596Z               [36m<View>[39m
+2026-10-06T20:59:35.6425772Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6425934Z                   [0m[0m
+2026-10-06T20:59:35.6426119Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6426299Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6426468Z                   [0mSnacks[0m
+2026-10-06T20:59:35.6426653Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6426837Z               [36m</View>[39m
+2026-10-06T20:59:35.6427013Z               [36m<Text />[39m
+2026-10-06T20:59:35.6427174Z             [36m</View>[39m
+2026-10-06T20:59:35.6427347Z             [36m<Text>[39m
+2026-10-06T20:59:35.6427567Z               [0mNo foods logged. Use Add Food below.[0m
+2026-10-06T20:59:35.6427773Z             [36m</Text>[39m
+2026-10-06T20:59:35.6427941Z             [36m<View>[39m
+2026-10-06T20:59:35.6428096Z               [36m<View[39m
+2026-10-06T20:59:35.6428306Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6428507Z               [36m>[39m
+2026-10-06T20:59:35.6428683Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6428840Z                   [0m[0m
+2026-10-06T20:59:35.6429031Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6429216Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6429403Z                   [0mAdd Food[0m
+2026-10-06T20:59:35.6429592Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6429762Z               [36m</View>[39m
+2026-10-06T20:59:35.6429934Z             [36m</View>[39m
+2026-10-06T20:59:35.6430109Z           [36m</View>[39m
+2026-10-06T20:59:35.6430261Z           [36m<View>[39m
+2026-10-06T20:59:35.6430552Z             [36m<View>[39m
+2026-10-06T20:59:35.6430735Z               [36m<View>[39m
+2026-10-06T20:59:35.6430915Z                 [36m<View>[39m
+2026-10-06T20:59:35.6431087Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6431265Z                     [0m[0m
+2026-10-06T20:59:35.6431451Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6431787Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6432070Z                     [0mWater[0m
+2026-10-06T20:59:35.6432463Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6432743Z                 [36m</View>[39m
+2026-10-06T20:59:35.6433034Z                 [36m<Text>[39m
+2026-10-06T20:59:35.6433302Z                   [0m0[0m
+2026-10-06T20:59:35.6433559Z                   [0m / [0m
+2026-10-06T20:59:35.6433750Z                   [0m128[0m
+2026-10-06T20:59:35.6433915Z                   [0m oz[0m
+2026-10-06T20:59:35.6434083Z                 [36m</Text>[39m
+2026-10-06T20:59:35.6434268Z               [36m</View>[39m
+2026-10-06T20:59:35.6434438Z               [36m<View[39m
+2026-10-06T20:59:35.6434683Z                 [33maccessibilityLabel[39m=[32m"Water progress"[39m
+2026-10-06T20:59:35.6434977Z                 [33maccessibilityRole[39m=[32m"progressbar"[39m
+2026-10-06T20:59:35.6435233Z                 [33maccessibilityValue[39m=[32m{
+2026-10-06T20:59:35.6435421Z                   {
+2026-10-06T20:59:35.6435554Z                     "max": 128,
+2026-10-06T20:59:35.6435705Z                     "min": 0,
+2026-10-06T20:59:35.6435856Z                     "now": 0,
+2026-10-06T20:59:35.6436017Z                     "text": "0 of 128 ounces",
+2026-10-06T20:59:35.6436185Z                   }
+2026-10-06T20:59:35.6436336Z                 }[39m
+2026-10-06T20:59:35.6436523Z                 [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6436719Z               [36m>[39m
+2026-10-06T20:59:35.6436901Z                 [36m<View />[39m
+2026-10-06T20:59:35.6437085Z               [36m</View>[39m
+2026-10-06T20:59:35.6437252Z               [36m<View>[39m
+2026-10-06T20:59:35.6437434Z                 [36m<View[39m
+2026-10-06T20:59:35.6437699Z                   [33maccessibilityLabel[39m=[32m"Add 8 ounces of water"[39m
+2026-10-06T20:59:35.6438011Z                   [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:35.6438268Z                   [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6438466Z                 [36m>[39m
+2026-10-06T20:59:35.6438634Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6438812Z                     [0m+[0m
+2026-10-06T20:59:35.6438978Z                     [0m8[0m
+2026-10-06T20:59:35.6439141Z                     [0moz[0m
+2026-10-06T20:59:35.6439325Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6439518Z                 [36m</View>[39m
+2026-10-06T20:59:35.6439699Z                 [36m<View[39m
+2026-10-06T20:59:35.6439958Z                   [33maccessibilityLabel[39m=[32m"Add 12 ounces of water"[39m
+2026-10-06T20:59:35.6440256Z                   [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:35.6440644Z                   [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6440841Z                 [36m>[39m
+2026-10-06T20:59:35.6441021Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6441182Z                     [0m+[0m
+2026-10-06T20:59:35.6441365Z                     [0m12[0m
+2026-10-06T20:59:35.6441544Z                     [0moz[0m
+2026-10-06T20:59:35.6441727Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6441912Z                 [36m</View>[39m
+2026-10-06T20:59:35.6442097Z                 [36m<View[39m
+2026-10-06T20:59:35.6442359Z                   [33maccessibilityLabel[39m=[32m"Add 16 ounces of water"[39m
+2026-10-06T20:59:35.6442661Z                   [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T20:59:35.6442908Z                   [33maccessible[39m=[32m{true}[39m
+2026-10-06T20:59:35.6443094Z                 [36m>[39m
+2026-10-06T20:59:35.6443276Z                   [36m<Text>[39m
+2026-10-06T20:59:35.6443449Z                     [0m+[0m
+2026-10-06T20:59:35.6443624Z                     [0m16[0m
+2026-10-06T20:59:35.6443791Z                     [0moz[0m
+2026-10-06T20:59:35.6443973Z                   [36m</Text>[39m
+2026-10-06T20:59:35.6444162Z                 [36m</View>[39m
+2026-10-06T20:59:35.6444447Z               [36m</View>[39m
+2026-10-06T20:59:35.6444626Z               [36m<Text>[39m
+2026-10-06T20:59:35.6444779Z                 [0m0[0m
+2026-10-06T20:59:35.6445059Z                 [0m glasses today[0m
+2026-10-06T20:59:35.6445240Z               [36m</Text>[39m
+2026-10-06T20:59:35.6445413Z             [36m</View>[39m
+2026-10-06T20:59:35.6445583Z           [36m</View>[39m
+2026-10-06T20:59:35.6445734Z         [36m</View>[39m
+2026-10-06T20:59:35.6445917Z       [36m</RCTScrollView>[39m
+2026-10-06T20:59:35.6446091Z     [36m</View>[39m
+2026-10-06T20:59:35.6446168Z 
+2026-10-06T20:59:35.6446379Z     [0m [90m  96 |[39m     mockStore[33m.[39misLoading [33m=[39m [36mtrue[39m[33m;[39m
+2026-10-06T20:59:35.6446801Z      [90m  97 |[39m     [36mawait[39m render([33m<[39m[33mLogScreen[39m [33m/[39m[33m>[39m)[33m;[39m
+2026-10-06T20:59:35.6447447Z     [31m[1m>[22m[39m[90m  98 |[39m     expect(screen[33m.[39mgetByTestId([32m'log-day-data-error-retry'[39m)[33m.[39mprops[33m.[39maccessibilityState)[33m.[39mtoMatchObject({
+2026-10-06T20:59:35.6447926Z      [90m     |[39m                   [31m[1m^[22m[39m
+2026-10-06T20:59:35.6448212Z      [90m  99 |[39m       disabled[33m:[39m [36mtrue[39m[33m,[39m
+2026-10-06T20:59:35.6448454Z      [90m 100 |[39m     })[33m;[39m
+2026-10-06T20:59:35.6448655Z      [90m 101 |[39m   })[33m;[39m[0m
+2026-10-06T20:59:35.6448756Z 
+2026-10-06T20:59:35.6448949Z       at Object.getByTestId (src/screens/client/__tests__/LogScreen.foodSpeed.test.tsx:98:19)
+2026-10-06T20:59:35.6449328Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T20:59:35.6449687Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T20:59:35.6449869Z 
+2026-10-06T20:59:36.1699489Z A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+2026-10-06T20:59:36.1717004Z Test Suites: 5 failed, 5 total
+2026-10-06T20:59:36.1717354Z Tests:       19 failed, 9 passed, 28 total
+2026-10-06T20:59:36.1717622Z Snapshots:   0 total
+2026-10-06T20:59:36.1717831Z Time:        8.778 s
+2026-10-06T20:59:36.1719226Z Ran all test suites matching /src\/types\/__tests__\/common.failureCopy.test.ts|src\/store\/__tests__\/clientStore.failureStates.test.ts|src\/screens\/support\/__tests__\/SupportInboxReportProblem.test.tsx|src\/screens\/client\/__tests__\/HomeScreen.macroMode.test.tsx|src\/screens\/client\/__tests__\/LogScreen.foodSpeed.test.tsx/i.
+2026-10-06T20:59:36.1846762Z ##[error]Process completed with exit code 1.
+2026-10-06T20:59:36.1931806Z Post job cleanup.
+2026-10-06T20:59:36.2635295Z [command]/usr/bin/git version
+2026-10-06T20:59:36.2724260Z git version 2.55.0
+2026-10-06T20:59:36.2793092Z Temporarily overriding HOME='/home/runner/work/_temp/ce2444b4-56e8-4df8-a868-2236e6908baa' before making global git config changes
+2026-10-06T20:59:36.2794843Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-06T20:59:36.2796901Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-06T20:59:36.2842539Z Removing SSH command configuration
+2026-10-06T20:59:36.2853054Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-06T20:59:36.2899792Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-06T20:59:36.3151736Z Removing HTTP extra header
+2026-10-06T20:59:36.3155132Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-06T20:59:36.3179323Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-06T20:59:36.3346704Z Removing includeIf entries pointing to credentials config files
+2026-10-06T20:59:36.3351211Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-06T20:59:36.3372697Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-06T20:59:36.3373432Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-06T20:59:36.3373963Z includeif.gitdir:/github/workspace/.git.path
+2026-10-06T20:59:36.3374348Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-06T20:59:36.3378987Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-06T20:59:36.3395580Z /home/runner/work/_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config
+2026-10-06T20:59:36.3402706Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config
+2026-10-06T20:59:36.3429383Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-06T20:59:36.3446296Z /home/runner/work/_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config
+2026-10-06T20:59:36.3453094Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config
+2026-10-06T20:59:36.3477389Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-06T20:59:36.3493448Z /github/runner_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config
+2026-10-06T20:59:36.3498195Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config
+2026-10-06T20:59:36.3522752Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-06T20:59:36.3538827Z /github/runner_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config
+2026-10-06T20:59:36.3544733Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config
+2026-10-06T20:59:36.3572045Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-06T20:59:36.3738731Z Removing credentials config '/home/runner/work/_temp/git-credentials-daf1c3f4-7852-49ce-bb09-3877773c731e.config'
+2026-10-06T20:59:36.3887244Z Cleaning up orphan processes

@@ -1,0 +1,416 @@
+{
+  "repo": "backend",
+  "number": 792,
+  "head": "25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+  "base": "40fe8acd236b3c55a63dd5550b179a051bc4c4e3",
+  "title": "fix(notifications): coach alert, new purchase and content pushes honour mute and keep names off the lock screen (AUDIT-09-125)",
+  "body": "**Tier:** T4 (notification delivery that carries client PII on the lock screen; touches the coach-alert, coach new-purchase and package content-unlocked push paths). No schema, no migration, no flag, no money logic.\n\n**Why:** Three push senders bypass the push stack's one sender (`NotificationsService.sendPush`) and call the raw Expo send directly. On a normal day:\n- they put a client's name (and for alerts a risk percentage, for purchases the amount paid) on the coach's lock screen;\n- they ignore \"Mute all notifications\" (the settings screen promises \"Turns off all push, in-app and email notifications\"), the per-kind switch (`coach_alert_push`, `coach_new_purchase_push`, `drip_released_push`) and quiet hours (9:00 PM to 8:00 AM);\n- the tap carries no `actionScreen`, so it opens nothing.\n\n**T4 trigger scan:** PII on the lock screen: yes, fixed (the lock screen now shows only fixed templates). Auth, RLS/tenancy, credentials, destructive data: none. Money: none (no Stripe, billing, ledger or payout code is touched; only the notification call after a purchase and after a drop fires).\n**T3 trigger scan:** Cross-module wiring: `CoachAlertsService` now injects `CoachAlertEmitter` (exported by `NotificationsModule`, which `CoachModule` already imports; `CoachModule` is the only provider of `CoachAlertsService`). No new module edges.\n**Bounded T1:** copy-only additions to `lock-screen-copy.ts` (two fixed templates).\n**Canonical builder:** AUDIT-09-125 (agent 125 worker, Claude Opus 5.5).\n**Acceptance evidence:** PR CI (full suite + tsc). The changed specs: `test/coach-alerts-push-delivery.spec.ts`, `test/coach-alerts-emitters.spec.ts`, `test/purchase-fanout-coach-new-purchase.spec.ts`, `test/drip-dispatcher.cron.spec.ts`, `test/package-push.service.spec.ts`, `test/mwb-program-dispatcher-e2e.spec.ts`, `test/privacy/no-pii-in-logs.spec.ts`, `test/push-lock-screen-copy.spec.ts`. On main the new assertions fail: `pushToCoach` is called with the alert text, `sendPush` is never called by the purchase and drip paths, and `lockScreenCopy(DRIP_RELEASED | COACH_NEW_PURCHASE)` returns the generic default.\n\n## What changes\n- `src/coach/coach-alerts.service.ts`: `tryPush` delivers through `CoachAlertEmitter.emit` (one inbox row in the coach's notification center plus one quiet push through `sendPush`) instead of `NotificationsService.pushToCoach` (title = alert text with the client's name, body = the raw alert type such as `risk_red_transition`).\n- `src/packages/purchase-fanout.service.ts`: the coach new-purchase push goes through `sendPush` (the inbox rows are unchanged).\n- `src/packages/drip-dispatcher.cron.ts`, `src/packages/package-push.service.ts`: the content-unlocked push goes through `sendPush` (the inbox rows are unchanged).\n- `src/notifications/push/lock-screen-copy.ts`: fixed templates \"New content / New content from your coach is ready. Open the app to see it.\" and \"New purchase / A client bought a package. Open the app to see it.\"\n\n`sendPush` gives each of these the gates every other push already has: `muted`, `<kind>_push`, quiet hours in the recipient's zone (deferred, never dropped), the outbox with retries, fixed lock-screen copy, and `actionScreen: NotificationCenter` in the tap data (the matching inbox row is there).\n\n## Findings fixed\n- **B-A09-1** (private data on the lock screen, Mute all ignored): a client misses three check-ins or falls into the red risk band, and the coach's lock screen shows \"Jordan Smith crossed into the red risk band (82%).\" with \"risk_red_transition\" under it, even with Mute all on or at 2 AM; the tap opens nothing.\n- **B-A09-2** (payment detail on the lock screen, Mute all ignored): a client buys a package and the coach's lock screen shows \"Jordan Smith just bought 12-Week Coaching ($199.00)\", including with Mute all on.\n- **B-A09-3** (Mute all ignored, false claim on the settings screen): a client with Mute all on still gets a push for every package content drop, with the coach-written content title on the lock screen.\n\n## Overlap with open PRs\nNone. No open PR touches these files (checked b#776-b#785; b#762 merged as main ef5e514a, flags file only).\n\nNo schema, migration, lockfile, dependency, flag, Fly, Stripe or Expo change. No clinic partner name, no secrets.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 151,
+  "deletions": 107,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/792",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/792#issuecomment-6025670770",
+      "body": "\n<!--\n  0 failure: \n  0 warning: \n  \n  1 markdown notices\n  DangerID: danger-id-Danger;\n-->\n\n\n\n### Danger summary\n\n- **Touched areas:** _none of the sensitive paths_\n- **Files changed:** 13\n\n<p align=\"right\">\n  Generated by :no_entry_sign: <a href=\"https://danger.systems/js\">dangerJS</a> against 25f882cf6f01c03ef087445cfd51974bb1c5fd8f\n</p>\n"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/792#issuecomment-6025816864",
+      "body": "<!-- pr-checks-watcher -->\n## CI status \u2014 `25f882c`\n\npending: 3 \u00b7 skipped: 1 \u00b7 success: 12\n\n- \u2705 **Banned cast tokens (R75 / R100.A2)** \u2014 success\n- \u23f3 **build-and-test**\n- \u2705 **build-sbom** \u2014 success\n- \u2705 **CodeQL** \u2014 success\n- \u2705 **CodeQL JS/TS (javascript-typescript)** \u2014 success\n- \u23f3 **comment-deploy-readiness**\n- \u2705 **community-live-tests** \u2014 success\n- \u2705 **danger** \u2014 success\n- \u23ed\ufe0f **deploy-readiness-gate** \u2014 skipped\n- \u23f3 **mwb-3-live-tests**\n- \u2705 **npm audit (high+critical, whole graph)** \u2014 success\n- \u2705 **rls-floor-guard** \u2014 success\n- \u2705 **rls-live-tests** \u2014 success\n- \u2705 **Schema parity (migrations match schema.prisma)** \u2014 success\n- \u2705 **size-label** \u2014 success\n- \u2705 **test-deploy-readiness** \u2014 success\n\n_Updated automatically by pr-checks-watcher._"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/792#issuecomment-6025904598",
+      "body": "<!-- h4-deploy-readiness-board -->\n## Deploy readiness board (R100, informational)\n\nThis check is informational on pull requests during the pre-launch\nburn-down. It gates only the codebase-invariant sections (stub values\nand prod-switch coherence). The environment-dependent sections (wiring,\nenv discovery, operator keys) are surfaced below but do not block the\nPR because the runner carries no production secrets. The prod-deploy\ngate (deploy-readiness-gate) enforces every section under strict mode.\n\n```\n================ DEPLOY READINESS BOARD (R100) ================\n    mode: INFORMATIONAL (PR / pre-launch)\n    \n    --- STUB VALUES [RED=0] ---\n      BLOCK_SHIP=0  WARN=7  INFO=5\n      [warn] src/coach/command-center/ltv-metrics.dto.ts:153  STUB (tracked debt or low-signal)\n      [warn] src/contracts/contracts.module.ts:47  STUB (tracked debt or low-signal)\n      [warn] src/contracts/contracts.module.ts:53  STUB (tracked debt or low-signal)\n      [warn] src/contracts/providers/docusign.provider.ts:11  STUB (tracked debt or low-signal)\n      [warn] src/contracts/providers/native-canvas.provider.ts:11  STUB (tracked debt or low-signal)\n      [warn] src/gym/gym-distribution.service.ts:4  STUB (tracked debt or low-signal)\n      [warn] src/scheduling/scheduling.controller.ts:91  Coming soon (tracked debt or low-signal)\n      no blocking stub/placeholder tokens in production-bound src/\n    \n    ---------------------------------------------------------------\n    GATING RED LINES (this run): 0\n    PROD-DEPLOY RED LINES (strict): 0\n    EXIT: ALL CLEAR \u2192 SAFE TO DEPLOY\n    ===============================================================\n```"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/792#issuecomment-6025920491",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-09-125, agent 125) \u2014 growth-project-backend#792 @ 25f882cf6f01c03ef087445cfd51974bb1c5fd8f \u2014 READY FOR AUDIT\n\n- Tier T4 (lock-screen PII on coach alert, coach new-purchase and content-unlocked pushes). 13 files, +151/-107 (258 lines, tests included). No schema, migration, flag or money logic.\n- Fixes B-A09-1 (coach alert push: client name and risk percentage on the coach lock screen, raw alert type as body, Mute all and quiet hours ignored, no tap target), B-A09-2 (new-purchase push: buyer name and amount on the lock screen, Mute all ignored), B-A09-3 (content-unlocked push: Mute all and the drip switch ignored, coach-written title on the lock screen). All three now go through `NotificationsService.sendPush` (coach alerts via the existing `CoachAlertEmitter`).\n- CI: all 16 checks green at this head (build-and-test incl. lint, type-check, full test suite; live-test lanes; CodeQL; Danger; size).\n- Rebased once on main ef5e514a (b#762 merge, flags file only) before the first push; no other pushes.\n- Needs both lenses at this exact head (T4).\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/runs/112509555847",
+      "id": 112509555847,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-backend/security/code-scanning?query=pr%3A792+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112509555847/annotations"
+      }
+    },
+    {
+      "name": "comment-deploy-readiness",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969367/job/112507945645",
+      "id": 112507945645,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112507945645/annotations"
+      }
+    },
+    {
+      "name": "deploy-readiness-gate",
+      "status": "completed",
+      "conclusion": "skipped",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969367/job/112506712680",
+      "id": 112506712680,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506712680/annotations"
+      }
+    },
+    {
+      "name": "danger",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969517/job/112506711097",
+      "id": 112506711097,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506711097/annotations"
+      }
+    },
+    {
+      "name": "mwb-3-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969440/job/112506711011",
+      "id": 112506711011,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506711011/annotations"
+      }
+    },
+    {
+      "name": "community-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969440/job/112506710810",
+      "id": 112506710810,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506710810/annotations"
+      }
+    },
+    {
+      "name": "rls-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969440/job/112506710795",
+      "id": 112506710795,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506710795/annotations"
+      }
+    },
+    {
+      "name": "rls-floor-guard",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969440/job/112506710696",
+      "id": 112506710696,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506710696/annotations"
+      }
+    },
+    {
+      "name": "build-and-test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969440/job/112506710623",
+      "id": 112506710623,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506710623/annotations"
+      }
+    },
+    {
+      "name": "CodeQL JS/TS (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969422/job/112506710571",
+      "id": 112506710571,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 3,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506710571/annotations"
+      }
+    },
+    {
+      "name": "test-deploy-readiness",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969367/job/112506710391",
+      "id": 112506710391,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506710391/annotations"
+      }
+    },
+    {
+      "name": "Schema parity (migrations match schema.prisma)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969419/job/112506710232",
+      "id": 112506710232,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506710232/annotations"
+      }
+    },
+    {
+      "name": "npm audit (high+critical, whole graph)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969260/job/112506710220",
+      "id": 112506710220,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506710220/annotations"
+      }
+    },
+    {
+      "name": "Banned cast tokens (R75 / R100.A2)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969225/job/112506709582",
+      "id": 112506709582,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506709582/annotations"
+      }
+    },
+    {
+      "name": "build-sbom",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969242/job/112506709519",
+      "id": 112506709519,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506709519/annotations"
+      }
+    },
+    {
+      "name": "size-label",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37532969188/job/112506709104",
+      "id": 112506709104,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 3,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112506709104/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "e1ef8fdba3b598553bea5228033e3ccc61424403",
+      "filename": "src/coach/coach-alerts.service.ts",
+      "status": "modified",
+      "additions": 27,
+      "deletions": 34,
+      "changes": 61,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/src%2Fcoach%2Fcoach-alerts.service.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/src%2Fcoach%2Fcoach-alerts.service.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fcoach%2Fcoach-alerts.service.ts?ref=25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "patch": "@@ -1,11 +1,7 @@\n import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';\n import type { CoachAlert, Prisma } from '@prisma/client';\n import { PrismaService } from '../prisma.service';\n-import {\n-  NotificationsService,\n-  PushPayload,\n-} from '../notifications/notifications.service';\n-import { NotificationCategory } from '../notifications/notification-category.enum';\n+import { CoachAlertEmitter } from '../notifications/emitters/coach-alert.emitter';\n \n // Phase 6B \u2014 Proactive Red Flag Alerts.\n //\n@@ -19,10 +15,13 @@ import { NotificationCategory } from '../notifications/notification-category.enu\n //                        owning the alert is the only caller permitted;\n //                        a foreign coach gets NotFoundException.\n //\n-// Push-notification delivery: real push via NotificationsService.pushToCoach.\n-// NotificationsService is @Optional() so the existing test suite that\n-// constructs CoachAlertsService(prisma) directly continues to compile and\n-// pass \u2014 when notifications is null, tryPush logs and returns without error.\n+// Push-notification delivery (AUDIT-09-125): CoachAlertEmitter writes the\n+// coach's inbox row and queues one device push through\n+// NotificationsService.sendPush, so the push honours \"Mute all\", the\n+// coach_alert switch and quiet hours, shows the fixed lock-screen copy (the\n+// alert text names the client and stays inside the app) and opens the\n+// notification center. The emitter is @Optional() so tests that construct\n+// CoachAlertsService(prisma) directly keep working (no push is sent).\n //\n // Emitters wired in this PR:\n //   * risk_red_transition  \u2014 PTM recompute (src/ptm/ptm-recompute.service.ts)\n@@ -73,7 +72,7 @@ export class CoachAlertsService {\n \n   constructor(\n     private readonly prisma: PrismaService,\n-    @Optional() private readonly notifications?: NotificationsService,\n+    @Optional() private readonly alertEmitter?: CoachAlertEmitter,\n   ) {}\n \n   /**\n@@ -221,41 +220,35 @@ export class CoachAlertsService {\n   }\n \n   // \u2500\u2500 push delivery \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n-  // Real push via NotificationsService.pushToCoach. NotificationsService is\n-  // @Optional() so the service is usable in test contexts that only provide\n-  // PrismaService. When notifications is absent (test-only), we log and skip.\n-  // When pushToCoach returns false (no token), the alert is still in the\n-  // in-app inbox \u2014 no exception thrown.\n+  // AUDIT-09-125: through CoachAlertEmitter (inbox row + quiet push via\n+  // sendPush). The old direct Expo send put the alert text (client name,\n+  // risk percentage) on the lock screen with the raw alert type as the body,\n+  // ignored \"Mute all\" and quiet hours, and wrote no inbox row for the tap to\n+  // open. The alert row is already stored; delivery never throws here.\n   private async tryPush(alert: CoachAlert): Promise<void> {\n+    if (!this.alertEmitter) {\n+      // Test context \u2014 emitter not wired; alert still written to DB.\n+      return;\n+    }\n     try {\n-      if (!this.notifications) {\n-        // Test context \u2014 notifications not wired; alert still written to DB.\n-        return;\n-      }\n-      const payload: PushPayload = {\n+      const delivery = await this.alertEmitter.emit({\n+        coachId: alert.coach_id,\n         alertId: alert.id,\n         alertType: alert.alert_type,\n-        severity: alert.severity,\n         message: alert.message,\n-        // Phase 11: coach alerts are COACH_DIRECT category so they surface on\n-        // the high-importance Android channel and iOS actionable category.\n-        category: NotificationCategory.COACH_DIRECT,\n-      };\n-      const delivered = await this.notifications.pushToCoach(\n-        alert.coach_id,\n-        payload,\n-      );\n-      if (!delivered) {\n+        severity: alert.severity,\n+        clientUserId: alert.client_id,\n+      });\n+      if (delivery.push !== 'sent') {\n         // C-611-17: alert.message names the client; log the alert id.\n         this.logger.log(\n-          `push skipped (no token) alert=${alert.id} coach=${alert.coach_id} type=${alert.alert_type} sev=${alert.severity}`,\n+          `push not queued alert=${alert.id} coach=${alert.coach_id} type=${alert.alert_type} push=${delivery.push}`,\n         );\n       }\n     } catch {\n-      // Push failure must never crash the alert-write path. Alert is still\n-      // stored in the in-app inbox regardless of delivery outcome.\n+      // Push failure must never crash the alert-write path.\n       this.logger.warn(\n-        `tryPush threw for alert=${alert.id} coach=${alert.coach_id} \u2014 alert still saved in inbox`,\n+        `tryPush threw for alert=${alert.id} coach=${alert.coach_id} \u2014 alert still saved`,\n       );\n     }\n   }"
+    },
+    {
+      "sha": "237cd54f35f0802a598d94b7d515ac55de320b88",
+      "filename": "src/notifications/push/lock-screen-copy.ts",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 0,
+      "changes": 9,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/src%2Fnotifications%2Fpush%2Flock-screen-copy.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/src%2Fnotifications%2Fpush%2Flock-screen-copy.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fnotifications%2Fpush%2Flock-screen-copy.ts?ref=25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "patch": "@@ -100,6 +100,15 @@ const TEMPLATES: Record<string, LockScreenCopy> = {\n     title: 'New meal plan',\n     body: `Your coach added a meal plan for you. ${OPEN}`,\n   },\n+  // AUDIT-09-125: no content title, buyer name or amount on the lock screen.\n+  [NotificationKind.DRIP_RELEASED]: {\n+    title: 'New content',\n+    body: `New content from your coach is ready. ${OPEN}`,\n+  },\n+  [NotificationKind.COACH_NEW_PURCHASE]: {\n+    title: 'New purchase',\n+    body: `A client bought a package. ${OPEN}`,\n+  },\n };\n \n // B-653-4: a client's move request keeps the booking_rescheduled kind, but"
+    },
+    {
+      "sha": "d1d9d3868bd23bd419f2f88c565667cd409fef1c",
+      "filename": "src/packages/drip-dispatcher.cron.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 4,
+      "changes": 11,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/src%2Fpackages%2Fdrip-dispatcher.cron.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/src%2Fpackages%2Fdrip-dispatcher.cron.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fpackages%2Fdrip-dispatcher.cron.ts?ref=25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "patch": "@@ -487,7 +487,6 @@ export class DripDispatcherCron {\n       );\n       return;\n     }\n-    const title = drop.display_title?.slice(0, 80) || 'New content unlocked';\n     const body = drop.display_title\n       ? `New content unlocked: ${drop.display_title}`.slice(0, 160)\n       : 'New content unlocked';\n@@ -525,10 +524,14 @@ export class DripDispatcherCron {\n         );\n       }\n       try {\n-        await this.notifications.pushToUser(clientUserId, title, body, {\n+        // AUDIT-09-125: through sendPush, so the push honours \"Mute all\", the\n+        // drip_released switch and quiet hours, and the lock screen shows fixed\n+        // copy (never the coach-written content title).\n+        await this.notifications.sendPush({\n+          user_id: clientUserId,\n           kind: NotificationKind.DRIP_RELEASED,\n-          scheduled_drop_id: drop.id,\n-          asset_type: drop.asset_type,\n+          body,\n+          deep_link: 'tgp://client/library',\n         });\n       } catch (err) {\n         this.logger.warn("
+    },
+    {
+      "sha": "bfed6462922492717b8fe4fef00e3c99479d1e92",
+      "filename": "src/packages/package-push.service.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 4,
+      "changes": 11,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/src%2Fpackages%2Fpackage-push.service.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/src%2Fpackages%2Fpackage-push.service.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fpackages%2Fpackage-push.service.ts?ref=25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "patch": "@@ -705,7 +705,6 @@ export class PackagePushService {\n       const purchase = purchaseById.get(drop.client_purchase_id);\n       if (!purchase) continue;\n       const clientUserId = purchase.client_user_id;\n-      const title = drop.display_title?.slice(0, 80) || 'New content unlocked';\n       const body = drop.display_title\n         ? `New content unlocked: ${drop.display_title}`.slice(0, 160)\n         : 'New content unlocked';\n@@ -731,10 +730,14 @@ export class PackagePushService {\n         );\n       }\n       try {\n-        await this.notifications.pushToUser(clientUserId, title, body, {\n+        // AUDIT-09-125: through sendPush, so the push honours \"Mute all\", the\n+        // drip_released switch and quiet hours, and the lock screen shows fixed\n+        // copy (never the coach-written content title).\n+        await this.notifications.sendPush({\n+          user_id: clientUserId,\n           kind: NotificationKind.DRIP_RELEASED,\n-          scheduled_drop_id: drop.id,\n-          asset_type: drop.asset_type,\n+          body,\n+          deep_link: 'tgp://client/library',\n         });\n       } catch (err) {\n         this.logger.warn("
+    },
+    {
+      "sha": "50ecb173c147ba6d5bf2bc2af008c6203af51f89",
+      "filename": "src/packages/purchase-fanout.service.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 3,
+      "changes": 10,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/src%2Fpackages%2Fpurchase-fanout.service.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/src%2Fpackages%2Fpurchase-fanout.service.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fpackages%2Fpurchase-fanout.service.ts?ref=25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "patch": "@@ -695,7 +695,6 @@ export class PurchaseFanoutService {\n     }\n \n     const amountStr = formatAmount(alert.amountCents, alert.currency);\n-    const title = 'New purchase';\n     const body =\n       `${alert.buyerDisplayName} just bought ${alert.packageName}` +\n       (amountStr ? ` (${amountStr})` : '');\n@@ -727,9 +726,14 @@ export class PurchaseFanoutService {\n         );\n       }\n       try {\n-        await this.notifications!.pushToUser(alert.coachId, title, body.slice(0, 160), {\n+        // AUDIT-09-125: through sendPush, so the push honours \"Mute all\",\n+        // the coach_new_purchase switch and quiet hours, and the lock screen\n+        // shows fixed copy (never the buyer's name or the amount paid).\n+        await this.notifications!.sendPush({\n+          user_id: alert.coachId,\n           kind: NotificationKind.COACH_NEW_PURCHASE,\n-          purchase_id: alert.purchaseId,\n+          body: body.slice(0, 160),\n+          deep_link,\n         });\n       } catch (err) {\n         this.logger.warn("
+    },
+    {
+      "sha": "037fb70359abba9195bfe1e93914c1292e4af678",
+      "filename": "test/coach-alerts-emitters.spec.ts",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 10,
+      "changes": 22,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fcoach-alerts-emitters.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fcoach-alerts-emitters.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fcoach-alerts-emitters.spec.ts?ref=25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "patch": "@@ -16,8 +16,7 @@\n \n import { Test, TestingModule } from '@nestjs/testing';\n import { CoachAlertsService } from '../src/coach/coach-alerts.service';\n-import { NotificationsService } from '../src/notifications/notifications.service';\n-import { NotificationCategory } from '../src/notifications/notification-category.enum';\n+import { CoachAlertEmitter } from '../src/notifications/emitters/coach-alert.emitter';\n import { PrismaService } from '../src/prisma.service';\n \n // \u2500\u2500 helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n@@ -73,15 +72,16 @@ async function buildService(options: {\n     },\n   };\n \n+  // AUDIT-09-125: alerts are delivered through CoachAlertEmitter.\n   const notificationsMock = {\n-    pushToCoach: jest.fn().mockResolvedValue(true),\n+    emit: jest.fn().mockResolvedValue({ inapp: 'sent', push: 'sent' }),\n   };\n \n   const module: TestingModule = await Test.createTestingModule({\n     providers: [\n       CoachAlertsService,\n       { provide: PrismaService, useValue: prismaMock },\n-      { provide: NotificationsService, useValue: notificationsMock },\n+      { provide: CoachAlertEmitter, useValue: notificationsMock },\n     ],\n   }).compile();\n \n@@ -167,12 +167,13 @@ describe('Phase 6B emitter: consecutive_misses', () => {\n \n     await service.createAlert(input);\n \n-    expect(notificationsMock.pushToCoach).toHaveBeenCalledWith('coach-1', {\n+    expect(notificationsMock.emit).toHaveBeenCalledWith({\n+      coachId: 'coach-1',\n       alertId: created.id,\n       alertType,\n-      severity: 'warning',\n       message: input.message,\n-      category: NotificationCategory.COACH_DIRECT,\n+      severity: 'warning',\n+      clientUserId: created.client_id,\n     });\n   });\n });\n@@ -254,12 +255,13 @@ describe('Phase 6B emitter: streak_dropped', () => {\n \n     await service.createAlert(input);\n \n-    expect(notificationsMock.pushToCoach).toHaveBeenCalledWith('coach-1', {\n+    expect(notificationsMock.emit).toHaveBeenCalledWith({\n+      coachId: 'coach-1',\n       alertId: created.id,\n       alertType,\n-      severity: 'info',\n       message: input.message,\n-      category: NotificationCategory.COACH_DIRECT,\n+      severity: 'info',\n+      clientUserId: created.client_id,\n     });\n   });\n });"
+    },
+    {
+      "sha": "43453a0ccb1e40380ed09cf020122648c4982fab",
+      "filename": "test/coach-alerts-push-delivery.spec.ts",
+      "status": "modified",
+      "additions": 35,
+      "deletions": 26,
+      "changes": 61,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fcoach-alerts-push-delivery.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fcoach-alerts-push-delivery.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fcoach-alerts-push-delivery.spec.ts?ref=25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "patch": "@@ -2,17 +2,17 @@\n  * test/coach-alerts-push-delivery.spec.ts\n  *\n  * Phase 6B \u2014 confirms that CoachAlertsService.createAlert:\n- *   1. Calls NotificationsService.pushToCoach when a new alert is created.\n- *   2. Falls back gracefully to in-app inbox only when pushToCoach returns false\n- *      (simulating no push token scenario).\n- *   3. Does NOT throw when pushToCoach throws.\n+ *   1. Delivers a new alert through CoachAlertEmitter (inbox row + quiet push\n+ *      via sendPush; AUDIT-09-125), never through the raw pushToCoach send.\n+ *   2. Still returns the alert when the push is skipped (muted, no token).\n+ *   3. Does NOT throw when the emitter throws.\n  *   4. Skips push (returns existing row) when dedup window is active.\n  */\n \n import { Test, TestingModule } from '@nestjs/testing';\n import { CoachAlertsService, CreateAlertInput } from '../src/coach/coach-alerts.service';\n+import { CoachAlertEmitter } from '../src/notifications/emitters/coach-alert.emitter';\n import { NotificationsService } from '../src/notifications/notifications.service';\n-import { NotificationCategory } from '../src/notifications/notification-category.enum';\n import { PrismaService } from '../src/prisma.service';\n \n // \u2500\u2500 helpers \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n@@ -47,6 +47,7 @@ function makeAlert(overrides: Partial<{\n describe('CoachAlertsService \u2014 push delivery (Phase 6B)', () => {\n   let service: CoachAlertsService;\n   let prismaMock: any;\n+  let emitterMock: { emit: jest.Mock };\n   let notificationsMock: { pushToCoach: jest.Mock };\n \n   const defaultInput: CreateAlertInput = {\n@@ -68,6 +69,9 @@ describe('CoachAlertsService \u2014 push delivery (Phase 6B)', () => {\n       },\n     };\n \n+    emitterMock = {\n+      emit: jest.fn().mockResolvedValue({ inapp: 'sent', push: 'sent' }),\n+    };\n     notificationsMock = {\n       pushToCoach: jest.fn(),\n     };\n@@ -76,6 +80,7 @@ describe('CoachAlertsService \u2014 push delivery (Phase 6B)', () => {\n       providers: [\n         CoachAlertsService,\n         { provide: PrismaService, useValue: prismaMock },\n+        { provide: CoachAlertEmitter, useValue: emitterMock },\n         { provide: NotificationsService, useValue: notificationsMock },\n       ],\n     }).compile();\n@@ -84,52 +89,59 @@ describe('CoachAlertsService \u2014 push delivery (Phase 6B)', () => {\n   });\n \n   describe('createAlert \u2014 new row (dedup miss)', () => {\n-    it('calls NotificationsService.pushToCoach with the created alert data', async () => {\n+    it('delivers through CoachAlertEmitter with the created alert data', async () => {\n       const alert = makeAlert();\n       prismaMock.coachAlert.findFirst.mockResolvedValue(null);\n       prismaMock.coachAlert.create.mockResolvedValue(alert);\n-      notificationsMock.pushToCoach.mockResolvedValue(true);\n \n       const result = await service.createAlert(defaultInput);\n \n       expect(result).toEqual(alert);\n-      expect(notificationsMock.pushToCoach).toHaveBeenCalledTimes(1);\n-      expect(notificationsMock.pushToCoach).toHaveBeenCalledWith('coach-1', {\n+      expect(emitterMock.emit).toHaveBeenCalledTimes(1);\n+      expect(emitterMock.emit).toHaveBeenCalledWith({\n+        coachId: 'coach-1',\n         alertId: alert.id,\n         alertType: alert.alert_type,\n-        severity: alert.severity,\n         message: alert.message,\n-        category: NotificationCategory.COACH_DIRECT,\n+        severity: alert.severity,\n+        clientUserId: 'client-1',\n       });\n     });\n \n-    it('still returns the created alert when pushToCoach returns false (no token)', async () => {\n+    it('never sends the alert text straight to the lock screen (pushToCoach)', async () => {\n+      const alert = makeAlert({ message: 'Jordan Client crossed into the red risk band (82%).' });\n+      prismaMock.coachAlert.findFirst.mockResolvedValue(null);\n+      prismaMock.coachAlert.create.mockResolvedValue(alert);\n+\n+      await service.createAlert(defaultInput);\n+\n+      expect(notificationsMock.pushToCoach).not.toHaveBeenCalled();\n+    });\n+\n+    it('still returns the created alert when the push is skipped (muted or no token)', async () => {\n       const alert = makeAlert();\n       prismaMock.coachAlert.findFirst.mockResolvedValue(null);\n       prismaMock.coachAlert.create.mockResolvedValue(alert);\n-      // Simulate: coach has no push token\n-      notificationsMock.pushToCoach.mockResolvedValue(false);\n+      emitterMock.emit.mockResolvedValue({ inapp: 'skipped', push: 'skipped' });\n \n       const result = await service.createAlert(defaultInput);\n \n-      // Alert still written and returned \u2014 in-app inbox works regardless\n       expect(result).toEqual(alert);\n-      expect(notificationsMock.pushToCoach).toHaveBeenCalledTimes(1);\n+      expect(emitterMock.emit).toHaveBeenCalledTimes(1);\n     });\n \n-    it('does NOT throw and still returns the alert when pushToCoach throws', async () => {\n+    it('does NOT throw and still returns the alert when the emitter throws', async () => {\n       const alert = makeAlert();\n       prismaMock.coachAlert.findFirst.mockResolvedValue(null);\n       prismaMock.coachAlert.create.mockResolvedValue(alert);\n-      notificationsMock.pushToCoach.mockRejectedValue(new Error('network failure'));\n+      emitterMock.emit.mockRejectedValue(new Error('network failure'));\n \n-      // Should not throw\n       await expect(service.createAlert(defaultInput)).resolves.toEqual(alert);\n     });\n   });\n \n   describe('createAlert \u2014 dedup hit (existing unacknowledged row within 24h)', () => {\n-    it('returns existing row WITHOUT calling pushToCoach', async () => {\n+    it('returns existing row WITHOUT delivering again', async () => {\n       const existing = makeAlert({ id: 'existing-alert' });\n       prismaMock.coachAlert.findFirst.mockResolvedValue(existing);\n \n@@ -139,20 +151,19 @@ describe('CoachAlertsService \u2014 push delivery (Phase 6B)', () => {\n       // No new row created\n       expect(prismaMock.coachAlert.create).not.toHaveBeenCalled();\n       // No push attempted for a dedup-hit\n-      expect(notificationsMock.pushToCoach).not.toHaveBeenCalled();\n+      expect(emitterMock.emit).not.toHaveBeenCalled();\n     });\n   });\n \n   describe('payload format', () => {\n-    it('passes alertType, severity, message verbatim in the push payload', async () => {\n+    it('passes alertType, severity, message verbatim to the emitter', async () => {\n       const alert = makeAlert({\n         alert_type: 'consecutive_misses',\n         severity: 'warning',\n         message: 'Client has missed 3 consecutive check-ins',\n       });\n       prismaMock.coachAlert.findFirst.mockResolvedValue(null);\n       prismaMock.coachAlert.create.mockResolvedValue(alert);\n-      notificationsMock.pushToCoach.mockResolvedValue(true);\n \n       await service.createAlert({\n         ...defaultInput,\n@@ -161,14 +172,12 @@ describe('CoachAlertsService \u2014 push delivery (Phase 6B)', () => {\n         message: 'Client has missed 3 consecutive check-ins',\n       });\n \n-      const [, payload] = notificationsMock.pushToCoach.mock.calls[0];\n+      const [payload] = emitterMock.emit.mock.calls[0];\n       expect(payload).toMatchObject({\n         alertType: 'consecutive_misses',\n         severity: 'warning',\n         message: 'Client has missed 3 consecutive check-ins',\n-        category: NotificationCategory.COACH_DIRECT,\n       });\n-      // Must include alertId\n       expect(payload.alertId).toBe(alert.id);\n     });\n   });"
+    },
+    {
+      "sha": "d900c98d739fc68bad534d57a9a38003304722a4",
+      "filename": "test/drip-dispatcher.cron.spec.ts",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 12,
+      "changes": 24,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fdrip-dispatcher.cron.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fdrip-dispatcher.cron.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fdrip-dispatcher.cron.spec.ts?ref=25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "patch": "@@ -194,7 +194,7 @@ function makeRegistry(materialise: jest.Mock) {\n function makeNotifications() {\n   return {\n     createNotification: jest.fn(async () => ({ id: 'n-1' })),\n-    pushToUser: jest.fn(async () => ({ delivered: true, code: 'delivered' })),\n+    sendPush: jest.fn(async () => ({ delivered: true, code: 'delivered' })),\n   } as any;\n }\n \n@@ -236,8 +236,8 @@ describe('DripDispatcherCron', () => {\n     expect(state.drops[0].attempt_count).toBe(1);\n     expect(state.drops[0].alert_dispatched_at).toBeInstanceOf(Date);\n     // 2 in-app + push notification calls happen via the same helper \u2014\n-    // we expect both an in-app and a push channel write, plus pushToUser.\n-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);\n+    // we expect both an in-app and a push channel write, plus sendPush.\n+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);\n     expect(notifications.createNotification).toHaveBeenCalledTimes(2);\n     const channels = notifications.createNotification.mock.calls.map(\n       (c: any[]) => c[0].channel,\n@@ -494,7 +494,7 @@ describe('DripDispatcherCron', () => {\n       createNotification: jest\n         .fn()\n         .mockRejectedValue(new Error('expo blew up')),\n-      pushToUser: jest.fn().mockRejectedValue(new Error('expo blew up')),\n+      sendPush: jest.fn().mockRejectedValue(new Error('expo blew up')),\n     } as any;\n     const cron = new DripDispatcherCron(\n       prisma as any,\n@@ -1012,7 +1012,7 @@ describe('DripDispatcherCron', () => {\n     expect(state.drops[0].materialised_ref).toBe('mp-silent');\n     // But NO alert sent \u2014 guard short-circuited on the pre-set column.\n     expect(notifications.createNotification).not.toHaveBeenCalled();\n-    expect(notifications.pushToUser).not.toHaveBeenCalled();\n+    expect(notifications.sendPush).not.toHaveBeenCalled();\n     // Guard returns before the re-stamp, so the original timestamp is\n     // preserved untouched.\n     expect(state.drops[0].alert_dispatched_at).toEqual(preStamped);\n@@ -1038,7 +1038,7 @@ describe('DripDispatcherCron', () => {\n \n     expect(stats.delivered).toBe(1);\n     // Alert fully sent: push + 2 in-app/push channel rows.\n-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);\n+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);\n     expect(notifications.createNotification).toHaveBeenCalledTimes(2);\n     // And the column is now stamped so a later tick never re-pushes.\n     expect(state.drops[0].alert_dispatched_at).toBeInstanceOf(Date);\n@@ -1128,7 +1128,7 @@ describe('DripDispatcherCron', () => {\n     expect(state.drops[0].alert_dispatched_at).toBeInstanceOf(Date);\n     const stampedAt = state.drops[0].alert_dispatched_at as Date;\n     // Exactly one push + the in-app/push channel rows from the first send.\n-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);\n+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);\n     expect(notifications.createNotification).toHaveBeenCalledTimes(2);\n \n     // Second worker over the SAME (now-stamped) row: the alert claim\n@@ -1139,7 +1139,7 @@ describe('DripDispatcherCron', () => {\n       'client-1',\n       new Date(NOW.getTime() + 6 * 60 * 1000),\n     );\n-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);\n+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);\n     expect(notifications.createNotification).toHaveBeenCalledTimes(2);\n     // The original stamp is untouched (we never re-write on a count===0).\n     expect(state.drops[0].alert_dispatched_at).toEqual(stampedAt);\n@@ -1208,7 +1208,7 @@ describe('DripDispatcherCron', () => {\n     expect(state.drops[0].materialised_ref).toBe('mp-notify-off');\n     // NO alert: claim count was 0 because the column was non-NULL.\n     expect(notifications.createNotification).not.toHaveBeenCalled();\n-    expect(notifications.pushToUser).not.toHaveBeenCalled();\n+    expect(notifications.sendPush).not.toHaveBeenCalled();\n     // Seed stamp untouched (we never write on count===0).\n     expect(state.drops[0].alert_dispatched_at).toEqual(preStamped);\n   });\n@@ -1230,7 +1230,7 @@ describe('DripDispatcherCron', () => {\n       createNotification: jest\n         .fn()\n         .mockRejectedValue(new Error('expo blew up')),\n-      pushToUser: jest.fn().mockRejectedValue(new Error('expo blew up')),\n+      sendPush: jest.fn().mockRejectedValue(new Error('expo blew up')),\n     } as any;\n     const cron = new DripDispatcherCron(\n       prisma as any,\n@@ -1247,13 +1247,13 @@ describe('DripDispatcherCron', () => {\n     expect(state.drops[0].alert_dispatched_at).toEqual(NOW);\n \n     // A second worker now sees count===0 and sends nothing more.\n-    const callsBefore = notifications.pushToUser.mock.calls.length;\n+    const callsBefore = notifications.sendPush.mock.calls.length;\n     await (cron as any).dispatchBuyerAlert(\n       { ...state.drops[0] },\n       'client-1',\n       new Date(NOW.getTime() + 6 * 60 * 1000),\n     );\n-    expect(notifications.pushToUser.mock.calls.length).toBe(callsBefore);\n+    expect(notifications.sendPush.mock.calls.length).toBe(callsBefore);\n   });\n \n   it('parent ClientPurchase missing \u2192 drop canceled defensively, never re-tried', async () => {"
+    },
+    {
+      "sha": "7925eaa1c2e10f9828a844f301e489c360fbcb7c",
+      "filename": "test/mwb-program-dispatcher-e2e.spec.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 3,
+      "changes": 6,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fmwb-program-dispatcher-e2e.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fmwb-program-dispatcher-e2e.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fmwb-program-dispatcher-e2e.spec.ts?ref=25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "patch": "@@ -186,7 +186,7 @@ function harness(drops: Row[]) {\n   const registry = new AssignableAssetResolverRegistry([resolver]);\n   const notifications = {\n     createNotification: jest.fn(async () => ({ id: 'n-1' })),\n-    pushToUser: jest.fn(async () => ({ delivered: true, code: 'delivered' })),\n+    sendPush: jest.fn(async () => ({ delivered: true, code: 'delivered' })),\n   };\n   const cron = new DripDispatcherCron(fake(prisma), registry, fake(notifications));\n   const checkout = new CheckoutService(\n@@ -225,14 +225,14 @@ describe('S-MWB-3 C-640-15: deferred program drop through the real dispatcher pa\n     });\n     expect(drops[0].alert_dispatched_at).toBeInstanceOf(Date);\n     // One alert: one push, plus its in-app row and its push-channel row.\n-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);\n+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);\n     expect(notifications.createNotification).toHaveBeenCalledTimes(2);\n \n     // A second tick finds nothing to do: no second copy, no second alert.\n     const again = await cron.runOnce(new Date(NOW.getTime() + 60_000));\n     expect(again.claimed).toBe(0);\n     expect(programDelivery.deliver).toHaveBeenCalledTimes(1);\n-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);\n+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);\n     expect(notifications.createNotification).toHaveBeenCalledTimes(2);\n \n     // The buyer's package list still shows the program, opened at day 1."
+    },
+    {
+      "sha": "679bbd512319690ac5c351aca06a2501bfba8609",
+      "filename": "test/package-push.service.spec.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fpackage-push.service.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fpackage-push.service.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fpackage-push.service.spec.ts?ref=25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "patch": "@@ -264,7 +264,7 @@ function makeResolverStub() {\n function makeNotificationsStub() {\n   return {\n     createNotification: jest.fn(async () => ({ id: 'notif' })),\n-    pushToUser: jest.fn(async () => undefined),\n+    sendPush: jest.fn(async () => undefined),\n   };\n }\n \n@@ -759,7 +759,7 @@ describe('PackagePushService', () => {\n     expect(row.alert_dispatched_at).not.toBeNull();\n     // No buyer push/in-app was sent.\n     expect(notifications.createNotification).not.toHaveBeenCalled();\n-    expect(notifications.pushToUser).not.toHaveBeenCalled();\n+    expect(notifications.sendPush).not.toHaveBeenCalled();\n   });\n \n   it('notify=true leaves alert_dispatched_at NULL at seed for a forward-dated push (cron alerts later)', async () => {"
+    },
+    {
+      "sha": "c9c1f73dc5db8838c3bbe7c6e1de8d4016919e15",
+      "filename": "test/privacy/no-pii-in-logs.spec.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 3,
+      "changes": 7,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fprivacy%2Fno-pii-in-logs.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fprivacy%2Fno-pii-in-logs.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fprivacy%2Fno-pii-in-logs.spec.ts?ref=25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "patch": "@@ -25,6 +25,7 @@ import { EmailService } from '../../src/email/email.service';\n import { EmailTemplateKey } from '../../src/email/email.types';\n import { DigestService } from '../../src/notifications/digest.service';\n import { CoachAlertsService } from '../../src/coach/coach-alerts.service';\n+import type { CoachAlertEmitter } from '../../src/notifications/emitters/coach-alert.emitter';\n import { PracticeTypeService } from '../../src/coach/practice-type/practice-type.service';\n import { SchedulingWebhookController } from '../../src/scheduling/scheduling-webhook.controller';\n \n@@ -221,10 +222,10 @@ describe('C-611-17: other log lines that carried a name, an address or a payload\n         create: jest.fn().mockResolvedValue(alert),\n       },\n     });\n-    const notifications = fake<NotificationsService>({\n-      pushToCoach: jest.fn().mockResolvedValue(false),\n+    const emitter = fake<CoachAlertEmitter>({\n+      emit: jest.fn().mockResolvedValue({ inapp: 'sent', push: 'skipped' }),\n     });\n-    const svc = new CoachAlertsService(prisma, notifications);\n+    const svc = new CoachAlertsService(prisma, emitter);\n     await svc.createAlert({\n       coachId: 'coach-1',\n       clientId: 'client-1',"
+    },
+    {
+      "sha": "59af7d6810f7d0f8109ac82f0892b8d8376cc66f",
+      "filename": "test/purchase-fanout-coach-new-purchase.spec.ts",
+      "status": "modified",
+      "additions": 15,
+      "deletions": 6,
+      "changes": 21,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fpurchase-fanout-coach-new-purchase.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fpurchase-fanout-coach-new-purchase.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fpurchase-fanout-coach-new-purchase.spec.ts?ref=25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "patch": "@@ -116,7 +116,7 @@ function makeNotifications() {\n     createNotification: jest.fn(async (_input: unknown): Promise<unknown> => ({\n       id: 'notif_1',\n     })),\n-    pushToUser: jest.fn(async () => undefined),\n+    sendPush: jest.fn(async () => undefined),\n   };\n }\n \n@@ -170,7 +170,16 @@ describe('PurchaseFanoutService \u2014 COACH_NEW_PURCHASE (PR-15A A2)', () => {\n       ([c]: any[]) => c.kind === NotificationKind.COACH_NEW_PURCHASE,\n     );\n     expect(inAppCalls.length).toBe(2); // inapp + push channel row\n-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);\n+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);\n+    // AUDIT-09-125: the device push goes through sendPush (mute, the\n+    // coach_new_purchase switch, quiet hours, fixed lock-screen copy).\n+    expect(notifications.sendPush).toHaveBeenCalledWith(\n+      expect.objectContaining({\n+        user_id: 'coach_1',\n+        kind: NotificationKind.COACH_NEW_PURCHASE,\n+        deep_link: 'tgp://coach/purchases/pur_1',\n+      }),\n+    );\n     const firstCall: any = inAppCalls[0]![0];\n     expect(firstCall.user_id).toBe('coach_1');\n     expect(firstCall.body).toMatch(/Alex Buyer/);\n@@ -196,7 +205,7 @@ describe('PurchaseFanoutService \u2014 COACH_NEW_PURCHASE (PR-15A A2)', () => {\n     );\n     svc.flushAlerts('pur_1');\n     await flush();\n-    const firstCount = notifications.pushToUser.mock.calls.length;\n+    const firstCount = notifications.sendPush.mock.calls.length;\n \n     // Stripe replay \u2014 same purchase id, same tx state already has marker.\n     await svc.onPurchaseEntitled(\n@@ -207,7 +216,7 @@ describe('PurchaseFanoutService \u2014 COACH_NEW_PURCHASE (PR-15A A2)', () => {\n     svc.flushAlerts('pur_1');\n     await flush();\n \n-    expect(notifications.pushToUser.mock.calls.length).toBe(firstCount);\n+    expect(notifications.sendPush.mock.calls.length).toBe(firstCount);\n     expect(state.markers.length).toBe(1);\n   });\n \n@@ -231,7 +240,7 @@ describe('PurchaseFanoutService \u2014 COACH_NEW_PURCHASE (PR-15A A2)', () => {\n     svc.discardPendingAlerts('pur_1');\n     svc.flushAlerts('pur_1');\n     await flush();\n-    expect(notifications.pushToUser).not.toHaveBeenCalled();\n+    expect(notifications.sendPush).not.toHaveBeenCalled();\n     const calls = notifications.createNotification.mock.calls.filter(\n       ([c]: any[]) => c.kind === NotificationKind.COACH_NEW_PURCHASE,\n     );\n@@ -288,7 +297,7 @@ describe('PurchaseFanoutService \u2014 COACH_NEW_PURCHASE (PR-15A A2)', () => {\n     svc.flushAlerts('pur_1');\n     await flush();\n     // A null return from createNotification (= prefs OFF) MUST NOT throw.\n-    // pushToUser is still attempted (NotificationsService.pushToUser\n+    // sendPush is still attempted (NotificationsService.sendPush\n     // applies its own per-kind prefs check inside).\n     expect(notifications.createNotification).toHaveBeenCalled();\n   });"
+    },
+    {
+      "sha": "a2681195d4b7245f9e12dca7dbe36ba1394a83bb",
+      "filename": "test/push-lock-screen-copy.spec.ts",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 0,
+      "changes": 11,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fpush-lock-screen-copy.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/25f882cf6f01c03ef087445cfd51974bb1c5fd8f/test%2Fpush-lock-screen-copy.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fpush-lock-screen-copy.spec.ts?ref=25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "patch": "@@ -72,6 +72,17 @@ describe('lock-screen copy is template-only (B-692-1)', () => {\n     ).toBe('Your session starts in about an hour. Open the app to see the details.');\n   });\n \n+  it('AUDIT-09-125: content-unlocked and new-purchase pushes carry fixed copy only', () => {\n+    expect(lockScreenCopy(NotificationKind.DRIP_RELEASED, 'New content unlocked: PCOS meal plan')).toEqual({\n+      title: 'New content',\n+      body: 'New content from your coach is ready. Open the app to see it.',\n+    });\n+    expect(lockScreenCopy(NotificationKind.COACH_NEW_PURCHASE, 'Alex Buyer just bought Pro ($99.00)')).toEqual({\n+      title: 'New purchase',\n+      body: 'A client bought a package. Open the app to see it.',\n+    });\n+  });\n+\n   it('unknown kinds get the generic line', () => {\n     expect(lockScreenCopy('something_new', PRIVATE)).toEqual({\n       title: 'The Growth Project',"
+    }
+  ]
+}

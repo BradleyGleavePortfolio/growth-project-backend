@@ -1,0 +1,172 @@
+diff --git a/src/services/__tests__/authActions.accountSwitch124.test.ts b/src/services/__tests__/authActions.accountSwitch124.test.ts
+new file mode 100644
+index 00000000..5e99ad48
+--- /dev/null
++++ b/src/services/__tests__/authActions.accountSwitch124.test.ts
+@@ -0,0 +1,149 @@
++import AsyncStorage from '@react-native-async-storage/async-storage';
++import { signOut } from '../authActions';
++import { authEvents } from '../../utils/authEvents';
++import { getOnboardingData, saveOnboardingData } from '../../utils/onboardingStore';
++import { finalizeLeanOnboarding } from '../../lib/finalizeLeanOnboarding';
++import { pushRecentClient, readRecentClients } from '../../lib/recentClients';
++import { enqueuePending, flushPendingSync, readResumeState, writeResumeState } from '../../screens/day-one/resume';
++import { profileApi } from '../api';
++import { saveGoals, saveCheckInTime } from '../../screens/day-one/api';
++
++jest.mock('../api', () => ({
++  usersApi: { updatePushToken: jest.fn(async () => ({ data: {} })) },
++  profileApi: {
++    get: jest.fn(async () => ({ data: {} })),
++    update: jest.fn(async () => ({ data: {} })),
++  },
++}));
++jest.mock('../../screens/day-one/api', () => ({
++  saveGoals: jest.fn(async () => undefined),
++  saveNotifPermission: jest.fn(async () => undefined),
++  saveCheckInTime: jest.fn(async () => undefined),
++  completeDayOne: jest.fn(async () => undefined),
++}));
++jest.mock('../sentry', () => ({ setSentryUser: jest.fn() }));
++jest.mock('../../lib/analytics', () => ({ reset: jest.fn(), track: jest.fn() }));
++jest.mock('../../lib/userCache', () => ({
++  readUserCacheSync: jest.fn(() => ({ id: 'person-A' })),
++  readUserCache: jest.fn(async () => ({ id: 'person-A' })),
++  clearUserCache: jest.fn(async () => undefined),
++  patchUserCache: jest.fn(async () => undefined),
++}));
++jest.mock('../../offline/sync/sync-engine', () => ({
++  deleteWorkoutLogsForUser: jest.fn(async () => 0),
++}));
++jest.mock('../../storage/mmkv', () => ({
++  clearAllStorage: jest.fn(async () => undefined),
++  prefsStorage: {
++    getAllKeys: jest.fn(async () => []),
++    delete: jest.fn(async () => undefined),
++    getString: () => undefined,
++  },
++  cacheStorage: {
++    getAllKeys: jest.fn(async () => []),
++    delete: jest.fn(async () => undefined),
++    getString: () => undefined,
++  },
++}));
++jest.mock('../../db/fastingDb', () => ({
++  getActiveFast: jest.fn(async () => null),
++  getFastingHistory: jest.fn(async () => []),
++  startFast: jest.fn(async () => undefined),
++  endFast: jest.fn(async () => undefined),
++}));
++
++describe('HUNT-08: ordinary sequential account switches', () => {
++  beforeEach(async () => {
++    await AsyncStorage.clear();
++    jest.clearAllMocks();
++  });
++
++  it('B-08-1: never sends the previous person’s optional health answers to the next profile', async () => {
++    await saveOnboardingData({
++      currentWeight: 83,
++      height: 181,
++      dob: '1992-06-15',
++      sex: 'male',
++      targetWeight: 78,
++      dietType: 'vegetarian',
++      restrictions: ['gluten'],
++    });
++    await signOut('person-A');
++
++    // Person B answers the required questions and skips optional metrics.
++    await saveOnboardingData({ primaryGoal: 'build_muscle', fitnessLevel: 'new', intent: 'explore' });
++    expect(await getOnboardingData()).toEqual({
++      primaryGoal: 'build_muscle',
++      fitnessLevel: 'new',
++      intent: 'explore',
++    });
++    expect(await finalizeLeanOnboarding()).toEqual({ ok: true, computedMacros: false });
++    const payload = (profileApi.update as jest.Mock).mock.calls[0][0];
++    expect(payload.onboarding_completed).toBe(true);
++    for (const key of ['current_weight', 'height_cm', 'dob', 'sex', 'target_weight', 'diet_type', 'diet_restrictions', 'tdee']) {
++      expect(payload).not.toHaveProperty(key);
++    }
++  });
++
++  it('B-08-2: the next coach sees no names or emails from the previous coach’s Recent picker', async () => {
++    await pushRecentClient({ email: 'private-client@example.com', name: 'Previous client', pillars: ['fitness'] });
++    expect((await readRecentClients())[0].email).toBe('private-client@example.com');
++
++    await signOut('coach-A');
++
++    expect(await readRecentClients()).toEqual([]);
++    expect(await AsyncStorage.getItem('tgp.recent_clients.v1')).toBeNull();
++  });
++
++  it('B-08-3: does not resume or replay the previous person’s Day-1 goals into the next account', async () => {
++    await writeResumeState({ step: 'CheckInTime', draft: { goals: ['fitness'], inviteCode: 'GP-EXAMPLE' } });
++    await enqueuePending({ kind: 'goals', goals: ['fitness'] });
++    await enqueuePending({ kind: 'checkin', time: { hour: 8, minute: 0 }, timezone: 'America/Los_Angeles' });
++
++    await signOut('person-A');
++
++    expect(await readResumeState()).toBeNull();
++    expect(await flushPendingSync()).toBe(0);
++    expect(saveGoals).not.toHaveBeenCalled();
++    expect(saveCheckInTime).not.toHaveBeenCalled();
++  });
++
++  it('purges all three private raw keys before the logout event exposes the next sign-in screen', async () => {
++    await saveOnboardingData({ currentWeight: 83 });
++    await pushRecentClient({ email: 'private-client@example.com', name: 'Previous client', pillars: ['fitness'] });
++    await writeResumeState({ step: 'Goals', draft: { goals: ['fitness'] } });
++    let keysAtLogout: Promise<(string | null)[]> | undefined;
++    const onLogout = () => {
++      keysAtLogout = Promise.all([
++        AsyncStorage.getItem('onboarding_data'),
++        AsyncStorage.getItem('tgp.recent_clients.v1'),
++        AsyncStorage.getItem('day_one_onboarding_state_v1'),
++      ]);
++    };
++    authEvents.on('logout', onLogout);
++    try {
++      await signOut('person-A');
++      expect(keysAtLogout).toBeDefined();
++      expect(await keysAtLogout).toEqual([null, null, null]);
++    } finally {
++      authEvents.off('logout', onLogout);
++    }
++  });
++
++  it('still restores persisted progress after a process restart without sign-out', async () => {
++    await saveOnboardingData({ currentWeight: 83, height: 181 });
++    await writeResumeState({ step: 'CheckInTime', draft: { goals: ['fitness'] } });
++    await enqueuePending({ kind: 'goals', goals: ['fitness'] });
++
++    // These readers fetch storage again; no component memory is involved.
++    expect(await getOnboardingData()).toEqual({ currentWeight: 83, height: 181 });
++    expect(await readResumeState()).toMatchObject({
++      step: 'CheckInTime',
++      draft: { goals: ['fitness'] },
++      pendingSync: [{ kind: 'goals', goals: ['fitness'] }],
++    });
++    await AsyncStorage.setItem('appearance', 'dark');
++    await signOut('person-A');
++    expect(await AsyncStorage.getItem('appearance')).toBe('dark');
++  });
++});
+diff --git a/src/services/authActions.ts b/src/services/authActions.ts
+index 285746a8..8d95bc01 100644
+--- a/src/services/authActions.ts
++++ b/src/services/authActions.ts
+@@ -49,6 +49,12 @@ const ASYNC_SIGN_OUT_KEYS = [
+   'user_data',
+   'needs_role_selection',
+   'onboarding_complete',
++  // Raw AsyncStorage drafts are outside the MMKV namespaces cleared below.
++  // Never let the next account inherit optional health answers, replay the
++  // previous person's Day-1 goals, or see another coach's recent clients.
++  'onboarding_data',
++  'day_one_onboarding_state_v1',
++  'tgp.recent_clients.v1',
+   // Legacy global macro cache (no user suffix). Per-user macro_targets:<id>
+   // keys are wiped via PER_USER_KEY_PREFIXES with the exact signing-out id.
+   'macro_targets',

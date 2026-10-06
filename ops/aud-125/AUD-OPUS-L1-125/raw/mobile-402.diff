@@ -1,0 +1,641 @@
+diff --git a/src/__tests__/moneyClient124.test.tsx b/src/__tests__/moneyClient124.test.tsx
+new file mode 100644
+index 00000000..4d98a986
+--- /dev/null
++++ b/src/__tests__/moneyClient124.test.tsx
+@@ -0,0 +1,277 @@
++/**
++ * MONEY-CLIENT-124 (agent 124): the client plans screen after a plan ends,
++ * while it is ending, alongside another plan, and while a payment is overdue.
++ *
++ * B-MC-1 — failing before: getPaymentStatus() fell back to the newest
++ * `canceled` purchase, so a plan that had ENDED (no access) stayed the
++ * "Current plan": its card said "Renews <past date>" and its buy button was
++ * disabled as "Current plan", so the client could never start it again.
++ * B-MC-2 — failing before: a plan the client ended (cancel at period end)
++ * still read "Renews <date>" under Current plan.
++ * U-MC-3: another plan says the renewing one keeps charging alongside it.
++ * U-MC-4: a past-due plan offers Update card on the plan itself.
++ * U-MC-5: the plans screen has a back control (the More stack hides headers).
++ * B-402-1 (Sol): after End my plan / Keep my plan succeeds, Current plan and
++ * the second-plan notice follow the new state without a pull to refresh.
++ * B-402-2 (Opus): the Ends date under Current plan is the billing-period end
++ * (the date Your plans shows), not the padded access expiry.
++ *
++ * Real clientPaymentsApi and ClientPackagesScreen; only HTTP is mocked.
++ */
++import React from 'react';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
++import { Alert } from 'react-native';
++
++jest.mock('../theme/ThemeProvider', () => {
++  const realTokens = jest.requireActual('../theme/tokens').default;
++  return {
++    useTheme: () => ({ tokens: realTokens, semanticColors: realTokens.lightTokens, colorScheme: 'light' }),
++  };
++});
++jest.mock('../ui/skeletons/Skeleton', () => ({ SkeletonScreen: () => null }));
++const mockNavigate = jest.fn();
++const mockGoBack = jest.fn();
++let mockCanGoBack = false;
++jest.mock('@react-navigation/native', () => {
++  const ReactLib = jest.requireActual('react');
++  return {
++    useNavigation: () => ({ navigate: mockNavigate, goBack: mockGoBack, canGoBack: () => mockCanGoBack }),
++    useFocusEffect: (cb: () => void) => ReactLib.useEffect(cb, []),
++  };
++});
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../services/api', () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockGet(...a), post: (...a: unknown[]) => mockPost(...a) },
++}));
++jest.mock('../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++jest.mock('@stripe/stripe-react-native', () => ({
++  initStripe: jest.fn(async () => undefined),
++  initPaymentSheet: jest.fn(async () => ({})),
++  presentPaymentSheet: jest.fn(async () => ({})),
++}));
++
++import ClientPackagesScreen from '../screens/client/ClientPackagesScreen';
++import { clientPaymentsApi } from '../api/clientPaymentsApi';
++
++const MONTHLY = {
++  id: 'pkg-monthly', name: 'Monthly coaching', amount_cents: 4900, currency: 'usd',
++  billing_type: 'recurring', interval: 'month', description: null, features: [],
++};
++const QUARTERLY = {
++  id: 'pkg-quarterly', name: 'Quarterly coaching', amount_cents: 12900, currency: 'usd',
++  billing_type: 'recurring', interval: 'month', interval_count: 3, description: null, features: [],
++};
++
++function purchase(over: Record<string, unknown>) {
++  return {
++    id: 'purchase-1', package_id: 'pkg-monthly', status: 'active', entitlement_active: true,
++    access_expires_at: null, current_period_end: '2026-11-02T12:00:00.000Z', cancel_at_period_end: false,
++    canceled_at: null, created_at: '2026-10-02T12:00:00.000Z', ...over,
++  };
++}
++
++let purchases: unknown[] = [];
++let plans: unknown[] = [];
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY = 'pk_test_build';
++  purchases = [];
++  plans = [];
++  mockCanGoBack = false;
++  mockGet.mockImplementation(async (url: string) => {
++    if (url === '/v1/clients/me/coach') return { data: { name: 'Coach Lee' } };
++    if (url === '/v1/clients/me/coach/packages') return { data: [MONTHLY, QUARTERLY] };
++    if (url === '/v1/checkout/purchases') return { data: { purchases, next_cursor: null } };
++    if (url === '/v1/checkout/subscriptions') return { data: { plans } };
++    throw Object.assign(new Error('404'), { response: { status: 404, data: {} } });
++  });
++  mockPost.mockImplementation(async (url: string) => {
++    throw new Error(`unexpected POST ${url}`);
++  });
++});
++
++describe('B-MC-1: a plan that ended is not the current plan', () => {
++  const ENDED = purchase({
++    status: 'canceled', entitlement_active: false, current_period_end: '2026-09-02T12:00:00.000Z',
++    canceled_at: '2026-09-02T12:00:00.000Z',
++  });
++
++  it('getPaymentStatus reports no current plan for a canceled purchase without access', async () => {
++    purchases = [ENDED];
++    const res = await clientPaymentsApi.getPaymentStatus();
++    expect(res.ok).toBe(true);
++    if (res.ok) {
++      expect(res.data.state).toBe('none');
++      expect(res.data.package_id).toBeNull();
++      expect(res.data.package_name).toBeNull();
++    }
++  });
++
++  it('the plans screen lets the client start the ended plan again', async () => {
++    purchases = [ENDED];
++    const r = await render(<ClientPackagesScreen />);
++    await waitFor(() => expect(r.getByTestId('buy-plan-pkg-monthly')).toBeTruthy());
++    expect(r.queryAllByText('Current plan')).toHaveLength(0);
++    expect(r.queryByTestId('current-plan-line')).toBeNull();
++    expect(r.getByTestId('buy-plan-pkg-monthly').props.accessibilityState).toEqual(
++      expect.objectContaining({ disabled: false }),
++    );
++    expect(r.getByTestId('plan-terms-pkg-monthly-renewal')).toBeTruthy();
++  });
++
++  it('a live plan stays current, and an older ended row does not override it', async () => {
++    purchases = [purchase({}), { ...ENDED, id: 'purchase-0', package_id: 'pkg-quarterly' }];
++    const r = await render(<ClientPackagesScreen />);
++    await waitFor(() => expect(r.getByTestId('current-plan-line')).toBeTruthy());
++    expect(r.getByTestId('current-plan-line').props.children).toBe('Renews Nov 2, 2026');
++    expect(r.getByTestId('buy-plan-pkg-monthly').props.accessibilityState).toEqual(
++      expect.objectContaining({ disabled: true }),
++    );
++    expect(r.getByTestId('buy-plan-pkg-quarterly').props.accessibilityState).toEqual(
++      expect.objectContaining({ disabled: false }),
++    );
++  });
++});
++
++// A real paid recurring row: access_expires_at = current_period_end + 24 h.
++const PERIOD_END = '2030-11-02T12:00:00.000Z';
++const ACCESS_PAD = '2030-11-03T12:00:00.000Z';
++const livePlan = (ending: boolean) => ({
++  purchase_id: 'purchase-1', package_id: 'pkg-monthly', package_name: 'Monthly coaching',
++  state: 'active', entitlement_active: true, amount_cents: 4900, currency: 'usd',
++  interval: 'month', interval_count: 1, next_charge_at: ending ? null : PERIOD_END,
++  cancel_at_period_end: ending, access_ends_at: ending ? PERIOD_END : null,
++  can_cancel: !ending, can_resume: ending,
++});
++const paidRow = (ending: boolean) =>
++  purchase({ cancel_at_period_end: ending, current_period_end: PERIOD_END, access_expires_at: ACCESS_PAD });
++
++describe('B-MC-2: an ending plan never says Renews', () => {
++  it('cancel at period end reads "Ends <date>. Nothing more is charged."', async () => {
++    purchases = [paidRow(true)];
++    plans = [livePlan(true)];
++    const r = await render(<ClientPackagesScreen />);
++    await waitFor(() => expect(r.getByTestId('current-plan-line')).toBeTruthy());
++    // B-402-2: the period end, the same day Your plans shows, not the padded expiry.
++    expect(r.getByTestId('current-plan-line').props.children).toBe(
++      'Ends Nov 2, 2030. Nothing more is charged.',
++    );
++    await waitFor(() => expect(r.getByTestId('your-plan-line-purchase-1').props.children).toContain(
++      'November 2, 2030',
++    ));
++    // It will not renew, so no "keeps renewing" notice on the other plan.
++    expect(r.queryByTestId('plan-second-pkg-quarterly')).toBeNull();
++  });
++});
++
++describe('U-MC-3: a second plan does not replace a renewing one', () => {
++  it('another plan says the current one keeps renewing alongside it', async () => {
++    purchases = [purchase({})];
++    const r = await render(<ClientPackagesScreen />);
++    await waitFor(() => expect(r.getByTestId('plan-second-pkg-quarterly')).toBeTruthy());
++    expect(r.getByTestId('plan-second-pkg-quarterly').props.children).toBe(
++      'Monthly coaching keeps renewing alongside this plan. To switch, end Monthly coaching in Your plans first.',
++    );
++    expect(r.queryByTestId('plan-second-pkg-monthly')).toBeNull();
++  });
++});
++
++describe('U-MC-4: a past-due plan offers Update card on the plan', () => {
++  it('Your plans shows Update card and opens the native card screen', async () => {
++    purchases = [purchase({ status: 'past_due' })];
++    plans = [
++      {
++        purchase_id: 'purchase-1', package_id: 'pkg-monthly', package_name: 'Monthly coaching', state: 'past_due',
++        entitlement_active: true, amount_cents: 4900, currency: 'usd', interval: 'month', interval_count: 1,
++        next_charge_at: null, cancel_at_period_end: false, access_ends_at: null, can_cancel: true, can_resume: false,
++      },
++    ];
++    const r = await render(<ClientPackagesScreen />);
++    await waitFor(() => expect(r.getByTestId('your-plan-update-card-purchase-1')).toBeTruthy());
++    expect(r.getByTestId('your-plan-line-purchase-1').props.children).toBe(
++      'The last payment did not go through. To keep this plan, choose Update card. To end it now, choose End my plan.',
++    );
++    expect(r.getByTestId('current-plan-line').props.children).toBe('The last payment did not go through.');
++    await fireEvent.press(r.getByTestId('your-plan-update-card-purchase-1'));
++    expect(mockNavigate).toHaveBeenCalledWith('UpdateCard', { autostart: true });
++  });
++});
++
++describe('U-MC-5: the plans screen has a back control', () => {
++  it('shows Back when there is a screen to return to', async () => {
++    mockCanGoBack = true;
++    const r = await render(<ClientPackagesScreen />);
++    await waitFor(() => expect(r.getByTestId('client-packages-back')).toBeTruthy());
++    await fireEvent.press(r.getByTestId('client-packages-back'));
++    expect(mockGoBack).toHaveBeenCalledTimes(1);
++  });
++
++  it('shows no Back when opened from another tab with nothing beneath', async () => {
++    const r = await render(<ClientPackagesScreen />);
++    await waitFor(() => expect(r.getByTestId('client-packages-header')).toBeTruthy());
++    expect(r.queryByTestId('client-packages-back')).toBeNull();
++  });
++});
++
++describe('B-402-1: End my plan / Keep my plan update the charge summary', () => {
++  it('after End my plan succeeds, Current plan says Ends and the other plan has no renewing notice', async () => {
++    purchases = [paidRow(false)];
++    plans = [livePlan(false)];
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === '/v1/checkout/subscriptions/purchase-1/cancel') {
++        purchases = [paidRow(true)];
++        plans = [livePlan(true)];
++        return { data: {
++          purchase_id: 'purchase-1', outcome: 'scheduled', access_ends_at: PERIOD_END,
++          voided_invoice_count: 0, voided_amount_cents: 0, currency: 'usd', paid_period_kept: false,
++        } };
++      }
++      throw new Error(`unexpected POST ${url}`);
++    });
++    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++    try {
++      const r = await render(<ClientPackagesScreen />);
++      await waitFor(() => expect(r.getByTestId('your-plan-end-purchase-1')).toBeTruthy());
++      expect(r.getByTestId('current-plan-line').props.children).toBe('Renews Nov 2, 2030');
++      expect(r.getByTestId('plan-second-pkg-quarterly')).toBeTruthy();
++      await fireEvent.press(r.getByTestId('your-plan-end-purchase-1'));
++      const confirm = alert.mock.calls[0][2]?.find((b) => b.style === 'destructive');
++      expect(confirm?.onPress).toBeTruthy();
++      await act(async () => { confirm?.onPress?.(); });
++      await waitFor(() => expect(r.getByTestId('your-plan-line-purchase-1').props.children).toContain('will not renew'));
++      await waitFor(() => expect(r.getByTestId('current-plan-line').props.children).toBe(
++        'Ends Nov 2, 2030. Nothing more is charged.',
++      ));
++      expect(r.queryByTestId('plan-second-pkg-quarterly')).toBeNull();
++      // The cancel receipt in Your plans survives the summary refresh.
++      expect(r.getByTestId('your-plan-line-purchase-1').props.children).toContain('will not renew');
++    } finally {
++      alert.mockRestore();
++    }
++  });
++
++  it('after Keep my plan succeeds, Current plan says Renews and the other plan shows the renewing notice', async () => {
++    purchases = [paidRow(true)];
++    plans = [livePlan(true)];
++    mockPost.mockImplementation(async (url: string) => {
++      if (url === '/v1/checkout/subscriptions/purchase-1/resume') {
++        purchases = [paidRow(false)];
++        plans = [livePlan(false)];
++        return { data: livePlan(false) };
++      }
++      throw new Error(`unexpected POST ${url}`);
++    });
++    const r = await render(<ClientPackagesScreen />);
++    await waitFor(() => expect(r.getByTestId('your-plan-keep-purchase-1')).toBeTruthy());
++    expect(r.getByTestId('current-plan-line').props.children).toBe('Ends Nov 2, 2030. Nothing more is charged.');
++    expect(r.queryByTestId('plan-second-pkg-quarterly')).toBeNull();
++    await fireEvent.press(r.getByTestId('your-plan-keep-purchase-1'));
++    await waitFor(() => expect(r.getByTestId('your-plan-line-purchase-1').props.children).toContain('Next charge of'));
++    await waitFor(() => expect(r.getByTestId('current-plan-line').props.children).toBe('Renews Nov 2, 2030'));
++    expect(r.getByTestId('plan-second-pkg-quarterly')).toBeTruthy();
++  });
++});
+diff --git a/src/api/clientPaymentsApi.ts b/src/api/clientPaymentsApi.ts
+index ea0d29f0..608a1bf4 100644
+--- a/src/api/clientPaymentsApi.ts
++++ b/src/api/clientPaymentsApi.ts
+@@ -133,12 +133,16 @@ export interface ClientPurchase {
+     | 'pending'
+     | 'paid'
+     | 'active'
++    | 'trialing'
+     | 'past_due'
++    | 'unpaid'
+     | 'canceled'
+     | 'payment_failed'
+     | 'expired';
+   entitlement_active: boolean;
+   access_expires_at: string | null;
++  /** ClientPurchase.trial_ends_at (present on current backends). */
++  trial_ends_at?: string | null;
+   current_period_end: string | null;
+   cancel_at_period_end: boolean;
+   canceled_at: string | null;
+@@ -287,9 +291,10 @@ export interface CheckoutSession {
+ export interface ClientPaymentStatus {
+   /**
+    * - 'active'    — subscription healthy
+-   * - 'trialing'  — inside trial window (not exposed by backend yet)
++   * - 'trialing'  — inside trial window (purchase status trialing)
+    * - 'past_due'  — last invoice failed, in retry window
+-   * - 'canceled'  — subscription ended
++   * - 'canceled'  — canceled but access still runs (access_expires_at); a
++   *                 plan with no access left is not current (B-MC-1)
+    * - 'none'      — no subscription yet (coach manages access externally)
+    */
+   state: 'active' | 'trialing' | 'past_due' | 'canceled' | 'none';
+@@ -306,6 +311,10 @@ export interface ClientPaymentStatus {
+   package_name: string | null;
+   current_period_end: string | null;
+   trial_ends_at: string | null;
++  /** The client ended this plan; it stops at the period end (B-MC-2). */
++  cancel_at_period_end?: boolean;
++  /** When access ends for a one-time or canceled plan, if the row says. */
++  access_expires_at?: string | null;
+   /**
+    * Set when state === 'past_due'. The backend renders a human summary
+    * (e.g. "Your last payment failed on May 12. Update your card to keep access.")
+@@ -563,22 +572,28 @@ export const clientPaymentsApi = {
+         return Number.isNaN(ts) || ts > now;
+       }) ?? null;
+ 
+-    // Surface a past_due or canceled signal even when entitlement has
+-    // already been turned off, so the screen can still show the user
+-    // what happened. Picks the most recent matching row.
++    // Surface a past_due signal even when entitlement has already been
++    // turned off, so the screen can still show the user what happened
++    // (the fix is a card update, not a second plan). Picks the most
++    // recent matching row.
++    // MONEY-CLIENT-124 B-MC-1: a plan that has ENDED (canceled, no access)
++    // is no longer the client's current plan. Choosing it marked that plan
++    // "Current plan" with its buy button disabled and "Renews <past date>",
++    // so a client whose plan ended could never start it again.
+     const pastDuePurchase = purchasesResult.data.find((p) => p.status === 'past_due') ?? null;
+-    const canceledPurchase = purchasesResult.data.find((p) => p.status === 'canceled') ?? null;
+ 
+-    const chosen = activePurchase ?? pastDuePurchase ?? canceledPurchase ?? null;
++    const chosen = activePurchase ?? pastDuePurchase ?? null;
+     const state: ClientPaymentStatus['state'] = chosen
+-      ? chosen.status === 'past_due'
++      ? chosen.status === 'past_due' || chosen.status === 'unpaid' // unpaid: still in grace
+         ? 'past_due'
+         : chosen.status === 'canceled'
+           ? 'canceled'
+-          : chosen.entitlement_active &&
+-              (chosen.status === 'paid' || chosen.status === 'active')
+-            ? 'active'
+-            : 'none'
++          : chosen.status === 'trialing'
++            ? 'trialing'
++            : chosen.entitlement_active &&
++                (chosen.status === 'paid' || chosen.status === 'active')
++              ? 'active'
++              : 'none'
+       : 'none';
+ 
+     const packageId = chosen?.package_id ?? null;
+@@ -594,9 +609,12 @@ export const clientPaymentsApi = {
+         package_id: packageId,
+         package_name: packageName,
+         current_period_end: chosen?.current_period_end ?? null,
+-        // Backend has no trial column today. Null tells the UI to omit
+-        // the trial row instead of fabricating a date (rule 18).
+-        trial_ends_at: null,
++        // The purchase row's trial end when it carries one; null tells the
++        // UI to omit the trial row instead of fabricating a date (rule 18).
++        trial_ends_at: chosen?.trial_ends_at ?? null,
++        // B-MC-2: an ended-at-period-end plan says when it ends, never "Renews".
++        cancel_at_period_end: chosen?.cancel_at_period_end === true,
++        access_expires_at: chosen?.access_expires_at ?? null,
+         // No client-facing dunning route exists today — see file header
+         // TODO. The past-due banner in `ClientPackagesScreen` is wired
+         // and will render the moment this stops being null.
+diff --git a/src/components/purchase/YourPlansPanel.tsx b/src/components/purchase/YourPlansPanel.tsx
+index da06ddcd..7fd11639 100644
+--- a/src/components/purchase/YourPlansPanel.tsx
++++ b/src/components/purchase/YourPlansPanel.tsx
+@@ -79,6 +79,12 @@ export const YOUR_PLANS_COPY = {
+   // B-344-5: the native Update card is not on this tree (lockout #352-#354).
+   pastDue:
+     "The last payment did not go through. To keep this plan, message your coach about the payment. To end it now, choose End my plan.",
++  // MONEY-CLIENT-124 U-MC-4: the card fix sits on the plan itself (the
++  // native Update card screen also pays the open invoice). The coach cannot
++  // change a client's card.
++  pastDueUpdateCard:
++    "The last payment did not go through. To keep this plan, choose Update card. To end it now, choose End my plan.",
++  updateCard: "Update card",
+   paymentFailed:
+     "The first payment for this plan did not go through, so it has not started and nothing more is charged. Choose the plan below to start it with another card.",
+   endedNow: "This plan has ended. Nothing more is charged.",
+@@ -132,8 +138,14 @@ const agrees = (r: Receipt, p: ClientPlan | undefined) =>
+ 
+ export default function YourPlansPanel({
+   reloadKey = 0,
++  onUpdateCard,
++  onPlanChanged,
+ }: {
+   reloadKey?: number;
++  /** Opens the native Update card screen; absent keeps the coach copy. */
++  onUpdateCard?: () => void;
++  /** B-402-1: End / Keep succeeded, so the screen's own plan summary re-reads. */
++  onPlanChanged?: () => void;
+ }) {
+   const { semanticColors, tokens } = useTheme();
+   const styles = useMemo(
+@@ -240,6 +252,7 @@ export default function YourPlansPanel({
+           });
+         }
+         await load();
++        if (mounted.current) onPlanChanged?.();
+       } catch (err) {
+         if (!mounted.current) return;
+         const n = describePlanActionFailure(err, action);
+@@ -250,7 +263,7 @@ export default function YourPlansPanel({
+         if (mounted.current) setBusyId(null);
+       }
+     },
+-    [load],
++    [load, onPlanChanged],
+   );
+ 
+   const stale = list.kind === "failed" || list.kind === "unavailable";
+@@ -370,7 +383,9 @@ export default function YourPlansPanel({
+             : plan.state === "confirming"
+               ? YOUR_PLANS_COPY.confirming
+               : plan.state === "past_due"
+-                ? YOUR_PLANS_COPY.pastDue
++                ? onUpdateCard
++                  ? YOUR_PLANS_COPY.pastDueUpdateCard
++                  : YOUR_PLANS_COPY.pastDue
+                 : plan.state === "payment_failed"
+                   ? YOUR_PLANS_COPY.paymentFailed
+                   : plan.cancelAtPeriodEnd
+@@ -410,6 +425,17 @@ export default function YourPlansPanel({
+               </Text>
+             ) : null}
+             {n?.support ? support : null}
++            {plan.state === "past_due" && onUpdateCard && !receipt ? (
++              <Pressable
++                onPress={onUpdateCard}
++                style={styles.action}
++                accessibilityRole="button"
++                accessibilityLabel={`${YOUR_PLANS_COPY.updateCard}, ${plan.packageName}`}
++                testID={`your-plan-update-card-${plan.purchaseId}`}
++              >
++                <Text style={styles.actionText}>{YOUR_PLANS_COPY.updateCard}</Text>
++              </Pressable>
++            ) : null}
+             {plan.canCancel ? (
+               <Pressable
+                 onPress={() => confirmEnd(plan)}
+diff --git a/src/screens/client/ClientPackagesScreen.tsx b/src/screens/client/ClientPackagesScreen.tsx
+index 9f671d9c..e2d287e0 100644
+--- a/src/screens/client/ClientPackagesScreen.tsx
++++ b/src/screens/client/ClientPackagesScreen.tsx
+@@ -97,6 +97,43 @@ function formatDate(iso: string | null): string | null {
+   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+ }
+ 
++/**
++ * MONEY-CLIENT-124: the one line under "Current plan". B-MC-2: a plan the
++ * client ended (cancel at period end) or a canceled plan that still has
++ * access says when it ends, never "Renews"; a one-time plan says when its
++ * access runs out; a past-due plan says the payment did not go through.
++ */
++export function currentPlanLine(d: ClientPaymentStatus): string {
++  if (d.state === 'past_due') return 'The last payment did not go through.';
++  if (d.state === 'canceled' || d.cancel_at_period_end) {
++    // B-402-2: access ends with the billing period (Your plans shows that
++    // date); access_expires_at carries a 24 h renewal pad on paid rows.
++    const ends = formatDate(d.current_period_end) ?? formatDate(d.access_expires_at ?? null);
++    return ends
++      ? `Ends ${ends}. Nothing more is charged.`
++      : 'Ends at the close of this period. Nothing more is charged.';
++  }
++  if (d.state === 'trialing' && d.trial_ends_at) {
++    return `Trial ends ${formatDate(d.trial_ends_at)}`;
++  }
++  if (d.current_period_end) {
++    const renews = formatDate(d.current_period_end);
++    if (renews) return `Renews ${renews}`;
++  }
++  const until = formatDate(d.access_expires_at ?? null);
++  return until ? `Access until ${until}` : '';
++}
++
++function isRenewing(pkg: ClientCoachPackage | undefined): boolean {
++  if (!pkg) return false;
++  return pkg.purchasable ? pkg.purchasable.renewing : pkg.type === 'recurring';
++}
++
++/** U-MC-3: buying another plan never replaces a renewing one. */
++export function secondPlanNotice(currentName: string): string {
++  return `${currentName} keeps renewing alongside this plan. To switch, end ${currentName} in Your plans first.`;
++}
++
+ function DunningBanner({
+   dunning,
+   onUpdateCard,
+@@ -188,6 +225,14 @@ export default function ClientPackagesScreen() {
+   }, [load]);
+ 
+   const { refreshEntitlement } = useEntitlement();
++
++  // B-402-1: after End my plan / Keep my plan succeeds, Current plan, the
++  // buy buttons and the second-plan notice re-read payment status. Only the
++  // status is re-read: bumping plansTick would clear the panel's receipt.
++  const onPlanChanged = useCallback(() => {
++    void clientPaymentsApi.getPaymentStatus().then(setStatus);
++    void refreshEntitlement().catch(() => false);
++  }, [refreshEntitlement]);
+   const { appearance, colorScheme } = usePaymentSheetAppearance();
+   const purchase = usePackagePurchase({
+     surface: 'plans',
+@@ -258,6 +303,19 @@ export default function ClientPackagesScreen() {
+         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={semanticColors.accent} />
+       }
+     >
++      {/* U-MC-5: the More stack hides headers, so the screen brings its own
++          back control (cross-tab opens have nothing to go back to). */}
++      {navigation.canGoBack?.() ? (
++        <TouchableOpacity
++          onPress={() => navigation.goBack()}
++          style={styles.backBtn}
++          accessibilityRole="button"
++          accessibilityLabel="Back"
++          testID="client-packages-back"
++        >
++          <Ionicons name="arrow-back" size={24} color={semanticColors.textPrimary} />
++        </TouchableOpacity>
++      ) : null}
+       <Text style={styles.header} testID="client-packages-header">
+         {oneToOneCoachingLabel(coachName)}
+       </Text>
+@@ -282,21 +340,19 @@ export default function ClientPackagesScreen() {
+       <SmartDunningBanner surface="ClientPackagesScreen" />
+ 
+       {/* Renewing plans: next charge, End my plan / Keep my plan */}
+-      <YourPlansPanel reloadKey={plansTick} />
++      <YourPlansPanel
++        reloadKey={plansTick}
++        onUpdateCard={handleUpdateCard}
++        onPlanChanged={onPlanChanged}
++      />
+ 
+       {/* Current plan summary */}
+       {status.ok && status.data.state !== 'none' && status.data.package_name ? (
+         <View style={styles.currentPlanCard}>
+           <Text style={styles.currentPlanLabel}>Current plan</Text>
+           <Text style={styles.currentPlanName}>{status.data.package_name}</Text>
+-          <Text style={styles.currentPlanSub}>
+-            {status.data.state === 'trialing' && status.data.trial_ends_at
+-              ? `Trial ends ${formatDate(status.data.trial_ends_at)}`
+-              : status.data.state === 'past_due'
+-              ? 'Past due — see banner above'
+-              : status.data.current_period_end
+-              ? `Renews ${formatDate(status.data.current_period_end)}`
+-              : ''}
++          <Text style={styles.currentPlanSub} testID="current-plan-line">
++            {currentPlanLine(status.data)}
+           </Text>
+           {/* PR-13 — buyer-facing Deliverables entry. Two gates:
+               (1) feature flag `deliverables` — OFF in production until
+@@ -384,6 +440,18 @@ export default function ClientPackagesScreen() {
+             // (the backend CoachPackage schema has no such column —
+             // backend prisma/schema.prisma:2942-3000).
+             const current = status.ok && status.data.package_id === pkg.id;
++            // U-MC-3: a live renewing plan keeps charging when another plan
++            // is bought (each plan is its own subscription), so say so.
++            const st = status.ok ? status.data : null;
++            const renewingName =
++              st &&
++              !current &&
++              st.package_name &&
++              (st.state === 'active' || st.state === 'trialing' || st.state === 'past_due') &&
++              !st.cancel_at_period_end &&
++              isRenewing(packages.data.find((p) => p.id === st.package_id))
++                ? st.package_name
++                : null;
+             return (
+               <View key={pkg.id} style={styles.pkgCard}>
+                 <View style={styles.pkgHeader}>
+@@ -411,6 +479,11 @@ export default function ClientPackagesScreen() {
+                   </View>
+                 ) : null}
+                 {sellable && !current ? <PlanTermsBlock pkg={sellable} testID={`plan-terms-${pkg.id}`} /> : null}
++                {sellable && renewingName ? (
++                  <Text style={styles.pkgDesc} testID={`plan-second-${pkg.id}`}>
++                    {secondPlanNotice(renewingName)}
++                  </Text>
++                ) : null}
+                 {active ? (
+                   <PurchaseFeedback
+                     purchase={purchase}
+@@ -493,6 +566,7 @@ const makeStyles = (semanticColors: SemanticTokens, tokens: Tokens) =>
+       justifyContent: 'center',
+       backgroundColor: semanticColors.bgPrimary,
+     },
++    backBtn: { width: 44, height: 44, justifyContent: 'center', marginLeft: -10, marginTop: -12 },
+     header: { fontSize: 28, fontWeight: '600', color: semanticColors.textPrimary, marginBottom: 4 },
+     subheader: {
+       fontSize: 13,
+diff --git a/src/screens/client/MembershipScreen.tsx b/src/screens/client/MembershipScreen.tsx
+index 93b8f666..2d661d9f 100644
+--- a/src/screens/client/MembershipScreen.tsx
++++ b/src/screens/client/MembershipScreen.tsx
+@@ -165,8 +165,9 @@ export default function MembershipScreen() {
+               <Text style={styles.explainBody}>
+                 The Growth Project is a coach-managed platform. Your coach
+                 invites you, sets your training and nutrition plan, and may
+-                offer self-serve plans below. To pause, change tier, or
+-                cancel, message your coach directly.
++                offer self-serve plans below. A plan paid in the app shows
++                under View coaching plans, where a renewing plan can be ended
++                at any time. To pause or change a plan, message your coach.
+               </Text>
+             </View>
+ 
+diff --git a/src/screens/client/MoreScreen.tsx b/src/screens/client/MoreScreen.tsx
+index 39633287..29c5bddf 100644
+--- a/src/screens/client/MoreScreen.tsx
++++ b/src/screens/client/MoreScreen.tsx
+@@ -99,7 +99,7 @@ const MORE_ITEMS: MoreItem[] = [
+   {
+     icon: 'ribbon-outline',
+     label: 'Membership',
+-    description: 'Your access and coaching tier',
++    description: 'Your plan, payments and access',
+     target: { type: 'stack', screen: 'Membership' },
+     a11yHint: 'Opens membership and access details',
+   },

@@ -1,0 +1,104 @@
+{
+  "repo": "mobile",
+  "number": 409,
+  "head": "e1239b1129841a51519450163463959fc8d0154f",
+  "base": "321274f36939e25a2cdf19ec2b840bda4b395967",
+  "title": "fix(auth): remove private onboarding and client caches before account switches",
+  "body": "## HUNT-08-124 (agent 124) \u2014 T4\n\nThree ordinary sequential-account privacy/data-integrity failures:\n\n- B-08-1: A client completes onboarding and logs out; the next client on the phone skips optional metrics and receives the previous person's health answers in their own saved profile.\n- B-08-2: A coach opens a client and logs out; another coach signs in and sees the first coach's client names/email in the Recent picker.\n- B-08-3: A client saves Day-1 progress offline and later logs out; the next account resumes the previous person's goals and can replay their pending preferences into its own profile.\n\n## Fix\n\nAdd the three raw AsyncStorage keys to the existing awaited sign-out sweep. These keys are outside MMKV and therefore were not covered by `clearAllStorage()`. No API, payload, dependency, navigation, permissions or server changes.\n\n155 changed lines including tests; six implementation lines.\n\n## Failing-first proof\n\nTest-only commit `cc9527638ba1be3b25be4d19f7607e83fa63977c` precedes the fix.\nBaseline CI lane: https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37522150429\n\nThe baseline has four expected behavioral failures and one passing same-account persistence control. The suite checks actual saved answers, profile payload fields, Recent rows, pending Day-1 writes, and deletion before logout. Same-account stored progress survives until logout; unrelated raw appearance settings survive logout.\n\nThe PR's own CI supplies typecheck/lint/full Jest and CodeQL. No additional lane beyond the one red baseline.\n\n## Review and owner steps\n\nDual exact-head T4 review required. No dashboard-only fix or owner decision for this slice.\nNo production writes, signup, payment-provider calls, deployments, runner cancellation or dependency changes.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 155,
+  "deletions": 0,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/409",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/409#issuecomment-6024420646",
+      "body": "FIX ROUND 1 (OPENING) (HUNT-08-124, agent 124) \u2014 growth-project-mobile#409 @ e1239b1129841a51519450163463959fc8d0154f \u2014 READY FOR AUDIT\n\nT4: account privacy + health profile integrity. A/B/U/C = 0/0/0/0 open for this slice; three Bs fixed (normal sequential taps, not concurrent races).\n\n- B-08-1: Next client skipping optional onboarding metrics inherited the previous person's health answers into their own profile.\n- B-08-2: Next coach saw the previous coach's clients' names/email in the Recent picker.\n- B-08-3: Next client inherited Day-1 goals and pending preferences on the same phone.\n\nFix is six implementation lines adding three raw AsyncStorage keys to the existing awaited sign-out sweep; MMKV's namespace clear did not include these keys. 155 changed lines including tests.\n\nFailing-first: https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37522150429 \u2014 four expected behavioral failures, one passing same-account persistence control, tests committed before the fix.\n\nExact-head PR CI: https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37522502082 \u2014 SUCCESS (596 suites, 8,257 tests; typecheck/lint/guards passed).\nCodeQL: https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37522502078 \u2014 SUCCESS.\n\nNo owner dashboard change or product decision for this slice. Dual exact-head lenses required before merge. A separate draft #411 covers offline Day-1 queue resume and is NOT ready yet; do not confuse its state with #409.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112471542223",
+      "id": 112471542223,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A409+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112471542223/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37522502078/job/112471189155",
+      "id": 112471189155,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112471189155/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37522502078/job/112471188592",
+      "id": 112471188592,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 3,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112471188592/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37522502082/job/112471187805",
+      "id": 112471187805,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 10,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112471187805/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "5e99ad48bb7a6135a6a8797450900885c0e9558a",
+      "filename": "src/services/__tests__/authActions.accountSwitch124.test.ts",
+      "status": "added",
+      "additions": 149,
+      "deletions": 0,
+      "changes": 149,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/e1239b1129841a51519450163463959fc8d0154f/src%2Fservices%2F__tests__%2FauthActions.accountSwitch124.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/e1239b1129841a51519450163463959fc8d0154f/src%2Fservices%2F__tests__%2FauthActions.accountSwitch124.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fservices%2F__tests__%2FauthActions.accountSwitch124.test.ts?ref=e1239b1129841a51519450163463959fc8d0154f",
+      "patch": "@@ -0,0 +1,149 @@\n+import AsyncStorage from '@react-native-async-storage/async-storage';\n+import { signOut } from '../authActions';\n+import { authEvents } from '../../utils/authEvents';\n+import { getOnboardingData, saveOnboardingData } from '../../utils/onboardingStore';\n+import { finalizeLeanOnboarding } from '../../lib/finalizeLeanOnboarding';\n+import { pushRecentClient, readRecentClients } from '../../lib/recentClients';\n+import { enqueuePending, flushPendingSync, readResumeState, writeResumeState } from '../../screens/day-one/resume';\n+import { profileApi } from '../api';\n+import { saveGoals, saveCheckInTime } from '../../screens/day-one/api';\n+\n+jest.mock('../api', () => ({\n+  usersApi: { updatePushToken: jest.fn(async () => ({ data: {} })) },\n+  profileApi: {\n+    get: jest.fn(async () => ({ data: {} })),\n+    update: jest.fn(async () => ({ data: {} })),\n+  },\n+}));\n+jest.mock('../../screens/day-one/api', () => ({\n+  saveGoals: jest.fn(async () => undefined),\n+  saveNotifPermission: jest.fn(async () => undefined),\n+  saveCheckInTime: jest.fn(async () => undefined),\n+  completeDayOne: jest.fn(async () => undefined),\n+}));\n+jest.mock('../sentry', () => ({ setSentryUser: jest.fn() }));\n+jest.mock('../../lib/analytics', () => ({ reset: jest.fn(), track: jest.fn() }));\n+jest.mock('../../lib/userCache', () => ({\n+  readUserCacheSync: jest.fn(() => ({ id: 'person-A' })),\n+  readUserCache: jest.fn(async () => ({ id: 'person-A' })),\n+  clearUserCache: jest.fn(async () => undefined),\n+  patchUserCache: jest.fn(async () => undefined),\n+}));\n+jest.mock('../../offline/sync/sync-engine', () => ({\n+  deleteWorkoutLogsForUser: jest.fn(async () => 0),\n+}));\n+jest.mock('../../storage/mmkv', () => ({\n+  clearAllStorage: jest.fn(async () => undefined),\n+  prefsStorage: {\n+    getAllKeys: jest.fn(async () => []),\n+    delete: jest.fn(async () => undefined),\n+    getString: () => undefined,\n+  },\n+  cacheStorage: {\n+    getAllKeys: jest.fn(async () => []),\n+    delete: jest.fn(async () => undefined),\n+    getString: () => undefined,\n+  },\n+}));\n+jest.mock('../../db/fastingDb', () => ({\n+  getActiveFast: jest.fn(async () => null),\n+  getFastingHistory: jest.fn(async () => []),\n+  startFast: jest.fn(async () => undefined),\n+  endFast: jest.fn(async () => undefined),\n+}));\n+\n+describe('HUNT-08: ordinary sequential account switches', () => {\n+  beforeEach(async () => {\n+    await AsyncStorage.clear();\n+    jest.clearAllMocks();\n+  });\n+\n+  it('B-08-1: never sends the previous person\u2019s optional health answers to the next profile', async () => {\n+    await saveOnboardingData({\n+      currentWeight: 83,\n+      height: 181,\n+      dob: '1992-06-15',\n+      sex: 'male',\n+      targetWeight: 78,\n+      dietType: 'vegetarian',\n+      restrictions: ['gluten'],\n+    });\n+    await signOut('person-A');\n+\n+    // Person B answers the required questions and skips optional metrics.\n+    await saveOnboardingData({ primaryGoal: 'build_muscle', fitnessLevel: 'new', intent: 'explore' });\n+    expect(await getOnboardingData()).toEqual({\n+      primaryGoal: 'build_muscle',\n+      fitnessLevel: 'new',\n+      intent: 'explore',\n+    });\n+    expect(await finalizeLeanOnboarding()).toEqual({ ok: true, computedMacros: false });\n+    const payload = (profileApi.update as jest.Mock).mock.calls[0][0];\n+    expect(payload.onboarding_completed).toBe(true);\n+    for (const key of ['current_weight', 'height_cm', 'dob', 'sex', 'target_weight', 'diet_type', 'diet_restrictions', 'tdee']) {\n+      expect(payload).not.toHaveProperty(key);\n+    }\n+  });\n+\n+  it('B-08-2: the next coach sees no names or emails from the previous coach\u2019s Recent picker', async () => {\n+    await pushRecentClient({ email: 'private-client@example.com', name: 'Previous client', pillars: ['fitness'] });\n+    expect((await readRecentClients())[0].email).toBe('private-client@example.com');\n+\n+    await signOut('coach-A');\n+\n+    expect(await readRecentClients()).toEqual([]);\n+    expect(await AsyncStorage.getItem('tgp.recent_clients.v1')).toBeNull();\n+  });\n+\n+  it('B-08-3: does not resume or replay the previous person\u2019s Day-1 goals into the next account', async () => {\n+    await writeResumeState({ step: 'CheckInTime', draft: { goals: ['fitness'], inviteCode: 'GP-EXAMPLE' } });\n+    await enqueuePending({ kind: 'goals', goals: ['fitness'] });\n+    await enqueuePending({ kind: 'checkin', time: { hour: 8, minute: 0 }, timezone: 'America/Los_Angeles' });\n+\n+    await signOut('person-A');\n+\n+    expect(await readResumeState()).toBeNull();\n+    expect(await flushPendingSync()).toBe(0);\n+    expect(saveGoals).not.toHaveBeenCalled();\n+    expect(saveCheckInTime).not.toHaveBeenCalled();\n+  });\n+\n+  it('purges all three private raw keys before the logout event exposes the next sign-in screen', async () => {\n+    await saveOnboardingData({ currentWeight: 83 });\n+    await pushRecentClient({ email: 'private-client@example.com', name: 'Previous client', pillars: ['fitness'] });\n+    await writeResumeState({ step: 'Goals', draft: { goals: ['fitness'] } });\n+    let keysAtLogout: Promise<(string | null)[]> | undefined;\n+    const onLogout = () => {\n+      keysAtLogout = Promise.all([\n+        AsyncStorage.getItem('onboarding_data'),\n+        AsyncStorage.getItem('tgp.recent_clients.v1'),\n+        AsyncStorage.getItem('day_one_onboarding_state_v1'),\n+      ]);\n+    };\n+    authEvents.on('logout', onLogout);\n+    try {\n+      await signOut('person-A');\n+      expect(keysAtLogout).toBeDefined();\n+      expect(await keysAtLogout).toEqual([null, null, null]);\n+    } finally {\n+      authEvents.off('logout', onLogout);\n+    }\n+  });\n+\n+  it('still restores persisted progress after a process restart without sign-out', async () => {\n+    await saveOnboardingData({ currentWeight: 83, height: 181 });\n+    await writeResumeState({ step: 'CheckInTime', draft: { goals: ['fitness'] } });\n+    await enqueuePending({ kind: 'goals', goals: ['fitness'] });\n+\n+    // These readers fetch storage again; no component memory is involved.\n+    expect(await getOnboardingData()).toEqual({ currentWeight: 83, height: 181 });\n+    expect(await readResumeState()).toMatchObject({\n+      step: 'CheckInTime',\n+      draft: { goals: ['fitness'] },\n+      pendingSync: [{ kind: 'goals', goals: ['fitness'] }],\n+    });\n+    await AsyncStorage.setItem('appearance', 'dark');\n+    await signOut('person-A');\n+    expect(await AsyncStorage.getItem('appearance')).toBe('dark');\n+  });\n+});"
+    },
+    {
+      "sha": "8d95bc012c1022986f680c4b73de776bd4c58ce5",
+      "filename": "src/services/authActions.ts",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 0,
+      "changes": 6,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/e1239b1129841a51519450163463959fc8d0154f/src%2Fservices%2FauthActions.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/e1239b1129841a51519450163463959fc8d0154f/src%2Fservices%2FauthActions.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fservices%2FauthActions.ts?ref=e1239b1129841a51519450163463959fc8d0154f",
+      "patch": "@@ -49,6 +49,12 @@ const ASYNC_SIGN_OUT_KEYS = [\n   'user_data',\n   'needs_role_selection',\n   'onboarding_complete',\n+  // Raw AsyncStorage drafts are outside the MMKV namespaces cleared below.\n+  // Never let the next account inherit optional health answers, replay the\n+  // previous person's Day-1 goals, or see another coach's recent clients.\n+  'onboarding_data',\n+  'day_one_onboarding_state_v1',\n+  'tgp.recent_clients.v1',\n   // Legacy global macro cache (no user suffix). Per-user macro_targets:<id>\n   // keys are wiped via PER_USER_KEY_PREFIXES with the exact signing-out id.\n   'macro_targets',"
+    }
+  ]
+}

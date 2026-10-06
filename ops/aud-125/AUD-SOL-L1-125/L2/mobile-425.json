@@ -1,0 +1,176 @@
+{
+  "repo": "mobile",
+  "number": 425,
+  "head": "fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc",
+  "base": "a1904f2f4e8d175a38d6eb627303a2312e2b1ace",
+  "title": "fix(coach-ai): AI meal plans generate, AI programs never claim an assignment, no dead Ask AI pill (AUDIT-14-125)",
+  "body": "Tier: T3\nWhy: coach AI surfaces (AI meal plan request body, AI program approval copy, the Ask AI entry point); a wrong change could send a client's allergy information to the model incorrectly or mislead a coach about what reached the client.\nT4 trigger scan: none (no auth, RLS/tenancy, money, credentials or destructive data; client data sent to the model is unchanged: allergies and dietary restrictions still travel in `notes`, as they already did; consent gating is server-side and untouched).\nT3 trigger scan: AI request contract (POST /coach/ai/meal-plan body) and customer-facing AI copy.\nBounded T1: NO (AI surface, three files of product behaviour).\nCanonical builder: Claude Opus 5.5 (AUDIT-14-125, agent 125)\nParent owner: operator agent 125\nAcceptance evidence: `src/__tests__/coachAi.test.tsx` new case (meal-plan body has only clientId/days/notes, allergies inside notes; fails on main, where the body carries `allergies` and `dietary_restrictions`); `src/utils/coach/__tests__/aiWorkoutApproveCopy.test.ts` (no \"assigned\" claim without a backend `assigned_count`). Full suite + tsc in this PR's CI.\nPromotion triggers: any change to what client data reaches the model, or to the approval/decision endpoints.\n\nWorks against the CURRENT production backend (ec12a4b3): no new endpoint is called; the approve copy reads an optional `assigned_count` that production does not send, so it falls back to the truthful \"saved to library\" text.\n\n## Fixes\n\n**B1 \u2014 AI workout program \"Approve & assign\" claims an assignment that never happens.** A coach taps Generate workout program, then Approve & assign, sees \"Workout program assigned to Sam\", but the backend (`CoachAIService.materializeWorkoutProgram`, src/ai/coach/coach-ai.service.ts) only creates unassigned workout plans in the coach's library, so Sam never receives anything and the coach believes he did. Fix: the button reads \"Approve\"; the alert says \"The program is saved to your workout library. Sam does not see it until it is assigned.\" and says \"N workouts assigned to Sam\" only if a future backend returns `assigned_count > 0` (operator item: backend auto-assign).\n\n**U1 \u2014 every AI meal plan generation fails with a 400.** A coach taps Generate meal plan, then Generate, and always gets an error: the app sends `allergies` and `dietary_restrictions` as body keys, and the backend `GenerateMealPlanDto` (global ValidationPipe, `forbidNonWhitelisted: true`, src/main.ts:97-103) refuses any undeclared key. Fix: send only clientId, days and notes; the allergies and restrictions were already mirrored into `notes` (unchanged), so the model still sees them.\n\n**U2 \u2014 Ask AI pill dead-ends.** A coach taps Ask AI on a client's Summary tab, drafts a check-in nudge, lands on Pending AI drafts, and Approve/Reject silently do nothing: the gateway stores the coach as the draft's requester and `AiApprovalService.decide` refuses a decision by the requester (403, src/ai/gateway/ai-approval.service.ts:92-94), and the screen has no error state. The coach's own Nudge button already sends the same push directly. Fix: the pill is not shown (SummaryTab renders it only when a caller wires it; ClientDetailScreen no longer does). The sheet copy issues (first person \"What should I help you draft\", visible developer note about a follow-up) go away with it.\n\n## Overlap\n`src/screens/coach/ClientDetailScreen.tsx` and `src/screens/coach/client-detail/SummaryTab.tsx` are also touched by m#404 (FOOD-COACH-124). This PR changes only the `onOpenAskAi` prop line, one comment, and the Ask AI pill block; m#404 changes the SummaryTab props/calorie card. Expected to merge cleanly in either order.\n\nSize: 174 changed lines (139 + 35), tests included.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 139,
+  "deletions": 35,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/425",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/425#issuecomment-6025671927",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-14-125, agent 125) \u2014 growth-project-mobile#425 @ fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc \u2014 READY FOR AUDIT\n\nCI at this head: Typecheck, lint, test SUCCESS; CodeQL SUCCESS. 174 changed lines (139+/35-), tests included.\n\nFixes (one-sentence user stories in the PR body):\n- B1: AI workout program approval no longer tells the coach \"assigned to <client>\" when the backend only saved library plans; copy switches to \"N workouts assigned\" only when a backend returns assigned_count > 0.\n- U1: AI meal plan generation no longer 400s (body is clientId/days/notes; allergies and restrictions stay in notes as before).\n- U2: the Ask AI pill (check-in nudge drafts the coach can never approve: requester self-decide 403) is no longer shown.\n\nWorks against the current production backend. Overlap: ClientDetailScreen.tsx and SummaryTab.tsx are also touched by m#404 (different hunks).\nCompanion backend PR (Save edits 400): growth-project-backend#793.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112503145006",
+      "id": 112503145006,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A425+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112503145006/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531724412/job/112502493765",
+      "id": 112502493765,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502493765/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531724412/job/112502493548",
+      "id": 112502493548,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502493548/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531724236/job/112502493264",
+      "id": 112502493264,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502493264/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "9616c2154fde77fbb29a6173381e12365759a17b",
+      "filename": "src/__tests__/coachAi.test.tsx",
+      "status": "modified",
+      "additions": 30,
+      "deletions": 0,
+      "changes": 30,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2F__tests__%2FcoachAi.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2F__tests__%2FcoachAi.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FcoachAi.test.tsx?ref=fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc",
+      "patch": "@@ -236,6 +236,36 @@ describe('CoachAiSection', () => {\n   });\n });\n \n+describe('CoachAiSection meal-plan body (AUDIT-14-125)', () => {\n+  it('sends only the keys the backend allow-list accepts, with allergies inside notes', async () => {\n+    // GenerateMealPlanDto (backend, forbidNonWhitelisted) accepts clientId,\n+    // days and notes. Extra keys such as allergies or dietary_restrictions\n+    // are refused with a 400, which failed every generation.\n+    mockedGet.mockResolvedValue(ok({ ready: true, modelUsed: 'claude-opus-4-7' }));\n+    mockedPost.mockResolvedValueOnce(ok({ draftId: 'm1', type: 'MEAL_PLAN', clientId: 'c1' }));\n+    const { findByTestId, findByText } = await renderWithNav(\n+      <CoachAiSection\n+        clientId=\"c1\"\n+        clientName=\"Jane Doe\"\n+        clientAllergies={['peanuts']}\n+        clientDietaryRestrictions={['gluten']}\n+      />,\n+    );\n+    const cta = await findByTestId('coach-ai-cta-meal');\n+    await waitFor(() =>\n+      expect(cta.props.accessibilityState).toEqual(expect.objectContaining({ disabled: false })),\n+    );\n+    fireEvent.press(cta);\n+    fireEvent.press(await findByText('Generate'));\n+    await waitFor(() => expect(mockedPost).toHaveBeenCalled());\n+    const [url, body] = mockedPost.mock.calls[0];\n+    expect(url).toBe('/coach/ai/meal-plan');\n+    expect(Object.keys(body).sort()).toEqual(['clientId', 'days', 'notes']);\n+    expect(body.notes).toContain('Allergies: peanuts.');\n+    expect(body.notes).toContain('Dietary restrictions: gluten.');\n+  });\n+});\n+\n // \u2500\u2500\u2500 5. AIWorkoutDraftScreen \u2014 edit/save flow \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n \n import AIWorkoutDraftScreen from '../screens/coach/AIWorkoutDraftScreen';"
+    },
+    {
+      "sha": "4e11882aaf885867802f0d6cf44c0cfa45b6af6d",
+      "filename": "src/components/coach/CoachAiSection.tsx",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 2,
+      "changes": 6,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Fcomponents%2Fcoach%2FCoachAiSection.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Fcomponents%2Fcoach%2FCoachAiSection.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fcoach%2FCoachAiSection.tsx?ref=fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc",
+      "patch": "@@ -281,9 +281,11 @@ export default function CoachAiSection({\n       const res = await coachAiApi.generateMealPlan({\n         clientId,\n         days,\n+        // The safety fields travel inside `notes` only: the backend body\n+        // allow-list (GenerateMealPlanDto, forbidNonWhitelisted) refuses any\n+        // other key with a 400, so sending them as their own keys failed\n+        // every generation.\n         notes: composedNotes || undefined,\n-        allergies: clientAllergies,\n-        dietary_restrictions: clientDietaryRestrictions,\n       });\n       const draftId = res.data.draftId;\n       closeModal();"
+    },
+    {
+      "sha": "1c7d2f0589e46b1067775ea9822bbc3aa80cde91",
+      "filename": "src/screens/coach/AIWorkoutDraftScreen.tsx",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 6,
+      "changes": 15,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Fscreens%2Fcoach%2FAIWorkoutDraftScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Fscreens%2Fcoach%2FAIWorkoutDraftScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FAIWorkoutDraftScreen.tsx?ref=fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc",
+      "patch": "@@ -7,7 +7,8 @@\n  *   2. Render the WorkoutPayload as an editable structure\n  *      (weeks \u2192 days \u2192 exercises). Inline edits update local state.\n  *   3. \"Save edits\" \u2192 POST /coach/ai/drafts/:draftId/edit { patch }\n- *   4. \"Approve & assign\" \u2192 POST /coach/ai/drafts/:draftId/approve \u2192\n+ *   4. \"Approve\" \u2192 POST /coach/ai/drafts/:draftId/approve \u2192 truthful\n+ *      saved/assigned alert (aiWorkoutApproveCopy) \u2192\n  *      navigate back to ClientDetail (workouts tab).\n  *   5. \"Reject\" \u2192 reason modal \u2192 POST /coach/ai/drafts/:draftId/reject.\n  *\n@@ -43,6 +44,7 @@ import type {\n   WorkoutPayload,\n } from '../../types/coachAi';\n import { errorMessage } from '../../types/common';\n+import { aiWorkoutApproveCopy } from '../../utils/coach/aiWorkoutApproveCopy';\n \n type Nav = NativeStackNavigationProp<ClientsStackParamList, 'AIWorkoutDraft'>;\n type R = RouteProp<ClientsStackParamList, 'AIWorkoutDraft'>;\n@@ -244,10 +246,11 @@ export default function AIWorkoutDraftScreen() {\n     if (!draft) return;\n     setApproving(true);\n     try {\n-      await coachAiApi.approveDraft(draft.draftId);\n+      const res = await coachAiApi.approveDraft(draft.draftId);\n+      const copy = aiWorkoutApproveCopy(clientName, res?.data);\n       Alert.alert(\n-        'Approved',\n-        `Workout program assigned to ${clientName}.`,\n+        copy.title,\n+        copy.body,\n         [\n           {\n             text: 'OK',\n@@ -466,10 +469,10 @@ export default function AIWorkoutDraftScreen() {\n             onPress={handleApprove}\n             disabled={approving}\n             accessibilityRole=\"button\"\n-            accessibilityLabel=\"Approve and assign\"\n+            accessibilityLabel=\"Approve draft\"\n           >\n             <Text style={styles.btnApproveText}>\n-              {approving ? 'Approving\u2026' : 'Approve & assign'}\n+              {approving ? 'Approving\u2026' : 'Approve'}\n             </Text>\n           </TouchableOpacity>\n         </View>"
+    },
+    {
+      "sha": "17a67d14a1648a23e1524abee803745d6944fa52",
+      "filename": "src/screens/coach/ClientDetailScreen.tsx",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 2,
+      "changes": 8,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Fscreens%2Fcoach%2FClientDetailScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Fscreens%2Fcoach%2FClientDetailScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FClientDetailScreen.tsx?ref=fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc",
+      "patch": "@@ -472,7 +472,6 @@ export default function ClientDetailScreen({ navigation, route }: Props) {\n               })\n             }\n             onOpenWorkoutBuilder={() => navigation.navigate('CoachWorkoutBuilder', undefined)}\n-            onOpenAskAi={() => setAskAiVisible(true)}\n             colors={colors}\n             styles={styles}\n           />\n@@ -612,7 +611,12 @@ export default function ClientDetailScreen({ navigation, route }: Props) {\n         styles={styles}\n       />\n \n-      {/* Stream 2 \u2014 Ask-AI sheet for the four execution capabilities.\n+      {/* AUDIT-14-125: the Ask AI pill is not wired (SummaryTab hides it).\n+          Every draft it creates names the coach as requester, and the\n+          gateway refuses a decision by the requester (403), so the coach\n+          could never approve or reject the nudge it created. The sheet\n+          stays mounted, closed, until the approval rule supports it.\n+          Stream 2 \u2014 Ask-AI sheet for the four execution capabilities.\n           Mounted always; `visible` controls render. On a successful\n           submit the sheet closes and we navigate to the pending-drafts\n           inbox so the coach sees their new draft land. */}"
+    },
+    {
+      "sha": "77aec22a8375c10c79bbd6fd0e5299daa6f9fcba",
+      "filename": "src/screens/coach/client-detail/SummaryTab.tsx",
+      "status": "modified",
+      "additions": 15,
+      "deletions": 13,
+      "changes": 28,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Fscreens%2Fcoach%2Fclient-detail%2FSummaryTab.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Fscreens%2Fcoach%2Fclient-detail%2FSummaryTab.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2Fclient-detail%2FSummaryTab.tsx?ref=fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc",
+      "patch": "@@ -41,7 +41,7 @@ export function SummaryTab({\n    * Stream 2 \u2014 opens the AskAiActionSheet for this client. Optional so\n    * existing usages of SummaryTab in other contexts (e.g. unit tests\n    * that don't mount the sheet wiring) don't have to supply it. When\n-   * omitted, the \"Ask AI\" pill renders disabled.\n+   * omitted, the \"Ask AI\" pill is not shown.\n    */\n   onOpenAskAi?: () => void;\n   colors: ThemeColors;\n@@ -152,18 +152,20 @@ export function SummaryTab({\n           <Ionicons name=\"barbell-outline\" size={18} color={colors.primary} />\n           <Text style={styles.actionPillText}>Workouts</Text>\n         </TouchableOpacity>\n-        {/* Stream 2 \u2014 opens the four-capability Ask-AI sheet. */}\n-        <TouchableOpacity\n-          style={[styles.actionPill, !onOpenAskAi && { opacity: 0.5 }]}\n-          onPress={onOpenAskAi}\n-          disabled={!onOpenAskAi}\n-          accessibilityRole=\"button\"\n-          accessibilityLabel=\"Ask AI to draft a message, workout, meal plan, or nudge\"\n-          testID=\"summary-tab-ask-ai-pill\"\n-        >\n-          <Ionicons name=\"sparkles-outline\" size={18} color={colors.primary} />\n-          <Text style={styles.actionPillText}>Ask AI</Text>\n-        </TouchableOpacity>\n+        {/* Stream 2 \u2014 opens the Ask-AI sheet. Shown only when a caller wires\n+            it; ClientDetailScreen does not (see the note there). */}\n+        {onOpenAskAi ? (\n+          <TouchableOpacity\n+            style={styles.actionPill}\n+            onPress={onOpenAskAi}\n+            accessibilityRole=\"button\"\n+            accessibilityLabel=\"Ask AI to draft a check-in nudge\"\n+            testID=\"summary-tab-ask-ai-pill\"\n+          >\n+            <Ionicons name=\"sparkles-outline\" size={18} color={colors.primary} />\n+            <Text style={styles.actionPillText}>Ask AI</Text>\n+          </TouchableOpacity>\n+        ) : null}\n       </View>\n       {nudgeSuccess && (\n         <View style={styles.successBanner} accessibilityLiveRegion=\"polite\">"
+    },
+    {
+      "sha": "01073d9985fcc0e5a9241392e54a0a02d50efee7",
+      "filename": "src/types/coachAi.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 12,
+      "changes": 19,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Ftypes%2FcoachAi.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Ftypes%2FcoachAi.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Ftypes%2FcoachAi.ts?ref=fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc",
+      "patch": "@@ -155,20 +155,12 @@ export interface GenerateMealPlanInput {\n   clientId: string;\n   /** 1-14 inclusive. */\n   days: number;\n-  notes?: string;\n   /**\n-   * B14: explicit safety fields. The backend already reads the client's\n-   * stored profile, but a missing-by-default field in a prompt is a silent\n-   * way to drop an allergy on the floor. We mirror these into the request\n-   * so:\n-   *   - the generator sees them in the API contract (not just from a DB\n-   *     side-channel),\n-   *   - the values are auditable on the wire (Sentry / server logs),\n-   *   - any field added on mobile is immediately usable without a backend\n-   *     deploy.\n+   * B14: the client's allergies and dietary restrictions are mirrored into\n+   * `notes` by CoachAiSection. The backend body allow-list accepts only\n+   * clientId, days and notes; any other key is refused with a 400.\n    */\n-  allergies?: string[];\n-  dietary_restrictions?: string[];\n+  notes?: string;\n }\n \n export interface GenerateInsightInput {\n@@ -182,6 +174,9 @@ export interface GenerateInsightInput {\n export interface ApproveResult {\n   approvedAsId: string;\n   approvedType: CoachAiDraftType;\n+  /** Workouts scheduled for the client by a backend that assigns AI program\n+   *  days on approval. Absent on the production backend (library save only). */\n+  assigned_count?: number;\n }\n \n export interface RejectInput {"
+    },
+    {
+      "sha": "8208e54f64496111824f235aeadbbb8dd7455c6b",
+      "filename": "src/utils/coach/__tests__/aiWorkoutApproveCopy.test.ts",
+      "status": "added",
+      "additions": 34,
+      "deletions": 0,
+      "changes": 34,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Futils%2Fcoach%2F__tests__%2FaiWorkoutApproveCopy.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Futils%2Fcoach%2F__tests__%2FaiWorkoutApproveCopy.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Futils%2Fcoach%2F__tests__%2FaiWorkoutApproveCopy.test.ts?ref=fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc",
+      "patch": "@@ -0,0 +1,34 @@\n+import { aiWorkoutApproveCopy } from '../aiWorkoutApproveCopy';\n+\n+describe('aiWorkoutApproveCopy (AUDIT-14-125)', () => {\n+  it('does not claim the program was assigned when the backend only saved it to the library', () => {\n+    // Production approve response today: the AIDraft row, no assigned_count.\n+    const copy = aiWorkoutApproveCopy('Sam', { approvedAsId: 'plan-1' } as { assigned_count?: unknown });\n+    expect(copy.title).toBe('Saved to library');\n+    expect(copy.body).toBe(\n+      'The program is saved to your workout library. Sam does not see it until it is assigned.',\n+    );\n+    expect(copy.body).not.toMatch(/assigned to Sam/);\n+  });\n+\n+  it('says assigned only when the backend reports scheduled workouts', () => {\n+    expect(aiWorkoutApproveCopy('Sam', { assigned_count: 12 })).toEqual({\n+      title: 'Assigned',\n+      body: '12 workouts assigned to Sam.',\n+    });\n+    expect(aiWorkoutApproveCopy('Sam', { assigned_count: 1 }).body).toBe('1 workout assigned to Sam.');\n+  });\n+\n+  it('treats zero, missing or malformed counts as saved to the library', () => {\n+    for (const r of [undefined, null, {}, { assigned_count: 0 }, { assigned_count: '3' }, { assigned_count: 2.5 }]) {\n+      expect(aiWorkoutApproveCopy('Sam', r).title).toBe('Saved to library');\n+    }\n+  });\n+\n+  it('has no first person and no exclamation marks', () => {\n+    const all = [aiWorkoutApproveCopy('Sam', {}), aiWorkoutApproveCopy('Sam', { assigned_count: 2 })];\n+    for (const c of all) {\n+      expect(`${c.title} ${c.body}`).not.toMatch(/!|\\bI\\b|\\bwe\\b|\\bour\\b/i);\n+    }\n+  });\n+});"
+    },
+    {
+      "sha": "0800a8e10b18b65225de9e85b3fdcbcbc5c356c4",
+      "filename": "src/utils/coach/aiWorkoutApproveCopy.ts",
+      "status": "added",
+      "additions": 34,
+      "deletions": 0,
+      "changes": 34,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Futils%2Fcoach%2FaiWorkoutApproveCopy.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc/src%2Futils%2Fcoach%2FaiWorkoutApproveCopy.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Futils%2Fcoach%2FaiWorkoutApproveCopy.ts?ref=fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc",
+      "patch": "@@ -0,0 +1,34 @@\n+/**\n+ * AUDIT-14-125 \u2014 truthful copy after a coach approves an AI workout program.\n+ *\n+ * POST /coach/ai/drafts/:id/approve on the production backend saves each\n+ * program day as a workout plan in the coach's library and assigns nothing\n+ * to the client. The screen used to say \"Workout program assigned to <name>\",\n+ * so the coach believed the client had a program they never received.\n+ *\n+ * A backend that also assigns the days returns `assigned_count` (number of\n+ * workouts scheduled for the client); only then does the copy say\n+ * \"assigned\". Any other response reads as saved to the library.\n+ */\n+export interface AiWorkoutApproveCopy {\n+  title: string;\n+  body: string;\n+}\n+\n+export function aiWorkoutApproveCopy(\n+  clientName: string,\n+  result: { assigned_count?: unknown } | null | undefined,\n+): AiWorkoutApproveCopy {\n+  const raw = result?.assigned_count;\n+  const assigned = typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? raw : 0;\n+  if (assigned > 0) {\n+    return {\n+      title: 'Assigned',\n+      body: `${assigned} ${assigned === 1 ? 'workout' : 'workouts'} assigned to ${clientName}.`,\n+    };\n+  }\n+  return {\n+    title: 'Saved to library',\n+    body: `The program is saved to your workout library. ${clientName} does not see it until it is assigned.`,\n+  };\n+}"
+    }
+  ]
+}

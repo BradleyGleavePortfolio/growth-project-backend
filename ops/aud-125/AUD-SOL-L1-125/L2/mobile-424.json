@@ -1,0 +1,114 @@
+{
+  "repo": "mobile",
+  "number": 424,
+  "head": "f69f200ec84e7ed3657621f3fb8c922e80ee12a0",
+  "base": "a1904f2f4e8d175a38d6eb627303a2312e2b1ace",
+  "title": "fix(roman): a used-up coach AI credit pool gets its own copy, not a retry (AUDIT-05-125)",
+  "body": "**Tier:** T2 (client-visible error state on the Roman chat; no money movement, no auth, no data access change)\n**Why:** AUDIT-05-125 (agent 125). SoT A6.4: \"Pool empty -> its own code and copy.\" The backend already sends 402 `COACH_AI_BUDGET_EXHAUSTED` (B-668-1, in production); the app ignored it.\n**T4 trigger scan:** none. No auth, RLS/tenancy, PII, payment, credential or destructive-data path. Reads only the machine `code` of an error body; shows no credit figures to clients.\n**T3 trigger scan:** none (no schema, no API contract change, no new dependency, no flag).\n**Bounded T1:** n/a.\n**Canonical builder:** Claude Opus 5.5 (AUDIT-05-125).\n**Acceptance evidence:** `src/__tests__/romanPoolEmpty125.test.tsx` fails on main (402 maps to `generic`; `romanPoolEmpty` does not exist) and passes here; full lint, typecheck and tests run in this PR's CI.\n\n## Fixes\n- **U1 (AUDIT-05-125):** a client whose coach's monthly AI credit pool is used up sends Roman a message and sees \"That request did not complete. Send it once more, and I will try again.\" with a Send again button that can never work. Now: the 402 (before the turn is stored) and the same code in the stream error frame map to kind `poolEmpty`; the chat shows \"Your coach's AI credits for this month are used up, so Roman cannot answer right now. Your coach is in Messages any time, and your plan and logs work as usual.\" (client) or the coach-account line (coach), with no Send again button. The composer stays usable, so a crisis message (never pool-gated on the server) still goes through.\n\n## Compatibility\nWorks against the current production backend (ec12a4b3), which already returns this code. A 402 without the code stays generic.\n\n## Notes\n- The coach copy names no purchase step: digital credit packs are not sold in the store builds (iOS gate; Android in m#412). No overlap with any open PR's files.\n- Changed lines: about 200 (154 of them the test).\n",
+  "state": "open",
+  "draft": false,
+  "additions": 203,
+  "deletions": 7,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/424",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/424#issuecomment-6025915013",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-05-125, agent 125) \u2014 growth-project-mobile#424 @ f69f200ec84e7ed3657621f3fb8c922e80ee12a0 \u2014 READY FOR AUDIT\n\n- CI at this head: \"Typecheck, lint, test\" SUCCESS. CodeQL \"Analyze (actions)\" and \"Analyze (javascript-typescript)\" were still queued on the shared runners at 14:36 PDT.\n- Second push: the first head 9d5292c failed Typecheck on my own test (the fetch Headers stub cast); f69f200 types it the way src/api/__tests__/romanApiAiRefusal.test.ts does. No source change between the two heads.\n- Local, one file each at this head: src/__tests__/romanPoolEmpty125.test.tsx 6/6, src/__tests__/aiDailyCapSurfaces.test.tsx 4/4.\n- Fixes U1 (AUDIT-05-125): a used-up coach AI credit pool (402 COACH_AI_BUDGET_EXHAUSTED, already in production) now shows its own copy with no Send again button, instead of \"That request did not complete. Send it once more\".\n- Size: +204 -7 (49 source lines, the rest is the test). Holds under the clinic build profile (EXPO_PUBLIC_FF_ROMAN_CHAT is on there).\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "Analyze (actions)",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37533456664/job/112508363079",
+      "id": 112508363079,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112508363079/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37533456664/job/112508362877",
+      "id": 112508362877,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112508362877/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37533456763/job/112508355515",
+      "id": 112508355515,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112508355515/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "637075beded13df12972c9067309c6242bdb9cf0",
+      "filename": "src/__tests__/romanPoolEmpty125.test.tsx",
+      "status": "added",
+      "additions": 155,
+      "deletions": 0,
+      "changes": 155,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f69f200ec84e7ed3657621f3fb8c922e80ee12a0/src%2F__tests__%2FromanPoolEmpty125.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/f69f200ec84e7ed3657621f3fb8c922e80ee12a0/src%2F__tests__%2FromanPoolEmpty125.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FromanPoolEmpty125.test.tsx?ref=f69f200ec84e7ed3657621f3fb8c922e80ee12a0",
+      "patch": "@@ -0,0 +1,155 @@\n+/**\n+ * AUDIT-05-125 U1: the coach's monthly AI credit pool is used up.\n+ *\n+ * Backend B-668-1 answers a Roman send with 402 COACH_AI_BUDGET_EXHAUSTED\n+ * (before the turn is stored), or the same code in the in-stream error frame.\n+ * On main the app read both as a generic failure: \"That request did not\n+ * complete. Send it once more, and I will try again.\" with a Send again button\n+ * that can never succeed. Now the send maps to kind `poolEmpty`, and the chat\n+ * shows the pool copy for the right audience with no retry button.\n+ */\n+import React from 'react';\n+import { render } from '@testing-library/react-native';\n+import { RomanApiError, sendMessage } from '../api/romanApi';\n+import RomanChatScreen from '../screens/roman/RomanChatScreen';\n+import { romanPoolEmpty } from '../components/roman/romanVoice';\n+\n+jest.mock('@expo/vector-icons', () => {\n+  function Icon() {\n+    return null;\n+  }\n+  return { Ionicons: Icon, MaterialIcons: Icon, Feather: Icon };\n+});\n+\n+jest.mock('react-native-reanimated', () => {\n+  const View = jest.requireActual('react-native').View;\n+  return {\n+    __esModule: true,\n+    default: { View },\n+    useSharedValue: (v: number) => ({ value: v }),\n+    useAnimatedStyle: () => ({}),\n+    withTiming: (v: number) => v,\n+    withRepeat: (v: number) => v,\n+    withDelay: (_d: number, v: number) => v,\n+    withSequence: (...v: number[]) => v[0],\n+  };\n+});\n+\n+jest.mock('../theme/ThemeProvider', () => {\n+  const colors = new Proxy({}, { get: (_t, prop) => (typeof prop === 'string' ? `#${prop}` : '#000') });\n+  const Pass = ({ children }: { children: React.ReactNode }) => children;\n+  return { __esModule: true, ThemeProvider: Pass, default: Pass, useTheme: () => ({ colors }) };\n+});\n+\n+jest.mock('../theme/useTheme', () => {\n+  const { lightTokens } = jest.requireActual('../theme/tokens');\n+  return { useTheme: () => ({ colorScheme: 'light', semanticColors: lightTokens }) };\n+});\n+\n+jest.mock('../services/sentry', () => ({ captureError: jest.fn() }));\n+jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));\n+jest.mock('../services/api', () => ({\n+  __esModule: true,\n+  default: { get: jest.fn(), post: jest.fn(), delete: jest.fn() },\n+}));\n+jest.mock('../services/secureStorage', () => ({\n+  secureStorage: { getItem: jest.fn(async () => 'test-token') },\n+}));\n+jest.mock('../hooks/useCurrentUser', () => ({\n+  useCurrentUser: () => ({ id: 'client-1', role: 'client', firstName: 'Jane' }),\n+}));\n+\n+const mockUseRomanChat = jest.fn();\n+jest.mock('../screens/roman/useRomanChat', () => ({\n+  useRomanChat: (surface: unknown) => mockUseRomanChat(surface),\n+}));\n+\n+const SESSION_ID = '11111111-1111-4111-8111-111111111111';\n+const POOL_BODY = {\n+  statusCode: 402,\n+  code: 'COACH_AI_BUDGET_EXHAUSTED',\n+  message: \"Your coach's AI credits for this month are used up, so Roman cannot answer right now.\",\n+};\n+\n+const realFetch = global.fetch;\n+afterEach(() => {\n+  global.fetch = realFetch;\n+  mockUseRomanChat.mockReset();\n+});\n+\n+function mockFetchOnce(init: { ok: boolean; status: number; text: string }) {\n+  const headers: Record<string, string> = {};\n+  const response: Pick<Response, 'ok' | 'status' | 'headers' | 'text'> = {\n+    ok: init.ok,\n+    status: init.status,\n+    headers: { get: (k: string) => headers[k.toLowerCase()] ?? null } as Headers,\n+    text: async () => init.text,\n+  };\n+  global.fetch = jest.fn(async () => response as Response);\n+}\n+\n+async function failureOf(p: Promise<unknown>): Promise<unknown> {\n+  try {\n+    await p;\n+  } catch (err) {\n+    return err;\n+  }\n+  throw new Error('expected a rejection');\n+}\n+\n+describe('romanApi.sendMessage: coach AI credit pool used up', () => {\n+  it('402 COACH_AI_BUDGET_EXHAUSTED -> poolEmpty, turn not stored', async () => {\n+    mockFetchOnce({ ok: false, status: 402, text: JSON.stringify(POOL_BODY) });\n+    const err = await failureOf(sendMessage(SESSION_ID, 'hi'));\n+    expect(err).toBeInstanceOf(RomanApiError);\n+    expect(err).toMatchObject({ kind: 'poolEmpty', turnStored: false });\n+  });\n+\n+  it('the same code in the stream error frame -> poolEmpty, turn stored', async () => {\n+    const frame = `event: error\\ndata: ${JSON.stringify({ code: POOL_BODY.code, message: POOL_BODY.message })}\\n\\n`;\n+    mockFetchOnce({ ok: true, status: 200, text: frame });\n+    const err = await failureOf(sendMessage(SESSION_ID, 'hi'));\n+    expect(err).toMatchObject({ kind: 'poolEmpty', turnStored: true });\n+  });\n+\n+  it('a 402 without the machine code stays generic', async () => {\n+    mockFetchOnce({ ok: false, status: 402, text: JSON.stringify({ message: 'Payment required' }) });\n+    await expect(sendMessage(SESSION_ID, 'hi')).rejects.toMatchObject({ kind: 'generic' });\n+  });\n+});\n+\n+function romanState(sendError: unknown) {\n+  return {\n+    phase: 'ready',\n+    session: { id: 's1', surface: 'client' },\n+    isFirstOpen: false,\n+    messages: [],\n+    sending: false,\n+    sendError,\n+    nextCursor: null,\n+    loadingOlder: false,\n+    reload: jest.fn(),\n+    loadOlder: jest.fn(),\n+    send: jest.fn(async () => 'send-failed'),\n+    clearSendError: jest.fn(),\n+  };\n+}\n+\n+describe('RomanChatScreen: coach AI credit pool used up', () => {\n+  it.each(['client', 'coach'] as const)('%s surface: pool copy, no Send again', async (surface) => {\n+    mockUseRomanChat.mockReturnValue(romanState({ kind: 'poolEmpty', message: 'x' }));\n+    const r = await render(<RomanChatScreen surface={surface} />);\n+    expect(r.getByText(romanPoolEmpty(surface))).toBeTruthy();\n+    expect(r.queryByTestId('roman-send-retry')).toBeNull();\n+    expect(r.queryByText(/did not complete/)).toBeNull();\n+    expect(r.getByTestId('roman-composer')).toBeTruthy();\n+  });\n+\n+  it('client copy never shows credit figures; coach copy names no purchase step', () => {\n+    expect(romanPoolEmpty('client')).not.toMatch(/\\d/);\n+    expect(romanPoolEmpty('coach')).not.toMatch(/pack|buy|purchase/i);\n+    for (const a of ['client', 'coach'] as const) {\n+      expect(romanPoolEmpty(a)).not.toMatch(/[!]|\\bI\\b/);\n+    }\n+  });\n+});"
+    },
+    {
+      "sha": "8b9bb221f4151e86ad246ed2ac1c0a8a308ecfdc",
+      "filename": "src/api/romanApi.ts",
+      "status": "modified",
+      "additions": 26,
+      "deletions": 1,
+      "changes": 27,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f69f200ec84e7ed3657621f3fb8c922e80ee12a0/src%2Fapi%2FromanApi.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/f69f200ec84e7ed3657621f3fb8c922e80ee12a0/src%2Fapi%2FromanApi.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fapi%2FromanApi.ts?ref=f69f200ec84e7ed3657621f3fb8c922e80ee12a0",
+      "patch": "@@ -202,6 +202,7 @@ export type RomanErrorKind =\n   | 'dailyCap' // 429 ROMAN_RATE_LIMIT / 503 ROMAN_CAPACITY_REACHED \u2014 daily cap pop-up\n   | 'offline' // no network reachability\n   | 'aiRefused' // R2b: 403 ai_consent_required / 503 ai_egress_blocked (HTTP or in-stream)\n+  | 'poolEmpty' // 402 COACH_AI_BUDGET_EXHAUSTED: the coach's monthly AI credit pool is used up\n   | 'generic'; // anything else (5xx, malformed, unknown)\n \n export class RomanApiError extends Error {\n@@ -274,6 +275,18 @@ function parseRetryAfter(value: unknown): number | undefined {\n \n const ROMAN_DAILY_CAP_MESSAGE = 'Daily AI limit reached.';\n \n+/** Backend B-668-1 machine code: the coach's monthly AI credit pool is used up (402). */\n+export const COACH_AI_BUDGET_EXHAUSTED_CODE = 'COACH_AI_BUDGET_EXHAUSTED';\n+const ROMAN_POOL_EMPTY_MESSAGE = 'AI credits used up for this month.';\n+\n+function isPoolEmptyBody(body: unknown): boolean {\n+  return (\n+    !!body &&\n+    typeof body === 'object' &&\n+    (body as { code?: unknown }).code === COACH_AI_BUDGET_EXHAUSTED_CODE\n+  );\n+}\n+\n /** Map any thrown error (axios or otherwise) to a typed RomanApiError. */\n function toRomanApiError(err: unknown): RomanApiError {\n   if (err instanceof RomanApiError) return err;\n@@ -501,8 +514,17 @@ export async function sendMessage(\n       if (response.status === 404) {\n         throw new RomanApiError('unavailable', 'Roman is not available right now.');\n       }\n-      const coded = response.status === 429 || response.status === 403 || response.status === 503;\n+      const coded =\n+        response.status === 402 ||\n+        response.status === 429 ||\n+        response.status === 403 ||\n+        response.status === 503;\n       const errorBody = coded ? await readErrorBody(response) : null;\n+      // The coach's monthly AI credit pool is used up (backend B-668-1),\n+      // before the turn is stored: its own copy, never a retryable error.\n+      if (response.status === 402 && isPoolEmptyBody(errorBody)) {\n+        throw new RomanApiError('poolEmpty', ROMAN_POOL_EMPTY_MESSAGE);\n+      }\n       if (response.status === 429 || response.status === 503) {\n         // Daily AI cap (429 ROMAN_RATE_LIMIT / 503 ROMAN_CAPACITY_REACHED),\n         // before the turn is stored: the pop-up, never a generic error.\n@@ -567,6 +589,9 @@ export async function sendMessage(\n       if (dailyCap) {\n         throw new RomanApiError('dailyCap', ROMAN_DAILY_CAP_MESSAGE, undefined, undefined, true, dailyCap);\n       }\n+      if (streamError.code === COACH_AI_BUDGET_EXHAUSTED_CODE) {\n+        throw new RomanApiError('poolEmpty', ROMAN_POOL_EMPTY_MESSAGE, undefined, undefined, true);\n+      }\n       const kind: RomanErrorKind =\n         streamError.code === 'ROMAN_UNAVAILABLE' ? 'unavailable' : 'generic';\n       throw new RomanApiError(kind, streamError.message, undefined, undefined, true);"
+    },
+    {
+      "sha": "2a1c985d6fa1d0a990066252d4daace8661855c3",
+      "filename": "src/components/roman/romanVoice.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 0,
+      "changes": 13,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f69f200ec84e7ed3657621f3fb8c922e80ee12a0/src%2Fcomponents%2Froman%2FromanVoice.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/f69f200ec84e7ed3657621f3fb8c922e80ee12a0/src%2Fcomponents%2Froman%2FromanVoice.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Froman%2FromanVoice.ts?ref=f69f200ec84e7ed3657621f3fb8c922e80ee12a0",
+      "patch": "@@ -174,6 +174,19 @@ export const ROMAN_SEND_FAILED =\n export const ROMAN_STORED_NO_REPLY =\n   'Your message is saved above, but I could not answer it. Tap Send again to ask once more.';\n \n+/**\n+ * The coach's monthly AI credit pool is used up (backend 402\n+ * COACH_AI_BUDGET_EXHAUSTED, B-668-1). Sending again cannot help, so the copy\n+ * names what still works and offers no retry. A client never sees the\n+ * coach's credit figures; the coach copy names no purchase step, because\n+ * digital credit packs are not sold in the store builds.\n+ */\n+export function romanPoolEmpty(audience: 'client' | 'coach'): string {\n+  return audience === 'coach'\n+    ? 'The AI credits on your coaching account are used up for this month, so Roman cannot answer right now. Your clients, messages and the rest of the app work as usual.'\n+    : \"Your coach's AI credits for this month are used up, so Roman cannot answer right now. Your coach is in Messages any time, and your plan and logs work as usual.\";\n+}\n+\n /** After AI help is allowed for a message the server already stored (B-326-3). */\n export const ROMAN_AI_ON_ASK_AGAIN =\n   'AI help is on now. Your message is saved above without an answer. Tap send to ask again.';"
+    },
+    {
+      "sha": "76d2342d722fd810ab9cfc16a337af10d2c0039f",
+      "filename": "src/screens/roman/RomanChatScreen.tsx",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 6,
+      "changes": 15,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f69f200ec84e7ed3657621f3fb8c922e80ee12a0/src%2Fscreens%2Froman%2FRomanChatScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/f69f200ec84e7ed3657621f3fb8c922e80ee12a0/src%2Fscreens%2Froman%2FRomanChatScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Froman%2FRomanChatScreen.tsx?ref=f69f200ec84e7ed3657621f3fb8c922e80ee12a0",
+      "patch": "@@ -46,6 +46,7 @@ import AiDailyCapModal from '../../components/ai/AiDailyCapModal';\n import { aiRefusalCopy } from '../../lib/ai/aiRefusal';\n import { Skeleton } from '../../ui/skeletons/Skeleton';\n import {\n+  romanPoolEmpty,\n   romanRateLimited,\n   ROMAN_LOADING_A11Y_LABEL,\n   ROMAN_LOADING_OLDER,\n@@ -197,11 +198,13 @@ export default function RomanChatScreen({\n             const c = aiRefusalCopy(refusal, refusalAudience, 'roman');\n             return `${c.title}. ${c.body}`;\n           })()\n-        : sendError.kind === 'rateLimited'\n-          ? romanRateLimited(sendError.retryAfterSeconds)\n-          : sendError.turnStored\n-            ? ROMAN_STORED_NO_REPLY\n-            : ROMAN_SEND_FAILED;\n+        : sendError.kind === 'poolEmpty'\n+          ? romanPoolEmpty(refusalAudience)\n+          : sendError.kind === 'rateLimited'\n+            ? romanRateLimited(sendError.retryAfterSeconds)\n+            : sendError.turnStored\n+              ? ROMAN_STORED_NO_REPLY\n+              : ROMAN_SEND_FAILED;\n \n   // Announce a send failure (and its remedy) to assistive tech the moment it\n   // appears. The optimistic user turn was rolled back in useRomanChat, so the\n@@ -389,7 +392,7 @@ export default function RomanChatScreen({\n             <Text style={styles.sendErrorText} accessibilityRole=\"text\">\n               {sendErrorCopy}\n             </Text>\n-            {sendError?.kind !== 'rateLimited' ? (\n+            {sendError?.kind !== 'rateLimited' && sendError?.kind !== 'poolEmpty' ? (\n               <TouchableOpacity\n                 style={styles.retryButton}\n                 onPress={onRetrySend}"
+    }
+  ]
+}

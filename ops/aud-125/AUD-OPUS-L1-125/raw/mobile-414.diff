@@ -1,0 +1,326 @@
+diff --git a/src/components/coach/setup/__tests__/coachSetupRound2.test.tsx b/src/components/coach/setup/__tests__/coachSetupRound2.test.tsx
+index a7d047a7..774d127a 100644
+--- a/src/components/coach/setup/__tests__/coachSetupRound2.test.tsx
++++ b/src/components/coach/setup/__tests__/coachSetupRound2.test.tsx
+@@ -297,7 +297,7 @@ describe("B-329-2 payouts not configured", () => {
+       ),
+     ]) {
+       expect(e.title).toBe("Payouts are not switched on for your account yet");
+-      expect(e.body).toMatch(/Home checklist/);
++      expect(e.body).toMatch(/Get paid on the Overview tab/);
+       expect(e.body).toMatch(/Bradleyapple1031@gmail\.com/);
+       expect(e.body).not.toMatch(/version|Money|!/);
+     }
+diff --git a/src/components/home/PushPermissionCard.tsx b/src/components/home/PushPermissionCard.tsx
+index 552448c5..59e004a8 100644
+--- a/src/components/home/PushPermissionCard.tsx
++++ b/src/components/home/PushPermissionCard.tsx
+@@ -29,7 +29,9 @@ export type PushPermissionAudience = 'client' | 'coach';
+ 
+ const BODY_COPY: Record<PushPermissionAudience, string> = {
+   client: 'Turn on notifications so you see messages and plan updates from your coach.',
+-  coach: 'Turn on notifications so you see client messages and new client alerts.',
++  // HUNT-05-124 B-H05-1: name only alerts the server sends to coaches today
++  // (client messages and bookings); there is no new-client alert yet.
++  coach: 'Turn on notifications so you see client messages and bookings as they arrive.',
+ };
+ 
+ export default function PushPermissionCard({
+diff --git a/src/components/home/__tests__/PushPermissionCard.test.tsx b/src/components/home/__tests__/PushPermissionCard.test.tsx
+index b9b48922..2b17f3e9 100644
+--- a/src/components/home/__tests__/PushPermissionCard.test.tsx
++++ b/src/components/home/__tests__/PushPermissionCard.test.tsx
+@@ -49,7 +49,7 @@ describe('PushPermissionCard (deferred OS prompt)', () => {
+       <PushPermissionCard audience="coach" />,
+     );
+     await findByTestId('push-permission-card');
+-    expect(getByText('Turn on notifications so you see client messages and new client alerts.')).toBeTruthy();
++    expect(getByText('Turn on notifications so you see client messages and bookings as they arrive.')).toBeTruthy();
+     expect(queryByText(/plan updates from your coach/)).toBeNull();
+     await fireEvent.press(getByTestId('push-permission-enable'));
+     await waitFor(() => expect(mockRegister).toHaveBeenCalledWith({ requestPermission: true }));
+diff --git a/src/lib/coachSetup/errors.ts b/src/lib/coachSetup/errors.ts
+index c648d034..4a3e1ceb 100644
+--- a/src/lib/coachSetup/errors.ts
++++ b/src/lib/coachSetup/errors.ts
+@@ -195,7 +195,7 @@ export function describeError(err: unknown, action: string): FriendlyError {
+       title: "Payouts are not switched on for your account yet",
+       body:
+         "You cannot connect Stripe right now because payouts are not switched on for your account yet. " +
+-        "Finish the rest of setup, then connect Stripe later from Get paid on your Home checklist. " +
++        "Finish the rest of setup, then connect Stripe later from Get paid on the Overview tab. " +
+         `Free packages work today.${referenceSentence(requestId, "If this has not changed by tomorrow")}`,
+       retryable: false,
+     };
+diff --git a/src/navigation/CoachWizardNavigator.tsx b/src/navigation/CoachWizardNavigator.tsx
+index 1db0ab9b..c0ef7e3e 100644
+--- a/src/navigation/CoachWizardNavigator.tsx
++++ b/src/navigation/CoachWizardNavigator.tsx
+@@ -10,7 +10,7 @@
+  *   5. Ready                checklist, then POST /coach/onboarding/complete
+  * The backend keeps 6 sequential steps; advanceWizardTo walks it forward one
+  * step at a time. Stripe, package and invite can each be done later from the
+- * Home checklist, so the wizard never traps a coach.
++ * Overview checklist, so the wizard never traps a coach.
+  */
+ 
+ import React, {
+@@ -351,7 +351,7 @@ function CoachWizardStep2({ navigation }: Step2Props) {
+         testID="wizard-get-paid"
+       />
+       {!ready ? (
+-        <SmallNote text="You can finish this later from the checklist on your Home screen. Free packages work without Stripe." />
++        <SmallNote text="You can finish this later from the checklist on the Overview tab. Free packages work without Stripe." />
+       ) : null}
+       {error ? (
+         <SetupNotice error={error} testID="wizard-step-2-error" />
+@@ -581,7 +581,7 @@ function CoachWizardStep5({ navigation }: Step5Props) {
+   const [error, setError] = useState<FriendlyError | null>(null);
+   // C-329-3: read the server on mount. When the wizard resumes on this
+   // step, the in-memory state from earlier steps is empty, so the ticks
+-  // must come from the same routes the Home checklist uses.
++  // must come from the same routes the Overview checklist uses.
+   const [snap, setSnap] = useState<SetupSnapshot | null>(null);
+   const [checking, setChecking] = useState(true);
+   const check = useCallback(async () => {
+@@ -637,7 +637,7 @@ function CoachWizardStep5({ navigation }: Step5Props) {
+       stepNumber={5}
+       totalSteps={UI_STEPS}
+       heading="You are ready to coach"
+-      body="Anything still open stays on your Home checklist. Your first client payment shows up in Money on your Home screen."
++      body="Anything still open stays on the checklist on the Overview tab. Your first client payment shows up in Money on the Overview tab."
+       ctaLabel="Go to your dashboard"
+       ctaDisabled={submitting}
+       onCta={finish}
+diff --git a/src/screens/coach/__tests__/ClientsListPushPrimer.test.tsx b/src/screens/coach/__tests__/ClientsListPushPrimer.test.tsx
+index c83df02a..97518cba 100644
+--- a/src/screens/coach/__tests__/ClientsListPushPrimer.test.tsx
++++ b/src/screens/coach/__tests__/ClientsListPushPrimer.test.tsx
+@@ -72,7 +72,7 @@ it('a fresh coach install sees the notification ask; Turn on registers the push
+   mockRegister.mockResolvedValue({ token: 'coach-tok', granted: true });
+   await mount();
+   await screen.findByTestId('push-permission-card');
+-  expect(screen.getByText('Turn on notifications so you see client messages and new client alerts.')).toBeTruthy();
++  expect(screen.getByText('Turn on notifications so you see client messages and bookings as they arrive.')).toBeTruthy();
+   // The OS prompt only comes from the tap.
+   expect(mockRegister).not.toHaveBeenCalled();
+   await fireEvent.press(screen.getByTestId('push-permission-enable'));
+diff --git a/src/screens/coach/__tests__/coachDay1Hunt05.test.tsx b/src/screens/coach/__tests__/coachDay1Hunt05.test.tsx
+new file mode 100644
+index 00000000..5474471c
+--- /dev/null
++++ b/src/screens/coach/__tests__/coachDay1Hunt05.test.tsx
+@@ -0,0 +1,128 @@
++/**
++ * HUNT-05-124 — coach day 1.
++ *
++ * B-H05-1: the backend never sends a "new client" alert and nothing reads the
++ * coach's Daily Check-in / New Client Alerts / Weekly Summary preferences, yet
++ * the first screen a new coach sees promised "new client alerts" and Settings
++ * showed three switches for alerts that never arrive.
++ * U-H05-2: a coach with no clients yet saw a red "0%" check-in rate and
++ * "Active today 0 of 0" on the Overview tab.
++ * U-H05-3: the wizard and the payouts notice sent the coach to "your Home
++ * screen" / "your Home checklist", but the coach app has no Home tab: the
++ * setup checklist lives on the Overview tab.
++ */
++import React from 'react';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++
++jest.mock('../../../services/commandCenterApi', () => {
++  const original = jest.requireActual('../../../services/commandCenterApi');
++  return {
++    ...original,
++    __USING_MOCK_DATA: false,
++    commandCenterApi: {
++      getOverview: jest.fn(),
++      getLtvMetrics: jest.fn(() => new Promise(() => {})),
++    },
++  };
++});
++jest.mock('../../../components/command-center/CoachLtvDashboard', () => () => null);
++
++import { commandCenterApi } from '../../../services/commandCenterApi';
++import OverviewScreen from '../command-center/OverviewScreen';
++import { SettingsToggles } from '../settings/SettingsToggles';
++import { DEFAULT_SETTINGS } from '../settings/types';
++import type { ThemeColors } from '../../../theme/ThemeProvider';
++import type { SettingsStyles } from '../settings/styles';
++
++const overview = (over: Record<string, number>) => ({
++  roster_size: 0,
++  active_today: 0,
++  check_in_rate_7day: 0,
++  open_alerts: 0,
++  at_risk_count: 0,
++  win_streak_count: 0,
++  unread_messages: 0,
++  pending_actions: 0,
++  ...over,
++});
++
++describe('B-H05-1: no promise of alerts the server never sends', () => {
++  it('coach Settings shows no switch for daily check-in, new client or weekly summary alerts', async () => {
++    const onOpen = jest.fn();
++    const { queryByText, getByLabelText } = await render(
++      <SettingsToggles
++        settings={DEFAULT_SETTINGS}
++        onUpdateSetting={jest.fn()}
++        onOpenNotificationPreferences={onOpen}
++        colors={new Proxy({}, { get: () => '#000000' }) as unknown as ThemeColors}
++        styles={new Proxy({}, { get: () => ({}) }) as unknown as SettingsStyles}
++      />,
++    );
++    expect(queryByText('New Client Alerts')).toBeNull();
++    expect(queryByText('Weekly Summary')).toBeNull();
++    expect(queryByText('Daily Check-in')).toBeNull();
++    // The real controls stay: notification preferences and haptics.
++    await fireEvent.press(getByLabelText('Notification preferences'));
++    expect(onOpen).toHaveBeenCalledTimes(1);
++    expect(queryByText('Haptics')).toBeTruthy();
++  });
++
++  it('the coach push primer names only alerts that exist', () => {
++    const fs = jest.requireActual('fs') as typeof import('fs');
++    const path = jest.requireActual('path') as typeof import('path');
++    const src = fs.readFileSync(
++      path.join(__dirname, '../../../components/home/PushPermissionCard.tsx'),
++      'utf8',
++    );
++    expect(src).not.toMatch(/new client alerts/i);
++    expect(src).toContain('Turn on notifications so you see client messages and bookings as they arrive.');
++  });
++});
++
++describe('U-H05-2: Overview with no clients yet', () => {
++  it('shows no red 0% check-in rate and no "of 0" for a coach with no clients', async () => {
++    (commandCenterApi.getOverview as jest.Mock).mockResolvedValue({ data: overview({}) });
++    const { getByTestId, queryByText } = await render(<OverviewScreen />);
++    await waitFor(() => expect(getByTestId('command-center-kpi-checkin-rate')).toBeTruthy());
++    expect(getByTestId('command-center-kpi-checkin-rate').props.accessibilityLabel).toBe(
++      'Check-in rate (7 days): —',
++    );
++    expect(queryByText('0%')).toBeNull();
++    expect(queryByText('of 0')).toBeNull();
++  });
++
++  it('keeps the real rate once clients exist', async () => {
++    (commandCenterApi.getOverview as jest.Mock).mockResolvedValue({
++      data: overview({ roster_size: 12, active_today: 8, check_in_rate_7day: 0.75 }),
++    });
++    const { getByTestId, getByText } = await render(<OverviewScreen />);
++    await waitFor(() => expect(getByText('75%')).toBeTruthy());
++    expect(getByText('of 12')).toBeTruthy();
++    expect(getByTestId('command-center-kpi-checkin-rate')).toBeTruthy();
++  });
++});
++
++describe('U-H05-3: setup copy names the tab the coach can see', () => {
++  const fs = jest.requireActual('fs') as typeof import('fs');
++  const path = jest.requireActual('path') as typeof import('path');
++  const read = (rel: string) => fs.readFileSync(path.join(__dirname, rel), 'utf8');
++
++  it('the wizard points to the Overview tab, never a Home screen', () => {
++    const src = read('../../../navigation/CoachWizardNavigator.tsx');
++    expect(src).not.toMatch(/Home screen|Home checklist/);
++    expect(src).toContain('You can finish this later from the checklist on the Overview tab.');
++    expect(src).toContain('Anything still open stays on the checklist on the Overview tab.');
++  });
++
++  it('the payouts-not-switched-on notice points to the Overview tab', () => {
++    const { describeError } = jest.requireActual('../../../lib/coachSetup/errors');
++    const e = describeError(
++      Object.assign(new Error('x'), {
++        response: { status: 503, data: { error: 'CONNECT_NOT_CONFIGURED' }, headers: {} },
++      }),
++      'open Stripe',
++    );
++    expect(e.body).toContain('Get paid on the Overview tab');
++    expect(e.body).not.toMatch(/Home checklist/);
++  });
++});
+diff --git a/src/screens/coach/command-center/OverviewScreen.tsx b/src/screens/coach/command-center/OverviewScreen.tsx
+index fb34aec3..7a917bf7 100644
+--- a/src/screens/coach/command-center/OverviewScreen.tsx
++++ b/src/screens/coach/command-center/OverviewScreen.tsx
+@@ -95,6 +95,9 @@ export default function OverviewScreen({
+   }
+ 
+   const d = data;
++  // HUNT-05-124 U-H05-2: a coach with no clients yet has no check-in rate.
++  // Show a neutral dash instead of a red 0%, and no "of 0" under Active today.
++  const noClients = d !== null && d.roster_size === 0;
+ 
+   return (
+     <ScrollView
+@@ -127,7 +130,7 @@ export default function OverviewScreen({
+         <KpiTile
+           label="Active today"
+           value={d?.active_today ?? '—'}
+-          subtext={d ? `of ${d.roster_size}` : undefined}
++          subtext={d && !noClients ? `of ${d.roster_size}` : undefined}
+           valueColor={colors.forest}
+           testID="command-center-kpi-active-today"
+           style={styles.tileFlex}
+@@ -138,9 +141,11 @@ export default function OverviewScreen({
+       <View style={styles.tileRow}>
+         <KpiTile
+           label="Check-in rate (7 days)"
+-          value={d ? `${Math.round(d.check_in_rate_7day * 100)}%` : '—'}
++          value={d && !noClients ? `${Math.round(d.check_in_rate_7day * 100)}%` : '—'}
+           valueColor={
+-            d && d.check_in_rate_7day >= 0.7
++            !d || noClients
++              ? colors.stone
++              : d.check_in_rate_7day >= 0.7
+               ? colors.forest
+               : d && d.check_in_rate_7day >= 0.5
+               ? colors.mutedGold
+diff --git a/src/screens/coach/settings/SettingsToggles.tsx b/src/screens/coach/settings/SettingsToggles.tsx
+index 15008ccf..6db3705b 100644
+--- a/src/screens/coach/settings/SettingsToggles.tsx
++++ b/src/screens/coach/settings/SettingsToggles.tsx
+@@ -23,39 +23,10 @@ export function SettingsToggles({
+       {/* Notifications */}
+       <Text style={styles.sectionHeader}>Notifications</Text>
+       <View style={styles.section}>
+-        <View style={styles.row}>
+-          <Ionicons name="alarm-outline" size={20} color={colors.textSecondary} />
+-          <Text style={styles.rowLabel}>Daily Check-in</Text>
+-          <Switch
+-            value={settings.dailyCheckin}
+-            onValueChange={(v) => onUpdateSetting('dailyCheckin', v)}
+-            trackColor={{ false: colors.surfaceElevated, true: colors.primary }}
+-            thumbColor={colors.textOnPrimary}
+-          />
+-        </View>
+-        <View style={styles.divider} />
+-        <View style={styles.row}>
+-          <Ionicons name="person-add-outline" size={20} color={colors.textSecondary} />
+-          <Text style={styles.rowLabel}>New Client Alerts</Text>
+-          <Switch
+-            value={settings.newClientAlerts}
+-            onValueChange={(v) => onUpdateSetting('newClientAlerts', v)}
+-            trackColor={{ false: colors.surfaceElevated, true: colors.primary }}
+-            thumbColor={colors.textOnPrimary}
+-          />
+-        </View>
+-        <View style={styles.divider} />
+-        <View style={styles.row}>
+-          <Ionicons name="stats-chart-outline" size={20} color={colors.textSecondary} />
+-          <Text style={styles.rowLabel}>Weekly Summary</Text>
+-          <Switch
+-            value={settings.weeklySummary}
+-            onValueChange={(v) => onUpdateSetting('weeklySummary', v)}
+-            trackColor={{ false: colors.surfaceElevated, true: colors.primary }}
+-            thumbColor={colors.textOnPrimary}
+-          />
+-        </View>
+-        <View style={styles.divider} />
++        {/* HUNT-05-124 B-H05-1: the Daily Check-in, New Client Alerts and Weekly
++            Summary switches were removed. The server stored them but sends no
++            alert for any of them, so a coach left them on and waited for alerts
++            that never came. Real channels live in Notification preferences. */}
+         {/* Audit P1: surface the canonical NotificationPreferences screen. */}
+         <TouchableOpacity
+           style={styles.row}

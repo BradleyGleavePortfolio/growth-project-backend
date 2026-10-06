@@ -1,0 +1,285 @@
+diff --git a/src/__tests__/romanPoolEmpty125.test.tsx b/src/__tests__/romanPoolEmpty125.test.tsx
+new file mode 100644
+index 00000000..637075be
+--- /dev/null
++++ b/src/__tests__/romanPoolEmpty125.test.tsx
+@@ -0,0 +1,155 @@
++/**
++ * AUDIT-05-125 U1: the coach's monthly AI credit pool is used up.
++ *
++ * Backend B-668-1 answers a Roman send with 402 COACH_AI_BUDGET_EXHAUSTED
++ * (before the turn is stored), or the same code in the in-stream error frame.
++ * On main the app read both as a generic failure: "That request did not
++ * complete. Send it once more, and I will try again." with a Send again button
++ * that can never succeed. Now the send maps to kind `poolEmpty`, and the chat
++ * shows the pool copy for the right audience with no retry button.
++ */
++import React from 'react';
++import { render } from '@testing-library/react-native';
++import { RomanApiError, sendMessage } from '../api/romanApi';
++import RomanChatScreen from '../screens/roman/RomanChatScreen';
++import { romanPoolEmpty } from '../components/roman/romanVoice';
++
++jest.mock('@expo/vector-icons', () => {
++  function Icon() {
++    return null;
++  }
++  return { Ionicons: Icon, MaterialIcons: Icon, Feather: Icon };
++});
++
++jest.mock('react-native-reanimated', () => {
++  const View = jest.requireActual('react-native').View;
++  return {
++    __esModule: true,
++    default: { View },
++    useSharedValue: (v: number) => ({ value: v }),
++    useAnimatedStyle: () => ({}),
++    withTiming: (v: number) => v,
++    withRepeat: (v: number) => v,
++    withDelay: (_d: number, v: number) => v,
++    withSequence: (...v: number[]) => v[0],
++  };
++});
++
++jest.mock('../theme/ThemeProvider', () => {
++  const colors = new Proxy({}, { get: (_t, prop) => (typeof prop === 'string' ? `#${prop}` : '#000') });
++  const Pass = ({ children }: { children: React.ReactNode }) => children;
++  return { __esModule: true, ThemeProvider: Pass, default: Pass, useTheme: () => ({ colors }) };
++});
++
++jest.mock('../theme/useTheme', () => {
++  const { lightTokens } = jest.requireActual('../theme/tokens');
++  return { useTheme: () => ({ colorScheme: 'light', semanticColors: lightTokens }) };
++});
++
++jest.mock('../services/sentry', () => ({ captureError: jest.fn() }));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => true) }));
++jest.mock('../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn(), post: jest.fn(), delete: jest.fn() },
++}));
++jest.mock('../services/secureStorage', () => ({
++  secureStorage: { getItem: jest.fn(async () => 'test-token') },
++}));
++jest.mock('../hooks/useCurrentUser', () => ({
++  useCurrentUser: () => ({ id: 'client-1', role: 'client', firstName: 'Jane' }),
++}));
++
++const mockUseRomanChat = jest.fn();
++jest.mock('../screens/roman/useRomanChat', () => ({
++  useRomanChat: (surface: unknown) => mockUseRomanChat(surface),
++}));
++
++const SESSION_ID = '11111111-1111-4111-8111-111111111111';
++const POOL_BODY = {
++  statusCode: 402,
++  code: 'COACH_AI_BUDGET_EXHAUSTED',
++  message: "Your coach's AI credits for this month are used up, so Roman cannot answer right now.",
++};
++
++const realFetch = global.fetch;
++afterEach(() => {
++  global.fetch = realFetch;
++  mockUseRomanChat.mockReset();
++});
++
++function mockFetchOnce(init: { ok: boolean; status: number; text: string }) {
++  const headers: Record<string, string> = {};
++  const response: Pick<Response, 'ok' | 'status' | 'headers' | 'text'> = {
++    ok: init.ok,
++    status: init.status,
++    headers: { get: (k: string) => headers[k.toLowerCase()] ?? null } as Headers,
++    text: async () => init.text,
++  };
++  global.fetch = jest.fn(async () => response as Response);
++}
++
++async function failureOf(p: Promise<unknown>): Promise<unknown> {
++  try {
++    await p;
++  } catch (err) {
++    return err;
++  }
++  throw new Error('expected a rejection');
++}
++
++describe('romanApi.sendMessage: coach AI credit pool used up', () => {
++  it('402 COACH_AI_BUDGET_EXHAUSTED -> poolEmpty, turn not stored', async () => {
++    mockFetchOnce({ ok: false, status: 402, text: JSON.stringify(POOL_BODY) });
++    const err = await failureOf(sendMessage(SESSION_ID, 'hi'));
++    expect(err).toBeInstanceOf(RomanApiError);
++    expect(err).toMatchObject({ kind: 'poolEmpty', turnStored: false });
++  });
++
++  it('the same code in the stream error frame -> poolEmpty, turn stored', async () => {
++    const frame = `event: error\ndata: ${JSON.stringify({ code: POOL_BODY.code, message: POOL_BODY.message })}\n\n`;
++    mockFetchOnce({ ok: true, status: 200, text: frame });
++    const err = await failureOf(sendMessage(SESSION_ID, 'hi'));
++    expect(err).toMatchObject({ kind: 'poolEmpty', turnStored: true });
++  });
++
++  it('a 402 without the machine code stays generic', async () => {
++    mockFetchOnce({ ok: false, status: 402, text: JSON.stringify({ message: 'Payment required' }) });
++    await expect(sendMessage(SESSION_ID, 'hi')).rejects.toMatchObject({ kind: 'generic' });
++  });
++});
++
++function romanState(sendError: unknown) {
++  return {
++    phase: 'ready',
++    session: { id: 's1', surface: 'client' },
++    isFirstOpen: false,
++    messages: [],
++    sending: false,
++    sendError,
++    nextCursor: null,
++    loadingOlder: false,
++    reload: jest.fn(),
++    loadOlder: jest.fn(),
++    send: jest.fn(async () => 'send-failed'),
++    clearSendError: jest.fn(),
++  };
++}
++
++describe('RomanChatScreen: coach AI credit pool used up', () => {
++  it.each(['client', 'coach'] as const)('%s surface: pool copy, no Send again', async (surface) => {
++    mockUseRomanChat.mockReturnValue(romanState({ kind: 'poolEmpty', message: 'x' }));
++    const r = await render(<RomanChatScreen surface={surface} />);
++    expect(r.getByText(romanPoolEmpty(surface))).toBeTruthy();
++    expect(r.queryByTestId('roman-send-retry')).toBeNull();
++    expect(r.queryByText(/did not complete/)).toBeNull();
++    expect(r.getByTestId('roman-composer')).toBeTruthy();
++  });
++
++  it('client copy never shows credit figures; coach copy names no purchase step', () => {
++    expect(romanPoolEmpty('client')).not.toMatch(/\d/);
++    expect(romanPoolEmpty('coach')).not.toMatch(/pack|buy|purchase/i);
++    for (const a of ['client', 'coach'] as const) {
++      expect(romanPoolEmpty(a)).not.toMatch(/[!]|\bI\b/);
++    }
++  });
++});
+diff --git a/src/api/romanApi.ts b/src/api/romanApi.ts
+index 555a05d4..8b9bb221 100644
+--- a/src/api/romanApi.ts
++++ b/src/api/romanApi.ts
+@@ -202,6 +202,7 @@ export type RomanErrorKind =
+   | 'dailyCap' // 429 ROMAN_RATE_LIMIT / 503 ROMAN_CAPACITY_REACHED — daily cap pop-up
+   | 'offline' // no network reachability
+   | 'aiRefused' // R2b: 403 ai_consent_required / 503 ai_egress_blocked (HTTP or in-stream)
++  | 'poolEmpty' // 402 COACH_AI_BUDGET_EXHAUSTED: the coach's monthly AI credit pool is used up
+   | 'generic'; // anything else (5xx, malformed, unknown)
+ 
+ export class RomanApiError extends Error {
+@@ -274,6 +275,18 @@ function parseRetryAfter(value: unknown): number | undefined {
+ 
+ const ROMAN_DAILY_CAP_MESSAGE = 'Daily AI limit reached.';
+ 
++/** Backend B-668-1 machine code: the coach's monthly AI credit pool is used up (402). */
++export const COACH_AI_BUDGET_EXHAUSTED_CODE = 'COACH_AI_BUDGET_EXHAUSTED';
++const ROMAN_POOL_EMPTY_MESSAGE = 'AI credits used up for this month.';
++
++function isPoolEmptyBody(body: unknown): boolean {
++  return (
++    !!body &&
++    typeof body === 'object' &&
++    (body as { code?: unknown }).code === COACH_AI_BUDGET_EXHAUSTED_CODE
++  );
++}
++
+ /** Map any thrown error (axios or otherwise) to a typed RomanApiError. */
+ function toRomanApiError(err: unknown): RomanApiError {
+   if (err instanceof RomanApiError) return err;
+@@ -501,8 +514,17 @@ export async function sendMessage(
+       if (response.status === 404) {
+         throw new RomanApiError('unavailable', 'Roman is not available right now.');
+       }
+-      const coded = response.status === 429 || response.status === 403 || response.status === 503;
++      const coded =
++        response.status === 402 ||
++        response.status === 429 ||
++        response.status === 403 ||
++        response.status === 503;
+       const errorBody = coded ? await readErrorBody(response) : null;
++      // The coach's monthly AI credit pool is used up (backend B-668-1),
++      // before the turn is stored: its own copy, never a retryable error.
++      if (response.status === 402 && isPoolEmptyBody(errorBody)) {
++        throw new RomanApiError('poolEmpty', ROMAN_POOL_EMPTY_MESSAGE);
++      }
+       if (response.status === 429 || response.status === 503) {
+         // Daily AI cap (429 ROMAN_RATE_LIMIT / 503 ROMAN_CAPACITY_REACHED),
+         // before the turn is stored: the pop-up, never a generic error.
+@@ -567,6 +589,9 @@ export async function sendMessage(
+       if (dailyCap) {
+         throw new RomanApiError('dailyCap', ROMAN_DAILY_CAP_MESSAGE, undefined, undefined, true, dailyCap);
+       }
++      if (streamError.code === COACH_AI_BUDGET_EXHAUSTED_CODE) {
++        throw new RomanApiError('poolEmpty', ROMAN_POOL_EMPTY_MESSAGE, undefined, undefined, true);
++      }
+       const kind: RomanErrorKind =
+         streamError.code === 'ROMAN_UNAVAILABLE' ? 'unavailable' : 'generic';
+       throw new RomanApiError(kind, streamError.message, undefined, undefined, true);
+diff --git a/src/components/roman/romanVoice.ts b/src/components/roman/romanVoice.ts
+index 7af9f7ee..2a1c985d 100644
+--- a/src/components/roman/romanVoice.ts
++++ b/src/components/roman/romanVoice.ts
+@@ -174,6 +174,19 @@ export const ROMAN_SEND_FAILED =
+ export const ROMAN_STORED_NO_REPLY =
+   'Your message is saved above, but I could not answer it. Tap Send again to ask once more.';
+ 
++/**
++ * The coach's monthly AI credit pool is used up (backend 402
++ * COACH_AI_BUDGET_EXHAUSTED, B-668-1). Sending again cannot help, so the copy
++ * names what still works and offers no retry. A client never sees the
++ * coach's credit figures; the coach copy names no purchase step, because
++ * digital credit packs are not sold in the store builds.
++ */
++export function romanPoolEmpty(audience: 'client' | 'coach'): string {
++  return audience === 'coach'
++    ? 'The AI credits on your coaching account are used up for this month, so Roman cannot answer right now. Your clients, messages and the rest of the app work as usual.'
++    : "Your coach's AI credits for this month are used up, so Roman cannot answer right now. Your coach is in Messages any time, and your plan and logs work as usual.";
++}
++
+ /** After AI help is allowed for a message the server already stored (B-326-3). */
+ export const ROMAN_AI_ON_ASK_AGAIN =
+   'AI help is on now. Your message is saved above without an answer. Tap send to ask again.';
+diff --git a/src/screens/roman/RomanChatScreen.tsx b/src/screens/roman/RomanChatScreen.tsx
+index 5eaf0fb6..76d2342d 100644
+--- a/src/screens/roman/RomanChatScreen.tsx
++++ b/src/screens/roman/RomanChatScreen.tsx
+@@ -46,6 +46,7 @@ import AiDailyCapModal from '../../components/ai/AiDailyCapModal';
+ import { aiRefusalCopy } from '../../lib/ai/aiRefusal';
+ import { Skeleton } from '../../ui/skeletons/Skeleton';
+ import {
++  romanPoolEmpty,
+   romanRateLimited,
+   ROMAN_LOADING_A11Y_LABEL,
+   ROMAN_LOADING_OLDER,
+@@ -197,11 +198,13 @@ export default function RomanChatScreen({
+             const c = aiRefusalCopy(refusal, refusalAudience, 'roman');
+             return `${c.title}. ${c.body}`;
+           })()
+-        : sendError.kind === 'rateLimited'
+-          ? romanRateLimited(sendError.retryAfterSeconds)
+-          : sendError.turnStored
+-            ? ROMAN_STORED_NO_REPLY
+-            : ROMAN_SEND_FAILED;
++        : sendError.kind === 'poolEmpty'
++          ? romanPoolEmpty(refusalAudience)
++          : sendError.kind === 'rateLimited'
++            ? romanRateLimited(sendError.retryAfterSeconds)
++            : sendError.turnStored
++              ? ROMAN_STORED_NO_REPLY
++              : ROMAN_SEND_FAILED;
+ 
+   // Announce a send failure (and its remedy) to assistive tech the moment it
+   // appears. The optimistic user turn was rolled back in useRomanChat, so the
+@@ -389,7 +392,7 @@ export default function RomanChatScreen({
+             <Text style={styles.sendErrorText} accessibilityRole="text">
+               {sendErrorCopy}
+             </Text>
+-            {sendError?.kind !== 'rateLimited' ? (
++            {sendError?.kind !== 'rateLimited' && sendError?.kind !== 'poolEmpty' ? (
+               <TouchableOpacity
+                 style={styles.retryButton}
+                 onPress={onRetrySend}

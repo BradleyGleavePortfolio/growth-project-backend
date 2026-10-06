@@ -1,0 +1,553 @@
+diff --git a/src/screens/client/HomeScreen.tsx b/src/screens/client/HomeScreen.tsx
+index e4c6d765..d01f7d39 100644
+--- a/src/screens/client/HomeScreen.tsx
++++ b/src/screens/client/HomeScreen.tsx
+@@ -57,6 +57,7 @@ import {
+ } from '../../lib/profileCompletion';
+ import { getTodayString } from '../../utils/date';
+ import { isWorkoutDoneToday, type WorkoutRowLike } from '../../utils/workout/workoutDoneToday';
++import CoachErrorState from '../../components/community/coach/CoachErrorState';
+ 
+ // ─── Date-as-poetry helpers ──────────────────────────────────────────────────
+ 
+@@ -155,6 +156,8 @@ export default function HomeScreen() {
+     foodLogs,
+     dailyTotals,
+     waterOz,
++    isLoading,
++    loadError,
+     loadDayData,
+     loadProfile,
+   } = useClientStore();
+@@ -326,6 +329,14 @@ export default function HomeScreen() {
+         }
+       >
+         <HomeHeaderActions />
++        {loadError ? (
++          <CoachErrorState
++            message={loadError}
++            onRetry={() => void onRefresh()}
++            retrying={isLoading || refreshing}
++            testID="home-day-data-error"
++          />
++        ) : null}
+         <DunningBanner surface="HomeScreen" />
+         <CoachlessHomeSlot />
+         <PendingInviteBanner />
+@@ -451,4 +462,3 @@ export default function HomeScreen() {
+     </SafeAreaView>
+   );
+ }
+-
+diff --git a/src/screens/client/LogScreen.tsx b/src/screens/client/LogScreen.tsx
+index 85fa1272..9ca2e3be 100644
+--- a/src/screens/client/LogScreen.tsx
++++ b/src/screens/client/LogScreen.tsx
+@@ -46,6 +46,7 @@ import { HapticService } from '../../ui/haptics/haptics.service';
+ import { AnalyticsEvents } from '../../analytics/events';
+ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+ import { errorMessage } from '../../types/common';
++import CoachErrorState from '../../components/community/coach/CoachErrorState';
+ 
+ export default function LogScreen() {
+   const { colors } = useTheme();
+@@ -63,6 +64,8 @@ export default function LogScreen() {
+     foodLogs,
+     dailyTotals,
+     waterOz,
++    isLoading,
++    loadError,
+     setSelectedDate,
+     loadDayData,
+     logWater,
+@@ -543,6 +546,15 @@ export default function LogScreen() {
+ 
+         <DaySelector selectedDate={selectedDate} onDateChange={handleDateChange} />
+ 
++        {loadError ? (
++          <CoachErrorState
++            message={loadError}
++            onRetry={() => void onRefresh()}
++            retrying={isLoading || refreshing}
++            testID="log-day-data-error"
++          />
++        ) : null}
++
+         <DailySummaryBar dailyTotals={dailyTotals} remaining={remaining} targets={macroTargets} mode={macroMode} />
+         {savedMessage ? (
+           <Text style={styles.savedMessage} accessibilityLiveRegion="polite">{savedMessage}</Text>
+diff --git a/src/screens/client/__tests__/HomeScreen.macroMode.test.tsx b/src/screens/client/__tests__/HomeScreen.macroMode.test.tsx
+index c1e9fbf7..a66aa926 100644
+--- a/src/screens/client/__tests__/HomeScreen.macroMode.test.tsx
++++ b/src/screens/client/__tests__/HomeScreen.macroMode.test.tsx
+@@ -6,7 +6,17 @@
+  */
+ import React from 'react';
+ import AsyncStorage from '@react-native-async-storage/async-storage';
+-import { render, screen } from '@testing-library/react-native';
++import { fireEvent, render, screen } from '@testing-library/react-native';
++
++const mockDayState = {
++  foodLogs: [],
++  dailyTotals: { calories: 600, protein: 40, carbs: 70, fat: 20 },
++  waterOz: 0,
++  isLoading: false,
++  loadError: null as string | null,
++  loadDayData: jest.fn().mockResolvedValue(undefined),
++  loadProfile: jest.fn().mockResolvedValue(undefined),
++};
+ 
+ jest.mock('../../../hooks/useCurrentUser', () => ({
+   useCurrentUser: () => ({
+@@ -16,13 +26,7 @@ jest.mock('../../../hooks/useCurrentUser', () => ({
+   }),
+ }));
+ jest.mock('../../../store/clientStore', () => ({
+-  useClientStore: () => ({
+-    foodLogs: [],
+-    dailyTotals: { calories: 600, protein: 40, carbs: 70, fat: 20 },
+-    waterOz: 0,
+-    loadDayData: jest.fn(),
+-    loadProfile: jest.fn(),
+-  }),
++  useClientStore: () => mockDayState,
+ }));
+ jest.mock('@react-navigation/native', () => ({
+   useNavigation: () => ({ navigate: jest.fn() }),
+@@ -45,10 +49,34 @@ import {
+ } from '../../../macros/macroDisplayStore';
+ 
+ beforeEach(async () => {
++  jest.clearAllMocks();
++  mockDayState.loadError = null;
++  mockDayState.isLoading = false;
+   await AsyncStorage.clear();
+   __resetMacroDisplayStoreForTests();
+ });
+ 
++describe('Home day-data failure state', () => {
++  it('shows a specific failure and a working retry without losing navigation', async () => {
++    mockDayState.loadError = 'Food and water data could not refresh. Check your connection and try again.';
++    await render(<HomeScreen />);
++    expect(screen.getByText(mockDayState.loadError)).toBeTruthy();
++    expect(screen.getByTestId('home-day-data-error')).toBeTruthy();
++    await fireEvent.press(screen.getByTestId('home-day-data-error-retry'));
++    expect(mockDayState.loadDayData).toHaveBeenCalledTimes(2);
++    expect(screen.getByTestId('home-number-grid')).toBeTruthy();
++  });
++
++  it('keeps retry disabled while the refresh is loading', async () => {
++    mockDayState.loadError = 'Water data could not refresh. Check your connection and try again.';
++    mockDayState.isLoading = true;
++    await render(<HomeScreen />);
++    expect(screen.getByTestId('home-day-data-error-retry').props.accessibilityState).toMatchObject({
++      disabled: true,
++    });
++  });
++});
++
+ describe('HomeScreen macro display mode', () => {
+   it('keeps the existing grid when the backend sends no mode', async () => {
+     await render(<HomeScreen />);
+diff --git a/src/screens/client/__tests__/LogScreen.foodSpeed.test.tsx b/src/screens/client/__tests__/LogScreen.foodSpeed.test.tsx
+index 34a084b9..8f6d6a69 100644
+--- a/src/screens/client/__tests__/LogScreen.foodSpeed.test.tsx
++++ b/src/screens/client/__tests__/LogScreen.foodSpeed.test.tsx
+@@ -39,6 +39,7 @@ const mockLog: FoodLog = {
+ const mockStore = {
+   selectedDate: mockToday, foodLogs: [mockLog],
+   dailyTotals: { calories: 248, protein: 47, carbs: 0, fat: 5 }, waterOz: 0,
++  isLoading: false, loadError: null as string | null,
+   setSelectedDate: jest.fn(), loadDayData: jest.fn().mockResolvedValue(undefined), logWater: jest.fn(),
+   removeFoodLogLocally: jest.fn(),
+ };
+@@ -71,12 +72,35 @@ const ok: AxiosResponse = { data: {}, status: 200, statusText: 'OK', headers: {}
+ 
+ beforeEach(() => {
+   jest.clearAllMocks();
++  mockStore.loadError = null;
++  mockStore.isLoading = false;
+   jest.mocked(logApi.logFood).mockResolvedValue(ok);
+   jest.mocked(logApi.deleteEntry).mockResolvedValue(ok);
+   // The catalog search never answers here: local matches must not wait for it.
+   jest.mocked(foodApi.search).mockReturnValue(new Promise<never>(() => {}));
+ });
+ 
++describe('Food Log day-data failure state', () => {
++  it('shows a failed read with retry while Add Food remains available', async () => {
++    mockStore.loadError = 'Food and water data could not refresh. Check your connection and try again.';
++    await render(<LogScreen />);
++    expect(screen.getByText(mockStore.loadError)).toBeTruthy();
++    await fireEvent.press(screen.getByTestId('log-day-data-error-retry'));
++    expect(mockStore.loadDayData).toHaveBeenCalledWith('user', mockToday);
++    expect(mockStore.loadDayData).toHaveBeenCalledTimes(2);
++    expect(screen.getAllByText('Add Food')).not.toHaveLength(0);
++  });
++
++  it('keeps retry disabled while day data is loading', async () => {
++    mockStore.loadError = 'Water data could not refresh. Check your connection and try again.';
++    mockStore.isLoading = true;
++    await render(<LogScreen />);
++    expect(screen.getByTestId('log-day-data-error-retry').props.accessibilityState).toMatchObject({
++      disabled: true,
++    });
++  });
++});
++
+ async function openBreakfast() {
+   await render(<LogScreen />);
+   await act(async () => {
+diff --git a/src/screens/support/SupportInboxScreen.tsx b/src/screens/support/SupportInboxScreen.tsx
+index ed31f79b..a19968c5 100644
+--- a/src/screens/support/SupportInboxScreen.tsx
++++ b/src/screens/support/SupportInboxScreen.tsx
+@@ -20,7 +20,6 @@ import {
+   View,
+   Text,
+   StyleSheet,
+-  ActivityIndicator,
+ } from 'react-native';
+ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+ import HapticPressable from '../../components/HapticPressable';
+@@ -33,7 +32,7 @@ import { SUPPORT_EMAIL } from '../../constants/support';
+ import { SupportEmailFallback, useSupportEmail } from '../../components/support/SupportEmailFallback';
+ 
+ interface Props {
+-  navigation: NavigationProp<ParamListBase>;
++  navigation: Pick<NavigationProp<ParamListBase>, 'goBack'>;
+   /**
+    * Opened from the auth stack (nobody signed in). The chat session is reset
+    * first unless it is already this device's anonymous one, so a previous
+@@ -57,6 +56,7 @@ export default function SupportInboxScreen({ navigation, preSignIn = false }: Pr
+   const [unavailable, setUnavailable] = useState(false);
+   // Sol B-324-1: a failed email launch is shown, never swallowed.
+   const supportEmail = useSupportEmail('Support request');
++  const problemEmail = useSupportEmail('Report a problem');
+   const open = () => {
+     const result = openSupportChat({ preSignIn });
+     setBlocked(result === 'blocked');
+@@ -145,15 +145,25 @@ export default function SupportInboxScreen({ navigation, preSignIn = false }: Pr
+           <Text style={styles.openBtnText}>{blocked ? 'Try again' : 'Open Support Chat'}</Text>
+         </HapticPressable>
+         )}
+-        {unavailable ? (
+-          <SupportEmailFallback
+-            handle={supportEmail}
+-            textStyle={styles.body_text}
+-            linkColor={colors.primary}
+-            testID="support-email-fallback"
+-            centered
+-          />
++        {!unavailable ? (
++          <HapticPressable
++            intent="light"
++            style={styles.emailAction}
++            onPress={() => void problemEmail.open()}
++            accessibilityRole="button"
++            accessibilityLabel="Report a problem by email"
++            testID="support-report-problem"
++          >
++            <Text style={styles.emailActionText}>Report a problem by email</Text>
++          </HapticPressable>
+         ) : null}
++        <SupportEmailFallback
++          handle={unavailable ? supportEmail : problemEmail}
++          textStyle={styles.body_text}
++          linkColor={colors.primary}
++          testID="support-email-fallback"
++          centered
++        />
+ 
+         <Text style={styles.note}>
+           Support is separate from Coach AI and the Client Bot. A human
+@@ -231,6 +241,17 @@ function makeStyles(colors: ThemeColors) {
+       fontWeight: '500',
+       color: colors.textOnPrimary,
+     },
++    emailAction: {
++      minHeight: 44,
++      justifyContent: 'center',
++      paddingHorizontal: 16,
++    },
++    emailActionText: {
++      color: colors.primary,
++      fontSize: 15,
++      fontWeight: '500',
++      textDecorationLine: 'underline',
++    },
+     note: {
+       fontSize: 13,
+       color: colors.textMuted,
+diff --git a/src/screens/support/__tests__/SupportInboxReportProblem.test.tsx b/src/screens/support/__tests__/SupportInboxReportProblem.test.tsx
+new file mode 100644
+index 00000000..afdc7852
+--- /dev/null
++++ b/src/screens/support/__tests__/SupportInboxReportProblem.test.tsx
+@@ -0,0 +1,43 @@
++import React from 'react';
++import { Linking } from 'react-native';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++import SupportInboxScreen from '../SupportInboxScreen';
++
++const mockOpenChat = jest.fn();
++jest.mock('../../../services/support/crisp.service', () => ({
++  openSupportChat: (...args: unknown[]) => mockOpenChat(...args),
++}));
++jest.mock('../../../theme/ThemeProvider', () => ({
++  useTheme: () => ({ colors: new Proxy({}, { get: () => '#000000' }) }),
++}));
++jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn().mockResolvedValue(true) }));
++
++const navigation = { goBack: jest.fn() };
++
++describe('Support problem reporting', () => {
++  beforeEach(() => {
++    jest.clearAllMocks();
++    mockOpenChat.mockReturnValue('opened');
++  });
++  afterEach(() => jest.restoreAllMocks());
++
++  it('offers email problem reporting even when the SDK says the chat opened', async () => {
++    const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(true);
++    const screen = await render(<SupportInboxScreen navigation={navigation} />);
++    expect(screen.getByTestId('support-chat-open')).toBeTruthy();
++    await fireEvent.press(screen.getByRole('button', { name: 'Report a problem by email' }));
++    expect(openURL).toHaveBeenCalledWith(
++      'mailto:Bradleyapple1031@gmail.com?subject=Report%20a%20problem',
++    );
++  });
++
++  it('offers the existing selectable address and retry if problem reporting cannot open an email app', async () => {
++    jest.spyOn(Linking, 'openURL').mockRejectedValue(new Error('no mail app'));
++    const screen = await render(<SupportInboxScreen navigation={navigation} />);
++    await fireEvent.press(screen.getByRole('button', { name: 'Report a problem by email' }));
++    await waitFor(() => expect(screen.getByTestId('support-email-fallback')).toBeTruthy());
++    expect(screen.getByTestId('support-email-fallback-address').props.selectable).toBe(true);
++    expect(screen.getByTestId('support-email-fallback-copy')).toBeTruthy();
++    expect(screen.getByTestId('support-email-fallback-retry')).toBeTruthy();
++  });
++});
+diff --git a/src/store/__tests__/clientStore.failureStates.test.ts b/src/store/__tests__/clientStore.failureStates.test.ts
+new file mode 100644
+index 00000000..f3dc9fd7
+--- /dev/null
++++ b/src/store/__tests__/clientStore.failureStates.test.ts
+@@ -0,0 +1,63 @@
++import { useClientStore } from '../clientStore';
++
++const mockGetFood = jest.fn();
++const mockGetWater = jest.fn();
++
++jest.mock('../../services/api', () => ({
++  logApi: { getDaily: (...args: unknown[]) => mockGetFood(...args) },
++  waterApi: { getDaily: (...args: unknown[]) => mockGetWater(...args) },
++}));
++jest.mock('../../utils/logger', () => ({ logger: { error: jest.fn() } }));
++
++const foodDay = {
++  data: {
++    entries: [],
++    total_calories: 420, total_protein_g: 30, total_carbs_g: 50, total_fat_g: 11,
++  },
++};
++
++describe('client day data failure state', () => {
++  beforeEach(() => {
++    jest.clearAllMocks();
++    useClientStore.getState().reset();
++    mockGetFood.mockResolvedValue(foodDay);
++    mockGetWater.mockResolvedValue({ data: { total_ml: 591.47 } });
++  });
++
++  it('distinguishes a failed read from an empty food log and stops loading', async () => {
++    mockGetFood.mockRejectedValue(new Error('Network Error'));
++    await useClientStore.getState().loadDayData('client', '2026-10-06');
++    expect(useClientStore.getState()).toMatchObject({
++      isLoading: false,
++      loadError: 'Food and water data could not refresh. Check your connection and try again.',
++    });
++  });
++
++  it('keeps previously displayed data on failure and clears the notice after a successful retry', async () => {
++    await useClientStore.getState().loadDayData('client', '2026-10-06');
++    mockGetFood.mockRejectedValueOnce(new Error('Request failed with status code 503'));
++    await useClientStore.getState().loadDayData('client', '2026-10-06');
++    expect(useClientStore.getState().dailyTotals.calories).toBe(420);
++    expect(useClientStore.getState()).toMatchObject({ loadError: expect.any(String) });
++    await useClientStore.getState().loadDayData('client', '2026-10-06');
++    expect(useClientStore.getState()).toMatchObject({ isLoading: false, loadError: null });
++  });
++
++  it('does not turn a water-read failure into an unlabelled zero', async () => {
++    await useClientStore.getState().loadDayData('client', '2026-10-06');
++    mockGetWater.mockRejectedValueOnce(new Error('Network Error'));
++    await useClientStore.getState().loadDayData('client', '2026-10-06');
++    expect(useClientStore.getState()).toMatchObject({
++      waterOz: 20, isLoading: false,
++      loadError: 'Water data could not refresh. Check your connection and try again.',
++    });
++    expect(useClientStore.getState().dailyTotals.calories).toBe(420);
++  });
++
++  it('removes a failed-read notice when resetting the store', async () => {
++    mockGetFood.mockRejectedValueOnce(new Error('Network Error'));
++    await useClientStore.getState().loadDayData('client');
++    useClientStore.getState().reset();
++    expect(useClientStore.getState()).toMatchObject({ loadError: null, isLoading: false });
++  });
++});
+diff --git a/src/store/clientStore.ts b/src/store/clientStore.ts
+index af25929f..62e1657e 100644
+--- a/src/store/clientStore.ts
++++ b/src/store/clientStore.ts
+@@ -18,6 +18,7 @@ interface ClientStore {
+   dailyTotals: DailyTotals;
+   waterOz: number;
+   isLoading: boolean;
++  loadError: string | null;
+ 
+   setSelectedDate: (date: string) => void;
+   loadDayData: (userId: string, date?: string) => Promise<void>;
+@@ -45,6 +46,7 @@ const initialClientState = {
+   dailyTotals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+   waterOz: 0,
+   isLoading: false,
++  loadError: null as string | null,
+ };
+ 
+ export const useClientStore = create<ClientStore>((set, get) => ({
+@@ -62,7 +64,10 @@ export const useClientStore = create<ClientStore>((set, get) => ({
+       // Fetch food logs and water in parallel
+       const [foodResponse, waterResponse] = await Promise.all([
+         logApi.getDaily(d),
+-        waterApi.getDaily(d).catch(() => ({ data: { total_ml: 0 } })),
++        waterApi.getDaily(d).catch((err: unknown) => {
++          logger.error('ClientStore', 'water data load failed', err);
++          return null;
++        }),
+       ]);
+       const data = foodResponse.data;
+ 
+@@ -125,8 +130,8 @@ export const useClientStore = create<ClientStore>((set, get) => ({
+       });
+ 
+       // Convert ml to oz for display (1 oz = 29.5735 ml)
+-      const totalMl = waterResponse.data?.total_ml || 0;
+-      const waterOz = Math.round(totalMl / 29.5735);
++      const totalMl = waterResponse?.data?.total_ml || 0;
++      const waterOz = waterResponse ? Math.round(totalMl / 29.5735) : get().waterOz;
+ 
+       set({
+         foodLogs: logs,
+@@ -139,12 +144,18 @@ export const useClientStore = create<ClientStore>((set, get) => ({
+         waterOz,
+         selectedDate: d,
+         isLoading: false,
++        loadError: waterResponse
++          ? null
++          : 'Water data could not refresh. Check your connection and try again.',
+       });
+     } catch (err) {
+-      // Read-only day data aggregation. Empty totals are acceptable; the
+-      // UI falls back to zeros and the user can retry via pull-to-refresh.
++      // Preserve the last data, but mark this as a failed read rather than
++      // presenting empty/stale values as a successfully loaded day.
+       logger.error('ClientStore', 'loadDayData failed', err);
+-      set({ isLoading: false });
++      set({
++        isLoading: false,
++        loadError: 'Food and water data could not refresh. Check your connection and try again.',
++      });
+     }
+   },
+ 
+diff --git a/src/types/__tests__/common.failureCopy.test.ts b/src/types/__tests__/common.failureCopy.test.ts
+new file mode 100644
+index 00000000..d8446f1b
+--- /dev/null
++++ b/src/types/__tests__/common.failureCopy.test.ts
+@@ -0,0 +1,50 @@
++import { errorMessage } from '../common';
++
++describe('shared API failure copy', () => {
++  it.each([500, 502, 503, 504])('describes HTTP %s without exposing generic server text', (status) => {
++    expect(errorMessage({
++      message: `Request failed with status code ${status}`,
++      response: { status, data: { message: 'Internal Server Error' } },
++    }, 'Could not load food.')).toBe(
++      'The service is temporarily unavailable. Try again in a moment.',
++    );
++  });
++
++  it('does not show a gateway HTML body to the person', () => {
++    expect(errorMessage({
++      response: { status: 502, data: '<html>Bad Gateway</html>' },
++    })).toBe('The service is temporarily unavailable. Try again in a moment.');
++  });
++
++  it('explains a network failure', () => {
++    expect(errorMessage({ code: 'ERR_NETWORK', message: 'Network Error' })).toBe(
++      'The service could not be reached. Check your connection and try again.',
++    );
++  });
++
++  it.each(['ECONNABORTED', 'ETIMEDOUT'])('explains timeout code %s', (code) => {
++    expect(errorMessage({ code, message: 'timeout of 30000ms exceeded' })).toBe(
++      'The request timed out. Check your connection and try again.',
++    );
++  });
++
++  it('keeps a specific validation or permission response', () => {
++    expect(errorMessage({
++      response: { status: 400, data: { message: 'Choose a serving unit.' } },
++    })).toBe('Choose a serving unit.');
++    expect(errorMessage({
++      response: { status: 403, data: { message: 'Your coach must approve this change.' } },
++    })).toBe('Your coach must approve this change.');
++  });
++
++  it('keeps the callers specific fallback and local error details', () => {
++    expect(errorMessage(null, 'The entry could not be loaded.')).toBe('The entry could not be loaded.');
++    expect(errorMessage(new Error('The saved routine has no exercises.'))).toBe(
++      'The saved routine has no exercises.',
++    );
++  });
++
++  it('has an actionable default when no detail is available', () => {
++    expect(errorMessage(null)).toBe('The request could not be completed. Try again in a moment.');
++  });
++});
+diff --git a/src/types/common.ts b/src/types/common.ts
+index e7275d70..89ed2f91 100644
+--- a/src/types/common.ts
++++ b/src/types/common.ts
+@@ -34,9 +34,27 @@ export interface ApiErrorLike {
+ // Extract a human-readable message from an unknown error without using `any`.
+ // Axios response body wins over Error.message — the backend message is more
+ // specific than the generic JS error message.
+-export function errorMessage(err: unknown, fallback = 'Something went wrong'): string {
++export function errorMessage(
++  err: unknown,
++  fallback = 'The request could not be completed. Try again in a moment.',
++): string {
+   if (err && typeof err === 'object') {
+-    const e = err as { response?: { data?: unknown }; message?: string };
++    const e = err as {
++      response?: { data?: unknown; status?: number };
++      message?: string;
++      code?: string;
++    };
++    // Transport/server failures carry technical Axios text or a gateway HTML
++    // body, not a useful instruction. Keep specific 4xx/domain copy below.
++    if (typeof e.response?.status === 'number' && e.response.status >= 500) {
++      return 'The service is temporarily unavailable. Try again in a moment.';
++    }
++    if (e.code === 'ECONNABORTED' || e.code === 'ETIMEDOUT') {
++      return 'The request timed out. Check your connection and try again.';
++    }
++    if (e.code === 'ERR_NETWORK' || e.message === 'Network Error') {
++      return 'The service could not be reached. Check your connection and try again.';
++    }
+     const data = e.response?.data;
+     if (data && typeof data === 'object') {
+       const d = data as Record<string, unknown>;

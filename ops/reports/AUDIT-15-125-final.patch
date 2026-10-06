@@ -1,0 +1,620 @@
+diff --git a/src/hooks/useApi.ts b/src/hooks/useApi.ts
+index c9ee471..58e8d82 100644
+--- a/src/hooks/useApi.ts
++++ b/src/hooks/useApi.ts
+@@ -51,6 +51,9 @@ export type ApiHabit = {
+   emoji?: string | null;
+   category?: string | null;
+   target_per_week?: number | null;
++  target_value?: number | null;
++  unit?: string | null;
++  logs?: ApiHabitLog[];
+   created_at: string;
+ };
+ 
+@@ -60,6 +63,7 @@ export type ApiHabitLog = {
+   user_id: string;
+   date: string;
+   completed: boolean;
++  value?: number | null;
+ };
+ 
+ export function useHabits(opts?: UseQueryOptions<ApiHabit[]>) {
+@@ -82,10 +86,9 @@ export function useHabitLogs(date: string, opts?: UseQueryOptions<ApiHabitLog[]>
+ export function useCreateHabit() {
+   const qc = useQueryClient();
+   return useMutation({
+-    // Backend tolerates extra fields (icon/color/unit/target_value/frequency) that
+-    // the legacy HabitsScreen modal already collected. Accept Record so callers
+-    // don't have to be artificially narrow.
+-    mutationFn: (data: Record<string, unknown>) => habitsApi.create(data).then((r) => r.data),
++    // Match CreateHabitDto: the production API rejects unknown display fields.
++    mutationFn: (data: { name: string; category?: string; target_value?: number; unit?: string }) =>
++      habitsApi.create(data).then((r) => r.data),
+     onSuccess: () => {
+       qc.invalidateQueries({ queryKey: ['habits'] });
+     },
+diff --git a/src/screens/client/FastingScreen.tsx b/src/screens/client/FastingScreen.tsx
+index 07e424e..5d0a636 100644
+--- a/src/screens/client/FastingScreen.tsx
++++ b/src/screens/client/FastingScreen.tsx
+@@ -89,14 +89,25 @@ export default function FastingScreen() {
+     try {
+       if (!currentUser) return;
+       const histRes = await fastingApi.getHistory(50);
+-      type SessionRow = { id: string; start_time?: string; end_time?: string | null; target_hours?: number; completed?: boolean; startTime?: string; endTime?: string | null; targetHours?: number };
+-      const sessions: FastSession[] = ((histRes.data as SessionRow[] | undefined) || []).map((s) => ({
+-        id: s.id,
+-        startTime: s.start_time || s.startTime || '',
+-        endTime: s.end_time || s.endTime || undefined,
+-        targetHours: s.target_hours || s.targetHours || 16,
+-        completed: s.completed ?? (s.end_time != null),
+-      }));
++      type SessionRow = { id: string; start_time?: string; end_time?: string | null; protocol?: string | null; target_hours?: number; completed?: boolean; startTime?: string; endTime?: string | null; targetHours?: number };
++      const sessions: FastSession[] = ((histRes.data as SessionRow[] | undefined) || []).map((s) => {
++        const startTime = s.start_time || s.startTime || '';
++        const endTime = s.end_time || s.endTime || undefined;
++        // The production API persists the selected hours in `protocol`,
++        // not target_hours. Keep legacy numeric fields compatible.
++        const targetHours = s.target_hours || s.targetHours || Number(s.protocol?.split(':')[0]) || 16;
++        const elapsedHours = endTime
++          ? (new Date(endTime).getTime() - new Date(startTime).getTime()) / (1000 * 60 * 60)
++          : 0;
++        return {
++          id: s.id,
++          startTime,
++          endTime,
++          targetHours,
++          // Match the existing local fasting completion rule: 90% of target.
++          completed: s.completed ?? (!!endTime && elapsedHours >= targetHours * 0.9),
++        };
++      });
+ 
+       // Find active fast (no end time)
+       const active = sessions.find((s) => !s.endTime) || null;
+@@ -124,7 +135,7 @@ export default function FastingScreen() {
+       // tomorrow in UTC. Using toISOString() here was silently resetting the
+       // streak for AU/HI users every night (P0-4).
+       const completedDays = new Set(
+-        completed.map((f) => bucketDateLocal(new Date(f.startTime))),
++        completed.filter((f) => f.completed).map((f) => bucketDateLocal(new Date(f.startTime))),
+       );
+       let s = 0;
+       const now = new Date();
+@@ -253,10 +264,10 @@ export default function FastingScreen() {
+     if (!currentUser || !activeFast) return;
+     const elapsedHours = elapsed / (1000 * 60 * 60);
+     const pctDone = (elapsedHours / activeFast.targetHours) * 100;
+-    if (pctDone < 50) {
++    if (pctDone < 90) {
+       Alert.alert(
+         'End fast early?',
+-        `You're only ${Math.round(pctDone)}% through. This won't count as completed.`,
++        `${Math.round(pctDone)}% of the target reached. This fast will be saved in history, but will not count as completed.`,
+         [
+           { text: 'Keep going', style: 'cancel' },
+           {
+@@ -457,7 +468,7 @@ export default function FastingScreen() {
+       <FadeInView delay={100}>
+       <View style={styles.statsRow}>
+         <View style={styles.statCard}>
+-          <Text style={styles.statValue}>{stats.totalCompleted}</Text>
++          <Text testID="fasting-completed-count" style={styles.statValue}>{stats.totalCompleted}</Text>
+           <Text style={styles.statLabel}>Completed</Text>
+         </View>
+         <View style={styles.statCard}>
+diff --git a/src/screens/client/HabitsScreen.tsx b/src/screens/client/HabitsScreen.tsx
+index a8d2f4b..65675bc 100644
+--- a/src/screens/client/HabitsScreen.tsx
++++ b/src/screens/client/HabitsScreen.tsx
+@@ -18,10 +18,11 @@ import {
+   TouchableOpacity,
+   RefreshControl,
+   Alert,
++  ActivityIndicator,
+ } from 'react-native';
+ import { Ionicons } from '@expo/vector-icons';
+ 
+-import { getTodayString } from '../../utils/date';
++import { addDays, getLocalWeekStart, getTodayString } from '../../utils/date';
+ import { useTheme } from '../../theme/ThemeProvider';
+ import { errorMessage } from '../../types/common';
+ import {
+@@ -37,7 +38,7 @@ import {
+ } from '../../hooks/useApi';
+ 
+ import { makeStyles } from './habits/styles';
+-import { makeHABIT_COLORS, type HabitView, type TabMode } from './habits/constants';
++import { type HabitView, type TabMode } from './habits/constants';
+ import { HabitCard } from './habits/HabitCard';
+ import { MoodEnergyPicker } from './habits/MoodEnergyPicker';
+ import { AddHabitSheet } from './habits/AddHabitSheet';
+@@ -47,7 +48,6 @@ import { featureFlags } from '../../config/featureFlags';
+ export default function HabitsScreen() {
+   const { colors, semanticColors: sc } = useTheme();
+   const styles = useMemo(() => makeStyles(colors, sc), [colors, sc]);
+-  const HABIT_COLORS = useMemo(() => makeHABIT_COLORS(colors), [colors]);
+   const today = getTodayString();
+   const [tab, setTab] = useState<TabMode>('habits');
+   const [showAddModal, setShowAddModal] = useState(false);
+@@ -80,8 +80,6 @@ export default function HabitsScreen() {
+ 
+   // Add-habit modal form
+   const [newName, setNewName] = useState('');
+-  const [newIcon, setNewIcon] = useState('checkmark-circle');
+-  const [newColor, setNewColor] = useState(colors.primary);
+   const [newTarget, setNewTarget] = useState('1');
+   const [newUnit, setNewUnit] = useState('times');
+ 
+@@ -134,15 +132,21 @@ export default function HabitsScreen() {
+       const l = row as ApiHabitLog & Partial<{ habitId: string; count: number }>;
+       return [
+         l.habit_id || l.habitId || '',
+-        { completed: l.completed ?? false, count: l.count || 0 },
++        { completed: l.completed ?? false, count: l.value ?? l.count ?? 0 },
+       ] as [string, { completed: boolean; count: number }];
+     }),
+   );
+-  const habits: HabitView[] = allHabits.map((h) => ({
++  const weekStart = getLocalWeekStart();
++  const weekDates = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
++  const habits: HabitView[] = allHabits.map((h, index) => ({
+     ...h,
+     log: logsMap.get(h.id) || null,
+     runDays: 0,
+-    weekDots: [false, false, false, false, false, false, false],
++    weekDots: weekDates.map((date) =>
++      date === today
++        ? (logsMap.get(h.id)?.completed ?? false)
++        : (habitsQ.data?.[index].logs?.some((log) => log.completed && log.date.slice(0, 10) === date) ?? false),
++    ),
+   }));
+ 
+   const refreshing =
+@@ -199,10 +203,7 @@ export default function HabitsScreen() {
+     createHabit.mutate(
+       {
+         name: newName.trim(),
+-        icon: newIcon,
+-        color: newColor,
+         category: 'custom',
+-        frequency: 'daily',
+         target_value: parseInt(newTarget) || 1,
+         unit: newUnit || 'times',
+       },
+@@ -210,8 +211,6 @@ export default function HabitsScreen() {
+         onSuccess: () => {
+           setShowAddModal(false);
+           setNewName('');
+-          setNewIcon('checkmark-circle');
+-          setNewColor(colors.primary);
+           setNewTarget('1');
+           setNewUnit('times');
+         },
+@@ -307,34 +306,53 @@ export default function HabitsScreen() {
+       >
+         {tab === 'habits' ? (
+           <>
+-            {/* Progress */}
+-            <View style={styles.progressCard}>
+-              <View style={styles.progressCircle}>
+-                <Text style={styles.progressPct}>{completionPct}%</Text>
+-                <Text style={styles.progressLabel}>Done</Text>
++            {habitsQ.isLoading || logsQ.isLoading ? (
++              <View style={styles.progressCard}>
++                <ActivityIndicator color={colors.primary} accessibilityLabel="Loading habits" />
++                <Text style={styles.progressStatLabel}>Loading habits</Text>
+               </View>
+-              <View style={styles.progressStats}>
+-                <Text style={styles.progressStatValue}>
+-                  {completedCount}/{habits.length}
+-                </Text>
+-                <Text style={styles.progressStatLabel}>habits completed</Text>
+-                <View style={styles.progressBar}>
+-                  <View style={[styles.progressBarFill, { width: `${completionPct}%` }]} />
+-                </View>
++            ) : habitsQ.isError || logsQ.isError ? (
++              <View style={[styles.progressCard, { flexDirection: 'column', alignItems: 'flex-start', gap: 12 }]}>
++                <Text style={styles.progressStatLabel}>Habits could not be loaded.</Text>
++                <TouchableOpacity onPress={onRefresh} accessibilityRole="button">
++                  <Text style={styles.addBtnText}>Retry habits</Text>
++                </TouchableOpacity>
+               </View>
+-            </View>
+-
+-            {/* Habit Cards */}
+-            {habits.map((habit) => (
+-              <HabitCard
+-                key={habit.id}
+-                habit={habit}
+-                onToggle={handleToggle}
+-                onLongPress={handleDelete}
+-                colors={colors}
+-                styles={styles}
+-              />
+-            ))}
++            ) : habits.length === 0 ? (
++              <View style={[styles.progressCard, { flexDirection: 'column', alignItems: 'flex-start' }]}>
++                <Text style={styles.progressStatLabel}>No habits yet. Add a daily habit to start tracking.</Text>
++              </View>
++            ) : (
++              <>
++                {/* Progress */}
++                <View style={styles.progressCard}>
++                  <View style={styles.progressCircle}>
++                    <Text style={styles.progressPct}>{completionPct}%</Text>
++                    <Text style={styles.progressLabel}>Done</Text>
++                  </View>
++                  <View style={styles.progressStats}>
++                    <Text style={styles.progressStatValue}>
++                      {completedCount}/{habits.length}
++                    </Text>
++                    <Text style={styles.progressStatLabel}>habits completed</Text>
++                    <View style={styles.progressBar}>
++                      <View style={[styles.progressBarFill, { width: `${completionPct}%` }]} />
++                    </View>
++                  </View>
++                </View>
++                {/* Habit Cards */}
++                {habits.map((habit) => (
++                  <HabitCard
++                    key={habit.id}
++                    habit={habit}
++                    onToggle={handleToggle}
++                    onLongPress={handleDelete}
++                    colors={colors}
++                    styles={styles}
++                  />
++                ))}
++              </>
++            )}
+ 
+             <TouchableOpacity style={styles.addBtn} onPress={() => setShowAddModal(true)}>
+               <Ionicons name="add-circle" size={22} color={colors.primary} />
+@@ -417,15 +435,10 @@ export default function HabitsScreen() {
+         onClose={() => setShowAddModal(false)}
+         newName={newName}
+         setNewName={setNewName}
+-        newIcon={newIcon}
+-        setNewIcon={setNewIcon}
+-        newColor={newColor}
+-        setNewColor={setNewColor}
+         newTarget={newTarget}
+         setNewTarget={setNewTarget}
+         newUnit={newUnit}
+         setNewUnit={setNewUnit}
+-        HABIT_COLORS={HABIT_COLORS}
+         onAdd={handleAddHabit}
+         colors={colors}
+         styles={styles}
+diff --git a/src/screens/client/__tests__/HabitsFasting.launch.test.tsx b/src/screens/client/__tests__/HabitsFasting.launch.test.tsx
+new file mode 100644
+index 0000000..ee090f3
+--- /dev/null
++++ b/src/screens/client/__tests__/HabitsFasting.launch.test.tsx
+@@ -0,0 +1,222 @@
++import React from 'react';
++import { Alert } from 'react-native';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
++
++const mockGetHabits = jest.fn();
++const mockGetLogs = jest.fn();
++const mockCreateHabit = jest.fn();
++const mockLogHabit = jest.fn();
++const mockGetHistory = jest.fn();
++const mockStartFast = jest.fn();
++const mockEndFast = jest.fn();
++const mockUser = { id: 'client-1', email: 'client@example.test' };
++
++jest.mock('../../../services/api', () => ({
++  habitsApi: {
++    getAll: (...args: unknown[]) => mockGetHabits(...args),
++    getLogs: (...args: unknown[]) => mockGetLogs(...args),
++    create: (...args: unknown[]) => mockCreateHabit(...args),
++    logHabit: (...args: unknown[]) => mockLogHabit(...args),
++    delete: jest.fn(async () => undefined),
++  },
++  checkInsApi: { list: jest.fn(async () => ({ data: [] })) },
++  fastingApi: {
++    getHistory: (...args: unknown[]) => mockGetHistory(...args),
++    start: (...args: unknown[]) => mockStartFast(...args),
++    end: (...args: unknown[]) => mockEndFast(...args),
++  },
++}));
++jest.mock('../../../hooks/useCurrentUser', () => ({ useCurrentUser: () => mockUser }));
++jest.mock('../../../theme/ThemeProvider', () => ({
++  useTheme: () => ({
++    colors: require('../../../constants/colors').default,
++    semanticColors: require('../../../theme/tokens').lightTokens,
++  }),
++}));
++jest.mock('../../../utils/date', () => ({
++  ...jest.requireActual('../../../utils/date'),
++  getTodayString: () => '2026-10-07',
++  getLocalWeekStart: () => '2026-10-05',
++}));
++jest.mock('../../../config/featureFlags', () => ({ featureFlags: { romanCompetencePill: false } }));
++jest.mock('../../../components/roman/CompetencePill', () => () => null);
++jest.mock('../../../utils/logger', () => ({ logger: { error: jest.fn() } }));
++jest.mock('../../../utils/notifications', () => ({
++  scheduleFastingAlert: jest.fn(async () => 'notification-1'),
++}));
++jest.mock('expo-haptics', () => ({
++  impactAsync: jest.fn(async () => undefined),
++  notificationAsync: jest.fn(async () => undefined),
++  ImpactFeedbackStyle: { Medium: 'medium' },
++  NotificationFeedbackType: { Warning: 'warning', Success: 'success' },
++}));
++jest.mock('../../../components/FadeInView', () => {
++  const React = require('react');
++  const { View } = require('react-native');
++  return ({ children }: { children: import('react').ReactNode }) => React.createElement(View, null, children);
++});
++
++import HabitsScreen from '../HabitsScreen';
++import FastingScreen from '../FastingScreen';
++import type { ApiHabitLog } from '../../../hooks/useApi';
++
++let queryClient: QueryClient;
++let logs: ApiHabitLog[];
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++  queryClient = new QueryClient({
++    defaultOptions: { queries: { retry: false, gcTime: Infinity }, mutations: { retry: false, gcTime: Infinity } },
++  });
++  logs = [];
++  mockGetHabits.mockResolvedValue({
++    data: [{
++      id: 'water', user_id: 'client-1', name: 'Drink water', target_value: 8, unit: 'glasses',
++      logs: [
++        { date: '2026-10-05T00:00:00.000Z', completed: true },
++        { date: '2026-10-06T00:00:00.000Z', completed: true },
++      ],
++    }],
++  });
++  mockGetLogs.mockImplementation(async () => ({ data: logs }));
++  mockLogHabit.mockImplementation(async (id: string, data: { date: string; completed: boolean; value: number }) => {
++    logs = [{ id: 'log-1', habit_id: id, user_id: 'client-1', ...data }];
++    return { data: logs[0] };
++  });
++  mockCreateHabit.mockResolvedValue({ data: { id: 'new-habit' } });
++  mockGetHistory.mockResolvedValue({ data: [] });
++  mockStartFast.mockResolvedValue({ data: {} });
++  mockEndFast.mockResolvedValue({ data: {} });
++});
++
++afterEach(() => {
++  queryClient.clear();
++  jest.restoreAllMocks();
++});
++
++const renderHabits = () => render(
++  <QueryClientProvider client={queryClient}><HabitsScreen /></QueryClientProvider>,
++);
++
++describe('Habits — production DTO, check-off and server history', () => {
++  it('adds a habit using only fields accepted by the production CreateHabitDto', async () => {
++    const screen = await renderHabits();
++    await waitFor(() => expect(screen.getByText('Drink water')).toBeTruthy());
++    await fireEvent.press(screen.getByText('Add New Habit'));
++    await fireEvent.changeText(screen.getByPlaceholderText('e.g. Drink 8 glasses of water'), 'Walk daily');
++    await fireEvent.press(screen.getByText('Add Habit'));
++    await waitFor(() => expect(mockCreateHabit).toHaveBeenCalledWith({
++      name: 'Walk daily', category: 'custom', target_value: 1, unit: 'times',
++    }));
++    expect(screen.queryByText('Icon')).toBeNull();
++    expect(screen.queryByText('Color')).toBeNull();
++  });
++
++  it('check-off shows the saved quantity, and undo persists zero and clears today', async () => {
++    const screen = await renderHabits();
++    await waitFor(() => expect(screen.getByText('Drink water')).toBeTruthy());
++    await fireEvent.press(screen.getByText('Drink water'));
++    await waitFor(() => expect(screen.getByText('8/8 glasses')).toBeTruthy());
++    expect(mockLogHabit).toHaveBeenLastCalledWith('water', {
++      date: '2026-10-07', completed: true, value: 8,
++    });
++    expect(screen.getByTestId('habit-week-water-2').props.accessibilityLabel).toContain('completed');
++    await fireEvent.press(screen.getByText('Drink water'));
++    await waitFor(() => expect(screen.getByText('0/8 glasses')).toBeTruthy());
++    expect(mockLogHabit).toHaveBeenLastCalledWith('water', {
++      date: '2026-10-07', completed: false, value: 0,
++    });
++    expect(screen.getByTestId('habit-week-water-2').props.accessibilityLabel).toContain('not completed');
++  });
++
++  it('shows recorded consecutive days in the week indicators', async () => {
++    const screen = await renderHabits();
++    await waitFor(() => expect(screen.getByText('Drink water')).toBeTruthy());
++    expect(screen.getByTestId('habit-week-water-0').props.accessibilityLabel).toBe('M: completed');
++    expect(screen.getByTestId('habit-week-water-1').props.accessibilityLabel).toBe('T: completed');
++    expect(screen.getByTestId('habit-week-water-2').props.accessibilityLabel).toBe('W: not completed');
++  });
++
++  it('shows a load failure and retry, not an empty 0% progress claim', async () => {
++    mockGetHabits.mockRejectedValueOnce(new Error('Network unavailable'));
++    const screen = await renderHabits();
++    await waitFor(() => expect(screen.getByText('Habits could not be loaded.')).toBeTruthy());
++    expect(screen.queryByText('0%')).toBeNull();
++    await fireEvent.press(screen.getByText('Retry habits'));
++    await waitFor(() => expect(screen.getByText('Drink water')).toBeTruthy());
++  });
++
++  it('shows a useful empty state for a new client', async () => {
++    mockGetHabits.mockResolvedValue({ data: [] });
++    const screen = await renderHabits();
++    await waitFor(() => expect(screen.getByText('No habits yet. Add a daily habit to start tracking.')).toBeTruthy());
++  });
++});
++
++describe('Fasting — production protocol and completed status', () => {
++  it.each([12, 16, 18, 20, 24])('restores the selected %ih target on reopen', async (hours) => {
++    mockGetHistory.mockResolvedValue({ data: [{
++      id: 'active', start_time: new Date(Date.now() - 2 * 3600000).toISOString(),
++      end_time: null, protocol: `${hours}:${24 - hours}`,
++    }] });
++    const screen = await render(<FastingScreen />);
++    await waitFor(() => expect(screen.getByText(`${hours}h`)).toBeTruthy());
++    expect(screen.getByText(/02:00:\d{2}/)).toBeTruthy();
++  });
++
++  it('starting 12:12 sends the protocol and shows the same server-backed target', async () => {
++    mockStartFast.mockImplementation(async (data: { protocol: string }) => {
++      mockGetHistory.mockResolvedValue({ data: [{
++        id: 'active', start_time: new Date().toISOString(), end_time: null, protocol: data.protocol,
++      }] });
++      return { data: {} };
++    });
++    const screen = await render(<FastingScreen />);
++    await waitFor(() => expect(screen.getByText('12:12')).toBeTruthy());
++    await fireEvent.press(screen.getByText('12:12'));
++    await fireEvent.press(screen.getByLabelText('Start fast'));
++    await waitFor(() => expect(screen.getByText('12h')).toBeTruthy());
++    expect(mockStartFast).toHaveBeenCalledWith({ protocol: '12:12' });
++  });
++
++  it('ending early saves history without awarding a completion', async () => {
++    const session = {
++      id: 'early', start_time: new Date(Date.now() - 600000).toISOString(),
++      end_time: null as string | null, protocol: '12:12',
++    };
++    mockGetHistory.mockImplementation(async () => ({ data: [{ ...session }] }));
++    mockEndFast.mockImplementation(async () => {
++      session.end_time = new Date().toISOString();
++      return { data: { ...session } };
++    });
++    const screen = await render(<FastingScreen />);
++    await waitFor(() => expect(screen.getByLabelText('End fast')).toBeTruthy());
++    await fireEvent.press(screen.getByLabelText('End fast'));
++    const alert = jest.mocked(Alert.alert).mock.calls.at(-1);
++    expect(alert?.[1]).toContain('saved in history, but will not count as completed');
++    const endAnyway = alert?.[2]?.find((button) => button.text === 'End anyway');
++    await act(async () => { await endAnyway?.onPress?.(); });
++    await waitFor(() => expect(screen.getByText('Recent Fasts')).toBeTruthy());
++    expect(mockEndFast).toHaveBeenCalledTimes(1);
++    expect(screen.getByTestId('fasting-completed-count').props.children).toBe(0);
++    expect(screen.getByText('12h target')).toBeTruthy();
++  });
++
++  it('counts consecutive qualifying days, excluding a short ended fast today', async () => {
++    const sessions = [0, 1, 2].map((daysAgo) => {
++      const start = new Date();
++      start.setHours(12, 0, 0, 0);
++      start.setDate(start.getDate() - daysAgo);
++      return {
++        id: `day-${daysAgo}`, start_time: start.toISOString(), protocol: '12:12',
++        end_time: new Date(start.getTime() + (daysAgo === 0 ? 1 : 11) * 3600000).toISOString(),
++      };
++    });
++    mockGetHistory.mockResolvedValue({ data: sessions });
++    const screen = await render(<FastingScreen />);
++    await waitFor(() => expect(screen.getByText('Day 2')).toBeTruthy());
++    expect(screen.getByTestId('fasting-completed-count').props.children).toBe(2);
++  });
++});
+diff --git a/src/screens/client/habits/AddHabitSheet.tsx b/src/screens/client/habits/AddHabitSheet.tsx
+index 90a9e30..c8a94b4 100644
+--- a/src/screens/client/habits/AddHabitSheet.tsx
++++ b/src/screens/client/habits/AddHabitSheet.tsx
+@@ -2,8 +2,6 @@ import React from 'react';
+ import { Modal, Text, TextInput, TouchableOpacity, View } from 'react-native';
+ import { Ionicons } from '@expo/vector-icons';
+ import type { ThemeColors } from '../../../theme/ThemeProvider';
+-import type { IoniconName } from '../../../types/common';
+-import { HABIT_ICONS } from './constants';
+ import type { HabitsStyles } from './styles';
+ 
+ export function AddHabitSheet({
+@@ -11,15 +9,10 @@ export function AddHabitSheet({
+   onClose,
+   newName,
+   setNewName,
+-  newIcon,
+-  setNewIcon,
+-  newColor,
+-  setNewColor,
+   newTarget,
+   setNewTarget,
+   newUnit,
+   setNewUnit,
+-  HABIT_COLORS,
+   onAdd,
+   colors,
+   styles,
+@@ -28,15 +21,10 @@ export function AddHabitSheet({
+   onClose: () => void;
+   newName: string;
+   setNewName: (s: string) => void;
+-  newIcon: string;
+-  setNewIcon: (s: string) => void;
+-  newColor: string;
+-  setNewColor: (s: string) => void;
+   newTarget: string;
+   setNewTarget: (s: string) => void;
+   newUnit: string;
+   setNewUnit: (s: string) => void;
+-  HABIT_COLORS: string[];
+   onAdd: () => void;
+   colors: ThemeColors;
+   styles: HabitsStyles;
+@@ -62,34 +50,6 @@ export function AddHabitSheet({
+             maxLength={60}
+           />
+ 
+-          <Text style={styles.fieldLabel}>Icon</Text>
+-          <View style={styles.iconGrid}>
+-            {HABIT_ICONS.map((item) => (
+-              <TouchableOpacity
+-                key={item.icon}
+-                style={[styles.iconOption, newIcon === item.icon && styles.iconOptionActive]}
+-                onPress={() => setNewIcon(item.icon)}
+-              >
+-                <Ionicons
+-                  name={item.icon as IoniconName}
+-                  size={20}
+-                  color={newIcon === item.icon ? colors.primary : colors.textMuted}
+-                />
+-              </TouchableOpacity>
+-            ))}
+-          </View>
+-
+-          <Text style={styles.fieldLabel}>Color</Text>
+-          <View style={styles.colorGrid}>
+-            {HABIT_COLORS.map((c) => (
+-              <TouchableOpacity
+-                key={c}
+-                style={[styles.colorOption, { backgroundColor: c }, newColor === c && styles.colorOptionActive]}
+-                onPress={() => setNewColor(c)}
+-              />
+-            ))}
+-          </View>
+-
+           <View style={styles.targetRow}>
+             <View style={styles.targetField}>
+               <Text style={styles.fieldLabel}>Target</Text>
+diff --git a/src/screens/client/habits/HabitCard.tsx b/src/screens/client/habits/HabitCard.tsx
+index 5803663..2ec30ab 100644
+--- a/src/screens/client/habits/HabitCard.tsx
++++ b/src/screens/client/habits/HabitCard.tsx
+@@ -21,6 +21,9 @@ export function HabitCard({
+ }) {
+   return (
+     <TouchableOpacity
++      accessibilityRole="checkbox"
++      accessibilityLabel={habit.name}
++      accessibilityState={{ checked: habit.log?.completed ?? false }}
+       style={styles.habitCard}
+       onPress={() => onToggle(habit)}
+       onLongPress={() => onLongPress(habit)}
+@@ -52,6 +55,8 @@ export function HabitCard({
+             {habit.weekDots.map((done, i) => (
+               <View key={i} style={styles.weekDotCol}>
+                 <View
++                  testID={`habit-week-${habit.id}-${i}`}
++                  accessibilityLabel={`${DAY_LABELS[i]}: ${done ? 'completed' : 'not completed'}`}
+                   style={[
+                     styles.weekDot,
+                     done && { backgroundColor: habit.color },

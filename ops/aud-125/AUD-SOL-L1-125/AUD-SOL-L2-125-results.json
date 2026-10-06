@@ -1,0 +1,311 @@
+{
+  "observed_at": "2026-10-06 15:26:05 PDT",
+  "receipts": [
+    {
+      "repo": "backend",
+      "number": 786,
+      "head": "5812a267c3b94959ede42005dd73a894002f36f8",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/786#issuecomment-6025899263",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/backend-786-receipt.json"
+    },
+    {
+      "repo": "backend",
+      "number": 787,
+      "head": "1f32a2c1cd7ba6f0e4d7db0c75c75102a6cc742e",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/787#issuecomment-6025698919",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/backend-787-receipt.json"
+    },
+    {
+      "repo": "backend",
+      "number": 788,
+      "head": "20d430ad7923d8c52a5a07e3da1000140088b99c",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/788#issuecomment-6025726362",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/backend-788-receipt.json"
+    },
+    {
+      "repo": "backend",
+      "number": 789,
+      "head": "a28c474c8ed4fe9e23535458b5d91071cf45d4b7",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/789#issuecomment-6025899201",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/backend-789-receipt.json"
+    },
+    {
+      "repo": "backend",
+      "number": 790,
+      "head": "a9fee4d4d59755ee98899c3cb35d9df8abaac2fb",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/790#issuecomment-6025899219",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/backend-790-receipt.json"
+    },
+    {
+      "repo": "backend",
+      "number": 791,
+      "head": "4c74404e1642ac47f34ad7516c458b11c04fdee0",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/791#issuecomment-6025992521",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/backend-791-receipt.json"
+    },
+    {
+      "repo": "backend",
+      "number": 792,
+      "head": "25f882cf6f01c03ef087445cfd51974bb1c5fd8f",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/792#issuecomment-6025949645",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/backend-792-receipt.json"
+    },
+    {
+      "repo": "backend",
+      "number": 793,
+      "head": "5bfe51f4243f373cebc5b873439b3087de8885d3",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/793#issuecomment-6025942348",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/backend-793-receipt.json"
+    },
+    {
+      "repo": "backend",
+      "number": 795,
+      "head": "f85de9b83441ff5dce910375c8aeb877df3ed978",
+      "verdict": "REQUEST CHANGES",
+      "B": 1,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/795#issuecomment-6025909162",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/backend-795-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 416,
+      "head": "1344fb38f7280dac64d2f7da6ca240317c9dbfc7",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/416#issuecomment-6026570202",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/delta/mobile-416-1344fb38/mobile-416-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 416,
+      "head": "45a117a7fed0384f29fb7d8a81cb7f1b1afbc742",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/416#issuecomment-6025698369",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-416-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 417,
+      "head": "8302adc0465072c2674490a5c0e39884acec293d",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/417#issuecomment-6025777770",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-417-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 418,
+      "head": "64f32bacbb7c7a98139121ffbf5a87ddac87da16",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/418#issuecomment-6025697794",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-418-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 419,
+      "head": "59525ec2342fbafa5682589d6c170cd55550602d",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/419#issuecomment-6025737313",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-419-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 420,
+      "head": "81609b6a3c9b474cce6db97b07a57988abbc34d3",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/420#issuecomment-6025649808",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/mobile-420-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 421,
+      "head": "588a965b8c96ce8fd127ce5fe98a2035997abe52",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/421#issuecomment-6025672997",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-421-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 422,
+      "head": "2839eb325ac60f236615aec5834ac7bfbc4e5c12",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/422#issuecomment-6025648376",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/mobile-422-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 423,
+      "head": "5e164d17b20b655a76c37c2400d8a3c43e0dc5dc",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/423#issuecomment-6025725888",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-423-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 424,
+      "head": "f69f200ec84e7ed3657621f3fb8c922e80ee12a0",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/424#issuecomment-6025927185",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-424-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 425,
+      "head": "fd28ae84b5a9c573b4db1e22f8db7881be8e5cbc",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/425#issuecomment-6025736890",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-425-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 426,
+      "head": "0f4e80da96d9931a3f216b2c0a03c49b8eb11235",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/426#issuecomment-6025673575",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-426-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 427,
+      "head": "28888f83527a64c75477fa7513a831e31a466c04",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/427#issuecomment-6025736405",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-427-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 427,
+      "head": "a1f1459c7a62eab90ee83fdee34a24cee3052185",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/427#issuecomment-6026557565",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/delta/mobile-427-a1f1459c/mobile-427-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 428,
+      "head": "95119e5bcd02fb4e9db3c319deb57bf5b1b3f660",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/428#issuecomment-6025672529",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-428-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 429,
+      "head": "ed57be76588012ea62e2d927f4165f3aec98fded",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/429#issuecomment-6025671998",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-429-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 430,
+      "head": "1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/430#issuecomment-6025725439",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-430-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 431,
+      "head": "2b735827896f3e7bce0e88b43c73911d80da968b",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/431#issuecomment-6025777287",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-431-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 432,
+      "head": "f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/432#issuecomment-6025927232",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-432-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 433,
+      "head": "88da53118bcd3788b7b41b9669b987ef4f7138fa",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/433#issuecomment-6026000158",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-433-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 434,
+      "head": "9d4cfb53557c3ed1990c41ec6e1697c0abc3885f",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/434#issuecomment-6026130509",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-434-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 435,
+      "head": "be8626212e1081b72f348131b8dfdac06715355e",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/435#issuecomment-6026267926",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-435-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 436,
+      "head": "1356b8d425ab604e39c723080c5910e3119dd33e",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/436#issuecomment-6026334826",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-436-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 437,
+      "head": "1c22b557d1a06772e69394f18d1f8abffdecce69",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/437#issuecomment-6026576921",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-437-receipt.json"
+    },
+    {
+      "repo": "mobile",
+      "number": 438,
+      "head": "27f773f330a05cdf843f6f8b6c36d1da8295f9c5",
+      "verdict": "APPROVE",
+      "B": 0,
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/438#issuecomment-6026557189",
+      "evidence_path": "/home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-438-receipt.json"
+    }
+  ]
+}

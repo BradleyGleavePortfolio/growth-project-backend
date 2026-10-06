@@ -1,0 +1,581 @@
+diff --git a/src/__tests__/deliverablesScreen.test.tsx b/src/__tests__/deliverablesScreen.test.tsx
+index 8794bb6d..80efbe29 100644
+--- a/src/__tests__/deliverablesScreen.test.tsx
++++ b/src/__tests__/deliverablesScreen.test.tsx
+@@ -10,7 +10,7 @@
+  *      buyer). Pure function unit test on `__test.buyerStatusOf`.
+  *   3. Tappability per asset_type — workout_program/_plan + meal_plan +
+  *      auto_message tappable when the row has a `materialised_ref`; pdf
+- *      / video non-tappable today (PR-12 viewers OOS). Unit test on
++ *      / video tappable once delivered (B-DELIV-125). Unit test on
+  *      `__test.isTappableDelivered`.
+  *   4. The screen renders Delivered + Upcoming sections from a healthy
+  *      response, the empty state when both lists are empty, the error
+@@ -113,17 +113,17 @@ describe('tappability per asset_type', () => {
+     ).toBe(true);
+   });
+ 
+-  it('pdf + video are NOT tappable today (PR-12 viewers OOS)', () => {
++  it('pdf + video are tappable once delivered (B-DELIV-125: grant-scoped signed URL)', () => {
+     expect(
+       DeliverablesTest.isTappableDelivered(
+         baseDrop({ status: 'fired', asset_type: 'pdf', materialised_ref: 'm_1' }),
+       ),
+-    ).toBe(false);
++    ).toBe(true);
+     expect(
+       DeliverablesTest.isTappableDelivered(
+         baseDrop({ status: 'fired', asset_type: 'video', materialised_ref: 'm_2' }),
+       ),
+-    ).toBe(false);
++    ).toBe(true);
+   });
+ 
+   it('non-delivered status is never tappable', () => {
+diff --git a/src/__tests__/deliveredContentOpens.test.tsx b/src/__tests__/deliveredContentOpens.test.tsx
+new file mode 100644
+index 00000000..dcfb4744
+--- /dev/null
++++ b/src/__tests__/deliveredContentOpens.test.tsx
+@@ -0,0 +1,230 @@
++/**
++ * B-DELIV-125 — delivered package content opens what was bought.
++ *
++ * B3: a buyer tapped a delivered PDF or video and nothing happened (the row
++ *     was disabled and claimed "Saved to your library"). The row now asks
++ *     GET /v1/client/media/:asset_id/signed-url for a grant-scoped link and
++ *     opens it; every failure is a specific message.
++ * B4: the backend stores a delivered meal plan's DailyMealPlanAssignment id
++ *     in `materialised_ref`; mobile routed it as a date, the screen dropped
++ *     it and showed the newest plan. It now routes { assignmentId } and the
++ *     screen shows exactly that assignment.
++ */
++
++import React from 'react';
++import { Alert } from 'react-native';
++import { render, fireEvent, waitFor } from '@testing-library/react-native';
++
++const mockNavigate = jest.fn();
++const mockOpenBrowser = jest.fn();
++const mockGetPurchaseDrops = jest.fn();
++const mockUseMealPlanToday = jest.fn();
++let mockRouteParams: Record<string, string> | undefined = { purchaseId: 'purchase_1' };
++
++jest.mock('@react-navigation/native', () => ({
++  useNavigation: () => ({ navigate: mockNavigate, getParent: () => undefined }),
++  useRoute: () => ({ params: mockRouteParams }),
++  useFocusEffect: (_cb: () => void) => {
++    // intentionally empty: first-mount load covers the data path
++  },
++}));
++
++jest.mock('expo-web-browser', () => ({
++  openBrowserAsync: (...args: unknown[]) => mockOpenBrowser(...args),
++}));
++
++jest.mock('../hooks/useMealTemplates', () => ({
++  useMealPlanToday: (dateIso?: string) => mockUseMealPlanToday(dateIso),
++}));
++
++jest.mock('../theme/ThemeProvider', () => {
++  const realTokens = jest.requireActual('../theme/tokens').default;
++  return {
++    useTheme: () => ({
++      tokens: realTokens,
++      semanticColors: realTokens.lightTokens,
++      colorScheme: 'light',
++    }),
++  };
++});
++
++jest.mock('../api/clientPaymentsApi', () => {
++  const actual = jest.requireActual('../api/clientPaymentsApi');
++  return {
++    ...actual,
++    clientPaymentsApi: {
++      ...actual.clientPaymentsApi,
++      getPurchaseDrops: (...args: unknown[]) => mockGetPurchaseDrops(...args),
++    },
++  };
++});
++
++import api from '../services/api';
++import DeliverablesScreen from '../screens/client/DeliverablesScreen';
++import ClientDailyMealPlanScreen from '../screens/client/ClientDailyMealPlanScreen';
++import { isTappableDelivered } from '../screens/client/deliverables/dropRow';
++import type { ScheduledDropView } from '../api/clientPaymentsApi';
++
++const ASSIGNMENT_ID = '7b0f7f9e-3c5e-4f0a-9b8e-2f4b9d1c6a11';
++
++function drop(overrides: Partial<ScheduledDropView>): ScheduledDropView {
++  return {
++    id: 'drop_1',
++    asset_type: 'pdf',
++    asset_id: 'media_asset_1',
++    asset_revision_id: null,
++    cadence_kind: 'immediate',
++    display_title: 'Starter guide',
++    display_caption: null,
++    fire_at: null,
++    fired_at: '2026-10-01T10:00:00Z',
++    status: 'fired',
++    materialised_ref: 'grant_1',
++    ...overrides,
++  };
++}
++
++async function tapDrop(d: ScheduledDropView) {
++  mockGetPurchaseDrops.mockResolvedValue({ ok: true, data: [d] });
++  const screen = await render(<DeliverablesScreen />);
++  await waitFor(() => expect(screen.getByTestId(`drop-row-${d.id}`)).toBeTruthy());
++  await fireEvent.press(screen.getByTestId(`drop-row-${d.id}`));
++  return screen;
++}
++
++function httpError(status: number) {
++  return Object.assign(new Error(`Request failed with status code ${status}`), {
++    response: { status },
++  });
++}
++
++describe('B3 — a delivered PDF or video opens', () => {
++  let getSpy: jest.SpyInstance;
++  let alertSpy: jest.SpyInstance;
++
++  beforeEach(() => {
++    mockNavigate.mockReset();
++    mockOpenBrowser.mockReset();
++    mockOpenBrowser.mockResolvedValue({ type: 'opened' });
++    mockGetPurchaseDrops.mockReset();
++    mockRouteParams = { purchaseId: 'purchase_1' };
++    getSpy = jest.spyOn(api, 'get');
++    alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++  });
++
++  afterEach(() => {
++    getSpy.mockRestore();
++    alertSpy.mockRestore();
++  });
++
++  it('delivered pdf and video rows are tappable when they carry the media asset id', () => {
++    expect(isTappableDelivered(drop({ asset_type: 'pdf' }))).toBe(true);
++    expect(isTappableDelivered(drop({ asset_type: 'video' }))).toBe(true);
++    expect(isTappableDelivered(drop({ asset_type: 'pdf', asset_id: '' }))).toBe(false);
++    expect(isTappableDelivered(drop({ asset_type: 'video', status: 'pending' }))).toBe(false);
++  });
++
++  it('tapping a PDF signs the asset id (not the grant id) and opens the link', async () => {
++    getSpy.mockResolvedValue({ data: { url: 'https://files.example/guide.pdf?token=t', kind: 'pdf' } });
++    await tapDrop(drop({ asset_type: 'pdf' }));
++    await waitFor(() =>
++      expect(mockOpenBrowser).toHaveBeenCalledWith('https://files.example/guide.pdf?token=t'),
++    );
++    expect(getSpy).toHaveBeenCalledWith('/v1/client/media/media_asset_1/signed-url');
++    expect(alertSpy).not.toHaveBeenCalled();
++  });
++
++  it('a video still processing says so instead of opening', async () => {
++    getSpy.mockRejectedValue(httpError(409));
++    await tapDrop(drop({ id: 'drop_v', asset_type: 'video', asset_id: 'media_video_1' }));
++    await waitFor(() =>
++      expect(alertSpy).toHaveBeenCalledWith(
++        'Still processing',
++        'This file is still being prepared. Try again in a few minutes.',
++      ),
++    );
++    expect(mockOpenBrowser).not.toHaveBeenCalled();
++  });
++
++  it('no access (404, including a backend without the route) is a specific message', async () => {
++    getSpy.mockRejectedValue(httpError(404));
++    await tapDrop(drop({}));
++    await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('File not available', expect.any(String)));
++    expect(mockOpenBrowser).not.toHaveBeenCalled();
++  });
++
++  it('no network is a specific message, never the raw transport error', async () => {
++    getSpy.mockRejectedValue(new Error('Network Error'));
++    await tapDrop(drop({}));
++    await waitFor(() =>
++      expect(alertSpy).toHaveBeenCalledWith('Could not open file', 'Check your connection and try again.'),
++    );
++    expect(mockOpenBrowser).not.toHaveBeenCalled();
++  });
++
++  it('a delivered row no longer claims "Saved to your library"', async () => {
++    const screen = await tapDrop(drop({ fired_at: null }));
++    expect(screen.queryByText('Saved to your library')).toBeNull();
++  });
++});
++
++describe('B4 — a delivered meal plan opens that plan', () => {
++  const plan = (id: string, name: string, startsOn: string) => ({
++    id,
++    daily_meal_plan_id: `plan_${id}`,
++    client_id: 'client_1',
++    assigned_by_coach_id: 'coach_1',
++    starts_on: startsOn,
++    ends_on: null,
++    created_at: startsOn,
++    daily_meal_plan: { id: `plan_${id}`, name, slots: [] },
++  });
++
++  beforeEach(() => {
++    mockNavigate.mockReset();
++    mockGetPurchaseDrops.mockReset();
++    mockUseMealPlanToday.mockReset();
++    mockRouteParams = { purchaseId: 'purchase_1' };
++  });
++
++  it('routes the assignment id as an assignment, not as a date', async () => {
++    await tapDrop(drop({ id: 'drop_mp', asset_type: 'meal_plan', materialised_ref: ASSIGNMENT_ID }));
++    expect(mockNavigate).toHaveBeenCalledWith('ClientDailyMealPlan', { assignmentId: ASSIGNMENT_ID });
++  });
++
++  it('a legacy date ref still routes by date', async () => {
++    await tapDrop(drop({ id: 'drop_mp', asset_type: 'meal_plan', materialised_ref: '2026-10-01' }));
++    expect(mockNavigate).toHaveBeenCalledWith('ClientDailyMealPlan', { date: '2026-10-01' });
++  });
++
++  function mealPlanData(assignments: ReturnType<typeof plan>[]) {
++    mockUseMealPlanToday.mockReturnValue({
++      data: { date: '2026-10-06', assignments },
++      isLoading: false,
++      isError: false,
++      isRefetching: false,
++      refetch: jest.fn(),
++    });
++  }
++
++  it('the meal plan screen shows the delivered assignment, not the newest plan', async () => {
++    mealPlanData([
++      plan('newer', 'Coach cut plan', '2026-10-05'),
++      plan(ASSIGNMENT_ID, 'Package bulk plan', '2026-10-01'),
++    ]);
++    mockRouteParams = { assignmentId: ASSIGNMENT_ID };
++    const screen = await render(<ClientDailyMealPlanScreen />);
++    expect(mockUseMealPlanToday).toHaveBeenCalledWith(undefined);
++    expect(screen.getByText('Package bulk plan')).toBeTruthy();
++    expect(screen.queryByText('Coach cut plan')).toBeNull();
++    expect(screen.getByText('Meal plan')).toBeTruthy();
++  });
++
++  it('an assignment that is no longer active says it ended instead of showing another plan', async () => {
++    mealPlanData([plan('newer', 'Coach cut plan', '2026-10-05')]);
++    mockRouteParams = { assignmentId: ASSIGNMENT_ID };
++    const screen = await render(<ClientDailyMealPlanScreen />);
++    expect(screen.getByTestId('meal-plan-ended')).toBeTruthy();
++    expect(screen.queryByText('Coach cut plan')).toBeNull();
++  });
++});
+diff --git a/src/api/clientPaymentsApi.ts b/src/api/clientPaymentsApi.ts
+index 608a1bf4..1f767c08 100644
+--- a/src/api/clientPaymentsApi.ts
++++ b/src/api/clientPaymentsApi.ts
+@@ -213,20 +213,17 @@ export type ScheduledDropStatus =
+  *   workout_program / workout_plan → WorkoutAssignment id
+  *                                    (route: WorkoutAssignmentDetail
+  *                                    { assignmentId })
+- *   meal_plan                      → date string YYYY-MM-DD (start date)
+- *                                    (route: ClientDailyMealPlan { date })
+- *   pdf                            → CoachMediaAsset id
+- *                                    (no viewer registered yet — degrade
+- *                                    gracefully: shown but not tappable)
+- *   video                          → Mux playback id / CoachMediaAsset id
+- *                                    (no viewer registered yet — degrade)
++ *   meal_plan                      → DailyMealPlanAssignment id
++ *                                    (route: ClientDailyMealPlan
++ *                                    { assignmentId }; older rows may
++ *                                    carry a YYYY-MM-DD date → { date })
++ *   pdf / video                    → ClientAssetGrant id (not used by the
++ *                                    UI). Tapping opens `asset_id` (the
++ *                                    CoachMediaAsset id) through
++ *                                    GET /v1/client/media/:id/signed-url
++ *                                    (deliverables/openPurchasedMedia.ts).
+  *   auto_message                   → Conversation id (or null)
+  *                                    (route: Messages — opens thread)
+- *
+- * The PDF / video viewers do not exist yet in mobile — listed in master
+- * plan PR-12 (media upload) which is out of scope. Until they ship, those
+- * delivered drops render as non-tappable rows with a "Saved to your
+- * library" caption so the buyer is not left tapping a dead row.
+  */
+ export interface ScheduledDropView {
+   id: string;
+diff --git a/src/navigation/ClientNavigator.tsx b/src/navigation/ClientNavigator.tsx
+index 209d58b1..4085ca3d 100644
+--- a/src/navigation/ClientNavigator.tsx
++++ b/src/navigation/ClientNavigator.tsx
+@@ -289,7 +289,8 @@ export type MoreStackParamList = {
+   SupportInbox:      undefined;
+   /** Sprint B-2 — client-facing read surfaces over Sprint B v2 backend. */
+   ClientMacros:        undefined;
+-  ClientDailyMealPlan: { date?: string } | undefined;
++  /** `assignmentId`: a delivered meal plan (Deliverables); `date`: a day. */
++  ClientDailyMealPlan: { date?: string; assignmentId?: string } | undefined;
+   ClientWorkoutViewer: { assignmentId: string };
+   WorkoutAssignmentDetail: { assignmentId: string };
+   /** Concierge Phase 1 — scheduling client surfaces. */
+diff --git a/src/screens/client/ClientDailyMealPlanScreen.tsx b/src/screens/client/ClientDailyMealPlanScreen.tsx
+index 72adaa9d..78be30e1 100644
+--- a/src/screens/client/ClientDailyMealPlanScreen.tsx
++++ b/src/screens/client/ClientDailyMealPlanScreen.tsx
+@@ -16,6 +16,13 @@
+  * `{ date?: string } | undefined` — the screen was the one that needed
+  * to honor it. Defaults to today when omitted (the legacy call site).
+  *
++ * Route param `assignmentId` (B-DELIV-125, B4): the backend materialises a
++ * delivered meal_plan drop as a DailyMealPlanAssignment and stores its id in
++ * `materialised_ref`, not a date. Delivered assignments start on delivery
++ * day with no end, so the plan is among today's active assignments; the
++ * screen shows exactly that assignment instead of the newest one. If it is
++ * no longer active, an honest "ended" state replaces another plan.
++ *
+  * When no assignment is active for the chosen day we render an honest
+  * empty state — no fabricated suggestions, no "ask your coach" CTA
+  * that cannot do anything from here. The client-side surface is
+@@ -45,7 +52,7 @@ import type { SemanticTokens } from '../../theme/tokens';
+ // Route params: optional ISO date string (YYYY-MM-DD). Falls back to
+ // today (useMealPlanToday's default) when omitted, matching the legacy
+ // call site behaviour.
+-type MealPlanRouteParams = { date?: string } | undefined;
++type MealPlanRouteParams = { date?: string; assignmentId?: string } | undefined;
+ 
+ // Accept either YYYY-MM-DD or a full ISO timestamp; the hook + backend
+ // query parameter expect YYYY-MM-DD so we trim accordingly.
+@@ -64,6 +71,7 @@ export default function ClientDailyMealPlanScreen() {
+ 
+   const route = useRoute<RouteProp<Record<string, MealPlanRouteParams>, string>>();
+   const dateParam = normaliseDateParam(route.params?.date);
++  const assignmentId = route.params?.assignmentId || undefined;
+ 
+   const { data, isLoading, isError, refetch, isRefetching } =
+     useMealPlanToday(dateParam);
+@@ -74,8 +82,11 @@ export default function ClientDailyMealPlanScreen() {
+ 
+   const active: DailyMealPlanAssignmentWithPlan | null = useMemo(() => {
+     if (!data || data.assignments.length === 0) return null;
++    if (assignmentId) {
++      return data.assignments.find((a) => a.id === assignmentId) ?? null;
++    }
+     return data.assignments[0] ?? null;
+-  }, [data]);
++  }, [data, assignmentId]);
+ 
+   const groups = useMemo<Array<{ label: SlotLabel; slots: DailyMealPlanSlot[] }>>(() => {
+     if (!active) return [];
+@@ -105,7 +116,7 @@ export default function ClientDailyMealPlanScreen() {
+       }
+     >
+       <Text style={[typography.h2, { color: sc.textPrimary }]}>
+-        {dateParam ? 'Meal plan' : "Today's meals"}
++        {dateParam || assignmentId ? 'Meal plan' : "Today's meals"}
+       </Text>
+ 
+       {isLoading ? (
+@@ -116,6 +127,8 @@ export default function ClientDailyMealPlanScreen() {
+         <Text style={[typography.body, { color: sc.textMuted }]}>
+           Could not load today's plan. Pull to retry.
+         </Text>
++      ) : !active && assignmentId ? (
++        <EndedState styles={styles} sc={sc} />
+       ) : !active ? (
+         <EmptyState styles={styles} sc={sc} dateOverride={dateParam} />
+       ) : (
+@@ -168,6 +181,17 @@ function SlotGroup({
+   );
+ }
+ 
++function EndedState({ styles, sc }: { styles: Styles; sc: SemanticTokens }) {
++  return (
++    <View style={styles.card} testID="meal-plan-ended">
++      <Text style={[typography.h3, { color: sc.textPrimary }]}>This plan has ended</Text>
++      <Text style={[typography.body, { color: sc.textMuted }]}>
++        {'This meal plan no longer covers today. Message your coach if it should still be running.'}
++      </Text>
++    </View>
++  );
++}
++
+ function EmptyState({
+   styles,
+   sc,
+diff --git a/src/screens/client/deliverables/dropRow.tsx b/src/screens/client/deliverables/dropRow.tsx
+index 5b1f2b5b..44ddc479 100644
+--- a/src/screens/client/deliverables/dropRow.tsx
++++ b/src/screens/client/deliverables/dropRow.tsx
+@@ -38,6 +38,7 @@ import type {
+   ScheduledDropAssetType,
+   ScheduledDropView,
+ } from '../../../api/clientPaymentsApi';
++import { openPurchasedMedia } from './openPurchasedMedia';
+ 
+ // ─── Asset-type display tables ──────────────────────────────────────────────
+ 
+@@ -154,14 +155,15 @@ export function upcomingCaption(drop: ScheduledDropView): string {
+  * Pre-flight: can this delivered drop route to a real existing viewer?
+  *
+  * - workout_program / workout_plan need a `materialised_ref` (assignment id).
+- * - meal_plan needs a `materialised_ref` we treat as the start date string.
++ * - meal_plan needs a `materialised_ref`: the DailyMealPlanAssignment id
++ *   the backend materialised (older rows may carry a YYYY-MM-DD date).
+  * - auto_message routes to Messages (no params needed beyond opening
+  *   the thread surface).
+- * - pdf / video have no viewer registered today (PR-12 is out of scope).
++ * - pdf / video need the `asset_id` (CoachMediaAsset id); tapping asks the
++ *   backend for a grant-scoped signed URL (openPurchasedMedia).
+  *
+- * If a delivered drop cannot route, the row renders non-tappable with a
+- * neutral "Saved to your library" caption. Master plan rule 18 — we never
+- * fabricate success when the operation can't complete.
++ * If a delivered drop cannot route, the row renders non-tappable. Master
++ * plan rule 18 — never fabricate success when the operation can't complete.
+  */
+ export function isTappableDelivered(drop: ScheduledDropView): boolean {
+   if (drop.status !== 'fired') return false;
+@@ -175,19 +177,21 @@ export function isTappableDelivered(drop: ScheduledDropView): boolean {
+       return true; // routes to Messages list
+     case 'pdf':
+     case 'video':
+-      return false; // viewer not built yet (PR-12)
++      return typeof drop.asset_id === 'string' && drop.asset_id.length > 0;
+     default:
+       return false;
+   }
+ }
+ 
+-export function deliveredFallbackCaption(asset_type: ScheduledDropAssetType): string {
+-  if (asset_type === 'pdf' || asset_type === 'video') {
+-    return 'Saved to your library';
+-  }
++export function deliveredFallbackCaption(_asset_type: ScheduledDropAssetType): string {
+   return 'Tap to open';
+ }
+ 
++// The backend's meal_plan `materialised_ref` is a DailyMealPlanAssignment id.
++// Older rows and fixtures carry a YYYY-MM-DD start date; keep routing those
++// by date so neither shape ever lands on the wrong plan.
++const MEAL_PLAN_DATE_REF = /^\d{4}-\d{2}-\d{2}$/;
++
+ // ─── Per-asset_type viewer routing ──────────────────────────────────────────
+ 
+ /**
+@@ -220,13 +224,10 @@ export function routeForDrop(
+       return;
+     case 'meal_plan':
+       if (drop.materialised_ref) {
+-        (
+-          navigation as unknown as {
+-            navigate: (n: string, p: { date: string }) => void;
+-          }
+-        ).navigate('ClientDailyMealPlan', {
+-          date: drop.materialised_ref,
+-        });
++        const params = MEAL_PLAN_DATE_REF.test(drop.materialised_ref)
++          ? { date: drop.materialised_ref }
++          : { assignmentId: drop.materialised_ref };
++        navigation.navigate('ClientDailyMealPlan', params);
+       }
+       return;
+     case 'auto_message': {
+@@ -247,8 +248,7 @@ export function routeForDrop(
+     }
+     case 'pdf':
+     case 'video':
+-      // Viewers ship in PR-12; row is rendered non-tappable today, so
+-      // we should never reach here. Guard anyway.
++      void openPurchasedMedia(drop.asset_id);
+       return;
+     default:
+       return;
+diff --git a/src/screens/client/deliverables/openPurchasedMedia.ts b/src/screens/client/deliverables/openPurchasedMedia.ts
+new file mode 100644
+index 00000000..200feb52
+--- /dev/null
++++ b/src/screens/client/deliverables/openPurchasedMedia.ts
+@@ -0,0 +1,85 @@
++/**
++ * Opens a purchased PDF or video (B-DELIV-125, B3).
++ *
++ * A delivered pdf / video drop carries the CoachMediaAsset id in
++ * `asset_id` (NOT `materialised_ref`, which is the ClientAssetGrant id).
++ * The backend signs a short-lived URL only for the buyer who holds a live
++ * grant for that asset:
++ *
++ *   GET /v1/client/media/:assetId/signed-url → { url, expires_in_seconds, kind }
++ *     404 → no live grant for this account (or a backend that predates the
++ *           route), 409 → the file is still processing.
++ *
++ * The URL opens in the system in-app browser, which renders PDFs and plays
++ * the signed video stream. Every failure becomes a specific message; a raw
++ * transport error never reaches the buyer.
++ */
++
++import { Alert } from 'react-native';
++import * as WebBrowser from 'expo-web-browser';
++
++import api from '../../../services/api';
++
++export type PurchasedMediaFailure = 'not_ready' | 'unavailable' | 'network';
++
++export type PurchasedMediaLink =
++  | { ok: true; url: string }
++  | { ok: false; reason: PurchasedMediaFailure };
++
++export const PURCHASED_MEDIA_COPY: Record<
++  PurchasedMediaFailure | 'viewer',
++  { title: string; message: string }
++> = {
++  not_ready: {
++    title: 'Still processing',
++    message: 'This file is still being prepared. Try again in a few minutes.',
++  },
++  unavailable: {
++    title: 'File not available',
++    message:
++      'This file cannot be opened on this account right now. If it came with your purchase, message your coach.',
++  },
++  network: {
++    title: 'Could not open file',
++    message: 'Check your connection and try again.',
++  },
++  viewer: {
++    title: 'Could not open file',
++    message: 'The file viewer did not start. Try again.',
++  },
++};
++
++export async function fetchPurchasedMediaLink(
++  mediaAssetId: string,
++): Promise<PurchasedMediaLink> {
++  try {
++    const r = await api.get<{ url?: unknown }>(
++      `/v1/client/media/${encodeURIComponent(mediaAssetId)}/signed-url`,
++    );
++    const url = r.data?.url;
++    if (typeof url === 'string' && url.startsWith('https://')) {
++      return { ok: true, url };
++    }
++    return { ok: false, reason: 'unavailable' };
++  } catch (err) {
++    const status = (err as { response?: { status?: number } })?.response?.status;
++    if (status === 409) return { ok: false, reason: 'not_ready' };
++    if (typeof status === 'number') return { ok: false, reason: 'unavailable' };
++    return { ok: false, reason: 'network' };
++  }
++}
++
++export async function openPurchasedMedia(mediaAssetId: string): Promise<void> {
++  const link = await fetchPurchasedMediaLink(mediaAssetId);
++  if (!link.ok) {
++    const copy = PURCHASED_MEDIA_COPY[link.reason];
++    Alert.alert(copy.title, copy.message);
++    return;
++  }
++  try {
++    await WebBrowser.openBrowserAsync(link.url);
++  } catch {
++    const copy = PURCHASED_MEDIA_COPY.viewer;
++    Alert.alert(copy.title, copy.message);
++  }
++}

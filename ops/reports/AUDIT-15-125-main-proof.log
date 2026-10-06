@@ -1,0 +1,1682 @@
+﻿2026-10-06T21:01:28.6613025Z Current runner version: '2.337.0'
+2026-10-06T21:01:28.6639443Z ##[group]Runner Image Provisioner
+2026-10-06T21:01:28.6640898Z Hosted Compute Agent
+2026-10-06T21:01:28.6641577Z Version: 20260901.588
+2026-10-06T21:01:28.6642281Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-06T21:01:28.6643006Z Build Date: 2026-09-01T19:56:44Z
+2026-10-06T21:01:28.6643759Z Worker ID: {45d762d4-39ed-4694-a7d0-bb23c689965e}
+2026-10-06T21:01:28.6644516Z Azure Region: eastus
+2026-10-06T21:01:28.6645141Z ##[endgroup]
+2026-10-06T21:01:28.6646737Z ##[group]Operating System
+2026-10-06T21:01:28.6647384Z Ubuntu
+2026-10-06T21:01:28.6647999Z 24.04.5
+2026-10-06T21:01:28.6648514Z LTS
+2026-10-06T21:01:28.6649046Z ##[endgroup]
+2026-10-06T21:01:28.6649651Z ##[group]Runner Image
+2026-10-06T21:01:28.6650488Z Image: ubuntu-24.04
+2026-10-06T21:01:28.6651114Z Version: 20260927.320.1
+2026-10-06T21:01:28.6652359Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-06T21:01:28.6654016Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-06T21:01:28.6655013Z ##[endgroup]
+2026-10-06T21:01:28.6656667Z ##[group]GITHUB_TOKEN Permissions
+2026-10-06T21:01:28.6658901Z Contents: read
+2026-10-06T21:01:28.6659583Z Metadata: read
+2026-10-06T21:01:28.6660373Z Packages: read
+2026-10-06T21:01:28.6661032Z ##[endgroup]
+2026-10-06T21:01:28.6663186Z Secret source: Actions
+2026-10-06T21:01:28.6664278Z Cache mode: write
+2026-10-06T21:01:28.6665194Z Prepare workflow directory
+2026-10-06T21:01:28.7005844Z Prepare all required actions
+2026-10-06T21:01:28.7054974Z Getting action download info
+2026-10-06T21:01:28.9523374Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-06T21:01:29.0412008Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-06T21:01:29.2303045Z Complete job name: targeted
+2026-10-06T21:01:29.3077705Z ##[group]Run actions/checkout@v6
+2026-10-06T21:01:29.3078620Z with:
+2026-10-06T21:01:29.3079182Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-06T21:01:29.3083199Z   token: ***
+2026-10-06T21:01:29.3083647Z   ssh-strict: true
+2026-10-06T21:01:29.3084082Z   ssh-user: git
+2026-10-06T21:01:29.3084531Z   persist-credentials: true
+2026-10-06T21:01:29.3085010Z   clean: true
+2026-10-06T21:01:29.3085468Z   sparse-checkout-cone-mode: true
+2026-10-06T21:01:29.3085994Z   fetch-depth: 1
+2026-10-06T21:01:29.3086419Z   fetch-tags: false
+2026-10-06T21:01:29.3086870Z   show-progress: true
+2026-10-06T21:01:29.3087309Z   lfs: false
+2026-10-06T21:01:29.3087713Z   submodules: false
+2026-10-06T21:01:29.3088152Z   set-safe-directory: true
+2026-10-06T21:01:29.3088646Z   allow-unsafe-pr-checkout: false
+2026-10-06T21:01:29.3089409Z ##[endgroup]
+2026-10-06T21:01:29.4113405Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-06T21:01:29.4115762Z ##[group]Getting Git version info
+2026-10-06T21:01:29.4116739Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-06T21:01:29.4118115Z [command]/usr/bin/git version
+2026-10-06T21:01:29.4180723Z git version 2.55.0
+2026-10-06T21:01:29.4204462Z ##[endgroup]
+2026-10-06T21:01:29.4218652Z Temporarily overriding HOME='/home/runner/work/_temp/52614c5c-2d25-4167-9ef4-f46d0530872b' before making global git config changes
+2026-10-06T21:01:29.4220799Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-06T21:01:29.4224199Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-06T21:01:29.4279040Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-06T21:01:29.4283601Z ##[group]Determining repository object format
+2026-10-06T21:01:29.4285656Z ##[endgroup]
+2026-10-06T21:01:29.4286578Z ##[group]Initializing the repository
+2026-10-06T21:01:29.4290443Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-06T21:01:29.4393846Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-06T21:01:29.4395525Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-06T21:01:29.4396611Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-06T21:01:29.4397527Z hint: call:
+2026-10-06T21:01:29.4398245Z hint:
+2026-10-06T21:01:29.4399073Z hint: 	git config --global init.defaultBranch <name>
+2026-10-06T21:01:29.4400133Z hint:
+2026-10-06T21:01:29.4401241Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-06T21:01:29.4402351Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-06T21:01:29.4403828Z hint:
+2026-10-06T21:01:29.4404591Z hint: 	git branch -m <name>
+2026-10-06T21:01:29.4405243Z hint:
+2026-10-06T21:01:29.4405989Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-06T21:01:29.4407669Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-06T21:01:29.4410711Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-06T21:01:29.4465928Z ##[endgroup]
+2026-10-06T21:01:29.4466708Z ##[group]Disabling automatic garbage collection
+2026-10-06T21:01:29.4469306Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-06T21:01:29.4497773Z ##[endgroup]
+2026-10-06T21:01:29.4499196Z ##[group]Setting up auth
+2026-10-06T21:01:29.4500303Z Removing SSH command configuration
+2026-10-06T21:01:29.4504984Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-06T21:01:29.4535116Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-06T21:01:29.4870912Z Removing HTTP extra header
+2026-10-06T21:01:29.4876351Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-06T21:01:29.4908618Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-06T21:01:29.5121235Z Removing includeIf entries pointing to credentials config files
+2026-10-06T21:01:29.5127251Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-06T21:01:29.5158963Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-06T21:01:29.5381156Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-06T21:01:29.5418026Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config
+2026-10-06T21:01:29.5448359Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config
+2026-10-06T21:01:29.5480248Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config
+2026-10-06T21:01:29.5516552Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config
+2026-10-06T21:01:29.5543943Z ##[endgroup]
+2026-10-06T21:01:29.5544698Z ##[group]Fetching the repository
+2026-10-06T21:01:29.5552030Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +e39828231dba5ab4d24ea1c11b9975a03c68ffee:refs/remotes/origin/ci/AUDIT-15-125-main-proof
+2026-10-06T21:01:30.4845152Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-06T21:01:30.4862360Z  * [new ref]         e39828231dba5ab4d24ea1c11b9975a03c68ffee -> origin/ci/AUDIT-15-125-main-proof
+2026-10-06T21:01:30.4866314Z [command]/usr/bin/git branch --list --remote origin/ci/AUDIT-15-125-main-proof
+2026-10-06T21:01:30.4890496Z   origin/ci/AUDIT-15-125-main-proof
+2026-10-06T21:01:30.4902828Z [command]/usr/bin/git rev-parse refs/remotes/origin/ci/AUDIT-15-125-main-proof
+2026-10-06T21:01:30.4927075Z e39828231dba5ab4d24ea1c11b9975a03c68ffee
+2026-10-06T21:01:30.4938191Z ##[endgroup]
+2026-10-06T21:01:30.4938980Z ##[group]Determining the checkout info
+2026-10-06T21:01:30.4940269Z ##[endgroup]
+2026-10-06T21:01:30.4941621Z [command]/usr/bin/git sparse-checkout disable
+2026-10-06T21:01:30.4994164Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-06T21:01:30.5023597Z ##[group]Checking out the ref
+2026-10-06T21:01:30.5027153Z [command]/usr/bin/git checkout --progress --force -B ci/AUDIT-15-125-main-proof refs/remotes/origin/ci/AUDIT-15-125-main-proof
+2026-10-06T21:01:30.6315760Z Switched to a new branch 'ci/AUDIT-15-125-main-proof'
+2026-10-06T21:01:30.6319368Z branch 'ci/AUDIT-15-125-main-proof' set up to track 'origin/ci/AUDIT-15-125-main-proof'.
+2026-10-06T21:01:30.6330519Z ##[endgroup]
+2026-10-06T21:01:30.6375843Z [command]/usr/bin/git log -1 --format=%H
+2026-10-06T21:01:30.6401098Z e39828231dba5ab4d24ea1c11b9975a03c68ffee
+2026-10-06T21:01:30.6787001Z ##[group]Run actions/setup-node@v6
+2026-10-06T21:01:30.6788252Z with:
+2026-10-06T21:01:30.6789214Z   node-version: 22.13
+2026-10-06T21:01:30.6790607Z   cache: npm
+2026-10-06T21:01:30.6791579Z   check-latest: false
+2026-10-06T21:01:30.6800119Z   token: ***
+2026-10-06T21:01:30.6801165Z   package-manager-cache: true
+2026-10-06T21:01:30.6802330Z ##[endgroup]
+2026-10-06T21:01:30.8227742Z Attempting to download 22.13...
+2026-10-06T21:01:31.2634038Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-06T21:01:31.7453329Z Extracting ...
+2026-10-06T21:01:31.7579269Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/7cf0bb6d-a638-460b-92ff-8967187eb4fa -f /home/runner/work/_temp/af7dd5ea-5dac-4ebf-bbe8-f78a42197a89
+2026-10-06T21:01:32.9385036Z Adding to the cache ...
+2026-10-06T21:01:34.8960232Z ##[group]Environment details
+2026-10-06T21:01:35.1090455Z node: v22.13.1
+2026-10-06T21:01:35.1090997Z npm: 10.9.2
+2026-10-06T21:01:35.1094666Z yarn: 1.22.22
+2026-10-06T21:01:35.1095730Z ##[endgroup]
+2026-10-06T21:01:35.1114652Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-06T21:01:35.2027652Z /home/runner/.npm
+2026-10-06T21:01:35.2700910Z Cache hit for: node-cache-Linux-x64-npm-73b8c5392fe66c132d819fae91e82c2568aa0bf72eece35e2bb64b643944e426
+2026-10-06T21:01:36.3461279Z Received 201326592 of 242722566 (82.9%), 190.1 MBs/sec
+2026-10-06T21:01:36.5617162Z Received 242722566 of 242722566 (100.0%), 188.2 MBs/sec
+2026-10-06T21:01:36.5618056Z Cache Size: ~231 MB (242722566 B)
+2026-10-06T21:01:36.5719838Z [command]/usr/bin/tar -xf /home/runner/work/_temp/dc4bb4fd-965a-430d-8cd3-df1eca224cf8/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-06T21:01:37.4616025Z Cache restored successfully
+2026-10-06T21:01:37.4732132Z Cache restored from key: node-cache-Linux-x64-npm-73b8c5392fe66c132d819fae91e82c2568aa0bf72eece35e2bb64b643944e426
+2026-10-06T21:01:37.5011744Z ##[group]Run npm ci
+2026-10-06T21:01:37.5012368Z [36;1mnpm ci[0m
+2026-10-06T21:01:37.5280473Z shell: /usr/bin/bash -e {0}
+2026-10-06T21:01:37.5280817Z ##[endgroup]
+2026-10-06T21:01:43.1311537Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-06T21:01:43.3434964Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-06T21:01:43.3570598Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-06T21:01:43.3620113Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-06T21:01:43.3911864Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-06T21:01:43.5295822Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-06T21:01:43.5335027Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T21:01:43.5343312Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T21:01:43.5364356Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T21:01:43.5369083Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T21:01:43.5391059Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T21:01:43.5617088Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T21:01:43.8319073Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-06T21:01:44.4242604Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-06T21:01:45.1667577Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-06T21:01:48.7097051Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-06T21:01:55.8154573Z 
+2026-10-06T21:01:55.8155585Z > growth-project-app@1.0.0 postinstall
+2026-10-06T21:01:55.8156394Z > node scripts/patch-react-native-health.js
+2026-10-06T21:01:55.8156801Z 
+2026-10-06T21:01:55.8583436Z Applied react-native-health RN 0.85 compatibility patch
+2026-10-06T21:01:55.8776701Z 
+2026-10-06T21:01:55.8777651Z added 1109 packages, and audited 1110 packages in 18s
+2026-10-06T21:01:55.8778167Z 
+2026-10-06T21:01:55.8778482Z 187 packages are looking for funding
+2026-10-06T21:01:55.8779458Z   run `npm fund` for details
+2026-10-06T21:01:56.2583045Z 
+2026-10-06T21:01:56.2584103Z 92 vulnerabilities (1 low, 18 moderate, 72 high, 1 critical)
+2026-10-06T21:01:56.2584647Z 
+2026-10-06T21:01:56.2585035Z To address issues that do not require attention, run:
+2026-10-06T21:01:56.2585634Z   npm audit fix
+2026-10-06T21:01:56.2585878Z 
+2026-10-06T21:01:56.2586325Z To address all issues (including breaking changes), run:
+2026-10-06T21:01:56.2587694Z   npm audit fix --force
+2026-10-06T21:01:56.2587973Z 
+2026-10-06T21:01:56.2588210Z Run `npm audit` for details.
+2026-10-06T21:01:56.4271355Z ##[group]Run set -euo pipefail
+2026-10-06T21:01:56.4271701Z [36;1mset -euo pipefail[0m
+2026-10-06T21:01:56.4272101Z [36;1mtest -s .ci-lane-specs || { echo "missing .ci-lane-specs"; exit 2; }[0m
+2026-10-06T21:01:56.4272589Z [36;1mmapfile -t SPECS < <(grep -vE '^\s*(#|$)' .ci-lane-specs)[0m
+2026-10-06T21:01:56.4272947Z [36;1mecho "specs: ${SPECS[*]}"[0m
+2026-10-06T21:01:56.4273213Z [36;1mnpx jest --ci "${SPECS[@]}"[0m
+2026-10-06T21:01:56.4341239Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-10-06T21:01:56.4341601Z ##[endgroup]
+2026-10-06T21:01:56.4447528Z specs: src/screens/client/__tests__/HabitsFasting.launch.test.tsx
+2026-10-06T21:02:05.6968848Z   console.error
+2026-10-06T21:02:05.6971809Z     Encountered two children with the same key, `#4D7059`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version.
+2026-10-06T21:02:05.6973129Z 
+2026-10-06T21:02:05.6973515Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:4179:23
+2026-10-06T21:02:05.6974421Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-06T21:02:05.6975425Z       at warnOnInvalidKey (node_modules/react-reconciler/cjs/react-reconciler.development.js:4178:13)
+2026-10-06T21:02:05.6976441Z       at reconcileChildrenArray (node_modules/react-reconciler/cjs/react-reconciler.development.js:4247:31)
+2026-10-06T21:02:05.6977499Z       at reconcileChildFibersImpl (node_modules/react-reconciler/cjs/react-reconciler.development.js:4568:30)
+2026-10-06T21:02:05.6978424Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:4673:33
+2026-10-06T21:02:05.6979357Z       at reconcileChildren (node_modules/react-reconciler/cjs/react-reconciler.development.js:7255:13)
+2026-10-06T21:02:05.6980562Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9542:13)
+2026-10-06T21:02:05.6981464Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-06T21:02:05.6982497Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+2026-10-06T21:02:05.6983429Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+2026-10-06T21:02:05.6984332Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+2026-10-06T21:02:05.6985263Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+2026-10-06T21:02:05.6986298Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+2026-10-06T21:02:05.6987191Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+2026-10-06T21:02:05.6987780Z       at node_modules/react/cjs/react.development.js:847:21
+2026-10-06T21:02:05.6988070Z 
+2026-10-06T21:02:05.7246590Z   console.error
+2026-10-06T21:02:05.7248960Z     Encountered two children with the same key, `#4D7059`. Keys should be unique so that components maintain their identity across updates. Non-unique keys may cause children to be duplicated and/or omitted — the behavior is unsupported and could change in a future version.
+2026-10-06T21:02:05.7250578Z 
+2026-10-06T21:02:05.7250953Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:4179:23
+2026-10-06T21:02:05.7251825Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-06T21:02:05.7252774Z       at warnOnInvalidKey (node_modules/react-reconciler/cjs/react-reconciler.development.js:4178:13)
+2026-10-06T21:02:05.7253735Z       at reconcileChildrenArray (node_modules/react-reconciler/cjs/react-reconciler.development.js:4220:23)
+2026-10-06T21:02:05.7255440Z       at reconcileChildFibersImpl (node_modules/react-reconciler/cjs/react-reconciler.development.js:4568:30)
+2026-10-06T21:02:05.7256316Z       at node_modules/react-reconciler/cjs/react-reconciler.development.js:4673:33
+2026-10-06T21:02:05.7257157Z       at reconcileChildren (node_modules/react-reconciler/cjs/react-reconciler.development.js:7256:13)
+2026-10-06T21:02:05.7258048Z       at beginWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:9542:13)
+2026-10-06T21:02:05.7259138Z       at runWithFiberInDEV (node_modules/react-reconciler/cjs/react-reconciler.development.js:2508:13)
+2026-10-06T21:02:05.7260747Z       at performUnitOfWork (node_modules/react-reconciler/cjs/react-reconciler.development.js:15273:22)
+2026-10-06T21:02:05.7262188Z       at workLoopSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15099:41)
+2026-10-06T21:02:05.7263572Z       at renderRootSync (node_modules/react-reconciler/cjs/react-reconciler.development.js:15080:11)
+2026-10-06T21:02:05.7265010Z       at performWorkOnRoot (node_modules/react-reconciler/cjs/react-reconciler.development.js:14165:11)
+2026-10-06T21:02:05.7266604Z       at performWorkOnRootViaSchedulerTask (node_modules/react-reconciler/cjs/react-reconciler.development.js:3335:7)
+2026-10-06T21:02:05.7267934Z       at flushActQueue (node_modules/react/cjs/react.development.js:590:34)
+2026-10-06T21:02:05.7268825Z       at node_modules/react/cjs/react.development.js:847:21
+2026-10-06T21:02:05.7269267Z 
+2026-10-06T21:02:17.7297586Z FAIL src/screens/client/__tests__/HabitsFasting.launch.test.tsx (19.518 s)
+2026-10-06T21:02:17.7300426Z   Habits — production DTO, check-off and server history
+2026-10-06T21:02:17.7303083Z     ✕ adds a habit using only fields accepted by the production CreateHabitDto (5037 ms)
+2026-10-06T21:02:17.7304624Z     ✕ check-off shows the saved quantity, and undo persists zero and clears today (1071 ms)
+2026-10-06T21:02:17.7306021Z     ✕ shows recorded consecutive days in the week indicators (62 ms)
+2026-10-06T21:02:17.7307106Z     ✕ shows a load failure and retry, not an empty 0% progress claim (1009 ms)
+2026-10-06T21:02:17.7308075Z     ✕ shows a useful empty state for a new client (1010 ms)
+2026-10-06T21:02:17.7308941Z   Fasting — production protocol and completed status
+2026-10-06T21:02:17.7310106Z     ✕ restores the selected 12h target on reopen (1056 ms)
+2026-10-06T21:02:17.7311104Z     ✓ restores the selected 16h target on reopen (13 ms)
+2026-10-06T21:02:17.7312063Z     ✕ restores the selected 18h target on reopen (1012 ms)
+2026-10-06T21:02:17.7313049Z     ✕ restores the selected 20h target on reopen (1014 ms)
+2026-10-06T21:02:17.7314062Z     ✕ restores the selected 24h target on reopen (1013 ms)
+2026-10-06T21:02:17.7315219Z     ✕ starting 12:12 sends the protocol and shows the same server-backed target (1038 ms)
+2026-10-06T21:02:17.7316052Z     ✕ ending early saves history without awarding a completion (16 ms)
+2026-10-06T21:02:17.7316691Z     ✕ counts consecutive qualifying days, excluding a short ended fast today (1012 ms)
+2026-10-06T21:02:17.7317032Z 
+2026-10-06T21:02:17.7317779Z   ● Habits — production DTO, check-off and server history › adds a habit using only fields accepted by the production CreateHabitDto
+2026-10-06T21:02:17.7318274Z 
+2026-10-06T21:02:17.7318471Z     expect(jest.fn()).toHaveBeenCalledWith(...expected)
+2026-10-06T21:02:17.7318718Z 
+2026-10-06T21:02:17.7318810Z     - Expected
+2026-10-06T21:02:17.7319051Z     + Received
+2026-10-06T21:02:17.7319168Z 
+2026-10-06T21:02:17.7319258Z       Object {
+2026-10-06T21:02:17.7319467Z         "category": "custom",
+2026-10-06T21:02:17.7320069Z     +   "color": "#2C4A36",
+2026-10-06T21:02:17.7320403Z     +   "frequency": "daily",
+2026-10-06T21:02:17.7320705Z     +   "icon": "checkmark-circle",
+2026-10-06T21:02:17.7320986Z         "name": "Walk daily",
+2026-10-06T21:02:17.7321227Z         "target_value": 1,
+2026-10-06T21:02:17.7321460Z         "unit": "times",
+2026-10-06T21:02:17.7321967Z       },
+2026-10-06T21:02:17.7322074Z 
+2026-10-06T21:02:17.7322167Z     Number of calls: 1
+2026-10-06T21:02:17.7322305Z 
+2026-10-06T21:02:17.7323323Z     [0m [90m 108 |[39m     [36mawait[39m fireEvent[33m.[39mchangeText(screen[33m.[39mgetByPlaceholderText([32m'e.g. Drink 8 glasses of water'[39m)[33m,[39m [32m'Walk daily'[39m)[33m;[39m
+2026-10-06T21:02:17.7324504Z      [90m 109 |[39m     [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByText([32m'Add Habit'[39m))[33m;[39m
+2026-10-06T21:02:17.7325475Z     [31m[1m>[22m[39m[90m 110 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(mockCreateHabit)[33m.[39mtoHaveBeenCalledWith({
+2026-10-06T21:02:17.7326174Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-06T21:02:17.7327185Z      [90m 111 |[39m       name[33m:[39m [32m'Walk daily'[39m[33m,[39m category[33m:[39m [32m'custom'[39m[33m,[39m target_value[33m:[39m [35m1[39m[33m,[39m unit[33m:[39m [32m'times'[39m[33m,[39m
+2026-10-06T21:02:17.7327989Z      [90m 112 |[39m     }))[33m;[39m
+2026-10-06T21:02:17.7328621Z      [90m 113 |[39m     expect(screen[33m.[39mqueryByText([32m'Icon'[39m))[33m.[39mtoBeNull()[33m;[39m[0m
+2026-10-06T21:02:17.7329011Z 
+2026-10-06T21:02:17.7329351Z       at Object.<anonymous> (src/screens/client/__tests__/HabitsFasting.launch.test.tsx:110:18)
+2026-10-06T21:02:17.7330215Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T21:02:17.7330819Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T21:02:17.7331119Z 
+2026-10-06T21:02:17.7331697Z   ● Habits — production DTO, check-off and server history › check-off shows the saved quantity, and undo persists zero and clears today
+2026-10-06T21:02:17.7332199Z 
+2026-10-06T21:02:17.7332368Z     Unable to find an element with text: 8/8 glasses
+2026-10-06T21:02:17.7332582Z 
+2026-10-06T21:02:17.7332703Z     [36m<View>[39m
+2026-10-06T21:02:17.7332954Z       [36m<View>[39m
+2026-10-06T21:02:17.7333212Z         [36m<Text>[39m
+2026-10-06T21:02:17.7333511Z           [0mHabits & Check-in[0m
+2026-10-06T21:02:17.7333809Z         [36m</Text>[39m
+2026-10-06T21:02:17.7334070Z         [36m<Text>[39m
+2026-10-06T21:02:17.7334369Z           [0mWednesday, October 7[0m
+2026-10-06T21:02:17.7334662Z         [36m</Text>[39m
+2026-10-06T21:02:17.7334916Z       [36m</View>[39m
+2026-10-06T21:02:17.7335156Z       [36m<View>[39m
+2026-10-06T21:02:17.7335396Z         [36m<View[39m
+2026-10-06T21:02:17.7335700Z           [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7336011Z         [36m>[39m
+2026-10-06T21:02:17.7336247Z           [36m<Text>[39m
+2026-10-06T21:02:17.7336775Z             [0m[0m
+2026-10-06T21:02:17.7337054Z           [36m</Text>[39m
+2026-10-06T21:02:17.7337317Z           [36m<Text>[39m
+2026-10-06T21:02:17.7337570Z             [0mHabits[0m
+2026-10-06T21:02:17.7337830Z           [36m</Text>[39m
+2026-10-06T21:02:17.7338093Z         [36m</View>[39m
+2026-10-06T21:02:17.7338343Z         [36m<View[39m
+2026-10-06T21:02:17.7338659Z           [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7338965Z         [36m>[39m
+2026-10-06T21:02:17.7339217Z           [36m<Text>[39m
+2026-10-06T21:02:17.7339538Z             [0m[0m
+2026-10-06T21:02:17.7339933Z           [36m</Text>[39m
+2026-10-06T21:02:17.7340188Z           [36m<Text>[39m
+2026-10-06T21:02:17.7340478Z             [0mDaily Check-in[0m
+2026-10-06T21:02:17.7340757Z           [36m</Text>[39m
+2026-10-06T21:02:17.7341017Z           [36m<View />[39m
+2026-10-06T21:02:17.7341288Z         [36m</View>[39m
+2026-10-06T21:02:17.7341539Z       [36m</View>[39m
+2026-10-06T21:02:17.7341821Z       [36m<RCTScrollView>[39m
+2026-10-06T21:02:17.7342142Z         [36m<RCTRefreshControl />[39m
+2026-10-06T21:02:17.7342446Z         [36m<View>[39m
+2026-10-06T21:02:17.7342699Z           [36m<View>[39m
+2026-10-06T21:02:17.7342953Z             [36m<View>[39m
+2026-10-06T21:02:17.7343404Z               [36m<Text>[39m
+2026-10-06T21:02:17.7343684Z                 [0m100[0m
+2026-10-06T21:02:17.7343932Z                 [0m%[0m
+2026-10-06T21:02:17.7344321Z               [36m</Text>[39m
+2026-10-06T21:02:17.7344618Z               [36m<Text>[39m
+2026-10-06T21:02:17.7344881Z                 [0mDone[0m
+2026-10-06T21:02:17.7345159Z               [36m</Text>[39m
+2026-10-06T21:02:17.7345435Z             [36m</View>[39m
+2026-10-06T21:02:17.7345698Z             [36m<View>[39m
+2026-10-06T21:02:17.7345975Z               [36m<Text>[39m
+2026-10-06T21:02:17.7346241Z                 [0m1[0m
+2026-10-06T21:02:17.7346541Z                 [0m/[0m
+2026-10-06T21:02:17.7347002Z                 [0m1[0m
+2026-10-06T21:02:17.7347520Z               [36m</Text>[39m
+2026-10-06T21:02:17.7347918Z               [36m<Text>[39m
+2026-10-06T21:02:17.7348237Z                 [0mhabits completed[0m
+2026-10-06T21:02:17.7348567Z               [36m</Text>[39m
+2026-10-06T21:02:17.7348862Z               [36m<View>[39m
+2026-10-06T21:02:17.7349155Z                 [36m<View />[39m
+2026-10-06T21:02:17.7349453Z               [36m</View>[39m
+2026-10-06T21:02:17.7349871Z             [36m</View>[39m
+2026-10-06T21:02:17.7350145Z           [36m</View>[39m
+2026-10-06T21:02:17.7350398Z           [36m<View[39m
+2026-10-06T21:02:17.7350744Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7351057Z           [36m>[39m
+2026-10-06T21:02:17.7351309Z             [36m<View>[39m
+2026-10-06T21:02:17.7351610Z               [36m<View>[39m
+2026-10-06T21:02:17.7351896Z                 [36m<Text>[39m
+2026-10-06T21:02:17.7352174Z                   [0m[0m
+2026-10-06T21:02:17.7352465Z                 [36m</Text>[39m
+2026-10-06T21:02:17.7352759Z               [36m</View>[39m
+2026-10-06T21:02:17.7353041Z               [36m<View>[39m
+2026-10-06T21:02:17.7353334Z                 [36m<Text>[39m
+2026-10-06T21:02:17.7353636Z                   [0mDrink water[0m
+2026-10-06T21:02:17.7353963Z                 [36m</Text>[39m
+2026-10-06T21:02:17.7354262Z                 [36m<View>[39m
+2026-10-06T21:02:17.7354560Z                   [36m<Text>[39m
+2026-10-06T21:02:17.7354870Z                     [0m0/8 glasses[0m
+2026-10-06T21:02:17.7355188Z                   [36m</Text>[39m
+2026-10-06T21:02:17.7355491Z                 [36m</View>[39m
+2026-10-06T21:02:17.7355778Z                 [36m<View>[39m
+2026-10-06T21:02:17.7356066Z                   [36m<View>[39m
+2026-10-06T21:02:17.7356377Z                     [36m<View />[39m
+2026-10-06T21:02:17.7356688Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7356988Z                       [0mM[0m
+2026-10-06T21:02:17.7357290Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7357594Z                   [36m</View>[39m
+2026-10-06T21:02:17.7357893Z                   [36m<View>[39m
+2026-10-06T21:02:17.7358205Z                     [36m<View />[39m
+2026-10-06T21:02:17.7358512Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7358811Z                       [0mT[0m
+2026-10-06T21:02:17.7359101Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7359426Z                   [36m</View>[39m
+2026-10-06T21:02:17.7359847Z                   [36m<View>[39m
+2026-10-06T21:02:17.7360340Z                     [36m<View />[39m
+2026-10-06T21:02:17.7360665Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7360960Z                       [0mW[0m
+2026-10-06T21:02:17.7361254Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7361567Z                   [36m</View>[39m
+2026-10-06T21:02:17.7361867Z                   [36m<View>[39m
+2026-10-06T21:02:17.7362169Z                     [36m<View />[39m
+2026-10-06T21:02:17.7362480Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7362774Z                       [0mT[0m
+2026-10-06T21:02:17.7363065Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7363371Z                   [36m</View>[39m
+2026-10-06T21:02:17.7363842Z                   [36m<View>[39m
+2026-10-06T21:02:17.7364148Z                     [36m<View />[39m
+2026-10-06T21:02:17.7364459Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7364873Z                       [0mF[0m
+2026-10-06T21:02:17.7365176Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7365484Z                   [36m</View>[39m
+2026-10-06T21:02:17.7365785Z                   [36m<View>[39m
+2026-10-06T21:02:17.7366088Z                     [36m<View />[39m
+2026-10-06T21:02:17.7366397Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7366697Z                       [0mS[0m
+2026-10-06T21:02:17.7366987Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7367288Z                   [36m</View>[39m
+2026-10-06T21:02:17.7367585Z                   [36m<View>[39m
+2026-10-06T21:02:17.7367883Z                     [36m<View />[39m
+2026-10-06T21:02:17.7368185Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7368479Z                       [0mS[0m
+2026-10-06T21:02:17.7368781Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7369080Z                   [36m</View>[39m
+2026-10-06T21:02:17.7369373Z                 [36m</View>[39m
+2026-10-06T21:02:17.7369800Z               [36m</View>[39m
+2026-10-06T21:02:17.7370078Z             [36m</View>[39m
+2026-10-06T21:02:17.7370345Z             [36m<View>[39m
+2026-10-06T21:02:17.7370634Z               [36m<Text>[39m
+2026-10-06T21:02:17.7370902Z                 [0m[0m
+2026-10-06T21:02:17.7371177Z               [36m</Text>[39m
+2026-10-06T21:02:17.7371441Z             [36m</View>[39m
+2026-10-06T21:02:17.7371709Z           [36m</View>[39m
+2026-10-06T21:02:17.7371965Z           [36m<View[39m
+2026-10-06T21:02:17.7372284Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7372602Z           [36m>[39m
+2026-10-06T21:02:17.7372849Z             [36m<Text>[39m
+2026-10-06T21:02:17.7373109Z               [0m[0m
+2026-10-06T21:02:17.7373364Z             [36m</Text>[39m
+2026-10-06T21:02:17.7373633Z             [36m<Text>[39m
+2026-10-06T21:02:17.7373922Z               [0mAdd New Habit[0m
+2026-10-06T21:02:17.7374210Z             [36m</Text>[39m
+2026-10-06T21:02:17.7374480Z           [36m</View>[39m
+2026-10-06T21:02:17.7374740Z           [36m<View />[39m
+2026-10-06T21:02:17.7374999Z         [36m</View>[39m
+2026-10-06T21:02:17.7375290Z       [36m</RCTScrollView>[39m
+2026-10-06T21:02:17.7375561Z     [36m</View>[39m
+2026-10-06T21:02:17.7375697Z 
+2026-10-06T21:02:17.7376333Z     [0m [90m 119 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByText([32m'Drink water'[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-06T21:02:17.7377352Z      [90m 120 |[39m     [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByText([32m'Drink water'[39m))[33m;[39m
+2026-10-06T21:02:17.7378457Z     [31m[1m>[22m[39m[90m 121 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByText([32m'8/8 glasses'[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-06T21:02:17.7379207Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-06T21:02:17.7379973Z      [90m 122 |[39m     expect(mockLogHabit)[33m.[39mtoHaveBeenLastCalledWith([32m'water'[39m[33m,[39m {
+2026-10-06T21:02:17.7380966Z      [90m 123 |[39m       date[33m:[39m [32m'2026-10-07'[39m[33m,[39m completed[33m:[39m [36mtrue[39m[33m,[39m value[33m:[39m [35m8[39m[33m,[39m
+2026-10-06T21:02:17.7381602Z      [90m 124 |[39m     })[33m;[39m[0m
+2026-10-06T21:02:17.7381790Z 
+2026-10-06T21:02:17.7382116Z       at Object.<anonymous> (src/screens/client/__tests__/HabitsFasting.launch.test.tsx:121:18)
+2026-10-06T21:02:17.7382808Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T21:02:17.7383405Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T21:02:17.7383743Z 
+2026-10-06T21:02:17.7384228Z   ● Habits — production DTO, check-off and server history › shows recorded consecutive days in the week indicators
+2026-10-06T21:02:17.7384795Z 
+2026-10-06T21:02:17.7384995Z     Unable to find an element with testID: habit-week-water-0
+2026-10-06T21:02:17.7385354Z 
+2026-10-06T21:02:17.7385480Z     [36m<View>[39m
+2026-10-06T21:02:17.7385721Z       [36m<View>[39m
+2026-10-06T21:02:17.7385971Z         [36m<Text>[39m
+2026-10-06T21:02:17.7386266Z           [0mHabits & Check-in[0m
+2026-10-06T21:02:17.7386552Z         [36m</Text>[39m
+2026-10-06T21:02:17.7386803Z         [36m<Text>[39m
+2026-10-06T21:02:17.7387104Z           [0mWednesday, October 7[0m
+2026-10-06T21:02:17.7387397Z         [36m</Text>[39m
+2026-10-06T21:02:17.7387645Z       [36m</View>[39m
+2026-10-06T21:02:17.7387895Z       [36m<View>[39m
+2026-10-06T21:02:17.7388134Z         [36m<View[39m
+2026-10-06T21:02:17.7388441Z           [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7388746Z         [36m>[39m
+2026-10-06T21:02:17.7388990Z           [36m<Text>[39m
+2026-10-06T21:02:17.7389255Z             [0m[0m
+2026-10-06T21:02:17.7389510Z           [36m</Text>[39m
+2026-10-06T21:02:17.7389909Z           [36m<Text>[39m
+2026-10-06T21:02:17.7390173Z             [0mHabits[0m
+2026-10-06T21:02:17.7390426Z           [36m</Text>[39m
+2026-10-06T21:02:17.7390687Z         [36m</View>[39m
+2026-10-06T21:02:17.7390935Z         [36m<View[39m
+2026-10-06T21:02:17.7391248Z           [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7391552Z         [36m>[39m
+2026-10-06T21:02:17.7391793Z           [36m<Text>[39m
+2026-10-06T21:02:17.7392043Z             [0m[0m
+2026-10-06T21:02:17.7392282Z           [36m</Text>[39m
+2026-10-06T21:02:17.7392541Z           [36m<Text>[39m
+2026-10-06T21:02:17.7392834Z             [0mDaily Check-in[0m
+2026-10-06T21:02:17.7393127Z           [36m</Text>[39m
+2026-10-06T21:02:17.7393404Z           [36m<View />[39m
+2026-10-06T21:02:17.7393664Z         [36m</View>[39m
+2026-10-06T21:02:17.7393912Z       [36m</View>[39m
+2026-10-06T21:02:17.7394197Z       [36m<RCTScrollView>[39m
+2026-10-06T21:02:17.7394535Z         [36m<RCTRefreshControl />[39m
+2026-10-06T21:02:17.7394835Z         [36m<View>[39m
+2026-10-06T21:02:17.7395095Z           [36m<View>[39m
+2026-10-06T21:02:17.7395373Z             [36m<View>[39m
+2026-10-06T21:02:17.7395657Z               [36m<Text>[39m
+2026-10-06T21:02:17.7395920Z                 [0m0[0m
+2026-10-06T21:02:17.7396175Z                 [0m%[0m
+2026-10-06T21:02:17.7396446Z               [36m</Text>[39m
+2026-10-06T21:02:17.7396738Z               [36m<Text>[39m
+2026-10-06T21:02:17.7397010Z                 [0mDone[0m
+2026-10-06T21:02:17.7397289Z               [36m</Text>[39m
+2026-10-06T21:02:17.7397562Z             [36m</View>[39m
+2026-10-06T21:02:17.7397823Z             [36m<View>[39m
+2026-10-06T21:02:17.7398106Z               [36m<Text>[39m
+2026-10-06T21:02:17.7398365Z                 [0m0[0m
+2026-10-06T21:02:17.7398610Z                 [0m/[0m
+2026-10-06T21:02:17.7398857Z                 [0m1[0m
+2026-10-06T21:02:17.7399132Z               [36m</Text>[39m
+2026-10-06T21:02:17.7399417Z               [36m<Text>[39m
+2026-10-06T21:02:17.7399851Z                 [0mhabits completed[0m
+2026-10-06T21:02:17.7400370Z               [36m</Text>[39m
+2026-10-06T21:02:17.7400664Z               [36m<View>[39m
+2026-10-06T21:02:17.7400960Z                 [36m<View />[39m
+2026-10-06T21:02:17.7401260Z               [36m</View>[39m
+2026-10-06T21:02:17.7401524Z             [36m</View>[39m
+2026-10-06T21:02:17.7401786Z           [36m</View>[39m
+2026-10-06T21:02:17.7421608Z           [36m<View[39m
+2026-10-06T21:02:17.7422092Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7422439Z           [36m>[39m
+2026-10-06T21:02:17.7422719Z             [36m<View>[39m
+2026-10-06T21:02:17.7423030Z               [36m<View>[39m
+2026-10-06T21:02:17.7423338Z                 [36m<Text>[39m
+2026-10-06T21:02:17.7423641Z                   [0m[0m
+2026-10-06T21:02:17.7423943Z                 [36m</Text>[39m
+2026-10-06T21:02:17.7424454Z               [36m</View>[39m
+2026-10-06T21:02:17.7424750Z               [36m<View>[39m
+2026-10-06T21:02:17.7425051Z                 [36m<Text>[39m
+2026-10-06T21:02:17.7425479Z                   [0mDrink water[0m
+2026-10-06T21:02:17.7425808Z                 [36m</Text>[39m
+2026-10-06T21:02:17.7426116Z                 [36m<View>[39m
+2026-10-06T21:02:17.7426415Z                   [36m<Text>[39m
+2026-10-06T21:02:17.7426736Z                     [0m0/8 glasses[0m
+2026-10-06T21:02:17.7427064Z                   [36m</Text>[39m
+2026-10-06T21:02:17.7427371Z                 [36m</View>[39m
+2026-10-06T21:02:17.7427666Z                 [36m<View>[39m
+2026-10-06T21:02:17.7427967Z                   [36m<View>[39m
+2026-10-06T21:02:17.7428274Z                     [36m<View />[39m
+2026-10-06T21:02:17.7428594Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7428903Z                       [0mM[0m
+2026-10-06T21:02:17.7429209Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7429533Z                   [36m</View>[39m
+2026-10-06T21:02:17.7430008Z                   [36m<View>[39m
+2026-10-06T21:02:17.7430343Z                     [36m<View />[39m
+2026-10-06T21:02:17.7430668Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7430972Z                       [0mT[0m
+2026-10-06T21:02:17.7431281Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7431590Z                   [36m</View>[39m
+2026-10-06T21:02:17.7431891Z                   [36m<View>[39m
+2026-10-06T21:02:17.7432202Z                     [36m<View />[39m
+2026-10-06T21:02:17.7432512Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7432813Z                       [0mW[0m
+2026-10-06T21:02:17.7433113Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7433428Z                   [36m</View>[39m
+2026-10-06T21:02:17.7433727Z                   [36m<View>[39m
+2026-10-06T21:02:17.7434031Z                     [36m<View />[39m
+2026-10-06T21:02:17.7434353Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7434661Z                       [0mT[0m
+2026-10-06T21:02:17.7434957Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7435273Z                   [36m</View>[39m
+2026-10-06T21:02:17.7435575Z                   [36m<View>[39m
+2026-10-06T21:02:17.7435881Z                     [36m<View />[39m
+2026-10-06T21:02:17.7436198Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7436501Z                       [0mF[0m
+2026-10-06T21:02:17.7436795Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7437101Z                   [36m</View>[39m
+2026-10-06T21:02:17.7437407Z                   [36m<View>[39m
+2026-10-06T21:02:17.7437710Z                     [36m<View />[39m
+2026-10-06T21:02:17.7438019Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7438321Z                       [0mS[0m
+2026-10-06T21:02:17.7438610Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7438913Z                   [36m</View>[39m
+2026-10-06T21:02:17.7439220Z                   [36m<View>[39m
+2026-10-06T21:02:17.7439515Z                     [36m<View />[39m
+2026-10-06T21:02:17.7440039Z                     [36m<Text>[39m
+2026-10-06T21:02:17.7440469Z                       [0mS[0m
+2026-10-06T21:02:17.7440765Z                     [36m</Text>[39m
+2026-10-06T21:02:17.7441074Z                   [36m</View>[39m
+2026-10-06T21:02:17.7441377Z                 [36m</View>[39m
+2026-10-06T21:02:17.7441674Z               [36m</View>[39m
+2026-10-06T21:02:17.7441945Z             [36m</View>[39m
+2026-10-06T21:02:17.7442232Z             [36m<View />[39m
+2026-10-06T21:02:17.7442506Z           [36m</View>[39m
+2026-10-06T21:02:17.7442766Z           [36m<View[39m
+2026-10-06T21:02:17.7443090Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7443408Z           [36m>[39m
+2026-10-06T21:02:17.7443658Z             [36m<Text>[39m
+2026-10-06T21:02:17.7443923Z               [0m[0m
+2026-10-06T21:02:17.7444186Z             [36m</Text>[39m
+2026-10-06T21:02:17.7444637Z             [36m<Text>[39m
+2026-10-06T21:02:17.7444931Z               [0mAdd New Habit[0m
+2026-10-06T21:02:17.7445214Z             [36m</Text>[39m
+2026-10-06T21:02:17.7445670Z           [36m</View>[39m
+2026-10-06T21:02:17.7445944Z           [36m<View />[39m
+2026-10-06T21:02:17.7446203Z         [36m</View>[39m
+2026-10-06T21:02:17.7446501Z       [36m</RCTScrollView>[39m
+2026-10-06T21:02:17.7446778Z     [36m</View>[39m
+2026-10-06T21:02:17.7446915Z 
+2026-10-06T21:02:17.7447317Z     [0m [90m 135 |[39m     [36mconst[39m screen [33m=[39m [36mawait[39m renderHabits()[33m;[39m
+2026-10-06T21:02:17.7448294Z      [90m 136 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByText([32m'Drink water'[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-06T21:02:17.7449822Z     [31m[1m>[22m[39m[90m 137 |[39m     expect(screen[33m.[39mgetByTestId([32m'habit-week-water-0'[39m)[33m.[39mprops[33m.[39maccessibilityLabel)[33m.[39mtoBe([32m'M: completed'[39m)[33m;[39m
+2026-10-06T21:02:17.7450777Z      [90m     |[39m                   [31m[1m^[22m[39m
+2026-10-06T21:02:17.7451762Z      [90m 138 |[39m     expect(screen[33m.[39mgetByTestId([32m'habit-week-water-1'[39m)[33m.[39mprops[33m.[39maccessibilityLabel)[33m.[39mtoBe([32m'T: completed'[39m)[33m;[39m
+2026-10-06T21:02:17.7453170Z      [90m 139 |[39m     expect(screen[33m.[39mgetByTestId([32m'habit-week-water-2'[39m)[33m.[39mprops[33m.[39maccessibilityLabel)[33m.[39mtoBe([32m'W: not completed'[39m)[33m;[39m
+2026-10-06T21:02:17.7453968Z      [90m 140 |[39m   })[33m;[39m[0m
+2026-10-06T21:02:17.7454160Z 
+2026-10-06T21:02:17.7454501Z       at Object.getByTestId (src/screens/client/__tests__/HabitsFasting.launch.test.tsx:137:19)
+2026-10-06T21:02:17.7455203Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T21:02:17.7455807Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T21:02:17.7456118Z 
+2026-10-06T21:02:17.7456652Z   ● Habits — production DTO, check-off and server history › shows a load failure and retry, not an empty 0% progress claim
+2026-10-06T21:02:17.7457113Z 
+2026-10-06T21:02:17.7457343Z     Unable to find an element with text: Habits could not be loaded.
+2026-10-06T21:02:17.7457623Z 
+2026-10-06T21:02:17.7457739Z     [36m<View>[39m
+2026-10-06T21:02:17.7457999Z       [36m<View>[39m
+2026-10-06T21:02:17.7458251Z         [36m<Text>[39m
+2026-10-06T21:02:17.7458552Z           [0mHabits & Check-in[0m
+2026-10-06T21:02:17.7458855Z         [36m</Text>[39m
+2026-10-06T21:02:17.7459114Z         [36m<Text>[39m
+2026-10-06T21:02:17.7459417Z           [0mWednesday, October 7[0m
+2026-10-06T21:02:17.7459833Z         [36m</Text>[39m
+2026-10-06T21:02:17.7460102Z       [36m</View>[39m
+2026-10-06T21:02:17.7460351Z       [36m<View>[39m
+2026-10-06T21:02:17.7460593Z         [36m<View[39m
+2026-10-06T21:02:17.7460908Z           [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7461222Z         [36m>[39m
+2026-10-06T21:02:17.7461461Z           [36m<Text>[39m
+2026-10-06T21:02:17.7461728Z             [0m[0m
+2026-10-06T21:02:17.7461980Z           [36m</Text>[39m
+2026-10-06T21:02:17.7462244Z           [36m<Text>[39m
+2026-10-06T21:02:17.7462500Z             [0mHabits[0m
+2026-10-06T21:02:17.7462764Z           [36m</Text>[39m
+2026-10-06T21:02:17.7463019Z         [36m</View>[39m
+2026-10-06T21:02:17.7463268Z         [36m<View[39m
+2026-10-06T21:02:17.7463584Z           [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7463879Z         [36m>[39m
+2026-10-06T21:02:17.7464116Z           [36m<Text>[39m
+2026-10-06T21:02:17.7464367Z             [0m[0m
+2026-10-06T21:02:17.7464609Z           [36m</Text>[39m
+2026-10-06T21:02:17.7464864Z           [36m<Text>[39m
+2026-10-06T21:02:17.7465156Z             [0mDaily Check-in[0m
+2026-10-06T21:02:17.7465447Z           [36m</Text>[39m
+2026-10-06T21:02:17.7465707Z           [36m<View />[39m
+2026-10-06T21:02:17.7466122Z         [36m</View>[39m
+2026-10-06T21:02:17.7466382Z       [36m</View>[39m
+2026-10-06T21:02:17.7466654Z       [36m<RCTScrollView>[39m
+2026-10-06T21:02:17.7467086Z         [36m<RCTRefreshControl />[39m
+2026-10-06T21:02:17.7467403Z         [36m<View>[39m
+2026-10-06T21:02:17.7467659Z           [36m<View>[39m
+2026-10-06T21:02:17.7467915Z             [36m<View>[39m
+2026-10-06T21:02:17.7468198Z               [36m<Text>[39m
+2026-10-06T21:02:17.7468466Z                 [0m0[0m
+2026-10-06T21:02:17.7468711Z                 [0m%[0m
+2026-10-06T21:02:17.7468981Z               [36m</Text>[39m
+2026-10-06T21:02:17.7469267Z               [36m<Text>[39m
+2026-10-06T21:02:17.7469541Z                 [0mDone[0m
+2026-10-06T21:02:17.7469958Z               [36m</Text>[39m
+2026-10-06T21:02:17.7470229Z             [36m</View>[39m
+2026-10-06T21:02:17.7470502Z             [36m<View>[39m
+2026-10-06T21:02:17.7470785Z               [36m<Text>[39m
+2026-10-06T21:02:17.7471048Z                 [0m0[0m
+2026-10-06T21:02:17.7471317Z                 [0m/[0m
+2026-10-06T21:02:17.7471567Z                 [0m0[0m
+2026-10-06T21:02:17.7471852Z               [36m</Text>[39m
+2026-10-06T21:02:17.7472148Z               [36m<Text>[39m
+2026-10-06T21:02:17.7472464Z                 [0mhabits completed[0m
+2026-10-06T21:02:17.7472786Z               [36m</Text>[39m
+2026-10-06T21:02:17.7473069Z               [36m<View>[39m
+2026-10-06T21:02:17.7473367Z                 [36m<View />[39m
+2026-10-06T21:02:17.7473666Z               [36m</View>[39m
+2026-10-06T21:02:17.7473934Z             [36m</View>[39m
+2026-10-06T21:02:17.7474209Z           [36m</View>[39m
+2026-10-06T21:02:17.7474469Z           [36m<View[39m
+2026-10-06T21:02:17.7474794Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7475113Z           [36m>[39m
+2026-10-06T21:02:17.7475358Z             [36m<Text>[39m
+2026-10-06T21:02:17.7475636Z               [0m[0m
+2026-10-06T21:02:17.7475900Z             [36m</Text>[39m
+2026-10-06T21:02:17.7476180Z             [36m<Text>[39m
+2026-10-06T21:02:17.7476477Z               [0mAdd New Habit[0m
+2026-10-06T21:02:17.7476772Z             [36m</Text>[39m
+2026-10-06T21:02:17.7477039Z           [36m</View>[39m
+2026-10-06T21:02:17.7477297Z           [36m<View />[39m
+2026-10-06T21:02:17.7477552Z         [36m</View>[39m
+2026-10-06T21:02:17.7477841Z       [36m</RCTScrollView>[39m
+2026-10-06T21:02:17.7478113Z     [36m</View>[39m
+2026-10-06T21:02:17.7478246Z 
+2026-10-06T21:02:17.7478847Z     [0m [90m 143 |[39m     mockGetHabits[33m.[39mmockRejectedValueOnce([36mnew[39m [33mError[39m([32m'Network unavailable'[39m))[33m;[39m
+2026-10-06T21:02:17.7479884Z      [90m 144 |[39m     [36mconst[39m screen [33m=[39m [36mawait[39m renderHabits()[33m;[39m
+2026-10-06T21:02:17.7481135Z     [31m[1m>[22m[39m[90m 145 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByText([32m'Habits could not be loaded.'[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-06T21:02:17.7481955Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-06T21:02:17.7482591Z      [90m 146 |[39m     expect(screen[33m.[39mqueryByText([32m'0%'[39m))[33m.[39mtoBeNull()[33m;[39m
+2026-10-06T21:02:17.7483470Z      [90m 147 |[39m     [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByText([32m'Retry habits'[39m))[33m;[39m
+2026-10-06T21:02:17.7484568Z      [90m 148 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByText([32m'Drink water'[39m))[33m.[39mtoBeTruthy())[33m;[39m[0m
+2026-10-06T21:02:17.7485086Z 
+2026-10-06T21:02:17.7485415Z       at Object.<anonymous> (src/screens/client/__tests__/HabitsFasting.launch.test.tsx:145:18)
+2026-10-06T21:02:17.7486100Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T21:02:17.7486701Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T21:02:17.7487001Z 
+2026-10-06T21:02:17.7487590Z   ● Habits — production DTO, check-off and server history › shows a useful empty state for a new client
+2026-10-06T21:02:17.7487994Z 
+2026-10-06T21:02:17.7488406Z     Unable to find an element with text: No habits yet. Add a daily habit to start tracking.
+2026-10-06T21:02:17.7488754Z 
+2026-10-06T21:02:17.7488875Z     [36m<View>[39m
+2026-10-06T21:02:17.7489120Z       [36m<View>[39m
+2026-10-06T21:02:17.7489375Z         [36m<Text>[39m
+2026-10-06T21:02:17.7489811Z           [0mHabits & Check-in[0m
+2026-10-06T21:02:17.7490121Z         [36m</Text>[39m
+2026-10-06T21:02:17.7490385Z         [36m<Text>[39m
+2026-10-06T21:02:17.7490683Z           [0mWednesday, October 7[0m
+2026-10-06T21:02:17.7490978Z         [36m</Text>[39m
+2026-10-06T21:02:17.7491234Z       [36m</View>[39m
+2026-10-06T21:02:17.7491477Z       [36m<View>[39m
+2026-10-06T21:02:17.7491715Z         [36m<View[39m
+2026-10-06T21:02:17.7492032Z           [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7492353Z         [36m>[39m
+2026-10-06T21:02:17.7492594Z           [36m<Text>[39m
+2026-10-06T21:02:17.7492852Z             [0m[0m
+2026-10-06T21:02:17.7493104Z           [36m</Text>[39m
+2026-10-06T21:02:17.7493408Z           [36m<Text>[39m
+2026-10-06T21:02:17.7493666Z             [0mHabits[0m
+2026-10-06T21:02:17.7493925Z           [36m</Text>[39m
+2026-10-06T21:02:17.7494179Z         [36m</View>[39m
+2026-10-06T21:02:17.7494431Z         [36m<View[39m
+2026-10-06T21:02:17.7494756Z           [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7495055Z         [36m>[39m
+2026-10-06T21:02:17.7495299Z           [36m<Text>[39m
+2026-10-06T21:02:17.7495552Z             [0m[0m
+2026-10-06T21:02:17.7495792Z           [36m</Text>[39m
+2026-10-06T21:02:17.7496045Z           [36m<Text>[39m
+2026-10-06T21:02:17.7496328Z             [0mDaily Check-in[0m
+2026-10-06T21:02:17.7496617Z           [36m</Text>[39m
+2026-10-06T21:02:17.7496875Z           [36m<View />[39m
+2026-10-06T21:02:17.7497139Z         [36m</View>[39m
+2026-10-06T21:02:17.7497400Z       [36m</View>[39m
+2026-10-06T21:02:17.7497676Z       [36m<RCTScrollView>[39m
+2026-10-06T21:02:17.7498004Z         [36m<RCTRefreshControl />[39m
+2026-10-06T21:02:17.7498308Z         [36m<View>[39m
+2026-10-06T21:02:17.7498558Z           [36m<View>[39m
+2026-10-06T21:02:17.7498812Z             [36m<View>[39m
+2026-10-06T21:02:17.7499101Z               [36m<Text>[39m
+2026-10-06T21:02:17.7499368Z                 [0m0[0m
+2026-10-06T21:02:17.7499613Z                 [0m%[0m
+2026-10-06T21:02:17.7500048Z               [36m</Text>[39m
+2026-10-06T21:02:17.7500340Z               [36m<Text>[39m
+2026-10-06T21:02:17.7500606Z                 [0mDone[0m
+2026-10-06T21:02:17.7500889Z               [36m</Text>[39m
+2026-10-06T21:02:17.7501164Z             [36m</View>[39m
+2026-10-06T21:02:17.7501432Z             [36m<View>[39m
+2026-10-06T21:02:17.7501712Z               [36m<Text>[39m
+2026-10-06T21:02:17.7501974Z                 [0m0[0m
+2026-10-06T21:02:17.7502225Z                 [0m/[0m
+2026-10-06T21:02:17.7502469Z                 [0m0[0m
+2026-10-06T21:02:17.7502741Z               [36m</Text>[39m
+2026-10-06T21:02:17.7503037Z               [36m<Text>[39m
+2026-10-06T21:02:17.7503356Z                 [0mhabits completed[0m
+2026-10-06T21:02:17.7503679Z               [36m</Text>[39m
+2026-10-06T21:02:17.7503970Z               [36m<View>[39m
+2026-10-06T21:02:17.7504265Z                 [36m<View />[39m
+2026-10-06T21:02:17.7504566Z               [36m</View>[39m
+2026-10-06T21:02:17.7504840Z             [36m</View>[39m
+2026-10-06T21:02:17.7505105Z           [36m</View>[39m
+2026-10-06T21:02:17.7505367Z           [36m<View[39m
+2026-10-06T21:02:17.7505690Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7506003Z           [36m>[39m
+2026-10-06T21:02:17.7506246Z             [36m<Text>[39m
+2026-10-06T21:02:17.7506503Z               [0m[0m
+2026-10-06T21:02:17.7506756Z             [36m</Text>[39m
+2026-10-06T21:02:17.7507172Z             [36m<Text>[39m
+2026-10-06T21:02:17.7507464Z               [0mAdd New Habit[0m
+2026-10-06T21:02:17.7507753Z             [36m</Text>[39m
+2026-10-06T21:02:17.7508124Z           [36m</View>[39m
+2026-10-06T21:02:17.7508393Z           [36m<View />[39m
+2026-10-06T21:02:17.7508660Z         [36m</View>[39m
+2026-10-06T21:02:17.7508946Z       [36m</RCTScrollView>[39m
+2026-10-06T21:02:17.7509221Z     [36m</View>[39m
+2026-10-06T21:02:17.7509353Z 
+2026-10-06T21:02:17.7509936Z     [0m [90m 152 |[39m     mockGetHabits[33m.[39mmockResolvedValue({ data[33m:[39m [] })[33m;[39m
+2026-10-06T21:02:17.7510680Z      [90m 153 |[39m     [36mconst[39m screen [33m=[39m [36mawait[39m renderHabits()[33m;[39m
+2026-10-06T21:02:17.7511871Z     [31m[1m>[22m[39m[90m 154 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByText([32m'No habits yet. Add a daily habit to start tracking.'[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-06T21:02:17.7512763Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-06T21:02:17.7513132Z      [90m 155 |[39m   })[33m;[39m
+2026-10-06T21:02:17.7513451Z      [90m 156 |[39m })[33m;[39m
+2026-10-06T21:02:17.7513732Z      [90m 157 |[39m[0m
+2026-10-06T21:02:17.7513870Z 
+2026-10-06T21:02:17.7514204Z       at Object.<anonymous> (src/screens/client/__tests__/HabitsFasting.launch.test.tsx:154:18)
+2026-10-06T21:02:17.7514879Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T21:02:17.7515491Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T21:02:17.7515801Z 
+2026-10-06T21:02:17.7516222Z   ● Fasting — production protocol and completed status › restores the selected 12h target on reopen
+2026-10-06T21:02:17.7516621Z 
+2026-10-06T21:02:17.7516768Z     Unable to find an element with text: 12h
+2026-10-06T21:02:17.7516970Z 
+2026-10-06T21:02:17.7517098Z     [36m<RCTScrollView>[39m
+2026-10-06T21:02:17.7517423Z       [36m<RCTRefreshControl />[39m
+2026-10-06T21:02:17.7517726Z       [36m<View>[39m
+2026-10-06T21:02:17.7517980Z         [36m<View>[39m
+2026-10-06T21:02:17.7518245Z           [36m<Text>[39m
+2026-10-06T21:02:17.7518519Z             [0mFasting[0m
+2026-10-06T21:02:17.7518790Z           [36m</Text>[39m
+2026-10-06T21:02:17.7519057Z         [36m</View>[39m
+2026-10-06T21:02:17.7519313Z         [36m<View>[39m
+2026-10-06T21:02:17.7519607Z           [36m<RNSVGSvgView>[39m
+2026-10-06T21:02:17.7520240Z             [36m<RNSVGGroup>[39m
+2026-10-06T21:02:17.7520578Z               [36m<RNSVGCircle />[39m
+2026-10-06T21:02:17.7520912Z               [36m<RNSVGCircle />[39m
+2026-10-06T21:02:17.7521238Z             [36m</RNSVGGroup>[39m
+2026-10-06T21:02:17.7521562Z           [36m</RNSVGSvgView>[39m
+2026-10-06T21:02:17.7521848Z           [36m<View>[39m
+2026-10-06T21:02:17.7522113Z             [36m<Text>[39m
+2026-10-06T21:02:17.7522408Z               [0m02:00:00[0m
+2026-10-06T21:02:17.7522680Z             [36m</Text>[39m
+2026-10-06T21:02:17.7522956Z             [36m<Text>[39m
+2026-10-06T21:02:17.7523273Z               [0m13:59:59 remaining[0m
+2026-10-06T21:02:17.7523578Z             [36m</Text>[39m
+2026-10-06T21:02:17.7523847Z           [36m</View>[39m
+2026-10-06T21:02:17.7524110Z         [36m</View>[39m
+2026-10-06T21:02:17.7524360Z         [36m<View>[39m
+2026-10-06T21:02:17.7524609Z           [36m<View[39m
+2026-10-06T21:02:17.7524970Z             [33maccessibilityLabel[39m=[32m"End fast"[39m
+2026-10-06T21:02:17.7525446Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T21:02:17.7525861Z             [33maccessibilityState[39m=[32m{
+2026-10-06T21:02:17.7526161Z               {
+2026-10-06T21:02:17.7526401Z                 "disabled": false,
+2026-10-06T21:02:17.7526646Z               }
+2026-10-06T21:02:17.7526874Z             }[39m
+2026-10-06T21:02:17.7527176Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7527486Z           [36m>[39m
+2026-10-06T21:02:17.7527900Z             [36m<Text>[39m
+2026-10-06T21:02:17.7528172Z               [0m[0m
+2026-10-06T21:02:17.7528425Z             [36m</Text>[39m
+2026-10-06T21:02:17.7528800Z             [36m<Text>[39m
+2026-10-06T21:02:17.7529097Z               [0mEnd Fast[0m
+2026-10-06T21:02:17.7529362Z             [36m</Text>[39m
+2026-10-06T21:02:17.7529625Z           [36m</View>[39m
+2026-10-06T21:02:17.7530031Z         [36m</View>[39m
+2026-10-06T21:02:17.7530281Z         [36m<View>[39m
+2026-10-06T21:02:17.7530533Z           [36m<View>[39m
+2026-10-06T21:02:17.7530794Z             [36m<Text>[39m
+2026-10-06T21:02:17.7531058Z               [0mStarted[0m
+2026-10-06T21:02:17.7531324Z             [36m</Text>[39m
+2026-10-06T21:02:17.7531594Z             [36m<Text>[39m
+2026-10-06T21:02:17.7531881Z               [0m07:02 PM[0m
+2026-10-06T21:02:17.7532147Z             [36m</Text>[39m
+2026-10-06T21:02:17.7532407Z           [36m</View>[39m
+2026-10-06T21:02:17.7532671Z           [36m<View>[39m
+2026-10-06T21:02:17.7532939Z             [36m<Text>[39m
+2026-10-06T21:02:17.7533199Z               [0mTarget[0m
+2026-10-06T21:02:17.7533465Z             [36m</Text>[39m
+2026-10-06T21:02:17.7533734Z             [36m<Text>[39m
+2026-10-06T21:02:17.7533991Z               [0m16[0m
+2026-10-06T21:02:17.7534242Z               [0mh[0m
+2026-10-06T21:02:17.7534492Z             [36m</Text>[39m
+2026-10-06T21:02:17.7534752Z           [36m</View>[39m
+2026-10-06T21:02:17.7535007Z           [36m<View>[39m
+2026-10-06T21:02:17.7535272Z             [36m<Text>[39m
+2026-10-06T21:02:17.7535555Z               [0mProgress[0m
+2026-10-06T21:02:17.7535822Z             [36m</Text>[39m
+2026-10-06T21:02:17.7536090Z             [36m<Text>[39m
+2026-10-06T21:02:17.7536349Z               [0m13[0m
+2026-10-06T21:02:17.7536594Z               [0m%[0m
+2026-10-06T21:02:17.7536853Z             [36m</Text>[39m
+2026-10-06T21:02:17.7537119Z           [36m</View>[39m
+2026-10-06T21:02:17.7537380Z         [36m</View>[39m
+2026-10-06T21:02:17.7537642Z         [36m<View>[39m
+2026-10-06T21:02:17.7537903Z           [36m<View>[39m
+2026-10-06T21:02:17.7538159Z             [36m<View>[39m
+2026-10-06T21:02:17.7538449Z               [36m<Text>[39m
+2026-10-06T21:02:17.7538734Z                 [0m0[0m
+2026-10-06T21:02:17.7539018Z               [36m</Text>[39m
+2026-10-06T21:02:17.7539314Z               [36m<Text>[39m
+2026-10-06T21:02:17.7539618Z                 [0mCompleted[0m
+2026-10-06T21:02:17.7540040Z               [36m</Text>[39m
+2026-10-06T21:02:17.7540312Z             [36m</View>[39m
+2026-10-06T21:02:17.7540584Z             [36m<View>[39m
+2026-10-06T21:02:17.7540866Z               [36m<Text>[39m
+2026-10-06T21:02:17.7541127Z                 [0m0[0m
+2026-10-06T21:02:17.7541401Z               [36m</Text>[39m
+2026-10-06T21:02:17.7541698Z               [36m<Text>[39m
+2026-10-06T21:02:17.7541991Z                 [0mAvg Hours[0m
+2026-10-06T21:02:17.7542285Z               [36m</Text>[39m
+2026-10-06T21:02:17.7542561Z             [36m</View>[39m
+2026-10-06T21:02:17.7542826Z             [36m<View>[39m
+2026-10-06T21:02:17.7543107Z               [36m<Text>[39m
+2026-10-06T21:02:17.7543380Z                 [0m0[0m
+2026-10-06T21:02:17.7543652Z               [36m</Text>[39m
+2026-10-06T21:02:17.7543937Z               [36m<Text>[39m
+2026-10-06T21:02:17.7544231Z                 [0mLongest[0m
+2026-10-06T21:02:17.7544519Z               [36m</Text>[39m
+2026-10-06T21:02:17.7544786Z             [36m</View>[39m
+2026-10-06T21:02:17.7545052Z           [36m</View>[39m
+2026-10-06T21:02:17.7545318Z         [36m</View>[39m
+2026-10-06T21:02:17.7545572Z         [36m<View>[39m
+2026-10-06T21:02:17.7545829Z           [36m<Text>[39m
+2026-10-06T21:02:17.7546089Z             [0m[0m
+2026-10-06T21:02:17.7546336Z           [36m</Text>[39m
+2026-10-06T21:02:17.7546595Z           [36m<Text>[39m
+2026-10-06T21:02:17.7546900Z             [0mNo fasting history[0m
+2026-10-06T21:02:17.7547198Z           [36m</Text>[39m
+2026-10-06T21:02:17.7547595Z           [36m<Text>[39m
+2026-10-06T21:02:17.7548015Z             [0mStart your first fast to begin tracking your progress[0m
+2026-10-06T21:02:17.7548521Z           [36m</Text>[39m
+2026-10-06T21:02:17.7548789Z         [36m</View>[39m
+2026-10-06T21:02:17.7549044Z       [36m</View>[39m
+2026-10-06T21:02:17.7549329Z     [36m</RCTScrollView>[39m
+2026-10-06T21:02:17.7549488Z 
+2026-10-06T21:02:17.7549817Z     [0m [90m 163 |[39m     }] })[33m;[39m
+2026-10-06T21:02:17.7550611Z      [90m 164 |[39m     [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mFastingScreen[39m [33m/[39m[33m>[39m)[33m;[39m
+2026-10-06T21:02:17.7551762Z     [31m[1m>[22m[39m[90m 165 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByText([32m`${hours}h`[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-06T21:02:17.7552510Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-06T21:02:17.7553190Z      [90m 166 |[39m     expect(screen[33m.[39mgetByText([35m/02:00:\d{2}/[39m))[33m.[39mtoBeTruthy()[33m;[39m
+2026-10-06T21:02:17.7553745Z      [90m 167 |[39m   })[33m;[39m
+2026-10-06T21:02:17.7554038Z      [90m 168 |[39m[0m
+2026-10-06T21:02:17.7554181Z 
+2026-10-06T21:02:17.7554433Z       at src/screens/client/__tests__/HabitsFasting.launch.test.tsx:165:18
+2026-10-06T21:02:17.7555038Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T21:02:17.7555637Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T21:02:17.7555941Z 
+2026-10-06T21:02:17.7556363Z   ● Fasting — production protocol and completed status › restores the selected 18h target on reopen
+2026-10-06T21:02:17.7556753Z 
+2026-10-06T21:02:17.7556897Z     Unable to find an element with text: 18h
+2026-10-06T21:02:17.7557103Z 
+2026-10-06T21:02:17.7557237Z     [36m<RCTScrollView>[39m
+2026-10-06T21:02:17.7557557Z       [36m<RCTRefreshControl />[39m
+2026-10-06T21:02:17.7557861Z       [36m<View>[39m
+2026-10-06T21:02:17.7558117Z         [36m<View>[39m
+2026-10-06T21:02:17.7558373Z           [36m<Text>[39m
+2026-10-06T21:02:17.7558645Z             [0mFasting[0m
+2026-10-06T21:02:17.7558910Z           [36m</Text>[39m
+2026-10-06T21:02:17.7559174Z         [36m</View>[39m
+2026-10-06T21:02:17.7559428Z         [36m<View>[39m
+2026-10-06T21:02:17.7559934Z           [36m<RNSVGSvgView>[39m
+2026-10-06T21:02:17.7560355Z             [36m<RNSVGGroup>[39m
+2026-10-06T21:02:17.7560681Z               [36m<RNSVGCircle />[39m
+2026-10-06T21:02:17.7561018Z               [36m<RNSVGCircle />[39m
+2026-10-06T21:02:17.7561349Z             [36m</RNSVGGroup>[39m
+2026-10-06T21:02:17.7561672Z           [36m</RNSVGSvgView>[39m
+2026-10-06T21:02:17.7561958Z           [36m<View>[39m
+2026-10-06T21:02:17.7562227Z             [36m<Text>[39m
+2026-10-06T21:02:17.7562521Z               [0m02:00:00[0m
+2026-10-06T21:02:17.7562798Z             [36m</Text>[39m
+2026-10-06T21:02:17.7563072Z             [36m<Text>[39m
+2026-10-06T21:02:17.7563397Z               [0m13:59:59 remaining[0m
+2026-10-06T21:02:17.7563698Z             [36m</Text>[39m
+2026-10-06T21:02:17.7563969Z           [36m</View>[39m
+2026-10-06T21:02:17.7564233Z         [36m</View>[39m
+2026-10-06T21:02:17.7564487Z         [36m<View>[39m
+2026-10-06T21:02:17.7564740Z           [36m<View[39m
+2026-10-06T21:02:17.7565110Z             [33maccessibilityLabel[39m=[32m"End fast"[39m
+2026-10-06T21:02:17.7565559Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T21:02:17.7565967Z             [33maccessibilityState[39m=[32m{
+2026-10-06T21:02:17.7566260Z               {
+2026-10-06T21:02:17.7566491Z                 "disabled": false,
+2026-10-06T21:02:17.7566735Z               }
+2026-10-06T21:02:17.7566960Z             }[39m
+2026-10-06T21:02:17.7567267Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7567577Z           [36m>[39m
+2026-10-06T21:02:17.7567826Z             [36m<Text>[39m
+2026-10-06T21:02:17.7568252Z               [0m[0m
+2026-10-06T21:02:17.7568509Z             [36m</Text>[39m
+2026-10-06T21:02:17.7568774Z             [36m<Text>[39m
+2026-10-06T21:02:17.7569177Z               [0mEnd Fast[0m
+2026-10-06T21:02:17.7569454Z             [36m</Text>[39m
+2026-10-06T21:02:17.7569879Z           [36m</View>[39m
+2026-10-06T21:02:17.7570150Z         [36m</View>[39m
+2026-10-06T21:02:17.7570402Z         [36m<View>[39m
+2026-10-06T21:02:17.7570658Z           [36m<View>[39m
+2026-10-06T21:02:17.7570918Z             [36m<Text>[39m
+2026-10-06T21:02:17.7571190Z               [0mStarted[0m
+2026-10-06T21:02:17.7571461Z             [36m</Text>[39m
+2026-10-06T21:02:17.7571724Z             [36m<Text>[39m
+2026-10-06T21:02:17.7572017Z               [0m07:02 PM[0m
+2026-10-06T21:02:17.7572287Z             [36m</Text>[39m
+2026-10-06T21:02:17.7572550Z           [36m</View>[39m
+2026-10-06T21:02:17.7572818Z           [36m<View>[39m
+2026-10-06T21:02:17.7573077Z             [36m<Text>[39m
+2026-10-06T21:02:17.7573348Z               [0mTarget[0m
+2026-10-06T21:02:17.7573611Z             [36m</Text>[39m
+2026-10-06T21:02:17.7573878Z             [36m<Text>[39m
+2026-10-06T21:02:17.7574149Z               [0m16[0m
+2026-10-06T21:02:17.7574404Z               [0mh[0m
+2026-10-06T21:02:17.7574662Z             [36m</Text>[39m
+2026-10-06T21:02:17.7574925Z           [36m</View>[39m
+2026-10-06T21:02:17.7575186Z           [36m<View>[39m
+2026-10-06T21:02:17.7575452Z             [36m<Text>[39m
+2026-10-06T21:02:17.7575741Z               [0mProgress[0m
+2026-10-06T21:02:17.7576016Z             [36m</Text>[39m
+2026-10-06T21:02:17.7576282Z             [36m<Text>[39m
+2026-10-06T21:02:17.7576548Z               [0m13[0m
+2026-10-06T21:02:17.7576795Z               [0m%[0m
+2026-10-06T21:02:17.7577041Z             [36m</Text>[39m
+2026-10-06T21:02:17.7577306Z           [36m</View>[39m
+2026-10-06T21:02:17.7577562Z         [36m</View>[39m
+2026-10-06T21:02:17.7577818Z         [36m<View>[39m
+2026-10-06T21:02:17.7578084Z           [36m<View>[39m
+2026-10-06T21:02:17.7578340Z             [36m<View>[39m
+2026-10-06T21:02:17.7578624Z               [36m<Text>[39m
+2026-10-06T21:02:17.7578895Z                 [0m0[0m
+2026-10-06T21:02:17.7579176Z               [36m</Text>[39m
+2026-10-06T21:02:17.7579464Z               [36m<Text>[39m
+2026-10-06T21:02:17.7579936Z                 [0mCompleted[0m
+2026-10-06T21:02:17.7580252Z               [36m</Text>[39m
+2026-10-06T21:02:17.7580526Z             [36m</View>[39m
+2026-10-06T21:02:17.7580792Z             [36m<View>[39m
+2026-10-06T21:02:17.7581080Z               [36m<Text>[39m
+2026-10-06T21:02:17.7581342Z                 [0m0[0m
+2026-10-06T21:02:17.7581617Z               [36m</Text>[39m
+2026-10-06T21:02:17.7581908Z               [36m<Text>[39m
+2026-10-06T21:02:17.7582205Z                 [0mAvg Hours[0m
+2026-10-06T21:02:17.7582510Z               [36m</Text>[39m
+2026-10-06T21:02:17.7582778Z             [36m</View>[39m
+2026-10-06T21:02:17.7583058Z             [36m<View>[39m
+2026-10-06T21:02:17.7583338Z               [36m<Text>[39m
+2026-10-06T21:02:17.7583597Z                 [0m0[0m
+2026-10-06T21:02:17.7583918Z               [36m</Text>[39m
+2026-10-06T21:02:17.7584206Z               [36m<Text>[39m
+2026-10-06T21:02:17.7584493Z                 [0mLongest[0m
+2026-10-06T21:02:17.7584782Z               [36m</Text>[39m
+2026-10-06T21:02:17.7585049Z             [36m</View>[39m
+2026-10-06T21:02:17.7585317Z           [36m</View>[39m
+2026-10-06T21:02:17.7585583Z         [36m</View>[39m
+2026-10-06T21:02:17.7585839Z         [36m<View>[39m
+2026-10-06T21:02:17.7586096Z           [36m<Text>[39m
+2026-10-06T21:02:17.7586356Z             [0m[0m
+2026-10-06T21:02:17.7586614Z           [36m</Text>[39m
+2026-10-06T21:02:17.7586875Z           [36m<Text>[39m
+2026-10-06T21:02:17.7587173Z             [0mNo fasting history[0m
+2026-10-06T21:02:17.7587466Z           [36m</Text>[39m
+2026-10-06T21:02:17.7587719Z           [36m<Text>[39m
+2026-10-06T21:02:17.7588274Z             [0mStart your first fast to begin tracking your progress[0m
+2026-10-06T21:02:17.7588663Z           [36m</Text>[39m
+2026-10-06T21:02:17.7589028Z         [36m</View>[39m
+2026-10-06T21:02:17.7589289Z       [36m</View>[39m
+2026-10-06T21:02:17.7589570Z     [36m</RCTScrollView>[39m
+2026-10-06T21:02:17.7589867Z 
+2026-10-06T21:02:17.7590052Z     [0m [90m 163 |[39m     }] })[33m;[39m
+2026-10-06T21:02:17.7590827Z      [90m 164 |[39m     [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mFastingScreen[39m [33m/[39m[33m>[39m)[33m;[39m
+2026-10-06T21:02:17.7591966Z     [31m[1m>[22m[39m[90m 165 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByText([32m`${hours}h`[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-06T21:02:17.7592706Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-06T21:02:17.7593369Z      [90m 166 |[39m     expect(screen[33m.[39mgetByText([35m/02:00:\d{2}/[39m))[33m.[39mtoBeTruthy()[33m;[39m
+2026-10-06T21:02:17.7593922Z      [90m 167 |[39m   })[33m;[39m
+2026-10-06T21:02:17.7594209Z      [90m 168 |[39m[0m
+2026-10-06T21:02:17.7594362Z 
+2026-10-06T21:02:17.7594619Z       at src/screens/client/__tests__/HabitsFasting.launch.test.tsx:165:18
+2026-10-06T21:02:17.7595231Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T21:02:17.7595831Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T21:02:17.7596130Z 
+2026-10-06T21:02:17.7596554Z   ● Fasting — production protocol and completed status › restores the selected 20h target on reopen
+2026-10-06T21:02:17.7596940Z 
+2026-10-06T21:02:17.7597086Z     Unable to find an element with text: 20h
+2026-10-06T21:02:17.7597289Z 
+2026-10-06T21:02:17.7597418Z     [36m<RCTScrollView>[39m
+2026-10-06T21:02:17.7597746Z       [36m<RCTRefreshControl />[39m
+2026-10-06T21:02:17.7598043Z       [36m<View>[39m
+2026-10-06T21:02:17.7598303Z         [36m<View>[39m
+2026-10-06T21:02:17.7598566Z           [36m<Text>[39m
+2026-10-06T21:02:17.7598828Z             [0mFasting[0m
+2026-10-06T21:02:17.7599099Z           [36m</Text>[39m
+2026-10-06T21:02:17.7599363Z         [36m</View>[39m
+2026-10-06T21:02:17.7599615Z         [36m<View>[39m
+2026-10-06T21:02:17.7600033Z           [36m<RNSVGSvgView>[39m
+2026-10-06T21:02:17.7600357Z             [36m<RNSVGGroup>[39m
+2026-10-06T21:02:17.7600697Z               [36m<RNSVGCircle />[39m
+2026-10-06T21:02:17.7601040Z               [36m<RNSVGCircle />[39m
+2026-10-06T21:02:17.7601368Z             [36m</RNSVGGroup>[39m
+2026-10-06T21:02:17.7601694Z           [36m</RNSVGSvgView>[39m
+2026-10-06T21:02:17.7601981Z           [36m<View>[39m
+2026-10-06T21:02:17.7602246Z             [36m<Text>[39m
+2026-10-06T21:02:17.7602549Z               [0m02:00:00[0m
+2026-10-06T21:02:17.7602820Z             [36m</Text>[39m
+2026-10-06T21:02:17.7603088Z             [36m<Text>[39m
+2026-10-06T21:02:17.7603396Z               [0m13:59:59 remaining[0m
+2026-10-06T21:02:17.7603700Z             [36m</Text>[39m
+2026-10-06T21:02:17.7603966Z           [36m</View>[39m
+2026-10-06T21:02:17.7604227Z         [36m</View>[39m
+2026-10-06T21:02:17.7604486Z         [36m<View>[39m
+2026-10-06T21:02:17.7604738Z           [36m<View[39m
+2026-10-06T21:02:17.7605095Z             [33maccessibilityLabel[39m=[32m"End fast"[39m
+2026-10-06T21:02:17.7605539Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T21:02:17.7605943Z             [33maccessibilityState[39m=[32m{
+2026-10-06T21:02:17.7606229Z               {
+2026-10-06T21:02:17.7606470Z                 "disabled": false,
+2026-10-06T21:02:17.7606719Z               }
+2026-10-06T21:02:17.7606947Z             }[39m
+2026-10-06T21:02:17.7607261Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7607576Z           [36m>[39m
+2026-10-06T21:02:17.7607827Z             [36m<Text>[39m
+2026-10-06T21:02:17.7608096Z               [0m[0m
+2026-10-06T21:02:17.7608545Z             [36m</Text>[39m
+2026-10-06T21:02:17.7608818Z             [36m<Text>[39m
+2026-10-06T21:02:17.7609105Z               [0mEnd Fast[0m
+2026-10-06T21:02:17.7609505Z             [36m</Text>[39m
+2026-10-06T21:02:17.7609923Z           [36m</View>[39m
+2026-10-06T21:02:17.7610188Z         [36m</View>[39m
+2026-10-06T21:02:17.7610449Z         [36m<View>[39m
+2026-10-06T21:02:17.7610705Z           [36m<View>[39m
+2026-10-06T21:02:17.7610966Z             [36m<Text>[39m
+2026-10-06T21:02:17.7611242Z               [0mStarted[0m
+2026-10-06T21:02:17.7611508Z             [36m</Text>[39m
+2026-10-06T21:02:17.7611775Z             [36m<Text>[39m
+2026-10-06T21:02:17.7612068Z               [0m07:02 PM[0m
+2026-10-06T21:02:17.7612345Z             [36m</Text>[39m
+2026-10-06T21:02:17.7612613Z           [36m</View>[39m
+2026-10-06T21:02:17.7612875Z           [36m<View>[39m
+2026-10-06T21:02:17.7613151Z             [36m<Text>[39m
+2026-10-06T21:02:17.7613420Z               [0mTarget[0m
+2026-10-06T21:02:17.7613694Z             [36m</Text>[39m
+2026-10-06T21:02:17.7613964Z             [36m<Text>[39m
+2026-10-06T21:02:17.7614223Z               [0m16[0m
+2026-10-06T21:02:17.7614478Z               [0mh[0m
+2026-10-06T21:02:17.7614733Z             [36m</Text>[39m
+2026-10-06T21:02:17.7615000Z           [36m</View>[39m
+2026-10-06T21:02:17.7615257Z           [36m<View>[39m
+2026-10-06T21:02:17.7615514Z             [36m<Text>[39m
+2026-10-06T21:02:17.7615803Z               [0mProgress[0m
+2026-10-06T21:02:17.7616074Z             [36m</Text>[39m
+2026-10-06T21:02:17.7616335Z             [36m<Text>[39m
+2026-10-06T21:02:17.7616596Z               [0m13[0m
+2026-10-06T21:02:17.7616841Z               [0m%[0m
+2026-10-06T21:02:17.7617092Z             [36m</Text>[39m
+2026-10-06T21:02:17.7617360Z           [36m</View>[39m
+2026-10-06T21:02:17.7617616Z         [36m</View>[39m
+2026-10-06T21:02:17.7617869Z         [36m<View>[39m
+2026-10-06T21:02:17.7618120Z           [36m<View>[39m
+2026-10-06T21:02:17.7618388Z             [36m<View>[39m
+2026-10-06T21:02:17.7618670Z               [36m<Text>[39m
+2026-10-06T21:02:17.7618936Z                 [0m0[0m
+2026-10-06T21:02:17.7619230Z               [36m</Text>[39m
+2026-10-06T21:02:17.7619522Z               [36m<Text>[39m
+2026-10-06T21:02:17.7619951Z                 [0mCompleted[0m
+2026-10-06T21:02:17.7620266Z               [36m</Text>[39m
+2026-10-06T21:02:17.7620537Z             [36m</View>[39m
+2026-10-06T21:02:17.7620806Z             [36m<View>[39m
+2026-10-06T21:02:17.7621090Z               [36m<Text>[39m
+2026-10-06T21:02:17.7621359Z                 [0m0[0m
+2026-10-06T21:02:17.7621637Z               [36m</Text>[39m
+2026-10-06T21:02:17.7621922Z               [36m<Text>[39m
+2026-10-06T21:02:17.7622222Z                 [0mAvg Hours[0m
+2026-10-06T21:02:17.7622621Z               [36m</Text>[39m
+2026-10-06T21:02:17.7622987Z             [36m</View>[39m
+2026-10-06T21:02:17.7623349Z             [36m<View>[39m
+2026-10-06T21:02:17.7623933Z               [36m<Text>[39m
+2026-10-06T21:02:17.7624370Z                 [0m0[0m
+2026-10-06T21:02:17.7624803Z               [36m</Text>[39m
+2026-10-06T21:02:17.7625202Z               [36m<Text>[39m
+2026-10-06T21:02:17.7625659Z                 [0mLongest[0m
+2026-10-06T21:02:17.7626068Z               [36m</Text>[39m
+2026-10-06T21:02:17.7626466Z             [36m</View>[39m
+2026-10-06T21:02:17.7626909Z           [36m</View>[39m
+2026-10-06T21:02:17.7627264Z         [36m</View>[39m
+2026-10-06T21:02:17.7627642Z         [36m<View>[39m
+2026-10-06T21:02:17.7628052Z           [36m<Text>[39m
+2026-10-06T21:02:17.7628422Z             [0m[0m
+2026-10-06T21:02:17.7628834Z           [36m</Text>[39m
+2026-10-06T21:02:17.7629228Z           [36m<Text>[39m
+2026-10-06T21:02:17.7629934Z             [0mNo fasting history[0m
+2026-10-06T21:02:17.7640143Z           [36m</Text>[39m
+2026-10-06T21:02:17.7640571Z           [36m<Text>[39m
+2026-10-06T21:02:17.7641044Z             [0mStart your first fast to begin tracking your progress[0m
+2026-10-06T21:02:17.7641677Z           [36m</Text>[39m
+2026-10-06T21:02:17.7641954Z         [36m</View>[39m
+2026-10-06T21:02:17.7642377Z       [36m</View>[39m
+2026-10-06T21:02:17.7642680Z     [36m</RCTScrollView>[39m
+2026-10-06T21:02:17.7642853Z 
+2026-10-06T21:02:17.7643035Z     [0m [90m 163 |[39m     }] })[33m;[39m
+2026-10-06T21:02:17.7643813Z      [90m 164 |[39m     [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mFastingScreen[39m [33m/[39m[33m>[39m)[33m;[39m
+2026-10-06T21:02:17.7644944Z     [31m[1m>[22m[39m[90m 165 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByText([32m`${hours}h`[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-06T21:02:17.7645696Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-06T21:02:17.7646395Z      [90m 166 |[39m     expect(screen[33m.[39mgetByText([35m/02:00:\d{2}/[39m))[33m.[39mtoBeTruthy()[33m;[39m
+2026-10-06T21:02:17.7646963Z      [90m 167 |[39m   })[33m;[39m
+2026-10-06T21:02:17.7647257Z      [90m 168 |[39m[0m
+2026-10-06T21:02:17.7647410Z 
+2026-10-06T21:02:17.7647677Z       at src/screens/client/__tests__/HabitsFasting.launch.test.tsx:165:18
+2026-10-06T21:02:17.7648297Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T21:02:17.7648902Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T21:02:17.7649195Z 
+2026-10-06T21:02:17.7649631Z   ● Fasting — production protocol and completed status › restores the selected 24h target on reopen
+2026-10-06T21:02:17.7650199Z 
+2026-10-06T21:02:17.7650348Z     Unable to find an element with text: 24h
+2026-10-06T21:02:17.7650558Z 
+2026-10-06T21:02:17.7650702Z     [36m<RCTScrollView>[39m
+2026-10-06T21:02:17.7651030Z       [36m<RCTRefreshControl />[39m
+2026-10-06T21:02:17.7651330Z       [36m<View>[39m
+2026-10-06T21:02:17.7651591Z         [36m<View>[39m
+2026-10-06T21:02:17.7651863Z           [36m<Text>[39m
+2026-10-06T21:02:17.7652125Z             [0mFasting[0m
+2026-10-06T21:02:17.7652395Z           [36m</Text>[39m
+2026-10-06T21:02:17.7652662Z         [36m</View>[39m
+2026-10-06T21:02:17.7652918Z         [36m<View>[39m
+2026-10-06T21:02:17.7653206Z           [36m<RNSVGSvgView>[39m
+2026-10-06T21:02:17.7653535Z             [36m<RNSVGGroup>[39m
+2026-10-06T21:02:17.7653860Z               [36m<RNSVGCircle />[39m
+2026-10-06T21:02:17.7654196Z               [36m<RNSVGCircle />[39m
+2026-10-06T21:02:17.7654529Z             [36m</RNSVGGroup>[39m
+2026-10-06T21:02:17.7654851Z           [36m</RNSVGSvgView>[39m
+2026-10-06T21:02:17.7655139Z           [36m<View>[39m
+2026-10-06T21:02:17.7655415Z             [36m<Text>[39m
+2026-10-06T21:02:17.7655716Z               [0m02:00:00[0m
+2026-10-06T21:02:17.7655990Z             [36m</Text>[39m
+2026-10-06T21:02:17.7656267Z             [36m<Text>[39m
+2026-10-06T21:02:17.7656578Z               [0m13:59:59 remaining[0m
+2026-10-06T21:02:17.7656887Z             [36m</Text>[39m
+2026-10-06T21:02:17.7657160Z           [36m</View>[39m
+2026-10-06T21:02:17.7657418Z         [36m</View>[39m
+2026-10-06T21:02:17.7657678Z         [36m<View>[39m
+2026-10-06T21:02:17.7657934Z           [36m<View[39m
+2026-10-06T21:02:17.7658306Z             [33maccessibilityLabel[39m=[32m"End fast"[39m
+2026-10-06T21:02:17.7658757Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T21:02:17.7659164Z             [33maccessibilityState[39m=[32m{
+2026-10-06T21:02:17.7659460Z               {
+2026-10-06T21:02:17.7659822Z                 "disabled": false,
+2026-10-06T21:02:17.7660092Z               }
+2026-10-06T21:02:17.7660330Z             }[39m
+2026-10-06T21:02:17.7660641Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7660958Z           [36m>[39m
+2026-10-06T21:02:17.7661214Z             [36m<Text>[39m
+2026-10-06T21:02:17.7661493Z               [0m[0m
+2026-10-06T21:02:17.7661748Z             [36m</Text>[39m
+2026-10-06T21:02:17.7662188Z             [36m<Text>[39m
+2026-10-06T21:02:17.7662481Z               [0mEnd Fast[0m
+2026-10-06T21:02:17.7662751Z             [36m</Text>[39m
+2026-10-06T21:02:17.7663128Z           [36m</View>[39m
+2026-10-06T21:02:17.7663400Z         [36m</View>[39m
+2026-10-06T21:02:17.7663657Z         [36m<View>[39m
+2026-10-06T21:02:17.7663912Z           [36m<View>[39m
+2026-10-06T21:02:17.7664176Z             [36m<Text>[39m
+2026-10-06T21:02:17.7664441Z               [0mStarted[0m
+2026-10-06T21:02:17.7664705Z             [36m</Text>[39m
+2026-10-06T21:02:17.7664966Z             [36m<Text>[39m
+2026-10-06T21:02:17.7665258Z               [0m07:02 PM[0m
+2026-10-06T21:02:17.7665524Z             [36m</Text>[39m
+2026-10-06T21:02:17.7665795Z           [36m</View>[39m
+2026-10-06T21:02:17.7666061Z           [36m<View>[39m
+2026-10-06T21:02:17.7666319Z             [36m<Text>[39m
+2026-10-06T21:02:17.7666578Z               [0mTarget[0m
+2026-10-06T21:02:17.7666847Z             [36m</Text>[39m
+2026-10-06T21:02:17.7667117Z             [36m<Text>[39m
+2026-10-06T21:02:17.7667372Z               [0m16[0m
+2026-10-06T21:02:17.7667623Z               [0mh[0m
+2026-10-06T21:02:17.7667880Z             [36m</Text>[39m
+2026-10-06T21:02:17.7668143Z           [36m</View>[39m
+2026-10-06T21:02:17.7668404Z           [36m<View>[39m
+2026-10-06T21:02:17.7668670Z             [36m<Text>[39m
+2026-10-06T21:02:17.7668959Z               [0mProgress[0m
+2026-10-06T21:02:17.7669230Z             [36m</Text>[39m
+2026-10-06T21:02:17.7669501Z             [36m<Text>[39m
+2026-10-06T21:02:17.7670126Z               [0m13[0m
+2026-10-06T21:02:17.7670432Z               [0m%[0m
+2026-10-06T21:02:17.7670706Z             [36m</Text>[39m
+2026-10-06T21:02:17.7670980Z           [36m</View>[39m
+2026-10-06T21:02:17.7671242Z         [36m</View>[39m
+2026-10-06T21:02:17.7671542Z         [36m<View>[39m
+2026-10-06T21:02:17.7671803Z           [36m<View>[39m
+2026-10-06T21:02:17.7672059Z             [36m<View>[39m
+2026-10-06T21:02:17.7672354Z               [36m<Text>[39m
+2026-10-06T21:02:17.7672634Z                 [0m0[0m
+2026-10-06T21:02:17.7672917Z               [36m</Text>[39m
+2026-10-06T21:02:17.7673214Z               [36m<Text>[39m
+2026-10-06T21:02:17.7673523Z                 [0mCompleted[0m
+2026-10-06T21:02:17.7673833Z               [36m</Text>[39m
+2026-10-06T21:02:17.7674104Z             [36m</View>[39m
+2026-10-06T21:02:17.7674380Z             [36m<View>[39m
+2026-10-06T21:02:17.7674666Z               [36m<Text>[39m
+2026-10-06T21:02:17.7674931Z                 [0m0[0m
+2026-10-06T21:02:17.7675204Z               [36m</Text>[39m
+2026-10-06T21:02:17.7675503Z               [36m<Text>[39m
+2026-10-06T21:02:17.7675805Z                 [0mAvg Hours[0m
+2026-10-06T21:02:17.7676105Z               [36m</Text>[39m
+2026-10-06T21:02:17.7676378Z             [36m</View>[39m
+2026-10-06T21:02:17.7676643Z             [36m<View>[39m
+2026-10-06T21:02:17.7676924Z               [36m<Text>[39m
+2026-10-06T21:02:17.7677201Z                 [0m0[0m
+2026-10-06T21:02:17.7677474Z               [36m</Text>[39m
+2026-10-06T21:02:17.7677759Z               [36m<Text>[39m
+2026-10-06T21:02:17.7678054Z                 [0mLongest[0m
+2026-10-06T21:02:17.7678354Z               [36m</Text>[39m
+2026-10-06T21:02:17.7678626Z             [36m</View>[39m
+2026-10-06T21:02:17.7678892Z           [36m</View>[39m
+2026-10-06T21:02:17.7679161Z         [36m</View>[39m
+2026-10-06T21:02:17.7679414Z         [36m<View>[39m
+2026-10-06T21:02:17.7679799Z           [36m<Text>[39m
+2026-10-06T21:02:17.7680075Z             [0m[0m
+2026-10-06T21:02:17.7680326Z           [36m</Text>[39m
+2026-10-06T21:02:17.7680591Z           [36m<Text>[39m
+2026-10-06T21:02:17.7680904Z             [0mNo fasting history[0m
+2026-10-06T21:02:17.7681203Z           [36m</Text>[39m
+2026-10-06T21:02:17.7681467Z           [36m<Text>[39m
+2026-10-06T21:02:17.7681885Z             [0mStart your first fast to begin tracking your progress[0m
+2026-10-06T21:02:17.7682436Z           [36m</Text>[39m
+2026-10-06T21:02:17.7682697Z         [36m</View>[39m
+2026-10-06T21:02:17.7682946Z       [36m</View>[39m
+2026-10-06T21:02:17.7683333Z     [36m</RCTScrollView>[39m
+2026-10-06T21:02:17.7683499Z 
+2026-10-06T21:02:17.7683686Z     [0m [90m 163 |[39m     }] })[33m;[39m
+2026-10-06T21:02:17.7684501Z      [90m 164 |[39m     [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mFastingScreen[39m [33m/[39m[33m>[39m)[33m;[39m
+2026-10-06T21:02:17.7685637Z     [31m[1m>[22m[39m[90m 165 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByText([32m`${hours}h`[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-06T21:02:17.7686375Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-06T21:02:17.7687032Z      [90m 166 |[39m     expect(screen[33m.[39mgetByText([35m/02:00:\d{2}/[39m))[33m.[39mtoBeTruthy()[33m;[39m
+2026-10-06T21:02:17.7687578Z      [90m 167 |[39m   })[33m;[39m
+2026-10-06T21:02:17.7687872Z      [90m 168 |[39m[0m
+2026-10-06T21:02:17.7688016Z 
+2026-10-06T21:02:17.7688266Z       at src/screens/client/__tests__/HabitsFasting.launch.test.tsx:165:18
+2026-10-06T21:02:17.7688880Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T21:02:17.7689486Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T21:02:17.7689930Z 
+2026-10-06T21:02:17.7690500Z   ● Fasting — production protocol and completed status › starting 12:12 sends the protocol and shows the same server-backed target
+2026-10-06T21:02:17.7690989Z 
+2026-10-06T21:02:17.7691140Z     Unable to find an element with text: 12h
+2026-10-06T21:02:17.7691347Z 
+2026-10-06T21:02:17.7691478Z     [36m<RCTScrollView>[39m
+2026-10-06T21:02:17.7691806Z       [36m<RCTRefreshControl />[39m
+2026-10-06T21:02:17.7692100Z       [36m<View>[39m
+2026-10-06T21:02:17.7692349Z         [36m<View>[39m
+2026-10-06T21:02:17.7692613Z           [36m<Text>[39m
+2026-10-06T21:02:17.7692885Z             [0mFasting[0m
+2026-10-06T21:02:17.7693147Z           [36m</Text>[39m
+2026-10-06T21:02:17.7693405Z         [36m</View>[39m
+2026-10-06T21:02:17.7693675Z         [36m<View>[39m
+2026-10-06T21:02:17.7693968Z           [36m<RNSVGSvgView>[39m
+2026-10-06T21:02:17.7694289Z             [36m<RNSVGGroup>[39m
+2026-10-06T21:02:17.7694460Z               [36m<RNSVGCircle />[39m
+2026-10-06T21:02:17.7694625Z               [36m<RNSVGCircle />[39m
+2026-10-06T21:02:17.7694785Z             [36m</RNSVGGroup>[39m
+2026-10-06T21:02:17.7694937Z           [36m</RNSVGSvgView>[39m
+2026-10-06T21:02:17.7695062Z           [36m<View>[39m
+2026-10-06T21:02:17.7695192Z             [36m<Text>[39m
+2026-10-06T21:02:17.7695336Z               [0m00:00:00[0m
+2026-10-06T21:02:17.7695464Z             [36m</Text>[39m
+2026-10-06T21:02:17.7695586Z             [36m<Text>[39m
+2026-10-06T21:02:17.7695751Z               [0m15:59:59 remaining[0m
+2026-10-06T21:02:17.7695877Z             [36m</Text>[39m
+2026-10-06T21:02:17.7696005Z           [36m</View>[39m
+2026-10-06T21:02:17.7696128Z         [36m</View>[39m
+2026-10-06T21:02:17.7696248Z         [36m<View>[39m
+2026-10-06T21:02:17.7696369Z           [36m<View[39m
+2026-10-06T21:02:17.7696605Z             [33maccessibilityLabel[39m=[32m"End fast"[39m
+2026-10-06T21:02:17.7696817Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T21:02:17.7697008Z             [33maccessibilityState[39m=[32m{
+2026-10-06T21:02:17.7697099Z               {
+2026-10-06T21:02:17.7697223Z                 "disabled": false,
+2026-10-06T21:02:17.7697306Z               }
+2026-10-06T21:02:17.7697423Z             }[39m
+2026-10-06T21:02:17.7697609Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7697721Z           [36m>[39m
+2026-10-06T21:02:17.7697846Z             [36m<Text>[39m
+2026-10-06T21:02:17.7697971Z               [0m[0m
+2026-10-06T21:02:17.7698090Z             [36m</Text>[39m
+2026-10-06T21:02:17.7698358Z             [36m<Text>[39m
+2026-10-06T21:02:17.7698507Z               [0mEnd Fast[0m
+2026-10-06T21:02:17.7698631Z             [36m</Text>[39m
+2026-10-06T21:02:17.7698854Z           [36m</View>[39m
+2026-10-06T21:02:17.7698982Z         [36m</View>[39m
+2026-10-06T21:02:17.7699104Z         [36m<View>[39m
+2026-10-06T21:02:17.7699222Z           [36m<View>[39m
+2026-10-06T21:02:17.7699346Z             [36m<Text>[39m
+2026-10-06T21:02:17.7699473Z               [0mStarted[0m
+2026-10-06T21:02:17.7699591Z             [36m</Text>[39m
+2026-10-06T21:02:17.7699846Z             [36m<Text>[39m
+2026-10-06T21:02:17.7700001Z               [0m09:02 PM[0m
+2026-10-06T21:02:17.7700128Z             [36m</Text>[39m
+2026-10-06T21:02:17.7700249Z           [36m</View>[39m
+2026-10-06T21:02:17.7700372Z           [36m<View>[39m
+2026-10-06T21:02:17.7700496Z             [36m<Text>[39m
+2026-10-06T21:02:17.7700617Z               [0mTarget[0m
+2026-10-06T21:02:17.7700741Z             [36m</Text>[39m
+2026-10-06T21:02:17.7700875Z             [36m<Text>[39m
+2026-10-06T21:02:17.7700990Z               [0m16[0m
+2026-10-06T21:02:17.7701110Z               [0mh[0m
+2026-10-06T21:02:17.7701244Z             [36m</Text>[39m
+2026-10-06T21:02:17.7701369Z           [36m</View>[39m
+2026-10-06T21:02:17.7701487Z           [36m<View>[39m
+2026-10-06T21:02:17.7701612Z             [36m<Text>[39m
+2026-10-06T21:02:17.7701761Z               [0mProgress[0m
+2026-10-06T21:02:17.7701882Z             [36m</Text>[39m
+2026-10-06T21:02:17.7702006Z             [36m<Text>[39m
+2026-10-06T21:02:17.7702128Z               [0m0[0m
+2026-10-06T21:02:17.7702245Z               [0m%[0m
+2026-10-06T21:02:17.7702364Z             [36m</Text>[39m
+2026-10-06T21:02:17.7702488Z           [36m</View>[39m
+2026-10-06T21:02:17.7702609Z         [36m</View>[39m
+2026-10-06T21:02:17.7702724Z         [36m<View>[39m
+2026-10-06T21:02:17.7702847Z           [36m<View>[39m
+2026-10-06T21:02:17.7702973Z             [36m<View>[39m
+2026-10-06T21:02:17.7703115Z               [36m<Text>[39m
+2026-10-06T21:02:17.7703238Z                 [0m0[0m
+2026-10-06T21:02:17.7703385Z               [36m</Text>[39m
+2026-10-06T21:02:17.7703533Z               [36m<Text>[39m
+2026-10-06T21:02:17.7703684Z                 [0mCompleted[0m
+2026-10-06T21:02:17.7703829Z               [36m</Text>[39m
+2026-10-06T21:02:17.7703955Z             [36m</View>[39m
+2026-10-06T21:02:17.7704074Z             [36m<View>[39m
+2026-10-06T21:02:17.7704219Z               [36m<Text>[39m
+2026-10-06T21:02:17.7704340Z                 [0m0[0m
+2026-10-06T21:02:17.7704474Z               [36m</Text>[39m
+2026-10-06T21:02:17.7704614Z               [36m<Text>[39m
+2026-10-06T21:02:17.7704766Z                 [0mAvg Hours[0m
+2026-10-06T21:02:17.7704912Z               [36m</Text>[39m
+2026-10-06T21:02:17.7705034Z             [36m</View>[39m
+2026-10-06T21:02:17.7705161Z             [36m<View>[39m
+2026-10-06T21:02:17.7705303Z               [36m<Text>[39m
+2026-10-06T21:02:17.7705421Z                 [0m0[0m
+2026-10-06T21:02:17.7705566Z               [36m</Text>[39m
+2026-10-06T21:02:17.7705707Z               [36m<Text>[39m
+2026-10-06T21:02:17.7705857Z                 [0mLongest[0m
+2026-10-06T21:02:17.7705996Z               [36m</Text>[39m
+2026-10-06T21:02:17.7706120Z             [36m</View>[39m
+2026-10-06T21:02:17.7706240Z           [36m</View>[39m
+2026-10-06T21:02:17.7706354Z         [36m</View>[39m
+2026-10-06T21:02:17.7706473Z         [36m<View>[39m
+2026-10-06T21:02:17.7706594Z           [36m<Text>[39m
+2026-10-06T21:02:17.7706710Z             [0m[0m
+2026-10-06T21:02:17.7706832Z           [36m</Text>[39m
+2026-10-06T21:02:17.7706953Z           [36m<Text>[39m
+2026-10-06T21:02:17.7707120Z             [0mNo fasting history[0m
+2026-10-06T21:02:17.7707237Z           [36m</Text>[39m
+2026-10-06T21:02:17.7707358Z           [36m<Text>[39m
+2026-10-06T21:02:17.7707642Z             [0mStart your first fast to begin tracking your progress[0m
+2026-10-06T21:02:17.7707890Z           [36m</Text>[39m
+2026-10-06T21:02:17.7708012Z         [36m</View>[39m
+2026-10-06T21:02:17.7708131Z       [36m</View>[39m
+2026-10-06T21:02:17.7708381Z     [36m</RCTScrollView>[39m
+2026-10-06T21:02:17.7708397Z 
+2026-10-06T21:02:17.7708890Z     [0m [90m 178 |[39m     [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByText([32m'12:12'[39m))[33m;[39m
+2026-10-06T21:02:17.7709414Z      [90m 179 |[39m     [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByLabelText([32m'Start fast'[39m))[33m;[39m
+2026-10-06T21:02:17.7710429Z     [31m[1m>[22m[39m[90m 180 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByText([32m'12h'[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-06T21:02:17.7710671Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-06T21:02:17.7711194Z      [90m 181 |[39m     expect(mockStartFast)[33m.[39mtoHaveBeenCalledWith({ protocol[33m:[39m [32m'12:12'[39m })[33m;[39m
+2026-10-06T21:02:17.7711362Z      [90m 182 |[39m   })[33m;[39m
+2026-10-06T21:02:17.7711485Z      [90m 183 |[39m[0m
+2026-10-06T21:02:17.7711494Z 
+2026-10-06T21:02:17.7711834Z       at Object.<anonymous> (src/screens/client/__tests__/HabitsFasting.launch.test.tsx:180:18)
+2026-10-06T21:02:17.7712142Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T21:02:17.7712393Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T21:02:17.7712400Z 
+2026-10-06T21:02:17.7712889Z   ● Fasting — production protocol and completed status › ending early saves history without awarding a completion
+2026-10-06T21:02:17.7712897Z 
+2026-10-06T21:02:17.7713066Z     expect(received).toContain(expected) // indexOf
+2026-10-06T21:02:17.7713074Z 
+2026-10-06T21:02:17.7713337Z     Expected substring: "saved in history, but will not count as completed"
+2026-10-06T21:02:17.7713604Z     Received string:    "You're only 1% through. This won't count as completed."
+2026-10-06T21:02:17.7713617Z 
+2026-10-06T21:02:17.7714156Z     [0m [90m 196 |[39m     [36mawait[39m fireEvent[33m.[39mpress(screen[33m.[39mgetByLabelText([32m'End fast'[39m))[33m;[39m
+2026-10-06T21:02:17.7714888Z      [90m 197 |[39m     [36mconst[39m alert [33m=[39m jest[33m.[39mmocked([33mAlert[39m[33m.[39malert)[33m.[39mmock[33m.[39mcalls[33m.[39mat([33m-[39m[35m1[39m)[33m;[39m
+2026-10-06T21:02:17.7715600Z     [31m[1m>[22m[39m[90m 198 |[39m     expect(alert[33m?[39m[33m.[39m[[35m1[39m])[33m.[39mtoContain([32m'saved in history, but will not count as completed'[39m)[33m;[39m
+2026-10-06T21:02:17.7715824Z      [90m     |[39m                        [31m[1m^[22m[39m
+2026-10-06T21:02:17.7716642Z      [90m 199 |[39m     [36mconst[39m endAnyway [33m=[39m alert[33m?[39m[33m.[39m[[35m2[39m][33m?[39m[33m.[39mfind((button) [33m=>[39m button[33m.[39mtext [33m===[39m [32m'End anyway'[39m)[33m;[39m
+2026-10-06T21:02:17.7717315Z      [90m 200 |[39m     [36mawait[39m act([36masync[39m () [33m=>[39m { [36mawait[39m endAnyway[33m?[39m[33m.[39monPress[33m?[39m[33m.[39m()[33m;[39m })[33m;[39m
+2026-10-06T21:02:17.7717948Z      [90m 201 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByText([32m'Recent Fasts'[39m))[33m.[39mtoBeTruthy())[33m;[39m[0m
+2026-10-06T21:02:17.7717956Z 
+2026-10-06T21:02:17.7718285Z       at Object.toContain (src/screens/client/__tests__/HabitsFasting.launch.test.tsx:198:24)
+2026-10-06T21:02:17.7718595Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T21:02:17.7718840Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T21:02:17.7718847Z 
+2026-10-06T21:02:17.7719394Z   ● Fasting — production protocol and completed status › counts consecutive qualifying days, excluding a short ended fast today
+2026-10-06T21:02:17.7719402Z 
+2026-10-06T21:02:17.7719554Z     Unable to find an element with text: Day 2
+2026-10-06T21:02:17.7719886Z 
+2026-10-06T21:02:17.7720046Z     [36m<RCTScrollView>[39m
+2026-10-06T21:02:17.7720214Z       [36m<RCTRefreshControl />[39m
+2026-10-06T21:02:17.7720444Z       [36m<View>[39m
+2026-10-06T21:02:17.7720572Z         [36m<View>[39m
+2026-10-06T21:02:17.7720690Z           [36m<Text>[39m
+2026-10-06T21:02:17.7720817Z             [0mFasting[0m
+2026-10-06T21:02:17.7720942Z           [36m</Text>[39m
+2026-10-06T21:02:17.7721062Z           [36m<Text>[39m
+2026-10-06T21:02:17.7721176Z             [0mDay [0m
+2026-10-06T21:02:17.7721295Z             [0m3[0m
+2026-10-06T21:02:17.7721417Z           [36m</Text>[39m
+2026-10-06T21:02:17.7721533Z         [36m</View>[39m
+2026-10-06T21:02:17.7721651Z         [36m<View>[39m
+2026-10-06T21:02:17.7721770Z           [36m<View[39m
+2026-10-06T21:02:17.7721959Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7722077Z           [36m>[39m
+2026-10-06T21:02:17.7722205Z             [36m<Text>[39m
+2026-10-06T21:02:17.7722337Z               [0m12:12[0m
+2026-10-06T21:02:17.7722458Z             [36m</Text>[39m
+2026-10-06T21:02:17.7722582Z           [36m</View>[39m
+2026-10-06T21:02:17.7722705Z           [36m<View[39m
+2026-10-06T21:02:17.7722883Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7722998Z           [36m>[39m
+2026-10-06T21:02:17.7723126Z             [36m<Text>[39m
+2026-10-06T21:02:17.7723248Z               [0m16:8[0m
+2026-10-06T21:02:17.7723366Z             [36m</Text>[39m
+2026-10-06T21:02:17.7723486Z           [36m</View>[39m
+2026-10-06T21:02:17.7723606Z           [36m<View[39m
+2026-10-06T21:02:17.7723780Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7723893Z           [36m>[39m
+2026-10-06T21:02:17.7724013Z             [36m<Text>[39m
+2026-10-06T21:02:17.7724127Z               [0m18:6[0m
+2026-10-06T21:02:17.7724250Z             [36m</Text>[39m
+2026-10-06T21:02:17.7724369Z           [36m</View>[39m
+2026-10-06T21:02:17.7724492Z           [36m<View[39m
+2026-10-06T21:02:17.7724666Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7724778Z           [36m>[39m
+2026-10-06T21:02:17.7724908Z             [36m<Text>[39m
+2026-10-06T21:02:17.7725024Z               [0m20:4[0m
+2026-10-06T21:02:17.7725146Z             [36m</Text>[39m
+2026-10-06T21:02:17.7725265Z           [36m</View>[39m
+2026-10-06T21:02:17.7725376Z           [36m<View[39m
+2026-10-06T21:02:17.7725553Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7725667Z           [36m>[39m
+2026-10-06T21:02:17.7725791Z             [36m<Text>[39m
+2026-10-06T21:02:17.7725904Z               [0m24h[0m
+2026-10-06T21:02:17.7726027Z             [36m</Text>[39m
+2026-10-06T21:02:17.7726150Z           [36m</View>[39m
+2026-10-06T21:02:17.7726264Z         [36m</View>[39m
+2026-10-06T21:02:17.7726384Z         [36m<View>[39m
+2026-10-06T21:02:17.7726539Z           [36m<RNSVGSvgView>[39m
+2026-10-06T21:02:17.7726693Z             [36m<RNSVGGroup>[39m
+2026-10-06T21:02:17.7726856Z               [36m<RNSVGCircle />[39m
+2026-10-06T21:02:17.7727016Z               [36m<RNSVGCircle />[39m
+2026-10-06T21:02:17.7727177Z             [36m</RNSVGGroup>[39m
+2026-10-06T21:02:17.7727325Z           [36m</RNSVGSvgView>[39m
+2026-10-06T21:02:17.7727450Z           [36m<View>[39m
+2026-10-06T21:02:17.7727575Z             [36m<Text>[39m
+2026-10-06T21:02:17.7727687Z               [0m16[0m
+2026-10-06T21:02:17.7727805Z               [0mh[0m
+2026-10-06T21:02:17.7727929Z             [36m</Text>[39m
+2026-10-06T21:02:17.7728052Z             [36m<Text>[39m
+2026-10-06T21:02:17.7728168Z               [0mfast[0m
+2026-10-06T21:02:17.7728293Z             [36m</Text>[39m
+2026-10-06T21:02:17.7728415Z           [36m</View>[39m
+2026-10-06T21:02:17.7728529Z         [36m</View>[39m
+2026-10-06T21:02:17.7728648Z         [36m<View>[39m
+2026-10-06T21:02:17.7728768Z           [36m<View[39m
+2026-10-06T21:02:17.7729010Z             [33maccessibilityLabel[39m=[32m"Start fast"[39m
+2026-10-06T21:02:17.7729342Z             [33maccessibilityRole[39m=[32m"button"[39m
+2026-10-06T21:02:17.7729604Z             [33maccessibilityState[39m=[32m{
+2026-10-06T21:02:17.7729826Z               {
+2026-10-06T21:02:17.7729949Z                 "disabled": false,
+2026-10-06T21:02:17.7730037Z               }
+2026-10-06T21:02:17.7730157Z             }[39m
+2026-10-06T21:02:17.7730333Z             [33maccessible[39m=[32m{true}[39m
+2026-10-06T21:02:17.7730449Z           [36m>[39m
+2026-10-06T21:02:17.7730572Z             [36m<Text>[39m
+2026-10-06T21:02:17.7730697Z               [0m[0m
+2026-10-06T21:02:17.7730820Z             [36m</Text>[39m
+2026-10-06T21:02:17.7730937Z             [36m<Text>[39m
+2026-10-06T21:02:17.7731086Z               [0mStart Fast[0m
+2026-10-06T21:02:17.7731209Z             [36m</Text>[39m
+2026-10-06T21:02:17.7731332Z           [36m</View>[39m
+2026-10-06T21:02:17.7731446Z         [36m</View>[39m
+2026-10-06T21:02:17.7731566Z         [36m<View>[39m
+2026-10-06T21:02:17.7731698Z           [36m<View>[39m
+2026-10-06T21:02:17.7731815Z             [36m<View>[39m
+2026-10-06T21:02:17.7731962Z               [36m<Text>[39m
+2026-10-06T21:02:17.7732090Z                 [0m3[0m
+2026-10-06T21:02:17.7732232Z               [36m</Text>[39m
+2026-10-06T21:02:17.7732377Z               [36m<Text>[39m
+2026-10-06T21:02:17.7732530Z                 [0mCompleted[0m
+2026-10-06T21:02:17.7732674Z               [36m</Text>[39m
+2026-10-06T21:02:17.7732792Z             [36m</View>[39m
+2026-10-06T21:02:17.7732918Z             [36m<View>[39m
+2026-10-06T21:02:17.7733056Z               [36m<Text>[39m
+2026-10-06T21:02:17.7733172Z                 [0m7.7[0m
+2026-10-06T21:02:17.7733313Z               [36m</Text>[39m
+2026-10-06T21:02:17.7733456Z               [36m<Text>[39m
+2026-10-06T21:02:17.7733606Z                 [0mAvg Hours[0m
+2026-10-06T21:02:17.7733743Z               [36m</Text>[39m
+2026-10-06T21:02:17.7733865Z             [36m</View>[39m
+2026-10-06T21:02:17.7733996Z             [36m<View>[39m
+2026-10-06T21:02:17.7734130Z               [36m<Text>[39m
+2026-10-06T21:02:17.7734252Z                 [0m11.0[0m
+2026-10-06T21:02:17.7734400Z               [36m</Text>[39m
+2026-10-06T21:02:17.7734533Z               [36m<Text>[39m
+2026-10-06T21:02:17.7734676Z                 [0mLongest[0m
+2026-10-06T21:02:17.7734815Z               [36m</Text>[39m
+2026-10-06T21:02:17.7734938Z             [36m</View>[39m
+2026-10-06T21:02:17.7735052Z           [36m</View>[39m
+2026-10-06T21:02:17.7735170Z         [36m</View>[39m
+2026-10-06T21:02:17.7735290Z         [36m<View>[39m
+2026-10-06T21:02:17.7735404Z           [36m<Text>[39m
+2026-10-06T21:02:17.7735557Z             [0mRecent Fasts[0m
+2026-10-06T21:02:17.7735677Z           [36m</Text>[39m
+2026-10-06T21:02:17.7735797Z           [36m<View>[39m
+2026-10-06T21:02:17.7735919Z             [36m<View>[39m
+2026-10-06T21:02:17.7736059Z               [36m<Text>[39m
+2026-10-06T21:02:17.7736189Z                 [0m[0m
+2026-10-06T21:02:17.7736324Z               [36m</Text>[39m
+2026-10-06T21:02:17.7736464Z               [36m<View>[39m
+2026-10-06T21:02:17.7736611Z                 [36m<Text>[39m
+2026-10-06T21:02:17.7736756Z                   [0m10/6/2026[0m
+2026-10-06T21:02:17.7736906Z                 [36m</Text>[39m
+2026-10-06T21:02:17.7737052Z                 [36m<Text>[39m
+2026-10-06T21:02:17.7737170Z                   [0m16[0m
+2026-10-06T21:02:17.7737311Z                   [0mh target[0m
+2026-10-06T21:02:17.7737458Z                 [36m</Text>[39m
+2026-10-06T21:02:17.7737601Z               [36m</View>[39m
+2026-10-06T21:02:17.7737718Z             [36m</View>[39m
+2026-10-06T21:02:17.7737847Z             [36m<Text>[39m
+2026-10-06T21:02:17.7737972Z               [0m1.0[0m
+2026-10-06T21:02:17.7738089Z               [0mh[0m
+2026-10-06T21:02:17.7738208Z             [36m</Text>[39m
+2026-10-06T21:02:17.7738329Z           [36m</View>[39m
+2026-10-06T21:02:17.7738452Z           [36m<View>[39m
+2026-10-06T21:02:17.7738713Z             [36m<View>[39m
+2026-10-06T21:02:17.7738851Z               [36m<Text>[39m
+2026-10-06T21:02:17.7739077Z                 [0m[0m
+2026-10-06T21:02:17.7739224Z               [36m</Text>[39m
+2026-10-06T21:02:17.7739360Z               [36m<View>[39m
+2026-10-06T21:02:17.7739504Z                 [36m<Text>[39m
+2026-10-06T21:02:17.7739786Z                   [0m10/5/2026[0m
+2026-10-06T21:02:17.7739940Z                 [36m</Text>[39m
+2026-10-06T21:02:17.7740079Z                 [36m<Text>[39m
+2026-10-06T21:02:17.7740202Z                   [0m16[0m
+2026-10-06T21:02:17.7740352Z                   [0mh target[0m
+2026-10-06T21:02:17.7740491Z                 [36m</Text>[39m
+2026-10-06T21:02:17.7740632Z               [36m</View>[39m
+2026-10-06T21:02:17.7740752Z             [36m</View>[39m
+2026-10-06T21:02:17.7740868Z             [36m<Text>[39m
+2026-10-06T21:02:17.7740988Z               [0m11.0[0m
+2026-10-06T21:02:17.7741104Z               [0mh[0m
+2026-10-06T21:02:17.7741235Z             [36m</Text>[39m
+2026-10-06T21:02:17.7741349Z           [36m</View>[39m
+2026-10-06T21:02:17.7741468Z           [36m<View>[39m
+2026-10-06T21:02:17.7741595Z             [36m<View>[39m
+2026-10-06T21:02:17.7741732Z               [36m<Text>[39m
+2026-10-06T21:02:17.7741856Z                 [0m[0m
+2026-10-06T21:02:17.7741996Z               [36m</Text>[39m
+2026-10-06T21:02:17.7742133Z               [36m<View>[39m
+2026-10-06T21:02:17.7742278Z                 [36m<Text>[39m
+2026-10-06T21:02:17.7742428Z                   [0m10/4/2026[0m
+2026-10-06T21:02:17.7742572Z                 [36m</Text>[39m
+2026-10-06T21:02:17.7742708Z                 [36m<Text>[39m
+2026-10-06T21:02:17.7742829Z                   [0m16[0m
+2026-10-06T21:02:17.7742975Z                   [0mh target[0m
+2026-10-06T21:02:17.7743113Z                 [36m</Text>[39m
+2026-10-06T21:02:17.7743255Z               [36m</View>[39m
+2026-10-06T21:02:17.7743377Z             [36m</View>[39m
+2026-10-06T21:02:17.7743506Z             [36m<Text>[39m
+2026-10-06T21:02:17.7743620Z               [0m11.0[0m
+2026-10-06T21:02:17.7743737Z               [0mh[0m
+2026-10-06T21:02:17.7743868Z             [36m</Text>[39m
+2026-10-06T21:02:17.7743984Z           [36m</View>[39m
+2026-10-06T21:02:17.7744103Z         [36m</View>[39m
+2026-10-06T21:02:17.7744223Z       [36m</View>[39m
+2026-10-06T21:02:17.7744364Z     [36m</RCTScrollView>[39m
+2026-10-06T21:02:17.7744378Z 
+2026-10-06T21:02:17.7744822Z     [0m [90m 217 |[39m     mockGetHistory[33m.[39mmockResolvedValue({ data[33m:[39m sessions })[33m;[39m
+2026-10-06T21:02:17.7745396Z      [90m 218 |[39m     [36mconst[39m screen [33m=[39m [36mawait[39m render([33m<[39m[33mFastingScreen[39m [33m/[39m[33m>[39m)[33m;[39m
+2026-10-06T21:02:17.7746054Z     [31m[1m>[22m[39m[90m 219 |[39m     [36mawait[39m waitFor(() [33m=>[39m expect(screen[33m.[39mgetByText([32m'Day 2'[39m))[33m.[39mtoBeTruthy())[33m;[39m
+2026-10-06T21:02:17.7746268Z      [90m     |[39m                  [31m[1m^[22m[39m
+2026-10-06T21:02:17.7746949Z      [90m 220 |[39m     expect(screen[33m.[39mgetByTestId([32m'fasting-completed-count'[39m)[33m.[39mprops[33m.[39mchildren)[33m.[39mtoBe([35m2[39m)[33m;[39m
+2026-10-06T21:02:17.7747106Z      [90m 221 |[39m   })[33m;[39m
+2026-10-06T21:02:17.7747266Z      [90m 222 |[39m })[33m;[39m[0m
+2026-10-06T21:02:17.7747273Z 
+2026-10-06T21:02:17.7747601Z       at Object.<anonymous> (src/screens/client/__tests__/HabitsFasting.launch.test.tsx:219:18)
+2026-10-06T21:02:17.7747906Z       at asyncGeneratorStep (node_modules/@babel/runtime/helpers/asyncToGenerator.js:3:17)
+2026-10-06T21:02:17.7748156Z       at _next (node_modules/@babel/runtime/helpers/asyncToGenerator.js:17:9)
+2026-10-06T21:02:17.7748164Z 
+2026-10-06T21:02:17.7748346Z Test Suites: 1 failed, 1 total
+2026-10-06T21:02:17.7748518Z Tests:       12 failed, 1 passed, 13 total
+2026-10-06T21:02:17.7748624Z Snapshots:   0 total
+2026-10-06T21:02:17.7748894Z Time:        20.032 s
+2026-10-06T21:02:17.7749280Z Ran all test suites matching /src\/screens\/client\/__tests__\/HabitsFasting.launch.test.tsx/i.
+2026-10-06T21:02:18.7365292Z Jest did not exit one second after the test run has completed.
+2026-10-06T21:02:18.7365799Z 
+2026-10-06T21:02:18.7366743Z 'This usually means that there are asynchronous operations that weren't stopped in your tests. Consider running Jest with `--detectOpenHandles` to troubleshoot this issue.
+2026-10-06T21:07:09.2703618Z ##[error]Process completed with exit code 1.
+2026-10-06T21:07:09.2846327Z Post job cleanup.
+2026-10-06T21:07:09.3700111Z [command]/usr/bin/git version
+2026-10-06T21:07:09.3737039Z git version 2.55.0
+2026-10-06T21:07:09.3776742Z Temporarily overriding HOME='/home/runner/work/_temp/f7793e4c-17b3-4d2d-9912-9109b82e7c6d' before making global git config changes
+2026-10-06T21:07:09.3777648Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-06T21:07:09.3782950Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-06T21:07:09.3812338Z Removing SSH command configuration
+2026-10-06T21:07:09.3819311Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-06T21:07:09.3854062Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-06T21:07:09.4075951Z Removing HTTP extra header
+2026-10-06T21:07:09.4080853Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-06T21:07:09.4112856Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-06T21:07:09.4335971Z Removing includeIf entries pointing to credentials config files
+2026-10-06T21:07:09.4343049Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-06T21:07:09.4371904Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-06T21:07:09.4373442Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-06T21:07:09.4374518Z includeif.gitdir:/github/workspace/.git.path
+2026-10-06T21:07:09.4375286Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-06T21:07:09.4383471Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-06T21:07:09.4404762Z /home/runner/work/_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config
+2026-10-06T21:07:09.4415585Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config
+2026-10-06T21:07:09.4450372Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-06T21:07:09.4471566Z /home/runner/work/_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config
+2026-10-06T21:07:09.4483429Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config
+2026-10-06T21:07:09.4516582Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-06T21:07:09.4537202Z /github/runner_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config
+2026-10-06T21:07:09.4546792Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config
+2026-10-06T21:07:09.4579552Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-06T21:07:09.4601364Z /github/runner_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config
+2026-10-06T21:07:09.4611210Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config
+2026-10-06T21:07:09.4649589Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-06T21:07:09.4884384Z Removing credentials config '/home/runner/work/_temp/git-credentials-778f092b-9155-44f8-9d2a-3dcb61435b91.config'
+2026-10-06T21:07:09.5067481Z Cleaning up orphan processes

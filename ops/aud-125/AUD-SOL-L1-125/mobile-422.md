@@ -1,0 +1,7 @@
+AUDIT GPT-6.1 Sol — growth-project-mobile#422 @ 2839eb325ac60f236615aec5834ac7bfbc4e5c12 — VERDICT: APPROVE
+
+A=0 B=0 C=0
+
+- The assignment API now unwraps `{ items, nextCursor }`, follows the production cursor pages, and returns the array expected by `useMyWorkoutAssignments`; the request still uses the existing client-scoped endpoint, and unreadable responses fail instead of claiming that no workouts exist. ([API adapter](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2839eb325ac60f236615aec5834ac7bfbc4e5c12/src%2Fapi%2FworkoutBuilderApi.ts), [query hook](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2839eb325ac60f236615aec5834ac7bfbc4e5c12/src%2Fhooks%2FuseWorkoutBuilder.ts))
+- The coach editor hydrates the saved metadata when the plan arrives and prevents explicit Save while the edited plan is unavailable, with a specific loading/retry state; no ordinary-user blocker found in the changed train/edit path. ([CoachWorkoutBuilderScreen.tsx:274–312 and Save gate](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2839eb325ac60f236615aec5834ac7bfbc4e5c12/src%2Fscreens%2Fcoach%2FCoachWorkoutBuilderScreen.tsx))
+- Typecheck, lint, tests and CodeQL are successful at this exact head. ([mobile CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531604476/job/112502083627), [CodeQL](https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112502333356))

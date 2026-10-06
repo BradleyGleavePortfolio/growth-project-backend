@@ -1,0 +1,207 @@
+diff --git a/src/ai/ai-crisis-router.ts b/src/ai/ai-crisis-router.ts
+index 9a03409eb..f9caa5e59 100644
+--- a/src/ai/ai-crisis-router.ts
++++ b/src/ai/ai-crisis-router.ts
+@@ -98,7 +98,13 @@ const EMERGENCY: RegExp[] = [
+   // B-AIG3-123: any breathing trouble with a call for help now ("hard to
+   // breathe after my run, I need help now").
+   /^(?=.*\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\b)(?=.*\b(help (me )?(right )?now|need help (right )?now|call (911|an ambulance)|ambulance)\b)/i,
+-  /\b(i'?m|i am) not breathing\b/i,
++  // AUDIT-05-125: a breathing-technique question during a lift or a run
++  // ("I'm not breathing properly during squats", "I am not breathing right
++  // when I bench") is coaching, not 911; "I'm not breathing" alone still is.
++  new RegExp(
++    `\\b(i'?m|i am) not breathing\\b(?! (properly |right |correctly |well |enough |deeply |normally |evenly |fully |in |out )?(during|when|while|on|through|in|at|between|with|before|after) (my |the |a |an |each |every |heavy |hard |long |big )*${ACTIVITY}\\b)`,
++    'i',
++  ),
+   // F9: a person who is not breathing ("he's not breathing", "my teammate
+   // passed out and is not breathing", "unconscious and not breathing", "she
+   // stopped breathing"). How to breathe in a lift ("not breathing properly
+@@ -112,7 +118,12 @@ const EMERGENCY: RegExp[] = [
+     'i',
+   ),
+   /\b(i'?m|i am|i feel like i'?m|i think i'?m|feels like i'?m) (fainting|passing out|blacking out|losing consciousness)\b/i,
+-  /\b(about to|going to|gonna|feel like i'?m going to|think i'?m going to|i might|i'?m going to) (faint|pass out|black out|collapse)\b/i,
++  // AUDIT-05-125: a past near-faint ("I felt like I was going to pass out in
++  // the HIIT class", "I was about to faint at the end of the run") is history,
++  // not an emergency now: it goes to the model with the medical hint and the
++  // physician line. "I'm about to pass out" / "I feel like I'm going to
++  // faint" still answer with the 911 template.
++  /(?<!\b(?:was|were) )\b(about to|going to|gonna|feel like i'?m going to|think i'?m going to|i might|i'?m going to) (faint|pass out|black out|collapse)\b/i,
+   /\b(just|keeps?|kept) (fainted|passed out|blacked out|collapsed|fainting|passing out|blacking out|collapsing)\b/i,
+   /\b(someone|somebody|he|she|they|my (friend|partner|wife|husband|son|daughter|mom|mum|dad|brother|sister|client|training partner)) (just |has |is )?(fainted|passed out|blacked out|collapsed|unconscious|unresponsive|not breathing)\b/i,
+   // A person who is unconscious (not "unconscious snacking").
+diff --git a/src/roman/guardrails/roman-guardrail.contract.ts b/src/roman/guardrails/roman-guardrail.contract.ts
+index db7386f7f..b3eb9aa7d 100644
+--- a/src/roman/guardrails/roman-guardrail.contract.ts
++++ b/src/roman/guardrails/roman-guardrail.contract.ts
+@@ -14,7 +14,9 @@
+  */
+ 
+ /** Recorded per turn (log line) and stated in the system block. */
+-export const PROMPT_VERSION = 'roman-client-v3';
++// roman-client-v4 (AUDIT-05-125): adds the crisis section, the safety net for
++// a crisis message the deterministic SafetyRouter does not match.
++export const PROMPT_VERSION = 'roman-client-v4';
+ 
+ export const ROMAN_GUARDRAIL_CONTRACT = `# REPLY CONTRACT (${PROMPT_VERSION})
+ 
+@@ -47,6 +49,11 @@ export const ROMAN_GUARDRAIL_CONTRACT = `# REPLY CONTRACT (${PROMPT_VERSION})
+ - If safety_intake.completed is false (the health questions are not answered), never suggest increasing intensity, load or volume beyond the assigned plan; suggest finishing the health questions in the consultation first.
+ - If client_data says a physician check was recommended (safety_intake.clearance_recommended), keep suggestions within the assigned plan and, once per session and gently, remind the client of that recommendation before stepping up intensity. If the safety-screen answers are present in client_data you may refer plainly to what the client told us, without diagnosing or speculating beyond it; if they are not present, do not guess why the check was recommended.
+ 
++## Crisis and emergencies
++- Clear messages about suicide, self-harm or a medical emergency are answered before they reach you. If one reaches you anyway, even said indirectly or half as a joke (for example, that nobody would care if they were gone, that they want to disappear, or that they cannot go on), do not treat it as out of scope and do not only suggest the coach. Answer warmly and without a lecture, give the 988 Suicide & Crisis Lifeline (call or text 988 in the United States, any hour), say to call 911 if they are in immediate danger, and suggest telling someone they trust.
++- If the client describes a medical emergency happening now (chest pain, trouble breathing, about to faint, a person who will not wake up), tell them to stop and call 911 or their local emergency number now.
++- Plain training talk with no sign of distress ("leg day killed me", "I felt like I was going to pass out in yesterday's class") is not a crisis: answer it as usual, with the injury or medical guidance above where it applies.
++
+ ## Tone additions
+ - Warm as well as composed: kind first, correct second, like a good butler who has seen it all and is on the client's side. Never clinical, never alarmed.
+ - Plain words at about an 8th-grade level. Lead with the answer. Default to 120 words or fewer; up to 300 only when asked for a full breakdown.
+@@ -65,4 +72,5 @@ export const ROMAN_CONTRACT_ANCHORS = [
+   'Never claim to be human',
+   'safety_intake.clearance_recommended',
+   '120 words or fewer',
++  '988 Suicide & Crisis Lifeline',
+ ];
+diff --git a/src/roman/guardrails/safety-router.ts b/src/roman/guardrails/safety-router.ts
+index 5020463c5..4f6e531a5 100644
+--- a/src/roman/guardrails/safety-router.ts
++++ b/src/roman/guardrails/safety-router.ts
+@@ -64,7 +64,7 @@ const MEDICAL_SCOPE: RegExp[] = [
+   /\b(disorder|syndrome|disease)\b/i,
+   // B-651-2: history or near-miss reports the emergency router leaves to the
+   // model: the medical hint makes the reply route to the coach and physician.
+-  /\b(fainted|passed out|blacked out|fainting|passing out|blacking out|faint|dizzy|dizziness|light-?headed)\b/i,
++  /\b(fainted|passed out|blacked out|fainting|passing out|blacking out|faint|pass out|black out|dizzy|dizziness|light-?headed)\b/i,
+   /\b(had|have had|history of|after|since) (a |my )?stroke\b/i,
+   /\ballergic reaction\b|\ballerg(y|ies|ic) to\b/i,
+   // B-666-1 / B-666-2: history, risk and family mentions of the acute
+diff --git a/test/crisis-router-gym-talk-125.spec.ts b/test/crisis-router-gym-talk-125.spec.ts
+new file mode 100644
+index 000000000..19cfb20f7
+--- /dev/null
++++ b/test/crisis-router-gym-talk-125.spec.ts
+@@ -0,0 +1,96 @@
++/**
++ * AUDIT-05-125: ordinary gym talk is not answered with the 911 template, and
++ * a crisis the router does not match still meets a prompt that names 988/911.
++ *
++ *   - A past near-faint ("I felt like I was going to pass out in the HIIT
++ *     class") was the fixed "call 911 now" reply on both routers. It is now
++ *     history: Roman answers it with the medical hint and physician line.
++ *   - A breathing-technique question with "I'm" ("I'm not breathing properly
++ *     during squats") was 911; the subject-less form was already normal.
++ *   - Present-tense near-faint and "I'm not breathing" stay 911.
++ *   - The client reply contract carries the crisis section (roman-client-v4).
++ */
++import { classifyAiGuideCrisis } from '../src/ai/ai-crisis-router';
++import { classifySafety } from '../src/roman/guardrails/safety-router';
++import {
++  PROMPT_VERSION,
++  ROMAN_CONTRACT_ANCHORS,
++  ROMAN_GUARDRAIL_CONTRACT,
++} from '../src/roman/guardrails/roman-guardrail.contract';
++
++const PAST_NEAR_FAINT = [
++  'I felt like I was going to pass out during the HIIT class',
++  'thought I was gonna pass out on the last set',
++  'I was about to faint at the end of the run',
++  'yesterday I felt like I was going to faint',
++  'I thought I was going to black out during deadlifts',
++];
++
++const BREATHING_TECHNIQUE = [
++  "I'm not breathing properly during squats",
++  'I am not breathing right when I bench',
++  "I'm not breathing through my nose when I run",
++  "I'm not breathing out during the lift",
++];
++
++const STILL_911 = [
++  "I feel like I'm going to pass out",
++  "I'm about to pass out",
++  'I think I am about to pass out',
++  "I think I'm going to faint",
++  'I am going to black out',
++  'I might collapse',
++  "I'm not breathing",
++  'I am not breathing, help',
++  "I'm not breathing properly",
++];
++
++function expectNot911(message: string): void {
++  expect(classifyAiGuideCrisis(message)).toBeNull();
++  const roman = classifySafety(message);
++  expect(['emergency', 'self_harm']).not.toContain(roman.class);
++  expect(roman.short_circuit).toBe(false);
++}
++
++function expect911(message: string): void {
++  expect(classifyAiGuideCrisis(message)).toBe('emergency');
++  const roman = classifySafety(message);
++  expect(roman.class).toBe('emergency');
++  expect(roman.short_circuit).toBe(true);
++}
++
++describe('AUDIT-05-125 a past near-faint is not the 911 template', () => {
++  it.each(PAST_NEAR_FAINT)('"%s" is not 911 on either router', expectNot911);
++  it.each(PAST_NEAR_FAINT.filter((m) => /pass out|faint|black out/i.test(m)))(
++    '"%s" gets the medical hint and physician line on Roman',
++    (message) => {
++      expect(classifySafety(message).class).toBe('medical_scope');
++    },
++  );
++});
++
++describe('AUDIT-05-125 a breathing-technique question is coaching', () => {
++  it.each(BREATHING_TECHNIQUE)('"%s" is not 911 on either router', expectNot911);
++});
++
++describe('AUDIT-05-125 a near-faint now and a person not breathing stay 911', () => {
++  it.each(STILL_911)('"%s" is 911 on both routers', expect911);
++});
++
++describe('AUDIT-05-125 the client reply contract names 988 and 911 for a crisis the router misses', () => {
++  it('carries the crisis section under roman-client-v4', () => {
++    expect(PROMPT_VERSION).toBe('roman-client-v4');
++    expect(ROMAN_GUARDRAIL_CONTRACT).toContain('## Crisis and emergencies');
++    expect(ROMAN_GUARDRAIL_CONTRACT).toContain('988 Suicide & Crisis Lifeline');
++    expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/call 911 if they are in immediate danger/);
++    expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/do not only suggest the coach/);
++    expect(ROMAN_CONTRACT_ANCHORS).toContain('988 Suicide & Crisis Lifeline');
++  });
++
++  it('the indirect statements it names are ones the router leaves to the model', () => {
++    for (const m of ['nobody would care if I was gone', 'I wish I could disappear forever']) {
++      expect(classifyAiGuideCrisis(m)).toBeNull();
++      expect(classifySafety(m).short_circuit).toBe(false);
++    }
++  });
++});
+diff --git a/test/roman/roman-guardrails.spec.ts b/test/roman/roman-guardrails.spec.ts
+index 5594654fd..a227faea0 100644
+--- a/test/roman/roman-guardrails.spec.ts
++++ b/test/roman/roman-guardrails.spec.ts
+@@ -299,7 +299,7 @@ describe('safety copy — owner ruling 16:38 (warm, useful, safe next step, then
+   });
+ 
+   it('the contract tells Roman to be useful, not merely deflect, and is versioned v2', () => {
+-    expect(PROMPT_VERSION).toBe('roman-client-v3');
++    expect(PROMPT_VERSION).toBe('roman-client-v4');
+     expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/do not simply deflect/);
+     expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/pain-free alternative or a lower-intensity version/);
+     expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/Warm as well as composed/);
+diff --git a/test/roman/roman-launch-hardening.spec.ts b/test/roman/roman-launch-hardening.spec.ts
+index 2f641ba6b..d86009d2b 100644
+--- a/test/roman/roman-launch-hardening.spec.ts
++++ b/test/roman/roman-launch-hardening.spec.ts
+@@ -606,7 +606,7 @@ describe('OR-113-2 launch hardening', () => {
+       voice: { quipsInSession: 0, exclamationUsed: false },
+       clientData: '<client_data as_of="x">{}</client_data>',
+     });
+-    expect(p).toContain('REPLY CONTRACT (roman-client-v3)');
++    expect(p).toContain('REPLY CONTRACT (roman-client-v4)');
+     expect(p).toContain('<client_data as_of="x">{}</client_data>');
+   });
+ });

@@ -1,0 +1,1 @@
+done | PRs: none | B=0 U=0 | needs operator: 0 | verdict NO-GO (nothing to flip: DIAGNOSTIC_AI_ENABLED inert, DiagnosticModule unmounted per B-QUIZ-OFF; prod probe /api/diagnostic/* = router 404; NOT on in prod, not URGENT) | report ops/reports/SAFE-DIAG-125.md

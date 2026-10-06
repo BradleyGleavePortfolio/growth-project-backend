@@ -1,0 +1,161 @@
+diff --git a/src/services/__tests__/notificationsNormalize.test.ts b/src/services/__tests__/notificationsNormalize.test.ts
+index abb4e076..47cea09f 100644
+--- a/src/services/__tests__/notificationsNormalize.test.ts
++++ b/src/services/__tests__/notificationsNormalize.test.ts
+@@ -50,4 +50,14 @@ describe('normalizeNotification (S-SCHED-2 live rows)', () => {
+     expect(odd?.actionScreen).toBeUndefined();
+     expect(odd?.createdAt).toBe(new Date(0).toISOString());
+   });
++
++  it('AUDIT-09-125: rows without an actionScreen open the screen their kind belongs to', () => {
++    const row = (kind: string) =>
++      normalizeNotification({ id: `r-${kind}`, kind, body: 'b', payload: {}, read_at: null, created_at: '2027-03-01T10:00:00.000Z' });
++    expect(row('message_received')?.actionScreen).toBe('Messages');
++    expect(row('community_post_replied')?.actionScreen).toBe('Community');
++    expect(row('workout_reminder')?.actionScreen).toBe('WorkoutMain');
++    expect(row('drip_released')?.actionScreen).toBe('Deliverables');
++    expect(row('coach_alert')?.actionScreen).toBeUndefined();
++  });
+ });
+diff --git a/src/services/__tests__/pushPermissionDeferral.test.ts b/src/services/__tests__/pushPermissionDeferral.test.ts
+index e1dde168..b71689a5 100644
+--- a/src/services/__tests__/pushPermissionDeferral.test.ts
++++ b/src/services/__tests__/pushPermissionDeferral.test.ts
+@@ -24,7 +24,11 @@ jest.mock('expo-notifications', () => ({
+   AndroidImportance: { MAX: 5 },
+ }));
+ 
+-import { registerForPushNotifications, installNotificationResponseHandler } from '../pushNotifications';
++import {
++  registerForPushNotifications,
++  installNotificationResponseHandler,
++  fallbackScreenForKind,
++} from '../pushNotifications';
+ 
+ function response(id: string, data: Record<string, unknown>) {
+   return { notification: { request: { identifier: id, content: { data } } } };
+@@ -105,6 +109,38 @@ describe('installNotificationResponseHandler', () => {
+   });
+ });
+ 
++describe('AUDIT-09-125: a push without actionScreen still opens a screen', () => {
++  beforeEach(() => jest.clearAllMocks());
++
++  it('routes by kind: community, workout reminder, everything else to the notification center', () => {
++    let live: ((r: unknown) => void) | undefined;
++    mockAddResponse.mockImplementation((cb: (r: unknown) => void) => {
++      live = cb;
++      return { remove: jest.fn() };
++    });
++    mockGetLast.mockResolvedValue(null);
++    const onResponse = jest.fn();
++    const cleanup = installNotificationResponseHandler(onResponse);
++    live?.(response('c1', { kind: 'community_post_replied', target_id: 'p1' }));
++    expect(onResponse).toHaveBeenLastCalledWith('Community', undefined, 'c1');
++    live?.(response('w1', { kind: 'workout_reminder', deep_link: 'tgp://workouts' }));
++    expect(onResponse).toHaveBeenLastCalledWith('WorkoutMain', undefined, 'w1');
++    live?.(response('n1', { kind: 'nudge_missed_checkin' }));
++    expect(onResponse).toHaveBeenLastCalledWith('NotificationCenter', undefined, 'n1');
++    live?.(response('m1', { kind: 'message_received', actionScreen: 'Messages' }));
++    expect(onResponse).toHaveBeenLastCalledWith('Messages', undefined, 'm1');
++    live?.(response('x1', {}));
++    expect(onResponse).toHaveBeenLastCalledWith(undefined, undefined, 'x1');
++    cleanup();
++  });
++
++  it('fallbackScreenForKind ignores a missing or non-string kind', () => {
++    expect(fallbackScreenForKind(undefined)).toBeUndefined();
++    expect(fallbackScreenForKind(7)).toBeUndefined();
++    expect(fallbackScreenForKind('')).toBeUndefined();
++  });
++});
++
+ describe('app wiring (source guards)', () => {
+   const APP = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'App.tsx'), 'utf8');
+   it('App.tsx installs the tap handler once, routed through pushTapRouter', () => {
+diff --git a/src/services/notificationsApi.ts b/src/services/notificationsApi.ts
+index e506a9e8..6186f71f 100644
+--- a/src/services/notificationsApi.ts
++++ b/src/services/notificationsApi.ts
+@@ -289,6 +289,20 @@ function stringParams(raw: unknown): Record<string, string> | undefined {
+   return Object.keys(out).length > 0 ? out : undefined;
+ }
+ 
++/**
++ * AUDIT-09-125: only booking rows carry an actionScreen, so tapping a message,
++ * workout reminder, content or community row did nothing. Rows without one
++ * open the screen their kind belongs to (the push router keeps the role and
++ * flag checks); other kinds stay in the center.
++ */
++export function inboxScreenForKind(kind: string): string | undefined {
++  if (kind.startsWith('community_')) return 'Community';
++  if (kind.startsWith('message')) return 'Messages';
++  if (kind === 'workout_reminder') return 'WorkoutMain';
++  if (kind === 'drip_released') return 'Deliverables';
++  return undefined;
++}
++
+ /** Backend row or AppNotification -> AppNotification; null when unusable. */
+ export function normalizeNotification(raw: unknown): AppNotification | null {
+   const r = asRecord(raw);
+@@ -311,7 +325,9 @@ export function normalizeNotification(raw: unknown): AppNotification | null {
+       : new Date(0).toISOString();
+   const screenRaw = typeof r.actionScreen === 'string' ? r.actionScreen : payload.actionScreen;
+   const actionScreen =
+-    typeof screenRaw === 'string' && SCREEN_NAME.test(screenRaw) ? screenRaw : undefined;
++    typeof screenRaw === 'string' && SCREEN_NAME.test(screenRaw)
++      ? screenRaw
++      : inboxScreenForKind(rawKind);
+   const actionParams = stringParams(r.actionParams ?? payload.actionParams);
+   return {
+     id: r.id,
+diff --git a/src/services/pushNotifications.ts b/src/services/pushNotifications.ts
+index 6f9dee7d..cd69f51a 100644
+--- a/src/services/pushNotifications.ts
++++ b/src/services/pushNotifications.ts
+@@ -143,6 +143,22 @@ export type NotificationResponseCallback = (
+   notificationId?: string,
+ ) => void;
+ 
++/**
++ * AUDIT-09-125: where a push without `actionScreen` opens. Community, workout
++ * reminder, check-in nudge and content pushes from the current backend carry
++ * only `kind`, so a tap used to open the app with no navigation. A community
++ * push opens Community; a workout reminder opens Workouts; any other kind
++ * opens the notification center, where its inbox row is. The router keeps
++ * the role and flag checks (an unknown or unavailable screen lands on the
++ * role's notification center).
++ */
++export function fallbackScreenForKind(kind: unknown): string | undefined {
++  if (typeof kind !== 'string' || kind.length === 0) return undefined;
++  if (kind.startsWith('community_')) return 'Community';
++  if (kind === 'workout_reminder') return 'WorkoutMain';
++  return 'NotificationCenter';
++}
++
+ function dispatchResponse(
+   response: Notifications.NotificationResponse | null | undefined,
+   onResponse: NotificationResponseCallback,
+@@ -150,7 +166,8 @@ function dispatchResponse(
+   if (!response) return;
+   const request = response.notification?.request;
+   const data = request?.content?.data;
+-  const actionScreen = typeof data?.actionScreen === 'string' ? data.actionScreen : undefined;
++  const actionScreen =
++    typeof data?.actionScreen === 'string' ? data.actionScreen : fallbackScreenForKind(data?.kind);
+   // Untrusted payload: decode to a bounded string map (audit #304 Sol C2).
+   const actionParams = decodePushParams(data?.actionParams);
+   onResponse(actionScreen, actionParams, request?.identifier);
+diff --git a/src/services/pushTapRouter.ts b/src/services/pushTapRouter.ts
+index 7b8c731c..be001e0d 100644
+--- a/src/services/pushTapRouter.ts
++++ b/src/services/pushTapRouter.ts
+@@ -85,6 +85,8 @@ export const CLIENT_PUSH_ROUTES: Record<string, Resolver> = {
+     featureFlags.communityTab && featureFlags.communityEvents
+       ? { root: 'CommunityTab', screen: 'CommunityEventDetail' }
+       : null,
++  // AUDIT-09-125: a community push (kind community_*) opens the Community tab.
++  Community: () => (featureFlags.communityTab ? { root: 'CommunityTab' } : null),
+ };
+ 
+ /** Coach destinations. Root = CoachNavigator tab names. */

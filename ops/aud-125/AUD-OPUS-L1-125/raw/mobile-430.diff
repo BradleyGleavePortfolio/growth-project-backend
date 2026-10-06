@@ -1,0 +1,690 @@
+diff --git a/src/hooks/useApi.ts b/src/hooks/useApi.ts
+index c9ee471d..0220bd08 100644
+--- a/src/hooks/useApi.ts
++++ b/src/hooks/useApi.ts
+@@ -389,8 +389,6 @@ export function useSaveCheckIn() {
+       mood?: number | null;
+       energy?: number | null;
+       sleep_hours?: number | null;
+-      sleep_quality?: number | null;
+-      stress?: number | null;
+       weight_kg?: number | null;
+       notes?: string | null;
+     }) => checkInsApi.save(data).then((r) => r.data),
+diff --git a/src/screens/client/HabitsScreen.tsx b/src/screens/client/HabitsScreen.tsx
+index a8d2f4b7..daa27ef4 100644
+--- a/src/screens/client/HabitsScreen.tsx
++++ b/src/screens/client/HabitsScreen.tsx
+@@ -40,6 +40,7 @@ import { makeStyles } from './habits/styles';
+ import { makeHABIT_COLORS, type HabitView, type TabMode } from './habits/constants';
+ import { HabitCard } from './habits/HabitCard';
+ import { MoodEnergyPicker } from './habits/MoodEnergyPicker';
++import { buildCheckInPayload } from './habits/checkInPayload';
+ import { AddHabitSheet } from './habits/AddHabitSheet';
+ import CompetencePill from '../../components/roman/CompetencePill';
+ import { featureFlags } from '../../config/featureFlags';
+@@ -67,8 +68,6 @@ export default function HabitsScreen() {
+   const [mood, setMood] = useState(3);
+   const [energy, setEnergy] = useState(3);
+   const [sleepHours, setSleepHours] = useState(7);
+-  const [sleepQuality, setSleepQuality] = useState(3);
+-  const [stress, setStress] = useState(3);
+   const [notes, setNotes] = useState('');
+   const [checkInToast, setCheckInToast] = useState(false);
+   const [lastCheckInDate, setLastCheckInDate] = useState<string | null>(null);
+@@ -92,8 +91,6 @@ export default function HabitsScreen() {
+           mood?: number;
+           energy?: number;
+           sleep_hours?: number;
+-          sleep_quality?: number;
+-          stress?: number;
+           notes?: string;
+           date?: string;
+           coach_reviewed_at?: string | null;
+@@ -108,8 +105,6 @@ export default function HabitsScreen() {
+     if (row.mood != null) setMood(Number(row.mood));
+     if (row.energy != null) setEnergy(Number(row.energy));
+     if (row.sleep_hours != null) setSleepHours(Number(row.sleep_hours));
+-    if (row.sleep_quality != null) setSleepQuality(Number(row.sleep_quality));
+-    if (row.stress != null) setStress(Number(row.stress));
+     if (row.notes) setNotes(String(row.notes));
+     if (row.date) setLastCheckInDate(String(row.date).slice(0, 10));
+   }, [todayCheckInQ.data]);
+@@ -223,19 +218,10 @@ export default function HabitsScreen() {
+   };
+ 
+   const handleSaveCheckIn = () => {
++    // Only fields POST /check-ins accepts: sending sleep_quality / stress
++    // made every save fail with a 400 and the coach never got a check-in.
+     saveCheckIn.mutate(
+-      {
+-        date: today,
+-        mood,
+-        energy,
+-        sleep_hours: sleepHours,
+-        // B10: previously dropped on the floor; the form collected these
+-        // values but the mutation payload omitted them, so the coach
+-        // dashboard never saw stress/sleep_quality.
+-        sleep_quality: sleepQuality,
+-        stress,
+-        notes: notes || null,
+-      },
++      buildCheckInPayload({ date: today, mood, energy, sleepHours, notes }),
+       {
+         onSuccess: () => {
+           setLastCheckInDate(today);
+@@ -390,10 +376,6 @@ export default function HabitsScreen() {
+               setEnergy={setEnergy}
+               sleepHours={sleepHours}
+               setSleepHours={setSleepHours}
+-              sleepQuality={sleepQuality}
+-              setSleepQuality={setSleepQuality}
+-              stress={stress}
+-              setStress={setStress}
+               notes={notes}
+               setNotes={setNotes}
+               colors={colors}
+diff --git a/src/screens/client/ProgressScreen.tsx b/src/screens/client/ProgressScreen.tsx
+index bed8bc16..15d23a3b 100644
+--- a/src/screens/client/ProgressScreen.tsx
++++ b/src/screens/client/ProgressScreen.tsx
+@@ -43,6 +43,9 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';
+ import { shadows as shadowTokens } from '../../theme/tokens';
+ import { WeightLog } from '../../types';
+ import { getTodayString, bucketDateLocal } from '../../utils/date';
++import { parseWeightLogRow, weightHistoryRows } from './progress/weightHistory';
++
++export { parseWeightLogRow, weightHistoryRows };
+ import FadeInView from '../../components/FadeInView';
+ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+ import { errorMessage } from '../../types/common';
+@@ -75,45 +78,6 @@ export function streakMilestoneTier(loggingStreak: number): RomanStreakTier | nu
+   return null;
+ }
+ 
+-/**
+- * Typed parser for one weight-history row from the API. The server response is
+- * untyped at the boundary and may send either `date` or `created_at`, and
+- * either `weight_lbs` or `weight`. This validates the row shape and normalises
+- * it into a `WeightLog`, returning `null` for any row missing the fields a
+- * `WeightLog` requires (an id and a numeric weight) so callers can drop it
+- * instead of force-casting the untyped result through a double assertion (R69).
+- * The date is bucketed to the user's LOCAL calendar day so the streak compare
+- * is tz-correct on either side of the date line (see audit P0-3).
+- */
+-export function parseWeightLogRow(row: unknown, fallbackUserId: string): WeightLog | null {
+-  if (typeof row !== 'object' || row === null) return null;
+-  const r = row as Record<string, unknown>;
+-
+-  if (typeof r.id !== 'string' || r.id.length === 0) return null;
+-
+-  const rawWeight = typeof r.weight_lbs === 'number' ? r.weight_lbs : r.weight;
+-  if (typeof rawWeight !== 'number' || Number.isNaN(rawWeight)) return null;
+-
+-  const rawDateSource = typeof r.date === 'string' ? r.date : r.created_at;
+-  const rawDate = typeof rawDateSource === 'string' ? rawDateSource : '';
+-  const normDate = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+-    ? rawDate.slice(0, 10)
+-    : bucketDateLocal(new Date(rawDate));
+-
+-  const createdAt = typeof r.created_at === 'string' ? r.created_at : rawDate;
+-
+-  return {
+-    id: r.id,
+-    userId: typeof r.user_id === 'string' && r.user_id.length > 0 ? r.user_id : fallbackUserId,
+-    coachId: '',
+-    date: normDate,
+-    weight: rawWeight,
+-    unit: 'lbs',
+-    notes: typeof r.notes === 'string' ? r.notes : '',
+-    createdAt,
+-  };
+-}
+-
+ const SCREEN_WIDTH = Dimensions.get('window').width;
+ 
+ function CalorieRing({
+@@ -320,7 +284,7 @@ export default function ProgressScreen() {
+       // Boundary parse: each untyped server row is validated/normalised into a
+       // WeightLog via parseWeightLogRow; rows missing an id or numeric weight
+       // are dropped rather than force-cast through a double assertion (R69).
+-      const rawRows: unknown[] = Array.isArray(res.data) ? res.data : [];
++      const rawRows: unknown[] = weightHistoryRows(res.data);
+       const logs: WeightLog[] = rawRows
+         .map((row) => parseWeightLogRow(row, userId))
+         .filter((x): x is WeightLog => x !== null);
+diff --git a/src/screens/client/ReportScreen.tsx b/src/screens/client/ReportScreen.tsx
+index 057d2a7a..b766b443 100644
+--- a/src/screens/client/ReportScreen.tsx
++++ b/src/screens/client/ReportScreen.tsx
+@@ -9,6 +9,7 @@ import {
+ import { Ionicons } from '@expo/vector-icons';
+ import { useCurrentUser } from '../../hooks/useCurrentUser';
+ import { logApi, weightApi } from '../../services/api';
++import { parseWeightLogRow, weightHistoryRows } from './progress/weightHistory';
+ import { WeightLog } from '../../types';
+ import { getTodayString } from '../../utils/date';
+ import type { NavigationProp, ParamListBase } from '@react-navigation/native';
+@@ -37,7 +38,13 @@ export default function ReportScreen({ navigation }: { navigation: NavigationPro
+     if (!currentUser) return;
+     try {
+       const weightRes = await weightApi.getHistory(7);
+-      const logs = weightRes.data?.logs || weightRes.data || [];
++      // Rows carry weight_lbs and an ISO date; normalise them with the same
++      // parser the Progress screen uses so the report shows real numbers.
++      const uid = currentUser.id;
++      const logs = weightHistoryRows(weightRes.data)
++        .map((row) => parseWeightLogRow(row, uid))
++        .filter((x): x is WeightLog => x !== null)
++        .sort((a, b) => a.date.localeCompare(b.date));
+       setWeeklyWeights(logs.slice(-7));
+     } catch (err) {
+       // Read-only weight history; empty chart is the graceful fallback.
+diff --git a/src/screens/client/__tests__/ProgressScreen.chart.test.tsx b/src/screens/client/__tests__/ProgressScreen.chart.test.tsx
+index aaa1985e..b401c087 100644
+--- a/src/screens/client/__tests__/ProgressScreen.chart.test.tsx
++++ b/src/screens/client/__tests__/ProgressScreen.chart.test.tsx
+@@ -36,11 +36,17 @@ jest.mock('../progress/ProgressChartCard', () => {
+ });
+ 
+ // ── Data + environment mocks (inert; just enough to mount). ─────────────────
+-const mockGetHistory = jest.fn(async () => ({
+-  data: [
+-    { id: '1', date: '2026-06-01', weight_lbs: 185 },
+-    { id: '2', date: '2026-06-08', weight_lbs: 183 },
+-  ],
++// The real GET /weight/history body: `{ logs, height_cm }`, each row's date a
++// calendar day sent as an ISO midnight (AUDIT-06-125 B1: main read only a bare
++// array, so the chart never rendered for a real client).
++const mockGetHistory = jest.fn(async (): Promise<{ data: unknown }> => ({
++  data: {
++    logs: [
++      { id: '1', date: '2026-06-01T00:00:00.000Z', weight_lbs: 185 },
++      { id: '2', date: '2026-06-08T00:00:00.000Z', weight_lbs: 183 },
++    ],
++    height_cm: null,
++  },
+ }));
+ jest.mock('../../../services/api', () => ({
+   weightApi: {
+diff --git a/src/screens/client/habits/MoodEnergyPicker.tsx b/src/screens/client/habits/MoodEnergyPicker.tsx
+index b5736852..b39e3892 100644
+--- a/src/screens/client/habits/MoodEnergyPicker.tsx
++++ b/src/screens/client/habits/MoodEnergyPicker.tsx
+@@ -2,7 +2,7 @@ import React from 'react';
+ import { Text, TextInput, TouchableOpacity, View } from 'react-native';
+ import { Ionicons } from '@expo/vector-icons';
+ import type { ThemeColors } from '../../../theme/ThemeProvider';
+-import { ENERGY_LABELS, MOOD_EMOJIS, MOOD_LABELS, STRESS_LABELS } from './constants';
++import { ENERGY_LABELS, MOOD_EMOJIS, MOOD_LABELS } from './constants';
+ import type { HabitsStyles } from './styles';
+ 
+ export function MoodEnergyPicker({
+@@ -12,10 +12,6 @@ export function MoodEnergyPicker({
+   setEnergy,
+   sleepHours,
+   setSleepHours,
+-  sleepQuality,
+-  setSleepQuality,
+-  stress,
+-  setStress,
+   notes,
+   setNotes,
+   colors,
+@@ -27,10 +23,6 @@ export function MoodEnergyPicker({
+   setEnergy: (n: number) => void;
+   sleepHours: number;
+   setSleepHours: React.Dispatch<React.SetStateAction<number>>;
+-  sleepQuality: number;
+-  setSleepQuality: (n: number) => void;
+-  stress: number;
+-  setStress: (n: number) => void;
+   notes: string;
+   setNotes: (s: string) => void;
+   colors: ThemeColors;
+@@ -102,48 +94,6 @@ export function MoodEnergyPicker({
+               </TouchableOpacity>
+             </View>
+           </View>
+-          <View style={styles.sleepControl}>
+-            <Text style={styles.sleepLabel}>Quality</Text>
+-            <View style={styles.qualityRow}>
+-              {[1, 2, 3, 4, 5].map((val) => (
+-                <TouchableOpacity key={val} onPress={() => setSleepQuality(val)}>
+-                  <Ionicons
+-                    name={val <= sleepQuality ? 'star' : 'star-outline'}
+-                    size={22}
+-                    color={val <= sleepQuality ? colors.warning : colors.textMuted}
+-                  />
+-                </TouchableOpacity>
+-              ))}
+-            </View>
+-          </View>
+-        </View>
+-      </View>
+-
+-      {/* Stress */}
+-      <View style={styles.checkInCard}>
+-        <Text style={styles.checkInLabel}>Stress Level</Text>
+-        <View style={styles.ratingRow}>
+-          {[1, 2, 3, 4, 5].map((val) => (
+-            <TouchableOpacity
+-              key={val}
+-              style={[styles.ratingBtn, stress === val && styles.ratingBtnActive]}
+-              onPress={() => setStress(val)}
+-            >
+-              <View
+-                style={[
+-                  styles.stressDot,
+-                  {
+-                    backgroundColor:
+-                      val <= 2 ? colors.primary : val === 3 ? colors.warning : colors.error,
+-                    opacity: stress === val ? 1 : 0.4,
+-                  },
+-                ]}
+-              />
+-              <Text style={[styles.ratingLabel, stress === val && styles.ratingLabelActive]}>
+-                {STRESS_LABELS[val]}
+-              </Text>
+-            </TouchableOpacity>
+-          ))}
+         </View>
+       </View>
+ 
+diff --git a/src/screens/client/habits/__tests__/checkInPayload.test.ts b/src/screens/client/habits/__tests__/checkInPayload.test.ts
+new file mode 100644
+index 00000000..f8f11c2d
+--- /dev/null
++++ b/src/screens/client/habits/__tests__/checkInPayload.test.ts
+@@ -0,0 +1,36 @@
++/**
++ * AUDIT-06-125 B2: POST /check-ins rejects any key its DTO does not list
++ * (forbidNonWhitelisted). Main sent sleep_quality and stress, so every daily
++ * check-in save failed with a 400.
++ */
++import { buildCheckInPayload, CHECK_IN_KEYS } from '../checkInPayload';
++
++describe('buildCheckInPayload', () => {
++  it('sends only keys the server accepts', () => {
++    const body = buildCheckInPayload({
++      date: '2026-10-06',
++      mood: 4,
++      energy: 3,
++      sleepHours: 7.5,
++      notes: 'Slept well',
++    });
++    const allowed: readonly string[] = CHECK_IN_KEYS;
++    for (const key of Object.keys(body)) {
++      expect(allowed).toContain(key);
++    }
++    expect(body).toEqual({
++      date: '2026-10-06',
++      mood: 4,
++      energy: 3,
++      sleep_hours: 7.5,
++      notes: 'Slept well',
++    });
++  });
++
++  it('sends null notes when the box is empty', () => {
++    const body = buildCheckInPayload({ date: '2026-10-06', mood: 3, energy: 3, sleepHours: 7, notes: '' });
++    expect(body.notes).toBeNull();
++    expect(Object.keys(body)).not.toContain('sleep_quality');
++    expect(Object.keys(body)).not.toContain('stress');
++  });
++});
+diff --git a/src/screens/client/habits/checkInPayload.ts b/src/screens/client/habits/checkInPayload.ts
+new file mode 100644
+index 00000000..531f6fb4
+--- /dev/null
++++ b/src/screens/client/habits/checkInPayload.ts
+@@ -0,0 +1,22 @@
++/**
++ * The body for POST /check-ins. The server DTO accepts exactly these keys and
++ * rejects any other (ValidationPipe forbidNonWhitelisted), so a stray field
++ * fails the whole save with a 400. Keep this list equal to CreateCheckInDto.
++ */
++export const CHECK_IN_KEYS = ['date', 'mood', 'energy', 'sleep_hours', 'weight_kg', 'notes'] as const;
++
++export function buildCheckInPayload(form: {
++  date: string;
++  mood: number;
++  energy: number;
++  sleepHours: number;
++  notes: string;
++}): { date: string; mood: number; energy: number; sleep_hours: number; notes: string | null } {
++  return {
++    date: form.date,
++    mood: form.mood,
++    energy: form.energy,
++    sleep_hours: form.sleepHours,
++    notes: form.notes || null,
++  };
++}
+diff --git a/src/screens/client/progress/__tests__/weightHistory.test.ts b/src/screens/client/progress/__tests__/weightHistory.test.ts
+new file mode 100644
+index 00000000..9a2e9207
+--- /dev/null
++++ b/src/screens/client/progress/__tests__/weightHistory.test.ts
+@@ -0,0 +1,42 @@
++/**
++ * AUDIT-06-125 B1 / U3: GET /weight/history answers `{ logs, height_cm }` and
++ * each row's `date` is a calendar day sent as "YYYY-MM-DDT00:00:00.000Z".
++ * Main read only a bare array (so Progress never showed a weight) and moved
++ * every US entry to the day before.
++ */
++import { parseWeightLogRow, weightHistoryRows } from '../weightHistory';
++
++const serverRow = {
++  id: 'w1',
++  user_id: 'user-1',
++  date: '2026-10-06T00:00:00.000Z',
++  weight_lbs: 182.4,
++  notes: 'after run',
++  logged_at: '2026-10-06T15:02:11.000Z',
++};
++
++describe('weightHistoryRows', () => {
++  it('reads the rows from the real server envelope', () => {
++    expect(weightHistoryRows({ logs: [serverRow], height_cm: 178 })).toEqual([serverRow]);
++  });
++
++  it('still accepts a bare array', () => {
++    expect(weightHistoryRows([serverRow])).toEqual([serverRow]);
++  });
++
++  it('answers no rows for anything else', () => {
++    expect(weightHistoryRows(null)).toEqual([]);
++    expect(weightHistoryRows({ height_cm: 178 })).toEqual([]);
++  });
++});
++
++describe('parseWeightLogRow', () => {
++  it('keeps the logged calendar day of a date-only column', () => {
++    const log = parseWeightLogRow(serverRow, 'fallback');
++    expect(log).not.toBeNull();
++    expect(log?.date).toBe('2026-10-06');
++    expect(log?.weight).toBe(182.4);
++    expect(log?.unit).toBe('lbs');
++    expect(log?.notes).toBe('after run');
++  });
++});
+diff --git a/src/screens/client/progress/weightHistory.ts b/src/screens/client/progress/weightHistory.ts
+new file mode 100644
+index 00000000..7232d1ce
+--- /dev/null
++++ b/src/screens/client/progress/weightHistory.ts
+@@ -0,0 +1,58 @@
++import { WeightLog } from '../../../types';
++import { bucketDateLocal } from '../../../utils/date';
++
++/**
++ * Typed parser for one weight-history row from the API. The server response is
++ * untyped at the boundary and may send either `date` or `created_at`, and
++ * either `weight_lbs` or `weight`. This validates the row shape and normalises
++ * it into a `WeightLog`, returning `null` for any row missing the fields a
++ * `WeightLog` requires (an id and a numeric weight) so callers can drop it
++ * instead of force-casting the untyped result through a double assertion (R69).
++ * The date is bucketed to the user's LOCAL calendar day so the streak compare
++ * is tz-correct on either side of the date line (see audit P0-3).
++ */
++export function parseWeightLogRow(row: unknown, fallbackUserId: string): WeightLog | null {
++  if (typeof row !== 'object' || row === null) return null;
++  const r = row as Record<string, unknown>;
++
++  if (typeof r.id !== 'string' || r.id.length === 0) return null;
++
++  const rawWeight = typeof r.weight_lbs === 'number' ? r.weight_lbs : r.weight;
++  if (typeof rawWeight !== 'number' || Number.isNaN(rawWeight)) return null;
++
++  const rawDateSource = typeof r.date === 'string' ? r.date : r.created_at;
++  const rawDate = typeof rawDateSource === 'string' ? rawDateSource : '';
++  // WeightLog.date is a calendar-day column: the server sends it as
++  // "YYYY-MM-DDT00:00:00.000Z". Its first ten characters ARE the logged day;
++  // converting that UTC midnight to local time put every US entry on the day
++  // before. Only a real timestamp (created_at fallback) is bucketed locally.
++  const normDate = typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(rawDate)
++    ? rawDate.slice(0, 10)
++    : bucketDateLocal(new Date(rawDate));
++
++  const createdAt = typeof r.created_at === 'string' ? r.created_at : rawDate;
++
++  return {
++    id: r.id,
++    userId: typeof r.user_id === 'string' && r.user_id.length > 0 ? r.user_id : fallbackUserId,
++    coachId: '',
++    date: normDate,
++    weight: rawWeight,
++    unit: 'lbs',
++    notes: typeof r.notes === 'string' ? r.notes : '',
++    createdAt,
++  };
++}
++
++/**
++ * GET /weight/history answers `{ logs, height_cm }`. Read the rows from
++ * `logs`, and still accept a bare array so an older server keeps working.
++ */
++export function weightHistoryRows(body: unknown): unknown[] {
++  if (Array.isArray(body)) return body;
++  if (typeof body === 'object' && body !== null) {
++    const logs = (body as Record<string, unknown>).logs;
++    if (Array.isArray(logs)) return logs;
++  }
++  return [];
++}
+diff --git a/src/screens/coach/client-detail/ProgressTab.tsx b/src/screens/coach/client-detail/ProgressTab.tsx
+index e121d1b1..5b96091c 100644
+--- a/src/screens/coach/client-detail/ProgressTab.tsx
++++ b/src/screens/coach/client-detail/ProgressTab.tsx
+@@ -14,6 +14,14 @@ export function ProgressTab({
+   colors: ThemeColors;
+   styles: ClientDetailStyles;
+ }) {
++  // The summary sends weight_logs newest first. Order by day explicitly so
++  // First is the oldest entry, Latest the newest and Change = latest - first
++  // (it read backwards: a client down 10 lb showed +10.0).
++  const ascending = [...weightLogs].sort((x, y) => x.date.localeCompare(y.date));
++  const first = ascending[0]?.weight;
++  const latest = ascending[ascending.length - 1]?.weight;
++  const change = (latest ?? 0) - (first ?? 0);
++  const newestFirst = [...ascending].reverse();
+   return (
+     <>
+       <Text style={styles.sectionTitle}>Weight (Last 30 Days)</Text>
+@@ -21,12 +29,12 @@ export function ProgressTab({
+         <>
+           <View style={styles.progressStatsRow}>
+             <View style={styles.progressStat}>
+-              <Text style={styles.progressStatValue}>{weightLogs[0]?.weight || '—'}</Text>
++              <Text style={styles.progressStatValue}>{first ?? '—'}</Text>
+               <Text style={styles.progressStatLabel}>First</Text>
+             </View>
+             <View style={styles.progressStat}>
+               <Text style={[styles.progressStatValue, { color: colors.primary }]}>
+-                {weightLogs[weightLogs.length - 1]?.weight || '—'}
++                {latest ?? '—'}
+               </Text>
+               <Text style={styles.progressStatLabel}>Latest</Text>
+             </View>
+@@ -35,23 +43,20 @@ export function ProgressTab({
+                 style={[
+                   styles.progressStatValue,
+                   {
+-                    color:
+-                      (weightLogs[weightLogs.length - 1]?.weight || 0) - (weightLogs[0]?.weight || 0) <= 0
+-                        ? colors.success
+-                        : colors.warning,
++                    color: change <= 0 ? colors.success : colors.warning,
+                   },
+                 ]}
+               >
+-                {((weightLogs[weightLogs.length - 1]?.weight || 0) - (weightLogs[0]?.weight || 0)).toFixed(1)}
++                {change > 0 ? '+' : ''}{change.toFixed(1)}
+               </Text>
+               <Text style={styles.progressStatLabel}>Change</Text>
+             </View>
+           </View>
+-          {weightLogs.map((log) => (
++          {newestFirst.map((log) => (
+             <View key={log.id} style={styles.logItem}>
+               <View style={styles.logHeader}>
+                 <Text style={styles.logMeal}>{log.date}</Text>
+-                <Text style={styles.logCalories}>{log.weight} {log.unit}</Text>
++                <Text style={styles.logCalories}>{log.weight} {log.unit || 'lbs'}</Text>
+               </View>
+               {log.notes ? <Text style={styles.logMacros}>{log.notes}</Text> : null}
+             </View>
+diff --git a/src/screens/coach/client-detail/__tests__/ProgressTab.test.tsx b/src/screens/coach/client-detail/__tests__/ProgressTab.test.tsx
+new file mode 100644
+index 00000000..989425cf
+--- /dev/null
++++ b/src/screens/coach/client-detail/__tests__/ProgressTab.test.tsx
+@@ -0,0 +1,48 @@
++/**
++ * AUDIT-06-125 B3: the client summary sends weight_logs newest first. Main
++ * showed the newest weight as "First", the oldest as "Latest" and the change
++ * with the wrong sign (a client down 10 lb read +10.0).
++ */
++import React from 'react';
++import { render } from '@testing-library/react-native';
++import type { WeightLog } from '../../../../types';
++import { makeStyles } from '../styles';
++import { testColors } from '../../../client/wearables/recoveryTestColors';
++import { ProgressTab } from '../ProgressTab';
++
++const styles = makeStyles(testColors);
++
++function log(id: string, date: string, weight: number): WeightLog {
++  return { id, userId: 'client-1', coachId: '', date, weight, unit: 'lbs', notes: '', createdAt: date };
++}
++
++describe('Coach ProgressTab', () => {
++  it('reads First, Latest and Change in date order from a newest-first list', async () => {
++    const newestFirst = [
++      log('w3', '2026-10-06', 190),
++      log('w2', '2026-09-26', 195),
++      log('w1', '2026-09-16', 200),
++    ];
++    const { getByText, queryByText, getAllByText } = await render(
++      <ProgressTab weightLogs={newestFirst} colors={testColors} styles={styles} />,
++    );
++    expect(getByText('200')).toBeTruthy();
++    expect(getByText('190')).toBeTruthy();
++    // Down 10 lb: the change is negative (main showed 10.0).
++    expect(getByText('-10.0')).toBeTruthy();
++    expect(queryByText('10.0')).toBeNull();
++    // Entries list newest first.
++    expect(getAllByText(/ lbs$/).map((n) => n.props.children.join(''))).toEqual([
++      '190 lbs',
++      '195 lbs',
++      '200 lbs',
++    ]);
++  });
++
++  it('labels every entry with its unit', async () => {
++    const { getAllByText } = await render(
++      <ProgressTab weightLogs={[log('w1', '2026-10-06', 182.4)]} colors={testColors} styles={styles} />,
++    );
++    expect(getAllByText('182.4 lbs').length).toBe(1);
++  });
++});
+diff --git a/src/screens/coach/client-detail/__tests__/checkInSubtitle.test.ts b/src/screens/coach/client-detail/__tests__/checkInSubtitle.test.ts
+new file mode 100644
+index 00000000..e2f206a4
+--- /dev/null
++++ b/src/screens/coach/client-detail/__tests__/checkInSubtitle.test.ts
+@@ -0,0 +1,23 @@
++/**
++ * AUDIT-06-125 U2: the coach client Timeline read `mood_rating` (not a CheckIn
++ * field), so every check-in said "Mood: undefined/5".
++ */
++jest.mock('../../../../services/api', () => ({ coachApi: {} }));
++
++import { checkInSubtitle } from '../useClientDetailData';
++
++describe('checkInSubtitle', () => {
++  it('shows the client note when there is one', () => {
++    expect(checkInSubtitle({ notes: 'Knee sore', mood: 2 })).toBe('Knee sore');
++  });
++
++  it('shows the real scores from a server check-in row', () => {
++    expect(checkInSubtitle({ notes: null, mood: 4, energy: 3, sleep_hours: 7.5 })).toBe(
++      'Mood 4/5 · Energy 3/5 · Sleep 7.5 h',
++    );
++  });
++
++  it('never prints undefined', () => {
++    expect(checkInSubtitle({})).toBe('Check-in submitted');
++  });
++});
+diff --git a/src/screens/coach/client-detail/useClientDetailData.ts b/src/screens/coach/client-detail/useClientDetailData.ts
+index 746773f0..56b777ab 100644
+--- a/src/screens/coach/client-detail/useClientDetailData.ts
++++ b/src/screens/coach/client-detail/useClientDetailData.ts
+@@ -90,6 +90,7 @@ export function useClientDetailData(clientId: string, colors: ThemeColors) {
+       const weights = ((data.weight_logs as WeightRow[] | undefined) || []).map((w) => ({
+         id: w.id,
+         weight: w.weight_lbs,
++        unit: 'lbs',
+         date: typeof w.date === 'string' ? w.date.slice(0, 10) : bucketDateLocal(new Date(w.date)),
+         notes: w.notes || '',
+       }));
+@@ -178,7 +179,8 @@ export function useClientDetailData(clientId: string, colors: ThemeColors) {
+         events.push({
+           id: `workout_${s.id}`,
+           type: 'workout',
+-          title: s.name || 'Workout',
++          // WorkoutSession rows carry workout_name (no name / completed_at).
++          title: s.workout_name || s.name || 'Workout',
+           subtitle: s.completed_at ? `Completed` : 'Logged',
+           date: s.created_at || s.date,
+           icon: 'barbell',
+@@ -192,8 +194,11 @@ export function useClientDetailData(clientId: string, colors: ThemeColors) {
+           id: `checkin_${c.id}`,
+           type: 'checkin',
+           title: 'Check-in',
+-          subtitle: c.notes || `Mood: ${c.mood_rating}/5`,
+-          date: c.date + 'T09:00:00',
++          // CheckIn rows carry `mood` (1-5, optional) and an ISO `date`
++          // ("YYYY-MM-DDT00:00:00.000Z"): `mood_rating` read undefined and
++          // appending a time to the ISO string made an Invalid Date.
++          subtitle: checkInSubtitle(c),
++          date: String(c.date || '').slice(0, 10) + 'T09:00:00',
+           icon: 'chatbubble-ellipses',
+           iconColor: colors.primary,
+         });
+@@ -345,3 +350,18 @@ export function useClientDetailData(clientId: string, colors: ThemeColors) {
+     loadWeeklySummaries,
+   };
+ }
++
++/** Coach timeline line for one check-in: the client's note, else the scores. */
++export function checkInSubtitle(c: {
++  notes?: string | null;
++  mood?: number | null;
++  energy?: number | null;
++  sleep_hours?: number | null;
++}): string {
++  if (c.notes) return c.notes;
++  const parts: string[] = [];
++  if (typeof c.mood === 'number') parts.push(`Mood ${c.mood}/5`);
++  if (typeof c.energy === 'number') parts.push(`Energy ${c.energy}/5`);
++  if (typeof c.sleep_hours === 'number') parts.push(`Sleep ${c.sleep_hours} h`);
++  return parts.length > 0 ? parts.join(' · ') : 'Check-in submitted';
++}
+diff --git a/src/services/api.ts b/src/services/api.ts
+index 9abe8fd2..c35040ce 100644
+--- a/src/services/api.ts
++++ b/src/services/api.ts
+@@ -1002,10 +1002,6 @@ export const checkInsApi = {
+     mood?: number | null;
+     energy?: number | null;
+     sleep_hours?: number | null;
+-    /** B10: 1–5 self-reported sleep quality (separate from sleep_hours). */
+-    sleep_quality?: number | null;
+-    /** B10: 1–5 self-reported stress level. */
+-    stress?: number | null;
+     weight_kg?: number | null;
+     notes?: string | null;
+   }) => api.post('/check-ins', data),

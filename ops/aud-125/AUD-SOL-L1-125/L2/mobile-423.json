@@ -1,0 +1,176 @@
+{
+  "repo": "mobile",
+  "number": 423,
+  "head": "5e164d17b20b655a76c37c2400d8a3c43e0dc5dc",
+  "base": "a1904f2f4e8d175a38d6eb627303a2312e2b1ace",
+  "title": "fix(invites): resend says re-sent only when an email went out; emailed-invite mismatch named; Codes bulk invite shows per-email results (AUDIT-17-125)",
+  "body": "**Tier:** T1 (mobile copy and one navigation target; reads one more field of an existing response).\n**Why:** AUDIT-17-125 (invites and bulk invite): three coach/client-visible invite defects on the 10-07 build.\n**T4 trigger scan:** none. No auth, RLS/tenancy, PII scope, money, credentials or destructive data change. The attach rules, the intended-email rule and every backend call are unchanged.\n**T3 trigger scan:** none. No migration, flag, dependency, lockfile or backend change.\n**Bounded T1:** 8 files, 118 changed lines (99 + / 19 -), of which 4 source files 52 lines; the rest tests.\n**Canonical builder:** AUDIT-17-125 (agent 125, Claude Opus 5.5).\n**Acceptance evidence:** this PR's CI (jest suites below, tsc, lint, R75). Works against current production backend ec12a4b3: `POST /coach/invite-codes/:id/send` already returns `{ status: 'sent' | 'logged' | 'skipped' | 'failed' }`; the attach error code `invite_intended_email_mismatch` already exists; the `BulkInvite` route is already registered in ClientsStack.\n\n## U fixed (each with its one-sentence user story)\n- **U-1 Resend claims an email that never went out.** A coach whose client says the invite never arrived taps Resend in Settings > Invites & email and sees \"Invite re-sent to alice@...\", but no email is sent: the email key `invite:<id>` was spent by the first send, so the backend answers 200 `status: 'skipped'` (and a provider refusal is 200 `status: 'failed'`). Now `skipped` says \"No new email sent\" and `failed` says \"Email not sent\", both pointing to Copy link; only `sent`/`logged` says \"Invite re-sent\". The 404 copy (\"Resend isn't supported by the backend yet\") said the route was missing; the route is live, so a 404 now means the invite is gone and the list refreshes. The catch copy is specific instead of \"Please try again.\" (`src/api/invites.ts`, `src/screens/coach/CoachInvitesScreen.tsx`)\n- **U-2 Emailed invite refused with a generic retry message.** A client invited by bulk email who signs up with a different address (for example Sign in with Apple with Hide My Email) is refused by the emailed code and is told only \"Enter your invite code to try again\", so retrying the same code fails forever. `invite_intended_email_mismatch` now maps to: \"That invite was sent to a different email address. Sign up with the email the invite was sent to, or ask your coach for their coach code and enter it below.\" (`src/lib/inviteAttachOutcome.ts`; same copy idea as the coachless sheet's CODE_EMAIL_MISMATCH.)\n- **U-3 Codes screen opens the legacy bulk screen that hides failed emails.** A coach who taps \"Bulk invite from a list\" on Codes lands on the legacy CoachBulkInviteScreen, whose summary says \"Created: 5\" even when some of those emails failed to send. The button now opens `BulkInvite` (the per-email \"Sent / Failed\" screen with Retry failed), the same screen as Settings > Bulk invite clients. (`src/screens/coach/CoachCodesScreen.tsx`)\n\n## Tests (fail on main where behaviour changes)\n- `src/__tests__/coachInvitesScreen.test.tsx`: skipped / failed / sent resend each show the right alert (main shows \"Queued ... re-sent\" for all three).\n- `src/__tests__/invitesApi.test.ts`: `resendInvite` passes `emailStatus` through.\n- `src/lib/__tests__/inviteAttachOutcome.test.ts`: the mismatch code gets the named copy (main returns the generic default).\n- `src/screens/coach/__tests__/CoachCodesScreen.test.tsx`: the bulk button navigates to `BulkInvite`.\n\n## Overlap\nNone with open PRs (m#402-m#415 do not touch these files).\nBackend follow-up (not in this PR, listed in the AUDIT-17-125 report for the operator): resend should use a fresh email key so it can really re-send; the \"Who joined\" list should read the InviteRedemption ledger.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 99,
+  "deletions": 19,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/423",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/423#issuecomment-6025674765",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-17-125, agent 125) \u2014 growth-project-mobile#423 @ 5e164d17b20b655a76c37c2400d8a3c43e0dc5dc \u2014 READY FOR AUDIT\n\n- CI at this head: Typecheck, lint, test SUCCESS; CodeQL SUCCESS.\n- Size: 8 files, 118 changed lines (99 + / 19 -); source 52, tests 66.\n- Fixes U-1 (Resend says \"re-sent\" when the backend skipped or failed the email), U-2 (emailed-invite address mismatch named instead of the generic retry copy), U-3 (Codes \"Bulk invite from a list\" opens the per-email results screen).\n- Works on current production backend ec12a4b3 (reads `status` that `/coach/invite-codes/:id/send` already returns). Companion backend growth-project-backend#794 makes Resend really re-send; this PR does not depend on it.\n- Operator 14:20 correction (clinic profile for iOS and Android): none of these findings depend on an EXPO_PUBLIC_FF_* value; they hold under \"clinic\".\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112502449638",
+      "id": 112502449638,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A423+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502449638/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531652788/job/112502249991",
+      "id": 112502249991,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502249991/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531652788/job/112502249639",
+      "id": 112502249639,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502249639/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531651751/job/112502244582",
+      "id": 112502244582,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502244582/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "974ead1fa7da86307086028c03de0ac6426fe574",
+      "filename": "src/__tests__/coachInvitesScreen.test.tsx",
+      "status": "modified",
+      "additions": 24,
+      "deletions": 1,
+      "changes": 25,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2F__tests__%2FcoachInvitesScreen.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2F__tests__%2FcoachInvitesScreen.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FcoachInvitesScreen.test.tsx?ref=5e164d17b20b655a76c37c2400d8a3c43e0dc5dc",
+      "patch": "@@ -13,7 +13,8 @@\n  */\n \n import React from 'react';\n-import { render, waitFor } from '@testing-library/react-native';\n+import { Alert } from 'react-native';\n+import { fireEvent, render, waitFor } from '@testing-library/react-native';\n \n const mockListInvites = jest.fn();\n jest.mock('../api/invites', () => ({\n@@ -24,6 +25,8 @@ jest.mock('../api/invites', () => ({\n   },\n }));\n \n+jest.mock('../utils/haptics', () => ({ mediumTap: jest.fn(), successTap: jest.fn(), warningTap: jest.fn() }));\n+\n jest.mock('expo-clipboard', () => ({\n   setStringAsync: jest.fn().mockResolvedValue(undefined),\n }));\n@@ -44,6 +47,7 @@ jest.mock('../theme/ThemeProvider', () => ({\n \n import CoachInvitesScreen from '../screens/coach/CoachInvitesScreen';\n import type { Invite } from '../types/invites';\n+import { invitesApi, type ResendEmailStatus } from '../api/invites';\n \n // Build a navigation-prop stub that satisfies the typed nav prop. We\n // only assert against the rendered text so the inner shape can be a\n@@ -158,3 +162,22 @@ describe('CoachInvitesScreen \u2014 R26 render mapping (client_email + last_email_s\n   });\n \n });\n+\n+// AUDIT-17-125 \u2014 a 200 from /send can be `skipped` (the email key is already\n+// spent: every resend on today's backend) or `failed`; only `sent` is a resend.\n+describe('CoachInvitesScreen resend honesty (AUDIT-17-125)', () => {\n+  const cases: Array<[ResendEmailStatus, string, RegExp]> = [\n+    ['skipped', 'No new email sent', /no new email was sent/],\n+    ['failed', 'Email not sent', /did not send/],\n+    ['sent', 'Invite re-sent', /^Invite re-sent to alice@example.com\\.$/],\n+  ];\n+  it.each(cases)('a %s send shows \"%s\"', async (emailStatus, title, body) => {\n+    mockListInvites.mockResolvedValue([{ id: 'inv-r', code: 'GP-RSND23', clientEmail: 'alice@example.com', status: 'PENDING', createdAt: new Date().toISOString(), lastEmailStatus: null }]);\n+    jest.mocked(invitesApi.resendInvite).mockResolvedValue({ supported: true, emailStatus });\n+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);\n+    const { findByTestId } = await render(<CoachInvitesScreen navigation={makeNavigation()} />);\n+    await fireEvent.press(await findByTestId('invite-resend-inv-r'));\n+    await waitFor(() => expect(alert).toHaveBeenCalledWith(title, expect.stringMatching(body)));\n+    alert.mockRestore();\n+  });\n+});"
+    },
+    {
+      "sha": "8c436ae7fedf85cec5a7fc62fc9cba7a72a9ab28",
+      "filename": "src/__tests__/invitesApi.test.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 1,
+      "changes": 9,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2F__tests__%2FinvitesApi.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2F__tests__%2FinvitesApi.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FinvitesApi.test.ts?ref=5e164d17b20b655a76c37c2400d8a3c43e0dc5dc",
+      "patch": "@@ -441,7 +441,7 @@ describe('invitesApi.resendInvite', () => {\n   it('hits the /send route with the recipient email body', async () => {\n     mockedApi.post.mockResolvedValueOnce({ data: {} });\n     const out = await invitesApi.resendInvite('inv_1', 'alice@ex.com');\n-    expect(out).toEqual({ supported: true });\n+    expect(out).toEqual({ supported: true, emailStatus: null });\n     expect(mockedApi.post).toHaveBeenCalledWith(\n       '/coach/invite-codes/inv_1/send',\n       { email: 'alice@ex.com' },\n@@ -460,6 +460,13 @@ describe('invitesApi.resendInvite', () => {\n     );\n   });\n \n+  it('passes the backend send outcome through (AUDIT-17-125)', async () => {\n+    for (const status of ['skipped', 'failed', 'sent']) {\n+      mockedApi.post.mockResolvedValueOnce({ data: { status } });\n+      expect(await invitesApi.resendInvite('inv_1', 'a@ex.com')).toEqual({ supported: true, emailStatus: status });\n+    }\n+  });\n+\n   it('returns { supported: false } on 404', async () => {\n     mockedApi.post.mockRejectedValueOnce({ response: { status: 404 } });\n     const out = await invitesApi.resendInvite('inv_1', 'alice@ex.com');"
+    },
+    {
+      "sha": "bd31d0c9eff3857f52841d7a3d29431953d5edfb",
+      "filename": "src/api/invites.ts",
+      "status": "modified",
+      "additions": 24,
+      "deletions": 7,
+      "changes": 31,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2Fapi%2Finvites.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2Fapi%2Finvites.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fapi%2Finvites.ts?ref=5e164d17b20b655a76c37c2400d8a3c43e0dc5dc",
+      "patch": "@@ -252,20 +252,27 @@ export const invitesApi = {\n    * request body \u2014 that is the contract documented on the backend\n    * controller. Returns `{ supported: false }` on 404 so the UI can hide\n    * the affordance when the backend hasn't rolled the route yet.\n+   * `emailStatus` is the backend send outcome; a 200 can still be `skipped`\n+   * or `failed` (AUDIT-17-125).\n    */\n   resendInvite: async (\n     id: string,\n     email: string,\n     opts?: { name?: string; note?: string },\n-  ): Promise<{ supported: true } | { supported: false }> => {\n+  ): Promise<\n+    { supported: true; emailStatus: ResendEmailStatus | null } | { supported: false }\n+  > => {\n     if (!email) throw new Error('email is required to resend an invite');\n     try {\n-      await api.post(`/coach/invite-codes/${id}/send`, {\n-        email,\n-        ...(opts?.name ? { name: opts.name } : {}),\n-        ...(opts?.note ? { note: opts.note } : {}),\n-      });\n-      return { supported: true };\n+      const res = await api.post<{ status?: unknown } | null>(\n+        `/coach/invite-codes/${id}/send`,\n+        {\n+          email,\n+          ...(opts?.name ? { name: opts.name } : {}),\n+          ...(opts?.note ? { note: opts.note } : {}),\n+        },\n+      );\n+      return { supported: true, emailStatus: readResendEmailStatus(res?.data) };\n     } catch (err) {\n       if (isNotFound(err)) return { supported: false };\n       throw err;\n@@ -310,6 +317,16 @@ export const invitesApi = {\n   },\n };\n \n+export type ResendEmailStatus = 'sent' | 'logged' | 'skipped' | 'failed';\n+\n+function readResendEmailStatus(data: unknown): ResendEmailStatus | null {\n+  if (!data || typeof data !== 'object') return null;\n+  const status = (data as { status?: unknown }).status;\n+  return status === 'sent' || status === 'logged' || status === 'skipped' || status === 'failed'\n+    ? status\n+    : null;\n+}\n+\n /** Axios 404 detector \u2014 kept private so the surface stays clean. */\n function isNotFound(err: unknown): boolean {\n   if (!err || typeof err !== 'object') return false;"
+    },
+    {
+      "sha": "9c906aae590ee71d145013e54c3a3dca1e6a20f0",
+      "filename": "src/lib/__tests__/inviteAttachOutcome.test.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 0,
+      "changes": 7,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2Flib%2F__tests__%2FinviteAttachOutcome.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2Flib%2F__tests__%2FinviteAttachOutcome.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Flib%2F__tests__%2FinviteAttachOutcome.test.ts?ref=5e164d17b20b655a76c37c2400d8a3c43e0dc5dc",
+      "patch": "@@ -47,6 +47,13 @@ describe('inviteAttachErrorMessage', () => {\n     expect(inviteAttachErrorMessage('already_attached_to_different_coach')).toMatch(/different coach/);\n   });\n \n+  it('names the emailed-invite address mismatch instead of the generic retry copy (AUDIT-17-125)', () => {\n+    const msg = inviteAttachErrorMessage('invite_intended_email_mismatch');\n+    expect(msg).toMatch(/sent to a different email address/);\n+    expect(msg).toMatch(/coach code/);\n+    expect(msg).not.toBe(DEFAULT_INVITE_ATTACH_MESSAGE);\n+  });\n+\n   it('never echoes an unknown raw server string', () => {\n     const raw = 'PrismaClientKnownRequestError at /app/src/x.ts:42';\n     expect(inviteAttachErrorMessage(raw)).toBe(DEFAULT_INVITE_ATTACH_MESSAGE);"
+    },
+    {
+      "sha": "b05f058f0df6d65f26289d1b961dc6110a5e62f6",
+      "filename": "src/lib/inviteAttachOutcome.ts",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 0,
+      "changes": 8,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2Flib%2FinviteAttachOutcome.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2Flib%2FinviteAttachOutcome.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Flib%2FinviteAttachOutcome.ts?ref=5e164d17b20b655a76c37c2400d8a3c43e0dc5dc",
+      "patch": "@@ -41,6 +41,14 @@ export function inviteAttachFailed(data: unknown): boolean {\n }\n \n const MESSAGES: Array<{ test: RegExp; message: string }> = [\n+  {\n+    // invite_intended_email_mismatch: an emailed (bulk) invite only works for\n+    // the address it was sent to, e.g. not for a Sign in with Apple hidden\n+    // email (AUDIT-17-125). Retrying the same code can never work.\n+    test: /email_mismatch|intended_email/i,\n+    message:\n+      'That invite was sent to a different email address. Sign up with the email the invite was sent to, or ask your coach for their coach code and enter it below.',\n+  },\n   {\n     // code_revoked: the coach turned the code off (revoke, or a rotation with no grace period).\n     test: /revoked|turned_off/i,"
+    },
+    {
+      "sha": "9fafb5afc41ae27dd825ab68cae64049bc4836a0",
+      "filename": "src/screens/coach/CoachCodesScreen.tsx",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2Fscreens%2Fcoach%2FCoachCodesScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2Fscreens%2Fcoach%2FCoachCodesScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FCoachCodesScreen.tsx?ref=5e164d17b20b655a76c37c2400d8a3c43e0dc5dc",
+      "patch": "@@ -188,7 +188,7 @@ export default function CoachCodesScreen({\n         <CreateCode styles={styles} onCreated={(c) => applyChange(c)} />\n         <TouchableOpacity\n           style={styles.action}\n-          onPress={() => navigation.navigate('CoachBulkInvite')}\n+          onPress={() => navigation.navigate('BulkInvite')}\n           accessibilityRole=\"button\"\n           testID=\"coach-codes-bulk-invite\"\n         >"
+    },
+    {
+      "sha": "9edbb99c3faccdc96eefbc770a1d2ef8282eb157",
+      "filename": "src/screens/coach/CoachInvitesScreen.tsx",
+      "status": "modified",
+      "additions": 25,
+      "deletions": 7,
+      "changes": 32,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2Fscreens%2Fcoach%2FCoachInvitesScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2Fscreens%2Fcoach%2FCoachInvitesScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FCoachInvitesScreen.tsx?ref=5e164d17b20b655a76c37c2400d8a3c43e0dc5dc",
+      "patch": "@@ -189,28 +189,46 @@ export default function CoachInvitesScreen({\n           invite.clientEmail,\n         );\n         if (!result.supported) {\n-          setResendSupported(false);\n+          // The send route is live; a 404 means this invite is no longer on\n+          // the coach's account (AUDIT-17-125).\n           Alert.alert(\n-            'Not available',\n-            'Resend isn\\'t supported by the backend yet. Use \"Copy link\" to share the invite directly.',\n+            'Invite not found',\n+            'This invite is no longer on your account. Your list is refreshing.',\n           );\n+          void load();\n           return;\n         }\n         setResendSupported(true);\n+        // A 200 is not proof an email went out (AUDIT-17-125): only `sent`\n+        // (or the dev `logged` transport) is a resend.\n+        if (result.emailStatus === 'skipped') {\n+          Alert.alert(\n+            'No new email sent',\n+            `An invite email already went to ${invite.clientEmail}, so no new email was sent. Use \"Copy link\" to send the invite yourself.`,\n+          );\n+          return;\n+        }\n+        if (result.emailStatus === 'failed') {\n+          Alert.alert(\n+            'Email not sent',\n+            `The invite email to ${invite.clientEmail} did not send. Use \"Copy link\" to send the invite yourself, or try again in a few minutes.`,\n+          );\n+          return;\n+        }\n         successTap();\n-        Alert.alert('Queued', `Invite re-sent to ${invite.clientEmail}.`);\n+        Alert.alert('Invite re-sent', `Invite re-sent to ${invite.clientEmail}.`);\n       } catch (err) {\n         console.error(\n           'CoachInvitesScreen: resend failed',\n           errorMessage(err),\n         );\n         Alert.alert(\n-          'Could not complete this action',\n-          'Please try again.',\n+          'Resend did not go through',\n+          'The invite email was not sent. Check your connection and try again.',\n         );\n       }\n     },\n-    [],\n+    [load],\n   );\n \n   const handleCopyLink = useCallback(async (invite: Invite) => {"
+    },
+    {
+      "sha": "1ddc45ce0eb69f39236a463989f7889be5d5f567",
+      "filename": "src/screens/coach/__tests__/CoachCodesScreen.test.tsx",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2Fscreens%2Fcoach%2F__tests__%2FCoachCodesScreen.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/5e164d17b20b655a76c37c2400d8a3c43e0dc5dc/src%2Fscreens%2Fcoach%2F__tests__%2FCoachCodesScreen.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2F__tests__%2FCoachCodesScreen.test.tsx?ref=5e164d17b20b655a76c37c2400d8a3c43e0dc5dc",
+      "patch": "@@ -118,10 +118,10 @@ describe('CoachCodesScreen', () => {\n     expect(queryByTestId('coach-code-revoke-GP-LINK22')).toBeNull();\n   });\n \n-  it('keeps the legacy screen\\'s bulk invite and who-joined links', async () => {\n+  it('opens the per-email bulk invite (AUDIT-17-125) and who-joined links', async () => {\n     const { getByTestId, queryByTestId } = await renderEntry();\n     await fireEvent.press(getByTestId('coach-codes-bulk-invite'));\n-    expect(nav.navigate).toHaveBeenCalledWith('CoachBulkInvite');\n+    expect(nav.navigate).toHaveBeenCalledWith('BulkInvite');\n     await fireEvent.press(getByTestId('coach-code-joined-GP-ROW234'));\n     expect(nav.navigate).toHaveBeenCalledWith('InviteCodeRedeemers', { inviteCodeId: 'row-1', code: 'GP-ROW234' });\n     expect(queryByTestId('coach-code-joined-GP-LINK22')).toBeNull();"
+    }
+  ]
+}

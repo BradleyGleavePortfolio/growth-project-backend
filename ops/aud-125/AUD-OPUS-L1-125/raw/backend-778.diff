@@ -1,0 +1,394 @@
+diff --git a/src/packages/packages.service.ts b/src/packages/packages.service.ts
+index 3a5403b09..7dd130dd7 100644
+--- a/src/packages/packages.service.ts
++++ b/src/packages/packages.service.ts
+@@ -14,6 +14,11 @@ import { PrismaService } from '../prisma.service';
+ import { COACH_PURCHASE_SELECT } from '../checkout/coach-payments.select';
+ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+ import { assertValidTrial, TRIAL_DAYS_NONE } from './trials/trial-rules';
++import {
++  monthlyEquivalent,
++  MRR_SUBSCRIPTION_STATUSES,
++  recurringCadenceOf,
++} from '../coach-money/coach-money.service';
+ 
+ // CoachPackage CRUD. Owns coach offers / packages.
+ //
+@@ -156,15 +161,32 @@ export interface UpdatePackageInput {
+   is_active?: boolean;
+ }
+ 
+-/** A subscriber row as a coach may see it (C-641-2: no client Stripe secrets). */
++const COACH_PACKAGE_SUBSCRIBER_SELECT = {
++  ...COACH_PURCHASE_SELECT,
++  client: { select: { name: true, email: true } },
++} as const satisfies Prisma.ClientPurchaseSelect;
++
++/** A subscriber row as a coach may see it (no client Stripe secrets). */
+ export type CoachSubscriberRow = Prisma.ClientPurchaseGetPayload<{
+-  select: typeof COACH_PURCHASE_SELECT;
++  select: typeof COACH_PACKAGE_SUBSCRIBER_SELECT;
+ }>;
+ 
++export interface CoachPackageManagementView extends CoachPackage {
++  /** Distinct clients with access, including free access and trials. */
++  subscriber_count: number;
++  /** Paid monthly-equivalent recurring revenue, in this package's currency. */
++  monthly_revenue_cents: number;
++  pricing_locked: boolean;
++}
++
+ export interface SubscribersPage {
+   subscribers: CoachSubscriberRow[];
+   next_offset: number | null;
+   total_returned: number;
++  package_id: string;
++  currency: string;
++  subscriber_count: number;
++  monthly_revenue_cents: number;
+ }
+ 
+ /**
+@@ -559,11 +581,11 @@ export class PackagesService {
+ 
+       // One count query (no N+1). Active recurring buyer fingerprint: a
+       // non-null Stripe subscription id AND an active-ish subscription
+-      // status, AND the entitlement still live.
++    // status. Pausing app access does not end the Stripe subscription or
++    // replace its immutable price; those clients can resume their old terms.
+       const activeRecurringCount = await tx.clientPurchase.count({
+         where: {
+           package_id: packageId,
+-          entitlement_active: true,
+           stripe_subscription_id: { not: null },
+           status: { in: ACTIVE_RECURRING_STATUSES },
+         },
+@@ -708,12 +730,12 @@ export class PackagesService {
+   }
+ 
+   // List packages for a coach. Owner = the coach themselves (manage view).
+-  // Includes archived rows by default for the owner so they can un-archive.
++  // Archived rows are included when the management caller requests them.
+   async listForCoach(
+     coachUserId: string,
+     opts: { includeArchived?: boolean; activeOnly?: boolean } = {},
+-  ): Promise<CoachPackage[]> {
+-    return this.prisma.coachPackage.findMany({
++  ): Promise<CoachPackageManagementView[]> {
++    const rows = await this.prisma.coachPackage.findMany({
+       where: {
+         coach_id: coachUserId,
+         ...(opts.activeOnly ? { is_active: true } : {}),
+@@ -721,6 +743,7 @@ export class PackagesService {
+       },
+       orderBy: [{ is_active: 'desc' }, { created_at: 'desc' }],
+     });
++    return this.managementViews(rows);
+   }
+ 
+   // Public client-facing list: only active, non-archived, PUBLISHED
+@@ -747,12 +770,13 @@ export class PackagesService {
+   async getOwnedDetail(
+     coachUserId: string,
+     packageId: string,
+-  ): Promise<CoachPackage & { content_count: number }> {
++  ): Promise<CoachPackageManagementView & { content_count: number }> {
+     const row = await this.requireOwnedPackage(coachUserId, packageId);
+     const content_count = await this.prisma.coachPackageContent.count({
+       where: { package_id: packageId, removed_at: null },
+     });
+-    return { ...row, content_count };
++    const [view] = await this.managementViews([row]);
++    return { ...view, content_count };
+   }
+ 
+   // PR-6 — paginated subscribers list. Caller must own the package
+@@ -764,7 +788,7 @@ export class PackagesService {
+     packageId: string,
+     opts: { limit?: number; offset?: number } = {},
+   ): Promise<SubscribersPage> {
+-    await this.requireOwnedPackage(coachUserId, packageId);
++    const pkg = await this.requireOwnedPackage(coachUserId, packageId);
+     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
+     const offset = Math.max(opts.offset ?? 0, 0);
+     const rows = await this.prisma.clientPurchase.findMany({
+@@ -774,17 +798,62 @@ export class PackagesService {
+       take: limit + 1, // peek for next page
+       // C-641-2: allow-listed fields only — never the client's Stripe
+       // client_secret / ephemeral key or internal Stripe ids.
+-      select: COACH_PURCHASE_SELECT,
++      select: COACH_PACKAGE_SUBSCRIBER_SELECT,
+     });
+     const hasMore = rows.length > limit;
+     const page = hasMore ? rows.slice(0, limit) : rows;
++    const [view] = await this.managementViews([pkg]);
+     return {
+       subscribers: page,
+       next_offset: hasMore ? offset + limit : null,
+       total_returned: page.length,
++      package_id: packageId,
++      currency: view.currency,
++      subscriber_count: view.subscriber_count,
++      monthly_revenue_cents: view.monthly_revenue_cents,
+     };
+   }
+ 
++  // One read for the whole catalog; never invent zero clients/revenue because
++  // the raw CoachPackage row has no statistics columns. Uses Money's same MRR
++  // math, with the purchase price snapshot and one rounding per package.
++  private async managementViews(rows: CoachPackage[]): Promise<CoachPackageManagementView[]> {
++    if (rows.length === 0) return [];
++    const purchases = await this.prisma.clientPurchase.findMany({
++      where: { package_id: { in: rows.map((p) => p.id) } },
++      select: {
++        package_id: true, client_user_id: true, amount_cents: true,
++        currency: true, billing_type: true, status: true, source: true,
++        entitlement_active: true, stripe_subscription_id: true,
++      },
++    });
++    const byPackage = new Map(rows.map((row) => [
++      row.id, { row, clients: new Set<string>(), mrr: 0, pricingLocked: false },
++    ]));
++    for (const p of purchases) {
++      const bucket = byPackage.get(p.package_id);
++      if (!bucket) continue;
++      if (p.entitlement_active) bucket.clients.add(p.client_user_id);
++      if (p.stripe_subscription_id && ACTIVE_RECURRING_STATUSES.includes(p.status)) {
++        bucket.pricingLocked = true;
++      }
++      if (
++        !p.entitlement_active || p.source != null || p.billing_type !== 'recurring' ||
++        !MRR_SUBSCRIPTION_STATUSES.includes(p.status) ||
++        p.currency.toLowerCase() !== bucket.row.currency.toLowerCase()
++      ) continue;
++      bucket.mrr += monthlyEquivalent(recurringCadenceOf({
++        amount_cents: p.amount_cents, package: bucket.row,
++      }));
++    }
++    return rows.map((row) => ({
++      ...row,
++      subscriber_count: byPackage.get(row.id)!.clients.size,
++      monthly_revenue_cents: Math.round(byPackage.get(row.id)!.mrr),
++      pricing_locked: byPackage.get(row.id)!.pricingLocked,
++    }));
++  }
++
+   // PR-6 — resolve the effective tenant coach id for a caller. Head
+   // coaches own their packages directly; sub-coaches act on behalf of
+   // their head coach (CoachPackage.coach_id is always the head coach
+diff --git a/test/coach-payments-field-select.spec.ts b/test/coach-payments-field-select.spec.ts
+index 0fb9c2a17..313571d9a 100644
+--- a/test/coach-payments-field-select.spec.ts
++++ b/test/coach-payments-field-select.spec.ts
+@@ -179,7 +179,9 @@ function buildPrisma() {
+       findUnique: jest.fn(async (args: { select?: Row }) => project(dunning, args.select, {})),
+     },
+     coachPackage: {
+-      findFirst: jest.fn(async () => ({ id: 'pkg-1', coach_id: COACH })),
++      findFirst: jest.fn(async () => ({
++        id: 'pkg-1', coach_id: COACH, currency: 'usd', interval: 'month', interval_count: 1,
++      })),
+     },
+   };
+ }
+diff --git a/test/money-connect-package-views.spec.ts b/test/money-connect-package-views.spec.ts
+new file mode 100644
+index 000000000..3c35e99eb
+--- /dev/null
++++ b/test/money-connect-package-views.spec.ts
+@@ -0,0 +1,175 @@
++import { NotFoundException } from '@nestjs/common';
++import { PackagesService } from '../src/packages/packages.service';
++
++// MONEY-CONNECT-124: the actual Prisma-shaped management reads, not invented
++// camel-case fixtures. No Stripe calls or database writes.
++const packageRow = (over: Record<string, unknown> = {}) => ({
++  id: 'pkg-49',
++  coach_id: 'coach-1',
++  name: 'Monthly coaching',
++  amount_cents: 4900,
++  currency: 'gbp',
++  billing_type: 'recurring',
++  interval: 'month',
++  interval_count: 1,
++  recurring_amount_cents: null,
++  recurring_interval: null,
++  recurring_interval_count: null,
++  is_active: true,
++  archived_at: null,
++  published_at: new Date('2026-10-01T12:00:00Z'),
++  ...over,
++});
++
++const purchase = (over: Record<string, unknown> = {}) => ({
++  id: 'purchase-1',
++  package_id: 'pkg-49',
++  client_user_id: 'client-1',
++  coach_user_id: 'coach-1',
++  amount_cents: 4900,
++  currency: 'gbp',
++  billing_type: 'recurring',
++  status: 'active',
++  entitlement_active: true,
++  source: null,
++  stripe_subscription_id: 'sub_1',
++  current_period_end: new Date('2026-11-01T12:00:00Z'),
++  cancel_at_period_end: false,
++  created_at: new Date('2026-10-01T12:00:00Z'),
++  client: { name: 'Sam', email: 'sam@example.com', password: 'never-return' },
++  stripe_client_secret: 'never-return',
++  stripe_ephemeral_key: 'never-return',
++  ...over,
++});
++
++function matches(row: Record<string, unknown>, where: Record<string, unknown>) {
++  return Object.entries(where).every(([key, value]) => {
++    if (value && typeof value === 'object') {
++      const filter = value as { in?: unknown[]; not?: unknown };
++      if (filter.in) return filter.in.includes(row[key]);
++      if ('not' in filter) return row[key] !== filter.not;
++    }
++    return row[key] === value;
++  });
++}
++
++function project(row: Record<string, unknown>, select: Record<string, unknown>) {
++  return Object.fromEntries(Object.entries(select).map(([key, spec]) => {
++    if (spec === true) return [key, row[key]];
++    const fields = (spec as { select: Record<string, unknown> }).select;
++    const nested = row[key] as Record<string, unknown>;
++    return [key, Object.fromEntries(Object.keys(fields).map((k) => [k, nested?.[k]]))];
++  }));
++}
++
++function setup(
++  packages = [packageRow()],
++  purchases = [purchase()],
++) {
++  const prisma = {
++    $queryRaw: jest.fn(async () => []),
++    $transaction: jest.fn(),
++    coachPackage: {
++      findMany: jest.fn(async ({ where }) => packages.filter((p) => matches(p, where))),
++      findFirst: jest.fn(async ({ where }) => packages.find((p) => matches(p, where)) ?? null),
++      update: jest.fn(async ({ where, data }) => ({ ...packages.find((p) => p.id === where.id), ...data })),
++    },
++    coachPackageContent: { count: jest.fn(async () => 2) },
++    clientPurchase: {
++      count: jest.fn(async ({ where }) => purchases.filter((p) => matches(p, where)).length),
++      findMany: jest.fn(async ({ where, select, skip = 0, take }) => {
++        const rows = purchases.filter((p) => matches(p, where));
++        return rows.slice(skip, take === undefined ? undefined : skip + take)
++          .map((p) => select ? project(p, select) : p);
++      }),
++    },
++  };
++  prisma.$transaction.mockImplementation(async (fn) => fn(prisma));
++  const svc: PackagesService = Reflect.construct(PackagesService, [prisma, {}]);
++  return { prisma, svc };
++}
++
++describe('MONEY-CONNECT-124 package management reads', () => {
++  it('B-PACKAGE-1: a £49 monthly sale shows one client and £49 MRR, not invented zeros', async () => {
++    const { svc } = setup();
++    expect(await svc.listForCoach('coach-1')).toEqual([
++      expect.objectContaining({ subscriber_count: 1, monthly_revenue_cents: 4900 }),
++    ]);
++    expect(await svc.getOwnedDetail('coach-1', 'pkg-49')).toMatchObject({
++      subscriber_count: 1, monthly_revenue_cents: 4900, content_count: 2,
++    });
++  });
++
++  it('counts clients once; trials and free access are never paid MRR', async () => {
++    const { svc } = setup([packageRow()], [
++      purchase(),
++      purchase({ id: 'duplicate-history', status: 'canceled' }),
++      purchase({ id: 'trial', client_user_id: 'client-2', status: 'trialing' }),
++      purchase({ id: 'grant', client_user_id: 'client-3', source: 'free_package_claim',
++        status: 'granted', billing_type: 'one_time', amount_cents: 0 }),
++    ]);
++    expect((await svc.listForCoach('coach-1'))[0]).toMatchObject({
++      subscriber_count: 3, monthly_revenue_cents: 4900,
++    });
++  });
++
++  it('normalizes £49 every three months to monthly MRR and never adds another currency', async () => {
++    const { svc } = setup([packageRow({ interval_count: 3 })], [
++      purchase(), purchase({ id: 'usd-sale', client_user_id: 'client-us', currency: 'usd' }),
++    ]);
++    expect((await svc.listForCoach('coach-1'))[0]).toMatchObject({
++      currency: 'gbp', subscriber_count: 2, monthly_revenue_cents: 1633,
++    });
++  });
++
++  it('one-time buyers have access, not recurring revenue', async () => {
++    const { svc } = setup([packageRow({ billing_type: 'one_time', interval: null })], [
++      purchase({ billing_type: 'one_time', status: 'paid', stripe_subscription_id: null }),
++    ]);
++    expect((await svc.listForCoach('coach-1'))[0]).toMatchObject({
++      subscriber_count: 1, monthly_revenue_cents: 0, pricing_locked: false,
++    });
++  });
++
++  it('a saved purchase price remains the MRR amount rather than the current catalog price', async () => {
++    const { svc } = setup([packageRow({ amount_cents: 5900 })]);
++    expect((await svc.listForCoach('coach-1'))[0]).toMatchObject({
++      amount_cents: 5900, monthly_revenue_cents: 4900,
++    });
++  });
++
++  it('B-PACKAGE-2: subscriber rows include allow-listed client names and real totals/currency', async () => {
++    const { svc, prisma } = setup();
++    const result = await svc.listSubscribers('coach-1', 'pkg-49');
++    expect(result).toMatchObject({
++      package_id: 'pkg-49', currency: 'gbp', subscriber_count: 1,
++      monthly_revenue_cents: 4900,
++      subscribers: [expect.objectContaining({
++        client_user_id: 'client-1', client: { name: 'Sam', email: 'sam@example.com' },
++      })],
++    });
++    expect(JSON.stringify(result)).not.toContain('never-return');
++    expect(prisma.clientPurchase.findMany.mock.calls[0][0].select.client).toEqual({
++      select: { name: true, email: true },
++    });
++  });
++
++  it('checks package ownership before reading any buyer or summary data', async () => {
++    const { svc, prisma } = setup();
++    await expect(svc.listSubscribers('another-coach', 'pkg-49')).rejects.toBeInstanceOf(NotFoundException);
++    expect(prisma.clientPurchase.findMany).not.toHaveBeenCalled();
++  });
++
++  it('B-PRICING-1: paused access cannot change terms still held by a live Stripe subscription', async () => {
++    const { svc, prisma } = setup([packageRow()], [
++      purchase({ status: 'past_due', entitlement_active: false }),
++    ]);
++    await expect(svc.update('coach-1', 'pkg-49', {
++      amount_cents: 5900, interval_count: 3,
++    })).rejects.toMatchObject({ response: { code: 'PACKAGE_PRICING_LOCKED' } });
++    expect(prisma.coachPackage.update).not.toHaveBeenCalled();
++    expect((await svc.listForCoach('coach-1'))[0]).toMatchObject({
++      subscriber_count: 0, monthly_revenue_cents: 0, pricing_locked: true,
++    });
++  });
++});
+diff --git a/test/packages.service.spec.ts b/test/packages.service.spec.ts
+index 5269ea26a..e15158165 100644
+--- a/test/packages.service.spec.ts
++++ b/test/packages.service.spec.ts
+@@ -645,12 +645,11 @@ describe('PackagesService', () => {
+       expect(updated.amount_cents).toBe(29900);
+     });
+ 
+-    it('ALLOWS pricing edit when entitlement is inactive (even if status active)', async () => {
++    it('BLOCKS pricing edit when access is paused but the Stripe subscription is still active', async () => {
+       const pkg = await seedWithSubscriber({ entitlement_active: false });
+-      const updated = await svc.update('coach-1', pkg.id, {
++      await expect(svc.update('coach-1', pkg.id, {
+         amount_cents: 29900,
+-      });
+-      expect(updated.amount_cents).toBe(29900);
++      })).rejects.toBeInstanceOf(ConflictException);
+     });
+ 
+     it('ALLOWS pricing edit when buyer has no Stripe subscription (one-time buyer)', async () => {

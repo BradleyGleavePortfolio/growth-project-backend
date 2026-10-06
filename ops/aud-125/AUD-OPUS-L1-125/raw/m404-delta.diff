@@ -1,0 +1,70 @@
+diff --git a/src/__tests__/coachFoodReview124.test.tsx b/src/__tests__/coachFoodReview124.test.tsx
+index 0112da0d..3835d49e 100644
+--- a/src/__tests__/coachFoodReview124.test.tsx
++++ b/src/__tests__/coachFoodReview124.test.tsx
+@@ -74,6 +74,34 @@ describe('FOOD-COACH-124 normal-day regressions', () => {
+     expect(api.get).toHaveBeenLastCalledWith('/coach/clients/client-a/timeline?days=7&mealsCursor=new-99');
+   });
+ 
++  it('B-404-O1: counts each entry once when the next page repeats the boundary day', async () => {
++    const whole = (id: string, date: string) => ({ ...meal(id, date), quantity_multiplier: 1 });
++    // A date-only server sort restarts page 2 at the boundary day, so
++    // b-1 and b-2 arrive on both pages.
++    respondWithPages([
++      [
++        ...Array.from({ length: 97 }, (_, i) => whole(`a-${i}`, '2026-10-05')),
++        whole('b-0', '2026-10-04'), whole('b-1', '2026-10-04'), whole('b-2', '2026-10-04'),
++      ],
++      [
++        whole('b-1', '2026-10-04'), whole('b-2', '2026-10-04'),
++        whole('b-3', '2026-10-04'), whole('b-4', '2026-10-04'),
++        whole('c-0', '2026-10-03'),
++      ],
++    ]);
++    await render(<FoodLogReviewSection {...reviewProps} />);
++    await waitFor(() => expect(screen.getByText('Food c-0')).toBeTruthy());
++    expect(api.get).toHaveBeenLastCalledWith('/coach/clients/client-a/timeline?days=7&mealsCursor=b-2');
++    expect(screen.getAllByText('Food b-1')).toHaveLength(1);
++    expect(screen.getAllByText('Food b-2')).toHaveLength(1);
++    expect(screen.getByText('3 days with logs · 103 food entries')).toBeTruthy();
++    // Day totals equal what the client logged: 97, 5 and 1 entries of 100 kcal.
++    expect(screen.getByText('9700 kcal')).toBeTruthy();
++    expect(screen.getByText('500 kcal')).toBeTruthy();
++    expect(screen.queryByText('700 kcal')).toBeNull();
++    expect(screen.getByText('Average per logged day: 3433 kcal · P: 343g')).toBeTruthy();
++  });
++
+   it('shows macro totals and averages only over recorded days', async () => {
+     respondWithPages([[meal('one'), meal('two', '2026-10-04')]]);
+     await render(<FoodLogReviewSection {...reviewProps} />);
+diff --git a/src/api/coachFoodReviewApi.ts b/src/api/coachFoodReviewApi.ts
+index 1c330edc..d939927a 100644
+--- a/src/api/coachFoodReviewApi.ts
++++ b/src/api/coachFoodReviewApi.ts
+@@ -28,8 +28,11 @@ export class FoodReviewUnavailableError extends Error {}
+ // The timeline returns at most 100 entries per slice, with mealsCursor
+ // supported by the existing controller. A 30-day review routinely exceeds
+ // one page; never present that first page as the complete food history.
++// Servers that sort the meals slice by eat date only can repeat the
++// boundary day's entries on the next page, so each entry id is kept once.
+ export async function loadCoachFoodReview(clientId: string, days: 7 | 14 | 30) {
+   const meals: RecordedFoodEntry[] = [];
++  const seen = new Set<string>();
+   let cursor: string | undefined;
+   for (;;) {
+     const query = new URLSearchParams({ days: String(days) });
+@@ -46,8 +49,13 @@ export async function loadCoachFoodReview(clientId: string, days: 7 | 14 | 30) {
+     if (!Array.isArray(data.meals)) {
+       throw new FoodReviewUnavailableError('Food logs were not returned. Refresh to load the client’s recorded meals.');
+     }
+-    meals.push(...data.meals);
++    for (const entry of data.meals) {
++      if (seen.has(entry.id)) continue;
++      seen.add(entry.id);
++      meals.push(entry);
++    }
+     if (data.meals.length < 100) return { meals, shared: true };
++    // Page from the last raw row, even when it was a repeat.
+     cursor = data.meals[data.meals.length - 1].id;
+   }
+ }

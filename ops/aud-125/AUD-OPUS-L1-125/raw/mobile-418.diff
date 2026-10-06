@@ -1,0 +1,743 @@
+diff --git a/src/__tests__/exerciseCatalog.test.tsx b/src/__tests__/exerciseCatalog.test.tsx
+index c8106727..15674365 100644
+--- a/src/__tests__/exerciseCatalog.test.tsx
++++ b/src/__tests__/exerciseCatalog.test.tsx
+@@ -17,7 +17,7 @@
+  */
+ 
+ import React from 'react';
+-import { render, waitFor } from '@testing-library/react-native';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+ import { NavigationContainer } from '@react-navigation/native';
+ import { createNativeStackNavigator } from '@react-navigation/native-stack';
+ import type { AxiosResponse } from 'axios';
+@@ -50,9 +50,16 @@ jest.mock('expo-video', () => {
+   const ReactLib = require('react');
+   // eslint-disable-next-line @typescript-eslint/no-var-requires
+   const { View } = require('react-native');
++  const player = {
++    loop: false,
++    addListener: jest.fn((_event: string, listener: (event: { status: string }) => void) => {
++      mockVideoStatusListener = listener;
++      return { remove: jest.fn() };
++    }),
++  };
+   return {
+     __esModule: true,
+-    useVideoPlayer: () => ({ loop: false }),
++    useVideoPlayer: () => player,
+     VideoView: (props: { testID?: string }) =>
+       ReactLib.createElement(View, { testID: props.testID ?? 'video-view' }),
+   };
+@@ -102,6 +109,7 @@ import type {
+ } from '../types/exerciseCatalog';
+ 
+ const mockedGet = api.get as jest.Mock;
++let mockVideoStatusListener: (event: { status: string }) => void;
+ 
+ function ok<T>(data: T): AxiosResponse<T> {
+   return {
+@@ -138,6 +146,28 @@ beforeEach(() => {
+ });
+ 
+ describe('exerciseCatalogApi', () => {
++  test('resolves a seed workout id through the existing exercise route on catalog 404', async () => {
++    mockedGet.mockRejectedValueOnce({ response: { status: 404 } });
++    mockedGet.mockResolvedValueOnce(ok({
++      id: 'seed:push-001', name: 'Barbell Bench Press', bodyPart: 'chest',
++      target: 'pectorals', equipment: 'barbell', secondaryMuscles: ['triceps'],
++      instructions: ['Lower under control.'], gifUrl: '', video_url: null,
++    }));
++    const response = await exerciseCatalogApi.getDetail('seed:push-001');
++    expect(mockedGet).toHaveBeenLastCalledWith('/exercises/seed%3Apush-001');
++    expect(response.data).toMatchObject({
++      name: 'Barbell Bench Press', equipment: ['barbell'],
++      instructions: ['Lower under control.'], playbackUrl: null,
++    });
++  });
++
++  test('never falls back around a catalog access denial', async () => {
++    mockedGet.mockRejectedValueOnce({ response: { status: 403 } });
++    await expect(exerciseCatalogApi.getDetail('private-1')).rejects.toMatchObject({
++      response: { status: 403 },
++    });
++    expect(mockedGet).toHaveBeenCalledTimes(1);
++  });
+   test('list() builds the query string with every supplied filter', async () => {
+     mockedGet.mockResolvedValueOnce(ok(SAMPLE_LIST));
+     await exerciseCatalogApi.list({
+@@ -206,9 +236,40 @@ describe('ExerciseLibraryScreen', () => {
+     // A list row from the mocked response.
+     await findByText('Barbell Bench Press');
+   });
++
++  test('uses the production-safe default page size and the seeded filter values', async () => {
++    mockedGet.mockResolvedValue(ok(SAMPLE_LIST));
++    const screen = await renderInNav(ExerciseLibraryScreen);
++    await screen.findByText('Barbell Bench Press');
++    expect(mockedGet.mock.calls[0][0]).toBe('/exercise-catalog');
++    await fireEvent.press(screen.getByText('pectorals'));
++    await waitFor(() => expect(mockedGet).toHaveBeenLastCalledWith('/exercise-catalog?primaryMuscle=pectorals'));
++    await screen.findByText('Barbell Bench Press');
++    await fireEvent.press(screen.getByText('body weight'));
++    await waitFor(() => expect(mockedGet).toHaveBeenLastCalledWith('/exercise-catalog?primaryMuscle=pectorals&equipment=body%20weight'));
++  });
++
++  test('shows a specific retry when the catalog cannot load', async () => {
++    mockedGet.mockRejectedValueOnce(new Error('Network Error')).mockResolvedValue(ok(SAMPLE_LIST));
++    const screen = await renderInNav(ExerciseLibraryScreen);
++    await screen.findByText('Exercises did not load. Check your connection and try again.');
++    await fireEvent.press(screen.getByText('Retry'));
++    expect(await screen.findByText('Barbell Bench Press')).toBeTruthy();
++  });
+ });
+ 
+ describe('ExerciseDetailScreen', () => {
++  test('keeps instructions visible when a real video fails to load', async () => {
++    mockedGet.mockResolvedValueOnce(ok({
++      ...SAMPLE_EX, playbackUrl: 'https://stream.mux.com/missing.m3u8',
++    }));
++    const screen = await renderInNav(ExerciseDetailScreen, { idOrSlug: 'ex-1' });
++    await screen.findByTestId('exercise-detail-player');
++    await act(async () => mockVideoStatusListener({ status: 'error' }));
++    expect(screen.queryByTestId('exercise-detail-player')).toBeNull();
++    expect(screen.getByText('The demonstration did not load. Follow the instructions below.')).toBeTruthy();
++    expect(screen.getByText('Lie on the bench.')).toBeTruthy();
++  });
+   test('shows the "video not yet available" caption when playbackUrl is null', async () => {
+     const detail: ExerciseDetail = { ...SAMPLE_EX, playbackUrl: null };
+     mockedGet.mockResolvedValueOnce(ok(detail));
+diff --git a/src/api/exerciseCatalog.ts b/src/api/exerciseCatalog.ts
+index dd9bf261..1db8ada0 100644
+--- a/src/api/exerciseCatalog.ts
++++ b/src/api/exerciseCatalog.ts
+@@ -20,6 +20,8 @@
+  */
+ 
+ import api from '../services/api';
++import type { AxiosResponse } from 'axios';
++import { exerciseLibraryApi } from './exerciseLibraryApi';
+ import type {
+   ExerciseDetail,
+   ExerciseListParams,
+@@ -49,6 +51,33 @@ export const exerciseCatalogApi = {
+     api.get<ExerciseDetail>(
+       `/exercise-catalog/${encodeURIComponent(idOrSlug)}`,
+     ),
++
++  // Existing assigned workouts use ExerciseDB/seed IDs, not catalog UUIDs.
++  // Fall back only on a missing catalog entry, never on an access error.
++  getDetail: async (idOrSlug: string): Promise<AxiosResponse<ExerciseDetail>> => {
++    try {
++      return await exerciseCatalogApi.getByIdOrSlug(idOrSlug);
++    } catch (error) {
++      const status = (error as { response?: { status?: number } }).response?.status;
++      if (status !== 404) throw error;
++      const response = await exerciseLibraryApi.getById(idOrSlug);
++      const exercise = response.data;
++      const data: ExerciseDetail = {
++        id: exercise.id,
++        slug: exercise.id,
++        name: exercise.name,
++        category: exercise.bodyPart,
++        primaryMuscle: exercise.target,
++        secondaryMuscles: exercise.secondaryMuscles ?? [],
++        equipment: exercise.equipment ? [exercise.equipment] : [],
++        difficulty: '',
++        instructions: exercise.instructions ?? [],
++        playbackUrl: exercise.video_url ?? null,
++        gifUrl: exercise.gifUrl || null,
++      };
++      return { ...response, data };
++    }
++  },
+ };
+ 
+ export type { ExerciseDetail, ExerciseListParams, ExerciseListResponse };
+diff --git a/src/screens/client/EducationScreen.tsx b/src/screens/client/EducationScreen.tsx
+index 9578b745..97af6a61 100644
+--- a/src/screens/client/EducationScreen.tsx
++++ b/src/screens/client/EducationScreen.tsx
+@@ -7,6 +7,8 @@ import {
+   TouchableOpacity,
+   ScrollView,
+   RefreshControl,
++  Linking,
++  ActivityIndicator,
+ } from 'react-native';
+ import { Ionicons } from '@expo/vector-icons';
+ import { useCurrentUser } from '../../hooks/useCurrentUser';
+@@ -15,11 +17,10 @@ import { lessonsApi } from '../../services/api';
+ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+ import type { IoniconName, JsonRecord } from '../../types/common';
+ import {
+-  Lesson,
+-  LessonProgress,
+   getUserProgress,
+   markLessonComplete,
+ } from '../../db/educationDb';
++import { lessonFromApi, type EducationLesson } from './educationLesson';
+ 
+ type ScreenMode = 'list' | 'detail';
+ 
+@@ -39,28 +40,28 @@ function makeCATEGORY_COLORS(colors: ThemeColors): Record<string, string> {
+ };
+ }
+ 
+-interface LessonWithProgress extends Lesson {
+-  completed: boolean;
+-}
+-
+ export default function EducationScreen() {
+   const { colors } = useTheme();
+   const styles = useMemo(() => makeStyles(colors), [colors]);
+   const CATEGORY_COLORS = useMemo(() => makeCATEGORY_COLORS(colors), [colors]);
+   const currentUser = useCurrentUser();
+   const [mode, setMode] = useState<ScreenMode>('list');
+-  const [lessons, setLessons] = useState<LessonWithProgress[]>([]);
+-  const [_progress, setProgress] = useState<LessonProgress[]>([]);
+-  const [selectedLesson, setSelectedLesson] = useState<LessonWithProgress | null>(null);
++  const [lessons, setLessons] = useState<EducationLesson[]>([]);
++  const [selectedLesson, setSelectedLesson] = useState<EducationLesson | null>(null);
+   const [refreshing, setRefreshing] = useState(false);
+   const [filterCategory, setFilterCategory] = useState<string | null>(null);
++  const [loading, setLoading] = useState(true);
++  const [loadError, setLoadError] = useState<string | null>(null);
++  const [detailError, setDetailError] = useState<string | null>(null);
++  const [completing, setCompleting] = useState(false);
+ 
+   const loadData = useCallback(async () => {
+     if (!currentUser) return;
+-    let serverLessons: Lesson[] = [];
+     // Backend completions, derived from the same lessons payload we already
+     // fetched — no second round-trip to /lessons. See audit P0-7.
+     const backendCompletedIds = new Set<string>();
++    setLoading(true);
++    setLoadError(null);
+     try {
+       const res = await lessonsApi.getAll();
+       const data = res.data as { lessons?: JsonRecord[] } | JsonRecord[] | undefined;
+@@ -69,37 +70,26 @@ export default function EducationScreen() {
+         : Array.isArray(data?.lessons)
+           ? data.lessons
+           : [];
+-      serverLessons = raw.map((l) => {
+-        if (l.completed || l.is_completed) backendCompletedIds.add(String(l.id));
+-        return {
+-          id: String(l.id),
+-          title: (l.title as string) || 'Untitled',
+-          subtitle: (l.subtitle as string) || '',
+-          category: (l.category as string) || 'Nutrition Basics',
+-          content: (l.content as string) || (l.body as string) || '',
+-          durationMin: (l.duration_min as number) ?? (l.durationMin as number) ?? 5,
+-          sortOrder: (l.sort_order as number) ?? (l.sortOrder as number) ?? 0,
+-          createdAt: (l.created_at as string) ?? (l.createdAt as string) ?? new Date().toISOString(),
+-        };
++      const serverLessons = raw.map((l) => {
++        const lesson = lessonFromApi(l);
++        if (lesson.completed) backendCompletedIds.add(String(l.id));
++        return lesson;
+       });
+       serverLessons.sort((a, b) => a.sortOrder - b.sortOrder);
+-    } catch (err) {
+-      // Read-only fetch. On failure leave whatever we had (first load = empty
+-      // list with the honest empty state below).
+-      console.error('EducationScreen: lessonsApi.getAll failed', err);
++      // Preserve cached progress while reading real backend completions.
++      const userProgress = await getUserProgress(currentUser.id).catch(() => []);
++      const localCompletedIds = new Set(
++        userProgress.filter((p) => p.completed).map((p) => p.lessonId),
++      );
++      const completedIds = new Set([...localCompletedIds, ...backendCompletedIds]);
++      setLessons(
++        serverLessons.map((l) => ({ ...l, completed: completedIds.has(l.id) })),
++      );
++    } catch {
++      setLoadError('Lessons did not load. Check your connection and try again.');
++    } finally {
++      setLoading(false);
+     }
+-    // Completion: backend is source of truth; local SQLite is used as a cache
+-    // for offline reads. We merge both so lessons marked locally but not yet
+-    // synced still show as complete.
+-    const userProgress = await getUserProgress(currentUser.id);
+-    setProgress(userProgress);
+-    const localCompletedIds = new Set(
+-      userProgress.filter((p) => p.completed).map((p) => p.lessonId),
+-    );
+-    const completedIds = new Set([...localCompletedIds, ...backendCompletedIds]);
+-    setLessons(
+-      serverLessons.map((l) => ({ ...l, completed: completedIds.has(l.id) })),
+-    );
+   }, [currentUser]);
+ 
+   useEffect(() => {
+@@ -112,25 +102,40 @@ export default function EducationScreen() {
+     setRefreshing(false);
+   }, [loadData]);
+ 
+-  const openLesson = (lesson: LessonWithProgress) => {
++  const openLesson = (lesson: EducationLesson) => {
++    setDetailError(null);
+     setSelectedLesson(lesson);
+     setMode('detail');
+   };
+ 
+   const handleComplete = async () => {
+-    if (!currentUser || !selectedLesson) return;
+-    // Optimistic update — local SQLite keeps offline cache in sync
+-    await markLessonComplete(currentUser.id, selectedLesson.id);
+-    setSelectedLesson({ ...selectedLesson, completed: true });
+-    setLessons((prev) =>
+-      prev.map((l) => (l.id === selectedLesson.id ? { ...l, completed: true } : l))
+-    );
+-    // Backend is source of truth — fire-and-forget; local state already updated
++    if (!currentUser || !selectedLesson || completing) return;
++    setCompleting(true);
++    setDetailError(null);
+     try {
+       await lessonsApi.complete(selectedLesson.id);
+-    } catch (err) {
+-      // Non-blocking: completion is cached locally; backend will sync on next load
+-      console.warn('EducationScreen: lessonsApi.complete failed', err);
++      // Only claim completion after the server confirms the save.
++      setSelectedLesson({ ...selectedLesson, completed: true });
++      setLessons((prev) =>
++        prev.map((l) => (l.id === selectedLesson.id ? { ...l, completed: true } : l))
++      );
++      await markLessonComplete(currentUser.id, selectedLesson.id).catch((error: unknown) => {
++        console.warn('Education completion cache did not save', error);
++      });
++    } catch {
++      setDetailError('Lesson completion did not save. Check your connection and try again.');
++    } finally {
++      setCompleting(false);
++    }
++  };
++
++  const openLessonLink = async (url: string | null, kind: 'video' | 'article') => {
++    setDetailError(null);
++    try {
++      if (!url || !/^https?:\/\//i.test(url)) throw new Error('Unavailable lesson URL');
++      await Linking.openURL(url);
++    } catch {
++      setDetailError(`The lesson ${kind} could not open. Ask your coach for a working link.`);
+     }
+   };
+ 
+@@ -158,7 +163,9 @@ export default function EducationScreen() {
+           </TouchableOpacity>
+           <View style={styles.detailHeaderCenter}>
+             <Text style={styles.detailCategory}>{selectedLesson.category}</Text>
+-            <Text style={styles.detailDuration}>{selectedLesson.durationMin} min read</Text>
++            {selectedLesson.durationMin > 0 ? (
++              <Text style={styles.detailDuration}>{selectedLesson.durationMin} min read</Text>
++            ) : null}
+           </View>
+           {selectedLesson.completed ? (
+             <View style={styles.completedBadge}>
+@@ -178,6 +185,22 @@ export default function EducationScreen() {
+           <Text style={styles.detailSubtitle}>{selectedLesson.subtitle}</Text>
+ 
+           <View style={styles.detailDivider} />
++          {selectedLesson.videoUrl ? (
++            <TouchableOpacity style={styles.completeBtn} accessibilityRole="link"
++              onPress={() => void openLessonLink(selectedLesson.videoUrl, 'video')}>
++              <Text style={styles.completeBtnText}>Watch lesson</Text>
++            </TouchableOpacity>
++          ) : null}
++          {selectedLesson.articleUrl ? (
++            <TouchableOpacity style={styles.completeBtn} accessibilityRole="link"
++              onPress={() => void openLessonLink(selectedLesson.articleUrl, 'article')}>
++              <Text style={styles.completeBtnText}>Read article</Text>
++            </TouchableOpacity>
++          ) : null}
++          {!selectedLesson.content && !selectedLesson.videoUrl && !selectedLesson.articleUrl ? (
++            <Text style={styles.detailParagraph}>This lesson has no content yet. Ask your coach to add it.</Text>
++          ) : null}
++          {detailError ? <Text style={styles.detailParagraph}>{detailError}</Text> : null}
+ 
+           {selectedLesson.content.split('\n').map((paragraph, idx) => {
+             const trimmed = paragraph.trim();
+@@ -225,9 +248,10 @@ export default function EducationScreen() {
+           })}
+ 
+           {!selectedLesson.completed && (
+-            <TouchableOpacity style={styles.completeBtn} onPress={handleComplete}>
++            <TouchableOpacity style={styles.completeBtn} onPress={handleComplete} disabled={completing}
++              accessibilityRole="button" accessibilityState={{ disabled: completing }}>
+               <Ionicons name="checkmark-circle" size={20} color={colors.textOnPrimary} />
+-              <Text style={styles.completeBtnText}>Mark as Complete</Text>
++              <Text style={styles.completeBtnText}>{completing ? 'Saving completion…' : 'Mark as Complete'}</Text>
+             </TouchableOpacity>
+           )}
+ 
+@@ -241,6 +265,7 @@ export default function EducationScreen() {
+           <View style={{ height: 60 }} />
+         </ScrollView>
+       </View>
++
+     );
+   }
+ 
+@@ -251,6 +276,15 @@ export default function EducationScreen() {
+         <Text style={styles.title}>Learn</Text>
+         <Text style={styles.subtitle}>Build your nutrition &amp; fitness knowledge</Text>
+       </View>
++      {loading ? <ActivityIndicator color={colors.primary} accessibilityLabel="Loading lessons" /> : null}
++      {loadError ? (
++        <View style={styles.emptyContainer}>
++          <Text style={styles.emptyText}>{loadError}</Text>
++          <TouchableOpacity onPress={() => void loadData()} accessibilityRole="button">
++            <Text style={styles.emptyTitle}>Retry</Text>
++          </TouchableOpacity>
++        </View>
++      ) : null}
+ 
+       {/* Progress Card */}
+       <View style={styles.progressCard}>
+@@ -312,13 +346,13 @@ export default function EducationScreen() {
+         contentContainerStyle={styles.listContent}
+         showsVerticalScrollIndicator={false}
+         ListEmptyComponent={
+-          <View style={styles.emptyContainer}>
++          !loading && !loadError ? <View style={styles.emptyContainer}>
+             <Ionicons name="book-outline" size={40} color={colors.textMuted} />
+             <Text style={styles.emptyTitle}>No lessons yet</Text>
+             <Text style={styles.emptyText}>
+               Your coach hasn't published any lessons. When they do, you'll see them here.
+             </Text>
+-          </View>
++          </View> : null
+         }
+         refreshControl={
+           <RefreshControl
+@@ -353,7 +387,7 @@ export default function EducationScreen() {
+                   <View style={styles.featuredTag}>
+                     <Text style={styles.featuredTagText}>Featured</Text>
+                   </View>
+-                  <Text style={styles.lessonDuration}>{item.durationMin} min</Text>
++                  {item.durationMin > 0 ? <Text style={styles.lessonDuration}>{item.durationMin} min</Text> : null}
+                 </View>
+               </View>
+               {item.completed ? (
+diff --git a/src/screens/client/ExerciseDetailScreen.tsx b/src/screens/client/ExerciseDetailScreen.tsx
+index 42609174..d83f41ac 100644
+--- a/src/screens/client/ExerciseDetailScreen.tsx
++++ b/src/screens/client/ExerciseDetailScreen.tsx
+@@ -19,7 +19,8 @@
+ 
+ import React, { useEffect, useMemo, useState } from 'react';
+ import {
+-  ActivityIndicator,
++  Image,
++  Pressable,
+   ScrollView,
+   StyleSheet,
+   Text,
+@@ -45,19 +46,22 @@ export default function ExerciseDetailScreen({ route }: Props) {
+   const [detail, setDetail] = useState<ExerciseDetail | null>(null);
+   const [error, setError] = useState<string | null>(null);
+   const [loading, setLoading] = useState(true);
++  const [attempt, setAttempt] = useState(0);
++  const [mediaFailed, setMediaFailed] = useState(false);
+ 
+   useEffect(() => {
+     let cancelled = false;
+     setLoading(true);
+     setError(null);
++    setMediaFailed(false);
+     exerciseCatalogApi
+-      .getByIdOrSlug(idOrSlug)
++      .getDetail(idOrSlug)
+       .then((res) => {
+         if (!cancelled) setDetail(res.data as ExerciseDetail);
+       })
+-      .catch((e) => {
++      .catch(() => {
+         if (!cancelled) {
+-          setError(e instanceof Error ? e.message : 'Could not load exercise.');
++          setError('Exercise details did not load. Check your connection and try again.');
+         }
+       })
+       .finally(() => {
+@@ -66,7 +70,7 @@ export default function ExerciseDetailScreen({ route }: Props) {
+     return () => {
+       cancelled = true;
+     };
+-  }, [idOrSlug]);
++  }, [idOrSlug, attempt]);
+ 
+   // Always call useVideoPlayer (hook contract). We pass null when there is
+   // no URL — the player simply sits idle in that case.
+@@ -76,6 +80,12 @@ export default function ExerciseDetailScreen({ route }: Props) {
+     // the native play control to start the HLS stream.
+     instance.loop = false;
+   });
++  useEffect(() => {
++    const subscription = player.addListener('statusChange', ({ status }) => {
++      if (status === 'error') setMediaFailed(true);
++    });
++    return () => subscription.remove();
++  }, [player]);
+ 
+   if (loading) {
+     return <SkeletonScreen testID="exercise-detail-loading" count={5} />;
+@@ -88,6 +98,9 @@ export default function ExerciseDetailScreen({ route }: Props) {
+         testID="exercise-detail-error"
+       >
+         <Text style={styles.errorText}>{error ?? 'Exercise not found.'}</Text>
++        <Pressable accessibilityRole="button" onPress={() => setAttempt((value) => value + 1)}>
++          <Text style={styles.errorText}>Retry</Text>
++        </Pressable>
+       </View>
+     );
+   }
+@@ -105,7 +118,7 @@ export default function ExerciseDetailScreen({ route }: Props) {
+           .join(' · ')}
+       </Text>
+ 
+-      {playbackUrl ? (
++      {playbackUrl && !mediaFailed ? (
+         <VideoView
+           style={styles.player}
+           player={player}
+@@ -114,9 +127,20 @@ export default function ExerciseDetailScreen({ route }: Props) {
+           allowsPictureInPicture
+           testID="exercise-detail-player"
+         />
++      ) : detail.gifUrl && !mediaFailed ? (
++        <Image
++          source={{ uri: detail.gifUrl }}
++          style={styles.player}
++          resizeMode="contain"
++          accessibilityLabel={`${detail.name} demonstration`}
++          onError={() => setMediaFailed(true)}
++          testID="exercise-detail-animation"
++        />
+       ) : (
+         <View style={styles.noVideo} testID="exercise-detail-no-video">
+-          <Text style={styles.noVideoText}>Video not yet available.</Text>
++          <Text style={styles.noVideoText}>
++            {mediaFailed ? 'The demonstration did not load. Follow the instructions below.' : 'Video not yet available.'}
++          </Text>
+         </View>
+       )}
+ 
+diff --git a/src/screens/client/ExerciseLibraryScreen.tsx b/src/screens/client/ExerciseLibraryScreen.tsx
+index 2986a9f8..ab502d99 100644
+--- a/src/screens/client/ExerciseLibraryScreen.tsx
++++ b/src/screens/client/ExerciseLibraryScreen.tsx
+@@ -48,16 +48,18 @@ import type { WorkoutStackParamList } from '../../navigation/ClientNavigator';
+ // `feat/video-library-v1-backend` Wger importer. They're intentionally short:
+ // v1 only needs to feel useful, not exhaustive. Power-users still have the
+ // free-text search bar.
+-const CATEGORY_CHIPS = ['strength', 'cardio', 'mobility', 'core'] as const;
++const CATEGORY_CHIPS = ['push', 'pull', 'legs', 'cardio', 'mobility', 'core'] as const;
+ const MUSCLE_CHIPS = [
+-  'chest',
+-  'back',
+-  'legs',
+-  'shoulders',
+-  'arms',
++  'pectorals',
++  'lats',
++  'quads',
++  'hamstrings',
++  'front delts',
++  'biceps',
++  'triceps',
+   'glutes',
+ ] as const;
+-const EQUIPMENT_CHIPS = ['barbell', 'dumbbell', 'bodyweight', 'machine'] as const;
++const EQUIPMENT_CHIPS = ['barbell', 'dumbbell', 'body weight', 'machine', 'cable'] as const;
+ 
+ type Props = NativeStackScreenProps<WorkoutStackParamList, 'ExerciseLibrary'>;
+ 
+@@ -84,7 +86,8 @@ export default function ExerciseLibraryScreen({ navigation }: Props) {
+       primaryMuscle: primaryMuscle ?? undefined,
+       equipment: equipment ?? undefined,
+       cursor: next ?? undefined,
+-      limit: 20,
++      // The existing backend defaults to 20; omit until its numeric-query
++      // conversion fix deploys so the 10-07 app also works on today's server.
+     }),
+     [submittedSearch, category, primaryMuscle, equipment],
+   );
+@@ -103,10 +106,8 @@ export default function ExerciseLibraryScreen({ navigation }: Props) {
+         );
+         setCursor(body.nextCursor);
+         setExhausted(body.nextCursor === null);
+-      } catch (e) {
+-        setError(
+-          e instanceof Error ? e.message : 'Could not load exercises.',
+-        );
++      } catch {
++        setError('Exercises did not load. Check your connection and try again.');
+       } finally {
+         setLoading(false);
+       }
+@@ -232,6 +233,9 @@ export default function ExerciseLibraryScreen({ navigation }: Props) {
+       {error ? (
+         <View style={styles.emptyWrap}>
+           <Text style={styles.errorText}>{error}</Text>
++          <Pressable accessibilityRole="button" onPress={() => void fetchPage('replace')}>
++            <Text style={styles.errorText}>Retry</Text>
++          </Pressable>
+         </View>
+       ) : null}
+ 
+diff --git a/src/screens/client/__tests__/educationLaunch.test.tsx b/src/screens/client/__tests__/educationLaunch.test.tsx
+new file mode 100644
+index 00000000..61f24a1f
+--- /dev/null
++++ b/src/screens/client/__tests__/educationLaunch.test.tsx
+@@ -0,0 +1,99 @@
++import React from 'react';
++import { Linking } from 'react-native';
++import { AxiosHeaders, type AxiosResponse } from 'axios';
++import { fireEvent, render } from '@testing-library/react-native';
++import EducationScreen from '../EducationScreen';
++import { lessonFromApi } from '../educationLesson';
++import { lessonsApi } from '../../../services/api';
++import { markLessonComplete } from '../../../db/educationDb';
++
++jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
++jest.mock('../../../hooks/useCurrentUser', () => {
++  const user = { id: 'student_1' };
++  return { useCurrentUser: () => user };
++});
++jest.mock('../../../theme/ThemeProvider', () => {
++  const colors = {
++    primary: '#4a0404', textPrimary: '#000', textSecondary: '#333',
++    textMuted: '#555', background: '#fff', textOnPrimary: '#fff',
++  };
++  return { useTheme: () => ({ colors }) };
++});
++jest.mock('../../../services/api', () => ({
++  lessonsApi: { getAll: jest.fn(), complete: jest.fn() },
++}));
++jest.mock('../../../db/educationDb', () => ({
++  getUserProgress: jest.fn().mockResolvedValue([]),
++  markLessonComplete: jest.fn().mockResolvedValue(undefined),
++}));
++
++const serverLesson = {
++  id: 'lesson-1',
++  title: 'Bench press technique',
++  description: 'Keep the feet planted and lower the bar under control.',
++  video_url: 'https://example.com/bench-video',
++  article_url: 'https://example.com/bench-article',
++  order_index: 2,
++  created_at: '2026-10-01T12:00:00Z',
++  completions: [],
++};
++const getAll = jest.mocked(lessonsApi.getAll);
++const complete = jest.mocked(lessonsApi.complete);
++function response<T>(data: T): AxiosResponse<T> {
++  return { data, status: 200, statusText: 'OK', headers: {}, config: { headers: new AxiosHeaders() } };
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  getAll.mockResolvedValue(response([serverLesson]));
++  complete.mockResolvedValue(response({ id: 'completion-1' }));
++});
++
++test('maps the actual Prisma lesson payload, including completion records and content links', () => {
++  expect(lessonFromApi({ ...serverLesson, completions: [{ id: 'done-1', user_id: 'student_1' }] }))
++    .toMatchObject({
++      content: serverLesson.description,
++      completed: true,
++      sortOrder: 2,
++      durationMin: 0,
++      videoUrl: serverLesson.video_url,
++      articleUrl: serverLesson.article_url,
++    });
++});
++
++test('shows real description and opens both coach-provided lesson links', async () => {
++  const openURL = jest.spyOn(Linking, 'openURL').mockResolvedValue(undefined);
++  const screen = await render(<EducationScreen />);
++  await fireEvent.press(await screen.findByText(serverLesson.title));
++  expect(screen.getByText(serverLesson.description)).toBeTruthy();
++  await fireEvent.press(screen.getByText('Watch lesson'));
++  expect(openURL).toHaveBeenCalledWith(serverLesson.video_url);
++  await fireEvent.press(screen.getByText('Read article'));
++  expect(openURL).toHaveBeenCalledWith(serverLesson.article_url);
++  openURL.mockRestore();
++});
++
++test('server progress survives a fresh local completion cache', async () => {
++  getAll.mockResolvedValue(response([{ ...serverLesson, completions: [{ id: 'done-1' }] }]));
++  const screen = await render(<EducationScreen />);
++  expect(await screen.findByText('1 of 1 lessons')).toBeTruthy();
++});
++
++test('failed loading shows a retry rather than claiming the coach has published nothing', async () => {
++  getAll.mockRejectedValueOnce(new Error('Network Error'));
++  const screen = await render(<EducationScreen />);
++  expect(await screen.findByText('Lessons did not load. Check your connection and try again.')).toBeTruthy();
++  expect(screen.queryByText('No lessons yet')).toBeNull();
++  await fireEvent.press(screen.getByText('Retry'));
++  expect(await screen.findByText(serverLesson.title)).toBeTruthy();
++});
++
++test('does not claim completion or cache it when the server rejects the save', async () => {
++  complete.mockRejectedValueOnce(new Error('Network Error'));
++  const screen = await render(<EducationScreen />);
++  await fireEvent.press(await screen.findByText(serverLesson.title));
++  await fireEvent.press(screen.getByText('Mark as Complete'));
++  expect(await screen.findByText('Lesson completion did not save. Check your connection and try again.')).toBeTruthy();
++  expect(screen.queryByText('Complete.')).toBeNull();
++  expect(markLessonComplete).not.toHaveBeenCalled();
++});
+diff --git a/src/screens/client/educationLesson.ts b/src/screens/client/educationLesson.ts
+new file mode 100644
+index 00000000..4799e03b
+--- /dev/null
++++ b/src/screens/client/educationLesson.ts
+@@ -0,0 +1,30 @@
++import type { Lesson } from '../../db/educationDb';
++import type { JsonRecord } from '../../types/common';
++
++export interface EducationLesson extends Lesson {
++  completed: boolean;
++  videoUrl: string | null;
++  articleUrl: string | null;
++}
++
++export function lessonFromApi(lesson: JsonRecord): EducationLesson {
++  const text = (key: string) => typeof lesson[key] === 'string' ? lesson[key] as string : '';
++  const number = (...keys: string[]) => {
++    for (const key of keys) if (typeof lesson[key] === 'number') return lesson[key] as number;
++    return 0;
++  };
++  return {
++    id: String(lesson.id),
++    title: text('title') || 'Untitled lesson',
++    subtitle: text('subtitle'),
++    category: text('category') || 'Fitness',
++    content: text('content') || text('body') || text('description'),
++    durationMin: number('duration_min', 'durationMin'),
++    sortOrder: number('order_index', 'sort_order', 'sortOrder'),
++    createdAt: text('created_at') || text('createdAt'),
++    completed: !!(lesson.completed || lesson.is_completed ||
++      (Array.isArray(lesson.completions) && lesson.completions.length > 0)),
++    videoUrl: text('video_url') || null,
++    articleUrl: text('article_url') || null,
++  };
++}
+diff --git a/src/types/exerciseCatalog.ts b/src/types/exerciseCatalog.ts
+index 8b04db3f..d5876db8 100644
+--- a/src/types/exerciseCatalog.ts
++++ b/src/types/exerciseCatalog.ts
+@@ -36,6 +36,8 @@ export interface Exercise {
+ }
+ 
+ export interface ExerciseDetail extends Exercise {
++  /** Animation supplied by the legacy ExerciseDB detail route. */
++  gifUrl?: string | null;
+   /**
+    * Signed Mux HLS URL. `null` when the exercise has no `muxPlaybackId`
+    * or when the backend has Mux disabled. UI must hide the player and

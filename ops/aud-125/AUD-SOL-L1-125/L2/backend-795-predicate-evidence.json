@@ -1,0 +1,41 @@
+{
+  "head": "f85de9b83441ff5dce910375c8aeb877df3ed978",
+  "path": "src/ai/ai-crisis-router.ts",
+  "results": [
+    {
+      "message": "I'm not breathing properly during squats",
+      "previous": "emergency",
+      "current": null
+    },
+    {
+      "message": "I'm not breathing properly during squats, I need help now.",
+      "previous": "emergency",
+      "current": null
+    },
+    {
+      "message": "I'm not breathing during my run, call an ambulance.",
+      "previous": "emergency",
+      "current": null
+    },
+    {
+      "message": "I can't breathe after my workout",
+      "previous": "emergency",
+      "current": "emergency"
+    },
+    {
+      "message": "I'm not breathing",
+      "previous": "emergency",
+      "current": "emergency"
+    },
+    {
+      "message": "I felt like I was going to pass out in HIIT yesterday",
+      "previous": "emergency",
+      "current": null
+    },
+    {
+      "message": "I'm about to pass out",
+      "previous": "emergency",
+      "current": "emergency"
+    }
+  ]
+}

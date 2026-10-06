@@ -1,0 +1,929 @@
+diff --git a/src/__tests__/coachFoodConsent124.test.tsx b/src/__tests__/coachFoodConsent124.test.tsx
+new file mode 100644
+index 00000000..59cce56f
+--- /dev/null
++++ b/src/__tests__/coachFoodConsent124.test.tsx
+@@ -0,0 +1,96 @@
++import React, { useEffect } from 'react';
++import { render, screen, waitFor } from '@testing-library/react-native';
++import { coachApi } from '../services/api';
++import { useClientDetailData } from '../screens/coach/client-detail/useClientDetailData';
++import { SummaryTab } from '../screens/coach/client-detail/SummaryTab';
++import { makeStyles } from '../screens/coach/client-detail/styles';
++import type { ThemeColors } from '../theme/ThemeProvider';
++
++jest.mock('../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn() },
++  coachApi: { getClientSummary: jest.fn() },
++}));
++jest.mock('../hooks/useMacros', () => ({
++  useCurrentMacrosForClient: () => ({
++    data: { calories_kcal: 2200, protein_g: 160, carbs_g: 245, fats_g: 65 },
++    isLoading: false,
++    isError: false,
++    refetch: jest.fn(),
++  }),
++}));
++jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
++jest.mock('../components/coach/CoachAiSection', () => () => null);
++jest.mock('../screens/coach/client-detail/ConsultationSummaryCard', () => ({
++  ConsultationSummaryCard: () => null,
++}));
++jest.mock('../theme/ThemeProvider', () => ({
++  useTheme: () => ({ colors: {} }),
++}));
++
++const colors = {} as ThemeColors;
++const styles = makeStyles(colors);
++const noop = () => undefined;
++
++function RealSummaryDataHarness() {
++  const detail = useClientDetailData('client-a', colors);
++  useEffect(() => { void detail.loadData(); }, [detail.loadData]);
++  if (detail.isLoading) return null;
++  return <SummaryTab
++    {...detail}
++    clientId="client-a"
++    clientName="Client"
++    nudgeSuccess={false}
++    onOpenMessages={noop}
++    onOpenNudge={noop}
++    onOpenMacrosReview={noop}
++    onOpenWorkoutBuilder={noop}
++    colors={colors}
++    styles={styles}
++  />;
++}
++
++function respondWithFoodConsent(foodShared: boolean) {
++  jest.mocked(coachApi.getClientSummary).mockResolvedValue({
++    data: {
++      client_name: 'Client',
++      profile: { macro_target_calories: 2200 },
++      today: {
++        entries: [],
++        total_calories: 0,
++        total_protein_g: 0,
++        total_carbs_g: 0,
++        total_fat_g: 0,
++      },
++      weight_logs: [],
++      recent_workouts: [],
++      recent_assignments: [],
++      consent: { food_macros: foodShared, body_metrics: true },
++    },
++  } as never);
++}
++
++it('B-404-1: withheld food never appears as measured zero intake or a target percentage', async () => {
++  // Same real hook/response contract as the independent failing-head probe.
++  // Waiting for Profile works on both c916b2cf and the fix, so the old head
++  // fails on the nutrition assertion, not on setup or missing new copy.
++  respondWithFoodConsent(false);
++  await render(<RealSummaryDataHarness />);
++  await waitFor(() => expect(screen.getByText('Profile')).toBeTruthy());
++  expect(screen.queryByText('0% of daily target')).toBeNull();
++  expect(screen.queryByText('0')).toBeNull();
++  expect(screen.queryByText('0g')).toBeNull();
++  expect(screen.queryByText('Protein')).toBeNull();
++  expect(screen.getByText('Food logs are not shared with this coach.')).toBeTruthy();
++  expect(screen.getByText('Macros')).toBeTruthy();
++});
++
++it('shared food with no logged intake retains the existing zero totals and comparison', async () => {
++  respondWithFoodConsent(true);
++  await render(<RealSummaryDataHarness />);
++  await waitFor(() => expect(screen.getByText('0% of daily target')).toBeTruthy());
++  expect(screen.getByText('0')).toBeTruthy();
++  expect(screen.getAllByText('0g')).toHaveLength(3);
++  expect(screen.getByText('/ 2200 kcal')).toBeTruthy();
++  expect(screen.queryByText('Food logs are not shared with this coach.')).toBeNull();
++});
+diff --git a/src/__tests__/coachFoodReview124.test.tsx b/src/__tests__/coachFoodReview124.test.tsx
+new file mode 100644
+index 00000000..3835d49e
+--- /dev/null
++++ b/src/__tests__/coachFoodReview124.test.tsx
+@@ -0,0 +1,215 @@
++import React from 'react';
++import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
++import api, { coachApi } from '../services/api';
++import { FoodLogReviewSection } from '../screens/coach/client-detail/FoodLogReviewSection';
++import { SummaryTab } from '../screens/coach/client-detail/SummaryTab';
++import { makeStyles } from '../screens/coach/client-detail/styles';
++import type { ThemeColors } from '../theme/ThemeProvider';
++import type { ClientProfile } from '../types';
++import { useCurrentMacrosForClient } from '../hooks/useMacros';
++
++jest.mock('../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn() },
++  coachApi: { getClientFoodLogs: jest.fn() },
++}));
++jest.mock('../hooks/useMacros', () => ({
++  useCurrentMacrosForClient: jest.fn(),
++}));
++jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
++jest.mock('../components/coach/CoachAiSection', () => () => null);
++jest.mock('../screens/coach/client-detail/ConsultationSummaryCard', () => ({
++  ConsultationSummaryCard: () => null,
++}));
++jest.mock('../theme/ThemeProvider', () => ({
++  useTheme: () => ({ colors: {} }),
++}));
++
++const colors = {} as ThemeColors;
++const styles = makeStyles(colors);
++const macroQuery = useCurrentMacrosForClient as jest.Mock;
++const target = {
++  calories_kcal: 2200, protein_g: 160, carbs_g: 245, fats_g: 65,
++};
++
++function meal(id: string, date = '2026-10-05') {
++  return {
++    id, date, meal_type: 'lunch', quantity_multiplier: 0.333,
++    original_quantity: 33.3, original_unit: 'g',
++    food_item: { name: `Food ${id}`, calories: 100, protein_g: 10, carbs_g: 20, fat_g: 5 },
++  };
++}
++
++const reviewProps = { clientId: 'client-a', todayLogs: [], colors, styles };
++const summaryProps = {
++  clientId: 'client-a', clientName: 'Client', profile: null,
++  foodShared: true,
++  totals: { calories: 1100, protein: 80, carbs: 100, fat: 30 },
++  nudgeSuccess: false, onOpenMessages: jest.fn(), onOpenNudge: jest.fn(),
++  onOpenMacrosReview: jest.fn(), onOpenWorkoutBuilder: jest.fn(),
++  onOpenAskAi: jest.fn(), colors, styles,
++};
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  macroQuery.mockReturnValue({ data: target, isLoading: false, isError: false, refetch: jest.fn() });
++});
++
++function respondWithPages(pages: ReturnType<typeof meal>[][]) {
++  const read = async (url: string) => ({
++    data: { meals: pages[url.includes('mealsCursor=') ? 1 : 0] ?? [], consent: { food_macros: true } },
++  });
++  (coachApi.getClientFoodLogs as jest.Mock).mockImplementation(read);
++  (api.get as jest.Mock).mockImplementation(read);
++}
++
++describe('FOOD-COACH-124 normal-day regressions', () => {
++  it('B1: includes food entries beyond the first 100-row timeline page', async () => {
++    respondWithPages([
++      Array.from({ length: 100 }, (_, i) => meal(`new-${i}`)),
++      [meal('older-meal', '2026-10-04')],
++    ]);
++    await render(<FoodLogReviewSection {...reviewProps} />);
++    await waitFor(() => expect(screen.getByText('Food older-meal')).toBeTruthy());
++    expect(api.get).toHaveBeenLastCalledWith('/coach/clients/client-a/timeline?days=7&mealsCursor=new-99');
++  });
++
++  it('B-404-O1: counts each entry once when the next page repeats the boundary day', async () => {
++    const whole = (id: string, date: string) => ({ ...meal(id, date), quantity_multiplier: 1 });
++    // A date-only server sort restarts page 2 at the boundary day, so
++    // b-1 and b-2 arrive on both pages.
++    respondWithPages([
++      [
++        ...Array.from({ length: 97 }, (_, i) => whole(`a-${i}`, '2026-10-05')),
++        whole('b-0', '2026-10-04'), whole('b-1', '2026-10-04'), whole('b-2', '2026-10-04'),
++      ],
++      [
++        whole('b-1', '2026-10-04'), whole('b-2', '2026-10-04'),
++        whole('b-3', '2026-10-04'), whole('b-4', '2026-10-04'),
++        whole('c-0', '2026-10-03'),
++      ],
++    ]);
++    await render(<FoodLogReviewSection {...reviewProps} />);
++    await waitFor(() => expect(screen.getByText('Food c-0')).toBeTruthy());
++    expect(api.get).toHaveBeenLastCalledWith('/coach/clients/client-a/timeline?days=7&mealsCursor=b-2');
++    expect(screen.getAllByText('Food b-1')).toHaveLength(1);
++    expect(screen.getAllByText('Food b-2')).toHaveLength(1);
++    expect(screen.getByText('3 days with logs · 103 food entries')).toBeTruthy();
++    // Day totals equal what the client logged: 97, 5 and 1 entries of 100 kcal.
++    expect(screen.getByText('9700 kcal')).toBeTruthy();
++    expect(screen.getByText('500 kcal')).toBeTruthy();
++    expect(screen.queryByText('700 kcal')).toBeNull();
++    expect(screen.getByText('Average per logged day: 3433 kcal · P: 343g')).toBeTruthy();
++  });
++
++  it('shows macro totals and averages only over recorded days', async () => {
++    respondWithPages([[meal('one'), meal('two', '2026-10-04')]]);
++    await render(<FoodLogReviewSection {...reviewProps} />);
++    await waitFor(() => expect(screen.getByText('2 days with logs · 2 food entries')).toBeTruthy());
++    expect(screen.getByText('Average per logged day: 33 kcal · P: 3g')).toBeTruthy();
++    expect(screen.getAllByText('P: 3g · C: 7g · F: 2g')).toHaveLength(2);
++    expect(screen.getByText(/Days without logs are not counted as zero intake/)).toBeTruthy();
++  });
++
++  it('shows the selected eat date, original portion and client notes', async () => {
++    (api.get as jest.Mock).mockResolvedValue({
++      data: { meals: [{ ...meal('one'), logged_at: '2026-10-06T18:00:00Z', notes: 'Before training' }] },
++    });
++    await render(<FoodLogReviewSection {...reviewProps} />);
++    await waitFor(() => expect(screen.getByText('2026-10-05')).toBeTruthy());
++    expect(screen.getByText(/33.3 g/)).toBeTruthy();
++    expect(screen.getByText('Client note: Before training')).toBeTruthy();
++  });
++
++  it('labels current-target comparisons and does not clamp over-target intake to 100%', async () => {
++    macroQuery.mockReturnValue({ data: { ...target, calories_kcal: 20 }, isLoading: false, isError: false, refetch: jest.fn() });
++    respondWithPages([[meal('one')]]);
++    await render(<FoodLogReviewSection {...reviewProps} />);
++    await waitFor(() => expect(screen.getByText('167% of current daily calorie target')).toBeTruthy());
++  });
++
++  it('offers the existing message and meal-plan actions without claiming adherence', async () => {
++    respondWithPages([[meal('one')]]);
++    const onOpenMessages = jest.fn();
++    const onOpenMealPlans = jest.fn();
++    await render(<FoodLogReviewSection {...reviewProps} onOpenMessages={onOpenMessages} onOpenMealPlans={onOpenMealPlans} />);
++    await fireEvent.press(screen.getByText('Send feedback'));
++    await fireEvent.press(screen.getByText('Meal plans'));
++    expect(onOpenMessages).toHaveBeenCalledTimes(1);
++    expect(onOpenMealPlans).toHaveBeenCalledTimes(1);
++  });
++
++  it('distinguishes withheld food consent from no logged food', async () => {
++    (api.get as jest.Mock).mockResolvedValue({ data: { meals: [], consent: { food_macros: false } } });
++    await render(<FoodLogReviewSection {...reviewProps} />);
++    await waitFor(() => expect(screen.getByText('Food logs are not shared with this coach.')).toBeTruthy());
++    expect(screen.queryByText(/No meals logged/)).toBeNull();
++  });
++
++  it('does not display partial totals when a later page fails, and can retry', async () => {
++    (api.get as jest.Mock)
++      .mockResolvedValueOnce({ data: { meals: Array.from({ length: 100 }, (_, i) => meal(String(i))) } })
++      .mockRejectedValueOnce(new Error('Network Error'));
++    const spy = jest.spyOn(console, 'error').mockImplementation(() => {});
++    await render(<FoodLogReviewSection {...reviewProps} />);
++    await waitFor(() => expect(screen.getByText(/Food logs could not be loaded/)).toBeTruthy());
++    expect(screen.queryByText('Food 0')).toBeNull();
++    respondWithPages([[meal('retry')]]);
++    await fireEvent.press(screen.getByText('Retry'));
++    await waitFor(() => expect(screen.getByText('Food retry')).toBeTruthy());
++    spy.mockRestore();
++  });
++
++  it('changing the review period sends the selected days to the backend', async () => {
++    respondWithPages([[meal('one')]]);
++    await render(<FoodLogReviewSection {...reviewProps} />);
++    await waitFor(() => expect(screen.getByText('Food one')).toBeTruthy());
++    await fireEvent.press(screen.getByText('30d'));
++    await waitFor(() => expect(api.get).toHaveBeenLastCalledWith('/coach/clients/client-a/timeline?days=30'));
++  });
++
++  it('summary never claims 0% of an unset target', async () => {
++    macroQuery.mockReturnValue({ data: null, isLoading: false, isError: false, refetch: jest.fn() });
++    await render(<SummaryTab {...summaryProps} />);
++    expect(screen.getByText('No daily target available')).toBeTruthy();
++    expect(screen.queryByText('0% of daily target')).toBeNull();
++  });
++
++  it('target errors leave food visible without falling back to an outdated prescription', async () => {
++    macroQuery.mockReturnValue({ data: null, isLoading: false, isError: true, refetch: jest.fn() });
++    respondWithPages([[meal('one')]]);
++    await render(<FoodLogReviewSection {...reviewProps} />);
++    await waitFor(() => expect(screen.getByText('Food one')).toBeTruthy());
++    expect(screen.getByText('Target unavailable. Tap Refresh to retry.')).toBeTruthy();
++    expect(screen.queryByText(/% of current daily calorie target/)).toBeNull();
++  });
++
++  it('B2: sums unrounded portions before rounding the daily total', async () => {
++    respondWithPages([[meal('one'), meal('two')]]);
++    await render(<FoodLogReviewSection {...reviewProps} />);
++    // Client daily endpoint: round(100 * .333 + 100 * .333) = 67,
++    // not round(33.3) + round(33.3) = 66.
++    await waitFor(() => expect(screen.getByText('67 kcal')).toBeTruthy());
++  });
++
++  it('B3: summary uses the live prescription rather than missing camel-case profile targets', async () => {
++    await render(<SummaryTab {...summaryProps} />);
++    expect(screen.getByText('/ 2200 kcal')).toBeTruthy();
++    expect(screen.getByText('50% of daily target')).toBeTruthy();
++  });
++
++  it('B3: summary falls back to actual server-computed profile targets, not generic defaults', async () => {
++    macroQuery.mockReturnValue({ data: null, isLoading: false, isError: false, refetch: jest.fn() });
++    const profile = {
++      macro_target_calories: 1900, macro_target_protein_g: 150,
++      macro_target_carbs_g: 180, macro_target_fat_g: 60,
++    } as unknown as ClientProfile;
++    await render(<SummaryTab {...summaryProps} profile={profile} />);
++    expect(screen.getByText('/ 1900 kcal')).toBeTruthy();
++  });
++
++  it('B3: summary reports an over-target percentage while keeping the visual bar bounded', async () => {
++    await render(<SummaryTab {...summaryProps} totals={{ ...summaryProps.totals, calories: 3300 }} />);
++    expect(screen.getByText('150% of daily target')).toBeTruthy();
++  });
++});
+diff --git a/src/api/coachFoodReviewApi.ts b/src/api/coachFoodReviewApi.ts
+new file mode 100644
+index 00000000..d939927a
+--- /dev/null
++++ b/src/api/coachFoodReviewApi.ts
+@@ -0,0 +1,61 @@
++import api from '../services/api';
++
++export interface RecordedFoodEntry {
++  id: string;
++  date: string;
++  meal_type: string;
++  quantity_multiplier: number;
++  original_quantity?: number | null;
++  original_unit?: string | null;
++  notes?: string | null;
++  food_item: {
++    name: string;
++    calories: number;
++    protein_g: number;
++    carbs_g: number;
++    fat_g: number;
++  };
++}
++
++interface FoodTimelinePage {
++  meals?: RecordedFoodEntry[];
++  consent?: { food_macros?: boolean };
++  error?: string;
++}
++
++export class FoodReviewUnavailableError extends Error {}
++
++// The timeline returns at most 100 entries per slice, with mealsCursor
++// supported by the existing controller. A 30-day review routinely exceeds
++// one page; never present that first page as the complete food history.
++// Servers that sort the meals slice by eat date only can repeat the
++// boundary day's entries on the next page, so each entry id is kept once.
++export async function loadCoachFoodReview(clientId: string, days: 7 | 14 | 30) {
++  const meals: RecordedFoodEntry[] = [];
++  const seen = new Set<string>();
++  let cursor: string | undefined;
++  for (;;) {
++    const query = new URLSearchParams({ days: String(days) });
++    if (cursor) query.set('mealsCursor', cursor);
++    const { data } = await api.get<FoodTimelinePage>(
++      `/coach/clients/${clientId}/timeline?${query.toString()}`,
++    );
++    if (data.error) {
++      throw new FoodReviewUnavailableError('This client is not available. Return to Clients and select a current client.');
++    }
++    if (data.consent?.food_macros === false) {
++      return { meals: [], shared: false };
++    }
++    if (!Array.isArray(data.meals)) {
++      throw new FoodReviewUnavailableError('Food logs were not returned. Refresh to load the client’s recorded meals.');
++    }
++    for (const entry of data.meals) {
++      if (seen.has(entry.id)) continue;
++      seen.add(entry.id);
++      meals.push(entry);
++    }
++    if (data.meals.length < 100) return { meals, shared: true };
++    // Page from the last raw row, even when it was a repeat.
++    cursor = data.meals[data.meals.length - 1].id;
++  }
++}
+diff --git a/src/screens/coach/ClientDetailScreen.tsx b/src/screens/coach/ClientDetailScreen.tsx
+index f4e75115..6396f5b1 100644
+--- a/src/screens/coach/ClientDetailScreen.tsx
++++ b/src/screens/coach/ClientDetailScreen.tsx
+@@ -59,8 +59,8 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
+ 
+   const {
+     profile,
+-    foodLogs,
+     totals,
++    foodShared,
+     weightLogs,
+     workoutSessions,
+     timeline,
+@@ -452,6 +452,7 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
+           <SummaryTab
+             profile={profile}
+             totals={totals}
++            foodShared={foodShared}
+             clientId={clientId}
+             clientName={route.params.clientName}
+             nudgeSuccess={nudgeSuccess}
+@@ -481,7 +482,9 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
+         {activeTab === 'logs' && (
+           <FoodLogReviewSection
+             clientId={clientId}
+-            todayLogs={foodLogs}
++            profile={profile}
++            onOpenMessages={() => navigation.navigate('ClientMessages', { clientId, clientName })}
++            onOpenMealPlans={() => setActiveTab('mealplan')}
+             colors={colors}
+             styles={styles}
+           />
+diff --git a/src/screens/coach/client-detail/FoodLogReviewSection.tsx b/src/screens/coach/client-detail/FoodLogReviewSection.tsx
+index f76010b7..dd6a6200 100644
+--- a/src/screens/coach/client-detail/FoodLogReviewSection.tsx
++++ b/src/screens/coach/client-detail/FoodLogReviewSection.tsx
+@@ -6,82 +6,55 @@ import {
+   View,
+ } from 'react-native';
+ import { Ionicons } from '@expo/vector-icons';
+-import { coachApi } from '../../../services/api';
+-import { errorMessage } from '../../../types/common';
++import { FoodReviewUnavailableError, loadCoachFoodReview, type RecordedFoodEntry } from '../../../api/coachFoodReviewApi';
++import { useCurrentMacrosForClient } from '../../../hooks/useMacros';
++import {
++  foodEntryTotals,
++  groupRecordedMeals,
++  resolveCoachTargets,
++  sumFoodEntries,
++} from '../../../utils/coach/foodReview';
+ import type { ThemeColors } from '../../../theme/ThemeProvider';
+-import type { FoodLog } from '../../../types';
++import type { ClientProfile } from '../../../types';
+ import type { ClientDetailStyles } from './styles';
+-import type { CoachMealEntry } from './types';
+-import { getTodayString } from '../../../utils/date';
+-
+-// B15: Coach food-log review — group the client's recent meal entries by day
+-// across a 7 / 14 / 30-day window so the coach can actually see what the
+-// client ate well enough to leave guidance. Today-only was not enough for a
+-// weekly check-in cadence.
+ 
+ export function FoodLogReviewSection({
+   clientId,
+-  todayLogs,
++  profile,
++  onOpenMessages,
++  onOpenMealPlans,
+   colors,
+   styles,
+ }: {
+   clientId: string;
+-  todayLogs: FoodLog[];
++  profile?: ClientProfile | null;
++  onOpenMessages?: () => void;
++  onOpenMealPlans?: () => void;
+   colors: ThemeColors;
+   styles: ClientDetailStyles;
+ }) {
+   const [days, setDays] = useState<7 | 14 | 30>(7);
+-  const [meals, setMeals] = useState<CoachMealEntry[]>([]);
+-  const [loading, setLoading] = useState(false);
++  const [meals, setMeals] = useState<RecordedFoodEntry[]>([]);
++  const [shared, setShared] = useState(true);
++  const [loading, setLoading] = useState(true);
+   const [error, setError] = useState<string | null>(null);
++  const currentTarget = useCurrentMacrosForClient(clientId);
++  const targets = !currentTarget.isLoading && !currentTarget.isError
++    ? resolveCoachTargets(currentTarget.data, profile)
++    : null;
+ 
+   const load = useCallback(async () => {
+     setLoading(true);
+     setError(null);
+     try {
+-      const res = await coachApi.getClientFoodLogs(clientId, { days });
+-      type RawMeal = {
+-        id?: string;
+-        food_item?: { name?: string; calories?: number; protein_g?: number; carbs_g?: number; fat_g?: number };
+-        food_name?: string;
+-        meal_type?: string;
+-        calories?: number;
+-        protein?: number;
+-        carbs?: number;
+-        fat?: number;
+-        quantity_multiplier?: number;
+-        original_quantity?: number;
+-        original_unit?: string;
+-        logged_at?: string;
+-        date?: string;
+-      };
+-      const rows = ((res.data as { meals?: RawMeal[] } | undefined)?.meals) || [];
+-      const mapped: CoachMealEntry[] = rows.map((m, idx) => {
+-        const mult = m.quantity_multiplier || 1;
+-        // Macro pickers: prefer the food_item value × multiplier, fall back to
+-        // the row-level macro (legacy shape). null/missing stays as 0 in the
+-        // display but is *visually* distinguishable thanks to the —  marker.
+-        const cal = (m.food_item?.calories ?? m.calories ?? 0) * mult;
+-        const pro = (m.food_item?.protein_g ?? m.protein ?? 0) * mult;
+-        const car = (m.food_item?.carbs_g ?? m.carbs ?? 0) * mult;
+-        const fat = (m.food_item?.fat_g ?? m.fat ?? 0) * mult;
+-        return {
+-          id: m.id ?? `m-${idx}`,
+-          foodName: m.food_item?.name ?? m.food_name ?? 'Food',
+-          mealType: m.meal_type ?? 'snack',
+-          calories: Math.round(cal),
+-          protein: Math.round(pro * 10) / 10,
+-          carbs: Math.round(car * 10) / 10,
+-          fat: Math.round(fat * 10) / 10,
+-          loggedAt: m.date ?? m.logged_at ?? '',
+-          originalQuantity: m.original_quantity,
+-          originalUnit: m.original_unit,
+-        };
+-      });
+-      setMeals(mapped);
++      const result = await loadCoachFoodReview(clientId, days);
++      setMeals(result.meals);
++      setShared(result.shared);
+     } catch (err) {
+       console.error('FoodLogReviewSection: load failed', err);
+-      setError(errorMessage(err, 'Could not load food logs.'));
++      setError(err instanceof FoodReviewUnavailableError
++        ? err.message
++        : 'Food logs could not be loaded. Check the connection, then tap Retry.');
+     } finally {
+       setLoading(false);
+     }
+@@ -91,33 +64,21 @@ export function FoodLogReviewSection({
+     load();
+   }, [load]);
+ 
+-  // Group meals by date (descending).
+-  const grouped = useMemo(() => {
+-    const m = new Map<string, CoachMealEntry[]>();
+-    for (const meal of meals) {
+-      const day = meal.loggedAt.slice(0, 10) || 'unknown';
+-      const list = m.get(day) ?? [];
+-      list.push(meal);
+-      m.set(day, list);
+-    }
+-    return [...m.entries()].sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0));
+-  }, [meals]);
+-
+-  // If the timeline endpoint returns nothing, fall back to the today logs
+-  // already loaded by ClientDetailScreen so coaches still see something.
+-  const showTodayFallback = !loading && !error && grouped.length === 0 && todayLogs.length > 0;
++  const grouped = useMemo(() => groupRecordedMeals(meals), [meals]);
++  const windowTotals = useMemo(() => sumFoodEntries(meals), [meals]);
+ 
+   return (
+     <>
+       <View style={styles.foodReviewHeader}>
+-        <Text style={styles.sectionTitle}>Food log review</Text>
++        <Text style={[styles.sectionTitle, { flex: 1 }]} accessibilityRole="header">Food log review</Text>
+         <View style={styles.foodReviewChips}>
+           {([7, 14, 30] as const).map((d) => (
+             <TouchableOpacity
+               key={d}
+               onPress={() => setDays(d)}
+-              style={[styles.foodReviewChip, days === d && styles.foodReviewChipActive]}
++              style={[styles.foodReviewChip, { minHeight: 44, justifyContent: 'center' }, days === d && styles.foodReviewChipActive]}
+               accessibilityRole="button"
++              accessibilityLabel={`Review the last ${d} days of food logs`}
+               accessibilityState={{ selected: days === d }}
+             >
+               <Text
+@@ -133,6 +94,28 @@ export function FoodLogReviewSection({
+         </View>
+       </View>
+ 
++      <View style={styles.actionsRow}>
++        {onOpenMessages ? (
++          <TouchableOpacity style={styles.actionPill} onPress={onOpenMessages} accessibilityRole="button">
++            <Text style={styles.actionPillText}>Send feedback</Text>
++          </TouchableOpacity>
++        ) : null}
++        {onOpenMealPlans ? (
++          <TouchableOpacity style={styles.actionPill} onPress={onOpenMealPlans} accessibilityRole="button">
++            <Text style={styles.actionPillText}>Meal plans</Text>
++          </TouchableOpacity>
++        ) : null}
++        <TouchableOpacity
++          style={styles.actionPill}
++          onPress={() => { void load(); void currentTarget.refetch(); }}
++          disabled={loading}
++          accessibilityRole="button"
++          accessibilityState={{ disabled: loading }}
++        >
++          <Text style={styles.actionPillText}>Refresh</Text>
++        </TouchableOpacity>
++      </View>
++
+       {loading ? (
+         <View style={styles.emptyCard}>
+           <ActivityIndicator color={colors.primary} />
+@@ -146,65 +129,76 @@ export function FoodLogReviewSection({
+             <Text style={[styles.actionPillText, { marginTop: 8 }]}>Retry</Text>
+           </TouchableOpacity>
+         </View>
+-      ) : grouped.length === 0 && !showTodayFallback ? (
++      ) : !shared ? (
++        <View style={styles.emptyCard}>
++          <Ionicons name="lock-closed-outline" size={32} color={colors.textMuted} />
++          <Text style={styles.emptyText}>Food logs are not shared with this coach.</Text>
++        </View>
++      ) : grouped.length === 0 ? (
+         <View style={styles.emptyCard}>
+           <Ionicons name="restaurant-outline" size={32} color={colors.textMuted} />
+           <Text style={styles.emptyText}>No meals logged in the last {days} days.</Text>
+         </View>
+       ) : (
+         <>
+-          {showTodayFallback ? (
+-            <Text style={[styles.emptyText, { textAlign: 'left', marginBottom: 8 }]}>
+-              Showing today only — older logs were not returned by the
+-              server.
++          <View style={styles.foodReviewDayCard}>
++            <Text style={styles.foodReviewDayDate}>Current daily target</Text>
++            {currentTarget.isLoading ? (
++              <Text style={styles.logMacros}>Loading target…</Text>
++            ) : currentTarget.isError ? (
++              <Text style={styles.logMacros}>Target unavailable. Tap Refresh to retry.</Text>
++            ) : targets ? (
++              <Text style={styles.logMacros}>
++                {targets.calories} kcal · P: {targets.protein ?? '—'}g · C: {targets.carbs ?? '—'}g · F: {targets.fat ?? '—'}g
++              </Text>
++            ) : (
++              <Text style={styles.logMacros}>No daily target available.</Text>
++            )}
++            <Text style={[styles.logMacros, { marginTop: 8 }]}>
++              {grouped.length} days with logs · {meals.length} food entries
++            </Text>
++            <Text style={styles.logMacros}>
++              Average per logged day: {Math.round(windowTotals.calories / grouped.length)} kcal · P: {Math.round(windowTotals.protein / grouped.length)}g
+             </Text>
+-          ) : null}
+-          {(showTodayFallback
+-            ? ([
+-                [
+-                  getTodayString(),
+-                  todayLogs.map(
+-                    (l): CoachMealEntry => ({
+-                      id: l.id,
+-                      foodName: l.foodName,
+-                      mealType: String(l.mealType),
+-                      calories: l.calories,
+-                      protein: l.protein,
+-                      carbs: l.carbs,
+-                      fat: l.fat,
+-                      loggedAt: '',
+-                      originalQuantity: undefined,
+-                      originalUnit: undefined,
+-                    }),
+-                  ),
+-                ] as [string, CoachMealEntry[]],
+-              ] as Array<[string, CoachMealEntry[]]>)
+-            : grouped
+-          ).map(([day, dayMeals]) => {
+-            const dayCalories = dayMeals.reduce((s, m) => s + m.calories, 0);
++            <Text style={[styles.logMacros, { marginTop: 8 }]}>
++              Days without logs are not counted as zero intake. Meal-plan completion is not tracked by food logs.
++            </Text>
++          </View>
++          {grouped.map(([day, dayMeals]) => {
++            const totals = sumFoodEntries(dayMeals);
+             return (
+               <View key={day} style={styles.foodReviewDayCard}>
+                 <View style={styles.foodReviewDayHeader}>
+-                  <Text style={styles.foodReviewDayDate}>
+-                    {day === getTodayString() ? 'Today' : day}
+-                  </Text>
+-                  <Text style={styles.foodReviewDayTotal}>{dayCalories} kcal</Text>
++                  <Text style={styles.foodReviewDayDate}>{day}</Text>
++                  <Text style={styles.foodReviewDayTotal}>{Math.round(totals.calories)} kcal</Text>
+                 </View>
+-                {dayMeals.map((meal) => (
+-                  <View key={meal.id} style={styles.logItem}>
+-                    <View style={styles.logHeader}>
+-                      <Text style={styles.logMeal}>{meal.mealType}</Text>
+-                      <Text style={styles.logCalories}>{meal.calories} kcal</Text>
++                <Text style={[styles.logMacros, { marginBottom: 8 }]}>
++                  P: {Math.round(totals.protein)}g · C: {Math.round(totals.carbs)}g · F: {Math.round(totals.fat)}g
++                </Text>
++                {targets?.calories != null && targets.calories > 0 ? (
++                  <Text style={[styles.logMacros, { marginBottom: 8 }]}>
++                    {Math.round((totals.calories / targets.calories) * 100)}% of current daily calorie target
++                  </Text>
++                ) : null}
++                {dayMeals.map((meal) => {
++                  const macros = foodEntryTotals(meal);
++                  return (
++                    <View key={meal.id} style={styles.logItem}>
++                      <View style={styles.logHeader}>
++                        <Text style={styles.logMeal}>{meal.meal_type}</Text>
++                        <Text style={styles.logCalories}>{Math.round(macros.calories)} kcal</Text>
++                      </View>
++                      <Text style={styles.logFood}>{meal.food_item.name}</Text>
++                      <Text style={styles.logMacros}>
++                        {meal.original_quantity != null
++                          ? `${meal.original_quantity} ${meal.original_unit ?? 'serving'} · `
++                          : ''}
++                        P: {Math.round(macros.protein * 10) / 10}g  |  C: {Math.round(macros.carbs * 10) / 10}g  |  F: {Math.round(macros.fat * 10) / 10}g
++                      </Text>
++                      {meal.notes ? <Text style={styles.logMacros}>Client note: {meal.notes}</Text> : null}
+                     </View>
+-                    <Text style={styles.logFood}>{meal.foodName}</Text>
+-                    <Text style={styles.logMacros}>
+-                      {meal.originalQuantity != null
+-                        ? `${meal.originalQuantity} ${meal.originalUnit ?? 'serving'} · `
+-                        : ''}
+-                      P: {meal.protein}g  |  C: {meal.carbs}g  |  F: {meal.fat}g
+-                    </Text>
+-                  </View>
+-                ))}
++                  );
++                })}
+               </View>
+             );
+           })}
+diff --git a/src/screens/coach/client-detail/SummaryTab.tsx b/src/screens/coach/client-detail/SummaryTab.tsx
+index 20069d60..6483f24f 100644
+--- a/src/screens/coach/client-detail/SummaryTab.tsx
++++ b/src/screens/coach/client-detail/SummaryTab.tsx
+@@ -13,10 +13,13 @@ import type { ClientDetailStyles } from './styles';
+ import { MacroCard } from './MacroCard';
+ import { ProfileRow } from './ProfileRow';
+ import { ConsultationSummaryCard } from './ConsultationSummaryCard';
++import { useCurrentMacrosForClient } from '../../../hooks/useMacros';
++import { resolveCoachTargets } from '../../../utils/coach/foodReview';
+ 
+ export function SummaryTab({
+   profile,
+   totals,
++  foodShared,
+   clientId,
+   clientName,
+   nudgeSuccess,
+@@ -30,6 +33,7 @@ export function SummaryTab({
+ }: {
+   profile: ClientProfile | null;
+   totals: { calories: number; protein: number; carbs: number; fat: number };
++  foodShared: boolean;
+   clientId: string;
+   clientName: string;
+   nudgeSuccess: boolean;
+@@ -47,31 +51,49 @@ export function SummaryTab({
+   colors: ThemeColors;
+   styles: ClientDetailStyles;
+ }) {
+-  const calTarget = profile?.calorieTarget || 0;
+-  const calPct = calTarget > 0 ? Math.min(100, Math.round((totals.calories / calTarget) * 100)) : 0;
++  const currentTarget = useCurrentMacrosForClient(clientId);
++  const targets = !currentTarget.isLoading && !currentTarget.isError
++    ? resolveCoachTargets(currentTarget.data, profile)
++    : null;
++  const calTarget = targets?.calories ?? 0;
++  const calPct = calTarget > 0 ? Math.round((totals.calories / calTarget) * 100) : 0;
+   const allergies = extractClientAllergies(profile as unknown as LooseProfileRecord | null);
+   const restrictions = extractClientDietaryRestrictions(profile as unknown as LooseProfileRecord | null);
+ 
+   return (
+     <>
++      {foodShared === false ? (
++        <View style={styles.calorieCard}>
++          <Text style={styles.emptyText}>Food logs are not shared with this coach.</Text>
++        </View>
++      ) : null}
+       {/* Calorie Ring Card */}
+-      <View style={styles.calorieCard}>
++      {foodShared !== false && <View style={styles.calorieCard}>
+         <View style={styles.calorieMain}>
+           <Text style={styles.calorieValue}>{Math.round(totals.calories)}</Text>
+           <Text style={styles.calorieTarget}>/ {calTarget || '—'} kcal</Text>
+         </View>
+         <View style={styles.caloriePctBg}>
+-          <View style={[styles.caloriePctFill, { width: `${calPct}%` }]} />
++          <View style={[styles.caloriePctFill, { width: `${Math.min(100, calPct)}%` }]} />
+         </View>
+-        <Text style={styles.caloriePctText}>{calPct}% of daily target</Text>
+-      </View>
++        <Text style={styles.caloriePctText}>
++          {currentTarget.isLoading ? 'Loading daily target…'
++            : currentTarget.isError ? 'Daily target unavailable'
++            : calTarget > 0 ? `${calPct}% of daily target` : 'No daily target available'}
++        </Text>
++        {currentTarget.isError ? (
++          <TouchableOpacity onPress={() => void currentTarget.refetch()} accessibilityRole="button">
++            <Text style={styles.actionPillText}>Retry target</Text>
++          </TouchableOpacity>
++        ) : null}
++      </View>}
+ 
+       {/* Macro Cards */}
+-      <View style={styles.macroGrid}>
+-        <MacroCard label="Protein" value={totals.protein} target={profile?.proteinTarget} unit="g" color={colors.protein} />
+-        <MacroCard label="Carbs" value={totals.carbs} target={profile?.carbTarget} unit="g" color={colors.carbs} />
+-        <MacroCard label="Fat" value={totals.fat} target={profile?.fatTarget} unit="g" color={colors.fat} />
+-      </View>
++      {foodShared !== false && <View style={styles.macroGrid}>
++        <MacroCard label="Protein" value={totals.protein} target={targets?.protein ?? undefined} unit="g" color={colors.protein} />
++        <MacroCard label="Carbs" value={totals.carbs} target={targets?.carbs ?? undefined} unit="g" color={colors.carbs} />
++        <MacroCard label="Fat" value={totals.fat} target={targets?.fat ?? undefined} unit="g" color={colors.fat} />
++      </View>}
+ 
+       {/* Profile Info */}
+       <Text style={styles.sectionTitle}>Profile</Text>
+diff --git a/src/screens/coach/client-detail/useClientDetailData.ts b/src/screens/coach/client-detail/useClientDetailData.ts
+index 66e2c195..8e975899 100644
+--- a/src/screens/coach/client-detail/useClientDetailData.ts
++++ b/src/screens/coach/client-detail/useClientDetailData.ts
+@@ -16,6 +16,7 @@ export function useClientDetailData(clientId: string, colors: ThemeColors) {
+   const [profile, setProfile] = useState<ClientProfile | null>(null);
+   const [foodLogs, setFoodLogs] = useState<FoodLog[]>([]);
+   const [totals, setTotals] = useState({ calories: 0, protein: 0, carbs: 0, fat: 0 });
++  const [foodShared, setFoodShared] = useState(true);
+   const [weightLogs, setWeightLogs] = useState<WeightLog[]>([]);
+   const [workoutSessions, setWorkoutSessions] = useState<WorkoutSession[]>([]);
+   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
+@@ -46,6 +47,7 @@ export function useClientDetailData(clientId: string, colors: ThemeColors) {
+       const res = await coachApi.getClientSummary(clientId);
+       const data = res.data;
+       if (data.error) return;
++      setFoodShared(data.consent?.food_macros !== false);
+       // Reflect archived status from summary (client.archived_at)
+       if (data.client) setIsArchived(!!data.client.archived_at);
+ 
+@@ -340,6 +342,7 @@ export function useClientDetailData(clientId: string, colors: ThemeColors) {
+     profile,
+     foodLogs,
+     totals,
++    foodShared,
+     weightLogs,
+     workoutSessions,
+     timeline,
+diff --git a/src/utils/coach/foodReview.ts b/src/utils/coach/foodReview.ts
+new file mode 100644
+index 00000000..6807c409
+--- /dev/null
++++ b/src/utils/coach/foodReview.ts
+@@ -0,0 +1,78 @@
++import type { RecordedFoodEntry } from '../../api/coachFoodReviewApi';
++import type { MacroTarget } from '../../api/macrosApi';
++import type { ClientProfile } from '../../types';
++
++export interface NutritionTotals {
++  calories: number;
++  protein: number;
++  carbs: number;
++  fat: number;
++}
++
++export type NutritionTargets = { [K in keyof NutritionTotals]: number | null };
++
++type ServerProfileTargets = {
++  macro_target_calories?: number | null;
++  macro_target_protein_g?: number | null;
++  macro_target_carbs_g?: number | null;
++  macro_target_fat_g?: number | null;
++};
++
++// Same precedence as the client's /me/macros/current and /log/daily:
++// live coach prescription, then server-computed profile fields, never defaults.
++export function resolveCoachTargets(
++  target: Pick<MacroTarget, 'calories_kcal' | 'protein_g' | 'carbs_g' | 'fats_g'> | null | undefined,
++  profile: ClientProfile | null | undefined,
++): NutritionTargets | null {
++  if (target) {
++    return {
++      calories: target.calories_kcal, protein: target.protein_g,
++      carbs: target.carbs_g, fat: target.fats_g,
++    };
++  }
++  const raw = profile as (ClientProfile & ServerProfileTargets) | null | undefined;
++  if (raw?.macro_target_calories == null) return null;
++  return {
++    calories: Math.round(raw.macro_target_calories),
++    protein: raw.macro_target_protein_g == null ? null : Math.round(raw.macro_target_protein_g),
++    carbs: raw.macro_target_carbs_g == null ? null : Math.round(raw.macro_target_carbs_g),
++    fat: raw.macro_target_fat_g == null ? null : Math.round(raw.macro_target_fat_g),
++  };
++}
++
++export function foodEntryTotals(entry: RecordedFoodEntry): NutritionTotals {
++  const food = entry.food_item;
++  const q = entry.quantity_multiplier;
++  return {
++    calories: food.calories * q,
++    protein: food.protein_g * q,
++    carbs: food.carbs_g * q,
++    fat: food.fat_g * q,
++  };
++}
++
++// Keep exact portion products until the final display, matching /log/daily.
++export function sumFoodEntries(entries: RecordedFoodEntry[]): NutritionTotals {
++  return entries.reduce((sum, entry) => {
++    const value = foodEntryTotals(entry);
++    return {
++      calories: sum.calories + value.calories,
++      protein: sum.protein + value.protein,
++      carbs: sum.carbs + value.carbs,
++      fat: sum.fat + value.fat,
++    };
++  }, { calories: 0, protein: 0, carbs: 0, fat: 0 });
++}
++
++export function groupRecordedMeals(entries: RecordedFoodEntry[]) {
++  const groups = new Map<string, RecordedFoodEntry[]>();
++  for (const entry of entries) {
++    // `date` is the client's chosen eat date (Postgres DATE), not the
++    // server sync timestamp. Do not convert it into the coach's device zone.
++    const day = entry.date.slice(0, 10);
++    const meals = groups.get(day) ?? [];
++    meals.push(entry);
++    groups.set(day, meals);
++  }
++  return [...groups.entries()].sort(([a], [b]) => b.localeCompare(a));
++}

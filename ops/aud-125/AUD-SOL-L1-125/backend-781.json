@@ -1,0 +1,308 @@
+{
+  "repo": "backend",
+  "number": 781,
+  "head": "6d0e1623cd2e04fd6e53a3380339e67caf92fe37",
+  "base": "ec12a4b3069d91438501d9aa8f9d8449d0a5e292",
+  "title": "fix(time): first briefs use coach-local days; morning slots keep local hours (HUNT-06-124, T3)",
+  "body": "## HUNT-06-124, agent 124 \u2014 T3\n\n### B-06-1: the first brief must use the coach's own local day\n\nA newly signed-in Tokyo coach who never opens brief settings receives the 08:00 push in Tokyo, but its \u201ctoday\u201d brief is generated for yesterday in Los Angeles, with the wrong session/aggregation day. The scheduler already resolves the supplied device zone, then the coach's profile, then Pacific; generation now follows that same order when there is no saved brief preference. An explicitly saved brief zone remains authoritative. [Generator correction](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/6d0e1623cd2e04fd6e53a3380339e67caf92fe37/src/coach/brief/coach-brief.service.ts#L741-L776)\n\n### U-06-1: ordinary morning slots after a clock change\n\nOn November 1 a coach's saved 08:00 opening can offer an extra 07:00 appointment because the initial UTC estimate still uses daylight time; spring-forward similarly moves normal morning hours. Offset corrections now re-project the corrected instant until it matches the requested wall clock. This is a cheap UX correction, not an immediate October launch blocker: mobile lists only the next 14 days. No new policy for ambiguous repeated-hour appointments. [Booking correction](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/6d0e1623cd2e04fd6e53a3380339e67caf92fe37/src/scheduling/slot-computer.service.ts#L134-L165) [Mobile horizon](https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/321274f36939e25a2cdf19ec2b840bda4b395967/src/hooks/useCalendar.ts#L93-L113)\n\n### Failing-first evidence\n\n- Tests-only commits: `a2e65bc169fd64551441000bba25933678db4e5d`, then `156ba2413b0b2ab13da45e5e244ebd2ca4d68d4c` clarifies the November example to 08:00 (09:00 is already past the UTC offset switch).\n- Exactly one CI lane, original tests against pre-fix source, queued at publication: [red lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37522168542). Never cancelled or re-pushed.\n- Local targeted actual-module proof through `heavy.sh`, TypeScript 5.9.3 transpilation with in-memory Prisma reads and no provider calls: old source **3 pass / 6 fail**, fixed source **9 pass / 0 fail**. This is not a Jest/full-suite/typecheck claim.\n- Added Jest regressions for listing, authoritative booking rejection, local override hours, spring-forward, supplied/default/saved brief zones. Normal PR CI owns lint, full typecheck and suites.\n\n### Scope\n\n170 changed lines (tests included); four files. No schema, migrations, billing, authorization, API-contract, flags, dashboard, production or build changes. No mobile edit: the existing [mobile #399](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/399) already covers Home's date-only workout completion classification.\n\nNeeds the BE lens pair at the exact head and green required CI before any operator merge. Nothing was merged or deployed.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 150,
+  "deletions": 20,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/781",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/781#issuecomment-6024410965",
+      "body": "READY FOR AUDIT (HUNT-06-124, agent 124) \u2014 growth-project-backend#781 @ 6d0e1623cd2e04fd6e53a3380339e67caf92fe37\n\nT3; A/B/U/C = 0/1/1/deferred-edge-only. Four files, 170 changed lines.\n\n- B-06-1 closed at `src/coach/brief/coach-brief.service.ts:748-776`: an unsaved overseas coach's 08:00 \u201ctoday\u201d brief previously used the Pacific date instead of their own; generation now matches the scheduler's supplied-device-zone / own-profile / Pacific fallback, preserving explicitly saved brief preferences.\n- U-06-1 closed at `src/scheduling/slot-computer.service.ts:143-163`: a saved 08:00 opening on November 1 offered an extra 07:00 appointment; offset correction now re-projects the target instant. Spring-forward morning hours are corrected too. Cheap UX fix, not an immediate October blocker (mobile horizon = 14 days).\n\nFailing-first:\n- [One red lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37522168542/job/112470062972): npm install/Prisma generation succeeded; Targeted Jest failed with **3 failed / 5 passed**, specifically Tokyo/device zone, profile-vs-default zone, and ordinary spring-forward hours.\n- The November example was sharpened from 09:00 to 08:00 in a second tests-only commit before the fix (09:00 was already past the UTC offset switch). Actual pre-fix TypeScript-module probes through `heavy.sh`: **3 passed / 6 failed**; fixed modules: **9 passed / 0 failed**. No local full suite or full-project typecheck.\n- [Normal PR CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523103937) is queued/in progress at this head; required-green is NOT claimed.\n\nBE exact-head lens pair needed, then required CI green. No merge, deploy, production write, flag/dashboard change or mobile edit. OWNER STEPS: none for these two fixes. Rare repeated-hour policy / wrong device clock remain C (edge, deferred to 10k clients).\n"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/781#issuecomment-6024442246",
+      "body": "\n<!--\n  0 failure: \n  0 warning: \n  \n  1 markdown notices\n  DangerID: danger-id-Danger;\n-->\n\n\n\n### Danger summary\n\n- **Touched areas:** _none of the sensitive paths_\n- **Files changed:** 4\n\n<p align=\"right\">\n  Generated by :no_entry_sign: <a href=\"https://danger.systems/js\">dangerJS</a> against 6d0e1623cd2e04fd6e53a3380339e67caf92fe37\n</p>\n"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/781#issuecomment-6024460065",
+      "body": "<!-- h4-deploy-readiness-board -->\n## Deploy readiness board (R100, informational)\n\nThis check is informational on pull requests during the pre-launch\nburn-down. It gates only the codebase-invariant sections (stub values\nand prod-switch coherence). The environment-dependent sections (wiring,\nenv discovery, operator keys) are surfaced below but do not block the\nPR because the runner carries no production secrets. The prod-deploy\ngate (deploy-readiness-gate) enforces every section under strict mode.\n\n```\n================ DEPLOY READINESS BOARD (R100) ================\n    mode: INFORMATIONAL (PR / pre-launch)\n    \n    --- STUB VALUES [RED=0] ---\n      BLOCK_SHIP=0  WARN=7  INFO=5\n      [warn] src/coach/command-center/ltv-metrics.dto.ts:153  STUB (tracked debt or low-signal)\n      [warn] src/contracts/contracts.module.ts:47  STUB (tracked debt or low-signal)\n      [warn] src/contracts/contracts.module.ts:53  STUB (tracked debt or low-signal)\n      [warn] src/contracts/providers/docusign.provider.ts:11  STUB (tracked debt or low-signal)\n      [warn] src/contracts/providers/native-canvas.provider.ts:11  STUB (tracked debt or low-signal)\n      [warn] src/gym/gym-distribution.service.ts:4  STUB (tracked debt or low-signal)\n      [warn] src/scheduling/scheduling.controller.ts:91  Coming soon (tracked debt or low-signal)\n      no blocking stub/placeholder tokens in production-bound src/\n    \n    ---------------------------------------------------------------\n    GATING RED LINES (this run): 0\n    PROD-DEPLOY RED LINES (strict): 0\n    EXIT: ALL CLEAR \u2192 SAFE TO DEPLOY\n    ===============================================================\n```"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/781#issuecomment-6024483767",
+      "body": "<!-- pr-checks-watcher -->\n## CI status \u2014 `6d0e162`\n\npending: 1 \u00b7 skipped: 1 \u00b7 success: 14\n\n- \u2705 **Banned cast tokens (R75 / R100.A2)** \u2014 success\n- \u23f3 **build-and-test**\n- \u2705 **build-sbom** \u2014 success\n- \u2705 **CodeQL** \u2014 success\n- \u2705 **CodeQL JS/TS (javascript-typescript)** \u2014 success\n- \u2705 **comment-deploy-readiness** \u2014 success\n- \u2705 **community-live-tests** \u2014 success\n- \u2705 **danger** \u2014 success\n- \u23ed\ufe0f **deploy-readiness-gate** \u2014 skipped\n- \u2705 **mwb-3-live-tests** \u2014 success\n- \u2705 **npm audit (high+critical, whole graph)** \u2014 success\n- \u2705 **rls-floor-guard** \u2014 success\n- \u2705 **rls-live-tests** \u2014 success\n- \u2705 **Schema parity (migrations match schema.prisma)** \u2014 success\n- \u2705 **size-label** \u2014 success\n- \u2705 **test-deploy-readiness** \u2014 success\n\n_Updated automatically by pr-checks-watcher._"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "comment-deploy-readiness",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523104035/job/112475161692",
+      "id": 112475161692,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112475161692/annotations"
+      }
+    },
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/runs/112474664915",
+      "id": 112474664915,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-backend/security/code-scanning?query=pr%3A781+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112474664915/annotations"
+      }
+    },
+    {
+      "name": "npm audit (high+critical, whole graph)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523104134/job/112473241864",
+      "id": 112473241864,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473241864/annotations"
+      }
+    },
+    {
+      "name": "deploy-readiness-gate",
+      "status": "completed",
+      "conclusion": "skipped",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523104035/job/112473231847",
+      "id": 112473231847,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473231847/annotations"
+      }
+    },
+    {
+      "name": "Schema parity (migrations match schema.prisma)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523103935/job/112473230285",
+      "id": 112473230285,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473230285/annotations"
+      }
+    },
+    {
+      "name": "test-deploy-readiness",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523104035/job/112473230178",
+      "id": 112473230178,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473230178/annotations"
+      }
+    },
+    {
+      "name": "Banned cast tokens (R75 / R100.A2)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523104085/job/112473229963",
+      "id": 112473229963,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473229963/annotations"
+      }
+    },
+    {
+      "name": "rls-floor-guard",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523103937/job/112473229139",
+      "id": 112473229139,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473229139/annotations"
+      }
+    },
+    {
+      "name": "rls-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523103937/job/112473229066",
+      "id": 112473229066,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473229066/annotations"
+      }
+    },
+    {
+      "name": "community-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523103937/job/112473229045",
+      "id": 112473229045,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473229045/annotations"
+      }
+    },
+    {
+      "name": "danger",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523104196/job/112473229042",
+      "id": 112473229042,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473229042/annotations"
+      }
+    },
+    {
+      "name": "build-and-test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523103937/job/112473229034",
+      "id": 112473229034,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 10,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473229034/annotations"
+      }
+    },
+    {
+      "name": "build-sbom",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523104069/job/112473228815",
+      "id": 112473228815,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473228815/annotations"
+      }
+    },
+    {
+      "name": "mwb-3-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523103937/job/112473228630",
+      "id": 112473228630,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473228630/annotations"
+      }
+    },
+    {
+      "name": "CodeQL JS/TS (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523103997/job/112473228416",
+      "id": 112473228416,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473228416/annotations"
+      }
+    },
+    {
+      "name": "size-label",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523104003/job/112473228240",
+      "id": 112473228240,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473228240/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "64e5f0195db9a263c4027097777c3181870ad420",
+      "filename": "src/coach/brief/coach-brief.service.ts",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 3,
+      "changes": 21,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/6d0e1623cd2e04fd6e53a3380339e67caf92fe37/src%2Fcoach%2Fbrief%2Fcoach-brief.service.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/6d0e1623cd2e04fd6e53a3380339e67caf92fe37/src%2Fcoach%2Fbrief%2Fcoach-brief.service.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fcoach%2Fbrief%2Fcoach-brief.service.ts?ref=6d0e1623cd2e04fd6e53a3380339e67caf92fe37",
+      "patch": "@@ -37,6 +37,7 @@ import {\n import { createAnthropicClient } from '../../ai-egress/provider-clients';\n import { COACH_AI_MODEL } from '../../ai/coach/coach-ai.constants';\n import { describeFailure } from '../../observability/log-pii';\n+import { usableTimeZone } from '../../notifications/local-time';\n \n /**\n  * Sentinel error surfaced by `markBriefRead` when the briefId either does\n@@ -737,8 +738,9 @@ export class CoachBriefService {\n     return this.anthropic;\n   }\n \n-  // \u2500\u2500 Resolves the coach's timezone for date bucketing. Defaults to\n-  // 'America/Los_Angeles' when no preferences row exists yet. If a\n+  // \u2500\u2500 Resolves the coach's timezone for date bucketing. With no saved brief\n+  // preferences, match the scheduler: supplied device zone, own coach profile,\n+  // then 'America/Los_Angeles'. If a\n   // historically-persisted preferences row holds an invalid IANA tz\n   // (pre-validator), fall back to UTC with a warning instead of letting\n   // it crash Intl.DateTimeFormat downstream.\n@@ -747,7 +749,20 @@ export class CoachBriefService {\n       where: { coach_id: coachId },\n       select: { timezone: true },\n     });\n-    const tz = prefs?.timezone ?? 'America/Los_Angeles';\n+    let tz = prefs?.timezone;\n+    if (!tz) {\n+      const coach = await this.prisma.user.findUnique({\n+        where: { id: coachId },\n+        select: {\n+          notification_prefs: { select: { timezone: true, timezone_updated_at: true } },\n+          coach_profile: { select: { timezone: true } },\n+        },\n+      });\n+      const supplied = coach?.notification_prefs?.timezone_updated_at\n+        ? usableTimeZone(coach.notification_prefs.timezone)\n+        : null;\n+      tz = supplied ?? usableTimeZone(coach?.coach_profile?.timezone) ?? 'America/Los_Angeles';\n+    }\n     try {\n       new Intl.DateTimeFormat('en-US', { timeZone: tz });\n       return tz;"
+    },
+    {
+      "sha": "66af35d81c29bc15ae1a59bb199f8a8f84437bdb",
+      "filename": "src/scheduling/slot-computer.service.ts",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 17,
+      "changes": 35,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/6d0e1623cd2e04fd6e53a3380339e67caf92fe37/src%2Fscheduling%2Fslot-computer.service.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/6d0e1623cd2e04fd6e53a3380339e67caf92fe37/src%2Fscheduling%2Fslot-computer.service.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fscheduling%2Fslot-computer.service.ts?ref=6d0e1623cd2e04fd6e53a3380339e67caf92fe37",
+      "patch": "@@ -11,8 +11,8 @@\n // All times in/out at the API boundary are UTC ISO strings. The coach\n // timezone only matters to interpret CoachAvailability rows\n // (day_of_week + start_minute/end_minute live in the coach's local\n-// clock). DST is handled by recomputing the tz offset at each local\n-// midnight in the requested range.\n+// clock). The offset is resolved at each window/override boundary, including\n+// when the UTC estimate and the actual local hour fall on opposite sides of DST.\n \n export interface AvailabilityWindow {\n   day_of_week: number; // 0=Sun..6=Sat\n@@ -131,11 +131,10 @@ function localPartsInTz(\n }\n \n // Inverse of localPartsInTz: take a year/month/day + minuteOfDay in\n-// the named tz, return the UTC instant. Handles DST by binary\n-// converging on the offset (handles the \"spring forward\" gap and\n-// \"fall back\" overlap deterministically \u2014 picks the later of two\n-// valid interpretations during overlap, the simple forward step\n-// during gap).\n+// the named tz, return the UTC instant. Re-project after each correction:\n+// an offset read at the initial UTC guess can precede a DST change while the\n+// requested local hour follows it. Ambiguous hours keep the first valid\n+// interpretation; the bounded correction retains the forward step for a gap.\n function utcFromLocal(\n   year: number,\n   month: number, // 1-12\n@@ -144,19 +143,21 @@ function utcFromLocal(\n   tz: string,\n ): Date {\n   // First-pass guess: assume the UTC clock matches the local clock.\n-  const guess = new Date(\n+  let guess = new Date(\n     Date.UTC(year, month - 1, day, Math.floor(minuteOfDay / 60), minuteOfDay % 60),\n   );\n-  // What does that UTC instant project to in `tz`?\n-  const projected = localPartsInTz(guess, tz);\n-  const projectedMin =\n-    (Date.UTC(projected.year, projected.month - 1, projected.day) +\n-      projected.minuteOfDay * 60_000) /\n-    60_000;\n   const wantedMin = (Date.UTC(year, month - 1, day) + minuteOfDay * 60_000) / 60_000;\n-  // Offset in minutes between guess-as-tz and what we wanted.\n-  const offsetMin = projectedMin - wantedMin;\n-  return new Date(guess.getTime() - offsetMin * 60_000);\n+  for (let pass = 0; pass < 3; pass++) {\n+    const projected = localPartsInTz(guess, tz);\n+    const projectedMin =\n+      (Date.UTC(projected.year, projected.month - 1, projected.day) +\n+        projected.minuteOfDay * 60_000) /\n+      60_000;\n+    const correctionMin = wantedMin - projectedMin;\n+    if (correctionMin === 0) return guess;\n+    guess = new Date(guess.getTime() + correctionMin * 60_000);\n+  }\n+  return guess;\n }\n \n function addDays(d: Date, days: number): Date {"
+    },
+    {
+      "sha": "45bc5ab3fd47b04b37b8c47e1a608aca84ebefc1",
+      "filename": "test/coach-brief-local-zone.spec.ts",
+      "status": "added",
+      "additions": 61,
+      "deletions": 0,
+      "changes": 61,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/6d0e1623cd2e04fd6e53a3380339e67caf92fe37/test%2Fcoach-brief-local-zone.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/6d0e1623cd2e04fd6e53a3380339e67caf92fe37/test%2Fcoach-brief-local-zone.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fcoach-brief-local-zone.spec.ts?ref=6d0e1623cd2e04fd6e53a3380339e67caf92fe37",
+      "patch": "@@ -0,0 +1,61 @@\n+import {\n+  bucketDateLocal,\n+  CoachBriefService,\n+} from '../src/coach/brief/coach-brief.service';\n+import {\n+  asConfig,\n+  asPrismaService,\n+  makeMockConfig,\n+  makeMockPrisma,\n+} from './_fixtures/coach-brief-mocks';\n+import { grantAllEgress } from './ai-egress/ai-egress.fakes';\n+\n+function setup() {\n+  const prisma = makeMockPrisma();\n+  prisma.coachBriefPreferences.findUnique.mockResolvedValue(null);\n+  const service = new CoachBriefService(\n+    asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress(),\n+  );\n+  return { prisma, service };\n+}\n+\n+describe('brief generation uses the same unsaved coach zone as the 08:00 push', () => {\n+  it('uses a device-supplied zone so the first Tokyo brief is today, not yesterday', async () => {\n+    const { prisma, service } = setup();\n+    prisma.user.findUnique.mockResolvedValue({\n+      notification_prefs: {\n+        timezone: 'Asia/Tokyo',\n+        timezone_updated_at: new Date('2026-10-06T20:00:00Z'),\n+      },\n+      coach_profile: { timezone: 'America/New_York' },\n+    });\n+    const timezone = await service.resolveCoachTimezone('coach-1');\n+    expect(timezone).toBe('Asia/Tokyo');\n+    expect(bucketDateLocal(new Date('2026-10-06T23:00:00Z'), timezone)).toBe('2026-10-07');\n+  });\n+\n+  it('uses the coach profile before a schema-default notification zone', async () => {\n+    const { prisma, service } = setup();\n+    prisma.user.findUnique.mockResolvedValue({\n+      notification_prefs: { timezone: 'America/Los_Angeles', timezone_updated_at: null },\n+      coach_profile: { timezone: 'America/New_York' },\n+    });\n+    expect(await service.resolveCoachTimezone('coach-1')).toBe('America/New_York');\n+  });\n+\n+  it('keeps an explicitly saved brief zone authoritative', async () => {\n+    const { prisma, service } = setup();\n+    prisma.coachBriefPreferences.findUnique.mockResolvedValue({ timezone: 'Europe/London' });\n+    expect(await service.resolveCoachTimezone('coach-1')).toBe('Europe/London');\n+    expect(prisma.user.findUnique).not.toHaveBeenCalled();\n+  });\n+\n+  it('keeps the established Los Angeles fallback when no own zone is known', async () => {\n+    const { prisma, service } = setup();\n+    prisma.user.findUnique.mockResolvedValue({\n+      notification_prefs: null,\n+      coach_profile: null,\n+    });\n+    expect(await service.resolveCoachTimezone('coach-1')).toBe('America/Los_Angeles');\n+  });\n+});"
+    },
+    {
+      "sha": "685386913d8a6181ab8c2e4bbe161db24525db4a",
+      "filename": "test/slot-computer-dst-daytime.spec.ts",
+      "status": "added",
+      "additions": 53,
+      "deletions": 0,
+      "changes": 53,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/6d0e1623cd2e04fd6e53a3380339e67caf92fe37/test%2Fslot-computer-dst-daytime.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/6d0e1623cd2e04fd6e53a3380339e67caf92fe37/test%2Fslot-computer-dst-daytime.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fslot-computer-dst-daytime.spec.ts?ref=6d0e1623cd2e04fd6e53a3380339e67caf92fe37",
+      "patch": "@@ -0,0 +1,53 @@\n+import {\n+  computeOpenSlots,\n+  isIntervalBookable,\n+  type ComputeInput,\n+} from '../src/scheduling/slot-computer.service';\n+\n+function sunday(date: string): ComputeInput {\n+  return {\n+    from: new Date(`${date}T00:00:00Z`),\n+    to: new Date(`${date}T23:59:59Z`),\n+    durationMinutes: 60,\n+    coachTimezone: 'America/Los_Angeles',\n+    windows: [{ day_of_week: 0, start_minute: 480, end_minute: 600 }],\n+    overrides: [],\n+    bookings: [],\n+  };\n+}\n+\n+describe('ordinary daytime bookings on a DST change day', () => {\n+  it('lists the saved 8\u201310 AM hours on November 1 without an extra 7 AM slot', () => {\n+    expect(computeOpenSlots(sunday('2026-11-01'))).toEqual([\n+      { start_at: '2026-11-01T16:00:00.000Z', end_at: '2026-11-01T17:00:00.000Z' },\n+      { start_at: '2026-11-01T17:00:00.000Z', end_at: '2026-11-01T18:00:00.000Z' },\n+    ]);\n+  });\n+\n+  it('does not let a client request 7 AM outside the coach\u2019s 8 AM opening', () => {\n+    const input = sunday('2026-11-01');\n+    expect(isIntervalBookable(\n+      input, new Date('2026-11-01T15:00:00Z'), new Date('2026-11-01T16:00:00Z'),\n+    )).toBe(false);\n+    expect(isIntervalBookable(\n+      input, new Date('2026-11-01T17:00:00Z'), new Date('2026-11-01T18:00:00Z'),\n+    )).toBe(true);\n+  });\n+\n+  it('applies a saved 9\u201310 AM block in the same local hours as the window', () => {\n+    const input = sunday('2026-11-01');\n+    input.overrides = [\n+      { date: '2026-11-01', kind: 'block', start_minute: 540, end_minute: 600 },\n+    ];\n+    expect(computeOpenSlots(input)).toEqual([\n+      { start_at: '2026-11-01T16:00:00.000Z', end_at: '2026-11-01T17:00:00.000Z' },\n+    ]);\n+  });\n+\n+  it('lists the saved 8\u201310 AM hours on spring-forward day, not 9\u201311 AM', () => {\n+    expect(computeOpenSlots(sunday('2026-03-08'))).toEqual([\n+      { start_at: '2026-03-08T15:00:00.000Z', end_at: '2026-03-08T16:00:00.000Z' },\n+      { start_at: '2026-03-08T16:00:00.000Z', end_at: '2026-03-08T17:00:00.000Z' },\n+    ]);\n+  });\n+});"
+    }
+  ]
+}

@@ -1,0 +1,464 @@
+{
+  "repo": "mobile",
+  "number": 436,
+  "head": "1356b8d425ab604e39c723080c5910e3119dd33e",
+  "base": "8c9b771e896f64662978e5fdf136c269580b7c27",
+  "state": "open",
+  "additions": 252,
+  "deletions": 7,
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112522146221"
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37536769742/job/112519678831"
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37536769468/job/112519677325"
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37536769468/job/112519676878"
+    }
+  ],
+  "comments": []
+}
+
+=== DIFF ===
+
+--- src/api/wearablesConnectionsApi.ts (+23 -0) ---
+@@ -312,6 +312,19 @@ export const disconnectResultSchema = z.object({
+ 
+ export type DisconnectResult = z.infer<typeof disconnectResultSchema>;
+ 
++/**
++ * B-WEARLIST-125: `GET /v1/wearables/connections/providers` →
++ * `{ providers: WearableProvider[] }`, the cloud trackers the server can
++ * connect right now (switch on and that provider's keys set). Ids the app does
++ * not know, and on-device sources, are dropped rather than failing the list.
++ */
++const cloudProvidersSchema = z.object({ providers: z.array(z.string()) });
++
++function isKnownCloudProvider(id: string): id is WearableProvider {
++  const parsed = providerSchema.safeParse(id);
++  return parsed.success && !isOnDeviceProvider(parsed.data);
++}
++
+ // ─── Client ──────────────────────────────────────────────────────────────────
+ 
+ const BASE = '/v1/wearables/connections';
+@@ -327,6 +340,16 @@ export const wearablesConnectionsApi = {
+     return connectionListSchema.parse(res.data);
+   },
+ 
++  /**
++   * B-WEARLIST-125: the cloud providers the server can connect right now.
++   * Older servers answer 404; callers treat any failure as "none listed".
++   * @throws on a transport error or a drifted response.
++   */
++  async cloudProviders(): Promise<WearableProvider[]> {
++    const res = await api.get<unknown>(`${BASE}/providers`);
++    return cloudProvidersSchema.parse(res.data).providers.filter(isKnownCloudProvider);
++  },
++
+   /**
+    * Begin a cloud-OAuth connect flow for a provider. Returns the provider
+    * authorization URL + an opaque single-use CSRF state for the client to open
+
+--- src/hooks/useConnectableCloudProviders.test.ts (+39 -0) ---
+@@ -0,0 +1,39 @@
++/**
++ * B-WEARLIST-125: the server-listed cloud trackers. An older server (404), a
++ * network failure or a drifted body all mean "none listed", so Connections
++ * behaves exactly as before; known cloud ids pass, others are dropped.
++ */
++const mockGet = jest.fn();
++jest.mock('../services/api', () => ({
++  __esModule: true,
++  default: { get: (...args: unknown[]) => mockGet(...args) },
++}));
++
++import { fetchConnectableCloudProviders } from './useConnectableCloudProviders';
++
++describe('fetchConnectableCloudProviders (B-WEARLIST-125)', () => {
++  beforeEach(() => mockGet.mockReset());
++
++  it('reads GET /v1/wearables/connections/providers and keeps known cloud ids', async () => {
++    mockGet.mockResolvedValue({
++      data: { providers: ['OURA', 'POLAR', 'APPLE_HEALTHKIT', 'NEW_THING'] },
++    });
++    await expect(fetchConnectableCloudProviders()).resolves.toEqual(['OURA', 'POLAR']);
++    expect(mockGet).toHaveBeenCalledWith('/v1/wearables/connections/providers');
++  });
++
++  it('lists none when the server has no such route (404)', async () => {
++    mockGet.mockRejectedValue(Object.assign(new Error('Request failed with status code 404'), {
++      isAxiosError: true,
++      response: { status: 404 },
++    }));
++    await expect(fetchConnectableCloudProviders()).resolves.toEqual([]);
++  });
++
++  it('lists none on a network failure or a drifted body', async () => {
++    mockGet.mockRejectedValueOnce(new Error('Network Error'));
++    await expect(fetchConnectableCloudProviders()).resolves.toEqual([]);
++    mockGet.mockResolvedValueOnce({ data: { providers: 'OURA' } });
++    await expect(fetchConnectableCloudProviders()).resolves.toEqual([]);
++  });
++});
+
+--- src/hooks/useConnectableCloudProviders.ts (+42 -0) ---
+@@ -0,0 +1,42 @@
++/**
++ * B-WEARLIST-125: the cloud trackers (Oura, Polar, Withings, ...) the server
++ * can connect right now. The Connections screen offers a cloud tracker only
++ * when it is listed here, so a provider lights up as soon as its keys are set
++ * on the server, with no new app build.
++ *
++ * Any failure (an older server without the route answers 404, no network, a
++ * drifted body) means "none listed": the screen then shows exactly what it
++ * showed before (this phone's own health source plus existing connections),
++ * never a Connect that cannot work. The failure is logged, never shown.
++ */
++
++import { useMemo } from 'react';
++import { useQuery } from '@tanstack/react-query';
++import { wearablesConnectionsApi, type WearableProvider } from '../api/wearablesConnectionsApi';
++import { logger } from '../utils/logger';
++
++export const CONNECTABLE_CLOUD_PROVIDERS_QUERY_KEY = ['wearable-cloud-providers'] as const;
++
++const NONE: ReadonlySet<WearableProvider> = new Set<WearableProvider>();
++
++export async function fetchConnectableCloudProviders(): Promise<WearableProvider[]> {
++  try {
++    return await wearablesConnectionsApi.cloudProviders();
++  } catch (err) {
++    logger.warn('wearables', 'cloud provider list unavailable; showing none', {
++      error: err instanceof Error ? err.name : typeof err,
++    });
++    return [];
++  }
++}
++
++/** The connectable cloud providers as a set (empty while loading or on failure). */
++export function useConnectableCloudProviders(): ReadonlySet<WearableProvider> {
++  const query = useQuery<WearableProvider[], Error>({
++    queryKey: CONNECTABLE_CLOUD_PROVIDERS_QUERY_KEY,
++    queryFn: fetchConnectableCloudProviders,
++    staleTime: 5 * 60_000,
++  });
++  const data = query.data;
++  return useMemo(() => (data && data.length > 0 ? new Set(data) : NONE), [data]);
++}
+
+--- src/screens/client/wearables/ConnectProviderSheet.tsx (+8 -0) ---
+@@ -72,6 +72,8 @@ import {
+ } from '../../../services/health/sessionFence';
+ import {
+   cloudConnectFailureMessage,
++  cloudReturnFailed,
++  cloudReturnedErrorMessage,
+   cloudSessionLockedMessage,
+   connectFailureMessage,
+   ctaLabelFor,
+@@ -251,6 +253,12 @@ export default function ConnectProviderSheet({
+       // list — the server may have completed the connection even if the
+       // in-app session reported a dismiss (e.g. redirect handled out-of-band).
+       invalidate();
++      // B-WEARLIST-125: the server callback reports a failed connect in the
++      // return URL; keep the sheet open with a retry instead of closing it.
++      if (result.type === 'success' && cloudReturnFailed(result.url)) {
++        showMessage(cloudReturnedErrorMessage(name));
++        return;
++      }
+       // Clinic tutorial: only an explicit success counts as connected; a
+       // dismiss is confirmed (or not) by the re-read connections list.
+       if (result.type === 'success') emitTutorialSignal('wearable_connected');
+
+--- src/screens/client/wearables/ConnectionsScreen.tsx (+30 -6) ---
+@@ -18,8 +18,9 @@
+  * Data comes from `useWearableConnections` (cache key ['wearable-connections']).
+  * The list is the join of the user's existing connections with the sources
+  * this phone can connect (AUDIT-11-125: Apple Health on iPhone, Health Connect
+- * and Samsung Health on Android), so those appear with a Connect button even
+- * before a first connect. Tapping Connect / Reconnect opens
++ * and Samsung Health on Android) plus the cloud trackers the server lists as
++ * connectable (B-WEARLIST-125, `useConnectableCloudProviders`), so those
++ * appear with a Connect button even before a first connect. Tapping Connect / Reconnect opens
+  * `ConnectProviderSheet`; Disconnect asks first (DisconnectConfirmDialog, S14 round 4b) and then calls the soft-disconnect mutation.
+  *
+  * States: loading skeleton, error-with-retry, and a per-row pending state on
+@@ -57,6 +58,8 @@ import { notSyncingHereCopy } from './onDeviceCopy';
+ import DisconnectConfirmDialog from './DisconnectConfirmDialog';
+ import { disconnectFailureMessage } from './disconnectCopy';
+ import { isOnDeviceStop } from '../../../services/health/sessionFence';
++import { useConnectableCloudProviders } from '../../../hooks/useConnectableCloudProviders';
++import { cloudBenefit } from './cloudCopy';
+ 
+ // ─── Status presentation ──────────────────────────────────────────────────────
+ 
+@@ -151,12 +154,21 @@ interface ProviderRow {
+  * WHOOP, ...) are not switched on for launch, so offering Connect for them, or
+  * for the other platform's store, only ever ended in "isn't switched on yet".
+  */
+-function connectableHere(provider: WearableProvider, here: WearableProvider | null): boolean {
++function connectableHere(
++  provider: WearableProvider,
++  here: WearableProvider | null,
++  cloud: ReadonlySet<WearableProvider>,
++): boolean {
++  // B-WEARLIST-125: a cloud tracker is offered once the server lists it as
++  // connectable (switch on, keys set); an older server lists none.
++  if (cloud.has(provider)) return true;
+   if (here == null) return false;
+   if (provider === here) return true;
+   return here === 'HEALTH_CONNECT' && provider === 'SAMSUNG_HEALTH';
+ }
+ 
++const NO_CLOUD: ReadonlySet<WearableProvider> = new Set<WearableProvider>();
++
+ /**
+  * Build the flat row list: the sources this phone can connect, plus any other
+  * provider the person already has a connection for (so it can still be
+@@ -169,6 +181,7 @@ export function buildRows(
+   connections: WearableConnection[],
+   local?: { provider: WearableProvider; connectionId: string | null } | null,
+   here: WearableProvider | null = deviceSourceForPlatform(),
++  cloud: ReadonlySet<WearableProvider> = NO_CLOUD,
+ ): ProviderRow[] {
+   const byProvider = new Map<WearableProvider, WearableConnection>();
+   for (const c of connections) {
+@@ -203,7 +216,7 @@ export function buildRows(
+   // as an active source.
+   const rows: ProviderRow[] = WEARABLE_PROVIDERS.map((provider) =>
+     provider === 'SAMSUNG_HEALTH' ? { ...rowFor('HEALTH_CONNECT'), provider } : rowFor(provider),
+-  ).filter((row) => row.status !== 'disconnected' || connectableHere(row.provider, here));
++  ).filter((row) => row.status !== 'disconnected' || connectableHere(row.provider, here, cloud));
+ 
+   const tier = (s: BadgeTone): number =>
+     s === 'connected' ? 0 : s === 'error' || s === 'expired' || s === 'notSyncing' ? 1 : 2;
+@@ -237,6 +250,7 @@ function ConnectionRow({
+   const badge = BADGE_COLORS[row.status];
+   const action = rowAction(row.status);
+   const synced = relativeTime(row.lastSyncedAt);
++  const benefit = cloudBenefit(row.provider);
+ 
+   const handlePress = useCallback(() => {
+     if (action === 'disconnect') onDisconnect(row.provider);
+@@ -248,7 +262,7 @@ function ConnectionRow({
+       style={styles.row}
+       accessibilityLabel={`${config.displayName}, ${badge.label}${
+         synced ? `, last synced ${synced}` : ''
+-      }`}
++      }${benefit ? `. ${benefit}` : ''}`}
+     >
+       {/* Decorative brand glyph — conveyed to AT via the row label. */}
+       <Text style={styles.rowIcon} importantForAccessibility="no">
+@@ -257,6 +271,7 @@ function ConnectionRow({
+ 
+       <View style={styles.rowMain}>
+         <Text style={styles.rowName}>{config.displayName}</Text>
++        {benefit != null && <Text style={styles.benefit}>{benefit}</Text>}
+         <View style={styles.rowMeta}>
+           <View style={[styles.badge, { backgroundColor: badge.bg }]}>
+             <Text style={[styles.badgeText, { color: badge.fg }]}>
+@@ -331,7 +346,11 @@ export default function ConnectionsScreen() {
+         : null,
+     [deviceSource, localAuth.data],
+   );
+-  const rows = useMemo(() => buildRows(data ?? [], local), [data, local]);
++  const cloud = useConnectableCloudProviders();
++  const rows = useMemo(
++    () => buildRows(data ?? [], local, deviceSource, cloud),
++    [data, local, deviceSource, cloud],
++  );
+ 
+   const openConnect = useCallback((provider: WearableProvider) => {
+     setSheetProvider(provider);
+@@ -534,6 +553,11 @@ const styles = StyleSheet.create({
+     ...typography.h4,
+     color: colors.ink,
+   },
++  benefit: {
++    ...typography.bodySmall,
++    color: colors.charcoal,
++    marginTop: 2,
++  },
+   rowMeta: {
+     flexDirection: 'row',
+     alignItems: 'center',
+
+--- src/screens/client/wearables/__tests__/ConnectProviderSheet.test.tsx (+27 -0) ---
+@@ -117,6 +117,33 @@ beforeEach(() => {
+ });
+ 
+ describe('ConnectProviderSheet — cloud OAuth provider', () => {
++  // B-WEARLIST-125: the server callback reports a failed connect in the return
++  // URL; the sheet stays open with a retry instead of closing as connected.
++  it('keeps the sheet open with a retry when the return URL says status=error', async () => {
++    mockStartOauthMutateAsync.mockResolvedValue({
++      authorizationUrl: 'https://provider.example/oauth',
++      state: 'csrf-1',
++    });
++    mockOpenAuthSessionAsync.mockResolvedValue({
++      type: 'success',
++      url: 'tgp://wearables/connected?status=error',
++    });
++    const onClose = jest.fn();
++    const onConnected = jest.fn();
++
++    await render(
++      <ConnectProviderSheet provider="OURA" visible onClose={onClose} onConnected={onConnected} />,
++    );
++    await fireEvent.press(screen.getByLabelText('Continue connecting Oura'));
++
++    await waitFor(() =>
++      expect(screen.getByText(/The sign-in with Oura did not finish\. Tap Continue to try again\./)).toBeTruthy(),
++    );
++    expect(mockInvalidate).toHaveBeenCalled();
++    expect(onConnected).not.toHaveBeenCalled();
++    expect(onClose).not.toHaveBeenCalled();
++  });
++
+   it('starts OAuth, opens the auth session, invalidates, and closes', async () => {
+     mockStartOauthMutateAsync.mockResolvedValue({
+       authorizationUrl: 'https://provider.example/oauth',
+
+--- src/screens/client/wearables/__tests__/ConnectionsScreen.emptyImport.test.tsx (+3 -0) ---
+@@ -26,6 +26,9 @@ jest.mock('../../../../hooks/useWearableConnections', () => ({
+   useInvalidateWearableConnections: () => mockInvalidate,
+ }));
+ jest.mock('expo-web-browser', () => ({ openAuthSessionAsync: jest.fn() }));
++jest.mock('../../../../hooks/useConnectableCloudProviders', () => ({
++  useConnectableCloudProviders: () => new Set(),
++}));
+ jest.mock('../../../../config/healthConnect', () => ({
+   HEALTH_CONNECT_DISABLED_MESSAGE: 'disabled',
+   isHealthConnectProviderDisabled: () => false,
+
+--- src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx (+42 -1) ---
+@@ -57,13 +57,18 @@ jest.mock('../../../../hooks/useWearableConnections', () => ({
+   }),
+ }));
+ 
++// B-WEARLIST-125: the server-listed cloud trackers (empty = older server / 404).
++const mockCloud = jest.fn((): ReadonlySet<string> => new Set<string>());
++jest.mock('../../../../hooks/useConnectableCloudProviders', () => ({
++  useConnectableCloudProviders: () => mockCloud(),
++}));
+ const mockReportUnexpected = jest.fn();
+ jest.mock('../../../../lib/consultation/report', () => ({
+   reportUnexpected: (...args: unknown[]) => mockReportUnexpected(...args),
+ }));
+ 
+ import ConnectionsScreen, { buildRows } from '../ConnectionsScreen';
+-import { configFor } from '../../../../api/wearablesConnectionsApi';
++import { configFor, type WearableProvider } from '../../../../api/wearablesConnectionsApi';
+ import { disconnectConfirmCopy } from '../disconnectCopy';
+ import { emptyImportMessage } from '../onDeviceCopy';
+ import { OnDeviceSessionChangedError } from '../../../../services/health/sessionFence';
+@@ -454,3 +459,39 @@ describe('ConnectionsScreen — sources offered on this phone (AUDIT-11-125)', (
+     ]);
+   });
+ });
++
++// B-WEARLIST-125: a cloud tracker appears the moment the server lists it as
++// connectable; with no list (older server, 404, error) nothing changes.
++describe('ConnectionsScreen — server-listed cloud trackers (B-WEARLIST-125)', () => {
++  afterEach(() => {
++    mockCloud.mockReturnValue(new Set<string>());
++  });
++
++  it('shows a listed tracker with its benefit and a working Connect', async () => {
++    mockCloud.mockReturnValue(new Set(['OURA']));
++    mockUseWearableConnections.mockReturnValue(queryResult({ data: [] }));
++    await render(<ConnectionsScreen />);
++    expect(screen.getByText('Oura')).toBeTruthy();
++    expect(screen.getByText('Sleep, readiness and heart rate from your Oura ring')).toBeTruthy();
++    expect(screen.queryByText('WHOOP')).toBeNull();
++    await fireEvent.press(screen.getByLabelText('Connect Oura'));
++    expect(sheetProps.visible).toBe(true);
++    expect(sheetProps.provider).toBe('OURA');
++  });
++
++  it('shows no cloud tracker when the server lists none', async () => {
++    mockUseWearableConnections.mockReturnValue(queryResult({ data: [] }));
++    await render(<ConnectionsScreen />);
++    for (const name of ['Oura', 'WHOOP', 'Garmin', 'Polar', 'Withings']) {
++      expect(screen.queryByText(name)).toBeNull();
++    }
++    expect(screen.getAllByRole('button')).toHaveLength(1);
++  });
++
++  it('buildRows adds only the listed cloud providers', () => {
++    const names = buildRows([], null, 'APPLE_HEALTHKIT', new Set<WearableProvider>(['OURA', 'POLAR']))
++      .map((r) => r.provider)
++      .sort();
++    expect(names).toEqual(['APPLE_HEALTHKIT', 'OURA', 'POLAR']);
++  });
++});
+
+--- src/screens/client/wearables/cloudCopy.ts (+22 -0) ---
+@@ -0,0 +1,22 @@
++import type { WearableProvider } from '../../../api/wearablesConnectionsApi';
++
++/**
++ * B-WEARLIST-125: the one-line benefit shown under a cloud tracker on
++ * Connections. Each line names only data that tracker's server connector
++ * really reads (growth-project-backend src/wearables/connectors/<provider>).
++ */
++const CLOUD_BENEFIT: Partial<Record<WearableProvider, string>> = {
++  OURA: 'Sleep, readiness and heart rate from your Oura ring',
++  WHOOP: 'Recovery, strain, sleep and HRV from your WHOOP',
++  GARMIN: 'Workouts, sleep, HRV and Body Battery from your Garmin',
++  FITBIT: 'Sleep, heart rate and weight from your Fitbit',
++  POLAR: 'Workouts, sleep and Nightly Recharge from your Polar',
++  WITHINGS: 'Weight, body composition, blood pressure and sleep from Withings',
++  WAHOO: 'Workouts and heart rate from your Wahoo',
++  STRAVA: 'Runs, rides and workouts from Strava',
++};
++
++/** The benefit line for a cloud tracker, or null for every other source. */
++export function cloudBenefit(provider: WearableProvider): string | null {
++  return CLOUD_BENEFIT[provider] ?? null;
++}
+
+--- src/screens/client/wearables/onDeviceCopy.ts (+16 -0) ---
+@@ -424,6 +424,22 @@ export function cloudConnectFailureMessage(err: unknown, name: string): OnDevice
+ }
+ 
+ /** Another in-app sign-in window is already open (auth session `locked`). */
++/**
++ * B-WEARLIST-125: the server callback sent the sign-in window back with
++ * `status=error` (consent declined, an expired link or a failed exchange).
++ */
++export function cloudReturnedErrorMessage(name: string): OnDeviceMessage {
++  return {
++    text: `${name} isn't connected. The sign-in with ${name} did not finish. Tap Continue to try again.`,
++    action: 'connect',
++  };
++}
++
++/** True when the auth-session return URL reports a failed connect. */
++export function cloudReturnFailed(url: string | null | undefined): boolean {
++  return typeof url === 'string' && /[?&]status=error(?:&|#|$)/.test(url);
++}
++
+ export function cloudSessionLockedMessage(name: string): OnDeviceMessage {
+   return {
+     text: `Another sign-in window is already open. Finish or close it, then tap Continue to connect ${name}.`,
+
+SAVED /home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-436.json

@@ -1,0 +1,457 @@
+diff --git a/eas.json b/eas.json
+index fca1d67c..9fcdfe3e 100644
+--- a/eas.json
++++ b/eas.json
+@@ -26,7 +26,8 @@
+         "TGP_ANDROID_HEALTH_CONNECT": "0",
+         "EXPO_PUBLIC_USE_MOCK_COMMAND_CENTER": "false",
+         "EXPO_PUBLIC_NOTIFICATIONS_MOCK": "false",
+-        "EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES": "true"
++        "EXPO_PUBLIC_FF_IOS_HIDE_NON_P2P_PURCHASES": "true",
++        "EXPO_PUBLIC_FF_DELIVERABLES": "true"
+       }
+     },
+     "production": {
+@@ -45,7 +46,8 @@
+         "EXPO_PUBLIC_FF_ROMAN_CHAT": "true",
+         "EXPO_PUBLIC_FF_COMMUNITY_TAB": "true",
+         "EXPO_PUBLIC_FF_COMMUNITY_HALL": "true",
+-        "EXPO_PUBLIC_FF_COMMUNITY_COHORTS": "true"
++        "EXPO_PUBLIC_FF_COMMUNITY_COHORTS": "true",
++        "EXPO_PUBLIC_FF_DELIVERABLES": "true"
+       }
+     },
+     "clinic": {
+@@ -57,6 +59,7 @@
+         "EXPO_PUBLIC_USE_MOCK_COMMAND_CENTER": "false",
+         "EXPO_PUBLIC_NOTIFICATIONS_MOCK": "false",
+         "EXPO_PUBLIC_FF_CLIENT_TUTORIAL": "true",
++        "EXPO_PUBLIC_FF_DELIVERABLES": "true",
+         "EXPO_PUBLIC_FF_COMMUNITY_TAB": "true",
+         "EXPO_PUBLIC_FF_COMMUNITY_HALL": "true",
+         "EXPO_PUBLIC_FF_COMMUNITY_COHORTS": "true",
+diff --git a/src/__tests__/coachMediaPicker.test.tsx b/src/__tests__/coachMediaPicker.test.tsx
+new file mode 100644
+index 00000000..5c7ad85c
+--- /dev/null
++++ b/src/__tests__/coachMediaPicker.test.tsx
+@@ -0,0 +1,147 @@
++// B-DROPS-125: a coach attaching a PDF or video picks or uploads it in the form.
++import React from 'react';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
++
++const mockGet = jest.fn();
++const mockPost = jest.fn();
++jest.mock('../services/api', () => ({
++  __esModule: true,
++  default: {
++    get: (...a: unknown[]) => mockGet(...a),
++    post: (...a: unknown[]) => mockPost(...a),
++  },
++}));
++const mockPick = jest.fn();
++jest.mock('expo-document-picker', () => ({
++  getDocumentAsync: (...a: unknown[]) => mockPick(...a),
++}));
++const mockUpload = jest.fn();
++jest.mock('expo-file-system/legacy', () => ({
++  FileSystemUploadType: { BINARY_CONTENT: 0 },
++  uploadAsync: (...a: unknown[]) => mockUpload(...a),
++}));
++
++// eslint-disable-next-line @typescript-eslint/no-require-imports
++const MediaAssetPicker = require('../screens/coach/payments/contents/MediaAssetPicker').default;
++
++async function renderPicker(kind: 'pdf' | 'video', onSelect = jest.fn(), title = '') {
++  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
++  const utils = await render(
++    <QueryClientProvider client={qc}>
++      <MediaAssetPicker kind={kind} selectedId="" title={title} onSelect={onSelect} />
++    </QueryClientProvider>,
++  );
++  return { ...utils, onSelect };
++}
++
++const PDF_FILE = { uri: 'file:///cache/plan.pdf', name: 'Meal guide.pdf', mimeType: 'application/pdf', size: 1000 };
++
++async function uploadPdf(file: object = PDF_FILE) {
++  mockGet.mockResolvedValue({ data: { media: [] } });
++  mockPick.mockResolvedValue({ canceled: false, assets: [file] });
++  const ui = await renderPicker('pdf');
++  await ui.findByText('No PDF files ready yet. Upload one below.');
++  await fireEvent.press(ui.getByTestId('media-upload-pdf'));
++  return ui;
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++});
++
++describe('MediaAssetPicker (coach attaches a PDF or video)', () => {
++  it('lists only ready files of that kind and selects one', async () => {
++    mockGet.mockResolvedValue({
++      data: {
++        media: [
++          { id: 'm1', kind: 'pdf', title: 'Starter guide', status: 'ready' },
++          { id: 'm2', kind: 'pdf', title: 'Half done', status: 'uploading' },
++        ],
++      },
++    });
++    const { findByText, queryByText, onSelect } = await renderPicker('pdf');
++    await fireEvent.press(await findByText('Starter guide'));
++    expect(onSelect).toHaveBeenCalledWith('m1', 'Starter guide');
++    expect(queryByText('Half done')).toBeNull();
++    expect(mockGet).toHaveBeenCalledWith('/v1/coach/media', { params: { kind: 'pdf' } });
++  });
++
++  it('uploads a PDF: ticket, binary PUT, confirm, then selects it', async () => {
++    mockPost.mockResolvedValueOnce({ data: { media_asset_id: 'new-1', upload_url: 'https://storage.example/up' } });
++    mockPost.mockResolvedValueOnce({ data: { id: 'new-1', status: 'ready' } });
++    mockUpload.mockResolvedValue({ status: 200 });
++    const { findByText, onSelect } = await uploadPdf();
++    await waitFor(() => expect(onSelect).toHaveBeenCalledWith('new-1', 'Meal guide'));
++    expect(mockPost.mock.calls[0]).toEqual([
++      '/v1/coach/media/pdf/upload-url',
++      { title: 'Meal guide', content_type: 'application/pdf' },
++    ]);
++    expect(mockUpload).toHaveBeenCalledWith(
++      'https://storage.example/up',
++      PDF_FILE.uri,
++      expect.objectContaining({ httpMethod: 'PUT', headers: { 'Content-Type': 'application/pdf' } }),
++    );
++    expect(mockPost.mock.calls[1]).toEqual(['/v1/coach/media/new-1/pdf/confirm', {}]);
++    await findByText('Uploaded and selected.');
++  });
++
++  it('a failed transfer does not confirm or select, and says why', async () => {
++    mockPost.mockResolvedValueOnce({ data: { media_asset_id: 'new-2', upload_url: 'https://storage.example/up' } });
++    mockUpload.mockResolvedValue({ status: 500 });
++    const { findByText, onSelect } = await uploadPdf();
++    await findByText('The upload did not finish. Check the connection and try again.');
++    expect(mockPost).toHaveBeenCalledTimes(1);
++    expect(onSelect).not.toHaveBeenCalled();
++  });
++
++  it('refuses a PDF over 50 MB before asking for an upload URL', async () => {
++    const { findByText } = await uploadPdf({ ...PDF_FILE, size: 60 * 1024 * 1024 });
++    await findByText('PDFs can be up to 50 MB.');
++    expect(mockPost).not.toHaveBeenCalled();
++  });
++
++  it('a video upload goes to Mux and waits for processing instead of selecting', async () => {
++    mockGet
++      .mockResolvedValueOnce({ data: { media: [] } })
++      .mockResolvedValue({ data: { media: [{ id: 'v1', kind: 'video', title: 'Form check', status: 'processing' }] } });
++    mockPick.mockResolvedValue({ canceled: false, assets: [{ uri: 'file:///v.mov', name: 'Form check.mov', mimeType: 'video/quicktime' }] });
++    mockPost.mockResolvedValueOnce({ data: { media_asset_id: 'v1', upload_url: 'https://mux.example/up' } });
++    mockUpload.mockResolvedValue({ status: 200 });
++    const { findByText, getByTestId, onSelect } = await renderPicker('video');
++    await findByText('No video files ready yet. Upload one below.');
++    await fireEvent.press(getByTestId('media-upload-video'));
++    await findByText('Processing: Form check');
++    expect(mockPost.mock.calls[0]).toEqual(['/v1/coach/media/video/upload-url', { title: 'Form check' }]);
++    expect(mockPost).toHaveBeenCalledTimes(1);
++    expect(onSelect).not.toHaveBeenCalled();
++  });
++
++  it('shows a specific message when uploads are unavailable (503)', async () => {
++    mockPost.mockRejectedValueOnce({ response: { status: 503, data: { error: 'MEDIA_STORAGE_NOT_CONFIGURED' } } });
++    const { findByText } = await uploadPdf();
++    await findByText('Uploads are unavailable right now. Try again in a few minutes.');
++    expect(mockUpload).not.toHaveBeenCalled();
++  });
++});
++
++describe('ContentAttachForm wires the picker for PDF and video', () => {
++  it('choosing PDF shows the media picker, not only a paste field', async () => {
++    mockGet.mockResolvedValue({ data: { media: [{ id: 'm1', kind: 'pdf', title: 'Starter guide', status: 'ready' }] } });
++    // eslint-disable-next-line @typescript-eslint/no-require-imports
++    const ContentAttachForm = require('../screens/coach/payments/contents/ContentAttachForm').default;
++    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
++    const onSubmitAttach = jest.fn();
++    const ui = await render(
++      <QueryClientProvider client={qc}>
++        <ContentAttachForm visible onCancel={jest.fn()} onSubmitAttach={onSubmitAttach} onSubmitPatch={jest.fn()} />
++      </QueryClientProvider>,
++    );
++    await fireEvent.press(ui.getByLabelText('PDF'));
++    await fireEvent.press(await ui.findByText('Starter guide'));
++    await fireEvent.press(ui.getByTestId('content-attach-submit'));
++    expect(onSubmitAttach).toHaveBeenCalledWith(
++      expect.objectContaining({ asset_type: 'pdf', asset_id: 'm1', display_title: 'Starter guide' }),
++    );
++  });
++});
+diff --git a/src/api/coachMediaApi.ts b/src/api/coachMediaApi.ts
+new file mode 100644
+index 00000000..236cc779
+--- /dev/null
++++ b/src/api/coachMediaApi.ts
+@@ -0,0 +1,77 @@
++// Coach media library (PDF + video) for package contents (B-DROPS-125).
++// Backend coach-media.controller.ts, live in production: GET /v1/coach/media,
++// POST pdf/upload-url + :id/pdf/confirm (Supabase), POST video/upload-url (Mux;
++// its webhook flips the row to 'ready'). Bytes go straight to the signed URL.
++// `byte_size` is never sent: it is a BigInt column the API cannot serialise
++// when non-null, so leaving it null keeps list/confirm responses readable.
++import { FileSystemUploadType, uploadAsync } from 'expo-file-system/legacy';
++import api from '../services/api';
++
++export type CoachMediaKind = 'pdf' | 'video';
++export interface CoachMediaAsset {
++  id: string;
++  kind: CoachMediaKind;
++  title: string;
++  status: string; // uploading | processing | ready | errored
++}
++export interface PickedMediaFile {
++  uri: string;
++  name: string;
++  mimeType?: string | null;
++  size?: number | null;
++}
++
++export const PDF_MAX_BYTES = 50 * 1024 * 1024;
++const TRANSFER_FAILED = 'The upload did not finish. Check the connection and try again.';
++
++export class MediaUploadError extends Error {}
++
++export function mediaTitleFromFile(name: string, fallback: string): string {
++  return (name.replace(/\.[A-Za-z0-9]{1,5}$/, '').trim() || fallback).slice(0, 200);
++}
++
++export const coachMediaApi = {
++  list: (kind: CoachMediaKind) =>
++    api.get<{ media: CoachMediaAsset[] }>('/v1/coach/media', { params: { kind } }),
++
++  /** Create the row, send the file, confirm (PDF). Resolves with the asset id. */
++  async upload(kind: CoachMediaKind, file: PickedMediaFile, title: string): Promise<string> {
++    if (kind === 'pdf' && (file.size ?? 0) > PDF_MAX_BYTES) {
++      throw new MediaUploadError('PDFs can be up to 50 MB.');
++    }
++    const ticket = await api.post<{ media_asset_id: string; upload_url: string }>(
++      `/v1/coach/media/${kind}/upload-url`,
++      kind === 'pdf' ? { title, content_type: 'application/pdf' } : { title },
++    );
++    const { media_asset_id: id, upload_url: url } = ticket.data;
++    const status = await uploadAsync(url, file.uri, {
++      httpMethod: 'PUT',
++      uploadType: FileSystemUploadType.BINARY_CONTENT,
++      headers: {
++        'Content-Type': kind === 'pdf' ? 'application/pdf' : file.mimeType || 'video/mp4',
++      },
++    }).then(
++      (res) => res.status,
++      () => 0,
++    );
++    if (status < 200 || status >= 300) throw new MediaUploadError(TRANSFER_FAILED);
++    if (kind === 'pdf') {
++      await api.post(`/v1/coach/media/${encodeURIComponent(id)}/pdf/confirm`, {});
++    }
++    return id;
++  },
++};
++
++/** Specific, coach-facing copy for an upload failure. */
++export function describeMediaUploadFailure(err: unknown): string {
++  if (err instanceof MediaUploadError) return err.message;
++  const status = (err as { response?: { status?: number } })?.response?.status;
++  if (status === 503) return 'Uploads are unavailable right now. Try again in a few minutes.';
++  if (status === 400) {
++    return 'That file could not be accepted. Pick a PDF up to 50 MB or a standard video file.';
++  }
++  if (status === 402 || status === 403) {
++    return 'Uploading files needs an active coach subscription.';
++  }
++  return TRANSFER_FAILED;
++}
+diff --git a/src/screens/coach/payments/contents/ContentAttachForm.tsx b/src/screens/coach/payments/contents/ContentAttachForm.tsx
+index de2a087d..b53f6bff 100644
+--- a/src/screens/coach/payments/contents/ContentAttachForm.tsx
++++ b/src/screens/coach/payments/contents/ContentAttachForm.tsx
+@@ -50,6 +50,7 @@ import { useTheme, ThemeColors } from '../../../../theme/ThemeProvider';
+ import { mediumTap, warningTap } from '../../../../utils/haptics';
+ import { featureFlags } from '../../../../config/featureFlags';
+ import ProgramAssetPicker from '../../programs/ProgramAssetPicker';
++import MediaAssetPicker from './MediaAssetPicker';
+ 
+ // ─── option tables (mirror the M1 ContentAssetType / CadenceKind unions) ──────
+ 
+@@ -375,9 +376,29 @@ export default function ContentAttachForm({
+                   />
+                 </>
+               ) : null}
++              {/* B-DROPS-125: PDFs and videos are picked from (or uploaded
++                  to) the coach's own media library instead of pasting an ID. */}
++              {assetType === 'pdf' || assetType === 'video' ? (
++                <>
++                  <Label colors={colors}>
++                    {assetType === 'pdf' ? 'PDF' : 'Video'}
++                  </Label>
++                  <MediaAssetPicker
++                    kind={assetType}
++                    selectedId={assetId.trim()}
++                    title={title}
++                    onSelect={(id, name) => {
++                      setAssetId(id);
++                      if (title.trim() === '') setTitle(name);
++                    }}
++                  />
++                </>
++              ) : null}
+               <Label colors={colors}>
+-                {featureFlags.mwbPrograms &&
+-                (assetType === 'workout_program' || assetType === 'workout_plan')
++                {assetType === 'pdf' ||
++                assetType === 'video' ||
++                (featureFlags.mwbPrograms &&
++                  (assetType === 'workout_program' || assetType === 'workout_plan'))
+                   ? 'Or paste an asset reference'
+                   : 'Asset reference'}
+               </Label>
+diff --git a/src/screens/coach/payments/contents/MediaAssetPicker.tsx b/src/screens/coach/payments/contents/MediaAssetPicker.tsx
+new file mode 100644
+index 00000000..47f61d8b
+--- /dev/null
++++ b/src/screens/coach/payments/contents/MediaAssetPicker.tsx
+@@ -0,0 +1,139 @@
++/**
++ * MediaAssetPicker — PDF / video step of ContentAttachForm (B-DROPS-125).
++ * Lists the coach's own files of that kind, uploads a new one from the device
++ * and selects it. Only `ready` files are selectable (the backend refuses to
++ * deliver a file still processing); a new video shows as "Processing" until
++ * Mux finishes.
++ */
++import React, { useCallback, useState } from 'react';
++import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
++import * as DocumentPicker from 'expo-document-picker';
++import { useQuery } from '@tanstack/react-query';
++
++import {
++  coachMediaApi,
++  CoachMediaKind,
++  describeMediaUploadFailure,
++  mediaTitleFromFile,
++} from '../../../../api/coachMediaApi';
++import { useTheme } from '../../../../theme/ThemeProvider';
++import { describeProgramFailure } from '../../../../utils/programErrors';
++import { Chip, FailureBox, LoadingRow } from '../../programs/ProgramUi';
++
++export default function MediaAssetPicker({
++  kind,
++  selectedId,
++  title,
++  onSelect,
++}: {
++  kind: CoachMediaKind;
++  selectedId: string;
++  title: string; // the form's title, used as the file title when filled in
++  onSelect: (id: string, name: string) => void;
++}) {
++  const { colors } = useTheme();
++  const noun = kind === 'pdf' ? 'PDF' : 'video';
++  const [uploading, setUploading] = useState(false);
++  const [msg, setMsg] = useState<{ text: string; error: boolean } | null>(null);
++
++  const media = useQuery({
++    queryKey: ['coach', 'media', kind],
++    queryFn: async () => (await coachMediaApi.list(kind)).data.media ?? [],
++  });
++
++  const onUpload = useCallback(async () => {
++    setMsg(null);
++    let picked: DocumentPicker.DocumentPickerResult;
++    try {
++      picked = await DocumentPicker.getDocumentAsync({
++        type: kind === 'pdf' ? 'application/pdf' : 'video/*',
++        copyToCacheDirectory: true,
++      });
++    } catch {
++      setMsg({ text: `That ${noun} could not be read. Pick another file.`, error: true });
++      return;
++    }
++    const file = picked.canceled ? undefined : picked.assets?.[0];
++    if (!file) return;
++    const name = mediaTitleFromFile(title.trim() || file.name, noun);
++    setUploading(true);
++    try {
++      const id = await coachMediaApi.upload(kind, file, name);
++      await media.refetch();
++      if (kind === 'pdf') onSelect(id, name);
++      setMsg({ text: kind === 'pdf' ? 'Uploaded and selected.' : VIDEO_PENDING, error: false });
++    } catch (err) {
++      setMsg({ text: describeMediaUploadFailure(err), error: true });
++    } finally {
++      setUploading(false);
++    }
++  }, [kind, noun, title, media, onSelect]);
++
++  const rows = media.data ?? [];
++  const ready = rows.filter((r) => r.status === 'ready');
++  const pending = rows.filter((r) => r.status === 'uploading' || r.status === 'processing');
++
++  const hint = (text: string, color = colors.textSecondary) => (
++    <Text style={[styles.hint, { color }]}>{text}</Text>
++  );
++  return (
++    <View testID={`media-picker-${kind}`}>
++      {media.isLoading ? (
++        <LoadingRow label={`Loading your ${noun} files`} />
++      ) : media.error ? (
++        <FailureBox
++          failure={describeProgramFailure(media.error, `load your ${noun} files`)}
++          onRetry={() => media.refetch()}
++        />
++      ) : ready.length === 0 ? (
++        hint(`No ${noun} files ready yet. Upload one below.`)
++      ) : (
++        <View style={styles.row} accessibilityLabel={`Choose a ${noun}`}>
++          {ready.map((r) => (
++            <Chip
++              key={r.id}
++              label={r.title}
++              selected={selectedId === r.id}
++              onPress={() => onSelect(r.id, r.title)}
++              accessibilityLabel={`${r.title}, ${noun}`}
++            />
++          ))}
++        </View>
++      )}
++      {pending.length > 0 ? hint(`Processing: ${pending.map((p) => p.title).join(', ')}`) : null}
++      <View style={styles.row}>
++        <TouchableOpacity
++          style={[styles.uploadBtn, { borderColor: colors.primary }]}
++          onPress={onUpload}
++          disabled={uploading}
++          accessibilityRole="button"
++          accessibilityLabel={`Upload a ${noun}`}
++          accessibilityState={{ disabled: uploading, busy: uploading }}
++          testID={`media-upload-${kind}`}
++        >
++          {uploading ? (
++            <ActivityIndicator color={colors.primary} />
++          ) : (
++            <Text style={[styles.btnText, { color: colors.primary }]}>{`Upload a ${noun}`}</Text>
++          )}
++        </TouchableOpacity>
++        {kind === 'video' ? (
++          <TouchableOpacity onPress={() => media.refetch()} accessibilityRole="button" style={styles.uploadBtn}>
++            <Text style={[styles.btnText, { color: colors.textSecondary }]}>Refresh</Text>
++          </TouchableOpacity>
++        ) : null}
++      </View>
++      {uploading ? hint(`Uploading the ${noun}. Keep the app open until it finishes.`) : null}
++      {msg && !uploading ? hint(msg.text, msg.error ? colors.error : colors.textSecondary) : null}
++    </View>
++  );
++}
++
++const VIDEO_PENDING = 'Uploaded. The video can be attached once processing ends. Tap Refresh in a minute.';
++
++const styles = StyleSheet.create({
++  row: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingVertical: 4 },
++  hint: { fontSize: 13, lineHeight: 19, marginTop: 6 },
++  uploadBtn: { borderWidth: 1, borderColor: 'transparent', borderRadius: 2, padding: 10, alignItems: 'center' },
++  btnText: { fontSize: 14, fontWeight: '500' },
++});

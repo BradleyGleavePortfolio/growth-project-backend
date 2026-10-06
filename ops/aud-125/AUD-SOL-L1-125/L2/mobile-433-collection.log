@@ -1,0 +1,416 @@
+{
+  "repo": "mobile",
+  "number": 433,
+  "head": "88da53118bcd3788b7b41b9669b987ef4f7138fa",
+  "base": "675a0fb4858cdfb439ebed53eb6fa79e47f4daa8",
+  "state": "open",
+  "additions": 159,
+  "deletions": 53,
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112512772905"
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37533574370/job/112508755557"
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37533574449/job/112508755411"
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37533574449/job/112508755059"
+    }
+  ],
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/433#issuecomment-6025963018",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-13-125, agent 125) \u2014 growth-project-mobile#433 @ 88da53118bcd3788b7b41b9669b987ef4f7138fa \u2014 READY FOR AUDIT\n\n- CI at this head is green: Typecheck, lint, test; Analyze; CodeQL.\n- Size: 5 files, +159/-53 (212 lines, tests included).\n- Fixes U-A13-1..4 (see the PR body). Tier T2. Works against the current production backend: no new routes.\n- Tests: the new `src/__tests__/coachHomeAudit13.test.tsx` (7) fails on main, where the API resolves zeros and the at-risk row tap never navigates. `RiskBoardScreen.test.tsx` was updated (16 pass).\n- No overlap with m#414 / m#408 files.\n"
+    }
+  ]
+}
+
+=== DIFF ===
+
+--- src/__tests__/RiskBoardScreen.test.tsx (+16 -16) ---
+@@ -42,9 +42,9 @@ describe('RiskBoardScreen — source guards', () => {
+     expect(SCREEN_SRC).not.toMatch(/risk-board-placeholder/);
+   });
+ 
+-  it('routes coaches to /coach/clients/risk-board and owners to /admin/ptm/risk-board', () => {
+-    // The screen picks the fetcher off ptmApi based on isOwner.
+-    expect(SCREEN_SRC).toMatch(/isOwner\s*\?\s*ptmApi\.getRiskBoard\s*:\s*ptmApi\.getMyRiskBoard/);
++  it('AUDIT-13-125: every role reads /coach/clients/risk-board (the admin route needs a server token)', () => {
++    expect(SCREEN_SRC).toMatch(/ptmApi\.getMyRiskBoard\(/);
++    expect(SCREEN_SRC).not.toMatch(/ptmApi\.getRiskBoard\b/);
+   });
+ 
+   it('renders all four filter chips and re-fetches on filter change', () => {
+@@ -53,13 +53,14 @@ describe('RiskBoardScreen — source guards', () => {
+     expect(SCREEN_SRC).toMatch(/\}\s*,\s*\[filter,\s*canViewBoard\]\s*\)\s*;/);
+   });
+ 
+-  it('navigates to ClientRiskDetail with the userId param', () => {
+-    expect(SCREEN_SRC).toMatch(/navigation\.navigate\(\s*['"]ClientRiskDetail['"]/);
+-    expect(SCREEN_SRC).toMatch(/userId:\s*item\.user_id/);
++  it('AUDIT-13-125: a row opens the client page (the admin-only risk detail always failed)', () => {
++    expect(SCREEN_SRC).toMatch(/navigation\.navigate\(\s*['"]ClientDetail['"]/);
++    expect(SCREEN_SRC).toMatch(/clientId:\s*item\.user_id/);
++    expect(SCREEN_SRC).not.toMatch(/navigation\.navigate\(\s*['"]ClientRiskDetail['"]/);
+   });
+ 
+-  it('shows the 04:00 UTC empty-state copy', () => {
+-    expect(SCREEN_SRC).toMatch(/04:00 UTC/);
++  it('shows plain empty-state copy (no UTC times)', () => {
++    expect(SCREEN_SRC).not.toMatch(/04:00 UTC/);
+   });
+ 
+   it('uses cursor-based pagination with PAGE_SIZE = 20', () => {
+@@ -203,8 +204,7 @@ describe('RiskBoardScreen — coach branch hits the coach-scoped endpoint', () =
+       data: { items: [], next_cursor: null },
+     });
+     const { findByText } = await render(<RiskBoardScreen />);
+-    // Empty-state body text references the nightly recompute window.
+-    expect(await findByText(/04:00 UTC/i)).toBeTruthy();
++    expect(await findByText(/Risk levels update every night/i)).toBeTruthy();
+   });
+ 
+   it('renders a client row when the API returns data (coach — bucket label only)', async () => {
+@@ -246,7 +246,7 @@ describe('RiskBoardScreen — coach branch hits the coach-scoped endpoint', () =
+ 
+ // ─── Owner branch ────────────────────────────────────────────────────────────
+ 
+-describe('RiskBoardScreen — owner branch hits the OWNER endpoint', () => {
++describe('RiskBoardScreen — owner reads the coach-scoped endpoint (AUDIT-13-125)', () => {
+   beforeEach(() => {
+     mockGetRiskBoard.mockClear();
+     mockGetMyRiskBoard.mockClear();
+@@ -257,16 +257,16 @@ describe('RiskBoardScreen — owner branch hits the OWNER endpoint', () => {
+     });
+   });
+ 
+-  it('calls getRiskBoard (OWNER) and never the coach endpoint', async () => {
++  it('calls getMyRiskBoard and never the /admin endpoint an app session cannot pass', async () => {
+     await render(<RiskBoardScreen />);
+     await Promise.resolve();
+-    expect(mockGetRiskBoard).toHaveBeenCalled();
+-    expect(mockGetMyRiskBoard).not.toHaveBeenCalled();
++    expect(mockGetMyRiskBoard).toHaveBeenCalled();
++    expect(mockGetRiskBoard).not.toHaveBeenCalled();
+   });
+ 
+   it('renders a client row with a numeric percentage for the owner', async () => {
+-    // Owner scope: risk_score is returned as a number and displayed as a %.
+-    mockGetRiskBoard.mockResolvedValueOnce({
++    // A numeric risk_score, when present, is still shown as a %.
++    mockGetMyRiskBoard.mockResolvedValueOnce({
+       data: {
+         items: [
+           {
+
+--- src/__tests__/coachHomeAudit13.test.tsx (+91 -0) ---
+@@ -0,0 +1,91 @@
++/**
++ * AUDIT-13-125 — Coach Home (Overview tab).
++ *
++ * U-A13-1: the Overview tab mounts CommandCenterScreen with no props, so
++ * tapping a client on At-Risk / Streaks / Actions or a thread on Inbox did
++ * nothing. Rows now open the client page / the message thread.
++ * U-A13-2: commandCenterApi swallowed every failure and returned zeros, so a
++ * failed load read "0 clients", a red 0% and "No at-risk clients". Errors now
++ * reach the screens' specific error + Retry state.
++ */
++import React from 'react';
++import { fireEvent, render } from '@testing-library/react-native';
++
++const mockNavigate = jest.fn();
++jest.mock('@react-navigation/native', () => ({
++  ...jest.requireActual('@react-navigation/native'),
++  useNavigation: () => ({ navigate: mockNavigate }),
++}));
++jest.mock('react-native-safe-area-context', () => ({
++  useSafeAreaInsets: () => ({ top: 47, bottom: 0, left: 0, right: 0 }),
++}));
++const mockGet = jest.fn();
++jest.mock('../services/api', () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockGet(...a), post: jest.fn() },
++}));
++jest.mock('../components/command-center/CoachLtvDashboard', () => () => null);
++jest.mock('../screens/coach/command-center/CoachHomeCards', () => () => null);
++
++import { commandCenterApi } from '../services/commandCenterApi';
++import CommandCenterScreen from '../screens/coach/command-center/CommandCenterScreen';
++
++beforeEach(() => {
++  mockNavigate.mockClear();
++  mockGet.mockReset();
++});
++
++describe('U-A13-2: no fake zeros when a Coach Home read fails', () => {
++  it.each([
++    ['getOverview'],
++    ['getAtRisk'],
++    ['getWinStreaks'],
++    ['getInbox'],
++    ['getActionQueue'],
++  ] as const)('%s rejects instead of returning zeros', async (fn) => {
++    mockGet.mockRejectedValue(new Error('Network Error'));
++    await expect(commandCenterApi[fn]()).rejects.toThrow('Network Error');
++  });
++});
++
++describe('U-A13-1: Coach Home rows open the right place', () => {
++  it('an at-risk client opens that client page in the Clients tab', async () => {
++    mockGet.mockImplementation(async (url: string) => {
++      if (url.endsWith('/at-risk')) {
++        return {
++          data: {
++            items: [
++              {
++                user_id: 'c-1',
++                display_name: 'Ana Lopez',
++                bucket: 'red',
++                risk_score: null,
++                last_active_at: null,
++                top_factor: 'Missed check-ins',
++                days_since_checkin: 4,
++              },
++            ],
++            total_at_risk: 1,
++          },
++        };
++      }
++      return { data: { roster_size: 1, active_today: 0, check_in_rate_7day: 0, open_alerts: 0, at_risk_count: 1, win_streak_count: 0, unread_messages: 0, pending_actions: 0 } };
++    });
++    const screen = await render(<CommandCenterScreen />);
++    await fireEvent.press(screen.getByTestId('command-center-tab-at-risk'));
++    await fireEvent.press(await screen.findByTestId('command-center-at-risk-row'));
++    expect(mockNavigate).toHaveBeenCalledWith('ClientsStack', {
++      screen: 'ClientDetail',
++      params: { clientId: 'c-1', clientName: 'Ana Lopez' },
++      initial: false,
++    });
++  });
++
++  it('the tab row sits below the status bar', () => {
++    const src = jest.requireActual<typeof import('fs')>('fs').readFileSync(
++      require.resolve('../screens/coach/command-center/CommandCenterScreen.tsx'),
++      'utf8',
++    );
++    expect(src).toMatch(/paddingTop: insets\.top/);
++  });
++});
+
+--- src/screens/coach/RiskBoardScreen.tsx (+11 -7) ---
+@@ -83,8 +83,10 @@ export default function RiskBoardScreen() {
+         // Owner reads the platform-wide /admin endpoint. Coaches read the
+         // coach-scoped endpoint, which is roster-filtered and redacts the
+         // numeric score on the server.
+-        const fetcher = isOwner ? ptmApi.getRiskBoard : ptmApi.getMyRiskBoard;
+-        const res = await fetcher({
++        // AUDIT-13-125: /admin/ptm/* also needs the server service token, so
++        // an app session can never read it; the owner account reads its own
++        // roster through the coach endpoint like every coach.
++        const res = await ptmApi.getMyRiskBoard({
+           bucket,
+           cursor: useCursor,
+           limit: PAGE_SIZE,
+@@ -104,7 +106,7 @@ export default function RiskBoardScreen() {
+         setLoadingMore(false);
+       }
+     },
+-    [cursor, isOwner],
++    [cursor],
+   );
+ 
+   useEffect(() => {
+@@ -149,13 +151,15 @@ export default function RiskBoardScreen() {
+       intent="light"
+       style={styles.row}
+       onPress={() =>
+-        navigation.navigate('ClientRiskDetail', {
+-          userId: item.user_id,
++        // AUDIT-13-125: the risk detail screen reads an owner-only admin
++        // route and always failed; open the client's own page instead.
++        navigation.navigate('ClientDetail', {
++          clientId: item.user_id,
+           clientName: item.name,
+         })
+       }
+       accessibilityRole="button"
+-      accessibilityLabel={`Open risk detail for ${item.name}`}
++      accessibilityLabel={`Open ${item.name}`}
+     >
+       <RiskDot bucket={item.bucket} size={12} />
+       <View style={styles.rowBody}>
+@@ -241,7 +245,7 @@ export default function RiskBoardScreen() {
+               <Text style={styles.emptyBody}>
+                 {error
+                   ? error
+-                  : 'Recompute runs nightly at 04:00 UTC.'}
++                  : 'Risk levels update every night once clients start logging.'}
+               </Text>
+             </View>
+           }
+
+--- src/screens/coach/command-center/CommandCenterScreen.tsx (+32 -5) ---
+@@ -17,7 +17,11 @@ import {
+   ScrollView,
+   Platform,
+ } from 'react-native';
++import { useNavigation } from '@react-navigation/native';
++import type { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
++import { useSafeAreaInsets } from 'react-native-safe-area-context';
+ import { colors, spacing, typography } from '../../../theme/tokens';
++import type { CoachTabParamList } from '../../../navigation/CoachNavigator';
+ import OverviewScreen from './OverviewScreen';
+ import AtRiskScreen from './AtRiskScreen';
+ import WinStreaksScreen from './WinStreaksScreen';
+@@ -55,6 +59,27 @@ export default function CommandCenterScreen({
+   initialTab = 'overview',
+ }: Props) {
+   const [activeTab, setActiveTab] = React.useState<CommandCenterTab>(initialTab);
++  // AUDIT-13-125: the Overview tab mounts this screen with no props, so every
++  // client row and inbox thread was a dead tap. Default to the Clients stack
++  // (`initial: false` keeps the Clients list under it for Back).
++  const navigation = useNavigation<BottomTabNavigationProp<CoachTabParamList>>();
++  const insets = useSafeAreaInsets();
++  const selectClient =
++    onSelectClient ??
++    ((clientId: string, clientName: string) =>
++      navigation.navigate('ClientsStack', {
++        screen: 'ClientDetail',
++        params: { clientId, clientName },
++        initial: false,
++      }));
++  const openThread =
++    onOpenThread ??
++    ((clientId: string, clientName: string) =>
++      navigation.navigate('ClientsStack', {
++        screen: 'ClientMessages',
++        params: { clientId, clientName },
++        initial: false,
++      }));
+ 
+   const renderContent = () => {
+     switch (activeTab) {
+@@ -69,20 +94,22 @@ export default function CommandCenterScreen({
+           />
+         );
+       case 'at-risk':
+-        return <AtRiskScreen onSelectClient={onSelectClient} />;
++        return <AtRiskScreen onSelectClient={selectClient} />;
+       case 'win-streaks':
+-        return <WinStreaksScreen onSelectClient={onSelectClient} />;
++        return <WinStreaksScreen onSelectClient={selectClient} />;
+       case 'inbox':
+-        return <InboxScreen onOpenThread={onOpenThread} />;
++        return <InboxScreen onOpenThread={openThread} />;
+       case 'action-queue':
+-        return <ActionQueueScreen onSelectClient={onSelectClient} />;
++        return <ActionQueueScreen onSelectClient={selectClient} />;
+     }
+   };
+ 
+   return (
+     <View style={styles.container} testID="command-center-root">
+       {/* Top tab bar */}
+-      <View style={styles.tabBarWrapper}>
++      {/* AUDIT-13-125: no header above this tab, so keep the tab row out
++          of the status bar / Dynamic Island on iOS. */}
++      <View style={[styles.tabBarWrapper, { paddingTop: insets.top + (Platform.OS === 'ios' ? 0 : spacing.sm) }]}>
+         <ScrollView
+           horizontal
+           showsHorizontalScrollIndicator={false}
+
+--- src/services/commandCenterApi.ts (+9 -25) ---
+@@ -284,18 +284,18 @@ function mockDelay<T>(value: T): Promise<{ data: T }> {
+   );
+ }
+ 
++// AUDIT-13-125: the five reads below used to swallow every failure and
++// return zeros, so a failed load showed "0 clients", a red 0% and "No
++// at-risk clients". Errors now reach the screens, which show their
++// specific message and a Retry button.
+ export const commandCenterApi = {
+   /**
+    * GET /coach/command-center/overview
+    * Returns KPI tiles for the coach's current roster.
+    */
+   getOverview: async (): Promise<{ data: CommandCenterOverview }> => {
+     if (__USING_MOCK_DATA) return mockDelay(MOCK_OVERVIEW);
+-    try {
+-      return await api.get<CommandCenterOverview>(`${BASE}/overview`);
+-    } catch {
+-      return { data: { roster_size: 0, active_today: 0, check_in_rate_7day: 0, open_alerts: 0, at_risk_count: 0, win_streak_count: 0, unread_messages: 0, pending_actions: 0 } };
+-    }
++    return api.get<CommandCenterOverview>(`${BASE}/overview`);
+   },
+ 
+   /**
+@@ -304,11 +304,7 @@ export const commandCenterApi = {
+    */
+   getAtRisk: async (): Promise<{ data: AtRiskResponse }> => {
+     if (__USING_MOCK_DATA) return mockDelay(MOCK_AT_RISK);
+-    try {
+-      return await api.get<AtRiskResponse>(`${BASE}/at-risk`);
+-    } catch {
+-      return { data: { items: [], total_at_risk: 0 } };
+-    }
++    return api.get<AtRiskResponse>(`${BASE}/at-risk`);
+   },
+ 
+   /**
+@@ -317,11 +313,7 @@ export const commandCenterApi = {
+    */
+   getWinStreaks: async (): Promise<{ data: WinStreaksResponse }> => {
+     if (__USING_MOCK_DATA) return mockDelay(MOCK_WIN_STREAKS);
+-    try {
+-      return await api.get<WinStreaksResponse>(`${BASE}/win-streaks`);
+-    } catch {
+-      return { data: { items: [], total_active_streaks: 0 } };
+-    }
++    return api.get<WinStreaksResponse>(`${BASE}/win-streaks`);
+   },
+ 
+   /**
+@@ -332,11 +324,7 @@ export const commandCenterApi = {
+    */
+   getInbox: async (): Promise<{ data: InboxResponse }> => {
+     if (__USING_MOCK_DATA) return mockDelay(MOCK_INBOX);
+-    try {
+-      return await api.get<InboxResponse>(`${BASE}/inbox`);
+-    } catch {
+-      return { data: { threads: [], total_unread: 0 } };
+-    }
++    return api.get<InboxResponse>(`${BASE}/inbox`);
+   },
+ 
+   /**
+@@ -345,11 +333,7 @@ export const commandCenterApi = {
+    */
+   getActionQueue: async (): Promise<{ data: ActionQueueResponse }> => {
+     if (__USING_MOCK_DATA) return mockDelay(MOCK_ACTION_QUEUE);
+-    try {
+-      return await api.get<ActionQueueResponse>(`${BASE}/action-queue`);
+-    } catch {
+-      return { data: { items: [], total_pending: 0 } };
+-    }
++    return api.get<ActionQueueResponse>(`${BASE}/action-queue`);
+   },
+ 
+   /**
+
+SAVED /home/user/workspace/ops/aud-125/AUD-SOL-L1-125/L2/mobile-433.json

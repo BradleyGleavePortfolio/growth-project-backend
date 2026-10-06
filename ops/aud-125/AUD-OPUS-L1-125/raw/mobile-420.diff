@@ -1,0 +1,363 @@
+diff --git a/src/__tests__/coachSaasBlockers.test.ts b/src/__tests__/coachSaasBlockers.test.ts
+index 7874dac0..cec73b04 100644
+--- a/src/__tests__/coachSaasBlockers.test.ts
++++ b/src/__tests__/coachSaasBlockers.test.ts
+@@ -257,9 +257,18 @@ describe('CoachTeamProfileScreen honesty', () => {
+     expect(src).toMatch(/team\.ok/);
+   });
+ 
+-  it('surfaces the team code for sharing', () => {
+-    expect(src).toContain('buildInviteUniversalLink');
+-    expect(src).toContain('team_code');
++  // AUDIT-16-125: no sign-up or join path accepts the stored GP-TEAM code,
++  // so the screen shares the coach's permanent invite link instead.
++  it('shares the permanent invite link, never the team code', () => {
++    expect(src).toContain('<InviteShareCard');
++    expect(src).not.toContain('profile.team_code');
++    expect(src).not.toContain('buildInviteUniversalLink');
++    expect(src).not.toMatch(/sign up with this code/i);
++  });
++
++  it('shows no invented seat capacity and no unreachable sub-coach link', () => {
++    expect(src).not.toContain('client_capacity');
++    expect(src).not.toContain("navigate('TeamManagement')");
+   });
+ });
+ 
+diff --git a/src/__tests__/coachTeamP0Blockers.test.tsx b/src/__tests__/coachTeamP0Blockers.test.tsx
+index 40234bbf..d1366da8 100644
+--- a/src/__tests__/coachTeamP0Blockers.test.tsx
++++ b/src/__tests__/coachTeamP0Blockers.test.tsx
+@@ -117,7 +117,7 @@ jest.mock('../utils/authEvents', () => ({
+ // Pull the screens / hook AFTER the mocks above are registered.
+ import SubCoachInviteModal from '../screens/coach/SubCoachInviteModal';
+ import CoachInvitesScreen from '../screens/coach/CoachInvitesScreen';
+-import { useCoachRoleType } from '../hooks/useCoachRoleType';
++import { useCoachRoleType, useCoachTeamStatus } from '../hooks/useCoachRoleType';
+ 
+ beforeEach(() => {
+   mockSubCoachInvite.mockReset();
+@@ -217,7 +217,40 @@ describe('P0-1: TeamStack role gating in CoachNavigator', () => {
+     );
+     expect(src).toMatch(/showTeamTab && \(/);
+     expect(src).toContain('useCoachRoleType');
+-    expect(src).toContain("coachRoleType === 'head_coach'");
++    expect(src).toContain(
++      "teamStatus.role === 'head_coach' && teamStatus.hasSubCoaches",
++    );
++  });
++
++  // AUDIT-16-125: every coach is the head coach of their own roster, so the
++  // Team tab (which can only show the plan gate) needs a real sub-coach.
++  it('useCoachTeamStatus reports no team for a head coach with an empty roster', async () => {
++    mockReadUserCache.mockResolvedValue({ id: 'u-head', email: 'h@ex.com', role: 'coach' });
++    mockGetMembers.mockResolvedValue({
++      ok: true,
++      data: [
++        { id: 'u-head', name: 'Head', email: 'h@ex.com', role: 'head_coach', assigned_clients: 3, max_clients: 30, created_at: '' },
++      ],
++    });
++
++    const { result } = await renderHook(() => useCoachTeamStatus());
++    await waitFor(() => expect(result.current.role).toBe('head_coach'));
++    expect(result.current.hasSubCoaches).toBe(false);
++  });
++
++  it('useCoachTeamStatus reports a team once the roster has a sub-coach', async () => {
++    mockReadUserCache.mockResolvedValue({ id: 'u-head', email: 'h@ex.com', role: 'coach' });
++    mockGetMembers.mockResolvedValue({
++      ok: true,
++      data: [
++        { id: 'u-head', name: 'Head', email: 'h@ex.com', role: 'head_coach', assigned_clients: 3, max_clients: 30, created_at: '' },
++        { id: 'u-sub', name: 'Sub', email: 's@ex.com', role: 'sub_coach', assigned_clients: 1, max_clients: 30, created_at: '' },
++      ],
++    });
++
++    const { result } = await renderHook(() => useCoachTeamStatus());
++    await waitFor(() => expect(result.current.hasSubCoaches).toBe(true));
++    expect(result.current.role).toBe('head_coach');
+   });
+ });
+ 
+diff --git a/src/hooks/useCoachRoleType.ts b/src/hooks/useCoachRoleType.ts
+index eac11ff8..ca3d63d7 100644
+--- a/src/hooks/useCoachRoleType.ts
++++ b/src/hooks/useCoachRoleType.ts
+@@ -15,6 +15,11 @@
+  * The canonical signal lives in `/coach/team/members`. Each entry carries
+  * `role: 'head_coach' | 'sub_coach'`, and we match the cached current user
+  * id against the roster to decide.
++ *
++ * `useCoachTeamStatus` also reports whether the roster holds at least one
++ * sub-coach. The members route lists every coach as the head coach of their
++ * own (often empty) roster, so role alone cannot tell a coach who runs a
++ * team from one who does not.
+  */
+ 
+ import { useEffect, useState } from 'react';
+@@ -24,8 +29,16 @@ import { authEvents } from '../utils/authEvents';
+ 
+ export type CoachRoleType = 'head_coach' | 'sub_coach' | 'unknown';
+ 
+-export function useCoachRoleType(): CoachRoleType {
+-  const [role, setRole] = useState<CoachRoleType>('unknown');
++export interface CoachTeamStatus {
++  role: CoachRoleType;
++  /** True only once the roster shows at least one sub-coach. */
++  hasSubCoaches: boolean;
++}
++
++const UNKNOWN_STATUS: CoachTeamStatus = { role: 'unknown', hasSubCoaches: false };
++
++export function useCoachTeamStatus(): CoachTeamStatus {
++  const [status, setStatus] = useState<CoachTeamStatus>(UNKNOWN_STATUS);
+ 
+   useEffect(() => {
+     let mounted = true;
+@@ -34,7 +47,7 @@ export function useCoachRoleType(): CoachRoleType {
+       try {
+         const user = await readUserCache();
+         if (!user || user.role !== 'coach') {
+-          if (mounted) setRole('unknown');
++          if (mounted) setStatus(UNKNOWN_STATUS);
+           return;
+         }
+         const result = await coachTeamApi.getMembers();
+@@ -45,27 +58,30 @@ export function useCoachRoleType(): CoachRoleType {
+           // on a broken backend lose the tab until the next session — the
+           // upgrade-gate alternative would falsely tell paying customers they
+           // need to upgrade, which is worse.
+-          setRole('unknown');
++          setStatus(UNKNOWN_STATUS);
+           return;
+         }
+         const me = result.data.find((m) => m.id === user.id);
+         if (!me) {
+-          setRole('unknown');
++          setStatus(UNKNOWN_STATUS);
+           return;
+         }
+-        setRole(me.role === 'head_coach' ? 'head_coach' : 'sub_coach');
++        setStatus({
++          role: me.role === 'head_coach' ? 'head_coach' : 'sub_coach',
++          hasSubCoaches: result.data.some((m) => m.role === 'sub_coach'),
++        });
+       } catch {
+-        if (mounted) setRole('unknown');
++        if (mounted) setStatus(UNKNOWN_STATUS);
+       }
+     };
+ 
+     void resolve();
+ 
+     const onLogin = () => {
+-      setRole('unknown');
++      setStatus(UNKNOWN_STATUS);
+       void resolve();
+     };
+-    const onLogout = () => setRole('unknown');
++    const onLogout = () => setStatus(UNKNOWN_STATUS);
+     authEvents.on('login', onLogin);
+     authEvents.on('logout', onLogout);
+ 
+@@ -76,5 +92,9 @@ export function useCoachRoleType(): CoachRoleType {
+     };
+   }, []);
+ 
+-  return role;
++  return status;
++}
++
++export function useCoachRoleType(): CoachRoleType {
++  return useCoachTeamStatus().role;
+ }
+diff --git a/src/navigation/CoachNavigator.tsx b/src/navigation/CoachNavigator.tsx
+index 0fdaa9af..459591dc 100644
+--- a/src/navigation/CoachNavigator.tsx
++++ b/src/navigation/CoachNavigator.tsx
+@@ -137,7 +137,7 @@ import BlockedUsersScreen from '../screens/settings/BlockedUsersScreen';
+ import RomanConversationsScreen, { type RomanConversationParams } from '../screens/settings/RomanConversationsScreen';
+ import RomanConversationScreen from '../screens/settings/RomanConversationScreen';
+ import { Colors } from '../constants/colors';
+-import { useCoachRoleType } from '../hooks/useCoachRoleType';
++import { useCoachTeamStatus } from '../hooks/useCoachRoleType';
+ 
+ export type CoachTabParamList = {
+   // Phase 8: Command Center replaces the old top-level Dashboard tab.
+@@ -652,8 +652,12 @@ export default function CoachNavigator() {
+   // closed (returns 'unknown' until a positive head-coach signal), so the
+   // tab disappears for sub-coaches and during the initial resolution
+   // window.
+-  const coachRoleType = useCoachRoleType();
+-  const showTeamTab = coachRoleType === 'head_coach';
++  // AUDIT-16-125: the members route lists every coach as the head coach of
++  // their own roster, so role alone put a Team tab in front of every coach,
++  // where it could only show the plan gate. The tab now mounts only for a
++  // head coach (useCoachRoleType contract) whose roster already has a sub-coach.
++  const teamStatus = useCoachTeamStatus();
++  const showTeamTab = teamStatus.role === 'head_coach' && teamStatus.hasSubCoaches;
+   // Audit P0: while the Command Center API still ships only mock data
+   // (__USING_MOCK_DATA driven by EXPO_PUBLIC_USE_MOCK_COMMAND_CENTER), the
+   // initial tab for a real coach is ClientsStack. Mock-mode builds (demo,
+diff --git a/src/screens/coach/CoachTeamProfileScreen.tsx b/src/screens/coach/CoachTeamProfileScreen.tsx
+index 482de776..ce53cbac 100644
+--- a/src/screens/coach/CoachTeamProfileScreen.tsx
++++ b/src/screens/coach/CoachTeamProfileScreen.tsx
+@@ -1,9 +1,11 @@
+ /**
+  * CoachTeamProfileScreen
+  *
+- * The head coach's team / gym / organization profile. Renders the team
+- * code clients can sign up with, total seat capacity across head coach +
+- * sub-coaches, and links into TeamManagement for sub-coach administration.
++ * The head coach's team / gym / organization profile. Renders the coach's
++ * permanent invite link (the code every sign-up path accepts) and the client
++ * count. AUDIT-16-125: the stored team code (GP-TEAM-...) is not accepted by
++ * any sign-up or join path, so it is no longer shown or shared; the invented
++ * seat capacity and the unreachable sub-coach link are gone too.
+  *
+  * Renders an honest setup CTA when the backend has not provisioned the
+  * /coach/team endpoint yet (404). Never invents data.
+@@ -14,7 +16,6 @@ import {
+   ActivityIndicator,
+   Alert,
+   Modal,
+-  Share,
+   StyleSheet,
+   Text,
+   TextInput,
+@@ -31,7 +32,7 @@ import {
+ } from '../../api/coachTeamApi';
+ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+ import { errorMessage } from '../../types/common';
+-import { buildInviteUniversalLink } from '../../utils/deepLink';
++import InviteShareCard from '../../components/coach/setup/InviteShareCard';
+ 
+ export default function CoachTeamProfileScreen() {
+   const { colors } = useTheme();
+@@ -76,18 +77,6 @@ export default function CoachTeamProfileScreen() {
+     }
+   };
+ 
+-  const handleShareTeamCode = async (profile: TeamProfile) => {
+-    try {
+-      const url = buildInviteUniversalLink(profile.team_code);
+-      await Share.share({
+-        url,
+-        message: `Join ${profile.business_name} on The Growth Project: ${url}\nTeam code: ${profile.team_code}`,
+-      });
+-    } catch {
+-      // Share sheet dismissed — no-op.
+-    }
+-  };
+-
+   if (!team) {
+     return <SkeletonScreen count={5} />;
+   }
+@@ -112,8 +101,8 @@ export default function CoachTeamProfileScreen() {
+           <Ionicons name="business-outline" size={36} color={colors.textMuted} />
+           <Text style={styles.gateTitle}>Set up your team</Text>
+           <Text style={styles.gateBody}>
+-            Add a business name to generate a team code clients can use at signup.
+-            Sub-coaches you add later live under this team.
++            Add a business name for your team profile. Clients join with your
++            invite link.
+           </Text>
+           <TouchableOpacity
+             style={styles.cta}
+@@ -179,45 +168,14 @@ export default function CoachTeamProfileScreen() {
+       <Text style={styles.header}>{profile.business_name}</Text>
+       <Text style={styles.subheader}>Team profile</Text>
+ 
+-      <View style={styles.codeCard}>
+-        <Text style={styles.codeLabel}>TEAM CODE</Text>
+-        <Text style={styles.codeText} selectable>
+-          {profile.team_code}
+-        </Text>
+-        <Text style={styles.codeHint}>
+-          Clients who sign up with this code join your team. You can reassign them
+-          to any sub-coach.
+-        </Text>
+-        <View style={styles.codeActions}>
+-          <TouchableOpacity
+-            style={styles.actionBtn}
+-            onPress={() => handleShareTeamCode(profile)}
+-            accessibilityRole="button"
+-            accessibilityLabel="Share team code"
+-          >
+-            <Ionicons name="share-outline" size={16} color={colors.primary} />
+-            <Text style={styles.actionBtnText}>Share team code</Text>
+-          </TouchableOpacity>
+-        </View>
+-      </View>
++      <Text style={styles.codeLabel}>CLIENT INVITE LINK</Text>
++      <InviteShareCard testID="team-invite-share" />
+ 
+       <View style={styles.statsRow}>
+         <View style={styles.statCard}>
+           <Text style={styles.statValue}>{profile.clients_assigned}</Text>
+           <Text style={styles.statLabel}>Clients</Text>
+         </View>
+-        <View style={styles.statCard}>
+-          <Text style={styles.statValue}>{profile.client_capacity}</Text>
+-          <Text style={styles.statLabel}>Seats</Text>
+-        </View>
+-        <View style={styles.statCard}>
+-          <Text style={styles.statValue}>
+-            {profile.client_capacity > 0
+-              ? Math.max(0, profile.client_capacity - profile.clients_assigned)
+-              : 0}
+-          </Text>
+-          <Text style={styles.statLabel}>Open</Text>
+-        </View>
+       </View>
+ 
+       {!profile.payouts_enabled ? (
+@@ -234,17 +192,6 @@ export default function CoachTeamProfileScreen() {
+         </TouchableOpacity>
+       ) : null}
+ 
+-      <TouchableOpacity
+-        style={styles.linkRow}
+-        onPress={() => navigation.navigate('TeamManagement')}
+-        accessibilityRole="button"
+-        accessibilityLabel="Open team management"
+-      >
+-        <Ionicons name="people-outline" size={20} color={colors.primary} />
+-        <Text style={styles.linkText}>Manage sub-coaches</Text>
+-        <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+-      </TouchableOpacity>
+-
+       <TouchableOpacity
+         style={styles.linkRow}
+         onPress={() => navigation.navigate('CoachMoney')}
+@@ -284,28 +231,7 @@ const makeStyles = (colors: ThemeColors) =>
+     center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },
+     header: { fontSize: 26, fontWeight: '600', color: colors.textPrimary },
+     subheader: { fontSize: 13, color: colors.textSecondary, marginBottom: 16 },
+-    codeCard: {
+-      backgroundColor: colors.surface,
+-      borderRadius: 14,
+-      padding: 16,
+-      borderWidth: 1,
+-      borderColor: colors.border,
+-      marginTop: 12,
+-    },
+-    codeLabel: { fontSize: 11, color: colors.textMuted, letterSpacing: 0.5 },
+-    codeText: { fontSize: 28, fontWeight: '600', color: colors.textPrimary, marginVertical: 4 },
+-    codeHint: { fontSize: 12, color: colors.textSecondary, lineHeight: 17, marginBottom: 12 },
+-    codeActions: { flexDirection: 'row', gap: 12 },
+-    actionBtn: {
+-      flexDirection: 'row',
+-      alignItems: 'center',
+-      gap: 6,
+-      paddingHorizontal: 12,
+-      paddingVertical: 8,
+-      backgroundColor: colors.primary + '15',
+-      borderRadius: 8,
+-    },
+-    actionBtnText: { color: colors.primary, fontSize: 13, fontWeight: '500' },
++    codeLabel: { fontSize: 11, color: colors.textMuted, letterSpacing: 0.5, marginTop: 12, marginBottom: 8 },
+     statsRow: { flexDirection: 'row', gap: 10, marginTop: 16 },
+     statCard: {
+       flex: 1,

@@ -1,0 +1,284 @@
+diff --git a/src/__tests__/workoutAssignmentRomanSets125.test.tsx b/src/__tests__/workoutAssignmentRomanSets125.test.tsx
+new file mode 100644
+index 00000000..e896b1d3
+--- /dev/null
++++ b/src/__tests__/workoutAssignmentRomanSets125.test.tsx
+@@ -0,0 +1,133 @@
++/**
++ * B-ROMANADJ-125: a coach approves Roman's set change in the Action Queue;
++ * the client's workout screen shows and starts the approved sets, with a
++ * small "Updated by your coach" note. An older server (no field) keeps
++ * today's behaviour.
++ */
++import React from 'react';
++import { render, fireEvent } from '@testing-library/react-native';
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
++import { overlayRomanAdjustedSets } from '../utils/workout/romanAdjustedSets';
++
++const mockGetById = jest.fn();
++jest.mock('../api/exerciseLibraryApi', () => ({
++  exerciseLibraryApi: { getById: (...a: unknown[]) => mockGetById(...a) },
++}));
++
++const mockNavigate = jest.fn();
++jest.mock('@react-navigation/native', () => {
++  const actual = jest.requireActual('@react-navigation/native');
++  return {
++    ...actual,
++    useNavigation: () => ({
++      navigate: mockNavigate,
++      getParent: () => ({ getParent: () => ({ navigate: mockNavigate }) }),
++    }),
++    useRoute: () => ({ params: { assignmentId: 'asg-1' } }),
++  };
++});
++
++let mockAssignment: { data: unknown; isLoading: boolean; isError: boolean } = {
++  data: undefined,
++  isLoading: false,
++  isError: false,
++};
++jest.mock('../hooks/useWorkoutBuilder', () => ({
++  useMyWorkoutAssignment: () => ({ ...mockAssignment, refetch: jest.fn(), isRefetching: false }),
++}));
++
++// eslint-disable-next-line @typescript-eslint/no-require-imports
++const WorkoutAssignmentDetailScreen = require('../screens/client/WorkoutAssignmentDetailScreen').default;
++
++function wrap(node: React.ReactElement) {
++  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
++  return <QueryClientProvider client={qc}>{node}</QueryClientProvider>;
++}
++
++const EXERCISES = [
++  { id: 'pe1', exercise_external_id: 'bench', order: 1, sets: 4, reps_or_duration_seconds: 8, weight_lbs: 95, rest_seconds: 90, notes: null },
++  { id: 'pe2', exercise_external_id: 'row', order: 2, sets: 3, reps_or_duration_seconds: 10, weight_lbs: null, rest_seconds: 60, notes: null },
++];
++
++function assignment(extra: Record<string, unknown>) {
++  return {
++    id: 'asg-1',
++    completed_at: null,
++    post_rpe: null,
++    workout_plan: { id: 'plan-1', name: 'Upper A', type: 'strength', duration_estimate_minutes: 45, exercises: EXERCISES },
++    ...extra,
++  };
++}
++
++async function openAndStart() {
++  const screen = await render(wrap(<WorkoutAssignmentDetailScreen />));
++  expect(await screen.findByText('Start workout')).toBeTruthy();
++  await fireEvent.press(screen.getByText('Start workout'));
++  expect(mockNavigate).toHaveBeenCalledTimes(1);
++  const started = JSON.parse(mockNavigate.mock.calls[0][1].params.exercises) as Array<{ sets: number }>;
++  return { screen, startedSets: started.map((e) => e.sets) };
++}
++
++beforeEach(() => {
++  mockNavigate.mockReset();
++  mockGetById.mockReset();
++  mockGetById.mockImplementation((id: string) => Promise.resolve({ data: { id, name: id === 'row' ? 'Barbell Row' : 'Bench Press' } }));
++});
++
++describe('approved Roman set changes on the client workout (B-ROMANADJ-125)', () => {
++  it('shows and starts the approved set count, with the coach note on that exercise only', async () => {
++    mockAssignment = { data: assignment({ roman_adjusted_sets: [{ order: 1, sets: 2 }] }), isLoading: false, isError: false };
++    const { screen, startedSets } = await openAndStart();
++    expect(screen.getByText(/^2 sets × 8 reps/)).toBeTruthy();
++    expect(screen.queryByText(/^4 sets/)).toBeNull();
++    expect(screen.getByTestId('assignment-adjusted-1')).toBeTruthy();
++    expect(screen.queryByTestId('assignment-adjusted-2')).toBeNull();
++    expect(screen.getAllByText('Updated by your coach')).toHaveLength(1);
++    expect(startedSets).toEqual([2, 3]);
++  });
++
++  it('older server (field missing): the live plan exactly as before', async () => {
++    mockAssignment = { data: assignment({}), isLoading: false, isError: false };
++    const { screen, startedSets } = await openAndStart();
++    expect(screen.getByText(/^4 sets × 8 reps/)).toBeTruthy();
++    expect(screen.queryByText('Updated by your coach')).toBeNull();
++    expect(startedSets).toEqual([4, 3]);
++  });
++
++  it('empty list: nothing changes', async () => {
++    mockAssignment = { data: assignment({ roman_adjusted_sets: [] }), isLoading: false, isError: false };
++    const { screen, startedSets } = await openAndStart();
++    expect(screen.queryByText('Updated by your coach')).toBeNull();
++    expect(startedSets).toEqual([4, 3]);
++  });
++
++  it('an order the plan no longer has is ignored', async () => {
++    mockAssignment = { data: assignment({ roman_adjusted_sets: [{ order: 9, sets: 1 }] }), isLoading: false, isError: false };
++    const { screen, startedSets } = await openAndStart();
++    expect(screen.queryByText('Updated by your coach')).toBeNull();
++    expect(startedSets).toEqual([4, 3]);
++  });
++});
++
++describe('overlayRomanAdjustedSets', () => {
++  const rows = [
++    { order: 1, sets: 4 },
++    { order: 2, sets: 3 },
++  ];
++
++  it('overlays by order and reports which orders changed', () => {
++    const out = overlayRomanAdjustedSets(rows, [{ order: 2, sets: 1 }]);
++    expect(out.exercises).toEqual([{ order: 1, sets: 4 }, { order: 2, sets: 1 }]);
++    expect([...out.adjustedOrders]).toEqual([2]);
++    // The input is not mutated.
++    expect(rows[1].sets).toBe(3);
++  });
++
++  it('ignores malformed input and keeps the rows as they are', () => {
++    for (const raw of [undefined, null, 'x', {}, [null, { order: 'one', sets: 2 }, { order: 1, sets: 0 }, { order: 1.5, sets: 2 }]]) {
++      const out = overlayRomanAdjustedSets(rows, raw);
++      expect(out.exercises).toEqual(rows);
++      expect(out.adjustedOrders.size).toBe(0);
++    }
++  });
++});
+diff --git a/src/api/workoutBuilderApi.ts b/src/api/workoutBuilderApi.ts
+index 14995450..1665adc9 100644
+--- a/src/api/workoutBuilderApi.ts
++++ b/src/api/workoutBuilderApi.ts
+@@ -101,6 +101,11 @@ export interface ClientWorkoutAssignment {
+ 
+ export interface ClientWorkoutAssignmentWithPlan extends ClientWorkoutAssignment {
+   workout_plan: WorkoutPlan;
++  /**
++   * Set counts the coach approved from Roman's Action Queue, by exercise
++   * `order` (B-ROMANADJ-125). Absent on servers without that change.
++   */
++  roman_adjusted_sets?: Array<{ order: number; sets: number }>;
+ }
+ 
+ // ─── API ─────────────────────────────────────────────────────────────────────
+diff --git a/src/screens/client/WorkoutAssignmentDetailScreen.tsx b/src/screens/client/WorkoutAssignmentDetailScreen.tsx
+index 4208d164..f8f5be6b 100644
+--- a/src/screens/client/WorkoutAssignmentDetailScreen.tsx
++++ b/src/screens/client/WorkoutAssignmentDetailScreen.tsx
+@@ -36,6 +36,7 @@ import {
+   buildActiveWorkoutExercises,
+   prettifyExerciseName,
+ } from '../../utils/workout/buildActiveWorkout';
++import { overlayRomanAdjustedSets } from '../../utils/workout/romanAdjustedSets';
+ 
+ type RouteParams = {
+   WorkoutAssignmentDetail: { assignmentId: string };
+@@ -55,6 +56,18 @@ export default function WorkoutAssignmentDetailScreen() {
+     void refetch();
+   }, [refetch]);
+ 
++  // B-ROMANADJ-125: set counts the coach approved from Roman's Action Queue
++  // are laid over the live plan by `order`, for the list and for Start. No
++  // field (older server) = the live plan exactly as before.
++  const overlay = useMemo(
++    () =>
++      overlayRomanAdjustedSets(
++        data?.workout_plan?.exercises ?? [],
++        data?.roman_adjusted_sets,
++      ),
++    [data],
++  );
++
+   // The plan stores only catalog ids (e.g. "0025" or "seed:push-001"). The
+   // screen used to prettify the id, so a client saw "1. Exercise" or
+   // "1. Push 001" instead of "Barbell Bench Press". Resolve the real names
+@@ -76,7 +89,7 @@ export default function WorkoutAssignmentDetailScreen() {
+ 
+   const handleStart = useCallback(() => {
+     if (!data || namesLoading) return;
+-    const exercises = buildActiveWorkoutExercises(data.workout_plan).map((e) => ({
++    const exercises = buildActiveWorkoutExercises({ exercises: overlay.exercises }).map((e) => ({
+       ...e,
+       // Saved with the workout, shown in history and to the coach.
+       exerciseName: exerciseNames[e.exerciseId] || e.exerciseName,
+@@ -106,7 +119,7 @@ export default function WorkoutAssignmentDetailScreen() {
+     }
+     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     (navigation as any).navigate('ActiveWorkout', params);
+-  }, [data, navigation, exerciseNames, namesLoading]);
++  }, [data, navigation, exerciseNames, namesLoading, overlay]);
+ 
+   if (isLoading) {
+     return <SkeletonScreen count={5} />;
+@@ -135,7 +148,7 @@ export default function WorkoutAssignmentDetailScreen() {
+   }
+ 
+   const plan = data.workout_plan;
+-  const sorted = [...plan.exercises].sort((a, b) => a.order - b.order);
++  const sorted = [...overlay.exercises].sort((a, b) => a.order - b.order);
+   const isCompleted = !!data.completed_at;
+ 
+   return (
+@@ -173,6 +186,14 @@ export default function WorkoutAssignmentDetailScreen() {
+               {ex.weight_lbs ? ` • ${ex.weight_lbs} lbs` : ''}
+               {ex.rest_seconds ? ` • ${ex.rest_seconds}s rest` : ''}
+             </Text>
++            {overlay.adjustedOrders.has(ex.order) ? (
++              <Text
++                style={[typography.bodySmall, { color: sc.accent, marginTop: 4 }]}
++                testID={`assignment-adjusted-${ex.order}`}
++              >
++                Updated by your coach
++              </Text>
++            ) : null}
+             {ex.notes ? (
+               <Text
+                 style={[typography.bodySmall, { color: sc.textMuted, marginTop: 4 }]}
+diff --git a/src/utils/workout/romanAdjustedSets.ts b/src/utils/workout/romanAdjustedSets.ts
+new file mode 100644
+index 00000000..f8956f66
+--- /dev/null
++++ b/src/utils/workout/romanAdjustedSets.ts
+@@ -0,0 +1,50 @@
++/**
++ * B-ROMANADJ-125: when a coach approves Roman's set change in the Action
++ * Queue, the server writes the new set counts into the assignment and lists
++ * them on the client read as `roman_adjusted_sets` ({ order, sets }). The
++ * client screen renders the live plan (so the coach's later edits stay
++ * visible), so only these set counts are laid over it, matched by the
++ * exercise `order`.
++ *
++ * Missing or empty field (a server without this change) or an order that
++ * no longer exists in the plan leaves the exercise exactly as it was.
++ */
++
++export interface RomanAdjustedSet {
++  order: number;
++  sets: number;
++}
++
++export interface RomanSetsOverlay<E> {
++  exercises: E[];
++  /** Orders whose set count now comes from a coach-approved change. */
++  adjustedOrders: ReadonlySet<number>;
++}
++
++function readAdjustedSets(raw: unknown): Map<number, number> {
++  const byOrder = new Map<number, number>();
++  if (!Array.isArray(raw)) return byOrder;
++  for (const item of raw) {
++    if (!item || typeof item !== 'object') continue;
++    const { order, sets } = item as Partial<RomanAdjustedSet>;
++    if (typeof order !== 'number' || !Number.isInteger(order)) continue;
++    if (typeof sets !== 'number' || !Number.isInteger(sets) || sets < 1) continue;
++    byOrder.set(order, sets);
++  }
++  return byOrder;
++}
++
++export function overlayRomanAdjustedSets<E extends { order: number; sets: number }>(
++  exercises: readonly E[],
++  raw: unknown,
++): RomanSetsOverlay<E> {
++  const byOrder = readAdjustedSets(raw);
++  const adjustedOrders = new Set<number>();
++  const out = exercises.map((ex) => {
++    const sets = byOrder.get(ex.order);
++    if (sets === undefined) return ex;
++    adjustedOrders.add(ex.order);
++    return sets === ex.sets ? ex : { ...ex, sets };
++  });
++  return { exercises: out, adjustedOrders };
++}

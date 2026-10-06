@@ -1,0 +1,235 @@
+diff --git a/src/coach/brief/coach-brief.service.ts b/src/coach/brief/coach-brief.service.ts
+index 0c167fe3e..64e5f0195 100644
+--- a/src/coach/brief/coach-brief.service.ts
++++ b/src/coach/brief/coach-brief.service.ts
+@@ -37,6 +37,7 @@ import {
+ import { createAnthropicClient } from '../../ai-egress/provider-clients';
+ import { COACH_AI_MODEL } from '../../ai/coach/coach-ai.constants';
+ import { describeFailure } from '../../observability/log-pii';
++import { usableTimeZone } from '../../notifications/local-time';
+ 
+ /**
+  * Sentinel error surfaced by `markBriefRead` when the briefId either does
+@@ -737,8 +738,9 @@ export class CoachBriefService {
+     return this.anthropic;
+   }
+ 
+-  // ── Resolves the coach's timezone for date bucketing. Defaults to
+-  // 'America/Los_Angeles' when no preferences row exists yet. If a
++  // ── Resolves the coach's timezone for date bucketing. With no saved brief
++  // preferences, match the scheduler: supplied device zone, own coach profile,
++  // then 'America/Los_Angeles'. If a
+   // historically-persisted preferences row holds an invalid IANA tz
+   // (pre-validator), fall back to UTC with a warning instead of letting
+   // it crash Intl.DateTimeFormat downstream.
+@@ -747,7 +749,20 @@ export class CoachBriefService {
+       where: { coach_id: coachId },
+       select: { timezone: true },
+     });
+-    const tz = prefs?.timezone ?? 'America/Los_Angeles';
++    let tz = prefs?.timezone;
++    if (!tz) {
++      const coach = await this.prisma.user.findUnique({
++        where: { id: coachId },
++        select: {
++          notification_prefs: { select: { timezone: true, timezone_updated_at: true } },
++          coach_profile: { select: { timezone: true } },
++        },
++      });
++      const supplied = coach?.notification_prefs?.timezone_updated_at
++        ? usableTimeZone(coach.notification_prefs.timezone)
++        : null;
++      tz = supplied ?? usableTimeZone(coach?.coach_profile?.timezone) ?? 'America/Los_Angeles';
++    }
+     try {
+       new Intl.DateTimeFormat('en-US', { timeZone: tz });
+       return tz;
+diff --git a/src/scheduling/slot-computer.service.ts b/src/scheduling/slot-computer.service.ts
+index a6618a63f..66af35d81 100644
+--- a/src/scheduling/slot-computer.service.ts
++++ b/src/scheduling/slot-computer.service.ts
+@@ -11,8 +11,8 @@
+ // All times in/out at the API boundary are UTC ISO strings. The coach
+ // timezone only matters to interpret CoachAvailability rows
+ // (day_of_week + start_minute/end_minute live in the coach's local
+-// clock). DST is handled by recomputing the tz offset at each local
+-// midnight in the requested range.
++// clock). The offset is resolved at each window/override boundary, including
++// when the UTC estimate and the actual local hour fall on opposite sides of DST.
+ 
+ export interface AvailabilityWindow {
+   day_of_week: number; // 0=Sun..6=Sat
+@@ -131,11 +131,10 @@ function localPartsInTz(
+ }
+ 
+ // Inverse of localPartsInTz: take a year/month/day + minuteOfDay in
+-// the named tz, return the UTC instant. Handles DST by binary
+-// converging on the offset (handles the "spring forward" gap and
+-// "fall back" overlap deterministically — picks the later of two
+-// valid interpretations during overlap, the simple forward step
+-// during gap).
++// the named tz, return the UTC instant. Re-project after each correction:
++// an offset read at the initial UTC guess can precede a DST change while the
++// requested local hour follows it. Ambiguous hours keep the first valid
++// interpretation; the bounded correction retains the forward step for a gap.
+ function utcFromLocal(
+   year: number,
+   month: number, // 1-12
+@@ -144,19 +143,21 @@ function utcFromLocal(
+   tz: string,
+ ): Date {
+   // First-pass guess: assume the UTC clock matches the local clock.
+-  const guess = new Date(
++  let guess = new Date(
+     Date.UTC(year, month - 1, day, Math.floor(minuteOfDay / 60), minuteOfDay % 60),
+   );
+-  // What does that UTC instant project to in `tz`?
+-  const projected = localPartsInTz(guess, tz);
+-  const projectedMin =
+-    (Date.UTC(projected.year, projected.month - 1, projected.day) +
+-      projected.minuteOfDay * 60_000) /
+-    60_000;
+   const wantedMin = (Date.UTC(year, month - 1, day) + minuteOfDay * 60_000) / 60_000;
+-  // Offset in minutes between guess-as-tz and what we wanted.
+-  const offsetMin = projectedMin - wantedMin;
+-  return new Date(guess.getTime() - offsetMin * 60_000);
++  for (let pass = 0; pass < 3; pass++) {
++    const projected = localPartsInTz(guess, tz);
++    const projectedMin =
++      (Date.UTC(projected.year, projected.month - 1, projected.day) +
++        projected.minuteOfDay * 60_000) /
++      60_000;
++    const correctionMin = wantedMin - projectedMin;
++    if (correctionMin === 0) return guess;
++    guess = new Date(guess.getTime() + correctionMin * 60_000);
++  }
++  return guess;
+ }
+ 
+ function addDays(d: Date, days: number): Date {
+diff --git a/test/coach-brief-local-zone.spec.ts b/test/coach-brief-local-zone.spec.ts
+new file mode 100644
+index 000000000..45bc5ab3f
+--- /dev/null
++++ b/test/coach-brief-local-zone.spec.ts
+@@ -0,0 +1,61 @@
++import {
++  bucketDateLocal,
++  CoachBriefService,
++} from '../src/coach/brief/coach-brief.service';
++import {
++  asConfig,
++  asPrismaService,
++  makeMockConfig,
++  makeMockPrisma,
++} from './_fixtures/coach-brief-mocks';
++import { grantAllEgress } from './ai-egress/ai-egress.fakes';
++
++function setup() {
++  const prisma = makeMockPrisma();
++  prisma.coachBriefPreferences.findUnique.mockResolvedValue(null);
++  const service = new CoachBriefService(
++    asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress(),
++  );
++  return { prisma, service };
++}
++
++describe('brief generation uses the same unsaved coach zone as the 08:00 push', () => {
++  it('uses a device-supplied zone so the first Tokyo brief is today, not yesterday', async () => {
++    const { prisma, service } = setup();
++    prisma.user.findUnique.mockResolvedValue({
++      notification_prefs: {
++        timezone: 'Asia/Tokyo',
++        timezone_updated_at: new Date('2026-10-06T20:00:00Z'),
++      },
++      coach_profile: { timezone: 'America/New_York' },
++    });
++    const timezone = await service.resolveCoachTimezone('coach-1');
++    expect(timezone).toBe('Asia/Tokyo');
++    expect(bucketDateLocal(new Date('2026-10-06T23:00:00Z'), timezone)).toBe('2026-10-07');
++  });
++
++  it('uses the coach profile before a schema-default notification zone', async () => {
++    const { prisma, service } = setup();
++    prisma.user.findUnique.mockResolvedValue({
++      notification_prefs: { timezone: 'America/Los_Angeles', timezone_updated_at: null },
++      coach_profile: { timezone: 'America/New_York' },
++    });
++    expect(await service.resolveCoachTimezone('coach-1')).toBe('America/New_York');
++  });
++
++  it('keeps an explicitly saved brief zone authoritative', async () => {
++    const { prisma, service } = setup();
++    prisma.coachBriefPreferences.findUnique.mockResolvedValue({ timezone: 'Europe/London' });
++    expect(await service.resolveCoachTimezone('coach-1')).toBe('Europe/London');
++    expect(prisma.user.findUnique).not.toHaveBeenCalled();
++  });
++
++  it('keeps the established Los Angeles fallback when no own zone is known', async () => {
++    const { prisma, service } = setup();
++    prisma.user.findUnique.mockResolvedValue({
++      notification_prefs: null,
++      coach_profile: null,
++    });
++    expect(await service.resolveCoachTimezone('coach-1')).toBe('America/Los_Angeles');
++  });
++});
+diff --git a/test/slot-computer-dst-daytime.spec.ts b/test/slot-computer-dst-daytime.spec.ts
+new file mode 100644
+index 000000000..685386913
+--- /dev/null
++++ b/test/slot-computer-dst-daytime.spec.ts
+@@ -0,0 +1,53 @@
++import {
++  computeOpenSlots,
++  isIntervalBookable,
++  type ComputeInput,
++} from '../src/scheduling/slot-computer.service';
++
++function sunday(date: string): ComputeInput {
++  return {
++    from: new Date(`${date}T00:00:00Z`),
++    to: new Date(`${date}T23:59:59Z`),
++    durationMinutes: 60,
++    coachTimezone: 'America/Los_Angeles',
++    windows: [{ day_of_week: 0, start_minute: 480, end_minute: 600 }],
++    overrides: [],
++    bookings: [],
++  };
++}
++
++describe('ordinary daytime bookings on a DST change day', () => {
++  it('lists the saved 8–10 AM hours on November 1 without an extra 7 AM slot', () => {
++    expect(computeOpenSlots(sunday('2026-11-01'))).toEqual([
++      { start_at: '2026-11-01T16:00:00.000Z', end_at: '2026-11-01T17:00:00.000Z' },
++      { start_at: '2026-11-01T17:00:00.000Z', end_at: '2026-11-01T18:00:00.000Z' },
++    ]);
++  });
++
++  it('does not let a client request 7 AM outside the coach’s 8 AM opening', () => {
++    const input = sunday('2026-11-01');
++    expect(isIntervalBookable(
++      input, new Date('2026-11-01T15:00:00Z'), new Date('2026-11-01T16:00:00Z'),
++    )).toBe(false);
++    expect(isIntervalBookable(
++      input, new Date('2026-11-01T17:00:00Z'), new Date('2026-11-01T18:00:00Z'),
++    )).toBe(true);
++  });
++
++  it('applies a saved 9–10 AM block in the same local hours as the window', () => {
++    const input = sunday('2026-11-01');
++    input.overrides = [
++      { date: '2026-11-01', kind: 'block', start_minute: 540, end_minute: 600 },
++    ];
++    expect(computeOpenSlots(input)).toEqual([
++      { start_at: '2026-11-01T16:00:00.000Z', end_at: '2026-11-01T17:00:00.000Z' },
++    ]);
++  });
++
++  it('lists the saved 8–10 AM hours on spring-forward day, not 9–11 AM', () => {
++    expect(computeOpenSlots(sunday('2026-03-08'))).toEqual([
++      { start_at: '2026-03-08T15:00:00.000Z', end_at: '2026-03-08T16:00:00.000Z' },
++      { start_at: '2026-03-08T16:00:00.000Z', end_at: '2026-03-08T17:00:00.000Z' },
++    ]);
++  });
++});

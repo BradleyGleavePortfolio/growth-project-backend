@@ -1,0 +1,147 @@
+{
+  "repo": "mobile",
+  "number": 415,
+  "head": "e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a",
+  "base": "db48b96a7b4511ae1937c0ac1cf998ffe2664994",
+  "title": "fix(help-links): coach Help centre and Membership link open real pages (HUNT-09-124)",
+  "body": "HUNT-09-124 (agent 124), DAY-1 EDGE HUNT: config vs code truth. T1 (two link targets, copy on one button, tests). 136 changed lines.\n\n## What a person hit on production (public GETs, 10-06 ~13:00 PDT)\n- B-H09-1: a coach (or the App Store reviewer on the coach account) taps Settings > Help centre and the browser shows a raw JSON `Cannot GET /help/coach` 404. `helpUrl('/coach')` builds `https://app.trygrowthproject.com/help/coach`; the backend serves only `/help`, `/help/setup`, `/help/first-client`, `/help/tour`, `/help/faq`, `/help/support`, `/help/contact`, `/help/delete-account` (backend `src/main.ts` setGlobalPrefix exclude). Broken links in the app are an App Review 2.1 (completeness) risk.\n- U-H09-2: an Android client taps More > Membership > \"Open trygrowthproject.com\" and lands on \"Page not available\": the bare site root is the custom-domain coach-landing route, which 404s on the canonical host.\n\n## Fix\n- `src/screens/coach/SettingsScreen.tsx`: Help centre opens `helpUrl()` (the help centre home, 200; it lists the coach guides).\n- `src/screens/client/MembershipScreen.tsx`: the secondary link reads \"Contact support\" and opens `/help/contact` (200). Still hidden on iOS non-P2P builds (unchanged gate). No overlap with m#402's hunk in this file (explainer copy, lines 165-170).\n- `src/config/env.ts`: `HELP_PAGE_PATHS` (the served list) and `HELP_CONTACT_URL`.\n\n## Tests (failing first)\n- Commit 229b9eca adds the tests without the screen fix; ci-lane run on that commit is expected red.\n- `src/__tests__/hunt09HelpLinks.test.ts`: every `helpUrl('<literal>')` in src is a served help page; no screen opens the bare site root.\n- `src/__tests__/membershipWebsiteLinkIos.test.tsx`: Android press opens `/help/contact`.\n- `src/navigation/__tests__/coachSettingsMoneyRow.test.tsx`: Help centre press opens the help home, not `/help/coach` (env mock now a function).\n\nMust merge before the 10-07 build to ship in it.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 126,
+  "deletions": 10,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/415",
+  "comments": [],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112478490771",
+      "id": 112478490771,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A415+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112478490771/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37524582094/job/112478242160",
+      "id": 112478242160,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112478242160/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37524582094/job/112478241762",
+      "id": 112478241762,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112478241762/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37524582046/job/112478226420",
+      "id": 112478226420,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112478226420/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "e4cd38ab52f91061974e400e0e9453faf26e80ca",
+      "filename": "src/__tests__/hunt09HelpLinks.test.ts",
+      "status": "added",
+      "additions": 63,
+      "deletions": 0,
+      "changes": 63,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a/src%2F__tests__%2Fhunt09HelpLinks.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a/src%2F__tests__%2Fhunt09HelpLinks.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2Fhunt09HelpLinks.test.ts?ref=e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a",
+      "patch": "@@ -0,0 +1,63 @@\n+/**\n+ * HUNT-09-124 (config vs code truth): every help link the app opens must be a\n+ * page the backend serves. Production answered a raw JSON 404 for\n+ * helpUrl('/coach') (coach Settings > Help centre) and \"Page not available\"\n+ * for the bare site root (client More > Membership > Open trygrowthproject.com).\n+ * The served list mirrors growth-project-backend src/main.ts (setGlobalPrefix\n+ * exclude: help, help/setup, help/first-client, help/tour, help/faq,\n+ * help/support, help/contact, help/delete-account).\n+ */\n+import * as fs from 'fs';\n+import * as path from 'path';\n+import { HELP_CONTACT_URL, HELP_PAGE_PATHS, env, helpUrl } from '../config/env';\n+\n+const SRC = path.join(__dirname, '..');\n+\n+function sourceFiles(dir: string, out: string[] = []): string[] {\n+  for (const name of fs.readdirSync(dir)) {\n+    const full = path.join(dir, name);\n+    const stat = fs.statSync(full);\n+    if (stat.isDirectory()) {\n+      if (name === '__tests__' || name === '__fixtures__' || name === 'node_modules') continue;\n+      sourceFiles(full, out);\n+    } else if (/\\.(ts|tsx)$/.test(name) && !/\\.test\\.(ts|tsx)$/.test(name)) {\n+      out.push(full);\n+    }\n+  }\n+  return out;\n+}\n+\n+// env.ts documents the old mistakes in comments; it is the definition site.\n+const files = sourceFiles(SRC).filter((f) => !f.endsWith(path.join('config', 'env.ts')));\n+\n+describe('help links point at pages the backend serves', () => {\n+  it('every helpUrl() literal path is a served help page', () => {\n+    const served = new Set<string>(HELP_PAGE_PATHS);\n+    const bad: string[] = [];\n+    for (const file of files) {\n+      const text = fs.readFileSync(file, 'utf8');\n+      const re = /helpUrl\\(\\s*(?:'([^']*)'|\"([^\"]*)\"|`([^`$]*)`)?\\s*\\)/g;\n+      let m: RegExpExecArray | null;\n+      while ((m = re.exec(text)) !== null) {\n+        const raw = m[1] ?? m[2] ?? m[3] ?? '';\n+        const p = raw === '' ? '' : raw.startsWith('/') ? raw : `/${raw}`;\n+        if (!served.has(p)) bad.push(`${path.relative(SRC, file)}: helpUrl('${raw}')`);\n+      }\n+    }\n+    expect(bad).toEqual([]);\n+  });\n+\n+  it('no screen opens the bare site root (it answers \"Page not available\")', () => {\n+    const bad = files.filter((file) =>\n+      /openURL\\(\\s*['\"`]https:\\/\\/app\\.trygrowthproject\\.com\\/?['\"`]\\s*\\)/.test(\n+        fs.readFileSync(file, 'utf8'),\n+      ),\n+    );\n+    expect(bad.map((f) => path.relative(SRC, f))).toEqual([]);\n+  });\n+\n+  it('the contact link is the served /help/contact page', () => {\n+    expect(HELP_CONTACT_URL).toBe(`${env.HELP_BASE_URL}/contact`);\n+    expect(helpUrl()).toBe(env.HELP_BASE_URL);\n+  });\n+});"
+    },
+    {
+      "sha": "fe9ea783e4cd39babc477e6255ce92ce566c913e",
+      "filename": "src/__tests__/membershipWebsiteLinkIos.test.tsx",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 1,
+      "changes": 12,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a/src%2F__tests__%2FmembershipWebsiteLinkIos.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a/src%2F__tests__%2FmembershipWebsiteLinkIos.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FmembershipWebsiteLinkIos.test.tsx?ref=e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a",
+      "patch": "@@ -5,7 +5,7 @@\n  */\n import React from 'react';\n import { Linking, Platform } from 'react-native';\n-import { render, waitFor } from '@testing-library/react-native';\n+import { fireEvent, render, waitFor } from '@testing-library/react-native';\n \n const mockState: { flag: boolean; build: string | null } = { flag: true, build: '6' };\n jest.mock('../config/featureFlags', () => {\n@@ -95,4 +95,14 @@ describe('MembershipScreen website link', () => {\n     const r = await render(<MembershipScreen />);\n     await waitFor(() => expect(r.getByTestId('membership-website-link')).toBeTruthy());\n   });\n+\n+  it('on Android opens the contact support page, not the bare site root (HUNT-09-124)', async () => {\n+    setOS('android');\n+    mockState.flag = true;\n+    const r = await render(<MembershipScreen />);\n+    await waitFor(() => expect(r.getByTestId('membership-website-link')).toBeTruthy());\n+    expect(r.getByText('Contact support')).toBeTruthy();\n+    await fireEvent.press(r.getByTestId('membership-website-link'));\n+    expect(Linking.openURL).toHaveBeenCalledWith('https://app.trygrowthproject.com/help/contact');\n+  });\n });"
+    },
+    {
+      "sha": "656e6d308b3dcbbbd12c916046c1a6dbec0aaf67",
+      "filename": "src/config/env.ts",
+      "status": "modified",
+      "additions": 20,
+      "deletions": 0,
+      "changes": 20,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a/src%2Fconfig%2Fenv.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a/src%2Fconfig%2Fenv.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fconfig%2Fenv.ts?ref=e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a",
+      "patch": "@@ -60,6 +60,26 @@ export function helpUrl(pathname?: string): string {\n   return `${resolvedHelpBaseUrl}${suffix}`;\n }\n \n+// The help pages the backend actually serves (growth-project-backend\n+// src/public-pages/public-pages.controller.ts and the setGlobalPrefix exclude\n+// list in src/main.ts). Any other /help/<x> path answers a raw JSON 404, so\n+// every helpUrl() call in the app must use one of these (HUNT-09-124:\n+// helpUrl('/coach') opened \"Cannot GET /help/coach\").\n+export const HELP_PAGE_PATHS = [\n+  '',\n+  '/setup',\n+  '/first-client',\n+  '/tour',\n+  '/faq',\n+  '/support',\n+  '/contact',\n+  '/delete-account',\n+] as const;\n+\n+// Contact support page (email support, what to include). The site root\n+// (app.trygrowthproject.com/) is not a page: it answers \"Page not available\".\n+export const HELP_CONTACT_URL = helpUrl('/contact');\n+\n // Public policy pages, served by the backend at the site root\n // (growth-project-backend src/public-pages/trust-pages.html.ts: /privacy,\n // /consumer-health-privacy, /terms). They are NOT under the help centre, so"
+    },
+    {
+      "sha": "6838b326aac3601895ec8e3d5b2f75eb9dee7076",
+      "filename": "src/navigation/__tests__/coachSettingsMoneyRow.test.tsx",
+      "status": "modified",
+      "additions": 21,
+      "deletions": 2,
+      "changes": 23,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a/src%2Fnavigation%2F__tests__%2FcoachSettingsMoneyRow.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a/src%2Fnavigation%2F__tests__%2FcoachSettingsMoneyRow.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fnavigation%2F__tests__%2FcoachSettingsMoneyRow.test.tsx?ref=e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a",
+      "patch": "@@ -5,7 +5,8 @@\n  * imessageDmRoutes.test.tsx (the existing coach Settings render harness).\n  */\n import React from \"react\";\n-import { render, fireEvent } from \"@testing-library/react-native\";\n+import { render, fireEvent, waitFor } from \"@testing-library/react-native\";\n+import { Linking } from \"react-native\";\n import { act } from \"@testing-library/react-native\";\n // Required lazily so the Settings harness loads on a head without it.\n const noteHeadCoachHandlesMoney = (v: boolean): void => {\n@@ -102,7 +103,10 @@ jest.mock(\"../../components/BiometricUnlockSetting\", () => {\n   return { __esModule: true, default: () => React.createElement(View) };\n });\n \n-jest.mock(\"../../config/env\", () => ({ helpUrl: \"https://example.com/help\" }));\n+// HUNT-09-124: helpUrl is a function; the help-row case below asserts the path it is called with.\n+jest.mock(\"../../config/env\", () => ({\n+  helpUrl: (p?: string) => `https://example.com/help${p ? (p.startsWith(\"/\") ? p : `/${p}`) : \"\"}`,\n+}));\n \n // Coach settings sub-components \u2014 replace with minimal stubs so the screen\n // renders without their internal data dependencies firing.\n@@ -196,3 +200,18 @@ describe(\"coach Settings Featured coach row (M-FEATURED-123)\", () => {\n     expect(r.queryByTestId(\"settings-featured-coach\")).toBeNull();\n   });\n });\n+\n+describe(\"coach Settings Help centre row (HUNT-09-124)\", () => {\n+  it(\"opens the help centre home, not the missing /help/coach page\", async () => {\n+    const canOpen = jest.spyOn(Linking, \"canOpenURL\").mockResolvedValue(true);\n+    const open = jest.spyOn(Linking, \"openURL\").mockResolvedValue(true);\n+    // eslint-disable-next-line @typescript-eslint/no-var-requires\n+    const CoachSettings = require(\"../../screens/coach/SettingsScreen\").default;\n+    const r = await render(<CoachSettings />);\n+    await fireEvent.press(r.getByLabelText(\"Open help centre\"));\n+    await waitFor(() => expect(open).toHaveBeenCalledWith(\"https://example.com/help\"));\n+    expect(open).not.toHaveBeenCalledWith(\"https://example.com/help/coach\");\n+    canOpen.mockRestore();\n+    open.mockRestore();\n+  });\n+});"
+    },
+    {
+      "sha": "cc4c1bb0ba4240ddc46380b642e5367837223a52",
+      "filename": "src/screens/client/MembershipScreen.tsx",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 6,
+      "changes": 14,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a/src%2Fscreens%2Fclient%2FMembershipScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a/src%2Fscreens%2Fclient%2FMembershipScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2FMembershipScreen.tsx?ref=e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a",
+      "patch": "@@ -27,6 +27,7 @@ import HapticPressable from '../../components/HapticPressable';\n import { useCurrentUser } from '../../hooks/useCurrentUser';\n import { aiApi, AIStructuredContext, usersApi } from '../../services/api';\n import { nonP2PPurchasesHidden } from '../../config/purchaseSurfaces';\n+import { HELP_CONTACT_URL } from '../../config/env';\n \n import { colors as colorTokens, typography } from '../../theme/tokens';\n import { useTheme, ThemeColors } from '../../theme/ThemeProvider';\n@@ -205,7 +206,9 @@ export default function MembershipScreen() {\n               <Text style={styles.primaryActionLabel}>MESSAGE YOUR COACH</Text>\n             </HapticPressable>\n \n-            {/* Secondary \u2014 open the public site for general inquiries.\n+            {/* Secondary \u2014 the contact support page for general inquiries.\n+                HUNT-09-124: the site root is not a page (it answers \"Page\n+                not available\"), so this opens /help/contact.\n                 Audit #304 C2: not rendered on hidden iOS builds. A website\n                 link from the membership/billing context reads as steering to\n                 an external purchase (Guideline 3.1.1). The permitted 1:1\n@@ -216,15 +219,14 @@ export default function MembershipScreen() {\n                 intent=\"light\"\n                 style={styles.secondaryAction}\n                 onPress={() =>\n-                  Linking.openURL('https://app.trygrowthproject.com').catch(\n-                    () => undefined,\n-                  )\n+                  Linking.openURL(HELP_CONTACT_URL).catch(() => undefined)\n                 }\n                 accessibilityRole=\"link\"\n-                accessibilityLabel=\"Open trygrowthproject.com\"\n+                accessibilityLabel=\"Contact support\"\n+                accessibilityHint=\"Opens the contact support page in your browser\"\n               >\n                 <Text style={styles.secondaryActionLabel}>\n-                  Open trygrowthproject.com\n+                  Contact support\n                 </Text>\n               </HapticPressable>\n             )}"
+    },
+    {
+      "sha": "4514e79fd48100756f9ad4eae363bfd34b8920e7",
+      "filename": "src/screens/coach/SettingsScreen.tsx",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 1,
+      "changes": 4,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a/src%2Fscreens%2Fcoach%2FSettingsScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a/src%2Fscreens%2Fcoach%2FSettingsScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FSettingsScreen.tsx?ref=e0dbbb006ddfc1755e11305fbf5f0d68d6b59e0a",
+      "patch": "@@ -288,7 +288,9 @@ export default function SettingsScreen() {\n \n   const handleOpenHelp = async () => {\n     mediumTap();\n-    const url = helpUrl('/coach');\n+    // The help centre home lists the coach guides (setup, first client, tour,\n+    // FAQ, support). There is no /help/coach page (HUNT-09-124).\n+    const url = helpUrl();\n     try {\n       const supported = await Linking.canOpenURL(url);\n       if (!supported) {"
+    }
+  ]
+}

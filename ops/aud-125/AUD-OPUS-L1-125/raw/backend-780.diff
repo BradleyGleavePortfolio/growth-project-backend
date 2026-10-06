@@ -1,0 +1,1316 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 7c2ae44e0..754df88bc 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -404,6 +404,15 @@ jobs:
+         env:
+           NODE_OPTIONS: --max-old-space-size=4096
+ 
++      - name: Run private custom foods live RLS suite (UX-FOOD-PRIV-124)
++        # Builds a minimal FoodItem with its 20261213000000 RLS statements verbatim, applies
++        # prisma/migrations/20270403000000_private_custom_foods/migration.sql verbatim, and proves as
++        # API principals (authenticated/anon/service_role + the app.* GUCs) that a custom food is read
++        # only by its creator while the shared catalog stays readable. Refuses to skip under CI=true.
++        run: npx jest --config jest.rls.config.js test/rls/food-item-custom-privacy-rls.spec.ts --runInBand --testTimeout=60000
++        env:
++          NODE_OPTIONS: --max-old-space-size=4096
++
+   community-live-tests:
+     # C-610-4 (#610 fix round 2, T4 CI gate change): the DB-backed community
+     # moderation/safety suites were env-gated on COMMUNITY_TEST_DATABASE_URL
+diff --git a/prisma/migrations/20270403000000_private_custom_foods/down.sql b/prisma/migrations/20270403000000_private_custom_foods/down.sql
+new file mode 100644
+index 000000000..23fae98a3
+--- /dev/null
++++ b/prisma/migrations/20270403000000_private_custom_foods/down.sql
+@@ -0,0 +1,13 @@
++-- Reverse of 20270403000000_private_custom_foods. Restores the catalog SELECT
++-- policy of 20261213000000_rls_tier3_nutrition verbatim, then drops the owner
++-- column with its index and FK. Only for a confirmed defect: dropping the
++-- column makes every custom food a shared catalog row again.
++
++DROP POLICY IF EXISTS "p_fooditem_select_own" ON "FoodItem";
++DROP POLICY IF EXISTS "p_fooditem_select" ON "FoodItem";
++CREATE POLICY "p_fooditem_select" ON "FoodItem" AS PERMISSIVE FOR SELECT TO public USING (true);
++COMMENT ON POLICY "p_fooditem_select" ON "FoodItem" IS 'PR-RLS-05 public-catalog-read: the food catalog is a shared reference table; any caller (including unauthenticated) may read.';
++
++ALTER TABLE "FoodItem" DROP CONSTRAINT IF EXISTS "FoodItem_created_by_user_id_fkey";
++DROP INDEX IF EXISTS "FoodItem_created_by_user_id_idx";
++ALTER TABLE "FoodItem" DROP COLUMN IF EXISTS "created_by_user_id";
+diff --git a/prisma/migrations/20270403000000_private_custom_foods/migration.sql b/prisma/migrations/20270403000000_private_custom_foods/migration.sql
+new file mode 100644
+index 000000000..8a9b2eb0b
+--- /dev/null
++++ b/prisma/migrations/20270403000000_private_custom_foods/migration.sql
+@@ -0,0 +1,38 @@
++-- UX-FOOD-PRIV-124: custom foods are private to the person who created them.
++--
++-- Additive only. Reverse: down.sql. No backfill: every existing row keeps a
++-- null owner and stays in the shared catalog exactly as before.
++--
++-- "FoodItem"."created_by_user_id": set only by the custom-food create path
++-- (POST /foods). Seeded rows and USDA / OpenFoodFacts imports stay null-owned
++-- and shared. The backend serves an owned row only to its creator; the
++-- account-deletion manifest deletes it with the account, so a private row
++-- never becomes a shared catalog row. ON DELETE CASCADE (never SET NULL) for
++-- the same reason: the User row is tombstoned, but if a User row were ever
++-- removed its private foods must go with it rather than turn public.
++--
++-- RLS (FoodItem stays ENABLE + FORCE from 20261213000000_rls_tier3_nutrition;
++-- service_role and the owner-only write policies are unchanged):
++--   * p_fooditem_select (public, including anon): only the shared catalog,
++--     created_by_user_id IS NULL. Was USING (true).
++--   * p_fooditem_select_own (authenticated): the creator's own rows, plus the
++--     platform owner, through the existing app.current_user_id() and
++--     app.is_owner() helpers. anon is not named, so no helper is called for it.
++
++SET lock_timeout = '5s';
++
++-- 1) Owner column, index and FK (the shape prisma generates for schema.prisma)
++ALTER TABLE "FoodItem" ADD COLUMN "created_by_user_id" TEXT;
++
++CREATE INDEX "FoodItem_created_by_user_id_idx" ON "FoodItem"("created_by_user_id");
++
++ALTER TABLE "FoodItem" ADD CONSTRAINT "FoodItem_created_by_user_id_fkey" FOREIGN KEY ("created_by_user_id") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
++
++-- 2) RLS: the shared catalog stays readable; a custom food is its creator's only
++DROP POLICY IF EXISTS "p_fooditem_select" ON "FoodItem";
++CREATE POLICY "p_fooditem_select" ON "FoodItem" AS PERMISSIVE FOR SELECT TO public USING ("created_by_user_id" IS NULL);
++COMMENT ON POLICY "p_fooditem_select" ON "FoodItem" IS 'UX-FOOD-PRIV-124: the shared food catalog (seeded, USDA FDC and OpenFoodFacts imports; created_by_user_id IS NULL) stays readable by any caller. A custom food (created_by_user_id set) is never readable through this policy.';
++
++DROP POLICY IF EXISTS "p_fooditem_select_own" ON "FoodItem";
++CREATE POLICY "p_fooditem_select_own" ON "FoodItem" AS PERMISSIVE FOR SELECT TO authenticated USING (("created_by_user_id" = app.current_user_id()) OR app.is_owner());
++COMMENT ON POLICY "p_fooditem_select_own" ON "FoodItem" IS 'UX-FOOD-PRIV-124: a custom food is readable only by the user who created it (and the platform owner role). Writes stay app.is_owner() / service_role only.';
+diff --git a/prisma/schema.prisma b/prisma/schema.prisma
+index 39fccd804..9ba42d47b 100644
+--- a/prisma/schema.prisma
++++ b/prisma/schema.prisma
+@@ -206,6 +206,7 @@ model User {
+   coach_code_redemptions         CoachCodeRedemption[]    @relation("CoachCodeRedemptionUser")
+   coachless_prompt_state         CoachlessPromptState?    @relation("CoachlessPromptStateUser")
+   logged_entries                 LoggedFoodEntry[]
++  custom_foods                   FoodItem[]               @relation("FoodItemCreator")
+   workouts                       WorkoutSession[]
+   fasting_windows                FastingWindow[]
+   weight_logs                    WeightLog[]
+@@ -950,6 +951,13 @@ model FoodItem {
+   nutrient_basis      NutrientBasis     @default(PER_100G)
+   created_at          DateTime          @default(now())
+   log_entries         LoggedFoodEntry[]
++  // UX-FOOD-PRIV-124: the person who typed this food in (POST /foods only).
++  // A custom food is private to its creator; null is the shared catalog
++  // (seeded, USDA and OpenFoodFacts imports, rows created before 20270403).
++  created_by_user_id  String?
++  created_by          User?             @relation("FoodItemCreator", fields: [created_by_user_id], references: [id], onDelete: Cascade)
++
++  @@index([created_by_user_id])
+ }
+ 
+ model LoggedFoodEntry {
+diff --git a/src/account-deletion/account-deletion.manifest.ts b/src/account-deletion/account-deletion.manifest.ts
+index 1b1dc6f52..afa45508d 100644
+--- a/src/account-deletion/account-deletion.manifest.ts
++++ b/src/account-deletion/account-deletion.manifest.ts
+@@ -128,6 +128,13 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
+   { model: 'UserPreferences', field: 'user_id', action: del },
+   { model: 'NotificationPreferences', field: 'user_id', action: del },
+   { model: 'LoggedFoodEntry', field: 'user_id', action: del },
++  // UX-FOOD-PRIV-124: the user's custom foods are private to them, so they go
++  // with the account; left in place (or detached) they would be served as
++  // shared catalog rows. Only the creator can log one, and
++  // LoggedFoodEntry.food_item_id is ON DELETE RESTRICT, so any entry pointing
++  // at one goes first.
++  { model: 'LoggedFoodEntry', field: 'food_item.created_by_user_id', action: del },
++  { model: 'FoodItem', field: 'created_by_user_id', action: del },
+   // ExerciseSet and HabitLog hold ON DELETE RESTRICT FKs to their parents
+   // (baseline migration), so the children go first (A-608-3).
+   // test/account-deletion/manifest-fk-order.spec.ts derives every FK from
+diff --git a/src/data-export/README.md b/src/data-export/README.md
+index c073cc2ad..b2c23b653 100644
+--- a/src/data-export/README.md
++++ b/src/data-export/README.md
+@@ -50,6 +50,7 @@ Every export is a single JSON file. The top-level object has the following keys:
+ | `notification_preferences` | `NotificationPreferences` | All fields. |
+ | `weight_logs` | `WeightLog` | All fields. |
+ | `food_entries` | `LoggedFoodEntry` | All fields. |
++| `custom_foods` | `FoodItem` | Custom foods the user created (private to them), oldest first: name, brand, serving, nutrient basis, macros and micros, tags, aliases, image, barcode, date. Shared catalog foods are not personal data and are left out. |
+ | `workout_sessions` | `WorkoutSession` | All fields. |
+ | `fasting_windows` | `FastingWindow` | All fields. |
+ | `water_logs` | `WaterLog` | All fields. |
+diff --git a/src/data-export/data-export.service.ts b/src/data-export/data-export.service.ts
+index ef7697e25..61294d51f 100644
+--- a/src/data-export/data-export.service.ts
++++ b/src/data-export/data-export.service.ts
+@@ -145,6 +145,35 @@ function compareExportValues(a: unknown, b: unknown): number {
+   return (x as string | number) < (y as string | number) ? -1 : 1;
+ }
+ 
++/**
++ * UX-FOOD-PRIV-124: the custom foods the user created (private to them).
++ * The owner column is the user's own id and is left out.
++ */
++const CUSTOM_FOOD_EXPORT_SELECT: Record<string, true> = {
++  id: true,
++  name: true,
++  brand_or_restaurant: true,
++  category: true,
++  serving_description: true,
++  serving_size_grams: true,
++  nutrient_basis: true,
++  calories: true,
++  protein_g: true,
++  carbs_g: true,
++  fat_g: true,
++  saturated_fat_g: true,
++  mono_fat_g: true,
++  poly_fat_g: true,
++  fiber_g: true,
++  sugar_g: true,
++  sodium_mg: true,
++  tags: true,
++  search_aliases: true,
++  image_url: true,
++  barcode: true,
++  created_at: true,
++};
++
+ /** Recipe columns exported for recipes the user created. */
+ const RECIPE_EXPORT_SELECT: Record<string, true> = {
+   id: true,
+@@ -1250,6 +1279,7 @@ export class DataExportService {
+       notificationPrefs,
+       weightLogs,
+       loggedEntries,
++      customFoods,
+       workouts,
+       fastingWindows,
+       waterLogs,
+@@ -1307,6 +1337,11 @@ export class DataExportService {
+       this._streamAll('notificationPreferences', { user_id: userId }),
+       this._streamAll('weightLog', { user_id: userId }),
+       this._streamAll('loggedFoodEntry', { user_id: userId }),
++      this._streamAll(
++        'foodItem',
++        { created_by_user_id: userId },
++        { select: CUSTOM_FOOD_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
++      ),
+       this._streamAll('workoutSession', { user_id: userId }),
+       this._streamAll('fastingWindow', { user_id: userId }),
+       this._streamAll('waterLog', { user_id: userId }),
+@@ -1450,6 +1485,7 @@ export class DataExportService {
+       notification_preferences: notificationPrefs,
+       weight_logs: weightLogs,
+       food_entries: loggedEntries,
++      custom_foods: customFoods,
+       workout_sessions: workouts,
+       fasting_windows: fastingWindows,
+       water_logs: waterLogs,
+diff --git a/src/food/food.controller.ts b/src/food/food.controller.ts
+index 6f9be0882..9e02db2d6 100644
+--- a/src/food/food.controller.ts
++++ b/src/food/food.controller.ts
+@@ -1,6 +1,7 @@
+-import { Controller, Get, Post, Body, Param, Query, UseGuards, NotFoundException } from '@nestjs/common';
++import { Controller, Get, Post, Body, Param, Query, UseGuards, NotFoundException, Request } from '@nestjs/common';
+ import { ApiTags } from '@nestjs/swagger';
+ import { Throttle } from '@nestjs/throttler';
++import type { AuthedRequest } from '../auth/auth-request';
+ import { FoodService } from './food.service';
+ import { JwtAuthGuard } from '../auth/auth.guard';
+ import { RolesGuard } from '../auth/roles.guard';
+@@ -14,9 +15,11 @@ import { CreateFoodDto } from './food.dto';
+ export class FoodController {
+   constructor(private foodService: FoodService) {}
+ 
++  // UX-FOOD-PRIV-124: every read passes the caller, who sees the shared
++  // catalog and their own custom foods only.
+   @Get('search')
+-  async search(@Query('q') q: string, @Query('limit') limit?: string) {
+-    return this.foodService.search(q, limit ? parseInt(limit, 10) : 50);
++  async search(@Request() req: AuthedRequest, @Query('q') q: string, @Query('limit') limit?: string) {
++    return this.foodService.search(q, limit ? parseInt(limit, 10) : 50, req.user.id);
+   }
+ 
+   /**
+@@ -27,11 +30,11 @@ export class FoodController {
+    * Maps the OpenFoodFacts product to the app's food schema.
+    */
+   @Get('barcode/:upc')
+-  async getByBarcode(@Param('upc') upc: string) {
++  async getByBarcode(@Request() req: AuthedRequest, @Param('upc') upc: string) {
+     try {
+       // upsertFromOpenFoodFacts is private — expose via a new public method.
+-      const id = await this.foodService.lookupByBarcode(upc);
+-      return this.foodService.getById(id);
++      const id = await this.foodService.lookupByBarcode(upc, req.user.id);
++      return this.foodService.getById(id, req.user.id);
+     } catch (err) {
+       const msg = err instanceof Error ? err.message : 'Product not found';
+       if (msg.includes('not found') || msg.includes('fetch failed')) {
+@@ -42,8 +45,8 @@ export class FoodController {
+   }
+ 
+   @Get(':id')
+-  async getById(@Param('id') id: string) {
+-    return this.foodService.getById(id);
++  async getById(@Request() req: AuthedRequest, @Param('id') id: string) {
++    return this.foodService.getById(id, req.user.id);
+   }
+ 
+   // Gated to coach + owner + student. Coaches/owners create one-off custom foods
+@@ -54,7 +57,7 @@ export class FoodController {
+   @UseGuards(RolesGuard)
+   @Roles('coach', 'owner', 'student')
+   @Throttle({ default: { ttl: 60_000, limit: 30 } })
+-  async create(@Body() body: CreateFoodDto) {
+-    return this.foodService.create(body);
++  async create(@Request() req: AuthedRequest, @Body() body: CreateFoodDto) {
++    return this.foodService.create(body, req.user.id);
+   }
+ }
+diff --git a/src/food/food.service.ts b/src/food/food.service.ts
+index c794cd5ec..a6f031d6e 100644
+--- a/src/food/food.service.ts
++++ b/src/food/food.service.ts
+@@ -1,5 +1,6 @@
+ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+ import { ConfigService } from '@nestjs/config';
++import { Prisma } from '@prisma/client';
+ import { PrismaService } from '../prisma.service';
+ import { getGramsForVolume, supportsVolumeUnits } from './food-density';
+ import { parseFoodQuery } from './food-query-parser';
+@@ -126,6 +127,92 @@ function volumeWeights(category: string) {
+   };
+ }
+ 
++/**
++ * UX-FOOD-PRIV-124: rows a signed-in caller may see — the shared catalog
++ * (no creator) and their own custom foods. A custom food is private.
++ */
++function visibleFoodsWhere(viewerId: string): Prisma.FoodItemWhereInput {
++  return { OR: [{ created_by_user_id: null }, { created_by_user_id: viewerId }] };
++}
++
++function canSeeFood(item: { created_by_user_id?: string | null }, viewerId: string): boolean {
++  return item.created_by_user_id == null || item.created_by_user_id === viewerId;
++}
++
++/** Weighted relevance score of one result for the (parsed) query. */
++function scoreFoodResult(item: FoodResult, rawQuery: string): number {
++  // Singular/plural normalization: strip trailing 's' for comparison
++  const normalize = (s: string) =>
++    s.toLowerCase().trim().replace(/\s+/g, ' ').replace(/s$/, '');
++
++  const normalizedName = normalize(item.name);
++  const normalizedQuery = normalize(rawQuery);
++
++  let score: number;
++
++  // Exact match
++  if (normalizedName === normalizedQuery) {
++    score = 100;
++  } else if (normalizedName.startsWith(normalizedQuery)) {
++    // Starts with
++    score = 80;
++  } else if (normalizedName.includes(normalizedQuery)) {
++    // Contains as whole phrase
++    score = 60;
++  } else {
++    const tokens = normalizedQuery.split(' ');
++    if (tokens.every((t) => normalizedName.includes(t))) {
++      // All query tokens found in name
++      score = 30;
++    } else {
++      // Found in tags/aliases
++      const allText = [
++        ...(item.tags || []),
++        ...(item.search_aliases || []),
++      ]
++        .join(' ')
++        .toLowerCase();
++      if (tokens.some((t) => allText.includes(normalize(t)))) {
++        score = 10;
++      } else {
++        score = 5;
++      }
++    }
++  }
++
++  // Single-ingredient boost: category 'generic' or name is <= 3 words
++  const wordCount = item.name.trim().split(/\s+/).length;
++  if (item.category === 'generic' || wordCount <= 3) {
++    score += 20;
++  }
++
++  return score;
++}
++
++/**
++ * De-duplicate by name (the first source listed wins), then score DESC and
++ * alphabetical on ties, then take `limit`.
++ */
++function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodResult[] {
++  const merged: FoodResult[] = [];
++  const seen = new Set<string>();
++  for (const item of items) {
++    const key = item.name.toLowerCase().replace(/\s+/g, ' ').trim();
++    if (!seen.has(key)) {
++      seen.add(key);
++      merged.push(item);
++    }
++  }
++
++  const scored = merged.map((item) => ({ item, score: scoreFoodResult(item, q) }));
++  scored.sort((a, b) => {
++    if (b.score !== a.score) return b.score - a.score;
++    return a.item.name.localeCompare(b.item.name);
++  });
++
++  return scored.slice(0, limit).map((s) => s.item);
++}
++
+ // 24h TTL on cached search results — USDA/OFF data is effectively static at
+ // the per-day level and the upstream APIs are slow + rate-limited.
+ const SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+@@ -169,11 +256,18 @@ export class FoodService implements OnModuleInit {
+     }
+   }
+ 
+-  async search(query: string, limit: number = 50): Promise<FoodSearchResponse> {
++  /**
++   * UX-FOOD-PRIV-124: `viewerId` is the signed-in caller. They see the shared
++   * catalog (created_by_user_id null: seeded, USDA, OpenFoodFacts) plus their
++   * own custom foods, never another person's. The search cache holds shared
++   * results only; the caller's own foods are read per request.
++   */
++  async search(query: string, limit: number, viewerId: string): Promise<FoodSearchResponse> {
+     const rawQ = (query || '').trim();
+ 
+     if (!rawQ || rawQ.length < 2) {
+       const defaults = await this.prisma.foodItem.findMany({
++        where: visibleFoodsWhere(viewerId),
+         take: limit,
+         orderBy: { name: 'asc' },
+       });
+@@ -190,124 +284,47 @@ export class FoodService implements OnModuleInit {
+     const parsed = parseFoodQuery(rawQ);
+     const q = parsed.foodName || rawQ;
+ 
+-    // 2) Cache check — keyed off the *parsed* food name so "chicken breast"
+-    //    and "6oz chicken breast" share a cache entry.
++    // 2) The caller's own custom foods: per request, never cached.
++    const ownPromise = this.searchLocalDB(q, 10, viewerId);
++
++    // 3) Shared results, cache first — keyed off the *parsed* food name so
++    //    "chicken breast" and "6oz chicken breast" share a cache entry.
+     const cacheKey = `${SEARCH_CACHE_KEY_PREFIX}${q.toLowerCase()}`;
+     const cached = await this.getCachedSearch(cacheKey);
+-    if (cached) {
+-      // Splice parser output back in even on a cache hit so mobile can pre-fill.
+-      return {
+-        ...cached,
+-        query: rawQ,
+-        parsed_quantity: parsed.quantity,
+-        parsed_unit: parsed.unit,
+-      };
+-    }
++    const shared = cached ? cached.results : await this.searchShared(q, limit, cacheKey);
++
++    // Own foods first on a name tie, then the same relevance order as before.
++    const results = rankFoodResults([...(await ownPromise), ...shared], q, limit);
++
++    return {
++      results,
++      suggestions: [],
++      did_you_mean: false,
++      query: rawQ,
++      parsed_quantity: parsed.quantity,
++      parsed_unit: parsed.unit,
++    };
++  }
+ 
++  /** USDA + OpenFoodFacts + the shared local catalog, ranked and cached. */
++  private async searchShared(q: string, limit: number, cacheKey: string): Promise<FoodResult[]> {
+     // Run all 3 sources in parallel
+     const [usdaResults, offResults, localResults] = await Promise.allSettled([
+       this.searchUSDA(q, 20),
+       this.searchOpenFoodFacts(q, 20),
+-      this.searchLocalDB(q, 10),
++      this.searchLocalDB(q, 10, null),
+     ]);
+ 
+     const usda = usdaResults.status === 'fulfilled' ? usdaResults.value : [];
+     const off = offResults.status === 'fulfilled' ? offResults.value : [];
+     const local = localResults.status === 'fulfilled' ? localResults.value : [];
+ 
+-    // Merge: local first (user's own foods), then USDA (reliable nutrition), then OFF (images)
+-    const merged: FoodResult[] = [];
+-    const seen = new Set<string>();
+-
+-    const addUnique = (items: FoodResult[]) => {
+-      for (const item of items) {
+-        const key = item.name.toLowerCase().replace(/\s+/g, ' ').trim();
+-        if (!seen.has(key)) {
+-          seen.add(key);
+-          merged.push(item);
+-        }
+-      }
+-    };
+-
+-    addUnique(local);
+-    addUnique(usda);
+-    addUnique(off);
+-
+-    // ── Weighted relevance scoring ──────────────────────────────────────────
+-    const scoreResult = (item: FoodResult, rawQuery: string): number => {
+-      // Singular/plural normalization: strip trailing 's' for comparison
+-      const normalize = (s: string) =>
+-        s.toLowerCase().trim().replace(/\s+/g, ' ').replace(/s$/, '');
+-
+-      const normalizedName = normalize(item.name);
+-      const normalizedQuery = normalize(rawQuery);
+-
+-      let score: number;
+-
+-      // Exact match
+-      if (normalizedName === normalizedQuery) {
+-        score = 100;
+-      } else if (normalizedName.startsWith(normalizedQuery)) {
+-        // Starts with
+-        score = 80;
+-      } else if (normalizedName.includes(normalizedQuery)) {
+-        // Contains as whole phrase
+-        score = 60;
+-      } else {
+-        const tokens = normalizedQuery.split(' ');
+-        if (tokens.every((t) => normalizedName.includes(t))) {
+-          // All query tokens found in name
+-          score = 30;
+-        } else {
+-          // Found in tags/aliases
+-          const allText = [
+-            ...(item.tags || []),
+-            ...(item.search_aliases || []),
+-          ]
+-            .join(' ')
+-            .toLowerCase();
+-          if (tokens.some((t) => allText.includes(normalize(t)))) {
+-            score = 10;
+-          } else {
+-            score = 5;
+-          }
+-        }
+-      }
+-
+-      // Single-ingredient boost: category 'generic' or name is <= 3 words
+-      const wordCount = item.name.trim().split(/\s+/).length;
+-      if (item.category === 'generic' || wordCount <= 3) {
+-        score += 20;
+-      }
+-
+-      return score;
+-    };
+-
+-    // Score, then sort by score DESC, then alphabetically for ties
+-    const scored = merged.map((item) => ({
+-      item,
+-      score: scoreResult(item, q),
+-    }));
+-
+-    scored.sort((a, b) => {
+-      if (b.score !== a.score) return b.score - a.score;
+-      return a.item.name.localeCompare(b.item.name);
+-    });
++    // Merge: local catalog first, then USDA (reliable nutrition), then OFF (images)
++    const results = rankFoodResults([...local, ...usda, ...off], q, limit);
+ 
+-    const results = scored.slice(0, limit).map((s) => s.item);
+-
+-    const response: FoodSearchResponse = {
+-      results,
+-      suggestions: [],
+-      did_you_mean: false,
+-      query: rawQ,
+-      parsed_quantity: parsed.quantity,
+-      parsed_unit: parsed.unit,
+-    };
+-
+-    // Cache the merged+scored list (sans the query echo / parsed_* fields,
+-    // which are rebuilt per-call so callers with different leading quantities
+-    // still see their own parse).
++    // Cache the merged+scored shared list (sans the query echo / parsed_*
++    // fields, which are rebuilt per-call so callers with different leading
++    // quantities still see their own parse). Never holds a custom food.
+     await this.setCachedSearch(cacheKey, {
+       results,
+       suggestions: [],
+@@ -315,7 +332,7 @@ export class FoodService implements OnModuleInit {
+       query: q,
+     });
+ 
+-    return response;
++    return results;
+   }
+ 
+   /** Redis GET with in-memory fallback. Returns null on miss or any error. */
+@@ -355,7 +372,15 @@ export class FoodService implements OnModuleInit {
+     }
+   }
+ 
+-  private async searchLocalDB(query: string, limit: number): Promise<FoodResult[]> {
++  /**
++   * Local rows matching the query. `ownerId` null: the shared catalog only
++   * (cacheable); a user id: that user's own custom foods only.
++   */
++  private async searchLocalDB(query: string, limit: number, ownerId: string | null): Promise<FoodResult[]> {
++    const owner =
++      ownerId === null
++        ? Prisma.sql`"created_by_user_id" IS NULL`
++        : Prisma.sql`"created_by_user_id" = ${ownerId}`;
+     try {
+       const trgmResults = await this.prisma.$queryRaw<FoodItemRow[]>`
+         SELECT
+@@ -370,7 +395,7 @@ export class FoodService implements OnModuleInit {
+             lower(${query})
+           ) AS score
+         FROM "FoodItem"
+-        WHERE
++        WHERE ${owner} AND
+           similarity(
+             lower(name) || ' ' ||
+             lower(coalesce(brand_or_restaurant, '')) || ' ' ||
+@@ -392,13 +417,14 @@ export class FoodService implements OnModuleInit {
+             fiber_g, sugar_g, sodium_mg, tags, search_aliases, image_url,
+             nutrient_basis
+           FROM "FoodItem"
+-          WHERE
++          WHERE ${owner} AND (
+             lower(name) LIKE lower(${likeQ})
+             OR lower(coalesce(brand_or_restaurant, '')) LIKE lower(${likeQ})
+             OR EXISTS (
+               SELECT 1 FROM unnest(search_aliases) AS alias
+               WHERE lower(alias) LIKE lower(${likeQ})
+             )
++          )
+           ORDER BY
+             CASE WHEN lower(name) LIKE lower(${likeQ}) THEN 0 ELSE 1 END,
+             name
+@@ -577,9 +603,10 @@ export class FoodService implements OnModuleInit {
+     };
+   }
+ 
+-  async getById(id: string) {
++  /** Another person's custom food reads as not found (null), like a missing id. */
++  async getById(id: string, viewerId: string) {
+     const item = await this.prisma.foodItem.findUnique({ where: { id } });
+-    return item ? this.toResult(item) : null;
++    return item && canSeeFood(item, viewerId) ? this.toResult(item) : null;
+   }
+ 
+   /**
+@@ -587,11 +614,15 @@ export class FoodService implements OnModuleInit {
+    * Caches the result in FoodItem so subsequent lookups are instant.
+    * Returns the resolved FoodItem.id.
+    */
+-  async lookupByBarcode(upc: string): Promise<string> {
+-    return this.upsertFromOpenFoodFacts(upc);
++  async lookupByBarcode(upc: string, viewerId: string): Promise<string> {
++    return this.upsertFromOpenFoodFacts(upc, viewerId);
+   }
+ 
+-  async create(data: import('./food.dto').CreateFoodDto) {
++  /**
++   * POST /foods — a custom food, private to `creatorId` (UX-FOOD-PRIV-124).
++   * The only path that sets created_by_user_id; imports stay shared.
++   */
++  async create(data: import('./food.dto').CreateFoodDto, creatorId: string) {
+     // Explicit field mapping — previously spread the whole body into
+     // prisma.foodItem.create, which would let a client set `id`, `created_at`,
+     // or arbitrary extra columns. See audit C4. Only DTO-whitelisted fields
+@@ -618,6 +649,7 @@ export class FoodService implements OnModuleInit {
+         search_aliases: data.search_aliases ?? [],
+         image_url: data.image_url,
+         barcode: data.barcode,
++        created_by_user_id: creatorId,
+       },
+     });
+   }
+@@ -634,7 +666,7 @@ export class FoodService implements OnModuleInit {
+    * into FoodItem first (keyed by barcode for OFF, by a "usda_*" alias for USDA)
+    * gives us a real primary key we can reference without schema changes.
+    */
+-  async resolveOrImportId(id: string): Promise<string> {
++  async resolveOrImportId(id: string, viewerId: string): Promise<string> {
+     if (!id) throw new Error('food_item_id is required');
+ 
+     if (id.startsWith('usda_')) {
+@@ -644,19 +676,24 @@ export class FoodService implements OnModuleInit {
+ 
+     if (id.startsWith('off_')) {
+       const code = id.slice(4);
+-      return this.upsertFromOpenFoodFacts(code);
++      return this.upsertFromOpenFoodFacts(code, viewerId);
+     }
+ 
+     // Assume real uuid — verify it exists to surface a clean 404 before the FK explodes.
++    // Another person's custom food is reported exactly like a missing id.
+     const existing = await this.prisma.foodItem.findUnique({ where: { id } });
+-    if (!existing) throw new Error(`FoodItem ${id} not found`);
++    if (!existing || !canSeeFood(existing, viewerId)) throw new Error(`FoodItem ${id} not found`);
+     return existing.id;
+   }
+ 
+   private async upsertFromUSDA(fdcId: string): Promise<string> {
+     // Use tags array with "usda:<fdcId>" as the idempotency key — no schema change needed.
+     const tag = `usda:${fdcId}`;
+-    const existing = await this.prisma.foodItem.findFirst({ where: { tags: { has: tag } } });
++    // Shared rows only: a custom food may carry any tag, so it never stands in
++    // for a USDA import.
++    const existing = await this.prisma.foodItem.findFirst({
++      where: { tags: { has: tag }, created_by_user_id: null },
++    });
+     if (existing) return existing.id;
+ 
+     const apiKey = process.env.USDA_API_KEY;
+@@ -707,14 +744,24 @@ export class FoodService implements OnModuleInit {
+       // P2002 = Prisma unique constraint violation — a concurrent flush already
+       // inserted this row. Re-query to get the winning row's id.
+       if ((err as { code?: string }).code === 'P2002') {
+-        const race = await this.prisma.foodItem.findFirst({ where: { tags: { has: tag } } });
++        const race = await this.prisma.foodItem.findFirst({
++          where: { tags: { has: tag }, created_by_user_id: null },
++        });
+         if (race) return race.id;
+       }
+       throw err;
+     }
+   }
+ 
+-  private async upsertFromOpenFoodFacts(code: string): Promise<string> {
++  private async upsertFromOpenFoodFacts(code: string, viewerId: string): Promise<string> {
++    // Barcode is unique across shared and custom rows. A row already holding it
++    // answers directly; another person's custom food reads as not found.
++    const held = await this.prisma.foodItem.findUnique({ where: { barcode: code } });
++    if (held) {
++      if (!canSeeFood(held, viewerId)) throw new Error(`OpenFoodFacts product ${code} not found`);
++      return held.id;
++    }
++
+     // Barcode is unique in FoodItem — use a true Prisma upsert so concurrent
+     // flush calls don't race to create a duplicate row (Fix 3).
+     const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`;
+diff --git a/src/log/log.service.ts b/src/log/log.service.ts
+index 2d7bd8b94..2e34724a5 100644
+--- a/src/log/log.service.ts
++++ b/src/log/log.service.ts
+@@ -22,7 +22,8 @@ export class LogService {
+   async logFood(userId: string, data: LogFoodDto) {
+     // Mobile client may send synthetic ids ("usda_123", "off_456") returned by food search.
+     // Resolve them to real FoodItem.id via upsert-on-log so the FK below can't blow up.
+-    const resolvedFoodItemId = await this.foodService.resolveOrImportId(data.food_item_id);
++    // Another person's custom food resolves as not found (UX-FOOD-PRIV-124).
++    const resolvedFoodItemId = await this.foodService.resolveOrImportId(data.food_item_id, userId);
+     const entryData = {
+       user_id: userId,
+       date: new Date(data.date),
+diff --git a/test/data-export-archive-inventory.spec.ts b/test/data-export-archive-inventory.spec.ts
+index 794b3c0d3..fa14be56c 100644
+--- a/test/data-export-archive-inventory.spec.ts
++++ b/test/data-export-archive-inventory.spec.ts
+@@ -296,6 +296,34 @@ describe('data export archive inventory (C-636-2)', () => {
+     ]);
+     expect(events.every((e) => e.user_id === U)).toBe(true);
+   });
++
++  it('exports the custom foods the user created, oldest first, never a catalog food or another person food (UX-FOOD-PRIV-124)', async () => {
++    const custom = (id: string, name: string, owner: string | null, n: number) => ({
++      id,
++      name,
++      created_by_user_id: owner,
++      serving_description: '1 portion',
++      nutrient_basis: 'PER_SERVING',
++      calories: 520,
++      barcode: null,
++      created_at: t(n),
++    });
++    const archive = await build({
++      foodItem: [
++        custom('f2', "Grandma Rosa's lasagne", U, 2),
++        custom('f1', 'Protein pancakes', U, 1),
++        custom('f-other', 'Someone else stew', OTHER, 0),
++        custom('f-catalog', 'Lasagne', null, 0),
++      ],
++    });
++    const foods = stub<Row[]>(archive.custom_foods);
++    expect(foods.map((f) => f.id)).toEqual(['f1', 'f2']);
++    expect(foods[1]).toMatchObject({ name: "Grandma Rosa's lasagne", calories: 520, nutrient_basis: 'PER_SERVING' });
++    expect(foods[1]).not.toHaveProperty('created_by_user_id');
++    const text = JSON.stringify(archive);
++    expect(text).not.toContain('Someone else stew');
++    expect(text).not.toContain('f-catalog');
++  });
+ });
+ 
+ // F-EXPORT-TIE: the archive pages through every table 500 rows at a time.
+diff --git a/test/food-custom-privacy.spec.ts b/test/food-custom-privacy.spec.ts
+new file mode 100644
+index 000000000..ba7ddb69c
+--- /dev/null
++++ b/test/food-custom-privacy.spec.ts
+@@ -0,0 +1,257 @@
++/**
++ * UX-FOOD-PRIV-124: a custom food is private to the person who created it.
++ *
++ * Client A types in "Grandma Rosa's lasagne" (with a barcode). Client B must
++ * not find it by search (including a search A's request already cached), by
++ * id, by barcode, or by logging its id; A can do all of these, and A's
++ * logged entry still works. Shared catalog rows (no creator) and USDA /
++ * OpenFoodFacts imports stay visible to everyone and are never owned.
++ *
++ * The real FoodService, FoodController and LogService run against an
++ * in-memory FoodItem table. Local search reads the composed SQL the service
++ * sends ($queryRaw), so a missing owner filter returns A's row to B here.
++ */
++import { Prisma } from '@prisma/client';
++import { FoodController } from '../src/food/food.controller';
++import { FoodService } from '../src/food/food.service';
++import { LogService } from '../src/log/log.service';
++import type { AuthedRequest } from '../src/auth/auth-request';
++import type { PrismaService } from '../src/prisma.service';
++
++function stub<T>(value: unknown): T {
++  return value as T;
++}
++
++const A = 'client-a';
++const B = 'client-b';
++
++type Row = Record<string, unknown> & { id: string; name: string };
++
++const food = (id: string, name: string, extra: Record<string, unknown> = {}): Row => ({
++  id,
++  name,
++  brand_or_restaurant: null,
++  category: 'generic',
++  serving_description: '1 portion',
++  serving_size_grams: 0,
++  nutrient_basis: 'PER_SERVING',
++  calories: 520,
++  protein_g: 30,
++  carbs_g: 45,
++  fat_g: 22,
++  fiber_g: null,
++  sugar_g: null,
++  sodium_mg: null,
++  tags: [],
++  search_aliases: [],
++  image_url: null,
++  barcode: null,
++  created_by_user_id: null,
++  ...extra,
++});
++
++/** Flat equality plus `OR` and `tags: { has }`, the filters FoodService sends. */
++function matches(row: Row, where: Record<string, unknown>): boolean {
++  return Object.entries(where).every(([key, want]) => {
++    if (key === 'OR' && Array.isArray(want)) return want.some((w) => matches(row, w));
++    if (key === 'tags' && want && typeof want === 'object' && 'has' in want) {
++      return Array.isArray(row.tags) && row.tags.includes(Reflect.get(want, 'has'));
++    }
++    return (row[key] ?? null) === want;
++  });
++}
++
++function setup(opts: { trigram?: boolean } = {}) {
++  const rows: Row[] = [
++    food('shared-lasagne', 'Lasagne', { calories: 135, nutrient_basis: 'PER_100G', serving_size_grams: 100 }),
++  ];
++  let created = 0;
++  const sqlTexts: string[] = [];
++  const createRow = async ({ data }: { data: Record<string, unknown> }) => {
++    const row = food(`food-${(created += 1)}`, String(data.name), { created_by_user_id: null, ...data });
++    rows.push(row);
++    return row;
++  };
++  const foodItem = {
++    findUnique: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
++      rows.find((r) => matches(r, where)) ?? null,
++    ),
++    findFirst: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
++      rows.find((r) => matches(r, where)) ?? null,
++    ),
++    findMany: jest.fn(async ({ where = {}, take }: { where?: Record<string, unknown>; take?: number }) =>
++      rows.filter((r) => matches(r, where)).slice(0, take),
++    ),
++    create: jest.fn(createRow),
++    upsert: jest.fn(async ({ where, create }: { where: Record<string, unknown>; create: Record<string, unknown> }) =>
++      rows.find((r) => matches(r, where)) ?? createRow({ data: create }),
++    ),
++  };
++  // Local search: the owner condition the service composed decides the rows.
++  const $queryRaw = jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
++    const sql = Prisma.sql(strings, ...values);
++    sqlTexts.push(sql.sql);
++    if (opts.trigram === false && sql.sql.includes('similarity(')) throw new Error('no pg_trgm');
++    const term = String(sql.values.find((v) => v !== A && v !== B))
++      .replace(/%/g, '')
++      .toLowerCase();
++    const sharedOnly = sql.sql.includes('"created_by_user_id" IS NULL');
++    const owner = sql.values.find((v) => v === A || v === B);
++    if (!sharedOnly && owner === undefined) throw new Error('local search sent without an owner condition');
++    return rows.filter(
++      (r) =>
++        r.name.toLowerCase().includes(term) &&
++        (sharedOnly ? r.created_by_user_id === null : r.created_by_user_id === owner),
++    );
++  });
++  const prisma = stub<PrismaService>({ foodItem, $queryRaw });
++  const service = new FoodService(prisma);
++  return { rows, foodItem, service, sqlTexts };
++}
++
++const asUser = (id: string) => stub<AuthedRequest>({ user: { id } });
++
++let fetchSpy: jest.SpyInstance;
++beforeEach(() => {
++  // USDA + OpenFoodFacts answer with nothing and an unknown barcode.
++  fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
++    stub<Response>({ ok: false, status: 404, json: async () => ({}) }),
++  );
++});
++afterEach(() => fetchSpy.mockRestore());
++
++async function createAsA(service: FoodService) {
++  const controller = new FoodController(service);
++  return controller.create(asUser(A), {
++    name: "Grandma Rosa's lasagne",
++    category: 'generic',
++    serving_description: '1 portion',
++    serving_size_grams: 0,
++    nutrient_basis: 'PER_SERVING',
++    calories: 520,
++    protein_g: 30,
++    carbs_g: 45,
++    fat_g: 22,
++    barcode: '4006381333931',
++  });
++}
++
++describe('custom foods are private to their creator (UX-FOOD-PRIV-124)', () => {
++  it('records the creator on the custom-food create path', async () => {
++    const { service, foodItem } = setup();
++    const createdFood = await createAsA(service);
++    expect(foodItem.create).toHaveBeenCalledWith({
++      data: expect.objectContaining({ name: "Grandma Rosa's lasagne", created_by_user_id: A }),
++    });
++    expect(createdFood).toMatchObject({ created_by_user_id: A });
++  });
++
++  it.each([true, false])('search: B never sees A food, A does (pg_trgm %s), even from the cache A filled', async (trigram) => {
++    const { service, sqlTexts } = setup({ trigram });
++    await createAsA(service);
++    const controller = new FoodController(service);
++
++    const forA = await controller.search(asUser(A), 'lasagne');
++    expect(forA.results.map((r) => r.name)).toEqual(['Lasagne', "Grandma Rosa's lasagne"]);
++    const upstreamCalls = fetchSpy.mock.calls.length;
++
++    // Same query from B: the shared part now comes from the cache A filled.
++    const forB = await controller.search(asUser(B), 'lasagne');
++    expect(fetchSpy.mock.calls.length).toBe(upstreamCalls);
++    expect(forB.results.map((r) => r.name)).toEqual(['Lasagne']);
++    expect(JSON.stringify(forB)).not.toContain('Grandma');
++    expect(sqlTexts.every((t) => t.includes('"created_by_user_id"'))).toBe(true);
++
++    // A again, also from the cache, still has their own food.
++    const againA = await controller.search(asUser(A), 'lasagne');
++    expect(fetchSpy.mock.calls.length).toBe(upstreamCalls);
++    expect(againA.results.map((r) => r.name)).toEqual(['Lasagne', "Grandma Rosa's lasagne"]);
++  });
++
++  it('search with an empty query lists the catalog plus only the caller own foods', async () => {
++    const { service } = setup();
++    await createAsA(service);
++    const controller = new FoodController(service);
++    expect((await controller.search(asUser(B), '')).results.map((r) => r.id)).toEqual(['shared-lasagne']);
++    expect((await controller.search(asUser(A), '')).results).toHaveLength(2);
++  });
++
++  it('by id: B reads nothing (like a missing id), A reads the food, everyone reads the catalog', async () => {
++    const { service } = setup();
++    const { id } = await createAsA(service);
++    const controller = new FoodController(service);
++    expect(await controller.getById(asUser(B), id)).toBeNull();
++    expect(await controller.getById(asUser(A), id)).toMatchObject({ name: "Grandma Rosa's lasagne", calories: 520 });
++    expect(await controller.getById(asUser(B), 'shared-lasagne')).toMatchObject({ name: 'Lasagne' });
++  });
++
++  it('by barcode: B gets not found and no lookup reaches the catalog, A gets the food', async () => {
++    const { service, foodItem } = setup();
++    await createAsA(service);
++    const controller = new FoodController(service);
++    await expect(controller.getByBarcode(asUser(B), '4006381333931')).rejects.toThrow('not found');
++    expect(foodItem.upsert).not.toHaveBeenCalled();
++    expect(await controller.getByBarcode(asUser(A), '4006381333931')).toMatchObject({
++      name: "Grandma Rosa's lasagne",
++    });
++  });
++
++  it('logging: B cannot log A food by id or barcode id; A logs it and the entry carries its nutrition', async () => {
++    const { service } = setup();
++    const { id } = await createAsA(service);
++    const loggedFoodEntry = {
++      upsert: jest.fn(async ({ create }: { create: Record<string, unknown> }) => ({
++        id: 'entry-1',
++        ...create,
++        food_item: await service.getById(String(create.food_item_id), String(create.user_id)),
++      })),
++    };
++    const log = new LogService(
++      stub<PrismaService>({ loggedFoodEntry }),
++      service,
++      stub({ capture: jest.fn() }),
++      stub({ emit: jest.fn() }),
++      stub({ invalidateForUser: jest.fn() }),
++    );
++    const entry = (food_item_id: string) => ({ food_item_id, date: '2026-10-06', meal_type: 'dinner' as const });
++
++    await expect(log.logFood(B, entry(id))).rejects.toThrow('not found');
++    await expect(log.logFood(B, entry('off_4006381333931'))).rejects.toThrow('not found');
++    expect(loggedFoodEntry.upsert).not.toHaveBeenCalled();
++
++    const logged = await log.logFood(A, entry(id));
++    expect(loggedFoodEntry.upsert).toHaveBeenCalledWith(
++      expect.objectContaining({ create: expect.objectContaining({ user_id: A, food_item_id: id }) }),
++    );
++    expect(logged).toMatchObject({ food_item: { name: "Grandma Rosa's lasagne", calories: 520 } });
++  });
++
++  it('a custom food tagged like a USDA import never stands in for that import', async () => {
++    const { service, foodItem, rows } = setup();
++    rows.push(food('a-fake-usda', 'Not really oats', { created_by_user_id: A, tags: ['usda:168872'] }));
++    const previousKey = process.env.USDA_API_KEY;
++    process.env.USDA_API_KEY = 'fixture-key';
++    fetchSpy.mockResolvedValue(
++      stub<Response>({
++        ok: true,
++        json: async () => ({
++          fdcId: 168872,
++          description: 'Oats',
++          foodNutrients: [{ nutrientName: 'Energy', unitName: 'KCAL', value: 379 }],
++        }),
++      }),
++    );
++    try {
++      const resolved = await service.resolveOrImportId('usda_168872', B);
++      expect(resolved).not.toBe('a-fake-usda');
++      expect(foodItem.findFirst).toHaveBeenCalledWith({
++        where: { tags: { has: 'usda:168872' }, created_by_user_id: null },
++      });
++      // The import itself is shared catalog data: no owner.
++      expect(rows.find((r) => r.id === resolved)).toMatchObject({ created_by_user_id: null });
++    } finally {
++      if (previousKey === undefined) delete process.env.USDA_API_KEY;
++      else process.env.USDA_API_KEY = previousKey;
++    }
++  });
++});
+diff --git a/test/food-logging-contract.spec.ts b/test/food-logging-contract.spec.ts
+index c39b53c22..4229548ad 100644
+--- a/test/food-logging-contract.spec.ts
++++ b/test/food-logging-contract.spec.ts
+@@ -37,7 +37,7 @@ describe('food logging contract — ordinary client portions', () => {
+ 
+   it('persists the declared per-portion basis instead of relabelling it per 100g', async () => {
+     const { service, foodItem } = setup();
+-    await service.create({ ...customFood, category: 'generic', nutrient_basis: 'PER_SERVING' });
++    await service.create({ ...customFood, category: 'generic', nutrient_basis: 'PER_SERVING' }, 'user-a');
+     expect(foodItem.create).toHaveBeenCalledWith({
+       data: expect.objectContaining({
+         calories: 400,
+@@ -50,7 +50,7 @@ describe('food logging contract — ordinary client portions', () => {
+   it('keeps the existing per-100g default when a basis is not supplied', async () => {
+     const { service, foodItem } = setup();
+     const { nutrient_basis: _basis, ...payload } = customFood;
+-    await service.create({ ...payload, category: 'generic' });
++    await service.create({ ...payload, category: 'generic' }, 'user-a');
+     expect(foodItem.create).toHaveBeenCalledWith({
+       data: expect.objectContaining({ nutrient_basis: 'PER_100G' }),
+     });
+@@ -70,7 +70,7 @@ describe('food logging contract — ordinary client portions', () => {
+       id: 'milk', name: 'Milk', category: 'generic', serving_description: '100g',
+       serving_size_grams: 100, calories: 61, protein_g: 3.2, carbs_g: 4.8, fat_g: 3.3,
+     });
+-    expect(await service.getById('milk')).toEqual(expect.objectContaining({
++    expect(await service.getById('milk', 'user-a')).toEqual(expect.objectContaining({
+       supports_volume_units: true, cup_grams: 240, tbsp_grams: 15, tsp_grams: 5,
+     }));
+   });
+@@ -81,7 +81,7 @@ describe('food logging contract — ordinary client portions', () => {
+       id: 'food', name: 'Food', category: 'unrecognised', serving_description: '100g',
+       serving_size_grams: 100, calories: 100, protein_g: 10, carbs_g: 10, fat_g: 2,
+     });
+-    expect(await service.getById('food')).toEqual(expect.objectContaining({
++    expect(await service.getById('food', 'user-a')).toEqual(expect.objectContaining({
+       supports_volume_units: false, cup_grams: undefined,
+     }));
+   });
+@@ -118,7 +118,7 @@ describe('USDA search-to-log detail import', () => {
+         ],
+       }),
+     } as Response);
+-    await service.resolveOrImportId('usda_168872');
++    await service.resolveOrImportId('usda_168872', 'user-a');
+     expect(foodItem.create).toHaveBeenCalledWith({
+       data: expect.objectContaining({ calories: 379, protein_g: 13, carbs_g: 67.7, fat_g: 6.5 }),
+     });
+@@ -153,7 +153,7 @@ describe('USDA search-to-log detail import', () => {
+         ],
+       }),
+     } as Response);
+-    await service.resolveOrImportId('usda_2261421');
++    await service.resolveOrImportId('usda_2261421', 'user-a');
+     expect(foodItem.create).toHaveBeenCalledWith({
+       data: expect.objectContaining({ calories: 389, protein_g: 13 }),
+     });
+@@ -172,7 +172,7 @@ describe('USDA search-to-log detail import', () => {
+         ],
+       }),
+     } as Response);
+-    await expect(service.resolveOrImportId('usda_2261421')).resolves.toBe('created-food');
++    await expect(service.resolveOrImportId('usda_2261421', 'user-a')).resolves.toBe('created-food');
+     expect(foodItem.create).toHaveBeenCalledWith({
+       data: expect.objectContaining({ calories: 389, protein_g: 13 }),
+     });
+@@ -192,7 +192,7 @@ describe('USDA search-to-log detail import', () => {
+         ],
+       }),
+     } as Response);
+-    await service.resolveOrImportId('usda_456');
++    await service.resolveOrImportId('usda_456', 'user-a');
+     expect(foodItem.create).toHaveBeenCalledWith({
+       data: expect.objectContaining({ calories: 130, protein_g: 2.7, carbs_g: 28, fat_g: 0.3 }),
+     });
+diff --git a/test/food.service.spec.ts b/test/food.service.spec.ts
+index fe6654bab..321f2d958 100644
+--- a/test/food.service.spec.ts
++++ b/test/food.service.spec.ts
+@@ -19,6 +19,8 @@ function buildPrismaStub() {
+   } as any;
+ }
+ 
++const VIEWER = 'user-viewer';
++
+ describe('FoodService.search NL parsing integration', () => {
+   let service: FoodService;
+   let prisma: any;
+@@ -41,7 +43,7 @@ describe('FoodService.search NL parsing integration', () => {
+   });
+ 
+   it('extracts parsed_quantity and parsed_unit from "6oz chicken breast"', async () => {
+-    const res = await service.search('6oz chicken breast', 10);
++    const res = await service.search('6oz chicken breast', 10, VIEWER);
+     expect(res.parsed_quantity).toBe(6);
+     expect(res.parsed_unit).toBe('oz');
+     // The query echo is the *raw* user input so the mobile picker can still
+@@ -50,13 +52,13 @@ describe('FoodService.search NL parsing integration', () => {
+   });
+ 
+   it('omits parsed_* when the query has no qty/unit', async () => {
+-    const res = await service.search('chicken breast', 10);
++    const res = await service.search('chicken breast', 10, VIEWER);
+     expect(res.parsed_quantity).toBeUndefined();
+     expect(res.parsed_unit).toBeUndefined();
+   });
+ 
+   it('passes the parsed food name (not the raw query) to the upstream fetch', async () => {
+-    await service.search('1/2 cup oats', 10);
++    await service.search('1/2 cup oats', 10, VIEWER);
+     // The USDA URL is fetch's first argument on its first call — the parser
+     // should have stripped "1/2 cup " before it reached the encoder.
+     const usdaUrl = String(fetchSpy.mock.calls[0][0]);
+@@ -66,20 +68,20 @@ describe('FoodService.search NL parsing integration', () => {
+   });
+ 
+   it('returns short-circuit defaults for empty input without invoking upstreams', async () => {
+-    const res = await service.search('', 5);
++    const res = await service.search('', 5, VIEWER);
+     expect(res.results).toEqual([]);
+     expect(fetchSpy).not.toHaveBeenCalled();
+   });
+ 
+   it('caches identical normalized queries (second call skips upstreams)', async () => {
+     // First call hits USDA + OFF (2 fetch calls in parallel).
+-    await service.search('chicken breast', 10);
++    await service.search('chicken breast', 10, VIEWER);
+     const firstCallCount = fetchSpy.mock.calls.length;
+     expect(firstCallCount).toBeGreaterThanOrEqual(2);
+ 
+     // Second call with the same query should be served from the in-memory
+     // cache — no further upstream fetches.
+-    await service.search('chicken breast', 10);
++    await service.search('chicken breast', 10, VIEWER);
+     expect(fetchSpy.mock.calls.length).toBe(firstCallCount);
+   });
+ });
+diff --git a/test/rls/food-item-custom-privacy-rls.spec.ts b/test/rls/food-item-custom-privacy-rls.spec.ts
+new file mode 100644
+index 000000000..565c60d03
+--- /dev/null
++++ b/test/rls/food-item-custom-privacy-rls.spec.ts
+@@ -0,0 +1,155 @@
++/**
++ * UX-FOOD-PRIV-124 — live RLS proof for 20270403000000_private_custom_foods.
++ *
++ * Runs against a REAL PostgreSQL (no mocks). Builds a minimal "FoodItem" with
++ * its production RLS statements copied verbatim from
++ * prisma/migrations/20261213000000_rls_tier3_nutrition/migration.sql (catalog
++ * SELECT USING (true), owner-only writes, service_role bypass, FORCE), plus the
++ * Supabase default API-role table grants, then applies this PR's migration.sql
++ * verbatim. Principals are API shaped: `SET LOCAL ROLE authenticated|anon|
++ * service_role` with the app.current_user_id / app.current_user_role GUCs.
++ *
++ * Proves: a custom food is readable only by its creator (and the owner role or
++ * service_role); another client, a caller with no user GUC (PostgREST) and
++ * anon read the shared catalog only and get no error; writes stay owner-only.
++ *
++ * CI: the rls-live-tests job runs this file after the Supabase shim and the
++ * RLS-01 helper migration; the prerequisites below only fill in what is
++ * missing, so the file also runs on an empty throwaway DB.
++ * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
++ */
++import * as fs from 'fs';
++import * as path from 'path';
++import { Prisma, PrismaClient } from '@prisma/client';
++
++const MIGRATIONS = path.join(__dirname, '..', '..', 'prisma', 'migrations');
++const PRIV_DIR = path.join(MIGRATIONS, '20270403000000_private_custom_foods');
++const TIER3_SQL = path.join(MIGRATIONS, '20261213000000_rls_tier3_nutrition', 'migration.sql');
++
++const RAW_URL = process.env.TEST_DATABASE_URL || '';
++if (!RAW_URL && process.env.CI === 'true') {
++  throw new Error('[UX-FOOD-PRIV-124] food-item-custom-privacy-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.');
++}
++const URL_WITH_LIMIT = !RAW_URL
++  ? ''
++  : RAW_URL.includes('connection_limit=')
++    ? RAW_URL
++    : RAW_URL + (RAW_URL.includes('?') ? '&' : '?') + 'connection_limit=1';
++
++/** Prerequisites, one statement each; only what an empty DB is missing. */
++const PREREQ: string[] = [
++  `DO $do$ BEGIN
++  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN CREATE ROLE anon NOLOGIN NOINHERIT; END IF;
++  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN CREATE ROLE authenticated NOLOGIN NOINHERIT; END IF;
++  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS; END IF;
++END $do$`,
++  `CREATE SCHEMA IF NOT EXISTS app`,
++  `DO $do$ BEGIN
++  IF to_regprocedure('app.current_user_id()') IS NULL THEN
++    EXECUTE $f$CREATE FUNCTION app.current_user_id() RETURNS text LANGUAGE sql STABLE AS 'SELECT NULLIF(current_setting(''app.current_user_id'', true), '''')'$f$;
++  END IF;
++  IF to_regprocedure('app.current_user_role()') IS NULL THEN
++    EXECUTE $f$CREATE FUNCTION app.current_user_role() RETURNS text LANGUAGE sql STABLE AS 'SELECT NULLIF(current_setting(''app.current_user_role'', true), '''')'$f$;
++  END IF;
++  IF to_regprocedure('app.is_owner()') IS NULL THEN
++    EXECUTE $f$CREATE FUNCTION app.is_owner() RETURNS boolean LANGUAGE sql STABLE AS 'SELECT app.current_user_id() IS NOT NULL AND app.current_user_role() = ''owner'''$f$;
++  END IF;
++END $do$`,
++  `GRANT USAGE ON SCHEMA app TO anon, authenticated, service_role`,
++  `GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role`,
++  `CREATE TABLE IF NOT EXISTS public."User" ("id" text PRIMARY KEY)`,
++  `CREATE TABLE IF NOT EXISTS public."FoodItem" ("id" text PRIMARY KEY, "name" text NOT NULL)`,
++  `GRANT SELECT, INSERT, UPDATE, DELETE ON public."FoodItem" TO anon, authenticated, service_role`,
++];
++
++/** Statements of a migration file: `--` lines dropped, one statement per `;` line end. */
++function statements(sql: string): string[] {
++  return sql
++    .split('\n')
++    .filter((l) => !/^\s*--/.test(l))
++    .join('\n')
++    .split(/;\s*\n/)
++    .map((s) => s.trim().replace(/;$/, ''))
++    .filter(Boolean);
++}
++
++const describeLive = RAW_URL ? describe : describe.skip;
++
++describeLive('20270403000000_private_custom_foods — live RLS (UX-FOOD-PRIV-124)', () => {
++  let prisma: PrismaClient;
++
++  type Who = { role: 'authenticated' | 'anon' | 'service_role'; userId?: string; userRole?: string };
++
++  async function visibleIds(who: Who): Promise<string[]> {
++    return prisma.$transaction(async (tx: Prisma.TransactionClient) => {
++      await tx.$executeRawUnsafe(`SET LOCAL ROLE ${who.role}`);
++      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, who.userId ?? '');
++      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, who.userRole ?? '');
++      const rows = await tx.$queryRawUnsafe<{ id: string }[]>(`SELECT "id" FROM public."FoodItem" ORDER BY "id"`);
++      return rows.map((r) => r.id);
++    });
++  }
++
++  beforeAll(async () => {
++    prisma = new PrismaClient({ datasources: { db: { url: URL_WITH_LIMIT } } });
++    for (const s of PREREQ) await prisma.$executeRawUnsafe(s);
++    // Production FoodItem RLS (tier 3) verbatim, then reverse any earlier run, then this PR's migration.
++    const tier3 = statements(fs.readFileSync(TIER3_SQL, 'utf8')).filter((s) => s.includes('"FoodItem"'));
++    expect(tier3.some((s) => s.includes('"p_fooditem_select"') && s.includes('USING (true)'))).toBe(true);
++    for (const s of tier3) await prisma.$executeRawUnsafe(s);
++    for (const s of statements(fs.readFileSync(path.join(PRIV_DIR, 'down.sql'), 'utf8'))) await prisma.$executeRawUnsafe(s);
++    for (const s of statements(fs.readFileSync(path.join(PRIV_DIR, 'migration.sql'), 'utf8'))) await prisma.$executeRawUnsafe(s);
++
++    await prisma.$executeRawUnsafe(`DELETE FROM public."FoodItem" WHERE "id" IN ('priv-catalog','priv-mine-a')`);
++    await prisma.$executeRawUnsafe(
++      `INSERT INTO public."User"("id") VALUES ('priv-a'),('priv-b'),('priv-owner') ON CONFLICT ("id") DO NOTHING`,
++    );
++    await prisma.$executeRawUnsafe(
++      `INSERT INTO public."FoodItem"("id","name","created_by_user_id") VALUES ('priv-catalog','Lasagne',NULL),('priv-mine-a','Grandma Rosa''s lasagne','priv-a')`,
++    );
++  }, 60_000);
++
++  afterAll(async () => {
++    if (!prisma) return;
++    await prisma.$executeRawUnsafe(`DELETE FROM public."FoodItem" WHERE "id" IN ('priv-catalog','priv-mine-a')`);
++    await prisma.$disconnect();
++  });
++
++  const mine = (ids: string[]) => ids.filter((id) => id.startsWith('priv-'));
++
++  it('the creator reads their custom food and the catalog', async () => {
++    expect(mine(await visibleIds({ role: 'authenticated', userId: 'priv-a', userRole: 'student' }))).toEqual([
++      'priv-catalog',
++      'priv-mine-a',
++    ]);
++  });
++
++  it('another client reads the catalog only', async () => {
++    expect(mine(await visibleIds({ role: 'authenticated', userId: 'priv-b', userRole: 'student' }))).toEqual([
++      'priv-catalog',
++    ]);
++  });
++
++  it('an API caller with no user context, and anon, read the catalog only without an error', async () => {
++    expect(mine(await visibleIds({ role: 'authenticated' }))).toEqual(['priv-catalog']);
++    expect(mine(await visibleIds({ role: 'anon' }))).toEqual(['priv-catalog']);
++  });
++
++  it('the owner role and service_role still read everything', async () => {
++    const all = ['priv-catalog', 'priv-mine-a'];
++    expect(mine(await visibleIds({ role: 'authenticated', userId: 'priv-owner', userRole: 'owner' }))).toEqual(all);
++    expect(mine(await visibleIds({ role: 'service_role' }))).toEqual(all);
++  });
++
++  it('writes stay owner-only: the creator cannot insert a food through the API role', async () => {
++    await expect(
++      prisma.$transaction(async (tx: Prisma.TransactionClient) => {
++        await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
++        await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', 'priv-a', true)`);
++        await tx.$executeRawUnsafe(
++          `INSERT INTO public."FoodItem"("id","name","created_by_user_id") VALUES ('priv-forged','Forged','priv-a')`,
++        );
++      }),
++    ).rejects.toThrow(/row-level security/);
++  });
++});

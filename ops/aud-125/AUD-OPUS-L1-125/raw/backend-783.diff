@@ -1,0 +1,269 @@
+diff --git a/src/main.ts b/src/main.ts
+index 5f03e0f4b..b5540e103 100644
+--- a/src/main.ts
++++ b/src/main.ts
+@@ -157,6 +157,9 @@ async function bootstrap() {
+       // S-DUNNING-R2 — dunning email link; universal link to the in-app
+       // card update, calm "open the app" page otherwise.
+       'billing/update-card',
++      // HUNT-01-124 — sign-up confirmation landing (Supabase redirect for a
++      // confirmation link opened on a computer or without the app).
++      'verified',
+       // Universal Links / App Links require these documents at the apex
+       // domain (not under /api). See WellKnownController.
+       '.well-known/apple-app-site-association',
+diff --git a/src/public-pages/public-pages.controller.ts b/src/public-pages/public-pages.controller.ts
+index 2ff608592..ada8a6ad7 100644
+--- a/src/public-pages/public-pages.controller.ts
++++ b/src/public-pages/public-pages.controller.ts
+@@ -6,6 +6,7 @@ import { Public } from '../common/decorators/public.decorator';
+ import {
+   renderBillingUpdateCardPage,
+   renderDownloadPage,
++  renderEmailConfirmedPage,
+   renderSignupPage,
+   sanitizeInviteCode,
+   type DownloadPlatform,
+@@ -64,6 +65,18 @@ export class PublicPagesController {
+     res.status(HttpStatus.OK).send(renderBillingUpdateCardPage());
+   }
+ 
++  // HUNT-01-124 — sign-up confirmation landing for a link opened where the
++  // app cannot open (computer, no app). Static; see renderEmailConfirmedPage.
++  @Public()
++  @Get('verified')
++  @Throttle({ default: { ttl: 60000, limit: 60 } })
++  emailConfirmed(@Res() res: Response) {
++    res.setHeader('Content-Type', 'text/html; charset=utf-8');
++    res.setHeader('Cache-Control', 'no-store, max-age=0');
++    res.setHeader('Referrer-Policy', 'no-referrer');
++    res.status(HttpStatus.OK).send(renderEmailConfirmedPage());
++  }
++
+   // Canonical /signup. An invite code may arrive as ?code=… (the form
+   // mobile and email links use today). The path variant /signup/:code
+   // exists for printed / QR-encoded invites where putting the code in the
+diff --git a/src/public-pages/public-pages.html.ts b/src/public-pages/public-pages.html.ts
+index 21a9ba4a8..271f455c7 100644
+--- a/src/public-pages/public-pages.html.ts
++++ b/src/public-pages/public-pages.html.ts
+@@ -42,6 +42,11 @@ interface PageContent {
+   invite_code?: string | null;
+   /** Optional quieter links under the CTA (label + href, both escaped). */
+   links?: ReadonlyArray<{ label: string; href: string }>;
++  /**
++   * Optional inline script. Server-owned constants only, never request
++   * data (the trust-surface CSP is off, see main.ts helmet config).
++   */
++  script?: string;
+ }
+ 
+ function pageFor(platform: DownloadPlatform): PageContent {
+@@ -107,6 +112,62 @@ export function renderBillingUpdateCardPage(): string {
+   });
+ }
+ 
++/**
++ * HUNT-01-124 — landing for the sign-up confirmation email when it is opened
++ * somewhere the app's `tgp://verified` return cannot open (a computer, or a
++ * phone without the app), once the owner points SUPABASE_REDIRECT_URL / the
++ * Supabase Site URL here. Supabase confirms the address before redirecting
++ * and appends either the new session (`#access_token=...`) or an error
++ * (`#error=access_denied&error_code=otp_expired...`) to this URL. The
++ * fragment never reaches the server, so the page is static; the inline
++ * script (a) switches to the expired-link copy when the fragment or query
++ * carries an error and (b) removes the fragment from the address bar so
++ * session tokens are not left visible or copied. Nothing is stored or sent.
++ */
++export const EMAIL_CONFIRMED_LINK_PROBLEM_HEADLINE = 'This link has expired or was already used';
++export const EMAIL_CONFIRMED_LINK_PROBLEM_BODY =
++  'If the email address is already confirmed, open The Growth Project app and ' +
++  'sign in. If sign-in still asks for confirmation, contact support for a new link.';
++export const EMAIL_CONFIRMED_SCRIPT = [
++  '(function () {',
++  "  var loc = window.location;",
++  "  var raw = (loc.hash || '').replace(/^#/, '') + '&' + (loc.search || '').replace(/^\\?/, '');",
++  "  var failed = /(^|&)(error|error_code)=/.test(raw);",
++  "  if ((loc.hash || loc.search) && window.history && window.history.replaceState) {",
++  "    window.history.replaceState(null, '', loc.pathname);",
++  '  }',
++  '  if (!failed) return;',
++  "  var h = document.querySelector('h1');",
++  "  var p = document.querySelector('main > p');",
++  "  var a = document.querySelector('a.cta');",
++  `  if (h) h.textContent = ${JSON.stringify(EMAIL_CONFIRMED_LINK_PROBLEM_HEADLINE)};`,
++  `  if (p) p.textContent = ${JSON.stringify(EMAIL_CONFIRMED_LINK_PROBLEM_BODY)};`,
++  "  if (a) a.setAttribute('href', 'tgp://verified?error=link_problem');",
++  '})();',
++].join('\n');
++
++export function renderEmailConfirmedPage(): string {
++  return baseDocument({
++    title: 'The Growth Project — Email confirmed',
++    headline: 'Email confirmed',
++    body:
++      'Open The Growth Project app on your phone and sign in with the email ' +
++      'address and password used at sign-up. There is no need to open this ' +
++      'link again.',
++    cta_label: 'Open the app',
++    cta_href: 'tgp://verified',
++    links: [
++      { label: 'Get the iPhone app', href: '/download/ios' },
++      { label: 'Get the Android app', href: '/download/android' },
++      {
++        label: `Need help? Email ${SUPPORT_EMAIL}`,
++        href: `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Confirming my email')}`,
++      },
++    ],
++    script: EMAIL_CONFIRMED_SCRIPT,
++  });
++}
++
+ export function renderSignupPage(inviteCode?: string | null): string {
+   const code = sanitizeInviteCode(inviteCode);
+   if (code) {
+@@ -196,7 +257,7 @@ function baseDocument(p: PageContent): string {
+   <p>${body}</p>${codeBlock}
+   <a class="cta" href="${ctaHref}">${ctaLabel}</a>${linksBlock}
+   <footer>The Growth Project · ${policyFooterLinks()}</footer>
+-</main>
++</main>${p.script ? `\n<script>\n${p.script}\n</script>` : ''}
+ </body>
+ </html>`;
+ }
+diff --git a/test/hunt01-email-confirmed-page.spec.ts b/test/hunt01-email-confirmed-page.spec.ts
+new file mode 100644
+index 000000000..f6960aa04
+--- /dev/null
++++ b/test/hunt01-email-confirmed-page.spec.ts
+@@ -0,0 +1,130 @@
++// HUNT-01-124 — sign-up confirmation landing.
++//
++// Normal-day story: a new member signs up on the phone, opens the
++// confirmation email on a computer and clicks Confirm. Supabase confirms the
++// address and redirects to the app link `tgp://verified`, which a computer
++// cannot open, so the person sees a blank page (or, when the redirect is not
++// allow-listed, the Site URL fallback "Coach landing page — This page isn't
++// available") and believes sign-up failed. Production today:
++// GET https://app.trygrowthproject.com/verified -> 404 JSON.
++//
++// This page is the web target for that redirect: it says the email is
++// confirmed and what to do next, switches to expired-link copy when Supabase
++// appends an error, and strips the session fragment from the address bar.
++import type { INestApplication, Type } from '@nestjs/common';
++import { Test } from '@nestjs/testing';
++import { PublicPagesController } from '../src/public-pages/public-pages.controller';
++import {
++  EMAIL_CONFIRMED_LINK_PROBLEM_BODY,
++  EMAIL_CONFIRMED_LINK_PROBLEM_HEADLINE,
++  EMAIL_CONFIRMED_SCRIPT,
++} from '../src/public-pages/public-pages.html';
++
++async function serve(controller: Type<unknown>): Promise<{ app: INestApplication; base: string }> {
++  const mod = await Test.createTestingModule({ controllers: [controller] }).compile();
++  const app = mod.createNestApplication({ logger: false });
++  await app.listen(0, '127.0.0.1');
++  const base = (await app.getUrl()).replace('[::1]', '127.0.0.1');
++  return { app, base };
++}
++
++// Visible text only: drop the one known, server-owned script block by exact
++// string (not a regex), then strip tags.
++function textOutsideTags(html: string): string {
++  const scriptBlock = `<script>\n${EMAIL_CONFIRMED_SCRIPT}\n</script>`;
++  expect(html).toContain(scriptBlock);
++  return html
++    .split(scriptBlock)
++    .join(' ')
++    .split('<')
++    .map((chunk, i) => (i === 0 ? chunk : chunk.slice(chunk.indexOf('>') + 1)))
++    .join(' ');
++}
++
++type FakeEl = { textContent: string; href?: string; setAttribute(k: string, v: string): void };
++
++function runScript(hash: string, search = '') {
++  const els: Record<string, FakeEl> = {
++    h1: { textContent: 'Email confirmed', setAttribute() {} },
++    'main > p': { textContent: 'body', setAttribute() {} },
++    'a.cta': {
++      textContent: 'Open the app',
++      href: 'tgp://verified',
++      setAttribute(k: string, v: string) {
++        if (k === 'href') this.href = v;
++      },
++    },
++  };
++  const replaceState = jest.fn();
++  const window = {
++    location: { hash, search, pathname: '/verified' },
++    history: { replaceState },
++  };
++  const document = { querySelector: (sel: string) => els[sel] ?? null };
++  new Function('window', 'document', EMAIL_CONFIRMED_SCRIPT)(window, document);
++  return { els, replaceState };
++}
++
++describe('HUNT-01-124 GET /verified (email confirmed landing)', () => {
++  let app: INestApplication | null = null;
++  afterEach(async () => {
++    if (app) await app.close();
++    app = null;
++  });
++
++  it('serves a static confirmation page that opens the app and offers the stores and support', async () => {
++    const served = await serve(PublicPagesController);
++    app = served.app;
++    const res = await fetch(`${served.base}/verified`);
++    const body = await res.text();
++    expect(res.status).toBe(200);
++    expect(res.headers.get('content-type')).toMatch(/text\/html/);
++    expect(res.headers.get('cache-control')).toMatch(/no-store/);
++    expect(res.headers.get('referrer-policy')).toBe('no-referrer');
++    expect(body).toContain('<h1>Email confirmed</h1>');
++    expect(body).toContain('href="tgp://verified"');
++    expect(body).toContain('href="/download/ios"');
++    expect(body).toContain('href="/download/android"');
++    expect(body).toContain('mailto:');
++    const text = textOutsideTags(body);
++    expect(text).not.toContain('!');
++    expect(text).not.toMatch(/\b(I|I'm|we|We|our|Our|us)\b/);
++  });
++
++  it('a successful return strips the session tokens from the address bar and keeps the confirmed copy', () => {
++    const { els, replaceState } = runScript(
++      '#access_token=AAA.BBB.CCC&expires_in=3600&refresh_token=RRR&token_type=bearer&type=signup',
++    );
++    expect(replaceState).toHaveBeenCalledWith(null, '', '/verified');
++    expect(els.h1.textContent).toBe('Email confirmed');
++    expect(els['a.cta'].href).toBe('tgp://verified');
++  });
++
++  it('an expired or already-used link switches to the link-problem copy (fragment error)', () => {
++    const { els, replaceState } = runScript(
++      '#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired',
++    );
++    expect(replaceState).toHaveBeenCalled();
++    expect(els.h1.textContent).toBe(EMAIL_CONFIRMED_LINK_PROBLEM_HEADLINE);
++    expect(els['main > p'].textContent).toBe(EMAIL_CONFIRMED_LINK_PROBLEM_BODY);
++    expect(els['a.cta'].href).toBe('tgp://verified?error=link_problem');
++  });
++
++  it('treats a query-string error the same way (PKCE-style error return)', () => {
++    const { els } = runScript('', '?error=access_denied&error_code=otp_expired');
++    expect(els.h1.textContent).toBe(EMAIL_CONFIRMED_LINK_PROBLEM_HEADLINE);
++  });
++
++  it('a bare visit changes nothing', () => {
++    const { els, replaceState } = runScript('', '');
++    expect(replaceState).not.toHaveBeenCalled();
++    expect(els.h1.textContent).toBe('Email confirmed');
++  });
++
++  it('link-problem copy follows the product copy rules', () => {
++    for (const s of [EMAIL_CONFIRMED_LINK_PROBLEM_HEADLINE, EMAIL_CONFIRMED_LINK_PROBLEM_BODY]) {
++      expect(s).not.toContain('!');
++      expect(s).not.toMatch(/\b(I|I'm|we|We|our|Our|us)\b/);
++    }
++  });
++});

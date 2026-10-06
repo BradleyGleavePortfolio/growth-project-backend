@@ -1,0 +1,24 @@
+# pack-refs with: peeled fully-peeled sorted 
+39865147daa2859225a5d7349620b2364ff16d32 refs/heads/agent124/hunt02-auth-backend
+52fbaaebea99673750e1226e90c89e9ebacadc58 refs/heads/agent124/money-connect
+4c74404e1642ac47f34ad7516c458b11c04fdee0 refs/heads/agent125/audit-02-free-link-paid
+a28c474c8ed4fe9e23535458b5d91071cf45d4b7 refs/heads/agent125/audit-03-125-bell-read
+a9fee4d4d59755ee98899c3cb35d9df8abaac2fb refs/heads/agent125/audit-04-welcome-done
+933f325011f67e9a56a9d7980cb9c66532b1f5c0 refs/heads/agent125/audit-05-125-crisis
+43072020b93303af1e7faaad6fa7d93042a1330d refs/heads/agent125/audit-08-meal-plan-edits
+25f882cf6f01c03ef087445cfd51974bb1c5fd8f refs/heads/agent125/audit-09-notif
+ea742c5f02e288c17e4a1429b7005fc38600e867 refs/heads/agent125/audit-13-crosspillar-scope
+5bfe51f4243f373cebc5b873439b3087de8885d3 refs/heads/agent125/audit-14-ai-draft-edit
+d8352fe1eba11a07971ea92b1184a24e1d73a10e refs/heads/agent125/audit-17-redeemers
+20d430ad7923d8c52a5a07e3da1000140088b99c refs/heads/agent125/audit-18-125-catalog
+1f32a2c1cd7ba6f0e4d7db0c75c75102a6cc742e refs/heads/agent125/audit-19-help-copy
+3de021eb766f84f70e4d84fad88eca1ac1ed8613 refs/heads/agent125/b-deliv-125-buyer-access
+7fda4b23acf485999ea88816e1f2cbf1b5711db7 refs/heads/agent125/b-reportalert-125-email
+7fda4b23acf485999ea88816e1f2cbf1b5711db7 refs/heads/agent125/b-romanadj-125-sets
+aa2aa40c116116f7fa1d0b4e1fb0e1676743feb5 refs/heads/agent125/b-wearlist-125-providers
+5812a267c3b94959ede42005dd73a894002f36f8 refs/heads/agent125/fixq1-timeline-paging
+d0303aa57090cf72c16a3455b6fc0281057f04b3 refs/heads/fix/money-refund-124
+1ce430b96618fb61cdbafd585ab21c86c309f3a8 refs/heads/main
+d1713bf6ccb16f1dc29f924a72e5a077ef9b8ed5 refs/tags/pre-cleanup-20260425-195911
+fdd80b01c5c34ce832ea08fbf2fe91b000556044 refs/tags/pre-cleanup-archive-20260425-200137
+bf6594fd63a2506c727b2b8729485fab955972d8 refs/tags/pre-supabase-2.108-migration

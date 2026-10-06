@@ -1,0 +1,140 @@
+{
+  "repo": "mobile",
+  "number": 432,
+  "head": "f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b",
+  "base": "7b2942a29122fa6aa37da1ca14e8a10aad5fcdd5",
+  "title": "fix(push): a tap on a push without a target screen opens Community, Workouts or the notification center (AUDIT-09-125)",
+  "body": "**Tier:** T1 (tap routing only; no money, auth, PII, schema or data paths).\n\n**Why:** The app routes a push tap only by `data.actionScreen`. Community pushes, workout reminders, check-in nudges and several other pushes from the current production backend carry only `data.kind`, so tapping them opens the app wherever it was, with no navigation.\n\n**T4 trigger scan:** none (no auth, RLS, PII, money, credentials or destructive data).\n**T3 trigger scan:** none (no cross-module contract change; the backend payload is unchanged and read as it is sent today).\n**Bounded T1:** `src/services/pushNotifications.ts` (kind fallback when `actionScreen` is absent), `src/services/pushTapRouter.ts` (one client route, `Community` -> CommunityTab, behind `featureFlags.communityTab`), `src/services/notificationsApi.ts` (notification center rows: kind fallback when `actionScreen` is absent).\n**Canonical builder:** AUDIT-09-125 (agent 125 worker, Claude Opus 5.5).\n**Acceptance evidence:** PR CI. New tests in `src/services/__tests__/pushPermissionDeferral.test.ts` and `src/services/__tests__/notificationsNormalize.test.ts` fail on main (main passes `undefined` as the screen for a push or a center row with only `kind`).\n\n## Finding fixed\n- **U-A09-1** (broken navigation target): a client gets \"New reply on your post\" (or a workout reminder, or a check-in nudge), taps it, and the app opens on whatever screen was last open instead of Community, Workouts or the notification center.\n\n- **U-A09-2** (dead tap): a client opens the notification center and taps \"New message from Coach\" (or a workout reminder, a content drop or a community reply), and nothing happens; only booking rows carried a target screen.\n\nBehaviour: a push that carries `actionScreen` routes exactly as before. Without it, `kind` decides: `community_*` -> Community tab (client, flag on; coach and flag-off land on the notification center), `workout_reminder` -> Workouts, any other kind -> the role's notification center (where its inbox row is). No `kind` -> unchanged (no navigation). Center rows without `actionScreen`: `community_*` -> Community, `message*` -> Messages, `workout_reminder` -> Workouts, `drip_released` -> Deliverables; other kinds stay in the center as today. The router's role, flag and user checks are unchanged.\n\nWorks against the current production backend (it reads the `kind` key the backend already sends). Pairs with backend growth-project-backend#792 (coach alert, purchase and content pushes go through the push stack and carry `actionScreen: NotificationCenter`), but does not depend on it.\n\n## Overlap with open PRs\nm#412 also edits `src/services/pushTapRouter.ts` (import rename and the CreditPackCheckout comment, lines 28 and 100-108). This PR adds one route at the end of `CLIENT_PUSH_ROUTES` (a different hunk); either merge order applies cleanly.\n\nNo lockfile, dependency, flag, eas.json or backend change. No clinic partner name, no secrets.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 84,
+  "deletions": 3,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/432",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/432#issuecomment-6025920721",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-09-125, agent 125) \u2014 growth-project-mobile#432 @ f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b \u2014 READY FOR AUDIT\n\n- Tier T1 (tap routing only). 5 files, +84/-3 (87 lines, tests included). No eas.json, flag, lockfile or backend change.\n- Fixes U-A09-1 (a push with only `kind` (community, workout reminder, check-in nudge) opened no screen; now community -> Community tab, workout reminder -> Workouts, other kinds -> notification center) and U-A09-2 (notification center rows other than bookings had no target, so a tap did nothing; now message -> Messages, community -> Community, workout reminder -> Workouts, content -> Deliverables).\n- Works against the current production backend (reads the `kind` key it already sends). Pairs with backend#792; does not depend on it.\n- Overlap: m#412 also edits `src/services/pushTapRouter.ts` (different hunk; one route added at the end of `CLIENT_PUSH_ROUTES`).\n- CI: all checks green at this head (typecheck, lint, test; CodeQL). Two pushes (the second added U-A09-2 before CI started); this comment is for the final head.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112512862570",
+      "id": 112512862570,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A432+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112512862570/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37533500097/job/112508503611",
+      "id": 112508503611,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112508503611/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37533500097/job/112508503227",
+      "id": 112508503227,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112508503227/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37533500131/job/112508502958",
+      "id": 112508502958,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112508502958/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "47cea09f9e078a8ea6f772090d46fa7dae076c14",
+      "filename": "src/services/__tests__/notificationsNormalize.test.ts",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 0,
+      "changes": 10,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b/src%2Fservices%2F__tests__%2FnotificationsNormalize.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b/src%2Fservices%2F__tests__%2FnotificationsNormalize.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fservices%2F__tests__%2FnotificationsNormalize.test.ts?ref=f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b",
+      "patch": "@@ -50,4 +50,14 @@ describe('normalizeNotification (S-SCHED-2 live rows)', () => {\n     expect(odd?.actionScreen).toBeUndefined();\n     expect(odd?.createdAt).toBe(new Date(0).toISOString());\n   });\n+\n+  it('AUDIT-09-125: rows without an actionScreen open the screen their kind belongs to', () => {\n+    const row = (kind: string) =>\n+      normalizeNotification({ id: `r-${kind}`, kind, body: 'b', payload: {}, read_at: null, created_at: '2027-03-01T10:00:00.000Z' });\n+    expect(row('message_received')?.actionScreen).toBe('Messages');\n+    expect(row('community_post_replied')?.actionScreen).toBe('Community');\n+    expect(row('workout_reminder')?.actionScreen).toBe('WorkoutMain');\n+    expect(row('drip_released')?.actionScreen).toBe('Deliverables');\n+    expect(row('coach_alert')?.actionScreen).toBeUndefined();\n+  });\n });"
+    },
+    {
+      "sha": "b71689a50d6c4719ccefd449e3c44ea3608cdcf2",
+      "filename": "src/services/__tests__/pushPermissionDeferral.test.ts",
+      "status": "modified",
+      "additions": 37,
+      "deletions": 1,
+      "changes": 38,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b/src%2Fservices%2F__tests__%2FpushPermissionDeferral.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b/src%2Fservices%2F__tests__%2FpushPermissionDeferral.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fservices%2F__tests__%2FpushPermissionDeferral.test.ts?ref=f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b",
+      "patch": "@@ -24,7 +24,11 @@ jest.mock('expo-notifications', () => ({\n   AndroidImportance: { MAX: 5 },\n }));\n \n-import { registerForPushNotifications, installNotificationResponseHandler } from '../pushNotifications';\n+import {\n+  registerForPushNotifications,\n+  installNotificationResponseHandler,\n+  fallbackScreenForKind,\n+} from '../pushNotifications';\n \n function response(id: string, data: Record<string, unknown>) {\n   return { notification: { request: { identifier: id, content: { data } } } };\n@@ -105,6 +109,38 @@ describe('installNotificationResponseHandler', () => {\n   });\n });\n \n+describe('AUDIT-09-125: a push without actionScreen still opens a screen', () => {\n+  beforeEach(() => jest.clearAllMocks());\n+\n+  it('routes by kind: community, workout reminder, everything else to the notification center', () => {\n+    let live: ((r: unknown) => void) | undefined;\n+    mockAddResponse.mockImplementation((cb: (r: unknown) => void) => {\n+      live = cb;\n+      return { remove: jest.fn() };\n+    });\n+    mockGetLast.mockResolvedValue(null);\n+    const onResponse = jest.fn();\n+    const cleanup = installNotificationResponseHandler(onResponse);\n+    live?.(response('c1', { kind: 'community_post_replied', target_id: 'p1' }));\n+    expect(onResponse).toHaveBeenLastCalledWith('Community', undefined, 'c1');\n+    live?.(response('w1', { kind: 'workout_reminder', deep_link: 'tgp://workouts' }));\n+    expect(onResponse).toHaveBeenLastCalledWith('WorkoutMain', undefined, 'w1');\n+    live?.(response('n1', { kind: 'nudge_missed_checkin' }));\n+    expect(onResponse).toHaveBeenLastCalledWith('NotificationCenter', undefined, 'n1');\n+    live?.(response('m1', { kind: 'message_received', actionScreen: 'Messages' }));\n+    expect(onResponse).toHaveBeenLastCalledWith('Messages', undefined, 'm1');\n+    live?.(response('x1', {}));\n+    expect(onResponse).toHaveBeenLastCalledWith(undefined, undefined, 'x1');\n+    cleanup();\n+  });\n+\n+  it('fallbackScreenForKind ignores a missing or non-string kind', () => {\n+    expect(fallbackScreenForKind(undefined)).toBeUndefined();\n+    expect(fallbackScreenForKind(7)).toBeUndefined();\n+    expect(fallbackScreenForKind('')).toBeUndefined();\n+  });\n+});\n+\n describe('app wiring (source guards)', () => {\n   const APP = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'App.tsx'), 'utf8');\n   it('App.tsx installs the tap handler once, routed through pushTapRouter', () => {"
+    },
+    {
+      "sha": "6186f71f71bf79a4ce8549409a8f78b617af83ca",
+      "filename": "src/services/notificationsApi.ts",
+      "status": "modified",
+      "additions": 17,
+      "deletions": 1,
+      "changes": 18,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b/src%2Fservices%2FnotificationsApi.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b/src%2Fservices%2FnotificationsApi.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fservices%2FnotificationsApi.ts?ref=f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b",
+      "patch": "@@ -289,6 +289,20 @@ function stringParams(raw: unknown): Record<string, string> | undefined {\n   return Object.keys(out).length > 0 ? out : undefined;\n }\n \n+/**\n+ * AUDIT-09-125: only booking rows carry an actionScreen, so tapping a message,\n+ * workout reminder, content or community row did nothing. Rows without one\n+ * open the screen their kind belongs to (the push router keeps the role and\n+ * flag checks); other kinds stay in the center.\n+ */\n+export function inboxScreenForKind(kind: string): string | undefined {\n+  if (kind.startsWith('community_')) return 'Community';\n+  if (kind.startsWith('message')) return 'Messages';\n+  if (kind === 'workout_reminder') return 'WorkoutMain';\n+  if (kind === 'drip_released') return 'Deliverables';\n+  return undefined;\n+}\n+\n /** Backend row or AppNotification -> AppNotification; null when unusable. */\n export function normalizeNotification(raw: unknown): AppNotification | null {\n   const r = asRecord(raw);\n@@ -311,7 +325,9 @@ export function normalizeNotification(raw: unknown): AppNotification | null {\n       : new Date(0).toISOString();\n   const screenRaw = typeof r.actionScreen === 'string' ? r.actionScreen : payload.actionScreen;\n   const actionScreen =\n-    typeof screenRaw === 'string' && SCREEN_NAME.test(screenRaw) ? screenRaw : undefined;\n+    typeof screenRaw === 'string' && SCREEN_NAME.test(screenRaw)\n+      ? screenRaw\n+      : inboxScreenForKind(rawKind);\n   const actionParams = stringParams(r.actionParams ?? payload.actionParams);\n   return {\n     id: r.id,"
+    },
+    {
+      "sha": "cd69f51a102956b75aea4e7647f322be8d8e23b8",
+      "filename": "src/services/pushNotifications.ts",
+      "status": "modified",
+      "additions": 18,
+      "deletions": 1,
+      "changes": 19,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b/src%2Fservices%2FpushNotifications.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b/src%2Fservices%2FpushNotifications.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fservices%2FpushNotifications.ts?ref=f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b",
+      "patch": "@@ -143,14 +143,31 @@ export type NotificationResponseCallback = (\n   notificationId?: string,\n ) => void;\n \n+/**\n+ * AUDIT-09-125: where a push without `actionScreen` opens. Community, workout\n+ * reminder, check-in nudge and content pushes from the current backend carry\n+ * only `kind`, so a tap used to open the app with no navigation. A community\n+ * push opens Community; a workout reminder opens Workouts; any other kind\n+ * opens the notification center, where its inbox row is. The router keeps\n+ * the role and flag checks (an unknown or unavailable screen lands on the\n+ * role's notification center).\n+ */\n+export function fallbackScreenForKind(kind: unknown): string | undefined {\n+  if (typeof kind !== 'string' || kind.length === 0) return undefined;\n+  if (kind.startsWith('community_')) return 'Community';\n+  if (kind === 'workout_reminder') return 'WorkoutMain';\n+  return 'NotificationCenter';\n+}\n+\n function dispatchResponse(\n   response: Notifications.NotificationResponse | null | undefined,\n   onResponse: NotificationResponseCallback,\n ): void {\n   if (!response) return;\n   const request = response.notification?.request;\n   const data = request?.content?.data;\n-  const actionScreen = typeof data?.actionScreen === 'string' ? data.actionScreen : undefined;\n+  const actionScreen =\n+    typeof data?.actionScreen === 'string' ? data.actionScreen : fallbackScreenForKind(data?.kind);\n   // Untrusted payload: decode to a bounded string map (audit #304 Sol C2).\n   const actionParams = decodePushParams(data?.actionParams);\n   onResponse(actionScreen, actionParams, request?.identifier);"
+    },
+    {
+      "sha": "be001e0dd8ddfb68762ede9f3e17638fb67a750a",
+      "filename": "src/services/pushTapRouter.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 0,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b/src%2Fservices%2FpushTapRouter.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b/src%2Fservices%2FpushTapRouter.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fservices%2FpushTapRouter.ts?ref=f3f7afbb3b1122ea2866a3ecc1f3bf5ee2db4c8b",
+      "patch": "@@ -85,6 +85,8 @@ export const CLIENT_PUSH_ROUTES: Record<string, Resolver> = {\n     featureFlags.communityTab && featureFlags.communityEvents\n       ? { root: 'CommunityTab', screen: 'CommunityEventDetail' }\n       : null,\n+  // AUDIT-09-125: a community push (kind community_*) opens the Community tab.\n+  Community: () => (featureFlags.communityTab ? { root: 'CommunityTab' } : null),\n };\n \n /** Coach destinations. Root = CoachNavigator tab names. */"
+    }
+  ]
+}

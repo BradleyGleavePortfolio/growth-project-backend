@@ -1,0 +1,447 @@
+diff --git a/src/api/__tests__/messagesApi.test.ts b/src/api/__tests__/messagesApi.test.ts
+index ddf3952e..47e61505 100644
+--- a/src/api/__tests__/messagesApi.test.ts
++++ b/src/api/__tests__/messagesApi.test.ts
+@@ -7,7 +7,9 @@
+  *
+  * Coverage:
+  *   - report(): POST /messages/report with { messageId, reason, details }
+- *   - report(): every ReportReason value is exactly what backend accepts
++ *   - report(): every sheet category is sent as a reason the backend DTO accepts
++ *     (spam | harassment | sexual | self_harm | other); folded categories keep
++ *     their label in details (AUDIT-03-125 B1)
+  *   - report(): details truncated to DETAILS_MAX (1000)
+  *   - report(): non-2xx throws (no soft-success / no swallowed 4xx)
+  *   - block(): POST /users/:id/block
+@@ -18,9 +20,13 @@ import {
+   messagesModerationApi,
+   REPORT_REASON_OPTIONS,
+   DETAILS_MAX,
++  REPORT_WIRE_REASON,
+   ReportReason,
+ } from '../messagesApi';
+ 
++// Mirror of backend src/messages-safety/dto/report-message.dto.ts REPORT_REASONS.
++const BACKEND_REPORT_REASONS = ['spam', 'harassment', 'sexual', 'self_harm', 'other'];
++
+ jest.mock('../../services/api', () => ({
+   __esModule: true,
+   default: {
+@@ -70,31 +76,41 @@ describe('messagesModerationApi.report', () => {
+   });
+ 
+   it.each(REPORT_REASON_OPTIONS.map((o) => o.value))(
+-    'sends reason "%s" verbatim (no rewrites or drift)',
++    'sends category "%s" as a reason the backend accepts',
+     async (reason: ReportReason) => {
+       api.post.mockResolvedValueOnce({ data: {} });
+       await messagesModerationApi.report('msg-1', { reason });
+-      expect(api.post.mock.calls[0][1].reason).toBe(reason);
++      const sent = api.post.mock.calls[0][1].reason;
++      expect(BACKEND_REPORT_REASONS).toContain(sent);
++      expect(sent).toBe(REPORT_WIRE_REASON[reason]);
+     },
+   );
+ 
+-  it('uses backend reason "sexual" (never legacy "sexual_content")', () => {
++  it.each([
++    ['hate_speech', 'harassment', 'Hate speech.'],
++    ['violence', 'harassment', 'Violence or threats.'],
++    ['misinformation', 'other', 'Misinformation.'],
++  ] as const)('folds "%s" into "%s" and keeps the category in details', async (reason, wire, label) => {
++    api.post.mockResolvedValueOnce({ data: {} });
++    await messagesModerationApi.report('msg-1', { reason, details: 'said it twice' });
++    expect(api.post.mock.calls[0][1]).toEqual({
++      messageId: 'msg-1',
++      reason: wire,
++      details: `${label} said it twice`,
++    });
++    api.post.mockResolvedValueOnce({ data: {} });
++    await messagesModerationApi.report('msg-2', { reason });
++    expect(api.post.mock.calls[1][1].details).toBe(label);
++  });
++
++  it('offers self-harm and sends it verbatim; never legacy "sexual_content"', async () => {
+     const values = REPORT_REASON_OPTIONS.map((o) => o.value);
+     expect(values).toContain('sexual');
+     expect(values).not.toContain('sexual_content');
+-    expect(values).not.toContain('self_harm');
+-    // Backend-accepted reasons from PR #263.
+-    expect(values).toEqual(
+-      expect.arrayContaining([
+-        'spam',
+-        'harassment',
+-        'sexual',
+-        'hate_speech',
+-        'violence',
+-        'misinformation',
+-        'other',
+-      ]),
+-    );
++    expect(values).toContain('self_harm');
++    api.post.mockResolvedValueOnce({ data: {} });
++    await messagesModerationApi.report('msg-1', { reason: 'self_harm' });
++    expect(api.post.mock.calls[0][1]).toEqual({ messageId: 'msg-1', reason: 'self_harm', details: undefined });
+   });
+ 
+   it('caps details at DETAILS_MAX (1000)', async () => {
+diff --git a/src/api/messagesApi.ts b/src/api/messagesApi.ts
+index 691623a2..2ce87305 100644
+--- a/src/api/messagesApi.ts
++++ b/src/api/messagesApi.ts
+@@ -25,25 +25,57 @@ import api from '../services/api';
+ import type { AxiosResponse } from 'axios';
+ import { emitTutorialSignal } from '../tutorial/tutorialEvents';
+ 
++/**
++ * The categories the report sheet offers. The backend DTO
++ * (messages-safety/dto/report-message.dto.ts) accepts only
++ * spam | harassment | sexual | self_harm | other, so `report()` sends
++ * REPORT_WIRE_REASON[reason] and keeps the finer category in `details`.
++ * Sending a category verbatim (hate_speech, violence, misinformation) was a
++ * 400 and no report was filed (AUDIT-03-125 B1).
++ */
+ export type ReportReason =
+   | 'spam'
+   | 'harassment'
+   | 'sexual'
+   | 'hate_speech'
+   | 'violence'
++  | 'self_harm'
+   | 'misinformation'
+   | 'other';
+ 
++/** Reasons the production backend accepts on POST /messages/report. */
++export type ReportWireReason = 'spam' | 'harassment' | 'sexual' | 'self_harm' | 'other';
++
+ export const REPORT_REASON_OPTIONS: ReadonlyArray<{ value: ReportReason; label: string }> = [
+   { value: 'spam', label: 'Spam' },
+   { value: 'harassment', label: 'Harassment or bullying' },
+   { value: 'sexual', label: 'Sexual content' },
+   { value: 'hate_speech', label: 'Hate speech' },
+   { value: 'violence', label: 'Violence or threats' },
++  { value: 'self_harm', label: 'Self-harm or suicide' },
+   { value: 'misinformation', label: 'Misinformation' },
+   { value: 'other', label: 'Something else' },
+ ];
+ 
++export const REPORT_WIRE_REASON: Readonly<Record<ReportReason, ReportWireReason>> = {
++  spam: 'spam',
++  harassment: 'harassment',
++  sexual: 'sexual',
++  hate_speech: 'harassment',
++  violence: 'harassment',
++  self_harm: 'self_harm',
++  misinformation: 'other',
++  other: 'other',
++};
++
++/** Shown with reasons that can mean someone is at risk right now. */
++export const REPORT_EMERGENCY_NOTE =
++  'Reports are not for emergencies. If you are in danger, call 911. If you are struggling emotionally, call or text 988.';
++
++export function reportNeedsEmergencyNote(reason: ReportReason | null): boolean {
++  return reason === 'self_harm' || reason === 'violence';
++}
++
+ /** Backend cap for the optional free-text context, per PR #263. */
+ export const DETAILS_MAX = 1000;
+ 
+@@ -92,10 +124,18 @@ async function report(
+   payload: ReportMessagePayload,
+ ): Promise<ReportMessageResponse> {
+   if (!messageId) throw new Error('messageId required');
++  const wire = REPORT_WIRE_REASON[payload.reason];
++  // A category the backend folds into a wider reason keeps its label first in
++  // details so the reviewer still sees what was picked.
++  const label =
++    wire === payload.reason
++      ? null
++      : REPORT_REASON_OPTIONS.find((o) => o.value === payload.reason)?.label ?? null;
++  const details = label ? (payload.details ? `${label}. ${payload.details}` : `${label}.`) : payload.details;
+   const body = {
+     messageId,
+-    reason: payload.reason,
+-    details: payload.details?.slice(0, DETAILS_MAX),
++    reason: wire,
++    details: details?.slice(0, DETAILS_MAX),
+   };
+   const res: AxiosResponse<unknown> = await api.post('/messages/report', body);
+   const data = (res.data ?? {}) as { id?: string; report_id?: string };
+diff --git a/src/components/home/HomeHeaderActions.tsx b/src/components/home/HomeHeaderActions.tsx
+index 0884c3dd..013447cc 100644
+--- a/src/components/home/HomeHeaderActions.tsx
++++ b/src/components/home/HomeHeaderActions.tsx
+@@ -11,16 +11,17 @@
+  * The coach name comes from `GET /v1/clients/me/coach` (same endpoint as
+  * CoachIntroductionBanner); any failure keeps the generic label.
+  */
+-import React, { useEffect, useState } from 'react';
+-import { Pressable, StyleSheet, Text, View } from 'react-native';
++import React, { useCallback, useEffect, useState } from 'react';
++import { AppState, Pressable, StyleSheet, Text, View } from 'react-native';
+ import { Ionicons } from '@expo/vector-icons';
+-import { useNavigation, NavigationProp, ParamListBase } from '@react-navigation/native';
++import { useFocusEffect, useNavigation, NavigationProp, ParamListBase } from '@react-navigation/native';
+ import api from '../../services/api';
+ import { useCurrentUser } from '../../hooks/useCurrentUser';
+ import { useClientUnreadCount } from '../../hooks/useClientUnreadCount';
+ import NotificationBadge from '../NotificationBadge';
+ import { useTheme } from '../../theme/ThemeProvider';
+ import { typography } from '../../theme/tokens';
++import { logger } from '../../utils/logger';
+ 
+ export function messageCoachLabel(coachName?: string | null): string {
+   const first = typeof coachName === 'string' ? coachName.trim().split(/\s+/)[0] : '';
+@@ -52,7 +53,38 @@ export default function HomeHeaderActions() {
+     };
+   }, [coachId]);
+ 
++  // Unread coach messages on the message entry (AUDIT-03-125 U2): without it a
++  // client on Home had no sign the coach replied. GET /messages/unread-count
++  // is live in production; refreshed on Home focus, foreground and every 30 s.
++  const [unreadMessages, setUnreadMessages] = useState(0);
++  const refreshUnreadMessages = useCallback(() => {
++    if (!coachId) {
++      setUnreadMessages(0);
++      return;
++    }
++    api
++      .get<{ total?: number }>('/messages/unread-count')
++      .then((res) => {
++        const n = Number(res?.data?.total ?? 0);
++        setUnreadMessages(Number.isFinite(n) && n > 0 ? n : 0);
++      })
++      .catch((error: unknown) => logger.warn('homeHeader.unread-messages', { error: String(error) }));
++  }, [coachId]);
++  useFocusEffect(refreshUnreadMessages);
++  useEffect(() => {
++    const id = setInterval(refreshUnreadMessages, 30000);
++    const sub = AppState.addEventListener('change', (state) => {
++      if (state === 'active') refreshUnreadMessages();
++    });
++    return () => {
++      clearInterval(id);
++      sub.remove();
++    };
++  }, [refreshUnreadMessages]);
++
+   const label = messageCoachLabel(coachName);
++  const messageLabel =
++    unreadMessages > 0 ? `${label}, ${unreadMessages > 99 ? '99+' : unreadMessages} unread` : label;
+   const bellLabel =
+     unreadCount > 0
+       ? `Notifications, ${unreadCount > 99 ? '99+' : unreadCount} unread`
+@@ -63,7 +95,7 @@ export default function HomeHeaderActions() {
+       <Pressable
+         onPress={() => navigation.navigate('Messages')}
+         accessibilityRole="button"
+-        accessibilityLabel={label}
++        accessibilityLabel={messageLabel}
+         testID="home-message-coach"
+         style={({ pressed }) => [
+           styles.message,
+@@ -74,6 +106,7 @@ export default function HomeHeaderActions() {
+         <Text style={[typography.bodySmall, styles.messageText, { color: sc.textPrimary }]} numberOfLines={1}>
+           {label}
+         </Text>
++        <NotificationBadge count={unreadMessages} />
+       </Pressable>
+       <Pressable
+         onPress={() => navigation.navigate('NotificationCenter')}
+@@ -101,6 +134,7 @@ const styles = StyleSheet.create({
+     minHeight: 44,
+     flexShrink: 1,
+     marginRight: 12,
++    position: 'relative',
+   },
+   messageText: { marginLeft: 8, flexShrink: 1 },
+   bell: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', position: 'relative' },
+diff --git a/src/components/home/__tests__/HomeHeaderActions.test.tsx b/src/components/home/__tests__/HomeHeaderActions.test.tsx
+index 125c7e11..d7db3ae9 100644
+--- a/src/components/home/__tests__/HomeHeaderActions.test.tsx
++++ b/src/components/home/__tests__/HomeHeaderActions.test.tsx
+@@ -4,7 +4,13 @@ import * as fs from 'fs';
+ import * as path from 'path';
+ 
+ const mockNavigate = jest.fn();
+-jest.mock('@react-navigation/native', () => ({ useNavigation: () => ({ navigate: mockNavigate }) }));
++jest.mock('@react-navigation/native', () => ({
++  useNavigation: () => ({ navigate: mockNavigate }),
++  useFocusEffect: (cb: () => void) => {
++    const R = require('react');
++    R.useEffect(() => cb(), [cb]);
++  },
++}));
+ const mockUser = jest.fn();
+ jest.mock('../../../hooks/useCurrentUser', () => ({ useCurrentUser: () => mockUser() }));
+ jest.mock('../../../hooks/useClientUnreadCount', () => ({ useClientUnreadCount: () => 3 }));
+@@ -47,6 +53,16 @@ describe('HomeHeaderActions', () => {
+     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith('NotificationCenter'));
+   });
+ 
++  it('shows the unread coach-message count on the message entry (AUDIT-03-125 U2)', async () => {
++    mockUser.mockReturnValue({ id: 'u1', coach_id: 'c1' });
++    mockGet.mockImplementation(async (u: string) =>
++      u === '/messages/unread-count' ? { data: { total: 2 } } : { data: { name: 'Bradley Gleave' } },
++    );
++    const { findByLabelText } = await render(<HomeHeaderActions />);
++    expect(await findByLabelText('Message Bradley, 2 unread')).toBeTruthy();
++    expect(mockGet).toHaveBeenCalledWith('/messages/unread-count');
++  });
++
+   it('HomeScreen mounts the actions and the deferred push card; ClientNavigator has no dead headerRight bell', () => {
+     const home = fs.readFileSync(path.join(__dirname, '..', '..', '..', 'screens', 'client', 'HomeScreen.tsx'), 'utf8');
+     expect(home).toMatch(/<HomeHeaderActions \/>/);
+diff --git a/src/components/messaging/ReportMessageSheet.tsx b/src/components/messaging/ReportMessageSheet.tsx
+index 17884dca..47cb6024 100644
+--- a/src/components/messaging/ReportMessageSheet.tsx
++++ b/src/components/messaging/ReportMessageSheet.tsx
+@@ -11,7 +11,13 @@ import React, { useMemo, useState, useCallback } from 'react';
+ import { Modal, View, Text, Pressable, TextInput, StyleSheet, ScrollView, KeyboardAvoidingView, Platform, ActivityIndicator } from 'react-native';
+ import { Ionicons } from '@expo/vector-icons';
+ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+-import { REPORT_REASON_OPTIONS, ReportReason, DETAILS_MAX } from '../../api/messagesApi';
++import {
++  REPORT_REASON_OPTIONS,
++  REPORT_EMERGENCY_NOTE,
++  ReportReason,
++  DETAILS_MAX,
++  reportNeedsEmergencyNote,
++} from '../../api/messagesApi';
+ 
+ export interface ReportMessageSheetProps {
+   visible: boolean;
+@@ -128,6 +134,12 @@ export function ReportMessageSheet({
+             );
+           })}
+ 
++          {reportNeedsEmergencyNote(reason) ? (
++            <Text style={styles.emergency} accessibilityRole="alert" testID="report-emergency-note">
++              {REPORT_EMERGENCY_NOTE}
++            </Text>
++          ) : null}
++
+           <Text style={styles.sectionLabel}>More details (optional)</Text>
+           <TextInput
+             style={styles.detailsInput}
+@@ -186,6 +198,7 @@ const makeStyles = (colors: ThemeColors) =>
+     title: { fontSize: 16, fontWeight: '600', color: colors.textPrimary },
+     content: { padding: 20, gap: 12 },
+     lede: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
++    emergency: { fontSize: 13, color: colors.textPrimary, lineHeight: 18, fontWeight: '600' },
+ 
+     previewWrap: {
+       backgroundColor: colors.surface,
+diff --git a/src/components/messaging/__tests__/ReportMessageSheet.test.tsx b/src/components/messaging/__tests__/ReportMessageSheet.test.tsx
+index a8e1ce35..1fc1c1bd 100644
+--- a/src/components/messaging/__tests__/ReportMessageSheet.test.tsx
++++ b/src/components/messaging/__tests__/ReportMessageSheet.test.tsx
+@@ -58,6 +58,7 @@ describe('ReportMessageSheet', () => {
+     ['Sexual content', 'sexual'],
+     ['Hate speech', 'hate_speech'],
+     ['Violence or threats', 'violence'],
++    ['Self-harm or suicide', 'self_harm'],
+     ['Misinformation', 'misinformation'],
+     ['Something else', 'other'],
+   ])('maps UI label "%s" to backend reason "%s"', async (label, value) => {
+@@ -76,6 +77,20 @@ describe('ReportMessageSheet', () => {
+     expect(onSubmit.mock.calls[0][0]).toMatchObject({ reason: value });
+   });
+ 
++  it.each([
++    ['Self-harm or suicide', true],
++    ['Violence or threats', true],
++    ['Spam', false],
++  ])('shows the 911 / 988 line for "%s": %s', async (label, shown) => {
++    const { getByLabelText, queryByTestId } = await render(
++      <ReportMessageSheet visible messagePreview="" onSubmit={jest.fn()} onClose={jest.fn()} />,
++    );
++    expect(queryByTestId('report-emergency-note')).toBeNull();
++    await fireEvent.press(getByLabelText(label));
++    if (shown) expect(queryByTestId('report-emergency-note')).not.toBeNull();
++    else expect(queryByTestId('report-emergency-note')).toBeNull();
++  });
++
+   it('passes trimmed free-text details to onSubmit when supplied', async () => {
+     const onSubmit = jest.fn().mockResolvedValue(undefined);
+     const { getByLabelText } = await render(
+diff --git a/src/screens/client/__tests__/HomeScreen.macroMode.test.tsx b/src/screens/client/__tests__/HomeScreen.macroMode.test.tsx
+index c1e9fbf7..4ada9027 100644
+--- a/src/screens/client/__tests__/HomeScreen.macroMode.test.tsx
++++ b/src/screens/client/__tests__/HomeScreen.macroMode.test.tsx
+@@ -26,6 +26,7 @@ jest.mock('../../../store/clientStore', () => ({
+ }));
+ jest.mock('@react-navigation/native', () => ({
+   useNavigation: () => ({ navigate: jest.fn() }),
++  useFocusEffect: () => undefined,
+ }));
+ jest.mock('../../../services/api', () => ({
+   workoutApi: { getAll: () => Promise.resolve({ data: [] }) },
+diff --git a/src/screens/coach/ClientMessagesScreen.tsx b/src/screens/coach/ClientMessagesScreen.tsx
+index ae6de31a..3d23c766 100644
+--- a/src/screens/coach/ClientMessagesScreen.tsx
++++ b/src/screens/coach/ClientMessagesScreen.tsx
+@@ -179,10 +179,15 @@ export default function ClientMessagesScreen() {
+       const unsubClient = subscribeToMessages(clientId, () => {
+         loadSinceNewest().then(markRead);
+       });
++      // A client message lands on the coach's own channel: it is on screen,
++      // so it is read (AUDIT-03-125 U1; was a refetch that left it unread).
++      const refetchAndRead = () => {
++        void loadSinceNewest().then(markRead);
++      };
+       const unsubSelf = currentUser?.id
+         ? subscribeToMessages(
+             currentUser.id,
+-            loadSinceNewest,
++            refetchAndRead,
+             thread.enabled
+               ? (ping) => {
+                   // The backend's public-channel ping carries no ids, so every
+@@ -196,7 +201,7 @@ export default function ClientMessagesScreen() {
+           )
+         : () => {};
+ 
+-      pollRef.current = setInterval(loadSinceNewest, FALLBACK_POLL_MS);
++      pollRef.current = setInterval(refetchAndRead, FALLBACK_POLL_MS);
+       return () => {
+         unsubClient();
+         unsubSelf();
+diff --git a/src/screens/coach/__tests__/ClientMessagesScreenV2.test.tsx b/src/screens/coach/__tests__/ClientMessagesScreenV2.test.tsx
+index 2a6f02af..18923050 100644
+--- a/src/screens/coach/__tests__/ClientMessagesScreenV2.test.tsx
++++ b/src/screens/coach/__tests__/ClientMessagesScreenV2.test.tsx
+@@ -39,7 +39,13 @@ jest.mock('../../../services/api', () => ({
+     sendClientMessage: (...a: unknown[]) => mockLegacySend(...(a as [string, string])),
+   },
+ }));
+-jest.mock('../../../services/realtime', () => ({ subscribeToMessages: () => () => undefined }));
++const mockSubs: Array<{ userId: string; onPing: () => void }> = [];
++jest.mock('../../../services/realtime', () => ({
++  subscribeToMessages: (userId: string, onPing: () => void) => {
++    mockSubs.push({ userId, onPing });
++    return () => undefined;
++  },
++}));
+ jest.mock('../../../hooks/useCurrentUser', () => ({ useCurrentUser: () => ({ id: 'coach-1' }) }));
+ jest.mock('../../../hooks/useBlockedUsersHydration', () => ({
+   useBlockedUsersHydration: () => ({ serverHydrationComplete: true }),
+@@ -92,6 +98,17 @@ const sentRow = (body: Record<string, unknown>) => ({
+ });
+ 
+ describe('ClientMessagesScreen with messaging_core_v2 ON', () => {
++  it('a client message that arrives while the thread is open is marked read (AUDIT-03-125 U1)', async () => {
++    mockSubs.length = 0;
++    await render(<ClientMessagesScreen />);
++    await waitFor(() => expect(postMock).toHaveBeenCalledWith(`${BASE}/read`, { up_to_message_id: 'm3' }, expect.anything()));
++    mockRows.push(row({ id: 'm4', sender_id: 'client-1', body: 'are you there', created_at: new Date().toISOString() }));
++    const self = mockSubs.filter((x) => x.userId === 'coach-1').pop();
++    expect(self).toBeTruthy();
++    self?.onPing();
++    await waitFor(() => expect(postMock).toHaveBeenCalledWith(`${BASE}/read`, { up_to_message_id: 'm4' }, expect.anything()));
++  });
++
+   it('sides from sender_id: client message offers report, own message edit and delete; tombstone, Edited, read-up-to', async () => {
+     const { findByLabelText, getByLabelText, queryByLabelText, getByText } = await render(<ClientMessagesScreen />);
+     expect(getByText('Message deleted')).toBeTruthy();

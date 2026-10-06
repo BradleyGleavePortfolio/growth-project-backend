@@ -1,0 +1,181 @@
+{
+  "repo": "mobile",
+  "number": 436,
+  "head": "09649323558e55600df9b4b09699e4131e38b484",
+  "base": "8c9b771e896f64662978e5fdf136c269580b7c27",
+  "title": "feat(wearables): Connections lists the cloud trackers the server can connect (B-WEARLIST-125)",
+  "body": "Tier: T3\nWhy: the Connections screen offers a cloud tracker (Oura, Polar, Withings, ...) only when the server lists it as connectable, so trackers light up without a new app build; on an older server it behaves exactly as today (m#421).\nT4 trigger scan: none (reads a token-free list of provider ids; no auth, money, PII or credential change on the client).\nT3 trigger scan: health-data source connection screen and connect sheet.\nBounded T1: NO (customer-visible health-source flow).\nCanonical builder: Claude Opus 5.5 (B-WEARLIST-125, agent 125)\nParent owner: operator agent 125\nAcceptance evidence: `ConnectionsScreen.test.tsx` 36/36 (3 new: a listed tracker shows with its benefit line and a working Connect; none listed = no cloud rows; buildRows adds only listed providers), `useConnectableCloudProviders.test.ts` 3/3 (route path, known-cloud-id filter, 404 / network / drifted body = none), `ConnectProviderSheet.test.tsx` 30/30 (1 new: `status=error` return keeps the sheet open with a retry), `ConnectionsScreen.emptyImport.test.tsx` 5/5. Full suite and tsc in this PR's CI.\nPromotion triggers: showing a cloud row the server did not list; any change to the OAuth start flow.\n\nOwner 14:30 10-06: \"TURN THEM ON AND SHOW THEM PROUDLY!\" Pairs with backend growth-project-backend#799 (adds `GET /v1/wearables/connections/providers` and makes the OAuth callback reachable from the provider redirect).\n\n## What changes\n- `wearablesConnectionsApi.cloudProviders()` reads `GET /v1/wearables/connections/providers` (`{ providers: [...] }`), keeping only known cloud ids (on-device and unknown ids dropped).\n- `useConnectableCloudProviders()` (new hook, 5 min stale time): any failure (today's production backend answers 404, no network, drifted body) means \"none listed\" and is logged, never shown.\n- ConnectionsScreen: `buildRows` also offers a cloud provider when the server lists it (m#421's `connectableHere` gains the server set). Listed trackers show their name and a one-line benefit (\"Sleep, readiness and heart rate from your Oura ring\"), each naming only data that provider's backend connector really reads. No brand logos exist in the app, so none are added. Connect uses the existing sheet and OAuth start flow.\n- ConnectProviderSheet: when the server callback returns `tgp://wearables/connected?status=error`, the sheet stays open with \"Oura isn't connected. The sign-in with Oura did not finish. Tap Continue to try again.\" instead of closing as if connected.\n\n## Against today's production backend\n`/providers` is a 404 there, so the list is empty and the screen is exactly m#421: this phone's health source plus existing connections, no cloud Connect that cannot work. The `status=error` branch is never reached (today's callback never redirects).\n\n## B / U fixed\n- U1 (owner ask): cloud trackers can be offered only with an app update; now each appears as soon as the server can connect it.\n- U2: a failed provider sign-in closed the sheet as if it worked; it now says it did not finish and offers Continue.\n\n## Overlap\nNo open mobile PR touches `src/screens/client/wearables`, `src/api/wearablesConnectionsApi.ts` or `src/hooks/useWearableConnections*` (checked m#411-m#433).\n",
+  "state": "open",
+  "draft": false,
+  "additions": 251,
+  "deletions": 7,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/436",
+  "comments": [],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37536166108/job/112517516413",
+      "id": 112517516413,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112517516413/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37536166376/job/112517516260",
+      "id": 112517516260,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112517516260/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37536166108/job/112517515847",
+      "id": 112517515847,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112517515847/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "c742388d063056d494f6cdf9eb71ad0554ec3334",
+      "filename": "src/api/wearablesConnectionsApi.ts",
+      "status": "modified",
+      "additions": 23,
+      "deletions": 0,
+      "changes": 23,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/09649323558e55600df9b4b09699e4131e38b484/src%2Fapi%2FwearablesConnectionsApi.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/09649323558e55600df9b4b09699e4131e38b484/src%2Fapi%2FwearablesConnectionsApi.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fapi%2FwearablesConnectionsApi.ts?ref=09649323558e55600df9b4b09699e4131e38b484",
+      "patch": "@@ -312,6 +312,19 @@ export const disconnectResultSchema = z.object({\n \n export type DisconnectResult = z.infer<typeof disconnectResultSchema>;\n \n+/**\n+ * B-WEARLIST-125: `GET /v1/wearables/connections/providers` \u2192\n+ * `{ providers: WearableProvider[] }`, the cloud trackers the server can\n+ * connect right now (switch on and that provider's keys set). Ids the app does\n+ * not know, and on-device sources, are dropped rather than failing the list.\n+ */\n+const cloudProvidersSchema = z.object({ providers: z.array(z.string()) });\n+\n+function isKnownCloudProvider(id: string): id is WearableProvider {\n+  const parsed = providerSchema.safeParse(id);\n+  return parsed.success && !isOnDeviceProvider(parsed.data);\n+}\n+\n // \u2500\u2500\u2500 Client \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n \n const BASE = '/v1/wearables/connections';\n@@ -327,6 +340,16 @@ export const wearablesConnectionsApi = {\n     return connectionListSchema.parse(res.data);\n   },\n \n+  /**\n+   * B-WEARLIST-125: the cloud providers the server can connect right now.\n+   * Older servers answer 404; callers treat any failure as \"none listed\".\n+   * @throws on a transport error or a drifted response.\n+   */\n+  async cloudProviders(): Promise<WearableProvider[]> {\n+    const res = await api.get<unknown>(`${BASE}/providers`);\n+    return cloudProvidersSchema.parse(res.data).providers.filter(isKnownCloudProvider);\n+  },\n+\n   /**\n    * Begin a cloud-OAuth connect flow for a provider. Returns the provider\n    * authorization URL + an opaque single-use CSRF state for the client to open"
+    },
+    {
+      "sha": "81cfdc6bd85aca9807125aba08ed15eac9cab8f1",
+      "filename": "src/hooks/useConnectableCloudProviders.test.ts",
+      "status": "added",
+      "additions": 39,
+      "deletions": 0,
+      "changes": 39,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/09649323558e55600df9b4b09699e4131e38b484/src%2Fhooks%2FuseConnectableCloudProviders.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/09649323558e55600df9b4b09699e4131e38b484/src%2Fhooks%2FuseConnectableCloudProviders.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fhooks%2FuseConnectableCloudProviders.test.ts?ref=09649323558e55600df9b4b09699e4131e38b484",
+      "patch": "@@ -0,0 +1,39 @@\n+/**\n+ * B-WEARLIST-125: the server-listed cloud trackers. An older server (404), a\n+ * network failure or a drifted body all mean \"none listed\", so Connections\n+ * behaves exactly as before; known cloud ids pass, others are dropped.\n+ */\n+const mockGet = jest.fn();\n+jest.mock('../services/api', () => ({\n+  __esModule: true,\n+  default: { get: (...args: unknown[]) => mockGet(...args) },\n+}));\n+\n+import { fetchConnectableCloudProviders } from './useConnectableCloudProviders';\n+\n+describe('fetchConnectableCloudProviders (B-WEARLIST-125)', () => {\n+  beforeEach(() => mockGet.mockReset());\n+\n+  it('reads GET /v1/wearables/connections/providers and keeps known cloud ids', async () => {\n+    mockGet.mockResolvedValue({\n+      data: { providers: ['OURA', 'POLAR', 'APPLE_HEALTHKIT', 'NEW_THING'] },\n+    });\n+    await expect(fetchConnectableCloudProviders()).resolves.toEqual(['OURA', 'POLAR']);\n+    expect(mockGet).toHaveBeenCalledWith('/v1/wearables/connections/providers');\n+  });\n+\n+  it('lists none when the server has no such route (404)', async () => {\n+    mockGet.mockRejectedValue(Object.assign(new Error('Request failed with status code 404'), {\n+      isAxiosError: true,\n+      response: { status: 404 },\n+    }));\n+    await expect(fetchConnectableCloudProviders()).resolves.toEqual([]);\n+  });\n+\n+  it('lists none on a network failure or a drifted body', async () => {\n+    mockGet.mockRejectedValueOnce(new Error('Network Error'));\n+    await expect(fetchConnectableCloudProviders()).resolves.toEqual([]);\n+    mockGet.mockResolvedValueOnce({ data: { providers: 'OURA' } });\n+    await expect(fetchConnectableCloudProviders()).resolves.toEqual([]);\n+  });\n+});"
+    },
+    {
+      "sha": "2a03bd438266754c4e7adc517a6ab9587ca8c1b3",
+      "filename": "src/hooks/useConnectableCloudProviders.ts",
+      "status": "added",
+      "additions": 41,
+      "deletions": 0,
+      "changes": 41,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/09649323558e55600df9b4b09699e4131e38b484/src%2Fhooks%2FuseConnectableCloudProviders.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/09649323558e55600df9b4b09699e4131e38b484/src%2Fhooks%2FuseConnectableCloudProviders.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fhooks%2FuseConnectableCloudProviders.ts?ref=09649323558e55600df9b4b09699e4131e38b484",
+      "patch": "@@ -0,0 +1,41 @@\n+/**\n+ * B-WEARLIST-125: the cloud trackers (Oura, Polar, Withings, ...) the server\n+ * can connect right now. The Connections screen offers a cloud tracker only\n+ * when it is listed here, so a provider lights up as soon as its keys are set\n+ * on the server, with no new app build.\n+ *\n+ * Any failure (an older server without the route answers 404, no network, a\n+ * drifted body) means \"none listed\": the screen then shows exactly what it\n+ * showed before (this phone's own health source plus existing connections),\n+ * never a Connect that cannot work. The failure is logged, never shown.\n+ */\n+\n+import { useQuery } from '@tanstack/react-query';\n+import { wearablesConnectionsApi, type WearableProvider } from '../api/wearablesConnectionsApi';\n+import { logger } from '../utils/logger';\n+\n+export const CONNECTABLE_CLOUD_PROVIDERS_QUERY_KEY = ['wearable-cloud-providers'] as const;\n+\n+const NONE: ReadonlySet<WearableProvider> = new Set<WearableProvider>();\n+\n+export async function fetchConnectableCloudProviders(): Promise<WearableProvider[]> {\n+  try {\n+    return await wearablesConnectionsApi.cloudProviders();\n+  } catch (err) {\n+    logger.warn('wearables', 'cloud provider list unavailable; showing none', {\n+      error: err instanceof Error ? err.name : typeof err,\n+    });\n+    return [];\n+  }\n+}\n+\n+/** The connectable cloud providers as a set (empty while loading or on failure). */\n+export function useConnectableCloudProviders(): ReadonlySet<WearableProvider> {\n+  const query = useQuery<WearableProvider[], Error>({\n+    queryKey: CONNECTABLE_CLOUD_PROVIDERS_QUERY_KEY,\n+    queryFn: fetchConnectableCloudProviders,\n+    staleTime: 5 * 60_000,\n+  });\n+  const data = query.data;\n+  return data && data.length > 0 ? new Set(data) : NONE;\n+}"
+    },
+    {
+      "sha": "1f09f75025af6b38305bbabb3af062365f9d5e6c",
+      "filename": "src/screens/client/wearables/ConnectProviderSheet.tsx",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 0,
+      "changes": 8,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2FConnectProviderSheet.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2FConnectProviderSheet.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2Fwearables%2FConnectProviderSheet.tsx?ref=09649323558e55600df9b4b09699e4131e38b484",
+      "patch": "@@ -72,6 +72,8 @@ import {\n } from '../../../services/health/sessionFence';\n import {\n   cloudConnectFailureMessage,\n+  cloudReturnFailed,\n+  cloudReturnedErrorMessage,\n   cloudSessionLockedMessage,\n   connectFailureMessage,\n   ctaLabelFor,\n@@ -251,6 +253,12 @@ export default function ConnectProviderSheet({\n       // list \u2014 the server may have completed the connection even if the\n       // in-app session reported a dismiss (e.g. redirect handled out-of-band).\n       invalidate();\n+      // B-WEARLIST-125: the server callback reports a failed connect in the\n+      // return URL; keep the sheet open with a retry instead of closing it.\n+      if (result.type === 'success' && cloudReturnFailed(result.url)) {\n+        showMessage(cloudReturnedErrorMessage(name));\n+        return;\n+      }\n       // Clinic tutorial: only an explicit success counts as connected; a\n       // dismiss is confirmed (or not) by the re-read connections list.\n       if (result.type === 'success') emitTutorialSignal('wearable_connected');"
+    },
+    {
+      "sha": "35afc339e99ea1a15e29f2e25562747e2fc24071",
+      "filename": "src/screens/client/wearables/ConnectionsScreen.tsx",
+      "status": "modified",
+      "additions": 30,
+      "deletions": 6,
+      "changes": 36,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2FConnectionsScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2FConnectionsScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2Fwearables%2FConnectionsScreen.tsx?ref=09649323558e55600df9b4b09699e4131e38b484",
+      "patch": "@@ -18,8 +18,9 @@\n  * Data comes from `useWearableConnections` (cache key ['wearable-connections']).\n  * The list is the join of the user's existing connections with the sources\n  * this phone can connect (AUDIT-11-125: Apple Health on iPhone, Health Connect\n- * and Samsung Health on Android), so those appear with a Connect button even\n- * before a first connect. Tapping Connect / Reconnect opens\n+ * and Samsung Health on Android) plus the cloud trackers the server lists as\n+ * connectable (B-WEARLIST-125, `useConnectableCloudProviders`), so those\n+ * appear with a Connect button even before a first connect. Tapping Connect / Reconnect opens\n  * `ConnectProviderSheet`; Disconnect asks first (DisconnectConfirmDialog, S14 round 4b) and then calls the soft-disconnect mutation.\n  *\n  * States: loading skeleton, error-with-retry, and a per-row pending state on\n@@ -57,6 +58,8 @@ import { notSyncingHereCopy } from './onDeviceCopy';\n import DisconnectConfirmDialog from './DisconnectConfirmDialog';\n import { disconnectFailureMessage } from './disconnectCopy';\n import { isOnDeviceStop } from '../../../services/health/sessionFence';\n+import { useConnectableCloudProviders } from '../../../hooks/useConnectableCloudProviders';\n+import { cloudBenefit } from './cloudCopy';\n \n // \u2500\u2500\u2500 Status presentation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n \n@@ -151,12 +154,21 @@ interface ProviderRow {\n  * WHOOP, ...) are not switched on for launch, so offering Connect for them, or\n  * for the other platform's store, only ever ended in \"isn't switched on yet\".\n  */\n-function connectableHere(provider: WearableProvider, here: WearableProvider | null): boolean {\n+function connectableHere(\n+  provider: WearableProvider,\n+  here: WearableProvider | null,\n+  cloud: ReadonlySet<WearableProvider>,\n+): boolean {\n+  // B-WEARLIST-125: a cloud tracker is offered once the server lists it as\n+  // connectable (switch on, keys set); an older server lists none.\n+  if (cloud.has(provider)) return true;\n   if (here == null) return false;\n   if (provider === here) return true;\n   return here === 'HEALTH_CONNECT' && provider === 'SAMSUNG_HEALTH';\n }\n \n+const NO_CLOUD: ReadonlySet<WearableProvider> = new Set<WearableProvider>();\n+\n /**\n  * Build the flat row list: the sources this phone can connect, plus any other\n  * provider the person already has a connection for (so it can still be\n@@ -169,6 +181,7 @@ export function buildRows(\n   connections: WearableConnection[],\n   local?: { provider: WearableProvider; connectionId: string | null } | null,\n   here: WearableProvider | null = deviceSourceForPlatform(),\n+  cloud: ReadonlySet<WearableProvider> = NO_CLOUD,\n ): ProviderRow[] {\n   const byProvider = new Map<WearableProvider, WearableConnection>();\n   for (const c of connections) {\n@@ -203,7 +216,7 @@ export function buildRows(\n   // as an active source.\n   const rows: ProviderRow[] = WEARABLE_PROVIDERS.map((provider) =>\n     provider === 'SAMSUNG_HEALTH' ? { ...rowFor('HEALTH_CONNECT'), provider } : rowFor(provider),\n-  ).filter((row) => row.status !== 'disconnected' || connectableHere(row.provider, here));\n+  ).filter((row) => row.status !== 'disconnected' || connectableHere(row.provider, here, cloud));\n \n   const tier = (s: BadgeTone): number =>\n     s === 'connected' ? 0 : s === 'error' || s === 'expired' || s === 'notSyncing' ? 1 : 2;\n@@ -237,6 +250,7 @@ function ConnectionRow({\n   const badge = BADGE_COLORS[row.status];\n   const action = rowAction(row.status);\n   const synced = relativeTime(row.lastSyncedAt);\n+  const benefit = cloudBenefit(row.provider);\n \n   const handlePress = useCallback(() => {\n     if (action === 'disconnect') onDisconnect(row.provider);\n@@ -248,7 +262,7 @@ function ConnectionRow({\n       style={styles.row}\n       accessibilityLabel={`${config.displayName}, ${badge.label}${\n         synced ? `, last synced ${synced}` : ''\n-      }`}\n+      }${benefit ? `. ${benefit}` : ''}`}\n     >\n       {/* Decorative brand glyph \u2014 conveyed to AT via the row label. */}\n       <Text style={styles.rowIcon} importantForAccessibility=\"no\">\n@@ -257,6 +271,7 @@ function ConnectionRow({\n \n       <View style={styles.rowMain}>\n         <Text style={styles.rowName}>{config.displayName}</Text>\n+        {benefit != null && <Text style={styles.benefit}>{benefit}</Text>}\n         <View style={styles.rowMeta}>\n           <View style={[styles.badge, { backgroundColor: badge.bg }]}>\n             <Text style={[styles.badgeText, { color: badge.fg }]}>\n@@ -331,7 +346,11 @@ export default function ConnectionsScreen() {\n         : null,\n     [deviceSource, localAuth.data],\n   );\n-  const rows = useMemo(() => buildRows(data ?? [], local), [data, local]);\n+  const cloud = useConnectableCloudProviders();\n+  const rows = useMemo(\n+    () => buildRows(data ?? [], local, deviceSource, cloud),\n+    [data, local, deviceSource, cloud],\n+  );\n \n   const openConnect = useCallback((provider: WearableProvider) => {\n     setSheetProvider(provider);\n@@ -534,6 +553,11 @@ const styles = StyleSheet.create({\n     ...typography.h4,\n     color: colors.ink,\n   },\n+  benefit: {\n+    ...typography.bodySmall,\n+    color: colors.charcoal,\n+    marginTop: 2,\n+  },\n   rowMeta: {\n     flexDirection: 'row',\n     alignItems: 'center',"
+    },
+    {
+      "sha": "b888f0f1dbdc794f9db1d26b85db43949aebe8d8",
+      "filename": "src/screens/client/wearables/__tests__/ConnectProviderSheet.test.tsx",
+      "status": "modified",
+      "additions": 27,
+      "deletions": 0,
+      "changes": 27,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2F__tests__%2FConnectProviderSheet.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2F__tests__%2FConnectProviderSheet.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2Fwearables%2F__tests__%2FConnectProviderSheet.test.tsx?ref=09649323558e55600df9b4b09699e4131e38b484",
+      "patch": "@@ -117,6 +117,33 @@ beforeEach(() => {\n });\n \n describe('ConnectProviderSheet \u2014 cloud OAuth provider', () => {\n+  // B-WEARLIST-125: the server callback reports a failed connect in the return\n+  // URL; the sheet stays open with a retry instead of closing as connected.\n+  it('keeps the sheet open with a retry when the return URL says status=error', async () => {\n+    mockStartOauthMutateAsync.mockResolvedValue({\n+      authorizationUrl: 'https://provider.example/oauth',\n+      state: 'csrf-1',\n+    });\n+    mockOpenAuthSessionAsync.mockResolvedValue({\n+      type: 'success',\n+      url: 'tgp://wearables/connected?status=error',\n+    });\n+    const onClose = jest.fn();\n+    const onConnected = jest.fn();\n+\n+    await render(\n+      <ConnectProviderSheet provider=\"OURA\" visible onClose={onClose} onConnected={onConnected} />,\n+    );\n+    await fireEvent.press(screen.getByLabelText('Continue connecting Oura'));\n+\n+    await waitFor(() =>\n+      expect(screen.getByText(/The sign-in with Oura did not finish\\. Tap Continue to try again\\./)).toBeTruthy(),\n+    );\n+    expect(mockInvalidate).toHaveBeenCalled();\n+    expect(onConnected).not.toHaveBeenCalled();\n+    expect(onClose).not.toHaveBeenCalled();\n+  });\n+\n   it('starts OAuth, opens the auth session, invalidates, and closes', async () => {\n     mockStartOauthMutateAsync.mockResolvedValue({\n       authorizationUrl: 'https://provider.example/oauth',"
+    },
+    {
+      "sha": "f49e1b9143fb5cfd2fb667f4737e7000633e1b95",
+      "filename": "src/screens/client/wearables/__tests__/ConnectionsScreen.emptyImport.test.tsx",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0,
+      "changes": 3,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2F__tests__%2FConnectionsScreen.emptyImport.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2F__tests__%2FConnectionsScreen.emptyImport.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2Fwearables%2F__tests__%2FConnectionsScreen.emptyImport.test.tsx?ref=09649323558e55600df9b4b09699e4131e38b484",
+      "patch": "@@ -26,6 +26,9 @@ jest.mock('../../../../hooks/useWearableConnections', () => ({\n   useInvalidateWearableConnections: () => mockInvalidate,\n }));\n jest.mock('expo-web-browser', () => ({ openAuthSessionAsync: jest.fn() }));\n+jest.mock('../../../../hooks/useConnectableCloudProviders', () => ({\n+  useConnectableCloudProviders: () => new Set(),\n+}));\n jest.mock('../../../../config/healthConnect', () => ({\n   HEALTH_CONNECT_DISABLED_MESSAGE: 'disabled',\n   isHealthConnectProviderDisabled: () => false,"
+    },
+    {
+      "sha": "6bd504d533d30cb9b6a1ee5877f6935cbdedb125",
+      "filename": "src/screens/client/wearables/__tests__/ConnectionsScreen.test.tsx",
+      "status": "modified",
+      "additions": 42,
+      "deletions": 1,
+      "changes": 43,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2F__tests__%2FConnectionsScreen.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2F__tests__%2FConnectionsScreen.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2Fwearables%2F__tests__%2FConnectionsScreen.test.tsx?ref=09649323558e55600df9b4b09699e4131e38b484",
+      "patch": "@@ -57,13 +57,18 @@ jest.mock('../../../../hooks/useWearableConnections', () => ({\n   }),\n }));\n \n+// B-WEARLIST-125: the server-listed cloud trackers (empty = older server / 404).\n+const mockCloud = jest.fn((): ReadonlySet<string> => new Set<string>());\n+jest.mock('../../../../hooks/useConnectableCloudProviders', () => ({\n+  useConnectableCloudProviders: () => mockCloud(),\n+}));\n const mockReportUnexpected = jest.fn();\n jest.mock('../../../../lib/consultation/report', () => ({\n   reportUnexpected: (...args: unknown[]) => mockReportUnexpected(...args),\n }));\n \n import ConnectionsScreen, { buildRows } from '../ConnectionsScreen';\n-import { configFor } from '../../../../api/wearablesConnectionsApi';\n+import { configFor, type WearableProvider } from '../../../../api/wearablesConnectionsApi';\n import { disconnectConfirmCopy } from '../disconnectCopy';\n import { emptyImportMessage } from '../onDeviceCopy';\n import { OnDeviceSessionChangedError } from '../../../../services/health/sessionFence';\n@@ -454,3 +459,39 @@ describe('ConnectionsScreen \u2014 sources offered on this phone (AUDIT-11-125)', (\n     ]);\n   });\n });\n+\n+// B-WEARLIST-125: a cloud tracker appears the moment the server lists it as\n+// connectable; with no list (older server, 404, error) nothing changes.\n+describe('ConnectionsScreen \u2014 server-listed cloud trackers (B-WEARLIST-125)', () => {\n+  afterEach(() => {\n+    mockCloud.mockReturnValue(new Set<string>());\n+  });\n+\n+  it('shows a listed tracker with its benefit and a working Connect', async () => {\n+    mockCloud.mockReturnValue(new Set(['OURA']));\n+    mockUseWearableConnections.mockReturnValue(queryResult({ data: [] }));\n+    await render(<ConnectionsScreen />);\n+    expect(screen.getByText('Oura')).toBeTruthy();\n+    expect(screen.getByText('Sleep, readiness and heart rate from your Oura ring')).toBeTruthy();\n+    expect(screen.queryByText('WHOOP')).toBeNull();\n+    await fireEvent.press(screen.getByLabelText('Connect Oura'));\n+    expect(sheetProps.visible).toBe(true);\n+    expect(sheetProps.provider).toBe('OURA');\n+  });\n+\n+  it('shows no cloud tracker when the server lists none', async () => {\n+    mockUseWearableConnections.mockReturnValue(queryResult({ data: [] }));\n+    await render(<ConnectionsScreen />);\n+    for (const name of ['Oura', 'WHOOP', 'Garmin', 'Polar', 'Withings']) {\n+      expect(screen.queryByText(name)).toBeNull();\n+    }\n+    expect(screen.getAllByRole('button')).toHaveLength(1);\n+  });\n+\n+  it('buildRows adds only the listed cloud providers', () => {\n+    const names = buildRows([], null, 'APPLE_HEALTHKIT', new Set<WearableProvider>(['OURA', 'POLAR']))\n+      .map((r) => r.provider)\n+      .sort();\n+    expect(names).toEqual(['APPLE_HEALTHKIT', 'OURA', 'POLAR']);\n+  });\n+});"
+    },
+    {
+      "sha": "0cb720250f70d85aa1a738497a96720e15f37eb4",
+      "filename": "src/screens/client/wearables/cloudCopy.ts",
+      "status": "added",
+      "additions": 22,
+      "deletions": 0,
+      "changes": 22,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2FcloudCopy.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2FcloudCopy.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2Fwearables%2FcloudCopy.ts?ref=09649323558e55600df9b4b09699e4131e38b484",
+      "patch": "@@ -0,0 +1,22 @@\n+import type { WearableProvider } from '../../../api/wearablesConnectionsApi';\n+\n+/**\n+ * B-WEARLIST-125: the one-line benefit shown under a cloud tracker on\n+ * Connections. Each line names only data that tracker's server connector\n+ * really reads (growth-project-backend src/wearables/connectors/<provider>).\n+ */\n+const CLOUD_BENEFIT: Partial<Record<WearableProvider, string>> = {\n+  OURA: 'Sleep, readiness and heart rate from your Oura ring',\n+  WHOOP: 'Recovery, strain, sleep and HRV from your WHOOP',\n+  GARMIN: 'Workouts, sleep, HRV and Body Battery from your Garmin',\n+  FITBIT: 'Sleep, heart rate and weight from your Fitbit',\n+  POLAR: 'Workouts, sleep and Nightly Recharge from your Polar',\n+  WITHINGS: 'Weight, body composition, blood pressure and sleep from Withings',\n+  WAHOO: 'Workouts and heart rate from your Wahoo',\n+  STRAVA: 'Runs, rides and workouts from Strava',\n+};\n+\n+/** The benefit line for a cloud tracker, or null for every other source. */\n+export function cloudBenefit(provider: WearableProvider): string | null {\n+  return CLOUD_BENEFIT[provider] ?? null;\n+}"
+    },
+    {
+      "sha": "7213fc319240daa36b91e1543a13fc388d67c905",
+      "filename": "src/screens/client/wearables/onDeviceCopy.ts",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 0,
+      "changes": 16,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2FonDeviceCopy.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/09649323558e55600df9b4b09699e4131e38b484/src%2Fscreens%2Fclient%2Fwearables%2FonDeviceCopy.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2Fwearables%2FonDeviceCopy.ts?ref=09649323558e55600df9b4b09699e4131e38b484",
+      "patch": "@@ -424,6 +424,22 @@ export function cloudConnectFailureMessage(err: unknown, name: string): OnDevice\n }\n \n /** Another in-app sign-in window is already open (auth session `locked`). */\n+/**\n+ * B-WEARLIST-125: the server callback sent the sign-in window back with\n+ * `status=error` (consent declined, an expired link or a failed exchange).\n+ */\n+export function cloudReturnedErrorMessage(name: string): OnDeviceMessage {\n+  return {\n+    text: `${name} isn't connected. The sign-in with ${name} did not finish. Tap Continue to try again.`,\n+    action: 'connect',\n+  };\n+}\n+\n+/** True when the auth-session return URL reports a failed connect. */\n+export function cloudReturnFailed(url: string | null | undefined): boolean {\n+  return typeof url === 'string' && /[?&]status=error(?:&|#|$)/.test(url);\n+}\n+\n export function cloudSessionLockedMessage(name: string): OnDeviceMessage {\n   return {\n     text: `Another sign-in window is already open. Finish or close it, then tap Continue to connect ${name}.`,"
+    }
+  ]
+}

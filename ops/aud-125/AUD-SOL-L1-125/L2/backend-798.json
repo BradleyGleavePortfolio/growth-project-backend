@@ -1,0 +1,277 @@
+{
+  "repo": "backend",
+  "number": 798,
+  "head": "3de021eb766f84f70e4d84fad88eca1ac1ed8613",
+  "base": "7fda4b23acf485999ea88816e1f2cbf1b5711db7",
+  "title": "fix(lessons): Learn shows only the client's own coach's lessons; buyers can open purchased PDFs and videos (B-DELIV-125, T4)",
+  "body": "Tier: T4\nWhy: one change closes a private-data leak (every coach's lessons shown to coachless clients) and the other gives paying buyers access to the PDFs and videos they bought; both are access decisions on private or paid content.\nT4 trigger scan: tenancy/access scope (Lesson reads and writes now always scoped to one coach); paid-content access (new buyer route over the existing grant-scoped signer). No auth, RLS, credentials, migrations or destructive data changes.\nT3 trigger scan: new authenticated route `GET /v1/client/media/:id/signed-url`.\nBounded T1: NO (T4 triggers above).\nCanonical builder: Claude Opus 5.5 (B-DELIV-125, agent 125).\nParent owner: operator agent 125.\nAcceptance evidence: `test/b-deliv-125-lessons-scope-buyer-media.spec.ts` (11 tests). With only `src/lessons/lessons.service.ts` reverted to main, 6 of the 7 lesson tests fail (coachless list, coachless recommended, unknown user, cross-coach complete, coachless complete, scoped complete); the 4 route tests fail on main because the route does not exist. Existing `test/lessons.service.spec.ts` still passes. Full suite and tsc in this PR's CI.\nPromotion triggers: any change to `getBuyerSignedUrl`, ClientAssetGrant semantics, or a decision that coachless clients should see the featured coach's lessons.\n\n## Bs fixed (from AUDIT-18-125)\n\n- **B2 (private data).** A client who signs up without a coach opens More, then Learn, and sees every coach's lessons on the platform, because a missing coach meant \"no coach filter\". Now `getLessons` and `getRecommended` return an empty list when the user has no coach scope, and always filter by exactly one `coach_id` otherwise; `completeLesson` refuses (404) a lesson outside the client's coach scope instead of recording it. Lessons always belong to a coach (`Lesson.coach_id` is required) and the coachless product (src/coachless/README.md) promises Home and a coach code, not a lesson library, so empty is the correct coachless result. The mobile Learn screen already shows an empty state for an empty list.\n- **B3 (money).** A client who bought a package with a PDF or video sees it under Deliverables but cannot open it, because the grant-scoped signer `CoachMediaService.getBuyerSignedUrl` had no route. New `GET /v1/client/media/:id/signed-url` (`:id` = the drop's `asset_id`, the CoachMediaAsset id) calls it with `req.user.id`. Access is unchanged and entirely the signer's: live (non-revoked) ClientAssetGrant for that caller and asset, asset not archived, purchase coach equals asset coach; every refusal is the same 404; a not-yet-ready asset is 409 `ASSET_NOT_READY`. The caller cannot choose the URL lifetime (default signed TTL). JwtAuthGuard at class level plus global RolesGuard (`student`, `coach`, `owner`, mirroring `GET /v1/checkout/purchases/:purchaseId/drops`).\n\nB4 (delivered meal plan routed as a date) needs no backend change: it is fixed in the mobile PR by routing on the assignment id against the existing `GET /me/meal-plan/today`.\n\n## Overlap\nNone. No open PR touches `src/lessons/**` or `src/coach-media/**` (checked b#776-b#797). Mobile companion PR opens the new route and degrades to a specific error message until this deploys.\n\n## Size\n301 lines (92 source, 209 test). No migrations, no new dependencies, no flags.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 295,
+  "deletions": 6,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/798",
+  "comments": [],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "comment-deploy-readiness",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390416/job/112512742540",
+      "id": 112512742540,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112512742540/annotations"
+      }
+    },
+    {
+      "name": "danger",
+      "status": "in_progress",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390370/job/112511534539",
+      "id": 112511534539,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511534539/annotations"
+      }
+    },
+    {
+      "name": "deploy-readiness-gate",
+      "status": "completed",
+      "conclusion": "skipped",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390416/job/112511534336",
+      "id": 112511534336,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511534336/annotations"
+      }
+    },
+    {
+      "name": "Schema parity (migrations match schema.prisma)",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390401/job/112511533622",
+      "id": 112511533622,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511533622/annotations"
+      }
+    },
+    {
+      "name": "rls-live-tests",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390397/job/112511533552",
+      "id": 112511533552,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511533552/annotations"
+      }
+    },
+    {
+      "name": "build-and-test",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390397/job/112511533492",
+      "id": 112511533492,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511533492/annotations"
+      }
+    },
+    {
+      "name": "rls-floor-guard",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390397/job/112511533479",
+      "id": 112511533479,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511533479/annotations"
+      }
+    },
+    {
+      "name": "mwb-3-live-tests",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390397/job/112511533395",
+      "id": 112511533395,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511533395/annotations"
+      }
+    },
+    {
+      "name": "npm audit (high+critical, whole graph)",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390406/job/112511533384",
+      "id": 112511533384,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511533384/annotations"
+      }
+    },
+    {
+      "name": "size-label",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390373/job/112511533342",
+      "id": 112511533342,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 3,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511533342/annotations"
+      }
+    },
+    {
+      "name": "Banned cast tokens (R75 / R100.A2)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390427/job/112511533203",
+      "id": 112511533203,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511533203/annotations"
+      }
+    },
+    {
+      "name": "community-live-tests",
+      "status": "in_progress",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390397/job/112511533145",
+      "id": 112511533145,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511533145/annotations"
+      }
+    },
+    {
+      "name": "CodeQL JS/TS (javascript-typescript)",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390446/job/112511532982",
+      "id": 112511532982,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511532982/annotations"
+      }
+    },
+    {
+      "name": "build-sbom",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390385/job/112511532954",
+      "id": 112511532954,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511532954/annotations"
+      }
+    },
+    {
+      "name": "test-deploy-readiness",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37534390416/job/112511532921",
+      "id": 112511532921,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112511532921/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "08ef557bc6cafd2b309adfe5803d589c5bacfbfe",
+      "filename": "src/coach-media/client-media.controller.ts",
+      "status": "added",
+      "additions": 42,
+      "deletions": 0,
+      "changes": 42,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/3de021eb766f84f70e4d84fad88eca1ac1ed8613/src%2Fcoach-media%2Fclient-media.controller.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/3de021eb766f84f70e4d84fad88eca1ac1ed8613/src%2Fcoach-media%2Fclient-media.controller.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fcoach-media%2Fclient-media.controller.ts?ref=3de021eb766f84f70e4d84fad88eca1ac1ed8613",
+      "patch": "@@ -0,0 +1,42 @@\n+/**\n+ * Buyer-side media delivery (B-DELIV-125, B3).\n+ *\n+ * A client who bought a package with a PDF or video receives a\n+ * ClientAssetGrant when that drop is delivered (MediaAssetResolver). This\n+ * route turns that grant into a short-lived signed URL so the client can\n+ * open what was paid for.\n+ *\n+ * Route:\n+ *   GET /v1/client/media/:id/signed-url \u2014 `:id` is the CoachMediaAsset id\n+ *   (the drop's `asset_id`).\n+ *\n+ * Access is decided entirely by CoachMediaService.getBuyerSignedUrl: the\n+ * caller must hold a live (not revoked) grant for that asset, the asset\n+ * must not be archived, and the grant's purchase must belong to the coach\n+ * who owns the asset. Every refusal is the same 404 so an asset id cannot\n+ * be probed. The URL uses the default signed TTL; the caller cannot pick a\n+ * longer one.\n+ */\n+\n+import { Controller, Get, Param, Request, UseGuards } from '@nestjs/common';\n+import { ApiTags } from '@nestjs/swagger';\n+import type { AuthedRequest } from '../auth/auth-request';\n+import { JwtAuthGuard } from '../auth/auth.guard';\n+import { Roles } from '../common/decorators/roles.decorator';\n+import { CoachMediaService } from './coach-media.service';\n+\n+@ApiTags('client-media')\n+@Controller('v1/client/media')\n+@UseGuards(JwtAuthGuard)\n+export class ClientMediaController {\n+  constructor(private readonly media: CoachMediaService) {}\n+\n+  // RolesGuard is a global APP_GUARD. The roles mirror\n+  // GET /v1/checkout/purchases/:purchaseId/drops: whoever can see a\n+  // delivered drop can open it, and only with their own grant.\n+  @Roles('student', 'coach', 'owner')\n+  @Get(':id/signed-url')\n+  async signedUrl(@Request() req: AuthedRequest, @Param('id') id: string) {\n+    return this.media.getBuyerSignedUrl(req.user.id, id);\n+  }\n+}"
+    },
+    {
+      "sha": "bb0e0a20cb3a436aa887888f667ce651eae97cd4",
+      "filename": "src/coach-media/coach-media.module.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 1,
+      "changes": 8,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/3de021eb766f84f70e4d84fad88eca1ac1ed8613/src%2Fcoach-media%2Fcoach-media.module.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/3de021eb766f84f70e4d84fad88eca1ac1ed8613/src%2Fcoach-media%2Fcoach-media.module.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fcoach-media%2Fcoach-media.module.ts?ref=3de021eb766f84f70e4d84fad88eca1ac1ed8613",
+      "patch": "@@ -6,6 +6,7 @@\n  *     If we ever switch to S3, only this binding changes.\n  *   - CoachMediaService \u2014 orchestrates PDF + Mux flows behind the seam.\n  *   - CoachMediaController \u2014 owner endpoints.\n+ *   - ClientMediaController \u2014 buyer signed URL (grant-scoped).\n  *   - CoachMediaMuxWebhookController \u2014 Mux webhook (sig + durable\n  *     idempotency via MuxProcessedEvent).\n  *\n@@ -20,6 +21,7 @@\n  */\n \n import { Global, Module } from '@nestjs/common';\n+import { ClientMediaController } from './client-media.controller';\n import { CoachMediaController } from './coach-media.controller';\n import { CoachMediaMuxWebhookController } from './coach-media-mux-webhook.controller';\n import { CoachMediaService } from './coach-media.service';\n@@ -29,7 +31,11 @@ import { STORAGE_PROVIDER } from './storage-provider';\n @Global()\n @Module({\n   imports: [],\n-  controllers: [CoachMediaController, CoachMediaMuxWebhookController],\n+  controllers: [\n+    CoachMediaController,\n+    ClientMediaController,\n+    CoachMediaMuxWebhookController,\n+  ],\n   providers: [\n     SupabaseStorageProvider,\n     {"
+    },
+    {
+      "sha": "b41ce71d506343e59e95a4cff3be3388e66c80f6",
+      "filename": "src/lessons/lessons.service.ts",
+      "status": "modified",
+      "additions": 37,
+      "deletions": 5,
+      "changes": 42,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/3de021eb766f84f70e4d84fad88eca1ac1ed8613/src%2Flessons%2Flessons.service.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/3de021eb766f84f70e4d84fad88eca1ac1ed8613/src%2Flessons%2Flessons.service.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Flessons%2Flessons.service.ts?ref=3de021eb766f84f70e4d84fad88eca1ac1ed8613",
+      "patch": "@@ -7,16 +7,33 @@ import { CreateLessonDto, UpdateLessonDto } from './lessons.dto';\n export class LessonsService {\n   constructor(private prisma: PrismaService) {}\n \n+  /**\n+   * The one coach whose lessons this user may see: a coach sees their own,\n+   * a client sees their coach's. A client with no coach (coachless sign-up,\n+   * or a coach link that was removed) has no lesson scope at all, so every\n+   * read returns nothing and every write is refused. Lessons always belong\n+   * to a coach (Lesson.coach_id is required); there is no platform library.\n+   */\n+  private lessonCoachIdFor(\n+    user: { id: string; role: string; coach_id: string | null } | null,\n+  ): string | null {\n+    if (!user) return null;\n+    if (user.role === 'coach') return user.id;\n+    return user.coach_id ?? null;\n+  }\n+\n   async getLessons(userId: string) {\n     const user = await this.prisma.user.findUnique({\n       where: { id: userId },\n       include: { profile: true },\n     });\n \n-    const coachId = user?.role === 'coach' ? user.id : user?.coach_id;\n+    // B2: before this, a missing coach meant no coach filter, so a coachless\n+    // client's Learn tab listed every coach's lessons.\n+    const coachId = this.lessonCoachIdFor(user);\n+    if (!coachId) return [];\n \n-    const where: Prisma.LessonWhereInput = {};\n-    if (coachId) where.coach_id = coachId;\n+    const where: Prisma.LessonWhereInput = { coach_id: coachId };\n \n     // Filter by user's goal type if available\n     if (user?.profile?.goal_type) {\n@@ -84,6 +101,17 @@ export class LessonsService {\n   }\n \n   async completeLesson(userId: string, lessonId: string) {\n+    // Only a lesson this client can see may be marked complete.\n+    const user = await this.prisma.user.findUnique({ where: { id: userId } });\n+    const coachId = this.lessonCoachIdFor(user);\n+    const lesson = coachId\n+      ? await this.prisma.lesson.findFirst({\n+          where: { id: lessonId, coach_id: coachId },\n+          select: { id: true },\n+        })\n+      : null;\n+    if (!lesson) throw new NotFoundException('Lesson not found');\n+\n     const existing = await this.prisma.lessonCompletion.findFirst({\n       where: { user_id: userId, lesson_id: lessonId },\n     });\n@@ -101,12 +129,16 @@ export class LessonsService {\n       include: { profile: true, lesson_completions: true },\n     });\n \n-    const completedIds = user?.lesson_completions.map(c => c.lesson_id) || [];\n+    // B2: same coach scope as getLessons; no coach means no lessons.\n+    const coachId = this.lessonCoachIdFor(user);\n+    if (!user || !coachId) return [];\n+\n+    const completedIds = user.lesson_completions.map(c => c.lesson_id);\n \n     return this.prisma.lesson.findMany({\n       where: {\n         id: { notIn: completedIds },\n-        coach_id: user?.coach_id || undefined,\n+        coach_id: coachId,\n       },\n       take: 5,\n       orderBy: { order_index: 'asc' },"
+    },
+    {
+      "sha": "9089775e564e635f04405db1f0679a28f671905f",
+      "filename": "test/b-deliv-125-lessons-scope-buyer-media.spec.ts",
+      "status": "added",
+      "additions": 209,
+      "deletions": 0,
+      "changes": 209,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/3de021eb766f84f70e4d84fad88eca1ac1ed8613/test%2Fb-deliv-125-lessons-scope-buyer-media.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/3de021eb766f84f70e4d84fad88eca1ac1ed8613/test%2Fb-deliv-125-lessons-scope-buyer-media.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fb-deliv-125-lessons-scope-buyer-media.spec.ts?ref=3de021eb766f84f70e4d84fad88eca1ac1ed8613",
+      "patch": "@@ -0,0 +1,209 @@\n+// B-DELIV-125 \u2014 two launch fixes on paid and private content.\n+//\n+// B2: a client with no coach (coachless sign-up) opened Learn and got every\n+// coach's lessons, because a missing coach meant \"no coach filter\".\n+// Recommended lessons had the same gap, and any client could mark any\n+// coach's lesson complete.\n+//\n+// B3: a client who bought a package with a PDF or video could not open it:\n+// the grant-scoped signer (CoachMediaService.getBuyerSignedUrl) had no route.\n+// GET /v1/client/media/:id/signed-url now calls it with the caller's own id.\n+\n+import 'reflect-metadata';\n+import { NotFoundException, RequestMethod } from '@nestjs/common';\n+import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';\n+import { Test } from '@nestjs/testing';\n+import type { User } from '@prisma/client';\n+import type { AuthedRequest } from '../src/auth/auth-request';\n+import { JwtAuthGuard } from '../src/auth/auth.guard';\n+import { ClientMediaController } from '../src/coach-media/client-media.controller';\n+import { CoachMediaModule } from '../src/coach-media/coach-media.module';\n+import { CoachMediaService } from '../src/coach-media/coach-media.service';\n+import { ROLES_KEY } from '../src/common/decorators/roles.decorator';\n+import { LessonsService } from '../src/lessons/lessons.service';\n+import { PrismaService } from '../src/prisma.service';\n+\n+type FakeUser = {\n+  id: string;\n+  role: string;\n+  coach_id: string | null;\n+  profile: { goal_type: string | null } | null;\n+  lesson_completions: Array<{ lesson_id: string }>;\n+};\n+\n+type FakeLesson = { id: string; coach_id: string };\n+\n+const LESSONS: FakeLesson[] = [\n+  { id: 'lesson-a1', coach_id: 'coach-a' },\n+  { id: 'lesson-b1', coach_id: 'coach-b' },\n+];\n+\n+function makeLessonsPrisma(users: FakeUser[]) {\n+  type LessonWhere = { id?: string | { notIn: string[] }; coach_id?: string };\n+  const idMatches = (id: LessonWhere['id'], lessonId: string) =>\n+    id === undefined ||\n+    (typeof id === 'string' ? id === lessonId : !id.notIn.includes(lessonId));\n+  const byWhere = (where: LessonWhere | undefined) =>\n+    LESSONS.filter(\n+      (l) =>\n+        (where?.coach_id === undefined || l.coach_id === where.coach_id) &&\n+        idMatches(where?.id, l.id),\n+    );\n+  return {\n+    user: {\n+      findUnique: jest.fn(\n+        async ({ where }: { where: { id: string } }) =>\n+          users.find((u) => u.id === where.id) ?? null,\n+      ),\n+    },\n+    lesson: {\n+      findMany: jest.fn(\n+        async ({ where }: { where?: LessonWhere }) => byWhere(where),\n+      ),\n+      findFirst: jest.fn(\n+        async ({ where }: { where: LessonWhere }) => byWhere(where)[0] ?? null,\n+      ),\n+    },\n+    lessonCompletion: {\n+      findFirst: jest.fn(async () => null),\n+      create: jest.fn(\n+        async ({ data }: { data: { user_id: string; lesson_id: string } }) => ({\n+          id: 'completion-1',\n+          ...data,\n+        }),\n+      ),\n+    },\n+  };\n+}\n+\n+async function lessonsServiceWith(users: FakeUser[]) {\n+  const prisma = makeLessonsPrisma(users);\n+  const moduleRef = await Test.createTestingModule({\n+    providers: [LessonsService, { provide: PrismaService, useValue: prisma }],\n+  }).compile();\n+  return { service: moduleRef.get(LessonsService), prisma };\n+}\n+\n+const COACHLESS: FakeUser = {\n+  id: 'client-coachless',\n+  role: 'student',\n+  coach_id: null,\n+  profile: { goal_type: null },\n+  lesson_completions: [],\n+};\n+const COACHED: FakeUser = {\n+  id: 'client-of-a',\n+  role: 'student',\n+  coach_id: 'coach-a',\n+  profile: { goal_type: null },\n+  lesson_completions: [],\n+};\n+\n+describe('B2 \u2014 Learn only ever shows the client\\'s own coach\\'s lessons', () => {\n+  it('a coachless client gets no lessons, not every coach\\'s', async () => {\n+    const { service, prisma } = await lessonsServiceWith([COACHLESS]);\n+    await expect(service.getLessons(COACHLESS.id)).resolves.toEqual([]);\n+    expect(prisma.lesson.findMany).not.toHaveBeenCalled();\n+  });\n+\n+  it('a coachless client gets no recommended lessons', async () => {\n+    const { service, prisma } = await lessonsServiceWith([COACHLESS]);\n+    await expect(service.getRecommended(COACHLESS.id)).resolves.toEqual([]);\n+    expect(prisma.lesson.findMany).not.toHaveBeenCalled();\n+  });\n+\n+  it('an unknown user gets no lessons', async () => {\n+    const { service, prisma } = await lessonsServiceWith([]);\n+    await expect(service.getLessons('nobody')).resolves.toEqual([]);\n+    await expect(service.getRecommended('nobody')).resolves.toEqual([]);\n+    expect(prisma.lesson.findMany).not.toHaveBeenCalled();\n+  });\n+\n+  it('a coached client sees only their coach\\'s lessons (list and recommended)', async () => {\n+    const { service, prisma } = await lessonsServiceWith([COACHED]);\n+    const list = await service.getLessons(COACHED.id);\n+    expect(list.map((l) => l.id)).toEqual(['lesson-a1']);\n+    const recommended = await service.getRecommended(COACHED.id);\n+    expect(recommended.map((l) => l.id)).toEqual(['lesson-a1']);\n+    for (const [args] of prisma.lesson.findMany.mock.calls) {\n+      expect(args.where?.coach_id).toBe('coach-a');\n+    }\n+  });\n+\n+  it('a client cannot mark another coach\\'s lesson complete', async () => {\n+    const { service, prisma } = await lessonsServiceWith([COACHED]);\n+    await expect(service.completeLesson(COACHED.id, 'lesson-b1')).rejects.toBeInstanceOf(\n+      NotFoundException,\n+    );\n+    expect(prisma.lessonCompletion.create).not.toHaveBeenCalled();\n+  });\n+\n+  it('a coachless client cannot mark any lesson complete', async () => {\n+    const { service, prisma } = await lessonsServiceWith([COACHLESS]);\n+    await expect(service.completeLesson(COACHLESS.id, 'lesson-a1')).rejects.toBeInstanceOf(\n+      NotFoundException,\n+    );\n+    expect(prisma.lessonCompletion.create).not.toHaveBeenCalled();\n+  });\n+\n+  it('a client can still complete their own coach\\'s lesson', async () => {\n+    const { service, prisma } = await lessonsServiceWith([COACHED]);\n+    await expect(service.completeLesson(COACHED.id, 'lesson-a1')).resolves.toMatchObject({\n+      user_id: COACHED.id,\n+      lesson_id: 'lesson-a1',\n+    });\n+    expect(prisma.lesson.findFirst).toHaveBeenCalledWith({\n+      where: { id: 'lesson-a1', coach_id: 'coach-a' },\n+      select: { id: true },\n+    });\n+  });\n+});\n+\n+describe('B3 \u2014 a buyer can open a purchased PDF or video', () => {\n+  async function controllerWith(getBuyerSignedUrl: jest.Mock) {\n+    const moduleRef = await Test.createTestingModule({\n+      controllers: [ClientMediaController],\n+      providers: [{ provide: CoachMediaService, useValue: { getBuyerSignedUrl } }],\n+    })\n+      .overrideGuard(JwtAuthGuard)\n+      .useValue({ canActivate: () => true })\n+      .compile();\n+    return moduleRef.get(ClientMediaController);\n+  }\n+\n+  function reqFor(userId: string): AuthedRequest {\n+    return { user: { id: userId, role: 'student' } as User };\n+  }\n+\n+  it('is mounted at GET /v1/client/media/:id/signed-url behind JWT for clients', () => {\n+    expect(Reflect.getMetadata(PATH_METADATA, ClientMediaController)).toBe('v1/client/media');\n+    const handler = ClientMediaController.prototype.signedUrl;\n+    expect(Reflect.getMetadata(PATH_METADATA, handler)).toBe(':id/signed-url');\n+    expect(Reflect.getMetadata(METHOD_METADATA, handler)).toBe(RequestMethod.GET);\n+    expect(Reflect.getMetadata(GUARDS_METADATA, ClientMediaController)).toContain(JwtAuthGuard);\n+    expect(Reflect.getMetadata(ROLES_KEY, handler)).toContain('student');\n+  });\n+\n+  it('is registered on CoachMediaModule', () => {\n+    const controllers: unknown[] = Reflect.getMetadata('controllers', CoachMediaModule);\n+    expect(controllers).toContain(ClientMediaController);\n+  });\n+\n+  it('signs with the caller\\'s own id and the default lifetime', async () => {\n+    const signed = { url: 'https://signed.example/doc.pdf', expires_in_seconds: 300, kind: 'pdf' };\n+    const getBuyerSignedUrl = jest.fn(async () => signed);\n+    const controller = await controllerWith(getBuyerSignedUrl);\n+    await expect(controller.signedUrl(reqFor('buyer-1'), 'asset-1')).resolves.toEqual(signed);\n+    expect(getBuyerSignedUrl).toHaveBeenCalledWith('buyer-1', 'asset-1');\n+  });\n+\n+  it('a caller without a live grant gets the signer\\'s 404', async () => {\n+    const getBuyerSignedUrl = jest.fn(async () => {\n+      throw new NotFoundException({ error: 'ASSET_NOT_FOUND' });\n+    });\n+    const controller = await controllerWith(getBuyerSignedUrl);\n+    await expect(controller.signedUrl(reqFor('not-a-buyer'), 'asset-1')).rejects.toBeInstanceOf(\n+      NotFoundException,\n+    );\n+  });\n+});"
+    }
+  ]
+}

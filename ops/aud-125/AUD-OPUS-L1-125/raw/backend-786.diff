@@ -1,0 +1,42 @@
+diff --git a/src/coach/coach.service.ts b/src/coach/coach.service.ts
+index 486e30944..6a7323db1 100644
+--- a/src/coach/coach.service.ts
++++ b/src/coach/coach.service.ts
+@@ -281,7 +281,10 @@ export class CoachService {
+             // 90-day window or appear out of order. See Fix 5.
+             where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
+             include: { food_item: true },
+-            orderBy: { date: 'desc' },
++            // `date` is a calendar day, so same-day foods tie. The id
++            // tie-break makes mealsCursor pages exact: no entry repeats on
++            // the next page and none is skipped.
++            orderBy: [{ date: 'desc' }, { id: 'desc' }],
+             take: 100,
+             ...(opts.mealsCursor ? { cursor: { id: opts.mealsCursor }, skip: 1 } : {}),
+           })
+diff --git a/test/coach-timeline.spec.ts b/test/coach-timeline.spec.ts
+index c17f0ed1c..cf81f6269 100644
+--- a/test/coach-timeline.spec.ts
++++ b/test/coach-timeline.spec.ts
+@@ -93,4 +93,21 @@ describe('CoachService.getClientTimeline (Tier-2 check-in integration)', () => {
+     expect(r.meals).toEqual([]);
+     expect(r.checkIns).toEqual([]);
+   });
++
++  // Same-day foods tie on `date` (a calendar day). Without a unique
++  // tie-break, the next mealsCursor page restarts at the boundary day and
++  // repeats its entries, so a coach's food review double counts them.
++  it('pages the meals slice on a unique order (date, then id)', async () => {
++    const prisma = makePrisma({});
++    const svc = new CoachService(prisma, audit());
++    await svc.getClientTimeline('coach-A', 'client-1', 30, undefined, { mealsCursor: 'm-100' });
++    expect(prisma.loggedFoodEntry.findMany).toHaveBeenCalledWith(
++      expect.objectContaining({
++        orderBy: [{ date: 'desc' }, { id: 'desc' }],
++        cursor: { id: 'm-100' },
++        skip: 1,
++        take: 100,
++      }),
++    );
++  });
+ });

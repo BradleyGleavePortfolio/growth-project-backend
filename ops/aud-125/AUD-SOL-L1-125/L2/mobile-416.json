@@ -1,0 +1,188 @@
+{
+  "repo": "mobile",
+  "number": 416,
+  "head": "45a117a7fed0384f29fb7d8a81cb7f1b1afbc742",
+  "base": "a1904f2f4e8d175a38d6eb627303a2312e2b1ace",
+  "title": "fix(polish): readable tabs, safe-area spacing and screen-reader controls",
+  "body": "Tier: T2\nWhy: Bounded shared accessibility and appearance fixes, plus primary tab safe-area layout, without changing routes or data behavior.\nT4 trigger scan: none; no auth, tenancy, PII, money, credentials, or destructive-data change.\nT3 trigger scan: none; no persistence, synchronization, scheduling, API contract, or offline behavior change.\nBounded T1: NO; shared press semantics and two navigator layouts require regression coverage.\nCanonical builder: GPT-6.1 Sol\nParent owner: operator agent 125\nAcceptance evidence: new targeted screen-reader, tab appearance/safe-area, exercise contrast, and large-text label regression tests; PR CI runs typecheck, lint and the complete test suite.\nPromotion triggers: changing entitlement, routing, stored data, or API semantics requires re-grading.\n\n## AUDIT-20-125 \u2014 B/U list\n\nB: none established in this scope.\n\n- U20-1: A client opening the main tabs sees low-contrast inactive icons, and both client/coach tab bars ignore the selected dark appearance. Use semantic foreground/background/border tokens.\n- U20-2: On an iPhone with a bottom safe-area inset, fixed tab-bar heights consume icon/label space, and coach padding overrides inset protection. Retain the intended content height and coach bottom padding above the home indicator.\n- U20-3: A screen-reader user encounters shared actionable press controls without a button role unless each screen supplies one. Supply the shared button default only for actionable controls; explicit roles and non-actionable content are preserved.\n- U20-4: In dark mode, a client selecting an exercise filter sees dark text on the oxblood fill. Use the existing textOnAccent token for selected labels and accentText for load-error foregrounds.\n- U20-5: A large-text client sees the Home message-coach action truncated to one line. Allow the existing flexible control to wrap.\n\n## Compatibility and scope\n\n- Works against the current production backend; no API or feature-flag changes.\n- No dependencies, lockfile changes, migrations, store builds, merges or deploys.\n- No file overlap with agent 124's open food, workout, money, auth, roster or day-one coach PRs. Roster lookup and Overview copy fixes remain covered by #408 and #414.\n- Existing theme-provider legacy `colors` behavior is unchanged; this is not a risky app-wide palette rewrite.\n- Physical-device large-text/VoiceOver/dark-mode smoke evidence is not claimed.\n\n## Tests\n\n- `src/components/__tests__/HapticPressable.accessibility125.test.tsx`\n- `src/components/home/__tests__/HomeHeaderActions.test.tsx`\n- `src/navigation/__tests__/tabBarPolish125.test.ts`\n- `src/screens/client/__tests__/ExerciseLibraryPolish125.test.tsx`\n\nBaseline reproduction uses the tests-only commit on `ci/AUDIT-20-125-baseline`. Shared mobile dependencies were not ready, so no local full suite, project typecheck, lint or build was run.\n\n## CI and size\n\n- Initial tests-only baseline: 11 regression failures and 6 passing preservation/existing assertions across four suites; [baseline run](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37530694949).\n- Opening PR CI caught a removed legacy `colors` import still required by unchanged stack headers. Restored that import, kept the new tab semantic tokens, and pushed the correction.\n- Operator 14:05 revised the U-only cap to under 150 changed lines. Condensed the regression tests without removing the primary behavioral checks: 148 changed lines, including tests (38 source + 110 tests; 134 additions + 14 deletions).\n- No extra targeted lane run; the PR's own CI supplies final typecheck, lint and full-suite evidence.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 134,
+  "deletions": 14,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/416",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/416#issuecomment-6025593551",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-20-125, agent 125) \u2014 growth-project-mobile#416 @ 45a117a7fed0384f29fb7d8a81cb7f1b1afbc742 \u2014 READY FOR AUDIT\n\nTier T2. B=0; five highest-value U fixes in this PR; C=0.\n\n- Readable light/dark primary tabs and preserved content above the bottom safe-area inset.\n- Shared actionable press controls expose button semantics; explicit roles and non-actionable content are preserved.\n- Selected exercise filters and error foregrounds use the correct contrast tokens; the Home message label can wrap for large text.\n\n148 changed lines: 38 source + 110 tests (134 additions, 14 deletions), below the operator's revised under-150-line U-only cap.\n\nAcceptance: lint, typecheck, release guards, and the full suite passed: 603 suites / 8,288 tests, including all four changed regression files. Both CodeQL analysis jobs passed. [Final PR CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531749222)\n\nTests-only main baseline reproduced 11 regression failures with 6 existing/preservation assertions passing. [Baseline proof](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37530694949)\n\nThe opening CI caught the removed legacy `colors` import still needed by unchanged stack headers; restored it and pushed again before this READY comment. Tests were condensed to meet the updated size limit.\n\nNo backend, flags, dependencies, lockfiles, migrations, builds, merges, deploys, or production changes. No overlap with agent 124's open PR files.\n\nAudit report also records a lower-priority legacy-screen dark-appearance migration, intentionally not expanded into this launch slice. Recommended default: defer that broad migration, and retain the normal device dark-mode/large-text/VoiceOver smoke pass.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112502924001",
+      "id": 112502924001,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A416+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502924001/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531749271/job/112502576590",
+      "id": 112502576590,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502576590/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531749271/job/112502576307",
+      "id": 112502576307,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502576307/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531749222/job/112502575741",
+      "id": 112502575741,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502575741/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "05b641a5ee93ae558e5b94c6741ab31b3e994052",
+      "filename": "src/components/HapticPressable.tsx",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 0,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fcomponents%2FHapticPressable.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fcomponents%2FHapticPressable.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2FHapticPressable.tsx?ref=45a117a7fed0384f29fb7d8a81cb7f1b1afbc742",
+      "patch": "@@ -84,6 +84,7 @@ export default function HapticPressable({\n   pressScale = 0.97,\n   pressOpacity = 0.85,\n   disableAnimation = false,\n+  accessibilityRole,\n   ...rest\n }: HapticPressableProps) {\n   // GLOBAL reduce-motion gate (R4 P2): every HapticPressable \u2014 the client Roman\n@@ -170,6 +171,7 @@ export default function HapticPressable({\n       style={{ transform: [{ scale: scaleAnim }], opacity: opacityAnim }}\n     >\n       <Pressable\n+        accessibilityRole={accessibilityRole ?? (onPress || rest.onLongPress ? 'button' : undefined)}\n         onPress={handlePress}\n         onPressIn={handlePressIn}\n         onPressOut={handlePressOut}"
+    },
+    {
+      "sha": "e0f80b3d1961afacca51db8ae36767b84ea5523d",
+      "filename": "src/components/__tests__/HapticPressable.accessibility125.test.tsx",
+      "status": "added",
+      "additions": 32,
+      "deletions": 0,
+      "changes": 32,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fcomponents%2F__tests__%2FHapticPressable.accessibility125.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fcomponents%2F__tests__%2FHapticPressable.accessibility125.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2F__tests__%2FHapticPressable.accessibility125.test.tsx?ref=45a117a7fed0384f29fb7d8a81cb7f1b1afbc742",
+      "patch": "@@ -0,0 +1,32 @@\n+import React from 'react';\n+import { Text } from 'react-native';\n+import { fireEvent, render } from '@testing-library/react-native';\n+import HapticPressable from '../HapticPressable';\n+\n+jest.mock('../../screens/client/wearables/components/useReduceMotion', () => ({ useReduceMotion: () => true }));\n+jest.mock('expo-haptics', () => ({\n+  impactAsync: jest.fn().mockResolvedValue(undefined), ImpactFeedbackStyle: { Light: 'light' },\n+}));\n+\n+describe('shared press controls \u2014 screen-reader semantics', () => {\n+  it('exposes an actionable control as a button and keeps its handler', async () => {\n+    const onPress = jest.fn();\n+    const view = await render(<HapticPressable onPress={onPress}><Text>Save changes</Text></HapticPressable>);\n+    await fireEvent.press(view.getByRole('button', { name: 'Save changes' }));\n+    expect(onPress).toHaveBeenCalledTimes(1);\n+  });\n+\n+  it('keeps explicit roles, labels and selected state', async () => {\n+    const view = await render(\n+      <HapticPressable onPress={jest.fn()} accessibilityRole=\"radio\" accessibilityLabel=\"Dark appearance\"\n+        accessibilityState={{ selected: true }}><Text>Dark</Text></HapticPressable>,\n+    );\n+    expect(view.getByRole('radio', { name: 'Dark appearance', selected: true })).toBeTruthy();\n+    expect(view.queryByRole('button')).toBeNull();\n+  });\n+\n+  it('does not announce non-actionable content as a button', async () => {\n+    const view = await render(<HapticPressable><Text>Summary</Text></HapticPressable>);\n+    expect(view.queryByRole('button')).toBeNull();\n+  });\n+});"
+    },
+    {
+      "sha": "2de63f4e3776d46caea277833604a8f18b2b71ed",
+      "filename": "src/components/home/HomeHeaderActions.tsx",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fcomponents%2Fhome%2FHomeHeaderActions.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fcomponents%2Fhome%2FHomeHeaderActions.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fhome%2FHomeHeaderActions.tsx?ref=45a117a7fed0384f29fb7d8a81cb7f1b1afbc742",
+      "patch": "@@ -71,7 +71,7 @@ export default function HomeHeaderActions() {\n         ]}\n       >\n         <Ionicons name=\"chatbubble-ellipses-outline\" size={18} color={sc.textPrimary} />\n-        <Text style={[typography.bodySmall, styles.messageText, { color: sc.textPrimary }]} numberOfLines={1}>\n+        <Text style={[typography.bodySmall, styles.messageText, { color: sc.textPrimary }]}>\n           {label}\n         </Text>\n       </Pressable>"
+    },
+    {
+      "sha": "fec1cff9935be004257a3ab00d7e052e0f24f40e",
+      "filename": "src/components/home/__tests__/HomeHeaderActions.test.tsx",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 0,
+      "changes": 8,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fcomponents%2Fhome%2F__tests__%2FHomeHeaderActions.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fcomponents%2Fhome%2F__tests__%2FHomeHeaderActions.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fhome%2F__tests__%2FHomeHeaderActions.test.tsx?ref=45a117a7fed0384f29fb7d8a81cb7f1b1afbc742",
+      "patch": "@@ -36,6 +36,14 @@ describe('HomeHeaderActions', () => {\n     expect(messageCoachLabel('  ')).toBe('Message your coach');\n   });\n \n+  it('lets the message action label wrap at larger text sizes', async () => {\n+    mockUser.mockReturnValue({ id: 'u1', coach_id: null });\n+    const view = await render(<HomeHeaderActions />);\n+    const label = view.getByText('Message your coach');\n+    expect(label.props.numberOfLines).toBeUndefined();\n+    expect(label.props.allowFontScaling).not.toBe(false);\n+  });\n+\n   it('message entry opens Messages; bell opens NotificationCenter with unread label', async () => {\n     mockUser.mockReturnValue({ id: 'u1', coach_id: 'c1' });\n     mockGet.mockRejectedValue(new Error('404'));"
+    },
+    {
+      "sha": "e4b9cbf85e44af9a06ef237cf7d0e62231b7889d",
+      "filename": "src/navigation/ClientNavigator.tsx",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 5,
+      "changes": 14,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fnavigation%2FClientNavigator.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fnavigation%2FClientNavigator.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fnavigation%2FClientNavigator.tsx?ref=45a117a7fed0384f29fb7d8a81cb7f1b1afbc742",
+      "patch": "@@ -24,6 +24,7 @@ import { View } from 'react-native';\n import { StyleSheet } from 'react-native';\n import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';\n import { createNativeStackNavigator } from '@react-navigation/native-stack';\n+import { useSafeAreaInsets } from 'react-native-safe-area-context';\n import { Ionicons } from '@expo/vector-icons';\n import HomeScreen from '../screens/client/HomeScreen';\n import HabitsScreen from '../screens/client/HabitsScreen';\n@@ -126,6 +127,7 @@ import WearablesShell from '../screens/client/wearables/WearablesShell';\n import MetricDetailScreen from '../screens/client/wearables/MetricDetailScreen';\n import type { WearableMetricBucket, WearableMetricType } from '../api/wearablesSamplesApi';\n import { colors } from '../theme/tokens';\n+import { useTheme } from '../theme/ThemeProvider';\n // v1-5 Community client tab. The whole stack + tab are gated behind\n // featureFlags.communityTab (default OFF). When the flag is OFF the tab is not\n // rendered and the deep-link route is not registered (see CommunityTabBarIcon\n@@ -629,6 +631,8 @@ const TUTORIAL_TABS = [\n ];\n \n export default function ClientNavigator() {\n+  const { semanticColors: sc } = useTheme();\n+  const insets = useSafeAreaInsets();\n   // Sol B-310-5: a Roman and AI withdrawal from onboarding that the ledger\n   // has not confirmed yet is sent when the app opens.\n   useAiWithdrawalDrain();\n@@ -653,13 +657,13 @@ export default function ClientNavigator() {\n         headerShown: false,\n         tabBarShowLabel: false,\n         tabBarHideOnKeyboard: true,\n-        tabBarActiveTintColor:   colors.ink,\n-        tabBarInactiveTintColor: colors.stone,\n+        tabBarActiveTintColor:   sc.textPrimary,\n+        tabBarInactiveTintColor: sc.textMuted,\n         tabBarStyle: {\n-          backgroundColor: colors.bone,\n+          backgroundColor: sc.bgPrimary,\n           borderTopWidth: 0.5,\n-          borderTopColor: colors.stone,\n-          height: 64,\n+          borderTopColor: sc.border,\n+          height: 64 + insets.bottom,\n         },\n       }}\n       screenListeners={({ navigation }) => {"
+    },
+    {
+      "sha": "90ffd4f5f330b7414b6db6e55eeea04c71d9d73b",
+      "filename": "src/navigation/CoachNavigator.tsx",
+      "status": "modified",
+      "additions": 10,
+      "deletions": 6,
+      "changes": 16,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fnavigation%2FCoachNavigator.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fnavigation%2FCoachNavigator.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fnavigation%2FCoachNavigator.tsx?ref=45a117a7fed0384f29fb7d8a81cb7f1b1afbc742",
+      "patch": "@@ -137,6 +137,8 @@ import BlockedUsersScreen from '../screens/settings/BlockedUsersScreen';\n import RomanConversationsScreen, { type RomanConversationParams } from '../screens/settings/RomanConversationsScreen';\n import RomanConversationScreen from '../screens/settings/RomanConversationScreen';\n import { Colors } from '../constants/colors';\n+import { useTheme } from '../theme/ThemeProvider';\n+import { useSafeAreaInsets } from 'react-native-safe-area-context';\n import { useCoachRoleType } from '../hooks/useCoachRoleType';\n \n export type CoachTabParamList = {\n@@ -645,6 +647,8 @@ function useCoachUnreadPolling(): number {\n }\n \n export default function CoachNavigator() {\n+  const { semanticColors: sc } = useTheme();\n+  const insets = useSafeAreaInsets();\n   const unreadCount = useCoachUnreadPolling();\n   // P0-1: TeamStack must only mount for head coaches. Sub-coaches who land\n   // on team-management surfaces hit `/sub-coaches` 403s the screen treats as\n@@ -665,15 +669,15 @@ export default function CoachNavigator() {\n       initialRouteName={initialTab}\n       screenOptions={{\n         headerShown: false,\n-        tabBarActiveTintColor: Colors.primary,\n-        tabBarInactiveTintColor: Colors.textMuted,\n+        tabBarActiveTintColor: sc.accentText,\n+        tabBarInactiveTintColor: sc.textMuted,\n         tabBarStyle: {\n-          backgroundColor: Colors.surface,\n-          borderTopColor: Colors.border,\n+          backgroundColor: sc.bgSurface,\n+          borderTopColor: sc.border,\n           borderTopWidth: 1,\n-          paddingBottom: 4,\n+          paddingBottom: 4 + insets.bottom,\n           paddingTop: 4,\n-          height: 60,\n+          height: 60 + insets.bottom,\n         },\n         tabBarLabelStyle: {\n           fontSize: 10,"
+    },
+    {
+      "sha": "7496f8bcd968a8cdf74fb0c1ee291507aeed370e",
+      "filename": "src/navigation/__tests__/tabBarPolish125.test.ts",
+      "status": "added",
+      "additions": 21,
+      "deletions": 0,
+      "changes": 21,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fnavigation%2F__tests__%2FtabBarPolish125.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fnavigation%2F__tests__%2FtabBarPolish125.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fnavigation%2F__tests__%2FtabBarPolish125.test.ts?ref=45a117a7fed0384f29fb7d8a81cb7f1b1afbc742",
+      "patch": "@@ -0,0 +1,21 @@\n+import * as fs from 'fs';\n+import * as path from 'path';\n+\n+const src = (name: string) => fs.readFileSync(path.join(__dirname, '..', name), 'utf8');\n+\n+describe('primary tab-bar appearance and safe-area contracts', () => {\n+  it.each([\n+    ['ClientNavigator.tsx', 'textPrimary', 'bgPrimary', 64],\n+    ['CoachNavigator.tsx', 'accentText', 'bgSurface', 60],\n+  ] as const)('%s uses readable tokens and preserves content above the safe inset', (name, active, bg, height) => {\n+    const nav = src(name);\n+    expect(nav).toMatch(/semanticColors:\\s*sc/);\n+    expect(nav).toMatch(new RegExp(`tabBarActiveTintColor:\\\\s*sc\\\\.${active}`));\n+    expect(nav).toMatch(/tabBarInactiveTintColor:\\s*sc\\.textMuted/);\n+    expect(nav).toMatch(new RegExp(`backgroundColor:\\\\s*sc\\\\.${bg}`));\n+    expect(nav).toMatch(/borderTopColor:\\s*sc\\.border/);\n+    expect(nav).toMatch(/const insets = useSafeAreaInsets\\(\\)/);\n+    expect(nav).toMatch(new RegExp(`height:\\\\s*${height}\\\\s*\\\\+\\\\s*insets\\\\.bottom`));\n+    if (name === 'CoachNavigator.tsx') expect(nav).toMatch(/paddingBottom:\\s*4\\s*\\+\\s*insets\\.bottom/);\n+  });\n+});"
+    },
+    {
+      "sha": "888bd066f6b54c96654bed84688231bccdc0f6da",
+      "filename": "src/screens/client/ExerciseLibraryScreen.tsx",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 2,
+      "changes": 4,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fscreens%2Fclient%2FExerciseLibraryScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fscreens%2Fclient%2FExerciseLibraryScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2FExerciseLibraryScreen.tsx?ref=45a117a7fed0384f29fb7d8a81cb7f1b1afbc742",
+      "patch": "@@ -319,7 +319,7 @@ function makeStyles(sc: SemanticTokens) {\n       textTransform: 'capitalize',\n     },\n     chipTextActive: {\n-      color: sc.bgSurface,\n+      color: sc.textOnAccent,\n     },\n     listContent: {\n       paddingBottom: spacing.xl,\n@@ -351,7 +351,7 @@ function makeStyles(sc: SemanticTokens) {\n     },\n     errorText: {\n       ...typography.body,\n-      color: sc.accent,\n+      color: sc.accentText,\n     },\n     footerWrap: {\n       paddingVertical: spacing.lg,"
+    },
+    {
+      "sha": "c6bbc263bf7db0a9af06fd311a0475faa7455dcb",
+      "filename": "src/screens/client/__tests__/ExerciseLibraryPolish125.test.tsx",
+      "status": "added",
+      "additions": 49,
+      "deletions": 0,
+      "changes": 49,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fscreens%2Fclient%2F__tests__%2FExerciseLibraryPolish125.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/45a117a7fed0384f29fb7d8a81cb7f1b1afbc742/src%2Fscreens%2Fclient%2F__tests__%2FExerciseLibraryPolish125.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2F__tests__%2FExerciseLibraryPolish125.test.tsx?ref=45a117a7fed0384f29fb7d8a81cb7f1b1afbc742",
+      "patch": "@@ -0,0 +1,49 @@\n+import React from 'react';\n+import { AxiosHeaders } from 'axios';\n+import { StyleSheet } from 'react-native';\n+import { fireEvent, render, waitFor } from '@testing-library/react-native';\n+import { NavigationContainer } from '@react-navigation/native';\n+import { createNativeStackNavigator } from '@react-navigation/native-stack';\n+import ExerciseLibraryScreen from '../ExerciseLibraryScreen';\n+import { exerciseCatalogApi } from '../../../api/exerciseCatalog';\n+import { darkTokens, lightTokens } from '../../../theme/tokens';\n+import type { WorkoutStackParamList } from '../../../navigation/ClientNavigator';\n+\n+let mockColorScheme: 'light' | 'dark' = 'dark';\n+jest.mock('../../../theme/ThemeProvider', () => ({\n+  useTheme: () => ({ semanticColors: require('../../../theme/tokens')[`${mockColorScheme}Tokens`] }),\n+}));\n+jest.mock('../../../api/exerciseCatalog', () => ({ exerciseCatalogApi: { list: jest.fn() } }));\n+\n+const list = jest.mocked(exerciseCatalogApi.list);\n+const Stack = createNativeStackNavigator<WorkoutStackParamList>();\n+const renderLibrary = () => render(\n+  <NavigationContainer><Stack.Navigator><Stack.Screen name=\"ExerciseLibrary\"\n+    component={ExerciseLibraryScreen} /></Stack.Navigator></NavigationContainer>,\n+);\n+\n+beforeEach(() => {\n+  mockColorScheme = 'dark';\n+  list.mockReset();\n+  list.mockResolvedValue({\n+    data: { items: [], nextCursor: null, total: 0 }, status: 200, statusText: 'OK',\n+    headers: {}, config: { headers: new AxiosHeaders() },\n+  });\n+});\n+describe('exercise library contrast', () => {\n+  it.each(['light', 'dark'] as const)('uses the on-accent label in %s appearance', async (scheme) => {\n+    mockColorScheme = scheme;\n+    const tokens = scheme === 'dark' ? darkTokens : lightTokens;\n+    const view = await renderLibrary();\n+    await waitFor(() => expect(view.getByText('No exercises match.')).toBeTruthy());\n+    await fireEvent.press(view.getByRole('button', { name: 'strength' }));\n+    expect(StyleSheet.flatten(view.getByText('strength').props.style).color).toBe(tokens.textOnAccent);\n+  });\n+\n+  it('uses the readable accent foreground for a load error in dark appearance', async () => {\n+    list.mockRejectedValue(new Error('Cannot load exercises. Check the connection.'));\n+    const view = await renderLibrary();\n+    const error = await view.findByText('Cannot load exercises. Check the connection.');\n+    expect(StyleSheet.flatten(error.props.style).color).toBe(darkTokens.accentText);\n+  });\n+});"
+    }
+  ]
+}

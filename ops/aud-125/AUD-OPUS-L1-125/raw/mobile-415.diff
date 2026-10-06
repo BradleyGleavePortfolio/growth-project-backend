@@ -1,0 +1,231 @@
+diff --git a/src/__tests__/hunt09HelpLinks.test.ts b/src/__tests__/hunt09HelpLinks.test.ts
+new file mode 100644
+index 00000000..e4cd38ab
+--- /dev/null
++++ b/src/__tests__/hunt09HelpLinks.test.ts
+@@ -0,0 +1,63 @@
++/**
++ * HUNT-09-124 (config vs code truth): every help link the app opens must be a
++ * page the backend serves. Production answered a raw JSON 404 for
++ * helpUrl('/coach') (coach Settings > Help centre) and "Page not available"
++ * for the bare site root (client More > Membership > Open trygrowthproject.com).
++ * The served list mirrors growth-project-backend src/main.ts (setGlobalPrefix
++ * exclude: help, help/setup, help/first-client, help/tour, help/faq,
++ * help/support, help/contact, help/delete-account).
++ */
++import * as fs from 'fs';
++import * as path from 'path';
++import { HELP_CONTACT_URL, HELP_PAGE_PATHS, env, helpUrl } from '../config/env';
++
++const SRC = path.join(__dirname, '..');
++
++function sourceFiles(dir: string, out: string[] = []): string[] {
++  for (const name of fs.readdirSync(dir)) {
++    const full = path.join(dir, name);
++    const stat = fs.statSync(full);
++    if (stat.isDirectory()) {
++      if (name === '__tests__' || name === '__fixtures__' || name === 'node_modules') continue;
++      sourceFiles(full, out);
++    } else if (/\.(ts|tsx)$/.test(name) && !/\.test\.(ts|tsx)$/.test(name)) {
++      out.push(full);
++    }
++  }
++  return out;
++}
++
++// env.ts documents the old mistakes in comments; it is the definition site.
++const files = sourceFiles(SRC).filter((f) => !f.endsWith(path.join('config', 'env.ts')));
++
++describe('help links point at pages the backend serves', () => {
++  it('every helpUrl() literal path is a served help page', () => {
++    const served = new Set<string>(HELP_PAGE_PATHS);
++    const bad: string[] = [];
++    for (const file of files) {
++      const text = fs.readFileSync(file, 'utf8');
++      const re = /helpUrl\(\s*(?:'([^']*)'|"([^"]*)"|`([^`$]*)`)?\s*\)/g;
++      let m: RegExpExecArray | null;
++      while ((m = re.exec(text)) !== null) {
++        const raw = m[1] ?? m[2] ?? m[3] ?? '';
++        const p = raw === '' ? '' : raw.startsWith('/') ? raw : `/${raw}`;
++        if (!served.has(p)) bad.push(`${path.relative(SRC, file)}: helpUrl('${raw}')`);
++      }
++    }
++    expect(bad).toEqual([]);
++  });
++
++  it('no screen opens the bare site root (it answers "Page not available")', () => {
++    const bad = files.filter((file) =>
++      /openURL\(\s*['"`]https:\/\/app\.trygrowthproject\.com\/?['"`]\s*\)/.test(
++        fs.readFileSync(file, 'utf8'),
++      ),
++    );
++    expect(bad.map((f) => path.relative(SRC, f))).toEqual([]);
++  });
++
++  it('the contact link is the served /help/contact page', () => {
++    expect(HELP_CONTACT_URL).toBe(`${env.HELP_BASE_URL}/contact`);
++    expect(helpUrl()).toBe(env.HELP_BASE_URL);
++  });
++});
+diff --git a/src/__tests__/membershipWebsiteLinkIos.test.tsx b/src/__tests__/membershipWebsiteLinkIos.test.tsx
+index b7c0b6a8..fe9ea783 100644
+--- a/src/__tests__/membershipWebsiteLinkIos.test.tsx
++++ b/src/__tests__/membershipWebsiteLinkIos.test.tsx
+@@ -5,7 +5,7 @@
+  */
+ import React from 'react';
+ import { Linking, Platform } from 'react-native';
+-import { render, waitFor } from '@testing-library/react-native';
++import { fireEvent, render, waitFor } from '@testing-library/react-native';
+ 
+ const mockState: { flag: boolean; build: string | null } = { flag: true, build: '6' };
+ jest.mock('../config/featureFlags', () => {
+@@ -95,4 +95,14 @@ describe('MembershipScreen website link', () => {
+     const r = await render(<MembershipScreen />);
+     await waitFor(() => expect(r.getByTestId('membership-website-link')).toBeTruthy());
+   });
++
++  it('on Android opens the contact support page, not the bare site root (HUNT-09-124)', async () => {
++    setOS('android');
++    mockState.flag = true;
++    const r = await render(<MembershipScreen />);
++    await waitFor(() => expect(r.getByTestId('membership-website-link')).toBeTruthy());
++    expect(r.getByText('Contact support')).toBeTruthy();
++    await fireEvent.press(r.getByTestId('membership-website-link'));
++    expect(Linking.openURL).toHaveBeenCalledWith('https://app.trygrowthproject.com/help/contact');
++  });
+ });
+diff --git a/src/config/env.ts b/src/config/env.ts
+index 39fdf30e..656e6d30 100644
+--- a/src/config/env.ts
++++ b/src/config/env.ts
+@@ -60,6 +60,26 @@ export function helpUrl(pathname?: string): string {
+   return `${resolvedHelpBaseUrl}${suffix}`;
+ }
+ 
++// The help pages the backend actually serves (growth-project-backend
++// src/public-pages/public-pages.controller.ts and the setGlobalPrefix exclude
++// list in src/main.ts). Any other /help/<x> path answers a raw JSON 404, so
++// every helpUrl() call in the app must use one of these (HUNT-09-124:
++// helpUrl('/coach') opened "Cannot GET /help/coach").
++export const HELP_PAGE_PATHS = [
++  '',
++  '/setup',
++  '/first-client',
++  '/tour',
++  '/faq',
++  '/support',
++  '/contact',
++  '/delete-account',
++] as const;
++
++// Contact support page (email support, what to include). The site root
++// (app.trygrowthproject.com/) is not a page: it answers "Page not available".
++export const HELP_CONTACT_URL = helpUrl('/contact');
++
+ // Public policy pages, served by the backend at the site root
+ // (growth-project-backend src/public-pages/trust-pages.html.ts: /privacy,
+ // /consumer-health-privacy, /terms). They are NOT under the help centre, so
+diff --git a/src/navigation/__tests__/coachSettingsMoneyRow.test.tsx b/src/navigation/__tests__/coachSettingsMoneyRow.test.tsx
+index e5907e22..6838b326 100644
+--- a/src/navigation/__tests__/coachSettingsMoneyRow.test.tsx
++++ b/src/navigation/__tests__/coachSettingsMoneyRow.test.tsx
+@@ -5,7 +5,8 @@
+  * imessageDmRoutes.test.tsx (the existing coach Settings render harness).
+  */
+ import React from "react";
+-import { render, fireEvent } from "@testing-library/react-native";
++import { render, fireEvent, waitFor } from "@testing-library/react-native";
++import { Linking } from "react-native";
+ import { act } from "@testing-library/react-native";
+ // Required lazily so the Settings harness loads on a head without it.
+ const noteHeadCoachHandlesMoney = (v: boolean): void => {
+@@ -102,7 +103,10 @@ jest.mock("../../components/BiometricUnlockSetting", () => {
+   return { __esModule: true, default: () => React.createElement(View) };
+ });
+ 
+-jest.mock("../../config/env", () => ({ helpUrl: "https://example.com/help" }));
++// HUNT-09-124: helpUrl is a function; the help-row case below asserts the path it is called with.
++jest.mock("../../config/env", () => ({
++  helpUrl: (p?: string) => `https://example.com/help${p ? (p.startsWith("/") ? p : `/${p}`) : ""}`,
++}));
+ 
+ // Coach settings sub-components — replace with minimal stubs so the screen
+ // renders without their internal data dependencies firing.
+@@ -196,3 +200,18 @@ describe("coach Settings Featured coach row (M-FEATURED-123)", () => {
+     expect(r.queryByTestId("settings-featured-coach")).toBeNull();
+   });
+ });
++
++describe("coach Settings Help centre row (HUNT-09-124)", () => {
++  it("opens the help centre home, not the missing /help/coach page", async () => {
++    const canOpen = jest.spyOn(Linking, "canOpenURL").mockResolvedValue(true);
++    const open = jest.spyOn(Linking, "openURL").mockResolvedValue(true);
++    // eslint-disable-next-line @typescript-eslint/no-var-requires
++    const CoachSettings = require("../../screens/coach/SettingsScreen").default;
++    const r = await render(<CoachSettings />);
++    await fireEvent.press(r.getByLabelText("Open help centre"));
++    await waitFor(() => expect(open).toHaveBeenCalledWith("https://example.com/help"));
++    expect(open).not.toHaveBeenCalledWith("https://example.com/help/coach");
++    canOpen.mockRestore();
++    open.mockRestore();
++  });
++});
+diff --git a/src/screens/client/MembershipScreen.tsx b/src/screens/client/MembershipScreen.tsx
+index 93b8f666..cc4c1bb0 100644
+--- a/src/screens/client/MembershipScreen.tsx
++++ b/src/screens/client/MembershipScreen.tsx
+@@ -27,6 +27,7 @@ import HapticPressable from '../../components/HapticPressable';
+ import { useCurrentUser } from '../../hooks/useCurrentUser';
+ import { aiApi, AIStructuredContext, usersApi } from '../../services/api';
+ import { nonP2PPurchasesHidden } from '../../config/purchaseSurfaces';
++import { HELP_CONTACT_URL } from '../../config/env';
+ 
+ import { colors as colorTokens, typography } from '../../theme/tokens';
+ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+@@ -205,7 +206,9 @@ export default function MembershipScreen() {
+               <Text style={styles.primaryActionLabel}>MESSAGE YOUR COACH</Text>
+             </HapticPressable>
+ 
+-            {/* Secondary — open the public site for general inquiries.
++            {/* Secondary — the contact support page for general inquiries.
++                HUNT-09-124: the site root is not a page (it answers "Page
++                not available"), so this opens /help/contact.
+                 Audit #304 C2: not rendered on hidden iOS builds. A website
+                 link from the membership/billing context reads as steering to
+                 an external purchase (Guideline 3.1.1). The permitted 1:1
+@@ -216,15 +219,14 @@ export default function MembershipScreen() {
+                 intent="light"
+                 style={styles.secondaryAction}
+                 onPress={() =>
+-                  Linking.openURL('https://app.trygrowthproject.com').catch(
+-                    () => undefined,
+-                  )
++                  Linking.openURL(HELP_CONTACT_URL).catch(() => undefined)
+                 }
+                 accessibilityRole="link"
+-                accessibilityLabel="Open trygrowthproject.com"
++                accessibilityLabel="Contact support"
++                accessibilityHint="Opens the contact support page in your browser"
+               >
+                 <Text style={styles.secondaryActionLabel}>
+-                  Open trygrowthproject.com
++                  Contact support
+                 </Text>
+               </HapticPressable>
+             )}
+diff --git a/src/screens/coach/SettingsScreen.tsx b/src/screens/coach/SettingsScreen.tsx
+index ea8a28b2..4514e79f 100644
+--- a/src/screens/coach/SettingsScreen.tsx
++++ b/src/screens/coach/SettingsScreen.tsx
+@@ -288,7 +288,9 @@ export default function SettingsScreen() {
+ 
+   const handleOpenHelp = async () => {
+     mediumTap();
+-    const url = helpUrl('/coach');
++    // The help centre home lists the coach guides (setup, first client, tour,
++    // FAQ, support). There is no /help/coach page (HUNT-09-124).
++    const url = helpUrl();
+     try {
+       const supported = await Linking.canOpenURL(url);
+       if (!supported) {

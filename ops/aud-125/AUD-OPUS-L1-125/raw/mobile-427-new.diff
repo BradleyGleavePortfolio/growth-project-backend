@@ -1,0 +1,591 @@
+diff --git a/src/__tests__/aiMealPlanDraftReview125.test.tsx b/src/__tests__/aiMealPlanDraftReview125.test.tsx
+new file mode 100644
+index 00000000..15861c83
+--- /dev/null
++++ b/src/__tests__/aiMealPlanDraftReview125.test.tsx
+@@ -0,0 +1,227 @@
++/**
++ * AUDIT-08-125 — AI meal plan review shows what the client will get.
++ *
++ * GET /coach/ai/drafts/:id returns the stored AIDraft row: `id` (no
++ * `draftId`) and the backend payload shape from meal-plan.prompt.ts
++ * (meal `slot`, item `serving`, day `daily_totals`, plan `coach_notes`).
++ * The approve step copies exactly those fields into the client's plan.
++ *
++ * Fails on main: the slot, serving, day totals and notes render empty, and
++ * Save / Approve post to /coach/ai/drafts/undefined/... .
++ */
++
++import React from 'react';
++import { Alert } from 'react-native';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
++import { NavigationContainer } from '@react-navigation/native';
++import { createNativeStackNavigator } from '@react-navigation/native-stack';
++import type { AxiosResponse } from 'axios';
++
++jest.mock('@expo/vector-icons', () => {
++  function Icon(_props: { name?: string; size?: number; color?: string }) {
++    return null;
++  }
++  return { Ionicons: Icon, MaterialIcons: Icon, Feather: Icon };
++});
++
++jest.mock('../theme/ThemeProvider', () => {
++  const colors = new Proxy(
++    {},
++    { get: (_t, prop) => (typeof prop === 'string' ? `#${prop}` : '#000') },
++  );
++  const Pass = ({ children }: { children: React.ReactNode }) => children;
++  return {
++    __esModule: true,
++    ThemeProvider: Pass,
++    default: Pass,
++    useTheme: () => ({ colors }),
++  };
++});
++
++jest.mock('../services/api', () => {
++  const get = jest.fn();
++  const post = jest.fn();
++  return {
++    __esModule: true,
++    default: { get, post, defaults: { baseURL: 'http://test.local/api' } },
++    get,
++    post,
++  };
++});
++
++import api from '../services/api';
++import AIMealPlanDraftScreen from '../screens/coach/AIMealPlanDraftScreen';
++import AIWorkoutDraftScreen from '../screens/coach/AIWorkoutDraftScreen';
++
++const mockedGet = api.get as jest.Mock;
++const mockedPost = api.post as jest.Mock;
++
++function ok<T>(data: T): AxiosResponse<T> {
++  return {
++    data,
++    status: 200,
++    statusText: 'OK',
++    headers: {},
++    config: {} as AxiosResponse<T>['config'],
++  };
++}
++
++// The row exactly as the backend returns it (Prisma AIDraft): `id`, no `draftId`.
++const mealRow = {
++  id: 'd1',
++  coachId: 'coach1',
++  clientId: 'c1',
++  type: 'MEAL_PLAN',
++  status: 'DRAFT',
++  modelUsed: 'claude-opus',
++  tokensIn: 100,
++  tokensOut: 200,
++  costCents: 5,
++  generatedPayload: {
++    summary: 'High-protein week.',
++    coach_notes: 'Swap rice for potatoes on rest days.',
++    days: [
++      {
++        day: 1,
++        meals: [
++          {
++            slot: 'breakfast',
++            items: [
++              { name: 'Greek yogurt', serving: '1 cup', calories: 200, protein_g: 20, carbs_g: 10, fat_g: 5 },
++              { name: 'Oats', serving: '40 g', calories: 150, protein_g: 5, carbs_g: 27, fat_g: 3 },
++            ],
++          },
++        ],
++        daily_totals: { calories: 350, protein_g: 25, carbs_g: 37, fat_g: 8 },
++      },
++    ],
++  },
++};
++
++const Stack = createNativeStackNavigator();
++
++async function renderScreen(
++  name: 'AIMealPlanDraft' | 'AIWorkoutDraft',
++  component: React.ComponentType,
++) {
++  return await render(
++    <NavigationContainer>
++      <Stack.Navigator screenOptions={{ headerShown: false }}>
++        <Stack.Screen
++          name={name}
++          component={component}
++          initialParams={{ draftId: 'd1', clientId: 'c1', clientName: 'Jane Doe' }}
++        />
++        <Stack.Screen name="ClientDetail" component={() => null} />
++      </Stack.Navigator>
++    </NavigationContainer>,
++  );
++}
++
++beforeEach(() => {
++  mockedGet.mockReset();
++  mockedPost.mockReset();
++  jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
++});
++
++afterEach(() => {
++  jest.restoreAllMocks();
++});
++
++describe('AIMealPlanDraftScreen (AUDIT-08-125)', () => {
++  it('shows the meal, serving, day totals and client notes the backend sends', async () => {
++    mockedGet.mockResolvedValueOnce(ok(mealRow));
++    const { findByTestId, getByTestId } = await renderScreen(
++      'AIMealPlanDraft',
++      AIMealPlanDraftScreen,
++    );
++
++    expect((await findByTestId('mealplan-slot-0-0')).props.value).toBe('breakfast');
++    expect(getByTestId('mealplan-serving-0-0-0').props.value).toBe('1 cup');
++    expect(getByTestId('mealplan-coach-notes').props.value).toBe(
++      'Swap rice for potatoes on rest days.',
++    );
++    const totals = getByTestId('mealplan-day-totals-0');
++    expect([totals.props.children].flat().join('')).toBe('350 kcal · P 25g');
++  });
++
++  it('saves edits to the fields the client sees and approves the loaded draft id', async () => {
++    mockedGet.mockResolvedValueOnce(ok(mealRow));
++    mockedPost.mockResolvedValue(ok(mealRow));
++    const { findByTestId, getByTestId, getByLabelText } = await renderScreen(
++      'AIMealPlanDraft',
++      AIMealPlanDraftScreen,
++    );
++
++    const serving = await findByTestId('mealplan-serving-0-0-0');
++    await act(async () => {
++      await fireEvent.changeText(serving, '150 g');
++      await fireEvent.changeText(getByTestId('mealplan-kcal-0-0-0'), '100');
++      await fireEvent.changeText(getByTestId('mealplan-coach-notes'), 'Eat the oats first.');
++    });
++
++    // Day totals follow the edited items.
++    const totals = getByTestId('mealplan-day-totals-0');
++    expect([totals.props.children].flat().join('')).toBe('250 kcal · P 25g');
++
++    await act(async () => {
++      await fireEvent.press(getByLabelText('Save edits'));
++    });
++    expect(mockedPost).toHaveBeenCalledWith('/coach/ai/drafts/d1/edit', {
++      patch: expect.objectContaining({
++        coach_notes: 'Eat the oats first.',
++        days: [
++          expect.objectContaining({
++            daily_totals: expect.objectContaining({ calories: 250, protein_g: 25 }),
++            meals: [
++              expect.objectContaining({
++                slot: 'breakfast',
++                items: expect.arrayContaining([
++                  expect.objectContaining({ name: 'Greek yogurt', serving: '150 g', calories: 100 }),
++                ]),
++              }),
++            ],
++          }),
++        ],
++      }),
++    });
++
++    await act(async () => {
++      await fireEvent.press(getByLabelText('Approve and assign'));
++    });
++    await waitFor(() =>
++      expect(mockedPost).toHaveBeenCalledWith('/coach/ai/drafts/d1/approve'),
++    );
++    expect(mockedPost).not.toHaveBeenCalledWith(
++      expect.stringContaining('undefined'),
++      expect.anything(),
++    );
++  });
++});
++
++describe('AIWorkoutDraftScreen approve (AUDIT-08-125)', () => {
++  it('approves the route draft id when the loaded row carries only id', async () => {
++    mockedGet.mockResolvedValueOnce(
++      ok({
++        id: 'd1',
++        clientId: 'c1',
++        type: 'WORKOUT_PROGRAM',
++        status: 'DRAFT',
++        modelUsed: 'claude-opus',
++        tokensIn: 1,
++        tokensOut: 1,
++        costCents: 1,
++        generatedPayload: { title: 'Block 1', summary: null, weeks: [] },
++      }),
++    );
++    mockedPost.mockResolvedValue(ok({}));
++    const { findByLabelText } = await renderScreen('AIWorkoutDraft', AIWorkoutDraftScreen);
++    const approve = await findByLabelText('Approve draft');
++    await act(async () => {
++      await fireEvent.press(approve);
++    });
++    await waitFor(() =>
++      expect(mockedPost).toHaveBeenCalledWith('/coach/ai/drafts/d1/approve'),
++    );
++  });
++});
+diff --git a/src/screens/coach/AIMealPlanDraftScreen.tsx b/src/screens/coach/AIMealPlanDraftScreen.tsx
+index 91ad8fd4..ac096f2e 100644
+--- a/src/screens/coach/AIMealPlanDraftScreen.tsx
++++ b/src/screens/coach/AIMealPlanDraftScreen.tsx
+@@ -10,6 +10,13 @@
+  *   4. "Approve & assign" → POST /coach/ai/drafts/:draftId/approve →
+  *      navigate back to ClientDetail (meal-plan tab).
+  *   5. "Reject" → reason modal → POST /coach/ai/drafts/:draftId/reject.
++ *
++ * Field names follow the backend payload (meal-plan.prompt.ts): meal
++ * `slot`, item `serving`, day `daily_totals` and plan `coach_notes`. The
++ * approve step copies exactly those fields into the plan the client sees,
++ * so the coach reviews and edits the same text the client will read.
++ * Every call uses the route `draftId`: GET /coach/ai/drafts/:id returns the
++ * stored row (`id`), not a `draftId` field.
+  */
+ 
+ import React, { useCallback, useEffect, useMemo, useState } from 'react';
+@@ -33,6 +40,7 @@ import type { ClientsStackParamList } from '../../navigation/CoachNavigator';
+ import type {
+   AiMeal,
+   AiMealDay,
++  AiMealDayTotals,
+   AiMealItem,
+   Draft,
+   MealPlanPayload,
+@@ -46,6 +54,28 @@ function emptyPayload(): MealPlanPayload {
+   return { title: null, summary: null, days: [] };
+ }
+ 
++/** Day totals = the sum of the day's items, so edits keep them true. */
++function sumDay(meals: AiMeal[]): AiMealDayTotals {
++  const totals = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
++  for (const meal of meals) {
++    for (const it of meal.items || []) {
++      totals.calories += Number(it.calories) || 0;
++      totals.protein_g += Number(it.protein_g) || 0;
++      totals.carbs_g += Number(it.carbs_g) || 0;
++      totals.fat_g += Number(it.fat_g) || 0;
++    }
++  }
++  return totals;
++}
++
++function dayCalories(day: AiMealDay): number | null | undefined {
++  return day.daily_totals?.calories ?? day.total_calories;
++}
++
++function dayProtein(day: AiMealDay): number | null | undefined {
++  return day.daily_totals?.protein_g ?? day.total_protein_g;
++}
++
+ export default function AIMealPlanDraftScreen() {
+   const { colors } = useTheme();
+   const styles = useMemo(() => makeStyles(colors), [colors]);
+@@ -83,11 +113,8 @@ export default function AIMealPlanDraftScreen() {
+     load();
+   }, [load]);
+ 
+-  const updateDay = (dIdx: number, patch: Partial<AiMealDay>) => {
+-    setPayload((prev) => ({
+-      ...prev,
+-      days: prev.days.map((d, i) => (i === dIdx ? { ...d, ...patch } : d)),
+-    }));
++  const updateCoachNotes = (text: string) => {
++    setPayload((prev) => ({ ...prev, coach_notes: text }));
+     setDirty(true);
+   };
+   const updateMeal = (dIdx: number, mIdx: number, patch: Partial<AiMeal>) => {
+@@ -110,25 +137,29 @@ export default function AIMealPlanDraftScreen() {
+     iIdx: number,
+     patch: Partial<AiMealItem>,
+   ) => {
++    const macroEdit =
++      'calories' in patch ||
++      'protein_g' in patch ||
++      'carbs_g' in patch ||
++      'fat_g' in patch;
+     setPayload((prev) => ({
+       ...prev,
+-      days: prev.days.map((d, i) =>
+-        i === dIdx
+-          ? {
+-              ...d,
+-              meals: d.meals.map((m, j) =>
+-                j === mIdx
+-                  ? {
+-                      ...m,
+-                      items: m.items.map((it, k) =>
+-                        k === iIdx ? { ...it, ...patch } : it,
+-                      ),
+-                    }
+-                  : m,
+-              ),
+-            }
+-          : d,
+-      ),
++      days: prev.days.map((d, i) => {
++        if (i !== dIdx) return d;
++        const meals = d.meals.map((m, j) =>
++          j === mIdx
++            ? {
++                ...m,
++                items: m.items.map((it, k) =>
++                  k === iIdx ? { ...it, ...patch } : it,
++                ),
++              }
++            : m,
++        );
++        return macroEdit
++          ? { ...d, meals, daily_totals: sumDay(meals) }
++          : { ...d, meals };
++      }),
+     }));
+     setDirty(true);
+   };
+@@ -141,7 +172,7 @@ export default function AIMealPlanDraftScreen() {
+     if (!draft) return false;
+     setSaving(true);
+     try {
+-      await coachAiApi.editDraft<MealPlanPayload>(draft.draftId, payload);
++      await coachAiApi.editDraft<MealPlanPayload>(draftId, payload);
+       setDirty(false);
+       Alert.alert('Saved', 'Edits saved to the draft.');
+       return true;
+@@ -183,7 +214,7 @@ export default function AIMealPlanDraftScreen() {
+     if (!draft) return;
+     setApproving(true);
+     try {
+-      await coachAiApi.approveDraft(draft.draftId);
++      await coachAiApi.approveDraft(draftId);
+       Alert.alert(
+         'Approved',
+         `Meal plan assigned to ${clientName}.`,
+@@ -211,7 +242,7 @@ export default function AIMealPlanDraftScreen() {
+     }
+     setRejecting(true);
+     try {
+-      await coachAiApi.rejectDraft(draft.draftId, reason);
++      await coachAiApi.rejectDraft(draftId, reason);
+       setShowRejectModal(false);
+       Alert.alert('Rejected', 'Draft rejected.', [
+         { text: 'OK', onPress: () => navigation.goBack() },
+@@ -270,6 +301,20 @@ export default function AIMealPlanDraftScreen() {
+           </View>
+         ) : null}
+ 
++        <View style={styles.summaryCard}>
++          <Text style={styles.notesLabel}>Notes {clientName} sees</Text>
++          <TextInput
++            style={styles.dayNotesInput}
++            placeholder="Notes shown with the plan (optional)"
++            placeholderTextColor={colors.textMuted}
++            value={payload.coach_notes || ''}
++            onChangeText={updateCoachNotes}
++            multiline
++            accessibilityLabel={`Notes ${clientName} sees`}
++            testID="mealplan-coach-notes"
++          />
++        </View>
++
+         {days.length === 0 ? (
+           <View style={styles.emptyCard}>
+             <Ionicons name="restaurant-outline" size={32} color={colors.textMuted} />
+@@ -281,48 +326,30 @@ export default function AIMealPlanDraftScreen() {
+           days.map((day, dIdx) => (
+             <View key={`day-${dIdx}`} style={styles.dayCard}>
+               <Text style={styles.dayTitle}>Day {day.day ?? dIdx + 1}</Text>
+-              {day.total_calories != null || day.total_protein_g != null ? (
+-                <Text style={styles.dayTotals}>
+-                  {day.total_calories != null
+-                    ? `${Math.round(day.total_calories)} kcal`
++              {dayCalories(day) != null || dayProtein(day) != null ? (
++                <Text style={styles.dayTotals} testID={`mealplan-day-totals-${dIdx}`}>
++                  {dayCalories(day) != null
++                    ? `${Math.round(Number(dayCalories(day)))} kcal`
+                     : ''}
+-                  {day.total_calories != null && day.total_protein_g != null
++                  {dayCalories(day) != null && dayProtein(day) != null
+                     ? ' · '
+                     : ''}
+-                  {day.total_protein_g != null
+-                    ? `P ${Math.round(day.total_protein_g)}g`
++                  {dayProtein(day) != null
++                    ? `P ${Math.round(Number(dayProtein(day)))}g`
+                     : ''}
+                 </Text>
+               ) : null}
+-              <TextInput
+-                style={styles.dayNotesInput}
+-                placeholder="Day notes (optional)"
+-                placeholderTextColor={colors.textMuted}
+-                value={day.notes || ''}
+-                onChangeText={(t) => updateDay(dIdx, { notes: t })}
+-                multiline
+-                accessibilityLabel={`Day ${dIdx + 1} notes`}
+-              />
+               {(day.meals || []).map((meal, mIdx) => (
+                 <View key={`meal-${mIdx}`} style={styles.mealCard}>
+                   <View style={styles.mealHeader}>
+-                    <TextInput
+-                      style={styles.mealTodInput}
+-                      value={meal.time_of_day || ''}
+-                      onChangeText={(t) =>
+-                        updateMeal(dIdx, mIdx, { time_of_day: t })
+-                      }
+-                      placeholder="Time (breakfast/lunch/…)"
+-                      placeholderTextColor={colors.textMuted}
+-                      accessibilityLabel={`Meal ${mIdx + 1} time of day`}
+-                    />
+                     <TextInput
+                       style={styles.mealNameInput}
+-                      value={meal.name || ''}
+-                      onChangeText={(t) => updateMeal(dIdx, mIdx, { name: t })}
+-                      placeholder="Meal name"
++                      value={meal.slot ?? meal.time_of_day ?? ''}
++                      onChangeText={(t) => updateMeal(dIdx, mIdx, { slot: t })}
++                      placeholder="Meal (breakfast, lunch, dinner, snack)"
+                       placeholderTextColor={colors.textMuted}
+-                      accessibilityLabel={`Meal ${mIdx + 1} name`}
++                      accessibilityLabel={`Day ${dIdx + 1} meal ${mIdx + 1}`}
++                      testID={`mealplan-slot-${dIdx}-${mIdx}`}
+                     />
+                   </View>
+                   {(meal.items || []).map((item, iIdx) => (
+@@ -340,10 +367,11 @@ export default function AIMealPlanDraftScreen() {
+                       <View style={styles.itemRowGroup}>
+                         <TextInput
+                           style={styles.itemPortionInput}
+-                          value={item.portion || ''}
++                          value={item.serving ?? item.portion ?? ''}
+                           onChangeText={(t) =>
+-                            updateItem(dIdx, mIdx, iIdx, { portion: t })
++                            updateItem(dIdx, mIdx, iIdx, { serving: t })
+                           }
++                          testID={`mealplan-serving-${dIdx}-${mIdx}-${iIdx}`}
+                           placeholder="Portion"
+                           placeholderTextColor={colors.textMuted}
+                           accessibilityLabel="Portion"
+@@ -602,6 +630,12 @@ const makeStyles = (colors: ThemeColors) =>
+       color: colors.textSecondary,
+       marginBottom: 8,
+     },
++    notesLabel: {
++      fontFamily: 'Inter_500Medium',
++      fontSize: 12,
++      color: colors.textSecondary,
++      marginBottom: 6,
++    },
+     dayNotesInput: {
+       backgroundColor: colors.background,
+       borderWidth: 1,
+@@ -626,17 +660,6 @@ const makeStyles = (colors: ThemeColors) =>
+       gap: 8,
+       marginBottom: 8,
+     },
+-    mealTodInput: {
+-      flex: 1,
+-      backgroundColor: colors.surface,
+-      borderWidth: 1,
+-      borderColor: colors.border,
+-      borderRadius: 4,
+-      paddingVertical: 6,
+-      paddingHorizontal: 8,
+-      fontSize: 12,
+-      color: colors.textSecondary,
+-    },
+     mealNameInput: {
+       flex: 2,
+       backgroundColor: colors.surface,
+diff --git a/src/screens/coach/AIWorkoutDraftScreen.tsx b/src/screens/coach/AIWorkoutDraftScreen.tsx
+index 1c7d2f05..ab5e0bd7 100644
+--- a/src/screens/coach/AIWorkoutDraftScreen.tsx
++++ b/src/screens/coach/AIWorkoutDraftScreen.tsx
+@@ -201,7 +201,7 @@ export default function AIWorkoutDraftScreen() {
+     if (!draft) return false;
+     setSaving(true);
+     try {
+-      await coachAiApi.editDraft<WorkoutPayload>(draft.draftId, payload);
++      await coachAiApi.editDraft<WorkoutPayload>(draftId, payload);
+       setDirty(false);
+       Alert.alert('Saved', 'Edits saved to the draft.');
+       return true;
+@@ -246,7 +246,7 @@ export default function AIWorkoutDraftScreen() {
+     if (!draft) return;
+     setApproving(true);
+     try {
+-      const res = await coachAiApi.approveDraft(draft.draftId);
++      const res = await coachAiApi.approveDraft(draftId);
+       const copy = aiWorkoutApproveCopy(clientName, res?.data);
+       Alert.alert(
+         copy.title,
+@@ -275,7 +275,7 @@ export default function AIWorkoutDraftScreen() {
+     }
+     setRejecting(true);
+     try {
+-      await coachAiApi.rejectDraft(draft.draftId, reason);
++      await coachAiApi.rejectDraft(draftId, reason);
+       setShowRejectModal(false);
+       Alert.alert('Rejected', 'Draft rejected.', [
+         { text: 'OK', onPress: () => navigation.goBack() },
+diff --git a/src/types/coachAi.ts b/src/types/coachAi.ts
+index 01073d99..0c98ddce 100644
+--- a/src/types/coachAi.ts
++++ b/src/types/coachAi.ts
+@@ -77,7 +77,12 @@ export interface WorkoutPayload {
+ 
+ export interface AiMealItem {
+   name: string;
+-  /** Free-form portion description ("1 cup", "150g"). */
++  /**
++   * Portion as the backend sends it ("6 oz", "1 cup"). This is the field the
++   * approve step copies into the client's plan (meal-plan.prompt.ts).
++   */
++  serving?: string | null;
++  /** Older mobile name for the portion; read only as a fallback. */
+   portion?: string | null;
+   calories?: number | null;
+   protein_g?: number | null;
+@@ -87,16 +92,27 @@ export interface AiMealItem {
+ }
+ 
+ export interface AiMeal {
+-  /** breakfast / lunch / dinner / snack / etc — free text. */
++  /** breakfast / lunch / dinner / snack — the backend field the client sees. */
++  slot?: string | null;
++  /** Older mobile name for the slot; read only as a fallback. */
+   time_of_day?: string | null;
+   name?: string | null;
+   items: AiMealItem[];
+ }
+ 
++export interface AiMealDayTotals {
++  calories?: number | null;
++  protein_g?: number | null;
++  carbs_g?: number | null;
++  fat_g?: number | null;
++}
++
+ export interface AiMealDay {
+   day: number;
+   notes?: string | null;
+-  /** Daily totals when the model returns them. */
++  /** Daily totals as the backend sends them (meal-plan.prompt.ts). */
++  daily_totals?: AiMealDayTotals | null;
++  /** Older mobile names for the totals; read only as a fallback. */
+   total_calories?: number | null;
+   total_protein_g?: number | null;
+   total_carbs_g?: number | null;
+@@ -107,6 +123,8 @@ export interface AiMealDay {
+ export interface MealPlanPayload {
+   title?: string | null;
+   summary?: string | null;
++  /** Notes the approve step copies onto the plan the client sees. */
++  coach_notes?: string | null;
+   days: AiMealDay[];
+ }
+ 

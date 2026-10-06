@@ -1,0 +1,444 @@
+{
+  "repo": "backend",
+  "number": 776,
+  "head": "d0303aa57090cf72c16a3455b6fc0281057f04b3",
+  "base": "c8c7f2d0864c0a0605a3e6bfbd258d31cb52e3ca",
+  "title": "fix(money): refunds pause billing; repeat cancels and live-contract lifecycle (T4)",
+  "body": "## MONEY-REFUND-124 \u2014 agent 124\n\nT4: money, access, account-deletion billing. Opening fix round; independent exact-head dual audit required. No merge, deployment, production writes or live provider actions.\n\n### Ordinary-user findings fixed (B=5)\n1. **B1 \u2014 repeat cancellation:** a client cancels, chooses Keep plan, then cancels again; the lifetime Stripe idempotency key could replay the first response without scheduling the new cancellation.\n2. **B2 \u2014 renewal refunds:** an operator refunds a renewal; the saved initial PaymentIntent selected the original payment and equal-amount refunds reused a key across renewal charges. The latest settled charge now owns both the refund and its key.\n3. **B3 \u2014 full-refund lifecycle:** a coach refunds a recurring plan; access could end while Stripe continued billing. Full successful refunds now pause billing and end access, using a distinct refund reason and the existing owning-coach restart. Pending refunds keep access; cumulative partial refunds and changed renewal prices are assessed against the actual charge. Guest recurring refunds also stop collection.\n4. **B4 \u2014 coach deletion:** a coach deletes their account while a guest buyer's app-account conversion is pending; the guest subscription was missed because collection checked only the buyer's created user id. Deletion now collects the coach-as-payee direction.\n5. **B5 \u2014 archive with live billing:** a coach archives a package whose subscribers have access off or are still guests; entitlement-only counting could allow ongoing Stripe subscriptions behind an archived package. Live contracts and unconverted guests now block archive.\n\nU=1: truthful refund currency and dispute/inquiry wording; no invented seven-day evidence deadline. C=0: frozen edge cases intentionally not investigated.\n\n### Owner defaults preserved\n- Full recurring refund: **pause**, never cancel as a substitute; only the owning coach restarts.\n- Ordinary mid-period cancellation: keep paid-period access, no automatic refund.\n- Cross-coach reassignment via invite entry remains refused; no silent transfer of Stripe billing.\n- Archive remains blocked until contracts/access have ended.\n\n### Evidence\n- Baseline: f2d2750c4b9200c3fb9e50bda8299eabd17c873d.\n- [Failing-before CI lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37516864377): 9 behavior-assertion failures across every B; 2 additional fixture errors corrected in this PR. The pause-failure case passed on the baseline only because of that fixture error and is not counted as baseline proof.\n- Candidate proof: this PR's own CI. No extra lane beyond the baseline lane.\n- Provider fixtures use synthetic ids and in-memory databases; no external payments.\n\n### Coordination\nMONEY-CONNECT-124 owns disjoint package READ methods; this PR owns archive only. MONEY-WEBHOOK-124 owns billing routing and checkout webhook files; this PR leaves both untouched. Companion mobile PR teaches refund-specific copy and owning-coach restart; existing backend/dispute contracts remain supported.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 438,
+  "deletions": 39,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/776",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/776#issuecomment-6023909624",
+      "body": "FIX ROUND 1 (OPENING) (MONEY-REFUND-124, agent 124) \u2014 growth-project-backend#776 @ e81eeabf16ca9e5e03d7365249dabaeffc965348 \u2014 CI pending, not READY FOR AUDIT yet\n\nB/U/C: 5/1/0. Every B's ordinary-user story and closure is in the PR body. 471 changed lines.\n\nOwner policy preserved: a full recurring refund pauses billing and ends access; only the owning coach restarts. Ordinary cancellation keeps paid-period access without a refund. Archive stays blocked with live contracts. Coach switching is not a silent billing transfer.\n\n[Baseline behavior-failure evidence](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37516864377): 9 real assertion failures across all five Bs; two fixture errors corrected in this candidate. The pause-failure test was not valid baseline proof because of that fixture error. Candidate evidence is the PR's own CI.\n\nCompanion client/coach copy and restart consent: [mobile #405](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/405) @ 3ee4c8d1815f9398c927458cb0d57e6e57e2bb3e. No migration, flag change, deployment or provider action.\n"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/776#issuecomment-6023913747",
+      "body": "\n<!--\n  0 failure: \n  0 warning: \n  \n  1 markdown notices\n  DangerID: danger-id-Danger;\n-->\n\n\n\n### Danger summary\n\n- **Touched areas:** _none of the sensitive paths_\n- **Files changed:** 15\n\n<p align=\"right\">\n  Generated by :no_entry_sign: <a href=\"https://danger.systems/js\">dangerJS</a> against d0303aa57090cf72c16a3455b6fc0281057f04b3\n</p>\n"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/776#issuecomment-6024010854",
+      "body": "<!-- h4-deploy-readiness-board -->\n## Deploy readiness board (R100, informational)\n\nThis check is informational on pull requests during the pre-launch\nburn-down. It gates only the codebase-invariant sections (stub values\nand prod-switch coherence). The environment-dependent sections (wiring,\nenv discovery, operator keys) are surfaced below but do not block the\nPR because the runner carries no production secrets. The prod-deploy\ngate (deploy-readiness-gate) enforces every section under strict mode.\n\n```\n================ DEPLOY READINESS BOARD (R100) ================\n    mode: INFORMATIONAL (PR / pre-launch)\n    \n    --- STUB VALUES [RED=0] ---\n      BLOCK_SHIP=0  WARN=7  INFO=5\n      [warn] src/coach/command-center/ltv-metrics.dto.ts:153  STUB (tracked debt or low-signal)\n      [warn] src/contracts/contracts.module.ts:47  STUB (tracked debt or low-signal)\n      [warn] src/contracts/contracts.module.ts:53  STUB (tracked debt or low-signal)\n      [warn] src/contracts/providers/docusign.provider.ts:11  STUB (tracked debt or low-signal)\n      [warn] src/contracts/providers/native-canvas.provider.ts:11  STUB (tracked debt or low-signal)\n      [warn] src/gym/gym-distribution.service.ts:4  STUB (tracked debt or low-signal)\n      [warn] src/scheduling/scheduling.controller.ts:91  Coming soon (tracked debt or low-signal)\n      no blocking stub/placeholder tokens in production-bound src/\n    \n    ---------------------------------------------------------------\n    GATING RED LINES (this run): 0\n    PROD-DEPLOY RED LINES (strict): 0\n    EXIT: ALL CLEAR \u2192 SAFE TO DEPLOY\n    ===============================================================\n```"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/776#issuecomment-6024015385",
+      "body": "<!-- pr-checks-watcher -->\n## CI status \u2014 `d0303aa`\n\npending: 3 \u00b7 skipped: 1 \u00b7 success: 12\n\n- \u2705 **Banned cast tokens (R75 / R100.A2)** \u2014 success\n- \u23f3 **build-and-test**\n- \u2705 **build-sbom** \u2014 success\n- \u2705 **CodeQL** \u2014 success\n- \u2705 **CodeQL JS/TS (javascript-typescript)** \u2014 success\n- \u2705 **comment-deploy-readiness** \u2014 success\n- \u2705 **community-live-tests** \u2014 success\n- \u2705 **danger** \u2014 success\n- \u23ed\ufe0f **deploy-readiness-gate** \u2014 skipped\n- \u23f3 **mwb-3-live-tests**\n- \u2705 **npm audit (high+critical, whole graph)** \u2014 success\n- \u23f3 **rls-floor-guard**\n- \u2705 **rls-live-tests** \u2014 success\n- \u2705 **Schema parity (migrations match schema.prisma)** \u2014 success\n- \u2705 **size-label** \u2014 success\n- \u2705 **test-deploy-readiness** \u2014 success\n\n_Updated automatically by pr-checks-watcher._"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/776#issuecomment-6024230718",
+      "body": "FIX ROUND 1 (OPENING) (MONEY-REFUND-124, agent 124) \u2014 growth-project-backend#776 @ d0303aa57090cf72c16a3455b6fc0281057f04b3 \u2014 READY FOR AUDIT\n\nFinished by R-MONEY-FINISH-124 (agent 124) after the builder was cancelled by a session interruption. B/U/C: 5/1/0 (B1 repeat cancel after Keep plan, B2 renewal refund charge and key, B3 full refund pauses billing and ends access, B4 coach deletion collects guest subscriptions, B5 archive blocked by live contracts and unconverted guests; U1 refund currency and dispute wording). Normal-user stories and closures are in the PR body. 477 changed lines (1,500 cap).\n\nCI repair push (one, test-only, deterministic): the opening head e81eeabf failed build-and-test in two existing specs that encoded the old behaviour, not the fix:\n- test/dunning-r2-native-card-1a-2a-e2e.spec.ts:843 asserted the lifetime cancel key `tgp-cancel-ape-sub_dv2_client`; B1 makes it per-request (`...-<uuid>`). The \"second tap does not call Stripe again\" assertion in the same case is unchanged and passes.\n- test/packages-create-idempotency-http.spec.ts: the Prisma double had no `guestCheckout`, so the B5 archive count threw (500 / 422). Added `guestCheckout.count -> 0`.\nNo src change since e81eeabf.\n\nCI at this head: all required checks green (build-and-test, rls-live-tests, community-live-tests, mwb-3-live-tests, Banned cast tokens, Schema parity, CodeQL, npm audit, test-deploy-readiness): build-and-test https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520507961/job/112464398787 (R75 https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520508025/job/112464399873)\nFailing-before proof (unchanged): https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37516864377\n\nOwner decisions: none new. Owner defaults applied as recorded (full recurring refund pauses billing and ends access, only the owning coach restarts, never cancel as a substitute; ordinary cancel keeps the paid period with no refund; archive stays blocked while a contract is live). Operator: merge together with companion growth-project-mobile#405 (refund copy and restart consent). No merge, deploy, production, Stripe or spend.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/runs/112467023001",
+      "id": 112467023001,
+      "output": {
+        "title": "1 new alert",
+        "summary": "### New alerts in code changed by this pull request\n\n * 1 note\n\nSee annotations below for details.\n\n[View all branch alerts](/BradleyGleavePortfolio/growth-project-backend/security/code-scanning?query=pr%3A776+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112467023001/annotations"
+      }
+    },
+    {
+      "name": "comment-deploy-readiness",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520507991/job/112466457205",
+      "id": 112466457205,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112466457205/annotations"
+      }
+    },
+    {
+      "name": "npm audit (high+critical, whole graph)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520508329/job/112464404316",
+      "id": 112464404316,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464404316/annotations"
+      }
+    },
+    {
+      "name": "deploy-readiness-gate",
+      "status": "completed",
+      "conclusion": "skipped",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520507991/job/112464403665",
+      "id": 112464403665,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464403665/annotations"
+      }
+    },
+    {
+      "name": "test-deploy-readiness",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520507991/job/112464401498",
+      "id": 112464401498,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464401498/annotations"
+      }
+    },
+    {
+      "name": "Schema parity (migrations match schema.prisma)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520507943/job/112464400040",
+      "id": 112464400040,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464400040/annotations"
+      }
+    },
+    {
+      "name": "Banned cast tokens (R75 / R100.A2)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520508025/job/112464399873",
+      "id": 112464399873,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464399873/annotations"
+      }
+    },
+    {
+      "name": "CodeQL JS/TS (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520508056/job/112464399552",
+      "id": 112464399552,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 3,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464399552/annotations"
+      }
+    },
+    {
+      "name": "rls-floor-guard",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520507961/job/112464399519",
+      "id": 112464399519,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464399519/annotations"
+      }
+    },
+    {
+      "name": "mwb-3-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520507961/job/112464399413",
+      "id": 112464399413,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464399413/annotations"
+      }
+    },
+    {
+      "name": "community-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520507961/job/112464399370",
+      "id": 112464399370,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464399370/annotations"
+      }
+    },
+    {
+      "name": "build-sbom",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520507918/job/112464399352",
+      "id": 112464399352,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464399352/annotations"
+      }
+    },
+    {
+      "name": "size-label",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520508054/job/112464399316",
+      "id": 112464399316,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 3,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464399316/annotations"
+      }
+    },
+    {
+      "name": "rls-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520507961/job/112464399255",
+      "id": 112464399255,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464399255/annotations"
+      }
+    },
+    {
+      "name": "danger",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520507978/job/112464399138",
+      "id": 112464399138,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464399138/annotations"
+      }
+    },
+    {
+      "name": "build-and-test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37520507961/job/112464398787",
+      "id": 112464398787,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112464398787/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "8248eae53c2ae4731762f4072d8300c0016746dc",
+      "filename": "src/account-deletion/account-deletion.billing.ts",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 1,
+      "changes": 5,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Faccount-deletion%2Faccount-deletion.billing.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Faccount-deletion%2Faccount-deletion.billing.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Faccount-deletion%2Faccount-deletion.billing.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -63,7 +63,10 @@ export class AccountDeletionBillingService {\n       select: { stripe_subscription_id: true },\n     });\n     const guest = await tx.guestCheckout.findMany({\n-      where: { created_user_id: userId, stripe_subscription_id: { not: null } },\n+      where: {\n+        OR: [{ created_user_id: userId }, { package: { coach_id: userId } }],\n+        stripe_subscription_id: { not: null },\n+      },\n       select: { stripe_subscription_id: true },\n     });\n     for (const row of [...coachSubs, ...purchases, ...guest]) {"
+    },
+    {
+      "sha": "1b6a1f96bea5f44e83b1a057bc339b8ce3e2e2d4",
+      "filename": "src/checkout/client-billing.service.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 2,
+      "changes": 7,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Fcheckout%2Fclient-billing.service.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Fcheckout%2Fclient-billing.service.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fcheckout%2Fclient-billing.service.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -34,6 +34,7 @@ import { isDunningV2Enabled } from './dunning-v2/dunning-v2.feature';\n import {\n   DUNNING_V2_REVERSAL_REASON,\n   DunningV2Service,\n+  isBillingPauseReason,\n   outstandingDisputes,\n } from './dunning-v2/dunning-v2.service';\n import { dunningErrorCode } from './dunning-v2/dunning-v2.safe-error';\n@@ -321,7 +322,7 @@ export class BillingLeaseLostError extends Error {\n }\n \n export function isDisputeCycle(state: DunningState | null | undefined): boolean {\n-  return state?.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON;\n+  return state?.status === 'active' && isBillingPauseReason(state.last_failure_reason);\n }\n \n /** B-689-5: what the dispute ledger says was reversed on one plan. */\n@@ -1496,7 +1497,9 @@ export class ClientBillingService {\n       try {\n         const sub = await this.stripe.setCancelAtPeriodEnd({\n           subscriptionId: purchase.stripe_subscription_id as string,\n-          idempotencyKey: `tgp-cancel-ape-${purchase.stripe_subscription_id}`,\n+          // A later cancel after Keep plan is a new action, not Stripe's\n+          // cached answer to the first cancel. Setting true remains safe to repeat.\n+          idempotencyKey: `tgp-cancel-ape-${purchase.stripe_subscription_id}-${randomUUID()}`,\n         });\n         if (typeof sub.current_period_end === 'number') {\n           periodEnd = new Date(sub.current_period_end * 1000);"
+    },
+    {
+      "sha": "d237edd7ee19e719041c69bca6a19af811ffa5b1",
+      "filename": "src/checkout/dunning-v2/dunning-restart.controller.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Fcheckout%2Fdunning-v2%2Fdunning-restart.controller.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Fcheckout%2Fdunning-v2%2Fdunning-restart.controller.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fcheckout%2Fdunning-v2%2Fdunning-restart.controller.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -18,7 +18,7 @@ import { CoachOrOwnerGuard } from '../../common/guards/coach-or-owner.guard';\n import { DunningV2Service } from './dunning-v2.service';\n \n const NOT_PAUSED =\n-  'This plan is not paused by a payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.';\n+  'This plan is not paused by a refund, payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.';\n const UNAVAILABLE =\n   'Billing could not be reached, so the plan stays paused and nothing was charged. Try again in a few minutes.';\n "
+    },
+    {
+      "sha": "ef52af86a69dcecb228feac7485774e2cae9a76b",
+      "filename": "src/checkout/dunning-v2/dunning-v2.service.ts",
+      "status": "modified",
+      "additions": 66,
+      "deletions": 13,
+      "changes": 79,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Fcheckout%2Fdunning-v2%2Fdunning-v2.service.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Fcheckout%2Fdunning-v2%2Fdunning-v2.service.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fcheckout%2Fdunning-v2%2Fdunning-v2.service.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -253,7 +253,7 @@ export interface ClientDunningStatus {\n    * payment already made (no invoice is open, a card update does not end\n    * it); 'payment' = a renewal charge failed. Null with state 'none'.\n    */\n-  kind: 'payment' | 'dispute' | null;\n+  kind: 'payment' | 'dispute' | 'refund' | null;\n   /**\n    * B-628-7: true when the cycle is locked but the client keeps access\n    * through another live entitlement (the request guard lets them in), so\n@@ -293,7 +293,7 @@ export interface ClientDunningStatus {\n    * cancel_route / amount_cents all null: no lock date, no retry or card\n    * path). 'payment_failed': a renewal charge failed.\n    */\n-  reason: 'dispute_paused' | 'payment_failed' | null;\n+  reason: 'dispute_paused' | 'refund_paused' | 'payment_failed' | null;\n   access_ended: boolean;\n   /**\n    * Sol B-705-4: true only once Stripe confirmed the dispute pause; while the\n@@ -308,14 +308,19 @@ const PAID_STRIPE_STATUSES = new Set(['active', 'trialing']);\n \n /** `last_failure_reason` marker of a compressed late-reversal (dispute) cycle. */\n export const DUNNING_V2_REVERSAL_REASON = 'charge_disputed';\n+export const FULL_REFUND_PAUSE_REASON = 'charge_refunded';\n+const BILLING_PAUSE_REASONS = [DUNNING_V2_REVERSAL_REASON, FULL_REFUND_PAUSE_REASON];\n+export function isBillingPauseReason(reason: string | null | undefined): boolean {\n+  return reason != null && BILLING_PAUSE_REASONS.includes(reason);\n+}\n \n /** The cycle is paused by a dispute: the marker on an active, locked cycle. */\n function isDisputePausedRow(\n   state: Pick<DunningState, 'status' | 'last_failure_reason' | 'locked_out_at' | 'entered_at'>,\n ): boolean {\n   return (\n     state.status === 'active' &&\n-    state.last_failure_reason === DUNNING_V2_REVERSAL_REASON &&\n+    isBillingPauseReason(state.last_failure_reason) &&\n     state.locked_out_at != null &&\n     state.entered_at != null\n   );\n@@ -905,7 +910,7 @@ export class DunningV2Service {\n     if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) {\n       return 'skipped';\n     }\n-    const dispute = row.last_failure_reason === DUNNING_V2_REVERSAL_REASON;\n+    const dispute = isBillingPauseReason(row.last_failure_reason);\n     if (dispute) {\n       // B-628-8: a dispute cycle's evidence is the dispute itself, not the\n       // subscription (which stays active and keeps renewing). A won dispute\n@@ -1009,7 +1014,7 @@ export class DunningV2Service {\n     if (!state) return { liftedLockout: false };\n     // R-DISPUTE-PAUSE: no payment, card update or manual clear ends a\n     // dispute pause; only the coach restart does.\n-    if (state.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON) {\n+    if (state.status === 'active' && isBillingPauseReason(state.last_failure_reason)) {\n       return { liftedLockout: false };\n     }\n     const wasLocked = state.locked_out_at != null;\n@@ -1175,14 +1180,58 @@ export class DunningV2Service {\n       where: { purchase_id: purchaseId },\n       select: { status: true, last_failure_reason: true },\n     });\n-    return state?.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON;\n+    return state?.status === 'active' && isBillingPauseReason(state.last_failure_reason);\n   }\n \n   /** Alias read by the webhook entitlement writers (R-DISPUTE-PAUSE). */\n   async isDisputePaused(purchaseId: string, db?: DunningV2Db): Promise<boolean> {\n     return this.isDisputeCycleOpen(purchaseId, db);\n   }\n \n+  /**\n+   * Owner decision 7: a full refund is not non-payment. Record a distinct\n+   * pause reason, reuse the existing Stripe pause and coach restart, and\n+   * never create a fictitious bank dispute or dispatch dispute notices.\n+   * Money safety is independent of the rollout flag.\n+   */\n+  async pauseAfterFullRefund(purchaseId: string): Promise<void> {\n+    const now = new Date();\n+    await this.prisma.$transaction(async (tx) => {\n+      await this.lockDunningState(tx, purchaseId);\n+      const purchase = await tx.clientPurchase.findUnique({ where: { id: purchaseId } });\n+      if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) return;\n+      if (PLAN_ENDED_STATUSES.has(purchase.status)) return;\n+      const state = await tx.dunningState.findUnique({ where: { purchase_id: purchaseId } });\n+      if (state && isDisputePausedRow(state)) return;\n+      const data = {\n+        status: 'active',\n+        step_index: DUNNING_V2_PAUSE_STEP,\n+        last_failure_reason: FULL_REFUND_PAUSE_REASON,\n+        last_failure_at: now,\n+        entered_at: now,\n+        locked_out_at: now,\n+        next_attempt_at: null,\n+        resolved_at: null,\n+        recovered_at: null,\n+        client_canceled_at: null,\n+        billing_paused_at: null,\n+      };\n+      const paused = state\n+        ? await tx.dunningState.update({ where: { id: state.id }, data })\n+        : await tx.dunningState.create({\n+            data: { purchase_id: purchaseId, failure_count: 0, reversal_count: 0, ...data },\n+          });\n+      await tx.dunningNoticeDelivery.updateMany({\n+        where: { dunning_state_id: paused.id, status: { in: ['pending', 'failed'] } },\n+        data: { status: 'canceled', next_attempt_at: null },\n+      });\n+      await tx.clientPurchase.update({\n+        where: { id: purchaseId }, data: { entitlement_active: false },\n+      });\n+    });\n+    await this.confirmDisputePause(purchaseId, now);\n+  }\n+\n   /**\n    * B-628-13: an active cycle with a dispute keeps the dispute marker. CAS\n    * on the active row, so a cycle resolved meanwhile is never reopened here.\n@@ -1361,6 +1410,8 @@ export class DunningV2Service {\n       await this.releaseDisputeLease(lease);\n     }\n     if (!state) return { result: 'not_paused' };\n+    // Refund notices are emitted by the refund handler, not the bank-dispute renderer.\n+    if (state.last_failure_reason === FULL_REFUND_PAUSE_REASON) return { result: 'confirmed' };\n     const enteredAt = state.entered_at as Date;\n     const claim: DunningV2StepClaim = {\n       dunningStateId: state.id,\n@@ -1412,7 +1463,7 @@ export class DunningV2Service {\n         where: {\n           id: state.id,\n           status: 'active',\n-          last_failure_reason: DUNNING_V2_REVERSAL_REASON,\n+          last_failure_reason: state.last_failure_reason,\n           entered_at: enteredAt,\n         },\n         data: { billing_paused_at: new Date() },\n@@ -1446,7 +1497,7 @@ export class DunningV2Service {\n     const rows = await this.prisma.dunningState.findMany({\n       where: {\n         status: 'active',\n-        last_failure_reason: DUNNING_V2_REVERSAL_REASON,\n+        last_failure_reason: { in: BILLING_PAUSE_REASONS },\n         locked_out_at: { not: null },\n         entered_at: { not: null },\n         billing_paused_at: null,\n@@ -1555,7 +1606,7 @@ export class DunningV2Service {\n     if (\n       !state?.entered_at ||\n       state.status !== 'active' ||\n-      state.last_failure_reason !== DUNNING_V2_REVERSAL_REASON\n+      !isBillingPauseReason(state.last_failure_reason)\n     ) {\n       return 'not_paused';\n     }\n@@ -1635,7 +1686,7 @@ export class DunningV2Service {\n         where: {\n           id: state.id,\n           status: 'active',\n-          last_failure_reason: DUNNING_V2_REVERSAL_REASON,\n+          last_failure_reason: state.last_failure_reason,\n           entered_at: enteredAt,\n         },\n         data: {\n@@ -1898,9 +1949,11 @@ export class DunningV2Service {\n       }),\n     ]);\n     const enteredAt = row.entered_at as Date;\n-    const kind = row.last_failure_reason === DUNNING_V2_REVERSAL_REASON ? 'dispute' : 'payment';\n+    const kind = row.last_failure_reason === FULL_REFUND_PAUSE_REASON\n+      ? 'refund'\n+      : row.last_failure_reason === DUNNING_V2_REVERSAL_REASON ? 'dispute' : 'payment';\n     const state = row.locked_out_at && !lockWaived ? 'locked' : 'past_due';\n-    if (kind === 'dispute') {\n+    if (kind === 'dispute' || kind === 'refund') {\n       // R-DISPUTE-PAUSE: access ended at once, billing is paused, the coach\n       // restarts it. No lock date, no retry, no card update, no cancel path.\n       return {\n@@ -1915,7 +1968,7 @@ export class DunningV2Service {\n         coach_name: coach?.name ?? null,\n         update_payment_route: null,\n         update_card_url: null,\n-        reason: 'dispute_paused',\n+        reason: kind === 'refund' ? 'refund_paused' : 'dispute_paused',\n         access_ended: true,\n         // Sol B-705-4: only once Stripe confirmed the pause.\n         billing_paused: row.billing_paused_at != null,"
+    },
+    {
+      "sha": "7a47ea49b734530a8482f0c33bba1c96e5544ad3",
+      "filename": "src/checkout/refund-dispute-handler.service.ts",
+      "status": "modified",
+      "additions": 46,
+      "deletions": 16,
+      "changes": 62,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Fcheckout%2Frefund-dispute-handler.service.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Fcheckout%2Frefund-dispute-handler.service.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fcheckout%2Frefund-dispute-handler.service.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -47,6 +47,8 @@ import { NotificationKind } from '../notifications/notification-kind';\n import { PurchaseFanoutService } from '../packages/purchase-fanout.service';\n import { PartialRefundDecisionService } from '../regimes/partial-refund-decision.service';\n import { PrismaService } from '../prisma.service';\n+import { DunningV2Service } from './dunning-v2/dunning-v2.service';\n+import { formatMinor } from './client-billing.money';\n \n // PR-16 \u2014 outer tx forwarded by BillingService.handleEvent through\n // CheckoutWebhookHandlerService.handle. Used to keep cancelPendingForPurchase\n@@ -241,6 +243,7 @@ export class RefundDisputeHandlerService {\n     // settlement writes for each refund / chargeback / dispute outcome\n     // (push + in-app + email). @Optional() for legacy hand-built wiring.\n     @Optional() private payoutNotices?: PayoutNoticeService,\n+    @Optional() private dunningV2?: DunningV2Service,\n   ) {}\n \n   // Webhook entry point \u2014 returns claimed=true iff we matched to a\n@@ -409,8 +412,7 @@ export class RefundDisputeHandlerService {\n     // entitlement_active true; the client keeps the access they paid\n     // net-of-credit for.\n     const totalAmount = typeof charge.amount === 'number' ? charge.amount : purchase.amount_cents;\n-    const refundedCents = typeof charge.amount_refunded === 'number' ? charge.amount_refunded : 0;\n-    const fullyRefunded = totalAmount > 0 && refundedCents >= totalAmount;\n+    const fullyRefunded = totalAmount > 0 && succeededCents >= totalAmount;\n     // R81 (PR-395 follow-up, F5) \u2014 refund/chargeback behaviour for the Roman P4\n     // first-payment celebration is RETAIN-BY-DESIGN: a refund (even a full one)\n     // or a chargeback does NOT un-record the CoachFirstPaymentNotification\n@@ -483,6 +485,17 @@ export class RefundDisputeHandlerService {\n    * Stripe calls stay outside this transaction (P1-3). Partial refunds keep access.\n    */\n   private async revokeFullyRefunded(purchase: ClientPurchase): Promise<void> {\n+    // Owner decision 7: full recurring refund ends access and PAUSES\n+    // billing; only the owning coach restarts it. Never cancel the plan.\n+    if (purchase.billing_type === 'recurring' && purchase.stripe_subscription_id) {\n+      if (!this.dunningV2) {\n+        throw new ServiceUnavailableException({\n+          code: 'REFUND_PAUSE_UNAVAILABLE',\n+          message: 'The refund was recorded, but the plan pause could not be completed. Refresh the plan before restarting it.',\n+        });\n+      }\n+      await this.dunningV2.pauseAfterFullRefund(purchase.id);\n+    }\n     await this.prisma.$transaction(async (tx) => {\n       await tx.clientPurchase.updateMany({\n         where: { id: purchase.id, status: { not: 'refunded' } },\n@@ -501,6 +514,15 @@ export class RefundDisputeHandlerService {\n         await this.fanout.cancelPendingForPurchase(purchase.id, 'refund', tx);\n       }\n     });\n+    if (purchase.billing_type === 'recurring' && purchase.status !== 'refunded') {\n+      await this.notifications.createNotification({\n+        user_id: purchase.client_user_id,\n+        kind: NotificationKind.DUNNING_BLOCKER,\n+        body: 'A full refund was completed for this plan. Access to the plan has ended and billing is paused. The coach decides whether to restart it.',\n+        payload: { event: 'full_refund_paused', purchase_id: purchase.id },\n+        channel: 'inapp',\n+      }).catch(() => this.logger.warn(`refund pause notice deferred purchase=${purchase.id}`));\n+    }\n   }\n \n   /**\n@@ -1632,10 +1654,10 @@ export class RefundDisputeHandlerService {\n         where: { id: args.purchase.id },\n       });\n       const isFullRefund = !!fresh && fresh.status === 'refunded' && !fresh.entitlement_active;\n-      const dollars = (args.amount_cents / 100).toFixed(2);\n+      const amount = formatMinor(args.amount_cents, args.purchase.currency);\n       const body = isFullRefund\n-        ? `Refund processed: $${dollars} returned to client.`\n-        : `Partial refund: $${dollars} returned to client.`;\n+        ? `Refund processed: ${amount} returned to client.${fresh?.billing_type === 'recurring' ? ' Access to this plan has ended and billing is paused. Restarting it is your decision.' : ''}`\n+        : `Partial refund: ${amount} returned to client.`;\n       await this.notifications.createNotification({\n         user_id: args.purchase.coach_user_id,\n         kind: NotificationKind.COACH_ALERT,\n@@ -2177,7 +2199,7 @@ export class RefundDisputeHandlerService {\n         await this.notifications.createNotification({\n           user_id: purchase.coach_user_id,\n           kind: NotificationKind.COACH_ALERT,\n-          body: 'Chargeback opened on a client purchase. Submit evidence in Stripe within 7 days.',\n+          body: 'A payment dispute or inquiry opened on a client purchase. Review the evidence deadline in Stripe and respond before it closes.',\n           payload: {\n             event: 'dispute_opened',\n             purchase_id: purchase.id,\n@@ -2429,7 +2451,7 @@ export class RefundDisputeHandlerService {\n     if (!chargeId) {\n       throw new Error(`createAdminRefund: no charge id for purchase ${purchase.id}`);\n     }\n-    const idempotencyKey = `tgp-refund-${purchase.id}-${args.amount_cents ?? 'full'}-${args.initiated_by_user_id}`;\n+    const idempotencyKey = `tgp-refund-${purchase.id}-${chargeId}-${args.amount_cents ?? 'full'}-${args.initiated_by_user_id}`;\n     // S-FEE: reverse_transfer / refund_application_fee only exist for\n     // destination charges. A separate-charge-and-transfer charge is\n     // recovered by ChargeSettlementService when the refund is applied.\n@@ -2480,6 +2502,12 @@ export class RefundDisputeHandlerService {\n       if (!recorded) throw err;\n       return recorded;\n     }\n+    // Judge cumulative successful refunds against THIS charge, not the\n+    // purchase's first-period price. Both entry points use the same\n+    // entitlement/guest/drop transaction and recurring billing pause.\n+    if (outcome.row.status === 'succeeded' && await this.coversCharge(chargeId)) {\n+      await this.revokeFullyRefunded(purchase);\n+    }\n     // A276 P0-2 (refix) \u2014 admin-initiated refund: re-read the purchase\n     // (admin path doesn't go through the webhook's purchase.update\n     // branch, so we use the row state at call time) and emit the same\n@@ -2491,15 +2519,6 @@ export class RefundDisputeHandlerService {\n         typeof stripe.amount === 'number'\n           ? stripe.amount\n           : (args.amount_cents ?? purchase.amount_cents);\n-      // Admin refund implicitly fully refunds when amount matches the\n-      // purchase amount. Mirror the webhook's purchase-state update so\n-      // emitRefundCoachAlert observes the correct status.\n-      if (amount_cents >= purchase.amount_cents) {\n-        await this.prisma.clientPurchase.update({\n-          where: { id: purchase.id },\n-          data: { status: 'refunded', entitlement_active: false },\n-        });\n-      }\n       await this.emitRefundCoachAlert({\n         purchase,\n         amount_cents,\n@@ -2512,6 +2531,17 @@ export class RefundDisputeHandlerService {\n   }\n \n   private async resolveChargeIdForPurchase(purchase: ClientPurchase): Promise<string | null> {\n+    // Recurring purchases retain their first PaymentIntent. A refund is\n+    // against the most recent renewal, whose settlement/ledger owns the charge.\n+    if (purchase.billing_type === 'recurring') {\n+      const latest = await this.settlements?.latestChargeIdForPurchase(purchase.id);\n+      if (latest) return latest;\n+      const entry = await this.prisma.splitLedgerEntry.findFirst({\n+        where: { purchase_id: purchase.id, kind: 'destination' },\n+        orderBy: { posted_at: 'desc' },\n+      });\n+      if (entry?.stripe_charge_id) return entry.stripe_charge_id;\n+    }\n     if (purchase.stripe_payment_intent_id) {\n       try {\n         const pi = await this.stripe.retrievePaymentIntent(purchase.stripe_payment_intent_id);"
+    },
+    {
+      "sha": "8cbdb147a6cc87eedb0eeec2d071b37d88831407",
+      "filename": "src/packages/packages.service.ts",
+      "status": "modified",
+      "additions": 21,
+      "deletions": 2,
+      "changes": 23,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Fpackages%2Fpackages.service.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Fpackages%2Fpackages.service.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fpackages%2Fpackages.service.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -614,14 +614,33 @@ export class PackagesService {\n     // bypass, so the safer no-override behaviour is kept. Cancelling the\n     // Stripe subscriptions automatically is intentionally out of scope here\n     // (that is BUG-R5's territory).\n+    // Access off is not proof billing ended (unpaid and dispute/refund\n+    // pauses keep a live Stripe subscription). Guests may not have a\n+    // ClientPurchase yet while account conversion is being retried.\n     const activeCount = await this.prisma.clientPurchase.count({\n-      where: { package_id: packageId, entitlement_active: true },\n+      where: {\n+        package_id: packageId,\n+        OR: [\n+          { entitlement_active: true },\n+          {\n+            stripe_subscription_id: { not: null },\n+            status: { notIn: ['canceled', 'expired', 'incomplete_expired'] },\n+          },\n+        ],\n+      },\n+    }) + await this.prisma.guestCheckout.count({\n+      where: {\n+        package_id: packageId,\n+        created_user_id: null,\n+        stripe_subscription_id: { not: null },\n+        status: { not: 'failed' },\n+      },\n     });\n     if (activeCount > 0) {\n       throw new ConflictException({\n         error: 'PACKAGE_HAS_ACTIVE_SUBSCRIBERS',\n         code: 'PACKAGE_HAS_ACTIVE_SUBSCRIBERS',\n-        message: `This package has ${activeCount} active subscriber(s). Cancel their subscriptions before archiving.`,\n+        message: `This package has ${activeCount} active subscriber(s) or access grant(s). End their access and cancel any subscriptions before archiving.`,\n         active_subscriber_count: activeCount,\n       });\n     }"
+    },
+    {
+      "sha": "c208748e3fa4d15857701f11c527eebb6bd210b3",
+      "filename": "src/storefront/guest-checkout.service.ts",
+      "status": "modified",
+      "additions": 15,
+      "deletions": 0,
+      "changes": 15,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Fstorefront%2Fguest-checkout.service.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/src%2Fstorefront%2Fguest-checkout.service.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fstorefront%2Fguest-checkout.service.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -1123,6 +1123,21 @@ export class GuestCheckoutService {\n       // defence-in-depth so a degenerate event payload can't claim\n       // a full refund of nothing).\n       const fullyRefunded = chargeAmount > 0 && amountRefunded >= chargeAmount;\n+      // A guest can be refunded while account conversion is still pending.\n+      // The local refunded mirror must not leave that subscription billing.\n+      if (fullyRefunded && row?.stripe_subscription_id) {\n+        await this.stripe.pauseSubscriptionCollection({\n+          subscriptionId: row.stripe_subscription_id,\n+          idempotencyKey: `tgp-guest-full-refund-pause-${row.id}`,\n+        });\n+        const open = await this.stripe.listOpenInvoices(row.stripe_subscription_id);\n+        for (const invoice of open) {\n+          await this.stripe.markInvoiceUncollectible({\n+            invoiceId: invoice.id,\n+            idempotencyKey: `tgp-guest-full-refund-invoice-${invoice.id}`,\n+          });\n+        }\n+      }\n       // A276 P0-1: 'refunded' is admitted by GuestCheckout_status_check\n       // as of migration 20260921000000_add_refunded_disputed_to_guest_checkout_status.\n       // Partial refunds keep the existing row.status (typically 'paid' or"
+    },
+    {
+      "sha": "70f80ee6d3601d9069437aa5b3601b0d92c97a1e",
+      "filename": "test/dunning-r2-native-card-1a-2a-e2e.spec.ts",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 1,
+      "changes": 4,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Fdunning-r2-native-card-1a-2a-e2e.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Fdunning-r2-native-card-1a-2a-e2e.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fdunning-r2-native-card-1a-2a-e2e.spec.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -840,7 +840,9 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri\n       });\n       expect(res.message).toMatch(/keep access until 2026-10-25/);\n       const [ape] = w.stripe.callsOf('setCancelAtPeriodEnd');\n-      expect(ape.key).toBe('tgp-cancel-ape-sub_dv2_client');\n+      // MONEY-REFUND-124 B1: each cancel is its own Stripe request (a cancel\n+      // after Keep plan must not replay the first answer).\n+      expect(ape.key).toMatch(/^tgp-cancel-ape-sub_dv2_client-[0-9a-f-]{36}$/);\n       expect(w.stripe.callsOf('voidInvoice')).toHaveLength(0);\n       expect(w.stripe.callsOf('cancelSubscription')).toHaveLength(0);\n       expect(w.stripe.charges).toHaveLength(0);"
+    },
+    {
+      "sha": "484fae061c0719e457d2e647c8b0a8f02133ce81",
+      "filename": "test/money-refund-124.spec.ts",
+      "status": "added",
+      "additions": 246,
+      "deletions": 0,
+      "changes": 246,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Fmoney-refund-124.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Fmoney-refund-124.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fmoney-refund-124.spec.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -0,0 +1,246 @@\n+import { AccountDeletionBillingService } from '../src/account-deletion/account-deletion.billing';\n+import { ClientBillingService } from '../src/checkout/client-billing.service';\n+import { DunningV2Service } from '../src/checkout/dunning-v2/dunning-v2.service';\n+import { DunningV2Telemetry } from '../src/checkout/dunning-v2/dunning-v2.telemetry';\n+import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';\n+import { PackagesService } from '../src/packages/packages.service';\n+import { GuestCheckoutService } from '../src/storefront/guest-checkout.service';\n+import { FakePrisma } from './support/dunning-v2-fake-prisma';\n+import { FakeStripeBilling } from './support/fake-stripe-billing';\n+\n+// Synthetic fixtures only. No provider requests, database connections or timers.\n+// eslint-disable-next-line @typescript-eslint/no-explicit-any\n+const stub = (value: unknown): any => value;\n+\n+function world() {\n+  const fake = new FakePrisma();\n+  const prisma = fake.client();\n+  const row = fake.seed('clientPurchase', {\n+    id: 'purchase', package_id: 'package', coach_user_id: 'coach',\n+    client_user_id: 'client', billing_type: 'recurring', amount_cents: 1000,\n+    currency: 'usd', status: 'active', entitlement_active: true,\n+    stripe_subscription_id: 'sub_plan', stripe_payment_intent_id: 'pi_first',\n+    cancel_at_period_end: false, current_period_end: new Date('2026-11-01'),\n+  });\n+  fake.seed('coachPackage', { id: 'package', coach_id: 'coach', archived_at: null });\n+  fake.seed('user', { id: 'coach', name: 'Synthetic Coach' });\n+  fake.seed('user', { id: 'client', name: 'Synthetic Client' });\n+  const billingStripe = new FakeStripeBilling();\n+  billingStripe.subs.set('sub_plan', {\n+    id: 'sub_plan', status: 'active', customer: 'cus_client',\n+    current_period_end: 1793491200, default_payment_method: 'pm_card',\n+    cancel_at_period_end: false, latest_invoice: null,\n+  });\n+  const refunds: Array<{ id: string; amount: number; currency: string; status: string }> = [];\n+  const cancellationAnswers = new Map<string, unknown>();\n+  const originalCancel = billingStripe.setCancelAtPeriodEnd.bind(billingStripe);\n+  billingStripe.setCancelAtPeriodEnd = async (args) => {\n+    if (cancellationAnswers.has(args.idempotencyKey)) {\n+      billingStripe.calls.push({ op: 'setCancelAtPeriodEnd', key: args.idempotencyKey, args });\n+      return stub(cancellationAnswers.get(args.idempotencyKey));\n+    }\n+    const answer = await originalCancel(args);\n+    cancellationAnswers.set(args.idempotencyKey, answer);\n+    return answer;\n+  };\n+  let latestCharge = 'ch_renewal';\n+  let chargeAmount = 1000;\n+  const stripe = Object.assign(billingStripe, {\n+    resumeSubscriptionCollection: jest.fn(async (args: { subscriptionId: string; idempotencyKey: string }) => {\n+      billingStripe.calls.push({ op: 'resumeSubscriptionCollection', key: args.idempotencyKey, args });\n+      return { ...billingStripe.subs.get(args.subscriptionId)! };\n+    }),\n+    retrievePaymentIntent: jest.fn(async () => ({ id: 'pi_first', latest_charge: 'ch_first' })),\n+    retrieveCharge: jest.fn(async (id: string) => ({\n+      id, amount: chargeAmount, payment_intent: 'pi_first',\n+    })),\n+    listChargeRefunds: jest.fn(async () => ({ data: refunds, has_more: false })),\n+    createRefund: jest.fn(async (args: { amount?: number }) => {\n+      const refund = {\n+        id: `re_${refunds.length + 1}`, amount: args.amount ?? chargeAmount,\n+        currency: 'usd', status: 'succeeded',\n+      };\n+      refunds.push(refund);\n+      return refund;\n+    }),\n+  });\n+  const fanout = { cancelPendingForPurchase: jest.fn(async () => undefined) };\n+  const notifications = { createNotification: jest.fn(async () => undefined) };\n+  const v2 = new DunningV2Service(prisma, new DunningV2Telemetry(), undefined, stub(stripe));\n+  const settlements = {\n+    purchaseIdForCharge: jest.fn(async () => row.id),\n+    latestChargeIdForPurchase: jest.fn(async () => latestCharge),\n+    applyAdjustments: jest.fn(async () => undefined),\n+  };\n+  prisma.splitLedgerEntry = { findFirst: jest.fn(async () => ({ purchase_id: row.id })) };\n+  prisma.guestCheckout = { updateMany: jest.fn(async () => ({ count: 0 })) };\n+  // Preserve the extra delegates on tx views used by the refund handler.\n+  const transaction = prisma.$transaction;\n+  prisma.$transaction = async (cb: (tx: unknown) => unknown) => transaction(\n+    (tx: object) => cb(Object.assign(tx, { guestCheckout: prisma.guestCheckout })),\n+  );\n+  const service = new RefundDisputeHandlerService(\n+    prisma, stub(stripe), stub({}), stub({}), stub({}), stub(notifications),\n+    stub(fanout), undefined, stub(settlements),\n+  );\n+  Object.assign(service, { dunningV2: v2 });\n+  jest.spyOn(service, 'upsertAndApplyRefund').mockImplementation(async (args) => ({\n+    row: stub({\n+      id: args.stripe_refund_id, purchase_id: row.id, amount_cents: args.amount_cents,\n+      status: args.status, ledger_reversed: args.status === 'succeeded',\n+    }),\n+    ledger_just_reversed: args.status === 'succeeded',\n+  }));\n+  const refundEvent = (status = 'succeeded', amount = 1000) => ({\n+    id: 'evt_refund', type: 'charge.refunded',\n+    data: { object: {\n+      id: latestCharge, amount, amount_refunded: amount,\n+      refunds: { data: [{ id: 're_webhook', amount, status }], has_more: false },\n+    } },\n+  });\n+  return {\n+    fake, prisma, row, stripe, service, v2, notifications, fanout, refundEvent,\n+    setCharge: (id: string, amount = 1000) => { latestCharge = id; chargeAmount = amount; },\n+  };\n+}\n+\n+describe('MONEY-REFUND-124 ordinary billing lifecycle', () => {\n+  const flag = process.env.FEATURE_DUNNING_V2;\n+  beforeEach(() => { process.env.FEATURE_DUNNING_V2 = 'true'; });\n+  afterAll(() => {\n+    if (flag === undefined) delete process.env.FEATURE_DUNNING_V2;\n+    else process.env.FEATURE_DUNNING_V2 = flag;\n+  });\n+\n+  it('B1: cancel, keep plan, cancel again sends a new Stripe action', async () => {\n+    const h = world();\n+    const billing = new ClientBillingService(h.prisma, stub(h.stripe));\n+    await billing.cancelPlan('client', 'purchase');\n+    await h.stripe.resumeSubscriptionCollection({ subscriptionId: 'sub_plan', idempotencyKey: 'resume' });\n+    // Native Keep plan also clears cancel_at_period_end.\n+    h.stripe.subs.get('sub_plan')!.cancel_at_period_end = false;\n+    h.row.cancel_at_period_end = false;\n+    await billing.cancelPlan('client', 'purchase');\n+    const calls = h.stripe.callsOf('setCancelAtPeriodEnd');\n+    expect(calls).toHaveLength(2);\n+    expect(calls[0].key).not.toBe(calls[1].key);\n+    expect(h.stripe.subs.get('sub_plan')!.cancel_at_period_end).toBe(true);\n+  });\n+\n+  it('B2: refunding a renewal selects the renewal, not the initial PaymentIntent', async () => {\n+    const h = world();\n+    await h.service.createAdminRefund({\n+      purchase_id: 'purchase', amount_cents: 100, initiated_by_user_id: 'owner',\n+    });\n+    expect(h.stripe.createRefund).toHaveBeenCalledWith(expect.objectContaining({ charge_id: 'ch_renewal' }));\n+  });\n+\n+  it('B2: refunds of equal amounts on different renewal charges have different keys', async () => {\n+    const h = world();\n+    const args = { purchase_id: 'purchase', amount_cents: 100, initiated_by_user_id: 'owner' };\n+    await h.service.createAdminRefund(args);\n+    h.setCharge('ch_next_renewal');\n+    await h.service.createAdminRefund(args);\n+    const keys = h.stripe.createRefund.mock.calls.map(([call]) => stub(call).idempotencyKey);\n+    expect(keys[0]).not.toBe(keys[1]);\n+  });\n+\n+  it('B3: full refund pauses Stripe billing and exposes the existing coach restart', async () => {\n+    const h = world();\n+    await h.service.handle(h.refundEvent());\n+    expect(h.stripe.callsOf('pauseSubscriptionCollection')).toHaveLength(1);\n+    expect(h.row.entitlement_active).toBe(false);\n+    expect(h.fake.find('dunningState', { purchase_id: 'purchase' })).toMatchObject({\n+      status: 'active', last_failure_reason: 'charge_refunded',\n+    });\n+    const restarted = await h.v2.restartAfterDisputePause({ coachUserId: 'coach', purchaseId: 'purchase' });\n+    expect(restarted.restarted).toBe(true);\n+    expect(h.row.entitlement_active).toBe(true);\n+    expect(h.stripe.callsOf('resumeSubscriptionCollection')).toHaveLength(1);\n+  });\n+\n+  it('B3: a Stripe pause failure cannot report the full refund lifecycle complete', async () => {\n+    const h = world();\n+    jest.spyOn(h.stripe, 'pauseSubscriptionCollection').mockRejectedValueOnce(new Error('test outage'));\n+    await expect(h.service.handle(h.refundEvent())).rejects.toThrow();\n+  });\n+\n+  it('B3: a pending full refund does not remove paid access or pause billing', async () => {\n+    const h = world();\n+    await h.service.handle(h.refundEvent('pending'));\n+    expect(h.row.entitlement_active).toBe(true);\n+    expect(h.row.status).toBe('active');\n+    expect(h.stripe.callsOf('pauseSubscriptionCollection')).toHaveLength(0);\n+  });\n+\n+  it('B3: two partial refunds that finish the charge use the full-refund lifecycle', async () => {\n+    const h = world();\n+    await h.service.createAdminRefund({ purchase_id: 'purchase', amount_cents: 400, initiated_by_user_id: 'owner' });\n+    await h.service.createAdminRefund({ purchase_id: 'purchase', amount_cents: 600, initiated_by_user_id: 'owner' });\n+    expect(h.row.entitlement_active).toBe(false);\n+    expect(h.fanout.cancelPendingForPurchase).toHaveBeenCalledWith('purchase', 'refund', expect.anything());\n+    expect(h.stripe.callsOf('pauseSubscriptionCollection')).toHaveLength(1);\n+  });\n+\n+  it('B3: a full refund of a lower-priced renewal uses that charge amount', async () => {\n+    const h = world();\n+    h.setCharge('ch_lower_renewal', 500);\n+    await h.service.createAdminRefund({ purchase_id: 'purchase', initiated_by_user_id: 'owner' });\n+    expect(h.row.entitlement_active).toBe(false);\n+    expect(h.stripe.callsOf('pauseSubscriptionCollection')).toHaveLength(1);\n+  });\n+\n+  it('B3: full refund of a recurring guest pauses billing before the guest mirror ends access', async () => {\n+    const h = world();\n+    const guest = {\n+      id: 'guest', stripe_subscription_id: 'sub_plan', status: 'paid',\n+      package: { coach_id: 'coach' },\n+    };\n+    h.prisma.guestCheckout.findUnique = jest.fn(async () => guest);\n+    h.prisma.guestCheckout.updateMany = jest.fn(async () => ({ count: 1 }));\n+    const service = new GuestCheckoutService(\n+      h.prisma, stub(h.stripe), stub({}), stub({}), stub(h.notifications),\n+      stub({}), stub({}),\n+    );\n+    await service.handleChargeRefunded('pi_first', 1000, 1000);\n+    expect(h.stripe.callsOf('pauseSubscriptionCollection')).toHaveLength(1);\n+  });\n+\n+  it('B4: deleted coach collects a guest subscription before account conversion', async () => {\n+    const h = world();\n+    const guest = {\n+      created_user_id: null, stripe_subscription_id: 'sub_guest',\n+      package: { coach_id: 'coach' },\n+    };\n+    const tx = {\n+      coachSubscription: { findMany: jest.fn(async () => []) },\n+      clientPurchase: { findMany: jest.fn(async () => []) },\n+      guestCheckout: { findMany: jest.fn(async ({ where }: { where: { OR?: Array<{ package?: { coach_id?: string } }> } }) =>\n+        (where.OR?.some((part: { package?: { coach_id?: string } }) => part.package?.coach_id === 'coach')\n+          ? [guest] : []),\n+      ) },\n+    };\n+    const service = new AccountDeletionBillingService(stub({}));\n+    await expect(service.collectSubscriptionIds(stub(tx), 'coach')).resolves.toContain('sub_guest');\n+  });\n+\n+  it('B5: archive refuses a live recurring contract even while access is off', async () => {\n+    const h = world();\n+    Object.assign(h.row, { entitlement_active: false, status: 'unpaid' });\n+    h.prisma.guestCheckout.count = jest.fn(async () => 0);\n+    const packages = new PackagesService(h.prisma, stub({ getHeadCoachIdForSubCoach: async () => null }));\n+    await expect(packages.archive('coach', 'package')).rejects.toMatchObject({\n+      response: expect.objectContaining({ code: 'PACKAGE_HAS_ACTIVE_SUBSCRIBERS' }),\n+    });\n+  });\n+\n+  it('B5: archive refuses a recurring guest who has not converted yet', async () => {\n+    const h = world();\n+    Object.assign(h.row, { entitlement_active: false, status: 'canceled' });\n+    h.prisma.guestCheckout.count = jest.fn(async () => 1);\n+    const packages = new PackagesService(h.prisma, stub({ getHeadCoachIdForSubCoach: async () => null }));\n+    await expect(packages.archive('coach', 'package')).rejects.toMatchObject({\n+      response: expect.objectContaining({ code: 'PACKAGE_HAS_ACTIVE_SUBSCRIBERS' }),\n+    });\n+  });\n+});"
+    },
+    {
+      "sha": "0ab4287029cc8dfcb0d8b26957b3a1448ea13cb8",
+      "filename": "test/packages-archive-guard.spec.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 0,
+      "changes": 5,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Fpackages-archive-guard.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Fpackages-archive-guard.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fpackages-archive-guard.spec.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -26,6 +26,7 @@ function makePrismaStub() {\n   const stub: any = {\n     _rows: rows,\n     _purchases: purchases,\n+    guestCheckout: { count: jest.fn(async () => 0) },\n     coachPackage: {\n       findFirst: jest.fn(async ({ where }: any) =>\n         rows.find((r) =>\n@@ -57,6 +58,10 @@ function makePrismaStub() {\n       //   { package_id, entitlement_active: true }\n       count: jest.fn(async ({ where }: any) =>\n         purchases.filter((p) => {\n+          if (where.OR && !where.OR.some((branch: any) =>\n+            branch.entitlement_active === true ? p.entitlement_active === true :\n+              p.stripe_subscription_id != null && !branch.status.notIn.includes(p.status),\n+          )) return false;\n           if (\n             where.package_id !== undefined &&\n             p.package_id !== where.package_id"
+    },
+    {
+      "sha": "7bbaf60be1eaed18803f228e460473c7a0037031",
+      "filename": "test/packages-create-idempotency-http.spec.ts",
+      "status": "modified",
+      "additions": 2,
+      "deletions": 0,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Fpackages-create-idempotency-http.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Fpackages-create-idempotency-http.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fpackages-create-idempotency-http.spec.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -91,6 +91,8 @@ function makeDb() {\n     },\n     // Live buyers the archive guard and the pricing lock count (none here).\n     clientPurchase: { count: async () => 0 },\n+    // MONEY-REFUND-124 B5: recurring guests not yet converted to an account.\n+    guestCheckout: { count: async () => 0 },\n     // The pricing lock's row lock (SELECT ... FOR UPDATE).\n     $queryRaw: async () => [],\n     workoutBuilderIdempotencyKey: {"
+    },
+    {
+      "sha": "b456148838602dd12890ee8517a713268b7eb83a",
+      "filename": "test/packages.service.spec.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 0,
+      "changes": 5,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Fpackages.service.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Fpackages.service.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fpackages.service.spec.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -13,6 +13,7 @@ function makePrismaStub() {\n     _rows: rows,\n     _purchases: purchases,\n     _contents: contents,\n+    guestCheckout: { count: jest.fn(async () => 0) },\n     // B1 \u2014 the pricing-lock path runs inside prisma.$transaction(cb). The\n     // stub executes the callback synchronously with itself as the `tx`\n     // client so tx.$queryRaw / tx.clientPurchase / tx.coachPackage all\n@@ -88,6 +89,10 @@ function makePrismaStub() {\n       // status { in: [...] }.\n       count: jest.fn(async ({ where }: any) =>\n         purchases.filter((p) => {\n+          if (where.OR && !where.OR.some((branch: any) =>\n+            branch.entitlement_active === true ? p.entitlement_active === true :\n+              p.stripe_subscription_id != null && !branch.status.notIn.includes(p.status),\n+          )) return false;\n           if (where.package_id !== undefined && p.package_id !== where.package_id)\n             return false;\n           if ("
+    },
+    {
+      "sha": "b53785f10ae959a0b690795f695c170243faa036",
+      "filename": "test/refund-dispute-handler.service.spec.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 1,
+      "changes": 8,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Frefund-dispute-handler.service.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Frefund-dispute-handler.service.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Frefund-dispute-handler.service.spec.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -263,6 +263,12 @@ function makeServices() {\n       amount: 5_000,\n       status: 'succeeded',\n     })),\n+    listChargeRefunds: jest.fn(async (chargeId: string) => ({\n+      data: prisma._refunds.filter((r: any) => r.stripe_charge_id === chargeId).map((r: any) => ({\n+        id: r.stripe_refund_id, amount: r.amount_cents, currency: 'usd', status: r.status,\n+      })),\n+      has_more: false,\n+    })),\n     reverseTransfer: jest.fn(async () => ({ id: 'trr_1' })),\n   } as any;\n   const ledger = {\n@@ -901,7 +907,7 @@ describe('RefundDisputeHandlerService', () => {\n       expect(call.user_id).toBe('coach-1');\n       expect(call.kind).toBe('coach_alert');\n       expect(call.deep_link).toBe('tgp://coach/billing/disputes');\n-      expect(call.body).toMatch(/Chargeback opened/);\n+      expect(call.body).toMatch(/payment dispute or inquiry opened/);\n       expect(call.payload).toMatchObject({\n         event: 'dispute_opened',\n         purchase_id: 'p_alert',"
+    },
+    {
+      "sha": "3ad048ca5432ba2063b325d77b25b9e9ee01d428",
+      "filename": "test/refund-reversal-once.spec.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 1,
+      "changes": 8,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Frefund-reversal-once.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Frefund-reversal-once.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Frefund-reversal-once.spec.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -154,7 +154,13 @@ function harness(): Harness {\n   const alerts = jest.fn(async () => undefined);\n   const svc = Reflect.construct(RefundDisputeHandlerService, [\n     db,\n-    { retrieveCharge: jest.fn(async () => ({ payment_intent: null })) },\n+    {\n+      retrieveCharge: jest.fn(async () => ({ amount: 4900, payment_intent: null })),\n+      listChargeRefunds: jest.fn(async () => ({\n+        data: [{ id: 're_1', amount: 2450, currency: 'usd', status: 'succeeded' }],\n+        has_more: false,\n+      })),\n+    },\n     ledger,\n     transfers,\n     { recordPayoutEvent: jest.fn() },"
+    },
+    {
+      "sha": "cdccf12c2932725dfb7ee784120bd6752800b311",
+      "filename": "test/support/refund-reversal-harness.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 1,
+      "changes": 6,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Fsupport%2Frefund-reversal-harness.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/d0303aa57090cf72c16a3455b6fc0281057f04b3/test%2Fsupport%2Frefund-reversal-harness.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fsupport%2Frefund-reversal-harness.ts?ref=d0303aa57090cf72c16a3455b6fc0281057f04b3",
+      "patch": "@@ -166,7 +166,11 @@ export function harness() {\n     reverseTransfer,\n     listTransferReversals,\n     createRefund,\n-    retrieveCharge: jest.fn(async () => ({ payment_intent: null })),\n+    retrieveCharge: jest.fn(async () => ({ amount: 4900, payment_intent: null })),\n+    listChargeRefunds: jest.fn(async () => ({\n+      data: [{ id: 're_r-late', amount: 2450, currency: 'usd', status: 'succeeded' }],\n+      has_more: false,\n+    })),\n     retrievePaymentIntent: jest.fn(async () => ({ latest_charge: 'ch_p-late' })),\n   };\n   const ledger = Reflect.construct(SplitLedgerService, [db]);"
+    }
+  ]
+}

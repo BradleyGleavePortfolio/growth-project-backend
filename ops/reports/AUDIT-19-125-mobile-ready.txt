@@ -1,0 +1,11 @@
+FIX ROUND 1 (OPENING) (AUDIT-19-125, agent 125) — growth-project-mobile#417 @ 8302adc0465072c2674490a5c0e39884acec293d — READY FOR AUDIT
+
+T2. U19-1: Home/Food Log show a distinct failed-read state and working retry via the existing CoachErrorState; a failed water read does not silently zero the displayed amount.
+U19-2: Shared error copy explains ordinary 5xx, network and timeout failures without raw Axios/HTML text; specific 4xx/domain messages remain.
+U19-3: Support offers Report a problem by email even when the SDK reports its overlay opened, with the existing selectable address, Copy and Try again fallback.
+
+334 changed lines (307 additions, 27 deletions), tests included. Tests-only main-baseline CI reproduced 19 failures and passed 9 compatibility tests (37530539554). Fixed targeted run passed 29/30 assertions (37531085675); its faulty unconditional CONTINUE assertion and the test-navigation TS2352 in opening PR CI were corrected and pushed at this exact head. Full corrected-head PR CI is green.
+
+CodeQL Actions has passed; the separate JavaScript/TypeScript analysis is queued. No failing check remains.
+
+No auth/session/tenancy, Crisp ownership, payment operations, backend contracts, production flags, merge, deploy or build changes. Works against the current production backend. No duplicate of #415 help links or #406 workout sync.

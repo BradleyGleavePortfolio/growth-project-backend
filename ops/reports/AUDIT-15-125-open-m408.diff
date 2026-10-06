@@ -1,0 +1,1115 @@
+diff --git a/src/screens/coach/ClientsListScreen.tsx b/src/screens/coach/ClientsListScreen.tsx
+index f73ba0f0..1402e2d5 100644
+--- a/src/screens/coach/ClientsListScreen.tsx
++++ b/src/screens/coach/ClientsListScreen.tsx
+@@ -1,10 +1,11 @@
+-import React, { useEffect, useMemo } from 'react';
++import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+ import {
+   View,
+   Text,
+   StyleSheet,
+   FlatList,
+   TextInput,
++  RefreshControl,
+ } from 'react-native';
+ import HapticPressable from '../../components/HapticPressable';
+ import PushPermissionCard from '../../components/home/PushPermissionCard';
+@@ -14,20 +15,44 @@ import { ClientsStackParamList } from '../../navigation/CoachNavigator';
+ import { useCurrentUser } from '../../hooks/useCurrentUser';
+ import { useCoachStore } from '../../store/coachStore';
+ 
+-import { User } from '../../types';
+ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+ import { SkeletonClientCard } from '../../ui/skeletons';
+-import { EmptyStateNoClients, EmptyStateNoResults } from '../../ui/empty-states';
++import { EmptyState, EmptyStateNoClients, EmptyStateNoResults, IconPeople } from '../../ui/empty-states';
++import {
++  rosterActivityLine,
++  rosterCountLine,
++  rosterDisplayName,
++  rosterReviewBadge,
++  sortRoster,
++  type RosterClient,
++  type RosterSort,
++} from '../../utils/coach/clientRoster';
+ 
+ type Props = {
+   navigation: NativeStackNavigationProp<ClientsStackParamList, 'ClientsList'>;
+ };
+ 
++type RosterFilter = 'all' | 'active' | 'archived';
++const FILTERS: Array<{ key: RosterFilter; label: string }> = [
++  { key: 'active', label: 'Active' },
++  { key: 'archived', label: 'Archived' },
++  { key: 'all', label: 'All' },
++];
++
++function initials(c: RosterClient): string {
++  const name = rosterDisplayName(c);
++  const words = name.split(/\s+/).filter(Boolean);
++  const first = words[0]?.[0] ?? '?';
++  const second = words.length > 1 ? words[words.length - 1][0] : '';
++  return `${first}${second}`.toUpperCase();
++}
++
+ export default function ClientsListScreen({ navigation }: Props) {
+   const { colors } = useTheme();
+   const styles = useMemo(() => makeStyles(colors), [colors]);
+   const currentUser = useCurrentUser();
+   const {
++    clients,
+     isLoading,
+     loadError,
+     searchQuery,
+@@ -37,54 +62,108 @@ export default function ClientsListScreen({ navigation }: Props) {
+     setFilterStatus,
+     getFilteredClients,
+   } = useCoachStore();
++  // UX-COACHLOOKUP-124: name A to Z by default (fastest way to find one
++  // person); "Recent" puts the clients who logged most recently first and the
++  // quiet ones last.
++  const [sort, setSort] = useState<RosterSort>('name');
++  const [refreshing, setRefreshing] = useState(false);
+ 
+   useEffect(() => {
+     if (currentUser) {
+-      loadClients(currentUser.id, filterStatus === 'all' ? undefined : filterStatus);
++      loadClients(currentUser.id, filterStatus);
+     }
+   }, [currentUser?.id, filterStatus]);
+ 
+-  const filteredClients = getFilteredClients();
+-  const filters: Array<'all' | 'active' | 'archived'> = ['all', 'active', 'archived'];
+-
+-  const renderClient = ({ item }: { item: User }) => (
+-    <HapticPressable
+-      intent="light"
+-      style={styles.clientCard}
+-      onPress={() =>
+-        navigation.navigate('ClientDetail', {
+-          clientId: item.id,
+-          clientName: `${item.firstName} ${item.lastName}`,
+-        })
+-      }
+-      accessibilityRole="button"
+-      accessibilityLabel={`Open client ${item.firstName} ${item.lastName}`}
+-    >
+-      <View style={styles.avatar}>
+-        <Text style={styles.avatarText}>
+-          {(item.firstName || '?')[0]}
+-          {(item.lastName || '')[0]}
+-        </Text>
+-      </View>
+-      <View style={styles.clientInfo}>
+-        <Text style={styles.clientName}>
+-          {item.firstName} {item.lastName}
+-        </Text>
+-        <Text style={styles.clientEmail}>{item.email}</Text>
+-      </View>
+-      <View style={styles.statusBadge}>
+-        <View
+-          style={[
+-            styles.statusDot,
+-            { backgroundColor: item.status === 'active' ? colors.success : colors.textMuted },
+-          ]}
+-        />
+-        <Text style={styles.statusText}>{item.status}</Text>
+-      </View>
+-      <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+-    </HapticPressable>
++  // Coming back from a client (archived, messaged, reviewed a check-in) or
++  // from another tab that reloaded the shared list: refresh in place. The
++  // first focus is the mount, already loaded above.
++  const focusedOnce = useRef(false);
++  const coachId = currentUser?.id;
++  useEffect(
++    () =>
++      navigation.addListener('focus', () => {
++        if (!focusedOnce.current) {
++          focusedOnce.current = true;
++          return;
++        }
++        if (coachId) loadClients(coachId, filterStatus, { silent: true });
++      }),
++    [navigation, coachId, filterStatus, loadClients],
+   );
+ 
++  const onRefresh = useCallback(async () => {
++    if (!currentUser) return;
++    setRefreshing(true);
++    try {
++      await loadClients(currentUser.id, filterStatus, { silent: true });
++    } finally {
++      setRefreshing(false);
++    }
++  }, [currentUser?.id, filterStatus, loadClients]);
++
++  const searching = searchQuery.trim().length > 0;
++  const shownClients = sortRoster(getFilteredClients(), sort);
++  const total = clients.length;
++  const countLine = rosterCountLine(shownClients, total, filterStatus, searching);
++
++  const renderClient = ({ item }: { item: RosterClient }) => {
++    const name = rosterDisplayName(item);
++    const line = rosterActivityLine(item);
++    const review = rosterReviewBadge(item);
++    const archived = item.status === 'archived';
++    const lineColor =
++      line.tone === 'quiet' ? colors.warning : line.tone === 'ok' ? colors.textSecondary : colors.textMuted;
++    const a11y = [name, line.text, review, archived ? 'Archived' : null].filter(Boolean).join(', ');
++    return (
++      <HapticPressable
++        intent="light"
++        style={styles.clientCard}
++        onPress={() =>
++          navigation.navigate('ClientDetail', {
++            clientId: item.id,
++            clientName: name,
++          })
++        }
++        accessibilityRole="button"
++        accessibilityLabel={`Open client ${a11y}`}
++        testID={`client-row-${item.id}`}
++      >
++        <View style={[styles.avatar, archived && styles.avatarArchived]}>
++          <Text style={styles.avatarText}>{initials(item)}</Text>
++        </View>
++        <View style={styles.clientInfo}>
++          <Text style={styles.clientName} numberOfLines={1}>
++            {name}
++          </Text>
++          <View style={styles.activityRow}>
++            {line.tone !== 'muted' ? (
++              <View
++                style={[
++                  styles.statusDot,
++                  { backgroundColor: line.tone === 'quiet' ? colors.warning : colors.success },
++                ]}
++              />
++            ) : null}
++            <Text style={[styles.activityText, { color: lineColor }]} numberOfLines={1}>
++              {line.text}
++            </Text>
++          </View>
++        </View>
++        {review ? (
++          <View style={styles.reviewBadge}>
++            <Text style={styles.reviewBadgeText}>{review}</Text>
++          </View>
++        ) : null}
++        {archived ? (
++          <View style={styles.archivedTag}>
++            <Text style={styles.archivedTagText}>Archived</Text>
++          </View>
++        ) : null}
++        <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
++      </HapticPressable>
++    );
++  };
++
+   // Audit fix CR-4 / Coach #8: a single goToInviteCodes handler
+   // reused by the header pill (always visible) and by
+   // EmptyStateNoClients (zero-clients state). Without these the
+@@ -101,13 +180,27 @@ export default function ClientsListScreen({ navigation }: Props) {
+   const canSeeRiskBoard = currentUser?.role === 'coach' || currentUser?.role === 'owner';
+   const goToRiskBoard = () => navigation.navigate('RiskBoard');
+ 
++  const emptyList = searchQuery ? (
++    <EmptyStateNoResults query={searchQuery} onClearSearch={() => setSearchQuery('')} />
++  ) : filterStatus === 'archived' ? (
++    <EmptyState
++      icon={<IconPeople />}
++      headline="No archived clients"
++      body="Clients you archive from their profile appear here."
++    />
++  ) : (
++    <EmptyStateNoClients onInvite={goToInviteCodes} />
++  );
++
+   return (
+     <View style={styles.container}>
+       <View style={styles.header}>
+         <View style={styles.titleRow}>
+           <View style={styles.titleBlock}>
+             <Text style={styles.title}>Clients</Text>
+-            <Text style={styles.subtitle}>{filteredClients.length} total</Text>
++            <Text style={styles.subtitle} testID="clients-count">
++              {isLoading ? ' ' : countLine}
++            </Text>
+           </View>
+           {canSeeRiskBoard ? (
+             <HapticPressable
+@@ -149,7 +242,7 @@ export default function ClientsListScreen({ navigation }: Props) {
+       <View style={styles.privacyBanner}>
+         <Ionicons name="shield-checkmark-outline" size={16} color={colors.info} style={{ marginTop: 1 }} />
+         <Text style={styles.privacyBannerText}>
+-          Your students see what they share. You only see what they log.
++          Clients choose what they share with you. Anything not shared stays private.
+         </Text>
+       </View>
+ 
+@@ -159,42 +252,68 @@ export default function ClientsListScreen({ navigation }: Props) {
+           style={styles.searchInput}
+           value={searchQuery}
+           onChangeText={setSearchQuery}
+-          placeholder="Search clients..."
++          placeholder="Search by name or email"
+           placeholderTextColor={colors.textMuted}
+           accessibilityLabel="Search clients"
++          autoCorrect={false}
++          autoCapitalize="none"
++          returnKeyType="search"
++          clearButtonMode="while-editing"
++          testID="clients-search"
+         />
+       </View>
+ 
+       <View style={styles.filterRow}>
+-        {filters.map((f) => (
++        {FILTERS.map(({ key, label }) => (
+           <HapticPressable
+-            key={f}
++            key={key}
+             intent="light"
+-            style={[styles.filterChip, filterStatus === f && styles.filterChipActive]}
+-            onPress={() => setFilterStatus(f)}
++            style={[styles.filterChip, filterStatus === key && styles.filterChipActive]}
++            onPress={() => setFilterStatus(key)}
+             accessibilityRole="button"
+-            accessibilityLabel={`Filter ${f}`}
+-            accessibilityState={{ selected: filterStatus === f }}
++            accessibilityLabel={`Show ${label.toLowerCase()} clients`}
++            accessibilityState={{ selected: filterStatus === key }}
++            testID={`clients-filter-${key}`}
+           >
+             <Text
+               style={[
+                 styles.filterChipText,
+-                filterStatus === f && styles.filterChipTextActive,
++                filterStatus === key && styles.filterChipTextActive,
+               ]}
+             >
+-              {f.charAt(0).toUpperCase() + f.slice(1)}
++              {label}
+             </Text>
+           </HapticPressable>
+         ))}
++        <View style={styles.filterSpacer} />
++        <HapticPressable
++          intent="light"
++          style={styles.sortToggle}
++          onPress={() => setSort(sort === 'name' ? 'recent' : 'name')}
++          accessibilityRole="button"
++          accessibilityLabel={sort === 'name' ? 'Sorted by name. Sort by most recent log' : 'Sorted by most recent log. Sort by name'}
++          testID="clients-sort"
++        >
++          <Ionicons name="swap-vertical" size={14} color={colors.textSecondary} />
++          <Text style={styles.sortToggleText}>{sort === 'name' ? 'Name' : 'Recent'}</Text>
++        </HapticPressable>
+       </View>
+ 
++      {loadError && shownClients.length > 0 ? (
++        // A reload failed while an earlier list is on screen: say so instead
++        // of showing the old list as current.
++        <Text style={styles.staleText} testID="clients-stale">
++          Clients did not refresh. Pull down to try again.
++        </Text>
++      ) : null}
++
+       {isLoading ? (
+         <>
+           {[0, 1, 2, 3, 4].map((i) => (
+             <SkeletonClientCard key={i} />
+           ))}
+         </>
+-      ) : loadError && filteredClients.length === 0 ? (
++      ) : loadError && shownClients.length === 0 ? (
+         // Network/server failure with no prior data — show an explicit error
+         // surface with a retry button instead of falling through to the
+         // empty-roster CTA (which falsely implied the coach had no clients).
+@@ -204,10 +323,7 @@ export default function ClientsListScreen({ navigation }: Props) {
+           <HapticPressable
+             intent="medium"
+             style={styles.retryButton}
+-            onPress={() =>
+-              currentUser &&
+-              loadClients(currentUser.id, filterStatus === 'all' ? undefined : filterStatus)
+-            }
++            onPress={() => currentUser && loadClients(currentUser.id, filterStatus)}
+             accessibilityRole="button"
+             accessibilityLabel="Retry loading clients"
+           >
+@@ -216,16 +332,22 @@ export default function ClientsListScreen({ navigation }: Props) {
+         </View>
+       ) : (
+         <FlatList
+-          data={filteredClients}
++          data={shownClients}
+           renderItem={renderClient}
+           keyExtractor={(item) => item.id}
+           contentContainerStyle={styles.listContent}
+           showsVerticalScrollIndicator={false}
+-          ListEmptyComponent={
+-            searchQuery
+-              ? <EmptyStateNoResults query={searchQuery} onClearSearch={() => setSearchQuery('')} />
+-              : <EmptyStateNoClients onInvite={goToInviteCodes} />
++          keyboardShouldPersistTaps="handled"
++          keyboardDismissMode="on-drag"
++          refreshControl={
++            <RefreshControl
++              refreshing={refreshing}
++              onRefresh={onRefresh}
++              tintColor={colors.primary}
++              colors={[colors.primary]}
++            />
+           }
++          ListEmptyComponent={emptyList}
+         />
+       )}
+     </View>
+@@ -356,25 +478,65 @@ const makeStyles = (colors: ThemeColors) =>
+     fontWeight: '600',
+     color: colors.textPrimary,
+   },
+-  clientEmail: {
+-    fontSize: 13,
+-    color: colors.textSecondary,
+-    marginTop: 2,
+-  },
+-  statusBadge: {
++  activityRow: {
+     flexDirection: 'row',
+     alignItems: 'center',
+-    gap: 4,
++    gap: 6,
++    marginTop: 3,
++  },
++  activityText: {
++    flexShrink: 1,
++    fontSize: 13,
+   },
+   statusDot: {
+     width: 6,
+     height: 6,
+     borderRadius: 3,
+   },
+-  statusText: {
++  avatarArchived: {
++    backgroundColor: colors.textMuted,
++  },
++  reviewBadge: {
++    paddingHorizontal: 8,
++    paddingVertical: 4,
++    borderRadius: 999,
++    backgroundColor: colors.primaryPale,
++  },
++  reviewBadgeText: {
++    fontSize: 12,
++    fontWeight: '600',
++    color: colors.primary,
++  },
++  archivedTag: {
++    paddingHorizontal: 8,
++    paddingVertical: 4,
++    borderRadius: 999,
++    borderWidth: 1,
++    borderColor: colors.border,
++  },
++  archivedTagText: {
+     fontSize: 12,
++    color: colors.textMuted,
++  },
++  filterSpacer: { flex: 1 },
++  sortToggle: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 4,
++    paddingHorizontal: 10,
++    paddingVertical: 8,
++  },
++  sortToggleText: {
++    fontSize: 13,
++    fontWeight: '600',
+     color: colors.textSecondary,
+   },
++  staleText: {
++    fontSize: 13,
++    color: colors.textSecondary,
++    paddingHorizontal: 24,
++    marginBottom: 8,
++  },
+   loader: {
+     marginTop: 40,
+   },
+diff --git a/src/screens/coach/__tests__/ClientsListLookup124.test.tsx b/src/screens/coach/__tests__/ClientsListLookup124.test.tsx
+new file mode 100644
+index 00000000..3ae8cafd
+--- /dev/null
++++ b/src/screens/coach/__tests__/ClientsListLookup124.test.tsx
+@@ -0,0 +1,268 @@
++/**
++ * UX-COACHLOOKUP-124 — the coach's Clients list.
++ *
++ * B1: GET /coach/clients answers one page (20 rows by default). The roster
++ *     read only that page, so a coach with more clients could not see,
++ *     search or message anyone past the 20 newest, and the count said 20.
++ * B2: loadClients() with no status (Home, Messages) read whatever filter the
++ *     Clients list was left on, so after a look at Archived those screens
++ *     listed archived clients only.
++ * U:  each row showed only name, email and the word "active"; now it shows
++ *     the last day the client logged anything shared, check-ins waiting for
++ *     review and an Archived tag, sorted A to Z (or most recent log), with a
++ *     count line, pull to refresh, refresh on return, a real All filter and
++ *     an Archived empty state that does not offer the invite flow.
++ */
++import React from 'react';
++import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
++
++const mockGetClients = jest.fn();
++jest.mock('../../../services/api', () => ({
++  coachApi: { getClients: (...a: unknown[]) => mockGetClients(...a) },
++}));
++jest.mock('../../../hooks/useCurrentUser', () => ({
++  useCurrentUser: () => ({ id: 'coach-1', role: 'coach' }),
++}));
++jest.mock('../../../theme/ThemeProvider', () => {
++  const anyColor = new Proxy({}, { get: () => '#000000' });
++  return { useTheme: () => ({ colors: anyColor, semanticColors: anyColor }) };
++});
++jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
++jest.mock('../../../components/HapticPressable', () => {
++  const { Pressable } = jest.requireActual('react-native');
++  return Pressable;
++});
++jest.mock('../../../ui/skeletons', () => ({ SkeletonClientCard: () => null }));
++jest.mock('../../../components/home/PushPermissionCard', () => () => null);
++jest.mock('../../../ui/empty-states', () => {
++  const { Text } = jest.requireActual('react-native');
++  return {
++    EmptyState: ({ headline }: { headline: string }) => <Text>{headline}</Text>,
++    EmptyStateNoClients: () => <Text>Invite your first client</Text>,
++    EmptyStateNoResults: () => <Text>No results</Text>,
++    IconPeople: () => null,
++  };
++});
++
++import ClientsListScreen from '../ClientsListScreen';
++import { useCoachStore, ROSTER_PAGE_SIZE } from '../../../store/coachStore';
++import {
++  matchesRosterSearch,
++  rosterActivityLine,
++  rosterCountLine,
++  sortRoster,
++  type RosterClient,
++} from '../../../utils/coach/clientRoster';
++
++function localDay(offsetDays: number): string {
++  const d = new Date();
++  d.setDate(d.getDate() - offsetDays);
++  const m = String(d.getMonth() + 1).padStart(2, '0');
++  const day = String(d.getDate()).padStart(2, '0');
++  return `${d.getFullYear()}-${m}-${day}`;
++}
++
++type Activity = { shared: boolean; last_active_on: string | null; check_ins_to_review: number | null };
++function wireRow(id: string, name: string, activity?: Activity, archived = false) {
++  return {
++    id,
++    name,
++    email: `${id}@example.test`,
++    role: 'student',
++    coach_id: 'coach-1',
++    archived_at: archived ? '2026-09-20T00:00:00.000Z' : null,
++    created_at: '2026-09-01T10:00:00.000Z',
++    ...(activity ? { activity } : {}),
++  };
++}
++
++type Nav = React.ComponentProps<typeof ClientsListScreen>['navigation'];
++const navigate = jest.fn();
++let focusListener: (() => void) | null = null;
++async function mount() {
++  // Only navigate() and the focus listener are read by the screen.
++  const navigation = {
++    navigate,
++    addListener: (_type: string, cb: () => void) => {
++      focusListener = cb;
++      return () => undefined;
++    },
++  } as unknown as Nav;
++  return await render(<ClientsListScreen navigation={navigation} />);
++}
++
++beforeEach(() => {
++  mockGetClients.mockReset();
++  navigate.mockReset();
++  focusListener = null;
++  useCoachStore.getState().reset();
++});
++
++describe('roster store', () => {
++  it('B1: reads every page, so the 21st and later clients are listed and counted', async () => {
++    const page1 = Array.from({ length: ROSTER_PAGE_SIZE }, (_, i) => wireRow(`c${i}`, `Client ${i}`));
++    const page2 = Array.from({ length: 10 }, (_, i) => wireRow(`d${i}`, `Late ${i}`));
++    mockGetClients.mockResolvedValueOnce({ data: page1 }).mockResolvedValueOnce({ data: page2 });
++
++    await useCoachStore.getState().loadClients('coach-1');
++
++    expect(useCoachStore.getState().clients).toHaveLength(ROSTER_PAGE_SIZE + 10);
++    expect(mockGetClients).toHaveBeenNthCalledWith(1, 'active', undefined, ROSTER_PAGE_SIZE);
++    expect(mockGetClients).toHaveBeenNthCalledWith(2, 'active', `c${ROSTER_PAGE_SIZE - 1}`, ROSTER_PAGE_SIZE);
++    useCoachStore.getState().setSearchQuery('late 9');
++    expect(useCoachStore.getState().getFilteredClients().map((c) => c.id)).toEqual(['d9']);
++  });
++
++  it('a page that fails fails the load: no partial roster shown as whole', async () => {
++    const page1 = Array.from({ length: ROSTER_PAGE_SIZE }, (_, i) => wireRow(`c${i}`, `Client ${i}`));
++    mockGetClients.mockResolvedValueOnce({ data: page1 }).mockRejectedValueOnce(new Error('offline'));
++    await useCoachStore.getState().loadClients('coach-1');
++    expect(useCoachStore.getState().clients).toHaveLength(0);
++    expect(useCoachStore.getState().loadError).toBe('Clients did not load. Check the connection and try again.');
++  });
++
++  it('B2: no status reads active clients even after the list was left on Archived; All reads both', async () => {
++    mockGetClients.mockResolvedValue({ data: [] });
++    useCoachStore.getState().setFilterStatus('archived');
++    await useCoachStore.getState().loadClients('coach-1');
++    expect(mockGetClients).toHaveBeenLastCalledWith('active', undefined, ROSTER_PAGE_SIZE);
++    await useCoachStore.getState().loadClients('coach-1', 'all');
++    expect(mockGetClients).toHaveBeenLastCalledWith('all', undefined, ROSTER_PAGE_SIZE);
++  });
++
++  it('search matches every typed word across first name, last name and email', () => {
++    const ana = { firstName: 'Ana', lastName: 'Lopez', email: 'ana@example.test' };
++    expect(matchesRosterSearch(ana, 'ana lo')).toBe(true);
++    expect(matchesRosterSearch(ana, 'Ana ')).toBe(true);
++    expect(matchesRosterSearch(ana, 'example')).toBe(true);
++    expect(matchesRosterSearch(ana, 'ana smith')).toBe(false);
++  });
++});
++
++describe('row helpers', () => {
++  const base = {
++    id: 'x',
++    role: 'client' as const,
++    email: 'x@example.test',
++    passwordHash: '',
++    firstName: 'Ana',
++    lastName: 'Lopez',
++    status: 'active' as const,
++    createdAt: '2026-09-01T10:00:00.000Z',
++    updatedAt: '2026-09-01T10:00:00.000Z',
++  };
++  const client = (activity: RosterClient['activity'], extra: Partial<RosterClient> = {}): RosterClient => ({
++    ...base,
++    ...extra,
++    activity,
++  });
++
++  it('says when the client last logged, and flags three quiet days', () => {
++    expect(rosterActivityLine(client({ shared: true, lastActiveOn: localDay(0), checkInsToReview: 0 }))).toEqual({
++      text: 'Logged today',
++      tone: 'ok',
++    });
++    expect(rosterActivityLine(client({ shared: true, lastActiveOn: localDay(1), checkInsToReview: 0 })).text).toBe(
++      'Logged yesterday',
++    );
++    expect(rosterActivityLine(client({ shared: true, lastActiveOn: localDay(4), checkInsToReview: 0 }))).toEqual({
++      text: 'Last logged 4 days ago',
++      tone: 'quiet',
++    });
++    expect(rosterActivityLine(client({ shared: true, lastActiveOn: null, checkInsToReview: 0 }))).toEqual({
++      text: 'Joined Sep 1 · Nothing logged yet',
++      tone: 'quiet',
++    });
++    expect(rosterActivityLine(client({ shared: false, lastActiveOn: null, checkInsToReview: null })).text).toBe(
++      'Joined Sep 1 · Logs not shared',
++    );
++    // Older server: no activity block.
++    expect(rosterActivityLine(client(null))).toEqual({ text: 'Joined Sep 1', tone: 'muted' });
++  });
++
++  it('sorts A to Z by default and by most recent log on request', () => {
++    const rows = [
++      client({ shared: true, lastActiveOn: localDay(5), checkInsToReview: 0 }, { id: 'b', firstName: 'Ben', lastName: 'Cho' }),
++      client({ shared: true, lastActiveOn: localDay(0), checkInsToReview: 0 }, { id: 'z', firstName: 'Zoe', lastName: 'Park' }),
++      client(null, { id: 'a', firstName: 'ana', lastName: 'Lopez' }),
++    ];
++    expect(sortRoster(rows, 'name').map((c) => c.id)).toEqual(['a', 'b', 'z']);
++    expect(sortRoster(rows, 'recent').map((c) => c.id)).toEqual(['z', 'b', 'a']);
++  });
++
++  it('count line names the filter, the search narrowing and the check-ins waiting', () => {
++    const rows = [
++      client({ shared: true, lastActiveOn: null, checkInsToReview: 2 }),
++      client({ shared: true, lastActiveOn: null, checkInsToReview: 1 }),
++    ];
++    expect(rosterCountLine(rows, 2, 'active', false)).toBe('2 active clients · 3 check-ins to review');
++    expect(rosterCountLine(rows.slice(1), 12, 'all', true)).toBe('1 of 12 clients · 1 check-in to review');
++    expect(rosterCountLine([], 1, 'archived', false)).toBe('1 archived client');
++  });
++});
++
++describe('Clients list screen', () => {
++  it('each row shows name, last log, check-ins to review; tap opens the client by name', async () => {
++    mockGetClients.mockResolvedValue({
++      data: [
++        wireRow('c2', 'Zoe Park', { shared: true, last_active_on: localDay(0), check_ins_to_review: 0 }),
++        wireRow('c1', 'Ana Lopez', { shared: true, last_active_on: localDay(6), check_ins_to_review: 2 }),
++      ],
++    });
++    await mount();
++    await screen.findByText('Ana Lopez');
++    expect(screen.getByText('Last logged 6 days ago')).toBeTruthy();
++    expect(screen.getByText('2 to review')).toBeTruthy();
++    expect(screen.getByText('Logged today')).toBeTruthy();
++    expect(screen.getByTestId('clients-count').props.children).toBe('2 active clients · 2 check-ins to review');
++    // The email and the word "active" no longer fill every row.
++    expect(screen.queryByText('c1@example.test')).toBeNull();
++    expect(screen.queryByText('active')).toBeNull();
++
++    // A to Z: Ana before Zoe although the server sends newest first.
++    const rows = screen.getAllByTestId(/^client-row-/).map((r) => r.props.testID);
++    expect(rows).toEqual(['client-row-c1', 'client-row-c2']);
++    await fireEvent.press(screen.getByTestId('client-row-c1'));
++    expect(navigate).toHaveBeenCalledWith('ClientDetail', { clientId: 'c1', clientName: 'Ana Lopez' });
++
++    // Recent: Zoe logged today, Ana six days ago.
++    await fireEvent.press(screen.getByTestId('clients-sort'));
++    expect(screen.getAllByTestId(/^client-row-/).map((r) => r.props.testID)).toEqual(['client-row-c2', 'client-row-c1']);
++  });
++
++  it('All reads active and archived clients and tags the archived ones', async () => {
++    mockGetClients.mockResolvedValue({ data: [] });
++    await mount();
++    await waitFor(() => expect(mockGetClients).toHaveBeenCalledWith('active', undefined, ROSTER_PAGE_SIZE));
++    mockGetClients.mockResolvedValue({
++      data: [wireRow('c1', 'Ana Lopez'), wireRow('c3', 'Old Client', undefined, true)],
++    });
++    await fireEvent.press(screen.getByTestId('clients-filter-all'));
++    await screen.findByText('Old Client');
++    expect(mockGetClients).toHaveBeenLastCalledWith('all', undefined, ROSTER_PAGE_SIZE);
++    expect(screen.getAllByText('Archived').length).toBeGreaterThanOrEqual(2); // chip + tag
++  });
++
++  it('Archived with none says so instead of offering the first-client invite', async () => {
++    mockGetClients.mockResolvedValue({ data: [] });
++    await mount();
++    await fireEvent.press(screen.getByTestId('clients-filter-archived'));
++    expect(await screen.findByText('No archived clients')).toBeTruthy();
++    expect(screen.queryByText('Invite your first client')).toBeNull();
++  });
++
++  it('coming back to the list reloads it in place', async () => {
++    mockGetClients.mockResolvedValue({ data: [wireRow('c1', 'Ana Lopez')] });
++    await mount();
++    await screen.findByText('Ana Lopez');
++    expect(focusListener).not.toBeNull();
++    await act(async () => focusListener?.()); // first focus = the mount
++    const before = mockGetClients.mock.calls.length;
++    mockGetClients.mockResolvedValue({
++      data: [wireRow('c1', 'Ana Lopez', { shared: true, last_active_on: localDay(0), check_ins_to_review: 1 })],
++    });
++    await act(async () => focusListener?.());
++    expect(mockGetClients.mock.calls.length).toBe(before + 1);
++    expect(await screen.findByText('1 to review')).toBeTruthy();
++  });
++});
+diff --git a/src/screens/coach/__tests__/ClientsListPushPrimer.test.tsx b/src/screens/coach/__tests__/ClientsListPushPrimer.test.tsx
+index c83df02a..f406f696 100644
+--- a/src/screens/coach/__tests__/ClientsListPushPrimer.test.tsx
++++ b/src/screens/coach/__tests__/ClientsListPushPrimer.test.tsx
+@@ -28,6 +28,7 @@ jest.mock('../../../hooks/useCurrentUser', () => ({
+ }));
+ jest.mock('../../../store/coachStore', () => ({
+   useCoachStore: () => ({
++    clients: [],
+     isLoading: false,
+     loadError: null,
+     searchQuery: '',
+@@ -58,7 +59,10 @@ import { pushPrimerDismissedKey } from '../../../components/home/PushPermissionC
+ 
+ type Nav = React.ComponentProps<typeof ClientsListScreen>['navigation'];
+ async function mount() {
+-  const navigation: Pick<Nav, 'navigate'> = { navigate: jest.fn() };
++  const navigation: Pick<Nav, 'navigate' | 'addListener'> = {
++    navigate: jest.fn(),
++    addListener: () => () => undefined,
++  };
+   return await render(<ClientsListScreen navigation={navigation as Nav} />);
+ }
+ 
+diff --git a/src/screens/coach/__tests__/ClientsListRiskPill.test.tsx b/src/screens/coach/__tests__/ClientsListRiskPill.test.tsx
+index e425f14c..ff43f048 100644
+--- a/src/screens/coach/__tests__/ClientsListRiskPill.test.tsx
++++ b/src/screens/coach/__tests__/ClientsListRiskPill.test.tsx
+@@ -11,6 +11,7 @@ let mockUser: { id: string; role?: string } | null = { id: 'c1', role: 'coach' }
+ jest.mock('../../../hooks/useCurrentUser', () => ({ useCurrentUser: () => mockUser }));
+ jest.mock('../../../store/coachStore', () => ({
+   useCoachStore: () => ({
++    clients: [],
+     isLoading: false,
+     loadError: null,
+     searchQuery: '',
+@@ -43,7 +44,7 @@ type Nav = React.ComponentProps<typeof ClientsListScreen>['navigation'];
+ const navigate = jest.fn();
+ async function mount() {
+   // Only navigate() is read by the header.
+-  const navigation: Pick<Nav, 'navigate'> = { navigate };
++  const navigation: Pick<Nav, 'navigate' | 'addListener'> = { navigate, addListener: () => () => undefined };
+   return await render(<ClientsListScreen navigation={navigation as Nav} />);
+ }
+ 
+diff --git a/src/services/__tests__/authActions.signOut.test.ts b/src/services/__tests__/authActions.signOut.test.ts
+index 1405abdb..da3d3340 100644
+--- a/src/services/__tests__/authActions.signOut.test.ts
++++ b/src/services/__tests__/authActions.signOut.test.ts
+@@ -129,7 +129,8 @@ describe('signOut → store resets (Hunter #2 P1-7)', () => {
+     expect(coach.isLoading).toBe(false);
+     expect(coach.loadError).toBeNull();
+     expect(coach.searchQuery).toBe('');
+-    expect(coach.filterStatus).toBe('all');
++    // UX-COACHLOOKUP-124: the Clients list opens on Active.
++    expect(coach.filterStatus).toBe('active');
+ 
+     const client = useClientStore.getState();
+     expect(client.foodLogs).toEqual([]);
+diff --git a/src/store/coachStore.ts b/src/store/coachStore.ts
+index 8fc44be6..4f69e0ff 100644
+--- a/src/store/coachStore.ts
++++ b/src/store/coachStore.ts
+@@ -1,10 +1,21 @@
+ import { create } from 'zustand';
+-import { User } from '../types';
+ import { coachApi } from '../services/api';
+ import { logger } from '../utils/logger';
++import {
++  matchesRosterSearch,
++  rosterActivityFromWire,
++  type RosterClient,
++} from '../utils/coach/clientRoster';
++
++// UX-COACHLOOKUP-124: GET /coach/clients answers one page (20 rows by default,
++// at most 50, newest first). The roster reads every page so a coach with more
++// than one page sees, searches and counts every client. The page cap only
++// stops a runaway loop.
++export const ROSTER_PAGE_SIZE = 50;
++export const ROSTER_MAX_PAGES = 40;
+ 
+ interface CoachStore {
+-  clients: User[];
++  clients: RosterClient[];
+   isLoading: boolean;
+   // null when the last load succeeded or has not yet run. Holds a non-empty
+   // message after a failed load so callers can render an error/retry block
+@@ -13,52 +24,86 @@ interface CoachStore {
+   searchQuery: string;
+   filterStatus: 'all' | 'active' | 'archived';
+ 
+-  loadClients: (coachId: string, status?: 'active' | 'archived' | 'all') => Promise<void>;
++  /**
++   * `status` omitted reads active clients (Home, Messages, the review delta),
++   * whatever filter the Clients list was left on. The Clients list passes its
++   * filter: 'all' reads active and archived together. `silent` keeps the
++   * current list on screen while it reloads (pull to refresh, coming back).
++   */
++  loadClients: (
++    coachId: string,
++    status?: 'active' | 'archived' | 'all',
++    opts?: { silent?: boolean },
++  ) => Promise<void>;
+   setSearchQuery: (query: string) => void;
+   setFilterStatus: (status: 'all' | 'active' | 'archived') => void;
+-  getFilteredClients: () => User[];
++  getFilteredClients: () => RosterClient[];
+   // Security: reset on logout so a new coach on the same device can't briefly
+   // see the previous coach's clients list before a fresh load completes.
+   reset: () => void;
+ }
+ 
+ const initialCoachState = {
+-  clients: [] as User[],
++  clients: [] as RosterClient[],
+   isLoading: false,
+   loadError: null as string | null,
+   searchQuery: '',
+-  filterStatus: 'all' as const,
++  filterStatus: 'active' as 'all' | 'active' | 'archived',
+ };
+ 
++// Backend coach-clients row shape (GET /coach/clients). `role` arrives as the
++// wire `student` string, normalized to the mobile `client` literal below;
++// `activity` is the at-a-glance block (absent on older servers).
++interface CoachClientRow {
++  id: string;
++  name?: string | null;
++  email?: string | null;
++  role?: string | null;
++  coach_id?: string | null;
++  archived_at?: string | null;
++  created_at?: string | null;
++  activity?: unknown;
++}
++
+ export const useCoachStore = create<CoachStore>((set, get) => ({
+   ...initialCoachState,
+ 
+   reset: () => set({ ...initialCoachState }),
+ 
+-  loadClients: async (_coachId: string, status?: 'active' | 'archived' | 'all') => {
+-    const { filterStatus } = get();
+-    const effectiveStatus = status ?? filterStatus ?? 'all';
++  loadClients: async (
++    _coachId: string,
++    status?: 'active' | 'archived' | 'all',
++    opts?: { silent?: boolean },
++  ) => {
++    const wireStatus = status ?? 'active';
+     try {
+-      set({ isLoading: true, loadError: null });
+-      const res = await coachApi.getClients(effectiveStatus === 'all' ? undefined : effectiveStatus);
+-      // Backend coach-clients row shape. Field names mirror the
+-      // /v1/coach/me/clients DTO; `role` arrives as the wire `student`
+-      // string, normalized to the mobile `client` literal below.
+-      interface CoachClientRow {
+-        id: string;
+-        name?: string | null;
+-        email?: string | null;
+-        role?: string | null;
+-        coach_id?: string | null;
+-        archived_at?: string | null;
+-        created_at?: string | null;
++      set(opts?.silent ? { loadError: null } : { isLoading: true, loadError: null });
++      const raw: CoachClientRow[] = [];
++      const seen = new Set<string>();
++      let cursor: string | undefined;
++      for (let page = 0; page < ROSTER_MAX_PAGES; page += 1) {
++        const res = await coachApi.getClients(wireStatus, cursor, ROSTER_PAGE_SIZE);
++        const rows: unknown = res.data;
++        if (!Array.isArray(rows)) {
++          // A first reply that is not a list reads as an empty roster, as it
++          // always has; a later one would leave the roster partial: fail.
++          if (page === 0) break;
++          throw new Error('roster page was not a list');
++        }
++        for (const row of rows as CoachClientRow[]) {
++          if (!row || typeof row.id !== 'string' || seen.has(row.id)) continue;
++          seen.add(row.id);
++          raw.push(row);
++        }
++        const last = (rows as CoachClientRow[])[rows.length - 1];
++        if (rows.length < ROSTER_PAGE_SIZE || !last || typeof last.id !== 'string') break;
++        cursor = last.id;
+       }
+-      const raw: CoachClientRow[] = res.data || [];
+-      const clients: User[] = raw.map((u) => {
+-        const parts = (u.name || '').split(' ');
++      const clients: RosterClient[] = raw.map((u) => {
++        const parts = (u.name || '').trim().split(/\s+/);
+         return {
+           id: u.id,
+-          role: u.role === 'student' ? 'client' : (u.role as User['role']),
++          role: u.role === 'student' ? 'client' : (u.role as RosterClient['role']),
+           email: u.email || '',
+           passwordHash: '',
+           firstName: parts[0] || '',
+@@ -68,17 +113,19 @@ export const useCoachStore = create<CoachStore>((set, get) => ({
+           status: u.archived_at ? 'archived' : 'active',
+           createdAt: u.created_at || new Date().toISOString(),
+           updatedAt: u.created_at || new Date().toISOString(),
++          activity: rosterActivityFromWire(u.activity),
+         };
+       });
+       set({ clients, isLoading: false, loadError: null });
+     } catch (err) {
+       // Read-only client list load. Existing state stays so the previous
+       // roster remains visible if the user already loaded once; the new
+-      // loadError flag lets the screen render an error/retry block.
++      // loadError flag lets the screen render an error/retry block. A page
++      // that fails fails the whole load: never a partial roster shown as whole.
+       logger.error('CoachStore', 'loadClients failed', err);
+       set({
+         isLoading: false,
+-        loadError: 'Could not load clients. Please try again.',
++        loadError: 'Clients did not load. Check the connection and try again.',
+       });
+     }
+   },
+@@ -88,19 +135,9 @@ export const useCoachStore = create<CoachStore>((set, get) => ({
+ 
+   getFilteredClients: () => {
+     const { clients, searchQuery } = get();
+-    let filtered = clients;
+-    // Status filtering is now done server-side via loadClients; only apply search here
+-
+-    if (searchQuery.trim()) {
+-      const q = searchQuery.toLowerCase();
+-      filtered = filtered.filter(
+-        (c) =>
+-          c.firstName.toLowerCase().includes(q) ||
+-          c.lastName.toLowerCase().includes(q) ||
+-          c.email.toLowerCase().includes(q)
+-      );
+-    }
+-
+-    return filtered;
++    // Status filtering is done server-side via loadClients; only search here.
++    // Every typed word must match the full name or email (UX-COACHLOOKUP-124).
++    if (!searchQuery.trim()) return clients;
++    return clients.filter((c) => matchesRosterSearch(c, searchQuery));
+   },
+ }));
+diff --git a/src/utils/coach/clientRoster.ts b/src/utils/coach/clientRoster.ts
+new file mode 100644
+index 00000000..ad18d8d3
+--- /dev/null
++++ b/src/utils/coach/clientRoster.ts
+@@ -0,0 +1,147 @@
++/**
++ * UX-COACHLOOKUP-124 — pure helpers for the coach's Clients list.
++ *
++ * GET /coach/clients rows carry an optional `activity` block (latest logged
++ * day per slice and check-ins waiting for review; each slice null when the
++ * client has not shared it with this coach). Older servers send no block:
++ * every helper here treats that as "unknown" and falls back to the join date.
++ */
++import type { User } from '../../types';
++
++export interface ClientActivity {
++  /** False when the client shares no fitness slice with this coach. */
++  shared: boolean;
++  /** YYYY-MM-DD, latest day across the shared slices; null when none. */
++  lastActiveOn: string | null;
++  checkInsToReview: number | null;
++}
++
++export type RosterClient = User & { activity?: ClientActivity | null };
++
++export type RosterSort = 'name' | 'recent';
++
++const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
++
++/** Reads the wire `activity` block; anything malformed reads as absent. */
++export function rosterActivityFromWire(raw: unknown): ClientActivity | null {
++  if (!raw || typeof raw !== 'object') return null;
++  const a = raw as Record<string, unknown>;
++  const day = typeof a.last_active_on === 'string' && DAY_RE.test(a.last_active_on.slice(0, 10))
++    ? a.last_active_on.slice(0, 10)
++    : null;
++  const review = typeof a.check_ins_to_review === 'number' && Number.isFinite(a.check_ins_to_review)
++    ? Math.max(0, Math.floor(a.check_ins_to_review))
++    : null;
++  return { shared: a.shared === true, lastActiveOn: day, checkInsToReview: review };
++}
++
++export function rosterDisplayName(c: Pick<User, 'firstName' | 'lastName' | 'email'>): string {
++  const name = `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim();
++  return name || c.email || 'Unnamed client';
++}
++
++/**
++ * Every word typed must appear in the full name or the email, so "ana lo"
++ * finds Ana Lopez and a trailing space from the keyboard changes nothing.
++ */
++export function matchesRosterSearch(c: Pick<User, 'firstName' | 'lastName' | 'email'>, query: string): boolean {
++  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
++  if (words.length === 0) return true;
++  const haystack = `${c.firstName ?? ''} ${c.lastName ?? ''} ${c.email ?? ''}`.toLowerCase();
++  return words.every((w) => haystack.includes(w));
++}
++
++/** Name A to Z, or most recently logged first (never logged last, then by name). */
++export function sortRoster<T extends RosterClient>(clients: T[], sort: RosterSort): T[] {
++  const byName = (a: T, b: T) =>
++    rosterDisplayName(a).localeCompare(rosterDisplayName(b), undefined, { sensitivity: 'base' });
++  const out = [...clients];
++  if (sort === 'recent') {
++    out.sort((a, b) => {
++      const da = a.activity?.lastActiveOn ?? '';
++      const db = b.activity?.lastActiveOn ?? '';
++      if (da !== db) return da < db ? 1 : -1;
++      return byName(a, b);
++    });
++  } else {
++    out.sort(byName);
++  }
++  return out;
++}
++
++function localDayString(d: Date): string {
++  const m = String(d.getMonth() + 1).padStart(2, '0');
++  const day = String(d.getDate()).padStart(2, '0');
++  return `${d.getFullYear()}-${m}-${day}`;
++}
++
++function daysAgo(day: string, today: Date): number {
++  const [y, m, d] = day.split('-').map(Number);
++  const [ty, tm, td] = localDayString(today).split('-').map(Number);
++  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(y, m - 1, d)) / 86_400_000);
++}
++
++const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
++function shortDay(day: string): string {
++  const [, m, d] = day.split('-').map(Number);
++  return `${MONTHS[m - 1]} ${d}`;
++}
++
++/** Days without any shared log before a row reads as gone quiet. */
++export const QUIET_AFTER_DAYS = 3;
++
++export interface ActivityLine {
++  text: string;
++  /** 'ok' logged recently; 'quiet' nothing logged for QUIET_AFTER_DAYS or more; 'muted' unknown. */
++  tone: 'ok' | 'quiet' | 'muted';
++}
++
++/**
++ * The one line under each client's name: the latest day the client logged
++ * anything this coach can see (food, workout, weigh-in or check-in).
++ */
++export function rosterActivityLine(c: RosterClient, today: Date = new Date()): ActivityLine {
++  const a = c.activity;
++  const joined = typeof c.createdAt === 'string' && DAY_RE.test(c.createdAt.slice(0, 10))
++    ? `Joined ${shortDay(c.createdAt.slice(0, 10))}`
++    : 'Client';
++  if (!a) return { text: joined, tone: 'muted' };
++  if (!a.shared) return { text: `${joined} · Logs not shared`, tone: 'muted' };
++  if (!a.lastActiveOn) return { text: `${joined} · Nothing logged yet`, tone: 'quiet' };
++  const n = daysAgo(a.lastActiveOn, today);
++  if (n <= 0) return { text: 'Logged today', tone: 'ok' };
++  if (n === 1) return { text: 'Logged yesterday', tone: 'ok' };
++  const tone = n >= QUIET_AFTER_DAYS ? 'quiet' : 'ok';
++  if (n < 14) return { text: `Last logged ${n} days ago`, tone };
++  return { text: `Last logged ${shortDay(a.lastActiveOn)}`, tone };
++}
++
++/** "2 to review" for the row badge; null when nothing waits. */
++export function rosterReviewBadge(c: RosterClient): string | null {
++  const n = c.activity?.checkInsToReview ?? 0;
++  return n > 0 ? `${n} to review` : null;
++}
++
++const FILTER_NOUN: Record<'all' | 'active' | 'archived', [string, string]> = {
++  active: ['active client', 'active clients'],
++  archived: ['archived client', 'archived clients'],
++  all: ['client', 'clients'],
++};
++
++/**
++ * Header count: "12 active clients", "3 of 12 active clients" while a search
++ * narrows the list, plus the check-ins waiting across the shown clients.
++ */
++export function rosterCountLine(
++  shown: RosterClient[],
++  total: number,
++  filter: 'all' | 'active' | 'archived',
++  searching: boolean,
++): string {
++  const [one, many] = FILTER_NOUN[filter];
++  const noun = total === 1 ? one : many;
++  const base = searching ? `${shown.length} of ${total} ${noun}` : `${total} ${noun}`;
++  const review = shown.reduce((sum, c) => sum + (c.activity?.checkInsToReview ?? 0), 0);
++  if (review === 0) return base;
++  return `${base} · ${review} check-in${review === 1 ? '' : 's'} to review`;
++}

@@ -1,0 +1,848 @@
+diff --git a/src/account-deletion/account-deletion.billing.ts b/src/account-deletion/account-deletion.billing.ts
+index 7a1b43e1a..8248eae53 100644
+--- a/src/account-deletion/account-deletion.billing.ts
++++ b/src/account-deletion/account-deletion.billing.ts
+@@ -63,7 +63,10 @@ export class AccountDeletionBillingService {
+       select: { stripe_subscription_id: true },
+     });
+     const guest = await tx.guestCheckout.findMany({
+-      where: { created_user_id: userId, stripe_subscription_id: { not: null } },
++      where: {
++        OR: [{ created_user_id: userId }, { package: { coach_id: userId } }],
++        stripe_subscription_id: { not: null },
++      },
+       select: { stripe_subscription_id: true },
+     });
+     for (const row of [...coachSubs, ...purchases, ...guest]) {
+diff --git a/src/checkout/client-billing.service.ts b/src/checkout/client-billing.service.ts
+index 27c9268b4..1b6a1f96b 100644
+--- a/src/checkout/client-billing.service.ts
++++ b/src/checkout/client-billing.service.ts
+@@ -34,6 +34,7 @@ import { isDunningV2Enabled } from './dunning-v2/dunning-v2.feature';
+ import {
+   DUNNING_V2_REVERSAL_REASON,
+   DunningV2Service,
++  isBillingPauseReason,
+   outstandingDisputes,
+ } from './dunning-v2/dunning-v2.service';
+ import { dunningErrorCode } from './dunning-v2/dunning-v2.safe-error';
+@@ -321,7 +322,7 @@ export class BillingLeaseLostError extends Error {
+ }
+ 
+ export function isDisputeCycle(state: DunningState | null | undefined): boolean {
+-  return state?.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON;
++  return state?.status === 'active' && isBillingPauseReason(state.last_failure_reason);
+ }
+ 
+ /** B-689-5: what the dispute ledger says was reversed on one plan. */
+@@ -1496,7 +1497,9 @@ export class ClientBillingService {
+       try {
+         const sub = await this.stripe.setCancelAtPeriodEnd({
+           subscriptionId: purchase.stripe_subscription_id as string,
+-          idempotencyKey: `tgp-cancel-ape-${purchase.stripe_subscription_id}`,
++          // A later cancel after Keep plan is a new action, not Stripe's
++          // cached answer to the first cancel. Setting true remains safe to repeat.
++          idempotencyKey: `tgp-cancel-ape-${purchase.stripe_subscription_id}-${randomUUID()}`,
+         });
+         if (typeof sub.current_period_end === 'number') {
+           periodEnd = new Date(sub.current_period_end * 1000);
+diff --git a/src/checkout/dunning-v2/dunning-restart.controller.ts b/src/checkout/dunning-v2/dunning-restart.controller.ts
+index 075b7183a..d237edd7e 100644
+--- a/src/checkout/dunning-v2/dunning-restart.controller.ts
++++ b/src/checkout/dunning-v2/dunning-restart.controller.ts
+@@ -18,7 +18,7 @@ import { CoachOrOwnerGuard } from '../../common/guards/coach-or-owner.guard';
+ import { DunningV2Service } from './dunning-v2.service';
+ 
+ const NOT_PAUSED =
+-  'This plan is not paused by a payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.';
++  'This plan is not paused by a refund, payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.';
+ const UNAVAILABLE =
+   'Billing could not be reached, so the plan stays paused and nothing was charged. Try again in a few minutes.';
+ 
+diff --git a/src/checkout/dunning-v2/dunning-v2.service.ts b/src/checkout/dunning-v2/dunning-v2.service.ts
+index 904cc4b0f..ef52af86a 100644
+--- a/src/checkout/dunning-v2/dunning-v2.service.ts
++++ b/src/checkout/dunning-v2/dunning-v2.service.ts
+@@ -253,7 +253,7 @@ export interface ClientDunningStatus {
+    * payment already made (no invoice is open, a card update does not end
+    * it); 'payment' = a renewal charge failed. Null with state 'none'.
+    */
+-  kind: 'payment' | 'dispute' | null;
++  kind: 'payment' | 'dispute' | 'refund' | null;
+   /**
+    * B-628-7: true when the cycle is locked but the client keeps access
+    * through another live entitlement (the request guard lets them in), so
+@@ -293,7 +293,7 @@ export interface ClientDunningStatus {
+    * cancel_route / amount_cents all null: no lock date, no retry or card
+    * path). 'payment_failed': a renewal charge failed.
+    */
+-  reason: 'dispute_paused' | 'payment_failed' | null;
++  reason: 'dispute_paused' | 'refund_paused' | 'payment_failed' | null;
+   access_ended: boolean;
+   /**
+    * Sol B-705-4: true only once Stripe confirmed the dispute pause; while the
+@@ -308,6 +308,11 @@ const PAID_STRIPE_STATUSES = new Set(['active', 'trialing']);
+ 
+ /** `last_failure_reason` marker of a compressed late-reversal (dispute) cycle. */
+ export const DUNNING_V2_REVERSAL_REASON = 'charge_disputed';
++export const FULL_REFUND_PAUSE_REASON = 'charge_refunded';
++const BILLING_PAUSE_REASONS = [DUNNING_V2_REVERSAL_REASON, FULL_REFUND_PAUSE_REASON];
++export function isBillingPauseReason(reason: string | null | undefined): boolean {
++  return reason != null && BILLING_PAUSE_REASONS.includes(reason);
++}
+ 
+ /** The cycle is paused by a dispute: the marker on an active, locked cycle. */
+ function isDisputePausedRow(
+@@ -315,7 +320,7 @@ function isDisputePausedRow(
+ ): boolean {
+   return (
+     state.status === 'active' &&
+-    state.last_failure_reason === DUNNING_V2_REVERSAL_REASON &&
++    isBillingPauseReason(state.last_failure_reason) &&
+     state.locked_out_at != null &&
+     state.entered_at != null
+   );
+@@ -905,7 +910,7 @@ export class DunningV2Service {
+     if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) {
+       return 'skipped';
+     }
+-    const dispute = row.last_failure_reason === DUNNING_V2_REVERSAL_REASON;
++    const dispute = isBillingPauseReason(row.last_failure_reason);
+     if (dispute) {
+       // B-628-8: a dispute cycle's evidence is the dispute itself, not the
+       // subscription (which stays active and keeps renewing). A won dispute
+@@ -1009,7 +1014,7 @@ export class DunningV2Service {
+     if (!state) return { liftedLockout: false };
+     // R-DISPUTE-PAUSE: no payment, card update or manual clear ends a
+     // dispute pause; only the coach restart does.
+-    if (state.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON) {
++    if (state.status === 'active' && isBillingPauseReason(state.last_failure_reason)) {
+       return { liftedLockout: false };
+     }
+     const wasLocked = state.locked_out_at != null;
+@@ -1175,7 +1180,7 @@ export class DunningV2Service {
+       where: { purchase_id: purchaseId },
+       select: { status: true, last_failure_reason: true },
+     });
+-    return state?.status === 'active' && state.last_failure_reason === DUNNING_V2_REVERSAL_REASON;
++    return state?.status === 'active' && isBillingPauseReason(state.last_failure_reason);
+   }
+ 
+   /** Alias read by the webhook entitlement writers (R-DISPUTE-PAUSE). */
+@@ -1183,6 +1188,50 @@ export class DunningV2Service {
+     return this.isDisputeCycleOpen(purchaseId, db);
+   }
+ 
++  /**
++   * Owner decision 7: a full refund is not non-payment. Record a distinct
++   * pause reason, reuse the existing Stripe pause and coach restart, and
++   * never create a fictitious bank dispute or dispatch dispute notices.
++   * Money safety is independent of the rollout flag.
++   */
++  async pauseAfterFullRefund(purchaseId: string): Promise<void> {
++    const now = new Date();
++    await this.prisma.$transaction(async (tx) => {
++      await this.lockDunningState(tx, purchaseId);
++      const purchase = await tx.clientPurchase.findUnique({ where: { id: purchaseId } });
++      if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) return;
++      if (PLAN_ENDED_STATUSES.has(purchase.status)) return;
++      const state = await tx.dunningState.findUnique({ where: { purchase_id: purchaseId } });
++      if (state && isDisputePausedRow(state)) return;
++      const data = {
++        status: 'active',
++        step_index: DUNNING_V2_PAUSE_STEP,
++        last_failure_reason: FULL_REFUND_PAUSE_REASON,
++        last_failure_at: now,
++        entered_at: now,
++        locked_out_at: now,
++        next_attempt_at: null,
++        resolved_at: null,
++        recovered_at: null,
++        client_canceled_at: null,
++        billing_paused_at: null,
++      };
++      const paused = state
++        ? await tx.dunningState.update({ where: { id: state.id }, data })
++        : await tx.dunningState.create({
++            data: { purchase_id: purchaseId, failure_count: 0, reversal_count: 0, ...data },
++          });
++      await tx.dunningNoticeDelivery.updateMany({
++        where: { dunning_state_id: paused.id, status: { in: ['pending', 'failed'] } },
++        data: { status: 'canceled', next_attempt_at: null },
++      });
++      await tx.clientPurchase.update({
++        where: { id: purchaseId }, data: { entitlement_active: false },
++      });
++    });
++    await this.confirmDisputePause(purchaseId, now);
++  }
++
+   /**
+    * B-628-13: an active cycle with a dispute keeps the dispute marker. CAS
+    * on the active row, so a cycle resolved meanwhile is never reopened here.
+@@ -1361,6 +1410,8 @@ export class DunningV2Service {
+       await this.releaseDisputeLease(lease);
+     }
+     if (!state) return { result: 'not_paused' };
++    // Refund notices are emitted by the refund handler, not the bank-dispute renderer.
++    if (state.last_failure_reason === FULL_REFUND_PAUSE_REASON) return { result: 'confirmed' };
+     const enteredAt = state.entered_at as Date;
+     const claim: DunningV2StepClaim = {
+       dunningStateId: state.id,
+@@ -1412,7 +1463,7 @@ export class DunningV2Service {
+         where: {
+           id: state.id,
+           status: 'active',
+-          last_failure_reason: DUNNING_V2_REVERSAL_REASON,
++          last_failure_reason: state.last_failure_reason,
+           entered_at: enteredAt,
+         },
+         data: { billing_paused_at: new Date() },
+@@ -1446,7 +1497,7 @@ export class DunningV2Service {
+     const rows = await this.prisma.dunningState.findMany({
+       where: {
+         status: 'active',
+-        last_failure_reason: DUNNING_V2_REVERSAL_REASON,
++        last_failure_reason: { in: BILLING_PAUSE_REASONS },
+         locked_out_at: { not: null },
+         entered_at: { not: null },
+         billing_paused_at: null,
+@@ -1555,7 +1606,7 @@ export class DunningV2Service {
+     if (
+       !state?.entered_at ||
+       state.status !== 'active' ||
+-      state.last_failure_reason !== DUNNING_V2_REVERSAL_REASON
++      !isBillingPauseReason(state.last_failure_reason)
+     ) {
+       return 'not_paused';
+     }
+@@ -1635,7 +1686,7 @@ export class DunningV2Service {
+         where: {
+           id: state.id,
+           status: 'active',
+-          last_failure_reason: DUNNING_V2_REVERSAL_REASON,
++          last_failure_reason: state.last_failure_reason,
+           entered_at: enteredAt,
+         },
+         data: {
+@@ -1898,9 +1949,11 @@ export class DunningV2Service {
+       }),
+     ]);
+     const enteredAt = row.entered_at as Date;
+-    const kind = row.last_failure_reason === DUNNING_V2_REVERSAL_REASON ? 'dispute' : 'payment';
++    const kind = row.last_failure_reason === FULL_REFUND_PAUSE_REASON
++      ? 'refund'
++      : row.last_failure_reason === DUNNING_V2_REVERSAL_REASON ? 'dispute' : 'payment';
+     const state = row.locked_out_at && !lockWaived ? 'locked' : 'past_due';
+-    if (kind === 'dispute') {
++    if (kind === 'dispute' || kind === 'refund') {
+       // R-DISPUTE-PAUSE: access ended at once, billing is paused, the coach
+       // restarts it. No lock date, no retry, no card update, no cancel path.
+       return {
+@@ -1915,7 +1968,7 @@ export class DunningV2Service {
+         coach_name: coach?.name ?? null,
+         update_payment_route: null,
+         update_card_url: null,
+-        reason: 'dispute_paused',
++        reason: kind === 'refund' ? 'refund_paused' : 'dispute_paused',
+         access_ended: true,
+         // Sol B-705-4: only once Stripe confirmed the pause.
+         billing_paused: row.billing_paused_at != null,
+diff --git a/src/checkout/refund-dispute-handler.service.ts b/src/checkout/refund-dispute-handler.service.ts
+index 6cb418427..7a47ea49b 100644
+--- a/src/checkout/refund-dispute-handler.service.ts
++++ b/src/checkout/refund-dispute-handler.service.ts
+@@ -47,6 +47,8 @@ import { NotificationKind } from '../notifications/notification-kind';
+ import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
+ import { PartialRefundDecisionService } from '../regimes/partial-refund-decision.service';
+ import { PrismaService } from '../prisma.service';
++import { DunningV2Service } from './dunning-v2/dunning-v2.service';
++import { formatMinor } from './client-billing.money';
+ 
+ // PR-16 — outer tx forwarded by BillingService.handleEvent through
+ // CheckoutWebhookHandlerService.handle. Used to keep cancelPendingForPurchase
+@@ -241,6 +243,7 @@ export class RefundDisputeHandlerService {
+     // settlement writes for each refund / chargeback / dispute outcome
+     // (push + in-app + email). @Optional() for legacy hand-built wiring.
+     @Optional() private payoutNotices?: PayoutNoticeService,
++    @Optional() private dunningV2?: DunningV2Service,
+   ) {}
+ 
+   // Webhook entry point — returns claimed=true iff we matched to a
+@@ -409,8 +412,7 @@ export class RefundDisputeHandlerService {
+     // entitlement_active true; the client keeps the access they paid
+     // net-of-credit for.
+     const totalAmount = typeof charge.amount === 'number' ? charge.amount : purchase.amount_cents;
+-    const refundedCents = typeof charge.amount_refunded === 'number' ? charge.amount_refunded : 0;
+-    const fullyRefunded = totalAmount > 0 && refundedCents >= totalAmount;
++    const fullyRefunded = totalAmount > 0 && succeededCents >= totalAmount;
+     // R81 (PR-395 follow-up, F5) — refund/chargeback behaviour for the Roman P4
+     // first-payment celebration is RETAIN-BY-DESIGN: a refund (even a full one)
+     // or a chargeback does NOT un-record the CoachFirstPaymentNotification
+@@ -483,6 +485,17 @@ export class RefundDisputeHandlerService {
+    * Stripe calls stay outside this transaction (P1-3). Partial refunds keep access.
+    */
+   private async revokeFullyRefunded(purchase: ClientPurchase): Promise<void> {
++    // Owner decision 7: full recurring refund ends access and PAUSES
++    // billing; only the owning coach restarts it. Never cancel the plan.
++    if (purchase.billing_type === 'recurring' && purchase.stripe_subscription_id) {
++      if (!this.dunningV2) {
++        throw new ServiceUnavailableException({
++          code: 'REFUND_PAUSE_UNAVAILABLE',
++          message: 'The refund was recorded, but the plan pause could not be completed. Refresh the plan before restarting it.',
++        });
++      }
++      await this.dunningV2.pauseAfterFullRefund(purchase.id);
++    }
+     await this.prisma.$transaction(async (tx) => {
+       await tx.clientPurchase.updateMany({
+         where: { id: purchase.id, status: { not: 'refunded' } },
+@@ -501,6 +514,15 @@ export class RefundDisputeHandlerService {
+         await this.fanout.cancelPendingForPurchase(purchase.id, 'refund', tx);
+       }
+     });
++    if (purchase.billing_type === 'recurring' && purchase.status !== 'refunded') {
++      await this.notifications.createNotification({
++        user_id: purchase.client_user_id,
++        kind: NotificationKind.DUNNING_BLOCKER,
++        body: 'A full refund was completed for this plan. Access to the plan has ended and billing is paused. The coach decides whether to restart it.',
++        payload: { event: 'full_refund_paused', purchase_id: purchase.id },
++        channel: 'inapp',
++      }).catch(() => this.logger.warn(`refund pause notice deferred purchase=${purchase.id}`));
++    }
+   }
+ 
+   /**
+@@ -1632,10 +1654,10 @@ export class RefundDisputeHandlerService {
+         where: { id: args.purchase.id },
+       });
+       const isFullRefund = !!fresh && fresh.status === 'refunded' && !fresh.entitlement_active;
+-      const dollars = (args.amount_cents / 100).toFixed(2);
++      const amount = formatMinor(args.amount_cents, args.purchase.currency);
+       const body = isFullRefund
+-        ? `Refund processed: $${dollars} returned to client.`
+-        : `Partial refund: $${dollars} returned to client.`;
++        ? `Refund processed: ${amount} returned to client.${fresh?.billing_type === 'recurring' ? ' Access to this plan has ended and billing is paused. Restarting it is your decision.' : ''}`
++        : `Partial refund: ${amount} returned to client.`;
+       await this.notifications.createNotification({
+         user_id: args.purchase.coach_user_id,
+         kind: NotificationKind.COACH_ALERT,
+@@ -2177,7 +2199,7 @@ export class RefundDisputeHandlerService {
+         await this.notifications.createNotification({
+           user_id: purchase.coach_user_id,
+           kind: NotificationKind.COACH_ALERT,
+-          body: 'Chargeback opened on a client purchase. Submit evidence in Stripe within 7 days.',
++          body: 'A payment dispute or inquiry opened on a client purchase. Review the evidence deadline in Stripe and respond before it closes.',
+           payload: {
+             event: 'dispute_opened',
+             purchase_id: purchase.id,
+@@ -2429,7 +2451,7 @@ export class RefundDisputeHandlerService {
+     if (!chargeId) {
+       throw new Error(`createAdminRefund: no charge id for purchase ${purchase.id}`);
+     }
+-    const idempotencyKey = `tgp-refund-${purchase.id}-${args.amount_cents ?? 'full'}-${args.initiated_by_user_id}`;
++    const idempotencyKey = `tgp-refund-${purchase.id}-${chargeId}-${args.amount_cents ?? 'full'}-${args.initiated_by_user_id}`;
+     // S-FEE: reverse_transfer / refund_application_fee only exist for
+     // destination charges. A separate-charge-and-transfer charge is
+     // recovered by ChargeSettlementService when the refund is applied.
+@@ -2480,6 +2502,12 @@ export class RefundDisputeHandlerService {
+       if (!recorded) throw err;
+       return recorded;
+     }
++    // Judge cumulative successful refunds against THIS charge, not the
++    // purchase's first-period price. Both entry points use the same
++    // entitlement/guest/drop transaction and recurring billing pause.
++    if (outcome.row.status === 'succeeded' && await this.coversCharge(chargeId)) {
++      await this.revokeFullyRefunded(purchase);
++    }
+     // A276 P0-2 (refix) — admin-initiated refund: re-read the purchase
+     // (admin path doesn't go through the webhook's purchase.update
+     // branch, so we use the row state at call time) and emit the same
+@@ -2491,15 +2519,6 @@ export class RefundDisputeHandlerService {
+         typeof stripe.amount === 'number'
+           ? stripe.amount
+           : (args.amount_cents ?? purchase.amount_cents);
+-      // Admin refund implicitly fully refunds when amount matches the
+-      // purchase amount. Mirror the webhook's purchase-state update so
+-      // emitRefundCoachAlert observes the correct status.
+-      if (amount_cents >= purchase.amount_cents) {
+-        await this.prisma.clientPurchase.update({
+-          where: { id: purchase.id },
+-          data: { status: 'refunded', entitlement_active: false },
+-        });
+-      }
+       await this.emitRefundCoachAlert({
+         purchase,
+         amount_cents,
+@@ -2512,6 +2531,17 @@ export class RefundDisputeHandlerService {
+   }
+ 
+   private async resolveChargeIdForPurchase(purchase: ClientPurchase): Promise<string | null> {
++    // Recurring purchases retain their first PaymentIntent. A refund is
++    // against the most recent renewal, whose settlement/ledger owns the charge.
++    if (purchase.billing_type === 'recurring') {
++      const latest = await this.settlements?.latestChargeIdForPurchase(purchase.id);
++      if (latest) return latest;
++      const entry = await this.prisma.splitLedgerEntry.findFirst({
++        where: { purchase_id: purchase.id, kind: 'destination' },
++        orderBy: { posted_at: 'desc' },
++      });
++      if (entry?.stripe_charge_id) return entry.stripe_charge_id;
++    }
+     if (purchase.stripe_payment_intent_id) {
+       try {
+         const pi = await this.stripe.retrievePaymentIntent(purchase.stripe_payment_intent_id);
+diff --git a/src/packages/packages.service.ts b/src/packages/packages.service.ts
+index 3a5403b09..8cbdb147a 100644
+--- a/src/packages/packages.service.ts
++++ b/src/packages/packages.service.ts
+@@ -614,14 +614,33 @@ export class PackagesService {
+     // bypass, so the safer no-override behaviour is kept. Cancelling the
+     // Stripe subscriptions automatically is intentionally out of scope here
+     // (that is BUG-R5's territory).
++    // Access off is not proof billing ended (unpaid and dispute/refund
++    // pauses keep a live Stripe subscription). Guests may not have a
++    // ClientPurchase yet while account conversion is being retried.
+     const activeCount = await this.prisma.clientPurchase.count({
+-      where: { package_id: packageId, entitlement_active: true },
++      where: {
++        package_id: packageId,
++        OR: [
++          { entitlement_active: true },
++          {
++            stripe_subscription_id: { not: null },
++            status: { notIn: ['canceled', 'expired', 'incomplete_expired'] },
++          },
++        ],
++      },
++    }) + await this.prisma.guestCheckout.count({
++      where: {
++        package_id: packageId,
++        created_user_id: null,
++        stripe_subscription_id: { not: null },
++        status: { not: 'failed' },
++      },
+     });
+     if (activeCount > 0) {
+       throw new ConflictException({
+         error: 'PACKAGE_HAS_ACTIVE_SUBSCRIBERS',
+         code: 'PACKAGE_HAS_ACTIVE_SUBSCRIBERS',
+-        message: `This package has ${activeCount} active subscriber(s). Cancel their subscriptions before archiving.`,
++        message: `This package has ${activeCount} active subscriber(s) or access grant(s). End their access and cancel any subscriptions before archiving.`,
+         active_subscriber_count: activeCount,
+       });
+     }
+diff --git a/src/storefront/guest-checkout.service.ts b/src/storefront/guest-checkout.service.ts
+index a31919f20..c208748e3 100644
+--- a/src/storefront/guest-checkout.service.ts
++++ b/src/storefront/guest-checkout.service.ts
+@@ -1123,6 +1123,21 @@ export class GuestCheckoutService {
+       // defence-in-depth so a degenerate event payload can't claim
+       // a full refund of nothing).
+       const fullyRefunded = chargeAmount > 0 && amountRefunded >= chargeAmount;
++      // A guest can be refunded while account conversion is still pending.
++      // The local refunded mirror must not leave that subscription billing.
++      if (fullyRefunded && row?.stripe_subscription_id) {
++        await this.stripe.pauseSubscriptionCollection({
++          subscriptionId: row.stripe_subscription_id,
++          idempotencyKey: `tgp-guest-full-refund-pause-${row.id}`,
++        });
++        const open = await this.stripe.listOpenInvoices(row.stripe_subscription_id);
++        for (const invoice of open) {
++          await this.stripe.markInvoiceUncollectible({
++            invoiceId: invoice.id,
++            idempotencyKey: `tgp-guest-full-refund-invoice-${invoice.id}`,
++          });
++        }
++      }
+       // A276 P0-1: 'refunded' is admitted by GuestCheckout_status_check
+       // as of migration 20260921000000_add_refunded_disputed_to_guest_checkout_status.
+       // Partial refunds keep the existing row.status (typically 'paid' or
+diff --git a/test/dunning-r2-native-card-1a-2a-e2e.spec.ts b/test/dunning-r2-native-card-1a-2a-e2e.spec.ts
+index dbc60897c..70f80ee6d 100644
+--- a/test/dunning-r2-native-card-1a-2a-e2e.spec.ts
++++ b/test/dunning-r2-native-card-1a-2a-e2e.spec.ts
+@@ -840,7 +840,9 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
+       });
+       expect(res.message).toMatch(/keep access until 2026-10-25/);
+       const [ape] = w.stripe.callsOf('setCancelAtPeriodEnd');
+-      expect(ape.key).toBe('tgp-cancel-ape-sub_dv2_client');
++      // MONEY-REFUND-124 B1: each cancel is its own Stripe request (a cancel
++      // after Keep plan must not replay the first answer).
++      expect(ape.key).toMatch(/^tgp-cancel-ape-sub_dv2_client-[0-9a-f-]{36}$/);
+       expect(w.stripe.callsOf('voidInvoice')).toHaveLength(0);
+       expect(w.stripe.callsOf('cancelSubscription')).toHaveLength(0);
+       expect(w.stripe.charges).toHaveLength(0);
+diff --git a/test/money-refund-124.spec.ts b/test/money-refund-124.spec.ts
+new file mode 100644
+index 000000000..484fae061
+--- /dev/null
++++ b/test/money-refund-124.spec.ts
+@@ -0,0 +1,246 @@
++import { AccountDeletionBillingService } from '../src/account-deletion/account-deletion.billing';
++import { ClientBillingService } from '../src/checkout/client-billing.service';
++import { DunningV2Service } from '../src/checkout/dunning-v2/dunning-v2.service';
++import { DunningV2Telemetry } from '../src/checkout/dunning-v2/dunning-v2.telemetry';
++import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
++import { PackagesService } from '../src/packages/packages.service';
++import { GuestCheckoutService } from '../src/storefront/guest-checkout.service';
++import { FakePrisma } from './support/dunning-v2-fake-prisma';
++import { FakeStripeBilling } from './support/fake-stripe-billing';
++
++// Synthetic fixtures only. No provider requests, database connections or timers.
++// eslint-disable-next-line @typescript-eslint/no-explicit-any
++const stub = (value: unknown): any => value;
++
++function world() {
++  const fake = new FakePrisma();
++  const prisma = fake.client();
++  const row = fake.seed('clientPurchase', {
++    id: 'purchase', package_id: 'package', coach_user_id: 'coach',
++    client_user_id: 'client', billing_type: 'recurring', amount_cents: 1000,
++    currency: 'usd', status: 'active', entitlement_active: true,
++    stripe_subscription_id: 'sub_plan', stripe_payment_intent_id: 'pi_first',
++    cancel_at_period_end: false, current_period_end: new Date('2026-11-01'),
++  });
++  fake.seed('coachPackage', { id: 'package', coach_id: 'coach', archived_at: null });
++  fake.seed('user', { id: 'coach', name: 'Synthetic Coach' });
++  fake.seed('user', { id: 'client', name: 'Synthetic Client' });
++  const billingStripe = new FakeStripeBilling();
++  billingStripe.subs.set('sub_plan', {
++    id: 'sub_plan', status: 'active', customer: 'cus_client',
++    current_period_end: 1793491200, default_payment_method: 'pm_card',
++    cancel_at_period_end: false, latest_invoice: null,
++  });
++  const refunds: Array<{ id: string; amount: number; currency: string; status: string }> = [];
++  const cancellationAnswers = new Map<string, unknown>();
++  const originalCancel = billingStripe.setCancelAtPeriodEnd.bind(billingStripe);
++  billingStripe.setCancelAtPeriodEnd = async (args) => {
++    if (cancellationAnswers.has(args.idempotencyKey)) {
++      billingStripe.calls.push({ op: 'setCancelAtPeriodEnd', key: args.idempotencyKey, args });
++      return stub(cancellationAnswers.get(args.idempotencyKey));
++    }
++    const answer = await originalCancel(args);
++    cancellationAnswers.set(args.idempotencyKey, answer);
++    return answer;
++  };
++  let latestCharge = 'ch_renewal';
++  let chargeAmount = 1000;
++  const stripe = Object.assign(billingStripe, {
++    resumeSubscriptionCollection: jest.fn(async (args: { subscriptionId: string; idempotencyKey: string }) => {
++      billingStripe.calls.push({ op: 'resumeSubscriptionCollection', key: args.idempotencyKey, args });
++      return { ...billingStripe.subs.get(args.subscriptionId)! };
++    }),
++    retrievePaymentIntent: jest.fn(async () => ({ id: 'pi_first', latest_charge: 'ch_first' })),
++    retrieveCharge: jest.fn(async (id: string) => ({
++      id, amount: chargeAmount, payment_intent: 'pi_first',
++    })),
++    listChargeRefunds: jest.fn(async () => ({ data: refunds, has_more: false })),
++    createRefund: jest.fn(async (args: { amount?: number }) => {
++      const refund = {
++        id: `re_${refunds.length + 1}`, amount: args.amount ?? chargeAmount,
++        currency: 'usd', status: 'succeeded',
++      };
++      refunds.push(refund);
++      return refund;
++    }),
++  });
++  const fanout = { cancelPendingForPurchase: jest.fn(async () => undefined) };
++  const notifications = { createNotification: jest.fn(async () => undefined) };
++  const v2 = new DunningV2Service(prisma, new DunningV2Telemetry(), undefined, stub(stripe));
++  const settlements = {
++    purchaseIdForCharge: jest.fn(async () => row.id),
++    latestChargeIdForPurchase: jest.fn(async () => latestCharge),
++    applyAdjustments: jest.fn(async () => undefined),
++  };
++  prisma.splitLedgerEntry = { findFirst: jest.fn(async () => ({ purchase_id: row.id })) };
++  prisma.guestCheckout = { updateMany: jest.fn(async () => ({ count: 0 })) };
++  // Preserve the extra delegates on tx views used by the refund handler.
++  const transaction = prisma.$transaction;
++  prisma.$transaction = async (cb: (tx: unknown) => unknown) => transaction(
++    (tx: object) => cb(Object.assign(tx, { guestCheckout: prisma.guestCheckout })),
++  );
++  const service = new RefundDisputeHandlerService(
++    prisma, stub(stripe), stub({}), stub({}), stub({}), stub(notifications),
++    stub(fanout), undefined, stub(settlements),
++  );
++  Object.assign(service, { dunningV2: v2 });
++  jest.spyOn(service, 'upsertAndApplyRefund').mockImplementation(async (args) => ({
++    row: stub({
++      id: args.stripe_refund_id, purchase_id: row.id, amount_cents: args.amount_cents,
++      status: args.status, ledger_reversed: args.status === 'succeeded',
++    }),
++    ledger_just_reversed: args.status === 'succeeded',
++  }));
++  const refundEvent = (status = 'succeeded', amount = 1000) => ({
++    id: 'evt_refund', type: 'charge.refunded',
++    data: { object: {
++      id: latestCharge, amount, amount_refunded: amount,
++      refunds: { data: [{ id: 're_webhook', amount, status }], has_more: false },
++    } },
++  });
++  return {
++    fake, prisma, row, stripe, service, v2, notifications, fanout, refundEvent,
++    setCharge: (id: string, amount = 1000) => { latestCharge = id; chargeAmount = amount; },
++  };
++}
++
++describe('MONEY-REFUND-124 ordinary billing lifecycle', () => {
++  const flag = process.env.FEATURE_DUNNING_V2;
++  beforeEach(() => { process.env.FEATURE_DUNNING_V2 = 'true'; });
++  afterAll(() => {
++    if (flag === undefined) delete process.env.FEATURE_DUNNING_V2;
++    else process.env.FEATURE_DUNNING_V2 = flag;
++  });
++
++  it('B1: cancel, keep plan, cancel again sends a new Stripe action', async () => {
++    const h = world();
++    const billing = new ClientBillingService(h.prisma, stub(h.stripe));
++    await billing.cancelPlan('client', 'purchase');
++    await h.stripe.resumeSubscriptionCollection({ subscriptionId: 'sub_plan', idempotencyKey: 'resume' });
++    // Native Keep plan also clears cancel_at_period_end.
++    h.stripe.subs.get('sub_plan')!.cancel_at_period_end = false;
++    h.row.cancel_at_period_end = false;
++    await billing.cancelPlan('client', 'purchase');
++    const calls = h.stripe.callsOf('setCancelAtPeriodEnd');
++    expect(calls).toHaveLength(2);
++    expect(calls[0].key).not.toBe(calls[1].key);
++    expect(h.stripe.subs.get('sub_plan')!.cancel_at_period_end).toBe(true);
++  });
++
++  it('B2: refunding a renewal selects the renewal, not the initial PaymentIntent', async () => {
++    const h = world();
++    await h.service.createAdminRefund({
++      purchase_id: 'purchase', amount_cents: 100, initiated_by_user_id: 'owner',
++    });
++    expect(h.stripe.createRefund).toHaveBeenCalledWith(expect.objectContaining({ charge_id: 'ch_renewal' }));
++  });
++
++  it('B2: refunds of equal amounts on different renewal charges have different keys', async () => {
++    const h = world();
++    const args = { purchase_id: 'purchase', amount_cents: 100, initiated_by_user_id: 'owner' };
++    await h.service.createAdminRefund(args);
++    h.setCharge('ch_next_renewal');
++    await h.service.createAdminRefund(args);
++    const keys = h.stripe.createRefund.mock.calls.map(([call]) => stub(call).idempotencyKey);
++    expect(keys[0]).not.toBe(keys[1]);
++  });
++
++  it('B3: full refund pauses Stripe billing and exposes the existing coach restart', async () => {
++    const h = world();
++    await h.service.handle(h.refundEvent());
++    expect(h.stripe.callsOf('pauseSubscriptionCollection')).toHaveLength(1);
++    expect(h.row.entitlement_active).toBe(false);
++    expect(h.fake.find('dunningState', { purchase_id: 'purchase' })).toMatchObject({
++      status: 'active', last_failure_reason: 'charge_refunded',
++    });
++    const restarted = await h.v2.restartAfterDisputePause({ coachUserId: 'coach', purchaseId: 'purchase' });
++    expect(restarted.restarted).toBe(true);
++    expect(h.row.entitlement_active).toBe(true);
++    expect(h.stripe.callsOf('resumeSubscriptionCollection')).toHaveLength(1);
++  });
++
++  it('B3: a Stripe pause failure cannot report the full refund lifecycle complete', async () => {
++    const h = world();
++    jest.spyOn(h.stripe, 'pauseSubscriptionCollection').mockRejectedValueOnce(new Error('test outage'));
++    await expect(h.service.handle(h.refundEvent())).rejects.toThrow();
++  });
++
++  it('B3: a pending full refund does not remove paid access or pause billing', async () => {
++    const h = world();
++    await h.service.handle(h.refundEvent('pending'));
++    expect(h.row.entitlement_active).toBe(true);
++    expect(h.row.status).toBe('active');
++    expect(h.stripe.callsOf('pauseSubscriptionCollection')).toHaveLength(0);
++  });
++
++  it('B3: two partial refunds that finish the charge use the full-refund lifecycle', async () => {
++    const h = world();
++    await h.service.createAdminRefund({ purchase_id: 'purchase', amount_cents: 400, initiated_by_user_id: 'owner' });
++    await h.service.createAdminRefund({ purchase_id: 'purchase', amount_cents: 600, initiated_by_user_id: 'owner' });
++    expect(h.row.entitlement_active).toBe(false);
++    expect(h.fanout.cancelPendingForPurchase).toHaveBeenCalledWith('purchase', 'refund', expect.anything());
++    expect(h.stripe.callsOf('pauseSubscriptionCollection')).toHaveLength(1);
++  });
++
++  it('B3: a full refund of a lower-priced renewal uses that charge amount', async () => {
++    const h = world();
++    h.setCharge('ch_lower_renewal', 500);
++    await h.service.createAdminRefund({ purchase_id: 'purchase', initiated_by_user_id: 'owner' });
++    expect(h.row.entitlement_active).toBe(false);
++    expect(h.stripe.callsOf('pauseSubscriptionCollection')).toHaveLength(1);
++  });
++
++  it('B3: full refund of a recurring guest pauses billing before the guest mirror ends access', async () => {
++    const h = world();
++    const guest = {
++      id: 'guest', stripe_subscription_id: 'sub_plan', status: 'paid',
++      package: { coach_id: 'coach' },
++    };
++    h.prisma.guestCheckout.findUnique = jest.fn(async () => guest);
++    h.prisma.guestCheckout.updateMany = jest.fn(async () => ({ count: 1 }));
++    const service = new GuestCheckoutService(
++      h.prisma, stub(h.stripe), stub({}), stub({}), stub(h.notifications),
++      stub({}), stub({}),
++    );
++    await service.handleChargeRefunded('pi_first', 1000, 1000);
++    expect(h.stripe.callsOf('pauseSubscriptionCollection')).toHaveLength(1);
++  });
++
++  it('B4: deleted coach collects a guest subscription before account conversion', async () => {
++    const h = world();
++    const guest = {
++      created_user_id: null, stripe_subscription_id: 'sub_guest',
++      package: { coach_id: 'coach' },
++    };
++    const tx = {
++      coachSubscription: { findMany: jest.fn(async () => []) },
++      clientPurchase: { findMany: jest.fn(async () => []) },
++      guestCheckout: { findMany: jest.fn(async ({ where }: { where: { OR?: Array<{ package?: { coach_id?: string } }> } }) =>
++        (where.OR?.some((part: { package?: { coach_id?: string } }) => part.package?.coach_id === 'coach')
++          ? [guest] : []),
++      ) },
++    };
++    const service = new AccountDeletionBillingService(stub({}));
++    await expect(service.collectSubscriptionIds(stub(tx), 'coach')).resolves.toContain('sub_guest');
++  });
++
++  it('B5: archive refuses a live recurring contract even while access is off', async () => {
++    const h = world();
++    Object.assign(h.row, { entitlement_active: false, status: 'unpaid' });
++    h.prisma.guestCheckout.count = jest.fn(async () => 0);
++    const packages = new PackagesService(h.prisma, stub({ getHeadCoachIdForSubCoach: async () => null }));
++    await expect(packages.archive('coach', 'package')).rejects.toMatchObject({
++      response: expect.objectContaining({ code: 'PACKAGE_HAS_ACTIVE_SUBSCRIBERS' }),
++    });
++  });
++
++  it('B5: archive refuses a recurring guest who has not converted yet', async () => {
++    const h = world();
++    Object.assign(h.row, { entitlement_active: false, status: 'canceled' });
++    h.prisma.guestCheckout.count = jest.fn(async () => 1);
++    const packages = new PackagesService(h.prisma, stub({ getHeadCoachIdForSubCoach: async () => null }));
++    await expect(packages.archive('coach', 'package')).rejects.toMatchObject({
++      response: expect.objectContaining({ code: 'PACKAGE_HAS_ACTIVE_SUBSCRIBERS' }),
++    });
++  });
++});
+diff --git a/test/packages-archive-guard.spec.ts b/test/packages-archive-guard.spec.ts
+index 50c16243e..0ab428702 100644
+--- a/test/packages-archive-guard.spec.ts
++++ b/test/packages-archive-guard.spec.ts
+@@ -26,6 +26,7 @@ function makePrismaStub() {
+   const stub: any = {
+     _rows: rows,
+     _purchases: purchases,
++    guestCheckout: { count: jest.fn(async () => 0) },
+     coachPackage: {
+       findFirst: jest.fn(async ({ where }: any) =>
+         rows.find((r) =>
+@@ -57,6 +58,10 @@ function makePrismaStub() {
+       //   { package_id, entitlement_active: true }
+       count: jest.fn(async ({ where }: any) =>
+         purchases.filter((p) => {
++          if (where.OR && !where.OR.some((branch: any) =>
++            branch.entitlement_active === true ? p.entitlement_active === true :
++              p.stripe_subscription_id != null && !branch.status.notIn.includes(p.status),
++          )) return false;
+           if (
+             where.package_id !== undefined &&
+             p.package_id !== where.package_id
+diff --git a/test/packages-create-idempotency-http.spec.ts b/test/packages-create-idempotency-http.spec.ts
+index 96df570ef..7bbaf60be 100644
+--- a/test/packages-create-idempotency-http.spec.ts
++++ b/test/packages-create-idempotency-http.spec.ts
+@@ -91,6 +91,8 @@ function makeDb() {
+     },
+     // Live buyers the archive guard and the pricing lock count (none here).
+     clientPurchase: { count: async () => 0 },
++    // MONEY-REFUND-124 B5: recurring guests not yet converted to an account.
++    guestCheckout: { count: async () => 0 },
+     // The pricing lock's row lock (SELECT ... FOR UPDATE).
+     $queryRaw: async () => [],
+     workoutBuilderIdempotencyKey: {
+diff --git a/test/packages.service.spec.ts b/test/packages.service.spec.ts
+index 5269ea26a..b45614883 100644
+--- a/test/packages.service.spec.ts
++++ b/test/packages.service.spec.ts
+@@ -13,6 +13,7 @@ function makePrismaStub() {
+     _rows: rows,
+     _purchases: purchases,
+     _contents: contents,
++    guestCheckout: { count: jest.fn(async () => 0) },
+     // B1 — the pricing-lock path runs inside prisma.$transaction(cb). The
+     // stub executes the callback synchronously with itself as the `tx`
+     // client so tx.$queryRaw / tx.clientPurchase / tx.coachPackage all
+@@ -88,6 +89,10 @@ function makePrismaStub() {
+       // status { in: [...] }.
+       count: jest.fn(async ({ where }: any) =>
+         purchases.filter((p) => {
++          if (where.OR && !where.OR.some((branch: any) =>
++            branch.entitlement_active === true ? p.entitlement_active === true :
++              p.stripe_subscription_id != null && !branch.status.notIn.includes(p.status),
++          )) return false;
+           if (where.package_id !== undefined && p.package_id !== where.package_id)
+             return false;
+           if (
+diff --git a/test/refund-dispute-handler.service.spec.ts b/test/refund-dispute-handler.service.spec.ts
+index 8e4970c4d..b53785f10 100644
+--- a/test/refund-dispute-handler.service.spec.ts
++++ b/test/refund-dispute-handler.service.spec.ts
+@@ -263,6 +263,12 @@ function makeServices() {
+       amount: 5_000,
+       status: 'succeeded',
+     })),
++    listChargeRefunds: jest.fn(async (chargeId: string) => ({
++      data: prisma._refunds.filter((r: any) => r.stripe_charge_id === chargeId).map((r: any) => ({
++        id: r.stripe_refund_id, amount: r.amount_cents, currency: 'usd', status: r.status,
++      })),
++      has_more: false,
++    })),
+     reverseTransfer: jest.fn(async () => ({ id: 'trr_1' })),
+   } as any;
+   const ledger = {
+@@ -901,7 +907,7 @@ describe('RefundDisputeHandlerService', () => {
+       expect(call.user_id).toBe('coach-1');
+       expect(call.kind).toBe('coach_alert');
+       expect(call.deep_link).toBe('tgp://coach/billing/disputes');
+-      expect(call.body).toMatch(/Chargeback opened/);
++      expect(call.body).toMatch(/payment dispute or inquiry opened/);
+       expect(call.payload).toMatchObject({
+         event: 'dispute_opened',
+         purchase_id: 'p_alert',
+diff --git a/test/refund-reversal-once.spec.ts b/test/refund-reversal-once.spec.ts
+index 415e4bae5..3ad048ca5 100644
+--- a/test/refund-reversal-once.spec.ts
++++ b/test/refund-reversal-once.spec.ts
+@@ -154,7 +154,13 @@ function harness(): Harness {
+   const alerts = jest.fn(async () => undefined);
+   const svc = Reflect.construct(RefundDisputeHandlerService, [
+     db,
+-    { retrieveCharge: jest.fn(async () => ({ payment_intent: null })) },
++    {
++      retrieveCharge: jest.fn(async () => ({ amount: 4900, payment_intent: null })),
++      listChargeRefunds: jest.fn(async () => ({
++        data: [{ id: 're_1', amount: 2450, currency: 'usd', status: 'succeeded' }],
++        has_more: false,
++      })),
++    },
+     ledger,
+     transfers,
+     { recordPayoutEvent: jest.fn() },
+diff --git a/test/support/refund-reversal-harness.ts b/test/support/refund-reversal-harness.ts
+index 2b13ad227..cdccf12c2 100644
+--- a/test/support/refund-reversal-harness.ts
++++ b/test/support/refund-reversal-harness.ts
+@@ -166,7 +166,11 @@ export function harness() {
+     reverseTransfer,
+     listTransferReversals,
+     createRefund,
+-    retrieveCharge: jest.fn(async () => ({ payment_intent: null })),
++    retrieveCharge: jest.fn(async () => ({ amount: 4900, payment_intent: null })),
++    listChargeRefunds: jest.fn(async () => ({
++      data: [{ id: 're_r-late', amount: 2450, currency: 'usd', status: 'succeeded' }],
++      has_more: false,
++    })),
+     retrievePaymentIntent: jest.fn(async () => ({ latest_charge: 'ch_p-late' })),
+   };
+   const ledger = Reflect.construct(SplitLedgerService, [db]);

@@ -1,0 +1,140 @@
+{
+  "repo": "mobile",
+  "number": 431,
+  "head": "2b735827896f3e7bce0e88b43c73911d80da968b",
+  "base": "f9da87dbb44b1706f0566f3ef0cef9ee74330772",
+  "title": "fix(day1win): Skip for now holds; the Day One screen no longer returns on every app open (AUDIT-01-125)",
+  "body": "Tier: T2\nWhy: client-side navigation gate for a one-time interstitial; a wrong answer only shows or hides the Day One screen, no data, money or access changes.\nT4 trigger scan: none (no auth, session, token, tenancy, PII, money or deletion change; the new key holds only an ISO time under the user's own id in the non-sensitive prefs namespace).\nT3 trigger scan: none (no backend contract, no shared data shape).\nBounded T1: NO (touches RootNavigator boot routing).\nCanonical builder: Claude Opus 5.5 (AUDIT-01-125, agent 125)\nParent owner: operator agent 125\nAcceptance evidence: `src/__tests__/rootNavigatorPackagePromptGate.test.tsx` (real RootNavigator: no skip -> Day One shows; this user skipped -> Home; another account's skip on the same phone -> Day One still shows) and `src/__tests__/Day1WinScreen.test.tsx` (Skip writes the marker for the signed-in user and records no win). Failing first: test-only commit d0123f30, ci-lane run https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532574885. Full typecheck, lint and Jest: this PR's CI.\nPromotion triggers: any change to what the server stores, or to sign-out cache sweeping.\n\n## Fixes (AUDIT-01-125, client first run)\n- **U-01-1:** A new client who taps \"Skip for now\" on the Day One screen gets that same full-screen Day One screen again every time they open the app, because `GET /me/first-win/status` only turns `completed` true when a win card is tapped and RootNavigator asked it on every cold start.\n\nBuild profile: the 10-07 build is eas.json \"clinic\" (consultation onboarding on). The Day One screen appears on the standard path: every client with no coach (coachless sign-up) and every client whose coach has no clinic program (`GET /me/onboarding` consultation_available false). The consultation path never shows it and is unchanged.\n\n## Change\n- `src/lib/day1WinSkip.ts`: `markDay1WinSkipped(userId)` / `wasDay1WinSkipped(userId)` on `prefsStorage` key `onboarding.day1win_skipped_at:<userId>` (falls back to the cached signed-in user id; never throws; logs on failure).\n- `Day1WinScreen.handleSkip` (the \"Skip for now\" button and the repeated-failure \"continue\" escape) records the skip before the existing package-sheet gate.\n- `RootNavigator.bootstrapAuth`: the first-win status read is skipped when this user already skipped; otherwise unchanged.\n- No API, backend, dependency, flag or lockfile change. Works against the current production backend (no new endpoint). The marker is per user id, so a second account on the same phone still sees its own Day One screen once; a prefs-namespace clear at sign-out only means the screen can appear once more after the next sign-in.\n\n## Overlap\n- `src/navigation/RootNavigator.tsx`: m#413 edits the linking config and imports in the same file (different hunks; this PR adds one import line next to `profileOnboardingCompleted` and edits only the first-win block). m#411 (draft) mounts a hook in RootNavigator; different hunk.\n\nSize: 116 changed lines (47 test).\n",
+  "state": "open",
+  "draft": false,
+  "additions": 109,
+  "deletions": 7,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/431",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/431#issuecomment-6025684286",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-01-125, agent 125) \u2014 growth-project-mobile#431 @ 2b735827896f3e7bce0e88b43c73911d80da968b \u2014 READY FOR AUDIT\n\n- Fixes U-01-1: a new client who taps \"Skip for now\" on the Day One screen no longer gets that full-screen screen again on every app open (skip remembered per user id in prefs; RootNavigator skips the first-win status read for that user only).\n- Tier T2, 116 changed lines (47 test). No backend, API, flag, dependency or lockfile change; works against the current production backend.\n- Failing first: test-only commit d0123f30, ci-lane run https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532574885 (2 failed for behaviour: skip marker not written; skipped user still sent to Day One. Controls passed: no skip shows Day One; another account's skip does not apply).\n- PR CI at this head: Typecheck, lint, test SUCCESS (https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532706299/job/112505819114). CodeQL (Analyze) still queued on the runner at posting time.\n- Build profile: holds under eas.json \"clinic\" (standard path = coachless clients and clients whose coach has no clinic program).\n- Overlap: RootNavigator.tsx also edited by m#413 (linking) and m#411 (draft hook); different hunks.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112508805404",
+      "id": 112508805404,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A431+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112508805404/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532706296/job/112505820394",
+      "id": 112505820394,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112505820394/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532706296/job/112505819774",
+      "id": 112505819774,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112505819774/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532706299/job/112505819114",
+      "id": 112505819114,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112505819114/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "98424b863d422d39d7aba7a542215a7877f8004b",
+      "filename": "src/__tests__/Day1WinScreen.test.tsx",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 0,
+      "changes": 11,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2b735827896f3e7bce0e88b43c73911d80da968b/src%2F__tests__%2FDay1WinScreen.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/2b735827896f3e7bce0e88b43c73911d80da968b/src%2F__tests__%2FDay1WinScreen.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FDay1WinScreen.test.tsx?ref=2b735827896f3e7bce0e88b43c73911d80da968b",
+      "patch": "@@ -134,6 +134,7 @@ jest.mock('../services/firstWinApi', () => ({\n // Silence font-loading warnings in test environment\n jest.mock('expo-font', () => ({ isLoaded: () => true }));\n \n+import AsyncStorage from '@react-native-async-storage/async-storage';\n import Day1WinScreen from '../screens/client/Day1WinScreen';\n \n describe('Day1WinScreen \u2014 RTL mount', () => {\n@@ -167,6 +168,16 @@ describe('Day1WinScreen \u2014 RTL mount', () => {\n     expect(mockComplete).not.toHaveBeenCalled();\n   });\n \n+  it('skip remembers the skip for the signed-in user (AUDIT-01-125)', async () => {\n+    await AsyncStorage.setItem('prefs:auth.user_data', JSON.stringify({ id: 'client-K', role: 'student', name: 'Kai' }));\n+    const onComplete = jest.fn();\n+    const { getByTestId } = await render(<Day1WinScreen onComplete={onComplete} />);\n+    await fireEvent.press(getByTestId('day1win-skip-button'));\n+    await waitFor(() => expect(onComplete).toHaveBeenCalledTimes(1));\n+    expect(await AsyncStorage.getItem('prefs:onboarding.day1win_skipped_at:client-K')).toBeTruthy();\n+    expect(mockComplete).not.toHaveBeenCalled();\n+  });\n+\n   it('tapping a card calls firstWinApi.complete with the correct winType', async () => {\n     mockComplete.mockResolvedValueOnce({\n       data: {"
+    },
+    {
+      "sha": "def4984c19bef5416c18c44ef8f1a6377ea479fd",
+      "filename": "src/__tests__/rootNavigatorPackagePromptGate.test.tsx",
+      "status": "modified",
+      "additions": 35,
+      "deletions": 1,
+      "changes": 36,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2b735827896f3e7bce0e88b43c73911d80da968b/src%2F__tests__%2FrootNavigatorPackagePromptGate.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/2b735827896f3e7bce0e88b43c73911d80da968b/src%2F__tests__%2FrootNavigatorPackagePromptGate.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FrootNavigatorPackagePromptGate.test.tsx?ref=2b735827896f3e7bce0e88b43c73911d80da968b",
+      "patch": "@@ -96,7 +96,11 @@ const mockGetEntitlement = jest.fn();\n jest.mock('../api/clientPaymentsApi', () => ({\n   clientPaymentsApi: { getEntitlement: () => mockGetEntitlement() },\n }));\n-jest.mock('../screens/client/Day1WinScreen', () => () => null);\n+jest.mock('../screens/client/Day1WinScreen', () => {\n+  const React = jest.requireActual('react');\n+  const { Text } = jest.requireActual('react-native');\n+  return () => React.createElement(Text, { testID: 'day1win' }, 'day1win');\n+});\n jest.mock('../services/support/crisp.service', () => ({ initCrisp: jest.fn(), syncCrispIdentity: jest.fn() }));\n jest.mock('../hooks/useLeanOnboardingReconcile', () => ({ useLeanOnboardingReconcile: jest.fn() }));\n jest.mock('../services/firstWinApi', () => ({\n@@ -200,3 +204,33 @@ describe('RootNavigator 24h package prompt is fail closed', () => {\n     expect(mockGetEntitlement).not.toHaveBeenCalled();\n   });\n });\n+\n+// AUDIT-01-125: \"Skip for now\" on the Day One screen holds for that user.\n+describe('RootNavigator Day 1 Win skip is remembered per user', () => {\n+  const { firstWinApi } = jest.requireMock('../services/firstWinApi');\n+  beforeEach(() => {\n+    mockGetEntitlement.mockResolvedValue({ ok: true, data: { active: true, entitlement_active: true } });\n+    firstWinApi.getStatus.mockResolvedValue({ data: { completed: false } });\n+  });\n+  afterEach(() => {\n+    firstWinApi.getStatus.mockResolvedValue({ data: { completed: true } });\n+  });\n+\n+  it('no win and no skip yet: the Day One screen shows', async () => {\n+    const r = await mount();\n+    await r.findByTestId('day1win');\n+  });\n+\n+  it('this user skipped it: the app opens straight to Home', async () => {\n+    await AsyncStorage.setItem('prefs:onboarding.day1win_skipped_at:client-S', '2026-10-06T21:00:00.000Z');\n+    const r = await mount();\n+    await r.findByTestId('nav-client');\n+    expect(r.queryByTestId('day1win')).toBeNull();\n+  });\n+\n+  it('a skip by another account on this phone does not apply', async () => {\n+    await AsyncStorage.setItem('prefs:onboarding.day1win_skipped_at:client-OTHER', '2026-10-06T21:00:00.000Z');\n+    const r = await mount();\n+    await r.findByTestId('day1win');\n+  });\n+});"
+    },
+    {
+      "sha": "7a390b876f0fd62fe111eda05efcc06ff5b3bd62",
+      "filename": "src/lib/day1WinSkip.ts",
+      "status": "added",
+      "additions": 48,
+      "deletions": 0,
+      "changes": 48,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2b735827896f3e7bce0e88b43c73911d80da968b/src%2Flib%2Fday1WinSkip.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/2b735827896f3e7bce0e88b43c73911d80da968b/src%2Flib%2Fday1WinSkip.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Flib%2Fday1WinSkip.ts?ref=2b735827896f3e7bce0e88b43c73911d80da968b",
+      "patch": "@@ -0,0 +1,48 @@\n+/**\n+ * Day 1 Win \"Skip for now\", remembered per user on this device.\n+ *\n+ * GET /me/first-win/status only turns `completed` true when a win card is\n+ * tapped, so a client who tapped \"Skip for now\" used to get the full-screen\n+ * Day One interstitial again on every app open. RootNavigator now reads this\n+ * marker before asking the server, so a skip holds for that account on this\n+ * device. The key carries the user id, so another account on the same phone\n+ * still sees its own Day One screen once.\n+ */\n+import { prefsStorage } from '../storage/mmkv';\n+import { logger } from '../utils/logger';\n+import { readUserCache } from './userCache';\n+\n+export const DAY1_WIN_SKIPPED_KEY_BASE = 'onboarding.day1win_skipped_at';\n+\n+function keyFor(userId: string): string {\n+  return `${DAY1_WIN_SKIPPED_KEY_BASE}:${userId}`;\n+}\n+\n+/**\n+ * Records that this user skipped the Day 1 Win screen. Falls back to the\n+ * cached signed-in user when the screen had no id yet. Never throws.\n+ */\n+export async function markDay1WinSkipped(userId: string | null | undefined): Promise<void> {\n+  try {\n+    let id = typeof userId === 'string' && userId ? userId : null;\n+    if (!id) {\n+      const cached = await readUserCache();\n+      id = typeof cached?.id === 'string' && cached.id ? cached.id : null;\n+    }\n+    if (!id) return;\n+    await prefsStorage.set(keyFor(id), new Date().toISOString());\n+  } catch (err) {\n+    logger.warn('day1WinSkip', 'skip marker not saved', err);\n+  }\n+}\n+\n+/** True when this user already skipped the Day 1 Win screen on this device. */\n+export async function wasDay1WinSkipped(userId: string | null | undefined): Promise<boolean> {\n+  if (typeof userId !== 'string' || !userId) return false;\n+  try {\n+    return !!(await prefsStorage.getStringAsync(keyFor(userId)));\n+  } catch (err) {\n+    logger.warn('day1WinSkip', 'skip marker not read', err);\n+    return false;\n+  }\n+}"
+    },
+    {
+      "sha": "9a3e2fc3fdd673eb4dd4d60eadbb253346a9e449",
+      "filename": "src/navigation/RootNavigator.tsx",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 4,
+      "changes": 13,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2b735827896f3e7bce0e88b43c73911d80da968b/src%2Fnavigation%2FRootNavigator.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/2b735827896f3e7bce0e88b43c73911d80da968b/src%2Fnavigation%2FRootNavigator.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fnavigation%2FRootNavigator.tsx?ref=2b735827896f3e7bce0e88b43c73911d80da968b",
+      "patch": "@@ -87,6 +87,7 @@ import {\n import { isValidPackageShareToken } from '../utils/packageShare';\n import { extractJoinPathCode, writePendingInviteCode } from '../lib/pendingInviteCode';\n import { profileOnboardingCompleted } from '../lib/profileOnboarding';\n+import { wasDay1WinSkipped } from '../lib/day1WinSkip';\n \n // A-2 helper. Convert `https://app.trygrowthproject.com/<path>` to its\n // `tgp://<path>` equivalent so the post-signOut replay never escapes to\n@@ -808,11 +809,15 @@ export default function RootNavigator() {\n           // Phase 7A: check if Day 1 Win has been completed. Fire-and-forget\n           // error handling \u2014 if the API is unreachable, skip the win screen and\n           // go straight to the client app. The screen can be shown on next boot.\n+          // A client who tapped \"Skip for now\" is not shown it again on every\n+          // open (lib/day1WinSkip); the server only records a tapped win.\n           try {\n-            const statusResponse = await firstWinApi.getStatus();\n-            if (!statusResponse.data.completed) {\n-              setAuthState('day1win');\n-              return;\n+            if (!(await wasDay1WinSkipped(user?.id))) {\n+              const statusResponse = await firstWinApi.getStatus();\n+              if (!statusResponse.data.completed) {\n+                setAuthState('day1win');\n+                return;\n+              }\n             }\n           } catch (err) { logger.warn('RootNavigator', 'non-fatal', err); }\n         }"
+    },
+    {
+      "sha": "c0989882cf8fe4787a3bce86db51b6d1cd0e9538",
+      "filename": "src/screens/client/Day1WinScreen.tsx",
+      "status": "modified",
+      "additions": 6,
+      "deletions": 2,
+      "changes": 8,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2b735827896f3e7bce0e88b43c73911d80da968b/src%2Fscreens%2Fclient%2FDay1WinScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/2b735827896f3e7bce0e88b43c73911d80da968b/src%2Fscreens%2Fclient%2FDay1WinScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2FDay1WinScreen.tsx?ref=2b735827896f3e7bce0e88b43c73911d80da968b",
+      "patch": "@@ -32,6 +32,7 @@ import { shouldOfferPackagePrompt } from '../../lib/packagePromptGate';\n import { prefsStorage } from '../../storage/mmkv';\n import api from '../../services/api';\n import { useCurrentUser } from '../../hooks/useCurrentUser';\n+import { markDay1WinSkipped } from '../../lib/day1WinSkip';\n \n // \u2500\u2500 Win card definitions \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n \n@@ -172,9 +173,12 @@ export default function Day1WinScreen({ onComplete }: Day1WinScreenProps) {\n \n   // Continue without selecting a win \u2014 used by skip and by the persistent-\n   // failure escape hatch. Routes straight into the main app (via package gate).\n-  const handleSkip = useCallback(() => {\n+  // A skip is remembered for this user (lib/day1WinSkip), so the Day One\n+  // screen is not shown again on every app open.\n+  const handleSkip = useCallback(async () => {\n+    await markDay1WinSkipped(currentUser?.id);\n     maybeShowPackageSheet(undefined);\n-  }, [maybeShowPackageSheet]);\n+  }, [maybeShowPackageSheet, currentUser?.id]);\n \n   // Continue from the completion view \u2014 routes to the matching logger (via package gate).\n   const handleContinue = useCallback(() => {"
+    }
+  ]
+}

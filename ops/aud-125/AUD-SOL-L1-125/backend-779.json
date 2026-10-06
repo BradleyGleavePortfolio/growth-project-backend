@@ -1,0 +1,398 @@
+{
+  "repo": "backend",
+  "number": 779,
+  "head": "5acc19e74707889449bce70e627a5bcfcd5ae8ee",
+  "base": "ec12a4b3069d91438501d9aa8f9d8449d0a5e292",
+  "title": "fix(billing): repeat grants and held assets never abort the Stripe webhook transaction (MONEY-WEBHOOK-124, T4)",
+  "body": "MONEY-WEBHOOK-124 (agent 124, builder Claude Opus 5.5). T4: Stripe webhook entitlement path.\n\n## Bs fixed (each with a test that fails on main)\n\n**B-WH-1 \u2014 a client who pays an overdue renewal after the lockout never gets access back.**\nNormal-day story: a client's renewal card declines, the plan locks after the Days 0-9 grace (or Stripe marks it unpaid), the client pays from Stripe's invoice email or the billing portal, Stripe charges the card, and the app stays locked for good while the client keeps being billed every month.\nWhy: the repeat grant (`invoice.paid` or `customer.subscription.updated` unpaid -> active) re-runs the content fan-out on the webhook transaction. `PurchaseFanoutService.stageCoachNewPurchaseAlert` claimed the coach \"new purchase\" marker with a plain INSERT; the marker from the first grant already exists, so the INSERT raised a unique violation. The code caught it, but PostgreSQL had already aborted the transaction, so the next statement failed (25P02), the whole delivery rolled back, and every Stripe retry failed the same way. The coach's payout for that invoice never posted either.\nFix: claim with `createMany({ skipDuplicates: true })` (INSERT ... ON CONFLICT DO NOTHING), the pattern TrialUsageService already uses in the same transaction.\n\n**B-WH-2 \u2014 a returning client whose new plan includes a PDF or video they already hold never gets access.**\nNormal-day story: a client comes back months later (or buys a second plan from the same coach) and the plan includes the same welcome PDF; the first payment succeeds on Stripe and the app never unlocks.\nWhy: `MediaAssetResolver` inserted `ClientAssetGrant` (unique per client + asset) inside the paid-checkout transaction and recovered from P2002 by reading the existing grant, but the read ran on the aborted transaction and failed, on every delivery.\nFix: read the client's existing grant first and reuse it; the INSERT only runs for a new asset.\n\n## Proof\n- `test/money-webhook-bulletproof.spec.ts` (new): real `StripeWebhookController` -> `BillingService.handleEvent` -> `CheckoutWebhookHandlerService` -> `PurchaseFanoutService` -> `MediaAssetResolver`, Stripe fixtures, no network, over a database double with PostgreSQL transaction rules (unique indexes raise P2002, a raised error aborts the transaction until rollback, a failed delivery rolls back every write). Covers: lockout recovery by `invoice.paid` (access back, coach paid the exact 4900 cents once, coach not re-alerted), the subscription update arriving first, the returning client's PDF, same event twice = one effect, a delivery failing mid-handler leaves nothing half-written and the retry applies once, cancel at period end keeps access until the subscription ends, signature check (tampered body, missing header and wrong secret refused with 400, nothing written).\n- Failing-before on main: ci-lane run https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37519199069 (main f2d2750c + the new spec only): 4 failed / 2 passed, every failure `current transaction is aborted ... (25P02)` on the B-WH-1 / B-WH-2 deliveries. (The subscription-update-first case passed there only because that double returned live row references; reads now return copies as Prisma does.)\n- `test/money-webhook-regrant.live.spec.ts` (new, real PostgreSQL in mwb-3-live-tests; added to that job's list in ci.yml): the B-WH-1 delivery commits on a real database.\n- Existing doubles that modelled the old `create` + P2002 claim now model `createMany` + skipDuplicates (checkout-hosted-activation-once, checkout-settlement-round5, purchase-fanout-coach-new-purchase); their assertions are unchanged.\n\n## Size\n672 changed lines (49 src, 623 tests + 3 ci.yml). No migration, no flag, no lockfile.\n\n## C (no fix)\n- C-WH-1 (flag off, not day 1): `CoachFirstPaymentService.tryEmitFirstPayment` uses the same INSERT-then-catch-P2002 on the webhook transaction; with FEATURE_ROMAN_FIRST_PAYMENT on, a hosted-checkout or one-time PaymentSheet payment for a coach who already had a first payment would abort the same way (the native invoice path pre-checks). Keep the flag off until it uses ON CONFLICT DO NOTHING.\n- C-WH-2 BillingService treats any unique violation raised inside a handler as \"already processed\" and acknowledges it; after this PR no handler on the day-1 path raises one. C (edge, deferred to 10k clients).\n- C (edge, deferred to 10k clients): two first grants of the same asset in the same instant can still race the grant INSERT.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 627,
+  "deletions": 49,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/779",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/779#issuecomment-6024002515",
+      "body": "\n<!--\n  0 failure: \n  1 warning:  \ud83d\udcec This PR touche...\n  \n  1 markdown notices\n  DangerID: danger-id-Danger;\n-->\n\n\n<table>\n  <thead>\n    <tr>\n      <th width=\"50\"></th>\n      <th width=\"100%\" data-danger-table=\"true\">Warnings</th>\n    </tr>\n  </thead>\n  <tbody><tr>\n      <td>:warning:</td>\n      <td>\n\n  \ud83d\udcec This PR touches **webhook** code. Replay-protected? Signature-verified? Returns 200 even on duplicate?\n  </td>\n    </tr>\n  </tbody>\n</table>\n\n\n### Danger summary\n\n- **Touched areas:** webhooks\n- **Files changed:** 8\n\n<p align=\"right\">\n  Generated by :no_entry_sign: <a href=\"https://danger.systems/js\">dangerJS</a> against 5acc19e74707889449bce70e627a5bcfcd5ae8ee\n</p>\n"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/779#issuecomment-6024068914",
+      "body": "<!-- h4-deploy-readiness-board -->\n## Deploy readiness board (R100, informational)\n\nThis check is informational on pull requests during the pre-launch\nburn-down. It gates only the codebase-invariant sections (stub values\nand prod-switch coherence). The environment-dependent sections (wiring,\nenv discovery, operator keys) are surfaced below but do not block the\nPR because the runner carries no production secrets. The prod-deploy\ngate (deploy-readiness-gate) enforces every section under strict mode.\n\n```\n================ DEPLOY READINESS BOARD (R100) ================\n    mode: INFORMATIONAL (PR / pre-launch)\n    \n    --- STUB VALUES [RED=0] ---\n      BLOCK_SHIP=0  WARN=7  INFO=5\n      [warn] src/coach/command-center/ltv-metrics.dto.ts:153  STUB (tracked debt or low-signal)\n      [warn] src/contracts/contracts.module.ts:47  STUB (tracked debt or low-signal)\n      [warn] src/contracts/contracts.module.ts:53  STUB (tracked debt or low-signal)\n      [warn] src/contracts/providers/docusign.provider.ts:11  STUB (tracked debt or low-signal)\n      [warn] src/contracts/providers/native-canvas.provider.ts:11  STUB (tracked debt or low-signal)\n      [warn] src/gym/gym-distribution.service.ts:4  STUB (tracked debt or low-signal)\n      [warn] src/scheduling/scheduling.controller.ts:91  Coming soon (tracked debt or low-signal)\n      no blocking stub/placeholder tokens in production-bound src/\n    \n    ---------------------------------------------------------------\n    GATING RED LINES (this run): 0\n    PROD-DEPLOY RED LINES (strict): 0\n    EXIT: ALL CLEAR \u2192 SAFE TO DEPLOY\n    ===============================================================\n```"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/779#issuecomment-6024501538",
+      "body": "<!-- pr-checks-watcher -->\n## CI status \u2014 `5acc19e`\n\npending: 2 \u00b7 skipped: 1 \u00b7 success: 16\n\n- \u2705 **actionlint (.github/workflows/*.yml)** \u2014 success\n- \u2705 **Banned cast tokens (R75 / R100.A2)** \u2014 success\n- \u23f3 **build-and-test**\n- \u2705 **build-sbom** \u2014 success\n- \u2705 **CodeQL** \u2014 success\n- \u2705 **CodeQL JS/TS (javascript-typescript)** \u2014 success\n- \u2705 **comment-deploy-readiness** \u2014 success\n- \u2705 **community-live-tests** \u2014 success\n- \u2705 **danger** \u2014 success\n- \u2705 **danger dry-run (dangerfile.js)** \u2014 success\n- \u23ed\ufe0f **deploy-readiness-gate** \u2014 skipped\n- \u23f3 **mwb-3-live-tests**\n- \u2705 **npm audit (high+critical, whole graph)** \u2014 success\n- \u2705 **rls-floor-guard** \u2014 success\n- \u2705 **rls-live-tests** \u2014 success\n- \u2705 **Schema parity (migrations match schema.prisma)** \u2014 success\n- \u2705 **shellcheck (scripts/*.sh)** \u2014 success\n- \u2705 **size-label** \u2014 success\n- \u2705 **test-deploy-readiness** \u2014 success\n\n_Updated automatically by pr-checks-watcher._"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/779#issuecomment-6024666089",
+      "body": "FIX ROUND 1 (OPENING) (MONEY-WEBHOOK-124, agent 124) \u2014 growth-project-backend#779 @ 5acc19e74707889449bce70e627a5bcfcd5ae8ee \u2014 READY FOR AUDIT\n\nFinished by R-MONEY-FINISH-124 (agent 124) after the builder was cancelled by a session interruption. B/U/C: 2/0/3. 676 changed lines (49 src, the rest tests and one ci.yml line; 1,500 cap). No migration, flag or lockfile.\n- B-WH-1: a client whose renewal declined and whose plan locked pays the overdue invoice (Stripe email or portal); Stripe charges, but the app stays locked for good and the coach's payout for that invoice never posts. The repeat grant's coach-new-purchase marker INSERT hit P2002 inside the webhook transaction, PostgreSQL aborted it (25P02), and every Stripe retry failed. Fix: createMany + skipDuplicates (ON CONFLICT DO NOTHING).\n- B-WH-2: a returning client whose new plan carries a PDF or video they already hold pays and never gets access (ClientAssetGrant unique hit inside the paid-checkout transaction). Fix: reuse the held grant.\n- C-WH-1 (flag off, not day 1): CoachFirstPaymentService INSERT-then-catch on the webhook transaction; keep FEATURE_ROMAN_FIRST_PAYMENT off until it uses ON CONFLICT DO NOTHING. C-WH-2, C-WH-3: C (edge, deferred to 10k clients).\nChecked and holding: signature check, event idempotency, single-transaction rollback, live Stripe read as authority, grace and cancel-at-period-end entitlement timing, exact cents into the split.\n\nCI repair push (one, test-only, deterministic): 17dacdf8 failed only Banned cast tokens (R75: +7 `as any` in the two new specs); build-and-test and mwb-3-live-tests (including the new live spec) were already green there. Doubles are now built with Reflect.construct / Reflect.apply (repo pattern); R75 net -1. No src change since 17dacdf8. (GitHub did not attach the 12:48 push to the PR until a no-op base edit at 13:01; one push only.)\n\nCI at this head: all required checks green. build-and-test https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318657/job/112473934168 ; mwb-3-live-tests https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318657/job/112473934301 ; R75 https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318763/job/112473935632.\nFailing-before proof (main f2d2750c + new spec only): https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37519199069 (4 failed / 2 passed, every failure 25P02 on the B deliveries).\n\nOwner decisions: D1 merge this before FEATURE_DUNNING_V2 goes on (#762), since the Day-10 lockout makes B-WH-1 reachable for every late payer (reachable today when Stripe marks a subscription unpaid). Recommended default: yes. D2 FEATURE_ROMAN_FIRST_PAYMENT stays off until C-WH-1 is fixed. Recommended default: yes. No merge, deploy, production, Stripe or spend.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/runs/112476224462",
+      "id": 112476224462,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-backend/security/code-scanning?query=pr%3A779+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112476224462/annotations"
+      }
+    },
+    {
+      "name": "comment-deploy-readiness",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318625/job/112475757615",
+      "id": 112475757615,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112475757615/annotations"
+      }
+    },
+    {
+      "name": "deploy-readiness-gate",
+      "status": "completed",
+      "conclusion": "skipped",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318625/job/112473937662",
+      "id": 112473937662,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473937662/annotations"
+      }
+    },
+    {
+      "name": "build-sbom",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318628/job/112473936077",
+      "id": 112473936077,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473936077/annotations"
+      }
+    },
+    {
+      "name": "test-deploy-readiness",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318625/job/112473935670",
+      "id": 112473935670,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473935670/annotations"
+      }
+    },
+    {
+      "name": "Banned cast tokens (R75 / R100.A2)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318763/job/112473935632",
+      "id": 112473935632,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473935632/annotations"
+      }
+    },
+    {
+      "name": "danger",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318665/job/112473935033",
+      "id": 112473935033,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473935033/annotations"
+      }
+    },
+    {
+      "name": "npm audit (high+critical, whole graph)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318705/job/112473934934",
+      "id": 112473934934,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473934934/annotations"
+      }
+    },
+    {
+      "name": "danger dry-run (dangerfile.js)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318743/job/112473934834",
+      "id": 112473934834,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473934834/annotations"
+      }
+    },
+    {
+      "name": "actionlint (.github/workflows/*.yml)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318743/job/112473934704",
+      "id": 112473934704,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473934704/annotations"
+      }
+    },
+    {
+      "name": "Schema parity (migrations match schema.prisma)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318651/job/112473934579",
+      "id": 112473934579,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473934579/annotations"
+      }
+    },
+    {
+      "name": "shellcheck (scripts/*.sh)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318743/job/112473934420",
+      "id": 112473934420,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473934420/annotations"
+      }
+    },
+    {
+      "name": "rls-floor-guard",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318657/job/112473934409",
+      "id": 112473934409,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473934409/annotations"
+      }
+    },
+    {
+      "name": "mwb-3-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318657/job/112473934301",
+      "id": 112473934301,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473934301/annotations"
+      }
+    },
+    {
+      "name": "rls-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318657/job/112473934284",
+      "id": 112473934284,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473934284/annotations"
+      }
+    },
+    {
+      "name": "build-and-test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318657/job/112473934168",
+      "id": 112473934168,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 10,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473934168/annotations"
+      }
+    },
+    {
+      "name": "CodeQL JS/TS (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318697/job/112473934087",
+      "id": 112473934087,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 3,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473934087/annotations"
+      }
+    },
+    {
+      "name": "size-label",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318616/job/112473933977",
+      "id": 112473933977,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473933977/annotations"
+      }
+    },
+    {
+      "name": "community-live-tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37523318657/job/112473933969",
+      "id": 112473933969,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/check-runs/112473933969/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "cea96398132ead111dce3ce7a392622bfd821b32",
+      "filename": ".github/workflows/ci.yml",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 0,
+      "changes": 3,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5acc19e74707889449bce70e627a5bcfcd5ae8ee/.github%2Fworkflows%2Fci.yml",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/5acc19e74707889449bce70e627a5bcfcd5ae8ee/.github%2Fworkflows%2Fci.yml",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/.github%2Fworkflows%2Fci.yml?ref=5acc19e74707889449bce70e627a5bcfcd5ae8ee",
+      "patch": "@@ -585,6 +585,8 @@ jobs:\n         # S-SCHED-2 adds test/scheduling-booking-concurrency.live.spec.ts: the\n         # no-double-booking proof (exclusion constraint applied from its\n         # migration file + per-coach advisory lock) on the same gate/bootstrap.\n+        # MONEY-WEBHOOK-124 adds test/money-webhook-regrant.live.spec.ts: a plan\n+        # granted again after a lockout commits (no unique violation in the tx).\n         run: |\n           npx jest \\\n             test/scheduling-booking-concurrency.live.spec.ts \\\n@@ -597,6 +599,7 @@ jobs:\n             test/onboarding-tenancy-fence.live.spec.ts \\\n             test/checkout-settlement.live.spec.ts \\\n             test/b-trials-usage-concurrency.live.spec.ts \\\n+            test/money-webhook-regrant.live.spec.ts \\\n             --runInBand --testTimeout=120000\n         env:\n           NODE_OPTIONS: --max-old-space-size=4096"
+    },
+    {
+      "sha": "9b164e58716a6dce5aa94672de376025dafa37bb",
+      "filename": "src/packages/asset-resolvers/media-asset.resolver.ts",
+      "status": "modified",
+      "additions": 16,
+      "deletions": 0,
+      "changes": 16,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5acc19e74707889449bce70e627a5bcfcd5ae8ee/src%2Fpackages%2Fasset-resolvers%2Fmedia-asset.resolver.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/5acc19e74707889449bce70e627a5bcfcd5ae8ee/src%2Fpackages%2Fasset-resolvers%2Fmedia-asset.resolver.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fpackages%2Fasset-resolvers%2Fmedia-asset.resolver.ts?ref=5acc19e74707889449bce70e627a5bcfcd5ae8ee",
+      "patch": "@@ -108,6 +108,22 @@ export class MediaAssetResolver implements AssignableAssetResolver {\n       throw new MediaAssetNotFoundError(input.assetId);\n     }\n \n+    // MONEY-WEBHOOK-124 (B-WH-2): a client who already holds this asset (a\n+    // re-purchase, or a second package with the same PDF) reuses the grant.\n+    // Read first: inside the paid-checkout transaction a raised unique\n+    // violation aborts it in PostgreSQL, so the P2002 recovery below never\n+    // ran there and every Stripe delivery of the payment failed.\n+    const held = await db.clientAssetGrant.findUnique({\n+      where: {\n+        client_id_media_asset_id: {\n+          client_id: input.clientId,\n+          media_asset_id: input.assetId,\n+        },\n+      },\n+      select: { id: true },\n+    });\n+    if (held) return { materialisedRef: held.id };\n+\n     // On-conflict-nothing via the @@unique(client_id, media_asset_id):\n     // optimistic INSERT, P2002 \u2192 look up the existing grant and return its\n     // id. Mirrors AssignWorkoutMaterializer's P2002 race-recovery"
+    },
+    {
+      "sha": "96884afb47e85235bfdf59330b4e4df2e0329c31",
+      "filename": "src/packages/purchase-fanout.service.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 20,
+      "changes": 33,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5acc19e74707889449bce70e627a5bcfcd5ae8ee/src%2Fpackages%2Fpurchase-fanout.service.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/5acc19e74707889449bce70e627a5bcfcd5ae8ee/src%2Fpackages%2Fpurchase-fanout.service.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/src%2Fpackages%2Fpurchase-fanout.service.ts?ref=5acc19e74707889449bce70e627a5bcfcd5ae8ee",
+      "patch": "@@ -399,8 +399,8 @@ export class PurchaseFanoutService {\n   //\n   // Idempotency: DripResolverMarker (purpose='coach_new_purchase',\n   // purchase_id, content_id='-') is unique per purchase. The first\n-  // commit wins; every Stripe webhook replay's create() raises a P2002\n-  // unique-constraint violation which we swallow \u2192 the staging is\n+  // commit wins; a replay or a repeat grant inserts nothing (ON CONFLICT\n+  // DO NOTHING, never a raised violation inside the tx) \u2192 the staging is\n   // skipped \u2192 exactly one COACH_NEW_PURCHASE per purchase.\n   //\n   // Rollback semantics: marker INSERT rides the outer tx; a rollback\n@@ -419,27 +419,20 @@ export class PurchaseFanoutService {\n   ): Promise<void> {\n     if (!tx.dripResolverMarker) return;\n \n-    let claimedFirst = false;\n-    try {\n-      await tx.dripResolverMarker.create({\n-        data: {\n-          purpose: 'coach_new_purchase',\n-          purchase_id: purchaseId,\n-          content_id: '-',\n-        },\n-      });\n-      claimedFirst = true;\n-    } catch (err) {\n-      const msg = (err as Error).message ?? '';\n-      const code = (err as { code?: string }).code ?? '';\n-      if (!/unique|UNIQUE|P2002/i.test(msg) && code !== 'P2002') {\n-        throw err;\n-      }\n+    // MONEY-WEBHOOK-124 (B-WH-1): claim with INSERT ... ON CONFLICT DO NOTHING.\n+    // A raised unique violation aborts the caller's PostgreSQL transaction, so\n+    // a purchase granted a second time (a client locked out for an unpaid\n+    // renewal who then pays) failed every Stripe delivery and stayed locked.\n+    const claimed = await tx.dripResolverMarker.createMany({\n+      data: [{ purpose: 'coach_new_purchase', purchase_id: purchaseId, content_id: '-' }],\n+      skipDuplicates: true,\n+    });\n+    if (claimed.count === 0) {\n       this.logger.debug(\n-        `coach_new_purchase: marker already claimed for purchase=${purchaseId} (webhook replay)`,\n+        `coach_new_purchase: marker already claimed for purchase=${purchaseId} (repeat grant)`,\n       );\n+      return;\n     }\n-    if (!claimedFirst) return;\n \n     const coachId = purchaseRow.coach_user_id;\n     const amountCents = purchaseRow.amount_cents ?? 0;"
+    },
+    {
+      "sha": "31675e43dd59b792c3528c6c86dd5d6a62f9040b",
+      "filename": "test/checkout-hosted-activation-once.spec.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 7,
+      "changes": 20,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5acc19e74707889449bce70e627a5bcfcd5ae8ee/test%2Fcheckout-hosted-activation-once.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/5acc19e74707889449bce70e627a5bcfcd5ae8ee/test%2Fcheckout-hosted-activation-once.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fcheckout-hosted-activation-once.spec.ts?ref=5acc19e74707889449bce70e627a5bcfcd5ae8ee",
+      "patch": "@@ -89,14 +89,20 @@ function makeHarness() {\n     },\n     user: { findUnique: jest.fn(async () => ({ id: 'c1' })) },\n     dripResolverMarker: {\n-      create: jest.fn(async ({ data }: any) => {\n-        const key = `${data.purpose}|${data.purchase_id}|${data.content_id}`;\n-        if (markers.includes(key)) {\n-          uniqueViolations.push(key);\n-          throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });\n+      // ON CONFLICT DO NOTHING (createMany + skipDuplicates), like the real\n+      // claim: a duplicate is recorded here and inserts nothing.\n+      createMany: jest.fn(async ({ data }: any) => {\n+        let count = 0;\n+        for (const row of data) {\n+          const key = `${row.purpose}|${row.purchase_id}|${row.content_id}`;\n+          if (markers.includes(key)) {\n+            uniqueViolations.push(key);\n+            continue;\n+          }\n+          markers.push(key);\n+          count += 1;\n         }\n-        markers.push(key);\n-        return data;\n+        return { count };\n       }),\n     },\n   };"
+    },
+    {
+      "sha": "33002ce476429546a9676b56bb5a9e0a1da357c2",
+      "filename": "test/checkout-settlement-round5.spec.ts",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 7,
+      "changes": 20,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5acc19e74707889449bce70e627a5bcfcd5ae8ee/test%2Fcheckout-settlement-round5.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/5acc19e74707889449bce70e627a5bcfcd5ae8ee/test%2Fcheckout-settlement-round5.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fcheckout-settlement-round5.spec.ts?ref=5acc19e74707889449bce70e627a5bcfcd5ae8ee",
+      "patch": "@@ -128,14 +128,20 @@ function makeHarness() {\n     },\n     user: { findUnique: jest.fn(async () => ({ id: 'c1' })) },\n     dripResolverMarker: {\n-      create: jest.fn(async ({ data }: any) => {\n-        const key = `${data.purpose}|${data.purchase_id}|${data.content_id}`;\n-        if (markers.includes(key)) {\n-          uniqueViolations.push(key);\n-          throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });\n+      // ON CONFLICT DO NOTHING (createMany + skipDuplicates), like the real\n+      // claim: a duplicate is recorded here and inserts nothing.\n+      createMany: jest.fn(async ({ data }: any) => {\n+        let count = 0;\n+        for (const row of data) {\n+          const key = `${row.purpose}|${row.purchase_id}|${row.content_id}`;\n+          if (markers.includes(key)) {\n+            uniqueViolations.push(key);\n+            continue;\n+          }\n+          markers.push(key);\n+          count += 1;\n         }\n-        markers.push(key);\n-        return data;\n+        return { count };\n       }),\n     },\n   };"
+    },
+    {
+      "sha": "05b59ead08640a6b8212b8b8019741326ba3d6b8",
+      "filename": "test/money-webhook-bulletproof.spec.ts",
+      "status": "added",
+      "additions": 434,
+      "deletions": 0,
+      "changes": 434,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5acc19e74707889449bce70e627a5bcfcd5ae8ee/test%2Fmoney-webhook-bulletproof.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/5acc19e74707889449bce70e627a5bcfcd5ae8ee/test%2Fmoney-webhook-bulletproof.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fmoney-webhook-bulletproof.spec.ts?ref=5acc19e74707889449bce70e627a5bcfcd5ae8ee",
+      "patch": "@@ -0,0 +1,434 @@\n+// MONEY-WEBHOOK-124 \u2014 the Stripe webhook money path on the real handlers:\n+// StripeWebhookController -> BillingService.handleEvent -> CheckoutWebhookHandlerService\n+// -> PurchaseFanoutService -> MediaAssetResolver, with Stripe fixtures and no network.\n+//\n+// The database double keeps PostgreSQL's transaction rules: unique indexes raise P2002,\n+// a raised error aborts the open transaction (every later statement fails until rollback,\n+// SQLSTATE 25P02), and a failed delivery rolls back every write, the dedup row included.\n+//\n+// B-WH-1: a client locked out for an unpaid renewal who then pays was never given access\n+// back (the repeat grant's coach-alert marker INSERT raised inside the webhook transaction,\n+// so every Stripe delivery failed). B-WH-2: a returning client whose new plan includes a\n+// PDF they already hold was never given access (same abort on the asset grant INSERT).\n+import { BadRequestException } from '@nestjs/common';\n+import { Prisma } from '@prisma/client';\n+import { BillingService } from '../src/billing/billing.service';\n+import { StripeWebhookController } from '../src/billing/stripe-webhook.controller';\n+import { signStripePayload } from '../src/billing/stripe-signature';\n+import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';\n+import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';\n+import { AssignableAssetResolverRegistry } from '../src/packages/asset-resolvers/assignable-asset-resolver.registry';\n+import { MediaAssetResolver } from '../src/packages/asset-resolvers/media-asset.resolver';\n+import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';\n+\n+type Row = Record<string, any>;\n+type State = Record<string, Row[]>;\n+\n+const UNIQUE: Record<string, string[][]> = {\n+  stripeProcessedEvent: [['stripe_event_id']],\n+  clientPurchase: [['id'], ['stripe_subscription_id']],\n+  purchaseFanout: [['purchase_id']],\n+  scheduledDrop: [['id'], ['client_purchase_id', 'content_id']],\n+  dripResolverMarker: [['purpose', 'purchase_id', 'content_id']],\n+  clientAssetGrant: [['id'], ['client_id', 'media_asset_id']],\n+};\n+const MODELS = [\n+  'stripeProcessedEvent', 'clientPurchase', 'coachPackage', 'coachPackageContent', 'purchaseFanout',\n+  'scheduledDrop', 'dripResolverMarker', 'user', 'coachMediaAsset', 'clientAssetGrant',\n+];\n+\n+function matches(row: Row, where: Row = {}): boolean {\n+  return Object.entries(where).every(([k, v]) => {\n+    if (k === 'OR') return (v as Row[]).some((w) => matches(row, w));\n+    if (v === null) return row[k] === null || row[k] === undefined;\n+    if (v instanceof Date) return row[k] instanceof Date && row[k].getTime() === v.getTime();\n+    if (v && typeof v === 'object') {\n+      if ('in' in v) return (v.in as unknown[]).includes(row[k]);\n+      if ('notIn' in v) return !(v.notIn as unknown[]).includes(row[k]);\n+      if ('not' in v) return v.not === null ? row[k] != null : row[k] !== v.not;\n+      if ('lte' in v) return row[k] != null && row[k] <= v.lte;\n+      return matches(row, v as Row); // compound unique key\n+    }\n+    return row[k] === v;\n+  });\n+}\n+\n+function apply(row: Row, data: Row = {}): void {\n+  for (const [k, v] of Object.entries(data)) {\n+    if (v && typeof v === 'object' && !(v instanceof Date) && 'increment' in v) {\n+      row[k] = (row[k] ?? 0) + v.increment;\n+    } else if (v !== undefined) row[k] = v;\n+  }\n+}\n+\n+function p2002(model: string, keys: string[]) {\n+  return new Prisma.PrismaClientKnownRequestError(\n+    `Unique constraint failed on the fields: (${keys.map((k) => `\\`${k}\\``).join(',')}) on ${model}`,\n+    { code: 'P2002', clientVersion: 'test' },\n+  );\n+}\n+\n+function makeDb(seed: State) {\n+  let state: State = seed;\n+  let seq = 0;\n+  const rows = (m: string) => (state[m] ??= []);\n+  const clash = (m: string, data: Row) =>\n+    (UNIQUE[m] ?? []).find(\n+      (keys) =>\n+        keys.every((k) => data[k] != null) &&\n+        rows(m).some((r) => keys.every((k) => r[k] === data[k])),\n+    );\n+  const insert = (m: string, data: Row) => {\n+    const row: Row = { id: `${m}-${(seq += 1)}`, created_at: new Date(), ...data };\n+    const keys = clash(m, row);\n+    if (keys) throw p2002(m, keys);\n+    rows(m).push(row);\n+    return { ...row };\n+  };\n+  // Reads return copies, as Prisma does: a later write never changes a row already read.\n+  const read = (m: string, where: Row) => {\n+    const r = rows(m).find((x) => matches(x, where));\n+    return r ? { ...r } : null;\n+  };\n+  const ops = (m: string): Record<string, (a: Row) => Promise<unknown>> => ({\n+    findUnique: async ({ where }) => read(m, where),\n+    findUniqueOrThrow: async ({ where }) => {\n+      const r = read(m, where);\n+      if (!r) throw Object.assign(new Error('No record found'), { code: 'P2025' });\n+      return r;\n+    },\n+    findFirst: async ({ where }) => read(m, where),\n+    findMany: async ({ where } = {}) => rows(m).filter((r) => matches(r, where)).map((r) => ({ ...r })),\n+    count: async ({ where } = {}) => rows(m).filter((r) => matches(r, where)).length,\n+    create: async ({ data }) => insert(m, data),\n+    createMany: async ({ data, skipDuplicates }) => {\n+      let count = 0;\n+      for (const d of [].concat(data)) {\n+        if (skipDuplicates && clash(m, d)) continue;\n+        insert(m, d);\n+        count += 1;\n+      }\n+      return { count };\n+    },\n+    update: async ({ where, data }) => {\n+      const r = rows(m).find((x) => matches(x, where));\n+      if (!r) throw Object.assign(new Error('Record to update not found'), { code: 'P2025' });\n+      apply(r, data);\n+      return { ...r };\n+    },\n+    updateMany: async ({ where, data }) => {\n+      const found = rows(m).filter((r) => matches(r, where));\n+      for (const r of found) apply(r, data);\n+      return { count: found.length };\n+    },\n+    upsert: async ({ where, create, update }) => {\n+      const r = rows(m).find((x) => matches(x, where));\n+      if (!r) return insert(m, create);\n+      apply(r, update);\n+      return { ...r };\n+    },\n+  });\n+  // ctx is null for the autocommit client and per-transaction otherwise.\n+  const client = (ctx: { aborted: boolean } | null): any => {\n+    const guard =\n+      (fn: (...a: any[]) => Promise<unknown>) =>\n+      async (...args: any[]) => {\n+        if (ctx?.aborted) {\n+          throw new Error(\n+            'current transaction is aborted, commands ignored until end of transaction block (25P02)',\n+          );\n+        }\n+        try {\n+          return await fn(...args);\n+        } catch (err) {\n+          if (ctx) ctx.aborted = true;\n+          throw err;\n+        }\n+      };\n+    const c: any = { $queryRaw: guard(async () => []) };\n+    for (const m of MODELS) {\n+      c[m] = Object.fromEntries(Object.entries(ops(m)).map(([k, fn]) => [k, guard(fn)]));\n+    }\n+    c.$transaction = async (cb: (tx: unknown) => Promise<unknown>) => {\n+      const snapshot = structuredClone(state);\n+      try {\n+        return await cb(client({ aborted: false }));\n+      } catch (err) {\n+        state = snapshot;\n+        throw err;\n+      }\n+    };\n+    return c;\n+  };\n+  return { db: client(null), rows };\n+}\n+\n+class StripeStub extends StripeConnectApiService {\n+  subs: Record<string, Row> = {};\n+  failReads = 0;\n+  retrieveSubscription = jest.fn(async (id: string): Promise<any> => {\n+    if (this.failReads > 0) {\n+      this.failReads -= 1;\n+      throw new Error('stripe unavailable');\n+    }\n+    return this.subs[id];\n+  });\n+  retrieveSubscriptionForCheckout = jest.fn(async (id: string): Promise<any> => this.subs[id]);\n+}\n+\n+const NOW_S = Math.floor(Date.now() / 1000);\n+const PERIOD_END = NOW_S + 30 * 86_400;\n+const liveSub = (id: string, over: Row = {}): Row => ({\n+  id,\n+  status: 'active',\n+  customer: 'cus_1',\n+  current_period_end: PERIOD_END,\n+  cancel_at_period_end: false,\n+  canceled_at: null,\n+  default_payment_method: 'pm_1',\n+  metadata: {},\n+  ...over,\n+});\n+\n+function purchase(id: string, sub: string, over: Row = {}): Row {\n+  return {\n+    id,\n+    client_user_id: 'client-1',\n+    coach_user_id: 'coach-1',\n+    package_id: 'pkg-1',\n+    amount_cents: 4900,\n+    currency: 'usd',\n+    billing_type: 'recurring',\n+    stripe_subscription_id: sub,\n+    stripe_checkout_session_id: sub,\n+    stripe_payment_intent_id: null,\n+    stripe_customer_id: 'cus_1',\n+    status: 'active',\n+    entitlement_active: true,\n+    trial_days: null,\n+    trial_started_at: null,\n+    trial_ends_at: null,\n+    cancel_at_period_end: false,\n+    canceled_at: null,\n+    current_period_end: new Date(PERIOD_END * 1000),\n+    access_expires_at: null,\n+    last_error: null,\n+    created_at: new Date(Date.now() - 60 * 86_400_000),\n+    updated_at: new Date(Date.now() - 86_400_000),\n+    ...over,\n+  };\n+}\n+\n+function makeWorld(seed: State = {}) {\n+  const { db, rows } = makeDb({\n+    user: [\n+      { id: 'client-1', name: 'Client One', email: 'client-1@example.test' },\n+      { id: 'coach-1', name: 'Coach One', email: 'coach-1@example.test' },\n+    ],\n+    coachPackage: [\n+      { id: 'pkg-1', coach_id: 'coach-1', name: 'Monthly coaching', billing_type: 'recurring', amount_cents: 4900 },\n+    ],\n+    ...seed,\n+  });\n+  const stripe = new StripeStub();\n+  const splits = { onChargeSucceeded: jest.fn(async () => undefined) };\n+  const scope = { resolve: async (coachId: string) => ({ tenantCoachId: coachId, actingCoachId: coachId }) };\n+  // Reflect.construct keeps the partial doubles untyped without a banned cast.\n+  const media: MediaAssetResolver = Reflect.construct(MediaAssetResolver, [db, scope]);\n+  const fanout = new PurchaseFanoutService(new AssignableAssetResolverRegistry([media]));\n+  const handler: CheckoutWebhookHandlerService = Reflect.construct(CheckoutWebhookHandlerService, [\n+    db, stripe, splits, undefined, undefined, fanout,\n+  ]);\n+  const billing: BillingService = Reflect.construct(BillingService, [\n+    db,\n+    { capture: jest.fn(), identify: jest.fn() },\n+    { write: jest.fn(async () => undefined), list: jest.fn(async () => []) },\n+    undefined,\n+    handler,\n+  ]);\n+  const row = (m: string, id: string) => rows(m).find((r) => r.id === id);\n+  return { db, rows, row, stripe, splits, billing };\n+}\n+\n+type Ev = { id: string; type: string; data: { object: Row } };\n+const invoicePaid = (id: string, sub: string, cents: number, charge: string): Ev => ({\n+  id,\n+  type: 'invoice.paid',\n+  data: { object: { id: `in_${id}`, subscription: sub, amount_paid: cents, currency: 'usd', charge } },\n+});\n+const subUpdated = (id: string, sub: Row): Ev => ({\n+  id,\n+  type: 'customer.subscription.updated',\n+  data: { object: sub },\n+});\n+\n+// A plan whose renewal card declined: past the Days 0-9 grace the plan is locked\n+// (entitlement off, subscription unpaid). It was granted once before, so its fan-out\n+// and coach \"new purchase\" marker already exist.\n+function lockedOut(): State {\n+  return {\n+    clientPurchase: [purchase('cp-1', 'sub_1', { status: 'unpaid', entitlement_active: false })],\n+    purchaseFanout: [{ id: 'fo-1', purchase_id: 'cp-1', entrypoint: 'in_app_ps', state: 'succeeded' }],\n+    dripResolverMarker: [{ id: 'mk-1', purpose: 'coach_new_purchase', purchase_id: 'cp-1', content_id: '-' }],\n+  };\n+}\n+\n+describe('MONEY-WEBHOOK-124 \u2014 Stripe webhooks on the real handlers', () => {\n+  it('B-WH-1: a locked-out client pays the overdue renewal; invoice.paid restores access on the first delivery and pays the coach the exact cents once', async () => {\n+    const w = makeWorld(lockedOut());\n+    w.stripe.subs.sub_1 = liveSub('sub_1');\n+\n+    await expect(w.billing.handleEvent(invoicePaid('evt_paid_1', 'sub_1', 4900, 'ch_renew'))).resolves.toEqual({\n+      processed: true,\n+    });\n+    expect(w.row('clientPurchase', 'cp-1')).toMatchObject({ status: 'active', entitlement_active: true });\n+    expect(w.rows('stripeProcessedEvent')).toEqual([\n+      expect.objectContaining({ stripe_event_id: 'evt_paid_1', handler_completed_at: expect.any(Date) }),\n+    ]);\n+    expect(w.splits.onChargeSucceeded).toHaveBeenCalledTimes(1);\n+    expect(w.splits.onChargeSucceeded).toHaveBeenCalledWith(\n+      expect.objectContaining({ invoice_amount_cents: 4900, invoice_charge_id: 'ch_renew' }),\n+    );\n+    // The coach is not told about a \"new purchase\" again.\n+    expect(w.rows('dripResolverMarker')).toHaveLength(1);\n+\n+    // Same event twice = one effect.\n+    await expect(w.billing.handleEvent(invoicePaid('evt_paid_1', 'sub_1', 4900, 'ch_renew'))).resolves.toEqual({\n+      processed: false,\n+      alreadyProcessed: true,\n+    });\n+    expect(w.splits.onChargeSucceeded).toHaveBeenCalledTimes(1);\n+  });\n+\n+  it('B-WH-1: the subscription update (unpaid -> active) arriving before invoice.paid restores access too', async () => {\n+    const w = makeWorld(lockedOut());\n+    w.stripe.subs.sub_1 = liveSub('sub_1');\n+\n+    await expect(w.billing.handleEvent(subUpdated('evt_sub_1', liveSub('sub_1')))).resolves.toEqual({\n+      processed: true,\n+    });\n+    expect(w.row('clientPurchase', 'cp-1')).toMatchObject({ status: 'active', entitlement_active: true });\n+\n+    await expect(w.billing.handleEvent(invoicePaid('evt_paid_2', 'sub_1', 4900, 'ch_renew'))).resolves.toEqual({\n+      processed: true,\n+    });\n+    expect(w.row('clientPurchase', 'cp-1')).toMatchObject({ status: 'active', entitlement_active: true });\n+    expect(w.splits.onChargeSucceeded).toHaveBeenCalledWith(\n+      expect.objectContaining({ invoice_amount_cents: 4900 }),\n+    );\n+  });\n+\n+  it('B-WH-2: a returning client whose new plan includes a PDF they already hold gets access on the first payment', async () => {\n+    const w = makeWorld({\n+      clientPurchase: [\n+        purchase('cp-2', 'sub_2', {\n+          status: 'incomplete',\n+          entitlement_active: false,\n+          created_at: new Date(),\n+          current_period_end: null,\n+        }),\n+      ],\n+      coachPackageContent: [\n+        {\n+          id: 'content-pdf',\n+          package_id: 'pkg-1',\n+          removed_at: null,\n+          display_order: 0,\n+          asset_type: 'pdf',\n+          asset_id: 'pdf-1',\n+          asset_revision_id: null,\n+          cadence_kind: 'immediate',\n+          cadence_payload: {},\n+          display_title: 'Welcome guide',\n+          display_caption: null,\n+        },\n+      ],\n+      coachMediaAsset: [{ id: 'pdf-1', coach_id: 'coach-1', archived_at: null, status: 'ready' }],\n+      // Granted by the plan this client bought last year.\n+      clientAssetGrant: [{ id: 'grant-old', client_id: 'client-1', media_asset_id: 'pdf-1' }],\n+    });\n+    w.stripe.subs.sub_2 = liveSub('sub_2');\n+\n+    await expect(w.billing.handleEvent(invoicePaid('evt_first_2', 'sub_2', 4900, 'ch_first'))).resolves.toEqual({\n+      processed: true,\n+    });\n+    expect(w.row('clientPurchase', 'cp-2')).toMatchObject({ status: 'active', entitlement_active: true });\n+    expect(w.rows('scheduledDrop')).toEqual([\n+      expect.objectContaining({ client_purchase_id: 'cp-2', status: 'fired', materialised_ref: 'grant-old' }),\n+    ]);\n+    expect(w.rows('clientAssetGrant')).toHaveLength(1);\n+    expect(w.splits.onChargeSucceeded).toHaveBeenCalledWith(\n+      expect.objectContaining({ invoice_amount_cents: 4900, invoice_charge_id: 'ch_first' }),\n+    );\n+  });\n+\n+  it('a delivery that fails mid-handler leaves no half-written state and the Stripe retry applies it once', async () => {\n+    const w = makeWorld(lockedOut());\n+    w.stripe.subs.sub_1 = liveSub('sub_1');\n+    w.stripe.failReads = 1;\n+\n+    await expect(w.billing.handleEvent(invoicePaid('evt_paid_3', 'sub_1', 4900, 'ch_renew'))).rejects.toThrow();\n+    expect(w.row('clientPurchase', 'cp-1')).toMatchObject({ status: 'unpaid', entitlement_active: false });\n+    expect(w.rows('stripeProcessedEvent')).toEqual([]);\n+    expect(w.splits.onChargeSucceeded).not.toHaveBeenCalled();\n+\n+    await expect(w.billing.handleEvent(invoicePaid('evt_paid_3', 'sub_1', 4900, 'ch_renew'))).resolves.toEqual({\n+      processed: true,\n+    });\n+    expect(w.row('clientPurchase', 'cp-1')).toMatchObject({ status: 'active', entitlement_active: true });\n+    expect(w.splits.onChargeSucceeded).toHaveBeenCalledTimes(1);\n+  });\n+\n+  it('cancel at period end keeps access until Stripe ends the subscription, then access stops', async () => {\n+    const w = makeWorld({ clientPurchase: [purchase('cp-4', 'sub_4')] });\n+    const ending = liveSub('sub_4', { cancel_at_period_end: true });\n+    w.stripe.subs.sub_4 = ending;\n+\n+    await w.billing.handleEvent(subUpdated('evt_cancel_req', ending));\n+    expect(w.row('clientPurchase', 'cp-4')).toMatchObject({\n+      status: 'active',\n+      entitlement_active: true,\n+      cancel_at_period_end: true,\n+    });\n+\n+    const ended = liveSub('sub_4', { status: 'canceled', canceled_at: PERIOD_END });\n+    await w.billing.handleEvent({ id: 'evt_deleted', type: 'customer.subscription.deleted', data: { object: ended } });\n+    expect(w.row('clientPurchase', 'cp-4')).toMatchObject({ status: 'canceled', entitlement_active: false });\n+  });\n+\n+  describe('signature check (StripeWebhookController)', () => {\n+    const SECRET = 'test-signing-secret-money-124';\n+    const saved = process.env.STRIPE_WEBHOOK_SECRET;\n+    beforeEach(() => {\n+      process.env.STRIPE_WEBHOOK_SECRET = SECRET;\n+    });\n+    afterEach(() => {\n+      if (saved === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;\n+      else process.env.STRIPE_WEBHOOK_SECRET = saved;\n+    });\n+    const call = (ctl: StripeWebhookController, payload: string, sig: string) =>\n+      Reflect.apply(ctl.stripe, ctl, [{ rawBody: Buffer.from(payload, 'utf8') }, sig]);\n+\n+    it('a correctly signed event reaches the handler; a tampered or unsigned body is refused with 400 and changes nothing', async () => {\n+      const w = makeWorld(lockedOut());\n+      w.stripe.subs.sub_1 = liveSub('sub_1');\n+      const ctl = new StripeWebhookController(w.billing);\n+      const payload = JSON.stringify(invoicePaid('evt_signed', 'sub_1', 4900, 'ch_renew'));\n+\n+      const tampered = payload.replace('\"amount_paid\":4900', '\"amount_paid\":1');\n+      await expect(call(ctl, tampered, signStripePayload({ payload, secret: SECRET }))).rejects.toBeInstanceOf(\n+        BadRequestException,\n+      );\n+      await expect(call(ctl, payload, '')).rejects.toBeInstanceOf(BadRequestException);\n+      await expect(\n+        call(ctl, payload, signStripePayload({ payload, secret: 'test-signing-secret-other' })),\n+      ).rejects.toBeInstanceOf(BadRequestException);\n+      expect(w.row('clientPurchase', 'cp-1')).toMatchObject({ entitlement_active: false });\n+\n+      await expect(call(ctl, payload, signStripePayload({ payload, secret: SECRET }))).resolves.toEqual({\n+        processed: true,\n+      });\n+      expect(w.row('clientPurchase', 'cp-1')).toMatchObject({ entitlement_active: true });\n+    });\n+  });\n+});"
+    },
+    {
+      "sha": "cd1a2ae0e6580c0b10558a7f0f0ceed1a12f45c0",
+      "filename": "test/money-webhook-regrant.live.spec.ts",
+      "status": "added",
+      "additions": 120,
+      "deletions": 0,
+      "changes": 120,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5acc19e74707889449bce70e627a5bcfcd5ae8ee/test%2Fmoney-webhook-regrant.live.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/5acc19e74707889449bce70e627a5bcfcd5ae8ee/test%2Fmoney-webhook-regrant.live.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fmoney-webhook-regrant.live.spec.ts?ref=5acc19e74707889449bce70e627a5bcfcd5ae8ee",
+      "patch": "@@ -0,0 +1,120 @@\n+// MONEY-WEBHOOK-124 B-WH-1 on real PostgreSQL (mwb-3-live-tests, gated on MWB3_TEST_DATABASE_URL).\n+// A client's plan was granted once, then locked for an unpaid renewal; the client pays. The\n+// real BillingService -> CheckoutWebhookHandlerService -> PurchaseFanoutService path must\n+// give access back on that delivery. Before the fix the repeat grant's coach-alert marker\n+// INSERT raised a unique violation inside the webhook transaction, PostgreSQL aborted it,\n+// and every Stripe delivery failed (25P02), so the client paid and stayed locked out.\n+import { BillingService } from '../src/billing/billing.service';\n+import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';\n+import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';\n+import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';\n+import { PrismaService } from '../src/prisma.service';\n+import { bootstrapTestSchema } from './utils/bootstrap-test-schema';\n+import { resetPublicSchema } from './utils/reset-public-schema';\n+\n+const DB_URL = process.env.MWB3_TEST_DATABASE_URL || '';\n+const liveDescribe = DB_URL ? describe : describe.skip;\n+const [CLIENT, COACH, PKG, SUB] = ['l124-client', 'l124-coach', 'l124-pkg', 'sub_l124'];\n+const PERIOD_END = Math.floor(Date.now() / 1000) + 30 * 86_400;\n+\n+class StripeStub extends StripeConnectApiService {\n+  sub = {\n+    id: SUB,\n+    status: 'active',\n+    customer: 'cus_l124',\n+    current_period_end: PERIOD_END,\n+    cancel_at_period_end: false,\n+    canceled_at: null,\n+    default_payment_method: 'pm_l124',\n+    metadata: {},\n+  };\n+  retrieveSubscription = jest.fn(async (): Promise<any> => this.sub);\n+  retrieveSubscriptionForCheckout = jest.fn(async (): Promise<any> => this.sub);\n+}\n+\n+liveDescribe('MONEY-WEBHOOK-124 B-WH-1 repeat grant on real PostgreSQL', () => {\n+  let prisma: PrismaService;\n+  let billing: BillingService;\n+  const splits = { onChargeSucceeded: jest.fn(async () => undefined) };\n+\n+  beforeAll(async () => {\n+    prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });\n+    await prisma.$connect();\n+    await resetPublicSchema(prisma);\n+    await bootstrapTestSchema(prisma);\n+    for (const id of [CLIENT, COACH]) {\n+      await prisma.user.create({ data: { id, supabase_id: id, email: `${id}@example.test`, name: id } });\n+    }\n+    await prisma.coachPackage.create({\n+      data: { id: PKG, coach_id: COACH, name: 'Monthly coaching', amount_cents: 4900 },\n+    });\n+    const fanout = new PurchaseFanoutService(undefined, undefined, undefined, prisma);\n+    // Reflect.construct keeps the partial doubles untyped without a banned cast.\n+    const handler: CheckoutWebhookHandlerService = Reflect.construct(CheckoutWebhookHandlerService, [\n+      prisma,\n+      new StripeStub(),\n+      splits,\n+      undefined,\n+      undefined,\n+      fanout,\n+    ]);\n+    billing = Reflect.construct(BillingService, [\n+      prisma,\n+      { capture: jest.fn(), identify: jest.fn() },\n+      { write: jest.fn(async () => undefined), list: jest.fn(async () => []) },\n+      undefined,\n+      handler,\n+    ]);\n+  }, 180_000);\n+  afterAll(async () => {\n+    if (prisma) await prisma.$disconnect();\n+  });\n+\n+  it('a locked-out client pays the overdue renewal: invoice.paid gives access back on the first delivery', async () => {\n+    await prisma.clientPurchase.create({\n+      data: {\n+        id: 'cp-l124',\n+        client_user_id: CLIENT,\n+        coach_user_id: COACH,\n+        package_id: PKG,\n+        amount_cents: 4900,\n+        billing_type: 'recurring',\n+        stripe_subscription_id: SUB,\n+        stripe_checkout_session_id: SUB,\n+        stripe_customer_id: 'cus_l124',\n+        idempotency_key: 'cp-l124',\n+        status: 'unpaid',\n+        entitlement_active: false,\n+      },\n+    });\n+    // The first grant ran the fan-out and claimed the coach's \"new purchase\" alert.\n+    await prisma.purchaseFanout.create({\n+      data: { purchase_id: 'cp-l124', entrypoint: 'in_app_ps', state: 'succeeded' },\n+    });\n+    await prisma.dripResolverMarker.create({\n+      data: { purpose: 'coach_new_purchase', purchase_id: 'cp-l124', content_id: '-' },\n+    });\n+\n+    const paid = {\n+      id: 'evt_l124_paid',\n+      type: 'invoice.paid',\n+      data: {\n+        object: { id: 'in_l124', subscription: SUB, amount_paid: 4900, currency: 'usd', charge: 'ch_l124' },\n+      },\n+    };\n+    await expect(billing.handleEvent(paid)).resolves.toEqual({ processed: true });\n+\n+    const row = await prisma.clientPurchase.findUniqueOrThrow({ where: { id: 'cp-l124' } });\n+    expect(row).toMatchObject({ status: 'active', entitlement_active: true });\n+    const done = await prisma.stripeProcessedEvent.findUniqueOrThrow({\n+      where: { stripe_event_id: 'evt_l124_paid' },\n+    });\n+    expect(done.handler_completed_at).toBeInstanceOf(Date);\n+    expect(splits.onChargeSucceeded).toHaveBeenCalledWith(\n+      expect.objectContaining({ invoice_amount_cents: 4900, invoice_charge_id: 'ch_l124' }),\n+    );\n+    expect(\n+      await prisma.dripResolverMarker.count({ where: { purchase_id: 'cp-l124', purpose: 'coach_new_purchase' } }),\n+    ).toBe(1);\n+  });\n+});"
+    },
+    {
+      "sha": "23087672e0e7f43b9610c7f7d82b24cc105773fd",
+      "filename": "test/purchase-fanout-coach-new-purchase.spec.ts",
+      "status": "modified",
+      "additions": 15,
+      "deletions": 15,
+      "changes": 30,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/5acc19e74707889449bce70e627a5bcfcd5ae8ee/test%2Fpurchase-fanout-coach-new-purchase.spec.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-backend/raw/5acc19e74707889449bce70e627a5bcfcd5ae8ee/test%2Fpurchase-fanout-coach-new-purchase.spec.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-backend/contents/test%2Fpurchase-fanout-coach-new-purchase.spec.ts?ref=5acc19e74707889449bce70e627a5bcfcd5ae8ee",
+      "patch": "@@ -84,22 +84,22 @@ function makeTxBundle(state: MockTxState) {\n       ),\n     },\n     dripResolverMarker: {\n-      create: jest.fn(async ({ data }: any) => {\n-        const dupe = state.markers.find(\n-          (m) =>\n-            m.purpose === data.purpose &&\n-            m.purchase_id === data.purchase_id &&\n-            m.content_id === data.content_id,\n-        );\n-        if (dupe) {\n-          // Simulate Prisma P2002 unique violation.\n-          const err = new Error('Unique constraint failed (P2002)') as any;\n-          err.code = 'P2002';\n-          throw err;\n+      // ON CONFLICT DO NOTHING (createMany + skipDuplicates): a duplicate\n+      // inserts nothing and never raises inside the webhook transaction.\n+      createMany: jest.fn(async ({ data }: any) => {\n+        let count = 0;\n+        for (const row of data) {\n+          const dupe = state.markers.find(\n+            (m) =>\n+              m.purpose === row.purpose &&\n+              m.purchase_id === row.purchase_id &&\n+              m.content_id === row.content_id,\n+          );\n+          if (dupe) continue;\n+          state.markers.push({ id: `marker_${state.markers.length}`, ...row });\n+          count += 1;\n         }\n-        const row = { id: `marker_${state.markers.length}`, ...data };\n-        state.markers.push(row);\n-        return row;\n+        return { count };\n       }),\n     },\n     user: {"
+    }
+  ]
+}

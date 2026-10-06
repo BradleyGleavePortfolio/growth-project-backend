@@ -1,0 +1,255 @@
+{
+  "repo": "mobile",
+  "number": 430,
+  "head": "1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+  "base": "a1904f2f4e8d175a38d6eb627303a2312e2b1ace",
+  "title": "fix(progress): weights show, check-ins save, coach weight trend reads forward (AUDIT-06-125, T4)",
+  "body": "**Tier:** T4 (client health data: weight logs and daily check-ins; coach view of a client's progress). Mobile only.\n**Why:** AUDIT-06-125 (agent 125, owner 13:50 10-06 \"audit every single one of these areas, seperately, in depth\"). Three normal-day Bs in Progress: weights never show, check-ins never save, the coach reads every weight trend backwards.\n**T4 trigger scan:** health data read/write paths only. No auth, tenancy, RLS, money, credentials or destructive-data change. Payload change only removes two keys the server already rejects. No new endpoint, no new flag, no dependency, no migration.\n**T3 trigger scan:** shared parser moved from ProgressScreen.tsx into `screens/client/progress/weightHistory.ts` (re-exported from ProgressScreen, so no import breaks). No navigation, store or API client behaviour change beyond the type of the check-in body.\n**Bounded T1:** copy and unit label on the coach Progress tab.\n**Canonical builder:** AUDIT-06-125 (Claude Opus 5.5).\n**Acceptance evidence:** new tests below fail on main; PR CI (jest + tsc + lint) is the proof. Works against the CURRENT production backend (ec12a4b3): it reads the body production already sends and sends only keys production already accepts.\n\n## Fixes\n- **B1** A client logs a weight, returns to Progress and still sees \"Log your weight to see your chart\", \"--\" for Start/Current and no entries: GET /weight/history answers `{ logs, height_cm }` and the screen only read a bare array. Now reads `logs` (bare array still accepted). The existing chart test mocked an array; it now mocks the real body.\n- **B2** A client fills in Habits & Check-in and taps Save Check-in: every save fails with a 400 and the coach never gets a check-in, because the app sent `sleep_quality` and `stress` and the server DTO rejects unknown keys (`forbidNonWhitelisted`). The body is now built by `buildCheckInPayload` with only DTO keys; the Quality stars and Stress card, which production cannot store, are removed from the form.\n- **B3** A coach opens a client's Progress tab and sees the newest weight as \"First\", the oldest as \"Latest\" and the change with the wrong sign (down 10 lb read +10.0 in warning colour), because the summary sends weight_logs newest first. The tab now orders by day; the list stays newest first; each entry shows \"lbs\".\n- **U1** My Report weekly weights showed a raw ISO date, a blank weight and \"--\" for Current (rows carry `weight_lbs`, the screen read `weight`). Now uses the Progress parser.\n- **U2** Coach client Timeline: every check-in read \"Mood: undefined/5\" with \"Invalid Date\" (`mood_rating` is not a field; a time was appended to an ISO string), every workout read \"Workout\". Now real mood/energy/sleep, a valid date, and `workout_name`.\n- **U3** Progress entries showed the day before the logged day for US clients (the date-only column arrives as UTC midnight and was bucketed to local time). Now keeps the calendar day.\n\n## Tests (fail on main)\n- `src/screens/client/progress/__tests__/weightHistory.test.ts` (B1, U3)\n- `src/screens/client/__tests__/ProgressScreen.chart.test.tsx` default mock = real server body (B1)\n- `src/screens/client/habits/__tests__/checkInPayload.test.ts` (B2)\n- `src/screens/coach/client-detail/__tests__/ProgressTab.test.tsx` (B3)\n- `src/screens/coach/client-detail/__tests__/checkInSubtitle.test.ts` (U2)\n\n## Overlap\nNone of the open agent 124 PRs touch these files. m#408 (Clients list \"N to review\" badge) depends on coach check-in review, which no app screen calls yet (reported to the operator, not in this PR).\n\nSize: 431 changed lines (294 + / 137 -), tests included.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 294,
+  "deletions": 137,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/430",
+  "comments": [],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "neutral",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112505788461",
+      "id": 112505788461,
+      "output": {
+        "title": "1 configuration not found",
+        "summary": "**Warning**: Code scanning cannot determine the alerts introduced by this pull request, because 1 configuration present on `refs/heads/main` was not found:\n\n### Actions workflow (`codeql.yml`)\n\n* :question:&nbsp;&nbsp;`/language:javascript-typescript`\n\n\n[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A430+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112505788461/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "queued",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532601629/job/112505460662",
+      "id": 112505460662,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112505460662/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532601629/job/112505460336",
+      "id": 112505460336,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112505460336/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "in_progress",
+      "conclusion": null,
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37532601546/job/112505459886",
+      "id": 112505459886,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112505459886/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "0220bd0847d731778794782936ed6403b95ac705",
+      "filename": "src/hooks/useApi.ts",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 2,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fhooks%2FuseApi.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fhooks%2FuseApi.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fhooks%2FuseApi.ts?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -389,8 +389,6 @@ export function useSaveCheckIn() {\n       mood?: number | null;\n       energy?: number | null;\n       sleep_hours?: number | null;\n-      sleep_quality?: number | null;\n-      stress?: number | null;\n       weight_kg?: number | null;\n       notes?: string | null;\n     }) => checkInsApi.save(data).then((r) => r.data),"
+    },
+    {
+      "sha": "daa27ef46815f8f3e7c50447a9ebf505d350bc79",
+      "filename": "src/screens/client/HabitsScreen.tsx",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 22,
+      "changes": 26,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2FHabitsScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2FHabitsScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2FHabitsScreen.tsx?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -40,6 +40,7 @@ import { makeStyles } from './habits/styles';\n import { makeHABIT_COLORS, type HabitView, type TabMode } from './habits/constants';\n import { HabitCard } from './habits/HabitCard';\n import { MoodEnergyPicker } from './habits/MoodEnergyPicker';\n+import { buildCheckInPayload } from './habits/checkInPayload';\n import { AddHabitSheet } from './habits/AddHabitSheet';\n import CompetencePill from '../../components/roman/CompetencePill';\n import { featureFlags } from '../../config/featureFlags';\n@@ -67,8 +68,6 @@ export default function HabitsScreen() {\n   const [mood, setMood] = useState(3);\n   const [energy, setEnergy] = useState(3);\n   const [sleepHours, setSleepHours] = useState(7);\n-  const [sleepQuality, setSleepQuality] = useState(3);\n-  const [stress, setStress] = useState(3);\n   const [notes, setNotes] = useState('');\n   const [checkInToast, setCheckInToast] = useState(false);\n   const [lastCheckInDate, setLastCheckInDate] = useState<string | null>(null);\n@@ -92,8 +91,6 @@ export default function HabitsScreen() {\n           mood?: number;\n           energy?: number;\n           sleep_hours?: number;\n-          sleep_quality?: number;\n-          stress?: number;\n           notes?: string;\n           date?: string;\n           coach_reviewed_at?: string | null;\n@@ -108,8 +105,6 @@ export default function HabitsScreen() {\n     if (row.mood != null) setMood(Number(row.mood));\n     if (row.energy != null) setEnergy(Number(row.energy));\n     if (row.sleep_hours != null) setSleepHours(Number(row.sleep_hours));\n-    if (row.sleep_quality != null) setSleepQuality(Number(row.sleep_quality));\n-    if (row.stress != null) setStress(Number(row.stress));\n     if (row.notes) setNotes(String(row.notes));\n     if (row.date) setLastCheckInDate(String(row.date).slice(0, 10));\n   }, [todayCheckInQ.data]);\n@@ -223,19 +218,10 @@ export default function HabitsScreen() {\n   };\n \n   const handleSaveCheckIn = () => {\n+    // Only fields POST /check-ins accepts: sending sleep_quality / stress\n+    // made every save fail with a 400 and the coach never got a check-in.\n     saveCheckIn.mutate(\n-      {\n-        date: today,\n-        mood,\n-        energy,\n-        sleep_hours: sleepHours,\n-        // B10: previously dropped on the floor; the form collected these\n-        // values but the mutation payload omitted them, so the coach\n-        // dashboard never saw stress/sleep_quality.\n-        sleep_quality: sleepQuality,\n-        stress,\n-        notes: notes || null,\n-      },\n+      buildCheckInPayload({ date: today, mood, energy, sleepHours, notes }),\n       {\n         onSuccess: () => {\n           setLastCheckInDate(today);\n@@ -390,10 +376,6 @@ export default function HabitsScreen() {\n               setEnergy={setEnergy}\n               sleepHours={sleepHours}\n               setSleepHours={setSleepHours}\n-              sleepQuality={sleepQuality}\n-              setSleepQuality={setSleepQuality}\n-              stress={stress}\n-              setStress={setStress}\n               notes={notes}\n               setNotes={setNotes}\n               colors={colors}"
+    },
+    {
+      "sha": "15d23a3b972accfb1a9a4277f46873541403613c",
+      "filename": "src/screens/client/ProgressScreen.tsx",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 40,
+      "changes": 44,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2FProgressScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2FProgressScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2FProgressScreen.tsx?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -43,6 +43,9 @@ import { useCurrentUser } from '../../hooks/useCurrentUser';\n import { shadows as shadowTokens } from '../../theme/tokens';\n import { WeightLog } from '../../types';\n import { getTodayString, bucketDateLocal } from '../../utils/date';\n+import { parseWeightLogRow, weightHistoryRows } from './progress/weightHistory';\n+\n+export { parseWeightLogRow, weightHistoryRows };\n import FadeInView from '../../components/FadeInView';\n import { useTheme, ThemeColors } from '../../theme/ThemeProvider';\n import { errorMessage } from '../../types/common';\n@@ -75,45 +78,6 @@ export function streakMilestoneTier(loggingStreak: number): RomanStreakTier | nu\n   return null;\n }\n \n-/**\n- * Typed parser for one weight-history row from the API. The server response is\n- * untyped at the boundary and may send either `date` or `created_at`, and\n- * either `weight_lbs` or `weight`. This validates the row shape and normalises\n- * it into a `WeightLog`, returning `null` for any row missing the fields a\n- * `WeightLog` requires (an id and a numeric weight) so callers can drop it\n- * instead of force-casting the untyped result through a double assertion (R69).\n- * The date is bucketed to the user's LOCAL calendar day so the streak compare\n- * is tz-correct on either side of the date line (see audit P0-3).\n- */\n-export function parseWeightLogRow(row: unknown, fallbackUserId: string): WeightLog | null {\n-  if (typeof row !== 'object' || row === null) return null;\n-  const r = row as Record<string, unknown>;\n-\n-  if (typeof r.id !== 'string' || r.id.length === 0) return null;\n-\n-  const rawWeight = typeof r.weight_lbs === 'number' ? r.weight_lbs : r.weight;\n-  if (typeof rawWeight !== 'number' || Number.isNaN(rawWeight)) return null;\n-\n-  const rawDateSource = typeof r.date === 'string' ? r.date : r.created_at;\n-  const rawDate = typeof rawDateSource === 'string' ? rawDateSource : '';\n-  const normDate = /^\\d{4}-\\d{2}-\\d{2}$/.test(rawDate)\n-    ? rawDate.slice(0, 10)\n-    : bucketDateLocal(new Date(rawDate));\n-\n-  const createdAt = typeof r.created_at === 'string' ? r.created_at : rawDate;\n-\n-  return {\n-    id: r.id,\n-    userId: typeof r.user_id === 'string' && r.user_id.length > 0 ? r.user_id : fallbackUserId,\n-    coachId: '',\n-    date: normDate,\n-    weight: rawWeight,\n-    unit: 'lbs',\n-    notes: typeof r.notes === 'string' ? r.notes : '',\n-    createdAt,\n-  };\n-}\n-\n const SCREEN_WIDTH = Dimensions.get('window').width;\n \n function CalorieRing({\n@@ -320,7 +284,7 @@ export default function ProgressScreen() {\n       // Boundary parse: each untyped server row is validated/normalised into a\n       // WeightLog via parseWeightLogRow; rows missing an id or numeric weight\n       // are dropped rather than force-cast through a double assertion (R69).\n-      const rawRows: unknown[] = Array.isArray(res.data) ? res.data : [];\n+      const rawRows: unknown[] = weightHistoryRows(res.data);\n       const logs: WeightLog[] = rawRows\n         .map((row) => parseWeightLogRow(row, userId))\n         .filter((x): x is WeightLog => x !== null);"
+    },
+    {
+      "sha": "b766b4437b6349c585a54c97c721fb6af0a5dfdc",
+      "filename": "src/screens/client/ReportScreen.tsx",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 1,
+      "changes": 9,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2FReportScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2FReportScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2FReportScreen.tsx?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -9,6 +9,7 @@ import {\n import { Ionicons } from '@expo/vector-icons';\n import { useCurrentUser } from '../../hooks/useCurrentUser';\n import { logApi, weightApi } from '../../services/api';\n+import { parseWeightLogRow, weightHistoryRows } from './progress/weightHistory';\n import { WeightLog } from '../../types';\n import { getTodayString } from '../../utils/date';\n import type { NavigationProp, ParamListBase } from '@react-navigation/native';\n@@ -37,7 +38,13 @@ export default function ReportScreen({ navigation }: { navigation: NavigationPro\n     if (!currentUser) return;\n     try {\n       const weightRes = await weightApi.getHistory(7);\n-      const logs = weightRes.data?.logs || weightRes.data || [];\n+      // Rows carry weight_lbs and an ISO date; normalise them with the same\n+      // parser the Progress screen uses so the report shows real numbers.\n+      const uid = currentUser.id;\n+      const logs = weightHistoryRows(weightRes.data)\n+        .map((row) => parseWeightLogRow(row, uid))\n+        .filter((x): x is WeightLog => x !== null)\n+        .sort((a, b) => a.date.localeCompare(b.date));\n       setWeeklyWeights(logs.slice(-7));\n     } catch (err) {\n       // Read-only weight history; empty chart is the graceful fallback."
+    },
+    {
+      "sha": "b401c087961dd730d3e423414068c96740477612",
+      "filename": "src/screens/client/__tests__/ProgressScreen.chart.test.tsx",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 5,
+      "changes": 16,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2F__tests__%2FProgressScreen.chart.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2F__tests__%2FProgressScreen.chart.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2F__tests__%2FProgressScreen.chart.test.tsx?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -36,11 +36,17 @@ jest.mock('../progress/ProgressChartCard', () => {\n });\n \n // \u2500\u2500 Data + environment mocks (inert; just enough to mount). \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n-const mockGetHistory = jest.fn(async () => ({\n-  data: [\n-    { id: '1', date: '2026-06-01', weight_lbs: 185 },\n-    { id: '2', date: '2026-06-08', weight_lbs: 183 },\n-  ],\n+// The real GET /weight/history body: `{ logs, height_cm }`, each row's date a\n+// calendar day sent as an ISO midnight (AUDIT-06-125 B1: main read only a bare\n+// array, so the chart never rendered for a real client).\n+const mockGetHistory = jest.fn(async (): Promise<{ data: unknown }> => ({\n+  data: {\n+    logs: [\n+      { id: '1', date: '2026-06-01T00:00:00.000Z', weight_lbs: 185 },\n+      { id: '2', date: '2026-06-08T00:00:00.000Z', weight_lbs: 183 },\n+    ],\n+    height_cm: null,\n+  },\n }));\n jest.mock('../../../services/api', () => ({\n   weightApi: {"
+    },
+    {
+      "sha": "b39e389241e1f9e607b019602f3b772f26dadb4f",
+      "filename": "src/screens/client/habits/MoodEnergyPicker.tsx",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 51,
+      "changes": 52,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2Fhabits%2FMoodEnergyPicker.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2Fhabits%2FMoodEnergyPicker.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2Fhabits%2FMoodEnergyPicker.tsx?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -2,7 +2,7 @@ import React from 'react';\n import { Text, TextInput, TouchableOpacity, View } from 'react-native';\n import { Ionicons } from '@expo/vector-icons';\n import type { ThemeColors } from '../../../theme/ThemeProvider';\n-import { ENERGY_LABELS, MOOD_EMOJIS, MOOD_LABELS, STRESS_LABELS } from './constants';\n+import { ENERGY_LABELS, MOOD_EMOJIS, MOOD_LABELS } from './constants';\n import type { HabitsStyles } from './styles';\n \n export function MoodEnergyPicker({\n@@ -12,10 +12,6 @@ export function MoodEnergyPicker({\n   setEnergy,\n   sleepHours,\n   setSleepHours,\n-  sleepQuality,\n-  setSleepQuality,\n-  stress,\n-  setStress,\n   notes,\n   setNotes,\n   colors,\n@@ -27,10 +23,6 @@ export function MoodEnergyPicker({\n   setEnergy: (n: number) => void;\n   sleepHours: number;\n   setSleepHours: React.Dispatch<React.SetStateAction<number>>;\n-  sleepQuality: number;\n-  setSleepQuality: (n: number) => void;\n-  stress: number;\n-  setStress: (n: number) => void;\n   notes: string;\n   setNotes: (s: string) => void;\n   colors: ThemeColors;\n@@ -102,48 +94,6 @@ export function MoodEnergyPicker({\n               </TouchableOpacity>\n             </View>\n           </View>\n-          <View style={styles.sleepControl}>\n-            <Text style={styles.sleepLabel}>Quality</Text>\n-            <View style={styles.qualityRow}>\n-              {[1, 2, 3, 4, 5].map((val) => (\n-                <TouchableOpacity key={val} onPress={() => setSleepQuality(val)}>\n-                  <Ionicons\n-                    name={val <= sleepQuality ? 'star' : 'star-outline'}\n-                    size={22}\n-                    color={val <= sleepQuality ? colors.warning : colors.textMuted}\n-                  />\n-                </TouchableOpacity>\n-              ))}\n-            </View>\n-          </View>\n-        </View>\n-      </View>\n-\n-      {/* Stress */}\n-      <View style={styles.checkInCard}>\n-        <Text style={styles.checkInLabel}>Stress Level</Text>\n-        <View style={styles.ratingRow}>\n-          {[1, 2, 3, 4, 5].map((val) => (\n-            <TouchableOpacity\n-              key={val}\n-              style={[styles.ratingBtn, stress === val && styles.ratingBtnActive]}\n-              onPress={() => setStress(val)}\n-            >\n-              <View\n-                style={[\n-                  styles.stressDot,\n-                  {\n-                    backgroundColor:\n-                      val <= 2 ? colors.primary : val === 3 ? colors.warning : colors.error,\n-                    opacity: stress === val ? 1 : 0.4,\n-                  },\n-                ]}\n-              />\n-              <Text style={[styles.ratingLabel, stress === val && styles.ratingLabelActive]}>\n-                {STRESS_LABELS[val]}\n-              </Text>\n-            </TouchableOpacity>\n-          ))}\n         </View>\n       </View>\n "
+    },
+    {
+      "sha": "f8f11c2dc153e95290d33914804a4f9d5614fcd5",
+      "filename": "src/screens/client/habits/__tests__/checkInPayload.test.ts",
+      "status": "added",
+      "additions": 36,
+      "deletions": 0,
+      "changes": 36,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2Fhabits%2F__tests__%2FcheckInPayload.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2Fhabits%2F__tests__%2FcheckInPayload.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2Fhabits%2F__tests__%2FcheckInPayload.test.ts?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -0,0 +1,36 @@\n+/**\n+ * AUDIT-06-125 B2: POST /check-ins rejects any key its DTO does not list\n+ * (forbidNonWhitelisted). Main sent sleep_quality and stress, so every daily\n+ * check-in save failed with a 400.\n+ */\n+import { buildCheckInPayload, CHECK_IN_KEYS } from '../checkInPayload';\n+\n+describe('buildCheckInPayload', () => {\n+  it('sends only keys the server accepts', () => {\n+    const body = buildCheckInPayload({\n+      date: '2026-10-06',\n+      mood: 4,\n+      energy: 3,\n+      sleepHours: 7.5,\n+      notes: 'Slept well',\n+    });\n+    const allowed: readonly string[] = CHECK_IN_KEYS;\n+    for (const key of Object.keys(body)) {\n+      expect(allowed).toContain(key);\n+    }\n+    expect(body).toEqual({\n+      date: '2026-10-06',\n+      mood: 4,\n+      energy: 3,\n+      sleep_hours: 7.5,\n+      notes: 'Slept well',\n+    });\n+  });\n+\n+  it('sends null notes when the box is empty', () => {\n+    const body = buildCheckInPayload({ date: '2026-10-06', mood: 3, energy: 3, sleepHours: 7, notes: '' });\n+    expect(body.notes).toBeNull();\n+    expect(Object.keys(body)).not.toContain('sleep_quality');\n+    expect(Object.keys(body)).not.toContain('stress');\n+  });\n+});"
+    },
+    {
+      "sha": "531f6fb49939c93a0c2c321e376e74c85bb3ce9e",
+      "filename": "src/screens/client/habits/checkInPayload.ts",
+      "status": "added",
+      "additions": 22,
+      "deletions": 0,
+      "changes": 22,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2Fhabits%2FcheckInPayload.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2Fhabits%2FcheckInPayload.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2Fhabits%2FcheckInPayload.ts?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -0,0 +1,22 @@\n+/**\n+ * The body for POST /check-ins. The server DTO accepts exactly these keys and\n+ * rejects any other (ValidationPipe forbidNonWhitelisted), so a stray field\n+ * fails the whole save with a 400. Keep this list equal to CreateCheckInDto.\n+ */\n+export const CHECK_IN_KEYS = ['date', 'mood', 'energy', 'sleep_hours', 'weight_kg', 'notes'] as const;\n+\n+export function buildCheckInPayload(form: {\n+  date: string;\n+  mood: number;\n+  energy: number;\n+  sleepHours: number;\n+  notes: string;\n+}): { date: string; mood: number; energy: number; sleep_hours: number; notes: string | null } {\n+  return {\n+    date: form.date,\n+    mood: form.mood,\n+    energy: form.energy,\n+    sleep_hours: form.sleepHours,\n+    notes: form.notes || null,\n+  };\n+}"
+    },
+    {
+      "sha": "9a2e92078070ecf2d1899d42f36ba2f0328fac2b",
+      "filename": "src/screens/client/progress/__tests__/weightHistory.test.ts",
+      "status": "added",
+      "additions": 42,
+      "deletions": 0,
+      "changes": 42,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2Fprogress%2F__tests__%2FweightHistory.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2Fprogress%2F__tests__%2FweightHistory.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2Fprogress%2F__tests__%2FweightHistory.test.ts?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -0,0 +1,42 @@\n+/**\n+ * AUDIT-06-125 B1 / U3: GET /weight/history answers `{ logs, height_cm }` and\n+ * each row's `date` is a calendar day sent as \"YYYY-MM-DDT00:00:00.000Z\".\n+ * Main read only a bare array (so Progress never showed a weight) and moved\n+ * every US entry to the day before.\n+ */\n+import { parseWeightLogRow, weightHistoryRows } from '../weightHistory';\n+\n+const serverRow = {\n+  id: 'w1',\n+  user_id: 'user-1',\n+  date: '2026-10-06T00:00:00.000Z',\n+  weight_lbs: 182.4,\n+  notes: 'after run',\n+  logged_at: '2026-10-06T15:02:11.000Z',\n+};\n+\n+describe('weightHistoryRows', () => {\n+  it('reads the rows from the real server envelope', () => {\n+    expect(weightHistoryRows({ logs: [serverRow], height_cm: 178 })).toEqual([serverRow]);\n+  });\n+\n+  it('still accepts a bare array', () => {\n+    expect(weightHistoryRows([serverRow])).toEqual([serverRow]);\n+  });\n+\n+  it('answers no rows for anything else', () => {\n+    expect(weightHistoryRows(null)).toEqual([]);\n+    expect(weightHistoryRows({ height_cm: 178 })).toEqual([]);\n+  });\n+});\n+\n+describe('parseWeightLogRow', () => {\n+  it('keeps the logged calendar day of a date-only column', () => {\n+    const log = parseWeightLogRow(serverRow, 'fallback');\n+    expect(log).not.toBeNull();\n+    expect(log?.date).toBe('2026-10-06');\n+    expect(log?.weight).toBe(182.4);\n+    expect(log?.unit).toBe('lbs');\n+    expect(log?.notes).toBe('after run');\n+  });\n+});"
+    },
+    {
+      "sha": "7232d1ce16cf4a6ab571c91cd24096c8fc00369a",
+      "filename": "src/screens/client/progress/weightHistory.ts",
+      "status": "added",
+      "additions": 58,
+      "deletions": 0,
+      "changes": 58,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2Fprogress%2FweightHistory.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fclient%2Fprogress%2FweightHistory.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2Fprogress%2FweightHistory.ts?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -0,0 +1,58 @@\n+import { WeightLog } from '../../../types';\n+import { bucketDateLocal } from '../../../utils/date';\n+\n+/**\n+ * Typed parser for one weight-history row from the API. The server response is\n+ * untyped at the boundary and may send either `date` or `created_at`, and\n+ * either `weight_lbs` or `weight`. This validates the row shape and normalises\n+ * it into a `WeightLog`, returning `null` for any row missing the fields a\n+ * `WeightLog` requires (an id and a numeric weight) so callers can drop it\n+ * instead of force-casting the untyped result through a double assertion (R69).\n+ * The date is bucketed to the user's LOCAL calendar day so the streak compare\n+ * is tz-correct on either side of the date line (see audit P0-3).\n+ */\n+export function parseWeightLogRow(row: unknown, fallbackUserId: string): WeightLog | null {\n+  if (typeof row !== 'object' || row === null) return null;\n+  const r = row as Record<string, unknown>;\n+\n+  if (typeof r.id !== 'string' || r.id.length === 0) return null;\n+\n+  const rawWeight = typeof r.weight_lbs === 'number' ? r.weight_lbs : r.weight;\n+  if (typeof rawWeight !== 'number' || Number.isNaN(rawWeight)) return null;\n+\n+  const rawDateSource = typeof r.date === 'string' ? r.date : r.created_at;\n+  const rawDate = typeof rawDateSource === 'string' ? rawDateSource : '';\n+  // WeightLog.date is a calendar-day column: the server sends it as\n+  // \"YYYY-MM-DDT00:00:00.000Z\". Its first ten characters ARE the logged day;\n+  // converting that UTC midnight to local time put every US entry on the day\n+  // before. Only a real timestamp (created_at fallback) is bucketed locally.\n+  const normDate = typeof r.date === 'string' && /^\\d{4}-\\d{2}-\\d{2}/.test(rawDate)\n+    ? rawDate.slice(0, 10)\n+    : bucketDateLocal(new Date(rawDate));\n+\n+  const createdAt = typeof r.created_at === 'string' ? r.created_at : rawDate;\n+\n+  return {\n+    id: r.id,\n+    userId: typeof r.user_id === 'string' && r.user_id.length > 0 ? r.user_id : fallbackUserId,\n+    coachId: '',\n+    date: normDate,\n+    weight: rawWeight,\n+    unit: 'lbs',\n+    notes: typeof r.notes === 'string' ? r.notes : '',\n+    createdAt,\n+  };\n+}\n+\n+/**\n+ * GET /weight/history answers `{ logs, height_cm }`. Read the rows from\n+ * `logs`, and still accept a bare array so an older server keeps working.\n+ */\n+export function weightHistoryRows(body: unknown): unknown[] {\n+  if (Array.isArray(body)) return body;\n+  if (typeof body === 'object' && body !== null) {\n+    const logs = (body as Record<string, unknown>).logs;\n+    if (Array.isArray(logs)) return logs;\n+  }\n+  return [];\n+}"
+    },
+    {
+      "sha": "5b96091c14aa0646ae359730b7545be17c960dae",
+      "filename": "src/screens/coach/client-detail/ProgressTab.tsx",
+      "status": "modified",
+      "additions": 14,
+      "deletions": 9,
+      "changes": 23,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fcoach%2Fclient-detail%2FProgressTab.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fcoach%2Fclient-detail%2FProgressTab.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2Fclient-detail%2FProgressTab.tsx?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -14,19 +14,27 @@ export function ProgressTab({\n   colors: ThemeColors;\n   styles: ClientDetailStyles;\n }) {\n+  // The summary sends weight_logs newest first. Order by day explicitly so\n+  // First is the oldest entry, Latest the newest and Change = latest - first\n+  // (it read backwards: a client down 10 lb showed +10.0).\n+  const ascending = [...weightLogs].sort((x, y) => x.date.localeCompare(y.date));\n+  const first = ascending[0]?.weight;\n+  const latest = ascending[ascending.length - 1]?.weight;\n+  const change = (latest ?? 0) - (first ?? 0);\n+  const newestFirst = [...ascending].reverse();\n   return (\n     <>\n       <Text style={styles.sectionTitle}>Weight (Last 30 Days)</Text>\n       {weightLogs.length > 0 ? (\n         <>\n           <View style={styles.progressStatsRow}>\n             <View style={styles.progressStat}>\n-              <Text style={styles.progressStatValue}>{weightLogs[0]?.weight || '\u2014'}</Text>\n+              <Text style={styles.progressStatValue}>{first ?? '\u2014'}</Text>\n               <Text style={styles.progressStatLabel}>First</Text>\n             </View>\n             <View style={styles.progressStat}>\n               <Text style={[styles.progressStatValue, { color: colors.primary }]}>\n-                {weightLogs[weightLogs.length - 1]?.weight || '\u2014'}\n+                {latest ?? '\u2014'}\n               </Text>\n               <Text style={styles.progressStatLabel}>Latest</Text>\n             </View>\n@@ -35,23 +43,20 @@ export function ProgressTab({\n                 style={[\n                   styles.progressStatValue,\n                   {\n-                    color:\n-                      (weightLogs[weightLogs.length - 1]?.weight || 0) - (weightLogs[0]?.weight || 0) <= 0\n-                        ? colors.success\n-                        : colors.warning,\n+                    color: change <= 0 ? colors.success : colors.warning,\n                   },\n                 ]}\n               >\n-                {((weightLogs[weightLogs.length - 1]?.weight || 0) - (weightLogs[0]?.weight || 0)).toFixed(1)}\n+                {change > 0 ? '+' : ''}{change.toFixed(1)}\n               </Text>\n               <Text style={styles.progressStatLabel}>Change</Text>\n             </View>\n           </View>\n-          {weightLogs.map((log) => (\n+          {newestFirst.map((log) => (\n             <View key={log.id} style={styles.logItem}>\n               <View style={styles.logHeader}>\n                 <Text style={styles.logMeal}>{log.date}</Text>\n-                <Text style={styles.logCalories}>{log.weight} {log.unit}</Text>\n+                <Text style={styles.logCalories}>{log.weight} {log.unit || 'lbs'}</Text>\n               </View>\n               {log.notes ? <Text style={styles.logMacros}>{log.notes}</Text> : null}\n             </View>"
+    },
+    {
+      "sha": "989425cf263e7a5f4810af4f4a38a70dea110cba",
+      "filename": "src/screens/coach/client-detail/__tests__/ProgressTab.test.tsx",
+      "status": "added",
+      "additions": 48,
+      "deletions": 0,
+      "changes": 48,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fcoach%2Fclient-detail%2F__tests__%2FProgressTab.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fcoach%2Fclient-detail%2F__tests__%2FProgressTab.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2Fclient-detail%2F__tests__%2FProgressTab.test.tsx?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -0,0 +1,48 @@\n+/**\n+ * AUDIT-06-125 B3: the client summary sends weight_logs newest first. Main\n+ * showed the newest weight as \"First\", the oldest as \"Latest\" and the change\n+ * with the wrong sign (a client down 10 lb read +10.0).\n+ */\n+import React from 'react';\n+import { render } from '@testing-library/react-native';\n+import type { WeightLog } from '../../../../types';\n+import { makeStyles } from '../styles';\n+import { testColors } from '../../../client/wearables/recoveryTestColors';\n+import { ProgressTab } from '../ProgressTab';\n+\n+const styles = makeStyles(testColors);\n+\n+function log(id: string, date: string, weight: number): WeightLog {\n+  return { id, userId: 'client-1', coachId: '', date, weight, unit: 'lbs', notes: '', createdAt: date };\n+}\n+\n+describe('Coach ProgressTab', () => {\n+  it('reads First, Latest and Change in date order from a newest-first list', async () => {\n+    const newestFirst = [\n+      log('w3', '2026-10-06', 190),\n+      log('w2', '2026-09-26', 195),\n+      log('w1', '2026-09-16', 200),\n+    ];\n+    const { getByText, queryByText, getAllByText } = await render(\n+      <ProgressTab weightLogs={newestFirst} colors={testColors} styles={styles} />,\n+    );\n+    expect(getByText('200')).toBeTruthy();\n+    expect(getByText('190')).toBeTruthy();\n+    // Down 10 lb: the change is negative (main showed 10.0).\n+    expect(getByText('-10.0')).toBeTruthy();\n+    expect(queryByText('10.0')).toBeNull();\n+    // Entries list newest first.\n+    expect(getAllByText(/ lbs$/).map((n) => n.props.children.join(''))).toEqual([\n+      '190 lbs',\n+      '195 lbs',\n+      '200 lbs',\n+    ]);\n+  });\n+\n+  it('labels every entry with its unit', async () => {\n+    const { getAllByText } = await render(\n+      <ProgressTab weightLogs={[log('w1', '2026-10-06', 182.4)]} colors={testColors} styles={styles} />,\n+    );\n+    expect(getAllByText('182.4 lbs').length).toBe(1);\n+  });\n+});"
+    },
+    {
+      "sha": "e2f206a40ebff8e16089ca48d48daaec5a1dd530",
+      "filename": "src/screens/coach/client-detail/__tests__/checkInSubtitle.test.ts",
+      "status": "added",
+      "additions": 23,
+      "deletions": 0,
+      "changes": 23,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fcoach%2Fclient-detail%2F__tests__%2FcheckInSubtitle.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fcoach%2Fclient-detail%2F__tests__%2FcheckInSubtitle.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2Fclient-detail%2F__tests__%2FcheckInSubtitle.test.ts?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -0,0 +1,23 @@\n+/**\n+ * AUDIT-06-125 U2: the coach client Timeline read `mood_rating` (not a CheckIn\n+ * field), so every check-in said \"Mood: undefined/5\".\n+ */\n+jest.mock('../../../../services/api', () => ({ coachApi: {} }));\n+\n+import { checkInSubtitle } from '../useClientDetailData';\n+\n+describe('checkInSubtitle', () => {\n+  it('shows the client note when there is one', () => {\n+    expect(checkInSubtitle({ notes: 'Knee sore', mood: 2 })).toBe('Knee sore');\n+  });\n+\n+  it('shows the real scores from a server check-in row', () => {\n+    expect(checkInSubtitle({ notes: null, mood: 4, energy: 3, sleep_hours: 7.5 })).toBe(\n+      'Mood 4/5 \u00b7 Energy 3/5 \u00b7 Sleep 7.5 h',\n+    );\n+  });\n+\n+  it('never prints undefined', () => {\n+    expect(checkInSubtitle({})).toBe('Check-in submitted');\n+  });\n+});"
+    },
+    {
+      "sha": "56b777ab9e2cb951fd33fe23b8884187e81b4296",
+      "filename": "src/screens/coach/client-detail/useClientDetailData.ts",
+      "status": "modified",
+      "additions": 23,
+      "deletions": 3,
+      "changes": 26,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fcoach%2Fclient-detail%2FuseClientDetailData.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fscreens%2Fcoach%2Fclient-detail%2FuseClientDetailData.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2Fclient-detail%2FuseClientDetailData.ts?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -90,6 +90,7 @@ export function useClientDetailData(clientId: string, colors: ThemeColors) {\n       const weights = ((data.weight_logs as WeightRow[] | undefined) || []).map((w) => ({\n         id: w.id,\n         weight: w.weight_lbs,\n+        unit: 'lbs',\n         date: typeof w.date === 'string' ? w.date.slice(0, 10) : bucketDateLocal(new Date(w.date)),\n         notes: w.notes || '',\n       }));\n@@ -178,7 +179,8 @@ export function useClientDetailData(clientId: string, colors: ThemeColors) {\n         events.push({\n           id: `workout_${s.id}`,\n           type: 'workout',\n-          title: s.name || 'Workout',\n+          // WorkoutSession rows carry workout_name (no name / completed_at).\n+          title: s.workout_name || s.name || 'Workout',\n           subtitle: s.completed_at ? `Completed` : 'Logged',\n           date: s.created_at || s.date,\n           icon: 'barbell',\n@@ -192,8 +194,11 @@ export function useClientDetailData(clientId: string, colors: ThemeColors) {\n           id: `checkin_${c.id}`,\n           type: 'checkin',\n           title: 'Check-in',\n-          subtitle: c.notes || `Mood: ${c.mood_rating}/5`,\n-          date: c.date + 'T09:00:00',\n+          // CheckIn rows carry `mood` (1-5, optional) and an ISO `date`\n+          // (\"YYYY-MM-DDT00:00:00.000Z\"): `mood_rating` read undefined and\n+          // appending a time to the ISO string made an Invalid Date.\n+          subtitle: checkInSubtitle(c),\n+          date: String(c.date || '').slice(0, 10) + 'T09:00:00',\n           icon: 'chatbubble-ellipses',\n           iconColor: colors.primary,\n         });\n@@ -345,3 +350,18 @@ export function useClientDetailData(clientId: string, colors: ThemeColors) {\n     loadWeeklySummaries,\n   };\n }\n+\n+/** Coach timeline line for one check-in: the client's note, else the scores. */\n+export function checkInSubtitle(c: {\n+  notes?: string | null;\n+  mood?: number | null;\n+  energy?: number | null;\n+  sleep_hours?: number | null;\n+}): string {\n+  if (c.notes) return c.notes;\n+  const parts: string[] = [];\n+  if (typeof c.mood === 'number') parts.push(`Mood ${c.mood}/5`);\n+  if (typeof c.energy === 'number') parts.push(`Energy ${c.energy}/5`);\n+  if (typeof c.sleep_hours === 'number') parts.push(`Sleep ${c.sleep_hours} h`);\n+  return parts.length > 0 ? parts.join(' \u00b7 ') : 'Check-in submitted';\n+}"
+    },
+    {
+      "sha": "c35040ce46046125bac32ab5f1566d6547714cb4",
+      "filename": "src/services/api.ts",
+      "status": "modified",
+      "additions": 0,
+      "deletions": 4,
+      "changes": 4,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fservices%2Fapi.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/1fae37085610e1be5e9305ed38b4dc0ee47f22cf/src%2Fservices%2Fapi.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fservices%2Fapi.ts?ref=1fae37085610e1be5e9305ed38b4dc0ee47f22cf",
+      "patch": "@@ -1002,10 +1002,6 @@ export const checkInsApi = {\n     mood?: number | null;\n     energy?: number | null;\n     sleep_hours?: number | null;\n-    /** B10: 1\u20135 self-reported sleep quality (separate from sleep_hours). */\n-    sleep_quality?: number | null;\n-    /** B10: 1\u20135 self-reported stress level. */\n-    stress?: number | null;\n     weight_kg?: number | null;\n     notes?: string | null;\n   }) => api.post('/check-ins', data),"
+    }
+  ]
+}

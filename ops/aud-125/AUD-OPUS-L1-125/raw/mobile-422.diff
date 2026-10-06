@@ -1,0 +1,311 @@
+diff --git a/src/__tests__/coachWorkoutBuilderAutosave.test.tsx b/src/__tests__/coachWorkoutBuilderAutosave.test.tsx
+index e605c288..fda34084 100644
+--- a/src/__tests__/coachWorkoutBuilderAutosave.test.tsx
++++ b/src/__tests__/coachWorkoutBuilderAutosave.test.tsx
+@@ -969,3 +969,46 @@ describe('CoachWorkoutBuilderScreen — mirror-degraded durability (P1, #36)', (
+     );
+   });
+ });
++
++// ─── AUDIT-07-125: cold open from the Programs library ───────────────────────
++
++describe('CoachWorkoutBuilderScreen — plan not cached when the screen opens (AUDIT-07-125)', () => {
++  it('fills in the saved name, type and duration once the plan loads, and holds Save until then', async () => {
++    setFlag(true);
++    const CARDIO_PLAN: typeof EXISTING_PLAN = {
++      ...EXISTING_PLAN,
++      name: 'Week 1 Mon',
++      type: 'cardio' as typeof EXISTING_PLAN['type'],
++      duration_estimate_minutes: 30,
++    };
++    mockCurrentPlan = undefined;
++    const Screen = loadScreen();
++    const { getByLabelText, getByTestId, queryByTestId, rerender } = await render(<Screen />);
++
++    expect(getByTestId('mwb-plan-loading')).toBeTruthy();
++    expect(getByLabelText('Save changes').props.accessibilityState?.disabled).toBe(true);
++
++    mockCurrentPlan = CARDIO_PLAN;
++    await act(async () => {
++      await rerender(<Screen />);
++      await Promise.resolve();
++    });
++
++    await waitFor(() => expect(getByLabelText('Plan name').props.value).toBe('Week 1 Mon'));
++    expect(getByLabelText('Estimated duration in minutes').props.value).toBe('30');
++    expect(queryByTestId('mwb-plan-loading')).toBeNull();
++    expect(getByLabelText('Save changes').props.accessibilityState?.disabled).toBe(false);
++
++    await act(async () => {
++      await fireEvent.press(getByLabelText('Save changes'));
++      await Promise.resolve();
++    });
++    await waitFor(() => expect(mockUpdateMutateAsync).toHaveBeenCalled());
++    const args = mockUpdateMutateAsync.mock.calls[0]?.[0] as {
++      input: { name: string; type: string; duration_estimate_minutes?: number };
++    };
++    expect(args.input).toEqual({ name: 'Week 1 Mon', type: 'cardio', duration_estimate_minutes: 30 });
++    const rowsArg = mockSetExercisesMutateAsync.mock.calls[0]?.[0] as { rows: unknown[] };
++    expect(rowsArg.rows).toHaveLength(1);
++  });
++});
+diff --git a/src/api/__tests__/workoutBuilderApi.myAssignments.test.ts b/src/api/__tests__/workoutBuilderApi.myAssignments.test.ts
+new file mode 100644
+index 00000000..6a98f8f1
+--- /dev/null
++++ b/src/api/__tests__/workoutBuilderApi.myAssignments.test.ts
+@@ -0,0 +1,65 @@
++/**
++ * AUDIT-07-125: GET /assignments/me answers `{ items, nextCursor }` (one page
++ * of at most 50, oldest first). The client list must read every page and hand
++ * the screens a plain list, so coach-assigned workouts show up.
++ */
++jest.mock('../../services/api', () => ({
++  __esModule: true,
++  default: { get: jest.fn() },
++}));
++
++import api from '../../services/api';
++import { workoutBuilderApi } from '../workoutBuilderApi';
++
++const mockApi = jest.mocked(api);
++
++function row(id: string) {
++  return {
++    id,
++    workout_plan_id: `plan-${id}`,
++    client_id: 'client-1',
++    assigned_by_coach_id: 'coach-1',
++    scheduled_for: '2026-10-08T00:00:00.000Z',
++    completed_at: null,
++    post_rpe: null,
++    post_notes: null,
++    workout_plan: { id: `plan-${id}`, name: `Day ${id}`, exercises: [] },
++  };
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++});
++
++it('returns the items of the paginated reply as a list', async () => {
++  mockApi.get.mockResolvedValueOnce({ data: { items: [row('a'), row('b')], nextCursor: null } });
++  const list = await workoutBuilderApi.listMyAssignments();
++  expect(Array.isArray(list)).toBe(true);
++  expect(list.map((a) => a.id)).toEqual(['a', 'b']);
++  expect(mockApi.get).toHaveBeenCalledTimes(1);
++  expect(mockApi.get).toHaveBeenCalledWith('/assignments/me', { params: undefined });
++});
++
++it('reads every page so workouts after the first 50 are not lost', async () => {
++  mockApi.get
++    .mockResolvedValueOnce({ data: { items: [row('a')], nextCursor: 'c1' } })
++    .mockResolvedValueOnce({ data: { items: [row('b')], nextCursor: 'c2' } })
++    .mockResolvedValueOnce({ data: { items: [row('c')], nextCursor: null } });
++  const list = await workoutBuilderApi.listMyAssignments();
++  expect(list.map((a) => a.id)).toEqual(['a', 'b', 'c']);
++  expect(mockApi.get).toHaveBeenNthCalledWith(2, '/assignments/me', { params: { cursor: 'c1' } });
++  expect(mockApi.get).toHaveBeenNthCalledWith(3, '/assignments/me', { params: { cursor: 'c2' } });
++});
++
++it('still accepts a bare list', async () => {
++  mockApi.get.mockResolvedValueOnce({ data: [row('a')] });
++  const list = await workoutBuilderApi.listMyAssignments();
++  expect(list.map((a) => a.id)).toEqual(['a']);
++});
++
++it('fails the load on an unreadable page instead of showing an empty list', async () => {
++  mockApi.get.mockResolvedValueOnce({ data: { unexpected: true } });
++  await expect(workoutBuilderApi.listMyAssignments()).rejects.toThrow(
++    'Your workouts could not be read. Pull to try again.',
++  );
++});
+diff --git a/src/api/workoutBuilderApi.ts b/src/api/workoutBuilderApi.ts
+index b74ec7ca..14995450 100644
+--- a/src/api/workoutBuilderApi.ts
++++ b/src/api/workoutBuilderApi.ts
+@@ -105,6 +105,9 @@ export interface ClientWorkoutAssignmentWithPlan extends ClientWorkoutAssignment
+ 
+ // ─── API ─────────────────────────────────────────────────────────────────────
+ 
++/** Pages of 50 read for GET /assignments/me (1,000 assignments). */
++export const MY_ASSIGNMENTS_MAX_PAGES = 20;
++
+ export const workoutBuilderApi = {
+   // ---- Coach surfaces ------------------------------------------------------
+   listPlans: () => api.get<WorkoutPlan[]>('/workout-plans'),
+@@ -135,8 +138,38 @@ export const workoutBuilderApi = {
+     api.get<ClientWorkoutAssignment[]>(`/workout-plans/${planId}/assignments`),
+ 
+   // ---- Client surfaces -----------------------------------------------------
+-  listMyAssignments: () =>
+-    api.get<ClientWorkoutAssignmentWithPlan[]>('/assignments/me'),
++  /**
++   * Every assignment the signed-in client has, oldest first.
++   *
++   * AUDIT-07-125: GET /assignments/me answers one page,
++   * `{ items, nextCursor }` (at most 50 rows, ordered by scheduled_for), not a
++   * bare list. Reading the reply as a list left the Workouts tab with no
++   * assigned workouts and broke the Your workouts list. Read every page; a bare
++   * list is still accepted. A failed page fails the whole load so the list is
++   * never shown as complete when it is not.
++   */
++  listMyAssignments: async (): Promise<ClientWorkoutAssignmentWithPlan[]> => {
++    const out: ClientWorkoutAssignmentWithPlan[] = [];
++    let cursor: string | undefined;
++    for (let page = 0; page < MY_ASSIGNMENTS_MAX_PAGES; page += 1) {
++      const res = await api.get<unknown>('/assignments/me', {
++        params: cursor ? { cursor } : undefined,
++      });
++      const body: unknown = res.data;
++      if (Array.isArray(body)) {
++        return body as ClientWorkoutAssignmentWithPlan[];
++      }
++      const pageBody = (body ?? {}) as { items?: unknown; nextCursor?: unknown };
++      if (!Array.isArray(pageBody.items)) {
++        throw new Error('Your workouts could not be read. Pull to try again.');
++      }
++      out.push(...(pageBody.items as ClientWorkoutAssignmentWithPlan[]));
++      const next = pageBody.nextCursor;
++      if (typeof next !== 'string' || next === '' || next === cursor) break;
++      cursor = next;
++    }
++    return out;
++  },
+ 
+   getMyAssignment: (assignmentId: string) =>
+     api.get<ClientWorkoutAssignmentWithPlan>(`/assignments/${assignmentId}`),
+diff --git a/src/hooks/useWorkoutBuilder.ts b/src/hooks/useWorkoutBuilder.ts
+index 052984f1..cf1ec30b 100644
+--- a/src/hooks/useWorkoutBuilder.ts
++++ b/src/hooks/useWorkoutBuilder.ts
+@@ -121,8 +121,7 @@ export function useAssignWorkoutPlan() {
+ export function useMyWorkoutAssignments() {
+   return useQuery<ClientWorkoutAssignmentWithPlan[]>({
+     queryKey: ['assignments', 'me'],
+-    queryFn: () =>
+-      workoutBuilderApi.listMyAssignments().then((r) => r.data),
++    queryFn: () => workoutBuilderApi.listMyAssignments(),
+     staleTime: FIVE_MIN_MS,
+   });
+ }
+diff --git a/src/screens/coach/CoachWorkoutBuilderScreen.tsx b/src/screens/coach/CoachWorkoutBuilderScreen.tsx
+index 946f461f..ecb2d24d 100644
+--- a/src/screens/coach/CoachWorkoutBuilderScreen.tsx
++++ b/src/screens/coach/CoachWorkoutBuilderScreen.tsx
+@@ -272,7 +272,11 @@ export default function CoachWorkoutBuilderScreen() {
+   const styles = useMemo(() => makeStyles(sc), [sc]);
+ 
+   const qc = useQueryClient();
+-  const { data: existingPlan, refetch: refetchPlan } = useWorkoutPlan(planId);
++  const {
++    data: existingPlan,
++    refetch: refetchPlan,
++    isError: planLoadFailed,
++  } = useWorkoutPlan(planId);
+   const createMut = useCreateWorkoutPlan();
+   const updateMut = useUpdateWorkoutPlan();
+   const setExercisesMut = useSetWorkoutExercises();
+@@ -286,6 +290,26 @@ export default function CoachWorkoutBuilderScreen() {
+       ? String(existingPlan.duration_estimate_minutes)
+       : '',
+   );
++  // AUDIT-07-125: a plan opened from the Programs library (a program day or a
++  // saved workout) is usually not in the query cache yet, so the initialisers
++  // above ran with no plan and the editor showed a blank name, the wrong type
++  // and a disabled Save. Fill the plan details in once, the first time the
++  // plan arrives, unless the coach already typed into one of them.
++  const metaHydratedRef = useRef(Boolean(existingPlan));
++  const metaTouchedRef = useRef(false);
++  useEffect(() => {
++    if (metaHydratedRef.current || !existingPlan) return;
++    metaHydratedRef.current = true;
++    if (metaTouchedRef.current) return;
++    setName(existingPlan.name ?? '');
++    setType(existingPlan.type ?? 'strength');
++    setDuration(
++      existingPlan.duration_estimate_minutes != null
++        ? String(existingPlan.duration_estimate_minutes)
++        : '',
++    );
++  }, [existingPlan]);
++  const planLoading = isEditing && !existingPlan;
+   // Map a server exercise row into a local DraftExerciseRow, reusing the stable
+   // clientId we already minted for that server row_id when one exists so the
+   // identity survives a refetch/adoption (and the deletedKeysRef bookkeeping
+@@ -1157,8 +1181,11 @@ export default function CoachWorkoutBuilderScreen() {
+   //     mirror. The Refresh affordance guarantees Save is never locked forever.
+   // Together they span: replay detection -> terminal outcome -> adoption ->
+   // baseline reanchor, exactly the window in which a full-replace Save is unsafe.
++  // AUDIT-07-125: never send a full-replace Save for a plan that has not
++  // loaded yet; its exercise list would be empty and erase the saved one.
+   const canSave =
+     name.trim().length > 0 &&
++    !planLoading &&
+     !editorLocked &&
+     !autosave.replayInFlight &&
+     !replayAdoptionPending &&
+@@ -1571,13 +1598,38 @@ export default function CoachWorkoutBuilderScreen() {
+           </Pressable>
+         ) : null}
+ 
++        {planLoading ? (
++          <View testID="mwb-plan-loading" accessibilityLiveRegion="polite">
++            <Text style={[typography.body, { color: sc.textMuted }]}>
++              {planLoadFailed
++                ? 'This workout plan could not be loaded. Check your connection and try again.'
++                : 'Loading workout plan'}
++            </Text>
++            {planLoadFailed ? (
++              <Pressable
++                accessibilityRole="button"
++                accessibilityLabel="Try loading the workout plan again"
++                onPress={() => void refetchPlan()}
++                style={styles.historyButton}
++              >
++                <Text style={[typography.caption, { color: sc.textPrimary }]}>
++                  Try again
++                </Text>
++              </Pressable>
++            ) : null}
++          </View>
++        ) : null}
++
+         <Text style={[typography.caption, styles.label, { color: sc.textMuted }]}>
+           Plan name
+         </Text>
+         <TextInput
+           accessibilityLabel="Plan name"
+           value={name}
+-          onChangeText={setName}
++          onChangeText={(next) => {
++            metaTouchedRef.current = true;
++            setName(next);
++          }}
+           editable={!editorLocked}
+           placeholder="e.g. Push day A"
+           placeholderTextColor={sc.textMuted}
+@@ -1595,7 +1647,10 @@ export default function CoachWorkoutBuilderScreen() {
+               accessibilityRole="button"
+               accessibilityState={{ disabled: editorLocked, selected: type === t }}
+               disabled={editorLocked}
+-              onPress={() => setType(t)}
++              onPress={() => {
++                metaTouchedRef.current = true;
++                setType(t);
++              }}
+               style={[
+                 styles.typeChip,
+                 { borderColor: sc.textMuted },
+@@ -1620,7 +1675,10 @@ export default function CoachWorkoutBuilderScreen() {
+         <TextInput
+           accessibilityLabel="Estimated duration in minutes"
+           value={duration}
+-          onChangeText={setDuration}
++          onChangeText={(next) => {
++            metaTouchedRef.current = true;
++            setDuration(next);
++          }}
+           editable={!editorLocked}
+           keyboardType="number-pad"
+           placeholder="45"

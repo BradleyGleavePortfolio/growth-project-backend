@@ -1,0 +1,192 @@
+{
+  "repo": "mobile",
+  "number": 414,
+  "head": "16aca39fd1befa6d6514fca3525a0d29341ad98c",
+  "base": "db48b96a7b4511ae1937c0ac1cf998ffe2664994",
+  "title": "fix(coach): day-1 coach is promised only alerts that exist; no red 0% before the first client (HUNT-05-124, T1)",
+  "body": "HUNT-05-124 (agent 124) \u2014 coach day 1. Tier T1 (copy and display only; no money, auth, data or schema paths). 9 files, +151/-45.\n\n## Findings fixed here\n\n**B-H05-1 (false customer-facing claim).** A new coach opens the app, lands on Clients and reads \"Turn on notifications so you see client messages and new client alerts\"; Settings also shows Daily Check-in, New Client Alerts and Weekly Summary switched on. The backend stores those three preferences (`NotificationPreference.daily_checkin_enabled`, `new_client_alerts`, `weekly_summary_enabled`) but no code reads them and no emitter sends a new-client, weekly-summary or coach daily check-in push (backend main ec12a4b3: the only references are the defaults and the update in `src/notifications/notifications.service.ts:161-163, 252-254`). Normal-user story: a coach shares their code, the first client joins, and the coach waits for the promised alert that never comes.\n- `src/components/home/PushPermissionCard.tsx`: coach copy now names only alerts the server sends to coaches today: \"Turn on notifications so you see client messages and bookings as they arrive.\" (client messages: `messaging.service.ts` notifyNewMessage -> MessageReceivedEmitter.sendPush for either recipient; bookings: `booking.emitter.ts` role coach).\n- `src/screens/coach/settings/SettingsToggles.tsx`: the three switches with no server feature are removed; Notification preferences and Haptics stay.\n\n**U-H05-2 (empty state).** A coach with no clients yet opens Overview and sees a red \"0%\" check-in rate and \"Active today 0 of 0\". `OverviewScreen.tsx` now shows a neutral dash in stone and no \"of 0\" while the roster is empty; with clients the rate and colours are unchanged.\n\n**U-H05-3 (wrong directions).** A coach who skips Stripe in the wizard reads \"You can finish this later from the checklist on your Home screen\", finishes, and finds no Home tab (tabs: Overview, Clients, Programs, Messages, Settings); the checklist is on Overview. `CoachWizardNavigator.tsx:354, 640` and `lib/coachSetup/errors.ts:198` now name the Overview tab.\n\n## Tests (failing first)\n- New `src/screens/coach/__tests__/coachDay1Hunt05.test.tsx` (4 tests). Commit 090cf05f adds it alone; lane run on that commit (no fix) is linked in the opening comment.\n- Commit 6eef5a86 adds the U-H05-3 tests alone (source and describeError checks; main has \"Home screen\"/\"Home checklist\" in both files).\n- Updated expected copy in `PushPermissionCard.test.tsx`, `ClientsListPushPrimer.test.tsx` and `coachSetupRound2.test.tsx`.\n\n## Not in this PR (owner decision)\nReal new-client alerts (backend emitter on every attach path + tap route) are a follow-up; see the opening comment.\n\nNo backend, schema, lockfile, Expo/EAS or money changes. No clinic partner name, no secrets.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 151,
+  "deletions": 45,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/414",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/414#issuecomment-6024624180",
+      "body": "FIX ROUND 1 (OPENING) (HUNT-05-124, agent 124) \u2014 growth-project-mobile#414 @ d468e2f7f3547ae1834fe461a0b420aec342af92 \u2014 READY FOR AUDIT\n\nTier T1 (copy and display only). Size: 6 files, +117/-39 (under 1,500). Base main 321274f3. Lens pair MOB.\n\n**B 1 / U 1 / C 0 in this diff** (other coach day-1 Cs are in ops/reports/HUNT-05-124.md).\n\n- **B-H05-1 (false customer-facing claim).** A new coach lands on Clients and reads \"Turn on notifications so you see client messages and new client alerts\", and Settings shows Daily Check-in, New Client Alerts and Weekly Summary switched on; the first client joins with the coach's code and no alert ever comes, because no backend code reads those three preferences and no emitter sends a new-client, weekly-summary or coach daily check-in push (backend main ec12a4b3: only `src/notifications/notifications.service.ts:161-163` defaults and `:252-254` update reference them).\n  - `src/components/home/PushPermissionCard.tsx:34` coach copy -> \"Turn on notifications so you see client messages and bookings as they arrive.\" (both are sent to coaches today: `messaging.service.ts` notifyNewMessage -> MessageReceivedEmitter.sendPush; `notifications/emitters/booking.emitter.ts` role coach).\n  - `src/screens/coach/settings/SettingsToggles.tsx` the three switches are removed; Notification preferences and Haptics stay. SettingsScreen load/save of the fields is unchanged (harmless).\n- **U-H05-2.** A coach with no clients opens Overview and sees a red \"0%\" check-in rate and \"Active today 0 of 0\". `OverviewScreen.tsx:98-150`: with roster_size 0 the rate shows a neutral dash in stone and Active today has no \"of 0\"; with clients nothing changes.\n\n**Failing first.** Test-only commit 090cf05f, ci-lane run https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37524031114 (branch ci/HUNT-05-124-red): 3 failed for the stated reasons (New Client Alerts rendered; primer source matched \"new client alerts\"; label \"Check-in rate (7 days): 0%\"), 1 regression guard passed.\n\n**CI at this head:** all green. Typecheck, lint, test https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37524359953 (597 suites, 8,264 tests passed; includes coachDay1Hunt05, PushPermissionCard, ClientsListPushPrimer, commandCenterScreens); CodeQL success.\n\n**Operator decision (recommended default):** real new-client alerts for coaches (one backend emitter on every attach path: register with code, attach-coach-code, Google/Apple sign-up with a code, coachless pick; tap opens Clients; no client name on the lock screen), then restore a \"New client alerts\" switch. Default: yes, one follow-up backend PR after the 10-07 build.\n\nNo backend, schema, lockfile, Expo/EAS or money changes; no secrets; no clinic partner name.\n"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/414#issuecomment-6024672633",
+      "body": "HEAD MOVED (HUNT-05-124, agent 124) \u2014 growth-project-mobile#414 @ 16aca39fd1befa6d6514fca3525a0d29341ad98c \u2014 the READY comment at d468e2f7 is superseded before any review: one more copy-only finding (U-H05-3, wizard points to a Home screen the coach app does not have) was added in 6eef5a86 (test) + 16aca39f (fix). A new READY comment follows when CI is green at 16aca39f. Lenses: please review 16aca39f only."
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112481098626",
+      "id": 112481098626,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A414+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112481098626/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37525331801/job/112480764345",
+      "id": 112480764345,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112480764345/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37525331801/job/112480764028",
+      "id": 112480764028,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112480764028/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37525331792/job/112480763629",
+      "id": 112480763629,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112480763629/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "774d127ad798f0167700ab8439f10eac1ff6ccb3",
+      "filename": "src/components/coach/setup/__tests__/coachSetupRound2.test.tsx",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fcomponents%2Fcoach%2Fsetup%2F__tests__%2FcoachSetupRound2.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fcomponents%2Fcoach%2Fsetup%2F__tests__%2FcoachSetupRound2.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fcoach%2Fsetup%2F__tests__%2FcoachSetupRound2.test.tsx?ref=16aca39fd1befa6d6514fca3525a0d29341ad98c",
+      "patch": "@@ -297,7 +297,7 @@ describe(\"B-329-2 payouts not configured\", () => {\n       ),\n     ]) {\n       expect(e.title).toBe(\"Payouts are not switched on for your account yet\");\n-      expect(e.body).toMatch(/Home checklist/);\n+      expect(e.body).toMatch(/Get paid on the Overview tab/);\n       expect(e.body).toMatch(/Bradleyapple1031@gmail\\.com/);\n       expect(e.body).not.toMatch(/version|Money|!/);\n     }"
+    },
+    {
+      "sha": "59e004a847a7bd5642ac699cd0c71b4ea2c47622",
+      "filename": "src/components/home/PushPermissionCard.tsx",
+      "status": "modified",
+      "additions": 3,
+      "deletions": 1,
+      "changes": 4,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fcomponents%2Fhome%2FPushPermissionCard.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fcomponents%2Fhome%2FPushPermissionCard.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fhome%2FPushPermissionCard.tsx?ref=16aca39fd1befa6d6514fca3525a0d29341ad98c",
+      "patch": "@@ -29,7 +29,9 @@ export type PushPermissionAudience = 'client' | 'coach';\n \n const BODY_COPY: Record<PushPermissionAudience, string> = {\n   client: 'Turn on notifications so you see messages and plan updates from your coach.',\n-  coach: 'Turn on notifications so you see client messages and new client alerts.',\n+  // HUNT-05-124 B-H05-1: name only alerts the server sends to coaches today\n+  // (client messages and bookings); there is no new-client alert yet.\n+  coach: 'Turn on notifications so you see client messages and bookings as they arrive.',\n };\n \n export default function PushPermissionCard({"
+    },
+    {
+      "sha": "2b17f3e9b00b3894a753ef283dc828ab96f9f072",
+      "filename": "src/components/home/__tests__/PushPermissionCard.test.tsx",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fcomponents%2Fhome%2F__tests__%2FPushPermissionCard.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fcomponents%2Fhome%2F__tests__%2FPushPermissionCard.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fhome%2F__tests__%2FPushPermissionCard.test.tsx?ref=16aca39fd1befa6d6514fca3525a0d29341ad98c",
+      "patch": "@@ -49,7 +49,7 @@ describe('PushPermissionCard (deferred OS prompt)', () => {\n       <PushPermissionCard audience=\"coach\" />,\n     );\n     await findByTestId('push-permission-card');\n-    expect(getByText('Turn on notifications so you see client messages and new client alerts.')).toBeTruthy();\n+    expect(getByText('Turn on notifications so you see client messages and bookings as they arrive.')).toBeTruthy();\n     expect(queryByText(/plan updates from your coach/)).toBeNull();\n     await fireEvent.press(getByTestId('push-permission-enable'));\n     await waitFor(() => expect(mockRegister).toHaveBeenCalledWith({ requestPermission: true }));"
+    },
+    {
+      "sha": "4a3e1ceb8bf3bd58cd148fca0aa92b308ad4cfe6",
+      "filename": "src/lib/coachSetup/errors.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Flib%2FcoachSetup%2Ferrors.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Flib%2FcoachSetup%2Ferrors.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Flib%2FcoachSetup%2Ferrors.ts?ref=16aca39fd1befa6d6514fca3525a0d29341ad98c",
+      "patch": "@@ -195,7 +195,7 @@ export function describeError(err: unknown, action: string): FriendlyError {\n       title: \"Payouts are not switched on for your account yet\",\n       body:\n         \"You cannot connect Stripe right now because payouts are not switched on for your account yet. \" +\n-        \"Finish the rest of setup, then connect Stripe later from Get paid on your Home checklist. \" +\n+        \"Finish the rest of setup, then connect Stripe later from Get paid on the Overview tab. \" +\n         `Free packages work today.${referenceSentence(requestId, \"If this has not changed by tomorrow\")}`,\n       retryable: false,\n     };"
+    },
+    {
+      "sha": "c0ef7e3e064c2dabe6304e976a68d2165070baf7",
+      "filename": "src/navigation/CoachWizardNavigator.tsx",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 4,
+      "changes": 8,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fnavigation%2FCoachWizardNavigator.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fnavigation%2FCoachWizardNavigator.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fnavigation%2FCoachWizardNavigator.tsx?ref=16aca39fd1befa6d6514fca3525a0d29341ad98c",
+      "patch": "@@ -10,7 +10,7 @@\n  *   5. Ready                checklist, then POST /coach/onboarding/complete\n  * The backend keeps 6 sequential steps; advanceWizardTo walks it forward one\n  * step at a time. Stripe, package and invite can each be done later from the\n- * Home checklist, so the wizard never traps a coach.\n+ * Overview checklist, so the wizard never traps a coach.\n  */\n \n import React, {\n@@ -351,7 +351,7 @@ function CoachWizardStep2({ navigation }: Step2Props) {\n         testID=\"wizard-get-paid\"\n       />\n       {!ready ? (\n-        <SmallNote text=\"You can finish this later from the checklist on your Home screen. Free packages work without Stripe.\" />\n+        <SmallNote text=\"You can finish this later from the checklist on the Overview tab. Free packages work without Stripe.\" />\n       ) : null}\n       {error ? (\n         <SetupNotice error={error} testID=\"wizard-step-2-error\" />\n@@ -581,7 +581,7 @@ function CoachWizardStep5({ navigation }: Step5Props) {\n   const [error, setError] = useState<FriendlyError | null>(null);\n   // C-329-3: read the server on mount. When the wizard resumes on this\n   // step, the in-memory state from earlier steps is empty, so the ticks\n-  // must come from the same routes the Home checklist uses.\n+  // must come from the same routes the Overview checklist uses.\n   const [snap, setSnap] = useState<SetupSnapshot | null>(null);\n   const [checking, setChecking] = useState(true);\n   const check = useCallback(async () => {\n@@ -637,7 +637,7 @@ function CoachWizardStep5({ navigation }: Step5Props) {\n       stepNumber={5}\n       totalSteps={UI_STEPS}\n       heading=\"You are ready to coach\"\n-      body=\"Anything still open stays on your Home checklist. Your first client payment shows up in Money on your Home screen.\"\n+      body=\"Anything still open stays on the checklist on the Overview tab. Your first client payment shows up in Money on the Overview tab.\"\n       ctaLabel=\"Go to your dashboard\"\n       ctaDisabled={submitting}\n       onCta={finish}"
+    },
+    {
+      "sha": "97518cbabbfb66590dd34035e57660bd67fb43d8",
+      "filename": "src/screens/coach/__tests__/ClientsListPushPrimer.test.tsx",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fscreens%2Fcoach%2F__tests__%2FClientsListPushPrimer.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fscreens%2Fcoach%2F__tests__%2FClientsListPushPrimer.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2F__tests__%2FClientsListPushPrimer.test.tsx?ref=16aca39fd1befa6d6514fca3525a0d29341ad98c",
+      "patch": "@@ -72,7 +72,7 @@ it('a fresh coach install sees the notification ask; Turn on registers the push\n   mockRegister.mockResolvedValue({ token: 'coach-tok', granted: true });\n   await mount();\n   await screen.findByTestId('push-permission-card');\n-  expect(screen.getByText('Turn on notifications so you see client messages and new client alerts.')).toBeTruthy();\n+  expect(screen.getByText('Turn on notifications so you see client messages and bookings as they arrive.')).toBeTruthy();\n   // The OS prompt only comes from the tap.\n   expect(mockRegister).not.toHaveBeenCalled();\n   await fireEvent.press(screen.getByTestId('push-permission-enable'));"
+    },
+    {
+      "sha": "5474471c16e150d2bed5b1e624f92ab694ae2e62",
+      "filename": "src/screens/coach/__tests__/coachDay1Hunt05.test.tsx",
+      "status": "added",
+      "additions": 128,
+      "deletions": 0,
+      "changes": 128,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fscreens%2Fcoach%2F__tests__%2FcoachDay1Hunt05.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fscreens%2Fcoach%2F__tests__%2FcoachDay1Hunt05.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2F__tests__%2FcoachDay1Hunt05.test.tsx?ref=16aca39fd1befa6d6514fca3525a0d29341ad98c",
+      "patch": "@@ -0,0 +1,128 @@\n+/**\n+ * HUNT-05-124 \u2014 coach day 1.\n+ *\n+ * B-H05-1: the backend never sends a \"new client\" alert and nothing reads the\n+ * coach's Daily Check-in / New Client Alerts / Weekly Summary preferences, yet\n+ * the first screen a new coach sees promised \"new client alerts\" and Settings\n+ * showed three switches for alerts that never arrive.\n+ * U-H05-2: a coach with no clients yet saw a red \"0%\" check-in rate and\n+ * \"Active today 0 of 0\" on the Overview tab.\n+ * U-H05-3: the wizard and the payouts notice sent the coach to \"your Home\n+ * screen\" / \"your Home checklist\", but the coach app has no Home tab: the\n+ * setup checklist lives on the Overview tab.\n+ */\n+import React from 'react';\n+import { fireEvent, render, waitFor } from '@testing-library/react-native';\n+\n+jest.mock('../../../services/commandCenterApi', () => {\n+  const original = jest.requireActual('../../../services/commandCenterApi');\n+  return {\n+    ...original,\n+    __USING_MOCK_DATA: false,\n+    commandCenterApi: {\n+      getOverview: jest.fn(),\n+      getLtvMetrics: jest.fn(() => new Promise(() => {})),\n+    },\n+  };\n+});\n+jest.mock('../../../components/command-center/CoachLtvDashboard', () => () => null);\n+\n+import { commandCenterApi } from '../../../services/commandCenterApi';\n+import OverviewScreen from '../command-center/OverviewScreen';\n+import { SettingsToggles } from '../settings/SettingsToggles';\n+import { DEFAULT_SETTINGS } from '../settings/types';\n+import type { ThemeColors } from '../../../theme/ThemeProvider';\n+import type { SettingsStyles } from '../settings/styles';\n+\n+const overview = (over: Record<string, number>) => ({\n+  roster_size: 0,\n+  active_today: 0,\n+  check_in_rate_7day: 0,\n+  open_alerts: 0,\n+  at_risk_count: 0,\n+  win_streak_count: 0,\n+  unread_messages: 0,\n+  pending_actions: 0,\n+  ...over,\n+});\n+\n+describe('B-H05-1: no promise of alerts the server never sends', () => {\n+  it('coach Settings shows no switch for daily check-in, new client or weekly summary alerts', async () => {\n+    const onOpen = jest.fn();\n+    const { queryByText, getByLabelText } = await render(\n+      <SettingsToggles\n+        settings={DEFAULT_SETTINGS}\n+        onUpdateSetting={jest.fn()}\n+        onOpenNotificationPreferences={onOpen}\n+        colors={new Proxy({}, { get: () => '#000000' }) as unknown as ThemeColors}\n+        styles={new Proxy({}, { get: () => ({}) }) as unknown as SettingsStyles}\n+      />,\n+    );\n+    expect(queryByText('New Client Alerts')).toBeNull();\n+    expect(queryByText('Weekly Summary')).toBeNull();\n+    expect(queryByText('Daily Check-in')).toBeNull();\n+    // The real controls stay: notification preferences and haptics.\n+    await fireEvent.press(getByLabelText('Notification preferences'));\n+    expect(onOpen).toHaveBeenCalledTimes(1);\n+    expect(queryByText('Haptics')).toBeTruthy();\n+  });\n+\n+  it('the coach push primer names only alerts that exist', () => {\n+    const fs = jest.requireActual('fs') as typeof import('fs');\n+    const path = jest.requireActual('path') as typeof import('path');\n+    const src = fs.readFileSync(\n+      path.join(__dirname, '../../../components/home/PushPermissionCard.tsx'),\n+      'utf8',\n+    );\n+    expect(src).not.toMatch(/new client alerts/i);\n+    expect(src).toContain('Turn on notifications so you see client messages and bookings as they arrive.');\n+  });\n+});\n+\n+describe('U-H05-2: Overview with no clients yet', () => {\n+  it('shows no red 0% check-in rate and no \"of 0\" for a coach with no clients', async () => {\n+    (commandCenterApi.getOverview as jest.Mock).mockResolvedValue({ data: overview({}) });\n+    const { getByTestId, queryByText } = await render(<OverviewScreen />);\n+    await waitFor(() => expect(getByTestId('command-center-kpi-checkin-rate')).toBeTruthy());\n+    expect(getByTestId('command-center-kpi-checkin-rate').props.accessibilityLabel).toBe(\n+      'Check-in rate (7 days): \u2014',\n+    );\n+    expect(queryByText('0%')).toBeNull();\n+    expect(queryByText('of 0')).toBeNull();\n+  });\n+\n+  it('keeps the real rate once clients exist', async () => {\n+    (commandCenterApi.getOverview as jest.Mock).mockResolvedValue({\n+      data: overview({ roster_size: 12, active_today: 8, check_in_rate_7day: 0.75 }),\n+    });\n+    const { getByTestId, getByText } = await render(<OverviewScreen />);\n+    await waitFor(() => expect(getByText('75%')).toBeTruthy());\n+    expect(getByText('of 12')).toBeTruthy();\n+    expect(getByTestId('command-center-kpi-checkin-rate')).toBeTruthy();\n+  });\n+});\n+\n+describe('U-H05-3: setup copy names the tab the coach can see', () => {\n+  const fs = jest.requireActual('fs') as typeof import('fs');\n+  const path = jest.requireActual('path') as typeof import('path');\n+  const read = (rel: string) => fs.readFileSync(path.join(__dirname, rel), 'utf8');\n+\n+  it('the wizard points to the Overview tab, never a Home screen', () => {\n+    const src = read('../../../navigation/CoachWizardNavigator.tsx');\n+    expect(src).not.toMatch(/Home screen|Home checklist/);\n+    expect(src).toContain('You can finish this later from the checklist on the Overview tab.');\n+    expect(src).toContain('Anything still open stays on the checklist on the Overview tab.');\n+  });\n+\n+  it('the payouts-not-switched-on notice points to the Overview tab', () => {\n+    const { describeError } = jest.requireActual('../../../lib/coachSetup/errors');\n+    const e = describeError(\n+      Object.assign(new Error('x'), {\n+        response: { status: 503, data: { error: 'CONNECT_NOT_CONFIGURED' }, headers: {} },\n+      }),\n+      'open Stripe',\n+    );\n+    expect(e.body).toContain('Get paid on the Overview tab');\n+    expect(e.body).not.toMatch(/Home checklist/);\n+  });\n+});"
+    },
+    {
+      "sha": "7a917bf7c6c0b92b09586fbcb2dce90ee7064863",
+      "filename": "src/screens/coach/command-center/OverviewScreen.tsx",
+      "status": "modified",
+      "additions": 8,
+      "deletions": 3,
+      "changes": 11,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fscreens%2Fcoach%2Fcommand-center%2FOverviewScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fscreens%2Fcoach%2Fcommand-center%2FOverviewScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2Fcommand-center%2FOverviewScreen.tsx?ref=16aca39fd1befa6d6514fca3525a0d29341ad98c",
+      "patch": "@@ -95,6 +95,9 @@ export default function OverviewScreen({\n   }\n \n   const d = data;\n+  // HUNT-05-124 U-H05-2: a coach with no clients yet has no check-in rate.\n+  // Show a neutral dash instead of a red 0%, and no \"of 0\" under Active today.\n+  const noClients = d !== null && d.roster_size === 0;\n \n   return (\n     <ScrollView\n@@ -127,7 +130,7 @@ export default function OverviewScreen({\n         <KpiTile\n           label=\"Active today\"\n           value={d?.active_today ?? '\u2014'}\n-          subtext={d ? `of ${d.roster_size}` : undefined}\n+          subtext={d && !noClients ? `of ${d.roster_size}` : undefined}\n           valueColor={colors.forest}\n           testID=\"command-center-kpi-active-today\"\n           style={styles.tileFlex}\n@@ -138,9 +141,11 @@ export default function OverviewScreen({\n       <View style={styles.tileRow}>\n         <KpiTile\n           label=\"Check-in rate (7 days)\"\n-          value={d ? `${Math.round(d.check_in_rate_7day * 100)}%` : '\u2014'}\n+          value={d && !noClients ? `${Math.round(d.check_in_rate_7day * 100)}%` : '\u2014'}\n           valueColor={\n-            d && d.check_in_rate_7day >= 0.7\n+            !d || noClients\n+              ? colors.stone\n+              : d.check_in_rate_7day >= 0.7\n               ? colors.forest\n               : d && d.check_in_rate_7day >= 0.5\n               ? colors.mutedGold"
+    },
+    {
+      "sha": "6db3705b7f7d32d625bbc5960e0c2da05daa4d25",
+      "filename": "src/screens/coach/settings/SettingsToggles.tsx",
+      "status": "modified",
+      "additions": 4,
+      "deletions": 33,
+      "changes": 37,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fscreens%2Fcoach%2Fsettings%2FSettingsToggles.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/16aca39fd1befa6d6514fca3525a0d29341ad98c/src%2Fscreens%2Fcoach%2Fsettings%2FSettingsToggles.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2Fsettings%2FSettingsToggles.tsx?ref=16aca39fd1befa6d6514fca3525a0d29341ad98c",
+      "patch": "@@ -23,39 +23,10 @@ export function SettingsToggles({\n       {/* Notifications */}\n       <Text style={styles.sectionHeader}>Notifications</Text>\n       <View style={styles.section}>\n-        <View style={styles.row}>\n-          <Ionicons name=\"alarm-outline\" size={20} color={colors.textSecondary} />\n-          <Text style={styles.rowLabel}>Daily Check-in</Text>\n-          <Switch\n-            value={settings.dailyCheckin}\n-            onValueChange={(v) => onUpdateSetting('dailyCheckin', v)}\n-            trackColor={{ false: colors.surfaceElevated, true: colors.primary }}\n-            thumbColor={colors.textOnPrimary}\n-          />\n-        </View>\n-        <View style={styles.divider} />\n-        <View style={styles.row}>\n-          <Ionicons name=\"person-add-outline\" size={20} color={colors.textSecondary} />\n-          <Text style={styles.rowLabel}>New Client Alerts</Text>\n-          <Switch\n-            value={settings.newClientAlerts}\n-            onValueChange={(v) => onUpdateSetting('newClientAlerts', v)}\n-            trackColor={{ false: colors.surfaceElevated, true: colors.primary }}\n-            thumbColor={colors.textOnPrimary}\n-          />\n-        </View>\n-        <View style={styles.divider} />\n-        <View style={styles.row}>\n-          <Ionicons name=\"stats-chart-outline\" size={20} color={colors.textSecondary} />\n-          <Text style={styles.rowLabel}>Weekly Summary</Text>\n-          <Switch\n-            value={settings.weeklySummary}\n-            onValueChange={(v) => onUpdateSetting('weeklySummary', v)}\n-            trackColor={{ false: colors.surfaceElevated, true: colors.primary }}\n-            thumbColor={colors.textOnPrimary}\n-          />\n-        </View>\n-        <View style={styles.divider} />\n+        {/* HUNT-05-124 B-H05-1: the Daily Check-in, New Client Alerts and Weekly\n+            Summary switches were removed. The server stored them but sends no\n+            alert for any of them, so a coach left them on and waited for alerts\n+            that never came. Real channels live in Notification preferences. */}\n         {/* Audit P1: surface the canonical NotificationPreferences screen. */}\n         <TouchableOpacity\n           style={styles.row}"
+    }
+  ]
+}

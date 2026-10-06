@@ -1,0 +1,462 @@
+﻿2026-10-06T21:04:46.5835722Z Current runner version: '2.337.0'
+2026-10-06T21:04:46.5869359Z ##[group]Runner Image Provisioner
+2026-10-06T21:04:46.5870516Z Hosted Compute Agent
+2026-10-06T21:04:46.5871546Z Version: 20261002.596
+2026-10-06T21:04:46.5872614Z Commit: c3d12f3313a95f25162a1503be624f3b0617f8c0
+2026-10-06T21:04:46.5873882Z Build Date: 2026-10-02T22:28:27Z
+2026-10-06T21:04:46.5874956Z Worker ID: {c177df6a-8d3c-4296-a014-0d38573945bf}
+2026-10-06T21:04:46.5876012Z Region: eastus2
+2026-10-06T21:04:46.5876975Z Cloud: Azure
+2026-10-06T21:04:46.5877858Z ##[endgroup]
+2026-10-06T21:04:46.5880390Z ##[group]Operating System
+2026-10-06T21:04:46.5881533Z Ubuntu
+2026-10-06T21:04:46.5882368Z 24.04.5
+2026-10-06T21:04:46.5883264Z LTS
+2026-10-06T21:04:46.5884130Z ##[endgroup]
+2026-10-06T21:04:46.5885073Z ##[group]Runner Image
+2026-10-06T21:04:46.5886149Z Image: ubuntu-24.04
+2026-10-06T21:04:46.5887043Z Version: 20261004.327.1
+2026-10-06T21:04:46.5889576Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261004.327/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-06T21:04:46.5892136Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261004.327
+2026-10-06T21:04:46.5894009Z ##[endgroup]
+2026-10-06T21:04:46.5895862Z ##[group]GITHUB_TOKEN Permissions
+2026-10-06T21:04:46.5899092Z Contents: read
+2026-10-06T21:04:46.5900012Z Metadata: read
+2026-10-06T21:04:46.5900986Z Packages: read
+2026-10-06T21:04:46.5901887Z ##[endgroup]
+2026-10-06T21:04:46.5904532Z Secret source: Actions
+2026-10-06T21:04:46.5906145Z Cache mode: write
+2026-10-06T21:04:46.5907636Z Prepare workflow directory
+2026-10-06T21:04:46.6353796Z Prepare all required actions
+2026-10-06T21:04:46.6420538Z Getting action download info
+2026-10-06T21:04:46.8593467Z Download action repository 'actions/checkout@v6' (SHA:d23441a48e516b6c34aea4fa41551a30e30af803)
+2026-10-06T21:04:46.9593915Z Download action repository 'actions/setup-node@v6' (SHA:249970729cb0ef3589644e2896645e5dc5ba9c38)
+2026-10-06T21:04:47.1477078Z Complete job name: Typecheck, lint, test
+2026-10-06T21:04:47.2252221Z ##[group]Run actions/checkout@v6
+2026-10-06T21:04:47.2253034Z with:
+2026-10-06T21:04:47.2253586Z   repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-06T21:04:47.2257887Z   token: ***
+2026-10-06T21:04:47.2258506Z   ssh-strict: true
+2026-10-06T21:04:47.2258948Z   ssh-user: git
+2026-10-06T21:04:47.2259393Z   persist-credentials: true
+2026-10-06T21:04:47.2259891Z   clean: true
+2026-10-06T21:04:47.2260343Z   sparse-checkout-cone-mode: true
+2026-10-06T21:04:47.2260907Z   fetch-depth: 1
+2026-10-06T21:04:47.2261348Z   fetch-tags: false
+2026-10-06T21:04:47.2261792Z   show-progress: true
+2026-10-06T21:04:47.2262234Z   lfs: false
+2026-10-06T21:04:47.2262639Z   submodules: false
+2026-10-06T21:04:47.2263081Z   set-safe-directory: true
+2026-10-06T21:04:47.2263576Z   allow-unsafe-pr-checkout: false
+2026-10-06T21:04:47.2264292Z ##[endgroup]
+2026-10-06T21:04:47.3263276Z Syncing repository: BradleyGleavePortfolio/growth-project-mobile
+2026-10-06T21:04:47.3265216Z ##[group]Getting Git version info
+2026-10-06T21:04:47.3266249Z Working directory is '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-06T21:04:47.3267559Z [command]/usr/bin/git version
+2026-10-06T21:04:47.3301926Z git version 2.55.0
+2026-10-06T21:04:47.3322031Z ##[endgroup]
+2026-10-06T21:04:47.3335775Z Temporarily overriding HOME='/home/runner/work/_temp/3fba04fc-120a-47c2-a357-37e698938e2b' before making global git config changes
+2026-10-06T21:04:47.3337181Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-06T21:04:47.3341192Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-06T21:04:47.3382409Z Deleting the contents of '/home/runner/work/growth-project-mobile/growth-project-mobile'
+2026-10-06T21:04:47.3386800Z ##[group]Determining repository object format
+2026-10-06T21:04:47.3389104Z ##[endgroup]
+2026-10-06T21:04:47.3390316Z ##[group]Initializing the repository
+2026-10-06T21:04:47.3393372Z [command]/usr/bin/git init /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-06T21:04:47.3466459Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-06T21:04:47.3470552Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-06T21:04:47.3472162Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-06T21:04:47.3473434Z hint: call:
+2026-10-06T21:04:47.3474134Z hint:
+2026-10-06T21:04:47.3475004Z hint: 	git config --global init.defaultBranch <name>
+2026-10-06T21:04:47.3476053Z hint:
+2026-10-06T21:04:47.3477021Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-06T21:04:47.3478762Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-06T21:04:47.3480055Z hint:
+2026-10-06T21:04:47.3480803Z hint: 	git branch -m <name>
+2026-10-06T21:04:47.3481616Z hint:
+2026-10-06T21:04:47.3482652Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-06T21:04:47.3484866Z Initialized empty Git repository in /home/runner/work/growth-project-mobile/growth-project-mobile/.git/
+2026-10-06T21:04:47.3488393Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-06T21:04:47.3524715Z ##[endgroup]
+2026-10-06T21:04:47.3526057Z ##[group]Disabling automatic garbage collection
+2026-10-06T21:04:47.3528946Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-06T21:04:47.3559003Z ##[endgroup]
+2026-10-06T21:04:47.3560314Z ##[group]Setting up auth
+2026-10-06T21:04:47.3561218Z Removing SSH command configuration
+2026-10-06T21:04:47.3566438Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-06T21:04:47.3599626Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-06T21:04:47.3917637Z Removing HTTP extra header
+2026-10-06T21:04:47.3923924Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-06T21:04:47.3957018Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-06T21:04:47.4182099Z Removing includeIf entries pointing to credentials config files
+2026-10-06T21:04:47.4187725Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-06T21:04:47.4219148Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-06T21:04:47.4448791Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-06T21:04:47.4484676Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config
+2026-10-06T21:04:47.4514365Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config
+2026-10-06T21:04:47.4546845Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config
+2026-10-06T21:04:47.4584606Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config
+2026-10-06T21:04:47.4644324Z ##[endgroup]
+2026-10-06T21:04:47.4645094Z ##[group]Fetching the repository
+2026-10-06T21:04:47.4652323Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +2f1d06f4932e037bf44d13bbdc45a3d958de5fde:refs/remotes/pull/417/merge
+2026-10-06T21:04:48.4133054Z From https://github.com/BradleyGleavePortfolio/growth-project-mobile
+2026-10-06T21:04:48.4135033Z  * [new ref]         2f1d06f4932e037bf44d13bbdc45a3d958de5fde -> pull/417/merge
+2026-10-06T21:04:48.4138969Z ##[endgroup]
+2026-10-06T21:04:48.4140632Z ##[group]Determining the checkout info
+2026-10-06T21:04:48.4142472Z ##[endgroup]
+2026-10-06T21:04:48.4149447Z [command]/usr/bin/git sparse-checkout disable
+2026-10-06T21:04:48.4203281Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-06T21:04:48.4241104Z ##[group]Checking out the ref
+2026-10-06T21:04:48.4244175Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/417/merge
+2026-10-06T21:04:48.5527928Z Note: switching to 'refs/remotes/pull/417/merge'.
+2026-10-06T21:04:48.5529389Z 
+2026-10-06T21:04:48.5530281Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-10-06T21:04:48.5532160Z changes and commit them, and you can discard any commits you make in this
+2026-10-06T21:04:48.5533749Z state without impacting any branches by switching back to a branch.
+2026-10-06T21:04:48.5534477Z 
+2026-10-06T21:04:48.5535074Z If you want to create a new branch to retain commits you create, you may
+2026-10-06T21:04:48.5536259Z do so (now or later) by using -c with the switch command. Example:
+2026-10-06T21:04:48.5536981Z 
+2026-10-06T21:04:48.5537365Z   git switch -c <new-branch-name>
+2026-10-06T21:04:48.5537942Z 
+2026-10-06T21:04:48.5538597Z Or undo this operation with:
+2026-10-06T21:04:48.5539368Z 
+2026-10-06T21:04:48.5539819Z   git switch -
+2026-10-06T21:04:48.5540370Z 
+2026-10-06T21:04:48.5541010Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-10-06T21:04:48.5541941Z 
+2026-10-06T21:04:48.5543012Z HEAD is now at 2f1d06f Merge d489a4a7abf73f116059f98c743847f2c9396c8b into a1904f2f4e8d175a38d6eb627303a2312e2b1ace
+2026-10-06T21:04:48.5547115Z ##[endgroup]
+2026-10-06T21:04:48.5582459Z [command]/usr/bin/git log -1 --format=%H
+2026-10-06T21:04:48.5607512Z 2f1d06f4932e037bf44d13bbdc45a3d958de5fde
+2026-10-06T21:04:48.6062432Z ##[group]Run actions/setup-node@v6
+2026-10-06T21:04:48.6063588Z with:
+2026-10-06T21:04:48.6064480Z   node-version: 22.13
+2026-10-06T21:04:48.6065446Z   cache: npm
+2026-10-06T21:04:48.6066353Z   check-latest: false
+2026-10-06T21:04:48.6075222Z   token: ***
+2026-10-06T21:04:48.6076207Z   package-manager-cache: true
+2026-10-06T21:04:48.6077283Z ##[endgroup]
+2026-10-06T21:04:48.7480986Z Attempting to download 22.13...
+2026-10-06T21:04:49.1984482Z Acquiring 22.13.1 - x64 from https://github.com/actions/node-versions/releases/download/22.13.1-12900459766/node-22.13.1-linux-x64.tar.gz
+2026-10-06T21:04:49.7432877Z Extracting ...
+2026-10-06T21:04:49.7545725Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/9b7b2a74-21e0-4beb-b3e9-b99fbcddf8e9 -f /home/runner/work/_temp/77417caa-6225-45ea-8c22-5480e047e9c9
+2026-10-06T21:04:51.0144743Z Adding to the cache ...
+2026-10-06T21:04:52.7550848Z ##[group]Environment details
+2026-10-06T21:04:52.9617200Z node: v22.13.1
+2026-10-06T21:04:52.9617790Z npm: 10.9.2
+2026-10-06T21:04:52.9618697Z yarn: 1.22.22
+2026-10-06T21:04:52.9619433Z ##[endgroup]
+2026-10-06T21:04:52.9649282Z [command]/opt/hostedtoolcache/node/22.13.1/x64/bin/npm config get cache
+2026-10-06T21:04:53.0548872Z /home/runner/.npm
+2026-10-06T21:04:53.1396321Z Cache hit for: node-cache-Linux-x64-npm-73b8c5392fe66c132d819fae91e82c2568aa0bf72eece35e2bb64b643944e426
+2026-10-06T21:04:54.1366812Z Received 242722566 of 242722566 (100.0%), 242.1 MBs/sec
+2026-10-06T21:04:54.1367517Z Cache Size: ~231 MB (242722566 B)
+2026-10-06T21:04:54.1442884Z [command]/usr/bin/tar -xf /home/runner/work/_temp/fc0b3ace-6059-405c-9027-6d923a29d96f/cache.tzst -P -C /home/runner/work/growth-project-mobile/growth-project-mobile --use-compress-program unzstd
+2026-10-06T21:04:54.7817192Z Cache restored successfully
+2026-10-06T21:04:54.7934271Z Cache restored from key: node-cache-Linux-x64-npm-73b8c5392fe66c132d819fae91e82c2568aa0bf72eece35e2bb64b643944e426
+2026-10-06T21:04:54.8160629Z ##[group]Run npm ci
+2026-10-06T21:04:54.8160963Z [36;1mnpm ci[0m
+2026-10-06T21:04:54.8445297Z shell: /usr/bin/bash -e {0}
+2026-10-06T21:04:54.8445616Z ##[endgroup]
+2026-10-06T21:04:59.7777233Z npm warn deprecated inflight@1.0.6: This module is not supported, and leaks memory. Do not use it. Check out lru-cache if you want a good and tested way to coalesce async requests by a key value, which is much more comprehensive and powerful.
+2026-10-06T21:04:59.9587174Z npm warn deprecated @humanwhocodes/config-array@0.13.0: Use @eslint/config-array instead
+2026-10-06T21:04:59.9728444Z npm warn deprecated whatwg-encoding@2.0.0: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+2026-10-06T21:04:59.9771242Z npm warn deprecated rimraf@3.0.2: Rimraf versions prior to v4 are no longer supported
+2026-10-06T21:04:59.9966580Z npm warn deprecated abab@2.0.6: Use your platform's native atob() and btoa() methods instead
+2026-10-06T21:05:00.1147208Z npm warn deprecated @humanwhocodes/object-schema@2.0.3: Use @eslint/object-schema instead
+2026-10-06T21:05:00.1186027Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T21:05:00.1195175Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T21:05:00.1211881Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T21:05:00.1215271Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T21:05:00.1250107Z npm warn deprecated glob@7.2.3: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T21:05:00.1565863Z npm warn deprecated glob@7.1.6: Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me
+2026-10-06T21:05:00.1992410Z npm warn deprecated domexception@4.0.0: Use your platform's native DOMException instead
+2026-10-06T21:05:00.5911907Z npm warn deprecated @xmldom/xmldom@0.7.13: this version has critical issues, please update to the latest version
+2026-10-06T21:05:01.2763661Z npm warn deprecated uuid@7.0.3: uuid@10 and below is no longer supported.  For ESM codebases, update to uuid@latest.  For CommonJS codebases, use uuid@11 (but be aware this version will likely be deprecated in 2028).
+2026-10-06T21:05:04.3617520Z npm warn deprecated eslint@8.57.1: This version is no longer supported. Please see https://eslint.org/version-support for other options.
+2026-10-06T21:05:10.6143643Z 
+2026-10-06T21:05:10.6144462Z > growth-project-app@1.0.0 postinstall
+2026-10-06T21:05:10.6144968Z > node scripts/patch-react-native-health.js
+2026-10-06T21:05:10.6145203Z 
+2026-10-06T21:05:10.6599693Z Applied react-native-health RN 0.85 compatibility patch
+2026-10-06T21:05:10.6785012Z 
+2026-10-06T21:05:10.6785802Z added 1109 packages, and audited 1110 packages in 16s
+2026-10-06T21:05:10.6786605Z 
+2026-10-06T21:05:10.6786880Z 187 packages are looking for funding
+2026-10-06T21:05:10.6787625Z   run `npm fund` for details
+2026-10-06T21:05:11.0615504Z 
+2026-10-06T21:05:11.0616498Z 92 vulnerabilities (1 low, 18 moderate, 72 high, 1 critical)
+2026-10-06T21:05:11.0616944Z 
+2026-10-06T21:05:11.0617301Z To address issues that do not require attention, run:
+2026-10-06T21:05:11.0617810Z   npm audit fix
+2026-10-06T21:05:11.0618013Z 
+2026-10-06T21:05:11.0618509Z To address all issues (including breaking changes), run:
+2026-10-06T21:05:11.0619185Z   npm audit fix --force
+2026-10-06T21:05:11.0619414Z 
+2026-10-06T21:05:11.0619602Z Run `npm audit` for details.
+2026-10-06T21:05:11.1826805Z ##[group]Run npm run guard:vendors
+2026-10-06T21:05:11.1827147Z [36;1mnpm run guard:vendors[0m
+2026-10-06T21:05:11.1898597Z shell: /usr/bin/bash -e {0}
+2026-10-06T21:05:11.1898881Z ##[endgroup]
+2026-10-06T21:05:11.2902257Z 
+2026-10-06T21:05:11.2902962Z > growth-project-app@1.0.0 guard:vendors
+2026-10-06T21:05:11.2903500Z > node scripts/vendor-name-guard.mjs
+2026-10-06T21:05:11.2903717Z 
+2026-10-06T21:05:11.4371192Z docs/importer/NORTH_STAR.md: 3 hit(s) — Current importer governance record states the retired legacy oracle.; retire: V1 learned-path parity
+2026-10-06T21:05:11.4372751Z src/**/__tests__/**: 280 hit(s) — Tests preserve source-contract evidence.; retire: V1 learned-path parity
+2026-10-06T21:05:11.4373704Z src/**/__fixtures__/**: 11 hit(s) — Fixtures preserve source-contract evidence.; retire: V1 learned-path parity
+2026-10-06T21:05:11.4374672Z src/constants/importPlatforms.ts: 11 hit(s) — Source-picker shortcuts are data.; retire: Roman neutral source entry
+2026-10-06T21:05:11.4375354Z vendor-name guard: passed
+2026-10-06T21:05:11.4492445Z ##[group]Run npm run guard:supabase-hermes
+2026-10-06T21:05:11.4492815Z [36;1mnpm run guard:supabase-hermes[0m
+2026-10-06T21:05:11.4562007Z shell: /usr/bin/bash -e {0}
+2026-10-06T21:05:11.4562288Z ##[endgroup]
+2026-10-06T21:05:11.5531853Z 
+2026-10-06T21:05:11.5532599Z > growth-project-app@1.0.0 guard:supabase-hermes
+2026-10-06T21:05:11.5533376Z > node scripts/check-supabase-hermes.js
+2026-10-06T21:05:11.5533678Z 
+2026-10-06T21:05:12.0127384Z check-supabase-hermes: OK (@supabase/auth-js@2.105.0, @supabase/functions-js@2.105.0, @supabase/phoenix@0.4.5, @supabase/postgrest-js@2.105.0, @supabase/realtime-js@2.105.0, @supabase/storage-js@2.105.0, @supabase/supabase-js@2.105.0)
+2026-10-06T21:05:12.0297736Z ##[group]Run node scripts/check-expo-module-gradle.js
+2026-10-06T21:05:12.0298545Z [36;1mnode scripts/check-expo-module-gradle.js[0m
+2026-10-06T21:05:12.0370076Z shell: /usr/bin/bash -e {0}
+2026-10-06T21:05:12.0370364Z ##[endgroup]
+2026-10-06T21:05:12.1782447Z [expo-module-gradle] OK: 38 Expo modules, none on the legacy Gradle path.
+2026-10-06T21:05:12.1871855Z ##[group]Run node scripts/check-expected-env.js
+2026-10-06T21:05:12.1872242Z [36;1mnode scripts/check-expected-env.js[0m
+2026-10-06T21:05:12.1939502Z shell: /usr/bin/bash -e {0}
+2026-10-06T21:05:12.1939786Z ##[endgroup]
+2026-10-06T21:05:13.7357526Z [expected-env] OK: 63 EXPO_PUBLIC_* names read, all in the manifest.
+2026-10-06T21:05:13.7588872Z ##[group]Run npm run validate:config
+2026-10-06T21:05:13.7589229Z [36;1mnpm run validate:config[0m
+2026-10-06T21:05:13.7656979Z shell: /usr/bin/bash -e {0}
+2026-10-06T21:05:13.7657257Z ##[endgroup]
+2026-10-06T21:05:13.8618285Z 
+2026-10-06T21:05:13.8619019Z > growth-project-app@1.0.0 validate:config
+2026-10-06T21:05:13.8619766Z > node scripts/validate-app-config.js
+2026-10-06T21:05:13.8620090Z 
+2026-10-06T21:05:13.9391732Z warn: app.json: expo.extra.storeListings.playStoreUrl is null — fill in the published listing URL (e.g. https://play.google.com/store/apps/details?id=com.growthproject.app) before submitting to the stores
+2026-10-06T21:05:13.9394904Z warn: docs/well-known/assetlinks.json: contains template placeholder(s) REPLACE_WITH_PLAY_APP_SIGNING_SHA256_FINGERPRINT — fill in before hosting at the marketing site (run with --release to promote this to a release blocker)
+2026-10-06T21:05:13.9397100Z validate-app-config: OK (2 warning(s))
+2026-10-06T21:05:13.9503877Z ##[group]Run npm run lint --if-present
+2026-10-06T21:05:13.9504222Z [36;1mnpm run lint --if-present[0m
+2026-10-06T21:05:13.9572223Z shell: /usr/bin/bash -e {0}
+2026-10-06T21:05:13.9572512Z ##[endgroup]
+2026-10-06T21:05:14.0623353Z 
+2026-10-06T21:05:14.0623996Z > growth-project-app@1.0.0 lint
+2026-10-06T21:05:14.0624697Z > eslint "src/**/*.{ts,tsx}" --max-warnings=99999
+2026-10-06T21:05:14.0625083Z 
+2026-10-06T21:05:35.5745740Z 
+2026-10-06T21:05:35.5746704Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/api/invites.ts
+2026-10-06T21:05:35.5775774Z ##[warning]  53:32   warning  Unnecessary escape character: \-  no-useless-escape
+2026-10-06T21:05:35.5784768Z ##[warning]  53:74   warning  Unnecessary escape character: \-  no-useless-escape
+2026-10-06T21:05:35.5786170Z ##[warning]  53:120  warning  Unnecessary escape character: \-  no-useless-escape
+2026-10-06T21:05:35.5787017Z 
+2026-10-06T21:05:35.5787510Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/components/AppSplash.tsx
+2026-10-06T21:05:35.5790539Z ##[warning]  39:6  warning  React Hook useEffect has missing dependencies: 'containerOpacity', 'onFinish', and 'textOpacity'. Either include them or remove the dependency array. If 'onFinish' changes too often, find the parent component that defines it and wrap that definition in useCallback  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5792178Z 
+2026-10-06T21:05:35.5792647Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/components/OnboardingLayout.tsx
+2026-10-06T21:05:35.5794171Z ##[warning]  48:6  warning  React Hook useEffect has a missing dependency: 'progressAnim'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5795249Z 
+2026-10-06T21:05:35.5795674Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/components/SkeletonLoader.tsx
+2026-10-06T21:05:35.5797189Z ##[warning]  16:6  warning  React Hook useEffect has a missing dependency: 'opacity'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5798378Z 
+2026-10-06T21:05:35.5798902Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/components/anticipation/MilestoneProgress.tsx
+2026-10-06T21:05:35.5800447Z ##[warning]  46:7  warning  'PULSE_DURATION' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5801421Z 
+2026-10-06T21:05:35.5801867Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/components/coach/NewClientBanner.tsx
+2026-10-06T21:05:35.5803181Z ##[warning]  15:10  warning  'View' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5804114Z 
+2026-10-06T21:05:35.5804621Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/components/coach/StripeSetupBanner.tsx
+2026-10-06T21:05:35.5805802Z ##[warning]  20:3  warning  'View' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5806729Z 
+2026-10-06T21:05:35.5807236Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/components/command-center/CoachLtvDashboard.tsx
+2026-10-06T21:05:35.5808850Z ##[warning]   32:3  warning  'AccessibilityInfo' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5810783Z ##[warning]  554:9  warning  'mrr' is assigned a value but never used. Allowed unused vars must match /^_/u       @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5811786Z 
+2026-10-06T21:05:35.5812321Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/components/command-center/MockDataBanner.tsx
+2026-10-06T21:05:35.5813534Z ##[warning]  1:8  warning  'React' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5814828Z 
+2026-10-06T21:05:35.5815557Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/components/community/MilestoneCabinet.tsx
+2026-10-06T21:05:35.5817740Z ##[warning]  22:9  warning  The 'milestones' logical expression could make the dependencies of useEffect Hook (at line 36) change on every render. To fix this, wrap the initialization of 'milestones' in its own useMemo() Hook  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5819285Z 
+2026-10-06T21:05:35.5819722Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/components/trust/TrustCueRow.tsx
+2026-10-06T21:05:35.5820987Z ##[warning]  12:22  warning  'View' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5821958Z 
+2026-10-06T21:05:35.5822310Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/db/habitsDb.ts
+2026-10-06T21:05:35.5823471Z ##[warning]  180:7   warning  'checkDate' is never reassigned. Use 'const' instead                          prefer-const
+2026-10-06T21:05:35.5825167Z ##[warning]  241:6   warning  'CheckInRow' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5826896Z ##[warning]  273:10  warning  'mapCheckIn' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5827823Z 
+2026-10-06T21:05:35.5828435Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/hooks/useClientData.ts
+2026-10-06T21:05:35.5830069Z ##[warning]  15:6  warning  React Hook useEffect has missing dependencies: 'currentUser' and 'store'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5831149Z 
+2026-10-06T21:05:35.5831524Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/hooks/useCoachData.ts
+2026-10-06T21:05:35.5832996Z ##[warning]  13:6  warning  React Hook useEffect has missing dependencies: 'currentUser' and 'store'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5834085Z 
+2026-10-06T21:05:35.5834532Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/lib/finalizeLeanOnboarding.ts
+2026-10-06T21:05:35.5835864Z ##[warning]  44:10  warning  'readUserCache' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5836810Z 
+2026-10-06T21:05:35.5837240Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/navigation/RootNavigator.tsx
+2026-10-06T21:05:35.5838837Z ##[warning]   95:10  warning  'rewriteHttpsToScheme' is defined but never used. Allowed unused vars must match /^_/u                      @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5840933Z ##[warning]  632:6   warning  React Hook useEffect has a missing dependency: 'network'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5841980Z 
+2026-10-06T21:05:35.5842447Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/auth/CreateAccountScreen.tsx
+2026-10-06T21:05:35.5843870Z ##[warning]   45:15  warning  'NavigationProp' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5845627Z ##[warning]   45:31  warning  'ParamListBase' is defined but never used. Allowed unused vars must match /^_/u   @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5847227Z ##[warning]  444:27  warning  Unnecessary escape character: \[                                                  no-useless-escape
+2026-10-06T21:05:35.5849079Z ##[warning]  444:44  warning  Unnecessary escape character: \/                                                  no-useless-escape
+2026-10-06T21:05:35.5849976Z 
+2026-10-06T21:05:35.5850390Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/auth/LoginScreen.tsx
+2026-10-06T21:05:35.5851620Z ##[warning]  24:15  warning  'NavigationProp' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5853744Z ##[warning]  24:31  warning  'ParamListBase' is defined but never used. Allowed unused vars must match /^_/u   @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5854690Z 
+2026-10-06T21:05:35.5855156Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/auth/ResetPasswordScreen.tsx
+2026-10-06T21:05:35.5856512Z ##[warning]  41:10  warning  'NativeStackNavigationProp' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5857501Z 
+2026-10-06T21:05:35.5857972Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/auth/RoleSelectionScreen.tsx
+2026-10-06T21:05:35.5859966Z ##[warning]  156:6  warning  React Hook useEffect has missing dependencies: 'isAttachRetry' and 'route?.params?.signupNotice'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5861219Z 
+2026-10-06T21:05:35.5861660Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/client/AIGuideScreen.tsx
+2026-10-06T21:05:35.5863312Z ##[warning]   81:6  warning  React Hook useEffect has missing dependencies: 'dot1', 'dot2', and 'dot3'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5865486Z ##[warning]  148:6  warning  React Hook useEffect has a missing dependency: 'loadChat'. Either include it or remove the dependency array                    react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5867638Z ##[warning]  312:5  warning  React Hook useCallback has an unnecessary dependency: 'currentUser'. Either exclude it or remove the dependency array          react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5868827Z 
+2026-10-06T21:05:35.5869301Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/client/ActiveWorkoutScreen.tsx
+2026-10-06T21:05:35.5870657Z ##[warning]  36:10  warning  'toServerMuscleGroup' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5871628Z 
+2026-10-06T21:05:35.5872150Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/client/BrandedCheckoutWebViewScreen.tsx
+2026-10-06T21:05:35.5873424Z ##[warning]  503:3  warning  'tokens' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5874360Z 
+2026-10-06T21:05:35.5874829Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/client/DeliverablesScreen.tsx
+2026-10-06T21:05:35.5875998Z ##[warning]  317:53  warning  'tokens' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5876954Z 
+2026-10-06T21:05:35.5877400Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/client/ExerciseDetailScreen.tsx
+2026-10-06T21:05:35.5878791Z ##[warning]  22:3  warning  'ActivityIndicator' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5879759Z 
+2026-10-06T21:05:35.5880200Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/client/HomeScreen.tsx
+2026-10-06T21:05:35.5881829Z ##[warning]  208:6  warning  React Hook useEffect has a missing dependency: 'currentUser'. Either include it or remove the dependency array                                        react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5884174Z ##[warning]  271:6  warning  React Hook useEffect has missing dependencies: 'currentUser', 'loadDayData', and 'loadProfile'. Either include them or remove the dependency array    react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5886577Z ##[warning]  281:6  warning  React Hook useCallback has missing dependencies: 'currentUser', 'loadDayData', and 'loadProfile'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5887745Z 
+2026-10-06T21:05:35.5888262Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/client/LogScreen.tsx
+2026-10-06T21:05:35.5890185Z ##[warning]  144:6  warning  React Hook useEffect has missing dependencies: 'currentUser' and 'loadDayData'. Either include them or remove the dependency array    react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5892536Z ##[warning]  520:6  warning  React Hook useCallback has missing dependencies: 'currentUser' and 'loadDayData'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5893662Z 
+2026-10-06T21:05:35.5894125Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/client/ProfileScreen.tsx
+2026-10-06T21:05:35.5895428Z ##[warning]  66:9  warning  'identityTitle' is assigned a value but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5896393Z 
+2026-10-06T21:05:35.5896872Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/client/PurchaseUnpackScreen.tsx
+2026-10-06T21:05:35.5898080Z ##[warning]  540:53  warning  'tokens' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5899279Z 
+2026-10-06T21:05:35.5899722Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/client/RecipesScreen.tsx
+2026-10-06T21:05:35.5901379Z ##[warning]  161:6  warning  React Hook useEffect has a missing dependency: 'currentUser?.profile?.diet_restrictions'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5902496Z 
+2026-10-06T21:05:35.5902922Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/client/ReportScreen.tsx
+2026-10-06T21:05:35.5904373Z ##[warning]  34:6  warning  React Hook useEffect has a missing dependency: 'loadReportData'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5905411Z 
+2026-10-06T21:05:35.5905838Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/client/SettingsScreen.tsx
+2026-10-06T21:05:35.5907083Z ##[warning]  19:19  warning  'refreshProfile' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5908054Z 
+2026-10-06T21:05:35.5908580Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/client/TimelineScreen.tsx
+2026-10-06T21:05:35.5910105Z ##[warning]   29:3   warning  'AccessibilityInfo' is defined but never used. Allowed unused vars must match /^_/u                                                             @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5912237Z ##[warning]   34:10  warning  'timelineApi' is defined but never used. Allowed unused vars must match /^_/u                                                                   @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5914450Z ##[warning]  137:6   warning  React Hook React.useEffect has a missing dependency: 'load'. Either include it or remove the dependency array                                   react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5916738Z ##[warning]  137:7   warning  React Hook React.useEffect has a complex expression in the dependency array. Extract it to a separate variable so it can be statically checked  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5917861Z 
+2026-10-06T21:05:35.5918439Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/coach/ClientInsightScreen.tsx
+2026-10-06T21:05:35.5919843Z ##[warning]  26:3  warning  'ActivityIndicator' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5920826Z 
+2026-10-06T21:05:35.5921264Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/coach/ClientsListScreen.tsx
+2026-10-06T21:05:35.5922862Z ##[warning]  45:6  warning  React Hook useEffect has missing dependencies: 'currentUser' and 'loadClients'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5923941Z 
+2026-10-06T21:05:35.5924390Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/coach/CoachHomeScreen.tsx
+2026-10-06T21:05:35.5926183Z ##[warning]    8:3  warning  'ActivityIndicator' is defined but never used. Allowed unused vars must match /^_/u                                                   @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5928478Z ##[warning]  126:6  warning  React Hook useCallback has missing dependencies: 'currentUser' and 'loadClients'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5930728Z ##[warning]  162:6  warning  React Hook useEffect has a missing dependency: 'detectRedFlags'. Either include it or remove the dependency array                     react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5931817Z 
+2026-10-06T21:05:35.5932264Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/coach/CoachInvitesScreen.tsx
+2026-10-06T21:05:35.5933675Z ##[warning]  265:6  warning  React Hook useCallback has a missing dependency: 'load'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5934707Z 
+2026-10-06T21:05:35.5935131Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/coach/MessagesScreen.tsx
+2026-10-06T21:05:35.5936710Z ##[warning]  70:6  warning  React Hook useEffect has missing dependencies: 'currentUser' and 'loadClients'. Either include them or remove the dependency array    react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5939190Z ##[warning]  97:6  warning  React Hook useCallback has missing dependencies: 'currentUser' and 'loadClients'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5940292Z 
+2026-10-06T21:05:35.5940767Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/coach/ProgramTemplatesScreen.tsx
+2026-10-06T21:05:35.5942443Z ##[warning]  115:6  warning  React Hook useEffect has missing dependencies: 'currentUser' and 'loadClients'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5943582Z 
+2026-10-06T21:05:35.5944083Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/coach/client-detail/TimelineTab.tsx
+2026-10-06T21:05:35.5946438Z ##[warning]  12:6  warning  React Hook React.useEffect has a missing dependency: 'onLoad'. Either include it or remove the dependency array. If 'onLoad' changes too often, find the parent component that defines it and wrap that definition in useCallback  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5947832Z 
+2026-10-06T21:05:35.5948480Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/coach/payments/CoachPackageContentsScreen.tsx
+2026-10-06T21:05:35.5950158Z ##[warning]  522:5  warning  React Hook useCallback has a missing dependency: 'tokens.semantic.warning.icon'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5951191Z 
+2026-10-06T21:05:35.5951688Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/coach/payments/CoachPackageEditScreen.tsx
+2026-10-06T21:05:35.5952902Z ##[warning]  1054:3  warning  'tokens' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5953836Z 
+2026-10-06T21:05:35.5954371Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/coach/payments/CoachPackagesListScreen.tsx
+2026-10-06T21:05:35.5955617Z ##[warning]  208:3  warning  'tokens' is defined but never used. Allowed unused args must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5956545Z 
+2026-10-06T21:05:35.5957063Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/notifications/NotificationCenterScreen.tsx
+2026-10-06T21:05:35.5958521Z ##[warning]  15:61  warning  'useState' is defined but never used. Allowed unused vars must match /^_/u  @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5959496Z 
+2026-10-06T21:05:35.5959938Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/screens/onboarding/LeanQ5Screen.tsx
+2026-10-06T21:05:35.5961785Z ##[warning]   25:3   warning  'Dimensions' is defined but never used. Allowed unused vars must match /^_/u                                      @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5963771Z ##[warning]   93:67  warning  'colors' is defined but never used. Allowed unused args must match /^_/u                                          @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5965767Z ##[warning]  110:6   warning  React Hook useEffect has a missing dependency: 'selectedIndex'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5967840Z ##[warning]  245:6   warning  React Hook useEffect has a missing dependency: 'units'. Either include it or remove the dependency array          react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5968968Z 
+2026-10-06T21:05:35.5969440Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/services/PersistedQueryCacheGate.tsx
+2026-10-06T21:05:35.5972032Z ##[warning]  146:20  warning  The ref value 'retiredRef.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'retiredRef.current' to a variable inside the effect, and use that variable in the cleanup function  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5973565Z 
+2026-10-06T21:05:35.5973945Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/store/clientStore.ts
+2026-10-06T21:05:35.5974845Z ##[warning]  167:5  warning  Unnecessary try/catch wrapper  no-useless-catch
+2026-10-06T21:05:35.5975605Z 
+2026-10-06T21:05:35.5976062Z /home/runner/work/growth-project-mobile/growth-project-mobile/src/ui/empty-states/EmptyStateNoClients.tsx
+2026-10-06T21:05:35.5977583Z ##[warning]   69:10  warning  'loading' is assigned a value but never used. Allowed unused vars must match /^_/u                       @typescript-eslint/no-unused-vars
+2026-10-06T21:05:35.5979747Z ##[warning]  114:6   warning  React Hook useEffect has a missing dependency: 'code'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+2026-10-06T21:05:35.5980758Z 
+2026-10-06T21:05:35.5981222Z ✖ 73 problems (0 errors, 73 warnings)
+2026-10-06T21:05:35.5981711Z   0 errors and 1 warning potentially fixable with the `--fix` option.
+2026-10-06T21:05:35.5982011Z 
+2026-10-06T21:05:35.7184799Z ##[group]Run npx tsc --noEmit
+2026-10-06T21:05:35.7185123Z [36;1mnpx tsc --noEmit[0m
+2026-10-06T21:05:35.7252522Z shell: /usr/bin/bash -e {0}
+2026-10-06T21:05:35.7252804Z ##[endgroup]
+2026-10-06T21:06:06.3040678Z ##[error]src/screens/support/__tests__/SupportInboxReportProblem.test.tsx(16,20): error TS2352: Conversion of type '{ goBack: jest.Mock<any, any, any>; }' to type 'NavigationProp<ParamListBase>' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+2026-10-06T21:06:06.3046934Z   Type '{ goBack: Mock<any, any, any>; }' is missing the following properties from type 'Omit<NavigationHelpersCommon<ParamListBase, Readonly<{ key: string; index: number; routeNames: string[]; history?: unknown[] | undefined; routes: NavigationRoute<ParamListBase, string>[]; type: string; stale: false; }>>, "getParent">': getState, reset, dispatch, navigate, and 5 more.
+2026-10-06T21:06:06.4589347Z ##[error]Process completed with exit code 2.
+2026-10-06T21:06:06.4732474Z Post job cleanup.
+2026-10-06T21:06:06.5576028Z [command]/usr/bin/git version
+2026-10-06T21:06:06.5612018Z git version 2.55.0
+2026-10-06T21:06:06.5647366Z Temporarily overriding HOME='/home/runner/work/_temp/9cf7aaad-3a38-490d-83a2-2c33b958ab35' before making global git config changes
+2026-10-06T21:06:06.5648855Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-06T21:06:06.5652765Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-mobile/growth-project-mobile
+2026-10-06T21:06:06.5682889Z Removing SSH command configuration
+2026-10-06T21:06:06.5688975Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-06T21:06:06.5723481Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-06T21:06:06.5959932Z Removing HTTP extra header
+2026-10-06T21:06:06.5964172Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-06T21:06:06.6003698Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-06T21:06:06.6253297Z Removing includeIf entries pointing to credentials config files
+2026-10-06T21:06:06.6261670Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-06T21:06:06.6289601Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-06T21:06:06.6291177Z includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-06T21:06:06.6292523Z includeif.gitdir:/github/workspace/.git.path
+2026-10-06T21:06:06.6293549Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-06T21:06:06.6299452Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path
+2026-10-06T21:06:06.6322754Z /home/runner/work/_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config
+2026-10-06T21:06:06.6334999Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git.path /home/runner/work/_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config
+2026-10-06T21:06:06.6373555Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path
+2026-10-06T21:06:06.6397108Z /home/runner/work/_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config
+2026-10-06T21:06:06.6407025Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-mobile/growth-project-mobile/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config
+2026-10-06T21:06:06.6440257Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-06T21:06:06.6463358Z /github/runner_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config
+2026-10-06T21:06:06.6471018Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config
+2026-10-06T21:06:06.6503452Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-06T21:06:06.6527447Z /github/runner_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config
+2026-10-06T21:06:06.6534972Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config
+2026-10-06T21:06:06.6572304Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-06T21:06:06.6831384Z Removing credentials config '/home/runner/work/_temp/git-credentials-11847a3f-7152-42ec-9d81-fd295b7d76f5.config'
+2026-10-06T21:06:06.6986094Z Cleaning up orphan processes

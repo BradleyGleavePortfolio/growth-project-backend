@@ -1,0 +1,454 @@
+diff --git a/src/navigation/AuthNavigator.tsx b/src/navigation/AuthNavigator.tsx
+index 71a61d3d..2471be87 100644
+--- a/src/navigation/AuthNavigator.tsx
++++ b/src/navigation/AuthNavigator.tsx
+@@ -9,6 +9,7 @@ import RoleSelectionScreen from '../screens/auth/RoleSelectionScreen';
+ import type { SignupRoleNoticeKind } from '../lib/signupRoleNotice';
+ import AcceptInviteScreen from '../screens/auth/AcceptInviteScreen';
+ import AuthCallbackScreen from '../screens/auth/AuthCallbackScreen';
++import EmailVerifiedScreen from '../screens/auth/EmailVerifiedScreen';
+ import SupportInboxScreen from '../screens/support/SupportInboxScreen';
+ import { Colors } from '../constants/colors';
+ 
+@@ -41,6 +42,9 @@ export type AuthStackParamList = {
+   AcceptInvite: { token: string };
+   // Idempotent landing for a stray `tgp://auth/callback` (OAuth redirect URI).
+   AuthCallback: undefined;
++  // HUNT-01-124: landing for the sign-up confirmation link (`tgp://verified`).
++  // `status` is derived by the linking config; session tokens are dropped.
++  EmailVerified: { status?: 'confirmed' | 'link_problem' } | undefined;
+   // In-app support (Crisp; initCrisp runs at app start regardless of auth).
+   // Registered here so signup notices that say "contact support" can open
+   // it before the user has reached Settings (#306 fix round 2). Opened in
+@@ -72,6 +76,7 @@ export default function AuthNavigator() {
+       <Stack.Screen name="RoleSelection" component={RoleSelectionScreen} />
+       <Stack.Screen name="AcceptInvite" component={AcceptInviteScreen} />
+       <Stack.Screen name="AuthCallback" component={AuthCallbackScreen} />
++      <Stack.Screen name="EmailVerified" component={EmailVerifiedScreen} />
+       <Stack.Screen name="SupportInbox" component={PreSignInSupportInbox} />
+     </Stack.Navigator>
+   );
+diff --git a/src/navigation/RootNavigator.tsx b/src/navigation/RootNavigator.tsx
+index 48abfcef..84032aea 100644
+--- a/src/navigation/RootNavigator.tsx
++++ b/src/navigation/RootNavigator.tsx
+@@ -74,7 +74,7 @@ type AuthState =
+ // `?`). `fragmentToQuery` hoists the fragment into the query string
+ // for the reset-password path so the ResetPassword screen receives
+ // the tokens via `route.params`. See navigation/deepLinkUtils.ts.
+-import { fragmentToQuery } from './deepLinkUtils';
++import { emailVerifiedPath, fragmentToQuery } from './deepLinkUtils';
+ import { readUserCache, clearUserCache } from '../lib/userCache';
+ import { EntitlementProvider } from '../entitlements/EntitlementProvider';
+ import { shouldOfferPackagePrompt } from '../lib/packagePromptGate';
+@@ -154,6 +154,10 @@ export const linking: LinkingOptions<Record<string, object | undefined>> = {
+         return undefined;
+       }
+     }
++    // HUNT-01-124: the confirmation email's `tgp://verified#<session>` is
++    // reduced to a token-free status before parsing (see deepLinkUtils).
++    const verified = emailVerifiedPath(path);
++    if (verified) return getStateFromPath(verified, options);
+     return getStateFromPath(fragmentToQuery(path), options);
+   },
+   config: {
+@@ -179,6 +183,15 @@ export const linking: LinkingOptions<Record<string, object | undefined>> = {
+       // re-bootstraps (authenticated) or resets to Login (not). It is
+       // mounted in AuthNavigator under this route name (clinic C10).
+       AuthCallback: 'auth/callback',
++      // HUNT-01-124: sign-up confirmation return (backend emailRedirectTo
++      // default `tgp://verified`). Without this entry the link opened the
++      // app with no confirmation and no next step.
++      EmailVerified: {
++        path: 'verified',
++        parse: {
++          status: (v: string) => (v === 'link_problem' ? 'link_problem' : 'confirmed'),
++        },
++      },
+       CreateAccount: {
+         path: 'join/:invite_code?',
+         parse: { invite_code: (v: string) => v },
+diff --git a/src/navigation/__tests__/hunt01EmailVerifiedLink.test.tsx b/src/navigation/__tests__/hunt01EmailVerifiedLink.test.tsx
+new file mode 100644
+index 00000000..de2fd282
+--- /dev/null
++++ b/src/navigation/__tests__/hunt01EmailVerifiedLink.test.tsx
+@@ -0,0 +1,176 @@
++/**
++ * HUNT-01-124 (B-HUNT01-1): the sign-up confirmation email returns to
++ * `tgp://verified` (backend `SUPABASE_REDIRECT_URL` default). The app had no
++ * route for it, so tapping Confirm opened the app on whatever screen was
++ * last shown (Welcome after a cold start) with nothing saying the email was
++ * confirmed or what to do next. These tests drive the real URLs Supabase
++ * sends through the linking config and render the landing screen.
++ */
++import React from 'react';
++import { fireEvent, render } from '@testing-library/react-native';
++
++jest.mock('../AuthNavigator', () => () => null);
++jest.mock('../ClientNavigator', () => () => null);
++jest.mock('../CoachNavigator', () => () => null);
++jest.mock('../OnboardingNavigator', () => () => null);
++jest.mock('../LeanOnboardingNavigator', () => () => null);
++jest.mock('../../components/OfflineBanner', () => () => null);
++jest.mock('../../screens/client/Day1WinScreen', () => () => null);
++jest.mock('../../services/support/crisp.service', () => ({
++  initCrisp: jest.fn(),
++  syncCrispIdentity: jest.fn(),
++}));
++jest.mock('../../services/firstWinApi', () => ({
++  firstWinApi: { getStatus: jest.fn(), markComplete: jest.fn() },
++  WinType: {},
++}));
++jest.mock('../../services/authActions', () => ({ signOut: jest.fn() }));
++jest.mock('../../hooks/useLeanOnboardingReconcile', () => ({
++  useLeanOnboardingReconcile: () => {},
++}));
++jest.mock('../../services/foodLogQueue', () => ({ flush: jest.fn() }));
++jest.mock('../../screenshots', () => ({ isScreenshotMode: () => false }));
++jest.mock('../../theme/ThemeProvider', () => ({
++  useTheme: () => ({ colors: new Proxy({}, { get: () => '#000000' }) }),
++}));
++
++import { linking } from '../RootNavigator';
++import EmailVerifiedScreen from '../../screens/auth/EmailVerifiedScreen';
++
++function resolve(url: string) {
++  let stripped = url;
++  for (const p of linking.prefixes) {
++    if (url.startsWith(p)) {
++      stripped = url.slice(p.length);
++      break;
++    }
++  }
++  if (!stripped.startsWith('/')) stripped = '/' + stripped;
++  return linking.getStateFromPath!(stripped, linking.config as never);
++}
++
++function findRoute(
++  state: ReturnType<typeof resolve> | null | undefined,
++  name: string,
++): { name: string; params?: Record<string, unknown> } | undefined {
++  if (!state) return undefined;
++  for (const route of state.routes ?? []) {
++    if (route.name === name) return route as never;
++    const child = (route as { state?: typeof state }).state;
++    if (child) {
++      const nested = findRoute(child, name);
++      if (nested) return nested;
++    }
++  }
++  return undefined;
++}
++
++describe('confirmation link routing (tgp://verified)', () => {
++  it('routes the success redirect to EmailVerified and never carries the session tokens', () => {
++    const route = findRoute(
++      resolve('tgp://verified#access_token=AAA.BBB.CCC&expires_in=3600&refresh_token=RRR&token_type=bearer&type=signup'),
++      'EmailVerified',
++    );
++    expect(route).toBeDefined();
++    expect(route?.params).toEqual({ status: 'confirmed' });
++    expect(JSON.stringify(route)).not.toMatch(/AAA|RRR|access_token|refresh_token/);
++  });
++
++  it('routes a bare tgp://verified to EmailVerified', () => {
++    const route = findRoute(resolve('tgp://verified'), 'EmailVerified');
++    expect(route).toBeDefined();
++    expect(route?.params).toEqual({ status: 'confirmed' });
++  });
++
++  it('routes an expired or already-used link to the link-problem state', () => {
++    const route = findRoute(
++      resolve(
++        'tgp://verified#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired',
++      ),
++      'EmailVerified',
++    );
++    expect(route?.params).toEqual({ status: 'link_problem' });
++  });
++
++  it('treats a query-string error the same way', () => {
++    const route = findRoute(resolve('tgp://verified?error=access_denied'), 'EmailVerified');
++    expect(route?.params).toEqual({ status: 'link_problem' });
++  });
++
++  it('leaves the reset-password route and its tokens unchanged', () => {
++    const route = findRoute(
++      resolve('tgp://reset-password#access_token=A&refresh_token=B&type=recovery'),
++      'ResetPassword',
++    );
++    expect(route?.params).toMatchObject({ access_token: 'A', refresh_token: 'B' });
++  });
++});
++
++function navWith(routes: string[]) {
++  return {
++    navigate: jest.fn(),
++    goBack: jest.fn(),
++    replace: jest.fn(),
++    getState: () => ({ index: routes.length - 1, routes: routes.map((name) => ({ name })) }),
++  };
++}
++
++describe('EmailVerifiedScreen', () => {
++  it('after a cold start, says the email is confirmed and opens Login', async () => {
++    const navigation = navWith(['EmailVerified']);
++    const view = await render(
++      <EmailVerifiedScreen
++        navigation={navigation as never}
++        route={{ key: 'k', name: 'EmailVerified', params: { status: 'confirmed' } } as never}
++      />,
++    );
++    expect(view.getByText('Email confirmed')).toBeTruthy();
++    await fireEvent.press(view.getByLabelText('Sign in'));
++    expect(navigation.replace).toHaveBeenCalledWith('Login');
++  });
++
++  it('when the sign-up screen is still open, goes back to it so I verified my email finishes sign-in', async () => {
++    const navigation = navWith(['Welcome', 'CreateAccount', 'EmailVerified']);
++    const view = await render(
++      <EmailVerifiedScreen
++        navigation={navigation as never}
++        route={{ key: 'k', name: 'EmailVerified', params: { status: 'confirmed' } } as never}
++      />,
++    );
++    expect(view.getByText(/I verified my email/)).toBeTruthy();
++    await fireEvent.press(view.getByLabelText('Continue'));
++    expect(navigation.goBack).toHaveBeenCalled();
++    expect(navigation.replace).not.toHaveBeenCalled();
++  });
++
++  it('explains an expired or used link and offers sign-in and support', async () => {
++    const navigation = navWith(['EmailVerified']);
++    const view = await render(
++      <EmailVerifiedScreen
++        navigation={navigation as never}
++        route={{ key: 'k', name: 'EmailVerified', params: { status: 'link_problem' } } as never}
++      />,
++    );
++    expect(view.getByText('This link has expired or was already used')).toBeTruthy();
++    expect(view.queryByText('Email confirmed')).toBeNull();
++    await fireEvent.press(view.getByLabelText('Contact support'));
++    expect(navigation.navigate).toHaveBeenCalledWith('SupportInbox');
++    await fireEvent.press(view.getByLabelText('Sign in'));
++    expect(navigation.replace).toHaveBeenCalledWith('Login');
++  });
++
++  it('copy has no first person, exclamation marks or emojis', async () => {
++    for (const status of ['confirmed', 'link_problem'] as const) {
++      const view = await render(
++        <EmailVerifiedScreen
++          navigation={navWith(['EmailVerified']) as never}
++          route={{ key: 'k', name: 'EmailVerified', params: { status } } as never}
++        />,
++      );
++      const text = JSON.stringify(view.toJSON());
++      expect(text).not.toMatch(/\b(I'm|we|We|our|Our|us)\b|!/);
++      expect(text).not.toMatch(/[\u{1F300}-\u{1FAFF}]/u);
++      view.unmount();
++    }
++  });
++});
+diff --git a/src/navigation/deepLinkUtils.ts b/src/navigation/deepLinkUtils.ts
+index be8e8a49..aac38a6c 100644
+--- a/src/navigation/deepLinkUtils.ts
++++ b/src/navigation/deepLinkUtils.ts
+@@ -48,3 +48,23 @@ export function fragmentToQuery(rawPath: string): string {
+   const sep = base.includes('?') ? '&' : '?';
+   return `${base}${sep}${fragment}`;
+ }
++
++/**
++ * HUNT-01-124: the sign-up confirmation email returns to `tgp://verified`.
++ * Supabase appends the new session (`#access_token=...&refresh_token=...`)
++ * on success and `#error=...&error_code=otp_expired...` when the link has
++ * expired or was already used. The landing screen needs only which of the
++ * two happened, so this returns a token-free path: the session values never
++ * reach route params, navigation state or logs.
++ *
++ * Returns `null` for any other path.
++ */
++export function emailVerifiedPath(rawPath: string): string | null {
++  const match = /^\/?verified(?=$|[/?#])/i.exec(rawPath);
++  if (!match) return null;
++  const rest = rawPath.slice(match[0].length).replace(/^\/+/, '');
++  if (rest && !/^[?#]/.test(rest)) return null;
++  const params = new URLSearchParams(rest.replace(/^[?#]/, '').replace('#', '&'));
++  const failed = params.has('error') || params.has('error_code');
++  return failed ? 'verified?status=link_problem' : 'verified?status=confirmed';
++}
+diff --git a/src/screens/auth/EmailVerifiedScreen.tsx b/src/screens/auth/EmailVerifiedScreen.tsx
+new file mode 100644
+index 00000000..01103c8c
+--- /dev/null
++++ b/src/screens/auth/EmailVerifiedScreen.tsx
+@@ -0,0 +1,156 @@
++/**
++ * EmailVerifiedScreen — landing for the sign-up confirmation link.
++ *
++ * HUNT-01-124 (B-HUNT01-1): the backend asks Supabase to send new members
++ * back to `tgp://verified` after they tap Confirm in the email. The app had
++ * no route for that URL, so the tap opened the app on whatever screen was
++ * last shown (Welcome after a cold start) with no word that the email was
++ * confirmed and no next step.
++ *
++ * Supabase confirms the address before it redirects, so this screen only
++ * tells the member what happened and where to go next:
++ *   - sign-up screen still open underneath (same phone, app in the
++ *     background): Continue returns to it, where "I verified my email"
++ *     signs in with the password already typed;
++ *   - otherwise: Sign in opens Login.
++ * An expired or already-used link (Supabase `error_code=otp_expired`) gets
++ * its own copy plus a support route. The linking config strips the session
++ * tokens from the URL, so this screen never sees or stores them.
++ */
++import React, { useMemo } from 'react';
++import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
++import { Ionicons } from '@expo/vector-icons';
++import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
++import type { RouteProp } from '@react-navigation/native';
++import type { AuthStackParamList } from '../../navigation/AuthNavigator';
++import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
++
++type Props = {
++  navigation: NativeStackNavigationProp<AuthStackParamList, 'EmailVerified'>;
++  route: RouteProp<AuthStackParamList, 'EmailVerified'>;
++};
++
++function signupScreenIsUnderneath(navigation: Props['navigation']): boolean {
++  const state = navigation.getState?.();
++  if (!state || typeof state.index !== 'number') return false;
++  return state.routes[state.index - 1]?.name === 'CreateAccount';
++}
++
++export default function EmailVerifiedScreen({ navigation, route }: Props) {
++  const { colors } = useTheme();
++  const styles = useMemo(() => makeStyles(colors), [colors]);
++  const linkProblem = route.params?.status === 'link_problem';
++  const backToSignup = !linkProblem && signupScreenIsUnderneath(navigation);
++
++  const title = linkProblem ? 'This link has expired or was already used' : 'Email confirmed';
++  const body = linkProblem
++    ? 'If the email address is already confirmed, sign in to continue. If sign-in still asks for confirmation, contact support for a new link.'
++    : backToSignup
++      ? 'Continue to the sign-up screen and tap I verified my email to finish.'
++      : 'Sign in with the email address and password used at sign-up to continue.';
++
++  return (
++    <View style={styles.container}>
++      <View style={styles.content} accessible accessibilityRole="summary">
++        <Ionicons
++          name={linkProblem ? 'alert-circle-outline' : 'checkmark-circle'}
++          size={64}
++          color={colors.primary}
++        />
++        <Text style={styles.title} accessibilityRole="header">
++          {title}
++        </Text>
++        <Text style={styles.body}>{body}</Text>
++      </View>
++
++      {backToSignup ? (
++        <TouchableOpacity
++          style={styles.primaryButton}
++          onPress={() => navigation.goBack()}
++          activeOpacity={0.8}
++          accessibilityRole="button"
++          accessibilityLabel="Continue"
++        >
++          <Text style={styles.primaryButtonText}>Continue</Text>
++        </TouchableOpacity>
++      ) : (
++        <TouchableOpacity
++          style={styles.primaryButton}
++          onPress={() => navigation.replace('Login')}
++          activeOpacity={0.8}
++          accessibilityRole="button"
++          accessibilityLabel="Sign in"
++        >
++          <Text style={styles.primaryButtonText}>Sign in</Text>
++        </TouchableOpacity>
++      )}
++
++      {linkProblem ? (
++        <TouchableOpacity
++          style={styles.secondaryButton}
++          onPress={() => navigation.navigate('SupportInbox')}
++          accessibilityRole="button"
++          accessibilityLabel="Contact support"
++        >
++          <Text style={styles.secondaryButtonText}>Contact support</Text>
++        </TouchableOpacity>
++      ) : null}
++    </View>
++  );
++}
++
++const makeStyles = (colors: ThemeColors) =>
++  StyleSheet.create({
++    container: {
++      flex: 1,
++      backgroundColor: colors.background,
++      paddingHorizontal: 24,
++      paddingTop: 120,
++    },
++    content: {
++      alignItems: 'center',
++      gap: 16,
++      marginBottom: 40,
++    },
++    title: {
++      fontFamily: 'CormorantGaramond_400Regular',
++      fontSize: 32,
++      lineHeight: 35,
++      letterSpacing: 0.6,
++      fontWeight: '400',
++      color: colors.textPrimary,
++      textAlign: 'center',
++    },
++    body: {
++      fontFamily: 'Inter_400Regular',
++      fontSize: 16,
++      lineHeight: 24,
++      color: colors.textSecondary,
++      textAlign: 'center',
++      paddingHorizontal: 8,
++    },
++    primaryButton: {
++      backgroundColor: colors.primary,
++      paddingVertical: 16,
++      borderRadius: 2,
++      alignItems: 'center',
++    },
++    primaryButtonText: {
++      fontFamily: 'Inter_600SemiBold',
++      color: colors.textOnPrimary,
++      fontSize: 14,
++      fontWeight: '600',
++      letterSpacing: 1.2,
++      textTransform: 'uppercase',
++    },
++    secondaryButton: {
++      marginTop: 20,
++      alignItems: 'center',
++      paddingVertical: 12,
++    },
++    secondaryButtonText: {
++      color: colors.primary,
++      fontSize: 16,
++      fontWeight: '600',
++    },
++  });
+diff --git a/src/screens/auth/README.md b/src/screens/auth/README.md
+index a79dd72c..d3c80b0b 100644
+--- a/src/screens/auth/README.md
++++ b/src/screens/auth/README.md
+@@ -19,6 +19,7 @@ Pre-login surface area: welcome, login, invite-gated signup, password reset, and
+ | `LoginScreen.tsx` | Email + password form. Calls `authApi.login`, persists tokens, hands off to `RootNavigator`. Google button delegates to `signInWithGoogle`. Apple button (iOS only) delegates to `signInWithApple` and POSTs the identity token to `/auth/apple`. While the policy has `role_choice`, both provider buttons first ask "Already have an account?" (see Signup role choice). |
+ | `CreateAccountScreen.tsx` | Signup: optional role step (only when the policy has `role_choice` and no invite code), register (form), then verify (poll until email confirmed). Reads `/auth/signup-policy` on mount; falls back to "require invite" on failure. Auto-previews invite codes from deep-link params. Apple Sign-Up button (iOS only) is required by App Store Review whenever Google sign-in is offered. |
+ | `ForgotPasswordScreen.tsx` | Triggers Supabase's reset-password flow via `/auth/forgot-password`. |
++| `EmailVerifiedScreen.tsx` | Landing for the sign-up confirmation link `tgp://verified` (HUNT-01-124). Says the email is confirmed and offers Sign in, or Continue back to an open sign-up screen so "I verified my email" finishes. An expired or used link (`error_code=otp_expired`) gets its own copy and Contact support. The linking config drops the session tokens Supabase appends (`emailVerifiedPath` in `navigation/deepLinkUtils.ts`). Supabase must allow-list `tgp://verified` under Authentication > URL Configuration > Redirect URLs. |
+ | `RoleSelectionScreen.tsx` | One-shot screen that fires after a Google sign-in or codeless email signup. Hardcodes `selectRole('student', …)` — there is no self-serve "Become a coach" surface. Shows the C13 `signupNotice` (param or persisted) when a role request did not end as chosen. |
+ 
+ ## Endpoints consumed

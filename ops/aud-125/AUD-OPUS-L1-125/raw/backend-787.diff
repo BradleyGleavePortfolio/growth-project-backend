@@ -1,0 +1,54 @@
+diff --git a/docs/help/contact-support.md b/docs/help/contact-support.md
+index 900fdb2ea..6e537406e 100644
+--- a/docs/help/contact-support.md
++++ b/docs/help/contact-support.md
+@@ -9,6 +9,10 @@ order: 60
+ 
+ Write to `${SUPPORT_EMAIL}`.
+ 
++In the app, open **Settings → Support** to use the in-app support chat
++when it is available. Email is also available, including when chat cannot
++open. There is no phone line.
++
+ Before you write, please read [What support covers](./support-boundaries.md).
+ The fastest support reply is the one that fits a request we can
+ actually answer.
+diff --git a/src/public-pages/help-pages.html.ts b/src/public-pages/help-pages.html.ts
+index 377c13cf5..94e1a7729 100644
+--- a/src/public-pages/help-pages.html.ts
++++ b/src/public-pages/help-pages.html.ts
+@@ -630,7 +630,7 @@ function contactContent(): HelpPageContent {
+       },
+     ],
+     footnote:
+-      'There is no chat or phone line. Email is the only support channel today; if and when a form or in-app channel is added, this page will say so.',
++      `In the app, open Settings, then Support to use the in-app support chat when it is available. You can also email ${SUPPORT_EMAIL}, including when chat cannot open. There is no phone line.`,
+   };
+ }
+ 
+diff --git a/test/help-support-channels.spec.ts b/test/help-support-channels.spec.ts
+new file mode 100644
+index 000000000..59c68fd20
+--- /dev/null
++++ b/test/help-support-channels.spec.ts
+@@ -0,0 +1,20 @@
++import { renderHelpPage, SUPPORT_EMAIL } from '../src/public-pages/help-pages.html';
++
++describe('public help support channels', () => {
++  it('describes the in-app support route with email as an alternative', () => {
++    const html = renderHelpPage('contact');
++    expect(html).toContain('Settings');
++    expect(html).toContain('Support');
++    expect(html).toContain('in-app support chat');
++    expect(html).toContain(SUPPORT_EMAIL);
++    expect(html).toContain(`href="mailto:${SUPPORT_EMAIL}"`);
++    expect(html).not.toContain('There is no chat or phone line.');
++    expect(html).not.toContain('Email is the only support channel today');
++  });
++
++  it('does not promise a phone line or round-the-clock response', () => {
++    const html = renderHelpPage('contact');
++    expect(html).toContain('There is no phone line.');
++    expect(renderHelpPage('support')).toContain('We do not run a 24/7 desk.');
++  });
++});

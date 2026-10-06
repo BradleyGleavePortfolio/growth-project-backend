@@ -1,0 +1,140 @@
+{
+  "repo": "mobile",
+  "number": 422,
+  "head": "2839eb325ac60f236615aec5834ac7bfbc4e5c12",
+  "base": "a1904f2f4e8d175a38d6eb627303a2312e2b1ace",
+  "title": "fix(workouts): clients see coach-assigned workouts; plan editor loads saved details (AUDIT-07-125)",
+  "body": "**Tier:** T3\n**Why:** A client read path (the client's own workout assignments) and the coach plan editor's save gate. No auth, tenancy, money, PII or credential change; the request still goes to the same client-scoped route.\n**T4 trigger scan:** none. No auth/session, RLS/tenancy, payments, PII export, secrets or destructive data path touched. The Save gate only adds a \"plan loaded\" condition, which removes a way to send an empty exercise list.\n**T3 trigger scan:** client-visible data shape (GET /assignments/me pagination) and the coach editor's save behaviour.\n**Bounded T1:** none.\n**Canonical builder:** AUDIT-07-125 (Claude Opus 5.5), agent 125.\n**Acceptance evidence:**\n- New `src/api/__tests__/workoutBuilderApi.myAssignments.test.ts` (4 tests) and one new test in `src/__tests__/coachWorkoutBuilderAutosave.test.tsx`. Both fail on main (ci-lane run 37531499797 on `ci/AUDIT-07-125-1` = main + these tests only) and pass at this head (PR CI).\n- Works against the current production backend: production already answers `{ items, nextCursor }`; a bare list is still accepted, so no backend deploy is needed.\n\n## Fixes\n\n**B1 (core flow: train).** GET /assignments/me answers one page, `{ items, nextCursor }`, but the app read it as a plain list. A client whose coach assigned them a program opens the Workouts tab and sees no assigned workouts at all (the card is hidden because the reply is not a list), and the Your workouts screen fails to render. Fix: `workoutBuilderApi.listMyAssignments` reads every page (50 per page, up to 20 pages) and returns a list; an unreadable reply fails the load with specific copy instead of showing an empty list. The screens are unchanged.\n\n**U1 (coach builder).** A coach who opens a program day or a saved workout from the Programs library sees \"Edit workout plan\" with a blank name, the type set to Strength and Save greyed out, because the plan is not in the cache yet and the fields were only filled in from the cache on first render. Fix: fill the name, type and duration once when the plan arrives (unless the coach already typed), show \"Loading workout plan\" (and a Try again state if the load fails), and keep Save off until the plan has loaded so a full-replace Save can never send an empty exercise list over the saved one.\n\nOverlap: m#406 touches `WorkoutScreen.tsx`; this PR does not touch that file (the fix is in the API layer the screen already reads).\n",
+  "state": "open",
+  "draft": false,
+  "additions": 206,
+  "deletions": 8,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/422",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/422#issuecomment-6025560075",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-07-125, agent 125) \u2014 growth-project-mobile#422 @ 2839eb325ac60f236615aec5834ac7bfbc4e5c12 \u2014 READY FOR AUDIT\n\n- Size: +206/-8 (214 changed lines including tests), 5 files.\n- CI at this head: Typecheck, lint, test SUCCESS (601 suites, 8284 tests), CodeQL SUCCESS.\n- Fail-on-main proof: ci-lane run 37531499797 (`ci/AUDIT-07-125-1` = main + the new tests only) failed exactly the 5 new tests (4 in `workoutBuilderApi.myAssignments.test.ts`, 1 in `coachWorkoutBuilderAutosave.test.tsx`); the 12 existing tests in that file passed on main.\n- B1: a client whose coach assigned them a program now sees the assigned workouts on the Workouts tab and in Your workouts (GET /assignments/me pages are read in full).\n- U1: a program day or saved workout opened from the Programs library now shows its saved name, type and duration; Save waits until the plan has loaded.\n- Works against the current production backend (no backend change needed). Does not touch WorkoutScreen.tsx (m#406)."
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112502333356",
+      "id": 112502333356,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A422+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502333356/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531604451/job/112502084520",
+      "id": 112502084520,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502084520/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531604451/job/112502084120",
+      "id": 112502084120,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502084120/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531604476/job/112502083627",
+      "id": 112502083627,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502083627/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "fda34084d035bc231beccd8786a1171afdc7350b",
+      "filename": "src/__tests__/coachWorkoutBuilderAutosave.test.tsx",
+      "status": "modified",
+      "additions": 43,
+      "deletions": 0,
+      "changes": 43,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2839eb325ac60f236615aec5834ac7bfbc4e5c12/src%2F__tests__%2FcoachWorkoutBuilderAutosave.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/2839eb325ac60f236615aec5834ac7bfbc4e5c12/src%2F__tests__%2FcoachWorkoutBuilderAutosave.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FcoachWorkoutBuilderAutosave.test.tsx?ref=2839eb325ac60f236615aec5834ac7bfbc4e5c12",
+      "patch": "@@ -969,3 +969,46 @@ describe('CoachWorkoutBuilderScreen \u2014 mirror-degraded durability (P1, #36)', (\n     );\n   });\n });\n+\n+// \u2500\u2500\u2500 AUDIT-07-125: cold open from the Programs library \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n+\n+describe('CoachWorkoutBuilderScreen \u2014 plan not cached when the screen opens (AUDIT-07-125)', () => {\n+  it('fills in the saved name, type and duration once the plan loads, and holds Save until then', async () => {\n+    setFlag(true);\n+    const CARDIO_PLAN: typeof EXISTING_PLAN = {\n+      ...EXISTING_PLAN,\n+      name: 'Week 1 Mon',\n+      type: 'cardio' as typeof EXISTING_PLAN['type'],\n+      duration_estimate_minutes: 30,\n+    };\n+    mockCurrentPlan = undefined;\n+    const Screen = loadScreen();\n+    const { getByLabelText, getByTestId, queryByTestId, rerender } = await render(<Screen />);\n+\n+    expect(getByTestId('mwb-plan-loading')).toBeTruthy();\n+    expect(getByLabelText('Save changes').props.accessibilityState?.disabled).toBe(true);\n+\n+    mockCurrentPlan = CARDIO_PLAN;\n+    await act(async () => {\n+      await rerender(<Screen />);\n+      await Promise.resolve();\n+    });\n+\n+    await waitFor(() => expect(getByLabelText('Plan name').props.value).toBe('Week 1 Mon'));\n+    expect(getByLabelText('Estimated duration in minutes').props.value).toBe('30');\n+    expect(queryByTestId('mwb-plan-loading')).toBeNull();\n+    expect(getByLabelText('Save changes').props.accessibilityState?.disabled).toBe(false);\n+\n+    await act(async () => {\n+      await fireEvent.press(getByLabelText('Save changes'));\n+      await Promise.resolve();\n+    });\n+    await waitFor(() => expect(mockUpdateMutateAsync).toHaveBeenCalled());\n+    const args = mockUpdateMutateAsync.mock.calls[0]?.[0] as {\n+      input: { name: string; type: string; duration_estimate_minutes?: number };\n+    };\n+    expect(args.input).toEqual({ name: 'Week 1 Mon', type: 'cardio', duration_estimate_minutes: 30 });\n+    const rowsArg = mockSetExercisesMutateAsync.mock.calls[0]?.[0] as { rows: unknown[] };\n+    expect(rowsArg.rows).toHaveLength(1);\n+  });\n+});"
+    },
+    {
+      "sha": "6a98f8f1ea2aa0643fa69937a3699967546bac5f",
+      "filename": "src/api/__tests__/workoutBuilderApi.myAssignments.test.ts",
+      "status": "added",
+      "additions": 65,
+      "deletions": 0,
+      "changes": 65,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2839eb325ac60f236615aec5834ac7bfbc4e5c12/src%2Fapi%2F__tests__%2FworkoutBuilderApi.myAssignments.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/2839eb325ac60f236615aec5834ac7bfbc4e5c12/src%2Fapi%2F__tests__%2FworkoutBuilderApi.myAssignments.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fapi%2F__tests__%2FworkoutBuilderApi.myAssignments.test.ts?ref=2839eb325ac60f236615aec5834ac7bfbc4e5c12",
+      "patch": "@@ -0,0 +1,65 @@\n+/**\n+ * AUDIT-07-125: GET /assignments/me answers `{ items, nextCursor }` (one page\n+ * of at most 50, oldest first). The client list must read every page and hand\n+ * the screens a plain list, so coach-assigned workouts show up.\n+ */\n+jest.mock('../../services/api', () => ({\n+  __esModule: true,\n+  default: { get: jest.fn() },\n+}));\n+\n+import api from '../../services/api';\n+import { workoutBuilderApi } from '../workoutBuilderApi';\n+\n+const mockApi = jest.mocked(api);\n+\n+function row(id: string) {\n+  return {\n+    id,\n+    workout_plan_id: `plan-${id}`,\n+    client_id: 'client-1',\n+    assigned_by_coach_id: 'coach-1',\n+    scheduled_for: '2026-10-08T00:00:00.000Z',\n+    completed_at: null,\n+    post_rpe: null,\n+    post_notes: null,\n+    workout_plan: { id: `plan-${id}`, name: `Day ${id}`, exercises: [] },\n+  };\n+}\n+\n+beforeEach(() => {\n+  jest.clearAllMocks();\n+});\n+\n+it('returns the items of the paginated reply as a list', async () => {\n+  mockApi.get.mockResolvedValueOnce({ data: { items: [row('a'), row('b')], nextCursor: null } });\n+  const list = await workoutBuilderApi.listMyAssignments();\n+  expect(Array.isArray(list)).toBe(true);\n+  expect(list.map((a) => a.id)).toEqual(['a', 'b']);\n+  expect(mockApi.get).toHaveBeenCalledTimes(1);\n+  expect(mockApi.get).toHaveBeenCalledWith('/assignments/me', { params: undefined });\n+});\n+\n+it('reads every page so workouts after the first 50 are not lost', async () => {\n+  mockApi.get\n+    .mockResolvedValueOnce({ data: { items: [row('a')], nextCursor: 'c1' } })\n+    .mockResolvedValueOnce({ data: { items: [row('b')], nextCursor: 'c2' } })\n+    .mockResolvedValueOnce({ data: { items: [row('c')], nextCursor: null } });\n+  const list = await workoutBuilderApi.listMyAssignments();\n+  expect(list.map((a) => a.id)).toEqual(['a', 'b', 'c']);\n+  expect(mockApi.get).toHaveBeenNthCalledWith(2, '/assignments/me', { params: { cursor: 'c1' } });\n+  expect(mockApi.get).toHaveBeenNthCalledWith(3, '/assignments/me', { params: { cursor: 'c2' } });\n+});\n+\n+it('still accepts a bare list', async () => {\n+  mockApi.get.mockResolvedValueOnce({ data: [row('a')] });\n+  const list = await workoutBuilderApi.listMyAssignments();\n+  expect(list.map((a) => a.id)).toEqual(['a']);\n+});\n+\n+it('fails the load on an unreadable page instead of showing an empty list', async () => {\n+  mockApi.get.mockResolvedValueOnce({ data: { unexpected: true } });\n+  await expect(workoutBuilderApi.listMyAssignments()).rejects.toThrow(\n+    'Your workouts could not be read. Pull to try again.',\n+  );\n+});"
+    },
+    {
+      "sha": "14995450f1c9bc3eff269dc2d786855d21ca1398",
+      "filename": "src/api/workoutBuilderApi.ts",
+      "status": "modified",
+      "additions": 35,
+      "deletions": 2,
+      "changes": 37,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2839eb325ac60f236615aec5834ac7bfbc4e5c12/src%2Fapi%2FworkoutBuilderApi.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/2839eb325ac60f236615aec5834ac7bfbc4e5c12/src%2Fapi%2FworkoutBuilderApi.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fapi%2FworkoutBuilderApi.ts?ref=2839eb325ac60f236615aec5834ac7bfbc4e5c12",
+      "patch": "@@ -105,6 +105,9 @@ export interface ClientWorkoutAssignmentWithPlan extends ClientWorkoutAssignment\n \n // \u2500\u2500\u2500 API \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n \n+/** Pages of 50 read for GET /assignments/me (1,000 assignments). */\n+export const MY_ASSIGNMENTS_MAX_PAGES = 20;\n+\n export const workoutBuilderApi = {\n   // ---- Coach surfaces ------------------------------------------------------\n   listPlans: () => api.get<WorkoutPlan[]>('/workout-plans'),\n@@ -135,8 +138,38 @@ export const workoutBuilderApi = {\n     api.get<ClientWorkoutAssignment[]>(`/workout-plans/${planId}/assignments`),\n \n   // ---- Client surfaces -----------------------------------------------------\n-  listMyAssignments: () =>\n-    api.get<ClientWorkoutAssignmentWithPlan[]>('/assignments/me'),\n+  /**\n+   * Every assignment the signed-in client has, oldest first.\n+   *\n+   * AUDIT-07-125: GET /assignments/me answers one page,\n+   * `{ items, nextCursor }` (at most 50 rows, ordered by scheduled_for), not a\n+   * bare list. Reading the reply as a list left the Workouts tab with no\n+   * assigned workouts and broke the Your workouts list. Read every page; a bare\n+   * list is still accepted. A failed page fails the whole load so the list is\n+   * never shown as complete when it is not.\n+   */\n+  listMyAssignments: async (): Promise<ClientWorkoutAssignmentWithPlan[]> => {\n+    const out: ClientWorkoutAssignmentWithPlan[] = [];\n+    let cursor: string | undefined;\n+    for (let page = 0; page < MY_ASSIGNMENTS_MAX_PAGES; page += 1) {\n+      const res = await api.get<unknown>('/assignments/me', {\n+        params: cursor ? { cursor } : undefined,\n+      });\n+      const body: unknown = res.data;\n+      if (Array.isArray(body)) {\n+        return body as ClientWorkoutAssignmentWithPlan[];\n+      }\n+      const pageBody = (body ?? {}) as { items?: unknown; nextCursor?: unknown };\n+      if (!Array.isArray(pageBody.items)) {\n+        throw new Error('Your workouts could not be read. Pull to try again.');\n+      }\n+      out.push(...(pageBody.items as ClientWorkoutAssignmentWithPlan[]));\n+      const next = pageBody.nextCursor;\n+      if (typeof next !== 'string' || next === '' || next === cursor) break;\n+      cursor = next;\n+    }\n+    return out;\n+  },\n \n   getMyAssignment: (assignmentId: string) =>\n     api.get<ClientWorkoutAssignmentWithPlan>(`/assignments/${assignmentId}`),"
+    },
+    {
+      "sha": "cf1ec30bceb9d2a5681492e91ad7f017aebba17a",
+      "filename": "src/hooks/useWorkoutBuilder.ts",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 2,
+      "changes": 3,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2839eb325ac60f236615aec5834ac7bfbc4e5c12/src%2Fhooks%2FuseWorkoutBuilder.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/2839eb325ac60f236615aec5834ac7bfbc4e5c12/src%2Fhooks%2FuseWorkoutBuilder.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fhooks%2FuseWorkoutBuilder.ts?ref=2839eb325ac60f236615aec5834ac7bfbc4e5c12",
+      "patch": "@@ -121,8 +121,7 @@ export function useAssignWorkoutPlan() {\n export function useMyWorkoutAssignments() {\n   return useQuery<ClientWorkoutAssignmentWithPlan[]>({\n     queryKey: ['assignments', 'me'],\n-    queryFn: () =>\n-      workoutBuilderApi.listMyAssignments().then((r) => r.data),\n+    queryFn: () => workoutBuilderApi.listMyAssignments(),\n     staleTime: FIVE_MIN_MS,\n   });\n }"
+    },
+    {
+      "sha": "ecb2d24d20e683c3b9e0b439e73d0ad68f96fb4e",
+      "filename": "src/screens/coach/CoachWorkoutBuilderScreen.tsx",
+      "status": "modified",
+      "additions": 62,
+      "deletions": 4,
+      "changes": 66,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/2839eb325ac60f236615aec5834ac7bfbc4e5c12/src%2Fscreens%2Fcoach%2FCoachWorkoutBuilderScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/2839eb325ac60f236615aec5834ac7bfbc4e5c12/src%2Fscreens%2Fcoach%2FCoachWorkoutBuilderScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FCoachWorkoutBuilderScreen.tsx?ref=2839eb325ac60f236615aec5834ac7bfbc4e5c12",
+      "patch": "@@ -272,7 +272,11 @@ export default function CoachWorkoutBuilderScreen() {\n   const styles = useMemo(() => makeStyles(sc), [sc]);\n \n   const qc = useQueryClient();\n-  const { data: existingPlan, refetch: refetchPlan } = useWorkoutPlan(planId);\n+  const {\n+    data: existingPlan,\n+    refetch: refetchPlan,\n+    isError: planLoadFailed,\n+  } = useWorkoutPlan(planId);\n   const createMut = useCreateWorkoutPlan();\n   const updateMut = useUpdateWorkoutPlan();\n   const setExercisesMut = useSetWorkoutExercises();\n@@ -286,6 +290,26 @@ export default function CoachWorkoutBuilderScreen() {\n       ? String(existingPlan.duration_estimate_minutes)\n       : '',\n   );\n+  // AUDIT-07-125: a plan opened from the Programs library (a program day or a\n+  // saved workout) is usually not in the query cache yet, so the initialisers\n+  // above ran with no plan and the editor showed a blank name, the wrong type\n+  // and a disabled Save. Fill the plan details in once, the first time the\n+  // plan arrives, unless the coach already typed into one of them.\n+  const metaHydratedRef = useRef(Boolean(existingPlan));\n+  const metaTouchedRef = useRef(false);\n+  useEffect(() => {\n+    if (metaHydratedRef.current || !existingPlan) return;\n+    metaHydratedRef.current = true;\n+    if (metaTouchedRef.current) return;\n+    setName(existingPlan.name ?? '');\n+    setType(existingPlan.type ?? 'strength');\n+    setDuration(\n+      existingPlan.duration_estimate_minutes != null\n+        ? String(existingPlan.duration_estimate_minutes)\n+        : '',\n+    );\n+  }, [existingPlan]);\n+  const planLoading = isEditing && !existingPlan;\n   // Map a server exercise row into a local DraftExerciseRow, reusing the stable\n   // clientId we already minted for that server row_id when one exists so the\n   // identity survives a refetch/adoption (and the deletedKeysRef bookkeeping\n@@ -1157,8 +1181,11 @@ export default function CoachWorkoutBuilderScreen() {\n   //     mirror. The Refresh affordance guarantees Save is never locked forever.\n   // Together they span: replay detection -> terminal outcome -> adoption ->\n   // baseline reanchor, exactly the window in which a full-replace Save is unsafe.\n+  // AUDIT-07-125: never send a full-replace Save for a plan that has not\n+  // loaded yet; its exercise list would be empty and erase the saved one.\n   const canSave =\n     name.trim().length > 0 &&\n+    !planLoading &&\n     !editorLocked &&\n     !autosave.replayInFlight &&\n     !replayAdoptionPending &&\n@@ -1571,13 +1598,38 @@ export default function CoachWorkoutBuilderScreen() {\n           </Pressable>\n         ) : null}\n \n+        {planLoading ? (\n+          <View testID=\"mwb-plan-loading\" accessibilityLiveRegion=\"polite\">\n+            <Text style={[typography.body, { color: sc.textMuted }]}>\n+              {planLoadFailed\n+                ? 'This workout plan could not be loaded. Check your connection and try again.'\n+                : 'Loading workout plan'}\n+            </Text>\n+            {planLoadFailed ? (\n+              <Pressable\n+                accessibilityRole=\"button\"\n+                accessibilityLabel=\"Try loading the workout plan again\"\n+                onPress={() => void refetchPlan()}\n+                style={styles.historyButton}\n+              >\n+                <Text style={[typography.caption, { color: sc.textPrimary }]}>\n+                  Try again\n+                </Text>\n+              </Pressable>\n+            ) : null}\n+          </View>\n+        ) : null}\n+\n         <Text style={[typography.caption, styles.label, { color: sc.textMuted }]}>\n           Plan name\n         </Text>\n         <TextInput\n           accessibilityLabel=\"Plan name\"\n           value={name}\n-          onChangeText={setName}\n+          onChangeText={(next) => {\n+            metaTouchedRef.current = true;\n+            setName(next);\n+          }}\n           editable={!editorLocked}\n           placeholder=\"e.g. Push day A\"\n           placeholderTextColor={sc.textMuted}\n@@ -1595,7 +1647,10 @@ export default function CoachWorkoutBuilderScreen() {\n               accessibilityRole=\"button\"\n               accessibilityState={{ disabled: editorLocked, selected: type === t }}\n               disabled={editorLocked}\n-              onPress={() => setType(t)}\n+              onPress={() => {\n+                metaTouchedRef.current = true;\n+                setType(t);\n+              }}\n               style={[\n                 styles.typeChip,\n                 { borderColor: sc.textMuted },\n@@ -1620,7 +1675,10 @@ export default function CoachWorkoutBuilderScreen() {\n         <TextInput\n           accessibilityLabel=\"Estimated duration in minutes\"\n           value={duration}\n-          onChangeText={setDuration}\n+          onChangeText={(next) => {\n+            metaTouchedRef.current = true;\n+            setDuration(next);\n+          }}\n           editable={!editorLocked}\n           keyboardType=\"number-pad\"\n           placeholder=\"45\""
+    }
+  ]
+}

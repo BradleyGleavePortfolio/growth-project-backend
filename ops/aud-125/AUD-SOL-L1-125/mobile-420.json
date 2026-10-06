@@ -1,0 +1,140 @@
+{
+  "repo": "mobile",
+  "number": 420,
+  "head": "81609b6a3c9b474cce6db97b07a57988abbc34d3",
+  "base": "a1904f2f4e8d175a38d6eb627303a2312e2b1ace",
+  "title": "fix(coach-team): team profile shares the working invite link; Team tab only for real teams (AUDIT-16-125)",
+  "body": "**Tier:** T2 (coach-facing copy, navigation and tab visibility; no money, auth, tenancy, PII or data writes changed)\n**Why:** Settings -> Team / Gym profile advertises a team code no sign-up path accepts, and every coach gets a Team tab that can only show the plan gate (AUDIT-16-125, agent 125).\n**T4 trigger scan:** none. No backend, auth, RLS/tenancy, payment, credential or destructive-data change. The Team tab gate only narrows who sees the tab (fails closed, same `/coach/team/members` call as today).\n**T3 trigger scan:** none. No schema, migration, dependency, lockfile or flag change.\n**Bounded T1:** 3 source files (`useCoachRoleType.ts`, `CoachNavigator.tsx`, `CoachTeamProfileScreen.tsx`) + 2 existing test files. 198 changed lines.\n**Canonical builder:** Claude Opus 5.5 (AUDIT-16-125).\n**Acceptance evidence:** PR CI (lint, typecheck, full jest). Updated assertions in `src/__tests__/coachSaasBlockers.test.ts` fail on main (main shows and shares `profile.team_code`, shows `client_capacity`, navigates to `TeamManagement`); new `useCoachTeamStatus` tests in `src/__tests__/coachTeamP0Blockers.test.tsx` fail on main (export does not exist).\n\nWorks against the current production backend: uses only existing routes (`GET /coach/team`, `GET /coach/team/members`, `GET /coaches/me/invite-link` through the existing `InviteShareCard`).\n\n## Fixes\n\n- **B-16-1 (false claim, sign-up dead end).** A coach sets up a team profile and sends the \"TEAM CODE\" (GP-TEAM-...) to a new client; the client enters it at sign-up and is told the code is not valid, so they cannot join the coach. No sign-up or join path reads `TeamProfile.team_code` (backend: only `src/team` touches it; `invite-codes` validate / previewCode / resolveAttachTarget read `InviteCode.code` and `CoachProfile.invite_code`). The card now shows the coach's permanent invite link (`InviteShareCard`: Share, Copy, QR, loading and error states) and the false copy is gone.\n- **U-16-1 (dead button).** \"Manage sub-coaches\" called `navigate('TeamManagement')` from the Settings stack; that route lives only inside the Team tab stack and React Navigation 7 does not navigate into a sibling tab's child by name, so the tap did nothing. Row removed.\n- **U-16-2 (wrong number).** \"Seats\" and \"Open\" showed an invented capacity (30 for every coach, from an unknown tier) although coaches have no seat limit; a coach with 30+ clients saw \"Open 0\". Removed; the Clients count stays.\n- **U-16-3 (dead tab, store-review risk).** `/coach/team/members` lists every coach as the head coach of their own roster, so every coach got a Team tab, and `TeamManagementScreen` always shows the plan gate (it reads `plan_tier` from `/auth/me`, which never returns it, and no coach has a Scale tier). The tab now mounts only for a head coach whose roster has at least one sub-coach. `useCoachRoleType` keeps its contract (now a thin wrapper over `useCoachTeamStatus`).\n\n## Overlap\n- m#412 changes the `UpgradeGate` import/copy in `TeamManagementScreen.tsx`; this PR does not touch that file.\n\n## Not in this PR (reported to operator)\n- The sub-coach invite has no in-app accept path (invite URL `.../sub-coach/<token>` has no route; nothing calls `POST /sub-coaches/invites/accept`). Sub-coach teams stay unavailable on day 1; this PR makes the app say so by not showing them.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 95,
+  "deletions": 103,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/420",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/420#issuecomment-6025520637",
+      "body": "FIX ROUND 1 (OPENING) (AUDIT-16-125, agent 125) \u2014 growth-project-mobile#420 @ 81609b6a3c9b474cce6db97b07a57988abbc34d3 \u2014 READY FOR AUDIT\n\n- Tier T2. 198 changed lines (95+/103-), 5 files, no backend dependency (existing routes only).\n- CI at this head: Typecheck, lint, test SUCCESS (lint, typecheck and full jest steps all passed); CodeQL SUCCESS.\n- Fixes B-16-1 (team code no sign-up path accepts is no longer shown or shared; the card shares the coach's permanent invite link), U-16-1 (dead \"Manage sub-coaches\" row removed), U-16-2 (invented Seats/Open removed), U-16-3 (Team tab only for a head coach whose roster has a sub-coach).\n- Overlap: none in touched files; m#412 edits TeamManagementScreen.tsx, which this PR does not touch.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112502015557",
+      "id": 112502015557,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A420+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112502015557/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531520694/job/112501801554",
+      "id": 112501801554,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112501801554/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531520702/job/112501801388",
+      "id": 112501801388,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112501801388/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37531520694/job/112501801165",
+      "id": 112501801165,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112501801165/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "cec73b0487e420933d1ecf4ef38fc5317789d9ed",
+      "filename": "src/__tests__/coachSaasBlockers.test.ts",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 3,
+      "changes": 15,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/81609b6a3c9b474cce6db97b07a57988abbc34d3/src%2F__tests__%2FcoachSaasBlockers.test.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/81609b6a3c9b474cce6db97b07a57988abbc34d3/src%2F__tests__%2FcoachSaasBlockers.test.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FcoachSaasBlockers.test.ts?ref=81609b6a3c9b474cce6db97b07a57988abbc34d3",
+      "patch": "@@ -257,9 +257,18 @@ describe('CoachTeamProfileScreen honesty', () => {\n     expect(src).toMatch(/team\\.ok/);\n   });\n \n-  it('surfaces the team code for sharing', () => {\n-    expect(src).toContain('buildInviteUniversalLink');\n-    expect(src).toContain('team_code');\n+  // AUDIT-16-125: no sign-up or join path accepts the stored GP-TEAM code,\n+  // so the screen shares the coach's permanent invite link instead.\n+  it('shares the permanent invite link, never the team code', () => {\n+    expect(src).toContain('<InviteShareCard');\n+    expect(src).not.toContain('profile.team_code');\n+    expect(src).not.toContain('buildInviteUniversalLink');\n+    expect(src).not.toMatch(/sign up with this code/i);\n+  });\n+\n+  it('shows no invented seat capacity and no unreachable sub-coach link', () => {\n+    expect(src).not.toContain('client_capacity');\n+    expect(src).not.toContain(\"navigate('TeamManagement')\");\n   });\n });\n "
+    },
+    {
+      "sha": "d1366da81de1e40b57c11ebfbd271fa986af083a",
+      "filename": "src/__tests__/coachTeamP0Blockers.test.tsx",
+      "status": "modified",
+      "additions": 35,
+      "deletions": 2,
+      "changes": 37,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/81609b6a3c9b474cce6db97b07a57988abbc34d3/src%2F__tests__%2FcoachTeamP0Blockers.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/81609b6a3c9b474cce6db97b07a57988abbc34d3/src%2F__tests__%2FcoachTeamP0Blockers.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FcoachTeamP0Blockers.test.tsx?ref=81609b6a3c9b474cce6db97b07a57988abbc34d3",
+      "patch": "@@ -117,7 +117,7 @@ jest.mock('../utils/authEvents', () => ({\n // Pull the screens / hook AFTER the mocks above are registered.\n import SubCoachInviteModal from '../screens/coach/SubCoachInviteModal';\n import CoachInvitesScreen from '../screens/coach/CoachInvitesScreen';\n-import { useCoachRoleType } from '../hooks/useCoachRoleType';\n+import { useCoachRoleType, useCoachTeamStatus } from '../hooks/useCoachRoleType';\n \n beforeEach(() => {\n   mockSubCoachInvite.mockReset();\n@@ -217,7 +217,40 @@ describe('P0-1: TeamStack role gating in CoachNavigator', () => {\n     );\n     expect(src).toMatch(/showTeamTab && \\(/);\n     expect(src).toContain('useCoachRoleType');\n-    expect(src).toContain(\"coachRoleType === 'head_coach'\");\n+    expect(src).toContain(\n+      \"teamStatus.role === 'head_coach' && teamStatus.hasSubCoaches\",\n+    );\n+  });\n+\n+  // AUDIT-16-125: every coach is the head coach of their own roster, so the\n+  // Team tab (which can only show the plan gate) needs a real sub-coach.\n+  it('useCoachTeamStatus reports no team for a head coach with an empty roster', async () => {\n+    mockReadUserCache.mockResolvedValue({ id: 'u-head', email: 'h@ex.com', role: 'coach' });\n+    mockGetMembers.mockResolvedValue({\n+      ok: true,\n+      data: [\n+        { id: 'u-head', name: 'Head', email: 'h@ex.com', role: 'head_coach', assigned_clients: 3, max_clients: 30, created_at: '' },\n+      ],\n+    });\n+\n+    const { result } = await renderHook(() => useCoachTeamStatus());\n+    await waitFor(() => expect(result.current.role).toBe('head_coach'));\n+    expect(result.current.hasSubCoaches).toBe(false);\n+  });\n+\n+  it('useCoachTeamStatus reports a team once the roster has a sub-coach', async () => {\n+    mockReadUserCache.mockResolvedValue({ id: 'u-head', email: 'h@ex.com', role: 'coach' });\n+    mockGetMembers.mockResolvedValue({\n+      ok: true,\n+      data: [\n+        { id: 'u-head', name: 'Head', email: 'h@ex.com', role: 'head_coach', assigned_clients: 3, max_clients: 30, created_at: '' },\n+        { id: 'u-sub', name: 'Sub', email: 's@ex.com', role: 'sub_coach', assigned_clients: 1, max_clients: 30, created_at: '' },\n+      ],\n+    });\n+\n+    const { result } = await renderHook(() => useCoachTeamStatus());\n+    await waitFor(() => expect(result.current.hasSubCoaches).toBe(true));\n+    expect(result.current.role).toBe('head_coach');\n   });\n });\n "
+    },
+    {
+      "sha": "ca3d63d7546e01e1a995acc62c6670789beb0fea",
+      "filename": "src/hooks/useCoachRoleType.ts",
+      "status": "modified",
+      "additions": 30,
+      "deletions": 10,
+      "changes": 40,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/81609b6a3c9b474cce6db97b07a57988abbc34d3/src%2Fhooks%2FuseCoachRoleType.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/81609b6a3c9b474cce6db97b07a57988abbc34d3/src%2Fhooks%2FuseCoachRoleType.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fhooks%2FuseCoachRoleType.ts?ref=81609b6a3c9b474cce6db97b07a57988abbc34d3",
+      "patch": "@@ -15,6 +15,11 @@\n  * The canonical signal lives in `/coach/team/members`. Each entry carries\n  * `role: 'head_coach' | 'sub_coach'`, and we match the cached current user\n  * id against the roster to decide.\n+ *\n+ * `useCoachTeamStatus` also reports whether the roster holds at least one\n+ * sub-coach. The members route lists every coach as the head coach of their\n+ * own (often empty) roster, so role alone cannot tell a coach who runs a\n+ * team from one who does not.\n  */\n \n import { useEffect, useState } from 'react';\n@@ -24,8 +29,16 @@ import { authEvents } from '../utils/authEvents';\n \n export type CoachRoleType = 'head_coach' | 'sub_coach' | 'unknown';\n \n-export function useCoachRoleType(): CoachRoleType {\n-  const [role, setRole] = useState<CoachRoleType>('unknown');\n+export interface CoachTeamStatus {\n+  role: CoachRoleType;\n+  /** True only once the roster shows at least one sub-coach. */\n+  hasSubCoaches: boolean;\n+}\n+\n+const UNKNOWN_STATUS: CoachTeamStatus = { role: 'unknown', hasSubCoaches: false };\n+\n+export function useCoachTeamStatus(): CoachTeamStatus {\n+  const [status, setStatus] = useState<CoachTeamStatus>(UNKNOWN_STATUS);\n \n   useEffect(() => {\n     let mounted = true;\n@@ -34,7 +47,7 @@ export function useCoachRoleType(): CoachRoleType {\n       try {\n         const user = await readUserCache();\n         if (!user || user.role !== 'coach') {\n-          if (mounted) setRole('unknown');\n+          if (mounted) setStatus(UNKNOWN_STATUS);\n           return;\n         }\n         const result = await coachTeamApi.getMembers();\n@@ -45,27 +58,30 @@ export function useCoachRoleType(): CoachRoleType {\n           // on a broken backend lose the tab until the next session \u2014 the\n           // upgrade-gate alternative would falsely tell paying customers they\n           // need to upgrade, which is worse.\n-          setRole('unknown');\n+          setStatus(UNKNOWN_STATUS);\n           return;\n         }\n         const me = result.data.find((m) => m.id === user.id);\n         if (!me) {\n-          setRole('unknown');\n+          setStatus(UNKNOWN_STATUS);\n           return;\n         }\n-        setRole(me.role === 'head_coach' ? 'head_coach' : 'sub_coach');\n+        setStatus({\n+          role: me.role === 'head_coach' ? 'head_coach' : 'sub_coach',\n+          hasSubCoaches: result.data.some((m) => m.role === 'sub_coach'),\n+        });\n       } catch {\n-        if (mounted) setRole('unknown');\n+        if (mounted) setStatus(UNKNOWN_STATUS);\n       }\n     };\n \n     void resolve();\n \n     const onLogin = () => {\n-      setRole('unknown');\n+      setStatus(UNKNOWN_STATUS);\n       void resolve();\n     };\n-    const onLogout = () => setRole('unknown');\n+    const onLogout = () => setStatus(UNKNOWN_STATUS);\n     authEvents.on('login', onLogin);\n     authEvents.on('logout', onLogout);\n \n@@ -76,5 +92,9 @@ export function useCoachRoleType(): CoachRoleType {\n     };\n   }, []);\n \n-  return role;\n+  return status;\n+}\n+\n+export function useCoachRoleType(): CoachRoleType {\n+  return useCoachTeamStatus().role;\n }"
+    },
+    {
+      "sha": "459591dc728bd014b29fdc4284e185d54a092c3c",
+      "filename": "src/navigation/CoachNavigator.tsx",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 3,
+      "changes": 10,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/81609b6a3c9b474cce6db97b07a57988abbc34d3/src%2Fnavigation%2FCoachNavigator.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/81609b6a3c9b474cce6db97b07a57988abbc34d3/src%2Fnavigation%2FCoachNavigator.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fnavigation%2FCoachNavigator.tsx?ref=81609b6a3c9b474cce6db97b07a57988abbc34d3",
+      "patch": "@@ -137,7 +137,7 @@ import BlockedUsersScreen from '../screens/settings/BlockedUsersScreen';\n import RomanConversationsScreen, { type RomanConversationParams } from '../screens/settings/RomanConversationsScreen';\n import RomanConversationScreen from '../screens/settings/RomanConversationScreen';\n import { Colors } from '../constants/colors';\n-import { useCoachRoleType } from '../hooks/useCoachRoleType';\n+import { useCoachTeamStatus } from '../hooks/useCoachRoleType';\n \n export type CoachTabParamList = {\n   // Phase 8: Command Center replaces the old top-level Dashboard tab.\n@@ -652,8 +652,12 @@ export default function CoachNavigator() {\n   // closed (returns 'unknown' until a positive head-coach signal), so the\n   // tab disappears for sub-coaches and during the initial resolution\n   // window.\n-  const coachRoleType = useCoachRoleType();\n-  const showTeamTab = coachRoleType === 'head_coach';\n+  // AUDIT-16-125: the members route lists every coach as the head coach of\n+  // their own roster, so role alone put a Team tab in front of every coach,\n+  // where it could only show the plan gate. The tab now mounts only for a\n+  // head coach (useCoachRoleType contract) whose roster already has a sub-coach.\n+  const teamStatus = useCoachTeamStatus();\n+  const showTeamTab = teamStatus.role === 'head_coach' && teamStatus.hasSubCoaches;\n   // Audit P0: while the Command Center API still ships only mock data\n   // (__USING_MOCK_DATA driven by EXPO_PUBLIC_USE_MOCK_COMMAND_CENTER), the\n   // initial tab for a real coach is ClientsStack. Mock-mode builds (demo,"
+    },
+    {
+      "sha": "ce53cbac25b72ec70bb9c2b84f9ec3ac5df6f5d8",
+      "filename": "src/screens/coach/CoachTeamProfileScreen.tsx",
+      "status": "modified",
+      "additions": 11,
+      "deletions": 85,
+      "changes": 96,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/81609b6a3c9b474cce6db97b07a57988abbc34d3/src%2Fscreens%2Fcoach%2FCoachTeamProfileScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/81609b6a3c9b474cce6db97b07a57988abbc34d3/src%2Fscreens%2Fcoach%2FCoachTeamProfileScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fcoach%2FCoachTeamProfileScreen.tsx?ref=81609b6a3c9b474cce6db97b07a57988abbc34d3",
+      "patch": "@@ -1,9 +1,11 @@\n /**\n  * CoachTeamProfileScreen\n  *\n- * The head coach's team / gym / organization profile. Renders the team\n- * code clients can sign up with, total seat capacity across head coach +\n- * sub-coaches, and links into TeamManagement for sub-coach administration.\n+ * The head coach's team / gym / organization profile. Renders the coach's\n+ * permanent invite link (the code every sign-up path accepts) and the client\n+ * count. AUDIT-16-125: the stored team code (GP-TEAM-...) is not accepted by\n+ * any sign-up or join path, so it is no longer shown or shared; the invented\n+ * seat capacity and the unreachable sub-coach link are gone too.\n  *\n  * Renders an honest setup CTA when the backend has not provisioned the\n  * /coach/team endpoint yet (404). Never invents data.\n@@ -14,7 +16,6 @@ import {\n   ActivityIndicator,\n   Alert,\n   Modal,\n-  Share,\n   StyleSheet,\n   Text,\n   TextInput,\n@@ -31,7 +32,7 @@ import {\n } from '../../api/coachTeamApi';\n import { useTheme, ThemeColors } from '../../theme/ThemeProvider';\n import { errorMessage } from '../../types/common';\n-import { buildInviteUniversalLink } from '../../utils/deepLink';\n+import InviteShareCard from '../../components/coach/setup/InviteShareCard';\n \n export default function CoachTeamProfileScreen() {\n   const { colors } = useTheme();\n@@ -76,18 +77,6 @@ export default function CoachTeamProfileScreen() {\n     }\n   };\n \n-  const handleShareTeamCode = async (profile: TeamProfile) => {\n-    try {\n-      const url = buildInviteUniversalLink(profile.team_code);\n-      await Share.share({\n-        url,\n-        message: `Join ${profile.business_name} on The Growth Project: ${url}\\nTeam code: ${profile.team_code}`,\n-      });\n-    } catch {\n-      // Share sheet dismissed \u2014 no-op.\n-    }\n-  };\n-\n   if (!team) {\n     return <SkeletonScreen count={5} />;\n   }\n@@ -112,8 +101,8 @@ export default function CoachTeamProfileScreen() {\n           <Ionicons name=\"business-outline\" size={36} color={colors.textMuted} />\n           <Text style={styles.gateTitle}>Set up your team</Text>\n           <Text style={styles.gateBody}>\n-            Add a business name to generate a team code clients can use at signup.\n-            Sub-coaches you add later live under this team.\n+            Add a business name for your team profile. Clients join with your\n+            invite link.\n           </Text>\n           <TouchableOpacity\n             style={styles.cta}\n@@ -179,45 +168,14 @@ export default function CoachTeamProfileScreen() {\n       <Text style={styles.header}>{profile.business_name}</Text>\n       <Text style={styles.subheader}>Team profile</Text>\n \n-      <View style={styles.codeCard}>\n-        <Text style={styles.codeLabel}>TEAM CODE</Text>\n-        <Text style={styles.codeText} selectable>\n-          {profile.team_code}\n-        </Text>\n-        <Text style={styles.codeHint}>\n-          Clients who sign up with this code join your team. You can reassign them\n-          to any sub-coach.\n-        </Text>\n-        <View style={styles.codeActions}>\n-          <TouchableOpacity\n-            style={styles.actionBtn}\n-            onPress={() => handleShareTeamCode(profile)}\n-            accessibilityRole=\"button\"\n-            accessibilityLabel=\"Share team code\"\n-          >\n-            <Ionicons name=\"share-outline\" size={16} color={colors.primary} />\n-            <Text style={styles.actionBtnText}>Share team code</Text>\n-          </TouchableOpacity>\n-        </View>\n-      </View>\n+      <Text style={styles.codeLabel}>CLIENT INVITE LINK</Text>\n+      <InviteShareCard testID=\"team-invite-share\" />\n \n       <View style={styles.statsRow}>\n         <View style={styles.statCard}>\n           <Text style={styles.statValue}>{profile.clients_assigned}</Text>\n           <Text style={styles.statLabel}>Clients</Text>\n         </View>\n-        <View style={styles.statCard}>\n-          <Text style={styles.statValue}>{profile.client_capacity}</Text>\n-          <Text style={styles.statLabel}>Seats</Text>\n-        </View>\n-        <View style={styles.statCard}>\n-          <Text style={styles.statValue}>\n-            {profile.client_capacity > 0\n-              ? Math.max(0, profile.client_capacity - profile.clients_assigned)\n-              : 0}\n-          </Text>\n-          <Text style={styles.statLabel}>Open</Text>\n-        </View>\n       </View>\n \n       {!profile.payouts_enabled ? (\n@@ -234,17 +192,6 @@ export default function CoachTeamProfileScreen() {\n         </TouchableOpacity>\n       ) : null}\n \n-      <TouchableOpacity\n-        style={styles.linkRow}\n-        onPress={() => navigation.navigate('TeamManagement')}\n-        accessibilityRole=\"button\"\n-        accessibilityLabel=\"Open team management\"\n-      >\n-        <Ionicons name=\"people-outline\" size={20} color={colors.primary} />\n-        <Text style={styles.linkText}>Manage sub-coaches</Text>\n-        <Ionicons name=\"chevron-forward\" size={18} color={colors.textMuted} />\n-      </TouchableOpacity>\n-\n       <TouchableOpacity\n         style={styles.linkRow}\n         onPress={() => navigation.navigate('CoachMoney')}\n@@ -284,28 +231,7 @@ const makeStyles = (colors: ThemeColors) =>\n     center: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background },\n     header: { fontSize: 26, fontWeight: '600', color: colors.textPrimary },\n     subheader: { fontSize: 13, color: colors.textSecondary, marginBottom: 16 },\n-    codeCard: {\n-      backgroundColor: colors.surface,\n-      borderRadius: 14,\n-      padding: 16,\n-      borderWidth: 1,\n-      borderColor: colors.border,\n-      marginTop: 12,\n-    },\n-    codeLabel: { fontSize: 11, color: colors.textMuted, letterSpacing: 0.5 },\n-    codeText: { fontSize: 28, fontWeight: '600', color: colors.textPrimary, marginVertical: 4 },\n-    codeHint: { fontSize: 12, color: colors.textSecondary, lineHeight: 17, marginBottom: 12 },\n-    codeActions: { flexDirection: 'row', gap: 12 },\n-    actionBtn: {\n-      flexDirection: 'row',\n-      alignItems: 'center',\n-      gap: 6,\n-      paddingHorizontal: 12,\n-      paddingVertical: 8,\n-      backgroundColor: colors.primary + '15',\n-      borderRadius: 8,\n-    },\n-    actionBtnText: { color: colors.primary, fontSize: 13, fontWeight: '500' },\n+    codeLabel: { fontSize: 11, color: colors.textMuted, letterSpacing: 0.5, marginTop: 12, marginBottom: 8 },\n     statsRow: { flexDirection: 'row', gap: 10, marginTop: 16 },\n     statCard: {\n       flex: 1,"
+    }
+  ]
+}

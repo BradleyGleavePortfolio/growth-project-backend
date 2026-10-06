@@ -1,0 +1,184 @@
+{
+  "repo": "mobile",
+  "number": 405,
+  "head": "32e0c20ddd7d0fba981d1ddf64836d3fff8612fe",
+  "base": "42daf108364739287ba0445c8c1caae6d659d3e9",
+  "title": "fix(money): explain full-refund pause and explicit coach restart (T4)",
+  "body": "## MONEY-REFUND-124 \u2014 agent 124\n\nT4: customer-facing billing/access truth and coach consent to resume billing. Opening fix round; independent dual audit required.\n\n### Changes\n- Preserve the backend's `refund_paused` / `refund` state rather than treating a full refund as an unpaid card or bank dispute.\n- Client lockout, banner and card screen explain the full refund and owning-coach restart; no card-charge-to-restore promise.\n- Coach client detail lists refund-paused plans and offers the existing Restart plan route.\n- Confirmation makes renewed billing explicit and states the refund is not reversed.\n- Ordinary disputes retain their original explanation and confirmation.\n\n### Regression proof\n`src/__tests__/moneyRefund124.test.tsx`: normalized contract, client truth, unconfirmed billing pause, coach roster and restart confirmation. This PR's own CI is the candidate proof; no mobile extra lane.\n\n### Compatibility and defaults\nWorks with the existing backend: ordinary payment/dispute states are unchanged; new refund states are optional. Backend companion supplies refund billing pause and existing coach restart. No new billing action or endpoint. B=0 separately; companion backend B3 is completed by this mobile slice. U=1 refund-specific client/coach copy. C=0; frozen edge cases not investigated.\n\nNo merge, deployment, production flag changes or paid builds.\n",
+  "state": "open",
+  "draft": false,
+  "additions": 180,
+  "deletions": 15,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/405",
+  "comments": [
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/405#issuecomment-6023909410",
+      "body": "FIX ROUND 1 (OPENING) (MONEY-REFUND-124, agent 124) \u2014 growth-project-mobile#405 @ 3ee4c8d1815f9398c927458cb0d57e6e57e2bb3e \u2014 CI pending, not READY FOR AUDIT yet\n\n190 changed lines. Completes [backend #776](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/776) B3: the full-refund billing pause is explained accurately to client and coach, with explicit renewed-billing consent on the existing Restart plan action.\n\nSeparate mobile B/U/C: 0/1/0; aggregate job B/U/C: 5/1/0 (copy finding shared, not double-counted). Seven regression tests cover refund contract/copy/coach restart and unchanged dispute behavior. Existing backend states remain supported. No deploy or build.\n"
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/405#issuecomment-6023950445",
+      "body": "FIX ROUND 2 (MONEY-REFUND-124, agent 124) \u2014 growth-project-mobile#405 @ 80faafb69815cc2ac29ddccac906da5031b5a869 \u2014 CI pending. Opening CI identified two test TypeScript errors from the current asynchronous testing-library render API; render and press are now awaited. The card-update screen also preserves the backend's explicit unconfirmed-pause state instead of claiming billing is already paused. Aggregate B/U/C remains 5/1/0. No production action or extra CI lane."
+    },
+    {
+      "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/405#issuecomment-6024261888",
+      "body": "FIX ROUND 1 (OPENING) (MONEY-REFUND-124, agent 124) \u2014 growth-project-mobile#405 @ 32e0c20ddd7d0fba981d1ddf64836d3fff8612fe \u2014 READY FOR AUDIT\n\nFinished by R-MONEY-FINISH-124 (agent 124) after the builder was cancelled by a session interruption. B/U/C: 5/1/0 job-wide (this slice: B 0 of its own, completes backend B3's client and coach side; U1 refund-specific client and coach copy, owning-coach restart consent). 195 changed lines (1,500 cap).\n\nCI repair push (one, test-only, deterministic): 80faafb6 failed one existing jest case, src/entitlements/dunning/__tests__/coachDisputeRestart.test.tsx, which still expected the pre-U1 PLAN_NOT_DISPUTE_PAUSED sentence. It now expects the shipped copy \"This plan is not paused by a refund, payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.\" No src change since 80faafb6 (FIX ROUND 2 comment above covers 80faafb6).\n\nCI at this head: Typecheck, lint, test green https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37521055524/job/112466249146 ; CodeQL green.\n\nOwner decisions: none new (owner refund default applied: full recurring refund pauses billing and ends access; only the owning coach restarts). Operator: merge together with growth-project-backend#776 (READY https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/776#issuecomment-6024230718). No merge, deploy, production, Stripe, EAS or spend.\n"
+    }
+  ],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112467531706",
+      "id": 112467531706,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A405+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112467531706/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37521055524/job/112466249146",
+      "id": 112466249146,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112466249146/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37521055727/job/112466243391",
+      "id": 112466243391,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112466243391/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37521055727/job/112466243102",
+      "id": 112466243102,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 1,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112466243102/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "b404036d60fcc07db81d59d2dac9d4feb8d2fac6",
+      "filename": "src/__tests__/moneyRefund124.test.tsx",
+      "status": "added",
+      "additions": 120,
+      "deletions": 0,
+      "changes": 120,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2F__tests__%2FmoneyRefund124.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2F__tests__%2FmoneyRefund124.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FmoneyRefund124.test.tsx?ref=32e0c20ddd7d0fba981d1ddf64836d3fff8612fe",
+      "patch": "@@ -0,0 +1,120 @@\n+import React from 'react';\n+import { Alert } from 'react-native';\n+import { render, waitFor, fireEvent } from '@testing-library/react-native';\n+import type { ThemeColors } from '../theme/ThemeProvider';\n+import { normalizeDunningStatus } from '../entitlements/dunning/dunningApi';\n+import { lockoutSummary, lockoutNextStep, isDisputeCycle } from '../entitlements/dunning/DunningLockoutScreen';\n+import { bannerCopy } from '../entitlements/dunning/DunningBanner';\n+import { updateCardIntro } from '../entitlements/dunning/UpdateCardScreen';\n+import { loadDisputePausedPlans, isDisputePaused } from '../entitlements/dunning/coachDisputeRestart';\n+import { DisputePausedPlansCard, restartConfirmBody } from '../components/coach/DisputePausedPlansCard';\n+\n+const mockGet = jest.fn();\n+const mockPost = jest.fn();\n+jest.mock('../services/api', () => ({\n+  __esModule: true,\n+  default: { get: (...args: unknown[]) => mockGet(...args), post: (...args: unknown[]) => mockPost(...args) },\n+}));\n+jest.mock('../theme/ThemeProvider', () => {\n+  const tokens = jest.requireActual('../theme/tokens').default;\n+  return { useTheme: () => ({ semanticColors: tokens.lightTokens, tokens, colorScheme: 'light' }) };\n+});\n+jest.mock('../services/sentry', () => ({ captureError: jest.fn() }));\n+jest.mock('../services/queryClient', () => ({ queryClient: { invalidateQueries: jest.fn() } }));\n+jest.mock('@stripe/stripe-react-native', () => ({\n+  initStripe: jest.fn(), initPaymentSheet: jest.fn(), presentPaymentSheet: jest.fn(),\n+}));\n+\n+const RAW = {\n+  enabled: true, state: 'locked', kind: 'refund', reason: 'refund_paused',\n+  purchase_id: 'purchase', amount_cents: null, currency: 'usd',\n+  locked_at: '2026-10-06T12:00:00.000Z', lockout_at: null,\n+  coach_name: 'Morgan', billing_paused: true,\n+};\n+const DETAIL = {\n+  purchase: {\n+    id: 'purchase', billing_type: 'recurring', status: 'refunded',\n+    amount_cents: 1000, currency: 'usd',\n+  },\n+  dunning: {\n+    status: 'active', last_failure_reason: 'charge_refunded',\n+    entered_at: '2026-10-06T12:00:00.000Z',\n+  },\n+};\n+\n+beforeEach(() => {\n+  mockGet.mockReset();\n+  mockPost.mockReset();\n+});\n+\n+function serveRefund() {\n+  mockGet.mockImplementation(async (route: string) => ({\n+    data: route === '/v1/coach/purchases' ? {\n+      purchases: [{\n+        id: 'purchase', client_user_id: 'client', billing_type: 'recurring',\n+        status: 'refunded', entitlement_active: false,\n+      }],\n+      next_cursor: null,\n+    } : DETAIL,\n+  }));\n+}\n+\n+describe('MONEY-REFUND-124 refund pause is not failed payment or a bank dispute', () => {\n+  it('preserves the backend refund reason and keeps the coach-restart action gates', () => {\n+    const status = normalizeDunningStatus(RAW);\n+    expect(status).toMatchObject({ kind: 'refund', reason: 'refund_paused', lockout_at: null });\n+    expect(isDisputeCycle(status)).toBe(true);\n+  });\n+\n+  it('client lockout explains the refund and points to the coach, never a card charge', () => {\n+    const status = normalizeDunningStatus(RAW);\n+    expect(lockoutSummary(status)).toMatch(/fully refunded/);\n+    expect(lockoutSummary(status)).toMatch(/billing is paused/);\n+    expect(lockoutSummary(status)).not.toMatch(/bank opened|has not gone through|10 days/);\n+    expect(lockoutNextStep(status)).toMatch(/Message Morgan/);\n+    expect(lockoutNextStep(status)).not.toMatch(/Update card|charged right away/);\n+  });\n+\n+  it('a refund pause not yet confirmed by Stripe does not claim billing is paused', () => {\n+    const status = normalizeDunningStatus({ ...RAW, billing_paused: false });\n+    expect(lockoutSummary(status)).toMatch(/billing pause is being completed/);\n+    expect(lockoutSummary(status)).not.toMatch(/billing is paused/);\n+  });\n+\n+  it('banner and card screen distinguish a full refund from a decline or dispute', () => {\n+    const status = normalizeDunningStatus(RAW);\n+    expect(bannerCopy(status).title).toMatch(/full refund/);\n+    expect(bannerCopy(status).body).not.toMatch(/bank opened|did not go through/);\n+    expect(updateCardIntro(status)).toMatch(/fully refunded/);\n+    expect(updateCardIntro(status)).not.toMatch(/bank opened|charged.*right away/);\n+  });\n+\n+  it('coach roster can load a refund-paused plan for the existing restart route', async () => {\n+    serveRefund();\n+    expect(isDisputePaused(DETAIL)).toBe(true);\n+    await expect(loadDisputePausedPlans('client')).resolves.toEqual([expect.objectContaining({\n+      purchaseId: 'purchase', pauseReason: 'refund',\n+    })]);\n+  });\n+\n+  it('coach card offers restart with clear renewed-billing consent after a refund', async () => {\n+    serveRefund();\n+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);\n+    const colors = new Proxy({}, { get: () => '#000000' }) as ThemeColors;\n+    const view = await render(<DisputePausedPlansCard clientUserId=\"client\" clientName=\"Taylor\" colors={colors} />);\n+    await waitFor(() => expect(view.getByText('Plan paused after a full refund')).toBeTruthy());\n+    await fireEvent.press(view.getByTestId('dispute-restart-purchase'));\n+    expect(alert).toHaveBeenCalledWith(\n+      'Restart this plan?', expect.stringMatching(/refund is not reversed.*agreeing with the client/),\n+      expect.any(Array),\n+    );\n+    expect(mockPost).not.toHaveBeenCalled();\n+    alert.mockRestore();\n+  });\n+\n+  it('existing disputes keep their original explanation and restart confirmation', () => {\n+    const status = normalizeDunningStatus({ ...RAW, kind: 'dispute', reason: 'dispute_paused' });\n+    expect(lockoutSummary(status)).toMatch(/bank opened a dispute or inquiry/);\n+    expect(restartConfirmBody('Taylor')).toMatch(/payment dispute or inquiry is resolved or settled/);\n+  });\n+});"
+    },
+    {
+      "sha": "caf24bb4e4a05d086f5fd4c99bb2056759a913f0",
+      "filename": "src/components/coach/DisputePausedPlansCard.tsx",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 5,
+      "changes": 17,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fcomponents%2Fcoach%2FDisputePausedPlansCard.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fcomponents%2Fcoach%2FDisputePausedPlansCard.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fcomponents%2Fcoach%2FDisputePausedPlansCard.tsx?ref=32e0c20ddd7d0fba981d1ddf64836d3fff8612fe",
+      "patch": "@@ -25,7 +25,10 @@ interface Props {\n }\n \n export const RESTART_CONFIRM_TITLE = 'Restart this plan?';\n-export function restartConfirmBody(clientName: string): string {\n+export function restartConfirmBody(clientName: string, pauseReason?: 'refund' | 'dispute'): string {\n+  if (pauseReason === 'refund') {\n+    return `Billing for ${clientName || 'the client'} resumes on the plan's usual schedule and access to the plan returns. The refund is not reversed. Restart only after agreeing with the client to continue the plan.`;\n+  }\n   return `Billing for ${clientName || 'the client'} resumes on the plan's usual schedule and access to the plan returns. Restart only once the payment dispute or inquiry is resolved or settled.`;\n }\n \n@@ -58,12 +61,13 @@ export function DisputePausedPlansCard({ clientUserId, clientName, reloadKey = 0\n \n   const confirmRestart = useCallback(\n     (purchaseId: string) => {\n-      Alert.alert(RESTART_CONFIRM_TITLE, restartConfirmBody(clientName), [\n+      const plan = plans.find((p) => p.purchaseId === purchaseId);\n+      Alert.alert(RESTART_CONFIRM_TITLE, restartConfirmBody(clientName, plan?.pauseReason), [\n         { text: 'Cancel', style: 'cancel' },\n         { text: 'Restart plan', onPress: () => void restart(purchaseId) },\n       ]);\n     },\n-    [clientName, restart],\n+    [clientName, restart, plans],\n   );\n \n   if (plans.length === 0) return null;\n@@ -78,11 +82,14 @@ export function DisputePausedPlansCard({ clientUserId, clientName, reloadKey = 0\n         return (\n           <View key={plan.purchaseId} style={styles.plan}>\n             <Text style={[styles.title, { color: colors.noticeWarningText }]}>\n-              {out?.ok ? 'Plan restarted' : 'Plan paused after a payment dispute or inquiry'}\n+              {out?.ok ? 'Plan restarted' : plan.pauseReason === 'refund'\n+                ? 'Plan paused after a full refund' : 'Plan paused after a payment dispute or inquiry'}\n             </Text>\n             {out?.ok ? null : (\n               <Text style={[styles.body, { color: colors.textSecondary }]}>\n-                {`The bank opened a dispute or inquiry about a payment on this plan${\n+                {plan.pauseReason === 'refund'\n+                  ? 'A full refund was completed. Access to this plan has ended and its billing is paused until the plan is restarted.'\n+                  : `The bank opened a dispute or inquiry about a payment on this plan${\n                   amount ? ` (${amount})` : ''\n                 }. Access to this plan has ended and its billing is paused until the plan is restarted.`}\n               </Text>"
+    },
+    {
+      "sha": "77e8a5468dd270c71c9e4d4ed7f7b873cdc5c6a3",
+      "filename": "src/entitlements/dunning/DunningBanner.tsx",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 1,
+      "changes": 10,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fentitlements%2Fdunning%2FDunningBanner.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fentitlements%2Fdunning%2FDunningBanner.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fentitlements%2Fdunning%2FDunningBanner.tsx?ref=32e0c20ddd7d0fba981d1ddf64836d3fff8612fe",
+      "patch": "@@ -5,7 +5,7 @@ import type { SemanticTokens } from '../../theme/tokens';\n import { formatDunningAmount, formatDunningDate, type ClientDunningStatus } from './dunningApi';\n import { disputePauseFacts } from './dunningErrorCopy';\n import { useDunning } from './DunningLockoutProvider';\n-import { isDisputeCycle } from './DunningLockoutScreen';\n+import { isDisputeCycle, isRefundCycle } from './DunningLockoutScreen';\n \n /**\n  * The lock date, only while it is still ahead and the lock is not waived\n@@ -22,6 +22,14 @@ function upcomingLockDate(status: ClientDunningStatus, now: number): string | nu\n export function bannerCopy(status: ClientDunningStatus, now: number = Date.now()): { title: string; body: string } {\n   const amount = formatDunningAmount(status.amount_cents, status.currency);\n   const lockOn = upcomingLockDate(status, now);\n+  if (isRefundCycle(status)) {\n+    return {\n+      title: 'Your plan is paused after a full refund',\n+      body: status.billing_paused === false\n+        ? 'A full refund was completed. Access to this plan has ended. The billing pause is being completed; pull down to refresh or message your coach.'\n+        : `A full refund was completed. ${disputePauseFacts(status.coach_name, 'plan')}`,\n+    };\n+  }\n   if (isDisputeCycle(status)) {\n     // R-DISPUTE-PAUSE (B-353-3 / B-353-6): access to the disputed plan has\n     // already ended, so no lock date, no condition and no card fix. B-353-8:"
+    },
+    {
+      "sha": "9493c57b31a1b6854c5343c26b318b3e40530c12",
+      "filename": "src/entitlements/dunning/DunningLockoutScreen.tsx",
+      "status": "modified",
+      "additions": 13,
+      "deletions": 1,
+      "changes": 14,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fentitlements%2Fdunning%2FDunningLockoutScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fentitlements%2Fdunning%2FDunningLockoutScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fentitlements%2Fdunning%2FDunningLockoutScreen.tsx?ref=32e0c20ddd7d0fba981d1ddf64836d3fff8612fe",
+      "patch": "@@ -45,7 +45,13 @@ export interface DunningLockoutScreenProps {\n  * inquiry moves none), so no surface claims a reversal (B-353-8).\n  */\n export function isDisputeCycle(status: ClientDunningStatus | null | undefined): boolean {\n-  return status?.kind === 'dispute' || status?.reason === 'dispute_paused';\n+  // Compatibility name shared by the action gates: both pauses require\n+  // the coach to restart, never a card update or an automatic recovery.\n+  return status?.kind === 'dispute' || status?.reason === 'dispute_paused' || isRefundCycle(status);\n+}\n+\n+export function isRefundCycle(status: ClientDunningStatus | null | undefined): boolean {\n+  return status?.kind === 'refund' || status?.reason === 'refund_paused';\n }\n \n /** 'account' when the dispute locks the whole app, 'plan' when another plan keeps access. */\n@@ -68,6 +74,12 @@ export function lockoutSummary(status: ClientDunningStatus | null): string {\n   if (!status) return `Your plan is paused because of a payment problem. ${safe}`;\n   const amount = formatDunningAmount(status.amount_cents ?? null, status.currency ?? null);\n   const coach = status.coach_name ?? 'your coach';\n+  if (isRefundCycle(status)) {\n+    const facts = status.billing_paused === false\n+      ? 'Access to this plan has ended. The billing pause is being completed; pull down to refresh or message your coach.'\n+      : disputePauseFacts(status.coach_name, disputeScope(status));\n+    return `A payment for your plan with ${coach} was fully refunded. ${facts} ${safe}`;\n+  }\n   if (isDisputeCycle(status)) {\n     // R-DISPUTE-PAUSE (B-353-3 / B-353-6): the three facts, no lock date, no card fix.\n     return `Your bank opened a dispute or inquiry about a payment${amount ? ` of ${amount}` : ''} to ${coach}. ${disputePauseFacts("
+    },
+    {
+      "sha": "21ae6ca57818659dd639297d8a2bfb3bbc4724f8",
+      "filename": "src/entitlements/dunning/UpdateCardScreen.tsx",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 0,
+      "changes": 9,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fentitlements%2Fdunning%2FUpdateCardScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fentitlements%2Fdunning%2FUpdateCardScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fentitlements%2Fdunning%2FUpdateCardScreen.tsx?ref=32e0c20ddd7d0fba981d1ddf64836d3fff8612fe",
+      "patch": "@@ -41,6 +41,7 @@ import {\n   disputeScope,\n   endPlanAlertBody,\n   isDisputeCycle,\n+  isRefundCycle,\n } from './DunningLockoutScreen';\n import { confirmWithBank, handleStripeReturnUrl, runNativeCardUpdate } from './updateCard';\n \n@@ -85,6 +86,14 @@ function inDunning(status: ClientDunningStatus | null | undefined): boolean {\n export function updateCardIntro(status: ClientDunningStatus | null | undefined): string {\n   const amount = formatDunningAmount(status?.amount_cents ?? null, status?.currency ?? null);\n   const coach = status?.coach_name ?? 'your coach';\n+  if (inDunning(status) && isRefundCycle(status)) {\n+    if (status?.billing_paused === false) {\n+      return 'A full refund was completed. Access to this plan has ended. The billing pause is being completed; pull down to refresh or message your coach. Updating a card does not restart the plan.';\n+    }\n+    return `A payment for your plan with ${coach} was fully refunded. ${disputePauseFacts(\n+      status?.coach_name, disputeScope(status),\n+    )} Updating a card does not restart it.`;\n+  }\n   if (inDunning(status) && isDisputeCycle(status)) {\n     // R-DISPUTE-PAUSE (B-353-3 / B-353-7): the three facts; no charge, no\n     // comeback, no support fix and no future-payment line are promised."
+    },
+    {
+      "sha": "dac28d9e093a4536852a27438735abe4b0887a1e",
+      "filename": "src/entitlements/dunning/__tests__/coachDisputeRestart.test.tsx",
+      "status": "modified",
+      "additions": 1,
+      "deletions": 1,
+      "changes": 2,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fentitlements%2Fdunning%2F__tests__%2FcoachDisputeRestart.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fentitlements%2Fdunning%2F__tests__%2FcoachDisputeRestart.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fentitlements%2Fdunning%2F__tests__%2FcoachDisputeRestart.test.tsx?ref=32e0c20ddd7d0fba981d1ddf64836d3fff8612fe",
+      "patch": "@@ -162,7 +162,7 @@ describe('restart', () => {\n \n   it.each([\n     [404, 'PURCHASE_NOT_FOUND', 'That plan is not on your roster, so nothing was changed. Pull down to refresh, then try again.', true],\n-    [409, 'PLAN_NOT_DISPUTE_PAUSED', 'This plan is not paused by a payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.', true],\n+    [409, 'PLAN_NOT_DISPUTE_PAUSED', 'This plan is not paused by a refund, payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.', true],\n     [409, 'PLAN_ENDED', 'This plan has ended, so it cannot be restarted. The client can buy the package again.', true],\n     [409, 'OTHER_LIVE_PLAN', 'The client already has another active plan for this package, so restarting this one would bill them twice. Nothing was changed.', true],\n     [409, 'NEW_DISPUTE', 'The bank opened another payment dispute or inquiry on this plan, so it stays paused and nothing was charged.', false],"
+    },
+    {
+      "sha": "31bf49f1edf702ebc09ab0e04f5150b4d46a13ff",
+      "filename": "src/entitlements/dunning/coachDisputeRestart.ts",
+      "status": "modified",
+      "additions": 7,
+      "deletions": 2,
+      "changes": 9,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fentitlements%2Fdunning%2FcoachDisputeRestart.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fentitlements%2Fdunning%2FcoachDisputeRestart.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fentitlements%2Fdunning%2FcoachDisputeRestart.ts?ref=32e0c20ddd7d0fba981d1ddf64836d3fff8612fe",
+      "patch": "@@ -20,6 +20,7 @@ import api from '../../services/api';\n \n /** Backend DUNNING_V2_REVERSAL_REASON. */\n export const DISPUTE_PAUSE_REASON = 'charge_disputed';\n+export const REFUND_PAUSE_REASON = 'charge_refunded';\n \n /** Purchase statuses the backend treats as ended (restart refused). */\n const PLAN_ENDED_STATUSES = new Set(['canceled', 'expired', 'incomplete_expired']);\n@@ -32,6 +33,7 @@ export interface DisputePausedPlan {\n   amountCents: number | null;\n   currency: string | null;\n   pausedAt: string | null;\n+  pauseReason?: 'refund' | 'dispute';\n }\n \n interface RosterPurchase {\n@@ -68,7 +70,9 @@ export function isDisputePaused(detail: PurchaseDetail | null | undefined): bool\n   if (!p || !d) return false;\n   if (p.billing_type !== 'recurring') return false;\n   if (typeof p.status === 'string' && PLAN_ENDED_STATUSES.has(p.status)) return false;\n-  return d.status === 'active' && d.last_failure_reason === DISPUTE_PAUSE_REASON && str(d.entered_at) !== null;\n+  return d.status === 'active' &&\n+    (d.last_failure_reason === DISPUTE_PAUSE_REASON || d.last_failure_reason === REFUND_PAUSE_REASON) &&\n+    str(d.entered_at) !== null;\n }\n \n /** A roster row that could be dispute-paused (recurring, access off, not ended). */\n@@ -109,6 +113,7 @@ export async function loadDisputePausedPlans(clientUserId: string): Promise<Disp\n       amountCents: typeof amount === 'number' ? amount : null,\n       currency: str(detail?.purchase?.currency),\n       pausedAt: str(detail?.dunning?.entered_at),\n+      ...(detail?.dunning?.last_failure_reason === REFUND_PAUSE_REASON ? { pauseReason: 'refund' as const } : {}),\n     });\n   }\n   return out;\n@@ -130,7 +135,7 @@ const REFUSAL_COPY: Record<string, { message: string; final: boolean }> = {\n   },\n   PLAN_NOT_DISPUTE_PAUSED: {\n     message:\n-      'This plan is not paused by a payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.',\n+      'This plan is not paused by a refund, payment dispute or inquiry, so there is nothing to restart. Pull down to refresh.',\n     final: true,\n   },\n   PLAN_ENDED: {"
+    },
+    {
+      "sha": "a5f3cf7db9f5a0a718d527e7fafad8cd7d1f9328",
+      "filename": "src/entitlements/dunning/dunningApi.ts",
+      "status": "modified",
+      "additions": 9,
+      "deletions": 5,
+      "changes": 14,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fentitlements%2Fdunning%2FdunningApi.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/32e0c20ddd7d0fba981d1ddf64836d3fff8612fe/src%2Fentitlements%2Fdunning%2FdunningApi.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fentitlements%2Fdunning%2FdunningApi.ts?ref=32e0c20ddd7d0fba981d1ddf64836d3fff8612fe",
+      "patch": "@@ -19,13 +19,14 @@ export interface ClientDunningStatus {\n    * Under R-DISPUTE-PAUSE that plan's access has ended and its billing is\n    * paused until its coach restarts it; a card update never ends it.\n    */\n-  kind?: 'payment' | 'dispute' | null;\n+  kind?: 'payment' | 'dispute' | 'refund' | null;\n   /**\n    * Backend D2c (#705): 'dispute_paused' for a dispute pause (no lock date,\n    * no card or cancel path, `restart_by: 'coach'`); 'payment_failed' for a\n    * failed renewal. Absent on older backends (null).\n    */\n-  reason?: 'dispute_paused' | 'payment_failed' | null;\n+  reason?: 'dispute_paused' | 'refund_paused' | 'payment_failed' | null;\n+  billing_paused?: boolean;\n   /** The cycle is locked but another live plan keeps access (show the banner, not the lock). */\n   lock_waived?: boolean;\n   purchase_id: string | null;\n@@ -79,11 +80,13 @@ export function normalizeDunningStatus(raw: unknown): ClientDunningStatus {\n   }\n   const state: DunningState = r.state;\n   if (state !== 'none' && !str(r.purchase_id)) throw new DunningResponseShapeError(ROUTE_STATUS);\n-  const reason = r.reason === 'dispute_paused' || r.reason === 'payment_failed' ? r.reason : null;\n+  const reason = r.reason === 'dispute_paused' || r.reason === 'refund_paused' || r.reason === 'payment_failed' ? r.reason : null;\n   // R-DISPUTE-PAUSE: a dispute pause is a dispute whatever `kind` says, and a\n   // dispute never carries a lock date (an older backend's grace-period date\n   // is dropped here, so no surface can show one).\n-  const kind = r.kind === 'dispute' || reason === 'dispute_paused' ? 'dispute' : r.kind === 'payment' ? 'payment' : null;\n+  const kind = r.kind === 'refund' || reason === 'refund_paused' ? 'refund'\n+    : r.kind === 'dispute' || reason === 'dispute_paused' ? 'dispute'\n+      : r.kind === 'payment' ? 'payment' : null;\n   return {\n     enabled: r.enabled,\n     state,\n@@ -94,12 +97,13 @@ export function normalizeDunningStatus(raw: unknown): ClientDunningStatus {\n     amount_cents: cents(r.amount_cents),\n     currency: str(r.currency),\n     failed_at: str(r.failed_at),\n-    lockout_at: kind === 'dispute' ? null : str(r.lockout_at),\n+    lockout_at: kind === 'dispute' || kind === 'refund' ? null : str(r.lockout_at),\n     locked_at: str(r.locked_at),\n     day: num(r.day),\n     coach_name: str(r.coach_name),\n     card_last4: str(r.card_last4),\n     card_brand: str(r.card_brand),\n+    ...(typeof r.billing_paused === 'boolean' ? { billing_paused: r.billing_paused } : {}),\n   };\n }\n "
+    }
+  ]
+}

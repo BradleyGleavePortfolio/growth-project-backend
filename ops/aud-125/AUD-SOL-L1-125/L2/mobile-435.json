@@ -1,0 +1,123 @@
+{
+  "repo": "mobile",
+  "number": 435,
+  "head": "be8626212e1081b72f348131b8dfdac06715355e",
+  "base": "8c9b771e896f64662978e5fdf136c269580b7c27",
+  "title": "fix(workouts): the client trains the sets the coach approved from Roman (B-ROMANADJ-125)",
+  "body": "Tier: T3\nWhy: the client's assigned-workout screen (core flow: train) shows and starts the set counts the coach approved from Roman, read from one additive server field; no auth, money, storage or flag change.\nT4 trigger scan: none (display/start of the client's own assignment only; no auth, PII, money, credentials or destructive data).\nT3 trigger scan: core flow (train): WorkoutAssignmentDetailScreen list and Start payload.\nBounded T1: NO (core-flow screen).\nCanonical builder: Claude Opus 5.5 (B-ROMANADJ-125, agent 125)\nParent owner: operator agent 125\nAcceptance evidence: src/__tests__/workoutAssignmentRomanSets125.test.tsx (6 tests): approved count shown and sent to Start with the \"Updated by your coach\" note on that exercise only; field missing (older server) = today's behaviour; empty list = no change; an order the plan no longer has is ignored; pure overlay keeps input unmutated and ignores malformed input. The screen tests fail on main (main renders and starts the live 4 sets). Local: new file 6/6, existing src/__tests__/workoutAssignmentNamesUx124.test.tsx 8/8.\nPromotion triggers: replacing the live plan with the snapshot wholesale, or any change to which assignment is read.\n\n## Fixes\n- B (AUDIT-07-125 / AUDIT-14-125 B2): a coach approves Roman's set cut in the Action Queue and the card says it was applied, but the client opens the workout and still sees and starts the old sets, because this screen renders and starts `workout_plan.exercises` while roman-adjust writes only the assignment snapshot.\n\n## Change\n- New `src/utils/workout/romanAdjustedSets.ts`: `overlayRomanAdjustedSets(exercises, roman_adjusted_sets)` lays the approved set counts over the live plan by `order`; malformed entries and unknown orders are ignored.\n- `WorkoutAssignmentDetailScreen` uses the overlaid rows for the list and for Start (`buildActiveWorkoutExercises`), and shows \"Updated by your coach\" under an adjusted exercise. Coach live edits (reps, load, rest, notes, added exercises) stay visible because only Roman's set counts are overlaid.\n- `ClientWorkoutAssignmentWithPlan.roman_adjusted_sets?` added to the API type.\n\n## Works against the current production backend\n- Production does not send `roman_adjusted_sets` yet: the field is optional and a missing value renders exactly today's screen (tested). Once the companion backend PR deploys, approved changes appear with no app update. Companion: growth-project-backend#800.\n\n## Overlap\n- No open PR touches WorkoutAssignmentDetailScreen.tsx, workoutBuilderApi.ts or utils/workout/. Rebased on current main (8fac2fa2, includes m#422).\n",
+  "state": "open",
+  "draft": false,
+  "additions": 212,
+  "deletions": 3,
+  "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/435",
+  "comments": [],
+  "same_lens_current_head": [],
+  "checks": [
+    {
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/runs/112520811256",
+      "id": 112520811256,
+      "output": {
+        "title": "No new alerts in code changed by this pull request",
+        "summary": "[View all branch alerts](/BradleyGleavePortfolio/growth-project-mobile/security/code-scanning?query=pr%3A435+tool%3ACodeQL+is%3Aopen).",
+        "text": null,
+        "annotations_count": 0,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112520811256/annotations"
+      }
+    },
+    {
+      "name": "Analyze (actions)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37536046424/job/112517092940",
+      "id": 112517092940,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112517092940/annotations"
+      }
+    },
+    {
+      "name": "Typecheck, lint, test",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37536046430/job/112517092813",
+      "id": 112517092813,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 11,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112517092813/annotations"
+      }
+    },
+    {
+      "name": "Analyze (javascript-typescript)",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37536046424/job/112517092603",
+      "id": 112517092603,
+      "output": {
+        "title": null,
+        "summary": null,
+        "text": null,
+        "annotations_count": 2,
+        "annotations_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/check-runs/112517092603/annotations"
+      }
+    }
+  ],
+  "files": [
+    {
+      "sha": "e896b1d33c4e7ed72bba05feff10eab2deb26a03",
+      "filename": "src/__tests__/workoutAssignmentRomanSets125.test.tsx",
+      "status": "added",
+      "additions": 133,
+      "deletions": 0,
+      "changes": 133,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/be8626212e1081b72f348131b8dfdac06715355e/src%2F__tests__%2FworkoutAssignmentRomanSets125.test.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/be8626212e1081b72f348131b8dfdac06715355e/src%2F__tests__%2FworkoutAssignmentRomanSets125.test.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2F__tests__%2FworkoutAssignmentRomanSets125.test.tsx?ref=be8626212e1081b72f348131b8dfdac06715355e",
+      "patch": "@@ -0,0 +1,133 @@\n+/**\n+ * B-ROMANADJ-125: a coach approves Roman's set change in the Action Queue;\n+ * the client's workout screen shows and starts the approved sets, with a\n+ * small \"Updated by your coach\" note. An older server (no field) keeps\n+ * today's behaviour.\n+ */\n+import React from 'react';\n+import { render, fireEvent } from '@testing-library/react-native';\n+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';\n+import { overlayRomanAdjustedSets } from '../utils/workout/romanAdjustedSets';\n+\n+const mockGetById = jest.fn();\n+jest.mock('../api/exerciseLibraryApi', () => ({\n+  exerciseLibraryApi: { getById: (...a: unknown[]) => mockGetById(...a) },\n+}));\n+\n+const mockNavigate = jest.fn();\n+jest.mock('@react-navigation/native', () => {\n+  const actual = jest.requireActual('@react-navigation/native');\n+  return {\n+    ...actual,\n+    useNavigation: () => ({\n+      navigate: mockNavigate,\n+      getParent: () => ({ getParent: () => ({ navigate: mockNavigate }) }),\n+    }),\n+    useRoute: () => ({ params: { assignmentId: 'asg-1' } }),\n+  };\n+});\n+\n+let mockAssignment: { data: unknown; isLoading: boolean; isError: boolean } = {\n+  data: undefined,\n+  isLoading: false,\n+  isError: false,\n+};\n+jest.mock('../hooks/useWorkoutBuilder', () => ({\n+  useMyWorkoutAssignment: () => ({ ...mockAssignment, refetch: jest.fn(), isRefetching: false }),\n+}));\n+\n+// eslint-disable-next-line @typescript-eslint/no-require-imports\n+const WorkoutAssignmentDetailScreen = require('../screens/client/WorkoutAssignmentDetailScreen').default;\n+\n+function wrap(node: React.ReactElement) {\n+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });\n+  return <QueryClientProvider client={qc}>{node}</QueryClientProvider>;\n+}\n+\n+const EXERCISES = [\n+  { id: 'pe1', exercise_external_id: 'bench', order: 1, sets: 4, reps_or_duration_seconds: 8, weight_lbs: 95, rest_seconds: 90, notes: null },\n+  { id: 'pe2', exercise_external_id: 'row', order: 2, sets: 3, reps_or_duration_seconds: 10, weight_lbs: null, rest_seconds: 60, notes: null },\n+];\n+\n+function assignment(extra: Record<string, unknown>) {\n+  return {\n+    id: 'asg-1',\n+    completed_at: null,\n+    post_rpe: null,\n+    workout_plan: { id: 'plan-1', name: 'Upper A', type: 'strength', duration_estimate_minutes: 45, exercises: EXERCISES },\n+    ...extra,\n+  };\n+}\n+\n+async function openAndStart() {\n+  const screen = await render(wrap(<WorkoutAssignmentDetailScreen />));\n+  expect(await screen.findByText('Start workout')).toBeTruthy();\n+  await fireEvent.press(screen.getByText('Start workout'));\n+  expect(mockNavigate).toHaveBeenCalledTimes(1);\n+  const started = JSON.parse(mockNavigate.mock.calls[0][1].params.exercises) as Array<{ sets: number }>;\n+  return { screen, startedSets: started.map((e) => e.sets) };\n+}\n+\n+beforeEach(() => {\n+  mockNavigate.mockReset();\n+  mockGetById.mockReset();\n+  mockGetById.mockImplementation((id: string) => Promise.resolve({ data: { id, name: id === 'row' ? 'Barbell Row' : 'Bench Press' } }));\n+});\n+\n+describe('approved Roman set changes on the client workout (B-ROMANADJ-125)', () => {\n+  it('shows and starts the approved set count, with the coach note on that exercise only', async () => {\n+    mockAssignment = { data: assignment({ roman_adjusted_sets: [{ order: 1, sets: 2 }] }), isLoading: false, isError: false };\n+    const { screen, startedSets } = await openAndStart();\n+    expect(screen.getByText(/^2 sets \u00d7 8 reps/)).toBeTruthy();\n+    expect(screen.queryByText(/^4 sets/)).toBeNull();\n+    expect(screen.getByTestId('assignment-adjusted-1')).toBeTruthy();\n+    expect(screen.queryByTestId('assignment-adjusted-2')).toBeNull();\n+    expect(screen.getAllByText('Updated by your coach')).toHaveLength(1);\n+    expect(startedSets).toEqual([2, 3]);\n+  });\n+\n+  it('older server (field missing): the live plan exactly as before', async () => {\n+    mockAssignment = { data: assignment({}), isLoading: false, isError: false };\n+    const { screen, startedSets } = await openAndStart();\n+    expect(screen.getByText(/^4 sets \u00d7 8 reps/)).toBeTruthy();\n+    expect(screen.queryByText('Updated by your coach')).toBeNull();\n+    expect(startedSets).toEqual([4, 3]);\n+  });\n+\n+  it('empty list: nothing changes', async () => {\n+    mockAssignment = { data: assignment({ roman_adjusted_sets: [] }), isLoading: false, isError: false };\n+    const { screen, startedSets } = await openAndStart();\n+    expect(screen.queryByText('Updated by your coach')).toBeNull();\n+    expect(startedSets).toEqual([4, 3]);\n+  });\n+\n+  it('an order the plan no longer has is ignored', async () => {\n+    mockAssignment = { data: assignment({ roman_adjusted_sets: [{ order: 9, sets: 1 }] }), isLoading: false, isError: false };\n+    const { screen, startedSets } = await openAndStart();\n+    expect(screen.queryByText('Updated by your coach')).toBeNull();\n+    expect(startedSets).toEqual([4, 3]);\n+  });\n+});\n+\n+describe('overlayRomanAdjustedSets', () => {\n+  const rows = [\n+    { order: 1, sets: 4 },\n+    { order: 2, sets: 3 },\n+  ];\n+\n+  it('overlays by order and reports which orders changed', () => {\n+    const out = overlayRomanAdjustedSets(rows, [{ order: 2, sets: 1 }]);\n+    expect(out.exercises).toEqual([{ order: 1, sets: 4 }, { order: 2, sets: 1 }]);\n+    expect([...out.adjustedOrders]).toEqual([2]);\n+    // The input is not mutated.\n+    expect(rows[1].sets).toBe(3);\n+  });\n+\n+  it('ignores malformed input and keeps the rows as they are', () => {\n+    for (const raw of [undefined, null, 'x', {}, [null, { order: 'one', sets: 2 }, { order: 1, sets: 0 }, { order: 1.5, sets: 2 }]]) {\n+      const out = overlayRomanAdjustedSets(rows, raw);\n+      expect(out.exercises).toEqual(rows);\n+      expect(out.adjustedOrders.size).toBe(0);\n+    }\n+  });\n+});"
+    },
+    {
+      "sha": "1665adc96fbf288ee079637e19e049a91d687e27",
+      "filename": "src/api/workoutBuilderApi.ts",
+      "status": "modified",
+      "additions": 5,
+      "deletions": 0,
+      "changes": 5,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/be8626212e1081b72f348131b8dfdac06715355e/src%2Fapi%2FworkoutBuilderApi.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/be8626212e1081b72f348131b8dfdac06715355e/src%2Fapi%2FworkoutBuilderApi.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fapi%2FworkoutBuilderApi.ts?ref=be8626212e1081b72f348131b8dfdac06715355e",
+      "patch": "@@ -101,6 +101,11 @@ export interface ClientWorkoutAssignment {\n \n export interface ClientWorkoutAssignmentWithPlan extends ClientWorkoutAssignment {\n   workout_plan: WorkoutPlan;\n+  /**\n+   * Set counts the coach approved from Roman's Action Queue, by exercise\n+   * `order` (B-ROMANADJ-125). Absent on servers without that change.\n+   */\n+  roman_adjusted_sets?: Array<{ order: number; sets: number }>;\n }\n \n // \u2500\u2500\u2500 API \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500"
+    },
+    {
+      "sha": "f8f5be6b45e397c8b997340ebf35bd03f29ef23c",
+      "filename": "src/screens/client/WorkoutAssignmentDetailScreen.tsx",
+      "status": "modified",
+      "additions": 24,
+      "deletions": 3,
+      "changes": 27,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/be8626212e1081b72f348131b8dfdac06715355e/src%2Fscreens%2Fclient%2FWorkoutAssignmentDetailScreen.tsx",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/be8626212e1081b72f348131b8dfdac06715355e/src%2Fscreens%2Fclient%2FWorkoutAssignmentDetailScreen.tsx",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Fscreens%2Fclient%2FWorkoutAssignmentDetailScreen.tsx?ref=be8626212e1081b72f348131b8dfdac06715355e",
+      "patch": "@@ -36,6 +36,7 @@ import {\n   buildActiveWorkoutExercises,\n   prettifyExerciseName,\n } from '../../utils/workout/buildActiveWorkout';\n+import { overlayRomanAdjustedSets } from '../../utils/workout/romanAdjustedSets';\n \n type RouteParams = {\n   WorkoutAssignmentDetail: { assignmentId: string };\n@@ -55,6 +56,18 @@ export default function WorkoutAssignmentDetailScreen() {\n     void refetch();\n   }, [refetch]);\n \n+  // B-ROMANADJ-125: set counts the coach approved from Roman's Action Queue\n+  // are laid over the live plan by `order`, for the list and for Start. No\n+  // field (older server) = the live plan exactly as before.\n+  const overlay = useMemo(\n+    () =>\n+      overlayRomanAdjustedSets(\n+        data?.workout_plan?.exercises ?? [],\n+        data?.roman_adjusted_sets,\n+      ),\n+    [data],\n+  );\n+\n   // The plan stores only catalog ids (e.g. \"0025\" or \"seed:push-001\"). The\n   // screen used to prettify the id, so a client saw \"1. Exercise\" or\n   // \"1. Push 001\" instead of \"Barbell Bench Press\". Resolve the real names\n@@ -76,7 +89,7 @@ export default function WorkoutAssignmentDetailScreen() {\n \n   const handleStart = useCallback(() => {\n     if (!data || namesLoading) return;\n-    const exercises = buildActiveWorkoutExercises(data.workout_plan).map((e) => ({\n+    const exercises = buildActiveWorkoutExercises({ exercises: overlay.exercises }).map((e) => ({\n       ...e,\n       // Saved with the workout, shown in history and to the coach.\n       exerciseName: exerciseNames[e.exerciseId] || e.exerciseName,\n@@ -106,7 +119,7 @@ export default function WorkoutAssignmentDetailScreen() {\n     }\n     // eslint-disable-next-line @typescript-eslint/no-explicit-any\n     (navigation as any).navigate('ActiveWorkout', params);\n-  }, [data, navigation, exerciseNames, namesLoading]);\n+  }, [data, navigation, exerciseNames, namesLoading, overlay]);\n \n   if (isLoading) {\n     return <SkeletonScreen count={5} />;\n@@ -135,7 +148,7 @@ export default function WorkoutAssignmentDetailScreen() {\n   }\n \n   const plan = data.workout_plan;\n-  const sorted = [...plan.exercises].sort((a, b) => a.order - b.order);\n+  const sorted = [...overlay.exercises].sort((a, b) => a.order - b.order);\n   const isCompleted = !!data.completed_at;\n \n   return (\n@@ -173,6 +186,14 @@ export default function WorkoutAssignmentDetailScreen() {\n               {ex.weight_lbs ? ` \u2022 ${ex.weight_lbs} lbs` : ''}\n               {ex.rest_seconds ? ` \u2022 ${ex.rest_seconds}s rest` : ''}\n             </Text>\n+            {overlay.adjustedOrders.has(ex.order) ? (\n+              <Text\n+                style={[typography.bodySmall, { color: sc.accent, marginTop: 4 }]}\n+                testID={`assignment-adjusted-${ex.order}`}\n+              >\n+                Updated by your coach\n+              </Text>\n+            ) : null}\n             {ex.notes ? (\n               <Text\n                 style={[typography.bodySmall, { color: sc.textMuted, marginTop: 4 }]}"
+    },
+    {
+      "sha": "f8956f662f71d13d3639fc9b4019d4d608a67939",
+      "filename": "src/utils/workout/romanAdjustedSets.ts",
+      "status": "added",
+      "additions": 50,
+      "deletions": 0,
+      "changes": 50,
+      "blob_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/blob/be8626212e1081b72f348131b8dfdac06715355e/src%2Futils%2Fworkout%2FromanAdjustedSets.ts",
+      "raw_url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/raw/be8626212e1081b72f348131b8dfdac06715355e/src%2Futils%2Fworkout%2FromanAdjustedSets.ts",
+      "contents_url": "https://api.github.com/repos/BradleyGleavePortfolio/growth-project-mobile/contents/src%2Futils%2Fworkout%2FromanAdjustedSets.ts?ref=be8626212e1081b72f348131b8dfdac06715355e",
+      "patch": "@@ -0,0 +1,50 @@\n+/**\n+ * B-ROMANADJ-125: when a coach approves Roman's set change in the Action\n+ * Queue, the server writes the new set counts into the assignment and lists\n+ * them on the client read as `roman_adjusted_sets` ({ order, sets }). The\n+ * client screen renders the live plan (so the coach's later edits stay\n+ * visible), so only these set counts are laid over it, matched by the\n+ * exercise `order`.\n+ *\n+ * Missing or empty field (a server without this change) or an order that\n+ * no longer exists in the plan leaves the exercise exactly as it was.\n+ */\n+\n+export interface RomanAdjustedSet {\n+  order: number;\n+  sets: number;\n+}\n+\n+export interface RomanSetsOverlay<E> {\n+  exercises: E[];\n+  /** Orders whose set count now comes from a coach-approved change. */\n+  adjustedOrders: ReadonlySet<number>;\n+}\n+\n+function readAdjustedSets(raw: unknown): Map<number, number> {\n+  const byOrder = new Map<number, number>();\n+  if (!Array.isArray(raw)) return byOrder;\n+  for (const item of raw) {\n+    if (!item || typeof item !== 'object') continue;\n+    const { order, sets } = item as Partial<RomanAdjustedSet>;\n+    if (typeof order !== 'number' || !Number.isInteger(order)) continue;\n+    if (typeof sets !== 'number' || !Number.isInteger(sets) || sets < 1) continue;\n+    byOrder.set(order, sets);\n+  }\n+  return byOrder;\n+}\n+\n+export function overlayRomanAdjustedSets<E extends { order: number; sets: number }>(\n+  exercises: readonly E[],\n+  raw: unknown,\n+): RomanSetsOverlay<E> {\n+  const byOrder = readAdjustedSets(raw);\n+  const adjustedOrders = new Set<number>();\n+  const out = exercises.map((ex) => {\n+    const sets = byOrder.get(ex.order);\n+    if (sets === undefined) return ex;\n+    adjustedOrders.add(ex.order);\n+    return sets === ex.sets ? ex : { ...ex, sets };\n+  });\n+  return { exercises: out, adjustedOrders };\n+}"
+    }
+  ]
+}

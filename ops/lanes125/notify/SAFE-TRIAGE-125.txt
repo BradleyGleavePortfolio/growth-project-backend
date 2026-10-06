@@ -1,0 +1,1 @@
+done | verdict NO-GO for 10-07 (no mobile UI in clinic build; AI gateway off in prod; B-1 crisis routing fixed in b#804, needs dual T4 audit) | PRs: backend #804 @7b54b145 CI green READY | B=1 U=5 | needs operator: 4

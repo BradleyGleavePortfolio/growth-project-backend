@@ -1,0 +1,42 @@
+{
+  "observed_at": "2026-10-06T15:23:16.783855-07:00",
+  "rows": [
+    {
+      "repo": "mobile",
+      "number": 438,
+      "head": "27f773f330a05cdf843f6f8b6c36d1da8295f9c5",
+      "title": "feat(community): open the opt-in leaderboard from the Community tab (B-LEADER-125)",
+      "ready": [
+        {
+          "url": "https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/438#issuecomment-6026532208",
+          "body": "FIX ROUND 1 (OPENING) (B-LEADER-125, agent 125) \u2014 growth-project-mobile#438 @ 27f773f330a05cdf843f6f8b6c36d1da8295f9c5 \u2014 READY FOR AUDIT\n\nCI green at this head: Typecheck, lint, test (lint, typecheck, full jest) SUCCESS; CodeQL and both Analyze jobs SUCCESS. Merge state CLEAN.\nSize: 297 changed lines (260+/37-), 7 files, no lockfile, no new dependency, no migration, no new flag. Mobile-only; uses the existing GET /me/leaderboard and POST /me/leaderboard/opt-in, live in production since deploy 9.\nAudit: no privacy B. Opt-in default OFF (DB default false); display name only (user-set or \"First L.\"); no health numbers in the response; roster scoped by coach_id; non-opted viewers excluded from entries.\nFixes U1-U6 (listed in the body). Owner decision needed before merge: SoT A7 / OR-113-13 kept the leaderboard off for launch; owner 15:06 asked to turn it on.\n"
+        }
+      ],
+      "own_current": []
+    },
+    {
+      "repo": "mobile",
+      "number": 437,
+      "head": "1c22b557d1a06772e69394f18d1f8abffdecce69",
+      "title": "feat(deliverables): coaches upload and attach PDFs and videos; buyer deliverables on in store builds (B-DROPS-125)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "mobile",
+      "number": 427,
+      "head": "a1f1459c7a62eab90ee83fdee34a24cee3052185",
+      "title": "fix(coach-ai): AI meal plan review shows and saves what the client gets; approve uses the loaded draft id (AUDIT-08-125)",
+      "ready": [],
+      "own_current": []
+    },
+    {
+      "repo": "mobile",
+      "number": 416,
+      "head": "1344fb38f7280dac64d2f7da6ca240317c9dbfc7",
+      "title": "fix(polish): readable tabs, safe-area spacing and screen-reader controls",
+      "ready": [],
+      "own_current": []
+    }
+  ]
+}
