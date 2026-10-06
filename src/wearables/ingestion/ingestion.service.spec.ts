@@ -16,6 +16,7 @@ import {
 interface PrismaMock {
   wearableSample: {
     createMany: jest.Mock;
+    deleteMany: jest.Mock;
     findUnique: jest.Mock;
     findFirst: jest.Mock;
     findMany: jest.Mock;
@@ -30,6 +31,7 @@ function makePrismaMock(): PrismaMock {
   const mock: PrismaMock = {
     wearableSample: {
       createMany: jest.fn(),
+      deleteMany: jest.fn(),
       findUnique: jest.fn(),
       findFirst: jest.fn(),
       findMany: jest.fn(),
@@ -80,6 +82,7 @@ describe('IngestionService', () => {
   beforeEach(() => {
     prisma = makePrismaMock();
     prisma.wearableSample.createMany.mockResolvedValue({ count: 0 });
+    prisma.wearableSample.deleteMany.mockResolvedValue({ count: 0 });
     prisma.wearableConnection.updateMany.mockResolvedValue({ count: 0 });
     prisma.wearableInsightCache.deleteMany.mockResolvedValue({ count: 0 });
     service = new IngestionService(prisma as unknown as PrismaService);

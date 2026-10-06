@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   Prisma,
   WearableMetricType,
+  WearableProvider,
   WearableSample,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
@@ -51,6 +52,8 @@ export class IngestionService {
    *     throws on the first invalid sample.
    *  2. Compute dedup_key for each sample (shared util).
    *  3-5. Inside a SINGLE Prisma transaction (ReadCommitted, 10s timeout):
+   *     2b. SINGLE deleteMany replacing the stored version of each incoming
+   *        source record id (#732; see buildSourceRecordReplaceWhere).
    *     3. SINGLE createMany(skipDuplicates) on dedup_key (idempotent,
    *        #21/#28).
    *     4. SINGLE updateMany bumping each touched connection's last_synced_at.
@@ -118,9 +121,22 @@ export class IngestionService {
     // leave partial state (e.g. inserted samples with a stale connection /
     // un-invalidated cache). Wrapped in try/catch so DB failures are logged
     // (redacted) BEFORE the fail-loud rethrow (#36).
+    const replaceWhere = buildSourceRecordReplaceWhere(samples);
+
     try {
       const { inserted, skipped } = await this.prisma.$transaction(
         async (tx) => {
+          // (2b) #732 — a provider can rewrite a record it wrote earlier
+          // (same source record id, new interval or value, e.g. a Health
+          // Connect sleep session corrected in the morning). The interval
+          // hash alone would keep the old row next to the new one and the
+          // value would count twice. Replace the stored version first: ONE
+          // deleteMany over every incoming record identity, then the
+          // createMany below inserts the complete incoming sample set.
+          if (replaceWhere) {
+            await tx.wearableSample.deleteMany({ where: replaceWhere });
+          }
+
           // (3) Single batch insert; skipDuplicates makes re-ingestion
           // idempotent.
           const { count } = await tx.wearableSample.createMany({
@@ -301,4 +317,74 @@ export class IngestionService {
       fail('startAt must be <= endAt');
     }
   }
+}
+
+/**
+ * #732 — build the single delete filter that removes the stored version of
+ * every incoming record identity (user_id, provider, metric,
+ * source_record_id) with a non-null source record id. Rows without a source
+ * record id are never touched (interval-hash dedup only, as before).
+ *
+ * Samples are grouped by identity first, so a series record (a Health
+ * Connect heart-rate record carries many samples under one id) is replaced
+ * as a whole set and then re-inserted in full by the createMany.
+ *
+ * The delete is bounded to the time span the incoming samples of that
+ * identity cover (overlapping or contained rows). The phone splits a sync
+ * into requests of at most 250 samples, so one heart-rate record can arrive
+ * in two consecutive requests; the second request must not delete the
+ * first request's earlier samples. A rewritten interval record (sleep
+ * 22:00-06:00 corrected to 22:30-06:00) always overlaps its old row, so it
+ * is replaced.
+ */
+export function buildSourceRecordReplaceWhere(
+  samples: NormalizedSample[],
+): Prisma.WearableSampleWhereInput | null {
+  const spans = new Map<
+    string,
+    {
+      user_id: string;
+      provider: WearableProvider;
+      metric: WearableMetricType;
+      source_record_id: string;
+      from: Date;
+      to: Date;
+    }
+  >();
+  for (const s of samples) {
+    if (!s.sourceRecordId) continue;
+    const key = JSON.stringify([s.userId, s.provider, s.metric, s.sourceRecordId]);
+    const span = spans.get(key);
+    if (!span) {
+      spans.set(key, {
+        user_id: s.userId,
+        provider: s.provider,
+        metric: s.metric,
+        source_record_id: s.sourceRecordId,
+        from: s.startAt,
+        to: s.endAt,
+      });
+      continue;
+    }
+    if (s.startAt < span.from) span.from = s.startAt;
+    if (s.endAt > span.to) span.to = s.endAt;
+  }
+  if (spans.size === 0) return null;
+
+  return {
+    OR: [...spans.values()].map(({ from, to, ...identity }) => ({
+      ...identity,
+      OR: [
+        // Stored interval overlaps the incoming span (strict, so a row that
+        // only touches the span edge is kept).
+        { start_at: { lt: to }, end_at: { gt: from } },
+        // Stored row lies inside the incoming span (instantaneous samples,
+        // identical intervals).
+        {
+          start_at: { gte: from, lte: to },
+          end_at: { gte: from, lte: to },
+        },
+      ],
+    })),
+  };
 }
