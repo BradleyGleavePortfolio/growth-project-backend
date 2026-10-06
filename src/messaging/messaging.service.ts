@@ -32,6 +32,7 @@ import { isCoachReviewedAtEnabled } from '../roman/coach-reviewed.feature';
 import { holdWelcomeLease, WelcomeLeaseLostError } from '../engagement/welcome-lease-fence';
 import { describeFailure } from '../observability/log-pii';
 import { isMessagingCoreV2Enabled } from './messaging-core.feature';
+import { coachBroadcastsEnabled } from '../broadcasts/broadcasts.feature';
 import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
 import {
   broadcastThreadUpdated,
@@ -630,6 +631,8 @@ export class MessagingService {
   private async listThread(coachId: string, clientId: string, opts: ListOpts) {
     const limit = this.clampLimit(opts.limit);
     const before = this.parseBefore(opts.before);
+    const v2 = isMessagingCoreV2Enabled();
+    const withCards = coachBroadcastsEnabled();
     return this.prisma.coachMessage.findMany({
       where: {
         coach_id: coachId,
@@ -638,11 +641,14 @@ export class MessagingService {
       },
       orderBy: { created_at: 'desc' },
       take: limit,
-      // A3-MSG-CORE: the quoted message for swipe-replies (v2 only, so the
-      // flag-OFF query is byte-identical to the legacy one).
-      ...(isMessagingCoreV2Enabled()
+      // A4 — rich card (workout, meal plan, booking, package, check-in) as a
+      // server-validated snapshot, read only while FEATURE_COACH_BROADCASTS is
+      // on. A3-MSG-CORE: the quoted message for swipe-replies (v2 only). With
+      // both flags off the query is byte-identical to the legacy one.
+      ...(withCards && v2
         ? {
             include: {
+              card: { select: { card_type: true, ref_id: true, snapshot: true } },
               reply_to: {
                 select: {
                   id: true,
@@ -654,7 +660,27 @@ export class MessagingService {
               },
             },
           }
-        : {}),
+        : withCards
+          ? {
+              include: {
+                card: { select: { card_type: true, ref_id: true, snapshot: true } },
+              },
+            }
+          : v2
+            ? {
+                include: {
+                  reply_to: {
+                    select: {
+                      id: true,
+                      sender_id: true,
+                      body: true,
+                      voice_url: true,
+                      deleted_at: true,
+                    },
+                  },
+                },
+              }
+            : {}),
     });
   }
 

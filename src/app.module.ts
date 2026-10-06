@@ -39,6 +39,8 @@ import { InviteCodesModule } from './invite-codes/invite-codes.module';
 import { CoachlessModule } from './coachless/coachless.module';
 import { InviteGrantModule } from './invite-grant/invite-grant.module';
 import { MessagingModule } from './messaging/messaging.module';
+// A4-MSG-BROADCAST — coach broadcasts, cards, saved replies (FEATURE_COACH_BROADCASTS, default off).
+import { BroadcastsModule } from './broadcasts/broadcasts.module';
 import { MessagesSafetyModule } from './messages-safety/messages-safety.module';
 import { NudgesModule } from './nudges/nudges.module';
 import { MealPlansModule } from './meal-plans/meal-plans.module';
@@ -236,6 +238,7 @@ import { WearablesModule } from './wearables/wearables.module';
     // Clinic C01 — invite-code → package grants, free-package claims, revoke.
     InviteGrantModule,
     MessagingModule,
+    BroadcastsModule,
     // Apple App Review 1.2 — abuse-report + per-user blocklist endpoints.
     // Safety surface, NOT a paid feature. Reachable by every authenticated
     // user; intentionally absent from PAID_ROUTES.
