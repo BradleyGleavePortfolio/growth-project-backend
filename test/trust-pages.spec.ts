@@ -630,3 +630,57 @@ describe('consumer health policy link on other public pages', () => {
     expect(renderDownloadPage('android')).toContain('href="/consumer-health-privacy"');
   });
 });
+
+describe('community and leaderboard disclosure (B-PRIVACY-1, after b#747)', () => {
+  const community =
+    'Members of the community spaces you join can see your display name and the posts, ' +
+    'comments, reactions, shared wins and group messages you choose to share in those spaces. ' +
+    'Messages sent directly to your coach are not group messages.';
+  const leaderboard =
+    'If you opt in to a leaderboard, other clients assigned to the same coach can see your ' +
+    'display name, rank and participation information, such as workout counts or a ' +
+    'habit-consistency score and its change. The habit score uses check-in, workout, meal-log ' +
+    'and coach-message activity, not the content of your private messages. You can opt out to ' +
+    'hide your leaderboard entry.';
+
+  it('/privacy "Who can see your data" names community spaces and the opt-in leaderboard', () => {
+    const text = visibleText(renderTrustPage('privacy'));
+    const section = text.slice(
+      text.indexOf('Who can see your data'),
+      text.indexOf('Roman and AI', text.indexOf('Who can see your data')),
+    );
+    expect(section).toContain(community);
+    expect(section).toContain(leaderboard);
+    expect(section).toContain('Coaches can sort the members of their spaces by when they joined.');
+  });
+
+  it('/consumer-health-privacy "Categories we share" names community spaces and the opt-in leaderboard', () => {
+    const text = visibleText(renderTrustPage('consumer-health'));
+    const section = text.slice(
+      text.indexOf('Categories we share'),
+      text.indexOf('Who we do not share with'),
+    );
+    expect(section).toContain(community);
+    expect(section).toContain(leaderboard);
+    expect(text).not.toContain('only the health information you choose to post there');
+  });
+});
+
+describe('Terms of Service community zero tolerance (Apple Guideline 1.2)', () => {
+  it('carries the in-app Community terms sentence word for word', () => {
+    expect(visibleText(renderTrustPage('terms'))).toContain(
+      'There is no tolerance for objectionable content or abusive users. Content that breaks ' +
+        'these guidelines is removed, and the account that posted it can be removed.',
+    );
+  });
+});
+
+describe('status page signup endpoint label (B-STORECOPY-2)', () => {
+  it('describes /signup as open signup, not invite-only', () => {
+    const text = visibleText(renderTrustPage('status'));
+    expect(text).toContain(
+      'https://app.trygrowthproject.com/signup — signup information and coaching invitations.',
+    );
+    expect(text).not.toMatch(/invite-only/i);
+  });
+});

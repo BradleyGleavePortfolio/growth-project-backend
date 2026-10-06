@@ -32,7 +32,21 @@ export const SUPPORT_EMAIL = 'Bradleyapple1031@gmail.com';
 
 // Last-reviewed date for the policy text. Bump when copy changes.
 // Format ISO-8601 (UTC) so it sorts and renders consistently.
-export const POLICY_LAST_REVIEWED = '2026-10-03';
+export const POLICY_LAST_REVIEWED = '2026-10-05';
+
+// Who sees community and leaderboard data (B-PRIVACY-1). Shared by /privacy
+// "Who can see your data" and /consumer-health-privacy "Categories we share".
+// Leaderboard rows are opt-in (show_on_leaderboard, default off) on both the
+// legacy /community/leaderboard and /me/leaderboard reads.
+export const COMMUNITY_VISIBILITY_TEXT =
+  'Members of the community spaces you join can see your display name and the posts, comments, reactions, shared wins and group messages you choose to share in those spaces. Messages sent directly to your coach are not group messages.';
+export const LEADERBOARD_VISIBILITY_TEXT =
+  'If you opt in to a leaderboard, other clients assigned to the same coach can see your display name, rank and participation information, such as workout counts or a habit-consistency score and its change. The habit score uses check-in, workout, meal-log and coach-message activity, not the content of your private messages. You can opt out to hide your leaderboard entry.';
+
+// Apple Guideline 1.2: word for word the sentence the in-app Community terms
+// sheet shows before first Community use (mobile CommunityTermsGate).
+export const COMMUNITY_ZERO_TOLERANCE_TEXT =
+  'There is no tolerance for objectionable content or abusive users. Content that breaks these guidelines is removed, and the account that posted it can be removed.';
 
 // Public paths of the two privacy documents. The mobile app links to the
 // same paths (growth-project-mobile src/config/env.ts), so keep them stable.
@@ -234,7 +248,10 @@ function privacyContent(): TrustPageContent {
         bullets: [
           'You.',
           'Your coach, and any coach on their team who is assigned to you: your profile, consultation answers including readiness answers, targets and plan, logs, check-ins, connected health data and your messages with them. If any readiness answer is yes, your coach is told so they can adjust your training.',
-          'Members of a community space you belong to: what you post, comment or react there, and your name. Coaches can sort the members of their spaces by when they joined.',
+          // B-PRIVACY-1 (after the leaderboard opt-in fix, b#747): community
+          // spaces and the opt-in leaderboard. Same text on the health policy.
+          `${COMMUNITY_VISIBILITY_TEXT} Coaches can sort the members of their spaces by when they joined.`,
+          LEADERBOARD_VISIBILITY_TEXT,
           'Roman conversations are not visible to your coach, assistant coaches or any coach-facing screen. They are stored securely; TGP staff can access them only for support, safety and debugging.',
           'TGP staff, only when needed to provide support, keep people safe, fix problems, secure the service or meet a legal duty.',
           'The service providers listed below, only to run the service for us.',
@@ -433,7 +450,8 @@ function consumerHealthContent(): TrustPageContent {
         paragraphs: ['We share the health data described above only as follows:'],
         bullets: [
           'Your coach, and any coach on their team assigned to you — your consultation and readiness answers, targets and plan, logs, check-ins, connected health data and your messages with them. Your Roman conversations are never shared with your coach.',
-          'Other members of community spaces you join — only the health information you choose to post there.',
+          COMMUNITY_VISIBILITY_TEXT,
+          LEADERBOARD_VISIBILITY_TEXT,
           'Service providers that process data on our behalf: Supabase (database, sign-in and file storage) and Fly.io (hosting) receive all categories; Anthropic receives the categories listed in your AI agreement to generate Roman’s replies and your coach’s AI drafts, and, if turned on, up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you ticked the optional AI box); Sentry (error monitoring) and PostHog (product analytics) may receive health details that appear in an error report or app event; Crisp (support chat) receives what you choose to tell support; Resend (email) and Expo (push notifications) receive the content of the emails and notifications we send you; Mux (video hosting and playback) receives the videos coaches upload.',
           'Authorities, when the law requires it or to protect someone’s safety.',
         ],
@@ -529,6 +547,7 @@ function termsContent(): TrustPageContent {
         heading: 'Acceptable use',
         paragraphs: [
           'You agree not to misuse the service. In particular, you may not attempt to disrupt or break security controls, scrape or abuse the API, upload unlawful, harassing or harmful content, or impersonate another person. Community content can be reported and members can be blocked. We may remove content and suspend or terminate accounts that violate these rules.',
+          COMMUNITY_ZERO_TOLERANCE_TEXT,
         ],
       },
       {
@@ -662,7 +681,7 @@ function statusContent(): TrustPageContent {
         heading: 'Public endpoints',
         paragraphs: ['The user-facing surface area today is small and intentionally so:'],
         bullets: [
-          'https://app.trygrowthproject.com/signup — invite-only signup landing.',
+          'https://app.trygrowthproject.com/signup — signup information and coaching invitations.',
           'https://app.trygrowthproject.com/download/ios — iOS download status.',
           'https://app.trygrowthproject.com/download/android — Android download status.',
           'https://app.trygrowthproject.com/join/:code — invite landing for a specific code.',

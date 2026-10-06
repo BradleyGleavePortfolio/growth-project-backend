@@ -44,7 +44,7 @@ export { SUPPORT_EMAIL } from './trust-pages.html';
 
 // Last-reviewed date for the help copy. Bump on substantive edits so the
 // freshness signal at the top of each page reflects reality.
-export const HELP_LAST_REVIEWED = '2026-04-30';
+export const HELP_LAST_REVIEWED = '2026-10-05';
 
 // Token defaults align with the staging/production hostnames described in
 // docs/help/_tokens.md. The renderer never invents values that depend on
@@ -463,9 +463,9 @@ function faqContent(): HelpPageContent {
         heading: 'Other',
         items: [
           {
-            question: 'Is there a coach app, or is the console web-only?',
+            question: 'Is there a coach app?',
             answer:
-              'The coach surface is web-only today. The mobile app is the client surface. Some coach functions are also available inside the mobile app for coaches who prefer it.',
+              'Coach tools are available in The Growth Project mobile app. Sign in with a coach account to manage clients, messages, training programs, coaching packages and availability.',
           },
           {
             question: 'How do I report a bug?',

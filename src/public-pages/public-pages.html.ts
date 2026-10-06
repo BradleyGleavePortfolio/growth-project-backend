@@ -132,14 +132,16 @@ export function renderSignupPage(inviteCode?: string | null): string {
   }
   return baseDocument({
     title: 'The Growth Project — Sign up',
-    headline: 'Sign up by invite',
+    // Signup is open (owner decision; B-STORECOPY-2): no invite code is
+    // needed. A coach's invite code only connects the new client to them.
+    headline: 'Create an account',
     body:
-      'The Growth Project is currently invite-only. If your coach has ' +
-      'shared an invite link with you, open it on your phone to start. ' +
-      'If you do not have an invite yet, reach out to your coach or ' +
-      'email us and we will connect you with one.',
-    cta_label: 'Email us',
-    cta_href: `mailto:${SUPPORT_EMAIL}?subject=Request%20an%20invite`,
+      'Open The Growth Project app to create a client or coach account. ' +
+      'If a coach shared an invite code, enter it during setup to connect ' +
+      'with them. No invite code is needed to create an account. For help ' +
+      'with setup, contact support.',
+    cta_label: 'Contact support',
+    cta_href: `mailto:${SUPPORT_EMAIL}?subject=Signup%20help`,
   });
 }
 

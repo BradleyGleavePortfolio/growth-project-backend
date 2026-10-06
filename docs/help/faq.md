@@ -102,10 +102,10 @@ days, recovery is not possible.
 
 ## Other
 
-**Is there a coach app, or is the console web-only?**
-The coach surface is web-only today. The mobile app is the client
-surface. Some coach functions are also available inside the mobile
-app for coaches who prefer it.
+**Is there a coach app?**
+Coach tools are available in The Growth Project mobile app. Sign in
+with a coach account to manage clients, messages, training programs,
+coaching packages and availability.
 
 **How do I report a bug?**
 See [Contact support](./contact-support.md).
