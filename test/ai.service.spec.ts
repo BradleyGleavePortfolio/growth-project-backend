@@ -830,3 +830,68 @@ describe('AiService.chat — R2b box-2 consent', () => {
     expect(reader.calls).toHaveLength(0);
   });
 });
+
+// B-AIG-122 — a crisis message is answered with 988 / 911 before the daily
+// token limit, the consent gate and the model.
+describe('AiService.chat — crisis reply before the daily limit (B-AIG-122)', () => {
+  beforeEach(() => {
+    engineReady = true;
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue({ text: 'Keep going.', tokensIn: 5, tokensOut: 5 });
+  });
+
+  function seedAtCap(svc: AiService, quota: ReturnType<typeof makeQuotaStub>) {
+    const today = Reflect.apply(Reflect.get(svc, 'getQuotaDate'), svc, []) as Date;
+    quota.rows.set(quota.keyOf('u1', today), {
+      user_id: 'u1',
+      quota_date: today.toISOString(),
+      tokens_used: DAILY_TOKEN_QUOTA,
+      request_count: 20,
+    });
+  }
+
+  it('client at the daily limit types a suicidal message: 988 reply, no 429, no quota, no model call', async () => {
+    const quota = makeQuotaStub();
+    const { svc } = makeService(quota);
+    seedAtCap(svc, quota);
+    // Smart apostrophe as typed on a phone.
+    const result = await svc.chat('u1', 'I don’t want to live anymore. I want to kill myself', []);
+    expect(result.reply).toContain('988');
+    expect(result.reply).toContain('911');
+    expect(result.reply).not.toMatch(/\bI\b|\bme\b|\bmy\b|!/);
+    expect(result.model_used).toBe('safety');
+    expect(result.degraded).toBe(false);
+    expect(mockCreate).not.toHaveBeenCalled();
+    expect(quota.userAIQuota.upsert).not.toHaveBeenCalled();
+    expect(quota.userAIQuota.updateMany).not.toHaveBeenCalled();
+    expect(quota.aiRequestAudit.create).not.toHaveBeenCalled();
+  });
+
+  it('client at the daily limit reports an overdose: 911 reply, no 429', async () => {
+    const quota = makeQuotaStub();
+    const { svc } = makeService(quota);
+    seedAtCap(svc, quota);
+    const result = await svc.chat('u1', 'I took a whole bottle of my sleeping pills', []);
+    expect(result.reply).toContain('911');
+    expect(result.model_used).toBe('safety');
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('client without AI consent types a crisis message: 988 reply instead of the consent refusal', async () => {
+    const { egress, reader } = egressWithGrants([]);
+    const { svc } = makeService(undefined, egress);
+    const result = await svc.chat('u1', 'I want to die', []);
+    expect(result.reply).toContain('988');
+    expect(reader.calls).toHaveLength(0);
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it('an ordinary training message at the limit still gets the 429 limit reply', async () => {
+    const quota = makeQuotaStub();
+    const { svc } = makeService(quota);
+    seedAtCap(svc, quota);
+    await expect(svc.chat('u1', 'my legs are dying after squats', [])).rejects.toMatchObject({
+      response: { error: AI_DAILY_QUOTA_EXCEEDED },
+    });
+  });
+});

@@ -13,6 +13,7 @@ import { COACH_AI_CAPABILITIES } from './coach/coach-ai.constants';
 import { AiEgressService } from '../ai-egress/ai-egress.service';
 import { isAiEgressRefusal } from '../ai-egress/ai-consent-required.exception';
 import { clientDataSubject } from '../ai-egress/ai-egress.types';
+import { AI_GUIDE_CRISIS_REPLIES, classifyAiGuideCrisis } from './ai-crisis-router';
 
 // Legacy payload kept exported because other code (e.g. /ai/context for the
 // mobile debug screen) still types against this shape. Internally the
@@ -160,7 +161,8 @@ export interface ChatResult {
   reply: string;
   guardrails_applied: string[];
   context_generated_at: string;
-  model_used: 'perplexity' | 'anthropic' | 'fallback';
+  // 'safety' = the fixed crisis reply (B-AIG-122); no model was called.
+  model_used: 'perplexity' | 'anthropic' | 'fallback' | 'safety';
   degraded: boolean;
 }
 
@@ -381,6 +383,23 @@ Now answer the user's next message using the rules above. Keep the answer under 
     // entry can never be folded into the prompt WITH a system role.
     conversationHistory: Array<{ role: ChatRole; content: string }>,
   ): Promise<ChatResult> {
+    // B-AIG-122 — crisis first. A self-harm or emergency message gets the
+    // fixed 988 / 911 reply before consent, context, the daily token quota and
+    // the model: no quota is reserved, nothing leaves the server, so a client
+    // at the day's limit (or without AI consent) still reaches the crisis
+    // line. No analytics or audit row is written for the turn (health data).
+    const crisis = classifyAiGuideCrisis(userMessage);
+    if (crisis) {
+      this.logger.log('ai guide: crisis reply served');
+      return {
+        reply: AI_GUIDE_CRISIS_REPLIES[crisis],
+        guardrails_applied: [`crisis:${crisis}`],
+        context_generated_at: new Date().toISOString(),
+        model_used: 'safety',
+        degraded: false,
+      };
+    }
+
     // A1 — build context first (this performs NO provider calls and burns no
     // billable tokens) so we can assemble + clamp the prompt and reserve the
     // best-effort worst-case TOTAL-token estimate before any model call.
