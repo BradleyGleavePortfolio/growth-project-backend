@@ -159,6 +159,42 @@ describe('MONEY-REFUND-124 ordinary billing lifecycle', () => {
     expect(h.stripe.callsOf('resumeSubscriptionCollection')).toHaveLength(1);
   });
 
+  it('B-776-1: with FEATURE_DUNNING_V2 off (production today) the coach restarts a full-refund pause', async () => {
+    delete process.env.FEATURE_DUNNING_V2;
+    const h = world();
+    await h.service.handle(h.refundEvent());
+    expect(h.stripe.callsOf('pauseSubscriptionCollection')).toHaveLength(1);
+    expect(h.row.entitlement_active).toBe(false);
+    const restarted = await h.v2.restartAfterDisputePause({ coachUserId: 'coach', purchaseId: 'purchase' });
+    expect(restarted).toEqual({ restarted: true, reason: 'restarted' });
+    expect(h.row.entitlement_active).toBe(true);
+    expect(h.stripe.callsOf('resumeSubscriptionCollection')).toHaveLength(1);
+  });
+
+  it('B-776-1: with the flag off, another coach still cannot restart the refund pause', async () => {
+    delete process.env.FEATURE_DUNNING_V2;
+    const h = world();
+    await h.service.handle(h.refundEvent());
+    const refused = await h.v2.restartAfterDisputePause({ coachUserId: 'other-coach', purchaseId: 'purchase' });
+    expect(refused).toEqual({ restarted: false, reason: 'not_found' });
+    expect(h.row.entitlement_active).toBe(false);
+    expect(h.stripe.callsOf('resumeSubscriptionCollection')).toHaveLength(0);
+  });
+
+  it('B-776-1: with the flag off, a dispute pause keeps the rollout gate', async () => {
+    delete process.env.FEATURE_DUNNING_V2;
+    const h = world();
+    h.row.entitlement_active = false;
+    h.fake.seed('dunningState', {
+      id: 'ds-dispute', purchase_id: 'purchase', status: 'active', failure_count: 0,
+      reversal_count: 1, step_index: 0, last_failure_reason: 'charge_disputed',
+      entered_at: new Date('2026-10-01'), locked_out_at: new Date('2026-10-01'),
+    });
+    const refused = await h.v2.restartAfterDisputePause({ coachUserId: 'coach', purchaseId: 'purchase' });
+    expect(refused).toEqual({ restarted: false, reason: 'flag_off' });
+    expect(h.stripe.callsOf('resumeSubscriptionCollection')).toHaveLength(0);
+  });
+
   it('B3: a Stripe pause failure cannot report the full refund lifecycle complete', async () => {
     const h = world();
     jest.spyOn(h.stripe, 'pauseSubscriptionCollection').mockRejectedValueOnce(new Error('test outage'));
