@@ -152,6 +152,18 @@ FEATURE_COACH_BROADCASTS | off | fly secrets unset -a backend-spring-lake-3890 F
 
 Roll back with `"FEATURE_WEARABLES_INGEST_POST": "unset"` (or the emergency kill in the table above). The ingest routes then return `503 wearables_ingest_disabled` and the app keeps its saved progress.
 
+**Programs on at launch: FEATURE_MWB_TEMPLATES, FEATURE_MWB_AUTOSAVE_UNDO, FEATURE_NAMED_REGIMES=true and MWB_AUTOSAVE_LOCK_TOKEN_SECRET=github-secret (Wave B, coach Programs library).** The backend code (MWB-3, #733) is already deployed, so no deploy is needed. The autosave flag throws on every request without the lock-token secret, so the four lines flip in one PR and the secret must exist first:
+
+1. The owner creates the GitHub Actions secret `MWB_AUTOSAVE_LOCK_TOKEN_SECRET` on this repository (64 or more hex characters, for example the output of `openssl rand -hex 32`) and confirms it exists. Nobody else creates it and it is never written to a file.
+2. Merge the flip PR (`"FEATURE_MWB_TEMPLATES": "true"`, `"FEATURE_MWB_AUTOSAVE_UNDO": "true"`, `"FEATURE_NAMED_REGIMES": "true"`, `"MWB_AUTOSAVE_LOCK_TOKEN_SECRET": "github-secret"`).
+3. Run plan. The secret row must pass its shape check; a missing or short secret fails the plan before anything is written.
+4. Run apply with `deploy_staged=true` (one rolling restart).
+5. Run plan. All four rows must read `Deployed | match | keep`.
+6. Before the 10-07 build ships to coaches, the mobile `EXPO_PUBLIC_FF_MWB_PROGRAMS` and `EXPO_PUBLIC_FF_MWB_AUTOSAVE` flip PR is merged, so the Programs tab and autosave reach routes that are on.
+7. Owner device pass on a coach account: create a program, edit a workout (autosave and undo), assign it to a client.
+
+Roll back with `"unset"` on the three flags (the emergency kills in the table above). The program, autosave, undo and regime routes then return 404 and saved programs are kept. Leave the secret line as is.
+
 **Community core (Wave A).** Flip `FEATURE_COMMUNITY_API` and the core set (`_POSTS`, `_MESSAGES`, `_PUSH`, `_REALTIME`, and `_VOICE_NOTES` once its audit and device pass are done) in one PR, after the community report/block lane (#610) is deployed. The preconditions reject surface flags without the API flag.
 
 ## Notes and limits
