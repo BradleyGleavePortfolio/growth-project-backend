@@ -187,7 +187,7 @@ describe('InviteCodesService.sendInviteEmailForCode', () => {
     ).rejects.toThrow(/revoked/);
   });
 
-  it('sends with the same idempotency key shape as bulkInvite', async () => {
+  it('a resend uses its own email key, so it is not skipped behind the first send (AUDIT-17-125)', async () => {
     prisma.inviteCode.findUnique.mockResolvedValue({
       id: 'ic-99',
       code: 'GP-ZZZZZZ',
@@ -204,7 +204,7 @@ describe('InviteCodesService.sendInviteEmailForCode', () => {
     expect(res.status).toBe('sent');
     expect(email.send).toHaveBeenCalledWith(
       expect.objectContaining({
-        idempotencyKey: 'invite:ic-99',
+        idempotencyKey: expect.stringMatching(/^invite:ic-99:resend:\d+$/),
         template: 'coach-invites-client',
         to: 'a@example.com',
         data: expect.objectContaining({ recipient_name: 'Alex' }),

@@ -37,6 +37,8 @@ const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
 const CODE_LENGTH = 6;
 const CODE_PREFIX = 'GP-';
 const MAX_GENERATION_ATTEMPTS = 10;
+// AUDIT-17-125 — most redeemers listed for one code ("Who joined").
+const REDEEMERS_LIMIT = 500;
 
 // Public format constants surfaced via /auth/signup-policy so the mobile
 // client can validate input before round-tripping. Server-side DTOs (and the
@@ -454,22 +456,9 @@ export class InviteCodesService {
     });
   }
 
-  // Phase 8 — invite-code redeemer drilldown for the mobile UI.
-  //
-  // We don't (yet) have a first-class InviteRedemption ledger that
-  // maps individual users to the InviteCode row that brought them in.
-  // The closest correct signal we already have is:
-  //   - the user is currently coached by the InviteCode.coach_id (or by
-  //     one of that head coach's sub-coaches),
-  //   - they signed up after the invite was created,
-  //   - if the invite expired, before it expired.
-  // For single-use invites (used_count <= 1 and max_uses == 1) this is
-  // exact: at most one user can match. For multi-use codes the result
-  // is a best-effort window; we surface only as many rows as the
-  // invite has been used (capped at used_count) and the caller can
-  // trust that those rows came in during the invite's lifetime.
-  //
-  // The method is IDOR-gated on coach_id so a coach cannot enumerate
+  // Phase 8 — invite-code redeemer drilldown for the mobile UI ("Who
+  // joined"), read from the InviteRedemption ledger (AUDIT-17-125). The
+  // method is IDOR-gated on coach_id so a coach cannot enumerate
   // redeemers of another coach's invite.
   async listRedeemersForCoach(
     coachId: string,
@@ -492,32 +481,35 @@ export class InviteCodesService {
       // now coach-only is the safest gate.
       throw new ForbiddenException('Invite code does not belong to caller');
     }
-    if (invite.used_count === 0) return [];
-
-    const lowerBound = invite.created_at;
-    const upperBound = invite.expires_at ?? new Date();
-
-    // Candidate redeemers: students currently on the inviting coach's
-    // roster who signed up between (created_at, min(expires_at, now)).
-    const candidates = await this.prisma.user.findMany({
+    // AUDIT-17-125 — the signup ledger (one row per new redemption), not a
+    // signup-time window guess; accepted_by_user_id covers a pre-ledger first
+    // redeemer. Only students still on this coach's roster are shown.
+    const ledger = await this.prisma.inviteRedemption.findMany({
+      where: { invite_code_id: invite.id, coach_id: invite.coach_id },
+      orderBy: { redeemed_at: 'asc' },
+      select: { client_user_id: true, redeemed_at: true },
+      take: REDEEMERS_LIMIT,
+    });
+    const redeemedAt = new Map<string, Date>();
+    for (const r of ledger) {
+      if (!redeemedAt.has(r.client_user_id)) redeemedAt.set(r.client_user_id, r.redeemed_at);
+    }
+    if (invite.accepted_by_user_id && !redeemedAt.has(invite.accepted_by_user_id)) {
+      redeemedAt.set(invite.accepted_by_user_id, invite.accepted_at ?? invite.created_at);
+    }
+    if (redeemedAt.size === 0) return [];
+    const users = await this.prisma.user.findMany({
       where: {
+        id: { in: [...redeemedAt.keys()] },
         coach_id: invite.coach_id,
         role: 'student',
         deleted_at: null,
-        created_at: { gte: lowerBound, lte: upperBound },
       },
-      orderBy: { created_at: 'asc' },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        created_at: true,
-      },
-      // Cap to used_count + a small buffer so a noisy roster window
-      // doesn't blow up the response. For exact single-use invites the
-      // cap is 1.
-      take: Math.max(1, invite.used_count) + 5,
+      select: { id: true, name: true, email: true },
     });
+    const candidates = users
+      .map((u) => ({ ...u, redeemed_at: redeemedAt.get(u.id) ?? invite.created_at }))
+      .sort((a, b) => a.redeemed_at.getTime() - b.redeemed_at.getTime());
 
     // Last-active derived from the most recent WorkoutSession /
     // LoggedFoodEntry / CheckIn. Single round-trip across all three.
@@ -555,11 +547,11 @@ export class InviteCodesService {
       for (const r of checkIns) bump(r.user_id, r.logged_at);
     }
 
-    return candidates.slice(0, Math.max(1, invite.used_count)).map((u) => ({
+    return candidates.map((u) => ({
       user_id: u.id,
       name: u.name,
       email: u.email,
-      redeemed_at: u.created_at.toISOString(),
+      redeemed_at: u.redeemed_at.toISOString(),
       last_active_at: lastActiveByUser.get(u.id)?.toISOString() ?? null,
     }));
   }
@@ -1324,6 +1316,10 @@ export class InviteCodesService {
       inviteCode: row.code,
       inviteCodeId: row.id,
       expiresAt: row.expires_at,
+      // AUDIT-17-125 — the first send spent `invite:<id>`, so a resend with
+      // that key was always `skipped`. One key per minute: a double tap
+      // still sends once, a later Resend really sends.
+      idempotencyKey: `invite:${row.id}:resend:${Math.floor(Date.now() / 60_000)}`,
     });
   }
 
@@ -1338,6 +1334,7 @@ export class InviteCodesService {
     inviteCode: string;
     inviteCodeId: string;
     expiresAt: Date | null;
+    idempotencyKey?: string;
   }): Promise<{
     status: 'sent' | 'failed' | 'skipped' | 'logged';
     error?: string;
@@ -1355,7 +1352,7 @@ export class InviteCodesService {
       // Idempotency key is keyed on the invite-code row id (single source
       // of truth for "this invite") so even if a buggy mobile client
       // re-POSTs the bulk request twice, the second call is a no-op.
-      idempotencyKey: `invite:${params.inviteCodeId}`,
+      idempotencyKey: params.idempotencyKey ?? `invite:${params.inviteCodeId}`,
       data: {
         coach_name: params.coachName,
         recipient_name: params.recipientName ?? null,
