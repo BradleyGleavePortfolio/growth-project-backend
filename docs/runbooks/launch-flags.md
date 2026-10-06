@@ -134,6 +134,12 @@ FEATURE_ROMAN_CHAT_ENABLED | off | fly secrets unset -a backend-spring-lake-3890
 FEATURE_ROMAN_ADJUST_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_ADJUST_ENABLED | "FEATURE_ROMAN_ADJUST_ENABLED": "unset"
 APPLE_AUDIENCES | off | fly secrets unset -a backend-spring-lake-3890 APPLE_AUDIENCES | "APPLE_AUDIENCES": "unset"
 APPLE_NONCE_REQUIRED | off | fly secrets unset -a backend-spring-lake-3890 APPLE_NONCE_REQUIRED | "APPLE_NONCE_REQUIRED": "unset"
+GDPR_SCRUB_DRY_RUN | off | fly secrets unset -a backend-spring-lake-3890 GDPR_SCRUB_DRY_RUN | "GDPR_SCRUB_DRY_RUN": "unset"
+FEATURE_GOOGLE_CALENDAR_SYNC | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_GOOGLE_CALENDAR_SYNC | "FEATURE_GOOGLE_CALENDAR_SYNC": "unset"
+GOOGLE_CALENDAR_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 GOOGLE_CALENDAR_ENABLED | "GOOGLE_CALENDAR_ENABLED": "unset"
+GOOGLE_MEET_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 GOOGLE_MEET_ENABLED | "GOOGLE_MEET_ENABLED": "unset"
+FEATURE_SCOUT_INGEST | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_SCOUT_INGEST | "FEATURE_SCOUT_INGEST": "unset"
+FEATURE_EXTENSION_PAIRING | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_EXTENSION_PAIRING | "FEATURE_EXTENSION_PAIRING": "unset"
 ```
 
 ## Deploy-window sequences
