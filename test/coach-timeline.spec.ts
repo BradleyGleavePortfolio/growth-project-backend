@@ -93,4 +93,21 @@ describe('CoachService.getClientTimeline (Tier-2 check-in integration)', () => {
     expect(r.meals).toEqual([]);
     expect(r.checkIns).toEqual([]);
   });
+
+  // Same-day foods tie on `date` (a calendar day). Without a unique
+  // tie-break, the next mealsCursor page restarts at the boundary day and
+  // repeats its entries, so a coach's food review double counts them.
+  it('pages the meals slice on a unique order (date, then id)', async () => {
+    const prisma = makePrisma({});
+    const svc = new CoachService(prisma, audit());
+    await svc.getClientTimeline('coach-A', 'client-1', 30, undefined, { mealsCursor: 'm-100' });
+    expect(prisma.loggedFoodEntry.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [{ date: 'desc' }, { id: 'desc' }],
+        cursor: { id: 'm-100' },
+        skip: 1,
+        take: 100,
+      }),
+    );
+  });
 });
