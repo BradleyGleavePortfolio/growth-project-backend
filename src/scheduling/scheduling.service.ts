@@ -170,8 +170,15 @@ export class SchedulingService {
         where: {
           coach_id: { in: ids },
           client_id: actor.id,
-          status: 'completed',
           session_type: { is: { is_welcome: true } },
+          // AUDIT-04-125: a welcome call counts as had once the coach marks it
+          // completed, or once a confirmed call's end time has passed. The
+          // coach app has no "mark complete" step, so without the second arm a
+          // client who already had the call is asked to book it again.
+          OR: [
+            { status: 'completed' },
+            { status: { in: ['scheduled', 'pending_provider'] }, end_at: { lte: now } },
+          ],
         },
         select: { coach_id: true, end_at: true },
         orderBy: { end_at: 'desc' },
