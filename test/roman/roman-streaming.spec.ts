@@ -169,12 +169,15 @@ function makePrisma(sessionOwner = 'user-A') {
     ),
   };
 
+  // B-651-5: the spend admission takes a per-day advisory lock in its tx.
+  const $executeRaw = jest.fn(async () => 1);
   const prisma = {
     romanSession,
     romanMessage,
     aiRequestAudit,
+    $executeRaw,
     $transaction: jest.fn(async (fn: (tx: unknown) => unknown) =>
-      fn({ romanMessage, romanSession }),
+      fn({ romanMessage, romanSession, aiRequestAudit, $executeRaw }),
     ),
   };
   return { prisma, session, messages, romanMessage, audits };

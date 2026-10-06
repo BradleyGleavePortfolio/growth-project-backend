@@ -126,11 +126,16 @@ function makePrisma(opts: { spentTokens?: { in: number; out: number }; ledgerFai
       return row;
     }),
   };
+  // B-651-5: the spend admission takes a per-day advisory lock in its tx.
+  const $executeRaw = jest.fn(async () => 1);
   const prisma = {
     romanMessage,
     romanSession,
     aiRequestAudit,
-    $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn({ romanMessage, romanSession })),
+    $executeRaw,
+    $transaction: jest.fn(async (fn: (tx: unknown) => unknown) =>
+      fn({ romanMessage, romanSession, aiRequestAudit, $executeRaw }),
+    ),
   };
   return { prisma, stored, audits };
 }
@@ -755,38 +760,22 @@ describe('FR1-651-2 Roman failure copy is written for the caller (a coach is nev
   });
 });
 
-describe('FR1-651-3 the single per-session exclamation is spent once, then never allowed again', () => {
-  it('a stored reply that uses the exclamation marks the session; a spent session gets none', async () => {
-    const first = makePrisma();
-    const svc = new RomanService(fakeOf(first.prisma), grantAllEgress(), makeAnthropic('Nice work! Keep it up!').handle);
-    await drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'I hit my protein' }));
-    const roman1 = first.stored.filter((m) => m.role === 'roman');
-    expect(roman1[0].content).toBe('Nice work! Keep it up.');
-    const marks = first.prisma.romanSession.updateMany.mock.calls.map(
-      (c: unknown[]) => (c[0] as { data: Record<string, unknown> }).data.exclamation_used,
-    );
-    expect(marks).toContain(true);
-
-    const second = makePrisma();
-    const svc2 = new RomanService(fakeOf(second.prisma), grantAllEgress(), makeAnthropic('Nice work! Keep it up!').handle);
-    await drain(
-      svc2.streamAssistantTurn(CLIENT, fakeOf({ ...session(), exclamation_used: true }), { userMessage: 'again' }),
-    );
-    expect(second.stored.filter((m) => m.role === 'roman')[0].content).toBe('Nice work. Keep it up.');
-    const marks2 = second.prisma.romanSession.updateMany.mock.calls.map(
-      (c: unknown[]) => (c[0] as { data: Record<string, unknown> }).data.exclamation_used,
-    );
-    expect(marks2).not.toContain(true);
-  });
-
-  it('a reply without an exclamation leaves the allowance unspent', async () => {
-    const p = makePrisma();
-    const svc = new RomanService(fakeOf(p.prisma), grantAllEgress(), makeAnthropic('Good. Keep going.').handle);
-    await drain(svc.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'hi' }));
-    const marks = p.prisma.romanSession.updateMany.mock.calls.map(
-      (c: unknown[]) => (c[0] as { data: Record<string, unknown> }).data.exclamation_used,
-    );
-    expect(marks).not.toContain(true);
+describe('B-651-9 (supersedes FR1-651-3): no shipped reply carries an exclamation mark', () => {
+  it('a reply with exclamations is stored and emitted with none, on a fresh or spent session', async () => {
+    for (const exclamation_used of [false, true]) {
+      const p = makePrisma();
+      const svc = new RomanService(fakeOf(p.prisma), grantAllEgress(), makeAnthropic('Nice work! Keep the plan as written!').handle);
+      const chunks = await drain(
+        svc.streamAssistantTurn(CLIENT, fakeOf({ ...session(), exclamation_used }), { userMessage: 'I hit my protein' }),
+      );
+      expect(p.stored.filter((m) => m.role === 'roman')[0].content).toBe('Nice work. Keep the plan as written.');
+      expect(JSON.stringify(chunks)).not.toContain('!');
+      // There is no allowance left to spend, so the session is never marked.
+      const marks = p.prisma.romanSession.updateMany.mock.calls.map(
+        (c: unknown[]) => (c[0] as { data: Record<string, unknown> }).data.exclamation_used,
+      );
+      expect(marks).not.toContain(true);
+    }
   });
 });
 

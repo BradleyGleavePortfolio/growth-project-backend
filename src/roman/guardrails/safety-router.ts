@@ -73,6 +73,10 @@ const EMERGENCY: RegExp[] = [
   // A-666-2 (Opus): an overdose given as a count ("I took 20 of my sleeping
   // pills", "a bunch of pills"). Five or more; "took 2 pills" is a dose.
   /\b(took|taken|swallowed|have taken|i'?ve taken) ([5-9]|[1-9]\d+|a bunch of|a lot of|lots of|loads of|a load of|so many)( of)?( my| the)? (\w+ )?(pills|tablets|meds|capsules|painkillers)\b/i,
+  // A-666-3 (Opus): the same overdose with the medicine named instead of
+  // "pills" ("a whole bottle of Tylenol", "30 ibuprofen", "a bunch of Xanax").
+  // Five or more, or a bottle/pack/handful; "took 2 Tylenol" is a dose.
+  /\b(took|taken|swallowed|have taken|i'?ve taken) (too many|way too many|a (whole |full )?(bottle|pack|packet|box) of|all (of )?(my|the)|a handful of|[5-9]|[1-9]\d+|a bunch of|a lot of|lots of|loads of|a load of|so many)( of)?( my| the| his| her| their)? (\w+ )?(tylenol|acetaminophen|paracetamol|advil|motrin|ibuprofen|aleve|naproxen|aspirin|excedrin|nyquil|benadryl|diphenhydramine|xanax|valium|ativan|klonopin|ambien|zolpidem|oxy|oxys|oxycodone|oxycontin|percocet|vicodin|hydrocodone|codeine|tramadol|morphine|fentanyl|adderall|lithium|seroquel|antidepressants|sleeping meds|sleep meds)s?\b/i,
   /\b(coughing|throwing|vomiting) up blood\b/i,
 ];
 

@@ -82,8 +82,10 @@ function setup(initialUsedCents: number, inputTokens = 6000) {
     user: { findUnique: jest.fn(async () => ({ coach_id: 'rmn2-coach' })) },
     teamSubCoachAssignment: { findFirst: jest.fn(async () => null) },
     coachAIBudget, romanSession, romanMessage, aiRequestAudit,
+    // C2 (#669): the daily reservation runs inside a transaction behind an
+    // advisory lock, so the tx carries the ledger and $executeRaw too.
     $transaction: jest.fn(async (fn: (tx: object) => Promise<unknown>) =>
-      fn({ romanSession, romanMessage })),
+      fn({ romanSession, romanMessage, aiRequestAudit, $executeRaw: jest.fn(async () => 1) })),
   });
   const client = {
     messages: {

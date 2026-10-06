@@ -114,10 +114,12 @@ export const ROMAN_CURSOR_INVALID_MESSAGE =
  * 121, 13:33): about 2,000 to 3,000 ordinary turns a day at $0.03 to $0.05
  * each, or 23 clients each at the full 50-turn limit at the worst-case
  * reservation, so ordinary launch use never meets it. A turn
- * RESERVES its worst-case cost in the content-free ledger (AiRequestAudit,
- * capability `roman.chat`) before the provider call and settles the actual
- * tokens after it, so concurrent turns see each other. Fail closed: when
- * today's spend cannot be read, no paid call is made.
+ * RESERVES the upper bound of its exact payload plus max output in the
+ * content-free ledger (AiRequestAudit, capability `roman.chat`) under a
+ * per-day advisory lock before the provider call (B-651-4/5), and settles
+ * the known tokens after it, keeping the reserved value for any side whose
+ * usage the provider never reported (B-651-1). Fail closed: when today's
+ * spend cannot be read, no paid call is made.
  */
 export const ROMAN_DAILY_COST_CAP_USD_ENV = 'ROMAN_DAILY_COST_CAP_USD';
 export const ROMAN_DAILY_COST_CAP_USD_DEFAULT = 100;
