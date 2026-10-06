@@ -16,8 +16,7 @@
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { CoachAlertsService } from '../src/coach/coach-alerts.service';
-import { NotificationsService } from '../src/notifications/notifications.service';
-import { NotificationCategory } from '../src/notifications/notification-category.enum';
+import { CoachAlertEmitter } from '../src/notifications/emitters/coach-alert.emitter';
 import { PrismaService } from '../src/prisma.service';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -73,15 +72,16 @@ async function buildService(options: {
     },
   };
 
+  // AUDIT-09-125: alerts are delivered through CoachAlertEmitter.
   const notificationsMock = {
-    pushToCoach: jest.fn().mockResolvedValue(true),
+    emit: jest.fn().mockResolvedValue({ inapp: 'sent', push: 'sent' }),
   };
 
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       CoachAlertsService,
       { provide: PrismaService, useValue: prismaMock },
-      { provide: NotificationsService, useValue: notificationsMock },
+      { provide: CoachAlertEmitter, useValue: notificationsMock },
     ],
   }).compile();
 
@@ -167,12 +167,13 @@ describe('Phase 6B emitter: consecutive_misses', () => {
 
     await service.createAlert(input);
 
-    expect(notificationsMock.pushToCoach).toHaveBeenCalledWith('coach-1', {
+    expect(notificationsMock.emit).toHaveBeenCalledWith({
+      coachId: 'coach-1',
       alertId: created.id,
       alertType,
-      severity: 'warning',
       message: input.message,
-      category: NotificationCategory.COACH_DIRECT,
+      severity: 'warning',
+      clientUserId: created.client_id,
     });
   });
 });
@@ -254,12 +255,13 @@ describe('Phase 6B emitter: streak_dropped', () => {
 
     await service.createAlert(input);
 
-    expect(notificationsMock.pushToCoach).toHaveBeenCalledWith('coach-1', {
+    expect(notificationsMock.emit).toHaveBeenCalledWith({
+      coachId: 'coach-1',
       alertId: created.id,
       alertType,
-      severity: 'info',
       message: input.message,
-      category: NotificationCategory.COACH_DIRECT,
+      severity: 'info',
+      clientUserId: created.client_id,
     });
   });
 });

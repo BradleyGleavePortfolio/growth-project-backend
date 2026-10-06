@@ -2,17 +2,17 @@
  * test/coach-alerts-push-delivery.spec.ts
  *
  * Phase 6B — confirms that CoachAlertsService.createAlert:
- *   1. Calls NotificationsService.pushToCoach when a new alert is created.
- *   2. Falls back gracefully to in-app inbox only when pushToCoach returns false
- *      (simulating no push token scenario).
- *   3. Does NOT throw when pushToCoach throws.
+ *   1. Delivers a new alert through CoachAlertEmitter (inbox row + quiet push
+ *      via sendPush; AUDIT-09-125), never through the raw pushToCoach send.
+ *   2. Still returns the alert when the push is skipped (muted, no token).
+ *   3. Does NOT throw when the emitter throws.
  *   4. Skips push (returns existing row) when dedup window is active.
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { CoachAlertsService, CreateAlertInput } from '../src/coach/coach-alerts.service';
+import { CoachAlertEmitter } from '../src/notifications/emitters/coach-alert.emitter';
 import { NotificationsService } from '../src/notifications/notifications.service';
-import { NotificationCategory } from '../src/notifications/notification-category.enum';
 import { PrismaService } from '../src/prisma.service';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -47,6 +47,7 @@ function makeAlert(overrides: Partial<{
 describe('CoachAlertsService — push delivery (Phase 6B)', () => {
   let service: CoachAlertsService;
   let prismaMock: any;
+  let emitterMock: { emit: jest.Mock };
   let notificationsMock: { pushToCoach: jest.Mock };
 
   const defaultInput: CreateAlertInput = {
@@ -68,6 +69,9 @@ describe('CoachAlertsService — push delivery (Phase 6B)', () => {
       },
     };
 
+    emitterMock = {
+      emit: jest.fn().mockResolvedValue({ inapp: 'sent', push: 'sent' }),
+    };
     notificationsMock = {
       pushToCoach: jest.fn(),
     };
@@ -76,6 +80,7 @@ describe('CoachAlertsService — push delivery (Phase 6B)', () => {
       providers: [
         CoachAlertsService,
         { provide: PrismaService, useValue: prismaMock },
+        { provide: CoachAlertEmitter, useValue: emitterMock },
         { provide: NotificationsService, useValue: notificationsMock },
       ],
     }).compile();
@@ -84,52 +89,59 @@ describe('CoachAlertsService — push delivery (Phase 6B)', () => {
   });
 
   describe('createAlert — new row (dedup miss)', () => {
-    it('calls NotificationsService.pushToCoach with the created alert data', async () => {
+    it('delivers through CoachAlertEmitter with the created alert data', async () => {
       const alert = makeAlert();
       prismaMock.coachAlert.findFirst.mockResolvedValue(null);
       prismaMock.coachAlert.create.mockResolvedValue(alert);
-      notificationsMock.pushToCoach.mockResolvedValue(true);
 
       const result = await service.createAlert(defaultInput);
 
       expect(result).toEqual(alert);
-      expect(notificationsMock.pushToCoach).toHaveBeenCalledTimes(1);
-      expect(notificationsMock.pushToCoach).toHaveBeenCalledWith('coach-1', {
+      expect(emitterMock.emit).toHaveBeenCalledTimes(1);
+      expect(emitterMock.emit).toHaveBeenCalledWith({
+        coachId: 'coach-1',
         alertId: alert.id,
         alertType: alert.alert_type,
-        severity: alert.severity,
         message: alert.message,
-        category: NotificationCategory.COACH_DIRECT,
+        severity: alert.severity,
+        clientUserId: 'client-1',
       });
     });
 
-    it('still returns the created alert when pushToCoach returns false (no token)', async () => {
+    it('never sends the alert text straight to the lock screen (pushToCoach)', async () => {
+      const alert = makeAlert({ message: 'Jordan Client crossed into the red risk band (82%).' });
+      prismaMock.coachAlert.findFirst.mockResolvedValue(null);
+      prismaMock.coachAlert.create.mockResolvedValue(alert);
+
+      await service.createAlert(defaultInput);
+
+      expect(notificationsMock.pushToCoach).not.toHaveBeenCalled();
+    });
+
+    it('still returns the created alert when the push is skipped (muted or no token)', async () => {
       const alert = makeAlert();
       prismaMock.coachAlert.findFirst.mockResolvedValue(null);
       prismaMock.coachAlert.create.mockResolvedValue(alert);
-      // Simulate: coach has no push token
-      notificationsMock.pushToCoach.mockResolvedValue(false);
+      emitterMock.emit.mockResolvedValue({ inapp: 'skipped', push: 'skipped' });
 
       const result = await service.createAlert(defaultInput);
 
-      // Alert still written and returned — in-app inbox works regardless
       expect(result).toEqual(alert);
-      expect(notificationsMock.pushToCoach).toHaveBeenCalledTimes(1);
+      expect(emitterMock.emit).toHaveBeenCalledTimes(1);
     });
 
-    it('does NOT throw and still returns the alert when pushToCoach throws', async () => {
+    it('does NOT throw and still returns the alert when the emitter throws', async () => {
       const alert = makeAlert();
       prismaMock.coachAlert.findFirst.mockResolvedValue(null);
       prismaMock.coachAlert.create.mockResolvedValue(alert);
-      notificationsMock.pushToCoach.mockRejectedValue(new Error('network failure'));
+      emitterMock.emit.mockRejectedValue(new Error('network failure'));
 
-      // Should not throw
       await expect(service.createAlert(defaultInput)).resolves.toEqual(alert);
     });
   });
 
   describe('createAlert — dedup hit (existing unacknowledged row within 24h)', () => {
-    it('returns existing row WITHOUT calling pushToCoach', async () => {
+    it('returns existing row WITHOUT delivering again', async () => {
       const existing = makeAlert({ id: 'existing-alert' });
       prismaMock.coachAlert.findFirst.mockResolvedValue(existing);
 
@@ -139,12 +151,12 @@ describe('CoachAlertsService — push delivery (Phase 6B)', () => {
       // No new row created
       expect(prismaMock.coachAlert.create).not.toHaveBeenCalled();
       // No push attempted for a dedup-hit
-      expect(notificationsMock.pushToCoach).not.toHaveBeenCalled();
+      expect(emitterMock.emit).not.toHaveBeenCalled();
     });
   });
 
   describe('payload format', () => {
-    it('passes alertType, severity, message verbatim in the push payload', async () => {
+    it('passes alertType, severity, message verbatim to the emitter', async () => {
       const alert = makeAlert({
         alert_type: 'consecutive_misses',
         severity: 'warning',
@@ -152,7 +164,6 @@ describe('CoachAlertsService — push delivery (Phase 6B)', () => {
       });
       prismaMock.coachAlert.findFirst.mockResolvedValue(null);
       prismaMock.coachAlert.create.mockResolvedValue(alert);
-      notificationsMock.pushToCoach.mockResolvedValue(true);
 
       await service.createAlert({
         ...defaultInput,
@@ -161,14 +172,12 @@ describe('CoachAlertsService — push delivery (Phase 6B)', () => {
         message: 'Client has missed 3 consecutive check-ins',
       });
 
-      const [, payload] = notificationsMock.pushToCoach.mock.calls[0];
+      const [payload] = emitterMock.emit.mock.calls[0];
       expect(payload).toMatchObject({
         alertType: 'consecutive_misses',
         severity: 'warning',
         message: 'Client has missed 3 consecutive check-ins',
-        category: NotificationCategory.COACH_DIRECT,
       });
-      // Must include alertId
       expect(payload.alertId).toBe(alert.id);
     });
   });

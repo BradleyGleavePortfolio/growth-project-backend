@@ -186,7 +186,7 @@ function harness(drops: Row[]) {
   const registry = new AssignableAssetResolverRegistry([resolver]);
   const notifications = {
     createNotification: jest.fn(async () => ({ id: 'n-1' })),
-    pushToUser: jest.fn(async () => ({ delivered: true, code: 'delivered' })),
+    sendPush: jest.fn(async () => ({ delivered: true, code: 'delivered' })),
   };
   const cron = new DripDispatcherCron(fake(prisma), registry, fake(notifications));
   const checkout = new CheckoutService(
@@ -225,14 +225,14 @@ describe('S-MWB-3 C-640-15: deferred program drop through the real dispatcher pa
     });
     expect(drops[0].alert_dispatched_at).toBeInstanceOf(Date);
     // One alert: one push, plus its in-app row and its push-channel row.
-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);
     expect(notifications.createNotification).toHaveBeenCalledTimes(2);
 
     // A second tick finds nothing to do: no second copy, no second alert.
     const again = await cron.runOnce(new Date(NOW.getTime() + 60_000));
     expect(again.claimed).toBe(0);
     expect(programDelivery.deliver).toHaveBeenCalledTimes(1);
-    expect(notifications.pushToUser).toHaveBeenCalledTimes(1);
+    expect(notifications.sendPush).toHaveBeenCalledTimes(1);
     expect(notifications.createNotification).toHaveBeenCalledTimes(2);
 
     // The buyer's package list still shows the program, opened at day 1.

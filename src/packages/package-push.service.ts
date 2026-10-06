@@ -705,7 +705,6 @@ export class PackagePushService {
       const purchase = purchaseById.get(drop.client_purchase_id);
       if (!purchase) continue;
       const clientUserId = purchase.client_user_id;
-      const title = drop.display_title?.slice(0, 80) || 'New content unlocked';
       const body = drop.display_title
         ? `New content unlocked: ${drop.display_title}`.slice(0, 160)
         : 'New content unlocked';
@@ -731,10 +730,14 @@ export class PackagePushService {
         );
       }
       try {
-        await this.notifications.pushToUser(clientUserId, title, body, {
+        // AUDIT-09-125: through sendPush, so the push honours "Mute all", the
+        // drip_released switch and quiet hours, and the lock screen shows fixed
+        // copy (never the coach-written content title).
+        await this.notifications.sendPush({
+          user_id: clientUserId,
           kind: NotificationKind.DRIP_RELEASED,
-          scheduled_drop_id: drop.id,
-          asset_type: drop.asset_type,
+          body,
+          deep_link: 'tgp://client/library',
         });
       } catch (err) {
         this.logger.warn(

@@ -264,7 +264,7 @@ function makeResolverStub() {
 function makeNotificationsStub() {
   return {
     createNotification: jest.fn(async () => ({ id: 'notif' })),
-    pushToUser: jest.fn(async () => undefined),
+    sendPush: jest.fn(async () => undefined),
   };
 }
 
@@ -759,7 +759,7 @@ describe('PackagePushService', () => {
     expect(row.alert_dispatched_at).not.toBeNull();
     // No buyer push/in-app was sent.
     expect(notifications.createNotification).not.toHaveBeenCalled();
-    expect(notifications.pushToUser).not.toHaveBeenCalled();
+    expect(notifications.sendPush).not.toHaveBeenCalled();
   });
 
   it('notify=true leaves alert_dispatched_at NULL at seed for a forward-dated push (cron alerts later)', async () => {

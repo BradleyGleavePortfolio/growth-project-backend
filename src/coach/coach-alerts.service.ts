@@ -1,11 +1,7 @@
 import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type { CoachAlert, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import {
-  NotificationsService,
-  PushPayload,
-} from '../notifications/notifications.service';
-import { NotificationCategory } from '../notifications/notification-category.enum';
+import { CoachAlertEmitter } from '../notifications/emitters/coach-alert.emitter';
 
 // Phase 6B — Proactive Red Flag Alerts.
 //
@@ -19,10 +15,13 @@ import { NotificationCategory } from '../notifications/notification-category.enu
 //                        owning the alert is the only caller permitted;
 //                        a foreign coach gets NotFoundException.
 //
-// Push-notification delivery: real push via NotificationsService.pushToCoach.
-// NotificationsService is @Optional() so the existing test suite that
-// constructs CoachAlertsService(prisma) directly continues to compile and
-// pass — when notifications is null, tryPush logs and returns without error.
+// Push-notification delivery (AUDIT-09-125): CoachAlertEmitter writes the
+// coach's inbox row and queues one device push through
+// NotificationsService.sendPush, so the push honours "Mute all", the
+// coach_alert switch and quiet hours, shows the fixed lock-screen copy (the
+// alert text names the client and stays inside the app) and opens the
+// notification center. The emitter is @Optional() so tests that construct
+// CoachAlertsService(prisma) directly keep working (no push is sent).
 //
 // Emitters wired in this PR:
 //   * risk_red_transition  — PTM recompute (src/ptm/ptm-recompute.service.ts)
@@ -73,7 +72,7 @@ export class CoachAlertsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    @Optional() private readonly notifications?: NotificationsService,
+    @Optional() private readonly alertEmitter?: CoachAlertEmitter,
   ) {}
 
   /**
@@ -221,41 +220,35 @@ export class CoachAlertsService {
   }
 
   // ── push delivery ──────────────────────────────────────────────────────
-  // Real push via NotificationsService.pushToCoach. NotificationsService is
-  // @Optional() so the service is usable in test contexts that only provide
-  // PrismaService. When notifications is absent (test-only), we log and skip.
-  // When pushToCoach returns false (no token), the alert is still in the
-  // in-app inbox — no exception thrown.
+  // AUDIT-09-125: through CoachAlertEmitter (inbox row + quiet push via
+  // sendPush). The old direct Expo send put the alert text (client name,
+  // risk percentage) on the lock screen with the raw alert type as the body,
+  // ignored "Mute all" and quiet hours, and wrote no inbox row for the tap to
+  // open. The alert row is already stored; delivery never throws here.
   private async tryPush(alert: CoachAlert): Promise<void> {
+    if (!this.alertEmitter) {
+      // Test context — emitter not wired; alert still written to DB.
+      return;
+    }
     try {
-      if (!this.notifications) {
-        // Test context — notifications not wired; alert still written to DB.
-        return;
-      }
-      const payload: PushPayload = {
+      const delivery = await this.alertEmitter.emit({
+        coachId: alert.coach_id,
         alertId: alert.id,
         alertType: alert.alert_type,
-        severity: alert.severity,
         message: alert.message,
-        // Phase 11: coach alerts are COACH_DIRECT category so they surface on
-        // the high-importance Android channel and iOS actionable category.
-        category: NotificationCategory.COACH_DIRECT,
-      };
-      const delivered = await this.notifications.pushToCoach(
-        alert.coach_id,
-        payload,
-      );
-      if (!delivered) {
+        severity: alert.severity,
+        clientUserId: alert.client_id,
+      });
+      if (delivery.push !== 'sent') {
         // C-611-17: alert.message names the client; log the alert id.
         this.logger.log(
-          `push skipped (no token) alert=${alert.id} coach=${alert.coach_id} type=${alert.alert_type} sev=${alert.severity}`,
+          `push not queued alert=${alert.id} coach=${alert.coach_id} type=${alert.alert_type} push=${delivery.push}`,
         );
       }
     } catch {
-      // Push failure must never crash the alert-write path. Alert is still
-      // stored in the in-app inbox regardless of delivery outcome.
+      // Push failure must never crash the alert-write path.
       this.logger.warn(
-        `tryPush threw for alert=${alert.id} coach=${alert.coach_id} — alert still saved in inbox`,
+        `tryPush threw for alert=${alert.id} coach=${alert.coach_id} — alert still saved`,
       );
     }
   }

@@ -72,6 +72,17 @@ describe('lock-screen copy is template-only (B-692-1)', () => {
     ).toBe('Your session starts in about an hour. Open the app to see the details.');
   });
 
+  it('AUDIT-09-125: content-unlocked and new-purchase pushes carry fixed copy only', () => {
+    expect(lockScreenCopy(NotificationKind.DRIP_RELEASED, 'New content unlocked: PCOS meal plan')).toEqual({
+      title: 'New content',
+      body: 'New content from your coach is ready. Open the app to see it.',
+    });
+    expect(lockScreenCopy(NotificationKind.COACH_NEW_PURCHASE, 'Alex Buyer just bought Pro ($99.00)')).toEqual({
+      title: 'New purchase',
+      body: 'A client bought a package. Open the app to see it.',
+    });
+  });
+
   it('unknown kinds get the generic line', () => {
     expect(lockScreenCopy('something_new', PRIVATE)).toEqual({
       title: 'The Growth Project',
