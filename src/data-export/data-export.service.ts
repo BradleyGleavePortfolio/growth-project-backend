@@ -312,6 +312,20 @@ const ROMAN_CLIENT_SUMMARY_EXPORT_SELECT: Record<string, true> = {
   generated_at: true,
 };
 
+/**
+ * Roman v1.1 (R11-P1, owner D5): a head coach's own active playbook, the
+ * methods Roman learned from the coach. The source ledger (other people's
+ * row ids) and internal digests are left out.
+ */
+const COACH_PLAYBOOK_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  version: true,
+  status: true,
+  sections: true,
+  red_lines: true,
+  built_at: true,
+};
+
 /** Wearable connections: provider and sync state only, never tokens or secret refs. */
 const WEARABLE_CONNECTION_EXPORT_SELECT: Record<string, true> = {
   id: true,
@@ -1285,6 +1299,7 @@ export class DataExportService {
       workoutAdjustments,
       romanClientNotes,
       romanClientSummaries,
+      coachPlaybook,
       wearableConnections,
       wearableSamples,
     ] = await Promise.all([
@@ -1413,6 +1428,11 @@ export class DataExportService {
         },
       ),
       this._streamAll(
+        'coachPlaybook',
+        { coach_id: userId, status: 'active' },
+        { select: COACH_PLAYBOOK_EXPORT_SELECT, orderBy: [{ version: 'asc' }, { id: 'asc' }] },
+      ),
+      this._streamAll(
         'wearableConnection',
         { user_id: userId },
         { select: WEARABLE_CONNECTION_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
@@ -1488,6 +1508,7 @@ export class DataExportService {
       workout_adjustments: workoutAdjustments,
       roman_notes: romanClientNotes,
       roman_summaries: romanClientSummaries,
+      coach_playbook: coachPlaybook,
       wearable_connections: wearableConnections,
       wearable_samples: wearableSamples,
     };

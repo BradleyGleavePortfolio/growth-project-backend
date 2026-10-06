@@ -85,6 +85,7 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `workout_adjustments` | `WorkoutAdjustmentProposal` | Roman workout adjustments proposed for the user: status, severity, the recovery signals used, the proposed and applied change, Roman's text, dates. The coach's dismiss note and the internal rule key are left out. |
 | `roman_notes` | `RomanClientNote` | Notes Roman keeps about the user (live, expired and superseded), oldest first: kind, text, when it was said, expiry, when it was superseded, date. The internal slot key and source message id are left out. Kept when a chat is deleted; removed with the account. |
 | `roman_summaries` | `RomanClientSummary` | The user's day, week and month summaries, oldest period first: period, start date, text, generated date. The internal facts blob, input digest and model id are left out. The memory job state (`RomanMemoryState`) is internal and not exported. |
+| `coach_playbook` | `CoachPlaybook` | Coaches only: the coach's own active Roman playbook (version, sections, red lines, build date). The source ledger, which lists other people's row ids, is left out. |
 | `wearable_connections` | `WearableConnection` | Provider, status, scopes and sync dates. Tokens, secret refs and errors are never exported. |
 | `wearable_samples` | `WearableSample` | Every wearable sample, oldest first: provider, metric, bucket, value, unit, start/end, source time zone, recorded date. |
 
