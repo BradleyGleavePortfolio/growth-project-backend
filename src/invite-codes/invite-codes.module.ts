@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BillingModule } from '../billing/billing.module';
+import { CoachCodeToolsController } from './coach-code-tools.controller';
+import { CoachCodeToolsService } from './coach-code-tools.service';
 import { InviteCodesController } from './invite-codes.controller';
 import { InviteCodesService } from './invite-codes.service';
 import { InviteGrantModule } from '../invite-grant/invite-grant.module';
@@ -14,8 +16,8 @@ import { InviteGrantModule } from '../invite-grant/invite-grant.module';
 // subscription state when redeeming a coach invite.
 @Module({
   imports: [BillingModule, InviteGrantModule],
-  controllers: [InviteCodesController],
-  providers: [InviteCodesService],
+  controllers: [InviteCodesController, CoachCodeToolsController],
+  providers: [InviteCodesService, CoachCodeToolsService],
   exports: [InviteCodesService],
 })
 export class InviteCodesModule {}

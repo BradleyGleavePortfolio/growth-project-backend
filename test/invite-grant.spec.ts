@@ -186,6 +186,7 @@ function makePrisma(seed: {
         },
       ),
     },
+    inviteRedemption: { create: jest.fn(async ({ data }: any) => ({ id: 'red-1', ...data })) }, // A2 signup ledger
     inviteCode: {
       findUnique: jest.fn(async ({ where }: { where: { code?: string; id?: string } }) => {
         const c = codes.find((x) => (where.code ? x.code === where.code : x.id === where.id));

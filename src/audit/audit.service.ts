@@ -91,6 +91,8 @@ export const AuditAction = {
   SESSION_CANCELED: 'session.canceled',
   SESSION_COMPLETED: 'session.completed',
   SESSION_NO_SHOW: 'session.no_show',
+  // S-SCHED-5: a request reached its clear time without an answer (system actor).
+  SESSION_EXPIRED: 'session.expired',
   SESSION_VIDEO_LINK_ATTACHED: 'session.video_link_attached',
   SESSION_PROVIDER_CALENDAR_CREATED: 'session.provider.calendar_created',
   SESSION_PROVIDER_VIDEO_CREATED: 'session.provider.video_created',

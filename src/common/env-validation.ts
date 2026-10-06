@@ -443,6 +443,12 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Feature flag — when "false", the nightly PTM recompute cron and the admin teaching endpoints are disabled. Defaults to true (engine runs). Use to quickly disable the scoring engine if a heuristic regression is shipped.',
   },
   {
+    name: 'SFEE_SETTLEMENT_SWEEP_ENABLED',
+    tier: 'optional',
+    default: "on (unset = on; only the exact string 'false' pauses the scheduled sweep)",
+    reason: 'Kill switch — when "false", the 15-minute coach payout / settlement sweep (SettlementSweepCron) stops running on schedule; the admin run-sweeper endpoint still works by hand. Defaults to on.',
+  },
+  {
     name: 'PTM_SCORING_CRON',
     tier: 'optional',
     reason: 'Override for the nightly PTM recompute cron expression. Defaults to "0 4 * * *" (04:00 UTC, 1h after the GDPR scrub at 03:00 UTC). Must be a valid 5-field cron expression.',
@@ -1025,8 +1031,8 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'BILLING_PORTAL_URL',
     tier: 'optional',
-    default: "'https://thegrowthproject.app/billing'",
-    reason: 'Billing portal link in dunning emails.',
+    default: 'DUNNING_UPDATE_CARD_URL (the in-app card update link)',
+    reason: 'Card update link in v1 dunning emails.',
   },
   {
     name: 'IOS_BUNDLE_ID',
@@ -1665,6 +1671,13 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Fly app name (set by Fly at runtime) for the SOC2 evidence snapshot.',
   },
   {
+    name: 'FLY_MACHINE_ID',
+    tier: 'optional',
+    default: 'unset → os.hostname() (Fly sets it per machine at runtime)',
+    reason:
+      'Holder id for the S-FEE single-runner leases: the settlement sweep CronLease (SettlementSweepCron) and the per-charge money lock (ChargeLock), so each machine is told apart when it takes or fences a lease.',
+  },
+  {
     name: 'FLY_PRIMARY_REGION',
     tier: 'optional',
     default: 'unset → PRIMARY_REGION',
@@ -1916,12 +1929,30 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Stripe Treasury payouts flag.',
   },
   {
+    name: 'FEATURE_COACH_CODE_TOOLS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A2 coach code tools kill switch: /coach/codes list, create, rotate, revoke and daily signups (src/invite-codes/coach-code-tools.feature.ts). Only "true" enables; unset/other = 404 coach_code_tools_disabled. The signup ledger is always written.',
+  },
+  {
     name: 'FEATURE_DUNNING_V2',
     values: ['true', 'false'],
     unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Dunning v2 flag.',
+  },
+  {
+    name: 'FEATURE_COACH_BROADCASTS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A4 coach broadcasts (segmented, scheduled, recurring), rich message cards, saved replies and client tags, plus the per-minute broadcast dispatcher. Off: every A4 route answers 503 broadcasts.disabled and the dispatcher does nothing.',
   },
   {
     name: 'FEATURE_COMMUNITY_SCHEMA',
@@ -2043,6 +2074,15 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Community events.',
   },
   {
+    name: 'FEATURE_COACHLESS_HOME',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A1-COACHLESS kill switch for the coachless Home surfaces: GET /coachless/home, the coach-code check/redeem routes and the scripted Roman card routes (404 coachless_disabled while off), and the coachless_home key of GET /me/feature-flags. The owner-only /admin/featured-coach config is not gated so the offer can be set up before the flip.',
+  },
+  {
     name: 'FEATURE_COMMUNITY_SEARCH',
     values: ['true', 'false'],
     unsetIs: 'off',
@@ -2097,6 +2137,13 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Workout builder templates.',
   },
   {
+    name: 'FEATURE_ROMAN_ADJUST_ENABLED',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason:
+      'Kill switch for Roman approve-to-adjust: deterministic recovery suggestions on the coach side (GET/POST /coach/adjustments). Off = every route 404s.',
+  },
+  {
     name: 'FEATURE_NAMED_REGIMES',
     values: ['true', 'false'],
     unsetIs: 'off',
@@ -2117,6 +2164,15 @@ export const ENV_RULES: EnvRule[] = [
     default: 'unset → 100 (ROMAN_DAILY_COST_CAP_USD_DEFAULT); an invalid value also means 100, never no cap',
     reason:
       'Platform-wide daily spend ceiling for all Roman turns together (UTC day, US dollars), a runaway breaker sized to launch volume; the per-client limit is the 429 ROMAN_RATE_LIMIT turn cap and the per-coach bound is the monthly AI credit pool. Over the ceiling Roman answers 503 ROMAN_CAPACITY_REACHED; an unreadable ledger fails closed. No boot validator (ENV_RULES hygiene): RomanService.dailyCostCapUsd treats a non-numeric or negative value as 100.',
+  },
+  {
+    name: 'FEATURE_MESSAGING_CORE_V2',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A3-MSG-CORE kill switch: unified inbox, edit/delete, swipe-reply, pins, mute and read-up-to on the 1:1 coach thread (CoachMessage). Off until audit and device pass.',
   },
   {
     name: 'FEATURE_ROMAN_COACH_REVIEWED_AT',

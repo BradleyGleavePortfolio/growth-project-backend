@@ -42,7 +42,21 @@ export interface ComputeInput {
   windows: AvailabilityWindow[];
   overrides: AvailabilityOverride[];
   bookings: SessionInterval[];
+  // S-AVAIL-122 coach booking options (all optional; omitted = old rules).
+  // Each session keeps `bufferBeforeMinutes` free before it and
+  // `bufferAfterMinutes` free after it, so two sessions are at least
+  // before + after apart. Buffers separate sessions from sessions only; they
+  // may fall outside open hours.
+  bufferBeforeMinutes?: number;
+  bufferAfterMinutes?: number;
+  // At most this many `bookings` may start on one coach-local day; a full day
+  // offers no slots. null/undefined = no cap. `bookings` must then cover the
+  // whole local days touched by [from, to] (the loader widens by a day).
+  dailyMax?: number | null;
 }
+
+/** Why an interval is or is not bookable (isIntervalBookable's detail). */
+export type IntervalBookability = 'open' | 'outside_hours' | 'daily_max' | 'buffer';
 
 export interface ComputedSlot {
   start_at: string; // ISO UTC
@@ -54,12 +68,9 @@ export interface RangeError {
   message: string;
 }
 
-const MAX_RANGE_DAYS = 14;
+export const MAX_RANGE_DAYS = 14;
 
-export function validateRange(
-  from: Date,
-  to: Date,
-): RangeError | null {
+export function validateRange(from: Date, to: Date): RangeError | null {
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) {
     return { code: 'BAD_RANGE', message: 'from and to must be valid ISO timestamps' };
   }
@@ -100,7 +111,13 @@ function localPartsInTz(
   const byType: Record<string, string> = {};
   for (const p of parts) byType[p.type] = p.value;
   const weekdayMap: Record<string, number> = {
-    Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6,
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
   };
   const hour = Number(byType.hour === '24' ? '0' : byType.hour);
   const minute = Number(byType.minute);
@@ -127,15 +144,16 @@ function utcFromLocal(
   tz: string,
 ): Date {
   // First-pass guess: assume the UTC clock matches the local clock.
-  const guess = new Date(Date.UTC(year, month - 1, day, Math.floor(minuteOfDay / 60), minuteOfDay % 60));
+  const guess = new Date(
+    Date.UTC(year, month - 1, day, Math.floor(minuteOfDay / 60), minuteOfDay % 60),
+  );
   // What does that UTC instant project to in `tz`?
   const projected = localPartsInTz(guess, tz);
   const projectedMin =
     (Date.UTC(projected.year, projected.month - 1, projected.day) +
       projected.minuteOfDay * 60_000) /
     60_000;
-  const wantedMin =
-    (Date.UTC(year, month - 1, day) + minuteOfDay * 60_000) / 60_000;
+  const wantedMin = (Date.UTC(year, month - 1, day) + minuteOfDay * 60_000) / 60_000;
   // Offset in minutes between guess-as-tz and what we wanted.
   const offsetMin = projectedMin - wantedMin;
   return new Date(guess.getTime() - offsetMin * 60_000);
@@ -206,8 +224,121 @@ function sliceIntoSlots(r: MinuteRange, durationMin: number): MinuteRange[] {
 }
 
 export function computeOpenSlots(input: ComputeInput): ComputedSlot[] {
-  const { from, to, durationMinutes, coachTimezone, windows, overrides, bookings } = input;
+  const { from, to, durationMinutes } = input;
   if (durationMinutes <= 0) return [];
+  const afterBookings = computeFreeRanges(input);
+
+  // Clip to the requested [from, to] range.
+  const fromMin = from.getTime() / 60_000;
+  const toMin = to.getTime() / 60_000;
+  const clipped: MinuteRange[] = [];
+  for (const r of afterBookings) {
+    const s = Math.max(r.startMin, fromMin);
+    const e = Math.min(r.endMin, toMin);
+    if (e - s >= durationMinutes) clipped.push({ startMin: s, endMin: e });
+  }
+
+  // Slice into discrete duration-sized slots.
+  const sliced: MinuteRange[] = [];
+  for (const r of clipped) sliced.push(...sliceIntoSlots(r, durationMinutes));
+
+  // Sort + dedupe.
+  sliced.sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
+  const fullDays = fullLocalDays(input);
+  const out: ComputedSlot[] = [];
+  let prevStart = -1;
+  for (const s of sliced) {
+    if (s.startMin === prevStart) continue;
+    if (fullDays && fullDays.has(localDayKey(new Date(s.startMin * 60_000), input.coachTimezone))) {
+      continue;
+    }
+    prevStart = s.startMin;
+    out.push({
+      start_at: new Date(s.startMin * 60_000).toISOString(),
+      end_at: new Date(s.endMin * 60_000).toISOString(),
+    });
+  }
+  return out;
+}
+
+// S-SCHED-2: the authoritative booking check. True when [start, end) lies
+// entirely inside the coach's bookable time: recurring windows + extra
+// overrides, minus holidays/blocks, minus the supplied occupying bookings.
+// Containment (not "equals a sliced slot") so a free interval stays bookable
+// after a neighbouring booking shifts the slice grid. `from`/`to` in `input`
+// should bracket [start, end) (the caller passes the interval itself).
+export function isIntervalBookable(
+  input: Omit<ComputeInput, 'durationMinutes'>,
+  start: Date,
+  end: Date,
+): boolean {
+  return intervalBookability(input, start, end) === 'open';
+}
+
+// S-AVAIL-122: the same check with the reason, so a refusal can say why.
+// Order: outside open hours (or overlapping a session, ignoring buffers)
+// first, then the coach's daily maximum, then the buffers.
+export function intervalBookability(
+  input: Omit<ComputeInput, 'durationMinutes'>,
+  start: Date,
+  end: Date,
+): IntervalBookability {
+  const startMin = start.getTime() / 60_000;
+  const endMin = end.getTime() / 60_000;
+  if (!Number.isFinite(startMin) || !Number.isFinite(endMin) || endMin <= startMin) {
+    return 'outside_hours';
+  }
+  const durationMinutes = endMin - startMin;
+  const unbuffered = { ...input, durationMinutes, bufferBeforeMinutes: 0, bufferAfterMinutes: 0 };
+  if (!containsInterval(computeFreeRanges(unbuffered), startMin, endMin)) return 'outside_hours';
+  const fullDays = fullLocalDays(input);
+  if (fullDays && fullDays.has(localDayKey(start, input.coachTimezone))) return 'daily_max';
+  if (!containsInterval(computeFreeRanges({ ...input, durationMinutes }), startMin, endMin)) {
+    return 'buffer';
+  }
+  return 'open';
+}
+
+function containsInterval(free: MinuteRange[], startMin: number, endMin: number): boolean {
+  // Free pieces can abut (a window that ends where an extra override
+  // starts); merge touching pieces before testing containment.
+  const merged: MinuteRange[] = [];
+  for (const r of free.slice().sort((a, b) => a.startMin - b.startMin)) {
+    const last = merged[merged.length - 1];
+    if (last && r.startMin <= last.endMin) {
+      last.endMin = Math.max(last.endMin, r.endMin);
+    } else {
+      merged.push({ startMin: r.startMin, endMin: r.endMin });
+    }
+  }
+  return merged.some((r) => r.startMin <= startMin && r.endMin >= endMin);
+}
+
+/** YYYY-MM-DD of `instant` on the coach's local calendar. */
+export function localDayKey(instant: Date, tz: string): string {
+  const p = localPartsInTz(instant, tz);
+  return ymdString(p.year, p.month, p.day);
+}
+
+// Coach-local days that already hold `dailyMax` bookings (by start time), or
+// null when there is no cap.
+function fullLocalDays(input: Omit<ComputeInput, 'durationMinutes'>): Set<string> | null {
+  const cap = input.dailyMax;
+  if (cap === null || cap === undefined) return null;
+  const counts = new Map<string, number>();
+  for (const b of input.bookings) {
+    const key = localDayKey(b.start_at, input.coachTimezone);
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const full = new Set<string>();
+  for (const [key, n] of counts) if (n >= cap) full.add(key);
+  return full;
+}
+
+// Free minute ranges (UTC minutes) over the local days touched by
+// [from, to]: availability minus overrides minus bookings. Not clipped.
+function computeFreeRanges(input: ComputeInput): MinuteRange[] {
+  const { from, to, coachTimezone, windows, overrides, bookings } = input;
 
   // Determine the local date range to walk. We expand by ±1 day on
   // each side to catch windows that span midnight in tz vs UTC.
@@ -233,12 +364,8 @@ export function computeOpenSlots(input: ComputeInput): ComputedSlot[] {
     const d = date.getUTCDate();
     const dateKey = ymdString(y, m, d);
     const dayOverrides = overridesByDate.get(dateKey) ?? [];
-    const isHoliday = dayOverrides.some(
-      (o) => o.kind === 'holiday' && o.start_minute === null,
-    );
-    const fullDayBlocks = dayOverrides.filter(
-      (o) => o.kind === 'block' && o.start_minute === null,
-    );
+    const isHoliday = dayOverrides.some((o) => o.kind === 'holiday' && o.start_minute === null);
+    const fullDayBlocks = dayOverrides.filter((o) => o.kind === 'block' && o.start_minute === null);
     if (isHoliday || fullDayBlocks.length > 0) {
       // Whole day off — only EXTRA can put it back.
       const extras = dayOverrides.filter((o) => o.kind === 'extra');
@@ -276,44 +403,23 @@ export function computeOpenSlots(input: ComputeInput): ComputedSlot[] {
       if (o.start_minute === null || o.end_minute === null) continue;
       const startUtc = utcFromLocal(y, m, d, o.start_minute, coachTimezone);
       const endUtc = utcFromLocal(y, m, d, o.end_minute, coachTimezone);
-      partialHoles.push({ startMin: startUtc.getTime() / 60_000, endMin: endUtc.getTime() / 60_000 });
+      partialHoles.push({
+        startMin: startUtc.getTime() / 60_000,
+        endMin: endUtc.getTime() / 60_000,
+      });
     }
     const dayResult = subtractRanges(daySolid, partialHoles);
     solid.push(...dayResult);
   }
 
-  // Subtract bookings.
+  // Subtract bookings, widened by the buffers (S-AVAIL-122): a new session
+  // keeps `before` free ahead of it and every booked session keeps `after`
+  // free behind it (and the reverse), so each side needs before + after.
+  const gap =
+    Math.max(0, input.bufferBeforeMinutes ?? 0) + Math.max(0, input.bufferAfterMinutes ?? 0);
   const bookingHoles: MinuteRange[] = bookings.map((b) => ({
-    startMin: b.start_at.getTime() / 60_000,
-    endMin: b.end_at.getTime() / 60_000,
+    startMin: b.start_at.getTime() / 60_000 - gap,
+    endMin: b.end_at.getTime() / 60_000 + gap,
   }));
-  const afterBookings = subtractRanges(solid, bookingHoles);
-
-  // Clip to the requested [from, to] range.
-  const fromMin = from.getTime() / 60_000;
-  const toMin = to.getTime() / 60_000;
-  const clipped: MinuteRange[] = [];
-  for (const r of afterBookings) {
-    const s = Math.max(r.startMin, fromMin);
-    const e = Math.min(r.endMin, toMin);
-    if (e - s >= durationMinutes) clipped.push({ startMin: s, endMin: e });
-  }
-
-  // Slice into discrete duration-sized slots.
-  const sliced: MinuteRange[] = [];
-  for (const r of clipped) sliced.push(...sliceIntoSlots(r, durationMinutes));
-
-  // Sort + dedupe.
-  sliced.sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
-  const out: ComputedSlot[] = [];
-  let prevStart = -1;
-  for (const s of sliced) {
-    if (s.startMin === prevStart) continue;
-    prevStart = s.startMin;
-    out.push({
-      start_at: new Date(s.startMin * 60_000).toISOString(),
-      end_at: new Date(s.endMin * 60_000).toISOString(),
-    });
-  }
-  return out;
+  return subtractRanges(solid, bookingHoles);
 }

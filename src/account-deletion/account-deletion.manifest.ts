@@ -89,6 +89,27 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // service_role policy allows this DELETE. No policy or trigger is changed.
   { model: 'AiProcessingConsentEvent', field: 'user_id', action: del },
   { model: 'CoachMessage', field: 'coach_id', action: detach('coach_id') },
+  // A3-MSG-CORE (#660): who tombstoned or pinned a message in a surviving
+  // thread. The tombstone and the pin stay; the actor id is detached.
+  { model: 'CoachMessage', field: 'deleted_by_id', action: detach('deleted_by_id') },
+  { model: 'CoachMessage', field: 'pinned_by_id', action: detach('pinned_by_id') },
+  // A3-MSG-CORE (#660): per-user thread preferences (mute, inbox pin). The
+  // user's own rows go, and so do other people's rows for a thread with the
+  // deleted user (the thread is removed or detached above).
+  { model: 'CoachThreadState', field: 'user_id', action: del },
+  { model: 'CoachThreadState', field: 'coach_id', action: del },
+  { model: 'CoachThreadState', field: 'client_id', action: del },
+  // A4 broadcasts (#659). Copies already sent are ordinary CoachMessage rows
+  // (handled above; their cards cascade with the message). A broadcast the
+  // user owns as tenant or wrote as author is deleted with its runs and
+  // deliveries, so a removed author never keeps sending (A-659-7). Deliveries
+  // addressed to the user, their saved replies and client tags go too.
+  { model: 'CoachBroadcast', field: 'author_user_id', action: del },
+  { model: 'CoachBroadcast', field: 'coach_id', action: del },
+  { model: 'CoachBroadcastDelivery', field: 'recipient_id', action: del },
+  { model: 'CoachSavedReply', field: 'owner_user_id', action: del },
+  { model: 'CoachClientTag', field: 'coach_id', action: del },
+  { model: 'CoachClientTag', field: 'client_id', action: del },
   { model: 'Message', field: 'sender_id', action: del },
   { model: 'Message', field: 'recipient_id', action: del },
   { model: 'MessageDraft', field: 'coach_id', action: del },
@@ -147,6 +168,15 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'Lesson', field: 'coach_id', action: retain(FROZEN_PLAN) },
 
   // ── Workout and meal programming
+  // Roman approve-to-adjust (#655): a proposal carries the client's recovery
+  // signals, so it goes with the client and with the proposing or deciding
+  // coach; the change it applied stays in the client's assignment snapshot.
+  // Events cascade from their proposal. The append-only trigger refuses
+  // UPDATE, so an actor's events are deleted, never detached.
+  { model: 'WorkoutAdjustmentProposal', field: 'client_id', action: del },
+  { model: 'WorkoutAdjustmentProposal', field: 'coach_id', action: del },
+  { model: 'WorkoutAdjustmentProposal', field: 'decided_by_id', action: del },
+  { model: 'WorkoutAdjustmentEvent', field: 'actor_id', action: del },
   { model: 'ClientWorkoutAssignment', field: 'client_id', action: del },
   { model: 'ClientWorkoutAssignment', field: 'assigned_by_coach_id', action: retain(FROZEN_PLAN) },
   // S-MWB Programs (#640, B-640-3): the client's own program copies (bulk
@@ -244,6 +274,9 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'Notification', field: 'user_id', action: del },
   { model: 'NotificationDigestLog', field: 'user_id', action: del },
   { model: 'NotificationDeliveryLog', field: 'user_id', action: del },
+  // B-NOTIF-5: queued and sent device pushes (lock-screen copy, the push
+  // token used, receipts). Erased with the account; nothing is retained.
+  { model: 'PushOutbox', field: 'user_id', action: del },
   { model: 'NudgeLog', field: 'user_id', action: del },
   { model: 'PaymentReminder', field: 'recipient_user_id', action: del },
   { model: 'EmailSendLog', field: 'recipient_email', action: del, match: 'email' },
@@ -292,6 +325,9 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CoachAIBudget', field: 'coach_user_id', action: retain(FINANCE) },
   { model: 'CoachLtvPeak', field: 'coach_id', action: del },
   { model: 'ExtensionPairCode', field: 'coach_id', action: del },
+  // A2 signup ledger (#658 C-658-2): both sides are deleted with the person.
+  { model: 'InviteRedemption', field: 'coach_id', action: del },
+  { model: 'InviteRedemption', field: 'client_user_id', action: del },
   { model: 'InviteCode', field: 'coach_id', action: del },
   { model: 'InviteCode', field: 'invited_by_user_id', action: detach('invited_by_user_id') },
   { model: 'InviteCode', field: 'accepted_by_user_id', action: detach('accepted_by_user_id') },
@@ -300,6 +336,19 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
     field: 'intended_email',
     action: detach('intended_email'),
     match: 'email',
+  },
+  // A1-COACHLESS (#657): the redemption ledger and the Roman card state are the
+  // user's own rows (FK cascade); a ledger row naming an erased coach replays
+  // that coach's card, so it goes too. The featured-coach singleton stays and
+  // only loses the erased person (FK SET NULL for the coach).
+  { model: 'CoachCodeRedemption', field: 'user_id', action: del },
+  { model: 'CoachCodeRedemption', field: 'coach_id', action: del },
+  { model: 'CoachlessPromptState', field: 'user_id', action: del },
+  { model: 'FeaturedCoachConfig', field: 'coach_user_id', action: detach('coach_user_id') },
+  {
+    model: 'FeaturedCoachConfig',
+    field: 'updated_by_user_id',
+    action: detach('updated_by_user_id'),
   },
 
   // ── Teams and sub-coaches (B-608-6)
@@ -462,6 +511,19 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'ConnectAccount', field: 'coach_user_id', action: retain(FINANCE) },
   { model: 'SplitLedgerEntry', field: 'payee_user_id', action: retain(FINANCE) },
   { model: 'ConnectTransfer', field: 'destination_user_id', action: retain(FINANCE) },
+  // S-FEE (#627, C-627-2): per-charge settlement, held-balance recovery and
+  // payout-adjustment records. Amounts, Stripe ids and system-generated
+  // amount notices only; they reconcile the retained ledger and transfers.
+  { model: 'ChargeSettlement', field: 'coach_user_id', action: retain(FINANCE) },
+  { model: 'ChargeSettlement', field: 'head_coach_user_id', action: retain(FINANCE) },
+  { model: 'PayeeRecovery', field: 'payee_user_id', action: retain(FINANCE) },
+  {
+    model: 'PayoutAdjustmentNotice',
+    field: 'payee_user_id',
+    action: retain(
+      'payout adjustment record (amounts, Stripe ids, system-generated amount notice; no contact data) backing the retained ledger and recovery rows',
+    ),
+  },
   { model: 'ChargeRefund', field: 'initiated_by_user_id', action: detach('initiated_by_user_id') },
   { model: 'PartialRefundDecision', field: 'decided_by_coach_user_id', action: retain(FINANCE) },
   { model: 'CoachCreditPackPurchase', field: 'coach_user_id', action: retain(FINANCE) },

@@ -36,8 +36,11 @@ import { PrismaModule } from './prisma/prisma.module';
 import { KmsModule } from './common/kms/kms.module';
 import { HealthModule } from './health/health.module';
 import { InviteCodesModule } from './invite-codes/invite-codes.module';
+import { CoachlessModule } from './coachless/coachless.module';
 import { InviteGrantModule } from './invite-grant/invite-grant.module';
 import { MessagingModule } from './messaging/messaging.module';
+// A4-MSG-BROADCAST — coach broadcasts, cards, saved replies (FEATURE_COACH_BROADCASTS, default off).
+import { BroadcastsModule } from './broadcasts/broadcasts.module';
 import { MessagesSafetyModule } from './messages-safety/messages-safety.module';
 import { NudgesModule } from './nudges/nudges.module';
 import { MealPlansModule } from './meal-plans/meal-plans.module';
@@ -62,6 +65,7 @@ import { DunningV2Module } from './checkout/dunning-v2/dunning-v2.module';
 import { DunningLockoutGuard } from './checkout/dunning-v2/dunning-lockout.guard';
 import { PayoutsV2Module } from './payouts-v2/payouts-v2.module';
 import { RomanModule } from './roman/roman.module';
+import { RomanAdjustModule } from './roman-adjust/roman-adjust.module';
 import { AiConsentModule } from './ai-consent/ai-consent.module';
 import { AiEgressModule } from './ai-egress/ai-egress.module';
 import { PtmModule } from './ptm/ptm.module';
@@ -106,6 +110,7 @@ import { TeamModule } from './team/team.module';
 import { SubCoachesModule } from './sub-coaches/sub-coaches.module';
 import { TalentMarketplaceModule } from './talent-marketplace/talent-marketplace.module';
 import { CoachConnectModule } from './coach-connect/coach-connect.module';
+import { CoachMoneyModule } from './coach-money/coach-money.module';
 // Concierge scheduling (PR #142) — private 1:1 coach <-> client booking
 // with optional Google Calendar two-way sync. See
 // docs/rfcs/142-concierge-scheduling.md.
@@ -228,9 +233,12 @@ import { WearablesModule } from './wearables/wearables.module';
     WaterModule,
     HealthModule,
     InviteCodesModule,
+    // A1-COACHLESS — coachless Home, featured-coach config, coach-code redemption.
+    CoachlessModule,
     // Clinic C01 — invite-code → package grants, free-package claims, revoke.
     InviteGrantModule,
     MessagingModule,
+    BroadcastsModule,
     // Apple App Review 1.2 — abuse-report + per-user blocklist endpoints.
     // Safety surface, NOT a paid feature. Reachable by every authenticated
     // user; intentionally absent from PAID_ROUTES.
@@ -302,6 +310,8 @@ import { WearablesModule } from './wearables/wearables.module';
     // DunningV2Module / PayoutsV2Module mount-then-self-gate posture. Phase 2
     // (mobile UI) and Phase 3 (push/email) follow. See src/roman/.
     RomanModule,
+    // Roman approve-to-adjust (kill switch FEATURE_ROMAN_ADJUST_ENABLED, default off).
+    RomanAdjustModule,
     // R2a — AI processing consent ledger (box 2 of the D2 consent screen).
     // Mounted always; /me/ai-consent returns 503 AI_CONSENT_UNAVAILABLE while
     // FEATURE_AI_CONSENT_LEDGER_ENABLED is OFF (default). See src/ai-consent/.
@@ -365,6 +375,7 @@ import { WearablesModule } from './wearables/wearables.module';
     SubCoachesModule,
     TalentMarketplaceModule,
     CoachConnectModule,
+    CoachMoneyModule,
     // Concierge scheduling — private 1:1 coach<->client booking with
     // optional Google Calendar two-way sync. Stub adapters by default
     // so the module loads without Google OAuth credentials configured;

@@ -87,6 +87,7 @@ function makeAttachPrisma(seed: {
         async ({ where }: { where: { coach_id: string } }) => subs.get(where.coach_id) ?? null,
       ),
     },
+    inviteRedemption: { create: jest.fn(async ({ data }: any) => ({ id: 'red-1', ...data })) }, // A2 signup ledger
     inviteCode: {
       findUnique: jest.fn(async ({ where }: { where: { id?: string; code?: string } }) => {
         const row = [...inviteRows.values()].find((r) =>
@@ -327,7 +328,7 @@ describe('C03 — attachUserToCoachByCode re-parent rules', () => {
     );
   });
 
-  it('an exhausted InviteCode fails the conditional bump → invite_code_invalid, user not attached', async () => {
+  it('an exhausted InviteCode is refused with code_exhausted (A2 specific copy), user not attached', async () => {
     const prisma = makeAttachPrisma({
       users: [{ id: 'stu-1', email: 'one@example.com', role: 'student', coach_id: null }],
       coaches: [{ id: COACH_A, code: 'GP-COACHA' }],
@@ -347,7 +348,7 @@ describe('C03 — attachUserToCoachByCode re-parent rules', () => {
     const err = await captureHttp(
       buildInviteCodes(prisma).attachUserToCoachByCode('stu-1', 'FULL-ROOM'),
     );
-    expect(inviteAttachErrorCode(err)).toBe('invite_code_invalid');
+    expect(inviteAttachErrorCode(err)).toBe('code_exhausted');
     expect(prisma.user.updateMany).not.toHaveBeenCalled();
   });
 

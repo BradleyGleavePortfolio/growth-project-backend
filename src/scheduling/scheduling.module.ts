@@ -9,12 +9,15 @@ import { GoogleOAuthController } from './google-oauth/google-oauth.controller';
 import { GoogleOAuthService } from './google-oauth/google-oauth.service';
 import { CalendarSyncJob } from './jobs/calendar-sync.job';
 import { SessionReminderJob } from './jobs/reminder.job';
+import { BookingRequestExpiryJob } from './jobs/request-expiry.job';
+import { SchedulingJobLeaseService } from './jobs/scheduling-job-lease.service';
 import { GoogleCalendarAdapter } from './providers/google-calendar.adapter';
 import { GoogleMeetAdapter } from './providers/google-meet.adapter';
 import { SchedulingProviderRegistry } from './providers/scheduling-provider.registry';
 import { StubCalendarAdapter } from './providers/stub-calendar.adapter';
 import { StubVideoAdapter } from './providers/stub-video.adapter';
 import { ZoomVideoAdapter } from './providers/zoom-video.adapter';
+import { SchedulingAccessService } from './scheduling-access.service';
 import { SchedulingAvailabilityService } from './scheduling-availability.service';
 import { SchedulingController } from './scheduling.controller';
 import { SchedulingOpenSlotsService } from './scheduling-open-slots.service';
@@ -48,6 +51,8 @@ import { SchedulingWebhookController } from './scheduling-webhook.controller';
     SchedulingSessionLifecycleService,
     SchedulingOpenSlotsService,
     SchedulingAvailabilityService,
+    // S-SCHED-2: who may browse/book which coach (T4 ownership rules).
+    SchedulingAccessService,
     SchedulingProviderRegistry,
     StubCalendarAdapter,
     StubVideoAdapter,
@@ -55,6 +60,9 @@ import { SchedulingWebhookController } from './scheduling-webhook.controller';
     GoogleMeetAdapter,
     ZoomVideoAdapter,
     SessionReminderJob,
+    // S-SCHED-5: request auto-expiry sweep (single runner via SchedulingJobLease).
+    BookingRequestExpiryJob,
+    SchedulingJobLeaseService,
     CalendarSyncJob,
     GoogleOAuthService,
     // Real Google Calendar REST client. Stubbed adapter

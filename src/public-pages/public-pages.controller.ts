@@ -4,6 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import {
+  renderBillingUpdateCardPage,
   renderDownloadPage,
   renderSignupPage,
   sanitizeInviteCode,
@@ -48,6 +49,19 @@ export class PublicPagesController {
   @Throttle({ default: { ttl: 60000, limit: 60 } })
   androidDownload(@Res() res: Response) {
     return this.send(res, renderDownloadPage('android'));
+  }
+
+  // S-DUNNING-R2 (OR-110-2) — target of the "Update card" button in every
+  // dunning email. With the app installed the OS opens the native card
+  // screen (AASA / assetlinks list this path); otherwise this calm page asks
+  // the client to open the app. Static and identical for everyone.
+  @Public()
+  @Get('billing/update-card')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  billingUpdateCard(@Res() res: Response) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.status(HttpStatus.OK).send(renderBillingUpdateCardPage());
   }
 
   // Canonical /signup. An invite code may arrive as ?code=… (the form
@@ -97,6 +111,16 @@ export class PublicPagesController {
   @Throttle({ default: { ttl: 60000, limit: 60 } })
   privacy(@Res() res: Response) {
     return this.sendTrust(res, renderTrustPage('privacy'));
+  }
+
+  // Consumer Health Data Privacy Policy (Washington My Health My Data Act,
+  // RCW 19.373.020). Linked from every trust, help, signup and download page
+  // and from the mobile Trust Center.
+  @Public()
+  @Get('consumer-health-privacy')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  consumerHealthPrivacy(@Res() res: Response) {
+    return this.sendTrust(res, renderTrustPage('consumer-health'));
   }
 
   @Public()
@@ -172,6 +196,15 @@ export class PublicPagesController {
   @Throttle({ default: { ttl: 60000, limit: 60 } })
   helpContact(@Res() res: Response) {
     return this.sendHelp(res, 'contact');
+  }
+
+  // Google Play account-deletion page: public, no login, so a person can ask
+  // for deletion without installing the app.
+  @Public()
+  @Get('help/delete-account')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  helpDeleteAccount(@Res() res: Response) {
+    return this.sendHelp(res, 'delete-account');
   }
 
   private send(res: Response, html: string) {

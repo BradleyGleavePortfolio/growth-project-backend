@@ -117,8 +117,10 @@ FEATURE_COMMUNITY_AI_TRIAGE | off | fly secrets unset -a backend-spring-lake-389
 FEATURE_COMMUNITY_CHALLENGES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_CHALLENGES | "FEATURE_COMMUNITY_CHALLENGES": "unset"
 FEATURE_COMMUNITY_EVENTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_EVENTS | "FEATURE_COMMUNITY_EVENTS": "unset"
 FEATURE_COMMUNITY_CLASSROOM_POSTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COMMUNITY_CLASSROOM_POSTS | "FEATURE_COMMUNITY_CLASSROOM_POSTS": "unset"
+FEATURE_MESSAGING_CORE_V2 | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MESSAGING_CORE_V2 | "FEATURE_MESSAGING_CORE_V2": "unset"
 BOOKING_REMINDERS_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 BOOKING_REMINDERS_ENABLED | "BOOKING_REMINDERS_ENABLED": "unset"
 SIGNUP_ROLE_CHOICE_ENABLED | on | fly secrets set -a backend-spring-lake-3890 SIGNUP_ROLE_CHOICE_ENABLED=false (never unset: that turns it on) | "SIGNUP_ROLE_CHOICE_ENABLED": "false"
+FEATURE_COACHLESS_HOME | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACHLESS_HOME | "FEATURE_COACHLESS_HOME": "unset"
 COACH_WELCOME_SCHEDULER_ENABLED | on | fly secrets set -a backend-spring-lake-3890 COACH_WELCOME_SCHEDULER_ENABLED=false (never unset: that turns it on) | "COACH_WELCOME_SCHEDULER_ENABLED": "false"
 WORKOUT_REMINDERS_ENABLED | on | fly secrets set -a backend-spring-lake-3890 WORKOUT_REMINDERS_ENABLED=false (never unset: that turns it on) | "WORKOUT_REMINDERS_ENABLED": "false"
 FEATURE_WEARABLES_INGEST_POST | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_WEARABLES_INGEST_POST | "FEATURE_WEARABLES_INGEST_POST": "unset"
@@ -126,6 +128,8 @@ FEATURE_MWB_TEMPLATES | off | fly secrets unset -a backend-spring-lake-3890 FEAT
 FEATURE_MWB_AUTOSAVE_UNDO | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MWB_AUTOSAVE_UNDO | "FEATURE_MWB_AUTOSAVE_UNDO": "unset"
 FEATURE_NAMED_REGIMES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_NAMED_REGIMES | "FEATURE_NAMED_REGIMES": "unset"
 FEATURE_DUNNING_V2 | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_DUNNING_V2 | "FEATURE_DUNNING_V2": "unset"
+FEATURE_COACH_CODE_TOOLS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_CODE_TOOLS | "FEATURE_COACH_CODE_TOOLS": "unset"
+FEATURE_COACH_BROADCASTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_BROADCASTS | "FEATURE_COACH_BROADCASTS": "unset"
 ```
 
 ## Deploy-window sequences
@@ -138,6 +142,27 @@ FEATURE_DUNNING_V2 | off | fly secrets unset -a backend-spring-lake-3890 FEATURE
 4. Run plan. The ledger row must read `Deployed | match | keep`. If it does not (for example, the deploy ran from a runner that did not see the staged version), run apply with `deploy_staged=true`. That stages the value again and applies it with one rolling restart, then proves it in the machine.
 
 **BOOKING_REMINDERS_ENABLED=on, together with #632 (OR-110-5).** Same sequence with `"BOOKING_REMINDERS_ENABLED": "on"`. Only the literal `on` turns reminders on after #632.
+
+**FEATURE_WEARABLES_INGEST_POST=true (Wave B, on-device wearables).** Apply only after mobile #378 (refresh paced under the 60 per minute ingest limit; one sleep session per night) is approved and merged; the backend code is already deployed, so no deploy is needed:
+
+1. Merge the one-line flip PR (`"FEATURE_WEARABLES_INGEST_POST": "true"`).
+2. Run apply with `deploy_staged=true` (one rolling restart).
+3. Run plan. The row must read `Deployed | match | keep`.
+4. Owner device pass: connect Apple Health and Health Connect on a client account; both import without a 429 and the sleep for one night is counted once.
+
+Roll back with `"FEATURE_WEARABLES_INGEST_POST": "unset"` (or the emergency kill in the table above). The ingest routes then return `503 wearables_ingest_disabled` and the app keeps its saved progress.
+
+**Programs on at launch: FEATURE_MWB_TEMPLATES, FEATURE_MWB_AUTOSAVE_UNDO, FEATURE_NAMED_REGIMES=true and MWB_AUTOSAVE_LOCK_TOKEN_SECRET=github-secret (Wave B, coach Programs library).** The backend code (MWB-3, #733) is already deployed, so no deploy is needed. The autosave flag throws on every request without the lock-token secret, so the four lines flip in one PR and the secret must exist first:
+
+1. The owner creates the GitHub Actions secret `MWB_AUTOSAVE_LOCK_TOKEN_SECRET` on this repository (64 or more hex characters, for example the output of `openssl rand -hex 32`) and confirms it exists. Nobody else creates it and it is never written to a file.
+2. Merge the flip PR (`"FEATURE_MWB_TEMPLATES": "true"`, `"FEATURE_MWB_AUTOSAVE_UNDO": "true"`, `"FEATURE_NAMED_REGIMES": "true"`, `"MWB_AUTOSAVE_LOCK_TOKEN_SECRET": "github-secret"`).
+3. Run plan. The secret row must pass its shape check; a missing or short secret fails the plan before anything is written.
+4. Run apply with `deploy_staged=true` (one rolling restart).
+5. Run plan. All four rows must read `Deployed | match | keep`.
+6. Before the 10-07 build ships to coaches, the mobile `EXPO_PUBLIC_FF_MWB_PROGRAMS` and `EXPO_PUBLIC_FF_MWB_AUTOSAVE` flip PR is merged, so the Programs tab and autosave reach routes that are on.
+7. Owner device pass on a coach account: create a program, edit a workout (autosave and undo), assign it to a client.
+
+Roll back with `"unset"` on the three flags (the emergency kills in the table above). The program, autosave, undo and regime routes then return 404 and saved programs are kept. Leave the secret line as is.
 
 **Community core (Wave A).** Flip `FEATURE_COMMUNITY_API` and the core set (`_POSTS`, `_MESSAGES`, `_PUSH`, `_REALTIME`, and `_VOICE_NOTES` once its audit and device pass are done) in one PR, after the community report/block lane (#610) is deployed. The preconditions reject surface flags without the API flag.
 

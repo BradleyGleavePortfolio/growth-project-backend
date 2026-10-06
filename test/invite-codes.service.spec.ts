@@ -39,6 +39,7 @@ describe('InviteCodesService', () => {
       coachSubscription: {
         findUnique: jest.fn(async () => ({ status: 'active' })),
       },
+      inviteRedemption: { create: jest.fn(async ({ data }: any) => ({ id: 'red-1', ...data })) }, // A2 signup ledger
       $transaction: jest.fn((cb: any) => cb(prismaMock)),
     };
     const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
@@ -206,7 +207,7 @@ describe('InviteCodesService', () => {
       await service.revokeForCoach('coach-1', 'ic-1');
       expect(prismaMock.inviteCode.update).toHaveBeenCalledWith({
         where: { id: 'ic-1' },
-        data: { revoked: true },
+        data: { revoked: true, revoked_at: expect.any(Date) },
       });
     });
 
