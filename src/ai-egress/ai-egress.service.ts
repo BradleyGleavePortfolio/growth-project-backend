@@ -55,6 +55,26 @@ import {
 
 export type AnthropicStream = ReturnType<Anthropic['messages']['stream']>;
 
+/**
+ * B-ROMANIQ-125: Claude Sonnet 5.5's lowest thinking setting, "no up-front
+ * thinking" (platform.claude.com/docs/en/models/sonnet-5-5/migration-guide:
+ * "To turn off up-front thinking on Claude Sonnet 5.5, send thinking:
+ * {type: between_tools}"; `disabled` returns a 400 there). The installed SDK's
+ * ThinkingConfigParam (enabled | disabled | adaptive) predates it; the SDK
+ * sends the request body as given, so the gate accepts the wider union and
+ * hands the SDK its own param type at the one call below.
+ */
+export interface AnthropicThinkingBetweenTools {
+  type: 'between_tools';
+}
+export type AnthropicThinkingParam = Anthropic.ThinkingConfigParam | AnthropicThinkingBetweenTools;
+export type AnthropicCreateParams = Omit<Anthropic.MessageCreateParamsNonStreaming, 'thinking'> & {
+  thinking?: AnthropicThinkingParam;
+};
+export type AnthropicStreamParams = Omit<Anthropic.MessageStreamParams, 'thinking'> & {
+  thinking?: AnthropicThinkingParam;
+};
+
 /** The part of an Anthropic client the gate uses (real client or a test fake). */
 export interface AnthropicMessagesClient {
   messages: Pick<Anthropic['messages'], 'create' | 'stream'>;
@@ -295,13 +315,14 @@ export class AiEgressService {
     handle: AnthropicHandle,
     subject: AiDataSubject,
     surface: AiEgressSurface,
-    params: Anthropic.MessageCreateParamsNonStreaming,
+    params: AnthropicCreateParams,
     options?: Anthropic.RequestOptions,
     send?: AiEgressSendOptions,
   ): Promise<Anthropic.Message> {
     const client = this.anthropicClientOf(handle, surface);
+    const body = params as Anthropic.MessageCreateParamsNonStreaming;
     return this.sendGated(subject, 'anthropic', surface, send, options?.signal, () =>
-      client.messages.create(params, { ...options, maxRetries: 0 }),
+      client.messages.create(body, { ...options, maxRetries: 0 }),
     );
   }
 
@@ -315,13 +336,14 @@ export class AiEgressService {
     handle: AnthropicHandle,
     subject: AiDataSubject,
     surface: AiEgressSurface,
-    params: Anthropic.MessageStreamParams,
+    params: AnthropicStreamParams,
     options?: Anthropic.RequestOptions,
     send?: AiEgressSendOptions,
   ): Promise<AnthropicStream> {
     const client = this.anthropicClientOf(handle, surface);
+    const body = params as Anthropic.MessageStreamParams;
     return this.sendGated(subject, 'anthropic', surface, send, options?.signal, async () => {
-      const stream = client.messages.stream(params, { ...options, maxRetries: 0 });
+      const stream = client.messages.stream(body, { ...options, maxRetries: 0 });
       if (typeof stream.withResponse === 'function') await stream.withResponse();
       return stream;
     });

@@ -35,7 +35,6 @@ import {
   noClientDataSubject,
 } from '../../ai-egress/ai-egress.types';
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
-import { COACH_AI_MODEL } from '../../ai/coach/coach-ai.constants';
 import { describeFailure } from '../../observability/log-pii';
 import { usableTimeZone } from '../../notifications/local-time';
 
@@ -67,12 +66,23 @@ import {
 // out to the public API.
 export const BRIEF_ANTHROPIC_CLIENT_TOKEN = 'BRIEF_ANTHROPIC_CLIENT';
 
-// The brief uses the same pinned model as the rest of Coach AI. The former id
+// B-ROMANIQ-125: the brief has its own model, Claude Opus 5.5 ($4 / $20 per
+// MTok, docs.anthropic.com/en/docs/about-claude/models/overview): one call
+// per coach per day, so the best reasoning model. (The former id
 // claude-3-5-sonnet-20241022 was retired by the provider, so every call
-// failed and every coach got the deterministic fallback narrative.
-export const BRIEF_CLAUDE_MODEL = COACH_AI_MODEL;
-export const BRIEF_MAX_TOKENS = 300;
-export const BRIEF_TEMPERATURE = 0.6;
+// failed and every coach got the deterministic fallback narrative.)
+export const BRIEF_CLAUDE_MODEL = 'claude-opus-5-5';
+// Opus 5.5 always thinks (adaptive, cannot be disabled) and rejects
+// non-default temperature (platform.claude.com/docs/en/models/opus-5-5/
+// migration-guide), so the request has no thinking field and no temperature.
+// max_tokens covers thinking plus the reply, so it has room above the
+// ~200-token narrative. Effort `low`: the brief is prepared inside
+// GET /coach/brief/today on a coach's first open of the day, and two attempts
+// (call + repair) at BRIEF_ANTHROPIC_TIMEOUT_MS must fit the app's 40 s
+// request timeout; at low effort Opus "can skip thinking entirely for simpler
+// problems" (platform.claude.com/docs/en/build-with-claude/effort).
+export const BRIEF_MAX_TOKENS = 2048;
+export const BRIEF_EFFORT = 'low' as const;
 export const BRIEF_ANTHROPIC_TIMEOUT_MS = 15_000;
 export const BRIEF_MAX_NARRATIVE_CHARS = 600;
 // What the prompt asks for. Kept well under the hard cap so an ordinary
@@ -1557,7 +1567,7 @@ export class CoachBriefService {
         {
           model: BRIEF_CLAUDE_MODEL,
           max_tokens: BRIEF_MAX_TOKENS,
-          temperature: BRIEF_TEMPERATURE,
+          output_config: { effort: BRIEF_EFFORT },
           system: systemPrompt,
           messages: [{ role: 'user', content: userPrompt }],
         },

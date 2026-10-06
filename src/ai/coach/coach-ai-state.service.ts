@@ -9,7 +9,12 @@ import { ConfigService } from '@nestjs/config';
 import { AiEgressService, AnthropicHandle } from '../../ai-egress/ai-egress.service';
 import { noClientDataSubject } from '../../ai-egress/ai-egress.types';
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
-import { COACH_AI_MODEL, COACH_AI_CAPABILITIES } from './coach-ai.constants';
+import {
+  COACH_AI_CAPABILITIES,
+  COACH_AI_EFFORT,
+  COACH_AI_MODEL,
+  COACH_AI_THINKING,
+} from './coach-ai.constants';
 import { ANTHROPIC_CLIENT_TOKEN } from '../adapters/anthropic.adapter';
 
 // Coach AI module state. On boot, if ANTHROPIC_API_KEY is present, run a
@@ -78,6 +83,9 @@ export class CoachAIStateService implements OnApplicationBootstrap {
         {
           model: COACH_AI_MODEL,
           max_tokens: 4,
+          // Same settings as every real call, so the probe proves them.
+          thinking: COACH_AI_THINKING,
+          output_config: { effort: COACH_AI_EFFORT },
           messages: [{ role: 'user', content: 'ping' }],
         },
       );

@@ -541,6 +541,15 @@ describe('CoachBriefService.callClaude', () => {
     expect(result.generated_by).toBe('ai');
     expect(result.narrative).toBe(valid);
     expect(anthropic.messages.create).toHaveBeenCalledTimes(1);
+    // B-ROMANIQ-125: Opus 5.5 rejects non-default temperature and always
+    // thinks, so the request carries no temperature, no thinking field and an
+    // explicit effort; max_tokens leaves room for thinking plus the reply.
+    const body = anthropic.messages.create.mock.calls[0][0];
+    expect(body.model).toBe('claude-opus-5-5');
+    expect(body).not.toHaveProperty('temperature');
+    expect(body).not.toHaveProperty('thinking');
+    expect(body.output_config).toEqual({ effort: 'low' });
+    expect(body.max_tokens).toBe(2048);
   });
 
   it('attempts one repair then falls back when Claude keeps violating the contract', async () => {

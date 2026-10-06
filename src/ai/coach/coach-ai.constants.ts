@@ -1,3 +1,5 @@
+import type { AnthropicThinkingBetweenTools } from '../../ai-egress/ai-egress.service';
+
 // Coach AI v1 — pinned constants.
 //
 // COACH_AI_MODEL is the single source of truth for which Claude model the
@@ -6,14 +8,26 @@
 // uses this value verbatim so a model migration is a one-line diff +
 // regenerate-prompt-snapshots.
 //
-// Sonnet pricing as of 2026-05-13 (Anthropic public price card):
-//   * Input tokens:  $3.00 per 1M tokens
-//   * Output tokens: $15.00 per 1M tokens
+// B-ROMANIQ-125: Claude Sonnet 5.5 (was claude-sonnet-4-6). List price
+// (docs.anthropic.com/en/docs/about-claude/models/overview):
+//   * Input tokens:  $2.00 per 1M tokens
+//   * Output tokens: $10.00 per 1M tokens
 // If pricing changes, update both numbers. Cost is computed in
-// AnthropicAdapter and written to AICallLog.costCents.
-export const COACH_AI_MODEL = 'claude-sonnet-4-6';
-export const INPUT_USD_PER_MTOK = 3.0;
-export const OUTPUT_USD_PER_MTOK = 15.0;
+// AnthropicAdapter and written to AICallLog.costCents; the coach AI credit
+// pool and the gateway meter price with the same two numbers.
+export const COACH_AI_MODEL = 'claude-sonnet-5-5';
+export const INPUT_USD_PER_MTOK = 2.0;
+export const OUTPUT_USD_PER_MTOK = 10.0;
+
+// Sonnet 5.5 thinks by default when a request has no `thinking` field, and
+// rejects `thinking: {type: 'disabled'}` and non-default temperature/top_p/
+// top_k with a 400 (platform.claude.com/docs/en/models/sonnet-5-5/
+// migration-guide). Every coach AI request therefore sends the lowest
+// thinking setting (no up-front thinking, as on claude-sonnet-4-6, so
+// max_tokens still covers only the reply) at `high` effort, the effort
+// claude-sonnet-4-6 ran these calls at by default, and no sampling params.
+export const COACH_AI_THINKING: AnthropicThinkingBetweenTools = { type: 'between_tools' };
+export const COACH_AI_EFFORT = 'high' as const;
 
 // Centralized capability strings — used by AICallLog.capability and the
 // throttle decorators. Keeping these in one place so a typo in a string

@@ -182,7 +182,7 @@ export const AI_GUIDE_POOL_EMPTY_REPLY_COACH =
 /** Fixed framing allowance (roles, separators) added to the payload's UTF-8 bytes. */
 export const AI_GUIDE_REQUEST_OVERHEAD_TOKENS = 256;
 
-/** Provider cost of one call in whole cents, rounded up ($3 / $15 per million tokens). */
+/** Provider cost of one call in whole cents, rounded up (INPUT/OUTPUT_USD_PER_MTOK list price). */
 export function aiGuideCostCents(inputTokens: number, outputTokens: number): number {
   return Math.ceil(
     ((inputTokens * INPUT_USD_PER_MTOK + outputTokens * OUTPUT_USD_PER_MTOK) / 1_000_000) * 100,
@@ -597,7 +597,6 @@ Now answer the user's next message using the rules above. Keep the answer under 
             // P3 — use the shared MAX_TOKENS_PER_CALL constant so the provider
             // output cap and the reservation can never desynchronize.
             maxTokens: MAX_TOKENS_PER_CALL,
-            temperature: 0.7,
             capability: COACH_AI_CAPABILITIES.CLIENT_CHAT_FALLBACK,
             clientId: userId,
             dataSubject,

@@ -205,11 +205,11 @@ describe('AI Guide draws from the coach monthly AI credit pool (B-S-AICOST-123-1
     expect(complete).toHaveBeenCalledTimes(1);
     expect(result.model_used).toBe('anthropic');
     expect(result.code).toBeUndefined();
-    // 2,000 in + 400 out = $0.012 -> 2 cents (rounded up).
-    expect(aiGuideCostCents(2000, 400)).toBe(2);
+    // 2,000 in + 400 out at $2 / $10 = $0.008 -> 1 cent (rounded up).
+    expect(aiGuideCostCents(2000, 400)).toBe(1);
     expect(b.recordUsage).toHaveBeenCalledTimes(1);
-    expect(b.recordUsage.mock.calls[0][0]).toMatchObject({ coachId: 'head-1', actualCostCents: 2 });
-    expect(pools['head-1'].used).toBe(102);
+    expect(b.recordUsage.mock.calls[0][0]).toMatchObject({ coachId: 'head-1', actualCostCents: 1 });
+    expect(pools['head-1'].used).toBe(101);
   });
 
   it('a crisis message gets the safety reply and never touches the pool', async () => {

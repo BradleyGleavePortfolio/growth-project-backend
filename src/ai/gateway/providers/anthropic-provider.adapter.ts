@@ -46,7 +46,6 @@ export class AnthropicProviderAdapter implements AiProviderAdapter {
       { system: req.systemPrompt, user: userText },
       {
         maxTokens: req.maxTokens,
-        temperature: req.temperature,
         capability: req.capability || 'gateway',
         // R2b — consent is re-read inside the adapter's egress call.
         dataSubject: req.dataSubject,

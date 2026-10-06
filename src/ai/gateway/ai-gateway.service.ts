@@ -7,6 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
+import { INPUT_USD_PER_MTOK, OUTPUT_USD_PER_MTOK } from '../coach/coach-ai.constants';
 import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 import { PrismaService } from '../../prisma.service';
@@ -670,8 +671,9 @@ function estimateAnthropicCostCents(response: AiProviderResponse): number {
     // Conservative default — favours over-counting on missing data.
     return 5;
   }
-  const inputCostUsd = (promptTok ?? 0) * (3 / 1_000_000);
-  const outputCostUsd = (responseTok ?? 0) * (15 / 1_000_000);
+  // B-ROMANIQ-125: the coach AI model's list price (was a hard-coded $3 / $15).
+  const inputCostUsd = (promptTok ?? 0) * (INPUT_USD_PER_MTOK / 1_000_000);
+  const outputCostUsd = (responseTok ?? 0) * (OUTPUT_USD_PER_MTOK / 1_000_000);
   const totalCents = Math.ceil((inputCostUsd + outputCostUsd) * 100);
   return Math.max(1, totalCents);
 }

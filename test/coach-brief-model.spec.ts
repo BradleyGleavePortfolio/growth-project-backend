@@ -26,9 +26,10 @@ function sourceFiles(dir: string): string[] {
 }
 
 describe('coach brief model', () => {
-  it('uses the pinned Coach AI model (same as Roman), not a retired id', () => {
-    expect(BRIEF_CLAUDE_MODEL).toBe(COACH_AI_MODEL);
-    expect(BRIEF_CLAUDE_MODEL).toBe(ROMAN_MODEL_PHASE_1);
+  it('uses current-generation models: Opus 5.5 for the brief, Sonnet 5.5 for Coach AI and Roman (B-ROMANIQ-125)', () => {
+    expect(BRIEF_CLAUDE_MODEL).toBe('claude-opus-5-5');
+    expect(COACH_AI_MODEL).toBe('claude-sonnet-5-5');
+    expect(ROMAN_MODEL_PHASE_1).toBe(COACH_AI_MODEL);
     expect(BRIEF_CLAUDE_MODEL).not.toMatch(RETIRED);
   });
 

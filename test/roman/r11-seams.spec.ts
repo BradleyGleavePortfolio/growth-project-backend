@@ -595,11 +595,11 @@ describe('R11-00 background spend breaker', () => {
         metadata: { state: 'settled', outcome: 'ok' },
       },
     });
-    // 10k in x $3 + 1k out x $15 per MTok = $0.045 -> 5 cents, rounded up.
+    // 10k in x $2 + 1k out x $10 per MTok (Sonnet 5.5) = $0.03 -> 3 cents.
     expect(debits).toEqual([
       {
         coachId: 'coach-head',
-        actualCostCents: 5,
+        actualCostCents: 3,
         capability: 'roman.playbook',
         contextId: out.reservation.requestId,
       },

@@ -411,6 +411,10 @@ describe('R8 layer 6 — model config through the stack', () => {
     expect(body.model).toBe(ROMAN_MODEL_PHASE_1);
     expect(body).not.toHaveProperty('temperature');
     expect(JSON.stringify(body)).not.toContain('"disabled"');
+    // B-ROMANIQ-125: no up-front thinking (first streamed word stays fast) at
+    // one explicit effort level for the conversation.
+    expect(body.thinking).toEqual({ type: 'between_tools' });
+    expect(body.output_config).toEqual({ effort: 'medium' });
     expect(r.persisted?.model_id).toBe(ROMAN_MODEL_PHASE_1);
   });
 });
