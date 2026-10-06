@@ -61,6 +61,12 @@ function seed(fake: FakePrisma, id = 'p1', step = 3, over: Record<string, unknow
 const service = (fake: FakePrisma, stripe?: unknown, dispatcher?: unknown, t = telemetry()) =>
   new DunningV2Service(fake.client(), stub(t), stub(dispatcher), stub(stripe));
 const pastDue = { retrieveSubscription: async () => ({ status: 'past_due' }) };
+// R-DISPUTE-PAUSE: a dispute pauses billing at Stripe (stubbed).
+const pauseStripe = {
+  pauseSubscriptionCollection: async () => ({}),
+  listOpenInvoices: async () => [],
+  markInvoiceUncollectible: async () => ({}),
+};
 
 describe('dunning v2 service fix round (B-D12-116)', () => {
   const prior = process.env.FEATURE_DUNNING_V2;
@@ -218,7 +224,7 @@ describe('dunning v2 service fix round (B-D12-116)', () => {
       const fake = new FakePrisma();
       seed(fake, 'p1', 3, locked ? { locked_out_at: at(10) } : {});
       if (locked) fake.find('clientPurchase', { id: 'p1' })!.entitlement_active = false;
-      const svc = service(fake);
+      const svc = service(fake, pauseStripe);
       const opening = await svc.handleLateReversal({
         purchaseId: 'p1',
         reversedChargeAt: T0,
@@ -226,7 +232,8 @@ describe('dunning v2 service fix round (B-D12-116)', () => {
         chargeId: 'ch-lost',
         now: at(1),
       });
-      expect(opening.reason).toBe('cycle_already_active');
+      // R-DISPUTE-PAUSE: the dispute pauses the payment cycle at once.
+      expect(opening.reason).toBe('paused');
       fake.seed('connectTransfer', {
         id: 'tr1',
         source_stripe_charge_id: 'ch-lost',
@@ -372,7 +379,7 @@ describe('dunning v2 service fix round (B-D12-116)', () => {
       const fake = new FakePrisma();
       seed(fake, 'p1', 3, { status: 'resolved', resolved_at: at(2) });
       row(fake, 'clientPurchase').status = 'active';
-      const svc = service(fake);
+      const svc = service(fake, pauseStripe);
       const input = { purchaseId: 'p1', reversedChargeAt: at(1), disputeId: 'dp-1', now: at(2) };
       expect((await svc.handleLateReversal(input)).opened).toBe(true);
       expect(await svc.isDisputeCycleOpen('p1')).toBe(true);

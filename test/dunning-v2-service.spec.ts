@@ -7,7 +7,6 @@ import {
 } from '../src/checkout/dunning-v2/dunning-v2.service';
 import {
   DUNNING_V2_DAY_MS,
-  DUNNING_V2_REVERSAL_ENTRY_STEP,
   dunningV2LockoutAt,
   dunningV2StepForElapsed,
 } from '../src/checkout/dunning-v2/dunning-v2.cadence';
@@ -355,50 +354,7 @@ describe('DunningV2Service', () => {
     });
   });
 
-  describe('handleLateReversal (dispute on a cleared payment)', () => {
-    it('opens a compressed cycle: Step 2 now, coach in 4 days, lock in 7 days', async () => {
-      const { fake, svc, dispatcher } = setup();
-      seedState(fake, {
-        status: 'resolved',
-        step_index: 1,
-        resolved_at: at(-5),
-        recovered_at: at(-5),
-      });
-      const res = await svc.handleLateReversal({
-        purchaseId: 'p1',
-        reversedChargeAt: at(-1),
-        now: T0,
-      });
-      expect(res.opened).toBe(true);
-      const row = fake.find('dunningState', { id: 'ds1' });
-      expect(row).toMatchObject({
-        status: 'active',
-        step_index: DUNNING_V2_REVERSAL_ENTRY_STEP,
-        reversal_count: 1,
-        last_failure_reason: DUNNING_V2_REVERSAL_REASON,
-      });
-      expect(dunningV2LockoutAt(row?.entered_at as Date)).toEqual(at(7));
-      expect(dunningV2StepForElapsed(at(4).getTime() - (row?.entered_at as Date).getTime())).toBe(
-        3,
-      );
-      expect(dispatcher.dispatchStep).toHaveBeenCalledWith(
-        expect.objectContaining({ stepIndex: 2, isLateReversalCycle: true }),
-      );
-    });
-
-    it('refuses while a cycle is active, and for a charge disputed before it cleared', async () => {
-      const a = setup();
-      seedState(a.fake, { status: 'active', step_index: 1 });
-      expect(
-        (await a.svc.handleLateReversal({ purchaseId: 'p1', reversedChargeAt: T0 })).reason,
-      ).toBe('cycle_already_active');
-      const b = setup();
-      seedState(b.fake, { status: 'resolved', resolved_at: T0 });
-      expect(
-        (await b.svc.handleLateReversal({ purchaseId: 'p1', reversedChargeAt: at(-2) })).reason,
-      ).toBe('not_a_cleared_payment_reversal');
-    });
-  });
+  // handleLateReversal (R-DISPUTE-PAUSE): test/dunning-v2-dispute-pause.spec.ts.
 
   describe('getClientStatus', () => {
     it('reports past_due with amount, dates and coach; locked once locked; scoped to the caller', async () => {
