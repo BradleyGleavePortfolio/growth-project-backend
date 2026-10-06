@@ -224,6 +224,12 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'DiagnosticSubmission', field: 'email', action: del, match: 'email' },
 
   // ── Roman, AI drafts, AI audit
+  // Roman v1.1 memory (R11-M1): notes, summaries and job state are about the
+  // client only, so they go with the client, before the chat rows they may
+  // cite (a note's source_message_id is ON DELETE SET NULL either way).
+  { model: 'RomanClientNote', field: 'client_id', action: del },
+  { model: 'RomanClientSummary', field: 'client_id', action: del },
+  { model: 'RomanMemoryState', field: 'client_id', action: del },
   { model: 'RomanMessage', field: 'user_id', action: del },
   { model: 'RomanSession', field: 'user_id', action: del },
   { model: 'UserAIQuota', field: 'user_id', action: del },

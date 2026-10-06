@@ -612,6 +612,16 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Run Roman memory schema live spec (R11-M1)
+        # test/roman/r11-memory-schema.live.spec.ts: on real Postgres, deleting
+        # a Roman chat erases its messages and keeps the notes Roman took from
+        # it with a null source (ON DELETE SET NULL); another client's rows are
+        # untouched; one summary per (client, period, start). Same
+        # MWB3_TEST_DATABASE_URL gate and reset + full-schema bootstrap.
+        run: npx jest test/roman/r11-memory-schema.live.spec.ts --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
       - name: Run Roman spend admission live spec (#651 B-651-5)
         # test/roman/roman-spend-admission.live.spec.ts: on real Postgres,
         # concurrent Roman turns are admitted against the daily cap under a
