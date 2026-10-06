@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { CommunityMembership, CommunityMembershipRole, User } from '@prisma/client';
+import type { CommunityMembership, CommunityMembershipRole, Prisma, User } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { liftWorkspaceBan } from '../community-ban';
 
@@ -19,6 +19,31 @@ export type MembershipWithUser = CommunityMembership & {
 export interface MemberPageCursor {
   createdAt: Date;
   id: string;
+}
+
+/**
+ * B-AUTHZ-1: who a coach may add to a cohort. A target qualifies only when it
+ * is a live client of the workspace coach (`coach_id` match, not deleted) or
+ * already holds an active membership somewhere in the same workspace.
+ */
+export interface AssignTargetScope {
+  workspaceId: string;
+  coachId: string;
+}
+
+function assignTargetFilter(scope: AssignTargetScope | null): Prisma.UserWhereInput {
+  if (!scope) return {};
+  return {
+    deleted_at: null,
+    OR: [
+      { coach_id: scope.coachId },
+      {
+        community_memberships: {
+          some: { workspace_id: scope.workspaceId, status: 'active' },
+        },
+      },
+    ],
+  };
 }
 
 @Injectable()
@@ -81,16 +106,26 @@ export class CommunityCohortMembersRepository {
    * user. `mode: 'insensitive'` (Postgres ILIKE-equivalent) matches regardless
    * of casing; findFirst because an insensitive predicate is not a unique key.
    */
-  async findUserByEmail(email: string): Promise<Pick<User, 'id' | 'name' | 'email'> | null> {
+  async findUserByEmail(
+    email: string,
+    scope: AssignTargetScope | null = null,
+  ): Promise<Pick<User, 'id' | 'name' | 'email'> | null> {
     return this.prisma.user.findFirst({
-      where: { email: { equals: email, mode: 'insensitive' } },
+      where: { email: { equals: email, mode: 'insensitive' }, ...assignTargetFilter(scope) },
       select: { id: true, name: true, email: true },
     });
   }
 
-  async findUserById(userId: string): Promise<Pick<User, 'id' | 'name' | 'email'> | null> {
-    return this.prisma.user.findUnique({
-      where: { id: userId },
+  /**
+   * Resolve an assign target by id. With a scope, a user outside it resolves
+   * to null exactly like an unknown id (no existence leak).
+   */
+  async findUserById(
+    userId: string,
+    scope: AssignTargetScope | null = null,
+  ): Promise<Pick<User, 'id' | 'name' | 'email'> | null> {
+    return this.prisma.user.findFirst({
+      where: { id: userId, ...assignTargetFilter(scope) },
       select: { id: true, name: true, email: true },
     });
   }

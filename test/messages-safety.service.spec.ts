@@ -428,6 +428,22 @@ describe('MessagesSafetyService — blocks', () => {
     expect(typeof rows[0].blockedAt).toBe('string');
   });
 
+  it('listBlocks shows a blocked client by first name only (B-AUTHZ-2)', async () => {
+    prisma._users.push({ id: 'c', role: 'student', coach_id: null, name: 'Carol Q Member' });
+    await svc.blockUser('a', 'c');
+    const rows = await svc.listBlocks('a');
+    expect(rows).toHaveLength(1);
+    expect(rows[0].displayName).toBe('Carol');
+    expect(JSON.stringify(rows)).not.toContain('Q Member');
+  });
+
+  it('listBlocks keeps a blocked coach\'s profile name', async () => {
+    prisma._users.push({ id: 'd', role: 'coach', coach_id: null, name: 'Dana Coachname' });
+    await svc.blockUser('a', 'd');
+    const rows = await svc.listBlocks('a');
+    expect(rows[0].displayName).toBe('Dana Coachname');
+  });
+
   it('isEitherSideBlocked detects both directions', async () => {
     expect(await svc.isEitherSideBlocked('a', 'b')).toBe(false);
     await svc.blockUser('a', 'b');

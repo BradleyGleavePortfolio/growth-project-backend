@@ -4,10 +4,11 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { memberFirstName } from '../community/member-display-name';
 import { ReportMessageDto, ReportReason } from './dto/report-message.dto';
 
 // Prisma unique-constraint violation. Surfaced when two concurrent
@@ -20,6 +21,17 @@ const PRISMA_UNIQUE_VIOLATION = 'P2002';
 const EVENT_REPORTED = 'safety_message_reported';
 const EVENT_BLOCKED = 'safety_user_blocked';
 const EVENT_UNBLOCKED = 'safety_user_unblocked';
+
+/**
+ * B-AUTHZ-2: the block list follows the community privacy contract. A client
+ * (student) target shows the first name only, the same as every community
+ * surface; coach-side accounts keep the name already shown on their profile.
+ */
+function blockedDisplayName(blocked: { name: string | null; role: Role } | null): string {
+  if (!blocked) return '';
+  if (blocked.role === 'student') return memberFirstName(blocked.name);
+  return blocked.name ?? '';
+}
 
 /**
  * MessagesSafetyService — Apple 1.2 abuse-reporting + per-user blocklist.
@@ -244,12 +256,12 @@ export class MessagesSafetyService {
       select: {
         blocked_id: true,
         created_at: true,
-        blocked: { select: { name: true } },
+        blocked: { select: { name: true, role: true } },
       },
     });
     return rows.map((r) => ({
       blockedId: r.blocked_id,
-      displayName: r.blocked?.name ?? '',
+      displayName: blockedDisplayName(r.blocked),
       blockedAt: r.created_at.toISOString(),
     }));
   }
