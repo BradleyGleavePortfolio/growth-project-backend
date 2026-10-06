@@ -283,6 +283,24 @@ describe('/help/delete-account content', () => {
     );
   });
 
+  // F10 (C-4): the docs/help markdown mirrors tell the same 14-day timeline.
+  it('docs/help faq.md and support-boundaries.md mirror the 14-day grace answers (no thirty-day window)', () => {
+    const md = (name: string) =>
+      readFileSync(join(__dirname, '..', 'docs', 'help', name), 'utf8').replace(/\s+/g, ' ');
+    const faq = md('faq.md');
+    expect(faq).toContain(
+      'During the 14-day grace period they stay on your roster and can cancel the deletion in the app. ' +
+        'When it ends, they leave your roster and their data is permanently deleted and cannot be recovered.',
+    );
+    const boundaries = md('support-boundaries.md');
+    expect(boundaries).toContain(
+      'A deletion can be cancelled in the app during its 14-day grace period; once it is complete it cannot be reversed.',
+    );
+    for (const text of [faq, boundaries]) {
+      expect(text).not.toMatch(/thirty-day|thirty days|soft-delete window|deletion can be reversed/i);
+    }
+  });
+
   it('follows the copy rules: no exclamation marks, emoji, placeholders or clinic partner', () => {
     expect(text).not.toContain('!');
     expect(text).not.toMatch(

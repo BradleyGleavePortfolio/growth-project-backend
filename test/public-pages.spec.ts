@@ -154,3 +154,41 @@ describe('sanitizeInviteCode', () => {
     expect(sanitizeInviteCode(12345 as unknown)).toBeNull();
   });
 });
+
+describe('public page copy accuracy (F10)', () => {
+  const controller = new PublicPagesController();
+
+  it('download pages say the listing is not live yet, with no review or notify-list claim', () => {
+    const ios = makeRes();
+    controller.iosDownload(ios);
+    expect(ios.body).toContain(
+      'The iPhone app is not on the App Store yet. It can be downloaded there once the listing is ' +
+        'live. For questions in the meantime, contact support.',
+    );
+    expect(ios.body).toContain('subject=iPhone%20app');
+    const android = makeRes();
+    controller.androidDownload(android);
+    expect(android.body).toContain(
+      'The Android app is not on Google Play yet. It can be downloaded there once the listing is ' +
+        'live. For questions in the meantime, contact support.',
+    );
+    expect(android.body).toContain('subject=Android%20app');
+    for (const body of [ios.body, android.body]) {
+      expect(body).toContain('Contact support');
+      expect(body).not.toMatch(/private review|we will notify|leave us your email|Email us|Notify%20me/i);
+    }
+  });
+
+  it('/signup with a code has no first person and no manual-setup promise', () => {
+    const res = makeRes();
+    controller.signup('GP-A1B2C3', res);
+    expect(res.body).toContain(
+      'Open The Growth Project app on your phone and enter the invite code below during setup to ' +
+        'connect with your coach. If your coach shared a link, open it on your phone to launch the ' +
+        'app. For help with setup, contact support and include the code.',
+    );
+    expect(res.body).toContain('Contact support');
+    expect(res.body).toMatch(/subject=Invite(%20|\+)GP-A1B2C3/);
+    expect(res.body).not.toMatch(/\bwe will\b|Email us|help you finish setup/i);
+  });
+});

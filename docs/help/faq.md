@@ -95,10 +95,9 @@ gap. If you need a specific record for a legal or medical reason,
 write in.
 
 **A client deleted their account. Where did they go?**
-They are gone from your roster and their data is in a thirty-day
-soft-delete window before permanent removal. Within that window the
-deletion can be reversed if the client requests it. After thirty
-days, recovery is not possible.
+During the 14-day grace period they stay on your roster and can
+cancel the deletion in the app. When it ends, they leave your roster
+and their data is permanently deleted and cannot be recovered.
 
 ## Other
 
