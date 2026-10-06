@@ -5,7 +5,7 @@
 //   Sol B-672-3  the customer card was read before the purchase, so a card
 //                removed (or added) during the final purchase read was sent on
 //                the old copy ("Your card will be charged $49 then").
-//   Sol B-673-1  past_due/unpaid were read as never billed: a plan that paid
+//   Sol B-673-1  past_due/unpaid were read as unbilled: a plan that paid
 //                its first regular invoice and then fell past_due was DELETEd.
 //                Now only a complete paid-invoice page with no charge on it
 //                allows the cancel; any charge supersedes (paid plan kept, one
