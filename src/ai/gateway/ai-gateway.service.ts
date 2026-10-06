@@ -656,8 +656,8 @@ function sha256(s: string): string {
 //
 // Strategy: prefer the explicit token estimates when the provider
 // returned them (Anthropic SDK surfaces input_tokens + output_tokens on
-// the response), price them at Sonnet 4.5 list pricing (\$3/MTok input,
-// \$15/MTok output as of 2026-05-28), round up to the nearest cent.
+// the response), price them at the coach AI model's list price
+// (INPUT/OUTPUT_USD_PER_MTOK in coach-ai.constants), round up to the nearest cent.
 //
 // When estimates are missing (stub adapter, future providers) fall back
 // to a conservative default of 5 cents per call so the meter never
