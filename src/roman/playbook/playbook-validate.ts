@@ -131,8 +131,7 @@ export function sharesVerbatimRun(
 
 const PERSON_REF_RE =
   /\b(?:he|she|him|her|his|hers|himself|herself|this client|that client|one client|my client|a client of)\b/i;
-const AGE_RE =
-  /\b\d{1,3}\s*-?\s*(?:years?|yrs?)\s*-?\s*old\b|\b\d{1,3}\s*(?:y\/o|yo)\b|\baged?\s+\d{1,3}\b/i;
+const AGE_RE = /\b\d{1,3}\s*-?\s*(?:years?|yrs?)\s*-?\s*old\b|\b\d{1,3}\s*(?:y\/o|yo)\b/i;
 const OUTCOME_RE =
   /\b(?:lost|gained|dropped|weighs|weighed|weighing|put on|is down|is up|went down|went up)\s+(?:about\s+|around\s+|nearly\s+|over\s+|almost\s+)?\d+(?:[.,]\d+)?\s*(?:(?:lb|lbs|pounds?|kg|kgs|kilos?|st|stone|percent|inches|cm)\b|%)/i;
 const HEIGHT_RE = /\b[4-7]'\s?\d{1,2}\b|\b[4-7]\s?(?:ft|foot)\s?\d{1,2}\b/i;

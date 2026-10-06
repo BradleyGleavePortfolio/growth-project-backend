@@ -68,6 +68,11 @@ const COMMON_WORD_NAMES = new Set([
   'brown', 'green', 'gray', 'grey', 'hill', 'wood', 'cook', 'baker', 'walker',
   'price', 'rice', 'fields', 'banks', 'bell', 'stone', 'king', 'park', 'lee',
   'best', 'love', 'early', 'short', 'little', 'church', 'hall', 'west', 'north',
+  // Short names and name particles that are also everyday words ("Do", "To", "An", "Le").
+  'an', 'as', 'at', 'be', 'by', 'do', 'go', 'he', 'if', 'in', 'is', 'it', 'me', 'my', 'no',
+  'on', 'or', 'so', 'to', 'up', 'us', 'we', 'ha', 'ma', 'pa', 'la', 'le', 'lo', 'oh', 'ok',
+  'hi', 'al', 'el', 'de', 'da', 'du', 'di', 'van', 'von', 'der', 'den', 'del', 'son', 'sun',
+  'tan', 'man', 'can', 'won',
 ]);
 
 const LETTER_BOUNDARY_BEFORE = '(?<![\\p{L}\\p{N}_])';
@@ -204,10 +209,22 @@ export function scrubPlaybookText(text: unknown, roster: PlaybookRoster): string
   return s;
 }
 
-/** True when the text names anyone on the roster. */
+/**
+ * True when the text names anyone on the roster. Used on the model's output,
+ * which only ever saw scrubbed sources: a name that is also an ordinary word
+ * counts only when capitalised mid-sentence, so "Do not train to failure"
+ * survives a client called Do while "ask Do first" does not.
+ */
 export function containsRosterName(text: string, roster: PlaybookRoster): boolean {
   const s = text.normalize('NFC');
-  return hit(roster.anyCase, s) || hit(roster.capitalised, s);
+  if (hit(roster.anyCase, s)) return true;
+  if (!roster.capitalised) return false;
+  roster.capitalised.lastIndex = 0;
+  for (const m of s.matchAll(roster.capitalised)) {
+    const before = s.slice(0, m.index ?? 0);
+    if (!/(?:^|[.!?:;(\n\u2022*-])\s*$/.test(before)) return true;
+  }
+  return false;
 }
 
 /** True when the text carries an email, link, handle or phone number. */

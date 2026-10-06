@@ -29,6 +29,7 @@ const roster = buildPlaybookRoster([
   { name: 'Max Delgado' },
   { name: 'Priya Raman-Iyer', display_name: 'PriyaLifts' },
   { name: 'Coach Daniel Brooks' },
+  { name: 'Minh Do' },
 ]);
 
 describe('R11-P3a scrub before send', () => {
@@ -71,6 +72,16 @@ describe('R11-P3a scrub before send', () => {
     }
     expect(out).toContain(PLAYBOOK_SCRUB_TOKENS.name);
     expect(containsRosterName(out, roster)).toBe(false);
+  });
+
+  it('treats names that are ordinary words by case before send and by position after the model', () => {
+    expect(scrubPlaybookText('Ask Do about knees. Do 3 sets.', roster)).toBe('Ask [NAME] about knees. [NAME] 3 sets.');
+    expect(scrubPlaybookText('do the warm-up first', roster)).toBe('do the warm-up first');
+    expect(containsRosterName('Do not train to failure', roster)).toBe(false);
+    expect(containsRosterName('Max effort singles once a week', roster)).toBe(false);
+    expect(containsRosterName('Check with Do before adding volume', roster)).toBe(true);
+    expect(containsRosterName('Swap lunges when knees bother Max', roster)).toBe(true);
+    expect(containsRosterName('minh prefers mornings', roster)).toBe(true);
   });
 
   it('returns an empty string for non-text input', () => {
@@ -172,7 +183,7 @@ const draft: Draft = {
     ],
     substitutions: [
       { for: 'barbell back squat', when: 'knee pain', use: 'box squat to parallel', basis: 'stated', evidence_count: 2 },
-      { for: 'lunges', when: 'Max complains', use: 'step-ups', basis: 'observed', evidence_count: 1 },
+      { for: 'lunges', when: 'knees bother Max', use: 'step-ups', basis: 'observed', evidence_count: 1 },
     ],
   },
   diet: {
