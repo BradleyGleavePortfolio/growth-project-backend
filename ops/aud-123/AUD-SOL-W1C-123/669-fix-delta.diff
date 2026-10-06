@@ -1,0 +1,80 @@
+diff --git a/src/roman/guardrails/roman-post-check.ts b/src/roman/guardrails/roman-post-check.ts
+index 5b7e3987..d5f0cbf1 100644
+--- a/src/roman/guardrails/roman-post-check.ts
++++ b/src/roman/guardrails/roman-post-check.ts
+@@ -331,6 +331,12 @@ const SINGLE_MEAL_CLAUSE =
+ /** B-666-5 (Sol): wording that sums the day; it wins over a meal word ("across two meals"). */
+ const AGGREGATE_CLAIM =
+   /\b(in total|total|so far|for the day|daily|intake|across|combined|altogether|meals|snacks|all (of )?(your|my|the|today'?s))\b/i;
++/**
++ * B-669-1 (Sol): a sum of the client's own meals is today's intake even with
++ * no intake verb ("your meals add up to 450 kcal", "both meals come to ...").
++ */
++const MEAL_SUM_CLAIM =
++  /\b(meals|snacks|entries)(\s+[a-z']+){0,2}\s+(add(s|ed)? up|come to|came to|total(s|led|ed)?|sum(s|med)? (to|up))\b/i;
+ 
+ /**
+  * kcal facts of the given field families (B-651-7: never pooled across
+@@ -351,14 +357,15 @@ function kcalFacts(
+     if (past) out.push(...(f.intake_past_days ?? []));
+     else {
+       out.push(ctx.today.kcal);
+-      // B-668-3 / B-666-5 (Sol): one meal never validates a whole-day claim.
+-      // Entry values only count when the clause makes no whole-day claim at
+-      // all ("you logged a 450 kcal salad"), or names one meal without any
+-      // summing wording ("450 kcal at lunch today", never "today across two
+-      // meals" or "your total intake").
++      // B-668-3 / B-666-5 / B-669-1 (Sol): one meal never validates a
++      // whole-day claim. Summing wording ("across two meals", "your meals",
++      // "altogether", "so far") is always checked against the day's total,
++      // with or without "today". Otherwise entry values count when the clause
++      // makes no whole-day claim ("you logged a 450 kcal salad") or names one
++      // meal ("450 kcal at lunch today").
+       if (
+-        !DAY_TOTAL_CLAIM.test(clause) ||
+-        (SINGLE_MEAL_CLAUSE.test(clause) && !AGGREGATE_CLAIM.test(clause))
++        !AGGREGATE_CLAIM.test(clause) &&
++        (!DAY_TOTAL_CLAIM.test(clause) || SINGLE_MEAL_CLAUSE.test(clause))
+       ) {
+         out.push(...(f.intake_entries_today ?? []));
+       }
+@@ -529,6 +536,8 @@ function judgeSentence(
+     }
+     if (directive || delta) continue; // a meal-level suggestion or a change amount
+     const role = roleOf(s, at, end);
++    // B-669-1 (Sol): "your meals add up to 450 kcal" states today's intake.
++    if (role.size === 0 && MEAL_SUM_CLAIM.test(clause)) role.add('intake');
+     if (role.size === 0) continue;
+     // Not a grounded turn (coach surface, or no client data was expected):
+     // there are no client facts to compare with, only the floor applies.
+diff --git a/test/roman/roman-c2-rmn3-fixes.spec.ts b/test/roman/roman-c2-rmn3-fixes.spec.ts
+index cb6b1727..742a5471 100644
+--- a/test/roman/roman-c2-rmn3-fixes.spec.ts
++++ b/test/roman/roman-c2-rmn3-fixes.spec.ts
+@@ -79,3 +79,26 @@ describe('B-666-5 (Sol) a daily total that mentions meals is checked against the
+     expect(check(text)).toEqual({ text, guardrails_applied: [], rewritten: false });
+   });
+ });
++
++describe('B-669-1 (Sol) aggregate wording is checked against the whole day, with or without "today"', () => {
++  it.each([
++    'You have logged 450 kcal across two meals.',
++    'You logged 450 kcal across breakfast and lunch.',
++    'Your meals add up to 450 kcal.',
++  ])('rejected (one meal passed off as the sum): %s', (text) => {
++    const result = check(text);
++    expect(result.rewritten).toBe(true);
++    expect(result.guardrails_applied).toContain('ungrounded_number');
++  });
++
++  it.each([
++    'You have logged 780 kcal across two meals.',
++    'You logged 780 kcal across breakfast and lunch.',
++    'Your meals add up to 780 kcal.',
++    'You logged 450 kcal at lunch today.',
++    'You have logged 780 kcal today.',
++    'Breakfast was 330 kcal.',
++  ])('control (correct total or one actual meal): %s', (text) => {
++    expect(check(text)).toEqual({ text, guardrails_applied: [], rewritten: false });
++  });
++});

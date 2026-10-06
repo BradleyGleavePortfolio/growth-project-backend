@@ -1,0 +1,19 @@
+30f097477f1ab7ba54dec43fe048bab57972e715
+dc159eaf24dafafd32df4c06ed75f08971b31bbc 31573c83c8aeff3536db840ceaa2e0788249dfe1
+fa28cac50ac52d1d74d070954cfbe5e1ef02e015e078c86cc4cd2ff9009f28c3  /home/user/workspace/ops/aud-123/AUD-SOL-W1C-123/669-fix-delta.diff
+fa28cac50ac52d1d74d070954cfbe5e1ef02e015e078c86cc4cd2ff9009f28c3  /home/user/workspace/ops/aud-123/AUD-SOL-W1C-123/670-restack-delta.diff
+test/roman/eval/README.md
+40a4bf9555c6f7b52ab6c789fd71503eccc647af
+40a4bf9555c6f7b52ab6c789fd71503eccc647af
+test/roman/eval/golden-set.ts
+a239b5f8b389a20bc2ba4f2a4a22eda40da56455
+a239b5f8b389a20bc2ba4f2a4a22eda40da56455
+test/roman/eval/harness.ts
+939034905ef4c15f9bf1e79cf89a786132a2f012
+939034905ef4c15f9bf1e79cf89a786132a2f012
+test/roman/eval/roman-golden.eval.spec.ts
+cf2a33418735d90ca885f7dcf1e0014d454f7439
+cf2a33418735d90ca885f7dcf1e0014d454f7439
+test/roman/eval/stub-model.ts
+8751c9e9adc9c2826c3218cf8acf7dbdeaa4006b
+8751c9e9adc9c2826c3218cf8acf7dbdeaa4006b

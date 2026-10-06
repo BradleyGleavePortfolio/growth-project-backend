@@ -879,16 +879,3 @@ main -> keep deleted), src/screens/coach/payments/CoachPackageEditScreen.tsx (ta
 strings that still exist). Then run the repo-wide voice check on the merged tree and fix any new first-person strings main brought (lockout,
 restart, notifications, package edit), same style as before. ONE merge commit (+ one copy-fix commit if the voice check needs it). Mobile CI
 lane + PR CI green. Comment MAIN REFRESH (B-339R-122, agent 122) listing each conflict and any new string fixed, ending READY FOR AUDIT.
-
-### B-SHEET7B-122 — payment sheet m#342 main refresh, LAST JOB of agent 122 (relaunch after the 17:55 stop)
-Same job as B-SHEET7-122 above (read it). The 17:55 cancel left wt/B-SHEET7-122-1 clean (no changes, nothing pushed): remove it or reuse
-it; take over the sheet-m lock. Time box 30 minutes. Agent 123 starts while you run: at START post a short PR comment on m#342
-"STATUS (B-SHEET7B-122, agent 122): main refresh in progress, started <time>; agent 123 do not push to this branch until MAIN REFRESH
-or STATUS DONE is posted". At the end post MAIN REFRESH ... READY FOR AUDIT (pushed, CI green) or, if out of time, STATUS STOPPED with
-the conflict list, your planned resolution per hunk, and whether anything was pushed. Never leave a half-resolved push.
-
-### M-AVAIL2B-122 — m#381 fix B-381-1, agent 122's second last job (relaunch after the 17:55 stop)
-Same job as M-AVAIL2-122 above (read it). The 17:55 cancel left wt/M-AVAIL2-122 with 2 uncommitted files and nothing pushed: review
-them, keep what is correct, finish. Time box 20 minutes. At START post on m#381 "STATUS (M-AVAIL2B-122, agent 122): fix round in
-progress, started <time>; agent 123 do not push to this branch until FIX ROUND 2 or STATUS STOPPED is posted". At the end post FIX ROUND 2
-(M-AVAIL2B-122, agent 122) ... READY FOR AUDIT (pushed, CI green) or STATUS STOPPED with what is left. Never leave a half-done push.
