@@ -709,6 +709,7 @@ export class WorkoutBuilderService {
         // client reads the frozen exercise list (presentAssignment below);
         // the live join is the backward-compat fallback for pre-MWB-1 rows.
         snapshot: true,
+        adjustment_proposals: ROMAN_APPLIED_PROPOSALS,
         workout_plan: {
           include: {
             exercises: {
@@ -743,6 +744,7 @@ export class WorkoutBuilderService {
       where: { id: assignmentId },
       include: {
         snapshot: true,
+        adjustment_proposals: ROMAN_APPLIED_PROPOSALS,
         workout_plan: {
           include: {
             exercises: {
@@ -1472,25 +1474,42 @@ export class WorkoutBuilderService {
    * workout_plan.exercises join, preserving the exact legacy shape. A
    * `snapshot_source` flag is added so callers can tell which path was used
    * without changing the existing fields.
+   *
+   * `roman_adjusted_sets` (B-ROMANADJ-125): the set counts a coach approved
+   * from Roman's Action Queue for this assignment, by exercise `order`. The
+   * client app overlays them on `workout_plan.exercises`, so the client trains
+   * the approved sets while the coach's live plan edits stay visible. The raw
+   * proposal rows (signals, Roman's coach-facing text) never leave the server.
    */
   private presentAssignment<
     T extends {
       snapshot?: { exercises_json: unknown } | null;
       workout_plan?: { exercises?: unknown[] } | null;
+      adjustment_proposals?: readonly AppliedAdjustmentRow[];
     },
-  >(assignment: T): T & { exercises: unknown[]; snapshot_source: boolean } {
+  >(
+    assignment: T,
+  ): Omit<T, 'adjustment_proposals'> & {
+    exercises: unknown[];
+    snapshot_source: boolean;
+    roman_adjusted_sets: RomanAdjustedSet[];
+  } {
+    const { adjustment_proposals: applied, ...rest } = assignment;
+    const roman_adjusted_sets = romanAdjustedSets(applied);
     if (assignment.snapshot) {
       const frozen = assignment.snapshot.exercises_json;
       return {
-        ...assignment,
+        ...rest,
         exercises: Array.isArray(frozen) ? (frozen as unknown[]) : [],
         snapshot_source: true,
+        roman_adjusted_sets,
       };
     }
     return {
-      ...assignment,
+      ...rest,
       exercises: assignment.workout_plan?.exercises ?? [],
       snapshot_source: false,
+      roman_adjusted_sets,
     };
   }
 
@@ -1698,6 +1717,57 @@ export class WorkoutBuilderService {
         );
       });
   }
+}
+
+/**
+ * Roman approve-to-adjust rows that changed what the client trains: approved
+ * as proposed or edited by the coach. Undone, dismissed, expired and pending
+ * proposals are not applied, so they are not read.
+ */
+const ROMAN_APPLIED_PROPOSALS = {
+  where: { status: { in: ['approved', 'edited'] } },
+  select: { applied_change: true, decided_at: true },
+  orderBy: { decided_at: 'asc' },
+} satisfies Prisma.ClientWorkoutAssignment$adjustment_proposalsArgs;
+
+export interface AppliedAdjustmentRow {
+  applied_change: Prisma.JsonValue | null;
+  decided_at: Date | null;
+}
+
+/** One exercise's coach-approved set count, keyed by the exercise `order`. */
+export interface RomanAdjustedSet {
+  order: number;
+  sets: number;
+}
+
+/**
+ * Set counts the coach approved for one assignment, from the applied change of
+ * each approved or edited proposal. Only exercises whose sets actually changed
+ * are listed; when two decisions touch the same exercise the later one wins.
+ * Malformed rows are skipped. Empty when nothing was applied.
+ */
+export function romanAdjustedSets(rows: readonly AppliedAdjustmentRow[] | undefined): RomanAdjustedSet[] {
+  const byOrder = new Map<number, number>();
+  const ordered = [...(rows ?? [])].sort(
+    (a, b) => (a.decided_at?.getTime() ?? 0) - (b.decided_at?.getTime() ?? 0),
+  );
+  for (const row of ordered) {
+    const change = row.applied_change;
+    if (!change || typeof change !== 'object' || Array.isArray(change)) continue;
+    const exercises = (change as Record<string, unknown>).exercises;
+    if (!Array.isArray(exercises)) continue;
+    for (const x of exercises) {
+      if (!x || typeof x !== 'object') continue;
+      const e = x as Record<string, unknown>;
+      const { order, sets_before: before, sets_after: after } = e;
+      if (typeof order !== 'number' || !Number.isInteger(order)) continue;
+      if (typeof after !== 'number' || !Number.isInteger(after) || after < 1) continue;
+      if (after === before) continue;
+      byOrder.set(order, after);
+    }
+  }
+  return [...byOrder.entries()].sort((a, b) => a[0] - b[0]).map(([order, sets]) => ({ order, sets }));
 }
 
 /** One exercise row of an assignment snapshot (MWB-1 `exercises_json`). */

@@ -24,7 +24,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../src/prisma.service';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import { WorkoutType } from '../src/workout-builder/workout-builder.dto';
-import { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
+import { WorkoutBuilderService, romanAdjustedSets } from '../src/workout-builder/workout-builder.service';
 
 const COACH_ID = 'coach-uuid-1';
 const CLIENT_ID = 'client-uuid-1';
@@ -1086,6 +1086,148 @@ describe('WorkoutBuilderService', () => {
         exercises: frozen,
         snapshot_source: true,
       });
+    });
+  });
+
+  // ─── B-ROMANADJ-125: approved Roman set changes reach the client ─────────
+
+  describe('roman_adjusted_sets on the client assignment reads (B-ROMANADJ-125)', () => {
+    const approvedCut = {
+      applied_change: {
+        volume_pct: 20,
+        sets_before: 8,
+        sets_after: 6,
+        exercises: [
+          { order: 1, exercise_external_id: 'ex-a', sets_before: 4, sets_after: 3 },
+          { order: 2, exercise_external_id: 'ex-b', sets_before: 4, sets_after: 3 },
+        ],
+      },
+      decided_at: new Date('2026-10-06T10:00:00Z'),
+    };
+    const laterEdit = {
+      applied_change: {
+        volume_pct: 25,
+        sets_before: 6,
+        sets_after: 5,
+        exercises: [
+          { order: 1, exercise_external_id: 'ex-a', sets_before: 3, sets_after: 2 },
+          // Unchanged by this decision: the earlier approval stands.
+          { order: 2, exercise_external_id: 'ex-b', sets_before: 3, sets_after: 3 },
+        ],
+      },
+      decided_at: new Date('2026-10-06T11:00:00Z'),
+    };
+
+    it('reads only approved or edited proposals on both client reads', async () => {
+      prismaMock.clientWorkoutAssignment.findMany.mockResolvedValue([]);
+      prismaMock.clientWorkoutAssignment.findUnique.mockResolvedValue({
+        id: 'asgn-r',
+        client_id: CLIENT_ID,
+        snapshot: null,
+        workout_plan: { exercises: [] },
+      });
+      await service.listMyAssignments(CLIENT_ID);
+      await service.getMyAssignment(CLIENT_ID, 'asgn-r');
+      const expected = expect.objectContaining({
+        include: expect.objectContaining({
+          adjustment_proposals: expect.objectContaining({
+            where: { status: { in: ['approved', 'edited'] } },
+            select: { applied_change: true, decided_at: true },
+          }),
+        }),
+      });
+      expect(prismaMock.clientWorkoutAssignment.findMany).toHaveBeenCalledWith(expected);
+      expect(prismaMock.clientWorkoutAssignment.findUnique).toHaveBeenCalledWith(expected);
+    });
+
+    it('detail read: lists the approved set counts by order, latest decision wins, raw rows stripped', async () => {
+      prismaMock.clientWorkoutAssignment.findUnique.mockResolvedValue({
+        id: 'asgn-r',
+        client_id: CLIENT_ID,
+        snapshot: { exercises_json: [] },
+        workout_plan: { exercises: [] },
+        // Out of order on purpose: decided_at decides, not array position.
+        adjustment_proposals: [laterEdit, approvedCut],
+      });
+      const result = await service.getMyAssignment(CLIENT_ID, 'asgn-r');
+      expect(result.roman_adjusted_sets).toEqual([
+        { order: 1, sets: 2 },
+        { order: 2, sets: 3 },
+      ]);
+      expect(result).not.toHaveProperty('adjustment_proposals');
+    });
+
+    it('detail read: empty array when nothing was applied', async () => {
+      prismaMock.clientWorkoutAssignment.findUnique.mockResolvedValue({
+        id: 'asgn-r',
+        client_id: CLIENT_ID,
+        snapshot: null,
+        workout_plan: { exercises: [] },
+        adjustment_proposals: [],
+      });
+      const result = await service.getMyAssignment(CLIENT_ID, 'asgn-r');
+      expect(result.roman_adjusted_sets).toEqual([]);
+    });
+
+    it("another client's assignment is refused before any adjustment is shown", async () => {
+      prismaMock.clientWorkoutAssignment.findUnique.mockResolvedValue({
+        id: 'asgn-r',
+        client_id: 'other-client',
+        snapshot: null,
+        workout_plan: { exercises: [] },
+        adjustment_proposals: [approvedCut],
+      });
+      await expect(service.getMyAssignment(CLIENT_ID, 'asgn-r')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('list read: every item carries its own roman_adjusted_sets', async () => {
+      prismaMock.clientWorkoutAssignment.findMany.mockResolvedValue([
+        {
+          id: 'asgn-1',
+          client_id: CLIENT_ID,
+          scheduled_for: new Date('2026-10-07T00:00:00Z'),
+          snapshot: null,
+          workout_plan: { exercises: [] },
+          adjustment_proposals: [approvedCut],
+        },
+        {
+          id: 'asgn-2',
+          client_id: CLIENT_ID,
+          scheduled_for: new Date('2026-10-08T00:00:00Z'),
+          snapshot: null,
+          workout_plan: { exercises: [] },
+          adjustment_proposals: [],
+        },
+      ]);
+      const page = await service.listMyAssignments(CLIENT_ID);
+      const items = page.items as Array<{ id: string; roman_adjusted_sets: unknown }>;
+      expect(items.map((i) => [i.id, i.roman_adjusted_sets])).toEqual([
+        ['asgn-1', [{ order: 1, sets: 3 }, { order: 2, sets: 3 }]],
+        ['asgn-2', []],
+      ]);
+      expect(items[0]).not.toHaveProperty('adjustment_proposals');
+    });
+
+    it('skips malformed applied changes', () => {
+      expect(
+        romanAdjustedSets([
+          { applied_change: null, decided_at: null },
+          { applied_change: [], decided_at: null },
+          { applied_change: { exercises: 'x' }, decided_at: null },
+          {
+            applied_change: {
+              exercises: [
+                null,
+                { order: 'one', sets_before: 4, sets_after: 3 },
+                { order: 3, sets_before: 4, sets_after: 0 },
+                { order: 4, sets_before: 4, sets_after: 3 },
+              ],
+            },
+            decided_at: new Date('2026-10-06T10:00:00Z'),
+          },
+        ]),
+      ).toEqual([{ order: 4, sets: 3 }]);
+      expect(romanAdjustedSets(undefined)).toEqual([]);
     });
   });
 
