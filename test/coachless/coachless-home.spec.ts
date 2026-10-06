@@ -7,7 +7,15 @@ import { addRowCode, addUser } from '../support/attach-fixture';
 import { CoachlessFeatureGuard } from '../../src/coachless/coachless-feature.guard';
 import { decideRomanCard, NOT_NOW_DEBOUNCE_MS } from '../../src/coachless/coachless-prompt.service';
 import { DEFAULT_COACHLESS_BANNER_TITLE } from '../../src/coachless/featured-coach.service';
-import { COACH_A, COACH_B, PKG_A, PKG_B, buildCoachless, featuredRow } from './coachless-fixture';
+import {
+  COACH_A,
+  COACH_B,
+  PKG_A,
+  PKG_B,
+  buildCoachless,
+  featuredRow,
+  pkg,
+} from './coachless-fixture';
 
 const STUDENT = { id: 'stu', role: 'student', coach_id: null };
 const HOUR = 3_600_000;
@@ -261,6 +269,37 @@ describe('featured-coach config (owner)', () => {
       coach_id: COACH_B,
     });
     expect(r.resolved.accepting_clients).toBe(true);
+  });
+
+  it('lists every coach account with only the packages the PUT accepts (owner editor picker)', async () => {
+    const { featured, db } = await buildCoachless();
+    addUser(db, { id: 'stu-x' });
+    addUser(db, { id: 'owner-1', role: 'owner' });
+    db.state.user.push({
+      id: 'coach-gone',
+      email: 'gone@example.test',
+      name: 'Gone',
+      role: 'coach',
+      coach_id: null,
+      deleted_at: new Date(),
+    });
+    db.state.coachPackage.push(
+      { ...pkg('pkg-b-off', COACH_B, 100), is_active: false },
+      { ...pkg('pkg-b-arch', COACH_B, 200), archived_at: new Date() },
+    );
+    const { coaches } = await featured.listCandidates();
+    expect(coaches.map((c) => c.id)).toEqual([COACH_A, COACH_B]);
+    const b = coaches.find((c) => c.id === COACH_B);
+    expect(b).toMatchObject({
+      name: 'Coach B',
+      email: `${COACH_B}@example.test`,
+      business_name: 'B Training',
+    });
+    expect(b?.packages.map((p) => p.id)).toEqual([PKG_B]);
+    expect(b?.packages[0]).not.toHaveProperty('coach_id');
+    // Every listed package is one the PUT accepts for that coach.
+    for (const c of coaches)
+      for (const p of c.packages) expect(await featured.activePackageOf(p.id, c.id)).not.toBeNull();
   });
 
   it('caches the resolution: two reads inside the TTL hit the database once', async () => {

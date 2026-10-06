@@ -14,6 +14,7 @@ key is `coachless_home`, and it is true only for students when the env is on.
 | `POST /coachless/coach-code/redeem` | client | Attaches the client to the coach. Requires an `Idempotency-Key` UUID header. Returns the coach card plus `next.featured_package` / `next.packages_available` for the attach screen. |
 | `POST /coachless/roman-card/seen` | client | Records one impression (the frequency cap). |
 | `POST /coachless/roman-card/not-now` | client | Persists "Not now", which snoozes the card and, after `roman_max_not_now`, hides it for good. |
+| `GET /admin/featured-coach/coaches` | owner | Coach list for the in-app editor: every coach account with its active packages (the same set the PUT accepts). |
 | `GET/PUT /admin/featured-coach` | owner | Reads and edits the featured coach, code, package, banner title, offer text, Roman copy, accepting switch and caps. The change is audited as `featured_coach_config.updated`. `create_code_if_missing` mints a vanity code (for example `GP-BRADLEY`) for the featured coach. |
 
 All copy (banner title, offer text, Roman pitch) and the featured code come from
