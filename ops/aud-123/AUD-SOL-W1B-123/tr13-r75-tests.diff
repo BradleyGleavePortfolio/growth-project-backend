@@ -1,0 +1,62 @@
+commit 462a5e7ad2f8fa6d223a24ff6609075c5596a228
+Author: Bradley Gleave <bradley@bradleytgpcoaching.com>
+Date:   Tue Oct 6 01:39:08 2026 +0000
+
+    test(trials): typed helpers instead of banned casts (R75)
+    
+    - b-trials-trial-ending-push-prefs: NotificationsService gets its prisma
+      through the typed stub<T>() helper; the push send is spied on
+      Expo.prototype (typed tickets) instead of casting to the private field.
+    - b-trials-4-fix-round: comment reworded (it matched the 'as never' token).
+
+diff --git a/test/b-trials-4-fix-round.spec.ts b/test/b-trials-4-fix-round.spec.ts
+index 898608cc..5b1878bd 100644
+--- a/test/b-trials-4-fix-round.spec.ts
++++ b/test/b-trials-4-fix-round.spec.ts
+@@ -5,7 +5,7 @@
+ //   Sol B-672-3  the customer card was read before the purchase, so a card
+ //                removed (or added) during the final purchase read was sent on
+ //                the old copy ("Your card will be charged $49 then").
+-//   Sol B-673-1  past_due/unpaid were read as never billed: a plan that paid
++//   Sol B-673-1  past_due/unpaid were read as unbilled: a plan that paid
+ //                its first regular invoice and then fell past_due was DELETEd.
+ //                Now only a complete paid-invoice page with no charge on it
+ //                allows the cancel; any charge supersedes (paid plan kept, one
+diff --git a/test/b-trials-trial-ending-push-prefs.spec.ts b/test/b-trials-trial-ending-push-prefs.spec.ts
+index bb8f490b..057f5daa 100644
+--- a/test/b-trials-trial-ending-push-prefs.spec.ts
++++ b/test/b-trials-trial-ending-push-prefs.spec.ts
+@@ -1,6 +1,8 @@
++import { Expo } from 'expo-server-sdk';
+ import { NotificationsService } from '../src/notifications/notifications.service';
+ import { NotificationKind } from '../src/notifications/notification-kind';
+ import * as pushPrefs from '../src/notifications/push/push-preferences';
++import { stub } from './utils/trial-fakes';
+ 
+ // B-TR11-122 (Opus C-672-L1): main moved the preference mapping to push/push-preferences.ts. The
+ // notice three days before the first charge keeps its own prefix there, never 'digest' (off).
+@@ -19,10 +21,13 @@ describe('trial_ending notice through main notification and push senders', () =>
+       notification: { create: jest.fn(async (a: { data: object }) => ({ id: 'n1', ...a.data })) },
+       user: { findUnique: jest.fn(async () => ({ expo_push_token: 'ExponentPushToken[trial]' })) },
+     };
+-    const svc = new NotificationsService(prisma as never);
+-    type Sender = { sendPushNotificationsAsync: (...a: unknown[]) => Promise<unknown> };
+-    const expo = (svc as unknown as { expo: Sender }).expo;
+-    const send = jest.spyOn(expo, 'sendPushNotificationsAsync').mockResolvedValue([{ status: 'ok' }]);
++    const svc = new NotificationsService(
++      stub<ConstructorParameters<typeof NotificationsService>[0]>(prisma),
++    );
++    const send = jest
++      .spyOn(Expo.prototype, 'sendPushNotificationsAsync')
++      .mockResolvedValue([{ status: 'ok', id: 'ticket-1' }]);
++    jest.spyOn(Expo.prototype, 'getPushNotificationReceiptsAsync').mockResolvedValue({});
+     const body = 'Your free trial ends in 3 days.';
+     const row = await svc.createNotification({ user_id: 'client-1', kind, body, channel: 'inapp' });
+     expect(row).not.toBeNull();
+@@ -30,5 +35,6 @@ describe('trial_ending notice through main notification and push senders', () =>
+     const sent = await svc.pushToUser('client-1', 'Trial ending', body, { kind });
+     expect(sent).toEqual({ delivered: true, code: 'delivered' });
+     expect(send).toHaveBeenCalledTimes(1);
++    jest.restoreAllMocks();
+   });
+ });

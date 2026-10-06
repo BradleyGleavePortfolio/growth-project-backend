@@ -99,4 +99,44 @@ No Opus material was read for either round. Both clean worktrees and temporary m
 
 Follow-up Cs: none. Recommended next action: assign the single comparator/test fix for B-338-MR2-1, then delta re-review the changed lines; retain the backend-deploy gate. [Finding and fix scope](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/338#issuecomment-6007758439)
 
+## TR13 continuation — completed
+
+Start: 2026-10-05 19:16:26 PDT. Deadline: 19:41:26 PDT.
+Completed: 2026-10-05 19:20:39 PDT.
+
+**Backend #671 — APPROVE, A/B/C 0/0/0**, exact head `fca4018be43d57805c5c06c5a18c359800a1a22b`; posted one Sol verdict, verified its exact first line, and rechecked the unchanged head. [Posted TR13 verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/671#issuecomment-6008006104)
+
+### Scope and topology
+
+- Reviewed the actual first main merge `bf2c97dab67fee9194c33d578960bdfd7d3b527f` (parents collapsed `4315136a` and main `0521b393`), the R75 test-only commit `462a5e7a`, normal rename commit `2a6dfd98`, and final clean merge `fca4018b` (parents `2a6dfd98` and main `d5177b31`). `2a6dfd98` is not itself a merge; the assigned initial push comprised these three commits. [Builder breakdown](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/671#issuecomment-6007958655) · [First merge](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/bf2c97dab67fee9194c33d578960bdfd7d3b527f)
+- This verdict covers the assigned merge/integration delta, not a fresh whole-train review or a new full-tree equivalence claim for the former bottom slice. [Verdict scope](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/671#issuecomment-6008006104)
+
+### Reviewed seams
+
+- CheckoutModule retains TrialConflictService and main's ClientBilling imports/providers/controller. [Module conflict resolution](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/bf2c97dab67fee9194c33d578960bdfd7d3b527f)
+- Paid-invoice access retains main's dispute pause; the trial transition cannot upgrade a false grant. Dunning resolution remains before the trial notice/conflict return, and BillingService's post-commit delivery/cancel path still receives those IDs. [Money/access review](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/671#issuecomment-6008006104)
+- The failed-invoice method is byte-identical to final merge-parent main, including its normal failure/dunning route. Main's full-list open-invoice method and dunning implementation remain unchanged, while the trial one-page method's two callers and one mock all follow `listOpenInvoicePage`. [Dunning/rename review](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/671#issuecomment-6008006104) · [Rename commit](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/2a6dfd987af9081471d928f0c179b39b7f37df0d)
+- The two test changes retain the preference, in-app creation and delivered-push assertions: typed stub, prototype send spy, typed ticket/receipt stub and spy restoration; the other file changes only a comment phrase. [R75 test commit](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/462a5e7ad2f8fa6d223a24ff6609075c5596a228)
+- Final main merge has an empty remerge diff; independently checked 51/51 PR-file blobs identical to `2a6dfd98` and every added non-merge commit belongs to main. [Final merge review](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/671#issuecomment-6008006104)
+
+### Migration and CI confirmation
+
+- Read the existing migration-order job's actual commands/logs, using the runner's local PostgreSQL databases: main's chain through `20270318122000_coach_booking_options` applied first, then `prisma migrate deploy` applied exactly the older `20270228000000_package_free_trials` and `20270313000000_package_trial_truth`; status became up-to-date and comparison to name-order fresh deployment reported no schema difference. [Executed migration-order evidence](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37400421633/job/112066146042)
+- The migration-order lane has `462a5e7a` as its sole parent and only lane files added; the two trial migration directories are unchanged from that parent to final head. No rename is needed; the operator's release must still apply migrations. [Migration lane provenance](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/5ddbb1e5dc91f5428453efcd41f95714d6ae5d43) · [Release requirement](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/671#issuecomment-6007958655)
+- Verified branch protection's 11 required context names against the exact-head rollup: all green. Exact-head PR CI logs show 853 passed suites / 14,681 passed tests, with 30 skipped suites, 305 skipped tests and 5 todo; optional deploy-readiness-gate is skipped. [Exact-head CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37402275477) · [Verified status summary](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/671#issuecomment-6008006104)
+- Existing targeted lane at `2a6dfd98` passed tsc plus 82 suites / 1,517 tests; its sole parent and three lane-only files were checked, and final PR files remain identical. [Targeted lane](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37400905487) · [Lane provenance](https://github.com/BradleyGleavePortfolio/growth-project-backend/commit/7d69ac3303b3b69d1e8bc387e2405ceec7f6b981)
+
+### TR13 evidence and handoff
+
+Retained in `/home/user/workspace/ops/aud-123/AUD-SOL-W1B-123/`:
+
+- `verdict-tr13-671.md`: complete posted payload.
+- `tr13-remerge-first.diff`, `tr13-remerge-final.diff`, `tr13-invoice-rename.diff`, `tr13-r75-tests.diff`: assigned reviewed changes.
+- `tr13-migration-order.log`, `tr13-lane.log`, `tr13-pr-ci.log`: existing CI logs.
+- `tr13-source-provenance.txt`: exact parent, final 51-file blob, added-main-commit and migration-file equality proofs.
+
+No Opus comments/notes for this round were read. The clean detached backend worktree and temporary fetch alias were removed, and the clone checkout remains unchanged/clean. No repository-code edits, own CI run, local heavy tests, push, merge, deploy, production/provider action or spend.
+
+New Cs: none. No new operator decision from this lens; preserve the release's `migrations=apply-migrations` requirement. [Posted verdict and release reminder](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/671#issuecomment-6008006104)
+
 ## HANDOFF

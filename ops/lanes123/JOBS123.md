@@ -139,3 +139,35 @@ Controls stay normal ("breathe through my nose when I run", "out of breath on lo
 cardio/carbs", "can you overdose on creatine?", "kill this workout", "I'm dying after leg day", "took 2 Tylenol for my headache"). Rerun
 your saved probes. The builder notes "I can't breathe after my run" alone now gets 911 (as at f2dd87ad): acceptable (errs to safety) unless
 it breaks a control above. Required checks green at 384314a8 (poll up to 15 minutes). One verdict.
+
+## Lens delta TR13 (re-use both W1B lenses) — trials train b#671 main refresh (T3 money). Time box 25 minutes. (19:15)
+b#671 fca4018be43d57805c5c06c5a18c359800a1a22b (base main; the whole trials train #671-#673/#706/#707 folded into it, last dual APPROVE at
+6bf110fb). Builder B-TR12-123 (report ops/reports/B-TR12-123.md, comment 6007958655): push 1 2a6dfd98 = merge of main 0521b393 with three
+resolved hunks (checkout.module.ts imports; applyInvoicePaid: main's dispute-pause rule + trials naming, trials return after main's
+dunning step) + rename of the trials `listOpenInvoices` -> `listOpenInvoicePage` (2 callers, 1 mock; both sides had added a method with
+that name) + R75 typed helpers in test/b-trials-trial-ending-push-prefs.spec.ts and test/b-trials-4-fix-round.spec.ts; push 2 fca4018b =
+clean merge of main d5177b31. Review only these (`git show --remerge-diff` on both merges, the rename, the two test files). Story: a coach
+offers a 7-day trial; a client starts it, is not charged until day 8, gets the trial-ending push; a client whose card fails after the trial
+goes into main's dunning flow exactly as main does, and a disputed invoice still pauses as on main. Migrations: the two trials migrations
+are older than main's newest; confirm `prisma migrate deploy` applies them (builder lane proved order). Required checks green. One verdict.
+
+## Scout FLAGS-D1-123 (Claude Opus 5.5, READ-ONLY) — day-1 flag matrix before the 10-07 Expo build. Time box 35 minutes. (19:26)
+Why: day 1 (SoT A6.1, owner 10-05) = launch path + push notifications + community (coachless sign-up and featured coach, invite codes,
+broadcasts, unified inbox/messaging) + Roman day-1 upgrades (live chat, approve-to-adjust, "your conversations", daily-cap pop-up) + all
+scheduling. Mobile EXPO_PUBLIC_FF_* flags are baked in at build time, so any day-1 mobile flag must be in eas.json's production profile
+(and clinic where SoT says) BEFORE the Wednesday 10-07 build; backend flags go through .github/... fly env desired-state manifest (Fly Env
+Sync) and can flip any time but must be on before the build reaches users.
+Do (read-only; no pushes, no PRs, no comments):
+1. For every day-1 feature above: the backend flag(s) (FEATURE_*, read in src/), state in production (manifest on backend main
+   e6f9a5ec + the latest Fly Env Sync plan log, run 37400579222), the mobile flag(s) (EXPO_PUBLIC_FF_* or server-driven capability) and
+   their eas.json production/clinic values on mobile main, and whether ALL code is merged on both mains (cite PR numbers).
+2. Known gates: Opus C-337 (raising sets shows a negative "% less volume" on the coach suggestion card; fix before FEATURE_ROMAN_ADJUST_ENABLED);
+   SoT says confirm the Anthropic key is present in production for Roman (names only via the env plan; never print values); community
+   flags need FEATURE_COMMUNITY_API=true first (env-sync precondition); SoT line "EXPO_PUBLIC_FF_ROMAN_CHAT stays off in the clinic
+   profile"; FEATURE_DUNNING_V2 is off (launch step 4 "done, flag off") — report what turning it on needs, do not recommend unless SoT says.
+   Find any other gate in SoT Part C1 / A2 / A8.9 for these flags (grep the flag names in tgp-agent-context/TGP_SOURCE_OF_TRUTH.md).
+3. Output /home/user/workspace/ops/reports/FLAGS-D1-123.md: a table (feature | backend flag(s) now -> proposed | mobile flag(s) now ->
+   proposed | code merged? (PRs) | gate/blocker | owner decision needed?), then the exact proposed diffs for (a) the backend manifest and
+   (b) mobile eas.json (production + clinic), keeping every flag whose feature is not fully merged OFF. Plain words. End with ## HANDOFF.
+Use bash with api_credentials=["github"]; clones at /home/user/workspace/growth-project-{backend,mobile} (git fetch only; read with git show
+origin/main:<path>; never change their checkout). gh api for GitHub reads; never `gh run view` / `gh pr checks`.

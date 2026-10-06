@@ -1,0 +1,443 @@
+﻿2026-10-06T01:43:41.7918829Z Current runner version: '2.337.0'
+2026-10-06T01:43:41.7953829Z ##[group]Runner Image Provisioner
+2026-10-06T01:43:41.7955312Z Hosted Compute Agent
+2026-10-06T01:43:41.7956380Z Version: 20260901.588
+2026-10-06T01:43:41.7957750Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-06T01:43:41.7959260Z Build Date: 2026-09-01T19:56:44Z
+2026-10-06T01:43:41.7960695Z Worker ID: {da11b222-c827-4c9d-b304-e14601598860}
+2026-10-06T01:43:41.7962079Z Azure Region: eastus
+2026-10-06T01:43:41.7963627Z ##[endgroup]
+2026-10-06T01:43:41.7966737Z ##[group]Operating System
+2026-10-06T01:43:41.7967916Z Ubuntu
+2026-10-06T01:43:41.7969037Z 24.04.5
+2026-10-06T01:43:41.7969985Z LTS
+2026-10-06T01:43:41.7971042Z ##[endgroup]
+2026-10-06T01:43:41.7972158Z ##[group]Runner Image
+2026-10-06T01:43:41.7973696Z Image: ubuntu-24.04
+2026-10-06T01:43:41.7974870Z Version: 20260927.320.1
+2026-10-06T01:43:41.7977135Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-06T01:43:41.7980170Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-06T01:43:41.7982103Z ##[endgroup]
+2026-10-06T01:43:41.7984391Z ##[group]GITHUB_TOKEN Permissions
+2026-10-06T01:43:41.7987448Z Contents: read
+2026-10-06T01:43:41.7988728Z Metadata: read
+2026-10-06T01:43:41.7989914Z ##[endgroup]
+2026-10-06T01:43:41.7993209Z Secret source: Actions
+2026-10-06T01:43:41.7994990Z Cache mode: write
+2026-10-06T01:43:41.7996202Z Prepare workflow directory
+2026-10-06T01:43:41.8468033Z Prepare all required actions
+2026-10-06T01:43:41.8539299Z Getting action download info
+2026-10-06T01:43:42.0704789Z Download action repository 'actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10' (SHA:df4cb1c069e1874edd31b4311f1884172cec0e10)
+2026-10-06T01:43:42.1893923Z Download action repository 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e' (SHA:48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e)
+2026-10-06T01:43:42.3520633Z Download action repository 'superfly/flyctl-actions@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1' (SHA:ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1)
+2026-10-06T01:43:42.5648208Z Complete job name: Reconcile Fly with the desired-state manifest
+2026-10-06T01:43:42.6372799Z ##[group]Run set -euo pipefail
+2026-10-06T01:43:42.6373499Z set -euo pipefail
+2026-10-06T01:43:42.6374028Z case "${APP}" in
+2026-10-06T01:43:42.6374563Z   backend-spring-lake-3890) ;;
+2026-10-06T01:43:42.6375126Z   *)
+2026-10-06T01:43:42.6376491Z     echo "::error::The app input is not an allowed Fly app target, so nothing was read or changed. This workflow only manages backend-spring-lake-3890. Fix: re-run with -f app=backend-spring-lake-3890."
+2026-10-06T01:43:42.6377936Z     exit 1
+2026-10-06T01:43:42.6378390Z     ;;
+2026-10-06T01:43:42.6378823Z esac
+2026-10-06T01:43:42.6379277Z echo "App target allowed."
+2026-10-06T01:43:42.6670920Z shell: /usr/bin/bash -e {0}
+2026-10-06T01:43:42.6671869Z env:
+2026-10-06T01:43:42.6672713Z   APP: backend-spring-lake-3890
+2026-10-06T01:43:42.6673323Z ##[endgroup]
+2026-10-06T01:43:42.6828932Z App target allowed.
+2026-10-06T01:43:42.6932058Z ##[group]Run set -euo pipefail
+2026-10-06T01:43:42.6933047Z set -euo pipefail
+2026-10-06T01:43:42.6933575Z case "${MODE}" in
+2026-10-06T01:43:42.6934064Z   plan)
+2026-10-06T01:43:42.6934581Z     if [ "${DEPLOY_STAGED}" = "true" ]; then
+2026-10-06T01:43:42.6936148Z       echo "::error::deploy_staged=true only applies in apply mode and this run is a plan, so nothing was read or changed. Fix: re-run with -f mode=apply -f confirm=SET -f deploy_staged=true, or drop deploy_staged for a plan."
+2026-10-06T01:43:42.6937664Z       exit 1
+2026-10-06T01:43:42.6938172Z     fi
+2026-10-06T01:43:42.6938646Z     echo "Plan mode: read-only."
+2026-10-06T01:43:42.6939211Z     ;;
+2026-10-06T01:43:42.6939652Z   apply)
+2026-10-06T01:43:42.6940364Z     if [ "${CONFIRM}" != "SET" ]; then
+2026-10-06T01:43:42.6941619Z       echo "::error::The confirm input is not the literal string SET, so nothing was staged. Fix: re-run with -f confirm=SET once you intend to change production."
+2026-10-06T01:43:42.6943089Z       exit 1
+2026-10-06T01:43:42.6943546Z     fi
+2026-10-06T01:43:42.6944157Z     echo "Apply mode confirmed (deploy_staged=${DEPLOY_STAGED})."
+2026-10-06T01:43:42.6944862Z     ;;
+2026-10-06T01:43:42.6945417Z   *)
+2026-10-06T01:43:42.6946386Z     echo "::error::The mode input must be plan or apply, so nothing was read or changed. Fix: re-run with -f mode=plan or -f mode=apply."
+2026-10-06T01:43:42.6947445Z     exit 1
+2026-10-06T01:43:42.6947894Z     ;;
+2026-10-06T01:43:42.6948317Z esac
+2026-10-06T01:43:42.7007403Z shell: /usr/bin/bash -e {0}
+2026-10-06T01:43:42.7007931Z env:
+2026-10-06T01:43:42.7008341Z   MODE: plan
+2026-10-06T01:43:42.7008770Z   CONFIRM: 
+2026-10-06T01:43:42.7009207Z   DEPLOY_STAGED: false
+2026-10-06T01:43:42.7009681Z ##[endgroup]
+2026-10-06T01:43:42.7090309Z Plan mode: read-only.
+2026-10-06T01:43:42.7133236Z ##[group]Run if [ -z "${FLY_API_TOKEN}" ]; then
+2026-10-06T01:43:42.7133990Z if [ -z "${FLY_API_TOKEN}" ]; then
+2026-10-06T01:43:42.7136013Z   echo "::error::The FLY_API_TOKEN secret is empty or not set, so flyctl cannot read or manage secrets and nothing was changed. Fix: create a deploy token with 'fly tokens create deploy -a backend-spring-lake-3890', save it as the FLY_API_TOKEN secret available to the production environment, then re-run."
+2026-10-06T01:43:42.7138001Z   exit 1
+2026-10-06T01:43:42.7138435Z fi
+2026-10-06T01:43:42.7138910Z echo "FLY_API_TOKEN is configured."
+2026-10-06T01:43:42.7196242Z shell: /usr/bin/bash -e {0}
+2026-10-06T01:43:42.7196776Z env:
+2026-10-06T01:43:42.7202683Z   FLY_API_TOKEN: ***
+2026-10-06T01:43:42.7203183Z ##[endgroup]
+2026-10-06T01:43:42.7282754Z FLY_API_TOKEN is configured.
+2026-10-06T01:43:42.7501282Z ##[group]Run actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+2026-10-06T01:43:42.7503086Z with:
+2026-10-06T01:43:42.7503874Z   persist-credentials: false
+2026-10-06T01:43:42.7504926Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-06T01:43:42.7509130Z   token: ***
+2026-10-06T01:43:42.7509568Z   ssh-strict: true
+2026-10-06T01:43:42.7510004Z   ssh-user: git
+2026-10-06T01:43:42.7510476Z   clean: true
+2026-10-06T01:43:42.7510922Z   sparse-checkout-cone-mode: true
+2026-10-06T01:43:42.7511450Z   fetch-depth: 1
+2026-10-06T01:43:42.7511888Z   fetch-tags: false
+2026-10-06T01:43:42.7512624Z   show-progress: true
+2026-10-06T01:43:42.7513107Z   lfs: false
+2026-10-06T01:43:42.7513529Z   submodules: false
+2026-10-06T01:43:42.7513991Z   set-safe-directory: true
+2026-10-06T01:43:42.7514468Z ##[endgroup]
+2026-10-06T01:43:42.8528027Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-06T01:43:42.8529981Z ##[group]Getting Git version info
+2026-10-06T01:43:42.8530912Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-06T01:43:42.8532095Z [command]/usr/bin/git version
+2026-10-06T01:43:42.8617299Z git version 2.55.0
+2026-10-06T01:43:42.8640984Z ##[endgroup]
+2026-10-06T01:43:42.8657817Z Temporarily overriding HOME='/home/runner/work/_temp/c6d7d4f3-8f29-4c7c-aaf9-512a5b6d6af8' before making global git config changes
+2026-10-06T01:43:42.8660314Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-06T01:43:42.8665285Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-06T01:43:42.8720863Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-06T01:43:42.8725002Z ##[group]Determining repository object format
+2026-10-06T01:43:42.8727422Z ##[endgroup]
+2026-10-06T01:43:42.8728183Z ##[group]Initializing the repository
+2026-10-06T01:43:42.8733184Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-06T01:43:42.8848950Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-06T01:43:42.8851048Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-06T01:43:42.8853563Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-06T01:43:42.8854895Z hint: call:
+2026-10-06T01:43:42.8855371Z hint:
+2026-10-06T01:43:42.8855974Z hint: 	git config --global init.defaultBranch <name>
+2026-10-06T01:43:42.8856696Z hint:
+2026-10-06T01:43:42.8857843Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-06T01:43:42.8859710Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-06T01:43:42.8860604Z hint:
+2026-10-06T01:43:42.8861090Z hint: 	git branch -m <name>
+2026-10-06T01:43:42.8861643Z hint:
+2026-10-06T01:43:42.8863060Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-06T01:43:42.8865207Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-06T01:43:42.8867201Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-06T01:43:42.8911719Z ##[endgroup]
+2026-10-06T01:43:42.8912762Z ##[group]Disabling automatic garbage collection
+2026-10-06T01:43:42.8915365Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-06T01:43:42.8943777Z ##[endgroup]
+2026-10-06T01:43:42.8944761Z ##[group]Setting up auth
+2026-10-06T01:43:42.8945538Z Removing SSH command configuration
+2026-10-06T01:43:42.8950809Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-06T01:43:42.8980669Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-06T01:43:42.9331441Z Removing HTTP extra header
+2026-10-06T01:43:42.9338844Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-06T01:43:42.9369237Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-06T01:43:42.9578125Z Removing includeIf entries pointing to credentials config files
+2026-10-06T01:43:42.9584548Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-06T01:43:42.9615943Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-06T01:43:42.9835146Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-06T01:43:42.9870969Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config
+2026-10-06T01:43:42.9903844Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config
+2026-10-06T01:43:42.9935602Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config
+2026-10-06T01:43:42.9966311Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config
+2026-10-06T01:43:42.9997133Z ##[endgroup]
+2026-10-06T01:43:42.9998396Z ##[group]Fetching the repository
+2026-10-06T01:43:43.0004984Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +76a592168cab7f440913cdab8285293607f93ec1:refs/remotes/origin/main
+2026-10-06T01:43:44.1555530Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-06T01:43:44.1557381Z  * [new ref]         76a592168cab7f440913cdab8285293607f93ec1 -> origin/main
+2026-10-06T01:43:44.1565912Z [command]/usr/bin/git branch --list --remote origin/main
+2026-10-06T01:43:44.1589664Z   origin/main
+2026-10-06T01:43:44.1598516Z [command]/usr/bin/git rev-parse refs/remotes/origin/main
+2026-10-06T01:43:44.1620085Z 76a592168cab7f440913cdab8285293607f93ec1
+2026-10-06T01:43:44.1624556Z ##[endgroup]
+2026-10-06T01:43:44.1625439Z ##[group]Determining the checkout info
+2026-10-06T01:43:44.1626453Z ##[endgroup]
+2026-10-06T01:43:44.1630189Z [command]/usr/bin/git sparse-checkout disable
+2026-10-06T01:43:44.1678603Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-06T01:43:44.1704391Z ##[group]Checking out the ref
+2026-10-06T01:43:44.1708015Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-10-06T01:43:44.4581900Z Switched to a new branch 'main'
+2026-10-06T01:43:44.4830630Z branch 'main' set up to track 'origin/main'.
+2026-10-06T01:43:44.4952648Z ##[endgroup]
+2026-10-06T01:43:44.4957013Z [command]/usr/bin/git log -1 --format=%H
+2026-10-06T01:43:44.4981793Z 76a592168cab7f440913cdab8285293607f93ec1
+2026-10-06T01:43:44.4992050Z ##[group]Removing auth
+2026-10-06T01:43:44.4992938Z Removing SSH command configuration
+2026-10-06T01:43:44.4997231Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-06T01:43:44.5033521Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-06T01:43:44.5253093Z Removing HTTP extra header
+2026-10-06T01:43:44.5257258Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-06T01:43:44.5288820Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-06T01:43:44.5506026Z Removing includeIf entries pointing to credentials config files
+2026-10-06T01:43:44.5509366Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-06T01:43:44.5535589Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-06T01:43:44.5536798Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-06T01:43:44.5537472Z includeif.gitdir:/github/workspace/.git.path
+2026-10-06T01:43:44.5537980Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-06T01:43:44.5544842Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-06T01:43:44.5565513Z /home/runner/work/_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config
+2026-10-06T01:43:44.5574985Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config
+2026-10-06T01:43:44.5606491Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-06T01:43:44.5626670Z /home/runner/work/_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config
+2026-10-06T01:43:44.5635408Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config
+2026-10-06T01:43:44.5816909Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-06T01:43:44.5838812Z /github/runner_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config
+2026-10-06T01:43:44.5848189Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config
+2026-10-06T01:43:44.5890445Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-06T01:43:44.5911720Z /github/runner_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config
+2026-10-06T01:43:44.5918613Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config
+2026-10-06T01:43:44.6254426Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-06T01:43:44.6474601Z Removing credentials config '/home/runner/work/_temp/git-credentials-778bd660-7d92-40b4-8001-49462c69b410.config'
+2026-10-06T01:43:44.6484176Z ##[endgroup]
+2026-10-06T01:43:44.6680893Z ##[group]Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+2026-10-06T01:43:44.6681409Z with:
+2026-10-06T01:43:44.6681674Z   node-version: 20.x
+2026-10-06T01:43:44.6681955Z   check-latest: false
+2026-10-06T01:43:44.6685330Z   token: ***
+2026-10-06T01:43:44.6685619Z   package-manager-cache: true
+2026-10-06T01:43:44.6685934Z ##[endgroup]
+2026-10-06T01:43:44.8243845Z Attempting to download 20.x...
+2026-10-06T01:43:45.4110260Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-06T01:43:45.8300138Z Extracting ...
+2026-10-06T01:43:45.8421738Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/516384ee-83ec-495e-9fba-4092a9cfcd0a -f /home/runner/work/_temp/5030bafc-eda5-4cef-9bf3-283604ed4af3
+2026-10-06T01:43:46.8339126Z Adding to the cache ...
+2026-10-06T01:43:48.6589586Z ##[group]Environment details
+2026-10-06T01:43:49.2943562Z node: v20.20.2
+2026-10-06T01:43:49.2944157Z npm: 10.8.2
+2026-10-06T01:43:49.2944506Z yarn: 1.22.22
+2026-10-06T01:43:49.2945273Z ##[endgroup]
+2026-10-06T01:43:49.3129984Z ##[group]Run set -euo pipefail
+2026-10-06T01:43:49.3130333Z set -euo pipefail
+2026-10-06T01:43:49.3130588Z umask 077
+2026-10-06T01:43:49.3130866Z mkdir -p "${RUNNER_TEMP}/fly-env-sync"
+2026-10-06T01:43:49.3131512Z node scripts/fly-env/fly-env-manifest.js validate .github/fly-env-desired-state.json src/common/env-validation.ts
+2026-10-06T01:43:49.3198339Z shell: /usr/bin/bash -e {0}
+2026-10-06T01:43:49.3198634Z ##[endgroup]
+2026-10-06T01:43:49.3630481Z Desired state OK: 32 flags (6 declared with a value), 27 secrets, 14 excluded; manifest sha256 70a465d0c8fa4789759c2c52be82fbbc552cd223d6dddaaea62954e216b3675a
+2026-10-06T01:43:49.3746453Z ##[group]Run superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+2026-10-06T01:43:49.3747320Z with:
+2026-10-06T01:43:49.3747645Z   version: latest
+2026-10-06T01:43:49.3748003Z ##[endgroup]
+2026-10-06T01:43:50.1879205Z Acquired 0.4.112 from https://github.com/superfly/flyctl/releases/download/v0.4.112/flyctl_0.4.112_Linux_x86_64.tar.gz
+2026-10-06T01:43:50.2001380Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/569e5625-7e81-424f-a55f-be6016a68350 -f /home/runner/work/_temp/0b76d088-1da0-4b46-8f25-19ca84697455
+2026-10-06T01:43:50.9211270Z Successfully cached flyctl to /opt/hostedtoolcache/flyctl/0.4.112/x86_64
+2026-10-06T01:43:50.9243376Z Added flyctl to the path
+2026-10-06T01:43:50.9374695Z ##[group]Run set +x
+2026-10-06T01:43:50.9375079Z set +x
+2026-10-06T01:43:50.9375318Z set -euo pipefail
+2026-10-06T01:43:50.9375575Z umask 077
+2026-10-06T01:43:50.9376022Z cd "${RUNNER_TEMP}/fly-env-sync"
+2026-10-06T01:43:50.9376868Z trap 'rm -f fly-list-stderr.txt jq-stderr.txt list-status.txt ssh-stdout.txt fly-ssh-stderr.txt' EXIT
+2026-10-06T01:43:50.9377588Z # BEGIN fly_error_class (byte-identical in every step that calls flyctl; B-624-3)
+2026-10-06T01:43:50.9378159Z # flyctl can echo a NAME=VALUE argument, a quoted value or a bare value
+2026-10-06T01:43:50.9378666Z # in its errors, so no flyctl output is ever printed, filtered or
+2026-10-06T01:43:50.9379161Z # uploaded: stdout goes to /dev/null (or, for `secrets list --json`,
+2026-10-06T01:43:50.9379670Z # only through the jq name + status projection) and stderr goes to a
+2026-10-06T01:43:50.9380207Z # 0600 file in the job directory that is only tested with `grep -q`
+2026-10-06T01:43:50.9380716Z # against fixed patterns. fly_error_class prints one fixed word chosen
+2026-10-06T01:43:50.9381230Z # by this script, never a byte of the file; an EXIT trap deletes the
+2026-10-06T01:43:50.9381628Z # file on every path.
+2026-10-06T01:43:50.9381896Z fly_error_class() {
+2026-10-06T01:43:50.9382170Z   if [ ! -s "$1" ]; then echo no_output
+2026-10-06T01:43:50.9383229Z   elif grep -qiE 'unauthori[sz]ed|not authori[sz]ed|authenticat|forbidden|access denied|invalid token|token (is )?(invalid|expired|not valid)' "$1"; then echo auth
+2026-10-06T01:43:50.9384174Z   elif grep -qiE 'could not find app|app not found|no such app|app .* not found' "$1"; then echo app_not_found
+2026-10-06T01:43:50.9384817Z   elif grep -qiE 'rate limit|too many requests' "$1"; then echo rate_limited
+2026-10-06T01:43:50.9385516Z   elif grep -qiE 'health ?check|unhealthy|failed to update machine|machine .* failed' "$1"; then echo machine_health
+2026-10-06T01:43:50.9386645Z   elif grep -qiE 'timeout|timed out|connection refused|connection reset|no such host|dial tcp|network is unreachable|tls handshake|unexpected eof|service unavailable|bad gateway' "$1"; then echo network
+2026-10-06T01:43:50.9387533Z   else echo unclassified
+2026-10-06T01:43:50.9387786Z   fi
+2026-10-06T01:43:50.9387981Z }
+2026-10-06T01:43:50.9388177Z fly_error_hint() {
+2026-10-06T01:43:50.9388426Z   case "$1" in
+2026-10-06T01:43:50.9389413Z     auth) echo "Fix: flyctl reported an authorization error; check that FLY_API_TOKEN is a valid token for ${APP} (create one with 'fly tokens create deploy -a ${APP}' and save it as the FLY_API_TOKEN secret available to the production environment), then re-run." ;;
+2026-10-06T01:43:50.9390952Z     app_not_found) echo "Fix: flyctl could not find ${APP}; check that FLY_API_TOKEN is a valid token for ${APP} and belongs to the organization that owns it ('fly apps list'), then re-run." ;;
+2026-10-06T01:43:50.9391949Z     rate_limited) echo "Fix: the Fly API is rate limiting this token; wait a few minutes, then re-run." ;;
+2026-10-06T01:43:50.9393164Z     machine_health) echo "Fix: check machine health with 'fly status -a ${APP}' and 'fly logs -a ${APP}', fix the failing machine, then re-run." ;;
+2026-10-06T01:43:50.9394228Z     network) echo "Fix: the Fly API could not be reached; check that FLY_API_TOKEN is a valid token for ${APP}, check https://status.flyio.net, then re-run." ;;
+2026-10-06T01:43:50.9395677Z     *) echo "Fix: check that FLY_API_TOKEN is a valid token for ${APP} ('fly tokens create deploy -a ${APP}') and that the Fly API is reachable (https://status.flyio.net), then re-run; to read flyctl's full error, run 'fly secrets list -a ${APP}' from a trusted terminal." ;;
+2026-10-06T01:43:50.9396714Z   esac
+2026-10-06T01:43:50.9397123Z }
+2026-10-06T01:43:50.9397342Z # END fly_error_class
+2026-10-06T01:43:50.9397779Z # BEGIN fly_helpers (byte-identical in every step that reads Fly state; B-FLAGS-2)
+2026-10-06T01:43:50.9398370Z FEM=(node "${GITHUB_WORKSPACE}/scripts/fly-env/fly-env-manifest.js")
+2026-10-06T01:43:50.9399030Z MANIFEST="${GITHUB_WORKSPACE}/.github/fly-env-desired-state.json"
+2026-10-06T01:43:50.9399515Z RULES="${GITHUB_WORKSPACE}/src/common/env-validation.ts"
+2026-10-06T01:43:50.9399993Z # Structured listing (B-624-1, B-633-1): `--json` gives each secret's
+2026-10-06T01:43:50.9400489Z # bare name; jq projects name + status word only, so digests never
+2026-10-06T01:43:50.9400979Z # reach a variable, the log or a file. Error codes are fixed strings.
+2026-10-06T01:43:50.9401370Z fly_list_state() {
+2026-10-06T01:43:50.9401646Z   local filter fly_rc jq_rc code cls
+2026-10-06T01:43:50.9403011Z   filter='if type != "array" then error("ENVSYNC_NOT_ARRAY") else .[] | if type != "object" then error("ENVSYNC_ENTRY_NOT_OBJECT") else [(.name // .Name), ((.status // .Status // "Unknown") | tostring)] | if (.[0] | type) != "string" or .[0] == "" then error("ENVSYNC_ENTRY_NO_NAME") else @tsv end end end'
+2026-10-06T01:43:50.9404088Z   (
+2026-10-06T01:43:50.9404298Z     set +e
+2026-10-06T01:43:50.9404747Z     flyctl secrets list -a "${APP}" --json 2> fly-list-stderr.txt | jq -r "${filter}" > "$1" 2> jq-stderr.txt
+2026-10-06T01:43:50.9405343Z     echo "${PIPESTATUS[0]} ${PIPESTATUS[1]}" > list-status.txt
+2026-10-06T01:43:50.9405704Z   )
+2026-10-06T01:43:50.9405938Z   read -r fly_rc jq_rc < list-status.txt
+2026-10-06T01:43:50.9406250Z   if [ "${fly_rc}" -ne 0 ]; then
+2026-10-06T01:43:50.9406571Z     cls=$(fly_error_class fly-list-stderr.txt)
+2026-10-06T01:43:50.9407371Z     echo "::error::flyctl secrets list --json failed (exit ${fly_rc}, error class ${cls}) for ${APP}, so $2. flyctl's own error text is withheld from this log. $(fly_error_hint "${cls}")"
+2026-10-06T01:43:50.9408105Z     return 1
+2026-10-06T01:43:50.9408322Z   fi
+2026-10-06T01:43:50.9408534Z   if [ "${jq_rc}" -ne 0 ]; then
+2026-10-06T01:43:50.9408915Z     code=$(grep -oE 'ENVSYNC_[A-Z_]+' jq-stderr.txt | head -n 1 || true)
+2026-10-06T01:43:50.9410179Z     echo "::error::flyctl secrets list --json did not return a JSON array of objects with a string name field (${code:-ENVSYNC_INVALID_JSON}), so $2. Fix: the installed flyctl changed its JSON output; pin a flyctl version in the setup-flyctl step or update the jq filter in fly_list_state, then re-run."
+2026-10-06T01:43:50.9411320Z     return 1
+2026-10-06T01:43:50.9411538Z   fi
+2026-10-06T01:43:50.9411727Z }
+2026-10-06T01:43:50.9412070Z # In-machine value check. `prepare` builds the command (base64 only);
+2026-10-06T01:43:50.9412891Z # the machine prints one marked line of match / differs / absent /
+2026-10-06T01:43:50.9413372Z # present words. stdout goes to a 0600 scratch file that only
+2026-10-06T01:43:50.9413865Z # parse-compare reads; stderr is only classified; both are deleted.
+2026-10-06T01:43:50.9414279Z fly_machine_check() {
+2026-10-06T01:43:50.9414533Z   local rc cls out
+2026-10-06T01:43:50.9414777Z   out=machine.json
+2026-10-06T01:43:50.9415015Z   set +e
+2026-10-06T01:43:50.9415459Z   flyctl ssh console -a "${APP}" -C "$(cat compare.cmd)" < /dev/null > ssh-stdout.txt 2> fly-ssh-stderr.txt
+2026-10-06T01:43:50.9415949Z   rc=$?
+2026-10-06T01:43:50.9416157Z   set -e
+2026-10-06T01:43:50.9416371Z   if [ "${rc}" -ne 0 ]; then
+2026-10-06T01:43:50.9416679Z     cls=$(fly_error_class fly-ssh-stderr.txt)
+2026-10-06T01:43:50.9417281Z     printf '{"unavailable":true,"errorClass":"%s"}\n' "${cls}" > "${out}"
+2026-10-06T01:43:50.9418324Z     echo "::warning::flyctl ssh console failed (exit ${rc}, error class ${cls}), so the in-machine value check did not run and deployed values are unproven. flyctl's own output is withheld from this log. $(fly_error_hint "${cls}")"
+2026-10-06T01:43:50.9419345Z   else
+2026-10-06T01:43:50.9419636Z     "${FEM[@]}" parse-compare "${MANIFEST}" "${RULES}" . before
+2026-10-06T01:43:50.9419985Z   fi
+2026-10-06T01:43:50.9420231Z   rm -f ssh-stdout.txt fly-ssh-stderr.txt
+2026-10-06T01:43:50.9420538Z }
+2026-10-06T01:43:50.9420740Z # END fly_helpers
+2026-10-06T01:43:50.9421173Z fly_list_state fly-state.tsv "nothing could be planned and nothing was changed" || exit 1
+2026-10-06T01:43:50.9421765Z # Source checks (booleans only) and the in-machine check command.
+2026-10-06T01:43:50.9422189Z "${FEM[@]}" prepare "${MANIFEST}" "${RULES}" .
+2026-10-06T01:43:50.9422818Z fly_machine_check
+2026-10-06T01:43:50.9423096Z "${FEM[@]}" plan "${MANIFEST}" "${RULES}" .
+2026-10-06T01:43:50.9487101Z shell: /usr/bin/bash -e {0}
+2026-10-06T01:43:50.9487368Z env:
+2026-10-06T01:43:50.9491291Z   FLY_API_TOKEN: ***
+2026-10-06T01:43:50.9491553Z   APP: backend-spring-lake-3890
+2026-10-06T01:43:50.9492062Z   GOOGLE_CLIENT_IDS: ***
+2026-10-06T01:43:50.9492991Z   MWB_AUTOSAVE_LOCK_TOKEN_SECRET: ***
+2026-10-06T01:43:50.9493405Z   GOOGLE_OAUTH_CLIENT_ID: 
+2026-10-06T01:43:50.9493655Z   GOOGLE_OAUTH_CLIENT_SECRET: 
+2026-10-06T01:43:50.9493916Z   GOOGLE_OAUTH_REDIRECT_URI: 
+2026-10-06T01:43:50.9494163Z   METRICS_AUTH_TOKEN: 
+2026-10-06T01:43:50.9494418Z   DATA_EXPORT_DOWNLOAD_SECRET: 
+2026-10-06T01:43:50.9494678Z   CONTRACT_PDF_URL_SECRET: 
+2026-10-06T01:43:50.9494921Z   SCHEDULING_WEBHOOK_SECRET: 
+2026-10-06T01:43:50.9495170Z   GARMIN_WEBHOOK_SALT: 
+2026-10-06T01:43:50.9495398Z   WHOOP_WEBHOOK_SALT: 
+2026-10-06T01:43:50.9495624Z   FITBIT_CLIENT_ID: 
+2026-10-06T01:43:50.9495851Z   FITBIT_CLIENT_SECRET: 
+2026-10-06T01:43:50.9496086Z   GARMIN_CLIENT_ID: 
+2026-10-06T01:43:50.9496315Z   GARMIN_CLIENT_SECRET: 
+2026-10-06T01:43:50.9496538Z   OURA_CLIENT_ID: 
+2026-10-06T01:43:50.9496764Z   OURA_CLIENT_SECRET: 
+2026-10-06T01:43:50.9496980Z   POLAR_CLIENT_ID: 
+2026-10-06T01:43:50.9497198Z   POLAR_CLIENT_SECRET: 
+2026-10-06T01:43:50.9497420Z   STRAVA_CLIENT_ID: 
+2026-10-06T01:43:50.9497629Z   STRAVA_CLIENT_SECRET: 
+2026-10-06T01:43:50.9497849Z   WAHOO_CLIENT_ID: 
+2026-10-06T01:43:50.9498054Z   WAHOO_CLIENT_SECRET: 
+2026-10-06T01:43:50.9498279Z   WHOOP_CLIENT_ID: 
+2026-10-06T01:43:50.9498484Z   WHOOP_CLIENT_SECRET: 
+2026-10-06T01:43:50.9498701Z   WITHINGS_CLIENT_ID: 
+2026-10-06T01:43:50.9498926Z   WITHINGS_CLIENT_SECRET: 
+2026-10-06T01:43:50.9499159Z ##[endgroup]
+2026-10-06T01:43:51.6497514Z In-machine check prepared: 8 declared value(s) to compare, 51 name(s) to check for presence.
+2026-10-06T01:43:55.7582631Z Desired state: .github/fly-env-desired-state.json sha256 70a465d0c8fa4789759c2c52be82fbbc552cd223d6dddaaea62954e216b3675a
+2026-10-06T01:43:55.7583911Z In-machine value check: ran (per name: match / differs / absent for declared values, present / absent otherwise)
+2026-10-06T01:43:55.7584782Z NAME | kind | declared | on Fly | in machine | action | why
+2026-10-06T01:43:55.7585752Z FEATURE_AI_CONSENT_LEDGER_ENABLED | flag | true | Deployed | match | keep | deployed and the machine holds the declared value
+2026-10-06T01:43:55.7586764Z FEATURE_COMMUNITY_SCHEMA | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7587583Z FEATURE_COMMUNITY_API | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7588393Z FEATURE_COMMUNITY_POSTS | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7589216Z FEATURE_COMMUNITY_MESSAGES | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7590030Z FEATURE_COMMUNITY_PUSH | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7591061Z FEATURE_COMMUNITY_REALTIME | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7592032Z FEATURE_COMMUNITY_VOICE_NOTES | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7593387Z FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7594594Z FEATURE_COMMUNITY_DM | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7595480Z FEATURE_COMMUNITY_ACKS | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7596424Z FEATURE_COMMUNITY_PLAN_TAGS | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7597404Z FEATURE_COMMUNITY_SEARCH | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7598459Z FEATURE_COMMUNITY_TELEMETRY | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7599256Z FEATURE_COMMUNITY_WEARABLE_PROMPTS | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7600430Z FEATURE_COMMUNITY_AI_TRIAGE | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7601142Z FEATURE_COMMUNITY_CHALLENGES | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7601888Z FEATURE_COMMUNITY_EVENTS | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7603225Z FEATURE_COMMUNITY_CLASSROOM_POSTS | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7604007Z FEATURE_MESSAGING_CORE_V2 | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7604653Z BOOKING_REMINDERS_ENABLED | flag | on | absent | absent | set | not on Fly
+2026-10-06T01:43:55.7605379Z SIGNUP_ROLE_CHOICE_ENABLED | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7606051Z FEATURE_COACHLESS_HOME | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7606744Z COACH_WELCOME_SCHEDULER_ENABLED | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7607441Z WORKOUT_REMINDERS_ENABLED | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7608960Z FEATURE_WEARABLES_INGEST_POST | flag | true | Deployed | match | keep | deployed and the machine holds the declared value
+2026-10-06T01:43:55.7610250Z FEATURE_MWB_TEMPLATES | flag | true | absent | absent | set | not on Fly
+2026-10-06T01:43:55.7611290Z FEATURE_MWB_AUTOSAVE_UNDO | flag | true | absent | absent | set | not on Fly
+2026-10-06T01:43:55.7612523Z FEATURE_NAMED_REGIMES | flag | true | absent | absent | set | not on Fly
+2026-10-06T01:43:55.7613634Z FEATURE_DUNNING_V2 | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7614762Z FEATURE_COACH_CODE_TOOLS | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7615631Z FEATURE_COACH_BROADCASTS | flag | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7616489Z GOOGLE_CLIENT_IDS | secret | github-secret | Deployed | match | keep | deployed and the machine holds the declared value
+2026-10-06T01:43:55.7617317Z MWB_AUTOSAVE_LOCK_TOKEN_SECRET | secret | github-secret | absent | absent | set | not on Fly
+2026-10-06T01:43:55.7618199Z GOOGLE_OAUTH_CLIENT_ID | secret | present | Deployed | present | keep | present and deployed; value owned outside this manifest
+2026-10-06T01:43:55.7619227Z GOOGLE_OAUTH_CLIENT_SECRET | secret | present | Deployed | present | keep | present and deployed; value owned outside this manifest
+2026-10-06T01:43:55.7620374Z GOOGLE_OAUTH_REDIRECT_URI | secret | present | Deployed | present | keep | present and deployed; value owned outside this manifest
+2026-10-06T01:43:55.7621193Z METRICS_AUTH_TOKEN | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7621879Z DATA_EXPORT_DOWNLOAD_SECRET | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7622999Z CONTRACT_PDF_URL_SECRET | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7623717Z SCHEDULING_WEBHOOK_SECRET | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7624388Z GARMIN_WEBHOOK_SALT | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7625158Z WHOOP_WEBHOOK_SALT | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7625789Z FITBIT_CLIENT_ID | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7626421Z FITBIT_CLIENT_SECRET | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7627046Z GARMIN_CLIENT_ID | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7627665Z GARMIN_CLIENT_SECRET | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7628284Z OURA_CLIENT_ID | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7628900Z OURA_CLIENT_SECRET | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7629525Z POLAR_CLIENT_ID | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7630143Z POLAR_CLIENT_SECRET | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7630759Z STRAVA_CLIENT_ID | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7632853Z STRAVA_CLIENT_SECRET | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7633746Z WAHOO_CLIENT_ID | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7634397Z WAHOO_CLIENT_SECRET | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7635021Z WHOOP_CLIENT_ID | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7635641Z WHOOP_CLIENT_SECRET | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7636288Z WITHINGS_CLIENT_ID | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7636934Z WITHINGS_CLIENT_SECRET | secret | unset | absent | absent | keep | absent, as declared
+2026-10-06T01:43:55.7637594Z Plan: 5 to set, 0 to unset, 0 staged earlier and waiting for a deploy, 54 unchanged.
+2026-10-06T01:43:55.7638706Z Apply stages 5 change(s) without a restart; they take effect at the next deploy, or now with deploy_staged=true (one rolling restart, then every started machine must prove the manifest).
+2026-10-06T01:43:55.7640907Z Emergency kill (B-637-2; docs/runbooks/launch-flags.md): defaults-on switches are killed by SETTING their off value, never by unsetting: FEATURE_COMMUNITY_SCHEMA=false SIGNUP_ROLE_CHOICE_ENABLED=false COACH_WELCOME_SCHEDULER_ENABLED=false WORKOUT_REMINDERS_ENABLED=false. The other 28 flags default off and are killed by unsetting them.
+2026-10-06T01:43:55.9275594Z ##[group]Run rm -rf "${RUNNER_TEMP}/fly-env-sync"
+2026-10-06T01:43:55.9276223Z rm -rf "${RUNNER_TEMP}/fly-env-sync"
+2026-10-06T01:43:55.9350401Z shell: /usr/bin/bash -e {0}
+2026-10-06T01:43:55.9350669Z ##[endgroup]
+2026-10-06T01:43:55.9541825Z Post job cleanup.
+2026-10-06T01:43:56.0821229Z Post job cleanup.
+2026-10-06T01:43:56.1673553Z [command]/usr/bin/git version
+2026-10-06T01:43:56.1714317Z git version 2.55.0
+2026-10-06T01:43:56.1758638Z Temporarily overriding HOME='/home/runner/work/_temp/a3f9ebdd-b98c-4c1f-9892-24ec4a1023ed' before making global git config changes
+2026-10-06T01:43:56.1760334Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-06T01:43:56.1765134Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-06T01:43:56.1799780Z Removing SSH command configuration
+2026-10-06T01:43:56.1808606Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-06T01:43:56.1847501Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-06T01:43:56.2090881Z Removing HTTP extra header
+2026-10-06T01:43:56.2097139Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-06T01:43:56.2133495Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-06T01:43:56.2376941Z Removing includeIf entries pointing to credentials config files
+2026-10-06T01:43:56.2386629Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-06T01:43:56.2423042Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-06T01:43:56.2829141Z Cleaning up orphan processes
+2026-10-06T01:43:56.3143821Z Terminate orphan process: pid (2497) (flyctl)

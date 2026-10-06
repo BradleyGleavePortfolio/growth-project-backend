@@ -1,0 +1,6 @@
+commit fca4018be43d57805c5c06c5a18c359800a1a22b
+Merge: 2a6dfd98 d5177b31
+Author: Bradley Gleave <bradley@bradleytgpcoaching.com>
+Date:   Tue Oct 6 02:03:02 2026 +0000
+
+    Merge origin/main d5177b31 into trials-split-1 (#671: proxy-addr 2.0.8 for the audit check)

@@ -1,0 +1,278 @@
+﻿2026-10-03T18:20:31.9040997Z Current runner version: '2.337.0'
+2026-10-03T18:20:31.9064846Z ##[group]Runner Image Provisioner
+2026-10-03T18:20:31.9066078Z Hosted Compute Agent
+2026-10-03T18:20:31.9066699Z Version: 20260901.588
+2026-10-03T18:20:31.9067416Z Commit: f88ec8081b781fac6c440065ac7ff9e710ce3d0b
+2026-10-03T18:20:31.9068154Z Build Date: 2026-09-01T19:56:44Z
+2026-10-03T18:20:31.9068916Z Worker ID: {30b3eec5-a64b-4334-9ca6-e4500b4771a2}
+2026-10-03T18:20:31.9069742Z Azure Region: eastus2
+2026-10-03T18:20:31.9070357Z ##[endgroup]
+2026-10-03T18:20:31.9071901Z ##[group]Operating System
+2026-10-03T18:20:31.9072547Z Ubuntu
+2026-10-03T18:20:31.9073071Z 24.04.5
+2026-10-03T18:20:31.9073757Z LTS
+2026-10-03T18:20:31.9074281Z ##[endgroup]
+2026-10-03T18:20:31.9074893Z ##[group]Runner Image
+2026-10-03T18:20:31.9075702Z Image: ubuntu-24.04
+2026-10-03T18:20:31.9076621Z Version: 20260927.320.1
+2026-10-03T18:20:31.9078079Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260927.320/images/ubuntu/Ubuntu2404-Readme.md
+2026-10-03T18:20:31.9080141Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260927.320
+2026-10-03T18:20:31.9081849Z ##[endgroup]
+2026-10-03T18:20:31.9083703Z ##[group]GITHUB_TOKEN Permissions
+2026-10-03T18:20:31.9086104Z Contents: read
+2026-10-03T18:20:31.9086797Z Metadata: read
+2026-10-03T18:20:31.9087401Z ##[endgroup]
+2026-10-03T18:20:31.9089706Z Secret source: Actions
+2026-10-03T18:20:31.9090860Z Cache mode: write
+2026-10-03T18:20:31.9091785Z Prepare workflow directory
+2026-10-03T18:20:31.9418658Z Prepare all required actions
+2026-10-03T18:20:31.9466259Z Getting action download info
+2026-10-03T18:20:32.2033705Z Download action repository 'actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10' (SHA:df4cb1c069e1874edd31b4311f1884172cec0e10)
+2026-10-03T18:20:32.3230566Z Download action repository 'actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e' (SHA:48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e)
+2026-10-03T18:20:32.4484447Z Download action repository 'superfly/flyctl-actions@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1' (SHA:ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1)
+2026-10-03T18:20:32.5748016Z Download action repository 'actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4' (SHA:330a01c490aca151604b8cf639adc76d48f6c5d4)
+2026-10-03T18:20:32.8236093Z Complete job name: Classify env inside the Fly machine
+2026-10-03T18:20:32.9038454Z ##[group]Run set -euo pipefail
+2026-10-03T18:20:32.9039115Z set -euo pipefail
+2026-10-03T18:20:32.9039648Z case "${APP}" in
+2026-10-03T18:20:32.9040238Z   backend-spring-lake-3890) ;;
+2026-10-03T18:20:32.9040864Z   *)
+2026-10-03T18:20:32.9042265Z     echo "::error::The app input is not an allowed Fly app target, so no ssh session was opened. This workflow only reads backend-spring-lake-3890. Fix: re-run with -f app=backend-spring-lake-3890."
+2026-10-03T18:20:32.9043658Z     exit 1
+2026-10-03T18:20:32.9044108Z     ;;
+2026-10-03T18:20:32.9044537Z esac
+2026-10-03T18:20:32.9045230Z if [ -n "${MACHINE}" ] && ! printf '%s' "${MACHINE}" | grep -Eq '^[a-z0-9]{8,32}$'; then
+2026-10-03T18:20:32.9047423Z   echo "::error::The machine input is not a Fly machine id (8-32 lowercase letters and digits), so no ssh session was opened. Fix: copy an id from 'fly machine list -a backend-spring-lake-3890' or leave machine empty to use any started machine, then re-run."
+2026-10-03T18:20:32.9049085Z   exit 1
+2026-10-03T18:20:32.9049506Z fi
+2026-10-03T18:20:32.9049947Z echo "App target allowed."
+2026-10-03T18:20:32.9325247Z shell: /usr/bin/bash -e {0}
+2026-10-03T18:20:32.9326381Z env:
+2026-10-03T18:20:32.9326855Z   APP: backend-spring-lake-3890
+2026-10-03T18:20:32.9327401Z   MACHINE: 
+2026-10-03T18:20:32.9327836Z ##[endgroup]
+2026-10-03T18:20:32.9489467Z App target allowed.
+2026-10-03T18:20:32.9611811Z ##[group]Run if [ -z "${FLY_API_TOKEN}" ]; then
+2026-10-03T18:20:32.9612938Z if [ -z "${FLY_API_TOKEN}" ]; then
+2026-10-03T18:20:32.9616276Z   echo "::error::The FLY_API_TOKEN secret is empty or not set, so no ssh session can be opened. Fix: save a Fly token that can ssh into backend-spring-lake-3890 as the FLY_API_TOKEN secret available to the production environment, then re-run."
+2026-10-03T18:20:32.9617992Z   exit 1
+2026-10-03T18:20:32.9618439Z fi
+2026-10-03T18:20:32.9618914Z echo "FLY_API_TOKEN is configured."
+2026-10-03T18:20:32.9690084Z shell: /usr/bin/bash -e {0}
+2026-10-03T18:20:32.9690908Z env:
+2026-10-03T18:20:32.9702225Z   FLY_API_TOKEN: ***
+2026-10-03T18:20:32.9703187Z ##[endgroup]
+2026-10-03T18:20:32.9790976Z FLY_API_TOKEN is configured.
+2026-10-03T18:20:32.9944102Z ##[group]Run actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
+2026-10-03T18:20:32.9944859Z with:
+2026-10-03T18:20:32.9945876Z   repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-03T18:20:32.9950026Z   token: ***
+2026-10-03T18:20:32.9950476Z   ssh-strict: true
+2026-10-03T18:20:32.9950944Z   ssh-user: git
+2026-10-03T18:20:32.9951395Z   persist-credentials: true
+2026-10-03T18:20:32.9951893Z   clean: true
+2026-10-03T18:20:32.9952337Z   sparse-checkout-cone-mode: true
+2026-10-03T18:20:32.9952860Z   fetch-depth: 1
+2026-10-03T18:20:32.9953290Z   fetch-tags: false
+2026-10-03T18:20:32.9953739Z   show-progress: true
+2026-10-03T18:20:32.9954207Z   lfs: false
+2026-10-03T18:20:32.9954622Z   submodules: false
+2026-10-03T18:20:32.9955075Z   set-safe-directory: true
+2026-10-03T18:20:32.9955811Z ##[endgroup]
+2026-10-03T18:20:33.0938045Z Syncing repository: BradleyGleavePortfolio/growth-project-backend
+2026-10-03T18:20:33.0939921Z ##[group]Getting Git version info
+2026-10-03T18:20:33.0940865Z Working directory is '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-03T18:20:33.0942037Z [command]/usr/bin/git version
+2026-10-03T18:20:33.1032608Z git version 2.55.0
+2026-10-03T18:20:33.1054402Z ##[endgroup]
+2026-10-03T18:20:33.1068689Z Temporarily overriding HOME='/home/runner/work/_temp/ab65e80f-6600-43ab-8238-a2375562fb10' before making global git config changes
+2026-10-03T18:20:33.1071012Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-03T18:20:33.1074016Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-03T18:20:33.1122800Z Deleting the contents of '/home/runner/work/growth-project-backend/growth-project-backend'
+2026-10-03T18:20:33.1127137Z ##[group]Determining repository object format
+2026-10-03T18:20:33.1129399Z ##[endgroup]
+2026-10-03T18:20:33.1130595Z ##[group]Initializing the repository
+2026-10-03T18:20:33.1134594Z [command]/usr/bin/git init /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-03T18:20:33.1263636Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-03T18:20:33.1265360Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-03T18:20:33.1267428Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-03T18:20:33.1268755Z hint: call:
+2026-10-03T18:20:33.1269467Z hint:
+2026-10-03T18:20:33.1270303Z hint: 	git config --global init.defaultBranch <name>
+2026-10-03T18:20:33.1271246Z hint:
+2026-10-03T18:20:33.1272037Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-03T18:20:33.1272985Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-03T18:20:33.1273726Z hint:
+2026-10-03T18:20:33.1274151Z hint: 	git branch -m <name>
+2026-10-03T18:20:33.1274737Z hint:
+2026-10-03T18:20:33.1276017Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-03T18:20:33.1277237Z Initialized empty Git repository in /home/runner/work/growth-project-backend/growth-project-backend/.git/
+2026-10-03T18:20:33.1280329Z [command]/usr/bin/git remote add origin https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-03T18:20:33.1324352Z ##[endgroup]
+2026-10-03T18:20:33.1325391Z ##[group]Disabling automatic garbage collection
+2026-10-03T18:20:33.1327991Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-03T18:20:33.1357585Z ##[endgroup]
+2026-10-03T18:20:33.1358750Z ##[group]Setting up auth
+2026-10-03T18:20:33.1359607Z Removing SSH command configuration
+2026-10-03T18:20:33.1364756Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-03T18:20:33.1394228Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-03T18:20:33.1746694Z Removing HTTP extra header
+2026-10-03T18:20:33.1752858Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-03T18:20:33.1782003Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-03T18:20:33.1991217Z Removing includeIf entries pointing to credentials config files
+2026-10-03T18:20:33.1997299Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-03T18:20:33.2027577Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-03T18:20:33.2243785Z [command]/usr/bin/git config --file /home/runner/work/_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-03T18:20:33.2278271Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config
+2026-10-03T18:20:33.2308681Z [command]/usr/bin/git config --local includeIf.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config
+2026-10-03T18:20:33.2340481Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config
+2026-10-03T18:20:33.2372865Z [command]/usr/bin/git config --local includeIf.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config
+2026-10-03T18:20:33.2407008Z ##[endgroup]
+2026-10-03T18:20:33.2408397Z ##[group]Fetching the repository
+2026-10-03T18:20:33.2416638Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +0d33c4d4adfb1819f0007a5efbc101c3d8362414:refs/remotes/origin/main
+2026-10-03T18:20:34.5455806Z From https://github.com/BradleyGleavePortfolio/growth-project-backend
+2026-10-03T18:20:34.5457954Z  * [new ref]         0d33c4d4adfb1819f0007a5efbc101c3d8362414 -> origin/main
+2026-10-03T18:20:34.5467628Z [command]/usr/bin/git branch --list --remote origin/main
+2026-10-03T18:20:34.5491222Z   origin/main
+2026-10-03T18:20:34.5499546Z [command]/usr/bin/git rev-parse refs/remotes/origin/main
+2026-10-03T18:20:34.5519856Z 0d33c4d4adfb1819f0007a5efbc101c3d8362414
+2026-10-03T18:20:34.5523838Z ##[endgroup]
+2026-10-03T18:20:34.5524624Z ##[group]Determining the checkout info
+2026-10-03T18:20:34.5525721Z ##[endgroup]
+2026-10-03T18:20:34.5529285Z [command]/usr/bin/git sparse-checkout disable
+2026-10-03T18:20:34.5580674Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-03T18:20:34.5608507Z ##[group]Checking out the ref
+2026-10-03T18:20:34.5612729Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-10-03T18:20:34.7681908Z Switched to a new branch 'main'
+2026-10-03T18:20:34.7688259Z branch 'main' set up to track 'origin/main'.
+2026-10-03T18:20:34.7698602Z ##[endgroup]
+2026-10-03T18:20:34.7740514Z [command]/usr/bin/git log -1 --format=%H
+2026-10-03T18:20:34.7763573Z 0d33c4d4adfb1819f0007a5efbc101c3d8362414
+2026-10-03T18:20:34.7971474Z ##[group]Run actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+2026-10-03T18:20:34.7971941Z with:
+2026-10-03T18:20:34.7972188Z   node-version: 20.x
+2026-10-03T18:20:34.7972461Z   check-latest: false
+2026-10-03T18:20:34.7975670Z   token: ***
+2026-10-03T18:20:34.7976018Z   package-manager-cache: true
+2026-10-03T18:20:34.7976327Z ##[endgroup]
+2026-10-03T18:20:34.9480950Z Attempting to download 20.x...
+2026-10-03T18:20:35.5935245Z Acquiring 20.20.2 - x64 from https://github.com/actions/node-versions/releases/download/20.20.2-23521894959/node-20.20.2-linux-x64.tar.gz
+2026-10-03T18:20:35.9902436Z Extracting ...
+2026-10-03T18:20:36.0021050Z [command]/usr/bin/tar xz --strip 1 --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/2daaa880-e1b8-4933-8c64-cc11e0c6f993 -f /home/runner/work/_temp/8ea09271-918e-4e49-a3ab-758b63098b7e
+2026-10-03T18:20:37.0267490Z Adding to the cache ...
+2026-10-03T18:20:38.7947194Z ##[group]Environment details
+2026-10-03T18:20:39.0413732Z node: v20.20.2
+2026-10-03T18:20:39.0414680Z npm: 10.8.2
+2026-10-03T18:20:39.0415830Z yarn: 1.22.22
+2026-10-03T18:20:39.0416920Z ##[endgroup]
+2026-10-03T18:20:39.0648044Z ##[group]Run set -euo pipefail
+2026-10-03T18:20:39.0648390Z set -euo pipefail
+2026-10-03T18:20:39.0648913Z node scripts/env-truth/fly-env-classifier.js names src/common/env-validation.ts > registered-names.json
+2026-10-03T18:20:39.0649675Z node scripts/env-truth/fly-env-classifier.js command src/common/env-validation.ts > remote-cmd.txt
+2026-10-03T18:20:39.0650566Z echo "Registered names: $(node -e 'process.stdout.write(String(JSON.parse(require("fs").readFileSync("registered-names.json","utf8")).length))')"
+2026-10-03T18:20:39.0651338Z echo "Inline program size (bytes): $(wc -c < remote-cmd.txt)"
+2026-10-03T18:20:39.0717493Z shell: /usr/bin/bash -e {0}
+2026-10-03T18:20:39.0717932Z ##[endgroup]
+2026-10-03T18:20:39.1587745Z Registered names: 333
+2026-10-03T18:20:39.1606637Z Inline program size (bytes): 38434
+2026-10-03T18:20:39.1654182Z ##[group]Run superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1
+2026-10-03T18:20:39.1654678Z with:
+2026-10-03T18:20:39.1654883Z   version: latest
+2026-10-03T18:20:39.1655100Z ##[endgroup]
+2026-10-03T18:20:40.0171873Z Acquired 0.4.111 from https://github.com/superfly/flyctl/releases/download/v0.4.111/flyctl_0.4.111_Linux_x86_64.tar.gz
+2026-10-03T18:20:40.0291207Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/706fc596-09d7-4144-a9cb-133c46b8a0bd -f /home/runner/work/_temp/8e78f3dc-1951-4a0c-8c7c-e3034a351109
+2026-10-03T18:20:40.7602559Z Successfully cached flyctl to /opt/hostedtoolcache/flyctl/0.4.111/x86_64
+2026-10-03T18:20:40.7626272Z Added flyctl to the path
+2026-10-03T18:20:40.7747631Z ##[group]Run set +x
+2026-10-03T18:20:40.7747937Z set +x
+2026-10-03T18:20:40.7748166Z set -euo pipefail
+2026-10-03T18:20:40.7748442Z machine_args=()
+2026-10-03T18:20:40.7748805Z if [ -n "${MACHINE}" ]; then machine_args=(--machine "${MACHINE}"); fi
+2026-10-03T18:20:40.7749339Z # stdout carries only the value-free report line; it is parsed, not printed.
+2026-10-03T18:20:40.7750029Z flyctl ssh console -a "${APP}" "${machine_args[@]}" -C "$(cat remote-cmd.txt)" > ssh-output.txt 2> ssh-stderr.txt || {
+2026-10-03T18:20:40.7750580Z   rc=$?
+2026-10-03T18:20:40.7750800Z   rm -f ssh-output.txt
+2026-10-03T18:20:40.7751921Z   echo "::error::flyctl ssh console failed (exit ${rc}), so no env-truth report was produced. Fix: check that a machine is started ('fly status -a ${APP}'), that FLY_API_TOKEN may open ssh sessions on ${APP}, and that the machine input (if set) is a current machine id, then re-run. flyctl stderr follows:"
+2026-10-03T18:20:40.7753033Z   cat ssh-stderr.txt
+2026-10-03T18:20:40.7775115Z   exit 1
+2026-10-03T18:20:40.7775384Z }
+2026-10-03T18:20:40.7776417Z node scripts/env-truth/fly-env-classifier.js parse ssh-output.txt env-truth-report.json
+2026-10-03T18:20:40.7776962Z rm -f ssh-output.txt remote-cmd.txt
+2026-10-03T18:20:40.7840228Z shell: /usr/bin/bash -e {0}
+2026-10-03T18:20:40.7840484Z env:
+2026-10-03T18:20:40.7844160Z   FLY_API_TOKEN: ***
+2026-10-03T18:20:40.7844415Z   APP: backend-spring-lake-3890
+2026-10-03T18:20:40.7844663Z   MACHINE: 
+2026-10-03T18:20:40.7844851Z ##[endgroup]
+2026-10-03T18:20:45.8845967Z ##[group]Run set -euo pipefail
+2026-10-03T18:20:45.8846334Z set -euo pipefail
+2026-10-03T18:20:45.8846833Z node scripts/env-truth/fly-env-classifier.js render env-truth-report.json "${APP}" > env-truth.md
+2026-10-03T18:20:45.8847408Z cat env-truth.md >> "${GITHUB_STEP_SUMMARY}"
+2026-10-03T18:20:45.8908719Z shell: /usr/bin/bash -e {0}
+2026-10-03T18:20:45.8908965Z env:
+2026-10-03T18:20:45.8909174Z   APP: backend-spring-lake-3890
+2026-10-03T18:20:45.8909429Z ##[endgroup]
+2026-10-03T18:20:45.9349733Z ##[group]Run actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+2026-10-03T18:20:45.9350164Z with:
+2026-10-03T18:20:45.9350383Z   name: env-truth-report
+2026-10-03T18:20:45.9350661Z   path: env-truth-report.json
+env-truth.md
+
+2026-10-03T18:20:45.9350958Z   retention-days: 30
+2026-10-03T18:20:45.9351179Z   if-no-files-found: error
+2026-10-03T18:20:45.9351408Z   compression-level: 6
+2026-10-03T18:20:45.9351618Z   overwrite: false
+2026-10-03T18:20:45.9351838Z   include-hidden-files: false
+2026-10-03T18:20:45.9352071Z ##[endgroup]
+2026-10-03T18:20:46.0977393Z (node:2414) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-03T18:20:46.0978736Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-03T18:20:46.1045169Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-10-03T18:20:46.1048806Z The least common ancestor is /home/runner/work/growth-project-backend/growth-project-backend. This will be the root directory of the artifact
+2026-10-03T18:20:46.1049955Z With the provided path, there will be 2 files uploaded
+2026-10-03T18:20:46.1056217Z Artifact name is valid!
+2026-10-03T18:20:46.1057518Z Root directory input is valid!
+2026-10-03T18:20:46.3180227Z Beginning upload of artifact content to blob storage
+2026-10-03T18:20:46.3397084Z (node:2414) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-03T18:20:46.3600096Z Uploaded bytes 7908
+2026-10-03T18:20:46.3729068Z Finished uploading artifact content to blob storage!
+2026-10-03T18:20:46.3730520Z SHA256 digest of uploaded artifact zip is 6142731c46bb8b3c97b94193ef9ff9ad58a5031f10dbca0df4d87c56afb4b8c8
+2026-10-03T18:20:46.3732156Z Finalizing artifact upload
+2026-10-03T18:20:46.6033543Z Artifact env-truth-report.zip successfully finalized. Artifact ID 11281741187
+2026-10-03T18:20:46.6035863Z Artifact env-truth-report has been successfully uploaded! Final size is 7908 bytes. Artifact ID is 11281741187
+2026-10-03T18:20:46.6042292Z Artifact download URL: https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37143727833/artifacts/11281741187
+2026-10-03T18:20:46.6220569Z Post job cleanup.
+2026-10-03T18:20:46.7491052Z Post job cleanup.
+2026-10-03T18:20:46.8293798Z [command]/usr/bin/git version
+2026-10-03T18:20:46.8329616Z git version 2.55.0
+2026-10-03T18:20:46.8369900Z Temporarily overriding HOME='/home/runner/work/_temp/00cfc3c0-32ef-4a46-886f-b315b2ac6326' before making global git config changes
+2026-10-03T18:20:46.8371620Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-03T18:20:46.8376971Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/growth-project-backend/growth-project-backend
+2026-10-03T18:20:46.8406862Z Removing SSH command configuration
+2026-10-03T18:20:46.8413593Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-03T18:20:46.8471308Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-03T18:20:46.8690939Z Removing HTTP extra header
+2026-10-03T18:20:46.8696042Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-03T18:20:46.8725595Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-03T18:20:46.8938866Z Removing includeIf entries pointing to credentials config files
+2026-10-03T18:20:46.8946135Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-03T18:20:46.8972299Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-03T18:20:46.8974067Z includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-03T18:20:46.8975326Z includeif.gitdir:/github/workspace/.git.path
+2026-10-03T18:20:46.8976452Z includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-03T18:20:46.8982598Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path
+2026-10-03T18:20:46.9003604Z /home/runner/work/_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config
+2026-10-03T18:20:46.9015772Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git.path /home/runner/work/_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config
+2026-10-03T18:20:46.9050483Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path
+2026-10-03T18:20:46.9070984Z /home/runner/work/_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config
+2026-10-03T18:20:46.9080273Z [command]/usr/bin/git config --local --unset includeif.gitdir:/home/runner/work/growth-project-backend/growth-project-backend/.git/worktrees/*.path /home/runner/work/_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config
+2026-10-03T18:20:46.9110892Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git.path
+2026-10-03T18:20:46.9130510Z /github/runner_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config
+2026-10-03T18:20:46.9140113Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git.path /github/runner_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config
+2026-10-03T18:20:46.9170546Z [command]/usr/bin/git config --local --get-all includeif.gitdir:/github/workspace/.git/worktrees/*.path
+2026-10-03T18:20:46.9190633Z /github/runner_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config
+2026-10-03T18:20:46.9199235Z [command]/usr/bin/git config --local --unset includeif.gitdir:/github/workspace/.git/worktrees/*.path /github/runner_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config
+2026-10-03T18:20:46.9234244Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-03T18:20:46.9463044Z Removing credentials config '/home/runner/work/_temp/git-credentials-9a9b90ec-8901-4603-b860-78e775d86153.config'
+2026-10-03T18:20:46.9603060Z Cleaning up orphan processes
+2026-10-03T18:20:46.9918245Z Terminate orphan process: pid (2382) (flyctl)
+2026-10-03T18:20:46.9974616Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

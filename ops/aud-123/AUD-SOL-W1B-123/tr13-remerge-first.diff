@@ -1,0 +1,96 @@
+commit bf2c97dab67fee9194c33d578960bdfd7d3b527f
+Merge: 4315136a 0521b393
+Author: Bradley Gleave <bradley@bradleytgpcoaching.com>
+Date:   Tue Oct 6 01:38:58 2026 +0000
+
+    Merge origin/main 0521b393 into trials-split-1 (#671 main refresh)
+    
+    Conflicts resolved (both sides kept):
+    - src/checkout/checkout.module.ts: imports of TrialConflictService (trials)
+      and ClientBilling* (main) both kept.
+    - src/checkout/checkout-webhook-handler.service.ts applyInvoicePaid: main's
+      dispute-pause entitlement (R-DISPUTE-PAUSE) with the trials name 'start'
+      for the trial-start patch; main's resolveDunningOnPaid/inUnpaidGrace kept,
+      the trials return (trialConflictSubscriptionId, deferredTrialNoticeId)
+      moved to applyInvoicePaid's return after resolveDunningOnPaid.
+
+diff --git a/src/checkout/checkout-webhook-handler.service.ts b/src/checkout/checkout-webhook-handler.service.ts
+remerge CONFLICT (content): Merge conflict in src/checkout/checkout-webhook-handler.service.ts
+index 481401f3..91a1ab3e 100644
+--- a/src/checkout/checkout-webhook-handler.service.ts
++++ b/src/checkout/checkout-webhook-handler.service.ts
+@@ -2585,15 +2585,10 @@ export class CheckoutWebhookHandlerService {
+         wasEntitled = fresh.entitlement_active;
+         if (purchaseHasEnded(fresh)) return fresh;
+         const changed = revision !== undefined && lifecycleRevision(fresh) !== revision;
+-<<<<<<< 4315136a (Merge pull request #672 from BradleyGleavePortfolio/agent115/trials-split-2-editor-notices)
+-        const entitled = subscriptionGrantsAccess(fresh, live);
+-        const start = trialStartPatch(fresh, live, entitled);
+-=======
+         // R-DISPUTE-PAUSE: a paid invoice never ends a dispute pause.
+         const entitled =
+           subscriptionGrantsAccess(fresh, live) && !(await this.disputePaused(client, fresh.id));
+-        const trial = trialStartPatch(fresh, live, entitled);
+->>>>>>> 0521b393 (Merge pull request #726 from BradleyGleavePortfolio/agent121/bcast-split-1-schema-flag)
++        const start = trialStartPatch(fresh, live, entitled);
+         if (changed) {
+           // B-680-1 — another delivery wrote the purchase after this Stripe
+           // read (a revocation, a renewal period, a cancellation): a matching
+@@ -2662,7 +2657,13 @@ export class CheckoutWebhookHandlerService {
+     });
+     // Phase 5 — clear any active dunning window (v1 + v2).
+     await this.resolveDunningOnPaid(updated.id, tx);
+-    return { claimed: true, purchase_id: purchase.id, deferredSplit };
++    return {
++      claimed: true,
++      purchase_id: purchase.id,
++      deferredSplit,
++      ...(trialConflictSubscriptionId ? { trialConflictSubscriptionId } : {}),
++      ...(trialNoticeId ? { deferredTrialNoticeId: trialNoticeId } : {}),
++    };
+   }
+ 
+   /**
+@@ -2751,15 +2752,6 @@ export class CheckoutWebhookHandlerService {
+         );
+       }
+     }
+-<<<<<<< 4315136a (Merge pull request #672 from BradleyGleavePortfolio/agent115/trials-split-2-editor-notices)
+-    return {
+-      claimed: true,
+-      purchase_id: purchase.id,
+-      deferredSplit,
+-      ...(trialConflictSubscriptionId ? { trialConflictSubscriptionId } : {}),
+-      ...(trialNoticeId ? { deferredTrialNoticeId: trialNoticeId } : {}),
+-    };
+-=======
+   }
+ 
+   /**
+@@ -2780,7 +2772,6 @@ export class CheckoutWebhookHandlerService {
+       select: { status: true, locked_out_at: true },
+     });
+     return state?.status === 'active' && state.locked_out_at == null;
+->>>>>>> 0521b393 (Merge pull request #726 from BradleyGleavePortfolio/agent121/bcast-split-1-schema-flag)
+   }
+ 
+   private async applyInvoicePaymentFailed(
+diff --git a/src/checkout/checkout.module.ts b/src/checkout/checkout.module.ts
+remerge CONFLICT (content): Merge conflict in src/checkout/checkout.module.ts
+index cdc9bf0e..90b85517 100644
+--- a/src/checkout/checkout.module.ts
++++ b/src/checkout/checkout.module.ts
+@@ -13,13 +13,10 @@ import { CheckoutService } from './checkout.service';
+ import { SubscriptionCheckoutController } from './subscription-checkout.controller';
+ import { SubscriptionCheckoutService } from './subscription-checkout.service';
+ import { CheckoutWebhookHandlerService } from './checkout-webhook-handler.service';
+-<<<<<<< 4315136a (Merge pull request #672 from BradleyGleavePortfolio/agent115/trials-split-2-editor-notices)
+ import { TrialConflictService } from '../packages/trials/trial-conflict.service';
+-=======
+ import { ClientBillingController } from './client-billing.controller';
+ import { ClientBillingReconciler } from './client-billing.reconciler';
+ import { ClientBillingService } from './client-billing.service';
+->>>>>>> 0521b393 (Merge pull request #726 from BradleyGleavePortfolio/agent121/bcast-split-1-schema-flag)
+ import { DunningService } from './dunning.service';
+ import { DunningV2Module } from './dunning-v2/dunning-v2.module';
+ import {

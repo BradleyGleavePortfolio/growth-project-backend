@@ -127,3 +127,54 @@ RD1 DONE: #667 `af32412c87042f77ed3b62a3dbd6e7aa4263120e` APPROVE scoped merge r
 Recommended default: hold landing; resolve the dependency gate through its owning main/dependency lane, remove the four net-added cast tokens without weakening R75, and remove the stale Roman legacy-log exception entry without weakening the PII scan.
 The pending #736 FIX ROUND 2 has not been reviewed; await the operator's next assigned head.
 No audit remains active; all previous W1C findings/dispositions remain as recorded above.
+
+## RD2 — #667 test repair and lockfile-only main merge
+
+Started 2026-10-05 19:01:29 PDT; 15-minute time box ends 19:16:29 PDT.
+Read only the assigned RD2 entry and operator repair contract; no current-round other-lens material read.
+
+Reviewed `ec12f3a9f89a6677841964a38e4611e775b1ea04`: four test files, +25/-11; all existing test cases/assertions unchanged, typed fixture/DB/SSE fakes preserve their observed behavior, and removing the stale Roman legacy-log exception leaves the scanner's strict zero-violation, >500-call and exact-baseline assertions intact. ([Operator fix contract](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/667#issuecomment-6007792930), [Privacy scan](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/c5c86cb46bfe3f6ea425e255536a9ae091686580/test/privacy/no-pii-in-logs.spec.ts))
+
+Verified `c5c86cb46bfe3f6ea425e255536a9ae091686580` is a clean merge with parents the test fix and main `d5177b31fe74d40be6c38f5e715914e7fcc605ac`, an empty remerge diff, and only `package-lock.json` changed from the first parent; proxy-addr is 2.0.8, and the merged lockfile blob matches main. No production source, Prisma schema/migration or CI workflow changed from RD1. ([Fix/merge contract](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/667#issuecomment-6007792930), [Merged lockfile](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/c5c86cb46bfe3f6ea425e255536a9ae091686580/package-lock.json))
+
+All **11 required checks were SUCCESS** at the exact head at 19:12:09 PDT, verified against main's read-only required-check policy; R75 and dependency audit both pass, full typecheck/build passes, and **853 suites / 14,742 tests pass** with 303 tests skipped and 5 todo, including all four reviewed specs. ([Dependency audit](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37402090705/job/112071333649), [R75](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37402090768/job/112071319612), [Full build/test](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37402090809/job/112071319801))
+
+The sole RD2 verdict posted at 19:12:50 PDT: **APPROVE, A/B/C = 0/0/0**, after immediate head verification; all three prior RD1 CI holds are closed. ([Sol RD2 verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/667#issuecomment-6007928567))
+Evidence, policy/check snapshots, logs, exact payload and receipt are in `ops/aud-123/AUD-SOL-W1C-123/RD2/`.
+Its clean detached read worktree is retained under workspace preservation; the claim is completion-marked in agent 123 notify.
+
+## HANDOFF
+
+RD2 DONE, APPROVE **0/0/0**, all required checks green; continuing into the separately assigned AIG3 delta below. ([RD2 receipt](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/667#issuecomment-6007928567))
+
+## AIG3 — #736 FIX ROUND 2 and clean main merge
+
+Started 2026-10-05 19:12:51 PDT; additional operator mandate has a 20-minute time box ending 19:32:51 PDT.
+Read only AIG3's job entry and builder contract; no current-round other-lens notes/comment read.
+
+Reviewed `58a31e6f..78ce5db8`: explicit current inability to breathe routes independently of an activity clause, ordinary airway/technique controls retain their exclusion, chest-plus-breathing wording routes to emergency, and intent to overdose is recognized as self-harm without matching the requested exercise/food metaphors. The unchanged chat safety return remains before consent/quota/model. ([Router repair](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/384314a88d2a29ed198358f9e8ea60c4ccbaea8d/src/ai/ai-crisis-router.ts), [Unchanged service](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/384314a88d2a29ed198358f9e8ea60c4ccbaea8d/src/ai/ai.service.ts))
+
+The exact #736 head `384314a88d2a29ed198358f9e8ea60c4ccbaea8d` has fix head `78ce5db806249c90e4d62676ee58af154704c6e4` and main `d5177b31fe74d40be6c38f5e715914e7fcc605ac` as parents; clean remerge and identical four PR-file blobs independently verified. All 11 required PR checks are SUCCESS at 19:13:50 PDT. ([Builder contract](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/736#issuecomment-6007796311), [Exact-head PR CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37402183491))
+
+One independent probe-only lane was pushed: saved W1C assertion spec copied byte-for-byte (SHA-256 `e1eb24694de2a0495e512324fb178ff42e9049ed7878128e5b52ecebecc18a3b`) onto the exact head and run alongside both AI suites; run **37403174301 succeeded: 3 suites / 105 tests passed**, including both originally failing acute-breathing assertions. ([Saved-probe rerun](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37403174301/job/112074720612))
+
+Independent lane workflow head `d4a19332eb923b32739c8cee2166d9851d7c6256` has sole parent probe commit `dcb77d38744e35e339d2f9eee6c669cb95aa42ce`, which has sole parent the exact reviewed #736 head; only the probe spec and lane metadata/workflow were added, with no candidate source edits or weakened assertions. ([Independent exact-code evidence](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37403174301))
+
+The sole AIG3 verdict posted at **19:18:19 PDT: APPROVE, A/B/C = 0/0/6**; Sol B-736-3 is closed, all assigned acute-breathing/overdose cases and normal controls pass, and builder C-736-3/4/5/7/8/9 remain nonblocking carried follow-ups with no new C added. Head `384314a88d2a29ed198358f9e8ea60c4ccbaea8d` was verified again immediately before posting; all 11 required checks remain successful. ([Sol AIG3 verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/736#issuecomment-6007987138))
+
+### AIG3 saved evidence / completion
+
+`ops/aud-123/AUD-SOL-W1C-123/AIG3/` contains the source/test fix delta, clean merge and file-blob provenance, builder-lane proof, immutable saved probe, independent lane provenance/metadata/jobs/complete success log, exact-head required-check snapshots, immediate pre-post head, final comment/payload and accepted receipt.
+
+The completed owned remote branch `audit/AUD-SOL-W1C-123/736-aig3-rerun` was deleted; no audit run remains active.
+The clean detached `wt/AUD-SOL-W1C-123-AIG3-736` and RD2 worktree are retained under workspace preservation, and AIG3's claim moved to `ops/lanes123/notify/backend-736-384314a8-sol-complete` by 19:18:28 PDT.
+No other lens's current-round notes/comment was read, no candidate source or PR branch changed, and no local npm/Jest/tsc/eslint/build, merge, deploy, production access or paid action occurred.
+
+## HANDOFF
+
+DONE. RD2 #667 `c5c86cb46bfe3f6ea425e255536a9ae091686580` APPROVE **0/0/0**, all three RD1 CI holds closed and all 11 required checks successful. ([RD2 verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/667#issuecomment-6007928567))
+
+AIG3 #736 `384314a88d2a29ed198358f9e8ea60c4ccbaea8d` APPROVE **0/0/6**, Sol B-736-3 closed by unchanged saved-probe rerun, all 11 required checks successful; six C follow-ups remain nonblocking and no A/B remains in the assigned delta. ([AIG3 verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/736#issuecomment-6007987138))
+
+Recommended default: operator may continue the exact-head landing checklist; these approvals are not a deployment or activation authorization.
+No audit remains active, no lock is held, and no further operator decision is needed for these two assigned deltas.

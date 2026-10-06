@@ -40,8 +40,18 @@ https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/338#issueco
 - None of the 5 test adjustments is weaker. Required checks are green.
 - Operator gate: merge only after the backend trials train is deployed.
 
+## (5) TR13 b#671 @ fca4018be43d57805c5c06c5a18c359800a1a22b — APPROVE (A0 B0 C0), posted 19:19 PDT
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/671#issuecomment-6007995978
+- Merge 1 bf2c97da: both module import sets are kept.
+- applyInvoicePaid keeps main's dispute-pause rule. trialState can only grant access when `granted` is true, so a paused purchase stays paused. resolveDunningOnPaid is kept, and the trials return fields now come after it.
+- applyInvoicePaymentFailed, resolveDunningOnPaid and disputePaused are identical to main.
+- Rename to listOpenInvoicePage: 2 callers plus 1 mock. Main's paginated listOpenInvoices is untouched.
+- R75 test helpers are not weaker. Merge 2 (fca4018b) has an empty remerge-diff and touches no prisma files.
+- The migration-order lane job 112066146042 succeeded. Deploy needs migrations=apply-migrations.
+- All 11 required checks are green. The PR is about 10.8k lines (the folded train), which is an operator note, not a finding.
+
 ## HANDOFF
-- All four verdicts are posted (W1B #342 and #340, MR1 #339, MR2 #338). Nothing is in flight.
+- All five verdicts are posted (W1B m#342 and m#340, MR1 m#339, MR2 m#338, TR13 b#671). Nothing is in flight.
 - I created no worktrees, no ci/audit branches and no lane runs.
-- Claims touched: ops/lanes123/claims/mobile-342-5acdf5ca-opus, mobile-340-62794564-opus, mobile-339-bab905f2-opus and mobile-338-2d0288ca-opus.
+- Claims touched: ops/lanes123/claims/mobile-342-5acdf5ca-opus, mobile-340-62794564-opus, mobile-339-bab905f2-opus, mobile-338-2d0288ca-opus and backend-671-fca4018b-opus.
 - If either head moves, re-review only the delta at the new head.

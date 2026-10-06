@@ -80,11 +80,31 @@ Body: ops/aud-123/AUD-OPUS-W1C-123/rd1/verdict-667-af32412c.md. Evidence: rd1/ev
 
 **Next:** a test-only fix push (operator or builder). Then a delta re-review of only those 2 test files, with required checks green.
 
+## RD2 — b#667 @ c5c86cb46bfe3f6ea425e255536a9ae091686580, 19:01-19:12 PDT
+**Verdict: APPROVE, 0/0/0.** Comment: https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/667#issuecomment-6007925076 (body: rd2/verdict-667-c5c86cb4.md).
+- **ec12f3a9 (test-only, no test weakened):**
+  - The PII scan keeps exact equality; the stale Roman entry is gone, so roman.service.ts is now pinned at 0.
+  - Typed builders replace the 4 casts.
+  - it/expect counts are unchanged.
+- **c5c86cb4:** a clean main merge. Only package-lock.json changed (proxy-addr 2.0.8 from b#738), byte-identical to main; the merge-tree result equals the head tree.
+- **CI:** all 11 required checks green at 19:12.
+
+## AIG3 — b#736 @ 384314a88d2a29ed198358f9e8ea60c4ccbaea8d, 19:05-19:12 PDT
+**Verdict: APPROVE, 0/0/2.** Comment: https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/736#issuecomment-6007925310 (body: p736r2/verdict-736-384314a8.md; probe: p736r2/probe3.js and probe3-output.txt).
+- **Closed:** B-736-3 (all 10 overdose-intent phrases now give 988) and B-736-4 (all 3 chest-plus-breathing phrases give 911). The job's 5 phrases are covered at the daily limit in ai.service.spec.
+- **No regressions:** all controls stay normal, and the 15 story phrases still route.
+- **Merge-only:** 384314a8 is a clean merge (tree equal, PR file blobs equal to 78ce5db8).
+- **CI and size:** 11/11 checks green; 459 lines.
+- **Cs:**
+  - C-736-10: the literal "can't breathe" in a training question now gives 911. This errs to safety.
+  - C-736-11: "can't breathe out of my nose" is now null, which is correct.
+
 ## HANDOFF
 - **Done.** I created no worktree (I read code with `git show` / `git archive` into ops/aud-123/AUD-OPUS-W1C-123/p669/tree-*), pushed no ci/ or audit/ branches, ran no lane and held no locks. The main clone checkout is untouched (I ran `git fetch` by SHA only). The worktrees wt/AUD-SOL-W1C-123-* belong to the Sol lens; I did not touch them. Claims stay in ops/lanes123/claims/.
-- **Next for #736:** the builder pushes one fix round for B-736-3 and B-736-4 (two regex lines plus spec rows; the exact lines are in the comment). A fresh Opus lens then runs a 20-minute delta re-review covering only those Bs and the changed lines:
-  1. Copy the new src/ai/ai-crisis-router.ts into a folder.
-  2. Run p736/fixcheck.js, pointed at it.
-  3. Expect the 13 B phrases to route and the null cases to stay null.
-- **Next for the Roman train:** the stack has landed into #667. #667 needs the test-only fix for items 1 and 2 of RD1, plus an operator decision on npm audit (proxy-addr) on main, before it can merge.
-- **Standby:** the b#736 FIX ROUND 2 delta (builder B-AIG3-123) when the operator messages.
+- **#736 history:** B-736-3 and B-736-4 were fixed in FIX ROUND 2 (78ce5db8) and closed in AIG3 above.
+- **All items done, 19:13 PDT.**
+  - #736: Opus APPROVE at 384314a8.
+  - #667: Opus APPROVE at c5c86cb4.
+  - #669 and #670: Opus APPROVE (both since landed into #667).
+- **Merge:** the operator merges once Sol's verdicts at the same heads are in.
+- **Cleanup:** none needed. I made no worktrees, branches, lanes or locks; the claims stay in ops/lanes123/claims/.

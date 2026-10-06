@@ -1,9 +1,18 @@
-MAIN REFRESH (B-TR12-123, agent 123) — growth-project-backend#671 @ 2a6dfd987af9081471d928f0c179b39b7f37df0d
+MAIN REFRESH (B-TR12-123, agent 123) — growth-project-backend#671 @ fca4018be43d57805c5c06c5a18c359800a1a22b
 
-Old head 4315136a05685e0420a511fd7f05bb333a77e484 (the whole trials train #672 -> #673 -> #706 -> #707 landed, tree = audited TD1 top). Three commits on top, one push:
+Old head 4315136a05685e0420a511fd7f05bb333a77e484 (the whole trials train #672 -> #673 -> #706 -> #707 landed, tree = audited TD1 top). Two pushes:
+- **Push 1** (18:52 PDT) went to `2a6dfd987af9081471d928f0c179b39b7f37df0d` and carried items 1-3 below.
+- **Push 2** (19:03 PDT, merge-only, authorised by the operator) went to `fca4018be43d57805c5c06c5a18c359800a1a22b`, item 4.
+
+The commits:
 1. `bf2c97da` merge of origin/main `0521b393` (parents 4315136a + 0521b393). Two conflicts, both sides kept.
 2. `462a5e7a` R75 cast fix (tests only).
 3. `2a6dfd98` fix for a merge clash git did not flag: both sides added a method named `listOpenInvoices` (TS2393, found by lane tsc).
+4. `fca4018b` merge of origin/main `d5177b31` (includes b#738 proxy-addr 2.0.8 for the required npm audit check). It merged clean, and the rule-12 checks hold against 2a6dfd98:
+   - Parents are 2a6dfd98 and d5177b31.
+   - All 51 PR file blobs are byte-identical.
+   - Every non-merge commit in 2a6dfd98..fca4018b is on main.
+   - Main changed only `package-lock.json`, `.github/fly-env-desired-state.json`, `docs/runbooks/launch-flags.md`, `src/checkout/dunning-v2/dunning-lockout.guard.ts` and 4 dunning lockout specs; none of these are PR files.
 
 ### Conflict hunks and their resolution
 - **H1 `src/checkout/checkout.module.ts` imports.** Trials imports `TrialConflictService`; main imports `ClientBillingController`, `ClientBillingReconciler` and `ClientBillingService`. All four imports are kept. Controllers and providers merged without conflict and list both sides (`TrialConflictService` and the ClientBilling* entries).
@@ -30,7 +39,7 @@ Old head 4315136a05685e0420a511fd7f05bb333a77e484 (the whole trials train #672 -
   - Full `tsc --noEmit` is green.
   - 82 suites / 1,517 tests pass (all trials specs, checkout webhook specs, dunning/dispute/client-billing specs and the 57 TD1 lane specs).
   - The first lane run's tsc is what found the `listOpenInvoices` clash.
-- **PR CI at 2a6dfd98:** __PRCI__
-- **Main moved during this refresh:** 76a59216 (#725 lockout coach thread, #737 programs flags, #643 booking reminders). It touches none of the 51 PR files, and `git merge-tree` is clean, so it was not merged again (up-to-date is not required).
+- **PR CI at fca4018b (final head):** all 11 required checks green (20 success, deploy-readiness-gate skipped). [CI run 37402275477](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37402275477): build-and-test passed 853 suites / 14,681 tests (30 suites / 305 tests skipped, 5 todo). [Dependency Audit run 37402275521](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37402275521) and [R100 Quality Gate run 37402275531](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37402275531) are green.
+- **PR CI at 2a6dfd98 (push 1):** everything was green except the required npm audit check, which failed on the critical GHSA-jqcg-44mw-7w3h (proxy-addr 2.0.7). That failure was also red on main and was cleared by b#738 in push 2. build-and-test passed there too ([CI run 37401401441](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37401401441), 853 suites / 14,681 tests).
 
 READY FOR AUDIT (lens scope: H1-H3, 2a6dfd98's rename, the two test files; the other 46 PR files' +/- lines are identical to the audited TD1 top).
