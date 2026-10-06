@@ -307,7 +307,7 @@ export class CoachAIService {
     coachId: string,
     draft: Awaited<ReturnType<CoachAIService['getDraft']>>,
   ) {
-    const dayCount = this.workoutProgramDays(draft).length;
+    const dayCount = this.workoutProgramDays(draft).days.length;
     if (draft.status !== 'DRAFT') return this.replayWorkoutApproval(coachId, draft.id, dayCount);
     // The client may have left this coach since the draft was generated.
     await this.assertCoachOwnsClient(coachId, draft.clientId);
@@ -371,7 +371,7 @@ export class CoachAIService {
     if (!payload || !Array.isArray(payload.days) || payload.days.length === 0) {
       throw new BadRequestException('Workout program payload has no days');
     }
-    return payload.days;
+    return { payload, days: payload.days };
   }
 
   // ─── Materializers ────────────────────────────────────────────────────────
@@ -380,8 +380,7 @@ export class CoachAIService {
     coachId: string,
     draft: { generatedPayload: Prisma.JsonValue; clientId: string },
   ): Promise<Array<{ id: string; week_index: number; day_index: number }>> {
-    const payload = draft.generatedPayload as unknown as WorkoutProgramPayload;
-    const days = this.workoutProgramDays(draft);
+    const { payload, days } = this.workoutProgramDays(draft);
     // Materialize ALL days as individual WorkoutPlan records under the coach
     // (visible in the coach's plan library). The caller assigns them to the
     // client; the first plan's id becomes the draft's approvedAsId.
