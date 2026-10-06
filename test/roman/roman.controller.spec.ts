@@ -95,6 +95,16 @@ function makeService() {
   const assertMayUseAi = jest.fn((..._a: unknown[]): Promise<void> =>
     Promise.resolve(undefined),
   );
+  // OR-113-2 — daily spend cap pre-check (resolves = capacity left).
+  const assertDailyCapacity = jest.fn((..._a: unknown[]): Promise<void> =>
+    Promise.resolve(undefined),
+  );
+  // B-668-1 coach AI pool pre-check (resolves = the pool covers a turn).
+  const assertCoachPoolOpen = jest.fn((..._a: unknown[]): Promise<string | null> =>
+    Promise.resolve(null),
+  );
+  // SafetyRouter crisis short-circuit (false = an ordinary message).
+  const isSafetyShortCircuit = jest.fn((..._a: unknown[]): boolean => false);
   const appendMessage = jest.fn((..._a: unknown[]) =>
     Promise.resolve({
       id: 'msg_1',
@@ -140,6 +150,9 @@ function makeService() {
     deleteSession,
     assertWithinRateLimit,
     assertMayUseAi,
+    assertDailyCapacity,
+    assertCoachPoolOpen,
+    isSafetyShortCircuit,
     appendMessage,
     listMessages,
     streamAssistantTurn,
@@ -418,6 +431,35 @@ describe('RomanController — POST /roman/sessions/:id/messages (SSE)', () => {
 
     expect(service.appendMessage).not.toHaveBeenCalled();
     expect(service.streamAssistantTurn).not.toHaveBeenCalled();
+  });
+
+  it('B-668-1: a used-up coach pool (402) refuses before the user turn is stored or streamed', async () => {
+    flagOn();
+    const { ctrl, service, req } = makeController();
+    const { res } = makeRes();
+    service.assertCoachPoolOpen.mockRejectedValueOnce(
+      new HttpException({ code: 'COACH_AI_BUDGET_EXHAUSTED' }, HttpStatus.PAYMENT_REQUIRED),
+    );
+
+    await expect(
+      ctrl.sendMessage(req, res as never, 'sess_1', { content: 'hi' }),
+    ).rejects.toMatchObject({ status: HttpStatus.PAYMENT_REQUIRED });
+
+    expect(service.appendMessage).not.toHaveBeenCalled();
+    expect(service.streamAssistantTurn).not.toHaveBeenCalled();
+  });
+
+  it('B-668-1: a crisis turn skips the coach pool check and is stored and answered', async () => {
+    flagOn();
+    const { ctrl, service, req } = makeController();
+    const { res } = makeRes();
+    service.isSafetyShortCircuit.mockReturnValueOnce(true);
+
+    await ctrl.sendMessage(req, res as never, 'sess_1', { content: 'hi' });
+
+    expect(service.assertCoachPoolOpen).not.toHaveBeenCalled();
+    expect(service.appendMessage).toHaveBeenCalledTimes(1);
+    expect(service.streamAssistantTurn).toHaveBeenCalledTimes(1);
   });
 
   it('sets a Retry-After header (RFC 6585) when the rate-limit gate returns 429', async () => {

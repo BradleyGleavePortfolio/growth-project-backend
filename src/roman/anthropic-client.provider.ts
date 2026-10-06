@@ -29,7 +29,12 @@ export const ROMAN_ANTHROPIC_CLIENT = 'ROMAN_ANTHROPIC_CLIENT';
  * note: this is the PRODUCT runtime model the deployed Roman calls, chosen by
  * the brief; it is unrelated to the agent runtime that authored this code.
  */
-export const ROMAN_MODEL_PHASE_1 = 'claude-3-7-sonnet-20250219';
+export const ROMAN_MODEL_PHASE_1 = 'claude-sonnet-4-6';
+// OR-113-2: the former id claude-3-7-sonnet-20250219 was retired by the
+// provider on 2026-02-19 (every request to it fails); claude-sonnet-4-6 is the
+// documented replacement and the id the coach AI already uses
+// (src/ai/coach/coach-ai.constants.ts). Pricing used by the daily spend cap:
+// ROMAN_PRICE_PER_MTOK in roman.constants.ts.
 
 /**
  * Factory provider. Returns `null` when no API key is configured so the
