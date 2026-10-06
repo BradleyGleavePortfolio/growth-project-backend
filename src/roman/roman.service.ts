@@ -753,8 +753,6 @@ export class RomanService {
       modelId?: string | null;
       interrupted?: boolean;
       parentMessageId?: string | null;
-      /** This Roman turn spends the session's single exclamation mark. */
-      spendsExclamation?: boolean;
     },
   ): Promise<RomanMessage> {
     return this.prisma.$transaction(async (tx) => {
@@ -763,7 +761,6 @@ export class RomanService {
         data: {
           message_count: { increment: 1 },
           last_activity_at: new Date(),
-          ...(data.spendsExclamation ? { exclamation_used: true } : {}),
         },
       });
       if (live.count === 0) {

@@ -60,6 +60,7 @@ function controllerThatThrows(thrown: unknown) {
     getOwnedSession: jest.fn(async () => ({ id: 'sess_1' })),
     assertMayUseAi: jest.fn(async () => undefined),
     assertDailyCapacity: jest.fn(async () => undefined),
+    assertCoachPoolOpen: jest.fn(async () => null),
     isSafetyShortCircuit: jest.fn(() => false),
     appendMessage: jest.fn(async () => ({ id: 'm1' })),
     // eslint-disable-next-line require-yield

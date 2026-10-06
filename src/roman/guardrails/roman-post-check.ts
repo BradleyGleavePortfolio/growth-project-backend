@@ -325,6 +325,12 @@ const PLAN_WORD = /\b(meal plan|your plan|the plan|planned)\b/i;
 /** B-668-3 (Sol): wording that states the whole day's intake ("logged 450 kcal today", "so far"). */
 const DAY_TOTAL_CLAIM =
   /\b(today|so far|in total|total|for the day|daily|you are at|you'?re at|sitting at|intake)\b/i;
+/** B-666-5 (Sol): one named meal or food item (singular: "at lunch", "a 450 kcal bowl"). */
+const SINGLE_MEAL_CLAUSE =
+  /\b(breakfast|lunch|dinner|supper|snack|meal|serving|portion|plate|bowl|bar|shake)\b/i;
+/** B-666-5 (Sol): wording that sums the day; it wins over a meal word ("across two meals"). */
+const AGGREGATE_CLAIM =
+  /\b(in total|total|so far|for the day|daily|intake|across|combined|altogether|meals|snacks|all (of )?(your|my|the|today'?s))\b/i;
 
 /**
  * kcal facts of the given field families (B-651-7: never pooled across
@@ -345,10 +351,15 @@ function kcalFacts(
     if (past) out.push(...(f.intake_past_days ?? []));
     else {
       out.push(ctx.today.kcal);
-      // B-668-3 (Sol): one meal never validates a whole-day claim. Entry
-      // values only count when the clause is about a meal, or makes no
-      // whole-day claim at all ("you logged a 450 kcal salad").
-      if (MEAL_CLAUSE.test(clause) || !DAY_TOTAL_CLAIM.test(clause)) {
+      // B-668-3 / B-666-5 (Sol): one meal never validates a whole-day claim.
+      // Entry values only count when the clause makes no whole-day claim at
+      // all ("you logged a 450 kcal salad"), or names one meal without any
+      // summing wording ("450 kcal at lunch today", never "today across two
+      // meals" or "your total intake").
+      if (
+        !DAY_TOTAL_CLAIM.test(clause) ||
+        (SINGLE_MEAL_CLAUSE.test(clause) && !AGGREGATE_CLAIM.test(clause))
+      ) {
         out.push(...(f.intake_entries_today ?? []));
       }
     }
