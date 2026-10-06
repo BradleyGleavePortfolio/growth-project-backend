@@ -41,6 +41,10 @@ export class CreateFoodDto {
   @Max(100000)
   serving_size_grams!: number;
 
+  @IsOptional()
+  @IsIn(['PER_100G', 'PER_SERVING'])
+  nutrient_basis?: 'PER_100G' | 'PER_SERVING';
+
   @IsNumber()
   @Min(0)
   @Max(50000)
