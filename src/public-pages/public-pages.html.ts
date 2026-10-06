@@ -42,6 +42,11 @@ interface PageContent {
   invite_code?: string | null;
   /** Optional quieter links under the CTA (label + href, both escaped). */
   links?: ReadonlyArray<{ label: string; href: string }>;
+  /**
+   * Optional inline script. Server-owned constants only, never request
+   * data (the trust-surface CSP is off, see main.ts helmet config).
+   */
+  script?: string;
 }
 
 function pageFor(platform: DownloadPlatform): PageContent {
@@ -104,6 +109,62 @@ export function renderBillingUpdateCardPage(): string {
         href: `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Updating my card')}`,
       },
     ],
+  });
+}
+
+/**
+ * HUNT-01-124 — landing for the sign-up confirmation email when it is opened
+ * somewhere the app's `tgp://verified` return cannot open (a computer, or a
+ * phone without the app), once the owner points SUPABASE_REDIRECT_URL / the
+ * Supabase Site URL here. Supabase confirms the address before redirecting
+ * and appends either the new session (`#access_token=...`) or an error
+ * (`#error=access_denied&error_code=otp_expired...`) to this URL. The
+ * fragment never reaches the server, so the page is static; the inline
+ * script (a) switches to the expired-link copy when the fragment or query
+ * carries an error and (b) removes the fragment from the address bar so
+ * session tokens are not left visible or copied. Nothing is stored or sent.
+ */
+export const EMAIL_CONFIRMED_LINK_PROBLEM_HEADLINE = 'This link has expired or was already used';
+export const EMAIL_CONFIRMED_LINK_PROBLEM_BODY =
+  'If the email address is already confirmed, open The Growth Project app and ' +
+  'sign in. If sign-in still asks for confirmation, contact support for a new link.';
+export const EMAIL_CONFIRMED_SCRIPT = [
+  '(function () {',
+  "  var loc = window.location;",
+  "  var raw = (loc.hash || '').replace(/^#/, '') + '&' + (loc.search || '').replace(/^\\?/, '');",
+  "  var failed = /(^|&)(error|error_code)=/.test(raw);",
+  "  if ((loc.hash || loc.search) && window.history && window.history.replaceState) {",
+  "    window.history.replaceState(null, '', loc.pathname);",
+  '  }',
+  '  if (!failed) return;',
+  "  var h = document.querySelector('h1');",
+  "  var p = document.querySelector('main > p');",
+  "  var a = document.querySelector('a.cta');",
+  `  if (h) h.textContent = ${JSON.stringify(EMAIL_CONFIRMED_LINK_PROBLEM_HEADLINE)};`,
+  `  if (p) p.textContent = ${JSON.stringify(EMAIL_CONFIRMED_LINK_PROBLEM_BODY)};`,
+  "  if (a) a.setAttribute('href', 'tgp://verified?error=link_problem');",
+  '})();',
+].join('\n');
+
+export function renderEmailConfirmedPage(): string {
+  return baseDocument({
+    title: 'The Growth Project — Email confirmed',
+    headline: 'Email confirmed',
+    body:
+      'Open The Growth Project app on your phone and sign in with the email ' +
+      'address and password used at sign-up. There is no need to open this ' +
+      'link again.',
+    cta_label: 'Open the app',
+    cta_href: 'tgp://verified',
+    links: [
+      { label: 'Get the iPhone app', href: '/download/ios' },
+      { label: 'Get the Android app', href: '/download/android' },
+      {
+        label: `Need help? Email ${SUPPORT_EMAIL}`,
+        href: `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Confirming my email')}`,
+      },
+    ],
+    script: EMAIL_CONFIRMED_SCRIPT,
   });
 }
 
@@ -196,7 +257,7 @@ function baseDocument(p: PageContent): string {
   <p>${body}</p>${codeBlock}
   <a class="cta" href="${ctaHref}">${ctaLabel}</a>${linksBlock}
   <footer>The Growth Project · ${policyFooterLinks()}</footer>
-</main>
+</main>${p.script ? `\n<script>\n${p.script}\n</script>` : ''}
 </body>
 </html>`;
 }

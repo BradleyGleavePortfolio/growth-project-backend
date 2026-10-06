@@ -6,6 +6,7 @@ import { Public } from '../common/decorators/public.decorator';
 import {
   renderBillingUpdateCardPage,
   renderDownloadPage,
+  renderEmailConfirmedPage,
   renderSignupPage,
   sanitizeInviteCode,
   type DownloadPlatform,
@@ -62,6 +63,18 @@ export class PublicPagesController {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.status(HttpStatus.OK).send(renderBillingUpdateCardPage());
+  }
+
+  // HUNT-01-124 — sign-up confirmation landing for a link opened where the
+  // app cannot open (computer, no app). Static; see renderEmailConfirmedPage.
+  @Public()
+  @Get('verified')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  emailConfirmed(@Res() res: Response) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.status(HttpStatus.OK).send(renderEmailConfirmedPage());
   }
 
   // Canonical /signup. An invite code may arrive as ?code=… (the form
