@@ -131,12 +131,15 @@ export class CommunityService {
     if (scope === 'coach') {
       // Coaches do not ride in community_memberships the way students do; their
       // relationship to a workspace is ownership. Surface the owned workspace
-      // and a synthetic coach membership view (no row) when one exists.
-      workspace = await this.repo.findWorkspaceOwnedByCoach(user.id);
+      // (created on first open, B-E2E-1) and a synthetic coach membership view.
+      workspace = await this.repo.ensureWorkspaceForCoach(user.id);
     } else if (scope === 'student' && !membership) {
       // Bootstrap (readiness §4 item 4): first touch creates the student's
       // membership in their coach's default cohort. Idempotent via upsert.
+      // B-E2E-1: a coach with no space yet gets one first, so the client never
+      // lands in a Hall it cannot post to.
       if (user.coach_id) {
+        await this.repo.ensureWorkspaceForCoach(user.coach_id);
         const cohort = await this.repo.findDefaultCohortForCoach(user.coach_id);
         // B-610-2: a durable ban survives new/archived/re-ordered cohorts, so
         // first-touch bootstrap never re-admits a banned member.

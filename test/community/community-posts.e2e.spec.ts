@@ -48,6 +48,10 @@ import { NotificationsService } from '../../src/notifications/notifications.serv
 import { liveDbUrl } from './_support/community-db';
 import { insertLiveUsers } from './_support/community-live-seed';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
+import { CommunityController } from '../../src/community/community.controller';
+import { CommunityService } from '../../src/community/community.service';
+import { CommunityRepository } from '../../src/community/community.repository';
+import { ClientEntitlementGuard } from '../../src/common/guards/client-entitlement.guard';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
@@ -73,6 +77,8 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
     coachB: '',
     studentA: '',
     studentB: '',
+    coachNoSpace: '',
+    studentNoSpace: '',
     wsA: '',
     wsB: '',
     cohortA: '',
@@ -138,8 +144,11 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
     await prismaForStub.$connect();
 
     const moduleRef: TestingModule = await Test.createTestingModule({
-      controllers: [CommunityPostsController],
+      controllers: [CommunityPostsController, CommunityController],
       providers: [
+        CommunityService,
+        CommunityRepository,
+        ClientEntitlementGuard,
         CommunityPostsService,
         CommunityPostsRepository,
         CommunityMessagesRepository,
@@ -193,12 +202,17 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
     ids.coachB = randomUUID();
     ids.studentA = randomUUID();
     ids.studentB = randomUUID();
+    ids.coachNoSpace = randomUUID();
+    ids.studentNoSpace = randomUUID();
 
     const users: Array<[string, Role, string, string | null]> = [
       [ids.coachA, 'coach', 'Coach A', null],
       [ids.coachB, 'coach', 'Coach B', null],
       [ids.studentA, 'student', 'Student A', ids.coachA],
       [ids.studentB, 'student', 'Student B', ids.coachB],
+      // B-E2E-1: a coach with no community space and one client.
+      [ids.coachNoSpace, 'coach', 'Coach C', null],
+      [ids.studentNoSpace, 'student', 'Student C', ids.coachNoSpace],
     ];
     await insertLiveUsers(prisma, users);
 
@@ -228,18 +242,33 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
   }
 
   async function cleanup() {
-    const userIds = [ids.coachA, ids.coachB, ids.studentA, ids.studentB].filter(Boolean);
+    const userIds = [
+      ids.coachA,
+      ids.coachB,
+      ids.studentA,
+      ids.studentB,
+      ids.coachNoSpace,
+      ids.studentNoSpace,
+    ].filter(Boolean);
+    // Includes the space /community/me created for coachNoSpace (B-E2E-1).
+    const created = ids.coachNoSpace
+      ? await prisma.communityWorkspace.findMany({
+          where: { coach_id: ids.coachNoSpace },
+          select: { id: true },
+        })
+      : [];
+    const wsIds = [ids.wsA, ids.wsB, ...created.map((w) => w.id)].filter(Boolean);
     await prisma.communityMessage.deleteMany({
-      where: { workspace_id: { in: [ids.wsA, ids.wsB].filter(Boolean) } },
+      where: { workspace_id: { in: wsIds } },
     });
     await prisma.communityPost.deleteMany({
-      where: { workspace_id: { in: [ids.wsA, ids.wsB].filter(Boolean) } },
+      where: { workspace_id: { in: wsIds } },
     });
     await prisma.communityMembership.deleteMany({
       where: { user_id: { in: userIds } },
     });
     await prisma.communityWorkspace.deleteMany({
-      where: { id: { in: [ids.wsA, ids.wsB].filter(Boolean) } },
+      where: { id: { in: wsIds } },
     });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
   }
@@ -266,15 +295,66 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
     expect(res.body.post.author_user_id).toBe(ids.coachA);
   });
 
-  it('2. client create → 403 (clientPostsEnabled default off)', async () => {
+  it('2. an active member (client) creates a post → 201 (B-E2E-1)', async () => {
     const res = await call(
       'POST',
       `/api/community/workspaces/${ids.wsA}/posts`,
       asUser(ids.studentA),
-      { title: 'Client post', body: 'nope' },
+      { title: 'Client post', body: 'first week done' },
     );
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('community.post.client_posts_disabled');
+    expect(res.status).toBe(201);
+    expect(res.body.post.author_user_id).toBe(ids.studentA);
+  });
+
+  it('2b. B-E2E-1: client of a coach with no space gets one on /me and can post → 201', async () => {
+    const before = await prisma.communityWorkspace.count({
+      where: { coach_id: ids.coachNoSpace },
+    });
+    expect(before).toBe(0);
+
+    const me = await call('GET', '/api/community/me', asUser(ids.studentNoSpace));
+    expect(me.status).toBe(200);
+    expect(me.body.workspace_id).toEqual(expect.any(String));
+    expect(me.body.membership).not.toBeNull();
+    expect(me.body.membership.role).toBe('client');
+    const workspaceId: string = me.body.workspace_id;
+
+    const ws = await prisma.communityWorkspace.findUnique({ where: { id: workspaceId } });
+    expect(ws?.coach_id).toBe(ids.coachNoSpace);
+    expect(ws?.slug).toBe(`coach-${ids.coachNoSpace}`);
+    expect(ws?.name).toBe('Community');
+    const cohorts = await prisma.communityCohort.findMany({
+      where: { workspace_id: workspaceId },
+    });
+    expect(cohorts.map((c) => [c.name, c.sort_order])).toEqual([['All members', 0]]);
+
+    // Second open and the coach's own open land on the same space.
+    const again = await call('GET', '/api/community/me', asUser(ids.studentNoSpace));
+    expect(again.body.workspace_id).toBe(workspaceId);
+    const coachMe = await call('GET', '/api/community/me', asUser(ids.coachNoSpace));
+    expect(coachMe.status).toBe(200);
+    expect(coachMe.body.workspace_id).toBe(workspaceId);
+    expect(await prisma.communityWorkspace.count({ where: { coach_id: ids.coachNoSpace } })).toBe(
+      1,
+    );
+
+    const post = await call(
+      'POST',
+      `/api/community/workspaces/${workspaceId}/posts`,
+      asUser(ids.studentNoSpace),
+      { title: 'Hello', body: 'first post in the Hall' },
+    );
+    expect(post.status).toBe(201);
+    expect(post.body.post.workspace_id).toBe(workspaceId);
+
+    // Another coach's client still cannot post there.
+    const foreign = await call(
+      'POST',
+      `/api/community/workspaces/${workspaceId}/posts`,
+      asUser(ids.studentB),
+      { title: 'Nope', body: 'not my space' },
+    );
+    expect(foreign.status).toBe(404);
   });
 
   it('3. any active member may comment → 201', async () => {
