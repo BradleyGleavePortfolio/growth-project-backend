@@ -192,6 +192,123 @@ const ROMAN_MESSAGE_EXPORT_SELECT: Record<string, true> = {
   created_at: true,
 };
 
+/*
+ * W3-13 day-1 sections. Each select keeps `id` (archive paging follows it)
+ * and leaves out other people's ids and content, storage URLs, credentials
+ * and internal rule keys.
+ */
+
+/** Community posts the user wrote. */
+const COMMUNITY_POST_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  workspace_id: true,
+  scope: true,
+  type: true,
+  title: true,
+  body: true,
+  visibility: true,
+  created_at: true,
+  updated_at: true,
+};
+
+/** Community messages and comments the user sent (no recipient id, no voice URL). */
+const COMMUNITY_MESSAGE_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  workspace_id: true,
+  scope: true,
+  kind: true,
+  body: true,
+  voice_duration_ms: true,
+  parent_message_id: true,
+  plan_context_type: true,
+  visibility: true,
+  created_at: true,
+  updated_at: true,
+};
+
+/** Reactions the user left on posts and messages. */
+const COMMUNITY_REACTION_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  workspace_id: true,
+  target_type: true,
+  target_id: true,
+  response_kind: true,
+  created_at: true,
+};
+
+/** Coach broadcasts delivered to the user (the copy itself is in coach_messages). */
+const BROADCAST_DELIVERY_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  broadcast_id: true,
+  message_id: true,
+  status: true,
+  delivered_at: true,
+  created_at: true,
+};
+
+/** Coach-code redemption attempts the user made (stored response left out). */
+const COACH_CODE_REDEMPTION_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  status: true,
+  outcome: true,
+  coach_id: true,
+  created_at: true,
+};
+
+/** Invite and QR codes the user redeemed. */
+const INVITE_REDEMPTION_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  coach_id: true,
+  code: true,
+  source: true,
+  package_id: true,
+  redeemed_at: true,
+};
+
+/**
+ * Roman workout adjustments proposed for the user: the recovery signals they
+ * were based on, the change and its outcome. The coach's own dismiss note and
+ * the internal rule key are left out.
+ */
+const WORKOUT_ADJUSTMENT_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  coach_id: true,
+  assignment_id: true,
+  status: true,
+  severity: true,
+  signals: true,
+  proposed_change: true,
+  applied_change: true,
+  roman_text: true,
+  decided_at: true,
+  created_at: true,
+};
+
+/** Wearable connections: provider and sync state only, never tokens or secret refs. */
+const WEARABLE_CONNECTION_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  provider: true,
+  status: true,
+  scopes: true,
+  last_synced_at: true,
+  disconnected_at: true,
+  created_at: true,
+};
+
+/** Wearable health samples (consumer health data). */
+const WEARABLE_SAMPLE_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  provider: true,
+  metric: true,
+  bucket: true,
+  value: true,
+  unit: true,
+  start_at: true,
+  end_at: true,
+  source_tz: true,
+  recorded_at: true,
+};
+
 /** Why an archive must go although no request row owns it (B-608-11). */
 export type ArchiveCleanupReason = 'request_removed' | 'failed_run';
 
@@ -1131,6 +1248,15 @@ export class DataExportService {
       romanSessions,
       romanMessages,
       aiConsentEvents,
+      communityPosts,
+      communityMessages,
+      communityReactions,
+      broadcastDeliveries,
+      coachCodeRedemptions,
+      inviteRedemptions,
+      workoutAdjustments,
+      wearableConnections,
+      wearableSamples,
     ] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
@@ -1143,6 +1269,7 @@ export class DataExportService {
           created_at: true,
           archived_at: true,
           deletion_scheduled_at: true,
+          expo_push_token: true,
         },
       }),
       this._streamAll('userProfile', { user_id: userId }),
@@ -1201,7 +1328,65 @@ export class DataExportService {
       ),
       // C-636-2: the AI-processing consent ledger (every grant and withdrawal).
       this._streamAll('aiProcessingConsentEvent', { user_id: userId }, { orderBy: CHRONOLOGICAL }),
+      // W3-13: day-1 data. Posts and messages the user deleted are left out,
+      // like a deleted Roman chat.
+      this._streamAll(
+        'communityPost',
+        { author_id: userId, deleted_at: null },
+        { select: COMMUNITY_POST_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll(
+        'communityMessage',
+        { sender_id: userId, deleted_at: null },
+        { select: COMMUNITY_MESSAGE_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll(
+        'communityResponse',
+        { user_id: userId },
+        { select: COMMUNITY_REACTION_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll(
+        'coachBroadcastDelivery',
+        { recipient_id: userId },
+        { select: BROADCAST_DELIVERY_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll(
+        'coachCodeRedemption',
+        { user_id: userId },
+        { select: COACH_CODE_REDEMPTION_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll(
+        'inviteRedemption',
+        { client_user_id: userId },
+        {
+          select: INVITE_REDEMPTION_EXPORT_SELECT,
+          orderBy: [{ redeemed_at: 'asc' }, { id: 'asc' }],
+        },
+      ),
+      this._streamAll(
+        'workoutAdjustmentProposal',
+        { client_id: userId },
+        { select: WORKOUT_ADJUSTMENT_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll(
+        'wearableConnection',
+        { user_id: userId },
+        { select: WEARABLE_CONNECTION_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll(
+        'wearableSample',
+        { user_id: userId },
+        { select: WEARABLE_SAMPLE_EXPORT_SELECT, orderBy: [{ start_at: 'asc' }, { id: 'asc' }] },
+      ),
     ]);
+
+    // The push token is a send credential for the user's phone: the archive
+    // says whether one is registered, never the token itself.
+    let exportedUser: Record<string, unknown> | null = null;
+    if (user) {
+      const { expo_push_token: pushToken, ...fields } = user;
+      exportedUser = { ...fields, push_token_registered: Boolean(pushToken) };
+    }
 
     const completedAt = new Date();
 
@@ -1215,7 +1400,7 @@ export class DataExportService {
         completed_at: completedAt.toISOString(),
         sha256: null,
       },
-      user,
+      user: exportedUser,
       profile,
       preferences,
       notification_preferences: notificationPrefs,
@@ -1250,6 +1435,15 @@ export class DataExportService {
       roman_sessions: romanSessions,
       roman_messages: romanMessages,
       ai_processing_consent_events: aiConsentEvents,
+      community_posts: communityPosts,
+      community_messages: communityMessages,
+      community_reactions: communityReactions,
+      broadcasts_received: broadcastDeliveries,
+      coach_code_redemptions: coachCodeRedemptions,
+      invite_redemptions: inviteRedemptions,
+      workout_adjustments: workoutAdjustments,
+      wearable_connections: wearableConnections,
+      wearable_samples: wearableSamples,
     };
 
     const jsonForHash = JSON.stringify(archive);
