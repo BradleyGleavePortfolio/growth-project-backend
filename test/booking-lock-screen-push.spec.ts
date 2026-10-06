@@ -46,6 +46,31 @@ beforeAll(() => {
   for (const level of ['warn', 'error', 'log'] as const) {
     jest.spyOn(Logger.prototype, level).mockImplementation(() => undefined);
   }
+  // Pin only the Date clock to NOW: the copy builder's "today/tomorrow" falls back to the real clock, so this spec
+  // started failing once the real date reached AT. Timers, microtasks and nextTick stay real.
+  jest.useFakeTimers({
+    now: NOW,
+    doNotFake: [
+      'hrtime',
+      'nextTick',
+      'performance',
+      'queueMicrotask',
+      'requestAnimationFrame',
+      'cancelAnimationFrame',
+      'requestIdleCallback',
+      'cancelIdleCallback',
+      'setImmediate',
+      'clearImmediate',
+      'setInterval',
+      'clearInterval',
+      'setTimeout',
+      'clearTimeout',
+    ],
+  });
+});
+
+afterAll(() => {
+  jest.useRealTimers();
 });
 
 /** The real sender: NotificationsService.sendPush -> PushDeliveryService.enqueue -> outbox rows. */
