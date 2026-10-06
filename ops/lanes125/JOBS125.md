@@ -385,3 +385,37 @@ _HALL, _COHORTS). Do:
    not rely on cross-stack navigation that breaks back behaviour), plus any small fix from step 1. Tests for the entry point and the
    coachless case. If the audit finds a privacy B you cannot fix in the box, open no entry-point PR and report NO-GO.
 Report /home/user/workspace/ops/reports/B-LEADER-125.md. READY comment per _COMMON_125 item 5 with job B-LEADER-125. Never merge/deploy.
+
+## P-AIB-125 (Claude Opus 5.5, PLANNER, read-only) — AI master workout builder plan for agent 126. Time box 25 min (hard stop 16:10).
+Owner 15:40, verbatim: "lets build it - world class, better UI and UX than any competitor, more per client intelligent, and smooth
+transitions with haptic feedback layered in. I want the FUN part of being a trainer to be fun in-app. But, dont turn it off or hide it.
+Push it live and ON! Lets get a planner agent on that for agent 126 - notated as his responsibility to do!"
+Agent 126 (next operator, fresh budget, tonight; agent 127 after) EXECUTES this plan; you only plan. Inputs: the "AI MASTER WORKOUT
+BUILDER" section of /home/user/workspace/tgp-agent-context/handoffs/op-125/HANDOFF.md (AIB-1..6 sketch), ops/reports/SAFE-MWBAI-125.md
+(the 5 blockers, file:line), ops/reports/AUDIT-14-125.md (live per-client generator), ops/reports/AUDIT-07-125.md and any MWB/workout
+builder audit, the mobile master workout builder screens and src/ai/gateway + src/ai/coach on current main (RO worktrees, git fetch +
+git show origin/main:...). Deliver /home/user/workspace/tgp-agent-context/handoffs/op-125/AI_MASTER_BUILDER_PLAN.md (copy to
+ops/reports/P-AIB-125.md), plain words first, then engineering:
+1. Product: 5-8 coach jobs it nails (new program from a goal, edit by sentence, injury swaps, progress/deload a week, turn a template into
+   a client-specific block, explain a change); the exact screens and taps (entry points in the builder and on the client page, prompt bar,
+   quick-action chips, live diff preview with accept all / per change / undo, revision history); the "fun" layer (motion and transitions,
+   expo-haptics moments: check it is installed, light on chip tap, success on accept, warning on reject; streaming or staged reveal so it
+   feels alive; copy voice). A short competitor benchmark (Everfit, Trainerize, TrueCoach and 1-2 AI-first apps; web research with links)
+   and what makes ours better.
+2. Per-client intelligence: which signals feed the prompt (consultation goals, equipment, schedule, injuries and limitations, training
+   history and logged loads, adherence, check-ins, recovery from Health Connect / Apple Health, coach's own past programs and style), how
+   each is minimised and consent-gated (AI consent ledger), and how the coach's style is learned without Roman v1.1 being required.
+3. Safety built in, not bolted on: the 12-point checklist from the SAFETY PASSES block in /home/user/workspace/ops/lanes125/JOBS125.md as
+   acceptance criteria of the PRs; exercise-library ids only; hard bounds; injury/contraindication handling; no medical claims; coach
+   approval of every change before any client sees it (the coach IS the approver; fix ai-approval.service.ts:92); metering against the
+   coach AI pool with a clear out-of-credits state.
+4. Launch state per the owner: ON and visible in the 10-07 build. Exact flags/values: backend FEATURE_MWB_AI_LIVE_CREATE, AI_GATEWAY_ENABLED,
+   AI_GATEWAY_PROVIDER, AI_GATEWAY_CAPABILITIES (workout capabilities only), any mobile EXPO_PUBLIC_FF_* in eas.json clinic; the manifest
+   PR; the kill switch for emergencies (server-side, no build).
+5. PR slices in merge order: repo, title, files, ~lines (each under 600, hard cap 1500), tier, tests that must fail on main, dependencies,
+   which can run in parallel, and model choice per call (current Anthropic ids are in ops/reports/B-ROMANIQ-125.md: claude-sonnet-5-5,
+   claude-opus-5-5). A timeline for tonight (agents 126 then 127) so every mobile PR merges before the 10-07 build (assume build at
+   10:00 PDT 10-07 unless the SoT says otherwise), with a cut line: what ships in the build if time runs short, and what follows in 1.1.
+6. A ready-to-paste JOBS entry for each builder (same format as JOBS125.md entries), so agent 126 can launch them in minutes.
+Read-only: no PRs, no pushes except committing the plan file to tgp-agent-context main (git pull first; commit as Bradley Gleave
+<bradley@bradleytgpcoaching.com>; never name the clinic partner).

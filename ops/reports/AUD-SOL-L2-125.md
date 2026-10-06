@@ -1,6 +1,6 @@
-# AUD-SOL-L1-125 — live L2 follow-on
+# AUD-SOL-L1-125 — L2 follow-on exact-head audit
 
-Report updated: 2026-10-06 15:26:05 PDT.
+Report updated: 2026-10-06 15:32:13 PDT.
 
 ## Scope traced
 Exact-head independent Sol review of READY auditor PRs; clinic is the launch build profile for both iOS and Android. Following the operator split, this lens now owns MOBILE only; backend and FIX-Q1 deltas belong to L3.
@@ -44,9 +44,9 @@ No code push, merge, deployment, local build/test or production/provider action.
 | m#437 | `1c22b557d1a06772e69394f18d1f8abffdecce69` | APPROVE | 0 | [Exact-head Sol review](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/437#issuecomment-6026576921) |
 | m#438 | `27f773f330a05cdf843f6f8b6c36d1da8295f9c5` | APPROVE | 0 | [Exact-head Sol review](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/438#issuecomment-6026557189) |
 
-## B / CI blockers
+## B / CI blockers recorded by this lens
 
-- Latest posted backend#795 verdict is REQUEST CHANGES at `f85de9b83441ff5dce910375c8aeb877df3ed978`, B=1; a newer unreviewed head is not cleared by an older review. [Sol verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/795#issuecomment-6025909162)
+- Historical backend#795 review at `f85de9b83441ff5dce910375c8aeb877df3ed978` is REQUEST CHANGES, B=1; subsequent backend heads belong to L3 and this is not a verdict on a later head. [Sol verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/795#issuecomment-6025909162)
 
 ## Nonblocking U / C
 - m#426: explicit server `has_gym_membership:false` remains unanswered after sign-in; a small no-gym mapping follow-up is recommended. [Sol review](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/426#issuecomment-6025673575)
@@ -68,6 +68,6 @@ None.
 
 ## HANDOFF
 Per-head evidence, verdict payloads and posting receipts are in ops/aud-125/AUD-SOL-L1-125/ and its L2/ and delta/ subdirectories.
-Notifications continue in ops/lanes125/notify/AUD-SOL-L1-125.txt. Poll MOBILE every five minutes until operator WRAP UP or 16:30 PDT.
-Backend handoff is L2/backend-handoff-to-L3.md; b#795 repair and b#785 FIX-Q1 delta need L3 verdicts, not duplicate reviews here.
+STOPPED after operator WRAP UP at 15:30 PDT. No in-progress verdict remains; no new reviews started. Queue watch is disabled.
+Backend handoff is L2/backend-handoff-to-L3.md; L3 owns all subsequent backend/FIX-Q1 verdicts, including b#795 and b#785 repair heads.
 Safety predicate reproduction for the first b#795 head is saved as L2/backend-795-predicate-evidence.json, with a read-only evaluator in L2/crisis-predicate-review.mjs. It evaluates source predicates only, not a local build or test runner.

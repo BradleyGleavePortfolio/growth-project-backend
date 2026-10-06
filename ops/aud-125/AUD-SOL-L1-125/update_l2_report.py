@@ -18,10 +18,18 @@ receipts.sort(key=lambda r: (r["repo"], r["number"], r["head"]))
 observed = subprocess.check_output(
     ["bash", "-lc", "TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M:%S %Z'"], text=True
 ).strip()
-data = {"observed_at": observed, "receipts": receipts}
+stopped = (ROOT / "MOBILE_WATCH_STOP").exists()
+data = {
+    "observed_at": observed,
+    "status": "STOPPED — operator WRAP UP 15:30 PDT" if stopped else "ACTIVE",
+    "receipts": receipts,
+    "latest_receipts_by_this_lens": [
+        row for _, row in sorted(latest.values(), key=lambda pair: (pair[1]["repo"], pair[1]["number"]))
+    ],
+}
 (ROOT / "AUD-SOL-L2-125-results.json").write_text(json.dumps(data, indent=2) + "\n")
 lines = [
-    "# AUD-SOL-L1-125 — live L2 follow-on",
+    "# AUD-SOL-L1-125 — L2 follow-on exact-head audit",
     "",
     f"Report updated: {observed}.",
     "",
@@ -35,10 +43,10 @@ lines = [
 ]
 for r in receipts:
     lines.append(f"| {'m' if r['repo']=='mobile' else 'b'}#{r['number']} | `{r['head']}` | {r['verdict']} | {r['B']} | [Exact-head Sol review]({r['url']}) |")
-lines += ["", "## B / CI blockers", ""]
+lines += ["", "## B / CI blockers recorded by this lens", ""]
 for _, r in latest.values():
     if r["verdict"] == "REQUEST CHANGES":
-        lines.append(f"- Latest posted {r['repo']}#{r['number']} verdict is REQUEST CHANGES at `{r['head']}`, B={r['B']}; a newer unreviewed head is not cleared by an older review. [Sol verdict]({r['url']})")
+        lines.append(f"- Historical {r['repo']}#{r['number']} review at `{r['head']}` is REQUEST CHANGES, B={r['B']}; subsequent backend heads belong to L3 and this is not a verdict on a later head. [Sol verdict]({r['url']})")
 lines += [
     "",
     "## Nonblocking U / C",
@@ -61,8 +69,9 @@ lines += [
     "",
     "## HANDOFF",
     "Per-head evidence, verdict payloads and posting receipts are in ops/aud-125/AUD-SOL-L1-125/ and its L2/ and delta/ subdirectories.",
-    "Notifications continue in ops/lanes125/notify/AUD-SOL-L1-125.txt. Poll MOBILE every five minutes until operator WRAP UP or 16:30 PDT.",
-    "Backend handoff is L2/backend-handoff-to-L3.md; b#795 repair and b#785 FIX-Q1 delta need L3 verdicts, not duplicate reviews here.",
+    ("STOPPED after operator WRAP UP at 15:30 PDT. No in-progress verdict remains; no new reviews started. Queue watch is disabled." if stopped else
+     "Notifications continue in ops/lanes125/notify/AUD-SOL-L1-125.txt. Poll MOBILE every five minutes until operator WRAP UP or 16:30 PDT."),
+    "Backend handoff is L2/backend-handoff-to-L3.md; L3 owns all subsequent backend/FIX-Q1 verdicts, including b#795 and b#785 repair heads.",
     "Safety predicate reproduction for the first b#795 head is saved as L2/backend-795-predicate-evidence.json, with a read-only evaluator in L2/crisis-predicate-review.mjs. It evaluates source predicates only, not a local build or test runner.",
 ]
 path = pathlib.Path("/home/user/workspace/ops/reports/AUD-SOL-L2-125.md")
