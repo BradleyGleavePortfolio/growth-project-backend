@@ -304,7 +304,8 @@ const PROD: Record<string, FlySecret> = {
   GOOGLE_OAUTH_CLIENT_ID: { value: OLD_VALUE, status: 'Deployed' },
   GOOGLE_OAUTH_CLIENT_SECRET: { value: OLD_VALUE, status: 'Deployed' },
   GOOGLE_OAUTH_REDIRECT_URI: { value: OLD_VALUE, status: 'Deployed' },
-  FEATURE_SCOUT_INGEST: { value: 'false', status: 'Deployed' },
+  // FEATURE_SCOUT_INGEST left this fixture when the manifest adopted it as a managed flag declared
+  // unset (b#761): production as the manifest asserts it no longer lists that name.
 };
 const DEFAULT_SECRETS: Record<string, string> = {
   FLY_API_TOKEN: 'fake-fly-token-not-a-secret',
