@@ -281,7 +281,10 @@ export class CoachService {
             // 90-day window or appear out of order. See Fix 5.
             where: { user_id: clientId, date: { gte: ninetyDaysAgo } },
             include: { food_item: true },
-            orderBy: { date: 'desc' },
+            // `date` is a calendar day, so same-day foods tie. The id
+            // tie-break makes mealsCursor pages exact: no entry repeats on
+            // the next page and none is skipped.
+            orderBy: [{ date: 'desc' }, { id: 'desc' }],
             take: 100,
             ...(opts.mealsCursor ? { cursor: { id: opts.mealsCursor }, skip: 1 } : {}),
           })
