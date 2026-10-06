@@ -27,11 +27,20 @@ describe('DunningLockoutGuard — AI consent carve-out is exact METHOD + PATH (B
     close: () => Promise<void>;
   }> {
     process.env.FEATURE_DUNNING_V2 = 'true';
-    const lookup = jest.fn(async () => ({ id: 'locked' }));
+    const lookup = jest.fn(async () => ({ id: 'locked', purchase_id: 'cp_locked' }));
+    // S-DUNNING F6: the guard also checks for another live grant before
+    // locking; this caller holds none.
+    const otherGrants = jest.fn(async () => []);
     const module = await Test.createTestingModule({
       providers: [
         DunningLockoutGuard,
-        { provide: PrismaService, useValue: { dunningState: { findFirst: lookup } } },
+        {
+          provide: PrismaService,
+          useValue: {
+            dunningState: { findFirst: lookup },
+            clientPurchase: { findMany: otherGrants },
+          },
+        },
       ],
     }).compile();
     return { guard: module.get(DunningLockoutGuard), lookup, close: () => module.close() };

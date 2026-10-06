@@ -211,7 +211,8 @@ describe('B-680-2: a decline read before a payment never reopens dunning', () =>
     await expect(h.svc.handle(decline, h.prisma, pre)).rejects.toThrow(/redeliver/);
     expect(h.dunning.recordFailure).not.toHaveBeenCalled();
     await expect(h.deliver(decline)).resolves.toMatchObject({ claimed: true });
-    expect(h.row()).toMatchObject({ status: 'past_due', entitlement_active: true, last_error: 'Your card was declined.' });
+    // D4 (C-690-1): last_error is a decline code, never Stripe's message.
+    expect(h.row()).toMatchObject({ status: 'past_due', entitlement_active: true, last_error: 'invoice_payment_failed' });
     expect(h.dunning.recordFailure).toHaveBeenCalledTimes(1);
   });
 
