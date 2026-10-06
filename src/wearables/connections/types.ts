@@ -95,3 +95,11 @@ export interface DisconnectResult {
   success: true;
   provider: WearableProvider;
 }
+
+/**
+ * B-WEARLIST-125: `GET /v1/wearables/connections/providers`. The cloud
+ * providers that are connectable now; the app lists only these.
+ */
+export interface CloudProvidersResult {
+  providers: WearableProvider[];
+}
