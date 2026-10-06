@@ -22,7 +22,7 @@ import buildInboxTriagePrompt, {
 import {
   TRIAGE_CATEGORIES,
   TriageBucket,
-  TriageItem,
+  TriageCategory,
   TriageModelOutputSchema,
   TriageResponse,
   TriageResponseSchema,
@@ -83,9 +83,38 @@ const ALARMIST_PATTERNS: readonly RegExp[] = [
   /\bdanger(?:ous)?\b/i,
 ];
 
+// Safety language a coach must never miss: self-harm, suicide, an eating
+// disorder, or an acute physical symptom. Matched deterministically on the
+// item's FULL text (not the 240-character preview), so such an item is ALWAYS
+// counted under `urgent` ("Needs you soon") whatever the model returned, and
+// is never dropped when the model skips it. Over-matching only moves an item
+// up the coach's list; it never sends, replies or hides anything.
+const SAFETY_PATTERNS: readonly RegExp[] = [
+  /\bsuicid/i,
+  /\bkill(?:ing)?\s+myself\b/i,
+  /\bend(?:ing)?\s+(?:my\s+life|it\s+all)\b/i,
+  /\b(?:want|wanna|going|ready)\s+(?:to\s+)?die\b/i,
+  /\b(?:hurt|hurting|harm|harming|cut|cutting)\s+myself\b/i,
+  /\bself[-\s]?harm/i,
+  /\boverdos/i,
+  /\bno\s+reason\s+to\s+live\b/i,
+  /\bdon['\u2019]?t\s+want\s+to\s+(?:live|be\s+here)\b/i,
+  /\b(?:purg(?:e|ed|ing)|starv(?:e|ed|ing)\s+myself|anorexi|bulimi|eating\s+disorder)/i,
+  /\bchest\s+pains?\b/i,
+  /\b(?:fainted|fainting|passed\s+out|blacked\s+out)\b/i,
+];
+
+/** True when the text carries safety language (see SAFETY_PATTERNS). */
+export function needsSafetyAttention(text: string | null | undefined): boolean {
+  const collapsed = (text ?? '').replace(/\s+/g, ' ');
+  return SAFETY_PATTERNS.some((re) => re.test(collapsed));
+}
+
 interface Candidate {
   id: string;
   kind: 'message' | 'post';
+  // Safety language in the full text: always `urgent`, never dropped.
+  safety: boolean;
   // R2b — the client whose words these are; only authors with a live box-2
   // grant enter the prompt. Never sent to the provider.
   authorId: string;
@@ -253,23 +282,37 @@ export class AiTriageService {
     const seen = new Set<string>();
     const sourceIds: string[] = [];
 
+    const place = (candidate: Candidate, category: TriageCategory, summary: string): void => {
+      // Safety language always lands in `urgent` with the neutral summary,
+      // whatever the model said (or if it said nothing about the item).
+      const finalCategory: TriageCategory = candidate.safety ? 'urgent' : category;
+      const target = byCategory.get(finalCategory);
+      if (!target) return;
+      target.items.push({
+        source_item_id: candidate.id,
+        source_kind: candidate.kind,
+        category: finalCategory,
+        summary: this.safeSummary(candidate.safety ? '' : summary, candidate),
+      });
+      seen.add(candidate.id);
+      sourceIds.push(candidate.id);
+    };
+
     for (const bucket of modelBuckets) {
       for (const item of bucket.items) {
         const candidate = allowed.get(item.source_item_id);
         if (!candidate) continue; // fabricated / stale id — drop
         if (seen.has(item.source_item_id)) continue; // classified twice — keep first
-        const target = byCategory.get(item.category);
-        if (!target) continue;
-        const safe: TriageItem = {
-          source_item_id: item.source_item_id,
-          source_kind: candidate.kind,
-          category: item.category,
-          summary: this.safeSummary(item.summary, candidate),
-        };
-        target.items.push(safe);
-        seen.add(item.source_item_id);
-        sourceIds.push(item.source_item_id);
+        place(candidate, item.category, item.summary);
       }
+    }
+
+    // An item the model skipped (a refusal, a prompt injection in another
+    // member's text, or a plain miss) never vanishes from the triage: a safety
+    // item goes to `urgent`, anything else to `general`, so the coach's count
+    // matches the items that were sent for sorting.
+    for (const candidate of allowed.values()) {
+      if (!seen.has(candidate.id)) place(candidate, 'general', '');
     }
 
     const buckets = TRIAGE_CATEGORIES.map(
@@ -355,6 +398,7 @@ export class AiTriageService {
     return {
       id: m.id,
       kind: 'message',
+      safety: needsSafetyAttention(m.body),
       authorId: m.sender.id,
       preview: preview(m.body),
       cohortName,
@@ -367,6 +411,7 @@ export class AiTriageService {
     return {
       id: p.id,
       kind: 'post',
+      safety: needsSafetyAttention(`${p.title ?? ''} ${p.body ?? ''}`),
       authorId: p.author.id,
       preview: preview(p.body ?? p.title ?? ''),
       cohortName,
