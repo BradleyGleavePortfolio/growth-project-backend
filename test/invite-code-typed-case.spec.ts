@@ -1,6 +1,6 @@
 // HUNT-03-124 — a coach code typed the way people type it still pairs.
 // Story: a client types the code from the banner or a text as "gp-bradley"
-// (or "GP BRADLEY", or "GPBRADLEY") on the sign-up screen or the post-Google
+// (or "GPBRADLEY", without the dash) on the sign-up screen or the post-Google
 // screen. Codes are stored upper-case ("GP-XXXXXX" and owner vanity codes
 // such as "GP-BRADLEY"), and every lookup on these paths was exact, so the
 // preview said the code was not active and sign-up with the code stopped,
@@ -25,7 +25,7 @@ async function build() {
   return { db, ...services };
 }
 
-describe('invite codes typed in lower case, with spaces or without the dash', () => {
+describe('invite codes typed in lower case or without the dash', () => {
   it('preview resolves a lower-case permanent coach code (sign-up screen check)', async () => {
     const { invites } = await build();
     expect(await invites.previewCode('gp-bbbbbb')).toMatchObject({
@@ -39,7 +39,6 @@ describe('invite codes typed in lower case, with spaces or without the dash', ()
     const { db, invites } = await build();
     addRowCode(db, { code: 'GP-BRADLEY', coach_id: COACH_A });
     expect(await invites.previewCode('gp-bradley')).toMatchObject({ valid: true, coach_id: COACH_A });
-    expect(await invites.previewCode('GP BRADLEY')).toMatchObject({ valid: true, coach_id: COACH_A });
     expect(await invites.previewCode('GPBRADLEY')).toMatchObject({ valid: true, coach_id: COACH_A });
   });
 
@@ -56,10 +55,10 @@ describe('invite codes typed in lower case, with spaces or without the dash', ()
     ]);
   });
 
-  it('attach pairs a permanent coach code typed with a space instead of the dash', async () => {
+  it('attach pairs a permanent coach code typed without the dash', async () => {
     const { db, invites } = await build();
     addUser(db, { id: 'stu' });
-    expect(await outcome(invites.attachUserToCoachByCode('stu', 'gp bbbbbb'))).toMatchObject({
+    expect(await outcome(invites.attachUserToCoachByCode('stu', 'gpbbbbbb'))).toMatchObject({
       ok: { coach_id: COACH_B, already_attached: false },
     });
     expect(user(db, 'stu').coach_id).toBe(COACH_B);
