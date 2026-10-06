@@ -11,8 +11,8 @@
 // All times in/out at the API boundary are UTC ISO strings. The coach
 // timezone only matters to interpret CoachAvailability rows
 // (day_of_week + start_minute/end_minute live in the coach's local
-// clock). DST is handled by recomputing the tz offset at each local
-// midnight in the requested range.
+// clock). The offset is resolved at each window/override boundary, including
+// when the UTC estimate and the actual local hour fall on opposite sides of DST.
 
 export interface AvailabilityWindow {
   day_of_week: number; // 0=Sun..6=Sat
@@ -131,11 +131,10 @@ function localPartsInTz(
 }
 
 // Inverse of localPartsInTz: take a year/month/day + minuteOfDay in
-// the named tz, return the UTC instant. Handles DST by binary
-// converging on the offset (handles the "spring forward" gap and
-// "fall back" overlap deterministically — picks the later of two
-// valid interpretations during overlap, the simple forward step
-// during gap).
+// the named tz, return the UTC instant. Re-project after each correction:
+// an offset read at the initial UTC guess can precede a DST change while the
+// requested local hour follows it. Ambiguous hours keep the first valid
+// interpretation; the bounded correction retains the forward step for a gap.
 function utcFromLocal(
   year: number,
   month: number, // 1-12
@@ -144,19 +143,21 @@ function utcFromLocal(
   tz: string,
 ): Date {
   // First-pass guess: assume the UTC clock matches the local clock.
-  const guess = new Date(
+  let guess = new Date(
     Date.UTC(year, month - 1, day, Math.floor(minuteOfDay / 60), minuteOfDay % 60),
   );
-  // What does that UTC instant project to in `tz`?
-  const projected = localPartsInTz(guess, tz);
-  const projectedMin =
-    (Date.UTC(projected.year, projected.month - 1, projected.day) +
-      projected.minuteOfDay * 60_000) /
-    60_000;
   const wantedMin = (Date.UTC(year, month - 1, day) + minuteOfDay * 60_000) / 60_000;
-  // Offset in minutes between guess-as-tz and what we wanted.
-  const offsetMin = projectedMin - wantedMin;
-  return new Date(guess.getTime() - offsetMin * 60_000);
+  for (let pass = 0; pass < 3; pass++) {
+    const projected = localPartsInTz(guess, tz);
+    const projectedMin =
+      (Date.UTC(projected.year, projected.month - 1, projected.day) +
+        projected.minuteOfDay * 60_000) /
+      60_000;
+    const correctionMin = wantedMin - projectedMin;
+    if (correctionMin === 0) return guess;
+    guess = new Date(guess.getTime() + correctionMin * 60_000);
+  }
+  return guess;
 }
 
 function addDays(d: Date, days: number): Date {
