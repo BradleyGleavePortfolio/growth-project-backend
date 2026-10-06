@@ -35,6 +35,7 @@ import { createHash } from 'node:crypto';
  * version and sha256; a withdrawal of a v3 grant is recorded against v3.
  */
 export const CLIENT_AI_CONSENT_VERSION = 'client-ai-v4';
+// client-ai-v5 (memory scope) is defined below; v4 stays the copy GET offers.
 
 /** Processor + purpose keys stored on every ledger row. */
 export const CLIENT_AI_CONSENT_PROCESSOR = 'anthropic';
@@ -71,6 +72,84 @@ export const CLIENT_AI_CONSENT_BOX_LABEL_SHA256 = sha256Hex(CLIENT_AI_CONSENT_BO
 export const CLIENT_AI_CONSENT_COPY_SHA256 = sha256Hex(
   CLIENT_AI_CONSENT_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
 );
+
+/**
+ * client-ai-v4 under its own names. The unversioned CLIENT_AI_CONSENT_* names
+ * above stay the v4 copy: it is the base copy GET offers to everyone without
+ * a v5 grant, because the 10-07 app build pins client-ai-v4 (it POSTs v4 from
+ * the consultation, and Settings > Privacy treats any other `current_version`
+ * as "update the app").
+ */
+export const CLIENT_AI_CONSENT_V4_VERSION = CLIENT_AI_CONSENT_VERSION;
+export const CLIENT_AI_CONSENT_V4_PARAGRAPH = CLIENT_AI_CONSENT_PARAGRAPH;
+export const CLIENT_AI_CONSENT_V4_COPY_SHA256 = CLIENT_AI_CONSENT_COPY_SHA256;
+
+/**
+ * client-ai-v5 (Roman v1.1, owner decision D1 approved 2026-10-06 12:01):
+ * adds Roman's notes and summaries (kept when a chat is deleted, erased with
+ * the account) and learning the coach's methods, and drops the v4 promise
+ * "never your coach's private notes". Same box label. A v5 grant is the only
+ * grant with the 'memory' scope; v4 stays a full 'base' grant (day-1 Roman
+ * and coach AI drafts) and is never re-prompted.
+ */
+export const CLIENT_AI_CONSENT_V5_VERSION = 'client-ai-v5';
+
+/** Owner-approved v5 paragraph (A-ROMAN11-124 section 6, D1). Exact text. */
+export const CLIENT_AI_CONSENT_V5_PARAGRAPH =
+  'Roman, the assistant in this app, is powered by Anthropic, a third-party AI provider. ' +
+  'If you allow it, your information is sent to Anthropic so Roman can answer your questions ' +
+  'and your coach can use AI drafts about your training. ' +
+  'Roman may keep notes and summaries about your training, preferences and circumstances to ' +
+  'personalise his replies. ' +
+  'Deleting a chat removes its messages but not these notes; deleting your account removes them. ' +
+  "Roman may also learn your coach's methods, including from your coach's private session notes, " +
+  'and information about your training may help with that without identifying you. ' +
+  "Roman never quotes those notes or shows you another client's information. " +
+  'Your coach never sees your conversations with Roman or his notes about you. ' +
+  'Your conversations with Roman are kept until you delete them or delete your account.';
+
+export const CLIENT_AI_CONSENT_V5_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V5_PARAGRAPH);
+/** sha256 of the v5 `paragraph + "\n\n" + box_label` (UTF-8). */
+export const CLIENT_AI_CONSENT_V5_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V5_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+
+/**
+ * What a live grant covers. 'base': day-1 Roman and the coach's AI drafts
+ * (every existing AI path). 'memory': base plus Roman v1.1 notes, summaries
+ * and coach-method learning (FEATURE_ROMAN_MEMORY / FEATURE_ROMAN_PLAYBOOK).
+ */
+export type ClientAiConsentScope = 'base' | 'memory';
+
+export interface AcceptedClientAiConsent {
+  readonly copy_sha256: string;
+  readonly scope: ClientAiConsentScope;
+}
+
+/**
+ * Every copy version a grant may name, with the exact copy sha256 it must
+ * carry and the scope it gives. Anything else (v3 and older, unknown names,
+ * a known name with another sha256) is not consent.
+ */
+export const CLIENT_AI_CONSENT_ACCEPTED: Readonly<Record<string, AcceptedClientAiConsent>> =
+  Object.freeze({
+    [CLIENT_AI_CONSENT_V4_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V4_COPY_SHA256,
+      scope: 'base' as const,
+    }),
+    [CLIENT_AI_CONSENT_V5_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V5_COPY_SHA256,
+      scope: 'memory' as const,
+    }),
+  });
+
+/** The accepted entry for `version` (own keys only), or null. */
+export function acceptedClientAiConsent(version: unknown): AcceptedClientAiConsent | null {
+  return typeof version === 'string' &&
+    Object.prototype.hasOwnProperty.call(CLIENT_AI_CONSENT_ACCEPTED, version)
+    ? CLIENT_AI_CONSENT_ACCEPTED[version]
+    : null;
+}
 
 /** Ledger row actions (CHECK constraint in the migration). */
 export const AI_CONSENT_ACTION_GRANT = 'grant';

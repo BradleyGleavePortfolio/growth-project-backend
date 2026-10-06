@@ -12,6 +12,7 @@ import type { SelectionAnswers } from './program-rules';
 import { Logger } from '@nestjs/common';
 import {
   CONSULT_CONSENT_V3,
+  CONSULT_CONSENT_V4,
   consultConsentTextSha256,
   unknownConsultConsentVersions,
 } from './consult-consent-copy';
@@ -28,7 +29,8 @@ export const CONSULTATION_VERSION = 'consult-v1';
  * (consult-consent-copy.ts). A P0 counts only when BOTH match: an accepted
  * version and that version's pinned text digest (`isCurrentConsentAnswer`).
  *
- * v3 only (no live client ever recorded v2). CONSULT_CONSENT_COPY_VERSIONS
+ * Default: v3 and v4 (no live client ever recorded v2; v4 carries the
+ * client-ai-v5 paragraph 4 for Roman v1.1). CONSULT_CONSENT_COPY_VERSIONS
  * (comma-separated) may narrow or widen the accepted set, but only among the
  * versions whose exact text the server knows (CONSULT_CONSENT_COPIES): an
  * unknown name can never be verified, so it is ignored (logged once as a
@@ -39,12 +41,17 @@ export const CONSULTATION_VERSION = 'consult-v1';
  * stored on the intake, and is never required by this module.
  */
 export const DEFAULT_CONSULT_CONSENT_COPY_VERSION = CONSULT_CONSENT_V3;
+/** Accepted when CONSULT_CONSENT_COPY_VERSIONS is unset or names no known version. */
+export const DEFAULT_CONSULT_CONSENT_COPY_VERSIONS: readonly string[] = Object.freeze([
+  CONSULT_CONSENT_V3,
+  CONSULT_CONSENT_V4,
+]);
 
 const warnedConsentVersionLists = new Set<string>();
 
 export function acceptedConsentVersions(env: NodeJS.ProcessEnv = process.env): string[] {
   const raw = env.CONSULT_CONSENT_COPY_VERSIONS;
-  if (!raw) return [DEFAULT_CONSULT_CONSENT_COPY_VERSION];
+  if (!raw) return [...DEFAULT_CONSULT_CONSENT_COPY_VERSIONS];
   const unknown = unknownConsultConsentVersions(raw);
   if (unknown.length > 0 && !warnedConsentVersionLists.has(raw)) {
     warnedConsentVersionLists.add(raw);
@@ -56,7 +63,7 @@ export function acceptedConsentVersions(env: NodeJS.ProcessEnv = process.env): s
     .split(',')
     .map((v) => v.trim())
     .filter((v) => v.length > 0 && consultConsentTextSha256(v) !== null);
-  return list.length > 0 ? [...new Set(list)] : [DEFAULT_CONSULT_CONSENT_COPY_VERSION];
+  return list.length > 0 ? [...new Set(list)] : [...DEFAULT_CONSULT_CONSENT_COPY_VERSIONS];
 }
 
 /**

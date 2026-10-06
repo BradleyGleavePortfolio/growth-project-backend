@@ -92,21 +92,60 @@ that names `client-ai-v3` is a 409 `CONSENT_VERSION_MISMATCH` carrying the v4
 `current_version` and `copy_sha256`; nothing is written. A `DELETE` while the
 latest decision is a v3 grant records the withdraw against `client-ai-v3`.
 
+### client-ai-v5: the memory scope (Roman v1.1)
+
+Owner decision D1 (2026-10-06 12:01, A-ROMAN11-124 section 6) added
+`client-ai-v5`. Its paragraph replaces v4's "Only your own data is used, never
+another client's, and never your coach's private notes" with Roman's notes and
+summaries (kept when a chat is deleted, removed with the account) and learning
+the coach's methods, including from the coach's private session notes, never
+quoted. Box label unchanged.
+
+| Part | sha256 |
+|---|---|
+| v5 paragraph | `768ae3451fd1fbd22c65fd7758b51604a9ee0696c6ae7fab694c8238a6584782` |
+| v5 combined (`copy.sha256`) | `8c19fca94c2455094c47b1802bb6693aff47d24c7b6df3b256d0a0e8e90fe8ee` |
+
+Accepted grants (`CLIENT_AI_CONSENT_ACCEPTED`; version AND its exact sha256):
+
+| Live grant | `scope` | Covers |
+|---|---|---|
+| `client-ai-v4` | `base` | every day-1 AI path (Roman chat, coach AI drafts, brief, triage) |
+| `client-ai-v5` | `memory` | `base` + Roman v1.1 notes, summaries, coach-method learning |
+
+- v4 holders are never re-prompted and keep day-1 Roman unchanged. The 10-07
+  app build pins v4: it POSTs v4 from the consultation and its Settings screen
+  treats any other `current_version` as "update the app". So `GET` keeps
+  offering the v4 copy (`current_version: "client-ai-v4"`, `copy` = v4) to
+  everyone without a live v5 grant, and a v4 holder still reads
+  `state: "granted"`, `granted: true`, `needs_reconsent: false`.
+- A live v5 holder reads `current_version: "client-ai-v5"` and the v5 `copy`.
+- New fields (additive; older apps ignore them): `scope` (`"base"`,
+  `"memory"`, or `null` with no live grant) and `upgrade` (for a v4 holder:
+  the v5 copy, same shape as `copy`, one optional tap; otherwise `null`).
+- A withdrawal ends both scopes (it is recorded against the grant it ends).
+- `hasClientAiConsent(id, scope = 'base')`, `clientsWithAiConsent(ids, scope =
+  'base')` and `clientDataSubject(ids, audience, scope = 'base')`: a `memory`
+  subject is refused by the egress gate (`ai_consent_required`, before any
+  provider call) unless every listed client holds a live v5 grant.
+- Onboarding P0 `consult-consent-v4` is the v3 screen with the v5 paragraph 4;
+  v3 and v4 are both accepted by default.
+
 ### `POST /api/me/ai-consent/roman` -> 200 (same body as GET)
 
 Request (JSON; only these fields):
 
 | Field | Required | Rule |
 |---|---|---|
-| `version` | yes | string, must equal `current_version` (`client-ai-v4`) |
-| `copy_sha256` | no | 64 hex chars; when sent must equal `copy.sha256` (case-insensitive) |
+| `version` | yes | string, `client-ai-v4` or `client-ai-v5` |
+| `copy_sha256` | no | 64 hex chars; when sent must equal that version's combined sha256 (case-insensitive) |
 | `platform` | no | `ios`, `android` or `web` |
 | `app_version` | no | max 32 chars, `[0-9A-Za-z.+-]` |
 | `locale` | no | max 16 chars, BCP-47 shape (e.g. `en-US`) |
 
 Optional fields are OMITTED when not sent; `null` for any of them is a 400.
 
-Idempotent: if the latest decision is already a grant of the current copy,
+Idempotent: if the latest decision is already a live grant of the same version,
 nothing is written and the current status (with the original `granted_at`)
 returns. Two concurrent identical grants record one row.
 
@@ -126,7 +165,7 @@ is machine-readable.
 |---|---|---|---|
 | 400 | (none) | body fails validation or carries an unknown field | fix the request; do not retry as-is |
 | 401 | (none) | no or invalid JWT | re-authenticate |
-| 409 | `CONSENT_VERSION_MISMATCH` | `version` is not current, or `copy_sha256` differs | `GET /api/me/ai-consent`, show the new copy, ask again |
+| 409 | `CONSENT_VERSION_MISMATCH` | `version` is not `client-ai-v4` or `client-ai-v5`, or `copy_sha256` differs from that version's | `GET /api/me/ai-consent`, show the new copy, ask again |
 | 409 | `AI_CONSENT_CONFLICT` | concurrent writers kept colliding (bounded retries exhausted) | retry once |
 | 503 | `AI_CONSENT_UNAVAILABLE` | switch off, or any ledger read or write failed | treat as "unavailable right now"; never block onboarding |
 
@@ -193,6 +232,9 @@ empty set on a read failure.
   CacheControlInterceptor.
 - `test/ai-consent/ai-consent-wiring.spec.ts` — migration shape, CI wiring,
   flag registration, module mount, no AI call site touched.
+- `test/ai-consent/ai-consent-v5-scope.spec.ts` — v4/v5/withdraw scope
+  matrix, the 10-07 build contract (POST v4, GET for a v4 holder), `upgrade`,
+  egress refusal of a memory subject for a v4 holder, consult-consent v3 + v4.
 - `test/ai-consent/ai-consent-dunning-lockout.e2e.spec.ts` — a billing-locked
   client can GET, POST and DELETE through the real lockout guard.
 - `test/rls/ai-processing-consent-ledger-rls.spec.ts` — live Postgres, run by

@@ -49,23 +49,38 @@ export const NO_CLIENT_DATA_REASONS = [
 ] as const;
 export type NoClientDataReason = (typeof NO_CLIENT_DATA_REASONS)[number];
 
+/**
+ * Consent scope a client-data send needs (client-ai-v5). 'base': every day-1
+ * AI path (a live client-ai-v4 or client-ai-v5 grant). 'memory': Roman v1.1
+ * notes, summaries and coach-method learning (a live client-ai-v5 grant for
+ * EVERY listed client). Absent means 'base'.
+ */
+export type AiConsentScope = 'base' | 'memory';
+
 export type AiDataSubject =
   | {
       readonly kind: 'client_data';
       /** Every client whose information is in the prompt. Never empty. */
       readonly clientIds: readonly string[];
       readonly audience: AiConsentAudience;
+      readonly scope?: AiConsentScope;
     }
   | { readonly kind: 'no_client_data'; readonly reason: NoClientDataReason };
 
-/** Build a client-data subject (deduplicated, empty ids dropped). */
+/**
+ * Build a client-data subject (deduplicated, empty ids dropped). A 'base'
+ * subject carries no scope field (identical to the pre-v5 shape).
+ */
 export function clientDataSubject(
   clientIds: string | readonly string[],
   audience: AiConsentAudience,
+  scope: AiConsentScope = 'base',
 ): AiDataSubject {
   const list = typeof clientIds === 'string' ? [clientIds] : clientIds;
   const unique = [...new Set(list.filter((id) => typeof id === 'string' && id.length > 0))];
-  return { kind: 'client_data', clientIds: unique, audience };
+  return scope === 'memory'
+    ? { kind: 'client_data', clientIds: unique, audience, scope }
+    : { kind: 'client_data', clientIds: unique, audience };
 }
 
 export function noClientDataSubject(reason: NoClientDataReason): AiDataSubject {

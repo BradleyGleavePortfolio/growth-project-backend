@@ -1374,7 +1374,8 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'CONSULT_CONSENT_COPY_VERSIONS',
     tier: 'optional',
-    default: "consult-consent-v3 (unset, empty, or no known name -> ['consult-consent-v3'])",
+    default:
+      "consult-consent-v3,consult-consent-v4 (unset, empty, or no known name -> ['consult-consent-v3', 'consult-consent-v4'])",
     reason:
       "Comma-separated onboarding P0 (consent box 1) copy versions the intake accepts (#607). A P0 counts only when its copy_version is listed AND its text_sha256 equals that version's pinned full-screen digest (src/onboarding/consult-consent-copy.ts), so only versions whose exact text the server knows can be listed; unknown names are ignored (logged once as a warning by the onboarding module). Leave unset at launch.",
   },
