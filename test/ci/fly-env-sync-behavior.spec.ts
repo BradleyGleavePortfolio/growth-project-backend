@@ -616,6 +616,17 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
       expectNoLeak(run);
     });
 
+    it('stages a dotted flag value: APPLE_AUDIENCES=com.growthproject.app passes the NAME=value guard (B-APPLE-123)', () => {
+      const run = runJob({
+        mode: 'apply',
+        edits: { 'flags.APPLE_AUDIENCES': 'com.growthproject.app' },
+      });
+      expect(run.ok).toBe(true);
+      expect(writes(run)).toEqual(['secrets set stage=1 names=APPLE_AUDIENCES']);
+      expect(run.fly.APPLE_AUDIENCES).toEqual({ value: 'com.growthproject.app', status: 'Staged' });
+      expectNoLeak(run);
+    });
+
     it('deploy_staged=true: one deploy, then the running machine is proven to hold the value', () => {
       const run = runJob({
         mode: 'apply',

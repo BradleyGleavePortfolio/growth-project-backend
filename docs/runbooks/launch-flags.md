@@ -132,6 +132,8 @@ FEATURE_COACH_CODE_TOOLS | off | fly secrets unset -a backend-spring-lake-3890 F
 FEATURE_COACH_BROADCASTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_BROADCASTS | "FEATURE_COACH_BROADCASTS": "unset"
 FEATURE_ROMAN_CHAT_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_CHAT_ENABLED | "FEATURE_ROMAN_CHAT_ENABLED": "unset"
 FEATURE_ROMAN_ADJUST_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_ADJUST_ENABLED | "FEATURE_ROMAN_ADJUST_ENABLED": "unset"
+APPLE_AUDIENCES | off | fly secrets unset -a backend-spring-lake-3890 APPLE_AUDIENCES | "APPLE_AUDIENCES": "unset"
+APPLE_NONCE_REQUIRED | off | fly secrets unset -a backend-spring-lake-3890 APPLE_NONCE_REQUIRED | "APPLE_NONCE_REQUIRED": "unset"
 ```
 
 ## Deploy-window sequences
@@ -167,6 +169,15 @@ Roll back with `"FEATURE_WEARABLES_INGEST_POST": "unset"` (or the emergency kill
 Roll back with `"unset"` on the three flags (the emergency kills in the table above). The program, autosave, undo and regime routes then return 404 and saved programs are kept. Leave the secret line as is.
 
 **Community core (Wave A).** Flip `FEATURE_COMMUNITY_API` and the core set (`_POSTS`, `_MESSAGES`, `_PUSH`, `_REALTIME`, and `_VOICE_NOTES` once its audit and device pass are done) in one PR, after the community report/block lane (#610) is deployed. The preconditions reject surface flags without the API flag.
+
+**Sign in with Apple (day 1): APPLE_AUDIENCES=com.growthproject.app and APPLE_NONCE_REQUIRED unset.** The native iOS sheet issues identity tokens whose audience is the bundle id `com.growthproject.app`, and the app sends no `raw_nonce`. Any other audience, or `APPLE_NONCE_REQUIRED=true`, fails every Apple sign-in (and the Apple re-auth for account deletion) with 401. Both values are public, so they live here, not in a secret.
+
+1. Merge the PR that declares both lines.
+2. Run apply with `deploy_staged=true` (one rolling restart).
+3. Run plan. Both rows must read `keep` (`APPLE_AUDIENCES` deployed and matching, `APPLE_NONCE_REQUIRED` absent). Then run `fly-env-truth.yml`: the `APPLE_AUDIENCES` shape check must read `pass`.
+4. Owner device pass on iOS: Sign in with Apple on a fresh account lands in the app.
+
+The token-revocation keys (`APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY`) are never copied by this workflow; `fly-apple-signin-set.yml` owns them.
 
 ## Notes and limits
 
