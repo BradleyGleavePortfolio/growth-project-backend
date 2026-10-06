@@ -404,6 +404,15 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Run private custom foods live RLS suite (UX-FOOD-PRIV-124)
+        # Builds a minimal FoodItem with its 20261213000000 RLS statements verbatim, applies
+        # prisma/migrations/20270403000000_private_custom_foods/migration.sql verbatim, and proves as
+        # API principals (authenticated/anon/service_role + the app.* GUCs) that a custom food is read
+        # only by its creator while the shared catalog stays readable. Refuses to skip under CI=true.
+        run: npx jest --config jest.rls.config.js test/rls/food-item-custom-privacy-rls.spec.ts --runInBand --testTimeout=60000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
   community-live-tests:
     # C-610-4 (#610 fix round 2, T4 CI gate change): the DB-backed community
     # moderation/safety suites were env-gated on COMMUNITY_TEST_DATABASE_URL

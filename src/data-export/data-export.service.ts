@@ -145,6 +145,35 @@ function compareExportValues(a: unknown, b: unknown): number {
   return (x as string | number) < (y as string | number) ? -1 : 1;
 }
 
+/**
+ * UX-FOOD-PRIV-124: the custom foods the user created (private to them).
+ * The owner column is the user's own id and is left out.
+ */
+const CUSTOM_FOOD_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  name: true,
+  brand_or_restaurant: true,
+  category: true,
+  serving_description: true,
+  serving_size_grams: true,
+  nutrient_basis: true,
+  calories: true,
+  protein_g: true,
+  carbs_g: true,
+  fat_g: true,
+  saturated_fat_g: true,
+  mono_fat_g: true,
+  poly_fat_g: true,
+  fiber_g: true,
+  sugar_g: true,
+  sodium_mg: true,
+  tags: true,
+  search_aliases: true,
+  image_url: true,
+  barcode: true,
+  created_at: true,
+};
+
 /** Recipe columns exported for recipes the user created. */
 const RECIPE_EXPORT_SELECT: Record<string, true> = {
   id: true,
@@ -1264,6 +1293,7 @@ export class DataExportService {
       notificationPrefs,
       weightLogs,
       loggedEntries,
+      customFoods,
       workouts,
       fastingWindows,
       waterLogs,
@@ -1322,6 +1352,11 @@ export class DataExportService {
       this._streamAll('notificationPreferences', { user_id: userId }),
       this._streamAll('weightLog', { user_id: userId }),
       this._streamAll('loggedFoodEntry', { user_id: userId }),
+      this._streamAll(
+        'foodItem',
+        { created_by_user_id: userId },
+        { select: CUSTOM_FOOD_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
       this._streamAll('workoutSession', { user_id: userId }),
       this._streamAll('fastingWindow', { user_id: userId }),
       this._streamAll('waterLog', { user_id: userId }),
@@ -1470,6 +1505,7 @@ export class DataExportService {
       notification_preferences: notificationPrefs,
       weight_logs: weightLogs,
       food_entries: loggedEntries,
+      custom_foods: customFoods,
       workout_sessions: workouts,
       fasting_windows: fastingWindows,
       water_logs: waterLogs,

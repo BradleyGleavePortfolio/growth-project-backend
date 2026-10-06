@@ -19,6 +19,8 @@ function buildPrismaStub() {
   } as any;
 }
 
+const VIEWER = 'user-viewer';
+
 describe('FoodService.search NL parsing integration', () => {
   let service: FoodService;
   let prisma: any;
@@ -41,7 +43,7 @@ describe('FoodService.search NL parsing integration', () => {
   });
 
   it('extracts parsed_quantity and parsed_unit from "6oz chicken breast"', async () => {
-    const res = await service.search('6oz chicken breast', 10);
+    const res = await service.search('6oz chicken breast', 10, VIEWER);
     expect(res.parsed_quantity).toBe(6);
     expect(res.parsed_unit).toBe('oz');
     // The query echo is the *raw* user input so the mobile picker can still
@@ -50,13 +52,13 @@ describe('FoodService.search NL parsing integration', () => {
   });
 
   it('omits parsed_* when the query has no qty/unit', async () => {
-    const res = await service.search('chicken breast', 10);
+    const res = await service.search('chicken breast', 10, VIEWER);
     expect(res.parsed_quantity).toBeUndefined();
     expect(res.parsed_unit).toBeUndefined();
   });
 
   it('passes the parsed food name (not the raw query) to the upstream fetch', async () => {
-    await service.search('1/2 cup oats', 10);
+    await service.search('1/2 cup oats', 10, VIEWER);
     // The USDA URL is fetch's first argument on its first call — the parser
     // should have stripped "1/2 cup " before it reached the encoder.
     const usdaUrl = String(fetchSpy.mock.calls[0][0]);
@@ -66,20 +68,20 @@ describe('FoodService.search NL parsing integration', () => {
   });
 
   it('returns short-circuit defaults for empty input without invoking upstreams', async () => {
-    const res = await service.search('', 5);
+    const res = await service.search('', 5, VIEWER);
     expect(res.results).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('caches identical normalized queries (second call skips upstreams)', async () => {
     // First call hits USDA + OFF (2 fetch calls in parallel).
-    await service.search('chicken breast', 10);
+    await service.search('chicken breast', 10, VIEWER);
     const firstCallCount = fetchSpy.mock.calls.length;
     expect(firstCallCount).toBeGreaterThanOrEqual(2);
 
     // Second call with the same query should be served from the in-memory
     // cache — no further upstream fetches.
-    await service.search('chicken breast', 10);
+    await service.search('chicken breast', 10, VIEWER);
     expect(fetchSpy.mock.calls.length).toBe(firstCallCount);
   });
 });

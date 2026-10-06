@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { getGramsForVolume, supportsVolumeUnits } from './food-density';
 import { parseFoodQuery } from './food-query-parser';
@@ -126,6 +127,92 @@ function volumeWeights(category: string) {
   };
 }
 
+/**
+ * UX-FOOD-PRIV-124: rows a signed-in caller may see — the shared catalog
+ * (no creator) and their own custom foods. A custom food is private.
+ */
+function visibleFoodsWhere(viewerId: string): Prisma.FoodItemWhereInput {
+  return { OR: [{ created_by_user_id: null }, { created_by_user_id: viewerId }] };
+}
+
+function canSeeFood(item: { created_by_user_id?: string | null }, viewerId: string): boolean {
+  return item.created_by_user_id == null || item.created_by_user_id === viewerId;
+}
+
+/** Weighted relevance score of one result for the (parsed) query. */
+function scoreFoodResult(item: FoodResult, rawQuery: string): number {
+  // Singular/plural normalization: strip trailing 's' for comparison
+  const normalize = (s: string) =>
+    s.toLowerCase().trim().replace(/\s+/g, ' ').replace(/s$/, '');
+
+  const normalizedName = normalize(item.name);
+  const normalizedQuery = normalize(rawQuery);
+
+  let score: number;
+
+  // Exact match
+  if (normalizedName === normalizedQuery) {
+    score = 100;
+  } else if (normalizedName.startsWith(normalizedQuery)) {
+    // Starts with
+    score = 80;
+  } else if (normalizedName.includes(normalizedQuery)) {
+    // Contains as whole phrase
+    score = 60;
+  } else {
+    const tokens = normalizedQuery.split(' ');
+    if (tokens.every((t) => normalizedName.includes(t))) {
+      // All query tokens found in name
+      score = 30;
+    } else {
+      // Found in tags/aliases
+      const allText = [
+        ...(item.tags || []),
+        ...(item.search_aliases || []),
+      ]
+        .join(' ')
+        .toLowerCase();
+      if (tokens.some((t) => allText.includes(normalize(t)))) {
+        score = 10;
+      } else {
+        score = 5;
+      }
+    }
+  }
+
+  // Single-ingredient boost: category 'generic' or name is <= 3 words
+  const wordCount = item.name.trim().split(/\s+/).length;
+  if (item.category === 'generic' || wordCount <= 3) {
+    score += 20;
+  }
+
+  return score;
+}
+
+/**
+ * De-duplicate by name (the first source listed wins), then score DESC and
+ * alphabetical on ties, then take `limit`.
+ */
+function rankFoodResults(items: FoodResult[], q: string, limit: number): FoodResult[] {
+  const merged: FoodResult[] = [];
+  const seen = new Set<string>();
+  for (const item of items) {
+    const key = item.name.toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(item);
+    }
+  }
+
+  const scored = merged.map((item) => ({ item, score: scoreFoodResult(item, q) }));
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    return a.item.name.localeCompare(b.item.name);
+  });
+
+  return scored.slice(0, limit).map((s) => s.item);
+}
+
 // 24h TTL on cached search results — USDA/OFF data is effectively static at
 // the per-day level and the upstream APIs are slow + rate-limited.
 const SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -169,11 +256,18 @@ export class FoodService implements OnModuleInit {
     }
   }
 
-  async search(query: string, limit: number = 50): Promise<FoodSearchResponse> {
+  /**
+   * UX-FOOD-PRIV-124: `viewerId` is the signed-in caller. They see the shared
+   * catalog (created_by_user_id null: seeded, USDA, OpenFoodFacts) plus their
+   * own custom foods, never another person's. The search cache holds shared
+   * results only; the caller's own foods are read per request.
+   */
+  async search(query: string, limit: number, viewerId: string): Promise<FoodSearchResponse> {
     const rawQ = (query || '').trim();
 
     if (!rawQ || rawQ.length < 2) {
       const defaults = await this.prisma.foodItem.findMany({
+        where: visibleFoodsWhere(viewerId),
         take: limit,
         orderBy: { name: 'asc' },
       });
@@ -190,113 +284,19 @@ export class FoodService implements OnModuleInit {
     const parsed = parseFoodQuery(rawQ);
     const q = parsed.foodName || rawQ;
 
-    // 2) Cache check — keyed off the *parsed* food name so "chicken breast"
-    //    and "6oz chicken breast" share a cache entry.
+    // 2) The caller's own custom foods: per request, never cached.
+    const ownPromise = this.searchLocalDB(q, 10, viewerId);
+
+    // 3) Shared results, cache first — keyed off the *parsed* food name so
+    //    "chicken breast" and "6oz chicken breast" share a cache entry.
     const cacheKey = `${SEARCH_CACHE_KEY_PREFIX}${q.toLowerCase()}`;
     const cached = await this.getCachedSearch(cacheKey);
-    if (cached) {
-      // Splice parser output back in even on a cache hit so mobile can pre-fill.
-      return {
-        ...cached,
-        query: rawQ,
-        parsed_quantity: parsed.quantity,
-        parsed_unit: parsed.unit,
-      };
-    }
+    const shared = cached ? cached.results : await this.searchShared(q, limit, cacheKey);
 
-    // Run all 3 sources in parallel
-    const [usdaResults, offResults, localResults] = await Promise.allSettled([
-      this.searchUSDA(q, 20),
-      this.searchOpenFoodFacts(q, 20),
-      this.searchLocalDB(q, 10),
-    ]);
+    // Own foods first on a name tie, then the same relevance order as before.
+    const results = rankFoodResults([...(await ownPromise), ...shared], q, limit);
 
-    const usda = usdaResults.status === 'fulfilled' ? usdaResults.value : [];
-    const off = offResults.status === 'fulfilled' ? offResults.value : [];
-    const local = localResults.status === 'fulfilled' ? localResults.value : [];
-
-    // Merge: local first (user's own foods), then USDA (reliable nutrition), then OFF (images)
-    const merged: FoodResult[] = [];
-    const seen = new Set<string>();
-
-    const addUnique = (items: FoodResult[]) => {
-      for (const item of items) {
-        const key = item.name.toLowerCase().replace(/\s+/g, ' ').trim();
-        if (!seen.has(key)) {
-          seen.add(key);
-          merged.push(item);
-        }
-      }
-    };
-
-    addUnique(local);
-    addUnique(usda);
-    addUnique(off);
-
-    // ── Weighted relevance scoring ──────────────────────────────────────────
-    const scoreResult = (item: FoodResult, rawQuery: string): number => {
-      // Singular/plural normalization: strip trailing 's' for comparison
-      const normalize = (s: string) =>
-        s.toLowerCase().trim().replace(/\s+/g, ' ').replace(/s$/, '');
-
-      const normalizedName = normalize(item.name);
-      const normalizedQuery = normalize(rawQuery);
-
-      let score: number;
-
-      // Exact match
-      if (normalizedName === normalizedQuery) {
-        score = 100;
-      } else if (normalizedName.startsWith(normalizedQuery)) {
-        // Starts with
-        score = 80;
-      } else if (normalizedName.includes(normalizedQuery)) {
-        // Contains as whole phrase
-        score = 60;
-      } else {
-        const tokens = normalizedQuery.split(' ');
-        if (tokens.every((t) => normalizedName.includes(t))) {
-          // All query tokens found in name
-          score = 30;
-        } else {
-          // Found in tags/aliases
-          const allText = [
-            ...(item.tags || []),
-            ...(item.search_aliases || []),
-          ]
-            .join(' ')
-            .toLowerCase();
-          if (tokens.some((t) => allText.includes(normalize(t)))) {
-            score = 10;
-          } else {
-            score = 5;
-          }
-        }
-      }
-
-      // Single-ingredient boost: category 'generic' or name is <= 3 words
-      const wordCount = item.name.trim().split(/\s+/).length;
-      if (item.category === 'generic' || wordCount <= 3) {
-        score += 20;
-      }
-
-      return score;
-    };
-
-    // Score, then sort by score DESC, then alphabetically for ties
-    const scored = merged.map((item) => ({
-      item,
-      score: scoreResult(item, q),
-    }));
-
-    scored.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      return a.item.name.localeCompare(b.item.name);
-    });
-
-    const results = scored.slice(0, limit).map((s) => s.item);
-
-    const response: FoodSearchResponse = {
+    return {
       results,
       suggestions: [],
       did_you_mean: false,
@@ -304,10 +304,27 @@ export class FoodService implements OnModuleInit {
       parsed_quantity: parsed.quantity,
       parsed_unit: parsed.unit,
     };
+  }
 
-    // Cache the merged+scored list (sans the query echo / parsed_* fields,
-    // which are rebuilt per-call so callers with different leading quantities
-    // still see their own parse).
+  /** USDA + OpenFoodFacts + the shared local catalog, ranked and cached. */
+  private async searchShared(q: string, limit: number, cacheKey: string): Promise<FoodResult[]> {
+    // Run all 3 sources in parallel
+    const [usdaResults, offResults, localResults] = await Promise.allSettled([
+      this.searchUSDA(q, 20),
+      this.searchOpenFoodFacts(q, 20),
+      this.searchLocalDB(q, 10, null),
+    ]);
+
+    const usda = usdaResults.status === 'fulfilled' ? usdaResults.value : [];
+    const off = offResults.status === 'fulfilled' ? offResults.value : [];
+    const local = localResults.status === 'fulfilled' ? localResults.value : [];
+
+    // Merge: local catalog first, then USDA (reliable nutrition), then OFF (images)
+    const results = rankFoodResults([...local, ...usda, ...off], q, limit);
+
+    // Cache the merged+scored shared list (sans the query echo / parsed_*
+    // fields, which are rebuilt per-call so callers with different leading
+    // quantities still see their own parse). Never holds a custom food.
     await this.setCachedSearch(cacheKey, {
       results,
       suggestions: [],
@@ -315,7 +332,7 @@ export class FoodService implements OnModuleInit {
       query: q,
     });
 
-    return response;
+    return results;
   }
 
   /** Redis GET with in-memory fallback. Returns null on miss or any error. */
@@ -355,7 +372,15 @@ export class FoodService implements OnModuleInit {
     }
   }
 
-  private async searchLocalDB(query: string, limit: number): Promise<FoodResult[]> {
+  /**
+   * Local rows matching the query. `ownerId` null: the shared catalog only
+   * (cacheable); a user id: that user's own custom foods only.
+   */
+  private async searchLocalDB(query: string, limit: number, ownerId: string | null): Promise<FoodResult[]> {
+    const owner =
+      ownerId === null
+        ? Prisma.sql`"created_by_user_id" IS NULL`
+        : Prisma.sql`"created_by_user_id" = ${ownerId}`;
     try {
       const trgmResults = await this.prisma.$queryRaw<FoodItemRow[]>`
         SELECT
@@ -370,7 +395,7 @@ export class FoodService implements OnModuleInit {
             lower(${query})
           ) AS score
         FROM "FoodItem"
-        WHERE
+        WHERE ${owner} AND
           similarity(
             lower(name) || ' ' ||
             lower(coalesce(brand_or_restaurant, '')) || ' ' ||
@@ -392,13 +417,14 @@ export class FoodService implements OnModuleInit {
             fiber_g, sugar_g, sodium_mg, tags, search_aliases, image_url,
             nutrient_basis
           FROM "FoodItem"
-          WHERE
+          WHERE ${owner} AND (
             lower(name) LIKE lower(${likeQ})
             OR lower(coalesce(brand_or_restaurant, '')) LIKE lower(${likeQ})
             OR EXISTS (
               SELECT 1 FROM unnest(search_aliases) AS alias
               WHERE lower(alias) LIKE lower(${likeQ})
             )
+          )
           ORDER BY
             CASE WHEN lower(name) LIKE lower(${likeQ}) THEN 0 ELSE 1 END,
             name
@@ -577,9 +603,10 @@ export class FoodService implements OnModuleInit {
     };
   }
 
-  async getById(id: string) {
+  /** Another person's custom food reads as not found (null), like a missing id. */
+  async getById(id: string, viewerId: string) {
     const item = await this.prisma.foodItem.findUnique({ where: { id } });
-    return item ? this.toResult(item) : null;
+    return item && canSeeFood(item, viewerId) ? this.toResult(item) : null;
   }
 
   /**
@@ -587,11 +614,15 @@ export class FoodService implements OnModuleInit {
    * Caches the result in FoodItem so subsequent lookups are instant.
    * Returns the resolved FoodItem.id.
    */
-  async lookupByBarcode(upc: string): Promise<string> {
-    return this.upsertFromOpenFoodFacts(upc);
+  async lookupByBarcode(upc: string, viewerId: string): Promise<string> {
+    return this.upsertFromOpenFoodFacts(upc, viewerId);
   }
 
-  async create(data: import('./food.dto').CreateFoodDto) {
+  /**
+   * POST /foods — a custom food, private to `creatorId` (UX-FOOD-PRIV-124).
+   * The only path that sets created_by_user_id; imports stay shared.
+   */
+  async create(data: import('./food.dto').CreateFoodDto, creatorId: string) {
     // Explicit field mapping — previously spread the whole body into
     // prisma.foodItem.create, which would let a client set `id`, `created_at`,
     // or arbitrary extra columns. See audit C4. Only DTO-whitelisted fields
@@ -618,6 +649,7 @@ export class FoodService implements OnModuleInit {
         search_aliases: data.search_aliases ?? [],
         image_url: data.image_url,
         barcode: data.barcode,
+        created_by_user_id: creatorId,
       },
     });
   }
@@ -634,7 +666,7 @@ export class FoodService implements OnModuleInit {
    * into FoodItem first (keyed by barcode for OFF, by a "usda_*" alias for USDA)
    * gives us a real primary key we can reference without schema changes.
    */
-  async resolveOrImportId(id: string): Promise<string> {
+  async resolveOrImportId(id: string, viewerId: string): Promise<string> {
     if (!id) throw new Error('food_item_id is required');
 
     if (id.startsWith('usda_')) {
@@ -644,19 +676,24 @@ export class FoodService implements OnModuleInit {
 
     if (id.startsWith('off_')) {
       const code = id.slice(4);
-      return this.upsertFromOpenFoodFacts(code);
+      return this.upsertFromOpenFoodFacts(code, viewerId);
     }
 
     // Assume real uuid — verify it exists to surface a clean 404 before the FK explodes.
+    // Another person's custom food is reported exactly like a missing id.
     const existing = await this.prisma.foodItem.findUnique({ where: { id } });
-    if (!existing) throw new Error(`FoodItem ${id} not found`);
+    if (!existing || !canSeeFood(existing, viewerId)) throw new Error(`FoodItem ${id} not found`);
     return existing.id;
   }
 
   private async upsertFromUSDA(fdcId: string): Promise<string> {
     // Use tags array with "usda:<fdcId>" as the idempotency key — no schema change needed.
     const tag = `usda:${fdcId}`;
-    const existing = await this.prisma.foodItem.findFirst({ where: { tags: { has: tag } } });
+    // Shared rows only: a custom food may carry any tag, so it never stands in
+    // for a USDA import.
+    const existing = await this.prisma.foodItem.findFirst({
+      where: { tags: { has: tag }, created_by_user_id: null },
+    });
     if (existing) return existing.id;
 
     const apiKey = process.env.USDA_API_KEY;
@@ -707,14 +744,24 @@ export class FoodService implements OnModuleInit {
       // P2002 = Prisma unique constraint violation — a concurrent flush already
       // inserted this row. Re-query to get the winning row's id.
       if ((err as { code?: string }).code === 'P2002') {
-        const race = await this.prisma.foodItem.findFirst({ where: { tags: { has: tag } } });
+        const race = await this.prisma.foodItem.findFirst({
+          where: { tags: { has: tag }, created_by_user_id: null },
+        });
         if (race) return race.id;
       }
       throw err;
     }
   }
 
-  private async upsertFromOpenFoodFacts(code: string): Promise<string> {
+  private async upsertFromOpenFoodFacts(code: string, viewerId: string): Promise<string> {
+    // Barcode is unique across shared and custom rows. A row already holding it
+    // answers directly; another person's custom food reads as not found.
+    const held = await this.prisma.foodItem.findUnique({ where: { barcode: code } });
+    if (held) {
+      if (!canSeeFood(held, viewerId)) throw new Error(`OpenFoodFacts product ${code} not found`);
+      return held.id;
+    }
+
     // Barcode is unique in FoodItem — use a true Prisma upsert so concurrent
     // flush calls don't race to create a duplicate row (Fix 3).
     const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`;
