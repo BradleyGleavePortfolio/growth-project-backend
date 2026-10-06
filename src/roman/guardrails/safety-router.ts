@@ -30,6 +30,25 @@ function acute(condition: string): RegExp {
   );
 }
 
+/**
+ * B-AIG4-123: training, food and supplement words, copied from the AI guide
+ * crisis router. "OD on carbs" is a figure of speech, not an overdose.
+ */
+const NOT_A_SUBSTANCE =
+  '(cardio|creatine|protein|carbs?|sugar|sweets|candy|chocolate|food|junk food|pizza|fast food|salt|water|fiber|fibre|veggies|vegetables|fruit|exercise|training|workouts?|running|lifting|squats?|reps|sets|volume|the gym|gym|leg day|netflix|tv|sleep)';
+
+/**
+ * B-AIG4-123: a stated plan or wish to take all or many pills ("I want to take
+ * all my pills", "I am going to take a whole bottle of Tylenol"). Only with
+ * intent words: "should I take my pills with food?" and "I took all my
+ * vitamins" are ordinary questions. Same rule as the AI guide crisis router
+ * (src/ai/ai-crisis-router.ts).
+ */
+const PILLS_INTENT = new RegExp(
+  '\\b(want to|wanna|going to|gonna|plan(ning)? to|thinking (about|of)|thought (about|of)|about to|ready to|might|try(ing)? to|urge to|tempted to|feel like|should just) (just )?(take|taking|swallow|swallowing) (all (of )?(my|the|these|those)|too many|way too many|so many|many|a (whole |full )?(bottle|pack|packet|box) of|a handful of|a bunch of|a lot of|lots of|loads of|a load of|([5-9]|[1-9]\\d+)(?! ?(mg|mcg|g|ml|milligrams?|grams?|iu)\\b))( of)?( my| the| these| those)? (\\w+ )?(pills|tablets|meds|medication|medications|medicine|medicines|capsules|painkillers|prescriptions?|tylenol|acetaminophen|paracetamol|advil|motrin|ibuprofen|aleve|naproxen|aspirin|excedrin|nyquil|benadryl|diphenhydramine|xanax|valium|ativan|klonopin|ambien|zolpidem|oxy|oxys|oxycodone|oxycontin|percocet|vicodin|hydrocodone|codeine|tramadol|morphine|fentanyl|adderall|lithium|seroquel|antidepressants|sleeping meds|sleep meds)s?\\b',
+  'i',
+);
+
 const EMERGENCY: RegExp[] = [
   /\bchest (pain|pressure|tightness)\b/i,
   // A-666-2 (Opus): chest pain in plain words with a warning sign in the
@@ -103,6 +122,14 @@ const SELF_HARM: RegExp[] = [
   /\b(want to|going to|gonna|thinking (about|of)|thought (about|of)|plan(ning)? to|ready to) end(ing)? it( now| tonight| today)?[.!?]*\s*$/i,
   /\b(no|don'?t see (the|any)|do not see (the|any)|what'?s the|there'?s no) point (in|of|to) (living|life|being alive|going on|being here|existing)\b/i,
   /\bbetter off without me\b/i,
+  // B-AIG4-123: a stated plan or wish to take all or many pills, and the
+  // same OD intent line as the AI guide ("I am going to OD"; "OD on carbs"
+  // stays normal). "overdose" itself is already an emergency above.
+  PILLS_INTENT,
+  new RegExp(
+    `\\b(want to|wanna|going to|gonna|plan(ning)? to|thinking (about|of)|thought (about|of)|about to|ready to|might|try(ing)? to|urge to) (overdose|overdosing|od)\\b(?! on ${NOT_A_SUBSTANCE}\\b)`,
+    'i',
+  ),
 ];
 
 const EATING_DISORDER: RegExp[] = [

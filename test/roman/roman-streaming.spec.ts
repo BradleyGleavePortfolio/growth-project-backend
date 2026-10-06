@@ -622,6 +622,25 @@ describe('Roman — crisis messages are never blocked by the turn limit or the s
     expect(anthropic.messages.stream).not.toHaveBeenCalled();
   });
 
+  it.each([
+    'I want to take all my pills',
+    "I'm going to take all of my meds tonight",
+    'I am gonna take a bunch of pills',
+    'I want to take a whole bottle of Tylenol',
+    "I'm going to OD",
+    'I am gonna OD',
+    'I want to OD',
+  ])('daily cap reached: "%s" gets the 988 template, no model call (B-AIG4-123)', async (content) => {
+    process.env.ROMAN_DAILY_COST_CAP_USD = '0';
+    const { ctrl, anthropic, messages } = setup();
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(ROMAN_SAFETY_TEMPLATES.self_harm);
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+    expect(messages.map((m) => m.role)).toEqual(['user', 'roman']);
+  });
+
   it('turn limit used up: an emergency message still gets the 911 template; an ordinary one gets the 429', async () => {
     const { ctrl, anthropic, romanMessage } = setup();
     romanMessage.count.mockResolvedValue(10_000);

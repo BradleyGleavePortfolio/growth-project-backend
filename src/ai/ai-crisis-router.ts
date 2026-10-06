@@ -48,6 +48,17 @@ const NOT_A_SUBSTANCE =
 const ACTIVITY =
   '(squats?|squatting|runs?|running|jogs?|jogging|sprints?|sprinting|sets?|reps?|lifts?|lifting|workouts?|training|cardio|exercise|exercising|bench|benching|deadlifts?|deadlifting|swims?|swimming|hiit|class|classes|cycling|bike|biking|spin|rowing|planks?|burpees|yoga|hikes?|hiking|climbs?|stairs|the gym|gym|nose|mouth|mask|i (run|jog|lift|train|swim|squat|exercise|work out|bench|sprint|cycle|row))';
 
+/**
+ * B-AIG4-123: a stated plan or wish to take all or many pills ("I want to take
+ * all my pills", "I am going to take a whole bottle of Tylenol"). Only with
+ * intent words: "should I take my pills with food?" and "I took all my
+ * vitamins" are ordinary questions. Same rule in the Roman SafetyRouter.
+ */
+const PILLS_INTENT = new RegExp(
+  '\\b(want to|wanna|going to|gonna|plan(ning)? to|thinking (about|of)|thought (about|of)|about to|ready to|might|try(ing)? to|urge to|tempted to|feel like|should just) (just )?(take|taking|swallow|swallowing) (all (of )?(my|the|these|those)|too many|way too many|so many|many|a (whole |full )?(bottle|pack|packet|box) of|a handful of|a bunch of|a lot of|lots of|loads of|a load of|([5-9]|[1-9]\\d+)(?! ?(mg|mcg|g|ml|milligrams?|grams?|iu)\\b))( of)?( my| the| these| those)? (\\w+ )?(pills|tablets|meds|medication|medications|medicine|medicines|capsules|painkillers|prescriptions?|tylenol|acetaminophen|paracetamol|advil|motrin|ibuprofen|aleve|naproxen|aspirin|excedrin|nyquil|benadryl|diphenhydramine|xanax|valium|ativan|klonopin|ambien|zolpidem|oxy|oxys|oxycodone|oxycontin|percocet|vicodin|hydrocodone|codeine|tramadol|morphine|fentanyl|adderall|lithium|seroquel|antidepressants|sleeping meds|sleep meds)s?\\b',
+  'i',
+);
+
 /** "cut myself some slack", "cutting myself off from sugar" are not self-harm. */
 const NOT_A_FIGURE = '(?! (some |a little |any |a bit of )?(slack|off|a break|short)\\b)';
 
@@ -143,6 +154,7 @@ const SELF_HARM: RegExp[] = [
     `\\b(want to|wanna|going to|gonna|plan(ning)? to|thinking (about|of)|thought (about|of)|about to|ready to|might|try(ing)? to|urge to) (overdose|overdosing|od)\\b(?! on ${NOT_A_SUBSTANCE}\\b)`,
     'i',
   ),
+  PILLS_INTENT,
   // Common suicide-method phrasings ("I am going to hang myself").
   /\b(hang|hanging|hanged|shoot|shooting|stab|stabbing|drown|drowning|strangle|strangling|suffocate|suffocating) myself\b(?! (a |an )?(text|message|email|note|reminder|dm|link|line)\b| in (work|coffee|caffeine|food|sugar|carbs|protein|homework|emails?|paperwork)\b)/i,
   /\bslit(ting)? my (wrists?|throat)\b/i,

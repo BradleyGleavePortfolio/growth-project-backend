@@ -978,6 +978,27 @@ describe('AiService.chat — crisis phrasing a client actually types (B-AIG2-122
     expect(quota.userAIQuota.updateMany).not.toHaveBeenCalled();
   });
 
+  it.each([
+    'I want to take all my pills',
+    "I'm going to take all of my meds tonight",
+    'I am gonna take a bunch of pills',
+    'I want to take a whole bottle of Tylenol',
+  ])(
+    'client at the daily limit: "%s" gets the 988 reply, not the limit (B-AIG4-123)',
+    async (message) => {
+      const quota = makeQuotaStub();
+      const { svc } = makeService(quota);
+      seedAtCap(svc, quota);
+      const result = await svc.chat('u1', message, []);
+      expect(result.reply).toContain('988');
+      expect(result.guardrails_applied).toEqual(['crisis:self_harm']);
+      expect(result.model_used).toBe('safety');
+      expect(mockCreate).not.toHaveBeenCalled();
+      expect(quota.userAIQuota.upsert).not.toHaveBeenCalled();
+      expect(quota.userAIQuota.updateMany).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(['overdose on cardio', 'can you overdose on creatine?', 'I hurt myself deadlifting, can I train?'])(
     'ordinary question "%s" at the daily limit gets the 429 limit reply, not a crisis reply',
     async (message) => {

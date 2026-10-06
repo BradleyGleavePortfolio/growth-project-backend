@@ -68,3 +68,27 @@ describe('classifyAiGuideCrisis (B-AIG3-123)', () => {
     expect(classifyAiGuideCrisis(message)).toBe(expected);
   });
 });
+
+// B-AIG4-123 — a stated plan or wish to take all or many pills gets the 988
+// reply; ordinary pill, vitamin and "OD on carbs" phrasing does not.
+describe('classifyAiGuideCrisis (B-AIG4-123)', () => {
+  it.each([
+    'I want to take all my pills',
+    "I'm going to take all of my meds tonight",
+    'I am gonna take a bunch of pills',
+    'I want to take a whole bottle of Tylenol',
+  ])('"%s" is self_harm', (message) => {
+    expect(classifyAiGuideCrisis(message)).toBe('self_harm');
+  });
+
+  it.each([
+    'should I take my pills with food?',
+    'I took all my vitamins',
+    'OD on carbs',
+    'overdose on cardio',
+    'can you overdose on creatine?',
+    "I'm going to take 400 mg ibuprofen before my run",
+  ])('"%s" is an ordinary question (no crisis reply)', (message) => {
+    expect(classifyAiGuideCrisis(message)).toBeNull();
+  });
+});
