@@ -233,16 +233,19 @@ function makeWorld(seed: State = {}) {
   const stripe = new StripeStub();
   const splits = { onChargeSucceeded: jest.fn(async () => undefined) };
   const scope = { resolve: async (coachId: string) => ({ tenantCoachId: coachId, actingCoachId: coachId }) };
-  const media = new MediaAssetResolver(db, scope as any);
+  // Reflect.construct keeps the partial doubles untyped without a banned cast.
+  const media: MediaAssetResolver = Reflect.construct(MediaAssetResolver, [db, scope]);
   const fanout = new PurchaseFanoutService(new AssignableAssetResolverRegistry([media]));
-  const handler = new CheckoutWebhookHandlerService(db, stripe, splits as any, undefined, undefined, fanout);
-  const billing = new BillingService(
+  const handler: CheckoutWebhookHandlerService = Reflect.construct(CheckoutWebhookHandlerService, [
+    db, stripe, splits, undefined, undefined, fanout,
+  ]);
+  const billing: BillingService = Reflect.construct(BillingService, [
     db,
-    { capture: jest.fn(), identify: jest.fn() } as any,
-    { write: jest.fn(async () => undefined), list: jest.fn(async () => []) } as any,
+    { capture: jest.fn(), identify: jest.fn() },
+    { write: jest.fn(async () => undefined), list: jest.fn(async () => []) },
     undefined,
     handler,
-  );
+  ]);
   const row = (m: string, id: string) => rows(m).find((r) => r.id === id);
   return { db, rows, row, stripe, splits, billing };
 }
@@ -404,7 +407,7 @@ describe('MONEY-WEBHOOK-124 — Stripe webhooks on the real handlers', () => {
       else process.env.STRIPE_WEBHOOK_SECRET = saved;
     });
     const call = (ctl: StripeWebhookController, payload: string, sig: string) =>
-      ctl.stripe({ rawBody: Buffer.from(payload, 'utf8') } as any, sig);
+      Reflect.apply(ctl.stripe, ctl, [{ rawBody: Buffer.from(payload, 'utf8') }, sig]);
 
     it('a correctly signed event reaches the handler; a tampered or unsigned body is refused with 400 and changes nothing', async () => {
       const w = makeWorld(lockedOut());

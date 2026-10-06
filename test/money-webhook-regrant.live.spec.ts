@@ -49,21 +49,22 @@ liveDescribe('MONEY-WEBHOOK-124 B-WH-1 repeat grant on real PostgreSQL', () => {
       data: { id: PKG, coach_id: COACH, name: 'Monthly coaching', amount_cents: 4900 },
     });
     const fanout = new PurchaseFanoutService(undefined, undefined, undefined, prisma);
-    const handler = new CheckoutWebhookHandlerService(
+    // Reflect.construct keeps the partial doubles untyped without a banned cast.
+    const handler: CheckoutWebhookHandlerService = Reflect.construct(CheckoutWebhookHandlerService, [
       prisma,
       new StripeStub(),
-      splits as any,
+      splits,
       undefined,
       undefined,
       fanout,
-    );
-    billing = new BillingService(
+    ]);
+    billing = Reflect.construct(BillingService, [
       prisma,
-      { capture: jest.fn(), identify: jest.fn() } as any,
-      { write: jest.fn(async () => undefined), list: jest.fn(async () => []) } as any,
+      { capture: jest.fn(), identify: jest.fn() },
+      { write: jest.fn(async () => undefined), list: jest.fn(async () => []) },
       undefined,
       handler,
-    );
+    ]);
   }, 180_000);
   afterAll(async () => {
     if (prisma) await prisma.$disconnect();
