@@ -37,6 +37,7 @@ import {
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import { COACH_AI_MODEL } from '../../ai/coach/coach-ai.constants';
 import { describeFailure } from '../../observability/log-pii';
+import { usableTimeZone } from '../../notifications/local-time';
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -737,8 +738,9 @@ export class CoachBriefService {
     return this.anthropic;
   }
 
-  // ── Resolves the coach's timezone for date bucketing. Defaults to
-  // 'America/Los_Angeles' when no preferences row exists yet. If a
+  // ── Resolves the coach's timezone for date bucketing. With no saved brief
+  // preferences, match the scheduler: supplied device zone, own coach profile,
+  // then 'America/Los_Angeles'. If a
   // historically-persisted preferences row holds an invalid IANA tz
   // (pre-validator), fall back to UTC with a warning instead of letting
   // it crash Intl.DateTimeFormat downstream.
@@ -747,7 +749,20 @@ export class CoachBriefService {
       where: { coach_id: coachId },
       select: { timezone: true },
     });
-    const tz = prefs?.timezone ?? 'America/Los_Angeles';
+    let tz = prefs?.timezone;
+    if (!tz) {
+      const coach = await this.prisma.user.findUnique({
+        where: { id: coachId },
+        select: {
+          notification_prefs: { select: { timezone: true, timezone_updated_at: true } },
+          coach_profile: { select: { timezone: true } },
+        },
+      });
+      const supplied = coach?.notification_prefs?.timezone_updated_at
+        ? usableTimeZone(coach.notification_prefs.timezone)
+        : null;
+      tz = supplied ?? usableTimeZone(coach?.coach_profile?.timezone) ?? 'America/Los_Angeles';
+    }
     try {
       new Intl.DateTimeFormat('en-US', { timeZone: tz });
       return tz;
