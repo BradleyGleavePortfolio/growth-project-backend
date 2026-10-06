@@ -75,6 +75,8 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
     '{{#if subject}}{{subject}}{{else}}About your Growth Project payment{{/if}}',
   'dunning-v2-coach':
     '{{#if clientName}}A payment from {{clientName}} needs attention{{else}}A client payment needs attention{{/if}}',
+  // B-REPORTALERT-125 — ReportAlertService passes the subject (self-harm first).
+  'report-alert': '{{#if subject}}{{subject}}{{else}}A new user report needs review{{/if}}',
 };
 
 // EmailService is the single entry point for sending transactional email.

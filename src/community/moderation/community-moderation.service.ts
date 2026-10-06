@@ -4,6 +4,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import type {
   CommunityModerationAction,
@@ -23,6 +24,7 @@ import { CommunityModerationRepository } from './community-moderation.repository
 import { PrismaService } from '../../prisma.service';
 import { assertDmParticipantIfDm } from '../safety/community-safety.service';
 import { VoiceUploadProvider } from '../voice/voice-upload.provider';
+import { ReportAlertService } from '../../report-alerts/report-alert.service';
 import { WIN_NOT_FOUND, winModerationWorkspaceId } from '../community-wins.policy';
 import { recordWorkspaceBan } from '../community-ban';
 import {
@@ -199,6 +201,9 @@ export class CommunityModerationService {
     private readonly communityPush: CommunityNotificationsService,
     private readonly prisma: PrismaService,
     private readonly voiceStorage: VoiceUploadProvider,
+    // B-REPORTALERT-125: provided by CommunityModule; optional so unit
+    // harnesses that build the service by hand keep working.
+    @Optional() private readonly reportAlerts?: ReportAlertService,
   ) {}
 
   private itemView(a: CommunityModerationAction): CommunityModerationItemView {
@@ -363,6 +368,16 @@ export class CommunityModerationService {
       reportedById: user.id,
       reason,
       notes: notes ?? null,
+    });
+    // B-REPORTALERT-125: a person is told about every new report (ids and the
+    // reason only, never the notes). reportFiled() never rejects.
+    void this.reportAlerts?.reportFiled({
+      kind: 'community',
+      reportId: created.id,
+      reason: created.reason,
+      createdAt: created.created_at,
+      targetType: created.target_type,
+      targetId: created.target_id,
     });
     return CommunityModerationItemResponseSchema.parse({
       item: this.itemView(created),

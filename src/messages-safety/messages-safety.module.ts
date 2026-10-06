@@ -4,6 +4,7 @@ import { JwksVerifierService } from '../auth/jwks.service';
 import { AuditModule } from '../audit/audit.module';
 import { MessagesSafetyController } from './messages-safety.controller';
 import { MessagesSafetyService } from './messages-safety.service';
+import { ReportAlertService } from '../report-alerts/report-alert.service';
 
 /**
  * MessagesSafetyModule — Apple 1.2 safety surface.
@@ -19,7 +20,7 @@ import { MessagesSafetyService } from './messages-safety.service';
 @Module({
   imports: [AuditModule],
   controllers: [MessagesSafetyController],
-  providers: [MessagesSafetyService, JwtAuthGuard, JwksVerifierService],
+  providers: [MessagesSafetyService, ReportAlertService, JwtAuthGuard, JwksVerifierService],
   exports: [MessagesSafetyService],
 })
 export class MessagesSafetyModule {}
