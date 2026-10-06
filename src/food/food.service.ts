@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma.service';
-import { supportsVolumeUnits } from './food-density';
+import { getGramsForVolume, supportsVolumeUnits } from './food-density';
 import { parseFoodQuery } from './food-query-parser';
 
 export interface FoodSearchResponse {
@@ -17,8 +17,11 @@ export interface FoodSearchResponse {
 
 interface UsdaNutrient {
   nutrientName?: string;
+  name?: string;
   unitName?: string;
   value?: number;
+  amount?: number;
+  nutrient?: { name?: string; unitName?: string };
 }
 
 interface UsdaFood {
@@ -110,6 +113,17 @@ export interface FoodResult {
    * picker should fall back to g/oz/serving only.
    */
   supports_volume_units: boolean;
+  cup_grams?: number;
+  tbsp_grams?: number;
+  tsp_grams?: number;
+}
+
+function volumeWeights(category: string) {
+  return {
+    cup_grams: getGramsForVolume(category, 'cup', 1) ?? undefined,
+    tbsp_grams: getGramsForVolume(category, 'tbsp', 1) ?? undefined,
+    tsp_grams: getGramsForVolume(category, 'tsp', 1) ?? undefined,
+  };
 }
 
 // 24h TTL on cached search results — USDA/OFF data is effectively static at
@@ -434,14 +448,20 @@ export class FoodService implements OnModuleInit {
 
     const getNutrient = (name: string, unit?: string): number => {
       const match = nutrients.find(
-        (n) => n.nutrientName === name && (!unit || n.unitName === unit),
+        (n) => {
+          const nutrientName = n.nutrientName ?? n.name ?? n.nutrient?.name;
+          const nutrientUnit = n.unitName ?? n.nutrient?.unitName;
+          const nameMatches = nutrientName === name ||
+            (name === 'Carbohydrate, by difference' && nutrientName === 'Carbohydrates, by difference');
+          return nameMatches && (!unit || nutrientUnit?.toLowerCase() === unit.toLowerCase());
+        },
       );
-      return match ? Math.round((match.value || 0) * 10) / 10 : 0;
+      return match ? Math.round((match.value ?? match.amount ?? 0) * 10) / 10 : 0;
     };
 
     const calories = getNutrient('Energy', 'KCAL') || Math.round(getNutrient('Energy', 'kJ') / 4.184);
     const protein = getNutrient('Protein');
-    const carbs = getNutrient('Carbohydrates, by difference');
+    const carbs = getNutrient('Carbohydrate, by difference');
     const fat = getNutrient('Total lipid (fat)');
     const fiber = getNutrient('Fiber, total dietary');
     const sugar = getNutrient('Sugars, total including NLEA') || getNutrient('Sugars, total');
@@ -476,6 +496,7 @@ export class FoodService implements OnModuleInit {
       image_url: null,
       nutrient_basis: 'PER_100G',
       supports_volume_units: supportsVolumeUnits(category),
+      ...volumeWeights(category),
     };
   }
 
@@ -547,6 +568,7 @@ export class FoodService implements OnModuleInit {
       image_url: product.image_front_small_url || null,
       nutrient_basis: 'PER_100G',
       supports_volume_units: supportsVolumeUnits('generic'),
+      ...volumeWeights('generic'),
     };
   }
 
@@ -576,6 +598,7 @@ export class FoodService implements OnModuleInit {
         category: data.category ?? 'generic',
         serving_description: data.serving_description,
         serving_size_grams: data.serving_size_grams,
+        nutrient_basis: data.nutrient_basis ?? 'PER_100G',
         calories: data.calories,
         protein_g: data.protein_g,
         carbs_g: data.carbs_g,
@@ -756,5 +779,6 @@ export class FoodService implements OnModuleInit {
     // PER_100G matches the assumption the rest of the system already makes.
     nutrient_basis: item.nutrient_basis ?? 'PER_100G',
     supports_volume_units: supportsVolumeUnits(item.category),
+    ...volumeWeights(item.category),
   });
 }
