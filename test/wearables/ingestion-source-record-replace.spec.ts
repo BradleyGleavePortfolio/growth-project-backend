@@ -60,8 +60,9 @@ function makeStore() {
     wearableSample,
     wearableConnection: { updateMany: jest.fn(async () => ({ count: 1 })) },
     wearableInsightCache: { deleteMany: jest.fn(async () => ({ count: 0 })) },
-    $transaction: jest.fn(async (cb: (tx: unknown) => unknown) => cb(client)),
+    $transaction: jest.fn(),
   };
+  client.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(client));
   return { client, rows: () => table };
 }
 
