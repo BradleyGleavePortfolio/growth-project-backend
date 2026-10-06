@@ -48,28 +48,38 @@ Mobile registers two link surfaces:
   immediate-open path on the HTML page. Works only when the app is already
   installed.
 
-The HTML page renders three CTAs:
+The HTML page only renders when the OS did not open the app for the shared
+link, so it never offers that same link again as a button (on iOS a
+same-domain tap stays in Safari and just reloads the page). The buttons
+depend on the visitor's platform (User-Agent; the response sets
+`Vary: User-Agent`):
 
-1. **Open in The Growth Project** → universal link
-   (`https://app.tgp.com/join/<code>`). On a device with the app
-   installed, the OS intercepts before the browser ever loads. On a
-   device without it, this falls through to the same HTML page (no
-   redirect loop — the user then taps a store link).
-2. **Already have the app?** → custom scheme `tgp://join/<code>`.
-3. **Continue on web** → `PUBLIC_WEB_SIGNUP_URL` (defaults to the same
-   universal-link base).
+1. **iPhone** → main button **Get the app on the App Store**
+   (`APP_STORE_URL`), then **Already have the app? Open it** →
+   `tgp://join/<code>`.
+2. **Android** → main button **Open in The Growth Project** →
+   `intent://join/<code>#Intent;scheme=tgp;package=<ANDROID_PACKAGE_NAME>;S.browser_fallback_url=<PLAY_STORE_URL>;end`
+   (opens the installed app with the code filled in, otherwise Google Play),
+   plus a Google Play link.
+3. **Anything else** → "Open this invite on your phone to join." with both
+   store links.
 
-App store fallbacks live below the primary CTA and use
-`APP_STORE_URL` / `PLAY_STORE_URL` (placeholders by default — set the
-real listing URLs as Fly secrets before launch).
+Every layout shows the code and says to open the invite link again after
+installing, or to enter the code when creating the account. There is no
+"Continue on web" link: there is no web signup, and `/signup` asks the
+visitor to open the invite on a phone.
+
+When `APP_STORE_URL` is unset the App Store button points at
+`<invite host>/download/ios` (the durable status page), never a placeholder
+listing. Set the real listing URLs as Fly secrets once the stores are live.
 
 ## Configuration
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
 | `PUBLIC_INVITE_BASE_URL` | `https://app.tgp.com/join` | universal-link base used to build CTA hrefs and to mint default invite-link URLs in `GET /coaches/me/invite-link` |
-| `PUBLIC_WEB_SIGNUP_URL` | `${PUBLIC_INVITE_BASE_URL}/<code>` | "Continue on web" target |
-| `APP_STORE_URL` | placeholder | iOS App Store listing URL |
+| `PUBLIC_WEB_SIGNUP_URL` | `PUBLIC_INVITE_BASE_URL` | "Continue without a code" target on the invite-unavailable page |
+| `APP_STORE_URL` | `<invite host>/download/ios` | iOS App Store listing URL |
 | `PLAY_STORE_URL` | placeholder | Google Play listing URL |
 
 These are read on every request — change them as Fly secrets without a

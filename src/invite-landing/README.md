@@ -12,8 +12,9 @@ when it is not, the user lands here.
 - Render a single, generic "invite unavailable" page for any
   not-found / revoked / expired / paused / canceled state — never
   confirm to a stranger that a specific code existed.
-- Drive the App Store / Play Store / web-signup fallback so a user
-  without the app installed has a path forward.
+- Drive the App Store / Play Store fallback so a user without the app
+  installed has a path forward (buttons chosen per platform, see
+  docs/invite-landing.md).
 - Stay extraction-ready: when this template moves to a dedicated
   marketing app, the controller seam is the only edit.
 
@@ -47,12 +48,13 @@ served by `InviteCodesController` — the JSON contract is unchanged.
    service can grow a richer DTO (e.g. coach headshot URL) without
    changing every caller.
 3. On `{ valid: true }`, `renderValid` produces an HTML document with:
-   - Universal link (`https://app.tgp.com/join/<code>`) — primary CTA.
-   - Custom-scheme deep link (`tgp://join/<code>`) — fallback for cold
-     start when the app is installed.
-   - Web-signup URL — for the no-app case (resolves to the
-     `/signup/<code>` durable page in the public-pages module).
-   - App Store / Play Store URLs from env.
+   - iPhone: App Store button first, then the custom-scheme deep link
+     (`tgp://join/<code>`) for an installed app.
+   - Android: an `intent://` link that opens the app or falls back to
+     Google Play.
+   - Other devices: both store links and "open this invite on your phone".
+   - The shared universal link is never re-offered as a button (a
+     same-domain tap only reloads this page).
 4. On `{ valid: false }`, `renderInvalid` produces a 404 page with the
    same visual language but no coach data.
 
@@ -90,7 +92,7 @@ The same limit governs anonymous CDN-bypass clients; the underlying
 | Var | Tier | Purpose |
 |---|---|---|
 | `PUBLIC_INVITE_BASE_URL` | prod | Universal-link base (defaults to `https://app.tgp.com/join`). Drives the primary CTA href. |
-| `PUBLIC_WEB_SIGNUP_URL` | prod | Web-signup fallback the "Continue on web" link points at. |
+| `PUBLIC_WEB_SIGNUP_URL` | prod | "Continue without a code" target on the invite-unavailable page. The valid page has no web-signup link (there is no web signup). |
 | `APP_STORE_URL` | prod | iOS App Store URL. Until the listing is live, points at the durable status page. |
 | `PLAY_STORE_URL` | prod | Google Play URL. Same fallback story. |
 
