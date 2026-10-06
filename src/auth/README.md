@@ -133,10 +133,14 @@ gates pass. Deleted accounts never produce a signal.
 
 ## Throttling
 
-- `POST /auth/register`: 10 / hour / IP. Loose enough for shared NAT,
-  tight enough to kill enumeration loops.
-- `POST /auth/login`: 10 / minute / IP.
-- `POST /auth/signup-with-code`: 5 / hour / IP without a code (`auth-signup`);
+- `POST /auth/register`: 100 / hour / IP by default (`AUTH_SIGNUP_PER_HOUR`).
+- `POST /auth/login`: 60 / minute / IP by default; 200 / hour plus the
+  unchanged per-account password failure lock.
+- `POST /auth/resend-verification`: 100 / hour / IP; anonymous submission
+  copy, never account existence or a delivery promise. Uses the same
+  confirmation redirect as register; advertised by
+  `email_confirmation_resend: true` in signup-policy.
+- `POST /auth/signup-with-code`: 100 / hour / IP without a code (`auth-signup`, `AUTH_SIGNUP_PER_HOUR`);
   100 / hour / IP when the body carries a well-formed invite code
   (`auth-signup-with-code`, `AUTH_SIGNUP_WITH_CODE_PER_HOUR`). The higher cap
   lets a 40+ patient clinic event sign up from one clinic Wi-Fi IP inside an
@@ -261,7 +265,7 @@ honoured **only** on the branch that inserts a brand-new `User` row
   in-memory adapter and live Redis in `test/oauth-coach-signup-ceiling.spec.ts`. No successful sign-in (password, Google
   or Apple, new or returning) resets any per-IP counter (C14 fix round).
 - **Login throttling (C14).** `POST /auth/login` has never-reset per-IP
-  windows (`AUTH_LOGIN_PER_MIN` 20, `AUTH_LOGIN_PER_HOUR` 200) plus a
+  windows (`AUTH_LOGIN_PER_MIN` 60, `AUTH_LOGIN_PER_HOUR` 200) plus a
   **per-account failure lock**: `AUTH_LOGIN_ACCOUNT_FAILURES` (default 10)
   failed passwords for one email within 15 min lock that email for 15 min
   from any IP — the lock is checked *before* the password, so even the right

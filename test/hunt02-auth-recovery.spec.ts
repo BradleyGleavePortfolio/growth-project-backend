@@ -66,6 +66,18 @@ describe('HUNT-02: normal shared-network authentication', () => {
     for (let n = 40; n < 60; n++) await g.canActivate(context('login', n));
     await expect(g.canActivate(context('login', 60))).rejects.toBeInstanceOf(ThrottlerException);
   });
+
+  it('keeps first-owner bootstrap at its original 5/hour IP ceiling', () => {
+    expect(Reflect.getMetadata('THROTTLER:LIMITauth-signup', AuthController.prototype.bootstrapOwner)).toBe(5);
+  });
+
+  it('isolates anonymous resend from password-reset, signup and password-login buckets', () => {
+    const handler = AuthController.prototype.resendVerification;
+    expect(Reflect.getMetadata('THROTTLER:LIMITauth-confirmation-resend', handler)).toBe(100);
+    expect(Reflect.getMetadata('THROTTLER:LIMITauth-password-reset', handler)).toBeUndefined();
+    expect(Reflect.getMetadata('THROTTLER:LIMITauth-signup', handler)).toBeUndefined();
+    expect(Reflect.getMetadata('THROTTLER:LIMITauth-login-per-min', handler)).toBeUndefined();
+  });
 });
 
 describe('HUNT-02: confirmation recovery', () => {

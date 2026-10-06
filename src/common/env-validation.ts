@@ -641,7 +641,7 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'AUTH_LOGIN_PER_MIN',
     tier: 'optional',
-    reason: 'Phase 10 / C14 — per-IP POST /auth/login attempts per minute. Never reset by a successful login. Defaults to 20 (a room on one network); clamped to [1, 1000]. Per-account guessing is bounded by AUTH_LOGIN_ACCOUNT_FAILURES.',
+    reason: 'Phase 10 / HUNT-02 — per-IP POST /auth/login attempts per minute. Never reset by a successful login. Defaults to 60 (a 40-person room on one network); clamped to [1, 1000]. Per-account guessing is bounded by AUTH_LOGIN_ACCOUNT_FAILURES.',
   },
   {
     name: 'AUTH_LOGIN_PER_HOUR',
@@ -681,10 +681,16 @@ export const ENV_RULES: EnvRule[] = [
     reason: "Clinic C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker.",
   },
   {
+    name: 'AUTH_SIGNUP_PER_HOUR',
+    tier: 'optional',
+    default: '100 per IP per hour (unset, empty or unparseable fall back to 100; clamped to [5, 500])',
+    reason: 'HUNT-02 — codeless email signup allowance for ordinary shared-network launch intake. Applies to /auth/register and codeless /auth/signup-with-code; bootstrap-owner retains 5/hour. The per-account password failure lock is unchanged.',
+  },
+  {
     name: 'AUTH_SIGNUP_WITH_CODE_PER_HOUR',
     tier: 'optional',
     default: '100 per IP per hour (unset, empty or unparseable fall back to 100; clamped to [5, 500])',
-    reason: 'Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups keep the 5/hour auth-signup baseline. Defaults to 100 (a 40+ patient clinic event on one Wi-Fi IP inside an hour, with retries); clamped to [5, 500].',
+    reason: 'Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups use AUTH_SIGNUP_PER_HOUR. Defaults to 100 (a 40+ patient clinic event on one Wi-Fi IP inside an hour, with retries); clamped to [5, 500].',
   },
   {
     name: 'AUTH_PWD_RESET_PER_HOUR',

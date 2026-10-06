@@ -959,6 +959,7 @@ export class AuthService {
       require_invite_code: gateEnabled,
       google_signin_enabled: googleEnabled,
       apple_signin_enabled: appleEnabled,
+      email_confirmation_resend: true,
       invite_code_field: 'invite_code',
       invite_code: {
         min_length: INVITE_CODE_MIN_LENGTH,
@@ -1457,6 +1458,27 @@ export class AuthService {
       profile: user.profile,
       subscription_tier: subscriptionTier,
     };
+  }
+
+  async resendVerification(email: string) {
+    // Like recovery, the public response must not reveal whether the
+    // address exists, is already confirmed, or the provider refused mail.
+    try {
+      const supaClient = createClient(
+        process.env.SUPABASE_URL || '',
+        process.env.SUPABASE_ANON_KEY || '',
+        { realtime: { transport: WS as any } },
+      );
+      const { error } = await supaClient.auth.resend({
+        type: 'signup',
+        email: normalizeEmail(email),
+        options: { emailRedirectTo: process.env.SUPABASE_REDIRECT_URL || 'tgp://verified' },
+      });
+      if (error) this.logger.warn(`confirmation resend refused: ${describeFailure(error)}`);
+    } catch {
+      this.logger.warn('confirmation resend failed: provider request unavailable');
+    }
+    return { message: 'Verification request submitted. Check your inbox and spam folder.' };
   }
 
   async forgotPassword(email: string) {
