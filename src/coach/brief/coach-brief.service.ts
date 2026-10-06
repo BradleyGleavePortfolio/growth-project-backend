@@ -35,6 +35,7 @@ import {
   noClientDataSubject,
 } from '../../ai-egress/ai-egress.types';
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
+import { COACH_AI_MODEL } from '../../ai/coach/coach-ai.constants';
 import { describeFailure } from '../../observability/log-pii';
 
 /**
@@ -65,7 +66,10 @@ import {
 // out to the public API.
 export const BRIEF_ANTHROPIC_CLIENT_TOKEN = 'BRIEF_ANTHROPIC_CLIENT';
 
-export const BRIEF_CLAUDE_MODEL = 'claude-3-5-sonnet-20241022';
+// The brief uses the same pinned model as the rest of Coach AI. The former id
+// claude-3-5-sonnet-20241022 was retired by the provider, so every call
+// failed and every coach got the deterministic fallback narrative.
+export const BRIEF_CLAUDE_MODEL = COACH_AI_MODEL;
 export const BRIEF_MAX_TOKENS = 300;
 export const BRIEF_TEMPERATURE = 0.6;
 export const BRIEF_ANTHROPIC_TIMEOUT_MS = 15_000;
