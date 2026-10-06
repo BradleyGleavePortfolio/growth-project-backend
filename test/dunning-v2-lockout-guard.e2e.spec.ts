@@ -119,9 +119,11 @@ describe('DunningLockoutGuard — global mount (e2e over HTTP)', () => {
 
   // Structural stand-in for the single PrismaService method the guard touches.
   // Provided via `useValue`, so no full PrismaService shape is required.
+  // S-DUNNING F6: the guard also reads the client's OTHER live purchases (a
+  // comp grant or kept access means no lock); none here.
   const prismaStub: {
     dunningState: { findFirst: (args: unknown) => Promise<unknown> };
-    clientPurchase: { findMany: () => Promise<unknown[]> };
+    clientPurchase: { findMany: (args: unknown) => Promise<unknown[]> };
   } = {
     dunningState: {
       findFirst: (args: unknown) => {
@@ -129,8 +131,9 @@ describe('DunningLockoutGuard — global mount (e2e over HTTP)', () => {
         return Promise.resolve(lockedRow);
       },
     },
-    // D2d: the guard's lock-waiver read finds no other live access.
-    clientPurchase: { findMany: () => Promise.resolve([]) },
+    clientPurchase: {
+      findMany: () => Promise.resolve([]),
+    },
   };
 
   const prevFlag = process.env['FEATURE_DUNNING_V2'];

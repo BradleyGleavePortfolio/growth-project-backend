@@ -1023,7 +1023,8 @@ export class StripeConnectApiService {
     const form: Record<string, string> = {
       customer: args.customer,
       usage: 'off_session',
-      on_behalf_of: args.onBehalfOf,
+      // Stripe refuses an empty on_behalf_of: a client with no destination account omits it.
+      ...(args.onBehalfOf ? { on_behalf_of: args.onBehalfOf } : {}),
     };
     for (const [k, v] of Object.entries(args.metadata)) form[`metadata[${k}]`] = v;
     return this.post('/setup_intents', form, args.idempotencyKey);

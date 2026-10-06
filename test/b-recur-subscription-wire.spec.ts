@@ -77,4 +77,13 @@ describe('StripeConnectApiService.createSubscription wire format (Stripe-Version
     expect(api.calls[1].form.get('default_payment_method')).toBe('pm_1');
     expect(api.calls[1].headers['Idempotency-Key']).toBe('tgp-trial-card-1');
   });
+
+  it('SetupIntent omits on_behalf_of when no plan has a destination account', async () => {
+    const api = new Recording();
+    const base = { customer: 'cus_1', metadata: {}, idempotencyKey: 'tgp-si' };
+    await api.createSetupIntent({ ...base, onBehalfOf: '' });
+    await api.createSetupIntent({ ...base, onBehalfOf: 'acct_coach' });
+    expect(api.calls[0].form.has('on_behalf_of')).toBe(false);
+    expect(api.calls[1].form.get('on_behalf_of')).toBe('acct_coach');
+  });
 });
