@@ -172,4 +172,28 @@ describe('MONEY-CONNECT-124 package management reads', () => {
       subscriber_count: 0, monthly_revenue_cents: 0, pricing_locked: true,
     });
   });
+
+  // B-778-1: a full refund or a dispute pauses billing but keeps the Stripe
+  // subscription and its price; the coach can restart it on the old terms.
+  it.each(['refunded', 'disputed', 'chargeback_lost', 'unpaid'])(
+    'B-778-1: a %s plan with a live subscription keeps the package pricing locked',
+    async (status) => {
+      const { svc, prisma } = setup([packageRow()], [
+        purchase({ status, entitlement_active: false }),
+      ]);
+      await expect(svc.update('coach-1', 'pkg-49', {
+        amount_cents: 5900, interval_count: 3,
+      })).rejects.toMatchObject({ response: { code: 'PACKAGE_PRICING_LOCKED' } });
+      expect(prisma.coachPackage.update).not.toHaveBeenCalled();
+      expect((await svc.listForCoach('coach-1'))[0]).toMatchObject({ pricing_locked: true });
+    },
+  );
+
+  it.each(['canceled', 'expired', 'incomplete_expired', 'pending', 'payment_failed'])(
+    'B-778-1: a %s subscription does not lock pricing',
+    async (status) => {
+      const { svc } = setup([packageRow()], [purchase({ status, entitlement_active: false })]);
+      expect((await svc.listForCoach('coach-1'))[0]).toMatchObject({ pricing_locked: false });
+    },
+  );
 });
