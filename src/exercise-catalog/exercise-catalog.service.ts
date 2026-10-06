@@ -51,7 +51,17 @@ export class ExerciseCatalogService {
 
     const where: Prisma.ExerciseCatalogItemWhereInput = {};
     if (query.q) {
-      where.name = { contains: query.q, mode: 'insensitive' };
+      const aliases: Record<string, string> = {
+        rdl: 'romanian deadlift',
+        ohp: 'overhead press',
+        pushup: 'push up',
+        pullup: 'pull up',
+      };
+      const search = query.q.trim().toLowerCase();
+      const words = (aliases[search] ?? search).split(/[\s-]+/).filter(Boolean);
+      where.AND = words.map((word) => ({
+        name: { contains: word, mode: 'insensitive' },
+      }));
     }
     if (query.category) {
       where.category = { equals: query.category, mode: 'insensitive' };
@@ -88,7 +98,7 @@ export class ExerciseCatalogService {
     caller?: { userId: string; role: string },
   ): Promise<ExerciseCatalogDetailDto> {
     const row = await this.prisma.exerciseCatalogItem.findFirst({
-      where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }] },
+      where: { OR: [{ id: idOrSlug }, { slug: idOrSlug }, { source_ref: idOrSlug }] },
     });
     if (!row) throw new NotFoundException(`Exercise "${idOrSlug}" not found`);
     return this.toDetailDto(row, caller ? await this.canMintForRow(row, caller) : true);

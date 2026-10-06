@@ -25,6 +25,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class ExerciseCatalogListQueryDto {
   @IsOptional()
@@ -48,6 +49,7 @@ export class ExerciseCatalogListQueryDto {
   equipment?: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   @Max(100)
