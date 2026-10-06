@@ -35,6 +35,9 @@ export const EmailTemplateKey = {
   // the https universal link (`update_card_url`). Append-only.
   DUNNING_V2_CLIENT: 'dunning-v2-client',
   DUNNING_V2_COACH: 'dunning-v2-coach',
+  // B-REPORTALERT-125 — a new user report (DM or community) to the support
+  // inbox: ids, kind, reason label and time only. Append-only.
+  REPORT_ALERT: 'report-alert',
 } as const;
 export type EmailTemplateKey =
   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];

@@ -23,6 +23,7 @@ import { CommunityDmsService } from './dms/community-dms.service';
 import { CommunityDmsRepository } from './dms/community-dms.repository';
 import { CommunityModerationController } from './moderation/community-moderation.controller';
 import { CommunityModerationService } from './moderation/community-moderation.service';
+import { ReportAlertService } from '../report-alerts/report-alert.service';
 import { CommunityModerationRepository } from './moderation/community-moderation.repository';
 import { CommunitySafetyController } from './safety/community-safety.controller';
 import { CommunitySafetyService } from './safety/community-safety.service';
@@ -126,6 +127,7 @@ import { CommunityWearablePromptsModule } from './wearable-prompts/wearable-prom
     CommunityDmsService,
     CommunityDmsRepository,
     CommunityModerationService,
+    ReportAlertService,
     CommunityModerationRepository,
     CommunitySafetyService,
     CommunityCohortWriteService,

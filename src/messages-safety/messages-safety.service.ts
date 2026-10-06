@@ -3,6 +3,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, Role } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -10,6 +11,7 @@ import { AuditService } from '../audit/audit.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { memberFirstName } from '../community/member-display-name';
 import { ReportMessageDto, ReportReason } from './dto/report-message.dto';
+import { ReportAlertService } from '../report-alerts/report-alert.service';
 
 // Prisma unique-constraint violation. Surfaced when two concurrent
 // inserts race past the pre-check on the same unique tuple.
@@ -55,6 +57,9 @@ export class MessagesSafetyService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly analytics: AnalyticsService,
+    // B-REPORTALERT-125: provided by MessagesSafetyModule; optional so unit
+    // harnesses that build the service by hand keep working.
+    @Optional() private readonly reportAlerts?: ReportAlertService,
   ) {}
 
   // ─── Reports ──────────────────────────────────────────────────────────────
@@ -99,6 +104,7 @@ export class MessagesSafetyService {
     //    This closes the read-then-create TOCTOU window that a findUnique +
     //    create pair leaves open.
     let createdId: string;
+    let createdAt: Date;
     try {
       const created = await this.prisma.messageReport.create({
         data: {
@@ -110,9 +116,10 @@ export class MessagesSafetyService {
           details: dto.details?.slice(0, 1000) ?? null,
           // status defaults to 'pending'
         },
-        select: { id: true },
+        select: { id: true, created_at: true },
       });
       createdId = created.id;
+      createdAt = created.created_at;
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -153,6 +160,17 @@ export class MessagesSafetyService {
       reason: dto.reason,
       message_id: msg.id,
       has_details: !!dto.details,
+    });
+    // B-REPORTALERT-125: a person is told about every new report (ids and the
+    // reason only). reportFiled() never rejects, so the report always files.
+    void this.reportAlerts?.reportFiled({
+      kind: 'message',
+      reportId: createdId,
+      reason: dto.reason,
+      createdAt,
+      targetType: 'message',
+      targetId: msg.id,
+      details: dto.details,
     });
 
     return { reportId: createdId, status: 'received' };
