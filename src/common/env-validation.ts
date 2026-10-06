@@ -1031,8 +1031,8 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'BILLING_PORTAL_URL',
     tier: 'optional',
-    default: "'https://thegrowthproject.app/billing'",
-    reason: 'Billing portal link in dunning emails.',
+    default: 'DUNNING_UPDATE_CARD_URL (the in-app card update link)',
+    reason: 'Card update link in v1 dunning emails.',
   },
   {
     name: 'IOS_BUNDLE_ID',
@@ -1946,6 +1946,15 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Dunning v2 flag.',
   },
   {
+    name: 'FEATURE_COACH_BROADCASTS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'A4 coach broadcasts (segmented, scheduled, recurring), rich message cards, saved replies and client tags, plus the per-minute broadcast dispatcher. Off: every A4 route answers 503 broadcasts.disabled and the dispatcher does nothing.',
+  },
+  {
     name: 'FEATURE_COMMUNITY_SCHEMA',
     values: ['true', 'false'],
     unsetIs: 'on',
@@ -2126,6 +2135,13 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Workout builder templates.',
+  },
+  {
+    name: 'FEATURE_ROMAN_ADJUST_ENABLED',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason:
+      'Kill switch for Roman approve-to-adjust: deterministic recovery suggestions on the coach side (GET/POST /coach/adjustments). Off = every route 404s.',
   },
   {
     name: 'FEATURE_NAMED_REGIMES',

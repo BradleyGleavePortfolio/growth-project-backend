@@ -10,14 +10,23 @@ import { PrismaService } from '../../prisma.service';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { isDunningV2Enabled } from './dunning-v2.feature';
 import { LOCKED_DUNNING_CODE } from './dunning-v2.cadence';
+import { effectiveLock } from './dunning-effective-access';
 import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
 
 /**
  * B3 Smart Dunning v2 — Day-10 hard-lockout guard (spec §3 / §8.1).
  *
- * Backend enforcement of the hard lockout: when the signed-in client has a
- * DunningState in lockout (`locked_out_at != null` AND `entitlement_active ===
- * false`), every NON-allowed route returns `403 LOCKED_DUNNING`. Login then
+ * Backend enforcement of the hard lockout: when the signed-in client has an
+ * ACTIVE DunningState with `locked_out_at != null` (set only by the Day-10
+ * sweep, cleared only by payment) and no OTHER live entitlement, every
+ * NON-allowed route returns `403 LOCKED_DUNNING`.
+ *
+ * S-DUNNING: the lock no longer also requires `entitlement_active === false`.
+ * Stripe's `customer.subscription.updated` (sent for many reasons while a
+ * subscription is past_due) re-derives `entitlement_active = true` for
+ * past_due, which silently lifted the lockout. `locked_out_at` is now the sole
+ * authority. A client who also holds a separate live grant (a comp or
+ * invite-code purchase, or a coach-kept access) is not locked. Login then
  * collapses to the payment-update screen only; community, workouts, programs,
  * generic chat are all 403.
  *
@@ -30,6 +39,9 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
  *     recovery must never be locked). Note there is no mounted /auth/logout or
  *     /auth/refresh; the mounted refresh route is /auth/extension/refresh.
  *   - health checks (health, healthz, readyz)
+ *   - data export (/v1/me/data-export/*) and account deletion
+ *     (/me/delete-account*) — required while locked (App Store 5.1.1(v), and a
+ *     locked client must always be able to take their data and leave)
  *   - Roman chat: /roman/* (RomanController) — the dedicated Roman assistant
  *     surface, so Roman can explain the lockout. This is the ONLY AI-adjacent
  *     carve-out. The entitlement-gated student AI assistant (/ai/*, AiController)
@@ -44,6 +56,14 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
  *     state must never block it (operator ruling on #622). Matched as exact
  *     METHOD + PATH pairs (Sol B-622-1): no descendant path, no other method,
  *     and the rest of /me/* stays locked.
+ *   - Contact the coach (S-DUNNING F8, B-353-10): exactly GET /messages,
+ *     POST /messages, POST /messages/read and GET /messages/unread-count
+ *     (ClientMessagingController; the thread is always with the client's
+ *     assigned coach), plus POST /messages/report (MessagesSafetyController,
+ *     safety). "Message coach" is the lockout screen's way back. Matched as
+ *     exact METHOD + PATH pairs like the AI consent operations: voice upload
+ *     (paid), coach-review, the coach-side routes and every other method or
+ *     descendant stay locked.
  *
  * Posture: this guard is a HARD no-op while FEATURE_DUNNING_V2 is OFF — it
  * returns `true` immediately and reads no state, so v1 deployments are
@@ -104,6 +124,32 @@ const PRIVACY_OPERATIONS: ReadonlyArray<readonly [method: string, path: string]>
   ['DELETE', 'me/ai-consent/roman'], // AiConsentController.withdraw
 ] as const;
 
+/**
+ * Account-rights surfaces matched as full route prefixes: data export and
+ * account deletion stay reachable while locked (S-DUNNING F8).
+ */
+const ACCOUNT_RIGHTS_PREFIXES: readonly string[] = [
+  'me/data-export', // DataExportController — request, status, download
+  'me/delete-account', // AccountDeletionController — request, confirm, cancel, status
+] as const;
+
+/**
+ * Contact the coach (S-DUNNING F8; B-353-10, Opus L3 on mobile m#353): the
+ * locked client's thread with their own coach. ClientMessagingController
+ * resolves the thread from the client's assigned coach (no path param), so
+ * these exact METHOD + normalized PATH pairs open that one thread, plus the
+ * safety report, and nothing else: `POST messages/voice-upload` (paid),
+ * `GET messages/coach-review`, `coach/clients/:id/messages`, any future
+ * `messages/*` surface and every other method or descendant stay locked.
+ */
+const COACH_THREAD_OPERATIONS: ReadonlyArray<readonly [method: string, path: string]> = [
+  ['GET', 'messages'], // ClientMessagingController.listThread
+  ['POST', 'messages'], // ClientMessagingController.send
+  ['POST', 'messages/read'], // ClientMessagingController.markRead
+  ['GET', 'messages/unread-count'], // ClientMessagingController.unreadCount
+  ['POST', 'messages/report'], // MessagesSafetyController — report a message
+] as const;
+
 @Injectable()
 export class DunningLockoutGuard implements CanActivate {
   private readonly logger = new Logger(DunningLockoutGuard.name);
@@ -133,6 +179,7 @@ export class DunningLockoutGuard implements CanActivate {
     const path = normalizePath(req.path ?? req.originalUrl ?? req.url ?? '');
     if (isAllowedWhileLocked(path)) return true;
     if (isPrivacyOperationWhileLocked(req.method, path)) return true;
+    if (isCoachThreadOperationWhileLocked(req.method, path)) return true;
 
     const userId = req.user?.id;
     if (!userId) return true; // unauthenticated routes are handled by auth guards
@@ -164,23 +211,16 @@ export class DunningLockoutGuard implements CanActivate {
   }
 
   /**
-   * A client is locked out when ANY of their purchases has a DunningState with
-   * `locked_out_at != null` and the purchase entitlement is off. We resolve via
-   * ClientPurchase.client_user_id → DunningState.purchase_id.
+   * A client is locked out when ANY of their purchases has an ACTIVE
+   * DunningState with `locked_out_at != null`, unless the client also holds a
+   * different live entitlement (comp / invite-code grant, another paid
+   * package, or access the coach kept on). Resolved via
+   * ClientPurchase.client_user_id -> DunningState.purchase_id.
    */
   private async isClientLockedOut(userId: string): Promise<boolean> {
-    const lockedRow = await this.prisma.dunningState.findFirst({
-      where: {
-        locked_out_at: { not: null },
-        status: 'active',
-        purchase: {
-          client_user_id: userId,
-          entitlement_active: false,
-        },
-      },
-      select: { id: true },
-    });
-    return lockedRow != null;
+    // S-DUNNING-R3 (B-628-7): the same rule the status read model uses.
+    const lock = await effectiveLock(this.prisma, userId);
+    return lock.locked;
   }
 }
 
@@ -212,6 +252,11 @@ export function isAllowedWhileLocked(path: string): boolean {
   for (const chat of ROMAN_CHAT_PREFIXES) {
     if (matchesRoutePrefix(path, chat)) return true;
   }
+  for (const prefix of ACCOUNT_RIGHTS_PREFIXES) {
+    if (matchesRoutePrefix(path, prefix)) return true;
+  }
+  // Contact-the-coach routes are METHOD + PATH pairs, see
+  // isCoachThreadOperationWhileLocked.
   return false;
 }
 
@@ -221,7 +266,26 @@ export function isAllowedWhileLocked(path: string): boolean {
  * case-insensitively. A missing method never matches.
  */
 export function isPrivacyOperationWhileLocked(method: string | undefined, path: string): boolean {
+  return matchesOperation(PRIVACY_OPERATIONS, method, path);
+}
+
+/**
+ * True only for the exact coach-thread operations in COACH_THREAD_OPERATIONS
+ * (B-353-10), matched like the privacy operations.
+ */
+export function isCoachThreadOperationWhileLocked(
+  method: string | undefined,
+  path: string,
+): boolean {
+  return matchesOperation(COACH_THREAD_OPERATIONS, method, path);
+}
+
+function matchesOperation(
+  operations: ReadonlyArray<readonly [method: string, path: string]>,
+  method: string | undefined,
+  path: string,
+): boolean {
   if (typeof method !== 'string' || method.length === 0) return false;
   const m = method.toUpperCase();
-  return PRIVACY_OPERATIONS.some(([pm, pp]) => pm === m && pp === path);
+  return operations.some(([pm, pp]) => pm === m && pp === path);
 }

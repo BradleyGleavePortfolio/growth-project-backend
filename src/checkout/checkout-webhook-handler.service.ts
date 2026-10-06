@@ -9,6 +9,9 @@ import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { PrismaService } from '../prisma.service';
 import { DunningService } from './dunning.service';
 import { DunningV2Service } from './dunning-v2/dunning-v2.service';
+import { DUNNING_V2_GRACE_STATUSES, DunningWebhookRetryError } from './dunning-v2/dunning-grace';
+import { isDunningV2Enabled } from './dunning-v2/dunning-v2.feature';
+import { dunningErrorCode } from './dunning-v2/dunning-v2.safe-error';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { errorLabel } from './error-label';
 import { attachTrialCard } from './trial-card';
@@ -471,6 +474,9 @@ export interface CheckoutWebhookPrefetch {
   // (rare settling race); the split handler no-ops the transfer and the
   // sweeper picks it up. undefined entry = no pre-resolution attempted.
   chargeIdByPurchaseId?: Record<string, string | null>;
+  // B-690-3: the v2 dispute effect of a charge.dispute.created / .closed
+  // event already ran (awaited) before the outer tx opened.
+  disputeEffectDone?: boolean;
   // B-661-3 — Stripe's current status of the PaymentIntent a
   // payment_intent.payment_failed names, keyed by PaymentIntent id. Resolved
   // out-of-tx only when the matched purchase already settled (a decline of a
@@ -642,13 +648,15 @@ export class CheckoutWebhookHandlerService {
         // never alters the v1 refund/dispute result. The v2 service applies
         // the one-active-cycle-per-state guard (§6.4) so a dispute→refund
         // pair never double-opens.
-        if (
-          this.dunningV2 &&
-          (event.type === 'charge.dispute.created' ||
-            event.type === 'charge.refunded')
-        ) {
-          this.fireLateReversalProbe(event);
-        }
+        // S-DUNNING F11: disputes only; a refund is never non-payment.
+        // S-DUNNING-R3 (B-628-8): a dispute closed in the client's favour
+        // resolves its compressed cycle (unlock + restore access).
+        // B-690-3 (Sol) / C-690-2 (Opus): the dispute effect is awaited, and
+        // a failure fails the delivery so Stripe redelivers it (never
+        // acknowledged and deduplicated). BillingService runs it before the
+        // outer tx opens (prefetchForOuterTx); this covers the no-prefetch
+        // wiring.
+        if (!prefetched?.disputeEffectDone) await this.runDisputeEffect(event);
         // Bank-Account Payouts v2 (spec §2.5) — additive routing branch on the
         // payout.* events. Fire-and-forget bookkeeping classification only;
         // no-op while FEATURE_BANK_PAYOUTS_V2 is off. Never alters the v1
@@ -669,38 +677,50 @@ export class CheckoutWebhookHandlerService {
   }
 
   /**
-   * B3 v2 (§6) — fire-and-forget late-reversal probe. Extracts the charge /
-   * PI id + reversal timestamp from the Stripe event and hands them to the v2
-   * service, which applies the "previously cleared" + one-active-cycle guards.
-   * Never throws into the webhook path; no-op while FEATURE_DUNNING_V2 is off.
+   * B3 v2 (§6) / S-DUNNING-R3 (B-628-8): the dunning v2 effect of a dispute
+   * event. `charge.dispute.created` probes whether it reverses a previously
+   * cleared payment (the v2 service applies the cleared + one-active-cycle
+   * guards and records the obligation); `charge.dispute.closed` settles it.
+   * S-DUNNING F11: a refund is never non-payment, so only disputes reach
+   * this. No-op while FEATURE_DUNNING_V2 is off. B-690-3: awaited; a failure
+   * throws a closed code so the event is redelivered.
    */
-  private fireLateReversalProbe(event: StripeEvent): void {
+  private async runDisputeEffect(event: StripeEvent): Promise<void> {
     if (!this.dunningV2) return;
+    if (event.type !== 'charge.dispute.created' && event.type !== 'charge.dispute.closed') return;
     const obj = event.data.object as {
-      id?: string;
+      id?: string | null;
       charge?: string | null;
       payment_intent?: string | null;
       created?: number | null;
+      status?: string | null;
     };
-    // For charge.refunded the object IS the charge; for dispute.created the
-    // object is the dispute carrying a `charge` ref.
-    const chargeId =
-      event.type === 'charge.refunded' ? (obj.id ?? null) : (obj.charge ?? null);
-    const reversedAt =
-      typeof obj.created === 'number'
-        ? new Date(obj.created * 1000)
-        : new Date();
-    void this.dunningV2
-      .detectAndHandleLateReversal({
-        chargeId,
-        paymentIntentId: obj.payment_intent ?? null,
-        reversedChargeAt: reversedAt,
-      })
-      .catch((err) =>
-        this.logger.warn(
-          `dunningV2.detectAndHandleLateReversal failed: ${(err as Error).message}`,
-        ),
+    try {
+      if (event.type === 'charge.dispute.created') {
+        await this.dunningV2.detectAndHandleLateReversal({
+          chargeId: obj.charge ?? null,
+          disputeId: obj.id ?? null,
+          paymentIntentId: obj.payment_intent ?? null,
+          reversedChargeAt:
+            typeof obj.created === 'number' ? new Date(obj.created * 1000) : new Date(),
+        });
+      } else {
+        // The closure's own time is the event's (B-DUNB-120 ruling).
+        const created = (event as { created?: unknown }).created;
+        await this.dunningV2.onDisputeClosed({
+          disputeId: obj.id ?? null,
+          chargeId: obj.charge ?? null,
+          paymentIntentId: obj.payment_intent ?? null,
+          status: obj.status ?? null,
+          closedAt: typeof created === 'number' ? new Date(created * 1000) : undefined,
+        });
+      }
+    } catch (err) {
+      this.logger.warn(
+        `dunningV2 dispute effect failed event=${event.id} type=${event.type}: ${dunningErrorCode(err)}`,
       );
+      throw new DunningWebhookRetryError('DUNNING_DISPUTE_EFFECT_FAILED');
+    }
   }
 
   /**
@@ -724,9 +744,7 @@ export class CheckoutWebhookHandlerService {
         eventType: event.type,
       })
       .catch((err) =>
-        this.logger.warn(
-          `payoutRouting.routePayoutWebhook failed: ${(err as Error).message}`,
-        ),
+        this.logger.warn(`payoutRouting.routePayoutWebhook failed: ${dunningErrorCode(err)}`),
       );
   }
 
@@ -765,9 +783,7 @@ export class CheckoutWebhookHandlerService {
    * handler degrades cleanly (the renewal simply isn't resynced on this
    * delivery). Never throws — a failure here must not roll back the dedup row.
    */
-  async prefetchForOuterTx(
-    event: StripeEvent,
-  ): Promise<CheckoutWebhookPrefetch> {
+  async prefetchForOuterTx(event: StripeEvent): Promise<CheckoutWebhookPrefetch> {
     // PR-18 B1 R3 P1 — checkout.session.completed / payment_intent.succeeded
     // activate a one-time (or first-invoice) purchase and then post the
     // head-coach split. That split posting resolves the parent Stripe charge
@@ -778,11 +794,15 @@ export class CheckoutWebhookHandlerService {
     // charge id HERE, before the tx opens. The handler then defers the whole
     // split posting to post-commit using this pre-resolved id, so the in-tx
     // path performs zero Stripe HTTP.
-    if (
-      event.type === 'checkout.session.completed' ||
-      event.type === 'payment_intent.succeeded'
-    ) {
+    if (event.type === 'checkout.session.completed' || event.type === 'payment_intent.succeeded') {
       return this.prefetchChargeIdForActivation(event);
+    }
+    // B-690-3: dispute effects run here, before the outer tx (their own
+    // short transactions and notice delivery never wait on its locks); a
+    // failure rejects the delivery before the processed-event row exists.
+    if (event.type === 'charge.dispute.created' || event.type === 'charge.dispute.closed') {
+      await this.runDisputeEffect(event);
+      return { disputeEffectDone: true };
     }
     if (event.type === 'payment_intent.payment_failed') {
       return this.prefetchFailedPaymentIntentStatus(event);
@@ -1036,7 +1056,7 @@ export class CheckoutWebhookHandlerService {
       let chargeId: string | null =
         (typeof obj.latest_charge === 'string' ? obj.latest_charge : null) ??
         (obj.latest_charge && typeof obj.latest_charge === 'object'
-          ? obj.latest_charge.id ?? null
+          ? (obj.latest_charge.id ?? null)
           : null) ??
         obj.charges?.data?.[0]?.id ??
         null;
@@ -1049,8 +1069,7 @@ export class CheckoutWebhookHandlerService {
         });
         if (!purchase) return {};
         purchaseId = purchase.id;
-        paymentIntentId =
-          obj.payment_intent ?? purchase.stripe_payment_intent_id ?? null;
+        paymentIntentId = obj.payment_intent ?? purchase.stripe_payment_intent_id ?? null;
       } else {
         // payment_intent.succeeded
         if (!obj.id) return {};
@@ -1069,9 +1088,7 @@ export class CheckoutWebhookHandlerService {
       // didn't already carry it. This is the ONLY Stripe HTTP in the path and
       // it runs BEFORE the outer tx opens.
       if (!chargeId && paymentIntentId) {
-        const pi = await this.stripeConnect.retrievePaymentIntent(
-          paymentIntentId,
-        );
+        const pi = await this.stripeConnect.retrievePaymentIntent(paymentIntentId);
         chargeId =
           (typeof pi.latest_charge === 'string' ? pi.latest_charge : null) ??
           pi.charges?.data?.[0]?.id ??
@@ -1396,9 +1413,7 @@ export class CheckoutWebhookHandlerService {
     if (!this.splits) return undefined;
     // Pre-resolved (out-of-tx) charge id for this purchase, when available.
     const preChargeId =
-      extra?.invoice_charge_id ??
-      prefetched?.chargeIdByPurchaseId?.[purchase.id] ??
-      null;
+      extra?.invoice_charge_id ?? prefetched?.chargeIdByPurchaseId?.[purchase.id] ?? null;
     if (tx) {
       // Defer: do NOT touch Stripe while the outer tx / package lock is held.
       return {
@@ -1577,28 +1592,60 @@ export class CheckoutWebhookHandlerService {
       });
       if (bound.count === 0) {
         // Another event already claimed this row.
-        this.logger.warn(
-          `applySubscriptionUpdated: race-lost binding for purchase ${pending.id}`,
-        );
+        this.logger.warn(`applySubscriptionUpdated: race-lost binding for purchase ${pending.id}`);
         return { claimed: false, reason: 'race_lost' };
       }
       return this.applySubscriptionUpdated(event, tx, prefetched);
+    }
+
+    const status = this.normalizeSubscriptionStatus(sub.status);
+
+    // S-DUNNING-R2 (owner 2A): a Stripe subscription that is canceled can
+    // never become live again, so an update carrying a live status for a
+    // purchase we already ended is an out-of-order delivery (Stripe does not
+    // order events). The 2A path voids the open invoice (Stripe then emits
+    // `customer.subscription.updated` status=active) a moment before it
+    // cancels; without this guard that late event would hand access back.
+    if (purchase.status === 'canceled' && status !== 'canceled') {
+      this.logger.log(
+        JSON.stringify({
+          event: 'checkout_webhook.stale_subscription_update_ignored',
+          purchase_id: purchase.id,
+          stripe_event_id: event.id,
+          incoming_status: status,
+        }),
+      );
+      return { claimed: true, purchase_id: purchase.id, reason: 'stale_after_cancel' };
+    }
+
+    // S-DUNNING-R3 (C-628-4 / B-628-5): while a client's 2A cancel is in
+    // flight (durable intent recorded, invoice voided, the subscription not
+    // yet canceled) Stripe emits a live `customer.subscription.updated`
+    // (status=active after the void). Applying it would re-entitle a client
+    // who asked to end the plan; the cancel finishes (request or reconciler)
+    // and its own write is authoritative.
+    if (status !== 'canceled' && (await this.clientCancelPending(db, purchase.id))) {
+      this.logger.log(
+        JSON.stringify({
+          event: 'checkout_webhook.subscription_update_ignored_during_client_cancel',
+          purchase_id: purchase.id,
+          stripe_event_id: event.id,
+          incoming_status: status,
+        }),
+      );
+      return { claimed: true, purchase_id: purchase.id, reason: 'stale_during_client_cancel' };
     }
 
     const pkg = await db.coachPackage.findUnique({
       where: { id: purchase.package_id },
     });
 
-    const status = this.normalizeSubscriptionStatus(sub.status);
+    // B-690-5 (Sol): an unpaid plan inside the v2 Days 0-9 grace keeps access.
+    const inGrace = await this.inUnpaidGrace(db, purchase, status);
     const currentPeriodEnd = this.toDate(sub.current_period_end);
     const canceledAt = this.toDate(sub.canceled_at);
 
-    const accessExpiresAt = this.computeAccessExpiry(
-      pkg,
-      purchase,
-      true,
-      currentPeriodEnd,
-    );
+    const accessExpiresAt = this.computeAccessExpiry(pkg, purchase, true, currentPeriodEnd);
 
     // B1 pricing-lock serialization (PR-18). This path can flip
     // entitlement_active=true for a recurring purchase (active/trialing/
@@ -1622,7 +1669,19 @@ export class CheckoutWebhookHandlerService {
         return { skipped: 'subscription_ended' };
       }
       if (purchaseHasEnded(fresh)) return { skipped: 'subscription_already_ended' };
-      const entitled = subscriptionGrantsAccess(fresh, sub);
+      // B-690-1 (Sol): a live status is never written while a client's 2A
+      // cancel is pending, decided under the cycle's row lock (the 2A intent
+      // writes that row) after the purchase lock (same order as invoice.paid).
+      if (typeof (client as { $queryRaw?: unknown }).$queryRaw === 'function') {
+        await client.$queryRaw`SELECT "id" FROM "DunningState" WHERE "purchase_id" = ${fresh.id} FOR UPDATE`;
+      }
+      if (await this.clientCancelPending(client, fresh.id)) return { skipped: 'stale_after_cancel' };
+      // R-DISPUTE-PAUSE: a plan a dispute paused stays without access whatever
+      // Stripe's status (pause_collection keeps it `active`); read under the
+      // purchase lock, which the pause and the coach restart also take.
+      const entitled =
+        (subscriptionGrantsAccess(fresh, sub) || inGrace) &&
+        !(await this.disputePaused(client, fresh.id));
       if (live && live.revision !== null && lifecycleRevision(fresh) !== live.revision) {
         // Another delivery wrote the purchase after the Stripe read: a
         // matching state needs no write, anything else is read again.
@@ -2266,7 +2325,9 @@ export class CheckoutWebhookHandlerService {
         wasEntitled = fresh.entitlement_active;
         if (purchaseHasEnded(fresh)) return fresh;
         const changed = revision !== undefined && lifecycleRevision(fresh) !== revision;
-        const entitled = subscriptionGrantsAccess(fresh, live);
+        // R-DISPUTE-PAUSE: a paid invoice never ends a dispute pause.
+        const entitled =
+          subscriptionGrantsAccess(fresh, live) && !(await this.disputePaused(client, fresh.id));
         const trial = trialStartPatch(fresh, live, entitled);
         if (changed) {
           // B-680-1 — another delivery wrote the purchase after this Stripe
@@ -2327,29 +2388,117 @@ export class CheckoutWebhookHandlerService {
       invoice_amount_cents: inv.amount_paid ?? undefined,
       invoice_charge_id: inv.charge ?? null,
     });
-    // Phase 5 — clear any active dunning window.
+    // Phase 5 — clear any active dunning window (v1 + v2).
+    await this.resolveDunningOnPaid(updated.id, tx);
+    return { claimed: true, purchase_id: purchase.id, deferredSplit };
+  }
+
+  /**
+   * Close the dunning window for a paid invoice: v1 `recordResolution`, then
+   * the v2 immediate clear (lift a Day-10 lockout, restore entitlement,
+   * dismiss this client's blockers, revoke recovery tokens; no-op with the
+   * flag off).
+   *
+   * S-DUNNING F3: the v2 clear writes the SAME ClientPurchase row the renewal
+   * resync just updated on the caller's outer tx, so it must join that tx.
+   * Opening a second transaction on another connection waited on our own row
+   * lock until the outer tx timed out, on every Stripe redelivery.
+   */
+  /** An open 2A cancel intent (journal row or the cycle's marker). */
+  private async clientCancelPending(
+    db: WebhookTx | PrismaService,
+    purchaseId: string,
+  ): Promise<boolean> {
+    const op = await db.clientBillingOperation?.findFirst?.({
+      where: { purchase_id: purchaseId, kind: 'cancel', completed_at: null },
+      select: { id: true },
+    });
+    if (op) return true;
+    const state = await db.dunningState?.findUnique?.({
+      where: { purchase_id: purchaseId },
+      select: { status: true, client_canceled_at: true },
+    });
+    return state?.status === 'active' && state.client_canceled_at != null;
+  }
+
+  private async resolveDunningOnPaid(purchaseId: string, tx?: WebhookTx): Promise<void> {
+    // S-DUNNING-R3 (B-628-8): a renewal payment does not settle a disputed
+    // payment; the dispute cycle stays open until the dispute closes.
+    if (this.dunningV2) {
+      let disputed: boolean;
+      try {
+        disputed = await this.dunningV2.isDisputeCycleOpen(purchaseId, tx);
+      } catch (err) {
+        // B-690-2 (Sol) / B-690-1 (Opus): an unknown answer never resolves
+        // the cycle; the delivery fails and Stripe redelivers it.
+        this.logger.warn(
+          `dunningV2.isDisputeCycleOpen failed purchase=${purchaseId}: ${dunningErrorCode(err)}`,
+        );
+        throw new DunningWebhookRetryError('DUNNING_DISPUTE_CHECK_FAILED');
+      }
+      if (disputed) {
+        // B-628-13: the payment part is settled; the cycle stays (or
+        // becomes) the dispute cycle until the dispute closes. A failed
+        // marker write still keeps the cycle (never resolves it here).
+        try {
+          await this.dunningV2.keepAsDisputeCycle(purchaseId, tx);
+        } catch (err) {
+          this.logger.warn(
+            `dunningV2.keepAsDisputeCycle failed purchase=${purchaseId}: ${dunningErrorCode(err)}`,
+          );
+        }
+        this.logger.log(
+          JSON.stringify({
+            event: 'checkout_webhook.dispute_cycle_kept_on_paid',
+            purchase_id: purchaseId,
+          }),
+        );
+        return;
+      }
+    }
     if (this.dunning) {
       try {
-        await this.dunning.recordResolution(updated.id);
+        await this.dunning.recordResolution(purchaseId);
       } catch (err) {
         this.logger.warn(
-          `dunning.recordResolution failed purchase=${updated.id}: ${(err as Error).message}`,
+          `dunning.recordResolution failed purchase=${purchaseId}: ${dunningErrorCode(err)}`,
         );
       }
     }
     // B3 v2 (§5) — immediate-clear additions (restore entitlement, lift Day-10
     // lockout, dismiss blockers, revoke recovery tokens). No-op when the flag
     // is off; runs AFTER the v1 recordResolution so v1 behaviour is unchanged.
+    // On the outer tx (B-DUNMR-120): it already holds this purchase's row
+    // lock, which a second connection would wait on until the tx times out.
     if (this.dunningV2) {
       try {
-        await this.dunningV2.applyImmediateClear(updated.id, 'retry');
+        await this.dunningV2.applyImmediateClear(purchaseId, 'retry', tx);
       } catch (err) {
         this.logger.warn(
-          `dunningV2.applyImmediateClear failed purchase=${updated.id}: ${(err as Error).message}`,
+          `dunningV2.applyImmediateClear failed purchase=${purchaseId}: ${dunningErrorCode(err)}`,
         );
       }
     }
-    return { claimed: true, purchase_id: purchase.id, deferredSplit };
+  }
+
+  /**
+   * B-690-5 (Sol): an `unpaid` subscription (the account marks it unpaid
+   * instead of past_due) keeps the Days 0-9 grace of an active, unlocked v2
+   * cycle on a plan that was entitled. Never-entitled, canceled and locked
+   * plans are excluded; flag off: unchanged (unpaid ends access).
+   */
+  private async inUnpaidGrace(
+    db: WebhookTx | PrismaService,
+    purchase: ClientPurchase,
+    status: string,
+  ): Promise<boolean> {
+    if (status !== 'unpaid' || !DUNNING_V2_GRACE_STATUSES.includes(status)) return false;
+    if (!isDunningV2Enabled() || !purchase.entitlement_active) return false;
+    const state = await db.dunningState?.findUnique?.({
+      where: { purchase_id: purchase.id },
+      select: { status: true, locked_out_at: true },
+    });
+    return state?.status === 'active' && state.locked_out_at == null;
   }
 
   private async applyInvoicePaymentFailed(
@@ -2363,7 +2512,7 @@ export class CheckoutWebhookHandlerService {
       amount_due?: number | null;
       attempt_count?: number | null;
       billing_reason?: string | null;
-      last_payment_error?: { message?: string };
+      last_payment_error?: { message?: string; code?: string | null };
     };
     if (!inv?.subscription) return { claimed: false };
     const db: WebhookTx | PrismaService = tx ?? this.prisma;
@@ -2375,6 +2524,14 @@ export class CheckoutWebhookHandlerService {
     // checkout) is never reopened as past_due by a late decline.
     if (purchaseHasEnded(purchase)) {
       return { claimed: true, purchase_id: purchase.id, reason: 'subscription_already_ended' };
+    }
+    // C-690-1 (Opus): a late failure (e.g. the Day-3 retry) for a plan the
+    // client already ended, or is ending, changes nothing on the plan.
+    if (
+      purchase.status === 'canceled' ||
+      (await this.clientCancelPending(tx ?? this.prisma, purchase.id))
+    ) {
+      return { claimed: true, purchase_id: purchase.id, reason: 'stale_after_cancel' };
     }
     // B-680-2 — Stripe retries deliveries for days: a decline delivered after
     // its invoice was paid (a later retry or a second card) or voided is
@@ -2433,7 +2590,7 @@ export class CheckoutWebhookHandlerService {
           // Entitlement is retained during past_due — same as SaaS billing —
           // until Stripe ultimately cancels the subscription, which fires
           // customer.subscription.deleted.
-          last_error: message,
+          last_error: safeDeclineCode(inv.last_payment_error?.code),
           updated_at: nextVersion(fresh),
         },
       });
@@ -2448,28 +2605,43 @@ export class CheckoutWebhookHandlerService {
           purchase: updated,
           stripe_invoice_id: inv.id ?? null,
           amount_due_cents: typeof inv.amount_due === 'number' ? inv.amount_due : null,
-          attempt_number:
-            typeof inv.attempt_count === 'number' ? inv.attempt_count : null,
+          attempt_number: typeof inv.attempt_count === 'number' ? inv.attempt_count : null,
           reason: inv.last_payment_error?.message ?? null,
         });
       } catch (err) {
         this.logger.warn(
-          `dunning.recordFailure failed purchase=${updated.id}: ${(err as Error).message}`,
+          `dunning.recordFailure failed purchase=${updated.id}: ${dunningErrorCode(err)}`,
+        );
+      }
+    }
+    // S-DUNNING F1: drive Smart Dunning v2 (no-op with the flag off). The
+    // step claim is a short DB write; the notices go out after it,
+    // fire-and-forget, so no push/email HTTP runs while the caller's
+    // webhook transaction is open.
+    if (this.dunningV2) {
+      const v2 = this.dunningV2;
+      try {
+        const claim = await v2.recordPaymentFailed(updated.id);
+        if (claim) void v2.dispatchClaim(claim);
+      } catch (err) {
+        this.logger.warn(
+          `dunningV2.recordPaymentFailed failed purchase=${updated.id}: ${dunningErrorCode(err)}`,
         );
       }
     }
     return { claimed: true, purchase_id: purchase.id };
   }
 
-  private async applyCustomerUpdated(
-    event: StripeEvent,
-  ): Promise<CheckoutWebhookResult> {
+  private async applyCustomerUpdated(event: StripeEvent): Promise<CheckoutWebhookResult> {
     const cus = event.data.object as {
       id?: string;
       invoice_settings?: {
         default_payment_method?:
           | string
-          | { id?: string; card?: { brand?: string; last4?: string; exp_month?: number; exp_year?: number } }
+          | {
+              id?: string;
+              card?: { brand?: string; last4?: string; exp_month?: number; exp_year?: number };
+            }
           | null;
       };
     };
@@ -2558,6 +2730,29 @@ export class CheckoutWebhookHandlerService {
   }
 
   /**
+   * R-DISPUTE-PAUSE: a plan a dispute paused is never re-entitled by a Stripe
+   * status (pause_collection leaves the subscription `active`). Read under the
+   * caller's purchase lock, which the pause and the coach restart also take;
+   * no DunningState lock here (B-DUNMR-120): v1 `recordResolution` writes
+   * that row on its own connection during this transaction.
+   */
+  private async disputePaused(client: WebhookTx, purchaseId: string): Promise<boolean> {
+    // Legacy test stubs of DunningV2Service lack the read; production has it.
+    const v2 = this.dunningV2;
+    if (!v2 || typeof v2.isDisputePaused !== 'function') return false;
+    try {
+      return await v2.isDisputePaused(purchaseId, client);
+    } catch (err) {
+      // B-690-2: an unknown answer fails the delivery with a closed code, so
+      // Stripe redelivers it and the cause never reaches the logs.
+      this.logger.warn(
+        `dunningV2.isDisputePaused failed purchase=${purchaseId}: ${dunningErrorCode(err)}`,
+      );
+      throw new DunningWebhookRetryError('DUNNING_DISPUTE_CHECK_FAILED');
+    }
+  }
+
+  /**
    * B1 pricing-lock serialization (PR-18).
    *
    * Runs `activate` (a ClientPurchase entitlement-activation write) AFTER
@@ -2602,9 +2797,7 @@ export class CheckoutWebhookHandlerService {
       // unchanged there; in the stub case we skip the raw lock and just run
       // the activation write (same defensive pattern as the no-$transaction
       // fallback below).
-      if (
-        typeof (client as { $queryRaw?: unknown }).$queryRaw === 'function'
-      ) {
+      if (typeof (client as { $queryRaw?: unknown }).$queryRaw === 'function') {
         await client.$queryRaw<
           Array<{ id: string }>
         >`SELECT id FROM "CoachPackage" WHERE id = ${packageId} FOR UPDATE`;
@@ -2621,13 +2814,8 @@ export class CheckoutWebhookHandlerService {
     // fanout no-tx path uses). In that case run the lock + activate directly
     // on `this.prisma`: production always provides `$transaction`, so the
     // FOR UPDATE serialization is unchanged there.
-    if (
-      typeof (this.prisma as { $transaction?: unknown }).$transaction ===
-      'function'
-    ) {
-      return this.prisma.$transaction((innerTx) =>
-        runLocked(innerTx as unknown as WebhookTx),
-      );
+    if (typeof (this.prisma as { $transaction?: unknown }).$transaction === 'function') {
+      return this.prisma.$transaction((innerTx) => runLocked(innerTx as unknown as WebhookTx));
     }
     return runLocked(this.prisma as unknown as WebhookTx);
   }
@@ -2659,9 +2847,7 @@ export class CheckoutWebhookHandlerService {
     }
     if (!pkg || !pkg.duration_periods) return null;
     const startedAt = purchase.created_at;
-    return new Date(
-      startedAt.getTime() + pkg.duration_periods * 7 * 24 * 3600 * 1000,
-    );
+    return new Date(startedAt.getTime() + pkg.duration_periods * 7 * 24 * 3600 * 1000);
   }
 
   private normalizeSubscriptionStatus(status: string | undefined): string {
@@ -2675,4 +2861,11 @@ export class CheckoutWebhookHandlerService {
     if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return null;
     return new Date(seconds * 1000);
   }
+}
+
+/** C-690-1: `last_error` stores a Stripe decline code, never its free-form message. */
+function safeDeclineCode(code: string | null | undefined): string {
+  return typeof code === 'string' && /^[a-z][a-z_]{0,63}$/.test(code)
+    ? code
+    : 'invoice_payment_failed';
 }

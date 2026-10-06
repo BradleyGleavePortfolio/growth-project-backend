@@ -2,6 +2,7 @@ import { ForbiddenException } from '@nestjs/common';
 import {
   DunningLockoutGuard,
   isAllowedWhileLocked,
+  isCoachThreadOperationWhileLocked,
   isPrivacyOperationWhileLocked,
   normalizePath,
 } from '../src/checkout/dunning-v2/dunning-lockout.guard';
@@ -38,9 +39,31 @@ describe('isAllowedWhileLocked (route allow-list)', () => {
     'roman', // dedicated Roman chat base (explains the lockout)
     'roman/sessions',
     'roman/sessions/abc/messages',
+    // S-DUNNING F8: account rights and the coach thread stay reachable.
+    'me/data-export/request',
+    'me/data-export/status',
+    'me/data-export/download',
+    'me/delete-account',
+    'me/delete-account/confirm',
+    'me/delete-account/cancel',
+    'me/delete-account/status',
+    'checkout/dunning', // the lockout screen's own status read
     '', // root / redirect
   ])('ALLOWS %s while locked', (p) => {
     expect(isAllowedWhileLocked(p)).toBe(true);
+  });
+
+  // The coach thread and the safety report are exact METHOD + PATH pairs
+  // (S-DUNNING F8, B-353-10), so the method-blind path rules never admit them.
+  it.each([
+    ['GET', 'messages'],
+    ['POST', 'messages'],
+    ['POST', 'messages/read'],
+    ['GET', 'messages/unread-count'],
+    ['POST', 'messages/report'],
+  ])('ALLOWS %s %s while locked (exact METHOD + PATH)', (m, p) => {
+    expect(isCoachThreadOperationWhileLocked(m, p)).toBe(true);
+    expect(isAllowedWhileLocked(p)).toBe(false);
   });
 
   it.each([
@@ -74,6 +97,11 @@ describe('isAllowedWhileLocked (route allow-list)', () => {
     'me/ai-consent-export',
     'me/ai-consentroman',
     'coach/me/ai-consent',
+    // Only the exact coach-thread routes are carved out (S-DUNNING F8).
+    'messages/voice-upload',
+    'messages/coach-review',
+    'messages/anything-new',
+    'me/data-exporter', // prefix match is segment-bounded
   ])('BLOCKS %s while locked', (p) => {
     expect(isAllowedWhileLocked(p)).toBe(false);
   });
@@ -118,10 +146,13 @@ function makeCtx(path: string, userId?: string) {
   } as any;
 }
 
-function makePrismaStub(lockedRow: any) {
+function makePrismaStub(lockedRow: any, otherPurchases: any[] = []) {
   return {
     dunningState: {
       findFirst: jest.fn(async () => lockedRow),
+    },
+    clientPurchase: {
+      findMany: jest.fn(async () => otherPurchases),
     },
   } as any;
 }
@@ -215,5 +246,64 @@ describe('DunningLockoutGuard', () => {
       const guard = new DunningLockoutGuard(prisma);
       await expect(guard.canActivate(makeCtx('/api/v1/community/feed', 'u1'))).resolves.toBe(true);
     });
+  });
+});
+
+describe('DunningLockoutGuard lock authority (S-DUNNING F6)', () => {
+  const prevFlag = process.env['FEATURE_DUNNING_V2'];
+  beforeEach(() => {
+    process.env['FEATURE_DUNNING_V2'] = 'true';
+  });
+  afterAll(() => {
+    if (prevFlag === undefined) delete process.env['FEATURE_DUNNING_V2'];
+    else process.env['FEATURE_DUNNING_V2'] = prevFlag;
+  });
+
+  it('locks on locked_out_at alone: the query does not depend on entitlement_active', async () => {
+    const prisma = makePrismaStub({ id: 'd1', purchase_id: 'p1' });
+    const guard = new DunningLockoutGuard(prisma);
+    await expect(guard.canActivate(makeCtx('/api/v1/workouts', 'u1'))).rejects.toMatchObject({
+      response: expect.objectContaining({ code: LOCKED_DUNNING_CODE }),
+    });
+    const where = prisma.dunningState.findFirst.mock.calls[0][0].where;
+    expect(where).toEqual({
+      locked_out_at: { not: null },
+      status: 'active',
+      purchase: { client_user_id: 'u1' },
+    });
+  });
+
+  it('does NOT lock a client who holds another live grant (comp / invite-code / kept access)', async () => {
+    const prisma = makePrismaStub({ id: 'd1', purchase_id: 'p1' }, [
+      { id: 'p-comp', dunning: null },
+    ]);
+    const guard = new DunningLockoutGuard(prisma);
+    await expect(guard.canActivate(makeCtx('/api/v1/workouts', 'u1'))).resolves.toBe(true);
+    const where = prisma.clientPurchase.findMany.mock.calls[0][0].where;
+    expect(where.id).toEqual({ not: 'p1' });
+    expect(where.entitlement_active).toBe(true);
+  });
+
+  it('still locks when the only other purchase is itself locked', async () => {
+    const prisma = makePrismaStub({ id: 'd1', purchase_id: 'p1' }, [
+      { id: 'p2', dunning: { status: 'active', locked_out_at: new Date() } },
+    ]);
+    const guard = new DunningLockoutGuard(prisma);
+    await expect(guard.canActivate(makeCtx('/api/v1/workouts', 'u1'))).rejects.toMatchObject({
+      response: expect.objectContaining({ code: LOCKED_DUNNING_CODE }),
+    });
+  });
+
+  it('every LOCKED_DUNNING body carries a stable code and a human message with a next action', async () => {
+    const prisma = makePrismaStub({ id: 'd1', purchase_id: 'p1' });
+    const guard = new DunningLockoutGuard(prisma);
+    const err = await guard.canActivate(makeCtx('/api/v1/workouts', 'u1')).then(
+      () => null,
+      (e: unknown) => e,
+    );
+    const body = (err as { response: { code: string; message: string } }).response;
+    expect(body.code).toBe('LOCKED_DUNNING');
+    expect(body.message).toMatch(/Update your payment/);
+    expect(body.message).not.toMatch(/!/);
   });
 });

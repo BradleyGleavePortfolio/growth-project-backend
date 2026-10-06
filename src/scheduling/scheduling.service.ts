@@ -25,12 +25,15 @@ import {
   RequestSessionDto,
   RescheduleSessionDto,
   UpdateAvailabilityOverrideDto,
+  UpdateBookingOptionsDto,
   UpdateSessionTypeDto,
 } from './dto/scheduling.dto';
 import { SchedulingProviderRegistry } from './providers/scheduling-provider.registry';
 import { SchedulingAccessService } from './scheduling-access.service';
 import type { BookableCoach } from './scheduling-access.service';
 import { SchedulingAvailabilityService } from './scheduling-availability.service';
+import { SchedulingBookingOptionsService } from './scheduling-booking-options.service';
+import type { BookingOptionsView } from './scheduling-booking-options.service';
 import { SchedulingOpenSlotsService } from './scheduling-open-slots.service';
 import { SchedulingSessionLifecycleService } from './scheduling-session-lifecycle.service';
 import type { TransitionOptions } from './scheduling-session-lifecycle.service';
@@ -96,6 +99,7 @@ export class SchedulingService {
   private readonly openSlots: SchedulingOpenSlotsService;
   private readonly availability: SchedulingAvailabilityService;
   private readonly access: SchedulingAccessService;
+  private readonly bookingOptions: SchedulingBookingOptionsService;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -120,6 +124,7 @@ export class SchedulingService {
         this.openSlots,
       );
     this.availability = availability ?? new SchedulingAvailabilityService(prisma);
+    this.bookingOptions = new SchedulingBookingOptionsService(prisma);
   }
 
   // ---------------------------------------------------------------
@@ -626,6 +631,23 @@ export class SchedulingService {
     },
   ): Promise<OpenSlotsPayload> {
     return this.openSlots.getOpenSlots(actor, coachId, args);
+  }
+
+  // ---------------------------------------------------------------
+  // S-AVAIL-122: coach booking options (coach-only, own data)
+  // ---------------------------------------------------------------
+
+  async getMyBookingOptions(actor: ActorContext): Promise<BookingOptionsView> {
+    return this.bookingOptions.getMyBookingOptions(actor);
+  }
+
+  async updateMyBookingOptions(
+    actor: ActorContext,
+    dto: UpdateBookingOptionsDto,
+  ): Promise<BookingOptionsView> {
+    const saved = await this.bookingOptions.updateMyBookingOptions(actor, dto);
+    this.openSlots.invalidateCoach(actor.id);
+    return saved;
   }
 
   // ---------------------------------------------------------------

@@ -45,6 +45,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { DripTriggerService } from '../packages/drip-trigger.service';
@@ -1493,6 +1494,98 @@ export class WorkoutBuilderService {
     };
   }
 
+  // ─── Roman approve-to-adjust: one client's set counts (§3.3 snapshot) ─────
+
+  /**
+   * The prescription ONE client will actually train for `assignmentId`: the
+   * assignment's frozen snapshot (MWB-1). A legacy assignment without a
+   * snapshot gets one first, so an adjustment never edits the shared plan
+   * other clients are assigned to. `fingerprint` is a sha256 of the ordered
+   * exercise rows: the optimistic-concurrency token an adjustment must
+   * present to write.
+   */
+  async readAssignmentPrescription(
+    tx: Prisma.TransactionClient,
+    assignmentId: string,
+  ): Promise<
+    | { ok: false; reason: 'not_found' | 'started' }
+    | {
+        ok: true;
+        client_id: string;
+        workout_plan_id: string;
+        scheduled_for: Date;
+        plan_name: string;
+        exercises: AssignmentExerciseRow[];
+        fingerprint: string;
+      }
+  > {
+    const a = await tx.clientWorkoutAssignment.findUnique({
+      where: { id: assignmentId },
+      select: {
+        id: true,
+        client_id: true,
+        workout_plan_id: true,
+        scheduled_for: true,
+        started_at: true,
+        completed_at: true,
+        snapshot: { select: { plan_name: true, exercises_json: true } },
+      },
+    });
+    if (!a) return { ok: false, reason: 'not_found' };
+    if (a.started_at || a.completed_at) return { ok: false, reason: 'started' };
+    let snap = a.snapshot;
+    if (!snap) {
+      await this.writeAssignmentSnapshot(tx, a.id, a.workout_plan_id);
+      snap = await tx.clientWorkoutAssignmentSnapshot.findUnique({
+        where: { assignment_id: a.id },
+        select: { plan_name: true, exercises_json: true },
+      });
+      if (!snap) return { ok: false, reason: 'not_found' };
+    }
+    const exercises = parseAssignmentRows(snap.exercises_json);
+    return {
+      ok: true,
+      client_id: a.client_id,
+      workout_plan_id: a.workout_plan_id,
+      scheduled_for: a.scheduled_for,
+      plan_name: snap.plan_name,
+      exercises,
+      fingerprint: fingerprintAssignmentRows(exercises),
+    };
+  }
+
+  /**
+   * Write new set counts into ONE assignment's snapshot, only if the client
+   * has not started it and nobody changed it since `expectedFingerprint` was
+   * read. Reps, load, rest, order and notes are never touched here. Runs in
+   * the caller's transaction so the proposal decision and the write commit
+   * (or roll back) together.
+   */
+  async replaceAssignmentSets(
+    tx: Prisma.TransactionClient,
+    assignmentId: string,
+    opts: { expectedFingerprint: string; sets: ReadonlyMap<number, number> },
+  ): Promise<
+    | { ok: false; reason: 'not_found' | 'started' | 'changed' | 'invalid' }
+    | { ok: true; before: AssignmentExerciseRow[]; after: AssignmentExerciseRow[]; fingerprint: string }
+  > {
+    const cur = await this.readAssignmentPrescription(tx, assignmentId);
+    if (!cur.ok) return cur;
+    if (cur.fingerprint !== opts.expectedFingerprint) return { ok: false, reason: 'changed' };
+    const orders = new Set(cur.exercises.map((e) => e.order));
+    for (const [order, sets] of opts.sets) {
+      if (!orders.has(order) || !Number.isInteger(sets) || sets < 1 || sets > 20) {
+        return { ok: false, reason: 'invalid' };
+      }
+    }
+    const after = cur.exercises.map((e) => ({ ...e, sets: opts.sets.get(e.order) ?? e.sets }));
+    await tx.clientWorkoutAssignmentSnapshot.update({
+      where: { assignment_id: assignmentId },
+      data: { exercises_json: this.serialiseExerciseRows(after) },
+    });
+    return { ok: true, before: cur.exercises, after, fingerprint: fingerprintAssignmentRows(after) };
+  }
+
   /**
    * Frozen, ordered representation of a plan's live exercise rows, used as the
    * `exercises_json` payload of a ClientWorkoutAssignmentSnapshot. Field set
@@ -1605,4 +1698,46 @@ export class WorkoutBuilderService {
         );
       });
   }
+}
+
+/** One exercise row of an assignment snapshot (MWB-1 `exercises_json`). */
+export interface AssignmentExerciseRow {
+  exercise_external_id: string;
+  order: number;
+  sets: number;
+  reps_or_duration_seconds: number;
+  weight_lbs: number | null;
+  rest_seconds: number | null;
+  superset_group_id: string | null;
+  notes: string | null;
+}
+
+/** Defensive parse of a snapshot's `exercises_json`; malformed rows are skipped. */
+export function parseAssignmentRows(json: unknown): AssignmentExerciseRow[] {
+  if (!Array.isArray(json)) return [];
+  const out: AssignmentExerciseRow[] = [];
+  for (const r of json) {
+    if (!r || typeof r !== 'object') continue;
+    const o = r as Record<string, unknown>;
+    if (typeof o.exercise_external_id !== 'string' || typeof o.order !== 'number' || typeof o.sets !== 'number') continue;
+    out.push({
+      exercise_external_id: o.exercise_external_id,
+      order: o.order,
+      sets: o.sets,
+      reps_or_duration_seconds: typeof o.reps_or_duration_seconds === 'number' ? o.reps_or_duration_seconds : 0,
+      weight_lbs: typeof o.weight_lbs === 'number' ? o.weight_lbs : null,
+      rest_seconds: typeof o.rest_seconds === 'number' ? o.rest_seconds : null,
+      superset_group_id: typeof o.superset_group_id === 'string' ? o.superset_group_id : null,
+      notes: typeof o.notes === 'string' ? o.notes : null,
+    });
+  }
+  return out.sort((a, b) => a.order - b.order);
+}
+
+/** sha256 over the ordered rows: the optimistic-concurrency token. */
+export function fingerprintAssignmentRows(rows: readonly AssignmentExerciseRow[]): string {
+  const canon = [...rows]
+    .sort((a, b) => a.order - b.order)
+    .map((r) => [r.order, r.exercise_external_id, r.sets, r.reps_or_duration_seconds, r.weight_lbs, r.rest_seconds, r.superset_group_id, r.notes]);
+  return createHash('sha256').update(JSON.stringify(canon)).digest('hex');
 }

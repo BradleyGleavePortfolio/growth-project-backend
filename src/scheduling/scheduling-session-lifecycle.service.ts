@@ -33,6 +33,8 @@ import { SchedulingProviderRegistry } from './providers/scheduling-provider.regi
 import { SchedulingAccessService } from './scheduling-access.service';
 import { SchedulingOpenSlotsService } from './scheduling-open-slots.service';
 import {
+  BOOKING_OPTION_LIMITS,
+  DEFAULT_BOOKING_OPTIONS,
   MAX_BOOKING_HORIZON_DAYS,
   MAX_PENDING_REQUESTS_PER_COACH,
   MEETING_LINK_PATTERN,
@@ -40,6 +42,7 @@ import {
   OCCUPYING_SESSION_STATUSES,
   SESSION_NOT_FOUND_MESSAGE,
   SchedulingErrorCode,
+  formatNoticeMinutes,
   hasUsableLink,
   requestExpiresAt,
   schedulingError,
@@ -51,7 +54,7 @@ import {
   requestExpiredError,
   type LapsedRow,
 } from './request-expiry';
-import type { ActorContext } from './scheduling.types';
+import type { ActorContext, BookingOptions } from './scheduling.types';
 
 // State machine: which SessionStatus transitions the service accepts.
 // Anything outside this map is a 409 SESSION_STATE_CHANGED (the row moved
@@ -167,7 +170,7 @@ export class SchedulingSessionLifecycleService {
     }
     const { start, end } = parseInterval(dto.start_at, dto.end_at);
     const now = new Date();
-    assertWithinBookingWindow(start, now);
+    assertWithinBookingWindow(start, now, OUTER_BOOKING_BOUNDS);
 
     const sessionTypeId = dto.session_type_id;
     const session = await this.runBookingTx(dto.coach_id, async (tx) => {
@@ -218,7 +221,7 @@ export class SchedulingSessionLifecycleService {
         }
       }
 
-      await this.assertIntervalBookable(tx, dto.coach_id, start, end, {
+      await this.assertIntervalBookable(tx, dto.coach_id, start, end, now, {
         sessionTypeId: type.id,
         excludeSessionId: null,
       });
@@ -415,7 +418,7 @@ export class SchedulingSessionLifecycleService {
       );
     }
     const { start, end } = parseInterval(dto.start_at, dto.end_at);
-    assertWithinBookingWindow(start, now);
+    assertWithinBookingWindow(start, now, OUTER_BOOKING_BOUNDS);
 
     const result = await this.runBookingTx(existing.coach_id, async (tx) => {
       const current = await tx.coachingSession.findUnique({ where: { id: sessionId } });
@@ -441,7 +444,7 @@ export class SchedulingSessionLifecycleService {
           ? type.duration_minutes
           : Math.round((current.end_at.getTime() - current.start_at.getTime()) / 60_000);
         assertDurationMinutes(expected, start, end);
-        await this.assertIntervalBookable(tx, current.coach_id, start, end, {
+        await this.assertIntervalBookable(tx, current.coach_id, start, end, now, {
           sessionTypeId: type?.id ?? null,
           excludeSessionId: current.id,
         });
@@ -455,6 +458,14 @@ export class SchedulingSessionLifecycleService {
             ),
           );
         }
+        // S-AVAIL-122: a coach moving their own session keeps the 5-minute
+        // floor and may go as far ahead as the larger of the default window
+        // and their own; their buffers and daily maximum do not bind them.
+        const { options } = await this.openSlots.coachCalendarProfile(tx, current.coach_id);
+        assertWithinBookingWindow(start, now, {
+          min_notice_minutes: MIN_BOOKING_LEAD_MINUTES,
+          booking_window_days: Math.max(MAX_BOOKING_HORIZON_DAYS, options.booking_window_days),
+        });
         await this.assertNoOverlap(tx, current.coach_id, start, end, current.id);
       }
 
@@ -769,17 +780,45 @@ export class SchedulingSessionLifecycleService {
     }
   }
 
+  // Client bookings and client moves. S-AVAIL-122: the coach's minimum
+  // notice and booking window, then buffers and daily maximum, all read and
+  // checked under the per-coach lock.
   private async assertIntervalBookable(
     tx: Tx,
     coachId: string,
     start: Date,
     end: Date,
+    now: Date,
     opts: { sessionTypeId: string | null; excludeSessionId: string | null },
   ): Promise<void> {
-    const open = await this.openSlots.isIntervalOpen(tx, coachId, start, end, opts);
-    if (open) return;
-    // Explain why: someone else holds it, or it is outside the coach's hours.
+    const { verdict, options } = await this.openSlots.intervalBookability(
+      tx,
+      coachId,
+      start,
+      end,
+      opts,
+    );
+    assertWithinBookingWindow(start, now, options);
+    if (verdict === 'open') return;
+    // Explain why: someone else holds it, the coach's day is full, it is too
+    // close to another session (buffers), or it is outside the coach's hours.
     await this.assertNoOverlap(tx, coachId, start, end, opts.excludeSessionId);
+    if (verdict === 'daily_max') {
+      throw new ConflictException(
+        schedulingError(
+          SchedulingErrorCode.SLOT_UNAVAILABLE,
+          "Your coach's day is fully booked. Pick a time on another day.",
+        ),
+      );
+    }
+    if (verdict === 'buffer') {
+      throw new ConflictException(
+        schedulingError(
+          SchedulingErrorCode.SLOT_UNAVAILABLE,
+          "That time is too close to another session on your coach's calendar. Pick one of the times shown.",
+        ),
+      );
+    }
     throw new ConflictException(
       schedulingError(
         SchedulingErrorCode.SLOT_UNAVAILABLE,
@@ -1212,20 +1251,37 @@ export function parseInterval(startIso: string, endIso: string): { start: Date; 
   return { start, end };
 }
 
-export function assertWithinBookingWindow(start: Date, now: Date): void {
-  if (start.getTime() < now.getTime() + MIN_BOOKING_LEAD_MINUTES * 60_000) {
+// Checked before the lock: the loosest rules any coach can set (5 minutes,
+// 365 days). The coach's own rules are checked again inside the lock.
+const OUTER_BOOKING_BOUNDS: Pick<BookingOptions, 'min_notice_minutes' | 'booking_window_days'> = {
+  min_notice_minutes: MIN_BOOKING_LEAD_MINUTES,
+  booking_window_days: BOOKING_OPTION_LIMITS.booking_window_days.max,
+};
+
+// S-AVAIL-122: `rules` is the coach's minimum notice and booking window
+// (defaults 5 minutes / 120 days, today's rules).
+export function assertWithinBookingWindow(
+  start: Date,
+  now: Date,
+  rules: Pick<
+    BookingOptions,
+    'min_notice_minutes' | 'booking_window_days'
+  > = DEFAULT_BOOKING_OPTIONS,
+): void {
+  if (start.getTime() < now.getTime() + rules.min_notice_minutes * 60_000) {
     throw new BadRequestException(
       schedulingError(
         SchedulingErrorCode.SESSION_IN_PAST,
-        `That time is too soon. Pick a time at least ${MIN_BOOKING_LEAD_MINUTES} minutes from now.`,
+        `That time is too soon. Pick a time at least ${formatNoticeMinutes(rules.min_notice_minutes)} from now.`,
       ),
     );
   }
-  if (start.getTime() > now.getTime() + MAX_BOOKING_HORIZON_DAYS * DAY_MS) {
+  if (start.getTime() > now.getTime() + rules.booking_window_days * DAY_MS) {
+    const days = rules.booking_window_days;
     throw new BadRequestException(
       schedulingError(
         SchedulingErrorCode.BEYOND_BOOKING_HORIZON,
-        `Sessions can be booked up to ${MAX_BOOKING_HORIZON_DAYS} days ahead. Pick an earlier date.`,
+        `Sessions can be booked up to ${days} day${days === 1 ? '' : 's'} ahead. Pick an earlier date.`,
       ),
     );
   }
