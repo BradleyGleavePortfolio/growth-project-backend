@@ -325,6 +325,18 @@ const PLAN_WORD = /\b(meal plan|your plan|the plan|planned)\b/i;
 /** B-668-3 (Sol): wording that states the whole day's intake ("logged 450 kcal today", "so far"). */
 const DAY_TOTAL_CLAIM =
   /\b(today|so far|in total|total|for the day|daily|you are at|you'?re at|sitting at|intake)\b/i;
+/** B-666-5 (Sol): one named meal or food item (singular: "at lunch", "a 450 kcal bowl"). */
+const SINGLE_MEAL_CLAUSE =
+  /\b(breakfast|lunch|dinner|supper|snack|meal|serving|portion|plate|bowl|bar|shake)\b/i;
+/** B-666-5 (Sol): wording that sums the day; it wins over a meal word ("across two meals"). */
+const AGGREGATE_CLAIM =
+  /\b(in total|total|so far|for the day|daily|intake|across|combined|altogether|meals|snacks|all (of )?(your|my|the|today'?s))\b/i;
+/**
+ * B-669-1 (Sol): a sum of the client's own meals is today's intake even with
+ * no intake verb ("your meals add up to 450 kcal", "both meals come to ...").
+ */
+const MEAL_SUM_CLAIM =
+  /\b(meals|snacks|entries)(\s+[a-z']+){0,2}\s+(add(s|ed)? up|come to|came to|total(s|led|ed)?|sum(s|med)? (to|up))\b/i;
 
 /**
  * kcal facts of the given field families (B-651-7: never pooled across
@@ -345,10 +357,16 @@ function kcalFacts(
     if (past) out.push(...(f.intake_past_days ?? []));
     else {
       out.push(ctx.today.kcal);
-      // B-668-3 (Sol): one meal never validates a whole-day claim. Entry
-      // values only count when the clause is about a meal, or makes no
-      // whole-day claim at all ("you logged a 450 kcal salad").
-      if (MEAL_CLAUSE.test(clause) || !DAY_TOTAL_CLAIM.test(clause)) {
+      // B-668-3 / B-666-5 / B-669-1 (Sol): one meal never validates a
+      // whole-day claim. Summing wording ("across two meals", "your meals",
+      // "altogether", "so far") is always checked against the day's total,
+      // with or without "today". Otherwise entry values count when the clause
+      // makes no whole-day claim ("you logged a 450 kcal salad") or names one
+      // meal ("450 kcal at lunch today").
+      if (
+        !AGGREGATE_CLAIM.test(clause) &&
+        (!DAY_TOTAL_CLAIM.test(clause) || SINGLE_MEAL_CLAUSE.test(clause))
+      ) {
         out.push(...(f.intake_entries_today ?? []));
       }
     }
@@ -518,6 +536,8 @@ function judgeSentence(
     }
     if (directive || delta) continue; // a meal-level suggestion or a change amount
     const role = roleOf(s, at, end);
+    // B-669-1 (Sol): "your meals add up to 450 kcal" states today's intake.
+    if (role.size === 0 && MEAL_SUM_CLAIM.test(clause)) role.add('intake');
     if (role.size === 0) continue;
     // Not a grounded turn (coach surface, or no client data was expected):
     // there are no client facts to compare with, only the floor applies.
