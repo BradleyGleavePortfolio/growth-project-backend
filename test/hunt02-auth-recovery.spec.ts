@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { ExecutionContext, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { ThrottlerException, ThrottlerStorageService } from '@nestjs/throttler';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
@@ -39,12 +40,7 @@ function context(route: 'register' | 'signupWithCode' | 'login', n: number): Exe
     route: { path }, url: path, ip: '203.0.113.42', headers: {},
     body: { email: `person${n}@example.com`, password: 'Str0ng!pass', name: 'Person' },
   };
-  return {
-    getHandler: () => AuthController.prototype[route],
-    getClass: () => AuthController,
-    getType: () => 'http',
-    switchToHttp: () => ({ getRequest: () => req, getResponse: () => ({ header: jest.fn() }) }),
-  } as unknown as ExecutionContext;
+  return new ExecutionContextHost([req, { header: jest.fn() }], AuthController, AuthController.prototype[route]);
 }
 
 describe('HUNT-02: normal shared-network authentication', () => {
@@ -83,16 +79,20 @@ describe('HUNT-02: normal shared-network authentication', () => {
 describe('HUNT-02: confirmation recovery', () => {
   function service() {
     const verifier = { isConfigured: () => true };
-    return new AuthService(
-      {} as never, {} as never, { capture: jest.fn() } as never,
-      { write: jest.fn() } as never, verifier as never, verifier as never,
-    );
+    const deps = {
+      prisma: {}, invite: {}, analytics: { capture: jest.fn() },
+      audit: { write: jest.fn() }, apple: verifier, google: verifier,
+    };
+    type Ctor = ConstructorParameters<typeof AuthService>;
+    function asCtorArgs(d: typeof deps): Ctor {
+      // @ts-expect-error partial structural doubles; resend and signup-policy read none of these collaborators
+      return [d.prisma, d.invite, d.analytics, d.audit, d.apple, d.google];
+    }
+    return new AuthService(...asCtorArgs(deps));
   }
 
   async function resend(s: AuthService, email: string) {
-    const method = (s as unknown as { resendVerification?: (email: string) => Promise<unknown> }).resendVerification;
-    expect(typeof method).toBe('function');
-    return method!.call(s, email);
+    return s.resendVerification(email);
   }
 
   beforeEach(() => {

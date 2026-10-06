@@ -1460,15 +1460,21 @@ export class AuthService {
     };
   }
 
+  // Anonymous (anon-key) client for the one-shot recovery calls: password
+  // reset and signup confirmation resend share this one construction.
+  private anonAuthClient() {
+    return createClient(
+      process.env.SUPABASE_URL || '',
+      process.env.SUPABASE_ANON_KEY || '',
+      { realtime: { transport: WS as any } },
+    );
+  }
+
   async resendVerification(email: string) {
     // Like recovery, the public response must not reveal whether the
     // address exists, is already confirmed, or the provider refused mail.
     try {
-      const supaClient = createClient(
-        process.env.SUPABASE_URL || '',
-        process.env.SUPABASE_ANON_KEY || '',
-        { realtime: { transport: WS as any } },
-      );
+      const supaClient = this.anonAuthClient();
       const { error } = await supaClient.auth.resend({
         type: 'signup',
         email: normalizeEmail(email),
@@ -1482,11 +1488,7 @@ export class AuthService {
   }
 
   async forgotPassword(email: string) {
-    const supaClient = createClient(
-      process.env.SUPABASE_URL || '',
-      process.env.SUPABASE_ANON_KEY || '',
-      { realtime: { transport: WS as any } },
-    );
+    const supaClient = this.anonAuthClient();
 
     // B-597-1: same canonical address as signup and sign-in.
     const { error } = await supaClient.auth.resetPasswordForEmail(normalizeEmail(email), {

@@ -244,7 +244,7 @@ describe('C14 — intended routes are still governed by their own throttler', ()
     expect(await hammer(guard, build, 4)).toEqual({ allowed: 3, blocked: 1 });
   });
 
-  it('POST /auth/register: 5 per hour per IP (auth-signup)', async () => {
+  it('POST /auth/register: 100 per hour per IP by default (auth-signup, AUTH_SIGNUP_PER_HOUR)', async () => {
     const guard = await buildGuard();
     const build = () =>
       makeCtx({
@@ -254,7 +254,7 @@ describe('C14 — intended routes are still governed by their own throttler', ()
         handler: AuthController.prototype.register,
         cls: AuthController,
       });
-    expect(await hammer(guard, build, 6)).toEqual({ allowed: 5, blocked: 1 });
+    expect(await hammer(guard, build, 101)).toEqual({ allowed: 100, blocked: 1 });
   });
 
   it('GET /packages/public/join/:token keeps its route-level default (20/min composite key)', async () => {

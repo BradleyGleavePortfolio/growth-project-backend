@@ -46,10 +46,10 @@ describe('throttler.config -- named limit table', () => {
 
   // C14 fix round: per-IP login windows are never reset, so they are sized for
   // a room on one network; per-account guessing has its own lock.
-  it('has auth-login-per-min: 20/min default', () => {
+  it('has auth-login-per-min: 60/min default (HUNT-02: a 40-person room)', () => {
     expect(byName[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toMatchObject({
       ttl: 60_000,
-      limit: 20,
+      limit: 60,
     });
   });
 
@@ -72,10 +72,10 @@ describe('throttler.config -- named limit table', () => {
     });
   });
 
-  it('has auth-signup: 5/hour', () => {
+  it('has auth-signup: 100/hour default (HUNT-02 AUTH_SIGNUP_PER_HOUR)', () => {
     expect(byName[THROTTLER_NAMES.AUTH_SIGNUP]).toMatchObject({
       ttl: 3_600_000,
-      limit: 5,
+      limit: 100,
     });
   });
 
@@ -134,9 +134,9 @@ describe('throttler.config -- named limit table', () => {
 // ---------------------------------------------------------------------------
 
 describe('AuthController @Throttle metadata', () => {
-  it('POST /auth/login uses auth-login-per-min (20/min)', () => {
+  it('POST /auth/login uses auth-login-per-min (60/min)', () => {
     const meta = readThrottleMetadata(AuthController.prototype.login);
-    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toEqual({ ttl: 60_000, limit: 20 });
+    expect(meta[THROTTLER_NAMES.AUTH_LOGIN_PER_MIN]).toEqual({ ttl: 60_000, limit: 60 });
   });
 
   it('POST /auth/login uses auth-login-per-hour (200/hr)', () => {
@@ -162,14 +162,14 @@ describe('AuthController @Throttle metadata', () => {
     });
   });
 
-  it('POST /auth/register uses auth-signup (5/hr)', () => {
+  it('POST /auth/register uses auth-signup (100/hr)', () => {
     const meta = readThrottleMetadata(AuthController.prototype.register);
-    expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 5 });
+    expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 100 });
   });
 
-  it('POST /auth/signup-with-code uses auth-signup (5/hr)', () => {
+  it('POST /auth/signup-with-code uses auth-signup (100/hr)', () => {
     const meta = readThrottleMetadata(AuthController.prototype.signupWithCode);
-    expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 5 });
+    expect(meta[THROTTLER_NAMES.AUTH_SIGNUP]).toEqual({ ttl: 3_600_000, limit: 100 });
   });
 
   it('POST /auth/recent-auth-token uses auth-recent-auth (5/min)', () => {
