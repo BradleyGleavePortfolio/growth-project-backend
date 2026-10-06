@@ -1,0 +1,7 @@
+M-COACHPUSH-123 / Claude Opus 5.5 builder / agent 123 — DONE 09:40 PDT 10-06
+mobile#393 59ec57770771b4f98f61e5ffc3180cef37b129c4 FIX ROUND 1 (OPENING) READY FOR AUDIT https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/393#issuecomment-6020930007
+CI green at head (Typecheck/lint/test run 37496893581, CodeQL 37496893536). Size +313/-29, 11 files.
+(a) C-S-PUSH-3: coach Clients landing shows PushPermissionCard audience=coach (same once-per-account key, same token path).
+(b) C-F6-1: Community Today "Send your coach a message" with DMs off opens Home > Messages; button hidden for coachless clients on Today and the no-workspace state.
+Cs: C-M393-1 noCohorts copy mentions a coach for coachless clients (copy follow-up); C-M393-2 edge (Hall flag off fallback).
+Report ops/reports/M-COACHPUSH-123.md. Worktree removed; no locks or claims held; not merged.

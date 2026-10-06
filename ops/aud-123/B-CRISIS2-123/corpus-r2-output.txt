@@ -1,0 +1,36 @@
+AI emergency->null | Roman emergency->normal | I have odd soreness
+AI null->emergency | Roman normal->emergency | he's not breathing
+AI null->emergency | Roman normal->emergency | unconscious and not breathing
+AI null->emergency | Roman normal->emergency | she won't wake up
+AI null->emergency | Roman medical_scope->emergency | passed out and won't wake up
+AI null->emergency | Roman medical_scope->emergency | my teammate passed out and is not breathing
+AI null->emergency | Roman normal->emergency | she's not breathing
+AI null->emergency | Roman normal->emergency | my teammate is not breathing
+AI null->emergency | Roman normal->emergency | he stopped breathing
+AI null->emergency | Roman normal->emergency | he won't wake up
+AI null->emergency | Roman normal->emergency | my friend won't wake up
+AI null->emergency | Roman normal->emergency | she will not wake up
+AI null->emergency | Roman medical_scope->emergency | my teammate passed out and won't wake up
+AI null->emergency | Roman normal->emergency | she's not waking up
+AI null->emergency | Roman normal->emergency | my son is not waking up
+AI null->emergency | Roman normal->emergency | the baby won't wake up
+AI null->emergency | Roman normal->emergency | my friend ODed
+AI null->emergency | Roman normal->emergency | he ODed
+AI null->emergency | Roman normal->emergency | they ODed
+AI null->emergency | Roman normal->emergency | I ODed
+AI null->emergency | Roman normal->emergency | I think my roommate ODed
+AI null->emergency | Roman normal->emergency | my teammate ODed last night
+AI null->emergency | Roman normal->emergency | a guy at my gym ODed
+AI null->emergency | Roman normal->emergency | my brother OD'ed
+AI null->emergency | Roman normal->emergency | she OD'ed
+AI null->emergency | Roman normal->emergency | my friend O.D.
+AI null->emergency | Roman normal->emergency | he O.D.
+AI null->emergency | Roman normal->emergency | my friend O.D.'d
+AI null->emergency | Roman normal->emergency | she O.D.ed
+AI null->emergency | Roman normal->emergency | someone at the gym O.D.'d
+AI null->emergency | Roman normal->emergency | possible O.D.
+AI emergency->null | Roman emergency->normal | he is odd
+AI emergency->null | Roman emergency->normal | I have odd soreness after leg day
+AI null->emergency | Roman normal->emergency | F9 a person who is not breathing or will not wake up is 911 on both routers
+AI null->emergency | Roman normal->emergency | F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers
+strings 53635 changed 35

@@ -1,0 +1,4 @@
+Process completed with exit code 1.
+critical "shell-quote" is not covered by an exception: https://github.com/advisories/GHSA-pqg4-j6r4-53mv (shell-quote, critical)
+braces node_modules/braces@3.0.3 excepted until 2026-10-31 (25 days left). Ruling: OR-114-2 (operator agent 114, 2026-10-02): keep the audit gate fail-closed; narrowest time-boxed dev-only exception. Reason: CVE-2026-93687 stack-exhaustion DoS via deeply nested patterns; no patched braces exists on npm (latest 3.0.3). The only lockfile copy (node_modules/braces 3.0.3) is dev-only, reached through micromatch from danger (CI tooling), never installed in the production runtime image (Dockerfile runtime stage uses npm ci --omit=dev).
+"The ubuntu-latest label will migrate to Ubuntu 26 beginning October 19, 2026. For more information, see https://github.com/actions/runner-images/issues/14748"

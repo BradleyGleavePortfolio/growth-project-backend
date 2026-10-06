@@ -1,0 +1,212 @@
+diff --git a/docs/help/faq.md b/docs/help/faq.md
+index 53e7fd48..24453040 100644
+--- a/docs/help/faq.md
++++ b/docs/help/faq.md
+@@ -95,10 +95,9 @@ gap. If you need a specific record for a legal or medical reason,
+ write in.
+ 
+ **A client deleted their account. Where did they go?**
+-They are gone from your roster and their data is in a thirty-day
+-soft-delete window before permanent removal. Within that window the
+-deletion can be reversed if the client requests it. After thirty
+-days, recovery is not possible.
++During the 14-day grace period they stay on your roster and can
++cancel the deletion in the app. When it ends, they leave your roster
++and their data is permanently deleted and cannot be recovered.
+ 
+ ## Other
+ 
+diff --git a/docs/help/support-boundaries.md b/docs/help/support-boundaries.md
+index d0b2b728..0dca345c 100644
+--- a/docs/help/support-boundaries.md
++++ b/docs/help/support-boundaries.md
+@@ -27,8 +27,9 @@ We respond to, and own, the following:
+ - A security or privacy concern of any kind. These get same-day
+   attention.
+ - Account merge requests (you signed up with the wrong provider) and
+-  account-deletion reversals within the thirty-day soft-delete
+-  window.
++  questions about a pending account deletion. A deletion can be
++  cancelled in the app during its 14-day grace period; once it is
++  complete it cannot be reversed.
+ 
+ ## Out of scope
+ 
+diff --git a/src/public-pages/public-pages.html.ts b/src/public-pages/public-pages.html.ts
+index bec64d2c..21a9ba4a 100644
+--- a/src/public-pages/public-pages.html.ts
++++ b/src/public-pages/public-pages.html.ts
+@@ -9,7 +9,7 @@ export type DownloadPlatform = 'ios' | 'android';
+ // and trivially edge-cacheable.
+ //
+ // Copy is deliberately honest: when the App Store / Play Store listings
+-// don't exist yet, we say so and offer the user a way to be notified.
++// don't exist yet, the page says so and offers a support contact.
+ // We do NOT publish placeholder Apple/Google IDs that don't resolve —
+ // that's the failure mode the operator asked us to avoid.
+ 
+@@ -49,25 +49,25 @@ function pageFor(platform: DownloadPlatform): PageContent {
+     return {
+       title: 'The Growth Project for iPhone',
+       headline: 'Coming to the App Store',
++      // F10 (C-2): the listing is not live yet and there is no notify list,
++      // so the page says only that, with a plain support contact.
+       body:
+-        'The iPhone app is in private review. If your coach has invited you, ' +
+-        'they will share the App Store link as soon as it is live. In the ' +
+-        'meantime, leave us your email and we will notify you the moment it ' +
+-        'is available.',
+-      cta_label: 'Email us',
+-      cta_href: `mailto:${SUPPORT_EMAIL}?subject=Notify%20me%20when%20iOS%20is%20live`,
++        'The iPhone app is not on the App Store yet. It can be downloaded ' +
++        'there once the listing is live. For questions in the meantime, ' +
++        'contact support.',
++      cta_label: 'Contact support',
++      cta_href: `mailto:${SUPPORT_EMAIL}?subject=iPhone%20app`,
+     };
+   }
+   return {
+     title: 'The Growth Project for Android',
+     headline: 'Coming to Google Play',
+     body:
+-      'The Android app is in private review. If your coach has invited you, ' +
+-      'they will share the Play Store link as soon as it is live. In the ' +
+-      'meantime, leave us your email and we will notify you the moment it ' +
+-      'is available.',
+-    cta_label: 'Email us',
+-    cta_href: `mailto:${SUPPORT_EMAIL}?subject=Notify%20me%20when%20Android%20is%20live`,
++      'The Android app is not on Google Play yet. It can be downloaded there ' +
++      'once the listing is live. For questions in the meantime, contact ' +
++      'support.',
++    cta_label: 'Contact support',
++    cta_href: `mailto:${SUPPORT_EMAIL}?subject=Android%20app`,
+   };
+ }
+ 
+@@ -120,12 +120,14 @@ export function renderSignupPage(inviteCode?: string | null): string {
+     return baseDocument({
+       title: 'The Growth Project — Sign up',
+       headline: 'Your invite is ready',
++      // F10 (C-1): no first person and no promise of a manual setup step;
++      // the code is entered in the app, support is the fallback.
+       body:
+-        'Open this page on your phone to continue. If your coach has ' +
+-        'already shared a link, tap it from your phone to launch the app. ' +
+-        'If you run into trouble, email us with the code below and we will ' +
+-        'help you finish setup.',
+-      cta_label: 'Email us',
++        'Open The Growth Project app on your phone and enter the invite code ' +
++        'below during setup to connect with your coach. If your coach shared ' +
++        'a link, open it on your phone to launch the app. For help with ' +
++        'setup, contact support and include the code.',
++      cta_label: 'Contact support',
+       cta_href: `mailto:${SUPPORT_EMAIL}` + `?subject=${encodeURIComponent('Invite ' + code)}`,
+       invite_code: code,
+     });
+diff --git a/src/public-pages/trust-pages.html.ts b/src/public-pages/trust-pages.html.ts
+index 383959c9..33ad7436 100644
+--- a/src/public-pages/trust-pages.html.ts
++++ b/src/public-pages/trust-pages.html.ts
+@@ -534,8 +534,7 @@ function termsContent(): TrustPageContent {
+     headline: 'Terms of Service',
+     intro:
+       'These terms describe the agreement between you and The Growth Project ' +
+-      '(“TGP”) when you use our software. They are written as a company policy ' +
+-      'draft, and counsel review is recommended.',
++      '(“TGP”) when you use our software.',
+     sections: [
+       {
+         heading: 'Eligibility and account',
+diff --git a/test/help-delete-account.spec.ts b/test/help-delete-account.spec.ts
+index e75fb81d..a2c6a062 100644
+--- a/test/help-delete-account.spec.ts
++++ b/test/help-delete-account.spec.ts
+@@ -283,6 +283,24 @@ describe('/help/delete-account content', () => {
+     );
+   });
+ 
++  // F10 (C-4): the docs/help markdown mirrors tell the same 14-day timeline.
++  it('docs/help faq.md and support-boundaries.md mirror the 14-day grace answers (no thirty-day window)', () => {
++    const md = (name: string) =>
++      readFileSync(join(__dirname, '..', 'docs', 'help', name), 'utf8').replace(/\s+/g, ' ');
++    const faq = md('faq.md');
++    expect(faq).toContain(
++      'During the 14-day grace period they stay on your roster and can cancel the deletion in the app. ' +
++        'When it ends, they leave your roster and their data is permanently deleted and cannot be recovered.',
++    );
++    const boundaries = md('support-boundaries.md');
++    expect(boundaries).toContain(
++      'A deletion can be cancelled in the app during its 14-day grace period; once it is complete it cannot be reversed.',
++    );
++    for (const text of [faq, boundaries]) {
++      expect(text).not.toMatch(/thirty-day|thirty days|soft-delete window|deletion can be reversed/i);
++    }
++  });
++
+   it('follows the copy rules: no exclamation marks, emoji, placeholders or clinic partner', () => {
+     expect(text).not.toContain('!');
+     expect(text).not.toMatch(
+diff --git a/test/public-pages.spec.ts b/test/public-pages.spec.ts
+index 2c466ffa..aaf4fe63 100644
+--- a/test/public-pages.spec.ts
++++ b/test/public-pages.spec.ts
+@@ -154,3 +154,41 @@ describe('sanitizeInviteCode', () => {
+     expect(sanitizeInviteCode(12345 as unknown)).toBeNull();
+   });
+ });
++
++describe('public page copy accuracy (F10)', () => {
++  const controller = new PublicPagesController();
++
++  it('download pages say the listing is not live yet, with no review or notify-list claim', () => {
++    const ios = makeRes();
++    controller.iosDownload(ios);
++    expect(ios.body).toContain(
++      'The iPhone app is not on the App Store yet. It can be downloaded there once the listing is ' +
++        'live. For questions in the meantime, contact support.',
++    );
++    expect(ios.body).toContain('subject=iPhone%20app');
++    const android = makeRes();
++    controller.androidDownload(android);
++    expect(android.body).toContain(
++      'The Android app is not on Google Play yet. It can be downloaded there once the listing is ' +
++        'live. For questions in the meantime, contact support.',
++    );
++    expect(android.body).toContain('subject=Android%20app');
++    for (const body of [ios.body, android.body]) {
++      expect(body).toContain('Contact support');
++      expect(body).not.toMatch(/private review|we will notify|leave us your email|Email us|Notify%20me/i);
++    }
++  });
++
++  it('/signup with a code has no first person and no manual-setup promise', () => {
++    const res = makeRes();
++    controller.signup('GP-A1B2C3', res);
++    expect(res.body).toContain(
++      'Open The Growth Project app on your phone and enter the invite code below during setup to ' +
++        'connect with your coach. If your coach shared a link, open it on your phone to launch the ' +
++        'app. For help with setup, contact support and include the code.',
++    );
++    expect(res.body).toContain('Contact support');
++    expect(res.body).toMatch(/subject=Invite(%20|\+)GP-A1B2C3/);
++    expect(res.body).not.toMatch(/\bwe will\b|Email us|help you finish setup/i);
++  });
++});
+diff --git a/test/trust-pages.spec.ts b/test/trust-pages.spec.ts
+index 0586bd40..e5e1fd1c 100644
+--- a/test/trust-pages.spec.ts
++++ b/test/trust-pages.spec.ts
+@@ -684,3 +684,13 @@ describe('status page signup endpoint label (B-STORECOPY-2)', () => {
+     expect(text).not.toMatch(/invite-only/i);
+   });
+ });
++
++describe('Terms of Service intro (F10, S-IOSREV C-4)', () => {
++  it('does not call the live terms a draft', () => {
++    const text = visibleText(renderTrustPage('terms'));
++    expect(text).toContain(
++      'These terms describe the agreement between you and The Growth Project (“TGP”) when you use our software.',
++    );
++    expect(text).not.toMatch(/company policy draft|written as a company policy/i);
++  });
++});

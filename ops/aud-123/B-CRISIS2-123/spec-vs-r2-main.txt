@@ -1,0 +1,74 @@
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "my teammate passed out and is not breathing" is 911 on both :: got null want emergency
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "he's not breathing" is 911 on both :: got null want emergency
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "she's not breathing" is 911 on both :: got null want emergency
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "my teammate is not breathing" is 911 on both :: got null want emergency
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "unconscious and not breathing" is 911 on both :: got null want emergency
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "he stopped breathing" is 911 on both :: got null want emergency
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "she won't wake up" is 911 on both :: got null want emergency
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "he won't wake up" is 911 on both :: got null want emergency
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "my friend won't wake up" is 911 on both :: got null want emergency
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "she will not wake up" is 911 on both :: got null want emergency
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "my teammate passed out and won't wake up" is 911 on both :: got null want emergency
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "she's not waking up" is 911 on both :: got null want emergency
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "my son is not waking up" is 911 on both :: got null want emergency
+FAIL F9 a person who is not breathing or will not wake up is 911 on both routers > "the baby won't wake up" is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "my friend ODed" is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "he ODed" is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "they ODed" is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "I ODed" is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "I think my roommate ODed" is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "my teammate ODed last night" is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "a guy at my gym ODed" is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "my brother OD'ed" is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "she OD'ed" is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "my friend O.D." is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "he O.D." is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "my friend O.D.'d" is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "she O.D.ed" is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "someone at the gym O.D.'d" is 911 on both :: got null want emergency
+FAIL F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "possible O.D." is 911 on both :: got null want emergency
+PASS F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "my friend OD'd" is still 911 on both
+PASS F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "he OD'd" is still 911 on both
+PASS F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "he's ODing" is still 911 on both
+PASS F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "my teammate overdosed" is still 911 on both
+PASS F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "he overdosed" is still 911 on both
+PASS F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "I think she overdosed" is still 911 on both
+PASS F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "he is unconscious and not breathing" is still 911 on both
+PASS F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "my dad is not breathing" is still 911 on both
+PASS F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "I can't breathe" is still 911 on both
+PASS F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "I cannot breathe after my workout" is still 911 on both
+PASS F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "I cannot breathe after my workout. I need help now." is still 911 on both
+PASS F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "I can’t breathe during my workout. Please help me." is still 911 on both
+PASS F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers > "I can't breathe during squats and my chest hurts" is still 911 on both
+PASS B-758-1 every "can't breathe" during a workout is 911 on both routers > "I can't breathe while running and I'm wheezing" is 911 on both
+PASS B-758-1 every "can't breathe" during a workout is 911 on both routers > "I can't breathe during my workout and my lips are blue" is 911 on both
+PASS B-758-1 every "can't breathe" during a workout is 911 on both routers > "I can't breathe during my workout and my lips are turning blue" is 911 on both
+PASS B-758-1 every "can't breathe" during a workout is 911 on both routers > "I can't breathe during my run and my chest is tight" is 911 on both
+PASS B-758-1 every "can't breathe" during a workout is 911 on both routers > "I can't breathe during cardio and I don't have my inhaler" is 911 on both
+PASS B-758-1 every "can't breathe" during a workout is 911 on both routers > "I can't breathe during my workout, I think it's asthma" is 911 on both
+PASS B-758-1 every "can't breathe" during a workout is 911 on both routers > "I can't breathe during my workout, help" is 911 on both
+PASS B-758-1 every "can't breathe" during a workout is 911 on both routers > "I can't breathe during my workout, what do I do" is 911 on both
+PASS B-758-1 every "can't breathe" during a workout is 911 on both routers > "I can't breathe during spin class and my heart is racing" is 911 on both
+PASS B-758-1 every "can't breathe" during a workout is 911 on both routers > "can't breathe during burpees" is 911 on both
+PASS B-758-1 every "can't breathe" during a workout is 911 on both routers > "I can't breathe during burpees" is 911 on both
+FAIL F9 gym talk keeps the normal answer on both routers > "he is odd" is no longer sent to 911 :: got emergency want null
+FAIL F9 gym talk keeps the normal answer on both routers > "I have odd soreness after leg day" is no longer sent to 911 :: got emergency want null
+PASS F9 gym talk keeps the normal answer on both routers > "hold your breath on the brace" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "should I hold my breath on the brace" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "I get out of breath on the stairs" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "out of breath after sprints" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "creatine overdose?" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "can you overdose on creatine?" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "suicide sprints today" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "we did suicide sprints" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "not breathing properly during squats" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "I keep not breathing on the way up" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "I stopped breathing through my mouth when I run" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "she won't wake up early for training" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "he won't wake up for morning cardio" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "my husband won't wake up early to train with me" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "I can't wake up early for the gym" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "my legs won't wake up this morning" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "I ODed on cardio this week" stays normal
+PASS F9 gym talk keeps the normal answer on both routers > "Oded is my training partner" stays normal
+main: 42 passed, 31 failed, 73 total

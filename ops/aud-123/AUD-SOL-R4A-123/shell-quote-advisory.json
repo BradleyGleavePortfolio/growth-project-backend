@@ -1,0 +1,1 @@
+{"html_url":"https://github.com/advisories/GHSA-pqg4-j6r4-53mv","summary":"shell-quote: `quote()` command injection via a line terminator in a token after a `{ comment }` token","vulnerabilities":[{"first_patched_version":"1.11.0","package":{"ecosystem":"npm","name":"shell-quote"},"vulnerable_functions":[],"vulnerable_version_range":"\u003e= 1.8.4, \u003c 1.11.0"}]}

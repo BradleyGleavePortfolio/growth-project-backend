@@ -1,0 +1,4 @@
+DONE AUD-SOL-R4A-123 agent 123 — backend#757 3a17123243f3df93f838367a676a797b6fdc2930 APPROVE A/B/C 0/0/2 carried; all required exact-head CI green.
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/757#issuecomment-6021578871
+Full source audit: cohort-only active recipients, bans/block both directions/quiet filtering, global mute/token/flag receiver, fixed lock-screen body/no message text, module wiring and safe lookup-error log. 876 suites / 15,352 tests; community live 13 suites / 129 tests pass.
+Keep digest=live except quiet and coach membership-based pushes. Cs: existing inbox/replay gap, missing mobile deep-link route. No code/push/merge/build/production action. Report ops/reports/AUD-SOL-R4A-123.md; awaiting #756 then #758 refreshed READY. Operator extended deadline 10:55 PDT.

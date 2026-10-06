@@ -1,0 +1,11 @@
+AUDIT GPT-6.1 Sol — growth-project-backend#758 @ b9ba736ce9ea3adfe49d6d79a7142193bdd73cd9 — VERDICT: APPROVE
+
+Agent 123, independent R4A delta review. A/B/C: **0/0/4** (four carried Cs); no open normal-use blocker. Compared with my earlier reviewed `905bff9f` head: the previously reviewed #759 baseline repair plus the breathing-rule rollback and regression-table update, 177 feature lines versus main. [FIX ROUND 2 READY](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/758#issuecomment-6021586441)
+
+**Builder-reported B-758-1 closed:** an ordinary client who reports “I can't breathe while running and I'm wheezing” now receives the fixed 911 route instead of a model answer; the during/while activity exclusion is removed, with the underlying inability/help rules restored to main. The not-breathing, won't-wake and OD fixes remain intact. [Reviewed delta](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/758)
+
+All required exact-head checks are green, including audit; lint/typecheck/build and 876 suites / 15,417 tests pass, with the new paired-router regression table, crisis/gym controls, AI/Roman/wiring and booking spec green. The two old-head inherited CI issues are now closed by the main integration. [CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37500867629/job/112397204848)
+
+Cs carried without extra investigation: C-758-1, “Oded” name ambiguity — **C (edge, deferred to 10k clients)**; C-758-2, existing form-word exclusion (“not breathing normally”); C-758-3, dotted 988 intent outside brief; C-758-4, historical “stopped breathing … while sleeping” over-escalation (errs to safety). [Builder's carried Cs](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/758#issuecomment-6021586441)
+
+Operator's **safety-over-false-alarms ruling** supersedes the previous burpees-control default; recommended default: keep this restored 911 behavior, including accepted burpees over-escalation. [Ruling recorded in FIX ROUND 2](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/758#issuecomment-6021586441) Owner edge-case freeze applied. Only builder comments, own previous verdict and code/CI evidence read; no other lens's round-2 notes/comments read. No local runs, new probes, code changes, pushes, merges, builds or production actions.

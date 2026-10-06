@@ -1,0 +1,15 @@
+    ✓ "I keep not breathing on the way up" stays normal
+    ✓ "I stopped breathing through my mouth when I run" stays normal
+    ✓ "she won't wake up early for training" stays normal (1 ms)
+    ✓ "he won't wake up for morning cardio" stays normal
+    ✓ "my husband won't wake up early to train with me" stays normal
+    ✓ "I can't wake up early for the gym" stays normal (1 ms)
+    ✓ "my legs won't wake up this morning" stays normal
+    ✓ "I ODed on cardio this week" stays normal
+    ✓ "Oded is my training partner" stays normal (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       64 passed, 64 total
+Snapshots:   0 total
+Time:        1.167 s
+Ran all test suites matching test/crisis-router-not-breathing.spec.ts.

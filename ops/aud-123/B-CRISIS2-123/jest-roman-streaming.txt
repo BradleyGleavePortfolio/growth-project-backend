@@ -1,0 +1,81 @@
+[heavy] waiting for a slot: npx jest test/roman/roman-streaming.spec.ts
+[31m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[32m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable[39m
+[31m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[32m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable[39m
+[31m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[31m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[32m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=partial context=unavailable[39m
+[32m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=partial context=unavailable[39m
+[31m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[32m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable[39m
+[31m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[32m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=partial context=unavailable[39m
+[31m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[32m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable[39m
+[32m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [32m    LOG[39m [38;5;3m[AiEgressService] [39m[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1[39m
+[32m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [32m    LOG[39m [38;5;3m[AiEgressService] [39m[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1[39m
+[32m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [32m    LOG[39m [38;5;3m[AiEgressService] [39m[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[AiEgressService] [39m[33mai_egress.consent_read_failed (treated as no grant)[39m
+[32m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [32m    LOG[39m [38;5;3m[AiEgressService] [39m[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[32m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [32m    LOG[39m [38;5;3m[AiEgressService] [39m[32mai_egress.refused surface=roman.chat reason=no_live_grant clients=1 missing=1[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 307  - [39m10/06/2026, 4:36:11 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+PASS test/roman/roman-streaming.spec.ts (105 MB heap size)
+  Roman SSE streaming — happy path
+    ✓ translates Anthropic deltas into SSE frames and persists the full turn (49 ms)
+    ✓ writes correctly-framed SSE through the controller (data: …\n\n + done) (20 ms)
+  Roman SSE streaming — client disconnect
+    ✓ persists the PARTIAL assistant turn with interrupted=true when the client disconnects (2 ms)
+    ✓ forwards an AbortSignal to the Anthropic SDK and aborts it on client disconnect (3 ms)
+    ✓ aborts the upstream signal even on a clean completion (no leak) (2 ms)
+    ✓ aborting before any token still records an honest interrupted turn (2 ms)
+  Roman SSE streaming — defence in depth
+    ✓ the service refuses to stream while the feature flag is OFF (5 ms)
+    ✓ surfaces ROMAN_UNAVAILABLE when no Anthropic client is configured (2 ms)
+  Roman — R2b box-2 consent
+    ✓ grant: the client chat streams (2 ms)
+    ✓ no grant: 403 ai_consent_required before the turn is stored or the stream opens (2 ms)
+    ✓ revoked after the pre-check: the stream is refused at send, no Roman turn is stored (1 ms)
+    ✓ revoked mid-request through the controller: a structured error event, not a generic one (1 ms)
+    ✓ B-626-1/B-626-2: a policy refusal mid-stream is a specific {code, message} frame; the reference is the X-Request-ID header (2 ms)
+    ✓ ledger error: fails closed (1 ms)
+    ✓ coach caller: own scope, no client consent read (1 ms)
+  Roman — crisis messages are never blocked by the turn limit or the spend cap
+    ✓ daily cap reached: a self-harm message still gets the 988 template; an ordinary one gets the coded 503 (9 ms)
+    ✓ daily cap reached: "I want to take all my pills" gets the 988 template, no model call (B-AIG4-123) (1 ms)
+    ✓ daily cap reached: "I'm going to take all of my meds tonight" gets the 988 template, no model call (B-AIG4-123) (1 ms)
+    ✓ daily cap reached: "I am gonna take a bunch of pills" gets the 988 template, no model call (B-AIG4-123) (1 ms)
+    ✓ daily cap reached: "I want to take a whole bottle of Tylenol" gets the 988 template, no model call (B-AIG4-123) (1 ms)
+    ✓ daily cap reached: "I'm going to OD" gets the 988 template, no model call (B-AIG4-123)
+    ✓ daily cap reached: "I am gonna OD" gets the 988 template, no model call (B-AIG4-123) (1 ms)
+    ✓ daily cap reached: "I want to OD" gets the 988 template, no model call (B-AIG4-123) (10 ms)
+    ✓ daily cap reached: "Possible overdose, what do I do?" gets the emergency template, no model call (B-ROMAN911-123 FIX ROUND 1) (1 ms)
+    ✓ daily cap reached: "my teammate is overdosing, what do I do" gets the emergency template, no model call (B-ROMAN911-123 FIX ROUND 1)
+    ✓ daily cap reached: "I cut myself again" gets the self_harm template, no model call (B-ROMAN911-123 FIX ROUND 1)
+    ✓ turn limit used up: an emergency message still gets the 911 template; an ordinary one gets the 429 (2 ms)
+  Roman — a crisis message is answered without box 2; nothing else is
+    ✓ no grant + self-harm message: the 988 template, zero model calls; an ordinary message is still 403 (1 ms)
+    ✓ A-666-1 (Opus) no grant + acute emergency without the trigger word (I think I am going into anaphylactic shock): the 911 template, zero model calls (1 ms)
+    ✓ A-666-1 (Opus) no grant + acute emergency without the trigger word (I took a whole bottle of pills): the 911 template, zero model calls (1 ms)
+    ✓ no AI provider configured: an emergency message still gets the 911 template
+
+Test Suites: 1 passed, 1 total
+Tests:       31 passed, 31 total
+Snapshots:   0 total
+Time:        2.25 s
+Ran all test suites matching test/roman/roman-streaming.spec.ts.

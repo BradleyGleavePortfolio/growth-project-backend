@@ -1,0 +1,89 @@
+[heavy] waiting for a slot: npx jest test/roman/roman-launch-hardening.spec.ts
+[33m[Nest] 32674  - [39m10/06/2026, 4:35:53 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[31m[Nest] 32674  - [39m10/06/2026, 4:35:53 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[31m[Nest] 32674  - [39m10/06/2026, 4:35:53 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[31m[Nest] 32674  - [39m10/06/2026, 4:35:53 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.spend_ledger_failed: Error[39m
+[31m[Nest] 32674  - [39m10/06/2026, 4:35:53 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[31m[Nest] 32674  - [39m10/06/2026, 4:35:56 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[31m[Nest] 32674  - [39m10/06/2026, 4:35:56 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[31m[Nest] 32674  - [39m10/06/2026, 4:35:56 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+PASS test/roman/roman-launch-hardening.spec.ts (82 MB heap size)
+  A-R4-1 safety router normalisation
+    ✓ I can’t breathe -> emergency (5 ms)
+    ✓ I canʼt breathe after that set -> emergency (1 ms)
+    ✓ i  can’t breathe -> emergency (1 ms)
+    ✓ I don’t want to live anymore -> self_harm (13 ms)
+    ✓ I do not want to live anymore -> self_harm (9 ms)
+    ✓ I want to die -> self_harm (1 ms)
+    ✓ I can​t breathe -> emergency (1 ms)
+    ✓ a smart-apostrophe emergency is answered by the fixed template with zero provider calls (7 ms)
+  A-R4-2 medication directives and false reassurance are replaced, never appended to
+    ✓ "Take 400 mg ibuprofen twice daily." plus a physician line becomes the safe template (9 ms)
+    ✓ "You do not need a doctor. Keep training as usual." is replaced for injury_pain (5 ms)
+    ✓ a medical_scope reply that changes a medication is replaced even in a normal-looking sentence (2 ms)
+    ✓ an injury reply without a stop instruction is replaced; a complete one only gains the exact line (3 ms)
+  A-R4-3 numbers are judged by role and unit
+    ✓ "Eat only 900 calories a day." is a floor breach even though 900 kcal is logged today (17 ms)
+    ✓ a daily directive above the floor but far from the coach target is a target mismatch (2 ms)
+    ✓ quoting the real logged and remaining numbers passes (2 ms)
+    ✓ a protein number never validates against a carbs fact (1 ms)
+    ✓ degraded mode: a personal number with no context gives the data-unavailable copy
+  B-R3-2 client_data delimiter cannot be closed from inside a field
+    ✓ escapes < > & in every string value and keeps valid JSON (1 ms)
+    ✓ the rendered block has exactly one opening and one closing tag (1 ms)
+  C-R3-1 wearables bucket by local day and only label last night as last night
+    ✓ a 23:30 local step sample counts for that local day, not the next UTC day (3 ms)
+    ✓ sleep from three nights ago is not "last night"; it carries its own date (1 ms)
+  B-R3-1 the production graph binds the real consultation source
+    ✓ RomanClientContextService cannot be built without a source, and the module binds the #607 reader (11 ms)
+  B-R8-1 no box-2 grant: zero context builds, zero provider calls, nothing stored
+    ✓ missing (10 ms)
+    ✓ withdrawn (10 ms)
+    ✓ read_error (2 ms)
+  B-R8-2 / A-R4-4 one immutable bundle; only checked text is stored and emitted
+    ✓ the prompt and the post-check read the same bundle, built once (5 ms)
+    ✓ postCheckContextOf keeps typed facts from the same context object (1 ms)
+    ✓ B-668-3 (Sol): kcal facts keep their family, day and source (1 ms)
+  A-R3-1 grounding failure is sanitised and degraded, never silent
+    ✓ logs no raw error text and tells the model the data is unavailable (3 ms)
+  OR-113-2 launch hardening
+    ✓ uses the current model id (claude-3-7-sonnet-20250219 was retired 2026-02-19)
+    ✓ over the daily cap: coded 503 with specific copy, zero provider calls (2 ms)
+    ✓ ledger unreadable: fails closed with specific copy and no provider call (1 ms)
+    ✓ an invalid cap value never means "no cap"
+    ✓ model failure before any text: ROMAN_MODEL_UNAVAILABLE with honest copy, no invented reply (1 ms)
+    ✓ rate-limit copy says when Roman is back and where the coach is
+    ✓ every new client-facing copy follows the copy rules (no exclamation marks, no "we") (1 ms)
+    ✓ the client system prompt carries the guardrail contract and the client_data block
+  FR1-651-1 Roman failure logs are content-free for every error class, not only ORM errors
+    ✓ a ledger failure with a plain Error logs the class only, never its message (2 ms)
+    ✓ a provider error whose message echoes the conversation logs class and status only (1468 ms)
+    ✓ romanErrorTag / romanSanitizedError keep the class, Prisma code and status, never text (2 ms)
+  FR1-651-2 Roman failure copy is written for the caller (a coach is never told to message "your coach")
+    ✓ over the daily cap: the coach gets the coach-audience copy on both checks (2 ms)
+    ✓ ledger unreadable and model failure: coach-audience copy, same machine codes (1322 ms)
+    ✓ switched off and not configured: coach-audience copy (3 ms)
+    ✓ rate-limit copy: client is pointed to the coach, coach to the rest of the app (1 ms)
+    ✓ every coach-audience copy follows the copy rules and never says "your coach"
+  B-651-9 (supersedes FR1-651-3): no shipped reply carries an exclamation mark
+    ✓ a reply with exclamations is stored and emitted with none, on a fresh or spent session (5 ms)
+  FR1-651-5 the SafetyRouter catches a request to eat below the floor, by number
+    ✓ eating_disorder_risk: Can I drop to 1,000 calories to speed this up? (1 ms)
+    ✓ eating_disorder_risk: what if I aim for 900 kcal a day
+    ✓ eating_disorder_risk: I want to get down to 1100 calories
+    ✓ eating_disorder_risk: Is it ok to stay under 800 cals until the wedding?
+    ✓ eating_disorder_risk: can I cut to 1,150 kcal
+    ✓ not a restriction request: Can I go up to 1,800 calories on training days?
+    ✓ not a restriction request: Is 500 calories at lunch too much? (1 ms)
+    ✓ not a restriction request: I burned 800 calories on my run
+    ✓ not a restriction request: My target is 1,450 kcal, how much is left?
+    ✓ not a restriction request: Should I aim for 1,500 calories? (1 ms)
+    ✓ not a restriction request: Is a 300 calorie snack fine before training?
+  FR1-651-9 a chat deleted during the model call settles the ledger and stores nothing
+    ✓ 404 ROMAN_SESSION_NOT_FOUND, no Roman turn, ledger settled session_gone with the real tokens (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       58 passed, 58 total
+Snapshots:   0 total
+Time:        5.327 s
+Ran all test suites matching test/roman/roman-launch-hardening.spec.ts.

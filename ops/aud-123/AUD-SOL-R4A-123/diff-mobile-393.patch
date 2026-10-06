@@ -1,0 +1,517 @@
+diff --git a/src/components/community/EmptyState.tsx b/src/components/community/EmptyState.tsx
+index 70fab553..a0281ea7 100644
+--- a/src/components/community/EmptyState.tsx
++++ b/src/components/community/EmptyState.tsx
+@@ -27,10 +27,14 @@ export interface CommunityEmptyStateProps {
+   firstName?: string | null;
+   /** Short title above the Roman copy (e.g. "The Hall is quiet"). */
+   title: string;
+-  /** Primary action label — REQUIRED (no spinner-only / placeholder states). */
+-  actionLabel: string;
+-  /** Primary action handler — REQUIRED. */
+-  onAction: () => void;
++  /**
++   * Primary action label (no spinner-only / placeholder states). Omit the
++   * label and handler together only when no action can work for this member
++   * (C-F6-1: a client with no coach gets no "Send your coach a message").
++   */
++  actionLabel?: string;
++  /** Primary action handler; rendered only together with actionLabel. */
++  onAction?: () => void;
+   /** Optional seed override for the deterministic dry-quip selector. */
+   quipSeed?: string;
+   testID?: string;
+@@ -57,18 +61,20 @@ export default function CommunityEmptyState({
+       <Text style={[styles.body, { color: semanticColors.textMuted }]}>
+         {body}
+       </Text>
+-      <HapticPressable
+-        intent="medium"
+-        onPress={onAction}
+-        accessibilityRole="button"
+-        accessibilityLabel={actionLabel}
+-        testID={`${testID ?? 'community-empty'}-action`}
+-        style={[styles.cta, { backgroundColor: semanticColors.accent }]}
+-      >
+-        <Text style={[styles.ctaLabel, { color: semanticColors.textOnAccent }]}>
+-          {actionLabel}
+-        </Text>
+-      </HapticPressable>
++      {actionLabel && onAction ? (
++        <HapticPressable
++          intent="medium"
++          onPress={onAction}
++          accessibilityRole="button"
++          accessibilityLabel={actionLabel}
++          testID={`${testID ?? 'community-empty'}-action`}
++          style={[styles.cta, { backgroundColor: semanticColors.accent }]}
++        >
++          <Text style={[styles.ctaLabel, { color: semanticColors.textOnAccent }]}>
++            {actionLabel}
++          </Text>
++        </HapticPressable>
++      ) : null}
+     </View>
+   );
+ }
+diff --git a/src/components/home/PushPermissionCard.tsx b/src/components/home/PushPermissionCard.tsx
+index cf9d0bb3..552448c5 100644
+--- a/src/components/home/PushPermissionCard.tsx
++++ b/src/components/home/PushPermissionCard.tsx
+@@ -7,6 +7,11 @@
+  * and only a tap on "Turn on" shows the OS prompt. It renders only when the OS
+  * can still ask (status undetermined) and the user has not dismissed it.
+  * Dismissal is stored per user (R15) in prefsStorage.
++ *
++ * C-S-PUSH-3: the coach app mounts the same card (audience="coach") at the top
++ * of the Clients landing screen, so a fresh coach install also gets the ask
++ * and registers its token through the same path. Same per-user key, so it
++ * shows once per account.
+  */
+ import React, { useEffect, useState } from 'react';
+ import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+@@ -20,7 +25,16 @@ import { typography } from '../../theme/tokens';
+ 
+ export const pushPrimerDismissedKey = (userId: string) => `push_primer_dismissed:${userId}`;
+ 
+-export default function PushPermissionCard() {
++export type PushPermissionAudience = 'client' | 'coach';
++
++const BODY_COPY: Record<PushPermissionAudience, string> = {
++  client: 'Turn on notifications so you see messages and plan updates from your coach.',
++  coach: 'Turn on notifications so you see client messages and new client alerts.',
++};
++
++export default function PushPermissionCard({
++  audience = 'client',
++}: { audience?: PushPermissionAudience } = {}) {
+   const { semanticColors: sc } = useTheme();
+   const user = useCurrentUser();
+   const userId = user?.id ?? null;
+@@ -71,9 +85,7 @@ export default function PushPermissionCard() {
+       testID="push-permission-card"
+     >
+       <Text style={{ ...typography.eyebrow, color: sc.textMuted, marginBottom: 6 }}>STAY IN TOUCH</Text>
+-      <Text style={{ ...typography.body, color: sc.textPrimary }}>
+-        Turn on notifications so you see messages and plan updates from your coach.
+-      </Text>
++      <Text style={{ ...typography.body, color: sc.textPrimary }}>{BODY_COPY[audience]}</Text>
+       <View style={styles.actions}>
+         <Pressable
+           onPress={enable}
+diff --git a/src/components/home/__tests__/PushPermissionCard.test.tsx b/src/components/home/__tests__/PushPermissionCard.test.tsx
+index 1fa8f4ab..b9b48922 100644
+--- a/src/components/home/__tests__/PushPermissionCard.test.tsx
++++ b/src/components/home/__tests__/PushPermissionCard.test.tsx
+@@ -42,6 +42,21 @@ describe('PushPermissionCard (deferred OS prompt)', () => {
+     expect(mockStore.get(pushPrimerDismissedKey('u1'))).toBe('true');
+   });
+ 
++  it('coach audience (C-S-PUSH-3): coach copy, then the same token registration on tap', async () => {
++    mockGetPerms.mockResolvedValue({ status: 'undetermined', canAskAgain: true });
++    mockRegister.mockResolvedValue({ token: 'coach-tok', granted: true });
++    const { findByTestId, getByTestId, getByText, queryByText } = await render(
++      <PushPermissionCard audience="coach" />,
++    );
++    await findByTestId('push-permission-card');
++    expect(getByText('Turn on notifications so you see client messages and new client alerts.')).toBeTruthy();
++    expect(queryByText(/plan updates from your coach/)).toBeNull();
++    await fireEvent.press(getByTestId('push-permission-enable'));
++    await waitFor(() => expect(mockRegister).toHaveBeenCalledWith({ requestPermission: true }));
++    await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('coach-tok'));
++    expect(mockStore.get(pushPrimerDismissedKey('u1'))).toBe('true');
++  });
++
+   it('stays hidden when already granted', async () => {
+     mockGetPerms.mockResolvedValue({ status: 'granted', canAskAgain: true });
+     const { queryByTestId } = await render(<PushPermissionCard />);
+diff --git a/src/screens/coach/ClientsListScreen.tsx b/src/screens/coach/ClientsListScreen.tsx
+index 2749a5d1..f73ba0f0 100644
+--- a/src/screens/coach/ClientsListScreen.tsx
++++ b/src/screens/coach/ClientsListScreen.tsx
+@@ -7,6 +7,7 @@ import {
+   TextInput,
+ } from 'react-native';
+ import HapticPressable from '../../components/HapticPressable';
++import PushPermissionCard from '../../components/home/PushPermissionCard';
+ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+ import { Ionicons } from '@expo/vector-icons';
+ import { ClientsStackParamList } from '../../navigation/CoachNavigator';
+@@ -137,6 +138,13 @@ export default function ClientsListScreen({ navigation }: Props) {
+         </View>
+       </View>
+ 
++      {/* C-S-PUSH-3: the coach landing screen carries the same deferred push
++          ask as client Home (once per account, dismissible, OS prompt only on
++          tap), so client messages and new-client alerts reach a fresh install. */}
++      <View style={styles.pushCardWrap}>
++        <PushPermissionCard audience="coach" />
++      </View>
++
+       {/* Psych #2: Trust as Emotion — coach-side privacy context banner */}
+       <View style={styles.privacyBanner}>
+         <Ionicons name="shield-checkmark-outline" size={16} color={colors.info} style={{ marginTop: 1 }} />
+@@ -235,6 +243,9 @@ const makeStyles = (colors: ThemeColors) =>
+     paddingHorizontal: 24,
+     marginBottom: 20,
+   },
++  pushCardWrap: {
++    paddingHorizontal: 24,
++  },
+   titleRow: {
+     flexDirection: 'row',
+     alignItems: 'flex-end',
+diff --git a/src/screens/coach/__tests__/ClientsListPushPrimer.test.tsx b/src/screens/coach/__tests__/ClientsListPushPrimer.test.tsx
+new file mode 100644
+index 00000000..c83df02a
+--- /dev/null
++++ b/src/screens/coach/__tests__/ClientsListPushPrimer.test.tsx
+@@ -0,0 +1,102 @@
++/**
++ * C-S-PUSH-3: a fresh coach install never saw the OS notification ask (the
++ * opt-in card lived only on client Home), so client messages and new-client
++ * alerts never reached the coach. The coach landing screen (Clients) now
++ * mounts the same deferred card: shown once while the OS can still ask,
++ * dismissible, and "Turn on" registers the token through the existing path.
++ */
++import React from 'react';
++import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
++
++const mockGetPerms = jest.fn();
++jest.mock('expo-notifications', () => ({ getPermissionsAsync: () => mockGetPerms() }));
++const mockRegister = jest.fn();
++jest.mock('../../../services/pushNotifications', () => ({
++  registerForPushNotifications: (o: unknown) => mockRegister(o),
++}));
++const mockUpdate = jest.fn((_t: string) => Promise.resolve());
++jest.mock('../../../services/api', () => ({ usersApi: { updatePushToken: (t: string) => mockUpdate(t) } }));
++const mockStore = new Map<string, string>();
++jest.mock('../../../storage/mmkv', () => ({
++  prefsStorage: {
++    getStringAsync: async (k: string) => mockStore.get(k),
++    set: async (k: string, v: string) => void mockStore.set(k, v),
++  },
++}));
++jest.mock('../../../hooks/useCurrentUser', () => ({
++  useCurrentUser: () => ({ id: 'coach-1', role: 'coach' }),
++}));
++jest.mock('../../../store/coachStore', () => ({
++  useCoachStore: () => ({
++    isLoading: false,
++    loadError: null,
++    searchQuery: '',
++    filterStatus: 'all',
++    loadClients: jest.fn(),
++    setSearchQuery: jest.fn(),
++    setFilterStatus: jest.fn(),
++    getFilteredClients: () => [],
++  }),
++}));
++jest.mock('../../../theme/ThemeProvider', () => {
++  const anyColor = new Proxy({}, { get: () => '#000000' });
++  return { useTheme: () => ({ colors: anyColor, semanticColors: anyColor }) };
++});
++jest.mock('@expo/vector-icons', () => ({ Ionicons: () => null }));
++jest.mock('../../../components/HapticPressable', () => {
++  const { Pressable } = jest.requireActual('react-native');
++  return Pressable;
++});
++jest.mock('../../../ui/skeletons', () => ({ SkeletonClientCard: () => null }));
++jest.mock('../../../ui/empty-states', () => ({
++  EmptyStateNoClients: () => null,
++  EmptyStateNoResults: () => null,
++}));
++
++import ClientsListScreen from '../ClientsListScreen';
++import { pushPrimerDismissedKey } from '../../../components/home/PushPermissionCard';
++
++type Nav = React.ComponentProps<typeof ClientsListScreen>['navigation'];
++async function mount() {
++  const navigation: Pick<Nav, 'navigate'> = { navigate: jest.fn() };
++  return await render(<ClientsListScreen navigation={navigation as Nav} />);
++}
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockStore.clear();
++});
++
++it('a fresh coach install sees the notification ask; Turn on registers the push token', async () => {
++  mockGetPerms.mockResolvedValue({ status: 'undetermined', canAskAgain: true });
++  mockRegister.mockResolvedValue({ token: 'coach-tok', granted: true });
++  await mount();
++  await screen.findByTestId('push-permission-card');
++  expect(screen.getByText('Turn on notifications so you see client messages and new client alerts.')).toBeTruthy();
++  // The OS prompt only comes from the tap.
++  expect(mockRegister).not.toHaveBeenCalled();
++  await fireEvent.press(screen.getByTestId('push-permission-enable'));
++  await waitFor(() => expect(mockRegister).toHaveBeenCalledWith({ requestPermission: true }));
++  await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('coach-tok'));
++  await waitFor(() => expect(screen.queryByTestId('push-permission-card')).toBeNull());
++});
++
++it('Not now hides it for good (once per account)', async () => {
++  mockGetPerms.mockResolvedValue({ status: 'undetermined', canAskAgain: true });
++  await mount();
++  await fireEvent.press(await screen.findByTestId('push-permission-dismiss'));
++  await waitFor(() => expect(screen.queryByTestId('push-permission-card')).toBeNull());
++  expect(mockStore.get(pushPrimerDismissedKey('coach-1'))).toBe('true');
++  expect(mockRegister).not.toHaveBeenCalled();
++
++  await mount();
++  await new Promise((r) => setTimeout(r, 10));
++  expect(screen.queryByTestId('push-permission-card')).toBeNull();
++});
++
++it('a coach who already allowed notifications sees no card', async () => {
++  mockGetPerms.mockResolvedValue({ status: 'granted', canAskAgain: true });
++  await mount();
++  await new Promise((r) => setTimeout(r, 10));
++  expect(screen.queryByTestId('push-permission-card')).toBeNull();
++});
+diff --git a/src/screens/coach/__tests__/ClientsListRiskPill.test.tsx b/src/screens/coach/__tests__/ClientsListRiskPill.test.tsx
+index bef8eeaa..e425f14c 100644
+--- a/src/screens/coach/__tests__/ClientsListRiskPill.test.tsx
++++ b/src/screens/coach/__tests__/ClientsListRiskPill.test.tsx
+@@ -30,6 +30,8 @@ jest.mock('../../../components/HapticPressable', () => {
+   return Pressable;
+ });
+ jest.mock('../../../ui/skeletons', () => ({ SkeletonClientCard: () => null }));
++// The push ask has its own suite (ClientsListPushPrimer.test.tsx).
++jest.mock('../../../components/home/PushPermissionCard', () => () => null);
+ jest.mock('../../../ui/empty-states', () => ({
+   EmptyStateNoClients: () => null,
+   EmptyStateNoResults: () => null,
+diff --git a/src/screens/community/CommunitySpaceScreen.tsx b/src/screens/community/CommunitySpaceScreen.tsx
+index 7506cf06..b7229caf 100644
+--- a/src/screens/community/CommunitySpaceScreen.tsx
++++ b/src/screens/community/CommunitySpaceScreen.tsx
+@@ -200,7 +200,8 @@ export default function CommunitySpaceScreen({
+   }
+ 
+   // No space yet: point the member to their coach and offer no composer, so
+-  // nothing can post to an empty workspace id (B-E2E-1).
++  // nothing can post to an empty workspace id (B-E2E-1). A client with no
++  // coach gets no message button (C-F6-1): there is no one to message.
+   if (noWorkspace) {
+     return (
+       <Container>
+@@ -209,8 +210,8 @@ export default function CommunitySpaceScreen({
+             stem="noCohorts"
+             firstName={client?.firstName ?? client?.name ?? null}
+             title="No cohort yet"
+-            actionLabel="Send your coach a message"
+-            onAction={messageCoach}
++            actionLabel={client?.coach_id ? 'Send your coach a message' : undefined}
++            onAction={client?.coach_id ? messageCoach : undefined}
+             testID="community-space-no-workspace"
+           />
+         </View>
+diff --git a/src/screens/community/CommunityTodayScreen.tsx b/src/screens/community/CommunityTodayScreen.tsx
+index edd8b45a..cc006891 100644
+--- a/src/screens/community/CommunityTodayScreen.tsx
++++ b/src/screens/community/CommunityTodayScreen.tsx
+@@ -10,6 +10,7 @@
+ import React from 'react';
+ import { Text, View, StyleSheet, ScrollView } from 'react-native';
+ import { useNavigation } from '@react-navigation/native';
++import type { NavigationProp, ParamListBase } from '@react-navigation/native';
+ import { Ionicons } from '@expo/vector-icons';
+ import { useTheme } from '../../theme/useTheme';
+ import { spacing, radius } from '../../theme/tokens';
+@@ -28,7 +29,10 @@ interface Props {
+ export default function CommunityTodayScreen(_props: Props): React.ReactElement {
+   const { semanticColors } = useTheme();
+   const navigation = useNavigation<CommunityNav>();
++  const rootNavigation = useNavigation<NavigationProp<ParamListBase>>();
+   const client = useCurrentUser();
++  // C-F6-1: "Send your coach a message" only renders for a client with a coach.
++  const hasCoach = Boolean(client?.coach_id);
+   const today = useCommunityToday();
+ 
+   const data = today.data;
+@@ -41,8 +45,14 @@ export default function CommunityTodayScreen(_props: Props): React.ReactElement
+     !data.pinned_post &&
+     !data.challenge;
+ 
++  // C-F6-1: with community DMs off the button opened nothing. It now opens the
++  // 1:1 coach Messages screen in the Home stack (the m#389 no-workspace path).
+   const goToMessages = () => {
+-    if (featureFlags.communityDm) navigation.navigate('CommunityDmList');
++    if (featureFlags.communityDm) {
++      navigation.navigate('CommunityDmList');
++    } else {
++      rootNavigation.navigate('Home', { screen: 'Messages' });
++    }
+   };
+   const goToHall = () => {
+     if (featureFlags.communityHall) {
+@@ -125,9 +135,13 @@ export default function CommunityTodayScreen(_props: Props): React.ReactElement
+           firstName={client?.firstName ?? client?.name ?? null}
+           title={noMembership ? 'No cohort yet' : 'Nothing waiting today'}
+           actionLabel={
+-            noMembership ? 'Send your coach a message' : 'Visit the Hall'
++            noMembership
++              ? hasCoach
++                ? 'Send your coach a message'
++                : undefined
++              : 'Visit the Hall'
+           }
+-          onAction={noMembership ? goToMessages : goToHall}
++          onAction={noMembership ? (hasCoach ? goToMessages : undefined) : goToHall}
+           testID="community-today-empty"
+         />
+       </ScrollView>
+diff --git a/src/screens/community/__tests__/CommunitySpaceScreen.test.tsx b/src/screens/community/__tests__/CommunitySpaceScreen.test.tsx
+index 43f000e3..1b3b7bd3 100644
+--- a/src/screens/community/__tests__/CommunitySpaceScreen.test.tsx
++++ b/src/screens/community/__tests__/CommunitySpaceScreen.test.tsx
+@@ -36,9 +36,10 @@ jest.mock('@react-navigation/native', () => ({
+   useNavigation: () => ({ navigate: mockNavigate }),
+ }));
+ 
+-// ── Current user ─────────────────────────────────────────────────────────────
++// ── Current user (a client with a coach; the coachless case is in
++// communityMessageCoach.test.tsx) ──────────────────────────────────────────
+ jest.mock('../../../hooks/useCurrentUser', () => ({
+-  useCurrentUser: () => ({ id: 'me-1', firstName: 'Dana', name: 'Dana' }),
++  useCurrentUser: () => ({ id: 'me-1', firstName: 'Dana', name: 'Dana', coach_id: 'coach-1' }),
+ }));
+ 
+ // ── Safe-area stub ───────────────────────────────────────────────────────────
+diff --git a/src/screens/community/__tests__/communityMessageCoach.test.tsx b/src/screens/community/__tests__/communityMessageCoach.test.tsx
+new file mode 100644
+index 00000000..01ebfcc9
+--- /dev/null
++++ b/src/screens/community/__tests__/communityMessageCoach.test.tsx
+@@ -0,0 +1,120 @@
++/**
++ * C-F6-1: Community "Send your coach a message".
++ *
++ *   - Today (no cohort yet) with community DMs OFF used to call nothing; it now
++ *     opens the 1:1 coach Messages screen in the Home stack (Home > Messages),
++ *     the same target as the m#389 no-workspace state.
++ *   - With DMs ON it still opens the community DM inbox.
++ *   - A client with no coach sees no message button on either surface.
++ */
++import React from 'react';
++import { render, screen, fireEvent } from '@testing-library/react-native';
++
++jest.mock('../../../theme/useTheme', () => {
++  const { lightTokens } = jest.requireActual('../../../theme/tokens');
++  return { useTheme: () => ({ colorScheme: 'light', semanticColors: lightTokens }) };
++});
++
++const mockNavigate = jest.fn();
++jest.mock('@react-navigation/native', () => ({
++  useNavigation: () => ({ navigate: mockNavigate }),
++}));
++
++let mockUser: { id: string; firstName: string; name: string; coach_id?: string } = {
++  id: 'me-1',
++  firstName: 'Dana',
++  name: 'Dana',
++  coach_id: 'coach-1',
++};
++jest.mock('../../../hooks/useCurrentUser', () => ({
++  useCurrentUser: () => mockUser,
++}));
++
++const mockFlags = {
++  communityHall: true,
++  communityDm: false,
++  communityEvents: true,
++  communityChallenges: true,
++  communityVoiceNotes: false,
++};
++// Getter: the factory runs before `mockFlags` is initialised (jest.mock hoisting).
++jest.mock('../../../config/featureFlags', () => ({
++  get featureFlags() {
++    return mockFlags;
++  },
++}));
++
++jest.mock('react-native-safe-area-context', () => ({
++  SafeAreaView: ({ children }: { children: React.ReactNode }) => children,
++}));
++
++const mockToday = {
++  data: {
++    feature_flag_state: {},
++    cohort: null,
++    event: null,
++    pinned_post: null,
++    challenge: null,
++    empty_reason: 'no_membership',
++  } as unknown,
++  isLoading: false,
++  isError: false,
++  refetch: jest.fn(),
++};
++const mockPosts = { data: [], isLoading: false, isError: false, refetch: jest.fn() };
++const mockMe = { data: { workspace_id: null }, isLoading: false, isError: false, refetch: jest.fn() };
++jest.mock('../../../hooks/useCommunity', () => ({
++  useCommunityToday: () => mockToday,
++  useCommunityMe: () => mockMe,
++  usePosts: () => mockPosts,
++}));
++
++import CommunityTodayScreen from '../CommunityTodayScreen';
++import CommunitySpaceScreen from '../CommunitySpaceScreen';
++
++beforeEach(() => {
++  mockNavigate.mockReset();
++  mockFlags.communityDm = false;
++  mockUser = { id: 'me-1', firstName: 'Dana', name: 'Dana', coach_id: 'coach-1' };
++});
++
++describe('Community Today "Send your coach a message" (C-F6-1)', () => {
++  it('with community DMs off, opens the 1:1 coach Messages screen', async () => {
++    await render(<CommunityTodayScreen />);
++    expect(screen.getByText('No cohort yet')).toBeTruthy();
++    await fireEvent.press(screen.getByTestId('community-today-empty-action'));
++    expect(mockNavigate).toHaveBeenCalledTimes(1);
++    expect(mockNavigate).toHaveBeenCalledWith('Home', { screen: 'Messages' });
++  });
++
++  it('with community DMs on, still opens the community DM inbox', async () => {
++    mockFlags.communityDm = true;
++    await render(<CommunityTodayScreen />);
++    await fireEvent.press(screen.getByTestId('community-today-empty-action'));
++    expect(mockNavigate).toHaveBeenCalledWith('CommunityDmList');
++  });
++
++  it('a client with no coach sees no message button', async () => {
++    mockUser = { id: 'me-1', firstName: 'Dana', name: 'Dana' };
++    await render(<CommunityTodayScreen />);
++    expect(screen.getByText('No cohort yet')).toBeTruthy();
++    expect(screen.queryByTestId('community-today-empty-action')).toBeNull();
++    expect(screen.queryByText('Send your coach a message')).toBeNull();
++  });
++});
++
++describe('Community no-workspace state "Send your coach a message" (C-F6-1)', () => {
++  it('a client with a coach opens the 1:1 coach Messages screen', async () => {
++    await render(<CommunitySpaceScreen space="hall" />);
++    await fireEvent.press(screen.getByTestId('community-space-no-workspace-action'));
++    expect(mockNavigate).toHaveBeenCalledWith('Home', { screen: 'Messages' });
++  });
++
++  it('a client with no coach sees no message button', async () => {
++    mockUser = { id: 'me-1', firstName: 'Dana', name: 'Dana' };
++    await render(<CommunitySpaceScreen space="hall" />);
++    expect(screen.getByTestId('community-space-no-workspace')).toBeTruthy();
++    expect(screen.queryByTestId('community-space-no-workspace-action')).toBeNull();
++    expect(screen.queryByText('Send your coach a message')).toBeNull();
++  });
++});
+diff --git a/src/screens/notifications/README.md b/src/screens/notifications/README.md
+index 7d339e55..23e82257 100644
+--- a/src/screens/notifications/README.md
++++ b/src/screens/notifications/README.md
+@@ -167,4 +167,4 @@ No additional env vars are required while mocked. When live, the standard `EXPO_
+ - `src/services/pushTapRouter.ts` delivers a tap only when RootNavigator reports an explicit app session (`setPushSession(pushSessionFor(authState, userId))`): `student`/`package_prompt` mount the client navigator, `coach` the coach navigator. Bootstrap and every onboarding root (lean questions, Day-1, Day-1 win, coach wizard) hold the tap. Sign-out drops it, a tap that arrives while signed out is dropped, and a session for a different user id drops it.
+ - Destinations are a role-aware allow-list of real nested routes. Client: `Messages`, `NotificationCenter`, `Habits` -> `Home`; `Timeline`, `MoreIndex`, `Membership`, `Deliverables` -> `MoreTab`; `WorkoutMain` -> `WorkoutTab`; `CommunityEventDetail` -> `CommunityTab` (community + events flags). Coach: `Messages` (root tab); `NotificationCenter`, `NotificationPreferences` -> `ClientsStack`; `CreditPackCheckout` -> `SettingsStack` (gated wrapper, neutral copy on hidden iOS); `CommunityEventDetail` -> `CommunityStack/CoachCommunityEvents` (coach community + events flags). Unknown or unavailable names land on the role's notification center.
+ - Push params are decoded to at most 8 string values (200 chars each); the delivered-id dedupe set keeps the last 200 ids.
+-- The OS permission prompt is no longer shown at sign-in. `registerForPushNotifications({ requestPermission: false })` only registers the token when permission is already granted. The prompt comes from `components/home/PushPermissionCard.tsx` on Home, and only when the user taps "Turn on".
++- The OS permission prompt is no longer shown at sign-in. `registerForPushNotifications({ requestPermission: false })` only registers the token when permission is already granted. The prompt comes from `components/home/PushPermissionCard.tsx` on client Home and on the coach Clients landing screen (`audience="coach"`, C-S-PUSH-3), and only when the user taps "Turn on".

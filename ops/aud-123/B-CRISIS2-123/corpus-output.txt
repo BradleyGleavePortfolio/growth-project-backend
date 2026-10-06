@@ -1,0 +1,7 @@
+AI emergency->null | Roman emergency->normal | I have odd soreness
+AI emergency->null | Roman emergency->normal | I can't breathe during burpees
+AI null->emergency | Roman normal->emergency | he's not breathing
+AI null->emergency | Roman normal->emergency | unconscious and not breathing
+AI null->emergency | Roman normal->emergency | she won't wake up
+AI null->emergency | Roman medical_scope->emergency | passed out and won't wake up
+strings 53558 changed 6

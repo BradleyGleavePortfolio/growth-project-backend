@@ -1,0 +1,66 @@
+diff --git a/package-lock.json b/package-lock.json
+index fb66881b..24d5c9ed 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -14079,9 +14079,9 @@
+       }
+     },
+     "node_modules/shell-quote": {
+-      "version": "1.10.0",
+-      "resolved": "https://registry.npmjs.org/shell-quote/-/shell-quote-1.10.0.tgz",
+-      "integrity": "sha512-w1aiOKwKuRgtwAReIIj89puqg+I7GvX4IbLrvmhXbzQsj1+Zwi4VO3+fa6ZF91TWSjIxoEkKnMeHcLEODK5ZXA==",
++      "version": "1.12.0",
++      "resolved": "https://registry.npmjs.org/shell-quote/-/shell-quote-1.12.0.tgz",
++      "integrity": "sha512-PcByqNyT/38F2kDNi006HAMRJaULuBzq/FOsw3qdZvX/GA9W/jamDaRskgHjubHiftXK5sIFxLNkvrXUwcof6Q==",
+       "dev": true,
+       "license": "MIT",
+       "engines": {
+diff --git a/package.json b/package.json
+index 6573e221..73b01b50 100644
+--- a/package.json
++++ b/package.json
+@@ -100,6 +100,7 @@
+     },
+     "@nestjs/swagger@11.4.4": {
+       "js-yaml": "4.3.2"
+-    }
++    },
++    "shell-quote": "1.12.0"
+   }
+ }
+diff --git a/test/booking-lock-screen-push.spec.ts b/test/booking-lock-screen-push.spec.ts
+index 3d766b1a..b79229a5 100644
+--- a/test/booking-lock-screen-push.spec.ts
++++ b/test/booking-lock-screen-push.spec.ts
+@@ -46,6 +46,31 @@ beforeAll(() => {
+   for (const level of ['warn', 'error', 'log'] as const) {
+     jest.spyOn(Logger.prototype, level).mockImplementation(() => undefined);
+   }
++  // Pin only the Date clock to NOW: the copy builder's "today/tomorrow" falls back to the real clock, so this spec
++  // started failing once the real date reached AT. Timers, microtasks and nextTick stay real.
++  jest.useFakeTimers({
++    now: NOW,
++    doNotFake: [
++      'hrtime',
++      'nextTick',
++      'performance',
++      'queueMicrotask',
++      'requestAnimationFrame',
++      'cancelAnimationFrame',
++      'requestIdleCallback',
++      'cancelIdleCallback',
++      'setImmediate',
++      'clearImmediate',
++      'setInterval',
++      'clearInterval',
++      'setTimeout',
++      'clearTimeout',
++    ],
++  });
++});
++
++afterAll(() => {
++  jest.useRealTimers();
+ });
+ 
+ /** The real sender: NotificationsService.sendPush -> PushDeliveryService.enqueue -> outbox rows. */

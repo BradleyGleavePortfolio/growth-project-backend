@@ -1,0 +1,30 @@
+[heavy] waiting for a slot: npx jest test/roman/roman-guardrails-wiring.spec.ts
+[33m[Nest] 430  - [39m10/06/2026, 4:36:20 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 430  - [39m10/06/2026, 4:36:20 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[33m[Nest] 430  - [39m10/06/2026, 4:36:20 PM [33m   WARN[39m [38;5;3m[RomanService] [39m[33mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=false template=fixed[39m
+[31m[Nest] 430  - [39m10/06/2026, 4:36:20 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[32m[Nest] 430  - [39m10/06/2026, 4:36:20 PM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=0 usage=final context=unavailable[39m
+[31m[Nest] 430  - [39m10/06/2026, 4:36:20 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[32m[Nest] 430  - [39m10/06/2026, 4:36:20 PM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=false guardrail_count=1 usage=final context=unavailable[39m
+[31m[Nest] 430  - [39m10/06/2026, 4:36:20 PM [31m  ERROR[39m [38;5;3m[RomanService] [39m[31mroman.context_builder_missing[39m
+[32m[Nest] 430  - [39m10/06/2026, 4:36:20 PM [32m    LOG[39m [38;5;3m[RomanService] [39m[32mroman.turn session=sess_1 prompt_version=roman-client-v3 model_call=true rewritten=true guardrail_count=1 usage=final context=unavailable[39m
+PASS test/roman/roman-guardrails-wiring.spec.ts (80 MB heap size)
+  R4 prompt assembly
+    ✓ the client system prompt carries the voice contract, every contract anchor and PROMPT_VERSION; client_data is NOT in the static block (5 ms)
+    ✓ the static block is byte-identical across users and sessions with the same voice state (cache-safe, PII-free) (1 ms)
+    ✓ the coach surface gets the voice contract but not the client reply contract (1 ms)
+    ✓ a router hint lands in SESSION STATE and only when provided
+    ✓ the contract is static text with no template holes
+  R4 wiring — router short-circuit, buffered emit, post-check, audit
+    ✓ G17 emergency: fixed 911 reply, ZERO model calls, audit row, turn persisted with model_id safety-router (6 ms)
+    ✓ G18 self-harm: fixed 988 reply, ZERO model calls, audit row (14 ms)
+    ✓ the explicit userMessage option is preferred over the DB lookup (8 ms)
+    ✓ normal turn: the model stream is buffered into ONE delta + done (no unvalidated token reaches the client) (27 ms)
+    ✓ injury_pain turn: the router hint reaches the system prompt and the mandatory referral is enforced on the reply and in the DB (13 ms)
+    ✓ a bad model reply is rewritten before any byte is emitted; the persisted turn equals what the client saw (7 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        1.649 s
+Ran all test suites matching test/roman/roman-guardrails-wiring.spec.ts.

@@ -1,0 +1,85 @@
+[heavy] waiting for a slot: npx jest test/crisis-router-not-breathing.spec.ts
+PASS test/crisis-router-not-breathing.spec.ts (46 MB heap size)
+  F9 a person who is not breathing or will not wake up is 911 on both routers
+    ✓ "my teammate passed out and is not breathing" is 911 on both (8 ms)
+    ✓ "he's not breathing" is 911 on both (1 ms)
+    ✓ "she's not breathing" is 911 on both
+    ✓ "my teammate is not breathing" is 911 on both (2 ms)
+    ✓ "unconscious and not breathing" is 911 on both (1 ms)
+    ✓ "he stopped breathing" is 911 on both (9 ms)
+    ✓ "she won't wake up" is 911 on both (6 ms)
+    ✓ "he won't wake up" is 911 on both
+    ✓ "my friend won't wake up" is 911 on both (2 ms)
+    ✓ "she will not wake up" is 911 on both (1 ms)
+    ✓ "my teammate passed out and won't wake up" is 911 on both (1 ms)
+    ✓ "she's not waking up" is 911 on both
+    ✓ "my son is not waking up" is 911 on both
+    ✓ "the baby won't wake up" is 911 on both
+  F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers
+    ✓ "my friend ODed" is 911 on both (13 ms)
+    ✓ "he ODed" is 911 on both (1 ms)
+    ✓ "they ODed" is 911 on both
+    ✓ "I ODed" is 911 on both (1 ms)
+    ✓ "I think my roommate ODed" is 911 on both
+    ✓ "my teammate ODed last night" is 911 on both (2 ms)
+    ✓ "a guy at my gym ODed" is 911 on both (1 ms)
+    ✓ "my brother OD'ed" is 911 on both
+    ✓ "she OD'ed" is 911 on both
+    ✓ "my friend O.D." is 911 on both (1 ms)
+    ✓ "he O.D." is 911 on both
+    ✓ "my friend O.D.'d" is 911 on both (1 ms)
+    ✓ "she O.D.ed" is 911 on both
+    ✓ "someone at the gym O.D.'d" is 911 on both (1 ms)
+    ✓ "possible O.D." is 911 on both (1 ms)
+    ✓ "my friend OD'd" is still 911 on both
+    ✓ "he OD'd" is still 911 on both (1 ms)
+    ✓ "he's ODing" is still 911 on both
+    ✓ "my teammate overdosed" is still 911 on both
+    ✓ "he overdosed" is still 911 on both
+    ✓ "I think she overdosed" is still 911 on both
+    ✓ "he is unconscious and not breathing" is still 911 on both (1 ms)
+    ✓ "my dad is not breathing" is still 911 on both
+    ✓ "I can't breathe" is still 911 on both (1 ms)
+    ✓ "I cannot breathe after my workout" is still 911 on both
+    ✓ "I cannot breathe after my workout. I need help now." is still 911 on both (1 ms)
+    ✓ "I can’t breathe during my workout. Please help me." is still 911 on both (1 ms)
+    ✓ "I can't breathe during squats and my chest hurts" is still 911 on both
+  B-758-1 every "can't breathe" during a workout is 911 on both routers
+    ✓ "I can't breathe while running and I'm wheezing" is 911 on both (1 ms)
+    ✓ "I can't breathe during my workout and my lips are blue" is 911 on both
+    ✓ "I can't breathe during my workout and my lips are turning blue" is 911 on both (1 ms)
+    ✓ "I can't breathe during my run and my chest is tight" is 911 on both
+    ✓ "I can't breathe during cardio and I don't have my inhaler" is 911 on both
+    ✓ "I can't breathe during my workout, I think it's asthma" is 911 on both
+    ✓ "I can't breathe during my workout, help" is 911 on both
+    ✓ "I can't breathe during my workout, what do I do" is 911 on both
+    ✓ "I can't breathe during spin class and my heart is racing" is 911 on both
+    ✓ "can't breathe during burpees" is 911 on both
+    ✓ "I can't breathe during burpees" is 911 on both
+  F9 gym talk keeps the normal answer on both routers
+    ✓ "he is odd" is no longer sent to 911 (19 ms)
+    ✓ "I have odd soreness after leg day" is no longer sent to 911 (2 ms)
+    ✓ "hold your breath on the brace" stays normal
+    ✓ "should I hold my breath on the brace" stays normal (6 ms)
+    ✓ "I get out of breath on the stairs" stays normal (1 ms)
+    ✓ "out of breath after sprints" stays normal
+    ✓ "creatine overdose?" stays normal
+    ✓ "can you overdose on creatine?" stays normal (1 ms)
+    ✓ "suicide sprints today" stays normal
+    ✓ "we did suicide sprints" stays normal
+    ✓ "not breathing properly during squats" stays normal (1 ms)
+    ✓ "I keep not breathing on the way up" stays normal
+    ✓ "I stopped breathing through my mouth when I run" stays normal
+    ✓ "she won't wake up early for training" stays normal (1 ms)
+    ✓ "he won't wake up for morning cardio" stays normal
+    ✓ "my husband won't wake up early to train with me" stays normal
+    ✓ "I can't wake up early for the gym" stays normal (1 ms)
+    ✓ "my legs won't wake up this morning" stays normal
+    ✓ "I ODed on cardio this week" stays normal
+    ✓ "Oded is my training partner" stays normal (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       73 passed, 73 total
+Snapshots:   0 total
+Time:        1.18 s
+Ran all test suites matching test/crisis-router-not-breathing.spec.ts.

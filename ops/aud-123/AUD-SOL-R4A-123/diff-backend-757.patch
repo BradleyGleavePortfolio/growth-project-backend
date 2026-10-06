@@ -1,0 +1,528 @@
+diff --git a/src/community/messages/community-messages.repository.ts b/src/community/messages/community-messages.repository.ts
+index 1d8ec284..8687114f 100644
+--- a/src/community/messages/community-messages.repository.ts
++++ b/src/community/messages/community-messages.repository.ts
+@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
+ import type { CommunityMessage } from '@prisma/client';
+ import { PrismaService } from '../../prisma.service';
+ import type { PlanContextTag } from '../plan-context/plan-context.dto';
++import { bannedAmong } from '../community-ban';
+ 
+ /**
+  * Data access for cohort messages and post-comments.
+@@ -49,6 +50,33 @@ export class CommunityMessagesRepository {
+     });
+   }
+ 
++  /**
++   * Group chat push recipients (C-S-PUSH-4): every ACTIVE member of the cohort
++   * other than the sender, minus anyone with an active ban in the workspace
++   * (a ban also marks memberships removed; the ban row is the authority).
++   * Block filtering and the notify level are applied by the caller.
++   */
++  async listCohortPushRecipients(params: {
++    workspaceId: string;
++    cohortId: string;
++    senderId: string;
++  }): Promise<Array<{ user_id: string; notify_level: string }>> {
++    const rows = await this.prisma.communityMembership.findMany({
++      where: {
++        cohort_id: params.cohortId,
++        status: 'active',
++        user_id: { not: params.senderId },
++      },
++      select: { user_id: true, notify_level: true },
++    });
++    const banned = await bannedAmong(
++      this.prisma,
++      params.workspaceId,
++      rows.map((r) => r.user_id),
++    );
++    return rows.filter((r) => !banned.has(r.user_id));
++  }
++
+   /**
+    * Clear the "unanswered" flag on a cohort's outstanding client messages.
+    *
+diff --git a/src/community/messages/community-messages.service.ts b/src/community/messages/community-messages.service.ts
+index dbd026fc..036e9671 100644
+--- a/src/community/messages/community-messages.service.ts
++++ b/src/community/messages/community-messages.service.ts
+@@ -23,6 +23,9 @@ import {
+   CommunityMessageView,
+ } from '../dto/community-message.dto';
+ import { CommunitySafetyService } from '../safety/community-safety.service';
++import { CommunityNotificationsService } from '../notifications/community-notifications.service';
++import { NotificationKind } from '../../notifications/notification-kind';
++import { describeFailure } from '../../observability/log-pii';
+ 
+ const EDIT_WINDOW_MS = 5 * 60 * 1000;
+ const DEFAULT_PAGE = 50;
+@@ -54,6 +57,7 @@ export class CommunityMessagesService {
+     private readonly realtime: CommunityRealtimeService,
+     private readonly planContext: PlanContextService,
+     private readonly safety: CommunitySafetyService,
++    private readonly communityPush: CommunityNotificationsService,
+   ) {}
+ 
+   private view(m: CommunityMessage): CommunityMessageView {
+@@ -199,9 +203,52 @@ export class CommunityMessagesService {
+       },
+       { distinctId: created.sender_id, channelKind: 'cohort' },
+     );
++    // C-S-PUSH-4: tell the other members about the new group message. Fire-and-
++    // forget after the write; never blocks or fails the send.
++    void this.pushCohortMessage(created, cohort.workspace_id, created.cohort_id ?? cohort.id);
+     return CommunityMessageResponseSchema.parse({ message: this.view(created) });
+   }
+ 
++  /**
++   * Group chat push (C-S-PUSH-4): one COMMUNITY_MESSAGE_RECEIVED push per
++   * other active, unbanned member of the cohort, through the existing
++   * sendCommunityPush (flag, "Mute all notifications", token and lock-screen
++   * privacy gates live there; the body is the fixed safe string, never the
++   * message text). Skips both sides of a block with the sender and members
++   * whose cohort notify level is "quiet". Recipients come from the write
++   * result's cohort, never request params.
++   */
++  private async pushCohortMessage(
++    created: CommunityMessage,
++    workspaceId: string,
++    cohortId: string,
++  ): Promise<void> {
++    try {
++      if (!this.communityPush.pushEnabled()) return;
++      const members = await this.repo.listCohortPushRecipients({
++        workspaceId,
++        cohortId,
++        senderId: created.sender_id,
++      });
++      if (members.length === 0) return;
++      const hidden = await this.safety.hiddenFromViewer(created.sender_id);
++      for (const m of members) {
++        if (hidden.has(m.user_id) || m.notify_level === 'quiet') continue;
++        void this.communityPush.sendCommunityPush({
++          recipientId: m.user_id,
++          kind: NotificationKind.COMMUNITY_MESSAGE_RECEIVED,
++          targetType: 'message',
++          targetId: created.id,
++          deepLink: `tgp://community/cohorts/${cohortId}`,
++        });
++      }
++    } catch (err) {
++      this.logger.warn(
++        `cohort message push skipped: message=${created.id} cohort=${cohortId}: ${describeFailure(err)}`,
++      );
++    }
++  }
++
+   async list(
+     user: User,
+     cohortId: string,
+diff --git a/src/community/notifications/community-notifications.service.ts b/src/community/notifications/community-notifications.service.ts
+index a8db2f8f..45091b2d 100644
+--- a/src/community/notifications/community-notifications.service.ts
++++ b/src/community/notifications/community-notifications.service.ts
+@@ -71,8 +71,11 @@ export class CommunityNotificationsService {
+     private readonly analytics: AnalyticsService,
+   ) {}
+ 
+-  /** Push flag — read per call, never cached. */
+-  private pushEnabled(): boolean {
++  /**
++   * Push flag — read per call, never cached. Public so a fan-out caller (cohort
++   * chat) can skip its recipient lookup when community push is off.
++   */
++  pushEnabled(): boolean {
+     return process.env.FEATURE_COMMUNITY_PUSH === 'true';
+   }
+ 
+diff --git a/test/community/challenges/community-challenges-cross-surface.spec.ts b/test/community/challenges/community-challenges-cross-surface.spec.ts
+index 70b76f9d..b681ce93 100644
+--- a/test/community/challenges/community-challenges-cross-surface.spec.ts
++++ b/test/community/challenges/community-challenges-cross-surface.spec.ts
+@@ -28,6 +28,7 @@ import {
+ import { COMMENT_CONTEXT_TYPE } from '../../../src/community/messages/community-messages.repository';
+ import { makeUser } from './test-user.factory';
+ import { safetyWithBlocks } from '../safety/safety-test-helpers';
++import { noCommunityPush } from '../messages/community-push-test-helpers';
+ 
+ const COHORT = '11111111-1111-1111-1111-111111111111';
+ const WORKSPACE = '22222222-2222-2222-2222-222222222222';
+@@ -99,6 +100,7 @@ describe('v3-1 cross-surface containment (Finding 1)', () => {
+         realtime as never,
+         planContext as never,
+         safetyWithBlocks(),
++        noCommunityPush(),
+       );
+     });
+ 
+diff --git a/test/community/community-messages.e2e.spec.ts b/test/community/community-messages.e2e.spec.ts
+index b0cc5b88..cb9b0bed 100644
+--- a/test/community/community-messages.e2e.spec.ts
++++ b/test/community/community-messages.e2e.spec.ts
+@@ -31,6 +31,7 @@ import { Role } from '@prisma/client';
+ 
+ import { CommunityMessagesController } from '../../src/community/messages/community-messages.controller';
+ import { CommunityMessagesService } from '../../src/community/messages/community-messages.service';
++import { CommunityNotificationsService } from '../../src/community/notifications/community-notifications.service';
+ import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
+ import { PlanContextService } from '../../src/community/plan-context/plan-context.service';
+ import { PlanContextRepository } from '../../src/community/plan-context/plan-context.repository';
+@@ -156,6 +157,11 @@ itLive('community v1-3 cohort messages (live DB)', () => {
+         SupabaseService,
+         AnalyticsService,
+         Reflector,
++        // C-S-PUSH-4: send() fans out a group chat push; push stays off here.
++        {
++          provide: CommunityNotificationsService,
++          useValue: { pushEnabled: () => false, sendCommunityPush: async () => undefined },
++        },
+         { provide: PrismaService, useValue: prismaForStub },
+         { provide: APP_GUARD, useValue: new StubJwtAuthGuard(prismaForStub) },
+         { provide: APP_GUARD, useClass: RolesGuard },
+diff --git a/test/community/community-plan-context.e2e.spec.ts b/test/community/community-plan-context.e2e.spec.ts
+index 9ed784dc..2f0dfed7 100644
+--- a/test/community/community-plan-context.e2e.spec.ts
++++ b/test/community/community-plan-context.e2e.spec.ts
+@@ -37,6 +37,7 @@ import { Role } from '@prisma/client';
+ 
+ import { CommunityMessagesController } from '../../src/community/messages/community-messages.controller';
+ import { CommunityMessagesService } from '../../src/community/messages/community-messages.service';
++import { CommunityNotificationsService } from '../../src/community/notifications/community-notifications.service';
+ import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
+ import { PlanContextController } from '../../src/community/plan-context/plan-context.controller';
+ import { PlanContextService } from '../../src/community/plan-context/plan-context.service';
+@@ -178,6 +179,11 @@ itLive('community v2-1 plan-context tags (live DB)', () => {
+         SupabaseService,
+         AnalyticsService,
+         Reflector,
++        // C-S-PUSH-4: send() fans out a group chat push; push stays off here.
++        {
++          provide: CommunityNotificationsService,
++          useValue: { pushEnabled: () => false, sendCommunityPush: async () => undefined },
++        },
+         { provide: PrismaService, useValue: prismaForStub },
+         { provide: APP_GUARD, useValue: new StubJwtAuthGuard(prismaForStub) },
+         { provide: APP_GUARD, useClass: RolesGuard },
+diff --git a/test/community/messages/community-messages-coach-reply.service.spec.ts b/test/community/messages/community-messages-coach-reply.service.spec.ts
+index dfa856a7..56ae0679 100644
+--- a/test/community/messages/community-messages-coach-reply.service.spec.ts
++++ b/test/community/messages/community-messages-coach-reply.service.spec.ts
+@@ -12,6 +12,7 @@
+ import type { CommunityMessage, User } from '@prisma/client';
+ import { CommunityMessagesService } from '../../../src/community/messages/community-messages.service';
+ import { safetyWithBlocks } from '../safety/safety-test-helpers';
++import { noCommunityPush } from './community-push-test-helpers';
+ 
+ const COHORT = '11111111-1111-1111-1111-111111111111';
+ const WORKSPACE = '22222222-2222-2222-2222-222222222222';
+@@ -84,6 +85,7 @@ describe('CommunityMessagesService.send — coach-inbox producer', () => {
+       realtime as never,
+       planContext as never,
+       safetyWithBlocks(),
++      noCommunityPush(),
+     );
+   });
+ 
+diff --git a/test/community/messages/community-messages-push.service.spec.ts b/test/community/messages/community-messages-push.service.spec.ts
+new file mode 100644
+index 00000000..53a0d200
+--- /dev/null
++++ b/test/community/messages/community-messages-push.service.spec.ts
+@@ -0,0 +1,245 @@
++/**
++ * C-S-PUSH-4: a cohort (group chat) message sends a COMMUNITY_MESSAGE_RECEIVED
++ * push to the other members of the cohort.
++ *
++ * Before this fix CommunityMessagesService.send wrote the message and emitted
++ * the realtime ping but never called a push sender, so a member with the app
++ * closed never heard about a new group message. These tests pin who gets the
++ * push: other ACTIVE members of the cohort, never the sender, never a member
++ * banned from the workspace, never either side of a block, never a member whose
++ * cohort notify level is "quiet". Delivery goes through the existing
++ * CommunityNotificationsService.sendCommunityPush (flag, "Mute all" and token
++ * gates live there). The real repository runs over an in-memory Prisma fake.
++ */
++import type { CommunityMessage, User } from '@prisma/client';
++import { CommunityMessagesService } from '../../../src/community/messages/community-messages.service';
++import { CommunityMessagesRepository } from '../../../src/community/messages/community-messages.repository';
++import type { CommunityAccessService } from '../../../src/community/community-access.service';
++import type { CommunityRealtimeService } from '../../../src/community/realtime/community-realtime.service';
++import type { PlanContextService } from '../../../src/community/plan-context/plan-context.service';
++import type {
++  CommunityNotificationsService,
++  SendCommunityPushInput,
++} from '../../../src/community/notifications/community-notifications.service';
++import { NotificationKind } from '../../../src/notifications/notification-kind';
++import type { PrismaService } from '../../../src/prisma.service';
++import { safetyWithBlocks } from '../safety/safety-test-helpers';
++
++function stub<T>(v: unknown): T {
++  return v as T;
++}
++
++const COHORT = '11111111-1111-1111-1111-111111111111';
++const OTHER_COHORT = '11111111-1111-1111-1111-222222222222';
++const WORKSPACE = '22222222-2222-2222-2222-222222222222';
++const MESSAGE_ID = 'eeeeeeee-0000-0000-0000-000000000001';
++
++const SENDER = 'aaaaaaaa-0000-0000-0000-000000000001';
++const MATE = 'aaaaaaaa-0000-0000-0000-000000000002';
++const MATE2 = 'aaaaaaaa-0000-0000-0000-000000000003';
++
++interface MembershipRow {
++  cohort_id: string;
++  user_id: string;
++  status: 'invited' | 'active' | 'muted' | 'removed';
++  notify_level: string;
++}
++
++function member(user_id: string, over: Partial<MembershipRow> = {}): MembershipRow {
++  return { cohort_id: COHORT, user_id, status: 'active', notify_level: 'digest', ...over };
++}
++
++function fakePrisma(memberships: MembershipRow[], bannedUserIds: string[] = []) {
++  return {
++    communityMessage: {
++      create: jest.fn(async (args: { data: Record<string, unknown> }) => {
++        const at = new Date('2026-01-01T00:00:00.000Z');
++        return stub<CommunityMessage>({
++          id: MESSAGE_ID,
++          created_at: at,
++          updated_at: at,
++          coach_replied_at: null,
++          coach_seen_at: null,
++          coach_acked_at: null,
++          deleted_at: null,
++          plan_context_type: null,
++          ...args.data,
++          plan_context_payload: null,
++        });
++      }),
++      updateMany: jest.fn(async () => ({ count: 0 })),
++    },
++    communityMembership: {
++      findMany: jest.fn(
++        async (args: {
++          where: { cohort_id: string; status: string; user_id?: { not?: string } };
++        }) =>
++          memberships
++            .filter(
++              (m) =>
++                m.cohort_id === args.where.cohort_id &&
++                m.status === args.where.status &&
++                (args.where.user_id?.not === undefined || m.user_id !== args.where.user_id.not),
++            )
++            .map((m) => ({ user_id: m.user_id, notify_level: m.notify_level })),
++      ),
++    },
++    communityWorkspaceBan: {
++      findMany: jest.fn(
++        async (args: { where: { workspace_id: string; user_id: { in: string[] } } }) =>
++          args.where.workspace_id === WORKSPACE
++            ? bannedUserIds
++                .filter((id) => args.where.user_id.in.includes(id))
++                .map((user_id) => ({ user_id }))
++            : [],
++      ),
++    },
++  };
++}
++
++const sender = stub<User>({ id: SENDER, role: 'client' });
++
++/** Flush the fire-and-forget push tail. */
++async function settle(): Promise<void> {
++  for (let i = 0; i < 5; i += 1) await new Promise((r) => setImmediate(r));
++}
++
++function build(opts: {
++  memberships: MembershipRow[];
++  banned?: string[];
++  blocks?: Array<[string, string]>;
++  pushOn?: boolean;
++}) {
++  const prisma = fakePrisma(opts.memberships, opts.banned ?? []);
++  const access = {
++    findCohort: jest.fn(async () => ({ id: COHORT, workspace_id: WORKSPACE })),
++    canAccessCohort: jest.fn(async () => true),
++  };
++  const realtime = {
++    channels: { cohort: jest.fn(() => 'cohort-channel') },
++    cohortShard: jest.fn(() => 0),
++    broadcastCommunityEvent: jest.fn(async () => undefined),
++  };
++  const communityPush = {
++    pushEnabled: jest.fn(() => opts.pushOn ?? true),
++    sendCommunityPush: jest.fn(async (_input: SendCommunityPushInput) => undefined),
++  };
++  const service = new CommunityMessagesService(
++    stub<CommunityAccessService>(access),
++    new CommunityMessagesRepository(stub<PrismaService>(prisma)),
++    stub<CommunityRealtimeService>(realtime),
++    stub<PlanContextService>({ validate: jest.fn(async () => null) }),
++    safetyWithBlocks(opts.blocks ?? []),
++    stub<CommunityNotificationsService>(communityPush),
++  );
++  return { service, communityPush, prisma };
++}
++
++function recipients(push: ReturnType<typeof build>['communityPush']): string[] {
++  return push.sendCommunityPush.mock.calls.map(([input]) => input.recipientId);
++}
++
++describe('CommunityMessagesService.send — group chat push (C-S-PUSH-4)', () => {
++  it('pushes every other active member of the cohort, with ids and a deep link only', async () => {
++    const { service, communityPush } = build({
++      memberships: [member(SENDER), member(MATE), member(MATE2, { notify_level: 'live' })],
++    });
++    await service.send(sender, COHORT, 'leg day done, who is in tomorrow');
++    await settle();
++
++    expect(recipients(communityPush).sort()).toEqual([MATE, MATE2].sort());
++    for (const [input] of communityPush.sendCommunityPush.mock.calls) {
++      expect(input).toEqual({
++        recipientId: expect.any(String),
++        kind: NotificationKind.COMMUNITY_MESSAGE_RECEIVED,
++        targetType: 'message',
++        targetId: MESSAGE_ID,
++        deepLink: `tgp://community/cohorts/${COHORT}`,
++      });
++      // Never the message text (lock-screen privacy).
++      expect(JSON.stringify(input)).not.toContain('leg day');
++    }
++  });
++
++  it('never pushes the sender', async () => {
++    const { service, communityPush } = build({ memberships: [member(SENDER), member(MATE)] });
++    await service.send(sender, COHORT, 'hello team');
++    await settle();
++    expect(recipients(communityPush)).toEqual([MATE]);
++  });
++
++  it('skips members who are not active in this cohort (removed, muted, invited, other cohort)', async () => {
++    const { service, communityPush } = build({
++      memberships: [
++        member(SENDER),
++        member(MATE),
++        member('u-removed', { status: 'removed' }),
++        member('u-muted', { status: 'muted' }),
++        member('u-invited', { status: 'invited' }),
++        member('u-elsewhere', { cohort_id: OTHER_COHORT }),
++      ],
++    });
++    await service.send(sender, COHORT, 'hello team');
++    await settle();
++    expect(recipients(communityPush)).toEqual([MATE]);
++  });
++
++  it('skips a member banned from the workspace', async () => {
++    const { service, communityPush } = build({
++      memberships: [member(SENDER), member(MATE), member('u-banned')],
++      banned: ['u-banned'],
++    });
++    await service.send(sender, COHORT, 'hello team');
++    await settle();
++    expect(recipients(communityPush)).toEqual([MATE]);
++  });
++
++  it('skips both sides of a block (the sender blocked them, or they blocked the sender)', async () => {
++    const { service, communityPush } = build({
++      memberships: [
++        member(SENDER),
++        member(MATE),
++        member('u-blocked-by-sender'),
++        member('u-who-blocked-sender'),
++      ],
++      blocks: [
++        [SENDER, 'u-blocked-by-sender'],
++        ['u-who-blocked-sender', SENDER],
++      ],
++    });
++    await service.send(sender, COHORT, 'hello team');
++    await settle();
++    expect(recipients(communityPush)).toEqual([MATE]);
++  });
++
++  it('skips a member whose cohort notify level is quiet', async () => {
++    const { service, communityPush } = build({
++      memberships: [member(SENDER), member(MATE), member('u-quiet', { notify_level: 'quiet' })],
++    });
++    await service.send(sender, COHORT, 'hello team');
++    await settle();
++    expect(recipients(communityPush)).toEqual([MATE]);
++  });
++
++  it('does not look up recipients when community push is switched off', async () => {
++    const { service, communityPush, prisma } = build({
++      memberships: [member(SENDER), member(MATE)],
++      pushOn: false,
++    });
++    await service.send(sender, COHORT, 'hello team');
++    await settle();
++    expect(communityPush.sendCommunityPush).not.toHaveBeenCalled();
++    expect(prisma.communityMembership.findMany).not.toHaveBeenCalled();
++  });
++
++  it('still returns the sent message when the recipient lookup fails', async () => {
++    const { service, communityPush, prisma } = build({
++      memberships: [member(SENDER), member(MATE)],
++    });
++    prisma.communityMembership.findMany.mockRejectedValueOnce(new Error('db down'));
++    const res = await service.send(sender, COHORT, 'hello team');
++    await settle();
++    expect(res.message.id).toBe(MESSAGE_ID);
++    expect(communityPush.sendCommunityPush).not.toHaveBeenCalled();
++  });
++});
+diff --git a/test/community/messages/community-push-test-helpers.ts b/test/community/messages/community-push-test-helpers.ts
+new file mode 100644
+index 00000000..fdc5ee22
+--- /dev/null
++++ b/test/community/messages/community-push-test-helpers.ts
+@@ -0,0 +1,14 @@
++import type { CommunityNotificationsService } from '../../../src/community/notifications/community-notifications.service';
++
++/**
++ * Community push stub with push switched off, for unit specs that construct
++ * CommunityMessagesService directly and do not exercise the group chat push
++ * (C-S-PUSH-4). The fan-out returns before any recipient lookup.
++ */
++export function noCommunityPush(): CommunityNotificationsService {
++  const push: Pick<CommunityNotificationsService, 'pushEnabled' | 'sendCommunityPush'> = {
++    pushEnabled: () => false,
++    sendCommunityPush: async () => undefined,
++  };
++  return push as CommunityNotificationsService;
++}
+diff --git a/test/community/safety/community-block-two-way.spec.ts b/test/community/safety/community-block-two-way.spec.ts
+index 03f2f4c5..86989003 100644
+--- a/test/community/safety/community-block-two-way.spec.ts
++++ b/test/community/safety/community-block-two-way.spec.ts
+@@ -129,6 +129,10 @@ describe('two-way block: posts, comments, cohort messages and DMs (in-memory Pri
+       rt,
+       stub<PlanContextService>({ validate: async () => null }),
+       safety,
++      stub<CommunityNotificationsService>({
++        pushEnabled: () => false,
++        sendCommunityPush: async () => undefined,
++      }),
+     );
+     dms = new CommunityDmsService(access, new CommunityDmsRepository(prisma), rt, np, safety);
+   });
+diff --git a/test/community/safety/community-safety-flow.spec.ts b/test/community/safety/community-safety-flow.spec.ts
+index ddb972dc..5852e6c0 100644
+--- a/test/community/safety/community-safety-flow.spec.ts
++++ b/test/community/safety/community-safety-flow.spec.ts
+@@ -130,6 +130,10 @@ describe('community UGC safety flow (Apple 1.2)', () => {
+       rt,
+       stub<PlanContextService>({ validate: async () => null }),
+       safety,
++      stub<CommunityNotificationsService>({
++        pushEnabled: () => false,
++        sendCommunityPush: async () => undefined,
++      }),
+     );
+     dms = new CommunityDmsService(access, new CommunityDmsRepository(prisma), rt, np, safety);
+     moderation = new CommunityModerationService(

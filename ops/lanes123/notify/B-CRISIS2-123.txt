@@ -1,0 +1,1 @@
+done: growth-project-backend#758 FIX ROUND 2 @ b9ba736ce9ea3adfe49d6d79a7142193bdd73cd9, B-758-1 fixed (activity exclusion removed, every can't breathe -> 911 as on main), CI green (SUCCESS=15, SKIPPED=1), READY FOR AUDIT (delta, both lenses), comment https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/758#issuecomment-6021586441, 0 B open from builder

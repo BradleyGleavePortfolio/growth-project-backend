@@ -1,0 +1,4 @@
+DONE AUD-SOL-R4A-123 agent 123 — backend#758 FIX ROUND 2 b9ba736ce9ea3adfe49d6d79a7142193bdd73cd9 APPROVE A/B/C 0/0/4 carried; all required exact-head CI green.
+https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/758#issuecomment-6021631038
+Delta reviewed from prior 905bff9f: previously reviewed #759 plus activity-exclusion rollback and regression-table update. Builder-reported B-758-1 closed; inability to breathe while exercising restored to 911, F9 not-breathing/will-not-wake/OD fixes preserved. 876 suites / 15,417 tests pass.
+Operator safety-over-false-alarms ruling supersedes earlier burpees gym-control default: keep restored 911 behavior. Old inherited CI Cs closed. Cs: Oded name, form-word exclusion, dotted 988 intent, historical stopped-breathing over-escalation. Report ops/reports/AUD-SOL-R4A-123.md. No code/push/merge/build/production action.

@@ -1,0 +1,4 @@
+DONE AUD-SOL-R4A-123 agent 123 — mobile#393 59ec57770771b4f98f61e5ffc3180cef37b129c4 APPROVE A/B/C 0/0/2 carried; exact-head CI green.
+https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/393#issuecomment-6021013692
+Coach permission ask and coach-message fallback reviewed; backend RolesGuard explicitly allows coach→student permission inheritance. Recommended default: coachless Roman copy follow-up after launch; Hall-off behavior C (edge, deferred to 10k clients).
+Report ops/reports/AUD-SOL-R4A-123.md. No code changes, pushes, merges, builds or production actions.

@@ -1,0 +1,233 @@
+diff --git a/src/ai/ai-crisis-router.ts b/src/ai/ai-crisis-router.ts
+index e400f3b2..b689219a 100644
+--- a/src/ai/ai-crisis-router.ts
++++ b/src/ai/ai-crisis-router.ts
+@@ -38,6 +38,13 @@ function acute(condition: string): RegExp {
+ const PERSON =
+   "(i|i'?ve|i have|i just|i think i|i may have|i might have|he|she|they|someone|somebody|my (friend|partner|wife|husband|boyfriend|girlfriend|son|daughter|kid|child|mom|mum|dad|brother|sister|roommate|client|training partner))";
+ 
++/**
++ * F9: a person named by role ("my teammate", "a guy", "the baby"), so "my
++ * legs won't wake up" is not read as a person.
++ */
++const PERSON_NOUN =
++  '(my|our|a|the|this|that|his|her|their) (friend|partner|wife|husband|boyfriend|girlfriend|spouse|son|daughter|kid|child|baby|toddler|teen|teenager|mom|mum|mother|dad|father|parent|brother|sister|grandma|grandpa|grandmother|grandfather|aunt|uncle|cousin|roommate|flatmate|neighbou?r|client|teammate|coworker|co-worker|colleague|classmate|buddy|mate|guy|girl|man|woman|boy|person|trainer|coach|training partner|gym partner|lifting partner)s?';
++
+ /**
+  * Training, food and supplement words. "overdosed on cardio" or "overdose on
+  * carbs" is a figure of speech, not a poisoning (B-AIG2-122).
+@@ -45,6 +52,17 @@ const PERSON =
+ const NOT_A_SUBSTANCE =
+   '(cardio|creatine|protein|carbs?|sugar|sweets|candy|chocolate|food|junk food|pizza|fast food|salt|water|fiber|fibre|veggies|vegetables|fruit|exercise|training|workouts?|running|lifting|squats?|reps|sets|volume|the gym|gym|leg day|netflix|tv|sleep)';
+ 
++/**
++ * F9 (B-CRISIS2-123): the ways people type "overdosed" or "overdosing" about
++ * a person: overdosed, ODed, OD'd, OD'ed, O.D., O.D.'d, O.D.ed, ODing, OD'ing.
++ * "odd" is not one ("he is odd", "I have odd soreness"). Close it with
++ * `(?![\\w'])`, because "O.D." ends on a dot.
++ */
++const OD_VERB = "(overdosed|overdosing|o\\.?d\\.?'?ing|o\\.d\\.(?:'?e?d)?|o\\.?d(?:'e?d|ed))";
++
++/** The same spellings with an apostrophe or dots, which need no person before them. */
++const OD_VERB_MARKED = "(overdosed|overdosing|o\\.?d\\.?'(?:e?d|ing)|o\\.d\\.?(?:e?d|ing))";
++
+ /** Training activities ("hard to breathe during heavy squats" is a form question). */
+ const ACTIVITY =
+   '(squats?|squatting|runs?|running|jogs?|jogging|sprints?|sprinting|sets?|reps?|lifts?|lifting|workouts?|training|cardio|exercise|exercising|bench|benching|deadlifts?|deadlifting|swims?|swimming|hiit|class|classes|cycling|bike|biking|spin|rowing|planks?|burpees|yoga|hikes?|hiking|climbs?|stairs|the gym|gym|nose|mouth|mask|i (run|jog|lift|train|swim|squat|exercise|work out|bench|sprint|cycle|row))';
+@@ -67,10 +85,15 @@ const EMERGENCY: RegExp[] = [
+   /\bchest (pain|pressure|tightness)\b/i,
+   /^(?=.*\bchest (hurts|is hurting|aches|is aching|feels (tight|heavy))\b)(?=.*\b(numb(ness)?|tingl(e|es|ed|ing|y)|short(ness)? of breath|out of breath|jaw|left arm|cold sweat|can'?t breathe|cannot breathe|can not breathe|hard to breathe|trouble breathing|struggling to breathe)\b)/i,
+   /\b(crushing|squeezing) (pain|feeling) in my chest\b/i,
+-  // B-AIG3-123: "I can't breathe" is an emergency wherever it happens ("I
+-  // cannot breathe after my workout"). Only the airway is a technique
+-  // question ("I can't breathe through my nose when I run").
+-  /\b(can(?:'|no)?t|can not|cannot|unable to) breath(e|ing)?\b(?! (properly |well |right )?(through|out of|in through|with) (my |the |one )?(nose|mouth|nostrils?)\b)/i,
++  // B-AIG3-123: "I can't breathe" is an emergency ("I cannot breathe after my
++  // workout"). The airway is a technique question ("I can't breathe through
++  // my nose when I run"). F9: so is "I can't breathe during burpees", how a
++  // hard set feels; with a call for help or a chest symptom it still routes
++  // (the help-now rule below and the chest rule above).
++  new RegExp(
++    `\\b(can(?:'|no)?t|can not|cannot|unable to) breath(e|ing)?\\b(?! (properly |well |right )?(through|out of|in through|with) (my |the |one )?(nose|mouth|nostrils?)\\b)(?! (during|while|while doing|when doing|in the middle of) (my |the |a |an |long |heavy |hard |fast |big |intense |every |these |those |all |of )*${ACTIVITY}\\b)`,
++    'i',
++  ),
+   // Breathing trouble is an emergency; "hard to breathe during heavy squats"
+   // or "trouble breathing on long runs" is a training question.
+   new RegExp(
+@@ -79,8 +102,20 @@ const EMERGENCY: RegExp[] = [
+   ),
+   // B-AIG3-123: any breathing trouble with a call for help now ("hard to
+   // breathe after my run, I need help now").
+-  /^(?=.*\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\b)(?=.*\b(help (me )?(right )?now|need help (right )?now|call (911|an ambulance)|ambulance)\b)/i,
++  /^(?=.*\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\b)(?=.*\b(help (me )?(right )?now|need help (right )?now|please help|help me|call (911|an ambulance)|ambulance)\b)/i,
+   /\b(i'?m|i am) not breathing\b/i,
++  // F9: a person who is not breathing ("he's not breathing", "my teammate
++  // passed out and is not breathing", "unconscious and not breathing", "she
++  // stopped breathing"). How to breathe in a lift ("not breathing properly
++  // during squats", "not breathing between reps") is a form question.
++  /\b(not|isn'?t|aren'?t|wasn'?t|stopped|has stopped|stops) breathing\b(?! (properly|right|correctly|well|enough|deeply|deep|hard|heavily|normally|evenly|fully|out|in|through|during|while|when|on|at|between|with|into|from)\b)/i,
++  // F9: someone who will not wake up ("she won't wake up", "my friend is not
++  // waking up", "passed out and won't wake up"). "I can't wake up early" and
++  // "he won't wake up for morning cardio" are about sleep.
++  new RegExp(
++    `\\b((he|she|they|someone|somebody|${PERSON_NOUN})('s|'re|s|re)?( just| still)? (won'?t|wont|will not|can'?t|cannot|could not|couldn'?t|is not|isn'?t|are not|aren'?t|not)|and (won'?t|wont|will not|is not|isn'?t|is still not)) (wake|waking) up\\b(?! (early|earlier|on time|in time|for|to|before|at|until|till|by|when|in the|anymore)\\b)`,
++    'i',
++  ),
+   /\b(i'?m|i am|i feel like i'?m|i think i'?m|feels like i'?m) (fainting|passing out|blacking out|losing consciousness)\b/i,
+   /\b(about to|going to|gonna|feel like i'?m going to|think i'?m going to|i might|i'?m going to) (faint|pass out|black out|collapse)\b/i,
+   /\b(just|keeps?|kept) (fainted|passed out|blacked out|collapsed|fainting|passing out|blacking out|collapsing)\b/i,
+@@ -102,7 +137,7 @@ const EMERGENCY: RegExp[] = [
+   // poisoned"). "Can you overdose on creatine?", "overdose on cardio" and
+   // "is mercury poisoning a risk" are ordinary questions for the model.
+   new RegExp(
+-    `\\b(${PERSON} (just |has |have |had |is |are |am |was |may have |might have |think (i|he|she|they) |)|(i'?m|he'?s|she'?s|they'?re|we'?re) )(overdosed|overdosing|od'?d|od'?ing)\\b(?! on ${NOT_A_SUBSTANCE}\\b)`,
++    `\\b(${PERSON} (just |has |have |had |is |are |am |was |may have |might have |think (i|he|she|they) |)|(i'?m|he'?s|she'?s|they'?re|we'?re) )${OD_VERB}(?![\\w'])(?! on ${NOT_A_SUBSTANCE}\\b)`,
+     'i',
+   ),
+   /\b(took|taken|take|taking|having|i'?ve had|just had) an overdose\b/i,
+@@ -111,13 +146,19 @@ const EMERGENCY: RegExp[] = [
+   // overdosing"). A plan or thought ("thinking about overdosing") is the 988
+   // line below; "overdosing on cardio" stays an ordinary question.
+   new RegExp(
+-    `\\b(?<!\\b(about|of|considering|contemplating|planning on|into|like|never|almost|nearly) )(overdosed|overdosing|od'd|od'ing)\\b(?! on ${NOT_A_SUBSTANCE}\\b)`,
++    `\\b(?<!\\b(about|of|considering|contemplating|planning on|into|like|never|almost|nearly) )${OD_VERB_MARKED}(?![\\w'])(?! on ${NOT_A_SUBSTANCE}\\b)`,
++    'i',
++  ),
++  // F9: "ODed" or "O.D." after someone named by role ("my teammate ODed", "a
++  // guy at my gym O.D."), so the name "Oded" on its own does not route.
++  new RegExp(
++    `\\b(my|our|a|the|this|that|his|her|their) \\w+( (at|in|from|on) (my|our|the|his|her|their) \\w+)? (just |has |had |is |was |may have |might have |)${OD_VERB}(?![\\w'])(?! on ${NOT_A_SUBSTANCE}\\b)`,
+     'i',
+   ),
+   // B-744-1: the noun on its own ("possible overdose, what do I do?", "is this
+   // an overdose?", "help, overdose"). "can you overdose on creatine?" and
+   // "how much caffeine is an overdose" stay ordinary questions.
+-  /\b(possible|suspected|accidental|likely|probable) (overdose|od)\b/i,
++  /\b(possible|suspected|accidental|likely|probable) (overdose|o\.?d\.?)(?![\w'])/i,
+   acute('(an? )?overdose'),
+   /^\W*((please|help|help me|urgent|emergency)\W+)*(an )?(overdose|od)(\W+(help|help me|please|now|what do i do))*\W*$/i,
+   new RegExp(
+diff --git a/test/crisis-router-not-breathing.spec.ts b/test/crisis-router-not-breathing.spec.ts
+new file mode 100644
+index 00000000..78ccb2a8
+--- /dev/null
++++ b/test/crisis-router-not-breathing.spec.ts
+@@ -0,0 +1,118 @@
++// F9 (B-CRISIS2-123) — router table for both crisis routers (AI guide and
++// Roman share one 911 list). A person who is not breathing or will not wake
++// up, and an overdose typed as "ODed", "OD'd", "OD'ed" or "O.D.", gets the
++// fixed 911 reply on both surfaces. Ordinary gym talk keeps its normal answer.
++import { classifyAiGuideCrisis } from '../src/ai/ai-crisis-router';
++import { classifySafety } from '../src/roman/guardrails/safety-router';
++
++// Each of these got no 911 reply on main e9b82e13 (AI guide null, Roman
++// normal or medical_scope).
++const NOT_BREATHING_911 = [
++  'my teammate passed out and is not breathing',
++  "he's not breathing",
++  "she's not breathing",
++  'my teammate is not breathing',
++  'unconscious and not breathing',
++  'he stopped breathing',
++  "she won't wake up",
++  "he won't wake up",
++  "my friend won't wake up",
++  'she will not wake up',
++  "my teammate passed out and won't wake up",
++  "she's not waking up",
++  'my son is not waking up',
++  "the baby won't wake up",
++];
++
++const OD_SPELLINGS_911 = [
++  'my friend ODed',
++  'he ODed',
++  'they ODed',
++  'I ODed',
++  'I think my roommate ODed',
++  'my teammate ODed last night',
++  'a guy at my gym ODed',
++  "my brother OD'ed",
++  "she OD'ed",
++  'my friend O.D.',
++  'he O.D.',
++  "my friend O.D.'d",
++  'she O.D.ed',
++  "someone at the gym O.D.'d",
++  'possible O.D.',
++];
++
++// Already 911 on main (b#744); kept here so the new spellings do not lose them.
++const STILL_911 = [
++  "my friend OD'd",
++  "he OD'd",
++  "he's ODing",
++  'my teammate overdosed',
++  'he overdosed',
++  'I think she overdosed',
++  'he is unconscious and not breathing',
++  'my dad is not breathing',
++  "I can't breathe",
++  'I cannot breathe after my workout',
++  'I cannot breathe after my workout. I need help now.',
++  'I can’t breathe during my workout. Please help me.',
++  "I can't breathe during squats and my chest hurts",
++];
++
++// Got 911 on main; ordinary gym talk.
++const NOW_NORMAL = [
++  "can't breathe during burpees",
++  "I can't breathe during burpees",
++  'he is odd',
++  'I have odd soreness after leg day',
++];
++
++// Normal on main and still normal.
++const GYM_CONTROLS = [
++  'hold your breath on the brace',
++  'should I hold my breath on the brace',
++  'I get out of breath on the stairs',
++  'out of breath after sprints',
++  'creatine overdose?',
++  'can you overdose on creatine?',
++  'suicide sprints today',
++  'we did suicide sprints',
++  'not breathing properly during squats',
++  'I keep not breathing on the way up',
++  'I stopped breathing through my mouth when I run',
++  "she won't wake up early for training",
++  "he won't wake up for morning cardio",
++  "my husband won't wake up early to train with me",
++  "I can't wake up early for the gym",
++  "my legs won't wake up this morning",
++  'I ODed on cardio this week',
++  'Oded is my training partner',
++];
++
++function expect911(message: string): void {
++  expect(classifyAiGuideCrisis(message)).toBe('emergency');
++  const roman = classifySafety(message);
++  expect(roman.class).toBe('emergency');
++  expect(roman.short_circuit).toBe(true);
++}
++
++function expectNormal(message: string): void {
++  expect(classifyAiGuideCrisis(message)).toBeNull();
++  const roman = classifySafety(message);
++  expect(['emergency', 'self_harm']).not.toContain(roman.class);
++  expect(roman.short_circuit).toBe(false);
++}
++
++describe('F9 a person who is not breathing or will not wake up is 911 on both routers', () => {
++  it.each(NOT_BREATHING_911)('"%s" is 911 on both', expect911);
++});
++
++describe("F9 an overdose typed as ODed / OD'ed / O.D. is 911 on both routers", () => {
++  it.each(OD_SPELLINGS_911)('"%s" is 911 on both', expect911);
++  it.each(STILL_911)('"%s" is still 911 on both', expect911);
++});
++
++describe('F9 gym talk keeps the normal answer on both routers', () => {
++  it.each(NOW_NORMAL)('"%s" is no longer sent to 911', expectNormal);
++  it.each(GYM_CONTROLS)('"%s" stays normal', expectNormal);
++});
