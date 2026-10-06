@@ -645,12 +645,11 @@ describe('PackagesService', () => {
       expect(updated.amount_cents).toBe(29900);
     });
 
-    it('ALLOWS pricing edit when entitlement is inactive (even if status active)', async () => {
+    it('BLOCKS pricing edit when access is paused but the Stripe subscription is still active', async () => {
       const pkg = await seedWithSubscriber({ entitlement_active: false });
-      const updated = await svc.update('coach-1', pkg.id, {
+      await expect(svc.update('coach-1', pkg.id, {
         amount_cents: 29900,
-      });
-      expect(updated.amount_cents).toBe(29900);
+      })).rejects.toBeInstanceOf(ConflictException);
     });
 
     it('ALLOWS pricing edit when buyer has no Stripe subscription (one-time buyer)', async () => {
