@@ -14,13 +14,30 @@ import { CapabilityMaterializerRegistry } from './materialisers/capability-mater
 // Human-approval workflow for consequential AI outputs. AiActionDraft
 // rows land here as `pending`; an authorized human (coach for own-tenant
 // drafts, owner for any draft) decides them. AI cannot self-approve —
-// the service refuses any decision where decided_by_id == requester_id.
+// the service refuses any decision where decided_by_id == requester_id,
+// except a tenant coach deciding a model-authored draft or a draft in a
+// single-coach tenant (B-AIB1-125).
 //
 // Decisions are recorded both on the draft row and as an entry in the
 // global AuditLog so the action is visible alongside other sensitive
 // admin actions.
 
 type Decision = 'approved' | 'rejected';
+
+/**
+ * B-AIB1-125 — true when a draft's payload is the model's own reply: the
+ * gateway stores `{ reply: response.text }` when the caller supplies no
+ * `proposedActionPayload`, and the same text (first 1,000 chars) as the
+ * rationale. Caller-supplied payloads (every Stream 2 capability and
+ * MWB-5 live-create today) are human-authored.
+ */
+export function isModelAuthoredPayload(payload: unknown, rationale: string | null): boolean {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+  const keys = Object.keys(payload);
+  if (keys.length !== 1 || keys[0] !== 'reply') return false;
+  const reply = (payload as { reply?: unknown }).reply;
+  return typeof reply === 'string' && reply.length > 0 && rationale === reply.slice(0, 1000);
+}
 
 export interface DecideInput {
   draftId: string;
@@ -72,6 +89,25 @@ export class AiApprovalService {
     return draft;
   }
 
+  /**
+   * B-AIB1-125 — may the tenant coach decide a draft they requested?
+   * Only a coach deciding inside their own tenant (checked by the caller).
+   * Yes when the model authored the payload (the gateway's default
+   * `{ reply: <model text> }`, whose text is also the stored rationale), or
+   * when the tenant has no active sub-coach (the coach is its only human).
+   */
+  private async tenantCoachMayDecideOwnDraft(
+    draft: { payload: unknown; rationale: string | null; tenant_coach_id: string | null },
+    decider: { id: string; role: string },
+  ): Promise<boolean> {
+    if (decider.role !== 'coach' || draft.tenant_coach_id !== decider.id) return false;
+    if (isModelAuthoredPayload(draft.payload, draft.rationale)) return true;
+    const otherHumans = await this.prisma.teamSubCoachAssignment.count({
+      where: { head_coach_id: decider.id, archived_at: null },
+    });
+    return otherHumans === 0;
+  }
+
   async decide(input: DecideInput) {
     const draft = await this.prisma.aiActionDraft.findUnique({
       where: { id: input.draftId },
@@ -83,25 +119,46 @@ export class AiApprovalService {
       throw new ForbiddenException(`Draft already ${draft.status}`);
     }
 
-    // AI never approves itself. The original requester also cannot
-    // approve their OWN draft — even if the requester is a coach,
-    // approving an action they themselves initiated defeats the purpose
-    // of the human-in-the-loop check. Owners are still bound by this
-    // rule because in a single-operator deployment that is the only
-    // safety net we have.
-    if (draft.requester_id && draft.requester_id === input.decider.id) {
-      throw new ForbiddenException('A draft cannot be decided by its requester');
-    }
-
     // Tenant boundary: coaches can only decide drafts inside their own
-    // tenant. Owners can decide any draft. Other roles are rejected.
+    // tenant, for their own clients. Owners can decide any draft. Other
+    // roles are rejected. B-AIB1-125: a draft with no tenant is no coach's
+    // to decide, and the subject must be on the deciding coach's roster
+    // (re-read now), so a coach can never decide another coach's client's
+    // draft.
     if (input.decider.role !== 'owner') {
       if (input.decider.role !== 'coach') {
         throw new ForbiddenException('Approver role not permitted');
       }
-      if (draft.tenant_coach_id && draft.tenant_coach_id !== input.decider.id) {
+      if (draft.tenant_coach_id !== input.decider.id) {
         throw new ForbiddenException('Draft is outside your tenant');
       }
+      if (draft.subject_user_id) {
+        const subject = await this.prisma.user.findUnique({
+          where: { id: draft.subject_user_id },
+          select: { coach_id: true },
+        });
+        if (subject?.coach_id !== input.decider.id) {
+          throw new ForbiddenException('Draft is outside your tenant');
+        }
+      }
+    }
+
+    // AI never approves itself. The original requester also cannot
+    // approve their OWN human-written draft when someone else in the
+    // tenant could — approving an action they themselves typed defeats the
+    // human-in-the-loop check. Owners stay bound by this rule.
+    //
+    // B-AIB1-125 (AUDIT-14 U2, SAFE-MWBAI-125 blocker 3): the tenant coach
+    // IS the human in the loop for (a) a draft whose payload the model
+    // wrote, and (b) any draft in a single-coach tenant (no one else in the
+    // tenant can decide, so the rule only dead-ended the coach). The tenant
+    // and roster checks above already ran.
+    if (
+      draft.requester_id &&
+      draft.requester_id === input.decider.id &&
+      !(await this.tenantCoachMayDecideOwnDraft(draft, input.decider))
+    ) {
+      throw new ForbiddenException('A draft cannot be decided by its requester');
     }
 
     const status = input.decision;

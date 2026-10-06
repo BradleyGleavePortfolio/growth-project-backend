@@ -1,4 +1,4 @@
-import { AiApprovalService } from '../src/ai/gateway/ai-approval.service';
+import { AiApprovalService, isModelAuthoredPayload } from '../src/ai/gateway/ai-approval.service';
 import { AuditService } from '../src/audit/audit.service';
 
 function matchesWhere(row: any, where: any): boolean {
@@ -18,10 +18,25 @@ function matchesWhere(row: any, where: any): boolean {
   return true;
 }
 
-function buildPrisma(seed: any[] = []) {
+function buildPrisma(
+  seed: any[] = [],
+  // B-AIB1-125: roster (client id -> coach id) and active sub-coach count for
+  // the tenant-coach self-decide rule.
+  opts: { coachOf?: Record<string, string>; subCoachCount?: number } = {},
+) {
   const drafts: any[] = [...seed];
   const client: any = {
     drafts,
+    user: {
+      findUnique: jest.fn(async ({ where }: any) =>
+        opts.coachOf && where.id in opts.coachOf
+          ? { id: where.id, coach_id: opts.coachOf[where.id] }
+          : null,
+      ),
+    },
+    teamSubCoachAssignment: {
+      count: jest.fn(async () => opts.subCoachCount ?? 0),
+    },
     // HK-6a R2 (P1-4): decide() now wraps the status-flip + linked audit-row
     // update in an interactive $transaction. Prisma's interactive transaction
     // invokes the callback with a transaction client that exposes the same
@@ -111,16 +126,19 @@ describe('AiApprovalService', () => {
     expect(auditData.target_id).toBe('d-1');
   });
 
-  it('refuses to let the requester approve their own draft', async () => {
-    const prisma = buildPrisma([
-      {
-        id: 'd-1',
-        status: 'pending',
-        capability: 'draft.coach_message',
-        requester_id: 'coach-1',
-        tenant_coach_id: 'coach-1',
-      },
-    ]);
+  it('refuses to let the requester approve their own human-written draft in a multi-coach tenant', async () => {
+    const prisma = buildPrisma(
+      [
+        {
+          id: 'd-1',
+          status: 'pending',
+          capability: 'draft.coach_message',
+          requester_id: 'coach-1',
+          tenant_coach_id: 'coach-1',
+        },
+      ],
+      { subCoachCount: 1 },
+    );
     const svc = new AiApprovalService(prisma, makeAudit(prisma));
     await expect(
       svc.decide({
@@ -149,6 +167,109 @@ describe('AiApprovalService', () => {
         decision: 'approved',
       }),
     ).rejects.toThrow(/outside your tenant/);
+  });
+
+  describe('B-AIB1-125 — tenant coach decides drafts of their own clients', () => {
+    const aiDraft = (over: Partial<any> = {}) => ({
+      id: 'd-ai',
+      status: 'pending',
+      capability: 'draft.coach_message',
+      requester_id: 'coach-1',
+      subject_user_id: 'client-1',
+      tenant_coach_id: 'coach-1',
+      payload: { reply: 'Great week. Keep the Tuesday session.' },
+      rationale: 'Great week. Keep the Tuesday session.',
+      ...over,
+    });
+
+    it.each(['approved', 'rejected'] as const)(
+      'coach %s their own AI-authored draft (multi-coach tenant)',
+      async (decision) => {
+        const prisma = buildPrisma([aiDraft()], {
+          coachOf: { 'client-1': 'coach-1' },
+          subCoachCount: 2,
+        });
+        const svc = new AiApprovalService(prisma, makeAudit(prisma));
+        const updated = await svc.decide({
+          draftId: 'd-ai',
+          decider: { id: 'coach-1', role: 'coach' },
+          decision,
+        });
+        expect(updated.status).toBe(decision);
+        expect(updated.decided_by_id).toBe('coach-1');
+      },
+    );
+
+    it('coach approves their own human-written draft when they are the only coach in the tenant', async () => {
+      const prisma = buildPrisma(
+        [
+          aiDraft({
+            capability: 'draft.send_notification',
+            payload: { clientId: 'client-1', kind: 'coach_nudge', body: 'Check in tonight?' },
+            rationale: 'stub',
+          }),
+        ],
+        { coachOf: { 'client-1': 'coach-1' }, subCoachCount: 0 },
+      );
+      const svc = new AiApprovalService(prisma, makeAudit(prisma));
+      const updated = await svc.decide({
+        draftId: 'd-ai',
+        decider: { id: 'coach-1', role: 'coach' },
+        decision: 'approved',
+      });
+      expect(updated.status).toBe('approved');
+    });
+
+    it("coach cannot decide a draft about another coach's client, even in their own tenant", async () => {
+      const prisma = buildPrisma([aiDraft({ subject_user_id: 'client-2' })], {
+        coachOf: { 'client-1': 'coach-1', 'client-2': 'coach-2' },
+      });
+      const svc = new AiApprovalService(prisma, makeAudit(prisma));
+      await expect(
+        svc.decide({ draftId: 'd-ai', decider: { id: 'coach-1', role: 'coach' }, decision: 'approved' }),
+      ).rejects.toThrow(/outside your tenant/);
+      expect(prisma.drafts[0].status).toBe('pending');
+    });
+
+    it("coach cannot decide another coach's AI draft", async () => {
+      const prisma = buildPrisma(
+        [aiDraft({ requester_id: 'coach-2', tenant_coach_id: 'coach-2', subject_user_id: 'client-2' })],
+        { coachOf: { 'client-2': 'coach-2' } },
+      );
+      const svc = new AiApprovalService(prisma, makeAudit(prisma));
+      await expect(
+        svc.decide({ draftId: 'd-ai', decider: { id: 'coach-1', role: 'coach' }, decision: 'rejected' }),
+      ).rejects.toThrow(/outside your tenant/);
+    });
+
+    it('a draft with no tenant is no coach\'s to decide', async () => {
+      const prisma = buildPrisma([aiDraft({ requester_id: 'client-9', tenant_coach_id: null })], {
+        coachOf: { 'client-1': 'coach-1' },
+      });
+      const svc = new AiApprovalService(prisma, makeAudit(prisma));
+      await expect(
+        svc.decide({ draftId: 'd-ai', decider: { id: 'coach-1', role: 'coach' }, decision: 'approved' }),
+      ).rejects.toThrow(/outside your tenant/);
+    });
+
+    it('owner stays bound by the requester rule, even on an AI-authored draft', async () => {
+      const prisma = buildPrisma([aiDraft({ requester_id: 'owner-1' })], {
+        coachOf: { 'client-1': 'coach-1' },
+      });
+      const svc = new AiApprovalService(prisma, makeAudit(prisma));
+      await expect(
+        svc.decide({ draftId: 'd-ai', decider: { id: 'owner-1', role: 'owner' }, decision: 'approved' }),
+      ).rejects.toThrow(/requester/);
+    });
+
+    it('isModelAuthoredPayload: only the gateway default reply shape counts', () => {
+      expect(isModelAuthoredPayload({ reply: 'hi' }, 'hi')).toBe(true);
+      expect(isModelAuthoredPayload({ reply: 'x'.repeat(1500) }, 'x'.repeat(1000))).toBe(true);
+      expect(isModelAuthoredPayload({ reply: 'hi' }, 'other')).toBe(false);
+      expect(isModelAuthoredPayload({ reply: 'hi', clientId: 'c' }, 'hi')).toBe(false);
+      expect(isModelAuthoredPayload({ clientId: 'c', body: 'b' }, 'b')).toBe(false);
+      expect(isModelAuthoredPayload(null, null)).toBe(false);
+    });
   });
 
   it('refuses to decide an already-decided draft', async () => {
