@@ -41,7 +41,9 @@ function intakeRow(answers: Record<string, unknown>, extra: Record<string, unkno
 
 function sourceWith(row: ReturnType<typeof intakeRow> | null) {
   const findUnique = jest.fn(async () => row);
-  const prisma = { clientOnboardingIntake: { findUnique } } as unknown as PrismaService;
+  const prisma = Object.assign(Object.create(null) as PrismaService, {
+    clientOnboardingIntake: { findUnique },
+  });
   return { source: new RomanConsultationIntakeSource(prisma), findUnique };
 }
 

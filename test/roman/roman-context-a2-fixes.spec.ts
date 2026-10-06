@@ -22,6 +22,17 @@ import {
 import { makePersonaDb, FakeSafetyIntakeSource, NOW, P1 } from './fixtures/roman-personas';
 
 type Row = Record<string, unknown>;
+type Sample = Parameters<typeof summarizeWearables>[1][number];
+/** The fixture rows as the sample shape summarizeWearables reads (no double cast; R75). */
+const toSample = (r: Row): Sample => ({
+  metric: String(r.metric),
+  provider: String(r.provider),
+  value: Number(r.value),
+  start_at: r.start_at as Date,
+  end_at: r.end_at as Date,
+  recorded_at: r.recorded_at as Date,
+  source_tz: r.source_tz == null ? null : String(r.source_tz),
+});
 const caller = { id: P1, role: 'student' };
 const TODAY = '2026-09-30'; // NOW is Wed 2026-09-30 17:30 in Los Angeles.
 
@@ -97,7 +108,7 @@ describe('B-665-1 competing providers are never summed', () => {
         steps('OURA', 2500, '2026-09-30T18:00:00Z'),
         steps('APPLE_HEALTH', 9999, '2026-09-30T18:00:00Z', '2026-09-30T01:00:00Z'),
         night('OURA', 420, '2026-09-30T14:00:00Z'),
-      ] as unknown as Parameters<typeof summarizeWearables>[1],
+      ].map(toSample),
       TODAY,
       'America/Los_Angeles',
       { preferences: [{ metric: 'SLEEP_TOTAL_MIN', preferred_provider: 'WHOOP' }] },
