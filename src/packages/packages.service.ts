@@ -40,19 +40,20 @@ import {
 //       (3) one_time + recurring   (4) recurring (with no companion)
 //     and rejects any half-set second-price config.
 
-// B1 — active-ish recurring subscription statuses. A buyer counts as an
-// "active recurring subscriber" (which locks the package's pricing) when
-// their ClientPurchase has a non-null stripe_subscription_id AND a status
-// in this set. These mirror the provider-normalized lifecycle values the
-// checkout webhook writes onto ClientPurchase.status:
-//   active     — subscription billing normally
-//   trialing   — in a free trial; the sub is live and will bill
-//   past_due   — a payment failed but Stripe has NOT canceled yet; the
-//                entitlement is still active during dunning, so a pricing
-//                swap here would still hit a live subscriber
-// Terminal/benign states (canceled, payment_failed, expired, pending,
-// paid one-time) are intentionally excluded — they do not lock pricing.
-const ACTIVE_RECURRING_STATUSES: string[] = ['active', 'trialing', 'past_due'];
+// B1 — live recurring contract statuses. A buyer locks the package's pricing
+// when their ClientPurchase has a non-null stripe_subscription_id AND a
+// status in this set:
+//   active / trialing — billing normally, or in a trial that will bill
+//   past_due / unpaid — a payment failed; the subscription is still live
+// B-778-1: the lock follows the CONTRACT, not the access state. A full
+// refund or dispute pauses billing (`refunded`, `disputed`,
+// `chargeback_lost`) but keeps the Stripe subscription and its immutable
+// price, and the coach can restart the plan on those old terms.
+// Ended (canceled, expired, incomplete_expired) and not-yet-started
+// (pending, incomplete, payment_failed) subscriptions do not lock pricing.
+const LIVE_CONTRACT_STATUSES: string[] = [
+  'active', 'trialing', 'past_due', 'unpaid', 'refunded', 'disputed', 'chargeback_lost',
+];
 
 export interface CreatePackageInput {
   name: string;
@@ -587,7 +588,7 @@ export class PackagesService {
         where: {
           package_id: packageId,
           stripe_subscription_id: { not: null },
-          status: { in: ACTIVE_RECURRING_STATUSES },
+          status: { in: LIVE_CONTRACT_STATUSES },
         },
       });
 
@@ -834,7 +835,7 @@ export class PackagesService {
       const bucket = byPackage.get(p.package_id);
       if (!bucket) continue;
       if (p.entitlement_active) bucket.clients.add(p.client_user_id);
-      if (p.stripe_subscription_id && ACTIVE_RECURRING_STATUSES.includes(p.status)) {
+      if (p.stripe_subscription_id && LIVE_CONTRACT_STATUSES.includes(p.status)) {
         bucket.pricingLocked = true;
       }
       if (
