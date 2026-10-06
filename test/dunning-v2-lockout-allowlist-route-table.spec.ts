@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import {
   isAllowedWhileLocked,
+  isCoachThreadOperationWhileLocked,
   isPrivacyOperationWhileLocked,
   normalizePath,
 } from '../src/checkout/dunning-v2/dunning-lockout.guard';
@@ -28,7 +29,8 @@ import {
 // payment recovery, auth, liveness probes, the Roman lockout explanation, the
 // AI processing consent privacy control (/me/ai-consent, ruling on #622),
 // account rights (data export and account deletion, S-DUNNING F8), and the
-// exact 1:1 coach-thread routes so the client can contact their coach.
+// exact METHOD + PATH coach-thread operations so the client can contact their
+// own coach (/messages, S-DUNNING F8 and B-353-10).
 
 const REPO_ROOT = path.join(__dirname, '..');
 const SRC_ROOT = path.join(REPO_ROOT, 'src');
@@ -194,10 +196,10 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'me/delete-account/cancel',
   'me/delete-account/confirm',
   'me/delete-account/status',
-  'messages', // ClientMessagingController GET + POST — contact the coach (S-DUNNING F8)
-  'messages/read',
-  'messages/report', // MessagesSafetyController — report a message
-  'messages/unread-count',
+  'messages', // ClientMessagingController GET thread / POST send (S-DUNNING F8, B-353-10)
+  'messages/read', // ClientMessagingController POST mark read
+  'messages/report', // MessagesSafetyController POST — report a message
+  'messages/unread-count', // ClientMessagingController GET unread count
   'readyz',
   'roman/sessions',
   'roman/sessions/:id',
@@ -269,7 +271,8 @@ describe('DunningLockoutGuard allow-list vs the real mounted route table', () =>
           .filter(
             (r) =>
               isAllowedWhileLocked(r.normalized) ||
-              isPrivacyOperationWhileLocked(r.method, r.normalized),
+              isPrivacyOperationWhileLocked(r.method, r.normalized) ||
+              isCoachThreadOperationWhileLocked(r.method, r.normalized),
           )
           .map((r) => r.normalized),
       ),

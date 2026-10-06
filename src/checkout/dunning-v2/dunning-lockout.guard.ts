@@ -42,9 +42,6 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
  *   - data export (/v1/me/data-export/*) and account deletion
  *     (/me/delete-account*) — required while locked (App Store 5.1.1(v), and a
  *     locked client must always be able to take their data and leave)
- *   - contact the coach: the 1:1 thread (/messages GET/POST, /messages/read,
- *     /messages/unread-count) and /messages/report (safety). Voice uploads
- *     and the coach-review surface stay locked.
  *   - Roman chat: /roman/* (RomanController) — the dedicated Roman assistant
  *     surface, so Roman can explain the lockout. This is the ONLY AI-adjacent
  *     carve-out. The entitlement-gated student AI assistant (/ai/*, AiController)
@@ -59,6 +56,14 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
  *     state must never block it (operator ruling on #622). Matched as exact
  *     METHOD + PATH pairs (Sol B-622-1): no descendant path, no other method,
  *     and the rest of /me/* stays locked.
+ *   - Contact the coach (S-DUNNING F8, B-353-10): exactly GET /messages,
+ *     POST /messages, POST /messages/read and GET /messages/unread-count
+ *     (ClientMessagingController; the thread is always with the client's
+ *     assigned coach), plus POST /messages/report (MessagesSafetyController,
+ *     safety). "Message coach" is the lockout screen's way back. Matched as
+ *     exact METHOD + PATH pairs like the AI consent operations: voice upload
+ *     (paid), coach-review, the coach-side routes and every other method or
+ *     descendant stay locked.
  *
  * Posture: this guard is a HARD no-op while FEATURE_DUNNING_V2 is OFF — it
  * returns `true` immediately and reads no state, so v1 deployments are
@@ -129,15 +134,21 @@ const ACCOUNT_RIGHTS_PREFIXES: readonly string[] = [
 ] as const;
 
 /**
- * Contact-the-coach routes, matched EXACTLY (not as prefixes) so a future
- * `messages/*` value surface is locked by default (S-DUNNING F8).
+ * Contact the coach (S-DUNNING F8; B-353-10, Opus L3 on mobile m#353): the
+ * locked client's thread with their own coach. ClientMessagingController
+ * resolves the thread from the client's assigned coach (no path param), so
+ * these exact METHOD + normalized PATH pairs open that one thread, plus the
+ * safety report, and nothing else: `POST messages/voice-upload` (paid),
+ * `GET messages/coach-review`, `coach/clients/:id/messages`, any future
+ * `messages/*` surface and every other method or descendant stay locked.
  */
-const ALLOWED_EXACT_PATHS: ReadonlySet<string> = new Set([
-  'messages', // ClientMessagingController — GET thread, POST send
-  'messages/read',
-  'messages/unread-count',
-  'messages/report', // MessagesSafetyController — report a message
-]);
+const COACH_THREAD_OPERATIONS: ReadonlyArray<readonly [method: string, path: string]> = [
+  ['GET', 'messages'], // ClientMessagingController.listThread
+  ['POST', 'messages'], // ClientMessagingController.send
+  ['POST', 'messages/read'], // ClientMessagingController.markRead
+  ['GET', 'messages/unread-count'], // ClientMessagingController.unreadCount
+  ['POST', 'messages/report'], // MessagesSafetyController — report a message
+] as const;
 
 @Injectable()
 export class DunningLockoutGuard implements CanActivate {
@@ -168,6 +179,7 @@ export class DunningLockoutGuard implements CanActivate {
     const path = normalizePath(req.path ?? req.originalUrl ?? req.url ?? '');
     if (isAllowedWhileLocked(path)) return true;
     if (isPrivacyOperationWhileLocked(req.method, path)) return true;
+    if (isCoachThreadOperationWhileLocked(req.method, path)) return true;
 
     const userId = req.user?.id;
     if (!userId) return true; // unauthenticated routes are handled by auth guards
@@ -243,7 +255,9 @@ export function isAllowedWhileLocked(path: string): boolean {
   for (const prefix of ACCOUNT_RIGHTS_PREFIXES) {
     if (matchesRoutePrefix(path, prefix)) return true;
   }
-  return ALLOWED_EXACT_PATHS.has(path);
+  // Contact-the-coach routes are METHOD + PATH pairs, see
+  // isCoachThreadOperationWhileLocked.
+  return false;
 }
 
 /**
@@ -252,7 +266,26 @@ export function isAllowedWhileLocked(path: string): boolean {
  * case-insensitively. A missing method never matches.
  */
 export function isPrivacyOperationWhileLocked(method: string | undefined, path: string): boolean {
+  return matchesOperation(PRIVACY_OPERATIONS, method, path);
+}
+
+/**
+ * True only for the exact coach-thread operations in COACH_THREAD_OPERATIONS
+ * (B-353-10), matched like the privacy operations.
+ */
+export function isCoachThreadOperationWhileLocked(
+  method: string | undefined,
+  path: string,
+): boolean {
+  return matchesOperation(COACH_THREAD_OPERATIONS, method, path);
+}
+
+function matchesOperation(
+  operations: ReadonlyArray<readonly [method: string, path: string]>,
+  method: string | undefined,
+  path: string,
+): boolean {
   if (typeof method !== 'string' || method.length === 0) return false;
   const m = method.toUpperCase();
-  return PRIVACY_OPERATIONS.some(([pm, pp]) => pm === m && pp === path);
+  return operations.some(([pm, pp]) => pm === m && pp === path);
 }
