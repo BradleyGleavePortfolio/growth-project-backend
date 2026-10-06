@@ -312,16 +312,10 @@ describe('C-680-18 through the webhook (invoice.paid, then customer.subscription
       await h.deliver(paid());
       expect(h.row().entitlement_active).toBe(false);
       expect(h.states[0].locked_out_at).toEqual(LOCKED_AT);
-      // The webhook tx is passed on (it holds the purchase lock), and no
-      // DunningState lock is taken before v1 writes that row on its own
-      // connection (a 5 s stall and a failed delivery otherwise).
-      expect(clear.mock.calls[0][2]).toBe(h.db);
-      const v1At = (h.dunning.recordResolution as jest.Mock).mock.invocationCallOrder[0];
-      const raw = (h.db.$queryRaw as jest.Mock).mock;
-      raw.calls.forEach((c: [TemplateStringsArray], i: number) => {
-        if (c[0].join('?').includes('"DunningState"'))
-          expect(raw.invocationCallOrder[i]).toBeGreaterThan(v1At);
-      });
+      // D4 (B-628-13): the paid invoice keeps the dispute cycle; no clear and
+      // no v1 resolution run (so no DunningState write on a second connection).
+      expect(clear).not.toHaveBeenCalled();
+      expect(h.dunning.recordResolution).not.toHaveBeenCalled();
       h.row().updated_at = new Date(Date.now() - 30_000);
       await h.deliver(ev('customer.subscription.updated', sub('active')));
       expect(h.row().entitlement_active).toBe(false);
