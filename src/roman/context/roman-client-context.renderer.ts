@@ -10,8 +10,15 @@
  *     today's food entries (totals kept) → consultation answers (safety
  *     screen kept) → logged_workouts → check_ins notes → meal_plan items →
  *     coach messages → last_7_days per-day detail → plan completions →
- *     unflagged safety-screen answers → guidelines shortened to 500 chars.
- *   Every drop is recorded in `data_quality.truncated`.
+ *     unflagged safety-screen answers → guidelines shortened to 500 chars →
+ *     (B-667-3) profile free text → guidelines → target notes → check-ins →
+ *     upcoming sessions → meal plan → session exercises → weight points →
+ *     injuries shortened → flagged screen answers shortened → flagged screen
+ *     answers reduced to the bare "Yes".
+ *   Every drop is recorded in `data_quality.truncated`. The cap is measured on
+ *   the escaped, wrapped block. `clearance_recommended`, its instruction and
+ *   the flagged questions are never dropped. If nothing safe fits, the render
+ *   throws RomanContextBudgetError and the turn runs in degraded mode.
  * - The block is delimited and carries the "data, not instructions" notice.
  */
 
@@ -147,9 +154,8 @@ const TRUNCATION_ORDER: TruncationStep[] = [
       return true;
     },
   },
-  // Last resorts, so the block can never exceed the cap: keep only the flagged
-  // safety-screen answers (clearance_recommended itself is never dropped), then
-  // shorten the coach guidelines.
+  // Then keep only the flagged safety-screen answers (clearance_recommended
+  // itself is never dropped) and shorten the coach guidelines.
   {
     name: 'safety_intake.screen_answers.unflagged',
     apply: (ctx) => {
@@ -167,7 +173,135 @@ const TRUNCATION_ORDER: TruncationStep[] = [
       return true;
     },
   },
+  // B-667-3: escaping can still leave the block over the cap. Shed the text
+  // with no safety role, then shorten (never drop) injuries and flagged
+  // screen answers.
+  {
+    name: 'profile.free_text',
+    apply: (ctx) => {
+      const p = ctx.profile;
+      const had = p.bio !== null || p.food_preferences !== null || p.preferred_snacks.length > 0;
+      p.bio = null;
+      p.food_preferences = null;
+      p.preferred_snacks = [];
+      return had;
+    },
+  },
+  {
+    name: 'coach.guidelines',
+    apply: (ctx) => {
+      if (ctx.coach.guidelines === null) return false;
+      ctx.coach.guidelines = null;
+      return true;
+    },
+  },
+  {
+    name: 'targets.notes',
+    apply: (ctx) => {
+      if (ctx.targets.notes === null) return false;
+      ctx.targets.notes = null;
+      return true;
+    },
+  },
+  {
+    name: 'check_ins',
+    apply: (ctx) => {
+      if (ctx.check_ins.length === 0) return false;
+      ctx.check_ins = [];
+      return true;
+    },
+  },
+  {
+    name: 'upcoming_sessions',
+    apply: (ctx) => {
+      if (ctx.upcoming_sessions.length === 0) return false;
+      ctx.upcoming_sessions = [];
+      return true;
+    },
+  },
+  {
+    name: 'meal_plan',
+    apply: (ctx) => {
+      if (ctx.meal_plan === null) return false;
+      ctx.meal_plan = null;
+      return true;
+    },
+  },
+  {
+    name: 'plan.session_exercises',
+    apply: (ctx) => {
+      let changed = false;
+      for (const s of [ctx.plan?.today_session, ctx.plan?.next_session]) {
+        if (s && s.exercises.length > 0) {
+          s.exercises = [];
+          changed = true;
+        }
+      }
+      return changed;
+    },
+  },
+  {
+    name: 'weight_trend.points',
+    apply: (ctx) => {
+      if (ctx.weight_trend.points.length === 0) return false;
+      ctx.weight_trend.points = [];
+      return true;
+    },
+  },
+  {
+    name: 'profile.injuries.short',
+    apply: (ctx) => {
+      const short = ctx.profile.injuries.map((x) => shorten(x, 60));
+      const changed = short.some((x, i) => x !== ctx.profile.injuries[i]);
+      ctx.profile.injuries = short;
+      return changed;
+    },
+  },
+  {
+    name: 'safety_intake.screen_answers.short',
+    apply: (ctx) => {
+      let changed = false;
+      ctx.safety_intake.screen_answers = ctx.safety_intake.screen_answers.map((qa) => {
+        const next = { ...qa, question: shorten(qa.question, 80), answer: shorten(qa.answer, 80) };
+        changed ||= next.question !== qa.question || next.answer !== qa.answer;
+        return next;
+      });
+      return changed;
+    },
+  },
+  {
+    name: 'safety_intake.screen_answers.flags_only',
+    apply: (ctx) => {
+      const before = ctx.safety_intake.screen_answers;
+      const kept = before
+        .filter((qa) => qa.flagged === true)
+        .map((qa) => ({ ...qa, answer: 'Yes' }));
+      ctx.safety_intake.screen_answers = kept;
+      return kept.length !== before.length || kept.some((qa, i) => qa.answer !== before[i].answer);
+    },
+  },
 ];
+
+/** Shorten by code points, so a surrogate pair is never split. */
+function shorten(s: string, max: number): string {
+  const cps = Array.from(s);
+  return cps.length <= max ? s : cps.slice(0, max).join('');
+}
+
+/**
+ * B-667-3: no reduction brings the block under the hard cap. The message
+ * carries numbers only, never client data. RomanService treats any context
+ * failure as its explicit degraded mode (no personal facts, no intensity
+ * step-ups); GET /roman/context/me answers with its coded failure.
+ */
+export class RomanContextBudgetError extends Error {
+  constructor(readonly estimated_tokens: number) {
+    super(
+      `client context needs ${estimated_tokens} tokens after every reduction (cap ${ROMAN_CONTEXT_HARD_CAP_TOKENS})`,
+    );
+    this.name = 'RomanContextBudgetError';
+  }
+}
 
 function asOfLabel(ctx: RomanClientContext): string {
   return `${ctx.identity.local_date} ${ctx.identity.local_time} ${ctx.identity.timezone}`;
@@ -196,20 +330,20 @@ export interface RenderedClientContext {
 /**
  * Render with the token cap. The input is deep-copied; the returned `context`
  * reflects the truncation so the disclosure endpoint and the hash agree.
+ * Throws RomanContextBudgetError when no reduction fits (B-667-3).
  */
 export function renderClientContext(input: RomanClientContext): RenderedClientContext {
   const ctx: RomanClientContext = JSON.parse(JSON.stringify(input));
   let rendered = wrap(ctx, serializeClientDataJson(ctx));
-  let step = 0;
-  while (
-    estimateTokens(rendered) > ROMAN_CONTEXT_HARD_CAP_TOKENS &&
-    step < TRUNCATION_ORDER.length
-  ) {
-    const s = TRUNCATION_ORDER[step++];
+  for (const s of TRUNCATION_ORDER) {
+    if (estimateTokens(rendered) <= ROMAN_CONTEXT_HARD_CAP_TOKENS) break;
     if (s.apply(ctx)) {
       ctx.data_quality.truncated.push(s.name);
       rendered = wrap(ctx, serializeClientDataJson(ctx));
     }
+  }
+  if (estimateTokens(rendered) > ROMAN_CONTEXT_HARD_CAP_TOKENS) {
+    throw new RomanContextBudgetError(estimateTokens(rendered));
   }
   const hash = createHash('sha256').update(rendered).digest('hex');
   return { context: ctx, rendered, hash, estimated_tokens: estimateTokens(rendered) };

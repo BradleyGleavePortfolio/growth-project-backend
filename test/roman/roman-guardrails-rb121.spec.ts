@@ -7,6 +7,7 @@
 import {
   classifySafety,
   ROMAN_PHYSICIAN_LINE_INJURY,
+  ROMAN_PHYSICIAN_LINE_MEDICAL,
 } from '../../src/roman/guardrails/safety-router';
 import {
   postCheckRomanReply,
@@ -239,5 +240,85 @@ describe('B-668-3 (post-check half) kcal facts keep their family, day and source
     'Your meal plan has 520 kcal at dinner, and you have logged 780 kcal so far.',
   ])('accepted: %s', (reply) => {
     expect(normal(reply, FACTS)).toEqual({ text: reply, guardrails_applied: [], rewritten: false });
+  });
+});
+
+/**
+ * Fix round 2 (B-RMN2-122, agent 122) for #666 @ a3eb3206: A-666-2 (Opus),
+ * B-666-4 (Sol) and the post-check half of B-668-3 (Sol). Red on a3eb3206.
+ */
+describe('A-666-2 (Opus) ordinary crisis phrasings reach the fixed templates', () => {
+  it.each([
+    'I have been thinking about ending my life',
+    'I want to take my own life',
+    'I am going to take my life tonight',
+    'I keep thinking about ending it all',
+    'I want to end my own life',
+    'I don’t see the point in living anymore',
+    'Everyone would be better off without me',
+  ])('self harm: %s', (message) => {
+    expect(classifySafety(message)).toMatchObject({ class: 'self_harm', short_circuit: true });
+  });
+
+  it.each([
+    'I took 20 of my sleeping pills',
+    'I took a bunch of pills an hour ago',
+    'My chest hurts and my left arm is numb',
+  ])('emergency: %s', (message) => {
+    expect(classifySafety(message)).toMatchObject({ class: 'emergency', short_circuit: true });
+  });
+
+  it.each([
+    'I am ending my workout early today',
+    'Should I end the set when my form breaks?',
+    'My chest is sore after bench',
+    'My chest hurts after bench press yesterday',
+    'I took 2 pills of ibuprofen this morning',
+    'I want to take my life back from takeaway food',
+  ])('not a crisis: %s', (message) => {
+    expect(classifySafety(message).short_circuit).toBe(false);
+  });
+});
+
+describe('B-666-4 (Sol) an insulin change is a medication directive without the possessive', () => {
+  it('a skip-insulin reply in a medical-scope turn is rewritten to the safe redirect', () => {
+    const reply = `Skip insulin before training. Keep today as a lighter day and message your coach. ${ROMAN_PHYSICIAN_LINE_MEDICAL}`;
+    const r = postCheckRomanReply(reply, { routerClass: 'medical_scope', context: LEAN });
+    expect(classifySafety('Should I skip insulin before my workout?').class).toBe('medical_scope');
+    expect(r.rewritten).toBe(true);
+    expect(r.text).not.toMatch(/skip insulin/i);
+  });
+
+  it.each(['Lower insulin before training.', 'Halve the insulin on rest days.'])(
+    'rewritten: %s',
+    (reply) => {
+      expect(normal(reply).rewritten).toBe(true);
+    },
+  );
+
+  it.each([
+    'Carbs raise insulin, but that alone does not make you gain fat.',
+    'Walking after meals can reduce insulin spikes.',
+  ])('unchanged: %s', (reply) => {
+    expect(normal(reply)).toEqual({ text: reply, guardrails_applied: [], rewritten: false });
+  });
+});
+
+describe('B-668-3 (Sol) one meal never validates a whole-day intake claim', () => {
+  const MEALS: PostCheckContext = { ...LEAN, kcal_facts: { intake_entries_today: [330, 450] } };
+
+  it.each(['You have logged 450 kcal today.', 'You are at 330 kcal so far.'])('rejected: %s', (reply) => {
+    expect(normal(reply, MEALS)).toMatchObject({
+      guardrails_applied: ['ungrounded_number'],
+      rewritten: true,
+    });
+  });
+
+  it.each([
+    'You have logged 780 kcal today.',
+    'You logged 450 kcal at lunch today.',
+    'You logged a 330 kcal omelette.',
+  ])('accepted: %s', (reply) => {
+    expect(normal(reply, MEALS)).toEqual({ text: reply, guardrails_applied: [], rewritten: false });
   });
 });

@@ -7,7 +7,14 @@
  *
  * Scope: only the row whose `client_id` is the caller. Consent (P0) answers
  * are not repeated; screening answers are kept separately with `flagged` on a
- * "yes", and `clearance_recommended` is the intake's own `screening_any_yes`.
+ * "yes", and `clearance_recommended` is the intake's own `screening_any_yes`
+ * (or any "yes" already saved, even on a partial screen).
+ *
+ * B-667-1: the coach view shows the date-of-birth answer (B2) as the full
+ * date plus age. Roman gets the whole age only, never the date.
+ * B-667-2: the screen counts as completed only when every screening question
+ * (P1-P7) has a yes/no answer; a partial screen keeps its answers but stays
+ * `completed:false`, so the builder still reports `intake` as missing.
  *
  * Failure: a read failure THROWS. The context builder then fails, and
  * RomanService answers the turn in its explicit degraded mode (no personal
@@ -16,8 +23,9 @@
 
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { ageInYears } from '../../macros/macro-calculator';
 import { buildConsultationView } from '../../onboarding/consultation-view';
-import type { Answers } from '../../onboarding/consultation-answers';
+import { SCREENING_KEYS, type Answers } from '../../onboarding/consultation-answers';
 import type {
   RomanConsultationSummary,
   RomanCtxQA,
@@ -25,9 +33,20 @@ import type {
 } from './roman-client-context.types';
 
 const NOT_ANSWERED = 'Not answered';
+/** B-667-1: the date-of-birth screen. */
+const DOB_SCREEN = 'B2';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** Whole years from a stored YYYY-MM-DD birth date; null when it is not one. */
+function wholeAgeOf(v: unknown, now: Date): number | null {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  const dob = new Date(`${v}T00:00:00.000Z`);
+  if (Number.isNaN(dob.getTime())) return null;
+  const age = ageInYears(dob, now);
+  return age >= 0 && age < 130 ? age : null;
 }
 
 @Injectable()
@@ -73,19 +92,32 @@ export class RomanConsultationIntakeSource implements RomanSafetyIntakeSource {
     );
     const consultationAnswers: RomanCtxQA[] = view.chapters
       .flatMap((c) => c.answers)
-      .filter((a) => a.answer_label && a.answer_label !== NOT_ANSWERED)
-      .map((a) => ({ question: a.question, answer: a.answer_label }));
+      .flatMap((a): RomanCtxQA[] => {
+        if (a.screen === DOB_SCREEN) {
+          const age = wholeAgeOf(answers[DOB_SCREEN], now);
+          return age === null ? [] : [{ question: 'Age', answer: `${age} years` }];
+        }
+        if (!a.answer_label || a.answer_label === NOT_ANSWERED) return [];
+        return [{ question: a.question, answer: a.answer_label }];
+      });
     const screenAnswers: RomanCtxQA[] = view.screening.items
       .filter((i) => i.answer !== null)
       .map((i) => ({
         question: i.question,
-        answer: i.note ? `${i.answer === 'yes' ? 'Yes' : 'No'}. ${i.note}` : i.answer === 'yes' ? 'Yes' : 'No',
+        answer: i.note
+          ? `${i.answer === 'yes' ? 'Yes' : 'No'}. ${i.note}`
+          : i.answer === 'yes'
+            ? 'Yes'
+            : 'No',
         ...(i.answer === 'yes' ? { flagged: true } : {}),
       }));
-    const screenAnswered = view.screening.items.some((i) => i.answer !== null);
+    const answered = new Set(
+      view.screening.items.filter((i) => i.answer !== null).map((i) => i.key),
+    );
+    const screenComplete = SCREENING_KEYS.every((k) => answered.has(k));
     return {
       safety_intake: {
-        completed: screenAnswered,
+        completed: screenComplete,
         clearance_recommended: row.screening_any_yes === true || view.screening.any_yes,
         screen_answers: screenAnswers,
       },

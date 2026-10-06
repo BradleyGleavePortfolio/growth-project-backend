@@ -32,6 +32,10 @@ function acute(condition: string): RegExp {
 
 const EMERGENCY: RegExp[] = [
   /\bchest (pain|pressure|tightness)\b/i,
+  // A-666-2 (Opus): chest pain in plain words with a warning sign in the
+  // same message ("my chest hurts and my left arm is numb"). A sore chest
+  // after bench press on its own is not an emergency.
+  /^(?=.*\bchest (hurts|is hurting|aches|is aching|feels (tight|heavy))\b)(?=.*\b(numb(ness)?|tingl(e|es|ed|ing|y)|short(ness)? of breath|out of breath|jaw|left arm|cold sweat)\b)/i,
   /\b(crushing|squeezing) (pain|feeling) in my chest\b/i,
   /\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\b/i,
   /\b(i'?m|i am) not breathing\b/i,
@@ -66,6 +70,9 @@ const EMERGENCY: RegExp[] = [
   /\b(overdos(e|ed|ing)|(?<!food )poison(ed|ing))\b/i,
   // A-666-1 (Opus): an overdose described without the word.
   /\b(took|taken|swallowed|have taken|i'?ve taken) (too many|way too many|a (whole |full )?(bottle|pack|packet|box) of|all (of )?(my|the)|a handful of)( of)?( my| the)? (\w+ )?(pills|tablets|meds|medication|medicine|capsules|painkillers|sleeping pills)\b/i,
+  // A-666-2 (Opus): an overdose given as a count ("I took 20 of my sleeping
+  // pills", "a bunch of pills"). Five or more; "took 2 pills" is a dose.
+  /\b(took|taken|swallowed|have taken|i'?ve taken) ([5-9]|[1-9]\d+|a bunch of|a lot of|lots of|loads of|a load of|so many)( of)?( my| the)? (\w+ )?(pills|tablets|meds|capsules|painkillers)\b/i,
   /\b(coughing|throwing|vomiting) up blood\b/i,
 ];
 
@@ -84,6 +91,14 @@ const SELF_HARM: RegExp[] = [
   /\bnot worth living\b/i,
   // A-666-1 (Opus): "I cannot go on anymore" (but not "I can't go on the bike").
   /\b(can'?t|cannot|can not) go on( (anymore|any more|any longer|like this|living))\b|\b(can'?t|cannot|can not) go on[.!?]*\s*$/i,
+  // A-666-2 (Opus): ordinary suicidal phrasings ("ending my life", "take my
+  // own life", "ending it all", "no point in living", "better off without
+  // me"). "End the set" and "ending my workout early" do not match.
+  /\b(end|ends|ending|ended|take|taking|took)( my| his| her| their) (own )?life\b(?! (back|savings|insurance|story|goals?|to the next level)\b)/i,
+  /\b(end|ending|ended) it all\b/i,
+  /\b(want to|going to|gonna|thinking (about|of)|thought (about|of)|plan(ning)? to|ready to) end(ing)? it( now| tonight| today)?[.!?]*\s*$/i,
+  /\b(no|don'?t see (the|any)|do not see (the|any)|what'?s the|there'?s no) point (in|of|to) (living|life|being alive|going on|being here|existing)\b/i,
+  /\bbetter off without me\b/i,
 ];
 
 const EATING_DISORDER: RegExp[] = [

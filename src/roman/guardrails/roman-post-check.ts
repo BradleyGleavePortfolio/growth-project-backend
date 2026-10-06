@@ -183,6 +183,11 @@ const MEDICATION_DIRECTIVE: RegExp[] = [
   // B-666-1 (Opus): "carbs raise insulin" is physiology; changing the
   // client's own insulin is a medication directive.
   /\b(increase|decrease|lower|raise|stop|skip|double|halve|pause|change|adjust|time)\s+(taking\s+(your\s+)?|your\s+)insulin\b/i,
+  // B-666-4 (Sol): "Skip insulin before training" is a medication
+  // directive without the possessive too; "carbs raise insulin" and
+  // "improve insulin sensitivity" stay physiology.
+  /\b(stop|skip|double|halve|pause|miss|reduce|cut back on|cut down on|hold off on|go without)\s+(taking\s+)?(the\s+|any\s+|some\s+|an?\s+|less\s+|more\s+)?insulin\b(?!\s+(sensitivity|resistance|levels?|response|spikes?|production))/i,
+  /(?:^|[.!?:;]\s*|\b(?:you should|you can|you could|try to|just)\s+)(increase|decrease|lower|raise|change|adjust|time)\s+(the\s+|any\s+|less\s+|more\s+)?insulin\b(?!\s+(sensitivity|resistance|levels?|response|spikes?|production))/i,
   /\b(ice|heat) (it|the area|your [a-z]+) (for )?\d+\s?(minutes|min)\b[^.]{0,30}\b(times|every)\b/i,
 ];
 const FALSE_REASSURANCE: RegExp[] = [
@@ -317,6 +322,9 @@ const PAST_DAY =
   /\b(yesterday|last (night|week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|on (monday|tuesday|wednesday|thursday|friday|saturday|sunday)|\d+ days? ago|the day before|earlier this week|over the (last|past) \d+ days|this past week)\b/i;
 /** A claim about the meal plan ("your plan has 450 kcal at lunch"), not a log. */
 const PLAN_WORD = /\b(meal plan|your plan|the plan|planned)\b/i;
+/** B-668-3 (Sol): wording that states the whole day's intake ("logged 450 kcal today", "so far"). */
+const DAY_TOTAL_CLAIM =
+  /\b(today|so far|in total|total|for the day|daily|you are at|you'?re at|sitting at|intake)\b/i;
 
 /**
  * kcal facts of the given field families (B-651-7: never pooled across
@@ -328,13 +336,22 @@ function kcalFacts(
   ctx: PostCheckContext,
   families: ReadonlySet<KcalFamily>,
   sentence = '',
+  clause = sentence,
 ): number[] {
   const out: Array<number | null | undefined> = [];
   const f = ctx.kcal_facts ?? {};
   const past = PAST_DAY.test(sentence);
   if (families.has('intake')) {
     if (past) out.push(...(f.intake_past_days ?? []));
-    else out.push(ctx.today.kcal, ...(f.intake_entries_today ?? []));
+    else {
+      out.push(ctx.today.kcal);
+      // B-668-3 (Sol): one meal never validates a whole-day claim. Entry
+      // values only count when the clause is about a meal, or makes no
+      // whole-day claim at all ("you logged a 450 kcal salad").
+      if (MEAL_CLAUSE.test(clause) || !DAY_TOTAL_CLAIM.test(clause)) {
+        out.push(...(f.intake_entries_today ?? []));
+      }
+    }
     if (PLAN_WORD.test(sentence)) out.push(...(f.meal_plan ?? []));
   }
   if (families.has('remaining')) out.push(ctx.today.remaining_kcal);
@@ -508,7 +525,7 @@ function judgeSentence(
     const factFamilies = new Set(FACT_FAMILIES.filter((f) => role.has(f)));
     if (factFamilies.size > 0) {
       // A quoted fact must match a fact of its OWN family ("670 kcal left").
-      if (ctx && matchesFact(n, kcalFacts(ctx, factFamilies, s))) continue;
+      if (ctx && matchesFact(n, kcalFacts(ctx, factFamilies, s, clause))) continue;
       return 'ungrounded_number';
     }
     if (role.has('floor') && ctx && matchesFact(n, kcalFacts(ctx, new Set(['floor'])))) continue;

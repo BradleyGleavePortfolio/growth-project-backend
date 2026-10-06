@@ -1243,6 +1243,20 @@ export class RomanService {
     );
   }
 
+  /** Worst-case prompt tokens of one turn (the daily reservation holds this much). */
+  static readonly PROMPT_RESERVE_TOKENS = ROMAN_MAX_CONTEXT_TURNS * 600 + 6000;
+
+  /**
+   * B-668-1 (Sol): the most one turn can cost, in whole cents. The coach pool
+   * admits a paid turn only when this much credit is left, so a remainder
+   * smaller than a reply is never answered for free.
+   */
+  static worstCaseTurnCents(): number {
+    return Math.ceil(
+      RomanService.costUsd(RomanService.PROMPT_RESERVE_TOKENS, ROMAN_MAX_OUTPUT_TOKENS) * 100,
+    );
+  }
+
   /**
    * Read-only capacity check the controller runs BEFORE storing the user
    * turn, so a client who hits the daily cap is told so without leaving an
@@ -1422,9 +1436,12 @@ export class RomanService {
     try {
       coachId = await this.poolCoachIdFor(budget, caller);
       if (!coachId) return null;
-      // Same gate as the AI gateway: refuse once the pool is at or over its ceiling.
+      // B-668-1 (Sol): refuse unless the pool can still pay for a whole turn;
+      // a remainder smaller than one reply gets the capacity message.
       const pre = await budget.canCharge(coachId, 0);
-      exhausted = pre.budget.actual_used_cents >= pre.budget.total_actual_available_cents;
+      exhausted =
+        pre.budget.actual_used_cents + RomanService.worstCaseTurnCents() >
+        pre.budget.total_actual_available_cents;
     } catch (err) {
       this.logger.error(`roman.coach_pool_failed: ${romanErrorTag(err)}`);
       Sentry.captureException(romanSanitizedError('roman.coach_pool_failed', err), {
@@ -1461,7 +1478,8 @@ export class RomanService {
 
   /**
    * B-668-1: debit the turn's actual cost (the same tokens the ledger
-   * settles) from the coach pool, in whole cents rounded up. The provider
+   * settles) from the coach pool, in whole cents rounded up; a cost larger
+   * than the remainder consumes the remainder. The provider
    * call already happened, so a failed debit is logged and reported, never
    * thrown at the client.
    */
@@ -1475,12 +1493,27 @@ export class RomanService {
     const cents = Math.ceil(RomanService.costUsd(inputTokens, outputTokens) * 100);
     if (cents <= 0) return;
     try {
-      await this.budget.recordUsage({
+      const debit = await this.budget.recordUsage({
         coachId,
         actualCostCents: cents,
         capability: ROMAN_LEDGER_CAPABILITY,
         contextId: requestId,
       });
+      if (debit.recorded) return;
+      // B-668-1 (Sol): the pool could not absorb the whole cost. Consume
+      // what is left, so the pool reads used up and the next turn gets the
+      // capacity message instead of another reply on the same remainder.
+      const { budget } = await this.budget.canCharge(coachId, 0);
+      const rest = budget.total_actual_available_cents - budget.actual_used_cents;
+      this.logger.warn(`roman.coach_pool_short cents=${cents} rest=${rest}`);
+      if (rest > 0) {
+        await this.budget.recordUsage({
+          coachId,
+          actualCostCents: Math.min(rest, cents),
+          capability: ROMAN_LEDGER_CAPABILITY,
+          contextId: requestId,
+        });
+      }
     } catch (err) {
       this.logger.error(`roman.coach_pool_debit_failed: ${romanErrorTag(err)}`);
       Sentry.captureException(romanSanitizedError('roman.coach_pool_debit_failed', err), {
