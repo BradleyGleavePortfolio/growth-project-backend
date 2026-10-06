@@ -98,7 +98,13 @@ const EMERGENCY: RegExp[] = [
   // B-AIG3-123: any breathing trouble with a call for help now ("hard to
   // breathe after my run, I need help now").
   /^(?=.*\b(can(?:'|no)?t|can not|cannot|could(?:'|n)?t|couldn't|unable to|hard to|trouble|struggling to) breath(e|ing)?\b)(?=.*\b(help (me )?(right )?now|need help (right )?now|call (911|an ambulance)|ambulance)\b)/i,
-  /\b(i'?m|i am) not breathing\b/i,
+  // AUDIT-05-125: a breathing-technique question during a lift or a run
+  // ("I'm not breathing properly during squats", "I am not breathing right
+  // when I bench") is coaching, not 911; "I'm not breathing" alone still is.
+  new RegExp(
+    `\\b(i'?m|i am) not breathing\\b(?! (properly |right |correctly |well |enough |deeply |normally |evenly |fully |in |out )?(during|when|while|on|through|in|at|between|with|before|after) (my |the |a |an |each |every |heavy |hard |long |big )*${ACTIVITY}\\b)`,
+    'i',
+  ),
   // F9: a person who is not breathing ("he's not breathing", "my teammate
   // passed out and is not breathing", "unconscious and not breathing", "she
   // stopped breathing"). How to breathe in a lift ("not breathing properly
@@ -112,7 +118,12 @@ const EMERGENCY: RegExp[] = [
     'i',
   ),
   /\b(i'?m|i am|i feel like i'?m|i think i'?m|feels like i'?m) (fainting|passing out|blacking out|losing consciousness)\b/i,
-  /\b(about to|going to|gonna|feel like i'?m going to|think i'?m going to|i might|i'?m going to) (faint|pass out|black out|collapse)\b/i,
+  // AUDIT-05-125: a past near-faint ("I felt like I was going to pass out in
+  // the HIIT class", "I was about to faint at the end of the run") is history,
+  // not an emergency now: it goes to the model with the medical hint and the
+  // physician line. "I'm about to pass out" / "I feel like I'm going to
+  // faint" still answer with the 911 template.
+  /(?<!\b(?:was|were) )\b(about to|going to|gonna|feel like i'?m going to|think i'?m going to|i might|i'?m going to) (faint|pass out|black out|collapse)\b/i,
   /\b(just|keeps?|kept) (fainted|passed out|blacked out|collapsed|fainting|passing out|blacking out|collapsing)\b/i,
   /\b(someone|somebody|he|she|they|my (friend|partner|wife|husband|son|daughter|mom|mum|dad|brother|sister|client|training partner)) (just |has |is )?(fainted|passed out|blacked out|collapsed|unconscious|unresponsive|not breathing)\b/i,
   // A person who is unconscious (not "unconscious snacking").
