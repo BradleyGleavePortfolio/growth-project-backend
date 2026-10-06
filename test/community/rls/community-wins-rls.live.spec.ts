@@ -1,0 +1,346 @@
+/**
+ * A-610-2 (Opus B-610-6) live RLS proof for "CommunityWin", as a
+ * NON-BYPASSRLS principal (`SET LOCAL ROLE authenticated` + the
+ * app.current_user_id GUC the policies read) on a database migrated with the
+ * real chain (`prisma migrate deploy`, CI job community-live-tests).
+ *
+ * Populated fixture, then per-principal assertions:
+ *  - no public arm: a stranger (another tenant, no coach) sees nothing, even
+ *    for a win that was 'public' before the migration;
+ *  - hidden wins are invisible to teammates and the author, visible to the
+ *    moderating coach;
+ *  - tenancy: another coach's client never sees this circle;
+ *  - bans and blocks: a banned author's wins leave teammates' reads, a
+ *    banned viewer reads no teammate wins, and a block hides wins both ways;
+ *  - moderation columns: the author cannot unhide (hidden_at), move the win
+ *    (user_id / coach_id) or publish it (visibility); the coach can hide.
+ *
+ * GATE: env-gated on COMMUNITY_TEST_DATABASE_URL (skips with a logged reason
+ * when unset; never a silent pass).
+ */
+import 'reflect-metadata';
+import { randomUUID } from 'crypto';
+import { Prisma, PrismaClient, Role } from '@prisma/client';
+import { liveDbUrl } from '../_support/community-db';
+import { insertLiveUser } from '../_support/community-live-seed';
+
+const itLive = liveDbUrl() ? describe : describe.skip;
+
+if (!liveDbUrl()) {
+  // eslint-disable-next-line no-console
+  console.warn('[community-wins-rls] COMMUNITY_TEST_DATABASE_URL not set — live RLS spec skipped.');
+}
+
+itLive('CommunityWin RLS as authenticated (live DB, A-610-2)', () => {
+  let prisma: PrismaClient;
+  const tag = randomUUID().slice(0, 8);
+  const id = {
+    coach: randomUUID(),
+    otherCoach: randomUUID(),
+    alice: randomUUID(),
+    bob: randomUUID(),
+    banned: randomUUID(),
+    blocker: randomUUID(),
+    stranger: randomUUID(),
+    ws: '',
+  };
+  const win = { alice: '', aliceHidden: '', legacyPublic: '', banned: '', bob: '', blocker: '' };
+  /** Rows created by the round 5 cases (outside the visibility fixture). */
+  const extra: string[] = [];
+
+  /** Run `fn` as the non-BYPASSRLS `authenticated` role acting as `userId`. */
+  async function as<T>(
+    userId: string,
+    fn: (tx: Prisma.TransactionClient) => Promise<T>,
+  ): Promise<T> {
+    return prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
+      await tx.$queryRaw`SELECT set_config('app.current_user_id', ${userId}, true)`;
+      await tx.$queryRaw`SELECT set_config('app.current_user_role', 'student', true)`;
+      return fn(tx);
+    });
+  }
+
+  async function visibleIds(userId: string): Promise<string[]> {
+    return as(userId, async (tx) => {
+      const rows = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM "CommunityWin" WHERE id = ANY(${Object.values(win)}::text[])`;
+      return rows.map((r) => r.id).sort();
+    });
+  }
+
+  async function expectDenied(p: Promise<unknown>): Promise<void> {
+    await expect(p).rejects.toThrow(/42501|moderation_column|row-level security/);
+  }
+
+  /** Refused outright, or the row is not even visible to the writer (0 rows). */
+  async function expectNoEffect(p: Promise<number>): Promise<void> {
+    const outcome = await p.then(
+      (n) => n,
+      (e: unknown) => (/42501|moderation_column|row-level security/.test(String(e)) ? 0 : -1),
+    );
+    expect(outcome).toBe(0);
+  }
+
+  beforeAll(async () => {
+    prisma = new PrismaClient({ datasources: { db: { url: liveDbUrl() as string } } });
+    await prisma.$connect();
+    // Supabase grants table privileges to authenticated by default; the bare
+    // CI Postgres does not, so mirror that here (RLS is what is under test).
+    await prisma.$executeRawUnsafe('GRANT USAGE ON SCHEMA public TO authenticated');
+    await prisma.$executeRawUnsafe(
+      'GRANT SELECT, INSERT, UPDATE ON "CommunityWin" TO authenticated',
+    );
+    await prisma.$executeRawUnsafe('GRANT SELECT ON "User" TO authenticated');
+
+    const users: Array<[string, Role, string | null]> = [
+      [id.coach, 'coach', null],
+      [id.otherCoach, 'coach', null],
+      [id.alice, 'student', id.coach],
+      [id.bob, 'student', id.coach],
+      [id.banned, 'student', id.coach],
+      [id.blocker, 'student', id.coach],
+      [id.stranger, 'student', id.otherCoach],
+    ];
+    for (const [uid, role, coachId] of users) {
+      await insertLiveUser(prisma, { id: uid, role, name: `RLS ${role} ${tag}`, coachId });
+    }
+    const ws = await prisma.communityWorkspace.create({
+      data: { coach_id: id.coach, name: `Wins ${tag}`, slug: `wins-${tag}` },
+    });
+    id.ws = ws.id;
+    await prisma.communityWorkspaceBan.create({
+      data: { workspace_id: ws.id, user_id: id.banned, banned_by_id: id.coach },
+    });
+    await prisma.userBlock.create({ data: { blocker_id: id.blocker, blocked_id: id.alice } });
+
+    const mk = async (userId: string, over: { hidden_at?: Date } = {}) =>
+      (
+        await prisma.communityWin.create({
+          data: { user_id: userId, coach_id: id.coach, title: 'Win', description: 'D', ...over },
+        })
+      ).id;
+    win.alice = await mk(id.alice);
+    win.aliceHidden = await mk(id.alice, { hidden_at: new Date() });
+    win.banned = await mk(id.banned);
+    win.bob = await mk(id.bob);
+    win.blocker = await mk(id.blocker);
+    // A win stored 'public' before this PR (the migration rewrote existing
+    // rows; this proves a stray public row still has no world-readable arm).
+    win.legacyPublic = await mk(id.bob);
+    await prisma.$executeRaw`
+      UPDATE "CommunityWin" SET visibility = 'public' WHERE id = ${win.legacyPublic}`;
+  });
+
+  afterAll(async () => {
+    if (!prisma) return;
+    await prisma.$executeRaw`DELETE FROM "CommunityWin" WHERE coach_id = ${id.coach}`;
+    await prisma.$executeRaw`DELETE FROM "CommunityWin" WHERE id = ANY(${extra}::text[])`;
+    await prisma.$executeRaw`DELETE FROM "UserBlock" WHERE blocker_id = ${id.blocker}`;
+    await prisma.$executeRaw`DELETE FROM community_workspace_bans WHERE workspace_id = ${id.ws}::uuid`;
+    await prisma.$executeRaw`DELETE FROM community_workspaces WHERE id = ${id.ws}::uuid`;
+    await prisma.$executeRaw`DELETE FROM "User" WHERE id = ANY(${Object.values(id).filter((v) => v.length === 36)}::text[])`;
+    await prisma.$disconnect();
+  });
+
+  it('has no public arm: another tenant sees nothing, legacy public rows included', async () => {
+    expect(await visibleIds(id.stranger)).toEqual([]);
+  });
+
+  it('a teammate sees visible circle wins, never hidden ones or a banned author', async () => {
+    expect(await visibleIds(id.bob)).toEqual(
+      [win.alice, win.bob, win.legacyPublic, win.blocker].sort(),
+    );
+  });
+
+  it('the author sees their visible wins but not a hidden one', async () => {
+    const seen = await visibleIds(id.alice);
+    expect(seen).toContain(win.alice);
+    expect(seen).not.toContain(win.aliceHidden);
+  });
+
+  it('the moderating coach sees every win in the circle, hidden included', async () => {
+    expect(await visibleIds(id.coach)).toEqual(Object.values(win).sort());
+  });
+
+  it('a banned viewer reads no teammate wins, only their own', async () => {
+    expect(await visibleIds(id.banned)).toEqual([win.banned]);
+  });
+
+  it('a block hides wins both ways', async () => {
+    expect(await visibleIds(id.blocker)).not.toContain(win.alice);
+    expect(await visibleIds(id.alice)).not.toContain(win.blocker);
+    expect(await visibleIds(id.bob)).toEqual(expect.arrayContaining([win.alice, win.blocker]));
+  });
+
+  it('the author cannot unhide, move or publish a win', async () => {
+    // A hidden win is not even visible to its author, so the unhide touches
+    // no row (and the trigger would refuse it if it did).
+    await expectNoEffect(
+      as(
+        id.alice,
+        (tx) =>
+          tx.$executeRaw`UPDATE "CommunityWin" SET hidden_at = NULL WHERE id = ${win.aliceHidden}`,
+      ),
+    );
+    await expectDenied(
+      as(
+        id.alice,
+        (tx) => tx.$executeRaw`UPDATE "CommunityWin" SET hidden_at = now() WHERE id = ${win.alice}`,
+      ),
+    );
+    await expectDenied(
+      as(
+        id.alice,
+        (tx) =>
+          tx.$executeRaw`UPDATE "CommunityWin" SET visibility = 'public' WHERE id = ${win.alice}`,
+      ),
+    );
+    await expectDenied(
+      as(
+        id.alice,
+        (tx) =>
+          tx.$executeRaw`UPDATE "CommunityWin" SET coach_id = ${id.otherCoach} WHERE id = ${win.alice}`,
+      ),
+    );
+    await expectDenied(
+      as(
+        id.alice,
+        (tx) =>
+          tx.$executeRaw`
+          INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility, hidden_at)
+          VALUES (${randomUUID()}, ${id.alice}, ${id.coach}, 'x', 'y', 'circle', now())`,
+      ),
+    );
+    await expectDenied(
+      as(
+        id.alice,
+        (tx) =>
+          tx.$executeRaw`
+          INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+          VALUES (${randomUUID()}, ${id.alice}, ${id.coach}, 'x', 'y', 'public')`,
+      ),
+    );
+    const row = await prisma.communityWin.findUnique({ where: { id: win.aliceHidden } });
+    expect(row?.hidden_at).toBeInstanceOf(Date);
+  });
+
+  it('the coach can hide a win; the author can still edit their own text', async () => {
+    const hid = await as(
+      id.coach,
+      (tx) => tx.$executeRaw`UPDATE "CommunityWin" SET hidden_at = now() WHERE id = ${win.bob}`,
+    );
+    expect(hid).toBe(1);
+    const edited = await as(
+      id.alice,
+      (tx) => tx.$executeRaw`UPDATE "CommunityWin" SET title = 'Edited' WHERE id = ${win.alice}`,
+    );
+    expect(edited).toBe(1);
+  });
+
+  // ── Fix round 5 (Sol A-610-2 / Opus B-610-6): coach_id is never trusted ──
+
+  async function insertAs(
+    actor: string,
+    row: { userId: string; coachId: string | null },
+  ): Promise<number> {
+    const newId = randomUUID();
+    extra.push(newId);
+    return as(
+      actor,
+      (tx) => tx.$executeRaw`
+        INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+        VALUES (${newId}, ${row.userId}, ${row.coachId}, 'x', 'y', 'circle')`,
+    );
+  }
+
+  it('an author cannot insert a win naming themselves as its coach', async () => {
+    await expectDenied(insertAs(id.alice, { userId: id.alice, coachId: id.alice }));
+  });
+
+  it('an author cannot inject a win into another coach circle (forged foreign coach_id)', async () => {
+    await expectDenied(insertAs(id.stranger, { userId: id.stranger, coachId: id.coach }));
+    // A banned member cannot re-enter a circle through another coach either.
+    await expectDenied(insertAs(id.banned, { userId: id.banned, coachId: id.otherCoach }));
+    await expectDenied(insertAs(id.alice, { userId: id.alice, coachId: null }));
+  });
+
+  it('the author (own coach), the current coach (coach path) and a coach for their own win may insert', async () => {
+    expect(await insertAs(id.alice, { userId: id.alice, coachId: id.coach })).toBe(1);
+    expect(await insertAs(id.coach, { userId: id.bob, coachId: id.coach })).toBe(1);
+    expect(await insertAs(id.coach, { userId: id.coach, coachId: id.coach })).toBe(1);
+  });
+
+  it('a forged self-coach row (written by a privileged path) gives the author no moderator power', async () => {
+    const forged = randomUUID();
+    extra.push(forged);
+    await prisma.$executeRaw`
+      INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+      VALUES (${forged}, ${id.alice}, ${id.alice}, 'x', 'y', 'circle')`;
+    // The real coach (live relationship) hides it ...
+    expect(
+      await as(
+        id.coach,
+        (tx) => tx.$executeRaw`UPDATE "CommunityWin" SET hidden_at = now() WHERE id = ${forged}`,
+      ),
+    ).toBe(1);
+    // ... and the author can neither see the hidden row nor unhide it.
+    expect(await visibleIds(id.alice)).not.toContain(forged);
+    await expectNoEffect(
+      as(
+        id.alice,
+        (tx) => tx.$executeRaw`UPDATE "CommunityWin" SET hidden_at = NULL WHERE id = ${forged}`,
+      ),
+    );
+    const row = await prisma.communityWin.findUnique({ where: { id: forged } });
+    expect(row?.hidden_at).toBeInstanceOf(Date);
+  });
+
+  it('a forged foreign-coach row never reaches that coach circle (teammate helper checks the author)', async () => {
+    const forged = randomUUID();
+    extra.push(forged);
+    await prisma.$executeRaw`
+      INSERT INTO "CommunityWin" (id, user_id, coach_id, title, description, visibility)
+      VALUES (${forged}, ${id.stranger}, ${id.coach}, 'x', 'y', 'circle')`;
+    const seen = await as(
+      id.bob,
+      async (tx) =>
+        tx.$queryRaw<Array<{ id: string }>>`SELECT id FROM "CommunityWin" WHERE id = ${forged}`,
+    );
+    expect(seen).toEqual([]);
+  });
+
+  // ── C-610-11 (B-UGC-5): no coach lookup for API roles ──────────────────
+
+  it('C-610-11: a signed-in role cannot call the coach lookup (no user -> coach resolution)', async () => {
+    await expect(
+      as(
+        id.stranger,
+        (tx) => tx.$queryRaw`SELECT app.community_win_author_coach(${id.alice}) AS c`,
+      ),
+    ).rejects.toThrow(/42501|permission denied/);
+    // Not even for their own id: the lookup is server-only now.
+    await expect(
+      as(id.alice, (tx) => tx.$queryRaw`SELECT app.community_win_author_coach(${id.alice}) AS c`),
+    ).rejects.toThrow(/42501|permission denied/);
+  });
+
+  it('C-610-11: the boolean matcher answers only for the author or their current coach', async () => {
+    const matches = (actor: string, author: string, coach: string | null) =>
+      as(actor, async (tx) => {
+        const rows = await tx.$queryRaw<Array<{ ok: boolean }>>`
+          SELECT app.community_win_coach_matches(${author}, ${coach}) AS ok`;
+        return rows[0]?.ok;
+      });
+    // The author and their current coach get the true answer ...
+    expect(await matches(id.alice, id.alice, id.coach)).toBe(true);
+    expect(await matches(id.alice, id.alice, id.otherCoach)).toBe(false);
+    expect(await matches(id.coach, id.bob, id.coach)).toBe(true);
+    expect(await matches(id.coach, id.coach, id.coach)).toBe(true);
+    // ... nobody else can confirm a pairing, even a correct one.
+    expect(await matches(id.stranger, id.alice, id.coach)).toBe(false);
+    expect(await matches(id.bob, id.alice, id.coach)).toBe(false);
+    expect(await matches(id.otherCoach, id.alice, id.coach)).toBe(false);
+    expect(await matches(id.stranger, id.alice, null)).toBe(false);
+  });
+});

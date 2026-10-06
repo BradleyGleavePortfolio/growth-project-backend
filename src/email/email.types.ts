@@ -26,6 +26,13 @@ export const EmailTemplateKey = {
   PAYMENT_REMINDER_URGENT: 'payment-reminder-urgent',
   PAYMENT_FINAL_NOTICE: 'payment-final-notice',
   PAYMENT_RECOVERED: 'payment-recovered',
+  // S-FEE round 5 (OR-111-1) — refund / chargeback payout notice to a coach.
+  COACH_PAYOUT_ADJUSTMENT: 'coach-payout-adjustment',
+  // S-DUNNING-R2 — Smart Dunning v2 notices. The body is Roman's rendered
+  // copy (`roman_body`); the button opens the native in-app card update via
+  // the https universal link (`update_card_url`). Append-only.
+  DUNNING_V2_CLIENT: 'dunning-v2-client',
+  DUNNING_V2_COACH: 'dunning-v2-coach',
 } as const;
 export type EmailTemplateKey =
   (typeof EmailTemplateKey)[keyof typeof EmailTemplateKey];
@@ -49,6 +56,9 @@ export interface SendEmailInput {
   from?: string;
   // Optional reply-to header; falls back to provider default if unset.
   replyTo?: string;
+  // Optional cancellation: checked before the send-log row, again right before the transport,
+  // and passed to the provider request. An abort before the transport returns notStarted.
+  signal?: AbortSignal;
 }
 
 export interface SendEmailResult {
@@ -58,7 +68,12 @@ export interface SendEmailResult {
   providerMessageId: string | null;
   // Mirrored from input.idempotencyKey for caller convenience.
   idempotencyKey: string;
-  // Human-readable error text on 'failed'. Never contains the provider
-  // API key. Safe to surface up to the operator.
+  // Diagnostic on 'failed': server-owned parts only, e.g.
+  // `provider=resend status=422 code=validation_error` or
+  // `render: error=Error` (B-700-1: never the provider body or an exception
+  // message, which can hold an address or a name). Safe to surface up to
+  // the operator.
   error?: string;
+  // True when input.signal aborted before the provider was called: nothing was sent.
+  notStarted?: boolean;
 }

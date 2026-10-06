@@ -11,6 +11,7 @@
  */
 import type { CommunityMessage, User } from '@prisma/client';
 import { CommunityMessagesService } from '../../../src/community/messages/community-messages.service';
+import { safetyWithBlocks } from '../safety/safety-test-helpers';
 
 const COHORT = '11111111-1111-1111-1111-111111111111';
 const WORKSPACE = '22222222-2222-2222-2222-222222222222';
@@ -82,10 +83,11 @@ describe('CommunityMessagesService.send — coach-inbox producer', () => {
       repo as never,
       realtime as never,
       planContext as never,
+      safetyWithBlocks(),
     );
   });
 
-  it('stamps the cohort\'s outstanding client messages when a COACH replies', async () => {
+  it("stamps the cohort's outstanding client messages when a COACH replies", async () => {
     repo.createCohortMessage.mockResolvedValue(createdMessage(coach.id));
     await service.send(coach, COHORT, 'noted, keep going');
     expect(repo.markCohortClientMessagesReplied).toHaveBeenCalledTimes(1);

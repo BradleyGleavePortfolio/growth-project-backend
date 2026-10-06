@@ -52,6 +52,7 @@ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { isMwbTemplatesEnabled } from './mwb-templates.feature';
+import { assertLastDayMayGo, lockProgramMaster } from './program-guards';
 import {
   AssignProgramDto,
   CloneProgramResultDto,
@@ -82,6 +83,10 @@ export interface Paginated<T> {
   items: T[];
   nextCursor: string | null;
 }
+
+// Must match LOCK_NS_PROGRAM_GRID in program-library.service.ts ('MWBG'): the
+// legacy plan archive route and the library grid writes serialise per program.
+const LOCK_NS_PROGRAM_GRID = 0x4d574247;
 
 @Injectable()
 export class WorkoutBuilderService {
@@ -151,14 +156,11 @@ export class WorkoutBuilderService {
    * Format (after base64 decode): `${isoTimestamp}|${id}`
    */
   private encodeCursor(timestamp: Date | string, id: string): string {
-    const iso =
-      typeof timestamp === 'string' ? timestamp : timestamp.toISOString();
+    const iso = typeof timestamp === 'string' ? timestamp : timestamp.toISOString();
     return Buffer.from(`${iso}|${id}`, 'utf8').toString('base64');
   }
 
-  private decodeCursor(
-    cursor: string | null | undefined,
-  ): { timestamp: Date; id: string } | null {
+  private decodeCursor(cursor: string | null | undefined): { timestamp: Date; id: string } | null {
     if (!cursor) return null;
     try {
       const raw = Buffer.from(cursor, 'base64').toString('utf8');
@@ -214,10 +216,7 @@ export class WorkoutBuilderService {
       });
       claimId = claim.id;
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         // Another request already holds (or completed with) this key.
         const existing = await this.prisma.workoutBuilderIdempotencyKey.findUnique({
           where: {
@@ -230,18 +229,14 @@ export class WorkoutBuilderService {
         });
         if (!existing) {
           // Race: row was just deleted (op() failed). Try once more.
-          throw new ConflictException(
-            'Request in progress — retry in a moment',
-          );
+          throw new ConflictException('Request in progress — retry in a moment');
         }
         if (existing.status === 'completed') {
           return existing.response_json as unknown as T;
         }
         // status === 'in_progress' → concurrent retry. Surface 409 so
         // the client can back off; we do NOT run the mutation a second time.
-        throw new ConflictException(
-          'Request in progress — retry in a moment',
-        );
+        throw new ConflictException('Request in progress — retry in a moment');
       }
       throw err;
     }
@@ -283,10 +278,7 @@ export class WorkoutBuilderService {
    * newest plans come first and the ordering matches the composite
    * index (coach_id, archived_at, created_at DESC) without a sort step.
    */
-  async listPlans(
-    coachId: string,
-    query: PaginatedQuery = {},
-  ): Promise<Paginated<unknown>> {
+  async listPlans(coachId: string, query: PaginatedQuery = {}): Promise<Paginated<unknown>> {
     await this.assertCoach(coachId);
     const limit = this.resolveLimit(query.limit);
     const decoded = this.decodeCursor(query.cursor);
@@ -321,8 +313,7 @@ export class WorkoutBuilderService {
     const hasMore = items.length > limit;
     const page = hasMore ? items.slice(0, limit) : items;
     const last = page[page.length - 1];
-    const nextCursor =
-      hasMore && last ? this.encodeCursor(last.created_at, last.id) : null;
+    const nextCursor = hasMore && last ? this.encodeCursor(last.created_at, last.id) : null;
     return { items: page, nextCursor };
   }
 
@@ -338,30 +329,47 @@ export class WorkoutBuilderService {
       },
     });
     if (!plan) throw new NotFoundException('Workout plan not found');
-    if (plan.coach_id !== coachId) throw new ForbiddenException();
+    if (plan.coach_id !== coachId && !(await this.canOpenTeamProgramDay(coachId, plan))) {
+      throw new ForbiddenException();
+    }
     return plan;
   }
 
-  async createPlan(
-    coachId: string,
-    dto: CreateWorkoutPlanDto,
-    idempotencyKey?: string | null,
-  ) {
+  /**
+   * S-MWB-2 — a program day plan carries the TENANT (head coach) id, so a team
+   * sub-coach failed the bare ownership check above even for a program they
+   * authored. Allow the open when the caller is an in-team sub-coach of the
+   * plan's tenant (membership-checked, never a bare coach_id) AND the plan is a
+   * day of a library master they own or one shared with the team. Owner-only
+   * masters of the head coach stay closed (403, never a 404 leak).
+   */
+  private async canOpenTeamProgramDay(
+    callerId: string,
+    plan: { coach_id: string; program_id: string | null },
+  ): Promise<boolean> {
+    if (!plan.program_id || !this.subCoachScope) return false;
+    const headCoachId = await this.subCoachScope.getHeadCoachIdForSubCoach(callerId);
+    if (headCoachId === null || headCoachId !== plan.coach_id) return false;
+    const program = await this.prisma.workoutProgram.findUnique({
+      where: { id: plan.program_id },
+      select: { is_template: true, owner_user_id: true, visibility: true },
+    });
+    if (!program?.is_template) return false;
+    return program.owner_user_id === callerId || program.visibility === 'tenant_shared';
+  }
+
+  async createPlan(coachId: string, dto: CreateWorkoutPlanDto, idempotencyKey?: string | null) {
     await this.assertCoach(coachId);
-    return this.withIdempotency(
-      coachId,
-      'workout-builder:createPlan',
-      idempotencyKey,
-      () =>
-        this.prisma.workoutPlan.create({
-          data: {
-            coach_id: coachId,
-            name: dto.name,
-            type: dto.type,
-            duration_estimate_minutes: dto.duration_estimate_minutes ?? null,
-          },
-          include: { exercises: true },
-        }),
+    return this.withIdempotency(coachId, 'workout-builder:createPlan', idempotencyKey, () =>
+      this.prisma.workoutPlan.create({
+        data: {
+          coach_id: coachId,
+          name: dto.name,
+          type: dto.type,
+          duration_estimate_minutes: dto.duration_estimate_minutes ?? null,
+        },
+        include: { exercises: true },
+      }),
     );
   }
 
@@ -409,11 +417,7 @@ export class WorkoutBuilderService {
    * Idempotency ledger is still consulted so concurrent retries collapse
    * to one cached response just like the other coach writes.
    */
-  async archivePlan(
-    coachId: string,
-    planId: string,
-    idempotencyKey?: string | null,
-  ) {
+  async archivePlan(coachId: string, planId: string, idempotencyKey?: string | null) {
     await this.assertCoach(coachId);
     await this.assertPlanOwnership(coachId, planId);
     return this.withIdempotency(
@@ -424,10 +428,30 @@ export class WorkoutBuilderService {
         // Atomic conditional update — safe under concurrent DELETEs.
         // Whichever request matches first stamps archived_at; replays
         // (and concurrent losers) match zero rows and no-op.
-        await this.prisma.workoutPlan.updateMany({
-          where: { id: planId, coach_id: coachId, archived_at: null },
-          data: { archived_at: new Date() },
+        const target = await this.prisma.workoutPlan.findUnique({
+          where: { id: planId },
+          select: { program_id: true },
         });
+        const programId = target?.program_id ?? null;
+        if (programId) {
+          // S-MWB-2 C-640-5: a program day archived through the legacy plan
+          // route takes the same grid lock as the library clear-day route and
+          // obeys the same rule, so a master a package delivers (or an active
+          // clinic consultation set uses, B-640-11) never empties.
+          await this.prisma.$transaction(async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS_PROGRAM_GRID}::int4, hashtext(${programId}))`;
+            await this.assertPackagedProgramKeepsADay(tx, programId, planId);
+            await tx.workoutPlan.updateMany({
+              where: { id: planId, coach_id: coachId, archived_at: null },
+              data: { archived_at: new Date() },
+            });
+          });
+        } else {
+          await this.prisma.workoutPlan.updateMany({
+            where: { id: planId, coach_id: coachId, archived_at: null },
+            data: { archived_at: new Date() },
+          });
+        }
 
         // Re-read the row regardless. Handles both first-archive and
         // replay: in both cases we return the now-archived plan.
@@ -439,6 +463,25 @@ export class WorkoutBuilderService {
         return plan;
       },
     );
+  }
+
+  /**
+   * Refuse to archive the last live day of a program that a live package
+   * delivers or an active clinic consultation set uses (typed 409, same codes
+   * and copy as the library clear-day route). Takes the master's row lock
+   * first (C-640-5), the lock "Add to package" re-counts days under.
+   */
+  private async assertPackagedProgramKeepsADay(
+    tx: Prisma.TransactionClient,
+    programId: string,
+    planId: string,
+  ): Promise<void> {
+    const master = await lockProgramMaster(tx, programId);
+    const others = await tx.workoutPlan.count({
+      where: { program_id: programId, archived_at: null, id: { not: planId } },
+    });
+    if (others > 0 || !master) return;
+    await assertLastDayMayGo(tx, master);
   }
 
   // ─── WorkoutPlanExercise rows ─────────────────────────────────────────────
@@ -467,9 +510,7 @@ export class WorkoutBuilderService {
     // ledger so a malformed retry never claims an idempotency key.
     const orders = rows.map((r) => r.order);
     if (new Set(orders).size !== orders.length) {
-      throw new BadRequestException(
-        'Exercise order values must be unique within a plan',
-      );
+      throw new BadRequestException('Exercise order values must be unique within a plan');
     }
 
     return this.withIdempotency(
@@ -609,18 +650,17 @@ export class WorkoutBuilderService {
     await this.assertPlanOwnership(coachId, planId);
     const limit = this.resolveLimit(query.limit);
     const decoded = this.decodeCursor(query.cursor);
-    const cursorWhere: Prisma.ClientWorkoutAssignmentWhereInput | undefined =
-      decoded
-        ? {
-            OR: [
-              { scheduled_for: { gt: decoded.timestamp } },
-              {
-                scheduled_for: decoded.timestamp,
-                id: { gt: decoded.id },
-              },
-            ],
-          }
-        : undefined;
+    const cursorWhere: Prisma.ClientWorkoutAssignmentWhereInput | undefined = decoded
+      ? {
+          OR: [
+            { scheduled_for: { gt: decoded.timestamp } },
+            {
+              scheduled_for: decoded.timestamp,
+              id: { gt: decoded.id },
+            },
+          ],
+        }
+      : undefined;
     const items = await this.prisma.clientWorkoutAssignment.findMany({
       where: {
         workout_plan_id: planId,
@@ -632,10 +672,7 @@ export class WorkoutBuilderService {
     const hasMore = items.length > limit;
     const page = hasMore ? items.slice(0, limit) : items;
     const last = page[page.length - 1];
-    const nextCursor =
-      hasMore && last
-        ? this.encodeCursor(last.scheduled_for, last.id)
-        : null;
+    const nextCursor = hasMore && last ? this.encodeCursor(last.scheduled_for, last.id) : null;
     return { items: page, nextCursor };
   }
 
@@ -645,24 +682,20 @@ export class WorkoutBuilderService {
    * Restricted to client_id = userId so a leaked URL cannot expose
    * another user's training history (defense-in-depth atop RLS).
    */
-  async listMyAssignments(
-    userId: string,
-    query: PaginatedQuery = {},
-  ): Promise<Paginated<unknown>> {
+  async listMyAssignments(userId: string, query: PaginatedQuery = {}): Promise<Paginated<unknown>> {
     const limit = this.resolveLimit(query.limit);
     const decoded = this.decodeCursor(query.cursor);
-    const cursorWhere: Prisma.ClientWorkoutAssignmentWhereInput | undefined =
-      decoded
-        ? {
-            OR: [
-              { scheduled_for: { gt: decoded.timestamp } },
-              {
-                scheduled_for: decoded.timestamp,
-                id: { gt: decoded.id },
-              },
-            ],
-          }
-        : undefined;
+    const cursorWhere: Prisma.ClientWorkoutAssignmentWhereInput | undefined = decoded
+      ? {
+          OR: [
+            { scheduled_for: { gt: decoded.timestamp } },
+            {
+              scheduled_for: decoded.timestamp,
+              id: { gt: decoded.id },
+            },
+          ],
+        }
+      : undefined;
     const items = await this.prisma.clientWorkoutAssignment.findMany({
       where: {
         client_id: userId,
@@ -688,10 +721,7 @@ export class WorkoutBuilderService {
     const hasMore = items.length > limit;
     const page = hasMore ? items.slice(0, limit) : items;
     const last = page[page.length - 1];
-    const nextCursor =
-      hasMore && last
-        ? this.encodeCursor(last.scheduled_for, last.id)
-        : null;
+    const nextCursor = hasMore && last ? this.encodeCursor(last.scheduled_for, last.id) : null;
     return { items: page.map((a) => this.presentAssignment(a)), nextCursor };
   }
 
@@ -743,11 +773,7 @@ export class WorkoutBuilderService {
    * Authorisation: existence check is separate from ownership check so
    * a foreign assignment gets a 403 (not a 404 that leaks existence).
    */
-  async completeAssignment(
-    clientId: string,
-    assignmentId: string,
-    dto: CompleteAssignmentDto,
-  ) {
+  async completeAssignment(clientId: string, assignmentId: string, dto: CompleteAssignmentDto) {
     // Existence + ownership disambiguation (R22 server-authoritative gate).
     const existing = await this.prisma.clientWorkoutAssignment.findUnique({
       where: { id: assignmentId },
@@ -765,10 +791,7 @@ export class WorkoutBuilderService {
 
     // Fast-path replay: same idempotency key on an already-completed row
     // returns the full record without a write.
-    if (
-      existing.completed_at &&
-      existing.completion_idempotency_key === dto.idempotency_key
-    ) {
+    if (existing.completed_at && existing.completion_idempotency_key === dto.idempotency_key) {
       return this.prisma.clientWorkoutAssignment.findUnique({
         where: { id: assignmentId },
       });
@@ -788,8 +811,7 @@ export class WorkoutBuilderService {
         post_notes: dto.post_notes ?? null,
         completion_idempotency_key: dto.idempotency_key,
         started_at: dto.started_at ? new Date(dto.started_at) : null,
-        completion_payload:
-          (dto.completion_payload as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        completion_payload: (dto.completion_payload as Prisma.InputJsonValue) ?? Prisma.JsonNull,
       },
     });
 
@@ -886,9 +908,12 @@ export class WorkoutBuilderService {
   async assertCanAccessClient(actingUserId: string, clientId: string) {
     const client = await this.prisma.user.findUnique({
       where: { id: clientId },
-      select: { id: true, coach_id: true },
+      select: { id: true, coach_id: true, deleted_at: true },
     });
-    if (!client) throw new NotFoundException('Client not found');
+    // S-MWB-2 B-640-3: account deletion tombstones the User row (deleted_at)
+    // rather than deleting it, so a tombstoned client is "not found" here and
+    // can never be handed new workouts or program copies.
+    if (!client || client.deleted_at) throw new NotFoundException('Client not found');
     // Head coach / owner direct ownership.
     if (client.coach_id === actingUserId) return;
     // Sub-coach overlay (open SubCoachAssignment). Only consulted when the
@@ -1033,8 +1058,7 @@ export class WorkoutBuilderService {
     const actorTenantId = actor.coach_id ?? actor.id;
     const isOwner = source.owner_user_id === actingUserId;
     const isSharedInTenant =
-      source.visibility === 'tenant_shared' &&
-      source.coach_id === actorTenantId;
+      source.visibility === 'tenant_shared' && source.coach_id === actorTenantId;
     if (!isOwner && !isSharedInTenant) {
       throw new ForbiddenException(
         'You may only fork a program you own or a tenant-shared building block in your business',
@@ -1122,11 +1146,7 @@ export class WorkoutBuilderService {
    * Returns the new program, its plans, and the fresh program revision. The
    * controller maps this to the typed CloneProgramResultDto.
    */
-  async cloneProgramToClient(
-    masterProgramId: string,
-    clientId: string,
-    coachId: string,
-  ) {
+  async cloneProgramToClient(masterProgramId: string, clientId: string, coachId: string) {
     // (1) Flag gate FIRST — before any DB read — so the feature is genuinely
     // unreachable when OFF. 404 (NotFound), never 403, to hide its existence.
     if (!isMwbTemplatesEnabled()) {
@@ -1147,8 +1167,7 @@ export class WorkoutBuilderService {
     const actorTenantId = actor.coach_id ?? actor.id;
     const canReachMaster =
       master.owner_user_id === coachId ||
-      (master.visibility === 'tenant_shared' &&
-        master.coach_id === actorTenantId);
+      (master.visibility === 'tenant_shared' && master.coach_id === actorTenantId);
     if (!canReachMaster) {
       // A program the coach cannot reach (foreign owner / foreign tenant) must
       // look NOT FOUND rather than forbidden — never leak that it exists
@@ -1185,19 +1204,21 @@ export class WorkoutBuilderService {
         // coach already exists, so the winner has already committed. Surface a
         // typed ConflictException (409) rather than silently creating a second
         // clone (R0: never a silent double-create).
+        // S-MWB-2: the probe is keyed on the CLIENT (WorkoutProgram.client_id,
+        // migration 20270223000000), not only the coach, so the same master
+        // cloned for a second client is a new clone instead of a false 409.
         const existingClone = await tx.workoutProgram.findFirst({
           where: {
             cloned_from_id: masterProgramId,
             owner_user_id: coachId,
+            client_id: clientId,
             is_template: false,
             archived_at: null,
           },
           select: { id: true },
         });
         if (existingClone) {
-          throw new ConflictException(
-            'A clone of this program for this client already exists',
-          );
+          throw new ConflictException('A clone of this program for this client already exists');
         }
         let program;
         try {
@@ -1214,6 +1235,7 @@ export class WorkoutBuilderService {
               cloned_from_id: masterProgramId,
               goal_tag: master.goal_tag,
               version: 1,
+              client_id: clientId,
             },
           });
         } catch (err) {
@@ -1231,9 +1253,7 @@ export class WorkoutBuilderService {
             err instanceof Prisma.PrismaClientKnownRequestError &&
             (err.code === 'P2002' || err.code === 'P2034')
           ) {
-            throw new ConflictException(
-              'A clone of this program for this client already exists',
-            );
+            throw new ConflictException('A clone of this program for this client already exists');
           }
           throw err;
         }
@@ -1253,10 +1273,7 @@ export class WorkoutBuilderService {
           data: {
             program_id: program.id,
             revision_index: 0,
-            structure_json: this.serialiseProgramStructure(
-              program,
-              plans,
-            ),
+            structure_json: this.serialiseProgramStructure(program, plans),
             author_id: coachId,
             author_kind: actor.coach_id ? 'sub_coach' : 'coach',
             cause: 'clone',
@@ -1358,8 +1375,7 @@ export class WorkoutBuilderService {
         const actorTenantId = actor.coach_id ?? actor.id;
         const canReach =
           program.owner_user_id === coachId ||
-          (program.visibility === 'tenant_shared' &&
-            program.coach_id === actorTenantId);
+          (program.visibility === 'tenant_shared' && program.coach_id === actorTenantId);
         if (!canReach) throw new ForbiddenException('You cannot assign this program');
         await this.assertCanAccessClient(coachId, dto.client_id);
 
@@ -1372,37 +1388,77 @@ export class WorkoutBuilderService {
           throw new BadRequestException('Program has no plans to assign');
         }
 
-        const startDate = new Date(dto.start_date);
-        const DAY_MS = 24 * 60 * 60 * 1000;
-
-        const created = await this.prisma.$transaction(async (tx) => {
-          const out: Array<{ id: string }> = [];
-          for (const plan of plans) {
-            // Offset = full weeks (7 days each) + day-of-week within the week.
-            const offsetDays =
-              (plan.week_index ?? 0) * 7 + (plan.day_index ?? 0);
-            const scheduledFor = new Date(
-              startDate.getTime() + offsetDays * DAY_MS,
-            );
-            const assignment = await tx.clientWorkoutAssignment.create({
-              data: {
-                workout_plan_id: plan.id,
-                client_id: dto.client_id,
-                assigned_by_coach_id: coachId,
-                scheduled_for: scheduledFor,
-              },
-            });
-            await this.writeAssignmentSnapshot(tx, assignment.id, plan.id);
-            out.push({ id: assignment.id });
-          }
-          return out;
-        });
+        const created = await this.prisma.$transaction((tx) =>
+          this.fanOutProgramPlans(tx, plans, coachId, dto.client_id, dto.start_date),
+        );
 
         // One push for the whole program (avoid N notifications).
         this.emitAssignmentPush(dto.client_id, created[0].id, plans[0].id);
         return { assignments: created };
       },
     );
+  }
+
+  /**
+   * Program fan-out inside the CALLER's transaction: one assignment row and
+   * one frozen snapshot per live plan of `programId`, scheduled from
+   * `startDate`. No idempotency ledger and no push: the caller owns the
+   * tenancy checks and the exactly-once guarantee (its own fence), and calls
+   * `notifyProgramAssigned` only AFTER its transaction commits. Used by
+   * onboarding completion so the assignment is written under the onboarding
+   * claim fence and is never visible for a stale attempt (#607 A607-2-R1).
+   */
+  async writeProgramAssignmentsInTx(
+    tx: Prisma.TransactionClient,
+    coachId: string,
+    programId: string,
+    clientId: string,
+    startDate: string,
+  ): Promise<{ assignments: Array<{ id: string }>; first_plan_id: string }> {
+    const plans = await tx.workoutPlan.findMany({
+      where: { program_id: programId, archived_at: null },
+      orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
+      select: { id: true, week_index: true, day_index: true },
+    });
+    if (plans.length === 0) {
+      throw new BadRequestException('Program has no plans to assign');
+    }
+    const assignments = await this.fanOutProgramPlans(tx, plans, coachId, clientId, startDate);
+    return { assignments, first_plan_id: plans[0].id };
+  }
+
+  /** WORKOUT_ASSIGNED push for a committed program fan-out (fire-and-forget). */
+  notifyProgramAssigned(clientId: string, assignmentId: string, workoutPlanId: string): void {
+    this.emitAssignmentPush(clientId, assignmentId, workoutPlanId);
+  }
+
+  /** Shared by assignProgramToClient and writeProgramAssignmentsInTx. */
+  private async fanOutProgramPlans(
+    tx: Prisma.TransactionClient,
+    plans: Array<{ id: string; week_index: number | null; day_index: number | null }>,
+    coachId: string,
+    clientId: string,
+    startDateIso: string,
+  ): Promise<Array<{ id: string }>> {
+    const startDate = new Date(startDateIso);
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const out: Array<{ id: string }> = [];
+    for (const plan of plans) {
+      // Offset = full weeks (7 days each) + day-of-week within the week.
+      const offsetDays = (plan.week_index ?? 0) * 7 + (plan.day_index ?? 0);
+      const scheduledFor = new Date(startDate.getTime() + offsetDays * DAY_MS);
+      const assignment = await tx.clientWorkoutAssignment.create({
+        data: {
+          workout_plan_id: plan.id,
+          client_id: clientId,
+          assigned_by_coach_id: coachId,
+          scheduled_for: scheduledFor,
+        },
+      });
+      await this.writeAssignmentSnapshot(tx, assignment.id, plan.id);
+      out.push({ id: assignment.id });
+    }
+    return out;
   }
 
   // ─── MWB-1: snapshot helpers (§3.3) ───────────────────────────────────────
@@ -1532,11 +1588,7 @@ export class WorkoutBuilderService {
    * human and AI assign paths behave identically. Never throws: the
    * assignment row is authoritative, a push failure must not roll it back.
    */
-  private emitAssignmentPush(
-    clientId: string,
-    assignmentId: string,
-    workoutPlanId: string,
-  ): void {
+  private emitAssignmentPush(clientId: string, assignmentId: string, workoutPlanId: string): void {
     if (!this.notifications) return;
     void this.notifications
       .createNotification({

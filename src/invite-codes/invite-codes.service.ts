@@ -126,6 +126,17 @@ export const INVITE_ATTACH_ERROR = {
   USER_NOT_FOUND: 'user_not_found',
   /** Anything else (DB error, timeout). */
   ATTACH_FAILED: 'attach_failed',
+  /**
+   * A2 coach code tools — the code exists but its coach turned it off
+   * (revoke, or a rotation without a grace period). Specific copy: ask the
+   * coach for their current code. Only a NEW redemption sees these three; a
+   * client already attached to that coach gets the idempotent replay.
+   */
+  CODE_REVOKED: 'code_revoked',
+  /** A2 — the code passed its expiry (including the end of a rotation grace period). */
+  CODE_EXPIRED: 'code_expired',
+  /** A2 — the code reached its signup limit (max_uses). */
+  CODE_EXHAUSTED: 'code_exhausted',
 } as const;
 export type InviteAttachErrorCode = (typeof INVITE_ATTACH_ERROR)[keyof typeof INVITE_ATTACH_ERROR];
 
@@ -157,6 +168,16 @@ class AttachRaceSameCoach extends Error {
   }
 }
 
+/** B-658-7 — the coach link the caller saw is no longer current: answer with that rotation's outcome. */
+class LinkAlreadyRotated extends Error {}
+
+function linkRotationConflict(): ConflictException {
+  return new ConflictException({
+    code: 'code_rotation_conflict',
+    message: 'Your coach link was just changed on another device. Refresh your codes to see the current link.',
+  });
+}
+
 /** Only students can be attached to a coach; every other role is refused, never rewritten. */
 function assertRedeemerIsStudent(me: { role: string }): void {
   if (me.role === 'student') return;
@@ -175,6 +196,47 @@ function invalidInviteCode(): BadRequestException {
     code: INVITE_ATTACH_ERROR.INVITE_CODE_INVALID,
     message: 'Invalid or expired invite code',
   });
+}
+
+/**
+ * A2 — a refusal for a code that EXISTS but cannot take a new signup, with a
+ * reason the client can act on. The code was already resolved to a real
+ * coach before this runs, so naming the lifecycle state leaks nothing a
+ * typed-in code had not already proven; unknown codes stay
+ * `invite_code_invalid`. Copy says what happened and what to do next.
+ */
+export function inviteCodeLifecycleRefusal(reason: string | null | undefined): BadRequestException {
+  switch (reason) {
+    case 'revoked':
+      return new BadRequestException({
+        code: INVITE_ATTACH_ERROR.CODE_REVOKED,
+        message:
+          'This code was turned off by the coach who shared it. Ask your coach for their current code.',
+      });
+    case 'expired':
+      return new BadRequestException({
+        code: INVITE_ATTACH_ERROR.CODE_EXPIRED,
+        message: 'This code has expired. Ask your coach for a new one.',
+      });
+    case 'max_uses_reached':
+      return new BadRequestException({
+        code: INVITE_ATTACH_ERROR.CODE_EXHAUSTED,
+        message: 'This code has reached its signup limit. Ask your coach for a new one.',
+      });
+    default:
+      return invalidInviteCode();
+  }
+}
+
+/** Lifecycle state of an InviteCode row for a NEW redemption (null = usable). */
+export function inviteCodeRowLifecycle(
+  row: { revoked: boolean; expires_at: Date | null; max_uses: number | null; used_count: number },
+  now: number = Date.now(),
+): 'revoked' | 'expired' | 'max_uses_reached' | null {
+  if (row.revoked) return 'revoked';
+  if (row.expires_at && row.expires_at.getTime() <= now) return 'expired';
+  if (row.max_uses !== null && row.used_count >= row.max_uses) return 'max_uses_reached';
+  return null;
 }
 
 /** Grant outcome attached to an attach result (C01). */
@@ -216,8 +278,7 @@ export class InviteCodesService {
       where: { coach_id: coachId },
       select: { status: true },
     });
-    const allowed =
-      sub && ['active', 'trialing', 'grandfathered'].includes(sub.status);
+    const allowed = sub && ['active', 'trialing', 'grandfathered'].includes(sub.status);
     if (!allowed) {
       throw new BadRequestException({
         code: INVITE_ATTACH_ERROR.COACH_NOT_ACCEPTING_CLIENTS,
@@ -341,7 +402,7 @@ export class InviteCodesService {
   // Returned shape:
   //   - head coach (no active sub-coach assignment): {effective_coach_id: callerId, invited_by_user_id: null}
   //   - sub-coach (>=1 active assignment): {effective_coach_id: head_coach_id, invited_by_user_id: callerId}
-  private async resolveTeamAttribution(
+  async resolveTeamAttribution(
     callerId: string,
   ): Promise<{ effective_coach_id: string; invited_by_user_id: string | null }> {
     const subAssignment = await this.prisma.teamSubCoachAssignment.findFirst({
@@ -486,7 +547,8 @@ export class InviteCodesService {
     }
     return this.prisma.inviteCode.update({
       where: { id: inviteCodeId },
-      data: { revoked: true },
+      // A2 — stamp when it was turned off (kept if it was already revoked).
+      data: { revoked: true, revoked_at: existing.revoked_at ?? new Date() },
     });
   }
 
@@ -499,13 +561,8 @@ export class InviteCodesService {
       include: { coach: { select: { id: true, name: true, role: true } } },
     });
     if (!record) return { valid: false, reason: 'not_found' };
-    if (record.revoked) return { valid: false, reason: 'revoked' };
-    if (record.expires_at && record.expires_at.getTime() <= Date.now()) {
-      return { valid: false, reason: 'expired' };
-    }
-    if (record.max_uses !== null && record.used_count >= record.max_uses) {
-      return { valid: false, reason: 'max_uses_reached' };
-    }
+    const lifecycle = inviteCodeRowLifecycle(record);
+    if (lifecycle) return { valid: false, reason: lifecycle };
     // Defensive: only a coach-role user should be able to claim students. If a
     // coach was later demoted, refuse to honor their codes.
     if (record.coach.role !== 'coach') {
@@ -551,27 +608,114 @@ export class InviteCodesService {
         throw err;
       }
     }
-    throw new InternalServerErrorException(
-      'Could not generate a unique invite code',
-    );
+    throw new InternalServerErrorException('Could not generate a unique invite code');
   }
 
   async regenerateDefaultForCoach(coachId: string) {
+    return (await this.rotateDefaultCode(coachId, 0)).profile;
+  }
+
+  /**
+   * A2 — rotate the coach's permanent link code. The new code replaces it on
+   * CoachProfile and the OLD code is archived as an InviteCode row in the
+   * same transaction, so it keeps resolving to this coach:
+   *   - graceMs = 0: archived revoked, so a new signup with it gets the
+   *     specific `code_revoked` refusal instead of a bare "invalid code";
+   *   - graceMs > 0: archived active until now + graceMs (unlimited uses),
+   *     then `code_expired`. Signups inside the window still attach.
+   * The archived row copies the package binding so a signup during the grace
+   * window gets the same package. Clients already attached are untouched:
+   * User.coach_id is the durable link, and a replay of the old code by an
+   * attached client stays the idempotent `already_attached` success.
+   * B-658-7: with `expectedCode` (the link the caller saw) a retry, or an
+   * overlapping duplicate, of a rotation that already happened writes nothing
+   * and returns that rotation's successor (`successor_code` on the archived row).
+   */
+  async rotateDefaultCode(
+    coachId: string,
+    graceMs: number,
+    expectedCode?: string | null,
+  ): Promise<{
+    profile: Awaited<ReturnType<InviteCodesService['getOrCreateDefaultForCoach']>>;
+    previous: { id: string; code: string; expires_at: Date | null; revoked: boolean };
+    replayed: boolean;
+    successorCode: string;
+  }> {
     await this.getOrCreateDefaultForCoach(coachId);
     for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
+      const next = await this.generateCodeUniqueAcrossTables();
       try {
-        return await this.prisma.coachProfile.update({
-          where: { user_id: coachId },
-          data: { invite_code: this.generateCode() },
+        return await this.prisma.$transaction(async (tx) => {
+          const current = await tx.coachProfile.findUnique({ where: { user_id: coachId } });
+          if (!current) throw new NotFoundException({ code: 'coach_profile_missing', message: 'Coach profile not found' });
+          if (expectedCode && current.invite_code !== expectedCode) throw new LinkAlreadyRotated();
+          const now = new Date();
+          const archived = await tx.inviteCode.create({
+            data: {
+              code: current.invite_code,
+              coach_id: coachId,
+              label: 'Previous coach link',
+              max_uses: null,
+              expires_at: graceMs > 0 ? new Date(now.getTime() + graceMs) : null,
+              revoked: graceMs <= 0,
+              revoked_at: graceMs <= 0 ? now : null,
+              package_id: current.invite_code_package_id,
+              grant_mode: current.invite_code_grant_mode,
+              successor_code: next,
+            },
+            select: { id: true, code: true, expires_at: true, revoked: true },
+          });
+          // Conditional on the code we archived: a concurrent rotation that
+          // already moved the link makes this a no-op, and throwing rolls the
+          // archive back so exactly one rotation wins.
+          const moved = await tx.coachProfile.updateMany({
+            where: { user_id: coachId, invite_code: current.invite_code },
+            data: { invite_code: next },
+          });
+          if (moved.count !== 1) {
+            if (expectedCode) throw new LinkAlreadyRotated();
+            throw linkRotationConflict();
+          }
+          const profile = await tx.coachProfile.findUnique({ where: { user_id: coachId } });
+          if (!profile) throw new NotFoundException({ code: 'coach_profile_missing', message: 'Coach profile not found' });
+          return { profile, previous: archived, replayed: false, successorCode: next };
         });
       } catch (err) {
+        if (err instanceof LinkAlreadyRotated && expectedCode) {
+          // Nothing is written: the archived row of the expected code names its successor.
+          const previous = await this.prisma.inviteCode.findUnique({
+            where: { code: expectedCode },
+            select: { id: true, code: true, expires_at: true, revoked: true, coach_id: true, successor_code: true },
+          });
+          if (!previous || previous.coach_id !== coachId || !previous.successor_code) throw linkRotationConflict();
+          const profile = await this.getOrCreateDefaultForCoach(coachId);
+          return { profile, previous, replayed: true, successorCode: previous.successor_code };
+        }
+        // A duplicate archive of the same code means a concurrent rotation won:
+        // the next attempt sees the moved link (and, with expectedCode, replays it).
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') continue;
         throw err;
       }
     }
-    throw new InternalServerErrorException(
-      'Could not generate a unique invite code',
-    );
+    throw new InternalServerErrorException('Could not generate a unique invite code');
+  }
+
+  /**
+   * A2 — a `GP-XXXXXX` candidate that is not in use as a coach link OR an
+   * InviteCode row (attach resolves the coach link first, so a cross-table
+   * duplicate would shadow a row). The unique indexes stay the final word;
+   * callers still retry on P2002.
+   */
+  async generateCodeUniqueAcrossTables(): Promise<string> {
+    for (let attempt = 0; attempt < MAX_GENERATION_ATTEMPTS; attempt++) {
+      const candidate = this.generateCode();
+      const [profile, row] = await Promise.all([
+        this.prisma.coachProfile.findUnique({ where: { invite_code: candidate }, select: { id: true } }),
+        this.prisma.inviteCode.findUnique({ where: { code: candidate }, select: { id: true } }),
+      ]);
+      if (!profile && !row) return candidate;
+    }
+    throw new InternalServerErrorException('Could not generate a unique invite code');
   }
 
   // ---- Phase 1C: public preview / validation ------------------------
@@ -664,12 +808,8 @@ export class InviteCodesService {
       // to {valid:false}. We log at error level so Sentry still pages on
       // anything actually broken; we just don't blow up the caller.
       const code_class =
-        err instanceof Prisma.PrismaClientKnownRequestError
-          ? `prisma:${err.code}`
-          : 'unknown';
-      this.logger.error(
-        `previewCode failed (${code_class}): ${(err as Error).message}`,
-      );
+        err instanceof Prisma.PrismaClientKnownRequestError ? `prisma:${err.code}` : 'unknown';
+      this.logger.error(`previewCode failed (${code_class}): ${(err as Error).message}`);
       return { valid: false };
     }
   }
@@ -750,7 +890,8 @@ export class InviteCodesService {
     // 3. A NEW redemption: every lifecycle rule applies.
     if (target.kind === 'row') {
       const v = await this.validate(code);
-      if (!v.valid || v.coach_id !== target.coachId) throw invalidInviteCode();
+      if (!v.valid) throw inviteCodeLifecycleRefusal(v.reason);
+      if (v.coach_id !== target.coachId) throw invalidInviteCode();
     } else if (target.coachRole !== 'coach') {
       throw invalidInviteCode();
     }
@@ -802,6 +943,19 @@ export class InviteCodesService {
             message: 'You are already attached to a different coach',
           });
         }
+        // A2 — signup ledger: exactly one row per NEW redemption, written in
+        // the attach transaction so a rolled-back attach never counts and a
+        // committed one always does (daily signups per code and package).
+        await tx.inviteRedemption.create({
+          data: {
+            coach_id: coachId,
+            client_user_id: userId,
+            invite_code_id: inviteCodeRowId,
+            code: target.code,
+            source: target.kind === 'row' ? 'invite_code' : 'coach_link',
+            package_id: target.packageId,
+          },
+        });
         return { role: 'student', coach_id: coachId, already_attached: false };
       });
     } catch (err) {
@@ -863,8 +1017,8 @@ export class InviteCodesService {
   private async resolveAttachTarget(
     code: string,
   ): Promise<
-    | { kind: 'profile'; coachId: string; coachRole: string | null }
-    | { kind: 'row'; coachId: string; rowId: string }
+    | { kind: 'profile'; coachId: string; coachRole: string | null; code: string; packageId: string | null }
+    | { kind: 'row'; coachId: string; rowId: string; code: string; packageId: string | null }
     | null
   > {
     const profile = await this.prisma.coachProfile.findUnique({
@@ -872,13 +1026,27 @@ export class InviteCodesService {
       include: { user: { select: { id: true, role: true } } },
     });
     if (profile?.user) {
-      return { kind: 'profile', coachId: profile.user.id, coachRole: profile.user.role ?? null };
+      return {
+        kind: 'profile',
+        coachId: profile.user.id,
+        coachRole: profile.user.role ?? null,
+        code: profile.invite_code ?? code,
+        packageId: profile.invite_code_package_id ?? null,
+      };
     }
     const row = await this.prisma.inviteCode.findUnique({
       where: { code },
-      select: { id: true, coach_id: true },
+      select: { id: true, coach_id: true, code: true, package_id: true },
     });
-    if (row) return { kind: 'row', coachId: row.coach_id, rowId: row.id };
+    if (row) {
+      return {
+        kind: 'row',
+        coachId: row.coach_id,
+        rowId: row.id,
+        code: row.code ?? code,
+        packageId: row.package_id ?? null,
+      };
+    }
     return null;
   }
 
@@ -899,15 +1067,13 @@ export class InviteCodesService {
     redeemerUserId: string,
   ): Promise<void> {
     const current = await tx.inviteCode.findUnique({ where: { id: inviteCodeRowId } });
-    if (!current || current.revoked) {
+    if (!current) {
       throw invalidInviteCode();
     }
-    if (current.expires_at && current.expires_at.getTime() <= Date.now()) {
-      throw invalidInviteCode();
-    }
-    if (current.max_uses !== null && current.used_count >= current.max_uses) {
-      throw invalidInviteCode();
-    }
+    // A2 — fresh in-transaction read; a code revoked / expired / filled
+    // between validate() and here gets its specific refusal.
+    const lifecycle = inviteCodeRowLifecycle(current);
+    if (lifecycle) throw inviteCodeLifecycleRefusal(lifecycle);
     // Validate intended recipient — prevents forwarded-code abuse.
     if (current.intended_email) {
       const redeemerEmail = (redeemerEmailRaw ?? '').toLowerCase().trim();
@@ -930,7 +1096,10 @@ export class InviteCodesService {
       data: { used_count: { increment: 1 } },
     });
     if (bumped.count !== 1) {
-      throw invalidInviteCode();
+      // Lost the last seat (or a revoke) to a concurrent request: classify
+      // from a fresh read so the client sees the real reason.
+      const after = await tx.inviteCode.findUnique({ where: { id: inviteCodeRowId } });
+      throw inviteCodeLifecycleRefusal(after ? (inviteCodeRowLifecycle(after) ?? 'max_uses_reached') : null);
     }
     if (!current.accepted_by_user_id) {
       await tx.inviteCode.updateMany({
@@ -1150,9 +1319,7 @@ export class InviteCodesService {
         expires_at: expiresAtDisplay,
       },
     });
-    return res.error
-      ? { status: res.status, error: res.error }
-      : { status: res.status };
+    return res.error ? { status: res.status, error: res.error } : { status: res.status };
   }
 
   // ---- C3: public accept-by-token ----------------------------------------
@@ -1166,7 +1333,12 @@ export class InviteCodesService {
   // (bulk-invite codes always set expires_at; default-link codes never expire
   // server-side, so we treat them as always valid here).
   async acceptByToken(token: string): Promise<
-    | { accepted: true; email: string | null; coachName: string | null; redirectTo: 'signup' | 'app_open' }
+    | {
+        accepted: true;
+        email: string | null;
+        coachName: string | null;
+        redirectTo: 'signup' | 'app_open';
+      }
     | { accepted: false; reason: 'expired' | 'already_accepted' | 'invalid'; message: string }
   > {
     // Input guard — mirrors previewCode().
@@ -1191,7 +1363,11 @@ export class InviteCodesService {
         try {
           await this.assertCoachCanAcceptClients(profile.user.id);
         } catch {
-          return { accepted: false, reason: 'invalid', message: 'This coach is not currently accepting clients.' };
+          return {
+            accepted: false,
+            reason: 'invalid',
+            message: 'This coach is not currently accepting clients.',
+          };
         }
         return {
           accepted: true,
@@ -1210,7 +1386,11 @@ export class InviteCodesService {
         return { accepted: false, reason: 'invalid', message: 'Invite code not found.' };
       }
       if (record.revoked) {
-        return { accepted: false, reason: 'invalid', message: 'This invite code has been revoked.' };
+        return {
+          accepted: false,
+          reason: 'invalid',
+          message: 'This invite code has been revoked.',
+        };
       }
 
       // Apply 14-day TTL from creation when no explicit expires_at is set.
@@ -1224,18 +1404,30 @@ export class InviteCodesService {
       // max_uses check (single-use codes that are fully consumed are
       // treated as "already_accepted" from the client's perspective).
       if (record.max_uses !== null && record.used_count >= record.max_uses) {
-        return { accepted: false, reason: 'already_accepted', message: 'This invite has already been used.' };
+        return {
+          accepted: false,
+          reason: 'already_accepted',
+          message: 'This invite has already been used.',
+        };
       }
 
       if (record.coach.role !== 'coach') {
-        return { accepted: false, reason: 'invalid', message: 'This invite code is no longer valid.' };
+        return {
+          accepted: false,
+          reason: 'invalid',
+          message: 'This invite code is no longer valid.',
+        };
       }
 
       // Verify the coach still has an active subscription before accepting the invite.
       try {
         await this.assertCoachCanAcceptClients(record.coach.id);
       } catch {
-        return { accepted: false, reason: 'invalid', message: 'This coach is not currently accepting clients.' };
+        return {
+          accepted: false,
+          reason: 'invalid',
+          message: 'This coach is not currently accepting clients.',
+        };
       }
 
       return {
@@ -1246,11 +1438,13 @@ export class InviteCodesService {
       };
     } catch (err) {
       const code_class =
-        err instanceof Prisma.PrismaClientKnownRequestError
-          ? `prisma:${err.code}`
-          : 'unknown';
+        err instanceof Prisma.PrismaClientKnownRequestError ? `prisma:${err.code}` : 'unknown';
       this.logger.error(`acceptByToken failed (${code_class}): ${(err as Error).message}`);
-      return { accepted: false, reason: 'invalid', message: 'Unable to validate invite at this time.' };
+      return {
+        accepted: false,
+        reason: 'invalid',
+        message: 'Unable to validate invite at this time.',
+      };
     }
   }
 
@@ -1258,7 +1452,10 @@ export class InviteCodesService {
   // {email,name?,note?} rows. Liberal accept: comma- or tab-separated,
   // up to 3 fields per line. Emails are validated as a final pass at
   // the DTO layer when the parsed rows are POSTed back.
-  parsePasted(input: string, maxRows = 100): {
+  parsePasted(
+    input: string,
+    maxRows = 100,
+  ): {
     email: string;
     name?: string;
     note?: string;

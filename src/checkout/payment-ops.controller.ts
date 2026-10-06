@@ -21,6 +21,7 @@ import { ServiceTokenGuard } from '../auth/service-token.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
+import { COUNTED_RECOVERY_STATUSES, coachNetCents } from '../connect/fees/coach-net';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import { PayoutReadinessService } from '../connect/fees/payout-readiness.service';
 import { ReconciliationService } from '../connect/fees/reconciliation.service';
@@ -29,8 +30,16 @@ import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { PrismaService } from '../prisma.service';
 import { AdminAnalyticsService, type RollupGroupBy } from './admin-analytics.service';
 import { DunningService } from './dunning.service';
+import { PAYOUT_NOTICE_PAGE_MAX, PayoutNoticeService } from './payout-notice.service';
 import { PurchaseSplitHandlerService } from './purchase-split-handler.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
+import {
+  COACH_DUNNING_SELECT,
+  COACH_LEDGER_SELECT,
+  COACH_PURCHASE_SELECT,
+  COACH_TRANSFER_SELECT,
+} from './coach-payments.select';
+import { ADMIN_PURCHASE_OMIT } from './admin-purchase.select';
 import {
   CursorPageQueryDto,
   PAYMENT_OPS_DEFAULT_LIMIT,
@@ -144,6 +153,8 @@ export class AdminPaymentOpsController {
       },
       orderBy: { created_at: 'desc' },
       take: limit,
+      // B-SECRETS-3: never the client's cached payment credentials.
+      omit: ADMIN_PURCHASE_OMIT,
     });
     return { purchases: rows };
   }
@@ -159,6 +170,7 @@ export class AdminPaymentOpsController {
     const purchase = await this.prisma.clientPurchase.findUnique({
       where: { id: purchaseId },
       include: { package: true },
+      omit: ADMIN_PURCHASE_OMIT,
     });
     if (!purchase) {
       throw new NotFoundException({
@@ -619,7 +631,37 @@ export class CoachPaymentOpsController {
     private ledger: SplitLedgerService,
     private payoutReadiness: PayoutReadinessService,
     private analytics: AdminAnalyticsService,
+    private payoutNotices: PayoutNoticeService,
   ) {}
+
+  // S-FEE round 5 (owner decision OR-111-1) — the Money page's "needs
+  // attention" read: the caller's open held balance per currency (what will
+  // be taken from their next sale(s)) and their refund / chargeback notices
+  // with the exact breakdown (what the client got back, what came back from
+  // that sale's payout, and the held amount split into TGP's 2%, Stripe's
+  // processing fee, the dispute fee and any share Stripe could not reverse).
+  // Always scoped to req.user.id (never a coach_id argument).
+  @Roles('coach', 'owner')
+  @Get('adjustments')
+  @ApiOperation({
+    summary: "The calling coach's held balance and refund / chargeback payout notices",
+  })
+  async listAdjustments(@Request() req: AuthedRequest, @Query() query: CursorPageQueryDto) {
+    return this.payoutNotices.listForPayee(req.user.id, {
+      cursor: query.cursor ?? null,
+      limit: Math.min(query.limit ?? 20, PAYOUT_NOTICE_PAGE_MAX),
+    });
+  }
+
+  // The coach has read a payout notice. Scoped to the caller: another
+  // coach's notice id is indistinguishable from a missing one (404).
+  @Roles('coach', 'owner')
+  @Post('adjustments/:id/acknowledge')
+  @ApiOperation({ summary: "Mark one of the calling coach's payout notices as read" })
+  @ApiResponse({ status: 404, description: 'PAYOUT_NOTICE_NOT_FOUND' })
+  async acknowledgeAdjustment(@Request() req: AuthedRequest, @Param('id') noticeId: string) {
+    return this.payoutNotices.acknowledge(req.user.id, noticeId);
+  }
 
   // Coach's own purchases — same data the OWNER drill-down view exposes,
   // but scoped to this coach.
@@ -641,6 +683,8 @@ export class CoachPaymentOpsController {
     // ever sees their own purchases (RLS/IDOR). Fetch limit+1 to decide
     // whether there's a next page without a second count query.
     const limit = query.limit ?? PAYMENT_OPS_DEFAULT_LIMIT;
+    // C-641-2: explicit allow-list — the raw row carries the CLIENT's
+    // Stripe client_secret / ephemeral key, which a coach must never get.
     const rows = await this.prisma.clientPurchase.findMany({
       where: { coach_user_id: req.user.id },
       orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
@@ -648,6 +692,7 @@ export class CoachPaymentOpsController {
       ...(query.cursor
         ? { cursor: { id: query.cursor }, skip: 1 }
         : {}),
+      select: COACH_PURCHASE_SELECT,
     });
     const hasMore = rows.length > limit;
     const purchases = hasMore ? rows.slice(0, limit) : rows;
@@ -672,21 +717,32 @@ export class CoachPaymentOpsController {
       req.user.role === 'owner'
         ? { id: purchaseId }
         : { id: purchaseId, coach_user_id: req.user.id };
-    const purchase = await this.prisma.clientPurchase.findFirst({ where });
+    const purchase = await this.prisma.clientPurchase.findFirst({
+      where,
+      select: COACH_PURCHASE_SELECT,
+    });
     if (!purchase) {
       throw new NotFoundException({
         error: 'PURCHASE_NOT_FOUND',
         message: `No purchase with id ${purchaseId}`,
       });
     }
+    // C-641-2: every nested read is allow-listed too (no idempotency keys,
+    // connected-account ids or other internal Stripe fields).
     const [splitEntries, transfers, dunningState] = await Promise.all([
-      this.ledger.findByPurchase(purchase.id),
+      this.prisma.splitLedgerEntry.findMany({
+        where: { purchase_id: purchase.id },
+        orderBy: [{ kind: 'asc' }, { created_at: 'asc' }],
+        select: COACH_LEDGER_SELECT,
+      }),
       this.prisma.connectTransfer.findMany({
         where: { purchase_id: purchase.id },
         orderBy: { created_at: 'desc' },
+        select: COACH_TRANSFER_SELECT,
       }),
       this.prisma.dunningState.findUnique({
         where: { purchase_id: purchase.id },
+        select: COACH_DUNNING_SELECT,
       }),
     ]);
     return {
@@ -727,6 +783,7 @@ export class CoachPaymentOpsController {
         ...(query.cursor
           ? { cursor: { id: query.cursor }, skip: 1 }
           : {}),
+        select: COACH_LEDGER_SELECT,
       }),
     ]);
     const hasMore = rows.length > limit;
@@ -828,17 +885,39 @@ export class CoachPaymentOpsController {
   //   posted   = sum(amount) - sum(reversed)  on posted rows
   //   pending  = sum(amount)                  on pending rows
   //   reversed = sum(amount)                  on reversed rows
+  //
+  // S-FEE: `recoveries_cents` is what this payee owes back on refunded /
+  // disputed charges beyond what a transfer reversal recovered, and
+  // `net_cents` is the shared coach-net definition (coachNetCents), the same
+  // figure /coach/connect/metrics reports.
   private async computeEarningsSummary(payeeUserId: string): Promise<{
     posted_cents: number;
     pending_cents: number;
     reversed_cents: number;
+    recoveries_cents: number;
+    net_cents: number;
   }> {
-    const grouped = await this.prisma.splitLedgerEntry.groupBy({
-      by: ['status'],
-      where: { payee_user_id: payeeUserId },
-      _sum: { amount_cents: true, reversed_cents: true },
-    });
-    const summary = { posted_cents: 0, pending_cents: 0, reversed_cents: 0 };
+    const [grouped, recoveries] = await Promise.all([
+      this.prisma.splitLedgerEntry.groupBy({
+        by: ['status'],
+        where: { payee_user_id: payeeUserId },
+        _sum: { amount_cents: true, reversed_cents: true },
+      }),
+      this.prisma.payeeRecovery.aggregate({
+        where: {
+          payee_user_id: payeeUserId,
+          status: { in: [...COUNTED_RECOVERY_STATUSES] },
+        },
+        _sum: { amount_cents: true },
+      }),
+    ]);
+    const summary = {
+      posted_cents: 0,
+      pending_cents: 0,
+      reversed_cents: 0,
+      recoveries_cents: recoveries._sum.amount_cents ?? 0,
+      net_cents: 0,
+    };
     for (const g of grouped) {
       const amount = g._sum.amount_cents ?? 0;
       const reversed = g._sum.reversed_cents ?? 0;
@@ -846,6 +925,7 @@ export class CoachPaymentOpsController {
       else if (g.status === 'pending') summary.pending_cents += amount;
       else if (g.status === 'reversed') summary.reversed_cents += amount;
     }
+    summary.net_cents = coachNetCents(summary.posted_cents, summary.recoveries_cents);
     return summary;
   }
 
@@ -865,7 +945,7 @@ export class CoachPaymentOpsController {
         coach_user_id: req.user.id,
         OR: [{ status: 'past_due' }, { status: 'payment_failed' }],
       },
-      include: { dunning: true },
+      select: { ...COACH_PURCHASE_SELECT, dunning: { select: COACH_DUNNING_SELECT } },
       orderBy: { updated_at: 'desc' },
       take: 100,
     });

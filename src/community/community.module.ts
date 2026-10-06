@@ -24,6 +24,8 @@ import { CommunityDmsRepository } from './dms/community-dms.repository';
 import { CommunityModerationController } from './moderation/community-moderation.controller';
 import { CommunityModerationService } from './moderation/community-moderation.service';
 import { CommunityModerationRepository } from './moderation/community-moderation.repository';
+import { CommunitySafetyController } from './safety/community-safety.controller';
+import { CommunitySafetyService } from './safety/community-safety.service';
 // v1-6 coach admin: cohort write, membership administration, coach inbox.
 import { CommunityCohortWriteController } from './cohorts/community-cohort-write.controller';
 import { CommunityCohortWriteService } from './cohorts/community-cohort-write.service';
@@ -99,6 +101,7 @@ import { CommunityWearablePromptsModule } from './wearable-prompts/wearable-prom
     CommunityReactionsController,
     CommunityDmsController,
     CommunityModerationController,
+    CommunitySafetyController,
     CommunityCohortWriteController,
     CommunityCohortMembersController,
     CommunityCoachInboxController,
@@ -124,6 +127,7 @@ import { CommunityWearablePromptsModule } from './wearable-prompts/wearable-prom
     CommunityDmsRepository,
     CommunityModerationService,
     CommunityModerationRepository,
+    CommunitySafetyService,
     CommunityCohortWriteService,
     CommunityCohortWriteRepository,
     CommunityCohortMembersService,

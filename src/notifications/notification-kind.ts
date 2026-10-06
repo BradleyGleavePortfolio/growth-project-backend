@@ -47,6 +47,14 @@ export const NotificationKind = {
   BOOKING_RESCHEDULED: 'booking_rescheduled',
   BOOKING_REMINDER_24H: 'booking_reminder_24h',
   BOOKING_REMINDER_1H: 'booking_reminder_1h',
+  // S-SCHED-2: a confirmed session has no call link yet (to the coach, with
+  // an "add the call link" action) and the link was added (to the client).
+  // Same booking_* preference cluster.
+  BOOKING_LINK_NEEDED: 'booking_link_needed',
+  BOOKING_LINK_READY: 'booking_link_ready',
+  // S-SCHED-5: a request reached its clear time without an answer (to both
+  // sides; the slot is open again). Same booking_* preference cluster.
+  BOOKING_REQUEST_EXPIRED: 'booking_request_expired',
 
   // NUDGE-V1 — Behavioral re-engagement nudges. Four trigger types,
   // each independently opt-out-able via NotificationPreferences.
@@ -61,6 +69,9 @@ export const NotificationKind = {
   // draft. The notification deep-links into the assigned row so the
   // client can see what their coach just queued for them.
   WORKOUT_ASSIGNED: 'workout_assigned',
+  // C05 item 7 — Client: workout reminder at their preferred training time on
+  // a plan day (WorkoutReminderService). Prefs: workout_reminder_push/_inapp.
+  WORKOUT_REMINDER: 'workout_reminder',
   MEAL_PLAN_ASSIGNED: 'meal_plan_assigned',
 
   // PR-10 — Buyer: a scheduled package drop just unlocked. Decision #9

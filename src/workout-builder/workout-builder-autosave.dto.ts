@@ -145,6 +145,14 @@ export const AutosaveBatchSchema = z
 export const UndoRequestSchema = z
   .object({
     to_revision_index: z.number().int().min(0),
+    /**
+     * S-MWB-3 (B-328-6): optional head fence. When sent, the undo applies only
+     * if the plan's head is still this index; otherwise a typed 409
+     * `undo_head_moved` carries the current head so the client reconciles. A
+     * retried undo whose first attempt already committed (response lost) is
+     * therefore refused instead of restoring a second time.
+     */
+    expected_head_index: z.number().int().min(0).optional(),
   })
   .strict();
 
@@ -173,18 +181,45 @@ export interface UndoResponseDto {
 }
 
 /**
+ * B-MWB409 — the three 409 codes whose body carries the current head index and
+ * a fresh lock token. HttpExceptionFilter passes exactly these two fields to the
+ * client for exactly these codes (src/filters/error-details.ts), keyed on the
+ * exception's `code`, so every one of these bodies sets `code` (= `error`).
+ */
+export type MwbHeadConflictCode =
+  | 'autosave_lock_stale'
+  | 'autosave_conflict_retry'
+  | 'undo_head_moved';
+
+/** 409 body of a head conflict: the client adopts the head and token, then retries. */
+export interface MwbHeadConflictDto {
+  code: MwbHeadConflictCode;
+  error: MwbHeadConflictCode;
+  message?: string;
+  head_revision_index: number;
+  lock_token: string;
+}
+
+/**
  * 409 conflict body for an autosave optimistic-concurrency failure (spec §6.2).
  * Two discriminated causes share this shape:
  *   - `autosave_lock_stale`     — the client's `lock_token` does not match the
  *     deterministic token derived from the plan's persisted (version,
  *     head_revision_id) state (a stale optimistic lock).
- *   - `autosave_conflict_retry` — a stale `base_revision_index` (or a Postgres
- *     serialization conflict coerced to this code).
+ *   - `autosave_conflict_retry` — a stale `base_revision_index`.
  * Both carry the current head index + a freshly-derived lock_token so the client
  * can rebase and retry. The lock_token wire shape is unchanged (16 hex chars).
+ * A Postgres serialization conflict is a plain 409 `autosave_conflict_retry`
+ * message with neither field (there is no committed head to report).
  */
-export interface AutosaveConflictDto {
+export interface AutosaveConflictDto extends MwbHeadConflictDto {
+  code: 'autosave_conflict_retry' | 'autosave_lock_stale';
   error: 'autosave_conflict_retry' | 'autosave_lock_stale';
-  head_revision_index: number;
-  lock_token: string;
+}
+
+/** 409 body of a fenced undo whose `expected_head_index` is no longer the head. */
+export interface UndoHeadMovedDto extends MwbHeadConflictDto {
+  code: 'undo_head_moved';
+  error: 'undo_head_moved';
+  message: string;
 }

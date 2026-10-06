@@ -6,6 +6,7 @@ import { CommunitySearchController } from './community-search.controller';
 import { CommunitySearchEnabledGuard } from './community-search-flag.guard';
 import { CommunitySearchRepository } from './community-search.repository';
 import { CommunitySearchService } from './community-search.service';
+import { CommunitySafetyService } from '../safety/community-safety.service';
 import { SearchIndexerListener } from './search-indexer.listener';
 import { SearchIndexerService } from './search-indexer.service';
 
@@ -34,6 +35,7 @@ import { SearchIndexerService } from './search-indexer.service';
   controllers: [CommunitySearchController],
   providers: [
     CommunitySearchService,
+    CommunitySafetyService,
     CommunitySearchRepository,
     CommunitySearchEnabledGuard,
     CommunityAccessService,

@@ -26,8 +26,8 @@ PRs #198 and #199.
 | `REDIS_URL` | **Production refuses to boot without this.** Pre-Connect cleanup hardened `assertEnv()` AND `buildThrottlerOptions` to throw when `NODE_ENV=production` and `REDIS_URL` is missing — a single-machine in-memory throttler cannot defend a multi-machine Fly deploy. Dev/test still fall back to in-memory. | `rediss://default:PASSWORD@<host>:6379` |
 | `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE` | DSN is required for error reporting; sample rate defaults to `0.1`. Release tag is now set from `GIT_SHA` in `src/instrument.ts` (falls back to `RELEASE_VERSION`). | `https://…@o…ingest.sentry.io/…` |
 | `GIT_SHA` | Sentry release tag for the running image. Wired through `fly.toml` `[build.args]` → Dockerfile `ARG/ENV GIT_SHA` → `src/instrument.ts`. Pass on every deploy: `fly deploy --build-arg GIT_SHA=$(git rev-parse HEAD)`. Without it, falls back to `RELEASE_VERSION` and finally to no release. | `3ec015bd…` (40-char SHA) |
-| `STRIPE_CONNECT_REFRESH_URL` | **Connect Phase 1.** Mobile deep link Stripe redirects the coach to if they bail mid-onboarding. `/v1/connect/accounts/onboarding-link` returns 503 when unset. | `growthproject://connect/onboarding/refresh` |
-| `STRIPE_CONNECT_RETURN_URL` | **Connect Phase 1.** Mobile deep link Stripe redirects the coach to after Express onboarding completes. Same 503 if unset. | `growthproject://connect/onboarding/return` |
+| `STRIPE_CONNECT_REFRESH_URL` | **Connect Phase 1.** HTTPS landing (S-COACH) that hands the coach back to the app at tgp://connect/onboarding/refresh when the link expired. `/v1/connect/accounts/onboarding-link` returns 503 when unset. | `https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/refresh` |
+| `STRIPE_CONNECT_RETURN_URL` | **Connect Phase 1.** HTTPS landing (S-COACH) that hands the coach back to the app at tgp://connect/onboarding/return after Express onboarding. Same 503 if unset. | `https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/return` |
 
 For every other env var the backend reads at boot, see `.env.example`
 (top to bottom is grouped by subsystem; the audit added inline comments
@@ -61,8 +61,8 @@ the exact next step. Full step-by-step also in `docs/connect-setup.md`.
 7. On Fly, set `STRIPE_CONNECT_REFRESH_URL` and `STRIPE_CONNECT_RETURN_URL`:
    ```
    fly secrets set \
-     STRIPE_CONNECT_REFRESH_URL=growthproject://connect/onboarding/refresh \
-     STRIPE_CONNECT_RETURN_URL=growthproject://connect/onboarding/return
+     STRIPE_CONNECT_REFRESH_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/refresh \
+     STRIPE_CONNECT_RETURN_URL=https://backend-spring-lake-3890.fly.dev/api/v1/connect/onboarding/return
    ```
 8. Confirm the existing Stripe webhook endpoint is subscribed to:
    - `account.updated`
@@ -275,8 +275,8 @@ prod-tier vars and rejects `CORS_ORIGINS=*` outright.
 | `VOICE_NOTE_MAX_DURATION_SEC` | optional | Backend operator | Phase 6C — server-enforced max duration for voice attachments on coach <-> client messages. Defaults to `300` s; clamped to `[10, 600]`. Validated at upload-URL issuance and again at message-send. |
 | `VOICE_NOTE_MAX_SIZE_MB` | optional | Backend operator | Phase 6C — server-enforced max file size for voice attachments. Defaults to `5` MB; clamped to `[1, 25]`. |
 | `SUPABASE_VOICE_BUCKET` | optional | Backend operator | Phase 6C — Supabase Storage bucket name for voice attachments. Defaults to `voice-notes`. Bucket must exist in Supabase Storage; the signed-upload flow returns `501 VOICE_STORAGE_UNAVAILABLE` if the bucket is unreachable or the JS SDK is too old. |
-| `DIAGNOSTIC_AI_ENABLED` | optional | Backend operator | Set to `false` to skip Perplexity calls for `POST /api/diagnostic/submit` and store a placeholder roadmap. Defaults to `true`. Useful for CI / preview deploys without a Perplexity key. |
-| `DIAGNOSTIC_RATE_LIMIT_PER_HOUR` | optional | Backend operator | Per-IP hourly cap on `POST /api/diagnostic/submit` (named throttler `diagnostic-submit`). Defaults to 5; clamped to `[1, 1000]`. The endpoint is unauthenticated by design (lead capture), so the limit is the primary defense. |
+| `DIAGNOSTIC_AI_ENABLED` | optional | Backend operator | Inert: the diagnostic routes are not mounted (B-QUIZ-OFF). Set to `false` to skip Perplexity calls for `POST /api/diagnostic/submit` and store a placeholder roadmap. Defaults to `true`. Useful for CI / preview deploys without a Perplexity key. |
+| `DIAGNOSTIC_RATE_LIMIT_PER_HOUR` | optional | Backend operator | Inert: the diagnostic routes are not mounted (B-QUIZ-OFF). Per-IP hourly cap on `POST /api/diagnostic/submit` (named throttler `diagnostic-submit`). Defaults to 5; clamped to `[1, 1000]`. The endpoint is unauthenticated by design (lead capture), so the limit is the primary defense. |
 | `BUILD_WEEK_ENABLED` | optional | Backend operator | Feature flag — when `false`, the Phase 4 Build Week controllers refuse new writes and the admin funnel reports zeroed counts. Defaults to `true`. See [`src/build-week/README.md`](src/build-week/README.md) and [`docs/build-week.md`](docs/build-week.md). |
 | `BUILD_WEEK_AUTO_START_ON_SIGNUP` | optional | Backend operator | Feature flag — when `true`, new client signups auto-enrol in Build Week. Defaults to `false`. The flag is exposed for staged rollout; auto-enrolment wiring lands in a follow-on PR. |
 | `AUDIT_LOGGING_ENABLED` | optional | Backend operator | Kill switch for audit writes. Set to `off` to suppress all `AuditService.write()` calls without removing call sites. Reads via `GET /admin/audit/log` are unaffected. Use only for short-lived debugging windows; the default (`on`) is the correct production value. See [`src/audit/README.md`](src/audit/README.md). |
@@ -1443,7 +1443,7 @@ src/
   coach/         Coach mobile surface (roster, timeline, alerts, guidelines)
   common/        Shared decorators, guards, env validation
   community/     Leaderboard and wins
-  diagnostic/    40-point diagnostic + AI roadmap (public lead capture)
+  diagnostic/    40-point diagnostic + AI roadmap: switched off, not mounted (TGP Finance product; see docs/diagnostic.md)
   fasting/       Fasting windows
   filters/       Global exception filters
   food/          Food DB (local + USDA + OpenFoodFacts)
@@ -1647,6 +1647,20 @@ inputs). `GET /me/macros/current` falls back to the
 profile targets with `source: "profile"`. `PUT /profile` accepts the legacy
 mobile field names (`dob`, `current_weight`, `primary_goal`, `fitness_level`,
 `*_target`, ...). Full mapping: [docs/profile-contract.md](docs/profile-contract.md).
+
+### Clinic consultation onboarding (C05 / C07)
+
+`src/onboarding/`: `PUT /me/onboarding/consultation` (versioned, append-only
+answer revisions), `GET /me/onboarding`, `POST /me/onboarding/complete`
+(idempotent; 409 codes `not_attached`, `consultation_incomplete`,
+`consent_missing`, `clinic_not_configured`, `completion_in_progress`), and the
+coach read `GET /coach/clients/:clientId/consultation`. Completion writes the
+initial `MacroTarget`, picks one of three programs with a pure rule table,
+assigns a client clone through `assignProgramToClient`, joins the coach's
+clinic-wide and per-program community cohorts, and flags the coach on any
+screening yes. Programs are seeded by `scripts/seed-clinic-programs.ts` from
+`seed/clinic-programs.v1.json` (draft; production seeding needs owner
+approval). Full shapes: [docs/clinic-onboarding.md](docs/clinic-onboarding.md).
 
 ### Real meal plans
 

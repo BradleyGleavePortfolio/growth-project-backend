@@ -11,6 +11,8 @@ import { JwtAuthGuard } from './auth/auth.guard';
 import { RolesGuard } from './auth/roles.guard';
 import { PilotCoachAllowlistGuard } from './common/feature-flag/pilot-coach-allowlist.guard';
 import { ProfileModule } from './profile/profile.module';
+import { OnboardingModule } from './onboarding/onboarding.module';
+import { EngagementModule } from './engagement/engagement.module';
 import { FoodModule } from './food/food.module';
 import { LogModule } from './log/log.module';
 import { WorkoutModule } from './workout/workout.module';
@@ -34,6 +36,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { KmsModule } from './common/kms/kms.module';
 import { HealthModule } from './health/health.module';
 import { InviteCodesModule } from './invite-codes/invite-codes.module';
+import { CoachlessModule } from './coachless/coachless.module';
 import { InviteGrantModule } from './invite-grant/invite-grant.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { MessagesSafetyModule } from './messages-safety/messages-safety.module';
@@ -63,7 +66,12 @@ import { RomanModule } from './roman/roman.module';
 import { AiConsentModule } from './ai-consent/ai-consent.module';
 import { AiEgressModule } from './ai-egress/ai-egress.module';
 import { PtmModule } from './ptm/ptm.module';
-import { DiagnosticModule } from './diagnostic/diagnostic.module';
+// DiagnosticModule (src/diagnostic, the 40-point diagnostic quiz + AI roadmap)
+// is deliberately NOT imported: the quiz belongs to TGP Finance, not this
+// fitness product (owner 2026-10-01 15:25), so its /diagnostic routes are not
+// mounted. Its tables stay (no drops); existing rows are still covered by
+// data export and account deletion. test/diagnostic-quiz-off.spec.ts fails if
+// the module or any /diagnostic route comes back.
 import { BuildWeekModule } from './build-week/build-week.module';
 import { V1Module } from './v1/v1.module';
 import { InviteLandingModule } from './invite-landing/invite-landing.module';
@@ -99,6 +107,7 @@ import { TeamModule } from './team/team.module';
 import { SubCoachesModule } from './sub-coaches/sub-coaches.module';
 import { TalentMarketplaceModule } from './talent-marketplace/talent-marketplace.module';
 import { CoachConnectModule } from './coach-connect/coach-connect.module';
+import { CoachMoneyModule } from './coach-money/coach-money.module';
 // Concierge scheduling (PR #142) — private 1:1 coach <-> client booking
 // with optional Google Calendar two-way sync. See
 // docs/rfcs/142-concierge-scheduling.md.
@@ -182,6 +191,8 @@ import { WearablesModule } from './wearables/wearables.module';
     AuthModule,
     ExtensionPairModule,
     ProfileModule,
+    OnboardingModule,
+    EngagementModule,
     FoodModule,
     LogModule,
     WorkoutModule,
@@ -219,6 +230,8 @@ import { WearablesModule } from './wearables/wearables.module';
     WaterModule,
     HealthModule,
     InviteCodesModule,
+    // A1-COACHLESS — coachless Home, featured-coach config, coach-code redemption.
+    CoachlessModule,
     // Clinic C01 — invite-code → package grants, free-package claims, revoke.
     InviteGrantModule,
     MessagingModule,
@@ -318,8 +331,8 @@ import { WearablesModule } from './wearables/wearables.module';
     // by the migration; per-user enrollment + completion tracking with
     // a PTM milestone signal on Day 7. See src/build-week/README.md.
     BuildWeekModule,
-    // Phase 3 — public 40-point diagnostic + AI roadmap.
-    DiagnosticModule,
+    // Phase 3 diagnostic quiz: switched off here (TGP Finance product). See
+    // the note at the DiagnosticModule import site above.
     // Phase 7B — Transformation Timeline. 4-lane chronological event
     // feed computed on the fly from existing tables (WeightLog,
     // ClientSignal, CoachMessage, BuildWeekEnrollment). No new migrations.
@@ -356,6 +369,7 @@ import { WearablesModule } from './wearables/wearables.module';
     SubCoachesModule,
     TalentMarketplaceModule,
     CoachConnectModule,
+    CoachMoneyModule,
     // Concierge scheduling — private 1:1 coach<->client booking with
     // optional Google Calendar two-way sync. Stub adapters by default
     // so the module loads without Google OAuth credentials configured;

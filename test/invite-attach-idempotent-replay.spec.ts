@@ -67,7 +67,8 @@ describe('canonical attach — idempotent replay of a consumed invite', () => {
     await svc.attachUserToCoachByCode('stu', 'GP-ONE333');
     expect(await outcome(svc.attachUserToCoachByCode('other', 'GP-ONE333'))).toMatchObject({
       status: 400,
-      body: { code: 'invite_code_invalid' },
+      // A2: an existing-but-full code names its state (specific copy).
+      body: { code: 'code_exhausted' },
     });
     expect(user(db, 'other').coach_id).toBeNull();
     expect(code(db, 'GP-ONE333').used_count).toBe(1);

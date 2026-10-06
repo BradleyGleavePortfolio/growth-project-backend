@@ -104,6 +104,8 @@ pg_dump "$DATABASE_URL" --no-password -F c -f "backup_$(date +%Y%m%d).dump"
 
 Manual backup location: `<<BACKUP_STORAGE_LOCATION>>` (e.g. S3 bucket `The Growth Project, LLC-db-backups` with versioning enabled and lifecycle policy to expire after 90 days).
 
+Every manual export is a full copy of personal data and follows the published dump limits in [`docs/privacy/vendor-deletion-and-backups.md` §1.1](../../privacy/vendor-deletion-and-backups.md#11-our-own-database-dumps-operator-held-copies): one owner-controlled location, each file named with its date, never kept more than 90 days, and a monthly check that deletes anything older. With a versioned bucket, the lifecycle policy must also expire noncurrent versions within the same 90 days; otherwise old versions outlive the limit.
+
 ### Backup test cadence
 
 A database restore must be tested at least quarterly:

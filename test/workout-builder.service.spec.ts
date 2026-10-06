@@ -523,6 +523,7 @@ describe('WorkoutBuilderService', () => {
       const archivedRow = { ...basePlan, archived_at: new Date() };
       prismaMock.workoutPlan.findUnique
         .mockResolvedValueOnce(basePlan) // ownership pre-check
+        .mockResolvedValueOnce({ program_id: null }) // S-MWB-2: program-day lookup
         .mockResolvedValueOnce(archivedRow); // post-update re-read
       prismaMock.workoutPlan.updateMany.mockResolvedValueOnce({ count: 1 });
 
@@ -545,6 +546,7 @@ describe('WorkoutBuilderService', () => {
       const archived = { ...basePlan, archived_at: new Date('2024-12-01') };
       prismaMock.workoutPlan.findUnique
         .mockResolvedValueOnce(archived) // ownership pre-check
+        .mockResolvedValueOnce({ program_id: null }) // S-MWB-2: program-day lookup
         .mockResolvedValueOnce(archived); // post-update re-read
       prismaMock.workoutPlan.updateMany.mockResolvedValueOnce({ count: 0 });
 

@@ -4,12 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type {
-  CommunityCohort,
-  CommunityMembershipRole,
-  User,
-} from '@prisma/client';
+import type { CommunityCohort, CommunityMembershipRole, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
+import { CommunitySafetyService } from '../safety/community-safety.service';
+import { memberFirstName } from '../member-display-name';
 import {
   CommunityCohortMembersRepository,
   MemberPageCursor,
@@ -56,18 +54,12 @@ const BAD_TARGET = {
 
 // Map the API member role to the Prisma enum. `co_coach` → `assistant`; the
 // owning coach's `coach` row is never written through these routes.
-const API_TO_PRISMA_ROLE: Record<
-  AssignableMemberRole,
-  CommunityMembershipRole
-> = {
+const API_TO_PRISMA_ROLE: Record<AssignableMemberRole, CommunityMembershipRole> = {
   student: 'student',
   co_coach: 'assistant',
 };
 
-const PRISMA_TO_API_ROLE: Record<
-  CommunityMembershipRole,
-  'student' | 'co_coach' | 'coach'
-> = {
+const PRISMA_TO_API_ROLE: Record<CommunityMembershipRole, 'student' | 'co_coach' | 'coach'> = {
   student: 'student',
   assistant: 'co_coach',
   coach: 'coach',
@@ -89,6 +81,7 @@ export class CommunityCohortMembersService {
   constructor(
     private readonly access: CommunityAccessService,
     private readonly repo: CommunityCohortMembersRepository,
+    private readonly safety: CommunitySafetyService,
   ) {}
 
   private parseLimit(limit: string | undefined): number {
@@ -116,10 +109,7 @@ export class CommunityCohortMembersService {
   }
 
   private encodeCursor(row: { created_at: Date; id: string }): string {
-    return Buffer.from(
-      `${row.created_at.toISOString()}|${row.id}`,
-      'utf8',
-    ).toString('base64url');
+    return Buffer.from(`${row.created_at.toISOString()}|${row.id}`, 'utf8').toString('base64url');
   }
 
   /** Full coach-facing member view (all fields). */
@@ -135,12 +125,15 @@ export class CommunityCohortMembersService {
     };
   }
 
-  /** Sanitized roster view for a non-coach member (no PII/status). */
+  /**
+   * Sanitized roster view for a non-coach member (no PII/status). Client
+   * privacy: other members see first names only.
+   */
   private rosterView(m: MembershipWithUser): CohortMemberView {
     return {
       id: m.id,
       user_id: m.user_id,
-      display_name: m.user.name,
+      display_name: memberFirstName(m.user.name),
       role: PRISMA_TO_API_ROLE[m.role],
       status: null,
       email: null,
@@ -148,28 +141,17 @@ export class CommunityCohortMembersService {
     };
   }
 
-  private async resolveCohortOrThrow(
-    cohortId: string,
-  ): Promise<CommunityCohort> {
+  private async resolveCohortOrThrow(cohortId: string): Promise<CommunityCohort> {
     const cohort = await this.access.findCohort(cohortId);
     if (!cohort) throw new NotFoundException(NOT_FOUND);
     return cohort;
   }
 
-  private async isWorkspaceCoach(
-    workspaceId: string,
-    user: User,
-  ): Promise<boolean> {
-    return (
-      user.role === 'owner' ||
-      (await this.access.isWorkspaceCoach(workspaceId, user.id))
-    );
+  private async isWorkspaceCoach(workspaceId: string, user: User): Promise<boolean> {
+    return user.role === 'owner' || (await this.access.isWorkspaceCoach(workspaceId, user.id));
   }
 
-  private async assertWorkspaceCoach(
-    workspaceId: string,
-    user: User,
-  ): Promise<void> {
+  private async assertWorkspaceCoach(workspaceId: string, user: User): Promise<void> {
     if (!(await this.isWorkspaceCoach(workspaceId, user))) {
       throw new ForbiddenException(FORBIDDEN);
     }
@@ -185,10 +167,7 @@ export class CommunityCohortMembersService {
     if (!isCoach) {
       // A non-coach may read the roster only if they are an ACTIVE member of
       // this exact cohort. A foreign cohort id resolves to 404 (non-leak).
-      const membership = await this.access.membershipInCohort(
-        cohort.id,
-        user.id,
-      );
+      const membership = await this.access.membershipInCohort(cohort.id, user.id);
       if (membership?.status !== 'active') {
         throw new NotFoundException(NOT_FOUND);
       }
@@ -210,22 +189,22 @@ export class CommunityCohortMembersService {
       cursor: this.decodeCursor(query.cursor),
       roleFilter,
     });
-    const nextCursor =
-      rows.length === limit ? this.encodeCursor(rows[rows.length - 1]) : null;
+    const nextCursor = rows.length === limit ? this.encodeCursor(rows[rows.length - 1]) : null;
+
+    // Two-way block on the member roster: a member does not see people they
+    // blocked or who blocked them. The coach's management view stays complete
+    // (the coach administers every membership; moderation and ban act on it).
+    const visible = isCoach
+      ? rows
+      : await this.safety.filterBlocked(user.id, rows, (m) => m.user_id);
 
     return CohortMemberListResponseSchema.parse({
-      members: rows.map((m) =>
-        isCoach ? this.coachView(m) : this.rosterView(m),
-      ),
+      members: visible.map((m) => (isCoach ? this.coachView(m) : this.rosterView(m))),
       next_cursor: nextCursor,
     });
   }
 
-  async assign(
-    user: User,
-    cohortId: string,
-    body: AssignMemberDto,
-  ): Promise<CohortMemberResponse> {
+  async assign(user: User, cohortId: string, body: AssignMemberDto): Promise<CohortMemberResponse> {
     const cohort = await this.resolveCohortOrThrow(cohortId);
     await this.assertWorkspaceCoach(cohort.workspace_id, user);
 
@@ -244,6 +223,9 @@ export class CommunityCohortMembersService {
       if (!target) throw new NotFoundException(USER_NOT_FOUND);
       // Direct assign of a known user → active immediately (idempotent: an
       // existing/removed row is revived to the requested role + active).
+      // This is the explicit reinstatement path: it lifts a durable community
+      // ban in this workspace (B-610-2) so access and membership agree.
+      await this.repo.liftWorkspaceBan(cohort.workspace_id, target.id, user.id);
       const row = await this.repo.upsertMembership({
         workspaceId: cohort.workspace_id,
         cohortId: cohort.id,
@@ -275,11 +257,7 @@ export class CommunityCohortMembersService {
     return CohortMemberResponseSchema.parse({ member: this.coachView(row) });
   }
 
-  async remove(
-    user: User,
-    cohortId: string,
-    userId: string,
-  ): Promise<CohortMemberResponse> {
+  async remove(user: User, cohortId: string, userId: string): Promise<CohortMemberResponse> {
     const cohort = await this.resolveCohortOrThrow(cohortId);
     await this.assertWorkspaceCoach(cohort.workspace_id, user);
 

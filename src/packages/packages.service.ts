@@ -1,12 +1,17 @@
 import {
   BadRequestException,
   ConflictException,
+  GoneException,
   Injectable,
   Logger,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
-import type { CoachPackage, ClientPurchase } from '@prisma/client';
+import { createHash } from 'crypto';
+import { Prisma } from '@prisma/client';
+import type { CoachPackage } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { COACH_PURCHASE_SELECT } from '../checkout/coach-payments.select';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 
 // CoachPackage CRUD. Owns coach offers / packages.
@@ -58,6 +63,79 @@ export interface CreatePackageInput {
   recurring_interval_count?: number | null;
 }
 
+/**
+ * OR-112-16 (S-COACH-3) — package create is idempotent per coach and
+ * `Idempotency-Key`. The claim lives in the generic WorkoutBuilderIdempotencyKey
+ * ledger (unique on user_id + route_key + idempotency_key; no schema change)
+ * under this route key.
+ */
+export const PACKAGE_CREATE_ROUTE_KEY = 'packages:create';
+/** UUIDs and other opaque client tokens; nothing that could carry PII. */
+export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
+
+/** What the ledger stores for a package-create key (never the body itself). */
+interface PackageCreateClaim {
+  request_hash: string;
+  package_id?: string;
+}
+
+function readClaim(json: unknown): PackageCreateClaim | null {
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return null;
+  const j = json as Record<string, unknown>;
+  if (typeof j.request_hash !== 'string') return null;
+  return {
+    request_hash: j.request_hash,
+    package_id: typeof j.package_id === 'string' ? j.package_id : undefined,
+  };
+}
+
+/** SHA-256 of the canonical (normalised, key-sorted) create data. */
+export function packageCreateHash(data: Record<string, unknown>): string {
+  const canonical = JSON.stringify(
+    Object.keys(data)
+      .sort()
+      .map((k) => [k, data[k] === undefined ? null : data[k]]),
+  );
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
+/** Create columns the client always sets; they are always part of the hash. */
+const PACKAGE_CREATE_IDENTITY_KEYS: ReadonlySet<string> = new Set([
+  'coach_id',
+  'name',
+  'amount_cents',
+]);
+
+/**
+ * C-675-2 — what the request hash covers: the normalised create data minus
+ * every optional column still at the value the server stores when the client
+ * leaves it out (`defaults` = the same builder run on the required fields
+ * only). A column added later with a server default (the trials piece adds
+ * `trial_days ?? 0`) is then absent from the hash of a request that does not
+ * set it, so a key claimed before that deploy still replays its package
+ * instead of answering 422. This is a pure function of the normalised data:
+ * two bodies that normalise to the same row still hash the same, and two
+ * different rows never do.
+ */
+export function packageCreateFingerprint(
+  data: Record<string, unknown>,
+  defaults: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(data)) {
+    if (PACKAGE_CREATE_IDENTITY_KEYS.has(k) || !Object.is(v ?? null, defaults[k] ?? null)) {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002'
+  );
+}
+
 export interface UpdatePackageInput {
   name?: string;
   description?: string | null;
@@ -73,8 +151,13 @@ export interface UpdatePackageInput {
   is_active?: boolean;
 }
 
+/** A subscriber row as a coach may see it (C-641-2: no client Stripe secrets). */
+export type CoachSubscriberRow = Prisma.ClientPurchaseGetPayload<{
+  select: typeof COACH_PURCHASE_SELECT;
+}>;
+
 export interface SubscribersPage {
-  subscribers: ClientPurchase[];
+  subscribers: CoachSubscriberRow[];
   next_offset: number | null;
   total_returned: number;
 }
@@ -145,8 +228,151 @@ export class PackagesService {
 
   async create(coachUserId: string, input: CreatePackageInput): Promise<CoachPackage> {
     this.assertValidPricing(input);
-    return this.prisma.coachPackage.create({
-      data: {
+    return this.prisma.coachPackage.create({ data: this.createData(coachUserId, input) });
+  }
+
+  /**
+   * OR-112-16: create with an optional `Idempotency-Key`. Without a key this
+   * is `create()` (older clients). With a key, the claim row, the package
+   * and the stored result are written in ONE transaction:
+   *   - a retry after the first request committed hits the unique claim and
+   *     gets the SAME package back (replay; no second row);
+   *   - a retry that arrives while the first request is still running blocks
+   *     on the claim's unique index until the first commits, then replays
+   *     (if the first rolls back, the retry creates it);
+   *   - a crash mid-request rolls everything back, so no key is ever stuck;
+   *   - the same key with different details is 422 IDEMPOTENCY_KEY_REUSED
+   *     naming the package that key made (`package_id` on the wire), so the
+   *     app can adopt it; only a live package of the caller's current
+   *     catalog is named, anything else is 410 IDEMPOTENT_PACKAGE_REMOVED;
+   *   - a replay of a package that was archived or removed since is 410.
+   * Validation runs before the claim: a definitive 4xx never burns a key.
+   */
+  async createIdempotent(
+    coachUserId: string,
+    input: CreatePackageInput,
+    idempotencyKey: string | null | undefined,
+    // The authenticated caller. Keys are scoped to WHO sent them (a
+    // sub-coach creating on the head coach's catalog has their own key
+    // space); the package itself belongs to `coachUserId`.
+    actorUserId: string = coachUserId,
+  ): Promise<{ pkg: CoachPackage; replayed: boolean }> {
+    const key = typeof idempotencyKey === 'string' ? idempotencyKey.trim() : '';
+    if (!key) return { pkg: await this.create(coachUserId, input), replayed: false };
+    if (!IDEMPOTENCY_KEY_PATTERN.test(key)) {
+      throw new BadRequestException({
+        code: 'IDEMPOTENCY_KEY_INVALID',
+        message:
+          'The Idempotency-Key header must be 8 to 128 letters, digits, dots, colons, dashes or underscores.',
+      });
+    }
+    this.assertValidPricing(input);
+    const data = this.createData(coachUserId, input);
+    const requestHash = packageCreateHash(
+      packageCreateFingerprint(
+        data,
+        this.createData(coachUserId, { name: input.name, amount_cents: input.amount_cents }),
+      ),
+    );
+    try {
+      const pkg = await this.prisma.$transaction(async (tx) => {
+        const claim = await tx.workoutBuilderIdempotencyKey.create({
+          data: {
+            user_id: actorUserId,
+            route_key: PACKAGE_CREATE_ROUTE_KEY,
+            idempotency_key: key,
+            status: 'in_progress',
+            response_json: { request_hash: requestHash },
+          },
+        });
+        const created = await tx.coachPackage.create({ data });
+        await tx.workoutBuilderIdempotencyKey.update({
+          where: { id: claim.id },
+          data: {
+            status: 'completed',
+            status_code: 201,
+            response_json: { request_hash: requestHash, package_id: created.id },
+          },
+        });
+        return created;
+      });
+      return { pkg, replayed: false };
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      return {
+        pkg: await this.replayCreate(coachUserId, actorUserId, key, requestHash, err),
+        replayed: true,
+      };
+    }
+  }
+
+  private async replayCreate(
+    coachUserId: string,
+    actorUserId: string,
+    key: string,
+    requestHash: string,
+    uniqueViolation: unknown,
+  ): Promise<CoachPackage> {
+    const existing = await this.prisma.workoutBuilderIdempotencyKey.findUnique({
+      where: {
+        WorkoutBuilderIdempotencyKey_user_route_key_key: {
+          user_id: actorUserId,
+          route_key: PACKAGE_CREATE_ROUTE_KEY,
+          idempotency_key: key,
+        },
+      },
+    });
+    // S-COACH-BE-4: a unique violation with NO committed claim did not come
+    // from the claim (a concurrent same-key insert blocks until the first
+    // transaction ends; a rollback lets the retry create). It came from
+    // another constraint inside the create, so surface that error as is
+    // rather than telling the coach the package is still being saved.
+    if (!existing) throw uniqueViolation;
+    const claim = readClaim(existing.response_json);
+    if (existing.status !== 'completed' || !claim?.package_id) {
+      // Not reachable with the single-transaction claim (an uncommitted
+      // claim is invisible and blocks the retry's insert), kept so a
+      // future change can never fall through to a second create.
+      throw new ConflictException({
+        code: 'IDEMPOTENCY_IN_PROGRESS',
+        message:
+          'This package is still being saved. Wait a few seconds, then send the same request again.',
+      });
+    }
+    // B-675-1 / C-675-3: the package is looked up in the caller's CURRENT
+    // catalog before anything about it is answered. Removed, archived (DELETE
+    // :id archives) or in another catalog (a sub-coach who has since moved to
+    // another head coach) is 410, so the app starts a fresh create and never
+    // receives an id outside this catalog. Only a live package of this
+    // catalog is replayed, or named in the 422 for the app to adopt.
+    const pkg = await this.prisma.coachPackage.findFirst({
+      where: { id: claim.package_id, coach_id: coachUserId },
+    });
+    if (!pkg || pkg.archived_at) {
+      throw new GoneException({
+        code: 'IDEMPOTENT_PACKAGE_REMOVED',
+        message: pkg
+          ? 'The package this request created has since been archived. Send a new request to create it again.'
+          : 'The package this request created has since been removed. Send a new request to create it again.',
+      });
+    }
+    if (claim.request_hash !== requestHash) {
+      // PackageIdempotencyFilter puts `package_id` on the wire for this code.
+      throw new UnprocessableEntityException({
+        code: 'IDEMPOTENCY_KEY_REUSED',
+        message:
+          'This Idempotency-Key already created a package with different details. Update that package (package_id), or send a new key to create another.',
+        package_id: pkg.id,
+      });
+    }
+    return pkg;
+  }
+
+  private createData(
+    coachUserId: string,
+    input: CreatePackageInput,
+  ): Prisma.CoachPackageUncheckedCreateInput {
+    return {
         coach_id: coachUserId,
         name: input.name,
         description: input.description ?? null,
@@ -164,8 +390,7 @@ export class PackagesService {
         // PR-6 — new packages start as DRAFT (not purchasable). The
         // coach must explicitly call POST :id/publish to make it live.
         published_at: null,
-      },
-    });
+    };
   }
 
   async update(
@@ -518,6 +743,9 @@ export class PackagesService {
       orderBy: { created_at: 'desc' },
       skip: offset,
       take: limit + 1, // peek for next page
+      // C-641-2: allow-listed fields only — never the client's Stripe
+      // client_secret / ephemeral key or internal Stripe ids.
+      select: COACH_PURCHASE_SELECT,
     });
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
@@ -657,9 +885,13 @@ export class PackagesService {
       throw new BadRequestException({
         error: 'PACKAGE_PRICE_BELOW_MINIMUM',
         code: 'PACKAGE_PRICE_BELOW_MINIMUM',
+        // #321 C-321-7 / #627 round 6: free is exactly $0 on a one-time
+        // package only, so a recurring package is never offered $0.
         message: hasRecurringCompanion
           ? 'Paid packages start at $19.99. Set the one-time price to $19.99 or more.'
-          : 'Paid packages start at $19.99, or make it free.',
+          : input.billing_type === 'recurring'
+            ? 'Recurring packages start at $19.99.'
+            : 'Paid packages start at $19.99, or make it free.',
         minimum_cents: PAID_PACKAGE_MIN_CENTS,
       });
     }
