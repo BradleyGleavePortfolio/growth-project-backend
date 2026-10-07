@@ -2,10 +2,13 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import type { ConnectAccount } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { ConnectService } from '../connect/connect.service';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { parseStorefrontBaseUrl } from '../common/env-validation';
 import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
@@ -54,6 +57,21 @@ export function isConnectAccountReadyForCheckout(
   return true;
 }
 
+// B-GUESTPAY-127: the share link (public GET and guest checkout POST) gates
+// on the saved ConnectAccount row, and account.updated for a coach's Express
+// account does not reach the platform webhook. A row that fails the predicate
+// above is re-read from Stripe once through b#821's
+// ConnectService.refreshNotReady (same 60 s per-account cooldown; deauthorized
+// rows untouched; any failure returns the saved row) before the buyer is
+// refused. A ready row makes no Stripe call.
+export async function shareLinkReadinessRow(
+  row: ConnectAccount | null,
+  connect: ConnectService | undefined,
+): Promise<ConnectAccount | null> {
+  if (!row || !connect || isConnectAccountReadyForCheckout(row)) return row;
+  return connect.refreshNotReady(row);
+}
+
 @Injectable()
 export class StorefrontService {
   private readonly logger = new Logger(StorefrontService.name);
@@ -62,6 +80,9 @@ export class StorefrontService {
     private readonly prisma: PrismaService,
     private readonly stripeConnect: StripeConnectApiService,
     private readonly config: ConfigService,
+    // B-GUESTPAY-127: always injected in the app (StorefrontModule imports
+    // ConnectModule, which exports it); @Optional() only for hand-built tests.
+    @Optional() private readonly connect?: ConnectService,
   ) {}
 
   // GET /v1/packages/public/join/:token — no auth. Returns 404 when the
@@ -136,7 +157,7 @@ export class StorefrontService {
         message: 'This link is not available.',
       });
     }
-    const connectAccount = coach.connect_account;
+    const connectAccount = await shareLinkReadinessRow(coach.connect_account, this.connect);
     // Audit #3 P1-8 — gate on full readiness, not just charges_enabled.
     // 404 is the public surface; the exact failing axis is logged
     // server-side so ops can debug without an enumeration leak.

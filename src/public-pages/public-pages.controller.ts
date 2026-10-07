@@ -7,6 +7,7 @@ import {
   renderBillingUpdateCardPage,
   renderDownloadPage,
   renderEmailConfirmedPage,
+  renderOpenAppPage,
   renderSignupPage,
   sanitizeInviteCode,
   type DownloadPlatform,
@@ -63,6 +64,17 @@ export class PublicPagesController {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.status(HttpStatus.OK).send(renderBillingUpdateCardPage());
+  }
+
+  // B-DIGEST-127 — target of the "Open the app" button in every digest
+  // email. Static and identical for everyone.
+  @Public()
+  @Get('open')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  openApp(@Res() res: Response) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.status(HttpStatus.OK).send(renderOpenAppPage());
   }
 
   // HUNT-01-124 — sign-up confirmation landing for a link opened where the
@@ -158,7 +170,7 @@ export class PublicPagesController {
   }
 
   // Help surface — durable, server-rendered self-serve coach help. Source
-  // copy lives in docs/help/ and is mirrored into ./help-pages.html.ts so a
+  // copy lives in ./help-pages.html.ts (docs/help has summaries) so a
   // coach can resolve setup, first-invite, FAQ, and support-routing
   // questions without emailing the operator. Every page links to the
   // others through a shared nav so the surface reads as one section.

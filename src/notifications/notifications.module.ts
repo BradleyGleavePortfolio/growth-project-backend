@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { NotificationsController } from './notifications.controller';
+import { DigestUnsubscribeController } from './digest-unsubscribe.controller';
 import { NotificationsService } from './notifications.service';
 import { DigestService } from './digest.service';
 import { DigestScheduler } from './digest.scheduler';
@@ -50,7 +51,8 @@ import { VoiceModule } from '../roman/voice/voice.module';
   // NUDGE-V1: EmailService comes from the @Global EmailModule — no
   // import required. NudgeEngineService injects it as Optional.
   imports: [ConfigModule, VoiceModule],
-  controllers: [NotificationsController],
+  // B-DIGEST-127: public one-click unsubscribe for digest emails.
+  controllers: [NotificationsController, DigestUnsubscribeController],
   providers: [
     NotificationsService,
     PushDeliveryService,

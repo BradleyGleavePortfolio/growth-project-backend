@@ -756,6 +756,12 @@ export class BillingService {
   // event was lost.
   //
   // Returns null when:
+  //   - the event does not show the first payment confirmed (B-WELCOME-127:
+  //     only invoice.paid, or a subscription event whose status is active or
+  //     trialing, the same statuses that turn entitlement on). The
+  //     subscription is created `incomplete` before the buyer types a card,
+  //     and a declined card sends invoice.payment_failed; converting on
+  //     those made the account and sent "You're enrolled" before payment;
   //   - the event has no subscription id;
   //   - no GuestCheckout sentinel matches;
   //   - the sentinel has no real PI id (still on `pending_<key>` stub);
@@ -767,12 +773,12 @@ export class BillingService {
     let subId: string | undefined;
     if (
       event.type === 'customer.subscription.created' ||
-      event.type === 'customer.subscription.updated' ||
-      event.type === 'customer.subscription.deleted'
+      event.type === 'customer.subscription.updated'
     ) {
-      const sub = event.data.object as { id?: string };
+      const sub = event.data.object as { id?: string; status?: string };
+      if (sub?.status !== 'active' && sub?.status !== 'trialing') return null;
       subId = sub?.id;
-    } else if (event.type === 'invoice.paid' || event.type === 'invoice.payment_failed') {
+    } else if (event.type === 'invoice.paid') {
       const inv = event.data.object as {
         subscription?: string | { id?: string } | null;
       };
@@ -1668,7 +1674,7 @@ export class BillingService {
       throw new BadRequestException({
         error: 'BILLING_NOT_PROVISIONED',
         message:
-          'No Stripe customer is provisioned for this coach yet. An OWNER must call start-subscription first.',
+          'No coach subscription billing account is available. Ordinary coach tools do not require a coach subscription. For client payments and payouts, open Settings → Payouts (Stripe Connect) in the mobile app.',
       });
     }
 

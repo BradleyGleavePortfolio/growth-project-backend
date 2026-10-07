@@ -57,7 +57,7 @@ const ROUTE_HANDLERS: ReadonlyArray<{
     method: 'helpFirstClient' as any,
     expectInBody: 'Invite your first client',
   },
-  { page: 'tour', method: 'helpTour' as any, expectInBody: 'Coach console tour' },
+  { page: 'tour', method: 'helpTour' as any, expectInBody: 'Coach app tour' },
   { page: 'faq', method: 'helpFaq' as any, expectInBody: 'Frequently asked questions' },
   { page: 'support', method: 'helpSupport' as any, expectInBody: 'What support covers' },
   { page: 'contact', method: 'helpContact' as any, expectInBody: 'Contact support' },
@@ -208,20 +208,59 @@ describe('PublicPagesController help pages', () => {
     expect(html).toContain('https://app.trygrowthproject.com/status');
   });
 
-  it('setup and first-client pages reference the canonical console and invite URLs', () => {
+  it('setup and first-client pages reference the canonical invite URL', () => {
     const setup = renderHelpPage('setup');
-    expect(setup).toContain('https://console.thegrowthproject.app');
     expect(setup).toContain('https://app.trygrowthproject.com/join');
     const firstClient = renderHelpPage('first-client');
     expect(firstClient).toContain('https://app.trygrowthproject.com/join');
   });
 
-  it('faq page contains the most-frequent coach questions verbatim', () => {
+  it.each<HelpPage>(['index', 'setup', 'first-client', 'tour', 'faq'])(
+    '%s describes mobile coaching without a web console or subscription gate',
+    (page) => {
+      const html = renderHelpPage(page);
+      expect(html).toContain('mobile app');
+      expect(html).not.toMatch(/coach console|console\.thegrowthproject\.app/i);
+      expect(html).not.toMatch(/start your subscription|Billing reads Active|billing status reads Active/i);
+      expect(html).not.toMatch(/message sends are blocked|seven-day grace window/i);
+      expect(html).not.toMatch(/\b(?:I|my|we|our)\b/i);
+    },
+  );
+
+  it('setup points to the current coach setup and Settings entries', () => {
+    const html = renderHelpPage('setup');
+    for (const step of ['Get paid', 'Payouts (Stripe Connect)', 'Packages', 'Invite Codes', 'Programs', 'Availability', 'Appointment Types']) {
+      expect(html).toContain(step);
+    }
+    expect(html).toContain('Ordinary coach tools do not require a coach subscription.');
+    expect(html).toContain('recurring');
+    expect(html).not.toMatch(/account has not been promoted|Rotate button/i);
+  });
+
+  it('first-client explains the real landing page and post-install invite fallback', () => {
+    const html = renderHelpPage('first-client');
+    expect(html).toContain('coach name');
+    expect(html).toContain('open the invite link again');
+    expect(html).toContain('enter the code');
+    expect(html).not.toMatch(/shows your photo|your bio|preserved through the install|delete their account/i);
+  });
+
+  it('tour uses the current coach tabs instead of fictional console screens', () => {
+    const html = renderHelpPage('tour');
+    for (const tab of ['Overview', 'Clients', 'Programs', 'Messages', 'Settings']) {
+      expect(html).toContain(tab);
+    }
+    expect(html).not.toMatch(/draft.*any device|Sending is instant|Rotate/i);
+  });
+
+  it('faq answers current coach setup, invitation, messaging and payout questions', () => {
     const html = renderHelpPage('faq');
-    expect(html).toContain('Why does my account say Client instead of Coach');
-    expect(html).toContain('Does my invite link expire');
+    expect(html).toContain('Why does an account say Client instead of Coach');
+    expect(html).toContain('Can an invite code expire');
     expect(html).toContain('Are messages real-time');
-    expect(html).toContain('Where do I get an invoice');
+    expect(html).toContain('Is a coach subscription required');
+    expect(html).toContain('Where are earnings and payouts');
+    expect(html).not.toMatch(/promotion to coach is manual|merge the accounts|delete their account.*sign up again/i);
   });
 
   it('faq says coach tools are in the mobile app, never that coaching is web-only', () => {

@@ -3,7 +3,8 @@
 // /help/delete-account (public account-deletion page for Google Play).
 //
 // These pages are the public, no-vendor coach-facing help destination.
-// Content is sourced from docs/help/*.md (PR #101) and rendered as static
+// Current copy lives below; docs/help contains summaries and support notes.
+// Content is rendered as static
 // HTML in the same quiet-luxury aesthetic as the trust pages so the public
 // surface (https://app.trygrowthproject.com/...) reads as one product.
 //
@@ -12,7 +13,7 @@
 //  - Plain prose. No emoji, no marketing exclamation, no AI fingerprints.
 //  - No placeholders, TODO/FIXME, or "coming soon" copy. If a feature does
 //    not exist today, we either omit it or describe the current reality.
-//  - Tokens (SUPPORT_EMAIL, COACH_CONSOLE_URL, INVITE_BASE_URL, STATUS_URL)
+//  - Tokens (SUPPORT_EMAIL, INVITE_BASE_URL, STATUS_URL)
 //    are sourced from a single substitution map; never hardcoded inline.
 //    SUPPORT_EMAIL is reused from trust-pages.html so there is exactly one
 //    place in the codebase that names the operator's mailbox.
@@ -44,13 +45,12 @@ export { SUPPORT_EMAIL } from './trust-pages.html';
 
 // Last-reviewed date for the help copy. Bump on substantive edits so the
 // freshness signal at the top of each page reflects reality.
-export const HELP_LAST_REVIEWED = '2026-10-06';
+export const HELP_LAST_REVIEWED = '2026-10-07';
 
 // Token defaults align with the staging/production hostnames described in
 // docs/help/_tokens.md. The renderer never invents values that depend on
 // per-deployment secrets — it just substitutes in copy that already names
 // real public URLs the operator can verify.
-const COACH_CONSOLE_URL = 'https://console.thegrowthproject.app';
 const INVITE_BASE_URL = 'https://app.trygrowthproject.com/join';
 const STATUS_URL = 'https://app.trygrowthproject.com/status';
 
@@ -124,19 +124,19 @@ function indexContent(): HelpPageContent {
     title: 'Help — The Growth Project',
     headline: 'Help',
     intro:
-      'A short, opinionated guide for coaches getting started on the ' +
-      'platform. Each page below answers one question. Read them in order ' +
+      'A guide to coaching in The Growth Project mobile app. ' +
+      'Each page below answers one question. Read them in order ' +
       'the first time, then keep them as a reference.',
     sections: [
       {
         heading: 'Where to start',
         paragraphs: [
-          'New coaches generally read these in order. Thirty minutes from start to first invite is a reasonable budget.',
+          'Start with setup, then send an invite and explore the coach tabs in the app.',
         ],
         bullets: [
-          'Setup checklist — the six steps that move a fresh account to a ready one.',
+          'Setup checklist — account setup, Stripe payouts, packages, invites, programs and booking hours.',
           'Invite your first client — what to send, what the client sees, and how to confirm they landed.',
-          'Coach console tour — a six-scene walkthrough of every screen you will use day to day.',
+          'Coach app tour — Overview, Clients, Programs, Messages and Settings.',
         ],
       },
       {
@@ -146,21 +146,21 @@ function indexContent(): HelpPageContent {
         ],
         bullets: [
           'Frequently asked questions — short answers to the questions coaches ask most often.',
-          'What support covers — the contract between you and our support team. Read this before you write in.',
+          'What support covers — which issues to send to support.',
           'Contact support — what to include in a message so the first reply is the useful one.',
         ],
       },
       {
         heading: 'Your account',
         paragraphs: [
-          'Delete account explains how to delete your account and data, in the app or by email without the app, what we delete, what we keep and how long it takes.',
+          'Delete account explains deletion in the app or by email, which records are removed or retained, and how long it takes.',
         ],
         links: [{ label: 'Delete your account', href: DELETE_ACCOUNT_HELP_PATH }],
       },
       {
         heading: 'How this content is maintained',
         paragraphs: [
-          'These pages are versioned alongside the application. The last-reviewed date at the top of each page reflects when the copy was last edited. We update them when product behaviour changes; we do not write speculative documentation for features that do not yet exist.',
+          'These pages are versioned alongside the application. The last-reviewed date at the top of each page reflects when the copy was last edited.',
         ],
       },
     ],
@@ -172,65 +172,62 @@ function setupContent(): HelpPageContent {
     title: 'Coach setup checklist — The Growth Project',
     headline: 'Coach setup checklist',
     intro:
-      'Six steps, in order. Each one unblocks the next. Plan for thirty ' +
-      'minutes if you have your business details to hand.',
+      'Set up coaching in The Growth Project mobile app. Ordinary coach tools do not require a coach subscription. ' +
+      'Stripe setup is for receiving client payments, not buying access to coach tools.',
     sections: [
       {
-        heading: '1. Confirm your account is a coach account',
+        heading: '1. Create a coach account in the app',
         paragraphs: [
-          `Sign in to the coach console at ${COACH_CONSOLE_URL}. The header should read Coach. If it reads Client or you cannot reach the console at all, your account has not been promoted yet. Reply to the welcome email so we can promote it.`,
+          'Choose the coach option when creating an account. Sign in to an existing coach account with the sign-in method used to create it. If the account opens as a client instead, contact support before creating another account.',
         ],
       },
       {
-        heading: '2. Complete your coach profile',
-        paragraphs: ['In the console, open Settings → Profile and fill in:'],
-        bullets: [
-          'Display name (this is what clients see).',
-          'A one-paragraph bio (two to four sentences is enough).',
-          'A profile photo (square, at least 512×512).',
-          'Your timezone.',
+        heading: '2. Complete setup and connect Stripe',
+        paragraphs: [
+          'The coach setup wizard covers practice basics, Get paid, a first package and an invite. Steps left for later can be opened from the checklist on Overview.',
+          'To accept client payments, open Overview → Get paid or Settings → Payouts (Stripe Connect). Complete the details Stripe requests, then check the payment and payout status shown in the app. Free packages work without Stripe.',
         ],
       },
       {
-        heading: '3. Set your subscription up',
+        heading: '3. Create your first package',
         paragraphs: [
-          'Open Settings → Billing and start your subscription. You will be redirected to Stripe to enter card details. The subscription has to be active before you can send messages or invite clients — read-only access works without it, but writing does not.',
-          'If billing has already been set up for you (some launch coaches were provisioned manually), this section will say Active and you can skip it.',
+          'Create a package in the setup wizard, from the Overview checklist, or in Settings → Packages. Give it a name and review its price and included coaching before publishing.',
+          'Settings → Packages supports one-time and recurring packages. Client package payments are separate from access to coach tools.',
         ],
       },
       {
-        heading: '4. Generate your default invite link',
+        heading: '4. Share an invite link or code',
         paragraphs: [
-          `In the console, open Clients → Invite. The page shows your default invite link in the form ${INVITE_BASE_URL}/AB12CD. Copy it. This is the one link you give to every prospective client unless you have a reason to want a separate link per client (most coaches do not).`,
-          'The link is permanent. It does not expire and it is not single-use. If you ever need to rotate it — for example after a phone is lost — the same page has a Rotate button. Rotation invalidates the old link immediately.',
+          `Open Invite your first client on the Overview checklist to copy or share a link. Or open Clients → Invite or Settings → Invite Codes to create and share a code. Invite links use ${INVITE_BASE_URL}/ followed by the code.`,
+          'Send the complete link and code to one client. After installing the app, the client should open the invite link again or enter the code when creating an account. Confirm they appear in Clients.',
         ],
       },
       {
-        heading: '5. Send the invite to one test client',
+        heading: '5. Build and assign a program',
         paragraphs: [
-          'Pick a friend, family member, or second device of your own. Send them the link by whatever channel you would normally use with clients (text, email, DM). Have them open the link, install the app, sign in, and confirm they appear in your roster. If anything in that chain feels confusing, that is feedback — write it down.',
+          'Open Programs to build a training program and assign it to a client. Settings → Workout Builder opens the workout-plan editor. Open the client in Clients to review their training and meal plan.',
         ],
       },
       {
-        heading: '6. Read the support boundaries page',
+        heading: '6. Set booking hours and appointment types',
         paragraphs: [
-          'Read What support covers before you send your first real client invite. It tells you which problems we own and which problems sit with you. The line is sharper than most coaches expect on first read, and the cleanest moment to absorb it is before you have a client on the other end.',
+          'Open Settings → Availability to set weekly booking hours. Settings → Appointment Types sets the sessions clients can book. Use Time Off for dates that should not be available, and Booking Inbox to review requests.',
         ],
       },
       {
         heading: 'You are done when',
         paragraphs: ['Setup is complete when:'],
         bullets: [
-          'Your console header reads Coach.',
-          'Your profile is filled in.',
-          'Your billing status reads Active.',
-          'You have copied your invite link at least once.',
-          'A test client has appeared in your roster.',
+          'The coach tabs are available in the app.',
+          'The package intended for clients is published.',
+          'A client has joined and appears in Clients.',
+          'A program is assigned and booking hours match the coaching offered.',
+          'For paid packages, the Stripe status confirms client payments can be accepted.',
         ],
       },
     ],
     footnote:
-      'Anything outside that list is not a setup step — it is operating the business. Move on.',
+      'For help with a setup problem, open Contact support and include the screen and the message shown.',
   };
 }
 
@@ -244,55 +241,55 @@ function firstClientContent(): HelpPageContent {
     sections: [
       {
         heading: 'Before you send anything',
-        paragraphs: ['Confirm three things in the coach console:'],
+        paragraphs: ['Start in the coach mobile app:'],
         bullets: [
-          'Settings → Profile has a display name, bio, and photo. The client will see all three when they open the link.',
-          'Settings → Billing reads Active.',
-          'Clients → Invite shows a link. Copy it.',
+          'Open Invite your first client on Overview to copy or share the setup link.',
+          'For a new code, open Clients → Invite or Settings → Invite Codes. Review any expiry or use limit before sharing.',
+          'If offering a paid package, check Settings → Packages and Payouts (Stripe Connect). Inviting and messaging do not require a coach subscription.',
         ],
       },
       {
         heading: 'Send the link',
         paragraphs: [
-          `Send the link to one client by the channel you actually use with them. Text and email are the most common. The link looks like ${INVITE_BASE_URL}/AB12CD.`,
-          'Anything you write alongside the link is up to you, but the link itself does the heavy lifting — it shows your photo, your bio, and an Open in app button when the client taps it. You do not need to explain what the app is in the message.',
+          `Send the complete link and its code by text, email or another channel used with the client. The link uses ${INVITE_BASE_URL}/ followed by the code.`,
+          'Explain that the client needs The Growth Project mobile app and should use the invite to join the correct coach.',
         ],
       },
       {
         heading: 'What the client sees',
         paragraphs: [
-          'Tapping the link opens a landing page in the browser. The page shows your card and one button. The button does one of two things:',
+          'The link can open the installed app or a browser page. The browser page shows the coach name, business name when set, invite code and app-opening or download instructions for the device.',
         ],
         bullets: [
-          'If the client already has the app installed, it deep-links into the app and starts the sign-in flow.',
-          'If the client does not have the app installed, it routes to the App Store or Play Store, and the deep link is preserved through the install. After installing and opening the app for the first time, they land on the same sign-in flow with your invite already attached.',
+          'With the app installed, open the invite on the phone and follow the join instructions in the app.',
+          'Without the app, follow the download instructions. After installing, open the invite link again or enter the code when creating an account. Do not assume the install will keep the code.',
         ],
       },
       {
         heading: 'Confirm they landed',
         paragraphs: [
-          'In the console, open Clients → Roster. The client should appear within a few seconds of completing sign-in. If they do not, ask them which step they got stuck on:',
+          'Open Clients in the coach app after the client completes the join flow. If the client is missing, check:',
         ],
         bullets: [
-          'Could they open the link in their browser? A failure here is usually a DNS or carrier issue on their end.',
-          'Did the Open in app button appear? Yes means the link resolved correctly. No means the link they used was incomplete (often from a copy-paste that dropped characters).',
-          'Did they finish sign-in? If they bailed on the Apple or Google prompt, there is no row to show; they need to retry.',
+          'Did they receive the complete link and code?',
+          'Did they open the invite again after installing, or enter the code in the app?',
+          'Did they finish creating or signing in to the account and joining the coach?',
         ],
       },
       {
         heading: 'Common first-invite snags',
-        paragraphs: ['Four issues account for most stuck clients:'],
+        paragraphs: ['Check the message shown before sending another invite:'],
         bullets: [
-          'The client has an existing account from a different coach. They cannot be moved by sending a new invite. Ask them to delete their account in the app first, then sign up again with your invite. If that is not viable, see the Contact page.',
-          'The link looks like .../join/ with no code. The code did not copy. Re-copy from Clients → Invite.',
-          'The client tapped the link but it opened a generic app store page. The link did not contain the code, or they tapped a shortened version that dropped path segments. Send the original link without a URL shortener.',
-          'Apple or Google sign-in returned them to a blank screen. Their browser blocked the redirect. Have them open the original link in Safari (iOS) or Chrome (Android) rather than an in-app browser.',
+          'Invite unavailable: check that the code is active and has not expired, been revoked or reached its use limit. Share an active code from Invite Codes.',
+          'Missing code after install: send the original link and ask the client to reopen it or enter the code.',
+          'Already linked to another coach: a new invite does not transfer that relationship. Contact support about the existing account rather than asking the client to delete it.',
+          'Sign-in does not finish: note the sign-in method and the message shown, then contact support if the client cannot continue.',
         ],
       },
       {
         heading: 'After the first invite',
         paragraphs: [
-          'For every subsequent client, send the same link. The link does not change between clients. There is no per-client setup on your side until a client appears in your roster, at which point you can open their thread and message them in the console.',
+          'Open the client in Clients to review their details, assign training or a meal plan, and open their conversation. Messages also lists client conversations. Share an active invite for the next client.',
         ],
       },
     ],
@@ -301,47 +298,46 @@ function firstClientContent(): HelpPageContent {
 
 function tourContent(): HelpPageContent {
   return {
-    title: 'Coach console tour — The Growth Project',
-    headline: 'Coach console tour',
+    title: 'Coach app tour — The Growth Project',
+    headline: 'Coach app tour',
     intro:
-      'A six-scene walkthrough of the coach console. Read it as a tour, ' +
-      'or use it as a screen-by-screen reference when something is not ' +
-      'where you expected.',
+      'Coach tools are in The Growth Project mobile app. Sign in with a coach account, ' +
+      'then use the tabs below for daily coaching.',
     sections: [
       {
-        heading: 'Sign in',
+        heading: 'Overview',
         paragraphs: [
-          `The sign-in page lives at ${COACH_CONSOLE_URL}. Sign in with the email you used during setup. Apple, Google, and email all land you in the same place.`,
+          'Overview brings together the setup checklist and coaching activity. Use Get paid, Create your first package and Invite your first client to finish any setup left for later.',
         ],
       },
       {
-        heading: 'Dashboard at a glance',
+        heading: 'Clients',
         paragraphs: [
-          'The header shows the account you are signed in as. If the chip reads Coach, you are in the right place. Three tiles below it are everything you need to glance at on a normal day — how many clients you have, how many messages are waiting, and whether billing is healthy.',
+          'Clients lists the people linked to the coach. Open a client to review their consultation and logs, manage training and meal plans, or open their conversation. Invite opens the invite-code screen.',
         ],
       },
       {
-        heading: 'Roster and a single client',
+        heading: 'Programs',
         paragraphs: [
-          'Roster is the source of truth for who is on your books. Each row links to a thread. The thread is a conversation, with read markers on both sides, so you can see at a glance whether your last message has been opened.',
+          'Programs is the training-program library. Build and edit programs, then assign them to clients. Settings → Workout Builder opens the workout-plan editor.',
         ],
       },
       {
-        heading: 'Send a message',
+        heading: 'Messages',
         paragraphs: [
-          'Sending is instant. The client gets a push notification on their phone. If you save a draft instead of sending, it stays attached to the thread; you can come back to it from any device.',
+          'Messages lists client conversations. Open a conversation to read and send messages. If a send fails, follow the message shown in the app. Phone notifications depend on notification permissions and settings.',
         ],
       },
       {
-        heading: 'Invite link',
+        heading: 'Settings',
         paragraphs: [
-          'Your invite link does not change between clients. Copy it once, send it to whoever you want to bring on. If you ever need to retire the current link, Rotate generates a new one and makes the old one stop working.',
+          'Settings contains Packages, Payouts (Stripe Connect), Money, Invite Codes, Availability, Appointment Types, Time Off and Booking Inbox. Help centre and Contact support are also available here.',
         ],
       },
       {
-        heading: 'Settings and billing',
+        heading: 'Client payments are separate',
         paragraphs: [
-          'Billing lives in Stripe. The console shows the current status and a button into the Stripe portal, where you can update a card, see invoices, or cancel. If billing ever lapses, this tile is the first place to look.',
+          'Ordinary coach tools do not require a coach subscription. Packages define what clients buy; Stripe Connect handles client payments and coach payouts. Open Settings → Money to review earnings and payouts.',
         ],
       },
     ],
@@ -360,19 +356,19 @@ function faqContent(): HelpPageContent {
         heading: 'Account and access',
         items: [
           {
-            question: 'Why does my account say Client instead of Coach?',
+            question: 'Why does an account say Client instead of Coach?',
             answer:
-              'Promotion to coach is manual at sign-up. Reply to your welcome email and we will promote it within one business day.',
+              'New accounts can choose the coach option during sign-up. If an existing account opens as a client, confirm the sign-in method and contact support before creating another account.',
           },
           {
-            question: 'I signed in with the wrong provider — can I switch from Google to Apple?',
+            question: 'What happens when a different sign-in method is used?',
             answer:
-              'The provider is part of your identity in our system, so the two sign-ins map to two separate accounts. If you signed up with the wrong one, write in via the Contact page and we will merge the accounts.',
+              'Use the sign-in method used to create the account. If another method opens an unexpected account, contact support with the methods used and the screen shown.',
           },
           {
             question: 'Can two people share one coach account?',
             answer:
-              'No. Each coach is one human. If you have an assistant or co-coach, they need their own account, which we can promote to coach access on your roster.',
+              'Each person should use their own account. Do not share sign-in credentials.',
           },
         ],
       },
@@ -380,23 +376,23 @@ function faqContent(): HelpPageContent {
         heading: 'Clients and invites',
         items: [
           {
-            question: 'Does my invite link expire?',
-            answer: 'No. The default link is permanent until you rotate it.',
+            question: 'Can an invite code expire?',
+            answer: 'Invite Codes supports expiry dates and use limits. Check the code status before sharing it. A revoked, expired or fully used code needs to be replaced with an active code.',
           },
           {
-            question: 'How many clients can I invite?',
+            question: 'Where are client invitations?',
             answer:
-              'There is no fixed limit. Performance starts to degrade in the console only past several hundred active threads, which is well beyond a typical coaching practice.',
+              'Open Clients → Invite or Settings → Invite Codes to create and share codes. The Overview setup checklist also opens the first-client share link.',
           },
           {
-            question: 'A client signed up with the wrong coach. Can I take them over?',
+            question: 'Can an invite move a client from another coach?',
             answer:
-              'Not by sending a new invite. The client has to delete their account in the app and sign up again with your link. If that is not viable, write in.',
+              'A new invite does not transfer an existing coach relationship. Contact support about the account rather than asking the client to delete it.',
           },
           {
-            question: 'Can I send a different invite link to different clients?',
+            question: 'Can different clients receive different invite codes?',
             answer:
-              'Yes, but it is rarely worth the bookkeeping. The default link already attaches every signup to you. Use a separate link only when you have a campaign-tracking reason.',
+              'Yes. Create codes in Invite Codes and review any expiry date or use limit for each one.',
           },
         ],
       },
@@ -406,41 +402,41 @@ function faqContent(): HelpPageContent {
           {
             question: 'Are messages real-time?',
             answer:
-              'Sends are instant; the client gets a push notification. The client sees a typing-style indicator only briefly — we do not stream keystrokes.',
+              'Read and send messages in the mobile app. Notifications depend on phone permissions and settings; open the conversation to check for messages.',
           },
           {
-            question: 'Can I schedule a message to send later?',
-            answer: 'Not yet. You can save a draft and send it manually when ready.',
+            question: 'Can a message be scheduled to send later?',
+            answer: 'Message scheduling is not available in the app. A message is sent when Send is tapped.',
           },
           {
-            question: 'Are messages encrypted?',
+            question: 'What information should stay out of messages?',
             answer:
-              'Yes, in transit and at rest. They are not end-to-end encrypted — operators can read them in the course of a support investigation, under the same audit log that covers every other read of client data.',
+              'Do not send passwords, sign-in codes or full payment-card details. Use Contact support for an account or security problem.',
           },
           {
-            question: 'The client says they did not receive my message.',
+            question: 'A client has not seen a message. What should be checked?',
             answer:
-              'First confirm the message shows as delivered in the thread. If it does, the message reached our servers and the client device. If push notifications are silent on their side, that is almost always a phone-side notification setting; have them open the app to see the message.',
+              'Check the conversation for a send failure. Ask the client to open the app and the conversation, then check phone notification permissions if alerts are missing. Contact support if the message still cannot be found.',
           },
         ],
       },
       {
-        heading: 'Billing',
+        heading: 'Client payments and payouts',
         items: [
           {
-            question: 'My billing status is past due. Why?',
+            question: 'Is a coach subscription required?',
             answer:
-              'A charge failed. Open Settings → Billing → Manage in Stripe and update the card. The system retries automatically; you do not need to write in unless the retries also fail.',
+              'Ordinary coach tools do not require a coach subscription. Inviting and messaging clients are not blocked by a coach-software subscription. Paid client packages, including recurring packages, are separate and still require client payment.',
           },
           {
-            question: 'I am on past-due status — can I still message clients?',
+            question: 'How are client payments set up?',
             answer:
-              'You have a seven-day grace window after the failed charge. After that, message sends are blocked until billing is restored.',
+              'Open Overview → Get paid or Settings → Payouts (Stripe Connect), complete the details Stripe requests and check the status shown. Create and publish the package in Settings → Packages.',
           },
           {
-            question: 'Where do I get an invoice?',
+            question: 'Where are earnings and payouts?',
             answer:
-              'Stripe portal, accessible from Settings → Billing → Manage in Stripe. Every paid month is downloadable as a PDF.',
+              'Open Settings → Money for earnings and payout information. Settings → Payouts (Stripe Connect) opens the connected-account payment and payout controls, not a coach-subscription checkout.',
           },
         ],
       },
@@ -448,12 +444,12 @@ function faqContent(): HelpPageContent {
         heading: 'Data',
         items: [
           {
-            question: 'Can I export my client data?',
+            question: 'Can a coach bulk-export client data?',
             answer:
-              'A client can export their own data from the mobile app. A coach cannot bulk-export client data — that is a privacy decision, not a gap. If you need a specific record for a legal or medical reason, write in.',
+              'The coach app does not offer a bulk client-data export. Clients can export their own data from the mobile app. Contact support about a specific record needed for a legal or medical reason.',
           },
           {
-            question: 'A client deleted their account. Where did they go?',
+            question: 'What happens when a client deletes their account?',
             answer:
               'During the 14-day grace period they stay on your roster and can cancel the deletion in the app. When it ends, they leave your roster and their data is permanently deleted and cannot be recovered.',
           },
@@ -468,7 +464,7 @@ function faqContent(): HelpPageContent {
               'Coach tools are available in The Growth Project mobile app. Sign in with a coach account to manage clients, messages, training programs, coaching packages and availability.',
           },
           {
-            question: 'How do I report a bug?',
+            question: 'How is a bug reported?',
             answer: 'See the Contact page.',
           },
         ],

@@ -422,32 +422,55 @@ export class AiConsentService implements ClientAiConsentReader {
     userIds: readonly string[],
     scope: ClientAiConsentScope = 'base',
   ): Promise<ReadonlySet<string>> {
-    const unique = [...new Set(userIds.filter((id) => typeof id === 'string' && id.length > 0))];
-    if (unique.length > AI_CONSENT_BATCH_MAX) {
-      throw new RangeError(`clientsWithAiConsent accepts at most ${AI_CONSENT_BATCH_MAX} ids`);
-    }
+    const unique = batchIds(userIds, 'clientsWithAiConsent');
     if (!isAiConsentLedgerEnabled() || unique.length === 0) return new Set();
     try {
-      const rows = await this.prisma.aiProcessingConsentEvent.findMany({
-        where: {
-          user_id: { in: unique },
-          processor: CLIENT_AI_CONSENT_PROCESSOR,
-          purpose: CLIENT_AI_CONSENT_PURPOSE,
-        },
-        select: { user_id: true, ...LATEST_SELECT },
-      });
-      // Latest decision per user = highest seq (independent of row order).
-      const latestByUser = new Map<string, AiConsentLatestRow>();
-      for (const row of rows) {
-        const prev = latestByUser.get(row.user_id);
-        if (!prev || row.seq > prev.seq) latestByUser.set(row.user_id, row);
-      }
       const out = new Set<string>();
-      for (const [id, row] of latestByUser) if (coversScope(row, scope)) out.add(id);
+      for (const [id, row] of await this.latestByUser(unique)) if (coversScope(row, scope)) out.add(id);
       return out;
     } catch (err) {
       this.logger.warn(`ai_consent.batch_read_failed code=${prismaErrorCode(err)}`);
       return new Set();
     }
   }
+
+  /** R11-M4: grant time of each live client-ai-v5 ('memory') grant among `userIds`. */
+  async memoryGrantTimes(userIds: readonly string[]): Promise<ReadonlyMap<string, Date>> {
+    const unique = batchIds(userIds, 'memoryGrantTimes');
+    if (!isAiConsentLedgerEnabled() || unique.length === 0) return new Map();
+    try {
+      const out = new Map<string, Date>();
+      for (const [id, row] of await this.latestByUser(unique)) if (isMemoryGrant(row)) out.set(id, row.created_at);
+      return out;
+    } catch (err) {
+      this.logger.warn(`ai_consent.batch_read_failed code=${prismaErrorCode(err)}`);
+      return new Map();
+    }
+  }
+
+  /** Latest decision per user = highest seq (independent of row order). Throws on a read failure. */
+  private async latestByUser(unique: string[]): Promise<Map<string, AiConsentLatestRow>> {
+    const rows = await this.prisma.aiProcessingConsentEvent.findMany({
+      where: {
+        user_id: { in: unique },
+        processor: CLIENT_AI_CONSENT_PROCESSOR,
+        purpose: CLIENT_AI_CONSENT_PURPOSE,
+      },
+      select: { user_id: true, ...LATEST_SELECT },
+    });
+    const latest = new Map<string, AiConsentLatestRow>();
+    for (const row of rows) {
+      const prev = latest.get(row.user_id);
+      if (!prev || row.seq > prev.seq) latest.set(row.user_id, row);
+    }
+    return latest;
+  }
+}
+
+function batchIds(userIds: readonly string[], method: string): string[] {
+  const unique = [...new Set(userIds.filter((id) => typeof id === 'string' && id.length > 0))];
+  if (unique.length > AI_CONSENT_BATCH_MAX) {
+    throw new RangeError(`${method} accepts at most ${AI_CONSENT_BATCH_MAX} ids`);
+  }
+  return unique;
 }

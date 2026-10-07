@@ -263,6 +263,25 @@ export class AiEgressService {
   }
 
   /**
+   * R11-M4: when each of `clientIds` recorded the live client-ai-v5 ('memory') grant they hold now
+   * (others absent). Fails closed: an error, or a reader without this read, gives an empty map.
+   */
+  async memoryGrantTimes(clientIds: readonly string[]): Promise<ReadonlyMap<string, Date>> {
+    const unique = [...new Set(clientIds.filter((id) => typeof id === 'string' && id.length > 0))];
+    const out = new Map<string, Date>();
+    try {
+      for (let i = 0; i < unique.length; i += AI_CONSENT_BATCH_MAX) {
+        const got = await this.consent.memoryGrantTimes?.(unique.slice(i, i + AI_CONSENT_BATCH_MAX));
+        for (const [id, at] of got ?? []) out.set(id, at);
+      }
+    } catch {
+      this.logger.warn('ai_egress.consent_read_failed (treated as no grant)');
+      return new Map();
+    }
+    return out;
+  }
+
+  /**
    * One gated send with gate-owned retries: the grant is re-read before EVERY
    * attempt, and `attempt` must make exactly one provider request (SDK
    * retries off). Refusals and non-transient errors are thrown unchanged.

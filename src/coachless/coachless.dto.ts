@@ -14,6 +14,7 @@ import {
   INVITE_CODE_MAX_LENGTH,
   INVITE_CODE_MIN_LENGTH,
 } from '../invite-codes/invite-codes.service';
+import { CoachSharingNoticeProperty } from '../consent/coach-sharing-notice';
 
 const CODE_SHAPE = /^\s*[A-Za-z0-9-]+\s*$/;
 
@@ -29,6 +30,11 @@ export class CoachCodeDto {
   @MaxLength(INVITE_CODE_MAX_LENGTH + 8)
   @Matches(CODE_SHAPE)
   code!: string;
+
+  // Redeem only: the coach-sharing sentence the code sheet showed above its
+  // Join button (src/consent/coach-sharing-notice.ts). Ignored by check.
+  @CoachSharingNoticeProperty()
+  coach_sharing_notice?: string;
 }
 
 /** Owner PUT /admin/featured-coach. Every field is replaced (null clears). */

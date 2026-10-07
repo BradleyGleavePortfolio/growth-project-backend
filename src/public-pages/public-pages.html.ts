@@ -47,6 +47,8 @@ interface PageContent {
    * data (the trust-surface CSP is off, see main.ts helmet config).
    */
   script?: string;
+  /** B-DIGEST-127: render the CTA as a same-origin POST form button instead of a link. */
+  form_action?: string;
 }
 
 function pageFor(platform: DownloadPlatform): PageContent {
@@ -168,6 +170,81 @@ export function renderEmailConfirmedPage(): string {
   });
 }
 
+const APP_LINKS = (subject: string): ReadonlyArray<{ label: string; href: string }> => [
+  { label: 'Get the iPhone app', href: '/download/ios' },
+  { label: 'Get the Android app', href: '/download/android' },
+  {
+    label: `Need help? Email ${SUPPORT_EMAIL}`,
+    href: `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(subject)}`,
+  },
+];
+
+/**
+ * B-DIGEST-127 — target of the "Open the app" button in every digest email
+ * (https://app.trygrowthproject.com/open). Static and identical for everyone.
+ */
+export function renderOpenAppPage(): string {
+  return baseDocument({
+    title: 'The Growth Project — Open the app',
+    headline: 'Open The Growth Project',
+    body:
+      'Summaries, check-ins, messages and training all live in The Growth ' +
+      'Project app. Open it on your phone to see the details.',
+    cta_label: 'Open the app',
+    cta_href: 'tgp://',
+    links: APP_LINKS('Opening the app'),
+  });
+}
+
+export type DigestUnsubscribeState = 'confirm' | 'done' | 'expired' | 'invalid';
+
+/**
+ * B-DIGEST-127 — the one-click unsubscribe page for summary emails. 'confirm'
+ * (GET with a valid token) shows a button that POSTs back to the same URL, so
+ * a mail scanner that only follows links turns nothing off; 'done' follows the
+ * POST. No account data is rendered.
+ */
+export function renderDigestUnsubscribePage(
+  state: DigestUnsubscribeState,
+  formAction?: string,
+): string {
+  const title = 'The Growth Project — Summary emails';
+  if (state === 'confirm' && formAction) {
+    return baseDocument({
+      title,
+      headline: 'Turn off summary emails',
+      body:
+        'Daily and weekly summary emails stop for this account. In-app ' +
+        'notifications, receipts and account emails are not affected.',
+      cta_label: 'Turn off summary emails',
+      cta_href: formAction,
+      form_action: formAction,
+    });
+  }
+  if (state === 'done') {
+    return baseDocument({
+      title,
+      headline: 'Summary emails are off',
+      body:
+        'Daily and weekly summary emails are now off for this account. ' +
+        'Receipts and account emails still arrive as usual.',
+      cta_label: 'Open the app',
+      cta_href: 'tgp://',
+      links: APP_LINKS('Summary emails'),
+    });
+  }
+  return baseDocument({
+    title,
+    headline:
+      state === 'expired' ? 'This link has expired' : 'This link does not work',
+    body:
+      'Use the unsubscribe link in the most recent summary email, or contact ' +
+      'support to turn summary emails off.',
+    cta_label: 'Contact support',
+    cta_href: `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent('Turn off summary emails')}`,
+  });
+}
+
 export function renderSignupPage(inviteCode?: string | null): string {
   const code = sanitizeInviteCode(inviteCode);
   if (code) {
@@ -226,6 +303,9 @@ function baseDocument(p: PageContent): string {
     .map((l) => `\n    <li><a href="${escapeAttr(l.href)}">${escapeHtml(l.label)}</a></li>`)
     .join('');
   const linksBlock = links ? `\n  <ul class="links">${links}\n  </ul>` : '';
+  const cta = p.form_action
+    ? `<form method="post" action="${escapeAttr(p.form_action)}"><button class="cta" type="submit">${ctaLabel}</button></form>`
+    : `<a class="cta" href="${ctaHref}">${ctaLabel}</a>`;
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -244,6 +324,7 @@ function baseDocument(p: PageContent): string {
   p.code { margin: 0 0 28px 0; font-family: "SF Mono", "Menlo", ui-monospace, monospace; font-size: 17px; color: #1F1B16; user-select: all; }
   a.cta { display: inline-block; padding: 14px 22px; border-radius: 999px; background: #1F1B16; color: #FBF8F3; text-decoration: none; font-weight: 500; font-size: 15px; }
   a.cta:hover { background: #3A332B; }
+  button.cta { display: inline-block; padding: 14px 22px; border: 0; border-radius: 999px; background: #1F1B16; color: #FBF8F3; font: inherit; font-weight: 500; font-size: 15px; cursor: pointer; }
   ul.links { list-style: none; padding: 0; margin: 28px 0 0 0; }
   ul.links li { margin: 0 0 10px 0; font-size: 15px; }
   ul.links a { color: #3A332B; }
@@ -255,7 +336,7 @@ function baseDocument(p: PageContent): string {
 <main>
   <h1>${headline}</h1>
   <p>${body}</p>${codeBlock}
-  <a class="cta" href="${ctaHref}">${ctaLabel}</a>${linksBlock}
+  ${cta}${linksBlock}
   <footer>The Growth Project · ${policyFooterLinks()}</footer>
 </main>${p.script ? `\n<script>\n${p.script}\n</script>` : ''}
 </body>
