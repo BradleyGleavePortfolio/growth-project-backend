@@ -128,6 +128,12 @@ export class SendNotificationMaterializer implements CapabilityMaterializer {
       throw err;
     }
 
+    // B-AIB1-125 (AUDIT-14 C) — roster check. The recipient must be a client
+    // of the draft's tenant coach and the draft's own subject, re-read at
+    // approval time; otherwise a draft naming any user id could push to a
+    // stranger once approved.
+    await this.assertRecipientInRoster(draft, payload.clientId);
+
     // Idempotency via schema-level @unique on ai_draft_id. Same race
     // pattern as the other Stream 2 materialisers.
     let notificationId: string;
@@ -158,6 +164,7 @@ export class SendNotificationMaterializer implements CapabilityMaterializer {
           select: { id: true },
         });
         if (existing) {
+          await this.markMaterialised(draft.id, existing.id);
           return { status: 'already_materialised', ref: existing.id };
         }
         this.logger.error(
@@ -175,6 +182,49 @@ export class SendNotificationMaterializer implements CapabilityMaterializer {
     // requires an explicit nudge, swap this comment for that call;
     // the row already exists so it is fire-and-forget either way.
 
+    await this.markMaterialised(draft.id, notificationId);
     return { status: 'sent', ref: notificationId };
+  }
+
+  private async assertRecipientInRoster(
+    draft: AiActionDraft,
+    clientId: string,
+  ): Promise<void> {
+    const recipient = draft.tenant_coach_id
+      ? await this.prisma.user.findUnique({
+          where: { id: clientId },
+          select: { id: true, coach_id: true },
+        })
+      : null;
+    const inRoster =
+      !!recipient &&
+      recipient.coach_id === draft.tenant_coach_id &&
+      (!draft.subject_user_id || draft.subject_user_id === clientId);
+    if (inRoster) return;
+    this.logger.warn(
+      {
+        event: 'AI_MATERIALISER_ROSTER_REJECTED',
+        capability: this.capability,
+        draftId: draft.id,
+        tenantCoachId: draft.tenant_coach_id ?? null,
+      },
+      'materialiser refused: notification recipient is not a client of the draft tenant',
+    );
+    throw new ForbiddenException({
+      error: 'AI_DRAFT_RECIPIENT_NOT_IN_ROSTER',
+      capability: this.capability,
+      message: 'The notification recipient is not a client of this coach.',
+    });
+  }
+
+  // B-AIB1-125 (AUDIT-14 C) — persist the committed-success marker the decide
+  // gate requires (`materialised_ref IS NOT NULL` when a ref is returned).
+  // Without it AiApprovalService.decide 409s after the Notification row was
+  // already created, leaving a sent push on a still-pending draft.
+  private async markMaterialised(draftId: string, ref: string): Promise<void> {
+    await this.prisma.aiActionDraft.updateMany({
+      where: { id: draftId, materialised_ref: null },
+      data: { materialised_at: new Date(), materialised_ref: ref },
+    });
   }
 }
