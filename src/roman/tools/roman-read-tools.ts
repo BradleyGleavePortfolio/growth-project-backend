@@ -7,7 +7,8 @@
  * objects, so a `user_id` (any unknown key) is bad_input before a query.
  * read_history goes through RomanTimelineReader (its tenancy and
  * never-selected rules) for ROMAN_READ_HISTORY_KINDS only, never 'activity'
- * or 'adjustment'; exercise_history and food_day filter on caller.id.
+ * or 'adjustment'; exercise_history, food_day and personal_baselines
+ * (roman-baselines.ts) filter on caller.id.
  * Results: compact JSON <= max_result_chars with `truncated`; numbers computed
  * in code; `facts` = past-day intake and active kcal shown, for the post-check.
  */
@@ -26,6 +27,7 @@ import { ROMAN_TOOL_LIMITS, type RomanToolbox, type RomanToolCaller } from './ro
 import type { RomanToolDefinition, RomanToolFacts, RomanToolGrams, RomanToolResult } from './roman-tool.types';
 import { EXERCISE_HISTORY_LIMITS, exerciseChanges } from './roman-exercise-history';
 import { readExerciseSets, summarizeExerciseSet } from './roman-exercise-history';
+import { burnedFacts, readBaselines } from './roman-baselines';
 
 const DEFAULT_TZ = 'America/Los_Angeles';
 const DAY_MS = 86_400_000;
@@ -50,6 +52,7 @@ const SCHEMAS = {
   read_history: z.strictObject({ kinds: kindList.optional(), from: ymd, to: ymd }),
   exercise_history: z.strictObject({ exercise: exerciseName, from: ymd.optional(), to: ymd.optional() }),
   food_day: z.strictObject({ date: ymd }),
+  personal_baselines: z.strictObject({}),
 };
 type Input<K extends keyof typeof SCHEMAS> = z.infer<(typeof SCHEMAS)[K]>;
 
@@ -80,6 +83,12 @@ export const ROMAN_READ_TOOL_DEFINITIONS: readonly RomanToolDefinition[] = Objec
     description:
       "Everything the client logged as food on one date within the last 365 days: each entry's kcal and macros and the day totals, computed the same way as client_data.",
     input_schema: { type: 'object', properties: { date: DAY }, required: ['date'] },
+  },
+  {
+    name: 'personal_baselines',
+    description:
+      "The client's own normal, computed by the app: for sleep minutes, HRV, resting heart rate, steps, active kcal, weight (lb), daily protein (g) and workouts per week, the median, average and range of the 28 days before the last 7 versus the last 7 days, the change, and a flag when it crosses the recovery lines the coach's adjustment suggestions use. not_enough_data when those 28 days hold fewer than 7 days of data. Quote the numbers as given.",
+    input_schema: { type: 'object', properties: {} },
   },
 ]);
 
@@ -220,6 +229,8 @@ export class RomanReadToolbox implements RomanToolbox {
           return await call(SCHEMAS.exercise_history, (at, d) => this.exerciseHistory(at, d));
         case 'food_day':
           return await call(SCHEMAS.food_day, (at, d) => this.foodDay(at, d));
+        case 'personal_baselines':
+          return await call(SCHEMAS.personal_baselines, (at) => this.personalBaselines(at));
         default:
           return toolFailure('bad_input', 'unknown tool');
       }
@@ -302,6 +313,13 @@ export class RomanReadToolbox implements RomanToolbox {
     const past = input.date < at.today && rows.length > 0;
     const intake_past_g = past ? gramsOf([day.totals, ...day.entries.slice(0, fit.kept)]) : {};
     return okResult(fit, { intake_past_kcal: past ? [day.totals.kcal, ...shown] : [], intake_past_g });
+  }
+
+  private async personalBaselines(at: At): Promise<RomanToolResult> {
+    const { metrics, truncated } = await readBaselines(this.prisma, at.id, at.tz, at.today);
+    const head = { tool: 'personal_baselines', today: at.today, timezone: at.tz };
+    const fit = fitToolJson(head, 'metrics', metrics, truncated);
+    return okResult(fit, { burned_past_kcal: burnedFacts(metrics.slice(0, fit.kept)) });
   }
 }
 
