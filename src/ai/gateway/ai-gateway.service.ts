@@ -92,6 +92,16 @@ export interface AiGatewayRequest {
   // Capability-specific proposed action; required for capabilities
   // that map to a human-approval draft (e.g. draft.coach_message).
   proposedActionPayload?: Record<string, unknown>;
+  // B-AIB2-126 — the model writes the payload. Called with the provider
+  // response after metering and before payload validation and the draft
+  // write; its return value becomes the draft payload and is marked
+  // model-authored in provenance. null = no draft (an explain answer). A
+  // throw writes nothing. `providerFailed` = the real provider errored and
+  // the reply is the stub fallback.
+  resolveProposedAction?: (
+    response: AiProviderResponse,
+    meta: { providerFailed: boolean },
+  ) => Promise<Record<string, unknown> | null>;
   ip?: string | null;
   userAgent?: string | null;
 }
@@ -337,7 +347,10 @@ export class AiGatewayService {
     }
 
     const responseHash = sha256(response.text);
-    const provenance = req.provenance ?? [];
+    // B-AIB2-126 — only the gateway may mark a payload model-authored.
+    const provenance = (req.provenance ?? []).filter(
+      (p) => p.source !== WORKOUT_BUILDER_MODEL_DIFF_SOURCE,
+    );
     const redactionSummary = redacted.summary;
 
     // Stream 1 — post-call atomic usage recording. Runs ONLY when the
@@ -380,7 +393,20 @@ export class AiGatewayService {
     let approvalDraftId: string | null = null;
     let approvalStatus: AiGatewayResult['approvalStatus'] = 'not_required';
 
-    if (approvalRequired) {
+    // B-AIB2-126 — model-authored payload (validated by the caller's resolver).
+    let modelPayload: Record<string, unknown> | null | undefined;
+    if (req.resolveProposedAction) {
+      modelPayload = await req.resolveProposedAction(response, { providerFailed: errorMsg !== null });
+      if (modelPayload) {
+        provenance.push({
+          source: WORKOUT_BUILDER_MODEL_DIFF_SOURCE,
+          hash: sha256(JSON.stringify(modelPayload)),
+          count: 1,
+        });
+      }
+    }
+
+    if (approvalRequired && modelPayload !== null) {
       // PR AI-3 (PRODUCT-1): validate capability-specific payload BEFORE
       // persisting the draft. This shifts the failure earlier — a malformed
       // payload never lands in the database, so the coach never sees a
@@ -388,7 +414,7 @@ export class AiGatewayService {
       // owns its schema; capabilities without a materialiser fall through
       // to the legacy behaviour (any-shape payload accepted) so we don't
       // break paths that haven't migrated yet.
-      const proposedPayload = req.proposedActionPayload ?? { reply: response.text };
+      const proposedPayload = modelPayload ?? req.proposedActionPayload ?? { reply: response.text };
       // Stream 2 — capability-specific payload validation BEFORE the
       // draft row is persisted. Mirrors PR AI-3's pattern for
       // coach_message and adds the three Stream 2 capabilities. A
@@ -647,6 +673,13 @@ export function deriveGatewayDataSubject(req: AiGatewayRequest): AiDataSubject {
   const audience = req.requester.role === 'coach' || req.requester.role === 'owner' ? 'coach' : 'client';
   return clientDataSubject(ids, audience);
 }
+
+/**
+ * B-AIB2-126 — provenance source marking a draft whose payload the model
+ * wrote through `resolveProposedAction` (hash = sha256 of the payload JSON).
+ * Callers cannot set it: the gateway strips it from caller provenance.
+ */
+export const WORKOUT_BUILDER_MODEL_DIFF_SOURCE = 'workout_builder_model_diff';
 
 function sha256(s: string): string {
   return createHash('sha256').update(s, 'utf8').digest('hex');

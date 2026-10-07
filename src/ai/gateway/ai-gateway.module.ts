@@ -36,6 +36,8 @@ import { SendNotificationMaterializer } from './materialisers/send-notification.
 // re-registered here.
 import { CreateWorkoutPlanMaterializer } from './materialisers/create-workout-plan.materialiser';
 import { EditWorkoutPlanMaterializer } from './materialisers/edit-workout-plan.materialiser';
+import { WorkoutBuilderAiController } from './workout-builder/workout-builder-ai.controller';
+import { WorkoutBuilderAiService } from './workout-builder/workout-builder-ai.service';
 
 // @Global so feature services (coach messaging, meal-plan AI suggestions,
 // finance proof drafts, …) can inject AiGatewayService without first
@@ -56,7 +58,7 @@ import { EditWorkoutPlanMaterializer } from './materialisers/edit-workout-plan.m
   // through it). send_notification writes Notification rows directly via
   // Prisma so it does NOT need the service, but the others do.
   imports: [AuthModule, MessagingModule, NotificationsModule],
-  controllers: [AiGatewayController],
+  controllers: [AiGatewayController, WorkoutBuilderAiController],
   providers: [
     AiGatewayConfig,
     AiRedactionService,
