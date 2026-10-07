@@ -206,7 +206,18 @@ jobs:
         # Required by scripts/ci/check-relrowsecurity.sh. Once
         # RLS_ENFORCEMENT_FULL=on, the script hard-fails if psql is missing
         # (audit P2-007); installing it here keeps the guard meaningful.
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        # CI-APT: bounded and fail-closed (image psql first, else 3 timed apt tries).
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            for i in 1 2 3; do
+              timeout 120 sudo apt-get update -o Acquire::Retries=3 && timeout 240 sudo apt-get install -y postgresql-client && break
+              sleep 10
+            done
+          fi
+          command -v psql
+          psql --version
 
       - name: RLS floor guard (soft until PR-RLS-08)
         env:
@@ -285,7 +296,18 @@ jobs:
         run: npx prisma generate
 
       - name: Install postgresql-client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        # CI-APT: bounded and fail-closed (image psql first, else 3 timed apt tries).
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            for i in 1 2 3; do
+              timeout 120 sudo apt-get update -o Acquire::Retries=3 && timeout 240 sudo apt-get install -y postgresql-client && break
+              sleep 10
+            done
+          fi
+          command -v psql
+          psql --version
 
       - name: Apply Supabase CI shim (roles + auth.uid)
         # Vanilla Postgres has no anon/authenticated/service_role roles and no
@@ -468,7 +490,18 @@ jobs:
         run: npx prisma generate
 
       - name: Install postgresql-client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        # CI-APT: bounded and fail-closed (image psql first, else 3 timed apt tries).
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            for i in 1 2 3; do
+              timeout 120 sudo apt-get update -o Acquire::Retries=3 && timeout 240 sudo apt-get install -y postgresql-client && break
+              sleep 10
+            done
+          fi
+          command -v psql
+          psql --version
 
       - name: Bootstrap Supabase-equivalent environment (CI only)
         # auth schema + anon/authenticated/service_role roles, idempotent;
@@ -558,7 +591,18 @@ jobs:
         run: npx prisma generate
 
       - name: Install postgresql-client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+        # CI-APT: bounded and fail-closed (image psql first, else 3 timed apt tries).
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            for i in 1 2 3; do
+              timeout 120 sudo apt-get update -o Acquire::Retries=3 && timeout 240 sudo apt-get install -y postgresql-client && break
+              sleep 10
+            done
+          fi
+          command -v psql
+          psql --version
 
       - name: Provision the RLS-bound app_authenticated role
         # test/rls-mwb3-autosave-undo.spec.ts (Part A, matrix #13) GRANTs table +
