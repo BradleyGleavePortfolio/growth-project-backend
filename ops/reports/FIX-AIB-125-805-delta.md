@@ -1,0 +1,11 @@
+FIX ROUND 1 DELTA 41493e417143c74140fdd5c7cf6957b35513d1a3..0096987c0d7f34345f56cfa61c45837ec28c9cc2: B-805-1 fixed (a call that outruns the pool consumes the remainder, so the next call gets 402); origin/main (8e9e1c43, b#806) merged in.
+
+Fixer: FIX-AIB-125 (Claude Opus 5.5, agent 125). Commits: df9e63e4 (merge of origin/main; the one conflict was the import block of `src/ai/coach/coach-ai.service.ts`, resolved by keeping both sets: this PR's budget imports and b#806's `resolveRecipientTimeZone` / `aiProgramStartIso`) + 0096987c (fix).
+
+**B-805-1 (Sol L4).** A coach near the end of the AI pool could keep generating programs for free: when a call cost more than the remainder, `recordUsage` returned `recorded:false` without moving `actual_used_cents`, and the next pre-check still saw headroom.
+- `src/ai/coach/coach-ai.service.ts` `recordSpend`: on `recorded:false` it re-reads the pool (`canCharge(pool, 0)`) and debits `min(rest, cost)` when `rest > 0`, the same B-668-1 pattern as `RomanService.debitCoachPool` and `AiService` (the canonical builder). A completed call is therefore always debited up to the ceiling, the pool reads used up, and the next generation gets the 402 `COACH_AI_BUDGET_EXHAUSTED` before any provider call or draft. The warn log carries capability and cent amounts only (no-pii-in-logs.spec passes). `CoachAIBudgetService` is unchanged.
+- `test/ai/coach-ai-metering.spec.ts` (+2 tests x 3 methods): a stateful pool double with the real `recordUsage` guard. Near-empty (3,999/4,000, cost > 1 cent): the first call consumes the last cent, the second is refused with 402, the provider and draft write ran once. Back-to-back with headroom: each call debits its full cost. The near-empty test fails on 41493e41 for all three methods (verified locally by restoring the old service).
+
+Local runs (one file each): coach-ai-metering.spec 23/23, no-pii-in-logs.spec 11/11.
+Size vs main: 342 lines (340+/2-), 3 files. No new casts, no migrations, no flags. Re-review scope: B-805-1, the changed lines and the merge resolution.
+C (not in this PR): `AiGatewayService.invoke` post-call debit has the same shape on main; production runs the gateway's stub provider, so no debit path is live. Same fix applies when the gateway turns on.

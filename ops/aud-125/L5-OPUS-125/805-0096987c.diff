@@ -1,0 +1,435 @@
+diff --git a/src/ai-credits/ai-credits.constants.ts b/src/ai-credits/ai-credits.constants.ts
+index 3937ed05..880a888a 100644
+--- a/src/ai-credits/ai-credits.constants.ts
++++ b/src/ai-credits/ai-credits.constants.ts
+@@ -67,6 +67,16 @@ export const COACH_AI_METERED_CAPABILITIES: ReadonlySet<string> = new Set([
+   // never invokes these, so no behavioural change to any existing path.
+   'roman.memory',
+   'roman.playbook',
++  // B-AIB1-125 — Coach AI v1 client insight (COACH_AI_CAPABILITIES.INSIGHT).
++  // 'workout_program' and 'meal_plan' above were already listed but
++  // CoachAIService never consulted the set; it now meters all three.
++  'insight',
++  // B-AIB1-125 — MWB-5 live-create workout plans through the gateway. Off
++  // today (FEATURE_MWB_AI_LIVE_CREATE unset); listed so the gateway's
++  // pre-call budget gate and post-call recordUsage meter them the moment
++  // they are turned on (owner A6.4: every AI turn debits the pool).
++  'draft.create_workout_plan',
++  'draft.edit_workout_plan',
+ ]);
+ 
+ /** Resolve the actual ceiling at call time so test env mutations stick. */
+diff --git a/src/ai/coach/coach-ai.service.ts b/src/ai/coach/coach-ai.service.ts
+index ef3519f9..0dd67014 100644
+--- a/src/ai/coach/coach-ai.service.ts
++++ b/src/ai/coach/coach-ai.service.ts
+@@ -4,6 +4,7 @@ import {
+   Injectable,
+   Logger,
+   NotFoundException,
++  Optional,
+   ServiceUnavailableException,
+ } from '@nestjs/common';
+ import { Prisma } from '@prisma/client';
+@@ -20,6 +21,12 @@ import { ClientContext } from '../context/client-context.types';
+ import { MealPlansService } from '../../meal-plans/meal-plans.service';
+ import { WorkoutBuilderService } from '../../workout-builder/workout-builder.service';
+ import { WorkoutType } from '../../workout-builder/workout-builder.dto';
++import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
++import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
++import {
++  COACH_AI_BUDGET_EXHAUSTED_CODE,
++  COACH_AI_METERED_CAPABILITIES,
++} from '../../ai-credits/ai-credits.constants';
+ import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
+ import { aiProgramStartIso } from './ai-program-start';
+ 
+@@ -30,8 +37,11 @@ import { aiProgramStartIso } from './ai-program-start';
+ //   2. Asserts coach owns the client (else 404 — same opacity convention
+ //      as the rest of /coach/* in this codebase).
+ //   3. Builds a snapshot via ClientContextService.build().
+-//   4. Calls AnthropicAdapter.completeStructured with the right prompt.
+-//   5. Writes an AIDraft row in DRAFT status.
++//   4. Refuses with 402 COACH_AI_BUDGET_EXHAUSTED when the coach AI pool
++//      (head coach's pool for a sub-coach) is used up (B-AIB1-125).
++//   5. Calls AnthropicAdapter.completeStructured with the right prompt and
++//      debits the call's cost from the pool.
++//   6. Writes an AIDraft row in DRAFT status.
+ //
+ // Approval flow materializes downstream rows: WORKOUT_PROGRAM -> a
+ // WorkoutPlan + WorkoutPlanExercise[]; MEAL_PLAN -> MealPlan; INSIGHT ->
+@@ -49,8 +59,93 @@ export class CoachAIService {
+     private readonly ctxSvc: ClientContextService,
+     private readonly mealPlans: MealPlansService,
+     private readonly workouts: WorkoutBuilderService,
++    // B-AIB1-125 — coach AI credit pool. @Optional() so unit tests that build
++    // the service without it keep compiling; AiCreditsModule is @Global, so
++    // production DI always provides it.
++    @Optional() private readonly budget?: CoachAIBudgetService,
+   ) {}
+ 
++  /**
++   * B-AIB1-125 — the same pre-call gate AiGatewayService.invoke runs: refuse
++   * when the pool is already at or over its ceiling (402 with the structured
++   * body the mobile hard-pause modal reads). Returns the pool owner id to
++   * debit after the call, or null when the capability is not metered.
++   */
++  private async assertBudget(coachId: string, capability: string): Promise<string | null> {
++    if (!this.budget || !COACH_AI_METERED_CAPABILITIES.has(capability)) return null;
++    const budgetCoachId = await this.budget.resolveHeadCoachId(coachId);
++    const pre = await this.budget.canCharge(budgetCoachId, 0);
++    if (pre.budget.actual_used_cents < pre.budget.total_actual_available_cents) {
++      return budgetCoachId;
++    }
++    const dto = await this.budget.getBudgetDto(budgetCoachId);
++    // CoachAiSection shows `message` verbatim, so it is product copy here:
++    // specific, and no purchase wording (the iOS app sells no AI credits).
++    throw new CoachAiBudgetExhaustedException({
++      code: COACH_AI_BUDGET_EXHAUSTED_CODE,
++      message:
++        'AI credits for this period are used up, so nothing was generated. Credits renew at the start of the next period.',
++      pack_options_cents: dto.pack_options_cents,
++      custom_pack_bounds_cents: dto.custom_pack_bounds_cents,
++      budget: {
++        period_end: dto.period_end,
++        base_displayed_cents: dto.base_displayed_cents,
++        pack_displayed_cents: dto.pack_displayed_cents,
++        used_displayed_cents: dto.used_displayed_cents,
++        remaining_displayed_cents: dto.remaining_displayed_cents,
++      },
++    });
++  }
++
++  /**
++   * B-AIB1-125 — debit the provider call's actual cost (the adapter's own
++   * token pricing). The call already happened, so a failed write is logged,
++   * never thrown at the coach (same posture as the gateway).
++   *
++   * FIX-AIB-125 (B-805-1): when the pool cannot absorb the whole cost,
++   * consume what is left (B-668-1 pattern in RomanService.debitCoachPool),
++   * so the pool reads used up and the next generation gets the 402 instead
++   * of another free call on the same remainder.
++   */
++  private async recordSpend(
++    budgetCoachId: string | null,
++    capability: string,
++    clientId: string,
++    tokensIn: number,
++    tokensOut: number,
++  ): Promise<void> {
++    if (!this.budget || !budgetCoachId) return;
++    const actualCostCents = AnthropicAdapter.computeCostCents(tokensIn, tokensOut);
++    try {
++      const debit = await this.budget.recordUsage({
++        coachId: budgetCoachId,
++        actualCostCents,
++        capability,
++        contextId: clientId,
++      });
++      if (debit.recorded) return;
++      const { budget } = await this.budget.canCharge(budgetCoachId, 0);
++      const rest = budget.total_actual_available_cents - budget.actual_used_cents;
++      this.logger.warn(
++        `Coach AI pool short for capability=${capability} cents=${actualCostCents} rest=${rest}`,
++      );
++      if (rest > 0) {
++        await this.budget.recordUsage({
++          coachId: budgetCoachId,
++          actualCostCents: Math.min(rest, actualCostCents),
++          capability,
++          contextId: clientId,
++        });
++      }
++    } catch (err) {
++      // Error name only: exception text can carry personal data
++      // (test/privacy/no-pii-in-logs.spec.ts).
++      this.logger.error(
++        `Budget recordUsage failed for capability=${capability} (err=${err instanceof Error ? err.name : 'unknown'})`,
++      );
++    }
++  }
++
+   private assertReady(): void {
+     if (!this.state.isReady()) {
+       throw new ServiceUnavailableException({
+@@ -83,6 +178,7 @@ export class CoachAIService {
+   ): Promise<{ draftId: string; payload: WorkoutProgramPayload }> {
+     this.assertReady();
+     await this.assertCoachOwnsClient(coachId, input.clientId);
++    const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.WORKOUT_PROGRAM);
+     const ctx = await this.ctxSvc.build(input.clientId);
+     const prompt = WorkoutProgramPrompt;
+     const result = await this.anthropic.completeStructured<WorkoutProgramPayload>(
+@@ -107,6 +203,13 @@ export class CoachAIService {
+         maxTokens: 4096,
+       },
+     );
++    await this.recordSpend(
++      budgetCoachId,
++      COACH_AI_CAPABILITIES.WORKOUT_PROGRAM,
++      input.clientId,
++      result.tokensIn,
++      result.tokensOut,
++    );
+     const draft = await this.persistDraft(
+       coachId,
+       input.clientId,
+@@ -127,6 +230,7 @@ export class CoachAIService {
+   ): Promise<{ draftId: string; payload: MealPlanPayload }> {
+     this.assertReady();
+     await this.assertCoachOwnsClient(coachId, input.clientId);
++    const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.MEAL_PLAN);
+     const ctx = await this.ctxSvc.build(input.clientId);
+     const prompt = MealPlanPrompt;
+     const result = await this.anthropic.completeStructured<MealPlanPayload>(
+@@ -146,6 +250,13 @@ export class CoachAIService {
+         maxTokens: 4096,
+       },
+     );
++    await this.recordSpend(
++      budgetCoachId,
++      COACH_AI_CAPABILITIES.MEAL_PLAN,
++      input.clientId,
++      result.tokensIn,
++      result.tokensOut,
++    );
+     // Soft check (warn-only at draft time): each day's totals should be
+     // within ±10% of prescribed.calories / prescribed.protein_g. The
+     // approval flow re-checks before materializing, so a non-compliant
+@@ -171,6 +282,7 @@ export class CoachAIService {
+   ): Promise<{ draftId: string; payload: ClientInsightPayload }> {
+     this.assertReady();
+     await this.assertCoachOwnsClient(coachId, input.clientId);
++    const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.INSIGHT);
+     const ctx = await this.ctxSvc.build(input.clientId);
+     const prompt = ClientInsightPrompt;
+     const result = await this.anthropic.completeStructured<ClientInsightPayload>(
+@@ -190,6 +302,13 @@ export class CoachAIService {
+         maxTokens: 1024,
+       },
+     );
++    await this.recordSpend(
++      budgetCoachId,
++      COACH_AI_CAPABILITIES.INSIGHT,
++      input.clientId,
++      result.tokensIn,
++      result.tokensOut,
++    );
+     const draft = await this.persistDraft(
+       coachId,
+       input.clientId,
+diff --git a/test/ai/coach-ai-metering.spec.ts b/test/ai/coach-ai-metering.spec.ts
+new file mode 100644
+index 00000000..81bccdf1
+--- /dev/null
++++ b/test/ai/coach-ai-metering.spec.ts
+@@ -0,0 +1,209 @@
++/**
++ * B-AIB1-125 — Coach AI v1 (workout program, meal plan, client insight) and
++ * the MWB-5 live-create gateway capabilities are metered against the coach AI
++ * credit pool (owner A6.4: every AI turn debits the pool).
++ *
++ *   - The set names all five capabilities.
++ *   - A used-up pool refuses with the gateway's 402 COACH_AI_BUDGET_EXHAUSTED
++ *     body BEFORE any provider call or draft write.
++ *   - With headroom, the call's cost (AnthropicAdapter token pricing) is
++ *     debited from the head coach's pool (a sub-coach draws on the head's).
++ *   - A failed debit is logged, never thrown at the coach.
++ *   - FIX-AIB-125 (B-805-1): a call that costs more than the remaining
++ *     allowance consumes the remainder, so the next sequential call is
++ *     refused instead of running free on the same balance.
++ */
++import { CoachAIService } from '../../src/ai/coach/coach-ai.service';
++import { AnthropicAdapter } from '../../src/ai/adapters/anthropic.adapter';
++import { COACH_AI_CAPABILITIES } from '../../src/ai/coach/coach-ai.constants';
++import { WorkoutProgramPrompt } from '../../src/ai/prompts/workout-program.prompt';
++import { MealPlanPrompt } from '../../src/ai/prompts/meal-plan.prompt';
++import { ClientInsightPrompt } from '../../src/ai/prompts/client-insight.prompt';
++import { CoachAiBudgetExhaustedException } from '../../src/ai-credits/budget-exhausted.exception';
++import type { CoachAIBudgetService } from '../../src/ai-credits/coach-ai-budget.service';
++import {
++  COACH_AI_BUDGET_EXHAUSTED_CODE,
++  COACH_AI_METERED_CAPABILITIES,
++} from '../../src/ai-credits/ai-credits.constants';
++import { fakeOf } from '../ai-egress/ai-egress.fakes';
++
++type Method = 'generateWorkoutProgram' | 'generateMealPlan' | 'generateClientInsight';
++const METHODS: Array<[Method, string]> = [
++  ['generateWorkoutProgram', COACH_AI_CAPABILITIES.WORKOUT_PROGRAM],
++  ['generateMealPlan', COACH_AI_CAPABILITIES.MEAL_PLAN],
++  ['generateClientInsight', COACH_AI_CAPABILITIES.INSIGHT],
++];
++
++const TOKENS_IN = 120_000;
++const TOKENS_OUT = 30_000;
++
++beforeAll(() => {
++  for (const p of [WorkoutProgramPrompt, MealPlanPrompt, ClientInsightPrompt]) {
++    jest.spyOn(p, 'buildUser').mockReturnValue('prompt');
++  }
++});
++
++function budgetDouble(opts: { used: number; available: number; recordFails?: boolean }) {
++  const budget = {
++    resolveHeadCoachId: jest.fn(async (id: string) => (id === 'sub1' ? 'head1' : id)),
++    canCharge: jest.fn(async () => ({
++      allowed: opts.used < opts.available,
++      budget: { actual_used_cents: opts.used, total_actual_available_cents: opts.available },
++    })),
++    getBudgetDto: jest.fn(async () => ({
++      period_end: '2026-11-01T00:00:00.000Z',
++      base_displayed_cents: 12500,
++      pack_displayed_cents: 0,
++      used_displayed_cents: 12500,
++      remaining_displayed_cents: 0,
++      pack_options_cents: [1000, 2500, 9900],
++      custom_pack_bounds_cents: { min: 1000, max: 50000 },
++    })),
++    recordUsage: jest.fn(async () => {
++      if (opts.recordFails) throw new Error('db down');
++      return { recorded: true, budgetId: 'b1' };
++    }),
++  };
++  return budget;
++}
++
++/**
++ * FIX-AIB-125 — a pool double with state and the real recordUsage guard
++ * (CoachAIBudgetService.recordUsage refuses a charge the pool cannot absorb
++ * and returns recorded:false without moving actual_used_cents).
++ */
++function statefulPool(used: number, available: number) {
++  const state = { used };
++  const budget = {
++    ...budgetDouble({ used, available }),
++    canCharge: jest.fn(async (_coachId: string, cost: number) => ({
++      allowed: state.used + cost <= available,
++      budget: { actual_used_cents: state.used, total_actual_available_cents: available },
++    })),
++    recordUsage: jest.fn(async (args: { actualCostCents: number }) => {
++      if (state.used > available - args.actualCostCents) return { recorded: false, budgetId: 'b1' };
++      state.used += args.actualCostCents;
++      return { recorded: true, budgetId: 'b1' };
++    }),
++  };
++  return { budget, state };
++}
++
++function build(budget: object) {
++  const completeStructured = jest.fn(async () => ({
++    data: { ok: true },
++    tokensIn: TOKENS_IN,
++    tokensOut: TOKENS_OUT,
++    modelUsed: 'm',
++    latencyMs: 1,
++  }));
++  const prisma = { aIDraft: { create: jest.fn(async () => ({ id: 'draft-1' })) } };
++  const svc = new CoachAIService(
++    fakeOf(prisma),
++    fakeOf({ isReady: () => true }),
++    fakeOf({ completeStructured }),
++    fakeOf({ build: jest.fn(async () => ({ prescribed: { calories: null, protein_g: null } })) }),
++    fakeOf({}),
++    fakeOf({ assertCanAccessClient: jest.fn(async () => undefined) }),
++    fakeOf<CoachAIBudgetService>(budget),
++  );
++  const call = (m: Method, coachId = 'coach1') =>
++    m === 'generateWorkoutProgram'
++      ? svc.generateWorkoutProgram(coachId, { clientId: 'client1', weeks: 4, daysPerWeek: 3 })
++      : m === 'generateMealPlan'
++        ? svc.generateMealPlan(coachId, { clientId: 'client1', days: 7 })
++        : svc.generateClientInsight(coachId, { clientId: 'client1' });
++  return { call, completeStructured, prisma };
++}
++
++describe('B-AIB1-125 — metered capability set', () => {
++  it.each([
++    'workout_program',
++    'meal_plan',
++    'insight',
++    'draft.create_workout_plan',
++    'draft.edit_workout_plan',
++  ])('meters %s', (cap) => {
++    expect(COACH_AI_METERED_CAPABILITIES.has(cap)).toBe(true);
++  });
++});
++
++describe.each(METHODS)('CoachAIService.%s — coach AI pool', (method, capability) => {
++  it('used-up pool: 402 COACH_AI_BUDGET_EXHAUSTED, no provider call, no draft', async () => {
++    const budget = budgetDouble({ used: 4000, available: 4000 });
++    const { call, completeStructured, prisma } = build(budget);
++    const err = await call(method).catch((e: unknown) => e);
++    expect(err).toBeInstanceOf(CoachAiBudgetExhaustedException);
++    const ex = err as CoachAiBudgetExhaustedException;
++    expect(ex.getStatus()).toBe(402);
++    expect(ex.getResponse()).toMatchObject({
++      code: COACH_AI_BUDGET_EXHAUSTED_CODE,
++      pack_options_cents: [1000, 2500, 9900],
++      budget: { remaining_displayed_cents: 0 },
++    });
++    // Shown verbatim by CoachAiSection: specific, no purchase wording on iOS.
++    const message = (ex.getResponse() as { message: string }).message;
++    expect(message).toMatch(/AI credits for this period are used up/);
++    expect(message).not.toMatch(/top up|buy|purchase|!/i);
++    expect(completeStructured).not.toHaveBeenCalled();
++    expect(prisma.aIDraft.create).not.toHaveBeenCalled();
++    expect(budget.recordUsage).not.toHaveBeenCalled();
++  });
++
++  it("headroom: generates and debits the call's cost from the pool", async () => {
++    const budget = budgetDouble({ used: 100, available: 4000 });
++    const { call, completeStructured } = build(budget);
++    await expect(call(method)).resolves.toMatchObject({ draftId: 'draft-1' });
++    expect(completeStructured).toHaveBeenCalledTimes(1);
++    expect(budget.recordUsage).toHaveBeenCalledWith({
++      coachId: 'coach1',
++      actualCostCents: AnthropicAdapter.computeCostCents(TOKENS_IN, TOKENS_OUT),
++      capability,
++      contextId: 'client1',
++    });
++    expect(AnthropicAdapter.computeCostCents(TOKENS_IN, TOKENS_OUT)).toBeGreaterThan(0);
++  });
++
++  it("sub-coach: checks and debits the head coach's pool", async () => {
++    const budget = budgetDouble({ used: 0, available: 4000 });
++    const { call } = build(budget);
++    await call(method, 'sub1');
++    expect(budget.canCharge).toHaveBeenCalledWith('head1', 0);
++    expect(budget.recordUsage).toHaveBeenCalledWith(
++      expect.objectContaining({ coachId: 'head1', capability }),
++    );
++  });
++
++  it('debit failure after the call: logged, the draft is still returned', async () => {
++    const budget = budgetDouble({ used: 0, available: 4000, recordFails: true });
++    const { call } = build(budget);
++    await expect(call(method)).resolves.toMatchObject({ draftId: 'draft-1' });
++    expect(budget.recordUsage).toHaveBeenCalledTimes(1);
++  });
++
++  it('near-empty pool: the call consumes the remainder and the next sequential call gets 402', async () => {
++    const cost = AnthropicAdapter.computeCostCents(TOKENS_IN, TOKENS_OUT);
++    expect(cost).toBeGreaterThan(1);
++    const { budget, state } = statefulPool(3999, 4000);
++    const { call, completeStructured, prisma } = build(budget);
++    await expect(call(method)).resolves.toMatchObject({ draftId: 'draft-1' });
++    expect(state.used).toBe(4000);
++    expect(budget.recordUsage).toHaveBeenLastCalledWith(
++      expect.objectContaining({ coachId: 'coach1', actualCostCents: 1, capability }),
++    );
++    const err = await call(method).catch((e: unknown) => e);
++    expect(err).toBeInstanceOf(CoachAiBudgetExhaustedException);
++    expect(completeStructured).toHaveBeenCalledTimes(1);
++    expect(prisma.aIDraft.create).toHaveBeenCalledTimes(1);
++  });
++
++  it('back-to-back calls with headroom each debit their full cost', async () => {
++    const cost = AnthropicAdapter.computeCostCents(TOKENS_IN, TOKENS_OUT);
++    const { budget, state } = statefulPool(0, 4000);
++    const { call } = build(budget);
++    await call(method);
++    await call(method);
++    expect(state.used).toBe(2 * cost);
++    expect(budget.recordUsage).toHaveBeenCalledTimes(2);
++  });
++});

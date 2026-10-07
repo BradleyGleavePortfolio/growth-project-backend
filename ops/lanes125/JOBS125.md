@@ -447,3 +447,33 @@ on double-tap approve. Tests that fail on main. One backend PR under 400 lines. 
 ## L4-OPUS-125 / L4-SOL-125 (lens pair) — review the LATE WAVE PRs (B-AIB1-125 PR-A and PR-B, B-AIASSIGN-125) as they post READY,
 plus any delta. Same lens rules as L3 (verdict comment at the exact head: "<Opus|Sol> verdict @ <sha>: APPROVE|REQUEST CHANGES B=<n>").
 T4: money and AI approval paths get the full 12-point AI checklist from the SAFETY PASSES block where relevant. Stop 16:35 or at WRAP UP.
+
+# FINAL WAVE (owner 16:58: "39.7k/45k creedits used - scale up to 3 agents to keep using your credits")
+## FIX-AIB-125 (Claude Opus 5.5, fixer, T4) — one fix round each on backend #805 and #807. Hard stop 17:35.
+Read ops/reports/L4-OPUS-125.md, ops/reports/L4-SOL-125.md and ops/reports/B-AIB1-125.md first; the verdict comments are on the PRs.
+1. #807 (agent125/b-aib1-approve @ 0cdafb37) Opus B=1: a solo coach can approve their own assign-workout / assign-meal-plan draft that
+   names another coach's client; that client gets the plan and a push. Fix in ai-approval.service.ts (~10 lines): refuse when any client
+   id in the draft payload does not match the draft's client (and that client is not on the deciding coach's roster). Test that fails on
+   the old head.
+2. #805 (agent125/b-aib1-meter @ 41493e41) Sol B=1: sequential generations against a nearly empty coach AI pool skip debits. Make the
+   pre-check + debit correct for back-to-back calls (reserve or re-check against the latest balance; never let a completed call go
+   un-debited). Also merge origin/main in (b#806 merged; one import-line conflict in coach-ai.service.ts). Tests that fail on the old head.
+Merge main in, never rebase or force-push. One push per PR if possible. Post a delta comment per PR: "FIX ROUND <n> DELTA <old>..<new>:
+<what changed>" and a READY comment per _COMMON_125 item 5. Never merge or deploy.
+
+## L5-OPUS-125 / L5-SOL-125 (lens pair) — review #805 and #807 at their NEW heads after FIX-AIB-125 posts READY (poll gh pr view every few
+minutes; full review, the deltas are T4 money/AI). VERDICT FORMAT IS MANDATORY (ops/merge_if_dual.sh parses it): the comment's FIRST LINE
+must be exactly
+  AUDIT Claude Opus 5.5 (L5-OPUS-125) — growth-project-backend#<n> @ <40-hex head> — VERDICT: APPROVE        (or REQUEST CHANGES)
+  AUDIT GPT-6.1 Sol (L5-SOL-125) — growth-project-backend#<n> @ <40-hex head> — VERDICT: APPROVE            (or REQUEST CHANGES)
+then B/U/C counts and findings. Re-check the head right before posting. Stop 17:50.
+
+# HEAD-START WAVE (owner 17:09: "wall clock time is the main constraint now - use your last 4k credits asap without any wasted work")
+## HS-AIB5-125, HS-AIB4-125 and HS-AIB2-125 (Claude Opus 5.5 builders; HS-AIB2 runs plan entry "B-AIB2-126", added 17:23) — head start on agent 126's AI master builder PRs.
+Run the entry "B-AIB5-126" (HS-AIB5) or "B-AIB4-126" (HS-AIB4) from tgp-agent-context/handoffs/op-125/AI_MASTER_BUILDER_PLAN.md
+section 8 exactly, as an agent 125 worker under _COMMON_125 (not _COMMON_126). Read PART 1 "Exact screens and taps" / "The fun layer"
+and PART 2 sections 2, 3 and 5 of the plan first. Use the branch name the entry gives (or agent126/<entry-slug> if none).
+NO WASTED WORK RULE: this session may run out of credits at any minute. Commit and push to the branch at least every 15 minutes, and
+open a DRAFT PR at the first push whose body keeps an up-to-date checklist "Done / Remaining / Next step" so agent 126's builder can
+continue on the same branch without re-reading anything. Merge main in, never rebase or force-push. When the work is complete and CI
+green, mark the PR ready and post the READY comment per _COMMON_125 item 5. Hard stop 18:15 PDT. Never merge, deploy or flip flags.
