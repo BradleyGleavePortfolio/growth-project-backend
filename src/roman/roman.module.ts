@@ -25,6 +25,10 @@ import { RomanConsultationIntakeSource } from './context/roman-consultation.sour
 import { RomanContextController } from './context/roman-context.controller';
 import { ROMAN_SAFETY_INTAKE_SOURCE } from './context/roman-client-context.types';
 import { romanTurnAugmentersProvider } from './augment/roman-turn-augmenter';
+import {
+  ROMAN_CLIENT_MEMORY_AUGMENTER,
+  RomanClientMemoryAugmenter,
+} from './memory/roman-client-memory.augmenter';
 import { RomanBackgroundSpendService } from './background/roman-background-spend';
 
 @Module({
@@ -45,6 +49,9 @@ import { RomanBackgroundSpendService } from './background/roman-background-spend
     RomanClientContextService,
     RomanConsultationIntakeSource,
     { provide: ROMAN_SAFETY_INTAKE_SOURCE, useExisting: RomanConsultationIntakeSource },
+    // R11-M5: the client-memory block (inert unless FEATURE_ROMAN_MEMORY is on;
+    // the R11-T2A seam drops it for clients without the 'memory' grant).
+    { provide: ROMAN_CLIENT_MEMORY_AUGMENTER, useClass: RomanClientMemoryAugmenter },
     // R11-00 seams: the turn-augmenter list (empty until a v1.1 slice
     // provides its kind token) and the background spend admission.
     romanTurnAugmentersProvider,
