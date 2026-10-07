@@ -201,6 +201,7 @@ export class AuthController {
       // the request IP / user-agent on the Google path too. throttleIp (Opus
       // C13-C1): the coach-signup ceiling keys on the trusted Fly-Client-IP.
       { ...auditContext(req), throttleIp: extractIp(req) },
+      body.coach_sharing_notice,
     );
     // C14 fix round: no reset of any per-IP window on success (Opus C14-A1).
     return result;
@@ -236,6 +237,7 @@ export class AuthController {
       { ...auditContext(req), throttleIp: extractIp(req) },
       body.raw_nonce,
       body.intended_role,
+      body.coach_sharing_notice,
     );
     return result;
   }
@@ -272,7 +274,9 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async attachInviteCode(@Request() req: AuthedRequest, @Body() body: AttachInviteCodeDto) {
-    return this.inviteCodes.attachUserToCoachByCode(req.user.id, body.invite_code);
+    return this.inviteCodes.attachUserToCoachByCode(req.user.id, body.invite_code, {
+      coachSharingNotice: body.coach_sharing_notice,
+    });
   }
 
   @ApiBearerAuth('bearer')

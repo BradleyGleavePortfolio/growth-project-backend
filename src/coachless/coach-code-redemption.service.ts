@@ -123,8 +123,10 @@ export class CoachCodeRedemptionService {
     rawCode: string;
     idempotencyKey: string;
     requestId?: string;
+    /** Coach sharing at join: the notice version the sheet showed. */
+    coachSharingNotice?: string;
   }): Promise<RedeemResponse> {
-    const { userId, rawCode, idempotencyKey, requestId } = args;
+    const { userId, rawCode, idempotencyKey, requestId, coachSharingNotice } = args;
     if (!UUID_RE.test(idempotencyKey))
       throw new CoachlessError(COACHLESS_ERROR.IDEMPOTENCY_KEY_REQUIRED);
     const hash = CoachCodeRedemptionService.requestHash(rawCode);
@@ -133,7 +135,7 @@ export class CoachCodeRedemptionService {
     if (claim.kind === 'replay') return { ...claim.response, replayed: true };
 
     try {
-      const response = await this.execute(userId, rawCode);
+      const response = await this.execute(userId, rawCode, coachSharingNotice);
       await this.prisma.coachCodeRedemption.update({
         where: { id: claim.id },
         data: {
@@ -209,7 +211,11 @@ export class CoachCodeRedemptionService {
   }
 
   /** The redemption itself (runs while this request holds the claim). */
-  private async execute(userId: string, rawCode: string): Promise<RedeemResponse> {
+  private async execute(
+    userId: string,
+    rawCode: string,
+    coachSharingNotice?: string,
+  ): Promise<RedeemResponse> {
     const resolved = await this.lookup.resolve(rawCode);
     if (!resolved) throw new CoachlessError(COACHLESS_ERROR.CODE_INVALID);
 
@@ -225,7 +231,9 @@ export class CoachCodeRedemptionService {
 
     let attach: Awaited<ReturnType<InviteCodesService['attachUserToCoachByCode']>>;
     try {
-      attach = await this.inviteCodes.attachUserToCoachByCode(userId, resolved.code);
+      attach = await this.inviteCodes.attachUserToCoachByCode(userId, resolved.code, {
+        coachSharingNotice,
+      });
     } catch (err) {
       const attachCode = inviteAttachErrorCode(err);
       if (attachCode === INVITE_ATTACH_ERROR.INVITE_CODE_INVALID) {
