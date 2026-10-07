@@ -23,6 +23,8 @@ import { RomanErasureSweep } from './roman-erasure.sweep';
 import { RomanClientContextService } from './context/roman-client-context.service';
 import { RomanConsultationIntakeSource } from './context/roman-consultation.source';
 import { RomanContextController } from './context/roman-context.controller';
+import { RomanCoachMethodAugmenter } from './playbook/roman-coach-method.augmenter';
+import { ROMAN_COACH_METHOD_AUGMENTER } from './augment/roman-turn-augmenter';
 import { ROMAN_SAFETY_INTAKE_SOURCE } from './context/roman-client-context.types';
 import { romanTurnAugmentersProvider } from './augment/roman-turn-augmenter';
 import { RomanBackgroundSpendService } from './background/roman-background-spend';
@@ -43,6 +45,8 @@ import { RomanNotesScheduler } from './memory/roman-notes.scheduler';
     RomanService,
     RomanFeatureGuard,
     romanAnthropicClientProvider,
+    // R11-P4: the coach-method block (null unless FEATURE_ROMAN_PLAYBOOK is on).
+    { provide: ROMAN_COACH_METHOD_AUGMENTER, useClass: RomanCoachMethodAugmenter },
     RomanErasureSweep,
     RomanClientContextService,
     RomanConsultationIntakeSource,
