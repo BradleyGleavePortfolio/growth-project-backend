@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AnthropicAdapter } from '../adapters/anthropic.adapter';
 import { ClientContextService } from '../context/client-context.service';
+import { WorkoutContextService } from '../context/workout-context.service';
 import { CoachAIController } from './coach-ai.controller';
 import { CoachAIService } from './coach-ai.service';
 import { CoachAIStateService } from './coach-ai-state.service';
@@ -25,10 +26,11 @@ import { CoachAIExecutionController } from './coach-ai-execution.controller';
   providers: [
     AnthropicAdapter,
     ClientContextService,
+    WorkoutContextService,
     CoachAIStateService,
     CoachAIService,
     WeeklyInsightCron,
   ],
-  exports: [AnthropicAdapter, ClientContextService, CoachAIStateService, CoachAIService],
+  exports: [AnthropicAdapter, ClientContextService, WorkoutContextService, CoachAIStateService, CoachAIService],
 })
 export class CoachAIModule {}

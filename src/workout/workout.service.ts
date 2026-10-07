@@ -74,7 +74,11 @@ export class WorkoutService {
     return this.prisma.workoutSession.findMany({
       where: { user_id: userId },
       include: { exercises: true },
-      orderBy: { date: 'desc' },
+      // FU-WORKLOG2-126: `date` is a calendar day, so two workouts on the
+      // same day tied and came back in any order. The client's Recent
+      // Workouts (and the "previous sets" hint) could show the morning
+      // session above the one just finished. Newest saved first within a day.
+      orderBy: [{ date: 'desc' }, { created_at: 'desc' }],
       take: limit,
     });
   }

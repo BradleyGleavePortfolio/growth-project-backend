@@ -29,6 +29,7 @@
     "FEATURE_COMMUNITY_EVENTS": "unset",
     "FEATURE_COMMUNITY_CLASSROOM_POSTS": "unset",
     "FEATURE_MESSAGING_CORE_V2": "true",
+    "BILLING_ENFORCEMENT": "unset",
     "BOOKING_REMINDERS_ENABLED": "on",
     "SIGNUP_ROLE_CHOICE_ENABLED": "unset",
     "FEATURE_COACHLESS_HOME": "true",
@@ -89,6 +90,7 @@
     "WITHINGS_CLIENT_SECRET": "unset"
   },
   "gates": {
+    "BILLING_ENFORCEMENT": "Launch posture, not a feature flag: docs/deploy-runbook.md step 3.2 says this stays unset (observe-only) during the Stripe rollout and flips to \"enforce\" only after every coach has a CoachSubscription row in \"active\" state. The production machine currently HAS it set (read-only Fly Env Truth run 37559943231, registered + present + non-empty), left over from the 2026-04-30 fly-secrets-set run, while production holds exactly one CoachSubscription row on tier \"free\" and nothing sells the pro tier yet. In enforce mode SubscriptionGuard denies every @RequiresTier('pro') route with 403 TIER_UPGRADE_REQUIRED for any non-owner coach: /coach/ai/* (coach AI drafts, approve, edit, reject), /v1/coach/ai/draft/* (assign workout, assign meal plan) and /workout-programs/* (fork, clone, clone-to-client, program assignments). Declaring it unset here restores the documented launch posture; denies are still computed and logged as telemetry. Flip back to \"enforce\" after the pro upgrade path ships and every coach has an active row.",
     "FEATURE_AI_CONSENT_LEDGER_ENABLED": "Wave B. Flip to true in the same window as the backend #626 deploy (operator ruling OR-110-4): #626 without the ledger blocks every client-data AI call. Unset = off (the code turns on only for 'true').",
     "FEATURE_COMMUNITY_SCHEMA": "Wave A community core. Unset = on (only 'false' disables); set 'true' to make it explicit. 'false' turns the community API off even when FEATURE_COMMUNITY_API is true.",
     "FEATURE_COMMUNITY_API": "Wave A community core: master switch (CommunityFeatureFlagGuard on every community controller; off = 503). Flip after the community report/block lane (#610) is deployed, before App Review uses community. Day 1, true: #610 deployed, m#314 merged.",

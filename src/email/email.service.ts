@@ -17,6 +17,12 @@ import {
   SendEmailInput,
   SendEmailResult,
 } from './email.types';
+import {
+  DEV_EMAIL_FROM_ADDRESS,
+  EMAIL_FROM_ENV,
+  parseEmailSender,
+  resolveEmailSender,
+} from './email-sender';
 
 // Provider abstraction is intentionally minimal: send(from, to, subject,
 // html) -> providerMessageId. Each transport implementation lives below.
@@ -100,6 +106,7 @@ export class EmailService {
   >();
   private transport: EmailTransport | null = null;
   private transportKind: 'resend' | 'log' = 'log';
+  private fromAddress: string = DEV_EMAIL_FROM_ADDRESS;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -184,10 +191,9 @@ export class EmailService {
       throw err;
     }
 
-    const from =
-      input.from ??
-      (this.config.get<string>('EMAIL_FROM_ADDRESS') ||
-        'noreply@thegrowthproject.app');
+    // B-EMAILFROM-126 — one sender for every email (src/email/email-sender.ts),
+    // resolved once at boot in _initTransport.
+    const from = input.from ?? this.fromAddress;
 
     let html: string;
     let subject: string;
@@ -324,23 +330,28 @@ export class EmailService {
 
     if (kind === 'log') {
       this.transportKind = 'log';
+      this.fromAddress = resolveEmailSender(this.config, 'log');
       return;
     }
     if (kind === 'resend') {
       const apiKey = this.config.get<string>('RESEND_API_KEY');
-      const fromAddr = this.config.get<string>('EMAIL_FROM_ADDRESS');
+      const sender = parseEmailSender(this.config.get<string>('EMAIL_FROM_ADDRESS'));
       if (!apiKey) {
         throw new InternalServerErrorException(
           'EMAIL_TRANSPORT=resend requires RESEND_API_KEY to be set. See README §Resend setup.',
         );
       }
-      if (!fromAddr) {
+      if (!sender) {
         throw new InternalServerErrorException(
-          'EMAIL_TRANSPORT=resend requires EMAIL_FROM_ADDRESS to be set (must be a domain you have verified with Resend). See README §Resend setup.',
+          `EMAIL_TRANSPORT=resend requires ${EMAIL_FROM_ENV} to be set to one sender address on a domain you have verified with Resend. See README §Resend setup.`,
         );
       }
       this.transportKind = 'resend';
       this.transport = new ResendTransport(apiKey, this.logger);
+      this.fromAddress = sender.value;
+      // One boot line so the operator can confirm the sender domain in the
+      // logs (the domain is not secret; the local part is not logged).
+      this.logger.log(`outbound sender domain=${sender.domain} transport=resend`);
       return;
     }
     throw new InternalServerErrorException(

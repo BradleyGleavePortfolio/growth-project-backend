@@ -29,6 +29,8 @@ import {
 } from '../../ai-credits/ai-credits.constants';
 import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
 import { aiProgramStartIso } from './ai-program-start';
+import { WorkoutContextService, WorkoutContextV2 } from '../context/workout-context.service';
+import { applyProgramSafety, toInjuryAreas } from '../gateway/workout-builder/training-substitutions';
 
 // Coach AI v1 — orchestration service.
 //
@@ -63,6 +65,8 @@ export class CoachAIService {
     // the service without it keep compiling; AiCreditsModule is @Global, so
     // production DI always provides it.
     @Optional() private readonly budget?: CoachAIBudgetService,
+    // B-AIB3-126 — per-client workout context v2 (history, adherence, check-ins, recovery, coach style).
+    @Optional() private readonly workoutContext?: WorkoutContextService,
   ) {}
 
   /**
@@ -180,6 +184,8 @@ export class CoachAIService {
     await this.assertCoachOwnsClient(coachId, input.clientId);
     const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.WORKOUT_PROGRAM);
     const ctx = await this.ctxSvc.build(input.clientId);
+    const workoutCtx = await this.loadWorkoutContext(coachId, input.clientId);
+    const injuries = workoutCtx?.client?.injuries ?? toInjuryAreas(ctx.profile?.injuries);
     const prompt = WorkoutProgramPrompt;
     const result = await this.anthropic.completeStructured<WorkoutProgramPayload>(
       {
@@ -189,6 +195,8 @@ export class CoachAIService {
           daysPerWeek: input.daysPerWeek,
           focus: input.focus,
           notes: input.notes,
+          injuryAreas: injuries,
+          workoutContext: workoutCtx ?? undefined,
         }),
       },
       prompt.validate,
@@ -203,6 +211,15 @@ export class CoachAIService {
         maxTokens: 4096,
       },
     );
+    // B-AIB3-126 — server-side pass: injury substitutions + hard bounds, before the draft is stored or shown.
+    if (Array.isArray(result.data?.days)) {
+      const lastWeightById = new Map((workoutCtx?.client?.history_6w ?? []).flatMap((h) => (h.last_weight_lbs ? [[h.id, h.last_weight_lbs] as const] : [])));
+      const report = applyProgramSafety(result.data.days, { injuries, coachText: `${input.focus ?? ''} ${input.notes ?? ''}`, lastWeightById });
+      const list = (rows: Array<{ name: string; area: string }>) => [...new Set(rows.map((r) => `${r.name} (${r.area.replace(/_/g, ' ')})`))].slice(0, 5).join(', ');
+      const notes = [result.data.coach_notes ?? '', report.removed.length ? `Removed for the client's limitations: ${list(report.removed)}.` : '',
+        report.kept.length ? `Kept at the coach's request despite the client's limitations: ${list(report.kept)}.` : ''];
+      result.data.coach_notes = notes.filter(Boolean).join(' ');
+    }
     await this.recordSpend(
       budgetCoachId,
       COACH_AI_CAPABILITIES.WORKOUT_PROGRAM,
@@ -575,6 +592,17 @@ export class CoachAIService {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
+
+  /** B-AIB3-126 — context v2 is additive: when it cannot be read the program is still generated from the base context. */
+  private async loadWorkoutContext(coachId: string, clientId: string): Promise<WorkoutContextV2 | null> {
+    if (!this.workoutContext) return null;
+    try {
+      return await this.workoutContext.build({ coachId, clientId });
+    } catch (err) {
+      this.logger.warn(`Workout context v2 unavailable (err=${err instanceof Error ? err.name : 'unknown'})`);
+      return null;
+    }
+  }
 
   private async persistDraft(
     coachId: string,

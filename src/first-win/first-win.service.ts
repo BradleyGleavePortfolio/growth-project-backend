@@ -30,9 +30,9 @@ const FALLBACK_MESSAGES: Record<WinType, string> = {
   set_first_goal:
     'Setting a clear goal turns a direction into a destination. Every decision from here — what you eat, when you train — can now be tested against that target.',
   first_checkin:
-    'Your first check-in opens the feedback loop. The data you submit each day lets your coach adjust your plan before small drifts become large ones.',
+    'Checking off your daily habits is the smallest unit of progress. One tick a day, repeated for 90 days, is the consistency that compounds into results.',
   first_meal:
-    'Logging your first meal starts your nutrition baseline. Three days of honest data tells your coach more about your habits than any intake form.',
+    'Logging your first meal starts your nutrition baseline. Three days of honest data says more about your habits than any intake form.',
 };
 
 @Injectable()
@@ -140,19 +140,26 @@ export class FirstWinService {
       return FALLBACK_MESSAGES[winType];
     }
 
+    // FU-FIRSTRUN-126 (AUDIT-01-125 U-01-3): the win is recorded the moment
+    // the client taps a card on the Day One screen, BEFORE anything is
+    // logged; the app then opens the logger. The label says what the client
+    // chose to do, so the message never claims an action that has not
+    // happened yet. `first_checkin` opens the habit list (there is no client
+    // check-in screen) and is shown to clients without a coach too.
     const winLabel: Record<WinType, string> = {
-      logged_first_weight: 'logged their first body weight measurement',
-      set_first_goal:      'set their first 90-day goal',
-      first_checkin:       'submitted their first daily check-in',
-      first_meal:          'logged their first meal',
+      logged_first_weight: 'chosen to log their starting body weight as their first step',
+      set_first_goal:      'chosen to set their first 90-day goal as their first step',
+      first_checkin:       'chosen to check off their daily habits as their first step',
+      first_meal:          'chosen to log their first meal as their first step',
     };
 
     const systemPrompt =
       'You are a factual coaching assistant for a results-driven fitness and lifestyle programme. ' +
       'Write exactly 2 sentences. No emoji. No exclamation marks. No hype words. ' +
       'Numbers over adjectives. Address the client directly using "you" and "your". ' +
-      'Explain what this specific first data point means for their progress, ' +
-      'and why consistency with this action over the next 90 days matters.';
+      'Explain what this first step means for their progress, ' +
+      'and why consistency with this action over the next 90 days matters. ' +
+      'Do not say or imply the action is already done, and do not mention a coach.';
 
     const userMessage = `The client has just ${winLabel[winType]}. Write the 2-sentence message.`;
 

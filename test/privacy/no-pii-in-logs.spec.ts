@@ -192,7 +192,11 @@ describe('C-611-17: DigestService logs the user id, never the address', () => {
         text: async () => `Error parsing 'To': Illegal email address '${ADDRESS}'.`,
       }),
     );
-    const { svc, notifications } = build({ EMAIL_TRANSPORT: 'resend', RESEND_API_KEY: 're_test' });
+    const { svc, notifications } = build({
+      EMAIL_TRANSPORT: 'resend',
+      RESEND_API_KEY: 're_test',
+      EMAIL_FROM_ADDRESS: 'team@example.org',
+    });
     await svc.sendClientDailyDigests();
     expect(notifications.markDigestFailed).toHaveBeenCalledTimes(1);
     const stored = notifications.markDigestFailed.mock.calls[0][1] as string;

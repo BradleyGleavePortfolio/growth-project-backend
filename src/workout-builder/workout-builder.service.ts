@@ -1722,15 +1722,23 @@ export class WorkoutBuilderService {
    */
   private emitAssignmentPush(clientId: string, assignmentId: string, workoutPlanId: string): void {
     if (!this.notifications) return;
-    void this.notifications
+    const notifications = this.notifications;
+    const body = 'Your coach assigned a new workout.';
+    const deepLink = `tgp://workouts/${assignmentId}`;
+    void notifications
       .createNotification({
         user_id: clientId,
         kind: NotificationKind.WORKOUT_ASSIGNED,
-        body: 'Your coach assigned a new workout.',
-        deep_link: `tgp://workouts/${assignmentId}`,
+        body,
+        deep_link: deepLink,
         channel: 'push',
         payload: { assignmentId, workoutPlanId },
       })
+      // FU-WORKLOG-126: createNotification only writes the inbox row; it
+      // never reached the phone, so a client was not told a workout was
+      // assigned. sendPush queues the device push (lock-screen copy, the
+      // client's push preferences) and opens the Workouts tab on tap.
+      .then(() => notifications.sendPush({ user_id: clientId, kind: NotificationKind.WORKOUT_ASSIGNED, body, deep_link: deepLink }))
       .catch((err) => {
         this.logger.warn(
           `WorkoutBuilderService: workout-assigned push failed (assignment ${assignmentId} still authoritative): ${(err as Error).message}`,

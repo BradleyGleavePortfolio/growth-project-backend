@@ -10,6 +10,9 @@
  *     and GET for a v4 holder still reads exactly as the 10-07 app expects
  *     (state granted, version and current_version client-ai-v4), plus the
  *     additive `scope` and `upgrade`;
+ *   - `upgrade` (the v5 offer) is sent only while FEATURE_ROMAN_MEMORY is
+ *     exactly "true"; unset or any other value -> null, and `memory_on`
+ *     reports the same flag (B-R11C-126);
  *   - POST v5 with its own sha256 grants the memory scope; mixed version/sha
  *     pairs are 409 with nothing written;
  *   - the egress gate refuses a memory-scope subject for a v4 holder before
@@ -108,12 +111,14 @@ async function build(fake: FakeLedgerPrisma): Promise<{
 
 describe('client-ai-v5 memory scope (R11-C1)', () => {
   const OLD_FLAG = process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED;
+  const OLD_MEMORY = process.env.FEATURE_ROMAN_MEMORY;
   let fake: FakeLedgerPrisma;
   let service: AiConsentService;
   let reader: ClientAiConsentReader;
 
   beforeEach(async () => {
     process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED = 'true';
+    delete process.env.FEATURE_ROMAN_MEMORY;
     fake = new FakeLedgerPrisma();
     ({ service, reader } = await build(fake));
     for (const level of ['log', 'warn', 'error'] as const) {
@@ -125,6 +130,8 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
     jest.restoreAllMocks();
     if (OLD_FLAG === undefined) delete process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED;
     else process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED = OLD_FLAG;
+    if (OLD_MEMORY === undefined) delete process.env.FEATURE_ROMAN_MEMORY;
+    else process.env.FEATURE_ROMAN_MEMORY = OLD_MEMORY;
   });
 
   async function scopes(id: string): Promise<{ base: boolean; memory: boolean }> {
@@ -211,7 +218,8 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
       expect(fake.rows[0]).toMatchObject({ consent_version: V4, copy_sha256: V4_COPY_SHA });
     });
 
-    it('GET for a v4 holder: unchanged fields, plus scope base and the v5 upgrade copy', async () => {
+    it('GET for a v4 holder with FEATURE_ROMAN_MEMORY on: unchanged fields, plus scope base and the v5 upgrade copy', async () => {
+      process.env.FEATURE_ROMAN_MEMORY = 'true';
       await service.grant('u_a', { version: V4 });
       const s = await service.getStatus('u_a');
       expect(s).toMatchObject({
@@ -224,6 +232,7 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
       });
       expect(s.copy.version).toBe(V4);
       expect(s.copy.sha256).toBe(V4_COPY_SHA);
+      expect(s.memory_on).toBe(true);
       expect(s.upgrade).toEqual({
         version: V5,
         processor: 'anthropic',
@@ -233,6 +242,42 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
       });
       expect(app1007SeesLiveV4Grant(s)).toBe(true);
       expect(app1007ShowsUpdateApp(s)).toBe(false);
+    });
+
+    it.each([
+      ['unset', undefined],
+      ['empty', ''],
+      ['false', 'false'],
+      ['1', '1'],
+    ])('FEATURE_ROMAN_MEMORY %s: a v4 holder gets no upgrade, the rest unchanged', async (_l, value) => {
+      if (value !== undefined) process.env.FEATURE_ROMAN_MEMORY = value;
+      const granted = await service.grant('u_a', { version: V4, copy_sha256: V4_COPY_SHA });
+      const s = await service.getStatus('u_a');
+      for (const status of [granted, s]) {
+        expect(status).toMatchObject({
+          granted: true,
+          state: 'granted',
+          version: V4,
+          current_version: V4,
+          needs_reconsent: false,
+          scope: 'base',
+          upgrade: null,
+          memory_on: false,
+        });
+        expect(status.copy.sha256).toBe(V4_COPY_SHA);
+        expect(app1007SeesLiveV4Grant(status)).toBe(true);
+      }
+    });
+
+    it('FEATURE_ROMAN_MEMORY on: no upgrade without a live v4 grant, and none for a v5 holder', async () => {
+      process.env.FEATURE_ROMAN_MEMORY = 'TRUE';
+      expect((await service.getStatus('u_a')).upgrade).toBeNull();
+      await service.grant('u_a', { version: V4 });
+      expect((await service.getStatus('u_a')).upgrade?.sha256).toBe(V5_COPY_SHA);
+      await service.withdraw('u_a');
+      expect((await service.getStatus('u_a')).upgrade).toBeNull();
+      await service.grant('u_b', { version: V5, copy_sha256: V5_COPY_SHA });
+      expect(await service.getStatus('u_b')).toMatchObject({ upgrade: null, memory_on: true, scope: 'memory' });
     });
 
     it('GET with no decision or after a withdraw still offers the v4 copy (no "update the app")', async () => {

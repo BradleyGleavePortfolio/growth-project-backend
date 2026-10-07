@@ -466,8 +466,11 @@ describe('PR-14 — Guest storefront recurring + landing_page_id propagation', (
       newPurchaseId?: string;
     }) {
       // First findUnique (handlePaymentSucceeded → fresh re-read of the
-      // claimed row).
-      prisma.guestCheckout.updateMany.mockResolvedValueOnce({ count: 1 });
+      // claimed row). Second updateMany = the paid -> converted claim
+      // (B-GUEST-126); count 1 means this run won the conversion.
+      prisma.guestCheckout.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 1 });
       prisma.guestCheckout.findUnique
         .mockResolvedValueOnce({ ...gc, package: pkg }) // include
         .mockResolvedValueOnce({ ...gc }); // inside convert path

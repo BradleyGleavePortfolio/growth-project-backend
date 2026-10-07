@@ -21,12 +21,10 @@ const OWNER_SUPPORT_EMAIL = 'Bradleyapple1031@gmail.com';
 // Every entry needs a reason. An entry that no longer appears in src/ fails
 // the stale-entry test below, so the list cannot silently grow.
 const ALLOWED: Record<string, string> = {
-  'noreply@thegrowthproject.app':
-    'Outbound sender (From) for digest and transactional email; replies are not read.',
+  'noreply@growthprojectapp.com':
+    'Outbound sender (From) on the Resend-verified domain for every email (B-EMAILFROM-126); replies are not read.',
   'no-reply@thegrowthproject.app':
     'Outbound sender named in the data-export README; not a contact address.',
-  'welcome@trygrowthproject.com':
-    'Default Resend From address for the guest-checkout welcome email (RESEND_FROM_EMAIL fallback).',
   'contracts@trygrowthproject.com':
     'Fallback party identity on a generated coaching contract when the coach record has no email; not presented as support.',
   'x@evil.com':

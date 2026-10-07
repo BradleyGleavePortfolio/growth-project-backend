@@ -121,8 +121,11 @@ Accepted grants (`CLIENT_AI_CONSENT_ACCEPTED`; version AND its exact sha256):
   `state: "granted"`, `granted: true`, `needs_reconsent: false`.
 - A live v5 holder reads `current_version: "client-ai-v5"` and the v5 `copy`.
 - New fields (additive; older apps ignore them): `scope` (`"base"`,
-  `"memory"`, or `null` with no live grant) and `upgrade` (for a v4 holder:
-  the v5 copy, same shape as `copy`, one optional tap; otherwise `null`).
+  `"memory"`, or `null` with no live grant), `upgrade` (for a v4 holder while
+  `FEATURE_ROMAN_MEMORY` is "true": the v5 copy, same shape as `copy`, one
+  optional tap; otherwise `null`) and `memory_on` (that flag). Servers before
+  B-R11C-126 sent `upgrade` to every v4 holder and no `memory_on`, so an app
+  shows the v5 offer only when `memory_on` is `true`.
 - A withdrawal ends both scopes (it is recorded against the grant it ends).
 - `hasClientAiConsent(id, scope = 'base')`, `clientsWithAiConsent(ids, scope =
   'base')` and `clientDataSubject(ids, audience, scope = 'base')`: a `memory`

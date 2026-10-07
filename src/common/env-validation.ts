@@ -336,8 +336,13 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'BILLING_ENFORCEMENT',
+    values: ['enforce', 'observe'],
+    unsetIs: 'off',
     tier: 'optional',
-    reason: 'SubscriptionGuard mode. "enforce" blocks writes for past_due/canceled coaches; anything else observes only.',
+    launch: 'switch',
+    default: 'unset \u2192 observe-only (only the exact string "enforce" enforces)',
+    reason:
+      'SubscriptionGuard mode. "enforce" denies every @RequiresTier(\'pro\') route with 403 TIER_UPGRADE_REQUIRED for a non-owner coach who is not on an active pro subscription: /coach/ai/*, /v1/coach/ai/draft/* and /workout-programs/* (fork, clone, clone-to-client, program assignments). Anything else, including unset, observes only \u2014 the verdict is still computed and logged. docs/deploy-runbook.md step 3.2: stays unset during the Stripe rollout, flips to "enforce" only after every coach has a CoachSubscription row in "active" state. Managed by the audited prod-switch manifest (.github/fly-env-desired-state.json) \u2014 one path, never fly-secrets-set.',
   },
   {
     name: 'STRIPE_PRICE_ID_FINANCE',
@@ -796,7 +801,7 @@ export const ENV_RULES: EnvRule[] = [
     name: 'RESEND_FROM_EMAIL',
     tier: 'feature',
     reason:
-      'R43 — From-address Resend uses for the guest-checkout welcome email (e.g. "Growth Project <welcome@trygrowthproject.com>"). Falls back to a brand-aligned default in dev/test; production must set explicitly (enforced in prodHardenedFeatureVars) so welcome mail is sent from a verified domain. Audit #5 P2-3 — customer-facing copy uses the brand name "Growth Project", never the internal abbreviation "TGP". Never hard-code the address — Resend rejects sends from unverified domains and dropping welcome mail silently in production is a launch-blocker.',
+      'RETIRED (B-EMAILFROM-126): no code reads it any more. The guest-checkout welcome email now uses EMAIL_FROM_ADDRESS like every other email, so a second sender can no longer drift onto an unverified domain. Registered only so an old value on Fly is recognised; safe to remove from Fly.',
     validate: (v) => {
       if (v.trim().length === 0) return 'RESEND_FROM_EMAIL must not be empty.';
       // Accept either a bare address or RFC 5322 "Display <addr>" — both
@@ -1107,9 +1112,9 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'EMAIL_FROM_ADDRESS',
     tier: 'feature',
-    default: "'noreply@thegrowthproject.app'",
+    default: "unset → 'log' transport only (dev sender); any live transport refuses to send",
     reason:
-      'From-address for transactional and digest email. Must be a Resend-verified domain when EMAIL_TRANSPORT=resend (EmailService throws otherwise).',
+      'B-EMAILFROM-126 — the ONE From address for every email the backend sends (EmailService templates, digests, guest-checkout welcome; src/email/email-sender.ts). Must be on the domain verified with Resend (production: The Growth Project <noreply@growthprojectapp.com>). EmailService refuses to boot EMAIL_TRANSPORT=resend without a valid value; with a live transport and no valid value nothing is sent and the log names this variable.',
   },
   {
     name: 'SENDGRID_API_KEY',
@@ -2833,11 +2838,6 @@ export function assertEnv(
         name: 'STOREFRONT_BASE_URL',
         reason:
           'R43 storefront — without it the share-link service falls back to the dev-only canonical origin and the storefront origin is missing from CORS, breaking the public package endpoint from any browser.',
-      },
-      {
-        name: 'RESEND_FROM_EMAIL',
-        reason:
-          'R43 storefront — Resend rejects sends from unverified domains. Without an explicit from-address tied to a verified domain, welcome mail drops silently and guests never receive credentials/invite links.',
       },
       {
         name: 'APPLE_TEAM_ID',

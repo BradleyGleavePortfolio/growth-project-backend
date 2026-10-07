@@ -17,7 +17,7 @@ The `winType` field is informational only. It does not change which database fie
 
 ### POST /me/first-win/complete
 
-Sets `first_win_completed_at = now()` on the first call. Subsequent calls return the original timestamp with no DB write (idempotent). Returns a 2-sentence AI-generated message explaining what the first data point means for the client.
+Sets `first_win_completed_at = now()` on the first call. Subsequent calls return the original timestamp with no DB write (idempotent). Returns a 2-sentence AI-generated message explaining what the first step the client chose means for them (the win is recorded when the card is tapped, before anything is logged).
 
 **Request:**
 
