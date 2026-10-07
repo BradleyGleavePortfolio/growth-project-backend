@@ -27,10 +27,12 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -45,6 +47,7 @@ import {
   UndoResponseDto,
 } from './workout-builder-autosave.dto';
 import { WorkoutBuilderAutosaveService } from './workout-builder-autosave.service';
+import type { RevisionListItem } from './workout-plan-revision-summary';
 
 @ApiTags('workout-plans')
 @ApiBearerAuth()
@@ -119,5 +122,24 @@ export class WorkoutBuilderAutosaveController {
     @Body() body: unknown,
   ): Promise<UndoResponseDto> {
     return this.autosave.applyUndo(planId, { userId: req.user.id }, body);
+  }
+
+  @Get(':planId/revisions')
+  @UseGuards(MwbAutosaveUndoFeatureGuard)
+  @ApiOperation({
+    summary:
+      'AIB-4: newest-first revision history of a plan (read-only, max 50, ' +
+      'default 20). Same owner/visibility gate as autosave and undo. Gated by ' +
+      'FEATURE_MWB_AUTOSAVE_UNDO — 404 while off.',
+  })
+  @ApiResponse({ status: 200, description: 'Revisions, newest first.' })
+  @ApiResponse({ status: 403, description: 'No access to the plan.' })
+  @ApiResponse({ status: 404, description: 'Feature off or plan not found.' })
+  listRevisions(
+    @Req() req: AuthedRequest,
+    @Param('planId', new ParseUUIDPipe()) planId: string,
+    @Query('limit') limit?: string,
+  ): Promise<RevisionListItem[]> {
+    return this.autosave.listRevisions(planId, { userId: req.user.id }, limit);
   }
 }

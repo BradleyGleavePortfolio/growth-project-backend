@@ -3,6 +3,9 @@ import { AuthModule } from '../../auth/auth.module';
 import { MessagingModule } from '../../messaging/messaging.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 import { AiGatewayController } from './ai-gateway.controller';
+// AIB-4 — server-driven "Ask AI" visibility for the workout builder.
+import { WorkoutBuilderStatusController } from './workout-builder/workout-builder-status.controller';
+import { WorkoutBuilderStatusService } from './workout-builder/workout-builder-status.service';
 import { AiGatewayService } from './ai-gateway.service';
 import { AiGatewayConfig } from './ai-gateway.config';
 import { AiRedactionService } from './ai-redaction.service';
@@ -56,7 +59,7 @@ import { EditWorkoutPlanMaterializer } from './materialisers/edit-workout-plan.m
   // through it). send_notification writes Notification rows directly via
   // Prisma so it does NOT need the service, but the others do.
   imports: [AuthModule, MessagingModule, NotificationsModule],
-  controllers: [AiGatewayController],
+  controllers: [AiGatewayController, WorkoutBuilderStatusController],
   providers: [
     AiGatewayConfig,
     AiRedactionService,
@@ -69,6 +72,7 @@ import { EditWorkoutPlanMaterializer } from './materialisers/edit-workout-plan.m
     PrivateContextService,
     AiGatewayService,
     AiApprovalService,
+    WorkoutBuilderStatusService,
     // PR AI-3 (PRODUCT-1): capability materialisation registry. Each
     // materialiser is provided as a concrete class AND as an entry in the
     // multi-injection array bound to CAPABILITY_MATERIALIZERS; the registry

@@ -356,7 +356,7 @@ jobs:
           unset_names=()
           while IFS= read -r line; do
             [ -n "${line}" ] || continue
-            if ! printf '%s\n' "${line}" | grep -Eq '^[A-Z][A-Z0-9_]*=[a-z0-9]+([.][a-z0-9]+)*$'; then
+            if ! printf '%s\n' "${line}" | grep -Eq '^[A-Z][A-Z0-9_]*=[a-z0-9_]+([.,][a-z0-9_]+)*$'; then
               echo "::error::The plan's flag list has a line that is not NAME=value, so nothing was staged. Fix: re-run the workflow; the plan step writes this list from the manifest."
               exit 1
             fi

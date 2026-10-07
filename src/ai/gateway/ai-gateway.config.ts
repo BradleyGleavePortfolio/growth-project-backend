@@ -81,6 +81,11 @@ export class AiGatewayConfig {
   // consequential capabilities so an operator must opt OUT of the safety
   // rather than opt IN.
   requireApprovalFor(capability: string): boolean {
+    // AIB-4 — the two workout builder capabilities write real plan rows, so a
+    // coach must approve every one of them whatever AI_GATEWAY_REQUIRE_APPROVAL
+    // says: setting that list replaces the defaults, and a list that left them
+    // out must never let an AI edit apply itself.
+    if (isMwbLiveCreateCapability(capability)) return true;
     const raw = process.env.AI_GATEWAY_REQUIRE_APPROVAL;
     if (raw == null || raw.trim() === '') {
       return DEFAULT_APPROVAL_REQUIRED.has(capability);

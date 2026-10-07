@@ -46,6 +46,11 @@ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { WorkoutBuilderService } from './workout-builder.service';
 import { isMwbAutosaveUndoEnabled } from './workout-builder-autosave.feature';
 import {
+  buildRevisionList,
+  parseRevisionsLimit,
+  type RevisionListItem,
+} from './workout-plan-revision-summary';
+import {
   assertLockTokenSecretConfigured,
   computeLockToken,
 } from './lock-token.helper';
@@ -152,6 +157,40 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
     if (isMwbAutosaveUndoEnabled()) {
       assertLockTokenSecretConfigured();
     }
+  }
+
+  // ─── Public: revision history (AIB-4, read-only) ───────────────────────────
+
+  /**
+   * Newest-first revision list for the builder's History sheet. Read-only and
+   * tenant-scoped through the same owner/visibility gate as autosave and undo
+   * (authorisePlanAccess), so a foreign coach gets 403 and an unknown plan 404
+   * before any revision row is read. One extra older row is fetched only to
+   * summarise the oldest listed revision; it is never returned.
+   */
+  async listRevisions(
+    planId: string,
+    actor: AutosaveActor,
+    limitRaw: unknown,
+  ): Promise<RevisionListItem[]> {
+    if (!isMwbAutosaveUndoEnabled()) {
+      throw new NotFoundException('Workout plan not found');
+    }
+    await this.authorisePlanAccess(planId, actor.userId);
+    const limit = parseRevisionsLimit(limitRaw);
+    const rows = await this.prisma.workoutPlanRevision.findMany({
+      where: { workout_plan_id: planId },
+      orderBy: { revision_index: 'desc' },
+      take: limit + 1,
+      select: {
+        revision_index: true,
+        author_kind: true,
+        cause: true,
+        created_at: true,
+        exercises_json: true,
+      },
+    });
+    return buildRevisionList(rows, limit);
   }
 
   // ─── Public: autosave (spec §6.2) ──────────────────────────────────────────
