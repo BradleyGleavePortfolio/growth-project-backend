@@ -91,6 +91,22 @@ const PRECONDITIONS = [
         : null,
   },
   {
+    // AIB-4: the AI workout builder is on only when every gateway switch is.
+    id: 'mwb-ai-live-needs-gateway',
+    names: ['FEATURE_MWB_AI_LIVE_CREATE', 'AI_GATEWAY_ENABLED', 'AI_GATEWAY_PROVIDER', 'AI_GATEWAY_CAPABILITIES'],
+    check: (m) => {
+      if (m.flags.FEATURE_MWB_AI_LIVE_CREATE !== 'true') return null;
+      const missing = [
+        m.flags.AI_GATEWAY_ENABLED !== 'true' && 'AI_GATEWAY_ENABLED "true"',
+        m.flags.AI_GATEWAY_PROVIDER !== 'anthropic' && 'AI_GATEWAY_PROVIDER "anthropic"',
+        m.flags.AI_GATEWAY_CAPABILITIES === 'unset' && 'AI_GATEWAY_CAPABILITIES (the two workout capabilities)',
+      ].filter(Boolean);
+      return missing.length
+        ? `FEATURE_MWB_AI_LIVE_CREATE is declared "true" but ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not declared, so the builder would stay in the not-configured state. Fix: declare ${missing.join(', ')} in the same PR, or keep FEATURE_MWB_AI_LIVE_CREATE "unset".`
+        : null;
+    },
+  },
+  {
     id: 'community-subflag-needs-api',
     names: ['FEATURE_COMMUNITY_API', ...COMMUNITY_SUBFLAGS],
     check: (m) => {
@@ -181,7 +197,8 @@ function extractEnvRules(source) {
           `An ENV_RULES values line could not be read (${current === null ? 'it is not inside a rule with a name line' : `rule ${current}`}). Fix: write it on one line as "values: ['a', 'b']," directly inside the rule, after its name line.`,
         );
       }
-      const values = m[1] === '' ? [] : m[1].split(',').map((s) => s.trim().slice(1, -1));
+      // A value may itself hold commas (a capability list), so read each quoted literal.
+      const values = m[1] === '' ? [] : m[1].match(/'[^'\\]*'/g).map((s) => s.slice(1, -1));
       rules.get(current).values = values;
       continue;
     }

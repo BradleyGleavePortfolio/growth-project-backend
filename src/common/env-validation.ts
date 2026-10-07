@@ -934,8 +934,12 @@ export const ENV_RULES: EnvRule[] = [
       'Read only as the third fallback signing key for contract PDF URLs (CONTRACT_PDF_URL_SECRET → DATA_EXPORT_DOWNLOAD_SECRET → JWT_SECRET) in src/contracts/signed-pdf-store.service.ts. Contracts are not used in v1. Supabase JWTs are verified via JWKS, not this value.',
   },
   // --- AI ---
+  // AIB-4 — closed sets so the AI workout builder can be flipped through the
+  // desired-state manifest (the FLIP values are in docs/runbooks/launch-flags.md).
   {
     name: 'AI_GATEWAY_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (envFlag: only true/1/yes/on enable)',
     reason:
@@ -943,6 +947,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'AI_GATEWAY_PROVIDER',
+    values: ['stub', 'anthropic'],
+    unsetIs: 'off',
     tier: 'optional',
     default: "'stub'",
     reason:
@@ -950,17 +956,22 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'AI_GATEWAY_CAPABILITIES',
+    values: ['draft.create_workout_plan,draft.edit_workout_plan'],
+    unsetIs: 'off',
     tier: 'optional',
     default: "unset → no capability allowed ('*' allows all)",
-    reason: 'Comma-separated capability allow-list for the AI gateway.',
+    reason:
+      "Comma-separated capability allow-list for the AI gateway. Never '*': it would send every gateway capability to the provider.",
   },
   {
     name: 'AI_GATEWAY_REQUIRE_APPROVAL',
+    values: ['draft.coach_message,draft.meal_plan_change,draft.client_facing_claim,flag.escalation,draft.assign_workout,draft.assign_meal_plan,draft.send_notification,draft.create_workout_plan,draft.edit_workout_plan'],
+    unsetIs: 'off',
     tier: 'optional',
     default:
       'unset → DEFAULT_APPROVAL_REQUIRED (draft.coach_message, draft.meal_plan_change, draft.client_facing_claim, …)',
     reason:
-      'Comma-separated capabilities that need human approval. Default-on safety: unset keeps the canonical consequential capabilities gated.',
+      'Comma-separated capabilities that need human approval. Default-on safety: unset keeps the canonical consequential capabilities gated. Setting it replaces the defaults, so it must keep both workout builder capabilities.',
   },
   {
     name: 'OPENAI_API_KEY',
@@ -2135,6 +2146,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_MWB_AI_LIVE_CREATE',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Workout builder AI live-create capabilities.',
