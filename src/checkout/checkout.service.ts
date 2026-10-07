@@ -4,10 +4,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import type { ClientPurchase, CoachPackage, ConnectCustomer } from '@prisma/client';
+import type { ClientPurchase, CoachPackage, ConnectAccount, ConnectCustomer } from '@prisma/client';
 import { ConnectModuleState } from '../connect/connect.module-state';
+import { ConnectService } from '../connect/connect.service';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import {
   StripeConnectApiError,
@@ -182,7 +184,17 @@ export class CheckoutService {
     // OFF (the gate self-checks the flag), so existing checkout behavior for
     // non-`requires_contract` packages is unchanged.
     private contractGate: CheckoutContractGate,
+    // B-CONNECT-126: always injected in the app (ConnectModule exports it);
+    // @Optional() only for hand-built test wiring.
+    @Optional() private readonly connect?: ConnectService,
   ) {}
+
+  // B-CONNECT-126: payout gate row. Charges already on -> untouched, no
+  // Stripe call. Not ready -> re-read from Stripe (cooldown) before refusing.
+  async payoutGateRow(row: ConnectAccount): Promise<ConnectAccount> {
+    if (row.charges_enabled || row.deauthorized_at || !this.connect) return row;
+    return this.connect.refreshNotReady(row);
+  }
 
   /**
    * B5 — Run the two-layer contract gate (platform waiver → coach service)
@@ -273,16 +285,17 @@ export class CheckoutService {
       });
     }
 
-    const connectAccount = await this.prisma.connectAccount.findUnique({
+    const savedAccount = await this.prisma.connectAccount.findUnique({
       where: { coach_user_id: pkg.coach_id },
     });
-    if (!connectAccount) {
+    if (!savedAccount) {
       throw new ConflictException({
         error: 'COACH_NOT_CONNECTED',
         message:
           'The coach has not connected a Stripe account yet. Ask them to complete Stripe Connect onboarding.',
       });
     }
+    const connectAccount = await this.payoutGateRow(savedAccount);
     if (!connectAccount.charges_enabled || connectAccount.deauthorized_at) {
       throw new ConflictException({
         error: 'COACH_NOT_PAYOUT_READY',
@@ -591,16 +604,17 @@ export class CheckoutService {
       });
     }
 
-    const connectAccount = await this.prisma.connectAccount.findUnique({
+    const savedAccount = await this.prisma.connectAccount.findUnique({
       where: { coach_user_id: pkg.coach_id },
     });
-    if (!connectAccount) {
+    if (!savedAccount) {
       throw new ConflictException({
         error: 'COACH_NOT_CONNECTED',
         message:
           'The coach has not connected a Stripe account yet. Ask them to complete Stripe Connect onboarding.',
       });
     }
+    const connectAccount = await this.payoutGateRow(savedAccount);
     if (!connectAccount.charges_enabled || connectAccount.deauthorized_at) {
       throw new ConflictException({
         error: 'COACH_NOT_PAYOUT_READY',

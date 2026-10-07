@@ -188,10 +188,19 @@ export class CoachConnectService {
   ) {}
 
   // GET /coach/connect/status — Stripe Connect onboarding state.
-  async getStatus(coachUserId: string): Promise<CoachConnectStatus> {
-    const row = await this.prisma.connectAccount.findUnique({
+  // B-CONNECT-126: when the saved row says charges or payouts are off, the
+  // row is re-read from Stripe first (ConnectService.refreshNotReady, with a
+  // cooldown), so a coach Stripe approved after onboarding reads ready
+  // without tapping "Check status again". A ready row makes no Stripe call.
+  // refreshStatus passes syncIfNotReady=false: it has just synced.
+  async getStatus(coachUserId: string, syncIfNotReady = true): Promise<CoachConnectStatus> {
+    let row = await this.prisma.connectAccount.findUnique({
       where: { coach_user_id: coachUserId },
     });
+    const ready = !!row && !!row.charges_enabled && !!row.payouts_enabled;
+    if (row && syncIfNotReady && !ready && !row.deauthorized_at) {
+      row = await this.connect.refreshNotReady(row);
+    }
     if (!row) {
       return {
         configured: false,
@@ -258,7 +267,7 @@ export class CoachConnectService {
         );
       }
     }
-    const status = await this.getStatus(coachUserId);
+    const status = await this.getStatus(coachUserId, false);
     return { ...status, refreshed };
   }
 

@@ -5,8 +5,12 @@ import {
 } from '@nestjs/common';
 import { CheckoutService, finishedPaymentReplay } from '../src/checkout/checkout.service';
 import { ConnectModuleState } from '../src/connect/connect.module-state';
+import { ConnectService } from '../src/connect/connect.service';
 import { FeePolicyService } from '../src/connect/fees/fee-policy.service';
-import { StripeConnectApiService } from '../src/connect/stripe-connect-api.service';
+import {
+  StripeConnectApiError,
+  StripeConnectApiService,
+} from '../src/connect/stripe-connect-api.service';
 import { PackagesService } from '../src/packages/packages.service';
 
 // Stripe-API stub — overrides every method we exercise.
@@ -1439,5 +1443,70 @@ describe('CheckoutController — payment-intent throttle metadata', () => {
     );
     expect(limit).toBeDefined();
     expect(ttl).toBeDefined();
+  });
+});
+
+// B-CONNECT-126 (AUD-MONEY-E2E-126 B1): the one-time Buy gate re-reads a
+// not-ready coach from Stripe (b#750 syncFromStripe) before refusing.
+describe('B-CONNECT-126 one-time Buy gate', () => {
+  function build(retrieveAccount: jest.Mock, chargesEnabled = false) {
+    const base = makeService();
+    seedSoloCoachFixture(base.prisma);
+    base.prisma._users.push({ id: 'client-ok', email: 'a@b.c', name: 'A', coach_id: 'coach-x' });
+    base.prisma._accounts[0].charges_enabled = chargesEnabled;
+    type Where = { where: { stripe_account_id: string }; data?: Record<string, unknown> };
+    const find = ({ where }: Where) =>
+      base.prisma._accounts.find((a: Where['where']) => a.stripe_account_id === where.stripe_account_id);
+    const connectPrisma = {
+      connectAccount: {
+        findUnique: jest.fn(async (args: Where) => find(args) ?? null),
+        update: jest.fn(async (args: Where) => Object.assign(find(args), args.data)),
+      },
+    };
+    const connect: ConnectService = Reflect.construct(ConnectService, [
+      connectPrisma,
+      { retrieveAccount },
+    ]);
+    const gate = { evaluate: async () => ({ ok: true, reason: 'contracts_disabled' }) };
+    const { prisma, stripe, packages, state, feePolicy } = base;
+    const args = [prisma, stripe, packages, state, feePolicy, gate, connect];
+    const svc: CheckoutService = Reflect.construct(CheckoutService, args);
+    const buy = () =>
+      svc.createPaymentIntentForClient('client-ok', {
+        package_id: 'pkg-x',
+        idempotency_key: '11111111-1111-4111-8111-111111111111',
+      });
+    return { ...base, svc, buy };
+  }
+  const approved = { id: 'acct_coach_x', charges_enabled: true, payouts_enabled: true };
+
+  it('saved row not ready + Stripe approved -> the client gets a PaymentSheet', async () => {
+    const retrieve = jest.fn(async () => approved);
+    const { buy, stripe, prisma } = build(retrieve);
+    const out = await buy();
+    expect(out.client_secret).toMatch(/^pi_test_secret_/);
+    expect(stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
+    expect(retrieve).toHaveBeenCalledWith('acct_coach_x');
+    expect(prisma._accounts[0].charges_enabled).toBe(true);
+  });
+
+  it('saved row ready -> zero Stripe account reads', async () => {
+    const retrieve = jest.fn(async () => approved);
+    const { buy, stripe } = build(retrieve, true);
+    await buy();
+    expect(stripe.createPaymentIntent).toHaveBeenCalledTimes(1);
+    expect(retrieve).not.toHaveBeenCalled();
+  });
+
+  it("Stripe timeout -> today's 409 COACH_NOT_PAYOUT_READY, no PaymentIntent", async () => {
+    const timeout = new StripeConnectApiError('timed out', 503, 'request_timeout', 'api_connection_error');
+    const { buy, stripe } = build(jest.fn(async () => Promise.reject(timeout)));
+    const err = await buy().then(
+      () => null,
+      (e: ConflictException) => e,
+    );
+    expect(err).toBeInstanceOf(ConflictException);
+    expect(err?.getResponse()).toMatchObject({ error: 'COACH_NOT_PAYOUT_READY' });
+    expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
   });
 });
