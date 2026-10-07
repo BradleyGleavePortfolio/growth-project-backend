@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma.service';
 import { NotificationsService } from './notifications.service';
 import { NotificationKind } from './notification-kind';
 import { ProviderFailure, describeFailure, providerErrorCode } from '../observability/log-pii';
+import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sender';
 
 // Handlebars helper: {{gt a b}} — used in templates for conditional plural.
 Handlebars.registerHelper('gt', (a: number, b: number) => a > b);
@@ -417,8 +418,22 @@ export class DigestService {
     data: Record<string, unknown>,
   ): Promise<void> {
     const html = this._render(templateKey, data);
-    const from = this.config.get<string>('EMAIL_FROM_ADDRESS') ?? 'noreply@thegrowthproject.app';
     const transport = this.config.get<string>('EMAIL_TRANSPORT') ?? 'log';
+    const live = transport === 'resend' || transport === 'sendgrid' || transport === 'postmark';
+    // B-EMAILFROM-126 — the shared sender; a live transport with no valid
+    // EMAIL_FROM_ADDRESS fails closed (the digest row records
+    // EmailSenderConfigError) instead of sending from an unverified domain.
+    let from: string;
+    try {
+      from = resolveEmailSender(this.config, live ? transport : 'log');
+    } catch (err) {
+      if (err instanceof EmailSenderConfigError) {
+        this.logger.error(
+          `digest not sent: EMAIL_FROM_ADDRESS is not set to a valid sender address (transport=${transport})`,
+        );
+      }
+      throw err;
+    }
 
     if (transport === 'resend') {
       await this._sendViaResend(from, to, subject, html);

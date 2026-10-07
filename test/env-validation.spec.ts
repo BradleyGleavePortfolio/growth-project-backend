@@ -287,7 +287,7 @@ describe('assertEnv', () => {
           // R43 round-3 additions: production refuses to serve a stub
           // AASA/assetlinks document or send welcome mail from an
           // unverified domain, so these are now prod-hardened.
-          RESEND_FROM_EMAIL: 'Growth Project <welcome@trygrowthproject.com>',
+          EMAIL_FROM_ADDRESS: 'The Growth Project <noreply@growthprojectapp.com>',
           APPLE_TEAM_ID: 'TEAMID1234',
           ANDROID_SHA256_FINGERPRINT:
             'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
@@ -329,7 +329,7 @@ describe('assertEnv', () => {
         STOREFRONT_BASE_URL: 'https://storefront.example.com',
         // R43 round-3 additions: prod refuses to ship without an
         // explicit welcome-mail sender or AASA/assetlinks credentials.
-        RESEND_FROM_EMAIL: 'Growth Project <welcome@trygrowthproject.com>',
+        EMAIL_FROM_ADDRESS: 'The Growth Project <noreply@growthprojectapp.com>',
         APPLE_TEAM_ID: 'TEAMID1234',
         ANDROID_SHA256_FINGERPRINT:
           'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
@@ -423,7 +423,7 @@ describe('assertEnv', () => {
           // R43 round-3 additions: production refuses to serve a stub
           // AASA/assetlinks document or send welcome mail from an
           // unverified domain, so these are now prod-hardened.
-          RESEND_FROM_EMAIL: 'Growth Project <welcome@trygrowthproject.com>',
+          EMAIL_FROM_ADDRESS: 'The Growth Project <noreply@growthprojectapp.com>',
           APPLE_TEAM_ID: 'TEAMID1234',
           ANDROID_SHA256_FINGERPRINT:
             'AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99',
