@@ -149,6 +149,7 @@ export class CheckoutReceiptService {
         await this.email.send({
           to: row.guest_email,
           template: EmailTemplateKey.PAYMENT_RECEIPT,
+          replyToCoachUserId: row.package.coach_id,
           idempotencyKey: `checkout-receipt:${row.id}`,
           data: {
             recipient_name: row.guest_name,
