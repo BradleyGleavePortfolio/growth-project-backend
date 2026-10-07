@@ -1,6 +1,8 @@
 import { ClientContext } from '../context/client-context.types';
 import { CoachAIPrompt } from './prompt.types';
 import { sanitizePromptInput } from '../utils/sanitize-prompt-input';
+import type { WorkoutContextV2 } from '../context/workout-context.service';
+import { InjuryAreaV2, PROGRAM_BOUNDS as PB, substitutionGuide, toInjuryAreas } from '../gateway/workout-builder/training-substitutions';
 
 // Coach AI v1 — workout program generation prompt.
 //
@@ -14,6 +16,9 @@ export interface WorkoutProgramInput {
   daysPerWeek: number;
   focus?: string;
   notes?: string;
+  /** B-AIB3-126 — client injury areas (enums) and the context v2 block (numbers and enums only). */
+  injuryAreas?: readonly InjuryAreaV2[];
+  workoutContext?: WorkoutContextV2;
 }
 
 export interface WorkoutProgramExerciseRow {
@@ -50,9 +55,9 @@ You are designing a multi-week training block for ONE specific client. Read
 the CLIENT_CONTEXT block carefully and obey its constraints:
 
 ABSOLUTE RULES:
-1. NEVER prescribe an exercise that would aggravate any entry in profile.injuries.
-   If an injury is listed (e.g. "left knee"), substitute joint-friendly variants
-   and add a one-line note explaining the substitution.
+1. NEVER prescribe an exercise that loads an area in injury_areas. Use the
+   listed substitution for that area and add a one-line note naming the swap.
+   The server replaces any exercise that still loads an injury area.
 2. ONLY use equipment that appears in profile.equipment_access. If the array is
    empty, design bodyweight programming.
 3. Scale volume and intensity to profile.workout_experience.
@@ -62,6 +67,11 @@ ABSOLUTE RULES:
 6. Use exercise_external_id as a stable token (e.g. "barbell-back-squat",
    "dumbbell-row"). The downstream system maps these to its ExerciseDB catalog.
 7. Tone: confident, direct, zero fluff. No emoji, no exclamation marks.
+8. Stay inside hard_limits. Set weight_lbs only for exercises in
+   WORKOUT_CONTEXT.client.history_6w, never above the limit; otherwise null.
+9. If health_screening is present, keep intensity conservative and tell the
+   coach in coach_notes to confirm medical clearance before increasing it.
+10. Never make medical claims (cure, treat, heal, rehab, diagnose, therapy).
 
 OUTPUT SCHEMA (return ONLY valid JSON conforming to this shape):
 {
@@ -125,7 +135,7 @@ function numberOf(v: unknown, field: string): number {
 
 export const WorkoutProgramPrompt: CoachAIPrompt<WorkoutProgramInput, WorkoutProgramPayload> = {
   name: 'workout-program',
-  version: 'v1',
+  version: 'v2',
   system: SYSTEM,
   buildUser(ctx, input) {
     const lines: string[] = [];
@@ -134,6 +144,22 @@ export const WorkoutProgramPrompt: CoachAIPrompt<WorkoutProgramInput, WorkoutPro
     lines.push(`days_per_week: ${input.daysPerWeek}`);
     if (input.focus) lines.push(`focus: ${sanitizePromptInput(input.focus)}`);
     if (input.notes) lines.push(`coach_notes: ${sanitizePromptInput(input.notes)}`);
+    const areas = input.injuryAreas ?? toInjuryAreas(ctx.profile?.injuries);
+    if (areas.length > 0) {
+      lines.push(`injury_areas: ${areas.join(', ')}`);
+      for (const g of substitutionGuide(areas)) lines.push(`substitution: ${g}`);
+    }
+    lines.push(
+      `hard_limits: sets ${PB.setsMin}-${PB.setsMax}; reps 1-30 (timed work 5-${PB.repsOrSecondsMax} seconds); rest 0-${PB.restMax} seconds; ` +
+        `at most ${PB.exercisesPerDayMax} exercises per day; weight_lbs at most 5 percent over the last logged weight`,
+    );
+    if (input.workoutContext?.client?.screening_flag) {
+      lines.push('health_screening: the client answered yes to a health screening question');
+    }
+    if (input.workoutContext) {
+      lines.push('WORKOUT_CONTEXT:');
+      lines.push(JSON.stringify(input.workoutContext));
+    }
     lines.push('---');
     lines.push('CLIENT_CONTEXT:');
     lines.push(JSON.stringify(serializeContextForPrompt(ctx), null, 2));
@@ -175,19 +201,26 @@ export const WorkoutProgramPrompt: CoachAIPrompt<WorkoutProgramInput, WorkoutPro
 };
 
 // Light serializer — drops giant arrays so the prompt stays compact.
+// B-AIB3-126 (plan section 1): workout generation gets no name, body weight, height, snacks, diet, bio, macros or
+// client-written workout notes.
 function serializeContextForPrompt(ctx: ClientContext) {
+  const p = ctx.profile;
   return {
-    client_id: ctx.client_id,
-    identity: ctx.identity,
-    profile: ctx.profile,
-    prescribed: ctx.prescribed,
-    today_calories: ctx.today.calories,
-    weight_trend: {
-      points: ctx.weight_trend_90d.length,
-      first: ctx.weight_trend_90d[0] ?? null,
-      last: ctx.weight_trend_90d[ctx.weight_trend_90d.length - 1] ?? null,
+    profile: {
+      goal_type: p.goal_type,
+      activity_level: p.activity_level,
+      workout_experience: p.workout_experience,
+      has_gym_membership: p.has_gym_membership,
+      workout_days_per_week: p.workout_days_per_week,
+      equipment_access: p.equipment_access,
+      preferred_training_time: p.preferred_training_time,
     },
-    recent_workouts: ctx.recent_workout_assignments.slice(0, 8),
+    recent_workouts: ctx.recent_workout_assignments.slice(0, 8).map((a) => ({
+      date: a.date,
+      completed: a.completed_at !== null,
+      post_rpe: a.post_rpe,
+      plan_type: a.plan_type,
+    })),
     coach: { has_coach: ctx.coach.has_coach },
   };
 }

@@ -76,9 +76,9 @@ function fixtureCtx(): ClientContext {
 }
 
 describe('Prompt versions are pinned', () => {
-  it('workout-program v1', () => {
+  it('workout-program v2 (B-AIB3-126: injuries, bounds, substitutions)', () => {
     expect(WorkoutProgramPrompt.name).toBe('workout-program');
-    expect(WorkoutProgramPrompt.version).toBe('v1');
+    expect(WorkoutProgramPrompt.version).toBe('v2');
   });
   it('meal-plan v1', () => {
     expect(MealPlanPrompt.name).toBe('meal-plan');

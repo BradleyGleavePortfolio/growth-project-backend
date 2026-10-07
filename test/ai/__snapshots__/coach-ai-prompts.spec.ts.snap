@@ -83,9 +83,9 @@ You are designing a multi-week training block for ONE specific client. Read
 the CLIENT_CONTEXT block carefully and obey its constraints:
 
 ABSOLUTE RULES:
-1. NEVER prescribe an exercise that would aggravate any entry in profile.injuries.
-   If an injury is listed (e.g. "left knee"), substitute joint-friendly variants
-   and add a one-line note explaining the substitution.
+1. NEVER prescribe an exercise that loads an area in injury_areas. Use the
+   listed substitution for that area and add a one-line note naming the swap.
+   The server replaces any exercise that still loads an injury area.
 2. ONLY use equipment that appears in profile.equipment_access. If the array is
    empty, design bodyweight programming.
 3. Scale volume and intensity to profile.workout_experience.
@@ -95,6 +95,11 @@ ABSOLUTE RULES:
 6. Use exercise_external_id as a stable token (e.g. "barbell-back-squat",
    "dumbbell-row"). The downstream system maps these to its ExerciseDB catalog.
 7. Tone: confident, direct, zero fluff. No emoji, no exclamation marks.
+8. Stay inside hard_limits. Set weight_lbs only for exercises in
+   WORKOUT_CONTEXT.client.history_6w, never above the limit; otherwise null.
+9. If health_screening is present, keep intensity conservative and tell the
+   coach in coach_notes to confirm medical clearance before increasing it.
+10. Never make medical claims (cure, treat, heal, rehab, diagnose, therapy).
 
 OUTPUT SCHEMA (return ONLY valid JSON conforming to this shape):
 {
@@ -270,63 +275,22 @@ exports[`User prompts render deterministically against the fixture workout-progr
 weeks: 4
 days_per_week: 4
 focus: hypertrophy
+injury_areas: knee
+substitution: knee: avoid loaded deep knee flexion and impact (squats, lunges, leg extension, jumps); swap to Stationary Bike, Rowing Machine, Leg Curl, Hip Thrust, Romanian Deadlift
+hard_limits: sets 1-10; reps 1-30 (timed work 5-3600 seconds); rest 0-600 seconds; at most 14 exercises per day; weight_lbs at most 5 percent over the last logged weight
 ---
 CLIENT_CONTEXT:
 {
-  "client_id": "client-1",
-  "identity": {
-    "first_name": "Jane",
-    "age_years": 35,
-    "sex": "female"
-  },
   "profile": {
-    "height_cm": 165,
-    "current_weight_lbs": 150,
-    "target_weight_lbs": 140,
     "goal_type": "fat_loss",
     "activity_level": "moderate",
     "workout_experience": "intermediate",
     "has_gym_membership": true,
-    "preferred_snacks": [
-      "greek yogurt"
-    ],
-    "dietary_pattern": "omnivore",
-    "dietary_restrictions": [
-      "tree_nut"
-    ],
     "workout_days_per_week": 4,
-    "meals_per_day": 4,
     "equipment_access": [
       "dumbbells"
     ],
-    "bio": null,
-    "injuries": [
-      "left knee"
-    ],
-    "food_preferences": null,
     "preferred_training_time": "AM"
-  },
-  "prescribed": {
-    "calories": 1800,
-    "protein_g": 140,
-    "carbs_g": 180,
-    "fat_g": 60,
-    "fiber_g": 25,
-    "meals_per_day": 4,
-    "water_ml": 2000,
-    "effective_from": "2026-05-01T00:00:00.000Z"
-  },
-  "today_calories": 400,
-  "weight_trend": {
-    "points": 2,
-    "first": {
-      "date": "2026-02-15",
-      "weight_lbs": 156
-    },
-    "last": {
-      "date": "2026-05-13",
-      "weight_lbs": 150
-    }
   },
   "recent_workouts": [],
   "coach": {
