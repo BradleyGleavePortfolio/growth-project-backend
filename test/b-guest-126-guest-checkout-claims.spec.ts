@@ -264,17 +264,4 @@ describe('B-GUEST-126 guest checkout claims', () => {
     });
     expect(w.prisma.guestCheckout.update).not.toHaveBeenCalled();
   });
-
-  // B-WELCOME-127 — one welcome per purchase, also at the provider.
-  it('the welcome email is sent with the idempotency key guest-welcome:<checkout id>', async () => {
-    const w = await build('paid');
-    await w.service.reconcilePaidCheckout('gc-1');
-    const sends = fetchSpy.mock.calls.filter(
-      ([url]) => String(url) === 'https://api.resend.com/emails',
-    );
-    expect(sends).toHaveLength(1);
-    expect(sends[0][1].headers).toEqual(
-      expect.objectContaining({ 'Idempotency-Key': 'guest-welcome:gc-1' }),
-    );
-  });
 });

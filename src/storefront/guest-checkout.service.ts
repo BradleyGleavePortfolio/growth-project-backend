@@ -2096,9 +2096,6 @@ ${receiptLine}
         headers: {
           Authorization: `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
-          // B-WELCOME-127 — one welcome per purchase: Resend drops a second
-          // send with the same key (24 h window).
-          'Idempotency-Key': `guest-welcome:${checkout.id}`,
         },
         body: JSON.stringify(body),
         signal: controller.signal,
