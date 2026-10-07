@@ -30,10 +30,17 @@ describe('FU-WORKLOG-126 workout push tap target', () => {
 
 describe('FU-WORKLOG-126 assignment notification', () => {
   function build() {
-    const createNotification = jest.fn(async () => ({ id: 'n-1' }));
-    const sendPush = jest.fn(async () => null);
-    const notifications = { createNotification, sendPush } as Partial<NotificationsService> as NotificationsService;
-    const service = new WorkoutBuilderService({} as PrismaService, undefined, undefined, notifications);
+    type Create = NotificationsService['createNotification'];
+    type Push = NotificationsService['sendPush'];
+    const createNotification = jest.fn<ReturnType<Create>, Parameters<Create>>().mockResolvedValue(null);
+    const sendPush = jest.fn<ReturnType<Push>, Parameters<Push>>().mockResolvedValue(null);
+    const notifications: Pick<NotificationsService, 'createNotification' | 'sendPush'> = { createNotification, sendPush };
+    const service = new WorkoutBuilderService(
+      {} as PrismaService,
+      undefined,
+      undefined,
+      notifications as NotificationsService,
+    );
     return { service, createNotification, sendPush };
   }
 
