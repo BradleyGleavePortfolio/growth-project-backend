@@ -46,6 +46,10 @@ import {
 import { roleSatisfies } from './roles.guard';
 import type { AppRole } from '../common/decorators/roles.decorator';
 import { describeFailure } from '../observability/log-pii';
+import {
+  COACH_SHARING_NOTICE_FIELD,
+  COACH_SHARING_NOTICE_VERSION,
+} from '../consent/coach-sharing-notice';
 
 // Self-service promotion to coach is the legacy behavior of POST
 // /auth/become-coach. It is a privilege-escalation hole on a sale-ready
@@ -235,13 +239,19 @@ export class AuthService {
     flow: 'signupWithCode' | 'googleAuth' | 'appleAuth',
     userId: string,
     inviteCode: string,
+    coachSharingNotice?: string,
   ): Promise<{
     invite_attached: boolean;
     invite_attach_error?: InviteAttachErrorCode;
     invite_grant?: AttachGrant | null;
   }> {
     try {
-      const res = await this.inviteCodes.attachUserToCoachByCode(userId, inviteCode);
+      // Coach sharing at join: the notice version the app showed above this
+      // sign-up button travels with the attach. Without one the call is
+      // exactly the one main makes (no grant).
+      const res = coachSharingNotice
+        ? await this.inviteCodes.attachUserToCoachByCode(userId, inviteCode, { coachSharingNotice })
+        : await this.inviteCodes.attachUserToCoachByCode(userId, inviteCode);
       // C01: the package-grant outcome (created / already_active /
       // pending_consent + recovery / ...) travels with every signup path so
       // mobile never has to guess whether the client is paywalled.
@@ -973,6 +983,11 @@ export class AuthService {
       role_choice: signupRoleChoiceEnabled(),
       role_choice_field: 'intended_role',
       role_choice_values: ['client', 'coach'],
+      // Coach sharing at join: the app shows the sharing sentence on its join
+      // buttons, and sends this version back in `coach_sharing_notice`, only
+      // when the server advertises it here (absent = no sentence, no grant).
+      coach_sharing_notice: COACH_SHARING_NOTICE_VERSION,
+      coach_sharing_notice_field: COACH_SHARING_NOTICE_FIELD,
     };
   }
 
@@ -981,6 +996,7 @@ export class AuthService {
     inviteCode?: string,
     intendedRole?: IntendedRole,
     ctx: AuditCtx = {},
+    coachSharingNotice?: string,
   ) {
     intendedRole = this.effectiveIntendedRole(intendedRole);
     this.assertRoleChoiceCompatibleWithInviteCode(intendedRole, inviteCode);
@@ -1103,7 +1119,7 @@ export class AuthService {
       );
       invite_attach_error = INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM;
     } else if (inviteCode) {
-      const attach = await this.tryAttachInviteCode('googleAuth', user.id, inviteCode);
+      const attach = await this.tryAttachInviteCode('googleAuth', user.id, inviteCode, coachSharingNotice);
       invite_attached = attach.invite_attached;
       invite_attach_error = attach.invite_attach_error;
       invite_grant = attach.invite_grant;
@@ -1142,6 +1158,7 @@ export class AuthService {
     ctx: AuditCtx = {},
     raw_nonce?: string,
     intendedRole?: IntendedRole,
+    coachSharingNotice?: string,
   ) {
     intendedRole = this.effectiveIntendedRole(intendedRole);
     this.assertRoleChoiceCompatibleWithInviteCode(intendedRole, inviteCode);
@@ -1314,7 +1331,7 @@ export class AuthService {
       );
       invite_attach_error = INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM;
     } else if (inviteCode) {
-      const attach = await this.tryAttachInviteCode('appleAuth', user.id, inviteCode);
+      const attach = await this.tryAttachInviteCode('appleAuth', user.id, inviteCode, coachSharingNotice);
       invite_attached = attach.invite_attached;
       invite_attach_error = attach.invite_attach_error;
       invite_grant = attach.invite_grant;
@@ -1522,6 +1539,7 @@ export class AuthService {
     invite_code?: string;
     ref?: string;
     intended_role?: IntendedRole;
+    coach_sharing_notice?: string;
   }) {
     const gateEnabled = (process.env.COACH_CODE_GATE_ENABLED || '').toLowerCase() === 'true';
 
@@ -1577,6 +1595,7 @@ export class AuthService {
         'signupWithCode',
         registered.user_id,
         data.invite_code,
+        data.coach_sharing_notice,
       );
       invite_attached = attach.invite_attached;
       invite_attach_error = attach.invite_attach_error;

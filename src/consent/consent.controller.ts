@@ -39,7 +39,9 @@ export class ConsentController {
 
   // GET /consent/me?coach_id=... — full per-scope state for one coach
   // (defaults to the caller's primary coach). Returns every scope, with
-  // unset scopes flagged `granted: false`.
+  // unset scopes flagged `granted: false`, and `owner_access` (true when
+  // that coach is the platform owner account, which sees client data
+  // without a consent row; see ConsentService.myConsentView).
   @Get('me')
   async getMyConsent(
     @Request() req: AuthedRequest,
@@ -51,8 +53,8 @@ export class ConsentController {
         'No coach_id supplied and caller has no primary coach',
       );
     }
-    const consents = await this.consent.listForClient(req.user.id, coachId);
-    return { client_id: req.user.id, coach_id: coachId, consents };
+    const { consents, owner_access } = await this.consent.myConsentView(req.user.id, coachId);
+    return { client_id: req.user.id, coach_id: coachId, consents, owner_access };
   }
 
   @Post('grant')

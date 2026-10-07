@@ -12,6 +12,7 @@ import { Transform } from 'class-transformer';
 import { BadRequestException } from '@nestjs/common';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { normalizeEmail } from './email-normalize';
+import { CoachSharingNoticeProperty } from '../consent/coach-sharing-notice';
 
 // SECURITY: DTOs for high-risk auth endpoints that touch the User model and/or
 // the `role` field. The global ValidationPipe (src/main.ts) is configured with
@@ -112,6 +113,10 @@ export class GoogleAuthDto {
   @IsString()
   @MaxLength(32)
   invite_code?: string;
+
+  // Coach sharing at join (src/consent/coach-sharing-notice.ts).
+  @CoachSharingNoticeProperty()
+  coach_sharing_notice?: string;
 }
 
 // Clinic launch C02 — the mobile Sign in with Apple body (growth-project-mobile
@@ -225,6 +230,10 @@ export class AppleAuthDto {
   @MaxLength(32)
   invite_code?: string;
 
+  // Coach sharing at join (src/consent/coach-sharing-notice.ts).
+  @CoachSharingNoticeProperty()
+  coach_sharing_notice?: string;
+
   // Honoured only when this exchange creates a new User row (C13).
   @ApiPropertyOptional(INTENDED_ROLE_API)
   @IsOptional()
@@ -276,6 +285,10 @@ export class AttachInviteCodeDto {
   @MinLength(3)
   @MaxLength(32)
   invite_code!: string;
+
+  // Coach sharing at join (src/consent/coach-sharing-notice.ts).
+  @CoachSharingNoticeProperty()
+  coach_sharing_notice?: string;
 }
 
 export class SelectRoleDto {
@@ -401,6 +414,10 @@ export class SignupWithCodeDto {
   @IsOptional()
   @IsIn(INTENDED_ROLES)
   intended_role?: IntendedRole;
+
+  // Coach sharing at join (src/consent/coach-sharing-notice.ts).
+  @CoachSharingNoticeProperty()
+  coach_sharing_notice?: string;
 }
 
 // Extension token refresh: proxies Supabase refreshSession(refresh_token) and

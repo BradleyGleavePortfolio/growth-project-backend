@@ -208,6 +208,7 @@ describe('C02 — AuthController.appleAuth hands the resolved token to the servi
       expect.objectContaining({ ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' }),
       undefined,
       undefined,
+      undefined, // coach_sharing_notice (B-SHARE-127): not sent
     );
   });
 
@@ -222,6 +223,7 @@ describe('C02 — AuthController.appleAuth hands the resolved token to the servi
       expect.objectContaining({ ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' }),
       undefined,
       'coach',
+      undefined, // coach_sharing_notice (B-SHARE-127): not sent
     );
   });
 
@@ -240,6 +242,7 @@ describe('C02 — AuthController.appleAuth hands the resolved token to the servi
       expect.objectContaining({ ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' }),
       'raw-nonce-0123456789abcdef',
       undefined,
+      undefined, // coach_sharing_notice (B-SHARE-127): not sent
     );
   });
 });

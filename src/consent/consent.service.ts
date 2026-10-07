@@ -335,6 +335,24 @@ export class ConsentService {
     return this.isGranted(clientId, coachId, scope);
   }
 
+  // GET /consent/me body for one (client, coach) pair: every scope's state
+  // plus `owner_access`. `owner_access` is true when the coach account is the
+  // platform owner account, which `coachCanAccess` lets through without a
+  // consent row (see above). The client app reads it so it never asks a
+  // client to share data that coach can already see, and so Settings says
+  // plainly that turning a scope off does not hide it from that account.
+  // It does not change who can read what; "no row" still means not shared.
+  async myConsentView(
+    clientId: string,
+    coachId: string,
+  ): Promise<{ consents: ConsentRow[]; owner_access: boolean }> {
+    const [consents, coach] = await Promise.all([
+      this.listForClient(clientId, coachId),
+      this.prisma.user.findUnique({ where: { id: coachId }, select: { role: true } }),
+    ]);
+    return { consents, owner_access: coach?.role === 'owner' };
+  }
+
   // Admin visibility surface — returns the full consent matrix for a
   // single client across all of their coaches. Used by the OWNER-only
   // /admin/clients/:id/consent endpoint.
