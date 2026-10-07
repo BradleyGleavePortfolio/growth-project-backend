@@ -14,6 +14,9 @@ const UNIT_ALIASES: Record<string, string> = {
 };
 
 export function canonicalIngredientUnit(raw: string | null | undefined): string {
-  const unit = (raw ?? '').trim().toLowerCase().replace(/\.+$/, '');
+  const normalized = (raw ?? '').trim().toLowerCase();
+  let end = normalized.length;
+  while (end > 0 && normalized[end - 1] === '.') end--;
+  const unit = normalized.slice(0, end);
   return UNIT_ALIASES[unit] ?? unit;
 }
