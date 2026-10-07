@@ -1033,6 +1033,10 @@ export class RomanService {
     // R11-T2A: a memory or coach-method block needs the client's 'memory'
     // scope (client-ai-v5). A v4 holder gets today's prompt and send.
     const { augmentRun, sendSubject } = await this.memoryScopeOf(caller, subject, ranAugmenters);
+    // R11-T2B: a tools turn (flag on, toolbox provided, grounded with a
+    // bundle) reserves every call it may make; any other turn is today's.
+    // R11-T3: only a tools turn's prompt carries the tools and answer sections.
+    const toolsTurn = this.toolsTurnOf(grounded && bundle !== null);
 
     const system = buildRomanSystemPrompt({
       surface: session.surface,
@@ -1045,17 +1049,15 @@ export class RomanService {
       ...(augmentRun && augmentRun.applied.length > 0
         ? { augments: augmentRun.applied.map((a) => a.block) }
         : {}),
+      ...(toolsTurn ? { tools: true } : {}),
     });
     // B-651-4: the reservation is an upper bound of THIS payload, built from
     // the exact system prompt and history that will be sent (trimmed to the
     // enforceable input budget, oldest turns first), never a fixed estimate.
     const payload = boundRomanPayload(system, await this.buildContextTurns(session.id));
     const messages = payload.messages;
-    // R11-T2B: a tools turn (flag on, toolbox provided, grounded with a
-    // bundle) reserves every call it may make; any other turn is today's.
     const L = ROMAN_TOOL_LIMITS;
     const roundBound = payload.inputTokenBound + L.max_calls_per_turn * L.max_result_chars;
-    const toolsTurn = grounded && bundle !== null;
     const toolLoop = this.toolLoopFor(caller, toolsTurn, sendSubject, system, roundBound);
     const reservation = toolLoop
       ? await this.reserveDailySpend(
@@ -1274,6 +1276,11 @@ export class RomanService {
     });
   }
 
+  /** R11-T2B/T3: flag on, toolbox and provider present, grounded turn with a bundle. */
+  private toolsTurnOf(groundedWithBundle: boolean): boolean {
+    return isRomanToolsEnabled() && !!this.toolbox && !!this.anthropic && groundedWithBundle;
+  }
+
   /**
    * R11-T2B: the tool loop for this turn, or null (flag off, no toolbox, or
    * not a grounded turn with a bundle). Every call goes through the same
@@ -1281,14 +1288,14 @@ export class RomanService {
    */
   private toolLoopFor(
     caller: RomanCaller,
-    groundedWithBundle: boolean,
+    toolsTurn: boolean,
     subject: AiDataSubject,
     system: string,
     roundInputBound: number,
   ): RomanToolLoop | null {
     const toolbox = this.toolbox;
     const handle = this.anthropic;
-    if (!isRomanToolsEnabled() || !toolbox || !handle || !groundedWithBundle) return null;
+    if (!toolsTurn || !toolbox || !handle) return null;
     return new RomanToolLoop({
       toolbox,
       caller,
@@ -1800,6 +1807,7 @@ export function postCheckContextOf(ctx: RomanClientContext): PostCheckContext {
   const today = ctx.today.date;
   const burned = (days: RomanClientContext['wearables']['days']) =>
     days.map((d) => d.active_kcal).filter((n): n is number => n !== null);
+  const past = ctx.last_7_days.days.filter((d) => d.date !== today);
   return {
     targets: ctx.targets,
     today: ctx.today,
@@ -1808,7 +1816,7 @@ export function postCheckContextOf(ctx: RomanClientContext): PostCheckContext {
     coach: { has_coach: ctx.coach.has_coach, coach_first_name: ctx.coach.coach_first_name },
     kcal_facts: {
       intake_entries_today: ctx.today.entries.map((e) => e.kcal),
-      intake_past_days: ctx.last_7_days.days.filter((d) => d.date !== today).map((d) => d.kcal),
+      intake_past_days: past.map((d) => d.kcal),
       burned_today: burned(ctx.wearables.days.filter((d) => d.date === today)),
       burned_past: [
         ...burned(ctx.wearables.days.filter((d) => d.date !== today)),
@@ -1817,6 +1825,12 @@ export function postCheckContextOf(ctx: RomanClientContext): PostCheckContext {
       meal_plan: (ctx.meal_plan?.items ?? []).flatMap((item) =>
         [...item.matchAll(/(\d{2,5}) kcal/g)].map((m) => Number(m[1])),
       ),
+    },
+    // R11-T3: client_data's earlier days carry grams too; a past-day gram claim reads only these.
+    macro_past: {
+      protein_g: past.map((d) => d.protein_g),
+      carbs_g: past.map((d) => d.carbs_g),
+      fat_g: past.map((d) => d.fat_g),
     },
   };
 }

@@ -24,7 +24,7 @@ import { RomanTimelineError, type RomanTimelineEvent } from '../memory/roman-tim
 import type { RomanTimelineKind } from '../memory/roman-timeline.types';
 import { romanErrorTag } from '../roman-error-tag';
 import { ROMAN_TOOL_LIMITS, type RomanToolbox, type RomanToolCaller } from './roman-tool.types';
-import type { RomanToolDefinition, RomanToolFacts, RomanToolResult } from './roman-tool.types';
+import type { RomanToolDefinition, RomanToolFacts, RomanToolGrams, RomanToolResult } from './roman-tool.types';
 import { EXERCISE_HISTORY_LIMITS, exerciseChanges } from './roman-exercise-history';
 import { readExerciseSets, summarizeExerciseSet } from './roman-exercise-history';
 import { burnedFacts, readBaselines } from './roman-baselines';
@@ -167,6 +167,14 @@ export function foodDayOf(rows: readonly FoodEntryRow[], tz: string) {
   return { totals: { ...totals, fat_g: r(sum.fat_g), entries: rows.length, meals: meals.size }, entries };
 }
 
+type Grams = Record<'protein_g' | 'carbs_g' | 'fat_g', number>;
+/** R11-T3: the macro grams shown, per macro, for the post-check (past days only). */
+const gramsOf = (rows: readonly Grams[]): RomanToolGrams => ({
+  protein_g: rows.map((g) => g.protein_g),
+  carbs_g: rows.map((g) => g.carbs_g),
+  fat_g: rows.map((g) => g.fat_g),
+});
+
 const days = (a: string, b: string) => Math.round((+dateOnly(b) - +dateOnly(a)) / DAY_MS) + 1;
 const INSTANT_TABLES = new Set(['WaterLog', 'CoachMessage', 'CoachingSession', 'ClientWorkoutAssignment']);
 
@@ -262,7 +270,9 @@ export class RomanReadToolbox implements RomanToolbox {
         .filter((e) => e.kind === kind)
         .map((e) => e.facts[key])
         .filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
-    const facts = { intake_past_kcal: pick('food_day', 'kcal') };
+    const g = (key: string) => pick('food_day', key);
+    const intake_past_g = { protein_g: g('protein_g'), carbs_g: g('carbs_g'), fat_g: g('fat_g') };
+    const facts = { intake_past_kcal: pick('food_day', 'kcal'), intake_past_g };
     return okResult(fit, { ...facts, burned_past_kcal: pick('wearable_day', 'active_kcal') });
   }
 
@@ -301,7 +311,8 @@ export class RomanReadToolbox implements RomanToolbox {
     // Today's numbers are already in client_data; only an earlier day is a past-day fact.
     const shown = day.entries.slice(0, fit.kept).map((e) => e.kcal);
     const past = input.date < at.today && rows.length > 0;
-    return okResult(fit, { intake_past_kcal: past ? [day.totals.kcal, ...shown] : [] });
+    const intake_past_g = past ? gramsOf([day.totals, ...day.entries.slice(0, fit.kept)]) : {};
+    return okResult(fit, { intake_past_kcal: past ? [day.totals.kcal, ...shown] : [], intake_past_g });
   }
 
   private async personalBaselines(at: At): Promise<RomanToolResult> {

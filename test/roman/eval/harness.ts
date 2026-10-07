@@ -7,10 +7,22 @@
 import 'reflect-metadata';
 import { RomanService } from '../../../src/roman/roman.service';
 import { RomanClientContextService } from '../../../src/roman/context/roman-client-context.service';
-import { AnthropicHandle, type AnthropicMessagesClient } from '../../../src/ai-egress/ai-egress.service';
-import { egressWithGrants, fakeOf, type FakeConsentReader } from '../../ai-egress/ai-egress.fakes';
-import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../../src/roman/roman.feature';
 import {
+  AiEgressService,
+  AnthropicHandle,
+  type AnthropicMessagesClient,
+} from '../../../src/ai-egress/ai-egress.service';
+import { FakeConsentReader, fakeOf } from '../../ai-egress/ai-egress.fakes';
+import type { ClientAiConsentScope } from '../../../src/ai-consent/ai-consent.constants';
+import type { CoachAIBudgetService } from '../../../src/ai-credits/coach-ai-budget.service';
+import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../../src/roman/roman.feature';
+import { RomanReadToolbox } from '../../../src/roman/tools/roman-read-tools';
+import type { RomanToolbox } from '../../../src/roman/tools/roman-tool.types';
+import { RomanTimelineReader } from '../../../src/roman/memory/roman-timeline.reader';
+import { RomanClientMemoryAugmenter } from '../../../src/roman/memory/roman-client-memory.augmenter';
+import { RomanCoachMethodAugmenter } from '../../../src/roman/playbook/roman-coach-method.augmenter';
+import {
+  matches,
   makePersonaDb,
   FakeSafetyIntakeSource,
   P1,
@@ -21,7 +33,7 @@ import {
   LOCAL_TODAY_PT,
   type PersonaDb,
 } from '../fixtures/roman-personas';
-import { makeStubModel, type StubModel } from './stub-model';
+import { makeStubModel, type StubCall, type StubModel, type StubStep } from './stub-model';
 import type { GoldenItem, GoldenPersona } from './golden-set';
 
 export const PERSONA_ID: Record<GoldenPersona, string> = { P1, P2, P3, P4 };
@@ -36,7 +48,30 @@ export interface HarnessWorld {
   consent: FakeConsentReader;
 }
 
-export function makeWorld(defaultReply?: string): HarnessWorld {
+/** R11-T3: base grant for everyone; the 'memory' scope (client-ai-v5) for all but `v4`. */
+export class ScopedConsentReader extends FakeConsentReader {
+  readonly v4 = new Set<string>();
+  async hasClientAiConsent(id: string, scope?: ClientAiConsentScope): Promise<boolean> {
+    return (await super.hasClientAiConsent(id)) && !(scope === 'memory' && this.v4.has(id));
+  }
+  async clientsWithAiConsent(ids: readonly string[], scope?: ClientAiConsentScope) {
+    const base = await super.clientsWithAiConsent(ids);
+    return new Set([...base].filter((id) => !(scope === 'memory' && this.v4.has(id))));
+  }
+}
+
+/** R11-T3: rows the v1.1 readers need, kept outside the shared persona fixtures. */
+export interface R11Rows {
+  exerciseSets: Array<{ exercise_name: string; sets_completed: number; reps_per_set: number[];
+    weight_per_set: number[]; rpe: number | null; workout: { user_id: string; date: Date } }>;
+  notes: Array<Record<string, unknown>>;
+  playbooks: Array<Record<string, unknown>>;
+}
+
+export function makeWorld(
+  defaultReply?: string,
+  r11: { tools?: boolean; augmenters?: boolean; wrapTools?: (t: RomanToolbox) => RomanToolbox } = {},
+): HarnessWorld & { r11: R11Rows; consent: ScopedConsentReader } {
   const db = makePersonaDb();
   const intake = new FakeSafetyIntakeSource();
   const ctx = new RomanClientContextService(db.prisma, intake);
@@ -44,14 +79,35 @@ export function makeWorld(defaultReply?: string): HarnessWorld {
   // B-R8-1: the production RomanService over the production egress gate; the
   // only fake is the consent ledger read. Every persona holds a live grant
   // unless a spec revokes it.
-  const { egress, reader } = egressWithGrants([P1, P2, P3, P4]);
+  const reader = new ScopedConsentReader([P1, P2, P3, P4]);
+  const rows: R11Rows = { exerciseSets: [], notes: [], playbooks: [] };
+  const p = fakeOf<Record<string, unknown>>(db.prisma);
+  type W = { where?: Record<string, unknown> };
+  const where = <R extends object>(xs: R[], w: W['where']) =>
+    xs.filter((r) => matches(fakeOf<Record<string, unknown>>(r), w));
+  p.exerciseSet = {
+    findMany: jest.fn(async (a: { where: { exercise_name: { contains: string }; workout: W['where'] } }) =>
+      where(rows.exerciseSets.map((r) => ({ ...r, ...r.workout })), a.where.workout)
+        .filter((r) => r.exercise_name.toLowerCase().includes(a.where.exercise_name.contains.toLowerCase()))
+        .sort((x, y) => +y.workout.date - +x.workout.date)),
+  };
+  p.romanClientNote = { findMany: jest.fn(async (a: W) => where(rows.notes, a.where)) };
+  p.romanClientSummary = { findMany: jest.fn(async () => []) };
+  p.coachPlaybook = { findFirst: jest.fn(async (a: W) => where(rows.playbooks, a.where)[0] ?? null) };
+  const budget = fakeOf<CoachAIBudgetService>({ resolveHeadCoachId: async (id: string) => id });
   const roman = new RomanService(
     fakeOf(db.prisma),
-    egress,
+    new AiEgressService(reader),
     AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(model.client)),
     ctx,
+    null,
+    null,
+    r11.augmenters
+      ? [new RomanClientMemoryAugmenter(db.prisma), new RomanCoachMethodAugmenter(db.prisma, budget)]
+      : null,
+    r11.tools ? (r11.wrapTools ?? ((t: RomanToolbox) => t))(new RomanReadToolbox(db.prisma, new RomanTimelineReader(db.prisma))) : null,
   );
-  return { db, ctx, intake, model, roman, consent: reader };
+  return { db, ctx, intake, model, roman, consent: reader, r11: rows };
 }
 
 export const student = (id: string) => ({ id, role: 'student' });
@@ -82,16 +138,19 @@ export interface TurnResult {
   staticSystem: string | null;
   clientData: string | null;
   persisted: Record<string, unknown> | undefined;
+  /** R11-T3: every model call of this turn (a tools turn makes several). */
+  calls: StubCall[];
 }
 
 /** Run one turn for `item.persona` (or an explicit user id) with an optional canned model reply. */
 export async function runTurn(
   world: HarnessWorld,
   item: Pick<GoldenItem, 'persona' | 'question'>,
-  opts: { reply?: string | string[]; userId?: string; exclamation_used?: boolean } = {},
+  opts: { reply?: string | string[]; userId?: string; exclamation_used?: boolean; script?: StubStep[] } = {},
 ): Promise<TurnResult> {
   const userId = opts.userId ?? PERSONA_ID[item.persona];
   if (opts.reply !== undefined) world.model.enqueue(opts.reply);
+  if (opts.script) world.model.script(...opts.script);
   const before = world.model.calls.length;
   const chunks: TurnResult['chunks'] = [];
   const session = clientSession(userId, { exclamation_used: opts.exclamation_used });
@@ -115,6 +174,7 @@ export async function runTurn(
     staticSystem: call?.staticSystem ?? null,
     clientData: call?.clientData ?? null,
     persisted,
+    calls: world.model.calls.slice(before),
   };
 }
 

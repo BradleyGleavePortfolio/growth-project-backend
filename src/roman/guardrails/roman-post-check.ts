@@ -73,7 +73,16 @@ export interface PostCheckContext {
    * log).
    */
   kcal_facts?: PostCheckKcalFacts;
+  /**
+   * R11-T3: grams of EARLIER days (client_data's past days, tool day totals and
+   * entries, personal baselines), per macro; only a past-day claim reads them.
+   */
+  macro_past?: PostCheckMacroFacts;
+  /** R11-T3: medians, averages and ranges of earlier days (personal baselines), per macro. */
+  macro_average?: PostCheckMacroFacts;
 }
+
+export type PostCheckMacroFacts = Partial<Record<'protein_g' | 'carbs_g' | 'fat_g', number[]>>;
 
 export interface PostCheckKcalFacts {
   /** Today's individual logged food entries (intake, today). */
@@ -317,9 +326,19 @@ function macroKeyOf(word: string): MacroKey {
 const finite = (xs: Array<number | null | undefined>): number[] =>
   xs.filter((n): n is number => typeof n === 'number' && Number.isFinite(n));
 
-/** A claim about an earlier day ("yesterday you logged ..."), not today. */
-const PAST_DAY =
-  /\b(yesterday|last (night|week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|on (monday|tuesday|wednesday|thursday|friday|saturday|sunday)|\d+ days? ago|the day before|earlier this week|over the (last|past) \d+ days|this past week)\b/i;
+/**
+ * A claim about an earlier day ("yesterday you logged ..."), not today. R11-T3: also a dated day
+ * ("on 22 September", "on Sept 22"), a range of earlier days ("over the last three weeks", "two
+ * weeks ago", "last month") and the client's normal ("your usual"), the way tool answers name them.
+ */
+const MONTH = '(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)';
+const COUNT = '(\\d+|two|three|four|five|six|seven|eight)';
+const PAST_DAY = new RegExp(
+  '\\b(yesterday|last (night|week|month|monday|tuesday|wednesday|thursday|friday|saturday|sunday)|on (monday|tuesday|wednesday|thursday|friday|saturday|sunday)|\\d+ days? ago|the day before|earlier this week|this past week)\\b' +
+    `|\\bon (the )?\\d{1,2}(st|nd|rd|th)? (of )?${MONTH}\\b|\\bon ${MONTH}\\.? \\d{1,2}\\b|\\b${COUNT} weeks? ago\\b` +
+    `|\\b(over|in|across|during) the (last|past) ${COUNT} (days|weeks)\\b|\\byour (normal|usual|typical|baseline)\\b`,
+  'i',
+);
 /** A claim about the meal plan ("your plan has 450 kcal at lunch"), not a log. */
 const PLAN_WORD = /\b(meal plan|your plan|the plan|planned)\b/i;
 /** B-668-3 (Sol): wording that states the whole day's intake ("logged 450 kcal today", "so far"). */
@@ -382,15 +401,22 @@ function kcalFacts(
   return finite(out);
 }
 
-/** gram facts for ONE macro and the given families (protein never matches carbs). */
+/**
+ * gram facts for ONE macro and the given families (protein never matches carbs).
+ * R11-T3: like kcal (B-668-3), a claim about an earlier day reads earlier days only.
+ */
 function macroFacts(
   ctx: PostCheckContext,
   key: MacroKey,
   families: ReadonlySet<KcalFamily>,
+  sentence: string,
 ): number[] {
   const out: Array<number | null | undefined> = [];
   if (families.has('target')) out.push(ctx.targets[key]);
-  if (families.has('intake')) out.push(ctx.today[key]);
+  if (families.has('intake')) {
+    if (PAST_DAY.test(sentence)) out.push(...(ctx.macro_past?.[key] ?? []));
+    else out.push(ctx.today[key]);
+  }
   if (families.has('remaining')) {
     out.push(
       key === 'protein_g'
@@ -400,8 +426,9 @@ function macroFacts(
           : ctx.today.remaining_fat_g,
     );
   }
-  if (families.has('average') && key === 'protein_g') {
-    out.push(ctx.last_7_days.avg_protein_g_on_logged_days);
+  if (families.has('average')) {
+    if (key === 'protein_g') out.push(ctx.last_7_days.avg_protein_g_on_logged_days);
+    out.push(...(ctx.macro_average?.[key] ?? []));
   }
   return finite(out);
 }
@@ -579,7 +606,7 @@ function judgeSentence(
     const role = roleOf(s, at, end);
     const factFamilies = new Set(FACT_FAMILIES.filter((f) => role.has(f)));
     if (factFamilies.size > 0) {
-      if (!ctx || !matchesFact(n, macroFacts(ctx, key, factFamilies))) return 'ungrounded_number';
+      if (!ctx || !matchesFact(n, macroFacts(ctx, key, factFamilies, s))) return 'ungrounded_number';
       continue;
     }
     if (role.has('target')) {
