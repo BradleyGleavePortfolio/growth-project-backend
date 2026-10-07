@@ -46,6 +46,18 @@ const basePlan = {
   exercises: [],
 };
 
+// B-REV0-126: setExercises now appends a revision and moves the head inside its transaction.
+const revisionTx = (lastIndex: number | null = 2) => ({
+  workoutPlan: {
+    findUnique: jest.fn().mockResolvedValue({ ...basePlan, week_index: null, day_index: null }),
+    update: jest.fn().mockResolvedValue({}),
+  },
+  workoutPlanRevision: {
+    findFirst: jest.fn().mockResolvedValue(lastIndex === null ? null : { revision_index: lastIndex }),
+    create: jest.fn().mockResolvedValue({ id: 'rev-saved' }),
+  },
+});
+
 interface PrismaMock {
   workoutPlan: {
     create: jest.Mock;
@@ -211,6 +223,7 @@ describe('WorkoutBuilderService', () => {
 
     it('accepts owner role on coach-side routes', async () => {
       prismaMock.workoutPlan.create.mockResolvedValue(basePlan);
+      prismaMock.workoutPlan.update.mockResolvedValue(basePlan);
       await expect(
         service.createPlan(
           ownerRow.id,
@@ -226,6 +239,7 @@ describe('WorkoutBuilderService', () => {
   describe('createPlan', () => {
     it('creates and returns a workout plan', async () => {
       prismaMock.workoutPlan.create.mockResolvedValue(basePlan);
+      prismaMock.workoutPlan.update.mockResolvedValue(basePlan);
 
       const result = await service.createPlan(
         COACH_ID,
@@ -247,6 +261,27 @@ describe('WorkoutBuilderService', () => {
         }),
       );
       expect(result).toEqual(basePlan);
+    });
+
+    it('B-REV0-126: writes revision 0 (empty, cause initial) and points the new plan at it, in one transaction', async () => {
+      prismaMock.workoutPlan.create.mockResolvedValue({ ...basePlan, head_revision_id: null });
+      prismaMock.workoutPlanRevision.create.mockResolvedValue({ id: 'rev-0' });
+      prismaMock.workoutPlan.update.mockResolvedValue({ ...basePlan, head_revision_id: 'rev-0' });
+
+      const result = await service.createPlan(COACH_ID, { name: 'Push Day A', type: WorkoutType.strength, duration_estimate_minutes: 45 });
+
+      expect(prismaMock.$transaction).toHaveBeenCalled();
+      expect(prismaMock.workoutPlanRevision.create).toHaveBeenCalledWith({
+        data: {
+          workout_plan_id: basePlan.id, revision_index: 0, exercises_json: [],
+          plan_meta_json: { name: 'Push Day A', type: WorkoutType.strength, duration_estimate_minutes: 45, week_index: null, day_index: null },
+          author_id: COACH_ID, author_kind: 'coach', cause: 'initial',
+        },
+      });
+      expect(prismaMock.workoutPlan.update).toHaveBeenCalledWith({
+        where: { id: basePlan.id }, data: { head_revision_id: 'rev-0' }, include: { exercises: true },
+      });
+      expect(result).toEqual(expect.objectContaining({ head_revision_id: 'rev-0' }));
     });
   });
 
@@ -411,6 +446,7 @@ describe('WorkoutBuilderService', () => {
 
     it('soft-archives prior rows and writes the new ones', async () => {
       const tx = {
+        ...revisionTx(),
         $queryRaw: jest.fn().mockResolvedValue([{ id: basePlan.id }]),
         workoutPlanExercise: {
           updateMany: jest.fn().mockResolvedValue({ count: 2 }),
@@ -453,6 +489,7 @@ describe('WorkoutBuilderService', () => {
       // hold an immutable snapshot, so the coach can freely edit. Crucially
       // the tx must NOT count assignments anymore, and the writes DO fire.
       const tx = {
+        ...revisionTx(),
         $queryRaw: jest.fn().mockResolvedValue([{ id: basePlan.id }]),
         // A `count` is intentionally provided; if the service still called it
         // the assertion below would fail — proving the guard is truly removed.
@@ -489,6 +526,44 @@ describe('WorkoutBuilderService', () => {
       // The writes DID fire despite active assignments existing.
       expect(tx.workoutPlanExercise.updateMany).toHaveBeenCalled();
       expect(tx.workoutPlanExercise.createMany).toHaveBeenCalled();
+    });
+
+    it('B-REV0-126: the explicit Save appends a manual_edit revision of exactly the saved rows and moves the head', async () => {
+      const tx = {
+        ...revisionTx(2),
+        $queryRaw: jest.fn().mockResolvedValue([{ id: basePlan.id }]),
+        workoutPlanExercise: {
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          createMany: jest.fn().mockResolvedValue({ count: 2 }),
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+      };
+      prismaMock.$transaction.mockImplementation(async (fn: (innerTx: typeof tx) => unknown) => fn(tx));
+
+      await service.setExercises(COACH_ID, basePlan.id, [
+        { exercise_external_id: 'ex-2', order: 2, sets: 4, reps_or_duration_seconds: 8, weight_lbs: 135, rest_seconds: 120 },
+        { exercise_external_id: 'ex-1', order: 1, sets: 3, reps_or_duration_seconds: 12 },
+      ], '55555555-5555-4555-8555-555555555555');
+
+      expect(tx.workoutPlanRevision.create).toHaveBeenCalledWith({
+        data: {
+          workout_plan_id: basePlan.id, revision_index: 3,
+          exercises_json: [
+            { exercise_external_id: 'ex-1', order: 1, sets: 3, reps_or_duration_seconds: 12, weight_lbs: null, rest_seconds: null, superset_group_id: null, notes: null },
+            { exercise_external_id: 'ex-2', order: 2, sets: 4, reps_or_duration_seconds: 8, weight_lbs: 135, rest_seconds: 120, superset_group_id: null, notes: null },
+          ],
+          plan_meta_json: { name: 'Push Day A', type: WorkoutType.strength, duration_estimate_minutes: 45, week_index: null, day_index: null },
+          author_id: COACH_ID, author_kind: 'coach', cause: 'manual_edit',
+        },
+      });
+      expect(tx.workoutPlan.update).toHaveBeenCalledWith({
+        where: { id: basePlan.id }, data: { head_revision_id: 'rev-saved', version: { increment: 1 } },
+      });
+      // A plan with no revision yet gets index 0.
+      const fresh = { ...tx, ...revisionTx(null) };
+      prismaMock.$transaction.mockImplementation(async (fn: (innerTx: typeof fresh) => unknown) => fn(fresh));
+      await service.setExercises(COACH_ID, basePlan.id, [{ exercise_external_id: 'ex-1', order: 1, sets: 3, reps_or_duration_seconds: 12 }], '66666666-6666-4666-8666-666666666666');
+      expect(fresh.workoutPlanRevision.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ revision_index: 0 }) }));
     });
 
     it('rejects duplicate order values', async () => {

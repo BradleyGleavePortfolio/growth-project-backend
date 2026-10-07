@@ -89,6 +89,23 @@ export interface Paginated<T> {
 // legacy plan archive route and the library grid writes serialise per program.
 const LOCK_NS_PROGRAM_GRID = 0x4d574247;
 
+/** Plan-level metadata snapshot stored with each revision (same fields the clone paths write). */
+function planMetaJson(plan: {
+  name: string;
+  type: string;
+  duration_estimate_minutes: number | null;
+  week_index?: number | null;
+  day_index?: number | null;
+}): Prisma.InputJsonValue {
+  return {
+    name: plan.name,
+    type: plan.type,
+    duration_estimate_minutes: plan.duration_estimate_minutes ?? null,
+    week_index: plan.week_index ?? null,
+    day_index: plan.day_index ?? null,
+  };
+}
+
 @Injectable()
 export class WorkoutBuilderService {
   private readonly logger = new Logger(WorkoutBuilderService.name);
@@ -361,15 +378,34 @@ export class WorkoutBuilderService {
 
   async createPlan(coachId: string, dto: CreateWorkoutPlanDto, idempotencyKey?: string | null) {
     await this.assertCoach(coachId);
+    // B-REV0-126: a new workout gets its revision 0 in the same transaction, so autosave, undo and Ask AI have the
+    // baseline they need (a null head made every one of them answer 409 "changed on another screen").
     return this.withIdempotency(coachId, 'workout-builder:createPlan', idempotencyKey, () =>
-      this.prisma.workoutPlan.create({
-        data: {
-          coach_id: coachId,
-          name: dto.name,
-          type: dto.type,
-          duration_estimate_minutes: dto.duration_estimate_minutes ?? null,
-        },
-        include: { exercises: true },
+      this.prisma.$transaction(async (tx) => {
+        const plan = await tx.workoutPlan.create({
+          data: {
+            coach_id: coachId,
+            name: dto.name,
+            type: dto.type,
+            duration_estimate_minutes: dto.duration_estimate_minutes ?? null,
+          },
+        });
+        const revision = await tx.workoutPlanRevision.create({
+          data: {
+            workout_plan_id: plan.id,
+            revision_index: 0,
+            exercises_json: this.serialiseExerciseRows([]),
+            plan_meta_json: planMetaJson(plan),
+            author_id: coachId,
+            author_kind: 'coach',
+            cause: 'initial',
+          },
+        });
+        return tx.workoutPlan.update({
+          where: { id: plan.id },
+          data: { head_revision_id: revision.id },
+          include: { exercises: true },
+        });
       }),
     );
   }
@@ -576,6 +612,10 @@ export class WorkoutBuilderService {
                 })),
               });
             }
+
+            // B-REV0-126: the explicit Save also moves the plan's head revision, so the head always matches the rows the
+            // coach saved. Otherwise the next Ask AI apply or autosave rebuilt the workout from an older (or empty) head.
+            await this.recordSavedRevision(tx, planId, coachId, rows);
 
             return tx.workoutPlanExercise.findMany({
               where: { workout_plan_id: planId, archived_at: null },
@@ -1623,6 +1663,48 @@ export class WorkoutBuilderService {
       data: { exercises_json: this.serialiseExerciseRows(after) },
     });
     return { ok: true, before: cur.exercises, after, fingerprint: fingerprintAssignmentRows(after) };
+  }
+
+  /** B-REV0-126: append a 'manual_edit' revision snapshotting the rows just saved and point the plan's head at it. */
+  private async recordSavedRevision(
+    tx: Prisma.TransactionClient,
+    planId: string,
+    authorId: string,
+    rows: UpsertExerciseRowDto[],
+  ): Promise<void> {
+    const plan = await tx.workoutPlan.findUnique({ where: { id: planId } });
+    if (!plan) throw new NotFoundException('Workout plan not found');
+    const last = await tx.workoutPlanRevision.findFirst({
+      where: { workout_plan_id: planId },
+      orderBy: { revision_index: 'desc' },
+      select: { revision_index: true },
+    });
+    const revision = await tx.workoutPlanRevision.create({
+      data: {
+        workout_plan_id: planId,
+        revision_index: (last?.revision_index ?? -1) + 1,
+        exercises_json: this.serialiseExerciseRows(
+          rows.map((r) => ({
+            exercise_external_id: r.exercise_external_id,
+            order: r.order,
+            sets: r.sets,
+            reps_or_duration_seconds: r.reps_or_duration_seconds,
+            weight_lbs: r.weight_lbs ?? null,
+            rest_seconds: r.rest_seconds ?? null,
+            superset_group_id: r.superset_group_id ?? null,
+            notes: r.notes ?? null,
+          })),
+        ),
+        plan_meta_json: planMetaJson(plan),
+        author_id: authorId,
+        author_kind: 'coach',
+        cause: 'manual_edit',
+      },
+    });
+    await tx.workoutPlan.update({
+      where: { id: planId },
+      data: { head_revision_id: revision.id, version: { increment: 1 } },
+    });
   }
 
   /**

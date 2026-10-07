@@ -45,6 +45,7 @@ const prismaMock = {
   user: {
     findUnique: jest.fn(),
   },
+  workoutPlanRevision: { create: jest.fn() },
   $transaction: jest.fn(),
 };
 
@@ -69,6 +70,9 @@ describe('WorkoutBuilderService', () => {
   describe('createPlan', () => {
     it('creates and returns a workout plan', async () => {
       prismaMock.workoutPlan.create.mockResolvedValue(mockPlan);
+      prismaMock.workoutPlanRevision.create.mockResolvedValue({ id: 'rev-0' });
+      prismaMock.workoutPlan.update.mockResolvedValue({ ...mockPlan, head_revision_id: 'rev-0' });
+      prismaMock.$transaction.mockImplementation(async (fn: (tx: typeof prismaMock) => unknown) => fn(prismaMock));
 
       const result = await service.createPlan(COACH_ID, {
         name: 'Push Day A',
