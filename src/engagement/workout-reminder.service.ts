@@ -235,7 +235,11 @@ export class WorkoutReminderService {
 
     if (isDunningV2Enabled() && (await this.isDunningLockedOut(clientId))) return 'locked_out';
 
-    const { title, body } = reminderCopy(decision.localDate, decision.firstDay);
+    const { title, body } = reminderCopy(
+      decision.localDate,
+      decision.firstDay,
+      assignments.length > 0,
+    );
     const deepLink = assignments[0] ? `tgp://workouts/${assignments[0].id}` : 'tgp://workouts';
     const payload = {
       local_date: decision.localDate,
