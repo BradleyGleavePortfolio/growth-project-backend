@@ -1,9 +1,16 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
-import type { User } from '@prisma/client';
+import type { User, UserProfile } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../prisma.service';
 import { ProvenanceRef } from './data-quality.types';
 import { canCoachActOnClient } from '../../common/scope';
+import { CREATE_WORKOUT_PLAN_CAPABILITY } from './materialisers/create-workout-plan.materialiser';
+import { EDIT_WORKOUT_PLAN_CAPABILITY } from './materialisers/edit-workout-plan.materialiser';
+import { toInjuryAreas } from './workout-builder/training-substitutions';
+
+// B-AIB3-126 (plan section 1, SAFE 2): the workout capabilities get the minimised block — no name, body weight, height,
+// preferred snacks or coach message excerpt (the message row is not even read).
+const WORKOUT_CAPABILITIES: ReadonlySet<string> = new Set([CREATE_WORKOUT_PLAN_CAPABILITY, EDIT_WORKOUT_PLAN_CAPABILITY]);
 
 // Permissioned context retrieval for the AI gateway. The gateway never
 // reads the database directly: capability-specific services call into
@@ -49,14 +56,16 @@ export class PrivateContextService {
   async loadClientContext(
     caller: CallerScope,
     subjectUserId: string,
+    opts: { capability?: string } = {},
   ): Promise<ClientContextResult> {
+    const workout = WORKOUT_CAPABILITIES.has(opts.capability ?? '');
     const subject = await this.prisma.user.findUnique({
       where: { id: subjectUserId },
       include: {
         profile: true,
         coach_messages_as_client: {
           orderBy: { created_at: 'desc' },
-          take: 1,
+          take: workout ? 0 : 1,
         },
       },
     });
@@ -67,12 +76,12 @@ export class PrivateContextService {
     }
 
     const profile = subject.profile;
-    const lastMessage = subject.coach_messages_as_client[0];
+    const lastMessage = workout ? undefined : subject.coach_messages_as_client[0];
 
     // Sanitized, structured block. NEVER include email, phone,
     // supabase_id, or any internal-only IDs. The gateway will further
     // redact free-text inputs before sending them to a provider.
-    const block = {
+    const fullBlock = {
       identity: {
         first_name: subject.name?.split(' ')[0] ?? 'Client',
         role: subject.role,
@@ -91,6 +100,7 @@ export class PrivateContextService {
         : null,
       last_coach_message_excerpt: lastMessage?.body?.slice(0, 240) ?? null,
     };
+    const block = workout ? workoutBlock(subject.role, profile) : fullBlock;
 
     const systemPrompt =
       `You are an AI assistant operating inside The Growth Project.\n` +
@@ -140,6 +150,22 @@ export class PrivateContextService {
       { coach_id: subject.coach_id },
     );
   }
+}
+
+function workoutBlock(role: User['role'], profile: UserProfile | null) {
+  return {
+    identity: { first_name: 'the client', role },
+    profile: profile
+      ? {
+          goal_type: profile.goal_type,
+          activity_level: profile.activity_level,
+          workout_experience: profile.workout_experience,
+          workout_days_per_week: profile.workout_days_per_week,
+          equipment_access: profile.equipment_access,
+          injuries: toInjuryAreas(profile.injuries),
+        }
+      : null,
+  };
 }
 
 function hash(s: string): string {

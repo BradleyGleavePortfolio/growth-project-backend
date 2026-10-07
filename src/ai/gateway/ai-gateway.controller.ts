@@ -79,6 +79,7 @@ export class AiGatewayController {
     const ctx = await this.context.loadClientContext(
       { id: req.user.id, role: req.user.role, coach_id: req.user.coach_id ?? null },
       subjectId,
+      { capability: cap },
     );
     const result = await this.gateway.invoke({
       capability: cap,
