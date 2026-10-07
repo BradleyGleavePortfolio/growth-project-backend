@@ -339,7 +339,8 @@ describe('Privacy Policy accuracy (/privacy)', () => {
   // R11-L1 (owner A6.4: notes survive chat deletion and the policy says so;
   // owner 10:18 10-07: memory is on by default inside the Roman permission,
   // notes come from chats and everything the client logs or connects, and the
-  // client can turn memory off and delete the notes). Coach-method wording
+  // client can turn memory off; owner 11:46 10-07: notes are deleted only
+  // with the account, never by memory off, withdrawal or chat deletion). Coach-method wording
   // follows the owner-approved v5 paragraph (ai-consent.constants.ts).
   it('describes Roman’s memory: on within the Roman permission, chats and logs, off switch, survives chat deletion', () => {
     expect(text).not.toContain(
@@ -349,19 +350,25 @@ describe('Privacy Policy accuracy (/privacy)', () => {
       'With Roman’s memory off, only your own data is used — never another client’s, and never your coach’s private notes about you.',
     );
     expect(text).toContain(
-      'Roman’s memory is part of the Roman permission you give in the consultation, and it is on unless you turn it off. Roman keeps notes and summaries about your training, preferences and circumstances, from your Roman chats and from everything you log or connect in the app, to personalise his replies. Roman may also learn your coach’s methods, including from your coach’s private session notes, and information about your training may help with that without identifying you. Roman never quotes those notes or shows you another client’s information. Your coach never sees your conversations with Roman or his notes about you. You can turn Roman’s memory off, and delete his notes, at any time in Settings > Privacy > Roman and AI.',
+      'Roman’s memory is part of the Roman permission you give in the consultation, and it is on unless you turn it off. Roman keeps notes and summaries about your training, preferences and circumstances, from your Roman chats and from everything you log or connect in the app, to personalise his replies. Roman may also learn your coach’s methods, including from your coach’s private session notes, and information about your training may help with that without identifying you. Roman never quotes those notes or shows you another client’s information. Your coach never sees your conversations with Roman or his notes about you. You can turn Roman’s memory off at any time in Settings > Privacy > Roman and AI; Roman then stops using his notes until you turn it back on. Turning memory off, withdrawing the AI agreement or deleting a chat does not delete the notes: they are kept with your account and deleted when you delete your account.',
     );
     expect(text).toContain('food, water and habit logs, workouts and workout history, check-ins, bookings,');
     expect(text).toContain(
       'Roman’s notes and summaries — short notes Roman keeps about your training, preferences and circumstances, from your Roman chats and from everything you log or connect in the app, as part of the Roman permission (see “Roman and AI” below).',
     );
     expect(text).toContain(
-      'Deleting a chat removes its messages but not Roman’s notes; deleting the notes in Settings > Privacy > Roman and AI, or deleting your account, removes them.',
+      'Deleting a chat removes its messages but not Roman’s notes; deleting your account removes them.',
     );
     expect(text).toContain(
-      'Roman’s notes and summaries — kept until you delete them in Settings > Privacy > Roman and AI or delete your account; deleting a chat does not remove them.',
+      'Roman’s notes and summaries — kept with your account until you delete it, including while Roman’s memory is off; deleting a chat does not remove them.',
     );
     expect(POLICY_LAST_REVIEWED >= '2026-10-07').toBe(true);
+  });
+
+  it('no policy offers a separate way to delete Roman’s notes (owner 11:46 10-07)', () => {
+    for (const slug of ['privacy', 'consumer-health'] as const) {
+      expect(visibleText(renderTrustPage(slug))).not.toMatch(/and delete (his|the) notes|deleting the notes in/);
+    }
   });
 
   it('health-data policy: Roman’s notes are collected and derived information, with the off switch', () => {
@@ -370,7 +377,7 @@ describe('Privacy Policy accuracy (/privacy)', () => {
       'Derived information — calorie and macro targets, the plan assigned to you, trends in your readings, Roman’s replies, and Roman’s notes and summaries.',
     );
     expect(health).toContain(
-      'Roman’s notes and summaries — short notes Roman keeps about your training, preferences and circumstances, from your Roman chats and from everything you log or connect, as part of the Roman permission you give in the consultation. Used to personalise Roman’s replies. Roman’s memory is on unless you turn it off; you can turn it off, and delete the notes, in Settings > Privacy > Roman and AI. Deleting a chat does not remove them; deleting your account does.',
+      'Roman’s notes and summaries — short notes Roman keeps about your training, preferences and circumstances, from your Roman chats and from everything you log or connect, as part of the Roman permission you give in the consultation. Used to personalise Roman’s replies. Roman’s memory is on unless you turn it off in Settings > Privacy > Roman and AI; while it is off, Roman does not use the notes. Turning memory off or deleting a chat does not remove them; they are kept with your account and deleted when you delete your account.',
     );
   });
 
