@@ -628,6 +628,20 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
       expectNoLeak(run);
     });
 
+    it('stages a capability-list flag value: AI_GATEWAY_CAPABILITIES with "_" and "," passes the NAME=value guard (AIB-4)', () => {
+      const run = runJob({
+        mode: 'apply',
+        edits: { 'flags.AI_GATEWAY_CAPABILITIES': 'draft.create_workout_plan,draft.edit_workout_plan' },
+      });
+      expect(run.ok).toBe(true);
+      expect(writes(run)).toEqual(['secrets set stage=1 names=AI_GATEWAY_CAPABILITIES']);
+      expect(run.fly.AI_GATEWAY_CAPABILITIES).toEqual({
+        value: 'draft.create_workout_plan,draft.edit_workout_plan',
+        status: 'Staged',
+      });
+      expectNoLeak(run);
+    });
+
     it('deploy_staged=true: one deploy, then the running machine is proven to hold the value', () => {
       const run = runJob({
         mode: 'apply',
