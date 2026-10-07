@@ -21,6 +21,7 @@ Preconditions are checked on the manifest alone, so they fail the PR's tests and
 - Every community surface flag (`FEATURE_COMMUNITY_POSTS`, `_MESSAGES`, `_PUSH`, `_REALTIME`, `_VOICE_NOTES`, `_DM` and the others) needs `FEATURE_COMMUNITY_API=true`.
 - `FEATURE_COMMUNITY_API=true` needs `FEATURE_COMMUNITY_SCHEMA` to be `true` or `unset` (unset means on).
 - `FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT=true` needs `FEATURE_COMMUNITY_VOICE_NOTES=true`.
+- `FEATURE_MWB_AI_LIVE_CREATE=true` needs `AI_GATEWAY_ENABLED=true`, `AI_GATEWAY_PROVIDER=anthropic` and `AI_GATEWAY_CAPABILITIES` declared (its only settable value is `draft.create_workout_plan,draft.edit_workout_plan`; `*` is outside the closed set).
 - A `github-secret` source must be set and non-blank. `GOOGLE_CLIENT_IDS` must be a comma list with no empty entry.
 
 ## 1. Flip: one PR per flip
@@ -126,6 +127,11 @@ WORKOUT_REMINDERS_ENABLED | on | fly secrets set -a backend-spring-lake-3890 WOR
 FEATURE_WEARABLES_INGEST_POST | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_WEARABLES_INGEST_POST | "FEATURE_WEARABLES_INGEST_POST": "unset"
 FEATURE_MWB_TEMPLATES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MWB_TEMPLATES | "FEATURE_MWB_TEMPLATES": "unset"
 FEATURE_MWB_AUTOSAVE_UNDO | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MWB_AUTOSAVE_UNDO | "FEATURE_MWB_AUTOSAVE_UNDO": "unset"
+FEATURE_MWB_AI_LIVE_CREATE | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MWB_AI_LIVE_CREATE | "FEATURE_MWB_AI_LIVE_CREATE": "unset"
+AI_GATEWAY_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 AI_GATEWAY_ENABLED | "AI_GATEWAY_ENABLED": "unset"
+AI_GATEWAY_PROVIDER | off | fly secrets unset -a backend-spring-lake-3890 AI_GATEWAY_PROVIDER | "AI_GATEWAY_PROVIDER": "unset"
+AI_GATEWAY_CAPABILITIES | off | fly secrets unset -a backend-spring-lake-3890 AI_GATEWAY_CAPABILITIES | "AI_GATEWAY_CAPABILITIES": "unset"
+AI_GATEWAY_REQUIRE_APPROVAL | off | fly secrets unset -a backend-spring-lake-3890 AI_GATEWAY_REQUIRE_APPROVAL | "AI_GATEWAY_REQUIRE_APPROVAL": "unset"
 FEATURE_NAMED_REGIMES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_NAMED_REGIMES | "FEATURE_NAMED_REGIMES": "unset"
 FEATURE_DUNNING_V2 | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_DUNNING_V2 | "FEATURE_DUNNING_V2": "unset"
 FEATURE_COACH_CODE_TOOLS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_CODE_TOOLS | "FEATURE_COACH_CODE_TOOLS": "unset"
@@ -175,6 +181,14 @@ Roll back with `"FEATURE_WEARABLES_INGEST_POST": "unset"` (or the emergency kill
 7. Owner device pass on a coach account: create a program, edit a workout (autosave and undo), assign it to a client.
 
 Roll back with `"unset"` on the three flags (the emergency kills in the table above). The program, autosave, undo and regime routes then return 404 and saved programs are kept. Leave the secret line as is.
+
+**AI workout builder (AIB, plan handoffs/op-125/AI_MASTER_BUILDER_PLAN.md section 5).** All five names stay `"unset"` until AIB-1a, AIB-2 and AIB-4 are deployed, SAFE-AIB-127 says GO and the owner has tapped through it on a device. Before the flip the operator lists Fly secret names (names only) and records whether `AI_GATEWAY_CAPABILITIES` already exists. The FLIP PR changes four lines in one PR:
+
+1. `"FEATURE_MWB_AI_LIVE_CREATE": "true"`, `"AI_GATEWAY_ENABLED": "true"`, `"AI_GATEWAY_PROVIDER": "anthropic"`, `"AI_GATEWAY_CAPABILITIES": "draft.create_workout_plan,draft.edit_workout_plan"` (exactly these two, never `*`: that would send every gateway capability to the provider). `AI_GATEWAY_REQUIRE_APPROVAL` stays `"unset"`; the gateway requires a coach decision for both workout capabilities whatever it says.
+2. Run plan, then apply with `deploy_staged=true`, then plan again (every row `Deployed | match | keep`).
+3. `GET /ai/gateway/workout-builder/status` as a coach returns `state: "on"`. Live smoke: one edit, one create, apply, undo; the coach pool is debited and a client without AI consent gets the consent state.
+
+Emergency kill, in order: `FEATURE_MWB_AI_LIVE_CREATE` unset (only the builder stops; the app shows the paused state, no build needed); then `AI_GATEWAY_CAPABILITIES` unset; last resort `AI_GATEWAY_ENABLED` unset (stops every gateway capability).
 
 **Community core (Wave A).** Flip `FEATURE_COMMUNITY_API` and the core set (`_POSTS`, `_MESSAGES`, `_PUSH`, `_REALTIME`, and `_VOICE_NOTES` once its audit and device pass are done) in one PR, after the community report/block lane (#610) is deployed. The preconditions reject surface flags without the API flag.
 
