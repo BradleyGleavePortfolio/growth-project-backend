@@ -66,11 +66,12 @@ describe('R11-00 prompt seam', () => {
   const v1 = { quipsInSession: 2, exclamationUsed: true, lastTurnHadQuip: true };
   const CLIENT_DATA = '<client_data as_of="2026-09-30">{"first_name":"Test"}</client_data>';
   // sha256 of buildRomanSystemPrompt on origin/main 302c4522 for these inputs;
-  // client hashes re-pinned for the roman-client-v4 crisis section (AUDIT-05-125).
+  // client hashes re-pinned for the roman-client-v4 crisis section (AUDIT-05-125),
+  // then for CF-ROMAN-COPY-B-128 (client framing assumes no coach, real tab names).
   const MAIN = {
     client_plain: {
       input: { surface: 'client' as const, voice: v0 },
-      hash: '962b871d82f71897b51a1085b83f5c573ac153a1221ef2153246ca7a98611965',
+      hash: '75539676337b8ebee582972dea7b4552e10fec82b08668e77fb9b780d2144c71',
     },
     coach_plain: {
       input: {
@@ -87,11 +88,11 @@ describe('R11-00 prompt seam', () => {
         routerHint: 'Hint line.',
         clientData: CLIENT_DATA,
       },
-      hash: 'd3ec365d34c74fea135eb8da88c78ab0de014bbd7f6fa05dc5cf480cd0df5889',
+      hash: '6caf056fbfc31d13fb9bca73a778f8a24166858cdae2abab184f66b65c060f44',
     },
     client_unavailable: {
       input: { surface: 'client' as const, voice: v1, clientDataUnavailable: true },
-      hash: 'a3e665f5ade3cfa43a11f1555e0fa2ced51418dbffc890459519740254750b84',
+      hash: '6f70def570e83336b40e9313b5c2c760bc84a7c5c5a6a37a05360f82fd17d002',
     },
   };
 

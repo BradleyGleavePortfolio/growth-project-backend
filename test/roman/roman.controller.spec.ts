@@ -106,6 +106,15 @@ function makeService() {
   );
   // SafetyRouter crisis short-circuit (false = an ordinary message).
   const isSafetyShortCircuit = jest.fn((..._a: unknown[]): boolean => false);
+  // CF-ROMAN-COPY-B-128: eating-disorder fallback when a check refuses (false = ordinary).
+  const isEatingDisorderRisk = jest.fn((..._a: unknown[]): boolean => false);
+  const streamEatingDisorderFallback = jest.fn(
+    (..._a: unknown[]): AsyncGenerator<unknown> =>
+      (async function* () {
+        yield { type: 'delta', text: 'Fixed.' };
+        yield { type: 'done', text: 'Fixed.', messageId: 'msg_ed', interrupted: false };
+      })(),
+  );
   const appendMessage = jest.fn((..._a: unknown[]) =>
     Promise.resolve({
       id: 'msg_1',
@@ -154,6 +163,8 @@ function makeService() {
     assertDailyCapacity,
     assertCoachPoolOpen,
     isSafetyShortCircuit,
+    isEatingDisorderRisk,
+    streamEatingDisorderFallback,
     appendMessage,
     listMessages,
     streamAssistantTurn,

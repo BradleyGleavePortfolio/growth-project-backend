@@ -32,7 +32,11 @@ import {
 } from '../../src/ai-egress/ai-consent-required.exception';
 import { SUPPORT_EMAIL } from '../../src/public-pages/trust-pages.html';
 import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
-import { ROMAN_SAFETY_TEMPLATES } from '../../src/roman/guardrails/safety-router';
+import {
+  romanEatingDisorderFallback,
+  ROMAN_SAFETY_TEMPLATES,
+} from '../../src/roman/guardrails/safety-router';
+import { ROMAN_MET_BEFORE_LINE } from '../../src/roman/roman.prompts';
 import { ROMAN_MODEL_PHASE_1 } from '../../src/roman/anthropic-client.provider';
 import {
   ROMAN_ERROR_CAPACITY_REACHED,
@@ -743,5 +747,110 @@ describe('Roman — a crisis message is answered without box 2; nothing else is'
     const done = parseFrames(writes).find((f) => f.data?.type === 'done');
     expect(done?.data.text).toBe(ROMAN_SAFETY_TEMPLATES.emergency);
     expect(messages.map((m) => m.role)).toEqual(['user', 'roman']);
+  });
+});
+
+// CF-ROMAN-COPY-B-128 (owner default 10-07): an eating-disorder message the AI
+// cannot answer (AI help off, daily cap, turn limit) gets a fixed reply that
+// points to people, with zero model calls; when the AI can answer, the model
+// does. A returning client's prompt says Roman has met them before.
+describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-COPY-B-128)', () => {
+  const ED = 'I have been making myself throw up after meals';
+  function setup(granted: string[], coachId: string | null = null) {
+    const made = makePrisma();
+    const anthropic = makeAnthropic(['Hi', '.']);
+    const { egress } = egressWithGrants(granted);
+    const audit = { write: jest.fn(async (_input: Record<string, unknown>) => undefined) };
+    const prisma = { ...made.prisma, user: { findUnique: jest.fn(async () => ({ coach_id: coachId })) } };
+    const service = new RomanService(
+      fakeOf(prisma),
+      egress,
+      AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)),
+      null,
+      fakeOf(audit),
+    );
+    const ctrl = new RomanController(
+      fakeOf(service),
+      fakeOf({ coachSubscription: { findUnique: jest.fn(async () => null) } }),
+    );
+    return { ...made, anthropic, audit, ctrl };
+  }
+  afterEach(() => {
+    delete process.env.ROMAN_DAILY_COST_CAP_USD;
+  });
+
+  it('no box-2 grant: the fixed fallback (no coach line for a coachless client), zero model calls; an ordinary message is still 403', async () => {
+    const { ctrl, anthropic, messages, audit } = setup([]);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(romanEatingDisorderFallback(false));
+    expect(done?.data.text).not.toMatch(/coach/i);
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+    expect(messages.map((m) => m.role)).toEqual(['user', 'roman']);
+    expect(audit.write.mock.calls[0][0]).toMatchObject({
+      action: 'roman.safety_route',
+      metadata: { route_reason: 'eating_disorder_fallback' },
+    });
+    expect(JSON.stringify(audit.write.mock.calls[0][0])).not.toContain('throw up');
+
+    const second = makeRes();
+    const err = await ctrl
+      .sendMessage(fakeOf(makeReq()), fakeOf(second.res), 'sess_1', { content: 'hello' })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AiConsentRequiredException);
+  });
+
+  it('daily cap reached: a client with a coach gets the fallback with the coach line', async () => {
+    process.env.ROMAN_DAILY_COST_CAP_USD = '0';
+    const { ctrl, anthropic } = setup(['user-A'], 'coach-1');
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(romanEatingDisorderFallback(true));
+    expect(done?.data.text).toContain('Your coach would want to hear from you');
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+  });
+
+  it('turn limit used up: the fallback, no 429 and no Retry-After; an ordinary message still gets the 429', async () => {
+    const { ctrl, anthropic, romanMessage } = setup(['user-A']);
+    romanMessage.count.mockResolvedValue(10_000);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(romanEatingDisorderFallback(false));
+    expect(res.setHeader).not.toHaveBeenCalledWith('Retry-After', expect.anything());
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+
+    const second = makeRes();
+    const err = await ctrl
+      .sendMessage(fakeOf(makeReq()), fakeOf(second.res), 'sess_1', { content: 'hello' })
+      .catch((e: unknown) => e);
+    expect(err).toMatchObject({ response: { code: ROMAN_ERROR_RATE_LIMIT } });
+  });
+
+  it('AI available: an eating-disorder message is answered by the model under its hint, not the fallback', async () => {
+    const { ctrl, anthropic } = setup(['user-A']);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
+    expect(anthropic.messages.stream).toHaveBeenCalledTimes(1);
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).not.toBe(romanEatingDisorderFallback(false));
+  });
+
+  it('returning client: the system prompt says Roman has met them; a first chat does not', async () => {
+    const first = setup(['user-A']);
+    const sess = first.session;
+    first.prisma.romanSession.findFirst.mockImplementation(async (args?: { where?: { id?: unknown } }) =>
+      args?.where?.id && typeof args.where.id === 'object' ? null : sess,
+    );
+    await first.ctrl.sendMessage(fakeOf(makeReq()), fakeOf(makeRes().res), 'sess_1', { content: 'hello' });
+    const sys0 = (first.anthropic.messages.stream.mock.calls[0][0] as { system: string }).system;
+    expect(sys0).not.toContain(ROMAN_MET_BEFORE_LINE);
+
+    const back = setup(['user-A']);
+    await back.ctrl.sendMessage(fakeOf(makeReq()), fakeOf(makeRes().res), 'sess_1', { content: 'hello' });
+    const sys1 = (back.anthropic.messages.stream.mock.calls[0][0] as { system: string }).system;
+    expect(sys1).toContain(ROMAN_MET_BEFORE_LINE);
   });
 });
