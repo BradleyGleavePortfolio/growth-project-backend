@@ -17,7 +17,8 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { ConsentService } from './consent.service';
-import { GrantConsentDto, RevokeConsentDto } from './consent.dto';
+import { CoachSharingNoticeDto, GrantConsentDto, RevokeConsentDto } from './consent.dto';
+import { CoachSharingFirstSignInService } from './coach-sharing-first-sign-in.service';
 
 // Client-facing consent surface. Mounted at /consent/* so the mobile app
 // has one path prefix to learn. Every route requires a logged-in user;
@@ -28,7 +29,10 @@ import { GrantConsentDto, RevokeConsentDto } from './consent.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
 export class ConsentController {
-  constructor(private readonly consent: ConsentService) {}
+  constructor(
+    private readonly consent: ConsentService,
+    private readonly firstSignInSharing: CoachSharingFirstSignInService,
+  ) {}
 
   // GET /consent/scopes — static list of canonical scope strings, so the
   // mobile UI can render a toggle per scope without hard-coding them.
@@ -66,6 +70,22 @@ export class ConsentController {
       body.scope,
       auditContext(req),
     );
+  }
+
+  // GET /consent/coach-sharing-notice — whether the first onboarding screen
+  // prints the coach-sharing sentence (an account linked outside the app,
+  // e.g. a share-link buyer, that has not decided sharing yet) and the coach
+  // it names. POST records the four fitness grants when the client taps
+  // Continue under it. See coach-sharing-first-sign-in.service.ts.
+  @Get('coach-sharing-notice')
+  async getCoachSharingNotice(@Request() req: AuthedRequest) {
+    return this.firstSignInSharing.view(req.user.id);
+  }
+
+  @Post('coach-sharing-notice')
+  @HttpCode(HttpStatus.OK)
+  async acceptCoachSharingNotice(@Request() req: AuthedRequest, @Body() body: CoachSharingNoticeDto) {
+    return this.firstSignInSharing.accept(req.user.id, body.coach_sharing_notice);
   }
 
   @Post('revoke')
