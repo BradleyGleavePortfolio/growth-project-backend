@@ -19,4 +19,8 @@ is maintained in `src/public-pages/help-pages.html.ts`.
 - Notifications depend on phone permissions and settings; open the conversation to check messages.
 - Use the original sign-in method and contact support about unexpected account access.
 
+When a client deletes their account:
+During the 14-day grace period they stay on your roster and can cancel the deletion in the app.
+When it ends, they leave your roster and their data is permanently deleted and cannot be recovered.
+
 For the full answers, use the published FAQ or [Contact support](./contact-support.md).
