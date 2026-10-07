@@ -4,7 +4,9 @@ import {
   PlanExerciseSnapshot, PlanSnapshot, WorkoutDiffOp, WorkoutDiffOpSchema, planMetaOpChangesAField, updateExerciseOpChangesAField,
 } from '../materialisers/__shared/workout-diff.types';
 import { WorkoutDiffApplyError, applyWorkoutDiff } from '../materialisers/__shared/workout-diff.applier';
-import { INJURY_AREA_LABEL, InjuryArea, TRAINING_BOUNDS as B, contraindicatedAreas, stripMedicalClaims } from './training-safety.constants';
+import {
+  INJURY_AREA_LABEL, InjuryArea, MEDICAL_CLAIM_PATTERN, TRAINING_BOUNDS as B, contraindicatedAreas, stripMedicalClaims,
+} from './training-safety.constants';
 
 export const QUICK_ACTIONS = ['swap_for_injury', 'progress', 'deload', 'shorten', 'more_volume', 'explain'] as const;
 export type QuickAction = (typeof QUICK_ACTIONS)[number];
@@ -35,7 +37,6 @@ function isTimed(ex: LibraryExercise | undefined, plan: PlanSnapshot): boolean {
   if (!ex) return plan.meta.type !== 'strength';
   return ex.category === 'cardio' || ex.category === 'mobility' || /plank|hold|carry|stretch|pose/i.test(ex.name);
 }
-
 type Fields = { sets?: number; reps_or_duration_seconds?: number; rest_seconds?: number | null };
 function boundsError(op: Fields, timed: boolean): string | null {
   if (op.sets !== undefined && (op.sets < B.setsMin || op.sets > B.setsMax)) return `Sets must be ${B.setsMin} to ${B.setsMax}.`;
@@ -60,6 +61,8 @@ function maxSetsPerMuscle(snapshot: PlanSnapshot, library: ReadonlyMap<string, L
 /** One change: null = keep (op may be adjusted in place), string = drop with this reason. */
 function checkChange(op: WorkoutDiffOp, before: PlanExerciseSnapshot | null, ex: LibraryExercise | undefined, swaps: boolean,
   input: ValidateInput, current: PlanSnapshot, warnings: string[]): string | null {
+  // U1: a workout name the client may see never carries a medical claim.
+  if (op.kind === 'plan_meta' && op.name !== undefined && MEDICAL_CLAIM_PATTERN.test(op.name)) return 'Workout names cannot make medical claims.';
   if (op.kind !== 'add_exercise' && op.kind !== 'update_exercise') return null;
   const timed = isTimed(ex, current);
   const err = boundsError(op, timed);
@@ -101,7 +104,6 @@ export function validateProposedChanges(input: ValidateInput): ValidateResult {
   const raw = Array.isArray(input.rawChanges) ? input.rawChanges : [];
   if (raw.length > MAX_PROPOSED_CHANGES) dropped.push({ reason: `Only the first ${MAX_PROPOSED_CHANGES} suggestions were checked.` });
   const setsCap = Math.max(B.hardSetsPerMuscleMax, maxSetsPerMuscle(current, library));
-
   for (const item of raw.slice(0, MAX_PROPOSED_CHANGES)) {
     const rec: Record<string, unknown> = item && typeof item === 'object' ? { ...item } : {};
     const parsed = WorkoutDiffOpSchema.safeParse(rec.op);
@@ -123,7 +125,6 @@ export function validateProposedChanges(input: ValidateInput): ValidateResult {
     const why = checkChange(op, before, ex, swaps, input, current, warnings);
     if (why) { dropped.push({ reason: why }); continue; }
     if (op.kind === 'update_exercise' && !updateExerciseOpChangesAField(op)) continue;
-
     let next: PlanSnapshot;
     try {
       next = applyWorkoutDiff(current, [op]);

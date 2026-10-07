@@ -6,12 +6,7 @@ import { InjuryArea, TRAINING_BOUNDS as B } from './training-safety.constants';
 import { LibraryExercise, QuickAction } from './workout-diff.validator';
 
 export interface WorkoutClientContext {
-  goal: string | null;
-  experience: string | null;
-  equipment: string[];
-  days_per_week: number | null;
-  injuries: InjuryArea[];
-  screening_flag: boolean;
+  goal: string | null; experience: string | null; equipment: string[]; days_per_week: number | null; injuries: InjuryArea[]; screening_flag: boolean;
 }
 
 const QUICK_ACTION_BRIEF: Record<QuickAction, string> = {
@@ -24,10 +19,7 @@ const QUICK_ACTION_BRIEF: Record<QuickAction, string> = {
 };
 
 export function buildWorkoutBuilderSystemPrompt(args: {
-  mode: 'create' | 'edit';
-  quickAction?: QuickAction;
-  library: readonly LibraryExercise[];
-  client: WorkoutClientContext | null;
+  mode: 'create' | 'edit'; quickAction?: QuickAction; library: readonly LibraryExercise[]; client: WorkoutClientContext | null;
 }): string {
   const lines = [
     'You edit one strength-and-conditioning workout for a personal trainer (the coach). The coach reviews every change before it is applied.',
@@ -50,49 +42,27 @@ export function buildWorkoutBuilderSystemPrompt(args: {
   if (args.quickAction) lines.push(`Quick action: ${QUICK_ACTION_BRIEF[args.quickAction]}`);
   if (args.client) {
     lines.push(`CLIENT (enums and numbers only): ${JSON.stringify(args.client)}`);
-    if (args.client.injuries.length > 0) {
-      lines.push('Avoid movements that load the client injury areas.');
-    }
-    if (args.client.screening_flag) {
-      lines.push('The client flagged a health screening question: do not increase sets, reps or load.');
-    }
+    if (args.client.injuries.length > 0) lines.push('Avoid movements that load the client injury areas.');
+    if (args.client.screening_flag) lines.push('The client flagged a health screening question: do not increase sets, reps or load.');
   }
-  lines.push(
-    `LIBRARY (id | name | category | muscle): ${args.library
-      .map((e) => `${e.id} | ${e.name} | ${e.category} | ${e.muscle}`)
-      .join('; ')}`,
-  );
+  lines.push(`LIBRARY (id | name | category | muscle): ${args.library.map((e) => `${e.id} | ${e.name} | ${e.category} | ${e.muscle}`).join('; ')}`);
   return lines.join('\n');
 }
 
 export function buildWorkoutBuilderUserMessage(instruction: string, baseline: PlanSnapshot): string {
-  return JSON.stringify({
-    coach_request: instruction,
-    workout: {
-      name: baseline.meta.name,
-      type: baseline.meta.type,
-      duration_estimate_minutes: baseline.meta.duration_estimate_minutes,
-      rows: baseline.exercises.map((e) => ({
-        client_ref: e.client_ref,
-        exercise_external_id: e.exercise_external_id,
-        sets: e.sets,
-        reps_or_duration_seconds: e.reps_or_duration_seconds,
-        weight_lbs: e.weight_lbs,
-        rest_seconds: e.rest_seconds,
-      })),
-    },
-  });
+  const { name, type, duration_estimate_minutes } = baseline.meta;
+  const rows = baseline.exercises.map(({ client_ref, exercise_external_id, sets, reps_or_duration_seconds, weight_lbs, rest_seconds }) => ({
+    client_ref, exercise_external_id, sets, reps_or_duration_seconds, weight_lbs, rest_seconds,
+  }));
+  return JSON.stringify({ coach_request: instruction, workout: { name, type, duration_estimate_minutes, rows } });
 }
-
 const ModelOutputSchema = z.object({
   summary: z.string().max(2_000).optional().default(''),
   changes: z.array(z.unknown()).max(200).optional().default([]),
 });
 export type ModelOutput = z.infer<typeof ModelOutputSchema>;
-
 export function parseModelOutput(text: string): ModelOutput | null {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
+  const [start, end] = [text.indexOf('{'), text.lastIndexOf('}')];
   if (start < 0 || end <= start) return null;
   try {
     const parsed = ModelOutputSchema.safeParse(JSON.parse(text.slice(start, end + 1)));
@@ -106,10 +76,8 @@ export function stubProposal(baseline: PlanSnapshot, library: readonly LibraryEx
   const pick = library.filter((e) => e.category !== 'cardio' && e.category !== 'mobility').slice(0, 2);
   const first = baseline.exercises[0];
   if (first) {
-    return {
-      summary: 'Test proposal: rest set to 90 seconds on the first exercise.',
-      changes: [{ op: { kind: 'update_exercise', client_ref: first.client_ref, rest_seconds: 90 }, reason: 'Keeps the session moving.' }],
-    };
+    const op = { kind: 'update_exercise', client_ref: first.client_ref, rest_seconds: 90 };
+    return { summary: 'Test proposal: rest set to 90 seconds on the first exercise.', changes: [{ op, reason: 'Keeps the session moving.' }] };
   }
   return {
     summary: 'Test proposal: two library exercises added.',

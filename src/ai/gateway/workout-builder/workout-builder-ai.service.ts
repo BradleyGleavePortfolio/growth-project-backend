@@ -1,13 +1,12 @@
 // B-AIB2-126 — AI workout builder generator. Gates in order: flag 503 -> role -> tenancy 404 -> lock token 409 ->
 // capability configured 503 -> gateway (roster, box-2 consent 403, budget 403, meter) -> validator -> one repair -> 422.
 import {
-  BadRequestException, ConflictException, HttpException, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException,
-  UnprocessableEntityException,
+  BadRequestException, ConflictException, Injectable, NotFoundException, ServiceUnavailableException, UnprocessableEntityException,
 } from '@nestjs/common';
 import { timingSafeEqual } from 'crypto';
+import type { z } from 'zod';
 import { PrismaService } from '../../../prisma.service';
 import { SubCoachScopeService } from '../../../sub-coach/sub-coach-scope.service';
-import { CoachAIBudgetService } from '../../../ai-credits/coach-ai-budget.service';
 import { computeLockToken } from '../../../workout-builder/lock-token.helper';
 import { SEED_EXERCISES } from '../../../exercise-library/seed-catalog';
 import { AiGatewayService } from '../ai-gateway.service';
@@ -17,85 +16,62 @@ import { CREATE_WORKOUT_PLAN_CAPABILITY } from '../materialisers/create-workout-
 import { EDIT_WORKOUT_PLAN_CAPABILITY } from '../materialisers/edit-workout-plan.materialiser';
 import { PlanSnapshot, emptyPlanSnapshot, snapshotFromRevisionJson } from '../materialisers/__shared/workout-diff.types';
 import { InjuryArea, TRAINING_BOUNDS, contraindicatedAreas, isInjuryArea, stripMedicalClaims } from './training-safety.constants';
-import { LibraryExercise, QuickAction, ValidatedChange, validateProposedChanges } from './workout-diff.validator';
+import { LibraryExercise, ValidatedChange, validateProposedChanges } from './workout-diff.validator';
 import {
   WorkoutClientContext, buildWorkoutBuilderSystemPrompt, buildWorkoutBuilderUserMessage, parseModelOutput, stubProposal,
 } from './workout-builder-prompt';
+import { WorkoutBuilderStatusService } from './workout-builder-status.service';
+import type { ProposeBodySchema } from './workout-builder-ai.controller';
 
-export interface ProposeInput {
-  mode: 'create' | 'edit'; plan_id?: string; lock_token?: string; client_id?: string; instruction: string;
-  quick_action?: QuickAction; injury_area?: InjuryArea;
-}
+export type ProposeInput = z.infer<typeof ProposeBodySchema>;
 type Dropped = Array<{ reason: string }>;
 type Outcome = { summary: string; changes: ValidatedChange[]; dropped: Dropped };
-export interface ProposeResult extends Outcome {
-  draft_id: string | null; context_used: string[]; screening_flag: boolean; credits_remaining_pct: number | null;
-}
+export type ProposeResult = Outcome & { draft_id: string | null; context_used: string[]; screening_flag: boolean; credits_remaining_pct: number | null };
 
 export const LIBRARY: ReadonlyMap<string, LibraryExercise> = new Map(
   SEED_EXERCISES.map((e) => [e.id, { id: e.id, name: e.name, category: e.bodyPart, muscle: e.target, thumbnail_url: e.gifUrl || null }]),
 );
-
+// Section 4: max_tokens per mode; never a temperature (the Anthropic adapter sends none).
 const MAX_TOKENS = { create: 8_000, edit: 6_000, explain: 1_500 } as const;
-
 class NoSafeProposal extends Error {
   constructor(readonly dropped: Dropped) { super('AI_NO_SAFE_PROPOSAL'); }
 }
 
 function sameToken(a: string, b: string): boolean {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
+  const [x, y] = [Buffer.from(a), Buffer.from(b)];
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
 @Injectable()
 export class WorkoutBuilderAiService {
-  private readonly logger = new Logger(WorkoutBuilderAiService.name);
-
   constructor(
-    private readonly prisma: PrismaService,
-    private readonly gateway: AiGatewayService,
-    private readonly config: AiGatewayConfig,
-    private readonly subCoachScope: SubCoachScopeService,
-    @Optional() private readonly budget?: CoachAIBudgetService,
+    private readonly prisma: PrismaService, private readonly gateway: AiGatewayService, private readonly config: AiGatewayConfig,
+    private readonly subCoachScope: SubCoachScopeService, private readonly status: WorkoutBuilderStatusService,
   ) {}
 
-  async propose(
-    requester: { id: string; role: string },
-    input: ProposeInput,
-    meta: { ip?: string | null; userAgent?: string | null } = {},
-  ): Promise<ProposeResult> {
+  async propose(requester: { id: string; role: string }, input: ProposeInput, meta: { ip?: string | null; userAgent?: string | null } = {}): Promise<ProposeResult> {
     if (!isMwbAiLiveCreateEnabled()) {
       throw new ServiceUnavailableException({ code: 'AI_PAUSED', message: 'Ask AI is paused for maintenance. Your workouts are unchanged.' });
     }
     if (requester.role !== 'coach' && requester.role !== 'owner') throw new NotFoundException();
-    const tenantCoachId =
-      requester.role === 'coach' ? (await this.subCoachScope.getHeadCoachIdForSubCoach(requester.id)) ?? requester.id : null;
-
-    if (input.client_id && requester.role !== 'owner') {
-      const ok = await this.subCoachScope.canAccessClient(requester.id, input.client_id);
-      if (!ok) throw new NotFoundException({ code: 'client_not_found', message: 'Client not found.' });
+    const tenantCoachId = requester.role === 'coach' ? (await this.subCoachScope.getHeadCoachIdForSubCoach(requester.id)) ?? requester.id : null;
+    if (input.client_id && requester.role !== 'owner' && !(await this.subCoachScope.canAccessClient(requester.id, input.client_id))) {
+      throw new NotFoundException({ code: 'client_not_found', message: 'Client not found.' });
     }
-
-    let baseline: PlanSnapshot = emptyPlanSnapshot();
-    let baseRevisionIndex = 0;
-    let planCoachId: string | null = null;
+    let [baseline, baseRevisionIndex, planCoachId]: [PlanSnapshot, number, string | null] = [emptyPlanSnapshot(), 0, null];
     if (input.plan_id) {
-      const plan = await this.prisma.workoutPlan.findUnique({
-        where: { id: input.plan_id },
-        select: { id: true, coach_id: true, version: true, head_revision_id: true, archived_at: true },
-      });
+      const select = { id: true, coach_id: true, version: true, head_revision_id: true, archived_at: true };
+      const plan = await this.prisma.workoutPlan.findUnique({ where: { id: input.plan_id }, select });
       if (!plan || plan.archived_at || (requester.role !== 'owner' && plan.coach_id !== tenantCoachId)) {
         throw new NotFoundException({ code: 'plan_not_found', message: 'Workout not found.' });
       }
       planCoachId = plan.coach_id;
-      const stale = () =>
-        new ConflictException({ code: 'REVISION_STALE', message: 'This workout changed on another screen. Reload it and ask again.' });
+      const stale = () => new ConflictException({ code: 'REVISION_STALE', message: 'This workout changed on another screen. Reload it and ask again.' });
       if (!plan.head_revision_id) throw stale();
+      // No lock_token (the builder has not autosaved yet) = no stale check; the materialiser re-checks the base revision on apply.
       if (input.lock_token && !sameToken(computeLockToken(plan.id, plan.version, plan.head_revision_id), input.lock_token)) throw stale();
       const head = await this.prisma.workoutPlanRevision.findUnique({
-        where: { id: plan.head_revision_id },
-        select: { revision_index: true, exercises_json: true, plan_meta_json: true },
+        where: { id: plan.head_revision_id }, select: { revision_index: true, exercises_json: true, plan_meta_json: true },
       });
       if (!head) throw stale();
       baseline = snapshotFromRevisionJson(head.exercises_json, head.plan_meta_json);
@@ -103,47 +79,27 @@ export class WorkoutBuilderAiService {
     } else if (input.mode === 'edit' || !input.client_id) {
       throw new BadRequestException({ code: 'PLAN_REQUIRED', message: 'Open a workout first, or choose a client to build a new one for.' });
     }
-
     const capability = input.plan_id ? EDIT_WORKOUT_PLAN_CAPABILITY : CREATE_WORKOUT_PLAN_CAPABILITY;
     if (!this.config.resolve(capability).capabilityAllowed) {
       throw new ServiceUnavailableException({ code: 'AI_NOT_CONFIGURED', message: 'Ask AI is not available yet. Your workouts are unchanged.' });
     }
-
     const client = input.client_id ? await this.loadClientContext(input.client_id) : null;
     const injuries: InjuryArea[] = [...new Set([...(client?.injuries ?? []), ...(input.injury_area ? [input.injury_area] : [])])];
     const screeningFlag = client?.screening_flag ?? false;
     const promptLibrary = [...LIBRARY.values()].filter((e) => contraindicatedAreas(e, injuries).length === 0);
     const explain = input.quick_action === 'explain';
-    const systemPrompt = buildWorkoutBuilderSystemPrompt({
-      mode: input.mode,
-      quickAction: input.quick_action,
-      library: promptLibrary,
-      client: client ? { ...client, injuries } : injuries.length ? emptyClient(injuries) : null,
-    });
-
-    let lastDropped: Dropped = [];
-    let outcome: Outcome | null = null;
-    let draftId: string | null = null;
+    const promptClient = client ? { ...client, injuries } : injuries.length ? { ...NO_CLIENT, injuries } : null;
+    const systemPrompt = buildWorkoutBuilderSystemPrompt({ mode: input.mode, quickAction: input.quick_action, library: promptLibrary, client: promptClient });
+    let [lastDropped, outcome, draftId]: [Dropped, Outcome | null, string | null] = [[], null, null];
     for (let attempt = 0; attempt < 2 && !outcome; attempt++) {
-      const userMessage =
-        attempt === 0
-          ? buildWorkoutBuilderUserMessage(input.instruction, baseline)
-          : JSON.stringify({
-              previous_attempt_rejected: lastDropped.map((d) => d.reason).slice(0, 20),
-              retry: JSON.parse(buildWorkoutBuilderUserMessage(input.instruction, baseline)),
-            });
+      const first = buildWorkoutBuilderUserMessage(input.instruction, baseline);
+      const userMessage = attempt === 0
+        ? first : JSON.stringify({ previous_attempt_rejected: lastDropped.map((d) => d.reason).slice(0, 20), retry: JSON.parse(first) });
       const box: { validated: Outcome | null } = { validated: null };
       try {
         const result = await this.gateway.invoke({
-          capability,
-          requester,
-          subjectUserId: input.client_id,
-          tenantCoachId: tenantCoachId ?? planCoachId ?? undefined,
-          userMessage,
-          systemPrompt,
-          maxTokens: explain ? MAX_TOKENS.explain : MAX_TOKENS[input.mode],
-          ip: meta.ip ?? null,
-          userAgent: meta.userAgent ?? null,
+          capability, requester, subjectUserId: input.client_id, tenantCoachId: tenantCoachId ?? planCoachId ?? undefined, userMessage, systemPrompt,
+          maxTokens: explain ? MAX_TOKENS.explain : MAX_TOKENS[input.mode], ip: meta.ip ?? null, userAgent: meta.userAgent ?? null,
           resolveProposedAction: async (response, { providerFailed }) => {
             const isStub = response.provider === 'stub' && !providerFailed;
             if (providerFailed || !response.enabled) {
@@ -153,8 +109,7 @@ export class WorkoutBuilderAiService {
             }
             const output = isStub ? stubProposal(baseline, promptLibrary) : parseModelOutput(response.text);
             if (!output) throw new NoSafeProposal([{ reason: 'The reply was not a workout change.' }]);
-            const summary =
-              stripMedicalClaims(output.summary, TRAINING_BOUNDS.summaryMax) ||
+            const summary = stripMedicalClaims(output.summary, TRAINING_BOUNDS.summaryMax) ||
               (explain ? 'No summary available for this workout.' : 'Suggested changes for this workout.');
             if (explain) {
               box.validated = { summary, changes: [], dropped: [] };
@@ -184,18 +139,15 @@ export class WorkoutBuilderAiService {
       });
     }
 
-    return {
-      draft_id: draftId, ...outcome, context_used: contextUsed(client, injuries), screening_flag: screeningFlag,
-      credits_remaining_pct: await this.remainingPct(tenantCoachId ?? planCoachId),
-    };
+    const creditsCoach = tenantCoachId ?? planCoachId;
+    const credits = creditsCoach ? (await this.status.getStatus(creditsCoach)).credits.remaining_pct : null;
+    return { draft_id: draftId, ...outcome, context_used: contextUsed(client, injuries), screening_flag: screeningFlag, credits_remaining_pct: credits };
   }
 
   private async loadClientContext(clientId: string): Promise<WorkoutClientContext> {
+    const select = { goal_type: true, workout_experience: true, equipment_access: true, workout_days_per_week: true, injuries: true };
     const [profile, intake] = await Promise.all([
-      this.prisma.userProfile.findUnique({
-        where: { user_id: clientId },
-        select: { goal_type: true, workout_experience: true, equipment_access: true, workout_days_per_week: true, injuries: true },
-      }),
+      this.prisma.userProfile.findUnique({ where: { user_id: clientId }, select }),
       this.prisma.clientOnboardingIntake.findUnique({ where: { client_id: clientId }, select: { screening_any_yes: true } }),
     ]);
     return {
@@ -207,34 +159,14 @@ export class WorkoutBuilderAiService {
       screening_flag: intake?.screening_any_yes === true,
     };
   }
-
-  private async remainingPct(coachId: string | null): Promise<number | null> {
-    if (!this.budget || !coachId) return null;
-    try {
-      const dto = await this.budget.getBudgetDto(await this.budget.resolveHeadCoachId(coachId));
-      const total = dto.total_displayed_cents;
-      return total > 0 ? Math.max(0, Math.min(100, Math.round((dto.remaining_displayed_cents / total) * 100))) : 0;
-    } catch (err) {
-      if (err instanceof HttpException) throw err;
-      this.logger.warn(`credits_remaining_pct unavailable: ${(err as Error).message}`);
-      return null;
-    }
-  }
 }
 
-function emptyClient(injuries: InjuryArea[]): WorkoutClientContext {
-  return { goal: null, experience: null, equipment: [], days_per_week: null, injuries, screening_flag: false };
-}
+const NO_CLIENT: WorkoutClientContext = { goal: null, experience: null, equipment: [], days_per_week: null, injuries: [], screening_flag: false };
 
 export function contextUsed(client: WorkoutClientContext | null, injuries: readonly InjuryArea[]): string[] {
-  const used = ['exercise_library', 'current_workout'];
-  if (client) {
-    if (client.goal) used.push('goal');
-    if (client.experience) used.push('experience');
-    if (client.equipment.length) used.push('equipment');
-    if (client.days_per_week) used.push('schedule');
-    if (client.screening_flag) used.push('health_screening');
-  }
-  if (injuries.length) used.push('injuries');
-  return used;
+  const used: Array<[string, unknown]> = [
+    ['exercise_library', true], ['current_workout', true], ['goal', client?.goal], ['experience', client?.experience],
+    ['equipment', client?.equipment.length], ['schedule', client?.days_per_week], ['health_screening', client?.screening_flag], ['injuries', injuries.length],
+  ];
+  return used.filter(([, v]) => !!v).map(([k]) => k);
 }

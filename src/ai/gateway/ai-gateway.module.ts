@@ -75,6 +75,7 @@ import { WorkoutBuilderAiService } from './workout-builder/workout-builder-ai.se
     AiGatewayService,
     AiApprovalService,
     WorkoutBuilderStatusService,
+    WorkoutBuilderAiService,
     // PR AI-3 (PRODUCT-1): capability materialisation registry. Each
     // materialiser is provided as a concrete class AND as an entry in the
     // multi-injection array bound to CAPABILITY_MATERIALIZERS; the registry

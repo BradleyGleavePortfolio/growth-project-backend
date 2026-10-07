@@ -5,13 +5,11 @@ export type InjuryArea = (typeof INJURY_AREAS)[number];
 export function isInjuryArea(v: unknown): v is InjuryArea {
   return typeof v === 'string' && (INJURY_AREAS as readonly string[]).includes(v);
 }
-
 export const TRAINING_BOUNDS = {
   setsMin: 1, setsMax: 10, repsMin: 1, repsMax: 30, durationMinSeconds: 5, durationMaxSeconds: 3_600, restMin: 0, restMax: 600,
   exercisesPerWorkoutMax: 14, hardSetsPerMuscleMax: 12, progressLoadMaxPct: 10, progressRepsMax: 2, notesMax: 200, reasonMax: 200,
   summaryMax: 280,
 } as const;
-
 export const INJURY_AREA_LABEL: Record<InjuryArea, string> = {
   lower_back: 'lower back', upper_back_neck: 'upper back or neck', shoulder: 'shoulder', elbow_wrist: 'elbow or wrist', hip: 'hip',
   knee: 'knee', ankle_foot: 'ankle or foot', other: 'other',
@@ -36,7 +34,6 @@ export function contraindicatedAreas(exercise: { id: string; name: string }, inj
 // SAFE 7 deny list: any sentence with one of these is removed from model-written reason / summary / notes.
 export const MEDICAL_CLAIM_PATTERN =
   /\b(cures?|cured|curing|treat(s|ed|ing|ment)?|heal(s|ed|ing)?|rehab\w*|diagnos\w*|therap\w*|prescri\w*)\b|recover(y|s|ed)? from (an? |the |your )?injur/i;
-
 export function stripMedicalClaims(text: string, max: number): string {
   const kept = text.split(/(?<=[.;!?])\s+/).filter((s) => !MEDICAL_CLAIM_PATTERN.test(s));
   return kept.join(' ').replace(/\s+/g, ' ').trim().slice(0, max);
