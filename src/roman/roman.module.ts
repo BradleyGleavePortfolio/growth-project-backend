@@ -20,6 +20,9 @@ import { RomanService } from './roman.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanAnthropicClientProvider } from './anthropic-client.provider';
 import { RomanErasureSweep } from './roman-erasure.sweep';
+import { RomanTimelineReader } from './memory/roman-timeline.reader';
+import { RomanReadToolbox } from './tools/roman-read-tools';
+import { ROMAN_TOOLBOX } from './tools/roman-tool.types';
 import { RomanClientContextService } from './context/roman-client-context.service';
 import { RomanConsultationIntakeSource } from './context/roman-consultation.source';
 import { PlaybookSignalsService } from './playbook/playbook-signals.service';
@@ -54,6 +57,10 @@ import { RomanNotesScheduler } from './memory/roman-notes.scheduler';
     // R11-P4: the coach-method block (null unless FEATURE_ROMAN_PLAYBOOK is on).
     { provide: ROMAN_COACH_METHOD_AUGMENTER, useClass: RomanCoachMethodAugmenter },
     RomanErasureSweep,
+    // R11-T1: read tools for the caller's own logs (used only by the R11-T2B loop).
+    RomanTimelineReader,
+    RomanReadToolbox,
+    { provide: ROMAN_TOOLBOX, useExisting: RomanReadToolbox },
     RomanClientContextService,
     // R11-P3b: playbook signals and the source collector (inert until the builder).
     PlaybookSignalsService,
