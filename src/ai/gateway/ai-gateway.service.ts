@@ -40,7 +40,10 @@ import {
   EDIT_WORKOUT_PLAN_CAPABILITY,
   assertEditWorkoutPlanPayload,
 } from './materialisers/edit-workout-plan.materialiser';
-import { isMwbLiveCreateCapability } from './mwb-live-create.feature';
+import {
+  isMwbLiveCreateCapability,
+  MWB_LIVE_CREATE_CAPABILITIES,
+} from './mwb-live-create.feature';
 import { AuditService } from '../../audit/audit.service';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
@@ -606,6 +609,9 @@ export class AiGatewayService {
       'client_path_summary',
       'check_in_summary',
       'food_log_explain',
+      // AIB-4 — the two workout builder capabilities (listed only while
+      // FEATURE_MWB_AI_LIVE_CREATE is on and they are in the allow-list).
+      ...MWB_LIVE_CREATE_CAPABILITIES,
     ];
     // Resolve config against the first known capability to get provider/enabled state.
     const resolved = this.config.resolve(ALL_CAPABILITIES[0]);
