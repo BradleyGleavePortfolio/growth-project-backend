@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module';
 import { ConsentController } from './consent.controller';
 import { ConsentService } from './consent.service';
+import { CoachSharingFirstSignInService } from './coach-sharing-first-sign-in.service';
 
 // ConsentService is read by coach-side query paths to gate access to
 // client data; marking the module @Global keeps wiring trivial in the
@@ -13,7 +14,7 @@ import { ConsentService } from './consent.service';
 @Module({
   imports: [AuthModule],
   controllers: [ConsentController],
-  providers: [ConsentService],
+  providers: [ConsentService, CoachSharingFirstSignInService],
   exports: [ConsentService],
 })
 export class ConsentModule {}
