@@ -17,7 +17,12 @@ import {
   SendEmailInput,
   SendEmailResult,
 } from './email.types';
-import { EMAIL_FROM_ENV, parseEmailSender, resolveEmailSender } from './email-sender';
+import {
+  DEV_EMAIL_FROM_ADDRESS,
+  EMAIL_FROM_ENV,
+  parseEmailSender,
+  resolveEmailSender,
+} from './email-sender';
 
 // Provider abstraction is intentionally minimal: send(from, to, subject,
 // html) -> providerMessageId. Each transport implementation lives below.
@@ -101,6 +106,7 @@ export class EmailService {
   >();
   private transport: EmailTransport | null = null;
   private transportKind: 'resend' | 'log' = 'log';
+  private fromAddress: string = DEV_EMAIL_FROM_ADDRESS;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -185,10 +191,9 @@ export class EmailService {
       throw err;
     }
 
-    // B-EMAILFROM-126 — one sender for every email (src/email/email-sender.ts).
-    // The live transport cannot get here without a valid EMAIL_FROM_ADDRESS
-    // (checked at boot in _initTransport).
-    const from = input.from ?? resolveEmailSender(this.config, this.transportKind);
+    // B-EMAILFROM-126 — one sender for every email (src/email/email-sender.ts),
+    // resolved once at boot in _initTransport.
+    const from = input.from ?? this.fromAddress;
 
     let html: string;
     let subject: string;
@@ -325,6 +330,7 @@ export class EmailService {
 
     if (kind === 'log') {
       this.transportKind = 'log';
+      this.fromAddress = resolveEmailSender(this.config, 'log');
       return;
     }
     if (kind === 'resend') {
@@ -342,6 +348,7 @@ export class EmailService {
       }
       this.transportKind = 'resend';
       this.transport = new ResendTransport(apiKey, this.logger);
+      this.fromAddress = sender.value;
       // One boot line so the operator can confirm the sender domain in the
       // logs (the domain is not secret; the local part is not logged).
       this.logger.log(`outbound sender domain=${sender.domain} transport=resend`);

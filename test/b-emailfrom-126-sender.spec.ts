@@ -16,6 +16,7 @@ import {
   parseEmailSender,
   resolveEmailSender,
 } from '../src/email/email-sender';
+import { EmailService } from '../src/email/email.service';
 import { DigestService } from '../src/notifications/digest.service';
 import { NotificationsService } from '../src/notifications/notifications.service';
 import { PrismaService } from '../src/prisma.service';
@@ -58,6 +59,19 @@ describe('resolveEmailSender', () => {
     expect(parseEmailSender(VERIFIED)?.address).toBe('noreply@growthprojectapp.com');
     expect(parseEmailSender('no-at-sign')).toBeNull();
     expect(parseEmailSender('a@b.com\r\nBcc: c@d.com')).toBeNull();
+  });
+});
+
+describe('EmailService sender', () => {
+  it('refuses to boot a live transport with a malformed sender and names the variable', () => {
+    const config = new ConfigService({
+      EMAIL_TRANSPORT: 'resend',
+      RESEND_API_KEY: 're_test',
+      EMAIL_FROM_ADDRESS: 'noreply',
+    });
+    expect(() => new EmailService(Object.create(PrismaService.prototype), config)).toThrow(
+      /EMAIL_FROM_ADDRESS/,
+    );
   });
 });
 
