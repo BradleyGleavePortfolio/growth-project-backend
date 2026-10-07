@@ -97,6 +97,7 @@ jobs:
         run: npm ci
 
       - name: Ensure postgresql-client is available
+        timeout-minutes: 10
         run: |
           set -euo pipefail
           if ! command -v psql >/dev/null 2>&1; then
@@ -231,6 +232,7 @@ jobs:
         run: npm ci
 
       - name: Ensure postgresql-client is available
+        timeout-minutes: 10
         run: |
           set -euo pipefail
           if ! command -v psql >/dev/null 2>&1 || ! command -v pg_dump >/dev/null 2>&1; then

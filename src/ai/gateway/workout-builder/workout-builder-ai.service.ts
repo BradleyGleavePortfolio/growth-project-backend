@@ -106,9 +106,17 @@ export class WorkoutBuilderAiService {
     const explain = input.quick_action === 'explain';
     const promptClient = client ? { ...client, injuries } : injuries.length ? { ...NO_CLIENT, injuries } : null;
     const systemPrompt = buildWorkoutBuilderSystemPrompt({ mode: input.mode, quickAction: input.quick_action, library: promptLibrary, client: promptClient });
+    // AIB-INJ-128: a seed row the injury filter keeps out of LIBRARY (a squat for a knee) still reaches the model by name and
+    // muscle; LIBRARY (what the model may add) stays filtered. No injury: nothing is filtered and the user turn is unchanged.
+    const offered = new Set(promptLibrary.map((e) => e.id));
+    const hidden = baseline.exercises.flatMap(({ exercise_external_id: id }) => {
+      const e = LIBRARY.get(id);
+      return e && !offered.has(id) ? [[id, e] as const] : [];
+    });
+    const rowNames = hidden.length === 0 ? rowCatalog : new Map([...rowCatalog, ...hidden]);
     let [lastDropped, outcome, draftId]: [Dropped, Outcome | null, string | null] = [[], null, null];
     for (let attempt = 0; attempt < 2 && !outcome; attempt++) {
-      const first = buildWorkoutBuilderUserMessage(input.instruction, baseline, rowCatalog);
+      const first = buildWorkoutBuilderUserMessage(input.instruction, baseline, rowNames);
       const userMessage = attempt === 0
         ? first : JSON.stringify({ previous_attempt_rejected: lastDropped.map((d) => d.reason).slice(0, 20), retry: JSON.parse(first) });
       const box: { validated: Outcome | null } = { validated: null };

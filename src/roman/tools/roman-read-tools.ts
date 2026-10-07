@@ -6,9 +6,9 @@
  * not_allowed); the subject is `caller.id` only. Inputs are strict zod
  * objects, so a `user_id` (any unknown key) is bad_input before a query.
  * read_history goes through RomanTimelineReader (its tenancy and
- * never-selected rules) for ROMAN_READ_HISTORY_KINDS only, never 'activity'
- * or 'adjustment'; exercise_history, food_day and personal_baselines
- * (roman-baselines.ts) filter on caller.id.
+ * never-selected rules) for ROMAN_READ_TIMELINE_KINDS only, never 'activity'
+ * or 'adjustment'; its extra kinds (roman-extra-history.ts), exercise_history,
+ * food_day and personal_baselines (roman-baselines.ts) filter on caller.id.
  * Results: compact JSON <= max_result_chars with `truncated`; numbers computed
  * in code; `facts` = past-day intake and active kcal shown, for the post-check.
  */
@@ -27,6 +27,7 @@ import { ROMAN_TOOL_LIMITS, type RomanToolbox, type RomanToolCaller } from './ro
 import type { RomanToolDefinition, RomanToolFacts, RomanToolGrams, RomanToolResult } from './roman-tool.types';
 import { EXERCISE_HISTORY_LIMITS, exerciseChanges } from './roman-exercise-history';
 import { readExerciseSets, summarizeExerciseSet } from './roman-exercise-history';
+import { ROMAN_EXTRA_HISTORY_KINDS, RomanExtraHistory } from './roman-extra-history';
 import { burnedFacts, readBaselines } from './roman-baselines';
 
 const DEFAULT_TZ = 'America/Los_Angeles';
@@ -36,9 +37,11 @@ const FOOD_MAX_AGE_DAYS = 365;
 const FOOD_MAX_ENTRIES = 200;
 
 /** Timeline kinds the tools may read: never 'activity' or 'adjustment'. */
-export const ROMAN_READ_HISTORY_KINDS = ['food_day', 'workout_done', 'workout_missed', 'weight',
+export const ROMAN_READ_TIMELINE_KINDS = ['food_day', 'workout_done', 'workout_missed', 'weight',
   'water', 'habit', 'check_in', 'wearable_day', 'message', 'booking',
 ] as const satisfies readonly RomanTimelineKind[];
+export const ROMAN_READ_HISTORY_KINDS = [...ROMAN_READ_TIMELINE_KINDS, ...ROMAN_EXTRA_HISTORY_KINDS] as const;
+const TIMELINE_KINDS = new Set<string>(ROMAN_READ_TIMELINE_KINDS);
 
 const realDay = (s: string) => {
   const t = Date.parse(`${s}T00:00:00.000Z`);
@@ -61,7 +64,7 @@ export const ROMAN_READ_TOOL_DEFINITIONS: readonly RomanToolDefinition[] = Objec
   {
     name: 'read_history',
     description:
-      "The client's own logs between two dates in their time zone (inclusive, at most 31 days): daily food totals, workouts done and missed, weight, water, habits, check-ins, daily wearable totals, messages with their coach and coaching sessions. Numbers are computed by the app; quote them as given.",
+      "The client's own logs between two dates in their time zone (inclusive, at most 31 days): daily food totals, workouts done and missed, weight, water, habits, check-ins, daily wearable totals, messages with their coach and coaching sessions; health_day is the rest of their connected-device data per day (sleep stages, bedtime and wake time, body weight and body fat, blood pressure, VO2 max, workout minutes and distance, strain, temperature, respiratory rate, SpO2); fasting windows; roman_chat is their own earlier chats with Roman; community_post is the posts they wrote. Numbers are computed by the app; quote them as given.",
     input_schema: {
       type: 'object',
       properties: { kinds: { type: 'array', items: { enum: [...ROMAN_READ_HISTORY_KINDS] } }, from: DAY, to: DAY },
@@ -193,7 +196,11 @@ const NOT_A_CLIENT = 'These tools read a client their own logs only.';
 export class RomanReadToolbox implements RomanToolbox {
   private readonly logger = new Logger(RomanReadToolbox.name);
 
-  constructor(private readonly prisma: PrismaService, private readonly timeline: RomanTimelineReader) {}
+  private readonly extra: RomanExtraHistory;
+
+  constructor(private readonly prisma: PrismaService, private readonly timeline: RomanTimelineReader) {
+    this.extra = new RomanExtraHistory(prisma);
+  }
 
   definitions(): readonly RomanToolDefinition[] {
     return ROMAN_READ_TOOL_DEFINITIONS;
@@ -247,7 +254,8 @@ export class RomanReadToolbox implements RomanToolbox {
     const n = days(input.from, input.to);
     if (n < 1) return toolFailure('bad_input', 'from must be on or before to.');
     if (n > HISTORY_MAX_DAYS) return toolFailure('range_too_large', 'Ask for 31 days or fewer.');
-    const kinds: RomanTimelineKind[] = [...new Set(input.kinds ?? ROMAN_READ_HISTORY_KINDS)];
+    const asked = new Set<string>(input.kinds ?? ROMAN_READ_HISTORY_KINDS);
+    const kinds = ROMAN_READ_TIMELINE_KINDS.filter((k) => asked.has(k));
     const from = localDayStart(input.from, at.tz);
     // A daylight-saving change can make 31 local days an hour longer than the reader's cap.
     const end = Math.min(
@@ -255,16 +263,27 @@ export class RomanReadToolbox implements RomanToolbox {
       from.getTime() + HISTORY_MAX_DAYS * DAY_MS,
     );
     const window = { from, to: new Date(end), kinds, limit: 500, now: at.now };
-    const page = await this.timeline.read(at.id, window);
-    const allowed = new Set<string>(kinds);
-    const events = page.events.filter((e) => allowed.has(e.kind));
+    // Never an empty kinds list: the reader reads every kind (activity, adjustment) when none is given.
+    const [page, extra] = await Promise.all([
+      kinds.length > 0 ? this.timeline.read(at.id, window) : null,
+      this.extra.read(at.id, { from, to: window.to, firstDay: input.from, lastDay: input.to, tz: at.tz }, asked),
+    ]);
+    const events = (page?.events ?? []).filter((e) => TIMELINE_KINDS.has(e.kind) && asked.has(e.kind));
+    const rows = [
+      ...events.map((e) => ({ out: compactEvent(e, at.tz), src: e })),
+      ...extra.events.map((out) => ({ out, src: null })),
+    ];
+    const key = (o: Record<string, unknown>) => `${String(o.date)} ${typeof o.time === 'string' ? o.time : ''}`;
+    rows.sort((a, b) => (key(a.out) < key(b.out) ? -1 : key(a.out) > key(b.out) ? 1 : 0));
     const fit = fitToolJson(
       { tool: 'read_history', from: input.from, to: input.to, timezone: at.tz },
       'events',
-      events.map((e) => compactEvent(e, at.tz)),
-      page.next_cursor !== null || page.truncated.length > 0,
+      rows.map((r) => r.out),
+      (page !== null && (page.next_cursor !== null || page.truncated.length > 0)) || extra.capped,
     );
-    const past = events.slice(0, fit.kept).filter((e) => e.local_date < at.today);
+    const past = rows
+      .slice(0, fit.kept)
+      .flatMap((r) => (r.src && r.src.local_date < at.today ? [r.src] : []));
     const pick = (kind: RomanTimelineKind, key: string): number[] =>
       past
         .filter((e) => e.kind === kind)
