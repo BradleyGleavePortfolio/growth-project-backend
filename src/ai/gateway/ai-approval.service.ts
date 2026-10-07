@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -6,10 +7,18 @@ import {
   Logger,
   NotFoundException,
   Optional,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { AuditService } from '../../audit/audit.service';
+import { Prisma } from '@prisma/client';
 import { CapabilityMaterializerRegistry } from './materialisers/capability-materialiser.registry';
+import { WORKOUT_BUILDER_MODEL_DIFF_SOURCE } from './ai-gateway.service';
+import { isMwbLiveCreateCapability } from './mwb-live-create.feature';
+import { computeLockToken } from '../../workout-builder/lock-token.helper';
+import { emptyPlanSnapshot, snapshotFromRevisionJson } from './materialisers/__shared/workout-diff.types';
+import { WeekLimits, subsetLimitBreach } from './workout-builder/subset-bounds';
+import { loadWeekOtherSetsByMuscle, weeklySetsCap } from './workout-builder/week-limits';
 
 // Human-approval workflow for consequential AI outputs. AiActionDraft
 // rows land here as `pending`; an authorized human (coach for own-tenant
@@ -54,11 +63,31 @@ export function payloadClientIds(payload: unknown): string[] {
   return [...ids];
 }
 
+/**
+ * B-AIB2-126 — true when the gateway marked this live-create draft model-written (the AI workout builder). Only the gateway
+ * can add the marker (it strips caller provenance with that source). No payload hash: JSONB reorders keys on the way back.
+ */
+export function isWorkoutBuilderModelDraft(capability: string, provenance: unknown): boolean {
+  return isMwbLiveCreateCapability(capability) && Array.isArray(provenance) && provenance.some(
+    (p) => !!p && typeof p === 'object' && (p as { source?: unknown }).source === WORKOUT_BUILDER_MODEL_DIFF_SOURCE,
+  );
+}
+
+/** Accepted subset (`c<i>` = diff index i). A reorder lists every ref, so it is kept only when all other ops are kept. */
+export function selectAcceptedOps<T extends { kind: string }>(diff: readonly T[], acceptedChangeIds: readonly string[]): T[] {
+  const ok = new Set(acceptedChangeIds);
+  const allOthers = diff.every((op, i) => op.kind === 'reorder' || ok.has(`c${i}`));
+  return diff.filter((op, i) => ok.has(`c${i}`) && (op.kind !== 'reorder' || allOthers));
+}
+
 export interface DecideInput {
   draftId: string;
   decider: { id: string; role: string };
   decision: Decision;
   note?: string;
+  // B-AIB2-126 — apply only these changes (`c<i>` = diff index i) of an AI
+  // workout-builder draft. Omitted = apply every change.
+  acceptedChangeIds?: string[];
   ip?: string | null;
   userAgent?: string | null;
 }
@@ -111,12 +140,41 @@ export class AiApprovalService {
    * `{ reply: <model text> }`, whose text is also the stored rationale), or
    * when the tenant has no active sub-coach (the coach is its only human).
    */
+  /** B-815-1: ceiling breach of a partial selection against the plan's CURRENT head and its program week, else null. */
+  private async subsetLimitBreachFor(
+    subjectUserId: string | null, payload: Record<string, unknown>, fullDiff: readonly unknown[], subset: readonly unknown[],
+  ): Promise<string | null> {
+    const planId = typeof payload.target_plan_id === 'string' ? payload.target_plan_id : null;
+    if (!planId) return subsetLimitBreach(emptyPlanSnapshot(), fullDiff, subset, null);
+    const plan = await this.prisma.workoutPlan.findUnique({
+      where: { id: planId }, select: { id: true, coach_id: true, head_revision_id: true, program_id: true, week_index: true },
+    });
+    const head = plan?.head_revision_id
+      ? await this.prisma.workoutPlanRevision.findUnique({ where: { id: plan.head_revision_id }, select: { exercises_json: true, plan_meta_json: true } })
+      : null;
+    if (!plan || !head) {
+      throw new ConflictException({ code: 'REVISION_STALE', message: 'This workout changed on another screen. Reload it and ask again.' });
+    }
+    let week: WeekLimits | null = null;
+    if (plan.program_id && plan.week_index != null) {
+      const profile = subjectUserId
+        ? await this.prisma.userProfile.findUnique({ where: { user_id: subjectUserId }, select: { workout_experience: true } })
+        : null;
+      week = {
+        otherSetsByMuscle: await loadWeekOtherSetsByMuscle(this.prisma, { planId: plan.id, coachId: plan.coach_id, programId: plan.program_id, weekIndex: plan.week_index }),
+        cap: weeklySetsCap(profile ? { experience: profile.workout_experience } : null),
+      };
+    }
+    return subsetLimitBreach(snapshotFromRevisionJson(head.exercises_json, head.plan_meta_json), fullDiff, subset, week);
+  }
+
   private async tenantCoachMayDecideOwnDraft(
-    draft: { payload: unknown; rationale: string | null; tenant_coach_id: string | null },
+    draft: { capability: string; payload: unknown; rationale: string | null; tenant_coach_id: string | null; provenance?: unknown },
     decider: { id: string; role: string },
   ): Promise<boolean> {
     if (decider.role !== 'coach' || draft.tenant_coach_id !== decider.id) return false;
     if (isModelAuthoredPayload(draft.payload, draft.rationale)) return true;
+    if (isWorkoutBuilderModelDraft(draft.capability, draft.provenance)) return true;
     const otherHumans = await this.prisma.teamSubCoachAssignment.count({
       where: { head_coach_id: decider.id, archived_at: null },
     });
@@ -192,6 +250,40 @@ export class AiApprovalService {
 
     const status = input.decision;
 
+    // B-AIB2-126 — subset approval: materialise only the accepted ops (the
+    // materialiser re-validates and dry-runs them against the current head).
+    let toMaterialise = draft;
+    let appliedPayload: Prisma.JsonObject | undefined;
+    if (status === 'approved' && input.acceptedChangeIds) {
+      const payload = draft.payload as { diff?: unknown } | null;
+      if (!isMwbLiveCreateCapability(draft.capability) || !payload || !Array.isArray(payload.diff)) {
+        throw new BadRequestException({
+          code: 'ACCEPTED_CHANGES_UNSUPPORTED',
+          message: 'This draft cannot be applied in part.',
+        });
+      }
+      const subset = selectAcceptedOps(payload.diff as Array<{ kind: string } & Prisma.JsonObject>, input.acceptedChangeIds);
+      if (subset.length === 0) {
+        throw new BadRequestException({
+          code: 'NO_CHANGES_ACCEPTED',
+          message: 'Keep at least one change to apply, or discard the suggestions.',
+        });
+      }
+      // B-815-1: a partial selection is re-checked against the training ceilings the full proposal was validated
+      // against (sets per muscle per workout and per program week, exercises per workout). Refused = draft stays pending.
+      if (subset.length < payload.diff.length) {
+        const breach = await this.subsetLimitBreachFor(draft.subject_user_id, payload as Record<string, unknown>, payload.diff, subset);
+        if (breach) {
+          throw new UnprocessableEntityException({
+            code: 'SELECTION_OVER_LIMITS',
+            message: `${breach} Keep the matching removal too, or untick an addition.`,
+          });
+        }
+      }
+      appliedPayload = { ...(payload as Prisma.JsonObject), diff: subset };
+      toMaterialise = { ...draft, payload: appliedPayload };
+    }
+
     // PR AI-3 (PRODUCT-1): for 'approved' decisions on capabilities that
     // have a registered materialiser, run materialisation BEFORE flipping
     // status. If the materialiser throws, the draft stays in 'pending' so
@@ -207,7 +299,7 @@ export class AiApprovalService {
       const materialiser = this.materialisers.resolve(draft.capability);
       if (materialiser) {
         try {
-          const result = await materialiser.materialize(draft);
+          const result = await materialiser.materialize(toMaterialise);
           materialisationRef = result.ref ?? null;
           if (result.status === 'racing') {
             // P1-1: a concurrent approver holds the materialisation claim
@@ -353,6 +445,7 @@ export class AiApprovalService {
           decided_by_id: input.decider.id,
           decided_at: new Date(),
           decision_note: input.note ?? null,
+          ...(appliedPayload !== undefined ? { payload: appliedPayload } : {}),
         },
       });
       if (flip.count === 0) {
@@ -413,7 +506,26 @@ export class AiApprovalService {
       },
     });
 
+    // B-AIB2-126 — the AI workout builder adopts the new head at once (plan section 3): plan id, head revision, fresh lock token.
+    if (status === 'approved' && materialisationRef && isWorkoutBuilderModelDraft(draft.capability, draft.provenance)) {
+      return { ...updated, materialised_ref: await this.workoutBuilderRef(materialisationRef) };
+    }
     return updated;
+  }
+
+  private async workoutBuilderRef(planId: string): Promise<{ plan_id: string; revision_index: number; lock_token?: string }> {
+    const plan = await this.prisma.workoutPlan.findUnique({ where: { id: planId }, select: { version: true, head_revision_id: true } });
+    const headId = plan?.head_revision_id;
+    const head = headId ? await this.prisma.workoutPlanRevision.findUnique({ where: { id: headId }, select: { revision_index: true } }) : null;
+    const ref = { plan_id: planId, revision_index: head?.revision_index ?? 0 };
+    if (!plan || !headId) return ref;
+    try {
+      return { ...ref, lock_token: computeLockToken(planId, plan.version, headId) };
+    } catch (err) {
+      // No autosave secret: the builder re-reads the plan instead of adopting the token.
+      this.logger.warn(`workout builder lock token unavailable: ${err instanceof Error ? err.name : 'unknown'}`);
+      return ref;
+    }
   }
 
   // Background sweep entry point. Mark any pending draft past its
