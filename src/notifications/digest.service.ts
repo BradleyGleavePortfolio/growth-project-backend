@@ -148,7 +148,8 @@ export class DigestService {
     try {
       const data = await this._buildClientDigestData(client.id, type);
       const templateKey = type === 'weekly' ? 'digest-client-weekly' : 'digest-client';
-      const consistencyPct = 'weekStats' in data ? data.weekStats.consistencyPct : 0;
+      // Only the weekly data carries weekStats (the daily shape types it as undefined).
+      const consistencyPct = data.weekStats?.consistencyPct ?? 0;
       const subject =
         type === 'weekly'
           ? `Your week in numbers — ${consistencyPct}% check-in consistency`
