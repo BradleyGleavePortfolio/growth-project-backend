@@ -59,10 +59,18 @@ export interface RomanToolbox {
   ): Promise<RomanToolResult>;
 }
 
+/**
+ * R11-FIX U1: the app gives up on a turn after 60 s (mobile romanApi.ts). No
+ * tool round starts after `turn_wall_ms`, and every provider call of the loop
+ * is aborted at `turn_deadline_ms` from the loop's start, so the whole loop
+ * ends within 50 s whatever the provider does; the 10 s left cover the turn's
+ * reads, the augmenters (1.5 s cap) and the reply check before the app's abort.
+ */
 export const ROMAN_TOOL_LIMITS = Object.freeze({
   max_rounds: 3,
   max_calls_per_turn: 6,
   max_result_chars: 12_000,
-  turn_wall_ms: 25_000,
+  turn_wall_ms: 15_000,
+  turn_deadline_ms: 50_000,
   tool_timeout_ms: 3_000,
 });

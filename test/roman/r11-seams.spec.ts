@@ -441,12 +441,33 @@ describe('R11-00 turn seam (RomanService.streamAssistantTurn)', () => {
     expect(t.ledger).toMatchObject({ augments: [expect.stringMatching(/^client_memory:/)] });
   });
 
-  it('R11-T2A no augmenter, or none applied: no memory read and the base-scope send', async () => {
-    for (const augs of [null, [], [aug('client_memory', async () => null)]]) {
+  it('R11-T2A no augmenter: no memory read; none applied: the base-scope send', async () => {
+    for (const augs of [null, []]) {
       const t = await scopedTurn(augs, false);
       expect(t.reader.memoryReads).toBe(0);
       expect(t.subject).toEqual(BASE);
     }
+    const none = await scopedTurn([aug('client_memory', async () => null)], true);
+    expect(none.reader.memoryReads).toBe(1);
+    expect(none.subject).toEqual(BASE);
+  });
+
+  it('R11-FIX U2 v4 caller: the grant is read first and no augmenter reads the notes', async () => {
+    const mem = memAug();
+    const coach = aug('coach_method', async () => block('coach_method', 'C'));
+    const t = await scopedTurn([coach, mem], false);
+    expect(mem.augment).not.toHaveBeenCalled();
+    expect(coach.augment).not.toHaveBeenCalled();
+    expect(t.reader.memoryReads).toBe(1);
+    expect(t.subject).toEqual(BASE);
+    expect(t.ledger).toMatchObject({
+      augments: [],
+      augments_omitted: ['client_memory', 'coach_method'],
+    });
+    expect(t.chunks.map((c) => c.type)).toEqual(['delta', 'done']);
+    const v5 = memAug();
+    await scopedTurn([v5], true);
+    expect(v5.augment).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -506,7 +527,8 @@ describe('R11-00 flags and capabilities', () => {
       max_rounds: 3,
       max_calls_per_turn: 6,
       max_result_chars: 12_000,
-      turn_wall_ms: 25_000,
+      turn_wall_ms: 15_000,
+      turn_deadline_ms: 50_000,
       tool_timeout_ms: 3_000,
     });
   });
