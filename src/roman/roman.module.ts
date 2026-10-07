@@ -20,6 +20,9 @@ import { RomanService } from './roman.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanAnthropicClientProvider } from './anthropic-client.provider';
 import { RomanErasureSweep } from './roman-erasure.sweep';
+import { RomanTimelineReader } from './memory/roman-timeline.reader';
+import { RomanReadToolbox } from './tools/roman-read-tools';
+import { ROMAN_TOOLBOX } from './tools/roman-tool.types';
 import { RomanClientContextService } from './context/roman-client-context.service';
 import { RomanConsultationIntakeSource } from './context/roman-consultation.source';
 import { RomanContextController } from './context/roman-context.controller';
@@ -42,6 +45,10 @@ import { RomanBackgroundSpendService } from './background/roman-background-spend
     RomanFeatureGuard,
     romanAnthropicClientProvider,
     RomanErasureSweep,
+    // R11-T1: read tools for the caller's own logs (used only by the R11-T2B loop).
+    RomanTimelineReader,
+    RomanReadToolbox,
+    { provide: ROMAN_TOOLBOX, useExisting: RomanReadToolbox },
     RomanClientContextService,
     RomanConsultationIntakeSource,
     { provide: ROMAN_SAFETY_INTAKE_SOURCE, useExisting: RomanConsultationIntakeSource },
