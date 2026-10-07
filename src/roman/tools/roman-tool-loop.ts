@@ -15,7 +15,7 @@
 
 import type Anthropic from '@anthropic-ai/sdk';
 import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
-import type { PostCheckContext } from '../guardrails/roman-post-check';
+import type { PostCheckContext, PostCheckMacroFacts } from '../guardrails/roman-post-check';
 import { ROMAN_MAX_OUTPUT_TOKENS } from '../roman.constants';
 import {
   ROMAN_TOOL_LIMITS,
@@ -23,6 +23,8 @@ import {
   type RomanToolCaller,
   type RomanToolName,
 } from './roman-tool.types';
+import { emptyGrams, ROMAN_TOOL_GRAM_KEYS, toolFactsOf } from './roman-tool-facts';
+import type { RomanToolGramLists } from './roman-tool-facts';
 
 const CLOSED_TOOL_NAMES: readonly RomanToolName[] = [
   'read_history',
@@ -94,7 +96,12 @@ export class RomanToolLoop {
   errors = 0;
   private unknownUsage = false;
   private readonly names = new Set<RomanToolName>();
-  readonly facts = { intake_past_kcal: [] as number[], burned_past_kcal: [] as number[] };
+  readonly facts = {
+    intake_past_kcal: [] as number[],
+    burned_past_kcal: [] as number[],
+    intake_past_g: emptyGrams(),
+    average_past_g: emptyGrams(),
+  };
   private readonly clock: () => number;
 
   constructor(private readonly deps: RomanToolLoopDeps) {
@@ -190,8 +197,14 @@ export class RomanToolLoop {
       );
       const content = r.content.slice(0, L.max_result_chars);
       if (!r.ok) return fail(content || 'This data is unavailable right now.');
-      this.facts.intake_past_kcal.push(...(r.facts?.intake_past_kcal ?? []));
-      this.facts.burned_past_kcal.push(...(r.facts?.burned_past_kcal ?? []));
+      for (const f of toolFactsOf(u.name, { ...r, content })) {
+        this.facts.intake_past_kcal.push(...(f.intake_past_kcal ?? []));
+        this.facts.burned_past_kcal.push(...(f.burned_past_kcal ?? []));
+        for (const k of ROMAN_TOOL_GRAM_KEYS) {
+          this.facts.intake_past_g[k].push(...(f.intake_past_g?.[k] ?? []));
+          this.facts.average_past_g[k].push(...(f.average_past_g?.[k] ?? []));
+        }
+      }
       return { type: 'tool_result', tool_use_id: u.id, content };
     } catch {
       return fail('This data is unavailable right now.');
@@ -199,11 +212,18 @@ export class RomanToolLoop {
   }
 }
 
-/** Past-day kcal numbers a tool returned may be quoted (post-check facts). */
+const joinGrams = (a: PostCheckMacroFacts | undefined, b: RomanToolGramLists): PostCheckMacroFacts => ({
+  protein_g: [...(a?.protein_g ?? []), ...b.protein_g],
+  carbs_g: [...(a?.carbs_g ?? []), ...b.carbs_g],
+  fat_g: [...(a?.fat_g ?? []), ...b.fat_g],
+});
+
+/** Past-day kcal and gram numbers a tool returned may be quoted (post-check facts). */
 export function withToolFacts(ctx: PostCheckContext, loop: RomanToolLoop | null): PostCheckContext {
   if (!loop) return ctx;
-  const { intake_past_kcal, burned_past_kcal } = loop.facts;
-  if (intake_past_kcal.length === 0 && burned_past_kcal.length === 0) return ctx;
+  const { intake_past_kcal, burned_past_kcal, intake_past_g, average_past_g } = loop.facts;
+  const grams = [intake_past_g, average_past_g].some((g) => ROMAN_TOOL_GRAM_KEYS.some((k) => g[k].length));
+  if (intake_past_kcal.length === 0 && burned_past_kcal.length === 0 && !grams) return ctx;
   const f = ctx.kcal_facts ?? {};
   return {
     ...ctx,
@@ -212,5 +232,7 @@ export function withToolFacts(ctx: PostCheckContext, loop: RomanToolLoop | null)
       intake_past_days: [...(f.intake_past_days ?? []), ...intake_past_kcal],
       burned_past: [...(f.burned_past ?? []), ...burned_past_kcal],
     },
+    macro_past: joinGrams(ctx.macro_past, intake_past_g),
+    macro_average: joinGrams(ctx.macro_average, average_past_g),
   };
 }

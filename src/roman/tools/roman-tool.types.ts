@@ -28,9 +28,16 @@ export interface RomanToolCaller {
   readonly role: string;
 }
 
+/** R11-T3: grams per macro (the post-check never pools protein with carbs or fat). */
+export type RomanToolGrams = Readonly<Partial<Record<'protein_g' | 'carbs_g' | 'fat_g', readonly number[]>>>;
+
 export interface RomanToolFacts {
   readonly intake_past_kcal?: readonly number[];
   readonly burned_past_kcal?: readonly number[];
+  /** R11-T3: grams logged on earlier days (day totals and entries shown). */
+  readonly intake_past_g?: RomanToolGrams;
+  /** R11-T3: medians, averages and ranges of earlier days (personal_baselines). */
+  readonly average_past_g?: RomanToolGrams;
 }
 
 export interface RomanToolResult {

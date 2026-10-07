@@ -85,7 +85,30 @@ export interface BuildSystemPromptInput {
    * never inside it. Absent or empty = the prompt is exactly the pre-v1.1 one.
    */
   augments?: readonly string[];
+  /**
+   * R11-T3: this turn offers the read tools (FEATURE_ROMAN_TOOLS, grounded
+   * client turn). Only `true` adds LOOKING THINGS UP and ANSWER CONTRACT;
+   * absent or false = the prompt is byte-identical to the one without tools.
+   */
+  tools?: boolean;
 }
+
+/** R11-T3: when and how to use the read tools (tools turns only). */
+export const ROMAN_TOOLS_SECTION =
+  '# LOOKING THINGS UP\n' +
+  "- client_data covers today, the last 7 days and the plan. When the question needs the client's own data from outside it (an earlier day, a longer range, one exercise over time, their normal), use a tool before answering. When client_data already answers, use no tool.\n" +
+  '- Ask for the narrowest range that answers the question: one date for one day, only the weeks asked about for a trend.\n' +
+  '- Tool results are computed by the app. Quote their numbers as given; do not add up or average them into new numbers.\n' +
+  '- When a tool returns an error or nothing for that range, say plainly that you cannot see that data right now, and give no number for it.';
+
+/** R11-T3: the shape of every answer on a tools turn. */
+export const ROMAN_ANSWER_CONTRACT =
+  '# ANSWER CONTRACT\n' +
+  '- Name the client\'s own numbers with their dates: "today" for today; "yesterday", "on Tuesday 22 September" or "over the last three weeks" for earlier days.\n' +
+  "- When the coach's guidelines or coach method are present, tie the advice to them, in your own words.\n" +
+  '- Give one clear next step.\n' +
+  '- When data is missing, say so plainly and what would fill the gap (logging it, or syncing a device).\n' +
+  '- Never invent a number. A number that is not in client_data or a tool result is not stated.';
 
 /**
  * A-R3-1: the explicit degraded mode. Roman answers in general terms only,
@@ -117,6 +140,7 @@ function surfaceFraming(surface: RomanSurface): string {
 export function buildRomanSystemPrompt(input: BuildSystemPromptInput): string {
   const { surface, voice, subjectContext, routerHint, clientData, clientDataUnavailable, augments } =
     input;
+  const tools = input.tools === true && surface === 'client';
 
   // B-651-9: shipped replies carry no exclamation marks at all, so the old
   // one-per-session allowance is gone whatever the session recorded.
@@ -138,6 +162,7 @@ export function buildRomanSystemPrompt(input: BuildSystemPromptInput): string {
     `# SESSION STATE\n${remainingExclamation}\n${quipGuidance}${
       routerHint && routerHint.trim().length > 0 ? `\n${routerHint.trim()}` : ''
     }`,
+    ...(tools ? [ROMAN_TOOLS_SECTION, ROMAN_ANSWER_CONTRACT] : []),
   ];
 
   if (surface === 'client') {
