@@ -110,10 +110,13 @@ export class CoachController {
     @Request() req: AuthedRequest,
     @Query() query: RiskBoardQueryDto,
   ) {
+    // CF-SHARE-GATE-128: only clients who share all four kinds of logs.
+    const clientIds = await this.coachService.riskBoardClientIds(req.user.id, req.user.role);
     return this.adminPtm.getRiskBoardForCoach(req.user.id, {
       bucket: query.bucket,
       cursor: query.cursor,
       limit: query.limit,
+      clientIds,
     });
   }
 

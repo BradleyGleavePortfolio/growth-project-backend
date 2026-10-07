@@ -32,7 +32,7 @@ export class CoachCheckInsController {
     @Param('client_id') clientId: string,
     @Query() query: ListCheckInsQueryDto,
   ) {
-    return this.checkIns.listForClientByCoach(req.user.id, clientId, query);
+    return this.checkIns.listForClientByCoach(req.user.id, clientId, query, req.user.role);
   }
 
   // ED.6 — coach marks a single check-in reviewed. Mirrors the messaging

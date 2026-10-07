@@ -2,7 +2,7 @@ import { ForbiddenException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
-import { ConsentScope, ConsentService } from '../consent/consent.service';
+import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../consent/consent.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 
 // Concrete payload shapes for the timeline/summary slices below. These
@@ -320,6 +320,39 @@ export class CoachService {
       out.set(r.client_id, set);
     }
     return out;
+  }
+
+  // CF-SHARE-GATE-128: per-switch client ids for the roster-wide dashboards
+  // (GET /coach/dashboard, /coach/alerts, /coach/dashboard/summary), by the
+  // roster's rule above: a client counts toward a number or a flag only while
+  // they share that kind of log with this coach. Owners read every client.
+  private async sharedClientIds(
+    coachId: string,
+    clientIds: string[],
+    callerRole?: string,
+  ): Promise<{ food: string[]; workouts: string[]; body: string[]; habits: string[] }> {
+    const granted = await this.rosterFitnessConsents(coachId, clientIds, callerRole);
+    const withScope = (scope: string) => clientIds.filter((id) => granted.get(id)?.has(scope) === true);
+    return {
+      food: withScope(ConsentScope.FITNESS_FOOD_MACROS),
+      workouts: withScope(ConsentScope.FITNESS_WORKOUTS),
+      body: withScope(ConsentScope.FITNESS_BODY_METRICS),
+      habits: withScope(ConsentScope.FITNESS_HABITS_PROGRESS),
+    };
+  }
+
+  // CF-SHARE-GATE-128: GET /coach/clients/risk-board scores the coach's own
+  // roster (the same query AdminPtmService.getRiskBoardForCoach runs) with the
+  // churn-risk score, which reads all four kinds of logs, so a client is on
+  // the board only while sharing all four. Owners read every client.
+  async riskBoardClientIds(coachId: string, callerRole?: string): Promise<string[]> {
+    const rows = await this.prisma.user.findMany({
+      where: { coach_id: coachId, role: 'student', deleted_at: null },
+      select: { id: true },
+    });
+    const ids = rows.map((r) => r.id);
+    const granted = await this.rosterFitnessConsents(coachId, ids, callerRole);
+    return ids.filter((id) => COACH_FITNESS_SCOPES.every((s) => granted.get(id)?.has(s) === true));
   }
 
   async archiveClient(
@@ -676,6 +709,11 @@ export class CoachService {
     }
 
     const clientIds = clients.map((c) => c.id);
+    // CF-SHARE-GATE-128: food totals read only clients who share Food logs.
+    const foodIds = (await this.sharedClientIds(coachId, clientIds, callerRole)).food;
+    if (foodIds.length === 0) {
+      return { logs_today: 0, total_kcal: 0, logging_rate: 0 };
+    }
 
     // Push aggregation into Postgres: one row per client instead of
     // fetching every food entry + food_item join and summing in JS.
@@ -690,7 +728,7 @@ export class CoachService {
         COALESCE(SUM(fi.fat_g     * lfe.quantity_multiplier), 0)::float  AS total_fat_g
       FROM "LoggedFoodEntry" lfe
       JOIN "FoodItem" fi ON fi.id = lfe.food_item_id
-      WHERE lfe.user_id = ANY(${clientIds}::uuid[])
+      WHERE lfe.user_id = ANY(${foodIds}::uuid[])
         AND lfe.logged_at BETWEEN ${startOfDay} AND ${endOfDay}
       GROUP BY lfe.user_id
     `;
@@ -701,7 +739,8 @@ export class CoachService {
     // Sum kcal across all clients; default to 0 for clients with no entries.
     const total_kcal = totals.reduce((acc, row) => acc + row.total_kcal, 0);
 
-    const logging_rate = clientIds.length > 0 ? logs_today / clientIds.length : 0;
+    // Of the clients whose food logs this coach can see.
+    const logging_rate = logs_today / foodIds.length;
 
     return {
       logs_today,
@@ -719,6 +758,10 @@ export class CoachService {
     if (clients.length === 0) return [];
 
     const clientIds = clients.map((c) => c.id);
+    // CF-SHARE-GATE-128: the weight alert reads only clients who share
+    // Weigh-ins, the missed-workout alert only clients who share Workouts.
+    const shared = await this.sharedClientIds(coachId, clientIds, callerRole);
+    const sharesWorkouts = new Set(shared.workouts);
     const fiveDaysAgo = new Date();
     fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
 
@@ -726,13 +769,13 @@ export class CoachService {
 
     const [allRecentWeightLogs, workoutGroups] = await Promise.all([
       this.prisma.weightLog.findMany({
-        where: { user_id: { in: clientIds }, date: { gte: thirtyDaysAgo } },
+        where: { user_id: { in: shared.body }, date: { gte: thirtyDaysAgo } },
         orderBy: [{ user_id: 'asc' }, { date: 'desc' }],
         select: { user_id: true, date: true, weight_lbs: true },
       }),
       this.prisma.workoutSession.groupBy({
         by: ['user_id'],
-        where: { user_id: { in: clientIds }, date: { gte: fiveDaysAgo } },
+        where: { user_id: { in: shared.workouts }, date: { gte: fiveDaysAgo } },
         _count: { _all: true },
       }),
     ]);
@@ -770,7 +813,7 @@ export class CoachService {
         }
       }
 
-      if (!workedOutRecently.has(client.id)) {
+      if (sharesWorkouts.has(client.id) && !workedOutRecently.has(client.id)) {
         alerts.push({
           type: 'missed_workouts',
           client_id: client.id,
@@ -839,6 +882,13 @@ export class CoachService {
 
     const clientIds = clients.map((c) => c.id);
     const clientMap = new Map(clients.map((c) => [c.id, c.name]));
+    // CF-SHARE-GATE-128: each count and flag reads only the clients who share
+    // that kind of log with this coach: Food logs (active today, off_macros),
+    // Workouts (missed_workout), Weigh-ins (weight_flag), Check-ins and
+    // habits (pending check-ins, no_checkin). Messages are not a sharing switch.
+    const shared = await this.sharedClientIds(coachId, clientIds, callerRole);
+    const sharesFood = new Set(shared.food);
+    const sharesWorkouts = new Set(shared.workouts);
 
     // ── Step 2: Parallel aggregations (all index-friendly, no per-row JS) ──
     const [
@@ -852,21 +902,21 @@ export class CoachService {
       // Active today: clients with at least one food log entry today.
       this.prisma.loggedFoodEntry.groupBy({
         by: ['user_id'],
-        where: { user_id: { in: clientIds }, logged_at: { gte: startOfDay, lte: endOfDay } },
+        where: { user_id: { in: shared.food }, logged_at: { gte: startOfDay, lte: endOfDay } },
         _count: { _all: true },
       }),
 
       // Missed workouts: clients with a session in the last 5 days.
       this.prisma.workoutSession.groupBy({
         by: ['user_id'],
-        where: { user_id: { in: clientIds }, date: { gte: fiveDaysAgo } },
+        where: { user_id: { in: shared.workouts }, date: { gte: fiveDaysAgo } },
         _count: { _all: true },
       }),
 
       // Pending check-ins: submitted but not yet reviewed by coach.
       this.prisma.checkIn.count({
         where: {
-          user_id: { in: clientIds },
+          user_id: { in: shared.habits },
           reviewed_by_coach: false,
         },
       }),
@@ -881,7 +931,7 @@ export class CoachService {
 
       // Weight trend flags: last 4 weight entries per client (for 3-day trend).
       this.prisma.weightLog.findMany({
-        where: { user_id: { in: clientIds }, date: { gte: thirtyDaysAgo } },
+        where: { user_id: { in: shared.body }, date: { gte: thirtyDaysAgo } },
         orderBy: [{ user_id: 'asc' }, { date: 'desc' }],
         select: { user_id: true, weight_lbs: true, date: true },
       }),
@@ -893,7 +943,7 @@ export class CoachService {
       // in the type union but never emitted.)
       this.prisma.checkIn.groupBy({
         by: ['user_id'],
-        where: { user_id: { in: clientIds }, reviewed_by_coach: false },
+        where: { user_id: { in: shared.habits }, reviewed_by_coach: false },
         _count: { _all: true },
       }),
     ]);
@@ -943,13 +993,13 @@ export class CoachService {
       }
 
       // No workout in 5+ days.
-      if (!workedOutRecently.has(id)) {
+      if (sharesWorkouts.has(id) && !workedOutRecently.has(id)) {
         attention.push({ client_id: id, client_name: name, reason: 'missed_workout' });
         continue;
       }
 
       // No food log today (off macros signal).
-      if (!loggedToday.has(id)) {
+      if (sharesFood.has(id) && !loggedToday.has(id)) {
         attention.push({ client_id: id, client_name: name, reason: 'off_macros' });
         continue;
       }
