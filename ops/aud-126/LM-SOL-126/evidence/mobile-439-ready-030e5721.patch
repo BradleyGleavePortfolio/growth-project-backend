@@ -1,0 +1,911 @@
+diff --git a/src/__tests__/coachWorkoutBuilderAutosave.test.tsx b/src/__tests__/coachWorkoutBuilderAutosave.test.tsx
+index fda34084..4326e889 100644
+--- a/src/__tests__/coachWorkoutBuilderAutosave.test.tsx
++++ b/src/__tests__/coachWorkoutBuilderAutosave.test.tsx
+@@ -23,6 +23,8 @@ import React from 'react';
+ import { render, waitFor, fireEvent, act } from '@testing-library/react-native';
+ import { exerciseLibraryApi } from '../api/exerciseLibraryApi';
+ 
++// AIB-5: Ask AI status reads 404 (current production backend), so the entry stays hidden.
++jest.mock('../api/aiBuilderApi', () => ({ ...jest.requireActual('../api/aiBuilderApi'), aiBuilderApi: { getStatus: () => Promise.resolve(null) } }));
+ jest.mock('../api/exerciseLibraryApi', () => ({
+   exerciseLibraryApi: { getById: jest.fn().mockRejectedValue(new Error('Catalog unavailable in this isolated autosave test')) },
+ }));
+diff --git a/src/__tests__/coachWorkoutBuilderRowIdAdoption.test.tsx b/src/__tests__/coachWorkoutBuilderRowIdAdoption.test.tsx
+index 4d0cc153..f88054cc 100644
+--- a/src/__tests__/coachWorkoutBuilderRowIdAdoption.test.tsx
++++ b/src/__tests__/coachWorkoutBuilderRowIdAdoption.test.tsx
+@@ -21,6 +21,8 @@
+ 
+ import React from 'react';
+ import { render, waitFor, fireEvent, act } from '@testing-library/react-native';
++// AIB-5: Ask AI status reads 404 (current production backend), so the entry stays hidden.
++jest.mock('../api/aiBuilderApi', () => ({ ...jest.requireActual('../api/aiBuilderApi'), aiBuilderApi: { getStatus: () => Promise.resolve(null) } }));
+ jest.mock('../api/exerciseLibraryApi', () => ({
+   exerciseLibraryApi: { getById: jest.fn().mockRejectedValue(new Error('Catalog unavailable in this isolated autosave test')) },
+ }));
+diff --git a/src/__tests__/coachWorkoutBuilderUndo.test.tsx b/src/__tests__/coachWorkoutBuilderUndo.test.tsx
+index 4c14977d..bcd105eb 100644
+--- a/src/__tests__/coachWorkoutBuilderUndo.test.tsx
++++ b/src/__tests__/coachWorkoutBuilderUndo.test.tsx
+@@ -32,6 +32,12 @@ import { render, waitFor, fireEvent, act } from "@testing-library/react-native";
+ // import, producing two React copies, a null hook dispatcher, and the
+ // "Invalid hook call" at `useMemo`. Keeping a single React also keeps RTL's
+ // auto-cleanup `afterEach` intact, so no test leaks an open handle.
++// AIB-5: Ask AI status reads 404 on this backend, so the entry stays hidden.
++const [mockAiStatus, mockAiPropose, mockAiApply] = [jest.fn(), jest.fn(), jest.fn()];
++jest.mock('../api/aiBuilderApi', () => ({ ...jest.requireActual('../api/aiBuilderApi'), aiBuilderApi: {
++  getStatus: (...a: unknown[]) => mockAiStatus(...a), propose: (...a: unknown[]) => mockAiPropose(...a), apply: (...a: unknown[]) => mockAiApply(...a), discard: () => Promise.resolve({ status: 'rejected' }),
++} }));
++
+ jest.mock('../api/exerciseLibraryApi', () => ({
+   exerciseLibraryApi: { getById: jest.fn().mockRejectedValue(new Error('Catalog unavailable in this isolated undo test')) },
+ }));
+@@ -278,6 +284,7 @@ beforeEach(() => {
+   // `clearAllMocks` wipes implementations too, so re-establish the defaults the
+   // boundary mocks need between tests.
+   mockCurrentPlan = EXISTING_PLAN;
++  mockAiStatus.mockResolvedValue(null);
+   mockReadMirror.mockResolvedValue(null);
+   mockClearMirrorIfKey.mockResolvedValue(undefined);
+   mockInvalidateQueries.mockResolvedValue(undefined);
+@@ -788,3 +795,59 @@ describe("CoachWorkoutBuilderScreen — history barrier and unknown outcomes (S-
+     expect(screen.getByLabelText("Plan name").props.editable).not.toBe(false);
+   });
+ });
++
++describe("CoachWorkoutBuilderScreen — Ask AI (AIB-5)", () => {
++  const STATUS = (state: string) => ({ state, create: true, edit: true, credits: { remaining_pct: 50, resets_at: null }, label: "AI-suggested, coach-approved" });
++  const press = (screen: Screen, id: string) => act(async () => { await fireEvent.press(screen.getByTestId(id)); });
++
++  const mount = async (status: object | null) => {
++    setFlag(true);
++    if (status instanceof Error) mockAiStatus.mockRejectedValue(status);
++    else mockAiStatus.mockResolvedValue(status);
++    const Screen = loadScreen();
++    return render(<Screen />);
++  };
++
++  it("status 404 (current production backend): no Ask AI entry", async () => {
++    const screen = await mount(null);
++    await waitFor(() => expect(mockAiStatus).toHaveBeenCalled());
++    await act(async () => {});
++    expect(screen.queryByTestId("ai-prompt-bar") ?? screen.queryByTestId("ai-header-button")).toBeNull();
++  });
++
++  it.each([
++    ["paused", STATUS("paused"), /^Ask AI is paused for maintenance\. Your workouts are unchanged\.$/], ["not_configured", STATUS("not_configured"), /^Ask AI is paused/],
++    ["unreadable (network), with a retry", new Error("socket"), /^No connection\./],
++  ])("status %s: the entry stays visible; a tap shows its copy and proposes nothing", async (_label, status, copy) => {
++    const screen = await mount(status);
++    await waitFor(() => expect(screen.getByTestId("ai-header-button")).toBeTruthy());
++    await press(screen, "ai-prompt-bar");
++    expect(screen.getByTestId("ai-builder-blocked").props.children).toMatch(copy);
++    [expect(screen.queryByTestId("ai-builder-input")).toBeNull(), expect(mockAiPropose).not.toHaveBeenCalled()];
++    if (status instanceof Error) expect(screen.getByTestId("ai-builder-retry")).toBeTruthy();
++  });
++
++  it("apply adopts the server rows, and the toast Undo calls the undo route for the AI change", async () => {
++    const exercise = { id: "bench", name: "Bench press", thumbnail_url: null };
++    const changes = [{ change_id: "c1", kind: "changed", op: {}, after: { sets: 4 }, exercise, reason: "One step.", warnings: [] }];
++    mockAiPropose.mockResolvedValue({ draft_id: "d1", summary: "1 change.", dropped: [], context_used: [], screening_flag: false, changes });
++    mockAiApply.mockResolvedValue({ status: "approved", materialised_ref: { plan_id: "plan-1", revision_index: 1, lock_token: "abcdefabcdefabcd" } });
++    mockRefetch.mockResolvedValue({ data: { ...EXISTING_PLAN, name: "AI push day" }, isError: false });
++    const screen = await mount(STATUS("on"));
++    await waitFor(() => expect(screen.getByTestId("ai-prompt-bar")).toBeTruthy());
++    await press(screen, "ai-prompt-bar");
++    await act(async () => { await fireEvent.changeText(screen.getByTestId("ai-builder-input"), "progress this"); });
++    await press(screen, "ai-builder-send");
++    await waitFor(() => expect(screen.getByTestId("ai-builder-apply")).toBeTruthy());
++    expect(mockAiPropose).toHaveBeenCalledWith(expect.objectContaining({ mode: "edit", plan_id: "plan-1", lock_token: undefined }));
++    await press(screen, "ai-builder-apply");
++    expect(mockAiApply).toHaveBeenCalledWith("d1", ["c1"]);
++    await waitFor(() => expect(screen.getByText("Applied 1 change.")).toBeTruthy());
++    expect(screen.getByLabelText("Plan name").props.value).toBe("AI push day");
++
++    mockUndoCall.mockResolvedValueOnce({ head_revision_index: 2, lock_token: "abababababababab" });
++    mockRefetch.mockResolvedValueOnce({ data: EXISTING_PLAN, isError: false });
++    await press(screen, "ai-toast-undo");
++    expect(mockUndoCall).toHaveBeenCalledWith("plan-1", { to_revision_index: 0, expected_head_index: 1 });
++  });
++});
+diff --git a/src/api/aiBuilderApi.ts b/src/api/aiBuilderApi.ts
+new file mode 100644
+index 00000000..694b21fd
+--- /dev/null
++++ b/src/api/aiBuilderApi.ts
+@@ -0,0 +1,91 @@
++/**
++ * aiBuilderApi — zod-parsed Ask AI client (AIB-5; contract: AI_MASTER_BUILDER_PLAN.md PART 2 section 3). GET status (AIB-4;
++ * 404 on older backends -> entry hidden), POST propose (AIB-2), PATCH drafts/:id (accepted_change_ids). One code per refusal.
++ */
++import { z } from 'zod';
++import axios from 'axios';
++import api from '../services/api';
++import { generateIdempotencyKey } from '../utils/idempotency';
++
++export const AI_BUILDER_INSTRUCTION_MAX = 1000;
++export const AI_BUILDER_QUICK_ACTIONS = ['swap_for_injury', 'progress', 'deload', 'shorten', 'more_volume', 'explain'] as const;
++export type AiBuilderQuickAction = (typeof AI_BUILDER_QUICK_ACTIONS)[number];
++export const AI_BUILDER_INJURY_AREAS = ['knee', 'shoulder', 'lower_back', 'hip', 'elbow_wrist', 'ankle_foot', 'upper_back_neck'] as const;
++export type AiBuilderInjuryArea = (typeof AI_BUILDER_INJURY_AREAS)[number];
++
++const StatusSchema = z.object({
++  state: z.enum(['on', 'paused', 'no_credits', 'not_configured']), create: z.boolean(), edit: z.boolean(), label: z.string(),
++  credits: z.object({ remaining_pct: z.number().nullable(), resets_at: z.string().nullable() }),
++});
++export type AiBuilderStatus = z.infer<typeof StatusSchema>;
++
++const n = z.number().nullable().optional();
++const RowSchema = z.object({ exercise_external_id: z.string().optional(), sets: n, reps_or_duration_seconds: n, rest_seconds: n, weight_lbs: n }).nullable().optional();
++
++const ChangeSchema = z.object({
++  change_id: z.string().min(1), kind: z.enum(['added', 'changed', 'removed', 'moved', 'meta']),
++  op: z.unknown(), // applied server-side by draft id; display only here. b#809: exercise is null for remove, reorder and meta.
++  before: RowSchema, after: RowSchema, reason: z.string(), warnings: z.array(z.string()),
++  exercise: z.object({ id: z.string(), name: z.string(), thumbnail_url: z.string().nullable() }).nullable(),
++});
++export type AiBuilderChange = z.infer<typeof ChangeSchema>;
++
++// b#809: draft_id is null for explain (no draft is written): the sheet shows the summary and Done, with no apply or discard call.
++const ProposalSchema = z.object({
++  draft_id: z.string().min(1).nullable(), summary: z.string(), changes: z.array(ChangeSchema), dropped: z.array(z.object({ reason: z.string() })),
++  context_used: z.array(z.string()), screening_flag: z.boolean(), credits_remaining_pct: z.number().nullable().optional(),
++});
++export type AiBuilderProposal = z.infer<typeof ProposalSchema>;
++
++// Approve replies with the AiActionDraft row: materialised_ref = plan id STRING (main, b#809) -> null, the screen re-reads; a section 3 object -> adopt.
++const RefSchema = z.object({ plan_id: z.string(), revision_index: z.number().int().min(0), lock_token: z.string().regex(/^[0-9a-f]{16}$/).optional() });
++const DecideSchema = z.object({ status: z.string(), materialised_ref: z.union([RefSchema, z.string()]).nullable().optional().transform((r) => (typeof r === 'string' ? null : r ?? null)) });
++export type AiBuilderRef = z.infer<typeof DecideSchema>['materialised_ref'];
++
++export type AiBuilderErrorCode = 'not_available' | 'paused' | 'no_credits' | 'consent_required' | 'stale' | 'no_safe_proposal' | 'rate_limited' | 'forbidden' | 'network' | 'server' | 'contract';
++
++export class AiBuilderError extends Error {
++  constructor(public readonly code: AiBuilderErrorCode, public readonly status: number, public readonly resetsAt: string | null = null) {
++    super(`ai-builder: ${code} (${status})`);
++    this.name = 'AiBuilderError';
++    Object.setPrototypeOf(this, AiBuilderError.prototype);
++  }
++}
++
++const field = (data: unknown, key: string): unknown => (data && typeof data === 'object' ? (data as Record<string, unknown>)[key] : undefined);
++
++/** Map any failure to one bounded code. */
++export function toAiBuilderError(err: unknown): AiBuilderError {
++  if (err instanceof AiBuilderError) return err;
++  if (err instanceof z.ZodError) return new AiBuilderError('contract', 0);
++  if (!axios.isAxiosError(err) || !err.response) return new AiBuilderError('network', 0);
++  const { status, data } = err.response;
++  const code = field(data, 'code') ?? field(data, 'error') ?? field(data, 'message');
++  if (code === 'COACH_AI_BUDGET_EXHAUSTED' || status === 402) {
++    const end = field(field(data, 'budget'), 'period_end');
++    return new AiBuilderError('no_credits', status, typeof end === 'string' ? end : null);
++  }
++  if (code === 'ai_consent_required') return new AiBuilderError('consent_required', status);
++  if (code === 'AI_NOT_CONFIGURED') return new AiBuilderError('server', status); // b#809 503: the model did not answer (not the kill switch)
++  const byStatus: Record<number, AiBuilderErrorCode> = { 401: 'forbidden', 403: 'forbidden', 404: 'not_available', 409: 'stale', 422: 'no_safe_proposal', 429: 'rate_limited', 503: 'paused' };
++  return new AiBuilderError(byStatus[status] ?? 'server', status);
++}
++
++const run = <T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, fn: () => Promise<{ data: unknown }>): Promise<T> =>
++  Promise.resolve().then(fn).then((res) => schema.parse(res.data)).catch((err: unknown) => Promise.reject(toAiBuilderError(err)));
++
++// lock_token is omitted until the builder holds a real head token (none yet, or the bootstrap one); client_id arrives with AIB-6 (client context).
++export type ProposeBody = { mode: 'create' | 'edit'; plan_id: string; lock_token?: string; client_id?: string; instruction: string; quick_action?: AiBuilderQuickAction; injury_area?: AiBuilderInjuryArea };
++
++const draftUrl = (id: string) => `/ai/gateway/drafts/${encodeURIComponent(id)}`;
++
++export const aiBuilderApi = {
++  /** null = this backend has no Ask AI (404): hide the entry. */
++  getStatus: (): Promise<AiBuilderStatus | null> => run(StatusSchema, () => api.get('/ai/gateway/workout-builder/status'))
++    .catch((err: unknown) => (err instanceof AiBuilderError && err.code === 'not_available' ? null : Promise.reject(err))),
++  propose: (body: ProposeBody) => run(ProposalSchema, () => api.post('/ai/gateway/workout-builder/propose',
++    { ...body, instruction: body.instruction.slice(0, AI_BUILDER_INSTRUCTION_MAX) }, { headers: { 'Idempotency-Key': generateIdempotencyKey() } })),
++  apply: (draftId: string, acceptedChangeIds: string[]) =>
++    run(DecideSchema, () => api.patch(draftUrl(draftId), { decision: 'approved', accepted_change_ids: acceptedChangeIds })),
++  discard: (draftId: string) => run(DecideSchema, () => api.patch(draftUrl(draftId), { decision: 'rejected' })),
++};
+diff --git a/src/components/coach/ai-builder/AiBuilderSheet.tsx b/src/components/coach/ai-builder/AiBuilderSheet.tsx
+new file mode 100644
+index 00000000..d535c346
+--- /dev/null
++++ b/src/components/coach/ai-builder/AiBuilderSheet.tsx
+@@ -0,0 +1,188 @@
++/** Ask AI sheet (AIB-5): prompt, chips, staged reveal, change cards with keep toggles, Apply N / Discard. Reduce Motion: fade, no stagger. */
++import React, { useEffect, useRef, useState } from 'react';
++import { ActivityIndicator, Animated, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
++import HapticPressable from '../../HapticPressable';
++import CoachExerciseName from '../workout-builder/CoachExerciseName';
++import { useReduceMotion } from '../../../screens/client/wearables/components/useReduceMotion';
++import { AI_BUILDER_INJURY_AREAS, AI_BUILDER_INSTRUCTION_MAX, AI_BUILDER_QUICK_ACTIONS, type AiBuilderChange, type AiBuilderInjuryArea, type AiBuilderQuickAction } from '../../../api/aiBuilderApi';
++import { spacing, typography, type SemanticTokens } from '../../../theme/tokens';
++import { AI_LABEL, AI_STAGES, applyLabel, contextLine, droppedLine, formatRow, INJURY_AREA_LABELS, KIND_LABELS, noCreditsCopy, PAUSED_COPY, QUICK_ACTIONS, SCREENING_COPY, UNNAMED_CHANGE } from './aiBuilderCopy';
++import type { AiBuilderController } from './useAiBuilder';
++
++type Props = { open: boolean; onClose: () => void; ai: AiBuilderController; isBlank: boolean; sc: SemanticTokens };
++
++/** One change: kind badge (text plus colour, never colour alone), before -> after, reason, warnings, keep switch; 60 ms stagger. */
++type CardProps = { change: AiBuilderChange; index: number; kept: boolean; reduceMotion: boolean; onToggle: (id: string) => void; sc: SemanticTokens };
++function ChangeCard({ change, index, kept, reduceMotion, onToggle, sc }: CardProps) {
++  const anim = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
++  useEffect(() => {
++    if (reduceMotion) return anim.setValue(1);
++    Animated.timing(anim, { toValue: 1, duration: 220, delay: index * 60, useNativeDriver: true }).start();
++  }, [anim, index, reduceMotion]);
++
++  const kind = KIND_LABELS[change.kind];
++  const removedId = change.exercise ? null : change.before?.exercise_external_id; // resolved by name like the builder rows
++  const name = change.exercise?.name ?? UNNAMED_CHANGE[change.kind] ?? 'Exercise';
++  const titleStyle = [typography.bodyMd, styles.grow, { color: sc.textPrimary }, change.kind === 'removed' && styles.strike];
++  const before = formatRow(change.before);
++  const after = formatRow(change.after);
++  const delta = before && after ? `${before} -> ${after}` : after || before;
++  const badge = change.kind === 'removed' ? sc.textMuted : change.kind === 'added' ? sc.accent : sc.accentText;
++  const slide = reduceMotion ? null : { transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }] };
++
++  return (
++    <Animated.View testID={`ai-change-${change.change_id}`} style={[styles.card, { borderColor: sc.border, backgroundColor: sc.bgSurface, opacity: anim }, slide]}>
++      <View style={styles.row}>
++        <Text style={[typography.caption, styles.badge, { color: badge, borderColor: badge }]}>{kind}</Text>
++        {removedId ? <CoachExerciseName id={removedId} fallback={removedId} prefix="" style={titleStyle} /> : <Text numberOfLines={2} style={titleStyle}>{name}</Text>}
++        <Switch testID={`ai-keep-${change.change_id}`} value={kept} onValueChange={() => onToggle(change.change_id)}
++          accessibilityLabel={`Keep this change: ${kind} ${name}${delta ? `, ${delta}` : ''}. ${change.reason}`} />
++      </View>
++      {delta ? <Text style={[typography.body, { color: sc.textPrimary }]}>{delta}</Text> : null}
++      <Text style={[typography.caption, { color: sc.textMuted }]}>{change.reason}</Text>
++      {change.warnings.map((w) => (
++        <Text key={w} accessibilityRole="alert" style={[typography.caption, styles.warning, { color: sc.textPrimary, borderColor: sc.accentText }]}>
++          {`Warning: ${w}`}
++        </Text>
++      ))}
++      {!kept ? <Text style={[typography.caption, { color: sc.textMuted }]}>Not applied.</Text> : null}
++    </Animated.View>
++  );
++}
++
++export default function AiBuilderSheet({ open, onClose, ai, isBlank, sc }: Props) {
++  const reduceMotion = useReduceMotion();
++  const [text, setText] = useState('');
++  const [injuryPicker, setInjuryPicker] = useState(false);
++  const st = ai.status?.state;
++  // paused and not_configured (a server switch, never the coach's account) both read as paused; an unreadable status offers a retry.
++  const blocked = st === 'paused' || st === 'not_configured' ? PAUSED_COPY : st === 'no_credits' ? noCreditsCopy(ai.status?.credits.resets_at ?? null) : ai.statusError;
++  const busy = ai.phase === 'thinking' || ai.phase === 'applying';
++  const p = ai.proposal;
++  const prompt = isBlank ? 'Describe the workout to build' : 'Ask AI to change this workout';
++  const canSend = !busy && !!text.trim();
++  const n = ai.acceptedIds.length;
++
++  const send = (quickAction?: AiBuilderQuickAction, injuryArea?: AiBuilderInjuryArea) => {
++    const instruction = text.trim() || (quickAction ? QUICK_ACTIONS[quickAction].instruction : '');
++    if (!instruction) return;
++    setInjuryPicker(false);
++    void ai.propose({ instruction, quickAction, injuryArea });
++  };
++  const close = () => {
++    if (p) void ai.discard();
++    onClose();
++  };
++  const chip = (key: string, label: string, a11y: string, onPress: () => void) => (
++    <HapticPressable key={key} intent="light" testID={key} accessibilityRole="button" accessibilityLabel={a11y} accessibilityState={{ disabled: busy }}
++      disabled={busy} onPress={onPress} style={[styles.chip, { borderColor: sc.border }]}>
++      <Text style={[typography.caption, { color: sc.textPrimary }]}>{label}</Text>
++    </HapticPressable>
++  );
++  const line = (testID: string, body: string, alert = false) => (
++    <Text testID={testID} accessibilityRole={alert ? 'alert' : undefined} accessibilityLiveRegion="polite"
++      style={[typography.body, alert && styles.alert, { color: sc.textPrimary, borderColor: sc.accentText }]}>
++      {body}
++    </Text>
++  );
++
++  return (
++    <Modal visible={open} transparent animationType={reduceMotion ? 'fade' : 'slide'} onRequestClose={close}>
++      <KeyboardAvoidingView style={[styles.backdrop, { backgroundColor: sc.overlay }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
++        <View testID="ai-builder-sheet" style={[styles.sheet, { backgroundColor: sc.bgPrimary, borderColor: sc.border }]}>
++          <View style={styles.row}>
++            <Text accessibilityRole="header" style={[typography.h4, styles.grow, { color: sc.textPrimary }]}>Ask AI</Text>
++            <Pressable accessibilityRole="button" accessibilityLabel="Close Ask AI" onPress={close} hitSlop={12}>
++              <Text style={[typography.bodyMd, { color: sc.accentText }]}>Close</Text>
++            </Pressable>
++          </View>
++          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: spacing.lg }}>
++            {blocked ? line('ai-builder-blocked', blocked) : null}
++            {ai.statusError ? (
++              <HapticPressable intent="light" testID="ai-builder-retry" accessibilityRole="button" accessibilityLabel="Check Ask AI again" accessibilityState={{ disabled: ai.checking }}
++                disabled={ai.checking} onPress={ai.retryStatus} style={[styles.button, styles.outline, { borderColor: sc.border }]}>
++                <Text style={[typography.bodyMd, { color: sc.textPrimary }]}>{ai.checking ? 'Checking' : 'Try again'}</Text>
++              </HapticPressable>
++            ) : null}
++            {!p && !blocked ? (
++              <>
++                <TextInput testID="ai-builder-input" accessibilityLabel={prompt} placeholder={prompt} placeholderTextColor={sc.textMuted} value={text}
++                  onChangeText={setText} maxLength={AI_BUILDER_INSTRUCTION_MAX} multiline autoFocus editable={!busy}
++                  style={[styles.input, { color: sc.textPrimary, borderColor: sc.border }]} />
++                <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled">
++                  {AI_BUILDER_QUICK_ACTIONS.map((a) =>
++                    chip(`ai-chip-${a}`, QUICK_ACTIONS[a].label, QUICK_ACTIONS[a].label, () => (a === 'swap_for_injury' ? setInjuryPicker((v) => !v) : send(a))),
++                  )}
++                </ScrollView>
++                {injuryPicker ? (
++                  <View style={styles.wrap}>
++                    {AI_BUILDER_INJURY_AREAS.map((area) =>
++                      chip(`ai-injury-${area}`, INJURY_AREA_LABELS[area], `Swap for ${INJURY_AREA_LABELS[area]}`, () => send('swap_for_injury', area)),
++                    )}
++                  </View>
++                ) : null}
++                <Pressable testID="ai-builder-send" accessibilityRole="button" accessibilityLabel="Send to Ask AI" accessibilityState={{ disabled: !canSend }}
++                  disabled={!canSend} onPress={() => send()} style={[styles.button, { backgroundColor: canSend ? sc.accent : sc.disabledBg }]}>
++                  <Text style={[typography.bodyMd, { color: canSend ? sc.textOnAccent : sc.textOnDisabled }]}>Send</Text>
++                </Pressable>
++              </>
++            ) : null}
++            {ai.phase === 'thinking' ? (
++              <View testID="ai-builder-thinking" accessibilityLiveRegion="polite" style={styles.stages}>
++                {AI_STAGES.map((label, i) => (
++                  <Text key={label} style={[typography.body, { color: i <= ai.stage ? sc.textPrimary : sc.textMuted }]}>
++                    {i < ai.stage ? `Done: ${label}` : label}
++                  </Text>
++                ))}
++                <ActivityIndicator color={sc.accentText} accessibilityLabel={AI_STAGES[ai.stage]} />
++              </View>
++            ) : null}
++            {ai.error ? line('ai-builder-error', ai.error, true) : null}
++            {p ? (
++              <View testID="ai-builder-review">
++                <Text style={[typography.bodyMd, { color: sc.textPrimary }]}>{p.summary}</Text>
++                {p.context_used.length ? <Text style={[typography.caption, { color: sc.textMuted }]}>{contextLine(p.context_used)}</Text> : null}
++                {p.screening_flag ? line('ai-builder-screening', SCREENING_COPY, true) : null}
++                {p.changes.map((c, i) => (
++                  <ChangeCard key={c.change_id} change={c} index={i} kept={!!ai.kept[c.change_id]} reduceMotion={reduceMotion} onToggle={ai.toggle} sc={sc} />
++                ))}
++                {p.dropped.length ? (
++                  <Text style={[typography.caption, { color: sc.textMuted }]}>{droppedLine(p.dropped.length, p.dropped[0]?.reason ?? null)}</Text>
++                ) : null}
++                <Text style={[typography.caption, { color: sc.textMuted, marginTop: spacing.xs }]}>{AI_LABEL}</Text>
++                <View style={[styles.row, { marginTop: spacing.md }]}>
++                  <Pressable testID="ai-builder-discard" accessibilityRole="button" accessibilityLabel={p.changes.length ? 'Discard all suggestions' : 'Done'}
++                    disabled={busy} onPress={() => void ai.discard()} style={[styles.button, styles.outline, { borderColor: sc.border }]}>
++                    <Text style={[typography.bodyMd, { color: sc.textPrimary }]}>{p.changes.length ? 'Discard' : 'Done'}</Text>
++                  </Pressable>
++                  {p.changes.length ? (
++                    <Pressable testID="ai-builder-apply" accessibilityRole="button" accessibilityLabel={applyLabel(n)} accessibilityState={{ disabled: busy || !n }}
++                      disabled={busy || !n} onPress={() => void ai.apply().then((ok) => ok && onClose())}
++                      style={[styles.button, styles.grow, { backgroundColor: n ? sc.accent : sc.disabledBg }]}>
++                      <Text style={[typography.bodyMd, { color: n ? sc.textOnAccent : sc.textOnDisabled }]}>{ai.phase === 'applying' ? 'Applying' : applyLabel(n)}</Text>
++                    </Pressable>
++                  ) : null}
++                </View>
++              </View>
++            ) : null}
++          </ScrollView>
++        </View>
++      </KeyboardAvoidingView>
++    </Modal>
++  );
++}
++
++const styles = StyleSheet.create({
++  backdrop: { flex: 1, justifyContent: 'flex-end' },
++  sheet: { maxHeight: '88%', minHeight: '50%', borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, padding: spacing.lg },
++  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
++  grow: { flex: 1 }, outline: { borderWidth: 1 }, strike: { textDecorationLine: 'line-through' }, wrap: { flexDirection: 'row', flexWrap: 'wrap' },
++  input: { borderWidth: 1, borderRadius: 12, padding: spacing.md, minHeight: 72, marginBottom: spacing.sm, textAlignVertical: 'top' },
++  chip: { borderWidth: 1, borderRadius: 16, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, marginRight: spacing.sm, marginBottom: spacing.sm },
++  button: { borderRadius: 12, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, alignItems: 'center' },
++  stages: { gap: spacing.xs, marginVertical: spacing.md },
++  alert: { borderLeftWidth: 3, paddingLeft: spacing.sm, marginVertical: spacing.sm },
++  card: { borderWidth: 1, borderRadius: 12, padding: spacing.md, marginBottom: spacing.sm, gap: spacing.xs },
++  badge: { borderWidth: 1, borderRadius: 8, paddingHorizontal: spacing.sm, paddingVertical: 2 },
++  warning: { borderLeftWidth: 3, paddingLeft: spacing.sm },
++});
+diff --git a/src/components/coach/ai-builder/__tests__/aiBuilder.test.tsx b/src/components/coach/ai-builder/__tests__/aiBuilder.test.tsx
+new file mode 100644
+index 00000000..b875bf7d
+--- /dev/null
++++ b/src/components/coach/ai-builder/__tests__/aiBuilder.test.tsx
+@@ -0,0 +1,175 @@
++/** AIB-5 Ask AI: API client, copy, sheet + hook (plan section 6). Screen entry + undo: coachWorkoutBuilderUndo.test.tsx. */
++import React from 'react';
++import { Animated } from 'react-native';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
++import * as Haptics from 'expo-haptics';
++import { aiBuilderApi, toAiBuilderError } from '../../../../api/aiBuilderApi';
++import { lightTokens } from '../../../../theme/tokens';
++import AiBuilderSheet from '../AiBuilderSheet';
++import { useAiBuilder } from '../useAiBuilder';
++import { describeAiBuilderError } from '../aiBuilderCopy';
++
++const mockApi = { get: jest.fn(), post: jest.fn(), patch: jest.fn() };
++jest.mock('../../../../services/api', () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockApi.get(...a), post: (...a: unknown[]) => mockApi.post(...a), patch: (...a: unknown[]) => mockApi.patch(...a) },
++}));
++jest.mock('expo-haptics', () => ({
++  impactAsync: jest.fn(async () => undefined), selectionAsync: jest.fn(async () => undefined), notificationAsync: jest.fn(async () => undefined),
++  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium' }, NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
++}));
++let mockReduceMotion = false;
++jest.mock('../../../../screens/client/wearables/components/useReduceMotion', () => ({ useReduceMotion: () => mockReduceMotion }));
++
++const httpError = (status: number, data: unknown = {}) => Object.assign(new Error(`HTTP ${status}`), { isAxiosError: true, response: { status, data } });
++const STATUS_ON = { state: 'on', create: true, edit: true, credits: { remaining_pct: 80, resets_at: null }, label: 'AI-suggested, coach-approved' };
++const change = (id: string, kind: string, name: string, extra: object) => ({
++  change_id: id, kind, op: {}, exercise: { id: name, name, thumbnail_url: null }, reason: `Reason ${id}.`, warnings: [], ...extra,
++});
++const PROPOSAL = {
++  draft_id: 'draft-1', summary: '2 changes. Knee-friendly swaps.', dropped: [{ reason: 'not in your exercise library.' }], context_used: ['goal'], screening_flag: false,
++  changes: [
++    change('c1', 'changed', 'Goblet squat', { before: { sets: 3, reps_or_duration_seconds: 8, weight_lbs: 135 }, after: { sets: 3, reps_or_duration_seconds: 10, weight_lbs: 115 } }),
++    change('c2', 'added', 'Glute bridge', { after: { sets: 2, reps_or_duration_seconds: 12 }, warnings: ['Loads the hip.'] }),
++  ],
++};
++
++const mockPrepare = jest.fn();
++const mockOnApplied = jest.fn();
++function Harness() {
++  const ai = useAiBuilder({ planId: 'plan-1', isBlank: false, prepare: mockPrepare, onApplied: mockOnApplied });
++  return <AiBuilderSheet open onClose={jest.fn()} ai={ai} isBlank={false} sc={lightTokens} />;
++}
++type Screen = Awaited<ReturnType<typeof render>>;
++const press = (s: Screen, id: string) => act(async () => { fireEvent.press(s.getByTestId(id)); });
++async function proposeFromInput(s: Screen) {
++  await act(async () => { fireEvent.changeText(s.getByTestId('ai-builder-input'), 'swap squats for something knee-friendly'); });
++  await press(s, 'ai-builder-send');
++}
++const proposeCall = (fields: object) => expect(mockApi.post).toHaveBeenCalledWith('/ai/gateway/workout-builder/propose', expect.objectContaining(fields), expect.anything());
++
++beforeEach(() => {
++  [jest.clearAllMocks(), (mockReduceMotion = false), mockOnApplied.mockResolvedValue(undefined), mockApi.get.mockResolvedValue({ data: STATUS_ON }), mockPrepare.mockResolvedValue({ ok: true, lockToken: 'abcdefabcdefabcd' })];
++});
++
++describe('aiBuilderApi + copy', () => {
++  it('status 404 (current production backend) is null, so the entry hides', async () => {
++    mockApi.get.mockRejectedValueOnce(httpError(404));
++    await expect(aiBuilderApi.getStatus()).resolves.toBeNull();
++  });
++
++  it('maps every refusal to one specific code and line; never first person, an exclamation or purchase wording', () => {
++    expect(toAiBuilderError(httpError(402, { code: 'COACH_AI_BUDGET_EXHAUSTED', budget: { period_end: '2026-11-01' } }))).toEqual(expect.objectContaining({ code: 'no_credits', resetsAt: '2026-11-01' }));
++    const cases: [number, object, string][] = [
++      [403, { code: 'COACH_AI_BUDGET_EXHAUSTED' }, 'no_credits'], [403, { code: 'ai_consent_required' }, 'consent_required'],
++      [409, {}, 'stale'], [422, {}, 'no_safe_proposal'], [429, {}, 'rate_limited'], [503, { code: 'AI_PAUSED' }, 'paused'], [503, { code: 'AI_NOT_CONFIGURED' }, 'server'],
++    ];
++    for (const [status, body, code] of cases) expect(toAiBuilderError(httpError(status, body)).code).toBe(code);
++    expect(toAiBuilderError(new Error('socket')).code).toBe('network');
++    for (const c of ['no_credits', 'consent_required', 'stale', 'no_safe_proposal', 'paused', 'rate_limited', 'forbidden', 'network', 'contract', 'server'] as const) {
++      expect(describeAiBuilderError(c, null)).not.toMatch(/!|\b(I|we|We|my|our)\b|Something went wrong|top up|buy|purchase/);
++    }
++  });
++});
++
++describe('AiBuilderSheet + useAiBuilder', () => {
++  it('cards show kind, before -> after, reason and warnings; keep toggles drive Apply N; Apply sends accepted ids with a success haptic', async () => {
++    mockApi.post.mockResolvedValueOnce({ data: PROPOSAL });
++    const ref = { plan_id: 'plan-1', revision_index: 4, lock_token: 'abababababababab' };
++    mockApi.patch.mockResolvedValueOnce({ data: { status: 'approved', materialised_ref: ref } });
++    const s = await render(<Harness />);
++    await proposeFromInput(s);
++    await waitFor(() => expect(s.getByTestId('ai-builder-review')).toBeTruthy());
++    proposeCall({ mode: 'edit', plan_id: 'plan-1', lock_token: 'abcdefabcdefabcd' });
++    for (const t of ['Changed', 'Added', '3 x 8 @ 135 lb -> 3 x 10 @ 115 lb', 'Reason c1.', 'Warning: Loads the hip.', '1 suggestion removed: not in your exercise library.', 'Apply 2 changes']) {
++      expect(s.getByText(t)).toBeTruthy();
++    }
++    await act(async () => { fireEvent(s.getByTestId('ai-keep-c2'), 'valueChange', false); });
++    expect(s.getByText('Apply 1 change')).toBeTruthy();
++    expect(Haptics.notificationAsync).toHaveBeenCalledWith('warning');
++    await press(s, 'ai-builder-apply');
++    expect(mockApi.patch).toHaveBeenCalledWith('/ai/gateway/drafts/draft-1', { decision: 'approved', accepted_change_ids: ['c1'] });
++    expect(Haptics.notificationAsync).toHaveBeenCalledWith('success');
++    expect(mockOnApplied).toHaveBeenCalledWith(ref, 1);
++  });
++
++  it('no lock token yet: propose still goes out and sends none; Discard rejects the draft with a warning haptic', async () => {
++    [mockPrepare.mockResolvedValueOnce({ ok: true }), mockApi.post.mockResolvedValueOnce({ data: PROPOSAL }), mockApi.patch.mockResolvedValueOnce({ data: { status: 'rejected' } })];
++    const s = await render(<Harness />);
++    await proposeFromInput(s);
++    await waitFor(() => expect(s.getByTestId('ai-builder-discard')).toBeTruthy());
++    expect(JSON.parse(JSON.stringify(mockApi.post.mock.calls[0][1]))).not.toHaveProperty('lock_token');
++    await press(s, 'ai-builder-discard');
++    expect(mockApi.patch).toHaveBeenCalledWith('/ai/gateway/drafts/draft-1', { decision: 'rejected' });
++    expect(Haptics.notificationAsync).toHaveBeenCalledWith('warning');
++  });
++
++  it('chips: light haptic + quick action; the injury chip asks for the area first; explain (b#809 draft_id null) ends with Done, no draft call', async () => {
++    mockApi.post.mockResolvedValue({ data: { ...PROPOSAL, draft_id: null, changes: [], summary: 'Upper body push, 6 exercises.' } });
++    const s = await render(<Harness />);
++    await waitFor(() => expect(s.getByTestId('ai-chip-deload')).toBeTruthy());
++    expect(s.queryByTestId('ai-injury-knee')).toBeNull();
++    await press(s, 'ai-chip-swap_for_injury');
++    await press(s, 'ai-injury-knee');
++    expect(Haptics.impactAsync).toHaveBeenCalledWith('light');
++    proposeCall({ quick_action: 'swap_for_injury', injury_area: 'knee' });
++    await waitFor(() => expect(s.getByText('Upper body push, 6 exercises.')).toBeTruthy());
++    await press(s, 'ai-builder-discard');
++    expect(mockApi.patch).not.toHaveBeenCalled();
++  });
++
++  it('b#809 shapes: remove/reorder/meta with exercise null render; the approve row (materialised_ref = plan id) re-reads, no error', async () => {
++    const before = { client_ref: 'r0', exercise_external_id: 'seed:back-squat', sets: 3, reps_or_duration_seconds: 8, rest_seconds: 90, weight_lbs: null, superset_group_id: null, notes: null };
++    const changes = [change('c0', 'removed', '', { exercise: null, before, after: null }), ...['moved', 'meta'].map((k, i) => change(`c${i + 1}`, k, '', { exercise: null, before: null, after: null }))];
++    mockApi.post.mockResolvedValueOnce({ data: { ...PROPOSAL, changes, context_used: ['exercise_library', 'current_workout'], credits_remaining_pct: null } });
++    mockApi.patch.mockResolvedValueOnce({ data: { id: 'draft-1', capability: 'draft.edit_workout_plan', status: 'approved', materialised_ref: 'plan-1', payload: { diff: [] }, decided_at: '2026-10-07T01:00:00.000Z' } });
++    const s = await render(<Harness />);
++    await proposeFromInput(s);
++    await waitFor(() => expect(s.getByTestId('ai-builder-review')).toBeTruthy());
++    for (const t of ['seed:back-squat', 'New order', 'Workout details', 'Using your exercise library, this workout', 'Apply 3 changes']) expect(s.getByText(t)).toBeTruthy();
++    await press(s, 'ai-builder-apply');
++    [expect(mockOnApplied).toHaveBeenCalledWith(null, 3), expect(s.queryByTestId('ai-builder-error')).toBeNull()];
++  });
++
++  it.each([
++    [httpError(402, { code: 'COACH_AI_BUDGET_EXHAUSTED' }), /^AI credits for this month are used up\./],
++    [httpError(403, { code: 'ai_consent_required' }), /has not allowed AI to use their data/],
++    [httpError(409), /changed on another screen/],
++    [httpError(422, { code: 'AI_NO_SAFE_PROPOSAL' }), /No safe change found/],
++  ])('a refused proposal shows its own copy and an error haptic (%#)', async (err, copy) => {
++    mockApi.post.mockRejectedValueOnce(err);
++    const s = await render(<Harness />);
++    await proposeFromInput(s);
++    await waitFor(() => expect(s.getByTestId('ai-builder-error').props.children).toMatch(copy));
++    expect(Haptics.notificationAsync).toHaveBeenCalledWith('error');
++  });
++
++  it.each(['paused', 'not_configured'])('status %s: paused copy, no prompt or chips, nothing proposed', async (state) => {
++    mockApi.get.mockResolvedValueOnce({ data: { ...STATUS_ON, state } });
++    const s = await render(<Harness />);
++    await waitFor(() => expect(s.getByTestId('ai-builder-blocked').props.children).toBe('Ask AI is paused for maintenance. Your workouts are unchanged.'));
++    expect(s.queryByTestId('ai-builder-input') ?? s.queryByTestId('ai-chip-deload') ?? s.queryByTestId('ai-builder-retry')).toBeNull();
++    expect(mockApi.post).not.toHaveBeenCalled();
++  });
++
++  it('status unreadable (network): specific copy and a retry; the prompt returns once status loads', async () => {
++    mockApi.get.mockRejectedValueOnce(new Error('socket'));
++    const s = await render(<Harness />);
++    await waitFor(() => expect(s.getByTestId('ai-builder-blocked').props.children).toMatch(/^No connection\./));
++    expect(s.queryByTestId('ai-builder-input')).toBeNull();
++    await press(s, 'ai-builder-retry');
++    await waitFor(() => expect(s.getByTestId('ai-builder-input')).toBeTruthy());
++    expect(mockApi.get).toHaveBeenCalledTimes(2);
++  });
++
++  it('Reduce Motion: cards appear at once, no stagger animation', async () => {
++    mockReduceMotion = true;
++    const timing = jest.spyOn(Animated, 'timing');
++    mockApi.post.mockResolvedValueOnce({ data: PROPOSAL });
++    const s = await render(<Harness />);
++    await proposeFromInput(s);
++    await waitFor(() => expect(s.getByTestId('ai-change-c1')).toBeTruthy());
++    expect(timing).not.toHaveBeenCalled();
++    timing.mockRestore();
++  });
++});
+diff --git a/src/components/coach/ai-builder/aiBuilderCopy.ts b/src/components/coach/ai-builder/aiBuilderCopy.ts
+new file mode 100644
+index 00000000..d5093bb0
+--- /dev/null
++++ b/src/components/coach/ai-builder/aiBuilderCopy.ts
+@@ -0,0 +1,62 @@
++/** Ask AI copy (plan PART 1 "States"): no first person, emojis, exclamation marks or generic errors. */
++import type { AiBuilderErrorCode, AiBuilderInjuryArea, AiBuilderQuickAction } from '../../../api/aiBuilderApi';
++
++export const AI_LABEL = 'AI-suggested, coach-approved';
++export const AI_STAGES = ['Reading the workout', 'Checking limits and injuries', 'Choosing from your exercise library'] as const;
++export const QUICK_ACTIONS: Record<AiBuilderQuickAction, { label: string; instruction: string }> = {
++  swap_for_injury: { label: 'Swap for injury', instruction: 'Swap exercises that load the selected area for safer options.' },
++  progress: { label: 'Progress', instruction: 'Progress this workout by one step.' },
++  deload: { label: 'Deload', instruction: 'Make this a deload: sets down about 40 percent, same exercises.' },
++  shorten: { label: 'Shorten', instruction: 'Shorten this workout and keep the main lifts.' },
++  more_volume: { label: 'More volume', instruction: 'Add volume to this workout inside safe limits.' },
++  explain: { label: 'Explain', instruction: 'Explain this workout in a short summary for the coach.' },
++};
++
++export const INJURY_AREA_LABELS: Record<AiBuilderInjuryArea, string> = {
++  knee: 'Knee', shoulder: 'Shoulder', lower_back: 'Lower back', hip: 'Hip', elbow_wrist: 'Elbow or wrist', ankle_foot: 'Ankle or foot', upper_back_neck: 'Upper back or neck',
++};
++export const KIND_LABELS = { added: 'Added', changed: 'Changed', removed: 'Removed', moved: 'Moved', meta: 'Details' } as const;
++export const UNNAMED_CHANGE: Record<string, string> = { moved: 'New order', meta: 'Workout details' }; // b#809 sends exercise: null for these and removes
++const CONTEXT_LABELS: Record<string, string> = { exercise_library: 'your exercise library', current_workout: 'this workout', schedule: 'training days' };
++export const contextLine = (keys: string[]) => `Using ${keys.map((k) => CONTEXT_LABELS[k] ?? k.replace(/_/g, ' ')).join(', ')}`;
++export const PAUSED_COPY = 'Ask AI is paused for maintenance. Your workouts are unchanged.';
++export const SAVE_FIRST_COPY = 'Save this workout first, then Ask AI can change it.';
++export const WAIT_FOR_SAVE_COPY = 'Your last edit is still saving. Ask again in a moment.';
++export const SCREENING_COPY = 'This client flagged a health screening question. Confirm medical clearance before increasing intensity.';
++
++export function noCreditsCopy(resetsAt: string | null): string {
++  const d = resetsAt ? new Date(resetsAt) : null;
++  return d && !Number.isNaN(d.getTime())
++    ? `AI credits for this month are used up. They reset on ${d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}.`
++    : 'AI credits for this month are used up. They reset at the start of the next billing period.';
++}
++
++const ERROR_COPY: Record<Exclude<AiBuilderErrorCode, 'no_credits'>, string> = {
++  consent_required: 'This client has not allowed AI to use their data. Edit by hand, or build from a template without client data.',
++  stale: 'This workout changed on another screen. Reload it and ask again.',
++  no_safe_proposal: 'No safe change found for that request. Try: swap squats for a knee-friendly option.',
++  paused: PAUSED_COPY,
++  not_available: PAUSED_COPY,
++  rate_limited: 'That is a lot of requests in an hour. Try again in a few minutes.',
++  forbidden: 'This account cannot use Ask AI on this workout.',
++  network: 'No connection. Your workout is unchanged. Check your connection and ask again.',
++  contract: 'The AI reply arrived in a format this app version cannot read. Your workout is unchanged.',
++  server: 'The AI service did not answer. Your workout is unchanged. Ask again in a minute.',
++};
++
++export function describeAiBuilderError(code: AiBuilderErrorCode, resetsAt: string | null = null): string {
++  return code === 'no_credits' ? noCreditsCopy(resetsAt) : ERROR_COPY[code];
++}
++
++type RowLike = { sets?: number | null; reps_or_duration_seconds?: number | null; weight_lbs?: number | null } | null | undefined;
++export function formatRow(row: RowLike): string {
++  if (!row) return '';
++  const base = row.sets != null && row.reps_or_duration_seconds != null ? `${row.sets} x ${row.reps_or_duration_seconds}` : row.sets != null ? `${row.sets} sets` : '';
++  return `${base}${row.weight_lbs != null ? ` @ ${row.weight_lbs} lb` : ''}`.trim();
++}
++
++const changes = (n: number) => (n === 1 ? '1 change' : `${n} changes`);
++export const applyLabel = (n: number) => (n === 0 ? 'Keep at least one change' : `Apply ${changes(n)}`);
++export const appliedToast = (n: number) => `Applied ${changes(n)}.`;
++export const droppedLine = (n: number, reason: string | null) =>
++  `${n === 1 ? '1 suggestion removed' : `${n} suggestions removed`}${reason ? `: ${reason}` : '.'}`;
+diff --git a/src/components/coach/ai-builder/useAiBuilder.ts b/src/components/coach/ai-builder/useAiBuilder.ts
+new file mode 100644
+index 00000000..88039556
+--- /dev/null
++++ b/src/components/coach/ai-builder/useAiBuilder.ts
+@@ -0,0 +1,139 @@
++/** useAiBuilder (AIB-5): idle -> thinking (staged reveal) -> review -> applying. Nothing reaches the plan before Apply. */
++import { useCallback, useEffect, useRef, useState } from 'react';
++import * as Haptics from 'expo-haptics';
++import { aiBuilderApi, toAiBuilderError, type AiBuilderInjuryArea, type AiBuilderProposal, type AiBuilderQuickAction, type AiBuilderRef, type AiBuilderStatus } from '../../../api/aiBuilderApi';
++import { AI_STAGES, describeAiBuilderError, WAIT_FOR_SAVE_COPY } from './aiBuilderCopy';
++
++export type AiHaptic = 'light' | 'medium' | 'success' | 'warning' | 'error' | 'selection';
++
++/** Haptics are decoration: an unsupported device (web, simulator) must never break a tap. */
++export function fireAiHaptic(kind: AiHaptic): void {
++  void (async () => {
++    try {
++      const { ImpactFeedbackStyle: I, NotificationFeedbackType: N } = Haptics;
++      await (kind === 'selection' ? Haptics.selectionAsync()
++        : kind === 'light' || kind === 'medium' ? Haptics.impactAsync(kind === 'light' ? I.Light : I.Medium)
++        : Haptics.notificationAsync(kind === 'success' ? N.Success : kind === 'warning' ? N.Warning : N.Error));
++    } catch {
++      // No haptic engine on this device: nothing to do.
++    }
++  })();
++}
++
++const AI_STAGE_MS = 700; // staged reveal step; card ticks capped at 5 per reveal
++
++export interface UseAiBuilderArgs {
++  planId: string | undefined;
++  isBlank: boolean;
++  prepare: () => Promise<{ ok: boolean; lockToken?: string }>; // land pending edits; ok=false while one is unsaved
++  onApplied: (ref: AiBuilderRef, count: number) => void | Promise<void>; // fold the server copy into the screen
++}
++
++export function useAiBuilder({ planId, isBlank, prepare, onApplied }: UseAiBuilderArgs) {
++  // value null = route absent (404): the ONLY hide case. error = status unreadable: the entry stays visible with a retry.
++  const [status, setStatus] = useState<{ loaded: boolean; value?: AiBuilderStatus | null; error?: string; checking?: boolean }>({ loaded: false });
++  const live = useRef(true);
++  const loadStatus = useCallback(() => {
++    setStatus((s) => ({ ...s, checking: true }));
++    void Promise.resolve().then(() => aiBuilderApi.getStatus()).then(
++      (value) => live.current && setStatus({ loaded: true, value }),
++      (err: unknown) => live.current && setStatus({ loaded: true, error: describeAiBuilderError(toAiBuilderError(err).code) }),
++    );
++  }, []);
++  useEffect(() => {
++    live.current = true;
++    loadStatus();
++    return () => void (live.current = false);
++  }, [loadStatus]);
++
++  const [phase, setPhase] = useState<'idle' | 'thinking' | 'review' | 'applying'>('idle');
++  const [stage, setStage] = useState(0);
++  const [proposal, setProposal] = useState<AiBuilderProposal | null>(null);
++  const [kept, setKept] = useState<Record<string, boolean>>({});
++  const [error, setError] = useState<string | null>(null);
++  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
++  const stopStages = useCallback(() => void (timer.current && clearInterval(timer.current)), []);
++  useEffect(() => stopStages, [stopStages]);
++
++  const fail = useCallback((err: unknown) => {
++    const e = toAiBuilderError(err);
++    fireAiHaptic('error');
++    setError(describeAiBuilderError(e.code, e.resetsAt));
++  }, []);
++
++  const propose = useCallback(
++    async (args: { instruction: string; quickAction?: AiBuilderQuickAction; injuryArea?: AiBuilderInjuryArea }) => {
++      if (!planId || phase === 'thinking' || phase === 'applying') return;
++      fireAiHaptic('medium');
++      setError(null);
++      setProposal(null);
++      setPhase('thinking');
++      setStage(0);
++      stopStages();
++      timer.current = setInterval(() => setStage((s) => Math.min(s + 1, AI_STAGES.length - 1)), AI_STAGE_MS);
++      try {
++        const ready = await prepare();
++        if (!ready.ok) {
++          setError(WAIT_FOR_SAVE_COPY);
++          return setPhase('idle');
++        }
++        const res = await aiBuilderApi.propose({
++          mode: isBlank ? 'create' : 'edit', plan_id: planId, lock_token: ready.lockToken,
++          instruction: args.instruction.trim(), quick_action: args.quickAction, injury_area: args.injuryArea,
++        });
++        setProposal(res);
++        setKept(Object.fromEntries(res.changes.map((c) => [c.change_id, true])));
++        setPhase('review');
++        res.changes.slice(0, 5).forEach((_, i) => setTimeout(() => fireAiHaptic('light'), i * 60));
++      } catch (err) {
++        fail(err);
++        setPhase('idle');
++      } finally {
++        stopStages();
++      }
++    },
++    [planId, phase, prepare, isBlank, stopStages, fail],
++  );
++
++  const toggle = useCallback((changeId: string) => {
++    fireAiHaptic(kept[changeId] ? 'warning' : 'selection');
++    setKept((cur) => ({ ...cur, [changeId]: !cur[changeId] }));
++  }, [kept]);
++
++  const acceptedIds = proposal ? proposal.changes.filter((c) => kept[c.change_id]).map((c) => c.change_id) : [];
++
++  const apply = useCallback(async () => {
++    if (!proposal?.draft_id || phase !== 'review' || acceptedIds.length === 0) return false;
++    setPhase('applying');
++    setError(null);
++    try {
++      const res = await aiBuilderApi.apply(proposal.draft_id, acceptedIds);
++      fireAiHaptic('success');
++      setProposal(null);
++      setPhase('idle');
++      await onApplied(res.materialised_ref ?? null, acceptedIds.length);
++      return true;
++    } catch (err) {
++      fail(err);
++      setPhase('review');
++      return false;
++    }
++  }, [proposal, phase, acceptedIds, onApplied, fail]);
++
++  const discard = useCallback(async () => {
++    fireAiHaptic('warning');
++    setProposal(null);
++    setPhase('idle');
++    setError(null);
++    if (!proposal?.draft_id) return; // explain writes no draft: nothing to reject
++    try {
++      await aiBuilderApi.discard(proposal.draft_id);
++    } catch {
++      // A failed reject leaves the draft pending server-side (it expires); the plan is unchanged either way.
++    }
++  }, [proposal]);
++
++  return { visible: status.loaded && status.value !== null, status: status.value ?? null, statusError: status.error ?? null, checking: !!status.checking, retryStatus: loadStatus, phase, stage, proposal, kept, acceptedIds, error, propose, toggle, apply, discard };
++}
++
++export type AiBuilderController = ReturnType<typeof useAiBuilder>;
+diff --git a/src/screens/coach/CoachWorkoutBuilderScreen.tsx b/src/screens/coach/CoachWorkoutBuilderScreen.tsx
+index ecb2d24d..e960a521 100644
+--- a/src/screens/coach/CoachWorkoutBuilderScreen.tsx
++++ b/src/screens/coach/CoachWorkoutBuilderScreen.tsx
+@@ -86,6 +86,10 @@ import {
+ } from './workoutBuilderAutosaveDiff';
+ import { describeAutosaveRefusal } from './workoutBuilderAccess';
+ import CoachExerciseName from '../../components/coach/workout-builder/CoachExerciseName';
++import AiBuilderSheet from '../../components/coach/ai-builder/AiBuilderSheet';
++import { fireAiHaptic, useAiBuilder } from '../../components/coach/ai-builder/useAiBuilder';
++import type { AiBuilderRef } from '../../api/aiBuilderApi';
++import { appliedToast, SAVE_FIRST_COPY } from '../../components/coach/ai-builder/aiBuilderCopy';
+ 
+ /** S-MWB-3: the undo / redo barrier phases (see the screen body). */
+ type HistoryOutcome = 'applied' | 'elsewhere';
+@@ -1497,6 +1501,50 @@ export default function CoachWorkoutBuilderScreen() {
+     }
+   }, [sendHistoryRequest, settleHistoryHead, setHistoryGate]);
+ 
++  // AIB-5 Ask AI: land pending edits before a proposal; after apply adopt the server head (header Undo reverts it) or, without a lock token, re-read.
++  const [aiOpen, setAiOpen] = useState(false);
++  const [aiToast, setAiToast] = useState<{ text: string; undo: boolean } | null>(null);
++  const aiPrepare = useCallback(async () => {
++    if (!autosaveEnabled || historyGateRef.current) return { ok: false };
++    await autosave.flush();
++    if (autosaveHasPendingRef.current) return { ok: false };
++    const token = autosave.readHead().lockToken;
++    return { ok: true, lockToken: token && token !== AUTOSAVE_BOOTSTRAP_LOCK_TOKEN ? token : undefined };
++  }, [autosaveEnabled, autosave]);
++  const aiOnApplied = useCallback(
++    async (ref: AiBuilderRef, count: number) => {
++      const before = autosave.readHead().index;
++      const token = ref?.lock_token;
++      const head = ref?.revision_index;
++      const fresh = token ? await refetchPlan().catch(() => null) : null;
++      const plan = fresh && !fresh.isError ? fresh.data : undefined;
++      const meta = { name: plan?.name ?? '', type: plan?.type ?? 'strength' };
++      const adopted = !!plan && !!token && head !== undefined &&
++        autosave.adoptServerHead({ headRevisionIndex: head, lockToken: token, serverCopy: buildServerWorkingCopy(plan.exercises, meta) });
++      setAiToast({ text: appliedToast(count), undo: adopted });
++      if (!plan || !adopted) return runReplayRefetch();
++      setUndoStack([...undoStackRef.current, before]);
++      setRedoStack([]);
++      deletedKeysRef.current.clear();
++      deletedSignaturesRef.current.clear();
++      setName(meta.name);
++      setType(meta.type);
++      setRows(plan.exercises.map((e) => ({ clientId: clientIdForServerRow(e.id), row_id: e.id, exercise_external_id: e.exercise_external_id, display_name: e.exercise_external_id,
++        sets: e.sets, reps_or_duration_seconds: e.reps_or_duration_seconds, rest_seconds: e.rest_seconds, weight_lbs: e.weight_lbs, superset_group_id: e.superset_group_id, notes: e.notes })));
++    },
++    [autosave, refetchPlan, buildServerWorkingCopy, runReplayRefetch, setUndoStack, setRedoStack, clientIdForServerRow],
++  );
++  const ai = useAiBuilder({ planId, isBlank: rows.length === 0, prepare: aiPrepare, onApplied: aiOnApplied });
++  useEffect(() => {
++    const t = aiToast ? setTimeout(() => setAiToast(null), 10_000) : undefined;
++    return () => clearTimeout(t);
++  }, [aiToast]);
++  const openAi = useCallback(() => {
++    if (!autosaveEnabled) return;
++    fireAiHaptic('light');
++    setAiOpen(true);
++  }, [autosaveEnabled]);
++
+   const historyBlocked =
+     editorLocked ||
+     autosave.replayInFlight ||
+@@ -1536,6 +1584,11 @@ export default function CoachWorkoutBuilderScreen() {
+               onPress={onPillPress}
+             />
+           ) : null}
++          {ai.visible && autosaveEnabled ? (
++            <Pressable testID="ai-header-button" accessibilityRole="button" accessibilityLabel="Ask AI to change this workout" onPress={openAi} style={styles.historyButton}>
++              <Text style={[typography.caption, { color: sc.textPrimary }]}>Ask AI</Text>
++            </Pressable>
++          ) : null}
+         </View>
+         {autosaveEnabled ? (
+           <View style={styles.historyRow}>
+@@ -1825,6 +1878,25 @@ export default function CoachWorkoutBuilderScreen() {
+           </Text>
+         </Pressable>
+       </ScrollView>
++      {aiToast ? (
++        <View testID="ai-applied-toast" accessibilityLiveRegion="polite" style={styles.aiBar}>
++          <Text style={[typography.body, { color: sc.textPrimary, flex: 1 }]}>{aiToast.text}</Text>
++          {aiToast.undo ? (
++            <Pressable testID="ai-toast-undo" accessibilityRole="button" accessibilityLabel="Undo the AI change" disabled={historyBlocked}
++              onPress={() => { fireAiHaptic('medium'); setAiToast(null); void runHistoryStep('undo'); }} style={styles.historyButton}>
++              <Text style={[typography.caption, { color: sc.textPrimary }]}>Undo</Text>
++            </Pressable>
++          ) : null}
++        </View>
++      ) : ai.visible && (autosaveEnabled || !isEditing) ? (
++        <Pressable testID="ai-prompt-bar" accessibilityRole="button" accessibilityLabel={autosaveEnabled ? 'Ask AI to change this workout' : SAVE_FIRST_COPY}
++          accessibilityState={{ disabled: !autosaveEnabled }} disabled={!autosaveEnabled} onPress={openAi} style={styles.aiBar}>
++          <Text style={[typography.body, { color: sc.textMuted }]}>
++            {!autosaveEnabled ? SAVE_FIRST_COPY : rows.length === 0 ? 'Describe the workout to build' : 'Ask AI to change this workout'}
++          </Text>
++        </Pressable>
++      ) : null}
++      <AiBuilderSheet open={aiOpen} onClose={() => setAiOpen(false)} ai={ai} isBlank={rows.length === 0} sc={sc} />
+     </KeyboardAvoidingView>
+   );
+ }
+@@ -1877,6 +1949,10 @@ function makeStyles(sc: SemanticTokens) {
+     },
+     label: { marginTop: spacing.md, marginBottom: spacing.xs },
+     historyRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.xs },
++    aiBar: {
++      flexDirection: 'row', alignItems: 'center', gap: spacing.sm, minHeight: 52, marginHorizontal: spacing.lg, marginBottom: spacing.md,
++      paddingHorizontal: spacing.md, borderWidth: 1, borderRadius: 14, borderColor: sc.border, backgroundColor: sc.bgSurface,
++    },
+     historyButton: {
+       minHeight: 44,
+       minWidth: 64,

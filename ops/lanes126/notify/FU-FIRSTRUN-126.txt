@@ -1,0 +1,1 @@
+done | PRs: growth-project-mobile#441 @ 9cc1fcdc (FIX ROUND 2 READY), growth-project-backend#812 merged | B=1 (B-441-1 fixed) U=3 | needs operator: 1

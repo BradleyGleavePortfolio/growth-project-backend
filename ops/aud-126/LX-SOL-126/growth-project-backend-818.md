@@ -1,0 +1,9 @@
+AUDIT GPT-6.1 Sol (LX-SOL-126) — growth-project-backend#818 @ 2e7d8de69cef6d13bedbd8e4cedc2dc4f7151802 — VERDICT: APPROVE
+
+A=0 B=0 C=0; U=0. Independent review of 39 changed lines (+38/-1); all executed current-head CI checks succeeded, with the non-deployment gate deliberately skipped. ([PR #818](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/818), [CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37558783705/job/112591075980))
+
+Scope: authenticated, entitled student GET /workouts → caller ID → WorkoutService.getWorkouts → caller-owned workout sessions and included exercises. The only runtime change adds descending `created_at` after descending calendar date, so today's newer saved session comes first without changing owner scope, response shape, row limit or other workout operations. ([controller](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/2e7d8de69cef6d13bedbd8e4cedc2dc4f7151802/src/workout/workout.controller.ts), [service change](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/2e7d8de69cef6d13bedbd8e4cedc2dc4f7151802/src/workout/workout.service.ts#L73-L84))
+
+The focused spec asserts both ordering fields alongside the unchanged caller filter, included exercises and limit; full CI supplies the acceptance evidence, with no new schema or backend/mobile compatibility dependency. ([regression spec](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/2e7d8de69cef6d13bedbd8e4cedc2dc4f7151802/test/workout-history-order-fu126.spec.ts), [PR changed files](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/818/files), [CI](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37558783705/job/112591075980))
+
+C: none newly raised. No local tests for this PR, pushes, merges, deployments or production actions.

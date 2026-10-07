@@ -1,0 +1,1080 @@
+diff --git a/.github/fly-env-desired-state.json b/.github/fly-env-desired-state.json
+index 9eccd95e..a796e50b 100644
+--- a/.github/fly-env-desired-state.json
++++ b/.github/fly-env-desired-state.json
+@@ -37,11 +37,6 @@
+     "FEATURE_WEARABLES_INGEST_POST": "true",
+     "FEATURE_MWB_TEMPLATES": "true",
+     "FEATURE_MWB_AUTOSAVE_UNDO": "true",
+-    "FEATURE_MWB_AI_LIVE_CREATE": "unset",
+-    "AI_GATEWAY_ENABLED": "unset",
+-    "AI_GATEWAY_PROVIDER": "unset",
+-    "AI_GATEWAY_CAPABILITIES": "unset",
+-    "AI_GATEWAY_REQUIRE_APPROVAL": "unset",
+     "FEATURE_NAMED_REGIMES": "true",
+     "FEATURE_DUNNING_V2": "true",
+     "FEATURE_COACH_CODE_TOOLS": "true",
+@@ -117,11 +112,6 @@
+     "FEATURE_WEARABLES_INGEST_POST": "Wave B, true: backend ingest (#623) deployed; mobile H1-H8 merged; apply only after mobile #378 (C-370-2 burst, C-370-3 sleep) is approved and merged, then the owner device pass on Apple Health and Health Connect. Unset = off (only 'true'); emergency kill: unset (the ingest routes return 503 wearables_ingest_disabled, the app keeps its saved progress).",
+     "FEATURE_MWB_TEMPLATES": "Wave B (owner day-1 list), true: programs backend (MWB-3 + #733) deployed; mobile Programs m#355-#358 merged and EXPO_PUBLIC_FF_MWB_PROGRAMS on in the production and clinic profiles for the 10-07 build. Apply with FEATURE_MWB_AUTOSAVE_UNDO and FEATURE_NAMED_REGIMES. Unset = off (only 'true'); emergency kill: unset (program library routes return 404; saved programs are kept).",
+     "FEATURE_MWB_AUTOSAVE_UNDO": "Wave B (owner day-1 list), true: same gate as FEATURE_MWB_TEMPLATES. Precondition: MWB_AUTOSAVE_LOCK_TOKEN_SECRET is github-secret in this file and the GitHub secret exists (64+ hex characters), because the autosave service throws without it. Mobile EXPO_PUBLIC_FF_MWB_AUTOSAVE flips with it. Unset = off (only 'true'); emergency kill: unset (autosave and undo routes return 404; ship the same kill to mobile EXPO_PUBLIC_FF_MWB_AUTOSAVE).",
+-    "FEATURE_MWB_AI_LIVE_CREATE": "AI workout builder kill switch (AI_MASTER_BUILDER_PLAN section 5). Stays unset until all of: AIB-1a, AIB-2 and AIB-4 deployed; SAFE-AIB-127 verdict GO; the owner's device tap-through on the ci APK. Then the FLIP PR sets it 'true' together with AI_GATEWAY_ENABLED 'true', AI_GATEWAY_PROVIDER 'anthropic' and AI_GATEWAY_CAPABILITIES (the two workout capabilities). Unset = off (only 'true'); emergency kill, first choice: unset (only the builder stops; the app shows the paused state; no build needed).",
+-    "AI_GATEWAY_ENABLED": "AI gateway master switch. Absent on Fly (secrets list run 37536038425, 15:52 10-06). Same gate as FEATURE_MWB_AI_LIVE_CREATE. Unset = off (only true/1/yes/on enable); last-resort kill: unset (stops every gateway capability, not only the builder).",
+-    "AI_GATEWAY_PROVIDER": "AI gateway provider. Absent on Fly (same run). Same gate as FEATURE_MWB_AI_LIVE_CREATE; the FLIP value is 'anthropic' (ANTHROPIC_API_KEY is already on Fly). Unset = stub (nothing leaves the server).",
+-    "AI_GATEWAY_CAPABILITIES": "AI gateway allow-list. Absent on Fly (same run), so no '*' list exists. Same gate as FEATURE_MWB_AI_LIVE_CREATE; the only value this manifest may set is exactly the two workout capabilities (never '*', which would send every gateway capability, e.g. community_ai_triage and wearable_insight, to the provider). Before the FLIP the operator lists Fly secret names again. Unset = no capability allowed; second-choice kill: unset (every gateway capability stops).",
+-    "AI_GATEWAY_REQUIRE_APPROVAL": "Stays unset: the code default keeps both workout capabilities approval-required, and since AIB-4 the gateway requires a coach decision for them whatever this list says. The only settable value is the default list written out. Unset = DEFAULT_APPROVAL_REQUIRED.",
+     "FEATURE_NAMED_REGIMES": "Wave B (owner day-1 list), true: same gate as FEATURE_MWB_TEMPLATES. Also turns on the partial-refund coach decision rows (Keep drops / Unassign drops); a pending decision changes nothing until the coach picks one. Unset = off (only 'true'); emergency kill: unset (regime and decision routes return 404, no new decision rows).",
+     "FEATURE_DUNNING_V2": "Day 1, true (owner 10-01 11:32 day-1 list; 10-06 10:48 \"we need to turn everything on thats a day 1 blocker\"): backend D1-D2c, R-DISPUTE-PAUSE and the refund/inquiry rulings deployed (deploy 5 onward; #628 + m#322 approved and merged); mobile lockout m#352-#354 and coach Restart plan m#380 merged, so they ship in the 10-07 build. Apply only after the owner turns on the Stripe customer portal in live mode (dunning links open it) and sets live Revenue recovery > Retries to a custom schedule 1 / 2 / 4 days after the previous attempt (Days 1/3/7; Stripe performs every charge, v2 never charges) with 'if all retries fail' leaving the subscription past due or unpaid, never cancelled. Unset = off (only 'true'; v1 dunning stays active); emergency kill: unset (the Day-10 lockout guard becomes a no-op and v2 opens no new cycle).",
+     "FEATURE_COACH_CODE_TOOLS": "Day 1, true (apply only after the owner says go): A2 backend b#658 deployed (deploy 5); mobile Codes screen m#387 and the code-refusal copy m#385 merged, so the Codes screen ships in the 10-07 build. The store build ff6bd4b has no Codes screen and keeps using the legacy /coach/invite-codes routes, which this flag does not gate. Unset = off (only 'true'); emergency kill: unset (every /coach/codes route returns 404 coach_code_tools_disabled and the app falls back to the legacy invite-codes screen; the signup ledger keeps writing).",
+@@ -168,6 +158,8 @@
+   },
+   "excluded": {
+     "FEATURE_COMMUNITY_API_ALLOWLIST": "A list of user ids, not a closed-choice switch; not needed at launch because FEATURE_COMMUNITY_API opens community for everyone.",
++    "FEATURE_MWB_AI_LIVE_CREATE": "Needs the AI_GATEWAY_CAPABILITIES allow-list (a list, not a closed-choice value) and R2b acceptance; it gets its own audited lane.",
++    "AI_GATEWAY_CAPABILITIES": "A capability allow-list, not a closed-choice switch; owned by the AI gateway lane.",
+     "FEATURE_BANK_PAYOUTS_V2": "Ledger: money paths wait for S-FEE.",
+     "FEATURE_STRIPE_TREASURY_PAYOUTS": "Ledger: money paths wait for S-FEE.",
+     "ZOOM_ENABLED": "Present on Fly with a value this lane cannot read; ledger: stays off. Adopt into flags only after an in-machine read confirms its value.",
+diff --git a/.github/workflows/fly-env-sync.yml b/.github/workflows/fly-env-sync.yml
+index 95b5334a..ce1e0dce 100644
+--- a/.github/workflows/fly-env-sync.yml
++++ b/.github/workflows/fly-env-sync.yml
+@@ -356,7 +356,7 @@ jobs:
+           unset_names=()
+           while IFS= read -r line; do
+             [ -n "${line}" ] || continue
+-            if ! printf '%s\n' "${line}" | grep -Eq '^[A-Z][A-Z0-9_]*=[a-z0-9_]+([.,][a-z0-9_]+)*$'; then
++            if ! printf '%s\n' "${line}" | grep -Eq '^[A-Z][A-Z0-9_]*=[a-z0-9]+([.][a-z0-9]+)*$'; then
+               echo "::error::The plan's flag list has a line that is not NAME=value, so nothing was staged. Fix: re-run the workflow; the plan step writes this list from the manifest."
+               exit 1
+             fi
+diff --git a/docs/runbooks/launch-flags.md b/docs/runbooks/launch-flags.md
+index ced5b490..300d83e4 100644
+--- a/docs/runbooks/launch-flags.md
++++ b/docs/runbooks/launch-flags.md
+@@ -21,7 +21,6 @@ Preconditions are checked on the manifest alone, so they fail the PR's tests and
+ - Every community surface flag (`FEATURE_COMMUNITY_POSTS`, `_MESSAGES`, `_PUSH`, `_REALTIME`, `_VOICE_NOTES`, `_DM` and the others) needs `FEATURE_COMMUNITY_API=true`.
+ - `FEATURE_COMMUNITY_API=true` needs `FEATURE_COMMUNITY_SCHEMA` to be `true` or `unset` (unset means on).
+ - `FEATURE_COMMUNITY_VOICE_NOTES_REQUIRE_ENTITLEMENT=true` needs `FEATURE_COMMUNITY_VOICE_NOTES=true`.
+-- `FEATURE_MWB_AI_LIVE_CREATE=true` needs `AI_GATEWAY_ENABLED=true`, `AI_GATEWAY_PROVIDER=anthropic` and `AI_GATEWAY_CAPABILITIES` declared (its only settable value is `draft.create_workout_plan,draft.edit_workout_plan`; `*` is outside the closed set).
+ - A `github-secret` source must be set and non-blank. `GOOGLE_CLIENT_IDS` must be a comma list with no empty entry.
+ 
+ ## 1. Flip: one PR per flip
+@@ -127,11 +126,6 @@ WORKOUT_REMINDERS_ENABLED | on | fly secrets set -a backend-spring-lake-3890 WOR
+ FEATURE_WEARABLES_INGEST_POST | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_WEARABLES_INGEST_POST | "FEATURE_WEARABLES_INGEST_POST": "unset"
+ FEATURE_MWB_TEMPLATES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MWB_TEMPLATES | "FEATURE_MWB_TEMPLATES": "unset"
+ FEATURE_MWB_AUTOSAVE_UNDO | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MWB_AUTOSAVE_UNDO | "FEATURE_MWB_AUTOSAVE_UNDO": "unset"
+-FEATURE_MWB_AI_LIVE_CREATE | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_MWB_AI_LIVE_CREATE | "FEATURE_MWB_AI_LIVE_CREATE": "unset"
+-AI_GATEWAY_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 AI_GATEWAY_ENABLED | "AI_GATEWAY_ENABLED": "unset"
+-AI_GATEWAY_PROVIDER | off | fly secrets unset -a backend-spring-lake-3890 AI_GATEWAY_PROVIDER | "AI_GATEWAY_PROVIDER": "unset"
+-AI_GATEWAY_CAPABILITIES | off | fly secrets unset -a backend-spring-lake-3890 AI_GATEWAY_CAPABILITIES | "AI_GATEWAY_CAPABILITIES": "unset"
+-AI_GATEWAY_REQUIRE_APPROVAL | off | fly secrets unset -a backend-spring-lake-3890 AI_GATEWAY_REQUIRE_APPROVAL | "AI_GATEWAY_REQUIRE_APPROVAL": "unset"
+ FEATURE_NAMED_REGIMES | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_NAMED_REGIMES | "FEATURE_NAMED_REGIMES": "unset"
+ FEATURE_DUNNING_V2 | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_DUNNING_V2 | "FEATURE_DUNNING_V2": "unset"
+ FEATURE_COACH_CODE_TOOLS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_CODE_TOOLS | "FEATURE_COACH_CODE_TOOLS": "unset"
+@@ -182,14 +176,6 @@ Roll back with `"FEATURE_WEARABLES_INGEST_POST": "unset"` (or the emergency kill
+ 
+ Roll back with `"unset"` on the three flags (the emergency kills in the table above). The program, autosave, undo and regime routes then return 404 and saved programs are kept. Leave the secret line as is.
+ 
+-**AI workout builder (AIB, plan handoffs/op-125/AI_MASTER_BUILDER_PLAN.md section 5).** All five names stay `"unset"` until AIB-1a, AIB-2 and AIB-4 are deployed, SAFE-AIB-127 says GO and the owner has tapped through it on a device. Before the flip the operator lists Fly secret names (names only) and records whether `AI_GATEWAY_CAPABILITIES` already exists. The FLIP PR changes four lines in one PR:
+-
+-1. `"FEATURE_MWB_AI_LIVE_CREATE": "true"`, `"AI_GATEWAY_ENABLED": "true"`, `"AI_GATEWAY_PROVIDER": "anthropic"`, `"AI_GATEWAY_CAPABILITIES": "draft.create_workout_plan,draft.edit_workout_plan"` (exactly these two, never `*`: that would send every gateway capability to the provider). `AI_GATEWAY_REQUIRE_APPROVAL` stays `"unset"`; the gateway requires a coach decision for both workout capabilities whatever it says.
+-2. Run plan, then apply with `deploy_staged=true`, then plan again (every row `Deployed | match | keep`).
+-3. `GET /ai/gateway/workout-builder/status` as a coach returns `state: "on"`. Live smoke: one edit, one create, apply, undo; the coach pool is debited and a client without AI consent gets the consent state.
+-
+-Emergency kill, in order: `FEATURE_MWB_AI_LIVE_CREATE` unset (only the builder stops; the app shows the paused state, no build needed); then `AI_GATEWAY_CAPABILITIES` unset; last resort `AI_GATEWAY_ENABLED` unset (stops every gateway capability).
+-
+ **Community core (Wave A).** Flip `FEATURE_COMMUNITY_API` and the core set (`_POSTS`, `_MESSAGES`, `_PUSH`, `_REALTIME`, and `_VOICE_NOTES` once its audit and device pass are done) in one PR, after the community report/block lane (#610) is deployed. The preconditions reject surface flags without the API flag.
+ 
+ **Sign in with Apple (day 1): APPLE_AUDIENCES=com.growthproject.app and APPLE_NONCE_REQUIRED unset.** The native iOS sheet issues identity tokens whose audience is the bundle id `com.growthproject.app`, and the app sends no `raw_nonce`. Any other audience, or `APPLE_NONCE_REQUIRED=true`, fails every Apple sign-in (and the Apple re-auth for account deletion) with 401. Both values are public, so they live here, not in a secret.
+diff --git a/scripts/fly-env/fly-env-manifest.js b/scripts/fly-env/fly-env-manifest.js
+index e52a9c66..9d84946b 100644
+--- a/scripts/fly-env/fly-env-manifest.js
++++ b/scripts/fly-env/fly-env-manifest.js
+@@ -90,22 +90,6 @@ const PRECONDITIONS = [
+         ? 'FEATURE_MWB_AUTOSAVE_UNDO is declared "true" but MWB_AUTOSAVE_LOCK_TOKEN_SECRET is declared "unset", and the autosave service throws on every request without that secret. Fix: create the GitHub secret with \'openssl rand -hex 32 | gh secret set MWB_AUTOSAVE_LOCK_TOKEN_SECRET\' and declare secrets.MWB_AUTOSAVE_LOCK_TOKEN_SECRET "github-secret" in the same PR, or keep FEATURE_MWB_AUTOSAVE_UNDO "unset".'
+         : null,
+   },
+-  {
+-    // AIB-4: the AI workout builder is on only when every gateway switch is.
+-    id: 'mwb-ai-live-needs-gateway',
+-    names: ['FEATURE_MWB_AI_LIVE_CREATE', 'AI_GATEWAY_ENABLED', 'AI_GATEWAY_PROVIDER', 'AI_GATEWAY_CAPABILITIES'],
+-    check: (m) => {
+-      if (m.flags.FEATURE_MWB_AI_LIVE_CREATE !== 'true') return null;
+-      const missing = [
+-        m.flags.AI_GATEWAY_ENABLED !== 'true' && 'AI_GATEWAY_ENABLED "true"',
+-        m.flags.AI_GATEWAY_PROVIDER !== 'anthropic' && 'AI_GATEWAY_PROVIDER "anthropic"',
+-        m.flags.AI_GATEWAY_CAPABILITIES === 'unset' && 'AI_GATEWAY_CAPABILITIES (the two workout capabilities)',
+-      ].filter(Boolean);
+-      return missing.length
+-        ? `FEATURE_MWB_AI_LIVE_CREATE is declared "true" but ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not declared, so the builder would stay in the not-configured state. Fix: declare ${missing.join(', ')} in the same PR, or keep FEATURE_MWB_AI_LIVE_CREATE "unset".`
+-        : null;
+-    },
+-  },
+   {
+     id: 'community-subflag-needs-api',
+     names: ['FEATURE_COMMUNITY_API', ...COMMUNITY_SUBFLAGS],
+@@ -197,8 +181,7 @@ function extractEnvRules(source) {
+           `An ENV_RULES values line could not be read (${current === null ? 'it is not inside a rule with a name line' : `rule ${current}`}). Fix: write it on one line as "values: ['a', 'b']," directly inside the rule, after its name line.`,
+         );
+       }
+-      // A value may itself hold commas (a capability list), so read each quoted literal.
+-      const values = m[1] === '' ? [] : m[1].match(/'[^'\\]*'/g).map((s) => s.slice(1, -1));
++      const values = m[1] === '' ? [] : m[1].split(',').map((s) => s.trim().slice(1, -1));
+       rules.get(current).values = values;
+       continue;
+     }
+diff --git a/src/ai/gateway/ai-gateway.config.ts b/src/ai/gateway/ai-gateway.config.ts
+index 2e1409fe..9fd6ca6f 100644
+--- a/src/ai/gateway/ai-gateway.config.ts
++++ b/src/ai/gateway/ai-gateway.config.ts
+@@ -81,11 +81,6 @@ export class AiGatewayConfig {
+   // consequential capabilities so an operator must opt OUT of the safety
+   // rather than opt IN.
+   requireApprovalFor(capability: string): boolean {
+-    // AIB-4 — the two workout builder capabilities write real plan rows, so a
+-    // coach must approve every one of them whatever AI_GATEWAY_REQUIRE_APPROVAL
+-    // says: setting that list replaces the defaults, and a list that left them
+-    // out must never let an AI edit apply itself.
+-    if (isMwbLiveCreateCapability(capability)) return true;
+     const raw = process.env.AI_GATEWAY_REQUIRE_APPROVAL;
+     if (raw == null || raw.trim() === '') {
+       return DEFAULT_APPROVAL_REQUIRED.has(capability);
+diff --git a/src/ai/gateway/ai-gateway.module.ts b/src/ai/gateway/ai-gateway.module.ts
+index ce69ce16..1806a93c 100644
+--- a/src/ai/gateway/ai-gateway.module.ts
++++ b/src/ai/gateway/ai-gateway.module.ts
+@@ -3,9 +3,6 @@ import { AuthModule } from '../../auth/auth.module';
+ import { MessagingModule } from '../../messaging/messaging.module';
+ import { NotificationsModule } from '../../notifications/notifications.module';
+ import { AiGatewayController } from './ai-gateway.controller';
+-// AIB-4 — server-driven "Ask AI" visibility for the workout builder.
+-import { WorkoutBuilderStatusController } from './workout-builder/workout-builder-status.controller';
+-import { WorkoutBuilderStatusService } from './workout-builder/workout-builder-status.service';
+ import { AiGatewayService } from './ai-gateway.service';
+ import { AiGatewayConfig } from './ai-gateway.config';
+ import { AiRedactionService } from './ai-redaction.service';
+@@ -59,7 +56,7 @@ import { EditWorkoutPlanMaterializer } from './materialisers/edit-workout-plan.m
+   // through it). send_notification writes Notification rows directly via
+   // Prisma so it does NOT need the service, but the others do.
+   imports: [AuthModule, MessagingModule, NotificationsModule],
+-  controllers: [AiGatewayController, WorkoutBuilderStatusController],
++  controllers: [AiGatewayController],
+   providers: [
+     AiGatewayConfig,
+     AiRedactionService,
+@@ -72,7 +69,6 @@ import { EditWorkoutPlanMaterializer } from './materialisers/edit-workout-plan.m
+     PrivateContextService,
+     AiGatewayService,
+     AiApprovalService,
+-    WorkoutBuilderStatusService,
+     // PR AI-3 (PRODUCT-1): capability materialisation registry. Each
+     // materialiser is provided as a concrete class AND as an entry in the
+     // multi-injection array bound to CAPABILITY_MATERIALIZERS; the registry
+diff --git a/src/ai/gateway/ai-gateway.service.ts b/src/ai/gateway/ai-gateway.service.ts
+index 1d7962e9..5fbd57dd 100644
+--- a/src/ai/gateway/ai-gateway.service.ts
++++ b/src/ai/gateway/ai-gateway.service.ts
+@@ -40,10 +40,7 @@ import {
+   EDIT_WORKOUT_PLAN_CAPABILITY,
+   assertEditWorkoutPlanPayload,
+ } from './materialisers/edit-workout-plan.materialiser';
+-import {
+-  isMwbLiveCreateCapability,
+-  MWB_LIVE_CREATE_CAPABILITIES,
+-} from './mwb-live-create.feature';
++import { isMwbLiveCreateCapability } from './mwb-live-create.feature';
+ import { AuditService } from '../../audit/audit.service';
+ import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
+ import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
+@@ -583,9 +580,6 @@ export class AiGatewayService {
+       'client_path_summary',
+       'check_in_summary',
+       'food_log_explain',
+-      // AIB-4 — the two workout builder capabilities (listed only while
+-      // FEATURE_MWB_AI_LIVE_CREATE is on and they are in the allow-list).
+-      ...MWB_LIVE_CREATE_CAPABILITIES,
+     ];
+     // Resolve config against the first known capability to get provider/enabled state.
+     const resolved = this.config.resolve(ALL_CAPABILITIES[0]);
+diff --git a/src/ai/gateway/workout-builder/workout-builder-status.controller.ts b/src/ai/gateway/workout-builder/workout-builder-status.controller.ts
+deleted file mode 100644
+index 436ecc02..00000000
+--- a/src/ai/gateway/workout-builder/workout-builder-status.controller.ts
++++ /dev/null
+@@ -1,25 +0,0 @@
+-import { Controller, Get, Request, UseGuards } from '@nestjs/common';
+-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+-import { JwtAuthGuard } from '../../../auth/auth.guard';
+-import { RolesGuard } from '../../../auth/roles.guard';
+-import { Roles } from '../../../common/decorators/roles.decorator';
+-import type { AuthedRequest } from '../../../auth/auth-request';
+-import { WorkoutBuilderAiStatus, WorkoutBuilderStatusService } from './workout-builder-status.service';
+-
+-/**
+- * AIB-4 — coach/owner only. The app keeps "Ask AI" visible in every state and
+- * shows the paused / out-of-credits copy; only a 404 (an older backend) hides it.
+- */
+-@ApiTags('ai-gateway')
+-@Controller('ai/gateway/workout-builder')
+-@UseGuards(JwtAuthGuard, RolesGuard)
+-@Roles('coach', 'owner')
+-export class WorkoutBuilderStatusController {
+-  constructor(private readonly status: WorkoutBuilderStatusService) {}
+-
+-  @Get('status')
+-  @ApiOperation({ summary: 'AIB-4: AI workout builder state, capabilities and coach AI pool share.' })
+-  getStatus(@Request() req: AuthedRequest): Promise<WorkoutBuilderAiStatus> {
+-    return this.status.getStatus(req.user.id);
+-  }
+-}
+diff --git a/src/ai/gateway/workout-builder/workout-builder-status.service.ts b/src/ai/gateway/workout-builder/workout-builder-status.service.ts
+deleted file mode 100644
+index 80fb46fe..00000000
+--- a/src/ai/gateway/workout-builder/workout-builder-status.service.ts
++++ /dev/null
+@@ -1,76 +0,0 @@
+-import { Injectable, Logger, Optional } from '@nestjs/common';
+-import { CoachAIBudgetService } from '../../../ai-credits/coach-ai-budget.service';
+-import { AiGatewayConfig } from '../ai-gateway.config';
+-import { isMwbAiLiveCreateEnabled } from '../mwb-live-create.feature';
+-
+-/**
+- * AIB-4 — GET /ai/gateway/workout-builder/status (AI_MASTER_BUILDER_PLAN.md
+- * section 3). Read per call, so the kill switch works without a redeploy:
+- *   paused         FEATURE_MWB_AI_LIVE_CREATE is not 'true' (the kill switch);
+- *   not_configured flag on, but neither workout capability resolves to a real
+- *                  provider (gateway off, not allow-listed, stub, key absent);
+- *   no_credits     the head coach's AI pool is used up (the gateway's own test);
+- *   on             otherwise.
+- * Never calls a provider and never reads client data.
+- */
+-export const WORKOUT_BUILDER_AI_LABEL = 'AI-suggested, coach-approved';
+-
+-export type WorkoutBuilderAiState = 'on' | 'paused' | 'no_credits' | 'not_configured';
+-
+-export interface WorkoutBuilderAiStatus {
+-  state: WorkoutBuilderAiState;
+-  create: boolean;
+-  edit: boolean;
+-  credits: { remaining_pct: number | null; resets_at: string | null };
+-  label: typeof WORKOUT_BUILDER_AI_LABEL;
+-}
+-
+-@Injectable()
+-export class WorkoutBuilderStatusService {
+-  private readonly logger = new Logger(WorkoutBuilderStatusService.name);
+-
+-  constructor(
+-    private readonly config: AiGatewayConfig,
+-    @Optional() private readonly budget?: CoachAIBudgetService,
+-  ) {}
+-
+-  async getStatus(coachUserId: string): Promise<WorkoutBuilderAiStatus> {
+-    const flagOn = isMwbAiLiveCreateEnabled();
+-    const create = flagOn && this.config.resolve('draft.create_workout_plan').enabled;
+-    const edit = flagOn && this.config.resolve('draft.edit_workout_plan').enabled;
+-    const { exhausted, ...credits } = await this.readCredits(coachUserId);
+-    const state: WorkoutBuilderAiState = !flagOn
+-      ? 'paused'
+-      : !create && !edit
+-        ? 'not_configured'
+-        : exhausted
+-          ? 'no_credits'
+-          : 'on';
+-    return { state, create, edit, credits, label: WORKOUT_BUILDER_AI_LABEL };
+-  }
+-
+-  /**
+-   * A failed read leaves the numbers null and the state unchanged: the propose
+-   * call re-checks the budget before any provider call, so it cannot let one through.
+-   */
+-  private async readCredits(
+-    coachUserId: string,
+-  ): Promise<{ exhausted: boolean; remaining_pct: number | null; resets_at: string | null }> {
+-    if (!this.budget) return { exhausted: false, remaining_pct: null, resets_at: null };
+-    try {
+-      const { budget } = await this.budget.canCharge(await this.budget.resolveHeadCoachId(coachUserId), 0);
+-      const total = budget.base_displayed_cents + budget.pack_displayed_cents;
+-      const used = Math.round(budget.actual_used_cents * budget.value_multiplier);
+-      const exhausted = budget.actual_used_cents >= budget.total_actual_available_cents;
+-      const remaining_pct =
+-        exhausted || total <= 0 ? 0 : Math.max(0, Math.min(100, Math.round(((total - used) / total) * 100)));
+-      return { exhausted, remaining_pct, resets_at: budget.period_end.toISOString() };
+-    } catch (err) {
+-      this.logger.warn(
+-        { event: 'WORKOUT_BUILDER_STATUS_BUDGET_READ_FAILED', error: err instanceof Error ? err.name : 'unknown' },
+-        'workout builder status: budget read failed; credits reported as null',
+-      );
+-      return { exhausted: false, remaining_pct: null, resets_at: null };
+-    }
+-  }
+-}
+diff --git a/src/common/env-validation.ts b/src/common/env-validation.ts
+index 57c28470..709b9fdf 100644
+--- a/src/common/env-validation.ts
++++ b/src/common/env-validation.ts
+@@ -934,12 +934,8 @@ export const ENV_RULES: EnvRule[] = [
+       'Read only as the third fallback signing key for contract PDF URLs (CONTRACT_PDF_URL_SECRET → DATA_EXPORT_DOWNLOAD_SECRET → JWT_SECRET) in src/contracts/signed-pdf-store.service.ts. Contracts are not used in v1. Supabase JWTs are verified via JWKS, not this value.',
+   },
+   // --- AI ---
+-  // AIB-4 — closed sets so the AI workout builder can be flipped through the
+-  // desired-state manifest (the FLIP values are in docs/runbooks/launch-flags.md).
+   {
+     name: 'AI_GATEWAY_ENABLED',
+-    values: ['true', 'false'],
+-    unsetIs: 'off',
+     tier: 'optional',
+     default: 'unset → off (envFlag: only true/1/yes/on enable)',
+     reason:
+@@ -947,8 +943,6 @@ export const ENV_RULES: EnvRule[] = [
+   },
+   {
+     name: 'AI_GATEWAY_PROVIDER',
+-    values: ['stub', 'anthropic'],
+-    unsetIs: 'off',
+     tier: 'optional',
+     default: "'stub'",
+     reason:
+@@ -956,22 +950,17 @@ export const ENV_RULES: EnvRule[] = [
+   },
+   {
+     name: 'AI_GATEWAY_CAPABILITIES',
+-    values: ['draft.create_workout_plan,draft.edit_workout_plan'],
+-    unsetIs: 'off',
+     tier: 'optional',
+     default: "unset → no capability allowed ('*' allows all)",
+-    reason:
+-      "Comma-separated capability allow-list for the AI gateway. Never '*': it would send every gateway capability to the provider.",
++    reason: 'Comma-separated capability allow-list for the AI gateway.',
+   },
+   {
+     name: 'AI_GATEWAY_REQUIRE_APPROVAL',
+-    values: ['draft.coach_message,draft.meal_plan_change,draft.client_facing_claim,flag.escalation,draft.assign_workout,draft.assign_meal_plan,draft.send_notification,draft.create_workout_plan,draft.edit_workout_plan'],
+-    unsetIs: 'off',
+     tier: 'optional',
+     default:
+       'unset → DEFAULT_APPROVAL_REQUIRED (draft.coach_message, draft.meal_plan_change, draft.client_facing_claim, …)',
+     reason:
+-      'Comma-separated capabilities that need human approval. Default-on safety: unset keeps the canonical consequential capabilities gated. Setting it replaces the defaults, so it must keep both workout builder capabilities.',
++      'Comma-separated capabilities that need human approval. Default-on safety: unset keeps the canonical consequential capabilities gated.',
+   },
+   {
+     name: 'OPENAI_API_KEY',
+@@ -2146,8 +2135,6 @@ export const ENV_RULES: EnvRule[] = [
+   },
+   {
+     name: 'FEATURE_MWB_AI_LIVE_CREATE',
+-    values: ['true', 'false'],
+-    unsetIs: 'off',
+     tier: 'optional',
+     default: 'unset → off (only explicit true)',
+     reason: 'Workout builder AI live-create capabilities.',
+diff --git a/src/data-export/data-export.module.ts b/src/data-export/data-export.module.ts
+index 4d49bf70..465ef6df 100644
+--- a/src/data-export/data-export.module.ts
++++ b/src/data-export/data-export.module.ts
+@@ -1,5 +1,4 @@
+ import { Module } from '@nestjs/common';
+-import { ScheduleModule } from '@nestjs/schedule';
+ import { DataExportController } from './data-export.controller';
+ import { DataExportService } from './data-export.service';
+ import { DataExportCleanupCron } from './data-export-cleanup.cron';
+@@ -27,9 +26,14 @@ import { DATA_EXPORT_ARCHIVE_STORE, selectArchiveStore } from './data-export-arc
+  * GDPR dependency note: this module is a hard dependency for the GDPR delete
+  * module (src/gdpr/). Users should export their data BEFORE deleting their
+  * account. See docs/compliance/data-portability.md for the full contract.
++ *
++ * ScheduleModule is loaded ONCE, in AppModule. A second root import of it
++ * here created a second scheduler instance, and each instance registers
++ * every @Cron/@Interval in the app, so every timed job ran twice per tick
++ * (test/schedule-module-single-instance.spec.ts).
+  */
+ @Module({
+-  imports: [PrismaModule, ScheduleModule.forRoot()],
++  imports: [PrismaModule],
+   controllers: [DataExportController],
+   providers: [
+     {
+diff --git a/src/workout-builder/workout-builder-autosave.controller.ts b/src/workout-builder/workout-builder-autosave.controller.ts
+index 460d893d..9a48814d 100644
+--- a/src/workout-builder/workout-builder-autosave.controller.ts
++++ b/src/workout-builder/workout-builder-autosave.controller.ts
+@@ -27,12 +27,10 @@
+ import {
+   Body,
+   Controller,
+-  Get,
+   Param,
+   ParseUUIDPipe,
+   Patch,
+   Post,
+-  Query,
+   Req,
+   UseGuards,
+ } from '@nestjs/common';
+@@ -47,7 +45,6 @@ import {
+   UndoResponseDto,
+ } from './workout-builder-autosave.dto';
+ import { WorkoutBuilderAutosaveService } from './workout-builder-autosave.service';
+-import type { RevisionListItem } from './workout-plan-revision-summary';
+ 
+ @ApiTags('workout-plans')
+ @ApiBearerAuth()
+@@ -123,23 +120,4 @@ export class WorkoutBuilderAutosaveController {
+   ): Promise<UndoResponseDto> {
+     return this.autosave.applyUndo(planId, { userId: req.user.id }, body);
+   }
+-
+-  @Get(':planId/revisions')
+-  @UseGuards(MwbAutosaveUndoFeatureGuard)
+-  @ApiOperation({
+-    summary:
+-      'AIB-4: newest-first revision history of a plan (read-only, max 50, ' +
+-      'default 20). Same owner/visibility gate as autosave and undo. Gated by ' +
+-      'FEATURE_MWB_AUTOSAVE_UNDO — 404 while off.',
+-  })
+-  @ApiResponse({ status: 200, description: 'Revisions, newest first.' })
+-  @ApiResponse({ status: 403, description: 'No access to the plan.' })
+-  @ApiResponse({ status: 404, description: 'Feature off or plan not found.' })
+-  listRevisions(
+-    @Req() req: AuthedRequest,
+-    @Param('planId', new ParseUUIDPipe()) planId: string,
+-    @Query('limit') limit?: string,
+-  ): Promise<RevisionListItem[]> {
+-    return this.autosave.listRevisions(planId, { userId: req.user.id }, limit);
+-  }
+ }
+diff --git a/src/workout-builder/workout-builder-autosave.service.ts b/src/workout-builder/workout-builder-autosave.service.ts
+index 24cc529c..76e47c9a 100644
+--- a/src/workout-builder/workout-builder-autosave.service.ts
++++ b/src/workout-builder/workout-builder-autosave.service.ts
+@@ -45,11 +45,6 @@ import { Events } from '../analytics/events';
+ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+ import { WorkoutBuilderService } from './workout-builder.service';
+ import { isMwbAutosaveUndoEnabled } from './workout-builder-autosave.feature';
+-import {
+-  buildRevisionList,
+-  parseRevisionsLimit,
+-  type RevisionListItem,
+-} from './workout-plan-revision-summary';
+ import {
+   assertLockTokenSecretConfigured,
+   computeLockToken,
+@@ -159,40 +154,6 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
+     }
+   }
+ 
+-  // ─── Public: revision history (AIB-4, read-only) ───────────────────────────
+-
+-  /**
+-   * Newest-first revision list for the builder's History sheet. Read-only and
+-   * tenant-scoped through the same owner/visibility gate as autosave and undo
+-   * (authorisePlanAccess), so a foreign coach gets 403 and an unknown plan 404
+-   * before any revision row is read. One extra older row is fetched only to
+-   * summarise the oldest listed revision; it is never returned.
+-   */
+-  async listRevisions(
+-    planId: string,
+-    actor: AutosaveActor,
+-    limitRaw: unknown,
+-  ): Promise<RevisionListItem[]> {
+-    if (!isMwbAutosaveUndoEnabled()) {
+-      throw new NotFoundException('Workout plan not found');
+-    }
+-    await this.authorisePlanAccess(planId, actor.userId);
+-    const limit = parseRevisionsLimit(limitRaw);
+-    const rows = await this.prisma.workoutPlanRevision.findMany({
+-      where: { workout_plan_id: planId },
+-      orderBy: { revision_index: 'desc' },
+-      take: limit + 1,
+-      select: {
+-        revision_index: true,
+-        author_kind: true,
+-        cause: true,
+-        created_at: true,
+-        exercises_json: true,
+-      },
+-    });
+-    return buildRevisionList(rows, limit);
+-  }
+-
+   // ─── Public: autosave (spec §6.2) ──────────────────────────────────────────
+ 
+   /**
+diff --git a/src/workout-builder/workout-plan-revision-summary.ts b/src/workout-builder/workout-plan-revision-summary.ts
+deleted file mode 100644
+index a7527fa0..00000000
+--- a/src/workout-builder/workout-plan-revision-summary.ts
++++ /dev/null
+@@ -1,89 +0,0 @@
+-/**
+- * AIB-4 — read-only revision history (GET /workout-plans/:planId/revisions).
+- * A revision row stores a full snapshot and no summary, so the one-line summary
+- * is derived by comparing each snapshot with its direct predecessor. Only
+- * counts and the cause are used: no notes, no client data, no free text.
+- */
+-export const REVISIONS_LIST_DEFAULT_LIMIT = 20;
+-export const REVISIONS_LIST_MAX_LIMIT = 50;
+-
+-export interface RevisionListItem {
+-  revision_index: number;
+-  author_kind: string;
+-  cause: string;
+-  created_at: string;
+-  summary: string;
+-}
+-
+-type SnapshotRow = Record<string, unknown> & { exercise_external_id: string };
+-
+-const CAUSE_LABELS: Record<string, string> = {
+-  initial: 'Created',
+-  clone: 'Copied from a program',
+-  manual_edit: 'Edited',
+-  autosave: 'Edited',
+-  ai_apply: 'AI-suggested, coach-approved',
+-  undo: 'Restored an earlier version',
+-};
+-const COMPARED = ['sets', 'reps_or_duration_seconds', 'weight_lbs', 'rest_seconds', 'superset_group_id'];
+-
+-/** Clamp the `limit` query value to 1..50, defaulting to 20. */
+-export function parseRevisionsLimit(raw: unknown): number {
+-  const n = typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw.trim()) : REVISIONS_LIST_DEFAULT_LIMIT;
+-  return Math.min(Math.max(n, 1), REVISIONS_LIST_MAX_LIMIT);
+-}
+-
+-function readRows(json: unknown): SnapshotRow[] {
+-  if (!Array.isArray(json)) return [];
+-  return json.filter(
+-    (r): r is SnapshotRow => typeof r === 'object' && r !== null && typeof r.exercise_external_id === 'string',
+-  );
+-}
+-
+-const rowKey = (r: SnapshotRow): string => COMPARED.map((k) => String(r[k] ?? null)).join('|');
+-
+-/** "Edited: 1 added, 2 changed. 6 exercises." Rows match by exercise id, pair by pair. */
+-export function summariseRevision(cause: string, before: SnapshotRow[] | null, after: SnapshotRow[]): string {
+-  const label = CAUSE_LABELS[cause] ?? 'Edited';
+-  const total = `${after.length} exercise${after.length === 1 ? '' : 's'}`;
+-  if (before === null) return `${label}. ${total}.`;
+-  const pool = new Map<string, SnapshotRow[]>();
+-  for (const r of before) pool.set(r.exercise_external_id, [...(pool.get(r.exercise_external_id) ?? []), r]);
+-  let added = 0;
+-  let changed = 0;
+-  for (const r of after) {
+-    const match = pool.get(r.exercise_external_id)?.shift();
+-    if (!match) added += 1;
+-    else if (rowKey(match) !== rowKey(r)) changed += 1;
+-  }
+-  const removed = [...pool.values()].reduce((n, l) => n + l.length, 0);
+-  const parts = [
+-    added && `${added} added`,
+-    changed && `${changed} changed`,
+-    removed && `${removed} removed`,
+-  ].filter(Boolean);
+-  return parts.length ? `${label}: ${parts.join(', ')}. ${total}.` : `${label}. ${total}.`;
+-}
+-
+-/**
+- * `rows` are newest first and may hold one extra older row beyond `limit`,
+- * used only as the baseline of the oldest listed revision. A pruned gap is
+- * never treated as a baseline.
+- */
+-export function buildRevisionList(
+-  rows: Array<{ revision_index: number; author_kind: string; cause: string; created_at: Date; exercises_json: unknown }>,
+-  limit: number,
+-): RevisionListItem[] {
+-  const snapshots = rows.map((r) => readRows(r.exercises_json));
+-  return rows.slice(0, limit).map((r, i) => ({
+-    revision_index: r.revision_index,
+-    author_kind: r.author_kind,
+-    cause: r.cause,
+-    created_at: r.created_at.toISOString(),
+-    summary: summariseRevision(
+-      r.cause,
+-      rows[i + 1]?.revision_index === r.revision_index - 1 ? snapshots[i + 1] : null,
+-      snapshots[i],
+-    ),
+-  }));
+-}
+diff --git a/test/aib4-workout-builder-status.spec.ts b/test/aib4-workout-builder-status.spec.ts
+deleted file mode 100644
+index 24be029e..00000000
+--- a/test/aib4-workout-builder-status.spec.ts
++++ /dev/null
+@@ -1,166 +0,0 @@
+-/**
+- * AIB-4 (AI_MASTER_BUILDER_PLAN.md sections 3, 5): workout builder status
+- * route, gateway status capability list, approval rule, manifest closed sets.
+- */
+-import { readFileSync } from 'fs';
+-import { join } from 'path';
+-import { AiGatewayConfig } from '../src/ai/gateway/ai-gateway.config';
+-import { AiGatewayService } from '../src/ai/gateway/ai-gateway.service';
+-import { WorkoutBuilderStatusService } from '../src/ai/gateway/workout-builder/workout-builder-status.service';
+-import { CoachAIBudgetService } from '../src/ai-credits/coach-ai-budget.service';
+-import * as fem from '../scripts/fly-env/fly-env-manifest';
+-
+-const fake = <T>(v: unknown): T => v as T;
+-const CREATE = 'draft.create_workout_plan';
+-const EDIT = 'draft.edit_workout_plan';
+-const TWO_CAPS = `${CREATE},${EDIT}`;
+-const PERIOD_END = new Date('2026-11-01T00:00:00.000Z');
+-const NAMES = ['FEATURE_MWB_AI_LIVE_CREATE', 'AI_GATEWAY_ENABLED', 'AI_GATEWAY_PROVIDER', 'AI_GATEWAY_CAPABILITIES', 'AI_GATEWAY_REQUIRE_APPROVAL'];
+-const ENV_KEYS = [...NAMES, 'ANTHROPIC_API_KEY'];
+-
+-function budget(used: number, available: number, throws = false) {
+-  return fake<CoachAIBudgetService>({
+-    resolveHeadCoachId: jest.fn(async (id: string) => (id === 'sub-1' ? 'head-1' : id)),
+-    canCharge: jest.fn(async () => {
+-      if (throws) throw new Error('db down');
+-      return {
+-        allowed: used < available,
+-        budget: {
+-          period_end: PERIOD_END,
+-          base_displayed_cents: 1000,
+-          pack_displayed_cents: 0,
+-          value_multiplier: 2,
+-          actual_used_cents: used,
+-          total_actual_available_cents: available,
+-        },
+-      };
+-    }),
+-  });
+-}
+-
+-function liveEnv(): void {
+-  Object.assign(process.env, {
+-    FEATURE_MWB_AI_LIVE_CREATE: 'true',
+-    AI_GATEWAY_ENABLED: 'true',
+-    AI_GATEWAY_PROVIDER: 'anthropic',
+-    AI_GATEWAY_CAPABILITIES: TWO_CAPS,
+-    ANTHROPIC_API_KEY: 'test-key-not-real',
+-  });
+-}
+-
+-const status = (b = budget(0, 500), user = 'head-1') =>
+-  new WorkoutBuilderStatusService(new AiGatewayConfig(), b).getStatus(user);
+-
+-describe('AIB-4 workout builder status', () => {
+-  const saved: Record<string, string | undefined> = {};
+-  beforeEach(() => {
+-    for (const k of ENV_KEYS) {
+-      saved[k] = process.env[k];
+-      delete process.env[k];
+-    }
+-  });
+-  afterEach(() => {
+-    for (const k of ENV_KEYS) {
+-      if (saved[k] === undefined) delete process.env[k];
+-      else process.env[k] = saved[k];
+-    }
+-  });
+-
+-  it('flag off -> paused, both capabilities false, even with the gateway fully configured', async () => {
+-    liveEnv();
+-    delete process.env.FEATURE_MWB_AI_LIVE_CREATE;
+-    expect(await status()).toMatchObject({
+-      state: 'paused',
+-      create: false,
+-      edit: false,
+-      label: 'AI-suggested, coach-approved',
+-    });
+-  });
+-
+-  it('flag + capabilities + key -> on, with the head coach pool share and reset date', async () => {
+-    liveEnv();
+-    const b = budget(125, 500);
+-    // used displayed = 125 * 2 = 250 of 1000 -> 75 percent left.
+-    expect(await status(b, 'sub-1')).toEqual({
+-      state: 'on',
+-      create: true,
+-      edit: true,
+-      credits: { remaining_pct: 75, resets_at: PERIOD_END.toISOString() },
+-      label: 'AI-suggested, coach-approved',
+-    });
+-    expect(b.canCharge).toHaveBeenCalledWith('head-1', 0);
+-  });
+-
+-  it.each([['AI_GATEWAY_CAPABILITIES'], ['ANTHROPIC_API_KEY'], ['AI_GATEWAY_ENABLED']])(
+-    'flag on but %s missing -> not_configured',
+-    async (name) => {
+-      liveEnv();
+-      delete process.env[name];
+-      expect((await status()).state).toBe('not_configured');
+-    },
+-  );
+-
+-  it('one capability allowed -> on with only that capability true', async () => {
+-    liveEnv();
+-    process.env.AI_GATEWAY_CAPABILITIES = EDIT;
+-    expect(await status()).toMatchObject({ state: 'on', create: false, edit: true });
+-  });
+-
+-  it('pool used up -> no_credits, 0 percent; budget read failure -> credits null, state unchanged', async () => {
+-    liveEnv();
+-    expect(await status(budget(500, 500))).toMatchObject({ state: 'no_credits', credits: { remaining_pct: 0 } });
+-    expect(await status(budget(0, 500, true))).toMatchObject({
+-      state: 'on',
+-      credits: { remaining_pct: null, resets_at: null },
+-    });
+-  });
+-
+-  it('GET /ai/gateway/status lists the two workout capabilities only while allowed', () => {
+-    const gateway = new AiGatewayService(fake({}), new AiGatewayConfig(), fake({}), fake({}), fake({}));
+-    liveEnv();
+-    expect(gateway.getStatus().capabilities).toEqual(expect.arrayContaining([CREATE, EDIT]));
+-    delete process.env.FEATURE_MWB_AI_LIVE_CREATE;
+-    expect(gateway.getStatus().capabilities).not.toEqual(expect.arrayContaining([CREATE]));
+-    expect(gateway.getStatus().capabilities).not.toEqual(expect.arrayContaining([EDIT]));
+-  });
+-
+-  it('the workout capabilities need a coach decision whatever AI_GATEWAY_REQUIRE_APPROVAL says', () => {
+-    const config = new AiGatewayConfig();
+-    process.env.AI_GATEWAY_REQUIRE_APPROVAL = 'draft.coach_message';
+-    expect([config.requireApprovalFor(CREATE), config.requireApprovalFor(EDIT)]).toEqual([true, true]);
+-    expect(config.requireApprovalFor('draft.assign_workout')).toBe(false);
+-  });
+-});
+-
+-describe('AIB-4 manifest entries', () => {
+-  const ROOT = join(__dirname, '..');
+-  const rules = fem.extractEnvRules(readFileSync(join(ROOT, 'src/common/env-validation.ts'), 'utf8'));
+-  const manifest = () => fem.parseManifestText(readFileSync(join(ROOT, '.github/fly-env-desired-state.json'), 'utf8'));
+-  const errors = (flags: Record<string, string>) => {
+-    const m = manifest();
+-    return fem.validateManifest({ ...m, flags: { ...m.flags, ...flags } }, rules);
+-  };
+-
+-  it('the five names are managed, unset, gated and not excluded; a comma value loads as one value', () => {
+-    const m = manifest();
+-    for (const n of NAMES) expect([n, m.flags[n], typeof m.gates[n], n in m.excluded]).toEqual([n, 'unset', 'string', false]);
+-    expect(fem.validateManifest(m, rules)).toEqual([]);
+-    expect(rules.get('AI_GATEWAY_CAPABILITIES')?.values).toEqual([TWO_CAPS]);
+-  });
+-
+-  it("FLIP values validate; '*' and REQUIRE_APPROVAL=false are rejected; the live flag alone fails its precondition", () => {
+-    expect(
+-      errors({
+-        FEATURE_MWB_AI_LIVE_CREATE: 'true',
+-        AI_GATEWAY_ENABLED: 'true',
+-        AI_GATEWAY_PROVIDER: 'anthropic',
+-        AI_GATEWAY_CAPABILITIES: TWO_CAPS,
+-      }),
+-    ).toEqual([]);
+-    expect(errors({ AI_GATEWAY_CAPABILITIES: '*' }).join('\n')).toMatch(/flags\.AI_GATEWAY_CAPABILITIES is "\*"/);
+-    expect(errors({ AI_GATEWAY_REQUIRE_APPROVAL: 'false' }).join('\n')).toMatch(/AI_GATEWAY_REQUIRE_APPROVAL is "false"/);
+-    const e = errors({ FEATURE_MWB_AI_LIVE_CREATE: 'true' });
+-    expect(e).toHaveLength(1);
+-    expect(e[0]).toMatch(/^precondition mwb-ai-live-needs-gateway: .*Fix: /);
+-  });
+-});
+diff --git a/test/aib4-workout-plan-revisions.spec.ts b/test/aib4-workout-plan-revisions.spec.ts
+deleted file mode 100644
+index 52dc9ec1..00000000
+--- a/test/aib4-workout-plan-revisions.spec.ts
++++ /dev/null
+@@ -1,101 +0,0 @@
+-/**
+- * AIB-4: GET /workout-plans/:planId/revisions — read-only, tenant-scoped
+- * history for the builder's History sheet (same gate as autosave and undo).
+- */
+-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+-import { AnalyticsService } from '../src/analytics/analytics.service';
+-import { WorkoutBuilderAutosaveService } from '../src/workout-builder/workout-builder-autosave.service';
+-import { parseRevisionsLimit } from '../src/workout-builder/workout-plan-revision-summary';
+-
+-const fake = <T>(v: unknown): T => v as T;
+-const PLAN_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+-const HEAD = 'head-1';
+-
+-const row = (id: string, reps = 10) => ({
+-  exercise_external_id: id,
+-  order: 1,
+-  sets: 3,
+-  reps_or_duration_seconds: reps,
+-  weight_lbs: null,
+-  notes: 'private coach note',
+-});
+-const rev = (index: number, cause: string, author: string, exercises: unknown) => ({
+-  revision_index: index,
+-  author_kind: author,
+-  cause,
+-  created_at: new Date(Date.UTC(2026, 9, 6, 12, index)),
+-  exercises_json: exercises,
+-});
+-const HISTORY = [
+-  rev(3, 'undo', 'coach', [row('squat'), row('row')]),
+-  rev(2, 'ai_apply', 'ai', [row('goblet_squat'), row('row', 12), row('plank')]),
+-  rev(1, 'autosave', 'coach', [row('squat'), row('row')]),
+-  rev(0, 'initial', 'coach', [row('squat')]),
+-];
+-
+-function build(revisions = HISTORY) {
+-  const prisma = {
+-    workoutPlan: { findUnique: jest.fn(async () => ({ coach_id: HEAD, program_id: null, program: null })) },
+-    workoutPlanRevision: { findMany: jest.fn(async (a: { take: number }) => revisions.slice(0, a.take)) },
+-  };
+-  const scope = { getHeadCoachIdForSubCoach: jest.fn(async () => null), getAuthorizedClientIds: jest.fn(async () => []) };
+-  const service = new WorkoutBuilderAutosaveService(fake(prisma), fake(undefined), new AnalyticsService(), fake(scope));
+-  return { service, prisma };
+-}
+-
+-describe('AIB-4 revisions list', () => {
+-  const ORIGINAL = process.env.FEATURE_MWB_AUTOSAVE_UNDO;
+-  beforeEach(() => {
+-    process.env.FEATURE_MWB_AUTOSAVE_UNDO = 'true';
+-  });
+-  afterEach(() => {
+-    if (ORIGINAL === undefined) delete process.env.FEATURE_MWB_AUTOSAVE_UNDO;
+-    else process.env.FEATURE_MWB_AUTOSAVE_UNDO = ORIGINAL;
+-  });
+-
+-  it('the plan coach gets newest first, derived summaries, no notes', async () => {
+-    const { service, prisma } = build();
+-    const list = await service.listRevisions(PLAN_ID, { userId: HEAD }, '20');
+-    expect(prisma.workoutPlanRevision.findMany).toHaveBeenCalledWith(
+-      expect.objectContaining({ where: { workout_plan_id: PLAN_ID }, orderBy: { revision_index: 'desc' }, take: 21 }),
+-    );
+-    expect(list[1]).toEqual({
+-      revision_index: 2,
+-      author_kind: 'ai',
+-      cause: 'ai_apply',
+-      created_at: '2026-10-06T12:02:00.000Z',
+-      summary: 'AI-suggested, coach-approved: 2 added, 1 changed, 1 removed. 3 exercises.',
+-    });
+-    expect(list.map((r) => r.summary)).toEqual([
+-      'Restored an earlier version: 1 added, 1 changed, 2 removed. 2 exercises.',
+-      list[1].summary,
+-      'Edited: 1 added. 2 exercises.',
+-      'Created. 1 exercise.',
+-    ]);
+-    expect(JSON.stringify(list)).not.toContain('private coach note');
+-  });
+-
+-  it("another coach's plan is 403 before any revision row is read; unknown plan 404; flag off 404", async () => {
+-    const a = build();
+-    await expect(a.service.listRevisions(PLAN_ID, { userId: 'head-9' }, undefined)).rejects.toBeInstanceOf(ForbiddenException);
+-    expect(a.prisma.workoutPlanRevision.findMany).not.toHaveBeenCalled();
+-    a.prisma.workoutPlan.findUnique.mockResolvedValueOnce(fake(null));
+-    await expect(a.service.listRevisions(PLAN_ID, { userId: HEAD }, undefined)).rejects.toBeInstanceOf(NotFoundException);
+-    delete process.env.FEATURE_MWB_AUTOSAVE_UNDO;
+-    const b = build();
+-    await expect(b.service.listRevisions(PLAN_ID, { userId: HEAD }, undefined)).rejects.toBeInstanceOf(NotFoundException);
+-    expect(b.prisma.workoutPlan.findUnique).not.toHaveBeenCalled();
+-  });
+-
+-  it('limit defaults to 20, clamps to 1..50; the extra row is a baseline only; a gap or bad snapshot invents nothing', async () => {
+-    expect([undefined, '0', '500', 'abc'].map(parseRevisionsLimit)).toEqual([20, 1, 50, 20]);
+-    const list = await build().service.listRevisions(PLAN_ID, { userId: HEAD }, '2');
+-    expect(list.map((r) => r.revision_index)).toEqual([3, 2]);
+-    expect(list[1].summary).toContain('2 added');
+-    const gap = build([rev(9, 'autosave', 'coach', 'not-an-array'), rev(4, 'autosave', 'coach', [row('a')])]);
+-    expect((await gap.service.listRevisions(PLAN_ID, { userId: HEAD }, undefined)).map((r) => r.summary)).toEqual([
+-      'Edited. 0 exercises.',
+-      'Edited. 1 exercise.',
+-    ]);
+-  });
+-});
+diff --git a/test/ci/fly-env-sync-behavior.spec.ts b/test/ci/fly-env-sync-behavior.spec.ts
+index e87af0c5..b1eb658e 100644
+--- a/test/ci/fly-env-sync-behavior.spec.ts
++++ b/test/ci/fly-env-sync-behavior.spec.ts
+@@ -628,20 +628,6 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
+       expectNoLeak(run);
+     });
+ 
+-    it('stages a capability-list flag value: AI_GATEWAY_CAPABILITIES with "_" and "," passes the NAME=value guard (AIB-4)', () => {
+-      const run = runJob({
+-        mode: 'apply',
+-        edits: { 'flags.AI_GATEWAY_CAPABILITIES': 'draft.create_workout_plan,draft.edit_workout_plan' },
+-      });
+-      expect(run.ok).toBe(true);
+-      expect(writes(run)).toEqual(['secrets set stage=1 names=AI_GATEWAY_CAPABILITIES']);
+-      expect(run.fly.AI_GATEWAY_CAPABILITIES).toEqual({
+-        value: 'draft.create_workout_plan,draft.edit_workout_plan',
+-        status: 'Staged',
+-      });
+-      expectNoLeak(run);
+-    });
+-
+     it('deploy_staged=true: one deploy, then the running machine is proven to hold the value', () => {
+       const run = runJob({
+         mode: 'apply',
+diff --git a/test/schedule-module-single-instance.spec.ts b/test/schedule-module-single-instance.spec.ts
+new file mode 100644
+index 00000000..d20f2c31
+--- /dev/null
++++ b/test/schedule-module-single-instance.spec.ts
+@@ -0,0 +1,171 @@
++/**
++ * B-CRON-126 — every timed job registers ONCE.
++ *
++ * Production bug (deploy 16, 2026-10-06): ScheduleModule.forRoot() was
++ * imported by AppModule AND by DataExportModule. On Nest 11 dynamic modules
++ * are keyed by object reference, so the two forRoot() results became two
++ * ScheduleModule instances. Each instance owns its own ScheduleExplorer,
++ * SchedulerOrchestrator and SchedulerRegistry, and each explorer walks EVERY
++ * provider in the app, so every @Cron / @Interval was mounted twice and fired
++ * twice per schedule, at the same moment.
++ *
++ * Runtime proof: a testing module wired the way AppModule is (one root
++ * ScheduleModule.forRoot() plus the real DataExportModule) and a probe
++ * provider with one @Cron and one @Interval. The probe must be registered
++ * exactly once across every SchedulerRegistry in the container. On the old
++ * DataExportModule this counted 2; with the fix it counts 1.
++ *
++ * Static guard: ScheduleModule.forRoot( / forRootAsync( appears only in
++ * src/app.module.ts, exactly once.
++ */
++import { readdirSync, readFileSync, statSync } from 'fs';
++import { join, relative, sep } from 'path';
++import { DynamicModule, Injectable, Type } from '@nestjs/common';
++import { ModulesContainer } from '@nestjs/core';
++import { Test, TestingModule } from '@nestjs/testing';
++import { Cron, Interval, ScheduleModule, SchedulerRegistry } from '@nestjs/schedule';
++import { DataExportModule } from '../src/data-export/data-export.module';
++import { DATA_EXPORT_ARCHIVE_STORE } from '../src/data-export/data-export-archive.store';
++import { PrismaService } from '../src/prisma.service';
++
++const PROBE_CRON = 'b-cron-126-probe-cron';
++const PROBE_INTERVAL = 'b-cron-126-probe-interval';
++const DAY_MS = 24 * 60 * 60 * 1000;
++
++@Injectable()
++class ScheduleProbe {
++  ticks = 0;
++
++  // 00:00 on 1 January: never fires while the test runs.
++  @Cron('0 0 1 1 *', { name: PROBE_CRON, timeZone: 'UTC' })
++  cronTick(): void {
++    this.ticks += 1;
++  }
++
++  @Interval(PROBE_INTERVAL, DAY_MS)
++  intervalTick(): void {
++    this.ticks += 1;
++  }
++}
++
++interface Booted {
++  moduleRef: TestingModule;
++  registries: SchedulerRegistry[];
++  addCronJob: jest.SpyInstance;
++  addInterval: jest.SpyInstance;
++}
++
++async function boot(imports: Array<Type<unknown> | DynamicModule>): Promise<Booted> {
++  const addCronJob = jest.spyOn(SchedulerRegistry.prototype, 'addCronJob');
++  const addInterval = jest.spyOn(SchedulerRegistry.prototype, 'addInterval');
++  const moduleRef = await Test.createTestingModule({
++    imports,
++    providers: [ScheduleProbe],
++  })
++    .overrideProvider(PrismaService)
++    .useValue({})
++    .overrideProvider(DATA_EXPORT_ARCHIVE_STORE)
++    .useValue({ kind: 'local' })
++    .compile();
++  // init() runs onModuleInit (explorers) and onApplicationBootstrap
++  // (orchestrators mount the jobs into their registries).
++  await moduleRef.init();
++  const registries: SchedulerRegistry[] = [];
++  for (const mod of moduleRef.get(ModulesContainer).values()) {
++    if (mod.metatype !== ScheduleModule) continue;
++    const wrapper = mod.getProviderByKey<SchedulerRegistry>(SchedulerRegistry);
++    registries.push(wrapper.instance);
++  }
++  return { moduleRef, registries, addCronJob, addInterval };
++}
++
++function cronCount(b: Booted, name: string): number {
++  return b.registries.filter((r) => r.getCronJobs().has(name)).length;
++}
++
++function intervalCount(b: Booted, name: string): number {
++  return b.registries.filter((r) => r.getIntervals().includes(name)).length;
++}
++
++function callsFor(spy: jest.SpyInstance, name: string): number {
++  return spy.mock.calls.filter((args) => args[0] === name).length;
++}
++
++describe('ScheduleModule single instance (B-CRON-126)', () => {
++  let booted: Booted | undefined;
++
++  afterEach(async () => {
++    // close() runs beforeApplicationShutdown: every mounted job is stopped.
++    if (booted) await booted.moduleRef.close();
++    booted = undefined;
++    jest.restoreAllMocks();
++  });
++
++  it('wired like AppModule (root forRoot + real DataExportModule), each timed job registers once', async () => {
++    booted = await boot([ScheduleModule.forRoot(), DataExportModule]);
++
++    // On the old DataExportModule each of these counted 2.
++    expect(cronCount(booted, PROBE_CRON)).toBe(1);
++    expect(callsFor(booted.addCronJob, PROBE_CRON)).toBe(1);
++    expect(intervalCount(booted, PROBE_INTERVAL)).toBe(1);
++    expect(callsFor(booted.addInterval, PROBE_INTERVAL)).toBe(1);
++    expect(booted.registries.length).toBe(1);
++    // DataExportModule's own nightly job is registered once as well.
++    expect(cronCount(booted, 'data-export-cleanup')).toBe(1);
++    expect(callsFor(booted.addCronJob, 'data-export-cleanup')).toBe(1);
++  });
++
++  it('control: two root imports (the 10-06 production wiring) register every timed job twice', async () => {
++    // Proves the counter above detects the bug: the same probe under two
++    // root imports, as AppModule + the old DataExportModule produced.
++    booted = await boot([ScheduleModule.forRoot(), ScheduleModule.forRoot()]);
++
++    expect(booted.registries.length).toBe(2);
++    expect(cronCount(booted, PROBE_CRON)).toBe(2);
++    expect(intervalCount(booted, PROBE_INTERVAL)).toBe(2);
++    expect(callsFor(booted.addCronJob, PROBE_CRON)).toBe(2);
++  });
++
++  it('DataExportModule does not import ScheduleModule itself', () => {
++    const imports: unknown[] = Reflect.getMetadata('imports', DataExportModule) ?? [];
++    const scheduleImports = imports.filter(
++      (entry) =>
++        entry === ScheduleModule ||
++        (typeof entry === 'object' &&
++          entry !== null &&
++          (entry as DynamicModule).module === ScheduleModule),
++    );
++    expect(scheduleImports.length).toBe(0);
++  });
++});
++
++describe('ScheduleModule root import static guard (B-CRON-126)', () => {
++  const root = join(__dirname, '..');
++  const srcDir = join(root, 'src');
++  const pattern = /ScheduleModule\s*\.\s*forRoot(?:Async)?\s*\(/g;
++
++  function sourceFiles(dir: string): string[] {
++    const out: string[] = [];
++    for (const name of readdirSync(dir)) {
++      const full = join(dir, name);
++      if (statSync(full).isDirectory()) {
++        if (name === '__tests__' || name === 'node_modules') continue;
++        out.push(...sourceFiles(full));
++      } else if (name.endsWith('.ts') && !name.endsWith('.spec.ts')) {
++        out.push(full);
++      }
++    }
++    return out;
++  }
++
++  it('ScheduleModule.forRoot( appears exactly once in src, in src/app.module.ts', () => {
++    const hits: string[] = [];
++    for (const file of sourceFiles(srcDir)) {
++      const matches = readFileSync(file, 'utf8').match(pattern) ?? [];
++      for (let i = 0; i < matches.length; i += 1) {
++        hits.push(relative(root, file).split(sep).join('/'));
++      }
++    }
++    expect(hits).toEqual(['src/app.module.ts']);
++  });
++});

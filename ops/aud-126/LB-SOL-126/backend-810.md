@@ -1,0 +1,17 @@
+AUDIT GPT-6.1 Sol (LB-SOL-126) — growth-project-backend#810 @ 9ee51c0b16fa139b32532ac16450896188c8967f — VERDICT: APPROVE
+
+A=0 B=0 C=0; U=0. T4 independent review, 177 additions + 2 deletions = 179 changed lines; current-head READY verified; CI green, with deploy-readiness-gate skipped as designed. ([PR #810](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/810), [READY](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/810#issuecomment-6028857589), [CI build-and-test](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37555944247/job/112582074751))
+
+## B findings
+None.
+
+## Operator-requested runtime review
+- **Minimal source change:** `src/data-export/data-export.module.ts:31–35` removes only the ScheduleModule import and duplicate `forRoot()` plus explanatory comments; PrismaModule, controller, service, cleanup provider and archive-store configuration remain unchanged, with no job-body, schedule, flag, money calculation or database change. ([Module diff](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9ee51c0b16fa139b32532ac16450896188c8967f/src%2Fdata-export%2Fdata-export.module.ts))
+- **Data-export cleanup remains mounted once:** `test/schedule-module-single-instance.spec.ts:62–84` boots real Nest lifecycle hooks with the actual DataExportModule and one root scheduler, enumerates every scheduler registry from ModulesContainer, and lines 104–117 assert one probe cron, one probe interval, one registry, and one real `data-export-cleanup` cron; prototype spies additionally count registration calls, so this is runtime registration proof, not a YAML/string-only assertion. ([Runtime spec](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9ee51c0b16fa139b32532ac16450896188c8967f/test%2Fschedule-module-single-instance.spec.ts))
+- **Regression proof is real:** the two-root control at lines 120–129 observes two registries and two registrations, while the production-shaped one-root-plus-DataExport case requires one; the builder's main-code run records `Expected: 1, Received: 2` and 3/4 failing tests, while the fixed run passes 4/4 and current CI passes; the static guard at lines 144–171 prevents reintroducing another scheduler root in src. ([Runtime spec](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9ee51c0b16fa139b32532ac16450896188c8967f/test%2Fschedule-module-single-instance.spec.ts), [Builder main/fixed proof](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/810#issuecomment-6028857589), [CI build-and-test](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37555944247/job/112582074751))
+- The test directly instantiates the probe cron/interval and real data-export cron, rather than executing all money jobs; a single root's app-wide provider discovery is the shared mechanism for the unchanged decorated jobs, so removing the extra root fixes duplicate mounting without executing financial or destructive operations in the test. ([Runtime spec](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/9ee51c0b16fa139b32532ac16450896188c8967f/test%2Fschedule-module-single-instance.spec.ts), [PR cause analysis](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/810))
+
+## C one-liners
+None introduced.
+
+No local tests, code push, merge, deployment, production access or configuration change performed.

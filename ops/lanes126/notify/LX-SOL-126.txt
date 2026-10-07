@@ -1,0 +1,16 @@
+growth-project-mobile#443 @ 502205bb REQUEST CHANGES B=1
+growth-project-mobile#447 @ 863df75f APPROVE B=0
+growth-project-backend#811 @ e1d804b7 APPROVE B=0
+growth-project-backend#813 @ c3eae417 REQUEST CHANGES B=1
+growth-project-backend#814 @ e27aa237 APPROVE B=0
+growth-project-mobile#449 @ 4d13021c APPROVE B=0
+growth-project-backend#817 @ 6e8616f5 APPROVE B=0
+growth-project-backend#818 @ 2e7d8de6 APPROVE B=0
+growth-project-backend#813 @ dee67d53 REQUEST CHANGES B=1
+growth-project-mobile#443 @ 82d8b252 APPROVE B=0
+growth-project-mobile#450 @ f67962d0 APPROVE B=0
+growth-project-mobile#451 @ 06570f13 REQUEST CHANGES B=1
+growth-project-backend#814 @ 7275acd4 APPROVE B=0
+growth-project-backend#822 @ b4f48a76 APPROVE B=0
+growth-project-backend#819 @ 1fcd9330 APPROVE B=0
+done | PRs: m#443,m#447,m#449,m#450,m#451,b#811,b#813,b#814,b#817,b#818,b#819,b#822 (verdicts only; none opened) | B=3 U=1 | needs operator: 4

@@ -1,0 +1,8 @@
+backend#811 @ e1d804b7 APPROVE B=0
+backend#814 @ e27aa237 REQUEST CHANGES B=1
+mobile#441 @ 9cc1fcdc APPROVE B=0
+mobile#449 @ 4d13021c APPROVE B=0
+backend#820 @ e6cf9316 APPROVE B=0
+mobile#450 @ f67962d0 APPROVE B=0
+mobile#443 @ 82d8b252 APPROVE B=0
+done | PRs: none | verdicts: b#811 APPROVE, b#814@e27aa237 RC B=1, m#441 APPROVE, m#449 APPROVE, b#820 APPROVE, m#450 APPROVE, m#443@82d8b252 APPROVE | needs operator: 2 (m#451 owner-held, no Opus; b#821 guest-checkout gate C)

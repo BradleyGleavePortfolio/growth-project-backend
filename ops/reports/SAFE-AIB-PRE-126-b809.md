@@ -1,0 +1,20 @@
+SAFETY PRE-PASS (SAFE-AIB-PRE-126) — growth-project-backend#809 @ c0984e2af2be79134c3f6eafeee0b72de73229b0 — 2 blockers
+
+Not a verdict; the lenses decide. Read at the head above (draft, being split). Plan section 2, SAFE 1-12: consent, minimisation, tenancy, prompt injection, output validation, cost, kill switch and logs PASS. Blockers:
+
+**B3: the "model wrote this" marker never matches after the database round trip.** A Scale-tier head coach with one active sub-coach taps Apply on any Ask AI suggestion and is refused ("This account cannot use Ask AI on this workout").
+- `ai-gateway.service.ts:403` hashes `JSON.stringify(modelPayload)`; `ai-approval.service.ts:70` re-hashes `JSON.stringify(draft.payload)` read back from Postgres. `AiActionDraft.payload` is JSONB, which does not keep key order (it returns `diff, capability, target_plan_id, base_revision_index` and reorders every op). So `isWorkoutBuilderModelDraft` is always false in production, and `tenantCoachMayDecideOwnDraft` (:146-151) falls to the "no other human" rule -> 403 "A draft cannot be decided by its requester" whenever the coach has a sub-coach. Solo coaches are unaffected. The spec builds the draft in memory, so CI passes.
+- Smallest fix: the marker is already unforgeable (the gateway strips caller provenance with that source, `ai-gateway.service.ts:352`), so check `source === WORKOUT_BUILDER_MODEL_DIFF_SOURCE && isMwbLiveCreateCapability(draft.capability)` and drop the hash, or hash a recursively key-sorted JSON on both sides. Add a spec that reorders the payload keys before `decide`.
+
+**B4: a sub-coach can never use Ask AI (team tiers).** A sub-coach opens a workout, asks AI, and gets "paused for maintenance" on their own plans or a refusal on Apply on the head coach's plans.
+- `workout-builder-ai.service.ts:72-73,88`: a plan is accepted only when `plan.coach_id === tenantCoachId` (head coach), so a sub-coach's own plan returns 404 (the app maps 404 to the paused copy). On a head-coach plan the draft gets `tenant_coach_id` = head coach and `decide` refuses the sub-coach (`ai-approval.service.ts:174`).
+- Smallest fix (recommended default for 10-07): hide Ask AI for sub-coaches: status and propose return 404 for a user whose `getHeadCoachIdForSubCoach` is another coach (the app hides the entry on 404). Full support is a T4 tenancy change for v1.1. The operator may reclassify to U if Scale teams are out of launch scope.
+
+**Backend halves of the m#439 blockers (fix on either side; mobile must tolerate both because the build ships first):**
+- B1: `PATCH /ai/gateway/drafts/:id` returns the Prisma row (`ai-approval.service.ts:467`), where `materialised_ref` is the plan id string; m#439 expects `{ plan_id, revision_index, lock_token }` (plan section 3). Return that shape for live-create drafts.
+- B2: `workout-diff.validator.ts:147` sends `exercise: null` for remove, reorder and plan_meta changes; Explain returns `draft_id: null`. For `remove_exercise`, fill `exercise` from `before.exercise_external_id`.
+
+U (small): U1 model-written plan names skip the medical-claim filter (`plan_meta.name` never meets `MEDICAL_CLAIM_PATTERN`; only summary, reason and notes do), so Ask AI could name a workout "Knee rehab day" that a client later sees. Fix: drop a plan_meta op whose name matches, with a reason. U3: rows reach the model as ids only (`workout-builder-prompt.ts:75-82`); add the library name per row.
+C: no `aiRequestAudit` row when the resolver throws after a real call; weekly hard-set caps not enforced; the screening flag still allows add_exercise (AIB-6 only); size +1,112 (over 800); rebase on 2df556b7 (module conflict with b#808).
+
+SAFE-MWBAI-125 blockers: 1 closed here (`workout-builder-ai.service.ts:147-172`, `ai-gateway.service.ts:397-408`); 3 closed on main for solo coaches (b#807), still open for teams (B3, B4); 4 closed on main (b#805); 5 mostly closed here (`training-safety.constants.ts`, `workout-diff.validator.ts`), context v2 = AIB-3. Full report: ops/reports/SAFE-AIB-PRE-126.md.

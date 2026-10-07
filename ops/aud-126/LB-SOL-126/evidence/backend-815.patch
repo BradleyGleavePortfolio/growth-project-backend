@@ -1,0 +1,271 @@
+diff --git a/src/ai/gateway/ai-approval.service.ts b/src/ai/gateway/ai-approval.service.ts
+index 54b5d278..64045d26 100644
+--- a/src/ai/gateway/ai-approval.service.ts
++++ b/src/ai/gateway/ai-approval.service.ts
+@@ -1,4 +1,5 @@
+ import {
++  BadRequestException,
+   ConflictException,
+   ForbiddenException,
+   Injectable,
+@@ -9,7 +10,11 @@ import {
+ } from '@nestjs/common';
+ import { PrismaService } from '../../prisma.service';
+ import { AuditService } from '../../audit/audit.service';
++import { Prisma } from '@prisma/client';
+ import { CapabilityMaterializerRegistry } from './materialisers/capability-materialiser.registry';
++import { WORKOUT_BUILDER_MODEL_DIFF_SOURCE } from './ai-gateway.service';
++import { isMwbLiveCreateCapability } from './mwb-live-create.feature';
++import { computeLockToken } from '../../workout-builder/lock-token.helper';
+ 
+ // Human-approval workflow for consequential AI outputs. AiActionDraft
+ // rows land here as `pending`; an authorized human (coach for own-tenant
+@@ -54,11 +59,31 @@ export function payloadClientIds(payload: unknown): string[] {
+   return [...ids];
+ }
+ 
++/**
++ * B-AIB2-126 — true when the gateway marked this live-create draft model-written (the AI workout builder). Only the gateway
++ * can add the marker (it strips caller provenance with that source). No payload hash: JSONB reorders keys on the way back.
++ */
++export function isWorkoutBuilderModelDraft(capability: string, provenance: unknown): boolean {
++  return isMwbLiveCreateCapability(capability) && Array.isArray(provenance) && provenance.some(
++    (p) => !!p && typeof p === 'object' && (p as { source?: unknown }).source === WORKOUT_BUILDER_MODEL_DIFF_SOURCE,
++  );
++}
++
++/** Accepted subset (`c<i>` = diff index i). A reorder lists every ref, so it is kept only when all other ops are kept. */
++export function selectAcceptedOps<T extends { kind: string }>(diff: readonly T[], acceptedChangeIds: readonly string[]): T[] {
++  const ok = new Set(acceptedChangeIds);
++  const allOthers = diff.every((op, i) => op.kind === 'reorder' || ok.has(`c${i}`));
++  return diff.filter((op, i) => ok.has(`c${i}`) && (op.kind !== 'reorder' || allOthers));
++}
++
+ export interface DecideInput {
+   draftId: string;
+   decider: { id: string; role: string };
+   decision: Decision;
+   note?: string;
++  // B-AIB2-126 — apply only these changes (`c<i>` = diff index i) of an AI
++  // workout-builder draft. Omitted = apply every change.
++  acceptedChangeIds?: string[];
+   ip?: string | null;
+   userAgent?: string | null;
+ }
+@@ -112,11 +137,12 @@ export class AiApprovalService {
+    * when the tenant has no active sub-coach (the coach is its only human).
+    */
+   private async tenantCoachMayDecideOwnDraft(
+-    draft: { payload: unknown; rationale: string | null; tenant_coach_id: string | null },
++    draft: { capability: string; payload: unknown; rationale: string | null; tenant_coach_id: string | null; provenance?: unknown },
+     decider: { id: string; role: string },
+   ): Promise<boolean> {
+     if (decider.role !== 'coach' || draft.tenant_coach_id !== decider.id) return false;
+     if (isModelAuthoredPayload(draft.payload, draft.rationale)) return true;
++    if (isWorkoutBuilderModelDraft(draft.capability, draft.provenance)) return true;
+     const otherHumans = await this.prisma.teamSubCoachAssignment.count({
+       where: { head_coach_id: decider.id, archived_at: null },
+     });
+@@ -192,6 +218,29 @@ export class AiApprovalService {
+ 
+     const status = input.decision;
+ 
++    // B-AIB2-126 — subset approval: materialise only the accepted ops (the
++    // materialiser re-validates and dry-runs them against the current head).
++    let toMaterialise = draft;
++    let appliedPayload: Prisma.JsonObject | undefined;
++    if (status === 'approved' && input.acceptedChangeIds) {
++      const payload = draft.payload as { diff?: unknown } | null;
++      if (!isMwbLiveCreateCapability(draft.capability) || !payload || !Array.isArray(payload.diff)) {
++        throw new BadRequestException({
++          code: 'ACCEPTED_CHANGES_UNSUPPORTED',
++          message: 'This draft cannot be applied in part.',
++        });
++      }
++      const subset = selectAcceptedOps(payload.diff as Array<{ kind: string } & Prisma.JsonObject>, input.acceptedChangeIds);
++      if (subset.length === 0) {
++        throw new BadRequestException({
++          code: 'NO_CHANGES_ACCEPTED',
++          message: 'Keep at least one change to apply, or discard the suggestions.',
++        });
++      }
++      appliedPayload = { ...(payload as Prisma.JsonObject), diff: subset };
++      toMaterialise = { ...draft, payload: appliedPayload };
++    }
++
+     // PR AI-3 (PRODUCT-1): for 'approved' decisions on capabilities that
+     // have a registered materialiser, run materialisation BEFORE flipping
+     // status. If the materialiser throws, the draft stays in 'pending' so
+@@ -207,7 +256,7 @@ export class AiApprovalService {
+       const materialiser = this.materialisers.resolve(draft.capability);
+       if (materialiser) {
+         try {
+-          const result = await materialiser.materialize(draft);
++          const result = await materialiser.materialize(toMaterialise);
+           materialisationRef = result.ref ?? null;
+           if (result.status === 'racing') {
+             // P1-1: a concurrent approver holds the materialisation claim
+@@ -353,6 +402,7 @@ export class AiApprovalService {
+           decided_by_id: input.decider.id,
+           decided_at: new Date(),
+           decision_note: input.note ?? null,
++          ...(appliedPayload !== undefined ? { payload: appliedPayload } : {}),
+         },
+       });
+       if (flip.count === 0) {
+@@ -413,9 +463,28 @@ export class AiApprovalService {
+       },
+     });
+ 
++    // B-AIB2-126 — the AI workout builder adopts the new head at once (plan section 3): plan id, head revision, fresh lock token.
++    if (status === 'approved' && materialisationRef && isWorkoutBuilderModelDraft(draft.capability, draft.provenance)) {
++      return { ...updated, materialised_ref: await this.workoutBuilderRef(materialisationRef) };
++    }
+     return updated;
+   }
+ 
++  private async workoutBuilderRef(planId: string): Promise<{ plan_id: string; revision_index: number; lock_token?: string }> {
++    const plan = await this.prisma.workoutPlan.findUnique({ where: { id: planId }, select: { version: true, head_revision_id: true } });
++    const headId = plan?.head_revision_id;
++    const head = headId ? await this.prisma.workoutPlanRevision.findUnique({ where: { id: headId }, select: { revision_index: true } }) : null;
++    const ref = { plan_id: planId, revision_index: head?.revision_index ?? 0 };
++    if (!plan || !headId) return ref;
++    try {
++      return { ...ref, lock_token: computeLockToken(planId, plan.version, headId) };
++    } catch (err) {
++      // No autosave secret: the builder re-reads the plan instead of adopting the token.
++      this.logger.warn(`workout builder lock token unavailable: ${err instanceof Error ? err.name : 'unknown'}`);
++      return ref;
++    }
++  }
++
+   // Background sweep entry point. Mark any pending draft past its
+   // `expires_at` as `expired` and write a single AuditLog row per sweep.
+   // Wired to a cron in a follow-up; kept as a service method here so
+diff --git a/src/ai/gateway/ai-gateway.controller.ts b/src/ai/gateway/ai-gateway.controller.ts
+index 24210e2e..b842bb6f 100644
+--- a/src/ai/gateway/ai-gateway.controller.ts
++++ b/src/ai/gateway/ai-gateway.controller.ts
+@@ -1,4 +1,5 @@
+ import {
++  BadRequestException,
+   Body,
+   Controller,
+   ForbiddenException,
+@@ -137,14 +138,26 @@ export class AiGatewayController {
+   async decide(
+     @Request() req: AuthedRequest,
+     @Param('id') id: string,
+-    @Body() body: { decision: 'approved' | 'rejected'; note?: string },
++    @Body() body: { decision: 'approved' | 'rejected'; note?: string; accepted_change_ids?: unknown },
+   ) {
+     const decision = body.decision === 'rejected' ? 'rejected' : 'approved';
++    // B-AIB2-126 — optional subset of an AI workout-builder draft (`c<i>` ids).
++    const ids = body.accepted_change_ids;
++    if (
++      ids !== undefined &&
++      (!Array.isArray(ids) || ids.length > 400 || !ids.every((v) => typeof v === 'string' && /^c\d{1,3}$/.test(v)))
++    ) {
++      throw new BadRequestException({
++        code: 'INVALID_ACCEPTED_CHANGES',
++        message: 'accepted_change_ids must be a list of change ids from the proposal.',
++      });
++    }
+     return this.approvals.decide({
+       draftId: id,
+       decider: { id: req.user.id, role: req.user.role },
+       decision,
+       note: body.note,
++      acceptedChangeIds: ids as string[] | undefined,
+       ip: extractIp(req),
+       userAgent: extractUserAgent(req),
+     });
+diff --git a/test/aib2b-subset-approve.spec.ts b/test/aib2b-subset-approve.spec.ts
+new file mode 100644
+index 00000000..4524fc14
+--- /dev/null
++++ b/test/aib2b-subset-approve.spec.ts
+@@ -0,0 +1,83 @@
++// B-AIB2-126 (stacked on the generator) — subset approve of an AI workout-builder draft, the marker after a JSONB round trip,
++// and the materialised_ref the builder adopts.
++import { BadRequestException } from '@nestjs/common';
++import { AiApprovalService, isWorkoutBuilderModelDraft, selectAcceptedOps } from '../src/ai/gateway/ai-approval.service';
++import { AiGatewayController } from '../src/ai/gateway/ai-gateway.controller';
++import { AiGatewayService, WORKOUT_BUILDER_MODEL_DIFF_SOURCE } from '../src/ai/gateway/ai-gateway.service';
++import { PrivateContextService } from '../src/ai/gateway/private-context.service';
++import { CapabilityMaterializerRegistry } from '../src/ai/gateway/materialisers/capability-materialiser.registry';
++import { PrismaService } from '../src/prisma.service';
++import { AuditService } from '../src/audit/audit.service';
++import type { AuthedRequest } from '../src/auth/auth-request';
++import { computeLockToken } from '../src/workout-builder/lock-token.helper';
++import { fakeOf } from './ai-egress/ai-egress.fakes';
++
++const PLAN = '11111111-1111-4111-8111-111111111111';
++const COACH = 'coach-1';
++const MARKER = [{ source: WORKOUT_BUILDER_MODEL_DIFF_SOURCE, hash: 'written-before-the-round-trip', count: 1 }];
++
++// As Postgres JSONB returns it: keys reordered (diff first, op keys sorted), so no hash of the written JSON can match.
++const payload = {
++  diff: [{ client_ref: 'r1', kind: 'update_exercise', rest_seconds: 90 }, { client_ref: 'r2', kind: 'remove_exercise' }],
++  base_revision_index: 2, capability: 'draft.edit_workout_plan', target_plan_id: PLAN,
++};
++
++function build(over: { provenance?: unknown; capability?: string; subCoaches?: number } = {}) {
++  const draft = {
++    id: 'draft-1', capability: over.capability ?? 'draft.edit_workout_plan', status: 'pending', requester_id: COACH, tenant_coach_id: COACH,
++    subject_user_id: null, payload, rationale: 'text', provenance: over.provenance ?? MARKER, materialised_ref: null,
++  };
++  const updates: Array<{ data: Record<string, unknown> }> = [];
++  const tx = {
++    aiActionDraft: { updateMany: jest.fn(async (args: { data: Record<string, unknown> }) => { updates.push(args); return { count: 1 }; }) },
++    aiRequestAudit: { updateMany: jest.fn(async () => ({ count: 1 })) },
++  };
++  const prisma = {
++    aiActionDraft: { findUnique: jest.fn(async () => draft) },
++    teamSubCoachAssignment: { count: jest.fn(async () => over.subCoaches ?? 1) },
++    workoutPlan: { findUnique: jest.fn(async () => ({ version: 4, head_revision_id: 'rev-4' })) },
++    workoutPlanRevision: { findUnique: jest.fn(async () => ({ revision_index: 3 })) },
++    $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
++  };
++  const materialize = jest.fn(async (_d: { payload: unknown }) => ({ status: 'sent', ref: PLAN }));
++  const registry = fakeOf<CapabilityMaterializerRegistry>({ resolve: () => ({ materialize }) });
++  const svc = new AiApprovalService(fakeOf<PrismaService>(prisma), fakeOf<AuditService>({ write: jest.fn(async () => undefined) }), registry);
++  return { svc, materialize, updates };
++}
++const approve = { draftId: 'draft-1', decider: { id: COACH, role: 'coach' }, decision: 'approved' as const };
++
++describe('AiApprovalService subset approve (B-AIB2-126)', () => {
++  const ORIGINAL_ENV = process.env;
++  beforeEach(() => { process.env = { ...ORIGINAL_ENV, MWB_AUTOSAVE_LOCK_TOKEN_SECRET: 'test-secret-for-lock-token' }; });
++  afterAll(() => { process.env = ORIGINAL_ENV; });
++  it('a head coach with a sub-coach approves the AI draft after the JSONB round trip; only accepted ops are applied', async () => {
++    const { svc, materialize, updates } = build();
++    const res = await svc.decide({ ...approve, acceptedChangeIds: ['c0'] });
++    expect(materialize).toHaveBeenCalledTimes(1);
++    expect(materialize.mock.calls[0][0]).toMatchObject({ payload: { diff: [payload.diff[0]] } });
++    expect(updates[0].data.payload).toEqual({ ...payload, diff: [payload.diff[0]] });
++    expect(res.materialised_ref).toEqual({ plan_id: PLAN, revision_index: 3, lock_token: computeLockToken(PLAN, 4, 'rev-4') });
++  });
++  it('without the gateway marker, or on another capability, the requester rule still applies', async () => {
++    await expect(build({ provenance: [] }).svc.decide(approve)).rejects.toMatchObject({ status: 403 });
++    await expect(build({ capability: 'draft.coach_message' }).svc.decide(approve)).rejects.toMatchObject({ status: 403 });
++    expect(isWorkoutBuilderModelDraft('draft.coach_message', MARKER)).toBe(false);
++  });
++  it('no lock-token secret: materialised_ref still names the plan and head revision', async () => {
++    delete process.env.MWB_AUTOSAVE_LOCK_TOKEN_SECRET;
++    const res = await build().svc.decide(approve);
++    expect(res.materialised_ref).toEqual({ plan_id: PLAN, revision_index: 3 });
++  });
++  it('selectAcceptedOps keeps a reorder only when every other op is accepted', () => {
++    const diff = [{ kind: 'add_exercise' }, { kind: 'remove_exercise' }, { kind: 'reorder' }];
++    expect(selectAcceptedOps(diff, ['c0', 'c2'])).toEqual([{ kind: 'add_exercise' }]);
++    expect(selectAcceptedOps(diff, ['c0', 'c1', 'c2'])).toHaveLength(3);
++  });
++  it('the controller refuses malformed accepted_change_ids', async () => {
++    const decide = jest.fn();
++    const ctl = new AiGatewayController(fakeOf<AiGatewayService>({}), fakeOf<AiApprovalService>({ decide }), fakeOf<PrivateContextService>({}));
++    const req = fakeOf<AuthedRequest>({ user: { id: COACH, role: 'coach' }, headers: {} });
++    await expect(ctl.decide(req, 'draft-1', { decision: 'approved', accepted_change_ids: ['all'] })).rejects.toBeInstanceOf(BadRequestException);
++    expect(decide).not.toHaveBeenCalled();
++  });
++});

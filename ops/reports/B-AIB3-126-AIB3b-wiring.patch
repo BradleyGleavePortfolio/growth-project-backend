@@ -1,0 +1,277 @@
+diff --git a/src/ai/gateway/workout-builder/workout-builder-ai.service.ts b/src/ai/gateway/workout-builder/workout-builder-ai.service.ts
+index 129b4c4c..1aa3e82a 100644
+--- a/src/ai/gateway/workout-builder/workout-builder-ai.service.ts
++++ b/src/ai/gateway/workout-builder/workout-builder-ai.service.ts
+@@ -1,7 +1,7 @@
+ // B-AIB2-126 — AI workout builder generator. Gates in order: flag 503 -> role -> tenancy 404 -> lock token 409 ->
+ // capability configured 503 -> gateway (roster, box-2 consent 403, budget 403, meter) -> validator -> one repair -> 422.
+ import {
+-  BadRequestException, ConflictException, Injectable, NotFoundException, ServiceUnavailableException, UnprocessableEntityException,
++  BadRequestException, ConflictException, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException, UnprocessableEntityException,
+ } from '@nestjs/common';
+ import { timingSafeEqual } from 'crypto';
+ import type { z } from 'zod';
+@@ -21,6 +21,7 @@ import {
+   WorkoutClientContext, buildWorkoutBuilderSystemPrompt, buildWorkoutBuilderUserMessage, parseModelOutput, stubProposal,
+ } from './workout-builder-prompt';
+ import { WorkoutBuilderStatusService } from './workout-builder-status.service';
++import { WorkoutContextService, WorkoutContextV2, contextUsedKeys } from '../../context/workout-context.service';
+ import type { ProposeBodySchema } from './workout-builder-ai.controller';
+ 
+ export type ProposeInput = z.infer<typeof ProposeBodySchema>;
+@@ -44,9 +45,12 @@ function sameToken(a: string, b: string): boolean {
+ 
+ @Injectable()
+ export class WorkoutBuilderAiService {
++  private readonly logger = new Logger(WorkoutBuilderAiService.name);
+   constructor(
+     private readonly prisma: PrismaService, private readonly gateway: AiGatewayService, private readonly config: AiGatewayConfig,
+     private readonly subCoachScope: SubCoachScopeService, private readonly status: WorkoutBuilderStatusService,
++    // B-AIB3-126 — context v2 (history, adherence, check-ins, recovery, coach style); provided by the global CoachAIModule.
++    @Optional() private readonly workoutContext?: WorkoutContextService,
+   ) {}
+ 
+   async propose(requester: { id: string; role: string }, input: ProposeInput, meta: { ip?: string | null; userAgent?: string | null } = {}): Promise<ProposeResult> {
+@@ -83,13 +87,14 @@ export class WorkoutBuilderAiService {
+     if (!this.config.resolve(capability).capabilityAllowed) {
+       throw new ServiceUnavailableException({ code: 'AI_NOT_CONFIGURED', message: 'Ask AI is not available yet. Your workouts are unchanged.' });
+     }
+-    const client = input.client_id ? await this.loadClientContext(input.client_id) : null;
++    const v2 = await this.loadContextV2(tenantCoachId ?? planCoachId, input.client_id ?? null);
++    const client = input.client_id ? (v2?.client ? fromV2(v2.client) : await this.loadClientContext(input.client_id)) : null;
+     const injuries: InjuryArea[] = [...new Set([...(client?.injuries ?? []), ...(input.injury_area ? [input.injury_area] : [])])];
+     const screeningFlag = client?.screening_flag ?? false;
+     const promptLibrary = [...LIBRARY.values()].filter((e) => contraindicatedAreas(e, injuries).length === 0);
+     const explain = input.quick_action === 'explain';
+     const promptClient = client ? { ...client, injuries } : injuries.length ? { ...NO_CLIENT, injuries } : null;
+-    const systemPrompt = buildWorkoutBuilderSystemPrompt({ mode: input.mode, quickAction: input.quick_action, library: promptLibrary, client: promptClient });
++    const systemPrompt = buildWorkoutBuilderSystemPrompt({ mode: input.mode, quickAction: input.quick_action, library: promptLibrary, client: promptClient, coachStyle: v2?.coach_style ?? null });
+     let [lastDropped, outcome, draftId]: [Dropped, Outcome | null, string | null] = [[], null, null];
+     for (let attempt = 0; attempt < 2 && !outcome; attempt++) {
+       const first = buildWorkoutBuilderUserMessage(input.instruction, baseline);
+@@ -141,7 +146,18 @@ export class WorkoutBuilderAiService {
+ 
+     const creditsCoach = tenantCoachId ?? planCoachId;
+     const credits = creditsCoach ? (await this.status.getStatus(creditsCoach)).credits.remaining_pct : null;
+-    return { draft_id: draftId, ...outcome, context_used: contextUsed(client, injuries), screening_flag: screeningFlag, credits_remaining_pct: credits };
++    return { draft_id: draftId, ...outcome, context_used: [...new Set([...contextUsed(client, injuries), ...(v2 ? contextUsedKeys(v2) : [])])], screening_flag: screeningFlag, credits_remaining_pct: credits };
++  }
++
++  /** B-AIB3-126 — additive: when it cannot be read the proposal uses the base context (the injury rules still apply). */
++  private async loadContextV2(coachId: string | null, clientId: string | null): Promise<WorkoutContextV2 | null> {
++    if (!this.workoutContext || !coachId) return null;
++    try {
++      return await this.workoutContext.build({ coachId, clientId });
++    } catch (err) {
++      this.logger.warn(`Workout context v2 unavailable (err=${err instanceof Error ? err.name : 'unknown'})`);
++      return null;
++    }
+   }
+ 
+   private async loadClientContext(clientId: string): Promise<WorkoutClientContext> {
+@@ -161,6 +177,11 @@ export class WorkoutBuilderAiService {
+   }
+ }
+ 
++function fromV2(c: NonNullable<WorkoutContextV2['client']>): WorkoutClientContext {
++  const { goal, experience, equipment, days_per_week, screening_flag, history_6w, adherence_pct_4w, check_ins, recovery } = c;
++  return { goal, experience, equipment, days_per_week, injuries: c.injuries.filter(isInjuryArea), screening_flag, history_6w, adherence_pct_4w, check_ins, ...(recovery ? { recovery } : {}) };
++}
++
+ const NO_CLIENT: WorkoutClientContext = { goal: null, experience: null, equipment: [], days_per_week: null, injuries: [], screening_flag: false };
+ 
+ export function contextUsed(client: WorkoutClientContext | null, injuries: readonly InjuryArea[]): string[] {
+diff --git a/src/ai/gateway/workout-builder/workout-builder-prompt.ts b/src/ai/gateway/workout-builder/workout-builder-prompt.ts
+index 232bb352..23db0199 100644
+--- a/src/ai/gateway/workout-builder/workout-builder-prompt.ts
++++ b/src/ai/gateway/workout-builder/workout-builder-prompt.ts
+@@ -4,9 +4,14 @@ import { z } from 'zod';
+ import { PlanSnapshot } from '../materialisers/__shared/workout-diff.types';
+ import { InjuryArea, TRAINING_BOUNDS as B } from './training-safety.constants';
+ import { LibraryExercise, QuickAction } from './workout-diff.validator';
++import type { CoachStyleSignals, WorkoutClientSignals } from '../../context/workout-context.service';
++import { substitutionGuide } from './training-substitutions';
+ 
+ export interface WorkoutClientContext {
+   goal: string | null; experience: string | null; equipment: string[]; days_per_week: number | null; injuries: InjuryArea[]; screening_flag: boolean;
++  // B-AIB3-126 context v2 (numbers and enums only; recovery only with an active wearable connection).
++  history_6w?: WorkoutClientSignals['history_6w']; adherence_pct_4w?: number | null; check_ins?: WorkoutClientSignals['check_ins'];
++  recovery?: WorkoutClientSignals['recovery'];
+ }
+ 
+ const QUICK_ACTION_BRIEF: Record<QuickAction, string> = {
+@@ -20,6 +25,7 @@ const QUICK_ACTION_BRIEF: Record<QuickAction, string> = {
+ 
+ export function buildWorkoutBuilderSystemPrompt(args: {
+   mode: 'create' | 'edit'; quickAction?: QuickAction; library: readonly LibraryExercise[]; client: WorkoutClientContext | null;
++  coachStyle?: CoachStyleSignals | null;
+ }): string {
+   const lines = [
+     'You edit one strength-and-conditioning workout for a personal trainer (the coach). The coach reviews every change before it is applied.',
+@@ -43,8 +49,10 @@ export function buildWorkoutBuilderSystemPrompt(args: {
+   if (args.client) {
+     lines.push(`CLIENT (enums and numbers only): ${JSON.stringify(args.client)}`);
+     if (args.client.injuries.length > 0) lines.push('Avoid movements that load the client injury areas.');
++    for (const g of substitutionGuide(args.client.injuries)) lines.push(`Injury area ${g}`);
+     if (args.client.screening_flag) lines.push('The client flagged a health screening question: do not increase sets, reps or load.');
+   }
++  if (args.coachStyle) lines.push(`COACH_STYLE (this coach's own programming habits; match them unless the request says otherwise): ${JSON.stringify(args.coachStyle)}`);
+   lines.push(`LIBRARY (id | name | category | muscle): ${args.library.map((e) => `${e.id} | ${e.name} | ${e.category} | ${e.muscle}`).join('; ')}`);
+   return lines.join('\n');
+ }
+diff --git a/src/ai/gateway/workout-builder/workout-diff.validator.ts b/src/ai/gateway/workout-builder/workout-diff.validator.ts
+index 7cff210e..fb579e4b 100644
+--- a/src/ai/gateway/workout-builder/workout-diff.validator.ts
++++ b/src/ai/gateway/workout-builder/workout-diff.validator.ts
+@@ -7,6 +7,7 @@ import { WorkoutDiffApplyError, applyWorkoutDiff } from '../materialisers/__shar
+ import {
+   INJURY_AREA_LABEL, InjuryArea, MEDICAL_CLAIM_PATTERN, TRAINING_BOUNDS as B, contraindicatedAreas, stripMedicalClaims,
+ } from './training-safety.constants';
++import { coachAskedToKeep, substituteFor } from './training-substitutions';
+ 
+ export const QUICK_ACTIONS = ['swap_for_injury', 'progress', 'deload', 'shorten', 'more_volume', 'explain'] as const;
+ export type QuickAction = (typeof QUICK_ACTIONS)[number];
+@@ -87,8 +88,17 @@ function checkChange(op: WorkoutDiffOp, before: PlanExerciseSnapshot | null, ex:
+   if (swaps && ex) {
+     const areas = contraindicatedAreas(ex, input.injuries);
+     const label = areas.map((a) => INJURY_AREA_LABEL[a]).join(' and ');
+-    const named = input.instruction.toLowerCase().includes(ex.name.toLowerCase());
+-    if (areas.length > 0 && !named) return `${ex.name} loads the ${label}. The client reported ${label} issues.`;
++    const named = coachAskedToKeep(input.instruction, ex.name); // a mention or "avoid X" never exempts (B-813-1)
++    if (areas.length > 0 && !named) {
++      // B-AIB3-126 — swap to a library exercise that loads none of the client's areas; drop only when none is left.
++      const sub = substituteFor(ex, input.injuries, new Set(current.exercises.map((e) => e.exercise_external_id)));
++      if (!sub || !input.library.has(sub.id) || (op.kind !== 'add_exercise' && op.kind !== 'update_exercise')) {
++        return `${ex.name} loads the ${label}. The client reported ${label} issues.`;
++      }
++      op.exercise_external_id = sub.id;
++      warnings.push(`Swapped ${ex.name} for ${sub.name}: the client reported ${label} issues.`);
++      return null;
++    }
+     if (areas.length > 0) warnings.push(`Loads the ${label}. The client reported ${label} issues.`);
+     if (input.injuries.includes('other')) warnings.push('The client reported another injury. Check this exercise suits them.');
+   }
+@@ -116,7 +126,7 @@ export function validateProposedChanges(input: ValidateInput): ValidateResult {
+     if (hasRef && !before) { dropped.push({ reason: 'Refers to an exercise that is not in this workout.' }); continue; }
+     const exId = op.kind === 'add_exercise' ? op.exercise_external_id
+       : op.kind === 'update_exercise' ? op.exercise_external_id ?? before?.exercise_external_id ?? null : null;
+-    const cardId = exId ?? before?.exercise_external_id ?? null;
++    let cardId = exId ?? before?.exercise_external_id ?? null;
+     const ex = exId ? library.get(exId) : undefined;
+     const swaps = op.kind === 'add_exercise' ||
+       (op.kind === 'update_exercise' && op.exercise_external_id !== undefined && op.exercise_external_id !== before?.exercise_external_id);
+@@ -124,6 +134,7 @@ export function validateProposedChanges(input: ValidateInput): ValidateResult {
+     const warnings: string[] = [];
+     const why = checkChange(op, before, ex, swaps, input, current, warnings);
+     if (why) { dropped.push({ reason: why }); continue; }
++    if ((op.kind === 'add_exercise' || op.kind === 'update_exercise') && op.exercise_external_id) cardId = op.exercise_external_id; // B-AIB3-126 swap
+     if (op.kind === 'update_exercise' && !updateExerciseOpChangesAField(op)) continue;
+     let next: PlanSnapshot;
+     try {
+diff --git a/test/aib2-workout-builder-ai.service.spec.ts b/test/aib2-workout-builder-ai.service.spec.ts
+index e6a916c8..5eccacb8 100644
+--- a/test/aib2-workout-builder-ai.service.spec.ts
++++ b/test/aib2-workout-builder-ai.service.spec.ts
+@@ -14,6 +14,7 @@ import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+ import { CoachAIBudgetService } from '../src/ai-credits/coach-ai-budget.service';
+ import { AiEgressService } from '../src/ai-egress/ai-egress.service';
+ import { computeLockToken } from '../src/workout-builder/lock-token.helper';
++import { WorkoutContextService, WorkoutContextV2 } from '../src/ai/context/workout-context.service';
+ import { egressWithGrants, fakeOf, grantAllEgress } from './ai-egress/ai-egress.fakes';
+ 
+ const PLAN = '11111111-1111-4111-8111-111111111111';
+@@ -49,7 +50,7 @@ function buildPrisma() {
+ }
+ 
+ type Anthropic = jest.Mock<Promise<AiProviderResponse>, [AiProviderRequest]>;
+-function build(opts: { egress?: AiEgressService; anthropic?: Anthropic; withBudget?: boolean } = {}) {
++function build(opts: { egress?: AiEgressService; anthropic?: Anthropic; withBudget?: boolean; workoutContext?: WorkoutContextService } = {}) {
+   const prisma = buildPrisma();
+   const anthropic: Anthropic = opts.anthropic ?? jest.fn();
+   const registry = new AiProviderRegistry(new StubProviderAdapter(), fakeOf<AnthropicProviderAdapter>({ name: 'anthropic', complete: anthropic }));
+@@ -67,7 +68,7 @@ function build(opts: { egress?: AiEgressService; anthropic?: Anthropic; withBudg
+     getHeadCoachIdForSubCoach: jest.fn(async () => null),
+     canAccessClient: jest.fn(async (_u: string, c: string) => c === CLIENT),
+   });
+-  const svc = new WorkoutBuilderAiService(fakeOf<PrismaService>(prisma), gateway, config, scope, new WorkoutBuilderStatusService(config, meter));
++  const svc = new WorkoutBuilderAiService(fakeOf<PrismaService>(prisma), gateway, config, scope, new WorkoutBuilderStatusService(config, meter), opts.workoutContext);
+   return { svc, prisma, anthropic, budget };
+ }
+ 
+@@ -128,7 +129,7 @@ describe('WorkoutBuilderAiService.propose (B-AIB2-126)', () => {
+       expect(anthropic).not.toHaveBeenCalled();
+       expect(prisma.aiActionDraft.create).not.toHaveBeenCalled();
+     });
+-    it('model diff is validated: knee-loading add dropped, library add kept, budget debited once', async () => {
++    it('model diff is validated: knee-loading add swapped, library add kept, budget debited once', async () => {
+       const anthropic = fake(JSON.stringify({
+         summary: 'Knee-friendly pulling work. This will heal the knee.',
+         changes: [
+@@ -139,8 +140,9 @@ describe('WorkoutBuilderAiService.propose (B-AIB2-126)', () => {
+       const { svc, prisma, budget } = build({ anthropic, withBudget: true });
+       const res = await svc.propose(coach, { ...edit, client_id: CLIENT });
+       expect(res).toMatchObject({
+-        summary: 'Knee-friendly pulling work.', credits_remaining_pct: 40, dropped: [{ reason: expect.stringMatching(/loads the knee/) }],
+-        changes: [{ exercise: { id: 'seed:pull-002' }, after: { weight_lbs: null } }], context_used: expect.arrayContaining(['goal', 'equipment', 'injuries']),
++        summary: 'Knee-friendly pulling work.', credits_remaining_pct: 40, dropped: [],
++        changes: [{ exercise: { id: 'seed:legs-007' }, warnings: [expect.stringMatching(/^Swapped Back Squat for Hip Thrust/)] },
++          { exercise: { id: 'seed:pull-002' }, after: { weight_lbs: null } }], context_used: expect.arrayContaining(['goal', 'equipment', 'injuries']),
+       });
+       expect([anthropic.mock.calls.length, budget.recordUsage.mock.calls.length, prisma.drafts.length]).toEqual([1, 1, 1]);
+       const [sent] = anthropic.mock.calls[0];
+@@ -148,6 +150,28 @@ describe('WorkoutBuilderAiService.propose (B-AIB2-126)', () => {
+       expect(sent.systemPrompt).not.toMatch(/Add a pulling exercise|email|snack/i);
+       expect(sent.turns[sent.turns.length - 1].content).toContain('Add a pulling exercise');
+     });
++    it('context v2 (B-AIB3-126): history, coach style and swap lines reach the prompt; a read failure falls back to the base context', async () => {
++      const v2: WorkoutContextV2 = {
++        client: { goal: 'muscle_gain', experience: 'beginner', equipment: ['dumbbells'], days_per_week: 3, injuries: ['knee'], screening_flag: false,
++          history_6w: [{ id: 'seed:pull-002', last_weight_lbs: 100, last_reps: 10, best_e1rm_lbs: 133.3, sessions: 3 }], adherence_pct_4w: 75, check_ins: [] },
++        coach_style: { plans: 9, rep_range_pct: { low_1_5: 10, mid_6_12: 80, high_13_30: 10, timed: 0 }, median_sets: 3, median_rest_seconds: 90,
++          top_exercise_ids: ['seed:pull-002'], split: 'upper_lower', superset_rate_pct: 0 },
++      };
++      const ctxBuild = jest.fn(async (_a: { coachId: string; clientId?: string | null }) => v2);
++      const ok = JSON.stringify({ summary: 'ok', changes: [{ op: { kind: 'add_exercise', client_ref: 'ai-1', exercise_external_id: 'seed:pull-002', sets: 3, reps_or_duration_seconds: 10 } }] });
++      const anthropic = fake(ok);
++      const { svc } = build({ anthropic, workoutContext: fakeOf<WorkoutContextService>({ build: ctxBuild }) });
++      const res = await svc.propose(coach, { ...edit, client_id: CLIENT });
++      expect(ctxBuild).toHaveBeenCalledWith({ coachId: COACH, clientId: CLIENT });
++      expect(res.context_used).toEqual(expect.arrayContaining(['injuries', 'training_history', 'adherence', 'coach_style']));
++      const prompt = anthropic.mock.calls[0][0].systemPrompt;
++      expect(prompt).toContain('"history_6w":[{"id":"seed:pull-002"');
++      expect(prompt).toMatch(/COACH_STYLE .*"split":"upper_lower"/);
++      expect(prompt).toMatch(/Injury area knee: .*Hip Thrust/);
++      expect(prompt).not.toContain('"recovery"'); // no wearable connection in this context
++      const failing = build({ anthropic: fake(ok), workoutContext: fakeOf<WorkoutContextService>({ build: jest.fn(async () => { throw new Error('db'); }) }) });
++      await expect(failing.svc.propose(coach, { ...edit, client_id: CLIENT })).resolves.toMatchObject({ context_used: expect.arrayContaining(['injuries']) });
++    });
+     it('invalid output twice -> one repair attempt, then 422 AI_NO_SAFE_PROPOSAL and no draft', async () => {
+       const anthropic = fake('{"summary":"x","changes":[{"op":{"kind":"add_exercise","client_ref":"a","exercise_external_id":"made-up","sets":40,"reps_or_duration_seconds":8},"reason":"x"}]}');
+       const { svc, prisma } = build({ anthropic });
+diff --git a/test/aib2-workout-diff.validator.spec.ts b/test/aib2-workout-diff.validator.spec.ts
+index 0bf0e706..10e9362e 100644
+--- a/test/aib2-workout-diff.validator.spec.ts
++++ b/test/aib2-workout-diff.validator.spec.ts
+@@ -38,10 +38,19 @@ describe('validateProposedChanges (B-AIB2-126)', () => {
+     expect(reps.changes).toHaveLength(0);
+     expect(reps.dropped[0].reason).toMatch(/Reps must be 1 to 30/);
+   });
+-  it('drops a knee-loading add for a client with knee issues, with a reason', () => {
++  it('swaps a knee-loading add for a safe library exercise, with a warning (B-AIB3-126)', () => {
+     const r = run([add('seed:legs-001')], { injuries: ['knee'] });
+-    expect(r.changes).toHaveLength(0);
+-    expect(r.dropped[0].reason).toBe('Back Squat loads the knee. The client reported knee issues.');
++    expect(r.dropped).toEqual([]);
++    expect(r.changes[0]).toMatchObject({ exercise: { id: 'seed:legs-007', name: 'Hip Thrust' }, op: { exercise_external_id: 'seed:legs-007' } });
++    expect(r.changes[0].warnings).toEqual(['Swapped Back Squat for Hip Thrust: the client reported knee issues.']);
++  });
++  it('drops a contraindicated add when no safe swap is left, with a reason', () => {
++    const r = run([add('seed:pull-008'), { ...add('seed:pull-007'), op: { ...add('seed:pull-007').op, client_ref: 'ai-2' } }], { injuries: ['elbow_wrist'] });
++    expect(r.changes.map((c) => c.exercise.id)).toEqual(['seed:pull-008']);
++    expect(r.dropped).toEqual([{ reason: 'Barbell Curl loads the elbow or wrist. The client reported elbow or wrist issues.' }]);
++  });
++  it('an avoid instruction never exempts the injury filter (B-813-1)', () => {
++    expect(run([add('seed:legs-001')], { injuries: ['knee'], instruction: 'Avoid back squat' }).changes[0].exercise.id).toBe('seed:legs-007');
+   });
+   it('keeps a contraindicated exercise the coach named, with a warning', () => {
+     const r = run([add('seed:legs-001')], { injuries: ['knee'], instruction: 'Add back squat anyway' });

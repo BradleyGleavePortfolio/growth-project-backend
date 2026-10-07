@@ -1,0 +1,11 @@
+AUDIT GPT-6.1 Sol (LF-SOL-126) — growth-project-mobile#446 @ de7b93643f3d2f2bca0191643c1d50455a67ab1d — VERDICT: APPROVE
+
+Tier T4 consent attestation. A=0, B=0, C=0; U=0 new findings; 398 changed lines including tests. ([PR #446](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/446))
+
+- Traced Settings → Privacy → Roman and AI → status parsing → optional memory card → affirmative confirmation → existing identity-fenced consent grant → server status / withdrawal; no new consent is recorded just by opening the screen. ([PR #446](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/446))
+- `aiConsentApi.ts:122–144, 175–177` and `RomanAiConsentScreen.tsx:148–152, 377–388` suppress the offer for absent/null/malformed upgrade, absent/false `memory_on`, non-live v4 consent, unsupported offered version or pending withdrawal; therefore current production and older servers show no new offer. ([PR #446](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/446))
+- `RomanAiConsentScreen.tsx:255–260, 301–306` displays the server paragraph and confirmation wording, then sends `client-ai-v5` with that offer’s full copy hash and platform through the existing account-fenced ledger helper; the production DTO/accepted-copy check supports this body, and a version mismatch re-reads status rather than claiming success. ([PR #446](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/446))
+- The first-consent constant and default `romanGrantBody()` remain v4; live v5 grants show their server text and retain Withdraw, with no change to onboarding, flags, navigation or storage. ([PR #446](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/446))
+- Full typecheck/lint/tests and CodeQL are green at this exact head; the new regression cases cover no-offer compatibility, v5 payload/confirmation, v4 unchanged and v5 withdrawal availability. ([PR CI](https://github.com/BradleyGleavePortfolio/growth-project-mobile/actions/runs/37556971193/job/112585328907), [PR #446](https://github.com/BradleyGleavePortfolio/growth-project-mobile/pull/446))
+
+No local tests, code changes, pushes, merges, deployments or production actions.

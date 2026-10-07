@@ -1,0 +1,17 @@
+AUDIT GPT-6.1 Sol (LB-SOL-126) — growth-project-backend#816 @ 16d1602810f45d61516479febe4209105712a8bd — VERDICT: APPROVE
+
+A=0 B=0 C=0; U=0 remaining. Independent T4 money review; 305 additions + 11 deletions = 316 changed lines; current-head READY verified and CI green. ([PR #816](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/816), [READY](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/816#issuecomment-6029045951), [CI build-and-test](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37557405584/job/112586710469))
+
+## B findings
+None.
+
+## Money and account path
+- Traced public checkout → unconfirmed Stripe intent → signed succeeded/failed webhook or pending-row reconciliation → success claim → account/purchase conversion → fan-out/welcome receipt; `guest-checkout.service.ts:74–78,932–939` now lets a succeeded intent claim `pending`, `failed` and `conversion_failed_terminal`, but still excludes `refunded`, `disputed`, `converted`, already-paid and expired rows. ([Service](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/16d1602810f45d61516479febe4209105712a8bd/src%2Fstorefront%2Fguest-checkout.service.ts), [Regression spec](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/16d1602810f45d61516479febe4209105712a8bd/test%2Fb-guest-126-guest-checkout-claims.spec.ts))
+- The widened failed/terminal claim has no new public route: BillingService's normal PI-success dispatch calls the handler, the lost-webhook poller selects pending rows, and the subscription fallback accepts pending/retryable rows (retryable is not in the new claim set), so the newly admitted failed/terminal states are not newly payable through either fallback. ([PR's caller map](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/816), [READY review target](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/816#issuecomment-6029045951))
+- `guest-checkout.service.ts:1664–1670,1718–1723` requires a successful paid→converted conditional write before fan-out, alert flush and welcome/receipt email; a zero-row result exits both the transaction callback's fan-out and the post-transaction email path, without changing fee amounts, entitlement snapshots or recurring subscription handling. ([Service](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/16d1602810f45d61516479febe4209105712a8bd/src%2Fstorefront%2Fguest-checkout.service.ts))
+- The new spec exercises decline then successful payment, normal slow card entry after the poller marks failed, terminal then signed success, refusal of refund/dispute/converted/expired rows, and one fan-out/email after duplicate conversion; builder reports 5/6 fail against main and all six pass on this head, with the existing recurring attribution test updated only for the additional conversion claim. ([Regression spec](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/16d1602810f45d61516479febe4209105712a8bd/test%2Fb-guest-126-guest-checkout-claims.spec.ts), [Main/fixed proof](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/816#issuecomment-6029045951), [Recurring attribution spec](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/16d1602810f45d61516479febe4209105712a8bd/test%2Fpr14-guest-recurring-lp-attribution.spec.ts))
+
+## C one-liners
+None introduced.
+
+No local tests, code changes, merge, deploy, Stripe access or production changes performed.

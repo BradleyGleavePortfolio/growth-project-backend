@@ -1,0 +1,48 @@
+diff --git a/src/__tests__/coachWorkoutBuilderUndo.test.tsx b/src/__tests__/coachWorkoutBuilderUndo.test.tsx
+index bcd105eb..34976860 100644
+--- a/src/__tests__/coachWorkoutBuilderUndo.test.tsx
++++ b/src/__tests__/coachWorkoutBuilderUndo.test.tsx
+@@ -850,4 +850,43 @@ describe("CoachWorkoutBuilderScreen — Ask AI (AIB-5)", () => {
+     await press(screen, "ai-toast-undo");
+     expect(mockUndoCall).toHaveBeenCalledWith("plan-1", { to_revision_index: 0, expected_head_index: 1 });
+   });
++
++  it("AI fallback adopts the fresh rows when the query retains its cached plan during a normal refetch", async () => {
++    setFlag(true);
++    mockAiStatus.mockResolvedValue(STATUS("on"));
++    mockAiPropose.mockResolvedValue({
++      draft_id: "d1", summary: "1 change.", dropped: [], context_used: [], screening_flag: false,
++      changes: [{ change_id: "c0", kind: "changed", op: {}, after: { sets: 4 }, exercise: { id: "bench", name: "Bench press", thumbnail_url: null }, reason: "One step.", warnings: [] }],
++    });
++    // The real string reference is normalised to null by aiBuilderApi before this callback.
++    mockAiApply.mockResolvedValue({ status: "approved", materialised_ref: null });
++    let finish!: (value: unknown) => void;
++    mockRefetch.mockReturnValue(new Promise((resolve) => { finish = resolve; }));
++    const Component = loadScreen();
++    const screen = await render(<Component />);
++    await waitFor(() => expect(screen.getByTestId("ai-prompt-bar")).toBeTruthy());
++    await press(screen, "ai-prompt-bar");
++    await act(async () => { fireEvent.changeText(screen.getByTestId("ai-builder-input"), "progress this"); });
++    await press(screen, "ai-builder-send");
++    await waitFor(() => expect(screen.getByTestId("ai-builder-apply")).toBeTruthy());
++    await press(screen, "ai-builder-apply");
++    await waitFor(() => expect(mockRefetch).toHaveBeenCalled());
++    // React Query retains EXISTING_PLAN while the ordinary GET is pending.
++    await act(async () => {});
++    const fresh = { ...EXISTING_PLAN, exercises: EXISTING_PLAN.exercises.map((row) => ({ ...row, sets: 4 })) };
++    await act(async () => {
++      mockCurrentPlan = fresh;
++      finish({ data: fresh, isError: false });
++    });
++    await screen.rerender(<Component />);
++    await act(async () => {});
++    console.log("LM-SOL-126 AI fallback", {
++      sets: screen.getByLabelText("Sets").props.value,
++      saveDisabled: screen.getByLabelText("Save changes").props.accessibilityState?.disabled,
++    });
++    await act(async () => { fireEvent.press(screen.getByLabelText("Save changes")); });
++    expect(mockSetExercisesMutateAsync).toHaveBeenCalledWith(expect.objectContaining({
++      rows: expect.arrayContaining([expect.objectContaining({ exercise_external_id: "bench", sets: 4 })]),
++    }));
++  });
+ });

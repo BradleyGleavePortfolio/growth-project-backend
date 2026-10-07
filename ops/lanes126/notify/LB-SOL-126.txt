@@ -1,0 +1,21 @@
+backend#808 @ 9487faa2 APPROVE B=0
+backend#810 @ 9ee51c0b APPROVE B=0
+backend#812 @ 91ab6aa7 APPROVE B=0
+backend#809 @ 8b82ead8 REQUEST CHANGES B=2
+backend#816 @ 16d16028 APPROVE B=0
+backend#815 @ b83e0357 REQUEST CHANGES B=1
+skip | backend#817 @ 6e8616f5 existing LX-SOL APPROVE; local review complete, no duplicate comment
+skip | backend#818 @ 2e7d8de6 existing LX-SOL APPROVE
+skip | backend#813 @ dee67d53 existing LX-SOL REQUEST CHANGES; independent local findings saved, no duplicate comment
+wait | backend#814 @ b6e40ad8 FIX ROUND 2 operator-named, CI pending
+backend#820 @ e6cf9316 APPROVE B=0 (owner wording hold unchanged)
+superseded | backend#814 @ b6e40ad8 head moved to 7275acd4 before post; no verdict posted, await READY/CI
+backend#821 @ b9ada9f8 APPROVE B=0
+handoff | no eligible unaudited READY head at 19:24 PDT; #814 @ 7275acd4 green/no READY; #819 @ 1fcd9330 pending/no READY; #822 @ b4f48a76 green/no READY; LX continues
+resumed | 19:26 operator explicitly authorized existing drain #814/#819/#822; prior wrap snapshot superseded, no new scope
+skip | backend#814 @ 7275acd4 existing LX-SOL APPROVE appeared before post; new 73-line real-service regression read, local draft retained
+wait | backend#819 @ 1fcd9330 operator-named existing queue, all source/tests read; build-and-test pending before grading; then #822
+skip | backend#822 @ b4f48a76 current-head LX-SOL APPROVE + CI green; no duplicate review/comment
+skip | backend#819 @ 1fcd9330 CI green at 19:34, existing LX-SOL APPROVE; full source/test pre-read notes saved, no duplicate verdict
+handoff | final existing drain complete: #814 @ 7275acd4, #819 @ 1fcd9330, #822 @ b4f48a76 all existing exact-head Sol APPROVE + green; no new reviews; formal posted B=3 U=0 C=2, owner wording hold unchanged
+done | PRs: none | B=3 U=0 | needs operator: 4

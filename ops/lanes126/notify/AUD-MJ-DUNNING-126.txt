@@ -1,0 +1,1 @@
+done | PRs: none | B=0 U=0 | needs operator: 0 | dunning 12 SAFE / 0 UNSAFE / 0 UNKNOWN; v2-ON redo 18:17: 10 SAFE / 0 UNSAFE / 0 UNKNOWN | SQL /home/user/workspace/ops/reports/AUD-MJ-DUNNING-126.sql (Q8-Q13 v2)

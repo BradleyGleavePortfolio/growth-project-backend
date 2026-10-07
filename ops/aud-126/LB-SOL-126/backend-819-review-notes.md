@@ -1,0 +1,19 @@
+# Backend #819 — independent source notes, no second verdict
+
+**NOT POSTED.** Current head `1fcd9330c76e5629db4f06cd49b49d9f397a9c53`, 323 changed lines; the existing-drain operator instruction authorized this head before its READY comment. ([PR #819](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/819), [Operator instructions](https://www.perplexity.ai/computer/tasks/c0c3aa1c-1f5e-4ecf-a96e-7fb334754c81))
+
+Source/tests were read while build-and-test was pending; no verdict was graded or posted during that wait. At the 19:34 PDT poll, CI was green and LX-SOL-126 already had an exact-head APPROVE, so the same-model rule suppressed a duplicate verdict. ([Green build-and-test](https://github.com/BradleyGleavePortfolio/growth-project-backend/actions/runs/37561665105/job/112600086707), [Existing Sol verdict](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/819#issuecomment-6029663315), [Current-head READY](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/819#issuecomment-6029681790))
+
+## Paths read
+
+- Canonical sender resolution reads only `EMAIL_FROM_ADDRESS`; blank, newline, comma-separated or malformed live senders are rejected, while log transport has a development fallback and configuration errors do not print raw values. ([Sender resolver](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/1fcd9330c76e5629db4f06cd49b49d9f397a9c53/src%2Femail%2Femail-sender.ts))
+- EmailService resolves its default sender at startup, keeps the existing recipient/template/finalization paths, and logs only the sender domain for the live transport. ([EmailService](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/1fcd9330c76e5629db4f06cd49b49d9f397a9c53/src%2Femail%2Femail.service.ts))
+- Digest live sends resolve the canonical sender before invoking a provider; invalid configuration follows the existing failed-digest handling rather than sending with an arbitrary fallback. ([Digest service](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/1fcd9330c76e5629db4f06cd49b49d9f397a9c53/src%2Fnotifications%2Fdigest.service.ts))
+- Guest checkout welcome/receipt sends use the same resolver, keep the existing guest recipient and content, and return without sending on invalid configuration; payment/account conversion and the converted claim are unchanged in this sender-only delta. ([Guest checkout service](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/1fcd9330c76e5629db4f06cd49b49d9f397a9c53/src%2Fstorefront%2Fguest-checkout.service.ts))
+- Env validation retires `RESEND_FROM_EMAIL` and documents the canonical sender without adding a new production-startup requirement; the committed sender tests cover parser/log/live behavior, EmailService startup, real digest and real guest send methods with controlled provider responses. ([Env validation](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/1fcd9330c76e5629db4f06cd49b49d9f397a9c53/src%2Fcommon%2Fenv-validation.ts), [Sender regression tests](https://github.com/BradleyGleavePortfolio/growth-project-backend/blob/1fcd9330c76e5629db4f06cd49b49d9f397a9c53/test%2Fb-emailfrom-126-sender.spec.ts))
+
+## Operator staging reminder
+
+Recommended default: confirm/pin the canonical sender before deploy, retain `RESEND_FROM_EMAIL` until the new binary is deployed, then retire it only through the operator's normal process; the old binary still uses it. This lane did not inspect production values, verify a provider domain, send mail, deploy or change secrets. ([PR staging instructions](https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/819))
+
+No paired Opus verdict was read; no local test/build/probe was run. Full REST file evidence remains in `evidence/backend-819-1fcd9330-files.json`.

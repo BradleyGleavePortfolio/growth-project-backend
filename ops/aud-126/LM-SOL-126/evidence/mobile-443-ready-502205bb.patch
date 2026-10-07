@@ -1,0 +1,920 @@
+diff --git a/src/api/workoutRevisionsApi.ts b/src/api/workoutRevisionsApi.ts
+new file mode 100644
+index 00000000..09081eb5
+--- /dev/null
++++ b/src/api/workoutRevisionsApi.ts
+@@ -0,0 +1,26 @@
++/**
++ * AIB-6 — read-only revision history (b#808: GET /workout-plans/:planId/revisions, newest first, max 50).
++ * A 404 (route not deployed, or the autosave/undo switch is off) resolves to null so the sheet says so plainly.
++ */
++import axios from 'axios';
++import { z } from 'zod';
++import api from '../services/api';
++
++const RevisionSchema = z.object({
++  revision_index: z.number().int(),
++  author_kind: z.string(),
++  cause: z.string(),
++  created_at: z.string(),
++  summary: z.string(),
++});
++export type WorkoutRevision = z.infer<typeof RevisionSchema>;
++
++export async function listWorkoutRevisions(planId: string, limit = 20): Promise<WorkoutRevision[] | null> {
++  try {
++    const res = await api.get(`/workout-plans/${encodeURIComponent(planId)}/revisions`, { params: { limit } });
++    return z.array(RevisionSchema).parse(res.data);
++  } catch (err) {
++    if (axios.isAxiosError(err) && err.response?.status === 404) return null;
++    throw err;
++  }
++}
+diff --git a/src/components/coach/CoachAiSection.tsx b/src/components/coach/CoachAiSection.tsx
+index 4e11882a..e0d6660b 100644
+--- a/src/components/coach/CoachAiSection.tsx
++++ b/src/components/coach/CoachAiSection.tsx
+@@ -60,6 +60,9 @@ interface Props {
+    */
+   clientAllergies?: string[];
+   clientDietaryRestrictions?: string[];
++  /** AIB-6: the Workouts tab "Build a program with AI" entry asks for the program generator; handled once AI is ready. */
++  openWorkoutRequest?: boolean;
++  onWorkoutRequestHandled?: () => void;
+ }
+ 
+ export default function CoachAiSection({
+@@ -67,6 +70,8 @@ export default function CoachAiSection({
+   clientName,
+   clientAllergies,
+   clientDietaryRestrictions,
++  openWorkoutRequest,
++  onWorkoutRequestHandled,
+ }: Props) {
+   const { colors } = useTheme();
+   const styles = useMemo(() => makeStyles(colors), [colors]);
+@@ -338,6 +343,12 @@ export default function CoachAiSection({
+   };
+ 
+   const ready = !!status?.ready;
++  useEffect(() => {
++    if (!openWorkoutRequest || !ready) return;
++    setSubmitError(null);
++    setMode('workout');
++    onWorkoutRequestHandled?.();
++  }, [openWorkoutRequest, ready, onWorkoutRequestHandled]);
+ 
+   return (
+     <View style={styles.section}>
+diff --git a/src/components/coach/ai-entry/RevisionHistorySheet.tsx b/src/components/coach/ai-entry/RevisionHistorySheet.tsx
+new file mode 100644
+index 00000000..5177211e
+--- /dev/null
++++ b/src/components/coach/ai-entry/RevisionHistorySheet.tsx
+@@ -0,0 +1,106 @@
++/**
++ * AIB-6 — workout revision history (b#808 route), newest first: author chip, time, one-line summary. Read-only; the header
++ * Undo steps back through recent changes. A 404 (route not deployed) says so plainly instead of showing an empty list.
++ */
++import React, { useCallback, useEffect, useState } from 'react';
++import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
++import { spacing, typography, type SemanticTokens } from '../../../theme/tokens';
++import { listWorkoutRevisions, type WorkoutRevision } from '../../../api/workoutRevisionsApi';
++import { AI_LABEL } from '../ai-builder/aiBuilderCopy';
++
++export const HISTORY_COPY = {
++  unavailable: 'History is not available for this workout yet. Undo still steps back through recent changes.',
++  empty: 'No saved versions yet. Each change appears here once it saves.',
++  failed: 'History did not load. Check your connection and try again.',
++  footer: 'Use Undo in the header to step back through recent changes.',
++} as const;
++
++export function authorChip(kind: string): string {
++  if (kind === 'ai') return AI_LABEL;
++  if (kind === 'sub_coach') return 'Team coach';
++  return kind === 'coach' || kind === 'owner' ? 'Coach' : 'System';
++}
++
++function when(iso: string): string {
++  const d = new Date(iso);
++  return Number.isNaN(d.getTime())
++    ? ''
++    : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
++}
++
++type Props = { planId: string; onClose: () => void; sc: SemanticTokens };
++
++export default function RevisionHistorySheet({ planId, onClose, sc }: Props) {
++  const [state, setState] = useState<{ items?: WorkoutRevision[] | null; failed?: boolean }>({});
++  const load = useCallback(() => {
++    let live = true;
++    setState({});
++    listWorkoutRevisions(planId).then(
++      (items) => live && setState({ items }),
++      () => live && setState({ failed: true }),
++    );
++    return () => {
++      live = false;
++    };
++  }, [planId]);
++  useEffect(load, [load]);
++
++  const text = (body: string, testID?: string) => (
++    <Text testID={testID} style={[typography.body, { color: sc.textMuted, marginVertical: spacing.sm }]}>{body}</Text>
++  );
++  return (
++    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
++      <View style={[styles.backdrop, { backgroundColor: sc.overlay }]}>
++        <View testID="revision-history-sheet" style={[styles.sheet, { backgroundColor: sc.bgPrimary, borderColor: sc.border }]}>
++          <View style={styles.row}>
++            <Text accessibilityRole="header" style={[typography.h4, styles.grow, { color: sc.textPrimary }]}>History</Text>
++            <Pressable accessibilityRole="button" accessibilityLabel="Close history" onPress={onClose} hitSlop={12}>
++              <Text style={[typography.bodyMd, { color: sc.accentText }]}>Close</Text>
++            </Pressable>
++          </View>
++          <ScrollView contentContainerStyle={{ paddingBottom: spacing.lg }}>
++            {state.failed ? (
++              <>
++                {text(HISTORY_COPY.failed, 'revision-history-failed')}
++                <Pressable accessibilityRole="button" accessibilityLabel="Try loading history again" onPress={load}
++                  style={[styles.retry, { borderColor: sc.border }]}>
++                  <Text style={[typography.bodyMd, { color: sc.textPrimary }]}>Try again</Text>
++                </Pressable>
++              </>
++            ) : state.items === undefined ? (
++              <ActivityIndicator color={sc.accentText} accessibilityLabel="Loading history" />
++            ) : state.items === null ? (
++              text(HISTORY_COPY.unavailable, 'revision-history-unavailable')
++            ) : state.items.length === 0 ? (
++              text(HISTORY_COPY.empty, 'revision-history-empty')
++            ) : (
++              state.items.map((r) => (
++                <View key={r.revision_index} testID={`revision-${r.revision_index}`} style={[styles.item, { borderColor: sc.border }]}
++                  accessible accessibilityLabel={`${authorChip(r.author_kind)}, ${when(r.created_at)}. ${r.summary}`}>
++                  <View style={styles.row}>
++                    <Text style={[typography.caption, styles.chip, { color: sc.textPrimary, borderColor: r.author_kind === 'ai' ? sc.accentText : sc.border }]}>
++                      {authorChip(r.author_kind)}
++                    </Text>
++                    <Text style={[typography.caption, { color: sc.textMuted }]}>{when(r.created_at)}</Text>
++                  </View>
++                  <Text style={[typography.body, { color: sc.textPrimary }]}>{r.summary}</Text>
++                </View>
++              ))
++            )}
++            {state.items?.length ? text(HISTORY_COPY.footer) : null}
++          </ScrollView>
++        </View>
++      </View>
++    </Modal>
++  );
++}
++
++const styles = StyleSheet.create({
++  backdrop: { flex: 1, justifyContent: 'flex-end' },
++  sheet: { maxHeight: '85%', minHeight: '45%', borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, padding: spacing.lg },
++  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs },
++  grow: { flex: 1 },
++  item: { borderBottomWidth: 1, paddingVertical: spacing.sm },
++  chip: { borderWidth: 1, borderRadius: 8, paddingHorizontal: spacing.sm, paddingVertical: 2 },
++  retry: { borderWidth: 1, borderRadius: 12, paddingVertical: spacing.sm, alignItems: 'center' },
++});
+diff --git a/src/components/coach/ai-entry/WeekAiSheet.tsx b/src/components/coach/ai-entry/WeekAiSheet.tsx
+new file mode 100644
+index 00000000..1dd8afed
+--- /dev/null
++++ b/src/components/coach/ai-entry/WeekAiSheet.tsx
+@@ -0,0 +1,259 @@
++/**
++ * AIB-6 — week-level Ask AI from the program editor: "Progress this week with AI" / "Make this a deload week".
++ * One propose per filled day (max 7), in day order, under one shared staged reveal; cards grouped by day with keep toggles;
++ * Apply sends each day's kept change ids (a day with none kept is discarded). Nothing changes before Apply.
++ */
++import React, { useEffect, useRef, useState } from 'react';
++import { ActivityIndicator, Animated, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
++import { useTheme } from '../../../theme/ThemeProvider';
++import { spacing, typography } from '../../../theme/tokens';
++import { useReduceMotion } from '../../../screens/client/wearables/components/useReduceMotion';
++import { DAY_LABELS, type ProgramDay } from '../../../api/programsApi';
++import {
++  aiBuilderApi, toAiBuilderError, type AiBuilderChange, type AiBuilderErrorCode, type AiBuilderProposal, type AiBuilderStatus,
++} from '../../../api/aiBuilderApi';
++import {
++  AI_LABEL, AI_STAGES, applyLabel, describeAiBuilderError, droppedLine, formatRow, KIND_LABELS, noCreditsCopy, PAUSED_COPY, QUICK_ACTIONS,
++  SCREENING_COPY, UNNAMED_CHANGE,
++} from '../ai-builder/aiBuilderCopy';
++import { fireAiHaptic } from '../ai-builder/useAiBuilder';
++import CoachExerciseName from '../workout-builder/CoachExerciseName';
++
++export type WeekAiAction = 'progress' | 'deload';
++export const WEEK_AI_TITLES: Record<WeekAiAction, string> = {
++  progress: 'Progress this week with AI',
++  deload: 'Make this a deload week',
++};
++const MAX_DAYS = 7;
++/** Per-day refusals that leave the other days worth asking; anything else stops the run. */
++const PER_DAY: AiBuilderErrorCode[] = ['no_safe_proposal', 'stale', 'contract'];
++
++type DayResult = { day: ProgramDay; proposal?: AiBuilderProposal; error?: string };
++type Props = {
++  action: WeekAiAction; week: number; days: ProgramDay[]; status: AiBuilderStatus | null;
++  onClose: () => void; onApplied: (changes: number, days: number) => void;
++};
++
++/** Same rule as the builder sheet: paused and not_configured (a server switch) read as paused. */
++export function blockedCopy(status: AiBuilderStatus | null): string | null {
++  const st = status?.state;
++  if (st === 'paused' || st === 'not_configured') return PAUSED_COPY;
++  return st === 'no_credits' ? noCreditsCopy(status?.credits.resets_at ?? null) : null;
++}
++
++/** A failed reject leaves the draft pending server-side (it expires); no plan changes either way. */
++async function quietDiscard(draftId: string): Promise<void> {
++  try {
++    await aiBuilderApi.discard(draftId);
++  } catch {
++    // Nothing to undo: the plan is unchanged.
++  }
++}
++
++const dayTitle = (d: ProgramDay) => `${DAY_LABELS[d.day_index] ?? `Day ${d.day_index + 1}`}: ${d.name}`;
++
++export default function WeekAiSheet({ action, week, days, status, onClose, onApplied }: Props) {
++  const { semanticColors: sc } = useTheme();
++  const reduceMotion = useReduceMotion();
++  const blocked = blockedCopy(status);
++  const queue = useRef([...days].sort((a, b) => a.day_index - b.day_index).slice(0, MAX_DAYS)).current;
++  const [phase, setPhase] = useState<'thinking' | 'review' | 'applying'>(blocked ? 'review' : 'thinking');
++  const [answered, setAnswered] = useState(0);
++  const [results, setResults] = useState<DayResult[]>([]);
++  const [kept, setKept] = useState<Record<string, boolean>>({});
++  const [error, setError] = useState<string | null>(null);
++  const live = useRef(true);
++  useEffect(() => () => void (live.current = false), []);
++
++  useEffect(() => {
++    if (blocked) return;
++    void (async () => {
++      fireAiHaptic('medium');
++      const out: DayResult[] = [];
++      for (const day of queue) {
++        try {
++          const proposal = await aiBuilderApi.propose({
++            mode: 'edit', plan_id: day.plan_id, instruction: QUICK_ACTIONS[action].instruction, quick_action: action,
++          });
++          out.push({ day, proposal });
++        } catch (err) {
++          const e = toAiBuilderError(err);
++          const copy = describeAiBuilderError(e.code, e.resetsAt);
++          if (!PER_DAY.includes(e.code)) {
++            if (live.current) setError(copy);
++            break;
++          }
++          out.push({ day, error: copy });
++        }
++        if (!live.current) return; // closed mid-run: unapplied drafts expire server-side, no plan changed
++        setAnswered(out.length);
++      }
++      const ids = out.flatMap((r) => r.proposal?.changes.map((c) => c.change_id) ?? []);
++      setResults(out);
++      setKept(Object.fromEntries(ids.map((id) => [id, true])));
++      setPhase('review');
++      if (out.some((r) => r.error) || !ids.length) fireAiHaptic('error');
++      ids.slice(0, 5).forEach((_, i) => setTimeout(() => fireAiHaptic('light'), i * 60));
++    })();
++    // Runs once per sheet: the week and action are fixed while it is open.
++    // eslint-disable-next-line react-hooks/exhaustive-deps
++  }, []);
++
++  const pending = results.filter((r) => r.proposal);
++  const accepted = (r: DayResult) => r.proposal?.changes.filter((c) => kept[c.change_id]).map((c) => c.change_id) ?? [];
++  const n = pending.reduce((sum, r) => sum + accepted(r).length, 0);
++
++  const discardAll = (list: DayResult[]) => list.forEach((r) => r.proposal?.draft_id && void quietDiscard(r.proposal.draft_id));
++  const close = () => {
++    if (phase === 'applying') return;
++    if (pending.length) fireAiHaptic('warning');
++    discardAll(pending);
++    onClose();
++  };
++  const toggle = (id: string) => {
++    fireAiHaptic(kept[id] ? 'warning' : 'selection');
++    setKept((cur) => ({ ...cur, [id]: !cur[id] }));
++  };
++
++  const apply = async () => {
++    if (phase !== 'review' || n === 0) return;
++    setPhase('applying');
++    setError(null);
++    let changes = 0;
++    let applied = 0;
++    const left: DayResult[] = [];
++    for (const r of pending) {
++      const ids = accepted(r);
++      const draftId = r.proposal?.draft_id;
++      if (!draftId) continue; // explain-only replies write no draft; week actions never send explain
++      try {
++        if (!ids.length) {
++          await quietDiscard(draftId);
++          continue;
++        }
++        await aiBuilderApi.apply(draftId, ids);
++        changes += ids.length;
++        applied += 1;
++      } catch (err) {
++        const e = toAiBuilderError(err);
++        left.push({ day: r.day, error: `Not changed. ${describeAiBuilderError(e.code, e.resetsAt)}` });
++      }
++    }
++    if (!live.current) return;
++    if (changes) onApplied(changes, applied);
++    if (!left.length) {
++      fireAiHaptic('success');
++      return onClose();
++    }
++    fireAiHaptic('error');
++    setResults(left);
++    setPhase('review');
++    if (changes) setError(`Applied ${changes} ${changes === 1 ? 'change' : 'changes'}. The days below were not changed.`);
++  };
++
++  const screening = pending.some((r) => r.proposal?.screening_flag);
++  return (
++    <Modal visible transparent animationType={reduceMotion ? 'fade' : 'slide'} onRequestClose={close}>
++      <View style={[styles.backdrop, { backgroundColor: sc.overlay }]}>
++        <View testID="week-ai-sheet" style={[styles.sheet, { backgroundColor: sc.bgPrimary, borderColor: sc.border }]}>
++          <View style={styles.row}>
++            <Text accessibilityRole="header" style={[typography.h4, styles.grow, { color: sc.textPrimary }]}>
++              {`Week ${week + 1}: ${WEEK_AI_TITLES[action]}`}
++            </Text>
++            <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={close} hitSlop={12} disabled={phase === 'applying'}>
++              <Text style={[typography.bodyMd, { color: sc.accentText }]}>Close</Text>
++            </Pressable>
++          </View>
++          <ScrollView contentContainerStyle={{ paddingBottom: spacing.lg }}>
++            {blocked ? <Text testID="week-ai-blocked" style={[typography.body, { color: sc.textPrimary }]}>{blocked}</Text> : null}
++            {phase === 'thinking' ? (
++              <View testID="week-ai-thinking" accessibilityLiveRegion="polite" style={styles.stages}>
++                <Text style={[typography.bodyMd, { color: sc.textPrimary }]}>
++                  {`Day ${Math.min(answered + 1, queue.length)} of ${queue.length}: ${queue[answered] ? dayTitle(queue[answered]) : ''}`}
++                </Text>
++                {AI_STAGES.map((label) => <Text key={label} style={[typography.body, { color: sc.textMuted }]}>{label}</Text>)}
++                <ActivityIndicator color={sc.accentText} accessibilityLabel="Asking AI about each day" />
++              </View>
++            ) : null}
++            {error ? <Text testID="week-ai-error" accessibilityRole="alert" style={[typography.body, styles.alert, { color: sc.textPrimary, borderColor: sc.accentText }]}>{error}</Text> : null}
++            {screening ? <Text style={[typography.body, styles.alert, { color: sc.textPrimary, borderColor: sc.accentText }]}>{SCREENING_COPY}</Text> : null}
++            {phase !== 'thinking' ? results.map((r, di) => (
++              <View key={r.day.plan_id} testID={`week-ai-day-${r.day.day_index}`} style={styles.day}>
++                <Text accessibilityRole="header" style={[typography.bodyMd, { color: sc.textPrimary }]}>{dayTitle(r.day)}</Text>
++                {r.error ? <Text style={[typography.caption, { color: sc.textMuted }]}>{r.error}</Text> : null}
++                {r.proposal ? <Text style={[typography.caption, { color: sc.textMuted }]}>{r.proposal.summary}</Text> : null}
++                {r.proposal?.changes.map((c, i) => (
++                  <WeekChangeRow key={c.change_id} change={c} kept={!!kept[c.change_id]} delay={reduceMotion ? 0 : (di * 3 + i) * 60}
++                    reduceMotion={reduceMotion} onToggle={toggle} />
++                ))}
++                {r.proposal?.dropped.length ? (
++                  <Text style={[typography.caption, { color: sc.textMuted }]}>{droppedLine(r.proposal.dropped.length, r.proposal.dropped[0]?.reason ?? null)}</Text>
++                ) : null}
++              </View>
++            )) : null}
++            {pending.length ? <Text style={[typography.caption, { color: sc.textMuted }]}>{AI_LABEL}</Text> : null}
++          </ScrollView>
++          {pending.length ? (
++            <View style={styles.row}>
++              <Pressable testID="week-ai-discard" accessibilityRole="button" accessibilityLabel="Discard all suggestions" onPress={close}
++                disabled={phase === 'applying'} style={[styles.button, styles.outline, { borderColor: sc.border }]}>
++                <Text style={[typography.bodyMd, { color: sc.textPrimary }]}>Discard</Text>
++              </Pressable>
++              <Pressable testID="week-ai-apply" accessibilityRole="button" accessibilityLabel={applyLabel(n)}
++                accessibilityState={{ disabled: phase !== 'review' || !n }} disabled={phase !== 'review' || !n} onPress={() => void apply()}
++                style={[styles.button, styles.grow, { backgroundColor: n ? sc.accent : sc.disabledBg }]}>
++                <Text style={[typography.bodyMd, { color: n ? sc.textOnAccent : sc.textOnDisabled }]}>{phase === 'applying' ? 'Applying' : applyLabel(n)}</Text>
++              </Pressable>
++            </View>
++          ) : null}
++        </View>
++      </View>
++    </Modal>
++  );
++}
++
++type RowProps = { change: AiBuilderChange; kept: boolean; delay: number; reduceMotion: boolean; onToggle: (id: string) => void };
++function WeekChangeRow({ change, kept, delay, reduceMotion, onToggle }: RowProps) {
++  const { semanticColors: sc } = useTheme();
++  const anim = useRef(new Animated.Value(reduceMotion ? 1 : 0)).current;
++  useEffect(() => {
++    if (reduceMotion) return anim.setValue(1);
++    Animated.timing(anim, { toValue: 1, duration: 220, delay, useNativeDriver: true }).start();
++  }, [anim, delay, reduceMotion]);
++  const kind = KIND_LABELS[change.kind];
++  const removedId = change.exercise ? null : change.before?.exercise_external_id; // b#809: exercise is null for remove/reorder/meta
++  const name = change.exercise?.name ?? UNNAMED_CHANGE[change.kind] ?? 'Exercise';
++  const titleStyle = [typography.bodyMd, styles.grow, { color: sc.textPrimary }, change.kind === 'removed' && styles.strike];
++  const before = formatRow(change.before);
++  const after = formatRow(change.after);
++  const delta = before && after ? `${before} -> ${after}` : after || before;
++  return (
++    <Animated.View testID={`week-ai-change-${change.change_id}`} style={[styles.card, { borderColor: sc.border, backgroundColor: sc.bgSurface, opacity: anim }]}>
++      <View style={styles.row}>
++        <Text style={[typography.caption, styles.badge, { color: sc.accentText, borderColor: sc.accentText }]}>{kind}</Text>
++        {removedId ? <CoachExerciseName id={removedId} fallback={removedId} prefix="" style={titleStyle} /> : <Text numberOfLines={2} style={titleStyle}>{name}</Text>}
++        <Switch testID={`week-ai-keep-${change.change_id}`} value={kept} onValueChange={() => onToggle(change.change_id)}
++          accessibilityLabel={`Keep this change: ${kind} ${name}${delta ? `, ${delta}` : ''}. ${change.reason}`} />
++      </View>
++      {delta ? <Text style={[typography.body, { color: sc.textPrimary }]}>{delta}</Text> : null}
++      <Text style={[typography.caption, { color: sc.textMuted }]}>{change.reason}</Text>
++      {change.warnings.map((w) => <Text key={w} style={[typography.caption, { color: sc.textPrimary }]}>{`Warning: ${w}`}</Text>)}
++      {!kept ? <Text style={[typography.caption, { color: sc.textMuted }]}>Not applied.</Text> : null}
++    </Animated.View>
++  );
++}
++
++const styles = StyleSheet.create({
++  backdrop: { flex: 1, justifyContent: 'flex-end' },
++  sheet: { maxHeight: '90%', minHeight: '50%', borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, padding: spacing.lg },
++  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
++  grow: { flex: 1 },
++  stages: { gap: spacing.xs, marginVertical: spacing.md },
++  alert: { borderLeftWidth: 3, paddingLeft: spacing.sm, marginVertical: spacing.sm },
++  day: { gap: spacing.xs, marginBottom: spacing.md },
++  card: { borderWidth: 1, borderRadius: 12, padding: spacing.md, gap: spacing.xs },
++  badge: { borderWidth: 1, borderRadius: 8, paddingHorizontal: spacing.sm, paddingVertical: 2 },
++  strike: { textDecorationLine: 'line-through' },
++  button: { borderRadius: 12, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, alignItems: 'center' },
++  outline: { borderWidth: 1 },
++});
+diff --git a/src/components/coach/ai-entry/__tests__/aiEntry.test.tsx b/src/components/coach/ai-entry/__tests__/aiEntry.test.tsx
+new file mode 100644
+index 00000000..582907bb
+--- /dev/null
++++ b/src/components/coach/ai-entry/__tests__/aiEntry.test.tsx
+@@ -0,0 +1,135 @@
++/** AIB-6: entry visibility, week-level Ask AI grouped by day, revision history chips, client Workouts tab entry (plan section 6). */
++import React from 'react';
++import { Text } from 'react-native';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
++import * as Haptics from 'expo-haptics';
++import { lightTokens } from '../../../../theme/tokens';
++import WeekAiSheet from '../WeekAiSheet';
++import RevisionHistorySheet from '../RevisionHistorySheet';
++import { useAiEntryStatus } from '../useAiEntryStatus';
++import { WorkoutsTab } from '../../../../screens/coach/client-detail/WorkoutsTab';
++import type { ProgramDay } from '../../../../api/programsApi';
++import type { AiBuilderStatus } from '../../../../api/aiBuilderApi';
++
++const mockApi = { get: jest.fn(), post: jest.fn(), patch: jest.fn() };
++jest.mock('../../../../services/api', () => ({
++  __esModule: true,
++  default: { get: (...a: unknown[]) => mockApi.get(...a), post: (...a: unknown[]) => mockApi.post(...a), patch: (...a: unknown[]) => mockApi.patch(...a) },
++}));
++jest.mock('expo-haptics', () => ({
++  impactAsync: jest.fn(async () => undefined), selectionAsync: jest.fn(async () => undefined), notificationAsync: jest.fn(async () => undefined),
++  ImpactFeedbackStyle: { Light: 'light', Medium: 'medium' }, NotificationFeedbackType: { Success: 'success', Warning: 'warning', Error: 'error' },
++}));
++jest.mock('../../../../screens/client/wearables/components/useReduceMotion', () => ({ useReduceMotion: () => true }));
++jest.mock('../../../../theme/ThemeProvider', () => ({ useTheme: () => ({ semanticColors: jest.requireActual('../../../../theme/tokens').lightTokens }) }));
++
++const httpError = (status: number, data: unknown = {}) => Object.assign(new Error(`HTTP ${status}`), { isAxiosError: true, response: { status, data } });
++const status = (state: AiBuilderStatus['state']): AiBuilderStatus => ({ state, create: true, edit: true, credits: { remaining_pct: 50, resets_at: null }, label: 'AI-suggested, coach-approved' });
++const day = (d: number, name: string): ProgramDay => ({
++  week_index: 0, day_index: d, plan_id: `plan-${d}`, name, type: 'strength', duration_estimate_minutes: null, exercise_count: 4, updated_at: '2026-10-06T00:00:00Z',
++});
++const proposal = (d: number, ids: string[]) => ({
++  draft_id: `draft-${d}`, summary: `Day ${d} progressed.`, dropped: [], context_used: [], screening_flag: false,
++  changes: ids.map((id) => ({
++    change_id: id, kind: 'changed', op: {}, exercise: { id, name: `Lift ${id}`, thumbnail_url: null }, reason: 'One step up.', warnings: [],
++    before: { sets: 3, reps_or_duration_seconds: 8 }, after: { sets: 3, reps_or_duration_seconds: 9 },
++  })),
++});
++const press = (s: Awaited<ReturnType<typeof render>>, id: string) => act(async () => { fireEvent.press(s.getByTestId(id)); });
++
++beforeEach(() => {
++  jest.clearAllMocks();
++  mockApi.patch.mockResolvedValue({ data: { status: 'approved' } });
++});
++
++describe('WeekAiSheet', () => {
++  it('asks once per filled day in day order, groups cards by day, and applies only kept ids per day', async () => {
++    mockApi.post
++      .mockResolvedValueOnce({ data: proposal(0, ['a1', 'a2']) })
++      .mockResolvedValueOnce({ data: proposal(3, ['b1']) });
++    const onApplied = jest.fn();
++    const onClose = jest.fn();
++    const s = await render(
++      <WeekAiSheet action="progress" week={0} days={[day(3, 'Pull'), day(0, 'Push')]} status={status('on')} onClose={onClose} onApplied={onApplied} />,
++    );
++    await waitFor(() => expect(s.getByTestId('week-ai-apply')).toBeTruthy());
++    expect(mockApi.post.mock.calls.map((c) => c[1].plan_id)).toEqual(['plan-0', 'plan-3']);
++    expect(mockApi.post.mock.calls[0][1]).toEqual(expect.objectContaining({ mode: 'edit', quick_action: 'progress' }));
++    expect(s.getByTestId('week-ai-day-0')).toHaveTextContent(/Lift a1/);
++    expect(s.getByTestId('week-ai-day-3')).toHaveTextContent(/Lift b1/);
++    expect(s.getByText('Apply 3 changes')).toBeTruthy();
++
++    await act(async () => { fireEvent(s.getByTestId('week-ai-keep-b1'), 'valueChange', false); });
++    expect(s.getByText('Apply 2 changes')).toBeTruthy();
++    await press(s, 'week-ai-apply');
++    expect(mockApi.patch).toHaveBeenCalledWith('/ai/gateway/drafts/draft-0', { decision: 'approved', accepted_change_ids: ['a1', 'a2'] });
++    expect(mockApi.patch).toHaveBeenCalledWith('/ai/gateway/drafts/draft-3', { decision: 'rejected' });
++    expect(onApplied).toHaveBeenCalledWith(2, 1);
++    expect(onClose).toHaveBeenCalled();
++    expect(Haptics.notificationAsync).toHaveBeenCalledWith('success');
++  });
++
++  it('paused: stays open with the paused copy and asks nothing', async () => {
++    const s = await render(<WeekAiSheet action="deload" week={1} days={[day(0, 'Push')]} status={status('paused')} onClose={jest.fn()} onApplied={jest.fn()} />);
++    expect(s.getByTestId('week-ai-blocked')).toHaveTextContent('Ask AI is paused for maintenance. Your workouts are unchanged.');
++    expect(mockApi.post).not.toHaveBeenCalled();
++  });
++
++  it('out of credits on the first day stops the run with the specific copy', async () => {
++    mockApi.post.mockRejectedValueOnce(httpError(403, { code: 'COACH_AI_BUDGET_EXHAUSTED' }));
++    const s = await render(<WeekAiSheet action="progress" week={0} days={[day(0, 'Push'), day(2, 'Legs')]} status={status('on')} onClose={jest.fn()} onApplied={jest.fn()} />);
++    await waitFor(() => expect(s.getByTestId('week-ai-error')).toHaveTextContent(/AI credits for this month are used up/));
++    expect(mockApi.post).toHaveBeenCalledTimes(1);
++    expect(s.queryByTestId('week-ai-apply')).toBeNull();
++  });
++});
++
++describe('RevisionHistorySheet', () => {
++  it('lists revisions newest first with author chips', async () => {
++    mockApi.get.mockResolvedValueOnce({ data: [
++      { revision_index: 2, author_kind: 'ai', cause: 'ai_apply', created_at: '2026-10-06T18:00:00Z', summary: 'AI-suggested, coach-approved: 2 changed. 5 exercises.' },
++      { revision_index: 1, author_kind: 'coach', cause: 'autosave', created_at: '2026-10-06T17:00:00Z', summary: 'Edited: 1 added. 5 exercises.' },
++    ] });
++    const s = await render(<RevisionHistorySheet planId="plan-1" onClose={jest.fn()} sc={lightTokens} />);
++    await waitFor(() => expect(s.getByTestId('revision-2')).toBeTruthy());
++    expect(mockApi.get).toHaveBeenCalledWith('/workout-plans/plan-1/revisions', { params: { limit: 20 } });
++    expect(s.getByTestId('revision-2')).toHaveTextContent(/^AI-suggested, coach-approved/);
++    expect(s.getByTestId('revision-1')).toHaveTextContent(/^Coach/);
++  });
++
++  it('a backend without the route says so instead of an empty list', async () => {
++    mockApi.get.mockRejectedValueOnce(httpError(404));
++    const s = await render(<RevisionHistorySheet planId="plan-1" onClose={jest.fn()} sc={lightTokens} />);
++    await waitFor(() => expect(s.getByTestId('revision-history-unavailable')).toBeTruthy());
++  });
++});
++
++describe('entry points', () => {
++  function Probe() {
++    const { visible } = useAiEntryStatus();
++    return <Text testID="probe">{visible ? 'shown' : 'hidden'}</Text>;
++  }
++  it('status 404 hides the entry; paused keeps it visible', async () => {
++    mockApi.get.mockRejectedValueOnce(httpError(404));
++    const hidden = await render(<Probe />);
++    await waitFor(() => expect(mockApi.get).toHaveBeenCalledWith('/ai/gateway/workout-builder/status'));
++    await act(async () => { await Promise.resolve(); });
++    expect(hidden.getByTestId('probe')).toHaveTextContent('hidden');
++    mockApi.get.mockResolvedValueOnce({ data: status('paused') });
++    const paused = await render(<Probe />);
++    await waitFor(() => expect(paused.getByTestId('probe')).toHaveTextContent('shown'));
++  });
++
++  it('client Workouts tab offers a program built with AI for the client by first name', async () => {
++    const onBuild = jest.fn();
++    type TabProps = Parameters<typeof WorkoutsTab>[0];
++    const fake = <T,>(v: unknown): T => v as T; // test seam: proxies stand in for theme colors and styles
++    const s = await render(
++      <WorkoutsTab workoutSessions={[]} clientName="Sam Lee" onBuildWithAi={onBuild}
++        colors={fake<TabProps['colors']>(new Proxy({}, { get: () => '#123456' }))} styles={fake<TabProps['styles']>(new Proxy({}, { get: () => ({}) }))} />,
++    );
++    expect(s.getByText('Build a program for Sam with AI')).toBeTruthy();
++    await press(s, 'workouts-build-with-ai');
++    expect(onBuild).toHaveBeenCalledTimes(1);
++  });
++});
+diff --git a/src/components/coach/ai-entry/useAiEntryStatus.ts b/src/components/coach/ai-entry/useAiEntryStatus.ts
+new file mode 100644
+index 00000000..e19f10ed
+--- /dev/null
++++ b/src/components/coach/ai-entry/useAiEntryStatus.ts
+@@ -0,0 +1,24 @@
++/**
++ * AIB-6 — Ask AI visibility for entry points outside the workout builder (same rule as AIB-5): the entry hides ONLY when the
++ * status route is absent (404 on an older backend). Paused, no credits or an unreadable status keep it visible; the sheet
++ * then shows the specific state.
++ */
++import { useEffect, useState } from 'react';
++import { aiBuilderApi, type AiBuilderStatus } from '../../../api/aiBuilderApi';
++
++export function useAiEntryStatus(): { visible: boolean; status: AiBuilderStatus | null } {
++  const [s, setS] = useState<{ loaded: boolean; value?: AiBuilderStatus | null }>({ loaded: false });
++  useEffect(() => {
++    let live = true;
++    Promise.resolve()
++      .then(() => aiBuilderApi.getStatus())
++      .then(
++        (value) => live && setS({ loaded: true, value }),
++        () => live && setS({ loaded: true }),
++      );
++    return () => {
++      live = false;
++    };
++  }, []);
++  return { visible: s.loaded && s.value !== null, status: s.value ?? null };
++}
+diff --git a/src/screens/coach/AIWorkoutDraftScreen.tsx b/src/screens/coach/AIWorkoutDraftScreen.tsx
+index ab5e0bd7..a2c3f16e 100644
+--- a/src/screens/coach/AIWorkoutDraftScreen.tsx
++++ b/src/screens/coach/AIWorkoutDraftScreen.tsx
+@@ -45,6 +45,7 @@ import type {
+ } from '../../types/coachAi';
+ import { errorMessage } from '../../types/common';
+ import { aiWorkoutApproveCopy } from '../../utils/coach/aiWorkoutApproveCopy';
++import { fireAiHaptic } from '../../components/coach/ai-builder/useAiBuilder';
+ 
+ type Nav = NativeStackNavigationProp<ClientsStackParamList, 'AIWorkoutDraft'>;
+ type R = RouteProp<ClientsStackParamList, 'AIWorkoutDraft'>;
+@@ -248,6 +249,7 @@ export default function AIWorkoutDraftScreen() {
+     try {
+       const res = await coachAiApi.approveDraft(draftId);
+       const copy = aiWorkoutApproveCopy(clientName, res?.data);
++      fireAiHaptic('success'); // AIB-6: approve lands with the same haptic as Apply in the builder
+       Alert.alert(
+         copy.title,
+         copy.body,
+@@ -260,6 +262,7 @@ export default function AIWorkoutDraftScreen() {
+         ],
+       );
+     } catch (err) {
++      fireAiHaptic('error');
+       Alert.alert('Approve failed', errorMessage(err, 'Try again.'));
+     } finally {
+       setApproving(false);
+@@ -276,11 +279,13 @@ export default function AIWorkoutDraftScreen() {
+     setRejecting(true);
+     try {
+       await coachAiApi.rejectDraft(draftId, reason);
++      fireAiHaptic('warning');
+       setShowRejectModal(false);
+       Alert.alert('Rejected', 'Draft rejected.', [
+         { text: 'OK', onPress: () => navigation.goBack() },
+       ]);
+     } catch (err) {
++      fireAiHaptic('error');
+       Alert.alert('Reject failed', errorMessage(err, 'Try again.'));
+     } finally {
+       setRejecting(false);
+diff --git a/src/screens/coach/ClientDetailScreen.tsx b/src/screens/coach/ClientDetailScreen.tsx
+index a41cb48f..0238a50c 100644
+--- a/src/screens/coach/ClientDetailScreen.tsx
++++ b/src/screens/coach/ClientDetailScreen.tsx
+@@ -83,6 +83,9 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
+   } = useClientDetailData(clientId, colors);
+ 
+   const [activeTab, setActiveTab] = useState<TabKey>(route.params.initialTab ?? 'summary');
++  // AIB-6: Workouts tab "Build a program with AI" opens the Coach AI program generator (Summary tab) once.
++  const [aiProgramRequest, setAiProgramRequest] = useState(false);
++  const clearAiProgramRequest = useCallback(() => setAiProgramRequest(false), []);
+   const [selectedDays, setSelectedDays] = useState<7 | 30 | 90>(90);
+   const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
+   const [showNudgeModal, setShowNudgeModal] = useState(false);
+@@ -473,6 +476,8 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
+               })
+             }
+             onOpenWorkoutBuilder={() => navigation.navigate('CoachWorkoutBuilder', undefined)}
++            openWorkoutRequest={aiProgramRequest}
++            onWorkoutRequestHandled={clearAiProgramRequest}
+             colors={colors}
+             styles={styles}
+           />
+@@ -490,7 +495,16 @@ export default function ClientDetailScreen({ navigation, route }: Props) {
+         )}
+ 
+         {activeTab === 'workouts' && (
+-          <WorkoutsTab workoutSessions={workoutSessions} colors={colors} styles={styles} />
++          <WorkoutsTab
++            workoutSessions={workoutSessions}
++            clientName={clientName}
++            onBuildWithAi={() => {
++              setAiProgramRequest(true);
++              setActiveTab('summary');
++            }}
++            colors={colors}
++            styles={styles}
++          />
+         )}
+ 
+         {activeTab === 'mealplan' && (
+diff --git a/src/screens/coach/CoachWorkoutBuilderScreen.tsx b/src/screens/coach/CoachWorkoutBuilderScreen.tsx
+index e960a521..23602ad8 100644
+--- a/src/screens/coach/CoachWorkoutBuilderScreen.tsx
++++ b/src/screens/coach/CoachWorkoutBuilderScreen.tsx
+@@ -65,6 +65,7 @@ import { featureFlags } from '../../config/featureFlags';
+ import { useAutosave } from '../../hooks/useAutosave';
+ import { generateClientId } from '../../utils/clientId';
+ import AutosaveStatusPill from '../../components/workout/AutosaveStatusPill';
++import RevisionHistorySheet from '../../components/coach/ai-entry/RevisionHistorySheet';
+ import {
+   WorkoutAutosaveApiError,
+   workoutAutosaveApi,
+@@ -1550,6 +1551,8 @@ export default function CoachWorkoutBuilderScreen() {
+     autosave.replayInFlight ||
+     replayAdoptionPending ||
+     replayRefetchFailed;
++  // AIB-6: revision history sheet. Shown with Ask AI: the status and revisions routes ship together (b#808).
++  const [revisionsOpen, setRevisionsOpen] = useState(false);
+ 
+   const pillStatus = replayRefetchFailed ? 'conflict' : autosave.status;
+   const onPillPress = useCallback(() => {
+@@ -1620,6 +1623,23 @@ export default function CoachWorkoutBuilderScreen() {
+             >
+               <Text style={[typography.caption, { color: sc.textPrimary }]}>Redo</Text>
+             </Pressable>
++            {ai.visible && planId ? (
++              <Pressable
++                testID="revision-history-button"
++                accessibilityRole="button"
++                accessibilityLabel="Show the history of this workout"
++                onPress={() => {
++                  fireAiHaptic('light');
++                  setRevisionsOpen(true);
++                }}
++                style={styles.historyButton}
++              >
++                <Text style={[typography.caption, { color: sc.textPrimary }]}>History</Text>
++              </Pressable>
++            ) : null}
++            {revisionsOpen && planId ? (
++              <RevisionHistorySheet planId={planId} onClose={() => setRevisionsOpen(false)} sc={sc} />
++            ) : null}
+           </View>
+         ) : null}
+         {autosaveEnabled && autosave.refusal ? (
+diff --git a/src/screens/coach/client-detail/SummaryTab.tsx b/src/screens/coach/client-detail/SummaryTab.tsx
+index 7343abdc..c06ebef6 100644
+--- a/src/screens/coach/client-detail/SummaryTab.tsx
++++ b/src/screens/coach/client-detail/SummaryTab.tsx
+@@ -28,6 +28,8 @@ export function SummaryTab({
+   onOpenMacrosReview,
+   onOpenWorkoutBuilder,
+   onOpenAskAi,
++  openWorkoutRequest,
++  onWorkoutRequestHandled,
+   colors,
+   styles,
+ }: {
+@@ -48,6 +50,9 @@ export function SummaryTab({
+    * omitted, the "Ask AI" pill is not shown.
+    */
+   onOpenAskAi?: () => void;
++  /** AIB-6: open the AI program generator once (from the Workouts tab entry). */
++  openWorkoutRequest?: boolean;
++  onWorkoutRequestHandled?: () => void;
+   colors: ThemeColors;
+   styles: ClientDetailStyles;
+ }) {
+@@ -201,6 +206,8 @@ export function SummaryTab({
+       <CoachAiSection
+         clientId={clientId}
+         clientName={clientName}
++        openWorkoutRequest={openWorkoutRequest}
++        onWorkoutRequestHandled={onWorkoutRequestHandled}
+         clientAllergies={allergies}
+         clientDietaryRestrictions={restrictions}
+       />
+diff --git a/src/screens/coach/client-detail/WorkoutsTab.tsx b/src/screens/coach/client-detail/WorkoutsTab.tsx
+index 1a6c595f..6e402e75 100644
+--- a/src/screens/coach/client-detail/WorkoutsTab.tsx
++++ b/src/screens/coach/client-detail/WorkoutsTab.tsx
+@@ -1,5 +1,5 @@
+ import React from 'react';
+-import { Text, View } from 'react-native';
++import { Pressable, Text, View } from 'react-native';
+ import { Ionicons } from '@expo/vector-icons';
+ import type { ThemeColors } from '../../../theme/ThemeProvider';
+ import type { ClientDetailStyles } from './styles';
+@@ -7,10 +7,15 @@ import type { SessionExercise, WorkoutSession } from './types';
+ 
+ export function WorkoutsTab({
+   workoutSessions,
++  clientName,
++  onBuildWithAi,
+   colors,
+   styles,
+ }: {
+   workoutSessions: WorkoutSession[];
++  /** AIB-6: "Build a program with AI" opens the existing per-client generator (AIWorkoutDraft review). */
++  clientName?: string;
++  onBuildWithAi?: () => void;
+   colors: ThemeColors;
+   styles: ClientDetailStyles;
+ }) {
+@@ -25,8 +30,22 @@ export function WorkoutsTab({
+     return min < 60 ? `${min} min` : `${Math.floor(min / 60)}h ${min % 60}m`;
+   };
+ 
++  const first = clientName?.trim().split(/\s+/)[0] || 'this client';
+   return (
+     <>
++      {onBuildWithAi ? (
++        <Pressable
++          testID="workouts-build-with-ai"
++          accessibilityRole="button"
++          accessibilityLabel={`Build a program for ${first} with AI`}
++          accessibilityHint="Opens the Coach AI program generator. Nothing reaches the client until you approve it."
++          onPress={onBuildWithAi}
++          style={[styles.emptyCard, { flexDirection: 'row', justifyContent: 'center', padding: 16, marginBottom: 12 }]}
++        >
++          <Ionicons name="sparkles-outline" size={20} color={colors.primary} />
++          <Text style={[styles.emptyText, { color: colors.textPrimary, marginTop: 0 }]}>{`Build a program for ${first} with AI`}</Text>
++        </Pressable>
++      ) : null}
+       <Text style={styles.sectionTitle}>Recent Workouts</Text>
+       {workoutSessions.length === 0 ? (
+         <View style={styles.emptyCard}>
+diff --git a/src/screens/coach/programs/ProgramEditorScreen.tsx b/src/screens/coach/programs/ProgramEditorScreen.tsx
+index 191497bf..ed1d33df 100644
+--- a/src/screens/coach/programs/ProgramEditorScreen.tsx
++++ b/src/screens/coach/programs/ProgramEditorScreen.tsx
+@@ -44,6 +44,12 @@ import {
+   weeksByDays,
+ } from "./ProgramUi";
+ import type { ProgramsScreenProps } from "./types";
++import { useAiEntryStatus } from "../../../components/coach/ai-entry/useAiEntryStatus";
++import WeekAiSheet, {
++  WEEK_AI_TITLES,
++  type WeekAiAction,
++} from "../../../components/coach/ai-entry/WeekAiSheet";
++import { fireAiHaptic } from "../../../components/coach/ai-builder/useAiBuilder";
+ 
+ interface Slot {
+   week: number;
+@@ -77,6 +83,22 @@ export default function ProgramEditorScreen({
+ 
+   const data = program.data;
+   const dayMap = useMemo(() => indexDays(data?.days ?? []), [data?.days]);
++  // AIB-6: week-level Ask AI (hidden only when the status route is absent).
++  const aiEntry = useAiEntryStatus();
++  const [weekAi, setWeekAi] = useState<{ action: WeekAiAction; week: number } | null>(null);
++  const [aiNotice, setAiNotice] = useState<string | null>(null);
++  const openWeekAi = (week: number) => {
++    fireAiHaptic("light");
++    const pick = (action: WeekAiAction) => () => {
++      setAiNotice(null);
++      setWeekAi({ action, week });
++    };
++    Alert.alert(`Week ${week + 1}`, "Ask AI suggests changes for each workout day. Nothing changes until you apply.", [
++      { text: WEEK_AI_TITLES.progress, onPress: pick("progress") },
++      { text: WEEK_AI_TITLES.deload, onPress: pick("deload") },
++      { text: "Cancel", style: "cancel" },
++    ]);
++  };
+ 
+   const run = useCallback(
+     async (
+@@ -447,11 +469,42 @@ export default function ProgramEditorScreen({
+         Day 1 of week 1 lands on the start date. Tap a day to open, fill or
+         clear it.
+       </Text>
++      {aiNotice ? (
++        <Text accessibilityLiveRegion="polite" style={[styles.help, { color: colors.textPrimary }]}>
++          {aiNotice}
++        </Text>
++      ) : null}
++      {weekAi ? (
++        <WeekAiSheet
++          action={weekAi.action}
++          week={weekAi.week}
++          days={data.days.filter((d) => d.week_index === weekAi.week)}
++          status={aiEntry.status}
++          onClose={() => setWeekAi(null)}
++          onApplied={(changes, days) => {
++            setAiNotice(
++              `Applied ${plural(changes, "change", "changes")} across ${plural(days, "day", "days")} in week ${weekAi.week + 1}. AI-suggested, coach-approved.`,
++            );
++            void program.refetch();
++            void invalidate();
++          }}
++        />
++      ) : null}
+       {Array.from({ length: data.weeks }, (_, week) => (
+         <View key={week} style={styles.weekRow}>
+-          <Text style={[styles.weekLabel, { color: colors.textPrimary }]}>
+-            Week {week + 1}
+-          </Text>
++          <View style={styles.weekHead}>
++            <Text style={[styles.weekLabel, { color: colors.textPrimary }]}>
++              Week {week + 1}
++            </Text>
++            {editable && aiEntry.visible && data.days.some((d) => d.week_index === week) ? (
++              <SmallButton
++                icon="sparkles-outline"
++                label="Ask AI"
++                onPress={() => openWeekAi(week)}
++                accessibilityHint={`Progress week ${week + 1} or make it a deload week`}
++              />
++            ) : null}
++          </View>
+           <View style={styles.cells}>
+             {DAY_LABELS.map((dayLabel, day) => {
+               const d = dayMap.get(`${week}:${day}`);
+@@ -550,6 +603,7 @@ const styles = StyleSheet.create({
+   notice: { borderRadius: 10, padding: 10, marginTop: 8 },
+   weekRow: { gap: 6, marginTop: 8 },
+   weekLabel: { fontSize: 14, fontWeight: "600" },
++  weekHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+   cells: { flexDirection: "row", gap: 4 },
+   cell: {
+     flex: 1,

@@ -1,0 +1,1 @@
+done | PRs: none | B=0 U=0 | needs operator: 0 | payouts 15 SAFE / 0 UNSAFE / 0 UNKNOWN (DUNNING_V2=on re-checked) | SQL /home/user/workspace/ops/reports/AUD-MJ-PAYOUT-126-queries.sql

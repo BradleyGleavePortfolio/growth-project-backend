@@ -1,0 +1,47 @@
+diff --git a/test/aib2b-subset-approve.spec.ts b/test/aib2b-subset-approve.spec.ts
+index 4524fc14..345be869 100644
+--- a/test/aib2b-subset-approve.spec.ts
++++ b/test/aib2b-subset-approve.spec.ts
+@@ -11,6 +11,9 @@ import { AuditService } from '../src/audit/audit.service';
+ import type { AuthedRequest } from '../src/auth/auth-request';
+ import { computeLockToken } from '../src/workout-builder/lock-token.helper';
+ import { fakeOf } from './ai-egress/ai-egress.fakes';
++import { validateProposedChanges, type LibraryExercise } from '../src/ai/gateway/workout-builder/workout-diff.validator';
++import { applyWorkoutDiff } from '../src/ai/gateway/materialisers/__shared/workout-diff.applier';
++import type { PlanSnapshot } from '../src/ai/gateway/materialisers/__shared/workout-diff.types';
+ 
+ const PLAN = '11111111-1111-4111-8111-111111111111';
+ const COACH = 'coach-1';
+@@ -81,3 +84,32 @@ describe('AiApprovalService subset approve (B-AIB2-126)', () => {
+     expect(decide).not.toHaveBeenCalled();
+   });
+ });
++
++describe('LX-SOL-126 ordinary subset-volume regression', () => {
++  it('keeps the server hard-set limit when the coach keeps only the increase from a balanced redistribution', () => {
++    const baseline: PlanSnapshot = {
++      meta: { name: 'Chest', type: 'strength', duration_estimate_minutes: 45 },
++      exercises: ['seed:push-001', 'seed:push-002', 'seed:push-003'].map((id, i) => ({
++        client_ref: `r${i}`, exercise_external_id: id, order: i, sets: 4, reps_or_duration_seconds: 8,
++        weight_lbs: null, rest_seconds: 90, superset_group_id: null, notes: null,
++      })),
++    };
++    const library = new Map<string, LibraryExercise>(
++      baseline.exercises.map((r) => [r.exercise_external_id, {
++        id: r.exercise_external_id, name: r.exercise_external_id, category: 'strength', muscle: 'chest', thumbnail_url: null,
++      }]),
++    );
++    const validated = validateProposedChanges({
++      baseline, library, injuries: [], instruction: 'Redistribute the chest volume', screeningFlag: false,
++      rawChanges: [
++        { op: { kind: 'update_exercise', client_ref: 'r0', sets: 2 }, reason: 'Move two sets to the next lift.' },
++        { op: { kind: 'update_exercise', client_ref: 'r1', sets: 6 }, reason: 'Keep the total weekly volume.' },
++      ],
++    });
++    expect(validated.changes.map((c) => c.change_id)).toEqual(['c0', 'c1']);
++    expect(validated.snapshot.exercises.reduce((sum, r) => sum + r.sets, 0)).toBe(12);
++    const accepted = selectAcceptedOps(validated.changes.map((c) => c.op), ['c1']);
++    const applied = applyWorkoutDiff(baseline, accepted);
++    expect(applied.exercises.reduce((sum, r) => sum + r.sets, 0)).toBeLessThanOrEqual(12);
++  });
++});

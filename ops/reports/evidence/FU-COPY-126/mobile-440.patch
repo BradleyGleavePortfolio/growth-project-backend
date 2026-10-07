@@ -1,0 +1,771 @@
+diff --git a/src/__tests__/bulkInviteScreen.test.tsx b/src/__tests__/bulkInviteScreen.test.tsx
+index 89cb84dc..1d48fea8 100644
+--- a/src/__tests__/bulkInviteScreen.test.tsx
++++ b/src/__tests__/bulkInviteScreen.test.tsx
+@@ -136,7 +136,7 @@ describe('BulkInviteScreen — RTL', () => {
+     await waitFor(() => expect(alertSpy).toHaveBeenCalled());
+     const args = alertSpy.mock.calls[alertSpy.mock.calls.length - 1];
+     expect(args[0]).toBe('Could not send invites');
+-    expect(args[1]).toBe('Please try again.');
++    expect(args[1]).toBe('Your email list is still here. Check your connection and try sending the invites again.');
+     // Never leak the raw error string. Alert.alert only receives the safe
+     // title + message; no extra args carry the underlying error.
+     expect(args.length).toBeLessThanOrEqual(2);
+diff --git a/src/__tests__/coachSaasBlockers.test.ts b/src/__tests__/coachSaasBlockers.test.ts
+index cec73b04..912a38ea 100644
+--- a/src/__tests__/coachSaasBlockers.test.ts
++++ b/src/__tests__/coachSaasBlockers.test.ts
+@@ -183,7 +183,7 @@ describe('Coach Tools section wires the previously-disconnected routes', () => {
+     'CoachMealTemplates',
+     'CoachBookingInbox',
+     'CoachAvailabilityEditor',
+-    'CoachBulkInvite',
++    'BulkInvite',
+   ])('SettingsScreen exposes a tap target that navigates to %s', (routeName) => {
+     expect(settingsSrc).toContain(`screen: '${routeName}'`);
+   });
+@@ -291,8 +291,8 @@ describe('MoneyScreen honesty', () => {
+ describe('InviteCodeRedeemersScreen honesty', () => {
+   const src = readSrc('screens/coach/InviteCodeRedeemersScreen.tsx');
+ 
+-  it('renders "Redeemer history coming soon" on 404 / 501', () => {
+-    expect(src).toMatch(/Redeemer history coming soon/);
+-    expect(src).toContain("'not_available'");
++  it('does not claim the live redeemer route is coming soon', () => {
++    expect(src).not.toMatch(/coming soon|isn't live yet/);
++    expect(src).toContain('Invite code unavailable');
+   });
+ });
+diff --git a/src/__tests__/followUpDeadRows126.test.ts b/src/__tests__/followUpDeadRows126.test.ts
+new file mode 100644
+index 00000000..deec374d
+--- /dev/null
++++ b/src/__tests__/followUpDeadRows126.test.ts
+@@ -0,0 +1,39 @@
++import * as fs from 'fs';
++import * as path from 'path';
++
++const read = (relative: string) => fs.readFileSync(path.join(__dirname, '..', relative), 'utf8');
++
++describe('FU-COPY-126 dead rows and action-specific alerts', () => {
++  it('keeps one working bulk-invite entry in coach Settings', () => {
++    const src = read('screens/coach/SettingsScreen.tsx');
++    expect(src).toContain('settings-bulk-invite');
++    expect(src).toContain("screen: 'BulkInvite'");
++    expect(src).not.toContain('Invite Codes (bulk)');
++    expect(src).not.toContain("screen: 'CoachBulkInvite'");
++  });
++
++  it('does not offer display preferences that the app does not use', () => {
++    const src = read('screens/client/SettingsScreen.tsx');
++    expect(src).not.toContain('>Units<');
++    expect(src).not.toContain('Calorie Display');
++    expect(src).toContain('Meals Per Day');
++    expect(src).toContain('Water Goal (fl oz)');
++  });
++
++  it.each(['GroceryListScreen', 'ShoppingListScreen', 'PrepGuideScreen', 'RecipeDetailScreen'])(
++    '%s names the failed action instead of using an Error title',
++    (name) => {
++      const src = read(`screens/client/${name}.tsx`);
++      expect(src).not.toContain("Alert.alert('Error'");
++      expect(src).not.toContain('Please try again.');
++    },
++  );
++
++  it('legacy invite failures never display technical exception text', () => {
++    const src = read('screens/coach/CoachBulkInviteScreen.tsx');
++    expect(src).not.toContain('Unknown error');
++    expect(src).not.toContain('err.message');
++    expect(src).toContain('Your pasted list is still here.');
++    expect(src).toContain('Your email list is still here.');
++  });
++});
+diff --git a/src/__tests__/followUpLoadErrors126.test.tsx b/src/__tests__/followUpLoadErrors126.test.tsx
+new file mode 100644
+index 00000000..01193958
+--- /dev/null
++++ b/src/__tests__/followUpLoadErrors126.test.tsx
+@@ -0,0 +1,73 @@
++import React from 'react';
++import { fireEvent, render } from '@testing-library/react-native';
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
++import InviteCodeRedeemersScreen from '../screens/coach/InviteCodeRedeemersScreen';
++import RecipeDetailScreen from '../screens/client/RecipeDetailScreen';
++
++const mockRedeemers = jest.fn();
++const mockRecipe = jest.fn();
++const mockBack = jest.fn();
++jest.mock('../services/api', () => ({
++  coachApi: { getInviteCodeRedeemers: (...args: unknown[]) => mockRedeemers(...args) },
++  recipesApi: { getById: (...args: unknown[]) => mockRecipe(...args) },
++}));
++jest.mock('../theme/ThemeProvider', () => ({
++  useTheme: () => ({ colors: new Proxy({}, { get: () => '#123456' }) }),
++}));
++jest.mock('@react-navigation/native', () => ({
++  useNavigation: () => ({ goBack: mockBack }),
++  useRoute: () => ({ params: { recipeId: 'recipe-1' } }),
++}));
++
++beforeEach(() => jest.clearAllMocks());
++
++const inviteProps = {
++  route: { key: 'redeemers', name: 'InviteCodeRedeemers' as const, params: { inviteCodeId: 'invite-1', code: 'GP-CODE12' } },
++  navigation: { goBack: mockBack, navigate: jest.fn() },
++};
++
++function recipeScreen() {
++  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
++  return render(<QueryClientProvider client={client}><RecipeDetailScreen /></QueryClientProvider>);
++}
++
++describe('FU-COPY-126 invite history', () => {
++  it('a missing invite does not claim the live route is coming soon', async () => {
++    mockRedeemers.mockRejectedValue({ response: { status: 404 } });
++    const ui = await render(<InviteCodeRedeemersScreen {...inviteProps} />);
++    expect(await ui.findByText('Invite code unavailable')).toBeTruthy();
++    expect(ui.queryByText(/coming soon|isn't live yet/)).toBeNull();
++    expect(ui.getByText('Who joined')).toBeTruthy();
++  });
++
++  it('history failures offer a safe retry and then show the empty state', async () => {
++    mockRedeemers.mockRejectedValueOnce(new Error('Request failed with status code 500'));
++    mockRedeemers.mockResolvedValueOnce({ data: { redeemers: [] } });
++    const ui = await render(<InviteCodeRedeemersScreen {...inviteProps} />);
++    expect(await ui.findByText(/Could not load who joined/)).toBeTruthy();
++    expect(ui.queryByText(/Request failed/)).toBeNull();
++    await fireEvent.press(ui.getByRole('button', { name: 'Retry' }));
++    expect(await ui.findByText('No clients joined yet')).toBeTruthy();
++  });
++});
++
++describe('FU-COPY-126 recipe detail', () => {
++  it.each([new Error('Network Error'), { response: { status: 500 } }])(
++    'a load failure is not labelled as a missing recipe and can be retried',
++    async (failure) => {
++      mockRecipe.mockRejectedValue(failure);
++      const ui = await recipeScreen();
++      expect(await ui.findByText('Could not load this recipe. Check your connection and try again.')).toBeTruthy();
++      expect(ui.queryByText('Recipe not found.')).toBeNull();
++      await fireEvent.press(ui.getByRole('button', { name: 'Retry recipe' }));
++      expect(mockRecipe).toHaveBeenCalledTimes(2);
++    },
++  );
++
++  it('an actual 404 still says the recipe is unavailable, without a retry loop', async () => {
++    mockRecipe.mockRejectedValue({ response: { status: 404 } });
++    const ui = await recipeScreen();
++    expect(await ui.findByText('This recipe is no longer available.')).toBeTruthy();
++    expect(ui.queryByRole('button', { name: 'Retry recipe' })).toBeNull();
++  });
++});
+diff --git a/src/screens/client/GroceryListScreen.tsx b/src/screens/client/GroceryListScreen.tsx
+index fceb2ab9..cfbdedb7 100644
+--- a/src/screens/client/GroceryListScreen.tsx
++++ b/src/screens/client/GroceryListScreen.tsx
+@@ -71,7 +71,7 @@ export default function GroceryListScreen() {
+       Keyboard.dismiss();
+       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+     },
+-    onError: () => Alert.alert('Error', 'Could not add item. Please try again.'),
++    onError: () => Alert.alert('Could not add grocery item', 'Your item is still in the form. Check your connection and tap Add again.'),
+   });
+ 
+   const toggleMutation = useMutation({
+@@ -113,7 +113,7 @@ export default function GroceryListScreen() {
+       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+     },
+-    onError: () => Alert.alert('Error', 'Could not clear checked items.'),
++    onError: () => Alert.alert('Could not clear grocery items', 'Checked items could not be removed. Refresh the grocery list before clearing them again.'),
+   });
+ 
+   const handleAdd = useCallback(() => {
+diff --git a/src/screens/client/MessagesScreen.tsx b/src/screens/client/MessagesScreen.tsx
+index ba814be4..f43f14b2 100644
+--- a/src/screens/client/MessagesScreen.tsx
++++ b/src/screens/client/MessagesScreen.tsx
+@@ -18,6 +18,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+ import type { MoreStackParamList } from '../../navigation/ClientNavigator';
+ import { messagesApi, profileApi } from '../../services/api';
+ import { useCurrentUser } from '../../hooks/useCurrentUser';
++import { useFeatureFlags } from '../../hooks/useFeatureFlags';
++import CoachCodeSheet from '../../components/coachless/CoachCodeSheet';
+ import { subscribeToMessages } from '../../services/realtime';
+ import { cacheStorage } from '../../storage/mmkv';
+ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+@@ -75,6 +77,7 @@ export default function MessagesScreen() {
+   const textOnPrimaryFaint = colors.textOnPrimary + '80';
+   const navigation = useNavigation<NativeStackNavigationProp<MoreStackParamList>>();
+   const currentUser = useCurrentUser();
++  const { flags } = useFeatureFlags();
+   const [messages, setMessages] = useState<Message[]>([]);
+   const [loading, setLoading] = useState(true);
+   const [loadingOlder, setLoadingOlder] = useState(false);
+@@ -83,6 +86,7 @@ export default function MessagesScreen() {
+   const [sending, setSending] = useState(false);
+   const [error, setError] = useState('');
+   const [noCoach, setNoCoach] = useState(false);
++  const [showCoachCode, setShowCoachCode] = useState(false);
+   const [coachName, setCoachName] = useState('');
+   const [coachId, setCoachId] = useState('');
+   // ED.6 — timestamp of the coach's most-recent review of THIS thread, feeding
+@@ -441,12 +445,30 @@ export default function MessagesScreen() {
+     [messages, blockedIds],
+   );
+ 
++  // Keep the sheet mounted while the thread reloads so its welcome and next
++  // step remain visible after the existing sheet connects the account.
++  const coachCodeSheet = showCoachCode ? (
++    <CoachCodeSheet
++      key="coach-code-sheet"
++      visible
++      onClose={() => setShowCoachCode(false)}
++      onAttached={(result) => {
++        setCoachName(result.coach.name);
++        setCoachId(result.coach.id);
++        void load();
++      }}
++      onChoosePlan={() => navigation.getParent()?.navigate('MoreTab', { screen: 'ClientPackages' })}
++      onMessageCoach={() => void load()}
++    />
++  ) : null;
++
+   // Render skeleton while messages are loading OR while we are still waiting
+   // on the initial server block-list hydration. The latter is critical: if we
+   // rendered cached messages before GET /users/blocks resolved, a user blocked
+   // on another device could briefly appear before being filtered out.
+   if ((loading && visibleMessages.length === 0) || !serverHydrationComplete) {
+     return (
++      <>
+       <View style={styles.container}>
+         <View style={styles.chatHeader}>
+           <TouchableOpacity
+@@ -472,11 +494,14 @@ export default function MessagesScreen() {
+           </View>
+         </View>
+       </View>
++      {coachCodeSheet}
++      </>
+     );
+   }
+ 
+   if (noCoach) {
+     return (
++      <>
+       <View style={styles.noCoachContainer}>
+         <View style={styles.noCoachHeader}>
+           <TouchableOpacity
+@@ -497,9 +522,21 @@ export default function MessagesScreen() {
+               state. This screen says what is missing and offers a working
+               next step instead of a sign-up-time instruction. */}
+           <Text style={styles.noCoachText}>
+-            You are not connected to a coach yet, so there is no one to message here. If you have a
+-            code from a coach, contact support to get connected.
++            {flags.coachless_home
++              ? 'Enter a coach code to connect and start messaging. Need help finding a coach? Contact support.'
++              : 'You are not connected to a coach yet, so there is no one to message here. Contact support for help finding a coach.'}
+           </Text>
++          {flags.coachless_home && (
++            <TouchableOpacity
++              onPress={() => setShowCoachCode(true)}
++              accessibilityRole="button"
++              accessibilityLabel="Enter a coach code"
++              testID="messages-no-coach-code"
++              style={styles.noCoachAction}
++            >
++              <Text style={styles.noCoachActionText}>Enter a coach code</Text>
++            </TouchableOpacity>
++          )}
+           <TouchableOpacity
+             onPress={() => navigation.getParent()?.navigate('MoreTab', { screen: 'SupportInbox' })}
+             accessibilityRole="button"
+@@ -511,6 +548,8 @@ export default function MessagesScreen() {
+           </TouchableOpacity>
+         </View>
+       </View>
++      {coachCodeSheet}
++      </>
+     );
+   }
+ 
+@@ -525,6 +564,7 @@ export default function MessagesScreen() {
+   visibleMessages.forEach((m) => parentLookup.set(m.id, m));
+ 
+   return (
++    <>
+     <KeyboardAvoidingView
+       style={styles.container}
+       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+@@ -753,6 +793,8 @@ export default function MessagesScreen() {
+         onClose={() => setReportTarget(null)}
+       />
+     </KeyboardAvoidingView>
++    {coachCodeSheet}
++    </>
+   );
+ }
+ 
+diff --git a/src/screens/client/PrepGuideScreen.tsx b/src/screens/client/PrepGuideScreen.tsx
+index 0f02ff75..d06e2d7f 100644
+--- a/src/screens/client/PrepGuideScreen.tsx
++++ b/src/screens/client/PrepGuideScreen.tsx
+@@ -103,7 +103,7 @@ export default function PrepGuideScreen() {
+       );
+     },
+     onError: () =>
+-      Alert.alert('Error', 'Could not add ingredients to grocery list. Please try again.'),
++      Alert.alert('Could not add all ingredients', 'Some ingredients may already be in the grocery list. Open the list to check before adding them again.'),
+   });
+ 
+   const handleAddToGrocery = useCallback(() => {
+diff --git a/src/screens/client/RecipeDetailScreen.tsx b/src/screens/client/RecipeDetailScreen.tsx
+index 1f622348..26989786 100644
+--- a/src/screens/client/RecipeDetailScreen.tsx
++++ b/src/screens/client/RecipeDetailScreen.tsx
+@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
+ import { useNavigation, useRoute, RouteProp, NavigationProp, ParamListBase } from '@react-navigation/native';
+ import { useQuery, useQueryClient } from '@tanstack/react-query';
+ import { recipesApi } from '../../services/api';
++import { errorStatus } from '../../types/common';
+ 
+ import FadeInView from '../../components/FadeInView';
+ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+@@ -68,7 +69,7 @@ export default function RecipeDetailScreen() {
+     return list?.find((r) => r.id === recipeId);
+   })();
+ 
+-  const { data, isLoading, isError } = useQuery<Recipe>({
++  const { data, isLoading, isError, error, refetch } = useQuery<Recipe>({
+     queryKey: ['recipe', recipeId],
+     queryFn: () => recipesApi.getById(recipeId).then((r) => r.data as Recipe),
+     enabled: !!recipeId,
+@@ -100,7 +101,7 @@ export default function RecipeDetailScreen() {
+         setIsSaved(true);
+       }
+     } catch {
+-      Alert.alert('Error', 'Could not update saved status. Please try again.');
++      Alert.alert('Could not update saved recipe', 'The saved-recipe change could not be confirmed. Check your connection and tap the bookmark again.');
+     } finally {
+       setSaving(false);
+     }
+@@ -110,11 +111,21 @@ export default function RecipeDetailScreen() {
+     return <SkeletonScreen count={6} />;
+   }
+ 
+-  if (isError || !recipe) {
++  if (!recipe) {
++    const unavailable = !recipeId || errorStatus(error) === 404 || !isError;
+     return (
+       <View style={styles.errorContainer}>
+-        <Text style={styles.errorText}>Recipe not found.</Text>
+-        <TouchableOpacity onPress={() => navigation.goBack()}>
++        <Text style={styles.errorText}>
++          {unavailable
++            ? 'This recipe is no longer available.'
++            : 'Could not load this recipe. Check your connection and try again.'}
++        </Text>
++        {!unavailable && (
++          <TouchableOpacity onPress={() => void refetch()} accessibilityRole="button" accessibilityLabel="Retry recipe">
++            <Text style={styles.errorLink}>Try again</Text>
++          </TouchableOpacity>
++        )}
++        <TouchableOpacity onPress={() => navigation.goBack()} accessibilityRole="button">
+           <Text style={styles.errorLink}>Go back</Text>
+         </TouchableOpacity>
+       </View>
+diff --git a/src/screens/client/SettingsScreen.tsx b/src/screens/client/SettingsScreen.tsx
+index 0533172b..1191c5a0 100644
+--- a/src/screens/client/SettingsScreen.tsx
++++ b/src/screens/client/SettingsScreen.tsx
+@@ -102,10 +102,8 @@ export default function SettingsScreen({ navigation }: { navigation: NavigationP
+ 
+   // Map client setting keys to backend profile fields
+   const PROFILE_KEY_MAP: Partial<Record<keyof import('../../hooks/useSettings').ClientSettings, string>> = {
+-    unit: 'weight_unit',
+     mealsPerDay: 'meals_per_day',
+     waterGoalOz: 'water_goal_oz',
+-    calorieDisplay: 'calorie_display',
+   };
+ 
+   const handleProfileSettingUpdate = <K extends keyof import('../../hooks/useSettings').ClientSettings>(
+@@ -211,21 +209,6 @@ export default function SettingsScreen({ navigation }: { navigation: NavigationP
+         {/* Nutrition Preferences */}
+         <Text style={styles.sectionLabel}>Nutrition Preferences</Text>
+         <View style={styles.card}>
+-          <View style={styles.row}>
+-            <Text style={styles.rowLabel}>Units</Text>
+-            <View style={styles.segmented}>
+-              {(['lbs', 'kg'] as const).map((u) => (
+-                <HapticPressable
+-                  key={u}
+-                  intent="light"
+-                  style={[styles.segBtn, settings.unit === u && styles.segBtnActive]}
+-                  onPress={() => handleProfileSettingUpdate('unit', u)}
+-                >
+-                  <Text style={[styles.segText, settings.unit === u && styles.segTextActive]}>{u}</Text>
+-                </HapticPressable>
+-              ))}
+-            </View>
+-          </View>
+           <View style={styles.row}>
+             <Text style={styles.rowLabel}>Meals Per Day</Text>
+             <View style={styles.stepper}>
+@@ -250,23 +233,6 @@ export default function SettingsScreen({ navigation }: { navigation: NavigationP
+               </HapticPressable>
+             </View>
+           </View>
+-          <View style={styles.row}>
+-            <Text style={styles.rowLabel}>Calorie Display</Text>
+-            <View style={styles.segmented}>
+-              {(['net', 'gross'] as const).map((c) => (
+-                <HapticPressable
+-                  key={c}
+-                  intent="light"
+-                  style={[styles.segBtn, settings.calorieDisplay === c && styles.segBtnActive]}
+-                  onPress={() => handleProfileSettingUpdate('calorieDisplay', c)}
+-                >
+-                  <Text style={[styles.segText, settings.calorieDisplay === c && styles.segTextActive]}>
+-                    {c.charAt(0).toUpperCase() + c.slice(1)}
+-                  </Text>
+-                </HapticPressable>
+-              ))}
+-            </View>
+-          </View>
+         </View>
+ 
+         {/* Notifications */}
+@@ -804,4 +770,3 @@ const makeStyles = (colors: ThemeColors) =>
+   },
+ 
+   });
+-
+diff --git a/src/screens/client/ShoppingListScreen.tsx b/src/screens/client/ShoppingListScreen.tsx
+index bd58ef24..4a708788 100644
+--- a/src/screens/client/ShoppingListScreen.tsx
++++ b/src/screens/client/ShoppingListScreen.tsx
+@@ -70,7 +70,7 @@ export default function ShoppingListScreen() {
+       Keyboard.dismiss();
+       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+     },
+-    onError: () => Alert.alert('Error', 'Could not add item. Please try again.'),
++    onError: () => Alert.alert('Could not add shopping item', 'Your item is still in the form. Check your connection and tap Add again.'),
+   });
+ 
+   const toggleMutation = useMutation({
+@@ -112,7 +112,7 @@ export default function ShoppingListScreen() {
+       queryClient.invalidateQueries({ queryKey: QUERY_KEY });
+       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+     },
+-    onError: () => Alert.alert('Error', 'Could not clear checked items.'),
++    onError: () => Alert.alert('Could not clear shopping items', 'Checked items could not be removed. Refresh the shopping list before clearing them again.'),
+   });
+ 
+   const handleAdd = useCallback(() => {
+diff --git a/src/screens/client/__tests__/MessagesScreenNoCoach.test.tsx b/src/screens/client/__tests__/MessagesScreenNoCoach.test.tsx
+index ed7bc8a2..3c1ebec3 100644
+--- a/src/screens/client/__tests__/MessagesScreenNoCoach.test.tsx
++++ b/src/screens/client/__tests__/MessagesScreenNoCoach.test.tsx
+@@ -5,7 +5,8 @@
+  * "use it when you sign up", which a signed-up client cannot do.
+  */
+ import React from 'react';
+-import { fireEvent, render } from '@testing-library/react-native';
++import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
++import type { CoachCodeSheetProps } from '../../../components/coachless/CoachCodeSheet';
+ 
+ jest.mock('../../../theme/ThemeProvider', () => ({
+   useTheme: () => ({ colors: new Proxy({}, { get: () => '#000000' }) }),
+@@ -38,8 +39,9 @@ jest.mock('../../../services/api', () => ({
+   profileApi: { get: jest.fn(async () => ({ data: {} })) },
+ }));
+ jest.mock('../../../services/realtime', () => ({ subscribeToMessages: () => () => undefined }));
++let mockCoachlessEnabled = true;
+ jest.mock('../../../hooks/useFeatureFlags', () => ({
+-  useFeatureFlags: () => ({ flags: { messaging_core_v2: false } }),
++  useFeatureFlags: () => ({ flags: { messaging_core_v2: false, coachless_home: mockCoachlessEnabled } }),
+ }));
+ jest.mock('../../../hooks/useCurrentUser', () => ({ useCurrentUser: () => ({ id: 'client-1' }) }));
+ jest.mock('../../../hooks/useBlockedUsersHydration', () => ({
+@@ -47,6 +49,14 @@ jest.mock('../../../hooks/useBlockedUsersHydration', () => ({
+ }));
+ jest.mock('../../../lib/analytics', () => ({ track: jest.fn() }));
+ jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn(async () => undefined) }));
++let mockSheetProps: CoachCodeSheetProps;
++jest.mock('../../../components/coachless/CoachCodeSheet', () => {
++  const { Text } = jest.requireActual('react-native');
++  return (props: CoachCodeSheetProps) => {
++    mockSheetProps = props;
++    return <Text testID="mock-coach-code-sheet">Coach code sheet</Text>;
++  };
++});
+ 
+ const mockParentNavigate = jest.fn();
+ const mockGoBack = jest.fn();
+@@ -71,6 +81,7 @@ import MessagesScreen from '../MessagesScreen';
+ describe('client MessagesScreen with no coach', () => {
+   beforeEach(() => {
+     jest.clearAllMocks();
++    mockCoachlessEnabled = true;
+     mockList.mockRejectedValue({ response: { status: 409, data: { code: 'NO_COACH_ASSIGNED' } } });
+   });
+ 
+@@ -82,4 +93,39 @@ describe('client MessagesScreen with no coach', () => {
+     await fireEvent.press(utils.getByTestId('messages-no-coach-support'));
+     expect(mockParentNavigate).toHaveBeenCalledWith('MoreTab', { screen: 'SupportInbox' });
+   });
++
++  it('opens the existing code sheet and refreshes the thread after connecting', async () => {
++    const utils = await render(<MessagesScreen />);
++    await utils.findByText('No coach connected');
++    expect(utils.queryByText(/code from a coach, contact support/)).toBeNull();
++    await fireEvent.press(utils.getByTestId('messages-no-coach-code'));
++    expect(utils.getByTestId('mock-coach-code-sheet')).toBeTruthy();
++    mockList.mockResolvedValue({ data: [] });
++    await act(async () => mockSheetProps.onAttached({
++      status: 'attached',
++      already_attached: false,
++      coach: { id: 'coach-2', name: 'Coach Two', photo_url: null, business_name: null, bio: null },
++      next: { featured_package: null, packages_available: 0 },
++      grant: null,
++      replayed: false,
++    }));
++    await waitFor(() => expect(utils.queryByText('No coach connected')).toBeNull());
++    expect(utils.getByTestId('mock-coach-code-sheet')).toBeTruthy();
++  });
++
++  it('retains the support fallback when coach codes are unavailable', async () => {
++    mockCoachlessEnabled = false;
++    const utils = await render(<MessagesScreen />);
++    await utils.findByText('No coach connected');
++    expect(utils.queryByTestId('messages-no-coach-code')).toBeNull();
++    expect(utils.getByTestId('messages-no-coach-support')).toBeTruthy();
++  });
++
++  it('hands the sheet plan action to the existing coaching-plan screen', async () => {
++    const utils = await render(<MessagesScreen />);
++    await utils.findByText('No coach connected');
++    await fireEvent.press(utils.getByTestId('messages-no-coach-code'));
++    await act(async () => mockSheetProps.onChoosePlan(null));
++    expect(mockParentNavigate).toHaveBeenCalledWith('MoreTab', { screen: 'ClientPackages' });
++  });
+ });
+diff --git a/src/screens/coach/BulkInviteScreen.tsx b/src/screens/coach/BulkInviteScreen.tsx
+index cadbf723..2ddbb42f 100644
+--- a/src/screens/coach/BulkInviteScreen.tsx
++++ b/src/screens/coach/BulkInviteScreen.tsx
+@@ -159,7 +159,7 @@ export default function BulkInviteScreen() {
+       setMessage('');
+     } catch (err) {
+       console.error('BulkInviteScreen: bulk send failed', errorMessage(err));
+-      Alert.alert('Could not send invites', 'Please try again.');
++      Alert.alert('Could not send invites', 'Your email list is still here. Check your connection and try sending the invites again.');
+     } finally {
+       setSubmitting(false);
+     }
+diff --git a/src/screens/coach/CoachBulkInviteScreen.tsx b/src/screens/coach/CoachBulkInviteScreen.tsx
+index 40e522db..5584086a 100644
+--- a/src/screens/coach/CoachBulkInviteScreen.tsx
++++ b/src/screens/coach/CoachBulkInviteScreen.tsx
+@@ -68,10 +68,10 @@ export default function CoachBulkInviteScreen() {
+       onSuccess: (data) => {
+         setPreviewRows(data.rows);
+       },
+-      onError: (err) => {
++      onError: () => {
+         Alert.alert(
+-          'Could not parse',
+-          err instanceof Error ? err.message : 'Unknown error',
++          'Could not preview emails',
++          'Your pasted list is still here. Check your connection and open Preview again.',
+         );
+       },
+     });
+@@ -94,10 +94,10 @@ export default function CoachBulkInviteScreen() {
+         setPreviewRows([]);
+         setPaste('');
+       },
+-      onError: (err) => {
++      onError: () => {
+         Alert.alert(
+           'Could not send invites',
+-          err instanceof Error ? err.message : 'Unknown error',
++          'Your email list is still here. Check your connection and try sending the invites again.',
+         );
+       },
+     });
+diff --git a/src/screens/coach/CoachCodesScreen.tsx b/src/screens/coach/CoachCodesScreen.tsx
+index 9fafb5af..6247a49e 100644
+--- a/src/screens/coach/CoachCodesScreen.tsx
++++ b/src/screens/coach/CoachCodesScreen.tsx
+@@ -194,6 +194,14 @@ export default function CoachCodesScreen({
+         >
+           <Text style={styles.actionText}>Bulk invite from a list</Text>
+         </TouchableOpacity>
++        <TouchableOpacity
++          style={styles.action}
++          onPress={() => navigation.navigate('CoachInvites')}
++          accessibilityRole="button"
++          testID="coach-codes-emailed-invites"
++        >
++          <Text style={styles.actionText}>Emailed invites</Text>
++        </TouchableOpacity>
+         {banner ? (
+           <Text style={styles.banner} accessibilityRole="alert" testID="coach-codes-banner">{banner}</Text>
+         ) : null}
+diff --git a/src/screens/coach/InviteCodeRedeemersScreen.tsx b/src/screens/coach/InviteCodeRedeemersScreen.tsx
+index e5db2e85..1a473349 100644
+--- a/src/screens/coach/InviteCodeRedeemersScreen.tsx
++++ b/src/screens/coach/InviteCodeRedeemersScreen.tsx
+@@ -10,8 +10,7 @@
+  * Backend contract: `coachApi.getInviteCodeRedeemers` →
+  * GET /coach/invite-codes/:id/redeemers
+  *
+- * If the backend hasn't shipped the route yet (404 / 501), the screen
+- * renders an honest "not available" state instead of an empty list.
++ * A missing code and a failed history request have separate states.
+  */
+ 
+ import React, { useCallback, useEffect, useMemo, useState } from 'react';
+@@ -27,6 +26,7 @@ import { Ionicons } from '@expo/vector-icons';
+ import type { RouteProp } from '@react-navigation/native';
+ import { useTheme, ThemeColors } from '../../theme/ThemeProvider';
+ import { coachApi } from '../../services/api';
++import { errorStatus } from '../../types/common';
+ 
+ interface Redeemer {
+   user_id: string;
+@@ -52,8 +52,8 @@ interface Props {
+ type LoadState =
+   | { kind: 'loading' }
+   | { kind: 'ok'; redeemers: Redeemer[] }
+-  | { kind: 'not_available' }
+-  | { kind: 'error'; message: string };
++  | { kind: 'missing' }
++  | { kind: 'error' };
+ 
+ export default function InviteCodeRedeemersScreen({ route, navigation }: Props) {
+   const { colors } = useTheme();
+@@ -68,15 +68,7 @@ export default function InviteCodeRedeemersScreen({ route, navigation }: Props)
+       const redeemers = (res.data?.redeemers ?? []) as Redeemer[];
+       setState({ kind: 'ok', redeemers });
+     } catch (err) {
+-      const status = (err as { response?: { status?: number } })?.response?.status;
+-      if (status === 404 || status === 501) {
+-        setState({ kind: 'not_available' });
+-      } else {
+-        setState({
+-          kind: 'error',
+-          message: (err as { message?: string })?.message ?? 'Failed to load.',
+-        });
+-      }
++      setState({ kind: errorStatus(err) === 404 ? 'missing' : 'error' });
+     }
+   }, [inviteCodeId]);
+ 
+@@ -96,7 +88,7 @@ export default function InviteCodeRedeemersScreen({ route, navigation }: Props)
+           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+         </TouchableOpacity>
+         <View style={{ flex: 1 }}>
+-          <Text style={styles.topTitle}>Redeemers</Text>
++          <Text style={styles.topTitle}>Who joined</Text>
+           <Text style={styles.subTitle}>{code}</Text>
+         </View>
+         <View style={styles.backBtn} />
+@@ -110,17 +102,16 @@ export default function InviteCodeRedeemersScreen({ route, navigation }: Props)
+ 
+       {state.kind === 'error' && (
+         <TouchableOpacity onPress={load} accessibilityRole="button" accessibilityLabel="Retry">
+-          <Text style={styles.errorText}>{state.message} Tap to retry.</Text>
++          <Text style={styles.errorText}>Could not load who joined. Check your connection, then tap to retry.</Text>
+         </TouchableOpacity>
+       )}
+ 
+-      {state.kind === 'not_available' && (
++      {state.kind === 'missing' && (
+         <View style={styles.empty}>
+-          <Ionicons name="construct-outline" size={36} color={colors.textMuted} />
+-          <Text style={styles.emptyTitle}>Redeemer history coming soon</Text>
++          <Ionicons name="link-outline" size={36} color={colors.textMuted} />
++          <Text style={styles.emptyTitle}>Invite code unavailable</Text>
+           <Text style={styles.emptyBody}>
+-            The backend route for redeemer history isn't live yet. You can still
+-            see redemption totals on the previous screen.
++            This invite code could not be found. Go back to Codes and refresh the list.
+           </Text>
+         </View>
+       )}
+@@ -128,7 +119,7 @@ export default function InviteCodeRedeemersScreen({ route, navigation }: Props)
+       {state.kind === 'ok' && state.redeemers.length === 0 && (
+         <View style={styles.empty}>
+           <Ionicons name="people-outline" size={36} color={colors.textMuted} />
+-          <Text style={styles.emptyTitle}>No redeemers yet</Text>
++          <Text style={styles.emptyTitle}>No clients joined yet</Text>
+           <Text style={styles.emptyBody}>
+             Once a client signs up with this code they'll appear here.
+           </Text>
+diff --git a/src/screens/coach/SettingsScreen.tsx b/src/screens/coach/SettingsScreen.tsx
+index 4514e79f..a0cb4038 100644
+--- a/src/screens/coach/SettingsScreen.tsx
++++ b/src/screens/coach/SettingsScreen.tsx
+@@ -616,22 +616,6 @@ export default function SettingsScreen() {
+           <Text style={styles.rowLabel}>Time Off</Text>
+           <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+         </TouchableOpacity>
+-        <View style={styles.divider} />
+-        {/* Legacy single-invite generator. The new email-pipeline Bulk
+-            invite + Invites & email rows live under Client Management. */}
+-        <TouchableOpacity
+-          style={styles.row}
+-          onPress={() => {
+-            mediumTap();
+-            navigation.navigate('ClientsStack', { screen: 'CoachBulkInvite' });
+-          }}
+-          accessibilityRole="button"
+-          accessibilityLabel="Open legacy bulk invite generator"
+-        >
+-          <Ionicons name="people-circle-outline" size={20} color={colors.textSecondary} />
+-          <Text style={styles.rowLabel}>Invite Codes (bulk)</Text>
+-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+-        </TouchableOpacity>
+       </View>
+ 
+       <BillingSection
+diff --git a/src/screens/coach/__tests__/CoachCodesScreen.test.tsx b/src/screens/coach/__tests__/CoachCodesScreen.test.tsx
+index 1ddc45ce..5070c1a1 100644
+--- a/src/screens/coach/__tests__/CoachCodesScreen.test.tsx
++++ b/src/screens/coach/__tests__/CoachCodesScreen.test.tsx
+@@ -127,6 +127,12 @@ describe('CoachCodesScreen', () => {
+     expect(queryByTestId('coach-code-joined-GP-LINK22')).toBeNull();
+   });
+ 
++  it('opens emailed-invite delivery history separately from code signups', async () => {
++    const { getByTestId } = await renderEntry();
++    await fireEvent.press(getByTestId('coach-codes-emailed-invites'));
++    expect(nav.navigate).toHaveBeenCalledWith('CoachInvites');
++  });
++
+   it('turns a leaked code off after confirmation', async () => {
+     api.revoke.mockResolvedValue({ code: { ...ROW, status: 'revoked', revoked_at: '2026-10-05T20:00:00Z' }, replayed: false });
+     const alert = jest.spyOn(Alert, 'alert');
+@@ -191,4 +197,3 @@ describe('CoachCodesScreen', () => {
+     await waitFor(() => expect(Sharing.shareAsync).toHaveBeenCalledWith('file:///tmp/qr.png', expect.objectContaining({ mimeType: 'image/png' })));
+   });
+ });
+-
+diff --git a/src/services/api.ts b/src/services/api.ts
+index c35040ce..557dfcbe 100644
+--- a/src/services/api.ts
++++ b/src/services/api.ts
+@@ -796,9 +796,7 @@ export const coachApi = {
+   // ── Invite code redeemer drilldown ─────────────────────────────────────
+   // Backend contract: GET /coach/invite-codes/:id/redeemers returns the
+   // accounts that signed up using a specific invite code, sorted newest
+-  // first. 404 from the endpoint means the backend hasn't shipped the
+-  // route yet — the screen renders an honest "not available" state rather
+-  // than a fabricated list.
++  // first. The route is live; a 404 means the invite code was not found.
+   getInviteCodeRedeemers: (
+     inviteCodeId: string,
+   ) =>

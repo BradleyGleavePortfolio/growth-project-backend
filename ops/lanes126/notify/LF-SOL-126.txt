@@ -1,0 +1,10 @@
+waiting | PRs: none | B=0 U=0 | needs operator: 0 | initial queue empty
+mobile#440 @ 48348a62 APPROVE B=0
+mobile#441 @ a1449f37 REQUEST CHANGES B=1
+mobile#442 @ 4ecb5e4b APPROVE B=0
+mobile#444 @ 3ec7f0be APPROVE B=0
+mobile#445 @ 559999b2 APPROVE B=0
+mobile#446 @ de7b9364 APPROVE B=0
+mobile#441 @ 9cc1fcdc APPROVE B=0
+mobile#448 @ 75fd7b35 APPROVE B=0
+done | PRs: none | B=0 U=0 | needs operator: 0
