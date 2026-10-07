@@ -1,4 +1,10 @@
-import { AiApprovalService, isModelAuthoredPayload } from '../src/ai/gateway/ai-approval.service';
+import {
+  AiApprovalService,
+  isModelAuthoredPayload,
+  payloadClientIds,
+} from '../src/ai/gateway/ai-approval.service';
+import { CapabilityMaterializerRegistry } from '../src/ai/gateway/materialisers/capability-materialiser.registry';
+import type { CapabilityMaterializer } from '../src/ai/gateway/materialisers/capability-materialiser.interface';
 import { AuditService } from '../src/audit/audit.service';
 
 function matchesWhere(row: any, where: any): boolean {
@@ -240,6 +246,67 @@ describe('AiApprovalService', () => {
       await expect(
         svc.decide({ draftId: 'd-ai', decider: { id: 'coach-1', role: 'coach' }, decision: 'rejected' }),
       ).rejects.toThrow(/outside your tenant/);
+    });
+
+    // FIX-AIB-125 (B-807-1): a solo coach's own assign draft whose payload
+    // names another coach's client must be refused before any materialiser.
+    it.each([
+      ['draft.assign_workout', { workoutPlanId: 'wp-1', clientId: 'client-2' }],
+      ['draft.assign_meal_plan', { mealPlanId: 'mp-1', client_id: 'client-2' }],
+      ['draft.create_workout_plan', { target_client_id: 'client-2' }],
+    ])(
+      "%s naming another coach's client in the payload is refused and never materialised",
+      async (capability, payload) => {
+        const prisma = buildPrisma(
+          [aiDraft({ capability, payload, rationale: 'stub' })],
+          { coachOf: { 'client-1': 'coach-1', 'client-2': 'coach-2' }, subCoachCount: 0 },
+        );
+        const materialize = jest.fn();
+        const materialiser: CapabilityMaterializer = {
+          capability,
+          canHandle: (c: string) => c === capability,
+          materialize,
+        };
+        const registry = new CapabilityMaterializerRegistry([materialiser]);
+        const svc = new AiApprovalService(prisma, makeAudit(prisma), registry);
+        await expect(
+          svc.decide({ draftId: 'd-ai', decider: { id: 'coach-1', role: 'coach' }, decision: 'approved' }),
+        ).rejects.toThrow(/outside your tenant/);
+        expect(materialize).not.toHaveBeenCalled();
+        expect(prisma.drafts[0].status).toBe('pending');
+      },
+    );
+
+    it('a payload client that is unknown (no user row) is refused', async () => {
+      const prisma = buildPrisma(
+        [aiDraft({ capability: 'draft.assign_workout', payload: { clientId: 'ghost' }, rationale: 'stub' })],
+        { coachOf: { 'client-1': 'coach-1' } },
+      );
+      const svc = new AiApprovalService(prisma, makeAudit(prisma));
+      await expect(
+        svc.decide({ draftId: 'd-ai', decider: { id: 'coach-1', role: 'coach' }, decision: 'approved' }),
+      ).rejects.toThrow(/outside your tenant/);
+    });
+
+    it("a payload naming another of the coach's own clients is still decidable", async () => {
+      const prisma = buildPrisma(
+        [aiDraft({ capability: 'draft.assign_workout', payload: { clientId: 'client-3' }, rationale: 'stub' })],
+        { coachOf: { 'client-1': 'coach-1', 'client-3': 'coach-1' }, subCoachCount: 0 },
+      );
+      const svc = new AiApprovalService(prisma, makeAudit(prisma));
+      const updated = await svc.decide({
+        draftId: 'd-ai',
+        decider: { id: 'coach-1', role: 'coach' },
+        decision: 'rejected',
+      });
+      expect(updated.status).toBe('rejected');
+    });
+
+    it('payloadClientIds: string values of clientId / client_id / target_client_id only', () => {
+      expect(payloadClientIds({ clientId: 'a', client_id: 'b', target_client_id: 'a' })).toEqual(['a', 'b']);
+      expect(payloadClientIds({ clientId: 7, reply: 'hi' })).toEqual([]);
+      expect(payloadClientIds(null)).toEqual([]);
+      expect(payloadClientIds(['a'])).toEqual([]);
     });
 
     it('a draft with no tenant is no coach\'s to decide', async () => {

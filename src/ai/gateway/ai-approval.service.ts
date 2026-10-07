@@ -39,6 +39,21 @@ export function isModelAuthoredPayload(payload: unknown, rationale: string | nul
   return typeof reply === 'string' && reply.length > 0 && rationale === reply.slice(0, 1000);
 }
 
+// FIX-AIB-125 (B-807-1) — payload keys that name the client an approved
+// draft acts on (same keys as PAYLOAD_CLIENT_ID_KEYS in ai-gateway.service.ts).
+const PAYLOAD_CLIENT_ID_KEYS = ['clientId', 'client_id', 'target_client_id'] as const;
+
+/** Client ids named by a draft payload (string values of the keys above). */
+export function payloadClientIds(payload: unknown): string[] {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return [];
+  const ids = new Set<string>();
+  for (const key of PAYLOAD_CLIENT_ID_KEYS) {
+    const v = (payload as Record<string, unknown>)[key];
+    if (typeof v === 'string' && v.length > 0) ids.add(v);
+  }
+  return [...ids];
+}
+
 export interface DecideInput {
   draftId: string;
   decider: { id: string; role: string };
@@ -138,6 +153,20 @@ export class AiApprovalService {
           select: { coach_id: true },
         });
         if (subject?.coach_id !== input.decider.id) {
+          throw new ForbiddenException('Draft is outside your tenant');
+        }
+      }
+      // FIX-AIB-125 (B-807-1): every client the payload names must be the
+      // subject (checked above) or on the deciding coach's roster, so an
+      // approved assign / notification draft can never reach another
+      // coach's client.
+      for (const clientId of payloadClientIds(draft.payload)) {
+        if (clientId === draft.subject_user_id) continue;
+        const named = await this.prisma.user.findUnique({
+          where: { id: clientId },
+          select: { coach_id: true },
+        });
+        if (named?.coach_id !== input.decider.id) {
           throw new ForbiddenException('Draft is outside your tenant');
         }
       }
