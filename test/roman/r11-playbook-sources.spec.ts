@@ -196,7 +196,7 @@ describe('R11-P3b-1 playbook sources: memory-scope consent', () => {
     expect(egress.consentedClients).toHaveBeenCalledWith([C1, C2, C3], 'memory');
     expect(out.consentedClientIds).toEqual([C1, C3]);
     expect(ids(out)).toEqual(['g-c1', 'g-wide', 'm-c1', 'm-c3', 'mp-c1', 'mp-wide', 'plan-h', 'sn-c1', 'tpl-h']);
-    expect(JSON.stringify(out.items)).not.toMatch(/Marcus|secret|private/);
+    expect(out.items.map((i) => i.text).join('\n')).not.toMatch(/Marcus|secret|private/);
     expect(out.ledger).toContainEqual({ source_kind: 'session_note', source_id: 'sn-c1', client_id: C1 });
     expect(out.ledger).toContainEqual({ source_kind: 'guideline', source_id: 'g-wide' });
     expect(out.items.filter((i) => i.private).map((i) => i.id).sort()).toEqual(['m-c1', 'm-c3', 'sn-c1']);
