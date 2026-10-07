@@ -51,7 +51,7 @@ import { grantAllEgress } from './ai-egress/ai-egress.fakes';
 // ---------------------------------------------------------------------------
 
 interface MiniStore {
-  users: Map<string, { id: string; role: string }>;
+  users: Map<string, { id: string; role: string; coach_id?: string | null }>;
   workoutPlans: Map<string, { id: string; coach_id: string }>;
   dailyMealPlans: Map<string, { id: string; coach_id: string }>;
   workoutAssignments: any[];
@@ -186,6 +186,10 @@ function makePrismaMock(store: MiniStore, opts: MockOpts = {}): any {
           null
         );
       }),
+    },
+    // B-AIB1-125: SendNotificationMaterializer writes the materialised marker.
+    aiActionDraft: {
+      updateMany: jest.fn(async () => ({ count: 1 })),
     },
     $transaction: jest.fn(async (cb: any) => cb(prisma)),
   };
@@ -550,6 +554,7 @@ describe('Stream 2 §4.2 — SendNotificationMaterializer', () => {
   function seedStore(): MiniStore {
     const store = newStore();
     store.users.set(COACH_ID, { id: COACH_ID, role: 'coach' });
+    store.users.set(CLIENT_ID, { id: CLIENT_ID, role: 'student', coach_id: COACH_ID });
     return store;
   }
 
@@ -610,6 +615,53 @@ describe('Stream 2 §4.2 — SendNotificationMaterializer', () => {
     await expect(m.materialize(happyDraft())).rejects.toBeInstanceOf(
       ForbiddenException,
     );
+    expect(store.notifications).toHaveLength(0);
+  });
+
+  it('B-AIB1-125: writes materialised_ref (the decide gate needs it) on sent and on the race path', async () => {
+    const store = seedStore();
+    const prisma = makePrismaMock(store);
+    const m = new SendNotificationMaterializer(prisma);
+    const r = await m.materialize(happyDraft());
+    expect(prisma.aiActionDraft.updateMany).toHaveBeenCalledWith({
+      where: { id: '55555555-5555-5555-5555-555555555555', materialised_ref: null },
+      data: { materialised_at: expect.any(Date), materialised_ref: r.ref },
+    });
+    const r2 = await m.materialize(happyDraft());
+    expect(r2.status).toBe('already_materialised');
+    expect(prisma.aiActionDraft.updateMany).toHaveBeenLastCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ materialised_ref: r.ref }) }),
+    );
+  });
+
+  it("B-AIB1-125 roster: refuses a recipient who is another coach's client", async () => {
+    const store = seedStore();
+    store.users.set(CLIENT_ID, { id: CLIENT_ID, role: 'student', coach_id: 'other-coach' });
+    const prisma = makePrismaMock(store);
+    const m = new SendNotificationMaterializer(prisma);
+    await expect(m.materialize(happyDraft())).rejects.toMatchObject({
+      response: expect.objectContaining({ error: 'AI_DRAFT_RECIPIENT_NOT_IN_ROSTER' }),
+    });
+    expect(store.notifications).toHaveLength(0);
+  });
+
+  it('B-AIB1-125 roster: refuses a payload recipient that is not the draft subject', async () => {
+    const store = seedStore();
+    const prisma = makePrismaMock(store);
+    const m = new SendNotificationMaterializer(prisma);
+    const draft = happyDraft();
+    draft.subject_user_id = '33333333-3333-3333-3333-333333333333';
+    await expect(m.materialize(draft)).rejects.toBeInstanceOf(ForbiddenException);
+    expect(store.notifications).toHaveLength(0);
+  });
+
+  it('B-AIB1-125 roster: refuses a draft with no tenant coach', async () => {
+    const store = seedStore();
+    const prisma = makePrismaMock(store);
+    const m = new SendNotificationMaterializer(prisma);
+    const draft = happyDraft();
+    draft.tenant_coach_id = null;
+    await expect(m.materialize(draft)).rejects.toBeInstanceOf(ForbiddenException);
     expect(store.notifications).toHaveLength(0);
   });
 

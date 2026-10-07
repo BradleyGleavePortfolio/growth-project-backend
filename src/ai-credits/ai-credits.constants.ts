@@ -67,6 +67,16 @@ export const COACH_AI_METERED_CAPABILITIES: ReadonlySet<string> = new Set([
   // never invokes these, so no behavioural change to any existing path.
   'roman.memory',
   'roman.playbook',
+  // B-AIB1-125 — Coach AI v1 client insight (COACH_AI_CAPABILITIES.INSIGHT).
+  // 'workout_program' and 'meal_plan' above were already listed but
+  // CoachAIService never consulted the set; it now meters all three.
+  'insight',
+  // B-AIB1-125 — MWB-5 live-create workout plans through the gateway. Off
+  // today (FEATURE_MWB_AI_LIVE_CREATE unset); listed so the gateway's
+  // pre-call budget gate and post-call recordUsage meter them the moment
+  // they are turned on (owner A6.4: every AI turn debits the pool).
+  'draft.create_workout_plan',
+  'draft.edit_workout_plan',
 ]);
 
 /** Resolve the actual ceiling at call time so test env mutations stick. */
