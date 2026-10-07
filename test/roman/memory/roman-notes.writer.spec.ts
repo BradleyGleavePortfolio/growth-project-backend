@@ -5,7 +5,6 @@ import { MODULE_METADATA } from '@nestjs/common/constants';
 import { AiEgressService, AnthropicHandle } from '../../../src/ai-egress/ai-egress.service';
 import type { AnthropicMessagesClient } from '../../../src/ai-egress/ai-egress.service';
 import type { ClientAiConsentReader } from '../../../src/ai-consent/ai-consent.reader';
-import { CLIENT_AI_CONSENT_V5_COPY_SHA256 } from '../../../src/ai-consent/ai-consent.constants';
 import type { RomanBackgroundSpendService } from '../../../src/roman/background/roman-background-spend';
 import type { PrismaService } from '../../../src/prisma.service';
 import { ROMAN_MODEL_BACKGROUND } from '../../../src/roman/anthropic-client.provider';
@@ -21,12 +20,15 @@ const NOW = new Date('2026-10-07T17:00:00Z');
 const GRANT_AT = new Date('2026-10-07T12:00:00Z');
 const at = (h: number) => new Date(Date.UTC(2026, 9, 7, h));
 
-// V5 holds a live client-ai-v5 grant ('base' + 'memory'); V4 holds client-ai-v4 ('base' only).
+// V5 holds a live client-ai-v5 grant ('base' + 'memory', granted at GRANT_AT); V4 holds client-ai-v4 ('base' only).
 class ScopedReader implements ClientAiConsentReader {
   private ok = (id: string, scope?: string) => id === V5 || (scope !== 'memory' && id === V4);
   async hasClientAiConsent(id: string, scope?: 'base' | 'memory') { return this.ok(id, scope); }
   async clientsWithAiConsent(ids: readonly string[], scope?: 'base' | 'memory') {
     return new Set(ids.filter((id) => this.ok(id, scope)));
+  }
+  async memoryGrantTimes(ids: readonly string[]) {
+    return new Map(ids.filter((id) => id === V5).map((id) => [id, GRANT_AT] as const));
   }
 }
 
@@ -53,12 +55,6 @@ function makeDb(msgs: Msg[], notes: Note[] = []) {
       }
       return [...newest].map(([client_id, newest_at]) => ({ client_id, newest_at }));
     }),
-    aiProcessingConsentEvent: {
-      findMany: jest.fn(async () => [
-        { user_id: V5, seq: 1, action: 'grant', consent_version: 'client-ai-v5',
-          copy_sha256: CLIENT_AI_CONSENT_V5_COPY_SHA256, created_at: GRANT_AT },
-      ]),
-    },
     romanMemoryState: {
       findUnique: jest.fn(async ({ where }: { where: Where }) => states.get(where.client_id) ?? null),
       upsert: jest.fn(async ({ where, update }: { where: Where; update: Record<string, unknown> }) => {
@@ -198,6 +194,14 @@ describe('R11-M4 RomanNotesWriter', () => {
     expect(old).toMatchObject({ superseded_at: NOW, superseded_by_id: fresh.id });
     expect(fresh).toMatchObject({ text: 'Trains before work.', source_message_id: 'm2',
       expires_at: new Date(at(13).getTime() + 30 * 86_400_000) });
+  });
+
+  it('egress.memoryGrantTimes fails closed: a reader without it, or a failing read, gives no grant times', async () => {
+    const base = { hasClientAiConsent: async () => true, clientsWithAiConsent: async () => new Set([V5]) };
+    expect(await new AiEgressService(base).memoryGrantTimes([V5])).toEqual(new Map());
+    const failing = { ...base, memoryGrantTimes: async () => { throw new Error('db down'); } };
+    expect(await new AiEgressService(failing).memoryGrantTimes([V5])).toEqual(new Map());
+    expect(await new AiEgressService(new ScopedReader()).memoryGrantTimes([V4, V5])).toEqual(new Map([[V5, GRANT_AT]]));
   });
 
   it('RomanModule provides the writer and its scheduler', () => {

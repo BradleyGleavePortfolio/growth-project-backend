@@ -1,21 +1,12 @@
 /**
- * Roman v1.1 slice R11-M4: notes from chats (writer), behind
- * FEATURE_ROMAN_MEMORY (default off). Flag off or no Anthropic key: a run
- * reads nothing and calls nothing.
- *
- * One run (RomanNotesScheduler, every 10 minutes): up to 25 students with
- * client-surface user turns newer than their notes watermark, least recently
- * run first. Only clients in egress.consentedClients(ids, 'memory') whose
- * latest ledger row is a live client-ai-v5 grant go on; the rest get
- * 'no_consent', no turn read and no call (their watermark moves past turns
- * that predate any v5 grant, so those turns could never be eligible). Per
- * client: at most 40 newest user turns written after both the watermark and
- * the grant (never Roman replies, coach messages, other users or deleted
- * chats), sanitised and clamped, plus up to 60 live notes so the model can
- * update them. Background spend admission first (refusal = outcome, no
- * call); the send declares scope 'memory', so the gate re-reads the v5 grant.
- * Valid notes land in one transaction per client: same key supersedes, an
- * unchanged note is kept. Logs carry counts and codes only.
+ * Roman v1.1 R11-M4: notes from chats, behind FEATURE_ROMAN_MEMORY (default off; off or no Anthropic
+ * key = no reads, no calls). One run (RomanNotesScheduler, every 10 minutes): up to 25 students with
+ * client-surface user turns past their watermark, least recently run first. Only clients in
+ * egress.consentedClients(ids, 'memory') with an egress.memoryGrantTimes entry (live client-ai-v5) go on;
+ * the rest get 'no_consent', no turn read, no call. Per client: the 40 newest own user turns after both
+ * the watermark and the grant, sanitised and clamped, plus up to 60 live notes; background spend
+ * admission first; the send declares scope 'memory' (the gate re-reads the grant). Valid notes land in
+ * one transaction per client (same key supersedes). Logs carry counts and codes only.
  */
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -24,8 +15,6 @@ import { PrismaService } from '../../prisma.service';
 import { AiEgressService, AnthropicHandle } from '../../ai-egress/ai-egress.service';
 import { clientDataSubject } from '../../ai-egress/ai-egress.types';
 import { AiConsentRequiredException, isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
-import { CLIENT_AI_CONSENT_PROCESSOR, CLIENT_AI_CONSENT_PURPOSE } from '../../ai-consent/ai-consent.constants';
-import { grantScope, type AiConsentLatestRow } from '../../ai-consent/ai-consent.service';
 import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
 import { ROMAN_ANTHROPIC_CLIENT, ROMAN_MODEL_BACKGROUND } from '../anthropic-client.provider';
 import { RomanBackgroundSpendService, type RomanBackgroundRefusal } from '../background/roman-background-spend';
@@ -88,7 +77,7 @@ export class RomanNotesWriter {
     if (candidates.length === 0) return result;
 
     const consented = await this.egress.consentedClients(candidates.map((c) => c.client_id), 'memory');
-    const grants = await this.memoryGrantTimes([...consented]);
+    const grants = await this.egress.memoryGrantTimes([...consented]);
     for (const c of candidates) {
       const grantAt = grants.get(c.client_id);
       let outcome: RomanNotesOutcome;
@@ -114,30 +103,8 @@ export class RomanNotesWriter {
     return result;
   }
 
-  /** Grant time of each client whose latest ledger row is a live v5 grant. */
-  private async memoryGrantTimes(ids: string[]): Promise<Map<string, Date>> {
-    const out = new Map<string, Date>();
-    if (ids.length === 0) return out;
-    const rows = await this.prisma.aiProcessingConsentEvent.findMany({
-      where: { user_id: { in: ids }, processor: CLIENT_AI_CONSENT_PROCESSOR, purpose: CLIENT_AI_CONSENT_PURPOSE },
-      select: { user_id: true, seq: true, action: true, consent_version: true, copy_sha256: true, created_at: true },
-    });
-    const latest = new Map<string, AiConsentLatestRow>();
-    for (const { user_id, ...row } of rows) {
-      const prev = latest.get(user_id);
-      if (!prev || row.seq > prev.seq) latest.set(user_id, row);
-    }
-    for (const [id, row] of latest) if (grantScope(row) === 'memory') out.set(id, row.created_at);
-    return out;
-  }
-
-  private async writeClient(
-    handle: AnthropicHandle,
-    c: Candidate,
-    grantAt: Date,
-    now: Date,
-    result: RomanNotesRunResult,
-  ): Promise<RomanNotesOutcome> {
+  private async writeClient(handle: AnthropicHandle, c: Candidate, grantAt: Date, now: Date,
+    result: RomanNotesRunResult): Promise<RomanNotesOutcome> {
     const clientId = c.client_id;
     const state = await this.prisma.romanMemoryState.findUnique({ where: { client_id: clientId } });
     const turns = await this.prisma.romanMessage.findMany({
@@ -182,17 +149,9 @@ export class RomanNotesWriter {
 
     let replyText: string;
     try {
-      const reply = await this.egress.anthropicMessagesCreate(
-        handle,
-        clientDataSubject(clientId, 'client', 'memory'),
-        'roman.memory',
-        {
-          model: ROMAN_MODEL_BACKGROUND,
-          max_tokens: MAX_OUT,
-          system: ROMAN_NOTES_SYSTEM_PROMPT,
-          messages: [{ role: 'user', content: user }],
-        },
-      );
+      const reply = await this.egress.anthropicMessagesCreate(handle, clientDataSubject(clientId, 'client', 'memory'),
+        'roman.memory', { model: ROMAN_MODEL_BACKGROUND, max_tokens: MAX_OUT, system: ROMAN_NOTES_SYSTEM_PROMPT,
+          messages: [{ role: 'user', content: user }] });
       const usage = reply.usage;
       await this.spend.settle(admission.reservation, usage?.input_tokens ?? inputTokenBound, usage?.output_tokens ?? MAX_OUT, {
         outcome: 'ok',
@@ -251,13 +210,8 @@ export class RomanNotesWriter {
 }
 
 /** Record a run outcome; the watermark moves only when one is given. */
-async function mark(
-  db: Pick<Prisma.TransactionClient, 'romanMemoryState'>,
-  clientId: string,
-  outcome: RomanNotesOutcome,
-  watermark: Date | null,
-  now: Date,
-): Promise<RomanNotesOutcome> {
+async function mark(db: Pick<Prisma.TransactionClient, 'romanMemoryState'>, clientId: string,
+  outcome: RomanNotesOutcome, watermark: Date | null, now: Date): Promise<RomanNotesOutcome> {
   const data = { last_run_at: now, last_outcome: outcome, ...(watermark ? { notes_watermark_at: watermark } : {}) };
   await db.romanMemoryState.upsert({ where: { client_id: clientId }, create: { client_id: clientId, ...data }, update: data });
   return outcome;
