@@ -1,5 +1,4 @@
 import { Module } from '@nestjs/common';
-import { ScheduleModule } from '@nestjs/schedule';
 import { DataExportController } from './data-export.controller';
 import { DataExportService } from './data-export.service';
 import { DataExportCleanupCron } from './data-export-cleanup.cron';
@@ -27,9 +26,14 @@ import { DATA_EXPORT_ARCHIVE_STORE, selectArchiveStore } from './data-export-arc
  * GDPR dependency note: this module is a hard dependency for the GDPR delete
  * module (src/gdpr/). Users should export their data BEFORE deleting their
  * account. See docs/compliance/data-portability.md for the full contract.
+ *
+ * ScheduleModule is loaded ONCE, in AppModule. A second root import of it
+ * here created a second scheduler instance, and each instance registers
+ * every @Cron/@Interval in the app, so every timed job ran twice per tick
+ * (test/schedule-module-single-instance.spec.ts).
  */
 @Module({
-  imports: [PrismaModule, ScheduleModule.forRoot()],
+  imports: [PrismaModule],
   controllers: [DataExportController],
   providers: [
     {
