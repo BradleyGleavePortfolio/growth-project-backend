@@ -123,14 +123,23 @@ export interface ProgramSafetyReport { substituted: Array<{ from: string; to: st
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(v)));
 const KEEP_WORD = /\b(keep|include|add|use|still|want|incorporate|program)\b/;
-const NEGATION = /\b(no|not|never|avoid|without|skip|exclude|remove|drop|replace|swap|instead|except|don'?t|nothing)\b/;
+// Exclusion or alternative wording anywhere in the exercise's clause (before OR after the name) means "do not keep it".
+const NEGATION =
+  /\b(no|not|never|avoid|without|skip|exclude|remove|drop|replace|swap|instead|except|don'?t|nothing|out|off|away|alternatives?|substitut\w*|rather|cut|ban(ned)?|eliminate|other than|less|fewer)\b/;
+const CLAUSE_BREAK = /[.;,!?\n]|\bbut\b/;
 
-/** True only for a clear positive keep/include of `name` (a keep word in the same clause, no negation); a mention is not enough. */
+/**
+ * True only for a clear positive keep/include of `name`: a keep word and no exclusion/alternative wording anywhere in the
+ * clause that names it (the text before AND after the name, up to the clause break). A mention or anything ambiguous fails
+ * closed, so the injury substitution still runs.
+ */
 export function coachAskedToKeep(coachText: string, name: string): boolean {
   const [text, n] = [coachText.toLowerCase(), name.trim().toLowerCase()];
   if (n.length < 3) return false;
   for (let i = text.indexOf(n); i >= 0; i = text.indexOf(n, i + 1)) {
-    const clause = text.slice(0, i).split(/[.;,!?\n]|\bbut\b/).pop() ?? '';
+    const before = text.slice(0, i).split(CLAUSE_BREAK).pop() ?? '';
+    const after = text.slice(i + n.length).split(CLAUSE_BREAK)[0] ?? '';
+    const clause = `${before} ${after}`;
     if (KEEP_WORD.test(clause) && !NEGATION.test(clause)) return true;
   }
   return false;
