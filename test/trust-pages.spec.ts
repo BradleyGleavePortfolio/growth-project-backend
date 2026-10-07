@@ -334,7 +334,38 @@ describe('Privacy Policy accuracy (/privacy)', () => {
     expect(text).toMatch(/delete a conversation at any time/);
     expect(text).toMatch(/only for support, safety and debugging/);
     expect(text).toMatch(/two separate boxes on one screen/);
-    expect(text).toMatch(/never your coach’s private notes/);
+  });
+
+  // R11-L1 (owner A6.4: notes survive chat deletion and the policy says so;
+  // wording follows the owner-approved v5 paragraph, ai-consent.constants.ts).
+  // The v4 promise about coach notes is now conditional on the v5 choice.
+  it('describes Roman’s notes, chat deletion and coach-method learning (v5)', () => {
+    expect(text).not.toContain(
+      'Only your own data is used — never another client’s, and never your coach’s private notes about you.',
+    );
+    expect(text).toContain(
+      'Unless you allow Roman’s notes, only your own data is used — never another client’s, and never your coach’s private notes about you.',
+    );
+    expect(text).toContain(
+      'If you allow Roman’s notes and summaries in Settings > Privacy > Roman and AI, Roman may keep notes and summaries about your training, preferences and circumstances to personalise his replies, and may learn your coach’s methods, including from your coach’s private session notes; information about your training may help with that without identifying you. Roman never quotes those notes or shows you another client’s information. Your coach never sees your conversations with Roman or his notes about you.',
+    );
+    expect(text).toContain('food, water and habit logs, workouts and workout history, check-ins, bookings,');
+    expect(text).toContain(
+      'Roman’s notes and summaries — short notes Roman keeps about your training, preferences and circumstances, if you allow them.',
+    );
+    expect(text).toContain(
+      'Deleting a chat removes its messages but not Roman’s notes; deleting your account removes them.',
+    );
+    expect(text).toContain(
+      'Roman’s notes and summaries — kept until you delete your account; deleting a chat does not remove them.',
+    );
+    expect(POLICY_LAST_REVIEWED >= '2026-10-07').toBe(true);
+  });
+
+  it('health-data policy lists Roman’s notes and summaries as derived information', () => {
+    expect(visibleText(renderTrustPage('consumer-health'))).toContain(
+      'Derived information — calorie and macro targets, the plan assigned to you, trends in your readings, Roman’s replies, and Roman’s notes and summaries.',
+    );
   });
 
   it('no page states a time-based purge of Roman conversations', () => {
