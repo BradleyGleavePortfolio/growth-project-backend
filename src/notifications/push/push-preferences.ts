@@ -38,6 +38,13 @@ export function notificationPrefsPrefix(kind: string): string {
   if (kind.startsWith('drip_released')) return 'drip_released';
   // C05 item 7 — WORKOUT_REMINDER routes to workout_reminder_* (default ON).
   if (kind.startsWith('workout_reminder')) return 'workout_reminder';
+  // FU-WORKLOG-126 R2 (B-814-1) — WORKOUT_ASSIGNED shares the
+  // workout_reminder_* prefs columns (push + inapp default TRUE, and the
+  // client can still switch them off). Without this branch the kind fell
+  // through to the 'digest' safe default, whose _push and _inapp defaults
+  // are FALSE, so every assignment push AND its notification-centre row
+  // were dropped before enqueue for a client with default preferences.
+  if (kind.startsWith('workout_assigned')) return 'workout_reminder';
   // PR-15A — COACH_NEW_PURCHASE routes to the dedicated
   // coach_new_purchase_* prefs columns (migration
   // 20261208000000_pr15_coach_new_purchase_prefs); defaults push+inapp

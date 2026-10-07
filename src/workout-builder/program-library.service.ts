@@ -1443,15 +1443,20 @@ export class ProgramLibraryService {
 
   private pushProgramAssigned(clientId: string, programName: string): void {
     if (!this.notifications) return;
-    void this.notifications
+    const notifications = this.notifications;
+    const body = `Your coach added the program ${programName} to your plan.`;
+    void notifications
       .createNotification({
         user_id: clientId,
         kind: NotificationKind.WORKOUT_ASSIGNED,
-        body: `Your coach added the program ${programName} to your plan.`,
+        body,
         deep_link: 'tgp://workouts',
         channel: 'push',
         payload: { kind: 'program_assigned' },
       })
+      // FU-WORKLOG-126: the inbox row alone never reached the phone; queue
+      // the device push too (lock-screen copy carries no program name).
+      .then(() => notifications.sendPush({ user_id: clientId, kind: NotificationKind.WORKOUT_ASSIGNED, body, deep_link: 'tgp://workouts' }))
       .catch((e: unknown) => {
         this.logger.warn(
           `bulkAssign: push failed for client=${clientId} (assignment stands): ${(e as Error)?.message}`,
