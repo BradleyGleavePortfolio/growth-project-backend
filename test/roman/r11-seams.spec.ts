@@ -481,8 +481,9 @@ describe('R11-00 flags and capabilities', () => {
     const m = JSON.parse(readFileSync(join(root, '.github/fly-env-desired-state.json'), 'utf8'));
     const runbook = readFileSync(join(root, 'docs/runbooks/launch-flags.md'), 'utf8');
     for (const n of ['FEATURE_ROMAN_MEMORY', 'FEATURE_ROMAN_PLAYBOOK', 'FEATURE_ROMAN_TOOLS']) {
-      // FLIP-MEM-128: memory is declared on; the code default (and the kill) stays unset = off.
-      expect(m.flags[n]).toBe(n === 'FEATURE_ROMAN_MEMORY' ? 'true' : 'unset');
+      // FLIP-TOOLS-128 (tools) and FLIP-MEM-128 (memory) are declared on; the code default (and the kill) stays unset = off.
+      const declaredOn = ['FEATURE_ROMAN_TOOLS', 'FEATURE_ROMAN_MEMORY'];
+      expect(m.flags[n]).toBe(declaredOn.includes(n) ? 'true' : 'unset');
       expect(m.gates[n]).toMatch(/unset = off/);
       expect(runbook).toContain(
         `${n} | off | fly secrets unset -a backend-spring-lake-3890 ${n} |`,
