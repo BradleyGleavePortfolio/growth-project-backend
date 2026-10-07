@@ -89,6 +89,7 @@ jobs:
         run: npm ci
 
       - name: Ensure postgresql-client is available
+        timeout-minutes: 10
         run: |
           set -euo pipefail
           if ! command -v psql >/dev/null 2>&1; then
