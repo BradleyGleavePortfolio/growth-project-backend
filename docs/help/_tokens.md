@@ -27,7 +27,6 @@ introducing a new one.
 | `ESP_FROM_NAME`    | Display name on the From: header of every onboarding email.             | Configured in the email service provider (ESP) sender profile.      | `The Growth Project`                   |
 | `APP_STORE_URL`    | iOS App Store listing for the client mobile app. Already in `.env`.      | `APP_STORE_URL` env var (see root `README.md`).                     | `https://apps.apple.com/app/id000000`  |
 | `PLAY_STORE_URL`   | Google Play listing for the client mobile app. Already in `.env`.        | `PLAY_STORE_URL` env var (see root `README.md`).                    | `https://play.google.com/store/apps/details?id=...` |
-| `COACH_CONSOLE_URL`| Web URL for the coach console (`tgp-coach-console`).                     | DNS for the coach-console deployment.                               | `https://console.thegrowthproject.app` |
 | `INVITE_BASE_URL`  | Public base URL for invite landing pages. Already in `.env`.             | `PUBLIC_INVITE_BASE_URL` env var.                                   | `https://app.thegrowthproject.app/join`|
 
 ## Conventions

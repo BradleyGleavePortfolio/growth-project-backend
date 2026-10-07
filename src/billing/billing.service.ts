@@ -1674,7 +1674,7 @@ export class BillingService {
       throw new BadRequestException({
         error: 'BILLING_NOT_PROVISIONED',
         message:
-          'No Stripe customer is provisioned for this coach yet. An OWNER must call start-subscription first.',
+          'No coach subscription billing account is available. Ordinary coach tools do not require a coach subscription. For client payments and payouts, open Settings → Payouts (Stripe Connect) in the mobile app.',
       });
     }
 

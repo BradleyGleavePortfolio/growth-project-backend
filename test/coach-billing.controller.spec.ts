@@ -85,7 +85,14 @@ describe('CoachBillingController.portalSession', () => {
     const controller = makeController(makePrisma({ subscription: null, profile: null }) as any, new TestStripeApi());
     await expect(
       controller.portalSession({ user: { id: 'c' } } as any),
-    ).rejects.toBeInstanceOf(BadRequestException);
+    ).rejects.toMatchObject({
+      status: 400,
+      response: {
+        error: 'BILLING_NOT_PROVISIONED',
+        message:
+          'No coach subscription billing account is available. Ordinary coach tools do not require a coach subscription. For client payments and payouts, open Settings → Payouts (Stripe Connect) in the mobile app.',
+      },
+    });
   });
 
   it('uses stripe_customer_id from CoachSubscription when present', async () => {
