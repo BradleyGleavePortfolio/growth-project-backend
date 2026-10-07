@@ -101,6 +101,11 @@ export class CoachAIService {
    * B-AIB1-125 — debit the provider call's actual cost (the adapter's own
    * token pricing). The call already happened, so a failed write is logged,
    * never thrown at the coach (same posture as the gateway).
+   *
+   * FIX-AIB-125 (B-805-1): when the pool cannot absorb the whole cost,
+   * consume what is left (B-668-1 pattern in RomanService.debitCoachPool),
+   * so the pool reads used up and the next generation gets the 402 instead
+   * of another free call on the same remainder.
    */
   private async recordSpend(
     budgetCoachId: string | null,
@@ -112,12 +117,26 @@ export class CoachAIService {
     if (!this.budget || !budgetCoachId) return;
     const actualCostCents = AnthropicAdapter.computeCostCents(tokensIn, tokensOut);
     try {
-      await this.budget.recordUsage({
+      const debit = await this.budget.recordUsage({
         coachId: budgetCoachId,
         actualCostCents,
         capability,
         contextId: clientId,
       });
+      if (debit.recorded) return;
+      const { budget } = await this.budget.canCharge(budgetCoachId, 0);
+      const rest = budget.total_actual_available_cents - budget.actual_used_cents;
+      this.logger.warn(
+        `Coach AI pool short for capability=${capability} cents=${actualCostCents} rest=${rest}`,
+      );
+      if (rest > 0) {
+        await this.budget.recordUsage({
+          coachId: budgetCoachId,
+          actualCostCents: Math.min(rest, actualCostCents),
+          capability,
+          contextId: clientId,
+        });
+      }
     } catch (err) {
       // Error name only: exception text can carry personal data
       // (test/privacy/no-pii-in-logs.spec.ts).

@@ -9,6 +9,9 @@
  *   - With headroom, the call's cost (AnthropicAdapter token pricing) is
  *     debited from the head coach's pool (a sub-coach draws on the head's).
  *   - A failed debit is logged, never thrown at the coach.
+ *   - FIX-AIB-125 (B-805-1): a call that costs more than the remaining
+ *     allowance consumes the remainder, so the next sequential call is
+ *     refused instead of running free on the same balance.
  */
 import { CoachAIService } from '../../src/ai/coach/coach-ai.service';
 import { AnthropicAdapter } from '../../src/ai/adapters/anthropic.adapter';
@@ -64,7 +67,29 @@ function budgetDouble(opts: { used: number; available: number; recordFails?: boo
   return budget;
 }
 
-function build(budget: ReturnType<typeof budgetDouble>) {
+/**
+ * FIX-AIB-125 — a pool double with state and the real recordUsage guard
+ * (CoachAIBudgetService.recordUsage refuses a charge the pool cannot absorb
+ * and returns recorded:false without moving actual_used_cents).
+ */
+function statefulPool(used: number, available: number) {
+  const state = { used };
+  const budget = {
+    ...budgetDouble({ used, available }),
+    canCharge: jest.fn(async (_coachId: string, cost: number) => ({
+      allowed: state.used + cost <= available,
+      budget: { actual_used_cents: state.used, total_actual_available_cents: available },
+    })),
+    recordUsage: jest.fn(async (args: { actualCostCents: number }) => {
+      if (state.used > available - args.actualCostCents) return { recorded: false, budgetId: 'b1' };
+      state.used += args.actualCostCents;
+      return { recorded: true, budgetId: 'b1' };
+    }),
+  };
+  return { budget, state };
+}
+
+function build(budget: object) {
   const completeStructured = jest.fn(async () => ({
     data: { ok: true },
     tokensIn: TOKENS_IN,
@@ -154,5 +179,31 @@ describe.each(METHODS)('CoachAIService.%s — coach AI pool', (method, capabilit
     const { call } = build(budget);
     await expect(call(method)).resolves.toMatchObject({ draftId: 'draft-1' });
     expect(budget.recordUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('near-empty pool: the call consumes the remainder and the next sequential call gets 402', async () => {
+    const cost = AnthropicAdapter.computeCostCents(TOKENS_IN, TOKENS_OUT);
+    expect(cost).toBeGreaterThan(1);
+    const { budget, state } = statefulPool(3999, 4000);
+    const { call, completeStructured, prisma } = build(budget);
+    await expect(call(method)).resolves.toMatchObject({ draftId: 'draft-1' });
+    expect(state.used).toBe(4000);
+    expect(budget.recordUsage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ coachId: 'coach1', actualCostCents: 1, capability }),
+    );
+    const err = await call(method).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CoachAiBudgetExhaustedException);
+    expect(completeStructured).toHaveBeenCalledTimes(1);
+    expect(prisma.aIDraft.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('back-to-back calls with headroom each debit their full cost', async () => {
+    const cost = AnthropicAdapter.computeCostCents(TOKENS_IN, TOKENS_OUT);
+    const { budget, state } = statefulPool(0, 4000);
+    const { call } = build(budget);
+    await call(method);
+    await call(method);
+    expect(state.used).toBe(2 * cost);
+    expect(budget.recordUsage).toHaveBeenCalledTimes(2);
   });
 });
