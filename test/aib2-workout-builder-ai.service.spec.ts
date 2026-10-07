@@ -26,12 +26,17 @@ function buildPrisma() {
   const drafts: DraftRow[] = [];
   const prisma = {
     drafts,
-    workoutPlan: { findUnique: jest.fn(async () => ({ id: PLAN, coach_id: COACH, version: 3, head_revision_id: 'rev-3', archived_at: null })) },
+    workoutPlan: {
+      findUnique: jest.fn(async (): Promise<Record<string, unknown>> => ({ id: PLAN, coach_id: COACH, version: 3, head_revision_id: 'rev-3', archived_at: null })),
+      findMany: jest.fn(async (): Promise<unknown[]> => []),
+    },
+    workoutPlanExercise: { findMany: jest.fn(async (): Promise<unknown[]> => []) },
     workoutPlanRevision: {
       findUnique: jest.fn(async () => ({
         revision_index: 2, plan_meta_json: { name: 'Upper', type: 'strength', duration_estimate_minutes: 60 },
         exercises_json: [{ client_ref: 'r1', exercise_external_id: 'seed:push-001', order: 0, sets: 3, reps_or_duration_seconds: 8, weight_lbs: 135, rest_seconds: 120, superset_group_id: null, notes: null }],
       })),
+      findMany: jest.fn(async (): Promise<unknown[]> => []),
     },
     userProfile: { findUnique: jest.fn(async () => ({ goal_type: 'muscle_gain', workout_experience: 'beginner', equipment_access: ['dumbbells'], workout_days_per_week: 3, injuries: ['knee'] })) },
     clientOnboardingIntake: { findUnique: jest.fn(async () => ({ screening_any_yes: false })) },
@@ -166,9 +171,9 @@ describe('WorkoutBuilderAiService.propose (B-AIB2-126)', () => {
       const { svc, prisma } = build({ anthropic });
       prisma.workoutPlan.findUnique.mockResolvedValue({ id: PLAN, coach_id: COACH, version: 3, head_revision_id: 'rev-3', archived_at: null, program_id: 'prog-1', week_index: 0 });
       const benchDay = (sets: number) => [{ client_ref: 'x', exercise_external_id: 'seed:push-001', order: 0, sets, reps_or_duration_seconds: 8, weight_lbs: null, rest_seconds: 90, superset_group_id: null, notes: null }];
-      Object.assign(prisma.workoutPlan, { findMany: jest.fn(async () => [{ id: 'day-2', head_revision_id: 'rev-d2' }, { id: 'day-3', head_revision_id: null }]) });
-      Object.assign(prisma.workoutPlanRevision, { findMany: jest.fn(async () => [{ exercises_json: benchDay(8), plan_meta_json: { name: 'Push', type: 'strength' } }]) });
-      Object.assign(prisma, { workoutPlanExercise: { findMany: jest.fn(async () => [{ exercise_external_id: 'seed:push-002', sets: 5 }]) } });
+      prisma.workoutPlan.findMany.mockResolvedValue([{ id: 'day-2', head_revision_id: 'rev-d2' }, { id: 'day-3', head_revision_id: null }]);
+      prisma.workoutPlanRevision.findMany.mockResolvedValue([{ exercises_json: benchDay(8), plan_meta_json: { name: 'Push', type: 'strength' } }]);
+      prisma.workoutPlanExercise.findMany.mockResolvedValue([{ exercise_external_id: 'seed:push-002', sets: 5 }]);
       const res = await svc.propose(coach, { ...edit, client_id: CLIENT, quick_action: 'more_volume' });
       // this day 3 + other days 8 + 5 = 16 pectoral sets (beginner cap): one more set is dropped, the back add is kept.
       expect(res.dropped).toEqual([{ reason: 'More than 16 hard sets for one muscle in this program week.' }]);
