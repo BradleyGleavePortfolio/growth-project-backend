@@ -7,6 +7,7 @@ import {
   renderBillingUpdateCardPage,
   renderDownloadPage,
   renderEmailConfirmedPage,
+  renderOpenAppPage,
   renderSignupPage,
   sanitizeInviteCode,
   type DownloadPlatform,
@@ -63,6 +64,17 @@ export class PublicPagesController {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=300');
     res.status(HttpStatus.OK).send(renderBillingUpdateCardPage());
+  }
+
+  // B-DIGEST-127 — target of the "Open the app" button in every digest
+  // email. Static and identical for everyone.
+  @Public()
+  @Get('open')
+  @Throttle({ default: { ttl: 60000, limit: 60 } })
+  openApp(@Res() res: Response) {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.status(HttpStatus.OK).send(renderOpenAppPage());
   }
 
   // HUNT-01-124 — sign-up confirmation landing for a link opened where the

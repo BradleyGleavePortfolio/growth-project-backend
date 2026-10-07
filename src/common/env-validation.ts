@@ -1042,13 +1042,15 @@ export const ENV_RULES: EnvRule[] = [
     name: 'APP_URL',
     tier: 'optional',
     default: "'https://app.thegrowthproject.app'",
-    reason: 'Base URL for links in digests, nudges and the Google OAuth return redirect.',
+    reason:
+      'Base URL for links in nudges and the Google OAuth return redirect. Digest emails do not read it (B-DIGEST-127: their links go to /open and /email/unsubscribe on https://app.trygrowthproject.com).',
   },
   {
     name: 'CONSOLE_URL',
     tier: 'optional',
     default: "'https://console.thegrowthproject.app'",
-    reason: 'Coach console base URL used in coach digest emails.',
+    reason:
+      'Retired: coach digest emails used it for the console link until B-DIGEST-127; nothing reads it now. Kept registered because the production machine still holds a value.',
   },
   {
     name: 'PUBLIC_APP_BASE_URL',

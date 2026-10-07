@@ -157,6 +157,10 @@ async function bootstrap() {
       // S-DUNNING-R2 — dunning email link; universal link to the in-app
       // card update, calm "open the app" page otherwise.
       'billing/update-card',
+      // B-DIGEST-127 — digest email links: "Open the app" landing and the
+      // one-click unsubscribe page (GET confirm, POST turn off).
+      'open',
+      'email/unsubscribe',
       // HUNT-01-124 — sign-up confirmation landing (Supabase redirect for a
       // confirmation link opened on a computer or without the app).
       'verified',
