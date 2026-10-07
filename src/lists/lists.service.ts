@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma.service';
 import { AddListItemDto, UpdateListItemDto } from './lists.dto';
 import { ListType } from '@prisma/client';
+import { canonicalIngredientUnit } from '../common/ingredient-unit';
 
 @Injectable()
 export class ListsService {
@@ -20,13 +21,30 @@ export class ListsService {
   }
 
   async addItem(userId: string, listType: ListType, data: AddListItemDto) {
+    const name = data.name.trim();
+    const unit = canonicalIngredientUnit(data.unit) || null;
+    const candidates = await this.prisma.listItem.findMany({
+      where: {
+        user_id: userId, list_type: listType, is_checked: false,
+        name: { equals: name, mode: 'insensitive' },
+      },
+    });
+    const existing = candidates.find((item) =>
+      (canonicalIngredientUnit(item.unit) || null) === unit,
+    );
+    if (existing) {
+      return this.prisma.listItem.update({
+        where: { id: existing.id },
+        data: { quantity: { increment: data.quantity ?? 1 }, unit },
+      });
+    }
     return this.prisma.listItem.create({
       data: {
         user_id: userId,
         list_type: listType,
-        name: data.name,
+        name,
         quantity: data.quantity ?? 1,
-        unit: data.unit ?? null,
+        unit,
         source_recipe_id: data.source_recipe_id ?? null,
       },
     });
