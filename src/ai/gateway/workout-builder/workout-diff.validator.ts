@@ -12,7 +12,7 @@ export interface LibraryExercise { id: string; name: string; category: string; m
 export type ChangeKind = 'added' | 'changed' | 'removed' | 'moved' | 'meta';
 export interface ValidatedChange {
   change_id: string; kind: ChangeKind; op: WorkoutDiffOp; before: PlanExerciseSnapshot | null; after: PlanExerciseSnapshot | null;
-  exercise: { id: string; name: string; thumbnail_url: string | null } | null; reason: string; warnings: string[];
+  exercise: { id: string; name: string; thumbnail_url: string | null }; reason: string; warnings: string[];
 }
 export interface ValidateInput {
   baseline: PlanSnapshot; rawChanges: unknown; library: ReadonlyMap<string, LibraryExercise>; injuries: readonly InjuryArea[];
@@ -24,6 +24,8 @@ export const MAX_PROPOSED_CHANGES = 40;
 const KIND: Record<WorkoutDiffOp['kind'], ChangeKind> = {
   add_exercise: 'added', update_exercise: 'changed', remove_exercise: 'removed', reorder: 'moved', plan_meta: 'meta',
 };
+// Card title when a change names no single exercise (contract: `exercise` is always present).
+const NO_EXERCISE_LABEL: Partial<Record<ChangeKind, string>> = { moved: 'Exercise order', meta: 'Workout details' };
 const DEFAULT_REASON: Record<ChangeKind, string> = {
   added: 'Added to match the request.', changed: 'Adjusted to match the request.', removed: 'Removed to match the request.',
   moved: 'Order adjusted to match the request.', meta: 'Workout details updated to match the request.',
@@ -112,6 +114,7 @@ export function validateProposedChanges(input: ValidateInput): ValidateResult {
     if (hasRef && !before) { dropped.push({ reason: 'Refers to an exercise that is not in this workout.' }); continue; }
     const exId = op.kind === 'add_exercise' ? op.exercise_external_id
       : op.kind === 'update_exercise' ? op.exercise_external_id ?? before?.exercise_external_id ?? null : null;
+    const cardId = exId ?? before?.exercise_external_id ?? null;
     const ex = exId ? library.get(exId) : undefined;
     const swaps = op.kind === 'add_exercise' ||
       (op.kind === 'update_exercise' && op.exercise_external_id !== undefined && op.exercise_external_id !== before?.exercise_external_id);
@@ -144,16 +147,11 @@ export function validateProposedChanges(input: ValidateInput): ValidateResult {
     const reason = typeof rec.reason === 'string' ? stripMedicalClaims(rec.reason, B.reasonMax) : '';
     changes.push({
       change_id: `c${changes.length}`, kind, op, before, after, warnings, reason: reason || DEFAULT_REASON[kind],
-      exercise: exId ? { id: exId, name: ex?.name ?? exId, thumbnail_url: ex?.thumbnail_url ?? null } : null,
+      exercise: cardId
+        ? { id: cardId, name: library.get(cardId)?.name ?? 'Exercise in this workout', thumbnail_url: library.get(cardId)?.thumbnail_url ?? null }
+        : { id: '', name: NO_EXERCISE_LABEL[kind] ?? 'Workout', thumbnail_url: null },
     });
     current = next;
   }
   return { changes, dropped, snapshot: current };
-}
-
-/** Accepted subset (`c<i>` = diff index i). A reorder lists every ref, so it is kept only when all other ops are kept. */
-export function selectAcceptedOps<T extends { kind: string }>(diff: readonly T[], acceptedChangeIds: readonly string[]): T[] {
-  const ok = new Set(acceptedChangeIds);
-  const allOthers = diff.every((op, i) => op.kind === 'reorder' || ok.has(`c${i}`));
-  return diff.filter((op, i) => ok.has(`c${i}`) && (op.kind !== 'reorder' || allOthers));
 }

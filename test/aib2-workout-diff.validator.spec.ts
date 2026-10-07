@@ -1,6 +1,6 @@
 import { PlanSnapshot } from '../src/ai/gateway/materialisers/__shared/workout-diff.types';
 import { stripMedicalClaims } from '../src/ai/gateway/workout-builder/training-safety.constants';
-import { selectAcceptedOps, validateProposedChanges, ValidateInput } from '../src/ai/gateway/workout-builder/workout-diff.validator';
+import { validateProposedChanges, ValidateInput } from '../src/ai/gateway/workout-builder/workout-diff.validator';
 import { LIBRARY } from '../src/ai/gateway/workout-builder/workout-builder-ai.service';
 
 function plan(): PlanSnapshot {
@@ -89,14 +89,12 @@ describe('validateProposedChanges (B-AIB2-126)', () => {
     const r = run([{ op: { kind: 'remove_exercise', client_ref: 'nope' }, reason: 'x' }]);
     expect(r.changes).toHaveLength(0);
   });
-});
 
-describe('selectAcceptedOps (B-AIB2-126)', () => {
-  const diff = [{ kind: 'add_exercise' }, { kind: 'remove_exercise' }, { kind: 'reorder' }];
-  it('keeps only accepted ops', () => {
-    expect(selectAcceptedOps(diff, ['c0', 'c2'])).toEqual([{ kind: 'add_exercise' }]);
-  });
-  it('keeps a reorder only when every other op is accepted', () => {
-    expect(selectAcceptedOps(diff, ['c0', 'c1', 'c2'])).toHaveLength(3);
+  it('every change names a card: removals the removed exercise, reorders the order', () => {
+    const r = run([{ op: { kind: 'remove_exercise', client_ref: 'r2' } }, { op: { kind: 'reorder', ordered_client_refs: ['r1'] } }]);
+    expect(r.changes.map((c) => c.exercise)).toEqual([
+      { id: 'seed:pull-004', name: LIBRARY.get('seed:pull-004')?.name, thumbnail_url: LIBRARY.get('seed:pull-004')?.thumbnail_url },
+      { id: '', name: 'Exercise order', thumbnail_url: null },
+    ]);
   });
 });

@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -10,12 +9,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { AuditService } from '../../audit/audit.service';
-import { createHash } from 'crypto';
-import { Prisma } from '@prisma/client';
 import { CapabilityMaterializerRegistry } from './materialisers/capability-materialiser.registry';
-import { WORKOUT_BUILDER_MODEL_DIFF_SOURCE } from './ai-gateway.service';
-import { isMwbLiveCreateCapability } from './mwb-live-create.feature';
-import { selectAcceptedOps } from './workout-builder/workout-diff.validator';
 
 // Human-approval workflow for consequential AI outputs. AiActionDraft
 // rows land here as `pending`; an authorized human (coach for own-tenant
@@ -60,31 +54,11 @@ export function payloadClientIds(payload: unknown): string[] {
   return [...ids];
 }
 
-/**
- * B-AIB2-126 — true when the gateway marked this payload model-written (the
- * AI workout builder): provenance carries the marker with the sha256 of the
- * exact payload JSON. Callers cannot set the marker (the gateway strips it).
- */
-export function isWorkoutBuilderModelDraft(payload: unknown, provenance: unknown): boolean {
-  if (!Array.isArray(provenance) || !payload || typeof payload !== 'object') return false;
-  const hash = createHash('sha256').update(JSON.stringify(payload), 'utf8').digest('hex');
-  return provenance.some(
-    (p) =>
-      !!p &&
-      typeof p === 'object' &&
-      (p as { source?: unknown }).source === WORKOUT_BUILDER_MODEL_DIFF_SOURCE &&
-      (p as { hash?: unknown }).hash === hash,
-  );
-}
-
 export interface DecideInput {
   draftId: string;
   decider: { id: string; role: string };
   decision: Decision;
   note?: string;
-  // B-AIB2-126 — apply only these changes (`c<i>` = diff index i) of an AI
-  // workout-builder draft. Omitted = apply every change.
-  acceptedChangeIds?: string[];
   ip?: string | null;
   userAgent?: string | null;
 }
@@ -138,12 +112,11 @@ export class AiApprovalService {
    * when the tenant has no active sub-coach (the coach is its only human).
    */
   private async tenantCoachMayDecideOwnDraft(
-    draft: { payload: unknown; rationale: string | null; tenant_coach_id: string | null; provenance?: unknown },
+    draft: { payload: unknown; rationale: string | null; tenant_coach_id: string | null },
     decider: { id: string; role: string },
   ): Promise<boolean> {
     if (decider.role !== 'coach' || draft.tenant_coach_id !== decider.id) return false;
     if (isModelAuthoredPayload(draft.payload, draft.rationale)) return true;
-    if (isWorkoutBuilderModelDraft(draft.payload, draft.provenance)) return true;
     const otherHumans = await this.prisma.teamSubCoachAssignment.count({
       where: { head_coach_id: decider.id, archived_at: null },
     });
@@ -219,29 +192,6 @@ export class AiApprovalService {
 
     const status = input.decision;
 
-    // B-AIB2-126 — subset approval: materialise only the accepted ops (the
-    // materialiser re-validates and dry-runs them against the current head).
-    let toMaterialise = draft;
-    let appliedPayload: Prisma.InputJsonValue | undefined;
-    if (status === 'approved' && input.acceptedChangeIds) {
-      const payload = draft.payload as { diff?: unknown } | null;
-      if (!isMwbLiveCreateCapability(draft.capability) || !payload || !Array.isArray(payload.diff)) {
-        throw new BadRequestException({
-          code: 'ACCEPTED_CHANGES_UNSUPPORTED',
-          message: 'This draft cannot be applied in part.',
-        });
-      }
-      const subset = selectAcceptedOps(payload.diff as Array<{ kind: string }>, input.acceptedChangeIds);
-      if (subset.length === 0) {
-        throw new BadRequestException({
-          code: 'NO_CHANGES_ACCEPTED',
-          message: 'Keep at least one change to apply, or discard the suggestions.',
-        });
-      }
-      appliedPayload = { ...(payload as Record<string, unknown>), diff: subset } as Prisma.InputJsonValue;
-      toMaterialise = { ...draft, payload: appliedPayload };
-    }
-
     // PR AI-3 (PRODUCT-1): for 'approved' decisions on capabilities that
     // have a registered materialiser, run materialisation BEFORE flipping
     // status. If the materialiser throws, the draft stays in 'pending' so
@@ -257,7 +207,7 @@ export class AiApprovalService {
       const materialiser = this.materialisers.resolve(draft.capability);
       if (materialiser) {
         try {
-          const result = await materialiser.materialize(toMaterialise);
+          const result = await materialiser.materialize(draft);
           materialisationRef = result.ref ?? null;
           if (result.status === 'racing') {
             // P1-1: a concurrent approver holds the materialisation claim
@@ -403,7 +353,6 @@ export class AiApprovalService {
           decided_by_id: input.decider.id,
           decided_at: new Date(),
           decision_note: input.note ?? null,
-          ...(appliedPayload !== undefined ? { payload: appliedPayload } : {}),
         },
       });
       if (flip.count === 0) {

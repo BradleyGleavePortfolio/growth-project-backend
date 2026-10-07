@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
@@ -138,26 +137,14 @@ export class AiGatewayController {
   async decide(
     @Request() req: AuthedRequest,
     @Param('id') id: string,
-    @Body() body: { decision: 'approved' | 'rejected'; note?: string; accepted_change_ids?: unknown },
+    @Body() body: { decision: 'approved' | 'rejected'; note?: string },
   ) {
     const decision = body.decision === 'rejected' ? 'rejected' : 'approved';
-    // B-AIB2-126 — optional subset of an AI workout-builder draft (`c<i>` ids).
-    const ids = body.accepted_change_ids;
-    if (
-      ids !== undefined &&
-      (!Array.isArray(ids) || ids.length > 400 || !ids.every((v) => typeof v === 'string' && /^c\d{1,3}$/.test(v)))
-    ) {
-      throw new BadRequestException({
-        code: 'INVALID_ACCEPTED_CHANGES',
-        message: 'accepted_change_ids must be a list of change ids from the proposal.',
-      });
-    }
     return this.approvals.decide({
       draftId: id,
       decider: { id: req.user.id, role: req.user.role },
       decision,
       note: body.note,
-      acceptedChangeIds: ids as string[] | undefined,
       ip: extractIp(req),
       userAgent: extractUserAgent(req),
     });
