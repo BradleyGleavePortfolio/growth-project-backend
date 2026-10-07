@@ -24,10 +24,12 @@
  * everyone without a live v5 grant, so the one Roman tick in the
  * consultation (box 2) and Settings > Roman AI can grant client-ai-v5 with
  * the exact text shown. Memory off is a client-ai-v4 grant by a live v5
- * holder: Roman stays allowed under the base scope, the ledger row records
- * the v4 notice, and Roman's notes, summaries and memory state for that
- * client are deleted first with the account-deletion manifest's own entries.
- * Turning it back on is a v5 grant again.
+ * holder: Roman stays allowed under the base scope and the ledger row records
+ * the v4 notice. Roman's notes are kept (owner ruling 2026-10-07 11:46: they
+ * are deleted only with the account, by the deletion manifest); without the
+ * 'memory' scope Roman does not read or write them. Turning it back on is a
+ * v5 grant again, and Roman uses the kept notes again. A withdrawal keeps
+ * them too.
  *
  * History is append-only: a decision is a new row with seq = latest.seq + 1.
  * The unique index (user_id, processor, purpose, seq) turns a race between two
@@ -50,7 +52,6 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { eraseRomanMemory } from '../account-deletion/account-deletion.manifest';
 import { PrismaService } from '../prisma.service';
 import { isRomanMemoryEnabled } from '../roman/memory/roman-memory.feature';
 import {
@@ -301,9 +302,8 @@ export class AiConsentService implements ClientAiConsentReader {
    * written and the current status returns.
    *
    * A client-ai-v4 grant by a live client-ai-v5 holder is "Roman's memory"
-   * switched off (R11-C2B): Roman's notes about the client are deleted first
-   * (a failure is 503 with the v5 grant unchanged, so the switch can be tried
-   * again), then the v4 grant is appended.
+   * switched off (R11-C2B): the v4 grant is appended and Roman's notes are
+   * kept, unread without the 'memory' scope (R11-C2C, owner 11:46).
    */
   async grant(
     userId: string,
@@ -354,20 +354,6 @@ export class AiConsentService implements ClientAiConsentReader {
     });
   }
 
-  /** Delete Roman's notes, summaries and memory state for `userId` (one transaction). */
-  private async eraseMemory(userId: string): Promise<void> {
-    try {
-      const steps = await this.prisma.$transaction((tx) => eraseRomanMemory(tx, userId));
-      const rows = steps.reduce((n, step) => n + step.count, 0);
-      this.logger.log(`ai_consent.memory_off user=${userId} erased=${rows}`);
-    } catch (err) {
-      this.logger.error(
-        `ai_consent.memory_erase_failed user=${userId} code=${prismaErrorCode(err)}`,
-      );
-      throw this.unavailable();
-    }
-  }
-
   private async append(
     userId: string,
     action: typeof AI_CONSENT_ACTION_GRANT | typeof AI_CONSENT_ACTION_WITHDRAW,
@@ -395,14 +381,6 @@ export class AiConsentService implements ClientAiConsentReader {
         (row === null || row.action === AI_CONSENT_ACTION_WITHDRAW)
       ) {
         return this.toStatus(row);
-      }
-      // R11-C2B: a base (v4) grant over a live memory (v5) grant is memory off.
-      if (
-        action === AI_CONSENT_ACTION_GRANT &&
-        acceptedClientAiConsent(grantCopy.version)?.scope === 'base' &&
-        isMemoryGrant(row)
-      ) {
-        await this.eraseMemory(userId);
       }
       // A withdraw refers to the grant it ends; a grant to the copy it accepts.
       const consent_version =

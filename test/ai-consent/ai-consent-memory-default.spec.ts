@@ -1,5 +1,6 @@
 /**
- * R11-C2B — Roman memory on by default (owner 2026-10-07 10:18).
+ * R11-C2B — Roman memory on by default (owner 2026-10-07 10:18), with
+ * R11-C2C — Roman's notes are deleted only with the account (owner 11:46).
  *
  * Proves, with the real AiConsentService (via the shipped AiConsentModule) on
  * the in-memory ledger:
@@ -9,12 +10,14 @@
  *     memory is off (the app then shows today's v4 text) and for v5 holders;
  *   - box 2: a v5 grant with memory_copy.sha256 gives the memory scope;
  *   - switch off: a live v5 holder granting client-ai-v4 keeps Roman (base
- *     scope), records the v4 notice on the ledger, and deletes that client's
- *     Roman notes, summaries and memory state (nobody else's) with the
- *     account-deletion manifest's entries; a failed delete is 503 with the v5
- *     grant unchanged;
- *   - switch on again: a v5 grant with the same text and sha256;
- *   - a v4 grant by anyone who is not a live v5 holder deletes nothing.
+ *     scope) and records the v4 notice on the ledger; Roman's notes,
+ *     summaries and memory state are kept, and without the 'memory' scope
+ *     Roman does not read them (the R11-T2A seam, test/roman/r11-seams.spec.ts);
+ *   - switch on again: a v5 grant with the same text and sha256, and the kept
+ *     notes are in scope again;
+ *   - a full Roman withdrawal keeps the notes too;
+ *   - no consent change ever deletes a memory row (the fake's deleteMany
+ *     throws); account deletion does (test/account-deletion/roman-memory-erasure.spec.ts).
  */
 import { Logger, type DynamicModule } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -31,7 +34,6 @@ import {
   CLIENT_AI_CONSENT_BOX_LABEL,
   CLIENT_AI_CONSENT_V5_PARAGRAPH,
 } from '../../src/ai-consent/ai-consent.constants';
-import { romanMemoryErasureEntries } from '../../src/account-deletion/account-deletion.manifest';
 import { FakeLedgerPrisma } from './_support/fake-ledger-prisma';
 
 const V4 = 'client-ai-v4';
@@ -41,33 +43,31 @@ const V5_COPY_SHA = '8c19fca94c2455094c47b1802bb6693aff47d24c7b6df3b256d0a0e8e90
 const MEMORY_MODELS = ['romanClientNote', 'romanClientSummary', 'romanMemoryState'] as const;
 type MemoryModel = (typeof MEMORY_MODELS)[number];
 
-/** The ledger fake plus Roman's three memory tables and an interactive transaction. */
+/**
+ * The ledger fake plus Roman's three memory tables and an interactive
+ * transaction. A consent change must never touch a memory row: every write
+ * to them counts and throws.
+ */
 class FakeLedgerWithMemory extends FakeLedgerPrisma {
   memory: Record<MemoryModel, { client_id: string }[]> = {
     romanClientNote: [],
     romanClientSummary: [],
     romanMemoryState: [],
   };
-  failMemoryDelete = false;
+  memoryWrites = 0;
   transactions = 0;
 
-  private table(model: MemoryModel) {
-    return {
-      deleteMany: async (args: { where: { client_id?: string } }) => {
-        if (this.failMemoryDelete) throw new Error('db down');
-        const before = this.memory[model].length;
-        this.memory[model] = this.memory[model].filter((r) => r.client_id !== args.where.client_id);
-        return { count: before - this.memory[model].length };
-      },
-      updateMany: async () => {
-        throw new Error('memory rows are never updated here');
-      },
+  private table() {
+    const refuse = async (): Promise<never> => {
+      this.memoryWrites += 1;
+      throw new Error('a consent change never deletes or updates Roman memory rows');
     };
+    return { deleteMany: refuse, updateMany: refuse };
   }
 
-  readonly romanClientNote = this.table('romanClientNote');
-  readonly romanClientSummary = this.table('romanClientSummary');
-  readonly romanMemoryState = this.table('romanMemoryState');
+  readonly romanClientNote = this.table();
+  readonly romanClientSummary = this.table();
+  readonly romanMemoryState = this.table();
 
   async $transaction<T>(fn: (tx: this) => Promise<T>): Promise<T> {
     this.transactions += 1;
@@ -190,7 +190,7 @@ describe('Roman memory on by default (R11-C2B)', () => {
   });
 
   describe("Settings > Roman AI > Roman's memory", () => {
-    it('off: Roman stays under v4, the v4 notice is recorded, and only this client\'s notes are deleted', async () => {
+    it("off: Roman stays under v4, the v4 notice is recorded, and the notes are kept but out of scope", async () => {
       await service.grant('u_a', { version: V5, copy_sha256: V5_COPY_SHA });
       fake.seedMemory('u_a');
       fake.seedMemory('u_b');
@@ -202,39 +202,40 @@ describe('Roman memory on by default (R11-C2B)', () => {
         [1, 'grant', V5, V5_COPY_SHA],
         [2, 'grant', V4, V4_COPY_SHA],
       ]);
-      expect(fake.memoryOf('u_a')).toBe(0);
+      expect(fake.memoryOf('u_a')).toBe(3);
       expect(fake.memoryOf('u_b')).toBe(3);
-      expect(fake.transactions).toBe(1);
+      expect(fake.memoryWrites).toBe(0);
+      expect(fake.transactions).toBe(0);
     });
 
-    it('off with a failed delete: 503, the v5 grant and the notes stay, so it can be tried again', async () => {
+    it('on again: a v5 grant with the same text and sha256, and the kept notes are in scope again', async () => {
       await service.grant('u_a', { version: V5 });
       fake.seedMemory('u_a');
-      fake.failMemoryDelete = true;
-      await expect(service.grant('u_a', { version: V4 })).rejects.toMatchObject({
-        status: 503,
-        response: { code: 'AI_CONSENT_UNAVAILABLE' },
-      });
-      expect(fake.rows).toHaveLength(1);
-      expect(await scopes('u_a')).toEqual({ base: true, memory: true });
-      fake.failMemoryDelete = false;
       await service.grant('u_a', { version: V4 });
-      expect(await scopes('u_a')).toEqual({ base: true, memory: false });
-      expect(fake.memoryOf('u_a')).toBe(0);
-    });
-
-    it('on again: a v5 grant with the same text and sha256; nothing is deleted', async () => {
-      await service.grant('u_a', { version: V5 });
-      await service.grant('u_a', { version: V4 });
-      fake.seedMemory('u_a');
       const offered = (await service.getStatus('u_a')).memory_copy;
       const s = await service.grant('u_a', { version: V5, copy_sha256: offered?.sha256 });
       expect(s).toMatchObject({ version: V5, scope: 'memory' });
       expect(fake.rows.map((r) => r.consent_version)).toEqual([V5, V4, V5]);
+      expect(await scopes('u_a')).toEqual({ base: true, memory: true });
       expect(fake.memoryOf('u_a')).toBe(3);
+      expect(fake.memoryWrites).toBe(0);
     });
 
-    it('a v4 grant by a client who is not a live v5 holder deletes nothing', async () => {
+    it('a full Roman withdrawal by a v5 holder keeps the notes, out of every scope', async () => {
+      await service.grant('u_a', { version: V5 });
+      fake.seedMemory('u_a');
+      const s = await service.withdraw('u_a');
+      expect(s).toMatchObject({ state: 'withdrawn', granted: false });
+      expect(await scopes('u_a')).toEqual({ base: false, memory: false });
+      expect(fake.memoryOf('u_a')).toBe(3);
+      await service.grant('u_a', { version: V5 });
+      expect(await scopes('u_a')).toEqual({ base: true, memory: true });
+      expect(fake.memoryOf('u_a')).toBe(3);
+      expect(fake.memoryWrites).toBe(0);
+      expect(fake.transactions).toBe(0);
+    });
+
+    it('a v4 grant by a client who is not a live v5 holder touches nothing', async () => {
       fake.seedMemory('u_new');
       await service.grant('u_new', { version: V4 });
       await service.grant('u_new', { version: V4 });
@@ -243,16 +244,9 @@ describe('Roman memory on by default (R11-C2B)', () => {
       await service.withdraw('u_w');
       await service.grant('u_w', { version: V4 });
       expect(fake.transactions).toBe(0);
+      expect(fake.memoryWrites).toBe(0);
       expect(fake.memoryOf('u_new')).toBe(3);
       expect(fake.memoryOf('u_w')).toBe(3);
     });
-  });
-
-  it('memory off deletes exactly the manifest rows for Roman notes, summaries and memory state', () => {
-    expect(romanMemoryErasureEntries()).toEqual([
-      { model: 'RomanClientNote', field: 'client_id', action: { op: 'delete' } },
-      { model: 'RomanClientSummary', field: 'client_id', action: { op: 'delete' } },
-      { model: 'RomanMemoryState', field: 'client_id', action: { op: 'delete' } },
-    ]);
   });
 });
