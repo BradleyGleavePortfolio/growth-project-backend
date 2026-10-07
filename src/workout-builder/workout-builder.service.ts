@@ -1435,6 +1435,26 @@ export class WorkoutBuilderService {
     this.emitAssignmentPush(clientId, assignmentId, workoutPlanId);
   }
 
+  /**
+   * B-AIASSIGN-125: the same fan-out for an explicit list of plans that are
+   * not rows of one WorkoutProgram (Coach AI approve creates one plan per AI
+   * day). `week_index` / `day_index` are 0-based offsets. Runs inside the
+   * caller's transaction; the caller owns the tenancy check, the exactly-once
+   * fence and the push (`notifyProgramAssigned` after commit).
+   */
+  async writePlanAssignmentsInTx(
+    tx: Prisma.TransactionClient,
+    coachId: string,
+    clientId: string,
+    plans: Array<{ id: string; week_index: number; day_index: number }>,
+    startDate: string,
+  ): Promise<Array<{ id: string }>> {
+    if (plans.length === 0) {
+      throw new BadRequestException('Program has no plans to assign');
+    }
+    return this.fanOutProgramPlans(tx, plans, coachId, clientId, startDate);
+  }
+
   /** Shared by assignProgramToClient and writeProgramAssignmentsInTx. */
   private async fanOutProgramPlans(
     tx: Prisma.TransactionClient,

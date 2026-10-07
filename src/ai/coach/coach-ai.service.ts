@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -26,6 +27,8 @@ import {
   COACH_AI_BUDGET_EXHAUSTED_CODE,
   COACH_AI_METERED_CAPABILITIES,
 } from '../../ai-credits/ai-credits.constants';
+import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
+import { aiProgramStartIso } from './ai-program-start';
 
 // Coach AI v1 — orchestration service.
 //
@@ -374,13 +377,14 @@ export class CoachAIService {
 
   async approveDraft(coachId: string, draftId: string) {
     const draft = await this.getDraft(coachId, draftId);
+    if (draft.type === 'WORKOUT_PROGRAM') {
+      return this.approveWorkoutProgram(coachId, draft);
+    }
     if (draft.status !== 'DRAFT') {
       throw new BadRequestException(`Cannot approve a draft in status=${draft.status}`);
     }
     let approvedAsId: string | null = null;
-    if (draft.type === 'WORKOUT_PROGRAM') {
-      approvedAsId = await this.materializeWorkoutProgram(coachId, draft);
-    } else if (draft.type === 'MEAL_PLAN') {
+    if (draft.type === 'MEAL_PLAN') {
       approvedAsId = await this.materializeMealPlan(coachId, draft);
     }
     return this.prisma.aIDraft.update({
@@ -389,22 +393,99 @@ export class CoachAIService {
     });
   }
 
+  /**
+   * B-AIASSIGN-125: "Approve & assign" puts every AI day on the client's
+   * calendar. Plans are created in the coach library, then ONE transaction
+   * writes one ClientWorkoutAssignment + snapshot per plan (offset
+   * (week-1)*7 + (day-1) days from the start date) and stamps the draft
+   * APPROVED with approvedAsId, so approvedAsId set <=> assignments exist.
+   * One push to the client after commit. A double tap is fenced by a
+   * conditional DRAFT -> APPROVED claim: the second request replays the
+   * finished result instead of assigning the program twice.
+   */
+  private async approveWorkoutProgram(
+    coachId: string,
+    draft: Awaited<ReturnType<CoachAIService['getDraft']>>,
+  ) {
+    const dayCount = this.workoutProgramDays(draft).days.length;
+    if (draft.status !== 'DRAFT') return this.replayWorkoutApproval(coachId, draft.id, dayCount);
+    // The client may have left this coach since the draft was generated.
+    await this.assertCoachOwnsClient(coachId, draft.clientId);
+
+    const claim = await this.prisma.aIDraft.updateMany({
+      where: { id: draft.id, coachId, status: 'DRAFT' },
+      data: { status: 'APPROVED' },
+    });
+    if (claim.count === 0) return this.replayWorkoutApproval(coachId, draft.id, dayCount);
+
+    try {
+      const plans = await this.materializeWorkoutProgram(coachId, draft);
+      const startDate = aiProgramStartIso(
+        new Date(),
+        await resolveRecipientTimeZone(this.prisma, draft.clientId),
+        (draft.generatedPayload as { start_date?: unknown } | null)?.start_date,
+      );
+      const { approved, assignments } = await this.prisma.$transaction(async (tx) => {
+        const rows = await this.workouts.writePlanAssignmentsInTx(
+          tx,
+          coachId,
+          draft.clientId,
+          plans,
+          startDate,
+        );
+        const updated = await tx.aIDraft.update({
+          where: { id: draft.id },
+          data: { status: 'APPROVED', approvedAsId: plans[0].id },
+        });
+        return { approved: updated, assignments: rows };
+      });
+      this.workouts.notifyProgramAssigned(draft.clientId, assignments[0].id, plans[0].id);
+      return { ...approved, assigned_count: assignments.length };
+    } catch (err) {
+      // Release the claim so the coach can approve again after a failure.
+      await this.prisma.aIDraft
+        .updateMany({
+          where: { id: draft.id, status: 'APPROVED', approvedAsId: null },
+          data: { status: 'DRAFT' },
+        })
+        .catch((releaseErr: unknown) =>
+          this.logger.warn(`approve claim release failed for draft ${draft.id}: ${String(releaseErr)}`),
+        );
+      throw err;
+    }
+  }
+
+  private async replayWorkoutApproval(coachId: string, draftId: string, dayCount: number) {
+    const current = await this.getDraft(coachId, draftId);
+    if (current.status === 'APPROVED' && current.approvedAsId) {
+      return { ...current, assigned_count: dayCount };
+    }
+    if (current.status === 'APPROVED') {
+      throw new ConflictException('This program is already being assigned.');
+    }
+    throw new BadRequestException(`Cannot approve a draft in status=${current.status}`);
+  }
+
+  private workoutProgramDays(draft: { generatedPayload: Prisma.JsonValue }) {
+    const payload = draft.generatedPayload as unknown as WorkoutProgramPayload;
+    if (!payload || !Array.isArray(payload.days) || payload.days.length === 0) {
+      throw new BadRequestException('Workout program payload has no days');
+    }
+    return { payload, days: payload.days };
+  }
+
   // ─── Materializers ────────────────────────────────────────────────────────
 
   private async materializeWorkoutProgram(
     coachId: string,
     draft: { generatedPayload: Prisma.JsonValue; clientId: string },
-  ): Promise<string> {
-    const payload = draft.generatedPayload as unknown as WorkoutProgramPayload;
-    if (!payload || !Array.isArray(payload.days) || payload.days.length === 0) {
-      throw new BadRequestException('Workout program payload has no days');
-    }
-    // Materialize ALL days as individual WorkoutPlan records. The first
-    // plan's id is returned as approvedAsId so the AIDraft FK resolves to
-    // a concrete record; all plans are created under the same coach and
-    // are immediately visible in the coach's plan library for assignment.
-    let firstPlanId: string | null = null;
-    for (const day of payload.days) {
+  ): Promise<Array<{ id: string; week_index: number; day_index: number }>> {
+    const { payload, days } = this.workoutProgramDays(draft);
+    // Materialize ALL days as individual WorkoutPlan records under the coach
+    // (visible in the coach's plan library). The caller assigns them to the
+    // client; the first plan's id becomes the draft's approvedAsId.
+    const created: Array<{ id: string; week_index: number; day_index: number }> = [];
+    for (const day of days) {
       const dayLabel = `W${day.week}D${day.day}`;
       const planName = (
         `${payload.summary?.slice(0, 40) || 'AI program'} – ${day.name || dayLabel}`
@@ -430,11 +511,13 @@ export class CoachAIService {
           })),
         );
       }
-      if (firstPlanId === null) {
-        firstPlanId = plan.id;
-      }
+      created.push({
+        id: plan.id,
+        week_index: Math.max(0, Math.trunc(Number(day.week) || 1) - 1),
+        day_index: Math.max(0, Math.trunc(Number(day.day) || 1) - 1),
+      });
     }
-    return firstPlanId!;
+    return created;
   }
 
   private async materializeMealPlan(
