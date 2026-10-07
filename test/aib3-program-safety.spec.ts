@@ -51,6 +51,7 @@ const generated = () => ({
   summary: 'Block', weeks: 1, days_per_week: 1, coach_notes: 'Progress weekly.',
   days: [{ week: 1, day: 1, name: 'Lower', type: 'strength', exercises: [
     row('barbell-back-squat', 'Barbell Back Squat', 40, 315, 2_000), row('seed:pull-002', 'Lat Pulldown', 3, 120, 90), row('db-curl', 'Dumbbell Curl', 3, 30, 60),
+    row('lunge', 'Walking Lunge', 3, 50, 60),
   ] }],
 });
 
@@ -89,7 +90,8 @@ describe('B-AIB3-126 — per-client program generator', () => {
   it('a generated knee-loading exercise is replaced by a substitution and every row is held to the bounds', async () => {
     const { svc, create } = buildGenerator();
     const out = await svc.generateWorkoutProgram('coach1', { clientId: 'client1', weeks: 1, daysPerWeek: 1 });
-    const [squat, pulldown, curl] = create.mock.calls[0][0].data.generatedPayload.days[0].exercises;
+    const [squat, pulldown, curl, lunge] = create.mock.calls[0][0].data.generatedPayload.days[0].exercises;
+    expect(lunge.name).toBe('Romanian Deadlift'); // a second knee swap in the same day takes the next option
     expect(squat).toMatchObject({ exercise_external_id: 'seed:legs-007', name: 'Hip Thrust', sets: 10, rest_seconds: 600, weight_lbs: null });
     expect(squat.notes).toBe('Swapped from Barbell Back Squat for the knee limitation.');
     expect(pulldown.weight_lbs).toBe(105); // logged 100 lb -> at most 105%

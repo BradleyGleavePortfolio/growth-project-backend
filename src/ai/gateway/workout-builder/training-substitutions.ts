@@ -79,13 +79,13 @@ export function loadedAreas(exercise: NamedExercise, injuries: readonly InjuryAr
   );
 }
 
-/** A library exercise that replaces `exercise` and loads none of the client's areas; null when no safe option exists. */
-export function substituteFor(exercise: NamedExercise, injuries: readonly InjuryAreaV2[]): NamedExercise | null {
+/** A library exercise that replaces `exercise`, loads none of the client's areas and is not in `avoid`; null when none is left. */
+export function substituteFor(exercise: NamedExercise, injuries: readonly InjuryAreaV2[], avoid: ReadonlySet<string> = new Set()): NamedExercise | null {
   for (const area of loadedAreas(exercise, injuries)) {
     const rule = SUBSTITUTIONS[area].find((r) => r.when.test(exercise.name)) ?? SUBSTITUTIONS[area][SUBSTITUTIONS[area].length - 1];
     for (const id of rule.use) {
       const seed = SEED_BY_ID.get(id);
-      if (seed && seed.id !== exercise.id && loadedAreas(seed, injuries).length === 0) return { id: seed.id, name: seed.name };
+      if (seed && seed.id !== exercise.id && !avoid.has(seed.id) && loadedAreas(seed, injuries).length === 0) return { id: seed.id, name: seed.name };
     }
   }
   return null;
@@ -135,15 +135,17 @@ export function applyProgramSafety(
   const typed = opts.coachText.toLowerCase();
   for (const day of days) {
     const kept: ProgramRowLike[] = [];
+    const used = new Set(day.exercises.map((r) => seedExerciseFor(r.exercise_external_id)?.id ?? seedExerciseFor(r.name)?.id ?? r.exercise_external_id));
     for (const row of day.exercises) {
       const ex = { id: row.exercise_external_id, name: row.name || row.exercise_external_id };
       const areas = loadedAreas(ex, opts.injuries);
       if (areas.length > 0 && !(ex.name.length > 2 && typed.includes(ex.name.toLowerCase()))) {
-        const sub = substituteFor(ex, opts.injuries);
+        const sub = substituteFor(ex, opts.injuries, used); // no duplicate swaps within one day
         if (!sub) {
           report.removed.push({ name: ex.name, area: areas[0] });
           continue;
         }
+        used.add(sub.id);
         report.substituted.push({ from: ex.name, to: sub.name, area: areas[0] });
         row.exercise_external_id = sub.id;
         row.name = sub.name;
