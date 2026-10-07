@@ -16,10 +16,12 @@ export class PrepGuideController {
   /**
    * GET /prep-guide?week=YYYY-MM-DD
    *
-   * Returns a weekly meal-prep summary computed from the user's meal plans
-   * and associated recipes. Pure computation — no DB writes.
+   * Returns visible recipes referenced by the user's unarchived meal plans,
+   * or the latest visible library recipes, identified by `source`.
+   * Pure computation — no DB writes.
    *
-   * If `week` is omitted, defaults to the current week's Monday (ISO).
+   * `week` is a compatibility echo only, not a filter (`week_filter_applied: false`).
+   * If omitted, its echo defaults to the current week's Monday (ISO).
    */
   @Get()
   async getWeeklyGuide(
