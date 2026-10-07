@@ -13,7 +13,7 @@ import {
   type AnthropicMessagesClient,
 } from '../../../src/ai-egress/ai-egress.service';
 import { FakeConsentReader, fakeOf } from '../../ai-egress/ai-egress.fakes';
-import type { ClientAiConsentScope } from '../../../src/ai-consent/ai-consent.reader';
+import type { ClientAiConsentScope } from '../../../src/ai-consent/ai-consent.constants';
 import type { CoachAIBudgetService } from '../../../src/ai-credits/coach-ai-budget.service';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../../src/roman/roman.feature';
 import { RomanReadToolbox } from '../../../src/roman/tools/roman-read-tools';
