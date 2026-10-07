@@ -19,6 +19,16 @@
  * so an app can tell this server from an older one that sent `upgrade` to
  * every v4 holder. A withdrawal ends both scopes.
  *
+ * Memory on by default (R11-C2B, owner 2026-10-07 10:18): while
+ * FEATURE_ROMAN_MEMORY is on, GET also sends `memory_copy` (the v5 copy) to
+ * everyone without a live v5 grant, so the one Roman tick in the
+ * consultation (box 2) and Settings > Roman AI can grant client-ai-v5 with
+ * the exact text shown. Memory off is a client-ai-v4 grant by a live v5
+ * holder: Roman stays allowed under the base scope, the ledger row records
+ * the v4 notice, and Roman's notes, summaries and memory state for that
+ * client are deleted first with the account-deletion manifest's own entries.
+ * Turning it back on is a v5 grant again.
+ *
  * History is append-only: a decision is a new row with seq = latest.seq + 1.
  * The unique index (user_id, processor, purpose, seq) turns a race between two
  * writers into a P2002 on the loser, which re-reads and re-decides (so two
@@ -40,6 +50,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { eraseRomanMemory } from '../account-deletion/account-deletion.manifest';
 import { PrismaService } from '../prisma.service';
 import { isRomanMemoryEnabled } from '../roman/memory/roman-memory.feature';
 import {
@@ -121,6 +132,12 @@ export interface ClientAiConsentStatus {
    * `upgrade` regardless of it; an app shows the v5 offer only when true.
    */
   memory_on: boolean;
+  /**
+   * R11-C2B: the v5 copy box 2 shows and grants while FEATURE_ROMAN_MEMORY is
+   * on, for everyone without a live v5 grant (a v5 holder's `copy` is
+   * already v5). Null while memory is off, so an app shows today's v4 text.
+   */
+  memory_copy: ClientAiConsentCopy | null;
 }
 
 export interface AiConsentRequestMeta {
@@ -267,6 +284,7 @@ export class AiConsentService implements ClientAiConsentReader {
       scope,
       upgrade: scope === 'base' && memoryOn ? clientAiConsentV5Copy() : null,
       memory_on: memoryOn,
+      memory_copy: memoryOn && scope !== 'memory' ? clientAiConsentV5Copy() : null,
     };
   }
 
@@ -281,6 +299,11 @@ export class AiConsentService implements ClientAiConsentReader {
    * client-ai-v5) and, when sent, that version's sha256. Idempotent: when the
    * latest decision is already a live grant of the same version, nothing is
    * written and the current status returns.
+   *
+   * A client-ai-v4 grant by a live client-ai-v5 holder is "Roman's memory"
+   * switched off (R11-C2B): Roman's notes about the client are deleted first
+   * (a failure is 503 with the v5 grant unchanged, so the switch can be tried
+   * again), then the v4 grant is appended.
    */
   async grant(
     userId: string,
@@ -331,6 +354,20 @@ export class AiConsentService implements ClientAiConsentReader {
     });
   }
 
+  /** Delete Roman's notes, summaries and memory state for `userId` (one transaction). */
+  private async eraseMemory(userId: string): Promise<void> {
+    try {
+      const steps = await this.prisma.$transaction((tx) => eraseRomanMemory(tx, userId));
+      const rows = steps.reduce((n, step) => n + step.count, 0);
+      this.logger.log(`ai_consent.memory_off user=${userId} erased=${rows}`);
+    } catch (err) {
+      this.logger.error(
+        `ai_consent.memory_erase_failed user=${userId} code=${prismaErrorCode(err)}`,
+      );
+      throw this.unavailable();
+    }
+  }
+
   private async append(
     userId: string,
     action: typeof AI_CONSENT_ACTION_GRANT | typeof AI_CONSENT_ACTION_WITHDRAW,
@@ -358,6 +395,14 @@ export class AiConsentService implements ClientAiConsentReader {
         (row === null || row.action === AI_CONSENT_ACTION_WITHDRAW)
       ) {
         return this.toStatus(row);
+      }
+      // R11-C2B: a base (v4) grant over a live memory (v5) grant is memory off.
+      if (
+        action === AI_CONSENT_ACTION_GRANT &&
+        acceptedClientAiConsent(grantCopy.version)?.scope === 'base' &&
+        isMemoryGrant(row)
+      ) {
+        await this.eraseMemory(userId);
       }
       // A withdraw refers to the grant it ends; a grant to the copy it accepts.
       const consent_version =
