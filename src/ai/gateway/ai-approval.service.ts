@@ -7,6 +7,7 @@ import {
   Logger,
   NotFoundException,
   Optional,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { AuditService } from '../../audit/audit.service';
@@ -15,6 +16,9 @@ import { CapabilityMaterializerRegistry } from './materialisers/capability-mater
 import { WORKOUT_BUILDER_MODEL_DIFF_SOURCE } from './ai-gateway.service';
 import { isMwbLiveCreateCapability } from './mwb-live-create.feature';
 import { computeLockToken } from '../../workout-builder/lock-token.helper';
+import { emptyPlanSnapshot, snapshotFromRevisionJson } from './materialisers/__shared/workout-diff.types';
+import { WeekLimits, subsetLimitBreach } from './workout-builder/subset-bounds';
+import { loadWeekOtherSetsByMuscle, weeklySetsCap } from './workout-builder/week-limits';
 
 // Human-approval workflow for consequential AI outputs. AiActionDraft
 // rows land here as `pending`; an authorized human (coach for own-tenant
@@ -136,6 +140,34 @@ export class AiApprovalService {
    * `{ reply: <model text> }`, whose text is also the stored rationale), or
    * when the tenant has no active sub-coach (the coach is its only human).
    */
+  /** B-815-1: ceiling breach of a partial selection against the plan's CURRENT head and its program week, else null. */
+  private async subsetLimitBreachFor(
+    subjectUserId: string | null, payload: Record<string, unknown>, fullDiff: readonly unknown[], subset: readonly unknown[],
+  ): Promise<string | null> {
+    const planId = typeof payload.target_plan_id === 'string' ? payload.target_plan_id : null;
+    if (!planId) return subsetLimitBreach(emptyPlanSnapshot(), fullDiff, subset, null);
+    const plan = await this.prisma.workoutPlan.findUnique({
+      where: { id: planId }, select: { id: true, coach_id: true, head_revision_id: true, program_id: true, week_index: true },
+    });
+    const head = plan?.head_revision_id
+      ? await this.prisma.workoutPlanRevision.findUnique({ where: { id: plan.head_revision_id }, select: { exercises_json: true, plan_meta_json: true } })
+      : null;
+    if (!plan || !head) {
+      throw new ConflictException({ code: 'REVISION_STALE', message: 'This workout changed on another screen. Reload it and ask again.' });
+    }
+    let week: WeekLimits | null = null;
+    if (plan.program_id && plan.week_index != null) {
+      const profile = subjectUserId
+        ? await this.prisma.userProfile.findUnique({ where: { user_id: subjectUserId }, select: { workout_experience: true } })
+        : null;
+      week = {
+        otherSetsByMuscle: await loadWeekOtherSetsByMuscle(this.prisma, { planId: plan.id, coachId: plan.coach_id, programId: plan.program_id, weekIndex: plan.week_index }),
+        cap: weeklySetsCap(profile ? { experience: profile.workout_experience } : null),
+      };
+    }
+    return subsetLimitBreach(snapshotFromRevisionJson(head.exercises_json, head.plan_meta_json), fullDiff, subset, week);
+  }
+
   private async tenantCoachMayDecideOwnDraft(
     draft: { capability: string; payload: unknown; rationale: string | null; tenant_coach_id: string | null; provenance?: unknown },
     decider: { id: string; role: string },
@@ -236,6 +268,17 @@ export class AiApprovalService {
           code: 'NO_CHANGES_ACCEPTED',
           message: 'Keep at least one change to apply, or discard the suggestions.',
         });
+      }
+      // B-815-1: a partial selection is re-checked against the training ceilings the full proposal was validated
+      // against (sets per muscle per workout and per program week, exercises per workout). Refused = draft stays pending.
+      if (subset.length < payload.diff.length) {
+        const breach = await this.subsetLimitBreachFor(draft.subject_user_id, payload as Record<string, unknown>, payload.diff, subset);
+        if (breach) {
+          throw new UnprocessableEntityException({
+            code: 'SELECTION_OVER_LIMITS',
+            message: `${breach} Keep the matching removal too, or untick an addition.`,
+          });
+        }
       }
       appliedPayload = { ...(payload as Prisma.JsonObject), diff: subset };
       toMaterialise = { ...draft, payload: appliedPayload };
