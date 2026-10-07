@@ -15,6 +15,8 @@ import { SubscriptionCheckoutService } from './subscription-checkout.service';
 import { CheckoutWebhookHandlerService } from './checkout-webhook-handler.service';
 import { TrialConflictService } from '../packages/trials/trial-conflict.service';
 import { ClientBillingController } from './client-billing.controller';
+import { CoachClientPaymentsController } from './coach-client-payments.controller';
+import { CoachClientPaymentsService } from './coach-client-payments.service';
 import { ClientBillingReconciler } from './client-billing.reconciler';
 import { ClientBillingService } from './client-billing.service';
 import { DunningService } from './dunning.service';
@@ -90,6 +92,8 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     CoachPaymentOpsController,
     // S-DUNNING-R2 — native card update (1A) and client cancel (2A / option A).
     ClientBillingController,
+    // CF-COACH-PAY-BE-128 — coach payments per client (flag default off).
+    CoachClientPaymentsController,
   ],
   providers: [
     CheckoutService,
@@ -109,6 +113,7 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     SettlementSweepCron,
     // S-FEE round 5 (OR-111-1) — payout notice delivery + Money read side.
     PayoutNoticeService,
+    CoachClientPaymentsService,
   ],
   exports: [
     CheckoutService,

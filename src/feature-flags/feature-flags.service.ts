@@ -6,6 +6,7 @@ import {
   type FeatureFlagKey,
 } from './feature-flags.dto';
 import { isMessagingCoreV2Enabled } from '../messaging/messaging-core.feature';
+import { isCoachPaymentActionsEnabled } from '../checkout/coach-payment-actions.feature';
 
 /**
  * D5 = B+γ — server-side feature-flag evaluation.
@@ -74,6 +75,8 @@ export class FeatureFlagsService {
       // every coach and coached client, so only its own kill switch applies.
       // Same literal-'true' rule as isMessagingCoreV2Enabled (case-insensitive).
       messaging_core_v2: isMessagingCoreV2Enabled(),
+      // CF-COACH-PAY-BE-128: coach refund/pause/cancel per client; never for clients.
+      coach_payment_actions: isCoachOrOwner && isCoachPaymentActionsEnabled(),
     };
   }
 
