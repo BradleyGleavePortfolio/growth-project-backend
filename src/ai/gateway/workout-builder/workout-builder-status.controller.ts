@@ -5,14 +5,16 @@ import { RolesGuard } from '../../../auth/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../../../auth/auth-request';
 import { WorkoutBuilderAiStatus, WorkoutBuilderStatusService } from './workout-builder-status.service';
+import { WorkoutBuilderNoSubCoachGuard } from './workout-builder-sub-coach.gate';
 
 /**
  * AIB-4 — coach/owner only. The app keeps "Ask AI" visible in every state and
  * shows the paused / out-of-credits copy; only a 404 (an older backend) hides it.
+ * B-AIBSUB-126: a sub-coach gets that same 404 (Ask AI is not offered to sub-coaches at launch).
  */
 @ApiTags('ai-gateway')
 @Controller('ai/gateway/workout-builder')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RolesGuard, WorkoutBuilderNoSubCoachGuard)
 @Roles('coach', 'owner')
 export class WorkoutBuilderStatusController {
   constructor(private readonly status: WorkoutBuilderStatusService) {}
