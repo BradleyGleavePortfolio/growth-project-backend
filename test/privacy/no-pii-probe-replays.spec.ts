@@ -188,7 +188,7 @@ describe('Sol B-700-1 replay: provider and render failures keep codes, never tex
     const svc = new DigestService(
       fake<PrismaService>({}),
       fake<NotificationsService>(notifications),
-      config({ EMAIL_TRANSPORT: 'resend', RESEND_API_KEY: 're_test' }),
+      config({ EMAIL_TRANSPORT: 'resend', RESEND_API_KEY: 're_test', EMAIL_FROM_ADDRESS: 'team@example.test' }),
     );
     const internals = fake<{
       _activeClientsWithEmailDigest: () => Promise<unknown>;

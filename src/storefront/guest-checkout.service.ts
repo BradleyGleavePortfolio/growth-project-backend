@@ -36,6 +36,7 @@ import { CheckoutService } from '../checkout/checkout.service';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { type GuestCheckoutStatus } from './guest-checkout-status';
+import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sender';
 
 // S-FEE — guest storefront charges are separate charges and transfers, like
 // every other checkout path. The PaymentIntent / Subscription carries NO
@@ -1985,9 +1986,10 @@ export class GuestCheckoutService {
   //
   // Audit #3 P1-9 — body never includes a password. Brand-new accounts
   // receive a Supabase invite link; existing-account purchases receive
-  // a sign-in nudge. From-address comes from RESEND_FROM_EMAIL which is
-  // production-required so welcome mail can never default to an
-  // unverified domain (env-validation prodHardenedFeatureVars).
+  // a sign-in nudge. B-EMAILFROM-126: the From address is the shared
+  // EMAIL_FROM_ADDRESS sender (src/email/email-sender.ts), the same one
+  // every other email uses; with no valid sender nothing is sent and the
+  // log line names the variable.
   private async sendWelcomeEmail(
     checkout: CheckoutWithRelations,
     inviteLink: string | null,
@@ -1999,17 +2001,19 @@ export class GuestCheckoutService {
       );
       return;
     }
-    // Dev-only fallback. Production refuses to boot without
-    // RESEND_FROM_EMAIL via env-validation.
-    //
     // Audit #5 P2-3 — customer-facing copy uses the brand name
-    // "Growth Project", never the internal abbreviation "TGP". This
-    // affects three places in the welcome-email path: the from-header
-    // fallback, the body line "added X to your existing ... account",
-    // and the subject line.
-    const fromAddress =
-      this.config.get<string>('RESEND_FROM_EMAIL') ??
-      'Growth Project <welcome@trygrowthproject.com>';
+    // "Growth Project", never the internal abbreviation "TGP" (the body
+    // line "added X to your existing ... account" and the subject line).
+    let fromAddress: string;
+    try {
+      fromAddress = resolveEmailSender(this.config, 'resend');
+    } catch (err) {
+      if (!(err instanceof EmailSenderConfigError)) throw err;
+      this.logger.error(
+        `Welcome email not sent for ${checkout.id}: EMAIL_FROM_ADDRESS is not set to a valid sender address`,
+      );
+      return;
+    }
 
     const coachName = checkout.package.coach.name?.trim() || 'Your coach';
     const packageName = checkout.package.name;

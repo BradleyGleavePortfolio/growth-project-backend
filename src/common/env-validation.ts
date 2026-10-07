@@ -796,7 +796,7 @@ export const ENV_RULES: EnvRule[] = [
     name: 'RESEND_FROM_EMAIL',
     tier: 'feature',
     reason:
-      'R43 — From-address Resend uses for the guest-checkout welcome email (e.g. "Growth Project <welcome@trygrowthproject.com>"). Falls back to a brand-aligned default in dev/test; production must set explicitly (enforced in prodHardenedFeatureVars) so welcome mail is sent from a verified domain. Audit #5 P2-3 — customer-facing copy uses the brand name "Growth Project", never the internal abbreviation "TGP". Never hard-code the address — Resend rejects sends from unverified domains and dropping welcome mail silently in production is a launch-blocker.',
+      'RETIRED (B-EMAILFROM-126): no code reads it any more. The guest-checkout welcome email now uses EMAIL_FROM_ADDRESS like every other email, so a second sender can no longer drift onto an unverified domain. Registered only so an old value on Fly is recognised; safe to remove from Fly.',
     validate: (v) => {
       if (v.trim().length === 0) return 'RESEND_FROM_EMAIL must not be empty.';
       // Accept either a bare address or RFC 5322 "Display <addr>" — both
@@ -1107,9 +1107,9 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'EMAIL_FROM_ADDRESS',
     tier: 'feature',
-    default: "'noreply@thegrowthproject.app'",
+    default: "unset → 'log' transport only (dev sender); any live transport refuses to send",
     reason:
-      'From-address for transactional and digest email. Must be a Resend-verified domain when EMAIL_TRANSPORT=resend (EmailService throws otherwise).',
+      'B-EMAILFROM-126 — the ONE From address for every email the backend sends (EmailService templates, digests, guest-checkout welcome; src/email/email-sender.ts). Must be on the domain verified with Resend (production: The Growth Project <noreply@growthprojectapp.com>). Production boot requires it (prodHardenedFeatureVars); with a live transport and no valid value nothing is sent and the log names this variable.',
   },
   {
     name: 'SENDGRID_API_KEY',
@@ -2835,9 +2835,9 @@ export function assertEnv(
           'R43 storefront — without it the share-link service falls back to the dev-only canonical origin and the storefront origin is missing from CORS, breaking the public package endpoint from any browser.',
       },
       {
-        name: 'RESEND_FROM_EMAIL',
+        name: 'EMAIL_FROM_ADDRESS',
         reason:
-          'R43 storefront — Resend rejects sends from unverified domains. Without an explicit from-address tied to a verified domain, welcome mail drops silently and guests never receive credentials/invite links.',
+          'B-EMAILFROM-126 — the one sender for every email. Resend rejects sends from unverified domains; without an address on the verified domain no receipt, invite, dunning notice, digest or guest welcome (invite link) reaches anyone.',
       },
       {
         name: 'APPLE_TEAM_ID',
