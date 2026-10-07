@@ -5,7 +5,8 @@
 // in-memory persona DB. Exact assertions; no network, no real DB.
 //
 // Layer 1 context builder · 2 prompt assembly · 3 safety router · 4 post-check
-// · 5 consent and tenancy · 6 model config. Layers 5 and 6 are covered in
+// · 5 consent and tenancy · 6 model config · 7 v1.1 tools, memory and coach
+// method (R11-T3, G38–G47). Layers 5 and 6 are covered in
 // depth by roman-consent.spec.ts and roman-model-config.spec.ts; here they
 // run through the golden personas so the bar is asserted in one place.
 
@@ -13,13 +14,19 @@ import 'reflect-metadata';
 import { NotFoundException } from '@nestjs/common';
 import {
   GOLDEN_SET,
+  GOLDEN_SET_R11,
   SAFETY_ITEMS,
   GROUNDING_ITEMS,
   checkGoldenReply,
   type GoldenItem,
 } from './golden-set';
-import { makeWorld, runTurn, withRomanEnabled, student, clientSession } from './harness';
+import { makeWorld, runTurn, withRomanEnabled, student, clientSession, type TurnResult } from './harness';
 import { CANARIES, INTAKE_CANARIES, NOW, P1, P2, P3, COACH_A } from '../fixtures/roman-personas';
+import { LOCAL_TODAY_PT, matches } from '../fixtures/roman-personas';
+import { fakeOf } from '../../ai-egress/ai-egress.fakes';
+import { ROMAN_ANSWER_CONTRACT, ROMAN_TOOLS_SECTION } from '../../../src/roman/roman.prompts';
+import { toolFactsOf } from '../../../src/roman/tools/roman-tool-facts';
+import type { RomanToolbox } from '../../../src/roman/tools/roman-tool.types';
 
 // Every turn and getBundle() call builds grounding with the real clock; pin
 // Date to the fixtures' NOW (2026-09-30 17:30 PT) so "today" is deterministic.
@@ -58,6 +65,8 @@ describe('R8 golden set — shape', () => {
     expect(new Set(GOLDEN_SET.map((g) => g.id)).size).toBe(37);
     for (const id of [...SAFETY_ITEMS, ...GROUNDING_ITEMS]) expect(byId(id)).toBeDefined();
     for (const g of GOLDEN_SET) expect(classifySafety(g.question).class).toBe(g.router);
+    expect(GOLDEN_SET_R11.map((g) => g.id)).toEqual(['G38', 'G39', 'G40', 'G41', 'G42', 'G43', 'G44', 'G45', 'G46', 'G47']);
+    for (const g of GOLDEN_SET_R11) expect(classifySafety(g.question).class).toBe(g.router);
   });
 });
 
@@ -426,5 +435,207 @@ describe('R8 — contract invariants the live rubric assumes', () => {
     expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/1,200/);
     expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/1,500/);
     expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/physician/);
+  });
+});
+
+// ─── Layer 7: v1.1 tools, memory and coach method (R11-T3, G38–G47) ──────────
+
+describe('R8 layer 7 — tools, memory and coach method (G38–G47)', () => {
+  const r11 = (id: string): GoldenItem => GOLDEN_SET_R11.find((g) => g.id === id)!;
+  const FLAGS = ['FEATURE_ROMAN_TOOLS', 'FEATURE_ROMAN_MEMORY', 'FEATURE_ROMAN_PLAYBOOK'];
+  const saved = FLAGS.map((f) => process.env[f]);
+  beforeEach(() => FLAGS.forEach((f) => (process.env[f] = 'true')));
+  afterEach(() =>
+    FLAGS.forEach((f, i) => {
+      if (saved[i] === undefined) delete process.env[f];
+      else process.env[f] = saved[i];
+    }),
+  );
+  const D = (d: string) => new Date(`${d}T00:00:00.000Z`);
+  const bench = (user_id: string, date: string, w: number) => ({ exercise_name: 'Dumbbell Bench Press',
+    sets_completed: 3, reps_per_set: [8, 8, 8], weight_per_set: [w, w, w], rpe: 8, workout: { user_id, date: D(date) } });
+  const oats = { client_id: P1, kind: 'diet_dislike', text: 'Dislikes oats', source_at: D('2026-09-20'), superseded_at: null, expires_at: null };
+  const squats = { coach_id: COACH_A.id, version: 1, status: 'active', red_lines: [],
+    sections: { exercises: { substitutions: [{ for: 'Back squat', use: 'Goblet squat', when: 'knees ache', basis: 'observed', evidence_count: 4 }] } } };
+  const toolWorld = (wrapTools?: (t: RomanToolbox) => RomanToolbox) => {
+    const w = makeWorld(undefined, { tools: true, augmenters: true, wrapTools });
+    w.r11.exerciseSets.push(bench(P1, '2026-08-20', 40), bench(P1, '2026-09-24', 50), bench(P2, '2026-09-24', 333));
+    w.db.raw.loggedFood.push({ user_id: P2, date: D('2026-09-22'), logged_at: new Date('2026-09-22T23:00:00Z'),
+      quantity_multiplier: 1, meal_type: 'LUNCH', food_item: { calories: 2222, protein_g: 1, carbs_g: 1, fat_g: 1, name: 'DAN-CANARY' } });
+    return w;
+  };
+  type Block = { type?: string; content?: unknown; is_error?: boolean };
+  const toolBlocks = (t: TurnResult): Block[] =>
+    ((t.calls[t.calls.length - 1]?.body.messages ?? []) as Array<{ content: unknown }>)
+      .flatMap((m) => (Array.isArray(m.content) ? (m.content as Block[]) : []))
+      .filter((b) => b.type === 'tool_result');
+  const toolText = (t: TurnResult) => toolBlocks(t).map((b) => String(b.content)).join('\n');
+  const use = (name: string, input: unknown) => ({ tool_use: [{ name, input }] });
+  const pass = (id: string, t: TurnResult) => expect(checkGoldenReply(r11(id), t.reply, t.modelCalls)).toEqual([]);
+
+  it('G38: bench progression via exercise_history, caller rows only; the reply is not rewritten', async () => {
+    const w = toolWorld();
+    const reply = 'Your dumbbell bench press top set went from 40 lb for 8 reps on 20 August to 50 lb for 8 reps on 24 September. Next session, aim for 50 lb for 9 reps on the first set.';
+    const t = await runTurn(w, r11('G38'), { script: [use('exercise_history', { exercise: 'bench press' }), reply] });
+    expect(t.modelCalls).toBe(2);
+    expect(toolText(t)).toContain('"top_set":{"weight_lbs":50,"reps":8}');
+    expect(toolText(t)).not.toContain('333');
+    expect(t.reply).toBe(reply);
+    pass('G38', t);
+  });
+
+  it('G39: last Tuesday via food_day; past-day kcal and protein from the tool pass the reply check', async () => {
+    const w = toolWorld();
+    const reply = 'On Tuesday 22 September you logged 999 kcal and 99 g protein, in one entry. Logging each meal on its own would show what made up that day.';
+    const t = await runTurn(w, r11('G39'), { script: [use('food_day', { date: '2026-09-22' }), reply] });
+    expect(t.staticSystem).toContain(ROMAN_TOOLS_SECTION);
+    expect(t.staticSystem).toContain(ROMAN_ANSWER_CONTRACT);
+    expect(toolText(t)).toContain('"totals":{"kcal":999,"protein_g":99');
+    expect(t.reply).toBe(reply);
+    pass('G39', t);
+  });
+
+  it('G40: three weeks of sleep via read_history for exactly those days', async () => {
+    const w = toolWorld();
+    for (let d = 10; d <= 28; d++) {
+      const end = new Date(`2026-09-${d}T13:00:00Z`);
+      w.db.raw.wearableSamples.push({ user_id: P1, metric: 'SLEEP_TOTAL_MIN', provider: 'OURA', value: 420,
+        start_at: new Date(+end - 450 * 60_000), end_at: end, recorded_at: end, source_tz: 'America/Los_Angeles' });
+    }
+    const reply = 'Over the last three weeks you slept about 7 hours on most nights; the last two nights were 6.7 and 6.3 hours. Keep the same bedtime tonight and see whether that holds.';
+    const input = { kinds: ['wearable_day'], from: '2026-09-10', to: LOCAL_TODAY_PT };
+    const t = await runTurn(w, r11('G40'), { script: [use('read_history', input), reply] });
+    expect(toolText(t)).toContain('"date":"2026-09-10"');
+    expect(toolText(t)).not.toContain('"date":"2026-09-09"');
+    expect(toolText(t)).toContain('"sleep_hours":7');
+    expect(t.reply).toBe(reply);
+    pass('G40', t);
+  });
+
+  it('G41: tool tenancy mirror — P2 rows never reach P1; a user_id in the input is refused', async () => {
+    const w = toolWorld();
+    const t = await runTurn(w, r11('G41'), { script: [{ tool_use: [
+      { name: 'food_day', input: { date: '2026-09-22' } },
+      { name: 'food_day', input: { date: '2026-09-22', user_id: P2 } },
+      { name: 'exercise_history', input: { exercise: 'bench' } },
+    ] }, 'Only your own logs are visible here, so there is nothing to share about anyone else.'] });
+    const blocks = toolBlocks(t);
+    expect(blocks).toHaveLength(3);
+    expect(blocks[1]).toMatchObject({ is_error: true });
+    expect(String(blocks[1].content)).toContain('bad_input');
+    for (const c of ['DAN-CANARY', '2222', '333', P2]) expect(toolText(t)).not.toContain(c);
+    for (const q of w.db.wheres.filter((x) => x.table === 'loggedFoodEntry')) expect(q.where?.user_id).toBe(P1);
+    pass('G41', t);
+  });
+
+  it('G42: a tool error is a plain "cannot see that"; an invented number is rewritten', async () => {
+    const w = toolWorld();
+    const p = fakeOf<{ loggedFoodEntry: { findMany: (a: { where: { date?: unknown } }) => Promise<unknown> } }>(w.db.prisma);
+    const read = p.loggedFoodEntry.findMany;
+    p.loggedFoodEntry.findMany = async (a) => {
+      if (a.where.date instanceof Date) throw new Error('db down');
+      return read(a);
+    };
+    const plain = 'I cannot see your food log for 15 September right now. Ask again in a minute.';
+    const ok = await runTurn(w, r11('G42'), { script: [use('food_day', { date: '2026-09-15' }), plain] });
+    expect(toolBlocks(ok)[0]).toMatchObject({ is_error: true });
+    expect(ok.reply).toBe(plain);
+    pass('G42', ok);
+    const bad = await runTurn(w, r11('G42'), {
+      script: [use('food_day', { date: '2026-09-15' }), 'On 15 September you logged 2,100 kcal and 140 g protein.'],
+    });
+    expect(bad.reply).not.toContain('2,100');
+    expect(bad.reply).not.toContain('140 g');
+  });
+
+  it('G43 / G44: a v5 note shapes the reply; a v4 holder gets no memory block; no tools sections without a toolbox', async () => {
+    const w = makeWorld(undefined, { augmenters: true });
+    w.r11.notes.push(oats);
+    const reply = 'Eggs with spinach and rye toast would suit you. Log it when you eat it.';
+    const v5 = await runTurn(w, r11('G43'), { reply });
+    expect(v5.staticSystem).toContain('# CLIENT MEMORY');
+    expect(v5.staticSystem).toContain('Food they dislike · Dislikes oats');
+    expect(v5.staticSystem).not.toContain('# LOOKING THINGS UP');
+    pass('G43', v5);
+    w.consent.v4.add(P1);
+    const v4 = await runTurn(w, r11('G44'), { reply });
+    expect(v4.staticSystem).not.toContain('# CLIENT MEMORY');
+    expect(v4.staticSystem).not.toContain('Dislikes oats');
+    pass('G44', v4);
+  });
+
+  it('G45: the coach surface gets neither block and no tools', async () => {
+    const w = toolWorld();
+    w.r11.notes.push(oats);
+    w.r11.playbooks.push(squats);
+    const session = { ...clientSession(COACH_A.id), surface: 'coach' as const };
+    for await (const _c of w.roman.streamAssistantTurn({ id: COACH_A.id, role: 'coach' }, session, {
+      userMessage: r11('G45').question,
+    })) void _c;
+    expect(w.model.calls).toHaveLength(1);
+    const sys = w.model.calls[0].staticSystem;
+    for (const c of ['# CLIENT MEMORY', '# COACH METHOD', '# LOOKING THINGS UP', '# ANSWER CONTRACT', 'Dislikes oats', 'Goblet'])
+      expect(sys).not.toContain(c);
+    expect(w.model.calls[0].body).not.toHaveProperty('tools');
+  });
+
+  it('G46: the coach method shapes the advice; the reply never says playbook', async () => {
+    const w = toolWorld();
+    w.r11.playbooks.push(squats);
+    const reply = 'Alex swaps back squats for goblet squats, so use goblet squats on Thursday with the same sets and reps.';
+    const t = await runTurn(w, r11('G46'), { script: [reply] });
+    expect(t.staticSystem).toContain('Goblet squat instead of Back squat (knees ache)');
+    expect(t.staticSystem).toContain('Never mention a playbook');
+    expect(t.staticSystem).toContain("When the coach's guidelines or coach method are present, tie the advice to them");
+    expect(t.reply).toBe(reply);
+    pass('G46', t);
+  });
+
+  it('G47: a deleted chat leaves no transcript in storage or the next prompt; its note is still used', async () => {
+    const w = makeWorld(undefined, { augmenters: true });
+    w.r11.notes.push(oats);
+    const msgs = w.db.raw.romanMessages;
+    msgs.push({ id: 'm_old', session_id: 'sess_old', user_id: P1, role: 'user', content: 'TRANSCRIPT-CANARY no oats', created_at: NOW });
+    const p = fakeOf<Record<string, Record<string, unknown>>>(w.db.prisma);
+    const hit = (a: { where?: Record<string, unknown> }) => msgs.filter((m) => matches(m, a.where));
+    p.romanSession.findFirst = async () => ({ id: 'sess_old', day_key: LOCAL_TODAY_PT, deleted_at: null });
+    p.romanMessage.count = async (a: { where?: Record<string, unknown> }) => hit(a).length;
+    p.romanMessage.deleteMany = async (a: { where?: Record<string, unknown> }) => {
+      const gone = hit(a);
+      for (const m of gone) msgs.splice(msgs.indexOf(m), 1);
+      return { count: gone.length };
+    };
+    await w.roman.deleteSession(student(P1), 'sess_old');
+    expect(msgs.filter((m) => m.session_id === 'sess_old')).toEqual([]);
+    p.romanSession.findFirst = async () => null;
+    const t = await runTurn(w, r11('G47'), { reply: 'Eggs with spinach and rye toast would suit you.' });
+    expect(JSON.stringify(t.calls[0].body.messages)).not.toContain('TRANSCRIPT-CANARY');
+    expect(t.staticSystem).toContain('Dislikes oats');
+    pass('G47', t);
+  });
+
+  it('W1 by field name: personal_baselines protein and active-kcal figures pass the reply check', async () => {
+    const stat = (median: number) => ({ from: '2026-08-26', to: '2026-09-22', days: 28, median, mean: median + 1, min: median - 10, max: median + 10 });
+    const row = (metric: string, unit: string, normal: number, last: number) => ({ metric, unit, status: 'ok', data_days: 28,
+      needed_days: 14, normal: stat(normal), last_7: stat(last), change: last - normal, change_pct: 0, flag: null, marked: false });
+    const metrics = [row('sleep_min', 'min', 412, 398), row('hrv_ms', 'ms', 48, 44), row('resting_hr_bpm', 'bpm', 58, 59),
+      row('steps', 'steps', 7400, 6900), row('active_kcal', 'kcal', 420, 380), row('weight_lbs', 'lb', 166.2, 165.8),
+      row('protein_g', 'g', 128, 104), row('sessions_per_week', 'workouts', 3, 2)];
+    const content = JSON.stringify({ tool: 'personal_baselines', today: LOCAL_TODAY_PT, timezone: 'America/Los_Angeles', metrics, truncated: false });
+    const result = { ok: true as const, content, rows: 8, truncated: false };
+    const grams = [128, 129, 118, 138, 104, 105, 94, 114, 24];
+    expect(toolFactsOf('personal_baselines', result)).toEqual([{}, {
+      burned_past_kcal: [420, 421, 410, 430, 380, 381, 370, 390, 40],
+      intake_past_g: { protein_g: grams },
+      average_past_g: { protein_g: grams },
+    }]);
+    const w = toolWorld((real) => ({
+      definitions: () => [...real.definitions().filter((d) => d.name !== 'personal_baselines'),
+        { name: 'personal_baselines', description: 'The client normal.', input_schema: { type: 'object', properties: {} } }],
+      run: (c, name, input, o) => (name === 'personal_baselines' ? Promise.resolve(result) : real.run(c, name, input, o)),
+    }));
+    const reply = 'Over the four weeks before this one your protein averaged 128 g a day, and the last 7 days averaged 104 g. Your normal active energy is 420 kcal and the last 7 days are 380 kcal. Your normal sleep is 412 minutes, HRV 48 ms, resting heart rate 58 bpm, 7,400 steps, 166.2 lb and 3 workouts a week.';
+    const t = await runTurn(w, { ...r11('G40'), question: 'What is my normal?' }, { script: [use('personal_baselines', {}), reply] });
+    expect(t.reply).toBe(reply);
   });
 });

@@ -106,6 +106,9 @@ describe('R11-00 prompt seam', () => {
         name,
         c.hash,
       ]);
+      // R11-T3: tools false (or any coach prompt) is byte-identical to main.
+      expect([name, sha(buildRomanSystemPrompt({ ...c.input, tools: false }))]).toEqual([name, c.hash]);
+      if (c.input.surface === 'coach') expect(sha(buildRomanSystemPrompt({ ...c.input, tools: true }))).toBe(c.hash);
     }
   });
 

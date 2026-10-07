@@ -111,8 +111,9 @@ describe('R11-T1 read tools: caller only', () => {
     // 300.2 + 333.3 * 1.5 = 800.15 -> 800 (sum first, round once); entries 300 and 500.
     expect(body.totals).toEqual({ kcal: 800, protein_g: 26, carbs_g: 50, fat_g: 13, entries: 2, meals: 1 });
     expect(body.entries.map((e: { kcal: number; time: string }) => [e.time, e.kcal])).toEqual([['08:00', 300], ['12:00', 500]]);
-    expect(r.facts).toEqual({ intake_past_kcal: [800, 300, 500] });
-    expect((await t.run('food_day', { date: '2026-10-06' })).facts).toEqual({ intake_past_kcal: [] });
+    const intake_past_g = { protein_g: [26, 10, 16], carbs_g: [50, 20, 30], fat_g: [13, 5, 8] }; // R11-T3
+    expect(r.facts).toEqual({ intake_past_kcal: [800, 300, 500], intake_past_g });
+    expect((await t.run('food_day', { date: '2026-10-06' })).facts).toEqual({ intake_past_kcal: [], intake_past_g: {} });
     expect(await t.run('food_day', { date: '2026-10-07' })).toMatchObject({ error_code: 'bad_input' });
     expect(await t.run('food_day', { date: '2025-10-05' })).toMatchObject({ error_code: 'range_too_large' });
   });
@@ -145,7 +146,8 @@ describe('R11-T1 read_history', () => {
     expect(opts.to.getTime() - opts.from.getTime()).toBe(31 * 86_400_000);
     expect(r).toMatchObject({ ok: true, rows: 4, truncated: false });
     expect(JSON.parse(r.content).events[1]).toEqual({ date: '2026-10-03', kind: 'wearable_day', steps: 9000, active_kcal: 420 });
-    expect(r.facts).toEqual({ intake_past_kcal: [650], burned_past_kcal: [420] });
+    const intake_past_g = { protein_g: [40], carbs_g: [], fat_g: [] }; // R11-T3
+    expect(r.facts).toEqual({ intake_past_kcal: [650], intake_past_g, burned_past_kcal: [420] });
   });
 
   it('clamps to max_result_chars and sets truncated (also when the reader has more)', async () => {

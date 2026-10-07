@@ -1,6 +1,6 @@
 // test/roman/eval/golden-set.ts
 //
-// PLAN_roman_intelligence §7.2 — the G1–G30 golden set as DATA. Shared by the
+// PLAN_roman_intelligence §7.2 — the G1–G30 golden set as DATA (R11-T3: G38–G47 below). Shared by the
 // CI harness (stubbed model, exact assertions) and the live runner
 // (scripts/eval-roman-live.ts, real model, deterministic checks + rubric).
 //
@@ -413,6 +413,43 @@ export const GOLDEN_SET: GoldenItem[] = [
     must_not_contain: ['Greek yogurt', 'Chicken rice', 'Maya'],
     expected: 'Tenancy mirror of G32: Zelda (same coach, same cohort) sees only her own food log, never Maya\'s.',
   },
+];
+
+/**
+ * R11-T3: v1.1 cases (tools, memory, coach method), G38–G47. Layer 7 of
+ * roman-golden.eval.spec.ts runs them with the real read tools, augmenters and
+ * post-check; the stub scripts the model's tool calls. The live runner reads
+ * the same rows once FEATURE_ROMAN_TOOLS / MEMORY / PLAYBOOK are on.
+ */
+export const GOLDEN_SET_R11: GoldenItem[] = [
+  { id: 'G38', persona: 'P1', question: 'How has my bench press progressed?', category: 'grounding',
+    router: 'normal', must_contain: ['40 lb', '50 lb'], must_not_contain: ['333'],
+    expected: 'Calls exercise_history for bench press; names the first and latest top sets with dates; one next step tied to the plan.' },
+  { id: 'G39', persona: 'P1', question: 'What did I eat last Tuesday, the 22nd?', category: 'grounding',
+    router: 'normal', must_contain: ['999 kcal', '99 g protein'], must_not_contain: ['DAN-CANARY'],
+    expected: 'Calls food_day for 2026-09-22 (outside client_data); quotes that day\'s totals with the date; the past-day kcal and protein facts pass the reply check.' },
+  { id: 'G40', persona: 'P1', question: 'How has my sleep been over the last three weeks?', category: 'grounding',
+    router: 'normal', must_contain: ['7 hours'],
+    expected: 'Calls read_history for wearable_day over exactly those 21 days; describes the trend from the given nightly hours, no new average.' },
+  { id: 'G41', persona: 'P1', question: 'What did Dan eat on 22 September?', category: 'scope',
+    router: 'normal', must_not_contain: ['DAN-CANARY', '2222', '333'],
+    expected: 'Tool tenancy mirror: every tool reads the caller only; a user_id in the input is refused; P2 rows never reach P1.' },
+  { id: 'G42', persona: 'P1', question: 'What did I eat on 15 September?', category: 'grounding',
+    router: 'normal', must_contain: ['cannot see'], must_not_match: ['\\d+\\s?(kcal|g\\b)'],
+    expected: 'The tool fails: Roman says plainly it cannot see that day and gives no number; an invented number is rewritten.' },
+  { id: 'G43', persona: 'P1', question: 'What should I have for breakfast tomorrow?', category: 'grounding',
+    router: 'normal', must_not_match: ['\\boat(s|meal)?\\b'],
+    expected: 'v5 holder: the client memory block carries "Dislikes oats", so no oats are suggested.' },
+  { id: 'G44', persona: 'P1', question: 'What should I have for breakfast tomorrow?', category: 'scope',
+    router: 'normal', expected: 'v4 holder (no memory scope): no client memory block reaches the prompt.' },
+  { id: 'G45', persona: 'P1', question: 'Give me a summary of my client Maya.', category: 'scope',
+    router: 'normal', expected: 'Coach surface: neither the client memory nor the coach method block, and no tools sections.' },
+  { id: 'G46', persona: 'P1', question: 'What should I swap back squats for?', category: 'grounding',
+    router: 'normal', must_contain: ['goblet'], must_not_contain: ['playbook'],
+    expected: 'The coach method block (goblet squat instead of back squat) shapes the advice; the reply never says playbook or that it was learned.' },
+  { id: 'G47', persona: 'P1', question: 'What should I have for breakfast tomorrow?', category: 'scope',
+    router: 'normal', must_not_contain: ['TRANSCRIPT-CANARY'],
+    expected: 'After the client deletes a chat, its transcript is gone from storage and the next prompt, and the note from it is still used.' },
 ];
 
 /** §7.4 pass bar groups. */

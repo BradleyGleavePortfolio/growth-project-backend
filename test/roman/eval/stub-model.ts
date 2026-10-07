@@ -15,18 +15,24 @@ export interface StubCall {
   clientData: string | null;
 }
 
+/** R11-T3: one scripted `messages.create` answer: final text, or tool_use blocks. */
+export type StubStep = string | { tool_use: Array<{ name: string; input: unknown }> };
+
 export interface StubModel {
   client: Anthropic;
   calls: StubCall[];
   /** Queue the reply for the NEXT model call (FIFO). Falls back to `defaultReply`. */
   enqueue(reply: string | string[]): void;
+  /** R11-T3: queue `messages.create` answers (tools turns), FIFO; then `defaultReply`. */
+  script(...steps: StubStep[]): void;
   reset(): void;
 }
 
 export function makeStubModel(defaultReply = 'You have 670 kcal left today.'): StubModel {
   const calls: StubCall[] = [];
   const queue: Array<string | string[]> = [];
-  const stream = jest.fn((body: Record<string, unknown>) => {
+  const steps: StubStep[] = [];
+  const record = (body: Record<string, unknown>) => {
     const system = body.system;
     let staticSystem = '';
     let clientData: string | null = null;
@@ -43,6 +49,9 @@ export function makeStubModel(defaultReply = 'You have 670 kcal left today.'): S
       clientData = blocks[1]?.text ?? null;
     }
     calls.push({ body, staticSystem, clientData });
+  };
+  const stream = jest.fn((body: Record<string, unknown>) => {
+    record(body);
     const next = queue.shift() ?? defaultReply;
     const deltas = Array.isArray(next) ? next : [next];
     return {
@@ -54,15 +63,29 @@ export function makeStubModel(defaultReply = 'You have 670 kcal left today.'): S
       },
     };
   });
-  const clientDouble = { messages: { stream } };
+  const create = jest.fn(async (body: Record<string, unknown>) => {
+    record(structuredClone(body)); // the tool loop appends to `messages` after the call
+    const step = steps.shift() ?? defaultReply;
+    const n = calls.length;
+    const content =
+      typeof step === 'string'
+        ? [{ type: 'text', text: step }]
+        : step.tool_use.map((u, i) => ({ type: 'tool_use', id: `tu_${n}_${i}`, ...u }));
+    const stop_reason = typeof step === 'string' ? 'end_turn' : 'tool_use';
+    const usage = { input_tokens: 42, output_tokens: 12 };
+    return { id: `msg_${n}`, type: 'message', role: 'assistant', content, stop_reason, usage };
+  });
+  const clientDouble = { messages: { stream, create } };
   return {
-    // @ts-expect-error partial structural mock of the Anthropic SDK client — only messages.stream is stubbed.
+    // @ts-expect-error partial structural mock of the Anthropic SDK client — only messages.stream and messages.create are stubbed.
     client: clientDouble,
     calls,
     enqueue: (r) => void queue.push(r),
+    script: (...s) => void steps.push(...s),
     reset: () => {
       calls.length = 0;
       queue.length = 0;
+      steps.length = 0;
     },
   };
 }
