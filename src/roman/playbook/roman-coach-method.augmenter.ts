@@ -1,37 +1,17 @@
 /**
- * Roman v1.1 slice R11-P4: the coach-method block in a client's turn.
- *
- * Adds "# COACH METHOD" (kind 'coach_method') to a grounded client turn: how
- * the client's coach trains, feeds and recovers clients, from that coach's one
- * active CoachPlaybook, so Roman shapes advice to the coach's method.
- *
- * Rules:
- *  - Null unless FEATURE_ROMAN_PLAYBOOK is on and the caller is a student.
- *  - The coach is the client's CURRENT live coach (User.coach, the same rule
- *    as the turn context, roman-coach-scope.ts), folded into its head coach
- *    (CoachAIBudgetService.resolveHeadCoachId). The user row is read on every
- *    turn, so a former coach's playbook is never used after a reassignment.
- *  - Only the head coach's active playbook (newest active version), re-run
- *    through validateCoachPlaybook; an invalid row gives no block.
- *  - The block never names a playbook and tells Roman never to say the method
- *    was learned or to quote the coach's notes. Red lines are plain rules and
- *    go to post_check.red_lines.
- *  - Whether the block may be sent at all is the R11-T2A seam's rule (the
- *    'memory' scope); this augmenter only reads.
- *
- * In-process cache of the rendered block by (coach_id, version): 10 minutes,
- * at most 200 entries. A new version is a new key, so a rebuild applies on
- * the next turn.
+ * Roman v1.1 slice R11-P4: the coach-method block ("# COACH METHOD", kind 'coach_method') in a grounded client
+ * turn, behind FEATURE_ROMAN_PLAYBOOK. Null unless the flag is on and the caller is a student. The coach is the
+ * client's CURRENT live coach (roman-coach-scope.ts), folded into its head coach (resolveHeadCoachId); the user
+ * row is read on every turn, so a former coach's playbook is never used after a reassignment. Only that head
+ * coach's active playbook, re-validated with validateCoachPlaybook (invalid -> null). Red lines become plain
+ * rules and post_check.red_lines. Whether the block may be sent is the R11-T2A 'memory' scope rule.
+ * Cache: rendered block by (coach_id, version), 10 minutes, at most 200 keys.
  */
 import { createHash } from 'node:crypto';
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
-import type {
-  RomanAugmentCaller,
-  RomanTurnAugment,
-  RomanTurnAugmenter,
-} from '../augment/roman-turn-augmenter';
+import type { RomanAugmentCaller, RomanTurnAugment, RomanTurnAugmenter } from '../augment/roman-turn-augmenter';
 import type { RomanClientContextBundle } from '../context/roman-client-context.types';
 import { resolveRomanCoachScope } from '../context/roman-coach-scope';
 import { estimateTokens } from '../context/roman-client-context.renderer';
@@ -47,61 +27,29 @@ import {
 
 export const COACH_METHOD_CACHE_TTL_MS = 10 * 60_000;
 export const COACH_METHOD_CACHE_MAX = 200;
-/** Most items rendered per section (the strongest evidence first). */
-export const COACH_METHOD_SECTION_ITEMS_MAX = 12;
-
+export const COACH_METHOD_SECTION_ITEMS_MAX = 12; // per section, stated first, then the strongest evidence
 export const COACH_METHOD_HEADING = '# COACH METHOD';
 export const COACH_METHOD_INSTRUCTION =
   'This is how the client’s coach trains, feeds and recovers clients. Shape your advice to it. ' +
   'Never mention a playbook or say that this was learned, and never quote the coach’s notes.';
 
-const SECTION_TITLES: Record<PlaybookSectionName, string> = {
-  exercises: 'Exercises',
-  training: 'Training',
-  diet: 'Nutrition',
-  recovery: 'Recovery',
-};
-
-const LIST_LABELS: Record<string, string> = {
-  go_to: 'Go-to',
-  avoid: 'Avoid',
+// List labels: the key in words, with a few clearer names.
+const LABELS: Record<string, string> = {
   substitutions: 'Swap',
-  cues: 'Cue',
-  warm_up: 'Warm-up',
-  split: 'Split',
-  frequency: 'Frequency',
-  progression: 'Progression',
   volume_intensity: 'Volume and intensity',
   failure: 'Training to failure',
-  deload: 'Deloads',
-  cardio: 'Cardio',
-  missed_sessions: 'Missed sessions',
-  plateaus: 'Plateaus',
-  macro_method: 'Macros',
-  protein: 'Protein',
-  flexibility: 'Flexibility',
-  meal_timing: 'Meal timing',
-  cut_bulk: 'Cutting and bulking',
-  refeeds: 'Refeeds',
   supplements_endorse: 'Supplements used',
   supplements_reject: 'Supplements not used',
   bad_day: 'After an off day',
-  sleep_target: 'Sleep',
-  wind_down: 'Wind-down',
   poor_sleep_low_hrv: 'Poor sleep or low HRV',
-  rest_days: 'Rest days',
+  sleep_target: 'Sleep',
 };
+const labelOf = (k: string) => LABELS[k] ?? `${k.charAt(0).toUpperCase()}${k.slice(1).replace(/_/g, ' ')}`;
 
 /** Item text cannot open or close a tag inside the block. */
 const plain = (s: string): string => s.replace(/[<>]/g, '').trim();
 
-interface Line {
-  readonly order: number;
-  readonly text: string;
-  readonly stated: boolean;
-  readonly evidence: number;
-}
-
+type Line = { order: number; text: string; stated: boolean; evidence: number };
 type AnyItem = PlaybookItem | PlaybookSubstitution;
 
 function itemText(it: AnyItem): string {
@@ -119,12 +67,8 @@ function sectionLines(content: CoachPlaybookContent, section: PlaybookSectionNam
     for (const it of lists[key] ?? []) {
       const body = itemText(it);
       if (!body) continue;
-      lines.push({
-        order: lines.length,
-        text: `- ${LIST_LABELS[key] ?? key}: ${body}`,
-        stated: it.basis === 'stated',
-        evidence: it.evidence_count,
-      });
+      const text = `- ${labelOf(key)}: ${body}`;
+      lines.push({ order: lines.length, text, stated: it.basis === 'stated', evidence: it.evidence_count });
     }
   }
   // Over the cap: keep stated items, then the strongest evidence; render in schema order.
@@ -136,13 +80,11 @@ function sectionLines(content: CoachPlaybookContent, section: PlaybookSectionNam
 }
 
 /** The rendered block and its red-line phrases, or null when nothing is known. */
-export function renderCoachMethod(
-  content: CoachPlaybookContent,
-): { block: string; redLines: string[] } | null {
+export function renderCoachMethod(content: CoachPlaybookContent): { block: string; redLines: string[] } | null {
   const parts: string[] = [];
   for (const section of Object.keys(PLAYBOOK_SECTION_KEYS) as PlaybookSectionName[]) {
     const lines = sectionLines(content, section);
-    if (lines.length > 0) parts.push(`${SECTION_TITLES[section]}:\n${lines.join('\n')}`);
+    if (lines.length > 0) parts.push(`${section === 'diet' ? 'Nutrition' : labelOf(section)}:\n${lines.join('\n')}`);
   }
   const redLines = content.red_lines.map((r) => plain(r.text)).filter((t) => t.length > 0);
   if (redLines.length > 0) {
@@ -166,11 +108,7 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
     private readonly budget: CoachAIBudgetService | null = null,
   ) {}
 
-  async augment(
-    caller: RomanAugmentCaller,
-    _bundle: RomanClientContextBundle,
-    _userMessage: string,
-  ): Promise<RomanTurnAugment | null> {
+  async augment(caller: RomanAugmentCaller, _bundle: RomanClientContextBundle, _message: string): Promise<RomanTurnAugment | null> {
     if (!isRomanPlaybookEnabled() || caller.role !== 'student' || !this.budget) return null;
     const headCoachId = await this.headCoachOf(caller);
     if (!headCoachId) return null;
@@ -194,10 +132,8 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
     });
     if (!row) return null;
     const value = this.build(row.sections, row.red_lines);
-    if (this.cache.size >= COACH_METHOD_CACHE_MAX) {
-      const oldest = this.cache.keys().next().value;
-      if (oldest !== undefined) this.cache.delete(oldest);
-    }
+    const oldest = this.cache.size >= COACH_METHOD_CACHE_MAX ? this.cache.keys().next().value : undefined;
+    if (oldest !== undefined) this.cache.delete(oldest);
     this.cache.set(key, { at: now, value });
     return value;
   }
@@ -209,12 +145,8 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
       select: { role: true, coach: { select: { id: true, role: true, deleted_at: true } } },
     });
     if (!user || !this.budget) return null;
-    const { coachId } = resolveRomanCoachScope({
-      userRole: user.role,
-      callerRole: caller.role,
-      coach: user.coach,
-      overlay: null,
-    });
+    const scope = { userRole: user.role, callerRole: caller.role, coach: user.coach, overlay: null };
+    const { coachId } = resolveRomanCoachScope(scope);
     return coachId ? this.budget.resolveHeadCoachId(coachId) : null;
   }
 
