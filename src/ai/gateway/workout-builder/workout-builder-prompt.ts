@@ -49,11 +49,14 @@ export function buildWorkoutBuilderSystemPrompt(args: {
   return lines.join('\n');
 }
 
-export function buildWorkoutBuilderUserMessage(instruction: string, baseline: PlanSnapshot): string {
+/** `rowCatalog`: AIB-NAMES-127 name and muscle (capped) for rows outside the seed LIBRARY; seed rows are sent as before. */
+export function buildWorkoutBuilderUserMessage(instruction: string, baseline: PlanSnapshot, rowCatalog?: ReadonlyMap<string, LibraryExercise>): string {
   const { name, type, duration_estimate_minutes } = baseline.meta;
-  const rows = baseline.exercises.map(({ client_ref, exercise_external_id, sets, reps_or_duration_seconds, weight_lbs, rest_seconds }) => ({
-    client_ref, exercise_external_id, sets, reps_or_duration_seconds, weight_lbs, rest_seconds,
-  }));
+  const rows = baseline.exercises.map(({ client_ref, exercise_external_id, sets, reps_or_duration_seconds, weight_lbs, rest_seconds }) => {
+    const row = { client_ref, exercise_external_id, sets, reps_or_duration_seconds, weight_lbs, rest_seconds };
+    const ex = rowCatalog?.get(exercise_external_id);
+    return ex ? { ...row, name: ex.name, ...(ex.muscle ? { muscle: ex.muscle } : {}) } : row;
+  });
   return JSON.stringify({ coach_request: instruction, workout: { name, type, duration_estimate_minutes, rows } });
 }
 const ModelOutputSchema = z.object({

@@ -55,7 +55,7 @@ export function setsPerMuscle(snapshot: PlanSnapshot, library: ReadonlyMap<strin
   const per = new Map<string, number>();
   for (const row of snapshot.exercises) {
     const ex = library.get(row.exercise_external_id);
-    if (ex && ex.category !== 'cardio' && ex.category !== 'mobility') per.set(ex.muscle, (per.get(ex.muscle) ?? 0) + row.sets);
+    if (ex && ex.muscle && ex.category !== 'cardio' && ex.category !== 'mobility') per.set(ex.muscle, (per.get(ex.muscle) ?? 0) + row.sets);
   }
   return per;
 }
@@ -124,6 +124,11 @@ function checkChange(op: WorkoutDiffOp, before: PlanExerciseSnapshot | null, ex:
     const named = coachAskedToInclude(input.instruction, ex.name);
     if (areas.length > 0 && !named) return `${ex.name} loads the ${label}. The client reported ${label} issues.`;
     if (areas.length > 0) warnings.push(`Loads the ${label}. The client reported ${label} issues.`);
+    if (input.injuries.includes('other')) warnings.push('The client reported another injury. Check this exercise suits them.');
+  } else if ((swaps || increases) && input.injuries.length > 0) {
+    // AIB-NAMES-127: a row whose catalog details did not load (name unknown) is flagged to the coach, never passed silently.
+    const label = input.injuries.filter((a) => a !== 'other').map((a) => INJURY_AREA_LABEL[a]).join(' and ');
+    if (label) warnings.push(`The exercise details did not load, so it was not checked for the ${label}. Check it suits the client.`);
     if (input.injuries.includes('other')) warnings.push('The client reported another injury. Check this exercise suits them.');
   }
   return null;
