@@ -107,6 +107,7 @@ import {
   RomanSessionVoiceState,
 } from './roman.prompts';
 import {
+  ROMAN_TURN_AUGMENT_ORDER,
   ROMAN_TURN_AUGMENTERS,
   runRomanTurnAugmenters,
   type RomanAugmentRun,
@@ -1028,11 +1029,12 @@ export class RomanService {
     }
     // R11-00: grounded turns with a bundle only; the coach surface never
     // augments. A failing augmenter only drops its own block.
-    const ranAugmenters =
-      grounded && bundle ? await this.runAugmenters(caller, bundle, userMessage) : null;
     // R11-T2A: a memory or coach-method block needs the client's 'memory'
     // scope (client-ai-v5). A v4 holder gets today's prompt and send.
-    const { augmentRun, sendSubject } = await this.memoryScopeOf(caller, subject, ranAugmenters);
+    const { augmentRun, sendSubject } =
+      grounded && bundle
+        ? await this.memoryScopeOf(caller, subject, bundle, userMessage)
+        : { augmentRun: null, sendSubject: subject };
     // R11-T2B: a tools turn (flag on, toolbox provided, grounded with a
     // bundle) reserves every call it may make; any other turn is today's.
     // R11-T3: only a tools turn's prompt carries the tools and answer sections.
@@ -1320,26 +1322,30 @@ export class RomanService {
   }
 
   /**
-   * R11-T2A memory-scope rule. No applied block = no extra read and the base
-   * subject. Otherwise the caller's 'memory' grant is read once: without it
-   * every block is dropped (the prompt is exactly today's); with it the send
-   * carries scope 'memory', so the gate re-checks v5 at send time.
+   * R11-T2A memory-scope rule. No registered augmenter = no extra read and the
+   * base subject. Otherwise the caller's 'memory' grant is read once, BEFORE
+   * any augmenter runs (R11-FIX U2): without it no augmenter reads the
+   * client's notes and every kind is omitted (the prompt is exactly today's);
+   * with it an applied block sends with scope 'memory', so the gate re-checks
+   * v5 at send time.
    */
   private async memoryScopeOf(
     caller: RomanCaller,
     subject: AiDataSubject,
-    run: RomanAugmentRun | null,
+    bundle: RomanClientContextBundle,
+    userMessage: string,
   ): Promise<{ augmentRun: RomanAugmentRun | null; sendSubject: AiDataSubject }> {
-    if (!run || run.applied.length === 0) return { augmentRun: run, sendSubject: subject };
+    const list = this.augmenters ?? [];
+    if (list.length === 0) return { augmentRun: null, sendSubject: subject };
     const granted = await this.egress.consentedClients([caller.id], 'memory');
-    if (granted.has(caller.id)) {
-      return { augmentRun: run, sendSubject: clientDataSubject(caller.id, 'client', 'memory') };
+    if (!granted.has(caller.id)) {
+      this.logger.log('roman.augment_dropped reason=no_memory_scope');
+      const omitted = ROMAN_TURN_AUGMENT_ORDER.filter((k) => list.some((a) => a.kind === k));
+      return { augmentRun: { applied: [], omitted }, sendSubject: subject };
     }
-    this.logger.log('roman.augment_dropped reason=no_memory_scope');
-    return {
-      augmentRun: { applied: [], omitted: [...run.omitted, ...run.applied.map((a) => a.kind)] },
-      sendSubject: subject,
-    };
+    const run = await this.runAugmenters(caller, bundle, userMessage);
+    if (!run || run.applied.length === 0) return { augmentRun: run, sendSubject: subject };
+    return { augmentRun: run, sendSubject: clientDataSubject(caller.id, 'client', 'memory') };
   }
 
   /** Newest user turn of the caller's session (the controller stores it first). */
