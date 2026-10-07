@@ -22,6 +22,8 @@ import { romanAnthropicClientProvider } from './anthropic-client.provider';
 import { RomanErasureSweep } from './roman-erasure.sweep';
 import { RomanClientContextService } from './context/roman-client-context.service';
 import { RomanConsultationIntakeSource } from './context/roman-consultation.source';
+import { PlaybookSignalsService } from './playbook/playbook-signals.service';
+import { PlaybookSourceCollector } from './playbook/playbook-sources';
 import { RomanContextController } from './context/roman-context.controller';
 import { RomanCoachMethodAugmenter } from './playbook/roman-coach-method.augmenter';
 import { ROMAN_COACH_METHOD_AUGMENTER } from './augment/roman-turn-augmenter';
@@ -49,6 +51,9 @@ import { RomanNotesScheduler } from './memory/roman-notes.scheduler';
     { provide: ROMAN_COACH_METHOD_AUGMENTER, useClass: RomanCoachMethodAugmenter },
     RomanErasureSweep,
     RomanClientContextService,
+    // R11-P3b: playbook signals and the source collector (inert until the builder).
+    PlaybookSignalsService,
+    PlaybookSourceCollector,
     RomanConsultationIntakeSource,
     { provide: ROMAN_SAFETY_INTAKE_SOURCE, useExisting: RomanConsultationIntakeSource },
     // R11-00 seams: the turn-augmenter list (empty until a v1.1 slice
