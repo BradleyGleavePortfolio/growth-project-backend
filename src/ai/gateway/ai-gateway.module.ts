@@ -2,6 +2,8 @@ import { Global, Module } from '@nestjs/common';
 import { AuthModule } from '../../auth/auth.module';
 import { MessagingModule } from '../../messaging/messaging.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
+// AIB-NAMES-127 — the workout builder reads catalog names for rows outside the seed library (cached ExerciseDB read).
+import { ExerciseLibraryModule } from '../../exercise-library/exercise-library.module';
 import { AiGatewayController } from './ai-gateway.controller';
 // AIB-4 — server-driven "Ask AI" visibility for the workout builder.
 import { WorkoutBuilderStatusController } from './workout-builder/workout-builder-status.controller';
@@ -60,7 +62,7 @@ import { WorkoutBuilderAiService } from './workout-builder/workout-builder-ai.se
   // new materialisers (assign_workout, assign_meal_plan dispatch pushes
   // through it). send_notification writes Notification rows directly via
   // Prisma so it does NOT need the service, but the others do.
-  imports: [AuthModule, MessagingModule, NotificationsModule],
+  imports: [AuthModule, MessagingModule, NotificationsModule, ExerciseLibraryModule],
   controllers: [AiGatewayController, WorkoutBuilderStatusController, WorkoutBuilderAiController],
   providers: [
     AiGatewayConfig,

@@ -84,7 +84,7 @@ describe('AI workout builder on rows from exercise search (AIB-NAMES-127)', () =
     await svc.propose(coach, edit({ instruction: 'Swap squats for something knee-friendly' }));
     const [seedRow, searchRow] = sentRows(sent);
     expect(seedRow).toEqual({ client_ref: 'r1', exercise_external_id: 'seed:push-001', sets: 3, reps_or_duration_seconds: 8, weight_lbs: null, rest_seconds: 90 });
-    expect(searchRow).toMatchObject({ client_ref: 'r2', exercise_external_id: '0043', name: 'barbell full squat', muscle: 'glutes' });
+    expect(searchRow).toMatchObject({ client_ref: 'r2', exercise_external_id: '0043', name: 'Barbell full squat', muscle: 'glutes' });
   });
 
   it('caps the catalog name per row so the prompt cannot grow with long names', async () => {
@@ -103,14 +103,14 @@ describe('AI workout builder on rows from exercise search (AIB-NAMES-127)', () =
       changes: [update('r2', { sets: 4 }), update('r1', { reps_or_duration_seconds: 9 })],
     });
     const res = await svc.propose(coach, edit({ injury_area: 'knee', quick_action: 'progress' }));
-    expect(res.dropped).toEqual([{ reason: 'barbell full squat loads the knee. The client reported knee issues.' }]);
+    expect(res.dropped).toEqual([{ reason: 'Barbell full squat loads the knee. The client reported knee issues.' }]);
     expect(res.changes.map((c) => c.op)).toEqual([expect.objectContaining({ client_ref: 'r1' })]);
   });
 
   it('the change card names the search-result exercise', async () => {
     const { svc } = await build({ rows: [row('r2', '0043', 0, 3)], changes: [update('r2', { rest_seconds: 120 })] });
     const res = await svc.propose(coach, edit());
-    expect(res.changes[0].exercise).toMatchObject({ id: '0043', name: 'barbell full squat' });
+    expect(res.changes[0].exercise).toMatchObject({ id: '0043', name: 'Barbell full squat' });
   });
 
   it('a row whose details do not load is flagged to the coach, not silently passed', async () => {

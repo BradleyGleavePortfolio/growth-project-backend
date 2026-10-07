@@ -9,6 +9,7 @@ import { PrismaService } from '../../../prisma.service';
 import { SubCoachScopeService } from '../../../sub-coach/sub-coach-scope.service';
 import { computeLockToken } from '../../../workout-builder/lock-token.helper';
 import { SEED_EXERCISES } from '../../../exercise-library/seed-catalog';
+import { ExerciseLibraryService } from '../../../exercise-library/exercise-library.service';
 import { AiGatewayService } from '../ai-gateway.service';
 import { AiGatewayConfig } from '../ai-gateway.config';
 import { isMwbAiLiveCreateEnabled } from '../mwb-live-create.feature';
@@ -17,7 +18,8 @@ import { EDIT_WORKOUT_PLAN_CAPABILITY } from '../materialisers/edit-workout-plan
 import { PlanSnapshot, emptyPlanSnapshot, snapshotFromRevisionJson } from '../materialisers/__shared/workout-diff.types';
 import { InjuryArea, TRAINING_BOUNDS, contraindicatedAreas, isInjuryArea, stripMedicalClaims } from './training-safety.constants';
 import { LibraryExercise, ValidatedChange, validateProposedChanges } from './workout-diff.validator';
-import { loadWeekOtherSetsByMuscle, weeklySetsCap } from './week-limits';
+import { WeekRow, loadWeekOtherRows, sumSetsByMuscle, weeklySetsCap } from './week-limits';
+import { resolveRowCatalog } from './row-catalog';
 import {
   WorkoutClientContext, buildWorkoutBuilderSystemPrompt, buildWorkoutBuilderUserMessage, parseModelOutput, stubProposal,
 } from './workout-builder-prompt';
@@ -48,6 +50,7 @@ export class WorkoutBuilderAiService {
   constructor(
     private readonly prisma: PrismaService, private readonly gateway: AiGatewayService, private readonly config: AiGatewayConfig,
     private readonly subCoachScope: SubCoachScopeService, private readonly status: WorkoutBuilderStatusService,
+    private readonly exercises: ExerciseLibraryService,
   ) {}
 
   async propose(requester: { id: string; role: string }, input: ProposeInput, meta: { ip?: string | null; userAgent?: string | null } = {}): Promise<ProposeResult> {
@@ -60,7 +63,7 @@ export class WorkoutBuilderAiService {
       throw new NotFoundException({ code: 'client_not_found', message: 'Client not found.' });
     }
     let [baseline, baseRevisionIndex, planCoachId]: [PlanSnapshot, number, string | null] = [emptyPlanSnapshot(), 0, null];
-    let weekOther: Map<string, number> | null = null;
+    let weekRows: WeekRow[] | null = null;
     if (input.plan_id) {
       const select = { id: true, coach_id: true, version: true, head_revision_id: true, archived_at: true, program_id: true, week_index: true };
       const plan = await this.prisma.workoutPlan.findUnique({ where: { id: input.plan_id }, select });
@@ -79,7 +82,7 @@ export class WorkoutBuilderAiService {
       baseline = snapshotFromRevisionJson(head.exercises_json, head.plan_meta_json);
       baseRevisionIndex = head.revision_index;
       if (plan.program_id && plan.week_index != null) {
-        weekOther = await loadWeekOtherSetsByMuscle(this.prisma, { planId: plan.id, coachId: plan.coach_id, programId: plan.program_id, weekIndex: plan.week_index });
+        weekRows = await loadWeekOtherRows(this.prisma, { planId: plan.id, coachId: plan.coach_id, programId: plan.program_id, weekIndex: plan.week_index });
       }
     } else if (input.mode === 'edit' || !input.client_id) {
       throw new BadRequestException({ code: 'PLAN_REQUIRED', message: 'Open a workout first, or choose a client to build a new one for.' });
@@ -88,7 +91,15 @@ export class WorkoutBuilderAiService {
     if (!this.config.resolve(capability).capabilityAllowed) {
       throw new ServiceUnavailableException({ code: 'AI_NOT_CONFIGURED', message: 'Ask AI is not available yet. Your workouts are unchanged.' });
     }
-    const client = input.client_id ? await this.loadClientContext(input.client_id) : null;
+    // AIB-NAMES-127: rows outside the seed LIBRARY (ExerciseDB ids from search) get their catalog name and muscle, so the
+    // model, the injury screen and the set caps know them. Seed-only workouts make no read and behave exactly as before.
+    const [client, rowCatalog] = await Promise.all([
+      input.client_id ? this.loadClientContext(input.client_id) : null,
+      resolveRowCatalog((id) => this.exercises.getExerciseById(id), [...baseline.exercises, ...(weekRows ?? [])].map((r) => r.exercise_external_id), LIBRARY),
+    ]);
+    const baselineIds = new Set(baseline.exercises.map((r) => r.exercise_external_id));
+    const library = rowCatalog.size === 0 ? LIBRARY : new Map([...LIBRARY, ...[...rowCatalog].filter(([id]) => baselineIds.has(id))]);
+    const weekOther = weekRows ? sumSetsByMuscle(weekRows, rowCatalog) : null;
     const injuries: InjuryArea[] = [...new Set([...(client?.injuries ?? []), ...(input.injury_area ? [input.injury_area] : [])])];
     const screeningFlag = client?.screening_flag ?? false;
     const promptLibrary = [...LIBRARY.values()].filter((e) => contraindicatedAreas(e, injuries).length === 0);
@@ -97,7 +108,7 @@ export class WorkoutBuilderAiService {
     const systemPrompt = buildWorkoutBuilderSystemPrompt({ mode: input.mode, quickAction: input.quick_action, library: promptLibrary, client: promptClient });
     let [lastDropped, outcome, draftId]: [Dropped, Outcome | null, string | null] = [[], null, null];
     for (let attempt = 0; attempt < 2 && !outcome; attempt++) {
-      const first = buildWorkoutBuilderUserMessage(input.instruction, baseline);
+      const first = buildWorkoutBuilderUserMessage(input.instruction, baseline, rowCatalog);
       const userMessage = attempt === 0
         ? first : JSON.stringify({ previous_attempt_rejected: lastDropped.map((d) => d.reason).slice(0, 20), retry: JSON.parse(first) });
       const box: { validated: Outcome | null } = { validated: null };
@@ -121,7 +132,7 @@ export class WorkoutBuilderAiService {
               return null;
             }
             const v = validateProposedChanges({
-              baseline, rawChanges: output.changes, library: LIBRARY, injuries, instruction: input.instruction, screeningFlag, quickAction: input.quick_action,
+              baseline, rawChanges: output.changes, library, injuries, instruction: input.instruction, screeningFlag, quickAction: input.quick_action,
               weekly: weekOther ? { otherSetsByMuscle: weekOther, cap: weeklySetsCap(client) } : undefined,
             });
             if (v.changes.length === 0) throw new NoSafeProposal(v.dropped);
