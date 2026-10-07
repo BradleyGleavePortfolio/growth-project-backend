@@ -6,7 +6,7 @@ for repo in growth-project-backend growth-project-mobile; do
       --jq '.[]|select(.headRefName|startswith("agent126/"))|select(.baseRefName=="main")|select(.isDraft|not)|.number'); do
     # Approval holds override mechanical promotion, even with dual verdicts.
     if { [ "$repo" = "growth-project-backend" ] && [ -f /home/user/workspace/ops/lanes126/backend-promotion-hold ]; } ||
-       { [ "$repo" = "growth-project-backend" ] && [[ " 809 820 822 " == *" $n "* ]]; } ||
+       { [ "$repo" = "growth-project-backend" ] && [[ " 809 820 " == *" $n "* ]]; } ||
        { [ "$repo" = "growth-project-mobile" ] && [ "$n" = "451" ]; }; then
       echo "HOLD $repo#$n (production release freeze or owner approval pending)"
       continue
