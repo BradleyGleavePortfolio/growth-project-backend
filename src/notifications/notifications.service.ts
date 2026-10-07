@@ -1083,11 +1083,16 @@ export function pushTapData(
     bookingRole !== null &&
     typeof sessionId === 'string' &&
     sessionId.length > 0;
+  // FU-WORKLOG-126: a workout push (assigned or reminder) opens the client's
+  // Workouts tab, where the coach's workout is, instead of the inbox.
+  const workout = kind === 'workout_assigned' || kind === 'workout_reminder';
   const actionScreen = booking
     ? BOOKING_PUSH_SCREEN[bookingRole]
     : prefix === 'message'
       ? 'Messages'
-      : 'NotificationCenter';
+      : workout
+        ? 'WorkoutMain'
+        : 'NotificationCenter';
   return {
     actionScreen,
     ...(booking ? { actionParams: { sessionId } } : {}),
