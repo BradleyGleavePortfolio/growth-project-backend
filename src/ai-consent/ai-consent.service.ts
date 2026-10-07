@@ -13,7 +13,9 @@
  * POST accepts v4 (the 10-07 app build) and v5. GET offers the v4 copy to
  * everyone without a live v5 grant, so the 10-07 contract is unchanged, and
  * adds `scope` plus, for a v4 holder, `upgrade` (the v5 copy, one optional
- * tap). A withdrawal ends both scopes.
+ * tap). `upgrade` is offered only while FEATURE_ROMAN_MEMORY is on: the v5
+ * copy describes notes and summaries that do not exist while it is off, so
+ * no client is asked to agree to them early. A withdrawal ends both scopes.
  *
  * History is append-only: a decision is a new row with seq = latest.seq + 1.
  * The unique index (user_id, processor, purpose, seq) turns a race between two
@@ -37,6 +39,7 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { isRomanMemoryEnabled } from '../roman/memory/roman-memory.feature';
 import {
   AI_CONSENT_ACTION_GRANT,
   AI_CONSENT_ACTION_WITHDRAW,
@@ -106,7 +109,10 @@ export interface ClientAiConsentStatus {
   copy: ClientAiConsentCopy;
   /** What the live grant covers; null when there is no live grant. */
   scope: ClientAiConsentScope | null;
-  /** For a live v4 (base-only) holder: the v5 copy that adds 'memory'. Otherwise null. */
+  /**
+   * For a live v4 (base-only) holder while FEATURE_ROMAN_MEMORY is on: the v5
+   * copy that adds 'memory'. Otherwise null (memory off, no live grant, or v5).
+   */
   upgrade: ClientAiConsentCopy | null;
 }
 
@@ -251,7 +257,7 @@ export class AiConsentService implements ClientAiConsentReader {
       needs_reconsent: isGrant && !granted,
       copy,
       scope,
-      upgrade: scope === 'base' ? clientAiConsentV5Copy() : null,
+      upgrade: scope === 'base' && isRomanMemoryEnabled() ? clientAiConsentV5Copy() : null,
     };
   }
 
