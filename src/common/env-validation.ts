@@ -336,8 +336,13 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'BILLING_ENFORCEMENT',
+    values: ['enforce', 'observe'],
+    unsetIs: 'off',
     tier: 'optional',
-    reason: 'SubscriptionGuard mode. "enforce" blocks writes for past_due/canceled coaches; anything else observes only.',
+    launch: 'switch',
+    default: 'unset \u2192 observe-only (only the exact string "enforce" enforces)',
+    reason:
+      'SubscriptionGuard mode. "enforce" denies every @RequiresTier(\'pro\') route with 403 TIER_UPGRADE_REQUIRED for a non-owner coach who is not on an active pro subscription: /coach/ai/*, /v1/coach/ai/draft/* and /workout-programs/* (fork, clone, clone-to-client, program assignments). Anything else, including unset, observes only \u2014 the verdict is still computed and logged. docs/deploy-runbook.md step 3.2: stays unset during the Stripe rollout, flips to "enforce" only after every coach has a CoachSubscription row in "active" state. Managed by the audited prod-switch manifest (.github/fly-env-desired-state.json) \u2014 one path, never fly-secrets-set.',
   },
   {
     name: 'STRIPE_PRICE_ID_FINANCE',
