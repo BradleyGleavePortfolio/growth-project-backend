@@ -161,7 +161,10 @@ async function build(initialStatus: string, piStatus = 'succeeded') {
       { provide: SupabaseService, useValue: { getClient: () => ({ auth }) } },
       {
         provide: ConfigService,
-        useValue: { get: (k: string) => (k === 'RESEND_API_KEY' ? 're_test' : undefined) },
+        useValue: {
+          get: (k: string): string | undefined =>
+            k === 'RESEND_API_KEY' ? 're_test' : k === 'EMAIL_FROM_ADDRESS' ? 'noreply@example.test' : undefined,
+        },
       },
       { provide: NotificationsService, useValue: { createNotification: jest.fn() } },
       { provide: CheckoutService, useValue: {} },
