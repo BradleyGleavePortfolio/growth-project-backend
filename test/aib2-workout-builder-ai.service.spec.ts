@@ -155,6 +155,28 @@ describe('WorkoutBuilderAiService.propose (B-AIB2-126)', () => {
       expect(anthropic).toHaveBeenCalledTimes(2);
       expect(prisma.aiActionDraft.create).not.toHaveBeenCalled();
     });
+    it('B-809-2: a program day reads the same week\'s other days and caps weekly sets for a beginner', async () => {
+      const anthropic = fake(JSON.stringify({
+        summary: 'More chest volume.',
+        changes: [
+          { op: { kind: 'update_exercise', client_ref: 'r1', sets: 4 }, reason: 'More volume.' },
+          { op: { kind: 'add_exercise', client_ref: 'ai-1', exercise_external_id: 'seed:pull-002', sets: 3, reps_or_duration_seconds: 10 }, reason: 'Back.' },
+        ],
+      }));
+      const { svc, prisma } = build({ anthropic });
+      prisma.workoutPlan.findUnique.mockResolvedValue({ id: PLAN, coach_id: COACH, version: 3, head_revision_id: 'rev-3', archived_at: null, program_id: 'prog-1', week_index: 0 });
+      const benchDay = (sets: number) => [{ client_ref: 'x', exercise_external_id: 'seed:push-001', order: 0, sets, reps_or_duration_seconds: 8, weight_lbs: null, rest_seconds: 90, superset_group_id: null, notes: null }];
+      Object.assign(prisma.workoutPlan, { findMany: jest.fn(async () => [{ id: 'day-2', head_revision_id: 'rev-d2' }, { id: 'day-3', head_revision_id: null }]) });
+      Object.assign(prisma.workoutPlanRevision, { findMany: jest.fn(async () => [{ exercises_json: benchDay(8), plan_meta_json: { name: 'Push', type: 'strength' } }]) });
+      Object.assign(prisma, { workoutPlanExercise: { findMany: jest.fn(async () => [{ exercise_external_id: 'seed:push-002', sets: 5 }]) } });
+      const res = await svc.propose(coach, { ...edit, client_id: CLIENT, quick_action: 'more_volume' });
+      // this day 3 + other days 8 + 5 = 16 pectoral sets (beginner cap): one more set is dropped, the back add is kept.
+      expect(res.dropped).toEqual([{ reason: 'More than 16 hard sets for one muscle in this program week.' }]);
+      expect(res.changes.map((c) => c.exercise.id)).toEqual(['seed:pull-002']);
+      expect(prisma.workoutPlan.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { program_id: 'prog-1', coach_id: COACH, week_index: 0, archived_at: null, id: { not: PLAN } },
+      }));
+    });
     it('explain returns a summary, no changes and no draft', async () => {
       const anthropic = fake('{"summary":"Upper push day, 60 minutes.","changes":[]}');
       const { svc, prisma } = build({ anthropic });

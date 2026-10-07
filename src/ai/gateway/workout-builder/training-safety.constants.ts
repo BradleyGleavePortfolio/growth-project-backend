@@ -7,7 +7,7 @@ export function isInjuryArea(v: unknown): v is InjuryArea {
 }
 export const TRAINING_BOUNDS = {
   setsMin: 1, setsMax: 10, repsMin: 1, repsMax: 30, durationMinSeconds: 5, durationMaxSeconds: 3_600, restMin: 0, restMax: 600,
-  exercisesPerWorkoutMax: 14, hardSetsPerMuscleMax: 12, progressLoadMaxPct: 10, progressRepsMax: 2, notesMax: 200, reasonMax: 200,
+  exercisesPerWorkoutMax: 14, hardSetsPerMuscleMax: 12, hardSetsPerMuscleWeekMax: 24, hardSetsPerMuscleWeekBeginnerMax: 16, progressLoadMaxPct: 10, progressRepsMax: 2, notesMax: 200, reasonMax: 200,
   summaryMax: 280,
 } as const;
 export const INJURY_AREA_LABEL: Record<InjuryArea, string> = {

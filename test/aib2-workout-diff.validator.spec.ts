@@ -82,4 +82,46 @@ describe('validateProposedChanges (B-AIB2-126)', () => {
       { id: '', name: 'Exercise order', thumbnail_url: null },
     ]);
   });
+  describe('B-809-1: an existing exercise that loads a reported injury is not progressed', () => {
+    const squatDay = (): PlanSnapshot => ({
+      meta: { name: 'Legs', type: 'strength', duration_estimate_minutes: 60 },
+      exercises: [{ ...row, client_ref: 's1', exercise_external_id: 'seed:legs-001', order: 0, sets: 3, reps_or_duration_seconds: 8, weight_lbs: 135, rest_seconds: 120 }],
+    });
+    const progress = (over: Record<string, unknown>) => ({ op: { kind: 'update_exercise', client_ref: 's1', ...over }, reason: 'Progress.' });
+    it.each([{ reps_or_duration_seconds: 9 }, { sets: 4 }, { weight_lbs: 145 }])('drops %o on Back Squat for a knee client', (over) => {
+      const r = run([progress(over)], { baseline: squatDay(), injuries: ['knee'], instruction: 'Progress the workout', quickAction: 'progress' });
+      expect(r.changes).toHaveLength(0);
+      expect(r.dropped).toEqual([{ reason: 'Back Squat loads the knee. The client reported knee issues.' }]);
+    });
+    it('keeps the same progression when the coach named the exercise, with a warning', () => {
+      const r = run([progress({ reps_or_duration_seconds: 9 })], { baseline: squatDay(), injuries: ['knee'], instruction: 'Progress the back squat' });
+      expect(r.changes).toHaveLength(1);
+      expect(r.changes[0].warnings[0]).toMatch(/Loads the knee/);
+    });
+    it('still allows lowering it, and progressing it when no injury loads it', () => {
+      expect(run([progress({ sets: 2 })], { baseline: squatDay(), injuries: ['knee'] }).changes).toHaveLength(1);
+      expect(run([progress({ reps_or_duration_seconds: 9 })], { baseline: squatDay(), injuries: ['shoulder'] }).changes).toHaveLength(1);
+    });
+  });
+
+  describe('B-809-2: hard sets per muscle are capped across the program week', () => {
+    // Bench Press (pectorals) 3 sets here; the week's other days already hold 13 pectoral sets -> 16, the beginner cap.
+    const weekly = (cap: number) => ({ otherSetsByMuscle: new Map([['pectorals', 13]]), cap });
+    const moreSets = { op: { kind: 'update_exercise', client_ref: 'r1', sets: 4 }, reason: 'More volume.' };
+    it('drops More Volume that takes a beginner past 16 weekly pectoral sets', () => {
+      const r = run([moreSets], { quickAction: 'more_volume', weekly: weekly(16) });
+      expect(r.changes).toHaveLength(0);
+      expect(r.dropped).toEqual([{ reason: 'More than 16 hard sets for one muscle in this program week.' }]);
+    });
+    it('drops an added chest exercise past the cap but keeps other muscles and the general 24 cap', () => {
+      expect(run([add('seed:push-002', { sets: 2 })], { weekly: weekly(16) }).changes).toHaveLength(0);
+      expect(run([add('seed:pull-002')], { weekly: weekly(16) }).changes).toHaveLength(1);
+      expect(run([moreSets], { weekly: weekly(24) }).changes).toHaveLength(1);
+    });
+    it('never blocks a change that lowers or keeps a week that is already over', () => {
+      const over = { otherSetsByMuscle: new Map([['pectorals', 20]]), cap: 16 };
+      expect(run([{ op: { kind: 'update_exercise', client_ref: 'r1', sets: 2 }, reason: 'Less.' }], { weekly: over }).changes).toHaveLength(1);
+      expect(run([{ op: { kind: 'update_exercise', client_ref: 'r1', rest_seconds: 90 }, reason: 'Rest.' }], { weekly: over }).changes).toHaveLength(1);
+    });
+  });
 });

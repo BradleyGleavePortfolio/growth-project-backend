@@ -19,6 +19,8 @@ export interface ValidatedChange {
 export interface ValidateInput {
   baseline: PlanSnapshot; rawChanges: unknown; library: ReadonlyMap<string, LibraryExercise>; injuries: readonly InjuryArea[];
   instruction: string; screeningFlag: boolean; quickAction?: QuickAction;
+  /** Program-week context: hard sets per muscle on the week's OTHER days, and the client's weekly cap (plan section 2). */
+  weekly?: { otherSetsByMuscle: ReadonlyMap<string, number>; cap: number };
 }
 export interface ValidateResult { changes: ValidatedChange[]; dropped: Array<{ reason: string }>; snapshot: PlanSnapshot }
 
@@ -49,13 +51,26 @@ function boundsError(op: Fields, timed: boolean): string | null {
   return null;
 }
 
-function maxSetsPerMuscle(snapshot: PlanSnapshot, library: ReadonlyMap<string, LibraryExercise>): number {
+export function setsPerMuscle(snapshot: PlanSnapshot, library: ReadonlyMap<string, LibraryExercise>): Map<string, number> {
   const per = new Map<string, number>();
   for (const row of snapshot.exercises) {
     const ex = library.get(row.exercise_external_id);
     if (ex && ex.category !== 'cardio' && ex.category !== 'mobility') per.set(ex.muscle, (per.get(ex.muscle) ?? 0) + row.sets);
   }
-  return Math.max(0, ...per.values());
+  return per;
+}
+function maxSetsPerMuscle(snapshot: PlanSnapshot, library: ReadonlyMap<string, LibraryExercise>): number {
+  return Math.max(0, ...setsPerMuscle(snapshot, library).values());
+}
+/** True when `next` takes a muscle's program-week total over the cap AND above where the week already was. */
+function overWeeklyCap(current: PlanSnapshot, next: PlanSnapshot, library: ReadonlyMap<string, LibraryExercise>,
+  weekly: NonNullable<ValidateInput['weekly']>): boolean {
+  const [before, after] = [setsPerMuscle(current, library), setsPerMuscle(next, library)];
+  for (const [muscle, sets] of after) {
+    const other = weekly.otherSetsByMuscle.get(muscle) ?? 0;
+    if (sets + other > weekly.cap && sets > (before.get(muscle) ?? 0)) return true;
+  }
+  return false;
 }
 
 /** One change: null = keep (op may be adjusted in place), string = drop with this reason. */
@@ -69,6 +84,7 @@ function checkChange(op: WorkoutDiffOp, before: PlanExerciseSnapshot | null, ex:
   if (err) return err;
   if (op.notes != null) op.notes = stripMedicalClaims(op.notes, B.notesMax) || null;
   // Loads are never invented: a new row has none (the coach fills it); a changed load needs a current load, max one step.
+  let increases = false;
   if (op.kind === 'add_exercise') op.weight_lbs = null;
   if (op.kind === 'update_exercise' && before) {
     if (op.weight_lbs != null && (before.weight_lbs == null || swaps)) delete op.weight_lbs;
@@ -79,12 +95,13 @@ function checkChange(op: WorkoutDiffOp, before: PlanExerciseSnapshot | null, ex:
     if (!swaps && reps !== undefined && !timed && reps > before.reps_or_duration_seconds + B.progressRepsMax) {
       return `Rep increase is more than ${B.progressRepsMax} in one step.`;
     }
-    const increases = !swaps && ((op.sets !== undefined && op.sets > before.sets) || (reps !== undefined && reps > before.reps_or_duration_seconds) ||
+    increases = !swaps && ((op.sets !== undefined && op.sets > before.sets) || (reps !== undefined && reps > before.reps_or_duration_seconds) ||
       (op.weight_lbs != null && op.weight_lbs > (before.weight_lbs ?? 0)));
     if (increases && input.screeningFlag) return 'Intensity stays the same until medical clearance is confirmed.';
     if (increases && input.quickAction === 'deload') return 'A deload does not increase sets, reps or load.';
   }
-  if (swaps && ex) {
+  // Injury screen: a new or swapped-in exercise, AND more sets / reps / load on an exercise already in the workout.
+  if ((swaps || increases) && ex) {
     const areas = contraindicatedAreas(ex, input.injuries);
     const label = areas.map((a) => INJURY_AREA_LABEL[a]).join(' and ');
     const named = input.instruction.toLowerCase().includes(ex.name.toLowerCase());
@@ -140,6 +157,10 @@ export function validateProposedChanges(input: ValidateInput): ValidateResult {
     const setsAfter = maxSetsPerMuscle(next, library);
     if (setsAfter > setsCap && setsAfter > maxSetsPerMuscle(current, library)) {
       dropped.push({ reason: `More than ${B.hardSetsPerMuscleMax} hard sets for one muscle in a workout.` });
+      continue;
+    }
+    if (input.weekly && overWeeklyCap(current, next, library, input.weekly)) {
+      dropped.push({ reason: `More than ${input.weekly.cap} hard sets for one muscle in this program week.` });
       continue;
     }
     const kind = KIND[op.kind];
