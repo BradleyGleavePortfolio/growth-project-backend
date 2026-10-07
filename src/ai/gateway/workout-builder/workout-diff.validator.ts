@@ -73,6 +73,22 @@ function overWeeklyCap(current: PlanSnapshot, next: PlanSnapshot, library: Reado
   return false;
 }
 
+// B-809-3: the coach override of the injury screen needs a clear positive request for THAT exercise. A mention, or exclusion /
+// alternative wording anywhere in the clause that names it (before or after the name), fails closed. Same rule as #813.
+const OVERRIDE_WORD = /\b(keep|include|add|use|still|want|incorporate|program|progress|increase|more|heavier|bump|anyway)\b/;
+const EXCLUDE_WORD =
+  /\b(no|not|never|avoid|without|skip|exclude|remove|drop|replace|swap|instead|except|don'?t|nothing|out|off|away|alternatives?|substitut\w*|rather|cut|ban(ned)?|eliminate|other than|less|fewer|lighter|reduce)\b/;
+const CLAUSE_BREAK = /[.;,!?\n]|\bbut\b/;
+export function coachAskedToInclude(instruction: string, name: string): boolean {
+  const [text, n] = [instruction.toLowerCase(), name.trim().toLowerCase()];
+  if (n.length < 3) return false;
+  for (let i = text.indexOf(n); i >= 0; i = text.indexOf(n, i + 1)) {
+    const clause = `${text.slice(0, i).split(CLAUSE_BREAK).pop() ?? ''} ${text.slice(i + n.length).split(CLAUSE_BREAK)[0] ?? ''}`;
+    if (OVERRIDE_WORD.test(clause) && !EXCLUDE_WORD.test(clause)) return true;
+  }
+  return false;
+}
+
 /** One change: null = keep (op may be adjusted in place), string = drop with this reason. */
 function checkChange(op: WorkoutDiffOp, before: PlanExerciseSnapshot | null, ex: LibraryExercise | undefined, swaps: boolean,
   input: ValidateInput, current: PlanSnapshot, warnings: string[]): string | null {
@@ -104,7 +120,7 @@ function checkChange(op: WorkoutDiffOp, before: PlanExerciseSnapshot | null, ex:
   if ((swaps || increases) && ex) {
     const areas = contraindicatedAreas(ex, input.injuries);
     const label = areas.map((a) => INJURY_AREA_LABEL[a]).join(' and ');
-    const named = input.instruction.toLowerCase().includes(ex.name.toLowerCase());
+    const named = coachAskedToInclude(input.instruction, ex.name);
     if (areas.length > 0 && !named) return `${ex.name} loads the ${label}. The client reported ${label} issues.`;
     if (areas.length > 0) warnings.push(`Loads the ${label}. The client reported ${label} issues.`);
     if (input.injuries.includes('other')) warnings.push('The client reported another injury. Check this exercise suits them.');
