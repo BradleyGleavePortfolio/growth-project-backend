@@ -17,6 +17,7 @@ describe('NUTR-BE-128 prep guide', () => {
     const db = {
       mealPlan: { findMany: jest.fn().mockResolvedValue([{ items }]) },
       recipe: { findMany: jest.fn().mockResolvedValue([recipe('r1', ['1 cup rice'])]) },
+      userProfile: { findUnique: jest.fn().mockResolvedValue(null) },
     };
     return { db, service: new PrepGuideService(asPrismaDouble(db)) };
   };

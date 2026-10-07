@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { RecipeViewer, toRecipeView, visibleRecipesWhere } from '../recipes/recipe-access';
+import { loadViewerAllergens } from '../recipes/allergens';
 import { canonicalIngredientUnit } from '../common/ingredient-unit';
 
 export interface AggregatedIngredient {
@@ -27,6 +28,9 @@ export interface PrepGuideResult {
     carbs: number;
     fat: number;
     tags: string[];
+    /** Declared by the recipe author (CF-ALLERGY-128); see allergens_declared. */
+    allergens: string[];
+    allergens_declared: boolean;
   }>;
   aggregated_ingredients: AggregatedIngredient[];
   prep_day_suggestions: string[];
@@ -74,7 +78,10 @@ export class PrepGuideService {
     // recipe this client could open in Recipes (their own, or one their coach
     // shares with clients). There is no platform-wide fallback: with no
     // referenced recipe, the guide shows the latest visible ones (up to 6).
-    const visible = visibleRecipesWhere(viewer);
+    // A shared recipe declaring an allergen saved on the client's profile is
+    // left out here too (CF-ALLERGY-128), so it adds nothing to the list.
+    const avoid = await loadViewerAllergens(this.prisma, userId);
+    const visible = visibleRecipesWhere(viewer, avoid);
     let recipes;
     if (referencedRecipeIds.size > 0) {
       recipes = await this.prisma.recipe.findMany({
@@ -130,6 +137,8 @@ export class PrepGuideService {
         carbs: r.carbs,
         fat: r.fat,
         tags: r.tags,
+        allergens: r.allergens,
+        allergens_declared: r.allergens_declared,
       })),
       aggregated_ingredients: Array.from(ingredientMap.values()),
       // Neither recipe-library dates nor legacy plans specify prep days.

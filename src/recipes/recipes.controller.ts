@@ -42,6 +42,16 @@ export class RecipesController {
     return this.recipesService.listSaved(viewerOf(req));
   }
 
+  /**
+   * GET /recipes/allergens — the one allergen list authors declare from, and
+   * the caller's saved allergens that hide shared recipes declaring them.
+   * Declared before ':id' so it is not read as a recipe id.
+   */
+  @Get('allergens')
+  async allergens(@Request() req: AuthedRequest) {
+    return this.recipesService.allergenGuide(viewerOf(req));
+  }
+
   /** GET /recipes/:id — single recipe detail; 404 RECIPE_NOT_FOUND when not visible. */
   @Get(':id')
   async getById(@Request() req: AuthedRequest, @Param('id') id: string) {
