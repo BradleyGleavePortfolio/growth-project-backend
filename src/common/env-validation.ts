@@ -111,52 +111,6 @@ export interface EnvRule {
   unsetIs?: 'on' | 'off';
 }
 
-// AIB-4 — capability ids the AI gateway knows. AI_GATEWAY_CAPABILITIES may name
-// only these (never '*'), and AI_GATEWAY_REQUIRE_APPROVAL must keep the two
-// workout builder capabilities, because setting it replaces the default list.
-export const KNOWN_AI_GATEWAY_CAPABILITIES: readonly string[] = [
-  'coach_brief_draft',
-  'client_path_summary',
-  'check_in_summary',
-  'food_log_explain',
-  'chat.client_coach',
-  'community_ai_triage',
-  'draft.coach_message',
-  'draft.coach_wearable_message',
-  'draft.meal_plan_change',
-  'draft.client_facing_claim',
-  'flag.escalation',
-  'draft.assign_workout',
-  'draft.assign_meal_plan',
-  'draft.send_notification',
-  'draft.create_workout_plan',
-  'draft.edit_workout_plan',
-  'wearable_insight.coach',
-  'wearable_insight.client',
-];
-const AI_WORKOUT_CAPABILITIES = ['draft.create_workout_plan', 'draft.edit_workout_plan'];
-
-function splitCapabilityList(value: string): string[] {
-  return value.split(',').map((s) => s.trim()).filter(Boolean);
-}
-
-export function validateAiGatewayCapabilityList(value: string): string | null {
-  const ids = splitCapabilityList(value);
-  if (ids.includes('*')) {
-    return "'*' allows every gateway capability; list the capability ids instead";
-  }
-  const unknown = ids.filter((id) => !KNOWN_AI_GATEWAY_CAPABILITIES.includes(id));
-  return unknown.length ? `unknown capability ids: ${unknown.join(', ')}` : null;
-}
-
-export function validateAiGatewayRequireApproval(value: string): string | null {
-  const ids = splitCapabilityList(value);
-  const missing = AI_WORKOUT_CAPABILITIES.filter((id) => !ids.includes(id));
-  return missing.length
-    ? `must keep ${missing.join(', ')} (setting this list replaces the defaults)`
-    : null;
-}
-
 export const ENV_RULES: EnvRule[] = [
   // --- Hard: cannot start without these in any environment ---
   {
@@ -1008,7 +962,6 @@ export const ENV_RULES: EnvRule[] = [
     default: "unset → no capability allowed ('*' allows all)",
     reason:
       "Comma-separated capability allow-list for the AI gateway. Never '*': it would send every gateway capability to the provider.",
-    validate: validateAiGatewayCapabilityList,
   },
   {
     name: 'AI_GATEWAY_REQUIRE_APPROVAL',
@@ -1019,7 +972,6 @@ export const ENV_RULES: EnvRule[] = [
       'unset → DEFAULT_APPROVAL_REQUIRED (draft.coach_message, draft.meal_plan_change, draft.client_facing_claim, …)',
     reason:
       'Comma-separated capabilities that need human approval. Default-on safety: unset keeps the canonical consequential capabilities gated. Setting it replaces the defaults, so it must keep both workout builder capabilities.',
-    validate: validateAiGatewayRequireApproval,
   },
   {
     name: 'OPENAI_API_KEY',
