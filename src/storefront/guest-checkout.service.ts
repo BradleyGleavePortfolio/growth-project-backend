@@ -68,6 +68,18 @@ const SUPPORTED_CURRENCY = 'usd';
 // replaced rather than reused.
 const CHECKOUT_TTL_MS = 24 * 60 * 60 * 1000;
 
+// B-GUEST-126 — rows a succeeded PaymentIntent may claim. A card decline
+// (payment_intent.payment_failed) or the lost-webhook poller (intent still
+// waiting for a card, or a 3DS step past the poll cap) marks the row
+// before the buyer has finished paying, and the buyer can still pay on
+// the SAME PaymentIntent. Stripe saying it succeeded wins, otherwise the
+// buyer is charged and never gets an account.
+const PAYMENT_CLAIMABLE_STATUSES: GuestCheckoutStatus[] = [
+  'pending',
+  'failed',
+  'conversion_failed_terminal',
+];
+
 // Audit #3 P2-3 — PII retention deadline applied to every new
 // GuestCheckout row. 13 months follows the default GDPR-style retention
 // window for transactional purchase records — long enough to handle
@@ -909,8 +921,9 @@ export class GuestCheckoutService {
     },
   ): Promise<void> {
     try {
-      // Atomic pending→paid transition. updateMany with WHERE status =
-      // 'pending' is the canonical "claim once" pattern: if count = 0,
+      // Atomic not-yet-paid→paid transition (PAYMENT_CLAIMABLE_STATUSES,
+      // B-GUEST-126). updateMany with WHERE status IN (...) is the
+      // canonical "claim once" pattern: if count = 0,
       // either we never owned this PI or another handler already moved
       // it forward, and we return silently.
       //
@@ -920,7 +933,7 @@ export class GuestCheckoutService {
       const claim = await this.prisma.guestCheckout.updateMany({
         where: {
           stripe_payment_intent_id: paymentIntentId,
-          status: 'pending',
+          status: { in: PAYMENT_CLAIMABLE_STATUSES },
           expires_at: { gt: new Date() },
         },
         data: { status: 'paid' },
@@ -1476,6 +1489,7 @@ export class GuestCheckoutService {
     // ClientPurchase id even though the row is created inside the
     // $transaction callback below.
     let entitledPurchaseId: string | null = null;
+    let lostConversionClaim = false;
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -1643,13 +1657,19 @@ export class GuestCheckoutService {
           }
         }
 
-        await tx.guestCheckout.update({
-          where: { id: checkout.id },
-          data: {
-            status: 'converted',
-            created_user_id: dbUser.id,
-          },
+        // B-GUEST-126 — claim-by-write on the prior status. The webhook and
+        // the reconciler (or a retry) can both reach this line for one
+        // checkout; only the copy that moves paid -> converted goes on to
+        // fan-out, drop alerts and the welcome email. A late copy blocks on
+        // the row lock, re-checks status = 'paid', and matches 0 rows.
+        const won = await tx.guestCheckout.updateMany({
+          where: { id: checkout.id, status: 'paid' },
+          data: { status: 'converted', created_user_id: dbUser.id },
         });
+        if (won.count !== 1) {
+          lostConversionClaim = true;
+          return;
+        }
 
         // PR-9 — fan-out is now non-empty (drop seed + immediate-cadence
         // inline materialisation). Runs inside the same $transaction as
@@ -1693,6 +1713,13 @@ export class GuestCheckoutService {
         }
       }
       await this.markRetryable(checkout.id, `db:${safeErrorTag(err)}`);
+      return;
+    }
+
+    if (lostConversionClaim) {
+      this.logger.log(
+        `convertGuestToUser: ${checkout.id} already converted by another run; welcome email not re-sent`,
+      );
       return;
     }
 

@@ -48,6 +48,8 @@ import { AuditService } from '../../audit/audit.service';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
 import { AiEgressService } from '../../ai-egress/ai-egress.service';
+import { SubCoachScopeService } from '../../sub-coach/sub-coach-scope.service';
+import { isSubCoachOfAnotherCoach } from './workout-builder/workout-builder-sub-coach.gate';
 import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
 import {
   AiDataSubject,
@@ -138,6 +140,10 @@ export class AiGatewayService {
     // refused because the requester role is not coach/owner — primary
     // defence for the spec §3 hard role boundary.
     @Optional() private audit?: AuditService,
+    // B-AIBSUB-126 — sub-coach detection for the two workout-builder
+    // capabilities. SubCoachModule is @Global, so the app always injects it;
+    // @Optional() only keeps positional test constructors compiling.
+    @Optional() private subCoachScope?: SubCoachScopeService,
   ) {}
 
   async invoke(req: AiGatewayRequest): Promise<AiGatewayResult> {
@@ -200,6 +206,17 @@ export class AiGatewayService {
         message:
           'Only coaches and owners can invoke draft capabilities. The client AI must not reach this gateway path.',
       });
+    }
+
+    // B-AIBSUB-126 — Ask AI is not offered to sub-coaches at launch (the
+    // status route 404s for them too). Same 404 for every way in (propose,
+    // POST /ai/gateway/invoke), before any draft, budget read or provider call.
+    if (
+      isMwbLiveCreateCapability(req.capability) &&
+      this.subCoachScope &&
+      (await isSubCoachOfAnotherCoach(this.subCoachScope, req.requester))
+    ) {
+      throw new NotFoundException();
     }
 
     const requestId = randomUUID();
