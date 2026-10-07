@@ -77,10 +77,11 @@ function overWeeklyCap(current: PlanSnapshot, next: PlanSnapshot, library: Reado
 // alternative wording anywhere in the clause that names it (before or after the name), fails closed. Same rule as #813.
 const OVERRIDE_WORD = /\b(keep|include|add|use|still|want|incorporate|program|progress|increase|more|heavier|bump|anyway)\b/;
 const EXCLUDE_WORD =
-  /\b(no|not|never|avoid|without|skip|exclude|remove|drop|replace|swap|instead|except|don'?t|nothing|out|off|away|alternatives?|substitut\w*|rather|cut|ban(ned)?|eliminate|other than|less|fewer|lighter|reduce)\b/;
+  /\b(no|not|never|avoid|without|skip|exclude|remove|drop|replace|swap|instead|except|\w+n't|cannot|dont|doesnt|didnt|cant|wont|shouldnt|nothing|out|off|away|alternatives?|substitut\w*|rather|cut|ban(ned)?|eliminate|other than|less|fewer|lighter|reduce)\b/;
 const CLAUSE_BREAK = /[.;,!?\n]|\bbut\b/;
 export function coachAskedToInclude(instruction: string, name: string): boolean {
-  const [text, n] = [instruction.toLowerCase(), name.trim().toLowerCase()];
+  // iOS Smart Punctuation types a curly apostrophe; normalise it so "Don’t progress ..." reads as a negation.
+  const [text, n] = [instruction.toLowerCase().replace(/[\u2018\u2019\u02bc]/g, "'"), name.trim().toLowerCase()];
   if (n.length < 3) return false;
   for (let i = text.indexOf(n); i >= 0; i = text.indexOf(n, i + 1)) {
     const clause = `${text.slice(0, i).split(CLAUSE_BREAK).pop() ?? ''} ${text.slice(i + n.length).split(CLAUSE_BREAK)[0] ?? ''}`;

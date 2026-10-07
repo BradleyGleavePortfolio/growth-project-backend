@@ -98,7 +98,7 @@ describe('validateProposedChanges (B-AIB2-126)', () => {
       expect(r.changes).toHaveLength(1);
       expect(r.changes[0].warnings[0]).toMatch(/Loads the knee/);
     });
-    it.each(['Progress the workout but avoid Back Squat', 'No back squat progression', 'Swap back squat for a knee-friendly option', 'Keep back squat out of this'])(
+    it.each(['Progress the workout but avoid Back Squat', 'No back squat progression', 'Swap back squat for a knee-friendly option', 'Keep back squat out of this', 'Don\u2019t progress back squat', "She doesn't want back squat heavier"])(
       'B-809-3: negative or alternative wording never overrides the screen: %s', (instruction) => {
         const r = run([progress({ reps_or_duration_seconds: 9 })], { baseline: squatDay(), injuries: ['knee'], instruction });
         expect(r.changes).toHaveLength(0);
