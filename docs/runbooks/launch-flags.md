@@ -141,6 +141,7 @@ FEATURE_ROMAN_CHAT_ENABLED | off | fly secrets unset -a backend-spring-lake-3890
 FEATURE_ROMAN_ADJUST_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_ADJUST_ENABLED | "FEATURE_ROMAN_ADJUST_ENABLED": "unset"
 FEATURE_ROMAN_MEMORY | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_MEMORY | "FEATURE_ROMAN_MEMORY": "unset"
 FEATURE_ROMAN_PLAYBOOK | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_PLAYBOOK | "FEATURE_ROMAN_PLAYBOOK": "unset"
+FEATURE_ROMAN_TOOLS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_TOOLS | "FEATURE_ROMAN_TOOLS": "unset"
 APPLE_AUDIENCES | off | fly secrets unset -a backend-spring-lake-3890 APPLE_AUDIENCES | "APPLE_AUDIENCES": "unset"
 APPLE_NONCE_REQUIRED | off | fly secrets unset -a backend-spring-lake-3890 APPLE_NONCE_REQUIRED | "APPLE_NONCE_REQUIRED": "unset"
 GDPR_SCRUB_DRY_RUN | off | fly secrets unset -a backend-spring-lake-3890 GDPR_SCRUB_DRY_RUN | "GDPR_SCRUB_DRY_RUN": "unset"
@@ -202,7 +203,7 @@ Emergency kill, in order: `FEATURE_MWB_AI_LIVE_CREATE` unset (only the builder s
 
 The token-revocation keys (`APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY`) are never copied by this workflow; `fly-apple-signin-set.yml` owns them.
 
-**FEATURE_ROMAN_MEMORY and FEATURE_ROMAN_PLAYBOOK (Roman v1.1, off).** Both stay `unset` until their flip PRs (R11-F1 memory, R11-F2 playbook) land after the v1.1 slices are merged and deployed. Only the exact value `true` turns each on; unset is the kill, and with both unset every v1.1 path is inert and the Roman turn prompt is unchanged. Background work for both is bounded by `ROMAN_BACKGROUND_DAILY_COST_CAP_USD` (default 10 US dollars per UTC day, not managed by this manifest) and by each coach's monthly AI pool.
+**FEATURE_ROMAN_MEMORY and FEATURE_ROMAN_PLAYBOOK (Roman v1.1, off).** Both stay `unset` until their flip PRs (R11-F1 memory, R11-F2 playbook) land after the v1.1 slices are merged and deployed. Only the exact value `true` turns each on; unset is the kill, and with both unset every v1.1 path is inert and the Roman turn prompt is unchanged. Background work for both is bounded by `ROMAN_BACKGROUND_DAILY_COST_CAP_USD` (default 10 US dollars per UTC day, not managed by this manifest) and by each coach's monthly AI pool. `FEATURE_ROMAN_TOOLS` (v1.1 tool-using turns, off) stays `unset` until its flip PR R11-F3 lands after the tool loop, the read tools and their eval cases are merged and deployed; unset is the kill, and every turn is then the single streaming call it is today.
 
 ## Notes and limits
 
