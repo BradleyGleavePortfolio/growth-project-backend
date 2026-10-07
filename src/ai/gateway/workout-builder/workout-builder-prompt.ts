@@ -1,12 +1,5 @@
-/**
- * B-AIB2-126 — prompt and output contract for the AI workout builder.
- *
- * SAFE 5: the coach's instruction and the current rows go in the USER turn as
- * quoted JSON data, never in the system prompt. The model's output is only
- * ever parsed as `{ summary, changes: [{ op, reason }] }`; each `op` is then
- * validated as a WorkoutDiffOp (workout-diff.validator.ts). The model cannot
- * name a capability, client, plan id or route: the server fills those in.
- */
+// B-AIB2-126 — prompt + output contract. SAFE 5: instruction and rows go in the USER turn as quoted JSON; the reply is
+// only parsed as { summary, changes: [{ op, reason }] }; capability, client, plan id and route are filled in by the server.
 import { z } from 'zod';
 import { PlanSnapshot } from '../materialisers/__shared/workout-diff.types';
 import { InjuryArea, TRAINING_BOUNDS as B } from './training-safety.constants';
@@ -97,7 +90,6 @@ const ModelOutputSchema = z.object({
 });
 export type ModelOutput = z.infer<typeof ModelOutputSchema>;
 
-/** Parse the model reply as the output contract; null when it is not one. */
 export function parseModelOutput(text: string): ModelOutput | null {
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
@@ -110,11 +102,6 @@ export function parseModelOutput(text: string): ModelOutput | null {
   }
 }
 
-/**
- * Deterministic proposal used when the gateway runs the stub provider (CI and
- * the safety pass): create adds two library exercises; edit trims rest on the
- * first row (or adds one exercise to an empty workout). Always valid.
- */
 export function stubProposal(baseline: PlanSnapshot, library: readonly LibraryExercise[]): ModelOutput {
   const pick = library.filter((e) => e.category !== 'cardio' && e.category !== 'mobility').slice(0, 2);
   const first = baseline.exercises[0];

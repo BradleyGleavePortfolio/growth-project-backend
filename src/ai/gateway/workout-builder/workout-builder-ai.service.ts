@@ -1,23 +1,7 @@
-/**
- * B-AIB2-126 — AI workout builder generator (plan sections 2-4).
- *
- * `propose` asks the model for a structured diff of one workout, validates it
- * server-side (workout-diff.validator.ts) and stores it as a pending
- * AiActionDraft through the gateway. Nothing reaches a client until the coach
- * applies it (PATCH /ai/gateway/drafts/:id, optionally with
- * accepted_change_ids). Order of gates: flag (503 before anything) -> role ->
- * tenancy (404) -> lock token (409) -> capability configured (503) -> gateway
- * (roster + box-2 consent 403 + budget 403 before the provider call).
- */
+// B-AIB2-126 — AI workout builder generator. Gates in order: flag 503 -> role -> tenancy 404 -> lock token 409 ->
+// capability configured 503 -> gateway (roster, box-2 consent 403, budget 403, meter) -> validator -> one repair -> 422.
 import {
-  BadRequestException,
-  ConflictException,
-  HttpException,
-  Injectable,
-  Logger,
-  NotFoundException,
-  Optional,
-  ServiceUnavailableException,
+  BadRequestException, ConflictException, HttpException, Injectable, Logger, NotFoundException, Optional, ServiceUnavailableException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { timingSafeEqual } from 'crypto';
@@ -31,62 +15,31 @@ import { AiGatewayConfig } from '../ai-gateway.config';
 import { isMwbAiLiveCreateEnabled } from '../mwb-live-create.feature';
 import { CREATE_WORKOUT_PLAN_CAPABILITY } from '../materialisers/create-workout-plan.materialiser';
 import { EDIT_WORKOUT_PLAN_CAPABILITY } from '../materialisers/edit-workout-plan.materialiser';
-import {
-  PlanSnapshot,
-  emptyPlanSnapshot,
-  snapshotFromRevisionJson,
-} from '../materialisers/__shared/workout-diff.types';
+import { PlanSnapshot, emptyPlanSnapshot, snapshotFromRevisionJson } from '../materialisers/__shared/workout-diff.types';
 import { InjuryArea, TRAINING_BOUNDS, contraindicatedAreas, isInjuryArea, stripMedicalClaims } from './training-safety.constants';
+import { LibraryExercise, QuickAction, ValidatedChange, validateProposedChanges } from './workout-diff.validator';
 import {
-  LibraryExercise,
-  QuickAction,
-  ValidatedChange,
-  validateProposedChanges,
-} from './workout-diff.validator';
-import {
-  WorkoutClientContext,
-  buildWorkoutBuilderSystemPrompt,
-  buildWorkoutBuilderUserMessage,
-  parseModelOutput,
-  stubProposal,
+  WorkoutClientContext, buildWorkoutBuilderSystemPrompt, buildWorkoutBuilderUserMessage, parseModelOutput, stubProposal,
 } from './workout-builder-prompt';
 
 export interface ProposeInput {
-  mode: 'create' | 'edit';
-  plan_id?: string;
-  lock_token?: string;
-  client_id?: string;
-  instruction: string;
-  quick_action?: QuickAction;
-  injury_area?: InjuryArea;
+  mode: 'create' | 'edit'; plan_id?: string; lock_token?: string; client_id?: string; instruction: string;
+  quick_action?: QuickAction; injury_area?: InjuryArea;
 }
-
-export interface ProposeResult {
-  draft_id: string | null;
-  summary: string;
-  changes: ValidatedChange[];
-  dropped: Array<{ reason: string }>;
-  context_used: string[];
-  screening_flag: boolean;
-  credits_remaining_pct: number | null;
+type Dropped = Array<{ reason: string }>;
+type Outcome = { summary: string; changes: ValidatedChange[]; dropped: Dropped };
+export interface ProposeResult extends Outcome {
+  draft_id: string | null; context_used: string[]; screening_flag: boolean; credits_remaining_pct: number | null;
 }
 
 export const LIBRARY: ReadonlyMap<string, LibraryExercise> = new Map(
-  SEED_EXERCISES.map((e) => [
-    e.id,
-    { id: e.id, name: e.name, category: e.bodyPart, muscle: e.target, thumbnail_url: e.gifUrl || null },
-  ]),
+  SEED_EXERCISES.map((e) => [e.id, { id: e.id, name: e.name, category: e.bodyPart, muscle: e.target, thumbnail_url: e.gifUrl || null }]),
 );
-
-type Outcome = { summary: string; changes: ValidatedChange[]; dropped: Array<{ reason: string }> };
 
 const MAX_TOKENS = { create: 8_000, edit: 6_000, explain: 1_500 } as const;
 
-/** Internal: the validator kept nothing usable. Carries reasons for the repair turn. */
 class NoSafeProposal extends Error {
-  constructor(readonly dropped: Array<{ reason: string }>) {
-    super('AI_NO_SAFE_PROPOSAL');
-  }
+  constructor(readonly dropped: Dropped) { super('AI_NO_SAFE_PROPOSAL'); }
 }
 
 function sameToken(a: string, b: string): boolean {
@@ -112,22 +65,13 @@ export class WorkoutBuilderAiService {
     input: ProposeInput,
     meta: { ip?: string | null; userAgent?: string | null } = {},
   ): Promise<ProposeResult> {
-    // SAFE 9 — kill switch, read per call, before any read, provider call or draft.
     if (!isMwbAiLiveCreateEnabled()) {
-      throw new ServiceUnavailableException({
-        code: 'AI_PAUSED',
-        message: 'Ask AI is paused for maintenance. Your workouts are unchanged.',
-      });
+      throw new ServiceUnavailableException({ code: 'AI_PAUSED', message: 'Ask AI is paused for maintenance. Your workouts are unchanged.' });
     }
-    if (requester.role !== 'coach' && requester.role !== 'owner') {
-      throw new NotFoundException();
-    }
+    if (requester.role !== 'coach' && requester.role !== 'owner') throw new NotFoundException();
     const tenantCoachId =
-      requester.role === 'coach'
-        ? (await this.subCoachScope.getHeadCoachIdForSubCoach(requester.id)) ?? requester.id
-        : null;
+      requester.role === 'coach' ? (await this.subCoachScope.getHeadCoachIdForSubCoach(requester.id)) ?? requester.id : null;
 
-    // SAFE 3 — tenancy. Another coach's client or plan is an opaque 404.
     if (input.client_id && requester.role !== 'owner') {
       const ok = await this.subCoachScope.canAccessClient(requester.id, input.client_id);
       if (!ok) throw new NotFoundException({ code: 'client_not_found', message: 'Client not found.' });
@@ -146,15 +90,9 @@ export class WorkoutBuilderAiService {
       }
       planCoachId = plan.coach_id;
       const stale = () =>
-        new ConflictException({
-          code: 'REVISION_STALE',
-          message: 'This workout changed on another screen. Reload it and ask again.',
-        });
+        new ConflictException({ code: 'REVISION_STALE', message: 'This workout changed on another screen. Reload it and ask again.' });
       if (!plan.head_revision_id) throw stale();
-      if (input.lock_token) {
-        const expected = computeLockToken(plan.id, plan.version, plan.head_revision_id);
-        if (!sameToken(expected, input.lock_token)) throw stale();
-      }
+      if (input.lock_token && !sameToken(computeLockToken(plan.id, plan.version, plan.head_revision_id), input.lock_token)) throw stale();
       const head = await this.prisma.workoutPlanRevision.findUnique({
         where: { id: plan.head_revision_id },
         select: { revision_index: true, exercises_json: true, plan_meta_json: true },
@@ -163,26 +101,18 @@ export class WorkoutBuilderAiService {
       baseline = snapshotFromRevisionJson(head.exercises_json, head.plan_meta_json);
       baseRevisionIndex = head.revision_index;
     } else if (input.mode === 'edit' || !input.client_id) {
-      throw new BadRequestException({
-        code: 'PLAN_REQUIRED',
-        message: 'Open a workout first, or choose a client to build a new one for.',
-      });
+      throw new BadRequestException({ code: 'PLAN_REQUIRED', message: 'Open a workout first, or choose a client to build a new one for.' });
     }
 
     const capability = input.plan_id ? EDIT_WORKOUT_PLAN_CAPABILITY : CREATE_WORKOUT_PLAN_CAPABILITY;
     if (!this.config.resolve(capability).capabilityAllowed) {
-      throw new ServiceUnavailableException({
-        code: 'AI_NOT_CONFIGURED',
-        message: 'Ask AI is not available yet. Your workouts are unchanged.',
-      });
+      throw new ServiceUnavailableException({ code: 'AI_NOT_CONFIGURED', message: 'Ask AI is not available yet. Your workouts are unchanged.' });
     }
 
     const client = input.client_id ? await this.loadClientContext(input.client_id) : null;
     const injuries: InjuryArea[] = [...new Set([...(client?.injuries ?? []), ...(input.injury_area ? [input.injury_area] : [])])];
     const screeningFlag = client?.screening_flag ?? false;
-    const promptLibrary = [...LIBRARY.values()].filter(
-      (e) => contraindicatedAreas(e, injuries).length === 0,
-    );
+    const promptLibrary = [...LIBRARY.values()].filter((e) => contraindicatedAreas(e, injuries).length === 0);
     const explain = input.quick_action === 'explain';
     const systemPrompt = buildWorkoutBuilderSystemPrompt({
       mode: input.mode,
@@ -191,7 +121,7 @@ export class WorkoutBuilderAiService {
       client: client ? { ...client, injuries } : injuries.length ? emptyClient(injuries) : null,
     });
 
-    let lastDropped: Array<{ reason: string }> = [];
+    let lastDropped: Dropped = [];
     let outcome: Outcome | null = null;
     let draftId: string | null = null;
     for (let attempt = 0; attempt < 2 && !outcome; attempt++) {
@@ -218,10 +148,7 @@ export class WorkoutBuilderAiService {
             const isStub = response.provider === 'stub' && !providerFailed;
             if (providerFailed || !response.enabled) {
               if (!isStub || process.env.NODE_ENV === 'production') {
-                throw new ServiceUnavailableException({
-                  code: 'AI_NOT_CONFIGURED',
-                  message: 'Ask AI could not reach the model. Your workouts are unchanged. Try again in a minute.',
-                });
+                throw new ServiceUnavailableException({ code: 'AI_NOT_CONFIGURED', message: 'Ask AI could not reach the model. Your workouts are unchanged. Try again in a minute.' });
               }
             }
             const output = isStub ? stubProposal(baseline, promptLibrary) : parseModelOutput(response.text);
@@ -234,13 +161,7 @@ export class WorkoutBuilderAiService {
               return null;
             }
             const v = validateProposedChanges({
-              baseline,
-              rawChanges: output.changes,
-              library: LIBRARY,
-              injuries,
-              instruction: input.instruction,
-              screeningFlag,
-              quickAction: input.quick_action,
+              baseline, rawChanges: output.changes, library: LIBRARY, injuries, instruction: input.instruction, screeningFlag, quickAction: input.quick_action,
             });
             if (v.changes.length === 0) throw new NoSafeProposal(v.dropped);
             box.validated = { summary, changes: v.changes, dropped: v.dropped };
@@ -259,34 +180,23 @@ export class WorkoutBuilderAiService {
     }
     if (!outcome) {
       throw new UnprocessableEntityException({
-        code: 'AI_NO_SAFE_PROPOSAL',
-        message: 'No safe change found for that request. Try: swap squats for a knee-friendly option.',
-        dropped: lastDropped.slice(0, 20),
+        code: 'AI_NO_SAFE_PROPOSAL', message: 'No safe change found for that request. Try: swap squats for a knee-friendly option.', dropped: lastDropped.slice(0, 20),
       });
     }
 
     return {
-      draft_id: draftId,
-      summary: outcome.summary,
-      changes: outcome.changes,
-      dropped: outcome.dropped,
-      context_used: contextUsed(client, injuries),
-      screening_flag: screeningFlag,
+      draft_id: draftId, ...outcome, context_used: contextUsed(client, injuries), screening_flag: screeningFlag,
       credits_remaining_pct: await this.remainingPct(tenantCoachId ?? planCoachId),
     };
   }
 
-  /** SAFE 2 — enums and numbers only; no name, email, phone, body metrics, snacks or messages. */
   private async loadClientContext(clientId: string): Promise<WorkoutClientContext> {
     const [profile, intake] = await Promise.all([
       this.prisma.userProfile.findUnique({
         where: { user_id: clientId },
         select: { goal_type: true, workout_experience: true, equipment_access: true, workout_days_per_week: true, injuries: true },
       }),
-      this.prisma.clientOnboardingIntake.findUnique({
-        where: { client_id: clientId },
-        select: { screening_any_yes: true },
-      }),
+      this.prisma.clientOnboardingIntake.findUnique({ where: { client_id: clientId }, select: { screening_any_yes: true } }),
     ]);
     return {
       goal: profile?.goal_type ?? null,
@@ -316,7 +226,6 @@ function emptyClient(injuries: InjuryArea[]): WorkoutClientContext {
   return { goal: null, experience: null, equipment: [], days_per_week: null, injuries, screening_flag: false };
 }
 
-/** Truthful list of what the model was given (drives the mobile context row). */
 export function contextUsed(client: WorkoutClientContext | null, injuries: readonly InjuryArea[]): string[] {
   const used = ['exercise_library', 'current_workout'];
   if (client) {

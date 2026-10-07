@@ -1,7 +1,4 @@
-/**
- * B-AIB2-126 — POST /ai/gateway/workout-builder/propose through the REAL
- * AiGatewayService (stub + fake Anthropic adapters) and the real validator.
- */
+// B-AIB2-126 — propose through the REAL AiGatewayService (stub + fake Anthropic) and the real validator; subset approve.
 import { AiGatewayService } from '../src/ai/gateway/ai-gateway.service';
 import { AiGatewayConfig } from '../src/ai/gateway/ai-gateway.config';
 import { AiRedactionService } from '../src/ai/gateway/ai-redaction.service';
@@ -201,7 +198,6 @@ describe('WorkoutBuilderAiService.propose (B-AIB2-126)', () => {
       expect(res.credits_remaining_pct).toBe(40);
       expect(budget.recordUsage).toHaveBeenCalledTimes(1);
       expect(prisma.drafts).toHaveLength(1);
-      // SAFE 2/5: no client free text or identity in the prompt; instruction only in the user turn.
       const sent = anthropic.mock.calls[0][0];
       expect(sent.systemPrompt).not.toMatch(/Add a pulling exercise|email|snack/i);
       expect(sent.turns[sent.turns.length - 1].content).toContain('Add a pulling exercise');

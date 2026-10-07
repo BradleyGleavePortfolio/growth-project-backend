@@ -1,8 +1,4 @@
-/**
- * B-AIB2-126 — `POST /ai/gateway/workout-builder/propose` (plan section 3).
- * Coach/owner only, 60 requests per hour per caller. The status route lives in
- * its own file (B-AIB4-126).
- */
+// B-AIB2-126 — POST /ai/gateway/workout-builder/propose (plan section 3). Coach/owner, 60/h. Status route: B-AIB4-126 (own file).
 import {
   BadRequestException,
   Body,
