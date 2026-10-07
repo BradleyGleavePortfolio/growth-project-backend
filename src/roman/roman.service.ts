@@ -113,7 +113,9 @@ import {
   type RomanTurnAugmenter,
 } from './augment/roman-turn-augmenter';
 import { ROMAN_TURN_AUGMENTER_TIMEOUT_MS } from './roman.constants';
-import { ROMAN_TOOLBOX, type RomanToolbox } from './tools/roman-tool.types';
+import { ROMAN_TOOL_LIMITS, ROMAN_TOOLBOX, type RomanToolbox } from './tools/roman-tool.types';
+import { isRomanToolsEnabled } from './tools/roman-tools.feature';
+import { RomanToolLoop, withToolFacts } from './tools/roman-tool-loop';
 
 /** Minimal caller identity the service needs (from the authenticated User). */
 export interface RomanCaller {
@@ -1049,14 +1051,27 @@ export class RomanService {
     // enforceable input budget, oldest turns first), never a fixed estimate.
     const payload = boundRomanPayload(system, await this.buildContextTurns(session.id));
     const messages = payload.messages;
-    const reservation = await this.reserveDailySpend(caller, payload.inputTokenBound);
+    // R11-T2B: a tools turn (flag on, toolbox provided, grounded with a
+    // bundle) reserves every call it may make; any other turn is today's.
+    const L = ROMAN_TOOL_LIMITS;
+    const roundBound = payload.inputTokenBound + L.max_calls_per_turn * L.max_result_chars;
+    const toolsTurn = grounded && bundle !== null;
+    const toolLoop = this.toolLoopFor(caller, toolsTurn, sendSubject, system, roundBound);
+    const reservation = toolLoop
+      ? await this.reserveDailySpend(
+          caller,
+          (L.max_rounds + 1) * roundBound,
+          (L.max_rounds + 1) * ROMAN_MAX_OUTPUT_TOKENS,
+        )
+      : await this.reserveDailySpend(caller, payload.inputTokenBound);
     // Every settle path that spent tokens also debits the coach pool (B-668-1).
     const settle = async (
       inputTokens: number,
       outputTokens: number,
       metadata: Record<string, string | number | boolean | string[] | null>,
     ): Promise<void> => {
-      await this.settleSpend(reservation, inputTokens, outputTokens, metadata);
+      const meta = toolLoop ? { ...metadata, ...toolLoop.ledger() } : metadata;
+      await this.settleSpend(reservation, inputTokens, outputTokens, meta);
       await this.debitCoachPool(poolCoachId, inputTokens, outputTokens, reservation);
     };
 
@@ -1085,20 +1100,28 @@ export class RomanService {
 
     try {
       dispatched = true;
-      const stream = await this.egress.anthropicMessagesStream(
-        this.anthropic,
-        sendSubject,
-        'roman.chat',
-        {
-          model: ROMAN_MODEL_PHASE_1,
-          max_tokens: ROMAN_MAX_OUTPUT_TOKENS,
-          thinking: ROMAN_TURN_THINKING,
-          output_config: { effort: ROMAN_TURN_EFFORT },
-          system,
-          messages,
-        },
-        { signal: upstream.signal },
-      );
+      // R11-T2B: a tools turn gets its final text from the loop (no stream).
+      if (toolLoop) {
+        acc = await toolLoop.run(messages, upstream.signal);
+        promptTokens = toolLoop.input;
+        completionTokens = toolLoop.output;
+      }
+      const stream = toolLoop
+        ? []
+        : await this.egress.anthropicMessagesStream(
+            this.anthropic,
+            sendSubject,
+            'roman.chat',
+            {
+              model: ROMAN_MODEL_PHASE_1,
+              max_tokens: ROMAN_MAX_OUTPUT_TOKENS,
+              thinking: ROMAN_TURN_THINKING,
+              output_config: { effort: ROMAN_TURN_EFFORT },
+              system,
+              messages,
+            },
+            { signal: upstream.signal },
+          );
       for await (const event of stream) {
         sawEvent = true;
         if (opts.signal?.aborted) {
@@ -1119,8 +1142,10 @@ export class RomanService {
       }
     } catch (err) {
       if (isAiEgressRefusal(err)) {
-        // Refused by the consent gate before anything was sent: known zero.
-        await settle(0, 0, { outcome: 'refused', usage: 'none_sent' });
+        // Refused by the consent gate before anything was sent: known zero
+        // (R11-T2B: a tools turn settles the calls already answered).
+        const known = toolLoop?.settled() ?? { input: 0, output: 0, kind: 'none_sent' };
+        await settle(known.input, known.output, { outcome: 'refused', usage: known.kind });
         throw err;
       }
       interrupted = true;
@@ -1134,21 +1159,23 @@ export class RomanService {
 
     // Model failure before any text: honest, specific, coded. The user turn
     // stays stored; nothing is invented for Roman.
-    if (promptTokens !== null && promptTokens > payload.inputTokenBound) {
+    if (!toolLoop && promptTokens !== null && promptTokens > payload.inputTokenBound) {
       // Should be impossible (tokens never exceed bytes); surfaced so the
       // bound can be corrected if a provider ever counts differently.
       this.logger.warn(
         `roman.input_bound_exceeded session=${session.id} reported=${promptTokens} bound=${payload.inputTokenBound}`,
       );
     }
-    const usage = settledUsage({
-      dispatched,
-      providerRejected,
-      usageFinal,
-      promptTokens,
-      completionTokens,
-      inputTokenBound: payload.inputTokenBound,
-    });
+    const usage =
+      toolLoop?.settled() ??
+      settledUsage({
+        dispatched,
+        providerRejected,
+        usageFinal,
+        promptTokens,
+        completionTokens,
+        inputTokenBound: payload.inputTokenBound,
+      });
     if (failed && acc.trim().length === 0) {
       await settle(usage.input, usage.output, {
         outcome: 'model_error',
@@ -1166,7 +1193,7 @@ export class RomanService {
 
     const checked = postCheckRomanReply(acc, {
       routerClass: route.class,
-      context: bundle ? postCheckContextOf(bundle.context) : null,
+      context: bundle ? withToolFacts(postCheckContextOf(bundle.context), toolLoop) : null,
       contextUnavailable: grounded && contextUnavailable,
       exclamationAllowed: false,
     });
@@ -1244,6 +1271,44 @@ export class RomanService {
           }`,
         );
       },
+    });
+  }
+
+  /**
+   * R11-T2B: the tool loop for this turn, or null (flag off, no toolbox, or
+   * not a grounded turn with a bundle). Every call goes through the same
+   * egress gate, subject and body as today's stream, plus the tools.
+   */
+  private toolLoopFor(
+    caller: RomanCaller,
+    groundedWithBundle: boolean,
+    subject: AiDataSubject,
+    system: string,
+    roundInputBound: number,
+  ): RomanToolLoop | null {
+    const toolbox = this.toolbox;
+    const handle = this.anthropic;
+    if (!isRomanToolsEnabled() || !toolbox || !handle || !groundedWithBundle) return null;
+    return new RomanToolLoop({
+      toolbox,
+      caller,
+      roundInputBound,
+      send: (call, messages, signal) =>
+        this.egress.anthropicMessagesCreate(
+          handle,
+          subject,
+          'roman.chat',
+          {
+            model: ROMAN_MODEL_PHASE_1,
+            max_tokens: ROMAN_MAX_OUTPUT_TOKENS,
+            thinking: ROMAN_TURN_THINKING,
+            output_config: { effort: ROMAN_TURN_EFFORT },
+            system,
+            messages,
+            ...call,
+          },
+          { signal },
+        ),
     });
   }
 
@@ -1382,15 +1447,21 @@ export class RomanService {
    * rejected, and admitted reservations never sum above the cap. Over the
    * cap: nothing is inserted and the turn is a coded 503 with specific copy.
    * Any ledger failure: coded 503, no provider call (fail closed).
+   * R11-T2B: a tools turn passes the output bound of all its calls.
    */
-  async reserveDailySpend(caller: RomanCaller, inputTokenBound: number): Promise<string> {
+  async reserveDailySpend(
+    caller: RomanCaller,
+    inputTokenBound: number,
+    outputTokenBound: number = ROMAN_MAX_OUTPUT_TOKENS,
+  ): Promise<string> {
     const requestId = `roman:${randomUUID()}`;
     const cap = this.dailyCostCapUsd();
     const now = new Date();
     const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     const dayKey = Math.floor(dayStart.getTime() / 86_400_000);
     const promptReserve = Math.max(0, Math.ceil(inputTokenBound));
-    const reserveUsd = RomanService.costUsd(promptReserve, ROMAN_MAX_OUTPUT_TOKENS);
+    const outputReserve = Math.max(0, Math.ceil(outputTokenBound));
+    const reserveUsd = RomanService.costUsd(promptReserve, outputReserve);
     let admitted: boolean;
     try {
       admitted = await this.prisma.$transaction(async (tx) => {
@@ -1415,7 +1486,7 @@ export class RomanService {
             model: ROMAN_MODEL_PHASE_1,
             enabled: true,
             prompt_token_estimate: promptReserve,
-            response_token_estimate: ROMAN_MAX_OUTPUT_TOKENS,
+            response_token_estimate: outputReserve,
             metadata: { state: 'reserved' },
           },
         });
@@ -1515,8 +1586,13 @@ export class RomanService {
       // B-668-1 (Sol): refuse unless the pool can still pay for a whole turn;
       // a remainder smaller than one reply gets the capacity message.
       const pre = await budget.canCharge(coachId, 0);
+      // R11-T2B: a client whose turns may use tools must afford every call.
+      const calls =
+        isRomanToolsEnabled() && this.toolbox && caller.role === 'student'
+          ? ROMAN_TOOL_LIMITS.max_rounds + 1
+          : 1;
       exhausted =
-        pre.budget.actual_used_cents + RomanService.worstCaseTurnCents() >
+        pre.budget.actual_used_cents + RomanService.worstCaseTurnCents() * calls >
         pre.budget.total_actual_available_cents;
     } catch (err) {
       this.logger.error(`roman.coach_pool_failed: ${romanErrorTag(err)}`);
