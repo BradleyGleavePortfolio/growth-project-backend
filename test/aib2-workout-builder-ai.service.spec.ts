@@ -11,6 +11,7 @@ import { WorkoutBuilderAiController } from '../src/ai/gateway/workout-builder/wo
 import { WorkoutBuilderStatusService } from '../src/ai/gateway/workout-builder/workout-builder-status.service';
 import { PrismaService } from '../src/prisma.service';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import { ExerciseLibraryService } from '../src/exercise-library/exercise-library.service';
 import { CoachAIBudgetService } from '../src/ai-credits/coach-ai-budget.service';
 import { AiEgressService } from '../src/ai-egress/ai-egress.service';
 import { computeLockToken } from '../src/workout-builder/lock-token.helper';
@@ -72,7 +73,9 @@ function build(opts: { egress?: AiEgressService; anthropic?: Anthropic; withBudg
     getHeadCoachIdForSubCoach: jest.fn(async () => null),
     canAccessClient: jest.fn(async (_u: string, c: string) => c === CLIENT),
   });
-  const svc = new WorkoutBuilderAiService(fakeOf<PrismaService>(prisma), gateway, config, scope, new WorkoutBuilderStatusService(config, meter));
+  // Seed-only rows: the catalog is never read (AIB-NAMES-127).
+  const exercises = fakeOf<ExerciseLibraryService>({ getExerciseById: jest.fn(async () => { throw new Error('not read for seed rows'); }) });
+  const svc = new WorkoutBuilderAiService(fakeOf<PrismaService>(prisma), gateway, config, scope, new WorkoutBuilderStatusService(config, meter), exercises);
   return { svc, prisma, anthropic, budget };
 }
 

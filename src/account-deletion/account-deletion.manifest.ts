@@ -966,3 +966,42 @@ export async function executeErasureManifest(
   results.push(...(await purgeOptionalUserTables(tx, ctx.userId)));
   return results;
 }
+
+/**
+ * Roman v1.1 memory (R11-M1): the manifest rows for Roman's notes, summaries
+ * and memory job state. They are erased with the account (above) and also
+ * when the client turns Roman's memory off in Settings > Roman AI (R11-C2B:
+ * a live client-ai-v5 holder going back to client-ai-v4), so both paths
+ * delete exactly the same rows.
+ */
+export const ROMAN_MEMORY_MODELS: ReadonlySet<string> = new Set([
+  'RomanClientNote',
+  'RomanClientSummary',
+  'RomanMemoryState',
+]);
+
+/** The ERASURE_MANIFEST entries for Roman's memory (every one a delete by client id). */
+export function romanMemoryErasureEntries(): ErasureEntry[] {
+  return ERASURE_MANIFEST.filter(
+    (entry) => ROMAN_MEMORY_MODELS.has(entry.model) && entry.action.op === 'delete',
+  );
+}
+
+/**
+ * Delete Roman's memory about one client (notes, summaries, job state) with
+ * the account-deletion manifest's own entries, inside the caller's
+ * transaction. Nothing else is touched; chats, consent and coaching data stay.
+ */
+export async function eraseRomanMemory(
+  tx: Prisma.TransactionClient,
+  clientId: string,
+): Promise<ErasureStepResult[]> {
+  const results: ErasureStepResult[] = [];
+  for (const entry of romanMemoryErasureEntries()) {
+    const res = await delegateFor(tx, entry.model).deleteMany({
+      where: { ...whereForPath(entry.field, clientId), ...(entry.where ?? {}) },
+    });
+    results.push({ model: entry.model, field: entry.field, op: 'delete', count: res.count });
+  }
+  return results;
+}
