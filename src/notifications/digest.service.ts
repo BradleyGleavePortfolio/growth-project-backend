@@ -8,6 +8,7 @@ import { NotificationsService } from './notifications.service';
 import { NotificationKind } from './notification-kind';
 import { ProviderFailure, describeFailure, providerErrorCode } from '../observability/log-pii';
 import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sender';
+import { digestLinksFor, type DigestLinks } from './digest-links';
 
 // Handlebars helper: {{gt a b}} — used in templates for conditional plural.
 Handlebars.registerHelper('gt', (a: number, b: number) => a > b);
@@ -37,17 +38,12 @@ Handlebars.registerHelper('eq', (a: unknown, b: unknown) => a === b);
 export class DigestService {
   private readonly logger = new Logger(DigestService.name);
   private readonly templates = new Map<string, HandlebarsTemplateDelegate>();
-  private readonly appUrl: string;
-  private readonly consoleUrl: string;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
   ) {
-    this.appUrl = this.config.get<string>('APP_URL') ?? 'https://app.thegrowthproject.app';
-    this.consoleUrl =
-      this.config.get<string>('CONSOLE_URL') ?? 'https://console.thegrowthproject.app';
     this._loadTemplates();
   }
 
@@ -139,12 +135,14 @@ export class DigestService {
           ? `Your week in numbers — ${data.weekStats?.consistencyPct ?? 0}% check-in consistency`
           : `Your daily summary — ${data.date}`;
 
+      // B-DIGEST-127: links go to routes this backend serves (never APP_URL).
+      const links = this._links(client.id);
       await this._send(client.id, client.email, subject, templateKey, {
         ...data,
-        appUrl: this.appUrl,
-        unsubscribeUrl: `${this.appUrl}/settings/notifications`,
+        openAppUrl: links.openAppUrl,
+        unsubscribeUrl: links.unsubscribeUrl,
         currentYear: new Date().getFullYear().toString(),
-      });
+      }, links.headers);
 
       // Write an in-app notification row so the inbox shows the digest was sent.
       await this.notifications.createNotification({
@@ -205,12 +203,14 @@ export class DigestService {
             ? `${needCount} client${needCount !== 1 ? 's' : ''} need review today — ${data.date}`
             : `Your coach summary — ${data.date}`;
 
+      // B-DIGEST-127: links go to routes this backend serves (never CONSOLE_URL).
+      const links = this._links(coach.id);
       await this._send(coach.id, coach.email, subject, templateKey, {
         ...data,
-        consoleUrl: this.consoleUrl,
-        unsubscribeUrl: `${this.consoleUrl}/settings/notifications`,
+        openAppUrl: links.openAppUrl,
+        unsubscribeUrl: links.unsubscribeUrl,
         currentYear: new Date().getFullYear().toString(),
-      });
+      }, links.headers);
 
       await this.notifications.createNotification({
         user_id: coach.id,
@@ -372,6 +372,14 @@ export class DigestService {
 
   // ── Private: eligibility queries ─────────────────────────────────────────
 
+  // B-DIGEST-127: system accounts never get a digest. The seeded platform
+  // account (migration 20261215000100, the contracts system coach) is marked
+  // by owning the platform waiver template (ContractTemplate.is_platform);
+  // there is no other system marker on User.
+  private static readonly NOT_SYSTEM_ACCOUNT = {
+    contract_templates: { none: { is_platform: true } },
+  } as const;
+
   private async _activeClientsWithEmailDigest() {
     // Active = not archived, not deleted, email confirmed.
     // Prefs check: digest_email is either null (unset → default true) or true.
@@ -380,6 +388,7 @@ export class DigestService {
         role: 'student',
         deleted_at: null,
         archived_at: null,
+        ...DigestService.NOT_SYSTEM_ACCOUNT,
         OR: [
           { notification_prefs: null },
           { notification_prefs: { muted: false, digest_email: true } },
@@ -396,6 +405,7 @@ export class DigestService {
         role: 'coach',
         deleted_at: null,
         archived_at: null,
+        ...DigestService.NOT_SYSTEM_ACCOUNT,
         OR: [
           { notification_prefs: null },
           { notification_prefs: { muted: false, digest_email: true } },
@@ -416,6 +426,7 @@ export class DigestService {
     subject: string,
     templateKey: string,
     data: Record<string, unknown>,
+    headers: Record<string, string> = {},
   ): Promise<void> {
     const html = this._render(templateKey, data);
     const transport = this.config.get<string>('EMAIL_TRANSPORT') ?? 'log';
@@ -436,11 +447,11 @@ export class DigestService {
     }
 
     if (transport === 'resend') {
-      await this._sendViaResend(from, to, subject, html);
+      await this._sendViaResend(from, to, subject, html, headers);
     } else if (transport === 'sendgrid') {
-      await this._sendViaSendgrid(from, to, subject, html);
+      await this._sendViaSendgrid(from, to, subject, html, headers);
     } else if (transport === 'postmark') {
-      await this._sendViaPostmark(from, to, subject, html);
+      await this._sendViaPostmark(from, to, subject, html, headers);
     } else {
       // 'log' transport — dev / test mode.
       this.logger.log(`[email log] user=${userId} template=${templateKey}`);
@@ -452,6 +463,7 @@ export class DigestService {
     to: string,
     subject: string,
     html: string,
+    headers: Record<string, string>,
   ): Promise<void> {
     const apiKey = this.config.get<string>('RESEND_API_KEY');
     if (!apiKey) {
@@ -461,7 +473,7 @@ export class DigestService {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to, subject, html }),
+      body: JSON.stringify({ from, to, subject, html, headers }),
     });
     if (!res.ok) {
       const body = await res.text();
@@ -474,6 +486,7 @@ export class DigestService {
     to: string,
     subject: string,
     html: string,
+    headers: Record<string, string>,
   ): Promise<void> {
     const apiKey = this.config.get<string>('SENDGRID_API_KEY');
     if (!apiKey) {
@@ -488,6 +501,7 @@ export class DigestService {
         from: { email: from },
         subject,
         content: [{ type: 'text/html', value: html }],
+        headers,
       }),
     });
     if (!res.ok) {
@@ -501,6 +515,7 @@ export class DigestService {
     to: string,
     subject: string,
     html: string,
+    headers: Record<string, string>,
   ): Promise<void> {
     const apiKey = this.config.get<string>('POSTMARK_SERVER_TOKEN');
     if (!apiKey) {
@@ -513,7 +528,13 @@ export class DigestService {
         'X-Postmark-Server-Token': apiKey,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ From: from, To: to, Subject: subject, HtmlBody: html }),
+      body: JSON.stringify({
+        From: from,
+        To: to,
+        Subject: subject,
+        HtmlBody: html,
+        Headers: Object.entries(headers).map(([Name, Value]) => ({ Name, Value })),
+      }),
     });
     if (!res.ok) {
       const body = await res.text();
@@ -548,6 +569,13 @@ export class DigestService {
       throw new Error(`Unknown template: ${templateKey}`);
     }
     return tpl(data);
+  }
+
+  // Throws UnsubscribeKeyMissingError without RECENT_AUTH_SECRET (required at
+  // production boot), so the per-user catch records a failed row and no
+  // digest goes out without a working unsubscribe link.
+  private _links(userId: string): DigestLinks {
+    return digestLinksFor(userId);
   }
 
   private _digestEnabled(envKey: string): boolean {

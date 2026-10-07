@@ -7,104 +7,20 @@ order: 40
 
 # Frequently asked questions
 
-Short answers to the questions coaches ask most often. Each answer
-is one paragraph. If a question needs more, it has its own page.
+The [published FAQ](https://app.trygrowthproject.com/help/faq)
+is maintained in `src/public-pages/help-pages.html.ts`.
 
-## Account and access
+- Coach tools are in the mobile app; choose the coach option at sign-up.
+- Ordinary coach tools do not require a coach subscription. Paid client packages, including recurring packages, still require client payment.
+- Stripe setup is under **Overview → Get paid** or **Settings → Payouts (Stripe Connect)**.
+- Earnings and payout information are under **Settings → Money**.
+- **Invite Codes** supports expiry dates, use limits and revocation; check the status before sharing.
+- A new invite does not transfer a client from another coach; contact support rather than advising account deletion.
+- Notifications depend on phone permissions and settings; open the conversation to check messages.
+- Use the original sign-in method and contact support about unexpected account access.
 
-**Why does my account say Client instead of Coach?**
-Promotion to coach is manual at sign-up. Reply to your welcome
-email and we will promote it within one business day.
+When a client deletes their account:
+During the 14-day grace period they stay on your roster and can cancel the deletion in the app.
+When it ends, they leave your roster and their data is permanently deleted and cannot be recovered.
 
-**I signed in with the wrong provider — can I switch from Google to
-Apple?**
-The provider is part of your identity in our system, so the two
-sign-ins map to two separate accounts. If you signed up with the
-wrong one, write in (see [Contact support](./contact-support.md))
-and we will merge the accounts.
-
-**Can two people share one coach account?**
-No. Each coach is one human. If you have an assistant or co-coach,
-they need their own account, which we can promote to coach access
-on your roster.
-
-## Clients and invites
-
-**Does my invite link expire?**
-No. The default link is permanent until you rotate it.
-
-**How many clients can I invite?**
-There is no fixed limit. Performance starts to degrade in the
-console only past several hundred active threads, which is well
-beyond a typical coaching practice.
-
-**A client signed up with the wrong coach. Can I take them over?**
-Not by sending a new invite. The client has to delete their account
-in the app and sign up again with your link. If that is not viable,
-write in.
-
-**Can I send a different invite link to different clients?**
-Yes, but it is rarely worth the bookkeeping. The default link
-already attaches every signup to you. Use a separate link only when
-you have a campaign-tracking reason.
-
-## Messaging and sessions
-
-**Are messages real-time?**
-Sends are instant; the client gets a push notification. The client
-sees a typing-style indicator only briefly — we do not stream key-
-strokes.
-
-**Can I schedule a message to send later?**
-Not yet. You can save a draft and send it manually when ready.
-
-**Are messages encrypted?**
-Yes, in transit and at rest. They are not end-to-end encrypted —
-operators can read them in the course of a support investigation,
-under the same audit log that covers every other read of client
-data.
-
-**The client says they did not receive my message.**
-First confirm the message shows as delivered in the thread. If it
-does, the message reached our servers and the client's device. If
-push notifications are silent on their side, that is almost always
-a phone-side notification setting; have them open the app to see
-the message.
-
-## Billing
-
-**My billing status is past due. Why?**
-A charge failed. Open **Settings → Billing → Manage in Stripe** and
-update the card. The system retries automatically; you do not need
-to write in unless the retries also fail.
-
-**I am on past-due status — can I still message clients?**
-You have a seven-day grace window after the failed charge. After
-that, message sends are blocked until billing is restored.
-
-**Where do I get an invoice?**
-Stripe portal, accessible from **Settings → Billing → Manage in
-Stripe**. Every paid month is downloadable as a PDF.
-
-## Data
-
-**Can I export my client data?**
-A client can export their own data from the mobile app. A coach
-cannot bulk-export client data — that is a privacy decision, not a
-gap. If you need a specific record for a legal or medical reason,
-write in.
-
-**A client deleted their account. Where did they go?**
-During the 14-day grace period they stay on your roster and can
-cancel the deletion in the app. When it ends, they leave your roster
-and their data is permanently deleted and cannot be recovered.
-
-## Other
-
-**Is there a coach app?**
-Coach tools are available in The Growth Project mobile app. Sign in
-with a coach account to manage clients, messages, training programs,
-coaching packages and availability.
-
-**How do I report a bug?**
-See [Contact support](./contact-support.md).
+For the full answers, use the published FAQ or [Contact support](./contact-support.md).

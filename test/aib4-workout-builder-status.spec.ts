@@ -141,9 +141,16 @@ describe('AIB-4 manifest entries', () => {
     return fem.validateManifest({ ...m, flags: { ...m.flags, ...flags } }, rules);
   };
 
-  it('the five names are managed, unset, gated and not excluded; a comma value loads as one value', () => {
+  it('the five names are managed, hold the FLIP values (owner 2026-10-07), gated and not excluded; a comma value loads as one value', () => {
     const m = manifest();
-    for (const n of NAMES) expect([n, m.flags[n], typeof m.gates[n], n in m.excluded]).toEqual([n, 'unset', 'string', false]);
+    const FLIPPED: Record<string, string> = {
+      FEATURE_MWB_AI_LIVE_CREATE: 'true',
+      AI_GATEWAY_ENABLED: 'true',
+      AI_GATEWAY_PROVIDER: 'anthropic',
+      AI_GATEWAY_CAPABILITIES: TWO_CAPS,
+      AI_GATEWAY_REQUIRE_APPROVAL: 'unset',
+    };
+    for (const n of NAMES) expect([n, m.flags[n], typeof m.gates[n], n in m.excluded]).toEqual([n, FLIPPED[n], 'string', false]);
     expect(fem.validateManifest(m, rules)).toEqual([]);
     expect(rules.get('AI_GATEWAY_CAPABILITIES')?.values).toEqual([TWO_CAPS]);
   });
@@ -159,7 +166,7 @@ describe('AIB-4 manifest entries', () => {
     ).toEqual([]);
     expect(errors({ AI_GATEWAY_CAPABILITIES: '*' }).join('\n')).toMatch(/flags\.AI_GATEWAY_CAPABILITIES is "\*"/);
     expect(errors({ AI_GATEWAY_REQUIRE_APPROVAL: 'false' }).join('\n')).toMatch(/AI_GATEWAY_REQUIRE_APPROVAL is "false"/);
-    const e = errors({ FEATURE_MWB_AI_LIVE_CREATE: 'true' });
+    const e = errors({ FEATURE_MWB_AI_LIVE_CREATE: 'true', AI_GATEWAY_ENABLED: 'unset', AI_GATEWAY_PROVIDER: 'unset', AI_GATEWAY_CAPABILITIES: 'unset' });
     expect(e).toHaveLength(1);
     expect(e[0]).toMatch(/^precondition mwb-ai-live-needs-gateway: .*Fix: /);
   });

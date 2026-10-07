@@ -65,6 +65,7 @@ describe('AuthController google/apple wiring (Opus C5 / Grok B1, B5)', () => {
       undefined,
       'coach',
       expect.objectContaining({ ip: '203.0.113.9', userAgent: 'growth-mobile/1.0' }),
+      undefined, // coach_sharing_notice (B-SHARE-127): not sent
     );
     expect(loginThrottleReset.resetLoginCounters).not.toHaveBeenCalled();
   });
@@ -89,6 +90,7 @@ describe('AuthController google/apple wiring (Opus C5 / Grok B1, B5)', () => {
       expect.objectContaining({ ip: '203.0.113.9' }),
       undefined,
       'coach',
+      undefined, // coach_sharing_notice (B-SHARE-127): not sent
     );
     expect(loginThrottleReset.resetLoginCounters).not.toHaveBeenCalled();
   });

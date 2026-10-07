@@ -1,0 +1,61 @@
+/**
+ * Roman v1.1 tool seam (R11-T2A). The pinned contract shared by the read
+ * tools (R11-T1, R11-W1) and the budgeted tool loop in the turn (R11-T2B).
+ *
+ * Nothing on main provides ROMAN_TOOLBOX, so RomanService stores `null` and
+ * every turn is the pre-v1.1 single streaming call. Tools run only for the
+ * authenticated caller (`RomanToolCaller`, the session owner); an id from the
+ * model's input is never trusted. Results carry content for the model plus
+ * content-free counts; `facts` feed the reply post-check.
+ */
+
+export const ROMAN_TOOLBOX = 'ROMAN_TOOLBOX';
+
+export type RomanToolName = 'read_history' | 'exercise_history' | 'food_day' | 'personal_baselines';
+
+export interface RomanToolDefinition {
+  readonly name: RomanToolName;
+  readonly description: string;
+  readonly input_schema: {
+    readonly type: 'object';
+    readonly properties: Record<string, unknown>;
+    readonly required?: readonly string[];
+  };
+}
+
+export interface RomanToolCaller {
+  readonly id: string;
+  readonly role: string;
+}
+
+export interface RomanToolFacts {
+  readonly intake_past_kcal?: readonly number[];
+  readonly burned_past_kcal?: readonly number[];
+}
+
+export interface RomanToolResult {
+  readonly ok: boolean;
+  readonly content: string;
+  readonly rows: number;
+  readonly truncated: boolean;
+  readonly facts?: RomanToolFacts;
+  readonly error_code?: 'bad_input' | 'range_too_large' | 'not_allowed' | 'unavailable';
+}
+
+export interface RomanToolbox {
+  definitions(): readonly RomanToolDefinition[];
+  run(
+    caller: RomanToolCaller,
+    name: string,
+    input: unknown,
+    opts: { readonly now: Date },
+  ): Promise<RomanToolResult>;
+}
+
+export const ROMAN_TOOL_LIMITS = Object.freeze({
+  max_rounds: 3,
+  max_calls_per_turn: 6,
+  max_result_chars: 12_000,
+  turn_wall_ms: 25_000,
+  tool_timeout_ms: 3_000,
+});

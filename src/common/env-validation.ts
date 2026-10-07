@@ -1042,13 +1042,15 @@ export const ENV_RULES: EnvRule[] = [
     name: 'APP_URL',
     tier: 'optional',
     default: "'https://app.thegrowthproject.app'",
-    reason: 'Base URL for links in digests, nudges and the Google OAuth return redirect.',
+    reason:
+      'Base URL for links in nudges and the Google OAuth return redirect. Digest emails do not read it (B-DIGEST-127: their links go to /open and /email/unsubscribe on https://app.trygrowthproject.com).',
   },
   {
     name: 'CONSOLE_URL',
     tier: 'optional',
     default: "'https://console.thegrowthproject.app'",
-    reason: 'Coach console base URL used in coach digest emails.',
+    reason:
+      'Retired: coach digest emails used it for the console link until B-DIGEST-127; nothing reads it now. Kept registered because the production machine still holds a value.',
   },
   {
     name: 'PUBLIC_APP_BASE_URL',
@@ -2223,6 +2225,15 @@ export const ENV_RULES: EnvRule[] = [
     default: 'unset → off (only explicit true)',
     reason:
       "Kill switch for the Roman v1.1 coach playbook (playbook signals and builds, the coach-method block in a client's turn). Off = every playbook path is inert and the turn prompt is unchanged.",
+  },
+  {
+    name: 'FEATURE_ROMAN_TOOLS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason:
+      "Kill switch for Roman v1.1 tool-using turns (Roman reads the client's own history, exercise loads and food days during a turn, within fixed round, call and time limits). Off = every turn is the single streaming call it is today.",
   },
   {
     name: 'ROMAN_BACKGROUND_DAILY_COST_CAP_USD',

@@ -20,6 +20,10 @@ import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { AuditService } from '../audit/audit.service';
 import { InviteGrantService, type GrantOutcome } from '../invite-grant/invite-grant.service';
+import {
+  acceptedCoachSharingNotice,
+  grantCoachSharingAtJoinTx,
+} from '../consent/coach-sharing-notice';
 
 type ValidationSuccess = {
   valid: true;
@@ -281,6 +285,16 @@ export type AttachResult = {
   coach_id: string | null;
   already_attached: boolean;
   grant?: AttachGrant | null;
+  // Coach sharing at join: present (true) only when this request linked the
+  // client AND named the notice the app showed, so the four fitness grants
+  // were recorded in the link transaction.
+  coach_sharing_granted?: boolean;
+};
+
+/** Options for a link request (see src/consent/coach-sharing-notice.ts). */
+export type AttachOptions = {
+  /** `coach_sharing_notice` from the request body, unvalidated. */
+  coachSharingNotice?: string | null;
 };
 
 @Injectable()
@@ -877,7 +891,9 @@ export class InviteCodesService {
   async attachUserToCoachByCode(
     userId: string,
     rawCode: string,
+    opts: AttachOptions = {},
   ): Promise<AttachResult> {
+    const sharingNotice = acceptedCoachSharingNotice(opts.coachSharingNotice);
     // 1. Resolve the code to its coach WITHOUT lifecycle checks, so the
     //    redeemer's own state can be classified first (Sol SOL-C03-B1).
     //    HUNT-03-124: the typed forms are tried in order (exact first), and
@@ -943,7 +959,7 @@ export class InviteCodesService {
 
     const coachId = target.coachId;
     const inviteCodeRowId = target.kind === 'row' ? target.rowId : null;
-    let result: { role: string; coach_id: string | null; already_attached: boolean };
+    let result: AttachResult;
     try {
       result = await this.prisma.$transaction(async (tx) => {
         // Everything that can refuse runs on a fresh in-transaction read
@@ -1000,6 +1016,13 @@ export class InviteCodesService {
             package_id: target.packageId,
           },
         });
+        // Coach sharing at join: the client tapped this join under the
+        // sharing sentence, so the four fitness grants commit (or roll back)
+        // with the link itself. No notice -> no grant (today's behaviour).
+        if (sharingNotice) {
+          await grantCoachSharingAtJoinTx(tx, this.audit, userId, coachId, sharingNotice);
+          return { role: 'student', coach_id: coachId, already_attached: false, coach_sharing_granted: true };
+        }
         return { role: 'student', coach_id: coachId, already_attached: false };
       });
     } catch (err) {

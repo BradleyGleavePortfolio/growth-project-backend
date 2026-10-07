@@ -315,4 +315,57 @@ describe('ConsentService', () => {
       expect(coaches.has('coach-2')).toBe(true);
     });
   });
+
+  // B-SHARE-126: the client app's coach-sharing screen reads GET /consent/me.
+  describe('myConsentView (GET /consent/me body)', () => {
+    const FITNESS = [
+      ConsentScope.FITNESS_WORKOUTS,
+      ConsentScope.FITNESS_FOOD_MACROS,
+      ConsentScope.FITNESS_BODY_METRICS,
+      ConsentScope.FITNESS_HABITS_PROGRESS,
+    ];
+
+    it('a coach-role coach: owner_access false and the four fitness scopes start not shared', async () => {
+      const prisma = buildPrisma([{ id: 'coach-1', role: 'coach' }]);
+      const svc = new ConsentService(prisma, buildAudit());
+      const view = await svc.myConsentView('client-1', 'coach-1');
+      expect(view.owner_access).toBe(false);
+      for (const scope of FITNESS) {
+        const row = view.consents.find((r) => r.scope === scope);
+        expect(row).toMatchObject({ granted: false, granted_at: null, revoked_at: null });
+      }
+      expect(await svc.coachCanAccess('coach-1', 'client-1', ConsentScope.FITNESS_FOOD_MACROS, 'coach')).toBe(false);
+    });
+
+    it('sharing the four scopes shows them granted and opens them to the coach; a revoke closes one again', async () => {
+      const prisma = buildPrisma([{ id: 'coach-1', role: 'coach' }]);
+      const svc = new ConsentService(prisma, buildAudit());
+      for (const scope of FITNESS) await svc.grant('client-1', 'coach-1', scope);
+      await svc.revoke('client-1', 'coach-1', ConsentScope.FITNESS_BODY_METRICS);
+      const view = await svc.myConsentView('client-1', 'coach-1');
+      const granted = (scope: string) => view.consents.find((r) => r.scope === scope)?.granted;
+      expect(granted(ConsentScope.FITNESS_WORKOUTS)).toBe(true);
+      expect(granted(ConsentScope.FITNESS_FOOD_MACROS)).toBe(true);
+      expect(granted(ConsentScope.FITNESS_HABITS_PROGRESS)).toBe(true);
+      expect(granted(ConsentScope.FITNESS_BODY_METRICS)).toBe(false);
+      expect(await svc.coachCanAccess('coach-1', 'client-1', ConsentScope.FITNESS_WORKOUTS, 'coach')).toBe(true);
+      expect(await svc.coachCanAccess('coach-1', 'client-1', ConsentScope.FITNESS_BODY_METRICS, 'coach')).toBe(false);
+    });
+
+    it('an owner-role coach: owner_access true, rows unchanged (no row is still not granted)', async () => {
+      const prisma = buildPrisma([{ id: 'owner-1', role: 'owner' }]);
+      const svc = new ConsentService(prisma, buildAudit());
+      const view = await svc.myConsentView('client-1', 'owner-1');
+      expect(view.owner_access).toBe(true);
+      expect(view.consents.find((r) => r.scope === ConsentScope.FITNESS_WORKOUTS)?.granted).toBe(false);
+    });
+
+    it('an unknown coach id: owner_access false', async () => {
+      const prisma = buildPrisma([]);
+      const svc = new ConsentService(prisma, buildAudit());
+      const view = await svc.myConsentView('client-1', 'nobody');
+      expect(view.owner_access).toBe(false);
+      expect(view.consents).toHaveLength(13);
+    });
+  });
 });

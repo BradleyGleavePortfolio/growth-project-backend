@@ -201,6 +201,17 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
       expect(await service.getStatus('u_a')).toMatchObject({ state: 'needs_reconsent', scope: null });
     });
 
+    it('memoryGrantTimes (R11-M4): only a live v5 grant, with its recorded time; flag off -> empty', async () => {
+      await service.grant('u_a', { version: V5 });
+      await service.grant('u_b', { version: V4 });
+      await service.grant('u_c', { version: V5 });
+      await service.withdraw('u_c');
+      const got = await service.memoryGrantTimes(['u_a', 'u_b', 'u_c', 'u_d']);
+      expect(got).toEqual(new Map([['u_a', fake.rows[0].created_at]]));
+      process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED = 'false';
+      expect(await service.memoryGrantTimes(['u_a'])).toEqual(new Map());
+    });
+
     it('ledger flag off -> neither scope', async () => {
       await service.grant('u_a', { version: V5 });
       process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED = 'false';

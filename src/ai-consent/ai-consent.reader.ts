@@ -35,4 +35,9 @@ export interface ClientAiConsentReader {
     userIds: readonly string[],
     scope?: ClientAiConsentScope,
   ): Promise<ReadonlySet<string>>;
+  /**
+   * R11-M4: when each live client-ai-v5 ('memory') grant among `userIds` was recorded (others
+   * absent). Same batch limit and fail-closed rule as clientsWithAiConsent. Optional.
+   */
+  memoryGrantTimes?(userIds: readonly string[]): Promise<ReadonlyMap<string, Date>>;
 }

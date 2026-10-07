@@ -25,7 +25,8 @@ import {
   SupabaseExistingUserNotFoundError,
   SupabaseTimeoutError,
 } from './errors/guest-conversion.error';
-import { isConnectAccountReadyForCheckout } from './storefront.service';
+import { ConnectService } from '../connect/connect.service';
+import { isConnectAccountReadyForCheckout, shareLinkReadinessRow } from './storefront.service';
 import type { GuestCheckoutDto } from './storefront.dto';
 import type { GuestCheckoutResult } from './storefront.types';
 import { CheckoutIdempotencyService } from './checkout-idempotency.service';
@@ -218,6 +219,12 @@ export class GuestCheckoutService {
     // for hand-constructed unit tests.
     @Optional()
     private readonly fanout?: PurchaseFanoutService,
+    // B-GUESTPAY-127: re-reads a not-ready coach from Stripe before the
+    // guest Buy is refused (b#821 refreshNotReady). Always injected in the
+    // app (StorefrontModule imports ConnectModule, which exports it);
+    // @Optional() only for hand-built tests.
+    @Optional()
+    private readonly connect?: ConnectService,
   ) {}
 
   // POST /v1/packages/public/join/:token/checkout
@@ -260,7 +267,7 @@ export class GuestCheckoutService {
         message: 'This link is not available.',
       });
     }
-    const connectAccount = pkg.coach.connect_account;
+    const connectAccount = await shareLinkReadinessRow(pkg.coach.connect_account, this.connect);
     // Audit #3 P1-8 — gate on full readiness, not just charges_enabled.
     // Reuse the storefront predicate so the GET and POST surfaces can't
     // disagree about who can be sold.

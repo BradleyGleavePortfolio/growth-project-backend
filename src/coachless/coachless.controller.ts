@@ -92,6 +92,7 @@ export class CoachlessController {
       rawCode: body.code,
       idempotencyKey,
       requestId: req.requestId,
+      coachSharingNotice: body.coach_sharing_notice,
     });
   }
 
