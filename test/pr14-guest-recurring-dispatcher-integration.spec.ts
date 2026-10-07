@@ -267,6 +267,33 @@ describe('PR-14 R2 — Guest recurring dispatcher integration (BillingService.ha
     sentinels[0].stripe_payment_intent_id = 'pi_first_invoice';
   });
 
+  // B-WELCOME-127 — the subscription is created `incomplete` before the buyer
+  // types a card. Converting on that event (or on a decline) made the account
+  // and sent "You're enrolled" to a buyer who had not paid.
+  const unpaidEvents: Array<[string, Record<string, unknown>]> = [
+    ['customer.subscription.created', { id: 'sub_guest_rec', customer: 'cus_g', status: 'incomplete' }],
+    ['customer.subscription.updated', { id: 'sub_guest_rec', customer: 'cus_g', status: 'incomplete_expired' }],
+    ['customer.subscription.deleted', { id: 'sub_guest_rec', customer: 'cus_g', status: 'canceled' }],
+    ['invoice.payment_failed', { id: 'in_first', customer: 'cus_g', subscription: 'sub_guest_rec' }],
+  ];
+  it.each(unpaidEvents)('%s before payment does NOT convert the guest (no account, no welcome email)', async (type, object) => {
+    const res = await svc.handleEvent({ id: `evt_unpaid_${type}`, type, data: { object } });
+    expect(res.processed).toBe(true);
+    expect(guestCheckout.handlePaymentSucceeded).not.toHaveBeenCalled();
+  });
+
+  it.each(['active', 'trialing'])(
+    'customer.subscription.created with status %s still converts via the BACKSTOP',
+    async (status) => {
+      await svc.handleEvent({
+        id: `evt_sub_created_${status}`,
+        type: 'customer.subscription.created',
+        data: { object: { id: 'sub_guest_rec', customer: 'cus_g', status } },
+      });
+      expect(guestCheckout.handlePaymentSucceeded).toHaveBeenCalledWith('pi_first_invoice');
+    },
+  );
+
   it('duplicate Stripe event id is short-circuited by StripeProcessedEvent — handlePaymentSucceeded is NOT invoked a second time', async () => {
     // First delivery — fires fallback.
     await svc.handleEvent({
