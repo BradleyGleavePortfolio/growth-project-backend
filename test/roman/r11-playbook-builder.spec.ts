@@ -20,7 +20,7 @@ import { PlaybookBuilderScheduler } from '../../src/roman/playbook/playbook-buil
 type Row = Record<string, any>;
 const H = 'coach-head-7f3a';
 const NOW = new Date('2026-10-07T12:00:00.000Z');
-const RESERVATION = { requestId: 'roman-bg:1', capability: 'roman.playbook', model: ROMAN_MODEL_PHASE_1, poolCoachId: H };
+const RESERVATION = { requestId: 'roman-bg:1', capability: 'roman.playbook', model: ROMAN_MODEL_PHASE_1, poolCoachId: null };
 
 const DRAFT = {
   sections: {
@@ -118,8 +118,10 @@ describe('R11-P3b-2 playbook builder', () => {
     const h = harness();
     expect(await h.svc.runOnce(NOW)).toEqual({ coaches: 1, outcomes: { built: 1 } });
     expect(h.spend.reserve).toHaveBeenCalledWith(expect.objectContaining({
-      capability: 'roman.playbook', payer: { kind: 'coach', coachId: H }, model: ROMAN_MODEL_PHASE_1,
+      capability: 'roman.playbook', payer: { kind: 'platform', coachId: H }, model: ROMAN_MODEL_PHASE_1,
     }));
+    // PB-POOL: the platform pays playbook learning, never the head coach's AI credits.
+    expect(h.spend.reserve).not.toHaveBeenCalledWith(expect.objectContaining({ payer: expect.objectContaining({ kind: 'coach' }) }));
     const [, subject, surface, params] = h.egress.anthropicMessagesCreate.mock.calls[0];
     expect(subject).toEqual({ kind: 'client_data', clientIds: ['client-aa11'], audience: 'coach', scope: 'memory' });
     expect(surface).toBe('roman.playbook');

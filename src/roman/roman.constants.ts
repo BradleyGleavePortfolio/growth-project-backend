@@ -135,7 +135,7 @@ export const ROMAN_LEDGER_CAPABILITY = 'roman.chat';
 
 /** Ledger + coach-pool capability for v1.1 memory work (day summaries, notes). */
 export const ROMAN_MEMORY_CAPABILITY = 'roman.memory';
-/** Ledger + coach-pool capability for v1.1 coach playbook builds. */
+/** Ledger capability for v1.1 coach playbook builds (platform-paid, no coach pool). */
 export const ROMAN_PLAYBOOK_CAPABILITY = 'roman.playbook';
 /** The background capabilities, which share one daily ceiling. */
 export const ROMAN_BACKGROUND_CAPABILITIES = [

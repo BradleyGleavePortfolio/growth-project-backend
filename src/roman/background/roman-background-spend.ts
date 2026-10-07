@@ -7,7 +7,10 @@
  *     admitted only when the pool can still pay its worst case, and its real
  *     cost is debited after it under the job's own capability. A client's
  *     turn limit is never touched. A payer with no pool (no coach) is bounded
- *     by the ceiling below only, the same rule as a Roman turn.
+ *     by the ceiling below only, the same rule as a Roman turn. The platform
+ *     payer (coach playbook learning, PB-POOL) has no pool either: the head
+ *     coach's credits are never read or debited for it, and its spend is
+ *     bounded by the ceiling below only.
  *  2. A platform-wide daily ceiling for all background work together
  *     (ROMAN_BACKGROUND_DAILY_COST_CAP_USD, default 10), kept on the
  *     content-free AiRequestAudit ledger under the capabilities roman.memory
@@ -35,10 +38,15 @@ import { romanErrorTag, romanSanitizedError } from '../roman-error-tag';
 /** pg_advisory_xact_lock namespace for background admission: ASCII 'rmbg'. */
 export const ROMAN_BACKGROUND_LOCK_NAMESPACE = 0x72_6d_62_67;
 
-/** Whose pool pays: a client's head coach, or a coach's own head coach. */
+/**
+ * Whose pool pays: a client's head coach, a coach's own head coach, or the
+ * platform (no coach pool; coachId is the head coach the job is for, kept on
+ * the ledger row for attribution only).
+ */
 export type RomanBackgroundPayer =
   | { readonly kind: 'client'; readonly clientId: string }
-  | { readonly kind: 'coach'; readonly coachId: string };
+  | { readonly kind: 'coach'; readonly coachId: string }
+  | { readonly kind: 'platform'; readonly coachId: string };
 
 export interface RomanBackgroundReserveInput {
   readonly capability: RomanBackgroundCapability;
@@ -107,7 +115,7 @@ export class RomanBackgroundSpendService {
     );
 
     let poolCoachId: string | null = null;
-    if (this.budget) {
+    if (this.budget && input.payer.kind !== 'platform') {
       try {
         poolCoachId = await this.poolCoachIdFor(this.budget, input.payer);
         if (poolCoachId) {
@@ -157,7 +165,7 @@ export class RomanBackgroundSpendService {
             requester_id: payerId(input.payer),
             requester_role: 'system',
             subject_user_id: input.payer.kind === 'client' ? input.payer.clientId : null,
-            tenant_coach_id: poolCoachId,
+            tenant_coach_id: input.payer.kind === 'platform' ? input.payer.coachId : poolCoachId,
             provider: 'anthropic',
             model: input.model,
             enabled: true,
@@ -240,6 +248,7 @@ export class RomanBackgroundSpendService {
     budget: CoachAIBudgetService,
     payer: RomanBackgroundPayer,
   ): Promise<string | null> {
+    if (payer.kind === 'platform') return null;
     if (payer.kind === 'coach') return budget.resolveHeadCoachId(payer.coachId);
     const user = await this.prisma.user.findUnique({
       where: { id: payer.clientId },

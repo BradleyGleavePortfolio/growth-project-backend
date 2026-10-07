@@ -3,7 +3,8 @@
  *
  * For each head coach with clients: collect the team's scrubbed sources
  * (playbook-sources.ts), skip when nothing changed since the active version
- * (same ledger digest), admit the spend (background pool + daily ceiling),
+ * (same ledger digest), admit the spend (paid by the platform, never the
+ * head coach's AI credits; bounded by the daily background ceiling),
  * ask the model for the playbook JSON once, validate it (schema, identity,
  * verbatim quotes of private notes), then write the new version in one
  * transaction: the old active row is superseded, the new one is active, and
@@ -170,7 +171,9 @@ export class PlaybookBuilderService {
     const inputTokenBound = inputTokenUpperBound(PLAYBOOK_SYSTEM_PROMPT, [{ content: user }]);
     const admission = await this.spend.reserve({
       capability: ROMAN_PLAYBOOK_CAPABILITY,
-      payer: { kind: 'coach', coachId: head },
+      // PB-POOL: the platform pays playbook learning; the daily background
+      // ceiling bounds it. The head coach's AI credits are never touched.
+      payer: { kind: 'platform', coachId: head },
       model: ROMAN_MODEL_PHASE_1,
       inputTokenBound,
       maxOutputTokens: maxOut,

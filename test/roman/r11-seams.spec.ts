@@ -523,7 +523,9 @@ describe('R11-00 flags and capabilities', () => {
 // ─── background breaker ──────────────────────────────────────────────────────
 
 type Row = Record<string, unknown>;
-function bgDb(opts: { usedRows?: Row[]; ledgerFails?: boolean; coachOf?: string | null } = {}) {
+function bgDb(
+  opts: { usedRows?: Row[]; ledgerFails?: boolean; coachOf?: string | null; ledgerFromCreated?: boolean } = {},
+) {
   const created: Row[] = [];
   const updated: Row[] = [];
   const groupByArgs: Row[] = [];
@@ -533,6 +535,12 @@ function bgDb(opts: { usedRows?: Row[]; ledgerFails?: boolean; coachOf?: string 
       groupBy: jest.fn(async (args: Row) => {
         groupByArgs.push(args);
         if (opts.ledgerFails) throw new Error('ledger down');
+        if (opts.ledgerFromCreated) {
+          return created.map((c) => ({
+            model: c.model,
+            _sum: { prompt_token_estimate: c.prompt_token_estimate, response_token_estimate: c.response_token_estimate },
+          }));
+        }
         return opts.usedRows ?? [];
       }),
       create: jest.fn(async ({ data }: { data: Row }) => {
@@ -703,5 +711,59 @@ describe('R11-00 background spend breaker', () => {
         contextId: out.reservation.requestId,
       },
     ]);
+  });
+
+  // PB-POOL: coach playbook learning is paid by the platform. The head coach's
+  // AI pool is never read or debited, and the spend still sits on the ledger
+  // the background ceiling reads, so the daily ceiling bounds it.
+  const playbookJob = {
+    capability: 'roman.playbook' as const,
+    payer: { kind: 'platform' as const, coachId: 'coach-head' },
+    model: ROMAN_MODEL_PHASE_1,
+    inputTokenBound: 10_000,
+    maxOutputTokens: 2_000,
+  };
+
+  it('a platform payer: an empty coach pool does not refuse it, and the pool is never read or debited', async () => {
+    const db = bgDb();
+    const { budget, debits } = fakeBudget({ used: 4000, available: 4000 });
+    const s = bg(db, budget);
+    const out = await s.reserve(playbookJob);
+    expect(out.admitted).toBe(true);
+    if (!out.admitted) return;
+    expect(out.reservation.poolCoachId).toBeNull();
+    expect(db.created[0]).toMatchObject({
+      capability: 'roman.playbook',
+      requester_id: 'coach-head',
+      subject_user_id: null,
+      tenant_coach_id: 'coach-head',
+      metadata: { state: 'reserved' },
+    });
+    await s.settle(out.reservation, 10_000, 1_000, { outcome: 'ok' });
+    expect(db.updated[0]).toMatchObject({
+      data: { prompt_token_estimate: 10_000, response_token_estimate: 1_000 },
+    });
+    expect(budget.canCharge).not.toHaveBeenCalled();
+    expect(budget.recordUsage).not.toHaveBeenCalled();
+    expect(budget.resolveHeadCoachId).not.toHaveBeenCalled();
+    expect(debits).toEqual([]);
+  });
+
+  it('a platform payer is still bounded by the daily background ceiling', async () => {
+    // Worst case per build: 10k in x $2 + 2k out x $10 per MTok = $0.04.
+    process.env.ROMAN_BACKGROUND_DAILY_COST_CAP_USD = '0.09';
+    const db = bgDb({ ledgerFromCreated: true });
+    const { budget } = fakeBudget();
+    const s = bg(db, budget);
+    expect((await s.reserve(playbookJob)).admitted).toBe(true);
+    expect((await s.reserve(playbookJob)).admitted).toBe(true);
+    expect(await s.reserve(playbookJob)).toEqual({ admitted: false, reason: 'cap_reached' });
+    expect(db.created).toHaveLength(2);
+    // Memory work shares the same ceiling with the platform-paid playbook rows.
+    expect(await s.reserve({ ...memoryJob, inputTokenBound: 10_000 })).toEqual({
+      admitted: false,
+      reason: 'cap_reached',
+    });
+    expect(budget.recordUsage).not.toHaveBeenCalled();
   });
 });
