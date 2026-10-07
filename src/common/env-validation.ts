@@ -1109,7 +1109,7 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'feature',
     default: "unset → 'log' transport only (dev sender); any live transport refuses to send",
     reason:
-      'B-EMAILFROM-126 — the ONE From address for every email the backend sends (EmailService templates, digests, guest-checkout welcome; src/email/email-sender.ts). Must be on the domain verified with Resend (production: The Growth Project <noreply@growthprojectapp.com>). Production boot requires it (prodHardenedFeatureVars); with a live transport and no valid value nothing is sent and the log names this variable.',
+      'B-EMAILFROM-126 — the ONE From address for every email the backend sends (EmailService templates, digests, guest-checkout welcome; src/email/email-sender.ts). Must be on the domain verified with Resend (production: The Growth Project <noreply@growthprojectapp.com>). EmailService refuses to boot EMAIL_TRANSPORT=resend without a valid value; with a live transport and no valid value nothing is sent and the log names this variable.',
   },
   {
     name: 'SENDGRID_API_KEY',
@@ -2833,11 +2833,6 @@ export function assertEnv(
         name: 'STOREFRONT_BASE_URL',
         reason:
           'R43 storefront — without it the share-link service falls back to the dev-only canonical origin and the storefront origin is missing from CORS, breaking the public package endpoint from any browser.',
-      },
-      {
-        name: 'EMAIL_FROM_ADDRESS',
-        reason:
-          'B-EMAILFROM-126 — the one sender for every email. Resend rejects sends from unverified domains; without an address on the verified domain no receipt, invite, dunning notice, digest or guest welcome (invite link) reaches anyone.',
       },
       {
         name: 'APPLE_TEAM_ID',
