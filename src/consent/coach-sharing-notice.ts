@@ -23,6 +23,10 @@ export const COACH_SHARING_NOTICE_VERSION = 'coach_sharing_join_v1';
 export const COACH_SHARING_NOTICE_FIELD = 'coach_sharing_notice';
 // Audit metadata `source` for grants recorded this way.
 export const COACH_SHARING_JOIN_SOURCE = 'coach_join_notice';
+// Audit metadata `source` when the same sentence was shown on the first
+// onboarding screen of an account linked outside the app (share-link buyers,
+// see coach-sharing-first-sign-in.service.ts).
+export const COACH_SHARING_FIRST_SIGN_IN_SOURCE = 'first_sign_in_notice';
 
 export const COACH_SHARING_JOIN_SCOPES = [
   ConsentScope.FITNESS_WORKOUTS,
@@ -65,6 +69,7 @@ export async function grantCoachSharingAtJoinTx(
   clientId: string,
   coachId: string,
   noticeVersion: string,
+  source: string = COACH_SHARING_JOIN_SOURCE,
 ): Promise<string[]> {
   const now = new Date();
   const granted: string[] = [];
@@ -90,7 +95,7 @@ export async function grantCoachSharingAtJoinTx(
       metadata: {
         scope,
         coach_id: coachId,
-        source: COACH_SHARING_JOIN_SOURCE,
+        source,
         notice_version: noticeVersion,
       },
     });
