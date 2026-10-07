@@ -1,4 +1,4 @@
-// R11-T1b: read_history's extra kinds (health_day, fasting, roman_chat) read the caller's rows only,
+// R11-T1b: read_history's extra kinds (health_day, fasting, roman_chat, community_post) read the caller's rows only,
 // with numbers computed in code. The doubles return fixed rows; the tests assert the where clauses.
 
 import { RomanReadToolbox } from '../../../src/roman/tools/roman-read-tools';
@@ -20,6 +20,7 @@ function setup(samples = [sample('SPO2_PCT', 'OURA', 97, '2026-10-01T15:00:00Z')
     { created_at: T('2026-10-01T16:00:00Z'), role: 'user', content: 'How was my sleep?' },
     { created_at: T('2026-10-01T16:00:05Z'), role: 'roman', content: 'x'.repeat(400) },
   ];
+  const posts = [{ created_at: T('2026-10-02T01:00:00Z'), scope: 'workspace', title: 'Week 3', body: 'New squat best' }];
   const prisma = {
     user: { findUnique: jest.fn(async () => ({ deleted_at: null, notification_prefs: { timezone: 'America/Los_Angeles' } })) },
     wearableSample: { findMany: jest.fn(async (_a: { where: unknown }) => samples) },
@@ -28,13 +29,14 @@ function setup(samples = [sample('SPO2_PCT', 'OURA', 97, '2026-10-01T15:00:00Z')
     },
     fastingWindow: { findMany: jest.fn(async (_a: { where: unknown }) => fasts) },
     romanMessage: { findMany: jest.fn(async (_a: { where: unknown }) => chats) },
+    communityPost: { findMany: jest.fn(async (_a: { where: unknown }) => posts) },
   };
   const timeline = { read: jest.fn(async () => ({ client_id: 'client-a', events: [], next_cursor: null, truncated: [] })) };
   const box = new RomanReadToolbox(fakeOf<PrismaService>(prisma), fakeOf<RomanTimelineReader>(timeline));
   const run = (input: unknown) => box.run({ id: 'client-a', role: 'student' }, 'read_history', input, { now: NOW });
   return { prisma, timeline, run };
 }
-const KINDS = ['health_day', 'fasting', 'roman_chat'];
+const KINDS = ['health_day', 'fasting', 'roman_chat', 'community_post'];
 const WINDOW = { from: '2026-10-01', to: '2026-10-02' };
 
 describe('R11-T1b read_history extra kinds', () => {
@@ -68,11 +70,15 @@ describe('R11-T1b read_history extra kinds', () => {
       created_at: { gte: T('2026-10-01T07:00:00Z'), lt: T('2026-10-03T07:00:00Z') },
       session: { user_id: 'client-a', surface: 'client', deleted_at: null },
     });
-    expect(r).toMatchObject({ ok: true, rows: 6, truncated: false });
+    expect(t.prisma.communityPost.findMany.mock.calls[0][0].where).toMatchObject({
+      author_id: 'client-a', deleted_at: null, visibility: 'active',
+    });
+    expect(r).toMatchObject({ ok: true, rows: 7, truncated: false });
     expect(JSON.parse(r.content).events).toEqual([
       { date: '2026-10-01', kind: 'health_day', sleep_deep_min: 90, bedtime: '23:15' },
       { date: '2026-10-01', time: '09:00', kind: 'roman_chat', from: 'client', text: 'How was my sleep?' },
       { date: '2026-10-01', time: '09:00', kind: 'roman_chat', from: 'roman', text: `${'x'.repeat(300)}…` },
+      { date: '2026-10-01', time: '18:00', kind: 'community_post', scope: 'workspace', title: 'Week 3', text: 'New squat best' },
       { date: '2026-10-01', time: '20:00', kind: 'fasting', hours: 16.5, ended: true, protocol: '16:8', text: 'felt fine' },
       { date: '2026-10-02', kind: 'health_day', body_weight_kg: 81, body_weight_lbs: 178.6, workout_distance_km: 5.23 },
       { date: '2026-10-02', time: '15:00', kind: 'fasting', ended: false },
@@ -88,7 +94,8 @@ describe('R11-T1b read_history extra kinds', () => {
       expect(m.findMany).toHaveBeenCalledTimes(1);
       expect(m.findMany.mock.calls[0][0].where).toMatchObject({ user_id: 'client-a' });
     }
-    expect(r).toMatchObject({ ok: true, rows: 5 });
+    expect(t.prisma.communityPost.findMany).toHaveBeenCalledTimes(1);
+    expect(r).toMatchObject({ ok: true, rows: 6 });
   });
 
   it('a capped device read sets truncated and drops the day it may not have read completely', async () => {

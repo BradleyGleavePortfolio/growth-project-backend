@@ -50,13 +50,14 @@ function setup(events: RomanTimelineEvent[] = [], more = false) {
     wearableUserMetricPreference: { findMany: jest.fn(async () => []) },
     fastingWindow: { findMany: jest.fn(async () => []) },
     romanMessage: { findMany: jest.fn(async () => []) },
+    communityPost: { findMany: jest.fn(async () => []) },
   };
   const page = { timezone: 'America/Los_Angeles', events, next_cursor: more ? 'c' : null, truncated: [] };
   const timeline = { read: jest.fn(async (client_id: string, _opts: ReadOpts) => ({ client_id, ...page })) };
   const box = new RomanReadToolbox(fakeOf<PrismaService>(prisma), fakeOf<RomanTimelineReader>(timeline));
   const run = (name: string, input: unknown, caller = A) => box.run(caller, name, input, { now: NOW });
   const { exerciseSet, loggedFoodEntry, wearableSample, wearableUserMetricPreference: prefs, fastingWindow } = prisma;
-  const tables = [exerciseSet, loggedFoodEntry, wearableSample, prefs, fastingWindow, prisma.romanMessage];
+  const tables = [exerciseSet, loggedFoodEntry, wearableSample, prefs, fastingWindow, prisma.romanMessage, prisma.communityPost];
   const fns: { mock: { calls: unknown[] } }[] = [timeline.read, ...tables.map((m) => m.findMany)];
   const queries = () => fns.reduce((n, f) => n + f.mock.calls.length, 0);
   return { prisma, timeline, run, queries };

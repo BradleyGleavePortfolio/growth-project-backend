@@ -62,7 +62,7 @@ export const ROMAN_READ_TOOL_DEFINITIONS: readonly RomanToolDefinition[] = Objec
   {
     name: 'read_history',
     description:
-      "The client's own logs between two dates in their time zone (inclusive, at most 31 days): daily food totals, workouts done and missed, weight, water, habits, check-ins, daily wearable totals, messages with their coach and coaching sessions; health_day is the rest of their connected-device data per day (sleep stages, bedtime and wake time, body weight and body fat, blood pressure, VO2 max, workout minutes and distance, strain, temperature, respiratory rate, SpO2); fasting windows; roman_chat is their own earlier chats with Roman. Numbers are computed by the app; quote them as given.",
+      "The client's own logs between two dates in their time zone (inclusive, at most 31 days): daily food totals, workouts done and missed, weight, water, habits, check-ins, daily wearable totals, messages with their coach and coaching sessions; health_day is the rest of their connected-device data per day (sleep stages, bedtime and wake time, body weight and body fat, blood pressure, VO2 max, workout minutes and distance, strain, temperature, respiratory rate, SpO2); fasting windows; roman_chat is their own earlier chats with Roman; community_post is the posts they wrote. Numbers are computed by the app; quote them as given.",
     input_schema: {
       type: 'object',
       properties: { kinds: { type: 'array', items: { enum: [...ROMAN_READ_HISTORY_KINDS] } }, from: DAY, to: DAY },

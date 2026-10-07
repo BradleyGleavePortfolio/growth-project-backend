@@ -7,7 +7,7 @@
  *   respiratory rate, SpO2. Daily values per the ingest aggregation (METRIC_AGGREGATION) and the same
  *   provider choice as wearable_day (selectWearableProviders). Never the raw heart-rate stream.
  * - fasting: FastingWindow rows. roman_chat: the caller's own client-surface Roman messages in chats
- *   they have not deleted.
+ *   they have not deleted. community_post: posts the caller wrote (client_data has the latest 5 only).
  * Numbers are computed here; strings are sanitised and clamped.
  */
 
@@ -16,7 +16,7 @@ import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
 import { localClock, localDateOf, selectWearableProviders } from '../context/roman-client-context.service';
 import { METRIC_AGGREGATION } from '../../wearables/samples/metric-bucket.map';
 
-export const ROMAN_EXTRA_HISTORY_KINDS = ['health_day', 'fasting', 'roman_chat'] as const;
+export const ROMAN_EXTRA_HISTORY_KINDS = ['health_day', 'fasting', 'roman_chat', 'community_post'] as const;
 export type RomanExtraHistoryKind = (typeof ROMAN_EXTRA_HISTORY_KINDS)[number];
 
 /** Metric -> output key. wearable_day already has steps, active kcal, resting HR, HRV, sleep total, efficiency, recovery, readiness. */
@@ -84,6 +84,7 @@ export class RomanExtraHistory {
       kinds.has('health_day') ? this.health(callerId, w) : null,
       kinds.has('fasting') ? this.fasting(callerId, w) : null,
       kinds.has('roman_chat') ? this.chats(callerId, w) : null,
+      kinds.has('community_post') ? this.posts(callerId, w) : null,
     ]);
     const events = parts.flatMap((p) => p?.events ?? []);
     return { events, capped: parts.some((p) => p?.capped) };
@@ -188,6 +189,26 @@ export class RomanExtraHistory {
       const from = r.role === 'user' ? 'client' : 'roman';
       events.push({ date: c.local_date, time: c.local_time, kind: 'roman_chat', from, text });
     }
+    return { events, capped: rows.length > CAP };
+  }
+
+  private async posts(callerId: string, w: ExtraWindow) {
+    const rows = await this.prisma.communityPost.findMany({
+      where: { author_id: callerId, deleted_at: null, visibility: 'active', created_at: { gte: w.from, lt: w.to } },
+      orderBy: { created_at: 'asc' },
+      take: CAP + 1,
+      select: { created_at: true, scope: true, title: true, body: true },
+    });
+    const events = rows.slice(0, CAP).map((r) => {
+      const c = localClock(r.created_at, w.tz);
+      const event: Record<string, unknown> = { date: c.local_date, time: c.local_time, kind: 'community_post' };
+      event.scope = String(r.scope);
+      const title = clamp(r.title, 80);
+      const text = clamp(r.body, 300);
+      if (title) event.title = title;
+      if (text) event.text = text;
+      return event;
+    });
     return { events, capped: rows.length > CAP };
   }
 }
