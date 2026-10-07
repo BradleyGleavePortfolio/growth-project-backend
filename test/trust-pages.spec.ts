@@ -467,6 +467,54 @@ describe('Privacy Policy accuracy (/privacy)', () => {
   });
 });
 
+// R11-L3 (FLIP-PB-128 B1): with FEATURE_ROMAN_PLAYBOOK on, the playbook
+// builder sends the coach team's own content (and, for memory-scope clients,
+// coach messages, session notes, per-client plans and k>=3 figures) to
+// Anthropic to learn the coach's method (src/roman/playbook/playbook-sources.ts,
+// playbook-builder.service.ts). The summary has no app route, is in the head
+// coach's data export (data-export.service.ts) and is deleted with the coach
+// (account-deletion.manifest.ts). Off = no build, no use (roman-playbook.feature.ts).
+describe('Roman learns a coach\u2019s method: privacy, health-data policy and terms (R11-L3)', () => {
+  const privacy = visibleText(renderTrustPage('privacy'));
+  const health = visibleText(renderTrustPage('consumer-health'));
+  const terms = visibleText(renderTrustPage('terms'));
+
+  it('privacy policy says what coach content Anthropic processes, why, who sees it, export, deletion and the off state', () => {
+    expect(privacy).toContain(
+      'If you coach on TGP and the feature is on, Roman also learns your coaching methods, so that he answers your clients the way you coach. Anthropic processes your coaching team’s general guidelines and meal plans, program templates and library workouts, and the exercises you program most. For clients who keep Roman’s memory on, it also processes your messages to them, your private session notes about them, the guidelines and meal plans written for them, and figures worked out across at least three of those clients, such as sessions per week, macro targets and how you handle Roman’s suggested plan changes. Your clients’ and team members’ names, and any email addresses, phone numbers, links and dates, are removed first. From this, Anthropic writes a summary of your methods that Roman uses only when he replies to your clients who keep his memory on. The summary itself is not shown in the app, to you or to your clients, and Roman never quotes your session notes or messages. It is kept with the head coach’s account (yours, if you coach on your own), included in that coach’s data export and deleted with that account. When the feature is off, no new summary is built and Roman does not use it.',
+    );
+    expect(privacy).toContain(
+      'If you coach on TGP and the feature is on: to let Roman learn your coaching methods, so he answers your clients the way you coach (see “Roman and AI” below).',
+    );
+    expect(privacy).toContain(
+      'Roman’s summary of a coach’s methods — kept with the head coach’s account until that account is deleted.',
+    );
+    expect(privacy).toContain(
+      'Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed; learning a coach’s methods from that coach’s content, if turned on (see “Roman and AI”).',
+    );
+  });
+
+  it('health-data policy names the client data used to learn the coach\u2019s method, only with Roman\u2019s memory on', () => {
+    expect(health).toContain(
+      'to provide Roman and your coach’s AI drafts after you agree, to help Roman learn your coach’s methods without identifying you if you keep Roman’s memory on and the feature is on, to keep the service safe and secure,',
+    );
+    expect(health).toContain(
+      'to generate Roman’s replies and your coach’s AI drafts; if you keep Roman’s memory on and the feature is on, your coach’s messages to you, their private session notes about you, the guidelines and meal plans written for you and figures from your plan combined with those of at least two other clients, with names and contact details removed, so Roman can learn your coach’s methods; and, if turned on, up to 240 characters',
+    );
+  });
+
+  it('terms licence covers AI processing of coach content for Roman, not only hosting and display', () => {
+    expect(terms).not.toContain('licence to host and display it as required to operate the service.');
+    expect(terms).toContain(
+      'Coaching content you create remains yours; you grant The Growth Project a limited licence to host, display and process it as required to operate the service, including, when the feature is on, processing by its AI provider, Anthropic, so that Roman can learn your coaching methods and answer your clients the way you coach (see the Privacy Policy).',
+    );
+  });
+
+  it('dates the review to the day of the change', () => {
+    expect(POLICY_LAST_REVIEWED >= '2026-10-07').toBe(true);
+  });
+});
+
 describe('Terms of Service eligibility', () => {
   it('requires 16+ and links both privacy documents', () => {
     const html = renderTrustPage('terms');
@@ -548,7 +596,7 @@ describe('policy copy hygiene', () => {
       'it never replies, posts or acts on anything, and only the coach sees the result',
     );
     expect(privacy).toContain(
-      'Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed.',
+      'Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed; learning a coach’s methods from that coach’s content, if turned on (see “Roman and AI”).',
     );
     expect(health).toContain(
       'up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you ticked the optional AI box)',
