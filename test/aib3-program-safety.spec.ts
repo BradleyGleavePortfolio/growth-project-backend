@@ -115,6 +115,9 @@ describe('B-AIB3-126 — per-client program generator', () => {
     'Keep Barbell Back Squat out of this plan',
     'Want an alternative to Barbell Back Squat',
     'Keep the barbell back squat off the program, his knee is sore',
+    'Don\u2019t include Barbell Back Squat',
+    "She doesn't want Barbell Back Squat",
+    'He can\u2019t use the Barbell Back Squat',
   ])('a negative, an alternative request or a mention never exempts the injury filter: %s', async (notes) => {
     const { svc, create } = buildGenerator();
     await svc.generateWorkoutProgram('coach1', { clientId: 'client1', weeks: 1, daysPerWeek: 1, notes });

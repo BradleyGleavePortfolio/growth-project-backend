@@ -125,7 +125,7 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, M
 const KEEP_WORD = /\b(keep|include|add|use|still|want|incorporate|program)\b/;
 // Exclusion or alternative wording anywhere in the exercise's clause (before OR after the name) means "do not keep it".
 const NEGATION =
-  /\b(no|not|never|avoid|without|skip|exclude|remove|drop|replace|swap|instead|except|don'?t|nothing|out|off|away|alternatives?|substitut\w*|rather|cut|ban(ned)?|eliminate|other than|less|fewer)\b/;
+  /\b(no|not|never|avoid|without|skip|exclude|remove|drop|replace|swap|instead|except|\w+n't|cannot|dont|doesnt|didnt|cant|wont|shouldnt|nothing|out|off|away|alternatives?|substitut\w*|rather|cut|ban(ned)?|eliminate|other than|less|fewer)\b/;
 const CLAUSE_BREAK = /[.;,!?\n]|\bbut\b/;
 
 /**
@@ -134,7 +134,8 @@ const CLAUSE_BREAK = /[.;,!?\n]|\bbut\b/;
  * closed, so the injury substitution still runs.
  */
 export function coachAskedToKeep(coachText: string, name: string): boolean {
-  const [text, n] = [coachText.toLowerCase(), name.trim().toLowerCase()];
+  // iOS Smart Punctuation types a curly apostrophe; normalise it so "Don’t include ..." reads as a negation.
+  const [text, n] = [coachText.toLowerCase().replace(/[\u2018\u2019\u02bc]/g, "'"), name.trim().toLowerCase()];
   if (n.length < 3) return false;
   for (let i = text.indexOf(n); i >= 0; i = text.indexOf(n, i + 1)) {
     const before = text.slice(0, i).split(CLAUSE_BREAK).pop() ?? '';
