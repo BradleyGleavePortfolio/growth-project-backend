@@ -158,7 +158,7 @@ export class PublicPagesController {
   }
 
   // Help surface — durable, server-rendered self-serve coach help. Source
-  // copy lives in docs/help/ and is mirrored into ./help-pages.html.ts so a
+  // copy lives in ./help-pages.html.ts (docs/help has summaries) so a
   // coach can resolve setup, first-invite, FAQ, and support-routing
   // questions without emailing the operator. Every page links to the
   // others through a shared nav so the surface reads as one section.
