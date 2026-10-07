@@ -371,6 +371,31 @@ describe('Privacy Policy accuracy (/privacy)', () => {
     }
   });
 
+  // R11-T1b (#843, read_history): fasting logs, past Roman chats the client has
+  // not deleted, the client's own community posts and per-day device health
+  // (sleep stages, bedtime and wake time, body weight and body fat, blood
+  // pressure); never the raw HEART_RATE_BPM stream. /privacy already names the
+  // community posts the client writes in the sentence before.
+  it('both policies name what Roman may read (R11-T1b), never raw heart-rate readings', () => {
+    const device =
+      'daily summaries of your connected health data, including sleep stages, bedtime and wake time, body weight and body fat, and blood pressure.';
+    const never = 'Roman never reads the raw heart-rate readings your device records.';
+    expect(text).toContain(
+      'When your coach asks for an AI draft about you, the same kinds of data are sent. Roman may also read, and send to Anthropic, your fasting logs, your earlier Roman conversations that you have not deleted and ' +
+        device +
+        ' ' +
+        never +
+        ' With Roman’s memory off, only your own data is used',
+    );
+    const health = visibleText(renderTrustPage('consumer-health'));
+    expect(health).toContain(
+      'After you tick the optional AI box, Roman may read, and send to Anthropic, your fasting logs, your earlier Roman conversations that you have not deleted, the community posts you wrote and ' +
+        device +
+        ' ' +
+        never,
+    );
+  });
+
   it('health-data policy: Roman’s notes are collected and derived information, with the off switch', () => {
     const health = visibleText(renderTrustPage('consumer-health'));
     expect(health).toContain(
