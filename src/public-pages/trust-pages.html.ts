@@ -233,6 +233,7 @@ function privacyContent(): TrustPageContent {
         bullets: [
           'To run your personal training: build your plan and targets, show your progress, and let you and your coach work together.',
           'To power Roman and your coach’s AI drafts about you, after you agree (see “Roman and AI” below).',
+          'If you coach on TGP and the feature is on: to let Roman learn your coaching methods, so he answers your clients the way you coach (see “Roman and AI” below).',
           'To send the messages you expect: account emails, reminders and push notifications.',
           'To provide support, keep the service safe and secure, prevent abuse, moderate the community and fix problems.',
           'To understand, in aggregate, which parts of the app work and which do not.',
@@ -269,6 +270,7 @@ function privacyContent(): TrustPageContent {
           'When you use Roman, we send Anthropic your message, the earlier turns of that conversation, and context drawn from your own account: your profile, consultation and readiness answers, food, water and habit logs, workouts and workout history, check-ins, bookings, wearable, health and sleep data, messages with your coach and the community posts you write. When your coach asks for an AI draft about you, the same kinds of data are sent. Roman may also read, and send to Anthropic, your fasting logs, your earlier Roman conversations that you have not deleted and daily summaries of your connected health data, including sleep stages, bedtime and wake time, body weight and body fat, and blood pressure. Roman never reads the raw heart-rate readings your device records. With Roman’s memory off, only your own data is used — never another client’s, and never your coach’s private notes about you.',
           'Roman’s memory is part of the Roman permission you give in the consultation, and it is on unless you turn it off. Roman keeps notes and summaries about your training, preferences and circumstances, from your Roman chats and from everything you log or connect in the app, to personalise his replies. Roman may also learn your coach’s methods, including from your coach’s private session notes, and information about your training may help with that without identifying you. Roman never quotes those notes or shows you another client’s information. Your coach never sees your conversations with Roman or his notes about you. You can turn Roman’s memory off at any time in Settings > Privacy > Roman and AI; Roman then stops using his notes until you turn it back on. Turning memory off, withdrawing the AI agreement or deleting a chat does not delete the notes: they are kept with your account and deleted when you delete your account.',
           'Roman conversations are kept until you delete them or your account. You can delete a conversation at any time in the app, which removes its messages from our database straight away. Deleting a chat removes its messages but not Roman’s notes; deleting your account removes them. You can allow or withdraw the optional AI agreement at any time in Settings > Privacy > Roman and AI; when you withdraw it, Roman and AI drafts about you stop until you agree again.',
+          'If you coach on TGP and the feature is on, Roman also learns your coaching methods, so that he answers your clients the way you coach. Anthropic processes your coaching team’s general guidelines and meal plans, program templates and library workouts, and the exercises you program most. For clients who keep Roman’s memory on, it also processes your messages to them, your private session notes about them, the guidelines and meal plans written for them, and figures worked out across at least three of those clients, such as sessions per week, macro targets and how you handle Roman’s suggested plan changes. Your clients’ and team members’ names, and any email addresses, phone numbers, links and dates, are removed first. From this, Anthropic writes a summary of your methods that Roman uses only when he replies to your clients who keep his memory on. The summary itself is not shown in the app, to you or to your clients, and Roman never quotes your session notes or messages. It is kept with the head coach’s account (yours, if you coach on your own), included in that coach’s data export and deleted with that account. When the feature is off, no new summary is built and Roman does not use it.',
           'If we turn it on, coaches can also use AI inbox sorting in the community. Anthropic sorts the community posts and messages a coach has not yet answered into five groups (urgent, a win to celebrate, a form check, general, no action needed) and writes a short summary of each for the coach. Sorting only includes posts and messages from members who ticked the optional AI box; everything else stays in the coach’s regular inbox, unsorted. For each item it receives up to 240 characters of the text, the name of the member who wrote it, the cohort name and how many hours ago it was posted. It only sorts and summarises: it never replies, posts or acts on anything, and only the coach sees the result. Perplexity, if enabled, is used to write short generic encouragement after your first logged milestones (it receives only the type of milestone, not your data).',
           'Roman gives general fitness and nutrition guidance, not medical advice. If something sounds like an emergency, Roman points you to 911; if you are in crisis, to 988.',
         ],
@@ -282,7 +284,7 @@ function privacyContent(): TrustPageContent {
           'Supabase — sign-in, database and file storage (for example voice notes, if enabled).',
           'Fly.io — hosting for our servers.',
           'Stripe — card payments, invoices and coach payouts.',
-          'Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed.',
+          'Anthropic — Roman and coach AI drafts, after you agree; sorting and summarising a coach’s unanswered community posts and messages for that coach, if turned on, only for members who agreed; learning a coach’s methods from that coach’s content, if turned on (see “Roman and AI”).',
           'Perplexity — generic milestone messages, if enabled.',
           'PostHog — product analytics. Session recording is off.',
           'Sentry — crash and performance monitoring.',
@@ -307,6 +309,7 @@ function privacyContent(): TrustPageContent {
           'Account, consultation, coaching, health and community data — while your account is open, until you delete it or ask us to delete it.',
           'Roman conversations — kept until you delete them or your account.',
           'Roman’s notes and summaries — kept with your account until you delete it, including while Roman’s memory is off; deleting a chat does not remove them.',
+          'Roman’s summary of a coach’s methods — kept with the head coach’s account until that account is deleted.',
           'Food search results — 24 hours in our cache.',
           'Payment, invoice and tax records — as long as the law requires.',
           'Security and audit logs — as long as needed to protect the service and meet legal duties.',
@@ -435,7 +438,7 @@ function consumerHealthContent(): TrustPageContent {
         ],
         paragraphs: [],
         closing: [
-          'We use consumer health data only to provide the personal training you ask for, to provide Roman and your coach’s AI drafts after you agree, to keep the service safe and secure, and to meet legal duties. We do not use it for advertising or marketing, we do not sell it, and we do not use it to train AI models.',
+          'We use consumer health data only to provide the personal training you ask for, to provide Roman and your coach’s AI drafts after you agree, to help Roman learn your coach’s methods without identifying you if you keep Roman’s memory on and the feature is on, to keep the service safe and secure, and to meet legal duties. We do not use it for advertising or marketing, we do not sell it, and we do not use it to train AI models.',
           'Health and fitness data is never used for advertising or for data mining other than to improve health management, and is used for health research only with your permission.',
         ],
       },
@@ -456,7 +459,7 @@ function consumerHealthContent(): TrustPageContent {
           'Your coach, and any coach on their team assigned to you — your consultation and readiness answers, targets and plan, logs, check-ins, connected health data and your messages with them. Your Roman conversations are never shared with your coach.',
           COMMUNITY_VISIBILITY_TEXT,
           LEADERBOARD_VISIBILITY_TEXT,
-          'Service providers that process data on our behalf: Supabase (database, sign-in and file storage) and Fly.io (hosting) receive all categories; Anthropic receives the categories listed in your AI agreement to generate Roman’s replies and your coach’s AI drafts, and, if turned on, up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you ticked the optional AI box); Sentry (error monitoring) and PostHog (product analytics) may receive health details that appear in an error report or app event; Crisp (support chat) receives what you choose to tell support; Resend (email) and Expo (push notifications) receive the content of the emails and notifications we send you; Mux (video hosting and playback) receives the videos coaches upload.',
+          'Service providers that process data on our behalf: Supabase (database, sign-in and file storage) and Fly.io (hosting) receive all categories; Anthropic receives the categories listed in your AI agreement to generate Roman’s replies and your coach’s AI drafts; if you keep Roman’s memory on and the feature is on, your coach’s messages to you, their private session notes about you, the guidelines and meal plans written for you and figures from your plan combined with those of at least two other clients, with names and contact details removed, so Roman can learn your coach’s methods; and, if turned on, up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you ticked the optional AI box); Sentry (error monitoring) and PostHog (product analytics) may receive health details that appear in an error report or app event; Crisp (support chat) receives what you choose to tell support; Resend (email) and Expo (push notifications) receive the content of the emails and notifications we send you; Mux (video hosting and playback) receives the videos coaches upload.',
           'Authorities, when the law requires it or to protect someone’s safety.',
         ],
         closing: [
@@ -585,7 +588,7 @@ function termsContent(): TrustPageContent {
       {
         heading: 'Intellectual property',
         paragraphs: [
-          'The software, brand, and product design are owned by The Growth Project. Coaching content you create remains yours; you grant us a limited licence to host and display it as required to operate the service.',
+          'The software, brand, and product design are owned by The Growth Project. Coaching content you create remains yours; you grant The Growth Project a limited licence to host, display and process it as required to operate the service, including, when the feature is on, processing by its AI provider, Anthropic, so that Roman can learn your coaching methods and answer your clients the way you coach (see the Privacy Policy).',
         ],
       },
       {
