@@ -15,7 +15,9 @@
  * adds `scope` plus, for a v4 holder, `upgrade` (the v5 copy, one optional
  * tap). `upgrade` is offered only while FEATURE_ROMAN_MEMORY is on: the v5
  * copy describes notes and summaries that do not exist while it is off, so
- * no client is asked to agree to them early. A withdrawal ends both scopes.
+ * no client is asked to agree to them early. `memory_on` says so explicitly,
+ * so an app can tell this server from an older one that sent `upgrade` to
+ * every v4 holder. A withdrawal ends both scopes.
  *
  * History is append-only: a decision is a new row with seq = latest.seq + 1.
  * The unique index (user_id, processor, purpose, seq) turns a race between two
@@ -114,6 +116,11 @@ export interface ClientAiConsentStatus {
    * copy that adds 'memory'. Otherwise null (memory off, no live grant, or v5).
    */
   upgrade: ClientAiConsentCopy | null;
+  /**
+   * True while FEATURE_ROMAN_MEMORY is on. Absent on servers that offered
+   * `upgrade` regardless of it; an app shows the v5 offer only when true.
+   */
+  memory_on: boolean;
 }
 
 export interface AiConsentRequestMeta {
@@ -237,6 +244,7 @@ export class AiConsentService implements ClientAiConsentReader {
 
   private toStatus(row: AiConsentLatestRow | null): ClientAiConsentStatus {
     const scope = grantScope(row);
+    const memoryOn = isRomanMemoryEnabled();
     const granted = scope !== null;
     const copy = scope === 'memory' ? clientAiConsentV5Copy() : clientAiConsentCopy();
     const isGrant = row?.action === AI_CONSENT_ACTION_GRANT;
@@ -257,7 +265,8 @@ export class AiConsentService implements ClientAiConsentReader {
       needs_reconsent: isGrant && !granted,
       copy,
       scope,
-      upgrade: scope === 'base' && isRomanMemoryEnabled() ? clientAiConsentV5Copy() : null,
+      upgrade: scope === 'base' && memoryOn ? clientAiConsentV5Copy() : null,
+      memory_on: memoryOn,
     };
   }
 

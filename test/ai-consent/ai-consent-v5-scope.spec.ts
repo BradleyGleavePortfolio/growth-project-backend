@@ -11,7 +11,8 @@
  *     (state granted, version and current_version client-ai-v4), plus the
  *     additive `scope` and `upgrade`;
  *   - `upgrade` (the v5 offer) is sent only while FEATURE_ROMAN_MEMORY is
- *     exactly "true"; unset or any other value -> null (B-R11C-126);
+ *     exactly "true"; unset or any other value -> null, and `memory_on`
+ *     reports the same flag (B-R11C-126);
  *   - POST v5 with its own sha256 grants the memory scope; mixed version/sha
  *     pairs are 409 with nothing written;
  *   - the egress gate refuses a memory-scope subject for a v4 holder before
@@ -231,6 +232,7 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
       });
       expect(s.copy.version).toBe(V4);
       expect(s.copy.sha256).toBe(V4_COPY_SHA);
+      expect(s.memory_on).toBe(true);
       expect(s.upgrade).toEqual({
         version: V5,
         processor: 'anthropic',
@@ -260,6 +262,7 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
           needs_reconsent: false,
           scope: 'base',
           upgrade: null,
+          memory_on: false,
         });
         expect(status.copy.sha256).toBe(V4_COPY_SHA);
         expect(app1007SeesLiveV4Grant(status)).toBe(true);
@@ -274,7 +277,7 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
       await service.withdraw('u_a');
       expect((await service.getStatus('u_a')).upgrade).toBeNull();
       await service.grant('u_b', { version: V5, copy_sha256: V5_COPY_SHA });
-      expect((await service.getStatus('u_b')).upgrade).toBeNull();
+      expect(await service.getStatus('u_b')).toMatchObject({ upgrade: null, memory_on: true, scope: 'memory' });
     });
 
     it('GET with no decision or after a withdraw still offers the v4 copy (no "update the app")', async () => {
