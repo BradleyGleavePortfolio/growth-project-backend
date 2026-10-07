@@ -186,11 +186,8 @@ export class CoachController {
     return this.coachService.getClientSummary(req.user.id, clientId, date, req.user.role, auditContext(req));
   }
 
-  @Get('my-guidelines')
-  async getMyGuidelines(@Request() req: AuthedRequest) {
-    return this.coachService.getGuidelines(req.user.id);
-  }
-
+  // GET /coach/my-guidelines (the client's own read) lives in
+  // ClientGuidelinesController: this class's CoachGuard refused every client.
   @Get('guidelines/:client_id')
   async getGuidelines(@Request() req: AuthedRequest, @Param('client_id') clientId: string) {
     return this.coachService.getGuidelines(req.user.id, clientId);
