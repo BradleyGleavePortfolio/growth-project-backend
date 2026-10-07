@@ -1,8 +1,5 @@
-// B-AIB3-126 — per-client workout context v2 (plan section 1). One function builds the typed block the workout AI sees:
-// enums and numbers only, no name / email / phone / body weight / snacks / messages / notes / any client-written text.
-//
-// Tenancy: callers run their client check first (CoachAIService.assertCoachOwnsClient, the AIB-2 canAccessClient).
-// Consent: this service only reads; the box-2 grant is enforced where data leaves (AnthropicAdapter / AiGatewayService).
+// B-AIB3-126 — per-client workout context v2 (plan section 1): enums and numbers only, no name / weight / snacks / messages /
+// client-written text. Callers run their tenancy check first; box-2 consent is enforced where data leaves (adapter / gateway).
 // Coach style reads ONLY plans the coach owns (WorkoutPlan.coach_id = coachId) and holds no client data.
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
@@ -157,10 +154,7 @@ export class WorkoutContextService {
 
   async build(args: { coachId: string; clientId?: string | null; now?: Date }): Promise<WorkoutContextV2> {
     const now = args.now ?? new Date();
-    const [client, coach_style] = await Promise.all([
-      args.clientId ? this.clientSignals(args.clientId, now) : Promise.resolve(null),
-      this.coachStyle(args.coachId, now),
-    ]);
+    const [client, coach_style] = await Promise.all([args.clientId ? this.clientSignals(args.clientId, now) : null, this.coachStyle(args.coachId, now)]);
     return { client, coach_style };
   }
 
@@ -168,10 +162,7 @@ export class WorkoutContextService {
     const t = now.getTime();
     const p = this.prisma;
     const [profile, intake, sessions, assignments, checkIns, wearable] = await Promise.all([
-      p.userProfile.findUnique({
-        where: { user_id: clientId },
-        select: { goal_type: true, workout_experience: true, equipment_access: true, workout_days_per_week: true, injuries: true },
-      }),
+      p.userProfile.findUnique({ where: { user_id: clientId }, select: { goal_type: true, workout_experience: true, equipment_access: true, workout_days_per_week: true, injuries: true } }),
       p.clientOnboardingIntake.findUnique({ where: { client_id: clientId }, select: { screening_any_yes: true } }),
       p.workoutSession.findMany({
         where: { user_id: clientId, date: { gte: new Date(t - 42 * DAY_MS) } }, orderBy: { date: 'desc' }, take: 60,
@@ -184,21 +175,17 @@ export class WorkoutContextService {
       p.wearableConnection.findFirst({ where: { user_id: clientId, status: 'connected', disconnected_at: null }, select: { id: true } }),
     ]);
     const signals: WorkoutClientSignals = {
-      goal: profile?.goal_type ?? null,
-      experience: profile?.workout_experience ?? null,
+      goal: profile?.goal_type ?? null, experience: profile?.workout_experience ?? null,
       equipment: (profile?.equipment_access ?? []).filter((s) => ENUM_TOKEN.test(s)).slice(0, 12),
-      days_per_week: profile?.workout_days_per_week ?? null,
-      injuries: toInjuryAreas(profile?.injuries),
-      screening_flag: intake?.screening_any_yes === true,
-      history_6w: historyFromSessions(sessions),
+      days_per_week: profile?.workout_days_per_week ?? null, injuries: toInjuryAreas(profile?.injuries),
+      screening_flag: intake?.screening_any_yes === true, history_6w: historyFromSessions(sessions),
       adherence_pct_4w: assignments.length ? pct(assignments.filter((a) => a.completed_at).length, assignments.length) : null,
       check_ins: checkIns.map((c) => ({ energy: c.energy ?? null, soreness: c.soreness ?? null, sleep_hours: c.sleep_hours ?? null })),
     };
     if (wearable) {
       const samples = await p.wearableSample.findMany({
         where: { user_id: clientId, metric: { in: ['SLEEP_TOTAL_MIN', 'SLEEP_DURATION_MIN', 'RESTING_HEART_RATE_BPM', 'HRV_MS'] }, start_at: { gte: new Date(t - 21 * DAY_MS) } },
-        select: { metric: true, value: true, start_at: true },
-        take: 2_000,
+        select: { metric: true, value: true, start_at: true }, take: 2_000,
       });
       signals.recovery = recoveryFromSamples(samples, now);
     }
@@ -210,12 +197,7 @@ export class WorkoutContextService {
     if (hit && now.getTime() - hit.at < STYLE_TTL_MS) return hit.value;
     const plans = await this.prisma.workoutPlan.findMany({
       where: { coach_id: coachId, archived_at: null }, orderBy: { updated_at: 'desc' }, take: 200,
-      select: {
-        exercises: {
-          where: { archived_at: null },
-          select: { exercise_external_id: true, sets: true, reps_or_duration_seconds: true, rest_seconds: true, superset_group_id: true },
-        },
-      },
+      select: { exercises: { where: { archived_at: null }, select: { exercise_external_id: true, sets: true, reps_or_duration_seconds: true, rest_seconds: true, superset_group_id: true } } },
     });
     const value = coachStyleFromPlans(plans);
     this.styleCache.set(coachId, { at: now.getTime(), value });

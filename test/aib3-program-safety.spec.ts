@@ -99,10 +99,18 @@ describe('B-AIB3-126 — per-client program generator', () => {
     expect(out.payload.days[0].exercises[0].name).toBe('Hip Thrust');
   });
 
-  it('keeps an exercise the coach typed in the request', async () => {
+  it('keeps an exercise only on a clear positive keep request, and tells the coach', async () => {
     const { svc, create } = buildGenerator();
     await svc.generateWorkoutProgram('coach1', { clientId: 'client1', weeks: 1, daysPerWeek: 1, notes: 'Keep the barbell back squat, light.' });
-    expect(create.mock.calls[0][0].data.generatedPayload.days[0].exercises[0].name).toBe('Barbell Back Squat');
+    const payload = create.mock.calls[0][0].data.generatedPayload;
+    expect(payload.days[0].exercises[0].name).toBe('Barbell Back Squat');
+    expect(payload.coach_notes).toContain("Kept at the coach's request despite the client's limitations: Barbell Back Squat (knee).");
+  });
+
+  it.each(['Avoid Barbell Back Squat', 'No barbell back squat please', "Don't keep the barbell back squat", 'Barbell back squat felt heavy'])('a negative or a mention never exempts the injury filter: %s', async (notes) => {
+    const { svc, create } = buildGenerator();
+    await svc.generateWorkoutProgram('coach1', { clientId: 'client1', weeks: 1, daysPerWeek: 1, notes });
+    expect(create.mock.calls[0][0].data.generatedPayload.days[0].exercises[0].name).toBe('Hip Thrust');
   });
 
   it('box-2 consent gate unchanged: the client is the data subject; no grant -> 403 and no draft', async () => {

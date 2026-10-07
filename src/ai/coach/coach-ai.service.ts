@@ -213,17 +213,12 @@ export class CoachAIService {
     );
     // B-AIB3-126 — server-side pass: injury substitutions + hard bounds, before the draft is stored or shown.
     if (Array.isArray(result.data?.days)) {
-      const report = applyProgramSafety(result.data.days, {
-        injuries,
-        coachText: `${input.focus ?? ''} ${input.notes ?? ''}`,
-        lastWeightById: new Map(
-          (workoutCtx?.client?.history_6w ?? []).flatMap((h) => (h.last_weight_lbs ? [[h.id, h.last_weight_lbs] as const] : [])),
-        ),
-      });
-      if (report.removed.length > 0) {
-        const names = [...new Set(report.removed.map((r) => r.name))].slice(0, 5).join(', ');
-        result.data.coach_notes = `${result.data.coach_notes ?? ''} Removed for the client's limitations: ${names}.`.trim();
-      }
+      const lastWeightById = new Map((workoutCtx?.client?.history_6w ?? []).flatMap((h) => (h.last_weight_lbs ? [[h.id, h.last_weight_lbs] as const] : [])));
+      const report = applyProgramSafety(result.data.days, { injuries, coachText: `${input.focus ?? ''} ${input.notes ?? ''}`, lastWeightById });
+      const list = (rows: Array<{ name: string; area: string }>) => [...new Set(rows.map((r) => `${r.name} (${r.area.replace(/_/g, ' ')})`))].slice(0, 5).join(', ');
+      const notes = [result.data.coach_notes ?? '', report.removed.length ? `Removed for the client's limitations: ${list(report.removed)}.` : '',
+        report.kept.length ? `Kept at the coach's request despite the client's limitations: ${list(report.kept)}.` : ''];
+      result.data.coach_notes = notes.filter(Boolean).join(' ');
     }
     await this.recordSpend(
       budgetCoachId,

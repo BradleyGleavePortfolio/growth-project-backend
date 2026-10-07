@@ -118,28 +118,42 @@ export interface ProgramRowLike {
   exercise_external_id: string; name: string; sets: number; reps_or_duration_seconds: number;
   weight_lbs?: number | null; rest_seconds?: number | null; notes?: string | null;
 }
-export interface ProgramSafetyReport { substituted: Array<{ from: string; to: string; area: string }>; removed: Array<{ name: string; area: string }> }
+type AreaRow = { name: string; area: string };
+export interface ProgramSafetyReport { substituted: Array<{ from: string; to: string; area: string }>; removed: AreaRow[]; kept: AreaRow[] }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(v)));
+const KEEP_WORD = /\b(keep|include|add|use|still|want|incorporate|program)\b/;
+const NEGATION = /\b(no|not|never|avoid|without|skip|exclude|remove|drop|replace|swap|instead|except|don'?t|nothing)\b/;
+
+/** True only for a clear positive keep/include of `name` (a keep word in the same clause, no negation); a mention is not enough. */
+export function coachAskedToKeep(coachText: string, name: string): boolean {
+  const [text, n] = [coachText.toLowerCase(), name.trim().toLowerCase()];
+  if (n.length < 3) return false;
+  for (let i = text.indexOf(n); i >= 0; i = text.indexOf(n, i + 1)) {
+    const clause = text.slice(0, i).split(/[.;,!?\n]|\bbut\b/).pop() ?? '';
+    if (KEEP_WORD.test(clause) && !NEGATION.test(clause)) return true;
+  }
+  return false;
+}
 
 /**
- * Server-side pass over generated program days: swap any exercise that loads a client injury area (unless the coach typed
- * it in the request), drop it when no safe swap exists, clamp sets / reps / rest / notes to the hard bounds, cap exercises
+ * Server-side pass over generated program days: swap any exercise that loads a client injury area (unless the coach clearly
+ * asked to keep it), drop it when no safe swap exists, clamp sets / reps / rest / notes to the hard bounds, cap exercises
  * per day, and keep a load only when the client has logged that exercise (at most 105% of the last logged weight).
  */
 export function applyProgramSafety(
   days: Array<{ exercises: ProgramRowLike[] }>,
   opts: { injuries: readonly InjuryAreaV2[]; coachText: string; lastWeightById: ReadonlyMap<string, number> },
 ): ProgramSafetyReport {
-  const report: ProgramSafetyReport = { substituted: [], removed: [] };
-  const typed = opts.coachText.toLowerCase();
+  const report: ProgramSafetyReport = { substituted: [], removed: [], kept: [] };
   for (const day of days) {
     const kept: ProgramRowLike[] = [];
     const used = new Set(day.exercises.map((r) => seedExerciseFor(r.exercise_external_id)?.id ?? seedExerciseFor(r.name)?.id ?? r.exercise_external_id));
     for (const row of day.exercises) {
       const ex = { id: row.exercise_external_id, name: row.name || row.exercise_external_id };
       const areas = loadedAreas(ex, opts.injuries);
-      if (areas.length > 0 && !(ex.name.length > 2 && typed.includes(ex.name.toLowerCase()))) {
+      if (areas.length > 0 && coachAskedToKeep(opts.coachText, ex.name)) report.kept.push({ name: ex.name, area: areas[0] });
+      else if (areas.length > 0) {
         const sub = substituteFor(ex, opts.injuries, used); // no duplicate swaps within one day
         if (!sub) {
           report.removed.push({ name: ex.name, area: areas[0] });
