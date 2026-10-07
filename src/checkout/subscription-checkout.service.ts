@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { ClientPurchase, CoachPackage, Prisma } from '@prisma/client';
 import { ConnectModuleState } from '../connect/connect.module-state';
+import { ConnectService } from '../connect/connect.service';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import {
   StripeConnectApiService,
@@ -153,6 +154,9 @@ export class SubscriptionCheckoutService {
     // (card up front) under the one shared trial rule, so trial offers may
     // say "offered". @Optional() for hand-built test wiring.
     @Optional() trialCheckout?: TrialCheckoutCapability,
+    // B-CONNECT-126: same not-ready Stripe re-read as the one-time Buy gate.
+    // Always injected in the app; @Optional() for hand-built test wiring.
+    @Optional() private readonly connect?: ConnectService,
   ) {
     trialCheckout?.register(SUBSCRIPTION_CHECKOUT_OWNER);
   }
@@ -258,10 +262,10 @@ export class SubscriptionCheckoutService {
       select: { id: true, email: true, name: true },
     });
     if (!coach) throw packageUnavailable();
-    const connectAccount = await this.prisma.connectAccount.findUnique({
+    const savedAccount = await this.prisma.connectAccount.findUnique({
       where: { coach_user_id: pkg.coach_id },
     });
-    if (!connectAccount) {
+    if (!savedAccount) {
       throw new ConflictException({
         code: 'COACH_NOT_CONNECTED',
         error: 'COACH_NOT_CONNECTED',
@@ -269,6 +273,12 @@ export class SubscriptionCheckoutService {
           'Your coach has not finished setting up payments yet, so this plan cannot start. Message your coach; nothing was charged.',
       });
     }
+    // B-CONNECT-126: a ready row makes no Stripe call; a not-ready row is
+    // re-read from Stripe once (cooldown) before the Buy is refused.
+    const connectAccount =
+      savedAccount.charges_enabled || savedAccount.deauthorized_at || !this.connect
+        ? savedAccount
+        : await this.connect.refreshNotReady(savedAccount);
     if (!connectAccount.charges_enabled || connectAccount.deauthorized_at) {
       throw new ConflictException({
         code: 'COACH_NOT_PAYOUT_READY',

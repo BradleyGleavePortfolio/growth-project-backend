@@ -22,6 +22,11 @@ export interface ConnectAccountView extends ConnectAccount {
   is_fully_onboarded: boolean;
 }
 
+// B-CONNECT-126: at most one not-ready re-read per Stripe account per minute
+// in this process, so a client tapping Buy again and again cannot fan out
+// Stripe calls. Each re-read is itself bounded by the Stripe client timeout.
+export const CONNECT_NOT_READY_SYNC_COOLDOWN_MS = 60_000;
+
 @Injectable()
 export class ConnectService {
   private readonly logger = new Logger(ConnectService.name);
@@ -148,6 +153,32 @@ export class ConnectService {
         `getStatusForCoach: sync failed for coach=${coachUserId} code=CONNECT_STATUS_SYNC_FAILED class=${cls}`,
       );
       return saved;
+    }
+  }
+
+  // B-CONNECT-126: the in-app Buy gates and GET /coach/connect/status read
+  // the saved row, and account.updated for a coach's Express account does not
+  // reach the platform webhook. Callers pass a row they found NOT ready; this
+  // re-reads it from Stripe through syncFromStripe (the same write as the
+  // webhook) and returns the fresh row. Inside the cooldown, for a
+  // deauthorized row, or on any failure it returns the saved row unchanged,
+  // so the caller gives today's answer and never an exception.
+  private readonly notReadySyncAt = new Map<string, number>();
+
+  async refreshNotReady(row: ConnectAccount): Promise<ConnectAccount> {
+    if (row.deauthorized_at) return row;
+    const now = Date.now();
+    const last = this.notReadySyncAt.get(row.stripe_account_id);
+    if (last !== undefined && now - last < CONNECT_NOT_READY_SYNC_COOLDOWN_MS) return row;
+    this.notReadySyncAt.set(row.stripe_account_id, now);
+    try {
+      return (await this.syncFromStripe(row.stripe_account_id)) ?? row;
+    } catch (err) {
+      const cls = err instanceof StripeConnectApiError ? 'stripe' : 'other';
+      this.logger.warn(
+        `refreshNotReady: sync failed for coach=${row.coach_user_id} code=CONNECT_NOT_READY_SYNC_FAILED class=${cls}`,
+      );
+      return row;
     }
   }
 
