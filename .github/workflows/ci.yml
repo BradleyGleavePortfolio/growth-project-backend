@@ -212,6 +212,7 @@ jobs:
           set -euo pipefail
           if ! command -v psql >/dev/null 2>&1; then
             for i in 1 2 3; do
+              echo "postgresql-client install attempt $i of 3"
               timeout 120 sudo apt-get update -o Acquire::Retries=3 && timeout 240 sudo apt-get install -y postgresql-client && break
               sleep 10
             done
@@ -302,6 +303,7 @@ jobs:
           set -euo pipefail
           if ! command -v psql >/dev/null 2>&1; then
             for i in 1 2 3; do
+              echo "postgresql-client install attempt $i of 3"
               timeout 120 sudo apt-get update -o Acquire::Retries=3 && timeout 240 sudo apt-get install -y postgresql-client && break
               sleep 10
             done
@@ -496,6 +498,7 @@ jobs:
           set -euo pipefail
           if ! command -v psql >/dev/null 2>&1; then
             for i in 1 2 3; do
+              echo "postgresql-client install attempt $i of 3"
               timeout 120 sudo apt-get update -o Acquire::Retries=3 && timeout 240 sudo apt-get install -y postgresql-client && break
               sleep 10
             done
@@ -597,6 +600,7 @@ jobs:
           set -euo pipefail
           if ! command -v psql >/dev/null 2>&1; then
             for i in 1 2 3; do
+              echo "postgresql-client install attempt $i of 3"
               timeout 120 sudo apt-get update -o Acquire::Retries=3 && timeout 240 sudo apt-get install -y postgresql-client && break
               sleep 10
             done
