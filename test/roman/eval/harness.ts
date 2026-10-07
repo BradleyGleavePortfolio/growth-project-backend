@@ -49,7 +49,7 @@ export interface HarnessWorld {
 }
 
 /** R11-T3: base grant for everyone; the 'memory' scope (client-ai-v5) for all but `v4`. */
-class ScopedConsentReader extends FakeConsentReader {
+export class ScopedConsentReader extends FakeConsentReader {
   readonly v4 = new Set<string>();
   async hasClientAiConsent(id: string, scope?: ClientAiConsentScope): Promise<boolean> {
     return (await super.hasClientAiConsent(id)) && !(scope === 'memory' && this.v4.has(id));
@@ -105,7 +105,7 @@ export function makeWorld(
     r11.augmenters
       ? [new RomanClientMemoryAugmenter(db.prisma), new RomanCoachMethodAugmenter(db.prisma, budget)]
       : null,
-    r11.tools ? (r11.wrapTools ?? ((t) => t))(new RomanReadToolbox(db.prisma, new RomanTimelineReader(db.prisma))) : null,
+    r11.tools ? (r11.wrapTools ?? ((t: RomanToolbox) => t))(new RomanReadToolbox(db.prisma, new RomanTimelineReader(db.prisma))) : null,
   );
   return { db, ctx, intake, model, roman, consent: reader, r11: rows };
 }
