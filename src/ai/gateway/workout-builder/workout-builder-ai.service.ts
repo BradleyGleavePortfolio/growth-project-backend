@@ -16,7 +16,7 @@ import { CREATE_WORKOUT_PLAN_CAPABILITY } from '../materialisers/create-workout-
 import { EDIT_WORKOUT_PLAN_CAPABILITY } from '../materialisers/edit-workout-plan.materialiser';
 import { PlanSnapshot, emptyPlanSnapshot, snapshotFromRevisionJson } from '../materialisers/__shared/workout-diff.types';
 import { InjuryArea, TRAINING_BOUNDS, contraindicatedAreas, isInjuryArea, stripMedicalClaims } from './training-safety.constants';
-import { LibraryExercise, ValidatedChange, validateProposedChanges } from './workout-diff.validator';
+import { LibraryExercise, ValidatedChange, setsPerMuscle, validateProposedChanges } from './workout-diff.validator';
 import {
   WorkoutClientContext, buildWorkoutBuilderSystemPrompt, buildWorkoutBuilderUserMessage, parseModelOutput, stubProposal,
 } from './workout-builder-prompt';
@@ -59,8 +59,9 @@ export class WorkoutBuilderAiService {
       throw new NotFoundException({ code: 'client_not_found', message: 'Client not found.' });
     }
     let [baseline, baseRevisionIndex, planCoachId]: [PlanSnapshot, number, string | null] = [emptyPlanSnapshot(), 0, null];
+    let weekOther: Map<string, number> | null = null;
     if (input.plan_id) {
-      const select = { id: true, coach_id: true, version: true, head_revision_id: true, archived_at: true };
+      const select = { id: true, coach_id: true, version: true, head_revision_id: true, archived_at: true, program_id: true, week_index: true };
       const plan = await this.prisma.workoutPlan.findUnique({ where: { id: input.plan_id }, select });
       if (!plan || plan.archived_at || (requester.role !== 'owner' && plan.coach_id !== tenantCoachId)) {
         throw new NotFoundException({ code: 'plan_not_found', message: 'Workout not found.' });
@@ -76,6 +77,9 @@ export class WorkoutBuilderAiService {
       if (!head) throw stale();
       baseline = snapshotFromRevisionJson(head.exercises_json, head.plan_meta_json);
       baseRevisionIndex = head.revision_index;
+      if (plan.program_id && plan.week_index != null) {
+        weekOther = await this.weekOtherSetsByMuscle(plan.id, plan.coach_id, plan.program_id, plan.week_index);
+      }
     } else if (input.mode === 'edit' || !input.client_id) {
       throw new BadRequestException({ code: 'PLAN_REQUIRED', message: 'Open a workout first, or choose a client to build a new one for.' });
     }
@@ -117,6 +121,7 @@ export class WorkoutBuilderAiService {
             }
             const v = validateProposedChanges({
               baseline, rawChanges: output.changes, library: LIBRARY, injuries, instruction: input.instruction, screeningFlag, quickAction: input.quick_action,
+              weekly: weekOther ? { otherSetsByMuscle: weekOther, cap: weeklySetsCap(client) } : undefined,
             });
             if (v.changes.length === 0) throw new NoSafeProposal(v.dropped);
             box.validated = { summary, changes: v.changes, dropped: v.dropped };
@@ -144,6 +149,30 @@ export class WorkoutBuilderAiService {
     return { draft_id: draftId, ...outcome, context_used: contextUsed(client, injuries), screening_flag: screeningFlag, credits_remaining_pct: credits };
   }
 
+  /** Hard sets per muscle on the same program week's other (non-archived) days of this coach's program. */
+  private async weekOtherSetsByMuscle(planId: string, coachId: string, programId: string, weekIndex: number): Promise<Map<string, number>> {
+    const days = await this.prisma.workoutPlan.findMany({
+      where: { program_id: programId, coach_id: coachId, week_index: weekIndex, archived_at: null, id: { not: planId } },
+      select: { id: true, head_revision_id: true },
+    });
+    const revIds = days.map((d) => d.head_revision_id).filter((id): id is string => !!id);
+    const legacyIds = days.filter((d) => !d.head_revision_id).map((d) => d.id);
+    const [revs, legacyRows] = await Promise.all([
+      revIds.length ? this.prisma.workoutPlanRevision.findMany({ where: { id: { in: revIds } }, select: { exercises_json: true, plan_meta_json: true } }) : [],
+      legacyIds.length
+        ? this.prisma.workoutPlanExercise.findMany({ where: { workout_plan_id: { in: legacyIds }, archived_at: null }, select: { exercise_external_id: true, sets: true } })
+        : [],
+    ]);
+    const total = new Map<string, number>();
+    const addSets = (per: Map<string, number>) => per.forEach((n, m) => total.set(m, (total.get(m) ?? 0) + n));
+    for (const r of revs) addSets(setsPerMuscle(snapshotFromRevisionJson(r.exercises_json, r.plan_meta_json), LIBRARY));
+    for (const r of legacyRows) {
+      const ex = LIBRARY.get(r.exercise_external_id);
+      if (ex && ex.category !== 'cardio' && ex.category !== 'mobility') total.set(ex.muscle, (total.get(ex.muscle) ?? 0) + r.sets);
+    }
+    return total;
+  }
+
   private async loadClientContext(clientId: string): Promise<WorkoutClientContext> {
     const select = { goal_type: true, workout_experience: true, equipment_access: true, workout_days_per_week: true, injuries: true };
     const [profile, intake] = await Promise.all([
@@ -159,6 +188,11 @@ export class WorkoutBuilderAiService {
       screening_flag: intake?.screening_any_yes === true,
     };
   }
+}
+
+/** Plan section 2: hard sets per primary muscle per program week <= 24, beginner 16. No client (template) = the general cap. */
+export function weeklySetsCap(client: WorkoutClientContext | null): number {
+  return client?.experience === 'beginner' ? TRAINING_BOUNDS.hardSetsPerMuscleWeekBeginnerMax : TRAINING_BOUNDS.hardSetsPerMuscleWeekMax;
 }
 
 const NO_CLIENT: WorkoutClientContext = { goal: null, experience: null, equipment: [], days_per_week: null, injuries: [], screening_flag: false };
