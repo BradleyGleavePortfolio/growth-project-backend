@@ -42,8 +42,22 @@ function withConsents(db: StatefulPrisma): StatefulPrisma {
   return db;
 }
 
-const consents = (db: StatefulPrisma, clientId: string) =>
-  db.state.clientCoachConsent.filter((r) => r.client_id === clientId);
+interface ConsentState {
+  coach_id: string;
+  scope: string;
+  granted_at: Date | null;
+  revoked_at: Date | null;
+}
+
+const consents = (db: StatefulPrisma, clientId: string): ConsentState[] =>
+  db.state.clientCoachConsent
+    .filter((r) => r.client_id === clientId)
+    .map((r) => ({
+      coach_id: String(r.coach_id),
+      scope: String(r.scope),
+      granted_at: r.granted_at instanceof Date ? r.granted_at : null,
+      revoked_at: r.revoked_at instanceof Date ? r.revoked_at : null,
+    }));
 
 function consentService(db: StatefulPrisma): ConsentService {
   const prisma: PrismaService = Object.assign(Object.create(null), db);
