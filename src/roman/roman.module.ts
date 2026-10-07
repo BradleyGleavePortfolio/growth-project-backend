@@ -26,6 +26,8 @@ import { RomanContextController } from './context/roman-context.controller';
 import { ROMAN_SAFETY_INTAKE_SOURCE } from './context/roman-client-context.types';
 import { romanTurnAugmentersProvider } from './augment/roman-turn-augmenter';
 import { RomanBackgroundSpendService } from './background/roman-background-spend';
+import { RomanNotesWriter } from './memory/roman-notes.writer';
+import { RomanNotesScheduler } from './memory/roman-notes.scheduler';
 
 @Module({
   // RomanChatsController (list + delete own chats) is not behind the chat
@@ -49,6 +51,9 @@ import { RomanBackgroundSpendService } from './background/roman-background-spend
     // provides its kind token) and the background spend admission.
     romanTurnAugmentersProvider,
     RomanBackgroundSpendService,
+    // R11-M4: notes from chats (inert while FEATURE_ROMAN_MEMORY is off).
+    RomanNotesWriter,
+    RomanNotesScheduler,
   ],
   exports: [RomanService, RomanBackgroundSpendService],
 })
