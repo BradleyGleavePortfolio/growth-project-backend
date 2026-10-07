@@ -2225,6 +2225,15 @@ export const ENV_RULES: EnvRule[] = [
       "Kill switch for the Roman v1.1 coach playbook (playbook signals and builds, the coach-method block in a client's turn). Off = every playbook path is inert and the turn prompt is unchanged.",
   },
   {
+    name: 'FEATURE_ROMAN_TOOLS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason:
+      "Kill switch for Roman v1.1 tool-using turns (Roman reads the client's own history, exercise loads and food days during a turn, within fixed round, call and time limits). Off = every turn is the single streaming call it is today.",
+  },
+  {
     name: 'ROMAN_BACKGROUND_DAILY_COST_CAP_USD',
     tier: 'optional',
     default: 'unset → 10 (ROMAN_BACKGROUND_DAILY_COST_CAP_USD_DEFAULT); an invalid value also means 10, never no cap',

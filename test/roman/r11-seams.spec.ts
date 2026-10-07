@@ -22,6 +22,10 @@ import type { RomanClientContextBundle } from '../../src/roman/context/roman-cli
 import { RomanBackgroundSpendService } from '../../src/roman/background/roman-background-spend';
 import { isRomanMemoryEnabled } from '../../src/roman/memory/roman-memory.feature';
 import { isRomanPlaybookEnabled } from '../../src/roman/playbook/roman-playbook.feature';
+import { isRomanToolsEnabled } from '../../src/roman/tools/roman-tools.feature';
+import { ROMAN_TOOLBOX, ROMAN_TOOL_LIMITS } from '../../src/roman/tools/roman-tool.types';
+import type { ClientAiConsentReader } from '../../src/ai-consent/ai-consent.reader';
+import type { ClientAiConsentScope } from '../../src/ai-consent/ai-consent.constants';
 import {
   ROMAN_MEMORY_CAPABILITY,
   ROMAN_PLAYBOOK_CAPABILITY,
@@ -36,6 +40,7 @@ import { RomanModule } from '../../src/roman/roman.module';
 import { RomanService } from '../../src/roman/roman.service';
 import { RomanClientContextService } from '../../src/roman/context/roman-client-context.service';
 import {
+  AiEgressService,
   AnthropicHandle,
   type AnthropicMessagesClient,
 } from '../../src/ai-egress/ai-egress.service';
@@ -214,6 +219,24 @@ describe('R11-00 runRomanTurnAugmenters', () => {
 
 // ─── full turns through RomanService ─────────────────────────────────────────
 
+/** R11-T2A: every client holds the base grant; only a `v5` client holds 'memory'. */
+class ScopedConsentReader implements ClientAiConsentReader {
+  memoryReads = 0;
+  constructor(private readonly v5: boolean) {}
+  async hasClientAiConsent(_id: string, scope: ClientAiConsentScope = 'base'): Promise<boolean> {
+    if (scope !== 'memory') return true;
+    this.memoryReads += 1;
+    return this.v5;
+  }
+  async clientsWithAiConsent(
+    ids: readonly string[],
+    scope: ClientAiConsentScope = 'base',
+  ): Promise<ReadonlySet<string>> {
+    if (scope === 'memory') this.memoryReads += 1;
+    return new Set(scope === 'memory' && !this.v5 ? [] : ids);
+  }
+}
+
 const FLAG = FEATURE_ROMAN_CHAT_ENABLED_ENV;
 describe('R11-00 turn seam (RomanService.streamAssistantTurn)', () => {
   let savedFlag: string | undefined;
@@ -281,7 +304,11 @@ describe('R11-00 turn seam (RomanService.streamAssistantTurn)', () => {
     for await (const c of gen) out.push(c as { type: string; text?: string });
     return out;
   }
-  function run(augmenters: RomanTurnAugmenter[] | null, withContext = true) {
+  function run(
+    augmenters: RomanTurnAugmenter[] | null,
+    withContext = true,
+    egress: AiEgressService = grantAllEgress(),
+  ) {
     const db = makePersonaDb();
     const ctx = withContext
       ? new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource())
@@ -289,7 +316,7 @@ describe('R11-00 turn seam (RomanService.streamAssistantTurn)', () => {
     const anthropic = makeAnthropic();
     const svc = new RomanService(
       fakeOf(db.prisma),
-      grantAllEgress(),
+      egress,
       AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)),
       ctx,
       null,
@@ -369,6 +396,55 @@ describe('R11-00 turn seam (RomanService.streamAssistantTurn)', () => {
     for (const c of [...t.anthropic.calls, ...degraded.anthropic.calls])
       expect(c.system as string).not.toContain('<client_memory>');
   });
+
+  // ─── R11-T2A: memory scope for augmented turns ─────────────────────────────
+  async function scopedTurn(augmenters: RomanTurnAugmenter[] | null, v5: boolean) {
+    const reader = new ScopedConsentReader(v5);
+    const egress = new AiEgressService(reader);
+    const send = jest.spyOn(egress, 'anthropicMessagesStream');
+    const t = run(augmenters, true, egress);
+    const chunks = await drain(
+      t.svc.streamAssistantTurn({ id: P1, role: 'student' }, session('client', P1), {
+        userMessage: 'How is my week?',
+      }),
+    );
+    return {
+      chunks,
+      reader,
+      system: t.anthropic.calls[0].system as string,
+      subject: send.mock.calls[0][1],
+      ledger: t.db.raw.aiRequestAudits[0].metadata as Record<string, unknown>,
+    };
+  }
+  const memAug = () => aug('client_memory', async () => block('client_memory', 'MEM-TEXT'));
+  const BASE = { kind: 'client_data', clientIds: [P1], audience: 'client' };
+
+  it('R11-T2A v4 caller: the block is dropped, the prompt has no augment, the send is base scope', async () => {
+    const t = await scopedTurn([memAug()], false);
+    expect(t.system).not.toContain('<client_memory>');
+    expect(t.system).not.toContain('MEM-TEXT');
+    expect(t.subject).toEqual(BASE);
+    expect(t.reader.memoryReads).toBe(1);
+    expect(t.ledger).toMatchObject({ augments: [], augments_omitted: ['client_memory'] });
+    expect(t.chunks.map((c) => c.type)).toEqual(['delta', 'done']);
+  });
+
+  it('R11-T2A v5 caller: the block follows client_data and the send carries scope memory', async () => {
+    const t = await scopedTurn([memAug()], true);
+    expect(t.system.indexOf('<client_memory>MEM-TEXT')).toBeGreaterThan(
+      t.system.indexOf('</client_data>'),
+    );
+    expect(t.subject).toEqual({ ...BASE, scope: 'memory' });
+    expect(t.ledger).toMatchObject({ augments: [expect.stringMatching(/^client_memory:/)] });
+  });
+
+  it('R11-T2A no augmenter, or none applied: no memory read and the base-scope send', async () => {
+    for (const augs of [null, [], [aug('client_memory', async () => null)]]) {
+      const t = await scopedTurn(augs, false);
+      expect(t.reader.memoryReads).toBe(0);
+      expect(t.subject).toEqual(BASE);
+    }
+  });
 });
 
 // ─── flags, registry, capabilities ───────────────────────────────────────────
@@ -378,6 +454,7 @@ describe('R11-00 flags and capabilities', () => {
     for (const [fn, name] of [
       [isRomanMemoryEnabled, 'FEATURE_ROMAN_MEMORY'],
       [isRomanPlaybookEnabled, 'FEATURE_ROMAN_PLAYBOOK'],
+      [isRomanToolsEnabled, 'FEATURE_ROMAN_TOOLS'],
     ] as const) {
       expect(fn({})).toBe(false);
       for (const v of ['', 'false', '1', 'yes', 'on'])
@@ -389,7 +466,7 @@ describe('R11-00 flags and capabilities', () => {
 
   it('ENV_RULES, the Fly manifest and the runbook register both flags off and the background cap', () => {
     const byName = new Map(ENV_RULES.map((r) => [r.name, r]));
-    for (const n of ['FEATURE_ROMAN_MEMORY', 'FEATURE_ROMAN_PLAYBOOK']) {
+    for (const n of ['FEATURE_ROMAN_MEMORY', 'FEATURE_ROMAN_PLAYBOOK', 'FEATURE_ROMAN_TOOLS']) {
       expect(byName.get(n)).toMatchObject({
         values: ['true', 'false'],
         unsetIs: 'off',
@@ -400,7 +477,7 @@ describe('R11-00 flags and capabilities', () => {
     const root = join(__dirname, '../..');
     const m = JSON.parse(readFileSync(join(root, '.github/fly-env-desired-state.json'), 'utf8'));
     const runbook = readFileSync(join(root, 'docs/runbooks/launch-flags.md'), 'utf8');
-    for (const n of ['FEATURE_ROMAN_MEMORY', 'FEATURE_ROMAN_PLAYBOOK']) {
+    for (const n of ['FEATURE_ROMAN_MEMORY', 'FEATURE_ROMAN_PLAYBOOK', 'FEATURE_ROMAN_TOOLS']) {
       expect(m.flags[n]).toBe('unset');
       expect(m.gates[n]).toMatch(/unset = off/);
       expect(runbook).toContain(
@@ -410,7 +487,25 @@ describe('R11-00 flags and capabilities', () => {
     const example = readFileSync(join(root, '.env.example'), 'utf8');
     expect(example).toMatch(/^FEATURE_ROMAN_MEMORY=false$/m);
     expect(example).toMatch(/^FEATURE_ROMAN_PLAYBOOK=false$/m);
+    expect(example).toMatch(/^FEATURE_ROMAN_TOOLS=false$/m);
     expect(example).toMatch(/^ROMAN_BACKGROUND_DAILY_COST_CAP_USD=$/m);
+  });
+
+  it('R11-T2A: the toolbox is an optional injection and the tool limits are pinned', () => {
+    const deps: Array<{ index: number; param: unknown }> =
+      Reflect.getMetadata('self:paramtypes', RomanService) ?? [];
+    const optional: number[] = Reflect.getMetadata('optional:paramtypes', RomanService) ?? [];
+    const slot = deps.find((d) => d.param === ROMAN_TOOLBOX);
+    expect(slot?.index).toBe(7);
+    expect(optional).toContain(7);
+    expect(Object.isFrozen(ROMAN_TOOL_LIMITS)).toBe(true);
+    expect(ROMAN_TOOL_LIMITS).toEqual({
+      max_rounds: 3,
+      max_calls_per_turn: 6,
+      max_result_chars: 12_000,
+      turn_wall_ms: 25_000,
+      tool_timeout_ms: 3_000,
+    });
   });
 
   it('the background capabilities are metered and are not the chat capability', () => {

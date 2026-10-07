@@ -113,6 +113,7 @@ import {
   type RomanTurnAugmenter,
 } from './augment/roman-turn-augmenter';
 import { ROMAN_TURN_AUGMENTER_TIMEOUT_MS } from './roman.constants';
+import { ROMAN_TOOLBOX, type RomanToolbox } from './tools/roman-tool.types';
 
 /** Minimal caller identity the service needs (from the authenticated User). */
 export interface RomanCaller {
@@ -230,6 +231,11 @@ export class RomanService {
     @Optional()
     @Inject(ROMAN_TURN_AUGMENTERS)
     private readonly augmenters: readonly RomanTurnAugmenter[] | null = null,
+    // R11-T2A: the read toolbox for tool-using turns (R11-T1 provides it,
+    // R11-T2B uses it behind FEATURE_ROMAN_TOOLS). Not provided on main.
+    @Optional()
+    @Inject(ROMAN_TOOLBOX)
+    private readonly toolbox: RomanToolbox | null = null,
   ) {}
 
   // ─── Sessions ──────────────────────────────────────────────────────────────
@@ -1020,8 +1026,11 @@ export class RomanService {
     }
     // R11-00: grounded turns with a bundle only; the coach surface never
     // augments. A failing augmenter only drops its own block.
-    const augmentRun =
+    const ranAugmenters =
       grounded && bundle ? await this.runAugmenters(caller, bundle, userMessage) : null;
+    // R11-T2A: a memory or coach-method block needs the client's 'memory'
+    // scope (client-ai-v5). A v4 holder gets today's prompt and send.
+    const { augmentRun, sendSubject } = await this.memoryScopeOf(caller, subject, ranAugmenters);
 
     const system = buildRomanSystemPrompt({
       surface: session.surface,
@@ -1078,7 +1087,7 @@ export class RomanService {
       dispatched = true;
       const stream = await this.egress.anthropicMessagesStream(
         this.anthropic,
-        subject,
+        sendSubject,
         'roman.chat',
         {
           model: ROMAN_MODEL_PHASE_1,
@@ -1236,6 +1245,29 @@ export class RomanService {
         );
       },
     });
+  }
+
+  /**
+   * R11-T2A memory-scope rule. No applied block = no extra read and the base
+   * subject. Otherwise the caller's 'memory' grant is read once: without it
+   * every block is dropped (the prompt is exactly today's); with it the send
+   * carries scope 'memory', so the gate re-checks v5 at send time.
+   */
+  private async memoryScopeOf(
+    caller: RomanCaller,
+    subject: AiDataSubject,
+    run: RomanAugmentRun | null,
+  ): Promise<{ augmentRun: RomanAugmentRun | null; sendSubject: AiDataSubject }> {
+    if (!run || run.applied.length === 0) return { augmentRun: run, sendSubject: subject };
+    const granted = await this.egress.consentedClients([caller.id], 'memory');
+    if (granted.has(caller.id)) {
+      return { augmentRun: run, sendSubject: clientDataSubject(caller.id, 'client', 'memory') };
+    }
+    this.logger.log('roman.augment_dropped reason=no_memory_scope');
+    return {
+      augmentRun: { applied: [], omitted: [...run.omitted, ...run.applied.map((a) => a.kind)] },
+      sendSubject: subject,
+    };
   }
 
   /** Newest user turn of the caller's session (the controller stores it first). */
