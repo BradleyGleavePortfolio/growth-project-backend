@@ -86,10 +86,12 @@ function setup(opts: {
   const creates: Body[] = [];
   const streams: Body[] = [];
   const replies = opts.replies ?? [];
+  const reserved: Array<Record<string, unknown>> = [];
   const client = {
     messages: {
       create: jest.fn(async (body: Body) => {
         creates.push(structuredClone(body));
+        reserved.push({ ...db.raw.aiRequestAudits[0] });
         return replies[Math.min(creates.length, replies.length) - 1];
       }),
       stream: jest.fn((body: Body) => {
@@ -138,7 +140,7 @@ function setup(opts: {
   };
   const ledger = () => db.raw.aiRequestAudits[0] as Record<string, unknown>;
   const saved = () => db.raw.romanMessages.filter((m) => m.role === 'roman');
-  return { db, svc, creates, streams, budget, turn, ledger, saved };
+  return { db, svc, creates, streams, reserved, budget, turn, ledger, saved };
 }
 
 const TOOLS = 'FEATURE_ROMAN_TOOLS';
@@ -233,10 +235,11 @@ describe('R11-T2B tool loop in the Roman turn', () => {
     const sent = t.creates[3].messages;
     const lastResults = sent[sent.length - 1].content as Array<Record<string, unknown>>;
     expect(lastResults.map((r) => r.is_error)).toEqual([true, true, true]);
-    const reserved: Record<string, number> =
-      t.db.prisma.aiRequestAudit.create.mock.calls[0][0].data;
-    expect(reserved.response_token_estimate).toBe(4 * ROMAN_MAX_OUTPUT_TOKENS);
+    // Reserved before the first send: every call of the turn, at its bound.
+    const reserved = t.reserved[0];
+    expect(reserved).toMatchObject({ response_token_estimate: 4 * ROMAN_MAX_OUTPUT_TOKENS });
     expect(reserved.prompt_token_estimate).toBeGreaterThan(4 * 6 * 12_000);
+    expect(reserved.metadata).toEqual({ state: 'reserved' });
     expect(t.ledger()).toMatchObject({
       prompt_token_estimate: 400_000,
       response_token_estimate: 4_000,
