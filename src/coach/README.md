@@ -33,10 +33,10 @@ coach's own roster.
 |---|---|---|---|---|
 | `GET` | `/coach/dashboard` | coach / owner | — | Dashboard summary |
 | `GET` | `/coach/clients?status=active\|archived\|all` | coach / owner | `status` | Roster with profile blob |
-| `POST` | `/coach/clients/:id/archive` | coach / owner | `:id` | `{ ok: true }` |
-| `POST` | `/coach/clients/:id/unarchive` | coach / owner | `:id` | `{ ok: true }` |
+| `POST` | `/coach/clients/:id/archive` | coach / owner | `:id` | The client as `{ id, name, archived_at }` |
+| `POST` | `/coach/clients/:id/unarchive` | coach / owner | `:id` | The client as `{ id, name, archived_at }` |
 | `GET` | `/coach/clients/risk-board` | **coach / owner** | `?bucket=green\|amber\|red&cursor=ISO&limit=N` | `{ data: CoachRiskBoardRow[], next_cursor: string\|null, generated_at: string }` |
-| `GET` | `/coach/clients/:id/timeline?days=N` | coach / owner | `:id`, `days` | 90-day event stream |
+| `GET` | `/coach/clients/:id/timeline?days=N` | coach / owner | `:id`, `days` | 90-day event stream; `client` is `{ id, name, archived_at }` |
 | `GET` | `/coach/clients/:id/summary?date=YYYY-MM-DD` | coach / owner | `:id`, `date` | One-day macro tally + 30-day weight |
 | `GET` | `/coach/my-guidelines` | client (student; package required) | — | The signed-in client's guideline from their current coach: `{ description, created_at, updated_at }`, or an empty body when there is none (`client-guidelines.controller.ts`) |
 | `GET` | `/coach/guidelines/:client_id` | coach / owner | `:client_id` | Guideline coach has set on a client |
@@ -158,6 +158,8 @@ endpoint is one round-trip per rule, not one per client.
 | `test/coach-ptm-risk-board.spec.ts` | Role guard (coach ✓, owner ✓, student 403, unauth 403); happy path (rows are redacted, risk_score/success_score null); empty roster; cross-coach isolation; bucket filter forwarded; cursor pagination |
 | `test/coach.service.spec.ts` | Tenancy, archive/unarchive, alert rule output |
 | `test/coach-timeline.spec.ts` | 90-day timeline composition + ordering |
+| `test/coach-client-row-redaction.spec.ts` | Timeline, archive and unarchive send the client as `{ id, name, archived_at }` only: no push token, deletion token or auth id |
+| `test/coach-sub-coach-client-lookup.spec.ts` | A sub-coach's archive, unarchive, timeline and summary lookups match only an assigned client: the client id and the caller scope are combined with `AND` (B-878-SOL-I-131-1) |
 | `test/v1-coach.service.spec.ts` | The BFF analogue under `src/v1/` |
 | `test/coach-alerts-push-delivery.spec.ts` | Push delivery via `NotificationsService.pushToCoach`; fallback when no token; dedup suppression |
 | `test/coach-alerts-emitters.spec.ts` | `consecutive_misses` + `streak_dropped` emitter behaviour; dedup; payload shapes |
