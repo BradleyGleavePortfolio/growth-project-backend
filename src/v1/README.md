@@ -107,6 +107,7 @@ vars consumed by `SubscriptionGuard` (see
 | File | Covers |
 |---|---|
 | `test/v1-coach.service.spec.ts` | OWNER bypass, COACH scoping, send/draft persistence, presence/risk synthesis |
+| `test/v1-coach-sub-coach-thread-scope.spec.ts` | A sub-coach's thread, message and draft lookups match only an assigned client: the client id and the caller scope are combined with `AND` (SUBCOACH-SCOPE-V1-132); the head coach and an assigned sub-coach still work |
 
 ## Operational notes
 
