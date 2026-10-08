@@ -6226,7 +6226,12 @@ model CoachAIBudget {
 
   // Consumption — actual Anthropic spend, in cents. Displayed consumption
   // is `actual_used_cents * value_multiplier`, computed on read.
-  actual_used_cents Int @default(0)
+  actual_used_cents       Int    @default(0)
+  // CREDIT-METER-130 — the same spend, exact, in millionths of a cent. Each
+  // debit adds its exact cost here and sets actual_used_cents to the ceiling
+  // of this total, so a period rounds up once (under one cent), not on every
+  // call. The monthly rollover resets both.
+  actual_used_micro_cents BigInt @default(0)
 
   // P1-8 fix — sum of per-pack actual_credit_cents (banker's rounded at
   // pack-purchase time). Tracking this as a stored column avoids the
