@@ -71,6 +71,12 @@ Repeat sections 2.1–2.5 once per environment (staging and production are
    **not** track `latest`; locked versions prevent silent payload-shape
    regressions.
 4. Events to send — select exactly:
+   - `checkout.session.completed` (AI credit pack refills: the pack is added
+     to the coach's AI pool only from this event; hosted coach-package
+     checkouts complete from it too)
+   - `checkout.session.expired` (closes an abandoned checkout instead of
+     leaving it pending: a refill becomes `failed`, a package purchase
+     becomes `expired`)
    - `customer.subscription.created`
    - `customer.subscription.updated`
    - `customer.subscription.deleted`

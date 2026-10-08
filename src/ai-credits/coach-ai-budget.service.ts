@@ -486,9 +486,11 @@ export class CoachAIBudgetService {
 
   /**
    * Monthly rollover: for each budget whose period_end <= now, expire the
-   * base (reset actual_used_cents to 0, start a fresh period) but PRESERVE
-   * pack credit accumulated this period — that's money the coach paid us;
-   * we don't get to take it back.
+   * base (reset actual_used_cents to 0, start a fresh period) and carry
+   * over the UNUSED part of pack credit (bought or granted) — that's money
+   * the coach paid us; we don't get to take it back. The part of the pack
+   * the closing period already spent is gone (CREDIT-REFILL-130): it is
+   * never handed out again. See packSpentAtClose().
    *
    * P1-3: period_end is the start of the next calendar month, not a
    * 30-day offset. See startOfNextMonth().
@@ -496,15 +498,25 @@ export class CoachAIBudgetService {
   async rolloverDueBudgets(now: Date = new Date()): Promise<{ rolled: number }> {
     const due = await this.prisma.coachAIBudget.findMany({
       where: { period_end: { lte: now } },
-      select: { id: true },
+      select: {
+        id: true,
+        actual_used_cents: true,
+        base_actual_cents: true,
+        base_displayed_cents: true,
+        value_multiplier: true,
+        pack_displayed_cents: true,
+        total_pack_actual_cents: true,
+      },
     });
     if (due.length === 0) return { rolled: 0 };
     const periodStart = startOfCurrentMonth(now);
     const periodEnd = startOfNextMonth(periodStart);
     let rolled = 0;
     for (const row of due) {
+      const spent = packSpentAtClose(row);
       const result = await this.prisma.coachAIBudget.updateMany({
-        where: { id: row.id, period_end: { lte: now } },
+        // actual_used_cents pins the row to the usage `spent` was read from.
+        where: { id: row.id, period_end: { lte: now }, actual_used_cents: row.actual_used_cents },
         data: {
           period_start: periodStart,
           period_end: periodEnd,
@@ -513,8 +525,10 @@ export class CoachAIBudgetService {
           base_actual_cents: resolveMaxActualCents(),
           value_multiplier: new Prisma.Decimal(resolveValueMultiplier()),
           base_displayed_cents: resolveBaseDisplayedCents(),
-          // pack_paid_cents / pack_displayed_cents / total_pack_actual_cents
-          // intentionally left alone — paid credit carries over.
+          // Decrement (not set) so a pack booked mid-rollover is kept whole.
+          // pack_paid_cents stays: it records money paid (refunds read it).
+          total_pack_actual_cents: { decrement: spent.actualCents },
+          pack_displayed_cents: { decrement: spent.displayedCents },
         },
       });
       rolled += result.count;
@@ -557,6 +571,32 @@ export class CoachAIBudgetService {
         row.base_actual_cents + row.total_pack_actual_cents,
     };
   }
+}
+
+/**
+ * CREDIT-REFILL-130 — how much pack credit the closing period spent. The
+ * base is spent first (it expires at rollover anyway); usage beyond the
+ * base came out of pack credit. Displayed cents follow the balance the coach
+ * saw: the pack keeps exactly the remaining displayed balance at close, never
+ * more than the pack itself.
+ */
+function packSpentAtClose(row: {
+  actual_used_cents: number;
+  base_actual_cents: number;
+  base_displayed_cents: number;
+  value_multiplier: Prisma.Decimal | number;
+  pack_displayed_cents: number;
+  total_pack_actual_cents: number;
+}): { actualCents: number; displayedCents: number } {
+  const packActual = Math.max(0, row.total_pack_actual_cents);
+  const packDisplayed = Math.max(0, row.pack_displayed_cents);
+  const overBase = Math.max(0, row.actual_used_cents - row.base_actual_cents);
+  const actualCents = Math.min(packActual, overBase);
+  if (actualCents === 0) return { actualCents: 0, displayedCents: 0 };
+  if (actualCents === packActual) return { actualCents, displayedCents: packDisplayed };
+  const usedDisplayed = Math.round(row.actual_used_cents * Number(row.value_multiplier));
+  const leftDisplayed = Math.max(0, row.base_displayed_cents + packDisplayed - usedDisplayed);
+  return { actualCents, displayedCents: packDisplayed - Math.min(packDisplayed, leftDisplayed) };
 }
 
 /** First-of-month UTC at 00:00. */
