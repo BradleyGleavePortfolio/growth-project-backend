@@ -90,7 +90,7 @@ function makePrisma(rows: Row[], packs: Pack[] = []) {
     if (r.total_pack_actual_cents < 0) throw new Error('violates check constraint "CoachAIBudget_total_pack_actual_nonneg"');
     if (r.pack_paid_cents < 0) throw new Error('violates check constraint "CoachAIBudget_pack_paid_nonneg"');
   };
-  const prisma = {
+  const tables = {
     coachAIBudget: {
       findMany: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
         rows.filter((r) => matches(r, where)).map((r) => ({ ...r })),
@@ -136,9 +136,10 @@ function makePrisma(rows: Row[], packs: Pack[] = []) {
         return { ...p };
       }),
     },
-    $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
   };
-  return prisma;
+  // The transaction client is the same tables (named apart so the fake does
+  // not reference itself in its own initializer: TS7022 / TS7024 in CI).
+  return { ...tables, $transaction: jest.fn(async (fn: (tx: typeof tables) => Promise<unknown>) => fn(tables)) };
 }
 
 const COACH = 'coach-refill';
