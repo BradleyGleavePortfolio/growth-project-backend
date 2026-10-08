@@ -380,12 +380,28 @@ export class AiGatewayService {
     ) {
       const actualCostCents = estimateAnthropicCostCents(response);
       try {
-        await this.budget.recordUsage({
+        const debit = await this.budget.recordUsage({
           coachId: budgetCoachId,
           actualCostCents,
           capability: req.capability,
           contextId: req.subjectUserId ?? null,
         });
+        // B1 (LN-SOL-D-131): a call that costs more than the credit left is
+        // refused by recordUsage. Take what is left instead, as
+        // CoachAIService.recordSpend does, so the pool reaches empty and the
+        // next call gets the 402 before any provider request.
+        if (!debit.recorded) {
+          const { budget } = await this.budget.canCharge(budgetCoachId, 0);
+          const rest = budget.total_actual_available_cents - budget.actual_used_cents;
+          if (rest > 0) {
+            await this.budget.recordUsage({
+              coachId: budgetCoachId,
+              actualCostCents: Math.min(rest, actualCostCents),
+              capability: req.capability,
+              contextId: req.subjectUserId ?? null,
+            });
+          }
+        }
       } catch (err) {
         // Best-effort: a budget write failure must not 500 the AI surface
         // (the work already completed). Log + continue. The audit row

@@ -30,6 +30,7 @@ import {
 import { ROMAN_MODEL_PHASE_1 } from '../src/roman/anthropic-client.provider';
 import { ROMAN_MEMORY_CAPABILITY } from '../src/roman/roman.constants';
 import { AiGatewayService } from '../src/ai/gateway/ai-gateway.service';
+import { CoachAiBudgetExhaustedException } from '../src/ai-credits/budget-exhausted.exception';
 import { AiGatewayConfig } from '../src/ai/gateway/ai-gateway.config';
 import { AiRedactionService } from '../src/ai/gateway/ai-redaction.service';
 import { AiProviderRegistry } from '../src/ai/gateway/providers/provider-registry';
@@ -352,6 +353,57 @@ describe('CREDIT-METER-130 U3 — the gateway never takes its 5-cent no-token-co
       expect(complete).toHaveBeenCalledTimes(1);
       expect(p.row.actual_used_micro_cents).toBe(BigInt(1_000_000));
       expect(p.row.actual_used_cents).toBe(1);
+    } finally {
+      process.env = env;
+    }
+  });
+});
+
+// B1 (LN-SOL-D-131 @ fbab7f99, FIX-OPUS-131): with less credit left than a call costs, recordUsage refused
+// the debit and the gateway dropped it, so paid calls went on at the last cent. The gateway now takes
+// what is left, as CoachAIService.recordSpend does, and the next call gets the 402 before the provider.
+describe('CREDIT-METER-130 B1 — at the last cent the gateway uses up the pool, then stops', () => {
+  it('a 1.6-cent call with 1 cent left takes that cent, and the next call is refused before any provider call', async () => {
+    const env = { ...process.env };
+    process.env.AI_GATEWAY_ENABLED = 'true';
+    process.env.AI_GATEWAY_PROVIDER = 'anthropic';
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
+    process.env.AI_GATEWAY_CAPABILITIES = 'client_chat';
+    try {
+      const p = pool({ actual_used_cents: 3999, actual_used_micro_cents: BigInt(3_999_000_000) });
+      const anthropic = {
+        name: 'anthropic',
+        complete: jest.fn(async () => ({
+          provider: 'anthropic',
+          model: COACH_AI_MODEL,
+          text: 'ok',
+          enabled: true,
+          promptTokenEstimate: 6_000,
+          responseTokenEstimate: 400,
+          meta: {},
+        })),
+      };
+      const registry = new AiProviderRegistry(new StubProviderAdapter(), fakeOf(anthropic));
+      const svc = new AiGatewayService(
+        p.prisma,
+        new AiGatewayConfig(),
+        new AiRedactionService(),
+        registry,
+        grantAllEgress(),
+        p.budget,
+      );
+      const ask = () =>
+        svc.invoke({
+          capability: 'client_chat',
+          requester: { id: COACH, role: 'coach' },
+          userMessage: 'How is the week going?',
+          systemPrompt: 'x',
+        });
+      await ask();
+      expect(p.row.actual_used_cents).toBe(4000);
+      expect(p.row.actual_used_micro_cents).toBe(BigInt(4_000_000_000));
+      await expect(ask()).rejects.toBeInstanceOf(CoachAiBudgetExhaustedException);
+      expect(anthropic.complete).toHaveBeenCalledTimes(1);
     } finally {
       process.env = env;
     }
