@@ -57,6 +57,11 @@ export class V1CoachService {
   /**
    * Scope a User-table query for the given caller. Head coach → own
    * roster. Sub-coach → only assigned clients. Owner → no scope.
+   *
+   * SUBCOACH-SCOPE-V1-132 (the B-878-SOL-I-131-1 rule): combine it with a
+   * client id through AND (`{ AND: [{ id: clientId, ... }, scope] }`), never a
+   * spread: the sub-coach fragment has its own `id` and would replace the
+   * requested one.
    */
   private async clientScope(caller: Caller): Promise<Prisma.UserWhereInput> {
     if (caller.role === 'owner') return {};
@@ -382,7 +387,7 @@ export class V1CoachService {
     const client = await this.prisma.user.findFirst({
       where: ownerBypass
         ? { id: clientId, role: 'student' }
-        : { id: clientId, ...scope, role: 'student' },
+        : { AND: [{ id: clientId, role: 'student' }, scope] },
       select: { id: true, coach_id: true, name: true },
     });
     if (!client) throw new NotFoundException('Client not found');
@@ -459,7 +464,7 @@ export class V1CoachService {
     const client = await this.prisma.user.findFirst({
       where: ownerBypass
         ? { id: clientId, role: 'student' }
-        : { id: clientId, ...scope, role: 'student' },
+        : { AND: [{ id: clientId, role: 'student' }, scope] },
       select: { id: true, coach_id: true },
     });
     if (!client) throw new NotFoundException('Client not found');
@@ -540,7 +545,7 @@ export class V1CoachService {
     const client = await this.prisma.user.findFirst({
       where: ownerBypass
         ? { id: clientId, role: 'student' }
-        : { id: clientId, ...scope, role: 'student' },
+        : { AND: [{ id: clientId, role: 'student' }, scope] },
       select: { id: true, coach_id: true },
     });
     if (!client) throw new NotFoundException('Client not found');
@@ -596,7 +601,7 @@ export class V1CoachService {
     const client = await this.prisma.user.findFirst({
       where: ownerBypass
         ? { id: clientId, role: 'student' }
-        : { id: clientId, ...scope, role: 'student' },
+        : { AND: [{ id: clientId, role: 'student' }, scope] },
       select: { id: true, coach_id: true },
     });
     if (!client) throw new NotFoundException('Client not found');
