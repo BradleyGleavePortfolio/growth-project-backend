@@ -87,7 +87,6 @@ import {
 import { CoachAIBudgetService } from '../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../ai-credits/budget-exhausted.exception';
 import { COACH_AI_BUDGET_EXHAUSTED_CODE } from '../ai-credits/ai-credits.constants';
-import { PROMPT_VERSION } from './guardrails/roman-guardrail.contract';
 import {
   classifySafety,
   routerHintFor,
@@ -1288,7 +1287,7 @@ export class RomanService {
     // the owner audit list never returns and #608's erasure manifest nulls
     // for this actor.
     this.logger.warn(
-      `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} model_call=false template=fixed`,
+      `roman.turn session=${session.id} prompt_version=${romanPromptVersionOf(session.surface)} model_call=false template=fixed`,
     );
     await this.audit?.write({
       action: AuditAction.ROMAN_SAFETY_ROUTE,

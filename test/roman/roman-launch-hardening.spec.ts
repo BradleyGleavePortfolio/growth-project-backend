@@ -860,4 +860,16 @@ describe('COACH-ROMAN-SURFACE-130 a coach turn carries the coach rules and recor
     expect(client.audits[0].metadata).toMatchObject({ state: 'settled', prompt_version: PROMPT_VERSION });
     log.mockRestore();
   });
+
+  it('a coach turn answered by the fixed safety template logs roman-coach-v1 too', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const a = makeAnthropic('should never be called');
+    const svc = new RomanService(fakeOf(makePrisma().prisma), grantAllEgress(), a.handle);
+    await drain(svc.streamAssistantTurn(COACH, fakeOf(coachSession()), { userMessage: 'I can\u2019t breathe' }));
+    expect(a.client.messages.stream).not.toHaveBeenCalled();
+    expect(warn.mock.calls.map((c) => String(c[0]))).toContainEqual(
+      expect.stringContaining(`prompt_version=${ROMAN_COACH_PROMPT_VERSION} model_call=false template=fixed`),
+    );
+    warn.mockRestore();
+  });
 });
