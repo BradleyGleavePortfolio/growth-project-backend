@@ -217,7 +217,13 @@ export class DunningV2Dispatcher {
       body = this.renderer.clientPush(decision.copyKey, ctx.tokens, quip);
     }
     if (!this.notifications) return { status: 'skipped', error: 'push_not_wired' };
-    const res = await this.notifications.pushToUser(ctx.clientUserId, 'Payment', body);
+    // AUD-FIN-MONEY-129 U-3: a tap opens the in-app card update (the app
+    // routes by actionScreen). A dispute cycle gets no card route: a card
+    // update does not end a dispute (R-DISPUTE-PAUSE).
+    const data = ctx.isLateReversalCycle
+      ? undefined
+      : { kind: 'dunning_payment', actionScreen: 'UpdateCard' };
+    const res = await this.notifications.pushToUser(ctx.clientUserId, 'Payment', body, data);
     // A transport that returns no verdict (legacy stubs) counts as sent.
     if (typeof res === 'object' && res !== null && res.delivered === false) {
       if (res.code === 'no-token') return { status: 'skipped', error: 'push_no_token' };
