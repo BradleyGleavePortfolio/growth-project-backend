@@ -3,7 +3,9 @@
  *
  * For each head coach with clients: collect the team's scrubbed sources
  * (playbook-sources.ts), skip when nothing changed since the active version
- * (same ledger digest), admit the spend (background pool + daily ceiling),
+ * (same ledger digest) or when that version is under 6 hours old (PB-GAP-130:
+ * at most one rebuild per coach every 6 hours, the run 3 minutes after a
+ * restart included), admit the spend (background pool + daily ceiling),
  * ask the model for the playbook JSON once, validate it (schema, identity,
  * verbatim quotes of private notes), then write the new version in one
  * transaction: the old active row is superseded, the new one is active, and
@@ -52,9 +54,24 @@ export const PLAYBOOK_BUILD_LIMITS = Object.freeze({
   maxOutputTokens: 4096,
 });
 
+/** PB-GAP-130: a coach's playbook is rebuilt at most once every 6 hours. */
+export const PLAYBOOK_REBUILD_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const MINUTE_MS = 60 * 1000;
+
+/**
+ * True while the last successful build is under 6 hours old. Ages count whole
+ * minutes, so the next 6-hourly run still rebuilds when it starts a few
+ * milliseconds sooner after the hour than the last one did.
+ */
+export function builtTooRecently(builtAt: Date, now: Date): boolean {
+  const minutes = (d: Date) => Math.floor(d.getTime() / MINUTE_MS);
+  return (minutes(now) - minutes(builtAt)) * MINUTE_MS < PLAYBOOK_REBUILD_MIN_INTERVAL_MS;
+}
+
 export type PlaybookBuildOutcome =
   | 'built'
   | 'unchanged'
+  | 'too_recent'
   | 'no_sources'
   | 'unsafe_ledger'
   | 'not_admitted'
@@ -153,9 +170,10 @@ export class PlaybookBuilderService {
     if (src.items.length === 0) return 'no_sources';
     const active = await this.prisma.coachPlaybook.findFirst({
       where: { coach_id: head, status: 'active' },
-      select: { source_digest: true },
+      select: { source_digest: true, built_at: true },
     });
     if (active?.source_digest === src.digest) return 'unchanged';
+    if (active && builtTooRecently(active.built_at, now)) return 'too_recent';
     const consented = src.consentedClientIds;
     if (consented.length === 0 && src.ledger.some((r) => r.client_id)) return 'unsafe_ledger';
     const subject = consented.length

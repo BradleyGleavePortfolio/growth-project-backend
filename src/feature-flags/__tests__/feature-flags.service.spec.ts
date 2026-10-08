@@ -57,6 +57,7 @@ describe('FeatureFlagsService', () => {
       community_events: false,
       coachless_home: false,
       messaging_core_v2: false,
+      coach_payment_actions: false,
     });
   });
 

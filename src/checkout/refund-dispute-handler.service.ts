@@ -2430,6 +2430,10 @@ export class RefundDisputeHandlerService {
     reason?: 'duplicate' | 'fraudulent' | 'requested_by_customer';
     note?: string | null;
     initiated_by_user_id: string;
+    // CF-COACH-PAY-BE-128: the coach route names the payment it showed and
+    // sends its own per-tap Stripe key. Admin callers pass neither.
+    charge_id?: string;
+    idempotency_key?: string;
   }): Promise<ChargeRefund> {
     const purchase = await this.prisma.clientPurchase.findUnique({
       where: { id: args.purchase_id },
@@ -2447,11 +2451,13 @@ export class RefundDisputeHandlerService {
     }
     // Resolve the underlying charge id. For one_time prefer the saved PI;
     // for recurring use the most recent destination ledger slice.
-    const chargeId = await this.resolveChargeIdForPurchase(purchase);
+    const chargeId = args.charge_id ?? (await this.resolveChargeIdForPurchase(purchase));
     if (!chargeId) {
       throw new Error(`createAdminRefund: no charge id for purchase ${purchase.id}`);
     }
-    const idempotencyKey = `tgp-refund-${purchase.id}-${chargeId}-${args.amount_cents ?? 'full'}-${args.initiated_by_user_id}`;
+    const idempotencyKey =
+      args.idempotency_key ??
+      `tgp-refund-${purchase.id}-${chargeId}-${args.amount_cents ?? 'full'}-${args.initiated_by_user_id}`;
     // S-FEE: reverse_transfer / refund_application_fee only exist for
     // destination charges. A separate-charge-and-transfer charge is
     // recovered by ChargeSettlementService when the refund is applied.
