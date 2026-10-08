@@ -7,7 +7,7 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, type AIDraft } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { AnthropicAdapter } from '../adapters/anthropic.adapter';
 import { ClientContextService } from '../context/client-context.service';
@@ -33,6 +33,14 @@ import { WorkoutContextService, WorkoutContextV2 } from '../context/workout-cont
 import { applyProgramSafety, toInjuryAreas } from '../gateway/workout-builder/training-substitutions';
 import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
+
+/** B-872-SOL-H-131-1 — the Coach sharing switches a stored weekly insight can hold logs of. */
+const INSIGHT_SHARING_SCOPES: readonly string[] = [
+  ConsentScope.FITNESS_BODY_METRICS,
+  ConsentScope.FITNESS_FOOD_MACROS,
+  ConsentScope.FITNESS_WORKOUTS,
+  ConsentScope.FITNESS_HABITS_PROGRESS,
+];
 
 /** COACH-AI-GATE-130 — which of the client's logs they share with the coach (Settings > Privacy > Coach sharing). */
 export interface CoachSharing { weighIns: boolean; food: boolean; workouts: boolean; checkIns: boolean }
@@ -428,6 +436,28 @@ export class CoachAIService {
   }
 
   async getDraft(coachId: string, draftId: string) {
+    return this.shareSafe(coachId, await this.loadDraft(coachId, draftId));
+  }
+
+  /**
+   * B-872-SOL-H-131-1 — a weekly insight stored before its client turned off one of the four Coach
+   * sharing switches for this coach comes back without its content: it may describe a log the client
+   * now keeps private. A re-grant clears revoked_at, so the insight shows again. The owner account
+   * reads every log; hand-built unit tests without ConsentService keep their all-shared fixtures.
+   */
+  private async shareSafe(coachId: string, draft: AIDraft): Promise<AIDraft> {
+    if (draft.type !== 'INSIGHT' || !this.consent) return draft;
+    const caller = await this.prisma.user.findUnique({ where: { id: coachId }, select: { role: true } });
+    if (caller?.role === 'owner') return draft;
+    const withdrawn = await this.prisma.clientCoachConsent.findFirst({
+      where: { coach_id: coachId, client_id: draft.clientId, scope: { in: [...INSIGHT_SHARING_SCOPES] }, revoked_at: { gt: draft.createdAt } },
+      select: { id: true },
+    });
+    return withdrawn ? { ...draft, generatedPayload: null } : draft;
+  }
+
+  /** The stored draft for this service's own reads (edit, reject, approve); responses go through shareSafe. */
+  private async loadDraft(coachId: string, draftId: string): Promise<AIDraft> {
     const draft = await this.prisma.aIDraft.findUnique({ where: { id: draftId } });
     // Collapse missing vs foreign-owned into a single 404. Returning 403 for
     // foreign-owned IDs let a coach probe which draft IDs exist; the IDs
@@ -440,7 +470,7 @@ export class CoachAIService {
   }
 
   async editDraft(coachId: string, draftId: string, patch: Record<string, unknown>) {
-    const draft = await this.getDraft(coachId, draftId);
+    const draft = await this.loadDraft(coachId, draftId);
     if (draft.status !== 'DRAFT') {
       throw new BadRequestException(`Cannot edit a draft in status=${draft.status}`);
     }
@@ -450,25 +480,25 @@ export class CoachAIService {
         : {}),
       ...patch,
     };
-    return this.prisma.aIDraft.update({
+    return this.shareSafe(coachId, await this.prisma.aIDraft.update({
       where: { id: draftId },
       data: { generatedPayload: merged as unknown as Prisma.InputJsonValue },
-    });
+    }));
   }
 
   async rejectDraft(coachId: string, draftId: string, reason: string) {
-    const draft = await this.getDraft(coachId, draftId);
+    const draft = await this.loadDraft(coachId, draftId);
     if (draft.status !== 'DRAFT') {
       throw new BadRequestException(`Cannot reject a draft in status=${draft.status}`);
     }
-    return this.prisma.aIDraft.update({
+    return this.shareSafe(coachId, await this.prisma.aIDraft.update({
       where: { id: draftId },
       data: { status: 'REJECTED', rejectionReason: reason },
-    });
+    }));
   }
 
   async approveDraft(coachId: string, draftId: string) {
-    const draft = await this.getDraft(coachId, draftId);
+    const draft = await this.loadDraft(coachId, draftId);
     if (draft.type === 'WORKOUT_PROGRAM') {
       return this.approveWorkoutProgram(coachId, draft);
     }
@@ -479,10 +509,10 @@ export class CoachAIService {
     if (draft.type === 'MEAL_PLAN') {
       approvedAsId = await this.materializeMealPlan(coachId, draft);
     }
-    return this.prisma.aIDraft.update({
+    return this.shareSafe(coachId, await this.prisma.aIDraft.update({
       where: { id: draftId },
       data: { status: 'APPROVED', approvedAsId },
-    });
+    }));
   }
 
   /**
@@ -497,7 +527,7 @@ export class CoachAIService {
    */
   private async approveWorkoutProgram(
     coachId: string,
-    draft: Awaited<ReturnType<CoachAIService['getDraft']>>,
+    draft: AIDraft,
   ) {
     const dayCount = this.workoutProgramDays(draft).days.length;
     if (draft.status !== 'DRAFT') return this.replayWorkoutApproval(coachId, draft.id, dayCount);
@@ -548,7 +578,7 @@ export class CoachAIService {
   }
 
   private async replayWorkoutApproval(coachId: string, draftId: string, dayCount: number) {
-    const current = await this.getDraft(coachId, draftId);
+    const current = await this.loadDraft(coachId, draftId);
     if (current.status === 'APPROVED' && current.approvedAsId) {
       return { ...current, assigned_count: dayCount };
     }

@@ -7,7 +7,7 @@
 import type { Prisma } from '@prisma/client';
 import { ForbiddenException } from '@nestjs/common';
 import { AnthropicHandle, type AnthropicMessagesClient } from '../src/ai-egress/ai-egress.service';
-import { ConsentService } from '../src/consent/consent.service';
+import { ConsentScope, ConsentService } from '../src/consent/consent.service';
 import { CoachBriefService } from '../src/coach/brief/coach-brief.service';
 import { CoachAIService } from '../src/ai/coach/coach-ai.service';
 import { CoachAIController } from '../src/ai/coach/coach-ai.controller';
@@ -176,6 +176,81 @@ describe('Coach AI drafts (B2)', () => {
       expect(res).not.toHaveProperty('inputContext');
       expect(res).toMatchObject({ id: 'd1', status: 'DRAFT' });
     }
+  });
+});
+
+describe('Stored weekly insight after a client turns a switch off (B-872-SOL-H-131-1)', () => {
+  type Row = Record<string, unknown> & { id: string };
+  type Withdrawn = { coach_id: string; client_id: string; scope: { in: string[] }; revoked_at: { gt: Date } };
+  function insightFlow(role = 'coach') {
+    const rows: Record<string, Row> = {};
+    let revokedAt: Date | null = null;
+    const completeStructured = jest.fn(async () => ({
+      data: { summary: 'Weigh-ins are down to 184.6 lb.', wins: [], concerns: [], suggested_actions: [], questions_for_coach: [] },
+      tokensIn: 1, tokensOut: 1, modelUsed: 'm', latencyMs: 1,
+    }));
+    const prisma = {
+      aIDraft: {
+        create: jest.fn(async ({ data }: { data: Record<string, unknown> }) =>
+          (rows['ins-1'] = { id: 'ins-1', status: 'DRAFT', createdAt: new Date('2026-10-05T12:00:00Z'), ...data })),
+        findUnique: jest.fn(async ({ where }: { where: { id: string } }) => rows[where.id] ?? null),
+        update: jest.fn(async ({ where, data }: { where: { id: string }; data: Record<string, unknown> }) =>
+          (rows[where.id] = { ...rows[where.id], ...data })),
+      },
+      user: { findUnique: jest.fn(async () => ({ role })) },
+      // Answers like the database: a Weigh-ins row for this coach and client revoked after the asked time.
+      clientCoachConsent: {
+        findFirst: jest.fn(async ({ where }: { where: Withdrawn }) =>
+          revokedAt && where.coach_id === COACH && where.client_id === SHARES &&
+          where.scope.in.includes(ConsentScope.FITNESS_BODY_METRICS) && revokedAt > where.revoked_at.gt
+            ? { id: 'consent-1' }
+            : null),
+      },
+    };
+    const svc = new CoachAIService(
+      fakeOf(prisma), fakeOf({ isReady: () => true }), fakeOf({ completeStructured }),
+      fakeOf({ build: jest.fn(async (clientId: string) => clientContext(clientId)) }), fakeOf({}),
+      fakeOf({ assertCanAccessClient: jest.fn(async () => undefined) }), undefined,
+      fakeOf<WorkoutContextService>({ build: jest.fn(async () => workoutContext) }), consentSharing([SHARES]),
+    );
+    return { svc, setRevokedAt: (at: Date | null) => { revokedAt = at; } };
+  }
+
+  it('generate, then Weigh-ins off: read, edit and reject return the insight without its content', async () => {
+    const { svc, setRevokedAt } = insightFlow();
+    const controller = new CoachAIController(svc, fakeOf({}));
+    const req = fakeOf<Parameters<CoachAIController['getDraft']>[0]>({ user: { id: COACH } });
+    const { draftId } = await svc.generateClientInsight(COACH, { clientId: SHARES });
+    expect(JSON.stringify(await controller.getDraft(req, draftId))).toContain('184.6');
+    setRevokedAt(new Date('2026-10-06T08:00:00Z'));
+    for (const res of [
+      await controller.getDraft(req, draftId),
+      await controller.edit(req, draftId, { patch: { coach_notes: 'ok' } }),
+      await controller.reject(req, draftId, { reason: 'no' }),
+    ]) {
+      expect(res).toMatchObject({ id: draftId, generatedPayload: null });
+      expect(JSON.stringify(res)).not.toContain('184.6');
+    }
+  });
+
+  it('approve after Weigh-ins off returns no content; the owner account still reads it', async () => {
+    const coach = insightFlow();
+    const { draftId } = await coach.svc.generateClientInsight(COACH, { clientId: SHARES });
+    coach.setRevokedAt(new Date('2026-10-06T08:00:00Z'));
+    expect((await coach.svc.approveDraft(COACH, draftId)).generatedPayload).toBeNull();
+    const owner = insightFlow('owner');
+    await owner.svc.generateClientInsight(COACH, { clientId: SHARES });
+    owner.setRevokedAt(new Date('2026-10-06T08:00:00Z'));
+    expect(JSON.stringify((await owner.svc.getDraft(COACH, draftId)).generatedPayload)).toContain('184.6');
+  });
+
+  it('a switch turned off before the insight was made, or turned on again, keeps the insight', async () => {
+    const { svc, setRevokedAt } = insightFlow();
+    const { draftId } = await svc.generateClientInsight(COACH, { clientId: SHARES });
+    setRevokedAt(new Date('2026-10-04T08:00:00Z'));
+    expect(JSON.stringify((await svc.getDraft(COACH, draftId)).generatedPayload)).toContain('184.6');
+    setRevokedAt(null);
+    expect(JSON.stringify((await svc.getDraft(COACH, draftId)).generatedPayload)).toContain('184.6');
   });
 });
 
