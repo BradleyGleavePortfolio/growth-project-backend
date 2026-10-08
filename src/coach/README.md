@@ -159,6 +159,7 @@ endpoint is one round-trip per rule, not one per client.
 | `test/coach.service.spec.ts` | Tenancy, archive/unarchive, alert rule output |
 | `test/coach-timeline.spec.ts` | 90-day timeline composition + ordering |
 | `test/coach-client-row-redaction.spec.ts` | Timeline, archive and unarchive send the client as `{ id, name, archived_at }` only: no push token, deletion token or auth id |
+| `test/coach-sub-coach-client-lookup.spec.ts` | A sub-coach's archive, unarchive, timeline and summary lookups match only an assigned client: the client id and the caller scope are combined with `AND` (B-878-SOL-I-131-1) |
 | `test/v1-coach.service.spec.ts` | The BFF analogue under `src/v1/` |
 | `test/coach-alerts-push-delivery.spec.ts` | Push delivery via `NotificationsService.pushToCoach`; fallback when no token; dedup suppression |
 | `test/coach-alerts-emitters.spec.ts` | `consecutive_misses` + `streak_dropped` emitter behaviour; dedup; payload shapes |

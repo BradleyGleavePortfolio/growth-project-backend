@@ -142,6 +142,10 @@ export class CoachService {
   //
   // If SubCoachScopeService isn't wired up (unit tests), we silently fall
   // back to the head-coach behavior so existing fixtures keep passing.
+  //
+  // B-878-SOL-I-131-1: combine it with a client id through AND
+  // (`{ AND: [{ id: clientId }, scope] }`), never a spread: the sub-coach
+  // fragment has its own `id` and would replace the requested one.
   private async scopeClientsBy(
     callerId: string,
     callerRole?: string,
@@ -375,7 +379,7 @@ export class CoachService {
   ) {
     const scope = await this.scopeClientsBy(coachId, callerRole);
     const client = await this.prisma.user.findFirst({
-      where: { id: clientId, ...scope },
+      where: { AND: [{ id: clientId }, scope] },
       select: { ...COACH_CLIENT_ROW, coach_id: true },
     });
     if (!client) throw new Error('Client not found');
@@ -411,7 +415,7 @@ export class CoachService {
   ) {
     const scope = await this.scopeClientsBy(coachId, callerRole);
     const client = await this.prisma.user.findFirst({
-      where: { id: clientId, ...scope },
+      where: { AND: [{ id: clientId }, scope] },
       select: { ...COACH_CLIENT_ROW, coach_id: true },
     });
     if (!client) throw new Error('Client not found');
@@ -458,7 +462,7 @@ export class CoachService {
   ) {
     const scope = await this.scopeClientsBy(coachId, callerRole);
     const client = await this.prisma.user.findFirst({
-      where: { id: clientId, ...scope },
+      where: { AND: [{ id: clientId }, scope] },
       select: COACH_CLIENT_ROW,
     });
     if (!client) return { error: 'Client not found' };
@@ -629,7 +633,7 @@ export class CoachService {
   ) {
     const scope = await this.scopeClientsBy(coachId, callerRole);
     const client = await this.prisma.user.findFirst({
-      where: { id: clientId, ...scope },
+      where: { AND: [{ id: clientId }, scope] },
       include: { profile: true },
     });
     if (!client) return { error: 'Client not found' };
