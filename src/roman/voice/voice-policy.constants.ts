@@ -244,12 +244,15 @@ export const LEGACY: Readonly<Record<SurfaceKey, string>> = {
  */
 export const ROMAN_V2: Readonly<Record<SurfaceKey, string>> = {
   // ── Phase 2 ───────────────────────────────────────────────────────────────
+  // Day 0/1/3 (SMALL-BE-COPY-132): the same lines as LEGACY. The earlier Roman
+  // lines promised and counted retries that Stripe does not run for a hard
+  // decline (AUD-FIN-MONEY-129 B-2); the push title is "Payment", not Roman.
   dunning_day0:
-    "Your last charge didn't go through, {firstName}. I tried once. I'll try again tomorrow. Take a look at your card on file when you have a moment.\n— Roman",
+    'A small matter, {firstName}: your payment of {amount} did not go through. Update your card in the app to settle it.',
   dunning_day1:
-    "Still outstanding, {firstName}. I tried again today, and the card on file held firm. Update it and I'll settle the rest.\n— Roman",
+    '{firstName}, your payment of {amount} is still outstanding. Update your card in the app to settle it.',
   dunning_day3:
-    "Three tries now, {firstName}, and {amount} still hasn't cleared. Your access is at risk. Update your card today and you keep everything.\n— Roman",
+    '{firstName}, your access is at risk. {amount} is still unpaid. Update your card in the app before {lockoutDate} to keep everything.',
   dunning_day7:
     "Day seven, {firstName}. The charge still hasn't cleared. If we don't connect soon, your access pauses. Easier to fix today.\n— Roman",
   lockout_day10:

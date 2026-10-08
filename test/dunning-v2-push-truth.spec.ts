@@ -7,6 +7,7 @@ import { DunningV2Renderer } from '../src/checkout/dunning-v2/dunning-v2.rendere
 import type { DunningV2Telemetry } from '../src/checkout/dunning-v2/dunning-v2.telemetry';
 import type { NotificationsService } from '../src/notifications/notifications.service';
 import type { PushDeliveryResult } from '../src/notifications/push-delivery.types';
+import { ROMAN_V2 } from '../src/roman/voice/voice-policy.constants';
 import { partialDouble } from './support/typed-double';
 
 /**
@@ -54,6 +55,19 @@ describe('B-2: the Day 0/1/3 failed-payment pushes are true for every decline', 
       expect(text).not.toMatch(/[{}!]/);
     });
   });
+
+  // SMALL-BE-COPY-132 (MONEY-DUNNING-COPY-130 proposed 1): the Roman variant
+  // that FEATURE_ROMAN_COPY_V2 sends made the same retry promise.
+  it.each(['dunning_day0', 'dunning_day1', 'dunning_day3'] as const)(
+    'ROMAN_V2 %s (FEATURE_ROMAN_COPY_V2): no retry claim, no first person, says how to settle it',
+    (key) => {
+      const text = ROMAN_V2[key];
+      expect(text).not.toMatch(RETRY_CLAIM);
+      expect(text).not.toMatch(FIRST_PERSON);
+      expect(text).toMatch(/card/i);
+      expect(text).toMatch(/in the app/);
+    },
+  );
 });
 
 function ctx(over: Partial<DispatchContext> = {}): DispatchContext {
@@ -111,14 +125,22 @@ describe('U-3: a failed-payment push opens the in-app card update', () => {
     },
   );
 
-  it('a dispute-cycle push carries no card route: a card update does not end a dispute', async () => {
-    const { dispatcher, pushToUser } = pushWorld();
-    await dispatcher.dispatchStepDetailed(
-      ctx({ stepIndex: 2, isLateReversalCycle: true }),
-      undefined,
-      { channels: ['client_push'] },
-    );
-    expect(pushToUser).toHaveBeenCalledTimes(1);
-    expect(pushToUser.mock.calls[0][3]).toBeUndefined();
-  });
+  // SMALL-BE-COPY-132 (MONEY-DUNNING-COPY-130 proposed 3): a dispute push used
+  // to carry no data, so a tap opened nothing.
+  it.each([0, 1, 2, 3])(
+    'dispute cycle step %i: the push opens the notification center, not the card update (a card update does not end a dispute)',
+    async (stepIndex) => {
+      const { dispatcher, pushToUser } = pushWorld();
+      await dispatcher.dispatchStepDetailed(
+        ctx({ stepIndex, isLateReversalCycle: true }),
+        undefined,
+        { channels: ['client_push'] },
+      );
+      expect(pushToUser).toHaveBeenCalledTimes(1);
+      expect(pushToUser.mock.calls[0][3]).toEqual({
+        kind: 'dunning_dispute',
+        actionScreen: 'NotificationCenter',
+      });
+    },
+  );
 });

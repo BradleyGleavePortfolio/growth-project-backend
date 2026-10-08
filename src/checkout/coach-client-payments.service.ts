@@ -292,7 +292,7 @@ export class CoachClientPaymentsService {
       return new ConflictException(
         coded(
           'PLAN_PAUSED_BY_REFUND_OR_DISPUTE',
-          'Billing on this plan was paused by a full refund or a bank dispute. Use Restart billing on this plan instead.',
+          'Billing on this plan was paused by a full refund or a bank dispute. Use Restart plan instead.',
         ),
       );
     }

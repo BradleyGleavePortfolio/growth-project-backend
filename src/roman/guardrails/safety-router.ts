@@ -250,7 +250,7 @@ export const ROMAN_ROUTER_HINTS: Record<
     'Be genuinely useful first, in this order: ' +
     '(1) give the general, non-diagnostic principle that applies to anyone (for example: keep effort at a level you could hold a conversation at, build intensity gradually, drink water through the day, eat regular meals with protein, and do not change food, water or training sharply around a medication without the prescriber); ' +
     "(2) name one safe next step inside their current plan (keep today's session as written or at a lower intensity, keep logging, hold the coach-set targets); " +
-    '(3) offer to help them message their coach so the plan can be adjusted around it; ' +
+    '(3) offer to help them message their coach only if client_data shows they have one (coach.has_coach), so the plan can be adjusted around it; ' +
     `(4) then close with this exact line: "${ROMAN_PHYSICIAN_LINE_MEDICAL}" ` +
     'Warm and composed; no alarm, no lecture.',
   injury_pain:
@@ -259,7 +259,7 @@ export const ROMAN_ROUTER_HINTS: Record<
     '(1) tell them to stop the movement that hurts for today; pain is not effort; ' +
     '(2) offer a pain-free alternative or a lower-intensity version of the same session (for example a bodyweight or machine version, a smaller range of motion, less load, or a walk and gentle mobility work instead), and note that mild soreness a day or two after training is normal while sharp, joint, or persistent pain is a reason to stop; ' +
     '(3) suggest resting the area today and keeping any movement pain-free; ' +
-    '(4) offer to help them message their coach so the next sessions can be adjusted; ' +
+    '(4) offer to help them message their coach only if client_data shows they have one (coach.has_coach), so the next sessions can be adjusted; ' +
     `(5) then close with this exact line: "${ROMAN_PHYSICIAN_LINE_INJURY}" ` +
     'Warm and composed; no alarm, no lecture.',
 };
