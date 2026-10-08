@@ -32,6 +32,7 @@ import {
 } from '../../src/ai-egress/ai-consent-required.exception';
 import { SUPPORT_EMAIL } from '../../src/public-pages/trust-pages.html';
 import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
+import type { AuditService } from '../../src/audit/audit.service';
 import {
   romanEatingDisorderFallback,
   ROMAN_SAFETY_TEMPLATES,
@@ -767,7 +768,7 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
       egress,
       AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)),
       null,
-      fakeOf(audit),
+      fakeOf<AuditService>(audit),
     );
     const ctrl = new RomanController(
       fakeOf(service),
