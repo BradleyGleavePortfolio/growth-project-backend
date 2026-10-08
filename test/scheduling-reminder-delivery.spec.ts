@@ -172,7 +172,7 @@ describe('24h reminder', () => {
     expect(fake.rows.map((r) => r.channel)).toEqual(['inapp', 'inapp']);
   });
 
-  it('missing call link: the coach is asked to add one, the client is reassured', async () => {
+  it('missing call link: the coach is asked to add one, the client sees its current status', async () => {
     const { db, fake, job } = build();
     addSession(db, 's1', 24 * 60, 'pending_provider', null);
     await sweep24h(job);
@@ -180,7 +180,8 @@ describe('24h reminder', () => {
     const coach = fake.rows.find((r) => r.user_id === 'coach-1');
     const client = fake.rows.find((r) => r.user_id === 'client-1');
     expect(coach?.body).toContain('It has no call link yet. Add one so they can join.');
-    expect(client?.body).toContain('Your coach will add the call link before it starts.');
+    expect(client?.body).toContain('It has no call link yet.');
+    expect(client?.body).not.toContain('will add');
   });
 });
 
