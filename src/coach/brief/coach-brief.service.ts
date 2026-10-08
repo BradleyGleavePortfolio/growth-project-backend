@@ -96,6 +96,14 @@ export const BRIEF_TARGET_NARRATIVE_CHARS = 450;
 // next caller would attempt a takeover.
 export const BRIEF_GENERATION_LEASE_MS = 5 * 60 * 1000;
 
+// B-872-SOL-130-1: the Coach sharing switches a stored brief can hold logs of.
+const BRIEF_SHARING_SCOPES: readonly string[] = [
+  ConsentScope.FITNESS_WORKOUTS,
+  ConsentScope.FITNESS_FOOD_MACROS,
+  ConsentScope.FITNESS_BODY_METRICS,
+  ConsentScope.FITNESS_HABITS_PROGRESS,
+];
+
 // WeightLog stores `weight_lbs`; 2.0 kg ≈ 4.4 lbs is the flag threshold.
 const WEIGHT_FLAG_THRESHOLD_LBS = 4.4;
 
@@ -1722,6 +1730,11 @@ export class CoachBriefService {
         },
       });
       if (existing && existing.status === 'generated') {
+        // B-872-SOL-130-1: a brief stored before a client turned off a Coach
+        // sharing switch is written again under the current switches.
+        if (writtenBefore(existing, await this.lastSharingWithdrawal(coachId))) {
+          return this.generateBrief(coachId, timezone, briefDate, { force: true });
+        }
         return this.toResponse(existing);
       }
       if (existing && existing.status === 'generating') {
@@ -2010,12 +2023,36 @@ export class CoachBriefService {
       }),
     ]);
 
+    // B-872-SOL-130-1: a brief stored before a client turned off a Coach
+    // sharing switch keeps its day and status in history, not its content.
+    const withdrawnAt = await this.lastSharingWithdrawal(coachId);
     return {
-      items: rows.map((r) => this.toResponse(r)),
+      items: rows.map((r) => {
+        const out = this.toResponse(r);
+        return writtenBefore(r, withdrawnAt) ? { ...out, summary: null } : out;
+      }),
       total,
       page,
       limit,
     };
+  }
+
+  /**
+   * B-872-SOL-130-1 — when a client of this coach last turned off a Coach
+   * sharing switch. A brief stored before then may hold a log that client has
+   * since hidden. Null when nobody has, for the owner account (it reads every
+   * log), and in hand-built unit tests without ConsentService.
+   */
+  private async lastSharingWithdrawal(coachId: string): Promise<Date | null> {
+    if (!this.consent) return null;
+    const coach = await this.prisma.user.findUnique({ where: { id: coachId }, select: { role: true } });
+    if (coach?.role === 'owner') return null;
+    const row = await this.prisma.clientCoachConsent.findFirst({
+      where: { coach_id: coachId, scope: { in: [...BRIEF_SHARING_SCOPES] }, revoked_at: { not: null } },
+      orderBy: { revoked_at: 'desc' },
+      select: { revoked_at: true },
+    });
+    return row?.revoked_at ?? null;
   }
 
   // ── Force regenerate (POST /regenerate, throttled at the controller).
@@ -2125,6 +2162,11 @@ export class CoachBriefService {
 }
 
 // ─── Small helpers ──────────────────────────────────────────────────────
+
+/** B-872-SOL-130-1: true when a stored brief was written before `withdrawnAt`. */
+function writtenBefore(row: { generated_at: Date | null }, withdrawnAt: Date | null): boolean {
+  return withdrawnAt !== null && (row.generated_at === null || row.generated_at < withdrawnAt);
+}
 
 // P1-8: timezone-aware day boundaries. The previous implementation only
 // pulled the hour from Intl.DateTimeFormat, which silently truncated

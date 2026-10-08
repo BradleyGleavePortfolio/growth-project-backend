@@ -208,3 +208,68 @@ describe('Churn re-engagement draft (U4)', () => {
     expect(system).toContain('Their check-ins are not shared with the coach');
   });
 });
+
+// B-872-SOL-130-1 (FIX-OPUS-131): a brief stored before a client turned a switch off is not served as
+// stored. Today's brief is written again under the current switches; history keeps the day and its
+// status but drops the content.
+describe('Stored briefs after a client turns a switch off (B-872-SOL-130-1)', () => {
+  const STORED = {
+    id: 'b0', coach_id: COACH, brief_date: '2026-10-07', status: 'generated', brief_mode: 'solo_coach',
+    generated_by: 'ai', narrative: 'Sam Private moved 4.6 lbs this week.', brief_context: { roster_size: 2 },
+    action_items: [{ type: 'weight_flag', client_id: PRIVATE }],
+    generated_at: new Date('2026-10-07T13:00:00Z'), created_at: new Date('2026-10-07T13:00:00Z'),
+  };
+  function briefService(withdrawnAt: Date | null) {
+    const prisma = mocks.makeMockPrisma();
+    mocks.wireSoloDefaults(prisma, { coachId: COACH, clientIds: [SHARES, PRIVATE] });
+    const lastRevoke = jest.fn(async () => (withdrawnAt ? { revoked_at: withdrawnAt } : null));
+    Object.assign(prisma, { clientCoachConsent: { findFirst: lastRevoke } });
+    prisma.coachBrief.findUnique.mockResolvedValue(STORED);
+    prisma.coachBrief.updateMany.mockResolvedValue({ count: 1 });
+    prisma.coachBrief.update.mockImplementation(async ({ data }) => ({ ...STORED, ...data }));
+    prisma.user.findMany.mockReset();
+    prisma.user.findMany.mockImplementation(async ({ where }) =>
+      where.check_ins ? where.id.in.map((id: string) => ({ id, name: NAMES[id] })) : [{ id: SHARES }, { id: PRIVATE }],
+    );
+    prisma.$queryRaw.mockImplementation(async (sql: Prisma.Sql) =>
+      sql.strings.join('').includes('"WeightLog"')
+        ? (sql.values[0] as string[]).map((id) => ({ user_id: id, user_name: NAMES[id], delta_lbs: 4.6 }))
+        : [{ count: 0n }],
+    );
+    const config = mocks.asConfig(mocks.makeMockConfig());
+    const anthropic = mocks.makeMockAnthropic(new Error('provider down'));
+    const svc = new CoachBriefService(mocks.asPrismaService(prisma), config, grantAllEgress(), mocks.asAnthropic(anthropic), consentSharing([SHARES]));
+    return { prisma, svc, lastRevoke };
+  }
+
+  it("today: a brief stored before the switch went off is written again without that client's weigh-in", async () => {
+    const { prisma, svc } = briefService(new Date('2026-10-07T14:00:00Z'));
+    const out = await svc.generateBrief(COACH, 'America/Los_Angeles', '2026-10-07');
+    expect(prisma.coachBrief.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'generating' }) }),
+    );
+    const items = (out.summary?.action_items ?? []) as Array<{ type: string; client_id?: string }>;
+    expect(items.some((i) => i.client_id === PRIVATE)).toBe(false);
+    expect(JSON.stringify(out)).not.toContain('Sam Private');
+  });
+
+  it('today: a brief stored after the last switch change is served as stored', async () => {
+    const { prisma, svc, lastRevoke } = briefService(new Date('2026-10-07T12:00:00Z'));
+    const out = await svc.generateBrief(COACH, 'America/Los_Angeles', '2026-10-07');
+    expect(lastRevoke).toHaveBeenCalled();
+    expect(prisma.coachBrief.updateMany).not.toHaveBeenCalled();
+    expect(out.summary?.narrative).toBe(STORED.narrative);
+  });
+
+  it('history: a brief stored before the switch went off keeps its day and status, not its content', async () => {
+    const { prisma, svc } = briefService(new Date('2026-10-07T14:00:00Z'));
+    const later = { ...STORED, id: 'b1', brief_date: '2026-10-08', narrative: 'Ana Shares checked in.', generated_at: new Date('2026-10-08T13:00:00Z') };
+    prisma.coachBrief.count.mockResolvedValue(2);
+    prisma.coachBrief.findMany.mockResolvedValue([later, STORED]);
+    const { items } = await svc.getBriefHistory(COACH, 1, 20);
+    expect(items.map((i) => [i.id, i.status, i.summary?.narrative ?? null])).toEqual([
+      ['b1', 'generated', 'Ana Shares checked in.'],
+      ['b0', 'generated', null],
+    ]);
+  });
+});
