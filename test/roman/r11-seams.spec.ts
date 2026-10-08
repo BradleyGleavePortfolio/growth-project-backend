@@ -78,7 +78,8 @@ describe('R11-00 prompt seam', () => {
         voice: v1,
         subjectContext: 'Weekly brief for the coach.',
       },
-      hash: '41bcea54db0453a4f7a20ca596cb7917e1f97929fe0f523401abc90a1de4cdc7',
+      // Re-pinned for COACH-ROMAN-SURFACE-130 (coach framing: no client data, no invented numbers).
+      hash: 'f2f65e8a1e5a165f1e51f2b5f429317c34701c6282fd236673a0128842fb6248',
     },
     client_data: {
       input: {

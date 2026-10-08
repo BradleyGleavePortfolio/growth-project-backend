@@ -46,7 +46,8 @@ import type {
   RomanClientContext,
   RomanClientContextBundle,
 } from '../../src/roman/context/roman-client-context.types';
-import { buildRomanSystemPrompt } from '../../src/roman/roman.prompts';
+import { buildRomanSystemPrompt, ROMAN_COACH_PROMPT_VERSION } from '../../src/roman/roman.prompts';
+import { PROMPT_VERSION } from '../../src/roman/guardrails/roman-guardrail.contract';
 import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
 import { egressWithGrants, fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import { PrismaService } from '../../src/prisma.service';
@@ -824,5 +825,39 @@ describe('FR1-651-9 a chat deleted during the model call settles the ledger and 
       metadata: { state: 'settled', outcome: 'session_gone' },
     });
     expect(JSON.stringify(audits[0])).not.toContain('670');
+  });
+});
+
+// COACH-ROMAN-SURFACE-130: coach Roman sees no client data. The coach turn
+// sends the rules that say so, and the ledger and log record the coach
+// prompt version; a client turn keeps the client contract's PROMPT_VERSION.
+describe('COACH-ROMAN-SURFACE-130 a coach turn carries the coach rules and records the coach prompt version', () => {
+  const COACH = { id: 'coach-1', role: 'coach', tier: 'free' as const };
+  const coachSession = () => ({ ...session(), user_id: COACH.id, surface: 'coach' as const });
+
+  it('coach: no-client-data and no-invented-number rules sent, roman-coach-v1 in ledger and log; client: PROMPT_VERSION', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const coach = makePrisma();
+    const a = makeAnthropic('I cannot see that client here. Their logs are on their page in Clients.');
+    const svc = new RomanService(fakeOf(coach.prisma), grantAllEgress(), a.handle);
+    await drain(svc.streamAssistantTurn(COACH, fakeOf(coachSession()), { userMessage: 'How did Sam do this week?' }));
+    expect(a.calls[0].system).toContain("You cannot see any client's data here");
+    expect(a.calls[0].system).toContain('Never state a number you were not given');
+    expect(coach.audits[0].metadata).toMatchObject({ state: 'settled', prompt_version: ROMAN_COACH_PROMPT_VERSION });
+    expect(log.mock.calls.map((c) => String(c[0]))).toContainEqual(
+      expect.stringContaining(`prompt_version=${ROMAN_COACH_PROMPT_VERSION} model_call=true`),
+    );
+
+    const client = makePrisma();
+    const ctxSvc = { getBundle: jest.fn(async () => fakeBundle()) };
+    const c = new RomanService(
+      fakeOf(client.prisma),
+      grantAllEgress(),
+      makeAnthropic('Keep to your plan today.').handle,
+      fakeOf<RomanClientContextService>(ctxSvc),
+    );
+    await drain(c.streamAssistantTurn(CLIENT, fakeOf(session()), { userMessage: 'What is next?' }));
+    expect(client.audits[0].metadata).toMatchObject({ state: 'settled', prompt_version: PROMPT_VERSION });
+    log.mockRestore();
   });
 });

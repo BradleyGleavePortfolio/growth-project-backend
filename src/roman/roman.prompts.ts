@@ -9,13 +9,13 @@
  * the full markdown spec (the spec carries sample copy, mascot art direction,
  * and open operator decisions that have no place in a runtime prompt).
  *
- * Surface framing (`client` | `coach`) only adds a single line of context about
- * who Roman is addressing; the voice contract is identical on both surfaces —
- * there is exactly one Roman (spec §0 "persona scope").
+ * Surface framing (`client` | `coach`) adds who Roman is addressing (on the
+ * coach surface also what Roman cannot see there); the voice contract is
+ * identical on both surfaces — there is exactly one Roman (spec §0 "persona scope").
  */
 
 import { RomanSurface } from '@prisma/client';
-import { ROMAN_GUARDRAIL_CONTRACT } from './guardrails/roman-guardrail.contract';
+import { PROMPT_VERSION, ROMAN_GUARDRAIL_CONTRACT } from './guardrails/roman-guardrail.contract';
 
 /**
  * The voice contract, verbatim per brief §2. Kept as a single exported
@@ -121,11 +121,18 @@ export const ROMAN_CLIENT_DATA_UNAVAILABLE_NOTICE =
   'Do not state or estimate any of their numbers, sessions or dates. Say briefly that you cannot see their details at this moment and that their plan and logs are on the Today tab. ' +
   'Keep any training guidance general and conservative; never suggest increasing intensity, load or volume in this turn.';
 
-/** One line of surface-specific framing. The voice contract is identical on both. */
+/** Surface-specific framing. The voice contract is identical on both. */
 function surfaceFraming(surface: RomanSurface): string {
   switch (surface) {
     case 'coach':
-      return 'You are addressing a coach inside the TGP coach app. Speak to a professional who runs a coaching practice; never reveal another coach\'s or client\'s private data.';
+      // COACH-ROMAN-SURFACE-130: a coach turn carries no client data (no bundle,
+      // augments or tools), so the framing says so and forbids invented numbers.
+      return [
+        'You are addressing a coach inside the TGP coach app. Speak to a professional who runs a coaching practice; help with programming, nutrition and running the practice.',
+        "You cannot see any client's data here (no logs, plans, messages or health data), nor the coach's client list, schedule or payments: only what the coach writes in this chat. If the coach asks about a client, say plainly that you cannot see that client here and that their logs and plan are on that client's page in Clients. Never guess how a client is doing.",
+        'Never state a number you were not given: no figure about a client or the practice (weights, intake, sessions, adherence, counts, dates, money) unless the coach wrote it in this chat.',
+        "Never reveal another coach's or client's private data.",
+      ].join('\n');
     case 'client':
     default:
       return 'You are addressing a client inside the TGP client app. Speak to the person training under a coach; never reveal another user\'s private data.';
@@ -133,8 +140,21 @@ function surfaceFraming(surface: RomanSurface): string {
 }
 
 /**
+ * COACH-ROMAN-SURFACE-130: the coach prompt's own version. A coach turn never
+ * carries the client contract, so it records this instead of PROMPT_VERSION.
+ * roman-coach-v1: coach Roman says it sees no client data and never states a
+ * number it was not given.
+ */
+export const ROMAN_COACH_PROMPT_VERSION = 'roman-coach-v1';
+
+/** The prompt version a turn records (ledger and log line) for its surface. */
+export function romanPromptVersionOf(surface: RomanSurface): string {
+  return surface === 'coach' ? ROMAN_COACH_PROMPT_VERSION : PROMPT_VERSION;
+}
+
+/**
  * Build the system message for a Roman chat turn. Combines the verbatim voice
- * contract, the one-line surface framing, the live per-session voice budget,
+ * contract, the surface framing, the live per-session voice budget,
  * and (optionally) the subject context.
  */
 export function buildRomanSystemPrompt(input: BuildSystemPromptInput): string {

@@ -104,6 +104,7 @@ import type {
 } from './context/roman-client-context.types';
 import {
   buildRomanSystemPrompt,
+  romanPromptVersionOf,
   RomanSessionVoiceState,
 } from './roman.prompts';
 import {
@@ -1231,14 +1232,14 @@ export class RomanService {
       usage: usage.kind,
       rewritten: checked.rewritten,
       guardrail_count: checked.guardrails_applied.length,
-      prompt_version: PROMPT_VERSION,
+      prompt_version: romanPromptVersionOf(session.surface),
       context_version: bundle?.context.version ?? null,
       context_hash: bundle?.hash ?? null,
       context_unavailable: grounded && contextUnavailable,
       ...(augmentRun ? augmentLedgerOf(augmentRun) : {}),
     });
     this.logger.log(
-      `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} model_call=true rewritten=${checked.rewritten} guardrail_count=${checked.guardrails_applied.length} usage=${usage.kind} context=${bundle ? bundle.hash.slice(0, 12) : grounded ? 'unavailable' : 'none'}`,
+      `roman.turn session=${session.id} prompt_version=${romanPromptVersionOf(session.surface)} model_call=true rewritten=${checked.rewritten} guardrail_count=${checked.guardrails_applied.length} usage=${usage.kind} context=${bundle ? bundle.hash.slice(0, 12) : grounded ? 'unavailable' : 'none'}`,
     );
 
     if (checked.text.length > 0) yield { type: 'delta', text: checked.text };
