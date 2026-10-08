@@ -58,6 +58,20 @@ export class CommunityPostsRepository {
     });
   }
 
+  /**
+   * Stored names of the given users, keyed by id. The service reduces each to
+   * a first name before anything leaves the API (member privacy).
+   */
+  async namesByUserId(userIds: string[]): Promise<Map<string, string>> {
+    const ids = [...new Set(userIds)];
+    if (ids.length === 0) return new Map();
+    const rows = await this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, name: true },
+    });
+    return new Map(rows.map((u) => [u.id, u.name]));
+  }
+
   async update(postId: string, data: { title?: string; body?: string }): Promise<CommunityPost> {
     return this.prisma.communityPost.update({
       where: { id: postId },

@@ -196,6 +196,7 @@ const DELIVERY_PURCHASE_SELECT = {
   status: true,
   entitlement_active: true,
   trial_ends_at: true,
+  coach_user_id: true,
   package: { select: { name: true, interval: true, interval_count: true } },
   coach: { select: { name: true } },
   client: { select: { email: true, name: true } },
@@ -801,6 +802,7 @@ export class TrialNoticeService {
         mailer.send({
           to,
           template: EmailTemplateKey.TRIAL_ENDING,
+          replyToCoachUserId: purchase.coach_user_id,
           idempotencyKey,
           providerIdempotencyKey: baseKey,
           signal,

@@ -31,6 +31,7 @@ import { CommunityPostsController } from '../../src/community/posts/community-po
 import { CommunityPostsService } from '../../src/community/posts/community-posts.service';
 import { CommunityPostsRepository } from '../../src/community/posts/community-posts.repository';
 import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
+import { CommunityReactionsRepository } from '../../src/community/reactions/community-reactions.repository';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { CommunityFeatureFlagGuard } from '../../src/community/community-feature-flag.guard';
 import {
@@ -152,6 +153,7 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
         CommunityPostsService,
         CommunityPostsRepository,
         CommunityMessagesRepository,
+        CommunityReactionsRepository,
         CommunityAccessService,
         CommunitySafetyService,
         CommunityFeatureFlagGuard,
@@ -435,5 +437,48 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
     } finally {
       process.env.FEATURE_COMMUNITY_MESSAGES = 'true';
     }
+  });
+
+  it('9. posts and replies show the author first name and the stored reactions (CF-COMM-BE-128)', async () => {
+    const postId = await createPostAsCoach();
+    await prisma.communityResponse.create({
+      data: {
+        workspace_id: ids.wsA,
+        target_type: 'post',
+        target_id: postId,
+        user_id: ids.studentA,
+        response_kind: '👍',
+      },
+    });
+    const reply = await call(
+      'POST',
+      `/api/community/posts/${postId}/comments`,
+      asUser(ids.studentA),
+      { body: 'on it' },
+    );
+    expect(reply.status).toBe(201);
+    expect(reply.body.comment.author_name).toBe('Student');
+    expect(reply.body.comment.reactions).toEqual([]);
+
+    const mine = await call('GET', `/api/community/posts/${postId}`, asUser(ids.studentA));
+    expect(mine.status).toBe(200);
+    expect(mine.body.post.author_name).toBe('Coach');
+    expect(mine.body.post.reactions).toEqual([{ emoji: '👍', count: 1, reacted_by_me: true }]);
+
+    const feed = await call('GET', `/api/community/workspaces/${ids.wsA}/posts`, asUser(ids.coachA));
+    expect(feed.status).toBe(200);
+    const row = feed.body.posts.find((p: { id: string }) => p.id === postId);
+    expect(row.author_name).toBe('Coach');
+    expect(row.reactions).toEqual([{ emoji: '👍', count: 1, reacted_by_me: false }]);
+
+    const thread = await call('GET', `/api/community/posts/${postId}/comments`, asUser(ids.coachA));
+    expect(thread.status).toBe(200);
+    expect(thread.body.comments.map((c: { author_name: string }) => c.author_name)).toEqual([
+      'Student',
+    ]);
+    // Full names never leave the API on these surfaces.
+    expect(JSON.stringify([reply.body, mine.body, feed.body, thread.body])).not.toMatch(
+      /Coach A|Student A/,
+    );
   });
 });

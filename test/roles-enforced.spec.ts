@@ -73,7 +73,6 @@ const LEGACY_GUARD_ALLOWLIST: Array<{
   { controller: 'CoachController', method: 'unarchiveClient', reason: 'CoachGuard at class level' },
   { controller: 'CoachController', method: 'getClientTimeline', reason: 'CoachGuard at class level' },
   { controller: 'CoachController', method: 'getClientSummary', reason: 'CoachGuard at class level' },
-  { controller: 'CoachController', method: 'getMyGuidelines', reason: 'CoachGuard at class level' },
   { controller: 'CoachController', method: 'getGuidelines', reason: 'CoachGuard at class level' },
   { controller: 'CoachController', method: 'postGuidelines', reason: 'CoachGuard at class level' },
   { controller: 'CoachController', method: 'getAlerts', reason: 'CoachGuard at class level' },

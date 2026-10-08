@@ -973,7 +973,8 @@ Modules: [`src/coach/`](src/coach/README.md),
 
 | Method | Path | Auth | Notes |
 |---|---|---|---|
-| `GET` | `/coach/dashboard`, `/coach/clients`, `/coach/clients/:id/timeline`, `/coach/clients/:id/summary`, `/coach/alerts`, `/coach/guidelines/:client_id`, `/coach/my-guidelines` | coach or owner | Roster, timeline, alerts, guidelines reads. |
+| `GET` | `/coach/dashboard`, `/coach/clients`, `/coach/clients/:id/timeline`, `/coach/clients/:id/summary`, `/coach/alerts`, `/coach/guidelines/:client_id` | coach or owner | Roster, timeline, alerts, guidelines reads. |
+| `GET` | `/coach/my-guidelines` | client (package required) | The signed-in client's guideline from their current coach (text and dates only), or an empty body. |
 | `POST` | `/coach/clients/:id/archive`, `/coach/clients/:id/unarchive`, `/coach/guidelines/:client_id` | coach or owner | Roster mutations and guideline upsert. Archive / unarchive write `coach.client_archived` / `coach.client_unarchived` audit rows scoped to the client's `tenant_coach_id`; idempotent re-archive on an already-archived client writes no audit row. |
 | `GET` | `/admin/coaches`, `/admin/coaches/:id`, `/admin/users` | owner | OWNER-only inventory. |
 | `POST` | `/admin/users/:id/promote` | owner | Role change with lazy `CoachProfile` provisioning. Canonical coach-promotion path; `/auth/become-coach` defers to this when the legacy self-service flag is off. |

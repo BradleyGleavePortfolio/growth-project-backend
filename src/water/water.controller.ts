@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { WaterService } from './water.service';
@@ -29,5 +29,12 @@ export class WaterController {
   async getWeekly(@Request() req: AuthedRequest, @Query('start_date') startDate: string) {
     const sd = startDate || new Date().toISOString().split('T')[0];
     return this.waterService.getWeekly(req.user.id, sd);
+  }
+
+  // U6 (FW-FOOD-128): take back a mistaken water add. The caller's own entry
+  // only; any other id is a 404.
+  @Delete(':id')
+  async deleteEntry(@Request() req: AuthedRequest, @Param('id') id: string) {
+    return this.waterService.deleteEntry(req.user.id, id);
   }
 }

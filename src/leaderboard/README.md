@@ -54,6 +54,9 @@ Returns the leaderboard scoped to the requesting user's coach roster.
 - `enabled` — required. `true` = appear on the leaderboard; `false` = hide.
 - `displayName` — optional. Max 40 characters. If omitted, the service derives
   `"{firstName} {lastInitial}."` from the user's profile. Cleared on opt-out.
+- A `displayName` the community content filter (`src/community/safety/community-content-filter.ts`) blocks is refused with
+  `422 { error: "content_rejected", code: "community.content.rejected", message }` and nothing is saved. A stored name
+  that fails the filter is never shown to peers; the derived name is used instead.
 
 ---
 
