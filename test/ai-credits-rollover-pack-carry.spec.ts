@@ -50,7 +50,21 @@ const NUMERIC_COLUMNS = [
   'total_pack_actual_cents',
 ] as const;
 
-function makePrisma(rows: Row[]) {
+type Pack = {
+  id: string;
+  coach_user_id: string;
+  budget_id: string;
+  paid_cents: number;
+  actual_credit_cents: number;
+  displayed_credit_cents: number;
+  status: string;
+  applied_at: Date | null;
+  refunded_at: Date | null;
+  created_at: Date;
+  is_free_grant: boolean;
+};
+
+function makePrisma(rows: Row[], packs: Pack[] = []) {
   const matches = (r: Row, where: Record<string, unknown>): boolean => {
     if (where.id !== undefined && r.id !== where.id) return false;
     if (where.coach_user_id !== undefined && r.coach_user_id !== where.coach_user_id) return false;
@@ -72,8 +86,11 @@ function makePrisma(rows: Row[]) {
     if (data.period_start !== undefined) r.period_start = data.period_start as Date;
     if (data.period_end !== undefined) r.period_end = data.period_end as Date;
     if (data.last_rollover_at !== undefined) r.last_rollover_at = data.last_rollover_at as Date;
+    // The CHECK constraints production has on these columns.
+    if (r.total_pack_actual_cents < 0) throw new Error('violates check constraint "CoachAIBudget_total_pack_actual_nonneg"');
+    if (r.pack_paid_cents < 0) throw new Error('violates check constraint "CoachAIBudget_pack_paid_nonneg"');
   };
-  return {
+  const prisma = {
     coachAIBudget: {
       findMany: jest.fn(async ({ where }: { where: Record<string, unknown> }) =>
         rows.filter((r) => matches(r, where)).map((r) => ({ ...r })),
@@ -102,7 +119,26 @@ function makePrisma(rows: Row[]) {
         },
       ),
     },
+    coachCreditPackPurchase: {
+      findUnique: jest.fn(async ({ where }: { where: { id: string } }) => {
+        const p = packs.find((x) => x.id === where.id);
+        return p ? { ...p } : null;
+      }),
+      findMany: jest.fn(async ({ where }: { where: { budget_id: string; status: string; id: { not: string } } }) =>
+        packs
+          .filter((p) => p.budget_id === where.budget_id && p.status === where.status && p.id !== where.id.not)
+          .map((p) => ({ ...p })),
+      ),
+      update: jest.fn(async ({ where, data }: { where: { id: string }; data: Partial<Pack> }) => {
+        const p = packs.find((x) => x.id === where.id);
+        if (!p) throw new Error('purchase not found');
+        Object.assign(p, data);
+        return { ...p };
+      }),
+    },
+    $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
   };
+  return prisma;
 }
 
 const COACH = 'coach-refill';
@@ -226,5 +262,73 @@ describe('CREDIT-REFILL-130 — rollover keeps only the unused pack credit', () 
     await expect(svc.rolloverDueBudgets(now)).resolves.toEqual({ rolled: 0 });
 
     expect(rows[0]).toEqual(once);
+  });
+});
+
+// B-870-SOL-F-130-1 (FIX-OPUS-130): a rollover already removed the spent part
+// of a pack, so refunding that pack later takes back only what is left of it,
+// never another pack's credit, and never goes below 0.
+describe('B-870-SOL-F-130-1 — a refund after a rollover takes back only what is left of that pack', () => {
+  beforeEach(() => {
+    process.env.COACH_AI_MAX_ACTUAL_CENTS = '4000';
+    process.env.COACH_AI_VALUE_MULTIPLIER = '3.125';
+  });
+
+  const pack = (id: string, daysAgo: number): Pack => ({
+    id, coach_user_id: COACH, budget_id: 'b_1', paid_cents: 2500, actual_credit_cents: 800, displayed_credit_cents: 2500,
+    status: 'paid', applied_at: new Date(Date.now() - daysAgo * DAY), refunded_at: null,
+    created_at: new Date(Date.now() - daysAgo * DAY), is_free_grant: false,
+  });
+  async function setupWithPacks(row: Row, packs: Pack[]) {
+    const rows = [row];
+    const moduleRef = await Test.createTestingModule({
+      providers: [CoachAIBudgetService, { provide: PrismaService, useValue: makePrisma(rows, packs) }],
+    }).compile();
+    return { svc: moduleRef.get(CoachAIBudgetService), rows, packs };
+  }
+  const refund = (svc: CoachAIBudgetService, purchaseId: string) =>
+    svc.refundPack({ purchaseId, actorOwnerId: 'owner-1', reason: 'test' });
+
+  it('a partly spent pack: the refund removes the 500 actual / 1562 displayed left, and the receipt is refunded', async () => {
+    const { svc, rows, packs } = await setupWithPacks(closedPeriod({ ...PACK_25, actual_used_cents: 4300 }), [pack('p_a', 20)]);
+    await svc.rolloverDueBudgets(new Date());
+
+    await expect(refund(svc, 'p_a')).resolves.toMatchObject({ refunded: true });
+
+    expect(rows[0]).toMatchObject({ total_pack_actual_cents: 0, pack_displayed_cents: 0, pack_paid_cents: 0 });
+    expect(packs[0].status).toBe('refunded');
+    const { budget } = await svc.canCharge(COACH, 0);
+    expect(budget.total_actual_available_cents).toBe(4000);
+  });
+
+  it('a fully spent pack: the refund removes no more credit and nothing goes below 0', async () => {
+    const { svc, rows, packs } = await setupWithPacks(closedPeriod({ ...PACK_25, actual_used_cents: 4800 }), [pack('p_a', 20)]);
+    await svc.rolloverDueBudgets(new Date());
+
+    await expect(refund(svc, 'p_a')).resolves.toMatchObject({ refunded: true });
+
+    expect(rows[0]).toMatchObject({ total_pack_actual_cents: 0, pack_displayed_cents: 0, pack_paid_cents: 0 });
+    expect(packs[0].status).toBe('refunded');
+  });
+
+  it('two packs: refunding the older, partly spent one keeps the newer pack whole', async () => {
+    const two = { pack_paid_cents: 5000, pack_displayed_cents: 5000, total_pack_actual_cents: 1600 };
+    const { svc, rows } = await setupWithPacks(closedPeriod({ ...two, actual_used_cents: 4300 }), [pack('p_old', 20), pack('p_new', 10)]);
+    await svc.rolloverDueBudgets(new Date());
+    expect(rows[0]).toMatchObject({ total_pack_actual_cents: 1300, pack_displayed_cents: 4062 });
+
+    await expect(refund(svc, 'p_old')).resolves.toMatchObject({ refunded: true });
+
+    // The newer pack's 800 actual / 2500 displayed stay; only the older pack's 500 / 1562 left.
+    expect(rows[0]).toMatchObject({ total_pack_actual_cents: 800, pack_displayed_cents: 2500, pack_paid_cents: 2500 });
+  });
+
+  it('before any rollover an unused pack is refunded in full, as before', async () => {
+    const open = closedPeriod({ ...PACK_25, period_end: new Date(Date.now() + 10 * DAY) });
+    const { svc, rows } = await setupWithPacks(open, [pack('p_a', 2)]);
+
+    await expect(refund(svc, 'p_a')).resolves.toMatchObject({ refunded: true });
+
+    expect(rows[0]).toMatchObject({ total_pack_actual_cents: 0, pack_displayed_cents: 0, pack_paid_cents: 0 });
   });
 });

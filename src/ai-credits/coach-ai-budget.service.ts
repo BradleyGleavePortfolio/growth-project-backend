@@ -455,12 +455,27 @@ export class CoachAIBudgetService {
       if (purchase.status !== 'paid') {
         return { refunded: false, reason: `status_${purchase.status}` };
       }
+      // B-870-SOL-F-130-1: a monthly rollover may already have removed the
+      // spent part of this pack (packSpentAtClose), so take back only what is
+      // left of it, never another pack's credit. pack_paid_cents still drops by
+      // the full amount paid (that money is returned).
+      const [budget, otherPacks] = await Promise.all([
+        tx.coachAIBudget.findUnique({
+          where: { id: purchase.budget_id },
+          select: { pack_displayed_cents: true, total_pack_actual_cents: true },
+        }),
+        tx.coachCreditPackPurchase.findMany({
+          where: { budget_id: purchase.budget_id, status: 'paid', id: { not: purchase.id } },
+          select: { id: true, applied_at: true, created_at: true, actual_credit_cents: true, displayed_credit_cents: true },
+        }),
+      ]);
+      const left = packCreditLeft(purchase, otherPacks, budget);
       await tx.coachAIBudget.update({
         where: { id: purchase.budget_id },
         data: {
           pack_paid_cents: { decrement: purchase.paid_cents },
-          pack_displayed_cents: { decrement: purchase.displayed_credit_cents },
-          total_pack_actual_cents: { decrement: purchase.actual_credit_cents },
+          pack_displayed_cents: { decrement: left.displayedCents },
+          total_pack_actual_cents: { decrement: left.actualCents },
         },
       });
       await tx.coachCreditPackPurchase.update({
@@ -597,6 +612,36 @@ function packSpentAtClose(row: {
   const usedDisplayed = Math.round(row.actual_used_cents * Number(row.value_multiplier));
   const leftDisplayed = Math.max(0, row.base_displayed_cents + packDisplayed - usedDisplayed);
   return { actualCents, displayedCents: packDisplayed - Math.min(packDisplayed, leftDisplayed) };
+}
+
+/**
+ * B-870-SOL-F-130-1 — what is left of one pack (bought or granted) on its
+ * budget. Pack credit is spent oldest first, so the pack credit the budget
+ * still holds belongs to the newest credited packs. This pack keeps what
+ * remains after every newer one, at most its own credit and never below 0.
+ * Before any rollover that is the whole pack, as before.
+ */
+type PackCredit = { id: string; applied_at: Date | null; created_at: Date; actual_credit_cents: number; displayed_credit_cents: number };
+function packCreditLeft(
+  pack: PackCredit,
+  others: PackCredit[],
+  budget: { pack_displayed_cents: number; total_pack_actual_cents: number } | null,
+): { actualCents: number; displayedCents: number } {
+  const at = (p: PackCredit) => (p.applied_at ?? p.created_at).getTime();
+  const newer = others.filter((p) => at(p) > at(pack) || (at(p) === at(pack) && p.id > pack.id));
+  const share = (pool: number, newerSum: number, own: number) => Math.min(own, Math.max(0, pool - newerSum));
+  return {
+    actualCents: share(
+      budget?.total_pack_actual_cents ?? 0,
+      newer.reduce((n, p) => n + p.actual_credit_cents, 0),
+      pack.actual_credit_cents,
+    ),
+    displayedCents: share(
+      budget?.pack_displayed_cents ?? 0,
+      newer.reduce((n, p) => n + p.displayed_credit_cents, 0),
+      pack.displayed_credit_cents,
+    ),
+  };
 }
 
 /** First-of-month UTC at 00:00. */
