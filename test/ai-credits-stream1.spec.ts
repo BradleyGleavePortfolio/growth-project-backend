@@ -42,6 +42,8 @@ type BudgetRow = {
   pack_paid_cents: number;
   pack_displayed_cents: number;
   actual_used_cents: number;
+  /** CREDIT-METER-130 — the exact spend, in millionths of a cent. */
+  actual_used_micro_cents: bigint;
   /** Round-1 fixer P1-8 — stored aggregate of per-pack actual_credit_cents. */
   total_pack_actual_cents: number;
   created_at: Date;
@@ -121,6 +123,7 @@ function makePrismaMock(store: InMemoryStore) {
           pack_paid_cents: 0,
           pack_displayed_cents: 0,
           actual_used_cents: 0,
+          actual_used_micro_cents: BigInt(0),
           total_pack_actual_cents: 0,
           created_at: new Date(),
           updated_at: new Date(),
@@ -142,6 +145,17 @@ function makePrismaMock(store: InMemoryStore) {
           // Round-1 fixer P1-6 — recordUsage now pins period_end > now.
           if (where.period_end?.gt !== undefined) {
             if (r.period_end <= where.period_end.gt) continue;
+          }
+          // CREDIT-METER-130 — recordUsage pins the usage it read.
+          if (typeof where.actual_used_cents === 'number' && r.actual_used_cents !== where.actual_used_cents) continue;
+          if (
+            where.actual_used_micro_cents !== undefined &&
+            r.actual_used_micro_cents !== BigInt(where.actual_used_micro_cents)
+          ) {
+            continue;
+          }
+          if (data.actual_used_micro_cents !== undefined) {
+            r.actual_used_micro_cents = BigInt(data.actual_used_micro_cents);
           }
           // Apply increments / direct sets in lock-step with the real Prisma.
           if (data.actual_used_cents !== undefined) {

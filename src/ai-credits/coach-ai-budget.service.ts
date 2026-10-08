@@ -32,6 +32,11 @@ import { bankersRoundPaidToActual } from './bankers-round.util';
 //     pack_paid_cents at read time. applyCreditPack increments the
 //     column by the per-pack already-rounded actual_credit_cents.
 
+/** CREDIT-METER-130 — the unit of actual_used_micro_cents: millionths of a cent. */
+export const MICRO_CENTS_PER_CENT = 1_000_000;
+/** Optimistic writes recordUsage tries before it reports a lost race. */
+const RECORD_USAGE_ATTEMPTS = 3;
+
 export interface BudgetSnapshot {
   id: string;
   coach_user_id: string;
@@ -43,6 +48,8 @@ export interface BudgetSnapshot {
   pack_paid_cents: number;
   pack_displayed_cents: number;
   actual_used_cents: number;
+  /** CREDIT-METER-130 — the exact spend this period; actual_used_cents is its ceiling. */
+  actual_used_micro_cents: number;
   /** Per-pack already-rounded actual credit, summed. P1-8. */
   total_pack_actual_cents: number;
   /** Sum of base actual + actual headroom purchased via packs. */
@@ -196,6 +203,13 @@ export class CoachAIBudgetService {
    * can never land in an already-rolled period (which would silently
    * apply to the new period's base rather than the period the call was
    * billed against).
+   *
+   * CREDIT-METER-130: `actualCostCents` is the exact provider cost and may
+   * be a fraction of a cent. It is added to actual_used_micro_cents and
+   * actual_used_cents becomes the ceiling of that period total, so a period
+   * rounds up once (under one cent) instead of on every call. The write is
+   * pinned to the usage it was computed from; when a concurrent debit wins,
+   * the row is read again (up to RECORD_USAGE_ATTEMPTS writes).
    */
   async recordUsage(args: {
     coachId: string;
@@ -203,40 +217,62 @@ export class CoachAIBudgetService {
     capability: string;
     contextId?: string | null;
   }): Promise<{ recorded: boolean; budgetId: string }> {
-    if (args.actualCostCents < 0) {
+    if (!(args.actualCostCents >= 0)) {
       throw new Error(`recordUsage: actualCostCents must be >= 0, got ${args.actualCostCents}`);
     }
-    const budget = await this.getOrCreateCurrentPeriod(args.coachId);
-    const ceilingCents = budget.total_actual_available_cents;
+    const costMicroCents = Math.round(args.actualCostCents * MICRO_CENTS_PER_CENT);
+    for (let attempt = 1; ; attempt += 1) {
+      const budget = await this.getOrCreateCurrentPeriod(args.coachId);
+      const outcome = await this.writeUsage(budget, costMicroCents);
+      if (outcome === 'recorded') return { recorded: true, budgetId: budget.id };
+      if (outcome === 'refused' || attempt >= RECORD_USAGE_ATTEMPTS) {
+        this.logger.warn(
+          {
+            event: 'COACH_AI_BUDGET_RACE_OVERSHOOT',
+            coachId: args.coachId,
+            capability: args.capability,
+            contextId: args.contextId ?? null,
+            actualCostCents: args.actualCostCents,
+            ceilingCents: budget.total_actual_available_cents,
+            actualUsedCents: budget.actual_used_cents,
+            periodEnd: budget.period_end.toISOString(),
+          },
+          'budget race overshoot — charge could not be absorbed',
+        );
+        return { recorded: false, budgetId: budget.id };
+      }
+    }
+  }
+
+  /**
+   * One pinned write of recordUsage: 'refused' when the cost does not fit
+   * under the ceiling or the period has ended, 'conflict' when another
+   * write changed the row since it was read.
+   */
+  private async writeUsage(
+    budget: BudgetSnapshot,
+    costMicroCents: number,
+  ): Promise<'recorded' | 'refused' | 'conflict'> {
+    const toMicroCents = exactUsedMicroCents(budget) + costMicroCents;
+    const toCents = Math.ceil(toMicroCents / MICRO_CENTS_PER_CENT);
     const now = new Date();
+    if (toCents > budget.total_actual_available_cents || budget.period_end <= now) {
+      return 'refused';
+    }
     const result = await this.prisma.coachAIBudget.updateMany({
       where: {
         id: budget.id,
         // P1-6: refuse if the period rolled between read and write.
         period_end: { gt: now },
-        actual_used_cents: { lte: ceilingCents - args.actualCostCents },
+        actual_used_cents: budget.actual_used_cents,
+        actual_used_micro_cents: BigInt(budget.actual_used_micro_cents),
       },
       data: {
-        actual_used_cents: { increment: args.actualCostCents },
+        actual_used_cents: toCents,
+        actual_used_micro_cents: BigInt(toMicroCents),
       },
     });
-    if (result.count === 0) {
-      this.logger.warn(
-        {
-          event: 'COACH_AI_BUDGET_RACE_OVERSHOOT',
-          coachId: args.coachId,
-          capability: args.capability,
-          contextId: args.contextId ?? null,
-          actualCostCents: args.actualCostCents,
-          ceilingCents,
-          actualUsedCents: budget.actual_used_cents,
-          periodEnd: budget.period_end.toISOString(),
-        },
-        'budget race overshoot — charge could not be absorbed',
-      );
-      return { recorded: false, budgetId: budget.id };
-    }
-    return { recorded: true, budgetId: budget.id };
+    return result.count > 0 ? 'recorded' : 'conflict';
   }
 
   /**
@@ -509,6 +545,7 @@ export class CoachAIBudgetService {
           period_start: periodStart,
           period_end: periodEnd,
           actual_used_cents: 0,
+          actual_used_micro_cents: 0,
           last_rollover_at: now,
           base_actual_cents: resolveMaxActualCents(),
           value_multiplier: new Prisma.Decimal(resolveValueMultiplier()),
@@ -538,6 +575,7 @@ export class CoachAIBudgetService {
     pack_paid_cents: number;
     pack_displayed_cents: number;
     actual_used_cents: number;
+    actual_used_micro_cents: bigint;
     total_pack_actual_cents: number;
   }): BudgetSnapshot {
     const multiplier = Number(row.value_multiplier);
@@ -552,11 +590,28 @@ export class CoachAIBudgetService {
       pack_paid_cents: row.pack_paid_cents,
       pack_displayed_cents: row.pack_displayed_cents,
       actual_used_cents: row.actual_used_cents,
+      actual_used_micro_cents: Number(row.actual_used_micro_cents),
       total_pack_actual_cents: row.total_pack_actual_cents,
       total_actual_available_cents:
         row.base_actual_cents + row.total_pack_actual_cents,
     };
   }
+}
+
+/**
+ * CREDIT-METER-130 — the period's exact usage in millionths of a cent. A row
+ * last debited in whole cents (before actual_used_micro_cents existed, or by
+ * a machine still on the old code during a rollout) holds less here than its
+ * whole-cent figure; it reads as one millionth above (actual_used_cents - 1),
+ * so the whole-cent figure never goes down and under one cent goes uncounted.
+ */
+function exactUsedMicroCents(
+  budget: Pick<BudgetSnapshot, 'actual_used_cents' | 'actual_used_micro_cents'>,
+): number {
+  return Math.max(
+    budget.actual_used_micro_cents,
+    budget.actual_used_cents * MICRO_CENTS_PER_CENT - (MICRO_CENTS_PER_CENT - 1),
+  );
 }
 
 /** First-of-month UTC at 00:00. */

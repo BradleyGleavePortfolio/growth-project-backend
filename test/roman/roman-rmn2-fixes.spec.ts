@@ -51,6 +51,7 @@ function setup(initialUsedCents: number, inputTokens = 6000) {
     base_actual_cents: 4000, value_multiplier: new Prisma.Decimal(5),
     base_displayed_cents: 20000, pack_paid_cents: 0, pack_displayed_cents: 0,
     total_pack_actual_cents: 0, actual_used_cents: initialUsedCents,
+    actual_used_micro_cents: BigInt(initialUsedCents) * BigInt(1_000_000),
   };
   const romanSession = { updateMany: jest.fn(async () => ({ count: 1 })) };
   const romanMessage = {
@@ -69,12 +70,15 @@ function setup(initialUsedCents: number, inputTokens = 6000) {
   const coachAIBudget = {
     findUnique: jest.fn(async () => ({ ...row })),
     updateMany: jest.fn(async ({ where, data }: {
-      where: { actual_used_cents: { lte: number } };
-      data: { actual_used_cents: { increment: number } };
+      where: { actual_used_cents: number; actual_used_micro_cents: bigint };
+      data: { actual_used_cents: number; actual_used_micro_cents: bigint };
     }) => {
-      // Honor the exact real update predicate, with no competing actor.
-      if (row.actual_used_cents > where.actual_used_cents.lte) return { count: 0 };
-      row.actual_used_cents += data.actual_used_cents.increment;
+      // Honor the exact real update predicate, with no competing actor
+      // (CREDIT-METER-130: pinned to the usage read, sets both totals).
+      if (row.actual_used_cents !== where.actual_used_cents) return { count: 0 };
+      if (row.actual_used_micro_cents !== where.actual_used_micro_cents) return { count: 0 };
+      row.actual_used_cents = data.actual_used_cents;
+      row.actual_used_micro_cents = data.actual_used_micro_cents;
       return { count: 1 };
     }),
   };
@@ -140,13 +144,15 @@ const MEALS_CTX = fakeOf<RomanClientContext>({
 const EXHAUSTED = { response: { code: 'COACH_AI_BUDGET_EXHAUSTED', message: ROMAN_COACH_POOL_EMPTY_MESSAGE } };
 
 describe('B-668-1 (Sol) a pool remainder smaller than one reply is never answered for free', () => {
-  it('control: an affordable turn is answered and debits its 2-cent cost', async () => {
+  it('control: an affordable turn is answered and debits its exact 1.5-cent cost', async () => {
     const { svc, row, client, usage } = setup(0);
     await turn(svc);
     expect(client.messages.stream).toHaveBeenCalledTimes(1);
+    // 6,000 in / 300 out at $2 / $10 per MTok = 1.5 cents (CREDIT-METER-130).
     expect(usage).toHaveBeenCalledWith(expect.objectContaining({
-      coachId: 'rmn2-coach', actualCostCents: 2, capability: 'roman.chat',
+      coachId: 'rmn2-coach', actualCostCents: 1.5, capability: 'roman.chat',
     }));
+    expect(row.actual_used_micro_cents).toBe(BigInt(1_500_000));
     expect(row.actual_used_cents).toBe(2);
   });
 

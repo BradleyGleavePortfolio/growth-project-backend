@@ -64,6 +64,7 @@ function setup(o: SetupOpts) {
     base_actual_cents: 4000, value_multiplier: new Prisma.Decimal(5),
     base_displayed_cents: 20000, pack_paid_cents: 0, pack_displayed_cents: 0,
     total_pack_actual_cents: 0, actual_used_cents: o.usedCents,
+    actual_used_micro_cents: BigInt(o.usedCents) * BigInt(1_000_000),
   };
   const romanSession = { updateMany: jest.fn(async () => ({ count: 1 })) };
   const romanMessage = {
@@ -80,13 +81,16 @@ function setup(o: SetupOpts) {
   const coachAIBudget = {
     findUnique: jest.fn(async ({ where }: { where: { coach_user_id?: string } }) =>
       where.coach_user_id === undefined || where.coach_user_id === poolOwner ? { ...row } : null),
+    // CREDIT-METER-130: the debit is pinned to the usage it read and sets both totals.
     updateMany: jest.fn(async ({ where, data }: {
-      where: { coach_user_id?: string; actual_used_cents: { lte: number } };
-      data: { actual_used_cents: { increment: number } };
+      where: { coach_user_id?: string; actual_used_cents: number; actual_used_micro_cents: bigint };
+      data: { actual_used_cents: number; actual_used_micro_cents: bigint };
     }) => {
       if (where.coach_user_id !== undefined && where.coach_user_id !== poolOwner) return { count: 0 };
-      if (row.actual_used_cents > where.actual_used_cents.lte) return { count: 0 };
-      row.actual_used_cents += data.actual_used_cents.increment;
+      if (row.actual_used_cents !== where.actual_used_cents) return { count: 0 };
+      if (row.actual_used_micro_cents !== where.actual_used_micro_cents) return { count: 0 };
+      row.actual_used_cents = data.actual_used_cents;
+      row.actual_used_micro_cents = data.actual_used_micro_cents;
       return { count: 1 };
     }),
   };
@@ -142,12 +146,13 @@ describe('B-668-1 coach pool on the live turn (#669)', () => {
     const out = await drain(t.svc, 'What should I train today?', abort.signal);
     expect(out.find((c) => c.type === 'done')?.interrupted).toBe(true);
     expect(t.executeRaw).toHaveBeenCalledTimes(1);
-    const cents = Math.ceil(RomanService.costUsd(6000, ROMAN_MAX_OUTPUT_TOKENS) * 100);
+    // CREDIT-METER-130: the exact cost; the whole-cent figure is its ceiling.
+    const cents = RomanService.costUsd(6000, ROMAN_MAX_OUTPUT_TOKENS) * 100;
     expect(t.usage).toHaveBeenCalledTimes(1);
     expect(t.usage.mock.calls[0][0]).toEqual(
       expect.objectContaining({ coachId: 'c2-coach', actualCostCents: cents, capability: 'roman.chat' }),
     );
-    expect(t.row.actual_used_cents).toBe(cents);
+    expect(t.row.actual_used_cents).toBe(Math.ceil(cents));
   });
 
   it("a sub-coach's client debits the head coach's pool", async () => {
