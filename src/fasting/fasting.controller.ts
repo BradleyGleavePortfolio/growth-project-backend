@@ -7,11 +7,14 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { StartFastDto, EndFastDto } from './fasting.dto';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
+import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 
 @ApiTags('fasting')
 @Controller('fasting')
 @UseGuards(JwtAuthGuard, ClientEntitlementGuard, RolesGuard)
 @Roles('student')
+// B23: a client with no coach tracks fasts like any client.
+@OpenToCoachlessClient()
 export class FastingController {
   constructor(private fastingService: FastingService) {}
 

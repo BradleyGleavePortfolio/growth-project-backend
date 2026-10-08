@@ -14,6 +14,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { MealPlansService } from './meal-plans.service';
 import { RealMealPlansService } from '../real-meal-plans/real-meal-plans.service';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
+import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 
 // Client-authenticated meal-plan endpoints. A client only ever reads their own
 // plans (service scopes every query by req.user.id).
@@ -27,6 +28,8 @@ import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guar
 @Controller('meal-plans')
 @UseGuards(JwtAuthGuard, ClientEntitlementGuard, RolesGuard)
 @Roles('student')
+// B23: a client with no coach reads their own plans (none until a coach shares one).
+@OpenToCoachlessClient()
 export class ClientMealPlansController {
   constructor(private plans: MealPlansService) {}
 
@@ -52,6 +55,8 @@ export class ClientMealPlansController {
 @Controller('me/meal-plan')
 @UseGuards(JwtAuthGuard, ClientEntitlementGuard, RolesGuard)
 @Roles('student')
+// B23: same as ClientMealPlansController.
+@OpenToCoachlessClient()
 export class ClientMealPlanAliasController {
   constructor(private readonly canonical: RealMealPlansService) {}
 

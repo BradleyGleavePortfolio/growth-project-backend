@@ -6,6 +6,7 @@ import { AiService } from './ai.service';
 import { ChatRequestDto } from './ai.dto';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
+import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 
@@ -13,6 +14,9 @@ import { Roles } from '../common/decorators/roles.decorator';
 @Controller('ai')
 @UseGuards(JwtAuthGuard, RolesGuard, ClientEntitlementGuard)
 @Roles('student')
+// B23: AI guidance answers a client with no coach; no coach credit pool is
+// charged (ai.service checkCoachPool) and the per-user daily cap still applies.
+@OpenToCoachlessClient()
 export class AiController {
   constructor(private aiService: AiService) {}
 

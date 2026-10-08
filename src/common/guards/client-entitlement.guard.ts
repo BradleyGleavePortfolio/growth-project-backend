@@ -10,6 +10,7 @@ import { Reflector } from '@nestjs/core';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { SKIP_CLIENT_ENTITLEMENT_KEY } from '../decorators/skip-client-entitlement.decorator';
+import { OPEN_TO_COACHLESS_CLIENT_KEY } from '../decorators/open-to-coachless-client.decorator';
 import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
 import { isDunningV2Enabled } from '../../checkout/dunning-v2/dunning-v2.feature';
 import { DUNNING_V2_GRACE_STATUSES } from '../../checkout/dunning-v2/dunning-grace';
@@ -42,6 +43,16 @@ export class ClientEntitlementGuard implements CanActivate {
     // Only enforce for 'student' role users (clients).
     // Coaches and owners are not subject to client package entitlement.
     if (!user || user.role !== 'student') return true;
+
+    // B23: routes marked @OpenToCoachlessClient() (the client's own logging,
+    // targets, plans, check-ins, insights and AI guidance) let a client with
+    // no coach through. A client with a coach falls through to the package
+    // check below, unchanged.
+    const openToCoachless = this.reflector.getAllAndOverride<boolean>(OPEN_TO_COACHLESS_CLIENT_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (openToCoachless && !user.coach_id) return true;
 
     const now = new Date();
     const paidWindow: Prisma.ClientPurchaseWhereInput = {
