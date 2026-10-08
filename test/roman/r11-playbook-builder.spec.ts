@@ -5,6 +5,8 @@
  * call; spend refused -> no call; invalid or fully-dropped draft -> no write;
  * v1 then v2 supersedes; memory-scope subject with consented clients and the
  * coach's own scope without; spend settled on every path after a call.
+ * PB-GAP-130: a build under 6 hours old is not rebuilt, the run 3 minutes
+ * after a restart included, and the next 6-hourly run still rebuilds.
  */
 import type { PrismaService } from '../../src/prisma.service';
 import type { CoachAIBudgetService } from '../../src/ai-credits/coach-ai-budget.service';
@@ -14,12 +16,19 @@ import { ROMAN_MODEL_PHASE_1 } from '../../src/roman/anthropic-client.provider';
 import type { RomanBackgroundSpendService } from '../../src/roman/background/roman-background-spend';
 import { buildPlaybookRoster } from '../../src/roman/playbook/playbook-scrub';
 import type { PlaybookSourceCollector, PlaybookSources } from '../../src/roman/playbook/playbook-sources';
-import { PlaybookBuilderService, parsePlaybookReply } from '../../src/roman/playbook/playbook-builder.service';
-import { PlaybookBuilderScheduler } from '../../src/roman/playbook/playbook-builder.scheduler';
+import {
+  PlaybookBuilderService,
+  parsePlaybookReply,
+  type PlaybookRunResult,
+} from '../../src/roman/playbook/playbook-builder.service';
+import { PLAYBOOK_BUILD_BOOT_DELAY_MS, PlaybookBuilderScheduler } from '../../src/roman/playbook/playbook-builder.scheduler';
 
 type Row = Record<string, any>;
 const H = 'coach-head-7f3a';
 const NOW = new Date('2026-10-07T12:00:00.000Z');
+const MINUTE = 60 * 1000;
+const HOUR = 60 * MINUTE;
+const at = (ms: number) => new Date(NOW.getTime() + ms);
 const RESERVATION = { requestId: 'roman-bg:1', capability: 'roman.playbook', model: ROMAN_MODEL_PHASE_1, poolCoachId: H };
 
 const DRAFT = {
@@ -142,8 +151,33 @@ describe('R11-P3b-2 playbook builder', () => {
     expect(h.egress.anthropicMessagesCreate).toHaveBeenCalledTimes(1);
     expect(h.spend.reserve).toHaveBeenCalledTimes(1);
     h.setSrc(sources({ digest: 'digest-2' }));
-    expect(await h.svc.buildFor(H, NOW)).toBe('built');
+    expect(await h.svc.buildFor(H, at(6 * HOUR))).toBe('built');
     expect(h.playbooks.map((p) => [p.version, p.status])).toEqual([[1, 'superseded'], [2, 'active']]);
+  });
+
+  it('PB-GAP-130: new material under 6 hours after the last build waits: no spend, no call, no write', async () => {
+    const h = harness();
+    expect(await h.svc.buildFor(H, NOW)).toBe('built');
+    h.setSrc(sources({ digest: 'digest-2' }));
+    for (const ms of [3 * MINUTE, 2 * HOUR, 5 * HOUR + 59 * MINUTE]) {
+      expect(await h.svc.buildFor(H, at(ms))).toBe('too_recent');
+    }
+    expect(h.spend.reserve).toHaveBeenCalledTimes(1);
+    expect(h.egress.anthropicMessagesCreate).toHaveBeenCalledTimes(1);
+    expect(h.playbooks).toHaveLength(1);
+    expect(await h.svc.buildFor(H, at(6 * HOUR))).toBe('built');
+    expect(h.playbooks.map((p) => [p.version, p.status, p.built_at])).toEqual([
+      [1, 'superseded', NOW],
+      [2, 'active', at(6 * HOUR)],
+    ]);
+  });
+
+  it('PB-GAP-130: the next 6-hourly run rebuilds even when it starts a few ms sooner after the hour', async () => {
+    const h = harness();
+    expect(await h.svc.buildFor(H, at(40))).toBe('built');
+    h.setSrc(sources({ digest: 'digest-2' }));
+    expect(await h.svc.buildFor(H, at(6 * HOUR - 1))).toBe('too_recent');
+    expect(await h.svc.buildFor(H, at(6 * HOUR + 10))).toBe('built');
   });
 
   it('spend refused: no provider call, no write', async () => {
@@ -220,6 +254,32 @@ describe('R11-P3b-2 playbook schedule', () => {
     await new Promise((r) => setImmediate(r));
     await sched.tick();
     expect(runOnce).toHaveBeenCalledTimes(2);
+    sched.onModuleDestroy();
+  });
+
+  it('PB-GAP-130: the run 3 minutes after a restart skips a coach built under 6 hours ago', async () => {
+    process.env.FEATURE_ROMAN_PLAYBOOK = 'true';
+    const h = harness();
+    expect(await h.svc.buildFor(H, NOW)).toBe('built');
+    h.setSrc(sources({ digest: 'digest-2' }));
+    const runs: Promise<PlaybookRunResult>[] = [];
+    const builder = Object.assign(Object.create(null) as PlaybookBuilderService, {
+      runOnce: (now?: Date) => {
+        const run = h.svc.runOnce(now);
+        runs.push(run);
+        return run;
+      },
+    });
+    const sched = new PlaybookBuilderScheduler(builder);
+    jest.useFakeTimers({ now: at(2 * HOUR) });
+    sched.onApplicationBootstrap();
+    jest.advanceTimersByTime(PLAYBOOK_BUILD_BOOT_DELAY_MS);
+    jest.useRealTimers();
+    expect(runs).toHaveLength(1);
+    expect(await runs[0]).toEqual({ coaches: 1, outcomes: { too_recent: 1 } });
+    expect(h.spend.reserve).toHaveBeenCalledTimes(1);
+    expect(h.egress.anthropicMessagesCreate).toHaveBeenCalledTimes(1);
+    expect(h.playbooks).toHaveLength(1);
     sched.onModuleDestroy();
   });
 });

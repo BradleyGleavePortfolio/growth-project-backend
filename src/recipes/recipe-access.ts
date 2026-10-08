@@ -18,11 +18,18 @@
  * image link on create and serves `image_url: null` on every read. Rows written
  * before this policy (any link, any host) are never sent to an app.
  *
+ * Allergens (CF-ALLERGY-128): a recipe the viewer's coach shares is hidden
+ * from the viewer when its author DECLARED an allergen saved on the viewer's
+ * profile (src/recipes/allergens.ts). The viewer's own recipes are never
+ * hidden. A recipe with no declared allergens is shown (the app labels it
+ * as undeclared); recipe text is never guessed into an allergen.
+ *
  * Every function here is pure; RecipesService and PrepGuideService share them
  * so the two read paths cannot drift apart.
  */
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { Prisma, Role } from '@prisma/client';
+import type { AllergenCode } from './allergens';
 
 /** The fields of the authenticated User row this policy reads. */
 export interface RecipeViewer {
@@ -40,6 +47,7 @@ export const RECIPE_LIST_LIMIT = 200;
 export const RECIPE_ERROR_NOT_FOUND = 'RECIPE_NOT_FOUND';
 export const RECIPE_ERROR_SHARING_COACH_ONLY = 'RECIPE_SHARING_COACH_ONLY';
 export const RECIPE_ERROR_IMAGE_URL_NOT_ALLOWED = 'RECIPE_IMAGE_URL_NOT_ALLOWED';
+export const RECIPE_ERROR_HIDDEN_FOR_ALLERGENS = 'RECIPE_HIDDEN_FOR_ALLERGENS';
 
 export const RECIPE_ERROR_MESSAGES = {
   [RECIPE_ERROR_NOT_FOUND]:
@@ -48,6 +56,8 @@ export const RECIPE_ERROR_MESSAGES = {
     'Only coaches can share recipes, and only with their own clients. Turn sharing off to save this recipe for yourself.',
   [RECIPE_ERROR_IMAGE_URL_NOT_ALLOWED]:
     'Recipe photos from web links are not supported. Remove the photo link and save the recipe again.',
+  [RECIPE_ERROR_HIDDEN_FOR_ALLERGENS]:
+    'This recipe is hidden because its author lists an allergen saved on your profile. Go back to your recipes to see the ones you can open.',
 } as const;
 
 type RecipeErrorCode = keyof typeof RECIPE_ERROR_MESSAGES;
@@ -81,6 +91,11 @@ export function recipeImageUrlNotAllowed(): BadRequestException {
   return new BadRequestException(body(RECIPE_ERROR_IMAGE_URL_NOT_ALLOWED));
 }
 
+/** 404 with its own code: the recipe is visible by tenancy but declares one of the viewer's allergens. */
+export function recipeHiddenForAllergens(): NotFoundException {
+  return new NotFoundException(body(RECIPE_ERROR_HIDDEN_FOR_ALLERGENS));
+}
+
 /** True when this viewer may share recipes with their own clients. */
 export function canShareRecipes(viewer: Pick<RecipeViewer, 'role'>): boolean {
   return RECIPE_SHARER_ROLES.includes(viewer.role);
@@ -88,18 +103,40 @@ export function canShareRecipes(viewer: Pick<RecipeViewer, 'role'>): boolean {
 
 /**
  * The single visibility predicate. Every recipe read (list, detail, save,
- * saved list, prep guide) filters through it.
+ * saved list, prep guide) filters through it. `avoid` is the viewer's saved
+ * allergens (loadViewerAllergens): a shared recipe that declares any of them
+ * is left out; the viewer's own recipes are not.
  */
-export function visibleRecipesWhere(viewer: RecipeViewer): Prisma.RecipeWhereInput {
+export function visibleRecipesWhere(
+  viewer: RecipeViewer,
+  avoid: readonly AllergenCode[] = [],
+): Prisma.RecipeWhereInput {
   const visible: Prisma.RecipeWhereInput[] = [{ created_by_id: viewer.id }];
   if (viewer.coach_id && viewer.coach_id !== viewer.id) {
-    visible.push({
+    const shared: Prisma.RecipeWhereInput = {
       is_public: true,
       created_by_id: viewer.coach_id,
       created_by: { role: { in: [...RECIPE_SHARER_ROLES] }, deleted_at: null },
-    });
+    };
+    if (avoid.length > 0) shared.NOT = { allergens: { hasSome: [...avoid] } };
+    visible.push(shared);
   }
   return { OR: visible };
+}
+
+/**
+ * The same allergen rule for a recipe already read through
+ * `visibleRecipesWhere(viewer)` (detail and save): true when it is someone
+ * else's recipe that declares one of the viewer's allergens.
+ */
+export function hiddenForAllergens(
+  recipe: { created_by_id: string; allergens: readonly string[] | null },
+  viewer: Pick<RecipeViewer, 'id'>,
+  avoid: readonly AllergenCode[],
+): boolean {
+  if (avoid.length === 0 || recipe.created_by_id === viewer.id) return false;
+  const avoided = new Set<string>(avoid);
+  return (recipe.allergens ?? []).some((code) => avoided.has(code));
 }
 
 /**
