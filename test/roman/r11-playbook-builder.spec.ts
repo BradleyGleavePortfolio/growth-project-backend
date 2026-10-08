@@ -7,6 +7,8 @@
  * coach's own scope without; spend settled on every path after a call.
  * PB-GAP-130: a build under 6 hours old is not rebuilt, the run 3 minutes
  * after a restart included, and the next 6-hourly run still rebuilds.
+ * PB-FAIL-LIMIT-131: a charged attempt that failed counts toward the same
+ * 6 hours (no reserve, no call); one settled at 0 does not.
  */
 import type { PrismaService } from '../../src/prisma.service';
 import type { CoachAIBudgetService } from '../../src/ai-credits/coach-ai-budget.service';
@@ -38,6 +40,8 @@ const DRAFT = {
   },
   red_lines: [{ kind: 'no_train_through_pain', text: 'Never train through sharp pain.', basis: 'stated', evidence_count: 3 }],
 };
+/** Every item quotes a private session note, so validation drops them all (empty_draft). */
+const QUOTED = { sections: { recovery: { rest_days: [{ text: 'Should rest two full days after every heavy leg session.', basis: 'stated', evidence_count: 1 }] } }, red_lines: [] };
 
 function sources(over: Partial<PlaybookSources> = {}): PlaybookSources {
   return {
@@ -58,9 +62,13 @@ function sources(over: Partial<PlaybookSources> = {}): PlaybookSources {
   };
 }
 
-function harness(opts: { src?: PlaybookSources; reply?: string; admitted?: boolean; sendError?: Error } = {}) {
+function harness(opts: { src?: PlaybookSources; reply?: string; admitted?: boolean; sendError?: Error; reserveLagMs?: number } = {}) {
   const playbooks: Row[] = [];
   const sourceRows: Row[] = [];
+  // The background ledger (AiRequestAudit) as the spend service writes it: a
+  // row per reservation, created reserveLagMs after the run started.
+  const ledger: Row[] = [];
+  let runStart = NOW;
   let src = opts.src ?? sources();
   const pick = (where: Row) => playbooks.filter((p) => p.coach_id === where.coach_id && (!where.status || p.status === where.status));
   const coachPlaybook = {
@@ -78,9 +86,18 @@ function harness(opts: { src?: PlaybookSources; reply?: string; admitted?: boole
   };
   const coachPlaybookSource = { createMany: jest.fn(async (a: Row) => sourceRows.push(...a.data)) };
   const tx = { coachPlaybook, coachPlaybookSource };
+  const aiRequestAudit = {
+    findFirst: jest.fn(async (a: Row) => {
+      const w = a.where;
+      const hits = ledger.filter((r) => r.capability === w.capability && r.requester_id === w.requester_id
+        && r.created_at > w.created_at.gt && (r.prompt_token_estimate > 0 || r.response_token_estimate > 0));
+      return hits.sort((x, y) => y.created_at - x.created_at)[0] ?? null;
+    }),
+  };
   const prisma = Object.assign(Object.create(null) as PrismaService, {
     user: { findMany: jest.fn(async () => [{ coach_id: H }]) },
     coachPlaybook,
+    aiRequestAudit,
     $transaction: jest.fn(async (fn: (t: Row) => Promise<unknown>) => fn(tx)),
   });
   const budget = Object.assign(Object.create(null) as CoachAIBudgetService, {
@@ -92,11 +109,27 @@ function harness(opts: { src?: PlaybookSources; reply?: string; admitted?: boole
       return { content: [{ type: 'text', text: opts.reply ?? JSON.stringify(DRAFT) }], usage: { input_tokens: 1000, output_tokens: 200 } };
     }),
   });
-  const collector = Object.assign(Object.create(null) as PlaybookSourceCollector, { collect: jest.fn(async () => src) });
+  const collector = Object.assign(Object.create(null) as PlaybookSourceCollector, {
+    collect: jest.fn(async (_coachId: string, now: Date) => {
+      runStart = now;
+      return src;
+    }),
+  });
   const spend = Object.assign(Object.create(null) as RomanBackgroundSpendService, {
-    reserve: jest.fn(async () =>
-      opts.admitted === false ? { admitted: false, reason: 'cap_reached' } : { admitted: true, reservation: RESERVATION }),
-    settle: jest.fn(async () => undefined),
+    reserve: jest.fn(async (input: Row) => {
+      if (opts.admitted === false) return { admitted: false, reason: 'cap_reached' };
+      const reservation = { ...RESERVATION, requestId: `roman-bg:${ledger.length + 1}` };
+      ledger.push({
+        request_id: reservation.requestId, capability: input.capability, requester_id: input.payer.coachId,
+        created_at: new Date(runStart.getTime() + (opts.reserveLagMs ?? 0)),
+        prompt_token_estimate: input.inputTokenBound, response_token_estimate: input.maxOutputTokens, metadata: { state: 'reserved' },
+      });
+      return { admitted: true, reservation };
+    }),
+    settle: jest.fn(async (r: Row, inputTokens: number, outputTokens: number, metadata: Row = {}) => {
+      const row = ledger.find((l) => l.request_id === r.requestId);
+      if (row) Object.assign(row, { prompt_token_estimate: inputTokens, response_token_estimate: outputTokens, metadata: { state: 'settled', ...metadata } });
+    }),
   });
   const handle = Object.create(AnthropicHandle.prototype) as AnthropicHandle;
   const svc = new PlaybookBuilderService(prisma, budget, egress, collector, spend, handle);
@@ -121,6 +154,9 @@ describe('R11-P3b-2 playbook builder', () => {
     expect(h.collector.collect).not.toHaveBeenCalled();
     expect(h.spend.reserve).not.toHaveBeenCalled();
     expect(h.egress.anthropicMessagesCreate).not.toHaveBeenCalled();
+    expect(await h.svc.buildFor(H, NOW)).toBe('error');
+    expect(h.collector.collect).not.toHaveBeenCalled();
+    expect(h.prisma.aiRequestAudit.findFirst).not.toHaveBeenCalled();
   });
 
   it('builds v1 with a memory-scope subject, settles the spend and stores the ledger', async () => {
@@ -133,7 +169,7 @@ describe('R11-P3b-2 playbook builder', () => {
     expect(subject).toEqual({ kind: 'client_data', clientIds: ['client-aa11'], audience: 'coach', scope: 'memory' });
     expect(surface).toBe('roman.playbook');
     expect(JSON.stringify(params)).not.toMatch(/g-wide|sn-1|client-aa11|Zelda/);
-    expect(h.spend.settle).toHaveBeenCalledWith(RESERVATION, 1000, 200, { outcome: 'ok' });
+    expect(h.spend.settle).toHaveBeenCalledWith(RESERVATION, 1000, 200, { outcome: 'ok', run_at: NOW.toISOString() });
     expect(h.playbooks).toEqual([expect.objectContaining({
       coach_id: H, version: 1, status: 'active', source_count: 2, source_digest: 'digest-1', model_id: ROMAN_MODEL_PHASE_1,
     })]);
@@ -190,7 +226,7 @@ describe('R11-P3b-2 playbook builder', () => {
   it('consent refused at send: settles zero, no write', async () => {
     const h = harness({ sendError: new AiConsentRequiredException('coach') });
     expect(await h.svc.buildFor(H, NOW)).toBe('refused');
-    expect(h.spend.settle).toHaveBeenCalledWith(RESERVATION, 0, 0, { outcome: 'refused' });
+    expect(h.spend.settle).toHaveBeenCalledWith(RESERVATION, 0, 0, { outcome: 'refused', run_at: NOW.toISOString() });
     expect(h.playbooks).toEqual([]);
   });
 
@@ -201,10 +237,61 @@ describe('R11-P3b-2 playbook builder', () => {
       expect(h.spend.settle).toHaveBeenCalledTimes(1);
       expect(h.playbooks).toEqual([]);
     }
-    const quoted = { sections: { recovery: { rest_days: [{ text: 'Should rest two full days after every heavy leg session.', basis: 'stated', evidence_count: 1 }] } }, red_lines: [] };
-    const h = harness({ reply: JSON.stringify(quoted) });
+    const h = harness({ reply: JSON.stringify(QUOTED) });
     expect(await h.svc.buildFor(H, NOW)).toBe('empty_draft');
     expect(h.playbooks).toEqual([]);
+  });
+
+  it('PB-FAIL-LIMIT-131: a charged failure waits 6 hours (no reserve, no call); the next 6-hourly run tries again', async () => {
+    const charged: Array<[string, { sendError?: Error; reply?: string }]> = [
+      ['model_error', { sendError: new Error('socket hang up') }],
+      ['invalid_draft', { reply: 'no json here' }],
+      ['empty_draft', { reply: JSON.stringify(QUOTED) }],
+    ];
+    for (const [outcome, opts] of charged) {
+      // Reached 3 minutes into the run: the 6 hours count from the run's start, like built_at.
+      const h = harness({ ...opts, reserveLagMs: 3 * MINUTE });
+      expect(await h.svc.buildFor(H, NOW)).toBe(outcome);
+      for (const ms of [3 * MINUTE, HOUR, 5 * HOUR + 59 * MINUTE]) {
+        expect(await h.svc.buildFor(H, at(ms))).toBe('too_recent');
+      }
+      expect(h.spend.reserve).toHaveBeenCalledTimes(1);
+      expect(h.egress.anthropicMessagesCreate).toHaveBeenCalledTimes(1);
+      expect(await h.svc.buildFor(H, at(6 * HOUR))).toBe(outcome);
+      expect(h.spend.reserve).toHaveBeenCalledTimes(2);
+      expect(h.prisma.aiRequestAudit.findFirst).toHaveBeenLastCalledWith({
+        where: {
+          capability: 'roman.playbook',
+          requester_id: H,
+          created_at: { gt: NOW },
+          OR: [{ prompt_token_estimate: { gt: 0 } }, { response_token_estimate: { gt: 0 } }],
+        },
+        orderBy: { created_at: 'desc' },
+        select: { created_at: true, metadata: true },
+      });
+    }
+  });
+
+  it('PB-FAIL-LIMIT-131: an attempt settled at 0 (consent refused or an HTTP error) does not block the next run', async () => {
+    for (const sendError of [new AiConsentRequiredException('coach'), Object.assign(new Error('overloaded'), { status: 529 })]) {
+      const h = harness({ sendError });
+      await h.svc.buildFor(H, NOW);
+      expect(h.spend.settle).toHaveBeenCalledWith(RESERVATION, 0, 0, expect.anything());
+      await h.svc.buildFor(H, at(HOUR));
+      expect(h.spend.reserve).toHaveBeenCalledTimes(2);
+      expect(h.egress.anthropicMessagesCreate).toHaveBeenCalledTimes(2);
+    }
+  });
+
+  it('PB-FAIL-LIMIT-131: an unchanged digest stays unchanged, and a changed one still rebuilds at the next 6-hourly run', async () => {
+    const h = harness({ reserveLagMs: 3 * MINUTE });
+    expect(await h.svc.buildFor(H, NOW)).toBe('built');
+    expect(await h.svc.buildFor(H, at(HOUR))).toBe('unchanged');
+    expect(h.prisma.aiRequestAudit.findFirst).toHaveBeenCalledTimes(1);
+    h.setSrc(sources({ digest: 'digest-2' }));
+    expect(await h.svc.buildFor(H, at(2 * HOUR))).toBe('too_recent');
+    expect(await h.svc.buildFor(H, at(6 * HOUR))).toBe('built');
+    expect(h.spend.reserve).toHaveBeenCalledTimes(2);
   });
 
   it('no memory-scope client: coach-own-scope send; a client row without consent stops before spend', async () => {

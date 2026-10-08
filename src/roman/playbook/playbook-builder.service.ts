@@ -5,7 +5,8 @@
  * (playbook-sources.ts), skip when nothing changed since the active version
  * (same ledger digest) or when that version is under 6 hours old (PB-GAP-130:
  * at most one rebuild per coach every 6 hours, the run 3 minutes after a
- * restart included), admit the spend (background pool + daily ceiling),
+ * restart included) or the coach's last charged attempt is (PB-FAIL-LIMIT-131:
+ * a failed one counts too), admit the spend (background pool + daily ceiling),
  * ask the model for the playbook JSON once, validate it (schema, identity,
  * verbatim quotes of private notes), then write the new version in one
  * transaction: the old active row is superseded, the new one is active, and
@@ -66,6 +67,16 @@ const MINUTE_MS = 60 * 1000;
 export function builtTooRecently(builtAt: Date, now: Date): boolean {
   const minutes = (d: Date) => Math.floor(d.getTime() / MINUTE_MS);
   return (minutes(now) - minutes(builtAt)) * MINUTE_MS < PLAYBOOK_REBUILD_MIN_INTERVAL_MS;
+}
+
+/**
+ * PB-FAIL-LIMIT-131: when a charged attempt's run started (the run_at its
+ * settle stored, the same clock as built_at), else its reserve time.
+ */
+export function attemptRunAt(createdAt: Date, metadata: Prisma.JsonValue | null): Date {
+  const runAt = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata.run_at : null;
+  const at = typeof runAt === 'string' ? new Date(runAt) : null;
+  return at && !Number.isNaN(at.getTime()) ? at : createdAt;
 }
 
 export type PlaybookBuildOutcome =
@@ -174,6 +185,7 @@ export class PlaybookBuilderService {
     });
     if (active?.source_digest === src.digest) return 'unchanged';
     if (active && builtTooRecently(active.built_at, now)) return 'too_recent';
+    if (await this.chargedTooRecently(head, now)) return 'too_recent';
     const consented = src.consentedClientIds;
     if (consented.length === 0 && src.ledger.some((r) => r.client_id)) return 'unsafe_ledger';
     const subject = consented.length
@@ -211,7 +223,7 @@ export class PlaybookBuilderService {
         admission.reservation,
         reply.usage?.input_tokens ?? inputTokenBound,
         reply.usage?.output_tokens ?? maxOut,
-        { outcome: 'ok' },
+        { outcome: 'ok', run_at: now.toISOString() },
       );
       replyText = reply.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
     } catch (err) {
@@ -221,6 +233,7 @@ export class PlaybookBuilderService {
       const none = refused || hasHttpStatus(err);
       await this.spend.settle(admission.reservation, none ? 0 : inputTokenBound, none ? 0 : maxOut, {
         outcome: refused ? 'refused' : 'model_error',
+        run_at: now.toISOString(),
       });
       if (!refused) this.logger.warn(`roman.playbook_model_failed: ${romanErrorTag(err)}`);
       return refused ? 'refused' : 'model_error';
@@ -275,6 +288,28 @@ export class PlaybookBuilderService {
       `roman.playbook_built sources=${src.ledger.length} kept=${checked.kept_items} dropped=${checked.dropped.length}`,
     );
     return 'built';
+  }
+
+  /**
+   * PB-FAIL-LIMIT-131 (owner D7): true while the head coach's last charged
+   * playbook attempt is under 6 hours old, so a model error, invalid draft or
+   * empty draft is not paid for again by the next run. Reads the background
+   * ledger the spend service writes (one row per reservation); a row settled
+   * at 0 tokens (consent refused, an HTTP error) was not charged and does not
+   * count. A successful build's row gives the same answer as built_at.
+   */
+  private async chargedTooRecently(head: string, now: Date): Promise<boolean> {
+    const last = await this.prisma.aiRequestAudit.findFirst({
+      where: {
+        capability: ROMAN_PLAYBOOK_CAPABILITY,
+        requester_id: head,
+        created_at: { gt: new Date(now.getTime() - PLAYBOOK_REBUILD_MIN_INTERVAL_MS) },
+        OR: [{ prompt_token_estimate: { gt: 0 } }, { response_token_estimate: { gt: 0 } }],
+      },
+      orderBy: { created_at: 'desc' },
+      select: { created_at: true, metadata: true },
+    });
+    return last !== null && builtTooRecently(attemptRunAt(last.created_at, last.metadata), now);
   }
 
   /** Head coaches with at least one live client; never-built and oldest first. */
