@@ -40,6 +40,8 @@ export const FEATURE_FLAG_KEYS = [
   'community_events',
   'coachless_home',
   'messaging_core_v2',
+  // CF-COACH-PAY-BE-128 ← FEATURE_COACH_PAYMENT_ACTIONS (coach/owner only, not community).
+  'coach_payment_actions',
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
