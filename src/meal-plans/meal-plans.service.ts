@@ -13,6 +13,14 @@ import type {
 const DAY_SLOT = /^day\s+(\d+)\s*[–-](.*)$/i;
 
 /**
+ * SMALL-BE-COPY-132: a value the coach left empty stays empty (null), so the
+ * client sees no "0 kcal"; a day total is given only when every item has it.
+ */
+function dayTotal(rows: MealPlanItemDto[], pick: (r: MealPlanItemDto) => number | undefined): number | null {
+  return rows.every((r) => pick(r) != null) ? rows.reduce((n, r) => n + (pick(r) ?? 0), 0) : null;
+}
+
+/**
  * Rebuild the per-day shape from edited items so a coach's edit of an
  * AI-approved plan is what the client sees. Returns null (flat items only)
  * when any item has no "Day N – slot" label, since its day is unknown.
@@ -39,13 +47,13 @@ export function daysFromItems(items: MealPlanItemDto[]): Prisma.InputJsonValue |
           items: rows.map((r) => ({
             name: r.name,
             serving: '',
-            calories: r.calories ?? 0,
-            protein_g: r.protein ?? 0,
+            calories: r.calories ?? null,
+            protein_g: r.protein ?? null,
           })),
         })),
         daily_totals: {
-          calories: dayItems.reduce((n, r) => n + (r.calories ?? 0), 0),
-          protein_g: dayItems.reduce((n, r) => n + (r.protein ?? 0), 0),
+          calories: dayTotal(dayItems, (r) => r.calories),
+          protein_g: dayTotal(dayItems, (r) => r.protein),
         },
       };
     });

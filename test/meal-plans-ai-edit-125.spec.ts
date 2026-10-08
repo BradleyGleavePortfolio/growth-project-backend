@@ -74,6 +74,47 @@ describe('MealPlansService.updateByCoach on an AI-approved plan (AUDIT-08-125)',
     ]);
   });
 
+  it('an empty value stays empty, not "0 kcal", and a day total needs every item (SMALL-BE-COPY-132)', async () => {
+    const row: Row = { id: 'p1', coach_id: 'coach-A', days: aiDays, items: [] };
+    const prisma = makePrisma(row);
+    await svcFor(prisma).updateByCoach('coach-A', 'p1', {
+      items: [
+        { name: 'Eggs (2 large)', calories: 140, time_of_day: 'Day 1 – breakfast' },
+        { name: 'Coffee', time_of_day: 'Day 1 – breakfast' },
+        { name: 'Salmon (5 oz)', calories: 300, protein: 34, time_of_day: 'Day 2 – dinner' },
+        { name: 'Water', calories: 0, protein: 0, time_of_day: 'Day 2 – dinner' },
+      ],
+    });
+    expect(row.days).toEqual([
+      {
+        day: 1,
+        meals: [
+          {
+            slot: 'breakfast',
+            items: [
+              { name: 'Eggs (2 large)', serving: '', calories: 140, protein_g: null },
+              { name: 'Coffee', serving: '', calories: null, protein_g: null },
+            ],
+          },
+        ],
+        daily_totals: { calories: null, protein_g: null },
+      },
+      {
+        day: 2,
+        meals: [
+          {
+            slot: 'dinner',
+            items: [
+              { name: 'Salmon (5 oz)', serving: '', calories: 300, protein_g: 34 },
+              { name: 'Water', serving: '', calories: 0, protein_g: 0 },
+            ],
+          },
+        ],
+        daily_totals: { calories: 300, protein_g: 34 },
+      },
+    ]);
+  });
+
   it('falls back to the flat items when an edited item has no day label', async () => {
     const row: Row = { id: 'p1', coach_id: 'coach-A', days: aiDays, items: [] };
     const prisma = makePrisma(row);

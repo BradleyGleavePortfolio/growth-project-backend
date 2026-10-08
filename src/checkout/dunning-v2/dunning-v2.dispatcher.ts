@@ -219,9 +219,10 @@ export class DunningV2Dispatcher {
     if (!this.notifications) return { status: 'skipped', error: 'push_not_wired' };
     // AUD-FIN-MONEY-129 U-3: a tap opens the in-app card update (the app
     // routes by actionScreen). A dispute cycle gets no card route: a card
-    // update does not end a dispute (R-DISPUTE-PAUSE).
+    // update does not end a dispute (R-DISPUTE-PAUSE). Its tap opens the
+    // notification center, where the dispute notice is (SMALL-BE-COPY-132).
     const data = ctx.isLateReversalCycle
-      ? undefined
+      ? { kind: 'dunning_dispute', actionScreen: 'NotificationCenter' }
       : { kind: 'dunning_payment', actionScreen: 'UpdateCard' };
     const res = await this.notifications.pushToUser(ctx.clientUserId, 'Payment', body, data);
     // A transport that returns no verdict (legacy stubs) counts as sent.

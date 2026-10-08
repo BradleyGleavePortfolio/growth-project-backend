@@ -113,7 +113,7 @@ describe('Dunning dispatcher → VoicePolicyService (Phase 2 in-app copy)', () =
     const dispatcher = buildDispatcher(notifications);
     await dispatcher.dispatchStep(DAY0_CTX);
     expect(notifications.pushes).toHaveLength(1);
-    const expected = ROMAN_V2.dunning_day0.replace('{firstName}', 'Sam');
+    const expected = ROMAN_V2.dunning_day0.replace('{firstName}', 'Sam').replace('{amount}', '$49');
     expect(notifications.pushes[0].body).toBe(expected);
   });
 
@@ -122,7 +122,7 @@ describe('Dunning dispatcher → VoicePolicyService (Phase 2 in-app copy)', () =
     const notifications = new FakeNotifications();
     const dispatcher = buildDispatcher(notifications);
     await dispatcher.dispatchStep({ ...DAY0_CTX, stepIndex: 1 });
-    const expected = ROMAN_V2.dunning_day1.replace('{firstName}', 'Sam');
+    const expected = ROMAN_V2.dunning_day1.replace('{firstName}', 'Sam').replace('{amount}', '$49');
     expect(notifications.pushes[0].body).toBe(expected);
   });
 });

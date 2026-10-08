@@ -309,6 +309,23 @@ function coachName(ctx: PostCheckContext | null): string {
     : 'your coach';
 }
 
+/**
+ * SMALL-BE-COPY-132: the loaded context shows the client has no coach. Every
+ * fixed reply then drops its coach line and a medical reply needs no coach
+ * route. With no context (the coach surface, or the data did not load), a
+ * coach is still assumed.
+ */
+function coachless(ctx: PostCheckContext | null): boolean {
+  return ctx !== null && !ctx.coach.has_coach;
+}
+
+/** The coach offer of the fixed medical replies (none for a client with no coach). */
+function coachOffer(ctx: PostCheckContext | null, plan: string): string {
+  return coachless(ctx)
+    ? ''
+    : ` Message ${coachName(ctx)} so ${plan} can be adjusted around it, and I can help you word that.`;
+}
+
 function floorOf(ctx: PostCheckContext | null, fallback: number): number {
   return ctx?.macro_method.floor_kcal ?? fallback;
 }
@@ -687,7 +704,8 @@ function restateTargets(ctx: PostCheckContext | null, fallbackFloor: number): st
   const coach = coachName(ctx);
   const calories = ctx?.targets.calories ?? null;
   if (!ctx || ctx.targets.source === 'none' || calories === null) {
-    return `You do not have daily targets set yet, so I will not guess at numbers. ${coach === 'your coach' ? 'Your coach' : coach} can set them from Messages. I will not suggest going below ${fallbackFloor.toLocaleString('en-US')} kcal a day.`;
+    const setter = coachless(ctx) ? '' : ` ${coach === 'your coach' ? 'Your coach' : coach} can set them from Messages.`;
+    return `You do not have daily targets set yet, so I will not guess at numbers.${setter} I will not suggest going below ${fallbackFloor.toLocaleString('en-US')} kcal a day.`;
   }
   const t = ctx.targets;
   const who = t.source === 'coach_set' ? `${coach} set` : 'the app calculated';
@@ -702,24 +720,30 @@ function restateTargets(ctx: PostCheckContext | null, fallbackFloor: number): st
     ctx.today.meals_logged > 0 && ctx.today.remaining_kcal != null
       ? ` So far today you have logged ${ctx.today.kcal} kcal and ${ctx.today.protein_g} g protein, leaving ${ctx.today.remaining_kcal} kcal.`
       : '';
-  return `Your daily target is ${calories.toLocaleString('en-US')} kcal${macros ? ` (${macros})` : ''}, which ${who}.${today} I will not suggest different targets; if you would like them reviewed, message ${coach}.`;
+  const review = coachless(ctx) ? '.' : `; if you would like them reviewed, message ${coach}.`;
+  return `Your daily target is ${calories.toLocaleString('en-US')} kcal${macros ? ` (${macros})` : ''}, which ${who}.${today} I will not suggest different targets${review}`;
 }
 
 /**
  * Rewrite templates (owner ruling 2026-09-30 16:38: warm, useful, a safe next
  * step inside the plan, offer to message the coach, then the physician line).
+ * A client with no coach gets no coach line (SMALL-BE-COPY-132).
  */
 export const ROMAN_POST_CHECK_TEMPLATES = {
   medical: (ctx: PostCheckContext | null) =>
-    `I should not name what might be causing that, and I will not guess. What I can offer: stop any movement that hurts today, keep the rest of your session pain-free or at a lighter intensity, and rest the area. Message ${coachName(ctx)} so the plan can be adjusted around it, and I can help you word that. ${ROMAN_PHYSICIAN_LINE_INJURY}`,
+    `I should not name what might be causing that, and I will not guess. What I can offer: stop any movement that hurts today, keep the rest of your session pain-free or at a lighter intensity, and rest the area.${coachOffer(ctx, 'the plan')} ${ROMAN_PHYSICIAN_LINE_INJURY}`,
   banned: (ctx: PostCheckContext | null) =>
-    `I cannot help with that. It is outside what is safe for me to advise. What I can do is help you stay on your plan: hold your current targets, keep logging, and train the sessions as written. ${coachName(ctx) === 'your coach' ? 'Your coach' : coachName(ctx)} can talk through options that fit your plan, and a physician is the right person for anything medical.`,
+    `I cannot help with that. It is outside what is safe for me to advise. What I can do is help you stay on your plan: hold your current targets, keep logging, and train the sessions as written. ${
+      coachless(ctx)
+        ? 'A physician is the right person for anything medical.'
+        : `${coachName(ctx) === 'your coach' ? 'Your coach' : coachName(ctx)} can talk through options that fit your plan, and a physician is the right person for anything medical.`
+    }`,
   /** A-R4-2: fail-closed reply for a medical_scope turn the model got wrong. */
   medical_scope: (ctx: PostCheckContext | null) =>
-    `I cannot advise on the medical side of that, and I will not guess. What I can do: keep today's session as written or at a lighter effort, keep logging, and hold your current targets. Message ${coachName(ctx)} so your plan can be adjusted around it, and I can help you word that. ${ROMAN_PHYSICIAN_LINE_MEDICAL}`,
+    `I cannot advise on the medical side of that, and I will not guess. What I can do: keep today's session as written or at a lighter effort, keep logging, and hold your current targets.${coachOffer(ctx, 'your plan')} ${ROMAN_PHYSICIAN_LINE_MEDICAL}`,
   /** A-R3-1: the client's data could not be loaded for this turn. */
   context_unavailable: () =>
-    "I cannot see your plan and logs at this moment, so I will not quote any of your numbers. Your targets and today's log are on the Today tab. Ask me again in a minute and I will have them.",
+    "I cannot see your plan and logs at this moment, so I will not quote any of your numbers. Your targets and today's log are on Home and Food. Ask me again in a minute.",
   referral_medical: ROMAN_PHYSICIAN_LINE_MEDICAL,
   referral_injury: ROMAN_PHYSICIAN_LINE_INJURY,
 };
@@ -773,7 +797,8 @@ function medicalReplyGap(
   const t = predicateForm(text);
   if (FALSE_REASSURANCE.some((rx) => rx.test(t))) return 'false_reassurance';
   if (routerClass === 'injury_pain' && !affirmativeStop(t)) return 'safe_step_missing';
-  if (!routesToCoach(t, ctx)) return 'safe_step_missing';
+  // SMALL-BE-COPY-132: a client with no coach is not sent to one.
+  if (!coachless(ctx) && !routesToCoach(t, ctx)) return 'safe_step_missing';
   return null;
 }
 

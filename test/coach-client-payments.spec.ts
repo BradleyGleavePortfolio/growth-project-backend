@@ -153,7 +153,10 @@ describe('CF-COACH-PAY-BE-128 coach client payments', () => {
     expect(p.stripe.resumeSubscriptionCollection).toHaveBeenCalledWith({ subscriptionId: 'sub_1', idempotencyKey: `tgp-coach-resume-p1-${KEY}` });
 
     const r = build([plan({ status: 'refunded', dunning: { status: 'active', last_failure_reason: 'charge_refunded' } })]);
-    await expect(r.service.resume(A, CLIENT, 'p1', KEY)).rejects.toMatchObject({ response: { code: 'PLAN_PAUSED_BY_REFUND_OR_DISPUTE' } });
+    // SMALL-BE-COPY-132: the app's button is "Restart plan" (there is no "Restart billing").
+    await expect(r.service.resume(A, CLIENT, 'p1', KEY)).rejects.toMatchObject({
+      response: { code: 'PLAN_PAUSED_BY_REFUND_OR_DISPUTE', message: expect.stringMatching(/Use Restart plan instead\.$/) },
+    });
     expect((await r.service.list(A, CLIENT)).plans[0].actions.restart).toBe(true);
     const d = build([plan({ status: 'past_due' })]);
     await expect(d.service.pause(A, CLIENT, 'p1', KEY)).rejects.toMatchObject({ response: { code: 'PLAN_PAYMENT_FAILED' } });
