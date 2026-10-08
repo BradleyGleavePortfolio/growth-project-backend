@@ -633,10 +633,11 @@ describe('CC-3: top_factor reflects PtmPrediction.factors', () => {
           user_id: 'u1',
           risk_score: 0.8,
           computed_at: new Date(PINNED_NOW - 1000),
+          // Engine factor keys: a key with no known source is never shown (CHURN-LABELS-132).
           factors: [
-            { key: 'missed_checkins', label: 'Missed 4 of last 7 check-ins', contribution: 0.42 },
-            { key: 'msg_silence', label: 'No messages in 10 days', contribution: 0.21 },
-            { key: 'weight_gap', label: 'No weight logged in 8 days', contribution: 0.05 },
+            { key: 'checkin_miss_3plus', label: 'Missed 4 of last 7 check-ins', contribution: 0.42 },
+            { key: 'coach_note_gap_10d', label: 'No messages in 10 days', contribution: 0.21 },
+            { key: 'weight_skip_14d', label: 'No weight logged in 8 days', contribution: 0.05 },
           ],
         },
       ],
