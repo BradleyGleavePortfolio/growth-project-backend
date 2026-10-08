@@ -34,6 +34,9 @@ import { AiGatewayConfig } from '../src/ai/gateway/ai-gateway.config';
 import { AiRedactionService } from '../src/ai/gateway/ai-redaction.service';
 import { AiProviderRegistry } from '../src/ai/gateway/providers/provider-registry';
 import { StubProviderAdapter } from '../src/ai/gateway/providers/stub-provider.adapter';
+import { AnthropicProviderAdapter } from '../src/ai/gateway/providers/anthropic-provider.adapter';
+import type { AnthropicAdapter } from '../src/ai/adapters/anthropic.adapter';
+import type { CoachAIStateService } from '../src/ai/coach/coach-ai-state.service';
 import { fakeOf, grantAllEgress } from './ai-egress/ai-egress.fakes';
 
 const COACH = 'coach-meter';
@@ -307,5 +310,50 @@ describe('CREDIT-METER-130 — the pool rounds once per period', () => {
     ).resolves.toMatchObject({ recorded: true });
     expect(p.row.actual_used_micro_cents).toBe(BigInt(2_100_000));
     expect(p.row.actual_used_cents).toBe(3);
+  });
+});
+
+describe('CREDIT-METER-130 U3 — the gateway never takes its 5-cent no-token-counts default', () => {
+  it('a real call always reports both counts (0 / 0 when the SDK omits usage), so it keeps the 1-cent floor', async () => {
+    const env = { ...process.env };
+    process.env.AI_GATEWAY_ENABLED = 'true';
+    process.env.AI_GATEWAY_PROVIDER = 'anthropic';
+    process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
+    process.env.AI_GATEWAY_CAPABILITIES = 'client_chat';
+    try {
+      const p = pool();
+      // AnthropicAdapter.complete's result when the SDK response has no usage
+      // (src/ai/adapters/anthropic.adapter.ts:132-133 default both to 0).
+      const complete = jest.fn(async () => ({
+        text: 'ok',
+        tokensIn: 0,
+        tokensOut: 0,
+        modelUsed: COACH_AI_MODEL,
+        latencyMs: 1,
+      }));
+      const real = new AnthropicProviderAdapter(
+        fakeOf<AnthropicAdapter>({ complete }),
+        fakeOf<CoachAIStateService>({ isReady: () => true }),
+      );
+      const svc = new AiGatewayService(
+        p.prisma,
+        new AiGatewayConfig(),
+        new AiRedactionService(),
+        new AiProviderRegistry(new StubProviderAdapter(), real),
+        grantAllEgress(),
+        p.budget,
+      );
+      await svc.invoke({
+        capability: 'client_chat',
+        requester: { id: COACH, role: 'coach' },
+        userMessage: 'How is the week going?',
+        systemPrompt: 'x',
+      });
+      expect(complete).toHaveBeenCalledTimes(1);
+      expect(p.row.actual_used_micro_cents).toBe(BigInt(1_000_000));
+      expect(p.row.actual_used_cents).toBe(1);
+    } finally {
+      process.env = env;
+    }
   });
 });
