@@ -503,6 +503,10 @@ export const SCREEN_LABELS: readonly ScreenLabel[] = [
         label: 'Soy',
       },
       {
+        value: 'sesame',
+        label: 'Sesame',
+      },
+      {
         value: 'pork',
         label: 'Pork',
       },

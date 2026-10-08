@@ -286,6 +286,7 @@ describe('the one allergen list and the saved-answer lookup', () => {
     [['Shellfish Allergy', 'Egg Allergy'], ['eggs', 'shellfish']],
     [['Dairy Allergy', 'Gluten-Free'], ['dairy', 'gluten']],
     [['No Fish'], ['fish']],
+    [['Soy', 'Sesame'], ['soy', 'sesame']],
     [['nuts', 'dairy', 'gluten', 'shellfish', 'eggs', 'soy'], ['peanuts', 'tree_nuts', 'dairy', 'eggs', 'shellfish', 'soy', 'gluten']],
     [['  GLUTEN free ', 'tree_nuts', 'Sesame'], ['tree_nuts', 'sesame', 'gluten']],
   ])('maps the saved answers %j to %j (both app vocabularies, exact lookup)', (saved, codes) => {
@@ -368,6 +369,23 @@ describe('a client library hides a recipe only on a declared match', () => {
     expect(titles(await slug.recipes.list(slug.client))).toEqual(
       titles(await chip.recipes.list(chip.client)),
     );
+  });
+
+  // ALLERGY-CHOICES-131: the app saves its Soy and Sesame chips as these exact strings.
+  it.each([
+    [['Soy'], 'Miso tofu', ['soy']],
+    [['Sesame'], 'Sesame noodles', ['sesame']],
+    [['sesame'], 'Tahini bowl', ['sesame']],
+  ])('the saved answer %j hides a shared recipe declaring it', async (saved, title, allergens) => {
+    const shown = build(null);
+    shown.db.addRecipe({ title, created_by_id: 'coach-a', allergens, allergens_declared: true });
+    expect(titles(await shown.recipes.list(shown.client))).toContain(title);
+
+    const { recipes, client, db } = build(saved);
+    db.addRecipe({ title, created_by_id: 'coach-a', allergens, allergens_declared: true });
+    const seen = titles(await recipes.list(client));
+    expect(seen).not.toContain(title);
+    expect(seen).toContain('Satay chicken');
   });
 
   it('only the matching allergen hides: a gluten-free client loses the pesto, keeps the satay', async () => {
