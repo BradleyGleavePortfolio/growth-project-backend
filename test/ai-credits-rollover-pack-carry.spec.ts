@@ -324,6 +324,24 @@ describe('B-870-SOL-F-130-1 — a refund after a rollover takes back only what i
     expect(rows[0]).toMatchObject({ total_pack_actual_cents: 800, pack_displayed_cents: 2500, pack_paid_cents: 2500 });
   });
 
+  // B-870-SOL-F-131-1 (LN-SOL-F-131 @ 58490669, FIX-OPUS-131): in the same month the pack fields are
+  // still whole and this month's spend sits in actual_used_cents, so the refund first takes off what
+  // was spent from packs this month. The older pack's spent 300 stay spent; the newer pack keeps 800 / 2500.
+  it('B-870-SOL-F-131-1: same month, older pack partly spent, newer pack bought: refunding the older one leaves the newer whole', async () => {
+    const two = { pack_paid_cents: 5000, pack_displayed_cents: 5000, total_pack_actual_cents: 1600 };
+    const open = closedPeriod({ ...two, actual_used_cents: 4300, period_end: new Date(Date.now() + 10 * DAY) });
+    const { svc, rows } = await setupWithPacks(open, [pack('p_old', 8), pack('p_new', 2)]);
+
+    await expect(refund(svc, 'p_old')).resolves.toMatchObject({ refunded: true });
+
+    // Only the 500 actual / 1562 displayed left of the older pack go.
+    expect(rows[0]).toMatchObject({ total_pack_actual_cents: 1100, pack_displayed_cents: 3438, pack_paid_cents: 2500 });
+    const { budget } = await svc.canCharge(COACH, 0);
+    expect(budget.total_actual_available_cents - budget.actual_used_cents).toBe(800);
+    const dto = await svc.getBudgetDto(COACH);
+    expect(dto).toMatchObject({ remaining_displayed_cents: 2500 });
+  });
+
   it('before any rollover an unused pack is refunded in full, as before', async () => {
     const open = closedPeriod({ ...PACK_25, period_end: new Date(Date.now() + 10 * DAY) });
     const { svc, rows } = await setupWithPacks(open, [pack('p_a', 2)]);

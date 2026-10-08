@@ -462,14 +462,31 @@ export class CoachAIBudgetService {
       const [budget, otherPacks] = await Promise.all([
         tx.coachAIBudget.findUnique({
           where: { id: purchase.budget_id },
-          select: { pack_displayed_cents: true, total_pack_actual_cents: true },
+          select: {
+            pack_displayed_cents: true,
+            total_pack_actual_cents: true,
+            actual_used_cents: true,
+            base_actual_cents: true,
+            base_displayed_cents: true,
+            value_multiplier: true,
+          },
         }),
         tx.coachCreditPackPurchase.findMany({
           where: { budget_id: purchase.budget_id, status: 'paid', id: { not: purchase.id } },
           select: { id: true, applied_at: true, created_at: true, actual_credit_cents: true, displayed_credit_cents: true },
         }),
       ]);
-      const left = packCreditLeft(purchase, otherPacks, budget);
+      // B-870-SOL-F-131-1: within the month the pack fields are still whole
+      // and this month's spend sits in actual_used_cents, so take off what
+      // was spent from packs this month first (packSpentAtClose, the same
+      // sum the rollover uses). Spent credit stays spent; a newer pack keeps
+      // all of its credit.
+      const spent = budget ? packSpentAtClose(budget) : { actualCents: 0, displayedCents: 0 };
+      const unspent = budget && {
+        pack_displayed_cents: budget.pack_displayed_cents - spent.displayedCents,
+        total_pack_actual_cents: budget.total_pack_actual_cents - spent.actualCents,
+      };
+      const left = packCreditLeft(purchase, otherPacks, unspent);
       await tx.coachAIBudget.update({
         where: { id: purchase.budget_id },
         data: {
