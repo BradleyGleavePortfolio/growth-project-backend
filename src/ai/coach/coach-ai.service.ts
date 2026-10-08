@@ -31,6 +31,48 @@ import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone
 import { aiProgramStartIso } from './ai-program-start';
 import { WorkoutContextService, WorkoutContextV2 } from '../context/workout-context.service';
 import { applyProgramSafety, toInjuryAreas } from '../gateway/workout-builder/training-substitutions';
+import { ConsentScope, ConsentService } from '../../consent/consent.service';
+import { coachSharingCheck } from '../../consent/coach-sharing-gate';
+
+/** COACH-AI-GATE-130 — which of the client's logs they share with the coach (Settings > Privacy > Coach sharing). */
+export interface CoachSharing { weighIns: boolean; food: boolean; workouts: boolean; checkIns: boolean }
+
+/**
+ * COACH-AI-GATE-130 — the snapshot a Coach AI draft may send and store: each log the client keeps from the
+ * coach is emptied. Profile goals, diet, equipment and injuries stay (no switch covers them; the safety pass needs injuries).
+ */
+export function coachScopedContext(ctx: ClientContext, s: CoachSharing): ClientContext {
+  if (s.weighIns && s.food && s.workouts && s.checkIns) return ctx;
+  const noFood = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, remaining_calories: null, remaining_protein_g: null, pct_calories: null };
+  return {
+    ...ctx,
+    profile: s.weighIns ? ctx.profile : { ...ctx.profile, height_cm: null, current_weight_lbs: null, target_weight_lbs: null },
+    weight_trend_90d: s.weighIns ? ctx.weight_trend_90d : [],
+    today: s.food ? ctx.today : { date: ctx.today.date, ...noFood },
+    food_log_totals_last_7d: s.food ? ctx.food_log_totals_last_7d : { days_logged: 0, avg_calories: 0, avg_protein_g: 0, avg_carbs_g: 0, avg_fat_g: 0 },
+    recent_workout_assignments: s.workouts ? ctx.recent_workout_assignments : [],
+    recent_check_ins: s.checkIns ? ctx.recent_check_ins : [],
+  };
+}
+
+/** COACH-AI-GATE-130 — the same for the workout context: logged sets and adherence (Workouts), check-ins. */
+export function coachScopedWorkoutContext(w: WorkoutContextV2 | null, s: CoachSharing): WorkoutContextV2 | null {
+  const c = w?.client;
+  if (!w || !c || (s.workouts && s.checkIns)) return w;
+  const { history_6w, adherence_pct_4w, check_ins } = c;
+  return {
+    ...w,
+    client: { ...c, ...(s.workouts ? { history_6w, adherence_pct_4w } : { history_6w: [], adherence_pct_4w: null }), check_ins: s.checkIns ? check_ins : [] },
+  };
+}
+
+/** COACH-AI-GATE-130 — tells the model the empty fields are private, not missing. Empty when all is shared. */
+export function notSharedNote(s: CoachSharing): string {
+  const labels = [s.weighIns ? '' : 'weigh-ins', s.food ? '' : 'food logs', s.workouts ? '' : 'workout logs', s.checkIns ? '' : 'check-ins and habits'];
+  const list = labels.filter(Boolean).join(', ');
+  if (!list) return '';
+  return `\n\nNOT_SHARED_WITH_COACH: ${list}. The client keeps these from the coach, so those fields are empty because they are not shared, not because nothing was logged. Do not describe, estimate or guess them.`;
+}
 
 // Coach AI v1 — orchestration service.
 //
@@ -67,7 +109,18 @@ export class CoachAIService {
     @Optional() private readonly budget?: CoachAIBudgetService,
     // B-AIB3-126 — per-client workout context v2 (history, adherence, check-ins, recovery, coach style).
     @Optional() private readonly workoutContext?: WorkoutContextService,
+    // COACH-AI-GATE-130 — Coach sharing switches; no @Optional() (see coach-sharing-gate.ts).
+    private readonly consent?: ConsentService,
   ) {}
+
+  /** COACH-AI-GATE-130 — the client's Coach sharing switches for this coach (owner passes). */
+  private async coachSharing(coachId: string, clientId: string): Promise<CoachSharing> {
+    const sharing = await coachSharingCheck(this.consent, this.prisma, coachId);
+    const on = async (scope: string) => (await sharing(scope, [clientId])).length === 1;
+    const [weighIns, food, workouts, checkIns] = await Promise.all([on(ConsentScope.FITNESS_BODY_METRICS),
+      on(ConsentScope.FITNESS_FOOD_MACROS), on(ConsentScope.FITNESS_WORKOUTS), on(ConsentScope.FITNESS_HABITS_PROGRESS)]);
+    return { weighIns, food, workouts, checkIns };
+  }
 
   /**
    * B-AIB1-125 — the same pre-call gate AiGatewayService.invoke runs: refuse
@@ -183,8 +236,9 @@ export class CoachAIService {
     this.assertReady();
     await this.assertCoachOwnsClient(coachId, input.clientId);
     const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.WORKOUT_PROGRAM);
-    const ctx = await this.ctxSvc.build(input.clientId);
-    const workoutCtx = await this.loadWorkoutContext(coachId, input.clientId);
+    const sharing = await this.coachSharing(coachId, input.clientId);
+    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId), sharing);
+    const workoutCtx = coachScopedWorkoutContext(await this.loadWorkoutContext(coachId, input.clientId), sharing);
     const injuries = workoutCtx?.client?.injuries ?? toInjuryAreas(ctx.profile?.injuries);
     const prompt = WorkoutProgramPrompt;
     const result = await this.anthropic.completeStructured<WorkoutProgramPayload>(
@@ -197,7 +251,7 @@ export class CoachAIService {
           notes: input.notes,
           injuryAreas: injuries,
           workoutContext: workoutCtx ?? undefined,
-        }),
+        }) + notSharedNote(sharing),
       },
       prompt.validate,
       {
@@ -248,12 +302,13 @@ export class CoachAIService {
     this.assertReady();
     await this.assertCoachOwnsClient(coachId, input.clientId);
     const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.MEAL_PLAN);
-    const ctx = await this.ctxSvc.build(input.clientId);
+    const sharing = await this.coachSharing(coachId, input.clientId);
+    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId), sharing);
     const prompt = MealPlanPrompt;
     const result = await this.anthropic.completeStructured<MealPlanPayload>(
       {
         system: prompt.system,
-        user: prompt.buildUser(ctx, { days: input.days, notes: input.notes }),
+        user: prompt.buildUser(ctx, { days: input.days, notes: input.notes }) + notSharedNote(sharing),
       },
       prompt.validate,
       {
@@ -300,12 +355,13 @@ export class CoachAIService {
     this.assertReady();
     await this.assertCoachOwnsClient(coachId, input.clientId);
     const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.INSIGHT);
-    const ctx = await this.ctxSvc.build(input.clientId);
+    const sharing = await this.coachSharing(coachId, input.clientId);
+    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId), sharing);
     const prompt = ClientInsightPrompt;
     const result = await this.anthropic.completeStructured<ClientInsightPayload>(
       {
         system: prompt.system,
-        user: prompt.buildUser(ctx, { windowDays: input.windowDays ?? 7 }),
+        user: prompt.buildUser(ctx, { windowDays: input.windowDays ?? 7 }) + notSharedNote(sharing),
       },
       prompt.validate,
       {

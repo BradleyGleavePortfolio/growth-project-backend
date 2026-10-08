@@ -37,6 +37,8 @@ import {
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import { describeFailure } from '../../observability/log-pii';
 import { usableTimeZone } from '../../notifications/local-time';
+import { ConsentScope, ConsentService } from '../../consent/consent.service';
+import { coachSharingCheck } from '../../consent/coach-sharing-gate';
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -311,11 +313,12 @@ function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
     ``,
     `--- CLIENT DATA (own direct clients) ---`,
     `Roster size: ${ctx.roster_size} active clients`,
-    `Check-ins received today: ${ctx.checked_in_today} of ${ctx.roster_size}`,
+    `Check-ins received today: ${ctx.checked_in_today} of ${checkInsShared(ctx)}`,
     `Missing check-ins: ${ctx.missed_checkin}`,
     `Workouts completed today: ${ctx.workouts_completed_today}`,
     `Unread messages: ${ctx.unread_messages}`,
     `Weight log flags (large delta): ${ctx.weight_logs_flagged}`,
+    ...(ctx.not_shared ? [`Not shared with the coach, so left out of the counts above: check-ins from ${ctx.not_shared.check_ins}, weigh-ins from ${ctx.not_shared.weigh_ins}, workouts from ${ctx.not_shared.workouts} of the ${ctx.roster_size} clients. Do not state roster-wide totals for these.`] : []),
     ``,
     `--- PAYMENTS / TGP HANDLING ---`,
     `Payments received since midnight: ${ctx.paid_today_count} payment(s), ${formatUsd(ctx.revenue_today_cents)} total`,
@@ -413,6 +416,11 @@ export function buildFallbackNarrative(
   return narrative;
 }
 
+// COACH-AI-GATE-130: how many roster clients share check-ins with the coach.
+function checkInsShared(ctx: BriefContext): number {
+  return ctx.roster_size - (ctx.not_shared?.check_ins ?? 0);
+}
+
 function buildSoloOrSubCoachFallbackSentences(ctx: BriefContext): string[] {
   const sentences: string[] = [`Good morning, ${ctx.coach_first_name}.`];
 
@@ -442,7 +450,15 @@ function buildSoloOrSubCoachFallbackSentences(ctx: BriefContext): string[] {
     ctx.workouts_completed_today > 0
       ? `, and ${ctx.workouts_completed_today} ${plural(ctx.workouts_completed_today, 'workout was', 'workouts were')} completed`
       : '';
-  if (ctx.checked_in_today > 0) {
+  // COACH-AI-GATE-130: counted only over the clients who share check-ins.
+  const shared = checkInsShared(ctx);
+  const who = `${shared} ${plural(shared, 'client', 'clients')} sharing check-ins`;
+  if (shared === 0) {
+    if (workouts) sentences.push(`${ctx.workouts_completed_today} ${plural(ctx.workouts_completed_today, 'workout was', 'workouts were')} completed today.`);
+  } else if (shared < ctx.roster_size) {
+    const checked = ctx.checked_in_today;
+    sentences.push(checked > 0 ? `${checked} of ${who} ${plural(checked, 'has', 'have')} checked in today${workouts}.` : `No check-ins yet today from the ${who}${workouts}.`);
+  } else if (ctx.checked_in_today > 0) {
     sentences.push(
       `${ctx.checked_in_today} of ${ctx.roster_size} ${plural(ctx.roster_size, 'client has', 'clients have')} checked in today${workouts}.`,
     );
@@ -734,6 +750,8 @@ export class CoachBriefService {
     @Optional()
     @Inject(BRIEF_ANTHROPIC_CLIENT_TOKEN)
     injectedClient?: AnthropicHandle,
+    // COACH-AI-GATE-130 — Coach sharing switches; no @Optional() (see coach-sharing-gate.ts).
+    private readonly consent?: ConsentService,
   ) {
     if (injectedClient) this.anthropic = injectedClient;
   }
@@ -891,6 +909,15 @@ export class CoachBriefService {
       };
     }
 
+    // COACH-AI-GATE-130 — each log read below needs that client's Coach sharing switch (check-ins,
+    // weigh-ins, workouts); the AI context is built here too, so it is gated as well.
+    const sharing = await coachSharingCheck(this.consent, this.prisma, coachId);
+    const [checkInIds, weighInIds, workoutIds] = await Promise.all([
+      sharing(ConsentScope.FITNESS_HABITS_PROGRESS, clientIds),
+      sharing(ConsentScope.FITNESS_BODY_METRICS, clientIds),
+      sharing(ConsentScope.FITNESS_WORKOUTS, clientIds),
+    ]);
+
     const [
       checkedInToday,
       workoutsCompletedToday,
@@ -903,14 +930,14 @@ export class CoachBriefService {
       missingCheckinRaw,
     ] = await Promise.all([
       this.prisma.checkIn.findMany({
-        where: { user_id: { in: clientIds }, date: briefDateOnly },
+        where: { user_id: { in: checkInIds }, date: briefDateOnly },
         select: { user_id: true },
         distinct: ['user_id'],
       }),
       // Workouts completed today (reported only; S-BRIEF-124 B-398-1).
       this.prisma.clientWorkoutAssignment.count({
         where: {
-          client_id: { in: clientIds },
+          client_id: { in: workoutIds },
           completed_at: { gte: briefDateStart, lte: briefDateEnd },
           // Sub-coach mode: only workouts the sub-coach assigned.
           ...(briefMode === 'sub_coach' ? { assigned_by_coach_id: coachId } : {}),
@@ -960,7 +987,7 @@ export class CoachBriefService {
               "weight_lbs",
               ROW_NUMBER() OVER (PARTITION BY "user_id" ORDER BY "logged_at" DESC) AS rn
             FROM "WeightLog"
-            WHERE "user_id" = ANY(${clientIds}::text[])
+            WHERE "user_id" = ANY(${weighInIds}::text[])
           )
           SELECT
             r1."user_id"      AS user_id,
@@ -1006,7 +1033,7 @@ export class CoachBriefService {
       }),
       this.prisma.user.findMany({
         where: {
-          id: { in: clientIds },
+          id: { in: checkInIds },
           check_ins: { none: { date: briefDateOnly } },
         },
         select: { id: true, name: true },
@@ -1044,7 +1071,7 @@ export class CoachBriefService {
       brief_mode: 'solo_coach',
       date: briefDate,
       checked_in_today: checkedInCount,
-      missed_checkin: Math.max(0, clientIds.length - checkedInCount),
+      missed_checkin: Math.max(0, checkInIds.length - checkedInCount),
       workouts_completed_today: workoutsCompletedToday,
       workouts_approved_today: workoutsApprovedToday,
       paid_today_count: paidTodayAgg._count._all,
@@ -1057,6 +1084,9 @@ export class CoachBriefService {
       coach_first_name: coachFirstName,
       roster_size: clientIds.length,
     };
+    const n = clientIds.length;
+    const notShared = { check_ins: n - checkInIds.length, weigh_ins: n - weighInIds.length, workouts: n - workoutIds.length };
+    if (notShared.check_ins || notShared.weigh_ins || notShared.workouts) context.not_shared = notShared;
 
     return {
       context,

@@ -47,6 +47,9 @@ export interface BriefContext {
   coach_name: string;
   coach_first_name: string;
   roster_size: number;
+  // COACH-AI-GATE-130 — roster clients whose Coach sharing switch is off for
+  // that log, so left out of the counts above. Absent when everyone shares.
+  not_shared?: { check_ins: number; weigh_ins: number; workouts: number };
 }
 
 export interface SubCoachHighlight {

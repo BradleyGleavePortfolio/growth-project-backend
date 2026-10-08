@@ -21,6 +21,8 @@ import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AiEgressService } from '../ai-egress/ai-egress.service';
+import { ConsentScope, ConsentService } from '../consent/consent.service';
+import { coachSharingCheck } from '../consent/coach-sharing-gate';
 import {
   WorkoutBuilderService,
   type AssignmentExerciseRow,
@@ -134,6 +136,8 @@ export class RomanAdjustService {
     private readonly prisma: PrismaService,
     private readonly workoutBuilder: WorkoutBuilderService,
     private readonly egress: AiEgressService,
+    // COACH-AI-GATE-130 — Coach sharing switches; no @Optional() (see coach-sharing-gate.ts).
+    private readonly consent?: ConsentService,
   ) {}
 
   // ─── list + scan ──────────────────────────────────────────────────────────
@@ -222,6 +226,9 @@ export class RomanAdjustService {
     }
     if (nextByClient.size === 0) return 0;
     const candidates = [...nextByClient.keys()];
+    // COACH-AI-GATE-130 — effort ratings are workout logs: only for clients who share Workouts (wearables have no switch).
+    const sharing = await coachSharingCheck(this.consent, this.prisma, coachId);
+    const workoutSharers = await sharing(ConsentScope.FITNESS_WORKOUTS, candidates);
 
     const [samples, completions] = await Promise.all([
       this.prisma.wearableSample.findMany({
@@ -233,7 +240,7 @@ export class RomanAdjustService {
         select: { user_id: true, metric: true, value: true, start_at: true, end_at: true },
       }),
       this.prisma.clientWorkoutAssignment.findMany({
-        where: { client_id: { in: candidates }, completed_at: { gte: new Date(now.getTime() - 36 * 86_400_000) } },
+        where: { client_id: { in: workoutSharers }, completed_at: { gte: new Date(now.getTime() - 36 * 86_400_000) } },
         select: { client_id: true, completed_at: true, post_rpe: true },
       }),
     ]);
