@@ -20,6 +20,18 @@ type CheckInRow = Prisma.CheckInGetPayload<Record<string, never>>;
 // UX-COACHLOOKUP-124: user columns the roster never sends to the coach app.
 type RosterHiddenField = 'deletion_token_hash' | 'deletion_token_expires_at' | 'expo_push_token';
 
+// COACH-ROW-SCRUB-130 (AUD-FIN-FOOD-129 B1): the only client columns the
+// timeline, archive and unarchive responses carry. Never the push token, the
+// deletion token or the auth id.
+const COACH_CLIENT_ROW = { id: true, name: true, archived_at: true } as const satisfies Prisma.UserSelect;
+type CoachClientRow = Prisma.UserGetPayload<{ select: typeof COACH_CLIENT_ROW }>;
+
+// Copies only those columns, so a response stays trimmed even if a query
+// later stops selecting.
+function coachClientRow(row: CoachClientRow): CoachClientRow {
+  return { id: row.id, name: row.name, archived_at: row.archived_at };
+}
+
 // UX-COACHLOOKUP-124: per-row at-a-glance block on GET /coach/clients. Days
 // are YYYY-MM-DD (the logged day). A slice the client has not shared with
 // this coach is null; `shared` is false when no fitness slice is shared.
@@ -331,16 +343,18 @@ export class CoachService {
     const scope = await this.scopeClientsBy(coachId, callerRole);
     const client = await this.prisma.user.findFirst({
       where: { id: clientId, ...scope },
+      select: { ...COACH_CLIENT_ROW, coach_id: true },
     });
     if (!client) throw new Error('Client not found');
     if (client.archived_at) {
       // Idempotent — re-archive is a no-op and skips the audit row to
       // avoid polluting the log on a double-tap.
-      return client;
+      return coachClientRow(client);
     }
     const updated = await this.prisma.user.update({
       where: { id: clientId },
       data: { archived_at: new Date() },
+      select: COACH_CLIENT_ROW,
     });
     await this.audit.write({
       action: AuditAction.COACH_CLIENT_ARCHIVED,
@@ -353,7 +367,7 @@ export class CoachService {
       ip: ctx.ip ?? null,
       userAgent: ctx.userAgent ?? null,
     });
-    return updated;
+    return coachClientRow(updated);
   }
 
   async unarchiveClient(
@@ -365,15 +379,17 @@ export class CoachService {
     const scope = await this.scopeClientsBy(coachId, callerRole);
     const client = await this.prisma.user.findFirst({
       where: { id: clientId, ...scope },
+      select: { ...COACH_CLIENT_ROW, coach_id: true },
     });
     if (!client) throw new Error('Client not found');
     if (!client.archived_at) {
       // Idempotent — already active, skip audit.
-      return client;
+      return coachClientRow(client);
     }
     const updated = await this.prisma.user.update({
       where: { id: clientId },
       data: { archived_at: null },
+      select: COACH_CLIENT_ROW,
     });
     await this.audit.write({
       action: AuditAction.COACH_CLIENT_UNARCHIVED,
@@ -386,7 +402,7 @@ export class CoachService {
       ip: ctx.ip ?? null,
       userAgent: ctx.userAgent ?? null,
     });
-    return updated;
+    return coachClientRow(updated);
   }
 
   // Audit-1 Fix #7: each of the 4 parallel findMany slices is now capped
@@ -410,6 +426,7 @@ export class CoachService {
     const scope = await this.scopeClientsBy(coachId, callerRole);
     const client = await this.prisma.user.findFirst({
       where: { id: clientId, ...scope },
+      select: COACH_CLIENT_ROW,
     });
     if (!client) return { error: 'Client not found' };
 
@@ -491,7 +508,7 @@ export class CoachService {
     ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
     return {
-      client,
+      client: coachClientRow(client),
       meals,
       workouts,
       weights,
