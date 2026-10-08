@@ -1,8 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { PtmService } from '../ptm/ptm.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
-import { LogWeightDto } from './weight.dto';
+import { LogWeightDto, UpdateWeightDto } from './weight.dto';
+
+const WEIGH_IN_NOT_FOUND = 'Weigh-in not found.';
 
 @Injectable()
 export class WeightService {
@@ -36,6 +38,28 @@ export class WeightService {
     // M2 — bust AI context cache so next chat sees the new weight.
     this.aiContext.invalidateForUser(userId);
     return created;
+  }
+
+  // Edit and delete write with `where: { id, user_id }`: a weigh-in that is not
+  // the caller's matches no row, so it answers 404 and is never changed.
+  async updateWeight(userId: string, id: string, data: UpdateWeightDto) {
+    if (data.weight_lbs === undefined && data.notes === undefined) {
+      throw new BadRequestException('Send weight_lbs or notes to change a weigh-in.');
+    }
+    const { count } = await this.prisma.weightLog.updateMany({
+      where: { id, user_id: userId },
+      data: { weight_lbs: data.weight_lbs, notes: data.notes },
+    });
+    if (count === 0) throw new NotFoundException(WEIGH_IN_NOT_FOUND);
+    // Bust the AI context cache so the next chat sees the corrected weight.
+    this.aiContext.invalidateForUser(userId);
+    return this.prisma.weightLog.findFirst({ where: { id, user_id: userId } });
+  }
+
+  async deleteWeight(userId: string, id: string): Promise<void> {
+    const { count } = await this.prisma.weightLog.deleteMany({ where: { id, user_id: userId } });
+    if (count === 0) throw new NotFoundException(WEIGH_IN_NOT_FOUND);
+    this.aiContext.invalidateForUser(userId);
   }
 
   async getHistory(userId: string, days = 30) {

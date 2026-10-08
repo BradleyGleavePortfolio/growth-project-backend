@@ -8,7 +8,17 @@
 //   5. Score clamping — raw values above the denominator cap at 1.0.
 //   6. Kill switch — LEADERBOARD_ENABLED=off returns empty.
 
-import { LeaderboardService } from '../src/leaderboard/leaderboard.service';
+import { UnprocessableEntityException } from '@nestjs/common';
+import { LeaderboardService, LEADERBOARD_NAME_REJECTED } from '../src/leaderboard/leaderboard.service';
+
+async function rejection(p: Promise<unknown>): Promise<unknown> {
+  try {
+    await p;
+  } catch (e) {
+    return e;
+  }
+  throw new Error('expected a rejection');
+}
 
 // ─── Prisma fake ──────────────────────────────────────────────────────────────
 
@@ -292,6 +302,36 @@ describe('LeaderboardService', () => {
       );
     });
 
+    // FWC-SAFE-128 U10: a chosen name is shown to every opted-in peer, so it
+    // passes the same content filter as every community text write.
+    it('refuses a display name the community content filter blocks (422) and writes nothing', async () => {
+      const user = { ...USER_PERFECT };
+      const prisma = buildPrisma([user], []);
+      const svc = new LeaderboardService(prisma);
+      const err = await rejection(svc.setOptIn(user.id, true, 'go die'));
+      expect(err).toBeInstanceOf(UnprocessableEntityException);
+      expect((err as UnprocessableEntityException).getResponse()).toEqual(LEADERBOARD_NAME_REJECTED);
+      expect(LEADERBOARD_NAME_REJECTED).toEqual({
+        error: 'content_rejected',
+        code: 'community.content.rejected',
+        message:
+          'This display name was not saved because it appears to contain abusive or explicit language. Choose another name.',
+      });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('opting out always works, whatever name is passed', async () => {
+      const user = { ...USER_PERFECT };
+      const prisma = buildPrisma([user], []);
+      const svc = new LeaderboardService(prisma);
+      await svc.setOptIn(user.id, false, 'go die');
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { show_on_leaderboard: false, leaderboard_display_name: null },
+        }),
+      );
+    });
+
     it('clears displayName on opt-out regardless of passed value', async () => {
       const user = { ...USER_PERFECT };
       const prisma = buildPrisma([user], []);
@@ -330,6 +370,17 @@ describe('LeaderboardService', () => {
       const { entries } = await svc.getLeaderboard(USER_PERFECT.id);
       const perfectEntry = entries.find((e) => e.userId === USER_PERFECT.id)!;
       expect(perfectEntry.displayName).toBe('Amara O.');
+    });
+
+    it('never shows a stored display name the filter blocks; derives "{firstName} {lastInitial}." instead', async () => {
+      const saved = { ...USER_PARTIAL, leaderboard_display_name: 'kys' };
+      const allSignals = [
+        ...buildPerfectSignals(USER_PERFECT.id),
+        ...buildPartialSignals(saved.id),
+      ];
+      const svc = new LeaderboardService(buildPrisma([USER_PERFECT, saved], allSignals));
+      const { entries } = await svc.getLeaderboard(USER_PERFECT.id);
+      expect(entries.find((e) => e.userId === saved.id)?.displayName).toBe('James W.');
     });
   });
 });

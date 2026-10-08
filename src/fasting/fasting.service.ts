@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
@@ -57,5 +57,18 @@ export class FastingService {
       orderBy: { start_time: 'desc' },
       take: limit,
     });
+  }
+
+  // U10: delete one of the caller's own fasts (ended, or the one in progress
+  // when it was started by mistake). The owner is part of the WHERE, so
+  // another user's id (or a missing one) deletes nothing and gets the same 404.
+  async deleteFast(userId: string, id: string): Promise<{ id: string; deleted: true }> {
+    const { count } = await this.prisma.fastingWindow.deleteMany({
+      where: { id, user_id: userId },
+    });
+    if (count === 0) throw new NotFoundException('Fast not found');
+    // M2 — bust AI context cache so the next chat no longer sees the removed fast.
+    this.aiContext.invalidateForUser(userId);
+    return { id, deleted: true };
   }
 }

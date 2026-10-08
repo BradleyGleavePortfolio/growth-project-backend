@@ -1,5 +1,6 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { CoachController } from './coach.controller';
+import { ClientGuidelinesController } from './client-guidelines.controller';
 import { CoachService } from './coach.service';
 import { CoachEffectivenessService } from './coach-effectiveness.service';
 import { CoachEffectivenessScheduler } from './coach-effectiveness.scheduler';
@@ -72,6 +73,8 @@ import { ChurnInterventionService } from './command-center/churn-intervention.se
   ],
   controllers: [
     CoachController,
+    // GUIDE-READ-128: GET /coach/my-guidelines for the client (student role).
+    ClientGuidelinesController,
     CoachAlertsController,
     CoachOnboardingController,
     // EFF-2 — GET /coach/my-effectiveness (coach-role-guarded)

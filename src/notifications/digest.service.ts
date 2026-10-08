@@ -9,6 +9,15 @@ import { NotificationKind } from './notification-kind';
 import { ProviderFailure, describeFailure, providerErrorCode } from '../observability/log-pii';
 import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sender';
 import { digestLinksFor, type DigestLinks } from './digest-links';
+import {
+  DIGEST_WINDOW_DAYS,
+  checkInDaysInWindow,
+  checkInStreaks,
+  digestWeightUnit,
+  digestWindow,
+  formatWeight,
+  formatWeightChange,
+} from './digest-stats';
 
 // Handlebars helper: {{gt a b}} — used in templates for conditional plural.
 Handlebars.registerHelper('gt', (a: number, b: number) => a > b);
@@ -52,9 +61,18 @@ export class DigestService {
   /**
    * Send the daily client digest to all active clients whose prefs allow it.
    * Called by DigestScheduler at CLIENT_DAILY_CRON (default 07:00 UTC).
+   *
+   * CF-NOTIF-DIGEST-128 (owner default): the client DAILY digest is off unless
+   * EMAIL_DIGEST_CLIENT_DAILY_ENABLED is 'on'. The weekly client digest and
+   * both coach digests are unchanged.
    */
   async sendClientDailyDigests(): Promise<void> {
     if (!this._digestEnabled('EMAIL_DIGEST_CLIENT_ENABLED')) return;
+    const daily = this.config.get<string>('EMAIL_DIGEST_CLIENT_DAILY_ENABLED');
+    if ((daily ?? '').trim().toLowerCase() !== 'on') {
+      this.logger.debug('client daily digest off (EMAIL_DIGEST_CLIENT_DAILY_ENABLED is not on)');
+      return;
+    }
 
     const windowDate = this._todayIso();
     const clients = await this._activeClientsWithEmailDigest();
@@ -130,9 +148,11 @@ export class DigestService {
     try {
       const data = await this._buildClientDigestData(client.id, type);
       const templateKey = type === 'weekly' ? 'digest-client-weekly' : 'digest-client';
+      // Only the weekly data carries weekStats (the daily shape types it as undefined).
+      const consistencyPct = data.weekStats?.consistencyPct ?? 0;
       const subject =
         type === 'weekly'
-          ? `Your week in numbers — ${data.weekStats?.consistencyPct ?? 0}% check-in consistency`
+          ? `Your week in numbers — ${consistencyPct}% check-in consistency`
           : `Your daily summary — ${data.date}`;
 
       // B-DIGEST-127: links go to routes this backend serves (never APP_URL).
@@ -144,20 +164,9 @@ export class DigestService {
         currentYear: new Date().getFullYear().toString(),
       }, links.headers);
 
-      // Write an in-app notification row so the inbox shows the digest was sent.
-      await this.notifications.createNotification({
-        user_id: client.id,
-        kind:
-          type === 'weekly'
-            ? NotificationKind.CLIENT_DIGEST
-            : NotificationKind.CLIENT_DIGEST,
-        body:
-          type === 'weekly'
-            ? `Your weekly summary has been sent to ${client.email}.`
-            : `Your daily summary has been sent to ${client.email}.`,
-        channel: 'email',
-      });
-
+      // CF-NOTIF-DIGEST-128 (FW-NOTIF U6): no inbox row for a client digest.
+      // The "has been sent to <email>" row left the bell at 1 after every
+      // send; NotificationDigestLog already records the send.
       await this.notifications.markDigestSent(logId);
     } catch (err) {
       // Any step can fail with text that holds the address, the name or the
@@ -235,63 +244,82 @@ export class DigestService {
 
   // ── Private: data builders ────────────────────────────────────────────────
 
-  private async _buildClientDigestData(userId: string, _type: 'daily' | 'weekly') {
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const sevenDaysAgo = new Date(today);
-    sevenDaysAgo.setDate(today.getDate() - 7);
+  // CF-NOTIF-DIGEST-128 (FW-NOTIF U6): every number is the client's own and
+  // true. The window is the seven complete days before the send day (never "8
+  // of 7"); streaks are consecutive days, and the best streak is the longest
+  // run on record (it was the 7-day count twice); weight is shown in the
+  // profile's unit, and the weekly change runs from the first to the last
+  // weigh-in of the window (it was the first two).
+  private async _buildClientDigestData(
+    userId: string,
+    type: 'daily' | 'weekly',
+    now: Date = new Date(),
+  ) {
+    const { start, end } = digestWindow(now);
 
-    // Check-in streak (last 30 days).
     const checkIns = await this.prisma.checkIn.findMany({
-      where: { user_id: userId, date: { gte: sevenDaysAgo } },
-      orderBy: { date: 'desc' },
-    });
-    const streakDays = checkIns.length;
-
-    // Latest weight log.
-    const latestWeight = await this.prisma.weightLog.findFirst({
       where: { user_id: userId },
+      select: { date: true },
       orderBy: { date: 'desc' },
     });
+    const dates = checkIns.map((c) => c.date);
+    const checkinsCount = checkInDaysInWindow(dates, start, end);
+    const streaks = checkInStreaks(dates, now);
 
     // Coach name (privacy: display name only — never full name without opt-in).
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { coach: { select: { name: true } } },
+      select: { coach: { select: { name: true } }, profile: { select: { weight_unit: true } } },
     });
     const coachName = user?.coach?.name
       ? user.coach.name.split(' ')[0] // First name only for privacy
       : null;
+    const unit = digestWeightUnit(user?.profile?.weight_unit);
 
+    if (type === 'weekly') {
+      const weighIns = await this.prisma.weightLog.findMany({
+        where: { user_id: userId, date: { gte: start, lt: end } },
+        select: { weight_lbs: true },
+        orderBy: [{ date: 'asc' }, { logged_at: 'asc' }],
+      });
+      return {
+        // The header reads "week ending <date>": the last day counted (noon
+        // UTC of that day, so the server's zone cannot move the date).
+        date: this._formatDate(new Date(end.getTime() - 12 * 60 * 60 * 1000)),
+        coachName,
+        weekStats: {
+          checkinsCount,
+          consistencyPct: Math.round((checkinsCount / DIGEST_WINDOW_DAYS) * 100),
+          workoutsCount: await this.prisma.workoutSession.count({
+            where: { user_id: userId, date: { gte: start, lt: end } },
+          }),
+          weightDelta: formatWeightChange(
+            weighIns.map((w) => w.weight_lbs),
+            unit,
+          ),
+        },
+        streaks,
+      };
+    }
+
+    const latestWeight = await this.prisma.weightLog.findFirst({
+      where: { user_id: userId },
+      select: { weight_lbs: true },
+      orderBy: [{ date: 'desc' }, { logged_at: 'desc' }],
+    });
     return {
       date: this._formatDate(now),
       checkins: [
-        { label: 'Check-ins this week', value: `${checkIns.length} of 7` },
-        { label: 'Current streak', value: `${streakDays} day${streakDays !== 1 ? 's' : ''}` },
+        { label: 'Check-ins in the last 7 days', value: `${checkinsCount} of ${DIGEST_WINDOW_DAYS}` },
+        {
+          label: 'Current check-in streak',
+          value: `${streaks.current} day${streaks.current !== 1 ? 's' : ''}`,
+        },
       ],
       weightMetrics: latestWeight
-        ? [{ label: 'Last logged weight', value: `${latestWeight.weight_lbs} lbs` }]
+        ? [{ label: 'Last logged weight', value: formatWeight(latestWeight.weight_lbs, unit) }]
         : [],
-      streakMetrics: [
-        { label: 'This week', value: `${checkIns.length} check-in${checkIns.length !== 1 ? 's' : ''}` },
-      ],
       coachName,
-      weekStats:
-        _type === 'weekly'
-          ? {
-              checkinsCount: checkIns.length,
-              consistencyPct: Math.round((checkIns.length / 7) * 100),
-              workoutsCount: await this._countWorkouts(userId, sevenDaysAgo),
-              weightDelta: await this._weightDelta(userId, sevenDaysAgo),
-            }
-          : undefined,
-      streaks:
-        _type === 'weekly'
-          ? {
-              current: streakDays,
-              best: streakDays, // simplified — full best-streak calc is in PTM module
-            }
-          : undefined,
     };
   }
 
@@ -597,24 +625,6 @@ export class DigestService {
 
   private _formatDate(d: Date): string {
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
-  }
-
-  private async _countWorkouts(userId: string, since: Date): Promise<number> {
-    return this.prisma.workoutSession.count({
-      where: { user_id: userId, date: { gte: since } },
-    });
-  }
-
-  private async _weightDelta(userId: string, since: Date): Promise<string | null> {
-    const logs = await this.prisma.weightLog.findMany({
-      where: { user_id: userId, date: { gte: since } },
-      orderBy: { date: 'asc' },
-      take: 2,
-    });
-    if (logs.length < 2) return null;
-    const delta = logs[logs.length - 1].weight_lbs - logs[0].weight_lbs;
-    const sign = delta > 0 ? '+' : '';
-    return `${sign}${delta.toFixed(1)}`;
   }
 }
 

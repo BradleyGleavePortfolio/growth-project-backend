@@ -154,7 +154,8 @@ describe('C-611-17: DigestService logs the user id, never the address', () => {
     const svc = new DigestService(
       fake<PrismaService>({}),
       fake<NotificationsService>(notifications),
-      config(values),
+      // CF-NOTIF-DIGEST-128: the client daily digest sends only when this is on.
+      config({ EMAIL_DIGEST_CLIENT_DAILY_ENABLED: 'on', ...values }),
     );
     // The two database reads are private; replace them on the instance.
     const internals = fake<{

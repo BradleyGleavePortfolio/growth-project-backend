@@ -1137,6 +1137,13 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Kill switch for the client daily digest email.',
   },
   {
+    name: 'EMAIL_DIGEST_CLIENT_DAILY_ENABLED',
+    tier: 'optional',
+    default: 'off (only "on" sends)',
+    reason:
+      'CF-NOTIF-DIGEST-128 owner default: the client daily digest email stays off; the weekly one is kept.',
+  },
+  {
     name: 'EMAIL_DIGEST_COACH_ENABLED',
     tier: 'optional',
     default: 'on (only "off" disables)',
