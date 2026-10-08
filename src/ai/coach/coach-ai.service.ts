@@ -7,7 +7,7 @@ import {
   Optional,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, type AIDraft } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { AnthropicAdapter } from '../adapters/anthropic.adapter';
 import { ClientContextService } from '../context/client-context.service';
@@ -31,6 +31,56 @@ import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone
 import { aiProgramStartIso } from './ai-program-start';
 import { WorkoutContextService, WorkoutContextV2 } from '../context/workout-context.service';
 import { applyProgramSafety, toInjuryAreas } from '../gateway/workout-builder/training-substitutions';
+import { ConsentScope, ConsentService } from '../../consent/consent.service';
+import { coachSharingCheck } from '../../consent/coach-sharing-gate';
+
+/** B-872-SOL-H-131-1 — the Coach sharing switches a stored weekly insight can hold logs of. */
+const INSIGHT_SHARING_SCOPES: readonly string[] = [
+  ConsentScope.FITNESS_BODY_METRICS,
+  ConsentScope.FITNESS_FOOD_MACROS,
+  ConsentScope.FITNESS_WORKOUTS,
+  ConsentScope.FITNESS_HABITS_PROGRESS,
+];
+
+/** COACH-AI-GATE-130 — which of the client's logs they share with the coach (Settings > Privacy > Coach sharing). */
+export interface CoachSharing { weighIns: boolean; food: boolean; workouts: boolean; checkIns: boolean }
+
+/**
+ * COACH-AI-GATE-130 — the snapshot a Coach AI draft may send and store: each log the client keeps from the
+ * coach is emptied. Profile goals, diet, equipment and injuries stay (no switch covers them; the safety pass needs injuries).
+ */
+export function coachScopedContext(ctx: ClientContext, s: CoachSharing): ClientContext {
+  if (s.weighIns && s.food && s.workouts && s.checkIns) return ctx;
+  const noFood = { calories: 0, protein_g: 0, carbs_g: 0, fat_g: 0, remaining_calories: null, remaining_protein_g: null, pct_calories: null };
+  return {
+    ...ctx,
+    profile: s.weighIns ? ctx.profile : { ...ctx.profile, height_cm: null, current_weight_lbs: null, target_weight_lbs: null },
+    weight_trend_90d: s.weighIns ? ctx.weight_trend_90d : [],
+    today: s.food ? ctx.today : { date: ctx.today.date, ...noFood },
+    food_log_totals_last_7d: s.food ? ctx.food_log_totals_last_7d : { days_logged: 0, avg_calories: 0, avg_protein_g: 0, avg_carbs_g: 0, avg_fat_g: 0 },
+    recent_workout_assignments: s.workouts ? ctx.recent_workout_assignments : [],
+    recent_check_ins: s.checkIns ? ctx.recent_check_ins : [],
+  };
+}
+
+/** COACH-AI-GATE-130 — the same for the workout context: logged sets and adherence (Workouts), check-ins. */
+export function coachScopedWorkoutContext(w: WorkoutContextV2 | null, s: CoachSharing): WorkoutContextV2 | null {
+  const c = w?.client;
+  if (!w || !c || (s.workouts && s.checkIns)) return w;
+  const { history_6w, adherence_pct_4w, check_ins } = c;
+  return {
+    ...w,
+    client: { ...c, ...(s.workouts ? { history_6w, adherence_pct_4w } : { history_6w: [], adherence_pct_4w: null }), check_ins: s.checkIns ? check_ins : [] },
+  };
+}
+
+/** COACH-AI-GATE-130 — tells the model the empty fields are private, not missing. Empty when all is shared. */
+export function notSharedNote(s: CoachSharing): string {
+  const labels = [s.weighIns ? '' : 'weigh-ins', s.food ? '' : 'food logs', s.workouts ? '' : 'workout logs', s.checkIns ? '' : 'check-ins and habits'];
+  const list = labels.filter(Boolean).join(', ');
+  if (!list) return '';
+  return `\n\nNOT_SHARED_WITH_COACH: ${list}. The client keeps these from the coach, so those fields are empty because they are not shared, not because nothing was logged. Do not describe, estimate or guess them.`;
+}
 
 // Coach AI v1 — orchestration service.
 //
@@ -67,7 +117,18 @@ export class CoachAIService {
     @Optional() private readonly budget?: CoachAIBudgetService,
     // B-AIB3-126 — per-client workout context v2 (history, adherence, check-ins, recovery, coach style).
     @Optional() private readonly workoutContext?: WorkoutContextService,
+    // COACH-AI-GATE-130 — Coach sharing switches; no @Optional() (see coach-sharing-gate.ts).
+    private readonly consent?: ConsentService,
   ) {}
+
+  /** COACH-AI-GATE-130 — the client's Coach sharing switches for this coach (owner passes). */
+  private async coachSharing(coachId: string, clientId: string): Promise<CoachSharing> {
+    const sharing = await coachSharingCheck(this.consent, this.prisma, coachId);
+    const on = async (scope: string) => (await sharing(scope, [clientId])).length === 1;
+    const [weighIns, food, workouts, checkIns] = await Promise.all([on(ConsentScope.FITNESS_BODY_METRICS),
+      on(ConsentScope.FITNESS_FOOD_MACROS), on(ConsentScope.FITNESS_WORKOUTS), on(ConsentScope.FITNESS_HABITS_PROGRESS)]);
+    return { weighIns, food, workouts, checkIns };
+  }
 
   /**
    * B-AIB1-125 — the same pre-call gate AiGatewayService.invoke runs: refuse
@@ -184,8 +245,9 @@ export class CoachAIService {
     this.assertReady();
     await this.assertCoachOwnsClient(coachId, input.clientId);
     const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.WORKOUT_PROGRAM);
-    const ctx = await this.ctxSvc.build(input.clientId);
-    const workoutCtx = await this.loadWorkoutContext(coachId, input.clientId);
+    const sharing = await this.coachSharing(coachId, input.clientId);
+    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId), sharing);
+    const workoutCtx = coachScopedWorkoutContext(await this.loadWorkoutContext(coachId, input.clientId), sharing);
     const injuries = workoutCtx?.client?.injuries ?? toInjuryAreas(ctx.profile?.injuries);
     const prompt = WorkoutProgramPrompt;
     const result = await this.anthropic.completeStructured<WorkoutProgramPayload>(
@@ -198,7 +260,7 @@ export class CoachAIService {
           notes: input.notes,
           injuryAreas: injuries,
           workoutContext: workoutCtx ?? undefined,
-        }),
+        }) + notSharedNote(sharing),
       },
       prompt.validate,
       {
@@ -249,12 +311,13 @@ export class CoachAIService {
     this.assertReady();
     await this.assertCoachOwnsClient(coachId, input.clientId);
     const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.MEAL_PLAN);
-    const ctx = await this.ctxSvc.build(input.clientId);
+    const sharing = await this.coachSharing(coachId, input.clientId);
+    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId), sharing);
     const prompt = MealPlanPrompt;
     const result = await this.anthropic.completeStructured<MealPlanPayload>(
       {
         system: prompt.system,
-        user: prompt.buildUser(ctx, { days: input.days, notes: input.notes }),
+        user: prompt.buildUser(ctx, { days: input.days, notes: input.notes }) + notSharedNote(sharing),
       },
       prompt.validate,
       {
@@ -301,12 +364,13 @@ export class CoachAIService {
     this.assertReady();
     await this.assertCoachOwnsClient(coachId, input.clientId);
     const budgetCoachId = await this.assertBudget(coachId, COACH_AI_CAPABILITIES.INSIGHT);
-    const ctx = await this.ctxSvc.build(input.clientId);
+    const sharing = await this.coachSharing(coachId, input.clientId);
+    const ctx = coachScopedContext(await this.ctxSvc.build(input.clientId), sharing);
     const prompt = ClientInsightPrompt;
     const result = await this.anthropic.completeStructured<ClientInsightPayload>(
       {
         system: prompt.system,
-        user: prompt.buildUser(ctx, { windowDays: input.windowDays ?? 7 }),
+        user: prompt.buildUser(ctx, { windowDays: input.windowDays ?? 7 }) + notSharedNote(sharing),
       },
       prompt.validate,
       {
@@ -373,6 +437,28 @@ export class CoachAIService {
   }
 
   async getDraft(coachId: string, draftId: string) {
+    return this.shareSafe(coachId, await this.loadDraft(coachId, draftId));
+  }
+
+  /**
+   * B-872-SOL-H-131-1 — a weekly insight stored before its client turned off one of the four Coach
+   * sharing switches for this coach comes back without its content: it may describe a log the client
+   * now keeps private. A re-grant clears revoked_at, so the insight shows again. The owner account
+   * reads every log; hand-built unit tests without ConsentService keep their all-shared fixtures.
+   */
+  private async shareSafe(coachId: string, draft: AIDraft): Promise<AIDraft> {
+    if (draft.type !== 'INSIGHT' || !this.consent) return draft;
+    const caller = await this.prisma.user.findUnique({ where: { id: coachId }, select: { role: true } });
+    if (caller?.role === 'owner') return draft;
+    const withdrawn = await this.prisma.clientCoachConsent.findFirst({
+      where: { coach_id: coachId, client_id: draft.clientId, scope: { in: [...INSIGHT_SHARING_SCOPES] }, revoked_at: { gt: draft.createdAt } },
+      select: { id: true },
+    });
+    return withdrawn ? { ...draft, generatedPayload: null } : draft;
+  }
+
+  /** The stored draft for this service's own reads (edit, reject, approve); responses go through shareSafe. */
+  private async loadDraft(coachId: string, draftId: string): Promise<AIDraft> {
     const draft = await this.prisma.aIDraft.findUnique({ where: { id: draftId } });
     // Collapse missing vs foreign-owned into a single 404. Returning 403 for
     // foreign-owned IDs let a coach probe which draft IDs exist; the IDs
@@ -385,7 +471,7 @@ export class CoachAIService {
   }
 
   async editDraft(coachId: string, draftId: string, patch: Record<string, unknown>) {
-    const draft = await this.getDraft(coachId, draftId);
+    const draft = await this.loadDraft(coachId, draftId);
     if (draft.status !== 'DRAFT') {
       throw new BadRequestException(`Cannot edit a draft in status=${draft.status}`);
     }
@@ -395,25 +481,25 @@ export class CoachAIService {
         : {}),
       ...patch,
     };
-    return this.prisma.aIDraft.update({
+    return this.shareSafe(coachId, await this.prisma.aIDraft.update({
       where: { id: draftId },
       data: { generatedPayload: merged as unknown as Prisma.InputJsonValue },
-    });
+    }));
   }
 
   async rejectDraft(coachId: string, draftId: string, reason: string) {
-    const draft = await this.getDraft(coachId, draftId);
+    const draft = await this.loadDraft(coachId, draftId);
     if (draft.status !== 'DRAFT') {
       throw new BadRequestException(`Cannot reject a draft in status=${draft.status}`);
     }
-    return this.prisma.aIDraft.update({
+    return this.shareSafe(coachId, await this.prisma.aIDraft.update({
       where: { id: draftId },
       data: { status: 'REJECTED', rejectionReason: reason },
-    });
+    }));
   }
 
   async approveDraft(coachId: string, draftId: string) {
-    const draft = await this.getDraft(coachId, draftId);
+    const draft = await this.loadDraft(coachId, draftId);
     if (draft.type === 'WORKOUT_PROGRAM') {
       return this.approveWorkoutProgram(coachId, draft);
     }
@@ -424,10 +510,10 @@ export class CoachAIService {
     if (draft.type === 'MEAL_PLAN') {
       approvedAsId = await this.materializeMealPlan(coachId, draft);
     }
-    return this.prisma.aIDraft.update({
+    return this.shareSafe(coachId, await this.prisma.aIDraft.update({
       where: { id: draftId },
       data: { status: 'APPROVED', approvedAsId },
-    });
+    }));
   }
 
   /**
@@ -442,7 +528,7 @@ export class CoachAIService {
    */
   private async approveWorkoutProgram(
     coachId: string,
-    draft: Awaited<ReturnType<CoachAIService['getDraft']>>,
+    draft: AIDraft,
   ) {
     const dayCount = this.workoutProgramDays(draft).days.length;
     if (draft.status !== 'DRAFT') return this.replayWorkoutApproval(coachId, draft.id, dayCount);
@@ -493,7 +579,7 @@ export class CoachAIService {
   }
 
   private async replayWorkoutApproval(coachId: string, draftId: string, dayCount: number) {
-    const current = await this.getDraft(coachId, draftId);
+    const current = await this.loadDraft(coachId, draftId);
     if (current.status === 'APPROVED' && current.approvedAsId) {
       return { ...current, assigned_count: dayCount };
     }

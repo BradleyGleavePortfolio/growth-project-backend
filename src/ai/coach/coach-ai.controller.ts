@@ -27,6 +27,13 @@ import {
   RejectDraftDto,
 } from './coach-ai.dto';
 
+// COACH-AI-GATE-130 — a draft response never carries the stored client snapshot (inputContext): the app
+// does not read it, and an older draft can hold logs from before a Coach sharing switch was turned off.
+function withoutSnapshot<T extends { inputContext?: unknown }>(draft: T): Omit<T, 'inputContext'> {
+  const { inputContext: _snapshot, ...rest } = draft;
+  return rest;
+}
+
 // Coach AI v1 — coach-only generation surface. Mounted at /coach/ai/*.
 // Every route is gated by JwtAuthGuard + CoachGuard. Throttles are tight
 // because each generation call costs real money on Anthropic; the boot
@@ -122,7 +129,7 @@ export class CoachAIController {
   @Roles('coach', 'owner')
   @Get('drafts/:draftId')
   async getDraft(@Request() req: AuthedRequest, @Param('draftId') draftId: string) {
-    return this.svc.getDraft(req.user.id, draftId);
+    return withoutSnapshot(await this.svc.getDraft(req.user.id, draftId));
   }
 
   // Audit: write op on a draft; service calls getDraft(coachId, draftId)
@@ -131,7 +138,7 @@ export class CoachAIController {
   @Roles('coach', 'owner')
   @Post('drafts/:draftId/approve')
   async approve(@Request() req: AuthedRequest, @Param('draftId') draftId: string) {
-    return this.svc.approveDraft(req.user.id, draftId);
+    return withoutSnapshot(await this.svc.approveDraft(req.user.id, draftId));
   }
 
   // Audit: write op on a draft; service calls getDraft(coachId, draftId)
@@ -143,7 +150,7 @@ export class CoachAIController {
     @Param('draftId') draftId: string,
     @Body() body: EditDraftDto,
   ) {
-    return this.svc.editDraft(req.user.id, draftId, body.patch || {});
+    return withoutSnapshot(await this.svc.editDraft(req.user.id, draftId, body.patch || {}));
   }
 
   // Audit: write op on a draft; service calls getDraft(coachId, draftId)
@@ -156,6 +163,6 @@ export class CoachAIController {
     @Param('draftId') draftId: string,
     @Body() body: RejectDraftDto,
   ) {
-    return this.svc.rejectDraft(req.user.id, draftId, body.reason);
+    return withoutSnapshot(await this.svc.rejectDraft(req.user.id, draftId, body.reason));
   }
 }

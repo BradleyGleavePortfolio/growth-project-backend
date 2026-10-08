@@ -39,11 +39,12 @@ import { randomUUID } from 'crypto';
 import { AiEgressService, AnthropicHandle } from '../../ai-egress/ai-egress.service';
 import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
 import { AiDataSubject, clientDataSubject } from '../../ai-egress/ai-egress.types';
+import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../../consent/consent.service';
+import { coachSharingCheck } from '../../consent/coach-sharing-gate';
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import { PrismaService } from '../../prisma.service';
 import { PtmService } from '../../ptm/ptm.service';
 import { NotificationsService } from '../../notifications/notifications.service';
-import { COACH_FITNESS_SCOPES, ConsentService } from '../../consent/consent.service';
 import {
   COACH_AI_EFFORT,
   COACH_AI_MODEL,
@@ -160,9 +161,9 @@ export class ChurnInterventionService {
     @Optional()
     @Inject(CHURN_ANTHROPIC_CLIENT_TOKEN)
     injectedClient?: AnthropicHandle,
-    // B-865-SOL-130-1: the client's Coach sharing switches. Not @Optional:
-    // ConsentModule is @Global, so DI always injects it. Only positional unit
-    // tests omit it.
+    // COACH-AI-GATE-130 and B-865-SOL-130-1: the client's Coach sharing
+    // switches. Not @Optional: ConsentModule is @Global, so DI always injects
+    // it (see coach-sharing-gate.ts). Only positional unit tests omit it.
     private readonly consent?: ConsentService,
   ) {
     if (injectedClient) this.anthropic = injectedClient;
@@ -417,7 +418,10 @@ export class ChurnInterventionService {
       throw err;
     }
 
-    const recentCheckIn = await this.prisma.checkIn.findFirst({
+    // COACH-AI-GATE-130 — the last check-in goes in only when the client shares Check-ins and habits.
+    const sharing = await coachSharingCheck(this.consent, this.prisma, coachId);
+    const checkInsShared = (await sharing(ConsentScope.FITNESS_HABITS_PROGRESS, [clientId])).length === 1;
+    const recentCheckIn = !checkInsShared ? null : await this.prisma.checkIn.findFirst({
       where: { user_id: clientId },
       orderBy: { logged_at: 'desc' },
       select: {
@@ -447,6 +451,7 @@ export class ChurnInterventionService {
         topFactor,
         topFactors: factors.slice(0, 3).map((f) => f.label),
         recentCheckIn,
+        checkInsShared,
         coachName: coach?.name ?? 'Your coach',
         timeZone: coachTimeZone,
       });
@@ -747,6 +752,7 @@ export class ChurnInterventionService {
       notes: string | null;
       logged_at: Date;
     } | null;
+    checkInsShared: boolean;
     coachName: string;
     timeZone: string;
   }): Promise<string> {
@@ -760,7 +766,9 @@ export class ChurnInterventionService {
 
     const lastCheckIn = ctx.recentCheckIn
       ? `Their most recent check-in was on ${bucketDateLocal(ctx.recentCheckIn.logged_at, ctx.timeZone)}. Mood: ${ctx.recentCheckIn.mood ?? 'not rated'}. Energy: ${ctx.recentCheckIn.energy ?? 'not rated'}.`
-      : 'They have no recent check-in data.';
+      : ctx.checkInsShared
+        ? 'They have no recent check-in data.'
+        : 'Their check-ins are not shared with the coach. Do not mention check-ins.';
 
     const system = `You are a fitness coach assistant. Write a warm, supportive re-engagement message from a coach to a client who shows signs of disengaging.
 

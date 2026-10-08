@@ -37,6 +37,8 @@ import {
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import { describeFailure } from '../../observability/log-pii';
 import { usableTimeZone } from '../../notifications/local-time';
+import { ConsentScope, ConsentService } from '../../consent/consent.service';
+import { coachSharingCheck } from '../../consent/coach-sharing-gate';
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -93,6 +95,14 @@ export const BRIEF_TARGET_NARRATIVE_CHARS = 450;
 // Anthropic timeout above so a healthy generation finishes before the
 // next caller would attempt a takeover.
 export const BRIEF_GENERATION_LEASE_MS = 5 * 60 * 1000;
+
+// B-872-SOL-130-1: the Coach sharing switches a stored brief can hold logs of.
+const BRIEF_SHARING_SCOPES: readonly string[] = [
+  ConsentScope.FITNESS_WORKOUTS,
+  ConsentScope.FITNESS_FOOD_MACROS,
+  ConsentScope.FITNESS_BODY_METRICS,
+  ConsentScope.FITNESS_HABITS_PROGRESS,
+];
 
 // WeightLog stores `weight_lbs`; 2.0 kg ≈ 4.4 lbs is the flag threshold.
 const WEIGHT_FLAG_THRESHOLD_LBS = 4.4;
@@ -311,11 +321,12 @@ function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
     ``,
     `--- CLIENT DATA (own direct clients) ---`,
     `Roster size: ${ctx.roster_size} active clients`,
-    `Check-ins received today: ${ctx.checked_in_today} of ${ctx.roster_size}`,
+    `Check-ins received today: ${ctx.checked_in_today} of ${checkInsShared(ctx)}`,
     `Missing check-ins: ${ctx.missed_checkin}`,
     `Workouts completed today: ${ctx.workouts_completed_today}`,
     `Unread messages: ${ctx.unread_messages}`,
     `Weight log flags (large delta): ${ctx.weight_logs_flagged}`,
+    ...(ctx.not_shared ? [`Not shared with the coach, so left out of the counts above: check-ins from ${ctx.not_shared.check_ins}, weigh-ins from ${ctx.not_shared.weigh_ins}, workouts from ${ctx.not_shared.workouts} of the ${ctx.roster_size} clients. Do not state roster-wide totals for these.`] : []),
     ``,
     `--- PAYMENTS / TGP HANDLING ---`,
     `Payments received since midnight: ${ctx.paid_today_count} payment(s), ${formatUsd(ctx.revenue_today_cents)} total`,
@@ -413,6 +424,11 @@ export function buildFallbackNarrative(
   return narrative;
 }
 
+// COACH-AI-GATE-130: how many roster clients share check-ins with the coach.
+function checkInsShared(ctx: BriefContext): number {
+  return ctx.roster_size - (ctx.not_shared?.check_ins ?? 0);
+}
+
 function buildSoloOrSubCoachFallbackSentences(ctx: BriefContext): string[] {
   const sentences: string[] = [`Good morning, ${ctx.coach_first_name}.`];
 
@@ -442,7 +458,15 @@ function buildSoloOrSubCoachFallbackSentences(ctx: BriefContext): string[] {
     ctx.workouts_completed_today > 0
       ? `, and ${ctx.workouts_completed_today} ${plural(ctx.workouts_completed_today, 'workout was', 'workouts were')} completed`
       : '';
-  if (ctx.checked_in_today > 0) {
+  // COACH-AI-GATE-130: counted only over the clients who share check-ins.
+  const shared = checkInsShared(ctx);
+  const who = `${shared} ${plural(shared, 'client', 'clients')} sharing check-ins`;
+  if (shared === 0) {
+    if (workouts) sentences.push(`${ctx.workouts_completed_today} ${plural(ctx.workouts_completed_today, 'workout was', 'workouts were')} completed today.`);
+  } else if (shared < ctx.roster_size) {
+    const checked = ctx.checked_in_today;
+    sentences.push(checked > 0 ? `${checked} of ${who} ${plural(checked, 'has', 'have')} checked in today${workouts}.` : `No check-ins yet today from the ${who}${workouts}.`);
+  } else if (ctx.checked_in_today > 0) {
     sentences.push(
       `${ctx.checked_in_today} of ${ctx.roster_size} ${plural(ctx.roster_size, 'client has', 'clients have')} checked in today${workouts}.`,
     );
@@ -734,6 +758,8 @@ export class CoachBriefService {
     @Optional()
     @Inject(BRIEF_ANTHROPIC_CLIENT_TOKEN)
     injectedClient?: AnthropicHandle,
+    // COACH-AI-GATE-130 — Coach sharing switches; no @Optional() (see coach-sharing-gate.ts).
+    private readonly consent?: ConsentService,
   ) {
     if (injectedClient) this.anthropic = injectedClient;
   }
@@ -891,6 +917,15 @@ export class CoachBriefService {
       };
     }
 
+    // COACH-AI-GATE-130 — each log read below needs that client's Coach sharing switch (check-ins,
+    // weigh-ins, workouts); the AI context is built here too, so it is gated as well.
+    const sharing = await coachSharingCheck(this.consent, this.prisma, coachId);
+    const [checkInIds, weighInIds, workoutIds] = await Promise.all([
+      sharing(ConsentScope.FITNESS_HABITS_PROGRESS, clientIds),
+      sharing(ConsentScope.FITNESS_BODY_METRICS, clientIds),
+      sharing(ConsentScope.FITNESS_WORKOUTS, clientIds),
+    ]);
+
     const [
       checkedInToday,
       workoutsCompletedToday,
@@ -903,14 +938,14 @@ export class CoachBriefService {
       missingCheckinRaw,
     ] = await Promise.all([
       this.prisma.checkIn.findMany({
-        where: { user_id: { in: clientIds }, date: briefDateOnly },
+        where: { user_id: { in: checkInIds }, date: briefDateOnly },
         select: { user_id: true },
         distinct: ['user_id'],
       }),
       // Workouts completed today (reported only; S-BRIEF-124 B-398-1).
       this.prisma.clientWorkoutAssignment.count({
         where: {
-          client_id: { in: clientIds },
+          client_id: { in: workoutIds },
           completed_at: { gte: briefDateStart, lte: briefDateEnd },
           // Sub-coach mode: only workouts the sub-coach assigned.
           ...(briefMode === 'sub_coach' ? { assigned_by_coach_id: coachId } : {}),
@@ -960,7 +995,7 @@ export class CoachBriefService {
               "weight_lbs",
               ROW_NUMBER() OVER (PARTITION BY "user_id" ORDER BY "logged_at" DESC) AS rn
             FROM "WeightLog"
-            WHERE "user_id" = ANY(${clientIds}::text[])
+            WHERE "user_id" = ANY(${weighInIds}::text[])
           )
           SELECT
             r1."user_id"      AS user_id,
@@ -1006,7 +1041,7 @@ export class CoachBriefService {
       }),
       this.prisma.user.findMany({
         where: {
-          id: { in: clientIds },
+          id: { in: checkInIds },
           check_ins: { none: { date: briefDateOnly } },
         },
         select: { id: true, name: true },
@@ -1044,7 +1079,7 @@ export class CoachBriefService {
       brief_mode: 'solo_coach',
       date: briefDate,
       checked_in_today: checkedInCount,
-      missed_checkin: Math.max(0, clientIds.length - checkedInCount),
+      missed_checkin: Math.max(0, checkInIds.length - checkedInCount),
       workouts_completed_today: workoutsCompletedToday,
       workouts_approved_today: workoutsApprovedToday,
       paid_today_count: paidTodayAgg._count._all,
@@ -1057,6 +1092,9 @@ export class CoachBriefService {
       coach_first_name: coachFirstName,
       roster_size: clientIds.length,
     };
+    const n = clientIds.length;
+    const notShared = { check_ins: n - checkInIds.length, weigh_ins: n - weighInIds.length, workouts: n - workoutIds.length };
+    if (notShared.check_ins || notShared.weigh_ins || notShared.workouts) context.not_shared = notShared;
 
     return {
       context,
@@ -1692,6 +1730,11 @@ export class CoachBriefService {
         },
       });
       if (existing && existing.status === 'generated') {
+        // B-872-SOL-130-1: a brief stored before a client turned off a Coach
+        // sharing switch is written again under the current switches.
+        if (writtenBefore(existing, await this.lastSharingWithdrawal(coachId))) {
+          return this.generateBrief(coachId, timezone, briefDate, { force: true });
+        }
         return this.toResponse(existing);
       }
       if (existing && existing.status === 'generating') {
@@ -1980,12 +2023,36 @@ export class CoachBriefService {
       }),
     ]);
 
+    // B-872-SOL-130-1: a brief stored before a client turned off a Coach
+    // sharing switch keeps its day and status in history, not its content.
+    const withdrawnAt = await this.lastSharingWithdrawal(coachId);
     return {
-      items: rows.map((r) => this.toResponse(r)),
+      items: rows.map((r) => {
+        const out = this.toResponse(r);
+        return writtenBefore(r, withdrawnAt) ? { ...out, summary: null } : out;
+      }),
       total,
       page,
       limit,
     };
+  }
+
+  /**
+   * B-872-SOL-130-1 — when a client of this coach last turned off a Coach
+   * sharing switch. A brief stored before then may hold a log that client has
+   * since hidden. Null when nobody has, for the owner account (it reads every
+   * log), and in hand-built unit tests without ConsentService.
+   */
+  private async lastSharingWithdrawal(coachId: string): Promise<Date | null> {
+    if (!this.consent) return null;
+    const coach = await this.prisma.user.findUnique({ where: { id: coachId }, select: { role: true } });
+    if (coach?.role === 'owner') return null;
+    const row = await this.prisma.clientCoachConsent.findFirst({
+      where: { coach_id: coachId, scope: { in: [...BRIEF_SHARING_SCOPES] }, revoked_at: { not: null } },
+      orderBy: { revoked_at: 'desc' },
+      select: { revoked_at: true },
+    });
+    return row?.revoked_at ?? null;
   }
 
   // ── Force regenerate (POST /regenerate, throttled at the controller).
@@ -2095,6 +2162,11 @@ export class CoachBriefService {
 }
 
 // ─── Small helpers ──────────────────────────────────────────────────────
+
+/** B-872-SOL-130-1: true when a stored brief was written before `withdrawnAt`. */
+function writtenBefore(row: { generated_at: Date | null }, withdrawnAt: Date | null): boolean {
+  return withdrawnAt !== null && (row.generated_at === null || row.generated_at < withdrawnAt);
+}
 
 // P1-8: timezone-aware day boundaries. The previous implementation only
 // pulled the hour from Intl.DateTimeFormat, which silently truncated
