@@ -137,6 +137,8 @@ function makePrisma() {
   const prisma = Object.fromEntries(Object.keys(t).map((name) => [name, model(name)]));
   return {
     ...prisma,
+    // Named so tests can assert on it: next to named keys, the spread's index type is dropped.
+    checkIn: prisma.checkIn,
     clientCoachConsent: {
       ...prisma.clientCoachConsent,
       findUnique: jest.fn(async (a: { where: { ClientCoachConsent_client_coach_scope_key: Row } }) => {
