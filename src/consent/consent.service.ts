@@ -43,6 +43,15 @@ export const ConsentScope = {
 
 export type ConsentScopeValue = (typeof ConsentScope)[keyof typeof ConsentScope];
 
+// The four Settings > Privacy > Coach sharing switches: Workouts, Food logs,
+// Weigh-ins, Check-ins and habits.
+export const COACH_FITNESS_SCOPES: readonly string[] = [
+  ConsentScope.FITNESS_WORKOUTS,
+  ConsentScope.FITNESS_FOOD_MACROS,
+  ConsentScope.FITNESS_BODY_METRICS,
+  ConsentScope.FITNESS_HABITS_PROGRESS,
+];
+
 const ALL_SCOPES: ConsentScopeValue[] = Object.values(ConsentScope);
 const SCOPE_SET: Set<string> = new Set(ALL_SCOPES);
 
@@ -333,6 +342,35 @@ export class ConsentService {
   ): Promise<boolean> {
     if (callerRole === 'owner') return true;
     return this.isGranted(clientId, coachId, scope);
+  }
+
+  // Batch form of coachCanAccess for one coach and many clients, in one query:
+  // client id -> the scopes (out of `scopes`) this coach may read. Same rule:
+  // the owner account reads every scope; anyone else needs a granted row for
+  // this coach, client and scope. A client with nothing granted has no entry.
+  // (CoachService.rosterFitnessConsents applies the same rule to the roster.)
+  async grantedScopesByClient(
+    coachId: string,
+    clientIds: readonly string[],
+    scopes: readonly string[],
+    callerRole?: string,
+  ): Promise<Map<string, Set<string>>> {
+    if (callerRole === 'owner') {
+      return new Map(clientIds.map((id) => [id, new Set(scopes)]));
+    }
+    const out = new Map<string, Set<string>>();
+    if (clientIds.length === 0 || scopes.length === 0) return out;
+    const rows = await this.prisma.clientCoachConsent.findMany({
+      where: { coach_id: coachId, client_id: { in: [...clientIds] }, scope: { in: [...scopes] } },
+      select: { client_id: true, scope: true, granted_at: true, revoked_at: true },
+    });
+    for (const r of rows) {
+      if (!ConsentService.rowIsGranted(r)) continue;
+      const set = out.get(r.client_id) ?? new Set<string>();
+      set.add(r.scope);
+      out.set(r.client_id, set);
+    }
+    return out;
   }
 
   // GET /consent/me body for one (client, coach) pair: every scope's state
