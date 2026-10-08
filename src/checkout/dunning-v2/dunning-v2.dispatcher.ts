@@ -260,6 +260,7 @@ export class DunningV2Dispatcher {
       const res = await this.email.send({
         to: ctx.clientEmail,
         template: EmailTemplateKey.DUNNING_V2_CLIENT,
+        replyToCoachUserId: ctx.coachUserId,
         data: {
           roman_body: body,
           ...ctx.tokens,

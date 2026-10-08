@@ -566,24 +566,41 @@ export class CoachService {
     });
   }
 
-  async getGuidelines(coachId: string, clientId?: string) {
-    if (clientId) {
-      await this.assertCoachOwnsClient(coachId, clientId);
-      return this.prisma.coachGuideline.findUnique({
-        where: {
-          CoachGuideline_coach_client_key: {
-            coach_id: coachId,
-            client_id: clientId,
-          },
+  async getGuidelines(coachId: string, clientId: string) {
+    await this.assertCoachOwnsClient(coachId, clientId);
+    return this.prisma.coachGuideline.findUnique({
+      where: {
+        CoachGuideline_coach_client_key: {
+          coach_id: coachId,
+          client_id: clientId,
         },
-      });
-    }
-    // Client-facing route: return guidelines where this user is the client.
-    // No coach scope needed here — the caller IS the client.
-    return this.prisma.coachGuideline.findFirst({
-      where: { client_id: coachId },
-      orderBy: { updated_at: 'desc' },
+      },
     });
+  }
+
+  // GUIDE-READ-128: the client's own read (GET /coach/my-guidelines,
+  // ClientGuidelinesController). Scoped to the one row written for this
+  // client by their CURRENT coach, the same pair Roman reads. Returns only
+  // the text and its dates, under the field names the app's Coach guidelines
+  // screen reads (`description`, `created_at`), so installed builds render it
+  // unchanged. null (an empty 200 body) = no coach or nothing written yet,
+  // which the screen shows as "No guidelines yet".
+  async getClientGuidelines(
+    clientId: string,
+  ): Promise<{ description: string; created_at: Date; updated_at: Date } | null> {
+    const client = await this.prisma.user.findUnique({
+      where: { id: clientId },
+      select: { coach_id: true },
+    });
+    if (!client?.coach_id) return null;
+    const row = await this.prisma.coachGuideline.findUnique({
+      where: {
+        CoachGuideline_coach_client_key: { coach_id: client.coach_id, client_id: clientId },
+      },
+      select: { content: true, created_at: true, updated_at: true },
+    });
+    if (!row) return null;
+    return { description: row.content, created_at: row.created_at, updated_at: row.updated_at };
   }
 
   async getClientSummary(

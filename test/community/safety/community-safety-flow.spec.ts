@@ -24,6 +24,7 @@ import { CommunityAccessService } from '../../../src/community/community-access.
 import { CommunityFeatureFlagGuard } from '../../../src/community/community-feature-flag.guard';
 import { CommunityPostsService } from '../../../src/community/posts/community-posts.service';
 import { CommunityPostsRepository } from '../../../src/community/posts/community-posts.repository';
+import { CommunityReactionsRepository } from '../../../src/community/reactions/community-reactions.repository';
 import { CommunityMessagesService } from '../../../src/community/messages/community-messages.service';
 import { CommunityMessagesRepository } from '../../../src/community/messages/community-messages.repository';
 import { CommunityDmsService } from '../../../src/community/dms/community-dms.service';
@@ -123,7 +124,15 @@ describe('community UGC safety flow (Apple 1.2)', () => {
     safety = new CommunitySafetyService(prisma);
     const rt = stub<CommunityRealtimeService>(realtime);
     const np = stub<CommunityNotificationsService>(push);
-    posts = new CommunityPostsService(access, postsRepo, msgRepo, rt, np, safety);
+    posts = new CommunityPostsService(
+      access,
+      postsRepo,
+      msgRepo,
+      rt,
+      np,
+      safety,
+      new CommunityReactionsRepository(prisma),
+    );
     messages = new CommunityMessagesService(
       access,
       msgRepo,

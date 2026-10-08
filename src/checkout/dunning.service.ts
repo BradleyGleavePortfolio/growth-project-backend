@@ -589,6 +589,7 @@ export class DunningService {
         const send = await this.email.send({
           to: recipient.email,
           template: step?.template ?? EmailTemplateKey.PAYMENT_REMINDER,
+          replyToCoachUserId: purchase.coach_user_id,
           idempotencyKey: idemKey,
           data: this.buildEmailData(state, purchase, recipient.name),
         });
@@ -1183,6 +1184,7 @@ export class DunningService {
       await this.email.send({
         to: recipient.email,
         template: EmailTemplateKey.PAYMENT_RECOVERED,
+        replyToCoachUserId: purchase.coach_user_id,
         idempotencyKey: `dunning-recovered:${state.id}`,
         data: this.buildEmailData(state, purchase, recipient.name),
       });

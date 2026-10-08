@@ -2,7 +2,11 @@ import {
   WORKOUT_REMINDER_CRON,
   WorkoutReminderService,
 } from '../../src/engagement/workout-reminder.service';
-import { FIRST_DAY_BODY, REMINDER_TITLE } from '../../src/engagement/workout-reminder.policy';
+import {
+  FIRST_DAY_BODY,
+  FIRST_DAY_NO_PLAN_BODY,
+  REMINDER_TITLE,
+} from '../../src/engagement/workout-reminder.policy';
 import { NotificationsService } from '../../src/notifications/notifications.service';
 import type { PrismaService } from '../../src/prisma.service';
 import { cast, FakeTable, matches } from './_fake-db';
@@ -138,6 +142,24 @@ describe('WorkoutReminderService', () => {
       status: 'sent',
       slot: 'morning',
       first_day: true,
+    });
+  });
+
+  it('CF-NOTIF-DIGEST-128 (U8): first session day with no plan workout gets the no-plan copy and the Train tab link', async () => {
+    const h = harness();
+    await seed(h);
+    h.assignments.rows.splice(0, h.assignments.rows.length);
+    const s = await h.svc.runOnce(new Date('2026-10-05T14:00:00Z')); // 07:00 PDT on C1
+    expect(s.sent).toBe(1);
+    expect(h.pushToUser).toHaveBeenCalledWith(
+      CLIENT,
+      REMINDER_TITLE,
+      FIRST_DAY_NO_PLAN_BODY,
+      expect.objectContaining({ deep_link: 'tgp://workouts', local_date: C1, first_day: true }),
+    );
+    expect(h.notifRows.rows[0]).toMatchObject({
+      body: FIRST_DAY_NO_PLAN_BODY,
+      deep_link: 'tgp://workouts',
     });
   });
 
