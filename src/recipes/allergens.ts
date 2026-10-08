@@ -10,11 +10,11 @@
  * ever guessed into an allergen, because a missed keyword would look like
  * safety. An undeclared recipe is shown and labelled as undeclared.
  *
- * Saved profile answers are free strings from two closed vocabularies (the
- * app's restriction chips and the consultation's N2 options). They map to
- * allergens by exact lookup after trimming, lower-casing and folding
- * spaces, hyphens and underscores. Anything else (diets such as "Vegetarian",
- * "No Pork", "Something else") filters nothing.
+ * Saved profile answers are free strings from three closed vocabularies (the
+ * app's restriction chips, the lean onboarding values and the consultation's
+ * N2 options). They map to allergens by exact lookup after trimming,
+ * lower-casing and folding spaces, hyphens and underscores. Anything else
+ * (diets such as "Vegetarian", "No Pork", "Something else") filters nothing.
  */
 import type { PrismaService } from '../prisma.service';
 
@@ -38,8 +38,8 @@ export const ALLERGEN_CODES: readonly AllergenCode[] = RECIPE_ALLERGENS.map((a) 
 /**
  * Saved answer (folded) -> allergens. A Map, not an object literal, so a saved
  * string such as "constructor" can never reach a prototype property.
- * "Nut Allergy" / "nuts" cover peanuts as well as tree nuts: hiding one recipe
- * too many is safe, showing one too few is not.
+ * "Nut Allergy" / "nuts" / "nut_free" cover peanuts as well as tree nuts:
+ * hiding one recipe too many is safe, showing one too few is not.
  */
 const SAVED_ANSWER_ALLERGENS: ReadonlyMap<string, readonly AllergenCode[]> = new Map<
   string,
@@ -65,6 +65,9 @@ const SAVED_ANSWER_ALLERGENS: ReadonlyMap<string, readonly AllergenCode[]> = new
   ['dairy allergy', ['dairy']],
   ['gluten free', ['gluten']],
   ['no fish', ['fish']],
+  // Lean onboarding values not already listed above (its "Nut-free" chip saves
+  // "nut_free"; "gluten_free" folds to "gluten free").
+  ['nut free', ['peanuts', 'tree_nuts']],
   // Consultation N2 values not already listed above.
   ['nuts', ['peanuts', 'tree_nuts']],
 ]);
