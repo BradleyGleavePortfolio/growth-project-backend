@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { LogWaterDto } from './water.dto';
 
@@ -61,5 +61,16 @@ export class WaterService {
     });
 
     return Object.values(byDate);
+  }
+
+  // U6: delete one of the caller's own entries. The owner is part of the
+  // WHERE, so another user's id (or a missing one) deletes nothing and gets
+  // the same 404. No AI cache holds water entries (the AI context and Roman's
+  // per-turn memo carry only the goal; Roman's history tool reads WaterLog
+  // live), so there is nothing to bust, as with logWater.
+  async deleteEntry(userId: string, id: string): Promise<{ id: string; deleted: true }> {
+    const { count } = await this.prisma.waterLog.deleteMany({ where: { id, user_id: userId } });
+    if (count === 0) throw new NotFoundException('Water entry not found');
+    return { id, deleted: true };
   }
 }

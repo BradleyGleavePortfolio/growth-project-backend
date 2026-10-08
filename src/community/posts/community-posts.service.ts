@@ -1,12 +1,15 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import type { CommunityMessage, CommunityPost, User } from '@prisma/client';
+import type { CommunityMessage, CommunityPost, CommunityResponse, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
+import { memberFirstName } from '../member-display-name';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { CommunityNotificationsService } from '../notifications/community-notifications.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { CommunityPostsRepository } from './community-posts.repository';
 import { CommunityMessagesRepository } from '../messages/community-messages.repository';
+import { CommunityReactionsRepository } from '../reactions/community-reactions.repository';
+import { CommunityReactionSummary, summariseReactions } from '../dto/community-reaction.dto';
 import {
   CommunityCommentListResponse,
   CommunityCommentListResponseSchema,
@@ -28,6 +31,13 @@ const POST_NOT_FOUND = {
   error: 'not_found',
   code: 'community.post.not_found',
 } as const;
+
+/** Author first name and visible reactions for one post or reply. */
+interface ViewExtras {
+  authorName: string;
+  reactions: CommunityReactionSummary[];
+}
+type ExtrasFor = (targetId: string, authorId: string) => ViewExtras;
 
 /**
  * Lab posts (longer-form, coach-authored) and their comments.
@@ -52,14 +62,16 @@ export class CommunityPostsService {
     private readonly realtime: CommunityRealtimeService,
     private readonly communityPush: CommunityNotificationsService,
     private readonly safety: CommunitySafetyService,
+    private readonly reactions: CommunityReactionsRepository,
   ) {}
 
-  private postView(p: CommunityPost): CommunityPostView {
+  private postView(p: CommunityPost, extras: ViewExtras): CommunityPostView {
     return {
       id: p.id,
       workspace_id: p.workspace_id,
       cohort_id: p.cohort_id,
       author_user_id: p.author_id,
+      author_name: extras.authorName,
       title: p.title,
       body: p.deleted_at ? null : p.body,
       scope: p.scope,
@@ -68,17 +80,79 @@ export class CommunityPostsService {
       created_at: p.created_at.toISOString(),
       updated_at: p.updated_at.toISOString(),
       deleted: p.deleted_at !== null,
+      reactions: extras.reactions,
     };
   }
 
-  private commentView(m: CommunityMessage): CommunityCommentView {
+  private commentView(m: CommunityMessage, extras: ViewExtras): CommunityCommentView {
     return {
       id: m.id,
       post_id: m.plan_context_id ?? '',
       author_user_id: m.sender_id,
+      author_name: extras.authorName,
       body: m.body ?? '',
       created_at: m.created_at.toISOString(),
+      reactions: extras.reactions,
     };
+  }
+
+  /**
+   * What the app shows with each post or reply (FW-COMM-128 U1/U2): the
+   * author's FIRST name only (owner default 10-07, the same rule as wins), and
+   * the reactions the viewer may see in the reaction endpoints' own shape, so
+   * counts and the viewer's own reaction match before and after a tap. Two
+   * batched reads per page, never one per row.
+   */
+  private async viewExtras(
+    viewer: User,
+    targetType: 'post' | 'comment',
+    items: Array<{ id: string; authorId: string }>,
+  ): Promise<ExtrasFor> {
+    const [names, rows] = await Promise.all([
+      this.posts.namesByUserId(items.map((i) => i.authorId)),
+      this.reactions.listForTargets(
+        targetType,
+        items.map((i) => i.id),
+      ),
+    ]);
+    // Two-way block: reactions by anyone in a block relation with the viewer
+    // are not counted (as in CommunityReactionsService.visibleReactions).
+    const visible = await this.safety.filterBlocked(viewer.id, rows, (r) => r.user_id);
+    const byTarget = new Map<string, CommunityResponse[]>();
+    for (const r of visible) {
+      const forTarget = byTarget.get(r.target_id);
+      if (forTarget) forTarget.push(r);
+      else byTarget.set(r.target_id, [r]);
+    }
+    return (targetId, authorId) => ({
+      authorName: memberFirstName(names.get(authorId)),
+      reactions: summariseReactions(byTarget.get(targetId) ?? [], viewer.id),
+    });
+  }
+
+  private async postViews(viewer: User, rows: CommunityPost[]): Promise<CommunityPostView[]> {
+    const extras = await this.viewExtras(
+      viewer,
+      'post',
+      rows.map((p) => ({ id: p.id, authorId: p.author_id })),
+    );
+    return rows.map((p) => this.postView(p, extras(p.id, p.author_id)));
+  }
+
+  private async postResponse(viewer: User, post: CommunityPost): Promise<CommunityPostResponse> {
+    return CommunityPostResponseSchema.parse({ post: (await this.postViews(viewer, [post]))[0] });
+  }
+
+  private async commentViews(
+    viewer: User,
+    rows: CommunityMessage[],
+  ): Promise<CommunityCommentView[]> {
+    const extras = await this.viewExtras(
+      viewer,
+      'comment',
+      rows.map((m) => ({ id: m.id, authorId: m.sender_id })),
+    );
+    return rows.map((m) => this.commentView(m, extras(m.id, m.sender_id)));
   }
 
   private parsePage(limit: string | undefined): number {
@@ -142,7 +216,7 @@ export class CommunityPostsService {
       },
       { distinctId: created.author_id, channelKind: 'workspace' },
     );
-    return CommunityPostResponseSchema.parse({ post: this.postView(created) });
+    return this.postResponse(user, created);
   }
 
   async list(
@@ -164,7 +238,7 @@ export class CommunityPostsService {
     // Block filter after the cursor is taken from the unfiltered page.
     const visible = await this.safety.filterBlocked(user.id, rows, (p) => p.author_id);
     return CommunityPostListResponseSchema.parse({
-      posts: visible.map((p) => this.postView(p)),
+      posts: await this.postViews(user, visible),
       next_before: next,
     });
   }
@@ -192,7 +266,7 @@ export class CommunityPostsService {
 
   async getOne(user: User, postId: string): Promise<CommunityPostResponse> {
     const post = await this.visiblePost(user, postId);
-    return CommunityPostResponseSchema.parse({ post: this.postView(post) });
+    return this.postResponse(user, post);
   }
 
   async edit(
@@ -222,7 +296,7 @@ export class CommunityPostsService {
       },
       { distinctId: updated.author_id, channelKind: 'workspace' },
     );
-    return CommunityPostResponseSchema.parse({ post: this.postView(updated) });
+    return this.postResponse(user, updated);
   }
 
   async remove(user: User, postId: string): Promise<CommunityPostResponse> {
@@ -237,7 +311,7 @@ export class CommunityPostsService {
       });
     }
     const deleted = await this.posts.softDelete(postId);
-    return CommunityPostResponseSchema.parse({ post: this.postView(deleted) });
+    return this.postResponse(user, deleted);
   }
 
   // ── Comments ───────────────────────────────────────────────────────────────
@@ -280,7 +354,7 @@ export class CommunityPostsService {
       });
     }
     return CommunityCommentResponseSchema.parse({
-      comment: this.commentView(created),
+      comment: (await this.commentViews(user, [created]))[0],
     });
   }
 
@@ -289,7 +363,7 @@ export class CommunityPostsService {
     const rows = await this.messages.listComments(post.id);
     const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id);
     return CommunityCommentListResponseSchema.parse({
-      comments: visible.map((m) => this.commentView(m)),
+      comments: await this.commentViews(user, visible),
     });
   }
 }

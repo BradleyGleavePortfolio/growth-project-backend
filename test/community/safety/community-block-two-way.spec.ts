@@ -28,7 +28,7 @@ import { CommunityDmsService } from '../../../src/community/dms/community-dms.se
 import { CommunityDmsRepository } from '../../../src/community/dms/community-dms.repository';
 import { CommunitySafetyService } from '../../../src/community/safety/community-safety.service';
 import { CommunityReactionsService } from '../../../src/community/reactions/community-reactions.service';
-import type { CommunityReactionsRepository } from '../../../src/community/reactions/community-reactions.repository';
+import { CommunityReactionsRepository } from '../../../src/community/reactions/community-reactions.repository';
 import { CommunityCohortMembersService } from '../../../src/community/cohorts/community-cohort-members.service';
 import type { CommunityCohortMembersRepository } from '../../../src/community/cohorts/community-cohort-members.repository';
 import { CommunityService } from '../../../src/community/community.service';
@@ -122,7 +122,15 @@ describe('two-way block: posts, comments, cohort messages and DMs (in-memory Pri
     safety = new CommunitySafetyService(prisma);
     const rt = stub<CommunityRealtimeService>(realtime);
     const np = stub<CommunityNotificationsService>(push);
-    posts = new CommunityPostsService(access, postsRepo, msgRepo, rt, np, safety);
+    posts = new CommunityPostsService(
+      access,
+      postsRepo,
+      msgRepo,
+      rt,
+      np,
+      safety,
+      new CommunityReactionsRepository(prisma),
+    );
     messages = new CommunityMessagesService(
       access,
       msgRepo,
