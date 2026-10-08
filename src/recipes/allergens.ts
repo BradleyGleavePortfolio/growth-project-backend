@@ -45,8 +45,9 @@ const SAVED_ANSWER_ALLERGENS: ReadonlyMap<string, readonly AllergenCode[]> = new
   string,
   readonly AllergenCode[]
 >([
-  // The allergen codes and labels themselves. The app's "Soy" and "Sesame"
-  // restriction chips and the consultation's N2 "soy" / "sesame" use these.
+  // The allergen codes and labels themselves. The app's "Soy", "Sesame" and
+  // "Fish" restriction chips and the consultation's N2 "soy" / "sesame" /
+  // "fish" use these.
   ['peanuts', ['peanuts']],
   ['tree nuts', ['tree_nuts']],
   ['dairy', ['dairy']],
