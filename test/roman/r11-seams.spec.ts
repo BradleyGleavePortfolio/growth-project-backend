@@ -66,11 +66,12 @@ describe('R11-00 prompt seam', () => {
   const v1 = { quipsInSession: 2, exclamationUsed: true, lastTurnHadQuip: true };
   const CLIENT_DATA = '<client_data as_of="2026-09-30">{"first_name":"Test"}</client_data>';
   // sha256 of buildRomanSystemPrompt on origin/main 302c4522 for these inputs;
-  // client hashes re-pinned for the roman-client-v4 crisis section (AUDIT-05-125).
+  // client hashes re-pinned for the roman-client-v4 crisis section (AUDIT-05-125),
+  // then for CF-ROMAN-COPY-B-128 (client framing assumes no coach, real tab names).
   const MAIN = {
     client_plain: {
       input: { surface: 'client' as const, voice: v0 },
-      hash: '962b871d82f71897b51a1085b83f5c573ac153a1221ef2153246ca7a98611965',
+      hash: '75539676337b8ebee582972dea7b4552e10fec82b08668e77fb9b780d2144c71',
     },
     coach_plain: {
       input: {
@@ -87,11 +88,11 @@ describe('R11-00 prompt seam', () => {
         routerHint: 'Hint line.',
         clientData: CLIENT_DATA,
       },
-      hash: 'd3ec365d34c74fea135eb8da88c78ab0de014bbd7f6fa05dc5cf480cd0df5889',
+      hash: '6caf056fbfc31d13fb9bca73a778f8a24166858cdae2abab184f66b65c060f44',
     },
     client_unavailable: {
       input: { surface: 'client' as const, voice: v1, clientDataUnavailable: true },
-      hash: 'a3e665f5ade3cfa43a11f1555e0fa2ced51418dbffc890459519740254750b84',
+      hash: '6f70def570e83336b40e9313b5c2c760bc84a7c5c5a6a37a05360f82fd17d002',
     },
   };
 
@@ -441,12 +442,33 @@ describe('R11-00 turn seam (RomanService.streamAssistantTurn)', () => {
     expect(t.ledger).toMatchObject({ augments: [expect.stringMatching(/^client_memory:/)] });
   });
 
-  it('R11-T2A no augmenter, or none applied: no memory read and the base-scope send', async () => {
-    for (const augs of [null, [], [aug('client_memory', async () => null)]]) {
+  it('R11-T2A no augmenter: no memory read; none applied: the base-scope send', async () => {
+    for (const augs of [null, []]) {
       const t = await scopedTurn(augs, false);
       expect(t.reader.memoryReads).toBe(0);
       expect(t.subject).toEqual(BASE);
     }
+    const none = await scopedTurn([aug('client_memory', async () => null)], true);
+    expect(none.reader.memoryReads).toBe(1);
+    expect(none.subject).toEqual(BASE);
+  });
+
+  it('R11-FIX U2 v4 caller: the grant is read first and no augmenter reads the notes', async () => {
+    const mem = memAug();
+    const coach = aug('coach_method', async () => block('coach_method', 'C'));
+    const t = await scopedTurn([coach, mem], false);
+    expect(mem.augment).not.toHaveBeenCalled();
+    expect(coach.augment).not.toHaveBeenCalled();
+    expect(t.reader.memoryReads).toBe(1);
+    expect(t.subject).toEqual(BASE);
+    expect(t.ledger).toMatchObject({
+      augments: [],
+      augments_omitted: ['client_memory', 'coach_method'],
+    });
+    expect(t.chunks.map((c) => c.type)).toEqual(['delta', 'done']);
+    const v5 = memAug();
+    await scopedTurn([v5], true);
+    expect(v5.augment).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -481,8 +503,8 @@ describe('R11-00 flags and capabilities', () => {
     const m = JSON.parse(readFileSync(join(root, '.github/fly-env-desired-state.json'), 'utf8'));
     const runbook = readFileSync(join(root, 'docs/runbooks/launch-flags.md'), 'utf8');
     for (const n of ['FEATURE_ROMAN_MEMORY', 'FEATURE_ROMAN_PLAYBOOK', 'FEATURE_ROMAN_TOOLS']) {
-      // FLIP-TOOLS-128 (tools) and FLIP-PB-128 (playbook) are declared on; the code default (and the kill) stays unset = off.
-      const declaredOn = ['FEATURE_ROMAN_TOOLS', 'FEATURE_ROMAN_PLAYBOOK'];
+      // FLIP-TOOLS-128 (tools), FLIP-MEM-128 (memory) and FLIP-PB-128 (playbook) are declared on; the code default (and the kill) stays unset = off.
+      const declaredOn = ['FEATURE_ROMAN_TOOLS', 'FEATURE_ROMAN_MEMORY', 'FEATURE_ROMAN_PLAYBOOK'];
       expect(m.flags[n]).toBe(declaredOn.includes(n) ? 'true' : 'unset');
       expect(m.gates[n]).toMatch(/unset = off/);
       expect(runbook).toContain(
@@ -508,7 +530,8 @@ describe('R11-00 flags and capabilities', () => {
       max_rounds: 3,
       max_calls_per_turn: 6,
       max_result_chars: 12_000,
-      turn_wall_ms: 25_000,
+      turn_wall_ms: 15_000,
+      turn_deadline_ms: 50_000,
       tool_timeout_ms: 3_000,
     });
   });

@@ -37,6 +37,16 @@ const NEW_COLUMNS: Record<string, string[]> = {
   NotificationPreferences: ['daily_checkin_enabled', 'weekly_summary_enabled', 'new_client_alerts'],
 };
 
+/**
+ * Columns a LATER migration adds to a table this restore creates: the model
+ * declares them, this restore does not create them, and the named migration
+ * must add each one in the declared shape (checked below).
+ */
+const ADDED_LATER: ReadonlyArray<[table: string, column: string, migration: string]> = [
+  ['Recipe', 'allergens', '20270404000000_recipe_declared_allergens'],
+  ['Recipe', 'allergens_declared', '20270404000000_recipe_declared_allergens'],
+];
+
 /** SQL with `--` comment lines removed, so header prose never satisfies an assertion. */
 function code(sql: string): string {
   return sql
@@ -158,7 +168,8 @@ describe(`${NAME}: additive and idempotent`, () => {
 
 describe(`${NAME}: matches what schema.prisma declares`, () => {
   it.each(NEW_TABLES)('table %s has exactly the scalar fields of its model', (table) => {
-    const fields = modelFields(table);
+    const later = new Set(ADDED_LATER.filter(([t]) => t === table).map(([, column]) => column));
+    const fields = modelFields(table).filter((f) => !later.has(f.name));
     const cols = createdColumns(table);
     expect([...cols.keys()].sort()).toEqual(fields.map((f) => f.name).sort());
     for (const f of fields) {
@@ -169,6 +180,17 @@ describe(`${NAME}: matches what schema.prisma declares`, () => {
       if (f.list) expect(def).toMatch(/\[\]/);
       if (ENUMS.has(f.type)) expect(def).toContain(`"${f.type}"`);
     }
+  });
+
+  it.each(ADDED_LATER)('%s.%s is added later, by %s, in the declared shape', (table, column, dir) => {
+    expect(dir > NAME).toBe(true);
+    const later = code(readFileSync(join(ROOT, 'prisma', 'migrations', dir, 'migration.sql'), 'utf8'));
+    const def = new RegExp(`ALTER TABLE "${table}"[\\s\\S]*?ADD COLUMN "${column}" ([^,;]+)`).exec(later)?.[1] ?? '';
+    const f = modelFields(table).find((x) => x.name === column);
+    expect(f).toBeDefined();
+    expect(def).not.toBe('');
+    expect(def.includes('NOT NULL')).toBe(!f!.optional && !f!.list);
+    expect(def.includes('DEFAULT')).toBe(f!.hasDefault);
   });
 
   it.each(Object.keys(NEW_COLUMNS))('columns added to %s are declared on the model with matching nullability/defaults', (table) => {

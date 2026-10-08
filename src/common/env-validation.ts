@@ -1137,6 +1137,13 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Kill switch for the client daily digest email.',
   },
   {
+    name: 'EMAIL_DIGEST_CLIENT_DAILY_ENABLED',
+    tier: 'optional',
+    default: 'off (only "on" sends)',
+    reason:
+      'CF-NOTIF-DIGEST-128 owner default: the client daily digest email stays off; the weekly one is kept.',
+  },
+  {
     name: 'EMAIL_DIGEST_COACH_ENABLED',
     tier: 'optional',
     default: 'on (only "off" disables)',
@@ -1973,6 +1980,13 @@ export const ENV_RULES: EnvRule[] = [
     default: 'unset → off (only "true")',
     reason:
       'A2 coach code tools kill switch: /coach/codes list, create, rotate, revoke and daily signups (src/invite-codes/coach-code-tools.feature.ts). Only "true" enables; unset/other = 404 coach_code_tools_disabled. The signup ledger is always written.',
+  },
+  {
+    name: 'FEATURE_COACH_PAYMENT_ACTIONS',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'CF-COACH-PAY-BE-128 coach payments per client: list, refund, pause/resume and cancel under /v1/coach/clients/:clientId/payments (src/checkout/coach-payment-actions.feature.ts). Only "true" enables; unset/other = every route 404 and the coach_payment_actions flag reads false.',
   },
   {
     name: 'FEATURE_DUNNING_V2',

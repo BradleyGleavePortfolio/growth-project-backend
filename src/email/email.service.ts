@@ -23,6 +23,7 @@ import {
   parseEmailSender,
   resolveEmailSender,
 } from './email-sender';
+import { SUPPORT_EMAIL } from '../public-pages/trust-pages.html';
 
 // Provider abstraction is intentionally minimal: send(from, to, subject,
 // html) -> providerMessageId. Each transport implementation lives below.
@@ -84,6 +85,29 @@ const TEMPLATE_SUBJECTS: Record<EmailTemplateKey, string> = {
   // B-REPORTALERT-125 — ReportAlertService passes the subject (self-harm first).
   'report-alert': '{{#if subject}}{{subject}}{{else}}A new user report needs review{{/if}}',
 };
+
+// MONEY-MAIL-128 (FW-MONEY-128 B-2) — payment and dunning emails come from a
+// no-mailbox sender, so their Reply-To is set here: the client's coach when the
+// caller names one (replyToCoachUserId) and that coach has an address,
+// otherwise the support address. Templates read `reply_to_coach` to say
+// exactly where a reply goes. Every other template is unchanged.
+const PAYMENT_REPLY_TEMPLATES: ReadonlySet<EmailTemplateKey> = new Set<EmailTemplateKey>([
+  'payment-reminder',
+  'payment-failed',
+  'payment-receipt',
+  'dunning-final',
+  'payment-reminder-soft',
+  'payment-reminder-urgent',
+  'payment-final-notice',
+  'payment-recovered',
+  'trial-ending',
+  'coach-payout-adjustment',
+  'dunning-v2-client',
+  'dunning-v2-coach',
+]);
+
+const isSingleAddress = (v: string | null | undefined): v is string =>
+  !!v && v.includes('@') && !/[\r\n,]/.test(v);
 
 // EmailService is the single entry point for sending transactional email.
 // It owns:
@@ -194,11 +218,14 @@ export class EmailService {
     // B-EMAILFROM-126 — one sender for every email (src/email/email-sender.ts),
     // resolved once at boot in _initTransport.
     const from = input.from ?? this.fromAddress;
+    const reply = await this._paymentReplyTo(input);
+    const replyTo = reply?.replyTo ?? input.replyTo;
 
     let html: string;
     let subject: string;
     try {
-      const rendered = this.render(input.template, input.data);
+      const data = reply ? { ...input.data, reply_to_coach: reply.toCoach } : input.data;
+      const rendered = this.render(input.template, data);
       html = rendered.html;
       subject = rendered.subject;
     } catch (err) {
@@ -244,9 +271,9 @@ export class EmailService {
         to: input.to,
         subject,
         html,
-        replyTo: input.replyTo,
+        replyTo,
         signal: input.signal,
-        idempotencyKey: this._providerKey(input, from, subject, html),
+        idempotencyKey: this._providerKey(input, replyTo, from, subject, html),
       });
       await this._finalize(logRow.id, 'sent', providerMessageId, null);
       this.logger.log(
@@ -278,6 +305,28 @@ export class EmailService {
 
   // ── internal ────────────────────────────────────────────────────────────
 
+  // MONEY-MAIL-128 — Reply-To for payment/dunning templates (null = not one).
+  // The coach's account email when named and present, else support. A failed
+  // lookup falls back to support; it never blocks the send.
+  private async _paymentReplyTo(
+    input: SendEmailInput,
+  ): Promise<{ replyTo: string; toCoach: boolean } | null> {
+    if (!PAYMENT_REPLY_TEMPLATES.has(input.template)) return null;
+    if (input.replyToCoachUserId) {
+      try {
+        const coach = await this.prisma.user.findUnique({
+          where: { id: input.replyToCoachUserId },
+          select: { email: true },
+        });
+        const email = coach?.email;
+        if (isSingleAddress(email)) return { replyTo: email, toCoach: true };
+      } catch (err) {
+        this.logger.warn(`email reply-to coach lookup failed: ${describeFailure(err)}`);
+      }
+    }
+    return { replyTo: SUPPORT_EMAIL, toCoach: false };
+  }
+
   // error 'aborted' keeps the trial notice's failure code (B-672-4).
   private notStarted(idempotencyKey: string): SendEmailResult {
     return {
@@ -291,9 +340,13 @@ export class EmailService {
 
   // B-672-4 — the caller's stable key plus a hash of the rendered message
   // (Resend allows 1-256 characters).
-  private _providerKey(input: SendEmailInput, ...content: string[]): string | undefined {
+  private _providerKey(
+    input: SendEmailInput,
+    replyTo: string | undefined,
+    ...content: string[]
+  ): string | undefined {
     if (!input.providerIdempotencyKey) return undefined;
-    const message = JSON.stringify([...content, input.to, input.replyTo ?? null]);
+    const message = JSON.stringify([...content, input.to, replyTo ?? null]);
     const digest = createHash('sha256').update(message).digest('hex').slice(0, 32);
     return `${input.providerIdempotencyKey.slice(0, 200)}:${digest}`;
   }

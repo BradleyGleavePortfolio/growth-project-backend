@@ -72,4 +72,16 @@ export class CommunityReactionsRepository {
       orderBy: { created_at: 'asc' },
     });
   }
+
+  /** Reactions on a page of targets of one type, oldest first (post and reply views). */
+  async listForTargets(
+    targetType: CommunityResponseTargetType,
+    targetIds: string[],
+  ): Promise<CommunityResponse[]> {
+    if (targetIds.length === 0) return [];
+    return this.prisma.communityResponse.findMany({
+      where: { target_type: targetType, target_id: { in: targetIds } },
+      orderBy: { created_at: 'asc' },
+    });
+  }
 }

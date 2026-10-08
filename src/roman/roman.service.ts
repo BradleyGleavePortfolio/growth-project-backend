@@ -91,6 +91,8 @@ import { PROMPT_VERSION } from './guardrails/roman-guardrail.contract';
 import {
   classifySafety,
   routerHintFor,
+  ROMAN_EATING_DISORDER_FALLBACK_REASON,
+  romanEatingDisorderFallback,
   ROMAN_SAFETY_ROUTE_REASON,
   ROMAN_SAFETY_ROUTER_MODEL_ID,
   ROMAN_SAFETY_TEMPLATES,
@@ -107,6 +109,7 @@ import {
   RomanSessionVoiceState,
 } from './roman.prompts';
 import {
+  ROMAN_TURN_AUGMENT_ORDER,
   ROMAN_TURN_AUGMENTERS,
   runRomanTurnAugmenters,
   type RomanAugmentRun,
@@ -973,29 +976,7 @@ export class RomanService {
 
     if (route.short_circuit && (route.class === 'emergency' || route.class === 'self_harm')) {
       const text = ROMAN_SAFETY_TEMPLATES[route.class];
-      const persisted = await this.appendMessage(caller, session.id, {
-        role: 'roman',
-        content: text,
-        modelId: ROMAN_SAFETY_ROUTER_MODEL_ID,
-        interrupted: false,
-      });
-      // OR-115-1 (C-651-5): one neutral action name and no class in the log
-      // line. The closed reason code lives only in AuditLog.metadata, which
-      // the owner audit list never returns and #608's erasure manifest nulls
-      // for this actor.
-      this.logger.warn(
-        `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} model_call=false template=fixed`,
-      );
-      await this.audit?.write({
-        action: AuditAction.ROMAN_SAFETY_ROUTE,
-        actorId: caller.id,
-        actorRole: caller.role,
-        targetType: 'RomanSession',
-        targetId: session.id,
-        metadata: { route_reason: ROMAN_SAFETY_ROUTE_REASON[route.class] },
-      });
-      yield { type: 'delta', text };
-      yield { type: 'done', text, messageId: persisted.id, interrupted: false };
+      yield* this.fixedSafetyReply(caller, session, text, ROMAN_SAFETY_ROUTE_REASON[route.class]);
       return;
     }
 
@@ -1028,15 +1009,17 @@ export class RomanService {
     }
     // R11-00: grounded turns with a bundle only; the coach surface never
     // augments. A failing augmenter only drops its own block.
-    const ranAugmenters =
-      grounded && bundle ? await this.runAugmenters(caller, bundle, userMessage) : null;
     // R11-T2A: a memory or coach-method block needs the client's 'memory'
     // scope (client-ai-v5). A v4 holder gets today's prompt and send.
-    const { augmentRun, sendSubject } = await this.memoryScopeOf(caller, subject, ranAugmenters);
+    const { augmentRun, sendSubject } =
+      grounded && bundle
+        ? await this.memoryScopeOf(caller, subject, bundle, userMessage)
+        : { augmentRun: null, sendSubject: subject };
     // R11-T2B: a tools turn (flag on, toolbox provided, grounded with a
     // bundle) reserves every call it may make; any other turn is today's.
     // R11-T3: only a tools turn's prompt carries the tools and answer sections.
     const toolsTurn = this.toolsTurnOf(grounded && bundle !== null);
+    const metBefore = grounded && (await this.hasEarlierChat(caller, session));
 
     const system = buildRomanSystemPrompt({
       surface: session.surface,
@@ -1050,6 +1033,7 @@ export class RomanService {
         ? { augments: augmentRun.applied.map((a) => a.block) }
         : {}),
       ...(toolsTurn ? { tools: true } : {}),
+      ...(metBefore ? { metBefore: true } : {}),
     });
     // B-651-4: the reservation is an upper bound of THIS payload, built from
     // the exact system prompt and history that will be sent (trimmed to the
@@ -1253,6 +1237,94 @@ export class RomanService {
     return route.short_circuit && (route.class === 'emergency' || route.class === 'self_harm');
   }
 
+  /** CF-ROMAN-COPY-B-128: true when the message gets the eating-disorder fallback if the AI cannot answer. */
+  isEatingDisorderRisk(message: string): boolean {
+    return classifySafety(message).class === 'eating_disorder_risk';
+  }
+
+  /**
+   * CF-ROMAN-COPY-B-128 (owner default 10-07): the fixed eating-disorder reply
+   * for a turn the AI cannot answer (the controller calls it when a turn-limit,
+   * consent, daily-cap or coach-pool check refused). No model call, no spend;
+   * the only read is whether the client has a coach, for the coach line.
+   */
+  async *streamEatingDisorderFallback(
+    caller: RomanCaller,
+    session: RomanSession,
+  ): AsyncGenerator<RomanStreamChunk> {
+    let hasCoach = false;
+    try {
+      if (caller.role === 'student') {
+        const user = await this.prisma.user.findUnique({
+          where: { id: caller.id },
+          select: { coach_id: true },
+        });
+        hasCoach = Boolean(user?.coach_id);
+      }
+    } catch (err) {
+      // The coachless wording is true for everyone; never block the reply.
+      this.logger.warn(`roman.fallback_coach_read_failed: ${romanErrorTag(err)}`);
+    }
+    const text = romanEatingDisorderFallback(hasCoach);
+    yield* this.fixedSafetyReply(caller, session, text, ROMAN_EATING_DISORDER_FALLBACK_REASON);
+  }
+
+  /** A deterministic safety reply: stored once, audited by reason code only, then emitted. */
+  private async *fixedSafetyReply(
+    caller: RomanCaller,
+    session: RomanSession,
+    text: string,
+    reason: string,
+  ): AsyncGenerator<RomanStreamChunk> {
+    const persisted = await this.appendMessage(caller, session.id, {
+      role: 'roman',
+      content: text,
+      modelId: ROMAN_SAFETY_ROUTER_MODEL_ID,
+      interrupted: false,
+    });
+    // OR-115-1 (C-651-5): one neutral action name and no class in the log
+    // line. The closed reason code lives only in AuditLog.metadata, which
+    // the owner audit list never returns and #608's erasure manifest nulls
+    // for this actor.
+    this.logger.warn(
+      `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} model_call=false template=fixed`,
+    );
+    await this.audit?.write({
+      action: AuditAction.ROMAN_SAFETY_ROUTE,
+      actorId: caller.id,
+      actorRole: caller.role,
+      targetType: 'RomanSession',
+      targetId: session.id,
+      metadata: { route_reason: reason },
+    });
+    yield { type: 'delta', text };
+    yield { type: 'done', text, messageId: persisted.id, interrupted: false };
+  }
+
+  /**
+   * CF-ROMAN-COPY-B-128 (owner default 10-07): the client has a live chat with
+   * messages from an earlier day, so Roman is not reintroduced. A failed read
+   * means no line (the prompt as before), never a failed turn.
+   */
+  private async hasEarlierChat(caller: RomanCaller, session: RomanSession): Promise<boolean> {
+    try {
+      const earlier = await this.prisma.romanSession.findFirst({
+        where: {
+          user_id: caller.id,
+          surface: session.surface,
+          id: { not: session.id },
+          deleted_at: null,
+          message_count: { gt: 0 },
+        },
+        select: { id: true },
+      });
+      return earlier !== null && earlier !== undefined;
+    } catch (err) {
+      this.logger.warn(`roman.earlier_chat_read_failed: ${romanErrorTag(err)}`);
+      return false;
+    }
+  }
+
   /**
    * R11-00: run the registered augmenters (none on main). Returns null when
    * none are registered so the turn and its ledger row stay exactly as before.
@@ -1320,26 +1392,30 @@ export class RomanService {
   }
 
   /**
-   * R11-T2A memory-scope rule. No applied block = no extra read and the base
-   * subject. Otherwise the caller's 'memory' grant is read once: without it
-   * every block is dropped (the prompt is exactly today's); with it the send
-   * carries scope 'memory', so the gate re-checks v5 at send time.
+   * R11-T2A memory-scope rule. No registered augmenter = no extra read and the
+   * base subject. Otherwise the caller's 'memory' grant is read once, BEFORE
+   * any augmenter runs (R11-FIX U2): without it no augmenter reads the
+   * client's notes and every kind is omitted (the prompt is exactly today's);
+   * with it an applied block sends with scope 'memory', so the gate re-checks
+   * v5 at send time.
    */
   private async memoryScopeOf(
     caller: RomanCaller,
     subject: AiDataSubject,
-    run: RomanAugmentRun | null,
+    bundle: RomanClientContextBundle,
+    userMessage: string,
   ): Promise<{ augmentRun: RomanAugmentRun | null; sendSubject: AiDataSubject }> {
-    if (!run || run.applied.length === 0) return { augmentRun: run, sendSubject: subject };
+    const list = this.augmenters ?? [];
+    if (list.length === 0) return { augmentRun: null, sendSubject: subject };
     const granted = await this.egress.consentedClients([caller.id], 'memory');
-    if (granted.has(caller.id)) {
-      return { augmentRun: run, sendSubject: clientDataSubject(caller.id, 'client', 'memory') };
+    if (!granted.has(caller.id)) {
+      this.logger.log('roman.augment_dropped reason=no_memory_scope');
+      const omitted = ROMAN_TURN_AUGMENT_ORDER.filter((k) => list.some((a) => a.kind === k));
+      return { augmentRun: { applied: [], omitted }, sendSubject: subject };
     }
-    this.logger.log('roman.augment_dropped reason=no_memory_scope');
-    return {
-      augmentRun: { applied: [], omitted: [...run.omitted, ...run.applied.map((a) => a.kind)] },
-      sendSubject: subject,
-    };
+    const run = await this.runAugmenters(caller, bundle, userMessage);
+    if (!run || run.applied.length === 0) return { augmentRun: run, sendSubject: subject };
+    return { augmentRun: run, sendSubject: clientDataSubject(caller.id, 'client', 'memory') };
   }
 
   /** Newest user turn of the caller's session (the controller stores it first). */

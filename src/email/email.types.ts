@@ -61,6 +61,9 @@ export interface SendEmailInput {
   from?: string;
   // Optional reply-to header; falls back to provider default if unset.
   replyTo?: string;
+  // MONEY-MAIL-128 — payment/dunning templates only: the client's coach. Replies
+  // go to that coach's email; unset or no address means the support address.
+  replyToCoachUserId?: string | null;
   // Optional cancellation: checked before the send-log row, again right before the transport,
   // and passed to the provider request. An abort before the transport returns notStarted.
   signal?: AbortSignal;

@@ -9,8 +9,9 @@
  * within `tool_timeout_ms`, each result clamped to `max_result_chars`. After
  * `max_rounds` tool rounds or `turn_wall_ms`, one final call that may not use
  * a tool (tool_choice none; the definitions stay because the history holds
- * tool_use blocks). Usage is summed; a call that failed after dispatch (not a
- * consent refusal or a provider HTTP error) counts its bound, the safe side.
+ * tool_use blocks). Every call and tool is cut at `turn_deadline_ms` (R11-FIX
+ * U1). Usage is summed; a call that failed after dispatch (not a consent
+ * refusal or a provider HTTP error) counts its bound, the safe side.
  */
 
 import type Anthropic from '@anthropic-ai/sdk';
@@ -54,12 +55,20 @@ export interface RomanToolLoopDeps {
   readonly clock?: () => number;
 }
 
-function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+function withTimeout<T>(
+  p: Promise<T>,
+  ms: number,
+  code = 'roman_tool_timeout',
+  onTimeout?: () => void,
+): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   return Promise.race([
     p,
     new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error('roman_tool_timeout')), ms);
+      timer = setTimeout(() => {
+        reject(new Error(code));
+        onTimeout?.();
+      }, ms);
     }),
   ]).finally(() => clearTimeout(timer));
 }
@@ -112,6 +121,7 @@ export class RomanToolLoop {
   async run(base: readonly Anthropic.MessageParam[], signal?: AbortSignal): Promise<string> {
     const L = ROMAN_TOOL_LIMITS;
     const started = this.clock();
+    const deadline = started + L.turn_deadline_ms;
     const tools: Anthropic.Tool[] = this.deps.toolbox.definitions().map((d) => ({
       name: d.name,
       description: d.description,
@@ -126,12 +136,12 @@ export class RomanToolLoop {
       if (signal?.aborted) throw new Error('roman_tool_loop_aborted');
       const last = this.rounds >= L.max_rounds || this.clock() - started >= L.turn_wall_ms;
       const call: RomanToolLoopCall = last ? { tools, tool_choice: { type: 'none' } } : { tools };
-      const res = await this.call(call, messages, signal);
+      const res = await this.call(call, messages, deadline, signal);
       const uses = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
       if (last || res.stop_reason !== 'tool_use' || uses.length === 0) return textOf(res);
       this.rounds += 1;
       const now = new Date(this.clock());
-      const results = await Promise.all(uses.map((u) => this.runTool(u, now)));
+      const results = await Promise.all(uses.map((u) => this.runTool(u, now, deadline)));
       messages.push({ role: 'assistant', content: asParams(res.content) });
       messages.push({ role: 'user', content: results });
     }
@@ -158,10 +168,20 @@ export class RomanToolLoop {
   private async call(
     extra: RomanToolLoopCall,
     messages: Anthropic.MessageParam[],
+    deadline: number,
     signal?: AbortSignal,
   ): Promise<Anthropic.Message> {
+    // R11-FIX U1: past the turn deadline nothing is sent; a call in flight is
+    // aborted at the deadline (or with the turn).
+    const ms = deadline - this.clock();
+    if (ms <= 0) throw new Error('roman_tool_turn_deadline');
+    const ctl = new AbortController();
+    const stop = () => ctl.abort();
+    if (signal?.aborted) stop();
+    else signal?.addEventListener('abort', stop, { once: true });
     try {
-      const res = await this.deps.send(extra, messages, signal);
+      const sent = this.deps.send(extra, messages, ctl.signal);
+      const res = await withTimeout(sent, ms, 'roman_tool_turn_deadline', stop);
       this.input += res.usage?.input_tokens ?? 0;
       this.output += res.usage?.output_tokens ?? 0;
       return res;
@@ -172,12 +192,15 @@ export class RomanToolLoop {
         this.unknownUsage = true;
       }
       throw err;
+    } finally {
+      signal?.removeEventListener('abort', stop);
     }
   }
 
   private async runTool(
     u: Anthropic.ToolUseBlock,
     now: Date,
+    deadline: number,
   ): Promise<Anthropic.ToolResultBlockParam> {
     const L = ROMAN_TOOL_LIMITS;
     this.calls += 1;
@@ -193,7 +216,7 @@ export class RomanToolLoop {
     try {
       const r = await withTimeout(
         this.deps.toolbox.run(this.deps.caller, u.name, u.input, { now }),
-        L.tool_timeout_ms,
+        Math.max(0, Math.min(L.tool_timeout_ms, deadline - this.clock())),
       );
       const content = r.content.slice(0, L.max_result_chars);
       if (!r.ok) return fail(content || 'This data is unavailable right now.');

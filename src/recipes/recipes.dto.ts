@@ -5,11 +5,15 @@ import {
   IsNumber,
   IsArray,
   IsBoolean,
+  IsIn,
   ArrayMaxSize,
+  ArrayUnique,
   MaxLength,
   Min,
   Max,
+  ValidateIf,
 } from 'class-validator';
+import { ALLERGEN_CODES } from './allergens';
 
 export class CreateRecipeDto {
   @IsString()
@@ -90,4 +94,26 @@ export class CreateRecipeDto {
   @IsOptional()
   @IsBoolean()
   isPublic?: boolean;
+
+  /**
+   * CF-ALLERGY-128: the allergens this recipe contains, as codes from the one
+   * list (src/recipes/allergens.ts; GET /recipes/allergens). Required as an
+   * array (an empty one is allowed) when `allergensDeclared` is true.
+   */
+  @ValidateIf((o: CreateRecipeDto) => o.allergens !== undefined || o.allergensDeclared === true)
+  @IsArray()
+  @ArrayMaxSize(ALLERGEN_CODES.length)
+  @ArrayUnique()
+  @IsIn([...ALLERGEN_CODES], { each: true })
+  allergens?: string[];
+
+  /**
+   * true = the author confirms `allergens` lists every listed allergen the
+   * recipe contains (an empty list then means none of them). Absent or false =
+   * undeclared: the recipe is shown to clients labelled as undeclared, and
+   * still hidden from a client whose saved allergen it lists.
+   */
+  @IsOptional()
+  @IsBoolean()
+  allergensDeclared?: boolean;
 }

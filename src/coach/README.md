@@ -38,7 +38,7 @@ coach's own roster.
 | `GET` | `/coach/clients/risk-board` | **coach / owner** | `?bucket=green\|amber\|red&cursor=ISO&limit=N` | `{ data: CoachRiskBoardRow[], next_cursor: string\|null, generated_at: string }` |
 | `GET` | `/coach/clients/:id/timeline?days=N` | coach / owner | `:id`, `days` | 90-day event stream |
 | `GET` | `/coach/clients/:id/summary?date=YYYY-MM-DD` | coach / owner | `:id`, `date` | One-day macro tally + 30-day weight |
-| `GET` | `/coach/my-guidelines` | coach / owner | — | Most-recent guideline row |
+| `GET` | `/coach/my-guidelines` | client (student; package required) | — | The signed-in client's guideline from their current coach: `{ description, created_at, updated_at }`, or an empty body when there is none (`client-guidelines.controller.ts`) |
 | `GET` | `/coach/guidelines/:client_id` | coach / owner | `:client_id` | Guideline coach has set on a client |
 | `POST` | `/coach/guidelines/:client_id` | coach / owner | `:client_id`, body | Upsert guideline |
 | `GET` | `/coach/alerts` | coach / owner | `?acknowledged=true\|false&limit=&before=` | Alert inbox |
@@ -124,9 +124,11 @@ cross-tenant read. `archiveClient` and `unarchiveClient` re-throw as
 
 `postGuidelines` upserts on the composite `(coach_id, client_id)` key
 (`CoachGuideline_coach_client_key`) so a coach has exactly one
-guideline row per client. `getGuidelines` accepts either
-`(coachId, clientId)` or `(clientId)` to support the mobile
-"coach-set guidelines for me" surface.
+guideline row per client. `getGuidelines(coachId, clientId)` is the
+coach read. The client's own read is `getClientGuidelines(clientId)`
+(GET /coach/my-guidelines): only the row for (current coach, this
+client), returned as the text and its dates under the names the app's
+Coach guidelines screen reads.
 
 ## Alerts
 

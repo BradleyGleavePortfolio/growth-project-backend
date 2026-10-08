@@ -192,7 +192,7 @@ export class MealPlansService {
   }
 
   // Query the canonical system for the client's most-recently-assigned,
-  // currently-or-previously-effective DailyMealPlan and reshape ONE plan
+  // non-ended DailyMealPlan and reshape ONE plan
   // into the legacy `MealPlan` response shape. Returns null when the client
   // has no canonical assignment, so the caller can fall through to legacy.
   //
@@ -201,8 +201,13 @@ export class MealPlansService {
   // (a coach can only create one for their own client), so reading by
   // `client_id` cannot leak another client's plan.
   private async mostRecentCanonicalAsLegacyShape(clientId: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const assignment = await this.prisma.dailyMealPlanAssignment.findFirst({
-      where: { client_id: clientId },
+      where: {
+        client_id: clientId,
+        OR: [{ ends_on: null }, { ends_on: { gte: today } }],
+      },
       // Most recently assigned wins: order by effective start, then by the
       // row's own creation so two same-day assignments are still ordered.
       orderBy: [{ starts_on: 'desc' }, { created_at: 'desc' }],

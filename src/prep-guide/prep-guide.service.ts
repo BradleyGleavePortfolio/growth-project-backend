@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { RecipeViewer, toRecipeView, visibleRecipesWhere } from '../recipes/recipe-access';
+import { loadViewerAllergens } from '../recipes/allergens';
+import { canonicalIngredientUnit } from '../common/ingredient-unit';
 
 export interface AggregatedIngredient {
   name: string;
@@ -10,6 +12,9 @@ export interface AggregatedIngredient {
 }
 
 export interface PrepGuideResult {
+  source: 'plan' | 'library';
+  week_filter_applied: false;
+  // Compatibility echo only: legacy plans have no weekly schedule.
   week_start: string;
   recipes: Array<{
     id: string;
@@ -23,16 +28,13 @@ export interface PrepGuideResult {
     carbs: number;
     fat: number;
     tags: string[];
+    /** Declared by the recipe author (CF-ALLERGY-128); see allergens_declared. */
+    allergens: string[];
+    allergens_declared: boolean;
   }>;
   aggregated_ingredients: AggregatedIngredient[];
   prep_day_suggestions: string[];
 }
-
-// Day-of-week names for prep suggestions.
-const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-// Best prep days per week-start day: always suggest Sunday + one mid-week day.
-const PREP_SUGGESTIONS = ['Sunday', 'Wednesday'];
 
 @Injectable()
 export class PrepGuideService {
@@ -40,13 +42,8 @@ export class PrepGuideService {
 
   async getWeeklyPrepGuide(viewer: RecipeViewer, weekStart: string): Promise<PrepGuideResult> {
     const userId = viewer.id;
-    // Derive week range.
-    const startDate = new Date(weekStart);
-    startDate.setHours(0, 0, 0, 0);
-    const endDate = new Date(startDate);
-    endDate.setDate(endDate.getDate() + 7);
-
-    // Find active meal plans for this client during the week.
+    // Legacy plans have no weekly schedule; weekStart is echoed, not filtered.
+    // Find this client's unarchived plans.
     // The meal plan items are stored as JSON. We extract recipe_id fields if present.
     const mealPlans = await this.prisma.mealPlan.findMany({
       where: {
@@ -81,7 +78,10 @@ export class PrepGuideService {
     // recipe this client could open in Recipes (their own, or one their coach
     // shares with clients). There is no platform-wide fallback: with no
     // referenced recipe, the guide shows the latest visible ones (up to 6).
-    const visible = visibleRecipesWhere(viewer);
+    // A shared recipe declaring an allergen saved on the client's profile is
+    // left out here too (CF-ALLERGY-128), so it adds nothing to the list.
+    const avoid = await loadViewerAllergens(this.prisma, userId);
+    const visible = visibleRecipesWhere(viewer, avoid);
     let recipes;
     if (referencedRecipeIds.size > 0) {
       recipes = await this.prisma.recipe.findMany({
@@ -102,29 +102,11 @@ export class PrepGuideService {
       for (const rawIngredient of recipe.ingredients) {
         // Parse "1 cup broccoli florets" or "2 tbsp olive oil" etc.
         const parsed = parseIngredient(rawIngredient);
-        const key = parsed.name.toLowerCase();
+        const key = JSON.stringify([parsed.name.toLowerCase(), parsed.unit]);
+        const existing = ingredientMap.get(key);
 
-        if (ingredientMap.has(key)) {
-          const existing = ingredientMap.get(key)!;
-          // Add quantities if units match, otherwise just add the entry.
-          if (existing.unit === parsed.unit) {
-            existing.quantity += parsed.quantity;
-          } else {
-            // Different units — list separately with a disambiguation suffix.
-            const altKey = `${key} (${parsed.unit})`;
-            if (!ingredientMap.has(altKey)) {
-              ingredientMap.set(altKey, {
-                name: parsed.name,
-                quantity: parsed.quantity,
-                unit: parsed.unit,
-                recipe_ids: [recipe.id],
-              });
-            } else {
-              ingredientMap.get(altKey)!.quantity += parsed.quantity;
-              ingredientMap.get(altKey)!.recipe_ids.push(recipe.id);
-            }
-            continue;
-          }
+        if (existing) {
+          existing.quantity += parsed.quantity;
           if (!existing.recipe_ids.includes(recipe.id)) {
             existing.recipe_ids.push(recipe.id);
           }
@@ -139,11 +121,10 @@ export class PrepGuideService {
       }
     }
 
-    // Derive prep day suggestions based on week start.
-    const prepDays = PREP_SUGGESTIONS.slice();
-
     return {
-      week_start: startDate.toISOString().split('T')[0],
+      source: referencedRecipeIds.size > 0 ? 'plan' : 'library',
+      week_filter_applied: false,
+      week_start: weekStart,
       recipes: recipes.map(toRecipeView).map((r) => ({
         id: r.id,
         title: r.title,
@@ -156,9 +137,12 @@ export class PrepGuideService {
         carbs: r.carbs,
         fat: r.fat,
         tags: r.tags,
+        allergens: r.allergens,
+        allergens_declared: r.allergens_declared,
       })),
       aggregated_ingredients: Array.from(ingredientMap.values()),
-      prep_day_suggestions: prepDays,
+      // Neither recipe-library dates nor legacy plans specify prep days.
+      prep_day_suggestions: [],
     };
   }
 }
@@ -166,7 +150,7 @@ export class PrepGuideService {
 // ─── Helper: simple ingredient parser ─────────────────────────────────────────
 // Handles formats like:
 //   "600g chicken breast, cubed"   → { quantity: 600, unit: 'g', name: 'chicken breast, cubed' }
-//   "2 cups jasmine rice (dry)"    → { quantity: 2, unit: 'cups', name: 'jasmine rice (dry)' }
+//   "2 cups jasmine rice (dry)"    → { quantity: 2, unit: 'cup', name: 'jasmine rice (dry)' }
 //   "1 tbsp olive oil"             → { quantity: 1, unit: 'tbsp', name: 'olive oil' }
 //   "salt & pepper to taste"       → { quantity: 1, unit: '', name: 'salt & pepper to taste' }
 function parseIngredient(raw: string): { quantity: number; unit: string; name: string } {
@@ -174,12 +158,12 @@ function parseIngredient(raw: string): { quantity: number; unit: string; name: s
 
   // Match "NUMBER UNIT NAME" patterns
   const match = trimmed.match(
-    /^([\d./]+)\s*(g|kg|ml|l|cups?|tbsp?|tsp?|oz|lbs?|lb|pieces?|cloves?|cans?|slices?|stalks?)\.?\s+(.+)$/i,
+    /^([\d./]+)\s*(g|grams?|kg|kilograms?|ml|millilit(?:er|re)s?|l|lit(?:er|re)s?|cups?|tbsp?|tablespoons?|tsp?|teaspoons?|oz|ounces?|lbs?|pounds?|pieces?|cloves?|cans?|slices?|stalks?)\.?\s+(.+)$/i,
   );
 
   if (match) {
     const quantityStr = match[1];
-    const unit = match[2].toLowerCase().replace(/\.+$/, '');
+    const unit = canonicalIngredientUnit(match[2]);
     const name = match[3].split(',')[0].trim(); // strip trailing modifiers like ", cubed"
 
     // Handle fractions like "1/2"
@@ -199,7 +183,7 @@ function parseIngredient(raw: string): { quantity: number; unit: string; name: s
   if (compactMatch) {
     return {
       quantity: parseFloat(compactMatch[1]) || 1,
-      unit: compactMatch[2].toLowerCase(),
+      unit: canonicalIngredientUnit(compactMatch[2]),
       name: compactMatch[3].split(',')[0].trim(),
     };
   }

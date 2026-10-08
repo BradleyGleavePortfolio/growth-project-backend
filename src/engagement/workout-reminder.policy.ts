@@ -139,6 +139,14 @@ export const REMINDER_TITLE = 'From Roman';
 export const FIRST_DAY_BODY =
   'Your first session is today. Everything is laid out and ready when you are.';
 
+/**
+ * CF-NOTIF-DIGEST-128 (FW-NOTIF U8): the first session day with no plan
+ * workout on it. Nothing is laid out then, so the copy points to the Train
+ * tab, where a session can be started.
+ */
+export const FIRST_DAY_NO_PLAN_BODY =
+  'Your first session is today. Start one from the Train tab when you are ready.';
+
 export const PLAN_DAY_BODIES: readonly string[] = [
   "Today's session is ready when you are. Everything is laid out.",
   'A gentle reminder: your session is on the plan for today.',
@@ -148,8 +156,11 @@ export const PLAN_DAY_BODIES: readonly string[] = [
 export function reminderCopy(
   localDate: string,
   firstDay: boolean,
+  hasPlanWorkout: boolean,
 ): { title: string; body: string } {
-  if (firstDay) return { title: REMINDER_TITLE, body: FIRST_DAY_BODY };
+  if (firstDay) {
+    return { title: REMINDER_TITLE, body: hasPlanWorkout ? FIRST_DAY_BODY : FIRST_DAY_NO_PLAN_BODY };
+  }
   // Deterministic rotation by date so a retry never changes the wording.
   const day = Math.floor(dateFromKey(localDate).getTime() / 86_400_000);
   const body =

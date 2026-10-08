@@ -1,6 +1,7 @@
 import {
   DEFAULT_REMINDER_TIMEZONE,
   FIRST_DAY_BODY,
+  FIRST_DAY_NO_PLAN_BODY,
   PLAN_DAY_BODIES,
   REMINDER_SEND_WINDOW_MINUTES,
   REMINDER_SLOT_MINUTES,
@@ -142,7 +143,7 @@ describe('which days', () => {
 });
 
 describe("copy (Roman's butler voice)", () => {
-  const all = [FIRST_DAY_BODY, ...PLAN_DAY_BODIES, REMINDER_TITLE];
+  const all = [FIRST_DAY_BODY, FIRST_DAY_NO_PLAN_BODY, ...PLAN_DAY_BODIES, REMINDER_TITLE];
   it('is short, with no exclamation marks, emojis or medical language', () => {
     for (const s of all) {
       expect(s.length).toBeLessThanOrEqual(90);
@@ -155,15 +156,22 @@ describe("copy (Roman's butler voice)", () => {
   });
 
   it('first-day copy on C1, deterministic rotation otherwise', () => {
-    expect(reminderCopy('2026-10-05', true)).toEqual({
+    expect(reminderCopy('2026-10-05', true, true)).toEqual({
       title: REMINDER_TITLE,
       body: FIRST_DAY_BODY,
     });
-    expect(reminderCopy('2026-10-07', false)).toEqual(reminderCopy('2026-10-07', false));
+    expect(reminderCopy('2026-10-07', false, true)).toEqual(reminderCopy('2026-10-07', false, true));
     const bodies = new Set(
-      ['2026-10-07', '2026-10-08', '2026-10-09'].map((d) => reminderCopy(d, false).body),
+      ['2026-10-07', '2026-10-08', '2026-10-09'].map((d) => reminderCopy(d, false, true).body),
     );
     expect(bodies.size).toBe(3);
+  });
+
+  it('CF-NOTIF-DIGEST-128 (U8): C1 with no plan workout never says the session is laid out', () => {
+    const copy = reminderCopy('2026-10-05', true, false);
+    expect(copy).toEqual({ title: REMINDER_TITLE, body: FIRST_DAY_NO_PLAN_BODY });
+    expect(copy.body).not.toMatch(/laid out|on the plan|waiting for you/i);
+    expect(copy.body).toMatch(/Train tab/);
   });
 });
 

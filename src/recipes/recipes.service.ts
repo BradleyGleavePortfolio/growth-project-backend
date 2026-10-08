@@ -6,25 +6,46 @@ import {
   RecipeViewer,
   assertNoRecipeImageUrl,
   canShareRecipes,
+  hiddenForAllergens,
+  recipeHiddenForAllergens,
   recipeNotFound,
   recipeSharingCoachOnly,
   toRecipeView,
   visibleRecipesWhere,
 } from './recipe-access';
+import {
+  AllergenCode,
+  RECIPE_ALLERGENS,
+  canonicalAllergens,
+  loadViewerAllergens,
+} from './allergens';
+
+/** GET /recipes/allergens: the one allergen list and the viewer's saved allergens. */
+export interface RecipeAllergenGuide {
+  allergens: Array<{ code: AllergenCode; label: string }>;
+  /** Shared recipes declaring any of these are hidden from this viewer. */
+  your_allergens: AllergenCode[];
+}
 
 /**
  * Recipes: private by default, shared only inside a coach's own client roster.
- * The access policy (who sees what, the photo rule, the error codes) lives in
- * ./recipe-access.ts; this service only applies it.
+ * The access policy (who sees what, the photo rule, the allergen rule, the
+ * error codes) lives in ./recipe-access.ts and ./allergens.ts; this service
+ * only applies it. Every read loads the viewer's saved allergens itself, so
+ * no caller can forget the allergen rule.
  */
 @Injectable()
 export class RecipesService {
   constructor(private prisma: PrismaService) {}
 
-  /** GET /recipes: the viewer's own recipes plus the ones their coach shares. */
+  /**
+   * GET /recipes: the viewer's own recipes plus the ones their coach shares,
+   * minus shared ones that declare an allergen saved on the viewer's profile.
+   */
   async list(viewer: RecipeViewer) {
+    const avoid = await loadViewerAllergens(this.prisma, viewer.id);
     const recipes = await this.prisma.recipe.findMany({
-      where: visibleRecipesWhere(viewer),
+      where: visibleRecipesWhere(viewer, avoid),
       orderBy: { created_at: 'desc' },
       take: RECIPE_LIST_LIMIT,
       include: { _count: { select: { saved_by: true } } },
@@ -32,8 +53,12 @@ export class RecipesService {
     return recipes.map(toRecipeView);
   }
 
-  /** GET /recipes/:id. 404 RECIPE_NOT_FOUND when missing or not visible. */
+  /**
+   * GET /recipes/:id. 404 RECIPE_NOT_FOUND when missing or not visible;
+   * 404 RECIPE_HIDDEN_FOR_ALLERGENS when it declares one of the viewer's allergens.
+   */
   async getById(recipeId: string, viewer: RecipeViewer) {
+    const avoid = await loadViewerAllergens(this.prisma, viewer.id);
     const recipe = await this.prisma.recipe.findFirst({
       where: { AND: [{ id: recipeId }, visibleRecipesWhere(viewer)] },
       include: {
@@ -42,6 +67,7 @@ export class RecipesService {
       },
     });
     if (!recipe) throw recipeNotFound();
+    if (hiddenForAllergens(recipe, viewer, avoid)) throw recipeHiddenForAllergens();
     const { saved_by, ...rest } = recipe;
     return { ...toRecipeView(rest), isSaved: saved_by.length > 0 };
   }
@@ -50,7 +76,10 @@ export class RecipesService {
    * POST /recipes. Private unless a coach (or the owner account) asks to share
    * it with their own clients. A client asking to share gets 403
    * RECIPE_SHARING_COACH_ONLY; any photo link gets 400
-   * RECIPE_IMAGE_URL_NOT_ALLOWED. Nothing is written on refusal.
+   * RECIPE_IMAGE_URL_NOT_ALLOWED. Nothing is written on refusal. Allergens
+   * are what the author declares: `allergensDeclared: true` confirms the list
+   * is complete (an empty list then means none of the listed allergens);
+   * without it the recipe is stored as undeclared.
    */
   async create(viewer: RecipeViewer, data: CreateRecipeDto) {
     const share = data.isPublic === true;
@@ -72,6 +101,8 @@ export class RecipesService {
         ingredients: data.ingredients,
         instructions: data.instructions,
         tags: data.tags,
+        allergens: canonicalAllergens(data.allergens),
+        allergens_declared: data.allergensDeclared === true,
         is_public: share,
         created_by_id: viewer.id,
       },
@@ -81,11 +112,13 @@ export class RecipesService {
 
   /** POST /recipes/:id/save. Only a recipe the viewer can see can be saved. */
   async saveRecipe(recipeId: string, viewer: RecipeViewer) {
+    const avoid = await loadViewerAllergens(this.prisma, viewer.id);
     const recipe = await this.prisma.recipe.findFirst({
       where: { AND: [{ id: recipeId }, visibleRecipesWhere(viewer)] },
-      select: { id: true },
+      select: { id: true, created_by_id: true, allergens: true },
     });
     if (!recipe) throw recipeNotFound();
+    if (hiddenForAllergens(recipe, viewer, avoid)) throw recipeHiddenForAllergens();
     // Upsert to avoid duplicate saves.
     return this.prisma.savedRecipe.upsert({
       where: { user_id_recipe_id: { user_id: viewer.id, recipe_id: recipe.id } },
@@ -110,14 +143,23 @@ export class RecipesService {
     return { removed: true };
   }
 
-  /** GET /recipes/saved: saved recipes the viewer can still see. */
+  /** GET /recipes/saved: saved recipes the viewer can still see (the allergen rule included). */
   async listSaved(viewer: RecipeViewer) {
+    const avoid = await loadViewerAllergens(this.prisma, viewer.id);
     const saved = await this.prisma.savedRecipe.findMany({
-      where: { user_id: viewer.id, recipe: visibleRecipesWhere(viewer) },
+      where: { user_id: viewer.id, recipe: visibleRecipesWhere(viewer, avoid) },
       include: { recipe: { include: { _count: { select: { saved_by: true } } } } },
       orderBy: { saved_at: 'desc' },
       take: RECIPE_LIST_LIMIT,
     });
     return saved.map((s) => toRecipeView(s.recipe));
+  }
+
+  /** GET /recipes/allergens: the allergens an author can declare and the ones that hide recipes for this viewer. */
+  async allergenGuide(viewer: RecipeViewer): Promise<RecipeAllergenGuide> {
+    return {
+      allergens: RECIPE_ALLERGENS.map((a) => ({ code: a.code, label: a.label })),
+      your_allergens: await loadViewerAllergens(this.prisma, viewer.id),
+    };
   }
 }

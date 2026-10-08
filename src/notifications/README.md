@@ -127,6 +127,7 @@ Push notifications are rate-limited to **1 push per user per kind per 60 seconds
 | ----------------------------- | -------------------------------------- | ---------------------------------------------------------------- |
 | `EMAIL_DIGEST_CLIENT_ENABLED` | `on`                                   | Set to `off` to disable all client digest emails                 |
 | `EMAIL_DIGEST_COACH_ENABLED`  | `on`                                   | Set to `off` to disable all coach digest emails                  |
+| `EMAIL_DIGEST_CLIENT_DAILY_ENABLED` | `off`                            | Only `on` sends the client daily digest; the weekly one is kept  |
 | `CLIENT_DAILY_CRON`           | `0 7 * * *`                            | Cron schedule for client daily digest (UTC)                      |
 | `COACH_DAILY_CRON`            | `0 6 * * *`                            | Cron schedule for coach daily digest (UTC)                       |
 | `WEEKLY_DIGEST_CRON`          | `0 8 * * 0`                            | Cron schedule for weekly digest (UTC, Sunday)                    |
