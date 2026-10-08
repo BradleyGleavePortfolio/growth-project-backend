@@ -302,9 +302,25 @@ export class V1CoachService {
 
     const now = new Date();
     const presenceCutoff = new Date(now.getTime() - ACTIVE_PRESENCE_MINUTES * 60_000);
+    // B-865-SOL-130-2: as in listClients, the risk reads the last check-in date
+    // only for clients who share "Check-ins and habits", under the grant of the
+    // coach the client joined (the head coach's for a sub-coach). The owner
+    // account reads all. A hidden date gives no check-in reason.
+    const granted = this.consent
+      ? await this.consent.grantedScopesByClient(
+          messagingCoachId,
+          clientIds,
+          [ConsentScope.FITNESS_HABITS_PROGRESS],
+          caller.role,
+        )
+      : null;
+    const checkInIds = clientIds.filter(
+      (id) => granted === null || granted.get(id)?.has(ConsentScope.FITNESS_HABITS_PROGRESS) === true,
+    );
+    const checkInShared = new Set(checkInIds);
     const lastCheckIns = await this.prisma.checkIn.groupBy({
       by: ['user_id'],
-      where: { user_id: { in: clientIds } },
+      where: { user_id: { in: checkInIds } },
       _max: { date: true },
     });
     const lastCheckInByClient = new Map<string, Date | null>();
@@ -333,6 +349,7 @@ export class V1CoachService {
         now,
         lastCheckIn: lastCheckInByClient.get(clientId) ?? null,
         lastCoachReply: lastCoachReplyByClient.get(clientId) ?? null,
+        checkInShared: checkInShared.has(clientId),
       });
       return {
         clientId,

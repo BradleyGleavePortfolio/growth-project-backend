@@ -1,3 +1,4 @@
+import { ForbiddenException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import type { AuthedRequest } from '../src/auth/auth-request';
 import { PrismaService } from '../src/prisma.service';
@@ -21,6 +22,7 @@ import { V1CoachController } from '../src/v1/v1-coach.controller';
 import { AiEgressService } from '../src/ai-egress/ai-egress.service';
 import { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
 import { CommandCenterController } from '../src/coach/command-center/command-center.controller';
+import type { GenerateChurnDraftDto } from '../src/coach/command-center/churn-intervention.dto';
 
 // CF-SHARE-GATE-128 (FW-COACH-128 U2): a client turns a switch off in Settings >
 // Privacy > Coach sharing (Workouts, Food logs, Weigh-ins, Check-ins and
@@ -354,5 +356,92 @@ describe('B-865-SOL-130-1: GET /v1/coach/me/clients and churn-at-risk follow the
   it('V1CoachService and ChurnInterventionService do not build without ConsentService', async () => {
     await expect(Test.createTestingModule({ providers: v1Providers(null) }).compile()).rejects.toThrow(/ConsentService/);
     await expect(Test.createTestingModule({ providers: churnProviders(null) }).compile()).rejects.toThrow(/ConsentService/);
+  });
+});
+
+// B-865-SOL-130-2 (FIX-OPUS-131): GET /v1/coach/me/threads turns only a shared
+// check-in date into risk, and POST churn-at-risk/:clientId/draft needs all four
+// switches before it reads the score, factors or check-in, claims the
+// idempotency key or calls the AI.
+describe('B-865-SOL-130-2: GET /v1/coach/me/threads and the churn draft follow the switches', () => {
+  const users = ['c1', 'c2', 'c3'].map((id) => ({ id, name: `Client ${id}`, role: 'student', coach_id: COACH, deleted_at: null }));
+  const KEY = '3b241101-e2bb-4255-8caf-4136c566a962';
+
+  function threadsModule() {
+    // Every client wrote an hour ago and was answered; the last check-in was 30 days ago.
+    const checkIns = users.map((u) => ({ user_id: u.id, date: ago(30 * DAY) }));
+    const checkInGroupBy = jest.fn(async (a: GroupArgs) => group(checkIns, a));
+    const providers = [
+      V1CoachService,
+      { provide: PrismaService, useValue: {
+        coachMessage: {
+          findMany: jest.fn(async () =>
+            users.map((u) => ({ client_id: u.id, sender_id: u.id, body: 'Hello', created_at: ago(3_600_000), read_at: null }))),
+          groupBy: jest.fn(async () => users.map((u) => ({ client_id: u.id, _max: { created_at: ago(2 * 3_600_000) } }))),
+        },
+        user: { findMany: jest.fn(async () => users.map((u) => ({ id: u.id, name: u.name, profile: { avatar_url: null } }))) },
+        checkIn: { groupBy: checkInGroupBy },
+      } },
+      { provide: SupabaseService, useValue: {} },
+      { provide: AuditService, useValue: { write: jest.fn() } },
+      // 'sub-1' is a sub-coach of COACH; the grants belong to COACH.
+      { provide: SubCoachScopeService, useValue: {
+        isSubCoach: jest.fn(async (id: string) => id === 'sub-1'),
+        getAuthorizedClientIds: jest.fn(async () => ['c1', 'c2', 'c3']),
+        getHeadCoachIdForSubCoach: jest.fn(async (id: string) => (id === 'sub-1' ? COACH : null)),
+      } },
+      { provide: ConsentService, useValue: setup().consent },
+    ];
+    return { providers, checkInGroupBy };
+  }
+
+  it('threads: a hidden check-in date gives no risk; a sub-coach reads under the head coach grant; the owner account reads all', async () => {
+    const { providers, checkInGroupBy } = threadsModule();
+    const mod = await Test.createTestingModule({ providers }).compile();
+    const ctrl = new V1CoachController(mod.get(V1CoachService));
+    const risk = async (id: string, role: string) =>
+      Object.fromEntries((await ctrl.listThreads(stub<AuthedRequest>({ user: { id, role } }))).map((t) => [t.clientId, t.risk]));
+
+    // c1 and c3 share Check-ins and habits (30 days without one: watch); c2 turned it off.
+    expect(await risk(COACH, 'coach')).toEqual({ c1: 'watch', c2: 'healthy', c3: 'watch' });
+    expect(checkInGroupBy.mock.calls[0][0].where).toEqual({ user_id: { in: ['c1', 'c3'] } });
+    expect(await risk('sub-1', 'coach')).toEqual({ c1: 'watch', c2: 'healthy', c3: 'watch' });
+    expect(await risk('owner-1', 'owner')).toEqual({ c1: 'watch', c2: 'watch', c3: 'watch' });
+  });
+
+  it('draft: refused before any read, key claim or AI call unless all four are shared; the owner account passes', async () => {
+    const reads = {
+      egress: jest.fn(async () => {
+        throw new Error('AI consent check reached');
+      }),
+      ptm: jest.fn(async () => null),
+      claim: jest.fn(async () => ({})),
+      checkIn: jest.fn(async () => null),
+    };
+    const mod = await Test.createTestingModule({ providers: [
+      ChurnInterventionService,
+      { provide: PrismaService, useValue: {
+        user: { findFirst: jest.fn(async (a: { where?: Where }) => users.find((u) => matches(u, a.where ?? {})) ?? null) },
+        churnIntervention: { create: reads.claim },
+        checkIn: { findFirst: reads.checkIn },
+      } },
+      { provide: PtmService, useValue: { getLatestPrediction: reads.ptm } },
+      { provide: ConfigService, useValue: { get: jest.fn() } },
+      { provide: AiEgressService, useValue: { assertMaySend: reads.egress } },
+      { provide: ConsentService, useValue: setup().consent },
+    ] }).compile();
+    const ctrl = new CommandCenterController(stub<CommandCenterService>({}), mod.get(ChurnInterventionService));
+    const draft = (role: string, clientId: string) =>
+      ctrl.generateChurnDraft(req(role), clientId, stub<GenerateChurnDraftDto>({ idempotency_key: KEY }));
+
+    // c2 turned all four off; c3 shares only Check-ins and habits.
+    for (const id of ['c2', 'c3']) {
+      await expect(draft('coach', id)).rejects.toThrow(ForbiddenException);
+    }
+    for (const fn of Object.values(reads)) expect(fn).not.toHaveBeenCalled();
+
+    // c1 shares all four, and the owner account reads all: both go on to the AI consent check.
+    await expect(draft('coach', 'c1')).rejects.toThrow('AI consent check reached');
+    await expect(draft('owner', 'c2')).rejects.toThrow('AI consent check reached');
   });
 });
