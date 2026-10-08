@@ -255,6 +255,8 @@ export class CommandCenterController {
     return this.churn.getChurnAtRisk(req.user.id, {
       limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
       minBucket: safeBucket,
+      // B-865-SOL-130-1: keeps the owner account's Coach sharing bypass.
+      callerRole: req.user.role,
     });
   }
 
@@ -281,10 +283,13 @@ export class CommandCenterController {
     @Param('clientId', new ParseUUIDPipe()) clientId: string,
     @Body() dto: GenerateChurnDraftDto,
   ): Promise<ChurnInterventionDto> {
-    return this.churn.generateChurnDraft(req.user.id, clientId, {
-      idempotency_key: dto.idempotency_key,
-      alert_id: dto.alert_id,
-    });
+    // B-865-SOL-130-2: the role keeps the owner account's Coach sharing bypass.
+    return this.churn.generateChurnDraft(
+      req.user.id,
+      clientId,
+      { idempotency_key: dto.idempotency_key, alert_id: dto.alert_id },
+      req.user.role,
+    );
   }
 
   // Coach sends a draft intervention they own. Service `sendIntervention`

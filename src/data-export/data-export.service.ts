@@ -190,6 +190,8 @@ const RECIPE_EXPORT_SELECT: Record<string, true> = {
   ingredients: true,
   instructions: true,
   tags: true,
+  allergens: true,
+  allergens_declared: true,
   is_public: true,
   created_at: true,
   updated_at: true,

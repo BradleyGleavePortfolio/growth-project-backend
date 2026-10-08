@@ -5,6 +5,7 @@
  * shares everything; client PRIVATE turned all four switches off on 10-01.
  */
 import type { Prisma } from '@prisma/client';
+import { ForbiddenException } from '@nestjs/common';
 import { AnthropicHandle, type AnthropicMessagesClient } from '../src/ai-egress/ai-egress.service';
 import { ConsentService } from '../src/consent/consent.service';
 import { CoachBriefService } from '../src/coach/brief/coach-brief.service';
@@ -30,7 +31,19 @@ function consentSharing(sharing: string[]): ConsentService {
     const revoked = sharing.includes(k.client_id) ? null : new Date('2026-10-01T00:00:00Z');
     return { granted_at: new Date('2026-09-01T00:00:00Z'), revoked_at: revoked };
   });
-  return new ConsentService(fakeOf({ clientCoachConsent: { findUnique } }), fakeOf({}));
+  // The batch read (grantedScopesByClient, from b#865) answers the same way, by the ids and scopes asked.
+  type ManyWhere = { coach_id: string; client_id: { in: string[] }; scope: { in: string[] } };
+  const findMany = jest.fn(async ({ where }: { where: ManyWhere }) =>
+    where.coach_id !== COACH
+      ? []
+      : where.client_id.in.flatMap((client_id) =>
+          where.scope.in.map((scope) => ({
+            client_id, scope, granted_at: new Date('2026-09-01T00:00:00Z'),
+            revoked_at: sharing.includes(client_id) ? null : new Date('2026-10-01T00:00:00Z'),
+          })),
+        ),
+  );
+  return new ConsentService(fakeOf({ clientCoachConsent: { findUnique, findMany } }), fakeOf({}));
 }
 
 describe('Coach daily brief (B1)', () => {
@@ -185,7 +198,9 @@ describe('Roman adjust proposals (U3)', () => {
 });
 
 describe('Churn re-engagement draft (U4)', () => {
-  it('leaves the last check-in out when the client does not share check-ins', async () => {
+  // With b#865 merged, the draft needs all four switches (churn-intervention.service.ts generateChurnDraft),
+  // so a client who does not share check-ins gets no draft: nothing is read or sent.
+  it('a client who does not share check-ins gets no draft: no check-in read, no AI call', async () => {
     const checkIn = jest.fn(async () => ({ mood: 1, energy: 2, notes: 'rough week at work', logged_at: new Date('2026-10-06T08:00:00Z') }));
     const prisma = {
       user: { findFirst: async () => ({ id: PRIVATE, name: NAMES[PRIVATE] }), findUnique: async () => ({ name: 'Coach One', role: 'coach', coach_profile: null }) },
@@ -201,11 +216,11 @@ describe('Churn re-engagement draft (U4)', () => {
       fakeOf(prisma), fakeOf({ getLatestPrediction: async () => null }), fakeOf({ get: () => undefined }),
       grantAllEgress(), undefined, anthropic, consentSharing([SHARES]),
     );
-    await svc.generateChurnDraft(COACH, PRIVATE, { idempotency_key: '7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f' });
+    await expect(
+      svc.generateChurnDraft(COACH, PRIVATE, { idempotency_key: '7f1c2d3e-4b5a-4c6d-8e9f-0a1b2c3d4e5f' }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
     expect(checkIn).not.toHaveBeenCalled();
-    const system = create.mock.calls[0][0].system;
-    expect(system).not.toContain('Mood:');
-    expect(system).toContain('Their check-ins are not shared with the coach');
+    expect(create).not.toHaveBeenCalled();
   });
 });
 

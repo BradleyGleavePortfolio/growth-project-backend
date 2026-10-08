@@ -59,6 +59,8 @@ function buildCoachSvc() {
     getGuidelines: jest.fn(),
     postGuidelines: jest.fn(),
     getAlerts: jest.fn(),
+    // CF-SHARE-GATE-128: the roster clients sharing all four kinds of logs.
+    riskBoardClientIds: jest.fn(async () => ['client-1']),
   } as any;
 }
 
@@ -158,6 +160,7 @@ describe('CoachController.getCoachRiskBoard — happy path', () => {
       bucket: 'amber',
       cursor,
       limit: 5,
+      clientIds: ['client-1'],
     });
   });
 });

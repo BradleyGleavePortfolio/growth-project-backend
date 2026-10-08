@@ -25,6 +25,7 @@ import { PrismaService } from '../../prisma.service';
 import { AdminPtmService } from '../../admin/ptm/admin-ptm.service';
 import { CoachAlertsService } from '../coach-alerts.service';
 import { SubCoachScopeService } from '../../sub-coach/sub-coach-scope.service';
+import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../../consent/consent.service';
 import type { CoachRiskBoardRow } from '../../admin/ptm/admin-ptm.service';
 import type { PtmRiskBucket } from '../../ptm/ptm.types';
 
@@ -142,6 +143,30 @@ function buildThreadId(id1: string, id2: string): string {
   return [id1, id2].sort().join(':');
 }
 
+// CF-SHARE-GATE-128: client ids by Coach sharing switch.
+interface SharedClientIds {
+  habits: string[]; // "Check-ins and habits": check-in counts and streaks
+  workouts: string[]; // "Workouts": workout streaks
+  allFour: string[]; // all four: the churn-risk score reads all four kinds of logs
+}
+
+// CoachAlert types built from a client's logs follow that log's switch:
+// missed check-ins and a dropped streak come from check-ins, the red-risk
+// alert from the churn-risk score. Other types (finance, bloodwork) are not
+// one of the four fitness switches and are unchanged.
+const CHECK_IN_ALERT_TYPES = ['consecutive_misses', 'streak_dropped'];
+const RISK_ALERT_TYPES = ['risk_red_transition'];
+
+function visibleAlertsWhere(clientIds: string[], shared: SharedClientIds): Prisma.CoachAlertWhereInput {
+  return {
+    OR: [
+      { alert_type: { in: CHECK_IN_ALERT_TYPES }, client_id: { in: shared.habits } },
+      { alert_type: { in: RISK_ALERT_TYPES }, client_id: { in: shared.allFour } },
+      { alert_type: { notIn: [...CHECK_IN_ALERT_TYPES, ...RISK_ALERT_TYPES] }, client_id: { in: clientIds } },
+    ],
+  };
+}
+
 // ── CC-3: PtmPrediction.factors parsing ─────────────────────────────────
 //
 // PtmPrediction.factors is a JSON array of { key, label, contribution }
@@ -191,7 +216,30 @@ export class CommandCenterService {
     // behaviour is unchanged for head coaches. In production it is wired
     // via the @Global SubCoachModule export.
     @Optional() private readonly subCoachScope?: SubCoachScopeService,
+    // CF-SHARE-GATE-128: the client's Coach sharing switches. Deliberately
+    // NOT @Optional: ConsentModule is @Global, so DI always injects it and
+    // boot fails if it ever cannot. Only positional unit tests omit it.
+    private readonly consent?: ConsentService,
   ) {}
+
+  // CF-SHARE-GATE-128: which of these clients share what (Settings > Privacy >
+  // Coach sharing). The grant belongs to the coach the client joined,
+  // `ownerCoachId`: a head coach reads under their own grant, a sub-coach
+  // under the head coach's, as for alerts and messages. The owner account has
+  // no Command Center roster (getAuthorizedClientIds is coach-only), so there
+  // is no owner bypass to keep here.
+  private async sharedWith(ownerCoachId: string, clientIds: string[]): Promise<SharedClientIds> {
+    if (!this.consent) {
+      return { habits: clientIds, workouts: clientIds, allFour: clientIds };
+    }
+    const granted = await this.consent.grantedScopesByClient(ownerCoachId, clientIds, COACH_FITNESS_SCOPES);
+    const has = (id: string, scope: string) => granted.get(id)?.has(scope) === true;
+    return {
+      habits: clientIds.filter((id) => has(id, ConsentScope.FITNESS_HABITS_PROGRESS)),
+      workouts: clientIds.filter((id) => has(id, ConsentScope.FITNESS_WORKOUTS)),
+      allFour: clientIds.filter((id) => COACH_FITNESS_SCOPES.every((s) => has(id, s))),
+    };
+  }
 
   // ── SC-2: roster scope resolution ─────────────────────────────────────
   //
@@ -268,6 +316,11 @@ export class CommandCenterService {
       };
     }
 
+    // CF-SHARE-GATE-128: check-in tiles and streaks read only clients who
+    // share Check-ins and habits; the at-risk count only clients who share all
+    // four; alerts follow visibleAlertsWhere. Messages are not a switch.
+    const shared = await this.sharedWith(ownerCoachId, clientIds);
+
     const [
       activeTodayGroups,
       checkInsLast7dCount,
@@ -285,14 +338,14 @@ export class CommandCenterService {
       // DISTINCT active clients (a client who checked in twice counts once).
       this.prisma.checkIn.groupBy({
         by: ['user_id'],
-        where: { user_id: { in: clientIds }, logged_at: { gte: oneDayAgo } },
+        where: { user_id: { in: shared.habits }, logged_at: { gte: oneDayAgo } },
         _count: { _all: true },
       }),
       // CC-5: total check-in EVENTS across the roster in the last 7d (not the
       // number of distinct clients) so the rate below is a frequency.
       this.prisma.checkIn.count({
         where: {
-          user_id: { in: clientIds },
+          user_id: { in: shared.habits },
           logged_at: { gte: sevenDaysAgo },
         },
       }),
@@ -301,6 +354,7 @@ export class CommandCenterService {
           coach_id: ownerCoachId,
           client_id: { in: clientIds },
           acknowledged_at: null,
+          ...visibleAlertsWhere(clientIds, shared),
         },
       }),
       // CC-1: pending_actions is a DISTINCT source from open_alerts. Open
@@ -312,17 +366,17 @@ export class CommandCenterService {
       // controller has no separate task-queue table; reviewed_by_coach is
       // the schema's explicit per-item coach-action flag.)
       this.prisma.checkIn.count({
-        where: { user_id: { in: clientIds }, reviewed_by_coach: false },
+        where: { user_id: { in: shared.habits }, reviewed_by_coach: false },
       }),
       this.prisma.ptmPrediction.groupBy({
         by: ['user_id'],
-        where: { user_id: { in: clientIds } },
+        where: { user_id: { in: shared.allFour } },
         _max: { computed_at: true },
       }),
       this.prisma.clientSignal.groupBy({
         by: ['user_id'],
         where: {
-          user_id: { in: clientIds },
+          user_id: { in: shared.habits },
           signal_type: 'checkin_streak',
           value: { gte: 3 },
           recorded_at: { gte: sevenDaysAgo },
@@ -375,7 +429,8 @@ export class CommandCenterService {
     //
     // expecting one check-in per client per day (7 per client per week).
     // Clamped to [0,1] so an over-achiever roster can't exceed 100%.
-    const expectedCheckIns = rosterSize * 7;
+    // Of the clients whose check-ins this coach can see.
+    const expectedCheckIns = shared.habits.length * 7;
     const checkInRate =
       expectedCheckIns > 0
         ? Math.min(checkInsLast7dCount / expectedCheckIns, 1)
@@ -410,7 +465,10 @@ export class CommandCenterService {
     // exactly the clients the caller may see. For a head coach `clientIds`
     // is their full roster, so the board is identical to before — behaviour
     // unchanged.
-    const { clientIds } = await this.resolveScope(coachId);
+    const { clientIds: rosterIds, ownerCoachId } = await this.resolveScope(coachId);
+    // CF-SHARE-GATE-128: the churn-risk score and its top factor read all four
+    // kinds of logs, so a client appears here only while sharing all four.
+    const { allFour: clientIds } = await this.sharedWith(ownerCoachId, rosterIds);
     if (clientIds.length === 0) {
       return { items: [], total_at_risk: 0 };
     }
@@ -531,15 +589,18 @@ export class CommandCenterService {
 
     // SC-2: roster scoped via SubCoachScopeService (head = full roster,
     // sub = assigned clients only).
-    const { clientIds, nameMap } = await this.resolveScopeWithNames(coachId);
+    const { clientIds, ownerCoachId, nameMap } = await this.resolveScopeWithNames(coachId);
     if (clientIds.length === 0) {
       return { items: [], total_active_streaks: 0 };
     }
+    // CF-SHARE-GATE-128: check-in streaks only for clients who share Check-ins
+    // and habits, workout streaks only for clients who share Workouts.
+    const shared = await this.sharedWith(ownerCoachId, clientIds);
     const sevenDaysAgo = new Date(Date.now() - 7 * ONE_DAY_MS);
 
     const checkInStreaks = await this.prisma.clientSignal.findMany({
       where: {
-        user_id: { in: clientIds },
+        user_id: { in: shared.habits },
         signal_type: 'checkin_streak',
         value: { gte: minStreak },
         recorded_at: { gte: sevenDaysAgo },
@@ -563,7 +624,7 @@ export class CommandCenterService {
     const workoutStreaks = await this.prisma.clientSignal.groupBy({
       by: ['user_id'],
       where: {
-        user_id: { in: clientIds },
+        user_id: { in: shared.workouts },
         signal_type: 'workout_logged',
         recorded_at: { gte: workoutWindow },
       },
@@ -744,10 +805,14 @@ export class CommandCenterService {
       return { items: [], total_pending: 0 };
     }
 
+    // CF-SHARE-GATE-128: alerts built from a client's logs follow that log's
+    // Coach sharing switch (visibleAlertsWhere).
+    const shared = await this.sharedWith(ownerCoachId, clientIds);
     const baseWhere: Prisma.CoachAlertWhereInput = {
       coach_id: ownerCoachId,
       client_id: { in: clientIds },
       acknowledged_at: null,
+      ...visibleAlertsWhere(clientIds, shared),
     };
     const where: Prisma.CoachAlertWhereInput = {
       ...baseWhere,

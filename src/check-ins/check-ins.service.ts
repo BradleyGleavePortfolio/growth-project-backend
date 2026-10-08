@@ -4,6 +4,7 @@ import { PtmService } from '../ptm/ptm.service';
 import { CoachAlertsService } from '../coach/coach-alerts.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
 import { isCoachReviewedAtEnabled } from '../roman/coach-reviewed.feature';
+import { ConsentScope, ConsentService } from '../consent/consent.service';
 import type { CreateCheckInDto, ListCheckInsQueryDto } from './check-ins.dto';
 
 const DEFAULT_LIMIT = 30;
@@ -42,6 +43,10 @@ export class CheckInsService {
     @Optional() private readonly coachAlerts?: CoachAlertsService,
     // M2 — bust the AI context cache after check-in writes.
     @Optional() private readonly aiContext?: ClientAIContextService,
+    // CF-SHARE-GATE-128: gates the coach read below. Deliberately NOT
+    // @Optional: ConsentModule is @Global, so DI always injects it and boot
+    // fails if it ever cannot. Only positional unit tests omit it.
+    private readonly consent?: ConsentService,
   ) {}
 
   // ---- helpers ----
@@ -313,8 +318,23 @@ export class CheckInsService {
     coachId: string,
     clientId: string,
     query: ListCheckInsQueryDto,
+    callerRole?: string,
   ) {
     await this.assertClientOfCoach(coachId, clientId);
+    // CF-SHARE-GATE-128: the client's "Check-ins and habits" switch (Settings
+    // > Privacy > Coach sharing). Not shared = an empty list, the same rule as
+    // the coach timeline's check-in slice; the owner account reads every scope.
+    if (
+      this.consent &&
+      !(await this.consent.coachCanAccess(
+        coachId,
+        clientId,
+        ConsentScope.FITNESS_HABITS_PROGRESS,
+        callerRole,
+      ))
+    ) {
+      return [];
+    }
     const limit = this.clampLimit(query.limit);
 
     let from = query.from ? this.parseDay(query.from) : undefined;

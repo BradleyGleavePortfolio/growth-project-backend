@@ -66,11 +66,12 @@ describe('R11-00 prompt seam', () => {
   const v1 = { quipsInSession: 2, exclamationUsed: true, lastTurnHadQuip: true };
   const CLIENT_DATA = '<client_data as_of="2026-09-30">{"first_name":"Test"}</client_data>';
   // sha256 of buildRomanSystemPrompt on origin/main 302c4522 for these inputs;
-  // client hashes re-pinned for the roman-client-v4 crisis section (AUDIT-05-125).
+  // client hashes re-pinned for the roman-client-v4 crisis section (AUDIT-05-125),
+  // then for CF-ROMAN-COPY-B-128 (client framing assumes no coach, real tab names).
   const MAIN = {
     client_plain: {
       input: { surface: 'client' as const, voice: v0 },
-      hash: '962b871d82f71897b51a1085b83f5c573ac153a1221ef2153246ca7a98611965',
+      hash: '75539676337b8ebee582972dea7b4552e10fec82b08668e77fb9b780d2144c71',
     },
     coach_plain: {
       input: {
@@ -78,7 +79,8 @@ describe('R11-00 prompt seam', () => {
         voice: v1,
         subjectContext: 'Weekly brief for the coach.',
       },
-      hash: '41bcea54db0453a4f7a20ca596cb7917e1f97929fe0f523401abc90a1de4cdc7',
+      // Re-pinned for COACH-ROMAN-SURFACE-130 (coach framing: no client data, no invented numbers).
+      hash: 'f2f65e8a1e5a165f1e51f2b5f429317c34701c6282fd236673a0128842fb6248',
     },
     client_data: {
       input: {
@@ -87,11 +89,11 @@ describe('R11-00 prompt seam', () => {
         routerHint: 'Hint line.',
         clientData: CLIENT_DATA,
       },
-      hash: 'd3ec365d34c74fea135eb8da88c78ab0de014bbd7f6fa05dc5cf480cd0df5889',
+      hash: '6caf056fbfc31d13fb9bca73a778f8a24166858cdae2abab184f66b65c060f44',
     },
     client_unavailable: {
       input: { surface: 'client' as const, voice: v1, clientDataUnavailable: true },
-      hash: 'a3e665f5ade3cfa43a11f1555e0fa2ced51418dbffc890459519740254750b84',
+      hash: '6f70def570e83336b40e9313b5c2c760bc84a7c5c5a6a37a05360f82fd17d002',
     },
   };
 
@@ -502,8 +504,8 @@ describe('R11-00 flags and capabilities', () => {
     const m = JSON.parse(readFileSync(join(root, '.github/fly-env-desired-state.json'), 'utf8'));
     const runbook = readFileSync(join(root, 'docs/runbooks/launch-flags.md'), 'utf8');
     for (const n of ['FEATURE_ROMAN_MEMORY', 'FEATURE_ROMAN_PLAYBOOK', 'FEATURE_ROMAN_TOOLS']) {
-      // FLIP-TOOLS-128 (tools) and FLIP-MEM-128 (memory) are declared on; the code default (and the kill) stays unset = off.
-      const declaredOn = ['FEATURE_ROMAN_TOOLS', 'FEATURE_ROMAN_MEMORY'];
+      // FLIP-TOOLS-128 (tools), FLIP-MEM-128 (memory) and FLIP-PB-128 (playbook) are declared on; the code default (and the kill) stays unset = off.
+      const declaredOn = ['FEATURE_ROMAN_TOOLS', 'FEATURE_ROMAN_MEMORY', 'FEATURE_ROMAN_PLAYBOOK'];
       expect(m.flags[n]).toBe(declaredOn.includes(n) ? 'true' : 'unset');
       expect(m.gates[n]).toMatch(/unset = off/);
       expect(runbook).toContain(

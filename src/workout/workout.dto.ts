@@ -12,7 +12,7 @@ import {
   Min,
   Max,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 // SECURITY: allow-list DTOs for workout writes. Previous impl accepted
 // `@Body() body: any` and spread into Prisma — which (for routines) let a
@@ -23,6 +23,11 @@ const MUSCLE_GROUPS = ['chest', 'back', 'legs', 'shoulders', 'arms', 'core', 'ca
 type MuscleGroup = (typeof MUSCLE_GROUPS)[number];
 const INTENSITIES = ['light', 'moderate', 'hard', 'max'] as const;
 type Intensity = (typeof INTENSITIES)[number];
+
+// Resumed sessions and queued uploads can include more than a day's elapsed time.
+// Cap valid integers without converting values that should fail validation.
+const capWorkoutDuration = ({ value }: { value: unknown }) =>
+  typeof value === 'number' && Number.isInteger(value) ? Math.min(value, 1440) : value;
 
 export class CreateExerciseSetDto {
   @IsString()
@@ -78,6 +83,7 @@ export class CreateWorkoutDto {
   workout_type!: string;
 
   @IsOptional()
+  @Transform(capWorkoutDuration, { toClassOnly: true })
   @IsInt()
   @Min(0)
   @Max(1440)
@@ -199,6 +205,7 @@ export class UpdateWorkoutDto {
   workout_type?: string;
 
   @IsOptional()
+  @Transform(capWorkoutDuration, { toClassOnly: true })
   @IsInt()
   @Min(0)
   @Max(1440)
