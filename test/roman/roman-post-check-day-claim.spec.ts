@@ -58,6 +58,9 @@ describe('ROMAN-GUARD-129: a correct today figure next to "usual", "baseline" or
     'You burned 2500 kcal, more than your usual.',
     'You are at 60 g protein, under your usual 110 g.',
     'Yesterday you logged 1,850 kcal, and today you have logged 780 kcal and 60 g protein.',
+    // B-861-SOL-129-1 guards: the usual figure is still an earlier-day comparison.
+    'Yesterday you logged 1,850 kcal, over your usual 1,500.',
+    'Today you are under your usual 1,500 kcal.',
   ])('accepted unchanged: %s', (reply) => {
     expect(check(reply)).toEqual({ text: reply, guardrails_applied: [], rewritten: false });
   });
@@ -70,6 +73,10 @@ describe('ROMAN-GUARD-129: a correct today figure next to "usual", "baseline" or
     'You are at 60 g protein, under your usual 95 g.', // invented usual
     'Yesterday, you logged 780 kcal.', // today's kcal claimed for the day named before it
     'Yesterday you logged 1850 kcal and 60 g protein.', // today's grams claimed for yesterday
+    // B-861-SOL-129-1 (Sol): "your usual" never overrides the earlier day named in or before the clause.
+    'Yesterday, you logged your usual 780 kcal.', // today's kcal claimed for yesterday
+    'Yesterday you logged your usual 780 kcal.', // same, one clause
+    'Yesterday you logged your usual 60 g protein.', // today's grams claimed for yesterday
   ])('still rewritten: %s', (reply) => {
     const r = check(reply);
     expect(r.guardrails_applied).toEqual(['ungrounded_number']);

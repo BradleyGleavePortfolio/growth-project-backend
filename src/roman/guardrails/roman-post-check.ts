@@ -489,11 +489,17 @@ function dayClaimOf(sentence: string, at: number, end: number): DayClaim {
   const { text, start } = clauseSpanAt(plain, at);
   const [from, to] = [at - start, end - start];
   let best: { d: number; day: DayClaim } | null = null;
-  for (const w of timeWordsIn(text)) {
+  const words = timeWordsIn(text);
+  for (const w of words) {
     const d = w.at >= to ? w.at - to : Math.max(0, from - w.end);
     if (!best || d < best.d) best = { d, day: w.day };
   }
-  if (best) return best.day;
+  if (best && best.day !== 'either') return best.day;
+  // B-861-SOL-129-1 (Sol): the client's normal never overrides an earlier day named in the clause
+  // ("Yesterday you logged your usual 780 kcal") or before it ("Yesterday, you logged your usual
+  // 780 kcal"); next to today's own word it still allows either ("Today you are under your usual 1,500").
+  if (words.some((w) => w.day === 'past')) return 'past';
+  if (words.some((w) => w.day === 'today')) return 'either';
   let last: { at: number; day: DayClaim } | null = null;
   for (const w of timeWordsIn(plain.slice(0, start))) {
     if (w.day !== 'either' && (!last || w.at > last.at)) last = w;
