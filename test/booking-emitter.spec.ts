@@ -297,13 +297,34 @@ describe('BookingEmitter delivery', () => {
     });
     expect(fake.rows.map((r) => r.body)).toEqual([
       'Your Quick Q/A Call with Jamie is on Tue, Oct 6, 10:00 AM PDT. It has no call link yet. Add one so they can join.',
-      'Your Quick Q/A Call with Coach Kim is on Tue, Oct 6, 10:00 AM PDT. Your coach will add the call link before it starts.',
+      'Your Quick Q/A Call with Coach Kim is on Tue, Oct 6, 10:00 AM PDT. It has no call link yet.',
     ]);
+    expect(fake.rows.map((r) => r.payload?.title)).toEqual(['Session reminder', 'Session reminder']);
     expect(fake.pushes.map((p) => p.title)).toEqual(['Session reminder', 'Session reminder']);
     expect(fake.rows.map((r) => r.payload?.actionScreen)).toEqual([
       'CoachBookingInbox',
       'CalendarSession',
     ]);
+  });
+
+  it.each([
+    ['24h', 'Session reminder'],
+    ['1h', 'Session starting soon'],
+  ])('%s inbox copy states the missing link without promising one', async (interval, title) => {
+    const { fake, emitter } = build();
+    const payload = {
+      recipientUserId: 'client-1',
+      otherPartyDisplayName: 'Coach Kim',
+      sessionId: 'sess-10',
+      scheduledAt: SCHEDULED_AT,
+      hasMeetingLink: false,
+    };
+    await (interval === '24h'
+      ? emitter.emitReminder24h(payload)
+      : emitter.emitReminder1h(payload));
+    expect(fake.rows[0].payload?.title).toBe(title);
+    expect(fake.rows[0].body).toMatch(/\. It has no call link yet\.$/);
+    expect(fake.rows[0].body).not.toMatch(/will add|before it starts/);
   });
 
   it('every message is plain (no exclamation marks) and fits 160 characters', async () => {

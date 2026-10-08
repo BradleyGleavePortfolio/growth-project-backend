@@ -502,7 +502,7 @@ export class BookingEmitter {
       tail =
         role === 'coach'
           ? ' It has no call link yet. Add one so they can join.'
-          : ' Your coach will add the call link before it starts.';
+          : ' It has no call link yet.';
     }
     return this.deliver({
       userId: p.recipientUserId,
@@ -510,7 +510,7 @@ export class BookingEmitter {
       kind,
       title:
         kind === NotificationKind.BOOKING_REMINDER_24H
-          ? 'Session tomorrow'
+          ? 'Session reminder'
           : 'Session starting soon',
       body: `${lead}${tail}`,
       sessionId: p.sessionId,

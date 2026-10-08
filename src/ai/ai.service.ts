@@ -16,11 +16,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AnthropicAdapter } from './adapters/anthropic.adapter';
 import { CoachAIStateService } from './coach/coach-ai-state.service';
-import {
-  COACH_AI_CAPABILITIES,
-  INPUT_USD_PER_MTOK,
-  OUTPUT_USD_PER_MTOK,
-} from './coach/coach-ai.constants';
+import { COACH_AI_CAPABILITIES, coachAiCostCents } from './coach/coach-ai.constants';
 import { CoachAIBudgetService } from '../ai-credits/coach-ai-budget.service';
 import { COACH_AI_BUDGET_EXHAUSTED_CODE } from '../ai-credits/ai-credits.constants';
 import { creditPacksSoldInCallerApp, poolRenewsSentence } from '../ai-credits/client-purchase-policy';
@@ -192,11 +188,12 @@ export function aiGuidePoolEmptyReplyCoach(packsSold: boolean, renewsSentence: s
 /** Fixed framing allowance (roles, separators) added to the payload's UTF-8 bytes. */
 export const AI_GUIDE_REQUEST_OVERHEAD_TOKENS = 256;
 
-/** Provider cost of one call in whole cents, rounded up (INPUT/OUTPUT_USD_PER_MTOK list price). */
+/**
+ * Provider cost of one call in cents at the INPUT/OUTPUT_USD_PER_MTOK list
+ * price, exact (CREDIT-METER-130: the coach pool rounds once per period).
+ */
 export function aiGuideCostCents(inputTokens: number, outputTokens: number): number {
-  return Math.ceil(
-    ((inputTokens * INPUT_USD_PER_MTOK + outputTokens * OUTPUT_USD_PER_MTOK) / 1_000_000) * 100,
-  );
+  return coachAiCostCents(inputTokens, outputTokens);
 }
 
 /**
@@ -209,7 +206,7 @@ export function aiGuideWorstCaseCents(system: string, user: string): number {
     Buffer.byteLength(system, 'utf8') +
     Buffer.byteLength(user, 'utf8') +
     AI_GUIDE_REQUEST_OVERHEAD_TOKENS;
-  return aiGuideCostCents(inputBound, MAX_TOKENS_PER_CALL);
+  return Math.ceil(aiGuideCostCents(inputBound, MAX_TOKENS_PER_CALL));
 }
 
 export interface ChatResult {
@@ -774,7 +771,7 @@ Now answer the user's next message using the rules above. Keep the answer under 
   }
 
   // B-S-AICOST-123-1 — debit one answer's actual cost (the provider's
-  // reported tokens at $3 / $15 per million, whole cents rounded up) from the
+  // reported tokens at the list price, exact: CREDIT-METER-130) from the
   // coach pool. A cost larger than the remainder consumes the remainder, so
   // the next question gets the pool-empty reply. The provider call already
   // happened, so a failed debit is logged, never thrown at the client.

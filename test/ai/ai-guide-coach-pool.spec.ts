@@ -1,7 +1,7 @@
 // B-S-AICOST-123-1 — AI Guide (/ai/chat) draws from the coach's monthly AI
 // credit pool, the same pool Roman and the coach AI tools use: the pool is
 // checked before the paid provider call, and the reported usage is debited
-// after it ($3 / $15 per million tokens, whole cents rounded up). Crisis and
+// after it (the list price, exact: CREDIT-METER-130). Crisis and
 // deterministic replies never spend; the owner and a client without a coach
 // have no pool (the per-person daily token quota still applies).
 import {
@@ -215,7 +215,7 @@ describe('AI Guide draws from the coach monthly AI credit pool (B-S-AICOST-123-1
     expect(complete).not.toHaveBeenCalled();
   });
 
-  it("a paid answer debits its actual cost, rounded up, from the head coach's pool", async () => {
+  it("a paid answer debits its exact cost from the head coach's pool", async () => {
     const pools = { 'head-1': { used: 100, total: 4000 } };
     const b = makeBudget(pools, { 'sub-1': 'head-1' });
     const { svc, complete } = makeService({
@@ -228,11 +228,11 @@ describe('AI Guide draws from the coach monthly AI credit pool (B-S-AICOST-123-1
     expect(complete).toHaveBeenCalledTimes(1);
     expect(result.model_used).toBe('anthropic');
     expect(result.code).toBeUndefined();
-    // 2,000 in + 400 out at $2 / $10 = $0.008 -> 1 cent (rounded up).
-    expect(aiGuideCostCents(2000, 400)).toBe(1);
+    // 2,000 in + 400 out at $2 / $10 = $0.008 = 0.8 cents, not rounded per call.
+    expect(aiGuideCostCents(2000, 400)).toBe(0.8);
     expect(b.recordUsage).toHaveBeenCalledTimes(1);
-    expect(b.recordUsage.mock.calls[0][0]).toMatchObject({ coachId: 'head-1', actualCostCents: 1 });
-    expect(pools['head-1'].used).toBe(101);
+    expect(b.recordUsage.mock.calls[0][0]).toMatchObject({ coachId: 'head-1', actualCostCents: 0.8 });
+    expect(pools['head-1'].used).toBe(100.8);
   });
 
   it('a crisis message gets the safety reply and never touches the pool', async () => {

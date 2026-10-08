@@ -7,7 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { createHash, randomUUID } from 'crypto';
-import { INPUT_USD_PER_MTOK, OUTPUT_USD_PER_MTOK } from '../coach/coach-ai.constants';
+import { coachAiCostCents } from '../coach/coach-ai.constants';
 import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 import { PrismaService } from '../../prisma.service';
@@ -389,12 +389,28 @@ export class AiGatewayService {
     ) {
       const actualCostCents = estimateAnthropicCostCents(response);
       try {
-        await this.budget.recordUsage({
+        const debit = await this.budget.recordUsage({
           coachId: budgetCoachId,
           actualCostCents,
           capability: req.capability,
           contextId: req.subjectUserId ?? null,
         });
+        // B1 (LN-SOL-D-131): a call that costs more than the credit left is
+        // refused by recordUsage. Take what is left instead, as
+        // CoachAIService.recordSpend does, so the pool reaches empty and the
+        // next call gets the 402 before any provider request.
+        if (!debit.recorded) {
+          const { budget } = await this.budget.canCharge(budgetCoachId, 0);
+          const rest = budget.total_actual_available_cents - budget.actual_used_cents;
+          if (rest > 0) {
+            await this.budget.recordUsage({
+              coachId: budgetCoachId,
+              actualCostCents: Math.min(rest, actualCostCents),
+              capability: req.capability,
+              contextId: req.subjectUserId ?? null,
+            });
+          }
+        }
       } catch (err) {
         // Best-effort: a budget write failure must not 500 the AI surface
         // (the work already completed). Log + continue. The audit row
@@ -703,7 +719,8 @@ function sha256(s: string): string {
 // Strategy: prefer the explicit token estimates when the provider
 // returned them (Anthropic SDK surfaces input_tokens + output_tokens on
 // the response), price them at the coach AI model's list price
-// (INPUT/OUTPUT_USD_PER_MTOK in coach-ai.constants), round up to the nearest cent.
+// (INPUT/OUTPUT_USD_PER_MTOK in coach-ai.constants), exact: the coach pool
+// rounds once per period (CREDIT-METER-130), not on every call.
 //
 // When estimates are missing (stub adapter, future providers) fall back
 // to a conservative default of 5 cents per call so the meter never
@@ -718,8 +735,7 @@ function estimateAnthropicCostCents(response: AiProviderResponse): number {
     return 5;
   }
   // B-ROMANIQ-125: the coach AI model's list price (was a hard-coded $3 / $15).
-  const inputCostUsd = (promptTok ?? 0) * (INPUT_USD_PER_MTOK / 1_000_000);
-  const outputCostUsd = (responseTok ?? 0) * (OUTPUT_USD_PER_MTOK / 1_000_000);
-  const totalCents = Math.ceil((inputCostUsd + outputCostUsd) * 100);
-  return Math.max(1, totalCents);
+  const cents = coachAiCostCents(promptTok ?? 0, responseTok ?? 0);
+  // A real call that reported no usage keeps the 1-cent floor it always had.
+  return cents > 0 ? cents : 1;
 }

@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma.service';
 import { SupabaseService } from '../supabase/supabase.service';
 import { AuditService, AuditAction } from '../audit/audit.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+import { ConsentScope, ConsentService } from '../consent/consent.service';
 
 // V1 BFF service for the coach console. Returns enriched payloads documented
 // in tgp-coach-console/INTEGRATION_NOTES.md. OWNER callers bypass the coach
@@ -47,6 +48,10 @@ export class V1CoachService {
     // (prisma, supabase) keep compiling. In production DI it's always
     // populated because SubCoachModule is @Global.
     private subCoachScope?: SubCoachScopeService,
+    // B-865-SOL-130-1: the client's Coach sharing switches. Not @Optional:
+    // ConsentModule is @Global, so DI always injects it. Only positional unit
+    // tests omit it.
+    private consent?: ConsentService,
   ) {}
 
   /**
@@ -141,15 +146,33 @@ export class V1CoachService {
     const since = new Date();
     since.setDate(since.getDate() - 14);
 
+    // B-865-SOL-130-1: the last check-in date follows "Check-ins and habits"
+    // and the last workout date follows "Workouts", under the grant of the
+    // coach the client joined (the head coach's for a sub-coach). The owner
+    // account reads all. A date the client does not share stays null, and the
+    // risk does not use it.
+    const granted = this.consent
+      ? await this.consent.grantedScopesByClient(
+          messagingCoachId,
+          clientIds,
+          [ConsentScope.FITNESS_HABITS_PROGRESS, ConsentScope.FITNESS_WORKOUTS],
+          caller.role,
+        )
+      : null;
+    const shares = (id: string, scope: string) => granted === null || granted.get(id)?.has(scope) === true;
+    const checkInIds = clientIds.filter((id) => shares(id, ConsentScope.FITNESS_HABITS_PROGRESS));
+    const workoutIds = clientIds.filter((id) => shares(id, ConsentScope.FITNESS_WORKOUTS));
+    const checkInShared = new Set(checkInIds);
+
     const [lastCheckIns, lastWorkouts, lastCoachReplies] = await Promise.all([
       this.prisma.checkIn.groupBy({
         by: ['user_id'],
-        where: { user_id: { in: clientIds } },
+        where: { user_id: { in: checkInIds } },
         _max: { date: true },
       }),
       this.prisma.workoutSession.groupBy({
         by: ['user_id'],
-        where: { user_id: { in: clientIds } },
+        where: { user_id: { in: workoutIds } },
         _max: { date: true },
       }),
       this.prisma.coachMessage.groupBy({
@@ -183,6 +206,7 @@ export class V1CoachService {
         now,
         lastCheckIn,
         lastCoachReply,
+        checkInShared: checkInShared.has(c.id),
       });
       return {
         id: c.id,
@@ -278,9 +302,25 @@ export class V1CoachService {
 
     const now = new Date();
     const presenceCutoff = new Date(now.getTime() - ACTIVE_PRESENCE_MINUTES * 60_000);
+    // B-865-SOL-130-2: as in listClients, the risk reads the last check-in date
+    // only for clients who share "Check-ins and habits", under the grant of the
+    // coach the client joined (the head coach's for a sub-coach). The owner
+    // account reads all. A hidden date gives no check-in reason.
+    const granted = this.consent
+      ? await this.consent.grantedScopesByClient(
+          messagingCoachId,
+          clientIds,
+          [ConsentScope.FITNESS_HABITS_PROGRESS],
+          caller.role,
+        )
+      : null;
+    const checkInIds = clientIds.filter(
+      (id) => granted === null || granted.get(id)?.has(ConsentScope.FITNESS_HABITS_PROGRESS) === true,
+    );
+    const checkInShared = new Set(checkInIds);
     const lastCheckIns = await this.prisma.checkIn.groupBy({
       by: ['user_id'],
-      where: { user_id: { in: clientIds } },
+      where: { user_id: { in: checkInIds } },
       _max: { date: true },
     });
     const lastCheckInByClient = new Map<string, Date | null>();
@@ -309,6 +349,7 @@ export class V1CoachService {
         now,
         lastCheckIn: lastCheckInByClient.get(clientId) ?? null,
         lastCoachReply: lastCoachReplyByClient.get(clientId) ?? null,
+        checkInShared: checkInShared.has(clientId),
       });
       return {
         clientId,
@@ -622,12 +663,15 @@ function computeRisk(input: {
   now: Date;
   lastCheckIn: Date | null;
   lastCoachReply: Date | null;
+  // B-865-SOL-130-1: false when the client does not share check-ins; then no
+  // check-in reason is given, rather than a false "No check-in" one.
+  checkInShared?: boolean;
 }): { bucket: 'healthy' | 'watch' | 'at_risk'; reason: string | null } {
   const reasons: string[] = [];
   const daysSince = (d: Date | null) =>
     d ? (input.now.getTime() - d.getTime()) / 86_400_000 : Infinity;
 
-  if (daysSince(input.lastCheckIn) > RISK_NO_CHECKIN_DAYS) {
+  if (input.checkInShared !== false && daysSince(input.lastCheckIn) > RISK_NO_CHECKIN_DAYS) {
     reasons.push(`No check-in in ${RISK_NO_CHECKIN_DAYS}+ days`);
   }
   if (daysSince(input.lastCoachReply) > RISK_NO_REPLY_DAYS) {
