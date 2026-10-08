@@ -289,7 +289,11 @@ describe('the one allergen list and the saved-answer lookup', () => {
     [['Soy', 'Sesame'], ['soy', 'sesame']],
     [['nuts', 'dairy', 'gluten', 'shellfish', 'eggs', 'soy'], ['peanuts', 'tree_nuts', 'dairy', 'eggs', 'shellfish', 'soy', 'gluten']],
     [['  GLUTEN free ', 'tree_nuts', 'Sesame'], ['tree_nuts', 'sesame', 'gluten']],
-  ])('maps the saved answers %j to %j (both app vocabularies, exact lookup)', (saved, codes) => {
+    // NUT-FREE-132: lean onboarding saves its "Nut-free" chip as the value "nut_free".
+    [['nut_free'], ['peanuts', 'tree_nuts']],
+    [['Nut-free'], ['peanuts', 'tree_nuts']],
+    [['gluten_free', 'nut_free', 'vegan'], ['peanuts', 'tree_nuts', 'gluten']],
+  ])('maps the saved answers %j to %j (every app vocabulary, exact lookup)', (saved, codes) => {
     expect(allergensFromRestrictions(saved)).toEqual(codes);
   });
 
@@ -369,6 +373,16 @@ describe('a client library hides a recipe only on a declared match', () => {
     expect(titles(await slug.recipes.list(slug.client))).toEqual(
       titles(await chip.recipes.list(chip.client)),
     );
+  });
+
+  // NUT-FREE-132: lean onboarding (LeanQ6Screen) saves the "Nut-free" chip as "nut_free".
+  it('the lean onboarding answer "nut_free" hides the same recipes as the "Nut Allergy" chip', async () => {
+    const { recipes, client } = build(['nut_free']);
+    expect(titles(await recipes.list(client))).toEqual([
+      'My peanut snack',
+      'Peanut noodles',
+      'Plain rice bowl',
+    ]);
   });
 
   // ALLERGY-CHOICES-131: the app saves its Soy and Sesame chips as these exact strings.
