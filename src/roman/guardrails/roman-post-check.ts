@@ -330,6 +330,7 @@ const finite = (xs: Array<number | null | undefined>): number[] =>
  * A claim about an earlier day ("yesterday you logged ..."), not today. R11-T3: also a dated day
  * ("on 22 September", "on Sept 22"), a range of earlier days ("over the last three weeks", "two
  * weeks ago", "last month") and the client's normal ("your usual"), the way tool answers name them.
+ * ROMAN-GUARD-129: the client's normal is a comparison, not a day (USUAL_PHRASE, dayClaimOf).
  */
 const MONTH =
   '(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept?|oct|nov|dec)';
@@ -343,6 +344,10 @@ const PAST_DAY = new RegExp(
 const PAST_DAY_ALL = new RegExp(PAST_DAY.source, 'gi');
 /** R11-T3-FU: a number said about today ("60 g protein today", "780 kcal so far"). */
 const TODAY_WORD = /\b(today|so far)\b/gi;
+/** ROMAN-GUARD-129: the PAST_DAY phrases that name the client's normal, not an earlier day. */
+const USUAL_PHRASE = /^your (normal|usual|typical|baseline)$/i;
+/** Which day's facts a number is checked against; 'either' accepts today's or earlier days'. */
+type DayClaim = 'today' | 'past' | 'either';
 /** A claim about the meal plan ("your plan has 450 kcal at lunch"), not a log. */
 const PLAN_WORD = /\b(meal plan|your plan|the plan|planned)\b/i;
 /** B-668-3 (Sol): wording that states the whole day's intake ("logged 450 kcal today", "so far"). */
@@ -365,20 +370,21 @@ const MEAL_SUM_CLAIM =
  * kcal facts of the given field families (B-651-7: never pooled across
  * families). B-668-3: also never pooled across days or sources: a claim about
  * today is checked against today's facts, a claim about an earlier day against
- * earlier days, and a meal-plan claim against the plan.
+ * earlier days, and a meal-plan claim against the plan. ROMAN-GUARD-129: a
+ * claim no day decides ('either', dayClaimOf) is checked against both days.
  */
 function kcalFacts(
   ctx: PostCheckContext,
   families: ReadonlySet<KcalFamily>,
   sentence = '',
   clause = sentence,
-  past = PAST_DAY.test(sentence),
+  day: DayClaim = PAST_DAY.test(sentence) ? 'past' : 'today',
 ): number[] {
   const out: Array<number | null | undefined> = [];
   const f = ctx.kcal_facts ?? {};
   if (families.has('intake')) {
-    if (past) out.push(...(f.intake_past_days ?? []));
-    else {
+    if (day !== 'today') out.push(...(f.intake_past_days ?? []));
+    if (day !== 'past') {
       out.push(ctx.today.kcal);
       // B-668-3 / B-666-5 / B-669-1 (Sol): one meal never validates a
       // whole-day claim. Summing wording ("across two meals", "your meals",
@@ -398,7 +404,9 @@ function kcalFacts(
   if (families.has('remaining')) out.push(ctx.today.remaining_kcal);
   if (families.has('average')) out.push(ctx.last_7_days.avg_kcal_on_logged_days);
   if (families.has('burned')) {
-    out.push(...(past || families.has('average') ? (f.burned_past ?? []) : (f.burned_today ?? [])));
+    const average = families.has('average');
+    if (day !== 'today' || average) out.push(...(f.burned_past ?? []));
+    if (day !== 'past' && !average) out.push(...(f.burned_today ?? []));
   }
   if (families.has('target')) out.push(ctx.targets.calories);
   if (families.has('floor')) out.push(ctx.macro_method.floor_kcal);
@@ -413,13 +421,13 @@ function macroFacts(
   ctx: PostCheckContext,
   key: MacroKey,
   families: ReadonlySet<KcalFamily>,
-  past: boolean,
+  day: DayClaim,
 ): number[] {
   const out: Array<number | null | undefined> = [];
   if (families.has('target')) out.push(ctx.targets[key]);
   if (families.has('intake')) {
-    if (past) out.push(...(ctx.macro_past?.[key] ?? []));
-    else out.push(ctx.today[key]);
+    if (day !== 'today') out.push(...(ctx.macro_past?.[key] ?? []));
+    if (day !== 'past') out.push(ctx.today[key]);
   }
   if (families.has('remaining')) {
     out.push(
@@ -465,28 +473,54 @@ function clauseAt(sentence: string, at: number): string {
 }
 
 /**
- * R11-T3-FU: whether the number at [at, end) is a claim about earlier days. A sentence with no
- * earlier-day phrase is about today, exactly as before. Otherwise the time word closest to the
+ * R11-T3-FU / ROMAN-GUARD-129: which day the number at [at, end) is a claim about. A sentence with
+ * no earlier-day phrase is about today, exactly as before. Otherwise the time word closest to the
  * number inside its own clause decides ("60 g protein today, under your usual": today; "last month
- * you logged 118 g": earlier days); a clause with no time word follows the sentence (earlier days).
- * Thousands separators ("1,850") do not end a clause here.
+ * you logged 118 g": earlier days). A clause with no time word follows the last day named before it
+ * ("Yesterday you logged 1,850 kcal and 118 g protein": earlier days). The client's normal ("your
+ * usual") is a comparison, not a day: it never decides another clause. A number it decides, or one no
+ * earlier day decides ("60 g protein, under your usual"; "today you have logged 780 kcal and 60 g
+ * protein, both under your usual"), may match today's or earlier days' facts ('either'); a figure in
+ * neither is still rewritten. Thousands separators ("1,850") do not end a clause here.
  */
-function isPastClaim(sentence: string, at: number, end: number): boolean {
-  if (!PAST_DAY.test(sentence)) return false;
-  const { text, start } = clauseSpanAt(sentence.replace(/(\d),(?=\d{3}\b)/g, '$1_'), at);
+function dayClaimOf(sentence: string, at: number, end: number): DayClaim {
+  if (!PAST_DAY.test(sentence)) return 'today';
+  const plain = sentence.replace(/(\d),(?=\d{3}\b)/g, '$1_');
+  const { text, start } = clauseSpanAt(plain, at);
   const [from, to] = [at - start, end - start];
-  let best: { d: number; past: boolean } | null = null;
+  let best: { d: number; day: DayClaim } | null = null;
+  const words = timeWordsIn(text);
+  for (const w of words) {
+    const d = w.at >= to ? w.at - to : Math.max(0, from - w.end);
+    if (!best || d < best.d) best = { d, day: w.day };
+  }
+  if (best && best.day !== 'either') return best.day;
+  // B-861-SOL-129-1 (Sol): the client's normal never overrides an earlier day named in the clause
+  // ("Yesterday you logged your usual 780 kcal") or before it ("Yesterday, you logged your usual
+  // 780 kcal"); next to today's own word it still allows either ("Today you are under your usual 1,500").
+  if (words.some((w) => w.day === 'past')) return 'past';
+  if (words.some((w) => w.day === 'today')) return 'either';
+  let last: { at: number; day: DayClaim } | null = null;
+  for (const w of timeWordsIn(plain.slice(0, start))) {
+    if (w.day !== 'either' && (!last || w.at > last.at)) last = w;
+  }
+  return last?.day === 'past' ? 'past' : 'either';
+}
+
+/** Every time word in `text` with the day it names; today's words first (they win a tie). */
+function timeWordsIn(text: string): Array<{ at: number; end: number; day: DayClaim }> {
+  const out: Array<{ at: number; end: number; day: DayClaim }> = [];
   for (const [rx, past] of [
     [TODAY_WORD, false],
     [PAST_DAY_ALL, true],
   ] as const) {
     for (const m of text.matchAll(rx)) {
-      const s = m.index ?? 0;
-      const d = s >= to ? s - to : Math.max(0, from - (s + m[0].length));
-      if (!best || d < best.d) best = { d, past };
+      const at = m.index ?? 0;
+      const day: DayClaim = !past ? 'today' : USUAL_PHRASE.test(m[0]) ? 'either' : 'past';
+      out.push({ at, end: at + m[0].length, day });
     }
   }
-  return best?.past ?? true;
+  return out;
 }
 
 /** Families whose word follows the number in English ("670 kcal left", "... target"). */
@@ -601,8 +635,8 @@ function judgeSentence(
     const factFamilies = new Set(FACT_FAMILIES.filter((f) => role.has(f)));
     if (factFamilies.size > 0) {
       // A quoted fact must match a fact of its OWN family ("670 kcal left").
-      const past = isPastClaim(s, at, end);
-      if (ctx && matchesFact(n, kcalFacts(ctx, factFamilies, s, clause, past))) continue;
+      const day = dayClaimOf(s, at, end);
+      if (ctx && matchesFact(n, kcalFacts(ctx, factFamilies, s, clause, day))) continue;
       return 'ungrounded_number';
     }
     if (role.has('floor') && ctx && matchesFact(n, kcalFacts(ctx, new Set(['floor'])))) continue;
@@ -636,7 +670,7 @@ function judgeSentence(
     const role = roleOf(s, at, end);
     const factFamilies = new Set(FACT_FAMILIES.filter((f) => role.has(f)));
     if (factFamilies.size > 0) {
-      if (!ctx || !matchesFact(n, macroFacts(ctx, key, factFamilies, isPastClaim(s, at, end)))) {
+      if (!ctx || !matchesFact(n, macroFacts(ctx, key, factFamilies, dayClaimOf(s, at, end)))) {
         return 'ungrounded_number';
       }
       continue;
