@@ -226,7 +226,8 @@ describe('safety copy — owner ruling 16:38 (warm, useful, safe next step, then
     const t = ROMAN_SAFETY_TEMPLATES.emergency;
     expect(t).toMatch(/stay where you are/i);
     expect(t).toMatch(/phone within reach/i);
-    expect(t).toMatch(/coach/i);
+    // CF-ROMAN-COPY-B-128: no coach is assumed; the close names someone they trust.
+    expect(t).toMatch(/someone you trust/i);
   });
 
   it('the self-harm template is warm, names a person who will answer, and a next step', () => {

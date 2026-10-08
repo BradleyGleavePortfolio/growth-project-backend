@@ -12,7 +12,13 @@
  *     operator decisions — the prompt is the summarised operative contract).
  */
 
-import { buildRomanSystemPrompt, ROMAN_VOICE_CONTRACT } from '../../src/roman/roman.prompts';
+import {
+  buildRomanSystemPrompt,
+  ROMAN_COACH_PROMPT_VERSION,
+  ROMAN_VOICE_CONTRACT,
+  romanPromptVersionOf,
+} from '../../src/roman/roman.prompts';
+import { PROMPT_VERSION } from '../../src/roman/guardrails/roman-guardrail.contract';
 
 describe('buildRomanSystemPrompt — voice contract anchors', () => {
   const base = buildRomanSystemPrompt({
@@ -97,6 +103,26 @@ describe('buildRomanSystemPrompt — surface framing', () => {
     });
     expect(client).toContain(ROMAN_VOICE_CONTRACT);
     expect(coach).toContain(ROMAN_VOICE_CONTRACT);
+  });
+
+  it('COACH-ROMAN-SURFACE-130: coach Roman says it sees no client data, points to Clients and never states a number it was not given', () => {
+    const voice = { quipsInSession: 0, exclamationUsed: false };
+    const coach = buildRomanSystemPrompt({ surface: 'coach', voice });
+    const client = buildRomanSystemPrompt({ surface: 'client', voice });
+    // What coach Roman really does: general help, and only what the coach writes in this chat.
+    expect(coach).toContain('help with programming, nutrition and running the practice');
+    expect(coach).toContain("You cannot see any client's data here");
+    expect(coach).toContain('only what the coach writes in this chat');
+    expect(coach).toContain("that client's page in Clients");
+    expect(coach).toContain('Never state a number you were not given');
+    expect(coach).toContain("Never reveal another coach's or client's private data.");
+    // The client prompt is untouched by the coach rules.
+    expect(client).not.toContain("You cannot see any client's data here");
+    expect(client).not.toContain('Never state a number you were not given');
+    // Prompt version bump: a coach turn records the coach prompt version, a client turn the contract's.
+    expect(ROMAN_COACH_PROMPT_VERSION).toBe('roman-coach-v1');
+    expect(romanPromptVersionOf('coach')).toBe(ROMAN_COACH_PROMPT_VERSION);
+    expect(romanPromptVersionOf('client')).toBe(PROMPT_VERSION);
   });
 });
 
