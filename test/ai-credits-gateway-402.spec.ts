@@ -19,6 +19,7 @@ import { AiRedactionService } from '../src/ai/gateway/ai-redaction.service';
 import { AiProviderRegistry } from '../src/ai/gateway/providers/provider-registry';
 import { StubProviderAdapter } from '../src/ai/gateway/providers/stub-provider.adapter';
 import { CoachAiBudgetExhaustedException } from '../src/ai-credits/budget-exhausted.exception';
+import { runWithCallerPurchaseHeaders } from '../src/ai-credits/client-purchase-policy';
 import { grantAllEgress } from './ai-egress/ai-egress.fakes';
 
 function buildPrismaMock() {
@@ -164,6 +165,38 @@ describe('Stream 1 — P1-4: AiGatewayService throws 402 when budget exhausted',
     // verified by the rejection above.)
     expect(budget.canCharge).toHaveBeenCalled();
     void adapter;
+  });
+
+  it('CREDIT-PAY-131: the 402 message names a credit pack only for a build that sells packs', async () => {
+    const svc = new AiGatewayService(
+      buildPrismaMock(),
+      new AiGatewayConfig(),
+      new AiRedactionService(),
+      buildRegistry(),
+      grantAllEgress(),
+      buildBudgetMock({ allowed: false, actualUsed: 4000, totalAvailable: 4000 }),
+    );
+    const call = () =>
+      svc.invoke({
+        capability: 'client_chat',
+        requester: { id: 'coach-1', role: 'coach' },
+        userMessage: 'hi',
+        systemPrompt: 'x',
+      });
+    const messageOf = (p: Promise<unknown>) =>
+      p.then(
+        () => 'no error',
+        (err: CoachAiBudgetExhaustedException) => (err.getResponse() as { message: string }).message,
+      );
+
+    expect(await messageOf(call())).toBe(
+      'The AI credits on your coaching account are used up for this month. They renew on June 1.',
+    );
+    expect(
+      await messageOf(
+        runWithCallerPurchaseHeaders({ policy: 'p2p-and-ai-credits', platform: 'ios' }, call),
+      ),
+    ).toBe('The AI credits on your coaching account are used up for this month. Add a credit pack to continue.');
   });
 
   it('proceeds normally and calls recordUsage when budget has headroom', async () => {

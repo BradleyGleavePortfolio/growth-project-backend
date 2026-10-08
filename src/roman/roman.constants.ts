@@ -220,6 +220,17 @@ export const ROMAN_COACH_POOL_EMPTY_MESSAGE =
   "Your coach's AI credits for this month are used up, so Roman cannot answer right now. Your coach is in Messages any time, and your plan and logs work as usual.";
 export const ROMAN_COACH_POOL_EMPTY_MESSAGE_COACH = `The AI credits on your coaching account are used up for this month, so Roman cannot answer right now. Add a credit pack to keep using Roman. ${ROMAN_COACH_NEXT_STEP}`;
 
+/**
+ * CREDIT-PAY-131: the coach copy names a credit pack only when the calling
+ * build sells packs (ai-credits/client-purchase-policy.ts); otherwise it says
+ * when the pool renews, so no coach is told to buy where nothing is sold.
+ */
+export function romanCoachPoolEmptyMessage(packsSold: boolean, renewsSentence: string): string {
+  return packsSold
+    ? ROMAN_COACH_POOL_EMPTY_MESSAGE_COACH
+    : `The AI credits on your coaching account are used up for this month, so Roman cannot answer right now. ${renewsSentence} ${ROMAN_COACH_NEXT_STEP}`;
+}
+
 /** The failure copy for one machine code, written for the caller's audience. */
 export function romanFailureMessage(
   kind: 'capacity_reached' | 'capacity_unknown' | 'model_unavailable' | 'not_configured' | 'switched_off',
