@@ -13,7 +13,7 @@ import { AnthropicAdapter } from '../adapters/anthropic.adapter';
 import { ClientContextService } from '../context/client-context.service';
 import { CoachAIStateService } from './coach-ai-state.service';
 import { clientDataSubject } from '../../ai-egress/ai-egress.types';
-import { COACH_AI_CAPABILITIES, COACH_AI_MODEL } from './coach-ai.constants';
+import { COACH_AI_CAPABILITIES, COACH_AI_MODEL, coachAiCostCents } from './coach-ai.constants';
 import { WorkoutProgramPrompt, WorkoutProgramInput, WorkoutProgramPayload } from '../prompts/workout-program.prompt';
 import { MealPlanPrompt, MealPlanInput, MealPlanPayload } from '../prompts/meal-plan.prompt';
 import { ClientInsightPrompt, ClientInsightInput, ClientInsightPayload } from '../prompts/client-insight.prompt';
@@ -163,9 +163,10 @@ export class CoachAIService {
   }
 
   /**
-   * B-AIB1-125 — debit the provider call's actual cost (the adapter's own
-   * token pricing). The call already happened, so a failed write is logged,
-   * never thrown at the coach (same posture as the gateway).
+   * B-AIB1-125 — debit the provider call's actual cost (the coach AI list
+   * price, exact: CREDIT-METER-130; AICallLog keeps whole cents).
+   * The call already happened, so a failed write is logged, never thrown at
+   * the coach (same posture as the gateway).
    *
    * FIX-AIB-125 (B-805-1): when the pool cannot absorb the whole cost,
    * consume what is left (B-668-1 pattern in RomanService.debitCoachPool),
@@ -180,7 +181,7 @@ export class CoachAIService {
     tokensOut: number,
   ): Promise<void> {
     if (!this.budget || !budgetCoachId) return;
-    const actualCostCents = AnthropicAdapter.computeCostCents(tokensIn, tokensOut);
+    const actualCostCents = coachAiCostCents(tokensIn, tokensOut);
     try {
       const debit = await this.budget.recordUsage({
         coachId: budgetCoachId,

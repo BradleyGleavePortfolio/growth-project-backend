@@ -19,6 +19,15 @@ export const COACH_AI_MODEL = 'claude-sonnet-5-5';
 export const INPUT_USD_PER_MTOK = 2.0;
 export const OUTPUT_USD_PER_MTOK = 10.0;
 
+/**
+ * CREDIT-METER-130 — the exact provider cost of one call in cents at the list
+ * price above, fractions kept. The coach AI pool rounds once per period, so
+ * debit paths pass this value unrounded.
+ */
+export function coachAiCostCents(inputTokens: number, outputTokens: number): number {
+  return (inputTokens * INPUT_USD_PER_MTOK + outputTokens * OUTPUT_USD_PER_MTOK) / 10_000;
+}
+
 // Sonnet 5.5 thinks by default when a request has no `thinking` field, and
 // rejects `thinking: {type: 'disabled'}` and non-default temperature/top_p/
 // top_k with a 400 (platform.claude.com/docs/en/models/sonnet-5-5/

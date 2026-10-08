@@ -32,6 +32,11 @@ import { bankersRoundPaidToActual } from './bankers-round.util';
 //     pack_paid_cents at read time. applyCreditPack increments the
 //     column by the per-pack already-rounded actual_credit_cents.
 
+/** CREDIT-METER-130 — the unit of actual_used_micro_cents: millionths of a cent. */
+export const MICRO_CENTS_PER_CENT = 1_000_000;
+/** Optimistic writes recordUsage tries before it reports a lost race. */
+const RECORD_USAGE_ATTEMPTS = 3;
+
 export interface BudgetSnapshot {
   id: string;
   coach_user_id: string;
@@ -43,6 +48,8 @@ export interface BudgetSnapshot {
   pack_paid_cents: number;
   pack_displayed_cents: number;
   actual_used_cents: number;
+  /** CREDIT-METER-130 — the exact spend this period; actual_used_cents is its ceiling. */
+  actual_used_micro_cents: number;
   /** Per-pack already-rounded actual credit, summed. P1-8. */
   total_pack_actual_cents: number;
   /** Sum of base actual + actual headroom purchased via packs. */
@@ -196,6 +203,13 @@ export class CoachAIBudgetService {
    * can never land in an already-rolled period (which would silently
    * apply to the new period's base rather than the period the call was
    * billed against).
+   *
+   * CREDIT-METER-130: `actualCostCents` is the exact provider cost and may
+   * be a fraction of a cent. It is added to actual_used_micro_cents and
+   * actual_used_cents becomes the ceiling of that period total, so a period
+   * rounds up once (under one cent) instead of on every call. The write is
+   * pinned to the usage it was computed from; when a concurrent debit wins,
+   * the row is read again (up to RECORD_USAGE_ATTEMPTS writes).
    */
   async recordUsage(args: {
     coachId: string;
@@ -203,40 +217,62 @@ export class CoachAIBudgetService {
     capability: string;
     contextId?: string | null;
   }): Promise<{ recorded: boolean; budgetId: string }> {
-    if (args.actualCostCents < 0) {
+    if (!(args.actualCostCents >= 0)) {
       throw new Error(`recordUsage: actualCostCents must be >= 0, got ${args.actualCostCents}`);
     }
-    const budget = await this.getOrCreateCurrentPeriod(args.coachId);
-    const ceilingCents = budget.total_actual_available_cents;
+    const costMicroCents = Math.round(args.actualCostCents * MICRO_CENTS_PER_CENT);
+    for (let attempt = 1; ; attempt += 1) {
+      const budget = await this.getOrCreateCurrentPeriod(args.coachId);
+      const outcome = await this.writeUsage(budget, costMicroCents);
+      if (outcome === 'recorded') return { recorded: true, budgetId: budget.id };
+      if (outcome === 'refused' || attempt >= RECORD_USAGE_ATTEMPTS) {
+        this.logger.warn(
+          {
+            event: 'COACH_AI_BUDGET_RACE_OVERSHOOT',
+            coachId: args.coachId,
+            capability: args.capability,
+            contextId: args.contextId ?? null,
+            actualCostCents: args.actualCostCents,
+            ceilingCents: budget.total_actual_available_cents,
+            actualUsedCents: budget.actual_used_cents,
+            periodEnd: budget.period_end.toISOString(),
+          },
+          'budget race overshoot — charge could not be absorbed',
+        );
+        return { recorded: false, budgetId: budget.id };
+      }
+    }
+  }
+
+  /**
+   * One pinned write of recordUsage: 'refused' when the cost does not fit
+   * under the ceiling or the period has ended, 'conflict' when another
+   * write changed the row since it was read.
+   */
+  private async writeUsage(
+    budget: BudgetSnapshot,
+    costMicroCents: number,
+  ): Promise<'recorded' | 'refused' | 'conflict'> {
+    const toMicroCents = exactUsedMicroCents(budget) + costMicroCents;
+    const toCents = Math.ceil(toMicroCents / MICRO_CENTS_PER_CENT);
     const now = new Date();
+    if (toCents > budget.total_actual_available_cents || budget.period_end <= now) {
+      return 'refused';
+    }
     const result = await this.prisma.coachAIBudget.updateMany({
       where: {
         id: budget.id,
         // P1-6: refuse if the period rolled between read and write.
         period_end: { gt: now },
-        actual_used_cents: { lte: ceilingCents - args.actualCostCents },
+        actual_used_cents: budget.actual_used_cents,
+        actual_used_micro_cents: BigInt(budget.actual_used_micro_cents),
       },
       data: {
-        actual_used_cents: { increment: args.actualCostCents },
+        actual_used_cents: toCents,
+        actual_used_micro_cents: BigInt(toMicroCents),
       },
     });
-    if (result.count === 0) {
-      this.logger.warn(
-        {
-          event: 'COACH_AI_BUDGET_RACE_OVERSHOOT',
-          coachId: args.coachId,
-          capability: args.capability,
-          contextId: args.contextId ?? null,
-          actualCostCents: args.actualCostCents,
-          ceilingCents,
-          actualUsedCents: budget.actual_used_cents,
-          periodEnd: budget.period_end.toISOString(),
-        },
-        'budget race overshoot — charge could not be absorbed',
-      );
-      return { recorded: false, budgetId: budget.id };
-    }
-    return { recorded: true, budgetId: budget.id };
+    return result.count > 0 ? 'recorded' : 'conflict';
   }
 
   /**
@@ -455,12 +491,44 @@ export class CoachAIBudgetService {
       if (purchase.status !== 'paid') {
         return { refunded: false, reason: `status_${purchase.status}` };
       }
+      // B-870-SOL-F-130-1: a monthly rollover may already have removed the
+      // spent part of this pack (packSpentAtClose), so take back only what is
+      // left of it, never another pack's credit. pack_paid_cents still drops by
+      // the full amount paid (that money is returned).
+      const [budget, otherPacks] = await Promise.all([
+        tx.coachAIBudget.findUnique({
+          where: { id: purchase.budget_id },
+          select: {
+            pack_displayed_cents: true,
+            total_pack_actual_cents: true,
+            actual_used_cents: true,
+            base_actual_cents: true,
+            base_displayed_cents: true,
+            value_multiplier: true,
+          },
+        }),
+        tx.coachCreditPackPurchase.findMany({
+          where: { budget_id: purchase.budget_id, status: 'paid', id: { not: purchase.id } },
+          select: { id: true, applied_at: true, created_at: true, actual_credit_cents: true, displayed_credit_cents: true },
+        }),
+      ]);
+      // B-870-SOL-F-131-1: within the month the pack fields are still whole
+      // and this month's spend sits in actual_used_cents, so take off what
+      // was spent from packs this month first (packSpentAtClose, the same
+      // sum the rollover uses). Spent credit stays spent; a newer pack keeps
+      // all of its credit.
+      const spent = budget ? packSpentAtClose(budget) : { actualCents: 0, displayedCents: 0 };
+      const unspent = budget && {
+        pack_displayed_cents: budget.pack_displayed_cents - spent.displayedCents,
+        total_pack_actual_cents: budget.total_pack_actual_cents - spent.actualCents,
+      };
+      const left = packCreditLeft(purchase, otherPacks, unspent);
       await tx.coachAIBudget.update({
         where: { id: purchase.budget_id },
         data: {
           pack_paid_cents: { decrement: purchase.paid_cents },
-          pack_displayed_cents: { decrement: purchase.displayed_credit_cents },
-          total_pack_actual_cents: { decrement: purchase.actual_credit_cents },
+          pack_displayed_cents: { decrement: left.displayedCents },
+          total_pack_actual_cents: { decrement: left.actualCents },
         },
       });
       await tx.coachCreditPackPurchase.update({
@@ -486,9 +554,11 @@ export class CoachAIBudgetService {
 
   /**
    * Monthly rollover: for each budget whose period_end <= now, expire the
-   * base (reset actual_used_cents to 0, start a fresh period) but PRESERVE
-   * pack credit accumulated this period — that's money the coach paid us;
-   * we don't get to take it back.
+   * base (reset actual_used_cents to 0, start a fresh period) and carry
+   * over the UNUSED part of pack credit (bought or granted) — that's money
+   * the coach paid us; we don't get to take it back. The part of the pack
+   * the closing period already spent is gone (CREDIT-REFILL-130): it is
+   * never handed out again. See packSpentAtClose().
    *
    * P1-3: period_end is the start of the next calendar month, not a
    * 30-day offset. See startOfNextMonth().
@@ -496,25 +566,38 @@ export class CoachAIBudgetService {
   async rolloverDueBudgets(now: Date = new Date()): Promise<{ rolled: number }> {
     const due = await this.prisma.coachAIBudget.findMany({
       where: { period_end: { lte: now } },
-      select: { id: true },
+      select: {
+        id: true,
+        actual_used_cents: true,
+        base_actual_cents: true,
+        base_displayed_cents: true,
+        value_multiplier: true,
+        pack_displayed_cents: true,
+        total_pack_actual_cents: true,
+      },
     });
     if (due.length === 0) return { rolled: 0 };
     const periodStart = startOfCurrentMonth(now);
     const periodEnd = startOfNextMonth(periodStart);
     let rolled = 0;
     for (const row of due) {
+      const spent = packSpentAtClose(row);
       const result = await this.prisma.coachAIBudget.updateMany({
-        where: { id: row.id, period_end: { lte: now } },
+        // actual_used_cents pins the row to the usage `spent` was read from.
+        where: { id: row.id, period_end: { lte: now }, actual_used_cents: row.actual_used_cents },
         data: {
           period_start: periodStart,
           period_end: periodEnd,
           actual_used_cents: 0,
+          actual_used_micro_cents: 0,
           last_rollover_at: now,
           base_actual_cents: resolveMaxActualCents(),
           value_multiplier: new Prisma.Decimal(resolveValueMultiplier()),
           base_displayed_cents: resolveBaseDisplayedCents(),
-          // pack_paid_cents / pack_displayed_cents / total_pack_actual_cents
-          // intentionally left alone — paid credit carries over.
+          // Decrement (not set) so a pack booked mid-rollover is kept whole.
+          // pack_paid_cents stays: it records money paid (refunds read it).
+          total_pack_actual_cents: { decrement: spent.actualCents },
+          pack_displayed_cents: { decrement: spent.displayedCents },
         },
       });
       rolled += result.count;
@@ -538,6 +621,7 @@ export class CoachAIBudgetService {
     pack_paid_cents: number;
     pack_displayed_cents: number;
     actual_used_cents: number;
+    actual_used_micro_cents: bigint;
     total_pack_actual_cents: number;
   }): BudgetSnapshot {
     const multiplier = Number(row.value_multiplier);
@@ -552,11 +636,84 @@ export class CoachAIBudgetService {
       pack_paid_cents: row.pack_paid_cents,
       pack_displayed_cents: row.pack_displayed_cents,
       actual_used_cents: row.actual_used_cents,
+      actual_used_micro_cents: Number(row.actual_used_micro_cents),
       total_pack_actual_cents: row.total_pack_actual_cents,
       total_actual_available_cents:
         row.base_actual_cents + row.total_pack_actual_cents,
     };
   }
+}
+
+/**
+ * CREDIT-REFILL-130 — how much pack credit the closing period spent. The
+ * base is spent first (it expires at rollover anyway); usage beyond the
+ * base came out of pack credit. Displayed cents follow the balance the coach
+ * saw: the pack keeps exactly the remaining displayed balance at close, never
+ * more than the pack itself.
+ */
+function packSpentAtClose(row: {
+  actual_used_cents: number;
+  base_actual_cents: number;
+  base_displayed_cents: number;
+  value_multiplier: Prisma.Decimal | number;
+  pack_displayed_cents: number;
+  total_pack_actual_cents: number;
+}): { actualCents: number; displayedCents: number } {
+  const packActual = Math.max(0, row.total_pack_actual_cents);
+  const packDisplayed = Math.max(0, row.pack_displayed_cents);
+  const overBase = Math.max(0, row.actual_used_cents - row.base_actual_cents);
+  const actualCents = Math.min(packActual, overBase);
+  if (actualCents === 0) return { actualCents: 0, displayedCents: 0 };
+  if (actualCents === packActual) return { actualCents, displayedCents: packDisplayed };
+  const usedDisplayed = Math.round(row.actual_used_cents * Number(row.value_multiplier));
+  const leftDisplayed = Math.max(0, row.base_displayed_cents + packDisplayed - usedDisplayed);
+  return { actualCents, displayedCents: packDisplayed - Math.min(packDisplayed, leftDisplayed) };
+}
+
+/**
+ * B-870-SOL-F-130-1 — what is left of one pack (bought or granted) on its
+ * budget. Pack credit is spent oldest first, so the pack credit the budget
+ * still holds belongs to the newest credited packs. This pack keeps what
+ * remains after every newer one, at most its own credit and never below 0.
+ * Before any rollover that is the whole pack, as before.
+ */
+type PackCredit = { id: string; applied_at: Date | null; created_at: Date; actual_credit_cents: number; displayed_credit_cents: number };
+function packCreditLeft(
+  pack: PackCredit,
+  others: PackCredit[],
+  budget: { pack_displayed_cents: number; total_pack_actual_cents: number } | null,
+): { actualCents: number; displayedCents: number } {
+  const at = (p: PackCredit) => (p.applied_at ?? p.created_at).getTime();
+  const newer = others.filter((p) => at(p) > at(pack) || (at(p) === at(pack) && p.id > pack.id));
+  const share = (pool: number, newerSum: number, own: number) => Math.min(own, Math.max(0, pool - newerSum));
+  return {
+    actualCents: share(
+      budget?.total_pack_actual_cents ?? 0,
+      newer.reduce((n, p) => n + p.actual_credit_cents, 0),
+      pack.actual_credit_cents,
+    ),
+    displayedCents: share(
+      budget?.pack_displayed_cents ?? 0,
+      newer.reduce((n, p) => n + p.displayed_credit_cents, 0),
+      pack.displayed_credit_cents,
+    ),
+  };
+}
+
+/**
+ * CREDIT-METER-130 — the period's exact usage in millionths of a cent. A row
+ * last debited in whole cents (before actual_used_micro_cents existed, or by
+ * a machine still on the old code during a rollout) holds less here than its
+ * whole-cent figure; it reads as one millionth above (actual_used_cents - 1),
+ * so the whole-cent figure never goes down and under one cent goes uncounted.
+ */
+function exactUsedMicroCents(
+  budget: Pick<BudgetSnapshot, 'actual_used_cents' | 'actual_used_micro_cents'>,
+): number {
+  return Math.max(
+    budget.actual_used_micro_cents,
+    budget.actual_used_cents * MICRO_CENTS_PER_CENT - (MICRO_CENTS_PER_CENT - 1),
+  );
 }
 
 /** First-of-month UTC at 00:00. */
