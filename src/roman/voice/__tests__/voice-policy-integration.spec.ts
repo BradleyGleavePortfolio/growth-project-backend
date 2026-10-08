@@ -100,7 +100,7 @@ describe('Dunning dispatcher → VoicePolicyService (Phase 2 in-app copy)', () =
       const dispatcher = buildDispatcher(notifications);
       await dispatcher.dispatchStep(DAY0_CTX);
       expect(notifications.pushes).toHaveLength(1);
-      const expected = LEGACY.dunning_day0.replace('{firstName}', 'Sam');
+      const expected = LEGACY.dunning_day0.replace('{firstName}', 'Sam').replace('{amount}', '$49');
       expect(notifications.pushes[0].body).toBe(expected);
     } finally {
       randomSpy.mockRestore();

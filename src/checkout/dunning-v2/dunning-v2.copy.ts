@@ -7,6 +7,13 @@
  * reorder, or invent copy here — the spec §C is the single source of truth and
  * the auditor diffs these strings against it.
  *
+ * One exception (MONEY-DUNNING-COPY-130, AUD-FIN-MONEY-129 B-2): the Day 0, 1
+ * and 3 push lines replace spec §C.1-§C.3. Stripe runs no retry for a hard
+ * decline (lost or stolen card, wrong number, 3-D Secure) until a new card
+ * exists, so no push line promises or counts a retry, and none says "I": the
+ * push title is "Payment", not Roman's chat. Each line is true for every
+ * decline: what is unpaid and that a card update in the app settles it.
+ *
  * Roman-voice rules applied (ROMAN_VOICE_POLICY §3, enforced by tests):
  *   - No emoji, no all-caps shouting, no second-person plural ("y'all").
  *   - Straight variant uses NO contractions ("you will", not "you'll");
@@ -50,17 +57,17 @@ export interface BlockerCopy {
 // ── §C.1 Day 0 — push (card decline) ────────────────────────────────────────
 export const DAY0_PUSH: RomanVariantPair = {
   straight:
-    'A small matter, {firstName}: your payment did not go through. I will try again tomorrow. You need do nothing for now.',
+    'A small matter, {firstName}: your payment of {amount} did not go through. Update your card in the app to settle it.',
   dryRoman:
-    "A small matter, {firstName}: your card declined. I'll have another word with it tomorrow.",
+    'A small matter, {firstName}: the card on file had other ideas about {amount}. Update your card in the app to settle it.',
 };
 
 // ── §C.2 Day 1 — push + email (retry) ───────────────────────────────────────
 export const DAY1_PUSH: RomanVariantPair = {
   straight:
-    '{firstName}, your payment is still outstanding. I attempted it again today without success. Updating your card will settle it.',
+    '{firstName}, your payment of {amount} is still outstanding. Update your card in the app to settle it.',
   dryRoman:
-    '{firstName}, the payment and I are not yet on speaking terms. A fresh card would help our negotiations.',
+    '{firstName}, {amount} and the card on file are not yet on speaking terms. Update your card in the app to settle it.',
 };
 
 export const DAY1_EMAIL: RomanVariantPair = {
@@ -73,9 +80,9 @@ export const DAY1_EMAIL: RomanVariantPair = {
 // ── §C.3 Day 3 — push + email + in-app blocker ──────────────────────────────
 export const DAY3_PUSH: RomanVariantPair = {
   straight:
-    '{firstName}, your access is at risk. Three attempts have not cleared {amount}. Please update your card to keep things in order.',
+    '{firstName}, your access is at risk. {amount} is still unpaid. Update your card in the app before {lockoutDate} to keep everything.',
   dryRoman:
-    '{firstName}, your access is on thin ice. The card ending {cardLast4} and I have tried three times now.',
+    '{firstName}, your access is on thin ice. {amount} is still unpaid. Update your card in the app before {lockoutDate} to keep everything.',
 };
 
 export const DAY3_EMAIL: RomanVariantPair = {

@@ -191,14 +191,15 @@ export const AVATAR_CROP_BY_SURFACE: Readonly<Record<SurfaceKey, AvatarCrop>> = 
  */
 export const LEGACY: Readonly<Record<SurfaceKey, string>> = {
   // ── Phase 2: lifted verbatim from dunning-v2.copy.ts (DAY0_PUSH.straight) ─
+  // (Day 0/1/3 track the AUD-FIN-MONEY-129 B-2 push lines: no retry claim.)
   dunning_day0:
-    'A small matter, {firstName}: your payment did not go through. I will try again tomorrow. You need do nothing for now.',
+    'A small matter, {firstName}: your payment of {amount} did not go through. Update your card in the app to settle it.',
   // DAY1_PUSH.straight
   dunning_day1:
-    '{firstName}, your payment is still outstanding. I attempted it again today without success. Updating your card will settle it.',
+    '{firstName}, your payment of {amount} is still outstanding. Update your card in the app to settle it.',
   // DAY3_PUSH.straight
   dunning_day3:
-    '{firstName}, your access is at risk. Three attempts have not cleared {amount}. Please update your card to keep things in order.',
+    '{firstName}, your access is at risk. {amount} is still unpaid. Update your card in the app before {lockoutDate} to keep everything.',
   // DAY7_PUSH.straight
   dunning_day7:
     '{firstName}, this is the last reminder. Your payment of {amount} is still outstanding. Without it, your access will be locked in three days.',
