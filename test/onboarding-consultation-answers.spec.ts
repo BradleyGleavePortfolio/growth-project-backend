@@ -259,3 +259,24 @@ describe('N2 sesame (ALLERGY-CHOICES-131)', () => {
     expect(n2?.options).toContainEqual({ value: 'sesame', label: 'Sesame' });
   });
 });
+
+describe('N2 fish (ALLERGY-CHOICES-131)', () => {
+  // Failing-first: on main f545c7c1 the N2 list has no 'fish', so this patch is refused.
+  it('accepts fish, saves it as a dietary restriction and maps it to the fish allergen', () => {
+    expect(validateAnswerPatch({ N2: ['shellfish', 'fish'] }, NOW)).toEqual([]);
+    const saved = profileFieldsFromAnswers({
+      ...COMPLETE,
+      N2: ['shellfish', 'fish'],
+    }).dietary_restrictions;
+    expect(saved).toEqual(['shellfish', 'fish']);
+    expect(allergensFromRestrictions(Array.isArray(saved) ? saved : [])).toEqual([
+      'fish',
+      'shellfish',
+    ]);
+  });
+
+  it('labels fish in the coach view of the answers', () => {
+    const n2 = SCREEN_LABELS.find((s) => s.key === 'N2');
+    expect(n2?.options).toContainEqual({ value: 'fish', label: 'Fish' });
+  });
+});

@@ -376,6 +376,7 @@ describe('a client library hides a recipe only on a declared match', () => {
     [['Soy'], 'Miso tofu', ['soy']],
     [['Sesame'], 'Sesame noodles', ['sesame']],
     [['sesame'], 'Tahini bowl', ['sesame']],
+    [['Fish'], 'Salmon bowl', ['fish']],
   ])('the saved answer %j hides a shared recipe declaring it', async (saved, title, allergens) => {
     const shown = build(null);
     shown.db.addRecipe({ title, created_by_id: 'coach-a', allergens, allergens_declared: true });
