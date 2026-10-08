@@ -12,6 +12,8 @@ import {
 } from '../src/onboarding/consultation-answers';
 import { computeMacros, resolveMacroInputs } from '../src/macros/macro-calculator';
 import { CONSULT_CONSENT_V3_TEXT_SHA256 } from '../src/onboarding/consult-consent-copy';
+import { SCREEN_LABELS } from '../src/onboarding/consultation-definitions';
+import { allergensFromRestrictions } from '../src/recipes/allergens';
 
 const NOW = new Date('2026-10-01T12:00:00.000Z');
 
@@ -230,5 +232,30 @@ describe('prototype keys', () => {
     expect(Object.keys(merged)).toEqual(['G1']);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     expect(Object.getPrototypeOf(merged)).toBe(Object.prototype);
+  });
+});
+
+describe('N2 sesame (ALLERGY-CHOICES-131)', () => {
+  // Failing-first: on main 652b07a8 the N2 list has no 'sesame', so this patch is refused.
+  it('accepts sesame, saves it as a dietary restriction and maps it to the sesame allergen', () => {
+    expect(validateAnswerPatch({ N2: ['soy', 'sesame'] }, NOW)).toEqual([]);
+    const saved = profileFieldsFromAnswers({
+      ...COMPLETE,
+      N2: ['soy', 'sesame'],
+    }).dietary_restrictions;
+    expect(saved).toEqual(['soy', 'sesame']);
+    expect(allergensFromRestrictions(Array.isArray(saved) ? saved : [])).toEqual(['soy', 'sesame']);
+  });
+
+  it('still refuses values outside the list and keeps nothing exclusive', () => {
+    expect(validateAnswerPatch({ N2: ['sesame seeds'] }, NOW).map((e) => e.key)).toEqual(['N2']);
+    expect(validateAnswerPatch({ N2: ['nothing', 'sesame'] }, NOW).map((e) => e.key)).toEqual([
+      'N2',
+    ]);
+  });
+
+  it('labels sesame in the coach view of the answers', () => {
+    const n2 = SCREEN_LABELS.find((s) => s.key === 'N2');
+    expect(n2?.options).toContainEqual({ value: 'sesame', label: 'Sesame' });
   });
 });

@@ -244,6 +244,7 @@ export const VALIDATORS: Readonly<Record<string, Validator>> = {
       'shellfish',
       'eggs',
       'soy',
+      'sesame',
       'pork',
       'halal',
       'kosher',
