@@ -26,6 +26,7 @@ import { AdminPtmService } from '../../admin/ptm/admin-ptm.service';
 import { CoachAlertsService } from '../coach-alerts.service';
 import { SubCoachScopeService } from '../../sub-coach/sub-coach-scope.service';
 import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../../consent/consent.service';
+import { CHURN_FACTOR_SCOPES, coachVisibleFactors } from './churn-factor-scopes';
 import type { CoachRiskBoardRow } from '../../admin/ptm/admin-ptm.service';
 import type { PtmRiskBucket } from '../../ptm/ptm.types';
 
@@ -497,6 +498,7 @@ export class CommandCenterService {
     // churn-intervention.service.ts). Falls back to an activity-based label
     // only when a user has no parseable factors.
     const topFactorMap = await this.loadTopFactors(
+      ownerCoachId,
       filtered.map((r) => r.user_id),
     );
 
@@ -529,7 +531,10 @@ export class CommandCenterService {
   // CC-3: load the highest-contribution factor LABEL per user from the
   // latest PtmPrediction.factors blob. Returns a map user_id -> label (only
   // for users that have at least one parseable factor).
+  // CHURN-LABELS-132: only a factor the client shares with this coach, under
+  // the same grant as sharedWith (churn-factor-scopes.ts).
   private async loadTopFactors(
+    ownerCoachId: string,
     userIds: string[],
   ): Promise<Map<string, string>> {
     const result = new Map<string, string>();
@@ -553,8 +558,12 @@ export class CommandCenterService {
       where: { OR: orPairs },
       select: { user_id: true, factors: true },
     });
+    const granted = this.consent
+      ? await this.consent.grantedScopesByClient(ownerCoachId, userIds, CHURN_FACTOR_SCOPES)
+      : null;
     for (const p of predictions) {
-      const factors = parseFactors(p.factors);
+      const shared = granted === null ? 'all' : granted.get(p.user_id) ?? new Set<string>();
+      const factors = coachVisibleFactors(parseFactors(p.factors), shared);
       if (factors.length > 0) result.set(p.user_id, factors[0].label);
     }
     return result;

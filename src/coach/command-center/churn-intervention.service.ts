@@ -41,6 +41,7 @@ import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception
 import { AiDataSubject, clientDataSubject } from '../../ai-egress/ai-egress.types';
 import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
+import { CHURN_FACTOR_SCOPES, coachVisibleFactors } from './churn-factor-scopes';
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import { PrismaService } from '../../prisma.service';
 import { PtmService } from '../../ptm/ptm.service';
@@ -201,9 +202,10 @@ export class ChurnInterventionService {
     // B-865-SOL-130-1: the churn score and its factors read all four kinds of
     // logs, so a client is listed only while sharing all four (the Command
     // Center at-risk rule), under this coach's grant. The owner account reads all.
+    // CHURN-LABELS-132: the same read brings the scopes the factor labels need.
     const allIds = rosterRows.map((r) => r.id);
     const granted = this.consent
-      ? await this.consent.grantedScopesByClient(coachId, allIds, COACH_FITNESS_SCOPES, opts.callerRole)
+      ? await this.consent.grantedScopesByClient(coachId, allIds, CHURN_FACTOR_SCOPES, opts.callerRole)
       : null;
     const rosterIds =
       granted === null
@@ -269,7 +271,8 @@ export class ChurnInterventionService {
       .sort((a, b) => b.risk_score - a.risk_score)
       .slice(0, limit)
       .map((p) => {
-        const factors = parseFactors(p.factors);
+        const shared = granted === null ? 'all' : granted.get(p.user_id) ?? new Set<string>();
+        const factors = coachVisibleFactors(parseFactors(p.factors), shared);
         const topFactors = factors.slice(0, 3);
         const lastSignal = p.user.ptm_signals[0]?.recorded_at ?? null;
         const lastSignalMs = lastSignal ? lastSignal.getTime() : null;
@@ -341,14 +344,15 @@ export class ChurnInterventionService {
     // factors (all four kinds of logs) and the last check-in, so it needs all
     // four Coach sharing switches, as churn-at-risk does. Checked before those
     // reads, the idempotency claim (so a replay is refused too) and the AI
-    // call. The owner account reads all.
-    if (this.consent) {
-      const granted = await this.consent.grantedScopesByClient(coachId, [clientId], COACH_FITNESS_SCOPES, callerRole);
-      if (!COACH_FITNESS_SCOPES.every((s) => granted.get(clientId)?.has(s) === true)) {
-        throw new ForbiddenException(
-          'This client does not share all four kinds of logs with you in Coach sharing, so no draft is written.',
-        );
-      }
+    // call. The owner account reads all. CHURN-LABELS-132: the same read brings
+    // the scopes the factor labels need.
+    const granted = this.consent
+      ? (await this.consent.grantedScopesByClient(coachId, [clientId], CHURN_FACTOR_SCOPES, callerRole)).get(clientId) ?? new Set<string>()
+      : 'all';
+    if (granted !== 'all' && !COACH_FITNESS_SCOPES.every((s) => granted.has(s))) {
+      throw new ForbiddenException(
+        'This client does not share all four kinds of logs with you in Coach sharing, so no draft is written.',
+      );
     }
 
     // R2b — the draft sends this client's name, risk signals and last
@@ -362,7 +366,7 @@ export class ChurnInterventionService {
     // Pull PTM context (used both for the prompt and as the row's
     // top_factor / risk_score_at_draft snapshot).
     const latestPrediction = await this.ptm.getLatestPrediction(clientId);
-    const factors = parseFactors(latestPrediction?.factors);
+    const factors = coachVisibleFactors(parseFactors(latestPrediction?.factors), granted);
     const topFactor = factors[0]?.label ?? 'Declining engagement';
     const riskScore = latestPrediction?.risk_score ?? null;
 
