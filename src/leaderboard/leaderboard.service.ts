@@ -15,6 +15,8 @@
 //     "{firstName} {lastInitial}." — never the full name.
 //     Derivation parses the single `name` column: first token = first name,
 //     last token = last name (initial only). "Sarah Connor" → "Sarah C."
+//   * A configured name passes the community content filter (Apple 1.2):
+//     refused with 422 on save, and never shown to peers if it fails later.
 //   * Only opted-in users appear; opt-out hides the row for all peers.
 //   * Scope is the requesting user's coach roster only — never platform-wide.
 //
@@ -24,8 +26,20 @@
 //     opted-in users at 06:00 UTC so daytime reads nearly always hit cache.
 //   * Cache key: user ID.  Cache value: { score, computedAt }.
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, UnprocessableEntityException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { checkCommunityText } from '../community/safety/community-content-filter';
+
+/**
+ * 422 body for a display name the community content filter refuses. Same
+ * machine code as every community text write, so the app shows `message`.
+ */
+export const LEADERBOARD_NAME_REJECTED = {
+  error: 'content_rejected',
+  code: 'community.content.rejected',
+  message:
+    'This display name was not saved because it appears to contain abusive or explicit language. Choose another name.',
+} as const;
 
 const SCORE_TTL_MS = 60 * 60 * 1_000; // 1 hour
 
@@ -218,6 +232,9 @@ export class LeaderboardService {
     enabled: boolean,
     displayName?: string,
   ): Promise<void> {
+    if (enabled && !checkCommunityText(displayName).allowed) {
+      throw new UnprocessableEntityException(LEADERBOARD_NAME_REJECTED);
+    }
     await this.prisma.user.update({
       where: { id: userId },
       data: {
@@ -363,9 +380,9 @@ export class LeaderboardService {
     name: string;
     leaderboard_display_name: string | null;
   }): string {
-    if (member.leaderboard_display_name?.trim()) {
-      return member.leaderboard_display_name.trim();
-    }
+    const chosen = member.leaderboard_display_name?.trim();
+    // A name saved before the filter (or before a term was added) never reaches peers.
+    if (chosen && checkCommunityText(chosen).allowed) return chosen;
     const parts = (member.name ?? '').trim().split(/\s+/).filter(Boolean);
     if (parts.length === 0) return 'Member';
     const first = parts[0];
