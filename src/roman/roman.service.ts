@@ -1713,8 +1713,8 @@ export class RomanService {
 
   /**
    * B-668-1: debit the turn's actual cost (the same tokens the ledger
-   * settles) from the coach pool, in whole cents rounded up; a cost larger
-   * than the remainder consumes the remainder. The provider
+   * settles) from the coach pool, exact (CREDIT-METER-130: the pool rounds
+   * once per period); a cost larger than the remainder consumes the remainder. The provider
    * call already happened, so a failed debit is logged and reported, never
    * thrown at the client.
    */
@@ -1725,7 +1725,7 @@ export class RomanService {
     requestId: string,
   ): Promise<void> {
     if (!coachId || !this.budget) return;
-    const cents = Math.ceil(RomanService.costUsd(inputTokens, outputTokens) * 100);
+    const cents = RomanService.costUsd(inputTokens, outputTokens) * 100;
     if (cents <= 0) return;
     try {
       const debit = await this.budget.recordUsage({

@@ -183,9 +183,9 @@ export class RomanBackgroundSpendService {
   }
 
   /**
-   * Replace the reservation with the real tokens, then debit the pool in
-   * whole cents (rounded up; a cost above the remainder consumes the
-   * remainder). The provider call already happened, so failures are logged
+   * Replace the reservation with the real tokens, then debit the pool at
+   * the exact cost (CREDIT-METER-130: the pool rounds once per period; a
+   * cost above the remainder consumes the remainder). The provider call already happened, so failures are logged
    * and reported, never thrown; a failed settle keeps the reservation, which
    * only over-counts.
    */
@@ -209,9 +209,8 @@ export class RomanBackgroundSpendService {
     }
     const coachId = reservation.poolCoachId;
     if (!coachId || !this.budget) return;
-    const cents = Math.ceil(
-      RomanBackgroundSpendService.costUsd(reservation.model, inputTokens, outputTokens) * 100,
-    );
+    const cents =
+      RomanBackgroundSpendService.costUsd(reservation.model, inputTokens, outputTokens) * 100;
     if (cents <= 0) return;
     try {
       const debit = await this.budget.recordUsage({
