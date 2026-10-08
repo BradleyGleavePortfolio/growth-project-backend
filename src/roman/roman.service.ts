@@ -87,7 +87,6 @@ import {
 import { CoachAIBudgetService } from '../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../ai-credits/budget-exhausted.exception';
 import { COACH_AI_BUDGET_EXHAUSTED_CODE } from '../ai-credits/ai-credits.constants';
-import { PROMPT_VERSION } from './guardrails/roman-guardrail.contract';
 import {
   classifySafety,
   routerHintFor,
@@ -106,6 +105,7 @@ import type {
 } from './context/roman-client-context.types';
 import {
   buildRomanSystemPrompt,
+  romanPromptVersionOf,
   RomanSessionVoiceState,
 } from './roman.prompts';
 import {
@@ -1213,14 +1213,14 @@ export class RomanService {
       usage: usage.kind,
       rewritten: checked.rewritten,
       guardrail_count: checked.guardrails_applied.length,
-      prompt_version: PROMPT_VERSION,
+      prompt_version: romanPromptVersionOf(session.surface),
       context_version: bundle?.context.version ?? null,
       context_hash: bundle?.hash ?? null,
       context_unavailable: grounded && contextUnavailable,
       ...(augmentRun ? augmentLedgerOf(augmentRun) : {}),
     });
     this.logger.log(
-      `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} model_call=true rewritten=${checked.rewritten} guardrail_count=${checked.guardrails_applied.length} usage=${usage.kind} context=${bundle ? bundle.hash.slice(0, 12) : grounded ? 'unavailable' : 'none'}`,
+      `roman.turn session=${session.id} prompt_version=${romanPromptVersionOf(session.surface)} model_call=true rewritten=${checked.rewritten} guardrail_count=${checked.guardrails_applied.length} usage=${usage.kind} context=${bundle ? bundle.hash.slice(0, 12) : grounded ? 'unavailable' : 'none'}`,
     );
 
     if (checked.text.length > 0) yield { type: 'delta', text: checked.text };
@@ -1287,7 +1287,7 @@ export class RomanService {
     // the owner audit list never returns and #608's erasure manifest nulls
     // for this actor.
     this.logger.warn(
-      `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} model_call=false template=fixed`,
+      `roman.turn session=${session.id} prompt_version=${romanPromptVersionOf(session.surface)} model_call=false template=fixed`,
     );
     await this.audit?.write({
       action: AuditAction.ROMAN_SAFETY_ROUTE,
