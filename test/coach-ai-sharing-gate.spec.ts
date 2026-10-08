@@ -11,7 +11,7 @@ import { CoachBriefService } from '../src/coach/brief/coach-brief.service';
 import { CoachAIService } from '../src/ai/coach/coach-ai.service';
 import { CoachAIController } from '../src/ai/coach/coach-ai.controller';
 import type { ClientContext } from '../src/ai/context/client-context.types';
-import type { WorkoutContextV2 } from '../src/ai/context/workout-context.service';
+import type { WorkoutContextService, WorkoutContextV2 } from '../src/ai/context/workout-context.service';
 import { RomanAdjustService } from '../src/roman-adjust/roman-adjust.service';
 import { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
 import * as mocks from './_fixtures/coach-brief-mocks';
@@ -114,7 +114,7 @@ function coachAi(sharing: string[]) {
     fakeOf(prisma), fakeOf({ isReady: () => true }), fakeOf({ completeStructured }),
     fakeOf({ build: jest.fn(async (clientId: string) => clientContext(clientId)) }), fakeOf({}),
     fakeOf({ assertCanAccessClient: jest.fn(async () => undefined) }), undefined,
-    fakeOf({ build: jest.fn(async () => workoutContext) }), consentSharing(sharing),
+    fakeOf<WorkoutContextService>({ build: jest.fn(async () => workoutContext) }), consentSharing(sharing),
   );
   const sent = () => completeStructured.mock.calls[0][0].user;
   const stored = () => JSON.stringify(create.mock.calls[0][0].data.inputContext);
