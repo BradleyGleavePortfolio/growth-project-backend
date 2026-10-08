@@ -91,6 +91,8 @@ import { PROMPT_VERSION } from './guardrails/roman-guardrail.contract';
 import {
   classifySafety,
   routerHintFor,
+  ROMAN_EATING_DISORDER_FALLBACK_REASON,
+  romanEatingDisorderFallback,
   ROMAN_SAFETY_ROUTE_REASON,
   ROMAN_SAFETY_ROUTER_MODEL_ID,
   ROMAN_SAFETY_TEMPLATES,
@@ -974,29 +976,7 @@ export class RomanService {
 
     if (route.short_circuit && (route.class === 'emergency' || route.class === 'self_harm')) {
       const text = ROMAN_SAFETY_TEMPLATES[route.class];
-      const persisted = await this.appendMessage(caller, session.id, {
-        role: 'roman',
-        content: text,
-        modelId: ROMAN_SAFETY_ROUTER_MODEL_ID,
-        interrupted: false,
-      });
-      // OR-115-1 (C-651-5): one neutral action name and no class in the log
-      // line. The closed reason code lives only in AuditLog.metadata, which
-      // the owner audit list never returns and #608's erasure manifest nulls
-      // for this actor.
-      this.logger.warn(
-        `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} model_call=false template=fixed`,
-      );
-      await this.audit?.write({
-        action: AuditAction.ROMAN_SAFETY_ROUTE,
-        actorId: caller.id,
-        actorRole: caller.role,
-        targetType: 'RomanSession',
-        targetId: session.id,
-        metadata: { route_reason: ROMAN_SAFETY_ROUTE_REASON[route.class] },
-      });
-      yield { type: 'delta', text };
-      yield { type: 'done', text, messageId: persisted.id, interrupted: false };
+      yield* this.fixedSafetyReply(caller, session, text, ROMAN_SAFETY_ROUTE_REASON[route.class]);
       return;
     }
 
@@ -1039,6 +1019,7 @@ export class RomanService {
     // bundle) reserves every call it may make; any other turn is today's.
     // R11-T3: only a tools turn's prompt carries the tools and answer sections.
     const toolsTurn = this.toolsTurnOf(grounded && bundle !== null);
+    const metBefore = grounded && (await this.hasEarlierChat(caller, session));
 
     const system = buildRomanSystemPrompt({
       surface: session.surface,
@@ -1052,6 +1033,7 @@ export class RomanService {
         ? { augments: augmentRun.applied.map((a) => a.block) }
         : {}),
       ...(toolsTurn ? { tools: true } : {}),
+      ...(metBefore ? { metBefore: true } : {}),
     });
     // B-651-4: the reservation is an upper bound of THIS payload, built from
     // the exact system prompt and history that will be sent (trimmed to the
@@ -1253,6 +1235,94 @@ export class RomanService {
   isSafetyShortCircuit(message: string): boolean {
     const route = classifySafety(message);
     return route.short_circuit && (route.class === 'emergency' || route.class === 'self_harm');
+  }
+
+  /** CF-ROMAN-COPY-B-128: true when the message gets the eating-disorder fallback if the AI cannot answer. */
+  isEatingDisorderRisk(message: string): boolean {
+    return classifySafety(message).class === 'eating_disorder_risk';
+  }
+
+  /**
+   * CF-ROMAN-COPY-B-128 (owner default 10-07): the fixed eating-disorder reply
+   * for a turn the AI cannot answer (the controller calls it when a turn-limit,
+   * consent, daily-cap or coach-pool check refused). No model call, no spend;
+   * the only read is whether the client has a coach, for the coach line.
+   */
+  async *streamEatingDisorderFallback(
+    caller: RomanCaller,
+    session: RomanSession,
+  ): AsyncGenerator<RomanStreamChunk> {
+    let hasCoach = false;
+    try {
+      if (caller.role === 'student') {
+        const user = await this.prisma.user.findUnique({
+          where: { id: caller.id },
+          select: { coach_id: true },
+        });
+        hasCoach = Boolean(user?.coach_id);
+      }
+    } catch (err) {
+      // The coachless wording is true for everyone; never block the reply.
+      this.logger.warn(`roman.fallback_coach_read_failed: ${romanErrorTag(err)}`);
+    }
+    const text = romanEatingDisorderFallback(hasCoach);
+    yield* this.fixedSafetyReply(caller, session, text, ROMAN_EATING_DISORDER_FALLBACK_REASON);
+  }
+
+  /** A deterministic safety reply: stored once, audited by reason code only, then emitted. */
+  private async *fixedSafetyReply(
+    caller: RomanCaller,
+    session: RomanSession,
+    text: string,
+    reason: string,
+  ): AsyncGenerator<RomanStreamChunk> {
+    const persisted = await this.appendMessage(caller, session.id, {
+      role: 'roman',
+      content: text,
+      modelId: ROMAN_SAFETY_ROUTER_MODEL_ID,
+      interrupted: false,
+    });
+    // OR-115-1 (C-651-5): one neutral action name and no class in the log
+    // line. The closed reason code lives only in AuditLog.metadata, which
+    // the owner audit list never returns and #608's erasure manifest nulls
+    // for this actor.
+    this.logger.warn(
+      `roman.turn session=${session.id} prompt_version=${PROMPT_VERSION} model_call=false template=fixed`,
+    );
+    await this.audit?.write({
+      action: AuditAction.ROMAN_SAFETY_ROUTE,
+      actorId: caller.id,
+      actorRole: caller.role,
+      targetType: 'RomanSession',
+      targetId: session.id,
+      metadata: { route_reason: reason },
+    });
+    yield { type: 'delta', text };
+    yield { type: 'done', text, messageId: persisted.id, interrupted: false };
+  }
+
+  /**
+   * CF-ROMAN-COPY-B-128 (owner default 10-07): the client has a live chat with
+   * messages from an earlier day, so Roman is not reintroduced. A failed read
+   * means no line (the prompt as before), never a failed turn.
+   */
+  private async hasEarlierChat(caller: RomanCaller, session: RomanSession): Promise<boolean> {
+    try {
+      const earlier = await this.prisma.romanSession.findFirst({
+        where: {
+          user_id: caller.id,
+          surface: session.surface,
+          id: { not: session.id },
+          deleted_at: null,
+          message_count: { gt: 0 },
+        },
+        select: { id: true },
+      });
+      return earlier !== null && earlier !== undefined;
+    } catch (err) {
+      this.logger.warn(`roman.earlier_chat_read_failed: ${romanErrorTag(err)}`);
+      return false;
+    }
   }
 
   /**

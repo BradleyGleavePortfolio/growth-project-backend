@@ -62,6 +62,7 @@ function controllerThatThrows(thrown: unknown) {
     assertDailyCapacity: jest.fn(async () => undefined),
     assertCoachPoolOpen: jest.fn(async () => null),
     isSafetyShortCircuit: jest.fn(() => false),
+    isEatingDisorderRisk: jest.fn(() => false),
     appendMessage: jest.fn(async () => ({ id: 'm1' })),
     // eslint-disable-next-line require-yield
     streamAssistantTurn: jest.fn(async function* () {

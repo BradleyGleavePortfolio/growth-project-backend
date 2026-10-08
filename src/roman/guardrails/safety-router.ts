@@ -169,7 +169,8 @@ export const ROMAN_SAFETY_TEMPLATES: Record<'emergency' | 'self_harm', string> =
     'Please stop what you are doing and call 911 now, or your local emergency number. ' +
     'If you are able, stay where you are, unlock the door, and keep your phone within reach so help can find you quickly. ' +
     'This is beyond what I can help with, and it should not wait. ' +
-    'Once you are safe, your coach would want to hear from you in Messages, and I will be here.',
+    // CF-ROMAN-COPY-B-128: no coach is assumed (a client may have none).
+    'Once you are safe, let someone you trust know what happened, and I will be here.',
   self_harm:
     'I am sorry you are carrying this, and I am glad you said it here rather than holding it alone. ' +
     'Please reach the 988 Suicide & Crisis Lifeline now: call or text 988 in the United States, any hour, and a trained person will answer. ' +
@@ -195,6 +196,30 @@ export const ROMAN_SAFETY_ROUTE_REASON: Record<'emergency' | 'self_harm', 'call_
 
 export const ROMAN_SAFETY_ROUTER_MODEL_ID = 'safety-router';
 
+/**
+ * CF-ROMAN-COPY-B-128 (owner default 10-07): the fixed reply to an
+ * eating_disorder_risk message the AI cannot answer (AI help off, the turn
+ * limit or a daily limit reached, the coach's AI credits used up). Like the
+ * 911 / 988 templates: no model call, no spend, nothing sent anywhere. It
+ * points to people: the coach only when the client has one, a physician or a
+ * qualified professional, someone they trust, and 988 / 911 (988 serves anyone
+ * in distress). Worded for a broad router match ("binge" also fires on TV).
+ * When the AI can answer, the model replies under the hint below instead.
+ */
+export function romanEatingDisorderFallback(hasCoach: boolean): string {
+  return [
+    'I am not able to answer in chat at the moment.',
+    'If eating or food is weighing on you, you do not have to carry it alone.',
+    ...(hasCoach ? ['Your coach would want to hear from you, and Messages reaches them.'] : []),
+    'A physician, or a qualified professional who works with eating concerns, is the right person to talk to, and it helps to tell someone you trust how you are doing.',
+    'If you are in distress, call or text 988 in the United States, any hour, and a trained person will answer.',
+    'If you are in immediate danger, call 911.',
+  ].join(' ');
+}
+
+/** Closed reason code for the eating-disorder fallback (restricted-read audit metadata). */
+export const ROMAN_EATING_DISORDER_FALLBACK_REASON = 'eating_disorder_fallback';
+
 // ─── per-class hints appended to the system block ────────────────────────────
 
 /**
@@ -217,7 +242,8 @@ export const ROMAN_ROUTER_HINTS: Record<
     'ROUTER HINT (eating_disorder_risk): the message signals disordered eating or extreme restriction. Be warm, supportive and calm. ' +
     'Do not give any calorie number below the floor, do not praise restriction, do not suggest compensatory exercise. ' +
     'Offer one steadying next step inside their plan (for example, the next regular meal with protein, logged as usual), ' +
-    'offer to help them message their coach, and suggest talking with a physician or a qualified professional. Keep it short.',
+    'offer to help them message their coach only if client_data shows they have one (coach.has_coach), ' +
+    'and suggest talking with a physician or a qualified professional. Keep it short.',
   medical_scope:
     'ROUTER HINT (medical_scope): the message touches medication, labs, pregnancy, diabetes, blood pressure, a heart condition or a diagnosis. ' +
     'Stay within general fitness and nutrition; do not interpret, diagnose or advise on the medical matter itself, and do not change or time any medication. ' +

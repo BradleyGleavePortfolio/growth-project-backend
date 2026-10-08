@@ -110,6 +110,11 @@ export class RomanController {
     // the AI processor, CONSENT_D2_CONTRACT) may stand between the client and
     // that answer. Every other turn keeps all three checks.
     const crisis = this.roman.isSafetyShortCircuit(dto.content);
+    // CF-ROMAN-COPY-B-128 (owner default 10-07): an eating-disorder message
+    // that one of the checks below refuses gets the fixed fallback (a pointer
+    // to people, no model call) instead of the refusal.
+    const edRisk = !crisis && this.roman.isEatingDisorderRisk(dto.content);
+    let edFallback = false;
 
     // Rate-limit BEFORE persisting the user turn (so a rejected turn does not
     // count against the cap). Throws a structured 429 Too Many Requests; we
@@ -118,13 +123,14 @@ export class RomanController {
     try {
       if (!crisis) await this.roman.assertWithinRateLimit(caller);
     } catch (err) {
+      if (edRisk) edFallback = true;
       const payload = (
         err as { getResponse?: () => unknown }
       ).getResponse?.() as { retryAfterSeconds?: number } | undefined;
-      if (typeof payload?.retryAfterSeconds === 'number') {
+      if (!edFallback && typeof payload?.retryAfterSeconds === 'number') {
         res.setHeader('Retry-After', String(payload.retryAfterSeconds));
       }
-      throw err;
+      if (!edFallback) throw err;
     }
 
     const session = await this.roman.getOwnedSession(caller, id);
@@ -133,13 +139,18 @@ export class RomanController {
     // the stream opens.
     // A crisis turn skips it: the template involves no AI processing, and
     // streamAssistantTurn answers it before its own egress check.
-    if (!crisis) await this.roman.assertMayUseAi(caller);
-    // OR-113-2 — daily spend cap, checked before the turn is stored (coded
-    // 503 ROMAN_CAPACITY_REACHED with a specific message; fail closed).
-    if (!crisis) await this.roman.assertDailyCapacity(caller);
-    // B-668-1 — the coach's monthly AI credit pool, before the turn is stored
-    // (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).
-    if (!crisis) await this.roman.assertCoachPoolOpen(caller);
+    try {
+      if (!crisis && !edFallback) await this.roman.assertMayUseAi(caller);
+      // OR-113-2 — daily spend cap, checked before the turn is stored (coded
+      // 503 ROMAN_CAPACITY_REACHED with a specific message; fail closed).
+      if (!crisis && !edFallback) await this.roman.assertDailyCapacity(caller);
+      // B-668-1 — the coach's monthly AI credit pool, before the turn is stored
+      // (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).
+      if (!crisis && !edFallback) await this.roman.assertCoachPoolOpen(caller);
+    } catch (err) {
+      if (!edRisk) throw err;
+      edFallback = true;
+    }
     await this.roman.appendMessage(caller, session.id, {
       role: 'user',
       content: dto.content,
@@ -168,11 +179,14 @@ export class RomanController {
     const onClose = () => abort.abort();
     req.on('close', onClose);
 
+    const turn = edFallback
+      ? this.roman.streamEatingDisorderFallback(caller, session)
+      : this.roman.streamAssistantTurn(caller, session, {
+          signal: abort.signal,
+          userMessage: dto.content,
+        });
     try {
-      for await (const chunk of this.roman.streamAssistantTurn(caller, session, {
-        signal: abort.signal,
-        userMessage: dto.content,
-      })) {
+      for await (const chunk of turn) {
         res.write(`data: ${JSON.stringify(chunk)}\n\n`);
         if (chunk.type === 'done') break;
       }
