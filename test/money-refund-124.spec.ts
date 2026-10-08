@@ -145,6 +145,22 @@ describe('MONEY-REFUND-124 ordinary billing lifecycle', () => {
     expect(keys[0]).not.toBe(keys[1]);
   });
 
+  it('CF-COACH-PAY-BE-128: a coach refund names its charge and per-tap key; admin calls keep theirs', async () => {
+    const h = world();
+    await h.service.createAdminRefund({ purchase_id: 'purchase', amount_cents: 100, initiated_by_user_id: 'owner' });
+    await h.service.createAdminRefund({
+      purchase_id: 'purchase', amount_cents: 100, initiated_by_user_id: 'coach',
+      charge_id: 'ch_first', idempotency_key: 'tgp-coach-refund-purchase-tap-1',
+    });
+    const calls = h.stripe.createRefund.mock.calls.map(([call]) => stub(call));
+    expect(calls[0]).toEqual(expect.objectContaining({
+      charge_id: 'ch_renewal', idempotencyKey: 'tgp-refund-purchase-ch_renewal-100-owner',
+    }));
+    expect(calls[1]).toEqual(expect.objectContaining({
+      charge_id: 'ch_first', idempotencyKey: 'tgp-coach-refund-purchase-tap-1',
+    }));
+  });
+
   it('B3: full refund pauses Stripe billing and exposes the existing coach restart', async () => {
     const h = world();
     await h.service.handle(h.refundEvent());

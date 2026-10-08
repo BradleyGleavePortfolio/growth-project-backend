@@ -284,6 +284,8 @@ class FakeDb {
           return row;
         }),
       },
+      // CF-ALLERGY-128: nobody in this fixture has saved allergies.
+      userProfile: { findUnique: jest.fn(async () => null) },
       mealPlan: {
         findMany: jest.fn(async (args: { where: { client_id: string } }) =>
           this.mealPlans.filter(

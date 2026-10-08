@@ -1637,6 +1637,10 @@ model Recipe {
   ingredients   String[]
   instructions  String[]
   tags          String[]
+  /// CF-ALLERGY-128: allergen codes the author declared (src/recipes/allergens.ts). Never guessed from text.
+  allergens          String[] @default([])
+  /// true once the author confirmed `allergens` is complete (an empty list then means none of the listed allergens).
+  allergens_declared Boolean  @default(false)
   is_public     Boolean       @default(false)
   created_by_id String
   created_by    User          @relation("RecipeCreator", fields: [created_by_id], references: [id])

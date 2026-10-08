@@ -91,7 +91,16 @@ export interface BuildSystemPromptInput {
    * absent or false = the prompt is byte-identical to the one without tools.
    */
   tools?: boolean;
+  /**
+   * CF-ROMAN-COPY-B-128: the client has an earlier chat with Roman. Only
+   * `true` adds ROMAN_MET_BEFORE_LINE; absent = the prompt is unchanged.
+   */
+  metBefore?: boolean;
 }
+
+/** CF-ROMAN-COPY-B-128 (owner default 10-07): no second introduction for a returning client. */
+export const ROMAN_MET_BEFORE_LINE =
+  'You have spoken with this client in earlier chats. Do not introduce yourself or say who you are again unless they ask, and do not claim to remember anything you cannot see here.';
 
 /** R11-T3: when and how to use the read tools (tools turns only). */
 export const ROMAN_TOOLS_SECTION =
@@ -118,7 +127,7 @@ export const ROMAN_ANSWER_CONTRACT =
 export const ROMAN_CLIENT_DATA_UNAVAILABLE_NOTICE =
   '# CLIENT DATA UNAVAILABLE\n' +
   "The client's plan, logs, targets and health-screen answers could not be loaded for this turn. " +
-  'Do not state or estimate any of their numbers, sessions or dates. Say briefly that you cannot see their details at this moment and that their plan and logs are on the Today tab. ' +
+  'Do not state or estimate any of their numbers, sessions or dates. Say briefly that you cannot see their details at this moment and that their plan and logs are still in the app, on Home, Train and Food. ' +
   'Keep any training guidance general and conservative; never suggest increasing intensity, load or volume in this turn.';
 
 /** One line of surface-specific framing. The voice contract is identical on both. */
@@ -128,7 +137,7 @@ function surfaceFraming(surface: RomanSurface): string {
       return 'You are addressing a coach inside the TGP coach app. Speak to a professional who runs a coaching practice; never reveal another coach\'s or client\'s private data.';
     case 'client':
     default:
-      return 'You are addressing a client inside the TGP client app. Speak to the person training under a coach; never reveal another user\'s private data.';
+      return 'You are addressing a client inside the TGP client app. Speak to the person doing the training (client_data shows whether they have a coach); never reveal another user\'s private data.';
   }
 }
 
@@ -141,6 +150,7 @@ export function buildRomanSystemPrompt(input: BuildSystemPromptInput): string {
   const { surface, voice, subjectContext, routerHint, clientData, clientDataUnavailable, augments } =
     input;
   const tools = input.tools === true && surface === 'client';
+  const metBefore = input.metBefore === true && surface === 'client' ? `\n${ROMAN_MET_BEFORE_LINE}` : '';
 
   // B-651-9: shipped replies carry no exclamation marks at all, so the old
   // one-per-session allowance is gone whatever the session recorded.
@@ -159,7 +169,7 @@ export function buildRomanSystemPrompt(input: BuildSystemPromptInput): string {
     ROMAN_VOICE_CONTRACT,
     ...(surface === 'client' ? [ROMAN_GUARDRAIL_CONTRACT] : []),
     `# SURFACE\n${surfaceFraming(surface)}`,
-    `# SESSION STATE\n${remainingExclamation}\n${quipGuidance}${
+    `# SESSION STATE\n${remainingExclamation}\n${quipGuidance}${metBefore}${
       routerHint && routerHint.trim().length > 0 ? `\n${routerHint.trim()}` : ''
     }`,
     ...(tools ? [ROMAN_TOOLS_SECTION, ROMAN_ANSWER_CONTRACT] : []),
