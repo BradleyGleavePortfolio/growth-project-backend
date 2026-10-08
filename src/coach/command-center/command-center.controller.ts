@@ -255,6 +255,8 @@ export class CommandCenterController {
     return this.churn.getChurnAtRisk(req.user.id, {
       limit: Number.isFinite(parsedLimit) ? parsedLimit : undefined,
       minBucket: safeBucket,
+      // B-865-SOL-130-1: keeps the owner account's Coach sharing bypass.
+      callerRole: req.user.role,
     });
   }
 

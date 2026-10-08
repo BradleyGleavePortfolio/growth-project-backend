@@ -13,6 +13,14 @@ import { CommandCenterService } from '../src/coach/command-center/command-center
 import { AdminPtmService } from '../src/admin/ptm/admin-ptm.service';
 import type { RiskBoardQueryDto } from '../src/admin/ptm/admin-ptm.dto';
 import { CoachAlertsService } from '../src/coach/coach-alerts.service';
+import { ConfigService } from '@nestjs/config';
+import { SupabaseService } from '../src/supabase/supabase.service';
+import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import { V1CoachService } from '../src/v1/v1-coach.service';
+import { V1CoachController } from '../src/v1/v1-coach.controller';
+import { AiEgressService } from '../src/ai-egress/ai-egress.service';
+import { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
+import { CommandCenterController } from '../src/coach/command-center/command-center.controller';
 
 // CF-SHARE-GATE-128 (FW-COACH-128 U2): a client turns a switch off in Settings >
 // Privacy > Coach sharing (Workouts, Food logs, Weigh-ins, Check-ins and
@@ -272,5 +280,79 @@ describe('CF-SHARE-GATE-128: the gate cannot be skipped by wiring', () => {
     await expect(
       Test.createTestingModule({ providers: [CommandCenterService, ...withoutConsent] }).compile(),
     ).rejects.toThrow(/ConsentService/);
+  });
+});
+
+// B-865-SOL-130-1 (FIX-OPUS-130): two mounted coach routes with no app screen
+// also follow the switches: the v1 roster's last check-in and last workout
+// dates, and churn-at-risk (its score and factors read all four kinds of logs).
+describe('B-865-SOL-130-1: GET /v1/coach/me/clients and churn-at-risk follow the switches', () => {
+  const users = ['c1', 'c2', 'c3'].map((id) => ({ id, name: `Client ${id}`, role: 'student', coach_id: COACH, deleted_at: null }));
+  const logs = users.map((u) => ({ user_id: u.id, date: ago(DAY) }));
+  const preds = users.map((u) => ({
+    user_id: u.id, computed_at: ago(DAY), risk_score: 0.8,
+    factors: [{ key: 'weight', label: 'No weight logged in last 14 days', contribution: 1 }],
+  }));
+  const v1Providers = (consent: ConsentService | null) => [
+    V1CoachService,
+    { provide: PrismaService, useValue: {
+      user: { findMany: jest.fn(async () => users) },
+      checkIn: { groupBy: jest.fn(async (a: GroupArgs) => group(logs, a)) },
+      workoutSession: { groupBy: jest.fn(async (a: GroupArgs) => group(logs, a)) },
+      coachMessage: { groupBy: jest.fn(async () => []) },
+    } },
+    { provide: SupabaseService, useValue: {} },
+    { provide: AuditService, useValue: { write: jest.fn() } },
+    // 'sub-1' is a sub-coach of COACH; the grants belong to COACH.
+    { provide: SubCoachScopeService, useValue: {
+      isSubCoach: jest.fn(async (id: string) => id === 'sub-1'),
+      getAuthorizedClientIds: jest.fn(async () => ['c1', 'c2', 'c3']),
+      getHeadCoachIdForSubCoach: jest.fn(async (id: string) => (id === 'sub-1' ? COACH : null)),
+    } },
+    ...(consent ? [{ provide: ConsentService, useValue: consent }] : []),
+  ];
+  const churnProviders = (consent: ConsentService | null) => [
+    ChurnInterventionService,
+    { provide: PrismaService, useValue: {
+      user: { findMany: jest.fn(async (a: { where?: Where }) => users.filter((u) => matches(u, a.where ?? {}))) },
+      ptmPrediction: {
+        groupBy: jest.fn(async (a: GroupArgs) => group(preds, a)),
+        findMany: jest.fn(async (a: { where?: Where }) => preds.filter((p) => matches(p, a.where ?? {}))
+          .map((p) => ({ ...p, user: { id: p.user_id, name: p.user_id, ptm_signals: [] } }))),
+      },
+      coachAlert: { findMany: jest.fn(async () => []) },
+    } },
+    { provide: PtmService, useValue: {} },
+    { provide: ConfigService, useValue: { get: jest.fn() } },
+    { provide: AiEgressService, useValue: {} },
+    ...(consent ? [{ provide: ConsentService, useValue: consent }] : []),
+  ];
+
+  it('roster: the check-in date needs Check-ins, the workout date needs Workouts; sub-coach and owner keep their grant rules', async () => {
+    const mod = await Test.createTestingModule({ providers: v1Providers(setup().consent) }).compile();
+    const ctrl = new V1CoachController(mod.get(V1CoachService));
+    const rows = async (id: string, role: string) => ctrl.listClients(stub<AuthedRequest>({ user: { id, role } }));
+    const seen = (rs: Awaited<ReturnType<typeof rows>>) =>
+      rs.map((r) => `${r.id}:${r.lastCheckInAt ? 'check-in' : '-'}:${r.lastWorkoutAt ? 'workout' : '-'}`);
+
+    const coach = await rows(COACH, 'coach');
+    expect(seen(coach)).toEqual(['c1:check-in:workout', 'c2:-:-', 'c3:check-in:-']);
+    // A hidden check-in date is not turned into a "No check-in" risk reason.
+    expect(coach.map((r) => r.riskReason ?? '').filter((r) => /check-in/i.test(r))).toEqual([]);
+    expect(seen(await rows('sub-1', 'coach'))).toEqual(['c1:check-in:workout', 'c2:-:-', 'c3:check-in:-']);
+    expect(seen(await rows('owner-1', 'owner'))).toEqual(['c1:check-in:workout', 'c2:check-in:workout', 'c3:check-in:workout']);
+  });
+
+  it('churn-at-risk lists only clients sharing all four; the owner account sees all', async () => {
+    const mod = await Test.createTestingModule({ providers: churnProviders(setup().consent) }).compile();
+    const ctrl = new CommandCenterController(stub<CommandCenterService>({}), mod.get(ChurnInterventionService));
+    const listed = async (role: string) => (await ctrl.getChurnAtRisk(req(role))).items.map((i) => i.user_id);
+    expect(await listed('coach')).toEqual(['c1']);
+    expect(await listed('owner')).toEqual(['c1', 'c2', 'c3']);
+  });
+
+  it('V1CoachService and ChurnInterventionService do not build without ConsentService', async () => {
+    await expect(Test.createTestingModule({ providers: v1Providers(null) }).compile()).rejects.toThrow(/ConsentService/);
+    await expect(Test.createTestingModule({ providers: churnProviders(null) }).compile()).rejects.toThrow(/ConsentService/);
   });
 });

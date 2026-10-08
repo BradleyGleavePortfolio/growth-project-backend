@@ -42,6 +42,7 @@ import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import { PrismaService } from '../../prisma.service';
 import { PtmService } from '../../ptm/ptm.service';
 import { NotificationsService } from '../../notifications/notifications.service';
+import { COACH_FITNESS_SCOPES, ConsentService } from '../../consent/consent.service';
 import {
   COACH_AI_EFFORT,
   COACH_AI_MODEL,
@@ -158,6 +159,10 @@ export class ChurnInterventionService {
     @Optional()
     @Inject(CHURN_ANTHROPIC_CLIENT_TOKEN)
     injectedClient?: AnthropicHandle,
+    // B-865-SOL-130-1: the client's Coach sharing switches. Not @Optional:
+    // ConsentModule is @Global, so DI always injects it. Only positional unit
+    // tests omit it.
+    private readonly consent?: ConsentService,
   ) {
     if (injectedClient) this.anthropic = injectedClient;
   }
@@ -175,7 +180,7 @@ export class ChurnInterventionService {
   // ── GET /churn-at-risk ────────────────────────────────────────────────
   async getChurnAtRisk(
     coachId: string,
-    opts: { limit?: number; minBucket?: 'amber' | 'red' },
+    opts: { limit?: number; minBucket?: 'amber' | 'red'; callerRole?: string },
   ): Promise<ChurnAtRiskResponse> {
     const limit =
       opts.limit && Number.isFinite(opts.limit) && opts.limit > 0
@@ -190,8 +195,18 @@ export class ChurnInterventionService {
       return { items: [], generated_at: new Date().toISOString() };
     }
 
-    const rosterIds = rosterRows.map((r) => r.id);
     const nameMap = new Map(rosterRows.map((r) => [r.id, r.name]));
+    // B-865-SOL-130-1: the churn score and its factors read all four kinds of
+    // logs, so a client is listed only while sharing all four (the Command
+    // Center at-risk rule), under this coach's grant. The owner account reads all.
+    const allIds = rosterRows.map((r) => r.id);
+    const granted = this.consent
+      ? await this.consent.grantedScopesByClient(coachId, allIds, COACH_FITNESS_SCOPES, opts.callerRole)
+      : null;
+    const rosterIds =
+      granted === null
+        ? allIds
+        : allIds.filter((id) => COACH_FITNESS_SCOPES.every((s) => granted.get(id)?.has(s) === true));
 
     // Latest PtmPrediction per client in this coach's roster.
     const groups = await this.prisma.ptmPrediction.groupBy({
