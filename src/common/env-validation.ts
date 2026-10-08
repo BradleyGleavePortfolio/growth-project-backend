@@ -1023,13 +1023,19 @@ export const ENV_RULES: EnvRule[] = [
     name: 'COACH_AI_PACK_SUCCESS_URL',
     tier: 'optional',
     default: "STRIPE_CHECKOUT_SUCCESS_URL, else 'https://app.trygrowthproject.com/billing/success'",
-    reason: 'Stripe Checkout success URL for coach AI credit packs.',
+    reason:
+      'Stripe Checkout success URL for coach AI credit packs when the app sends none inline. The one declared value is the app return link the in-app checkout recognises (mobile CreditPackCheckoutScreen, scheme com.growthproject.app in app.json). Not secret; declared in .github/fly-env-desired-state.json.',
+    values: ['com.growthproject.app://checkout/success?session_id={CHECKOUT_SESSION_ID}'],
+    unsetIs: 'off',
   },
   {
     name: 'COACH_AI_PACK_CANCEL_URL',
     tier: 'optional',
     default: "STRIPE_CHECKOUT_CANCEL_URL, else 'https://app.trygrowthproject.com/billing/cancel'",
-    reason: 'Stripe Checkout cancel URL for coach AI credit packs.',
+    reason:
+      'Stripe Checkout cancel URL for coach AI credit packs when the app sends none inline. The one declared value is the app return link the in-app checkout recognises (mobile CreditPackCheckoutScreen, scheme com.growthproject.app in app.json). Not secret; declared in .github/fly-env-desired-state.json.',
+    values: ['com.growthproject.app://checkout/cancel'],
+    unsetIs: 'off',
   },
   {
     name: 'COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN',

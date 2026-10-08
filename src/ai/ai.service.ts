@@ -19,6 +19,7 @@ import { CoachAIStateService } from './coach/coach-ai-state.service';
 import { COACH_AI_CAPABILITIES, coachAiCostCents } from './coach/coach-ai.constants';
 import { CoachAIBudgetService } from '../ai-credits/coach-ai-budget.service';
 import { COACH_AI_BUDGET_EXHAUSTED_CODE } from '../ai-credits/ai-credits.constants';
+import { creditPacksSoldInCallerApp, poolRenewsSentence } from '../ai-credits/client-purchase-policy';
 import { AiEgressService } from '../ai-egress/ai-egress.service';
 import { isAiEgressRefusal } from '../ai-egress/ai-consent-required.exception';
 import { clientDataSubject } from '../ai-egress/ai-egress.types';
@@ -175,6 +176,15 @@ export const AI_GUIDE_POOL_EMPTY_REPLY_CLIENT =
   "Your coach's AI credits for this month are used up, so AI guidance cannot answer right now. Your coach is in Messages any time, and your plan and logs work as usual.";
 export const AI_GUIDE_POOL_EMPTY_REPLY_COACH =
   'The AI credits on your coaching account are used up for this month, so AI guidance cannot answer right now. Add a credit pack to keep using AI guidance. Your clients, messages and the rest of the app work as usual.';
+/**
+ * CREDIT-PAY-131: names a credit pack only when the calling build sells packs
+ * (ai-credits/client-purchase-policy.ts); otherwise says when the pool renews.
+ */
+export function aiGuidePoolEmptyReplyCoach(packsSold: boolean, renewsSentence: string): string {
+  return packsSold
+    ? AI_GUIDE_POOL_EMPTY_REPLY_COACH
+    : `The AI credits on your coaching account are used up for this month, so AI guidance cannot answer right now. ${renewsSentence} Your clients, messages and the rest of the app work as usual.`;
+}
 /** Fixed framing allowance (roles, separators) added to the payload's UTF-8 bytes. */
 export const AI_GUIDE_REQUEST_OVERHEAD_TOKENS = 256;
 
@@ -514,7 +524,10 @@ Now answer the user's next message using the rules above. Keep the answer under 
         return {
           reply:
             pool.audience === 'coach'
-              ? AI_GUIDE_POOL_EMPTY_REPLY_COACH
+              ? aiGuidePoolEmptyReplyCoach(
+                  creditPacksSoldInCallerApp(),
+                  poolRenewsSentence(pool.periodEnd),
+                )
               : AI_GUIDE_POOL_EMPTY_REPLY_CLIENT,
           guardrails_applied: [],
           context_generated_at: ctx.generated_at,
@@ -723,7 +736,12 @@ Now answer the user's next message using the rules above. Keep the answer under 
     budget: CoachAIBudgetService,
     userId: string,
     worstCaseCents: number,
-  ): Promise<{ coachId: string | null; exhausted: boolean; audience: 'client' | 'coach' }> {
+  ): Promise<{
+    coachId: string | null;
+    exhausted: boolean;
+    audience: 'client' | 'coach';
+    periodEnd: Date | null;
+  }> {
     try {
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
@@ -737,9 +755,9 @@ Now answer the user's next message using the rules above. Keep the answer under 
       } else if (role !== 'owner' && user?.coach_id) {
         coachId = await budget.resolveHeadCoachId(user.coach_id);
       }
-      if (!coachId) return { coachId: null, exhausted: false, audience };
+      if (!coachId) return { coachId: null, exhausted: false, audience, periodEnd: null };
       const pre = await budget.canCharge(coachId, worstCaseCents);
-      return { coachId, exhausted: !pre.allowed, audience };
+      return { coachId, exhausted: !pre.allowed, audience, periodEnd: pre.budget.period_end };
     } catch (error) {
       this.logger.error(
         `ai guide: coach pool check failed (err=${error instanceof Error ? error.name : 'unknown'})`,

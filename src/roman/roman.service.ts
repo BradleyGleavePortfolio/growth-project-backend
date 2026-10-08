@@ -79,14 +79,15 @@ import {
   ROMAN_LEDGER_CAPABILITY,
   ROMAN_PRICE_PER_MTOK,
   ROMAN_COACH_POOL_EMPTY_MESSAGE,
-  ROMAN_COACH_POOL_EMPTY_MESSAGE_COACH,
   romanAudienceOf,
+  romanCoachPoolEmptyMessage,
   romanFailureMessage,
   romanRateLimitMessage,
 } from './roman.constants';
 import { CoachAIBudgetService } from '../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../ai-credits/budget-exhausted.exception';
 import { COACH_AI_BUDGET_EXHAUSTED_CODE } from '../ai-credits/ai-credits.constants';
+import { creditPacksSoldInCallerApp, poolRenewsSentence } from '../ai-credits/client-purchase-policy';
 import {
   classifySafety,
   routerHintFor,
@@ -1698,7 +1699,10 @@ export class RomanService {
     const dto = await budget.getBudgetDto(coachId);
     throw new CoachAiBudgetExhaustedException({
       code: COACH_AI_BUDGET_EXHAUSTED_CODE,
-      message: ROMAN_COACH_POOL_EMPTY_MESSAGE_COACH,
+      message: romanCoachPoolEmptyMessage(
+        creditPacksSoldInCallerApp(),
+        poolRenewsSentence(dto.period_end),
+      ),
       pack_options_cents: dto.pack_options_cents,
       custom_pack_bounds_cents: dto.custom_pack_bounds_cents,
       budget: {

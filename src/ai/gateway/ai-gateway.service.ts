@@ -47,6 +47,10 @@ import {
 import { AuditService } from '../../audit/audit.service';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
+import {
+  creditPacksSoldInCallerApp,
+  poolRenewsSentence,
+} from '../../ai-credits/client-purchase-policy';
 import { AiEgressService } from '../../ai-egress/ai-egress.service';
 import { SubCoachScopeService } from '../../sub-coach/sub-coach-scope.service';
 import { isSubCoachOfAnotherCoach } from './workout-builder/workout-builder-sub-coach.gate';
@@ -285,7 +289,12 @@ export class AiGatewayService {
         const dto = await this.budget.getBudgetDto(budgetCoachId);
         throw new CoachAiBudgetExhaustedException({
           code: COACH_AI_BUDGET_EXHAUSTED_CODE,
-          message: 'AI budget exhausted — top up to continue',
+          // CREDIT-PAY-131: a credit pack only where the calling build sells one.
+          message: `The AI credits on your coaching account are used up for this month. ${
+            creditPacksSoldInCallerApp()
+              ? 'Add a credit pack to continue.'
+              : poolRenewsSentence(dto.period_end)
+          }`,
           pack_options_cents: dto.pack_options_cents,
           custom_pack_bounds_cents: dto.custom_pack_bounds_cents,
           budget: {

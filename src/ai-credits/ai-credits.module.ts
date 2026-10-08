@@ -1,4 +1,5 @@
 import { Global, Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { PrismaService } from '../prisma.service';
 import { AuthModule } from '../auth/auth.module';
 import { StripeApiService } from '../billing/stripe-api.service';
@@ -8,6 +9,7 @@ import { CoachAiController } from './coach-ai.controller';
 import { AdminCoachAiController } from './admin-coach-ai.controller';
 import { CoachAIBudgetScheduler } from './coach-ai-budget.scheduler';
 import { DormancyGuardService } from './dormancy-guard.service';
+import { CallerPurchasePolicyInterceptor } from './client-purchase-policy';
 
 // Stream 1 — Coach AI Credits module. @Global because the AI gateway and
 // the dormancy-aware cron callers (CoachBriefScheduler, weekly-insight
@@ -33,6 +35,10 @@ import { DormancyGuardService } from './dormancy-guard.service';
     CoachAiCreditPackService,
     CoachAIBudgetScheduler,
     DormancyGuardService,
+    // CREDIT-PAY-131: global (APP_INTERCEPTOR is app-wide wherever it is
+    // declared). Puts X-Client-Purchase-Policy / X-Client-Platform in scope so
+    // the coach "credits used up" copy names a pack only where the app sells one.
+    { provide: APP_INTERCEPTOR, useClass: CallerPurchasePolicyInterceptor },
   ],
   exports: [
     CoachAIBudgetService,

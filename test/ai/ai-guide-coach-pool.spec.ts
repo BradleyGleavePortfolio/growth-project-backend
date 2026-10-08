@@ -7,8 +7,10 @@
 import {
   AiService,
   AI_GUIDE_POOL_EMPTY_REPLY_CLIENT,
+  AI_GUIDE_POOL_EMPTY_REPLY_COACH,
   aiGuideCostCents,
 } from '../../src/ai/ai.service';
+import { runWithCallerPurchaseHeaders } from '../../src/ai-credits/client-purchase-policy';
 import { ClientAIContextService } from '../../src/ai/client-ai-context.service';
 import { AIGuardrailsService } from '../../src/ai/ai-guardrails.service';
 import type { ClientAIContext } from '../../src/ai/client-ai-context.types';
@@ -190,6 +192,27 @@ describe('AI Guide draws from the coach monthly AI credit pool (B-S-AICOST-123-1
 
     expect(complete).not.toHaveBeenCalled();
     expect(result.code).toBe(COACH_AI_BUDGET_EXHAUSTED_CODE);
+  });
+
+  it('CREDIT-PAY-131: a coach is told to add a pack only from a build that sells packs', async () => {
+    const b = makeBudget({ 'coach-1': { used: 4000, total: 4000 } });
+    const { svc, complete } = makeService({
+      users: { 'coach-1': { role: 'coach', coach_id: null } },
+      budget: b.budget,
+    });
+
+    const noPacks = await svc.chat('coach-1', 'How did the team train this week?', []);
+    expect(complete).not.toHaveBeenCalled();
+    expect(noPacks.code).toBe(COACH_AI_BUDGET_EXHAUSTED_CODE);
+    expect(noPacks.reply).toContain('They renew');
+    expect(noPacks.reply).not.toMatch(/credit pack/i);
+
+    const usLink = await runWithCallerPurchaseHeaders(
+      { policy: 'p2p-and-ai-credits', platform: 'ios' },
+      () => svc.chat('coach-1', 'How did the team train this week?', []),
+    );
+    expect(usLink.reply).toBe(AI_GUIDE_POOL_EMPTY_REPLY_COACH);
+    expect(complete).not.toHaveBeenCalled();
   });
 
   it("a paid answer debits its exact cost from the head coach's pool", async () => {
