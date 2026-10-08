@@ -1,7 +1,9 @@
 /**
  * R11-P3b-2: runs the playbook builder 3 minutes after boot and every 6 hours
  * (UTC), only while FEATURE_ROMAN_PLAYBOOK is on (off: no timer, no reads, no
- * calls). Overlapping runs on one machine are skipped. Never throws.
+ * calls). Overlapping runs on one machine are skipped. Never throws. The
+ * builder skips a coach whose playbook is under 6 hours old (PB-GAP-130), the
+ * boot run included, so restarts cannot add a second rebuild inside 6 hours.
  */
 import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
