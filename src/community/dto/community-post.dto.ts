@@ -1,6 +1,7 @@
 import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { z } from 'zod';
+import { CommunityReactionSummarySchema } from './community-reaction.dto';
 
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
@@ -69,6 +70,8 @@ export const CommunityPostSchema = z
     workspace_id: z.guid(),
     cohort_id: z.guid().nullable(),
     author_user_id: z.guid(),
+    // First name only (memberFirstName): members never see a full name.
+    author_name: z.string(),
     title: z.string().nullable(),
     body: z.string().nullable(),
     scope: z.enum(['hall', 'cohort']),
@@ -77,6 +80,8 @@ export const CommunityPostSchema = z
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
     deleted: z.boolean(),
+    // What the viewer may see; same shape and rule as the reaction endpoints.
+    reactions: z.array(CommunityReactionSummarySchema),
   })
   .strict();
 
@@ -102,8 +107,10 @@ export const CommunityCommentSchema = z
     id: z.guid(),
     post_id: z.guid(),
     author_user_id: z.guid(),
+    author_name: z.string(),
     body: z.string(),
     created_at: z.string().datetime(),
+    reactions: z.array(CommunityReactionSummarySchema),
   })
   .strict();
 

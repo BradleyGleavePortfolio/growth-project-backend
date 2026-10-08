@@ -15,6 +15,7 @@ import { reactionKindForEmoji } from './community-emoji.allowlist';
 import {
   CommunityReactionState,
   CommunityReactionStateSchema,
+  summariseReactions,
 } from '../dto/community-reaction.dto';
 
 const NOT_FOUND = {
@@ -161,21 +162,10 @@ export class CommunityReactionsService {
     rows: CommunityResponse[],
     userId: string,
   ): CommunityReactionState {
-    const byEmoji = new Map<string, { count: number; mine: boolean }>();
-    for (const r of rows) {
-      const entry = byEmoji.get(r.response_kind) ?? { count: 0, mine: false };
-      entry.count += 1;
-      if (r.user_id === userId) entry.mine = true;
-      byEmoji.set(r.response_kind, entry);
-    }
     return CommunityReactionStateSchema.parse({
       target_type: apiType,
       target_id: targetId,
-      reactions: [...byEmoji.entries()].map(([emoji, e]) => ({
-        emoji,
-        count: e.count,
-        reacted_by_me: e.mine,
-      })),
+      reactions: summariseReactions(rows, userId),
     });
   }
 
