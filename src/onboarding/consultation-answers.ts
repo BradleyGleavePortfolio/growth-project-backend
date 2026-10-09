@@ -9,6 +9,7 @@
  */
 import { ageInYears, LBS_PER_KG } from '../macros/macro-calculator';
 import type { SelectionAnswers } from './program-rules';
+import type { ClearableProfileField } from '../profile/profile.service';
 import { Logger } from '@nestjs/common';
 import {
   CONSULT_CONSENT_V3,
@@ -435,6 +436,17 @@ export function profileFieldsFromAnswers(a: Answers): Record<string, unknown> {
     }
   }
   return out;
+}
+
+/**
+ * Profile columns a save clears (ONB-SWEEP-SOL-135 B3). Only an explicit
+ * `B4: null` in the patch (the client removed the goal weight) clears
+ * target_weight_lbs; an omitted B4 keeps whatever the profile stores.
+ */
+export function profileClearsFromPatch(patch: Record<string, unknown>): ClearableProfileField[] {
+  return Object.prototype.hasOwnProperty.call(patch, 'B4') && patch.B4 === null
+    ? ['target_weight_lbs']
+    : [];
 }
 
 /** Macro inputs straight from the answers (single calculator input). */

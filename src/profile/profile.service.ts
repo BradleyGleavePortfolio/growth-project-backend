@@ -152,9 +152,17 @@ type ProfileRowLike = Record<string, unknown>;
 /**
  * Columns a writer may set (UserProfile column names). Targets, ids and
  * ownership keys are stripped by writeProfileWithTargets; null/undefined
- * values never overwrite a stored value.
+ * values never overwrite a stored value (only an explicit clear does).
  */
 export type ProfilePatch = Readonly<Record<string, unknown>>;
+
+/**
+ * Nullable calculator inputs a writer may clear on purpose (ONB-SWEEP-SOL-135
+ * B3). Only the optional goal weight: a client who removes it must not keep
+ * protein targets based on a goal they deleted. Required inputs are never
+ * clearable here.
+ */
+export type ClearableProfileField = 'target_weight_lbs';
 
 function macroRawFromProfile(p: ProfileRowLike) {
   return {
@@ -203,6 +211,7 @@ export async function writeProfileWithTargets(
   patch: ProfilePatch,
   now: Date,
   mode: ProfileWriteMode,
+  clears: readonly ClearableProfileField[] = [],
 ): Promise<ProfileWriteResult> {
   await lockProfileRow(tx, userId);
   const existing = await tx.userProfile.findUnique({ where: { user_id: userId } });
@@ -212,6 +221,9 @@ export async function writeProfileWithTargets(
     if (k.startsWith('macro_target_') || k === 'user_id' || k === 'id') continue;
     if (v !== undefined && v !== null) clean[k] = v;
   }
+  // An explicit clear is the one way a null reaches the row; a value for
+  // the same column in this patch wins.
+  for (const k of clears) if (!(k in clean)) clean[k] = null;
   const merged: ProfileRowLike = { ...(existing ?? {}), ...clean };
   const resolved = resolveMacroInputs(macroRawFromProfile(merged), now);
   if (!resolved.ok && mode === 'require_complete') {
