@@ -252,6 +252,8 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         coach_name: 'Sasha Lin',
         business_name: 'Sasha Strength',
         branding: { accent_color: '#0F0', logo_url: null },
+        headline: null,
+        specialties: [],
       });
     });
 
