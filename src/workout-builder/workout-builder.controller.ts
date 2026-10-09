@@ -376,12 +376,11 @@ export class WorkoutProgramController {
  */
 @ApiTags('assignments')
 @ApiBearerAuth()
-// ClientEntitlementGuard gates this paid surface — students with no
-// active ClientPurchase get 402 from the guard. Pinned by
-// test/entitlement-guards-mounted.spec.ts.
+// ClientEntitlementGuard is mounted (pinned by
+// test/entitlement-guards-mounted.spec.ts).
 @UseGuards(JwtAuthGuard, ClientEntitlementGuard)
-// B23: a client with no coach (coach_id null) passes without a package and
-// reads their own assignments (none without a coach).
+// B23 + owner 10-08 23:5x: open to every client, package or not; a client
+// with no coach reads their own assignments (none without a coach).
 @OpenToCoachlessClient()
 @Controller('assignments')
 export class AssignmentController {

@@ -21,6 +21,15 @@ All copy (banner title, offer text, Roman pitch) and the featured code come from
 `FeaturedCoachConfig`. None of it is in the code. The config is cached for 30 seconds, and a save
 invalidates the cache.
 
+## Basic functions are open to every client
+
+Routes marked `@OpenToCoachlessClient()` (food, workout and fasting logging, targets, plans,
+check-ins, insights, AI guidance) are open to every client: no coach, a coach with a free
+package, a coach with no package, or a lapsed plan (owner 10-08 23:5x). `ClientEntitlementGuard`
+lets them through with no package lookup; the name of the marker is historical. AI routes keep
+the coach AI credit pool and the per-client daily cap. Unmarked routes that need a real coach
+keep their 402. `test/coachless-logging-entitlement.spec.ts` classifies every controller.
+
 ## Redemption
 
 `CoachCodeRedemptionService` delegates the write to the single canonical attach writer,
