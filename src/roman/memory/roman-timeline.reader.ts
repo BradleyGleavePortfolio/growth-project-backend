@@ -134,6 +134,8 @@ interface ReadPlan {
   lastDay: string;
   coachId: string | null;
   coachSide: string[];
+  /** B31: assigners whose plan rows are the client's (coach side, or the coachless client). */
+  planSide: string[];
   preferences: { metric: string; preferred_provider: string }[];
   now: Date;
 }
@@ -202,6 +204,7 @@ export class RomanTimelineReader {
       callerRole: user.role,
       coach: user.coach,
       overlay,
+      userId: clientId,
     });
 
     const startMs = cursor && cursor.at > fromMs ? cursor.at : fromMs;
@@ -220,6 +223,7 @@ export class RomanTimelineReader {
       lastDay,
       coachId: scope.coachId,
       coachSide: scope.coachSide,
+      planSide: scope.planSide,
       preferences: (user.wearable_metric_preferences ?? []).map((p) => ({
         metric: String(p.metric),
         preferred_provider: String(p.preferred_provider),
@@ -231,7 +235,8 @@ export class RomanTimelineReader {
     const coached = scope.coachId !== null;
     const reads: Promise<Batch>[] = [];
     if (want('food_day')) reads.push(this.food(plan));
-    if (coached && want('workout_done', 'workout_missed')) reads.push(this.assignments(plan));
+    if (plan.planSide.length > 0 && want('workout_done', 'workout_missed'))
+      reads.push(this.assignments(plan));
     if (want('workout_done')) reads.push(this.loggedWorkouts(plan));
     if (want('weight')) reads.push(this.weights(plan));
     if (want('water')) reads.push(this.water(plan));
@@ -373,12 +378,12 @@ export class RomanTimelineReader {
     return { kinds: ['food_day'], events, horizon: this.dayHorizon(p, rows) };
   }
 
-  /** workout_done / workout_missed: plans from the current coach side only. */
+  /** workout_done / workout_missed: plans from the plan side only (current coach side, or the coachless client's own). */
   private async assignments(p: ReadPlan): Promise<Batch> {
     const rows = await this.prisma.clientWorkoutAssignment.findMany({
       where: {
         client_id: p.clientId,
-        assigned_by_coach_id: { in: p.coachSide },
+        assigned_by_coach_id: { in: p.planSide },
         OR: [{ scheduled_for: p.instants }, { completed_at: p.instants }],
       },
       orderBy: { scheduled_for: 'asc' },

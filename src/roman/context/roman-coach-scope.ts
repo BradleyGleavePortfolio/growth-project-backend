@@ -12,6 +12,13 @@
  *   the head-coach thread as itself (MessagingService pins the thread to the
  *   head coach). Only an open delegation from the current head coach counts.
  *
+ * - B31 (agent 133): a coachless student's own plan (the house program clone
+ *   CONSULT-ALL-BE-133 writes into the client's own tenant, with
+ *   assigned_by_coach_id and MacroTarget.coach_id = the client id) is the
+ *   client's plan. `planSide` names the assigner ids whose plan rows are the
+ *   client's plan: the coach side for a coached student, the client alone for
+ *   a coachless one. It never widens a coached client's read.
+ *
  * Pure: no I/O. The caller reads the user (with `coach`) and the open
  * SubCoachAssignment overlay and passes them in.
  */
@@ -36,6 +43,8 @@ export interface RomanCoachScopeInput<C extends RomanCoachRow> {
   coach: C | null | undefined;
   /** The client's open SubCoachAssignment (unassigned_at null), newest first, or null. */
   overlay: RomanSubCoachOverlay | null | undefined;
+  /** B31: the client's own id; without it a coachless client has no plan side. */
+  userId?: string;
 }
 
 export interface RomanCoachScope<C extends RomanCoachRow> {
@@ -47,6 +56,8 @@ export interface RomanCoachScope<C extends RomanCoachRow> {
   subCoachId: string | null;
   /** Coach-side ids allowed as assigner / sender: [coachId] or [coachId, subCoachId]; [] without a coach. */
   coachSide: string[];
+  /** B31: assigner ids whose plan and targets are the client's: coachSide, or [userId] when coachless; [] otherwise. */
+  planSide: string[];
 }
 
 export function resolveRomanCoachScope<C extends RomanCoachRow>(
@@ -62,5 +73,11 @@ export function resolveRomanCoachScope<C extends RomanCoachRow>(
   const overlay = input.overlay;
   const subCoachId = coachId && overlay?.head_coach_id === coachId ? overlay.sub_coach_id : null;
   const coachSide: string[] = coachId ? (subCoachId ? [coachId, subCoachId] : [coachId]) : [];
-  return { coach, coachId, subCoachId, coachSide };
+  const bothStudent = input.userRole === 'student' && input.callerRole === 'student';
+  const planSide: string[] = coachId
+    ? coachSide
+    : bothStudent && input.userId
+      ? [input.userId]
+      : [];
+  return { coach, coachId, subCoachId, coachSide, planSide };
 }
