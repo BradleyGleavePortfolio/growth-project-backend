@@ -20,6 +20,7 @@ import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { AuditService } from '../audit/audit.service';
 import { InviteGrantService, type GrantOutcome } from '../invite-grant/invite-grant.service';
+import { COACH_SPECIALTIES, MAX_SPECIALTIES } from '../coach/consultation/coach-consultation.vocab';
 import {
   acceptedCoachSharingNotice,
   grantCoachSharingAtJoinTx,
@@ -296,6 +297,41 @@ export type AttachOptions = {
   /** `coach_sharing_notice` from the request body, unvalidated. */
   coachSharingNotice?: string | null;
 };
+
+/**
+ * The public coach card for a valid code. `headline` and `specialties` come
+ * from the coach consultation (K1, K2; COACH-CARD-134), for both the
+ * CoachProfile code and per-row InviteCode invites: null and [] for a coach
+ * who never answered them.
+ */
+export type InvitePreview =
+  | {
+      valid: true;
+      coach_id: string;
+      coach_name: string;
+      business_name: string | null;
+      branding: { accent_color: string | null; logo_url: string | null };
+      headline: string | null;
+      /** Specialty keys (coach-consultation.vocab.ts), at most five, in the coach's order. */
+      specialties: string[];
+    }
+  | { valid: false };
+
+const SPECIALTY_KEYS: ReadonlySet<string> = new Set(COACH_SPECIALTIES);
+
+/**
+ * Null-safe card fields; only known specialty keys leave the server. The
+ * card line is the headline, else the K1 "how do you help people" answer
+ * (`bio`, what the shipped K1 screen saves).
+ */
+function coachCardFields(
+  profile: { headline?: string | null; bio?: string | null; specialties?: string[] | null } | null,
+): { headline: string | null; specialties: string[] } {
+  const specialties = (profile?.specialties ?? [])
+    .filter((k) => SPECIALTY_KEYS.has(k))
+    .slice(0, MAX_SPECIALTIES);
+  return { headline: profile?.headline?.trim() || profile?.bio?.trim() || null, specialties };
+}
 
 @Injectable()
 export class InviteCodesService {
@@ -760,16 +796,7 @@ export class InviteCodesService {
   //
   // Returns `{valid:false}` with no leak if the code does not resolve,
   // is revoked, or the coach is not currently in good standing.
-  async previewCode(code: string): Promise<
-    | {
-        valid: true;
-        coach_id: string;
-        coach_name: string;
-        business_name: string | null;
-        branding: { accent_color: string | null; logo_url: string | null };
-      }
-    | { valid: false }
-  > {
+  async previewCode(code: string): Promise<InvitePreview> {
     // Anonymous preview — distinctId is the (already opaque) code itself so
     // PostHog can deduplicate repeated previews from the same client without
     // needing a logged-in user. The code is non-PII (random GP-XXXXXX).
@@ -784,16 +811,7 @@ export class InviteCodesService {
     return { valid: false };
   }
 
-  private async previewExactCode(code: string): Promise<
-    | {
-        valid: true;
-        coach_id: string;
-        coach_name: string;
-        business_name: string | null;
-        branding: { accent_color: string | null; logo_url: string | null };
-      }
-    | { valid: false }
-  > {
+  private async previewExactCode(code: string): Promise<InvitePreview> {
     // Reject obviously-invalid input before going to the database. Path
     // params are not run through the DTO ValidationPipe, so anything could
     // arrive here — empty string, a NUL byte, kilobytes of garbage, etc.
@@ -842,6 +860,7 @@ export class InviteCodesService {
             accent_color: profile.branding_accent_color,
             logo_url: profile.branding_logo_url,
           },
+          ...coachCardFields(profile),
         };
       }
 
@@ -854,6 +873,13 @@ export class InviteCodesService {
         coach_name: validation.coach_name,
         business_name: null,
         branding: { accent_color: null, logo_url: null },
+        // B-897-SOL-D-134-2: a per-row invite shows the same coach card.
+        ...coachCardFields(
+          await this.prisma.coachProfile.findUnique({
+            where: { user_id: validation.coach_id },
+            select: { headline: true, bio: true, specialties: true },
+          }),
+        ),
       };
     } catch (err) {
       // Known Prisma errors (P2xxx — pool timeout, schema drift, bad
