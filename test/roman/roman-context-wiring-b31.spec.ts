@@ -26,6 +26,9 @@ import { AuditService } from '../../src/audit/audit.service';
 import { RomanService, type RomanCaller } from '../../src/roman/roman.service';
 import { RomanModule } from '../../src/roman/roman.module';
 import { RomanClientContextService } from '../../src/roman/context/roman-client-context.service';
+import { CoachAIBudgetService } from '../../src/ai-credits/coach-ai-budget.service';
+import { RomanBackgroundSpendService } from '../../src/roman/background/roman-background-spend';
+import { RomanCoachMethodAugmenter } from '../../src/roman/playbook/roman-coach-method.augmenter';
 import { resolveRomanCoachScope } from '../../src/roman/context/roman-coach-scope';
 
 const CALLER: RomanCaller = { id: 'b31-client', role: 'student', tier: 'free' };
@@ -34,16 +37,10 @@ type Ctor = abstract new (...args: never[]) => unknown;
 
 /**
  * Optional constructor params that still resolve to `Object` with no explicit
- * token. Each is a known gap reported to the operator, not silently accepted:
- * B31-D1 (agent 133 report): the coach AI credit pool (B-668-1) is never wired
- * in production; wiring it starts refusing coached turns when a pool is empty,
- * so it needs an operator decision first.
+ * token. B31-D1 (agent 133, owner 17:58 "Wire roman up"): the coach AI credit
+ * pool is now wired too, so nothing in RomanModule may be silently dropped.
  */
-const KNOWN_UNWIRED: ReadonlyArray<string> = [
-  'RomanService#5',
-  'RomanBackgroundSpendService#1',
-  'RomanCoachMethodAugmenter#1',
-];
+const KNOWN_UNWIRED: ReadonlyArray<string> = [];
 
 function unwiredOptionalParams(cls: Ctor): number[] {
   const types: unknown[] = Reflect.getMetadata('design:paramtypes', cls) ?? [];
@@ -88,7 +85,7 @@ describe('B31: RomanService receives its context builder through Nest DI', () =>
     expect(ctx.getBundle).toHaveBeenCalledWith({ id: CALLER.id, role: CALLER.role });
   });
 
-  it('no RomanModule provider has an optional param that DI silently drops (besides the reported pool gap)', () => {
+  it('no RomanModule provider has an optional param that DI silently drops', () => {
     const providers: unknown[] = Reflect.getMetadata(MODULE_METADATA.PROVIDERS, RomanModule) ?? [];
     const found: string[] = [];
     for (const p of providers) {
@@ -104,6 +101,27 @@ describe('B31: RomanService receives its context builder through Nest DI', () =>
       for (const i of unwiredOptionalParams(cls)) found.push(`${cls.name}#${i}`);
     }
     expect(found.sort()).toEqual([...KNOWN_UNWIRED].sort());
+  });
+});
+
+describe('B31-D1: the coach AI credit pool reaches every Roman spender through Nest DI', () => {
+  it('RomanService, RomanBackgroundSpendService and RomanCoachMethodAugmenter get CoachAIBudgetService', async () => {
+    const budget = { canCharge: jest.fn(), recordUsage: jest.fn(), resolveHeadCoachId: jest.fn() };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        RomanService,
+        RomanBackgroundSpendService,
+        RomanCoachMethodAugmenter,
+        { provide: PrismaService, useValue: {} },
+        { provide: AiEgressService, useValue: {} },
+        { provide: RomanClientContextService, useValue: {} },
+        { provide: AuditService, useValue: { write: jest.fn() } },
+        { provide: CoachAIBudgetService, useValue: budget },
+      ],
+    }).compile();
+    expect(Reflect.get(moduleRef.get(RomanService), 'budget')).toBe(budget);
+    expect(Reflect.get(moduleRef.get(RomanBackgroundSpendService), 'budget')).toBe(budget);
+    expect(Reflect.get(moduleRef.get(RomanCoachMethodAugmenter), 'budget')).toBe(budget);
   });
 });
 
