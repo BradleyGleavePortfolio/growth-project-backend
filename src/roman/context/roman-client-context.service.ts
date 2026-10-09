@@ -401,12 +401,16 @@ export class RomanClientContextService {
     // coach is live, plus an open sub-coach delegation from that coach
     // (B-665-3). The rule lives in roman-coach-scope.ts (shared with the
     // v1.1 timeline reader).
-    const { coach, coachId, coachSide } = resolveRomanCoachScope({
+    const { coach, coachId, coachSide, planSide } = resolveRomanCoachScope({
       userRole: user.role,
       callerRole: caller.role,
       coach: user.coach,
       overlay,
+      userId,
     });
+    // B31: whose plan and targets rows are the client's (the coach side, or the
+    // coachless client's own tenant); coach-only facts below still need coachId.
+    const planOwner = coachId ?? planSide[0] ?? null;
 
     const today = clock.local_date;
     const d7 = addDays(today, -6);
@@ -434,12 +438,12 @@ export class RomanClientContextService {
       wearableSamples,
       bookings,
     ] = await Promise.all([
-      coachId
+      planOwner
         ? (queries++,
           this.prisma.macroTarget.findFirst({
             where: {
               client_id: userId,
-              coach_id: coachId,
+              coach_id: planOwner,
               archived_at: null,
               effective_from: { lte: now },
             },
@@ -461,12 +465,12 @@ export class RomanClientContextService {
       })),
       // B-665-4: history (adherence, completions) and upcoming (today, next)
       // are read separately, each with a cap+1 completeness check.
-      coachId
+      planSide.length > 0
         ? (queries++,
           this.prisma.clientWorkoutAssignment.findMany({
             where: {
               client_id: userId,
-              assigned_by_coach_id: { in: coachSide },
+              assigned_by_coach_id: { in: planSide },
               scheduled_for: {
                 gte: localDayStart(d14, tz),
                 lt: localDayStart(addDays(today, 1), tz),
@@ -484,12 +488,12 @@ export class RomanClientContextService {
             },
           }))
         : [],
-      coachId
+      planSide.length > 0
         ? (queries++,
           this.prisma.clientWorkoutAssignment.findMany({
             where: {
               client_id: userId,
-              assigned_by_coach_id: { in: coachSide },
+              assigned_by_coach_id: { in: planSide },
               scheduled_for: {
                 gte: localDayStart(today, tz),
                 lt: localDayStart(addDays(plus14, 1), tz),
@@ -707,7 +711,9 @@ export class RomanClientContextService {
     // ── targets ──
     const targets: RomanCtxTargets = macroTarget
       ? {
-          source: 'coach_set',
+          // B31: a coachless client's MacroTarget is the consultation's own
+          // calculation, never a coach's.
+          source: coachId ? 'coach_set' : 'onboarding_calculated',
           calories: macroTarget.calories_kcal,
           protein_g: macroTarget.protein_g,
           carbs_g: macroTarget.carbs_g,

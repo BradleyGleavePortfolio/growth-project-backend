@@ -221,11 +221,18 @@ export class RomanService {
     private readonly anthropic: AnthropicHandle | null = null,
     // Per-turn grounding (client surface). RomanModule always provides it; a
     // missing builder means degraded mode (no personal facts), never silence.
+    // B31 (agent 133): the explicit token is required. With strictNullChecks,
+    // `T | null` is emitted as `Object` in design:paramtypes, so without
+    // @Inject Nest looked up `Object`, found nothing, and the optional param
+    // fell back to null: every grounded turn in production ran degraded.
     @Optional()
+    @Inject(RomanClientContextService)
     private readonly clientContext: RomanClientContextService | null = null,
     // Content-free audit row for every emergency / self-harm short-circuit
-    // (ids and the route class only, never the message text).
+    // (ids and the route class only, never the message text). B31: explicit
+    // token for the same reason (AuditModule is @Global).
     @Optional()
+    @Inject(AuditService)
     private readonly audit: AuditService | null = null,
     // B-668-1: the coach's monthly AI credit pool (src/ai-credits, @Global
     // AiCreditsModule, so Nest always provides it). Every paid turn is
