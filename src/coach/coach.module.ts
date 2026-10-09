@@ -8,6 +8,10 @@ import { CoachAlertsService } from './coach-alerts.service';
 import { CoachAlertsController } from './coach-alerts.controller';
 import { CoachOnboardingService } from './coach-onboarding.service';
 import { CoachOnboardingController } from './coach-onboarding.controller';
+// COACH-CONSULT-BE-134 — the coach consultation K0-K8 (/coach/consultation).
+import { CoachConsultationController } from './consultation/coach-consultation.controller';
+import { CoachConsultationService } from './consultation/coach-consultation.service';
+import { InviteCodesModule } from '../invite-codes/invite-codes.module';
 // Stage 3 — coach-facing cross-pillar federation. Reuses FederationService
 // and FinanceAdminClient from AdminModule (already imported via forwardRef).
 import { CrossPillarController } from './cross-pillar/cross-pillar.controller';
@@ -70,6 +74,8 @@ import { ChurnInterventionService } from './command-center/churn-intervention.se
     NotificationsModule,
     forwardRef(() => AdminModule),
     SubCoachModule,
+    // CoachConsultationService reads the coach's /join link (lazy-create).
+    InviteCodesModule,
   ],
   controllers: [
     CoachController,
@@ -77,6 +83,7 @@ import { ChurnInterventionService } from './command-center/churn-intervention.se
     ClientGuidelinesController,
     CoachAlertsController,
     CoachOnboardingController,
+    CoachConsultationController,
     // EFF-2 — GET /coach/my-effectiveness (coach-role-guarded)
     CoachEffectivenessController,
     // Stage 3
@@ -93,6 +100,7 @@ import { ChurnInterventionService } from './command-center/churn-intervention.se
     CoachEffectivenessScheduler,
     CoachAlertsService,
     CoachOnboardingService,
+    CoachConsultationService,
     // Stage 3
     CrossPillarService,
     CrossPillarPracticeGuard,
