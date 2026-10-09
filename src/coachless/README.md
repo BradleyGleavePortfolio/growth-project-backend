@@ -10,7 +10,7 @@ key is `coachless_home`, and it is true only for students when the env is on.
 | Route | Who | Purpose |
 | --- | --- | --- |
 | `GET /coachless/home` | client | Banner (`title`, owner `offer_text`, `code`), Roman card (`text`, `code`) or the reason it is hidden, featured coach card with its package. `eligible:false` once a coach is attached. |
-| `POST /coachless/coach-code/check` | client | Instant validation for the code sheet. Writes nothing. Returns `{valid:true, coach}` or `{valid:false, code}`. |
+| `POST /coachless/coach-code/check` | client | Instant validation for the code sheet. Writes nothing. Returns `{valid:true, coach}` or `{valid:false, code}`. The coach card (here, on redeem and on the featured coach) also carries `headline` (K1 headline, else K1 bio, or null) and `specialties` (K2 keys, max five, or []) — COACH-CARD-134. |
 | `POST /coachless/coach-code/redeem` | client | Attaches the client to the coach. Requires an `Idempotency-Key` UUID header. Returns the coach card plus `next.featured_package` / `next.packages_available` for the attach screen. |
 | `POST /coachless/roman-card/seen` | client | Records one impression (the frequency cap). |
 | `POST /coachless/roman-card/not-now` | client | Persists "Not now", which snoozes the card and, after `roman_max_not_now`, hides it for good. |

@@ -41,3 +41,20 @@ export type ClientsToday = (typeof CLIENTS_TODAY)[number];
 export type CoachingTouch = (typeof COACHING_TOUCH)[number];
 export type ProgrammingStyle = (typeof PROGRAMMING_STYLE)[number];
 export type ConsultationStep = (typeof CONSULTATION_STEPS)[number];
+
+const SPECIALTY_KEYS: ReadonlySet<string> = new Set(COACH_SPECIALTIES);
+
+/**
+ * COACH-CARD-134: the client-facing card fields from the consultation, null
+ * safe. The card line is the K1 headline, else the K1 bio (what the shipped
+ * K1 screen saves); specialties keep only known keys, at most five, in the
+ * coach's order.
+ */
+export function publicCoachCardFields(
+  profile: { headline?: string | null; bio?: string | null; specialties?: string[] | null } | null | undefined,
+): { headline: string | null; specialties: CoachSpecialty[] } {
+  const specialties = (profile?.specialties ?? [])
+    .filter((k): k is CoachSpecialty => SPECIALTY_KEYS.has(k))
+    .slice(0, MAX_SPECIALTIES);
+  return { headline: profile?.headline?.trim() || profile?.bio?.trim() || null, specialties };
+}

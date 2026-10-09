@@ -324,6 +324,42 @@ describe('coach-code check (instant validation, no write)', () => {
     expect(db.state.coachCodeRedemption).toHaveLength(0);
   });
 
+  it('COACH-CARD-134: the card carries the consultation headline and specialties (known keys, max five)', async () => {
+    const { db, redemption } = await buildCoachless();
+    addUser(db, { id: 'stu' });
+    const b = db.state.coachProfile.find((p) => p.user_id === COACH_B);
+    if (!b) throw new Error('fixture: coach B profile missing');
+    Object.assign(b, {
+      headline: '  Strength for busy parents ',
+      specialties: ['strength', 'nope', 'busy', 'fat_loss', 'mobility', 'older', 'sports'],
+    });
+    const r = await redemption.check({ id: 'stu', role: 'student', coach_id: null }, 'GP-BBBBBB');
+    expect(r).toMatchObject({
+      valid: true,
+      coach: {
+        headline: 'Strength for busy parents',
+        specialties: ['strength', 'busy', 'fat_loss', 'mobility', 'older'],
+      },
+    });
+  });
+
+  it('COACH-CARD-134: no headline falls back to the K1 bio; nothing set gives null and []', async () => {
+    const { db, redemption } = await buildCoachless();
+    addUser(db, { id: 'stu' });
+    // Fixture coach B has bio 'Strength coach' and no consultation answers.
+    expect(await redemption.check({ id: 'stu', role: 'student', coach_id: null }, 'GP-BBBBBB')).toMatchObject({
+      valid: true,
+      coach: { headline: 'Strength coach', specialties: [] },
+    });
+    const b = db.state.coachProfile.find((p) => p.user_id === COACH_B);
+    if (!b) throw new Error('fixture: coach B profile missing');
+    Object.assign(b, { bio: null });
+    expect(await redemption.check({ id: 'stu', role: 'student', coach_id: null }, 'GP-BBBBBB')).toMatchObject({
+      valid: true,
+      coach: { headline: null, specialties: [] },
+    });
+  });
+
   it.each([
     ['unknown', 'GP-NOPE33', undefined, 'code_invalid'],
     ['revoked', 'GP-REVK33', { revoked: true }, 'code_revoked'],
