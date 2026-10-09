@@ -8,7 +8,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, type ClinicProgramSet } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { computeMacros, resolveMacroInputs, type MacroResult } from '../macros/macro-calculator';
 import { WorkoutBuilderService } from '../workout-builder/workout-builder.service';
@@ -79,7 +79,11 @@ export interface CompletionResult {
     why: string[];
   };
   spaces: Array<{ id: string; name: string }>;
-  coach: { id: string; display_name: string };
+  /**
+   * The attached coach. null for a coachless client (owner decision 28): the
+   * consultation finishes under no coach and the app shows no coach name.
+   */
+  coach: { id: string; display_name: string } | null;
   /** C05 item 8: 'simple' (calories + protein only) for 7 days when N4 = never. */
   macro_display_mode: 'simple' | 'full';
   simple_until: string | null;
@@ -237,6 +241,32 @@ function readMaterialisation(v: unknown): Materialisation | null {
   if (!isRecord(v.why_templates)) return null;
   // Written only by the seed script after parseFixture validation.
   return JSON.parse(JSON.stringify(v));
+}
+
+/** A coach or owner account that is not deleted (the only valid program owner). */
+function isLiveCoach(row: { role: string; deleted_at: Date | null } | null): boolean {
+  return !!row && !row.deleted_at && (row.role === 'coach' || row.role === 'owner');
+}
+
+/**
+ * CONSULT-ALL-BE-133 (owner decision 28, 2026-10-08 15:29): the program set a
+ * completion uses. 'coach': the attached coach's own active set (unchanged).
+ * 'house': the platform's house set (ClinicProgramSet.is_house), used for a
+ * coachless client and for a client whose coach has no usable set yet
+ * (decision 133-3: shown under that coach's name).
+ */
+interface ResolvedProgramSet {
+  set: ClinicProgramSet;
+  materialisation: Materialisation;
+  source: 'coach' | 'house';
+}
+
+/** 409 clinic_not_configured, worded for a coached or a coachless client. */
+function notConfigured(coached: boolean) {
+  return conflict(
+    'clinic_not_configured',
+    coached ? "Your coach's programs are not set up yet" : 'Programs are not set up yet',
+  );
 }
 
 @Injectable()
@@ -602,36 +632,63 @@ export class OnboardingService {
       completed: Boolean(intake?.completed_at),
       completed_at: intake?.completed_at?.toISOString() ?? null,
       result: intake?.completed_at && intake.completion_result ? intake.completion_result : null,
-      // S-REVENUE-124 (B-REV-1): whether POST /complete can finish for this
-      // client today. The clinic build shows the consultation to every new
-      // client, but only a coach with a seeded clinic program set can finish
-      // it; a client with no coach (coachless Home) or with any other coach
-      // would wait on "not_attached" / "clinic_not_configured" forever. The
-      // app reads false as "use the standard onboarding instead".
+      // S-REVENUE-124 (B-REV-1), kept for older apps: whether POST /complete
+      // can finish for this client today. CONSULT-ALL-BE-133: true for every
+      // student once a usable set resolves (the coach's own set, else the
+      // house set), coachless clients included (owner decision 28). False
+      // only while no set resolves (no house set seeded) or the client's
+      // coach account is no longer live; the app then runs the standard
+      // onboarding instead of waiting on a 409 forever.
       consultation_available:
-        Boolean(intake?.completed_at) || (await this.clinicConfiguredFor(clientId)),
+        Boolean(intake?.completed_at) || (await this.consultationCanFinish(clientId)),
     };
   }
 
-  /** Same coach and program-set checks complete() applies before it can finish. */
-  private async clinicConfiguredFor(clientId: string): Promise<boolean> {
+  /** Same coach and program-set resolution complete() applies before it can finish. */
+  private async consultationCanFinish(clientId: string): Promise<boolean> {
     const client = await this.prisma.user.findUnique({
       where: { id: clientId },
       select: { coach_id: true },
     });
-    if (!client?.coach_id) return false;
-    const coach = await this.prisma.user.findUnique({
-      where: { id: client.coach_id },
-      select: { role: true, deleted_at: true },
-    });
-    if (!coach || coach.deleted_at || (coach.role !== 'coach' && coach.role !== 'owner')) {
-      return false;
+    if (!client) return false;
+    if (client.coach_id) {
+      const coach = await this.prisma.user.findUnique({
+        where: { id: client.coach_id },
+        select: { role: true, deleted_at: true },
+      });
+      if (!isLiveCoach(coach)) return false;
     }
-    const set = await this.prisma.clinicProgramSet.findFirst({
-      where: { coach_id: client.coach_id, active: true },
+    return (await this.resolveProgramSet(client.coach_id ?? null)) !== null;
+  }
+
+  /**
+   * The attached coach's own active set, else the house set. The house set
+   * counts only while its owner is a live coach or owner account (the masters
+   * are that account's templates).
+   */
+  private async resolveProgramSet(coachId: string | null): Promise<ResolvedProgramSet | null> {
+    if (coachId) {
+      const own = await this.prisma.clinicProgramSet.findFirst({
+        where: { coach_id: coachId, active: true },
+        orderBy: { created_at: 'desc' },
+      });
+      const ownMaterialisation = own ? readMaterialisation(own.materialisation) : null;
+      if (own && ownMaterialisation) {
+        return { set: own, materialisation: ownMaterialisation, source: 'coach' };
+      }
+    }
+    const house = await this.prisma.clinicProgramSet.findFirst({
+      where: { is_house: true, active: true },
       orderBy: { created_at: 'desc' },
     });
-    return !!set && readMaterialisation(set.materialisation) !== null;
+    const houseMaterialisation = house ? readMaterialisation(house.materialisation) : null;
+    if (!house || !houseMaterialisation) return null;
+    const houseOwner = await this.prisma.user.findUnique({
+      where: { id: house.coach_id },
+      select: { role: true, deleted_at: true },
+    });
+    if (!isLiveCoach(houseOwner)) return null;
+    return { set: house, materialisation: houseMaterialisation, source: 'house' };
   }
 
   // ─── POST /me/onboarding/complete ──────────────────────────────────────
@@ -671,20 +728,24 @@ export class OnboardingService {
       where: { id: clientId },
       select: { id: true, coach_id: true },
     });
-    if (!client?.coach_id)
-      throw conflict('not_attached', 'This account is not attached to a coach yet');
-    const coach = await this.prisma.user.findUnique({
-      where: { id: client.coach_id },
-      select: { id: true, name: true, role: true, coach_id: true, deleted_at: true },
-    });
-    if (!coach || coach.deleted_at || (coach.role !== 'coach' && coach.role !== 'owner')) {
+    if (!client) throw conflict('not_attached', 'This account is not attached to a coach yet');
+    // Owner decision 28 (2026-10-08 15:29): a coachless client finishes the
+    // consultation too, attached to no coach. A client WITH a coach still
+    // needs that coach to be live (a deleted or demoted coach: not_attached).
+    const coach = client.coach_id
+      ? await this.prisma.user.findUnique({
+          where: { id: client.coach_id },
+          select: { id: true, name: true, role: true, coach_id: true, deleted_at: true },
+        })
+      : null;
+    if (client.coach_id && !isLiveCoach(coach)) {
       throw conflict('not_attached', 'This account is not attached to a coach yet');
     }
     // INT-607-1: the client clone's tenant is the coach's head ONLY when the
     // coach is an explicit member of that head's team (main's #597 rule); a
     // bare coach_id stamped by an old guest checkout keeps the clone in the
     // coach's own tenant, so a phantom head never lists the client's plans.
-    const coachTeamHead = await this.membership.getHeadCoachIdForSubCoach(coach.id);
+    const coachTeamHead = coach ? await this.membership.getHeadCoachIdForSubCoach(coach.id) : null;
 
     const answers: Answers = isRecord(intake?.answers)
       ? (JSON.parse(JSON.stringify(intake?.answers)) as Answers)
@@ -713,20 +774,15 @@ export class OnboardingService {
     }
     const macros = computeMacros(resolved.inputs);
 
-    const set = await this.prisma.clinicProgramSet.findFirst({
-      where: { coach_id: coach.id, active: true },
-      orderBy: { created_at: 'desc' },
-    });
-    const materialisation = set ? readMaterialisation(set.materialisation) : null;
-    if (!set || !materialisation) {
-      throw conflict('clinic_not_configured', "Your coach's programs are not set up yet");
-    }
+    const resolvedSet = await this.resolveProgramSet(coach?.id ?? null);
+    if (!resolvedSet) throw notConfigured(coach !== null);
+    const { set, materialisation, source } = resolvedSet;
 
     // A607-2: the selection is ALWAYS recomputed from the answers being
     // completed. Nothing from an earlier attempt is replayed.
     const sel: ProgramSelection = selectProgram(selectionAnswersFrom(answers));
     const entry = readProgramEntry(set.programs, sel.program_key);
-    if (!entry) throw conflict('clinic_not_configured', "Your coach's programs are not set up yet");
+    if (!entry) throw notConfigured(coach !== null);
     const startDate = String(answers.C1);
     const claimRevision = intake.current_revision;
     const masterIds = PROGRAM_KEYS.map((k) => readProgramEntry(set.programs, k)?.program_id).filter(
@@ -758,7 +814,10 @@ export class OnboardingService {
     try {
       const flagCoach =
         screeningAnyYes(answers) || injuryFlag(answers) || sel.coach_review_required;
-      const cohortIds = [set.all_members_cohort_id, entry.cohort_id];
+      // Community spaces belong to the set's coach. The house set's spaces are
+      // another account's community, so a house completion joins none (a
+      // coachless client's community is empty, owner decision 28).
+      const cohortIds = source === 'coach' ? [set.all_members_cohort_id, entry.cohort_id] : [];
 
       // EVERY completion effect, including the program clone, its
       // assignments and their snapshots, is written in this ONE transaction
@@ -773,16 +832,17 @@ export class OnboardingService {
           // one of these rows, so it either committed before this read (and
           // is seen here) or waits until this transaction ends. The coach
           // every effect below is written for is the one verified here.
-          const liveCoach = await lockUserRow(tx, coach.id);
+          // A coachless completion locks the client row only and requires it
+          // to be STILL coachless: an attachment committed meanwhile re-runs
+          // the completion under that coach.
+          const liveCoach = coach ? await lockUserRow(tx, coach.id) : null;
           const liveClient = await lockUserRow(tx, clientId);
           if (
-            !liveCoach ||
-            liveCoach.deleted_at ||
-            (liveCoach.role !== 'coach' && liveCoach.role !== 'owner') ||
+            (coach && !isLiveCoach(liveCoach)) ||
             !liveClient ||
             liveClient.deleted_at ||
             liveClient.role !== 'student' ||
-            liveClient.coach_id !== coach.id
+            (liveClient.coach_id ?? null) !== (coach?.id ?? null)
           ) {
             throw new TenancyChangedError();
           }
@@ -792,12 +852,20 @@ export class OnboardingService {
           // or the last delegation without touching User. If the decision
           // differs from the pre-read, the attempt rolls back and re-runs
           // against the current team (same path as an attachment change).
-          const tenantHead = await this.membership.lockMembershipHeadCoachIdInTx(
-            tx,
-            coach.id,
-            liveCoach,
-          );
+          const tenantHead =
+            coach && liveCoach
+              ? await this.membership.lockMembershipHeadCoachIdInTx(tx, coach.id, liveCoach)
+              : null;
           if (tenantHead !== coachTeamHead) throw new TenancyChangedError();
+          // Who owns the client's clone, its assignments and the MacroTarget.
+          // Coached: the coach, in the INT-607-1 tenant. Coachless: the
+          // client's OWN tenant (coach_id = owner_user_id = client id). A
+          // coach's tenant id is always a coach or owner account id, never a
+          // student's, so no coach library, assignee list or tenant read can
+          // list a coachless client's clone.
+          const owner = coach
+            ? { id: coach.id, tenant_id: tenantHead ?? coach.id }
+            : { id: clientId, tenant_id: clientId };
 
           // CLAIM FENCE: complete the row only while this worker still holds
           // (token, revision). Takes the intake row lock; a second worker
@@ -820,7 +888,8 @@ export class OnboardingService {
 
           const program = await this.materialiseAndAssignInTx(
             tx,
-            { id: coach.id, tenant_id: tenantHead ?? coach.id },
+            owner,
+            set.coach_id,
             clientId,
             entry.program_id,
             sel,
@@ -831,7 +900,7 @@ export class OnboardingService {
           // Defence in depth: no other onboarding clone may stay assigned.
           await this.retireOnboardingClones(
             tx,
-            coach.id,
+            owner.id,
             clientId,
             masterIds,
             program.program_id,
@@ -840,7 +909,7 @@ export class OnboardingService {
 
           await tx.macroTarget.create({
             data: {
-              coach_id: coach.id,
+              coach_id: owner.id,
               client_id: clientId,
               calories_kcal: macros.calories,
               protein_g: macros.protein_g,
@@ -858,7 +927,7 @@ export class OnboardingService {
                 id: cohortId,
                 workspace_id: set.workspace_id,
                 archived_at: null,
-                workspace: { coach_id: coach.id },
+                workspace: { coach_id: set.coach_id },
               },
               select: { id: true, name: true },
             });
@@ -903,11 +972,14 @@ export class OnboardingService {
               why: whyReasons(sel, materialisation.why_templates),
             },
             spaces,
-            coach: { id: coach.id, display_name: coach.name },
+            coach: coach ? { id: coach.id, display_name: coach.name } : null,
             ...macroDisplayFor(answers, now, now),
           };
 
-          if (flagCoach) {
+          // A coachless client has no coach to alert; screening_flagged_at
+          // above still records the flag and the selection already applied
+          // the extra-care overlay.
+          if (flagCoach && coach) {
             // In-app coach item. The body carries no screening details; the
             // coach opens the client's intake for the answers.
             await tx.notification.create({
@@ -947,11 +1019,13 @@ export class OnboardingService {
           });
           // Engagement hooks (welcome message scheduling, reminders) run
           // inside the same fenced transaction, under the verified coach, so
-          // they happen exactly once and never for a former coach.
-          for (const hook of this.completionHooks) {
+          // they happen exactly once and never for a former coach. They are
+          // coach-scoped, so a coachless completion runs none.
+          const hooks = coach ? this.completionHooks : [];
+          for (const hook of hooks) {
             await hook.onCompleted(tx, {
               client_id: clientId,
-              coach_id: coach.id,
+              coach_id: owner.id,
               completed_at: now,
               first_session_date: startDate,
               preferred_training_time: typeof answers.S2 === 'string' ? answers.S2 : null,
@@ -1087,14 +1161,16 @@ export class OnboardingService {
   }
 
   /**
-   * Build the client clone (owned by the attached coach, under the coach's
-   * tenancy) with frequency/equipment/extra-care applied, then fan the
-   * program out to the client, all inside the caller's fenced completion
-   * transaction. Nothing here is visible unless that transaction commits.
+   * Build the client clone (owned by the attached coach under the coach's
+   * tenancy, or by a coachless client in the client's own tenant) with
+   * frequency/equipment/extra-care applied, then fan the program out to the
+   * client, all inside the caller's fenced completion transaction. Nothing
+   * here is visible unless that transaction commits.
    */
   private async materialiseAndAssignInTx(
     tx: Prisma.TransactionClient,
-    coach: { id: string; tenant_id: string },
+    owner: { id: string; tenant_id: string },
+    masterOwnerId: string,
     clientId: string,
     masterId: string,
     sel: ProgramSelection,
@@ -1106,11 +1182,17 @@ export class OnboardingService {
     assignment_ids: string[];
     first_plan_id: string;
   }> {
-    const tenantId = coach.tenant_id;
+    const tenantId = owner.tenant_id;
     const master = await tx.workoutProgram.findUnique({ where: { id: masterId } });
-    // Tenancy: the master must be the attached coach's own live template.
-    if (!master || master.owner_user_id !== coach.id || !master.is_template || master.archived_at) {
-      throw conflict('clinic_not_configured', "Your coach's programs are not set up yet");
+    // Tenancy: the master must be a live template of the set's own coach (the
+    // attached coach for their own set, the house account for the house set).
+    if (
+      !master ||
+      master.owner_user_id !== masterOwnerId ||
+      !master.is_template ||
+      master.archived_at
+    ) {
+      throw notConfigured(owner.id !== clientId);
     }
 
     const masterPlans = await tx.workoutPlan.findMany({
@@ -1142,7 +1224,7 @@ export class OnboardingService {
 
     const clone = await writeProgramTree(tx, {
       tenantCoachId: tenantId,
-      ownerUserId: coach.id,
+      ownerUserId: owner.id,
       name: master.name,
       description: master.description,
       weeks: master.weeks,
@@ -1166,7 +1248,7 @@ export class OnboardingService {
 
     const assigned = await this.workoutBuilder.writeProgramAssignmentsInTx(
       tx,
-      coach.id,
+      owner.id,
       clone.id,
       clientId,
       startDate,

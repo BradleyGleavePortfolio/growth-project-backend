@@ -703,10 +703,13 @@ describe('POST /me/onboarding/complete', () => {
     return w;
   }
 
-  it('not_attached when the client has no coach', async () => {
+  it('a coachless client before any house set exists: clinic_not_configured, nothing written (CONSULT-ALL-BE-133)', async () => {
     const w = makeWorld();
     await w.consentThenSave('loner', { version: 'consult-v1', answers: COMPLETE }, NOW);
-    expect(await code(w.svc.complete('loner', NOW))).toBe('not_attached');
+    expect(await code(w.svc.complete('loner', NOW))).toBe('clinic_not_configured');
+    expect(w.createdClones).toHaveLength(0);
+    expect(w.macroTargets).toHaveLength(0);
+    expect(w.intakes[0].completed_at).toBeNull();
   });
 
   it('consultation_incomplete lists the missing keys', async () => {
@@ -1681,7 +1684,7 @@ describe('A607-3: finalisation never writes for a former coach', () => {
       user(w, 'client-1').coach_id = 'other-coach';
     });
     const res = await svc.complete('client-1', NOW);
-    expect(res.coach.id).toBe('other-coach');
+    expect(res.coach?.id).toBe('other-coach');
     expect(w.macroTargets.map((m) => m.coach_id)).toEqual(['other-coach']);
     expect(w.notifications.map((n) => n.user_id)).toEqual(['other-coach']);
     expect(w.memberships.every((m) => String(m.cohort_id).startsWith('other-coach-'))).toBe(true);
@@ -1698,7 +1701,7 @@ describe('A607-3: finalisation never writes for a former coach', () => {
     );
   });
 
-  it('client detached mid-completion -> not_attached, nothing written', async () => {
+  it('client detached mid-completion -> nothing written for the former coach; re-run as coachless (no house set -> clinic_not_configured)', async () => {
     const w = makeWorld();
     await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
     const hook = { onCompleted: jest.fn(async () => undefined) };
@@ -1706,7 +1709,7 @@ describe('A607-3: finalisation never writes for a former coach', () => {
     transferBeforeFence(w, () => {
       user(w, 'client-1').coach_id = null;
     });
-    expect(await code(svc.complete('client-1', NOW))).toBe('not_attached');
+    expect(await code(svc.complete('client-1', NOW))).toBe('clinic_not_configured');
     expectNothingWritten(w, hook.onCompleted);
   });
 
@@ -1954,7 +1957,7 @@ describe('S-REVENUE-124 B-REV-1: GET /me/onboarding says whether the consultatio
     expect((await w.svc.getOnboarding('client-1')).consultation_available).toBe(true);
   });
 
-  it('false for a client with no coach (coachless Home), the case complete() answers not_attached', async () => {
+  it('false for a coachless client only while no house set exists (CONSULT-ALL-BE-133)', async () => {
     const w = makeWorld();
     expect((await w.svc.getOnboarding('loner')).consultation_available).toBe(false);
   });
@@ -1975,5 +1978,270 @@ describe('S-REVENUE-124 B-REV-1: GET /me/onboarding says whether the consultatio
     const state = await w.svc.getOnboarding('client-1');
     expect(state.completed).toBe(true);
     expect(state.consultation_available).toBe(true);
+  });
+});
+
+// ─── CONSULT-ALL-BE-133 (B14, B33, owner decision 28): the house program set ──
+// Every client gets the full consultation. A coachless client finishes it
+// attached to no coach (clone in the client's own tenant); a client whose
+// coach has no set gets the house programs under that coach's name.
+
+const HOUSE = 'house-1';
+
+/** Seeds the house account, its three masters, its own spaces and an is_house set. */
+function addHouseSet(
+  w: ReturnType<typeof makeWorld>,
+  opts: { ownerRole?: string; deleted?: boolean } = {},
+) {
+  w.users.push({
+    id: HOUSE,
+    role: opts.ownerRole ?? 'owner',
+    name: 'House',
+    coach_id: null,
+    deleted_at: opts.deleted ? NOW : null,
+  });
+  const entries: Record<string, { program_id: string; cohort_id: string; name: string }> = {};
+  for (const [key, masterId] of Object.entries(w.masterIds)) {
+    const master = w.programs.find((p) => p.id === masterId)!;
+    const id = `${HOUSE}-${masterId}`;
+    w.programs.push({ ...master, id, owner_user_id: HOUSE, coach_id: HOUSE });
+    w.plans
+      .filter((p) => p.program_id === masterId)
+      .forEach((p, i) => w.plans.push({ ...p, id: `${id}-plan-${i}`, program_id: id }));
+    entries[key] = {
+      program_id: id,
+      cohort_id: `${HOUSE}-cohort-${key}`,
+      name: String(master.name),
+    };
+    w.cohorts.push({
+      id: `${HOUSE}-cohort-${key}`,
+      name: key,
+      workspace_id: `${HOUSE}-ws`,
+      archived_at: null,
+      coach: HOUSE,
+    });
+  }
+  w.cohorts.push({
+    id: `${HOUSE}-cohort-all`,
+    name: 'All members',
+    workspace_id: `${HOUSE}-ws`,
+    archived_at: null,
+    coach: HOUSE,
+  });
+  w.sets.push({
+    ...(w.sets[0] as Row),
+    id: 'house-set',
+    coach_id: HOUSE,
+    is_house: true,
+    workspace_id: `${HOUSE}-ws`,
+    all_members_cohort_id: `${HOUSE}-cohort-all`,
+    programs: entries,
+  });
+}
+
+describe('CONSULT-ALL-BE-133: every client can finish the consultation (house set)', () => {
+  const coachIds = (w: ReturnType<typeof makeWorld>) =>
+    w.users.filter((u) => u.role === 'coach' || u.role === 'owner').map((u) => String(u.id));
+
+  it('GET /me/onboarding: consultation_available is true for a coachless client once a house set exists', async () => {
+    const w = makeWorld();
+    addHouseSet(w);
+    expect((await w.svc.getOnboarding('loner')).consultation_available).toBe(true);
+  });
+
+  it('GET /me/onboarding: true for a client whose coach has no set, once a house set exists', async () => {
+    const w = makeWorld();
+    addHouseSet(w);
+    // coach-1 keeps no set of its own (the false case is covered above).
+    w.sets.splice(0, w.sets.length, ...w.sets.filter((s) => s.id === 'house-set'));
+    expect((await w.svc.getOnboarding('client-1')).consultation_available).toBe(true);
+  });
+
+  it('a house set whose owner account is deleted or is not a coach is never used', async () => {
+    for (const opts of [{ deleted: true }, { ownerRole: 'student' }]) {
+      const w = makeWorld();
+      addHouseSet(w, opts);
+      expect((await w.svc.getOnboarding('loner')).consultation_available).toBe(false);
+      await w.consentThenSave('loner', { version: 'consult-v1', answers: COMPLETE }, NOW);
+      expect(await code(w.svc.complete('loner', NOW))).toBe('clinic_not_configured');
+      expect(w.createdClones).toHaveLength(0);
+    }
+  });
+
+  it('coachless completes: house master cloned into the client OWN tenant, no coach, no spaces, no alert', async () => {
+    const w = makeWorld();
+    addHouseSet(w);
+    await w.consentThenSave('loner', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    const res = await w.svc.complete('loner', NOW);
+    expect(res.coach).toBeNull();
+    expect(res.spaces).toEqual([]);
+    expect(res.program).toMatchObject({ key: 'considered-strength', days_per_week: 3, weeks: 4 });
+    expect(res.macros.calories).toBe(1789);
+    expect(w.createdClones).toHaveLength(1);
+    expect(w.createdClones[0]).toMatchObject({
+      is_template: false,
+      cloned_from_id: `${HOUSE}-master-considered-strength`,
+      coach_id: 'loner',
+      owner_user_id: 'loner',
+      client_id: 'loner',
+    });
+    expect(w.builder.writeProgramAssignmentsInTx).toHaveBeenCalledWith(
+      expect.anything(),
+      'loner',
+      w.createdClones[0].id,
+      'loner',
+      '2026-10-05',
+    );
+    expect(w.builder.notifyProgramAssigned).toHaveBeenCalledTimes(1);
+    expect(w.macroTargets).toEqual([
+      expect.objectContaining({ coach_id: 'loner', client_id: 'loner', calories_kcal: 1789 }),
+    ]);
+    expect(w.memberships).toHaveLength(0);
+    expect(w.notifications).toHaveLength(0);
+    expect(w.intakes[0].completed_at).toEqual(NOW);
+    expect(w.profiles.find((p) => p.user_id === 'loner')?.onboardingCompleted).toBe(true);
+    const state = await w.svc.getOnboarding('loner');
+    expect(state.completed).toBe(true);
+    expect(state.consultation_available).toBe(true);
+  });
+
+  it("no cross-tenant read: a coachless client's clone and targets sit in no coach's tenant", async () => {
+    const w = makeWorld();
+    addHouseSet(w);
+    await w.consentThenSave('loner', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    await w.svc.complete('loner', NOW);
+    // Coach program reads are keyed on the coach's tenant (program-library
+    // `coach_id: actor.tenantId`, tenantId = head ?? coach id): a coach or
+    // owner id. The clone's tenant and owner are the client's id, so no coach,
+    // the house account included, can list it.
+    const coaches = coachIds(w);
+    for (const clone of w.createdClones) {
+      expect(coaches).not.toContain(clone.coach_id);
+      expect(coaches).not.toContain(clone.owner_user_id);
+    }
+    expect(coaches).not.toContain(w.macroTargets[0].coach_id);
+    expect(w.workoutAssignments.every((a) => a.assigned_by_coach_id === 'loner')).toBe(true);
+    // The house tenant still holds only its own templates.
+    expect(w.programs.filter((p) => p.coach_id === HOUSE).every((p) => p.is_template)).toBe(true);
+  });
+
+  it('coachless with a screening yes: extra-care program, flag recorded, no coach alert to anyone', async () => {
+    const w = makeWorld();
+    addHouseSet(w);
+    await w.consentThenSave(
+      'loner',
+      { version: 'consult-v1', answers: { ...COMPLETE, T1: 'advanced', S1: '5', P4: 'yes' } },
+      NOW,
+    );
+    const res = await w.svc.complete('loner', NOW);
+    expect(res.program).toMatchObject({ key: 'steady-foundations', days_per_week: 2 });
+    expect(w.intakes[0].screening_flagged_at).toEqual(NOW);
+    expect(w.notifications).toHaveLength(0);
+  });
+
+  it('coachless: consent_missing is still enforced', async () => {
+    const w = makeWorld();
+    addHouseSet(w);
+    await w.consentThenSave('loner', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    w.intakes[0].disclaimer_accepted_at = null;
+    expect(await code(w.svc.complete('loner', NOW))).toBe('consent_missing');
+    expect(w.createdClones).toHaveLength(0);
+  });
+
+  it('coachless: idempotent replay returns the frozen result and assigns nothing new', async () => {
+    const w = makeWorld();
+    addHouseSet(w);
+    await w.consentThenSave('loner', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    const first = await w.svc.complete('loner', NOW);
+    const second = await w.svc.complete('loner', new Date(NOW.getTime() + 5000));
+    expect(second).toEqual(first);
+    expect(w.createdClones).toHaveLength(1);
+    expect(w.macroTargets).toHaveLength(1);
+    expect(w.builder.notifyProgramAssigned).toHaveBeenCalledTimes(1);
+  });
+
+  it('coachless: the fenced transaction locks the client row only, FOR SHARE', async () => {
+    const w = makeWorld();
+    addHouseSet(w);
+    await w.consentThenSave('loner', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    w.prisma.$queryRaw.mockClear();
+    await w.svc.complete('loner', NOW);
+    const userLocks = w.prisma.$queryRaw.mock.calls
+      .map((c) => ({ sql: (c[0] as TemplateStringsArray).join('?'), id: c[1] }))
+      .filter((c) => c.sql.includes('FROM "User"'));
+    expect(userLocks.map((c) => c.id)).toEqual(['loner']);
+  });
+
+  it('coachless client attached to a coach mid-completion: nothing written in the client tenant; re-run under the coach', async () => {
+    const w = makeWorld();
+    addHouseSet(w);
+    await w.consentThenSave('loner', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    w.hooks.beforeTransaction = () => {
+      w.hooks.beforeTransaction = undefined;
+      w.users.find((u) => u.id === 'loner')!.coach_id = 'coach-1';
+    };
+    const res = await w.svc.complete('loner', NOW);
+    expect(res.coach).toEqual({ id: 'coach-1', display_name: 'Coach Rae' });
+    expect(w.createdClones).toHaveLength(1);
+    expect(w.createdClones[0]).toMatchObject({
+      owner_user_id: 'coach-1',
+      coach_id: 'coach-1',
+      cloned_from_id: 'master-considered-strength',
+    });
+    expect(w.macroTargets.map((m) => m.coach_id)).toEqual(['coach-1']);
+    expect(w.programs.some((p) => p.coach_id === 'loner')).toBe(false);
+  });
+
+  it('coached with their own set: unchanged when a house set also exists', async () => {
+    const w = makeWorld();
+    addHouseSet(w);
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    const res = await w.svc.complete('client-1', NOW);
+    expect(res.coach).toEqual({ id: 'coach-1', display_name: 'Coach Rae' });
+    expect(res.spaces.map((s) => s.id)).toEqual(['cohort-all', 'cohort-considered-strength']);
+    expect(w.createdClones[0]).toMatchObject({
+      cloned_from_id: 'master-considered-strength',
+      owner_user_id: 'coach-1',
+    });
+    expect(w.memberships.some((m) => String(m.cohort_id).startsWith(HOUSE))).toBe(false);
+  });
+
+  it("coached without a set falls back to the house programs, under the coach's name and tenant, joining no house space", async () => {
+    const w = makeWorld();
+    addHouseSet(w);
+    w.sets.splice(0, w.sets.length, ...w.sets.filter((s) => s.id === 'house-set'));
+    await w.consentThenSave(
+      'client-1',
+      { version: 'consult-v1', answers: { ...COMPLETE, P4: 'yes' } },
+      NOW,
+    );
+    const res = await w.svc.complete('client-1', NOW);
+    expect(res.coach).toEqual({ id: 'coach-1', display_name: 'Coach Rae' });
+    expect(res.spaces).toEqual([]);
+    expect(w.memberships).toHaveLength(0);
+    expect(w.createdClones).toHaveLength(1);
+    expect(w.createdClones[0]).toMatchObject({
+      cloned_from_id: `${HOUSE}-master-steady-foundations`,
+      owner_user_id: 'coach-1',
+      coach_id: 'coach-1',
+      client_id: 'client-1',
+    });
+    expect(w.macroTargets.map((m) => m.coach_id)).toEqual(['coach-1']);
+    // The screening alert goes to the client's own coach, never the house account.
+    expect(w.notifications.map((n) => n.user_id)).toEqual(['coach-1']);
+  });
+
+  it("refuses a house-set master that is not the house account's own template (tenancy)", async () => {
+    const w = makeWorld();
+    addHouseSet(w);
+    const house = w.sets.find((s) => s.id === 'house-set') as {
+      programs: Record<string, { program_id: string }>;
+    };
+    // Points at coach-1's master: a set may never clone another account's template.
+    house.programs['considered-strength'].program_id = 'master-considered-strength';
+    await w.consentThenSave('loner', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    expect(await code(w.svc.complete('loner', NOW))).toBe('clinic_not_configured');
+    expect(w.createdClones).toHaveLength(0);
+    expect(w.intakes[0].completion_claimed_at).toBeNull();
   });
 });

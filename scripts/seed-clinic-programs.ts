@@ -29,7 +29,13 @@
  *   CLINIC_SPACE_NAME            default "Clinic community"
  *   CLINIC_ALL_MEMBERS_NAME      default "All members"
  *
- * Run:  npx ts-node scripts/seed-clinic-programs.ts [--dry-run]
+ * House set (CONSULT-ALL-BE-133, owner decision 28): --house marks the set
+ * as the platform's house set (ClinicProgramSet.is_house). Coachless clients
+ * and clients whose coach has no set of their own complete the consultation
+ * with it. One house set at a time: marking one clears the flag on any other.
+ * Re-running with --house on an already seeded set only marks it.
+ *
+ * Run:  npx ts-node scripts/seed-clinic-programs.ts [--dry-run] [--house]
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -79,9 +85,9 @@ export function workspaceSlug(coachId: string, fixtureVersion: string): string {
 }
 
 export type SeedOutcome =
-  | { status: 'already_seeded'; set_id: string }
-  | { status: 'dry_run'; missing_slugs: string[] }
-  | { status: 'seeded'; set_id: string; programs: Record<string, string> };
+  | { status: 'already_seeded'; set_id: string; house: boolean }
+  | { status: 'dry_run'; missing_slugs: string[]; house: boolean }
+  | { status: 'seeded'; set_id: string; house: boolean; programs: Record<string, string> };
 
 export async function seedClinicPrograms(
   prisma: PrismaClient,
@@ -93,8 +99,11 @@ export async function seedClinicPrograms(
     spaceName: string;
     allMembersName: string;
     dryRun: boolean;
+    /** Mark the set as the platform's house set (see the header). */
+    house?: boolean;
   },
 ): Promise<SeedOutcome> {
+  const house = opts.house === true;
   const fx = parseFixture(raw);
   assertSeedAllowed(opts.env, fx);
 
@@ -121,7 +130,18 @@ export async function seedClinicPrograms(
         `ClinicProgramSet ${fx.fixture_version} already seeded with a different fixture hash; bump fixture_version for new content.`,
       );
     }
-    return { status: 'already_seeded', set_id: existing.id };
+    if (house && !existing.is_house) {
+      if (opts.dryRun) return { status: 'dry_run', missing_slugs: [], house };
+      await prisma.$transaction(async (tx) => {
+        await tx.clinicProgramSet.updateMany({
+          where: { is_house: true, id: { not: existing.id } },
+          data: { is_house: false },
+        });
+        await tx.clinicProgramSet.update({ where: { id: existing.id }, data: { is_house: true } });
+      });
+      return { status: 'already_seeded', set_id: existing.id, house };
+    }
+    return { status: 'already_seeded', set_id: existing.id, house: existing.is_house };
   }
 
   const found = await prisma.exerciseCatalogItem.findMany({
@@ -130,7 +150,7 @@ export async function seedClinicPrograms(
   });
   const have = new Set(found.map((f) => f.slug));
   const missing = fx.exercise_slugs.filter((s) => !have.has(s));
-  if (opts.dryRun) return { status: 'dry_run', missing_slugs: missing };
+  if (opts.dryRun) return { status: 'dry_run', missing_slugs: missing, house };
   if (missing.length > 0)
     throw new Error(
       `Exercise catalog is missing slugs: ${missing.join(', ')} (run seed-exercise-catalog first).`,
@@ -190,6 +210,7 @@ export async function seedClinicPrograms(
           all_members_cohort_id: allMembers.id,
           programs: JSON.parse(JSON.stringify(programs)),
           materialisation: JSON.parse(JSON.stringify(fx.materialisation)),
+          is_house: house,
         },
       });
       // Only the newest set is active for this coach.
@@ -197,9 +218,17 @@ export async function seedClinicPrograms(
         where: { coach_id: coach.id, id: { not: set.id } },
         data: { active: false },
       });
+      // One house set at a time.
+      if (house) {
+        await tx.clinicProgramSet.updateMany({
+          where: { is_house: true, id: { not: set.id } },
+          data: { is_house: false },
+        });
+      }
       return {
         status: 'seeded' as const,
         set_id: set.id,
+        house,
         programs: Object.fromEntries(Object.entries(programs).map(([k, v]) => [k, v.program_id])),
       };
     },
@@ -220,6 +249,7 @@ async function main(): Promise<void> {
       spaceName: process.env.CLINIC_SPACE_NAME ?? 'Clinic community',
       allMembersName: process.env.CLINIC_ALL_MEMBERS_NAME ?? 'All members',
       dryRun: process.argv.includes('--dry-run'),
+      house: process.argv.includes('--house'),
     });
     process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
   } finally {

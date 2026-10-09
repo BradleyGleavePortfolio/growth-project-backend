@@ -46,7 +46,25 @@ function fakeDb(opts: { missingSlug?: string } = {}) {
         sets.push(row);
         return row;
       }),
-      updateMany: jest.fn(async () => ({ count: 0 })),
+      // Applies { is_house } / { active } to rows matching the where shape the
+      // seed uses ({ coach_id?, is_house?, id: { not } }).
+      updateMany: jest.fn(async ({ where, data }: { where: Row; data: Row }) => {
+        const not = (where.id as { not?: string } | undefined)?.not;
+        const rows = sets.filter(
+          (r) =>
+            r.id !== not &&
+            (where.coach_id === undefined || r.coach_id === where.coach_id) &&
+            (where.is_house === undefined || r.is_house === where.is_house),
+        );
+        rows.forEach((r) => Object.assign(r, data));
+        return { count: rows.length };
+      }),
+      update: jest.fn(async ({ where, data }: { where: Row; data: Row }) =>
+        Object.assign(
+          sets.find((r) => r.id === where.id)!,
+          data,
+        ),
+      ),
     },
     exerciseCatalogItem: {
       findMany: jest.fn(async ({ where }: { where: { slug: { in: string[] } } }) =>
@@ -179,6 +197,7 @@ describe('seedClinicPrograms', () => {
       coach_id: 'coach-1',
       fixture_version: 'clinic-programs.v1',
       fixture_sha256: fx.sha256,
+      is_house: false,
     });
     expect(w.db.workoutPlan.create).toHaveBeenCalledTimes(8 + 12 + 16);
   });
@@ -208,6 +227,51 @@ describe('seedClinicPrograms', () => {
     );
     expect(w.programs).toHaveLength(0);
     const dry = await seedClinicPrograms(asClient(w.db), RAW, { ...base, env: {}, dryRun: true });
-    expect(dry).toEqual({ status: 'dry_run', missing_slugs: ['cat-cow'] });
+    expect(dry).toEqual({ status: 'dry_run', missing_slugs: ['cat-cow'], house: false });
+  });
+});
+
+describe('--house (CONSULT-ALL-BE-133, owner decision 28)', () => {
+  it('marks the new set as the house set and clears the flag on any other set', async () => {
+    const w = fakeDb();
+    w.sets.push({ id: 'old-house', coach_id: 'coach-9', is_house: true, active: true });
+    const out = await seedClinicPrograms(asClient(w.db), RAW, { ...base, env: {}, house: true });
+    expect(out).toMatchObject({ status: 'seeded', house: true });
+    expect(w.sets.find((r) => r.coach_id === 'coach-1')).toMatchObject({ is_house: true });
+    // The other coach's set stays active as that coach's own set.
+    expect(w.sets.find((r) => r.id === 'old-house')).toMatchObject({
+      is_house: false,
+      active: true,
+    });
+  });
+
+  it('on an already seeded set it only marks it; a dry run writes nothing', async () => {
+    const w = fakeDb();
+    await seedClinicPrograms(asClient(w.db), RAW, { ...base, env: {} });
+    const dry = await seedClinicPrograms(asClient(w.db), RAW, {
+      ...base,
+      env: {},
+      house: true,
+      dryRun: true,
+    });
+    expect(dry).toEqual({ status: 'dry_run', missing_slugs: [], house: true });
+    expect(w.sets[0].is_house).toBe(false);
+    const out = await seedClinicPrograms(asClient(w.db), RAW, { ...base, env: {}, house: true });
+    expect(out).toMatchObject({ status: 'already_seeded', house: true });
+    expect(w.sets).toHaveLength(1);
+    expect(w.sets[0].is_house).toBe(true);
+    expect(w.programs).toHaveLength(3);
+  });
+
+  it('the production guard still applies with --house', async () => {
+    const w = fakeDb();
+    await expect(
+      seedClinicPrograms(asClient(w.db), RAW, {
+        ...base,
+        env: { NODE_ENV: 'production' },
+        house: true,
+      }),
+    ).rejects.toThrow(/Refusing/);
+    expect(w.sets).toHaveLength(0);
   });
 });
