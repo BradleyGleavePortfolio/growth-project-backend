@@ -1,0 +1,184 @@
+name: House Seed (operator)
+
+# Operator workflow (HOUSE-SEED-134, B14): seeds the platform's house program
+# set (ClinicProgramSet with is_house) in production so coachless clients get
+# a plan. Triggered manually via workflow_dispatch only, from main only, and
+# bound to the `production` environment so its required reviewers gate it.
+#
+# How it runs: no new secret. The image built by fly-deploy.yml carries a
+# compiled copy of the EXISTING scripts (Dockerfile build stage,
+# tsconfig.house-seed.json -> /app/dist/house-seed/) and the fixture. This
+# workflow opens `flyctl ssh console` into a running machine of the app and
+# runs them there with the app's own env (its DATABASE_URL never leaves the
+# machine and is never printed). FLY_API_TOKEN is the existing secret used by
+# fly-env-truth.yml for the same kind of ssh session.
+#
+# Approval: scripts/seed-clinic-programs.ts refuses production unless the
+# fixture says production_seed_authorized true AND
+# CLINIC_PROGRAMS_SEED_APPROVED equals "<fixture_version>:<sha256>" of the
+# file. The hash is computed here at run time from main's committed
+# seed/clinic-programs.v1.json, and the run stops before the seed if the copy
+# inside the running image differs (deploy main first).
+#
+# Inputs are DATA, never shell source: every `inputs.*` value enters a step
+# only through `env:` and is validated before use.
+#
+# How to run (operator):
+#   gh workflow run "House Seed (operator)" --ref main \
+#     -f mode=dry-run -f coach_id=<house account user id> -f exercise_catalog=skip
+#   then the same with -f mode=apply (and -f exercise_catalog=upsert while the
+#   production exercise catalog is missing the fixture's slugs).
+# Output: the script's JSON (status, set id, program ids; ids only).
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'dry-run (reads only, reports missing slugs) or apply (writes the house set)'
+        required: true
+        default: dry-run
+        type: choice
+        options:
+          - dry-run
+          - apply
+      coach_id:
+        description: 'User id (uuid) of the house account that owns the masters (the owner account; never an email)'
+        required: true
+        type: string
+      exercise_catalog:
+        description: 'apply only: upsert scripts/seed-exercise-catalog.ts rows first (idempotent, metadata only) or skip'
+        required: true
+        default: skip
+        type: choice
+        options:
+          - skip
+          - upsert
+
+permissions:
+  contents: read
+
+concurrency:
+  group: house-seed-production
+  cancel-in-progress: false
+
+jobs:
+  house-seed:
+    name: Seed the house program set
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    timeout-minutes: 20
+    steps:
+      - name: Validate inputs
+        env:
+          MODE: ${{ inputs.mode }}
+          COACH_ID: ${{ inputs.coach_id }}
+          CATALOG: ${{ inputs.exercise_catalog }}
+        run: |
+          set -euo pipefail
+          case "${MODE}" in
+            dry-run|apply) ;;
+            *) echo "::error::mode must be dry-run or apply, so nothing ran. Fix: re-run with -f mode=dry-run."; exit 1 ;;
+          esac
+          case "${CATALOG}" in
+            skip|upsert) ;;
+            *) echo "::error::exercise_catalog must be skip or upsert, so nothing ran. Fix: re-run with -f exercise_catalog=skip."; exit 1 ;;
+          esac
+          if ! printf '%s' "${COACH_ID}" | grep -Eq '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'; then
+            echo "::error::coach_id is not a user id (uuid), so nothing ran. Fix: pass the house account's User.id, never an email."
+            exit 1
+          fi
+          echo "Inputs valid: mode=${MODE} exercise_catalog=${CATALOG}."
+
+      - name: Check Fly token configuration
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "${FLY_API_TOKEN}" ]; then
+            echo "::error::The FLY_API_TOKEN secret is empty or not set, so no ssh session can be opened."
+            exit 1
+          fi
+          echo "FLY_API_TOKEN is configured."
+
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v6.0.3
+        with:
+          persist-credentials: false
+
+      - name: Compute the approval from main's committed fixture
+        id: approval
+        run: |
+          set -euo pipefail
+          f=seed/clinic-programs.v1.json
+          version=$(jq -r '.fixture_version' "${f}")
+          authorized=$(jq -r '.production_seed_authorized' "${f}")
+          sha=$(sha256sum "${f}" | cut -d' ' -f1)
+          if ! printf '%s' "${version}" | grep -Eq '^[a-z0-9.-]+$'; then
+            echo "::error::fixture_version in ${f} is not a plain version string, so nothing ran."
+            exit 1
+          fi
+          if [ "${authorized}" != "true" ]; then
+            echo "::error::${f} says production_seed_authorized ${authorized}, so the seed would refuse. Nothing ran."
+            exit 1
+          fi
+          echo "sha=${sha}" >> "${GITHUB_OUTPUT}"
+          echo "approved=${version}:${sha}" >> "${GITHUB_OUTPUT}"
+          echo "Fixture ${version} sha256 ${sha} (main @ ${GITHUB_SHA})."
+
+      - uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1  # master 2026-09-20 (pinned)
+
+      - name: Check the running image carries the same fixture
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: backend-spring-lake-3890
+          EXPECTED_SHA: ${{ steps.approval.outputs.sha }}
+        run: |
+          set +x
+          set -euo pipefail
+          out=$(flyctl ssh console -a "${APP}" -C "sha256sum /app/dist/house-seed/seed/clinic-programs.v1.json /app/dist/house-seed/scripts/seed-clinic-programs.js /app/dist/house-seed/scripts/seed-exercise-catalog.js" 2>ssh-stderr.txt) || {
+            echo "::error::The running image has no compiled house seed (or no machine is started), so nothing ran. Fix: deploy main with fly-deploy.yml, then re-run."
+            cat ssh-stderr.txt
+            exit 1
+          }
+          got=$(printf '%s\n' "${out}" | grep 'clinic-programs.v1.json' | grep -Eo '^[0-9a-f]{64}' || true)
+          if [ "${got}" != "${EXPECTED_SHA}" ]; then
+            echo "::error::The fixture inside the running image (${got:-missing}) differs from main's (${EXPECTED_SHA}), so nothing ran. Fix: deploy main with fly-deploy.yml, then re-run."
+            exit 1
+          fi
+          echo "Running image carries main's fixture and both compiled scripts."
+
+      - name: Upsert the exercise catalog (apply + upsert only)
+        if: inputs.mode == 'apply' && inputs.exercise_catalog == 'upsert'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: backend-spring-lake-3890
+        run: |
+          set +x
+          set -euo pipefail
+          flyctl ssh console -a "${APP}" -C "node /app/dist/house-seed/scripts/seed-exercise-catalog.js"
+
+      - name: Run the house seed inside the machine
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          APP: backend-spring-lake-3890
+          MODE: ${{ inputs.mode }}
+          COACH_ID: ${{ inputs.coach_id }}
+          APPROVED: ${{ steps.approval.outputs.approved }}
+        run: |
+          set +x
+          set -euo pipefail
+          flags="--house"
+          if [ "${MODE}" = "dry-run" ]; then flags="--house --dry-run"; fi
+          cmd="env CLINIC_SEED_TARGET=production CLINIC_OWNER_COACH_ID=${COACH_ID} CLINIC_PROGRAMS_SEED_APPROVED=${APPROVED} node /app/dist/house-seed/scripts/seed-clinic-programs.js ${flags}"
+          flyctl ssh console -a "${APP}" -C "${cmd}" > seed-output.json 2> ssh-stderr.txt || {
+            rc=$?
+            echo "::error::The house seed exited ${rc} (mode ${MODE}); see the message below. Nothing is half-written: the seed is one transaction."
+            cat seed-output.json ssh-stderr.txt
+            exit 1
+          }
+          cat seed-output.json
+          {
+            echo "### House seed (${MODE})"
+            echo '```json'
+            cat seed-output.json
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"

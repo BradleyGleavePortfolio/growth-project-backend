@@ -1,7 +1,7 @@
 {
   "fixture_version": "clinic-programs.v1",
-  "approval_status": "draft-owner-approval-required",
-  "production_seed_authorized": false,
+  "approval_status": "approved",
+  "production_seed_authorized": true,
   "scope": "Personal training for general-population adults. No diagnosis, treatment, rehabilitation prescription or assurance of medical suitability.",
   "backend_model": {
     "inspected_head": "bffae5f38cdf2af4eb0d013dc5d2671976f6e657",

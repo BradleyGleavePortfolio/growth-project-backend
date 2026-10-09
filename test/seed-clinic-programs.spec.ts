@@ -129,14 +129,15 @@ describe('production guard', () => {
     expect(isProductionTarget({ NODE_ENV: 'development' })).toBe(false);
   });
 
-  it('refuses production for the unapproved draft even with the approval env', () => {
+  it('refuses production for an unapproved draft even with the approval env', () => {
+    const draft = { ...fx, production_seed_authorized: false };
     expect(() =>
       assertSeedAllowed(
         {
           NODE_ENV: 'production',
           CLINIC_PROGRAMS_SEED_APPROVED: `${fx.fixture_version}:${fx.sha256}`,
         },
-        fx,
+        draft,
       ),
     ).toThrow(/not owner-approved/);
   });

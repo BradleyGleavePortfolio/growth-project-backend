@@ -400,7 +400,7 @@ denial. The platform owner is the one documented difference (RLS admits it via
 ## Seeding the programs
 
 `scripts/seed-clinic-programs.ts` reads `seed/clinic-programs.v1.json`
-(draft; `production_seed_authorized: false`). It validates the fixture
+(owner-approved under decision 133-2; `production_seed_authorized: true`). It validates the fixture
 (three 4-week programs, slugs in the manifest, selection rules identical to
 the code rule table), checks every slug exists in `ExerciseCatalogItem`, and
 writes the masters, one community workspace with an "All members" cohort plus
@@ -416,6 +416,17 @@ CLINIC_OWNER_COACH_EMAIL=owner@example.com npx ts-node scripts/seed-clinic-progr
 
 `--house` (CONSULT-ALL-BE-133) marks the set as the house set and clears the
 flag on any other set; on an already seeded set it only marks it. The
-production guard applies unchanged. No workflow runs this script: the runtime
-image ships `dist/` only (no `scripts/*.ts`, no `seed/`), so it is an operator
-step from a checkout of main.
+production guard applies unchanged.
+
+Production (HOUSE-SEED-134): the image carries a compiled copy of this script
+and `scripts/seed-exercise-catalog.ts` at `dist/house-seed/` (built by
+`tsconfig.house-seed.json` in the Dockerfile build stage) plus the fixture at
+`dist/house-seed/seed/`. The operator workflow `.github/workflows/house-seed.yml`
+(workflow_dispatch from main, `environment: production`) runs it inside a
+running machine over `flyctl ssh console` with the app's own env, so it needs
+no new secret. Inputs: `mode` (`dry-run` | `apply`), `coach_id` (the house
+account's User id, never an email) and `exercise_catalog` (`skip` | `upsert`,
+apply only; upsert first while the production catalog lacks the fixture's
+slugs). It computes `CLINIC_PROGRAMS_SEED_APPROVED` from main's committed
+fixture at run time and stops before the seed if the copy in the running image
+differs (deploy main first). Output: the script's JSON (ids only).

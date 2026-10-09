@@ -102,10 +102,11 @@ const shape = (input: unknown) =>
     );
 
 describe('parseFixture', () => {
-  it('parses the checked-in draft fixture and records its hash', () => {
+  it('parses the checked-in owner-approved fixture (decision 133-2) and records its hash', () => {
     expect(fx.fixture_version).toBe('clinic-programs.v1');
     expect(fx.sha256).toBe(createHash('sha256').update(RAW).digest('hex'));
-    expect(fx.production_seed_authorized).toBe(false);
+    expect(fx.approval_status).toBe('approved');
+    expect(fx.production_seed_authorized).toBe(true);
     expect(fx.programs.map((p) => p.fixture_key)).toEqual([
       'steady-foundations',
       'considered-strength',
