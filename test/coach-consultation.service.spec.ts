@@ -8,6 +8,16 @@ import { CoachConsultationAnswersDto } from '../src/coach/consultation/coach-con
 import { CoachConsultationService } from '../src/coach/consultation/coach-consultation.service';
 import { JwtAuthGuard } from '../src/auth/auth.guard';
 import { CoachGuard } from '../src/auth/coach.guard';
+import type { AuthedRequest } from '../src/auth/auth-request';
+import { PrismaService } from '../src/prisma.service';
+import { InviteCodesService } from '../src/invite-codes/invite-codes.service';
+import { AnalyticsService } from '../src/analytics/analytics.service';
+
+// Typed test double: an object with the class's prototype and only the
+// members the code under test calls.
+function double<T extends object>(cls: { prototype: T }, members: object): T {
+  return Object.assign(Object.create(cls.prototype), members);
+}
 
 // COACH-CONSULT-BE-134 (B02 B03) — the coach consultation K0-K8 backend.
 // In-memory Prisma: one coach "c1" (signed up as "Jordan Reyes") and a second
@@ -50,7 +60,11 @@ function makeWorld() {
     getOrCreateDefaultForCoach: jest.fn(async (id: string) => ({ ...profiles[id] })),
   };
   const analytics = { capture: jest.fn() };
-  const service = new CoachConsultationService(prisma as any, inviteCodes as any, analytics as any);
+  const service = new CoachConsultationService(
+    double(PrismaService, prisma),
+    double(InviteCodesService, inviteCodes),
+    double(AnalyticsService, analytics),
+  );
   return { service, prisma, users, profiles, progress, analytics, inviteCodes };
 }
 
@@ -185,8 +199,8 @@ describe('CoachConsultationController', () => {
     const guards = Reflect.getMetadata(GUARDS_METADATA, CoachConsultationController);
     expect(guards).toEqual([JwtAuthGuard, CoachGuard]);
     const svc = { get: jest.fn(), save: jest.fn(), complete: jest.fn() };
-    const ctl = new CoachConsultationController(svc as any);
-    const req = { user: { id: 'c1' } } as any;
+    const ctl = new CoachConsultationController(double(CoachConsultationService, svc));
+    const req = { user: { id: 'c1' } } as AuthedRequest;
     await ctl.get(req);
     await ctl.save(req, { bio: 'b' });
     await ctl.complete(req, {});
