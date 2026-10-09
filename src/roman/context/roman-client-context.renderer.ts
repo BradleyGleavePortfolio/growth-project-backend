@@ -46,6 +46,18 @@ export const ROMAN_CLEARANCE_RECOMMENDED_INSTRUCTION =
   'never interpret them medically, never name a condition, and route intensity, pain or injury questions to their coach and physician.';
 
 /**
+ * COACH-CARD-134: present only when the client's coach answered K4 / K5 of the
+ * coach consultation (coach.coaching_style). Roman adapts to the coach's way of
+ * working and never claims to be the coach.
+ */
+export const ROMAN_COACHING_STYLE_INSTRUCTION =
+  "Coach style: coach.coaching_style is how the client's coach describes their own coaching. " +
+  'Work in that style: with close guidance, bring questions about the plan back to the coach more often; ' +
+  'with a light touch, help the client decide within their plan. ' +
+  'You are Roman, not the coach: never say you are their coach, never speak for the coach, ' +
+  'and leave program changes to the coach.';
+
+/**
  * B-R3-2: serialise the context for the system block so no string field can
  * close or reopen the `<client_data>` delimiter. `<`, `>` and `&` become JSON
  * unicode escapes (still valid JSON, same meaning to the model as data), so a
@@ -314,6 +326,9 @@ function wrap(ctx: RomanClientContext, body: string): string {
   ];
   if (ctx.safety_intake.clearance_recommended) {
     lines.push(ROMAN_CLEARANCE_RECOMMENDED_INSTRUCTION);
+  }
+  if (ctx.coach.coaching_style) {
+    lines.push(ROMAN_COACHING_STYLE_INSTRUCTION);
   }
   lines.push(body, '</client_data>');
   return lines.join('\n');

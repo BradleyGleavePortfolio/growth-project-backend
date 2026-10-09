@@ -160,6 +160,8 @@ describe('every join entry point carries the notice', () => {
       coach_name: 'Coach A',
       business_name: null,
       branding: { accent_color: null, logo_url: null },
+      headline: null,
+      specialties: [],
     });
     jest.spyOn(auth, 'register').mockResolvedValue({
       message: 'Account created. Check your email to verify.',

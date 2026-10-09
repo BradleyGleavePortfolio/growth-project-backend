@@ -45,6 +45,7 @@ import {
   RomanConsultationSummary,
   RomanCtxCheckIn,
   RomanCtxCoachMessage,
+  RomanCtxCoachingStyle,
   RomanCtxCommunityPost,
   RomanCtxBooking,
   RomanCtxCompletion,
@@ -197,6 +198,34 @@ export function ageYears(dob: Date | null | undefined, localDate: string): numbe
     m < dob.getUTCMonth() + 1 || (m === dob.getUTCMonth() + 1 && d < dob.getUTCDate());
   if (beforeBirthday) age -= 1;
   return age >= 0 && age < 130 ? age : null;
+}
+
+/**
+ * COACH-CARD-134: the coach's K4/K5 answers as plain phrases (consultation
+ * vocab in src/coach/consultation/coach-consultation.vocab.ts). Unknown or
+ * unset values are dropped; nothing at all when neither is set.
+ */
+const COACHING_TOUCH_PHRASE: Record<string, string> = {
+  close: 'close guidance, frequent check-ins',
+  balanced: 'balanced, a weekly check-in',
+  light: 'light touch, clients mostly self-direct',
+};
+const PROGRAMMING_STYLE_PHRASE: Record<string, string> = {
+  own: 'writes their own programs',
+  templates: 'adapts program templates',
+  help: 'builds programs with help from the app',
+};
+export function coachingStyleBlock(
+  profile: { coaching_touch: string | null; programming_style: string | null } | null | undefined,
+): { coaching_style?: RomanCtxCoachingStyle } {
+  const touch = profile?.coaching_touch ? COACHING_TOUCH_PHRASE[profile.coaching_touch] : undefined;
+  const programming = profile?.programming_style
+    ? PROGRAMMING_STYLE_PHRASE[profile.programming_style]
+    : undefined;
+  if (!touch && !programming) return {};
+  return {
+    coaching_style: { ...(touch ? { touch } : {}), ...(programming ? { programming } : {}) },
+  };
 }
 
 const clamp = (s: string | null | undefined, max: number): string | null => {
@@ -374,7 +403,16 @@ export class RomanClientContextService {
         coach_id: true,
         profile: true,
         notification_prefs: { select: { timezone: true } },
-        coach: { select: { id: true, name: true, role: true, deleted_at: true } },
+        coach: {
+          select: {
+            id: true,
+            name: true,
+            role: true,
+            deleted_at: true,
+            // COACH-CARD-134: the coach's K4/K5 consultation answers (same round trip).
+            coach_profile: { select: { coaching_touch: true, programming_style: true } },
+          },
+        },
         // B-665-1: the client's per-metric provider choice (resolveBest policy).
         wearable_metric_preferences: {
           where: { metric: { in: [...ROMAN_WEARABLE_METRICS] } },
@@ -903,6 +941,7 @@ export class RomanClientContextService {
       coach_first_name: coachId ? firstName(coach?.name) : null,
       guidelines: clamp(guideline?.content, 1500),
       recent_messages,
+      ...coachingStyleBlock(coachId ? coach?.coach_profile : null),
     };
     if (!coachId) missing.push('coach');
 

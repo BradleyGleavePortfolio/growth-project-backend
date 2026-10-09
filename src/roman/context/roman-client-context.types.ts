@@ -213,6 +213,19 @@ export interface RomanCtxCoach {
   guidelines: string | null;
   /** Last 8 messages in the client ↔ coach thread, oldest first, both directions. */
   recent_messages: RomanCtxCoachMessage[];
+  /**
+   * COACH-CARD-134 (K4, K5): how the coach describes their own coaching, from
+   * the coach consultation. Present only when the coach answered at least one;
+   * never for a coachless client.
+   */
+  coaching_style?: RomanCtxCoachingStyle;
+}
+
+export interface RomanCtxCoachingStyle {
+  /** K4 coaching touch, e.g. "close guidance, frequent check-ins". */
+  touch?: string;
+  /** K5 programming style, e.g. "writes their own programs". */
+  programming?: string;
 }
 
 /** The client's OWN community posts (never anyone else's), newest first (≤5). */
