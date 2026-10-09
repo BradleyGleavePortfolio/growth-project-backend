@@ -19,6 +19,7 @@ import { Reflector } from '@nestjs/core';
 import type { PrismaService } from '../src/prisma.service';
 import { AiController } from '../src/ai/ai.controller';
 import { CommunityController } from '../src/community/community.controller';
+import { FoodController } from '../src/food/food.controller';
 import { LogController } from '../src/log/log.controller';
 import { SchedulingController } from '../src/scheduling/scheduling.controller';
 import { WaterController } from '../src/water/water.controller';
@@ -96,6 +97,12 @@ describe('B1 — a Day-10 locked client still logs; coach services stay locked',
     ['GET /log/daily', LogController, 'getDaily', 'GET', '/api/log/daily'],
     ['POST /workouts', WorkoutController, 'createWorkout', 'POST', '/api/workouts'],
     ['POST /nutrition/water', WaterController, 'logWater', 'POST', '/api/nutrition/water'],
+    // Food search, barcode scan and manual entry (POST /foods makes the food
+    // the manual entry then logs through /log/food).
+    ['GET /foods/search', FoodController, 'search', 'GET', '/api/foods/search'],
+    ['GET /foods/barcode/:upc', FoodController, 'getByBarcode', 'GET', '/api/foods/barcode/0123456789012'],
+    ['GET /foods/:id', FoodController, 'getById', 'GET', '/api/foods/food-1'],
+    ['POST /foods', FoodController, 'create', 'POST', '/api/foods'],
   ])('%s: allowed for a Day-10 locked client, no lock lookup', async (_label, controller, handler, method, path) => {
     const w = world({ lockedDay10: true, paidPackage: false });
     expect(await chain(w, ctx(controller, handler, method, path, coached))).toBe(200);
