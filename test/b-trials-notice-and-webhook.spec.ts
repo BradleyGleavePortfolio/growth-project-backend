@@ -424,6 +424,9 @@ describe('B-TRIALS — delivery (push + email after commit, retried by the sweep
   it('a transport failure stays pending and the sweep retries it', async () => {
     const w = world({ pushCode: 'transport-error' });
     const id = await recorded(w);
+    // The fake table stamps created_at with the wall clock; pin it to the test
+    // clock so the sweep's minimum-age check does not depend on the time of day.
+    w.notices.rows[0].created_at = NOW;
     await w.noticeSvc.deliver(id, NOW);
     expect(w.notices.rows[0].push_status).toBe('pending');
     w.notifications.pushToUser.mockResolvedValueOnce({ delivered: true, code: 'delivered' });
