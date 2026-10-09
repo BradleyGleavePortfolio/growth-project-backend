@@ -75,6 +75,10 @@ export const ERROR_DETAIL_ALLOWLIST: Readonly<Record<string, Readonly<Record<str
     PACKAGE_COACH_NOT_CONNECTED: {
       reason: oneOf('no_coach', 'other_coach'),
     },
+    // Owner 10-09 00:0x — Roman for a client with no coach: the app's next step.
+    ROMAN_REQUIRES_COACH: {
+      action: oneOf('JOIN_COACH'),
+    },
     ...MWB_HEAD_CONFLICT_DETAILS,
   };
 

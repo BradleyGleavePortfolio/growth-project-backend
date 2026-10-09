@@ -80,3 +80,13 @@ and forced, anon revoked and denied, and writes allowed only to `service_role`:
 - `CoachCodeRedemption` and `CoachlessPromptState` can be read only by their own user.
 
 The live proof is `test/rls/coachless-rls.spec.ts`.
+
+## Roman needs a coach
+
+A client with no coach gets `403` with `error`/`code` `ROMAN_REQUIRES_COACH` and
+`action: "JOIN_COACH"` on `POST /roman/sessions`, `POST /roman/sessions/:id/messages` and
+`POST /ai/chat`, before anything is stored, counted or sent to the AI (owner 10-09 00:0x,
+`src/roman/roman-requires-coach.ts`). A crisis message still gets the fixed 988 / 911 answer, and
+an eating-disorder message on Roman the fixed fallback. Coached clients are unchanged (coach AI
+pool and daily cap). The scripted Roman card above makes no AI call and is unchanged, and so is
+the client's own logging.
