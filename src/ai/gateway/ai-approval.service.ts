@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -101,8 +102,13 @@ export class AiApprovalService {
     private audit: AuditService,
     // PR AI-3 (PRODUCT-1): optional so legacy unit tests that build the
     // service via `new AiApprovalService(prisma, audit)` keep compiling. In
-    // production DI it's always provided via AiGatewayModule.
+    // production DI it's provided via AiGatewayModule.
+    // NEST-TOKENS-134: the explicit token is required. With strictNullChecks a
+    // `T | null` param is emitted as `Object` in design:paramtypes, so without
+    // @Inject Nest resolved nothing: an approved draft flipped to 'approved'
+    // and its materialiser (message send, assignment) never ran.
     @Optional()
+    @Inject(CapabilityMaterializerRegistry)
     private materialisers: CapabilityMaterializerRegistry | null = null,
   ) {}
 
