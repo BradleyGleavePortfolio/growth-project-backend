@@ -14,7 +14,8 @@ import {
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { IsInt, IsOptional, IsUUID, Matches, Max, Min } from 'class-validator';
+import { IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator';
+import { INVITE_CODE_PATTERN } from '../invite-codes/invite-codes.service';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
@@ -75,6 +76,13 @@ export class CreateSubscriptionIntentDto {
   @IsOptional()
   @Matches(SHARE_TOKEN_REGEX)
   share_token?: string;
+
+  // B-PACKAGE-135 — a coachless client's join code: buys only its paid package.
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  @Matches(INVITE_CODE_PATTERN)
+  join_code?: string;
 }
 
 export class ResumePlanDto {

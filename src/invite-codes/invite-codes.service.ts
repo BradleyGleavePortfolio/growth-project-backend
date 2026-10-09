@@ -13,13 +13,26 @@ import {
 } from '@nestjs/common';
 import { randomInt } from 'crypto';
 import { Prisma } from '@prisma/client';
+import type { CoachPackage, InviteGrantMode } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { AuditService } from '../audit/audit.service';
-import { InviteGrantService, type GrantOutcome } from '../invite-grant/invite-grant.service';
+import {
+  InviteGrantService,
+  type CodeBinding,
+  type GrantOutcome,
+} from '../invite-grant/invite-grant.service';
+import {
+  coachFirstName,
+  createGettingStartedPackage,
+  findJoinPackage,
+  joinGrantMode,
+  joinPackageView,
+  type JoinOutcome,
+} from './join-package';
 import { publicCoachCardFields as coachCardFields } from '../coach/consultation/coach-consultation.vocab';
 import {
   acceptedCoachSharingNotice,
@@ -167,6 +180,8 @@ export const INVITE_ATTACH_ERROR = {
   CODE_EXPIRED: 'code_expired',
   /** A2 — the code reached its signup limit (max_uses). */
   CODE_EXHAUSTED: 'code_exhausted',
+  /** B-PACKAGE-135 — the join's package cannot be given now (revoked grant, unsigned agreement): not attached. */
+  JOIN_PACKAGE_UNAVAILABLE: 'join_package_unavailable',
 } as const;
 export type InviteAttachErrorCode = (typeof INVITE_ATTACH_ERROR)[keyof typeof INVITE_ATTACH_ERROR];
 
@@ -221,6 +236,26 @@ function assertRedeemerIsStudent(me: { role: string }): void {
   throw new ForbiddenException(coachCannotRedeemBody());
 }
 
+function joinPackageUnavailable(): BadRequestException {
+  return new BadRequestException({
+    code: INVITE_ATTACH_ERROR.JOIN_PACKAGE_UNAVAILABLE,
+    message: "This code's package cannot be added to your account. Ask your coach for a new code.",
+  });
+}
+
+/** A single-recipient invite redeemed by someone else (case and spaces ignored). */
+function intendedRecipientMismatch(intended: string | null, email: string | null | undefined): boolean {
+  if (!intended) return false;
+  return (email ?? '').toLowerCase().trim() !== intended.toLowerCase().trim();
+}
+
+function intendedEmailMismatch(): BadRequestException {
+  return new BadRequestException({
+    code: INVITE_ATTACH_ERROR.INVITE_INTENDED_EMAIL_MISMATCH,
+    message: 'This invite was sent to a different email address',
+  });
+}
+
 function invalidInviteCode(): BadRequestException {
   return new BadRequestException({
     code: INVITE_ATTACH_ERROR.INVITE_CODE_INVALID,
@@ -269,6 +304,54 @@ export function inviteCodeRowLifecycle(
   return null;
 }
 
+const ACCEPTING_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'grandfathered'];
+
+/**
+ * B-PACKAGE-135 — the checkout's one exception to "buy only from your own
+ * coach": a client with NO coach may buy the PAID package their coach code
+ * carries (a code that takes a new signup, for this person, coach accepting
+ * clients). Else false: the caller keeps its non-leaking 404.
+ */
+export async function paidJoinAllowed(
+  prisma: PrismaService,
+  client: { email: string | null },
+  pkg: Pick<CoachPackage, 'id' | 'coach_id'>,
+  rawCode: string | null | undefined,
+): Promise<boolean> {
+  for (const code of inviteCodeLookupCandidates(rawCode)) {
+    let coachId: string;
+    let picked: { package_id: string | null; grant_mode: InviteGrantMode };
+    const profile = await prisma.coachProfile.findUnique({
+      where: { invite_code: code },
+      include: { user: { select: { id: true, role: true } } },
+    });
+    if (profile?.user) {
+      if (profile.user.role !== 'coach') return false;
+      coachId = profile.user.id;
+      picked = { package_id: profile.invite_code_package_id, grant_mode: profile.invite_code_grant_mode };
+    } else {
+      const row = await prisma.inviteCode.findUnique({
+        where: { code },
+        include: { coach: { select: { role: true } } },
+      });
+      if (!row) continue;
+      if (inviteCodeRowLifecycle(row) || row.coach.role !== 'coach') return false;
+      if (intendedRecipientMismatch(row.intended_email, client.email)) return false;
+      coachId = row.coach_id;
+      picked = { package_id: row.package_id, grant_mode: row.grant_mode };
+    }
+    if (coachId !== pkg.coach_id) return false;
+    const sub = await prisma.coachSubscription.findUnique({
+      where: { coach_id: coachId },
+      select: { status: true },
+    });
+    if (!sub || !ACCEPTING_SUBSCRIPTION_STATUSES.includes(sub.status)) return false;
+    const joinPkg = await findJoinPackage(prisma, coachId, picked.package_id);
+    return !!joinPkg && joinPkg.id === pkg.id && joinGrantMode(joinPkg, picked) === 'none';
+  }
+  return false;
+}
+
 /** Grant outcome attached to an attach result (C01). */
 export type AttachGrant = Omit<GrantOutcome, 'purchase_id'> & {
   purchase_id: string | null;
@@ -276,16 +359,31 @@ export type AttachGrant = Omit<GrantOutcome, 'purchase_id'> & {
 };
 
 /** A code resolved to its coach for an attach, with NO lifecycle checks applied. */
-type AttachTarget =
-  | { kind: 'profile'; coachId: string; coachRole: string | null; code: string; packageId: string | null }
-  | { kind: 'row'; coachId: string; rowId: string; code: string; packageId: string | null };
+type AttachTarget = { code: string; packageId: string | null; grantMode: InviteGrantMode } & (
+  | { kind: 'profile'; coachId: string; coachRole: string | null }
+  | { kind: 'row'; coachId: string; rowId: string }
+);
 
-/** Result of the canonical attach. `grant` is absent when the code carries no package. */
+/** B-PACKAGE-135 — the one package a join carries, as a binding for the grant path. */
+type JoinPlan = {
+  join: JoinOutcome;
+  pkg: CoachPackage;
+  binding: CodeBinding & { package_id: string };
+};
+
+/**
+ * Result of the canonical attach. `grant` is the $0 grant outcome when the
+ * join's package is free. `join` (B-PACKAGE-135) is the package this join
+ * carries and the screen to show: `granted` (attached with it) or
+ * `checkout_required` (NOT attached: `coach_id` is null until the in-app
+ * purchase of that package succeeds).
+ */
 export type AttachResult = {
   role: string;
   coach_id: string | null;
   already_attached: boolean;
   grant?: AttachGrant | null;
+  join?: JoinOutcome;
   // Coach sharing at join: present (true) only when this request linked the
   // client AND named the notice the app showed, so the four fitness grants
   // were recorded in the link transaction.
@@ -342,7 +440,7 @@ export class InviteCodesService {
       where: { coach_id: coachId },
       select: { status: true },
     });
-    const allowed = sub && ['active', 'trialing', 'grandfathered'].includes(sub.status);
+    const allowed = sub && ACCEPTING_SUBSCRIPTION_STATUSES.includes(sub.status);
     if (!allowed) {
       throw new BadRequestException({
         code: INVITE_ATTACH_ERROR.COACH_NOT_ACCEPTING_CLIENTS,
@@ -945,8 +1043,14 @@ export class InviteCodesService {
         // nothing for the lifecycle rules to protect; any GRANT attached to
         // the code is authorised separately and strictly (C01).
         this.logger.debug(`attach no-op: user=${userId} already attached to coach=${target.coachId}`);
-        const grant = await this.grantAfterAttach(userId, me.coach_id, code, 'replay');
-        return { role: me.role, coach_id: me.coach_id, already_attached: true, ...(grant ? { grant } : {}) };
+        const { grant, join } = await this.joinAfterReplay(userId, target);
+        return {
+          role: me.role,
+          coach_id: me.coach_id,
+          already_attached: true,
+          ...(grant ? { grant } : {}),
+          ...(join ? { join } : {}),
+        };
       }
       this.logger.warn(
         `attach refused: user=${userId} already attached to a different coach (re-parent is not a side effect of code entry)`,
@@ -967,9 +1071,28 @@ export class InviteCodesService {
     }
     await this.assertCoachCanAcceptClients(target.coachId);
 
+    // B-PACKAGE-135 — attached ONLY together with the code's one package.
+    // Legacy wiring without InviteGrantService (old unit specs) keeps attach-only.
+    const plan = this.grants ? await this.planJoin(target) : null;
+    if (plan && plan.join.status === 'checkout_required') {
+      // Paid: NOT attached, no seat. The app opens the checkout with this code
+      // as `join_code`; the purchase's entitlement attaches (coachless till then).
+      if (target.kind === 'row') {
+        const row = await this.prisma.inviteCode.findUnique({
+          where: { id: target.rowId },
+          select: { intended_email: true },
+        });
+        if (intendedRecipientMismatch(row?.intended_email ?? null, me.email)) throw intendedEmailMismatch();
+      }
+      return { role: me.role, coach_id: null, already_attached: false, join: plan.join };
+    }
+    const joinActive = plan && this.grants ? await this.grants.joinGrantActive(me, plan.pkg) : true;
+    if (joinActive === null) throw joinPackageUnavailable();
+
     const coachId = target.coachId;
     const inviteCodeRowId = target.kind === 'row' ? target.rowId : null;
     let result: AttachResult;
+    let joinGrant = null as GrantOutcome | null;
     try {
       result = await this.prisma.$transaction(async (tx) => {
         // Everything that can refuse runs on a fresh in-transaction read
@@ -1023,9 +1146,20 @@ export class InviteCodesService {
             invite_code_id: inviteCodeRowId,
             code: target.code,
             source: target.kind === 'row' ? 'invite_code' : 'coach_link',
-            package_id: target.packageId,
+            package_id: plan?.pkg.id ?? target.packageId,
           },
         });
+        // B-PACKAGE-135 — the free package, in this transaction: no grant, no attach.
+        if (plan && this.grants) {
+          joinGrant = await this.grants.grantForJoinTx(tx, {
+            clientUserId: userId,
+            binding: plan.binding,
+            active: joinActive === true,
+          });
+          if (!['created', 'already_active', 'pending_consent'].includes(joinGrant.status)) {
+            throw joinPackageUnavailable();
+          }
+        }
         // Coach sharing at join: the client tapped this join under the
         // sharing sentence, so the four fitness grants commit (or roll back)
         // with the link itself. No notice -> no grant (today's behaviour).
@@ -1038,16 +1172,27 @@ export class InviteCodesService {
     } catch (err) {
       if (err instanceof AttachRaceSameCoach) {
         this.logger.debug(`attach race resolved as no-op: user=${userId} coach=${err.coachId}`);
-        const grant = await this.grantAfterAttach(userId, err.coachId, code, 'replay');
-        return { role: 'student', coach_id: err.coachId, already_attached: true, ...(grant ? { grant } : {}) };
+        const { grant, join } = await this.joinAfterReplay(userId, target);
+        return {
+          role: 'student',
+          coach_id: err.coachId,
+          already_attached: true,
+          ...(grant ? { grant } : {}),
+          ...(join ? { join } : {}),
+        };
       }
       throw err;
     }
 
-    // Clinic C01 — a bound code grants its package AFTER the attach
-    // committed. Only on success (never after a refusal); the grant can
-    // never undo the attach.
-    const grant = await this.grantAfterAttach(userId, coachId, code, 'new');
+    // Clinic C01 — legacy wiring: a bound code grants its package AFTER the
+    // attach committed. With a plan the grant committed with the attach.
+    let grant: AttachGrant | null;
+    if (plan) {
+      this.grants?.flushAfterCommit(joinGrant);
+      grant = joinGrant ? { ...joinGrant, package_id: plan.pkg.id } : null;
+    } else {
+      grant = await this.grantAfterAttach(userId, coachId, code, 'new');
+    }
     this.analytics.capture(userId, Events.INVITE_REDEEMED, {
       via: 'attach_code',
       coach_id: coachId,
@@ -1055,7 +1200,63 @@ export class InviteCodesService {
       already_attached: false,
       grant_status: grant?.status ?? null,
     });
-    return { ...result, ...(grant ? { grant } : {}) };
+    return { ...result, ...(grant ? { grant } : {}), ...(plan ? { join: plan.join } : {}) };
+  }
+
+  /** B-PACKAGE-135 — the join's one package (may create "Getting started"), its mode and screen. */
+  private async planJoin(target: AttachTarget): Promise<JoinPlan> {
+    const picked = { package_id: target.packageId, grant_mode: target.grantMode };
+    const pkg =
+      (await findJoinPackage(this.prisma, target.coachId, target.packageId)) ??
+      (await createGettingStartedPackage(this.prisma, target.coachId));
+    const mode = joinGrantMode(pkg, picked);
+    const coach = await this.prisma.user.findUnique({
+      where: { id: target.coachId },
+      select: { name: true },
+    });
+    return {
+      pkg,
+      binding: {
+        kind: target.kind,
+        coach_id: target.coachId,
+        invite_code_id: target.kind === 'row' ? target.rowId : null,
+        code: target.code,
+        package_id: pkg.id,
+        grant_mode: mode,
+      },
+      join: {
+        status: mode === 'none' ? 'checkout_required' : 'granted',
+        grant_mode: mode,
+        package: joinPackageView(pkg, mode),
+        coach: { id: target.coachId, first_name: coachFirstName(coach?.name) },
+        code: target.code,
+      },
+    };
+  }
+
+  /** B-PACKAGE-135 — re-entry by this coach's client: free -> C01 replay grant; paid -> granted once held. */
+  private async joinAfterReplay(
+    userId: string,
+    target: AttachTarget,
+  ): Promise<{ grant: AttachGrant | null; join: JoinOutcome | null }> {
+    if (!this.grants) {
+      return { grant: await this.grantAfterAttach(userId, target.coachId, target.code, 'replay'), join: null };
+    }
+    const plan = await this.planJoin(target);
+    if (plan.join.status === 'granted') {
+      const outcome = await this.grants.grantForAttachedCode({
+        clientUserId: userId,
+        coachUserId: target.coachId,
+        binding: plan.binding,
+        redemption: 'replay',
+      });
+      return { grant: outcome ? { ...outcome, package_id: plan.pkg.id } : null, join: plan.join };
+    }
+    const held = await this.prisma.clientPurchase.findFirst({
+      where: { client_user_id: userId, package_id: plan.pkg.id, entitlement_active: true },
+      select: { id: true },
+    });
+    return { grant: null, join: held ? { ...plan.join, status: 'granted' } : plan.join };
   }
 
   /** C01 — post-commit, never-throwing grant for a bound code. */
@@ -1103,11 +1304,12 @@ export class InviteCodesService {
         coachRole: profile.user.role ?? null,
         code: profile.invite_code ?? code,
         packageId: profile.invite_code_package_id ?? null,
+        grantMode: profile.invite_code_grant_mode ?? 'none',
       };
     }
     const row = await this.prisma.inviteCode.findUnique({
       where: { code },
-      select: { id: true, coach_id: true, code: true, package_id: true },
+      select: { id: true, coach_id: true, code: true, package_id: true, grant_mode: true },
     });
     if (row) {
       return {
@@ -1116,6 +1318,7 @@ export class InviteCodesService {
         rowId: row.id,
         code: row.code ?? code,
         packageId: row.package_id ?? null,
+        grantMode: row.grant_mode ?? 'none',
       };
     }
     return null;
@@ -1146,16 +1349,7 @@ export class InviteCodesService {
     const lifecycle = inviteCodeRowLifecycle(current);
     if (lifecycle) throw inviteCodeLifecycleRefusal(lifecycle);
     // Validate intended recipient — prevents forwarded-code abuse.
-    if (current.intended_email) {
-      const redeemerEmail = (redeemerEmailRaw ?? '').toLowerCase().trim();
-      const intendedEmail = current.intended_email.toLowerCase().trim();
-      if (redeemerEmail !== intendedEmail) {
-        throw new BadRequestException({
-          code: INVITE_ATTACH_ERROR.INVITE_INTENDED_EMAIL_MISMATCH,
-          message: 'This invite was sent to a different email address',
-        });
-      }
-    }
+    if (intendedRecipientMismatch(current.intended_email, redeemerEmailRaw)) throw intendedEmailMismatch();
     const bumped = await tx.inviteCode.updateMany({
       where: {
         id: inviteCodeRowId,

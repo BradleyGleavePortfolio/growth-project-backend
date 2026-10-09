@@ -22,6 +22,7 @@ import { SkipClientEntitlement } from '../common/decorators/skip-client-entitlem
 import { StripeConnectApiError } from '../connect/stripe-connect-api.service';
 import { THROTTLER_NAMES, THROTTLER_ROUTE_LIMITS } from '../throttler/throttler.config';
 import { CheckoutService } from './checkout.service';
+import { INVITE_CODE_PATTERN } from '../invite-codes/invite-codes.service';
 
 // Allowed URL schemes for redirect URLs. We only accept our own deep-link
 // scheme and https so Stripe cannot be tricked into redirecting to arbitrary
@@ -69,6 +70,13 @@ export class CreatePaymentIntentDto {
 
   @IsUUID()
   idempotency_key!: string;
+
+  // B-PACKAGE-135 — a coachless client's join code: buys only its paid package.
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  @Matches(INVITE_CODE_PATTERN)
+  join_code?: string;
 }
 
 // Client-facing: open a Stripe Checkout session for a package and read

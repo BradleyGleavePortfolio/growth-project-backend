@@ -29,6 +29,7 @@ import {
   type InviteAttachErrorCode,
   type AttachGrant,
 } from '../invite-codes/invite-codes.service';
+import type { JoinOutcome } from '../invite-codes/join-package';
 import type { IntendedRole } from './auth.dto';
 import { normalizeEmail } from './email-normalize';
 import { LoginThrottleResetService } from '../throttler/login-throttle-reset.service';
@@ -244,6 +245,7 @@ export class AuthService {
     invite_attached: boolean;
     invite_attach_error?: InviteAttachErrorCode;
     invite_grant?: AttachGrant | null;
+    invite_join?: JoinOutcome;
   }> {
     try {
       // Coach sharing at join: the notice version the app showed above this
@@ -255,7 +257,13 @@ export class AuthService {
       // C01: the package-grant outcome (created / already_active /
       // pending_consent + recovery / ...) travels with every signup path so
       // mobile never has to guess whether the client is paywalled.
-      return { invite_attached: true, ...(res.grant ? { invite_grant: res.grant } : {}) };
+      // B-PACKAGE-135: `invite_join` is the package this join carries. A paid
+      // one is not attached yet (coach_id null until the in-app purchase).
+      return {
+        invite_attached: res.coach_id !== null,
+        ...(res.grant ? { invite_grant: res.grant } : {}),
+        ...(res.join ? { invite_join: res.join } : {}),
+      };
     } catch (err) {
       const code = inviteAttachErrorCode(err);
       this.logger.warn(
@@ -1109,6 +1117,7 @@ export class AuthService {
     let invite_attached = false;
     let invite_attach_error: InviteAttachErrorCode | undefined;
     let invite_grant: AttachGrant | null | undefined;
+    let invite_join: JoinOutcome | undefined;
     if (inviteCode && isCoachLikeRole(user.role)) {
       // Fix round (Opus B1 / Grok A2): a coach/owner signing in with a stale
       // QR / deep-link code is never demoted to a client. The service-level
@@ -1123,6 +1132,7 @@ export class AuthService {
       invite_attached = attach.invite_attached;
       invite_attach_error = attach.invite_attach_error;
       invite_grant = attach.invite_grant;
+      invite_join = attach.invite_join;
       if (invite_attached) {
         const refreshed = await this.prisma.user.findUnique({ where: { id: user.id } });
         if (refreshed) user = refreshed;
@@ -1135,6 +1145,7 @@ export class AuthService {
       invite_attached,
       ...(invite_attach_error ? { invite_attach_error } : {}),
       ...(invite_grant ? { invite_grant } : {}),
+      ...(invite_join ? { invite_join } : {}),
       user: {
         id: user.id,
         email: user.email,
@@ -1324,6 +1335,7 @@ export class AuthService {
     let invite_attached = false;
     let invite_attach_error: InviteAttachErrorCode | undefined;
     let invite_grant: AttachGrant | null | undefined;
+    let invite_join: JoinOutcome | undefined;
     if (inviteCode && isCoachLikeRole(user.role)) {
       // Fix round (Opus B1 / Grok A2) — see googleAuth.
       this.logger.warn(
@@ -1335,6 +1347,7 @@ export class AuthService {
       invite_attached = attach.invite_attached;
       invite_attach_error = attach.invite_attach_error;
       invite_grant = attach.invite_grant;
+      invite_join = attach.invite_join;
       if (invite_attached) {
         const refreshed = await this.prisma.user.findUnique({
           where: { id: user.id },
@@ -1364,6 +1377,7 @@ export class AuthService {
       invite_attached,
       ...(invite_attach_error ? { invite_attach_error } : {}),
       ...(invite_grant ? { invite_grant } : {}),
+      ...(invite_join ? { invite_join } : {}),
       user: {
         id: user.id,
         email: user.email,
@@ -1425,7 +1439,7 @@ export class AuthService {
     }
 
     const attached = await this.inviteCodes.attachUserToCoachByCode(userId, inviteCode);
-    if (!attached.already_attached) {
+    if (!attached.already_attached && attached.coach_id) {
       this.analytics.capture(userId, Events.INVITE_REDEEMED, {
         via: 'select_role',
         coach_id: attached.coach_id,
@@ -1435,6 +1449,7 @@ export class AuthService {
       role: attached.role,
       coach_id: attached.coach_id,
       ...(attached.grant ? { invite_grant: attached.grant } : {}),
+      ...(attached.join ? { invite_join: attached.join } : {}),
     };
   }
 
@@ -1590,6 +1605,7 @@ export class AuthService {
     let invite_attached = false;
     let invite_attach_error: InviteAttachErrorCode | undefined;
     let invite_grant: AttachGrant | null | undefined;
+    let invite_join: JoinOutcome | undefined;
     if (data.invite_code) {
       const attach = await this.tryAttachInviteCode(
         'signupWithCode',
@@ -1600,6 +1616,7 @@ export class AuthService {
       invite_attached = attach.invite_attached;
       invite_attach_error = attach.invite_attach_error;
       invite_grant = attach.invite_grant;
+      invite_join = attach.invite_join;
     }
 
     this.analytics.capture(registered.user_id, Events.USER_SIGNUP_WITH_CODE, {
@@ -1614,6 +1631,7 @@ export class AuthService {
       invite_attached,
       ...(invite_attach_error ? { invite_attach_error } : {}),
       ...(invite_grant ? { invite_grant } : {}),
+      ...(invite_join ? { invite_join } : {}),
     };
   }
 

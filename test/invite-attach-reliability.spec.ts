@@ -487,6 +487,40 @@ describe('C03 — auth flows report invite_attached / invite_attach_error', () =
     expect(res.user_id).toBe('u-1');
   });
 
+  it('B-PACKAGE-135 signupWithCode: invite_join travels; a paid join is not attached until payment', async () => {
+    const join = (status: 'granted' | 'checkout_required') => ({
+      status,
+      grant_mode: status === 'granted' ? 'free' : 'none',
+      package: { id: 'pkg-1', name: 'Coaching', is_free: status === 'granted' },
+      coach: { id: 'c', first_name: 'Kay' },
+      code: 'GP-COACHA',
+    });
+    const signup = (coach_id: string | null, status: 'granted' | 'checkout_required') => {
+      const invite: InviteCodesDouble = {
+        previewCode: jest.fn(async () => ({ valid: true })),
+        attachUserToCoachByCode: jest.fn(async () => ({
+          role: 'student',
+          coach_id,
+          already_attached: false,
+          join: join(status),
+        })),
+      };
+      return buildAuth(invite, student).svc.signupWithCode({
+        email: 's@example.com',
+        password: 'Password123!',
+        name: 'S',
+        invite_code: 'GP-COACHA',
+      });
+    };
+    const paid = await signup(null, 'checkout_required');
+    expect(paid.invite_attached).toBe(false);
+    expect(paid).not.toHaveProperty('invite_attach_error');
+    expect(paid.invite_join).toEqual(join('checkout_required'));
+    const free = await signup('c', 'granted');
+    expect(free.invite_attached).toBe(true);
+    expect(free.invite_join).toEqual(expect.objectContaining({ status: 'granted', grant_mode: 'free' }));
+  });
+
   it('signupWithCode: attach failure is reported, not swallowed; account still returned', async () => {
     const invite: InviteCodesDouble = {
       previewCode: jest.fn(async () => ({ valid: true })),

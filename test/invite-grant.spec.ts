@@ -10,7 +10,8 @@ import {
 import { Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { ClientEntitlementGuard } from '../src/common/guards/client-entitlement.guard';
-import { InviteCodesService } from '../src/invite-codes/invite-codes.service';
+import { InviteCodesService, paidJoinAllowed } from '../src/invite-codes/invite-codes.service';
+import { GETTING_STARTED_PACKAGE_NAME } from '../src/invite-codes/join-package';
 import { GRANT_SOURCE, InviteGrantService } from '../src/invite-grant/invite-grant.service';
 import { ConsentService } from '../src/consent/consent.service';
 import { CheckoutContractGate } from '../src/contracts/checkout-contract-gate.service';
@@ -34,7 +35,7 @@ import type { AuthedRequest } from '../src/auth/auth-request';
 
 // ---- in-memory Prisma double ------------------------------------------------
 
-type UserRow = { id: string; email: string; role: string; coach_id: string | null };
+type UserRow = { id: string; email: string; role: string; coach_id: string | null; name?: string };
 type PkgRow = {
   id: string;
   coach_id: string;
@@ -140,6 +141,7 @@ function makePrisma(seed: {
     seed.users.filter((u) => u.role === 'coach').map((u) => [u.id, { status: 'active' }]),
   );
   let seq = 0;
+  let txTail: Promise<void> = Promise.resolve();
 
   const base = {
     _purchases: purchases,
@@ -213,6 +215,18 @@ function makePrisma(seed: {
       findUnique: jest.fn(
         async ({ where }: { where: { id: string } }) => packages.get(where.id) ?? null,
       ),
+      // B-PACKAGE-135 findJoinPackage: the coach's first usable package (seed order = oldest first).
+      findFirst: jest.fn(
+        async ({ where }: { where: { coach_id: string } }) =>
+          [...packages.values()].find(
+            (p) => p.coach_id === where.coach_id && p.is_active && !p.archived_at && !!p.published_at,
+          ) ?? null,
+      ),
+      create: jest.fn(async ({ data }: { data: Omit<PkgRow, 'id' | 'duration_periods'> }) => {
+        const row: PkgRow = { id: `pkg-new-${packages.size}`, duration_periods: null, ...data };
+        packages.set(row.id, row);
+        return row;
+      }),
     },
     clientPurchase: {
       findUnique: jest.fn(
@@ -270,7 +284,24 @@ function makePrisma(seed: {
     },
   };
   const double = Object.assign(base, {
-    $transaction: jest.fn(async <T>(cb: (tx: typeof base) => Promise<T>) => cb(base)),
+    // One transaction at a time; users and purchases roll back on a throw, like Postgres.
+    $transaction: jest.fn(async <T>(cb: (tx: typeof base) => Promise<T>) => {
+      const prev = txTail;
+      let release = (): void => {};
+      txTail = new Promise<void>((resolve) => (release = resolve));
+      await prev;
+      const userSnap = [...users.values()].map((u) => ({ ...u }));
+      const purchaseSnap = purchases.map((p) => ({ ...p }));
+      try {
+        return await cb(base);
+      } catch (err) {
+        for (const u of userSnap) users.set(u.id, u);
+        purchases.splice(0, purchases.length, ...purchaseSnap);
+        throw err;
+      } finally {
+        release();
+      }
+    }),
   });
   return double;
 }
@@ -341,7 +372,7 @@ function fixtures() {
   const now = new Date();
   return makePrisma({
     users: [
-      { id: COACH, email: 'b@example.com', role: 'coach', coach_id: null },
+      { id: COACH, email: 'b@example.com', role: 'coach', coach_id: null, name: 'Bradley Gleave' },
       { id: OTHER_COACH, email: 'o@example.com', role: 'coach', coach_id: null },
       { id: 'owner-1', email: 'own@example.com', role: 'owner', coach_id: null },
       { id: 'client-1', email: 'c1@example.com', role: 'student', coach_id: null },
@@ -616,8 +647,8 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
       coach_id: COACH,
       grant: { status: 'created', package_id: PKG_CLINIC },
     });
-    // attach tx + grant tx (the grant is post-commit and best-effort)
-    expect(prisma.$transaction).toHaveBeenCalledTimes(2);
+    // B-PACKAGE-135: the grant commits WITH the attach (one transaction).
+    expect(prisma.$transaction).toHaveBeenCalledTimes(1);
     // A1 — same fulfilment path as a paid purchase, in the grant's transaction,
     // then the staged coach-new-client alert is flushed after commit.
     expect(fanoutMock.onPurchaseEntitled).toHaveBeenCalledWith(
@@ -654,7 +685,7 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
     expect(await status(guard.canActivate(ctxFor(client('client-1'))))).toBe(200);
   });
 
-  it('free binding on a per-row code: source invite_grant:free; unbound code grants nothing (402 stays)', async () => {
+  it('free binding on a per-row code: source invite_grant:free; unbound code carries the first (paid) package: not attached, 402 stays', async () => {
     const prisma = fixtures();
     const { grants, inviteCodes, guard } = await build(prisma);
     await grants.setBinding(coachActor, {
@@ -669,8 +700,12 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
     expect(prisma._codes[0].used_count).toBe(1);
 
     const noGrant = await inviteCodes.attachUserToCoachByCode('client-2', CLINIC_CODE); // unbound permanent code
-    expect(noGrant).toMatchObject({ role: 'student', coach_id: COACH });
-    expect(noGrant.grant).toBeUndefined(); // no binding → no grant field
+    expect(noGrant).toMatchObject({
+      coach_id: null,
+      join: { status: 'checkout_required', package: { id: PKG_CLINIC, is_free: false } },
+    });
+    expect(noGrant.grant).toBeUndefined();
+    expect(prisma._users.get('client-2')?.coach_id).toBeNull();
     expect(prisma._purchases).toHaveLength(1);
     expect(await status(guard.canActivate(ctxFor(client('client-2'))))).toBe(
       HttpStatus.PAYMENT_REQUIRED,
@@ -707,7 +742,7 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
     expect(prisma._purchases).toHaveLength(0);
   });
 
-  it('a binding to an archived/inactive package is skipped safely at attach time (attach still succeeds)', async () => {
+  it('a binding to an archived package falls back to the coach\'s first usable package (B-PACKAGE-135)', async () => {
     const prisma = fixtures();
     const { grants, inviteCodes } = await build(prisma);
     await grants.setBinding(coachActor, {
@@ -719,34 +754,29 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
     const pkg = await prisma.coachPackage.findUnique({ where: { id: PKG_CLINIC } });
     pkg!.archived_at = new Date();
     const res = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
-    // A2 — the attach itself succeeds; the grant is reported as skipped and audited.
+    // Never attached without a package: the next usable one is the $0 package, granted free.
     expect(res).toMatchObject({
-      role: 'student',
       coach_id: COACH,
-      grant: { status: 'package_unavailable', purchase_id: null, package_id: PKG_CLINIC },
+      grant: { status: 'created', package_id: PKG_FREE },
+      join: { status: 'granted', grant_mode: 'free', package: { id: PKG_FREE, is_free: true } },
     });
-    expect(prisma._users.get('client-1')?.coach_id).toBe(COACH);
-    expect(prisma._purchases).toHaveLength(0);
+    expect(prisma._purchases).toHaveLength(1);
   });
 
-  it('a grant failure (e.g. fan-out throws) never fails the attach: status failed, audited, attach committed', async () => {
+  it('a grant failure (e.g. fan-out throws) rolls the attach back: never a coach without a package (B-PACKAGE-135)', async () => {
     const prisma = fixtures();
-    const { grants, inviteCodes, auditMock, fanoutMock } = await build(prisma);
+    const { grants, inviteCodes, fanoutMock } = await build(prisma);
     await grants.setBinding(coachActor, {
       code: CLINIC_CODE,
       package_id: PKG_CLINIC,
       grant_mode: 'prepaid',
     });
     fanoutMock.onPurchaseEntitled.mockRejectedValueOnce(new Error('resolver exploded'));
-    const res = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
-    expect(res).toMatchObject({ coach_id: COACH, grant: { status: 'failed', purchase_id: null } });
-    expect(prisma._users.get('client-1')?.coach_id).toBe(COACH);
-    expect(auditMock.write).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'entitlement.grant_skipped',
-        metadata: expect.objectContaining({ reason: 'failed', detail: 'resolver exploded' }),
-      }),
+    await expect(inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE)).rejects.toThrow(
+      'resolver exploded',
     );
+    expect(prisma._users.get('client-1')?.coach_id).toBeNull();
+    expect(prisma._purchases).toHaveLength(0);
   });
 
   it('double submit: two concurrent attaches through the bound code converge on ONE grant row', async () => {
@@ -1152,5 +1182,165 @@ describe('C01 — revoke grants (audited, idempotent, never touches Stripe rows)
     expect(
       prisma._purchases.find((p) => p.source === GRANT_SOURCE.FREE_PACKAGE_CLAIM),
     ).toMatchObject({ entitlement_active: false });
+  });
+});
+
+// ---- B-PACKAGE-135: a coached client always has a package --------------------
+
+describe('B-PACKAGE-135 — a client joins a coach only together with one package', () => {
+  async function pkgRow(prisma: PrismaDouble, id: string): Promise<PkgRow> {
+    const row = await prisma.coachPackage.findUnique({ where: { id } });
+    if (!row) throw new Error(`no package ${id}`);
+    return row;
+  }
+  function bindRow(prisma: PrismaDouble, packageId: string): void {
+    prisma._codes[0].package_id = packageId;
+    prisma._codes[0].grant_mode = 'none';
+  }
+  const paidRow = (clientId: string, packageId: string): PurchaseRow => ({
+    id: `cp-paid-${clientId}`,
+    client_user_id: clientId,
+    coach_user_id: COACH,
+    package_id: packageId,
+    amount_cents: 4900,
+    currency: 'usd',
+    billing_type: 'recurring',
+    stripe_checkout_session_id: 'pi_test_join',
+    status: 'active',
+    entitlement_active: true,
+    access_expires_at: null,
+    canceled_at: null,
+    idempotency_key: `pi:${clientId}`,
+    source: null,
+    grant_metadata: null,
+  });
+
+  it('free: a code with no package of its own carries the first usable ($0) package, granted in the attach', async () => {
+    const prisma = fixtures();
+    const { inviteCodes } = await build(prisma);
+    (await pkgRow(prisma, PKG_CLINIC)).archived_at = new Date();
+
+    const res = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    expect(res).toMatchObject({
+      coach_id: COACH,
+      already_attached: false,
+      grant: { status: 'created', package_id: PKG_FREE },
+      join: {
+        status: 'granted',
+        grant_mode: 'free',
+        package: { id: PKG_FREE, amount_cents: 0, is_free: true },
+        coach: { id: COACH, first_name: 'Bradley' },
+        code: CLINIC_CODE,
+      },
+    });
+    expect(prisma._users.get('client-1')?.coach_id).toBe(COACH);
+    expect(prisma._purchases[0]).toMatchObject({ package_id: PKG_FREE, source: GRANT_SOURCE.INVITE_FREE });
+    expect(prisma.inviteRedemption.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ package_id: PKG_FREE }),
+    });
+  });
+
+  it('paid: checkout_required, NOT attached (no seat, no ledger); checkout allowed for that package only; the purchase attaches', async () => {
+    const prisma = fixtures();
+    const { inviteCodes } = await build(prisma);
+    bindRow(prisma, PKG_PAID);
+
+    const res = await inviteCodes.attachUserToCoachByCode('client-1', 'GP-ROW001');
+    expect(res).toMatchObject({
+      coach_id: null,
+      already_attached: false,
+      join: {
+        status: 'checkout_required',
+        grant_mode: 'none',
+        package: { id: PKG_PAID, amount_cents: 4900, is_free: false },
+        coach: { first_name: 'Bradley' },
+        code: 'GP-ROW001',
+      },
+    });
+    expect(res.grant).toBeUndefined();
+    expect(prisma._users.get('client-1')?.coach_id).toBeNull();
+    expect(prisma._codes[0].used_count).toBe(0);
+    expect(prisma.inviteRedemption.create).not.toHaveBeenCalled();
+    expect(prisma._purchases).toHaveLength(0);
+
+    const db = asPrisma(prisma);
+    const me = { email: 'c1@example.com' };
+    expect(await paidJoinAllowed(db, me, { id: PKG_PAID, coach_id: COACH }, 'gp-row001')).toBe(true);
+    expect(await paidJoinAllowed(db, me, { id: PKG_CLINIC, coach_id: COACH }, 'GP-ROW001')).toBe(false);
+    expect(await paidJoinAllowed(db, me, { id: PKG_PAID, coach_id: COACH }, undefined)).toBe(false);
+    expect(await paidJoinAllowed(db, me, { id: PKG_FREE, coach_id: COACH }, CLINIC_CODE)).toBe(false);
+    expect(await paidJoinAllowed(db, me, { id: PKG_OTHER, coach_id: OTHER_COACH }, 'GP-ROW001')).toBe(
+      false,
+    );
+
+    // The purchase's entitlement (in-app PaymentSheet) attaches; other entrypoints and coached clients do not.
+    const fanout = new PurchaseFanoutService();
+    const tx = { purchaseFanout: { upsert: jest.fn(async () => ({})) }, user: prisma.user };
+    const entitle = (clientId: string, entrypoint: 'in_app_ps' | 'invite_grant') =>
+      // @ts-expect-error partial transaction client — the paid-join attach reads only these two delegates
+      fanout.onPurchaseEntitled({ id: `cp-${clientId}` }, { entrypoint, coachId: COACH, clientId }, tx);
+    await entitle('client-2', 'invite_grant');
+    await entitle('client-other', 'in_app_ps');
+    await entitle('client-1', 'in_app_ps');
+    expect(prisma._users.get('client-2')?.coach_id).toBeNull();
+    expect(prisma._users.get('client-other')?.coach_id).toBe(OTHER_COACH);
+    expect(prisma._users.get('client-1')?.coach_id).toBe(COACH);
+
+    prisma._purchases.push(paidRow('client-1', PKG_PAID));
+    const again = await inviteCodes.attachUserToCoachByCode('client-1', 'GP-ROW001');
+    expect(again).toMatchObject({ coach_id: COACH, already_attached: true, join: { status: 'granted' } });
+  });
+
+  it('paid: a single-recipient code still refuses anyone else', async () => {
+    const prisma = fixtures();
+    const { inviteCodes } = await build(prisma);
+    bindRow(prisma, PKG_PAID);
+    prisma._codes[0].intended_email = 'someone@example.com';
+    await expect(inviteCodes.attachUserToCoachByCode('client-1', 'GP-ROW001')).rejects.toMatchObject({
+      response: { code: 'invite_intended_email_mismatch' },
+    });
+    expect(
+      await paidJoinAllowed(asPrisma(prisma), { email: 'c1@example.com' }, { id: PKG_PAID, coach_id: COACH }, 'GP-ROW001'),
+    ).toBe(false);
+  });
+
+  it('zero packages: one free "Getting started" package is created for the coach, then reused', async () => {
+    const prisma = fixtures();
+    const { inviteCodes } = await build(prisma);
+    for (const id of [PKG_CLINIC, PKG_FREE, PKG_PAID]) (await pkgRow(prisma, id)).is_active = false;
+
+    const a = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    const b = await inviteCodes.attachUserToCoachByCode('client-2', CLINIC_CODE);
+    expect(a).toMatchObject({
+      coach_id: COACH,
+      grant: { status: 'created' },
+      join: { status: 'granted', package: { name: GETTING_STARTED_PACKAGE_NAME, amount_cents: 0, is_free: true } },
+    });
+    expect(b.join?.package.id).toBe(a.join?.package.id);
+    expect(prisma.coachPackage.create).toHaveBeenCalledTimes(1); // reused, not re-created
+    expect(prisma._purchases).toHaveLength(2);
+  });
+
+  it('idempotent re-entry: a free join again is already_attached with ONE grant; a paid join again writes nothing', async () => {
+    const prisma = fixtures();
+    const { inviteCodes } = await build(prisma);
+    (await pkgRow(prisma, PKG_CLINIC)).archived_at = new Date();
+    await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    const free = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    expect(free).toMatchObject({
+      already_attached: true,
+      grant: { status: 'already_active', package_id: PKG_FREE },
+      join: { status: 'granted', package: { id: PKG_FREE } },
+    });
+    expect(prisma._purchases).toHaveLength(1);
+
+    bindRow(prisma, PKG_PAID);
+    const first = await inviteCodes.attachUserToCoachByCode('client-2', 'GP-ROW001');
+    const second = await inviteCodes.attachUserToCoachByCode('client-2', 'GP-ROW001');
+    expect(second).toEqual(first);
+    expect(second).toMatchObject({ coach_id: null, join: { status: 'checkout_required' } });
+    expect(prisma._users.get('client-2')?.coach_id).toBeNull();
+    expect(prisma._codes[0].used_count).toBe(0);
+    expect(prisma._purchases).toHaveLength(1);
   });
 });

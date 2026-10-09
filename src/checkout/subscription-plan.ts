@@ -134,6 +134,8 @@ export interface SubscriptionIntentInput {
    * never widens who can buy.
    */
   share_token?: string;
+  /** B-PACKAGE-135 — the coach code a client with no coach joins through (paidJoinAllowed). */
+  join_code?: string;
 }
 
 export interface PlanPrice {

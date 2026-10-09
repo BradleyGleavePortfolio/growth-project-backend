@@ -20,6 +20,7 @@ import {
   TrialCheckoutCapability,
 } from '../packages/trials/trial-checkout-capability';
 import { PrismaService } from '../prisma.service';
+import { paidJoinAllowed } from '../invite-codes/invite-codes.service';
 import { CheckoutService, isRecurringPackage } from './checkout.service';
 import { errorLabel } from './error-label';
 import {
@@ -180,7 +181,11 @@ export class SubscriptionCheckoutService {
     if (!pkg || !pkg.is_active || pkg.archived_at || !pkg.published_at) {
       throw packageUnavailable();
     }
-    if (!client.coach_id || pkg.coach_id !== client.coach_id) {
+    // B-PACKAGE-135 — a coachless client may buy only their join code's paid package.
+    const ownCoachPackage = client.coach_id
+      ? pkg.coach_id === client.coach_id
+      : await paidJoinAllowed(this.prisma, client, pkg, input.join_code);
+    if (!ownCoachPackage) {
       // R1-10 — the in-app paths (payment-intent and this route) sell only
       // the client's own coach's packages; a client who is not connected
       // with the package's coach is refused, exactly like payment-intent.

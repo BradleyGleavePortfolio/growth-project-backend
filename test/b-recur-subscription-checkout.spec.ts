@@ -577,3 +577,44 @@ describe('POST /v1/checkout/payment-intent refuses renewing plans', () => {
     expect(prisma.clientPurchase.create).not.toHaveBeenCalled();
   });
 });
+
+describe('B-PACKAGE-135 paid join — subscription-intent', () => {
+  it('a client with no coach may start ONLY the paid plan their coach code carries', async () => {
+    const { svc, stripe, prisma } = setup();
+    prisma._users[0].coach_id = null;
+    const db: any = prisma;
+    db.coachProfile = {
+      findUnique: jest.fn(async ({ where }: any) =>
+        where.invite_code === 'GP-COACHK'
+          ? {
+              invite_code_package_id: PKG,
+              invite_code_grant_mode: 'none',
+              user: { id: COACH, role: 'coach' },
+            }
+          : null,
+      ),
+    };
+    db.inviteCode = { findUnique: jest.fn(async () => null) };
+    db.coachSubscription = { findUnique: jest.fn(async () => ({ status: 'active' })) };
+    const start = (idempotency_key: string, join_code?: string) =>
+      svc.createSubscriptionIntent(CLIENT, {
+        package_id: PKG,
+        idempotency_key,
+        ...(join_code ? { join_code } : {}),
+      });
+
+    for (const code of [undefined, 'GP-OTHER']) {
+      // The same non-leaking 404 as before: no package id confirmed.
+      expect((await codeOf(start(KEY1, code))).status).toBe(404);
+    }
+    expect(stripe.createSubscription).not.toHaveBeenCalled();
+
+    const out = await start(KEY2, 'gp-coachk');
+    expect(stripe.createSubscription).toHaveBeenCalledTimes(1);
+    expect(out.subscription_id).toBe('sub_1');
+    // Entitlement (and the attach) waits for the webhook.
+    expect(prisma._purchases[0]).toEqual(
+      expect.objectContaining({ client_user_id: CLIENT, package_id: PKG, entitlement_active: false }),
+    );
+  });
+});

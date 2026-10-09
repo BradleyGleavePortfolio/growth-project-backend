@@ -10,6 +10,7 @@ import {
   inviteAttachErrorCode,
   type AttachGrant,
 } from '../invite-codes/invite-codes.service';
+import type { JoinOutcome } from '../invite-codes/join-package';
 import {
   CoachCodeLookupService,
   isUniqueViolation,
@@ -28,7 +29,8 @@ export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 
 /** Response of a successful redemption (also what a replay returns). */
 export interface RedeemResponse {
-  status: 'attached';
+  /** checkout_required (B-PACKAGE-135): the code's package is paid; NOT attached until that purchase succeeds. */
+  status: 'attached' | 'checkout_required';
   /** false = this request attached the client (show the welcome moment); true = already this coach's client. */
   already_attached: boolean;
   coach: CoachCard;
@@ -39,6 +41,8 @@ export interface RedeemResponse {
     packages_available: number;
   };
   grant: AttachGrant | null;
+  /** B-PACKAGE-135 — the one package this join carries and the screen to show. */
+  join: JoinOutcome | null;
   replayed: boolean;
 }
 
@@ -140,7 +144,12 @@ export class CoachCodeRedemptionService {
         where: { id: claim.id },
         data: {
           status: 'completed',
-          outcome: response.already_attached ? 'already_attached_same_coach' : 'attached',
+          outcome:
+            response.status === 'checkout_required'
+              ? 'checkout_required'
+              : response.already_attached
+                ? 'already_attached_same_coach'
+                : 'attached',
           coach_id: response.coach.id,
           http_status: 200,
           response: toJson(response),
@@ -250,7 +259,7 @@ export class CoachCodeRedemptionService {
     const coach = await this.lookup.coachCard(coachId);
     if (!coach) throw new CoachlessError(COACHLESS_ERROR.CODE_INVALID);
     return {
-      status: 'attached',
+      status: attach.coach_id ? 'attached' : 'checkout_required',
       already_attached: attach.already_attached,
       coach,
       next: {
@@ -264,6 +273,7 @@ export class CoachCodeRedemptionService {
         }),
       },
       grant: attach.grant ?? null,
+      join: attach.join ?? null,
       replayed: false,
     };
   }

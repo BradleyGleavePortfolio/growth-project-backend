@@ -829,6 +829,43 @@ describe('CheckoutService.createPaymentIntentForClient — IDOR + idempotency', 
     expect(prisma._purchases).toHaveLength(0);
   });
 
+  it('B-PACKAGE-135 paid join: a client with no coach may buy ONLY the paid package their coach code carries', async () => {
+    const { svc, prisma, stripe } = makeService();
+    seedSoloCoachFixture(prisma);
+    prisma._users.push({ id: 'client-join', email: 'j@x.com', name: 'Join', coach_id: null });
+    prisma.coachProfile = {
+      findUnique: jest.fn(async ({ where }: any) =>
+        where.invite_code === 'GP-COACHX'
+          ? {
+              invite_code: 'GP-COACHX',
+              invite_code_package_id: 'pkg-x',
+              invite_code_grant_mode: 'none',
+              user: { id: 'coach-x', role: 'coach' },
+            }
+          : null,
+      ),
+    };
+    prisma.inviteCode = { findUnique: jest.fn(async () => null) };
+    prisma.coachSubscription = { findUnique: jest.fn(async () => ({ status: 'active' })) };
+    const buy = (idempotency_key: string, join_code?: string) =>
+      svc.createPaymentIntentForClient('client-join', {
+        package_id: 'pkg-x',
+        idempotency_key,
+        ...(join_code ? { join_code } : {}),
+      });
+
+    await expect(buy('44444444-4444-4444-8444-444444444444')).rejects.toBeInstanceOf(NotFoundException);
+    await expect(buy('55555555-5555-4555-8555-555555555555', 'GP-OTHER')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(stripe.createPaymentIntent).not.toHaveBeenCalled();
+
+    const out = await buy('66666666-6666-4666-8666-666666666666', 'gp-coachx');
+    expect(out.client_secret).toMatch(/^pi_test_secret_/);
+    expect(prisma._purchases).toHaveLength(1);
+    expect(prisma._purchases[0]).toMatchObject({ client_user_id: 'client-join', package_id: 'pkg-x' });
+  });
+
   it('duplicate idempotency key: Stripe called once, both calls return same client_secret', async () => {
     const { svc, prisma, stripe } = makeService();
     seedSoloCoachFixture(prisma);
