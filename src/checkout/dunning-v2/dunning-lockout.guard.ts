@@ -6,8 +6,10 @@ import {
   Logger,
   Optional,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { PrismaService } from '../../prisma.service';
 import type { AuthedRequest } from '../../auth/auth-request';
+import { OPEN_TO_COACHLESS_CLIENT_KEY } from '../../common/decorators/open-to-coachless-client.decorator';
 import { isDunningV2Enabled } from './dunning-v2.feature';
 import { LOCKED_DUNNING_CODE } from './dunning-v2.cadence';
 import { effectiveLock } from './dunning-effective-access';
@@ -64,6 +66,14 @@ import { VoicePolicyService } from '../../roman/voice/voice-policy.service';
  *     exact METHOD + PATH pairs like the AI consent operations: voice upload
  *     (paid), coach-review, the coach-side routes and every other method or
  *     descendant stay locked.
+ *   - Basic functions (owner 10-08 23:5x: "No reason to ever lock a client
+ *     from basic functions"): every route marked @OpenToCoachlessClient() (the
+ *     client's own food, workout and fasting logging, targets, plans,
+ *     check-ins and insights), except AI guidance under /ai/*, which stays
+ *     locked like every paid value surface (operator reading 10-09: billing,
+ *     the dispute pause, coach services and Roman stay as they are). Matched
+ *     by the route's metadata, not its path, so an unmarked route is never
+ *     opened by accident.
  *
  * Posture: this guard is a HARD no-op while FEATURE_DUNNING_V2 is OFF — it
  * returns `true` immediately and reads no state, so v1 deployments are
@@ -158,9 +168,27 @@ const COACH_THREAD_OPERATIONS: ReadonlyArray<readonly [method: string, path: str
   ['POST', 'messages/report'], // MessagesSafetyController — report a message
 ] as const;
 
+/**
+ * Marked basic-function routes that still lock: AI guidance (/ai/*) is Roman's
+ * guide and draws on the coach's AI pool, so it stays locked exactly as before.
+ */
+const BASIC_FUNCTION_LOCKED_PREFIXES: readonly string[] = ['ai'] as const;
+
+/**
+ * True when a route marked @OpenToCoachlessClient() (`markedOpen`) stays
+ * reachable while the client is locked out: every marked route except /ai/*.
+ */
+export function isBasicFunctionWhileLocked(markedOpen: boolean, path: string): boolean {
+  if (!markedOpen) return false;
+  return !BASIC_FUNCTION_LOCKED_PREFIXES.some((prefix) => matchesRoutePrefix(path, prefix));
+}
+
 @Injectable()
 export class DunningLockoutGuard implements CanActivate {
   private readonly logger = new Logger(DunningLockoutGuard.name);
+  // Reads route metadata only (no dependencies), so the existing constructor
+  // and every caller of it stay unchanged.
+  private readonly reflector = new Reflector();
 
   // Phase 2: VoicePolicyService supplies the Day-10 lockout SCREEN copy + the
   // RomanAvatar crop the locked client sees. @Optional so the guard keeps
@@ -188,6 +216,7 @@ export class DunningLockoutGuard implements CanActivate {
     if (isAllowedWhileLocked(path)) return true;
     if (isPrivacyOperationWhileLocked(req.method, path)) return true;
     if (isCoachThreadOperationWhileLocked(req.method, path)) return true;
+    if (isBasicFunctionWhileLocked(this.isMarkedOpen(context), path)) return true;
 
     const userId = req.user?.id;
     if (!userId) return true; // unauthenticated routes are handled by auth guards
@@ -216,6 +245,19 @@ export class DunningLockoutGuard implements CanActivate {
         'Your account is locked pending a billing matter. Update your payment to restore access.',
       lockout_copy: lockoutCopy,
     });
+  }
+
+  /**
+   * True when the handler or its controller carries @OpenToCoachlessClient().
+   * A context with no handler or class (a bare test double) counts as
+   * unmarked, so the lock applies as before.
+   */
+  private isMarkedOpen(context: ExecutionContext): boolean {
+    const targets: Parameters<Reflector['getAllAndOverride']>[1] = [];
+    if (typeof context.getHandler === 'function') targets.push(context.getHandler());
+    if (typeof context.getClass === 'function') targets.push(context.getClass());
+    if (targets.length === 0) return false;
+    return this.reflector.getAllAndOverride<boolean>(OPEN_TO_COACHLESS_CLIENT_KEY, targets) === true;
   }
 
   /**

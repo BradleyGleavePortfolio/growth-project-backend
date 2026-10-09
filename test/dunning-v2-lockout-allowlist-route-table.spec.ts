@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import {
   isAllowedWhileLocked,
+  isBasicFunctionWhileLocked,
   isCoachThreadOperationWhileLocked,
   isPrivacyOperationWhileLocked,
   normalizePath,
@@ -30,19 +31,22 @@ import {
 // AI processing consent privacy control (/me/ai-consent, ruling on #622),
 // account rights (data export and account deletion, S-DUNNING F8), and the
 // exact METHOD + PATH coach-thread operations so the client can contact their
-// own coach (/messages, S-DUNNING F8 and B-353-10).
+// own coach (/messages, S-DUNNING F8 and B-353-10), and the client's basic self
+// logging marked @OpenToCoachlessClient() (owner 10-08 23:5x, B1 on b#899).
 
 const REPO_ROOT = path.join(__dirname, '..');
 const SRC_ROOT = path.join(REPO_ROOT, 'src');
 const HTTP_METHODS = 'Get|Post|Put|Patch|Delete|Head|Options|All';
 const CONTROLLER_NAMES: ReadonlySet<string> = new Set(['Controller']);
 const HTTP_METHOD_NAMES: ReadonlySet<string> = new Set(HTTP_METHODS.split('|'));
+const OPEN_MARKER_NAMES: ReadonlySet<string> = new Set(['OpenToCoachlessClient']);
 
 interface MountedRoute {
   readonly method: string; // HTTP method from the decorator (GET, POST, ...)
   readonly normalized: string; // path after the guard's normalizePath
   readonly controller: string; // declaring @Controller class
   readonly file: string; // repo-relative source
+  readonly openToEveryClient: boolean; // @OpenToCoachlessClient() on the class or the method
 }
 
 interface ParsedController {
@@ -88,6 +92,7 @@ export function parseControllerSource(sourceText: string, fileName: string): Par
       if (controller) {
         const prefix = firstStringArgument(controller);
         const className = node.name?.text ?? '(anonymous)';
+        const classOpen = decoratorCallNamed(node, OPEN_MARKER_NAMES) !== undefined;
         const routes: MountedRoute[] = [];
         for (const member of node.members) {
           if (!ts.isMethodDeclaration(member)) continue;
@@ -99,7 +104,8 @@ export function parseControllerSource(sourceText: string, fileName: string): Par
           const normalized = normalizePath(`/api/${mounted}`);
           const target = httpMethod.expression;
           const method = ts.isIdentifier(target) ? target.text.toUpperCase() : '';
-          routes.push({ method, normalized, controller: className, file: fileName });
+          const openToEveryClient = classOpen || decoratorCallNamed(member, OPEN_MARKER_NAMES) !== undefined;
+          routes.push({ method, normalized, controller: className, file: fileName, openToEveryClient });
         }
         parsed.push({ className, prefix, file: fileName, routes });
       }
@@ -207,6 +213,59 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'roman/sessions/:id/messages',
 ];
 
+// Basic functions (owner 10-08 23:5x, B1 on b#899): every route marked
+// @OpenToCoachlessClient() stays reachable while locked, except AI guidance
+// (/ai/*), which stays locked like Roman and every paid value surface. Reviewed
+// one by one: each is the client's own logging (food, water, weight, habits,
+// workouts, fasting), targets, plans, check-ins or insights. A new marked route
+// turns this red on purpose.
+const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
+  'DELETE fasting/:id FastingController',
+  'DELETE habits/:id HabitsController',
+  'DELETE log/food/:id LogController',
+  'DELETE nutrition/water/:id WaterController',
+  'DELETE routines/:id WorkoutController',
+  'DELETE weight/:id WeightController',
+  'DELETE workouts/:id WorkoutController',
+  'GET assignments/:assignmentid AssignmentController',
+  'GET assignments/me AssignmentController',
+  'GET check-ins ClientCheckInsController',
+  'GET check-ins/:id ClientCheckInsController',
+  'GET fasting/history FastingController',
+  'GET habits HabitsController',
+  'GET habits/logs HabitsController',
+  'GET habits/streaks HabitsController',
+  'GET insights/holistic HolisticInsightsController',
+  'GET log/daily LogController',
+  'GET log/weekly LogController',
+  'GET me/macros/current ClientMacrosController',
+  'GET me/meal-plan ClientMealPlanAliasController',
+  'GET me/meal-plan/today ClientMealPlanController',
+  'GET meal-plans ClientMealPlansController',
+  'GET meal-plans/:id ClientMealPlansController',
+  'GET nutrition/water WaterController',
+  'GET nutrition/water/weekly WaterController',
+  'GET routines WorkoutController',
+  'GET weight/history WeightController',
+  'GET workouts WorkoutController',
+  'GET workouts/volume WorkoutController',
+  'PATCH assignments/:assignmentid/complete AssignmentController',
+  'PATCH weight/:id WeightController',
+  'POST check-ins ClientCheckInsController',
+  'POST fasting/end FastingController',
+  'POST fasting/start FastingController',
+  'POST habits HabitsController',
+  'POST habits/:id/log HabitsController',
+  'POST log/food LogController',
+  'POST nutrition/water WaterController',
+  'POST routines WorkoutController',
+  'POST weight WeightController',
+  'POST workouts WorkoutController',
+  'PUT log/food/:id LogController',
+  'PUT routines/:id WorkoutController',
+  'PUT workouts/:id WorkoutController',
+];
+
 // Files declaring MORE THAN ONE @Controller class, pinned in source order — the
 // assertion a file-level scan cannot satisfy: it sees only each row's first entry.
 const MULTI_CONTROLLER_FILES: ReadonlyArray<readonly [string, readonly string[]]> = [
@@ -279,6 +338,20 @@ describe('DunningLockoutGuard allow-list vs the real mounted route table', () =>
       ),
     ].sort();
     expect(reachable).toEqual([...EXPECTED_REACHABLE_WHILE_LOCKED].sort());
+  });
+
+  it('admits EXACTLY the reviewed basic-function routes through @OpenToCoachlessClient()', () => {
+    const open = table.routes
+      .filter((r) => isBasicFunctionWhileLocked(r.openToEveryClient, r.normalized))
+      .map((r) => `${r.method} ${r.normalized} ${r.controller}`)
+      .sort();
+    expect(open).toEqual([...EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED].sort());
+    // AI guidance is marked open to every client but stays locked here.
+    const ai = table.routes.filter((r) => r.openToEveryClient && r.normalized.startsWith('ai/'));
+    expect(ai.length).toBeGreaterThan(0);
+    expect(ai.some((r) => isBasicFunctionWhileLocked(r.openToEveryClient, r.normalized))).toBe(false);
+    // An unmarked route is never opened by the marker rule, whatever its path.
+    expect(table.routes.some((r) => !r.openToEveryClient && isBasicFunctionWhileLocked(false, r.normalized))).toBe(false);
   });
 
   // Lens A P1-1 — the positional second-segment match admitted any route whose

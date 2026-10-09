@@ -5,12 +5,16 @@ import { WaterService } from './water.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import { LogWaterDto } from './water.dto';
 
 @ApiTags('nutrition')
 @Controller('nutrition/water')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
+// B1 (owner 10-08 23:5x): basic self logging, open to every client and
+// reachable during a Day-10 dunning lock (no package guard here either).
+@OpenToCoachlessClient()
 export class WaterController {
   constructor(private waterService: WaterService) {}
 

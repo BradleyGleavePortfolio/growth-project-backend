@@ -23,12 +23,19 @@ invalidates the cache.
 
 ## Basic functions are open to every client
 
-Routes marked `@OpenToCoachlessClient()` (food, workout and fasting logging, targets, plans,
-check-ins, insights, AI guidance) are open to every client: no coach, a coach with a free
-package, a coach with no package, or a lapsed plan (owner 10-08 23:5x). `ClientEntitlementGuard`
-lets them through with no package lookup; the name of the marker is historical. AI routes keep
-the coach AI credit pool and the per-client daily cap. Unmarked routes that need a real coach
-keep their 402. `test/coachless-logging-entitlement.spec.ts` classifies every controller.
+Routes marked `@OpenToCoachlessClient()` (food, water, weight, habit, workout and fasting
+logging, targets, plans, check-ins, insights, AI guidance) are open to every client: no coach,
+a coach with a free package, a coach with no package, or a lapsed plan (owner 10-08 23:5x).
+`ClientEntitlementGuard` lets them through with no package lookup; the name of the marker is
+historical. AI routes keep the coach AI credit pool and the per-client daily cap. Unmarked
+routes that need a real coach keep their 402. `test/coachless-logging-entitlement.spec.ts`
+classifies every controller.
+
+A client locked out at Day 10 of a failed payment (or a disputed or refunded cycle that uses
+the same lock) still reaches every marked route: `DunningLockoutGuard` lets them through,
+except AI guidance (`/ai/*`), which stays locked with Roman, billing and the coach services.
+`test/dunning-v2-lockout-allowlist-route-table.spec.ts` pins the exact list and
+`test/dunning-basic-functions-guard-chain.spec.ts` runs both guards in order.
 
 ## Redemption
 
