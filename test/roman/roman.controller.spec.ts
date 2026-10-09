@@ -184,7 +184,7 @@ function makeController() {
   const prisma = makePrisma();
   const ctrl = new RomanController(service as never, prisma as never);
   const req = {
-    user: { id: 'user-A', role: 'student' },
+    user: { id: 'user-A', role: 'student', coach_id: 'coach-1' },
     on: jest.fn(),
     off: jest.fn(),
   } as never;

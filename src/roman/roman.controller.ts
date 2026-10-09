@@ -14,7 +14,9 @@
  * Auth: JwtAuthGuard authenticates every route. Roman is available to ALL
  * signed-in users on ANY tier (free + pro) — so there is no tier gate, only the
  * per-tier RATE limit applied in the service (brief §4). RomanFeatureGuard
- * returns 404 on every route while the feature flag is OFF.
+ * returns 404 on every route while the feature flag is OFF. A client with no
+ * coach gets 403 ROMAN_REQUIRES_COACH on open and send (owner 10-09 00:0x,
+ * roman-requires-coach.ts); reading a transcript stays open.
  *
  * Streaming: `POST …/messages` returns Server-Sent Events. The user turn is
  * persisted first; the assistant turn is streamed and persisted on completion
@@ -44,6 +46,11 @@ import { PrismaService } from '../prisma.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { toRomanSseErrorFrame } from './roman-sse-error';
 import {
+  assertRomanHasCoach,
+  romanRequiresCoach,
+  romanRequiresCoachException,
+} from './roman-requires-coach';
+import {
   RomanCaller,
   RomanService,
 } from './roman.service';
@@ -66,6 +73,9 @@ export class RomanController {
   @HttpCode(HttpStatus.OK)
   @Roles('student', 'coach', 'owner')
   async openSession(@Req() req: AuthedRequest, @Body() dto: OpenSessionDto) {
+    // Owner 10-09 00:0x: a client with no coach gets 403 ROMAN_REQUIRES_COACH
+    // (roman-requires-coach.ts) and no session is opened.
+    assertRomanHasCoach(req.user);
     const caller = await this.callerOf(req);
     const session = await this.roman.openOrResumeSession(caller, dto.surface);
     return this.toSessionView(session);
@@ -115,6 +125,15 @@ export class RomanController {
     // to people, no model call) instead of the refusal.
     const edRisk = !crisis && this.roman.isEatingDisorderRisk(dto.content);
     let edFallback = false;
+
+    // Owner 10-09 00:0x: a client with no coach gets 403 ROMAN_REQUIRES_COACH
+    // first, before the rate limit, the turn is stored or any AI or pool
+    // check. Like every refusal here, a crisis turn still gets the template
+    // and an eating-disorder message the fixed fallback (no model call).
+    if (!crisis && romanRequiresCoach(req.user)) {
+      if (!edRisk) throw romanRequiresCoachException();
+      edFallback = true;
+    }
 
     // Rate-limit BEFORE persisting the user turn (so a rejected turn does not
     // count against the cap). Throws a structured 429 Too Many Requests; we
