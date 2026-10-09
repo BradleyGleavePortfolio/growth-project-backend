@@ -8,7 +8,7 @@
  * Cache: rendered block by (coach_id, version), 10 minutes, at most 200 keys.
  */
 import { createHash } from 'node:crypto';
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
 import type { RomanAugmentCaller, RomanTurnAugment, RomanTurnAugmenter } from '../augment/roman-turn-augmenter';
@@ -104,7 +104,9 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
   constructor(
     private readonly prisma: PrismaService,
     // @Global AiCreditsModule; without it no head coach can be resolved, so no block.
+    // B31-D1 (agent 133): explicit token (a `T | null` param has no usable type metadata).
     @Optional()
+    @Inject(CoachAIBudgetService)
     private readonly budget: CoachAIBudgetService | null = null,
   ) {}
 

@@ -237,7 +237,10 @@ export class RomanService {
     // B-668-1: the coach's monthly AI credit pool (src/ai-credits, @Global
     // AiCreditsModule, so Nest always provides it). Every paid turn is
     // checked against it before the provider call and debited after it.
+    // B31-D1 (agent 133, owner 17:58): explicit token; without it the
+    // `T | null` param resolved to nothing and no pool was ever read.
     @Optional()
+    @Inject(CoachAIBudgetService)
     private readonly budget: CoachAIBudgetService | null = null,
     // R11-00: v1.1 turn augmenters (client memory, coach method). Empty on
     // main, so every turn is exactly the pre-v1.1 turn.

@@ -19,7 +19,7 @@
  * content-free metadata only, never prompt or reply text.
  */
 
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import * as Sentry from '@sentry/node';
 import { PrismaService } from '../../prisma.service';
@@ -75,7 +75,9 @@ export class RomanBackgroundSpendService {
 
   constructor(
     private readonly prisma: PrismaService,
+    // B31-D1 (agent 133): explicit token (a `T | null` param has no usable type metadata).
     @Optional()
+    @Inject(CoachAIBudgetService)
     private readonly budget: CoachAIBudgetService | null = null,
   ) {}
 
