@@ -2942,6 +2942,10 @@ model ClinicProgramSet {
   // (frequency_variants, equipment_overrides, overlays, why templates).
   materialisation       Json
   active                Boolean  @default(true)
+  // CONSULT-ALL-BE-133: the platform's house set, offered to coachless
+  // clients and to clients whose coach has no active set of their own.
+  // Written only by scripts/seed-clinic-programs.ts --house.
+  is_house              Boolean  @default(false)
   created_at            DateTime @default(now())
   updated_at            DateTime @updatedAt
 

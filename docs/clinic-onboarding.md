@@ -164,10 +164,29 @@ assigned from cannot change underneath it.
 
 `result` is the frozen completion payload once completed.
 `consultation_available` is true when `POST /complete` can finish for this
-client (attached to a live coach with an active clinic program set), or once
-the consultation is completed. False means the client has no coach or a coach
-without a program set; the app then runs the standard onboarding instead of
-the consultation (S-REVENUE-124 B-REV-1).
+client, or once the consultation is completed. Since CONSULT-ALL-BE-133 (owner
+decision 28) that is every student once a program set resolves: the attached
+coach's own active set, else the house set (below), coachless clients
+included. False only while no set resolves (no house set seeded yet) or the
+client's coach account is no longer live; the app then runs the standard
+onboarding instead of the consultation (S-REVENUE-124 B-REV-1).
+
+### Program set resolution and the house set (CONSULT-ALL-BE-133)
+
+| client                      | set used                         | clone owner / tenant (`owner_user_id` / `coach_id`) | spaces | coach alert | `coach` in the result |
+| --------------------------- | -------------------------------- | --------------------------------------------------- | ------ | ----------- | --------------------- |
+| coach with an active set    | the coach's own set (unchanged)  | coach / INT-607-1 tenant                             | joined | the coach   | the coach             |
+| coach without a usable set  | the house set                    | coach / INT-607-1 tenant                             | none   | the coach   | the coach             |
+| no coach (coachless)        | the house set                    | the client / the client                              | none   | none        | `null`                |
+
+The house set is the newest active `ClinicProgramSet` with `is_house = true`
+whose owner is a live coach or owner account (seeded with `--house`, below).
+A coachless clone, its assignments (`assigned_by_coach_id`) and its
+`MacroTarget` (`coach_id`) carry the client's own id: every coach program read
+is keyed on the coach's tenant (a coach or owner id), so no coach, the house
+account included, can list it. A house completion joins no community space
+(the house set's spaces belong to the house account) and a coachless one runs
+no coach-scoped completion hook; `screening_flagged_at` is still recorded.
 
 ### `POST /api/me/onboarding/complete`
 
@@ -186,7 +205,9 @@ meanwhile, or whose client changed coach rolls back without writing anything
 assignment push is sent only after the commit. When the attachment changed,
 the completion is re-run once against the current coach (and then answers
 `not_attached` or `clinic_not_configured` as usual if that coach is not set
-up).
+up). A coachless completion locks the client row only and requires it to be
+still coachless; a client attached meanwhile is re-run under that coach, and a
+client detached meanwhile is re-run as coachless.
 
 `200`:
 
@@ -223,10 +244,10 @@ up).
 
 | code                      | when                                                                                                               |
 | ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `not_attached`            | the client has no coach (or the coach account is not a coach)                                                      |
+| `not_attached`            | the client's coach account is deleted or is not a coach (a client with no coach completes with the house set)      |
 | `consultation_incomplete` | required answers missing; `missing: string[]` lists keys (also used when macro inputs are implausible)             |
 | `consent_missing`         | no current P0 acknowledgement (accepted `copy_version` with that version's `text_sha256`)                          |
-| `clinic_not_configured`   | the coach has no seeded program set, or its master/space rows are missing or not the coach's own                   |
+| `clinic_not_configured`   | no set resolves (no own set and no house set), or the set's master/space rows are missing or not the set owner's   |
 | `completion_in_progress`  | another completion for this client is running, or the answers changed since this attempt read them (retry shortly) |
 
 Effects, in order:
@@ -392,3 +413,9 @@ refused. Production is refused unless the fixture is owner-approved and
 CLINIC_OWNER_COACH_EMAIL=owner@example.com npx ts-node scripts/seed-clinic-programs.ts --dry-run
 CLINIC_OWNER_COACH_EMAIL=owner@example.com npx ts-node scripts/seed-clinic-programs.ts
 ```
+
+`--house` (CONSULT-ALL-BE-133) marks the set as the house set and clears the
+flag on any other set; on an already seeded set it only marks it. The
+production guard applies unchanged. No workflow runs this script: the runtime
+image ships `dist/` only (no `scripts/*.ts`, no `seed/`), so it is an operator
+step from a checkout of main.
