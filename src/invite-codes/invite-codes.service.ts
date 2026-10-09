@@ -300,8 +300,9 @@ export type AttachOptions = {
 
 /**
  * The public coach card for a valid code. `headline` and `specialties` come
- * from the coach consultation (K1, K2; COACH-CARD-134): null and [] for a
- * coach who never answered them and for legacy InviteCode rows.
+ * from the coach consultation (K1, K2; COACH-CARD-134), for both the
+ * CoachProfile code and per-row InviteCode invites: null and [] for a coach
+ * who never answered them.
  */
 export type InvitePreview =
   | {
@@ -318,15 +319,18 @@ export type InvitePreview =
 
 const SPECIALTY_KEYS: ReadonlySet<string> = new Set(COACH_SPECIALTIES);
 
-/** Null-safe card fields; only known specialty keys leave the server. */
-function coachCardFields(profile: { headline?: string | null; specialties?: string[] | null }): {
-  headline: string | null;
-  specialties: string[];
-} {
-  const specialties = (profile.specialties ?? [])
+/**
+ * Null-safe card fields; only known specialty keys leave the server. The
+ * card line is the headline, else the K1 "how do you help people" answer
+ * (`bio`, what the shipped K1 screen saves).
+ */
+function coachCardFields(
+  profile: { headline?: string | null; bio?: string | null; specialties?: string[] | null } | null,
+): { headline: string | null; specialties: string[] } {
+  const specialties = (profile?.specialties ?? [])
     .filter((k) => SPECIALTY_KEYS.has(k))
     .slice(0, MAX_SPECIALTIES);
-  return { headline: profile.headline?.trim() || null, specialties };
+  return { headline: profile?.headline?.trim() || profile?.bio?.trim() || null, specialties };
 }
 
 @Injectable()
@@ -869,8 +873,13 @@ export class InviteCodesService {
         coach_name: validation.coach_name,
         business_name: null,
         branding: { accent_color: null, logo_url: null },
-        headline: null,
-        specialties: [],
+        // B-897-SOL-D-134-2: a per-row invite shows the same coach card.
+        ...coachCardFields(
+          await this.prisma.coachProfile.findUnique({
+            where: { user_id: validation.coach_id },
+            select: { headline: true, bio: true, specialties: true },
+          }),
+        ),
       };
     } catch (err) {
       // Known Prisma errors (P2xxx — pool timeout, schema drift, bad

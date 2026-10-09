@@ -298,6 +298,26 @@ describe('InviteCodesService', () => {
       });
     });
 
+    it('COACH-CARD-134: a coach who answered K1 with the bio only shows the bio as the card line', async () => {
+      prismaMock.coachProfile.findUnique.mockResolvedValue({
+        id: 'cp-1',
+        user_id: 'coach-1',
+        business_name: null,
+        branding_accent_color: null,
+        branding_logo_url: null,
+        subscription_status: 'active',
+        headline: null,
+        bio: ' I help busy parents get strong in three sessions a week. ',
+        specialties: ['strength'],
+        user: { id: 'coach-1', name: 'Lara Hayes', role: 'coach' },
+      });
+      expect(await service.previewCode('GP-A1B2C3')).toMatchObject({
+        valid: true,
+        headline: 'I help busy parents get strong in three sessions a week.',
+        specialties: ['strength'],
+      });
+    });
+
     it('returns valid:false when the coach subscription is paused', async () => {
       prismaMock.coachProfile.findUnique.mockResolvedValue({
         id: 'cp-1',
@@ -346,6 +366,27 @@ describe('InviteCodesService', () => {
         branding: { accent_color: null, logo_url: null },
         headline: null,
         specialties: [],
+      });
+    });
+
+    it('COACH-CARD-134: a valid per-row invite carries the coach card of its coach', async () => {
+      prismaMock.coachProfile.findUnique
+        .mockResolvedValueOnce(null) // the code is not a CoachProfile code
+        .mockResolvedValueOnce({ headline: null, bio: 'Calm, steady strength.', specialties: ['older', 'x'] });
+      prismaMock.inviteCode.findUnique.mockResolvedValue({
+        id: 'ic-1',
+        coach_id: 'coach-1',
+        revoked: false,
+        expires_at: null,
+        max_uses: null,
+        used_count: 0,
+        coach: { id: 'coach-1', name: 'Coach One', role: 'coach' },
+      });
+      const r = await service.previewCode('GP-ABC123');
+      expect(r).toMatchObject({ valid: true, coach_id: 'coach-1', headline: 'Calm, steady strength.', specialties: ['older'] });
+      expect(prismaMock.coachProfile.findUnique).toHaveBeenLastCalledWith({
+        where: { user_id: 'coach-1' },
+        select: { headline: true, bio: true, specialties: true },
       });
     });
 

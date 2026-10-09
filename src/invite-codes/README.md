@@ -81,9 +81,9 @@ is preferred for new clients.
 invite_code_id }` or `{ valid: false, reason }`. `previewCode` resolves
 to a public-safe coach card (name, business name, branding) suitable
 for unauthenticated callers. COACH-CARD-134: the card also carries the coach
-consultation's `headline` (K1) and `specialties` (K2, known keys only, at most
-five); `null` and `[]` when the coach never answered and for legacy
-`InviteCode` rows.
+consultation's `headline` (K1 headline, else the K1 `bio`) and `specialties`
+(K2, known keys only, at most five), for CoachProfile codes and per-row
+`InviteCode` invites alike; `null` and `[]` when the coach never answered.
 
 Both refuse:
 - Codes owned by a user whose role is no longer `coach` (defense
