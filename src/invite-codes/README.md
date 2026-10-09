@@ -130,6 +130,15 @@ the coach's subscription, because it changes no state. Do not show
 "you joined" UI or count a new client from it; only `already_attached: false`
 is a new redemption.
 
+### Every join carries one package (B-PACKAGE-135)
+
+`join-package.ts` picks the package: the one bound to the code while usable, else the coach's oldest usable
+package, else a free "Getting started" package made on first use. Free or prepaid: granted inside the attach
+transaction (a failed grant rolls the attach back). Paid: no attach, no seat, no ledger row; the result carries
+`join.status: 'checkout_required'` and the app sends `join_code` to payment-intent or subscription-intent
+(`paidJoinAllowed`). The purchase's entitlement attaches the client (`attachPaidJoinTx`). Every result carries
+`join` (`invite_join` on the auth routes). Tests: `test/invite-grant.spec.ts` (B-PACKAGE-135 block).
+
 Tests: `test/invite-attach-idempotent-replay.spec.ts`,
 `test/select-role-canonical-attach.spec.ts`,
 `test/invite-attach-reliability.spec.ts`.

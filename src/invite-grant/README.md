@@ -58,6 +58,10 @@ Clinic clients pay Bradley outside the app. They must pass the paywall without S
 - **Free packages** are `amount_cents = 0`, `one_time`, no recurring companion (`PackagesService.assertValidPricing`);
   every paid leg keeps the 50¢ Stripe floor. No Stripe Price is minted for $0.
 
+- **Joins (B-PACKAGE-135).** A free or prepaid coach-code join writes its grant inside the attach transaction
+  (`grantForJoinTx`, after `joinGrantActive`); a grant that cannot be written rolls the attach back. See
+  [`../invite-codes/README.md`](../invite-codes/README.md).
+
 ## API (coach/owner unless noted)
 
 | Route | Roles | Purpose |
