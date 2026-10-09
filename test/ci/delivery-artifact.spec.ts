@@ -313,6 +313,7 @@ describe('privileged action refs are pinned to full commit SHAs (S2-B1 / S2-A-07
     '.github/workflows/fly-secrets-set.yml',
     '.github/workflows/fly-logs.yml',
     '.github/workflows/fly-secrets-list.yml',
+    '.github/workflows/house-seed.yml',
   ];
   for (const f of files) {
     it(`${f}: every uses: is a 40-hex pin (no @master / @vN)`, () => {
@@ -361,7 +362,7 @@ describe('fly-deploy.yml — recovery and migration evidence (S2-B6 / S2-B7 / S2
 });
 
 describe('production-mutating Fly operator workflows are bound to the production environment (S2-B10)', () => {
-  for (const f of ['fly-apple-signin-set', 'fly-db-secrets-set', 'fly-launch-env-set', 'fly-recent-auth-set', 'fly-secrets-set']) {
+  for (const f of ['fly-apple-signin-set', 'fly-db-secrets-set', 'fly-launch-env-set', 'fly-recent-auth-set', 'fly-secrets-set', 'house-seed']) {
     it(`${f}.yml has environment: production`, () => {
       expect(read(`.github/workflows/${f}.yml`)).toMatch(/^\s+environment: production$/m);
     });

@@ -1,0 +1,15 @@
+// HOUSE-SEED-134: compiled copy of the two production seed scripts for
+// .github/workflows/house-seed.yml. The Dockerfile build stage runs it after
+// nest build; output lands in dist/house-seed/ (scripts/ and src/ mirrored),
+// next to a copy of seed/clinic-programs.v1.json at dist/house-seed/seed/.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./",
+    "outDir": "./dist/house-seed",
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["scripts/seed-clinic-programs.ts", "scripts/seed-exercise-catalog.ts"],
+  "exclude": ["node_modules", "dist", "test"]
+}

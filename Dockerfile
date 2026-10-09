@@ -60,6 +60,15 @@ RUN --mount=type=secret,id=sentry_auth_token \
     RELEASE_VERSION="$RELEASE_VERSION" \
     bash ./scripts/sentry-upload-sourcemaps.sh dist
 
+# House-program seed (HOUSE-SEED-134): a compiled copy of
+# scripts/seed-clinic-programs.ts and scripts/seed-exercise-catalog.ts plus the
+# fixture they read, so .github/workflows/house-seed.yml can run them inside a
+# running machine over `flyctl ssh console` with the app's own env. Nothing
+# runs them at boot or release.
+RUN npx tsc -p tsconfig.house-seed.json \
+    && mkdir -p dist/house-seed/seed \
+    && cp seed/clinic-programs.v1.json dist/house-seed/seed/clinic-programs.v1.json
+
 ############################
 # runtime stage
 ############################
@@ -95,6 +104,9 @@ RUN node -e "['prisma/package.json','@prisma/client/package.json','@nestjs/core/
          if [ -e "node_modules/$p" ]; then echo "artifact check failed: dev tool $p present in runtime image" >&2; exit 1; fi; \
        done \
     && test -f dist/main.js \
+    && test -f dist/house-seed/scripts/seed-clinic-programs.js \
+    && test -f dist/house-seed/scripts/seed-exercise-catalog.js \
+    && test -f dist/house-seed/seed/clinic-programs.v1.json \
     && test -f prisma/schema.prisma \
     && test -f prisma/seed-diagnostic.json \
     && test -f scripts/release.sh \
