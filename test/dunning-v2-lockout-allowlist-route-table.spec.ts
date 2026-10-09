@@ -216,8 +216,9 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
 // Basic functions (owner 10-08 23:5x, B1 on b#899): every route marked
 // @OpenToCoachlessClient() stays reachable while locked, except AI guidance
 // (/ai/*), which stays locked like Roman and every paid value surface. Reviewed
-// one by one: each is the client's own logging (food, water, weight, habits,
-// workouts, fasting), targets, plans, check-ins or insights. A new marked route
+// one by one: each is the client's own logging (food, with /foods search,
+// barcode and manual entry; water, weight, habits, workouts, fasting),
+// targets, plans, check-ins or insights. A new marked route
 // turns this red on purpose.
 const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'DELETE fasting/:id FastingController',
@@ -227,6 +228,9 @@ const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'DELETE routines/:id WorkoutController',
   'DELETE weight/:id WeightController',
   'DELETE workouts/:id WorkoutController',
+  'GET foods/:id FoodController',
+  'GET foods/barcode/:upc FoodController',
+  'GET foods/search FoodController',
   'GET assignments/:assignmentid AssignmentController',
   'GET assignments/me AssignmentController',
   'GET check-ins ClientCheckInsController',
@@ -254,6 +258,7 @@ const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'POST check-ins ClientCheckInsController',
   'POST fasting/end FastingController',
   'POST fasting/start FastingController',
+  'POST foods FoodController',
   'POST habits HabitsController',
   'POST habits/:id/log HabitsController',
   'POST log/food LogController',

@@ -6,12 +6,17 @@ import { FoodService } from './food.service';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import { CreateFoodDto } from './food.dto';
 
 @ApiTags('food')
 @Controller('foods')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
+// Owner 10-08 23:5x ("No reason to ever lock a client from basic functions"):
+// food search, barcode and manual entry are basic self logging, reachable
+// during a Day-10 dunning lock like /log/food. No package guard here either.
+@OpenToCoachlessClient()
 export class FoodController {
   constructor(private foodService: FoodService) {}
 
