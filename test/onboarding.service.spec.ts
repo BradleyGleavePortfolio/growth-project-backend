@@ -13,6 +13,8 @@ import type { PrismaService } from '../src/prisma.service';
 import type { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import { CONSULT_CONSENT_V3_TEXT_SHA256 } from '../src/onboarding/consult-consent-copy';
+import { macroRawFromAnswers, type Answers } from '../src/onboarding/consultation-answers';
+import { computeMacros, resolveMacroInputs } from '../src/macros/macro-calculator';
 
 const fx = parseFixture(
   readFileSync(join(__dirname, '..', 'seed', 'clinic-programs.v1.json'), 'utf8'),
@@ -2264,5 +2266,71 @@ describe('CONSULT-ALL-BE-133: every client can finish the consultation (house se
     expect(await code(w.svc.complete('loner', NOW))).toBe('clinic_not_configured');
     expect(w.createdClones).toHaveLength(0);
     expect(w.intakes[0].completion_claimed_at).toBeNull();
+  });
+});
+
+describe('B-GOALCLEAR-BE-135: a goal weight removed in the summary leaves the profile', () => {
+  const later = new Date(NOW.getTime() + 60_000);
+  const NO_GOAL = Object.fromEntries(Object.entries(COMPLETE).filter(([k]) => k !== 'B4'));
+  const calculated = (answers: Answers) => {
+    const r = resolveMacroInputs(macroRawFromAnswers(answers), later);
+    if (!r.ok) throw new Error(`fixture not computable: ${r.missing.join(',')}`);
+    return computeMacros(r.inputs);
+  };
+
+  it('{B4: null} clears target_weight_lbs, and the profile targets equal the completion targets', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    expect(w.profiles[0]).toMatchObject({
+      target_weight_lbs: 150,
+      macro_target_protein_g: calculated(COMPLETE).protein_g,
+    });
+    // The mobile "No number, just the goal" edit sends exactly this.
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { B4: null } },
+      later,
+    );
+    expect(w.profiles[0].target_weight_lbs).toBeNull();
+    // Protein now follows the current weight, not the deleted goal.
+    expect(calculated(NO_GOAL).protein_g).not.toBe(calculated(COMPLETE).protein_g);
+    const res = await w.svc.complete('client-1', later);
+    expect(res.macros.protein_g).toBe(calculated(NO_GOAL).protein_g);
+    expect(w.macroTargets).toHaveLength(1);
+    const done = w.macroTargets[0];
+    expect(w.profiles[0]).toMatchObject({
+      macro_target_calories: done.calories_kcal,
+      macro_target_protein_g: done.protein_g,
+      macro_target_carbs_g: done.carbs_g,
+      macro_target_fat_g: done.fats_g,
+    });
+  });
+
+  it('a save that omits B4 keeps the stored goal weight; a cleared required answer still clears nothing', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { L1: 'active' } },
+      later,
+    );
+    expect(w.profiles[0]).toMatchObject({
+      target_weight_lbs: 150,
+      activity_level: 'active',
+      macro_target_protein_g: calculated({ ...COMPLETE, L1: 'active' }).protein_g,
+    });
+    await w.svc.saveConsultation(
+      'client-1',
+      { version: 'consult-v1', answers: { L1: null } },
+      later,
+    );
+    expect(w.profiles[0]).toMatchObject({ target_weight_lbs: 150, activity_level: 'active' });
+  });
+
+  it('a goal weight already on the profile is kept while the consultation never sends B4', async () => {
+    const w = makeWorld();
+    w.profiles.push({ user_id: 'client-1', target_weight_lbs: 140 });
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: NO_GOAL }, NOW);
+    expect(w.profiles[0].target_weight_lbs).toBe(140);
   });
 });

@@ -12,7 +12,7 @@ import { Prisma, type ClinicProgramSet } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { computeMacros, resolveMacroInputs, type MacroResult } from '../macros/macro-calculator';
 import { WorkoutBuilderService } from '../workout-builder/workout-builder.service';
-import { writeProfileWithTargets } from '../profile/profile.service';
+import { writeProfileWithTargets, type ClearableProfileField } from '../profile/profile.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { buildConsultationView, type ConsultationView } from './consultation-view';
 import {
@@ -27,6 +27,7 @@ import {
   macroRawFromAnswers,
   mergeAnswers,
   missingRequired,
+  profileClearsFromPatch,
   profileFieldsFromAnswers,
   screeningAnyYes,
   validateAnswerPatch,
@@ -590,7 +591,7 @@ export class OnboardingService {
       // Profile sync is bound to the committed revision: it runs in the same
       // transaction as the CAS, so an older save can never overwrite fields
       // derived from a newer one.
-      await this.writeProfileFromAnswers(tx, clientId, merged, now);
+      await this.writeProfileFromAnswers(tx, clientId, merged, profileClearsFromPatch(patch), now);
       return head.current_revision;
     });
 
@@ -608,11 +609,12 @@ export class OnboardingService {
     tx: Prisma.TransactionClient,
     clientId: string,
     answers: Answers,
+    clears: readonly ClearableProfileField[],
     now: Date,
   ) {
     const fields = profileFieldsFromAnswers(answers);
-    if (Object.keys(fields).length === 0) return;
-    await writeProfileWithTargets(tx, clientId, fields, now, 'allow_incomplete');
+    if (Object.keys(fields).length === 0 && clears.length === 0) return;
+    await writeProfileWithTargets(tx, clientId, fields, now, 'allow_incomplete', clears);
   }
 
   // ─── GET /me/onboarding ────────────────────────────────────────────────
