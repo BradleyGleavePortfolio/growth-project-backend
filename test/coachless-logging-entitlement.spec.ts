@@ -12,7 +12,7 @@
 // contract block classifies every controller that mounts the guard.
 
 import 'reflect-metadata';
-import { readdirSync, readFileSync, statSync } from 'fs';
+import { readdirSync, readFileSync } from 'fs';
 import { join, relative } from 'path';
 import { HttpException } from '@nestjs/common';
 import type { ExecutionContext } from '@nestjs/common';
@@ -172,10 +172,12 @@ describe('B23 contract — every controller with the paywall guard is classified
     const root = join(__dirname, '..', 'src');
     const found: string[] = [];
     const walk = (dir: string) => {
-      for (const name of readdirSync(dir)) {
-        const full = join(dir, name);
-        if (statSync(full).isDirectory()) walk(full);
-        else if (name.endsWith('.controller.ts')
+      // Dirent types come from the directory read itself: no separate stat
+      // of the path before it is read (CodeQL js/file-system-race).
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.isFile() && entry.name.endsWith('.controller.ts')
           && /@UseGuards\([^)]*ClientEntitlementGuard/.test(readFileSync(full, 'utf8'))) {
           found.push(relative(root, full).split('\\').join('/'));
         }
