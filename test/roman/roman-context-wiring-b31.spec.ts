@@ -74,21 +74,17 @@ describe('B31: RomanService receives its context builder through Nest DI', () =>
     const ctx = { getBundle: jest.fn() };
     const audit = { write: jest.fn() };
     const svc = await build(ctx, audit);
-    const fields = svc as unknown as { clientContext: unknown; audit: unknown };
-    expect(fields.clientContext).toBe(ctx);
-    expect(fields.audit).toBe(audit);
+    // Private fields, read without a cast.
+    expect(Reflect.get(svc, 'clientContext')).toBe(ctx);
+    expect(Reflect.get(svc, 'audit')).toBe(audit);
   });
 
   it('a grounded turn loads its bundle from the injected builder', async () => {
     const bundle = { context: {}, rendered: '<client_data>Avery</client_data>', hash: 'h' };
     const ctx = { getBundle: jest.fn().mockResolvedValue(bundle) };
     const svc = await build(ctx, { write: jest.fn() });
-    const load = (
-      svc as unknown as {
-        loadTurnBundle: (c: RomanCaller) => Promise<unknown>;
-      }
-    ).loadTurnBundle.bind(svc);
-    await expect(load(CALLER)).resolves.toBe(bundle);
+    const load: (c: RomanCaller) => Promise<unknown> = Reflect.get(svc, 'loadTurnBundle');
+    await expect(load.call(svc, CALLER)).resolves.toBe(bundle);
     expect(ctx.getBundle).toHaveBeenCalledWith({ id: CALLER.id, role: CALLER.role });
   });
 
