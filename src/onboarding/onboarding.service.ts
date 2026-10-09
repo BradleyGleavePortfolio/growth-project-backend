@@ -178,6 +178,9 @@ function isUniqueViolation(err: unknown): boolean {
 
 const COACH_FLAG_BODY =
   'A new client finished their consultation and was flagged for extra care. Please review before their first session.';
+// Decision 133-11: a coachless client's flag goes to the house account.
+const HOUSE_FLAG_BODY =
+  'A client without a coach finished their consultation and was flagged for extra care.';
 
 function conflict(
   code: OnboardingConflictCode,
@@ -976,19 +979,27 @@ export class OnboardingService {
             ...macroDisplayFor(answers, now, now),
           };
 
-          // A coachless client has no coach to alert; screening_flagged_at
-          // above still records the flag and the selection already applied
-          // the extra-care overlay.
-          if (flagCoach && coach) {
-            // In-app coach item. The body carries no screening details; the
-            // coach opens the client's intake for the answers.
+          // screening_flagged_at above records the flag and the selection
+          // already applied the extra-care overlay. Who hears about it: the
+          // client's own coach; for a coachless client (owner decision
+          // 133-11) the house account, i.e. the live coach or owner account
+          // that holds the house set this completion used. Same in-app item,
+          // no other sender.
+          const alertTo = coach ? coach.id : source === 'house' ? set.coach_id : null;
+          if (flagCoach && alertTo) {
+            // In-app coach item. The body carries no screening details; a
+            // coach opens their client's intake for the answers. The house
+            // account cannot read a coachless client's intake (canCoachRead
+            // needs a coach on the client), so it learns only that a flag exists.
             await tx.notification.create({
               data: {
-                user_id: coach.id,
+                user_id: alertTo,
                 kind: 'coach_alert',
                 channel: 'inapp',
-                body: COACH_FLAG_BODY,
-                payload: { type: 'onboarding_screening_review', client_id: clientId },
+                body: coach ? COACH_FLAG_BODY : HOUSE_FLAG_BODY,
+                payload: coach
+                  ? { type: 'onboarding_screening_review', client_id: clientId }
+                  : { type: 'onboarding_screening_review', client_id: clientId, coachless: true },
               },
             });
           }
