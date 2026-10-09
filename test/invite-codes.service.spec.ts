@@ -272,6 +272,29 @@ describe('InviteCodesService', () => {
           accent_color: '#7A5C3C',
           logo_url: 'https://cdn.example.com/l.png',
         },
+        // Never did the consultation: null-safe card fields.
+        headline: null,
+        specialties: [],
+      });
+    });
+
+    it('COACH-CARD-134: returns the consultation headline and specialties (known keys, max five)', async () => {
+      prismaMock.coachProfile.findUnique.mockResolvedValue({
+        id: 'cp-1',
+        user_id: 'coach-1',
+        business_name: 'Atelier Wellness',
+        branding_accent_color: null,
+        branding_logo_url: null,
+        subscription_status: 'active',
+        headline: '  Strength for busy parents  ',
+        specialties: ['strength', 'not_a_key', 'busy', 'fat_loss', 'mobility', 'older', 'sports'],
+        user: { id: 'coach-1', name: 'Lara Hayes', role: 'coach' },
+      });
+      const r = await service.previewCode('GP-A1B2C3');
+      expect(r).toMatchObject({
+        valid: true,
+        headline: 'Strength for busy parents',
+        specialties: ['strength', 'busy', 'fat_loss', 'mobility', 'older'],
       });
     });
 
@@ -321,6 +344,8 @@ describe('InviteCodesService', () => {
         coach_name: 'Coach One',
         business_name: null,
         branding: { accent_color: null, logo_url: null },
+        headline: null,
+        specialties: [],
       });
     });
 
