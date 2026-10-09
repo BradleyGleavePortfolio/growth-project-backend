@@ -15,6 +15,7 @@ import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
+import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import { CreateMacroTargetDto } from './macros.dto';
 import { MacrosService, type Goal } from './macros.service';
 import { ACTIVITY_FACTORS, type MacroActivity } from './macro-calculator';
@@ -107,6 +108,8 @@ export class CoachMacrosController {
 @ApiTags('macros')
 @Controller()
 @UseGuards(JwtAuthGuard, ClientEntitlementGuard)
+// B23: a client with no coach sees their own targets from day one.
+@OpenToCoachlessClient()
 export class ClientMacrosController {
   constructor(private readonly macros: MacrosService) {}
 

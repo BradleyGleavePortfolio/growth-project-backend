@@ -19,6 +19,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
 import { SubscriptionGuard } from '../billing/subscription.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
+import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import {
   AssignDailyPlanDto,
   CreateDailyMealPlanDto,
@@ -121,6 +122,8 @@ export class CoachDailyMealPlansController {
 @ApiTags('real-meal-plans')
 @Controller()
 @UseGuards(JwtAuthGuard, ClientEntitlementGuard)
+// B23: a client with no coach reads today's plan (empty until a coach assigns one).
+@OpenToCoachlessClient()
 export class ClientMealPlanController {
   constructor(private readonly meals: RealMealPlansService) {}
 
