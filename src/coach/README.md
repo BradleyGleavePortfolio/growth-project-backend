@@ -247,6 +247,20 @@ in after promotion.
 | `POST` | `/coach/onboarding/steps/:n`| coach | Advance to step `n` |
 | `POST` | `/coach/onboarding/complete`| coach | Terminal call |
 
+## Coach consultation K0-K8 (COACH-CONSULT-BE-134)
+
+The only onboarding a new coach sees (prototype 77-85, decision 134-1), in
+`consultation/`. The draft lives on `CoachOnboardingProgress.consultation_draft`;
+complete writes `User.name` + the `CoachProfile` card columns and sets
+`consultation_completed_at` and `completed_at` (the app gate) in one
+transaction. No Stripe, package or subscription check (B02).
+
+| Method | Path | Who | Behavior |
+|---|---|---|---|
+| `GET`  | `/coach/consultation`          | coach / owner | Draft or prefill, resume step, `/join` link |
+| `PUT`  | `/coach/consultation`          | coach / owner | Save a partial draft; 409 once complete |
+| `POST` | `/coach/consultation/complete` | coach / owner | Validate (name 1-80, clients today), write the card, finish; idempotent |
+
 ## Module dependency note (Phase 1E)
 
 `CoachModule` imports `AdminModule` via `forwardRef()` to resolve

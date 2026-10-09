@@ -588,6 +588,16 @@ model CoachProfile {
   business_name              String?
   bio                        String?
   timezone                   String?
+  // COACH-CONSULT-BE-134: the coach consultation (K1-K5) card and practice
+  // answers. Vocabularies live in src/coach/consultation/coach-consultation.vocab.ts.
+  // Written only by POST /coach/consultation/complete; until then the answers
+  // stay in CoachOnboardingProgress.consultation_draft.
+  headline                   String?             @db.VarChar(120)
+  years_coaching             Int?
+  specialties                String[]            @default([])
+  clients_today              String?
+  coaching_touch             String?
+  programming_style          String?
   branding_accent_color      String?
   branding_logo_url          String?
   invite_code                String              @unique
@@ -2056,13 +2066,17 @@ model CoachAlert {
 //   * `completed_at` is set once and the row freezes — POST /steps/:n returns
 //     409 after that.
 model CoachOnboardingProgress {
-  id           String    @id @default(uuid())
-  coach_id     String    @unique
-  coach        User      @relation("CoachOnboardingCoach", fields: [coach_id], references: [id], onDelete: Cascade)
-  started_at   DateTime  @default(now())
-  completed_at DateTime?
-  current_step Int       @default(1)
-  step_data    Json?
+  id                        String    @id @default(uuid())
+  coach_id                  String    @unique
+  coach                     User      @relation("CoachOnboardingCoach", fields: [coach_id], references: [id], onDelete: Cascade)
+  started_at                DateTime  @default(now())
+  completed_at              DateTime?
+  current_step              Int       @default(1)
+  step_data                 Json?
+  // COACH-CONSULT-BE-134: the resumable coach consultation draft (answers +
+  // last step) and the moment the coach finished it (K8).
+  consultation_draft        Json?
+  consultation_completed_at DateTime?
 
   @@index([completed_at])
 }
