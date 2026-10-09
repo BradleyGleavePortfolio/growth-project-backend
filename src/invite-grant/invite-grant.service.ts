@@ -687,6 +687,37 @@ export class InviteGrantService implements OnModuleInit {
     }
   }
 
+  /** B-PACKAGE-135 — a NEW join's grant: true active, false pending consent, null refused. Read-only. */
+  async joinGrantActive(client: PersonRow, pkg: CoachPackage): Promise<boolean | null> {
+    const gate = await this.evaluateGrantGate(client, pkg);
+    if (gate === 'ok') return true;
+    return gate === 'consent_required' ? false : null;
+  }
+
+  /**
+   * B-PACKAGE-135 — a NEW join's $0 grant, INSIDE the attach transaction (a
+   * throw rolls the attach back). The attach is the grant right. Flush with
+   * flushAfterCommit after commit.
+   */
+  async grantForJoinTx(
+    tx: Prisma.TransactionClient,
+    input: { clientUserId: string; binding: CodeBinding & { package_id: string }; active: boolean },
+  ): Promise<GrantOutcome> {
+    const { binding } = input;
+    return this.grant(
+      {
+        clientUserId: input.clientUserId,
+        coachUserId: binding.coach_id,
+        packageId: binding.package_id,
+        source:
+          binding.grant_mode === 'prepaid' ? GRANT_SOURCE.INVITE_PREPAID : GRANT_SOURCE.INVITE_FREE,
+        metadata: this.bindingMetadata(binding),
+        active: input.active,
+      },
+      tx,
+    );
+  }
+
   /**
    * Called by InviteCodesService AFTER every successful attach — a new
    * redemption or a same-coach idempotent replay — never after a refusal.

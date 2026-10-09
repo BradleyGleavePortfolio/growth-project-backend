@@ -17,6 +17,7 @@ import {
 } from '../connect/stripe-connect-api.service';
 import { PrismaService } from '../prisma.service';
 import { PackagesService } from '../packages/packages.service';
+import { paidJoinAllowed } from '../invite-codes/invite-codes.service';
 import { BUYER_VISIBLE_DROP_STATUSES, buyerDropStatus } from '../packages/drop-status';
 import { CheckoutContractGate } from '../contracts/checkout-contract-gate.service';
 import { CLIENT_PURCHASE_SELECT, type ClientPurchaseView } from './client-purchases.select';
@@ -481,7 +482,7 @@ export class CheckoutService {
   //     retry collapses on Stripe's side as well.
   async createPaymentIntentForClient(
     clientUserId: string,
-    input: { package_id: string; idempotency_key: string },
+    input: { package_id: string; idempotency_key: string; join_code?: string },
   ): Promise<{
     client_secret: string;
     ephemeral_key: string;
@@ -514,18 +515,18 @@ export class CheckoutService {
       });
     }
 
-    // Hard-block unassigned clients. Guest / pre-assignment purchase is
-    // Wave 4 work and is not enabled on this endpoint.
-    if (!client.coach_id) {
+    const pkg = await this.packages.getById(input.package_id);
+    if (!pkg || !pkg.is_active || pkg.archived_at || !pkg.published_at) {
+      // PR-6 — DRAFT packages (published_at IS NULL) are not purchasable.
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
         message: 'Package not available',
       });
     }
 
-    const pkg = await this.packages.getById(input.package_id);
-    if (!pkg || !pkg.is_active || pkg.archived_at || !pkg.published_at) {
-      // PR-6 — DRAFT packages (published_at IS NULL) are not purchasable.
+    // Hard-block unassigned clients, except a paid join (B-PACKAGE-135): only
+    // the paid package their coach code carries (entitlement attaches them).
+    if (!client.coach_id && !(await paidJoinAllowed(this.prisma, client, pkg, input.join_code))) {
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
         message: 'Package not available',
@@ -543,7 +544,7 @@ export class CheckoutService {
 
     // Hard-block cross-coach purchase (P0 IDOR fix). Returns 404 — never
     // confirm to the client that the package exists on another coach.
-    if (pkg.coach_id !== client.coach_id) {
+    if (client.coach_id && pkg.coach_id !== client.coach_id) {
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
         message: 'Package not available',

@@ -5,6 +5,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { PrismaService } from '../prisma.service';
 import { computeFireAt, type CadenceKind } from './drip-fire-at';
+import { attachPaidJoinTx } from '../invite-codes/join-package';
 
 // PR-9 (Packages & Drip-Feed) — REAL fan-out body.
 //
@@ -210,6 +211,14 @@ export class PurchaseFanoutService {
       },
       update: {},
     });
+
+    // B-PACKAGE-135 — a paid join completes here: a coachless buyer could only
+    // check out their join code's package (paidJoinAllowed), so this makes them
+    // that coach's client in this tx; a coached client is left alone.
+    const inApp = ctx.entrypoint === 'in_app_hosted' || ctx.entrypoint === 'in_app_ps';
+    if (inApp && ctx.clientId && ctx.coachId && typeof tx.user?.updateMany === 'function') {
+      await attachPaidJoinTx(tx, ctx.clientId, ctx.coachId);
+    }
 
     // Defensive: legacy unit-test wiring may pass a minimal stub that
     // doesn't expose the engine tables. Bail out (no-op fan-out) so
