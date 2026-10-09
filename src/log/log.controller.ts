@@ -7,11 +7,14 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { LogFoodDto, UpdateLogEntryDto } from './log.dto';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
+import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 
 @ApiTags('log')
 @Controller('log')
 @UseGuards(JwtAuthGuard, ClientEntitlementGuard, RolesGuard)
 @Roles('student')
+// B23: a client with no coach logs food from day one.
+@OpenToCoachlessClient()
 export class LogController {
   constructor(private logService: LogService) {}
 

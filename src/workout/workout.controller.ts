@@ -6,6 +6,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import {
   CreateWorkoutDto,
   CreateRoutineDto,
@@ -17,6 +18,8 @@ import {
 @Controller()
 @UseGuards(JwtAuthGuard, ClientEntitlementGuard, RolesGuard)
 @Roles('student')
+// B23: a client with no coach logs workouts and keeps their own routines.
+@OpenToCoachlessClient()
 export class WorkoutController {
   constructor(private workoutService: WorkoutService) {}
 

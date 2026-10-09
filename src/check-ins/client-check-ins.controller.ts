@@ -16,6 +16,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { CreateCheckInDto, ListCheckInsQueryDto } from './check-ins.dto';
 import { CheckInsService } from './check-ins.service';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
+import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 
 // Client-authenticated check-in endpoints. Every query scoped by req.user.id
 // so a client can never see/create a check-in for another user.
@@ -23,6 +24,8 @@ import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guar
 @Controller('check-ins')
 @UseGuards(JwtAuthGuard, RolesGuard, ClientEntitlementGuard)
 @Roles('student')
+// B23: a client with no coach checks in like any client (no coach alert fires).
+@OpenToCoachlessClient()
 export class ClientCheckInsController {
   constructor(private checkIns: CheckInsService) {}
 

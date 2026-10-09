@@ -40,6 +40,7 @@
 ## 4. Entitlement / Paywall
 
 - `ClientEntitlementGuard` is applied to every paid endpoint. Use `@SkipClientEntitlement()` only for billing-recovery routes (checkout, entitlement check, billing portal, package list).
+- `@OpenToCoachlessClient()` lets a client with no coach through on routes a client uses on their own data (B23: logging, targets, plans, check-ins, fasting, insights, AI guidance). Leave places that need a real coach unmarked. `test/coachless-logging-entitlement.spec.ts` classifies every controller that mounts the guard; a new one must be added there.
 - Mobile has `EntitlementProvider` wrapping all authenticated student navigation. Bootstrap check fires on login; foreground check fires on app resume.
 - Paid screens use `ProtectedScreen` wrapper — they never mount and fire guarded API calls if `entitlementActive === false`.
 - `PackageSelectionSheet` is a promotional prompt only — it is **never** the enforcement gate.
