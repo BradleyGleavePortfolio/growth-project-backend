@@ -703,6 +703,19 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Run Roman context + coach pool live specs (b#891 B31, b#892 B31-D1)
+        # test/roman/roman-context-null-lists.live.spec.ts: on real Postgres, a
+        # client whose list columns are NULL still gets a grounded Roman turn
+        # (the DI-built RomanService receives its context builder).
+        # test/roman/roman-coach-pool-b31d1.live.spec.ts: a coached client's
+        # turn draws on the coach AI credit pool (default period created on
+        # first use, spent pool answered with the existing 402). Same MWB3_TEST_DATABASE_URL gate
+        # and reset + full-schema bootstrap; --runInBand so the per-file schema
+        # rebuilds never race.
+        run: npx jest test/roman/roman-context-null-lists.live.spec.ts test/roman/roman-coach-pool-b31d1.live.spec.ts --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
       - name: Run refund reversal concurrency live spec (#674 B-674-1)
         # Two refunds reversing one slice / transfer at once both count, on
         # real Postgres behind a held row lock (same gate and bootstrap).

@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   HttpStatus,
+  Inject,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
@@ -142,8 +143,11 @@ export class MessagingService {
     private aiContext: ClientAIContextService,
     // Apple 1.2 — Optional so legacy unit tests that build the service via
     // `new MessagingService(...)` without the safety arg still compile. In
-    // production DI it is always provided via MessagesSafetyModule.
-    @Optional() private safety: MessagesSafetyService | null = null,
+    // production DI it is provided via MessagesSafetyModule.
+    // NEST-TOKENS-134: the explicit token is required. With strictNullChecks a
+    // `T | null` param is emitted as `Object` in design:paramtypes, so without
+    // @Inject Nest resolved nothing and every block check was skipped.
+    @Optional() @Inject(MessagesSafetyService) private safety: MessagesSafetyService | null = null,
     // Phase 11: optional in the type signature so unit tests that
     // construct MessagingService directly with the legacy 4-arg form
     // keep compiling. In production DI it's always populated because
@@ -155,7 +159,7 @@ export class MessagingService {
     // (MessagingModule imports CommunityVoiceModule's provider). When absent we
     // lazily build one from the already-injected SupabaseService, so behaviour
     // is identical whether or not DI supplied it.
-    @Optional() private voiceUpload: VoiceUploadProvider | null = null,
+    @Optional() @Inject(VoiceUploadProvider) private voiceUpload: VoiceUploadProvider | null = null,
   ) {}
 
   // Resolve the extracted signed-upload provider, lazily constructing one from
