@@ -9,13 +9,16 @@ import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guar
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
+import { classifyAiGuideCrisis } from './ai-crisis-router';
+import { assertRomanHasCoach } from '../roman/roman-requires-coach';
 
 @ApiTags('ai')
 @Controller('ai')
 @UseGuards(JwtAuthGuard, RolesGuard, ClientEntitlementGuard)
 @Roles('student')
-// B23: AI guidance answers a client with no coach; no coach credit pool is
-// charged (ai.service checkCoachPool) and the per-user daily cap still applies.
+// B23 + owner 10-08 23:5x: AI guidance answers every client, package or not.
+// A coached client draws on the coach credit pool, a client with no coach on
+// none (ai.service checkCoachPool); the per-user daily cap always applies.
 @OpenToCoachlessClient()
 export class AiController {
   constructor(private aiService: AiService) {}
@@ -24,6 +27,10 @@ export class AiController {
   @Post('chat')
   @Throttle({ default: { ttl: 3600000, limit: 20 } })
   async chat(@Request() req: AuthedRequest, @Body() body: ChatRequestDto) {
+    // Owner 10-09 00:0x: the guide is Roman, so a client with no coach gets
+    // 403 ROMAN_REQUIRES_COACH before any AI call, quota or pool check. A
+    // crisis message still gets the fixed 988 / 911 reply (ai.service).
+    if (!classifyAiGuideCrisis(body.message)) assertRomanHasCoach(req.user);
     const result = await this.aiService.chat(
       req.user.id,
       body.message,

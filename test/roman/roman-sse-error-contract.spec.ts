@@ -77,7 +77,7 @@ function controllerThatThrows(thrown: unknown) {
 
 function fakeReq(requestId?: string) {
   return {
-    user: { id: 'user-A', role: 'student' },
+    user: { id: 'user-A', role: 'student', coach_id: 'coach-1' },
     ...(requestId ? { requestId } : {}),
     on: jest.fn(),
     off: jest.fn(),

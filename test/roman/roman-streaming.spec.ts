@@ -217,7 +217,7 @@ function makeAnthropic(deltas: string[], gap: () => Promise<void> = async () => 
 }
 
 // ─── fake express Request/Response ────────────────────────────────────────────
-function makeReq(user = { id: 'user-A', role: 'student' }) {
+function makeReq(user = { id: 'user-A', role: 'student', coach_id: 'coach-1' }) {
   const handlers: Record<string, Array<() => void>> = {};
   const req = {
     user,

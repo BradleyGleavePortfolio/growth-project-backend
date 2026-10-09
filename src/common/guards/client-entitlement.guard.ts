@@ -44,15 +44,16 @@ export class ClientEntitlementGuard implements CanActivate {
     // Coaches and owners are not subject to client package entitlement.
     if (!user || user.role !== 'student') return true;
 
-    // B23: routes marked @OpenToCoachlessClient() (the client's own logging,
-    // targets, plans, check-ins, insights and AI guidance) let a client with
-    // no coach through. A client with a coach falls through to the package
-    // check below, unchanged.
-    const openToCoachless = this.reflector.getAllAndOverride<boolean>(OPEN_TO_COACHLESS_CLIENT_KEY, [
+    // B23 + owner 10-08 23:5x: routes marked @OpenToCoachlessClient() (the
+    // client's own logging, targets, plans, check-ins, insights and AI
+    // guidance) are open to every client: no coach, a coach with a free
+    // package, a coach with no package or a lapsed plan. No package lookup.
+    // Unmarked routes keep the package check below, unchanged.
+    const openToEveryClient = this.reflector.getAllAndOverride<boolean>(OPEN_TO_COACHLESS_CLIENT_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
-    if (openToCoachless && !user.coach_id) return true;
+    if (openToEveryClient) return true;
 
     const now = new Date();
     const paidWindow: Prisma.ClientPurchaseWhereInput = {
