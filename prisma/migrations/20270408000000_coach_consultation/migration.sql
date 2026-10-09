@@ -1,15 +1,9 @@
 -- COACH-CONSULT-BE-134 (B02 B03, decision 134-1): the coach consultation K0-K8.
---
--- Additive only. Reverse: down.sql. No backfill: existing coaches keep every
--- value they have; the new columns are empty until a coach finishes the
--- consultation (POST /coach/consultation/complete).
---
--- "CoachProfile": the client-facing card and practice answers (K1-K5). Values
--- are validated against src/coach/consultation/coach-consultation.vocab.ts.
--- "CoachOnboardingProgress": the resumable draft and the finish time (K8).
---
--- Every new column is nullable or has a constant default, so on Postgres 11+
--- ADD COLUMN is a catalog-only change (no table rewrite). RLS is unchanged.
+-- Additive only (reverse: down.sql), no backfill. "CoachProfile": the card and
+-- practice answers (K1-K5, vocabularies in src/coach/consultation/
+-- coach-consultation.vocab.ts). "CoachOnboardingProgress": the resumable draft
+-- and the finish time (K8). Nullable or constant-default columns: catalog-only
+-- ADD COLUMN on Postgres 11+. RLS unchanged.
 
 SET lock_timeout = '5s';
 
