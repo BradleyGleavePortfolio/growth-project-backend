@@ -14,8 +14,9 @@ import { Roles } from '../common/decorators/roles.decorator';
 @Controller('ai')
 @UseGuards(JwtAuthGuard, RolesGuard, ClientEntitlementGuard)
 @Roles('student')
-// B23: AI guidance answers a client with no coach; no coach credit pool is
-// charged (ai.service checkCoachPool) and the per-user daily cap still applies.
+// B23 + owner 10-08 23:5x: AI guidance answers every client, package or not.
+// A coached client draws on the coach credit pool, a client with no coach on
+// none (ai.service checkCoachPool); the per-user daily cap always applies.
 @OpenToCoachlessClient()
 export class AiController {
   constructor(private aiService: AiService) {}

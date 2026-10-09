@@ -7,6 +7,11 @@
 // CLIENT_ENTITLEMENT_REQUIRED for a coachless client, so the phone locked the
 // Food and Train tabs and re-opened the paywall sheet.
 //
+// Owner 10-08 23:5x (B1, OPEN-BASIC-135): "No reason to ever lock a client
+// from basic functions". The marked routes are now open to EVERY client: no
+// coach, a coach with a free package, a coach with no package, or a lapsed
+// plan. Before, a client with a coach and no paid package got 402 here.
+//
 // The guard runs with the real Reflector against the real controller
 // metadata, so the test fails if a marker is removed or added by mistake. The
 // contract block classifies every controller that mounts the guard.
@@ -81,7 +86,17 @@ async function outcome(guard: ClientEntitlementGuard, context: ExecutionContext)
 const coachless = { id: 'client-a', role: 'student', coach_id: null };
 const coached = { id: 'client-b', role: 'student', coach_id: 'coach-1' };
 
-// What a coached client uses on their own data: open to a client with no coach.
+// Every kind of client the owner named. The package query would find no paid
+// row for any of them (a free package, no package and a lapsed plan all miss
+// the paid window), so the double returns null for each.
+const EVERY_CLIENT: ReadonlyArray<[string, Record<string, unknown>]> = [
+  ['a client with no coach', coachless],
+  ['a coached client on a free package', { id: 'client-free', role: 'student', coach_id: 'coach-1' }],
+  ['a coached client with no package', coached],
+  ['a coached client whose plan lapsed', { id: 'client-lapsed', role: 'student', coach_id: 'coach-2' }],
+];
+
+// The basic functions on the client's own data: open to every client.
 const OPEN_ROUTES: ReadonlyArray<[AnyCtor, string, string]> = [
   [LogController, 'logFood', 'POST /log/food'],
   [LogController, 'getDaily', 'GET /log/daily'],
@@ -120,18 +135,15 @@ const COACH_ONLY_ROUTES: ReadonlyArray<[AnyCtor, string, string]> = [
   [ClientGuidelinesController, 'getMyGuidelines', 'GET /coach/my-guidelines'],
 ];
 
-describe('B23 — a client with no coach uses every client feature on their own data', () => {
+describe('B1 + B23 — every client uses the basic functions on their own data', () => {
   for (const [controller, handler, label] of OPEN_ROUTES) {
-    it(`${label}: open to a client with no coach, no package lookup`, async () => {
-      const { guard, findFirst } = makeGuard(null);
-      expect(await outcome(guard, ctx(controller, handler, coachless))).toBe(200);
-      expect(findFirst).not.toHaveBeenCalled();
-    });
-
-    it(`${label}: a client with a coach and no active package still gets 402`, async () => {
-      const { guard } = makeGuard(null);
-      expect(await outcome(guard, ctx(controller, handler, coached))).toBe(402);
-    });
+    for (const [who, user] of EVERY_CLIENT) {
+      it(`${label}: open to ${who}, no package lookup`, async () => {
+        const { guard, findFirst } = makeGuard(null);
+        expect(await outcome(guard, ctx(controller, handler, user))).toBe(200);
+        expect(findFirst).not.toHaveBeenCalled();
+      });
+    }
 
     it(`${label}: a client with a coach and an active package passes`, async () => {
       const { guard } = makeGuard({ id: 'purchase-1' });
@@ -143,6 +155,17 @@ describe('B23 — a client with no coach uses every client feature on their own 
     it(`${label}: needs a coach, so a client with no coach and no package still gets 402`, async () => {
       const { guard } = makeGuard(null);
       expect(await outcome(guard, ctx(controller, handler, coachless))).toBe(402);
+    });
+
+    it(`${label}: unmarked, so a coached client with no package still gets 402`, async () => {
+      const { guard, findFirst } = makeGuard(null);
+      expect(await outcome(guard, ctx(controller, handler, coached))).toBe(402);
+      expect(findFirst).toHaveBeenCalledTimes(1);
+    });
+
+    it(`${label}: unmarked, so a coached client with an active package passes`, async () => {
+      const { guard } = makeGuard({ id: 'purchase-1' });
+      expect(await outcome(guard, ctx(controller, handler, coached))).toBe(200);
     });
   }
 
@@ -195,7 +218,7 @@ describe('B23 contract — every controller with the paywall guard is classified
   });
 
   for (const controller of [...OPEN, ...COACH_ONLY]) {
-    it(`${controller.name}: ${OPEN.has(controller) ? 'open' : 'coach-only'} for a client with no coach`, () => {
+    it(`${controller.name}: ${OPEN.has(controller) ? 'open to every client' : 'coach-only'}`, () => {
       expect(marked(controller)).toBe(OPEN.has(controller));
       const proto = controller.prototype as Record<string, unknown>;
       const markedHandlers = Object.getOwnPropertyNames(proto)
