@@ -20,7 +20,7 @@ import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { AuditService } from '../audit/audit.service';
 import { InviteGrantService, type GrantOutcome } from '../invite-grant/invite-grant.service';
-import { COACH_SPECIALTIES, MAX_SPECIALTIES } from '../coach/consultation/coach-consultation.vocab';
+import { publicCoachCardFields as coachCardFields } from '../coach/consultation/coach-consultation.vocab';
 import {
   acceptedCoachSharingNotice,
   grantCoachSharingAtJoinTx,
@@ -316,22 +316,6 @@ export type InvitePreview =
       specialties: string[];
     }
   | { valid: false };
-
-const SPECIALTY_KEYS: ReadonlySet<string> = new Set(COACH_SPECIALTIES);
-
-/**
- * Null-safe card fields; only known specialty keys leave the server. The
- * card line is the headline, else the K1 "how do you help people" answer
- * (`bio`, what the shipped K1 screen saves).
- */
-function coachCardFields(
-  profile: { headline?: string | null; bio?: string | null; specialties?: string[] | null } | null,
-): { headline: string | null; specialties: string[] } {
-  const specialties = (profile?.specialties ?? [])
-    .filter((k) => SPECIALTY_KEYS.has(k))
-    .slice(0, MAX_SPECIALTIES);
-  return { headline: profile?.headline?.trim() || profile?.bio?.trim() || null, specialties };
-}
 
 @Injectable()
 export class InviteCodesService {

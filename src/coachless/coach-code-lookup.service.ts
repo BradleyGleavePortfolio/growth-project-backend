@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { isWellFormedInviteCode } from '../invite-codes/invite-codes.service';
 import { COACHLESS_ERROR, type CoachlessErrorCode } from './coachless.errors';
+import { publicCoachCardFields } from '../coach/consultation/coach-consultation.vocab';
 
 /** A code resolved to its coach WITHOUT applying lifecycle rules. */
 export type ResolvedCoachCode =
@@ -124,7 +125,7 @@ export class CoachCodeLookupService {
         name: true,
         role: true,
         profile: { select: { avatar_url: true } },
-        coach_profile: { select: { business_name: true, bio: true } },
+        coach_profile: { select: { business_name: true, bio: true, headline: true, specialties: true } },
       },
     });
     if (!coach || coach.role !== 'coach') return null;
@@ -134,6 +135,8 @@ export class CoachCodeLookupService {
       photo_url: coach.profile?.avatar_url ?? null,
       business_name: coach.coach_profile?.business_name ?? null,
       bio: coach.coach_profile?.bio ?? null,
+      // COACH-CARD-134: the same card line + specialties as GET /invite/:code/preview.
+      ...publicCoachCardFields(coach.coach_profile),
     };
   }
 }
@@ -144,6 +147,10 @@ export interface CoachCard {
   photo_url: string | null;
   business_name: string | null;
   bio: string | null;
+  /** K1 headline, else the K1 bio; null when neither is set. */
+  headline: string | null;
+  /** K2 specialty keys (known keys only, max five); [] when unset. */
+  specialties: string[];
 }
 
 /** Unique-constraint violation (Prisma P2002), duck-typed so test doubles qualify. */
