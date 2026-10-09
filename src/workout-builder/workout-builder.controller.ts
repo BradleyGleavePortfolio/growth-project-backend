@@ -57,6 +57,7 @@ import { SubscriptionGuard } from '../billing/subscription.guard';
 import { RequiresTier } from '../billing/requires-tier.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
+import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import {
   AssignProgramDto,
   CloneProgramResultDto,
@@ -379,6 +380,9 @@ export class WorkoutProgramController {
 // active ClientPurchase get 402 from the guard. Pinned by
 // test/entitlement-guards-mounted.spec.ts.
 @UseGuards(JwtAuthGuard, ClientEntitlementGuard)
+// B23: a client with no coach (coach_id null) passes without a package and
+// reads their own assignments (none without a coach).
+@OpenToCoachlessClient()
 @Controller('assignments')
 export class AssignmentController {
   constructor(private readonly workoutBuilder: WorkoutBuilderService) {}

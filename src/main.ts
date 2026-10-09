@@ -117,9 +117,10 @@ async function bootstrap() {
   const metrics = app.get(MetricsService, { strict: false });
   app.useGlobalFilters(new HttpExceptionFilter(), new ThrottlerExceptionFilter(metrics));
 
-  // Global Cache-Control interceptor — adds `private, max-age=60` to safe
-  // GET responses, `no-store` to /auth/*, /messaging/*, /admin/*, /health*,
-  // /.well-known/*. See src/common/cache-control.interceptor.ts.
+  // Global Cache-Control interceptor — `private, no-store` on every response
+  // unless the route declares its own policy, `no-store` on /auth/*,
+  // /messaging/*, /admin/*, /health*, /readyz, /.well-known/*. See
+  // src/common/cache-control.interceptor.ts.
   app.useGlobalInterceptors(new CacheControlInterceptor());
 
   // Surface unhandled rejections / uncaught exceptions to Sentry. Without

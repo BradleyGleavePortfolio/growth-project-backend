@@ -1,34 +1,38 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { Observable, tap } from 'rxjs';
+import { Observable } from 'rxjs';
 
 /**
- * CacheControlInterceptor — adds a conservative private cache hint to safe,
- * idempotent GET responses while opting sensitive surfaces out of caching.
+ * CacheControlInterceptor — no phone, browser or proxy keeps a copy of an API
+ * response unless the route itself says it may.
  *
  * Behavior:
- * - 2xx GET responses receive `Cache-Control: private, max-age=60` so a
- *   coach or client device can avoid round-tripping the same read more than
- *   once per minute. `private` keeps responses out of any shared/CDN cache;
- *   `max-age` is short enough that a coach action will appear within a
- *   minute even on the worst-case stale-cache device.
- * - The following route prefixes ALWAYS receive `Cache-Control: no-store`
- *   regardless of method or status code, because their responses change
- *   per-request or carry credentials that must never be persisted:
+ * - Every response that reaches a controller gets
+ *   `Cache-Control: private, no-store`: any method, success or error. The
+ *   header is set BEFORE the handler runs, so the exception filter's error
+ *   responses and handlers that answer through @Res() carry it too.
+ *   (Until SETUP-STALE-132, 2xx GETs got `private, max-age=60`: a phone's
+ *   HTTP cache then served personal reads such as GET /coach/onboarding from
+ *   memory for up to a minute after a write, and the coach setup wizard
+ *   posted a step the server had already passed -> 400 STEP_OUT_OF_ORDER.)
+ * - The following route prefixes receive exactly `Cache-Control: no-store`
+ *   (unchanged), because their responses change per request or carry
+ *   credentials:
  *     /auth/*              login responses (access tokens)
  *     /messaging/*         realtime coach-client messaging
  *     /admin/*             owner-only console (per-request fanout)
  *     /health*             liveness probes
  *     /readyz              current database readiness, never a cached success
- *     /.well-known/*       AASA + assetlinks (signed by deploy, not cacheable
- *                          long enough to matter; clients re-fetch on every
- *                          link tap)
- * - Non-GET methods and non-2xx responses are left untouched. The
- *   HttpExceptionFilter already controls error response shape; this
- *   interceptor stays out of that path.
- * - We do NOT overwrite a Cache-Control header that the handler explicitly
- *   set — controllers that opt into a different policy (e.g. longer maxage
- *   for static-ish public pages) take precedence.
+ *     /.well-known/*       AASA + assetlinks (their handler sets its own
+ *                          public policy, which wins; see below)
+ * - A policy already on the response when this interceptor runs (an
+ *   @Header() decorator, which Nest applies before interceptors, or a
+ *   middleware) is left alone, and a handler that sets its own header
+ *   overwrites this default. That is how the genuinely public,
+ *   unauthenticated routes keep public caching: the HTML pages in
+ *   public-pages.controller.ts (`public, max-age=300`), /.well-known/*
+ *   (`public, max-age=3600`) and the coach landing pages
+ *   (`public, max-age=60, stale-while-revalidate=300`).
  */
 
 const NO_STORE_PREFIXES: ReadonlyArray<string> = [
@@ -60,28 +64,12 @@ export class CacheControlInterceptor implements NestInterceptor {
 
     const req = context.switchToHttp().getRequest<Request>();
     const res = context.switchToHttp().getResponse<Response>();
-    const path = req.path || req.url || '';
-    const method = (req.method || 'GET').toUpperCase();
 
-    return next.handle().pipe(
-      tap(() => {
-        // Do not stomp on a handler-set policy.
-        if (res.getHeader('Cache-Control')) return;
-
-        if (matchesNoStore(path)) {
-          res.setHeader('Cache-Control', 'no-store');
-          return;
-        }
-
-        if (method !== 'GET') return;
-        // Only annotate successful responses; let errors flow through the
-        // exception filter without a cache hint that would tell a downstream
-        // proxy to remember a transient failure.
-        const status = res.statusCode;
-        if (status >= 200 && status < 300) {
-          res.setHeader('Cache-Control', 'private, max-age=60');
-        }
-      }),
-    );
+    // Do not stomp on a policy set before the handler (decorator/middleware).
+    if (!res.getHeader('Cache-Control')) {
+      const path = req.path || req.url || '';
+      res.setHeader('Cache-Control', matchesNoStore(path) ? 'no-store' : 'private, no-store');
+    }
+    return next.handle();
   }
 }

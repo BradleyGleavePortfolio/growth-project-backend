@@ -12,11 +12,14 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
+import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import { HolisticInsightsService } from './holistic-insights.service';
 
 @ApiTags('insights')
 @Controller('insights')
 @UseGuards(JwtAuthGuard, ClientEntitlementGuard)
+// B23: a client with no coach reads insights from their own logs.
+@OpenToCoachlessClient()
 export class HolisticInsightsController {
   constructor(private readonly insights: HolisticInsightsService) {}
 
