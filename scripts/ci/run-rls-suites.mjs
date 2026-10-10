@@ -89,6 +89,10 @@ for (const role of Object.values(OWNERS)) {
     CREATE ROLE ${role} LOGIN NOINHERIT PASSWORD '${role}' NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE; END IF; END $$`);
 }
 psql(`GRANT anon, authenticated, service_role TO ${OWNERS.member}`);
+// app_authenticated: the RLS-bound request role some suites grant to; created
+// exactly as the mwb-3-live-tests job does (NOLOGIN NOINHERIT NOBYPASSRLS).
+psql(`DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_authenticated') THEN
+  CREATE ROLE app_authenticated NOLOGIN NOINHERIT NOBYPASSRLS; END IF; END $$`);
 const results = [];
 suites.forEach((suite, i) => {
   const setup = SETUP[suite] || SETUP['*'] || {};
