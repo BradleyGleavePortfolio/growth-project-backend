@@ -37,6 +37,9 @@ function makeFixtures() {
         return row;
       }),
       findUnique: jest.fn(async ({ where }: any) => drafts.find((d) => d.id === where.id) || null),
+      findMany: jest.fn(async ({ where }: any) =>
+        drafts.filter((d) => d.coachId === where.coachId && d.status === where.status),
+      ),
       update: jest.fn(async ({ where, data }: any) => {
         const i = drafts.findIndex((d) => d.id === where.id);
         if (i < 0) throw new Error('not found');
@@ -451,5 +454,49 @@ describe('CoachAIService', () => {
     const rejected = await f.svc.rejectDraft('coach1', draftId, 'not useful');
     expect(rejected.status).toBe('REJECTED');
     expect(rejected.rejectionReason).toBe('not useful');
+  });
+
+  describe('a client who moves to another coach', () => {
+    async function insightDraft(f: ReturnType<typeof makeFixtures>, coachId: string) {
+      f.anthropic.completeStructured.mockResolvedValue({
+        data: { summary: '', wins: [], concerns: [], suggested_actions: [], questions_for_coach: [] },
+        tokensIn: 1,
+        tokensOut: 1,
+        modelUsed: 'claude-sonnet-4-6',
+        latencyMs: 1,
+      });
+      return (await f.svc.generateClientInsight(coachId, { clientId: 'client1' })).draftId;
+    }
+
+    it('takes their drafts from the former coach: list, read, edit, reject and approve', async () => {
+      const f = makeFixtures();
+      const draftId = await insightDraft(f, 'coach1');
+      expect((await f.svc.listDrafts('coach1')).map((d) => d.id)).toEqual([draftId]);
+      f.workouts.assertCanAccessClient.mockRejectedValue(new Error('moved'));
+      expect(await f.svc.listDrafts('coach1')).toEqual([]);
+      for (const call of [
+        () => f.svc.getDraft('coach1', draftId),
+        () => f.svc.editDraft('coach1', draftId, { summary: 'edited' }),
+        () => f.svc.rejectDraft('coach1', draftId, 'no'),
+        () => f.svc.approveDraft('coach1', draftId),
+      ]) {
+        await expect(call()).rejects.toBeInstanceOf(NotFoundException);
+      }
+      expect(f.drafts[0]).toMatchObject({ status: 'DRAFT', generatedPayload: { summary: '' } });
+    });
+
+    it('a sub-coach keeps their drafts while the client is assigned to them', async () => {
+      const f = makeFixtures();
+      f.workouts.assertCanAccessClient.mockImplementation(async (coachId: string, clientId: string) => {
+        if (coachId === 'sub1' && clientId === 'client1') return;
+        throw new Error('no access');
+      });
+      const draftId = await insightDraft(f, 'sub1');
+      expect((await f.svc.listDrafts('sub1')).map((d) => d.id)).toEqual([draftId]);
+      expect((await f.svc.getDraft('sub1', draftId)).id).toBe(draftId);
+      f.workouts.assertCanAccessClient.mockRejectedValue(new Error('unassigned'));
+      expect(await f.svc.listDrafts('sub1')).toEqual([]);
+      await expect(f.svc.getDraft('sub1', draftId)).rejects.toBeInstanceOf(NotFoundException);
+    });
   });
 });

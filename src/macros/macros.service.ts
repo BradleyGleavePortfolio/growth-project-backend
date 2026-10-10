@@ -195,11 +195,12 @@ export class MacrosService {
     };
   }
 
-  // Coach-side read of a single target. 404 if missing or owned by a
-  // different coach (privacy: same shape as a genuine miss).
+  // Coach-side read of a single target. 404 if missing or the client is no
+  // longer this coach's (privacy: same shape as a genuine miss). Scoped by
+  // the client's current coach, not the coach who set the target.
   async getOneByCoach(coachId: string, targetId: string) {
     const t = await this.prisma.macroTarget.findFirst({
-      where: { id: targetId, coach_id: coachId, archived_at: null },
+      where: { id: targetId, client: { coach_id: coachId }, archived_at: null },
     });
     if (!t) throw new NotFoundException('Macro target not found');
     return t;
@@ -207,7 +208,7 @@ export class MacrosService {
 
   async archiveByCoach(coachId: string, targetId: string) {
     const result = await this.prisma.macroTarget.updateMany({
-      where: { id: targetId, coach_id: coachId, archived_at: null },
+      where: { id: targetId, client: { coach_id: coachId }, archived_at: null },
       data: { archived_at: new Date() },
     });
     if (result.count === 0) throw new NotFoundException('Macro target not found');
