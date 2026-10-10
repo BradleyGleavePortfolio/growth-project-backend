@@ -46,6 +46,14 @@ const REFUSED = [
   'postgresql://u:p@localhost/throwaway?connection_limit=1&connection_limit=9',
   'postgresql://u:p@localhost/throwaway?sslmode=disable',
   'mysql://u:p@localhost/throwaway',
+  // forms libpq reads differently from WHATWG URL: a fragment hides host/hostaddr
+  'postgresql://u:p@localhost:5432/postgres#?host=remote.example.invalid&dbname=postgres',
+  'postgresql://u:p@localhost:5432/postgres#?hostaddr=203.0.113.7',
+  'postgresql://u:p@localhost:5432/throwaway#',
+  'postgresql://u@remote.example.invalid@localhost/throwaway',
+  'postgresql://u:p@local\thost/throwaway',
+  ' postgresql://u:p@localhost/throwaway',
+  'POSTGRESQL://u:p@localhost/throwaway',
 ];
 
 describe('liveTestDatabaseUrl', () => {

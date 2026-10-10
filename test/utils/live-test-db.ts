@@ -20,13 +20,18 @@ export const LIVE_TEST_DB_HOSTS: readonly string[] = ['localhost', '127.0.0.1', 
 export const LIVE_TEST_DB_OPTIONS: readonly string[] = ['connection_limit', 'schema', 'connect_timeout'];
 
 function problem(raw: string): string | null {
+  // Refuse anything libpq and WHATWG URL could read differently before parsing:
+  // libpq does not end the database path at '#', so options after it would apply.
+  if (!/^postgres(ql)?:\/\//.test(raw)) return 'does not start with postgresql:// or postgres://';
+  if (!/^[\x21-\x7e]+$/.test(raw)) return 'contains whitespace, control or non-ASCII characters';
+  if (raw.includes('#')) return 'has a # fragment';
+  if (raw.split('@').length > 2) return 'has more than one @';
   let u: URL;
   try {
     u = new URL(raw);
   } catch {
     return 'is not a valid URL';
   }
-  if (u.protocol !== 'postgresql:' && u.protocol !== 'postgres:') return `has protocol "${u.protocol}"`;
   const host = u.hostname.replace(/^\[|\]$/g, '');
   if (!LIVE_TEST_DB_HOSTS.includes(host)) {
     return `host "${host}" is not a local test database (${LIVE_TEST_DB_HOSTS.join(', ')})`;

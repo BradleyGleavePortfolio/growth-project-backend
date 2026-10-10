@@ -17,13 +17,18 @@ export const ALLOWED_OPTIONS = ['connection_limit', 'schema', 'connect_timeout']
 export const ROUTING_ENV = ['PGHOST', 'PGHOSTADDR', 'PGSERVICE'];
 
 export function localDbUrlProblem(raw) {
+  // Refuse anything libpq and WHATWG URL could read differently before parsing:
+  // libpq does not end the database path at '#', so options after it would apply.
+  if (!/^postgres(ql)?:\/\//.test(raw)) return 'does not start with postgresql:// or postgres://';
+  if (!/^[\x21-\x7e]+$/.test(raw)) return 'contains whitespace, control or non-ASCII characters';
+  if (raw.includes('#')) return 'has a # fragment';
+  if (raw.split('@').length > 2) return 'has more than one @';
   let u;
   try {
     u = new URL(raw);
   } catch {
     return 'is not a valid URL';
   }
-  if (u.protocol !== 'postgresql:' && u.protocol !== 'postgres:') return `has protocol "${u.protocol}"`;
   const host = u.hostname.replace(/^\[|\]$/g, '');
   if (!LOCAL_HOSTS.includes(host)) return `host "${host}" is not local (${LOCAL_HOSTS.join(', ')})`;
   if (!/^\/[\w-]*$/.test(u.pathname)) return `database name "${u.pathname}" is not a plain name`;
