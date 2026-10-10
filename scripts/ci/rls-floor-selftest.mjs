@@ -8,13 +8,15 @@
 // widened list entry. The fixtures exist only in the scratch copy; nothing
 // here is a migration. CI only: local hosts.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { assertLocalDbUrl, cleanEnv } from './local-db-url.mjs';
 
 const ADMIN = process.env.RLS_ADMIN_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/postgres';
 const TEMPLATE = process.env.RLS_SELFTEST_TEMPLATE || 'rls_replay';
 const SCRATCH = 'rls_floor_selftest';
-const OUT = '/tmp/rls-floor-selftest';
+const OUT = join(mkdtempSync(join(tmpdir(), 'rls-floor-selftest-')), 'out');
 assertLocalDbUrl(ADMIN, 'RLS_ADMIN_DATABASE_URL');
 const env = cleanEnv();
 const psql = (url, ...args) => execFileSync('psql', [url, '-XAtq', '-v', 'ON_ERROR_STOP=1', ...args], { encoding: 'utf8', env });
