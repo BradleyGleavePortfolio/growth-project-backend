@@ -2,8 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  Param,
-  Patch,
   Put,
   Req,
   UseGuards,
@@ -16,10 +14,11 @@ import { CoachGuard } from '../auth/coach.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { NoActiveSubCoachGuard } from '../common/guards/no-active-sub-coach.guard';
 import { UpsertTeamProfileDto } from './team.dto';
-import { UpdateRevenueSharingDto } from './dto/update-revenue-sharing.dto';
 import { TeamService } from './team.service';
 
 // Phase 8 — Coach team profile + member roster.
+// Sub-coach revenue-sharing routes are off until v1.1 dual authorization
+// (tgp-agent-context planning/V1_1_MUST_DO.md section 2).
 //
 // All routes are mounted under /coach/team (not /v1/coach/team) so the
 // mobile axios baseURL (`<host>/api`) resolves them at
@@ -80,51 +79,5 @@ export class TeamController {
   @Get('members')
   async members(@Req() req: AuthedRequest) {
     return this.team.listMembers(req.user.id);
-  }
-
-  // GET /coach/team/members/:sub_coach_id/revenue-sharing
-  //
-  // Reads the revenue-sharing flag for a single sub-coach. Service-side
-  // `assertSubCoachRelationship(headCoachId, subCoachId)` ensures the
-  // caller owns the target sub-coach; NoActiveSubCoachGuard blocks any
-  // active sub-coach from inspecting their own (or anyone's) split.
-  @Roles('coach', 'owner')
-  @Get('members/:sub_coach_id/revenue-sharing')
-  @UseGuards(JwtAuthGuard, NoActiveSubCoachGuard)
-  async getRevenueSharing(
-    @Req() req: AuthedRequest,
-    @Param('sub_coach_id') subCoachId: string,
-  ) {
-    return this.team.getRevenueSharing(req.user.id, subCoachId);
-  }
-
-  // PATCH /coach/team/members/:sub_coach_id/revenue-sharing
-  //
-  // CRITICAL: alters the head_coach_split_bps override for a sub-coach.
-  // A sub-coach must NEVER be able to set their own (or anyone's) split.
-  // Two defences enforce this:
-  //   1. NoActiveSubCoachGuard throws 403 'sub_coach_billing_blocked'
-  //      before the handler runs for any user with an active
-  //      teamSubCoachAssignment row.
-  //   2. Service calls `assertSubCoachRelationship(req.user.id, subCoachId)`
-  //      which verifies the caller is the head coach of the target.
-  // OWNER is included for platform support; the global RolesGuard owner
-  // bypass is also active.
-  @Roles('coach', 'owner')
-  @Patch('members/:sub_coach_id/revenue-sharing')
-  @UseGuards(JwtAuthGuard, NoActiveSubCoachGuard)
-  @Throttle({ default: { ttl: 60_000, limit: 20 } })
-  async setRevenueSharing(
-    @Req() req: AuthedRequest,
-    @Param('sub_coach_id') subCoachId: string,
-    @Body() body: UpdateRevenueSharingDto,
-  ) {
-    return this.team.setRevenueSharing(
-      req.user.id,
-      subCoachId,
-      body.enabled,
-      req.user.id,
-      req.user.role,
-    );
   }
 }

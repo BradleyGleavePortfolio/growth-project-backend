@@ -5,7 +5,6 @@ import { JwksVerifierService } from '../auth/jwks.service';
 import { StripeApiService } from '../billing/stripe-api.service';
 import { PrismaService } from '../prisma.service';
 import { HeadCoachOnlyGuard } from '../sub-coaches/head-coach-only.guard';
-import { TeamModeController } from './team-mode.controller';
 import { TeamModeService } from './team-mode.service';
 import { TeamModeTierResolverService } from './tier-resolver.service';
 
@@ -14,7 +13,7 @@ import { TeamModeTierResolverService } from './tier-resolver.service';
 // AuthModule. PrismaService is global. StripeApiService has no
 // dependencies beyond env so it self-instantiates.
 @Module({
-  controllers: [TeamModeController],
+  // Routes off until v1.1 dual authorization (tgp-agent-context planning/V1_1_MUST_DO.md section 2).
   providers: [
     TeamModeService,
     TeamModeTierResolverService,
