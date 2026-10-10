@@ -18,7 +18,7 @@
 //   STALE    a listed suite now passes, or its file is gone: delete the entry
 // The job fails on any FAIL or STALE. Usage: node scripts/ci/run-rls-suites.mjs [paths...]
 import { execFileSync, spawnSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const ADMIN_URL = process.env.RLS_ADMIN_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/postgres';
@@ -152,7 +152,7 @@ const head = `RLS suites: ${results.length} run; PASS ${tally('PASS')}, PENDING 
 console.log([head, '', ...lines].join('\n'));
 if (process.env.GITHUB_STEP_SUMMARY) {
   const md = [`## ${head}`, '', '| verdict | suite | database | pass/fail/skip | note |', '|---|---|---|---|---|',
-    ...results.map((x) => `| ${x.verdict} | \`${x.suite}\` | ${x.template} | ${tests(x.n)} | ${String(x.note).replace(/\|/g, '\\|')} |`), ''];
+    ...results.map((x) => `| ${x.verdict} | \`${x.suite}\` | ${x.template} | ${tests(x.n)} | ${String(x.note).replace(/\\/g, '\\\\').replace(/\|/g, '\\|')} |`), ''];
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, md.join('\n'));
 }
 if (tally('FAIL') || tally('STALE')) die(`${tally('FAIL')} failing and ${tally('STALE')} stale suite(s).`);

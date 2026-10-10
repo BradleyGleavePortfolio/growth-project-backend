@@ -153,7 +153,7 @@ for (const r of rows) lines.push(`${pad(r.result, 15)} ${pad(r.check, 4)} ${pad(
 console.log(lines.join('\n'));
 
 if (process.env.GITHUB_STEP_SUMMARY) {
-  const esc = (s) => String(s).replace(/\|/g, '\\|');
+  const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/\|/g, '\\|');
   const md = [
     `## RLS floor on the full-chain replay: ${failing.length ? `FAILED (${failing.length})` : 'passed'}`, '',
     ...head.map((h) => `- ${h}`), '',
