@@ -1,5 +1,5 @@
+import { calorieFloorKcal } from '../src/macros/calorie-floor';
 import {
-  CALORIE_FLOOR_KCAL,
   KG_PER_LB,
   ageInYears,
   bmrMifflinStJeor,
@@ -79,7 +79,7 @@ describe('computeMacros', () => {
     ['male', 1500],
     ['prefer_not_to_say', 1500],
   ] as const)('applies the %s floor of %i kcal and reports it', (sex, floor) => {
-    expect(CALORIE_FLOOR_KCAL[sex]).toBe(floor);
+    expect(calorieFloorKcal(sex)).toBe(floor);
     const m = computeMacros({
       weight_lbs: 95,
       height_cm: 150,

@@ -13,11 +13,10 @@ const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
 
 // Range bounds chosen to reject obviously-broken inputs (e.g. a coach
-// fat-fingering 99999 calories) while leaving generous headroom for
-// real prescriptions on either tail (cut to 800kcal, bulk to 6500kcal).
+// fat-fingering 99999 calories). The calorie lower bound depends on the
+// client's sex, so MacrosService.createForClient enforces it (calorie-floor.ts).
 export class CreateMacroTargetDto {
   @IsInt()
-  @Min(800)
   @Max(7000)
   calories_kcal!: number;
 

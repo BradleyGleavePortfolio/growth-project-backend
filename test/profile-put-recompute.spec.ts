@@ -6,6 +6,7 @@ import { MacrosService } from '../src/macros/macros.service';
 import type { PrismaService } from '../src/prisma.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
 import type { UpdateProfileDto } from '../src/profile/profile.dto';
+import { FLOOR_CASES, FLOOR_CASE_WEIGHT_LBS } from './_fixtures/calorie-floor-cases';
 
 // Fix-round regressions for the independent audit of PR #606:
 //   B606-1: PUT /profile with incomplete calculator inputs must return the
@@ -202,4 +203,23 @@ describe('B606-2: PUT /profile returns the recomputed, floor-respecting targets'
     expect(put.macro_target_calories).not.toBe(9999);
     expect(put.macro_target_calories).toBeGreaterThanOrEqual(1500);
   });
+
+  it.each(FLOOR_CASES)(
+    'calorie floor: $sex $where the floor stores $expected kcal',
+    async ({ sex, height_cm, expected }) => {
+      const h = harness({
+        user_id: 'u-floor',
+        sex,
+        activity_level: 'sedentary',
+        goal_type: 'maintenance',
+        current_weight_lbs: FLOOR_CASE_WEIGHT_LBS,
+        height_cm,
+        date_of_birth: new Date('1988-01-01'),
+      });
+      const put = (await h.svc.updateProfile('u-floor', dto({}), now)) as Record<string, unknown>;
+      expect(put.macro_target_calories).toBe(expected);
+      const recomputed = await h.svc.computeAndSaveMacros('u-floor', now);
+      expect(recomputed?.macro_target_calories).toBe(expected);
+    },
+  );
 });

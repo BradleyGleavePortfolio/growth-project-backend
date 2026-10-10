@@ -15,6 +15,7 @@ import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import { CONSULT_CONSENT_V3_TEXT_SHA256 } from '../src/onboarding/consult-consent-copy';
 import { macroRawFromAnswers, type Answers } from '../src/onboarding/consultation-answers';
 import { computeMacros, resolveMacroInputs } from '../src/macros/macro-calculator';
+import { FLOOR_CASES, FLOOR_CASE_WEIGHT_LBS } from './_fixtures/calorie-floor-cases';
 
 const fx = parseFixture(
   readFileSync(join(__dirname, '..', 'seed', 'clinic-programs.v1.json'), 'utf8'),
@@ -2333,4 +2334,30 @@ describe('B-GOALCLEAR-BE-135: a goal weight removed in the summary leaves the pr
     await w.consentThenSave('client-1', { version: 'consult-v1', answers: NO_GOAL }, NOW);
     expect(w.profiles[0].target_weight_lbs).toBe(140);
   });
+});
+
+describe('calorie floor: the consultation target never goes below the client floor', () => {
+  it.each(FLOOR_CASES)(
+    '$sex $where the floor stores $expected kcal, coached and coachless',
+    async ({ sex, height_cm, expected }) => {
+      const answers = {
+        ...COMPLETE,
+        B1: sex,
+        B3: { height_cm, weight_lbs: FLOOR_CASE_WEIGHT_LBS, unit: 'imperial' },
+        L1: 'sedentary',
+        G1: 'maintenance',
+      };
+      for (const clientId of ['client-1', 'loner']) {
+        const w = makeWorld();
+        if (clientId === 'loner') addHouseSet(w);
+        await w.consentThenSave(clientId, { version: 'consult-v1', answers }, NOW);
+        expect((await w.svc.complete(clientId, NOW)).macros.calories).toBe(expected);
+        expect(w.macroTargets).toEqual([
+          expect.objectContaining({ client_id: clientId, calories_kcal: expected }),
+        ]);
+        const profile = w.profiles.find((p) => p.user_id === clientId);
+        expect(profile?.macro_target_calories).toBe(expected);
+      }
+    },
+  );
 });
