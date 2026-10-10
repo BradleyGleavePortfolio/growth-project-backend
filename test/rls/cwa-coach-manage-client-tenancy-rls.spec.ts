@@ -28,12 +28,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
 const MIGRATIONS = path.join(__dirname, '..', '..', 'prisma', 'migrations');
 const D8_DIR = path.join(MIGRATIONS, '20270319000000_cwa_coach_manage_client_tenancy');
 const PRIOR_SQL = path.join(MIGRATIONS, '20260702000000_fix_workout_rls_coach_role', 'migration.sql');
 
-const RAW_URL = process.env.TEST_DATABASE_URL || '';
+const RAW_URL = liveTestDatabaseUrl();
 if (!RAW_URL && process.env.CI === 'true') {
   throw new Error('[D8] cwa-coach-manage-client-tenancy-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.');
 }

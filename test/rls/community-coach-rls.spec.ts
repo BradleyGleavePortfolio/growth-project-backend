@@ -11,7 +11,7 @@
  *     policies the new write/read paths rely on, with the allow/deny shapes the
  *     planner needs — workspace-coach FOR ALL on cohorts + memberships, member
  *     self/shared-cohort SELECT, and the helper functions that back them.
- *  2. LIVE assertions (run only when COMMUNITY_TEST_DATABASE_URL + `pg` are
+ *  2. LIVE assertions (run only when TEST_DATABASE_URL + `pg` are
  *     available): real cross-workspace, cross-cohort, member-not-coach, and
  *     OWNER-bypass enforcement through a non-privileged (NOBYPASSRLS) role.
  *
@@ -28,13 +28,13 @@ import {
   clearSessionUser,
   connect,
   ensureRlsTestRole,
-  liveDbUrl,
   migrationDown,
   readCommunityMigrationSql,
   resetRole,
   setSessionUser,
   type LiveClient,
 } from '../community/_support/community-db';
+import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
 // ── Layer 1: static policy-coverage assertions (always run) ────────────────
 
@@ -126,17 +126,17 @@ describe('v1-6 coach admin RLS — static policy coverage (no new migration)', (
 
 // ── Layer 2: live cross-tenant enforcement (gated on a disposable Postgres) ──
 
-const itLive = liveDbUrl() ? describe : describe.skip;
+const itLive = liveTestDatabaseUrl() ? describe : describe.skip;
 
-if (!liveDbUrl()) {
+if (!liveTestDatabaseUrl()) {
   // eslint-disable-next-line no-console
   console.warn(
-    '[community-coach-rls] COMMUNITY_TEST_DATABASE_URL not set — live RLS suite skipped (static coverage still runs).',
+    '[community-coach-rls] TEST_DATABASE_URL not set — live RLS suite skipped (static coverage still runs).',
   );
 }
 
 itLive('v1-6 coach admin RLS — live enforcement', () => {
-  const url = liveDbUrl() as string;
+  const url = liveTestDatabaseUrl() as string;
   let owner: LiveClient | null = null;
   let rls: LiveClient | null = null;
 

@@ -24,6 +24,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { liveTestDatabaseUrl } from './utils/live-test-db';
 
 const MIGRATION_SQL_PATH = path.join(
   __dirname,
@@ -34,11 +35,7 @@ const MIGRATION_SQL_PATH = path.join(
   'migration.sql',
 );
 
-const TEST_DB_URL =
-  process.env.RLS_TIER2_TEST_DATABASE_URL ||
-  process.env.RLS_FN_TEST_DATABASE_URL ||
-  process.env.DATABASE_URL ||
-  'postgresql://rls_tester:rls_tester_pw@localhost:5432/rls_tier2_test';
+const TEST_DB_URL = liveTestDatabaseUrl({ required: true });
 
 // Prerequisite catalog objects the migration and assertions depend on. Mirrors
 // the production column shapes the policies actually read. Applied before the

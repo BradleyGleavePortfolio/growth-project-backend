@@ -38,6 +38,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaClient, Prisma } from '@prisma/client';
+import { liveTestDatabaseUrl } from './utils/live-test-db';
 
 const MIGRATION_SQL_PATH = path.join(
   __dirname,
@@ -48,10 +49,7 @@ const MIGRATION_SQL_PATH = path.join(
   'migration.sql',
 );
 
-const TEST_DB_URL =
-  process.env.RLS_TIER5_TEST_DATABASE_URL ||
-  process.env.DATABASE_URL ||
-  'postgresql://rls_tester:rls_tester_pw@localhost:5432/rls_tier5_test';
+const TEST_DB_URL = liveTestDatabaseUrl({ required: true });
 
 // ---------------------------------------------------------------------------
 // Prerequisite catalog: the helper functions (search_path-hardened in
@@ -80,7 +78,8 @@ CREATE TABLE IF NOT EXISTS public."Habit" (
   "name" text NOT NULL DEFAULT 'habit'
 );
 CREATE TABLE IF NOT EXISTS public."CoachingSession" (
-  "id" text PRIMARY KEY
+  "id" text PRIMARY KEY,
+  "coach_id" text
 );
 
 CREATE TABLE IF NOT EXISTS public."EmailSendLog" (

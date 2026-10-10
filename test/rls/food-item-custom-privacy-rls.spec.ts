@@ -21,12 +21,13 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { Prisma, PrismaClient } from '@prisma/client';
+import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
 const MIGRATIONS = path.join(__dirname, '..', '..', 'prisma', 'migrations');
 const PRIV_DIR = path.join(MIGRATIONS, '20270403000000_private_custom_foods');
 const TIER3_SQL = path.join(MIGRATIONS, '20261213000000_rls_tier3_nutrition', 'migration.sql');
 
-const RAW_URL = process.env.TEST_DATABASE_URL || '';
+const RAW_URL = liveTestDatabaseUrl();
 if (!RAW_URL && process.env.CI === 'true') {
   throw new Error('[UX-FOOD-PRIV-124] food-item-custom-privacy-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.');
 }

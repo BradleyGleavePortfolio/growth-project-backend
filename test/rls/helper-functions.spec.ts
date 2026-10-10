@@ -24,12 +24,9 @@
  */
 
 import { PrismaClient } from '@prisma/client';
+import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
-const DB_URL =
-  process.env.TEST_DATABASE_URL ||
-  (process.env.DATABASE_URL && !process.env.DATABASE_URL.startsWith('postgresql://test:test@')
-    ? process.env.DATABASE_URL
-    : '');
+const DB_URL = liveTestDatabaseUrl();
 
 const dbAvailable = Boolean(DB_URL);
 

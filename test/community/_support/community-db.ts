@@ -86,6 +86,10 @@ export function loadPg(): PgModule | null {
     const mod: PgModule = require('pg');
     return mod;
   } catch {
+    // D5: under CI a configured live suite must not pass by returning early.
+    if (process.env.CI === 'true') {
+      throw new Error('[community-db] live DB configured but the optional `pg` driver is not installed (CI=true): refusing to pass without running.');
+    }
     // eslint-disable-next-line no-console
     console.warn(
       '[community-db] optional `pg` driver not installed — live DB suite skipped. ' +
@@ -151,7 +155,7 @@ export async function applyMigration(client: LiveClient): Promise<void> {
   await client.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
   // Minimal User table so the community FKs resolve.
   await client.query(
-    'CREATE TABLE IF NOT EXISTS "User" ("id" UUID PRIMARY KEY DEFAULT gen_random_uuid())',
+    'CREATE TABLE IF NOT EXISTS "User" ("id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text)',
   );
   await client.query(readCommunityMigrationSql());
 }

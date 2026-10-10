@@ -80,3 +80,18 @@ AS $function$
 $function$;
 
 GRANT USAGE ON SCHEMA auth TO anon, authenticated, service_role;
+
+-- ── Supabase default privileges (D5) ─────────────────────────────────────
+-- A Supabase project grants every NEW object in schema public to the three
+-- API roles automatically (supabase/postgres initial schema). Without this
+-- a table a migration forgets to protect would look safe in CI only because
+-- nobody was ever granted it. With it, Row Level Security is the only thing
+-- standing between anon/authenticated and a fresh table, exactly as in a
+-- real project, so the floor guard measures the real exposure.
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  GRANT ALL ON TABLES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
+ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
+  GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;

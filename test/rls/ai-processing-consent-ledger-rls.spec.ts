@@ -38,6 +38,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaClient } from '@prisma/client';
+import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
 const MIGRATION_DIR = path.join(
   __dirname,
@@ -51,7 +52,7 @@ const TABLE = 'AiProcessingConsentEvent';
 const SHA = 'd8738c900ed2bfbb12b7ca6423132a532fc47e2cd0fe52854cc38e34c427840f';
 
 // Not DATABASE_URL: test/jest.setup.ts always sets a placeholder DATABASE_URL.
-const RAW_URL = process.env.TEST_DATABASE_URL || '';
+const RAW_URL = liveTestDatabaseUrl();
 if (!RAW_URL && process.env.CI === 'true') {
   throw new Error(
     '[R2a] ai-processing-consent-ledger-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.',

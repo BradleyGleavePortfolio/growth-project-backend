@@ -7,7 +7,7 @@
  *     grants a PERMISSIVE service_role bypass, and denies anon + authenticated
  *     via RESTRICTIVE deny-all. These pin the posture the live block proves.
  *
- *  2. LIVE assertions (run only when COMMUNITY_TEST_DATABASE_URL + the optional
+ *  2. LIVE assertions (run only when TEST_DATABASE_URL + the optional
  *     `pg` driver are available): against a REAL Postgres, prove the security
  *     properties the read endpoint depends on but that the in-memory FakePrisma
  *     suite can only assert structurally —
@@ -26,7 +26,8 @@
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { connect, liveDbUrl, type LiveClient } from '../../community/_support/community-db';
+import { connect, type LiveClient } from '../../community/_support/community-db';
+import { liveTestDatabaseUrl } from '../../utils/live-test-db';
 
 const MIGRATION_SQL_PATH = join(
   __dirname,
@@ -69,14 +70,14 @@ describe('IMPORTER-I ScoutReconstructedEntity RLS posture (static)', () => {
   });
 });
 
-// R69: this live suite is intentionally gated on liveDbUrl() (a real disposable
-// Postgres) rather than skip-annotated per test. When COMMUNITY_TEST_DATABASE_URL
+// R69: this live suite is intentionally gated on liveTestDatabaseUrl() (a real disposable
+// Postgres) rather than skip-annotated per test. When TEST_DATABASE_URL
 // (or the optional `pg` driver) is absent it is describe.skip'd wholesale — never
 // a silent pass; the static block above still carries the posture verification.
-const itLive = liveDbUrl() ? describe : describe.skip;
+const itLive = liveTestDatabaseUrl() ? describe : describe.skip;
 
 itLive('IMPORTER-I ScoutReconstructedEntity RLS — live enforcement', () => {
-  const url = liveDbUrl() as string;
+  const url = liveTestDatabaseUrl();
   let owner: LiveClient | null = null;
 
   const COACH_A = 'coach-a';

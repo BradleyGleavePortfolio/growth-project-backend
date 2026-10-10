@@ -60,9 +60,10 @@ describe('R2a wiring', () => {
   it('the rls-live-tests CI job runs the live ledger suite', () => {
     const ci = read('.github/workflows/ci.yml');
     const job = ci.slice(ci.indexOf('\n  rls-live-tests:'), ci.indexOf('\n  mwb-3-live-tests:'));
-    expect(job).toContain(
-      'npx jest --config jest.rls.config.js test/rls/ai-processing-consent-ledger-rls.spec.ts',
-    );
+    // D5: the job runs every RLS suite through the runner; this one may not be parked as pending.
+    expect(job).toContain('node scripts/ci/run-rls-suites.mjs');
+    const pending = JSON.parse(read('scripts/ci/rls-suites-pending.json')) as Record<string, { path: string }[]>;
+    expect([...pending.suites, ...pending.operatorOnly].map((s) => s.path)).not.toContain('test/rls/ai-processing-consent-ledger-rls.spec.ts');
   });
 
   it('the flag is registered default OFF and documented default false', () => {

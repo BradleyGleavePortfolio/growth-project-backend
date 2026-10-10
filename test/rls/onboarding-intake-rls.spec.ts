@@ -37,12 +37,9 @@ import { OnboardingService } from '../../src/onboarding/onboarding.service';
 import { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.service';
 import type { PrismaService } from '../../src/prisma.service';
 import type { WorkoutBuilderService } from '../../src/workout-builder/workout-builder.service';
+import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
-const DB_URL =
-  process.env.TEST_DATABASE_URL ||
-  (process.env.DATABASE_URL && !process.env.DATABASE_URL.startsWith('postgresql://test:test@')
-    ? process.env.DATABASE_URL
-    : '');
+const DB_URL = liveTestDatabaseUrl();
 
 const dbAvailable = Boolean(DB_URL);
 
