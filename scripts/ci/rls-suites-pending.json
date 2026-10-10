@@ -1,89 +1,78 @@
 {
-  "_readme": "RLS suites the rls-live-tests job (scripts/ci/run-rls-suites.mjs) runs but may not pass yet, each for a setup reason. Entries may only be removed: a listed suite that passes fails the job until its entry is deleted. Every suite NOT listed must run all its tests and pass under CI=true.",
-  "suites": [
+  "_readme": "RLS suites in the rls-live-tests job (scripts/ci/run-rls-suites.mjs); format in scripts/ci/rls-lists.mjs. Entries may only be removed, never added (checked against the base commit). suites = pending: the suite runs but may not pass yet, for the stated reason; one that passes fails the job until its entry is deleted. operatorOnly = operator-run proofs that need their own disposable cluster: each must be refused at import with zero tests run, and anything else fails the job. Every suite on neither list must run all its tests and pass under CI=true.",
+  "suites": [],
+  "operatorOnly": [
     {
       "path": "test/rls-c1-setup.spec.ts",
-      "reason": "Operator-run C1 proof: needs its own disposable cluster on port 55439 plus C1_TEST_PSQL, C1_TEST_DATA_DIRECTORY and C1_SETUP_DISPOSABLE_ACK; its guard refuses the CI service container by design."
+      "reason": "Operator-run C1 proof: needs its own disposable cluster on port 55439 plus C1_TEST_PSQL, C1_TEST_DATA_DIRECTORY and C1_SETUP_DISPOSABLE_ACK; its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-b-drain.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-c-contract.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-ledger-expand.spec.ts",
-      "reason": "Operator-run G2 expand proof: needs a dedicated disposable cluster, G2_TEST_CONFIRM and an OLD client module/checkout; its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 expand proof: needs a dedicated disposable cluster, G2_TEST_CONFIRM and an OLD client module/checkout; its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-nq1.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-pg17-etq0.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-r-ready.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-s10b.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-s10c.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-s11.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-s7l.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-s8b.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-s8c.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-s8f.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-s8g.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-s9.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-s9c.spec.ts",
-      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design."
+      "reason": "Operator-run G2 proof: needs its own disposable PostgreSQL 17 cluster (pinned cluster_name and database markers, refused ports incl. 5432, double-entered confirmation, candidate/base heads); its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     },
     {
       "path": "test/rls-g2-tq0.spec.ts",
-      "reason": "Operator-run G2 T/Q0 proof: needs a dedicated disposable cluster, G2_TQ0_CONFIRM and an OLD root/client checkout; its guard refuses the CI service container by design."
-    },
-    {
-      "path": "test/rls/community-classroom-rls.spec.ts",
-      "reason": "Live part needs the optional `pg` driver, which is not in package.json or package-lock.json; adding a dependency is outside D5 (under CI=true it now fails instead of passing without running)."
-    },
-    {
-      "path": "test/rls/community-coach-rls.spec.ts",
-      "reason": "Live part needs the optional `pg` driver, which is not in package.json or package-lock.json; adding a dependency is outside D5 (under CI=true it now fails instead of passing without running)."
-    },
-    {
-      "path": "test/rls/community-voice-rls.spec.ts",
-      "reason": "Live part needs the optional `pg` driver, which is not in package.json or package-lock.json; adding a dependency is outside D5 (under CI=true it now fails instead of passing without running)."
+      "reason": "Operator-run G2 T/Q0 proof: needs a dedicated disposable cluster, G2_TQ0_CONFIRM and an OLD root/client checkout; its guard refuses the CI service container by design, so the job requires it to refuse at import with zero tests run."
     }
   ]
 }

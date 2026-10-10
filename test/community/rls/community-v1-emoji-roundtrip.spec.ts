@@ -12,7 +12,7 @@
  *
  * Live-Postgres-gated, exactly like the sibling v1-1 specs (community-schema /
  * community-rls): the whole describe block runs only when
- * COMMUNITY_TEST_DATABASE_URL is set (via liveDbUrl()); otherwise it skips —
+ * TEST_DATABASE_URL is set (via liveTestDatabaseUrl()); otherwise it skips —
  * never a silent pass (a one-line warn is logged at module load), and never a
  * hard failure on a DB-less CI runner. All community objects are created in a
  * disposable, uniquely-named schema and dropped in afterAll, so the run is
@@ -21,9 +21,9 @@
 
 import { PrismaClient } from '@prisma/client';
 import {
-  liveDbUrl,
   readCommunityMigrationSql,
 } from '../_support/community-db';
+import { liveTestDatabaseUrl } from '../../utils/live-test-db';
 
 /**
  * Split a Postgres migration script into individual statements. The Prisma
@@ -150,14 +150,14 @@ const COMMUNITY_TABLES = [
 // (community-schema.spec.ts / community-rls.spec.ts). When unset, the block is
 // skipped rather than failing on a DB-less CI runner. The warn below keeps the
 // skip from being a silent pass.
-if (!liveDbUrl()) {
+if (!liveTestDatabaseUrl()) {
   // eslint-disable-next-line no-console
   console.warn(
-    '[community-emoji-roundtrip] COMMUNITY_TEST_DATABASE_URL not set — emoji roundtrip live spec skipped.',
+    '[community-emoji-roundtrip] TEST_DATABASE_URL not set — emoji roundtrip live spec skipped.',
   );
 }
 
-const itLive = liveDbUrl() ? describe : describe.skip;
+const itLive = liveTestDatabaseUrl() ? describe : describe.skip;
 
 itLive('community v1-1 — CommunityResponse emoji roundtrip (live Postgres)', () => {
   // Resolved inside beforeAll, not at describe-body collection time: when the
@@ -190,7 +190,7 @@ itLive('community v1-1 — CommunityResponse emoji roundtrip (live Postgres)', (
   }
 
   beforeAll(async () => {
-    baseUrl = liveDbUrl() as string;
+    baseUrl = liveTestDatabaseUrl();
     schemaUrl = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}schema=${TEST_SCHEMA}`;
 
     admin = new PrismaClient({ datasources: { db: { url: baseUrl } } });
@@ -200,10 +200,10 @@ itLive('community v1-1 — CommunityResponse emoji roundtrip (live Postgres)', (
 
     prisma = new PrismaClient({ datasources: { db: { url: schemaUrl } } });
 
-    // Minimal User table (UUID id) so the community FKs resolve; the real app
-    // User table is out of scope for this schema-only disposable run.
+    // Minimal User table (TEXT id, as in the app and the migration's FKs);
+    // the real app User table is out of scope for this schema-only run.
     await prisma.$executeRawUnsafe(
-      'CREATE TABLE "User" ("id" UUID PRIMARY KEY DEFAULT gen_random_uuid())',
+      'CREATE TABLE "User" ("id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text)',
     );
 
     const migration = readCommunityMigrationSql();
@@ -246,7 +246,7 @@ itLive('community v1-1 — CommunityResponse emoji roundtrip (live Postgres)', (
       // failure. The DROP remains the safety net for the schema/tables.
       try {
         await admin.$executeRawUnsafe(
-          `DELETE FROM "${TEST_SCHEMA}"."community_responses" WHERE user_id = $1::uuid`,
+          `DELETE FROM "${TEST_SCHEMA}"."community_responses" WHERE user_id = $1`,
           userId,
         );
         await admin.$executeRawUnsafe(
@@ -313,7 +313,7 @@ itLive('community v1-1 — CommunityResponse emoji roundtrip (live Postgres)', (
                 char_length(response_kind)::int AS len,
                 octet_length(response_kind)::int AS octets
            FROM community_responses
-          WHERE target_id = $1::uuid AND user_id = $2::uuid AND response_kind = $3`,
+          WHERE target_id = $1::uuid AND user_id = $2 AND response_kind = $3`,
         targetId,
         userId,
         FAMILY,
@@ -357,7 +357,7 @@ itLive('community v1-1 — CommunityResponse emoji roundtrip (live Postgres)', (
         tx.$executeRawUnsafe(
           `INSERT INTO community_responses
              (id, workspace_id, target_type, target_id, user_id, response_kind, created_at)
-           VALUES (gen_random_uuid(), $1::uuid, 'message', $2::uuid, $3::uuid, $4, now())`,
+           VALUES (gen_random_uuid(), $1::uuid, 'message', $2::uuid, $3, $4, now())`,
           workspaceId,
           targetId,
           userId,
@@ -378,7 +378,7 @@ itLive('community v1-1 — CommunityResponse emoji roundtrip (live Postgres)', (
     const rows = await asUser(userId, (tx) =>
       tx.$queryRawUnsafe<Array<{ response_kind: string }>>(
         `SELECT response_kind FROM community_responses
-          WHERE target_id = $1::uuid AND user_id = $2::uuid
+          WHERE target_id = $1::uuid AND user_id = $2
           ORDER BY response_kind`,
         targetId,
         userId,

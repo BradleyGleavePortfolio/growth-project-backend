@@ -1,83 +1,110 @@
 {
-  "_readme": "Ratchet for scripts/ci/assert-rls-floor.mjs (rls-floor-guard). Entries may only be removed: an entry that is compliant again fails the job until it is deleted. tables = check a (RLS or FORCE off); policies = check c findings with a tracked fix; referenceData = reviewed public catalogs whose SELECT policy is USING (true) on purpose.",
+  "_readme": "Ratchet for scripts/ci/assert-rls-floor.mjs (rls-floor-guard); format and rules in scripts/ci/rls-lists.mjs. Entries may only be removed, never added or widened (checked against the base commit). tables = check a, one allowance per missing flag (rlsOff, forceOff): a newly missing flag fails, and a repaired listed flag fails as stale until it is removed. policies = check c findings with a tracked fix; referenceData = reviewed public catalogs. Both name one exact constant-true SELECT policy (table, policy, cmd, roles); a constant-true INSERT/UPDATE/DELETE/ALL policy is never exempt.",
   "tables": [
     {
       "table": "public._prisma_migrations",
+      "forceOff": true,
       "finding": "D5-02",
-      "reason": "Deliberate NO FORCE (20261213000000_rls_tier5): RLS is on with a service_role-only policy, and the owner that runs migrate deploy must still write it."
+      "reason": "Permanent by design: deliberate NO FORCE (20261213000000_rls_tier5): RLS is on with a service_role-only policy, and the owner that runs migrate deploy must still write it."
     },
     {
       "table": "public.BloodworkPanel",
+      "rlsOff": true,
       "finding": "DATA-01",
-      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+      "reason": "A migration forces RLS but none enables it; enabling comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     },
     {
       "table": "public.CheckIn",
+      "rlsOff": true,
       "finding": "DATA-01",
-      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+      "reason": "A migration forces RLS but none enables it; enabling comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     },
     {
       "table": "public.CoachSubscription",
+      "rlsOff": true,
+      "forceOff": true,
       "finding": "DATA-01",
       "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     },
     {
       "table": "public.ConnectAccount",
+      "forceOff": true,
       "finding": "D5-01",
       "reason": "20260606000003_rls_financial_tables enables RLS but no migration ever forces it, so the table owner bypasses its policies on a rebuilt database."
     },
     {
       "table": "public.DataExportRequest",
+      "rlsOff": true,
+      "forceOff": true,
       "finding": "DATA-01",
       "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     },
     {
       "table": "public.Habit",
+      "rlsOff": true,
+      "forceOff": true,
       "finding": "DATA-01",
       "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     },
     {
       "table": "public.InviteCode",
+      "rlsOff": true,
+      "forceOff": true,
       "finding": "DATA-01",
       "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     },
     {
       "table": "public.Invoice",
+      "forceOff": true,
       "finding": "D5-01",
       "reason": "20260606000003_rls_financial_tables enables RLS but no migration ever forces it, so the table owner bypasses its policies on a rebuilt database."
     },
     {
       "table": "public.LoggedFoodEntry",
+      "rlsOff": true,
+      "forceOff": true,
       "finding": "DATA-01",
       "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     },
     {
       "table": "public.Notification",
+      "rlsOff": true,
+      "forceOff": true,
       "finding": "DATA-01",
       "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     },
     {
       "table": "public.NotificationPreferences",
+      "rlsOff": true,
+      "forceOff": true,
       "finding": "DATA-01",
       "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     },
     {
       "table": "public.User",
+      "rlsOff": true,
+      "forceOff": true,
       "finding": "DATA-01",
       "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     },
     {
       "table": "public.UserProfile",
+      "rlsOff": true,
+      "forceOff": true,
       "finding": "DATA-01",
       "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     },
     {
       "table": "public.WeightLog",
+      "rlsOff": true,
+      "forceOff": true,
       "finding": "DATA-01",
       "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     },
     {
       "table": "public.WorkoutSession",
+      "rlsOff": true,
+      "forceOff": true,
       "finding": "DATA-01",
       "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     }
@@ -86,6 +113,10 @@
     {
       "table": "public.CoachPackage",
       "policy": "coach_package_client_select",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
       "finding": "DATA-04",
       "reason": "SELECT USING (true) lets the public key read every package row, including share tokens and Stripe ids; D1 replaces it."
     }
@@ -93,14 +124,29 @@
   "referenceData": [
     {
       "table": "public.BuildWeekDay",
+      "policy": "p_buildweekday_select",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
       "reason": "Build-week curriculum days: shared program content with no user data; writes are owner-only."
     },
     {
       "table": "public.ExerciseCatalogItem",
+      "policy": "p_exercisecatalogitem_select",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
       "reason": "Exercise picker catalog: public reference content with no user data; writes are owner-only."
     },
     {
       "table": "public.WearableMetricDef",
+      "policy": "wmd_public_select",
+      "cmd": "SELECT",
+      "roles": [
+        "public"
+      ],
       "reason": "Wearable metric definitions (names and units) seeded by service_role; no user data."
     }
   ]

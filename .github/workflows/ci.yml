@@ -200,12 +200,14 @@ jobs:
     # every new public table is granted to the API roles and only RLS stands in
     # the way), then `prisma migrate deploy` over the WHOLE chain. The loose
     # prisma/migrations/*.sql files are not applied. scripts/ci/
-    # assert-rls-floor.mjs then fails on: a table or partition without RLS +
-    # FORCE, a view open to anon/authenticated without security_invoker, a
-    # constant-true policy for anon/authenticated/public, an IS NOT DISTINCT
-    # FROM policy, or a SECURITY DEFINER function without a pinned search_path.
-    # Allowed exceptions live in scripts/ci/rls-known-gaps.json, which can only
-    # shrink (a listed entry that is fixed fails the job until removed). This
+    # assert-rls-floor.mjs then fails, in every non-system schema, on: a table
+    # or partition without RLS or FORCE, a view open to anon/authenticated
+    # without security_invoker, a constant-true policy for anon/authenticated/
+    # public, an IS NOT DISTINCT FROM policy, or a SECURITY DEFINER function
+    # without a pinned search_path. Allowed exceptions live in scripts/ci/
+    # rls-known-gaps.json, which can only shrink: a repaired entry fails as
+    # stale, and rls-lists.mjs fails any entry the base commit does not have.
+    # The self-test then proves each rule fails on a negative fixture. This
     # replaces the soft check-relrowsecurity.sh step, which read a production
     # URL secret that was never set and so skipped on every run. No secret and
     # no production URL is used here.
@@ -254,15 +256,24 @@ jobs:
           command -v psql
           psql --version
 
+      - name: Known gaps may only shrink (compared with the base commit)
+        env:
+          RLS_LISTS_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/ci/rls-lists.mjs gaps
+
       - name: Replay every migration from empty on the Supabase shim
         run: bash scripts/ci/replay-migrations.sh rls_replay
 
       - name: RLS floor (hard gate, ratcheted by scripts/ci/rls-known-gaps.json)
         run: node scripts/ci/assert-rls-floor.mjs
 
+      - name: Self-test (every floor rule fails on a negative fixture)
+        run: node scripts/ci/rls-floor-selftest.mjs
+
   rls-live-tests:
-    # D5 (REL-01): runs EVERY RLS suite (test/rls/**/*.spec.ts and
-    # test/rls-*.spec.ts), not a hand-picked few. scripts/ci/run-rls-suites.mjs
+    # D5 (REL-01): runs EVERY RLS suite (test/rls/**, test/rls-*.spec.ts and
+    # the RLS suites elsewhere under test/ that no other job runs), not a
+    # hand-picked few. scripts/ci/run-rls-suites.mjs
     # gives each suite a fresh copy of one of three templates built below and
     # runs it with CI=true and TEST_DATABASE_URL pointed at that copy:
     #   rls_replay  the whole chain from empty (as in rls-floor-guard); default
@@ -272,7 +283,9 @@ jobs:
     #   rls_empty   shim + an empty app schema, for self-bootstrapping suites
     # A suite fails the job if any test fails or is skipped, unless it is in
     # scripts/ci/rls-suites-pending.json with a reason; a pending suite that now
-    # passes also fails the job, so that list can only shrink. No DATABASE_URL
+    # passes also fails the job, an operatorOnly suite must be refused at
+    # import with zero tests run, and rls-lists.mjs fails any entry the base
+    # commit does not have, so the lists can only shrink. No DATABASE_URL
     # is set here: the suites read only TEST_DATABASE_URL, through
     # test/utils/live-test-db.ts, which refuses any non-local host.
     runs-on: ubuntu-latest
@@ -353,6 +366,11 @@ jobs:
             -f scripts/ci/clinic-engagement-live-bootstrap.sql \
             -f prisma/migrations/20270213000000_clinic_engagement/migration.sql \
             -f scripts/ci/clinic-engagement-live-grants.sql
+
+      - name: Pending and operator-only lists may only shrink (compared with the base commit)
+        env:
+          RLS_LISTS_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/ci/rls-lists.mjs suites
 
       - name: Run every RLS suite (ratcheted by scripts/ci/rls-suites-pending.json)
         run: node scripts/ci/run-rls-suites.mjs

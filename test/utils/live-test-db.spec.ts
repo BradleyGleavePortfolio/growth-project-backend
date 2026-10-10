@@ -3,6 +3,7 @@
  * Unit-proves test/utils/live-test-db.ts and pins that every RLS suite the
  * rls-live-tests runner owns reads its URL through it (never DATABASE_URL).
  */
+import { spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { liveTestDatabaseUrl } from './live-test-db';
@@ -19,6 +20,34 @@ afterEach(() => {
   }
 });
 
+const ACCEPTED = [
+  'postgresql://u:p@localhost:5432/rls_suite_01?connection_limit=1',
+  'postgresql://u:p@127.0.0.1:5432/x?schema=emoji&connect_timeout=5',
+  'postgresql://u:p@[::1]:5432/x',
+  'postgres://u:p@postgres:5432/postgres',
+];
+const REFUSED = [
+  'postgresql://u:p@db.abcdefgh.supabase.co:5432/postgres',
+  'postgresql://u:p@aws-0-us-west-1.pooler.supabase.com:6543/postgres',
+  'postgresql://u:p@localhost.evil.example:5432/postgres',
+  'postgresql://u:p@10.0.0.5:5432/postgres',
+  'not a url',
+  // local-looking URLs whose options reroute the connection
+  'postgresql://u:p@localhost:5432/throwaway?host=remote.example.invalid',
+  'postgresql://u:p@localhost:5432/throwaway?hostaddr=203.0.113.7',
+  'postgresql://u:p@localhost:5432/throwaway?ho%73t=remote.example.invalid',
+  'postgresql://u:p@localhost:5432/throwaway?service=prod',
+  'postgresql://u:p@localhost/throwaway?port=6543',
+  'postgresql://u:p@localhost:5432,remote.example.invalid:5432/throwaway',
+  'postgresql://u:p@localhost/throwaway%3Fhost%3Dremote.example.invalid',
+  'postgresql:///throwaway?host=/var/run/postgresql',
+  // duplicate and unknown options
+  'postgresql://u:p@localhost/throwaway?schema=a&schema=b',
+  'postgresql://u:p@localhost/throwaway?connection_limit=1&connection_limit=9',
+  'postgresql://u:p@localhost/throwaway?sslmode=disable',
+  'mysql://u:p@localhost/throwaway',
+];
+
 describe('liveTestDatabaseUrl', () => {
   it('never falls back to DATABASE_URL', () => {
     delete process.env.TEST_DATABASE_URL;
@@ -27,21 +56,24 @@ describe('liveTestDatabaseUrl', () => {
     expect(() => liveTestDatabaseUrl({ required: true })).toThrow(/TEST_DATABASE_URL is not set/);
   });
 
-  it.each(['localhost', '127.0.0.1', '[::1]', 'postgres'])('accepts the local host %s', (host) => {
-    process.env.TEST_DATABASE_URL = `postgresql://u:p@${host}:5432/rls_suite_01?connection_limit=1`;
-    expect(liveTestDatabaseUrl({ required: true })).toBe(process.env.TEST_DATABASE_URL);
+  it.each(ACCEPTED)('accepts %s', (url) => {
+    process.env.TEST_DATABASE_URL = url;
+    expect(liveTestDatabaseUrl({ required: true })).toBe(url);
   });
 
-  it.each([
-    'postgresql://u:p@db.abcdefgh.supabase.co:5432/postgres',
-    'postgresql://u:p@aws-0-us-west-1.pooler.supabase.com:6543/postgres',
-    'postgresql://u:p@localhost.evil.example:5432/postgres',
-    'postgresql://u:p@10.0.0.5:5432/postgres',
-    'not a url',
-  ])('refuses %s', (url) => {
+  it.each(REFUSED)('refuses %s', (url) => {
     process.env.TEST_DATABASE_URL = url;
     expect(() => liveTestDatabaseUrl()).toThrow(/refusing to run a destructive live-DB suite/);
   });
+
+  // Non-connecting: the CI scripts' validator must give the same verdicts.
+  it.each([...ACCEPTED.map((u) => [u, 0]), ...REFUSED.map((u) => [u, 1])])(
+    'scripts/ci/local-db-url.mjs agrees on %s',
+    (url, code) => {
+      const run = spawnSync('node', [path.join(ROOT, 'scripts/ci/local-db-url.mjs'), String(url)]);
+      expect(run.status).toBe(code);
+    },
+  );
 });
 
 describe('RLS suites use the guard', () => {

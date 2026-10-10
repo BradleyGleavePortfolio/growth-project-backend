@@ -155,7 +155,7 @@ export async function applyMigration(client: LiveClient): Promise<void> {
   await client.query('CREATE EXTENSION IF NOT EXISTS pgcrypto');
   // Minimal User table so the community FKs resolve.
   await client.query(
-    'CREATE TABLE IF NOT EXISTS "User" ("id" UUID PRIMARY KEY DEFAULT gen_random_uuid())',
+    'CREATE TABLE IF NOT EXISTS "User" ("id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text)',
   );
   await client.query(readCommunityMigrationSql());
 }

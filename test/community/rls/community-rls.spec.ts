@@ -7,7 +7,7 @@
  *     specific allow/deny shapes the planner's RLS plan calls for
  *     (workspace-owner ALL, member SELECT, author write, moderation
  *     coach-only).
- *  2. LIVE assertions (run only when COMMUNITY_TEST_DATABASE_URL + `pg` are
+ *  2. LIVE assertions (run only when TEST_DATABASE_URL + `pg` are
  *     available): real cross-tenant denial through a non-privileged role.
  *
  * RLS convention is app.current_user_id() (the repo helper), NOT auth.uid();
@@ -21,13 +21,13 @@ import {
   clearSessionUser,
   connect,
   ensureRlsTestRole,
-  liveDbUrl,
   migrationDown,
   readCommunityMigrationSql,
   resetRole,
   setSessionUser,
   type LiveClient,
 } from '../_support/community-db';
+import { liveTestDatabaseUrl } from '../../utils/live-test-db';
 
 describe('community v1-1 RLS — migration SQL policy coverage', () => {
   const sql = readCommunityMigrationSql();
@@ -92,10 +92,10 @@ describe('community v1-1 RLS — migration SQL policy coverage', () => {
   });
 });
 
-const itLive = liveDbUrl() ? describe : describe.skip;
+const itLive = liveTestDatabaseUrl() ? describe : describe.skip;
 
 itLive('community v1-1 RLS — live cross-tenant enforcement', () => {
-  const url = liveDbUrl() as string;
+  const url = liveTestDatabaseUrl();
   let owner: LiveClient | null = null; // privileged setup connection
   let rls: LiveClient | null = null; // non-privileged, RLS-enforced connection
 
