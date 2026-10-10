@@ -41,11 +41,10 @@ import {
 } from '../src/workout-builder/lock-token.helper';
 import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
 import { resetPublicSchema } from './utils/reset-public-schema';
+import { liveTestDatabaseUrl } from './utils/live-test-db';
 
-// The rls-live-tests CI job exposes the DB as DATABASE_URL; locally the builder
-// used MWB3_TEST_DATABASE_URL. Either drives this suite.
-const RAW_TEST_DB_URL =
-  process.env.MWB3_TEST_DATABASE_URL || process.env.DATABASE_URL || '';
+// D5: only TEST_DATABASE_URL drives this suite (never DATABASE_URL), and only a local host.
+const RAW_TEST_DB_URL = liveTestDatabaseUrl();
 const liveDescribe = RAW_TEST_DB_URL ? describe : describe.skip;
 
 if (!RAW_TEST_DB_URL) {

@@ -37,6 +37,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaClient, Prisma } from '@prisma/client';
+import { liveTestDatabaseUrl } from './utils/live-test-db';
 
 // The interactive-transaction client. Typing the callback parameter lets the
 // generic $queryRawUnsafe<...> / $executeRawUnsafe calls inside resolve (ts-jest
@@ -52,10 +53,7 @@ const MIGRATION_SQL_PATH = path.join(
   'migration.sql',
 );
 
-const TEST_DB_URL =
-  process.env.RLS_TIER3_TEST_DATABASE_URL ||
-  process.env.DATABASE_URL ||
-  'postgresql://rls_login:rls_login_pw@localhost:5432/rls_tier3_test';
+const TEST_DB_URL = liveTestDatabaseUrl({ required: true });
 
 // Prerequisite catalog objects mirroring the production columns the policies read.
 // Applied (as the owning login role) before the migration so its ALTER/CREATE

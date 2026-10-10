@@ -37,6 +37,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaClient } from '@prisma/client';
+import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
 const MIGRATION_DIR = path.join(
   __dirname,
@@ -47,7 +48,7 @@ const MIGRATION_DIR = path.join(
   '20270301000000_coachless_featured_coach',
 );
 
-const RAW_URL = process.env.TEST_DATABASE_URL || '';
+const RAW_URL = liveTestDatabaseUrl();
 if (!RAW_URL && process.env.CI === 'true') {
   throw new Error('[A1] coachless-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.');
 }

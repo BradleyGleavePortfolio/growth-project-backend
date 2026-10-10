@@ -86,6 +86,10 @@ export function loadPg(): PgModule | null {
     const mod: PgModule = require('pg');
     return mod;
   } catch {
+    // D5: under CI a configured live suite must not pass by returning early.
+    if (process.env.CI === 'true') {
+      throw new Error('[community-db] live DB configured but the optional `pg` driver is not installed (CI=true): refusing to pass without running.');
+    }
     // eslint-disable-next-line no-console
     console.warn(
       '[community-db] optional `pg` driver not installed — live DB suite skipped. ' +

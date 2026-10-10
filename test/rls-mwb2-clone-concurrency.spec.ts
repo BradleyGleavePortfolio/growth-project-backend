@@ -40,11 +40,12 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaService } from '../src/prisma.service';
 import { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
 import { bootstrapTestSchema } from './utils/bootstrap-test-schema';
+import { liveTestDatabaseUrl } from './utils/live-test-db';
 
 // A DEDICATED env var (never the app's DATABASE_URL) — beforeAll runs
 // `prisma db push --accept-data-loss`, which would wipe a real DB. Requiring an
 // explicit throwaway URL makes that impossible by accident.
-const RAW_TEST_DB_URL = process.env.MWB2_CLONE_TEST_DATABASE_URL || '';
+const RAW_TEST_DB_URL = liveTestDatabaseUrl();
 
 // Pin the Prisma connection pool to >= 2 connections so the two parallel
 // clones run on SEPARATE pooled connections — i.e. genuine DB-level

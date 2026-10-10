@@ -16,7 +16,7 @@
  *     coach-ownership / server-only RLS the application gate is defence-in-depth
  *     for. A non-service-role connection (Supabase authenticated/anon) cannot
  *     reach another coach's plan item even if the app gate were bypassed.
- *  2. LIVE assertions (run only when COMMUNITY_TEST_DATABASE_URL + `pg` are
+ *  2. LIVE assertions (run only when TEST_DATABASE_URL + `pg` are
  *     available): the real PlanContextService, against a real Postgres, refuses
  *     to validate a foreign-coach workout_plan_id (403) and refuses to resolve
  *     it (404, existence non-leak), while accepting the owning coach's own plan.
@@ -34,7 +34,7 @@ import type { User } from '@prisma/client';
 // layer free of every DB/Prisma-engine dependency).
 import type { PrismaService } from '../../src/prisma.service';
 import type { PlanContextService } from '../../src/community/plan-context/plan-context.service';
-import { liveDbUrl } from '../community/_support/community-db';
+import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
 const MIGRATIONS = join(__dirname, '..', '..', 'prisma', 'migrations');
 
@@ -110,12 +110,12 @@ describe('v2-1 plan-context RLS — static policy coverage (no new migration)', 
 
 // ── Layer 2: live application-layer ownership gate (gated on a real DB) ─────
 
-const liveDescribe = liveDbUrl() ? describe : describe.skip;
+const liveDescribe = liveTestDatabaseUrl() ? describe : describe.skip;
 
-if (!liveDbUrl()) {
+if (!liveTestDatabaseUrl()) {
   // eslint-disable-next-line no-console
   console.warn(
-    '[community-plan-context-rls] COMMUNITY_TEST_DATABASE_URL not set — live ownership-gate layer skipped.',
+    '[community-plan-context-rls] TEST_DATABASE_URL not set — live ownership-gate layer skipped.',
   );
 }
 
@@ -142,7 +142,7 @@ liveDescribe('v2-1 plan-context — live application-layer ownership gate', () =
     ({ id: ids.coachA, role: 'coach' } as unknown as User);
 
   beforeAll(async () => {
-    process.env.DATABASE_URL = liveDbUrl() as string;
+    process.env.DATABASE_URL = liveTestDatabaseUrl() as string;
     prisma = new PrismaService();
     await prisma.$connect();
     service = new PlanContextService(new PlanContextRepository(prisma));
@@ -154,7 +154,8 @@ liveDescribe('v2-1 plan-context — live application-layer ownership gate', () =
       [ids.coachB, 'RLS Coach B'],
     ]) {
       await prisma.$executeRaw`
-        INSERT INTO "User" (id, role, name) VALUES (${id}, 'coach'::"Role", ${name})
+        INSERT INTO "User" (id, supabase_id, email, role, name)
+        VALUES (${id}, ${id}, ${`${id}@rls.test`}, 'coach'::"Role", ${name})
       `;
     }
     const planA = await prisma.workoutPlan.create({

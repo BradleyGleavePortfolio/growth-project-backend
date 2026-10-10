@@ -24,6 +24,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaClient } from '@prisma/client';
+import { liveTestDatabaseUrl } from './utils/live-test-db';
 
 const MIGRATION_SQL_PATH = path.join(
   __dirname,
@@ -34,10 +35,7 @@ const MIGRATION_SQL_PATH = path.join(
   'migration.sql',
 );
 
-const TEST_DB_URL =
-  process.env.RLS_FN_TEST_DATABASE_URL ||
-  process.env.DATABASE_URL ||
-  'postgresql://rls_tester:rls_tester_pw@localhost:5432/rls_fn_test';
+const TEST_DB_URL = liveTestDatabaseUrl({ required: true });
 
 // Prerequisite catalog objects that the helpers depend on, mirroring the
 // production schema columns the functions actually read. Applied before the

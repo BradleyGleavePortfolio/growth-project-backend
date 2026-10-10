@@ -1,0 +1,107 @@
+{
+  "_readme": "Ratchet for scripts/ci/assert-rls-floor.mjs (rls-floor-guard). Entries may only be removed: an entry that is compliant again fails the job until it is deleted. tables = check a (RLS or FORCE off); policies = check c findings with a tracked fix; referenceData = reviewed public catalogs whose SELECT policy is USING (true) on purpose.",
+  "tables": [
+    {
+      "table": "public._prisma_migrations",
+      "finding": "D5-02",
+      "reason": "Deliberate NO FORCE (20261213000000_rls_tier5): RLS is on with a service_role-only policy, and the owner that runs migrate deploy must still write it."
+    },
+    {
+      "table": "public.BloodworkPanel",
+      "finding": "DATA-01",
+      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+    },
+    {
+      "table": "public.CheckIn",
+      "finding": "DATA-01",
+      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+    },
+    {
+      "table": "public.CoachSubscription",
+      "finding": "DATA-01",
+      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+    },
+    {
+      "table": "public.ConnectAccount",
+      "finding": "D5-01",
+      "reason": "20260606000003_rls_financial_tables enables RLS but no migration ever forces it, so the table owner bypasses its policies on a rebuilt database."
+    },
+    {
+      "table": "public.DataExportRequest",
+      "finding": "DATA-01",
+      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+    },
+    {
+      "table": "public.Habit",
+      "finding": "DATA-01",
+      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+    },
+    {
+      "table": "public.InviteCode",
+      "finding": "DATA-01",
+      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+    },
+    {
+      "table": "public.Invoice",
+      "finding": "D5-01",
+      "reason": "20260606000003_rls_financial_tables enables RLS but no migration ever forces it, so the table owner bypasses its policies on a rebuilt database."
+    },
+    {
+      "table": "public.LoggedFoodEntry",
+      "finding": "DATA-01",
+      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+    },
+    {
+      "table": "public.Notification",
+      "finding": "DATA-01",
+      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+    },
+    {
+      "table": "public.NotificationPreferences",
+      "finding": "DATA-01",
+      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+    },
+    {
+      "table": "public.User",
+      "finding": "DATA-01",
+      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+    },
+    {
+      "table": "public.UserProfile",
+      "finding": "DATA-01",
+      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+    },
+    {
+      "table": "public.WeightLog",
+      "finding": "DATA-01",
+      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+    },
+    {
+      "table": "public.WorkoutSession",
+      "finding": "DATA-01",
+      "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
+    }
+  ],
+  "policies": [
+    {
+      "table": "public.CoachPackage",
+      "policy": "coach_package_client_select",
+      "finding": "DATA-04",
+      "reason": "SELECT USING (true) lets the public key read every package row, including share tokens and Stripe ids; D1 replaces it."
+    }
+  ],
+  "referenceData": [
+    {
+      "table": "public.BuildWeekDay",
+      "reason": "Build-week curriculum days: shared program content with no user data; writes are owner-only."
+    },
+    {
+      "table": "public.ExerciseCatalogItem",
+      "reason": "Exercise picker catalog: public reference content with no user data; writes are owner-only."
+    },
+    {
+      "table": "public.WearableMetricDef",
+      "reason": "Wearable metric definitions (names and units) seeded by service_role; no user data."
+    }
+  ]
+}

@@ -10,7 +10,7 @@
  *     policies the read/write paths rely on — workspace-coach FOR ALL (USING +
  *     WITH CHECK) and a member SELECT gated on not-soft-deleted + (channel note
  *     with workspace/cohort membership) OR (DM note authored by the caller).
- *  2. LIVE assertions (run only when COMMUNITY_TEST_DATABASE_URL + `pg` are
+ *  2. LIVE assertions (run only when TEST_DATABASE_URL + `pg` are
  *     available): real coach-tenancy, cohort scoping, soft-delete exclusion, DM
  *     author-only visibility, and non-member storage_key denial through a
  *     non-privileged (NOBYPASSRLS) role.
@@ -35,12 +35,12 @@ import {
   clearSessionUser,
   connect,
   ensureRlsTestRole,
-  liveDbUrl,
   migrationDown,
   resetRole,
   setSessionUser,
   type LiveClient,
 } from '../community/_support/community-db';
+import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
 const VOICE_MIGRATION_SQL_PATH = join(
   __dirname,
@@ -117,17 +117,17 @@ describe('v3-3 voice RLS — static policy coverage', () => {
 
 // ── Layer 2: live enforcement (gated on a disposable Postgres) ──────────────
 
-const itLive = liveDbUrl() ? describe : describe.skip;
+const itLive = liveTestDatabaseUrl() ? describe : describe.skip;
 
-if (!liveDbUrl()) {
+if (!liveTestDatabaseUrl()) {
   // eslint-disable-next-line no-console
   console.warn(
-    '[community-voice-rls] COMMUNITY_TEST_DATABASE_URL not set — live RLS suite skipped (static coverage still runs).',
+    '[community-voice-rls] TEST_DATABASE_URL not set — live RLS suite skipped (static coverage still runs).',
   );
 }
 
 itLive('v3-3 voice RLS — live enforcement', () => {
-  const url = liveDbUrl() as string;
+  const url = liveTestDatabaseUrl() as string;
   let owner: LiveClient | null = null;
   let rls: LiveClient | null = null;
 

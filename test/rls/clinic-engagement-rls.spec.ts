@@ -41,9 +41,10 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import { lockEligibleClient } from '../../src/engagement/workout-reminder.service';
 import { holdWelcomeLease } from '../../src/engagement/welcome-lease-fence';
+import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
 // Not DATABASE_URL: test/jest.setup.ts always sets a placeholder DATABASE_URL.
-const DB_URL = process.env.TEST_DATABASE_URL || '';
+const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') {
   throw new Error(
     '[#609] clinic-engagement-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.',

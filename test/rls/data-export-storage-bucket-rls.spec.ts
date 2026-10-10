@@ -33,6 +33,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaClient } from '@prisma/client';
+import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
 const MIGRATION_DIR = path.join(
   __dirname,
@@ -47,7 +48,7 @@ const VERIFY = fs.readFileSync(path.join(MIGRATION_DIR, 'verify.sql'), 'utf8');
 const DOWN = fs.readFileSync(path.join(MIGRATION_DIR, 'down.sql'), 'utf8');
 const FIXTURE_MARK = 'tgp-ci-fixture: data-exports fence suite';
 
-const RAW_URL = process.env.TEST_DATABASE_URL || '';
+const RAW_URL = liveTestDatabaseUrl();
 if (!RAW_URL && process.env.CI === 'true') {
   throw new Error(
     '[A-636-1] data-export-storage-bucket-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.',

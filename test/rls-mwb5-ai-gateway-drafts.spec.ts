@@ -33,11 +33,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaClient } from '@prisma/client';
+import { liveTestDatabaseUrl } from './utils/live-test-db';
 
-const TEST_DB_URL =
-  process.env.RLS_MWB5_TEST_DATABASE_URL ||
-  process.env.RLS_FN_TEST_DATABASE_URL ||
-  '';
+const TEST_DB_URL = liveTestDatabaseUrl();
 
 const SERVICE_ROLE = process.env.RLS_SERVICE_ROLE || 'service_role';
 const AUTHED_ROLE = process.env.RLS_AUTHED_ROLE || 'app_authenticated';
