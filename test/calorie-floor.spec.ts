@@ -18,6 +18,10 @@ import {
 // for anyone whose sex is not recorded. Coach targets below it are rejected;
 // computed targets are raised to it.
 
+function asPrisma(m: object): PrismaService {
+  return m as PrismaService;
+}
+
 describe('calorieFloorKcal', () => {
   it.each([
     ['female', 1200],
@@ -39,7 +43,7 @@ describe('coach-set targets (MacrosService.createForClient)', () => {
       userProfile: { findUnique: jest.fn(async () => profile) },
       macroTarget: { create },
     };
-    return { svc: new MacrosService(prisma as unknown as PrismaService), create };
+    return { svc: new MacrosService(asPrisma(prisma)), create };
   }
   const dto = (calories_kcal: number): CreateMacroTargetDto => ({
     calories_kcal,
@@ -102,7 +106,7 @@ describe('computed targets are raised to the floor, never rejected', () => {
   it.each(FLOOR_CASES)(
     'coach preset: $sex $where the floor -> $expected kcal',
     ({ sex, height_cm, expected }) => {
-      const svc = new MacrosService(null as unknown as PrismaService);
+      const svc = new MacrosService(asPrisma({}));
       const out = svc.computePreset({
         weight_kg: FLOOR_CASE_WEIGHT_KG,
         height_cm,
