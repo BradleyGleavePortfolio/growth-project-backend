@@ -311,7 +311,6 @@ describe('privileged action refs are pinned to full commit SHAs (S2-B1 / S2-A-07
     '.github/workflows/fly-recent-auth-set.yml',
     '.github/workflows/fly-apple-signin-set.yml',
     '.github/workflows/fly-secrets-set.yml',
-    '.github/workflows/fly-logs.yml',
     '.github/workflows/fly-secrets-list.yml',
     '.github/workflows/house-seed.yml',
   ];
@@ -685,7 +684,6 @@ describe('operator workflows — dispatch inputs are data, never shell source (S
   const OPERATOR = [
     'fly-db-secrets-set',
     'fly-launch-env-set',
-    'fly-logs',
     'fly-recent-auth-set',
     'fly-apple-signin-set',
     'fly-secrets-list',
@@ -696,9 +694,11 @@ describe('operator workflows — dispatch inputs are data, never shell source (S
   const load = (f: string) => parseYaml(read(`.github/workflows/${f}.yml`)) as Doc;
   const steps = (d: Doc) => Object.values(d.jobs ?? {}).flatMap((j) => j.steps ?? []);
   const INLINE = /\$\{\{\s*(github\.event\.)?inputs\./;
-  it('these are all the fly-* operator workflows (and fly-logs-dump.yml, the hidden machine-start, is gone)', () => {
+  it('these are all the fly-* operator workflows (fly-logs-dump.yml and fly-logs.yml are gone)', () => {
     for (const f of OPERATOR) expect(existsSync(join(ROOT, `.github/workflows/${f}.yml`))).toBe(true);
     expect(existsSync(join(ROOT, '.github/workflows/fly-logs-dump.yml'))).toBe(false);
+    // The repo is public, so production logs must never be printed into an Actions log.
+    expect(existsSync(join(ROOT, '.github/workflows/fly-logs.yml'))).toBe(false);
   });
   for (const f of OPERATOR) {
     it(`${f}.yml: no run: block interpolates inputs; every input reaches shell only through step env:`, () => {
