@@ -21,8 +21,12 @@ function buildPrisma(initialUsers: Array<{ id: string; coach_id?: string | null 
   const attachments: any[] = [];
   let seq = 1;
   const newId = (p: string) => `${p}-${seq++}`;
+  // `client: { coach_id }` filters on the client's coach as it is now.
+  const onCoach = (p: any, where: any) =>
+    !where?.client || users.get(p.client_id)?.coach_id === where.client.coach_id;
 
   return {
+    _users: users,
     _panels: panels,
     _results: results,
     _attachments: attachments,
@@ -99,9 +103,9 @@ function buildPrisma(initialUsers: Array<{ id: string; coach_id?: string | null 
       findFirst: jest.fn(async ({ where, include }: any) => {
         const p = panels.find((x) => {
           for (const k of Object.keys(where)) {
-            if ((x as any)[k] !== (where as any)[k]) return false;
+            if (k !== 'client' && (x as any)[k] !== (where as any)[k]) return false;
           }
-          return true;
+          return onCoach(x, where);
         });
         if (!p) return null;
         const out: any = { ...p };
@@ -113,6 +117,7 @@ function buildPrisma(initialUsers: Array<{ id: string; coach_id?: string | null 
         const matches = panels.filter((p) => {
           if (where?.client_id && p.client_id !== where.client_id) return false;
           if (where?.coach_id && p.coach_id !== where.coach_id) return false;
+          if (!onCoach(p, where)) return false;
           if (where?.review_state) {
             if (typeof where.review_state === 'string') {
               if (p.review_state !== where.review_state) return false;
@@ -464,6 +469,57 @@ describe('BloodworkService', () => {
       const queue = await svc.listForCoach('coach-1', 'coach', {});
       expect(queue).toHaveLength(1);
       expect(queue[0].client_id).toBe('client-a');
+    });
+  });
+
+  describe('a client who moves to another coach', () => {
+    // client-1 submits a panel under coach-1, then moves to coach-2. Both
+    // coaches hold health consent, so only the coach link decides access.
+    async function movedClient() {
+      const prisma = buildPrisma([{ id: 'client-1', coach_id: 'coach-1' }]);
+      const consent = buildConsent(
+        new Set([
+          `client-1:coach-1:${ConsentScope.HEALTH_BLOODWORK}`,
+          `client-1:coach-2:${ConsentScope.HEALTH_BLOODWORK}`,
+        ]),
+      );
+      const svc = new BloodworkService(prisma, buildAudit(), consent, new KmsService());
+      const panel = await svc.createPanel(
+        'client-1',
+        { collection_date: '2026-04-01', results: [{ marker_name: 'x', value_numeric: 1 }] },
+        baseCtx('client-1'),
+      );
+      await svc.submitPanel('client-1', panel.id, baseCtx('client-1'));
+      prisma._users.get('client-1').coach_id = 'coach-2';
+      return { svc, panel };
+    }
+
+    it('the former coach can no longer list, read or review the panel', async () => {
+      const { svc, panel } = await movedClient();
+      expect(await svc.listForCoach('coach-1', 'coach', {})).toEqual([]);
+      await expect(svc.getForCoach('coach-1', 'coach', panel.id)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(
+        svc.reviewPanel(
+          panel.id,
+          { review_state: BloodworkReviewState.REVIEWED },
+          baseCtx('coach-1', 'coach'),
+        ),
+      ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('the new coach sees the earlier panel and can review it', async () => {
+      const { svc, panel } = await movedClient();
+      const queue = await svc.listForCoach('coach-2', 'coach', {});
+      expect(queue.map((p) => p.id)).toEqual([panel.id]);
+      expect((await svc.getForCoach('coach-2', 'coach', panel.id)).id).toBe(panel.id);
+      const after = await svc.reviewPanel(
+        panel.id,
+        { review_state: BloodworkReviewState.REVIEWED },
+        baseCtx('coach-2', 'coach'),
+      );
+      expect(after.reviewed_by_id).toBe('coach-2');
     });
   });
 

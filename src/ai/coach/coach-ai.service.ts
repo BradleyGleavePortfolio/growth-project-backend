@@ -238,6 +238,11 @@ export class CoachAIService {
     }
   }
 
+  /** The same gate as a yes/no, for reads that must hide rather than refuse. */
+  private reachesClient(coachId: string, clientId: string): Promise<boolean> {
+    return this.assertCoachOwnsClient(coachId, clientId).then(() => true, () => false);
+  }
+
   async generateWorkoutProgram(
     coachId: string,
     input: { clientId: string } & WorkoutProgramInput,
@@ -414,7 +419,7 @@ export class CoachAIService {
     opts: { clientId?: string; limit?: number } = {},
   ) {
     const take = Math.min(Math.max(opts.limit ?? 50, 1), 200);
-    return this.prisma.aIDraft.findMany({
+    const drafts = await this.prisma.aIDraft.findMany({
       where: {
         coachId,
         status: 'DRAFT',
@@ -434,6 +439,12 @@ export class CoachAIService {
         createdAt: true,
       },
     });
+    // A client who moved to another coach takes their drafts out of this inbox.
+    const reachable = new Set<string>();
+    for (const clientId of new Set(drafts.map((d) => d.clientId))) {
+      if (await this.reachesClient(coachId, clientId)) reachable.add(clientId);
+    }
+    return drafts.filter((d) => reachable.has(d.clientId));
   }
 
   async getDraft(coachId: string, draftId: string) {
@@ -463,8 +474,9 @@ export class CoachAIService {
     // Collapse missing vs foreign-owned into a single 404. Returning 403 for
     // foreign-owned IDs let a coach probe which draft IDs exist; the IDs
     // themselves don't carry payload but they were the basis for follow-on
-    // recon. See QA P0-A2.
-    if (!draft || draft.coachId !== coachId) {
+    // recon. See QA P0-A2. A draft about a client who has since moved to
+    // another coach is just as missing.
+    if (!draft || draft.coachId !== coachId || !(await this.reachesClient(coachId, draft.clientId))) {
       throw new NotFoundException('Draft not found');
     }
     return draft;
@@ -532,8 +544,6 @@ export class CoachAIService {
   ) {
     const dayCount = this.workoutProgramDays(draft).days.length;
     if (draft.status !== 'DRAFT') return this.replayWorkoutApproval(coachId, draft.id, dayCount);
-    // The client may have left this coach since the draft was generated.
-    await this.assertCoachOwnsClient(coachId, draft.clientId);
 
     const claim = await this.prisma.aIDraft.updateMany({
       where: { id: draft.id, coachId, status: 'DRAFT' },
