@@ -1,5 +1,10 @@
-import { NotFoundException } from '@nestjs/common';
+import type { AddressInfo } from 'node:net';
+import { ExecutionContext, INestApplication, NotFoundException } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { JwtAuthGuard } from '../src/auth/auth.guard';
 import { CheckInsService } from '../src/check-ins/check-ins.service';
+import { CoachCheckInsController } from '../src/check-ins/coach-check-ins.controller';
+import { ConsentScope } from '../src/consent/consent.service';
 
 // In-memory Prisma mock for CheckIn + User. Implements upsert with the
 // Tier-2 unique (user_id, date) constraint so the service's idempotent
@@ -117,11 +122,12 @@ function makePrisma() {
         rows.push(row);
         return { ...row };
       }),
-      update: jest.fn(async ({ where, data }: any) => {
+      update: jest.fn(async ({ where, data, select }: any) => {
         const row = rows.find((r) => r.id === where.id);
         if (!row) throw new Error('Record to update not found');
         Object.assign(row, data);
-        return { ...row };
+        if (!select) return { ...row };
+        return Object.fromEntries(Object.keys(select).map((k) => [k, (row as any)[k]]));
       }),
       findMany: jest.fn(async ({ where, orderBy, take }: any) => {
         let out = rows.filter((r) => matches(r, where));
@@ -322,7 +328,7 @@ describe('CheckInsService', () => {
       process.env[FLAG] = 'true';
       const ci = await seedCheckIn();
       const before = Date.now();
-      const out = await svc.markReviewedByCoach('coach-A', ci.id);
+      const out = await svc.markReviewedByCoach('coach-A', 'client-1', ci.id);
       expect(out.reviewed_by_coach).toBe(true);
       expect(out.coach_reviewed_at).toBeInstanceOf(Date);
       expect((out.coach_reviewed_at as Date).getTime()).toBeGreaterThanOrEqual(
@@ -333,7 +339,7 @@ describe('CheckInsService', () => {
     it('flag OFF: flips reviewed_by_coach but leaves coach_reviewed_at NULL', async () => {
       process.env[FLAG] = 'false';
       const ci = await seedCheckIn();
-      const out = await svc.markReviewedByCoach('coach-A', ci.id);
+      const out = await svc.markReviewedByCoach('coach-A', 'client-1', ci.id);
       expect(out.reviewed_by_coach).toBe(true);
       expect(out.coach_reviewed_at).toBeNull();
     });
@@ -341,7 +347,7 @@ describe('CheckInsService', () => {
     it('flag UNSET defaults OFF (coach_reviewed_at stays NULL)', async () => {
       delete process.env[FLAG];
       const ci = await seedCheckIn();
-      const out = await svc.markReviewedByCoach('coach-A', ci.id);
+      const out = await svc.markReviewedByCoach('coach-A', 'client-1', ci.id);
       expect(out.coach_reviewed_at).toBeNull();
     });
 
@@ -351,24 +357,24 @@ describe('CheckInsService', () => {
         date: '2026-05-01',
       } as any);
       await expect(
-        svc.markReviewedByCoach('coach-A', ci.id),
+        svc.markReviewedByCoach('coach-A', 'client-other', ci.id),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('404 on a non-existent check-in id (no probing)', async () => {
       process.env[FLAG] = 'true';
       await expect(
-        svc.markReviewedByCoach('coach-A', 'ci-does-not-exist'),
+        svc.markReviewedByCoach('coach-A', 'client-1', 'ci-does-not-exist'),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
 
     it('most-recent semantics: a second review re-stamps a later timestamp', async () => {
       process.env[FLAG] = 'true';
       const ci = await seedCheckIn();
-      const first = await svc.markReviewedByCoach('coach-A', ci.id);
+      const first = await svc.markReviewedByCoach('coach-A', 'client-1', ci.id);
       const t1 = (first.coach_reviewed_at as Date).getTime();
       await new Promise((r) => setTimeout(r, 5));
-      const second = await svc.markReviewedByCoach('coach-A', ci.id);
+      const second = await svc.markReviewedByCoach('coach-A', 'client-1', ci.id);
       const t2 = (second.coach_reviewed_at as Date).getTime();
       expect(t2).toBeGreaterThanOrEqual(t1);
     });
@@ -377,9 +383,9 @@ describe('CheckInsService', () => {
       process.env[FLAG] = 'true';
       const ci = await seedCheckIn();
       const results = await Promise.all([
-        svc.markReviewedByCoach('coach-A', ci.id),
-        svc.markReviewedByCoach('coach-A', ci.id),
-        svc.markReviewedByCoach('coach-A', ci.id),
+        svc.markReviewedByCoach('coach-A', 'client-1', ci.id),
+        svc.markReviewedByCoach('coach-A', 'client-1', ci.id),
+        svc.markReviewedByCoach('coach-A', 'client-1', ci.id),
       ]);
       for (const r of results) {
         expect(r.reviewed_by_coach).toBe(true);
@@ -387,6 +393,83 @@ describe('CheckInsService', () => {
       }
       // Still exactly one row — review never duplicates the check-in.
       expect(prisma._rows.filter((r) => r.id === ci.id)).toHaveLength(1);
+    });
+
+    // Through the real route, so these prove :client_id is read. client-1's
+    // check-in was made under coach-A, so its coach_id stays coach-A.
+    describe('POST /coach/clients/:client_id/check-ins/:check_in_id/reviewed', () => {
+      let app: INestApplication;
+      let base: string;
+      let consent: { coachCanAccess: jest.Mock };
+
+      beforeEach(async () => {
+        consent = { coachCanAccess: jest.fn(async () => true) };
+        const service = new CheckInsService(prisma as any, { emit: jest.fn() } as any, undefined, undefined, consent as any);
+        const ref = await Test.createTestingModule({
+          controllers: [CoachCheckInsController],
+          providers: [{ provide: CheckInsService, useValue: service }],
+        })
+          .overrideGuard(JwtAuthGuard)
+          .useValue({
+            canActivate: (ctx: ExecutionContext) => {
+              const req = ctx.switchToHttp().getRequest();
+              req.user = { id: req.headers['x-test-user'], role: 'coach' };
+              return true;
+            },
+          })
+          .compile();
+        app = ref.createNestApplication({ logger: false });
+        await app.listen(0, '127.0.0.1');
+        base = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+      });
+      afterEach(() => app.close());
+
+      const review = async (coach: string, client: string, checkInId: string) => {
+        const r = await fetch(`${base}/coach/clients/${client}/check-ins/${checkInId}/reviewed`, {
+          method: 'POST',
+          headers: { 'x-test-user': coach },
+        });
+        return { status: r.status, body: await r.json() };
+      };
+      const moveClient1ToCoachB = () => {
+        prisma._users.find((u) => u.id === 'client-1')!.coach_id = 'coach-B';
+      };
+
+      it('a former coach cannot review a moved client\'s check-in (404, nothing written)', async () => {
+        const ci = await seedCheckIn();
+        moveClient1ToCoachB();
+        expect((await review('coach-A', 'client-1', ci.id)).status).toBe(404);
+        expect(prisma._rows[0].reviewed_by_coach).toBe(false);
+      });
+
+      it('the current coach can, and gets back only the review fields', async () => {
+        process.env[FLAG] = 'true';
+        const ci = await seedCheckIn();
+        moveClient1ToCoachB();
+        const r = await review('coach-B', 'client-1', ci.id);
+        expect(r.status).toBe(200);
+        expect(r.body).toEqual({ id: ci.id, reviewed_by_coach: true, coach_reviewed_at: expect.any(String) });
+        expect(prisma._rows[0].reviewed_by_coach).toBe(true);
+      });
+
+      it('"Check-ins and habits" sharing off: 404, nothing written', async () => {
+        const ci = await seedCheckIn();
+        consent.coachCanAccess.mockResolvedValue(false);
+        expect((await review('coach-A', 'client-1', ci.id)).status).toBe(404);
+        expect(consent.coachCanAccess).toHaveBeenCalledWith(
+          'coach-A',
+          'client-1',
+          ConsentScope.FITNESS_HABITS_PROGRESS,
+          'coach',
+        );
+        expect(prisma._rows[0].reviewed_by_coach).toBe(false);
+      });
+
+      it("a check-in is only found under its own client's path (404, nothing written)", async () => {
+        const ci = await seedCheckIn();
+        expect((await review('coach-A', 'client-2', ci.id)).status).toBe(404);
+        expect(prisma._rows[0].reviewed_by_coach).toBe(false);
+      });
     });
   });
 });
