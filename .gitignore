@@ -13,3 +13,5 @@ node_modules
 # Wave status scratch files — local progress notes, never commit
 .h*-status.txt
 
+# Local MCP client config holds bearer tokens — never commit
+.mcp.json

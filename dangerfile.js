@@ -160,7 +160,7 @@ if (touchedLock && !touchedPackage) {
 
 // ---------- 4) Sensitive-file additions ----------
 const addedSensitive = danger.git.created_files.filter((f) =>
-  /\.env(\.|$)|\.pem$|\.key$|\.crt$|secrets?\.json$/.test(f),
+  /\.env(\.|$)|\.pem$|\.key$|\.crt$|secrets?\.json$|(^|\/)\.mcp\.json$/.test(f),
 );
 if (addedSensitive.length) {
   fail(
