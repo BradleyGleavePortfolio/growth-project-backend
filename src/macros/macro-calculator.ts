@@ -15,9 +15,9 @@
  * Goal adjustment: fat_loss -500 kcal, muscle_gain +300 kcal, maintenance and
  * performance 0.
  *
- * Calorie floor (clinical-safety floor, T3): 1,500 kcal for male, 1,200 kcal
- * for female, 1,500 kcal for prefer_not_to_say. The floor is applied after the
- * goal adjustment and reported as `floor_applied`.
+ * Calorie floor (calorie-floor.ts): 1,200 kcal for female, 1,500 kcal for
+ * everyone else. The floor is applied after the goal adjustment and reported
+ * as `floor_applied`.
  *
  * Split: protein 1 g per lb of goal weight (current weight when no goal weight
  * was given), capped at 35% of calories; fat 25% of calories; carbs fill the
@@ -30,6 +30,8 @@
  *
  * This module is pure: no Prisma, no Nest, no clock except the `now` argument.
  */
+
+import { calorieFloorKcal } from './calorie-floor';
 
 export type MacroSex = 'male' | 'female' | 'prefer_not_to_say';
 export type MacroGoal = 'fat_loss' | 'muscle_gain' | 'maintenance' | 'performance';
@@ -48,12 +50,6 @@ export const GOAL_ADJUSTMENT_KCAL: Readonly<Record<MacroGoal, number>> = Object.
   muscle_gain: 300,
   maintenance: 0,
   performance: 0,
-});
-
-export const CALORIE_FLOOR_KCAL: Readonly<Record<MacroSex, number>> = Object.freeze({
-  male: 1500,
-  female: 1200,
-  prefer_not_to_say: 1500,
 });
 
 export const FAT_SHARE_OF_KCAL = 0.25;
@@ -214,7 +210,7 @@ export function computeMacros(inputs: MacroInputs): MacroResult {
   const bmr = bmrMifflinStJeor(weightKg, inputs.height_cm, inputs.age_years, inputs.sex);
   const tdee = bmr * ACTIVITY_FACTORS[inputs.activity_level];
   const adjusted = tdee + GOAL_ADJUSTMENT_KCAL[inputs.goal];
-  const floor = CALORIE_FLOOR_KCAL[inputs.sex];
+  const floor = calorieFloorKcal(inputs.sex);
   const floorApplied = Math.round(adjusted) < floor;
   const calories = floorApplied ? floor : Math.round(adjusted);
 

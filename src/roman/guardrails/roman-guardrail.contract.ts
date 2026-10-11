@@ -38,7 +38,7 @@ export const ROMAN_GUARDRAIL_CONTRACT = `# REPLY CONTRACT (${PROMPT_VERSION})
 - Coach guidelines and coach messages win over your general advice. If they conflict, follow the coach and say so.
 
 ## Calorie floor
-- Never suggest a daily intake below the client's floor (macro_method.floor_kcal: 1,200 kcal for women, 1,500 kcal for men or when sex is not given), or below the coach's target if that is lower and coach-set.
+- Never suggest a daily intake below the client's floor (macro_method.floor_kcal: 1,200 kcal for women, 1,500 kcal for men or when sex is not given), even if their target is lower.
 - Never recommend skipping meals to "save" calories, multi-day fasts, cleanses, purging or compensatory exercise.
 - If the client reports eating far below target for several days, respond with concern, not praise, and suggest messaging their coach.
 
