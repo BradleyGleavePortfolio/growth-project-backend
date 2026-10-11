@@ -23,13 +23,18 @@ import { CreateInviteCodeDto } from './invite-codes.dto';
 import { BulkInviteDto } from './bulk-invite.dto';
 import { SendOneInviteDto } from './dto/send-one-invite.dto';
 import { InviteCodesService } from './invite-codes.service';
+import { LoginThrottleResetService, extractIp } from '../throttler/login-throttle-reset.service';
 
 // Coach-authenticated endpoints for managing invite codes. Mounted under
 // /coach/invite-codes to sit alongside the existing coach routes.
 @ApiTags('invite-codes')
 @Controller()
 export class InviteCodesController {
-  constructor(private inviteCodes: InviteCodesService) {}
+  constructor(
+    private inviteCodes: InviteCodesService,
+    // A7 — per-address limit on wrong invite-code guesses (public lookups).
+    private inviteGuess: LoginThrottleResetService,
+  ) {}
 
   // ----- existing legacy InviteCode CRUD (unchanged) -----------------
   @Post('coach/invite-codes')
@@ -171,8 +176,12 @@ export class InviteCodesController {
   @Throttle({
     [THROTTLER_NAMES.PUBLIC_READS]: { ttl: 60_000, limit: THROTTLER_ROUTE_LIMITS.PUBLIC_READS_PER_MIN },
   })
-  async previewInvite(@Param('code') code: string) {
-    return this.inviteCodes.previewCode(code);
+  async previewInvite(@Param('code') code: string, @Request() req: Record<string, unknown>) {
+    return this.inviteGuess.guardInviteCodeLookup(
+      extractIp(req),
+      () => this.inviteCodes.previewCode(code),
+      (r) => !r.valid,
+    );
   }
 
   // ----- C3: public accept-by-token -----------------------------------
@@ -189,8 +198,13 @@ export class InviteCodesController {
   async acceptInviteToken(
     @Param('token') token: string,
     @Body() _body: Record<string, unknown>,
+    @Request() req: Record<string, unknown>,
   ) {
-    return this.inviteCodes.acceptByToken(token);
+    return this.inviteGuess.guardInviteCodeLookup(
+      extractIp(req),
+      () => this.inviteCodes.acceptByToken(token),
+      (r) => !r.accepted,
+    );
   }
 
   // ----- Phase 1C: attach existing user to a coach via code ----------

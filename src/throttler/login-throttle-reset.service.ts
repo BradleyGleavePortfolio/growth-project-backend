@@ -75,6 +75,23 @@ export function accountFailureBucket(email: string): { key: string; name: string
   return { key: `auth-login-account:${digest}`, name: `auth-login-account:${digest}` };
 }
 
+// A7 — per-address limit on WRONG guesses across the five public invite-code
+// lookups (preview, /join, /invite, validate-invite-code, invites/accept).
+// Only misses count; a blocked address is refused BEFORE the lookup so a hit
+// cannot be confirmed either. Storage errors fail OPEN like the route throttles.
+export const INVITE_CODE_MISSES_PER_HOUR = 60;
+const INVITE_CODE_MISS_THROTTLER = 'invite-code-miss';
+
+/** Client address, same resolution order as UserThrottlerGuard.getTracker(). */
+export function extractIp(req?: Record<string, any>): string {
+  const flyIp = (req?.headers?.['fly-client-ip'] || '') as string;
+  if (flyIp.trim().length > 0) return flyIp.trim();
+  const xff = (req?.headers?.['x-forwarded-for'] || '') as string;
+  const fwdIp = xff.split(',')[0]?.trim();
+  if (fwdIp && fwdIp.length > 0) return fwdIp;
+  return req?.ip || req?.socket?.remoteAddress || req?.connection?.remoteAddress || 'unknown';
+}
+
 /**
  * LoginThrottleResetService — auth-specific throttling that the route guard
  * cannot express: the OAuth coach-signup ceiling (C13) and the per-account
@@ -197,6 +214,44 @@ export class LoginThrottleResetService {
       throw err;
     }
     await this.clearAccountFailures(email);
+    return result;
+  }
+
+  /** A7 — run one public invite-code lookup under the per-address miss limit. */
+  async guardInviteCodeLookup<T>(
+    ip: string,
+    lookup: () => Promise<T>,
+    isMiss: (result: T) => boolean,
+  ): Promise<T> {
+    if (!this.storage) return lookup();
+    const key = `invite-code-miss:ip:${ip}`;
+    let blocked = false;
+    try {
+      blocked = await blockedCheckFor(this.storage)(key, INVITE_CODE_MISS_THROTTLER);
+    } catch (err) {
+      this.logger.warn(
+        `invite miss check unavailable (fail open): ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    if (blocked) throw new ThrottlerException();
+    const result = await lookup();
+    if (isMiss(result)) {
+      try {
+        // limit-1: the 60th miss blocks the address for an hour.
+        const hour = 3_600_000;
+        await this.storage.increment(
+          key,
+          hour,
+          INVITE_CODE_MISSES_PER_HOUR - 1,
+          hour,
+          INVITE_CODE_MISS_THROTTLER,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `invite miss record unavailable (fail open): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
     return result;
   }
 
