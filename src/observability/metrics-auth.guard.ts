@@ -10,7 +10,7 @@ import { isProdLike } from '../common/env-validation';
 
 /**
  * MetricsAuthGuard — bearer-token gate (default-deny) for the privileged
- * observability endpoints (`/metrics/prom`, `/admin/db-stats`).
+ * observability endpoints (`/metrics`, `/metrics/prom`, `/admin/db-stats`).
  *
  *   - METRICS_AUTH_TOKEN set   → require matching `Authorization: Bearer`; else 401.
  *   - unset in a prod-like env → 503 (fail closed) so a misconfigured deploy
