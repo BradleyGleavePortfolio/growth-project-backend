@@ -11,7 +11,10 @@ import { ConflictException, NotFoundException, ServiceUnavailableException } fro
 import { CoachAIService } from '../../src/ai/coach/coach-ai.service';
 import { CoachAIStateService } from '../../src/ai/coach/coach-ai-state.service';
 import { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.service';
+import { SubCoachesService } from '../../src/sub-coaches/sub-coaches.service';
+import type { TeamService } from '../../src/team/team.service';
 import { WorkoutBuilderService } from '../../src/workout-builder/workout-builder.service';
+import { fakeOf } from '../ai-egress/ai-egress.fakes';
 
 function makeFixtures() {
   const drafts: any[] = [];
@@ -475,16 +478,22 @@ describe('CoachAIService', () => {
         Object.entries(where).every(([k, v]) => (v?.in ? v.in.includes(row[k]) : row[k] === v));
       f.prisma.user.findUnique = async ({ where }: any) => users[where.id] ?? null;
       f.prisma.user.findMany = async ({ where }: any) => Object.values(users).filter((u) => matches(u, where));
-      f.prisma.teamSubCoachAssignment = { findFirst: async ({ where }: any) => (matches(seat, where) ? seat : null) };
+      f.prisma.user.update = async ({ where, data }: any) => Object.assign(users[where.id], data);
+      f.prisma.teamSubCoachAssignment = {
+        findFirst: async ({ where }: any) => (matches(seat, where) ? seat : null),
+        findMany: async ({ where }: any) => [seat].filter((r) => matches(r, where)),
+      };
+      f.prisma.teamAuditEvent = { create: async () => ({ id: 'audit1' }) };
       f.prisma.subCoachAssignment = {
         findFirst: async ({ where }: any) => (matches(delegation, where) ? delegation : null),
         findMany: async ({ where }: any) => [delegation].filter((d) => matches(d, where)),
       };
-      const workouts = new WorkoutBuilderService(f.prisma, undefined, new SubCoachScopeService(f.prisma));
+      const scope = new SubCoachScopeService(f.prisma);
+      const workouts = new WorkoutBuilderService(f.prisma, undefined, scope);
       const svc = new CoachAIService(f.prisma, f.state, f.anthropic, f.ctxSvc, f.mealPlans, workouts);
       const draft = (id: string, coachId: string) =>
         f.drafts.push({ id, coachId, clientId: 'client1', type: 'INSIGHT', status: 'DRAFT', generatedPayload: { summary: '' }, createdAt: new Date() });
-      return { svc, users, drafts: f.drafts, draft };
+      return { svc, scope, users, drafts: f.drafts, draft, prisma: f.prisma };
     }
 
     it('a valid current delegation still works for the sub-coach, as does the head coach', async () => {
@@ -516,6 +525,18 @@ describe('CoachAIService', () => {
         }
       }
       expect(w.drafts.map((d) => [d.status, d.generatedPayload])).toEqual([['DRAFT', { summary: '' }], ['DRAFT', { summary: '' }]]);
+    });
+
+    it('a team move that makes the sub-coach the direct coach keeps the client in their scope and drafts', async () => {
+      const w = world();
+      w.draft('sub-a', 'sub1');
+      const team = new SubCoachesService(w.prisma, fakeOf<TeamService>({ refreshCounters: async () => undefined }));
+      await team.reassignClient('head1', 'sub1', { clientId: 'client1' });
+      expect(w.users.client1.coach_id).toBe('sub1');
+      expect(await w.scope.getAuthorizedClientIds('sub1')).toEqual(['client1']);
+      expect(await w.scope.canAccessClient('sub1', 'client1')).toBe(true);
+      expect((await w.svc.listDrafts('sub1')).map((d) => d.id)).toEqual(['sub-a']);
+      expect(await w.scope.getAuthorizedClientIds('head1')).toEqual([]);
     });
   });
 });

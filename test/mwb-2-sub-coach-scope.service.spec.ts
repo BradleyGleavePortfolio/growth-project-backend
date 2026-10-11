@@ -115,6 +115,7 @@ describe('SubCoachScopeService.canAccessClient (MWB-2 §7.2 matrix)', () => {
 
   it('sub-coach with zero open assignments -> false', async () => {
     prisma.subCoachAssignment.findMany.mockResolvedValue([]);
+    prisma.user.findMany.mockResolvedValue([]);
     expect(await svc.canAccessClient(SUB_COACH, CLIENT_IN_SCOPE)).toBe(false);
   });
 

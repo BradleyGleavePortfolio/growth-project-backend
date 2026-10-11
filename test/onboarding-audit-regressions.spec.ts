@@ -71,9 +71,9 @@ describe('A607-1 audit reproduction (real SubCoachScopeService)', () => {
           async ({ where }: { where: { id: string } }) =>
             users.find((u) => u.id === where.id) ?? null,
         ),
-        findMany: jest.fn(async ({ where }: { where: { id: { in: string[] }; coach_id?: string } }) =>
+        findMany: jest.fn(async ({ where }: { where: { id?: { in: string[] }; coach_id?: string } }) =>
           users.filter(
-            (u) => where.id.in.includes(u.id) && u.role === 'student' && u.deleted_at === null &&
+            (u) => (where.id?.in.includes(u.id) ?? true) && u.role === 'student' && u.deleted_at === null &&
               (where.coach_id === undefined || u.coach_id === where.coach_id),
           ),
         ),
