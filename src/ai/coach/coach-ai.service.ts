@@ -440,10 +440,9 @@ export class CoachAIService {
       },
     });
     // A client who moved to another coach takes their drafts out of this inbox.
-    const reachable = new Set<string>();
-    for (const clientId of new Set(drafts.map((d) => d.clientId))) {
-      if (await this.reachesClient(coachId, clientId)) reachable.add(clientId);
-    }
+    const clientIds = [...new Set(drafts.map((d) => d.clientId))];
+    const reaches = await Promise.all(clientIds.map((id) => this.reachesClient(coachId, id)));
+    const reachable = new Set(clientIds.filter((_, i) => reaches[i]));
     return drafts.filter((d) => reachable.has(d.clientId));
   }
 
@@ -474,8 +473,8 @@ export class CoachAIService {
     // Collapse missing vs foreign-owned into a single 404. Returning 403 for
     // foreign-owned IDs let a coach probe which draft IDs exist; the IDs
     // themselves don't carry payload but they were the basis for follow-on
-    // recon. See QA P0-A2. A draft about a client who has since moved to
-    // another coach is just as missing.
+    // recon. See QA P0-A2.
+    // A draft about a client who has since moved to another coach is just as missing.
     if (!draft || draft.coachId !== coachId || !(await this.reachesClient(coachId, draft.clientId))) {
       throw new NotFoundException('Draft not found');
     }

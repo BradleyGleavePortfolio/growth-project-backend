@@ -10,6 +10,8 @@
 import { ConflictException, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { CoachAIService } from '../../src/ai/coach/coach-ai.service';
 import { CoachAIStateService } from '../../src/ai/coach/coach-ai-state.service';
+import { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.service';
+import { WorkoutBuilderService } from '../../src/workout-builder/workout-builder.service';
 
 function makeFixtures() {
   const drafts: any[] = [];
@@ -168,7 +170,7 @@ function makeFixtures() {
   } as any;
 
   const svc = new CoachAIService(prisma, state, anthropic, ctxSvc, mealPlans, workouts);
-  return { svc, state, anthropic, prisma, mealPlans, workouts, drafts };
+  return { svc, state, anthropic, prisma, mealPlans, workouts, drafts, ctxSvc };
 }
 
 describe('CoachAIService', () => {
@@ -456,47 +458,64 @@ describe('CoachAIService', () => {
     expect(rejected.rejectionReason).toBe('not useful');
   });
 
-  describe('a client who moves to another coach', () => {
-    async function insightDraft(f: ReturnType<typeof makeFixtures>, coachId: string) {
-      f.anthropic.completeStructured.mockResolvedValue({
-        data: { summary: '', wins: [], concerns: [], suggested_actions: [], questions_for_coach: [] },
-        tokensIn: 1,
-        tokensOut: 1,
-        modelUsed: 'claude-sonnet-4-6',
-        latencyMs: 1,
-      });
-      return (await f.svc.generateClientInsight(coachId, { clientId: 'client1' })).draftId;
+  describe('a client who moves to another coach (real access gate)', () => {
+    // The real WorkoutBuilderService and SubCoachScopeService over in-memory
+    // rows: head1 owns client1 and delegated them to sub1, whose team seat and
+    // delegation both stay open when client1 moves to head2.
+    function world() {
+      const f = makeFixtures();
+      const users: Record<string, Record<string, unknown>> = {
+        head1: { id: 'head1', role: 'coach', coach_id: null, deleted_at: null },
+        sub1: { id: 'sub1', role: 'coach', coach_id: 'head1', deleted_at: null },
+        client1: { id: 'client1', role: 'student', coach_id: 'head1', deleted_at: null },
+      };
+      const seat = { id: 'seat1', head_coach_id: 'head1', sub_coach_id: 'sub1', archived_at: null };
+      const delegation = { id: 'sca1', head_coach_id: 'head1', sub_coach_id: 'sub1', client_id: 'client1', unassigned_at: null };
+      const matches = (row: Record<string, unknown>, where: Record<string, any>) =>
+        Object.entries(where).every(([k, v]) => (v?.in ? v.in.includes(row[k]) : row[k] === v));
+      f.prisma.user.findUnique = async ({ where }: any) => users[where.id] ?? null;
+      f.prisma.user.findMany = async ({ where }: any) => Object.values(users).filter((u) => matches(u, where));
+      f.prisma.teamSubCoachAssignment = { findFirst: async ({ where }: any) => (matches(seat, where) ? seat : null) };
+      f.prisma.subCoachAssignment = {
+        findFirst: async ({ where }: any) => (matches(delegation, where) ? delegation : null),
+        findMany: async ({ where }: any) => [delegation].filter((d) => matches(d, where)),
+      };
+      const workouts = new WorkoutBuilderService(f.prisma, undefined, new SubCoachScopeService(f.prisma));
+      const svc = new CoachAIService(f.prisma, f.state, f.anthropic, f.ctxSvc, f.mealPlans, workouts);
+      const draft = (id: string, coachId: string) =>
+        f.drafts.push({ id, coachId, clientId: 'client1', type: 'INSIGHT', status: 'DRAFT', generatedPayload: { summary: '' }, createdAt: new Date() });
+      return { svc, users, drafts: f.drafts, draft };
     }
 
-    it('takes their drafts from the former coach: list, read, edit, reject and approve', async () => {
-      const f = makeFixtures();
-      const draftId = await insightDraft(f, 'coach1');
-      expect((await f.svc.listDrafts('coach1')).map((d) => d.id)).toEqual([draftId]);
-      f.workouts.assertCanAccessClient.mockRejectedValue(new Error('moved'));
-      expect(await f.svc.listDrafts('coach1')).toEqual([]);
-      for (const call of [
-        () => f.svc.getDraft('coach1', draftId),
-        () => f.svc.editDraft('coach1', draftId, { summary: 'edited' }),
-        () => f.svc.rejectDraft('coach1', draftId, 'no'),
-        () => f.svc.approveDraft('coach1', draftId),
-      ]) {
-        await expect(call()).rejects.toBeInstanceOf(NotFoundException);
-      }
-      expect(f.drafts[0]).toMatchObject({ status: 'DRAFT', generatedPayload: { summary: '' } });
+    it('a valid current delegation still works for the sub-coach, as does the head coach', async () => {
+      const w = world();
+      ['sub-a', 'sub-b'].forEach((id) => w.draft(id, 'sub1'));
+      w.draft('head-a', 'head1');
+      expect((await w.svc.listDrafts('sub1')).map((d) => d.id)).toEqual(['sub-a', 'sub-b']);
+      expect((await w.svc.listDrafts('head1')).map((d) => d.id)).toEqual(['head-a']);
+      expect((await w.svc.getDraft('sub1', 'sub-a')).id).toBe('sub-a');
+      expect((await w.svc.editDraft('sub1', 'sub-a', { summary: 'edited' })).generatedPayload).toEqual({ summary: 'edited' });
+      expect((await w.svc.approveDraft('sub1', 'sub-a')).status).toBe('APPROVED');
+      expect((await w.svc.rejectDraft('sub1', 'sub-b', 'no')).status).toBe('REJECTED');
     });
 
-    it('a sub-coach keeps their drafts while the client is assigned to them', async () => {
-      const f = makeFixtures();
-      f.workouts.assertCanAccessClient.mockImplementation(async (coachId: string, clientId: string) => {
-        if (coachId === 'sub1' && clientId === 'client1') return;
-        throw new Error('no access');
-      });
-      const draftId = await insightDraft(f, 'sub1');
-      expect((await f.svc.listDrafts('sub1')).map((d) => d.id)).toEqual([draftId]);
-      expect((await f.svc.getDraft('sub1', draftId)).id).toBe(draftId);
-      f.workouts.assertCanAccessClient.mockRejectedValue(new Error('unassigned'));
-      expect(await f.svc.listDrafts('sub1')).toEqual([]);
-      await expect(f.svc.getDraft('sub1', draftId)).rejects.toBeInstanceOf(NotFoundException);
+    it('takes their drafts from the former coach and sub-coach, even with the delegation still open', async () => {
+      const w = world();
+      w.draft('sub-a', 'sub1');
+      w.draft('head-a', 'head1');
+      w.users.client1.coach_id = 'head2';
+      for (const [coachId, id] of [['sub1', 'sub-a'], ['head1', 'head-a']]) {
+        expect(await w.svc.listDrafts(coachId)).toEqual([]);
+        for (const call of [
+          () => w.svc.getDraft(coachId, id),
+          () => w.svc.editDraft(coachId, id, { summary: 'edited' }),
+          () => w.svc.rejectDraft(coachId, id, 'no'),
+          () => w.svc.approveDraft(coachId, id),
+        ]) {
+          await expect(call()).rejects.toThrow('Draft not found');
+        }
+      }
+      expect(w.drafts.map((d) => [d.status, d.generatedPayload])).toEqual([['DRAFT', { summary: '' }], ['DRAFT', { summary: '' }]]);
     });
   });
 });

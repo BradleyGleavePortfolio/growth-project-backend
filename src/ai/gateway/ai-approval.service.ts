@@ -134,14 +134,16 @@ export class AiApprovalService {
     const coachId = scope.tenantCoachId;
     if (!coachId) return drafts;
     // The tenant was stamped when the draft was made; a client who has since
-    // moved to another coach takes their drafts with them (same rule as decide).
-    const subjectIds = [...new Set(drafts.flatMap((d) => d.subject_user_id ?? []))];
+    // moved to another coach takes their drafts with them (same rule as decide),
+    // whether the draft names them as its subject or in its payload.
+    const clientsOf = (d: (typeof drafts)[number]) =>
+      [d.subject_user_id ?? [], payloadClientIds(d.payload)].flat().filter((id) => id !== coachId);
     const roster = await this.prisma.user.findMany({
-      where: { id: { in: subjectIds }, coach_id: coachId },
+      where: { id: { in: [...new Set(drafts.flatMap(clientsOf))] }, coach_id: coachId },
       select: { id: true },
     });
     const onRoster = new Set(roster.map((u) => u.id));
-    return drafts.filter((d) => !d.subject_user_id || d.subject_user_id === coachId || onRoster.has(d.subject_user_id));
+    return drafts.filter((d) => clientsOf(d).every((id) => onRoster.has(id)));
   }
 
   async getById(id: string) {

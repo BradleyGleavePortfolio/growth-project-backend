@@ -96,7 +96,7 @@ describe('SubCoachScopeService.canAccessClient (MWB-2 §7.2 matrix)', () => {
     expect(await svc.canAccessClient(SUB_COACH, CLIENT_IN_SCOPE)).toBe(true);
     expect(prisma.subCoachAssignment.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { sub_coach_id: SUB_COACH, unassigned_at: null },
+        where: { sub_coach_id: SUB_COACH, head_coach_id: HEAD_COACH, unassigned_at: null },
       }),
     );
   });
