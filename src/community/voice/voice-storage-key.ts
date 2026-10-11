@@ -56,8 +56,28 @@ export interface MintedVoiceKey {
 export function voiceKeySecret(): Buffer | null {
   const explicit = (process.env.VOICE_KEY_SIGNING_SECRET ?? '').trim();
   const base = explicit || (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
-  if (!base) return null;
+  return base ? deriveVoiceSecret(base) : null;
+}
+
+function deriveVoiceSecret(base: string): Buffer {
   return createHmac('sha256', 'tgp.community.voice-key.v1').update(base).digest();
+}
+
+/** When this process started; the old-key overlap below is measured from it. */
+const PROCESS_START_MS = Date.now();
+
+/**
+ * K5 (SEC-06) overlap: once VOICE_KEY_SIGNING_SECRET is set, a key minted
+ * with the old service-role-derived secret (before the restart that brought
+ * the new secret in) still publishes, but only during the first publish
+ * window after this process started. Null when the secret is unset (then the
+ * derived secret is already the primary one) or there is no service-role key.
+ */
+function legacyVoiceKeySecret(nowMs: number): Buffer | null {
+  if (!(process.env.VOICE_KEY_SIGNING_SECRET ?? '').trim()) return null;
+  if (nowMs - PROCESS_START_MS > VOICE_KEY_PUBLISH_WINDOW_MS) return null;
+  const base = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim();
+  return base ? deriveVoiceSecret(base) : null;
 }
 
 function macFor(secret: Buffer, ownerId: string, ts: string, nonce: string, ext: string): string {
@@ -140,11 +160,17 @@ export function verifyPublishableVoiceKey(
   const secret = voiceKeySecret();
   if (!secret) return { ok: false, reason: 'secret_missing' };
   const ts = String(parsed.mintedAtMs).padStart(13, '0');
-  const expected = Buffer.from(macFor(secret, ownerId, ts, parsed.nonce, parsed.ext), 'utf8');
   const given = Buffer.from(parsed.mac, 'utf8');
-  if (expected.length !== given.length || !timingSafeEqual(expected, given)) {
-    return { ok: false, reason: 'signature' };
+  const signedWith = (s: Buffer): boolean => {
+    const expected = Buffer.from(macFor(s, ownerId, ts, parsed.nonce, parsed.ext), 'utf8');
+    return expected.length === given.length && timingSafeEqual(expected, given);
+  };
+  let valid = signedWith(secret);
+  if (!valid) {
+    const legacy = legacyVoiceKeySecret(nowMs);
+    valid = legacy !== null && signedWith(legacy);
   }
+  if (!valid) return { ok: false, reason: 'signature' };
   const age = nowMs - parsed.mintedAtMs;
   if (age < -5 * 60 * 1000 || age > VOICE_KEY_PUBLISH_WINDOW_MS) {
     return { ok: false, reason: 'expired' };
