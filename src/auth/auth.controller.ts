@@ -311,7 +311,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async validateInviteCode(
     @Body() body: ValidateInviteCodePublicDto,
-    @Request() req: AuditableRequest,
+    @Request() req?: AuditableRequest,
   ) {
     const trimmed = body.code.trim();
     if (
