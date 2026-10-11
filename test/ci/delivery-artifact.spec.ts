@@ -143,8 +143,8 @@ describe('Dockerfile / .dockerignore — production artifact shape (structural o
   const di = read('.dockerignore');
 
   it('is multi-stage with a runtime stage that installs --omit=dev and copies dist from build', () => {
-    expect(df).toMatch(/FROM node:20-slim AS build/);
-    expect(df).toMatch(/FROM node:20-slim AS runtime/);
+    expect(df).toMatch(/FROM node:22-bookworm-slim AS build/);
+    expect(df).toMatch(/FROM node:22-bookworm-slim AS runtime/);
     const runtime = df.slice(df.indexOf('AS runtime'));
     expect(runtime).toMatch(/npm ci --omit=dev/);
     expect(runtime).toMatch(/COPY --from=build \/app\/dist \.\/dist/);

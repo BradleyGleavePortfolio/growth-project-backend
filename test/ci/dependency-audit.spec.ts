@@ -268,9 +268,9 @@ describe('dependency-audit workflow structure', () => {
     expect(uses.length).toBeGreaterThan(0);
     for (const ref of uses) expect(ref).toMatch(/^[^@]+@[0-9a-f]{40}$/);
   });
-  it('pins the runtime to the confirmed Node 20.20.1 and records versions', () => {
+  it('pins the runtime to the current Node 22 LTS (22.23.3) and records versions', () => {
     const setupNode = steps.find((s) => (s.uses ?? '').startsWith('actions/setup-node@'));
-    expect(setupNode?.with?.['node-version']).toBe('20.20.1');
+    expect(setupNode?.with?.['node-version']).toBe('22.23.3');
     const allCommands = runSteps.map((s) => stripComments(s.run)).join('\n');
     expect(allCommands).toMatch(/node -v/);
     expect(allCommands).toMatch(/npm -v/);
