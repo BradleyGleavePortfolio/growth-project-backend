@@ -27,6 +27,7 @@ import {
 } from './deletion-receipt';
 import { AccountDeletionStorageService } from './account-deletion.storage';
 import { AccountDeletionBillingService } from './account-deletion.billing';
+import { AccountDeletionVendorsService, VendorWork } from './account-deletion.vendors';
 import { VoiceUploadProvider } from '../community/voice/voice-upload.provider';
 import {
   VoiceErasureRow,
@@ -72,7 +73,9 @@ import {
 // DB statement succeeded; both idempotent, any failure throws and rolls the
 // DB back for the next run), and write one non-identifying outcome row. After commit the Supabase auth identity is
 // removed; the original supabase_id stays on the tombstone (the only retry
-// handle) until that succeeds, and the cron retries it every night.
+// handle) until that succeeds, and the cron retries it every night. The
+// vendors (PostHog, Crisp, Stripe customer) are asked to erase their copies
+// after commit too, from a work row committed with the deletion.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** Legacy sentinel id kept for callers that still import it. */
@@ -87,6 +90,10 @@ export const DeletionAuditEvent = {
   APPLE_REVOCATION: 'apple_revocation',
   AUTH_IDENTITY_REMOVED: 'auth_identity_removed',
   AUTH_IDENTITY_CLEANUP_FAILED: 'auth_identity_cleanup_failed',
+  /** One per vendor attempt, random subject id: `{ <vendor>: outcome }`. */
+  VENDOR_ERASURE: 'vendor_erasure',
+  /** Keyed by the tombstone id; holds VendorWork until every vendor is done. */
+  VENDOR_ERASURE_PENDING: 'vendor_erasure_pending',
 } as const;
 
 export type DeletionAuditEventValue = (typeof DeletionAuditEvent)[keyof typeof DeletionAuditEvent];
@@ -165,6 +172,7 @@ export class AccountDeletionService {
     private readonly appleRevocation: AppleTokenRevocationService,
     private readonly storage: AccountDeletionStorageService,
     private readonly billing: AccountDeletionBillingService,
+    private readonly vendors: AccountDeletionVendorsService,
   ) {}
 
   // ── Helpers ───────────────────────────────────────────────────────────────
@@ -221,7 +229,8 @@ export class AccountDeletionService {
    * deletion_audit insert. Lifecycle events are written with the
    * transaction client of the transition they describe, so a failure rolls
    * the transition back (B-608-4). Metadata never carries email, IP or
-   * user agent.
+   * user agent, except the vendor work row (VENDOR_ERASURE_PENDING), which
+   * keeps the email Crisp needs only until Crisp confirms the erasure.
    */
   private async insertDeletionAudit(
     client: Prisma.TransactionClient,
@@ -592,6 +601,19 @@ export class AccountDeletionService {
   @Cron(process.env['DELETION_FINALIZE_CRON'] ?? '0 3 * * *')
   async runFinalizeCron(): Promise<{ finalized: number; skipped: number; errors: number }> {
     this.logger.log('AccountDeletion finalize cron: starting');
+    // Vendor erasure left over from earlier runs, before this run adds its own.
+    try {
+      const rows = await this.prisma.$queryRaw<{ user_id: string; metadata: VendorWork }[]>`
+        SELECT "user_id", "metadata" FROM "deletion_audit"
+         WHERE "event" = ${DeletionAuditEvent.VENDOR_ERASURE_PENDING}
+         ORDER BY "created_at" LIMIT 100`;
+      for (const row of rows) await this.eraseAtVendors(row.user_id, row.metadata);
+    } catch (err) {
+      this.logger.error(
+        `AccountDeletion vendor retry failed, will retry next run: ${(err as Error).message}`,
+      );
+    }
+
     const cutoff = new Date(Date.now() - this.graceDays * DAY_MS);
 
     const candidates = await this.prisma.user.findMany({
@@ -693,7 +715,7 @@ export class AccountDeletionService {
         tx,
       ): Promise<
         | { skipped: FinalizeSkipReason }
-        | { supabaseId: string | null; voiceWork: VoiceErasureRow[] }
+        | { supabaseId: string | null; voiceWork: VoiceErasureRow[]; vendorWork: VendorWork }
       > => {
         const user = await this.lockUser(tx, userId, 'skip');
         if (!user) {
@@ -725,6 +747,7 @@ export class AccountDeletionService {
         subscriptionIds.push(
           ...(await this.billing.collectUnboundAttemptSubscriptionIds(tx, userId)),
         );
+        const vendorWork = await this.vendors.collect(tx, userId, user.email);
 
         // 1b. Community voice recordings (B-610-5, OR-110-1, Apple 5.1.1(v)).
         //     The verified-erasure work (every exact key on the user's notes
@@ -799,6 +822,14 @@ export class AccountDeletionService {
         // 4. Audit: lifecycle rows carry the user id, so they go; one outcome
         //    row with a random subject id stays (B-608-4).
         await tx.$executeRaw`DELETE FROM "deletion_audit" WHERE "user_id" = ${userId}`;
+        // 4b. Vendor work commits if and only if the deletion commits.
+        await this.insertDeletionAudit(tx, {
+          subjectId: userId,
+          event: DeletionAuditEvent.VENDOR_ERASURE_PENDING,
+          actorId: null,
+          actorRole: 'system',
+          metadata: vendorWork,
+        });
 
         // 5. External side effects last (A-608-3): every DB statement above
         //    has already succeeded, so a constraint or data error can no
@@ -829,15 +860,48 @@ export class AccountDeletionService {
         this.logger.log(
           `account deletion finalized user=${userId} rows=${rowsChanged} objects=${storage.removed} subscriptions=${billing.canceled}`,
         );
-        return { supabaseId: user.supabase_id, voiceWork };
+        return { supabaseId: user.supabase_id, voiceWork, vendorWork };
       },
       { timeout: FINALIZE_TX_TIMEOUT_MS, maxWait: 10_000 },
     );
 
     if ('skipped' in committed) return { outcome: 'skipped', reason: committed.skipped };
     await this.verifyVoiceErasures(userId, committed.voiceWork);
+    await this.eraseAtVendors(userId, committed.vendorWork);
     const authIdentity = await this.removeAuthIdentity(userId, committed.supabaseId);
     return { outcome: 'finalized', authIdentity };
+  }
+
+  /**
+   * Ask each vendor still listed in the work row to erase the person, record
+   * the outcomes under a random subject id, then drop the work row or narrow
+   * it to the vendors that failed (the nightly cron retries those). Never
+   * throws and never touches the committed deletion.
+   */
+  private async eraseAtVendors(userId: string, work: VendorWork): Promise<void> {
+    try {
+      const { outcomes, left } = await this.vendors.erase(userId, work);
+      await this.insertDeletionAudit(this.prisma, {
+        subjectId: crypto.randomUUID(),
+        event: DeletionAuditEvent.VENDOR_ERASURE,
+        actorId: null,
+        actorRole: 'system',
+        metadata: outcomes,
+      });
+      const pending = DeletionAuditEvent.VENDOR_ERASURE_PENDING;
+      if (left) {
+        await this.prisma.$executeRaw`
+          UPDATE "deletion_audit" SET "metadata" = ${left}::jsonb
+           WHERE "user_id" = ${userId} AND "event" = ${pending}`;
+      } else {
+        await this.prisma.$executeRaw`
+          DELETE FROM "deletion_audit" WHERE "user_id" = ${userId} AND "event" = ${pending}`;
+      }
+    } catch (err) {
+      this.logger.error(
+        `account deletion: vendor erasure bookkeeping failed user=${userId}; retried nightly: ${(err as Error).message}`,
+      );
+    }
   }
 
   /**

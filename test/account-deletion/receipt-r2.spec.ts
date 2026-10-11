@@ -31,6 +31,7 @@ import type { SupabaseService } from '../../src/supabase/supabase.service';
 import type { AppleTokenRevocationService } from '../../src/account-deletion/apple-token-revocation.service';
 import type { AccountDeletionStorageService } from '../../src/account-deletion/account-deletion.storage';
 import type { AccountDeletionBillingService } from '../../src/account-deletion/account-deletion.billing';
+import type { AccountDeletionVendorsService } from '../../src/account-deletion/account-deletion.vendors';
 import { FakeDeletionDb } from './fake-deletion-db';
 
 function stub<T>(value: unknown): T {
@@ -164,6 +165,7 @@ describe('C-608-7 in the deletion service', () => {
         collectUnboundAttemptSubscriptionIds: jest.fn(async () => []),
         cancelAll: jest.fn().mockResolvedValue({ canceled: 0, alreadyInactive: 0 }),
       }),
+      stub<AccountDeletionVendorsService>({}),
     );
     Object.assign(svc, { logger: { log: jest.fn(), warn: jest.fn(), error: jest.fn() } });
     return svc;
