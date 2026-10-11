@@ -990,7 +990,7 @@ export class RomanService {
       });
     }
     const userMessage = opts.userMessage ?? (await this.latestUserMessage(caller, session.id));
-    const route = classifySafety(userMessage);
+    const route = classifySafety(userMessage, await this.earlierUserText(caller, session.id));
 
     if (
       route.short_circuit &&
@@ -1257,8 +1257,12 @@ export class RomanService {
    * controller uses it so such a message is never blocked by the turn limit,
    * the spend cap or the coach requirement.
    */
-  isSafetyShortCircuit(message: string): boolean {
-    return classifySafety(message).short_circuit;
+  async isSafetyShortCircuit(
+    caller: RomanCaller,
+    sessionId: string,
+    message: string,
+  ): Promise<boolean> {
+    return classifySafety(message, await this.earlierUserText(caller, sessionId)).short_circuit;
   }
 
   /** CF-ROMAN-COPY-B-128: true when the message gets the eating-disorder fallback if the AI cannot answer. */
@@ -1295,9 +1299,9 @@ export class RomanService {
 
   /**
    * Urgent symptoms on a weight-loss medicine: the client's coach gets the
-   * existing red-flag coach alert (in-app item and the quiet push, deduped per
-   * client for 24 hours). A coachless client gets the reply only. A failure is
-   * logged by code and never blocks the reply.
+   * existing red-flag coach alert (in-app item and the quiet push), once per
+   * urgent reply. A coachless client gets the reply only. A failure is logged
+   * by code and never blocks the reply.
    */
   private async alertCoachOfUrgentReply(caller: RomanCaller): Promise<void> {
     if (caller.role !== 'student' || !this.coachAlerts) return;
@@ -1466,6 +1470,26 @@ export class RomanService {
     const run = await this.runAugmenters(caller, bundle, userMessage);
     if (!run || run.applied.length === 0) return { augmentRun: run, sendSubject: subject };
     return { augmentRun: run, sendSubject: clientDataSubject(caller.id, 'client', 'memory') };
+  }
+
+  /**
+   * The caller's own last few turns in the session, for the safety router: a
+   * weight-loss medicine named earlier counts for a red flag reported now.
+   * Scoped to the caller, so an unverified session id reads nothing else.
+   */
+  private async earlierUserText(caller: RomanCaller, sessionId: string): Promise<string> {
+    try {
+      const rows = await this.prisma.romanMessage.findMany({
+        where: { session_id: sessionId, user_id: caller.id, role: 'user' },
+        orderBy: { created_at: 'desc' },
+        take: 5,
+        select: { content: true },
+      });
+      return rows.map((r) => r.content).join('. ');
+    } catch (err) {
+      this.logger.warn(`roman.safety_history_failed: ${romanErrorTag(err)}`);
+      return '';
+    }
   }
 
   /** Newest user turn of the caller's session (the controller stores it first). */

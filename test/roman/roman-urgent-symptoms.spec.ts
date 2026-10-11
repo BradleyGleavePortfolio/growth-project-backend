@@ -8,9 +8,11 @@
 
 import 'reflect-metadata';
 import { Test } from '@nestjs/testing';
+import type { RomanSession } from '@prisma/client';
 import type { PrismaService } from '../../src/prisma.service';
 import type { AuditService } from '../../src/audit/audit.service';
 import { CoachAlertsService } from '../../src/coach/coach-alerts.service';
+import type { CoachAlertEmitter } from '../../src/notifications/emitters/coach-alert.emitter';
 import { RomanService } from '../../src/roman/roman.service';
 import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
 import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
@@ -39,41 +41,42 @@ const REPLY =
   'This needs medical attention. Contact your prescribing clinic today. If symptoms are severe, call 911.';
 
 const MEDICINES = [
-  'Ozempic',
-  'Wegovy',
-  'Rybelsus',
-  'semaglutide',
-  'Mounjaro',
-  'Zepbound',
-  'tirzepatide',
-  'Victoza',
-  'Saxenda',
-  'liraglutide',
-  'GLP-1',
-  'a GLP1',
-  'a weight loss shot',
+  ...'Ozempic Wegovy Rybelsus semaglutide Mounjaro Zepbound tirzepatide Victoza Saxenda'.split(' '),
+  ...'liraglutide Trulicity Byetta Bydureon exenatide retatrutide Monjaro Ozempik Wegovey'.split(' '),
+  ...['GLP-1', 'a GLP1', 'a weight loss shot', 'a fat jab'],
 ];
 
 const SYMPTOMS: Record<string, string[]> = {
-  'severe or persistent stomach pain': [
+  'severe or lasting stomach pain': [
     'I have severe stomach pain',
+    'I have severe stomach pains',
+    'I have the worst stomach pain of my life',
     'there is a terrible pain in my upper stomach',
     "my stomach pain won't go away",
     'my belly hurts and it goes through to my back',
     'I have had abdominal pain for 3 days',
+    'the pain in my stomach is severe',
+    'my abdomen hurts really badly',
+    'my stomach is killing me',
   ],
-  'vomiting that will not stop': [
+  'pancreatitis or gallbladder trouble': [
+    'I think I have pancreatitis',
+    'I have signs of gallbladder trouble',
+    'I think I have gallstones',
+  ],
+  'vomiting that will not stop, or severe dehydration': [
     "I can't keep any water down",
+    "I can't even keep water down",
     'I cannot keep anything down since yesterday',
     'I keep throwing up',
     "I've been vomiting and it won't stop",
+    "I'm puking constantly",
+    "I've thrown up 6 times today",
     'I threw up all night',
+    'I am severely dehydrated',
+    "I haven't been able to drink anything in 2 days",
   ],
-  'yellow skin or eyes': [
-    'my eyes look yellow',
-    'I noticed yellowing of my skin',
-    'I think I am jaundiced',
-  ],
+  'yellow skin or eyes': ['my eyes look yellow', 'I noticed yellowing of my skin', 'I am jaundiced'],
   'a serious allergic reaction': [
     'my face is swollen',
     'my lips swelled up after the dose',
@@ -113,21 +116,55 @@ describe('urgent_symptoms: a weight-loss medicine plus a red-flag symptom', () =
     expect(classifySafety('Wegovy and I am about to pass out').class).toBe('emergency');
   });
 
-  it('ordinary medicine mentions keep the medical hint, and the new names get it too', () => {
+  it('a denied symptom, a risk question or a coaching message is not a report', () => {
     for (const msg of [
       "I'm on Wegovy, what should I eat for lunch?",
       'Ozempic makes me a bit nauseous, any easy dinners?',
-      'Can Mounjaro cause low blood sugar?',
-      'I am worried about low blood sugar on Ozempic',
-      'I just started Zepbound, how much protein do I need?',
-      'Is Saxenda ok with my training plan?',
-      'I take Rybelsus every morning, when should I train?',
-      'Does a GLP-1 change how I should lift?',
-      'I have a knot in my neck from deadlifts and I am on Mounjaro',
+      'Mounjaro gives me mild stomach cramps',
+      'I threw up once after my Wegovy shot',
       "I'm on Wegovy and my stomach fat won't go away",
+      'I have a knot in my neck from deadlifts and I am on Mounjaro',
+      "I'm on Wegovy and losing muscle mass, how do I train my neck and traps?",
+      'On Mounjaro, my knees collapsed inward on my squats',
+      'On Wegovy and my motivation collapsed',
+      'On Zepbound I passed out at 9pm last night, slept great',
+      'On Ozempic my hands are shaky on bench and I am confused about grip',
+      'I had hives as a kid, can I take Ozempic?',
+      "On Wegovy I can't keep food intake down below 2000",
+      'Should I worry about getting low blood sugar on Ozempic?',
+      'Can Mounjaro cause low blood sugar?',
+      'Can Ozempic cause pancreatitis?',
+      "I'm on Wegovy and have no severe stomach pain; what should I eat for lunch?",
+      'I take Wegovy. I have not fainted and feel fine. What should I eat?',
+      "I'm on Wegovy and my skin isn't yellow. How much protein should I eat?",
+      "I'm on Ozempic and I don't have any severe stomach pain",
+      "I'm on Ozempic, no vomiting at all",
+      "I'm on Wegovy and my coach says to watch for severe stomach pain. I feel fine.",
+      "I don't take Ozempic. I have a swollen neck from an old gym injury.",
+      'since my weekly injection I keep throwing up',
     ]) {
-      expect({ msg, cls: classifySafety(msg).class }).toEqual({ msg, cls: 'medical_scope' });
+      expect({ msg, cls: classifySafety(msg).class }).not.toEqual({ msg, cls: 'urgent_symptoms' });
     }
+    expect(classifySafety("I'm on Wegovy. No vomiting, but severe stomach pain").class).toBe(
+      'urgent_symptoms',
+    );
+  });
+
+  it('plain medicine mentions route exactly as before', () => {
+    expect(classifySafety("I'm on Wegovy, what should I eat for lunch?").class).toBe('medical_scope');
+    expect(classifySafety('I just started Zepbound, how much protein do I need?').class).toBe('normal');
+    expect(classifySafety('What do you think about GLP-1s?').class).toBe('normal');
+  });
+
+  it('a medicine named in an earlier turn counts; an earlier symptom does not', () => {
+    const earlier = 'I started Wegovy two weeks ago';
+    expect(classifySafety("I can't keep any water down", earlier).class).toBe('urgent_symptoms');
+    expect(classifySafety("I can't keep any water down", "I don't take Wegovy").class).not.toBe(
+      'urgent_symptoms',
+    );
+    expect(classifySafety('What should I eat for lunch?', `${earlier}. I keep throwing up`).class).toBe(
+      'normal',
+    );
   });
 
   it('the template is the approved wording, word for word', () => {
@@ -147,24 +184,14 @@ describe('urgent_symptoms: a weight-loss medicine plus a red-flag symptom', () =
 // ─── the live turn: fixed reply, no model call, coach alert ──────────────────
 
 const MESSAGE = "I'm on Zepbound and I can't keep any water down";
-const SESSION = {
-  id: 'sess_1',
-  user_id: 'client-1',
-  surface: 'client' as const,
-  day_key: '2026-10-10',
-  message_count: 1,
-  started_at: new Date(),
-  last_activity_at: new Date(),
-  quips_in_session: 0,
-  exclamation_used: false,
-  subject_context_json: null,
-  created_at: new Date(),
-  updated_at: new Date(),
-  deleted_at: null,
-};
+const SESSION = fakeOf<RomanSession>({ id: 'sess_1', user_id: 'client-1', surface: 'client' });
 const CLIENT = { id: 'client-1', role: 'student' };
 
-function harness(coachId: string | null, createAlert: jest.Mock = jest.fn(async () => ({}))) {
+function harness(
+  coachId: string | null,
+  createAlert: jest.Mock = jest.fn(async () => ({})),
+  earlierTurns: string[] = [],
+) {
   const messages: Array<Record<string, unknown>> = [];
   const romanMessage = {
     create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
@@ -172,6 +199,7 @@ function harness(coachId: string | null, createAlert: jest.Mock = jest.fn(async 
       messages.push(row);
       return row;
     }),
+    findMany: jest.fn(async (_args: unknown) => earlierTurns.map((content) => ({ content }))),
   };
   const romanSession = { updateMany: jest.fn(async () => ({ count: 1 })) };
   const prisma = {
@@ -196,7 +224,7 @@ function harness(coachId: string | null, createAlert: jest.Mock = jest.fn(async 
     null,
     fakeOf<CoachAlertsService>(alerts),
   );
-  return { svc, stream, audit, alerts, messages };
+  return { svc, stream, audit, alerts, messages, findMany: romanMessage.findMany };
 }
 
 async function drain(gen: AsyncGenerator<unknown>) {
@@ -253,10 +281,24 @@ describe('urgent_symptoms on the live turn', () => {
     expect(h.alerts.createAlert).not.toHaveBeenCalled();
   });
 
-  it('the controller treats it as a fixed reply, so no limit, consent or coach check stands in the way', () => {
+  it('the controller treats it as a fixed reply, so no limit, consent or coach check stands in the way', async () => {
     const { svc } = harness(null);
-    expect(svc.isSafetyShortCircuit(MESSAGE)).toBe(true);
-    expect(svc.isSafetyShortCircuit("I'm on Wegovy, what should I eat for lunch?")).toBe(false);
+    await expect(svc.isSafetyShortCircuit(CLIENT, SESSION.id, MESSAGE)).resolves.toBe(true);
+    const lunch = "I'm on Wegovy, what should I eat for lunch?";
+    await expect(svc.isSafetyShortCircuit(CLIENT, SESSION.id, lunch)).resolves.toBe(false);
+  });
+
+  it('a medicine named in an earlier turn: the next red flag gets the fixed reply and the alert', async () => {
+    const h = harness('coach-1', undefined, ['I started Wegovy two weeks ago']);
+    const symptom = "I can't keep any water down";
+    await expect(h.svc.isSafetyShortCircuit(CLIENT, SESSION.id, symptom)).resolves.toBe(true);
+    const chunks = await drain(h.svc.streamAssistantTurn(CLIENT, SESSION, { userMessage: symptom }));
+    expect(chunks[1]).toMatchObject({ type: 'done', text: REPLY });
+    expect(h.stream).not.toHaveBeenCalled();
+    expect(h.alerts.createAlert).toHaveBeenCalledTimes(1);
+    expect(h.findMany.mock.calls[0][0]).toMatchObject({
+      where: { session_id: SESSION.id, user_id: CLIENT.id, role: 'user' },
+    });
   });
 
   it('the production module graph gives RomanService the real CoachAlertsService', async () => {
@@ -265,4 +307,32 @@ describe('urgent_symptoms on the live turn', () => {
     expect(Reflect.get(roman, 'coachAlerts')).toBeInstanceOf(CoachAlertsService);
     await moduleRef.close();
   }, 60000);
+});
+
+describe('the coach alert for an urgent reply', () => {
+  it('each urgent reply is its own alert: an earlier unacknowledged one never hides it', async () => {
+    const earlier = { id: 'alert_0', acknowledged_at: null, created_at: new Date() };
+    const prisma = {
+      coachAlert: {
+        findFirst: jest.fn(async () => earlier),
+        create: jest.fn(async ({ data }: { data: object }) => ({ id: 'alert_new', ...data })),
+      },
+    };
+    const emit = jest.fn(async () => ({ push: 'sent' }));
+    const alerts = new CoachAlertsService(
+      fakeOf<PrismaService>(prisma),
+      fakeOf<CoachAlertEmitter>({ emit }),
+    );
+    const input = {
+      coachId: 'coach-1',
+      clientId: 'client-1',
+      alertType: 'roman_urgent_reply' as const,
+      message: ROMAN_URGENT_COACH_ALERT,
+    };
+    await alerts.createAlert(input);
+    await alerts.createAlert(input);
+    expect(prisma.coachAlert.create).toHaveBeenCalledTimes(2);
+    expect(emit).toHaveBeenCalledTimes(2);
+    await expect(alerts.createAlert({ ...input, alertType: 'streak_dropped' })).resolves.toBe(earlier);
+  });
 });

@@ -41,54 +41,83 @@ const SELF_HARM: readonly RegExp[] = CRISIS_SELF_HARM_PATTERNS;
 /**
  * GLP-1 and related weight-loss medicines: semaglutide (Ozempic, Wegovy,
  * Rybelsus), tirzepatide (Mounjaro, Zepbound), liraglutide (Victoza, Saxenda),
- * the class name, and plain "weight loss shot" wording. Shared with the
- * post-check's medication-directive rule.
+ * dulaglutide (Trulicity), exenatide (Byetta, Bydureon), retatrutide, a few
+ * common misspellings, and "weight loss shot" style wording. Gates the
+ * urgent_symptoms route and feeds the post-check's medication-directive rule.
  */
 export const WEIGHT_LOSS_MEDICINES =
-  'ozempic|wegovy|rybelsus|semaglutide|mounjaro|zepbound|tirzepatide|victoza|saxenda|liraglutide|glp[- ]?1s?|weight[- ]loss (shots?|injections?|jabs?|medications?|medicines?|meds|drugs?)';
+  'ozempic|ozempik|ozempick|wegovy|wegovey|rybelsus|semaglutide?|sema|mounjaro|monjaro|mounjuro|zepbound|zepbond|tirzepatide|tirzepetide|tirz|victoza|saxenda|liraglutide|trulicity|dulaglutide|byetta|bydureon|exenatide|retatrutide|glp[- ]?1s?|(weight[- ]?loss|fat|skinny|diet) (shots?|jabs?|injections?|pens?|medications?|medicines?|meds|drugs?)';
 const WEIGHT_LOSS_MEDICINE = new RegExp(`\\b(${WEIGHT_LOSS_MEDICINES})\\b`, 'i');
 
 /**
  * Red-flag symptoms from the warnings and Medication Guides in the FDA labels
  * for these medicines (pancreatitis, gallbladder disease, dehydration, serious
- * allergic reaction, low blood sugar, thyroid tumors). They count only when a
- * weight-loss medicine is named in the same message: the fixed reply points to
- * the prescribing clinic. Acute emergencies (throat closing, cannot breathe,
- * fainting now) are caught first by EMERGENCY.
+ * allergic reaction, low blood sugar, thyroid tumors). Acute emergencies
+ * (throat closing, cannot breathe, about to pass out) are caught first by
+ * EMERGENCY. Each pattern is tested per sentence (see NOT_A_REPORT).
  */
 const STOMACH = '(stomach|belly|abdominal|abdomen|tummy)';
+const PAIN = '(pains?|aches?|cramps?|cramping)';
+const SEVERE =
+  '(severe|really bad|very bad|terrible|horrible|awful|intense|extreme|unbearable|excruciating|agonizing|sharp|worst|constant|persistent)';
+const STOMACH_PAIN = `(${STOMACH} (${PAIN}|hurts|is hurting|keeps hurting)|pain in (my |the )?(upper )?${STOMACH})`;
 const URGENT_SYMPTOMS: RegExp[] = [
-  // Severe or persistent stomach pain, or pain reaching the back.
+  // Severe or lasting stomach pain, pain reaching the back, or named
+  // pancreas / gallbladder trouble.
+  new RegExp(`\\b${SEVERE} ((upper )?${STOMACH} ${PAIN}|pain in (my |the )?(upper )?${STOMACH})\\b`, 'i'),
   new RegExp(
-    `\\b(severe|really bad|very bad|terrible|awful|intense|extreme|unbearable|excruciating|constant|persistent) (upper )?${STOMACH} (pain|ache|cramps?|cramping)\\b`,
+    `\\b${STOMACH_PAIN}\\b.{0,30}\\b((won'?t|will not|doesn'?t|does not) (go away|stop|ease|let up)|(to|into|through) (my |the )?back|for (\\d+|two|three|four|five|several|a few) (days|hours)|all (day|night))\\b`,
     'i',
   ),
   new RegExp(
-    `\\b(severe|terrible|awful|intense|extreme|unbearable|excruciating|constant|persistent) pain in (my |the )?(upper )?${STOMACH}\\b`,
+    `\\b(${STOMACH_PAIN} (is|feels|has been|gets)|${STOMACH} hurts) (really |so |very |extremely )?(bad|badly|severe|terrible|horrible|unbearable)\\b|\\b${STOMACH} is killing me\\b`,
     'i',
   ),
-  new RegExp(
-    `\\b${STOMACH} (pain|ache|cramps?|cramping|hurts|is hurting|keeps hurting)\\b[^.!?]{0,30}\\b((won'?t|will not|doesn'?t|does not) (go away|stop|ease|let up)|(to|into|through) (my |the )?back|for (\\d+|two|three|four|five|several|a few) (days|hours)|all (day|night))\\b`,
-    'i',
-  ),
-  // Vomiting that will not stop, or cannot keep fluids down.
-  /\b(can'?t|cannot|can not|unable to|couldn'?t|could not) (keep|hold) (anything|water|fluids?|liquids?|food|drinks?|it|any \w+)( \w+){0,3} down\b/i,
-  /\b(keep|keeps|kept|nonstop|non-stop|constant|constantly|persistent|uncontrollable|can'?t stop|cannot stop) (vomiting|throwing up|puking)\b/i,
-  /\b(vomit(ing|ed)?|throwing up|threw up|puk(ing|ed))\b[^.!?]{0,30}\b((won'?t|will not|doesn'?t|does not|can'?t|cannot) stop|all (day|night)|nonstop|non-stop|for (\d+|two|three|several|a few) (days|hours))\b/i,
+  /\b(pancreatitis|gall ?bladder (attack|pain|problems?|issues?|trouble)|gallstones?|pancreas (hurts|pain))\b/i,
+  // Vomiting that will not stop, not keeping fluids down, severe dehydration.
+  /\b(can'?t|cannot|can not|unable to|couldn'?t|could not) (even )?(keep|hold) (anything|water|fluids?|liquids?|drinks?|food|any (water|fluids?|liquids?|drinks?|food))( (at all|either|today|anymore))? down\b|\bnothing (stays|will stay) down\b/i,
+  /\b(keep|keeps|kept|nonstop|non-stop|constant|constantly|persistent|uncontrollable|can'?t stop|cannot stop) (vomitt?ing|throwing up|puking)\b/i,
+  /\b(vomitt?(ing|ed)?|throw(ing)? up|threw up|thrown up|puk(e|ing|ed))\b.{0,30}\b((won'?t|will not|doesn'?t|does not|can'?t|cannot) stop|all (day|night)|nonstop|non-stop|constantly|repeatedly|over and over|for (\d+|two|three|several|a few) (days|hours)|since (yesterday|last night)|(\d+|several|many) times)\b/i,
+  /\b(severely|very|really|so|extremely|badly) dehydrated\b|\b(haven'?t|have not|hasn'?t|barely) (peed|urinated|been able to drink)\b/i,
   // Yellow skin or eyes.
-  /\b(yellow(ing|ish)?( of)? (my |the )?(skin|eyes?)|(skin|eyes?)\b[^.!?]{0,20}\byellow(ish)?|jaundiced?)\b/i,
+  /\b(yellow(ing|ish)?( of)? (my |the )?(skin|eyes?)|(skin|eyes?)( (is|are|look|looks|looking|turned|turning|went|gone|seem|seems|has|have|kind of|a bit|really|very))* yellow(ish)?|jaundiced?)\b/i,
   // A serious allergic reaction: swelling of the face, lips, tongue or
   // throat, trouble swallowing, hives or a severe rash.
-  /\b(face|lips?|tongue|throat|mouth|eyelids?)\b[^.!?]{0,15}\b(swollen|swelling|swelled|puff(y|ed|ing) up)\b|\b(swollen|swelling (of|in)( my)?) (face|lips?|tongue|throat|mouth|eyelids?)\b/i,
-  /\b(hives|severe (rash|itching)|rash all over|itch(y|ing) all over|(trouble|difficulty|problems?) swallowing)\b/i,
-  // Fainting.
-  /\b(fainted|fainting|passed out|passing out|blacked out|blacking out|collapsed|lost consciousness)\b/i,
-  // Very low blood sugar, reported (not a question about the risk).
-  /\b(i'?m|i am|i'?ve|i have|i had|i get|i keep getting|getting|having|my) (\w+ )?(low blood sugar|(blood )?sugars? (is |are |was |were |keeps? )?(really |very |so |too |dangerously )?(low|dropping|crashing|tanking)|hypoglycemi[ac]|a hypo)\b/i,
-  /\b((shaky|shaking|trembling|sweaty|sweating)\b[^.!?]{0,20}\b(confused|disoriented)|(confused|disoriented)\b[^.!?]{0,20}\b(shaky|shaking|trembling|sweaty|sweating))\b/i,
+  /\b(face|lips?|tongue|throat|mouth|eyelids?)( (is|are|got|has|have|went|keeps?|started))* (swollen|swelling|swelled|puff(ed|ing) up)\b|\b(swollen|swelling (of|in)( my)?) (face|lips?|tongue|throat|mouth|eyelids?)\b/i,
+  /\b((broke|breaking|broken) out in hives|(i have|i've got|i got|covered in) hives|hives all over|severe (rash|itching)|rash all over|itch(y|ing) all over|(trouble|difficulty|problems?) swallowing)\b/i,
+  // Fainting (not "passed out at 9pm" or "on the sofa": that is sleep).
+  /\b(i|i'?ve|i have|i had)( (just|nearly|almost|also|then|suddenly|actually))? (fainted|collapsed|passed out|blacked out|lost consciousness)\b(?! (at \d|on (the |my )?(couch|sofa)|in (the |my )?bed|watching|early))|\b(fainting|passing out|blacking out)\b/i,
+  // Very low blood sugar, reported.
+  /\b(i'?m|i am|i'?ve|i have|i get|i keep getting|my) (\w+ )?(low blood sugar|(blood )?sugars? (is |are |was |were |keeps? )?(really |very |so |too |dangerously )?(low|dropping|crashing|tanking)|hypoglycemi[ac]|a hypo)\b/i,
+  /\b((shaky|shaking|trembling|sweaty|sweating)\b.{0,20}\b(confused|disoriented)|(confused|disoriented)\b.{0,20}\b(shaky|shaking|trembling|sweaty|sweating))\b(?! (about|by|with|on|why|how|what|if|whether)\b)/i,
   // A lump or swelling in the neck.
-  /\b(lump|bump|swelling|swollen|mass|nodule|growth)\b[^.!?]{0,25}\bneck\b|\bneck\b[^.!?]{0,15}\b(swollen|swelling|lump|lumpy)\b/i,
+  /\b(lump|bump|nodule|swelling)\b.{0,25}\bneck\b|\bneck (is |looks |feels |seems )?(swollen|lumpy)\b|\bswollen neck\b/i,
 ];
+
+/**
+ * Words just before a match that make it something other than a report:
+ * "no vomiting", "I have not fainted", "I don't take Ozempic"; for symptoms
+ * also a question about the risk ("can Wegovy cause pancreatitis", "worried
+ * about low blood sugar", "watch for").
+ */
+const NEGATION = "no|not|never|without|don'?t|doesn'?t|didn'?t|haven'?t|hasn'?t|isn'?t|aren'?t|wasn'?t";
+const closelyAfter = (cues: string) =>
+  new RegExp(`\\b(${cues})( (?!and |but )[^\\s,]+){0,2} $`, 'i');
+const NEGATED = closelyAfter(NEGATION);
+const NOT_A_REPORT = closelyAfter(
+  `${NEGATION}|cause|causes|risks? of|chance of|worr(y|ied|ying) about|watch (out )?for|afraid of|scared of`,
+);
+
+/** The first pattern stated in any sentence of the text and not undercut by `cue`. */
+function stated(patterns: readonly RegExp[], text: string, cue: RegExp): RegExp | undefined {
+  for (const sentence of text.split(/[.!?;]+/)) {
+    for (const rx of patterns) {
+      const m = rx.exec(sentence);
+      if (m && !cue.test(sentence.slice(0, m.index))) return rx;
+    }
+  }
+  return undefined;
+}
 
 const EATING_DISORDER: RegExp[] = [
   /\bpurg(e|ing|ed)\b/i,
@@ -117,8 +146,7 @@ const MEDICAL_SCOPE: RegExp[] = [
   /\bblood pressure\b|\bhypertension\b/i,
   /\bheart (condition|disease|problem|failure|rate is)\b|\barrhythmia\b|\bafib\b/i,
   /\bcholesterol\b|\bstatin\b|\bthyroid\b|\bkidney\b|\bliver\b/i,
-  WEIGHT_LOSS_MEDICINE,
-  /\b(metformin|phentermine|adderall|antidepressant|ssri)\b/i,
+  /\b(ozempic|wegovy|semaglutide|mounjaro|tirzepatide|metformin|phentermine|adderall|antidepressant|ssri)\b/i,
   /\b(symptom|symptoms)\b/i,
   /\b(disorder|syndrome|disease)\b/i,
   // B-651-2: history or near-miss reports the emergency router leaves to the
@@ -200,11 +228,20 @@ export function asksForSubFloorIntake(text: string): boolean {
   return false;
 }
 
-/** Classify one user message. Deterministic; first class in priority order wins. */
-export function classifySafety(message: string): SafetyRouteResult {
+/**
+ * Classify one user message. Deterministic; first class in priority order wins.
+ * urgent_symptoms needs a weight-loss medicine taken (this message or the
+ * client's earlier turns, `earlierUserText`) and a red flag in this message.
+ */
+export function classifySafety(message: string, earlierUserText = ''): SafetyRouteResult {
   const text = normalizeForSafety(message);
   for (const { cls, patterns, short_circuit } of ORDER) {
-    if (cls === 'urgent_symptoms' && !WEIGHT_LOSS_MEDICINE.test(text)) continue;
+    if (cls === 'urgent_symptoms') {
+      const taken = `${text}. ${normalizeForSafety(earlierUserText)}`;
+      const rx = stated([WEIGHT_LOSS_MEDICINE], taken, NEGATED) && stated(patterns, text, NOT_A_REPORT);
+      if (rx) return { class: cls, matched: rx.source, short_circuit };
+      continue;
+    }
     for (const rx of patterns) {
       if (rx.test(text)) return { class: cls, matched: rx.source, short_circuit };
     }
