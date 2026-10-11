@@ -550,14 +550,23 @@ describe('vendor erasure', () => {
 
   it('a vendor step that throws never undoes the committed deletion', async () => {
     const ctx = build({ confirmedDaysAgo: GRACE + 1 });
-    ctx.vendors.erase.mockRejectedValueOnce(new Error('vendor client crashed'));
+    ctx.vendors.erase.mockRejectedValueOnce(
+      new Error('vendor client crashed for private@example.com'),
+    );
     expect(await ctx.service.finalizeUserDeletion(UID, { mode: 'cron' })).toEqual({
       outcome: 'finalized',
       authIdentity: 'removed',
     });
     expect(ctx.user().deleted_at).toBeInstanceOf(Date);
     expect(pendingRow(ctx)?.metadata).toEqual(VENDOR_WORK);
-    expect(ctx.logger.error).toHaveBeenCalledWith(expect.stringContaining('vendor client crashed'));
+    // The log names the step and the error class, never the error text.
+    expect(ctx.logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('vendor erasure bookkeeping failed user=' + UID),
+    );
+    const logged = JSON.stringify(ctx.logger.error.mock.calls);
+    expect(logged).toContain('error=Error');
+    expect(logged).not.toContain('crashed');
+    expect(logged).not.toContain('private@example.com');
   });
 });
 
