@@ -77,6 +77,22 @@ export class CheckInsService {
     return client;
   }
 
+  // CF-SHARE-GATE-128: the client's "Check-ins and habits" switch (Settings >
+  // Privacy > Coach sharing). The owner account reads every scope.
+  private async checkInsShared(
+    coachId: string,
+    clientId: string,
+    callerRole?: string,
+  ): Promise<boolean> {
+    if (!this.consent) return true;
+    return this.consent.coachCanAccess(
+      coachId,
+      clientId,
+      ConsentScope.FITNESS_HABITS_PROGRESS,
+      callerRole,
+    );
+  }
+
   // ---- client writes ----
 
   // Upsert one check-in per (client, date). `coach_id` is denormalized from
@@ -321,20 +337,9 @@ export class CheckInsService {
     callerRole?: string,
   ) {
     await this.assertClientOfCoach(coachId, clientId);
-    // CF-SHARE-GATE-128: the client's "Check-ins and habits" switch (Settings
-    // > Privacy > Coach sharing). Not shared = an empty list, the same rule as
-    // the coach timeline's check-in slice; the owner account reads every scope.
-    if (
-      this.consent &&
-      !(await this.consent.coachCanAccess(
-        coachId,
-        clientId,
-        ConsentScope.FITNESS_HABITS_PROGRESS,
-        callerRole,
-      ))
-    ) {
-      return [];
-    }
+    // Not shared = an empty list, the same rule as the coach timeline's
+    // check-in slice.
+    if (!(await this.checkInsShared(coachId, clientId, callerRole))) return [];
     const limit = this.clampLimit(query.limit);
 
     let from = query.from ? this.parseDay(query.from) : undefined;
@@ -375,33 +380,34 @@ export class CheckInsService {
   // this lane and drives the dashboard), so it is always written regardless of
   // the flag — turning ED.6 off must not regress the existing review workflow.
   //
-  // Scopes the update by the OWNER (coach_id) so a coach can only review a
-  // check-in that is attached to them; a foreign / missing id returns the same
-  // 404 as a non-existent row (no probing). Idempotent under concurrent
-  // reviews: each call simply re-stamps now() — there is no read-modify-write
-  // race because the new value does not depend on the old one.
-  async markReviewedByCoach(coachId: string, checkInId: string) {
-    await this.assertCheckInOfCoach(coachId, checkInId);
+  // Authorized like the list route: the caller must be the client's current
+  // coach and the client must share check-ins. The check-in's own coach_id is
+  // not used: it stays pinned to the coach at creation time. A missing
+  // check-in, another client's check-in, or sharing off all get the same 404
+  // (no probing). Each call just re-stamps now(), so concurrent reviews cannot
+  // race. Returns only the review fields, not the client's answers.
+  async markReviewedByCoach(
+    coachId: string,
+    clientId: string,
+    checkInId: string,
+    callerRole?: string,
+  ) {
+    await this.assertClientOfCoach(coachId, clientId);
+    const row = await this.prisma.checkIn.findFirst({
+      where: { id: checkInId, user_id: clientId },
+      select: { id: true },
+    });
+    if (!row || !(await this.checkInsShared(coachId, clientId, callerRole))) {
+      throw new NotFoundException('Check-in not found');
+    }
     const flagOn = isCoachReviewedAtEnabled();
-    const updated = await this.prisma.checkIn.update({
+    return this.prisma.checkIn.update({
       where: { id: checkInId },
       data: {
         reviewed_by_coach: true,
         ...(flagOn ? { coach_reviewed_at: new Date() } : {}),
       },
+      select: { id: true, reviewed_by_coach: true, coach_reviewed_at: true },
     });
-    return updated;
-  }
-
-  // Authorize a coach for a specific check-in by its denormalized coach_id.
-  // 404 on missing / foreign so the existence of another coach's check-in does
-  // not leak.
-  private async assertCheckInOfCoach(coachId: string, checkInId: string) {
-    const row = await this.prisma.checkIn.findFirst({
-      where: { id: checkInId, coach_id: coachId },
-      select: { id: true },
-    });
-    if (!row) throw new NotFoundException('Check-in not found');
-    return row;
   }
 }
