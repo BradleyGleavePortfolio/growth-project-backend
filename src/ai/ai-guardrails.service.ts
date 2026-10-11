@@ -24,7 +24,7 @@ const BANNED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
 // calories"); the lower figure is checked. Comma-grouped figures are read whole,
 // never as "200 kcal".
 const CALORIE_FIGURE =
-  /\b(\d{1,2},\d{3}|\d{3,4})(?:\s*(?:-|\u2013|\u2014|to)\s*(\d{1,2},\d{3}|\d{3,4}))?\s*(?:kcal|calories|cal\b)/gi;
+  /\b(\d{1,2},\d{3}|\d{3,4})(?:\s*(?:-|\u2013|\u2014|to|and)\s*(\d{1,2},\d{3}|\d{3,4}))?\s*(?:kcal|calories|cal\b)/gi;
 
 // Topics where we always defer to the coach / a qualified pro instead of
 // answering directly. Match conservatively — the AI may legitimately
