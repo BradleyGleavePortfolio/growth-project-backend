@@ -19,7 +19,7 @@ import { Test } from '@nestjs/testing';
 import type { Request, Response } from 'express';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import type { AuthedRequest } from '../../src/auth/auth-request';
-import { AiController } from '../../src/ai/ai.controller';
+import { AI_GUIDE_RETIRED_REPLY, AiController } from '../../src/ai/ai.controller';
 import { AiService } from '../../src/ai/ai.service';
 import * as crisisRouter from '../../src/ai/ai-crisis-router';
 import { ClientEntitlementGuard } from '../../src/common/guards/client-entitlement.guard';
@@ -42,7 +42,13 @@ const COACH = { id: 'coach-1', role: 'coach', coach_id: null };
 
 function session() {
   const now = new Date('2026-10-09T07:00:00.000Z');
-  return { id: 'sess_1', surface: 'client', message_count: 0, started_at: now, last_activity_at: now };
+  return {
+    id: 'sess_1',
+    surface: 'client',
+    message_count: 0,
+    started_at: now,
+    last_activity_at: now,
+  };
 }
 
 function makeRoman() {
@@ -56,17 +62,15 @@ function makeRoman() {
     isSafetyShortCircuit: jest.fn((..._a: unknown[]): boolean => false),
     isEatingDisorderRisk: jest.fn((..._a: unknown[]): boolean => false),
     appendMessage: jest.fn(async (..._a: unknown[]) => ({ id: 'msg_1' })),
-    streamAssistantTurn: jest.fn(
-      (..._a: unknown[]): AsyncGenerator<unknown> =>
-        (async function* () {
-          yield { type: 'done', text: 'Hello', messageId: 'msg_2', interrupted: false };
-        })(),
+    streamAssistantTurn: jest.fn((..._a: unknown[]): AsyncGenerator<unknown> =>
+      (async function* () {
+        yield { type: 'done', text: 'Hello', messageId: 'msg_2', interrupted: false };
+      })(),
     ),
-    streamEatingDisorderFallback: jest.fn(
-      (..._a: unknown[]): AsyncGenerator<unknown> =>
-        (async function* () {
-          yield { type: 'done', text: 'Fixed.', messageId: 'msg_ed', interrupted: false };
-        })(),
+    streamEatingDisorderFallback: jest.fn((..._a: unknown[]): AsyncGenerator<unknown> =>
+      (async function* () {
+        yield { type: 'done', text: 'Fixed.', messageId: 'msg_ed', interrupted: false };
+      })(),
     ),
   };
 }
@@ -117,7 +121,10 @@ describe('Part 1 — the 403 a client with no coach receives over HTTP', () => {
         RomanFeatureGuard,
         { provide: RomanService, useValue: roman },
         { provide: AiService, useValue: ai },
-        { provide: PrismaService, useValue: { coachSubscription: { findUnique: async () => null } } },
+        {
+          provide: PrismaService,
+          useValue: { coachSubscription: { findUnique: async () => null } },
+        },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -131,7 +138,9 @@ describe('Part 1 — the 403 a client with no coach receives over HTTP', () => {
       .useValue({ canActivate: () => true })
       .compile();
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }),
+    );
     app.useGlobalFilters(new HttpExceptionFilter());
     await app.init();
     await app.listen(0);
@@ -148,12 +157,21 @@ describe('Part 1 — the 403 a client with no coach receives over HTTP', () => {
     user = COACHLESS;
   });
 
-  function post(path: string, body: unknown): Promise<{ status: number; body: Record<string, unknown> }> {
+  function post(
+    path: string,
+    body: unknown,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
     return new Promise((resolve, reject) => {
       const payload = JSON.stringify(body);
       const req = http.request(
         `${baseUrl}${path}`,
-        { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } },
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'content-length': Buffer.byteLength(payload),
+          },
+        },
         (res) => {
           let data = '';
           res.on('data', (c) => (data += c));
@@ -190,7 +208,9 @@ describe('Part 1 — the 403 a client with no coach receives over HTTP', () => {
   });
 
   it('POST /roman/sessions/:id/messages: 403 before the rate limit, the stored turn, AI or pool checks', async () => {
-    expectRequiresCoach(await post('/roman/sessions/sess_1/messages', { content: 'What should I eat today?' }));
+    expectRequiresCoach(
+      await post('/roman/sessions/sess_1/messages', { content: 'What should I eat today?' }),
+    );
     expect(roman.assertWithinRateLimit).not.toHaveBeenCalled();
     expect(roman.assertMayUseAi).not.toHaveBeenCalled();
     expect(roman.assertDailyCapacity).not.toHaveBeenCalled();
@@ -204,14 +224,15 @@ describe('Part 1 — the 403 a client with no coach receives over HTTP', () => {
     expect(ai.chat).not.toHaveBeenCalled();
   });
 
-  it('a coached client opens a session and asks the AI guide as before', async () => {
+  it('a coached client opens a session; the retired AI guide answers with the fixed reply (R2)', async () => {
     user = COACHED;
     const open = await post('/roman/sessions', { surface: 'client' });
     expect(open.status).toBe(200);
     expect(roman.openOrResumeSession).toHaveBeenCalledTimes(1);
     const guide = await post('/ai/chat', { message: 'What should I eat today?' });
     expect(guide.status).toBe(201);
-    expect(ai.chat).toHaveBeenCalledWith('client-b', 'What should I eat today?', []);
+    expect(guide.body.reply).toBe(AI_GUIDE_RETIRED_REPLY);
+    expect(ai.chat).not.toHaveBeenCalled();
   });
 
   it('a coach with no coach of their own is not a client: Roman opens', async () => {
@@ -263,20 +284,24 @@ describe('Part 2 — order of the checks on a Roman turn and the AI guide', () =
     expect(service.assertCoachPoolOpen).not.toHaveBeenCalled();
   });
 
-  it('AI guide: a client with no coach sending a crisis message reaches the fixed crisis reply in ai.service', async () => {
+  it('AI guide: a client with no coach sending a crisis message gets the fixed crisis reply, no model (R2)', async () => {
     const ai = makeAi();
     const spy = jest.spyOn(crisisRouter, 'classifyAiGuideCrisis').mockReturnValue('emergency');
+    let res;
     try {
-      await new AiController(fakeOf(ai)).chat(req(COACHLESS), { message: 'x' });
+      res = await new AiController(fakeOf(ai)).chat(req(COACHLESS), { message: 'x' });
     } finally {
       spy.mockRestore();
     }
-    expect(ai.chat).toHaveBeenCalledTimes(1);
+    expect(res?.reply).toBe(crisisRouter.AI_GUIDE_CRISIS_REPLIES.emergency);
+    expect(ai.chat).not.toHaveBeenCalled();
   });
 
   it('AI guide: a client with no coach and an ordinary message is refused before ai.service', async () => {
     const ai = makeAi();
-    await expect(new AiController(fakeOf(ai)).chat(req(COACHLESS), { message: 'hi' })).rejects.toMatchObject({
+    await expect(
+      new AiController(fakeOf(ai)).chat(req(COACHLESS), { message: 'hi' }),
+    ).rejects.toMatchObject({
       status: 403,
     });
     expect(ai.chat).not.toHaveBeenCalled();

@@ -9,8 +9,16 @@ import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guar
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { classifyAiGuideCrisis } from './ai-crisis-router';
+import { AI_GUIDE_CRISIS_REPLIES, classifyAiGuideCrisis } from './ai-crisis-router';
 import { assertRomanHasCoach } from '../roman/roman-requires-coach';
+
+// R2 (audit MED-01, MED-02): Guidance is retired, so Roman is the only AI
+// chat. App builds already in users' hands still call POST /ai/chat until
+// the app update ships, so the route stays and answers with this fixed text
+// in the same response shape. No model is called and nothing is stored.
+export const AI_GUIDE_RETIRED_REPLY =
+  'Guidance has moved to Roman. Open the You tab and choose Roman to keep chatting.';
+export const AI_GUIDE_RETIRED_CODE = 'AI_GUIDE_RETIRED';
 
 @ApiTags('ai')
 @Controller('ai')
@@ -29,33 +37,43 @@ export class AiController {
   async chat(@Request() req: AuthedRequest, @Body() body: ChatRequestDto) {
     // Owner 10-09 00:0x: the guide is Roman, so a client with no coach gets
     // 403 ROMAN_REQUIRES_COACH before any AI call, quota or pool check. A
-    // crisis message still gets the fixed 988 / 911 reply (ai.service).
-    if (!classifyAiGuideCrisis(body.message)) assertRomanHasCoach(req.user);
-    const result = await this.aiService.chat(
-      req.user.id,
-      body.message,
-      body.conversation_history || [],
-    );
+    // crisis message still gets the fixed 988 / 911 reply.
+    const crisis = classifyAiGuideCrisis(body.message);
+    if (!crisis) assertRomanHasCoach(req.user);
+    // R2: never AiService.chat. A crisis message keeps the fixed 988 / 911
+    // reply; anything else gets the fixed retirement reply.
+    const result = crisis
+      ? {
+          reply: AI_GUIDE_CRISIS_REPLIES[crisis],
+          guardrails_applied: [`crisis:${crisis}`],
+          model_used: 'safety',
+        }
+      : {
+          reply: AI_GUIDE_RETIRED_REPLY,
+          guardrails_applied: ['guidance_retired'],
+          model_used: 'retired',
+          code: AI_GUIDE_RETIRED_CODE,
+        };
+    const contextGeneratedAt = new Date().toISOString();
     const includeDebug = process.env.NODE_ENV !== 'production';
-    const isFallback = result.model_used === 'fallback';
     return {
       reply: result.reply,
-      timestamp: new Date().toISOString(),
+      timestamp: contextGeneratedAt,
       // A7 — `model` names the upstream provider (perplexity/anthropic/
       // fallback). It is debug-only: leaking it in prod tells an attacker
       // which provider (and which fallback state) backs the request. Keep
       // the buyer-facing `degraded` flag, but gate the provider name behind
       // the dev/debug block.
-      degraded: isFallback,
-      // B-S-AICOST-123-1 — a fixed non-model reply (coach AI credits used up)
-      // carries its machine code so the app can recognise it.
-      ...(result.code ? { code: result.code } : {}),
+      degraded: false,
+      // A fixed non-model reply carries its machine code so the app can
+      // recognise it (R2: AI_GUIDE_RETIRED).
+      ...('code' in result ? { code: result.code } : {}),
       ...(includeDebug
         ? {
             model: result.model_used,
             debug: {
               guardrails_applied: result.guardrails_applied,
-              context_generated_at: result.context_generated_at,
+              context_generated_at: contextGeneratedAt,
               model_used: result.model_used,
             },
           }
