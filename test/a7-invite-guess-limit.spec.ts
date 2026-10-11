@@ -132,7 +132,7 @@ describe('F-927-A7 — code-consuming routes share the miss limit', () => {
       else expect(err).toEqual(limited);
     }
     expect(answered).toBe(INVITE_CODE_MISSES_PER_HOUR);
-    const real = cast({ invite_code: REAL });
+    const real = cast<never>({ invite_code: REAL });
     await expect(auth.attachInviteCode(as('u1', '203.0.113.77'), real)).rejects.toEqual(limited);
     await expect(auth.attachInviteCode(as('u2', '198.51.100.7'), real)).rejects.toBeInstanceOf(ConflictException);
     for (let i = 0; i < 100; i++) await auth.attachInviteCode(as('u3', '192.0.2.8'), real).catch((e) => e);
@@ -152,7 +152,7 @@ describe('F-927-A7 — code-consuming routes share the miss limit', () => {
   it('misses on every code-consuming route count in one bucket, refused before the lookup', async () => {
     const { auth, codes, coachless, grants } = build();
     const key = '7d3c1f4e-8a2b-4c6d-9e0f-1a2b3c4d5e6f';
-    const signup = (c: string) => cast({ email: 'a@example.test', password: 'x', name: 'A', invite_code: c });
+    const signup = (c: string) => cast<never>({ email: 'a@example.test', password: 'x', name: 'A', invite_code: c });
     const calls = [
       (c: string, r: never) => auth.attachInviteCode(r, cast({ invite_code: c })),
       (c: string, r: never) => auth.selectRole(r, cast({ role: 'student', invite_code: c })),
