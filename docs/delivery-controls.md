@@ -146,7 +146,7 @@ step 0/1 are stage A, anything from step 2 onward is stage B. A process
 killed outright (SIGKILL/OOM, machine destroyed) prints no banner — Fly's
 release status is the only signal in that case.
 
-Production logs are read in the Fly dashboard. No workflow prints them,
+Production logs are read in the Fly dashboard, not through a workflow,
 because this repository's Actions logs are public. The former
 `fly-logs-dump.yml` was removed: it started a machine (`flyctl machine
 start`) from a workflow described as diagnostic, outside any environment
