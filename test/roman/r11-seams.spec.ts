@@ -67,11 +67,12 @@ describe('R11-00 prompt seam', () => {
   const CLIENT_DATA = '<client_data as_of="2026-09-30">{"first_name":"Test"}</client_data>';
   // sha256 of buildRomanSystemPrompt on origin/main 302c4522 for these inputs;
   // client hashes re-pinned for the roman-client-v4 crisis section (AUDIT-05-125),
-  // then for CF-ROMAN-COPY-B-128 (client framing assumes no coach, real tab names).
+  // then for CF-ROMAN-COPY-B-128 (client framing assumes no coach, real tab names),
+  // then for the calorie floor no longer yielding to a lower coach target.
   const MAIN = {
     client_plain: {
       input: { surface: 'client' as const, voice: v0 },
-      hash: '75539676337b8ebee582972dea7b4552e10fec82b08668e77fb9b780d2144c71',
+      hash: '902662c227a26156a3ee9a77deb0e7fa9c8289d6c4a3dd8cd6c701bb8e8c62de',
     },
     coach_plain: {
       input: {
@@ -89,11 +90,11 @@ describe('R11-00 prompt seam', () => {
         routerHint: 'Hint line.',
         clientData: CLIENT_DATA,
       },
-      hash: '6caf056fbfc31d13fb9bca73a778f8a24166858cdae2abab184f66b65c060f44',
+      hash: '119e3bc5de78835724c1347db8f20e6dcf0a60d864729d2ccb59e71450db780f',
     },
     client_unavailable: {
       input: { surface: 'client' as const, voice: v1, clientDataUnavailable: true },
-      hash: '6f70def570e83336b40e9313b5c2c760bc84a7c5c5a6a37a05360f82fd17d002',
+      hash: '5219fc945d9478ce85a863b730fae0d02bca59a0efbb3575df6251123662e747',
     },
   };
 
