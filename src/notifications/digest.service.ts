@@ -4,6 +4,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as Handlebars from 'handlebars';
 import { PrismaService } from '../prisma.service';
+import { ConsentScope, ConsentService } from '../consent/consent.service';
+import { coachSharingCheck } from '../consent/coach-sharing-gate';
 import { NotificationsService } from './notifications.service';
 import { NotificationKind } from './notification-kind';
 import { ProviderFailure, describeFailure, providerErrorCode } from '../observability/log-pii';
@@ -52,6 +54,8 @@ export class DigestService {
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly config: ConfigService,
+    // Not @Optional (ConsentModule is @Global); only positional unit tests omit it.
+    private readonly consent?: ConsentService,
   ) {
     this._loadTemplates();
   }
@@ -336,21 +340,27 @@ export class DigestService {
     });
     const activeCount = clients.length;
 
+    // Check-in numbers cover only the clients this coach coaches now (not the
+    // coach stamped on each check-in) who share "Check-ins and habits".
+    const sharing = await coachSharingCheck(this.consent, this.prisma, coachId);
+    const sharedIds = await sharing(ConsentScope.FITNESS_HABITS_PROGRESS, clients.map((c) => c.id));
+    const shared = { user_id: { in: sharedIds } };
+
     // Check-ins today.
     const checkinsToday = await this.prisma.checkIn.count({
-      where: { coach_id: coachId, date: today },
+      where: { ...shared, date: today },
     });
 
     // Clients with no check-in in last 3 days.
     const threeDaysAgo = new Date(today);
     threeDaysAgo.setDate(today.getDate() - 3);
     const checkedInRecently = await this.prisma.checkIn.findMany({
-      where: { coach_id: coachId, date: { gte: threeDaysAgo } },
+      where: { ...shared, date: { gte: threeDaysAgo } },
       select: { user_id: true },
       distinct: ['user_id'],
     });
     const recentIds = new Set(checkedInRecently.map((c) => c.user_id));
-    const missedClients = clients.filter((c) => !recentIds.has(c.id));
+    const missedClients = clients.filter((c) => sharedIds.includes(c.id) && !recentIds.has(c.id));
 
     // Privacy: coach sees display name (first name only) + reason.
     const needingReview = missedClients.length;
@@ -368,13 +378,13 @@ export class DigestService {
     const weeklyCheckinsCount =
       _type === 'weekly'
         ? await this.prisma.checkIn.count({
-            where: { coach_id: coachId, date: { gte: sevenDaysAgo } },
+            where: { ...shared, date: { gte: sevenDaysAgo } },
           })
         : 0;
 
     const avgConsistencyPct =
-      activeCount > 0 && _type === 'weekly'
-        ? Math.round((weeklyCheckinsCount / (activeCount * 7)) * 100)
+      sharedIds.length > 0 && _type === 'weekly'
+        ? Math.round((weeklyCheckinsCount / (sharedIds.length * 7)) * 100)
         : 0;
 
     const needCheckin =

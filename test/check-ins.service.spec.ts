@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../src/auth/auth.guard';
 import { CheckInsService } from '../src/check-ins/check-ins.service';
 import { CoachCheckInsController } from '../src/check-ins/coach-check-ins.controller';
 import { ConsentScope, ConsentService } from '../src/consent/consent.service';
+import { HttpExceptionFilter } from '../src/filters/http-exception.filter';
 import { PrismaService } from '../src/prisma.service';
 import { PtmService } from '../src/ptm/ptm.service';
 
@@ -425,6 +426,7 @@ describe('CheckInsService', () => {
           })
           .compile();
         app = ref.createNestApplication({ logger: false });
+        app.useGlobalFilters(new HttpExceptionFilter());
         await app.listen(0, '127.0.0.1');
         base = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
       });
@@ -440,11 +442,13 @@ describe('CheckInsService', () => {
       const moveClient1ToCoachB = () => {
         prisma._users.find((u) => u.id === 'client-1')!.coach_id = 'coach-B';
       };
+      // Every denial is the same 404 the app shows as "Check-in not found".
+      const denied = { status: 404, body: { statusCode: 404, error: 'Not Found', message: 'Check-in not found' } };
 
       it('a former coach cannot review a moved client\'s check-in (404, nothing written)', async () => {
         const ci = await seedCheckIn();
         moveClient1ToCoachB();
-        expect((await review('coach-A', 'client-1', ci.id)).status).toBe(404);
+        expect(await review('coach-A', 'client-1', ci.id)).toMatchObject(denied);
         expect(prisma._rows[0].reviewed_by_coach).toBe(false);
       });
 
@@ -461,7 +465,7 @@ describe('CheckInsService', () => {
       it('"Check-ins and habits" sharing off: 404, nothing written', async () => {
         const ci = await seedCheckIn();
         consent.coachCanAccess.mockResolvedValue(false);
-        expect((await review('coach-A', 'client-1', ci.id)).status).toBe(404);
+        expect(await review('coach-A', 'client-1', ci.id)).toMatchObject(denied);
         expect(consent.coachCanAccess).toHaveBeenCalledWith(
           'coach-A',
           'client-1',
@@ -473,7 +477,9 @@ describe('CheckInsService', () => {
 
       it("a check-in is only found under its own client's path (404, nothing written)", async () => {
         const ci = await seedCheckIn();
-        expect((await review('coach-A', 'client-2', ci.id)).status).toBe(404);
+        expect(await review('coach-A', 'client-2', ci.id)).toMatchObject(denied);
+        expect(await review('coach-A', 'client-missing', ci.id)).toMatchObject(denied);
+        expect(await review('coach-A', 'client-1', 'ci-missing')).toMatchObject(denied);
         expect(prisma._rows[0].reviewed_by_coach).toBe(false);
       });
     });

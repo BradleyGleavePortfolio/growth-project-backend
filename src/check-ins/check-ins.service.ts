@@ -68,12 +68,16 @@ export class CheckInsService {
     );
   }
 
-  private async assertClientOfCoach(coachId: string, clientId: string) {
+  private async assertClientOfCoach(
+    coachId: string,
+    clientId: string,
+    notFound = 'Client not found',
+  ) {
     const client = await this.prisma.user.findFirst({
       where: { id: clientId, coach_id: coachId, role: 'student' },
       select: { id: true },
     });
-    if (!client) throw new NotFoundException('Client not found');
+    if (!client) throw new NotFoundException(notFound);
     return client;
   }
 
@@ -392,7 +396,7 @@ export class CheckInsService {
     checkInId: string,
     callerRole?: string,
   ) {
-    await this.assertClientOfCoach(coachId, clientId);
+    await this.assertClientOfCoach(coachId, clientId, 'Check-in not found');
     const row = await this.prisma.checkIn.findFirst({
       where: { id: checkInId, user_id: clientId },
       select: { id: true },

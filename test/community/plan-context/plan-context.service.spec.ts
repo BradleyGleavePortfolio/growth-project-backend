@@ -154,16 +154,15 @@ describe('PlanContextService', () => {
   describe('validate() — check_in', () => {
     const tag: PlanContextTag = { type: 'check_in', check_in_id: CHECKIN };
 
-    it('returns the tag when the caller is the assigned coach', async () => {
-      repo.findCheckIn.mockResolvedValue({ id: CHECKIN, coach_id: COACH });
+    // A check-in keeps the coach_id it was logged under; access follows the
+    // client's current coach (user.coach_id).
+    it("returns the tag when the caller is the client's current coach", async () => {
+      repo.findCheckIn.mockResolvedValue({ id: CHECKIN, coach_id: OTHER_COACH, user: { coach_id: COACH } });
       await expect(service.validate(coach, tag)).resolves.toEqual(tag);
     });
 
-    it('throws 403 when the check-in is assigned to another coach', async () => {
-      repo.findCheckIn.mockResolvedValue({
-        id: CHECKIN,
-        coach_id: OTHER_COACH,
-      });
+    it('throws 403 for a former coach once the client has moved', async () => {
+      repo.findCheckIn.mockResolvedValue({ id: CHECKIN, coach_id: COACH, user: { coach_id: OTHER_COACH } });
       await expect(service.validate(coach, tag)).rejects.toBeInstanceOf(
         ForbiddenException,
       );
@@ -273,6 +272,7 @@ describe('PlanContextService', () => {
       repo.findCheckIn.mockResolvedValue({
         id: CHECKIN,
         coach_id: COACH,
+        user: { coach_id: COACH },
         date: new Date('2026-01-05T00:00:00.000Z'),
         type: 'morning',
         reviewed_by_coach: false,
@@ -285,6 +285,13 @@ describe('PlanContextService', () => {
         check_in_type: 'morning',
         reviewed_by_coach: false,
       });
+    });
+
+    it('404s a check-in for a former coach once the client has moved', async () => {
+      repo.findCheckIn.mockResolvedValue({ id: CHECKIN, coach_id: COACH, user: { coach_id: OTHER_COACH } });
+      await expect(
+        service.resolve(coach, { type: 'check_in', id: CHECKIN }),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });
