@@ -2,7 +2,13 @@ import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma, type UserProfile } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { UpdateProfileDto } from './profile.dto';
-import { computeMacros, LBS_PER_KG, resolveMacroInputs } from '../macros/macro-calculator';
+import {
+  computeMacros,
+  LBS_PER_KG,
+  NO_DEFICIT_UNDER_AGE,
+  resolveMacroInputs,
+  type MacroInputs,
+} from '../macros/macro-calculator';
 
 @Injectable()
 export class ProfileService {
@@ -116,10 +122,7 @@ export class ProfileService {
       if (!profile) return null;
       const resolved = resolveMacroInputs(macroRawFromProfile(profile), now);
       if (!resolved.ok) return profile;
-      const m = computeMacros({
-        ...resolved.inputs,
-        screening_yes: await screeningYes(tx, userId),
-      });
+      const m = await computeHeld(tx, userId, resolved.inputs, now);
       return tx.userProfile.update({
         where: { user_id: userId },
         data: targetColumns(m),
@@ -192,6 +195,40 @@ async function screeningYes(tx: Prisma.TransactionClient, userId: string): Promi
   return intake?.screening_any_yes === true;
 }
 
+const SERVER_NOTE = /^(Initial target from the consultation|Updated after a profile change) \(/;
+
+/**
+ * B-929-1 (owner decision 6): every reader prefers the live MacroTarget, so for
+ * a held client one below the new maintenance, or (readiness yes) a server-written
+ * one off the held number, is replaced by a new row. Coach targets at or above stay.
+ */
+async function computeHeld(tx: Prisma.TransactionClient, id: string, i: MacroInputs, now: Date) {
+  const m = computeMacros({ ...i, screening_yes: await screeningYes(tx, id) });
+  if (!m.maintenance_hold && i.age_years >= NO_DEFICIT_UNDER_AGE) return m;
+  const live = await tx.macroTarget.findFirst({
+    where: { client_id: id, archived_at: null, effective_from: { lte: now } },
+    orderBy: { effective_from: 'desc' },
+  });
+  const kcal = live?.calories_kcal ?? Infinity;
+  const off = m.maintenance_hold && SERVER_NOTE.test(live?.notes ?? '') && kcal !== m.calories;
+  if (!live || (kcal >= Math.max(m.floor_kcal, m.tdee) && !off)) return m;
+  const why = m.maintenance_hold ? 'held at maintenance' : 'no deficit under 18';
+  const { calories: calories_kcal, protein_g, carbs_g, fat_g: fats_g } = m;
+  await tx.macroTarget.create({
+    data: {
+      coach_id: live.coach_id,
+      client_id: id,
+      calories_kcal,
+      protein_g,
+      carbs_g,
+      fats_g,
+      notes: `Updated after a profile change (${why}).`,
+      effective_from: now,
+    },
+  });
+  return m;
+}
+
 function targetColumns(m: { calories: number; protein_g: number; carbs_g: number; fat_g: number }) {
   return {
     macro_target_calories: m.calories,
@@ -246,9 +283,7 @@ export async function writeProfileWithTargets(
     return { ok: false, missing: resolved.missing, row: existing };
   }
   const targets = resolved.ok
-    ? targetColumns(
-        computeMacros({ ...resolved.inputs, screening_yes: await screeningYes(tx, userId) }),
-      )
+    ? targetColumns(await computeHeld(tx, userId, resolved.inputs, now))
     : {
         macro_target_calories: null,
         macro_target_protein_g: null,

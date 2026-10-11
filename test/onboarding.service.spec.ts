@@ -383,6 +383,7 @@ function makeWorld() {
     workoutPlanRevision: { create: jest.fn(async () => ({ id: id('prev') })) },
     workoutProgramRevision: { create: jest.fn(async () => ({ id: id('grev') })) },
     macroTarget: {
+      findFirst: jest.fn(async () => macroTargets[macroTargets.length - 1] ?? null),
       create: jest.fn(async ({ data }: { data: Row }) => {
         macroTargets.push(data);
         return data;

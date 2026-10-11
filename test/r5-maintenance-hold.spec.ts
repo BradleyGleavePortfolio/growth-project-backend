@@ -98,6 +98,7 @@ function world(intake: { screening_any_yes: boolean } | null, profile: object | 
     profiles: new ProfileService(asPrisma(prisma)),
     macros: new MacrosService(asPrisma(prisma)),
     create,
+    prisma,
   };
 }
 
@@ -228,5 +229,57 @@ describe('coach-set targets (MacrosService.createForClient)', () => {
         calories_kcal: 1300,
       },
     );
+  });
+});
+
+// B-929-1 (Sol's scenario): every reader prefers the live MacroTarget, so a
+// held client's recompute re-checks it.
+describe('held client: the live MacroTarget follows the refreshed maintenance', () => {
+  type Act = MacroInputs['activity_level'];
+  const TEEN = { ...PROFILE, date_of_birth: new Date('2010-01-01') };
+  const keep = (activity_level: Act, age_years = 16) =>
+    computeMacros({ ...ADULT, age_years, activity_level, goal: 'maintenance' }).calories;
+  const NOTE = 'Initial target from the consultation (mifflin_st_jeor, no deficit under 18).';
+  const YES = { screening_any_yes: true };
+
+  async function run(intake: object | null, profile: object, live: object, act: Act = 'moderate') {
+    const w = world(intake as typeof YES | null, profile);
+    const rows: object[] = [{ coach_id: 'coach-1', notes: 'Coach plan', ...live }];
+    w.create.mockImplementation(async ({ data }) => ({ id: `t${rows.push(data)}`, ...data }));
+    Object.assign(w.prisma.macroTarget as object, { findFirst: async () => rows[rows.length - 1] });
+    await w.profiles.updateProfile('client-1', { activity_level: act }, NOW);
+    await w.profiles.computeAndSaveMacros('client-1', NOW);
+    return { rows, current: await w.macros.getCurrentForSelf('client-1', NOW) };
+  }
+
+  it('under 18: raising activity replaces the onboarding target with the new maintenance', async () => {
+    const teen = { ...TEEN, activity_level: 'sedentary' };
+    const { rows, current } = await run(null, teen, {
+      calories_kcal: keep('sedentary'),
+      notes: NOTE,
+    });
+    expect(rows).toHaveLength(2);
+    expect(current).toMatchObject({ calories_kcal: keep('moderate'), coach_id: 'coach-1' });
+    expect(current?.notes).toBe('Updated after a profile change (no deficit under 18).');
+  });
+
+  it.each([
+    ['a coach deficit target', { calories_kcal: DEFICIT }, 'moderate', MAINTENANCE],
+    [
+      'an onboarding target',
+      { calories_kcal: MAINTENANCE, notes: NOTE },
+      'light',
+      keep('light', 36),
+    ],
+  ] as const)('readiness yes: %s becomes exactly maintenance', async (_t, live, act, want) => {
+    expect((await run(YES, PROFILE, live, act)).current?.calories_kcal).toBe(want);
+  });
+
+  it.each([
+    ['readiness yes, coach above maintenance', YES, PROFILE, MAINTENANCE + 200],
+    ['under 18, coach at maintenance', null, TEEN, keep('moderate')],
+    ['adult, no readiness yes, deficit', { screening_any_yes: false }, PROFILE, DEFICIT],
+  ])('%s: kept', async (_who, intake, profile, calories_kcal) => {
+    expect((await run(intake, profile, { calories_kcal })).rows).toHaveLength(1);
   });
 });
