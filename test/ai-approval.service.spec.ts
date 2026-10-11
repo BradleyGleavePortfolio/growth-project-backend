@@ -39,6 +39,9 @@ function buildPrisma(
           ? { id: where.id, coach_id: opts.coachOf[where.id] }
           : null,
       ),
+      findMany: jest.fn(async ({ where }: any) =>
+        where.id.in.filter((id: string) => opts.coachOf?.[id] === where.coach_id).map((id: string) => ({ id })),
+      ),
     },
     teamSubCoachAssignment: {
       count: jest.fn(async () => opts.subCoachCount ?? 0),
@@ -105,6 +108,35 @@ function makeAudit(prisma: any) {
 }
 
 describe('AiApprovalService', () => {
+  it('lists a coach only the drafts whose client is still theirs; the owner sees all', async () => {
+    const draft = (id: string, subject: string | null) =>
+      ({ id, status: 'pending', capability: 'draft.coach_message', subject_user_id: subject, tenant_coach_id: 'coach-1' });
+    const prisma = buildPrisma(
+      [draft('moved', 'client-a'), draft('kept', 'client-b'), draft('self', 'coach-1'), draft('none', null)],
+      { coachOf: { 'client-a': 'coach-2', 'client-b': 'coach-1' } },
+    );
+    const svc = new AiApprovalService(prisma, makeAudit(prisma));
+    const ids = async (tenantCoachId?: string) => (await svc.listPending({ tenantCoachId })).map((d: any) => d.id);
+    expect(await ids('coach-1')).toEqual(['kept', 'self', 'none']);
+    expect(await ids()).toEqual(['moved', 'kept', 'self', 'none']);
+  });
+
+  it.each(['clientId', 'client_id', 'target_client_id'])(
+    'hides a draft whose payload %s names a client who moved, whatever its subject',
+    async (key) => {
+      const draft = (id: string, subject: string | null, client: string) =>
+        ({ id, status: 'pending', subject_user_id: subject, tenant_coach_id: 'coach-1', payload: { [key]: client } });
+      const prisma = buildPrisma(
+        [draft('subject-kept', 'client-b', 'client-a'), draft('no-subject', null, 'client-a'),
+          draft('self', 'coach-1', 'client-a'), draft('both-kept', 'client-b', 'client-b'), draft('payload-kept', null, 'client-b')],
+        { coachOf: { 'client-a': 'coach-2', 'client-b': 'coach-1' } },
+      );
+      const svc = new AiApprovalService(prisma, makeAudit(prisma));
+      const ids = (await svc.listPending({ tenantCoachId: 'coach-1' })).map((d: any) => d.id);
+      expect(ids).toEqual(['both-kept', 'payload-kept']);
+    },
+  );
+
   it('approves a pending draft and writes an AuditLog row', async () => {
     const prisma = buildPrisma([
       {
