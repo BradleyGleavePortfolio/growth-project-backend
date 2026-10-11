@@ -69,7 +69,7 @@ const PAIN = '(pains?|aches?|cramps?|cramping)';
 const SEVERE =
   '(severe|really bad|very bad|terrible|horrible|awful|intense|extreme|unbearable|excruciating|agonizing|sharp|worst|constant|persistent)';
 // B-913-1: "stomachache", "has hurt", "has been hurting", "pains in".
-const STOMACH_PAIN = `(${STOMACH} ?${PAIN}|${STOMACH} (hurts|is hurting|keeps hurting|has hurt|has been hurting)|pains? in (my |the )?(upper )?${STOMACH})`;
+const STOMACH_PAIN = `(${STOMACH} ?${PAIN}|${STOMACH} (hurts?|is hurting|keeps hurting|has hurt|has been hurting)|pains? in (my |the )?(upper )?${STOMACH})`;
 const CANT = "(can'?t|cannot|can not|unable to|couldn'?t|could not)";
 const INTAKE = '(anything|water|fluids?|liquids?|drinks?|food)';
 const KEEPABLE = `(any )?${INTAKE}( (or|and) ${INTAKE})?`;
@@ -77,7 +77,7 @@ const URGENT_SYMPTOMS: RegExp[] = [
   // Severe or lasting stomach pain, pain reaching the back, or named
   // pancreas / gallbladder trouble.
   new RegExp(
-    `\\b${SEVERE} ((upper )?${STOMACH} ?${PAIN}|pains? in (my |the )?(upper )?${STOMACH})\\b`,
+    `\\b(${SEVERE}|bad) ((upper )?${STOMACH} ?${PAIN}|pains? in (my |the )?(upper )?${STOMACH})\\b`,
     'i',
   ),
   new RegExp(
@@ -85,7 +85,7 @@ const URGENT_SYMPTOMS: RegExp[] = [
     'i',
   ),
   new RegExp(
-    `\\b${STOMACH_PAIN}( (is|feels|has been|gets|is getting))? (really |so |very |extremely )?(${SEVERE}|bad|badly|severely|worse)\\b|\\b${STOMACH} is killing me\\b|\\b${STOMACH} (won'?t|will not|doesn'?t|does not) stop (hurting|aching|cramping)\\b`,
+    `\\b${STOMACH_PAIN}(,? (it'?s|it is|is|feels|has been|gets|is getting))? (really |so |very |extremely )?(${SEVERE}|bad|badly|severely|worse)\\b|\\b${STOMACH} (is killing me|really hurts|is really hurting|is in (so much|a lot of) pain|is in agony|(hurts?|is hurting|has been hurting) (so much|a lot|like crazy))\\b|\\b${STOMACH} (won'?t|will not|doesn'?t|does not) stop (hurting|aching|cramping)\\b`,
     'i',
   ),
   /\b(pancreatitis|gallstones?|pancreas (hurts|pain)|gall ?bladder( is| has been| keeps)? (attack|pain|problems?|issues?|trouble|hurts|hurting|aching|acting up|killing me)|pain (where|around|near) my gall ?bladder|(it'?s|it is|must be|could be) (my )?gall ?bladder)\b/i,
@@ -130,20 +130,23 @@ const NOT_A_REPORT = closelyAfter(
  * of pancreatitis", "is gallbladder pain a side effect?", "what should I do if
  * I can't keep water down?", "I had gallstones years ago" go to the model; a
  * first-person report in a question still fires ("is it normal that I can't
- * keep water down?", "I can't keep water down, what should I do?").
+ * keep water down?", "I can't keep water down, what should I do?"). R2: the
+ * question can start mid-clause ("I'm on Wegovy and want to know what the
+ * symptoms of pancreatitis are"); only I/my after the last opener is a report.
  */
 const QUESTION_OPENER =
-  /^\s*(is|are|can|could|does|do|should|would|will|what'?s?|how|why|when|which|any)\b/i;
+  /^\s*(is|are|can|could|does|do|should|would|will|when|any)\b|\b(what'?s?|how|why|which|wonder(ing)?|want to know|curious)\b/gi;
 const OWN_REPORT = /\b(i|i'?m|i'?ve|my|me)\b/i;
 const IN_THE_PAST = /^.{0,25}\b(years? (ago|back)|as a (kid|child|teen))\b/i;
 const negated = (sentence: string, m: RegExpExecArray) => NEGATED.test(sentence.slice(0, m.index));
 function notAReport(sentence: string, m: RegExpExecArray): boolean {
   const clause = sentence.lastIndexOf(',', m.index) + 1; // "I'm on Ozempic, is ..."
+  const opener = [...sentence.slice(clause, m.index).matchAll(QUESTION_OPENER)].pop();
+  const after = opener && clause + (opener.index ?? 0) + opener[0].length;
   return (
     NOT_A_REPORT.test(sentence.slice(0, m.index)) ||
     IN_THE_PAST.test(sentence.slice(m.index + m[0].length)) ||
-    (QUESTION_OPENER.test(sentence.slice(clause)) &&
-      !OWN_REPORT.test(sentence.slice(Math.max(clause, m.index - 20), m.index + m[0].length)))
+    (after !== undefined && !OWN_REPORT.test(sentence.slice(after, m.index + m[0].length)))
   );
 }
 

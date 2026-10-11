@@ -69,6 +69,12 @@ const SYMPTOMS: Record<string, string[]> = {
     'my stomach pain is getting worse',
     'my stomach is hurting really badly',
     'my stomach has been hurting severely',
+    // B-913-4 (R2): intensity wording.
+    ...['my stomach hurts a lot', 'my stomach hurts so much', 'my stomach is hurting so much'],
+    ...['my stomach hurts like crazy', 'my stomach really hurts', 'my stomach is really hurting'],
+    ...['my stomach is in so much pain', 'my stomach is in a lot of pain', 'bad stomach cramps'],
+    ...['my stomach is in agony', 'my stomach hurt all night', 'why does my stomach hurt so bad'],
+    ...["my stomach hurts, it's really bad", 'I have bad stomach pain'],
   ],
   'pancreatitis or gallbladder trouble': [
     'I think I have pancreatitis',
@@ -226,6 +232,11 @@ describe('urgent_symptoms: a weight-loss medicine plus a red-flag symptom', () =
       "I'm on Wegovy, what should I do if I can't keep water down?",
       "I'm on Wegovy. If I keep throwing up should I call my doctor?",
       "I'm on Zepbound and I want to know what to do if I get severe stomach pain",
+      // R2 (L-913D-SOL probe): the question starts mid-clause.
+      "I'm on Wegovy and want to know what the symptoms of pancreatitis are",
+      "I take Ozempic and I'm wondering what pancreatitis feels like",
+      'I just started Mounjaro and what are the symptoms of pancreatitis?',
+      "I'm on Wegovy. What are the symptoms of pancreatitis?",
     ]) {
       expect({ msg, cls: classifySafety(msg).class }).not.toEqual({ msg, cls: 'urgent_symptoms' });
     }
@@ -234,6 +245,8 @@ describe('urgent_symptoms: a weight-loss medicine plus a red-flag symptom', () =
       'On Mounjaro, is it normal that I cannot keep water down?',
       "I'm on Ozempic and I think I have pancreatitis, what now?",
       'On Wegovy, why is my stomach pain so bad?',
+      "I'm on Wegovy and wondering why I can't keep water down",
+      'on ozempic, my stomach hurts so much',
     ]) {
       expect({ msg, cls: classifySafety(msg).class }).toEqual({ msg, cls: 'urgent_symptoms' });
     }
