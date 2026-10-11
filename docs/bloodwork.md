@@ -1,5 +1,7 @@
 # Bloodwork v1 — Handoff Doc
 
+> **Switched off on the server (2026-10-10).** None of the routes below are mounted; each answers 404. Secure Form Submission under Messaging replaces this pathway in v1.1 (tgp-agent-context `planning/V1_1_MUST_DO.md` section 1).
+
 Backend rails for the client-entered bloodwork feature shipped on the
 mobile side as PR #103. Treats lab values as PHI-grade health data:
 explicit consent, tenant-scoped review queue, immutable audit, and a
