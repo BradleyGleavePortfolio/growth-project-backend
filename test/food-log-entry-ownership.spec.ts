@@ -32,15 +32,16 @@ function setup() {
   };
   const withFood = (e: Entry) => ({ ...e, food_item: foodItem });
   const insert = (data: Record<string, unknown>) => {
-    const key = (data.client_uuid as string | null | undefined) ?? null;
+    const key = typeof data.client_uuid === 'string' ? data.client_uuid : null;
     if (key !== null && rows.some((r) => r.client_uuid === key))
       throw new Error('P2002 client_uuid');
-    const row = {
+    const row: Entry = {
       quantity_multiplier: 1,
       ...data,
       id: `entry-${rows.length + 1}`,
+      user_id: String(data.user_id),
       client_uuid: key,
-    } as Entry;
+    };
     rows.push(row);
     return row;
   };
