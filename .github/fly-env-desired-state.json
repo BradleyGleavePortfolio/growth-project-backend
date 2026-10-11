@@ -66,6 +66,8 @@
   "secrets": {
     "GOOGLE_CLIENT_IDS": "github-secret",
     "MWB_AUTOSAVE_LOCK_TOKEN_SECRET": "github-secret",
+    "SUPABASE_SERVICE_ROLE_KEY": "github-secret",
+    "SUPABASE_ANON_KEY": "github-secret",
     "GOOGLE_OAUTH_CLIENT_ID": "present",
     "GOOGLE_OAUTH_CLIENT_SECRET": "present",
     "GOOGLE_OAUTH_REDIRECT_URI": "present",
@@ -140,6 +142,8 @@
     "APPLE_NONCE_REQUIRED": "Day 1 (B-APPLE-123), unset: the mobile app (main and the 10-07 build) sends no raw_nonce, so 'true' (the value env-truth 37405459790 groups it with) fails every Apple sign-in with 401 before a session is minted. Flip to true only after a mobile build that sends raw_nonce is the oldest supported build. Unset = off (only 'true' enforces).",
     "GOOGLE_CLIENT_IDS": "Wave B: launch-required Google sign-in audiences. The GitHub secret GOOGLE_CLIENT_IDS exists; flip to github-secret to copy it to Fly. Must be a comma list of non-empty client ids.",
     "MWB_AUTOSAVE_LOCK_TOKEN_SECRET": "Precondition of FEATURE_MWB_AUTOSAVE_UNDO=true, github-secret in the same PR as the autosave flag. Merge only after the owner confirms the GitHub Actions secret MWB_AUTOSAVE_LOCK_TOKEN_SECRET exists on this repository (64+ hex characters, for example 'openssl rand -hex 32'); the plan fails closed while it is missing or too short.",
+    "SUPABASE_SERVICE_ROLE_KEY": "Key switch, owner 2026-10-10: the new Supabase secret key (sb_secret_...) and publishable key (sb_publishable_...) replace the legacy JWT keys.",
+    "SUPABASE_ANON_KEY": "Key switch, owner 2026-10-10: the new Supabase secret key (sb_secret_...) and publishable key (sb_publishable_...) replace the legacy JWT keys.",
     "GOOGLE_OAUTH_CLIENT_ID": "Present on Fly (set outside this manifest); asserted present, never written here.",
     "GOOGLE_OAUTH_CLIENT_SECRET": "Present on Fly (set outside this manifest); asserted present, never written here.",
     "GOOGLE_OAUTH_REDIRECT_URI": "Present on Fly (set outside this manifest); asserted present, never written here.",

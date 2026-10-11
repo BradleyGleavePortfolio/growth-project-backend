@@ -61,8 +61,8 @@ Note: This will log out all users immediately. That is the correct behavior duri
 
 **Supabase service-role key compromised:**
 
-1. Go to Supabase → Settings → API → Roll the service_role key
-2. `flyctl secrets set SUPABASE_SERVICE_ROLE_KEY="new-key" -a backend-spring-lake-3890`
+1. Go to Supabase → Settings → API Keys → create a new secret key (delete the leaked one after step 2)
+2. Save the new secret key as the GitHub Actions secret `SUPABASE_SERVICE_ROLE_KEY`, then run Fly Env Sync apply with `deploy_staged=true` (not `flyctl`: the next apply would copy the old GitHub secret back)
 
 **Stripe key compromised:**
 
@@ -86,8 +86,8 @@ flyctl secrets set FINANCE_SERVICE_TOKEN="$NEW_TOKEN" -a backend-spring-lake-389
 flyctl secrets set DATABASE_URL="new-url" -a backend-spring-lake-3890
 
 # 2. Supabase service role key
-#    Go to Supabase and roll the key, then:
-flyctl secrets set SUPABASE_SERVICE_ROLE_KEY="new-key" -a backend-spring-lake-3890
+#    Create a new secret key in Supabase, save it as the GitHub secret SUPABASE_SERVICE_ROLE_KEY,
+#    then run Fly Env Sync apply with deploy_staged=true (not flyctl; see docs/runbooks/launch-flags.md)
 
 # 3. JWT signing key (logs out all users)
 flyctl secrets set JWT_SIGNING_KEY="$(openssl rand -hex 32)" -a backend-spring-lake-3890
