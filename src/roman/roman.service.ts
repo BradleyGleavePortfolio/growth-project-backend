@@ -96,10 +96,12 @@ import {
   ROMAN_SAFETY_ROUTE_REASON,
   ROMAN_SAFETY_ROUTER_MODEL_ID,
   ROMAN_SAFETY_TEMPLATES,
+  ROMAN_URGENT_COACH_ALERT,
 } from './guardrails/safety-router';
 import { postCheckRomanReply, type PostCheckContext } from './guardrails/roman-post-check';
 import { RomanClientContextService } from './context/roman-client-context.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
+import { CoachAlertsService } from '../coach/coach-alerts.service';
 import type {
   RomanClientContext,
   RomanClientContextBundle,
@@ -252,6 +254,10 @@ export class RomanService {
     @Optional()
     @Inject(ROMAN_TOOLBOX)
     private readonly toolbox: RomanToolbox | null = null,
+    // The coach red-flag alert after an urgent_symptoms reply (CoachModule).
+    @Optional()
+    @Inject(CoachAlertsService)
+    private readonly coachAlerts: CoachAlertsService | null = null,
   ) {}
 
   // ─── Sessions ──────────────────────────────────────────────────────────────
@@ -956,8 +962,9 @@ export class RomanService {
    *
    *  1. Feature flag + provider key (coded 503s, never a raw SDK error).
    *  2. Deterministic SafetyRouter on the normalised user text (A-R4-1).
-   *     Emergency / self-harm answer with fixed templates: no model call, no
-   *     client data loaded, nothing sent anywhere.
+   *     Emergency / self-harm / urgent symptoms answer with fixed templates:
+   *     no model call, no client data loaded, nothing sent to a provider.
+   *     Urgent symptoms also alert the client's coach.
    *  3. Box-2 consent via the single egress gate BEFORE any client data is
    *     read (B-R8-1); the gate re-reads the grant again inside the send.
    *  4. Daily spend cap: reserve the worst-case cost first, fail closed.
@@ -985,8 +992,14 @@ export class RomanService {
     const userMessage = opts.userMessage ?? (await this.latestUserMessage(caller, session.id));
     const route = classifySafety(userMessage);
 
-    if (route.short_circuit && (route.class === 'emergency' || route.class === 'self_harm')) {
+    if (
+      route.short_circuit &&
+      (route.class === 'emergency' ||
+        route.class === 'self_harm' ||
+        route.class === 'urgent_symptoms')
+    ) {
       const text = ROMAN_SAFETY_TEMPLATES[route.class];
+      if (route.class === 'urgent_symptoms') await this.alertCoachOfUrgentReply(caller);
       yield* this.fixedSafetyReply(caller, session, text, ROMAN_SAFETY_ROUTE_REASON[route.class]);
       return;
     }
@@ -1239,13 +1252,13 @@ export class RomanService {
   }
 
   /**
-   * True when the SafetyRouter answers this message with a fixed emergency /
-   * self-harm template (no model call, no spend). The controller uses it so a
-   * crisis message is never blocked by the turn limit or the spend cap.
+   * True when the SafetyRouter answers this message with a fixed emergency,
+   * self-harm or urgent-symptoms template (no model call, no spend). The
+   * controller uses it so such a message is never blocked by the turn limit,
+   * the spend cap or the coach requirement.
    */
   isSafetyShortCircuit(message: string): boolean {
-    const route = classifySafety(message);
-    return route.short_circuit && (route.class === 'emergency' || route.class === 'self_harm');
+    return classifySafety(message).short_circuit;
   }
 
   /** CF-ROMAN-COPY-B-128: true when the message gets the eating-disorder fallback if the AI cannot answer. */
@@ -1278,6 +1291,32 @@ export class RomanService {
     }
     const text = romanEatingDisorderFallback(hasCoach);
     yield* this.fixedSafetyReply(caller, session, text, ROMAN_EATING_DISORDER_FALLBACK_REASON);
+  }
+
+  /**
+   * Urgent symptoms on a weight-loss medicine: the client's coach gets the
+   * existing red-flag coach alert (in-app item and the quiet push, deduped per
+   * client for 24 hours). A coachless client gets the reply only. A failure is
+   * logged by code and never blocks the reply.
+   */
+  private async alertCoachOfUrgentReply(caller: RomanCaller): Promise<void> {
+    if (caller.role !== 'student' || !this.coachAlerts) return;
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: caller.id },
+        select: { coach_id: true },
+      });
+      if (!user?.coach_id) return;
+      await this.coachAlerts.createAlert({
+        coachId: user.coach_id,
+        clientId: caller.id,
+        alertType: 'roman_urgent_reply',
+        severity: 'critical',
+        message: ROMAN_URGENT_COACH_ALERT,
+      });
+    } catch (err) {
+      this.logger.warn(`roman.urgent_alert_failed: ${romanErrorTag(err)}`);
+    }
   }
 
   /** A deterministic safety reply: stored once, audited by reason code only, then emitted. */
