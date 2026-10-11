@@ -39,7 +39,7 @@ describe('deep health throwaway Redis probe', () => {
   it.each(['connect', 'ping'] as const)('disconnects on %s failure', async (stage) => {
     mockClient[stage].mockRejectedValue(new Error(`${stage} failed`));
     expect(await probe()).toBe('down');
-    expect(errors).toEqual([`redis: ${stage} failed`]);
+    expect(errors).toEqual(['redis: unavailable']);
     expect(mockClient.disconnect).toHaveBeenCalledTimes(1);
     if (stage === 'connect') expect(mockClient.ping).not.toHaveBeenCalled();
   });
@@ -55,7 +55,7 @@ describe('deep health throwaway Redis probe', () => {
     expect(settled).toBe(false);
     await jest.advanceTimersByTimeAsync(1);
     expect(await result).toBe('down');
-    expect(errors).toEqual(['redis: probe timeout']);
+    expect(errors).toEqual(['redis: unavailable']);
     expect(mockClient.disconnect).toHaveBeenCalledTimes(1);
     ready();
     await jest.advanceTimersByTimeAsync(0);

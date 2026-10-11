@@ -1,8 +1,9 @@
-import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Logger, Res } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma.service';
+import { safeLogDiagnostic } from './orm-diagnostics';
 
 /**
  * HealthDeepController — adds GET /health/deep.
@@ -17,13 +18,17 @@ import { PrismaService } from '../prisma.service';
  *
  * Response shape:
  *   200: { ok: true,  db: "up",   redis: "up"|"unconfigured",  timestamp }
- *   503: { ok: false, db: "down", redis: "...",                timestamp, errors: [] }
+ *   503: { ok: false, db: "down", redis: "...",                timestamp, errors: [...] }
+ *
+ * Driver error text is internal detail, so callers only ever see
+ * "<component>: unavailable"; a safe diagnostic is logged instead.
  */
 @ApiExcludeController()
 @Public()
 @Controller('health')
 export class HealthDeepController {
   private readonly startedAt = Date.now();
+  private readonly logger = new Logger(HealthDeepController.name);
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -38,7 +43,7 @@ export class HealthDeepController {
       await this.prisma.$queryRaw`SELECT 1`;
     } catch (err) {
       dbStatus = 'down';
-      errors.push(`db: ${err instanceof Error ? err.message : String(err)}`);
+      errors.push(this.unavailable('db', err));
     }
 
     // -- Redis check (optional — only when REDIS_URL is set) --
@@ -93,11 +98,21 @@ export class HealthDeepController {
       }
       return 'up';
     } catch (err) {
-      errors.push(`redis: ${err instanceof Error ? err.message : String(err)}`);
+      errors.push(this.unavailable('redis', err));
       return 'down';
     } finally {
       clearTimeout(timer);
       client?.disconnect();
     }
+  }
+
+  private unavailable(component: 'db' | 'redis', err: unknown): string {
+    this.logger.error({
+      event: 'deep_health_dependency_down',
+      operation: 'health.deep',
+      component,
+      diagnostic: safeLogDiagnostic(err),
+    });
+    return `${component}: unavailable`;
   }
 }
