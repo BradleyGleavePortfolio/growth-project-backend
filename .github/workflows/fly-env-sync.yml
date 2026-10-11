@@ -165,6 +165,8 @@ jobs:
           # BEGIN SOURCES (every manifest secret; each maps to the GitHub secret of the same name)
           GOOGLE_CLIENT_IDS: ${{ secrets.GOOGLE_CLIENT_IDS }}
           MWB_AUTOSAVE_LOCK_TOKEN_SECRET: ${{ secrets.MWB_AUTOSAVE_LOCK_TOKEN_SECRET }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           GOOGLE_OAUTH_REDIRECT_URI: ${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }}
@@ -289,6 +291,8 @@ jobs:
           # BEGIN SOURCES (every manifest secret; each maps to the GitHub secret of the same name)
           GOOGLE_CLIENT_IDS: ${{ secrets.GOOGLE_CLIENT_IDS }}
           MWB_AUTOSAVE_LOCK_TOKEN_SECRET: ${{ secrets.MWB_AUTOSAVE_LOCK_TOKEN_SECRET }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           GOOGLE_OAUTH_REDIRECT_URI: ${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }}

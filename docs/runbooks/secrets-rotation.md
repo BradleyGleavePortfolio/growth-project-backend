@@ -172,20 +172,16 @@ flyctl secrets set DATABASE_URL="postgresql://postgres.xxx:NEW_PASSWORD@aws-0-us
 
 **How to rotate:**
 
-Supabase does not support rotating the service-role key without generating a new one and disabling the old one.
+Fly copies this value from the GitHub Actions secret of the same name through Fly Env Sync (`docs/runbooks/launch-flags.md`, "Supabase API keys"). Never set it with `flyctl`: the next apply copies the GitHub secret back.
 
-1. Go to Supabase dashboard → your project → Settings → API
-2. Click "Roll" next to the service_role key
-3. Copy the new key
-4. Set it in Fly immediately:
-
-```sh
-flyctl secrets set SUPABASE_SERVICE_ROLE_KEY="eyJhbGci..." -a backend-spring-lake-3890
-```
+1. Go to Supabase dashboard → your project → Settings → API Keys and create a new secret key (`sb_secret_...`)
+2. Save it as the GitHub Actions secret `SUPABASE_SERVICE_ROLE_KEY`
+3. Run Fly Env Sync: plan, then apply with `deploy_staged=true`, then plan again
+4. Delete the old secret key in Supabase
 
 **What breaks if it's wrong:** Any endpoint that calls Supabase Admin API (user creation, user deletion, auth admin) returns 500. Normal user-facing auth (JWT verification via JWKS) is unaffected.
 
-**Rollback:** Set the old key back while you investigate.
+**Rollback:** Save the old key in the GitHub secret again and re-run apply while you investigate.
 
 ---
 
