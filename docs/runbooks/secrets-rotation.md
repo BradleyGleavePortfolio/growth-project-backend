@@ -176,12 +176,12 @@ Fly copies this value from the GitHub Actions secret of the same name through Fl
 
 1. Go to Supabase dashboard → your project → Settings → API Keys and create a new secret key (`sb_secret_...`)
 2. Save it as the GitHub Actions secret `SUPABASE_SERVICE_ROLE_KEY`
-3. Run Fly Env Sync: plan, then apply with `deploy_staged=true`, then plan again
-4. Delete the old secret key in Supabase
+3. Run Fly Env Sync: plan, then apply with `confirm=SET` and `deploy_staged=true`, then plan again
+4. Retire the old key in Supabase → Settings → API Keys: delete an old `sb_secret_` key (this cannot be undone). A legacy `service_role` JWT stays valid until the legacy JWT keys are deactivated, which waits for the mobile builds (`docs/runbooks/launch-flags.md`, "Supabase API keys", step 5)
 
 **What breaks if it's wrong:** Any endpoint that calls Supabase Admin API (user creation, user deletion, auth admin) returns 500. Normal user-facing auth (JWT verification via JWKS) is unaffected.
 
-**Rollback:** Save the old key in the GitHub secret again and re-run apply while you investigate.
+**Rollback:** only before the old key is retired, and only to an active, uncompromised `sb_secret_` key: save it in the GitHub secret again, then plan and apply with `confirm=SET` and `deploy_staged=true`. A deleted key cannot be restored and the plan refuses a legacy JWT, so in every other case create a fresh secret key and use the same path.
 
 ---
 

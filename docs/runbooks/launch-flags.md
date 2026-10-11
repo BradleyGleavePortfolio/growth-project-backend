@@ -212,7 +212,7 @@ The token-revocation keys (`APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY`) ar
 1. Save the keys from Supabase (Project Settings > API Keys) as the repository Actions secrets `SUPABASE_SERVICE_ROLE_KEY` (the `sb_secret_` key) and `SUPABASE_ANON_KEY` (the `sb_publishable_` key). The plan fails before anything is written while either is missing or fails its shape check.
 2. Run plan. Both rows read `set` while Fly still holds the legacy values.
 3. Run apply with `confirm=SET` and `deploy_staged=true` (one rolling restart). It proves every started machine holds both new values.
-4. Run plan again (both rows `Deployed | match | keep`), then sign in with email and password once.
+4. Run plan again (both rows `Deployed | match | keep`), then sign in once with email and password (publishable key) and once with Google (the backend checks that sign-in with the secret key).
 5. Only then, and only once every mobile build in use carries an `sb_publishable_` key in `EXPO_PUBLIC_SUPABASE_ANON_KEY` (the app calls Supabase with its own copy), deactivate the legacy keys in Supabase (reversible).
 
 To rotate later, update the GitHub secret and repeat steps 2-4, then delete the old secret key in Supabase. Never set these two with `flyctl`: the next apply copies the GitHub secret back. Changing the secret key also changes two values derived from it: a confirmed email sign-up from before the change whose local account was never created is no longer adopted at password sign-in (Google or Apple sign-in still links it), and, while `VOICE_KEY_SIGNING_SECRET` is unset, a community voice upload minted before the change and not yet published is refused at publish (those keys expire after 24 hours anyway). Published voice notes and other stored data are unaffected.
