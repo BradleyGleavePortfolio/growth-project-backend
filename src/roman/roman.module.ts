@@ -41,8 +41,11 @@ import {
 import { RomanBackgroundSpendService } from './background/roman-background-spend';
 import { RomanNotesWriter } from './memory/roman-notes.writer';
 import { RomanNotesScheduler } from './memory/roman-notes.scheduler';
+import { CoachModule } from '../coach/coach.module';
 
 @Module({
+  // CoachAlertsService: the coach alert after an urgent-symptoms reply.
+  imports: [CoachModule],
   // RomanChatsController (list + delete own chats) is not behind the chat
   // feature flag: deleting your chats never depends on Roman being on.
   // RomanContextController: GET /roman/context/me, the client's own view of

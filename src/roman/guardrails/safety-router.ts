@@ -1,15 +1,21 @@
 /**
  * SafetyRouter — deterministic, pre-model classification of the user's turn
  * (PLAN_roman_intelligence §2.2 step 5, §4.6). Pure functions, no I/O, no
- * model call. `emergency` and `self_harm` short-circuit to fixed templates;
- * the other classes add a forced hint to the system block and tighten the
- * post-check.
+ * model call. `emergency`, `self_harm` and `urgent_symptoms` short-circuit to
+ * fixed templates; the other classes add a forced hint to the system block and
+ * tighten the post-check.
  */
 
 import { CRISIS_EMERGENCY_PATTERNS, CRISIS_SELF_HARM_PATTERNS } from '../../ai/ai-crisis-router';
 
 export type SafetyClass =
-  'emergency' | 'self_harm' | 'eating_disorder_risk' | 'medical_scope' | 'injury_pain' | 'normal';
+  | 'emergency'
+  | 'self_harm'
+  | 'urgent_symptoms'
+  | 'eating_disorder_risk'
+  | 'medical_scope'
+  | 'injury_pain'
+  | 'normal';
 
 export interface SafetyRouteResult {
   class: SafetyClass;
@@ -31,6 +37,58 @@ export interface SafetyRouteResult {
  */
 const EMERGENCY: readonly RegExp[] = CRISIS_EMERGENCY_PATTERNS;
 const SELF_HARM: readonly RegExp[] = CRISIS_SELF_HARM_PATTERNS;
+
+/**
+ * GLP-1 and related weight-loss medicines: semaglutide (Ozempic, Wegovy,
+ * Rybelsus), tirzepatide (Mounjaro, Zepbound), liraglutide (Victoza, Saxenda),
+ * the class name, and plain "weight loss shot" wording. Shared with the
+ * post-check's medication-directive rule.
+ */
+export const WEIGHT_LOSS_MEDICINES =
+  'ozempic|wegovy|rybelsus|semaglutide|mounjaro|zepbound|tirzepatide|victoza|saxenda|liraglutide|glp[- ]?1s?|weight[- ]loss (shots?|injections?|jabs?|medications?|medicines?|meds|drugs?)';
+const WEIGHT_LOSS_MEDICINE = new RegExp(`\\b(${WEIGHT_LOSS_MEDICINES})\\b`, 'i');
+
+/**
+ * Red-flag symptoms from the warnings and Medication Guides in the FDA labels
+ * for these medicines (pancreatitis, gallbladder disease, dehydration, serious
+ * allergic reaction, low blood sugar, thyroid tumors). They count only when a
+ * weight-loss medicine is named in the same message: the fixed reply points to
+ * the prescribing clinic. Acute emergencies (throat closing, cannot breathe,
+ * fainting now) are caught first by EMERGENCY.
+ */
+const STOMACH = '(stomach|belly|abdominal|abdomen|tummy)';
+const URGENT_SYMPTOMS: RegExp[] = [
+  // Severe or persistent stomach pain, or pain reaching the back.
+  new RegExp(
+    `\\b(severe|really bad|very bad|terrible|awful|intense|extreme|unbearable|excruciating|constant|persistent) (upper )?${STOMACH} (pain|ache|cramps?|cramping)\\b`,
+    'i',
+  ),
+  new RegExp(
+    `\\b(severe|terrible|awful|intense|extreme|unbearable|excruciating|constant|persistent) pain in (my |the )?(upper )?${STOMACH}\\b`,
+    'i',
+  ),
+  new RegExp(
+    `\\b${STOMACH} (pain|ache|cramps?|cramping|hurts|is hurting|keeps hurting)\\b[^.!?]{0,30}\\b((won'?t|will not|doesn'?t|does not) (go away|stop|ease|let up)|(to|into|through) (my |the )?back|for (\\d+|two|three|four|five|several|a few) (days|hours)|all (day|night))\\b`,
+    'i',
+  ),
+  // Vomiting that will not stop, or cannot keep fluids down.
+  /\b(can'?t|cannot|can not|unable to|couldn'?t|could not) (keep|hold) (anything|water|fluids?|liquids?|food|drinks?|it|any \w+)( \w+){0,3} down\b/i,
+  /\b(keep|keeps|kept|nonstop|non-stop|constant|constantly|persistent|uncontrollable|can'?t stop|cannot stop) (vomiting|throwing up|puking)\b/i,
+  /\b(vomit(ing|ed)?|throwing up|threw up|puk(ing|ed))\b[^.!?]{0,30}\b((won'?t|will not|doesn'?t|does not|can'?t|cannot) stop|all (day|night)|nonstop|non-stop|for (\d+|two|three|several|a few) (days|hours))\b/i,
+  // Yellow skin or eyes.
+  /\b(yellow(ing|ish)?( of)? (my |the )?(skin|eyes?)|(skin|eyes?)\b[^.!?]{0,20}\byellow(ish)?|jaundiced?)\b/i,
+  // A serious allergic reaction: swelling of the face, lips, tongue or
+  // throat, trouble swallowing, hives or a severe rash.
+  /\b(face|lips?|tongue|throat|mouth|eyelids?)\b[^.!?]{0,15}\b(swollen|swelling|swelled|puff(y|ed|ing) up)\b|\b(swollen|swelling (of|in)( my)?) (face|lips?|tongue|throat|mouth|eyelids?)\b/i,
+  /\b(hives|severe (rash|itching)|rash all over|itch(y|ing) all over|(trouble|difficulty|problems?) swallowing)\b/i,
+  // Fainting.
+  /\b(fainted|fainting|passed out|passing out|blacked out|blacking out|collapsed|lost consciousness)\b/i,
+  // Very low blood sugar, reported (not a question about the risk).
+  /\b(i'?m|i am|i'?ve|i have|i had|i get|i keep getting|getting|having|my) (\w+ )?(low blood sugar|(blood )?sugars? (is |are |was |were |keeps? )?(really |very |so |too |dangerously )?(low|dropping|crashing|tanking)|hypoglycemi[ac]|a hypo)\b/i,
+  /\b((shaky|shaking|trembling|sweaty|sweating)\b[^.!?]{0,20}\b(confused|disoriented)|(confused|disoriented)\b[^.!?]{0,20}\b(shaky|shaking|trembling|sweaty|sweating))\b/i,
+  // A lump or swelling in the neck.
+  /\b(lump|bump|swelling|swollen|mass|nodule|growth)\b[^.!?]{0,25}\bneck\b|\bneck\b[^.!?]{0,15}\b(swollen|swelling|lump|lumpy)\b/i,
+];
 
 const EATING_DISORDER: RegExp[] = [
   /\bpurg(e|ing|ed)\b/i,
@@ -59,7 +117,8 @@ const MEDICAL_SCOPE: RegExp[] = [
   /\bblood pressure\b|\bhypertension\b/i,
   /\bheart (condition|disease|problem|failure|rate is)\b|\barrhythmia\b|\bafib\b/i,
   /\bcholesterol\b|\bstatin\b|\bthyroid\b|\bkidney\b|\bliver\b/i,
-  /\b(ozempic|wegovy|semaglutide|mounjaro|tirzepatide|metformin|phentermine|adderall|antidepressant|ssri)\b/i,
+  WEIGHT_LOSS_MEDICINE,
+  /\b(metformin|phentermine|adderall|antidepressant|ssri)\b/i,
   /\b(symptom|symptoms)\b/i,
   /\b(disorder|syndrome|disease)\b/i,
   // B-651-2: history or near-miss reports the emergency router leaves to the
@@ -86,6 +145,7 @@ const INJURY_PAIN: RegExp[] = [
 const ORDER: Array<{ cls: SafetyClass; patterns: readonly RegExp[]; short_circuit: boolean }> = [
   { cls: 'emergency', patterns: EMERGENCY, short_circuit: true },
   { cls: 'self_harm', patterns: SELF_HARM, short_circuit: true },
+  { cls: 'urgent_symptoms', patterns: URGENT_SYMPTOMS, short_circuit: true },
   { cls: 'eating_disorder_risk', patterns: EATING_DISORDER, short_circuit: false },
   { cls: 'medical_scope', patterns: MEDICAL_SCOPE, short_circuit: false },
   { cls: 'injury_pain', patterns: INJURY_PAIN, short_circuit: false },
@@ -144,6 +204,7 @@ export function asksForSubFloorIntake(text: string): boolean {
 export function classifySafety(message: string): SafetyRouteResult {
   const text = normalizeForSafety(message);
   for (const { cls, patterns, short_circuit } of ORDER) {
+    if (cls === 'urgent_symptoms' && !WEIGHT_LOSS_MEDICINE.test(text)) continue;
     for (const rx of patterns) {
       if (rx.test(text)) return { class: cls, matched: rx.source, short_circuit };
     }
@@ -159,12 +220,13 @@ export function classifySafety(message: string): SafetyRouteResult {
 /**
  * Owner ruling 2026-09-30 16:38: the safety copy is "butlered up" (warm,
  * composed, Alfred-like) and gives something genuinely useful beyond "talk
- * to your doctor". The 911 / 988 routing stays. These two templates are
+ * to your doctor". The 911 / 988 routing stays. These templates are
  * DETERMINISTIC: no model call is ever made for them, so what follows is the
  * exact text the client sees. No contractions, no exclamation marks, no
  * emoji, no promise of an action Roman does not perform.
  */
-export const ROMAN_SAFETY_TEMPLATES: Record<'emergency' | 'self_harm', string> = {
+type FixedReplyClass = 'emergency' | 'self_harm' | 'urgent_symptoms';
+export const ROMAN_SAFETY_TEMPLATES: Record<FixedReplyClass, string> = {
   emergency:
     'Please stop what you are doing and call 911 now, or your local emergency number. ' +
     'If you are able, stay where you are, unlock the door, and keep your phone within reach so help can find you quickly. ' +
@@ -177,7 +239,17 @@ export const ROMAN_SAFETY_TEMPLATES: Record<'emergency' | 'self_harm', string> =
     'If you are in immediate danger, call 911. ' +
     'If you can, let someone you trust know where you are so they can sit with you. ' +
     'You matter, and talking to a person right now is the right next step.',
+  // Owner decision 6 wording, word for word.
+  urgent_symptoms:
+    'This needs medical attention. Contact your prescribing clinic today. If symptoms are severe, call 911.',
 };
+
+/**
+ * The coach alert after an urgent_symptoms reply. It carries no symptom,
+ * medicine or message text: the coach learns only that the reply was sent.
+ */
+export const ROMAN_URGENT_COACH_ALERT =
+  'Roman sent this client an urgent medical safety reply. Please check in with them.';
 
 /** Model id recorded on a short-circuited turn. */
 /**
@@ -188,11 +260,14 @@ export const ROMAN_SAFETY_TEMPLATES: Record<'emergency' | 'self_harm', string> =
  * OR-115-2: these templates answer without the box-2 AI consent grant and
  * without any provider call.
  */
-export const ROMAN_SAFETY_ROUTE_REASON: Record<'emergency' | 'self_harm', 'call_911' | 'call_988'> =
-  {
-    emergency: 'call_911',
-    self_harm: 'call_988',
-  };
+export const ROMAN_SAFETY_ROUTE_REASON: Record<
+  FixedReplyClass,
+  'call_911' | 'call_988' | 'contact_clinic'
+> = {
+  emergency: 'call_911',
+  self_harm: 'call_988',
+  urgent_symptoms: 'contact_clinic',
+};
 
 export const ROMAN_SAFETY_ROUTER_MODEL_ID = 'safety-router';
 
@@ -235,7 +310,7 @@ export const ROMAN_PHYSICIAN_LINE_INJURY =
   'If it persists, gets worse, or is severe, please see a physician.';
 
 export const ROMAN_ROUTER_HINTS: Record<
-  Exclude<SafetyClass, 'emergency' | 'self_harm' | 'normal'>,
+  Exclude<SafetyClass, FixedReplyClass | 'normal'>,
   string
 > = {
   eating_disorder_risk:

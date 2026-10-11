@@ -41,7 +41,9 @@ export type CoachAlertType =
   | 'consecutive_misses'
   | 'streak_dropped'
   | 'finance_eod_gap'
-  | 'bloodwork_review';
+  | 'bloodwork_review'
+  // Roman answered urgent symptoms on a weight-loss medicine (no symptom text).
+  | 'roman_urgent_reply';
 
 export type CoachAlertSeverity = 'info' | 'warning' | 'critical';
 
