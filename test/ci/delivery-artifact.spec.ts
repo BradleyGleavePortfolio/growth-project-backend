@@ -360,6 +360,30 @@ describe('fly-deploy.yml — recovery and migration evidence (S2-B6 / S2-B7 / S2
   });
 });
 
+// OPS-02: this repo is public, so its Actions logs are public. flyctl deploy
+// prints the release_command output and the machines' app logs when a release
+// or health check fails; none of that may reach the run log or an artifact.
+describe('fly-deploy.yml — production logs never reach the public run log (OPS-02)', () => {
+  type Doc = { jobs: Record<string, { steps: Array<{ run?: string }> }> };
+  const doc = parseYaml(read('.github/workflows/fly-deploy.yml')) as Doc;
+  const runs = Object.values(doc.jobs).flatMap((j) => j.steps.map((s) => s.run ?? ''));
+  it('no step reads Fly logs, dumps the environment or traces commands', () => {
+    for (const r of runs) {
+      const cmds = r.split('\n').filter((l) => !/^\s*echo\b/.test(l)).join('\n');
+      expect(cmds).not.toMatch(/\bfly(ctl)?\s+logs\b/);
+      expect(cmds).not.toMatch(/^\s*(env|printenv|set)\s*$|\bset -x\b/m);
+    }
+  });
+  it('flyctl deploy output goes to a runner-only file that is never printed or uploaded', () => {
+    const dep = runs.find((r) => r.includes('flyctl deploy')) ?? '';
+    expect(dep).toMatch(/--build-secret [^\n]*>\s*"\$\{RUNNER_TEMP\}\/flyctl-deploy\.log" 2>&1/);
+    const cmds = dep.split('\n').filter((l) => !/^\s*echo\b/.test(l)).join('\n');
+    expect(cmds).not.toMatch(/release-evidence|\btee\b|\bcat\b|\btail\b|\bhead\b/);
+    expect(dep).toMatch(/exit "\$\{?rc\}?"/);
+    expect(dep).toContain('docs/deploy-runbook.md');
+  });
+});
+
 describe('production-mutating Fly operator workflows are bound to the production environment (S2-B10)', () => {
   for (const f of ['fly-apple-signin-set', 'fly-db-secrets-set', 'fly-launch-env-set', 'fly-recent-auth-set', 'fly-secrets-set', 'house-seed']) {
     it(`${f}.yml has environment: production`, () => {

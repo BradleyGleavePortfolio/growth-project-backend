@@ -866,6 +866,11 @@ store and in `fly tokens`.
      literal `<token>` / `REPLACE_ME` / similar; replace with the real
      token from step 1.
    - `suspiciously short` — only a fragment of the token was pasted.
+   - `flyctl deploy failed (exit N)` — this repo is public, so the run log
+     never shows flyctl's output (it can hold production app logs). Read
+     the logs privately: Fly dashboard, or `fly logs -a <app-name> --no-tail`
+     from an authorized terminal (§11.3, §11.4). For a build error, build
+     the same commit locally with `docker build .`.
 
 5. **Confirm production is current.** After the workflow finishes:
 
