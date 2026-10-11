@@ -47,7 +47,15 @@ const SELF_HARM: readonly RegExp[] = CRISIS_SELF_HARM_PATTERNS;
  */
 export const WEIGHT_LOSS_MEDICINES =
   'ozempic|ozempik|ozempick|wegovy|wegovey|rybelsus|semaglutide?|sema|mounjaro|monjaro|mounjuro|zepbound|zepbond|tirzepatide|tirzepetide|tirz|victoza|saxenda|liraglutide|trulicity|dulaglutide|byetta|bydureon|exenatide|retatrutide|glp[- ]?1s?|(weight[- ]?loss|fat|skinny|diet) (shots?|jabs?|injections?|pens?|medications?|medicines?|meds|drugs?)';
-const WEIGHT_LOSS_MEDICINE = new RegExp(`\\b(${WEIGHT_LOSS_MEDICINES})\\b`, 'i');
+/**
+ * Operator ruling (B-913-2, R1): for the urgent route only, the client's own
+ * injection counts as the medicine ("since my shot I can't keep anything
+ * down"): the fixed reply says "Contact your prescribing clinic", which fits
+ * any prescribed injection. "My flu shot" is not "my shot".
+ */
+const OWN_INJECTION =
+  'my (weekly |last |latest )?(shots?|jabs?|injections?|pens?)|the shot|shot day';
+const WEIGHT_LOSS_MEDICINE = new RegExp(`\\b(${WEIGHT_LOSS_MEDICINES}|${OWN_INJECTION})\\b`, 'i');
 
 /**
  * Red-flag symptoms from the warnings and Medication Guides in the FDA labels
@@ -60,22 +68,32 @@ const STOMACH = '(stomach|belly|abdominal|abdomen|tummy)';
 const PAIN = '(pains?|aches?|cramps?|cramping)';
 const SEVERE =
   '(severe|really bad|very bad|terrible|horrible|awful|intense|extreme|unbearable|excruciating|agonizing|sharp|worst|constant|persistent)';
-const STOMACH_PAIN = `(${STOMACH} (${PAIN}|hurts|is hurting|keeps hurting)|pain in (my |the )?(upper )?${STOMACH})`;
+// B-913-1: "stomachache", "has hurt", "has been hurting", "pains in".
+const STOMACH_PAIN = `(${STOMACH} ?${PAIN}|${STOMACH} (hurts|is hurting|keeps hurting|has hurt|has been hurting)|pains? in (my |the )?(upper )?${STOMACH})`;
+const CANT = "(can'?t|cannot|can not|unable to|couldn'?t|could not)";
+const INTAKE = '(anything|water|fluids?|liquids?|drinks?|food)';
+const KEEPABLE = `(any )?${INTAKE}( (or|and) ${INTAKE})?`;
 const URGENT_SYMPTOMS: RegExp[] = [
   // Severe or lasting stomach pain, pain reaching the back, or named
   // pancreas / gallbladder trouble.
-  new RegExp(`\\b${SEVERE} ((upper )?${STOMACH} ${PAIN}|pain in (my |the )?(upper )?${STOMACH})\\b`, 'i'),
+  new RegExp(
+    `\\b${SEVERE} ((upper )?${STOMACH} ?${PAIN}|pains? in (my |the )?(upper )?${STOMACH})\\b`,
+    'i',
+  ),
   new RegExp(
     `\\b${STOMACH_PAIN}\\b.{0,30}\\b((won'?t|will not|doesn'?t|does not) (go away|stop|ease|let up)|(to|into|through) (my |the )?back|for (\\d+|two|three|four|five|several|a few) (days|hours)|all (day|night))\\b`,
     'i',
   ),
   new RegExp(
-    `\\b(${STOMACH_PAIN} (is|feels|has been|gets)|${STOMACH} hurts) (really |so |very |extremely )?(bad|badly|severe|terrible|horrible|unbearable)\\b|\\b${STOMACH} is killing me\\b`,
+    `\\b${STOMACH_PAIN}( (is|feels|has been|gets|is getting))? (really |so |very |extremely )?(${SEVERE}|bad|badly|severely|worse)\\b|\\b${STOMACH} is killing me\\b|\\b${STOMACH} (won'?t|will not|doesn'?t|does not) stop (hurting|aching|cramping)\\b`,
     'i',
   ),
-  /\b(pancreatitis|gall ?bladder (attack|pain|problems?|issues?|trouble)|gallstones?|pancreas (hurts|pain))\b/i,
+  /\b(pancreatitis|gallstones?|pancreas (hurts|pain)|gall ?bladder( is| has been| keeps)? (attack|pain|problems?|issues?|trouble|hurts|hurting|aching|acting up|killing me)|pain (where|around|near) my gall ?bladder|(it'?s|it is|must be|could be) (my )?gall ?bladder)\b/i,
   // Vomiting that will not stop, not keeping fluids down, severe dehydration.
-  /\b(can'?t|cannot|can not|unable to|couldn'?t|could not) (even )?(keep|hold) (anything|water|fluids?|liquids?|drinks?|food|any (water|fluids?|liquids?|drinks?|food))( (at all|either|today|anymore))? down\b|\bnothing (stays|will stay) down\b/i,
+  new RegExp(
+    `\\b${CANT} (even )?(keep|hold) (${KEEPABLE}( (at all|either|today|anymore))? down|down ${KEEPABLE})\\b|\\bnothing (stays|will stay) down\\b`,
+    'i',
+  ),
   /\b(keep|keeps|kept|nonstop|non-stop|constant|constantly|persistent|uncontrollable|can'?t stop|cannot stop) (vomitt?ing|throwing up|puking)\b/i,
   /\b(vomitt?(ing|ed)?|throw(ing)? up|threw up|thrown up|puk(e|ing|ed))\b.{0,30}\b((won'?t|will not|doesn'?t|does not|can'?t|cannot) stop|all (day|night)|nonstop|non-stop|constantly|repeatedly|over and over|for (\d+|two|three|several|a few) (days|hours)|since (yesterday|last night)|(\d+|several|many) times)\b/i,
   /\b(severely|very|really|so|extremely|badly) dehydrated\b|\b(haven'?t|have not|hasn'?t|barely) (peed|urinated|been able to drink)\b/i,
@@ -105,15 +123,40 @@ const closelyAfter = (cues: string) =>
   new RegExp(`\\b(${cues})( (?!and |but )[^\\s,]+){0,2} $`, 'i');
 const NEGATED = closelyAfter(NEGATION);
 const NOT_A_REPORT = closelyAfter(
-  `${NEGATION}|cause|causes|risks? of|chance of|worr(y|ied|ying) about|watch (out )?for|afraid of|scared of`,
+  `${NEGATION}|cause|causes|risks? of|chance of|worr(y|ied|ying) about|watch (out )?for|afraid of|scared of|if|avoid|prevent`,
 );
+/**
+ * B-913-3: a question or a past event is not a report. "What are the symptoms
+ * of pancreatitis", "is gallbladder pain a side effect?", "what should I do if
+ * I can't keep water down?", "I had gallstones years ago" go to the model; a
+ * first-person report in a question still fires ("is it normal that I can't
+ * keep water down?", "I can't keep water down, what should I do?").
+ */
+const QUESTION_OPENER =
+  /^\s*(is|are|can|could|does|do|should|would|will|what'?s?|how|why|when|which|any)\b/i;
+const OWN_REPORT = /\b(i|i'?m|i'?ve|my|me)\b/i;
+const IN_THE_PAST = /^.{0,25}\b(years? (ago|back)|as a (kid|child|teen))\b/i;
+const negated = (sentence: string, m: RegExpExecArray) => NEGATED.test(sentence.slice(0, m.index));
+function notAReport(sentence: string, m: RegExpExecArray): boolean {
+  const clause = sentence.lastIndexOf(',', m.index) + 1; // "I'm on Ozempic, is ..."
+  return (
+    NOT_A_REPORT.test(sentence.slice(0, m.index)) ||
+    IN_THE_PAST.test(sentence.slice(m.index + m[0].length)) ||
+    (QUESTION_OPENER.test(sentence.slice(clause)) &&
+      !OWN_REPORT.test(sentence.slice(Math.max(clause, m.index - 20), m.index + m[0].length)))
+  );
+}
 
-/** The first pattern stated in any sentence of the text and not undercut by `cue`. */
-function stated(patterns: readonly RegExp[], text: string, cue: RegExp): RegExp | undefined {
+/** The first pattern stated in any sentence of the text and not undercut by `skip`. */
+function stated(
+  patterns: readonly RegExp[],
+  text: string,
+  skip: (sentence: string, m: RegExpExecArray) => boolean,
+): RegExp | undefined {
   for (const sentence of text.split(/[.!?;]+/)) {
     for (const rx of patterns) {
       const m = rx.exec(sentence);
-      if (m && !cue.test(sentence.slice(0, m.index))) return rx;
+      if (m && !skip(sentence, m)) return rx;
     }
   }
   return undefined;
@@ -238,7 +281,8 @@ export function classifySafety(message: string, earlierUserText = ''): SafetyRou
   for (const { cls, patterns, short_circuit } of ORDER) {
     if (cls === 'urgent_symptoms') {
       const taken = `${text}. ${normalizeForSafety(earlierUserText)}`;
-      const rx = stated([WEIGHT_LOSS_MEDICINE], taken, NEGATED) && stated(patterns, text, NOT_A_REPORT);
+      const rx =
+        stated([WEIGHT_LOSS_MEDICINE], taken, negated) && stated(patterns, text, notAReport);
       if (rx) return { class: cls, matched: rx.source, short_circuit };
       continue;
     }

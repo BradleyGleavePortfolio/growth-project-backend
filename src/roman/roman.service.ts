@@ -990,7 +990,10 @@ export class RomanService {
       });
     }
     const userMessage = opts.userMessage ?? (await this.latestUserMessage(caller, session.id));
-    const route = classifySafety(userMessage, await this.earlierUserText(caller, session.id));
+    // B-913-2: the controller has stored this turn; skip it so this reads the
+    // same five earlier turns as the controller's pre-check.
+    const earlier = await this.earlierUserText(caller, session.id, userMessage);
+    const route = classifySafety(userMessage, earlier);
 
     if (
       route.short_circuit &&
@@ -1476,16 +1479,26 @@ export class RomanService {
    * The caller's own last few turns in the session, for the safety router: a
    * weight-loss medicine named earlier counts for a red flag reported now.
    * Scoped to the caller, so an unverified session id reads nothing else.
+   * `storedTurn`: the current turn, already stored, is skipped (B-913-2), so the
+   * pre-check (before storing) and the reply path read the same five turns.
    */
-  private async earlierUserText(caller: RomanCaller, sessionId: string): Promise<string> {
+  private async earlierUserText(
+    caller: RomanCaller,
+    sessionId: string,
+    storedTurn?: string,
+  ): Promise<string> {
     try {
       const rows = await this.prisma.romanMessage.findMany({
         where: { session_id: sessionId, user_id: caller.id, role: 'user' },
         orderBy: { created_at: 'desc' },
-        take: 5,
+        take: storedTurn === undefined ? 5 : 6,
         select: { content: true },
       });
-      return rows.map((r) => r.content).join('. ');
+      if (storedTurn !== undefined && rows[0]?.content === storedTurn) rows.shift();
+      return rows
+        .slice(0, 5)
+        .map((r) => r.content)
+        .join('. ');
     } catch (err) {
       this.logger.warn(`roman.safety_history_failed: ${romanErrorTag(err)}`);
       return '';

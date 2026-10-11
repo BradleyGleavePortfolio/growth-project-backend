@@ -58,11 +58,26 @@ const SYMPTOMS: Record<string, string[]> = {
     'the pain in my stomach is severe',
     'my abdomen hurts really badly',
     'my stomach is killing me',
+    // B-913-1 (R1): everyday wording.
+    'my stomach has hurt for two days',
+    'my stomach has been hurting for 3 days',
+    "my stomach won't stop hurting",
+    'I have a really bad stomachache',
+    'I have had a terrible stomachache all day',
+    'my tummy ache is awful',
+    'I have sharp pains in my stomach',
+    'my stomach pain is getting worse',
+    'my stomach is hurting really badly',
+    'my stomach has been hurting severely',
   ],
   'pancreatitis or gallbladder trouble': [
     'I think I have pancreatitis',
     'I have signs of gallbladder trouble',
     'I think I have gallstones',
+    'my gallbladder hurts',
+    'my gallbladder is hurting',
+    'there is pain where my gallbladder is',
+    "I think it's my gallbladder",
   ],
   'vomiting that will not stop, or severe dehydration': [
     "I can't keep any water down",
@@ -75,6 +90,8 @@ const SYMPTOMS: Record<string, string[]> = {
     'I threw up all night',
     'I am severely dehydrated',
     "I haven't been able to drink anything in 2 days",
+    "I can't keep down water",
+    "I can't keep food or water down",
   ],
   'yellow skin or eyes': ['my eyes look yellow', 'I noticed yellowing of my skin', 'I am jaundiced'],
   'a serious allergic reaction': [
@@ -83,7 +100,7 @@ const SYMPTOMS: Record<string, string[]> = {
     'I broke out in hives',
     'I have trouble swallowing',
   ],
-  fainting: ['I fainted this morning', 'I passed out after my shot', 'I blacked out in the shower'],
+  fainting: ['I fainted this morning', 'I passed out after my dose', 'I blacked out in the shower'],
   'very low blood sugar': [
     'I think I am having low blood sugar',
     'my blood sugar is really low',
@@ -141,7 +158,6 @@ describe('urgent_symptoms: a weight-loss medicine plus a red-flag symptom', () =
       "I'm on Ozempic, no vomiting at all",
       "I'm on Wegovy and my coach says to watch for severe stomach pain. I feel fine.",
       "I don't take Ozempic. I have a swollen neck from an old gym injury.",
-      'since my weekly injection I keep throwing up',
     ]) {
       expect({ msg, cls: classifySafety(msg).class }).not.toEqual({ msg, cls: 'urgent_symptoms' });
     }
@@ -178,6 +194,49 @@ describe('urgent_symptoms: a weight-loss medicine plus a red-flag symptom', () =
       exclamationAllowed: false,
     });
     expect(r.guardrails_applied).toContain('medication_directive');
+  });
+
+  it('B-913-2 (R1): "my shot / jab / injection / pen" counts as the medicine for this route', () => {
+    for (const msg of [
+      "since my shot I can't keep anything down",
+      'after my injection I keep throwing up',
+      'since my weekly injection I keep throwing up',
+      'my weekly shot made me throw up all night',
+      "I'm on the shot and I fainted",
+      'my jab day and now my stomach is killing me',
+      "I took my pen this morning and I can't keep water down",
+    ]) {
+      expect({ msg, cls: classifySafety(msg).class }).toEqual({ msg, cls: 'urgent_symptoms' });
+    }
+    expect(classifySafety('my flu shot made my arm sore').class).not.toBe('urgent_symptoms');
+    expect(classifySafety("I can't keep water down", 'I had my shot on Monday').class).toBe(
+      'urgent_symptoms',
+    );
+  });
+
+  it('B-913-3 (R1): a question or a past event is not a report; a report inside a question is', () => {
+    for (const msg of [
+      "I'm on Ozempic, what are the symptoms of pancreatitis",
+      "I'm on Ozempic, how do I know if I have pancreatitis",
+      "I'm on Ozempic, what does pancreatitis feel like?",
+      'Is pancreatitis common on Mounjaro?',
+      "I'm on Wegovy, is gallbladder pain a side effect?",
+      'On Mounjaro, any tips to avoid gallstones?',
+      'I had gallstones years ago, is it ok to take Mounjaro?',
+      "I'm on Wegovy, what should I do if I can't keep water down?",
+      "I'm on Wegovy. If I keep throwing up should I call my doctor?",
+      "I'm on Zepbound and I want to know what to do if I get severe stomach pain",
+    ]) {
+      expect({ msg, cls: classifySafety(msg).class }).not.toEqual({ msg, cls: 'urgent_symptoms' });
+    }
+    for (const msg of [
+      "I'm on Wegovy and I can't keep water down, what should I do?",
+      'On Mounjaro, is it normal that I cannot keep water down?',
+      "I'm on Ozempic and I think I have pancreatitis, what now?",
+      'On Wegovy, why is my stomach pain so bad?',
+    ]) {
+      expect({ msg, cls: classifySafety(msg).class }).toEqual({ msg, cls: 'urgent_symptoms' });
+    }
   });
 });
 
@@ -299,6 +358,28 @@ describe('urgent_symptoms on the live turn', () => {
     expect(h.findMany.mock.calls[0][0]).toMatchObject({
       where: { session_id: SESSION.id, user_id: CLIENT.id, role: 'user' },
     });
+  });
+
+  it('B-913-2 (R1, L-913-SOL probe): storing the turn keeps the urgent pre-check decision', async () => {
+    // Newest first: the medicine was named five turns back.
+    const rows = [
+      'Thanks, that helps',
+      'Could I swap chicken for tofu?',
+      'What should I eat for dinner?',
+      'How much protein should I aim for?',
+      'I started Wegovy two weeks ago',
+    ].map((content) => ({ role: 'user', content }));
+    const h = harness('coach-1');
+    h.findMany.mockImplementation(async (args: unknown) =>
+      rows.slice(0, (args as { take: number }).take),
+    );
+    const symptom = "I can't keep any water down";
+    await expect(h.svc.isSafetyShortCircuit(CLIENT, SESSION.id, symptom)).resolves.toBe(true);
+    rows.unshift({ role: 'user', content: symptom }); // the controller stores the turn
+    const chunks = await drain(h.svc.streamAssistantTurn(CLIENT, SESSION, { userMessage: symptom }));
+    expect(chunks[0]).toMatchObject({ type: 'delta', text: REPLY });
+    expect(h.stream).not.toHaveBeenCalled();
+    expect(h.alerts.createAlert).toHaveBeenCalledTimes(1);
   });
 
   it('the production module graph gives RomanService the real CoachAlertsService', async () => {
