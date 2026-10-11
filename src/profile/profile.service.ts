@@ -116,7 +116,10 @@ export class ProfileService {
       if (!profile) return null;
       const resolved = resolveMacroInputs(macroRawFromProfile(profile), now);
       if (!resolved.ok) return profile;
-      const m = computeMacros(resolved.inputs);
+      const m = computeMacros({
+        ...resolved.inputs,
+        screening_yes: await screeningYes(tx, userId),
+      });
       return tx.userProfile.update({
         where: { user_id: userId },
         data: targetColumns(m),
@@ -176,6 +179,19 @@ function macroRawFromProfile(p: ProfileRowLike) {
   };
 }
 
+/**
+ * Owner decision 6: any readiness (PAR-Q) "yes" on the consultation,
+ * pregnancy included, holds the computed target at maintenance. Read inside
+ * the caller's transaction, so an intake save sees its own new answers.
+ */
+async function screeningYes(tx: Prisma.TransactionClient, userId: string): Promise<boolean> {
+  const intake = await tx.clientOnboardingIntake.findUnique({
+    where: { client_id: userId },
+    select: { screening_any_yes: true },
+  });
+  return intake?.screening_any_yes === true;
+}
+
 function targetColumns(m: { calories: number; protein_g: number; carbs_g: number; fat_g: number }) {
   return {
     macro_target_calories: m.calories,
@@ -230,7 +246,9 @@ export async function writeProfileWithTargets(
     return { ok: false, missing: resolved.missing, row: existing };
   }
   const targets = resolved.ok
-    ? targetColumns(computeMacros(resolved.inputs))
+    ? targetColumns(
+        computeMacros({ ...resolved.inputs, screening_yes: await screeningYes(tx, userId) }),
+      )
     : {
         macro_target_calories: null,
         macro_target_protein_g: null,

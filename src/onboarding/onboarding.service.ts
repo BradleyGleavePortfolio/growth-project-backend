@@ -777,7 +777,7 @@ export class OnboardingService {
         missing: resolved.missing,
       });
     }
-    const macros = computeMacros(resolved.inputs);
+    const macros = computeMacros({ ...resolved.inputs, screening_yes: screeningAnyYes(answers) });
 
     const resolvedSet = await this.resolveProgramSet(coach?.id ?? null);
     if (!resolvedSet) throw notConfigured(coach !== null);
@@ -920,7 +920,7 @@ export class OnboardingService {
               protein_g: macros.protein_g,
               carbs_g: macros.carbs_g,
               fats_g: macros.fat_g,
-              notes: `Initial target from the consultation (${macros.method}${macros.floor_applied ? ', calorie floor applied' : ''}).`,
+              notes: `Initial target from the consultation (${macros.method}${macros.floor_applied ? ', calorie floor applied' : ''}${macros.maintenance_hold ? ', held at maintenance' : ''}).`,
               effective_from: now,
             },
           });

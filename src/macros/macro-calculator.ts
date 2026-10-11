@@ -13,7 +13,9 @@
  *   prefer_not_to_say uses the MALE equation (approved method, MM-1/2/4, C-D5)
  *
  * Goal adjustment: fat_loss -500 kcal, muscle_gain +300 kcal, maintenance and
- * performance 0.
+ * performance 0. Maintenance hold (owner decision 6): any readiness (PAR-Q)
+ * "yes", pregnancy included, or an age under 18 sets the adjustment to 0 and
+ * is reported as `maintenance_hold`.
  *
  * Calorie floor (calorie-floor.ts): 1,200 kcal for female, 1,500 kcal for
  * everyone else. The floor is applied after the goal adjustment and reported
@@ -52,6 +54,9 @@ export const GOAL_ADJUSTMENT_KCAL: Readonly<Record<MacroGoal, number>> = Object.
   performance: 0,
 });
 
+/** No deficit (or surplus) is computed for anyone younger than this. */
+export const MAINTENANCE_HOLD_UNDER_AGE = 18;
+
 export const FAT_SHARE_OF_KCAL = 0.25;
 /** Protein never exceeds this share of calories (approved method). */
 export const PROTEIN_MAX_SHARE_OF_KCAL = 0.35;
@@ -74,6 +79,8 @@ export interface MacroInputs {
   goal: MacroGoal;
   /** Optional goal weight; protein is set from it when present. */
   target_weight_lbs?: number | null;
+  /** Any readiness (PAR-Q) "yes" on the consultation, pregnancy included. */
+  screening_yes?: boolean;
 }
 
 export type MacroMethod = 'mifflin_st_jeor';
@@ -88,6 +95,7 @@ export interface MacroResult {
   method: MacroMethod;
   floor_applied: boolean;
   floor_kcal: number;
+  maintenance_hold: boolean;
 }
 
 export type MacroInputField =
@@ -209,7 +217,8 @@ export function computeMacros(inputs: MacroInputs): MacroResult {
   const weightKg = inputs.weight_lbs * KG_PER_LB;
   const bmr = bmrMifflinStJeor(weightKg, inputs.height_cm, inputs.age_years, inputs.sex);
   const tdee = bmr * ACTIVITY_FACTORS[inputs.activity_level];
-  const adjusted = tdee + GOAL_ADJUSTMENT_KCAL[inputs.goal];
+  const hold = inputs.screening_yes === true || inputs.age_years < MAINTENANCE_HOLD_UNDER_AGE;
+  const adjusted = tdee + (hold ? 0 : GOAL_ADJUSTMENT_KCAL[inputs.goal]);
   const floor = calorieFloorKcal(inputs.sex);
   const floorApplied = Math.round(adjusted) < floor;
   const calories = floorApplied ? floor : Math.round(adjusted);
@@ -230,6 +239,7 @@ export function computeMacros(inputs: MacroInputs): MacroResult {
     method: 'mifflin_st_jeor',
     floor_applied: floorApplied,
     floor_kcal: floor,
+    maintenance_hold: hold,
   };
 }
 
