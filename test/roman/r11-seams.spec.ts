@@ -67,8 +67,8 @@ describe('R11-00 prompt seam', () => {
   const CLIENT_DATA = '<client_data as_of="2026-09-30">{"first_name":"Test"}</client_data>';
   // sha256 of buildRomanSystemPrompt on origin/main 302c4522 for these inputs;
   // client hashes re-pinned for the roman-client-v4 crisis section (AUDIT-05-125),
-  // then for CF-ROMAN-COPY-B-128 (client framing assumes no coach, real tab names),
-  // then for the calorie floor no longer yielding to a lower coach target.
+  // then for CF-ROMAN-COPY-B-128 (client framing assumes no coach, real tab names).
+  // Re-pinned again: the calorie floor no longer yields to a lower coach target.
   const MAIN = {
     client_plain: {
       input: { surface: 'client' as const, voice: v0 },

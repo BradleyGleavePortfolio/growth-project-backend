@@ -67,6 +67,14 @@ function ctxFixture(overrides: Partial<ClientAIContext> = {}): ClientAIContext {
   };
 }
 
+function atFloor(floor: number, calories = 2400): ClientAIContext {
+  const base = ctxFixture();
+  return ctxFixture({
+    prescribed: { ...base.prescribed, calories },
+    guardrails: { ...base.guardrails, forbid_calorie_recommendations_below: floor },
+  });
+}
+
 describe('AIGuardrailsService.validate', () => {
   let svc: AIGuardrailsService;
   beforeEach(() => {
@@ -79,16 +87,39 @@ describe('AIGuardrailsService.validate', () => {
     expect(r.reply).toContain('safety floor');
   });
 
-  it.each([1200, 1500])('flags a daily figure below the %i kcal floor, commas included', (floor) => {
-    const guardrails = { ...ctxFixture().guardrails, forbid_calorie_recommendations_below: floor };
-    const ctx = ctxFixture({ guardrails });
-    const say = (kcal: number) => `Try ${kcal.toLocaleString('en-US')} kcal a day.`;
-    expect(svc.validate('q', say(floor - 100), ctx).reply).toBe(
-      `${say(floor - 100)}\n\nNote: any number under ${floor} kcal in this reply is below the safety floor. Stick with 2400 kcal.`,
+  it.each([1200, 1500])(
+    'flags a daily figure below the %i kcal floor, commas included',
+    (floor) => {
+      const ctx = atFloor(floor);
+      const say = (kcal: number) => `Try ${kcal.toLocaleString('en-US')} kcal a day.`;
+      expect(svc.validate('q', say(floor - 100), ctx).reply).toBe(
+        `${say(floor - 100)}\n\nNote: any number under ${floor} kcal in this reply is below the safety floor. Stick with 2400 kcal.`,
+      );
+      for (const kcal of [floor, floor + 100]) {
+        expect(svc.validate('q', say(kcal), ctx).applied).not.toContain('calorie-floor');
+      }
+    },
+  );
+
+  it.each([
+    [1200, 'Aim for 1,000-1,200 kcal a day.', true],
+    [1200, 'Aim for 1,000\u20131,200 kcal a day.', true],
+    [1200, 'Aim for 1,000\u20141,200 kcal a day.', true],
+    [1200, 'Aim for 1,000 to 1,200 calories a day.', true],
+    [1200, 'Aim for 1000-1200 kcal a day.', true],
+    [1500, 'Aim for 1,400-1,600 kcal a day.', true],
+    [1200, 'Aim for 1,200-1,400 kcal a day.', false],
+    [1500, 'Aim for 1,500-1,700 kcal a day.', false],
+  ])('at a %i kcal floor, reads a range by its low end: %s', (floor, reply, flagged) => {
+    expect(svc.validate('q', reply, atFloor(floor)).applied.includes('calorie-floor')).toBe(
+      flagged,
     );
-    for (const kcal of [floor, floor + 100]) {
-      expect(svc.validate('q', say(kcal), ctx).applied).not.toContain('calorie-floor');
-    }
+  });
+
+  it('never tells the client to stick with a stored target under the floor', () => {
+    expect(svc.validate('q', 'Try 1,000 kcal a day.', atFloor(1200, 1000)).reply).toBe(
+      'Try 1,000 kcal a day.\n\nNote: any number under 1200 kcal in this reply is below the safety floor. Stick with 1200 kcal.',
+    );
   });
 
   it('appends a macro-correction when the model proposes a contradicting protein target', () => {
