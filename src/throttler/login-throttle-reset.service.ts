@@ -9,6 +9,7 @@ import { InjectThrottlerStorage, ThrottlerException } from '@nestjs/throttler';
 import type { ThrottlerStorage } from '@nestjs/throttler';
 import { createHash } from 'crypto';
 import { blockedCheckFor, resetFor, strictIncrementFor } from './throttler.config';
+import { describeFailure } from '../observability/log-pii';
 
 // Clinic C13 fix round (Grok B5) — per-IP ceiling on brand-new COACH accounts
 // minted through /auth/google and /auth/apple. Those routes carry login
@@ -229,9 +230,7 @@ export class LoginThrottleResetService {
     try {
       blocked = await blockedCheckFor(this.storage)(key, INVITE_CODE_MISS_THROTTLER);
     } catch (err) {
-      this.logger.warn(
-        `invite miss check unavailable (fail open): ${err instanceof Error ? err.message : String(err)}`,
-      );
+      this.logger.warn(`invite miss check unavailable (fail open): ${describeFailure(err)}`);
     }
     if (blocked) throw new ThrottlerException();
     const result = await lookup();
@@ -247,9 +246,7 @@ export class LoginThrottleResetService {
           INVITE_CODE_MISS_THROTTLER,
         );
       } catch (err) {
-        this.logger.warn(
-          `invite miss record unavailable (fail open): ${err instanceof Error ? err.message : String(err)}`,
-        );
+        this.logger.warn(`invite miss record unavailable (fail open): ${describeFailure(err)}`);
       }
     }
     return result;
