@@ -4,6 +4,7 @@ import {
   StripeConnectApiError,
   StripeConnectApiService,
 } from '../connect/stripe-connect-api.service';
+import { describeFailure } from '../observability/log-pii';
 
 /**
  * Account deletion at our vendors. The privacy policy promises that a deleted
@@ -35,11 +36,13 @@ export type VendorWork = {
 const TIMEOUT_MS = 10_000;
 const CRISP_MAX_PAGES = 50;
 
-/** null on 404; throws on any other non-2xx, with the status only (a body can echo the email). */
+/** null on 404; throws on any other non-2xx with the status only (a body can echo the email). */
 async function send(vendor: Vendor, url: string, init: RequestInit): Promise<Response | null> {
   const res = await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`${vendor} answered ${res.status}`);
+  if (!res.ok) {
+    throw Object.assign(new Error(`${vendor} answered ${res.status}`), { status: res.status });
+  }
   return res;
 }
 
@@ -101,7 +104,7 @@ export class AccountDeletionVendorsService {
       } catch (err) {
         outcomes[vendor] = 'failed';
         this.logger.warn(
-          `account deletion: ${vendor} erasure failed user=${userId}; retrying nightly: ${(err as Error).message}`,
+          `account deletion: ${vendor} erasure failed user=${userId}; retrying nightly: ${describeFailure(err)}`,
         );
       }
     }

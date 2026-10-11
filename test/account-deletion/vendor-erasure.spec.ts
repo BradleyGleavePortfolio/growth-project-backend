@@ -143,7 +143,8 @@ describe('AccountDeletionVendorsService.erase', () => {
     const { service, stripe, logger } = setup();
     answer({ 'POST /api/projects/42/persons/bulk_delete/': () => json(503, {}) });
     stripe.deleteCustomer.mockRejectedValueOnce(
-      new StripeConnectApiError('Stripe down', 500, null, 'api_error'),
+      // Vendor error text can echo the email; the log must never print it.
+      new StripeConnectApiError(`No such customer for ${EMAIL}`, 500, null, 'api_error'),
     );
 
     const first = await service.erase(UID, WORK);
@@ -154,8 +155,15 @@ describe('AccountDeletionVendorsService.erase', () => {
       email: null,
       stripe_customer_ids: ['cus_a', 'cus_b'],
     });
-    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('posthog answered 503'));
-    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(EMAIL);
+    // Only the vendor, the error class and the HTTP status reach the log.
+    const logged = JSON.stringify(logger.warn.mock.calls);
+    expect(logged).toContain('posthog erasure failed');
+    expect(logged).toContain('error=Error status=503');
+    expect(logged).toContain('stripe erasure failed');
+    expect(logged).toContain('error=StripeConnectApiError');
+    expect(logged).not.toContain(EMAIL);
+    expect(logged).not.toContain('No such customer');
+    expect(logged).not.toContain('answered');
 
     // The retry calls only what is left; Crisp is not asked again.
     fetchMock.mockClear();

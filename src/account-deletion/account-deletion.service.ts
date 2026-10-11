@@ -28,6 +28,7 @@ import {
 import { AccountDeletionStorageService } from './account-deletion.storage';
 import { AccountDeletionBillingService } from './account-deletion.billing';
 import { AccountDeletionVendorsService, VendorWork } from './account-deletion.vendors';
+import { describeFailure } from '../observability/log-pii';
 import { VoiceUploadProvider } from '../community/voice/voice-upload.provider';
 import {
   VoiceErasureRow,
@@ -610,7 +611,7 @@ export class AccountDeletionService {
       for (const row of rows) await this.eraseAtVendors(row.user_id, row.metadata);
     } catch (err) {
       this.logger.error(
-        `AccountDeletion vendor retry failed, will retry next run: ${(err as Error).message}`,
+        `AccountDeletion vendor retry failed, will retry next run: ${describeFailure(err)}`,
       );
     }
 
@@ -899,7 +900,7 @@ export class AccountDeletionService {
       }
     } catch (err) {
       this.logger.error(
-        `account deletion: vendor erasure bookkeeping failed user=${userId}; retried nightly: ${(err as Error).message}`,
+        `account deletion: vendor erasure bookkeeping failed user=${userId}; retried nightly: ${describeFailure(err)}`,
       );
     }
   }
