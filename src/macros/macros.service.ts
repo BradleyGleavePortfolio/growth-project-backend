@@ -7,6 +7,7 @@ import {
   ACTIVITY_FACTORS,
   computeMacros,
   LBS_PER_KG,
+  NO_DEFICIT_UNDER_AGE,
   resolveDisplayedTargets,
   resolveMacroInputs,
   type MacroActivity,
@@ -97,8 +98,9 @@ export class MacrosService {
         `Calorie targets can't go below ${floor.toLocaleString('en-US')} for this client.`,
       );
     }
-    // Owner decision 6: a readiness (PAR-Q) or pregnancy "yes", or an age
-    // under 18, holds the client at maintenance; no coach deficit below it.
+    // Owner decision 6: a readiness (PAR-Q) or pregnancy "yes" holds the
+    // client at maintenance, and no deficit under 18: no coach target below
+    // maintenance for either. Above maintenance is still allowed.
     const resolved = profile ? resolveMacroInputs(profile, new Date()) : null;
     if (resolved?.ok) {
       const intake = await this.prisma.clientOnboardingIntake.findUnique({
@@ -109,9 +111,11 @@ export class MacrosService {
         ...resolved.inputs,
         screening_yes: intake?.screening_any_yes === true,
       });
-      if (m.maintenance_hold && dto.calories_kcal < m.calories) {
+      const minor = resolved.inputs.age_years < NO_DEFICIT_UNDER_AGE;
+      const maintenance = Math.max(m.floor_kcal, m.tdee);
+      if ((m.maintenance_hold || minor) && dto.calories_kcal < maintenance) {
         throw new BadRequestException(
-          `Calorie targets can't go below ${m.calories.toLocaleString('en-US')} for this client. Their readiness answers or age hold calories at maintenance.`,
+          `Calorie targets can't go below ${maintenance.toLocaleString('en-US')} for this client. Their readiness answers or age rule out a deficit.`,
         );
       }
     }
@@ -271,7 +275,7 @@ export class MacrosService {
     const rationale =
       `Mifflin-St Jeor BMR ${m.bmr} kcal, activity factor ${factor}, goal ${input.goal}` +
       `${m.floor_applied ? `, raised to the ${m.floor_kcal} kcal floor` : ''}` +
-      `${m.maintenance_hold ? ', held at maintenance under 18' : ''}. ` +
+      `${m.no_deficit_under_18 ? ', no deficit under 18' : ''}. ` +
       'Protein 1 g per lb of body weight, fats 25% of kcal, carbs fill remainder. Fiber 14 g per 1000 kcal.';
     return {
       calories_kcal: m.calories,

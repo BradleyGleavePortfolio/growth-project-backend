@@ -6,8 +6,8 @@ import { ProfileService } from '../src/profile/profile.service';
 import type { PrismaService } from '../src/prisma.service';
 
 // Owner decision 6: a readiness (PAR-Q) or pregnancy "yes" holds calories at
-// maintenance, and there is no deficit under 18. Computed targets are held;
-// a coach target below maintenance for such a client is rejected.
+// maintenance, and there is no deficit under 18 (a surplus still applies).
+// A coach target below maintenance for either client is rejected.
 
 const NOW = new Date('2026-09-30T12:00:00Z');
 const ADULT: MacroInputs = {
@@ -44,11 +44,26 @@ describe('calculator', () => {
     [16, true],
     [17, true],
     [18, false],
-  ])('age %i: held at maintenance = %s', (age_years, held) => {
+  ])('age %i: no deficit under 18 = %s', (age_years, minor) => {
     const m = computeMacros({ ...ADULT, age_years });
     const maintenance = computeMacros({ ...ADULT, age_years, goal: 'maintenance' }).calories;
-    expect(m.maintenance_hold).toBe(held);
-    expect(m.calories).toBe(held ? maintenance : maintenance - 500);
+    expect(m.maintenance_hold).toBe(false);
+    expect(m.no_deficit_under_18).toBe(minor);
+    expect(m.calories).toBe(minor ? maintenance : maintenance - 500);
+  });
+
+  it('under 18, muscle gain keeps the +300 surplus', () => {
+    const m = computeMacros({ ...ADULT, age_years: 16, goal: 'muscle_gain' });
+    const maintenance = computeMacros({ ...ADULT, age_years: 16, goal: 'maintenance' }).calories;
+    expect(m.calories).toBe(maintenance + 300);
+    expect(m).toMatchObject({ maintenance_hold: false, no_deficit_under_18: false });
+  });
+
+  it('under 18 with a readiness yes: exactly maintenance, even on muscle gain', () => {
+    const m = computeMacros({ ...ADULT, age_years: 16, goal: 'muscle_gain', screening_yes: true });
+    const maintenance = computeMacros({ ...ADULT, age_years: 16, goal: 'maintenance' }).calories;
+    expect(m.calories).toBe(maintenance);
+    expect(m.maintenance_hold).toBe(true);
   });
 });
 
@@ -108,6 +123,47 @@ describe('profile writers', () => {
     const maintenance = computeMacros({ ...ADULT, age_years: 16, goal: 'maintenance' }).calories;
     expect(put.macro_target_calories).toBe(maintenance);
   });
+
+  it('a 16-year-old on muscle gain is stored at maintenance + 300', async () => {
+    const w = world(null, {
+      ...PROFILE,
+      date_of_birth: new Date('2010-01-01'),
+      goal_type: 'muscle_gain',
+    });
+    const put = (await w.profiles.updateProfile('client-1', {}, NOW)) as Record<string, unknown>;
+    const maintenance = computeMacros({ ...ADULT, age_years: 16, goal: 'maintenance' }).calories;
+    expect(put.macro_target_calories).toBe(maintenance + 300);
+  });
+});
+
+describe('coach quick-set preset (MacrosService.computePreset)', () => {
+  const svc = new MacrosService(asPrisma({}));
+  const preset = (age_years: number, goal: 'cut' | 'maintain' | 'bulk') =>
+    svc.computePreset({
+      weight_kg: 70,
+      height_cm: 165,
+      age_years,
+      sex: 'female',
+      activity_level: 'moderate',
+      goal,
+    });
+
+  it('under 18: a cut gives maintenance and says "no deficit under 18"', () => {
+    const cut = preset(16, 'cut');
+    expect(cut.calories_kcal).toBe(preset(16, 'maintain').calories_kcal);
+    expect(cut.rationale).toContain('goal cut, no deficit under 18. ');
+    expect(cut.rationale).not.toMatch(/held at maintenance/);
+  });
+
+  it('under 18: a bulk keeps the +300 surplus with no extra wording', () => {
+    const bulk = preset(16, 'bulk');
+    expect(bulk.calories_kcal).toBe(preset(16, 'maintain').calories_kcal + 300);
+    expect(bulk.rationale).not.toMatch(/under 18/);
+  });
+
+  it('18: a cut keeps the deficit', () => {
+    expect(preset(18, 'cut').calories_kcal).toBe(preset(18, 'maintain').calories_kcal - 500);
+  });
 });
 
 describe('coach-set targets (MacrosService.createForClient)', () => {
@@ -131,7 +187,7 @@ describe('coach-set targets (MacrosService.createForClient)', () => {
     const saving = w.macros.createForClient('coach-1', 'client-1', dto(kcal - 1));
     await expect(saving).rejects.toThrow(
       new BadRequestException(
-        `Calorie targets can't go below ${kcal.toLocaleString('en-US')} for this client. Their readiness answers or age hold calories at maintenance.`,
+        `Calorie targets can't go below ${kcal.toLocaleString('en-US')} for this client. Their readiness answers or age rule out a deficit.`,
       ),
     );
     expect(w.create).not.toHaveBeenCalled();
@@ -140,15 +196,30 @@ describe('coach-set targets (MacrosService.createForClient)', () => {
     );
   });
 
-  it('rejects a deficit for a client under 18', async () => {
-    const w = world(null, {
-      ...PROFILE,
-      date_of_birth: new Date(Date.now() - 16 * 365.25 * 864e5),
-    });
-    await expect(w.macros.createForClient('coach-1', 'client-1', dto(1300))).rejects.toThrow(
-      /hold calories at maintenance/,
-    );
-  });
+  it.each(['fat_loss', 'muscle_gain'])(
+    'under 18 (%s goal): rejects below maintenance, allows maintenance and above',
+    async (goal_type) => {
+      const dob = new Date(Date.now() - 16.5 * 365.25 * 864e5);
+      const w = world(null, { ...PROFILE, date_of_birth: dob, goal_type });
+      const kcal = computeMacros({
+        ...ADULT,
+        age_years: ageInYears(dob, new Date()),
+        goal: 'maintenance',
+      }).calories;
+      await expect(w.macros.createForClient('coach-1', 'client-1', dto(kcal - 1))).rejects.toThrow(
+        new BadRequestException(
+          `Calorie targets can't go below ${kcal.toLocaleString('en-US')} for this client. Their readiness answers or age rule out a deficit.`,
+        ),
+      );
+      expect(w.create).not.toHaveBeenCalled();
+      await expect(
+        w.macros.createForClient('coach-1', 'client-1', dto(kcal)),
+      ).resolves.toMatchObject({ calories_kcal: kcal });
+      await expect(
+        w.macros.createForClient('coach-1', 'client-1', dto(kcal + 300)),
+      ).resolves.toMatchObject({ calories_kcal: kcal + 300 });
+    },
+  );
 
   it('still allows a deficit above the floor when nothing holds the client', async () => {
     const w = world({ screening_any_yes: false });

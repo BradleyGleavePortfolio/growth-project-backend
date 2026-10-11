@@ -2387,3 +2387,34 @@ describe('maintenance hold: a pregnancy or other readiness yes holds the consult
     );
   });
 });
+
+describe('no deficit under 18: the consultation target for a 16-year-old', () => {
+  const minor = { ...COMPLETE, B2: '2010-04-01' };
+  const maintenanceOf = (answers: Record<string, unknown>): number => {
+    const resolved = resolveMacroInputs(macroRawFromAnswers(answers as Answers), NOW);
+    if (!resolved.ok) throw new Error('fixture incomplete');
+    return computeMacros({ ...resolved.inputs, goal: 'maintenance' }).calories;
+  };
+
+  it('fat loss stores maintenance with "no deficit under 18" on the note', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: minor }, NOW);
+    const maintenance = maintenanceOf(minor);
+    expect((await w.svc.complete('client-1', NOW)).macros.calories).toBe(maintenance);
+    expect(w.macroTargets).toEqual([
+      expect.objectContaining({
+        calories_kcal: maintenance,
+        notes: 'Initial target from the consultation (mifflin_st_jeor, no deficit under 18).',
+      }),
+    ]);
+  });
+
+  it('muscle gain keeps the +300 surplus', async () => {
+    const answers = { ...minor, G1: 'muscle_gain' };
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers }, NOW);
+    expect((await w.svc.complete('client-1', NOW)).macros.calories).toBe(
+      maintenanceOf(answers) + 300,
+    );
+  });
+});

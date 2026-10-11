@@ -920,7 +920,7 @@ export class OnboardingService {
               protein_g: macros.protein_g,
               carbs_g: macros.carbs_g,
               fats_g: macros.fat_g,
-              notes: `Initial target from the consultation (${macros.method}${macros.floor_applied ? ', calorie floor applied' : ''}${macros.maintenance_hold ? ', held at maintenance' : ''}).`,
+              notes: `Initial target from the consultation (${macros.method}${macros.floor_applied ? ', calorie floor applied' : ''}${macros.maintenance_hold ? ', held at maintenance' : ''}${macros.no_deficit_under_18 ? ', no deficit under 18' : ''}).`,
               effective_from: now,
             },
           });
