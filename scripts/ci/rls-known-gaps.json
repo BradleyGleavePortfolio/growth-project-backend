@@ -109,18 +109,7 @@
       "reason": "Row security comes only from the loose prisma/migrations/rls_fitness_backend.sql, not a migration; D3 moves it into a migration (production already has it)."
     }
   ],
-  "policies": [
-    {
-      "table": "public.CoachPackage",
-      "policy": "coach_package_client_select",
-      "cmd": "SELECT",
-      "roles": [
-        "public"
-      ],
-      "finding": "DATA-04",
-      "reason": "SELECT USING (true) lets the public key read every package row, including share tokens and Stripe ids; D1 replaces it."
-    }
-  ],
+  "policies": [],
   "referenceData": [
     {
       "table": "public.BuildWeekDay",
