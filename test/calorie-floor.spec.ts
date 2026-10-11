@@ -38,12 +38,13 @@ describe('calorieFloorKcal', () => {
 describe('coach-set targets (MacrosService.createForClient)', () => {
   function world(profile: { sex: string } | null) {
     const create = jest.fn(async ({ data }: { data: object }) => ({ id: 'target-1', ...data }));
+    const findProfile = jest.fn(async () => profile);
     const prisma = {
       user: { findFirst: jest.fn(async () => ({ id: 'client-1' })) },
-      userProfile: { findUnique: jest.fn(async () => profile) },
+      userProfile: { findUnique: findProfile },
       macroTarget: { create },
     };
-    return { svc: new MacrosService(asPrisma(prisma)), create };
+    return { svc: new MacrosService(asPrisma(prisma)), create, findProfile };
   }
   const dto = (calories_kcal: number): CreateMacroTargetDto => ({
     calories_kcal,
@@ -61,13 +62,19 @@ describe('coach-set targets (MacrosService.createForClient)', () => {
   it.each(clients)(
     'rejects a target below the floor for %s',
     async (_who, profile, floor, shown) => {
-      const w = world(profile);
-      const saving = w.svc.createForClient('coach-1', 'client-1', dto(floor - 1));
-      await expect(saving).rejects.toBeInstanceOf(BadRequestException);
-      await expect(saving).rejects.toThrow(
-        new BadRequestException(`Calorie targets can't go below ${shown} for this client.`),
-      );
-      expect(w.create).not.toHaveBeenCalled();
+      for (const kcal of [floor - 1, 0, -1]) {
+        const w = world(profile);
+        const saving = w.svc.createForClient('coach-1', 'client-1', dto(kcal));
+        await expect(saving).rejects.toBeInstanceOf(BadRequestException);
+        await expect(saving).rejects.toThrow(
+          new BadRequestException(`Calorie targets can't go below ${shown} for this client.`),
+        );
+        expect(w.findProfile).toHaveBeenCalledWith({
+          where: { user_id: 'client-1' },
+          select: { sex: true },
+        });
+        expect(w.create).not.toHaveBeenCalled();
+      }
     },
   );
 

@@ -79,6 +79,18 @@ describe('AIGuardrailsService.validate', () => {
     expect(r.reply).toContain('safety floor');
   });
 
+  it.each([1200, 1500])('flags a daily figure below the %i kcal floor, commas included', (floor) => {
+    const guardrails = { ...ctxFixture().guardrails, forbid_calorie_recommendations_below: floor };
+    const ctx = ctxFixture({ guardrails });
+    const say = (kcal: number) => `Try ${kcal.toLocaleString('en-US')} kcal a day.`;
+    expect(svc.validate('q', say(floor - 100), ctx).reply).toBe(
+      `${say(floor - 100)}\n\nNote: any number under ${floor} kcal in this reply is below the safety floor. Stick with 2400 kcal.`,
+    );
+    for (const kcal of [floor, floor + 100]) {
+      expect(svc.validate('q', say(kcal), ctx).applied).not.toContain('calorie-floor');
+    }
+  });
+
   it('appends a macro-correction when the model proposes a contradicting protein target', () => {
     const r = svc.validate(
       'how much protein',

@@ -50,15 +50,16 @@ export class AIGuardrailsService {
 
     // 1. Calorie floor
     const floor = ctx.guardrails.forbid_calorie_recommendations_below;
-    const calMatch = out.match(/\b(\d{3,4})\s*(?:kcal|calories|cal\b)/gi);
+    // Comma-grouped figures ("1,100 kcal") are read whole, never as "100 kcal".
+    const calMatch = out.match(/\b(\d{1,2},\d{3}|\d{3,4})\s*(?:kcal|calories|cal\b)/gi);
     if (calMatch) {
       for (const m of calMatch) {
-        const n = parseInt(m, 10);
+        const n = parseInt(m.replace(/,/g, ''), 10);
         if (Number.isFinite(n) && n > 0 && n < floor) {
           applied.push('calorie-floor');
           out =
             out +
-            `\n\nNote: any number under ${floor} kcal in this reply is below the safety floor for adult men. Stick with ${ctx.prescribed.calories ?? 'your prescribed target'} kcal.`;
+            `\n\nNote: any number under ${floor} kcal in this reply is below the safety floor. Stick with ${ctx.prescribed.calories ?? 'your prescribed target'} kcal.`;
           break;
         }
       }
