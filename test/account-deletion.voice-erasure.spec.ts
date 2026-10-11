@@ -25,6 +25,7 @@ import { ConfigService } from '@nestjs/config';
 import { AccountDeletionService } from '../src/account-deletion/account-deletion.service';
 import { AccountDeletionStorageService } from '../src/account-deletion/account-deletion.storage';
 import type { AccountDeletionBillingService } from '../src/account-deletion/account-deletion.billing';
+import type { AccountDeletionVendorsService } from '../src/account-deletion/account-deletion.vendors';
 import type { AppleTokenRevocationService } from '../src/account-deletion/apple-token-revocation.service';
 import type { PrismaService } from '../src/prisma.service';
 import type { AuditService } from '../src/audit/audit.service';
@@ -187,6 +188,10 @@ function build(prisma: Record<string, unknown>, client: unknown) {
       collectSubscriptionIds: jest.fn(async () => []),
       collectUnboundAttemptSubscriptionIds: jest.fn(async () => []),
       cancelAll: jest.fn(async () => ({ canceled: 0, alreadyInactive: 0 })),
+    }),
+    stub<AccountDeletionVendorsService>({
+      collect: jest.fn(async () => ({ vendors: [], email: null, stripe_customer_ids: [] })),
+      erase: jest.fn(async () => ({ outcomes: {}, left: null })),
     }),
   );
   return service;
