@@ -4,7 +4,9 @@ import { Test } from '@nestjs/testing';
 import { JwtAuthGuard } from '../src/auth/auth.guard';
 import { CheckInsService } from '../src/check-ins/check-ins.service';
 import { CoachCheckInsController } from '../src/check-ins/coach-check-ins.controller';
-import { ConsentScope } from '../src/consent/consent.service';
+import { ConsentScope, ConsentService } from '../src/consent/consent.service';
+import { PrismaService } from '../src/prisma.service';
+import { PtmService } from '../src/ptm/ptm.service';
 
 // In-memory Prisma mock for CheckIn + User. Implements upsert with the
 // Tier-2 unique (user_id, date) constraint so the service's idempotent
@@ -127,7 +129,7 @@ function makePrisma() {
         if (!row) throw new Error('Record to update not found');
         Object.assign(row, data);
         if (!select) return { ...row };
-        return Object.fromEntries(Object.keys(select).map((k) => [k, (row as any)[k]]));
+        return Object.fromEntries(Object.entries(row).filter(([k]) => select[k]));
       }),
       findMany: jest.fn(async ({ where, orderBy, take }: any) => {
         let out = rows.filter((r) => matches(r, where));
@@ -404,10 +406,14 @@ describe('CheckInsService', () => {
 
       beforeEach(async () => {
         consent = { coachCanAccess: jest.fn(async () => true) };
-        const service = new CheckInsService(prisma as any, { emit: jest.fn() } as any, undefined, undefined, consent as any);
         const ref = await Test.createTestingModule({
           controllers: [CoachCheckInsController],
-          providers: [{ provide: CheckInsService, useValue: service }],
+          providers: [
+            CheckInsService,
+            { provide: PrismaService, useValue: prisma },
+            { provide: PtmService, useValue: { emit: jest.fn() } },
+            { provide: ConsentService, useValue: consent },
+          ],
         })
           .overrideGuard(JwtAuthGuard)
           .useValue({
