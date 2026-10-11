@@ -32,7 +32,7 @@ import { LoginThrottleResetService, extractIp } from '../throttler/login-throttl
 export class InviteCodesController {
   constructor(
     private inviteCodes: InviteCodesService,
-    // A7 — per-address limit on wrong invite-code guesses (public lookups).
+    // A7 — limit on wrong invite-code guesses (per address, and per account).
     private inviteGuess: LoginThrottleResetService,
   ) {}
 
@@ -224,6 +224,11 @@ export class InviteCodesController {
     @Request() req: AuthedRequest,
     @Body() body: { code: string },
   ) {
-    return this.inviteCodes.attachUserToCoachByCode(req.user.id, body.code);
+    return this.inviteGuess.guardInviteCodeLookup(
+      extractIp(req),
+      () => this.inviteCodes.attachUserToCoachByCode(req.user.id, body.code),
+      undefined,
+      req.user.id,
+    );
   }
 }

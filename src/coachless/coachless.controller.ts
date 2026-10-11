@@ -23,6 +23,7 @@ import { CoachlessHomeService } from './coachless-home.service';
 import { CoachlessPromptService, decideRomanCard } from './coachless-prompt.service';
 import { FeaturedCoachService } from './featured-coach.service';
 import { COACHLESS_ERROR, COACHLESS_ERROR_MESSAGE, CoachlessError } from './coachless.errors';
+import { LoginThrottleResetService, extractIp } from '../throttler/login-throttle-reset.service';
 
 function headerValue(v: string | string[] | undefined): string {
   return (Array.isArray(v) ? v[0] : (v ?? '')).trim();
@@ -47,6 +48,8 @@ export class CoachlessController {
     private readonly redemption: CoachCodeRedemptionService,
     private readonly prompts: CoachlessPromptService,
     private readonly featured: FeaturedCoachService,
+    // F-927-A7 — the A7 wrong-code limit (per address and per account).
+    private readonly inviteGuess: LoginThrottleResetService,
   ) {}
 
   @ApiOperation({ summary: 'Coachless Home: banner, featured offer and the scripted Roman card' })
@@ -60,7 +63,12 @@ export class CoachlessController {
   @Post('coach-code/check')
   @HttpCode(HttpStatus.OK)
   async check(@Request() req: AuthedRequest, @Body() body: CoachCodeDto) {
-    const result = await this.redemption.check(req.user, body.code);
+    const result = await this.inviteGuess.guardInviteCodeLookup(
+      extractIp(req),
+      () => this.redemption.check(req.user, body.code),
+      (r) => !r.valid && r.code === COACHLESS_ERROR.CODE_INVALID,
+      req.user.id,
+    );
     return result.valid ? result : { ...result, message: COACHLESS_ERROR_MESSAGE[result.code] };
   }
 
@@ -87,13 +95,15 @@ export class CoachlessController {
   ) {
     const idempotencyKey = headerValue(key);
     if (!idempotencyKey) throw new CoachlessError(COACHLESS_ERROR.IDEMPOTENCY_KEY_REQUIRED);
-    return this.redemption.redeem({
-      userId: req.user.id,
-      rawCode: body.code,
-      idempotencyKey,
-      requestId: req.requestId,
-      coachSharingNotice: body.coach_sharing_notice,
-    });
+    const redeem = () =>
+      this.redemption.redeem({
+        userId: req.user.id,
+        rawCode: body.code,
+        idempotencyKey,
+        requestId: req.requestId,
+        coachSharingNotice: body.coach_sharing_notice,
+      });
+    return this.inviteGuess.guardInviteCodeLookup(extractIp(req), redeem, undefined, req.user.id);
   }
 
   @ApiOperation({ summary: 'Record that the Roman card was shown (frequency cap)' })

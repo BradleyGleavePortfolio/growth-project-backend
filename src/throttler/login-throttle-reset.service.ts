@@ -1,4 +1,5 @@
 import {
+  HttpException,
   Injectable,
   Optional,
   Logger,
@@ -82,6 +83,18 @@ export function accountFailureBucket(email: string): { key: string; name: string
 // cannot be confirmed either. Storage errors fail OPEN like the route throttles.
 export const INVITE_CODE_MISSES_PER_HOUR = 60;
 const INVITE_CODE_MISS_THROTTLER = 'invite-code-miss';
+// F-927-A7 — a thrown "no such code" refusal from a code-consuming route is a
+// miss too: INVITE_ATTACH_ERROR.INVITE_CODE_INVALID, COACHLESS_ERROR.CODE_INVALID,
+// claim-grant INVITE_CODE_NOT_FOUND, and signup-with-code's plain message.
+const INVITE_MISS_ERROR_CODES = ['invite_code_invalid', 'code_invalid', 'INVITE_CODE_NOT_FOUND'];
+function isInviteCodeMissError(err: unknown): boolean {
+  if (!(err instanceof HttpException)) return false;
+  const body = err.getResponse() as { code?: unknown; error?: unknown; message?: unknown };
+  return (
+    INVITE_MISS_ERROR_CODES.includes(String(body?.code ?? body?.error)) ||
+    body?.message === 'Invalid or expired invite code'
+  );
+}
 
 /** Client address, same resolution order as UserThrottlerGuard.getTracker(). */
 export function extractIp(req?: Record<string, any>): string {
@@ -218,38 +231,50 @@ export class LoginThrottleResetService {
     return result;
   }
 
-  /** A7 — run one public invite-code lookup under the per-address miss limit. */
+  /**
+   * A7 — run one invite-code lookup under the miss limit: per address, and
+   * per account when signed in (a new network is not a fresh budget).
+   */
   async guardInviteCodeLookup<T>(
     ip: string,
     lookup: () => Promise<T>,
-    isMiss: (result: T) => boolean,
+    isMiss: (result: T) => boolean = () => false,
+    userId?: string,
   ): Promise<T> {
     if (!this.storage) return lookup();
-    const key = `invite-code-miss:ip:${ip}`;
-    let blocked = false;
-    try {
-      blocked = await blockedCheckFor(this.storage)(key, INVITE_CODE_MISS_THROTTLER);
-    } catch (err) {
-      this.logger.warn(`invite miss check unavailable (fail open): ${describeFailure(err)}`);
-    }
-    if (blocked) throw new ThrottlerException();
-    const result = await lookup();
-    if (isMiss(result)) {
+    const keys = [`invite-code-miss:ip:${ip}`];
+    if (userId) keys.push(`invite-code-miss:user:${userId}`);
+    for (const key of keys) {
+      let blocked = false;
       try {
-        // limit-1: the 60th miss blocks the address for an hour.
-        const hour = 3_600_000;
-        await this.storage.increment(
-          key,
-          hour,
-          INVITE_CODE_MISSES_PER_HOUR - 1,
-          hour,
-          INVITE_CODE_MISS_THROTTLER,
-        );
+        blocked = await blockedCheckFor(this.storage)(key, INVITE_CODE_MISS_THROTTLER);
+      } catch (err) {
+        this.logger.warn(`invite miss check unavailable (fail open): ${describeFailure(err)}`);
+      }
+      if (blocked) throw new ThrottlerException();
+    }
+    let result: T;
+    try {
+      result = await lookup();
+    } catch (err) {
+      if (isInviteCodeMissError(err)) await this.recordInviteCodeMiss(this.storage, keys);
+      throw err;
+    }
+    if (isMiss(result)) await this.recordInviteCodeMiss(this.storage, keys);
+    return result;
+  }
+
+  private async recordInviteCodeMiss(storage: ThrottlerStorage, keys: string[]): Promise<void> {
+    const hour = 3_600_000;
+    for (const key of keys) {
+      try {
+        // limit-1: the 60th miss blocks for an hour.
+        const limit = INVITE_CODE_MISSES_PER_HOUR - 1;
+        await storage.increment(key, hour, limit, hour, INVITE_CODE_MISS_THROTTLER);
       } catch (err) {
         this.logger.warn(`invite miss record unavailable (fail open): ${describeFailure(err)}`);
       }
     }
-    return result;
   }
 
   /**

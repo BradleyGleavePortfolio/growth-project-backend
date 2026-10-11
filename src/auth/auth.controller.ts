@@ -274,9 +274,15 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async attachInviteCode(@Request() req: AuthedRequest, @Body() body: AttachInviteCodeDto) {
-    return this.inviteCodes.attachUserToCoachByCode(req.user.id, body.invite_code, {
-      coachSharingNotice: body.coach_sharing_notice,
-    });
+    return this.loginThrottleReset.guardInviteCodeLookup(
+      extractIp(req),
+      () =>
+        this.inviteCodes.attachUserToCoachByCode(req.user.id, body.invite_code, {
+          coachSharingNotice: body.coach_sharing_notice,
+        }),
+      undefined,
+      req.user.id,
+    );
   }
 
   @ApiBearerAuth('bearer')
@@ -293,7 +299,9 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async selectRole(@Request() req: AuthedRequest, @Body() body: SelectRoleDto) {
     const code = body.invite_code ?? body.coach_code;
-    return this.authService.selectRole(req.user.id, body.role, code);
+    const run = () => this.authService.selectRole(req.user.id, body.role, code);
+    if (!code) return run();
+    return this.loginThrottleReset.guardInviteCodeLookup(extractIp(req), run, undefined, req.user.id);
   }
 
   @ApiOperation({
@@ -426,8 +434,10 @@ export class AuthController {
       limit: THROTTLER_ROUTE_LIMITS.AUTH_SIGNUP_WITH_CODE_PER_HOUR,
     },
   })
-  async signupWithCode(@Body() body: SignupWithCodeDto) {
-    return this.authService.signupWithCode(body);
+  async signupWithCode(@Body() body: SignupWithCodeDto, @Request() req?: AuditableRequest) {
+    const run = () => this.authService.signupWithCode(body);
+    if (!body.invite_code) return run();
+    return this.loginThrottleReset.guardInviteCodeLookup(extractIp(req), run);
   }
 
   @ApiOperation({
