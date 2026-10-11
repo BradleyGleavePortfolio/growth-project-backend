@@ -68,18 +68,25 @@ export class HealthDeepController {
     url: string,
     errors: string[],
   ): Promise<'up' | 'down'> {
+    let client: import('ioredis').default | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const Redis = require('ioredis') as typeof import('ioredis').default;
-      const client = new Redis(url, {
+      client = new Redis(url, {
         connectTimeout: 2000,
         commandTimeout: 2000,
         maxRetriesPerRequest: 0,
         enableOfflineQueue: false,
         lazyConnect: true,
+        retryStrategy: null,
       });
-      const pong = await client.ping();
-      client.disconnect();
+      // Both stages share one deadline; a timed-out connect must never PING.
+      const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('probe timeout')), 2000);
+      });
+      await Promise.race([client.connect(), deadline]);
+      const pong = await Promise.race([client.ping(), deadline]);
       if (pong !== 'PONG') {
         errors.push('redis: unexpected PING response');
         return 'down';
@@ -88,6 +95,9 @@ export class HealthDeepController {
     } catch (err) {
       errors.push(`redis: ${err instanceof Error ? err.message : String(err)}`);
       return 'down';
+    } finally {
+      clearTimeout(timer);
+      client?.disconnect();
     }
   }
 }
