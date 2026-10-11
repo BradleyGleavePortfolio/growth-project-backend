@@ -108,9 +108,20 @@ describe('AIGuardrailsService.validate', () => {
     [1200, 'Aim for 1,000 to 1,200 calories a day.', true],
     [1200, 'Aim for 1000-1200 kcal a day.', true],
     [1500, 'Aim for 1,400-1,600 kcal a day.', true],
+    [1200, 'Go from 1,800 to 1,100 kcal a day.', true],
+    [1200, 'Drop from 2000 to 1000 kcal a day.', true],
+    [1200, 'Reduce your daily intake from 1,800 to 1,000 calories.', true],
+    [1200, 'Cut from 2,000 to 1,000 calories a day.', true],
+    [1200, 'Since 2024 to 1,100 calories.', true],
+    [1200, 'Aim for 1,500-1,000 kcal.', true],
+    [1500, 'Lower your intake from 2,200 to 1,300 calories.', true],
+    [1500, 'Drop from 1800 to 1400 kcal.', true],
     [1200, 'Aim for 1,200-1,400 kcal a day.', false],
     [1500, 'Aim for 1,500-1,700 kcal a day.', false],
-  ])('at a %i kcal floor, reads a range by its low end: %s', (floor, reply, flagged) => {
+    [1500, 'Go from 1,500 to 2,000 kcal.', false],
+    [1500, 'Your target is 2,400 kcal.', false],
+    [1500, 'On 2026-10-10 aim for 1,500 kcal.', false],
+  ])('at a %i kcal floor, checks the lower figure: %s', (floor, reply, flagged) => {
     expect(svc.validate('q', reply, atFloor(floor)).applied.includes('calorie-floor')).toBe(
       flagged,
     );

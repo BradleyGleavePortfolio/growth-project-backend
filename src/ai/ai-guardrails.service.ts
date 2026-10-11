@@ -20,10 +20,11 @@ const BANNED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\b(starv(e|ation)|water\s+fast(?:\s+for\s+\d+\s+days?)?|hcg\s+diet)\b/gi, reason: 'extreme-restriction' },
 ];
 
-// A kcal figure, or the low end of a range ("1,000-1,200 kcal", "1,000 to
-// 1,200 calories"). Comma-grouped figures are read whole, never as "200 kcal".
+// A kcal figure, or a pair of them ("1,000-1,200 kcal", "from 1,800 to 1,100
+// calories"); the lower figure is checked. Comma-grouped figures are read whole,
+// never as "200 kcal".
 const CALORIE_FIGURE =
-  /\b(\d{1,2},\d{3}|\d{3,4})(?:\s*(?:-|\u2013|\u2014|to)\s*(?:\d{1,2},\d{3}|\d{3,4}))?\s*(?:kcal|calories|cal\b)/gi;
+  /\b(\d{1,2},\d{3}|\d{3,4})(?:\s*(?:-|\u2013|\u2014|to)\s*(\d{1,2},\d{3}|\d{3,4}))?\s*(?:kcal|calories|cal\b)/gi;
 
 // Topics where we always defer to the coach / a qualified pro instead of
 // answering directly. Match conservatively — the AI may legitimately
@@ -55,8 +56,8 @@ export class AIGuardrailsService {
 
     // 1. Calorie floor
     const floor = ctx.guardrails.forbid_calorie_recommendations_below;
-    for (const [, low] of out.matchAll(CALORIE_FIGURE)) {
-      const n = parseInt(low.replace(/,/g, ''), 10);
+    for (const [, first, second = first] of out.matchAll(CALORIE_FIGURE)) {
+      const n = Math.min(...[first, second].map((f) => parseInt(f.replace(/,/g, ''), 10)));
       if (Number.isFinite(n) && n > 0 && n < floor) {
         applied.push('calorie-floor');
         // An old stored target under the floor is never the one to stick with.
