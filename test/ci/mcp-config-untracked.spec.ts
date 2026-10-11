@@ -7,12 +7,15 @@ const git = (...args: string[]): string =>
   execFileSync('git', args, { cwd: join(__dirname, '..', '..'), encoding: 'utf8' }).trim();
 
 describe('.mcp.json stays out of git', () => {
-  it('is not tracked', () => {
-    expect(git('ls-files', '--', '.mcp.json')).toBe('');
+  it('is not tracked at any depth', () => {
+    expect(git('ls-files', '--', ':(glob)**/.mcp.json')).toBe('');
   });
 
-  it('is ignored', () => {
-    // check-ignore exits non-zero (so execFileSync throws) when the path is not ignored.
-    expect(git('check-ignore', '--no-index', '.mcp.json')).toBe('.mcp.json');
+  it('is ignored by the repo .gitignore', () => {
+    // check-ignore exits non-zero (so execFileSync throws) when the path is not ignored;
+    // -v names the deciding file, so a developer's global ignore cannot pass this.
+    expect(git('check-ignore', '-v', '--no-index', '.mcp.json')).toMatch(
+      /^\.gitignore:\d+:\.mcp\.json\t\.mcp\.json$/,
+    );
   });
 });

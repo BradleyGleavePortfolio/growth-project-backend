@@ -160,8 +160,11 @@ if (touchedLock && !touchedPackage) {
 
 // ---------- 4) Sensitive-file additions ----------
 const addedSensitive = danger.git.created_files.filter((f) =>
-  /\.env(\.|$)|\.pem$|\.key$|\.crt$|secrets?\.json$|(^|\/)\.mcp\.json$/.test(f),
+  /\.env(\.|$)|\.pem$|\.key$|\.crt$|secrets?\.json$/.test(f),
 );
+// Danger reports a rename destination as modified, so .mcp.json checks both lists.
+const createdOrModified = [...danger.git.created_files, ...danger.git.modified_files];
+addedSensitive.push(...createdOrModified.filter((f) => /(^|\/)\.mcp\.json$/.test(f)));
 if (addedSensitive.length) {
   fail(
     `Sensitive file(s) added to the repo: ${addedSensitive.map((f) => '`' + f + '`').join(', ')}. Move secrets to Fly secrets, not git.`,
