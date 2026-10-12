@@ -70,7 +70,8 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
     user: string | null,
     body?: unknown,
     role = 'student',
-    coachId?: string,
+    // A client with a coach unless a test passes null (owner 62x refuses a grant without one).
+    coachId: string | null = 'coach_1',
   ): Promise<HttpResult> {
     return new Promise((resolve, reject) => {
       const payload = body === undefined ? undefined : JSON.stringify(body);
@@ -175,7 +176,7 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
   });
 
   it('GET ?variant=coach_free -> the coach-free copies (owner 62); any other value -> the coached copies', async () => {
-    const free = await call('GET', '/me/ai-consent?variant=coach_free', 'u_a');
+    const free = await call('GET', '/me/ai-consent?variant=coach_free', 'u_a', undefined, 'student', null);
     expect(free.status).toBe(200);
     expect(free.body).toMatchObject({
       current_version: 'client-ai-v4-coach-free',
@@ -187,13 +188,55 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
   });
 
   it('a live coach-free grant reads as live without a coach (any GET) and as needs_reconsent with a coach', async () => {
-    const body = { version: 'client-ai-v4-coach-free', copy_sha256: CLIENT_AI_CONSENT_V4_COACH_FREE_COPY_SHA256 };
-    expect((await call('POST', '/me/ai-consent/roman', 'u_a', body)).status).toBe(200);
+    // Recorded before owner 62x (a client with no coach can no longer grant).
+    fake.plant({
+      user_id: 'u_a',
+      seq: 1,
+      action: 'grant',
+      consent_version: 'client-ai-v4-coach-free',
+      copy_sha256: CLIENT_AI_CONSENT_V4_COACH_FREE_COPY_SHA256,
+    });
     for (const path of ['/me/ai-consent', '/me/ai-consent?variant=coach_free']) {
-      expect((await call('GET', path, 'u_a')).body).toMatchObject({ granted: true, version: 'client-ai-v4-coach-free' });
+      expect((await call('GET', path, 'u_a', undefined, 'student', null)).body).toMatchObject({
+        granted: true,
+        version: 'client-ai-v4-coach-free',
+      });
       const joined = await call('GET', path, 'u_a', undefined, 'student', 'coach_1');
       expect(joined.body).toMatchObject({ granted: false, state: 'needs_reconsent', current_version: 'client-ai-v4' });
     }
+  });
+
+  it('owner 62x: POST from a client with no coach -> 403 ROMAN_REQUIRES_COACH, nothing written; DELETE and GET stay open', async () => {
+    for (const version of ['client-ai-v4', 'client-ai-v6', 'client-ai-v4-coach-free']) {
+      const r = await call('POST', '/me/ai-consent/roman', 'u_a', { version }, 'student', null);
+      expect(r.status).toBe(403);
+      expect(r.body).toMatchObject({ code: 'ROMAN_REQUIRES_COACH' });
+    }
+    expect(fake.rows).toHaveLength(0);
+    fake.plant({ user_id: 'u_a', seq: 1, action: 'grant', consent_version: 'client-ai-v4', copy_sha256: COPY_SHA });
+    expect((await call('GET', '/me/ai-consent', 'u_a', undefined, 'student', null)).status).toBe(200);
+    const d = await call('DELETE', '/me/ai-consent/roman', 'u_a', undefined, 'student', null);
+    expect(d.status).toBe(200);
+    expect(d.body).toMatchObject({ state: 'withdrawn' });
+    // A coach or the owner has no coach of record and still may grant.
+    for (const role of ['coach', 'owner']) {
+      expect((await call('POST', '/me/ai-consent/roman', 'u_c', { version: 'client-ai-v4' }, role, null)).status).toBe(200);
+    }
+  });
+
+  it('owner 57c: GET ?variant=safety_exception offers client-ai-v6 with the exception; a plain GET keeps client-ai-v4', async () => {
+    const asked = await call('GET', '/me/ai-consent?variant=safety_exception', 'u_a');
+    expect(asked.body).toMatchObject({ current_version: 'client-ai-v6', copy: { version: 'client-ai-v6' } });
+    expect((asked.body?.copy as { paragraph: { text: string } }).paragraph.text).toContain(
+      'One exception: if Roman sends you an urgent medical safety reply',
+    );
+    const plain = await call('GET', '/me/ai-consent', 'u_a');
+    expect(plain.body).toMatchObject({ current_version: 'client-ai-v4', copy: { version: 'client-ai-v4' } });
+    const sha = (asked.body?.copy as { sha256: string }).sha256;
+    const g = await call('POST', '/me/ai-consent/roman', 'u_a', { version: 'client-ai-v6', copy_sha256: sha });
+    expect(g.body).toMatchObject({ granted: true, version: 'client-ai-v6', current_version: 'client-ai-v6' });
+    // A live v6 grant reads its own copy on every GET.
+    expect((await call('GET', '/me/ai-consent', 'u_a')).body).toMatchObject({ granted: true, current_version: 'client-ai-v6' });
   });
 
   it('POST grant -> 200 granted; repeat is idempotent (one row)', async () => {
