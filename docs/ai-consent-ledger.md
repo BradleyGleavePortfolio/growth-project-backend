@@ -112,6 +112,14 @@ Accepted grants (`CLIENT_AI_CONSENT_ACCEPTED`; version AND its exact sha256):
 |---|---|---|
 | `client-ai-v4` | `base` | every day-1 AI path (Roman chat, coach AI drafts, brief, triage) |
 | `client-ai-v5` | `memory` | `base` + Roman v1.1 notes, summaries, coach-method learning |
+| `client-ai-v4-coach-free` | `base` | as `client-ai-v4` (owner 62: v4 text with every coach sentence or clause removed) |
+| `client-ai-v5-coach-free` | `memory` | as `client-ai-v5` (owner 62: v5 text with every coach sentence or clause removed) |
+
+- Coach-free copies (owner 62, 2026-10-12): `GET /api/me/ai-consent?variant=coach_free`
+  (the app sends it for a client with no coach) offers `client-ai-v4-coach-free` as
+  `copy` and `client-ai-v5-coach-free` as `upgrade` / `memory_copy`. A live grant
+  always reads the copies of its own family, whatever is asked; without a live
+  grant, a coach-free decision on file (a withdrawal) also reads the coach-free copies.
 
 - v4 holders are never re-prompted and keep day-1 Roman unchanged. The 10-07
   app build pins v4: it POSTs v4 from the consultation and its Settings screen
@@ -140,7 +148,7 @@ Request (JSON; only these fields):
 
 | Field | Required | Rule |
 |---|---|---|
-| `version` | yes | string, `client-ai-v4` or `client-ai-v5` |
+| `version` | yes | string, `client-ai-v4`, `client-ai-v5`, `client-ai-v4-coach-free` or `client-ai-v5-coach-free` |
 | `copy_sha256` | no | 64 hex chars; when sent must equal that version's combined sha256 (case-insensitive) |
 | `platform` | no | `ios`, `android` or `web` |
 | `app_version` | no | max 32 chars, `[0-9A-Za-z.+-]` |

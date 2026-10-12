@@ -3,6 +3,7 @@
  * Settings > Privacy "Roman and AI" row (D2 contract, R2a).
  *
  *   GET    /me/ai-consent        -> ClientAiConsentStatus (state + copy text + sha256)
+ *          ?variant=coach_free   -> the coach-free copies (a client with no coach, owner 62)
  *   POST   /me/ai-consent/roman  {version, copy_sha256?, platform?, app_version?, locale?}
  *                                -> grant (idempotent); 409 CONSENT_VERSION_MISMATCH
  *   DELETE /me/ai-consent/roman  -> withdraw (idempotent)
@@ -28,6 +29,7 @@ import {
   HttpStatus,
   Injectable,
   Post,
+  Query,
   Req,
   ServiceUnavailableException,
   UseGuards,
@@ -62,8 +64,14 @@ export class AiConsentController {
   @Get()
   @Header('Cache-Control', 'no-store')
   @Roles('student', 'coach', 'owner')
-  async get(@Req() req: AuthedRequest): Promise<ClientAiConsentStatus> {
-    return this.consent.getStatus(req.user.id);
+  async get(
+    @Req() req: AuthedRequest,
+    @Query('variant') variant?: unknown,
+  ): Promise<ClientAiConsentStatus> {
+    // Any other value (or none) reads the coached copies, as before.
+    return variant === 'coach_free'
+      ? this.consent.getStatus(req.user.id, { coachFree: true })
+      : this.consent.getStatus(req.user.id);
   }
 
   @Post('roman')

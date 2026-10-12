@@ -31,6 +31,12 @@
  * v5 grant again, and Roman uses the kept notes again. A withdrawal keeps
  * them too.
  *
+ * Coach-free copies (owner decision 62, 2026-10-12): a client with no coach
+ * sees client-ai-v4-coach-free / client-ai-v5-coach-free (the same paragraphs
+ * with every coach sentence or clause removed; same scopes). The app asks for
+ * them with GET ?variant=coach_free; a live coach-free grant always reads its
+ * own copies, and a live coached grant its coached ones, whatever is asked.
+ *
  * History is append-only: a decision is a new row with seq = latest.seq + 1.
  * The unique index (user_id, processor, purpose, seq) turns a race between two
  * writers into a P2002 on the loser, which re-reads and re-decides (so two
@@ -64,11 +70,21 @@ import {
   AI_CONSENT_WRITE_ATTEMPTS,
   CLIENT_AI_CONSENT_BOX_LABEL,
   CLIENT_AI_CONSENT_BOX_LABEL_SHA256,
+  CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL,
+  CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL_SHA256,
   CLIENT_AI_CONSENT_COPY_SHA256,
   CLIENT_AI_CONSENT_PARAGRAPH,
   CLIENT_AI_CONSENT_PARAGRAPH_SHA256,
   CLIENT_AI_CONSENT_PROCESSOR,
   CLIENT_AI_CONSENT_PURPOSE,
+  CLIENT_AI_CONSENT_V4_COACH_FREE_COPY_SHA256,
+  CLIENT_AI_CONSENT_V4_COACH_FREE_PARAGRAPH,
+  CLIENT_AI_CONSENT_V4_COACH_FREE_PARAGRAPH_SHA256,
+  CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION,
+  CLIENT_AI_CONSENT_V5_COACH_FREE_COPY_SHA256,
+  CLIENT_AI_CONSENT_V5_COACH_FREE_PARAGRAPH,
+  CLIENT_AI_CONSENT_V5_COACH_FREE_PARAGRAPH_SHA256,
+  CLIENT_AI_CONSENT_V5_COACH_FREE_VERSION,
   CLIENT_AI_CONSENT_V5_COPY_SHA256,
   CLIENT_AI_CONSENT_V5_PARAGRAPH,
   CLIENT_AI_CONSENT_V5_PARAGRAPH_SHA256,
@@ -76,6 +92,7 @@ import {
   CLIENT_AI_CONSENT_VERSION,
   acceptedClientAiConsent,
   isAiConsentLedgerEnabled,
+  isCoachFreeClientAiVersion,
   type ClientAiConsentScope,
 } from './ai-consent.constants';
 import type { GrantClientAiConsentDto } from './ai-consent.dto';
@@ -169,8 +186,23 @@ export function coversScope(row: AiConsentLatestRow | null, scope: ClientAiConse
   return scope === 'memory' ? isMemoryGrant(row) : isBaseGrant(row);
 }
 
-/** The v4 copy: offered to everyone without a live v5 grant. */
-export function clientAiConsentCopy(): ClientAiConsentCopy {
+/** The v4 copy: offered to everyone without a live v5 grant (coach-free: owner 62). */
+export function clientAiConsentCopy(coachFree = false): ClientAiConsentCopy {
+  if (coachFree) {
+    return {
+      version: CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION,
+      processor: CLIENT_AI_CONSENT_PROCESSOR,
+      paragraph: {
+        text: CLIENT_AI_CONSENT_V4_COACH_FREE_PARAGRAPH,
+        sha256: CLIENT_AI_CONSENT_V4_COACH_FREE_PARAGRAPH_SHA256,
+      },
+      box_label: {
+        text: CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL,
+        sha256: CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL_SHA256,
+      },
+      sha256: CLIENT_AI_CONSENT_V4_COACH_FREE_COPY_SHA256,
+    };
+  }
   return {
     version: CLIENT_AI_CONSENT_VERSION,
     processor: CLIENT_AI_CONSENT_PROCESSOR,
@@ -180,8 +212,23 @@ export function clientAiConsentCopy(): ClientAiConsentCopy {
   };
 }
 
-/** The v5 copy (memory scope). */
-export function clientAiConsentV5Copy(): ClientAiConsentCopy {
+/** The v5 copy (memory scope; coach-free: owner 62). */
+export function clientAiConsentV5Copy(coachFree = false): ClientAiConsentCopy {
+  if (coachFree) {
+    return {
+      version: CLIENT_AI_CONSENT_V5_COACH_FREE_VERSION,
+      processor: CLIENT_AI_CONSENT_PROCESSOR,
+      paragraph: {
+        text: CLIENT_AI_CONSENT_V5_COACH_FREE_PARAGRAPH,
+        sha256: CLIENT_AI_CONSENT_V5_COACH_FREE_PARAGRAPH_SHA256,
+      },
+      box_label: {
+        text: CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL,
+        sha256: CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL_SHA256,
+      },
+      sha256: CLIENT_AI_CONSENT_V5_COACH_FREE_COPY_SHA256,
+    };
+  }
   return {
     version: CLIENT_AI_CONSENT_V5_VERSION,
     processor: CLIENT_AI_CONSENT_PROCESSOR,
@@ -260,11 +307,20 @@ export class AiConsentService implements ClientAiConsentReader {
     }
   }
 
-  private toStatus(row: AiConsentLatestRow | null): ClientAiConsentStatus {
+  /**
+   * `askCoachFree`: the app shows the coach-free copies (GET ?variant=coach_free,
+   * a client with no coach). A live grant always reads the copies of its own
+   * family; with no live grant the coach-free family is used when asked or when
+   * the latest decision on file is coach-free (a withdrawal of a coach-free grant).
+   */
+  private toStatus(row: AiConsentLatestRow | null, askCoachFree = false): ClientAiConsentStatus {
     const scope = grantScope(row);
     const memoryOn = isRomanMemoryEnabled();
     const granted = scope !== null;
-    const copy = scope === 'memory' ? clientAiConsentV5Copy() : clientAiConsentCopy();
+    const onFileCoachFree = isCoachFreeClientAiVersion(row?.consent_version);
+    const coachFree = granted ? onFileCoachFree : askCoachFree || onFileCoachFree;
+    const copy =
+      scope === 'memory' ? clientAiConsentV5Copy(coachFree) : clientAiConsentCopy(coachFree);
     const isGrant = row?.action === AI_CONSENT_ACTION_GRANT;
     const isWithdraw = row?.action === AI_CONSENT_ACTION_WITHDRAW;
     let state: ClientAiConsentState = 'not_granted';
@@ -283,21 +339,24 @@ export class AiConsentService implements ClientAiConsentReader {
       needs_reconsent: isGrant && !granted,
       copy,
       scope,
-      upgrade: scope === 'base' && memoryOn ? clientAiConsentV5Copy() : null,
+      upgrade: scope === 'base' && memoryOn ? clientAiConsentV5Copy(coachFree) : null,
       memory_on: memoryOn,
-      memory_copy: memoryOn && scope !== 'memory' ? clientAiConsentV5Copy() : null,
+      memory_copy: memoryOn && scope !== 'memory' ? clientAiConsentV5Copy(coachFree) : null,
     };
   }
 
-  async getStatus(userId: string): Promise<ClientAiConsentStatus> {
+  async getStatus(
+    userId: string,
+    opts: { coachFree?: boolean } = {},
+  ): Promise<ClientAiConsentStatus> {
     this.assertEnabled();
-    return this.toStatus(await this.latestOr503(userId, 'status'));
+    return this.toStatus(await this.latestOr503(userId, 'status'), opts.coachFree === true);
   }
 
   /**
    * Record box 2 as allowed. 409 CONSENT_VERSION_MISMATCH (nothing written)
-   * unless the client displayed an accepted version (client-ai-v4 or
-   * client-ai-v5) and, when sent, that version's sha256. Idempotent: when the
+   * unless the client displayed an accepted version (client-ai-v4,
+   * client-ai-v5 or their coach-free versions) and, when sent, that version's sha256. Idempotent: when the
    * latest decision is already a live grant of the same version, nothing is
    * written and the current status returns.
    *
