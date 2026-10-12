@@ -76,17 +76,17 @@ function fixtureCtx(): ClientContext {
 }
 
 describe('Prompt versions are pinned', () => {
-  it('workout-program v2 (B-AIB3-126: injuries, bounds, substitutions)', () => {
+  it('workout-program v3 (R7: client text fenced as data)', () => {
     expect(WorkoutProgramPrompt.name).toBe('workout-program');
-    expect(WorkoutProgramPrompt.version).toBe('v2');
+    expect(WorkoutProgramPrompt.version).toBe('v3');
   });
-  it('meal-plan v1', () => {
+  it('meal-plan v2 (R7)', () => {
     expect(MealPlanPrompt.name).toBe('meal-plan');
-    expect(MealPlanPrompt.version).toBe('v1');
+    expect(MealPlanPrompt.version).toBe('v2');
   });
-  it('client-insight v1', () => {
+  it('client-insight v2 (R7)', () => {
     expect(ClientInsightPrompt.name).toBe('client-insight');
-    expect(ClientInsightPrompt.version).toBe('v1');
+    expect(ClientInsightPrompt.version).toBe('v2');
   });
 });
 

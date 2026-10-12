@@ -161,8 +161,17 @@ describe('Dockerfile / .dockerignore — production artifact shape (structural o
     expect(runtime).toMatch(/test -f prisma\/seed-diagnostic\.json/);
   });
 
-  it('does not bake NODE_ENV or secrets, keeps Sentry token as a build secret in the build stage only', () => {
-    expect(df).not.toMatch(/ENV NODE_ENV/);
+  it('runtime stage bakes NODE_ENV=production after the install; build stage does not (K6)', () => {
+    const build = df.slice(0, df.indexOf('AS runtime'));
+    const runtime = df.slice(df.indexOf('AS runtime'));
+    expect(build).not.toMatch(/NODE_ENV/);
+    expect(runtime.match(/^ENV NODE_ENV=.*$/gm)).toEqual(['ENV NODE_ENV=production']);
+    const env = runtime.indexOf('ENV NODE_ENV=production');
+    expect(env).toBeGreaterThan(runtime.indexOf('npm ci --omit=dev'));
+    expect(env).toBeLessThan(runtime.indexOf('CMD ['));
+  });
+
+  it('does not bake secrets, keeps Sentry token as a build secret in the build stage only', () => {
     expect(df).not.toMatch(/ENV SENTRY_AUTH_TOKEN/);
     const build = df.slice(0, df.indexOf('AS runtime'));
     expect(build).toMatch(/--mount=type=secret,id=sentry_auth_token/);
@@ -311,7 +320,6 @@ describe('privileged action refs are pinned to full commit SHAs (S2-B1 / S2-A-07
     '.github/workflows/fly-recent-auth-set.yml',
     '.github/workflows/fly-apple-signin-set.yml',
     '.github/workflows/fly-secrets-set.yml',
-    '.github/workflows/fly-logs.yml',
     '.github/workflows/fly-secrets-list.yml',
     '.github/workflows/house-seed.yml',
   ];
@@ -358,6 +366,30 @@ describe('fly-deploy.yml — recovery and migration evidence (S2-B6 / S2-B7 / S2
   it('migrations input exists and is only an acknowledgement string, not a default-on switch', () => {
     expect(yml).toMatch(/migrations:\s*\n\s+description:[^\n]*apply-migrations/);
     expect(yml).toMatch(/migrations:[\s\S]*?default: ''/);
+  });
+});
+
+// OPS-02: this repo is public, so its Actions logs are public. flyctl deploy
+// prints the release_command output and the machines' app logs when a release
+// or health check fails; none of that may reach the run log or an artifact.
+describe('fly-deploy.yml — production logs never reach the public run log (OPS-02)', () => {
+  type Doc = { jobs: Record<string, { steps: Array<{ run?: string }> }> };
+  const doc = parseYaml(read('.github/workflows/fly-deploy.yml')) as Doc;
+  const runs = Object.values(doc.jobs).flatMap((j) => j.steps.map((s) => s.run ?? ''));
+  it('no step reads Fly logs, dumps the environment or traces commands', () => {
+    for (const r of runs) {
+      const cmds = r.split('\n').filter((l) => !/^\s*echo\b/.test(l)).join('\n');
+      expect(cmds).not.toMatch(/\bfly(ctl)?\s+logs\b/);
+      expect(cmds).not.toMatch(/^\s*(env|printenv|set)\s*$|\bset -x\b/m);
+    }
+  });
+  it('flyctl deploy output goes to a runner-only file that is never printed or uploaded', () => {
+    const dep = runs.find((r) => r.includes('flyctl deploy')) ?? '';
+    expect(dep).toMatch(/--build-secret [^\n]*>\s*"\$\{RUNNER_TEMP\}\/flyctl-deploy\.log" 2>&1/);
+    const cmds = dep.split('\n').filter((l) => !/^\s*echo\b/.test(l)).join('\n');
+    expect(cmds).not.toMatch(/release-evidence|\btee\b|\bcat\b|\btail\b|\bhead\b/);
+    expect(dep).toMatch(/exit "\$\{?rc\}?"/);
+    expect(dep).toContain('docs/deploy-runbook.md');
   });
 });
 
@@ -685,7 +717,6 @@ describe('operator workflows — dispatch inputs are data, never shell source (S
   const OPERATOR = [
     'fly-db-secrets-set',
     'fly-launch-env-set',
-    'fly-logs',
     'fly-recent-auth-set',
     'fly-apple-signin-set',
     'fly-secrets-list',
@@ -696,9 +727,11 @@ describe('operator workflows — dispatch inputs are data, never shell source (S
   const load = (f: string) => parseYaml(read(`.github/workflows/${f}.yml`)) as Doc;
   const steps = (d: Doc) => Object.values(d.jobs ?? {}).flatMap((j) => j.steps ?? []);
   const INLINE = /\$\{\{\s*(github\.event\.)?inputs\./;
-  it('these are all the fly-* operator workflows (and fly-logs-dump.yml, the hidden machine-start, is gone)', () => {
+  it('these are all the fly-* operator workflows (fly-logs-dump.yml and fly-logs.yml are gone)', () => {
     for (const f of OPERATOR) expect(existsSync(join(ROOT, `.github/workflows/${f}.yml`))).toBe(true);
     expect(existsSync(join(ROOT, '.github/workflows/fly-logs-dump.yml'))).toBe(false);
+    // The repo is public, so production logs must never be printed into an Actions log.
+    expect(existsSync(join(ROOT, '.github/workflows/fly-logs.yml'))).toBe(false);
   });
   for (const f of OPERATOR) {
     it(`${f}.yml: no run: block interpolates inputs; every input reaches shell only through step env:`, () => {

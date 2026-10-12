@@ -143,7 +143,9 @@ sites to `describeFailure` is a tracked follow-up.
 
 ## Metrics
 
-Served at `GET /metrics` (Prometheus text format 0.0.4). No auth.
+Served at `GET /metrics` (Prometheus text format 0.0.4). Requires
+`Authorization: Bearer $METRICS_AUTH_TOKEN`, same as `/metrics/prom`; when the
+token is unset in a prod-like environment it fails closed with 503.
 
 | Metric name                | Type      | Labels                      | Description                           |
 | -------------------------- | --------- | --------------------------- | ------------------------------------- |
@@ -188,7 +190,7 @@ it attaches to Node's `http` module before any request arrives).
 
 | Method | Path             | Auth                              | Description                                       |
 | ------ | ---------------- | --------------------------------- | ------------------------------------------------- |
-| `GET`  | `/metrics`       | None (public)                     | Prometheus metrics scrape endpoint                |
+| `GET`  | `/metrics`       | Bearer `METRICS_AUTH_TOKEN`       | Prometheus metrics scrape endpoint                |
 | `GET`  | `/health/deep`   | None (public)                     | Deep readiness: DB + Redis check                  |
 | `GET`  | `/debug/profile` | OWNER role + `PROFILE_ENABLED=on` | 30-second V8 CPU profile (`.cpuprofile` download) |
 
@@ -229,9 +231,12 @@ Failure (503):
   "redis": "up",
   "uptime": 3600,
   "timestamp": "...",
-  "errors": ["db: connection refused"]
+  "errors": ["db: unavailable"]
 }
 ```
+
+Each failed dependency appears as `"<component>: unavailable"`; the safe
+diagnostic is logged server-side as `deep_health_dependency_down`.
 
 ---
 

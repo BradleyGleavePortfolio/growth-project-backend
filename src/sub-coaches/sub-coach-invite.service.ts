@@ -11,6 +11,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { TeamService } from '../team/team.service';
+import { deleteDraftsLeftByMove } from '../coach/moved-client-drafts';
 import type {
   AcceptInviteResult,
   InvitePreviewView,
@@ -685,6 +686,8 @@ export class SubCoachInviteService {
           where: { id: { in: reassignIds } },
           data: { coach_id: headCoachId },
         });
+        // Owner decision 17: drafts left behind for these clients go now.
+        await deleteDraftsLeftByMove(tx, reassignIds, headCoachId);
         await tx.teamAuditEvent.createMany({
           data: reassignIds.map((clientId) => ({
             head_coach_id: headCoachId,

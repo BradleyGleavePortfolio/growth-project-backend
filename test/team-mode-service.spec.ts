@@ -37,6 +37,11 @@ interface MockPrisma {
     findMany: jest.Mock;
     updateMany: jest.Mock;
   };
+  // A move deletes the drafts left behind (owner decision 17).
+  aIDraft: { deleteMany: jest.Mock };
+  aiActionDraft: { deleteMany: jest.Mock };
+  messageDraft: { deleteMany: jest.Mock };
+  churnIntervention: { deleteMany: jest.Mock };
   $transaction: jest.Mock;
 }
 
@@ -77,6 +82,10 @@ function buildPrisma(overrides: Partial<MockPrisma> = {}): MockPrisma {
       findMany: jest.fn(async () => []),
       updateMany: txFns.user.updateMany,
     },
+    aIDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    aiActionDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    messageDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    churnIntervention: { deleteMany: jest.fn(async () => ({ count: 0 })) },
     $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
       cb(base as unknown),
     ),

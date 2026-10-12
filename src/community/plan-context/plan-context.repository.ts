@@ -58,8 +58,13 @@ export class PlanContextRepository {
     return this.prisma.coachPackage.findUnique({ where: { id } });
   }
 
-  /** A check-in by id, or null. */
-  async findCheckIn(id: string): Promise<CheckIn | null> {
-    return this.prisma.checkIn.findUnique({ where: { id } });
+  /** A check-in by id with its client's current coach, or null. */
+  async findCheckIn(
+    id: string,
+  ): Promise<(CheckIn & { user: { coach_id: string | null } }) | null> {
+    return this.prisma.checkIn.findUnique({
+      where: { id },
+      include: { user: { select: { coach_id: true } } },
+    });
   }
 }

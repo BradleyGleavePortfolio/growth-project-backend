@@ -799,6 +799,16 @@ export class RomanClientContextService {
     if (targets.source === 'none') missing.push('targets');
 
     const floor = ROMAN_CALORIE_FLOOR_KCAL[sex ?? 'prefer_not_to_say'];
+    // R4d: Roman reads max(stored target, floor) (decision 6). The grams scale
+    // by floor/target and kcal left come from it (same math as R4c's post-check).
+    const stored = targets.calories;
+    if (stored != null && stored > 0 && stored < floor) {
+      const g = (v: number | null) => (v == null ? null : Math.round((v * floor) / stored));
+      targets.calories = floor;
+      targets.protein_g = g(targets.protein_g);
+      targets.carbs_g = g(targets.carbs_g);
+      targets.fat_g = g(targets.fat_g);
+    }
 
     // ── food totals: today + last 7 local days ──
     const byDay = new Map<string, RomanCtxDayTotals>();

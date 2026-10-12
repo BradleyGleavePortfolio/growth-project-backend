@@ -23,6 +23,11 @@ import type { SupabaseService } from '../../src/supabase/supabase.service';
 import type { AppleTokenRevocationService } from '../../src/account-deletion/apple-token-revocation.service';
 import type { AccountDeletionStorageService } from '../../src/account-deletion/account-deletion.storage';
 import type { AccountDeletionBillingService } from '../../src/account-deletion/account-deletion.billing';
+import {
+  VENDORS,
+  type AccountDeletionVendorsService,
+  type VendorWork,
+} from '../../src/account-deletion/account-deletion.vendors';
 import { FakeDeletionDb } from './fake-deletion-db';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import type { JwksVerifierService } from '../../src/auth/jwks.service';
@@ -44,6 +49,11 @@ const OTHER = '9b1e2d3c-4a5b-4c6d-8e7f-0a1b2c3d4e5f';
 const DAY = 24 * 60 * 60 * 1000;
 const GRACE = 14;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const VENDOR_WORK: VendorWork = {
+  vendors: [...VENDORS],
+  email: 'private@example.com',
+  stripe_customer_ids: ['cus_1'],
+};
 
 function build(opts: { confirmedDaysAgo?: number | null; role?: string } = {}) {
   const db = new FakeDeletionDb();
@@ -74,6 +84,10 @@ function build(opts: { confirmedDaysAgo?: number | null; role?: string } = {}) {
     collectUnboundAttemptSubscriptionIds: jest.fn(async () => []),
     cancelAll: jest.fn().mockResolvedValue({ canceled: 1, alreadyInactive: 0 }),
   };
+  const vendors = {
+    collect: jest.fn().mockResolvedValue(VENDOR_WORK),
+    erase: jest.fn().mockResolvedValue({ outcomes: { posthog: 'done' }, left: null }),
+  };
   const service = new AccountDeletionService(
     stub<PrismaService>(db.client()),
     stub<AuditService>(audit),
@@ -84,12 +98,13 @@ function build(opts: { confirmedDaysAgo?: number | null; role?: string } = {}) {
     stub<AppleTokenRevocationService>(apple),
     stub<AccountDeletionStorageService>(storage),
     stub<AccountDeletionBillingService>(billing),
+    stub<AccountDeletionVendorsService>(vendors),
   );
   const logger = { log: jest.fn(), warn: jest.fn(), error: jest.fn() };
   Object.assign(service, { logger });
   const user = () => db.users.get(UID)!;
   const events = () => db.audit.map((a) => a.event);
-  return { db, service, audit, deleteUser, apple, storage, billing, logger, user, events };
+  return { db, service, audit, deleteUser, apple, storage, billing, vendors, logger, user, events };
 }
 
 describe('request (POST /me/delete-account)', () => {
@@ -473,6 +488,85 @@ describe('finalization', () => {
       outcome: 'skipped',
       reason: 'cancelled',
     });
+  });
+});
+
+describe('vendor erasure', () => {
+  const pendingRow = (ctx: ReturnType<typeof build>) =>
+    ctx.db.audit.find((a) => a.event === 'vendor_erasure_pending');
+
+  it('asks the vendors once, after the deletion committed, and a second run does not ask again', async () => {
+    const ctx = build({ confirmedDaysAgo: GRACE + 1 });
+    let deletedWhenAsked: unknown = 'not-called';
+    ctx.vendors.erase.mockImplementationOnce(async () => {
+      deletedWhenAsked = ctx.user().deleted_at;
+      return { outcomes: { posthog: 'done', crisp: 'not_configured' }, left: null };
+    });
+
+    await ctx.service.runFinalizeCron();
+    await ctx.service.runFinalizeCron();
+
+    expect(ctx.vendors.collect).toHaveBeenCalledWith(expect.anything(), UID, 'private@example.com');
+    expect(ctx.vendors.erase).toHaveBeenCalledTimes(1);
+    expect(ctx.vendors.erase).toHaveBeenCalledWith(UID, VENDOR_WORK);
+    expect(deletedWhenAsked).toBeInstanceOf(Date);
+    const outcome = ctx.db.audit.find((a) => a.event === 'vendor_erasure');
+    expect(outcome?.subjectId).toMatch(UUID);
+    expect(outcome?.metadata).toEqual({ posthog: 'done', crisp: 'not_configured' });
+    expect(pendingRow(ctx)).toBeUndefined();
+    expect(JSON.stringify(ctx.db.audit)).not.toContain('private@example.com');
+  });
+
+  it('a vendor failure keeps the deletion; the next run retries only that vendor, not the deletion', async () => {
+    const ctx = build({ confirmedDaysAgo: GRACE + 1 });
+    const left: VendorWork = {
+      vendors: ['crisp'],
+      email: 'private@example.com',
+      stripe_customer_ids: [],
+    };
+    ctx.vendors.erase.mockResolvedValueOnce({
+      outcomes: { posthog: 'done', crisp: 'failed' },
+      left,
+    });
+
+    expect(await ctx.service.runFinalizeCron()).toEqual({ finalized: 1, skipped: 0, errors: 0 });
+    expect(ctx.user().deleted_at).toBeInstanceOf(Date);
+    expect(pendingRow(ctx)).toMatchObject({ subjectId: UID, metadata: left });
+    expect(ctx.db.audit.find((a) => a.event === 'vendor_erasure')?.metadata).toEqual({
+      posthog: 'done',
+      crisp: 'failed',
+    });
+    expect(ctx.vendors.erase).toHaveBeenCalledTimes(1);
+
+    await ctx.service.runFinalizeCron();
+    expect(ctx.vendors.erase).toHaveBeenCalledTimes(2);
+    expect(ctx.vendors.erase).toHaveBeenLastCalledWith(UID, left);
+    expect(ctx.vendors.collect).toHaveBeenCalledTimes(1);
+    expect(ctx.storage.purge).toHaveBeenCalledTimes(1);
+    expect(ctx.events().filter((e) => e === 'deletion_finalized')).toHaveLength(1);
+    expect(pendingRow(ctx)).toBeUndefined();
+    expect(JSON.stringify(ctx.db.audit)).not.toContain('private@example.com');
+  });
+
+  it('a vendor step that throws never undoes the committed deletion', async () => {
+    const ctx = build({ confirmedDaysAgo: GRACE + 1 });
+    ctx.vendors.erase.mockRejectedValueOnce(
+      new Error('vendor client crashed for private@example.com'),
+    );
+    expect(await ctx.service.finalizeUserDeletion(UID, { mode: 'cron' })).toEqual({
+      outcome: 'finalized',
+      authIdentity: 'removed',
+    });
+    expect(ctx.user().deleted_at).toBeInstanceOf(Date);
+    expect(pendingRow(ctx)?.metadata).toEqual(VENDOR_WORK);
+    // The log names the step and the error class, never the error text.
+    expect(ctx.logger.error).toHaveBeenCalledWith(
+      expect.stringContaining('vendor erasure bookkeeping failed user=' + UID),
+    );
+    const logged = JSON.stringify(ctx.logger.error.mock.calls);
+    expect(logged).toContain('error=Error');
+    expect(logged).not.toContain('crashed');
+    expect(logged).not.toContain('private@example.com');
   });
 });
 

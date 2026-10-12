@@ -71,9 +71,10 @@ describe('A607-1 audit reproduction (real SubCoachScopeService)', () => {
           async ({ where }: { where: { id: string } }) =>
             users.find((u) => u.id === where.id) ?? null,
         ),
-        findMany: jest.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+        findMany: jest.fn(async ({ where }: { where: { id?: { in: string[] }; coach_id?: string } }) =>
           users.filter(
-            (u) => where.id.in.includes(u.id) && u.role === 'student' && u.deleted_at === null,
+            (u) => (where.id?.in.includes(u.id) ?? true) && u.role === 'student' && u.deleted_at === null &&
+              (where.coach_id === undefined || u.coach_id === where.coach_id),
           ),
         ),
       },
@@ -96,10 +97,10 @@ describe('A607-1 audit reproduction (real SubCoachScopeService)', () => {
       clientOnboardingIntakeRevision: { findUnique: revisionRead, findMany: revisionRead },
     };
     const scope = new SubCoachScopeService(asPrisma(prisma));
-    // The legacy scope still answers true for this stale row (unchanged
-    // global semantics) ...
-    await expect(scope.canAccessClient('foreign-sub', 'client')).resolves.toBe(true);
-    // ... but the consultation read no longer trusts it.
+    // The shared scope now refuses this stale row too (the client's coach
+    // is no longer the head coach who delegated them) ...
+    await expect(scope.canAccessClient('foreign-sub', 'client')).resolves.toBe(false);
+    // ... and the consultation read never trusted it.
     const svc = new OnboardingService(asPrisma(prisma), asBuilder({}), scope);
     await expect(svc.getCoachConsultation('foreign-sub', 'client')).rejects.toMatchObject({
       status: 404,

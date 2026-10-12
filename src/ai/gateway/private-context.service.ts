@@ -7,6 +7,7 @@ import { canCoachActOnClient } from '../../common/scope';
 import { CREATE_WORKOUT_PLAN_CAPABILITY } from './materialisers/create-workout-plan.materialiser';
 import { EDIT_WORKOUT_PLAN_CAPABILITY } from './materialisers/edit-workout-plan.materialiser';
 import { toInjuryAreas } from './workout-builder/training-substitutions';
+import { UNTRUSTED_TEXT_RULE, fenceUntrusted } from '../utils/untrusted-text';
 
 // B-AIB3-126 (plan section 1, SAFE 2): the workout capabilities get the minimised block — no name, body weight, height,
 // preferred snacks or coach message excerpt (the message row is not even read).
@@ -105,8 +106,9 @@ export class PrivateContextService {
     const systemPrompt =
       `You are an AI assistant operating inside The Growth Project.\n` +
       `Treat the CLIENT_CONTEXT block as the only source of truth about the client.\n` +
-      `Outputs about consequential actions are drafts and require human approval.\n\n` +
-      `CLIENT_CONTEXT:\n${JSON.stringify(block, null, 2)}`;
+      `Outputs about consequential actions are drafts and require human approval.\n` +
+      `${UNTRUSTED_TEXT_RULE}\n\n` +
+      `CLIENT_CONTEXT:\n${fenceUntrusted(block, 2)}`;
 
     const provenance: ProvenanceRef[] = [
       { source: 'user', ref: subject.id, count: 1, hash: hash(subject.id), origin: 'local' },

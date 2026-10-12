@@ -135,12 +135,12 @@ const NOT_A_REPORT = closelyAfter(
  * symptoms of pancreatitis are"); only I/my after the last opener is a report.
  * R3: a clause also starts after but/because/cause ("not sure what's going on
  * but severe stomach pain"), and "this/these" points at a symptom being had.
- * R4: but not "this warning", "these leaflets", "this side effect list" (label reading).
+ * R4: but not "this warning", "these leaflets", "this side effect list" (label reading). R5: "this side effect" and "these warning signs" still point at a symptom.
  */
 const QUESTION_OPENER =
   /^\s*(is|are|can|could|does|do|should|would|will|when|any)\b|\b(what'?s?|how|why|which|wonder(ing)?|want to know|curious)\b/gi;
 const OWN_REPORT =
-  /\b(i|i'?m|i'?ve|my|me|(this|these)(?! (\w+ )?(warning|label|leaflet|side effect|list|info|insert|guide|sheet)))\b/i;
+  /\b(i|i'?m|i'?ve|my|me|(this|these)(?! (\w+ )?(warning(?!s? signs?\b)|label|leaflet|side effects? (list|sheet|leaflet|info|warning|label|guide|insert)|list|info|insert|guide|sheet)))\b/i;
 const CLAUSE_JOIN = /\b(but|because|cause) /gi;
 const IN_THE_PAST = /^.{0,25}\b(years? (ago|back)|as a (kid|child|teen))\b/i;
 const negated = (sentence: string, m: RegExpExecArray) => NEGATED.test(sentence.slice(0, m.index));

@@ -173,12 +173,13 @@ export class CoachHomeService {
 
   /**
    * Check-ins arc — submitted vs reviewed for THIS coach's roster, today.
-   * submitted = CheckIn rows attached to the coach with today's `date`.
+   * submitted = today's CheckIn rows from clients this coach coaches NOW
+   *             (user.coach_id), not the coach stamped on the row, so a moved
+   *             client stops counting for the former coach.
    * reviewed  = of those, the ones the coach has stamped `coach_reviewed_at`
    *             (most-recent-review semantics; non-null = reviewed).
    * `date` is a `@db.Date` column so it stores midnight UTC; we match the
-   * exact day via a [startOfDay, endOfDay] range to stay index-friendly on
-   * `@@index([coach_id, date])`.
+   * exact day via a [startOfDay, endOfDay] range.
    */
   private async countCheckIns(
     coachId: string,
@@ -188,11 +189,11 @@ export class CoachHomeService {
     const dateWindow = { gte: startOfDay, lte: endOfDay };
     const [submitted, reviewed] = await Promise.all([
       this.prisma.checkIn.count({
-        where: { coach_id: coachId, date: dateWindow },
+        where: { user: { coach_id: coachId }, date: dateWindow },
       }),
       this.prisma.checkIn.count({
         where: {
-          coach_id: coachId,
+          user: { coach_id: coachId },
           date: dateWindow,
           coach_reviewed_at: { not: null },
         },

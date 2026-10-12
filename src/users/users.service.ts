@@ -104,9 +104,22 @@ export class UsersService {
   }
 
   async updatePushToken(userId: string, token: string | null): Promise<void> {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { expo_push_token: token },
+    await this.prisma.$transaction(async (tx) => {
+      // A phone has one Expo token, so it belongs to one account: the account
+      // signed in before on this phone stops getting its notifications.
+      if (token) {
+        // One handover of this token at a time, so two accounts registering
+        // it at once cannot both keep it (lock held until commit).
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`expo_push_token:${token}`}))`;
+        await tx.user.updateMany({
+          where: { expo_push_token: token, id: { not: userId } },
+          data: { expo_push_token: null },
+        });
+      }
+      await tx.user.update({
+        where: { id: userId },
+        data: { expo_push_token: token },
+      });
     });
   }
 }

@@ -9,6 +9,7 @@ import {
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { TeamService } from '../team/team.service';
+import { deleteDraftsLeftByMove } from '../coach/moved-client-drafts';
 import { SubCoachAnalyticsService } from './sub-coach-analytics.service';
 import { SubCoachInviteService } from './sub-coach-invite.service';
 import {
@@ -276,6 +277,8 @@ export class SubCoachesService {
         where: { id: client.id },
         data: { coach_id: toCoachId },
       });
+      // Owner decision 17: drafts left behind for this client go now.
+      await deleteDraftsLeftByMove(tx, [client.id], toCoachId);
       return tx.teamAuditEvent.create({
         data: {
           head_coach_id: headCoachId,
