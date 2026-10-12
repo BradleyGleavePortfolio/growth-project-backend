@@ -168,11 +168,11 @@ describe('CONSULT_CONSENT_COPY_VERSIONS env rule (S-ENVTRUTH)', () => {
     ]);
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     try {
-      const env = { CONSULT_CONSENT_COPY_VERSIONS: 'consult-consent-v3, consult-consent-v8' };
+      const env = { CONSULT_CONSENT_COPY_VERSIONS: 'consult-consent-v3, consult-consent-v9' };
       expect(acceptedConsentVersions(env)).toEqual(['consult-consent-v3']);
       expect(acceptedConsentVersions(env)).toEqual(['consult-consent-v3']);
       expect(warn).toHaveBeenCalledTimes(1);
-      expect(String(warn.mock.calls[0][0])).toMatch(/consult-consent-v8/);
+      expect(String(warn.mock.calls[0][0])).toMatch(/consult-consent-v9/);
     } finally {
       warn.mockRestore();
     }

@@ -17,6 +17,8 @@ import { Logger, type DynamicModule } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../../src/prisma.service';
+import { JwtAuthGuard } from '../../src/auth/auth.guard';
+import { RolesGuard } from '../../src/auth/roles.guard';
 import { AiConsentService } from '../../src/ai-consent/ai-consent.service';
 import { AiConsentModule } from '../../src/ai-consent/ai-consent.module';
 import {
@@ -138,7 +140,12 @@ describe('AI consent ledger: client-ai-v6 / v7 (owner 57c)', () => {
       providers: [{ provide: PrismaService, useValue: fake }],
       exports: [PrismaService],
     };
-    const moduleRef = await Test.createTestingModule({ imports: [fakePrismaModule, AiConsentModule] }).compile();
+    const moduleRef = await Test.createTestingModule({ imports: [fakePrismaModule, AiConsentModule] })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(RolesGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
     service = moduleRef.get(AiConsentService);
     for (const level of ['log', 'warn', 'error'] as const) {
       jest.spyOn(Logger.prototype, level).mockImplementation(() => undefined);
