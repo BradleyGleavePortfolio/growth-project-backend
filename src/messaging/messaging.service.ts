@@ -350,32 +350,18 @@ export class MessagingService {
     if (direct) return direct;
 
     // Phase 11 fallback: caller might be a sub-coach with an open
-    // assignment for this client. Authorize via SubCoachAssignment.
+    // assignment for this client. B-DP-4-2: reuse the A1 roster gate, which
+    // also requires the client to still be the head coach's (a coach move
+    // does not close the delegation row), so an old team loses the thread.
     if (this.subCoachScope) {
       const headCoachId =
         await this.subCoachScope.getHeadCoachIdForSubCoach(coachId);
       if (headCoachId) {
-        const open = await this.prisma.subCoachAssignment.findFirst({
-          where: {
-            sub_coach_id: coachId,
-            client_id: clientId,
-            head_coach_id: headCoachId,
-            unassigned_at: null,
-          },
-          select: { id: true },
-        });
-        if (open) {
-          // Confirm the client row exists / isn't soft-deleted and pin
-          // the thread coach_id to the head coach.
-          const client = await this.prisma.user.findFirst({
-            where: { id: clientId, role: 'student', deleted_at: null },
-            select: { id: true, coach_id: true },
-          });
-          if (client) {
-            // The returned coach_id MUST be the head coach for the thread
-            // namespace to resolve correctly.
-            return { id: client.id, coach_id: headCoachId };
-          }
+        const ids = await this.subCoachScope.getAuthorizedClientIds(coachId);
+        if (ids.includes(clientId)) {
+          // The returned coach_id MUST be the head coach for the thread
+          // namespace to resolve correctly.
+          return { id: clientId, coach_id: headCoachId };
         }
       }
     }
