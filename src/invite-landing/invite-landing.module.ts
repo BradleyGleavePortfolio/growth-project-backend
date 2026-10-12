@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { InviteCodesModule } from '../invite-codes/invite-codes.module';
 import { InviteLandingController } from './invite-landing.controller';
 import { InviteLandingService } from './invite-landing.service';
+import { ThrottlerModule } from '../throttler/throttler.module';
 import { WellKnownController } from './well-known.controller';
 
 // The HTML landing pages live in a dedicated module so they can be lifted
@@ -13,7 +14,7 @@ import { WellKnownController } from './well-known.controller';
 // invite-landing surface is the consumer of universal links — when these
 // 404, the invite flow breaks end-to-end.
 @Module({
-  imports: [InviteCodesModule],
+  imports: [InviteCodesModule, ThrottlerModule],
   controllers: [InviteLandingController, WellKnownController],
   providers: [InviteLandingService],
 })
