@@ -1745,7 +1745,11 @@ export class CoachBriefService {
       if (existing && existing.status === 'generated') {
         // B-872-SOL-130-1: a brief stored before a client turned off a Coach
         // sharing switch is written again under the current switches.
-        if (writtenBefore(existing, await this.lastSharingWithdrawal(coachId))) {
+        // B-939-1: so is a brief with an item for a client who has moved away.
+        if (
+          writtenBefore(existing, await this.lastSharingWithdrawal(coachId)) ||
+          (await this.briefsNamingMovedClients(coachId, [existing])).size > 0
+        ) {
           return this.generateBrief(coachId, timezone, briefDate, { force: true });
         }
         return this.toResponse(existing);
@@ -2038,11 +2042,13 @@ export class CoachBriefService {
 
     // B-872-SOL-130-1: a brief stored before a client turned off a Coach
     // sharing switch keeps its day and status in history, not its content.
+    // B-939-1: so does a brief with an item for a client who has moved away.
     const withdrawnAt = await this.lastSharingWithdrawal(coachId);
+    const namingMoved = await this.briefsNamingMovedClients(coachId, rows);
     return {
       items: rows.map((r) => {
         const out = this.toResponse(r);
-        return writtenBefore(r, withdrawnAt) ? { ...out, summary: null } : out;
+        return writtenBefore(r, withdrawnAt) || namingMoved.has(r.id) ? { ...out, summary: null } : out;
       }),
       total,
       page,
@@ -2066,6 +2072,62 @@ export class CoachBriefService {
       select: { revoked_at: true },
     });
     return row?.revoked_at ?? null;
+  }
+
+  /**
+   * B-939-1 (owner decision 4: when a client moves, the old coach loses
+   * everything at once). The ids of stored solo or sub-coach briefs with an
+   * action item (name, message start, weight change) for a client who is no
+   * longer this coach's, by the current-coach rule of resolveClientScope: a
+   * solo coach's client still has this coach; a sub-coach's client is still
+   * delegated by a head coach who still has them. Head-coach briefs name no
+   * client. Archiving is the coach's own choice, not a move, so it is not
+   * checked here.
+   */
+  private async briefsNamingMovedClients(
+    coachId: string,
+    rows: ReadonlyArray<{ id: string; brief_mode: string | null; action_items: Prisma.JsonValue | null }>,
+  ): Promise<Set<string>> {
+    const named = new Map<string, { mode: 'solo_coach' | 'sub_coach'; ids: string[] }>();
+    for (const r of rows) {
+      if (r.brief_mode !== 'solo_coach' && r.brief_mode !== 'sub_coach') continue;
+      const ids = (Array.isArray(r.action_items) ? r.action_items : []).flatMap((item) =>
+        item && typeof item === 'object' && !Array.isArray(item) && typeof item.client_id === 'string'
+          ? [item.client_id]
+          : [],
+      );
+      if (ids.length > 0) named.set(r.id, { mode: r.brief_mode, ids });
+    }
+    const stale = new Set<string>();
+    for (const mode of ['solo_coach', 'sub_coach'] as const) {
+      const ofMode = Array.from(named).filter(([, n]) => n.mode === mode);
+      if (ofMode.length === 0) continue;
+      const ids = Array.from(new Set(ofMode.flatMap(([, n]) => n.ids)));
+      let current: Array<{ id: string }>;
+      if (mode === 'sub_coach') {
+        const open = await this.prisma.subCoachAssignment.findMany({
+          where: { sub_coach_id: coachId, unassigned_at: null, client_id: { in: ids } },
+          select: { client_id: true, head_coach_id: true },
+        });
+        current =
+          open.length === 0
+            ? []
+            : await this.prisma.user.findMany({
+                where: { OR: open.map((a) => ({ id: a.client_id, coach_id: a.head_coach_id })) },
+                select: { id: true },
+              });
+      } else {
+        current = await this.prisma.user.findMany({
+          where: { id: { in: ids }, coach_id: coachId },
+          select: { id: true },
+        });
+      }
+      const stillTheirs = new Set(current.map((u) => u.id));
+      for (const [briefId, n] of ofMode) {
+        if (n.ids.some((id) => !stillTheirs.has(id))) stale.add(briefId);
+      }
+    }
+    return stale;
   }
 
   // ── Force regenerate (POST /regenerate, throttled at the controller).
