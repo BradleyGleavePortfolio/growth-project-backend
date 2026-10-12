@@ -113,8 +113,9 @@ describe('F-DP4-3 coach brief after a client moves (owner decision 4)', () => {
 
   it("old head coach's brief no longer counts the moved client or bills against them", async () => {
     const { prisma, svc } = wire();
-    const { context } = await svc['aggregateHeadCoachContext']('H', 'America/Los_Angeles', '2026-10-11');
+    const { context, scopeClientIds } = await svc['aggregateHeadCoachContext']('H', 'America/Los_Angeles', '2026-10-11');
     expect(context.team_clients_total).toBe(1);
+    expect(scopeClientIds).toEqual(['kept']);
     expect(context.sub_coach_highlights).toEqual([
       expect.objectContaining({ coach_name: 'Sam Sub', active_clients: 1 }),
     ]);
@@ -221,6 +222,18 @@ describe('B-939-1 stored briefs after a client moves (owner decision 4)', () => 
     } finally {
       users[0].coach_id = 'X';
     }
+  });
+
+  it("history: a head coach's brief whose totals counted the moved client shows no content", async () => {
+    const { prisma, svc } = stored(STORED);
+    const head = {
+      ...KEPT_ONLY, id: 'b-head', coach_id: 'H', brief_mode: 'head_coach', action_items: [],
+      brief_context: { team_clients_total: 2, scope_client_ids: ['kept', 'moved'] },
+    };
+    prisma.coachBrief.count.mockResolvedValue(1);
+    prisma.coachBrief.findMany.mockResolvedValue([head]);
+    const { items } = await svc.getBriefHistory('H', 1, 20);
+    expect(items.map((i) => [i.id, i.status, i.summary])).toEqual([['b-head', 'generated', null]]);
   });
 
   it("history: a solo coach's brief naming a client who has since moved to another coach shows no content", async () => {

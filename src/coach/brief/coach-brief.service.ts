@@ -104,8 +104,8 @@ const BRIEF_SHARING_SCOPES: readonly string[] = [
   ConsentScope.FITNESS_HABITS_PROGRESS,
 ];
 
-// B-939-1: the clients a stored solo or sub-coach brief was built from. Kept
-// on the server for the moved-client check; never sent to the app.
+// B-939-1: the clients a stored brief was built from. Kept on the server for
+// the moved-client check; never sent to the app.
 const BRIEF_SCOPE_KEY = 'scope_client_ids';
 
 // WeightLog stores `weight_lbs`; 2.0 kg ≈ 4.4 lbs is the flag threshold.
@@ -1133,6 +1133,7 @@ export class CoachBriefService {
   ): Promise<{
     context: BriefContextHeadCoach;
     actionItems: HeadCoachActionItem[];
+    scopeClientIds: string[];
   }> {
     // Coach metadata
     const coachRow = await this.prisma.user.findUnique({
@@ -1421,7 +1422,7 @@ export class CoachBriefService {
     // Business-only action items — never client identifiers.
     const actionItems = buildHeadCoachActionItems(context);
 
-    return { context, actionItems };
+    return { context, actionItems, scopeClientIds: tenantClientIds };
   }
 
   /**
@@ -1843,7 +1844,7 @@ export class CoachBriefService {
       let actionItems: ActionItem[] | HeadCoachActionItem[];
       // R2b — what the AI may see (null = deterministic narrative only).
       let aiInput: BriefAiInput | null;
-      let scopeClientIds: string[] | null = null;
+      let scopeClientIds: string[];
 
       if (briefMode === 'head_coach') {
         // P1-3: head-coach is business-only. No client scope queries,
@@ -1855,6 +1856,7 @@ export class CoachBriefService {
         );
         context = headRes.context;
         actionItems = headRes.actionItems;
+        scopeClientIds = headRes.scopeClientIds;
         // Business metrics only (headcounts, money totals): no client
         // identifier and no health / activity field, pinned by the spec.
         aiInput = { ctx: context, subject: noClientDataSubject('coach_business_metrics') };
@@ -1903,9 +1905,7 @@ export class CoachBriefService {
           // accidentally flag this freshly-generated row.
           generation_started_at: null,
           narrative,
-          brief_context: (scopeClientIds
-            ? { ...context, [BRIEF_SCOPE_KEY]: scopeClientIds }
-            : context) as unknown as Prisma.JsonObject,
+          brief_context: { ...context, [BRIEF_SCOPE_KEY]: scopeClientIds } as unknown as Prisma.JsonObject,
           action_items: actionItems as unknown as Prisma.JsonArray,
           generated_by,
           brief_mode: briefMode,
@@ -2084,14 +2084,14 @@ export class CoachBriefService {
 
   /**
    * B-939-1 (owner decision 4: when a client moves, the old coach loses
-   * everything at once). The ids of stored solo or sub-coach briefs built
-   * from a client who is no longer this coach's: a client in the stored scope
-   * list (behind every count) or in an action item (name, message start,
-   * weight change). Same current-coach rule as resolveClientScope: a solo
+   * everything at once). The ids of stored briefs built from a client who is
+   * no longer this coach's: a client in the stored scope list (behind every
+   * count and total) or in an action item (name, message start, weight
+   * change). Same current-coach rule as the brief itself: a solo or head
    * coach's client still has this coach; a sub-coach's client is still
    * delegated by a head coach who still has them. Rows stored before the scope
-   * list are checked on their action items. Head-coach briefs hold no client.
-   * Archiving is the coach's own choice, not a move, so it is not checked.
+   * list are checked on their action items. Archiving is the coach's own
+   * choice, not a move, so it is not checked.
    */
   private async briefsWithMovedClients(
     coachId: string,
@@ -2102,9 +2102,8 @@ export class CoachBriefService {
       action_items: Prisma.JsonValue | null;
     }>,
   ): Promise<Set<string>> {
-    const builtFrom = new Map<string, { mode: 'solo_coach' | 'sub_coach'; ids: string[] }>();
+    const builtFrom = new Map<string, { delegated: boolean; ids: string[] }>();
     for (const r of rows) {
-      if (r.brief_mode !== 'solo_coach' && r.brief_mode !== 'sub_coach') continue;
       const ctx = r.brief_context;
       const scope = ctx && typeof ctx === 'object' && !Array.isArray(ctx) ? ctx[BRIEF_SCOPE_KEY] : null;
       const items = Array.isArray(r.action_items) ? r.action_items : [];
@@ -2112,15 +2111,15 @@ export class CoachBriefService {
         ...(Array.isArray(scope) ? scope : []),
         ...items.map((i) => (i && typeof i === 'object' && !Array.isArray(i) ? i.client_id : null)),
       ].filter((id): id is string => typeof id === 'string');
-      if (ids.length > 0) builtFrom.set(r.id, { mode: r.brief_mode, ids });
+      if (ids.length > 0) builtFrom.set(r.id, { delegated: r.brief_mode === 'sub_coach', ids });
     }
     const stale = new Set<string>();
-    for (const mode of ['solo_coach', 'sub_coach'] as const) {
-      const ofMode = Array.from(builtFrom).filter(([, n]) => n.mode === mode);
+    for (const delegated of [false, true]) {
+      const ofMode = Array.from(builtFrom).filter(([, n]) => n.delegated === delegated);
       if (ofMode.length === 0) continue;
       const ids = Array.from(new Set(ofMode.flatMap(([, n]) => n.ids)));
       let current: Array<{ id: string }>;
-      if (mode === 'sub_coach') {
+      if (delegated) {
         const open = await this.prisma.subCoachAssignment.findMany({
           where: { sub_coach_id: coachId, unassigned_at: null, client_id: { in: ids } },
           select: { client_id: true, head_coach_id: true },
