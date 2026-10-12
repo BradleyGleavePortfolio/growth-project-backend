@@ -484,6 +484,13 @@ describe('CoachAIService', () => {
         findMany: async ({ where }: any) => [seat].filter((r) => matches(r, where)),
       };
       f.prisma.teamAuditEvent = { create: async () => ({ id: 'audit1' }) };
+      // A team move deletes the drafts other coaches hold (owner decision 17).
+      f.prisma.aIDraft.deleteMany = async ({ where }: any) => {
+        const gone = f.drafts.filter((d) => where.clientId.in.includes(d.clientId) && d.coachId !== where.coachId.not && d.status !== where.status.not);
+        gone.forEach((d) => f.drafts.splice(f.drafts.indexOf(d), 1));
+        return { count: gone.length };
+      };
+      for (const model of ['aiActionDraft', 'messageDraft', 'churnIntervention']) f.prisma[model] = { deleteMany: async () => ({ count: 0 }) };
       f.prisma.subCoachAssignment = {
         findFirst: async ({ where }: any) => (matches(delegation, where) ? delegation : null),
         findMany: async ({ where }: any) => [delegation].filter((d) => matches(d, where)),
@@ -530,6 +537,7 @@ describe('CoachAIService', () => {
     it('a team move that makes the sub-coach the direct coach keeps the client in their scope and drafts', async () => {
       const w = world();
       w.draft('sub-a', 'sub1');
+      w.draft('head-a', 'head1');
       const team = new SubCoachesService(w.prisma, fakeOf<TeamService>({ refreshCounters: async () => undefined }));
       await team.reassignClient('head1', 'sub1', { clientId: 'client1' });
       expect(w.users.client1.coach_id).toBe('sub1');
@@ -537,6 +545,8 @@ describe('CoachAIService', () => {
       expect(await w.scope.canAccessClient('sub1', 'client1')).toBe(true);
       expect((await w.svc.listDrafts('sub1')).map((d) => d.id)).toEqual(['sub-a']);
       expect(await w.scope.getAuthorizedClientIds('head1')).toEqual([]);
+      // The head coach's unapproved draft is deleted in the move (owner decision 17).
+      expect(w.drafts.map((d) => d.id)).toEqual(['sub-a']);
     });
   });
 });
