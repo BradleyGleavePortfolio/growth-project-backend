@@ -777,7 +777,7 @@ export class OnboardingService {
         missing: resolved.missing,
       });
     }
-    const macros = computeMacros(resolved.inputs);
+    const macros = computeMacros({ ...resolved.inputs, screening_yes: screeningAnyYes(answers) });
 
     const resolvedSet = await this.resolveProgramSet(coach?.id ?? null);
     if (!resolvedSet) throw notConfigured(coach !== null);
@@ -914,13 +914,14 @@ export class OnboardingService {
 
           await tx.macroTarget.create({
             data: {
+              id: `auto-${randomUUID()}`,
               coach_id: owner.id,
               client_id: clientId,
               calories_kcal: macros.calories,
               protein_g: macros.protein_g,
               carbs_g: macros.carbs_g,
               fats_g: macros.fat_g,
-              notes: `Initial target from the consultation (${macros.method}${macros.floor_applied ? ', calorie floor applied' : ''}).`,
+              notes: `Initial target from the consultation (${macros.method}${macros.floor_applied ? ', calorie floor applied' : ''}${macros.maintenance_hold ? ', held at maintenance' : ''}${macros.no_deficit_under_18 ? ', no deficit under 18' : ''}).`,
               effective_from: now,
             },
           });

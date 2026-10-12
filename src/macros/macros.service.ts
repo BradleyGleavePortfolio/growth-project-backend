@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { calorieFloorKcal } from './calorie-floor';
 import { CreateMacroTargetDto } from './macros.dto';
@@ -13,7 +7,9 @@ import {
   ACTIVITY_FACTORS,
   computeMacros,
   LBS_PER_KG,
+  NO_DEFICIT_UNDER_AGE,
   resolveDisplayedTargets,
+  resolveMacroInputs,
   type MacroActivity,
   type MacroGoal,
   type TargetsSource,
@@ -87,13 +83,41 @@ export class MacrosService {
     await this.assertClientOfCoach(coachId, clientId);
     const profile = await this.prisma.userProfile.findUnique({
       where: { user_id: clientId },
-      select: { sex: true },
+      select: {
+        sex: true,
+        current_weight_lbs: true,
+        height_cm: true,
+        date_of_birth: true,
+        activity_level: true,
+        goal_type: true,
+      },
     });
     const floor = calorieFloorKcal(profile?.sex);
     if (dto.calories_kcal < floor) {
       throw new BadRequestException(
         `Calorie targets can't go below ${floor.toLocaleString('en-US')} for this client.`,
       );
+    }
+    // Owner decision 6: a readiness (PAR-Q) or pregnancy "yes" holds the
+    // client at maintenance, and no deficit under 18: no coach target below
+    // maintenance for either. Above maintenance is still allowed.
+    const resolved = profile ? resolveMacroInputs(profile, new Date()) : null;
+    if (resolved?.ok) {
+      const intake = await this.prisma.clientOnboardingIntake.findUnique({
+        where: { client_id: clientId },
+        select: { screening_any_yes: true },
+      });
+      const m = computeMacros({
+        ...resolved.inputs,
+        screening_yes: intake?.screening_any_yes === true,
+      });
+      const minor = resolved.inputs.age_years < NO_DEFICIT_UNDER_AGE;
+      const maintenance = Math.max(m.floor_kcal, m.tdee);
+      if ((m.maintenance_hold || minor) && dto.calories_kcal < maintenance) {
+        throw new BadRequestException(
+          `Calorie targets can't go below ${maintenance.toLocaleString('en-US')} for this client. Their readiness answers or age rule out a deficit.`,
+        );
+      }
     }
     const effective = dto.effective_from ? new Date(dto.effective_from) : new Date();
     const target = await this.prisma.macroTarget.create({
@@ -251,7 +275,8 @@ export class MacrosService {
     const factor = ACTIVITY_FACTORS[input.activity_level];
     const rationale =
       `Mifflin-St Jeor BMR ${m.bmr} kcal, activity factor ${factor}, goal ${input.goal}` +
-      `${m.floor_applied ? `, raised to the ${m.floor_kcal} kcal floor` : ''}. ` +
+      `${m.floor_applied ? `, raised to the ${m.floor_kcal} kcal floor` : ''}` +
+      `${m.no_deficit_under_18 ? ', no deficit under 18' : ''}. ` +
       'Protein 1 g per lb of body weight, fats 25% of kcal, carbs fill remainder. Fiber 14 g per 1000 kcal.';
     return {
       calories_kcal: m.calories,
