@@ -6,6 +6,7 @@ import { NotificationKind } from '../notifications/notification-kind';
 import { PrismaService } from '../prisma.service';
 import { computeFireAt, type CadenceKind } from './drip-fire-at';
 import { attachPaidJoinTx } from '../invite-codes/join-package';
+import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 
 // PR-9 (Packages & Drip-Feed) — REAL fan-out body.
 //
@@ -217,7 +218,11 @@ export class PurchaseFanoutService {
     // that coach's client in this tx; a coached client is left alone.
     const inApp = ctx.entrypoint === 'in_app_hosted' || ctx.entrypoint === 'in_app_ps';
     if (inApp && ctx.clientId && ctx.coachId && typeof tx.user?.updateMany === 'function') {
-      await attachPaidJoinTx(tx, ctx.clientId, ctx.coachId);
+      // Owner 61a: only the purchase that attaches tells the coach about a
+      // flagged consultation (a webhook replay attaches nothing).
+      if (await attachPaidJoinTx(tx, ctx.clientId, ctx.coachId)) {
+        await alertCoachOfFlaggedJoinTx(tx, ctx.clientId, ctx.coachId);
+      }
     }
 
     // Defensive: legacy unit-test wiring may pass a minimal stub that

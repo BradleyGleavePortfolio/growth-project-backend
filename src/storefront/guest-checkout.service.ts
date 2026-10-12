@@ -36,6 +36,7 @@ import { NotificationKind } from '../notifications/notification-kind';
 import { CheckoutService } from '../checkout/checkout.service';
 import { FeePolicyService } from '../connect/fees/fee-policy.service';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
+import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 import { type GuestCheckoutStatus } from './guest-checkout-status';
 import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sender';
 
@@ -1531,6 +1532,8 @@ export class GuestCheckoutService {
             where: { id: dbUser.id },
             data: { coach_id: checkout.package.coach_id },
           });
+          // Owner 61a: this attach is a join; a flagged consultation tells this coach once.
+          await alertCoachOfFlaggedJoinTx(tx, dbUser.id, checkout.package.coach_id);
         } else if (dbUser.coach_id == null) {
           // Clinic C13 fix round (Opus A1): the buyer is a coach / owner /
           // sub-coach buying another coach's package. Record the purchase

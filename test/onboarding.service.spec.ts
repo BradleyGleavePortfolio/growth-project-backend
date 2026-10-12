@@ -2130,7 +2130,7 @@ describe('CONSULT-ALL-BE-133: every client can finish the consultation (house se
     expect(w.programs.filter((p) => p.coach_id === HOUSE).every((p) => p.is_template)).toBe(true);
   });
 
-  it('coachless with a screening yes: extra-care program, flag recorded, the house account alerted in-app (decision 133-11)', async () => {
+  it('owner 61a: coachless with a screening yes: extra-care program and flag recorded, but no alert to anyone (no house alert)', async () => {
     const w = makeWorld();
     addHouseSet(w);
     await w.consentThenSave(
@@ -2139,24 +2139,15 @@ describe('CONSULT-ALL-BE-133: every client can finish the consultation (house se
       NOW,
     );
     const res = await w.svc.complete('loner', NOW);
+    // The gentle program stays.
     expect(res.program).toMatchObject({ key: 'steady-foundations', days_per_week: 2 });
+    // The flag stays recorded: the coach the client later joins is told then.
     expect(w.intakes[0].screening_flagged_at).toEqual(NOW);
-    expect(w.notifications).toEqual([
-      {
-        user_id: HOUSE,
-        kind: 'coach_alert',
-        channel: 'inapp',
-        body: 'A client without a coach finished their consultation and was flagged for extra care.',
-        payload: { type: 'onboarding_screening_review', client_id: 'loner', coachless: true },
-      },
-    ]);
-    // No screening details, and never "your coach" for a client without one.
-    expect(String(w.notifications[0].body)).not.toMatch(/P4|heart|chest|pregnan|your coach/i);
-    // The alert names a flag only: the house account still cannot open the intake.
+    expect(w.notifications).toEqual([]);
     expect(await w.svc.canCoachRead(HOUSE, 'loner')).toBe(false);
   });
 
-  it('coachless flagged: a replayed completion alerts the house account once', async () => {
+  it('owner 61a: coachless flagged: a replayed completion still alerts nobody', async () => {
     const w = makeWorld();
     addHouseSet(w);
     await w.consentThenSave(
@@ -2166,7 +2157,7 @@ describe('CONSULT-ALL-BE-133: every client can finish the consultation (house se
     );
     await w.svc.complete('loner', NOW);
     await w.svc.complete('loner', new Date(NOW.getTime() + 5000));
-    expect(w.notifications.map((n) => n.user_id)).toEqual([HOUSE]);
+    expect(w.notifications).toEqual([]);
   });
 
   it('coachless: consent_missing is still enforced', async () => {
