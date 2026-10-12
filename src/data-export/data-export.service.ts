@@ -19,6 +19,7 @@ import {
   LocalArchiveStore,
 } from './data-export-archive.store';
 import { PrismaService } from '../prisma.service';
+import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { DataExportRequest, DataExportStatus, Prisma } from '@prisma/client';
 import * as Sentry from '@sentry/node';
 import * as crypto from 'crypto';
@@ -539,6 +540,8 @@ function archiveFileName(record: Pick<DataExportRequest, 'completed_at' | 'creat
 export class DataExportService {
   private readonly logger = new Logger(DataExportService.name);
   private readonly store: DataExportArchiveStore;
+  // A1's "which clients does this coach have now" (own roster plus current delegations).
+  private readonly clientScope: SubCoachScopeService;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -576,6 +579,7 @@ export class DataExportService {
       );
     }
     this.store = store ?? new LocalArchiveStore();
+    this.clientScope = new SubCoachScopeService(prisma);
   }
 
   /** The archive store in use (supabase in production). */
@@ -1361,6 +1365,17 @@ export class DataExportService {
   ): Promise<{ buffer: Buffer; sha256: string }> {
     const startedAt = new Date();
 
+    // B-DP-4-1 (owner decision 4): when a client moves, the old coach loses
+    // everything at once and the history stays with the client. The coach
+    // side of each client-linked section keeps only rows about a client the
+    // exporter coaches now, or about no client; the client side is unchanged.
+    const currentClientIds = await this.clientScope.getAuthorizedClientIds(userId);
+    const currentClient = { client_id: { in: currentClientIds } };
+    const noOrCurrentClient = { OR: [{ client_id: null }, currentClient] };
+    const coachOrClient = {
+      OR: [{ client_id: userId }, { coach_id: userId, ...noOrCurrentClient }],
+    };
+
     const [
       user,
       profile,
@@ -1449,20 +1464,15 @@ export class DataExportService {
       this._streamAll('checkIn', { user_id: userId }),
       this._streamAll('savedRecipe', { user_id: userId }),
       this._streamAll('listItem', { user_id: userId }),
-      this._streamCoachMessages(userId),
-      this._streamAll('coachNudge', {
-        OR: [{ coach_id: userId }, { client_id: userId }],
-      }),
+      this._streamCoachMessages(userId, noOrCurrentClient),
+      this._streamAll('coachNudge', coachOrClient),
+      // A draft always names its client (client_id is required).
       this._streamAll('messageDraft', {
-        OR: [{ coach_id: userId }, { client_id: userId }],
+        OR: [{ client_id: userId }, { coach_id: userId, ...currentClient }],
       }),
-      this._streamAll('mealPlan', {
-        OR: [{ coach_id: userId }, { client_id: userId }],
-      }),
+      this._streamAll('mealPlan', coachOrClient),
       this._streamAll('communityWin', { user_id: userId }),
-      this._streamAll('coachGuideline', {
-        OR: [{ coach_id: userId }, { client_id: userId }],
-      }),
+      this._streamAll('coachGuideline', coachOrClient),
       this.prisma.buildWeekEnrollment.findUnique({ where: { user_id: userId } }),
       this._streamBuildWeekCompletions(userId),
       this._streamAll('inviteCode', { coach_id: userId }),
@@ -1772,11 +1782,19 @@ export class DataExportService {
    * CoachMessage export. Messages sent by the requesting user are returned
    * verbatim. Messages sent by a third party that are visible to the user
    * are redacted to protect the other party's privacy rights under GDPR.
-   * Pages follow the primary key like _streamAll.
+   * Pages follow the primary key like _streamAll. As the coach or sender,
+   * only messages about a client the user coaches now (`coachSideClient`,
+   * B-DP-4-1) or about no client; as the client, all of them.
    */
-  private async _streamCoachMessages(userId: string): Promise<unknown[]> {
-    const where = {
-      OR: [{ sender_id: userId }, { coach_id: userId }, { client_id: userId }],
+  private async _streamCoachMessages(
+    userId: string,
+    coachSideClient: Prisma.CoachMessageWhereInput,
+  ): Promise<unknown[]> {
+    const where: Prisma.CoachMessageWhereInput = {
+      OR: [
+        { client_id: userId },
+        { OR: [{ sender_id: userId }, { coach_id: userId }], AND: [coachSideClient] },
+      ],
     };
     return this._readAllById(
       'coachMessage',
