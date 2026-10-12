@@ -228,13 +228,13 @@ describe('#611 C-611-13..16 and the Sign in with Apple ruling', () => {
     expect(DOC).toMatch(/restores? the revocation sentence/);
   });
 
-  it('the rest of the approved deletion paragraph is unchanged', () => {
+  it('the rest of the approved deletion paragraph is unchanged apart from decision 24 provider retry retention', () => {
     expect(privacyDeletion).toContain(
       'You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. ' +
         APPLE_TODAY +
         ' We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and ' +
         CLOSED_ACCOUNT +
-        ', so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. Once it is removed, we keep only ' +
+        ', so the records we must keep still point to one closed account. While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. While asking our service providers to delete their copies is still being retried, we also keep the email address and Stripe customer reference they need. Once it is removed, we keep only ' +
         ONE_WAY_CODE +
         '.',
     );

@@ -15,6 +15,7 @@ import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import { CONSULT_CONSENT_V3_TEXT_SHA256 } from '../src/onboarding/consult-consent-copy';
 import { macroRawFromAnswers, type Answers } from '../src/onboarding/consultation-answers';
 import { computeMacros, resolveMacroInputs } from '../src/macros/macro-calculator';
+import { FLOOR_CASES, FLOOR_CASE_WEIGHT_LBS } from './_fixtures/calorie-floor-cases';
 
 const fx = parseFixture(
   readFileSync(join(__dirname, '..', 'seed', 'clinic-programs.v1.json'), 'utf8'),
@@ -382,6 +383,7 @@ function makeWorld() {
     workoutPlanRevision: { create: jest.fn(async () => ({ id: id('prev') })) },
     workoutProgramRevision: { create: jest.fn(async () => ({ id: id('grev') })) },
     macroTarget: {
+      findFirst: jest.fn(async () => macroTargets[macroTargets.length - 1] ?? null),
       create: jest.fn(async ({ data }: { data: Row }) => {
         macroTargets.push(data);
         return data;
@@ -611,7 +613,8 @@ describe('PUT /me/onboarding/consultation', () => {
     expect(intake.disclaimer_version).toBe('consult-consent-v3');
     expect(intake.disclaimer_accepted_at).toEqual(NOW);
     expect(intake.screening_any_yes).toBe(true);
-    expect(w.profiles[0]).toMatchObject({ sex: 'female', macro_target_calories: 1789 });
+    // P3 yes holds the fat-loss target at maintenance (decision 6): 1,789 + 500.
+    expect(w.profiles[0]).toMatchObject({ sex: 'female', macro_target_calories: 2289 });
     expect(JSON.stringify(w.profiles)).not.toMatch(/P3/);
     // Re-saving the same P0 version keeps the original accepted time.
     await w.svc.saveConsultation(
@@ -2127,7 +2130,7 @@ describe('CONSULT-ALL-BE-133: every client can finish the consultation (house se
     expect(w.programs.filter((p) => p.coach_id === HOUSE).every((p) => p.is_template)).toBe(true);
   });
 
-  it('coachless with a screening yes: extra-care program, flag recorded, the house account alerted in-app (decision 133-11)', async () => {
+  it('owner 61a: coachless with a screening yes: extra-care program and flag recorded, but no alert to anyone (no house alert)', async () => {
     const w = makeWorld();
     addHouseSet(w);
     await w.consentThenSave(
@@ -2136,30 +2139,25 @@ describe('CONSULT-ALL-BE-133: every client can finish the consultation (house se
       NOW,
     );
     const res = await w.svc.complete('loner', NOW);
+    // The gentle program stays.
     expect(res.program).toMatchObject({ key: 'steady-foundations', days_per_week: 2 });
+    // The flag stays recorded: the coach the client later joins is told then.
     expect(w.intakes[0].screening_flagged_at).toEqual(NOW);
-    expect(w.notifications).toEqual([
-      {
-        user_id: HOUSE,
-        kind: 'coach_alert',
-        channel: 'inapp',
-        body: 'A client without a coach finished their consultation and was flagged for extra care.',
-        payload: { type: 'onboarding_screening_review', client_id: 'loner', coachless: true },
-      },
-    ]);
-    // No screening details, and never "your coach" for a client without one.
-    expect(String(w.notifications[0].body)).not.toMatch(/P4|heart|chest|pregnan|your coach/i);
-    // The alert names a flag only: the house account still cannot open the intake.
+    expect(w.notifications).toEqual([]);
     expect(await w.svc.canCoachRead(HOUSE, 'loner')).toBe(false);
   });
 
-  it('coachless flagged: a replayed completion alerts the house account once', async () => {
+  it('owner 61a: coachless flagged: a replayed completion still alerts nobody', async () => {
     const w = makeWorld();
     addHouseSet(w);
-    await w.consentThenSave('loner', { version: 'consult-v1', answers: { ...COMPLETE, P4: 'yes' } }, NOW);
+    await w.consentThenSave(
+      'loner',
+      { version: 'consult-v1', answers: { ...COMPLETE, P4: 'yes' } },
+      NOW,
+    );
     await w.svc.complete('loner', NOW);
     await w.svc.complete('loner', new Date(NOW.getTime() + 5000));
-    expect(w.notifications.map((n) => n.user_id)).toEqual([HOUSE]);
+    expect(w.notifications).toEqual([]);
   });
 
   it('coachless: consent_missing is still enforced', async () => {
@@ -2332,5 +2330,83 @@ describe('B-GOALCLEAR-BE-135: a goal weight removed in the summary leaves the pr
     w.profiles.push({ user_id: 'client-1', target_weight_lbs: 140 });
     await w.consentThenSave('client-1', { version: 'consult-v1', answers: NO_GOAL }, NOW);
     expect(w.profiles[0].target_weight_lbs).toBe(140);
+  });
+});
+
+describe('calorie floor: the consultation target never goes below the client floor', () => {
+  it.each(FLOOR_CASES)(
+    '$sex $where the floor stores $expected kcal, coached and coachless',
+    async ({ sex, height_cm, expected }) => {
+      const answers = {
+        ...COMPLETE,
+        B1: sex,
+        B3: { height_cm, weight_lbs: FLOOR_CASE_WEIGHT_LBS, unit: 'imperial' },
+        L1: 'sedentary',
+        G1: 'maintenance',
+      };
+      for (const clientId of ['client-1', 'loner']) {
+        const w = makeWorld();
+        if (clientId === 'loner') addHouseSet(w);
+        await w.consentThenSave(clientId, { version: 'consult-v1', answers }, NOW);
+        expect((await w.svc.complete(clientId, NOW)).macros.calories).toBe(expected);
+        expect(w.macroTargets).toEqual([
+          expect.objectContaining({ client_id: clientId, calories_kcal: expected }),
+        ]);
+        const profile = w.profiles.find((p) => p.user_id === clientId);
+        expect(profile?.macro_target_calories).toBe(expected);
+      }
+    },
+  );
+});
+
+describe('maintenance hold: a pregnancy or other readiness yes holds the consultation target', () => {
+  it.each(['P6', 'P1'])('%s yes on fat loss stores maintenance, not the deficit', async (key) => {
+    const answers = { ...COMPLETE, G1: 'fat_loss', [key]: 'yes' };
+    const resolved = resolveMacroInputs(macroRawFromAnswers(answers as Answers), NOW);
+    if (!resolved.ok) throw new Error('fixture incomplete');
+    const maintenance = computeMacros({ ...resolved.inputs, goal: 'maintenance' }).calories;
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers }, NOW);
+    expect((await w.svc.complete('client-1', NOW)).macros.calories).toBe(maintenance);
+    expect(w.macroTargets).toEqual([
+      expect.objectContaining({
+        calories_kcal: maintenance,
+        notes: expect.stringContaining('held at maintenance'),
+      }),
+    ]);
+    expect(w.profiles.find((p) => p.user_id === 'client-1')?.macro_target_calories).toBe(
+      maintenance,
+    );
+  });
+});
+
+describe('no deficit under 18: the consultation target for a 16-year-old', () => {
+  const minor = { ...COMPLETE, B2: '2010-04-01' };
+  const maintenanceOf = (answers: Record<string, unknown>): number => {
+    const resolved = resolveMacroInputs(macroRawFromAnswers(answers as Answers), NOW);
+    if (!resolved.ok) throw new Error('fixture incomplete');
+    return computeMacros({ ...resolved.inputs, goal: 'maintenance' }).calories;
+  };
+
+  it('fat loss stores maintenance with "no deficit under 18" on the note', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: minor }, NOW);
+    const maintenance = maintenanceOf(minor);
+    expect((await w.svc.complete('client-1', NOW)).macros.calories).toBe(maintenance);
+    expect(w.macroTargets).toEqual([
+      expect.objectContaining({
+        calories_kcal: maintenance,
+        notes: 'Initial target from the consultation (mifflin_st_jeor, no deficit under 18).',
+      }),
+    ]);
+  });
+
+  it('muscle gain keeps the +300 surplus', async () => {
+    const answers = { ...minor, G1: 'muscle_gain' };
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers }, NOW);
+    expect((await w.svc.complete('client-1', NOW)).macros.calories).toBe(
+      maintenanceOf(answers) + 300,
+    );
   });
 });

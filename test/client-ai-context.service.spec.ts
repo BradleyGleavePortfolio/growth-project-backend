@@ -199,6 +199,21 @@ describe('ClientAIContextService.buildFresh', () => {
     expect(ctx.guardrails.forbid_calorie_recommendations_below).toBeGreaterThanOrEqual(1500);
   });
 
+  it.each([
+    ['female', 1200],
+    ['male', 1500],
+    ['prefer_not_to_say', 1500],
+    [null, 1500],
+  ])(
+    'sets the calorie guardrail to the %s floor of %i, even under a lower target',
+    async (sex, floor) => {
+      const base = await makePrisma({}).user.findUnique({ where: { id: 'u1' } });
+      const user = { ...base, profile: { ...base.profile, sex, macro_target_calories: 1000 } };
+      const ctx = await new ClientAIContextService(makePrisma({ user })).buildFresh('u1');
+      expect(ctx.guardrails.forbid_calorie_recommendations_below).toBe(floor);
+    },
+  );
+
   it('surfaces dietary_pattern, dietary_restrictions, and workout_days_per_week from profile', async () => {
     const prisma = makePrisma({
       user: {

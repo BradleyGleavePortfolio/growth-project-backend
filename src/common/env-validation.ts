@@ -303,6 +303,34 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'PostHog project key for product analytics. AnalyticsModule is a no-op when unset.',
   },
   {
+    name: 'POSTHOG_PERSONAL_API_KEY',
+    tier: 'optional',
+    default: 'unset → account deletion records posthog not_configured and skips PostHog',
+    reason:
+      'PostHog personal API key (phx_…, scope person:write; the project key POSTHOG_KEY cannot delete). Account deletion uses it with POSTHOG_PROJECT_ID to delete the person and their events (account-deletion.vendors.ts).',
+  },
+  {
+    name: 'POSTHOG_PROJECT_ID',
+    tier: 'optional',
+    default: 'unset → account deletion records posthog not_configured and skips PostHog',
+    reason:
+      'Numeric id of the PostHog project the app and server send events to. Not secret. Used with POSTHOG_PERSONAL_API_KEY by account deletion.',
+  },
+  {
+    name: 'CRISP_WEBSITE_ID',
+    tier: 'optional',
+    default: 'unset → account deletion records crisp not_configured and skips Crisp',
+    reason:
+      'Crisp website (workspace) id, the same value as the app\'s EXPO_PUBLIC_CRISP_WEBSITE_ID. Not secret. Used with CRISP_API_TOKEN by account deletion to remove the person\'s support conversations and profile.',
+  },
+  {
+    name: 'CRISP_API_TOKEN',
+    tier: 'optional',
+    default: 'unset → account deletion records crisp not_configured and skips Crisp',
+    reason:
+      'Crisp website token as "<identifier>:<key>" (Crisp: Settings > Workspace Settings > Advanced configuration > API Token). Secret. Account deletion only.',
+  },
+  {
     name: 'PERPLEXITY_API_KEY',
     tier: 'optional',
     reason: 'Perplexity API key. AI chat falls back to a deterministic responder when unset.',
@@ -1442,7 +1470,15 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'derived from SUPABASE_SERVICE_ROLE_KEY (HMAC); unset both -> every voice publish fails closed',
     reason:
-      'A-610-1 (#610) — secret behind the issuance MAC on community voice storage keys (src/community/voice/voice-storage-key.ts). Only keys the server minted for the caller in the last 24h can be published. Rotating it invalidates unpublished upload URLs only (published notes keep working). Use 32+ random characters.',
+      'A-610-1 (#610) — secret behind the issuance MAC on community voice storage keys (src/community/voice/voice-storage-key.ts). Only keys the server minted for the caller in the last 24h can be published. K5 (SEC-06): when set, keys minted with the derived secret still publish for the first 24h10m after each start, so setting it breaks no upload in flight. Rotating it later invalidates unpublished upload URLs only (published notes keep working). Use 64 hex characters (openssl rand -hex 32).',
+  },
+  {
+    name: 'SIGNUP_MARKER_SIGNING_SECRET',
+    tier: 'optional',
+    default:
+      'SUPABASE_SERVICE_ROLE_KEY (HMAC key); both unset or shorter than 16 -> no marker verifies (stranded sign-up adoption off)',
+    reason:
+      'K5 (SEC-06) — HMAC key for the sign-up attempt marker (src/auth/auth.service.ts signupAttemptMac) that lets a confirmed email sign-up with no local account be adopted at first password sign-in. When set, markers minted with SUPABASE_SERVICE_ROLE_KEY still verify for the first 7 days after each start. Use 64 hex characters (openssl rand -hex 32).',
   },
   {
     name: 'VOICE_NOTE_MAX_BYTES',

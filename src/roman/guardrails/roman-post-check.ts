@@ -708,24 +708,32 @@ function restateTargets(ctx: PostCheckContext | null, fallbackFloor: number): st
   const coach = coachName(ctx);
   const calories = ctx?.targets.calories ?? null;
   if (!ctx || ctx.targets.source === 'none' || calories === null) {
-    const setter = coachless(ctx) ? '' : ` ${coach === 'your coach' ? 'Your coach' : coach} can set them from Messages.`;
+    const setter = coachless(ctx)
+      ? ''
+      : ` ${coach === 'your coach' ? 'Your coach' : coach} can set them from Messages.`;
     return `You do not have daily targets set yet, so I will not guess at numbers.${setter} I will not suggest going below ${fallbackFloor.toLocaleString('en-US')} kcal a day.`;
   }
   const t = ctx.targets;
   const who = t.source === 'coach_set' ? `${coach} set` : 'the app calculated';
+  // B-908-1: never re-endorse a stored target under the floor (decision 6).
+  const safe = Math.max(calories, fallbackFloor);
+  // C-908-5/6: when the floor lifts the target, the grams and the kcal left
+  // come from that same number, so the reply adds up. Otherwise unchanged.
+  const lifted = safe !== calories && calories > 0;
+  const g = (v: number) => (lifted ? Math.round((v * safe) / calories) : v);
   const macros = [
-    t.protein_g != null ? `${t.protein_g} g protein` : null,
-    t.carbs_g != null ? `${t.carbs_g} g carbs` : null,
-    t.fat_g != null ? `${t.fat_g} g fat` : null,
+    t.protein_g != null ? `${g(t.protein_g)} g protein` : null,
+    t.carbs_g != null ? `${g(t.carbs_g)} g carbs` : null,
+    t.fat_g != null ? `${g(t.fat_g)} g fat` : null,
   ]
     .filter(Boolean)
     .join(', ');
   const today =
     ctx.today.meals_logged > 0 && ctx.today.remaining_kcal != null
-      ? ` So far today you have logged ${ctx.today.kcal} kcal and ${ctx.today.protein_g} g protein, leaving ${ctx.today.remaining_kcal} kcal.`
+      ? ` So far today you have logged ${ctx.today.kcal} kcal and ${ctx.today.protein_g} g protein, leaving ${lifted ? Math.round(safe - ctx.today.kcal) : ctx.today.remaining_kcal} kcal.`
       : '';
   const review = coachless(ctx) ? '.' : `; if you would like them reviewed, message ${coach}.`;
-  return `Your daily target is ${calories.toLocaleString('en-US')} kcal${macros ? ` (${macros})` : ''}, which ${who}.${today} I will not suggest different targets${review}`;
+  return `Your daily target is ${safe.toLocaleString('en-US')} kcal${macros ? ` (${macros})` : ''}, which ${who}.${today} I will not suggest different targets${review}`;
 }
 
 /**

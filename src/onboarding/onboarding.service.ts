@@ -179,9 +179,6 @@ function isUniqueViolation(err: unknown): boolean {
 
 const COACH_FLAG_BODY =
   'A new client finished their consultation and was flagged for extra care. Please review before their first session.';
-// Decision 133-11: a coachless client's flag goes to the house account.
-const HOUSE_FLAG_BODY =
-  'A client without a coach finished their consultation and was flagged for extra care.';
 
 function conflict(
   code: OnboardingConflictCode,
@@ -777,7 +774,7 @@ export class OnboardingService {
         missing: resolved.missing,
       });
     }
-    const macros = computeMacros(resolved.inputs);
+    const macros = computeMacros({ ...resolved.inputs, screening_yes: screeningAnyYes(answers) });
 
     const resolvedSet = await this.resolveProgramSet(coach?.id ?? null);
     if (!resolvedSet) throw notConfigured(coach !== null);
@@ -914,13 +911,14 @@ export class OnboardingService {
 
           await tx.macroTarget.create({
             data: {
+              id: `auto-${randomUUID()}`,
               coach_id: owner.id,
               client_id: clientId,
               calories_kcal: macros.calories,
               protein_g: macros.protein_g,
               carbs_g: macros.carbs_g,
               fats_g: macros.fat_g,
-              notes: `Initial target from the consultation (${macros.method}${macros.floor_applied ? ', calorie floor applied' : ''}).`,
+              notes: `Initial target from the consultation (${macros.method}${macros.floor_applied ? ', calorie floor applied' : ''}${macros.maintenance_hold ? ', held at maintenance' : ''}${macros.no_deficit_under_18 ? ', no deficit under 18' : ''}).`,
               effective_from: now,
             },
           });
@@ -982,26 +980,20 @@ export class OnboardingService {
           };
 
           // screening_flagged_at above records the flag and the selection
-          // already applied the extra-care overlay. Who hears about it: the
-          // client's own coach; for a coachless client (owner decision
-          // 133-11) the house account, i.e. the live coach or owner account
-          // that holds the house set this completion used. Same in-app item,
-          // no other sender.
-          const alertTo = coach ? coach.id : source === 'house' ? set.coach_id : null;
-          if (flagCoach && alertTo) {
+          // already applied the extra-care overlay. Who hears about it now:
+          // the client's own coach only (one in-app item, no other sender).
+          // A coachless client's flag alerts nobody (owner decision 61a); the
+          // coach they later join is told then (flagged-join-alert.ts).
+          if (flagCoach && coach) {
             // In-app coach item. The body carries no screening details; a
-            // coach opens their client's intake for the answers. The house
-            // account cannot read a coachless client's intake (canCoachRead
-            // needs a coach on the client), so it learns only that a flag exists.
+            // coach opens their client's intake for the answers.
             await tx.notification.create({
               data: {
-                user_id: alertTo,
+                user_id: coach.id,
                 kind: 'coach_alert',
                 channel: 'inapp',
-                body: coach ? COACH_FLAG_BODY : HOUSE_FLAG_BODY,
-                payload: coach
-                  ? { type: 'onboarding_screening_review', client_id: clientId }
-                  : { type: 'onboarding_screening_review', client_id: clientId, coachless: true },
+                body: COACH_FLAG_BODY,
+                payload: { type: 'onboarding_screening_review', client_id: clientId },
               },
             });
           }

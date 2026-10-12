@@ -382,6 +382,79 @@ const WEARABLE_SAMPLE_EXPORT_SELECT: Record<string, true> = {
   recorded_at: true,
 };
 
+/**
+ * P2 (DATA-07): bloodwork panels the user entered, with their own notes and
+ * the coach review note the app already shows them. The plaintext columns are
+ * dual-written with the encrypted ones; ciphertext and key references are
+ * left out.
+ */
+const BLOODWORK_PANEL_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  coach_id: true,
+  collection_date: true,
+  source: true,
+  panel_label: true,
+  notes: true,
+  review_state: true,
+  reviewed_at: true,
+  review_note: true,
+  validation_status: true,
+  is_stale: true,
+  source_missing: true,
+  ai_processing_allowed: true,
+  submitted_at: true,
+  created_at: true,
+  updated_at: true,
+};
+
+/** P2: onboarding answers (health screening included). The completion claim fields are internal. */
+const ONBOARDING_INTAKE_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  version: true,
+  answers: true,
+  completed_chapters: true,
+  disclaimer_version: true,
+  disclaimer_accepted_at: true,
+  screening_any_yes: true,
+  screening_flagged_at: true,
+  saved_at: true,
+  first_session_date: true,
+  preferred_training_time: true,
+  selected_program_key: true,
+  completed_at: true,
+  completion_result: true,
+  created_at: true,
+  updated_at: true,
+};
+
+/** P2: every earlier version of the onboarding answers. */
+const ONBOARDING_REVISION_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  revision: true,
+  version: true,
+  answers: true,
+  completed_chapters: true,
+  disclaimer_version: true,
+  disclaimer_accepted_at: true,
+  screening_any_yes: true,
+  cause: true,
+  created_at: true,
+};
+
+/** P2: workouts a coach assigned and how the user logged them. Idempotency keys and draft ids are internal. */
+const ASSIGNED_WORKOUT_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  workout_plan_id: true,
+  assigned_by_coach_id: true,
+  scheduled_for: true,
+  started_at: true,
+  completed_at: true,
+  post_rpe: true,
+  post_notes: true,
+  completion_payload: true,
+  approved_by_coach_at: true,
+};
+
 /** Why an archive must go although no request row owns it (B-608-11). */
 export type ArchiveCleanupReason = 'request_removed' | 'failed_run';
 
@@ -1334,6 +1407,15 @@ export class DataExportService {
       coachPlaybook,
       wearableConnections,
       wearableSamples,
+      exerciseSets,
+      habitLogs,
+      bloodworkPanels,
+      bloodworkResults,
+      onboardingIntake,
+      onboardingRevisions,
+      macroTargets,
+      assignedWorkouts,
+      wearablePreferences,
     ] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
@@ -1479,6 +1561,43 @@ export class DataExportService {
         { user_id: userId },
         { select: WEARABLE_SAMPLE_EXPORT_SELECT, orderBy: [{ start_at: 'asc' }, { id: 'asc' }] },
       ),
+      // P2 (DATA-07): health records reached only through the user's own rows.
+      this._streamAll('exerciseSet', { workout: { user_id: userId } }),
+      this._streamAll(
+        'habitLog',
+        { habit: { user_id: userId } },
+        { orderBy: [{ date: 'asc' }, { id: 'asc' }] },
+      ),
+      this._streamAll(
+        'bloodworkPanel',
+        { client_id: userId },
+        { select: BLOODWORK_PANEL_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll(
+        'bloodworkResult',
+        { panel: { client_id: userId } },
+        { orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll(
+        'clientOnboardingIntake',
+        { client_id: userId },
+        { select: ONBOARDING_INTAKE_EXPORT_SELECT },
+      ),
+      this._streamAll(
+        'clientOnboardingIntakeRevision',
+        { client_id: userId },
+        { select: ONBOARDING_REVISION_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll('macroTarget', { client_id: userId }, { orderBy: CHRONOLOGICAL }),
+      this._streamAll(
+        'clientWorkoutAssignment',
+        { client_id: userId },
+        {
+          select: ASSIGNED_WORKOUT_EXPORT_SELECT,
+          orderBy: [{ scheduled_for: 'asc' }, { id: 'asc' }],
+        },
+      ),
+      this._streamAll('wearableUserMetricPreference', { user_id: userId }),
     ]);
 
     // The push token is a send credential for the user's phone: the archive
@@ -1549,6 +1668,15 @@ export class DataExportService {
       coach_playbook: coachPlaybook,
       wearable_connections: wearableConnections,
       wearable_samples: wearableSamples,
+      exercise_sets: exerciseSets,
+      habit_logs: habitLogs,
+      bloodwork_panels: bloodworkPanels,
+      bloodwork_results: bloodworkResults,
+      onboarding_intake: onboardingIntake,
+      onboarding_intake_revisions: onboardingRevisions,
+      macro_targets: macroTargets,
+      assigned_workouts: assignedWorkouts,
+      wearable_metric_preferences: wearablePreferences,
     };
 
     const jsonForHash = JSON.stringify(archive);

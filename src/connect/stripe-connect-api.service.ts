@@ -374,6 +374,11 @@ export class StripeConnectApiService {
     return this.get<StripeCustomerObject>(`/customers/${encodeURIComponent(customerId)}`);
   }
 
+  /** Account deletion: removes saved cards and contact details; charges and invoices stay. */
+  async deleteCustomer(customerId: string): Promise<{ id: string; deleted: boolean }> {
+    return this.delete(`/customers/${encodeURIComponent(customerId)}`);
+  }
+
   async retrievePaymentMethod(paymentMethodId: string): Promise<{
     id: string;
     card?: {

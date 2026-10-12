@@ -9,6 +9,7 @@ import {
 import type { Prisma, TeamAuditEventKind } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { StripeApiService } from '../billing/stripe-api.service';
+import { deleteDraftsLeftByMove } from '../coach/moved-client-drafts';
 import {
   CoachTier,
   TeamModeTierResolverService,
@@ -348,6 +349,8 @@ export class TeamModeService {
           where: { id: { in: reassignIds } },
           data: { coach_id: headCoachId },
         });
+        // Owner decision 17: drafts left behind for these clients go now.
+        await deleteDraftsLeftByMove(tx, reassignIds, headCoachId);
         // One client_reassigned event per client so the head coach can
         // filter their feed by client and see the trail.
         await tx.teamAuditEvent.createMany({

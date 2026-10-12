@@ -1,8 +1,9 @@
-import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
+import { Controller, Get, HttpStatus, Logger, Res } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { PrismaService } from '../prisma.service';
+import { safeLogDiagnostic } from './orm-diagnostics';
 
 /**
  * HealthDeepController — adds GET /health/deep.
@@ -17,13 +18,17 @@ import { PrismaService } from '../prisma.service';
  *
  * Response shape:
  *   200: { ok: true,  db: "up",   redis: "up"|"unconfigured",  timestamp }
- *   503: { ok: false, db: "down", redis: "...",                timestamp, errors: [] }
+ *   503: { ok: false, db: "down", redis: "...",                timestamp, errors: [...] }
+ *
+ * Driver error text is internal detail, so callers only ever see
+ * "<component>: unavailable"; a safe diagnostic is logged instead.
  */
 @ApiExcludeController()
 @Public()
 @Controller('health')
 export class HealthDeepController {
   private readonly startedAt = Date.now();
+  private readonly logger = new Logger(HealthDeepController.name);
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -38,7 +43,7 @@ export class HealthDeepController {
       await this.prisma.$queryRaw`SELECT 1`;
     } catch (err) {
       dbStatus = 'down';
-      errors.push(`db: ${err instanceof Error ? err.message : String(err)}`);
+      errors.push(this.unavailable('db', err));
     }
 
     // -- Redis check (optional — only when REDIS_URL is set) --
@@ -68,26 +73,46 @@ export class HealthDeepController {
     url: string,
     errors: string[],
   ): Promise<'up' | 'down'> {
+    let client: import('ioredis').default | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const Redis = require('ioredis') as typeof import('ioredis').default;
-      const client = new Redis(url, {
+      client = new Redis(url, {
         connectTimeout: 2000,
         commandTimeout: 2000,
         maxRetriesPerRequest: 0,
         enableOfflineQueue: false,
         lazyConnect: true,
+        retryStrategy: null,
       });
-      const pong = await client.ping();
-      client.disconnect();
+      // Both stages share one deadline; a timed-out connect must never PING.
+      const deadline = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('probe timeout')), 2000);
+      });
+      await Promise.race([client.connect(), deadline]);
+      const pong = await Promise.race([client.ping(), deadline]);
       if (pong !== 'PONG') {
         errors.push('redis: unexpected PING response');
         return 'down';
       }
       return 'up';
     } catch (err) {
-      errors.push(`redis: ${err instanceof Error ? err.message : String(err)}`);
+      errors.push(this.unavailable('redis', err));
       return 'down';
+    } finally {
+      clearTimeout(timer);
+      client?.disconnect();
     }
+  }
+
+  private unavailable(component: 'db' | 'redis', err: unknown): string {
+    this.logger.error({
+      event: 'deep_health_dependency_down',
+      operation: 'health.deep',
+      component,
+      diagnostic: safeLogDiagnostic(err),
+    });
+    return `${component}: unavailable`;
   }
 }

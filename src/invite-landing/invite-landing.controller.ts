@@ -1,9 +1,10 @@
-import { Controller, Get, Headers, HttpStatus, Param, Res } from '@nestjs/common';
+import { Controller, Get, Headers, HttpStatus, Param, Req, Res } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { InviteLandingService, landingPlatformFromUserAgent } from './invite-landing.service';
+import { LoginThrottleResetService, extractIp } from '../throttler/login-throttle-reset.service';
 
 // Public, server-rendered landing for `/join/:code` and `/invite/:code`.
 //
@@ -22,7 +23,11 @@ import { InviteLandingService, landingPlatformFromUserAgent } from './invite-lan
 @ApiTags('invite-landing')
 @Controller()
 export class InviteLandingController {
-  constructor(private landing: InviteLandingService) {}
+  constructor(
+    private landing: InviteLandingService,
+    // A7 — per-address limit on wrong invite-code guesses (public lookups).
+    private inviteGuess: LoginThrottleResetService,
+  ) {}
 
   // ----- HTML landing pages -----------------------------------------
 
@@ -33,8 +38,9 @@ export class InviteLandingController {
     @Param('code') code: string,
     @Res() res: Response,
     @Headers('user-agent') userAgent?: string,
+    @Req() req?: Record<string, unknown>,
   ) {
-    return this.renderLanding(code, res, userAgent);
+    return this.renderLanding(code, res, userAgent, extractIp(req));
   }
 
   // /invite/:code is the alternate canonical landing — same renderer,
@@ -47,13 +53,19 @@ export class InviteLandingController {
     @Param('code') code: string,
     @Res() res: Response,
     @Headers('user-agent') userAgent?: string,
+    @Req() req?: Record<string, unknown>,
   ) {
-    return this.renderLanding(code, res, userAgent);
+    return this.renderLanding(code, res, userAgent, extractIp(req));
   }
 
   // ----- shared renderer --------------------------------------------
 
-  private async renderLanding(code: string, res: Response, userAgent?: string) {
+  private async renderLanding(
+    code: string,
+    res: Response,
+    userAgent: string | undefined,
+    ip: string,
+  ) {
     // Length-bound the param before going to the database. The DTO layer
     // doesn't run on path params, so guard here to make brute-force
     // enumeration of garbage strings cheap to reject.
@@ -61,7 +73,11 @@ export class InviteLandingController {
       this.respondInvalid(res);
       return;
     }
-    const preview = await this.landing.preview(code);
+    const preview = await this.inviteGuess.guardInviteCodeLookup(
+      ip,
+      () => this.landing.preview(code),
+      (r) => !r.valid,
+    );
     if (!preview.valid) {
       this.respondInvalid(res);
       return;

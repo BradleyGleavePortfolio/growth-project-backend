@@ -8,6 +8,13 @@ import {
   type ScoutIngestResult,
 } from './scout-ingest.dto';
 import { RunGateClosed, ScoutLifecycleService } from './lifecycle/lifecycle.service';
+import { loadNativeRuleSets } from './reconstruct/native/native-rule-registry';
+import {
+  buildPayloadKeepPlan,
+  keepDeclaredPayload,
+  type PayloadKeepPlan,
+} from './reconstruct/payload-keep';
+import { loadSourceMappingSpecs } from './reconstruct/source-mapper-registry';
 
 /**
  * Payload keys stripped server-side before persistence (case-insensitive,
@@ -37,6 +44,16 @@ const REDACTED_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
   'cvv',
   'private_key',
 ]);
+
+/**
+ * PRIV-04: the paths each platform's payload may keep, from the same repository
+ * specs and native rule sets reconstruction reads (loaded once, fail loud).
+ */
+let keepPlan: PayloadKeepPlan | undefined;
+function payloadKeepPlan(): PayloadKeepPlan {
+  keepPlan ??= buildPayloadKeepPlan(loadSourceMappingSpecs(), loadNativeRuleSets());
+  return keepPlan;
+}
 
 @Injectable()
 export class ScoutIngestService {
@@ -91,7 +108,11 @@ export class ScoutIngestService {
       // capturedAt is a strict-ISO8601-validated DTO field (see ScoutEntityDto),
       // so it always parses — no null-degrade path.
       captured_at: new Date(entity.capturedAt),
-      payload: redactPayload(entity.payload),
+      // PRIV-04: only the declared mapping paths are stored; the rest of the
+      // crawled record is dropped here and never persisted.
+      payload: redactPayload(
+        keepDeclaredPayload(payloadKeepPlan(), entity.sourcePlatform, entity.payload),
+      ),
     }));
 
     const resolution = await this.lifecycle.resolve(coachId, dto.intent_id);
@@ -148,10 +169,10 @@ const PROTOTYPE_POLLUTION_KEYS: ReadonlySet<string> = new Set([
 
 /**
  * Recursively strip denylisted keys from a client-supplied payload before it is
- * persisted as JSONB. Structure is otherwise preserved verbatim. Nested objects
+ * persisted as JSONB (after the PRIV-04 keep step). Nested objects
  * and array elements are walked; matching happens on the lowercased key.
  */
-function redactPayload(
+export function redactPayload(
   payload: Prisma.InputJsonObject,
 ): Record<string, Prisma.InputJsonValue | null> {
   // Use a Map + null-prototype output object so no dynamic write can traverse
