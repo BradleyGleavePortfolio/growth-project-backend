@@ -38,6 +38,7 @@ import {
   acceptedCoachSharingNotice,
   grantCoachSharingAtJoinTx,
 } from '../consent/coach-sharing-notice';
+import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 
 type ValidationSuccess = {
   valid: true;
@@ -1149,6 +1150,9 @@ export class InviteCodesService {
             package_id: plan?.pkg.id ?? target.packageId,
           },
         });
+        // Owner 61a: a client flagged in their consultation before they had a
+        // coach; this coach (only) gets one in-app alert, with this attach.
+        await alertCoachOfFlaggedJoinTx(tx, userId, coachId);
         // B-PACKAGE-135 — the free package, in this transaction: no grant, no attach.
         if (plan && this.grants) {
           joinGrant = await this.grants.grantForJoinTx(tx, {
