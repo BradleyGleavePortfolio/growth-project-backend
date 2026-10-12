@@ -247,6 +247,8 @@ describe('urgent_symptoms: a weight-loss medicine plus a red-flag symptom', () =
       'On Wegovy, what does this warning about a lump in the neck mean?',
       'On Wegovy, why does this leaflet mention pancreatitis?',
       'On Wegovy, why does this leaflet mention gallstones?',
+      'On Wegovy, what does this side effect list say about pancreatitis?',
+      'On Wegovy, why does this side effect sheet mention gallstones?',
     ]) {
       expect({ msg, cls: classifySafety(msg).class }).not.toEqual({ msg, cls: 'urgent_symptoms' });
     }
@@ -281,6 +283,13 @@ describe('urgent_symptoms: a weight-loss medicine plus a red-flag symptom', () =
       'on wegovy, these stomach cramps are unbearable',
       'on ozempic, stomach pains are killing me',
       'on ozempic and I have so much stomach pain',
+      // R5 (L-OA B1): their own symptom called "this side effect" or "these warning signs".
+      'on mounjaro how bad is this side effect throwing up nonstop',
+      'on wegovy what helps with this side effect severe stomach pain',
+      'how long does this side effect last on ozempic cant keep water down',
+      'on ozempic what are these warning signs severe stomach pain and yellow eyes',
+      'on ozempic how serious are these warning signs throwing up nonstop',
+      'on wegovy how bad is this side effect yellow eyes',
     ]) {
       expect({ msg, cls: classifySafety(msg).class }).toEqual({ msg, cls: 'urgent_symptoms' });
     }
