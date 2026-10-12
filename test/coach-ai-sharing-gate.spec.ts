@@ -305,7 +305,8 @@ describe('Churn re-engagement draft (U4)', () => {
 describe('Stored briefs after a client turns a switch off (B-872-SOL-130-1)', () => {
   const STORED = {
     id: 'b0', coach_id: COACH, brief_date: '2026-10-07', status: 'generated', brief_mode: 'solo_coach',
-    generated_by: 'ai', narrative: 'Sam Private moved 4.6 lbs this week.', brief_context: { roster_size: 2 },
+    generated_by: 'ai', narrative: 'Sam Private moved 4.6 lbs this week.',
+    brief_context: { roster_size: 2, scope_client_ids: [SHARES, PRIVATE] },
     action_items: [{ type: 'weight_flag', client_id: PRIVATE }],
     generated_at: new Date('2026-10-07T13:00:00Z'), created_at: new Date('2026-10-07T13:00:00Z'),
   };

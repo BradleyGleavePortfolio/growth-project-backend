@@ -126,15 +126,16 @@ describe('F-DP4-3 coach brief after a client moves (owner decision 4)', () => {
   });
 });
 
-// B-939-1: a brief stored before the move named the moved client. Today's brief is written again
-// without them; history keeps that day's date and status, not its content.
+// B-939-1: a brief stored before the move was built from the moved client. Today's brief is written
+// again without them; history keeps that day's date and status, not its content.
 describe('B-939-1 stored briefs after a client moves (owner decision 4)', () => {
   const item = (client_id: string, client_name: string, detail: string) => ({
     type: 'message_unread', client_id, client_name, detail, priority: 1, deep_link: `tgp://coach/clients/${client_id}`,
   });
   const STORED = {
     id: 'b-moved', coach_id: 'S', brief_date: '2026-10-11', status: 'generated', brief_mode: 'sub_coach',
-    generated_by: 'fallback', narrative: 'Two clients wrote to you.', brief_context: { roster_size: 2 },
+    generated_by: 'fallback', narrative: 'Two clients wrote to you.',
+    brief_context: { roster_size: 2, scope_client_ids: ['moved', 'kept'] },
     action_items: [
       item('moved', 'Mia Moved', 'Private note for my new coach about my dose'),
       item('kept', 'Kai Kept', 'Can we move my session'),
@@ -143,10 +144,11 @@ describe('B-939-1 stored briefs after a client moves (owner decision 4)', () => 
   };
   const KEPT_ONLY = {
     ...STORED, id: 'b-kept', brief_date: '2026-10-10', narrative: 'One client wrote to you.',
+    brief_context: { roster_size: 1, scope_client_ids: ['kept'] },
     action_items: [item('kept', 'Kai Kept', 'Can we move my session')],
   };
 
-  function stored(row: typeof STORED) {
+  function stored(row: object) {
     const ctx = wire();
     ctx.prisma.teamSubCoachAssignment.findFirst.mockResolvedValue({ id: 'team-S' });
     ctx.prisma.coachBrief.findUnique.mockResolvedValue(row);
@@ -222,6 +224,20 @@ describe('B-939-1 stored briefs after a client moves (owner decision 4)', () => 
     } finally {
       users[0].coach_id = 'X';
     }
+  });
+
+  it('a count-only brief stored before briefs recorded their clients is written again and hidden in history', async () => {
+    const legacy = { ...STORED, id: 'b-legacy', brief_context: { roster_size: 2, checked_in_today: 1 }, action_items: [] };
+    const { prisma, svc } = stored(legacy);
+    prisma.coachBrief.count.mockResolvedValue(1);
+    prisma.coachBrief.findMany.mockResolvedValue([legacy]);
+    const { items } = await svc.getBriefHistory('S', 1, 20);
+    expect(items.map((i) => [i.id, i.status, i.summary])).toEqual([['b-legacy', 'generated', null]]);
+    const today = await svc.generateBrief('S', 'America/Los_Angeles', '2026-10-11');
+    expect(prisma.coachBrief.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'generating' }) }),
+    );
+    expect(today.summary?.brief_context).toMatchObject({ roster_size: 1 });
   });
 
   it("history: a head coach's brief whose totals counted the moved client shows no content", async () => {

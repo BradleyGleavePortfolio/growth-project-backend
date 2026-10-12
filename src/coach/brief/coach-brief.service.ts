@@ -1750,7 +1750,8 @@ export class CoachBriefService {
       if (existing && existing.status === 'generated') {
         // B-872-SOL-130-1: a brief stored before a client turned off a Coach
         // sharing switch is written again under the current switches.
-        // B-939-1: so is a brief built from a client who has since moved away.
+        // B-939-1: so is a brief built from a client who has since moved away,
+        // or one stored before briefs recorded whose data they hold.
         if (
           writtenBefore(existing, await this.lastSharingWithdrawal(coachId)) ||
           (await this.briefsWithMovedClients(coachId, [existing])).size > 0
@@ -2085,13 +2086,12 @@ export class CoachBriefService {
   /**
    * B-939-1 (owner decision 4: when a client moves, the old coach loses
    * everything at once). The ids of stored briefs built from a client who is
-   * no longer this coach's: a client in the stored scope list (behind every
-   * count and total) or in an action item (name, message start, weight
-   * change). Same current-coach rule as the brief itself: a solo or head
-   * coach's client still has this coach; a sub-coach's client is still
-   * delegated by a head coach who still has them. Rows stored before the scope
-   * list are checked on their action items. Archiving is the coach's own
-   * choice, not a move, so it is not checked.
+   * no longer this coach's, by the stored scope list behind every count, total
+   * and action item. Same current-coach rule as the brief itself: a solo or
+   * head coach's client still has this coach; a sub-coach's client is still
+   * delegated by a head coach who still has them. A row stored before the
+   * scope list cannot show whose data it holds, so it counts as stale.
+   * Archiving is the coach's own choice, not a move, so it is not checked.
    */
   private async briefsWithMovedClients(
     coachId: string,
@@ -2099,21 +2099,19 @@ export class CoachBriefService {
       id: string;
       brief_mode: string | null;
       brief_context: Prisma.JsonValue | null;
-      action_items: Prisma.JsonValue | null;
     }>,
   ): Promise<Set<string>> {
     const builtFrom = new Map<string, { delegated: boolean; ids: string[] }>();
+    const stale = new Set<string>();
     for (const r of rows) {
       const ctx = r.brief_context;
       const scope = ctx && typeof ctx === 'object' && !Array.isArray(ctx) ? ctx[BRIEF_SCOPE_KEY] : null;
-      const items = Array.isArray(r.action_items) ? r.action_items : [];
-      const ids = [
-        ...(Array.isArray(scope) ? scope : []),
-        ...items.map((i) => (i && typeof i === 'object' && !Array.isArray(i) ? i.client_id : null)),
-      ].filter((id): id is string => typeof id === 'string');
-      if (ids.length > 0) builtFrom.set(r.id, { delegated: r.brief_mode === 'sub_coach', ids });
+      if (!Array.isArray(scope)) stale.add(r.id);
+      else if (scope.length > 0) {
+        const ids = scope.filter((id): id is string => typeof id === 'string');
+        builtFrom.set(r.id, { delegated: r.brief_mode === 'sub_coach', ids });
+      }
     }
-    const stale = new Set<string>();
     for (const delegated of [false, true]) {
       const ofMode = Array.from(builtFrom).filter(([, n]) => n.delegated === delegated);
       if (ofMode.length === 0) continue;

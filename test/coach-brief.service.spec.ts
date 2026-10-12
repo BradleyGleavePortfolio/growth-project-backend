@@ -290,13 +290,14 @@ describe('CoachBriefService.generateBrief — idempotent generated path', () => 
       generated_at: new Date('2026-05-25T07:00:00Z'),
       generation_started_at: null,
       narrative: 'cached',
-      brief_context: makeBriefContext({ roster_size: 1 }),
+      brief_context: { ...makeBriefContext({ roster_size: 1 }), scope_client_ids: ['c1'] },
       action_items: [],
       generated_by: 'ai',
       brief_mode: 'solo_coach',
       created_at: new Date('2026-05-25T00:00:00Z'),
     };
     prisma.coachBrief.findUnique.mockResolvedValue(existing);
+    prisma.user.findMany.mockResolvedValue([{ id: 'c1' }]);
 
     const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     const result = await svc.generateBrief('coach1', 'America/Los_Angeles', '2026-05-25');
