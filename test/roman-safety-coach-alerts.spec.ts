@@ -437,16 +437,28 @@ describe('the coach phone receives the safety push line', () => {
     expect(p.send.mock.calls[0][0][0]).toMatchObject({ body: ED_PUSH });
   });
 
-  it('at 22:00 an urgent push is never folded into a push about the same client waiting for 08:00', async () => {
+  it.each([
+    ['before it', ['ed', 'urgent']],
+    ['while it waits to be sent', ['urgent', 'ed']],
+    ['just after it was sent', ['urgent', 'send', 'ed']],
+  ])('at 22:00, an eating-disorder alert %s leaves the urgent push whole and still waits until 08:00', async (_label, steps) => {
     const p = phone(NIGHT);
-    await p.emit('roman_eating_disorder_reply', ED_PUSH, 'a-ed');
-    await p.emit('roman_urgent_reply', URGENT_PUSH, 'a-urgent');
-    expect(p.rows).toHaveLength(2);
-    expect(await p.delivery.drain()).toBe(1);
-    expect(p.send.mock.calls[0][0][0]).toMatchObject({
-      body: URGENT_PUSH,
-      data: { actionParams: { alertId: 'a-urgent' } },
-    });
+    for (const step of steps) {
+      if (step === 'urgent') await p.emit('roman_urgent_reply', URGENT_PUSH, 'a-urgent');
+      if (step === 'ed') await p.emit('roman_eating_disorder_reply', ED_PUSH, 'a-ed');
+      if (step === 'send') await p.delivery.drain();
+    }
+    await p.delivery.drain();
+    const sent = () =>
+      p.send.mock.calls.map(([[m]]) => [m.body, (m.data as { actionParams?: unknown }).actionParams]);
+    expect(sent()).toEqual([[URGENT_PUSH, { alertId: 'a-urgent' }]]);
+    expect(p.rows.find((r) => !r.urgent)).toMatchObject({ not_before: MORNING, deferred_reason: 'quiet_hours' });
+    clock = MORNING;
+    await p.delivery.drain();
+    expect(sent()).toEqual([
+      [URGENT_PUSH, { alertId: 'a-urgent' }],
+      [ED_PUSH, { alertId: 'a-ed' }],
+    ]);
   });
 });
 

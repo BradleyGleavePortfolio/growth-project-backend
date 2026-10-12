@@ -256,6 +256,9 @@ export class PushDeliveryService {
         where: {
           user_id: push.userId,
           collapse_key: push.collapseKey,
+          // Owner 57q: an urgent push (the urgent safety alert) keeps its own
+          // text, tap and time; an ordinary push never folds into it.
+          urgent: false,
           created_at: { gte: new Date(now.getTime() - RECEIPT_MAX_AGE_MS) },
         },
         orderBy: { created_at: 'desc' },
