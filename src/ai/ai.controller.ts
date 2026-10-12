@@ -17,7 +17,7 @@ import { assertRomanHasCoach } from '../roman/roman-requires-coach';
 // the app update ships, so the route stays and answers with this fixed text
 // in the same response shape. No model is called and nothing is stored.
 export const AI_GUIDE_RETIRED_REPLY =
-  'Guidance has moved to Roman. Open the You tab and choose Roman to keep chatting.';
+  'Guidance is now part of Roman. Tap Roman at the top of your Home screen to keep chatting.';
 export const AI_GUIDE_RETIRED_CODE = 'AI_GUIDE_RETIRED';
 
 @ApiTags('ai')

@@ -8,7 +8,7 @@ import { AI_GUIDE_CRISIS_REPLIES } from '../../src/ai/ai-crisis-router';
 import type { AuthedRequest } from '../../src/auth/auth-request';
 
 const RETIRED_REPLY =
-  'Guidance has moved to Roman. Open the You tab and choose Roman to keep chatting.';
+  'Guidance is now part of Roman. Tap Roman at the top of your Home screen to keep chatting.';
 
 function fakeOf<T>(v: unknown): T {
   return v as T;
