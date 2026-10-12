@@ -38,6 +38,10 @@ const baseline = (): FlyEnvManifest => {
   };
 };
 const VALUE = 'leakcanary-value-7d6c5b4a39213f2e';
+const SB_SECRET = 'sb_secret_leakcanary-Ab12_Cd34';
+const SB_PUBLISHABLE = 'sb_publishable_leakcanary-Ef56_Gh78';
+const NOT_SB_SECRET = 'not-an-sb-secret-key';
+const NOT_SB_PUBLISHABLE = 'not-an-sb-publishable-key';
 
 /** Wave A / Wave B inventory this lane must manage (B-FLAGS-2 brief). */
 const WAVE_FLAGS = [
@@ -257,6 +261,12 @@ describe('the checked-in manifest', () => {
     for (const n of WAVE_FLAGS) expect([n, n in m.flags]).toEqual([n, true]);
     expect(m.secrets.GOOGLE_CLIENT_IDS).toBeDefined();
     expect(m.secrets.MWB_AUTOSAVE_LOCK_TOKEN_SECRET).toBeDefined();
+  });
+
+  it('copies both Supabase API keys from GitHub (key switch, owner 2026-10-10)', () => {
+    const m = base();
+    for (const n of ['SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_ANON_KEY'])
+      expect([n, m.secrets[n], n in m.excluded]).toEqual([n, 'github-secret', false]);
   });
 
   it('every FEATURE_COMMUNITY_* name in ENV_RULES is managed or excluded with a reason', () => {
@@ -532,6 +542,21 @@ describe('source checks (GitHub secrets) return words, never values', () => {
   ])('%j', (env, want) => {
     const got = fem.sourceChecks(m, env);
     expect(got).toEqual(want);
+    expect(JSON.stringify(got)).not.toContain('leakcanary');
+  });
+
+  it.each<[string, string, string, string, string]>([
+    ['the new keys', SB_SECRET, SB_PUBLISHABLE, 'ok', 'ok'],
+    ['swapped keys', SB_PUBLISHABLE, SB_SECRET, NOT_SB_SECRET, NOT_SB_PUBLISHABLE],
+    ['legacy JWTs', 'eyJhbGciOiJIUzI1NiJ9.leakcanary', 'eyJ', NOT_SB_SECRET, NOT_SB_PUBLISHABLE],
+    ['stray whitespace', `${SB_SECRET}\n`, ` ${SB_PUBLISHABLE}`, NOT_SB_SECRET, NOT_SB_PUBLISHABLE],
+  ])('Supabase keys: %s', (_label, service, anon, wantService, wantAnon) => {
+    const s = edit(baseline(), {
+      secrets: { SUPABASE_SERVICE_ROLE_KEY: 'github-secret', SUPABASE_ANON_KEY: 'github-secret' },
+    });
+    const env = { SUPABASE_SERVICE_ROLE_KEY: service, SUPABASE_ANON_KEY: anon };
+    const got = fem.sourceChecks(s, env);
+    expect(got).toEqual({ SUPABASE_SERVICE_ROLE_KEY: wantService, SUPABASE_ANON_KEY: wantAnon });
     expect(JSON.stringify(got)).not.toContain('leakcanary');
   });
 });

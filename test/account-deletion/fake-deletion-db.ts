@@ -147,6 +147,13 @@ export class FakeDeletionDb {
         this.applyRaw(strings, values, null);
         return 1;
       },
+      // The vendor-erasure retry reads its work rows by event.
+      $queryRaw: async (strings: TemplateStringsArray, ...values: unknown[]) =>
+        strings.join('?').includes('FROM "deletion_audit"')
+          ? this.audit
+              .filter((a) => a.event === values[0])
+              .map((a) => ({ user_id: a.subjectId, metadata: a.metadata }))
+          : [],
       user: userDelegate,
     };
     return new Proxy(top, {
@@ -178,12 +185,24 @@ export class FakeDeletionDb {
     }
     if (sql.includes('DELETE FROM "deletion_audit"')) {
       if (pending) pending.auditDeletes.push(String(values[0]));
+      else this.dropAudit(String(values[0]));
       return 1;
+    }
+    if (sql.includes('UPDATE "deletion_audit" SET "metadata"')) {
+      const row = this.audit.find((a) => a.subjectId === values[1] && a.event === values[2]);
+      if (row) row.metadata = values[0];
+      return row ? 1 : 0;
     }
     const call = { model: '$executeRaw', method: sql.trim().split(/\s+/)[0], args: values };
     if (pending) pending.calls.push(call);
     else this.committedCalls.push(call);
     return 0;
+  }
+
+  private dropAudit(subjectId: string): void {
+    for (let i = this.audit.length - 1; i >= 0; i -= 1) {
+      if (this.audit[i].subjectId === subjectId) this.audit.splice(i, 1);
+    }
   }
 
   private delegate(model: string, pending: Pending | null): Record<string, unknown> {
@@ -274,11 +293,7 @@ export class FakeDeletionDb {
       const result = await fn(tx);
       for (const w of pending.userWrites) Object.assign(this.users.get(w.id) ?? {}, w.data);
       this.committedCalls.push(...pending.calls);
-      for (const id of pending.auditDeletes) {
-        for (let i = this.audit.length - 1; i >= 0; i -= 1) {
-          if (this.audit[i].subjectId === id) this.audit.splice(i, 1);
-        }
-      }
+      for (const id of pending.auditDeletes) this.dropAudit(id);
       this.audit.push(...pending.audit);
       this.commits += 1;
       return result;

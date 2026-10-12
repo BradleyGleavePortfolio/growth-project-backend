@@ -189,6 +189,9 @@ function store(extra: Record<string, Row[]> = {}, opts: StoreOptions = {}) {
     tables[name] = [...(tables[name] ?? []), ...rows];
   const related = (key: string, row: Row): Row | undefined => {
     if (key === 'session') return tables.romanSession.find((s) => s.id === row.session_id);
+    if (key === 'workout') return tables.workoutSession?.find((w) => w.id === row.workout_id);
+    if (key === 'habit') return tables.habit?.find((h) => h.id === row.habit_id);
+    if (key === 'panel') return tables.bloodworkPanel?.find((p) => p.id === row.panel_id);
     return undefined;
   };
   const delegate = (name: string) => ({
@@ -318,7 +321,11 @@ describe('data export archive inventory (C-636-2)', () => {
     });
     const foods = stub<Row[]>(archive.custom_foods);
     expect(foods.map((f) => f.id)).toEqual(['f1', 'f2']);
-    expect(foods[1]).toMatchObject({ name: "Grandma Rosa's lasagne", calories: 520, nutrient_basis: 'PER_SERVING' });
+    expect(foods[1]).toMatchObject({
+      name: "Grandma Rosa's lasagne",
+      calories: 520,
+      nutrient_basis: 'PER_SERVING',
+    });
     expect(foods[1]).not.toHaveProperty('created_by_user_id');
     const text = JSON.stringify(archive);
     expect(text).not.toContain('Someone else stew');
@@ -628,5 +635,200 @@ describe('data export day-1 sections (W3-13)', () => {
     const archive = await build(day1);
     expect(archive.user).toMatchObject({ id: U, push_token_registered: true });
     expect(JSON.stringify(archive)).not.toContain('ExponentPushToken');
+  });
+});
+
+// P2 (DATA-07): the archive left out health records the person keeps in the
+// app: the sets inside each workout, habit completions, bloodwork, onboarding
+// health answers, calorie and macro targets, completed assigned workouts and
+// wearable source choices. Each comes only from the person's own rows.
+describe('data export health records (P2 / DATA-07)', () => {
+  const ids = (rows: unknown): string[] => stub<Row[]>(rows).map((r) => String(r.id));
+  const health: Record<string, Row[]> = {
+    workoutSession: [
+      { id: 'wo1', user_id: U, workout_name: 'Legs', created_at: t(1) },
+      { id: 'wo-other', user_id: OTHER, workout_name: 'Arms', created_at: t(1) },
+    ],
+    exerciseSet: [
+      {
+        id: 'es1',
+        workout_id: 'wo1',
+        exercise_name: 'Back squat',
+        reps_per_set: [5, 5],
+        weight_per_set: [100, 100],
+      },
+      { id: 'es-other', workout_id: 'wo-other', exercise_name: 'Other person curl' },
+    ],
+    habit: [
+      { id: 'h1', user_id: U, name: 'Walk' },
+      { id: 'h-other', user_id: OTHER, name: 'Read' },
+    ],
+    habitLog: [
+      { id: 'hl2', habit_id: 'h1', date: t(2), completed: true },
+      { id: 'hl1', habit_id: 'h1', date: t(1), completed: false },
+      { id: 'hl-other', habit_id: 'h-other', date: t(1), completed: true },
+    ],
+    bloodworkPanel: [
+      {
+        id: 'bp1',
+        client_id: U,
+        collection_date: t(1),
+        panel_label: 'Lipid',
+        notes: 'Fasted 12 hours',
+        review_note: 'Looks steady',
+        encrypted_notes: 'cipher-notes',
+        encryption_key_ref: 'kms-alias',
+        created_at: t(1),
+      },
+      { id: 'bp-other', client_id: OTHER, panel_label: 'Other person panel', created_at: t(1) },
+    ],
+    bloodworkResult: [
+      { id: 'br1', panel_id: 'bp1', marker_name: 'LDL', value_text: '2.1', created_at: t(1) },
+      {
+        id: 'br-other',
+        panel_id: 'bp-other',
+        marker_name: 'Other person marker',
+        created_at: t(1),
+      },
+    ],
+    clientOnboardingIntake: [
+      {
+        id: 'in1',
+        client_id: U,
+        answers: { parq_heart: 'no', pregnant: 'no' },
+        screening_any_yes: false,
+        completion_claim_token: 'claim-secret',
+        created_at: t(1),
+      },
+      {
+        id: 'in-other',
+        client_id: OTHER,
+        answers: { note: 'other person answers' },
+        created_at: t(1),
+      },
+    ],
+    clientOnboardingIntakeRevision: [
+      {
+        id: 'ir1',
+        intake_id: 'in1',
+        client_id: U,
+        revision: 1,
+        answers: { parq_heart: 'yes' },
+        created_at: t(1),
+      },
+      {
+        id: 'ir-other',
+        intake_id: 'in-other',
+        client_id: OTHER,
+        revision: 1,
+        answers: {},
+        created_at: t(1),
+      },
+    ],
+    macroTarget: [
+      {
+        id: 'mt1',
+        client_id: U,
+        coach_id: 'coach-1',
+        calories_kcal: 1800,
+        notes: 'Hold for 2 weeks',
+        created_at: t(1),
+      },
+      {
+        id: 'mt-other',
+        client_id: OTHER,
+        coach_id: 'coach-1',
+        calories_kcal: 2500,
+        created_at: t(1),
+      },
+    ],
+    clientWorkoutAssignment: [
+      {
+        id: 'cwa1',
+        client_id: U,
+        workout_plan_id: 'plan-1',
+        scheduled_for: t(3),
+        post_rpe: 8,
+        post_notes: 'Knee felt fine',
+        idempotency_key: 'idem-secret',
+      },
+      {
+        id: 'cwa-other',
+        client_id: OTHER,
+        workout_plan_id: 'plan-1',
+        scheduled_for: t(3),
+        post_notes: 'Other person notes',
+      },
+    ],
+    wearableUserMetricPreference: [
+      { id: 'wp1', user_id: U, metric: 'STEPS', preferred_provider: 'OURA', created_at: t(1) },
+      {
+        id: 'wp-other',
+        user_id: OTHER,
+        metric: 'STEPS',
+        preferred_provider: 'WHOOP',
+        created_at: t(1),
+      },
+    ],
+  };
+
+  it('exports the sets of the user workouts and the user habit completions, never another person rows', async () => {
+    const archive = await build(health);
+    expect(ids(archive.exercise_sets)).toEqual(['es1']);
+    expect(stub<Row[]>(archive.exercise_sets)[0]).toMatchObject({
+      workout_id: 'wo1',
+      reps_per_set: [5, 5],
+    });
+    expect(ids(archive.habit_logs)).toEqual(['hl1', 'hl2']);
+    const text = JSON.stringify(archive);
+    expect(text).not.toContain('Other person curl');
+    expect(text).not.toContain('hl-other');
+  });
+
+  it('exports the user bloodwork panels and results without ciphertext or key references', async () => {
+    const archive = await build(health);
+    const [panel] = stub<Row[]>(archive.bloodwork_panels);
+    expect(ids(archive.bloodwork_panels)).toEqual(['bp1']);
+    expect(panel).toMatchObject({
+      panel_label: 'Lipid',
+      notes: 'Fasted 12 hours',
+      review_note: 'Looks steady',
+    });
+    expect(ids(archive.bloodwork_results)).toEqual(['br1']);
+    const text = JSON.stringify(archive);
+    expect(text).not.toContain('cipher-notes');
+    expect(text).not.toContain('kms-alias');
+    expect(text).not.toContain('Other person');
+  });
+
+  it('exports the user onboarding answers and their history without the completion claim token', async () => {
+    const archive = await build(health);
+    expect(ids(archive.onboarding_intake)).toEqual(['in1']);
+    expect(stub<Row[]>(archive.onboarding_intake)[0]).toMatchObject({
+      answers: { parq_heart: 'no', pregnant: 'no' },
+    });
+    expect(ids(archive.onboarding_intake_revisions)).toEqual(['ir1']);
+    const text = JSON.stringify(archive);
+    expect(text).not.toContain('claim-secret');
+    expect(text).not.toContain('other person answers');
+  });
+
+  it('exports the user macro targets, completed assigned workouts and wearable source choices', async () => {
+    const archive = await build(health);
+    expect(ids(archive.macro_targets)).toEqual(['mt1']);
+    expect(stub<Row[]>(archive.macro_targets)[0]).toMatchObject({
+      calories_kcal: 1800,
+      notes: 'Hold for 2 weeks',
+    });
+    expect(ids(archive.assigned_workouts)).toEqual(['cwa1']);
+    expect(stub<Row[]>(archive.assigned_workouts)[0]).toMatchObject({
+      post_rpe: 8,
+      post_notes: 'Knee felt fine',
+    });
+    expect(ids(archive.wearable_metric_preferences)).toEqual(['wp1']);
+    const text = JSON.stringify(archive);
+    expect(text).not.toContain('idem-secret');
+    expect(text).not.toContain('Other person notes');
+    expect(text).not.toContain('WHOOP');
   });
 });

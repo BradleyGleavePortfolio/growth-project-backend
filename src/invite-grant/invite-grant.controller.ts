@@ -22,6 +22,7 @@ import {
   SetInviteCodeBindingDto,
 } from './invite-grant.dto';
 import { InviteGrantService, type GrantOutcome } from './invite-grant.service';
+import { LoginThrottleResetService, extractIp } from '../throttler/login-throttle-reset.service';
 
 /** A refused re-claim of a revoked grant is a 409, not a 200 with a status flag (Grok C2). */
 function grantResponse(outcome: GrantOutcome) {
@@ -54,7 +55,11 @@ function auditContext(req: AuditableRequest): { ip: string | null; userAgent: st
 @Controller()
 @UseGuards(JwtAuthGuard)
 export class InviteGrantController {
-  constructor(private readonly grants: InviteGrantService) {}
+  constructor(
+    private readonly grants: InviteGrantService,
+    // F-927-A7 — the A7 wrong-code limit (per address and per account).
+    private readonly inviteGuess: LoginThrottleResetService,
+  ) {}
 
   @ApiOperation({
     summary: 'Bind (or clear) a package grant on an invite code',
@@ -129,9 +134,16 @@ export class InviteGrantController {
   @Post('v1/invite-codes/:code/claim-grant')
   @HttpCode(HttpStatus.OK)
   async claimGrant(@Request() req: AuthedRequest, @Param() params: InviteCodeParamDto) {
-    const outcome = await this.grants.claimGrantForCode(
-      { id: req.user.id, role: req.user.role, coach_id: req.user.coach_id ?? null },
-      params.code,
+    const claim = () =>
+      this.grants.claimGrantForCode(
+        { id: req.user.id, role: req.user.role, coach_id: req.user.coach_id ?? null },
+        params.code,
+      );
+    const outcome = await this.inviteGuess.guardInviteCodeLookup(
+      extractIp(req),
+      claim,
+      undefined,
+      req.user.id,
     );
     return grantResponse(outcome);
   }

@@ -146,12 +146,20 @@ const SOURCE_SHAPES = {
     v.split(',').every((e) => e.trim().length > 0) ? null : 'empty-client-id-entry',
   MWB_AUTOSAVE_LOCK_TOKEN_SECRET: (v) =>
     /^[0-9a-fA-F]{64,}$/.test(v.trim()) ? null : 'not-64-plus-hex-characters',
+  // Raw value, no trim: it is staged byte for byte, so a stray space or newline fails here.
+  SUPABASE_SERVICE_ROLE_KEY: (v) => (/^sb_secret_[\w-]+$/.test(v) ? null : 'not-an-sb-secret-key'),
+  SUPABASE_ANON_KEY: (v) =>
+    /^sb_publishable_[\w-]+$/.test(v) ? null : 'not-an-sb-publishable-key',
 };
 const SOURCE_SHAPE_FIX = {
   'empty-client-id-entry':
     'it must be a comma list of Google OAuth client ids with no empty entry (for example ios-id.apps.googleusercontent.com,web-id.apps.googleusercontent.com)',
   'not-64-plus-hex-characters':
     "it must be at least 32 random bytes of hex (64+ characters); create it with 'openssl rand -hex 32 | gh secret set MWB_AUTOSAVE_LOCK_TOKEN_SECRET'",
+  'not-an-sb-secret-key':
+    "it must be the Supabase secret key (Project Settings > API Keys): sb_secret_ then letters, digits, '_' or '-', with no spaces; not the legacy service_role JWT (eyJ...) or the publishable key",
+  'not-an-sb-publishable-key':
+    "it must be the Supabase publishable key (Project Settings > API Keys): sb_publishable_ then letters, digits, '_' or '-', with no spaces; not the legacy anon JWT (eyJ...) or the secret key",
 };
 
 class ManifestError extends Error {}

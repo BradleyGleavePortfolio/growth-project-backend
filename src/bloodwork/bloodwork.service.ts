@@ -101,6 +101,13 @@ export class BloodworkService {
     };
   }
 
+  // A coach reaches a panel through the client's CURRENT coach, never the
+  // coach_id stamped on the panel when it was created: a former coach loses
+  // it the moment the client moves, and the new coach inherits the history.
+  private coachScope(coachId: string, role: string): Prisma.BloodworkPanelWhereInput {
+    return role === 'owner' ? {} : { client: { coach_id: coachId } };
+  }
+
   private assertActorIsCoachLike(ctx: ActorContext) {
     if (NON_AUTHORITATIVE_ROLES.has(ctx.actorRole)) {
       // SECURITY: AI / non-human callers must never mutate authoritative
@@ -475,8 +482,8 @@ export class BloodworkService {
 
   // ---- coach reads ----
 
-  // Coach-side reads enforce both tenancy (panel.coach_id matches caller
-  // OR caller is owner) AND consent (HEALTH_BLOODWORK granted). Returns
+  // Coach-side reads enforce both tenancy (the client's current coach is the
+  // caller OR caller is owner) AND consent (HEALTH_BLOODWORK granted). Returns
   // empty when consent is missing rather than throwing — keeps the queue
   // surface predictable.
   async listForCoach(
@@ -485,10 +492,7 @@ export class BloodworkService {
     query: ListPanelsQueryDto,
   ) {
     const limit = Math.min(Math.max(query.limit ?? 50, 1), 200);
-    const where: Prisma.BloodworkPanelWhereInput = {};
-    if (callerRole !== 'owner') {
-      where.coach_id = coachId;
-    }
+    const where = this.coachScope(coachId, callerRole);
     // Default to submitted/needs_info/reviewed/flagged — exclude drafts
     // (clients still editing) and hidden unless explicitly asked for.
     if (query.review_state) {
@@ -526,15 +530,12 @@ export class BloodworkService {
   }
 
   async getForCoach(coachId: string, callerRole: string, panelId: string) {
-    const panel = await this.prisma.bloodworkPanel.findUnique({
-      where: { id: panelId },
+    // Another coach's client's panel is indistinguishable from a missing one.
+    const panel = await this.prisma.bloodworkPanel.findFirst({
+      where: { id: panelId, ...this.coachScope(coachId, callerRole) },
       include: { results: true, attachments: true },
     });
     if (!panel) throw new NotFoundException('Panel not found');
-    if (callerRole !== 'owner' && panel.coach_id !== coachId) {
-      // Tenant boundary: coaches can only see their own clients' panels.
-      throw new NotFoundException('Panel not found');
-    }
     if (callerRole !== 'owner') {
       const ok = await this.consent.isGranted(
         panel.client_id,
@@ -559,15 +560,11 @@ export class BloodworkService {
   ) {
     this.assertActorIsCoachLike(ctx);
 
-    const panel = await this.prisma.bloodworkPanel.findUnique({
-      where: { id: panelId },
+    const panel = await this.prisma.bloodworkPanel.findFirst({
+      where: { id: panelId, ...this.coachScope(ctx.actorId, ctx.actorRole) },
       include: { attachments: true, results: true },
     });
     if (!panel) throw new NotFoundException('Panel not found');
-
-    if (ctx.actorRole !== 'owner' && panel.coach_id !== ctx.actorId) {
-      throw new NotFoundException('Panel not found');
-    }
 
     // Consent gate: coach must have HEALTH_BLOODWORK to act on it.
     if (ctx.actorRole !== 'owner') {

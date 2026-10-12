@@ -26,8 +26,8 @@ scratch.pathname = `/${SCRATCH}`;
 // [fixture, SQL applied to the copy, check, expected row object, expected result]
 const FLOOR = [
   ['table with RLS off', 'CREATE TABLE public.d5_fx_open (id int)', 'a', 'public.d5_fx_open :: RLS off', 'FAIL'],
-  ['RLS disabled on a FORCE-only entry', 'ALTER TABLE public."Invoice" DISABLE ROW LEVEL SECURITY', 'a', 'public.Invoice :: RLS off', 'FAIL'],
-  ['repaired flag on a listed entry', 'ALTER TABLE public."ConnectAccount" FORCE ROW LEVEL SECURITY', 'a', 'public.ConnectAccount :: FORCE off', 'STALE ENTRY'],
+  ['RLS disabled on a FORCE-only entry', 'ALTER TABLE public._prisma_migrations DISABLE ROW LEVEL SECURITY', 'a', 'public._prisma_migrations :: RLS off', 'FAIL'],
+  ['repaired flag on a listed entry', 'ALTER TABLE public._prisma_migrations FORCE ROW LEVEL SECURITY', 'a', 'public._prisma_migrations :: FORCE off', 'STALE ENTRY'],
   ['private-schema table exposed through a public security_invoker view',
     `CREATE SCHEMA d5_fx_hidden; CREATE TABLE d5_fx_hidden.leak (id text); GRANT SELECT ON d5_fx_hidden.leak TO anon;
      CREATE VIEW public.d5_fx_leak WITH (security_invoker = true) AS SELECT * FROM d5_fx_hidden.leak;
@@ -72,7 +72,7 @@ const suites = JSON.parse(readFileSync('scripts/ci/rls-suites-pending.json', 'ut
 const LISTS = [
   ['added known-gap entry', 'gaps', { ...gaps, tables: [...gaps.tables, { table: 'public.d5_fx_open', rlsOff: true, forceOff: true, finding: 'D5-SELFTEST', reason: 'fixture' }] }, 'public.d5_fx_open :: RLS off'],
   ['widened known-gap entry (FORCE-only entry also allows RLS off)', 'gaps',
-    { ...gaps, tables: gaps.tables.map((t) => (t.table === 'public.Invoice' ? { ...t, rlsOff: true } : t)) }, 'public.Invoice :: RLS off'],
+    { ...gaps, tables: gaps.tables.map((t) => (t.table === 'public._prisma_migrations' ? { ...t, rlsOff: true } : t)) }, 'public._prisma_migrations :: RLS off'],
   ['added pending suite', 'suites', { ...suites, suites: [...(suites.suites || []), { path: 'test/rls/d5-fixture.spec.ts', reason: 'fixture' }] }, 'pending :: test/rls/d5-fixture.spec.ts'],
 ];
 for (const [name, kind, doc, id] of LISTS) {

@@ -59,8 +59,9 @@ const NOT_FOUND = {
  *  - CoachPackage.coach_id (required) — coach-owned.
  *  - MealPlan.coach_id     (nullable, SetNull) — owned when set; a null owner
  *    is unownable and therefore never taggable.
- *  - CheckIn.coach_id      (nullable) — the coach the check-in is assigned to;
- *    null is unownable.
+ *  - CheckIn → its client's CURRENT coach (User.coach_id), not the coach
+ *    stamped on the check-in, so a former coach loses access when the client
+ *    moves. A client with no coach is unownable.
  */
 @Injectable()
 export class PlanContextService {
@@ -103,7 +104,7 @@ export class PlanContextService {
       case 'check_in': {
         const checkIn = await this.repo.findCheckIn(tag.check_in_id);
         if (!checkIn) throw new UnprocessableEntityException(INVALID_REFERENCE);
-        this.assertOwner(checkIn.coach_id, user.id);
+        this.assertOwner(checkIn.user.coach_id, user.id);
         return tag;
       }
     }
@@ -183,7 +184,7 @@ export class PlanContextService {
       }
       case 'check_in': {
         const checkIn = await this.repo.findCheckIn(query.id);
-        if (!checkIn || !this.ownedBy(checkIn.coach_id, user.id)) {
+        if (!checkIn || !this.ownedBy(checkIn.user.coach_id, user.id)) {
           throw new NotFoundException(NOT_FOUND);
         }
         return PlanContextSnapshotSchema.parse({

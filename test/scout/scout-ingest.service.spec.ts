@@ -1,14 +1,14 @@
 import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { PrismaService } from '../../src/prisma.service';
-import { ScoutIngestService } from '../../src/scout/scout-ingest.service';
+import { redactPayload, ScoutIngestService } from '../../src/scout/scout-ingest.service';
 import { SCOUT_INGEST_EVENT, type ScoutIngestDto } from '../../src/scout/scout-ingest.dto';
 
 /**
  * ScoutIngestService unit tests — idempotent persistence + provenance signal.
  *
  * Covers the happy path (all rows new), captured_at parsing of a validated
- * strict-ISO8601 value, the row-mapping contract fed to Prisma, verbatim
- * (non-sensitive) payload persistence, server-side denylist redaction, and the
+ * strict-ISO8601 value, the row-mapping contract fed to Prisma, PRIV-04
+ * declared-fields-only payload persistence, server-side denylist redaction, and the
  * PostHog batch event. Provenance (sourceId / sourcePlatform / capturedAt) is a
  * top-level makeEntity field validated by the DTO, so its presence is exercised
  * in the controller/DTO spec. Real idempotency-key semantics (R-IDEMP-1) are
@@ -109,34 +109,34 @@ describe('ScoutIngestService', () => {
     expect((row.captured_at as Date).toISOString()).toBe('2026-07-07T00:00:00.000Z');
   });
 
-  it('persists the full payload verbatim, including extractor-specific fields', async () => {
+  it('stores only the fields the mapping declares (PRIV-04)', async () => {
     const { service, createMany } = build(1);
     const dto = makeDto({
-      entities: [entity('s1', { extra: 'kept', plan: 'gold' })],
-    });
-    await service.ingest('coach-1', dto);
-    expect(dataOf(createMany)[0].payload).toEqual({ extra: 'kept', plan: 'gold' });
-  });
-
-  it('strips denylisted secret keys from the payload before persistence', async () => {
-    const { service, createMany } = build(1);
-    const dto = makeDto({
+      entity_type: 'clients',
       entities: [
-        entity('s1', {
-          name: 'Jane',
-          password: 'hunter2',
-          API_KEY: 'sk-live-123',
-          nested: { authorization: 'Bearer x', keep: 'yes' },
-          list: [{ token: 'abc', label: 'ok' }],
-        }),
+        entity(
+          's1',
+          {
+            name: 'Jane',
+            email: 'jane@example.com',
+            phone: '+1 555 0100',
+            notes: 'private note',
+            html: '<div>full page</div>',
+            coach: { name: 'Another coach' },
+            password: 'hunter2',
+          },
+          { sourcePlatform: 'truecoach' },
+        ),
       ],
     });
     await service.ingest('coach-1', dto);
-    expect(dataOf(createMany)[0].payload).toEqual({
-      name: 'Jane',
-      nested: { keep: 'yes' },
-      list: [{ label: 'ok' }],
-    });
+    expect(dataOf(createMany)[0].payload).toEqual({ name: 'Jane' });
+  });
+
+  it('stores an empty payload for a platform with no mapping spec', async () => {
+    const { service, createMany } = build(1);
+    await service.ingest('coach-1', makeDto({ entities: [entity('s1', { extra: 'x' })] }));
+    expect(dataOf(createMany)[0].payload).toEqual({});
   });
 
   it('does not derive provenance from payload keys (top-level makeEntity fields win)', async () => {
@@ -149,7 +149,7 @@ describe('ScoutIngestService', () => {
     await service.ingest('coach-1', dto);
     const row = dataOf(createMany)[0];
     expect(row.source_platform).toBe('auto:real.com');
-    expect(row.payload).toEqual({ sourcePlatform: 'payload-decoy' });
+    expect(row.payload).toEqual({});
   });
 
   it('emits one scout.ingest.received event per batch with the counts', async () => {
@@ -242,12 +242,10 @@ describe('ScoutIngestService', () => {
 });
 
 describe('ScoutIngestService payload redaction', () => {
-  // Persist one entity and hand back the payload as it was written to the DB,
-  // so each case can assert exactly which keys survived the denylist strip.
+  // The denylist runs after the PRIV-04 keep step; it is exercised directly so
+  // each case can assert exactly which keys survive the strip.
   async function persistedPayload(payload: EntityPayload): Promise<unknown> {
-    const { service, createMany } = build(1);
-    await service.ingest('coach-1', makeDto({ entities: [entity('s1', payload)] }));
-    return dataOf(createMany)[0].payload;
+    return Promise.resolve(redactPayload(payload));
   }
 
   it('strips every top-level denylisted key regardless of surrounding data', async () => {
@@ -341,11 +339,9 @@ describe('ScoutIngestService payload redaction', () => {
 });
 
 describe('ScoutIngestService prototype pollution defenses', () => {
-  // Persist one entity and hand back the payload as it was written to the DB.
+  // The denylist runs after the PRIV-04 keep step; it is exercised directly.
   async function persistedPayload(payload: EntityPayload): Promise<Record<string, unknown>> {
-    const { service, createMany } = build(1);
-    await service.ingest('coach-1', makeDto({ entities: [entity('s1', payload)] }));
-    return dataOf(createMany)[0].payload as Record<string, unknown>;
+    return Promise.resolve(redactPayload(payload) as Record<string, unknown>);
   }
 
   afterEach(() => {

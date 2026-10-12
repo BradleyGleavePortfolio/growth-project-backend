@@ -122,38 +122,56 @@ function isSignupIdentityUniqueViolation(err: unknown): boolean {
 // public anon `signUp`, so an unauthenticated marker would let anyone label an
 // identity "created by /auth/register"; the MAC makes stranded-identity
 // adoption (`adoptStrandedSignupIdentity`) no wider than a normal register.
-// Keyed with the service-role key (never sent anywhere); without a key no
-// marker verifies and adoption is simply off.
+// Keyed with SIGNUP_MARKER_SIGNING_SECRET when set, else the service-role key
+// (never sent anywhere); without a key no marker verifies and adoption is off.
 export const SIGNUP_ATTEMPT_METADATA_KEY = 'tgp_signup_attempt';
+// K5 (SEC-06): how long after this process started a marker minted with the
+// old key (the service-role key) still verifies once the own secret is set.
+export const SIGNUP_MARKER_LEGACY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const PROCESS_START_MS = Date.now();
 function signupAttemptMarker(user: { user_metadata?: unknown } | null | undefined): string | null {
   const meta = user?.user_metadata;
   if (!meta || typeof meta !== 'object') return null;
   const v = (meta as Record<string, unknown>)[SIGNUP_ATTEMPT_METADATA_KEY];
   return typeof v === 'string' ? v : null;
 }
-function signupAttemptMac(canonicalEmail: string): string | null {
+function signupAttemptMac(canonicalEmail: string, key?: string): string | null {
   // MAC over the canonical address only (the caller-typed address, never any
   // value read back from Supabase); the nonce travels in clear and only makes
   // each request's marker unique for the creator check in `register`.
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? '';
-  if (key.length < 16) return null;
+  const k =
+    key ??
+    ((process.env.SIGNUP_MARKER_SIGNING_SECRET ?? '').trim() ||
+      (process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''));
+  if (k.length < 16) return null;
   return crypto
-    .createHmac('sha256', key)
+    .createHmac('sha256', k)
     .update(`tgp-signup-attempt:v2:${canonicalEmail}`)
     .digest('base64url');
 }
 export function mintSignupAttemptMarker(canonicalEmail: string): string {
   return `${crypto.randomUUID()}.${signupAttemptMac(canonicalEmail) ?? 'unsigned'}`;
 }
-export function isServerMintedSignupMarker(marker: string | null, canonicalEmail: string): boolean {
+export function isServerMintedSignupMarker(
+  marker: string | null,
+  canonicalEmail: string,
+  nowMs: number = Date.now(),
+): boolean {
   if (!marker) return false;
   const dot = marker.indexOf('.');
   if (dot <= 0) return false;
-  const expected = signupAttemptMac(canonicalEmail);
-  if (!expected) return false;
   const got = Buffer.from(marker.slice(dot + 1));
-  const want = Buffer.from(expected);
-  return got.length === want.length && crypto.timingSafeEqual(got, want);
+  const matches = (mac: string | null): boolean => {
+    if (!mac) return false;
+    const want = Buffer.from(mac);
+    return got.length === want.length && crypto.timingSafeEqual(got, want);
+  };
+  if (matches(signupAttemptMac(canonicalEmail))) return true;
+  // Overlap: the old key, only while the own secret is set and this process
+  // is younger than the window (markers minted before the switch).
+  const ownSet = (process.env.SIGNUP_MARKER_SIGNING_SECRET ?? '').trim() !== '';
+  if (!ownSet || nowMs - PROCESS_START_MS > SIGNUP_MARKER_LEGACY_WINDOW_MS) return false;
+  return matches(signupAttemptMac(canonicalEmail, process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''));
 }
 
 // Opus B-597-2: proof that the caller knows the password of a Supabase
