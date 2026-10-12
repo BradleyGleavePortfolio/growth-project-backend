@@ -18,6 +18,7 @@ import { fakeOf } from './ai-egress/ai-egress.fakes';
 import type { PrismaService } from '../src/prisma.service';
 import type { NotificationsService } from '../src/notifications/notifications.service';
 import type { AdminPtmService } from '../src/admin/ptm/admin-ptm.service';
+import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 
 const URGENT_PUSH = 'Urgent safety alert for one of your clients. Open TGP to see details.';
 const ED_PUSH = 'Safety alert for one of your clients. Open TGP to see details.';
@@ -166,7 +167,7 @@ describe('the alert card in the action queue', () => {
     });
   });
 
-  it('only while the client is still with this coach (owner 4)', async () => {
+  it('the query carries the current-coach rule for the caller', async () => {
     const { svc, prisma } = queue();
     await svc.getActionQueue('coach-1', {});
     const where = (prisma.coachAlert.findMany.mock.calls[0][0] as { where: Record<string, unknown> }).where;
@@ -191,5 +192,120 @@ describe('the alert card in the action queue', () => {
     const out = await svc.getActionQueue('coach-1', {});
     expect(out.items[0]).toMatchObject({ quote: null, sent_at: null });
     expect(out.items[1]).toMatchObject({ quote: null, sent_at: null });
+  });
+});
+
+// B1 (L-SB, b#946): only the client's current coach. A team assistant, a
+// former coach and an old team's assistant after a move never see, count or
+// dismiss a safety alert; other alert types keep the team rule. The fake
+// evaluates the real where clauses.
+describe('owner 4: the current coach only', () => {
+  type Row = {
+    id: string;
+    coach_id: string;
+    client_id: string;
+    alert_type: string;
+    message: string;
+    payload: unknown;
+    created_at: Date;
+    acknowledged_at: Date | null;
+  };
+  function matches(row: Row & { client: { coach_id: string | null } }, w: any): boolean {
+    if (!w) return true;
+    if (w.AND && !w.AND.every((x: unknown) => matches(row, x))) return false;
+    if (w.OR && !w.OR.some((x: unknown) => matches(row, x))) return false;
+    if (w.id !== undefined && row.id !== w.id) return false;
+    if (w.coach_id !== undefined && row.coach_id !== w.coach_id) return false;
+    if (w.client_id?.in && !w.client_id.in.includes(row.client_id)) return false;
+    if (w.alert_type?.in && !w.alert_type.in.includes(row.alert_type)) return false;
+    if (w.alert_type?.notIn && w.alert_type.notIn.includes(row.alert_type)) return false;
+    if (w.acknowledged_at === null && row.acknowledged_at !== null) return false;
+    if (w.client?.coach_id !== undefined && row.client.coach_id !== w.client.coach_id) return false;
+    return true;
+  }
+  function world(clientCoach: string) {
+    const users = [{ id: 'client-1', name: 'Jane Doe', coach_id: clientCoach }];
+    const rows: Row[] = [
+      ['a-safe', 'roman_urgent_reply', URGENT_PUSH, { roman_message_id: 'm1' }],
+      ['a-ed', 'roman_eating_disorder_reply', ED_PUSH, { roman_message_id: 'm1' }],
+      ['a-labs', 'bloodwork_review', 'New labs uploaded.', null],
+    ].map(([id, alert_type, message, payload]) => ({
+      id: id as string,
+      coach_id: 'coach-1',
+      client_id: 'client-1',
+      alert_type: alert_type as string,
+      message: message as string,
+      payload,
+      created_at: new Date('2026-10-12T09:00:00Z'),
+      acknowledged_at: null,
+    }));
+    const joined = () =>
+      rows.map((r) => ({ ...r, client: { name: 'Jane Doe', coach_id: users[0].coach_id } }));
+    const prisma = {
+      coachAlert: {
+        findMany: jest.fn(async ({ where }: { where: unknown }) => joined().filter((r) => matches(r, where))),
+        count: jest.fn(async ({ where }: { where: unknown }) => joined().filter((r) => matches(r, where)).length),
+        findFirst: jest.fn(async ({ where }: { where: unknown }) => joined().find((r) => matches(r, where)) ?? null),
+        updateMany: jest.fn(async ({ where, data }: { where: unknown; data: { acknowledged_at: Date } }) => {
+          const hit = joined().filter((r) => matches(r, where));
+          for (const h of hit) rows.find((r) => r.id === h.id)!.acknowledged_at = data.acknowledged_at;
+          return { count: hit.length };
+        }),
+      },
+      romanMessage: {
+        findMany: jest.fn(async () => [
+          { id: 'm1', user_id: 'client-1', content: 'A persistent-vomiting message.', created_at: new Date() },
+        ]),
+      },
+      user: { findMany: jest.fn(async () => []) },
+    };
+    // Team scope: head coach-1 sees its roster; assistant sub-1 has an open
+    // assignment to client-1 under head coach-1 (still open after a move).
+    const scope = {
+      getAuthorizedClientIds: jest.fn(async (id: string) =>
+        id === 'sub-1' || users[0].coach_id === id ? ['client-1'] : [],
+      ),
+      getHeadCoachIdForSubCoach: jest.fn(async (id: string) => (id === 'sub-1' ? 'coach-1' : null)),
+    };
+    const svc = new CommandCenterService(
+      fakeOf<PrismaService>(prisma),
+      fakeOf<AdminPtmService>({}),
+      new CoachAlertsService(fakeOf<PrismaService>(prisma)),
+      fakeOf<SubCoachScopeService>(scope),
+    );
+    return { svc, rows };
+  }
+  const types = async (svc: CommandCenterService, caller: string) =>
+    (await svc.getActionQueue(caller, {})).items.map((i) => i.alert_type);
+
+  it('the current coach sees both safety alerts and the quote, and can dismiss one', async () => {
+    const { svc, rows } = world('coach-1');
+    const out = await svc.getActionQueue('coach-1', {});
+    expect(out.items.map((i) => i.alert_type)).toEqual([
+      'roman_urgent_reply',
+      'roman_eating_disorder_reply',
+      'bloodwork_review',
+    ]);
+    expect(out.items[0].quote).toBe('A persistent-vomiting message.');
+    await expect(svc.dismissAlert('a-safe', 'coach-1')).resolves.toEqual({ ok: true });
+    expect(rows[0].acknowledged_at).not.toBeNull();
+  });
+
+  it('an assistant assigned to the client sees no safety alert and no quote, and cannot dismiss one', async () => {
+    const { svc, rows } = world('coach-1');
+    const out = await svc.getActionQueue('sub-1', {});
+    expect(out.items.map((i) => i.alert_type)).toEqual(['bloodwork_review']);
+    expect(out.total_pending).toBe(1);
+    expect(JSON.stringify(out)).not.toContain('persistent-vomiting');
+    await expect(svc.dismissAlert('a-safe', 'sub-1')).rejects.toThrow('Alert not found');
+    expect(rows[0].acknowledged_at).toBeNull();
+    await expect(svc.dismissAlert('a-labs', 'sub-1')).resolves.toEqual({ ok: true });
+  });
+
+  it('after the client moves, the former coach and the old team assistant lose it at once', async () => {
+    const { svc } = world('coach-2');
+    expect(await types(svc, 'coach-1')).toEqual([]);
+    expect(await types(svc, 'sub-1')).toEqual(['bloodwork_review']);
+    await expect(svc.dismissAlert('a-ed', 'sub-1')).rejects.toThrow('Alert not found');
   });
 });

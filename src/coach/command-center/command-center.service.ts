@@ -192,6 +192,26 @@ function visibleAlertsWhere(clientIds: string[], shared: SharedClientIds): Prism
   };
 }
 
+/**
+ * Owner 4 and B-R1F: a Roman safety alert, and the client's message on its
+ * card, is for the client's current coach only. The caller must be the
+ * client's coach of record: an assistant on the team, or a coach the client
+ * has left, never sees, counts or dismisses it. Other alert types keep the
+ * team rule.
+ */
+function safetyAlertsForCurrentCoach(callerId: string): Prisma.CoachAlertWhereInput {
+  return {
+    AND: [
+      {
+        OR: [
+          { alert_type: { notIn: [...ROMAN_SAFETY_ALERT_TYPES] } },
+          { client: { coach_id: callerId } },
+        ],
+      },
+    ],
+  };
+}
+
 // ── CC-3: PtmPrediction.factors parsing ─────────────────────────────────
 //
 // PtmPrediction.factors is a JSON array of { key, label, contribution }
@@ -380,6 +400,7 @@ export class CommandCenterService {
           client_id: { in: clientIds },
           acknowledged_at: null,
           ...visibleAlertsWhere(clientIds, shared),
+          ...safetyAlertsForCurrentCoach(coachId),
         },
       }),
       // CC-1: pending_actions is a DISTINCT source from open_alerts. Open
@@ -846,16 +867,7 @@ export class CommandCenterService {
       client_id: { in: clientIds },
       acknowledged_at: null,
       ...visibleAlertsWhere(clientIds, shared),
-      // Owner 4: a Roman safety alert is seen only while the client's current
-      // coach is the one it was sent to (an old team's open assignment too).
-      AND: [
-        {
-          OR: [
-            { alert_type: { notIn: [...ROMAN_SAFETY_ALERT_TYPES] } },
-            { client: { coach_id: ownerCoachId } },
-          ],
-        },
-      ],
+      ...safetyAlertsForCurrentCoach(coachId),
     };
     const where: Prisma.CoachAlertWhereInput = {
       ...baseWhere,
@@ -904,11 +916,14 @@ export class CommandCenterService {
   private async safetyQuotes(
     alerts: Array<{ id: string; client_id: string; alert_type: string; payload: Prisma.JsonValue }>,
   ): Promise<Map<string, { content: string; created_at: Date }>> {
-    const refs = new Map<string, { alertId: string; clientId: string }>();
+    const refs = new Map<string, Array<{ alertId: string; clientId: string }>>();
     for (const a of alerts) {
       const p = a.payload as { roman_message_id?: unknown } | null;
       if (!SAFETY_CARD_LINE[a.alert_type] || typeof p?.roman_message_id !== 'string') continue;
-      refs.set(p.roman_message_id, { alertId: a.id, clientId: a.client_id });
+      refs.set(p.roman_message_id, [
+        ...(refs.get(p.roman_message_id) ?? []),
+        { alertId: a.id, clientId: a.client_id },
+      ]);
     }
     const out = new Map<string, { content: string; created_at: Date }>();
     if (refs.size === 0) return out;
@@ -917,8 +932,9 @@ export class CommandCenterService {
       select: { id: true, user_id: true, content: true, created_at: true },
     });
     for (const row of rows) {
-      const ref = refs.get(row.id);
-      if (ref && ref.clientId === row.user_id) out.set(ref.alertId, row);
+      for (const ref of refs.get(row.id) ?? []) {
+        if (ref.clientId === row.user_id) out.set(ref.alertId, row);
+      }
     }
     return out;
   }
@@ -950,6 +966,7 @@ export class CommandCenterService {
       alertId,
       ownerCoachId,
       clientIds,
+      safetyAlertsForCurrentCoach(coachId),
     );
     return { ok: true };
   }

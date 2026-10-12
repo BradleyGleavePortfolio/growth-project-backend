@@ -194,10 +194,13 @@ export class CoachAlertsService {
     alertId: string,
     ownerCoachId: string,
     allowedClientIds: string[],
+    // B-R1F: a further caller rule (Roman safety alerts: current coach only).
+    extra: Prisma.CoachAlertWhereInput = {},
   ): Promise<CoachAlert> {
     return this.acknowledgeWhere(alertId, {
       coach_id: ownerCoachId,
       client_id: { in: allowedClientIds },
+      ...extra,
     });
   }
 
