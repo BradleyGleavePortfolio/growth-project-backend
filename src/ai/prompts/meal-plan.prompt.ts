@@ -1,5 +1,6 @@
 import { ClientContext } from '../context/client-context.types';
 import { CoachAIPrompt } from './prompt.types';
+import { UNTRUSTED_TEXT_RULE, fenceUntrusted } from '../utils/untrusted-text';
 import { sanitizePromptInput } from '../utils/sanitize-prompt-input';
 
 // Coach AI v1 — meal plan generation prompt.
@@ -93,6 +94,8 @@ OUTPUT SCHEMA (return ONLY valid JSON conforming to this shape):
   ],
   "coach_notes": "<2-4 sentences on swaps, prep, hitting protein, etc.>"
 }
+
+${UNTRUSTED_TEXT_RULE}
 `;
 
 function numberOf(v: unknown, field: string): number {
@@ -103,7 +106,7 @@ function numberOf(v: unknown, field: string): number {
 
 export const MealPlanPrompt: CoachAIPrompt<MealPlanInput, MealPlanPayload> = {
   name: 'meal-plan',
-  version: 'v1',
+  version: 'v2',
   system: SYSTEM,
   buildUser(ctx, input) {
     const lines: string[] = [];
@@ -112,7 +115,7 @@ export const MealPlanPrompt: CoachAIPrompt<MealPlanInput, MealPlanPayload> = {
     if (input.notes) lines.push(`coach_notes: ${sanitizePromptInput(input.notes)}`);
     lines.push('---');
     lines.push('CLIENT_CONTEXT:');
-    lines.push(JSON.stringify(serializeContextForPrompt(ctx), null, 2));
+    lines.push(fenceUntrusted(serializeContextForPrompt(ctx), 2));
     return lines.join('\n');
   },
   validate(raw: unknown): MealPlanPayload {

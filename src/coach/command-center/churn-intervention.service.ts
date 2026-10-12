@@ -41,6 +41,8 @@ import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception
 import { AiDataSubject, clientDataSubject } from '../../ai-egress/ai-egress.types';
 import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
+import { sanitizePromptIdentifier } from '../brief/coach-brief.service';
+import { UNTRUSTED_TEXT_RULE, fenceUntrusted } from '../../ai/utils/untrusted-text';
 import { CHURN_FACTOR_SCOPES, coachVisibleFactors } from './churn-factor-scopes';
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import { PrismaService } from '../../prisma.service';
@@ -776,8 +778,11 @@ export class ChurnInterventionService {
 
     const system = `You are a fitness coach assistant. Write a warm, supportive re-engagement message from a coach to a client who shows signs of disengaging.
 
-Coach name: ${ctx.coachName}
-Client name: ${ctx.clientName}
+The coach and client names are in client_data:
+${fenceUntrusted({
+  coach_name: sanitizePromptIdentifier(ctx.coachName, 'Your coach'),
+  client_name: sanitizePromptIdentifier(ctx.clientName, ''),
+})}
 
 Risk signals detected:
 ${signalList}
@@ -792,7 +797,8 @@ Write a brief (2-4 sentences), personal, non-pushy message that:
 
 Do not use generic phrases like "I noticed you haven't logged in." Be specific to the signals.
 Do not include any markdown formatting. Write in plain conversational text.
-Output ONLY the message text — no preamble, no explanation.`;
+Output ONLY the message text — no preamble, no explanation.
+${UNTRUSTED_TEXT_RULE}`;
 
     try {
       const resp = await this.egress.anthropicMessagesCreate(
@@ -809,7 +815,7 @@ Output ONLY the message text — no preamble, no explanation.`;
           messages: [
             {
               role: 'user',
-              content: `Write the message for ${ctx.clientName}.`,
+              content: 'Write the message for the client named in client_data.',
             },
           ],
         },
