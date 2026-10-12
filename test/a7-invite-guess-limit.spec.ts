@@ -15,6 +15,8 @@ import { CoachlessController } from '../src/coachless/coachless.controller';
 import { COACHLESS_ERROR, CoachlessError } from '../src/coachless/coachless.errors';
 import { InviteGrantController } from '../src/invite-grant/invite-grant.controller';
 import { INVITE_CODE_MISSES_PER_HOUR, LoginThrottleResetService } from '../src/throttler/login-throttle-reset.service';
+import { addRowCode, addUser, user } from './support/attach-fixture';
+import { buildCoachless, COACH_B, PKG_B } from './coachless/coachless-fixture';
 
 const cast = <T>(value: unknown): T => value as T;
 const REAL = 'GP-K7M2QX';
@@ -165,5 +167,21 @@ describe('F-927-A7 — code-consuming routes share the miss limit', () => {
     for (let i = 0; i < INVITE_CODE_MISSES_PER_HOUR; i++)
       await calls[i % calls.length](guess(i), as('u6', '203.0.113.88')).catch((e) => e);
     for (const call of calls) await expect(call(REAL, as('u7', '203.0.113.88'))).rejects.toEqual(limited);
+  });
+
+  // F-927-A7R2 (Sol B-927-1) — real coachless check: an attached client's unknown codes are misses.
+  it('attached client: 60 wrong checks, then a same-coach prepaid code is refused before lookup', async () => {
+    const f = await buildCoachless();
+    addUser(f.db, { id: 'att', coach_id: COACH_B });
+    addRowCode(f.db, { code: 'GP-PAID22', package_id: PKG_B, grant_mode: 'prepaid', max_uses: 1 });
+    const guard = new LoginThrottleResetService(storages[storages.push(new ThrottlerStorageService()) - 1]);
+    const c = new CoachlessController(f.home, f.redemption, f.prompts, f.featured, guard);
+    const req = cast<never>({ user: user(f.db, 'att'), ...from('203.0.113.140') });
+    expect(await c.check(req, { code: 'GP-PAID22' })).toMatchObject({ valid: true });
+    for (let i = 0; i < INVITE_CODE_MISSES_PER_HOUR; i++)
+      expect(await c.check(req, { code: guess(i) })).toMatchObject({ code: 'already_attached' });
+    const resolve = jest.spyOn(f.lookup, 'resolve');
+    await expect(c.check(req, { code: 'GP-PAID22' })).rejects.toEqual(limited);
+    expect(resolve).not.toHaveBeenCalled();
   });
 });

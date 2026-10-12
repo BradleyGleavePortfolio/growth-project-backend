@@ -66,7 +66,10 @@ export class CoachlessController {
     const result = await this.inviteGuess.guardInviteCodeLookup(
       extractIp(req),
       () => this.redemption.check(req.user, body.code),
-      (r) => !r.valid && r.code === COACHLESS_ERROR.CODE_INVALID,
+      // An attached client is answered already_attached for an unknown code: a miss too.
+      (r) =>
+        !r.valid &&
+        (r.code === COACHLESS_ERROR.CODE_INVALID || r.code === COACHLESS_ERROR.ALREADY_ATTACHED),
       req.user.id,
     );
     return result.valid ? result : { ...result, message: COACHLESS_ERROR_MESSAGE[result.code] };
