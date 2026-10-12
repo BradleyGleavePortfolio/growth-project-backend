@@ -186,6 +186,43 @@ describe('B-939-1 stored briefs after a client moves (owner decision 4)', () => 
     expect(JSON.stringify(items)).not.toContain('Private note');
   });
 
+  it("a brief with no item still drops a moved client's check-in and workout counts, today and in history", async () => {
+    const { prisma, svc } = wire();
+    let row: Record<string, unknown> | null = null;
+    const save = async ({ data }: { data: object }) => (row = { id: 'b-x', created_at: new Date(), ...row, ...data });
+    prisma.coachBrief.findUnique.mockImplementation(async () => row);
+    prisma.coachBrief.create.mockImplementation(save);
+    prisma.coachBrief.update.mockImplementation(save);
+    prisma.coachBrief.updateMany.mockImplementation(async (args: { data: object }) => {
+      await save(args);
+      return { count: 1 };
+    });
+    prisma.coachBrief.findMany.mockImplementation(async () => [row]);
+    prisma.coachBrief.count.mockResolvedValue(1);
+    prisma.coachMessage.findMany.mockResolvedValue([]);
+    prisma.checkIn.findMany.mockResolvedValue([{ user_id: 'moved' }]);
+    prisma.clientWorkoutAssignment.count.mockResolvedValue(1);
+    prisma.$queryRaw.mockImplementation(async (sql: { strings: string[] }) =>
+      sql.strings.join('').includes('"WeightLog"') ? [] : [{ count: 0n }],
+    );
+    const facts = { roster_size: 1, checked_in_today: 1, workouts_completed_today: 1 };
+
+    // Solo coach X's only client checked in and finished a workout: counts, no action item.
+    const before = await svc.generateBrief('X', 'America/Los_Angeles', '2026-10-12');
+    expect(before.summary).toMatchObject({ action_items: [], brief_context: facts });
+    expect(before.summary?.brief_context).not.toHaveProperty('scope_client_ids');
+
+    users[0].coach_id = 'Z'; // Mia moves from X to Z.
+    try {
+      const history = await svc.getBriefHistory('X', 1, 20);
+      expect(history.items.map((i) => [i.id, i.status, i.summary])).toEqual([['b-x', 'generated', null]]);
+      const today = await svc.generateBrief('X', 'America/Los_Angeles', '2026-10-12');
+      expect(today.summary?.brief_context).toMatchObject({ roster_size: 0, checked_in_today: 0, workouts_completed_today: 0 });
+    } finally {
+      users[0].coach_id = 'X';
+    }
+  });
+
   it("history: a solo coach's brief naming a client who has since moved to another coach shows no content", async () => {
     const { prisma, svc } = stored(STORED);
     const solo = { ...KEPT_ONLY, id: 'b-solo', coach_id: 'Y', brief_mode: 'solo_coach' };

@@ -104,6 +104,10 @@ const BRIEF_SHARING_SCOPES: readonly string[] = [
   ConsentScope.FITNESS_HABITS_PROGRESS,
 ];
 
+// B-939-1: the clients a stored solo or sub-coach brief was built from. Kept
+// on the server for the moved-client check; never sent to the app.
+const BRIEF_SCOPE_KEY = 'scope_client_ids';
+
 // WeightLog stores `weight_lbs`; 2.0 kg ≈ 4.4 lbs is the flag threshold.
 const WEIGHT_FLAG_THRESHOLD_LBS = 4.4;
 
@@ -1745,10 +1749,10 @@ export class CoachBriefService {
       if (existing && existing.status === 'generated') {
         // B-872-SOL-130-1: a brief stored before a client turned off a Coach
         // sharing switch is written again under the current switches.
-        // B-939-1: so is a brief with an item for a client who has moved away.
+        // B-939-1: so is a brief built from a client who has since moved away.
         if (
           writtenBefore(existing, await this.lastSharingWithdrawal(coachId)) ||
-          (await this.briefsNamingMovedClients(coachId, [existing])).size > 0
+          (await this.briefsWithMovedClients(coachId, [existing])).size > 0
         ) {
           return this.generateBrief(coachId, timezone, briefDate, { force: true });
         }
@@ -1839,6 +1843,7 @@ export class CoachBriefService {
       let actionItems: ActionItem[] | HeadCoachActionItem[];
       // R2b — what the AI may see (null = deterministic narrative only).
       let aiInput: BriefAiInput | null;
+      let scopeClientIds: string[] | null = null;
 
       if (briefMode === 'head_coach') {
         // P1-3: head-coach is business-only. No client scope queries,
@@ -1855,6 +1860,7 @@ export class CoachBriefService {
         aiInput = { ctx: context, subject: noClientDataSubject('coach_business_metrics') };
       } else {
         const clientIds = await this.resolveClientScope(coachId, briefMode);
+        scopeClientIds = clientIds;
         const agg = await this.aggregateSoloContext(
           coachId,
           clientIds,
@@ -1897,7 +1903,9 @@ export class CoachBriefService {
           // accidentally flag this freshly-generated row.
           generation_started_at: null,
           narrative,
-          brief_context: context as unknown as Prisma.JsonObject,
+          brief_context: (scopeClientIds
+            ? { ...context, [BRIEF_SCOPE_KEY]: scopeClientIds }
+            : context) as unknown as Prisma.JsonObject,
           action_items: actionItems as unknown as Prisma.JsonArray,
           generated_by,
           brief_mode: briefMode,
@@ -2042,13 +2050,13 @@ export class CoachBriefService {
 
     // B-872-SOL-130-1: a brief stored before a client turned off a Coach
     // sharing switch keeps its day and status in history, not its content.
-    // B-939-1: so does a brief with an item for a client who has moved away.
+    // B-939-1: so does a brief built from a client who has since moved away.
     const withdrawnAt = await this.lastSharingWithdrawal(coachId);
-    const namingMoved = await this.briefsNamingMovedClients(coachId, rows);
+    const builtFromMoved = await this.briefsWithMovedClients(coachId, rows);
     return {
       items: rows.map((r) => {
         const out = this.toResponse(r);
-        return writtenBefore(r, withdrawnAt) || namingMoved.has(r.id) ? { ...out, summary: null } : out;
+        return writtenBefore(r, withdrawnAt) || builtFromMoved.has(r.id) ? { ...out, summary: null } : out;
       }),
       total,
       page,
@@ -2076,31 +2084,39 @@ export class CoachBriefService {
 
   /**
    * B-939-1 (owner decision 4: when a client moves, the old coach loses
-   * everything at once). The ids of stored solo or sub-coach briefs with an
-   * action item (name, message start, weight change) for a client who is no
-   * longer this coach's, by the current-coach rule of resolveClientScope: a
-   * solo coach's client still has this coach; a sub-coach's client is still
-   * delegated by a head coach who still has them. Head-coach briefs name no
-   * client. Archiving is the coach's own choice, not a move, so it is not
-   * checked here.
+   * everything at once). The ids of stored solo or sub-coach briefs built
+   * from a client who is no longer this coach's: a client in the stored scope
+   * list (behind every count) or in an action item (name, message start,
+   * weight change). Same current-coach rule as resolveClientScope: a solo
+   * coach's client still has this coach; a sub-coach's client is still
+   * delegated by a head coach who still has them. Rows stored before the scope
+   * list are checked on their action items. Head-coach briefs hold no client.
+   * Archiving is the coach's own choice, not a move, so it is not checked.
    */
-  private async briefsNamingMovedClients(
+  private async briefsWithMovedClients(
     coachId: string,
-    rows: ReadonlyArray<{ id: string; brief_mode: string | null; action_items: Prisma.JsonValue | null }>,
+    rows: ReadonlyArray<{
+      id: string;
+      brief_mode: string | null;
+      brief_context: Prisma.JsonValue | null;
+      action_items: Prisma.JsonValue | null;
+    }>,
   ): Promise<Set<string>> {
-    const named = new Map<string, { mode: 'solo_coach' | 'sub_coach'; ids: string[] }>();
+    const builtFrom = new Map<string, { mode: 'solo_coach' | 'sub_coach'; ids: string[] }>();
     for (const r of rows) {
       if (r.brief_mode !== 'solo_coach' && r.brief_mode !== 'sub_coach') continue;
-      const ids = (Array.isArray(r.action_items) ? r.action_items : []).flatMap((item) =>
-        item && typeof item === 'object' && !Array.isArray(item) && typeof item.client_id === 'string'
-          ? [item.client_id]
-          : [],
-      );
-      if (ids.length > 0) named.set(r.id, { mode: r.brief_mode, ids });
+      const ctx = r.brief_context;
+      const scope = ctx && typeof ctx === 'object' && !Array.isArray(ctx) ? ctx[BRIEF_SCOPE_KEY] : null;
+      const items = Array.isArray(r.action_items) ? r.action_items : [];
+      const ids = [
+        ...(Array.isArray(scope) ? scope : []),
+        ...items.map((i) => (i && typeof i === 'object' && !Array.isArray(i) ? i.client_id : null)),
+      ].filter((id): id is string => typeof id === 'string');
+      if (ids.length > 0) builtFrom.set(r.id, { mode: r.brief_mode, ids });
     }
     const stale = new Set<string>();
     for (const mode of ['solo_coach', 'sub_coach'] as const) {
-      const ofMode = Array.from(named).filter(([, n]) => n.mode === mode);
+      const ofMode = Array.from(builtFrom).filter(([, n]) => n.mode === mode);
       if (ofMode.length === 0) continue;
       const ids = Array.from(new Set(ofMode.flatMap(([, n]) => n.ids)));
       let current: Array<{ id: string }>;
@@ -2205,11 +2221,12 @@ export class CoachBriefService {
     ) {
       const generatedBy =
         row.generated_by === 'ai' ? 'ai' : 'fallback';
+      const { [BRIEF_SCOPE_KEY]: _scope, ...publicContext } = row.brief_context as Prisma.JsonObject;
       summary = {
         date: row.brief_date,
         brief_mode: briefMode,
         narrative: row.narrative,
-        brief_context: row.brief_context as unknown as
+        brief_context: publicContext as unknown as
           | BriefContext
           | BriefContextHeadCoach,
         // Head-coach action items are HeadCoachActionItem[] (no
