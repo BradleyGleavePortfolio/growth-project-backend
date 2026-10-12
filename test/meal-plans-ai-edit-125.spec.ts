@@ -19,8 +19,9 @@ type Row = { id: string; coach_id: string; days: unknown; items: unknown };
 function makePrisma(row: Row) {
   return {
     mealPlan: {
-      findFirst: jest.fn(async ({ where }: { where: { id: string; coach_id: string } }) =>
-        where.id === row.id && where.coach_id === row.coach_id
+      // Here `coach_id` is also the client's coach now (the service checks the client's coach).
+      findFirst: jest.fn(async ({ where }: { where: { id: string; client: { coach_id: string } } }) =>
+        where.id === row.id && where.client.coach_id === row.coach_id
           ? { id: row.id, days: row.days }
           : null,
       ),
