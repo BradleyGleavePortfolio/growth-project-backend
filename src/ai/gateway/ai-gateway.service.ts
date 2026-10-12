@@ -607,9 +607,15 @@ export class AiGatewayService {
     if (rest.length > 0) {
       const delegated = await this.prisma.subCoachAssignment.findMany({
         where: { sub_coach_id: req.requester.id, client_id: { in: rest }, unassigned_at: null },
-        select: { client_id: true },
+        select: { client_id: true, head_coach_id: true },
       });
-      for (const d of delegated) allowed.add(d.client_id);
+      // A coach move leaves the delegation open, so it counts only while the
+      // client is still on that head coach's roster.
+      const onRoster = delegated.length === 0 ? [] : await this.prisma.user.findMany({
+        where: { OR: delegated.map((d) => ({ id: d.client_id, coach_id: d.head_coach_id })) },
+        select: { id: true },
+      });
+      for (const u of onRoster) allowed.add(u.id);
     }
     if (named.some((id) => !allowed.has(id))) throw notFound();
   }
