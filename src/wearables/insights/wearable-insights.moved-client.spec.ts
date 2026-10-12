@@ -2,8 +2,8 @@ import { ForbiddenException } from '@nestjs/common';
 import { WearableMetricBucket } from '@prisma/client';
 import { WearableInsightsService } from './wearable-insights.service';
 import { InsightCacheService } from './insight-cache.service';
-import type { PrismaService } from '../../prisma.service';
-import type { AiGatewayService } from '../../ai/gateway/ai-gateway.service';
+import { PrismaService } from '../../prisma.service';
+import { AiGatewayService } from '../../ai/gateway/ai-gateway.service';
 import { CoachInsight, isEmptyInsight } from './insight-output.schema';
 import { grantAllEgress } from '../../../test/ai-egress/ai-egress.fakes';
 
@@ -83,10 +83,13 @@ function fixture() {
     model: 'claude-sonnet-4.5',
     reply: JSON.stringify(payload),
   });
+  const dep = <T extends object>(cls: { prototype: T }, impl: object): T =>
+    Object.assign(Object.create(cls.prototype) as T, impl);
+  const prismaDep = dep(PrismaService, prisma);
   const svc = new WearableInsightsService(
-    prisma as unknown as PrismaService,
-    gateway as unknown as AiGatewayService,
-    new InsightCacheService(prisma as unknown as PrismaService),
+    prismaDep,
+    dep(AiGatewayService, gateway),
+    new InsightCacheService(prismaDep),
     grantAllEgress(),
   );
   // The controller's order: current-coach check, then generate.
