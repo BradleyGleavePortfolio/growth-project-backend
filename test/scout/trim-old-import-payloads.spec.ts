@@ -6,7 +6,7 @@ import {
   parseTrimArgs,
   run,
   trimOldImportPayloads,
-} from '../scripts/trim-old-import-payloads';
+} from '../../scripts/trim-old-import-payloads';
 
 // P3b: rows saved before P3 are cut through the same keep as new rows. All
 // values are synthetic; the fake Prisma stores JSON the way jsonb returns it.
