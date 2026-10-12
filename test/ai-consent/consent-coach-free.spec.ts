@@ -262,8 +262,12 @@ describe('AI consent ledger: coach-free copies (owner 62)', () => {
     await expect(egress.assertMaySend(clientDataSubject('u_a', 'client', scope), 'anthropic', 'roman.chat')).resolves.toBeUndefined();
     expect(await egress.consentedClients(['u_a'], scope, 'client')).toEqual(new Set(['u_a']));
     expect((await egress.memoryGrantTimes(['u_a'], 'client')).has('u_a')).toBe(scope === 'memory');
-    // The client joins a coach: the app's plain GET asks for the coached text again (nothing written) ...
-    expect(await service.getStatus('u_a')).toMatchObject({
+    // Without a coach, every GET (with or without the variant, e.g. the Roman gate) reads the grant as live.
+    expect(await service.getStatus('u_a')).toMatchObject({ granted: true, state: 'granted', version: cf });
+    expect(await service.getStatus('u_a', { coachFree: true })).toMatchObject({ granted: true, version: cf });
+    // The client joins a coach: GET asks for the coached text again, whatever the variant (nothing written) ...
+    const rows = fake.rows.length;
+    expect(await service.getStatus('u_a', { hasCoach: true })).toMatchObject({
       granted: false,
       state: 'needs_reconsent',
       needs_reconsent: true,
@@ -274,7 +278,12 @@ describe('AI consent ledger: coach-free copies (owner 62)', () => {
       copy: { version: V4, sha256: V4_COPY_SHA },
       memory_copy: { version: 'client-ai-v5' },
     });
-    expect(await service.getStatus('u_a', { coachFree: true })).toMatchObject({ granted: true, version: cf });
+    expect(await service.getStatus('u_a', { coachFree: true, hasCoach: true })).toMatchObject({
+      granted: false,
+      state: 'needs_reconsent',
+      current_version: V4,
+    });
+    expect(fake.rows).toHaveLength(rows);
     // ... and coach AI drafts and coach-method learning are refused (single and batch reads).
     await expect(
       egress.assertMaySend(clientDataSubject('u_a', 'coach', scope), 'anthropic', 'coach_ai.workout_program'),

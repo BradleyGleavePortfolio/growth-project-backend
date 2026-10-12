@@ -117,13 +117,12 @@ Accepted grants (`CLIENT_AI_CONSENT_ACCEPTED`; version AND its exact sha256):
 
 - Coach-free copies (owner 62, 2026-10-12): `GET /api/me/ai-consent?variant=coach_free`
   (the app sends it for a client with no coach) offers `client-ai-v4-coach-free` as
-  `copy` and `client-ai-v5-coach-free` as `upgrade` / `memory_copy`. A plain `GET`
-  (a client with a coach) reads a live coach-free grant as `needs_reconsent` with
-  the coached copy, so the app asks for the coached text. A live coached grant
-  reads its coached copies whatever is asked. Without a live grant, `GET` follows
-  the ask (so a client who joined a coach after withdrawing a
-  coach-free grant is offered the coached copy) and a POST / DELETE response follows
-  the latest decision on file. Coach-audience reads (`hasClientAiConsent` /
+  `copy` and `client-ai-v5-coach-free` as `upgrade` / `memory_copy`. For a client
+  with a coach (`User.coach_id`), `GET` always offers the coached copies and reads
+  a live coach-free grant as `needs_reconsent`, so the app asks for the coached
+  text. Otherwise a live grant reads the copies of its own family, whatever is
+  asked; without a live grant `GET` follows the ask, and a POST / DELETE response
+  follows the latest decision on file. Coach-audience reads (`hasClientAiConsent` /
   `clientsWithAiConsent` / `memoryGrantTimes` with `audience` 'coach', the default)
   never count a coach-free grant, also after the client joins a coach; coach AI for
   that client needs a coached grant.

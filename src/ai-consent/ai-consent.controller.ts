@@ -68,10 +68,12 @@ export class AiConsentController {
     @Req() req: AuthedRequest,
     @Query('variant') variant?: unknown,
   ): Promise<ClientAiConsentStatus> {
-    // Any other value (or none) reads the coached copies, as before.
+    // Any other value (or none) reads the coached copies, as before. A client
+    // with a coach never reads a coach-free grant as live (owner 62).
+    const hasCoach = typeof req.user.coach_id === 'string' && req.user.coach_id.length > 0;
     return variant === 'coach_free'
-      ? this.consent.getStatus(req.user.id, { coachFree: true })
-      : this.consent.getStatus(req.user.id);
+      ? this.consent.getStatus(req.user.id, { coachFree: true, hasCoach })
+      : this.consent.getStatus(req.user.id, { hasCoach });
   }
 
   @Post('roman')

@@ -36,10 +36,10 @@
  * with every coach sentence or clause removed; same scopes, for the 'client'
  * audience only: a coach-free grant never covers coach AI drafts or
  * coach-method learning, also after the client joins a coach). The app asks
- * for them with GET ?variant=coach_free. A plain GET (a client with a coach)
- * reads a live coach-free grant as needs_reconsent with the coached copy, so
- * the app asks for the coached text; a live coached grant reads its coached
- * copies whatever is asked.
+ * for them with GET ?variant=coach_free. For a client with a coach
+ * (User.coach_id) GET reads a live coach-free grant as needs_reconsent with
+ * the coached copy, so the app asks for the coached text; a live coached
+ * grant reads its coached copies whatever is asked.
  *
  * History is append-only: a decision is a new row with seq = latest.seq + 1.
  * The unique index (user_id, processor, purpose, seq) turns a race between two
@@ -321,20 +321,25 @@ export class AiConsentService implements ClientAiConsentReader {
   }
 
   /**
-   * `askCoachFree` (GET only): true for ?variant=coach_free (a client with no
-   * coach), false for a plain GET (a client with a coach). A plain GET never
-   * reads a coach-free grant as live: it answers needs_reconsent with the
-   * coached copy, so the app asks for the coached text (owner 62; Roman for the
-   * client stays covered server-side). Otherwise a live grant reads the copies
-   * of its own family; with no live grant, GET follows the ask and a POST /
-   * DELETE response (no ask) follows the latest decision on file.
+   * `askCoachFree` (GET only): true for ?variant=coach_free (the app's ask for a
+   * client with no coach), false for a plain GET. `hasCoach` (GET only): the
+   * caller has a coach (User.coach_id). For a client with a coach GET always
+   * offers the coached copies, and a live coach-free grant never reads as live:
+   * GET answers needs_reconsent, so the app asks for the coached text (owner 62;
+   * Roman for the client stays covered server-side). Otherwise a live grant
+   * reads the copies of its own family; with no live grant, GET follows the ask
+   * and a POST / DELETE response (no ask) follows the latest decision on file.
    */
-  private toStatus(row: AiConsentLatestRow | null, askCoachFree?: boolean): ClientAiConsentStatus {
+  private toStatus(
+    row: AiConsentLatestRow | null,
+    askCoachFree?: boolean,
+    hasCoach = false,
+  ): ClientAiConsentStatus {
     const onFileCoachFree = isCoachFreeClientAiVersion(row?.consent_version);
-    const scope = askCoachFree === false && onFileCoachFree ? null : grantScope(row);
+    const scope = hasCoach && onFileCoachFree ? null : grantScope(row);
     const memoryOn = isRomanMemoryEnabled();
     const granted = scope !== null;
-    const coachFree = granted ? onFileCoachFree : (askCoachFree ?? onFileCoachFree);
+    const coachFree = granted ? onFileCoachFree : !hasCoach && (askCoachFree ?? onFileCoachFree);
     const copy =
       scope === 'memory' ? clientAiConsentV5Copy(coachFree) : clientAiConsentCopy(coachFree);
     const isGrant = row?.action === AI_CONSENT_ACTION_GRANT;
@@ -363,10 +368,14 @@ export class AiConsentService implements ClientAiConsentReader {
 
   async getStatus(
     userId: string,
-    opts: { coachFree?: boolean } = {},
+    opts: { coachFree?: boolean; hasCoach?: boolean } = {},
   ): Promise<ClientAiConsentStatus> {
     this.assertEnabled();
-    return this.toStatus(await this.latestOr503(userId, 'status'), opts.coachFree === true);
+    return this.toStatus(
+      await this.latestOr503(userId, 'status'),
+      opts.coachFree === true,
+      opts.hasCoach === true,
+    );
   }
 
   /**
