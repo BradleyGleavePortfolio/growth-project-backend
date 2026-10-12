@@ -33,6 +33,7 @@ import { WorkoutContextService, WorkoutContextV2 } from '../context/workout-cont
 import { applyProgramSafety, toInjuryAreas } from '../gateway/workout-builder/training-substitutions';
 import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
+import { lockClientsForDraftWrite } from '../../coach/moved-client-drafts';
 
 /** B-872-SOL-H-131-1 — the Coach sharing switches a stored weekly insight can hold logs of. */
 const INSIGHT_SHARING_SCOPES: readonly string[] = [
@@ -712,19 +713,24 @@ export class CoachAIService {
     tokensOut: number,
   ) {
     const costCents = AnthropicAdapter.computeCostCents(tokensIn, tokensOut);
-    return this.prisma.aIDraft.create({
-      data: {
-        coachId,
-        clientId,
-        type,
-        inputContext: ctx as unknown as Prisma.InputJsonValue,
-        modelUsed: modelUsed || COACH_AI_MODEL,
-        promptVersion,
-        generatedPayload: payload,
-        tokensIn,
-        tokensOut,
-        costCents,
-      },
+    // Owner decision 17: a draft finished after its client moved is not saved for the old coach.
+    return this.prisma.$transaction(async (tx) => {
+      await lockClientsForDraftWrite(tx, [clientId]);
+      await this.assertCoachOwnsClient(coachId, clientId);
+      return tx.aIDraft.create({
+        data: {
+          coachId,
+          clientId,
+          type,
+          inputContext: ctx as unknown as Prisma.InputJsonValue,
+          modelUsed: modelUsed || COACH_AI_MODEL,
+          promptVersion,
+          generatedPayload: payload,
+          tokensIn,
+          tokensOut,
+          costCents,
+        },
+      });
     });
   }
 
