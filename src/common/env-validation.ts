@@ -1470,7 +1470,15 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'derived from SUPABASE_SERVICE_ROLE_KEY (HMAC); unset both -> every voice publish fails closed',
     reason:
-      'A-610-1 (#610) — secret behind the issuance MAC on community voice storage keys (src/community/voice/voice-storage-key.ts). Only keys the server minted for the caller in the last 24h can be published. Rotating it invalidates unpublished upload URLs only (published notes keep working). Use 32+ random characters.',
+      'A-610-1 (#610) — secret behind the issuance MAC on community voice storage keys (src/community/voice/voice-storage-key.ts). Only keys the server minted for the caller in the last 24h can be published. K5 (SEC-06): when set, keys minted with the derived secret still publish for the first 24h10m after each start, so setting it breaks no upload in flight. Rotating it later invalidates unpublished upload URLs only (published notes keep working). Use 64 hex characters (openssl rand -hex 32).',
+  },
+  {
+    name: 'SIGNUP_MARKER_SIGNING_SECRET',
+    tier: 'optional',
+    default:
+      'SUPABASE_SERVICE_ROLE_KEY (HMAC key); both unset or shorter than 16 -> no marker verifies (stranded sign-up adoption off)',
+    reason:
+      'K5 (SEC-06) — HMAC key for the sign-up attempt marker (src/auth/auth.service.ts signupAttemptMac) that lets a confirmed email sign-up with no local account be adopted at first password sign-in. When set, markers minted with SUPABASE_SERVICE_ROLE_KEY still verify for the first 7 days after each start. Use 64 hex characters (openssl rand -hex 32).',
   },
   {
     name: 'VOICE_NOTE_MAX_BYTES',
