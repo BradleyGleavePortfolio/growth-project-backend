@@ -525,7 +525,7 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
       return reply(...args);
     });
     const svc = new ChurnInterventionService(
-      prisma as any,
+      prisma,
       buildPtmService(),
       buildConfig(),
       grantAllEgress(),
@@ -752,7 +752,7 @@ describe('ChurnInterventionService.sendIntervention', () => {
     prisma.rows.users[0].coach_id = 'c2';
     const notif = buildNotifications();
     const svc = new ChurnInterventionService(
-      prisma as any,
+      prisma,
       buildPtmService(),
       buildConfig(),
       grantAllEgress(),
