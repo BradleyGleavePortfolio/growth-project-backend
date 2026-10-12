@@ -60,3 +60,36 @@ describe('B-908-1: Roman never re-endorses a stored target under the floor', () 
     expect(checked.text).toContain('Your daily target is 1,800 kcal');
   });
 });
+
+// C-908-5/6: the grams and the kcal left come from the same lifted number.
+describe('R4c: a floor-lifted correction adds up', () => {
+  function logged(floor: number, calories: number): PostCheckContext {
+    const ctx = coachTarget(floor, calories);
+    ctx.targets = { ...ctx.targets, protein_g: 70, carbs_g: 110, fat_g: 31 };
+    ctx.today = { ...ctx.today, kcal: 600, protein_g: 40, meals_logged: 2 };
+    ctx.today.remaining_kcal = calories - 600;
+    return ctx;
+  }
+
+  it('grams and kcal left follow the 1,200 kcal floor, not the stored 1,000', () => {
+    const checked = postCheckRomanReply('Stick to 1,000 kcal today.', {
+      context: logged(1200, 1000),
+      routerClass: 'normal',
+    });
+    expect(checked.text).toBe(
+      'Your daily target is 1,200 kcal (84 g protein, 132 g carbs, 37 g fat), which Alex set. So far today you have logged 600 kcal and 40 g protein, leaving 600 kcal. I will not suggest different targets; if you would like them reviewed, message Alex.',
+    );
+    const kcal = 84 * 4 + 132 * 4 + 37 * 9;
+    expect(Math.abs(kcal - 1200)).toBeLessThan(12);
+  });
+
+  it('a target above the floor is restated byte for byte as stored', () => {
+    const checked = postCheckRomanReply('Stick to 1,000 kcal today.', {
+      context: logged(1200, 1800),
+      routerClass: 'normal',
+    });
+    expect(checked.text).toBe(
+      'Your daily target is 1,800 kcal (70 g protein, 110 g carbs, 31 g fat), which Alex set. So far today you have logged 600 kcal and 40 g protein, leaving 1200 kcal. I will not suggest different targets; if you would like them reviewed, message Alex.',
+    );
+  });
+});
