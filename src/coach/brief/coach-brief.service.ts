@@ -835,12 +835,18 @@ export class CoachBriefService {
     if (briefMode === 'sub_coach') {
       const assignments = await this.prisma.subCoachAssignment.findMany({
         where: { sub_coach_id: coachId, unassigned_at: null },
-        select: { client_id: true },
+        select: { client_id: true, head_coach_id: true },
       });
       if (assignments.length === 0) return [];
-      const ids = Array.from(new Set(assignments.map((a) => a.client_id)));
+      // Same current-coach rule as SubCoachScopeService.getAuthorizedClientIds:
+      // a move does not close the delegation row, so the client must still be
+      // the delegating head coach's (owner decision 4).
       const live = await this.prisma.user.findMany({
-        where: { id: { in: ids }, role: 'student', archived_at: null },
+        where: {
+          OR: assignments.map((a) => ({ id: a.client_id, coach_id: a.head_coach_id })),
+          role: 'student',
+          archived_at: null,
+        },
         select: { id: true },
       });
       return live.map((u) => u.id);
@@ -1031,7 +1037,8 @@ export class CoachBriefService {
         },
         select: {
           client_id: true,
-          client: { select: { name: true } },
+          coach_id: true,
+          client: { select: { name: true, coach_id: true } },
           body: true,
           created_at: true,
         },
@@ -1059,6 +1066,8 @@ export class CoachBriefService {
     >();
     for (const m of unreadMessagesRaw) {
       if (!m.client_id || threadByClient.has(m.client_id)) continue;
+      // Only the thread with the client's current coach (owner decision 4).
+      if (m.coach_id !== m.client?.coach_id) continue;
       threadByClient.set(m.client_id, {
         client_id: m.client_id,
         client_name: m.client?.name ?? 'Client',
@@ -1209,6 +1218,8 @@ export class CoachBriefService {
       const delegatedRows = await this.prisma.user.findMany({
         where: {
           id: { in: Array.from(delegatedClientIds) },
+          // A client who moved away is no longer this head coach's.
+          coach_id: coachId,
           archived_at: null,
           role: 'student',
         },
@@ -1368,7 +1379,9 @@ export class CoachBriefService {
       .map((sc) => {
         const sub = sc.sub_coach;
         if (!sub) return null;
-        const clientSet = clientsBySubCoach.get(sub.id) ?? new Set<string>();
+        const clientSet = new Set(
+          [...(clientsBySubCoach.get(sub.id) ?? [])].filter((id) => delegatedClientIds.has(id)),
+        );
         let new24h = 0;
         for (const cid of clientSet) {
           const createdAt = delegatedClientCreatedAtById.get(cid);

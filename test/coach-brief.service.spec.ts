@@ -140,7 +140,7 @@ describe('CoachBriefService.resolveClientScope', () => {
     expect(result).toEqual(['c1', 'c2']);
     expect(prisma.subCoachAssignment.findMany).toHaveBeenCalledWith({
       where: { sub_coach_id: 'subCoach1', unassigned_at: null },
-      select: { client_id: true },
+      select: { client_id: true, head_coach_id: true },
     });
   });
 
