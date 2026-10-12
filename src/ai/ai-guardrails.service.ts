@@ -20,6 +20,12 @@ const BANNED_PATTERNS: Array<{ pattern: RegExp; reason: string }> = [
   { pattern: /\b(starv(e|ation)|water\s+fast(?:\s+for\s+\d+\s+days?)?|hcg\s+diet)\b/gi, reason: 'extreme-restriction' },
 ];
 
+// A kcal figure, or a pair of them ("1,000-1,200 kcal", "from 1,800 to 1,100
+// calories"); the lower figure is checked. Comma-grouped figures are read whole,
+// never as "200 kcal".
+const CALORIE_FIGURE =
+  /\b(\d{1,2},\d{3}|\d{3,4})(?:\s*(?:-|\u2013|\u2014|to|and)\s*(\d{1,2},\d{3}|\d{3,4}))?\s*(?:kcal|calories|cal\b)/gi;
+
 // Topics where we always defer to the coach / a qualified pro instead of
 // answering directly. Match conservatively — the AI may legitimately
 // discuss these in passing, so we add a referral line rather than
@@ -50,17 +56,16 @@ export class AIGuardrailsService {
 
     // 1. Calorie floor
     const floor = ctx.guardrails.forbid_calorie_recommendations_below;
-    const calMatch = out.match(/\b(\d{3,4})\s*(?:kcal|calories|cal\b)/gi);
-    if (calMatch) {
-      for (const m of calMatch) {
-        const n = parseInt(m, 10);
-        if (Number.isFinite(n) && n > 0 && n < floor) {
-          applied.push('calorie-floor');
-          out =
-            out +
-            `\n\nNote: any number under ${floor} kcal in this reply is below the safety floor for adult men. Stick with ${ctx.prescribed.calories ?? 'your prescribed target'} kcal.`;
-          break;
-        }
+    for (const [, first, second = first] of out.matchAll(CALORIE_FIGURE)) {
+      const n = Math.min(...[first, second].map((f) => parseInt(f.replace(/,/g, ''), 10)));
+      if (Number.isFinite(n) && n > 0 && n < floor) {
+        applied.push('calorie-floor');
+        // An old stored target under the floor is never the one to stick with.
+        const target = ctx.prescribed.calories;
+        out =
+          out +
+          `\n\nNote: any number under ${floor} kcal in this reply is below the safety floor. Stick with ${target != null ? Math.max(target, floor) : 'your prescribed target'} kcal.`;
+        break;
       }
     }
 

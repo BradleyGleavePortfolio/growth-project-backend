@@ -704,7 +704,9 @@ function restateTargets(ctx: PostCheckContext | null, fallbackFloor: number): st
   const coach = coachName(ctx);
   const calories = ctx?.targets.calories ?? null;
   if (!ctx || ctx.targets.source === 'none' || calories === null) {
-    const setter = coachless(ctx) ? '' : ` ${coach === 'your coach' ? 'Your coach' : coach} can set them from Messages.`;
+    const setter = coachless(ctx)
+      ? ''
+      : ` ${coach === 'your coach' ? 'Your coach' : coach} can set them from Messages.`;
     return `You do not have daily targets set yet, so I will not guess at numbers.${setter} I will not suggest going below ${fallbackFloor.toLocaleString('en-US')} kcal a day.`;
   }
   const t = ctx.targets;
@@ -721,7 +723,9 @@ function restateTargets(ctx: PostCheckContext | null, fallbackFloor: number): st
       ? ` So far today you have logged ${ctx.today.kcal} kcal and ${ctx.today.protein_g} g protein, leaving ${ctx.today.remaining_kcal} kcal.`
       : '';
   const review = coachless(ctx) ? '.' : `; if you would like them reviewed, message ${coach}.`;
-  return `Your daily target is ${calories.toLocaleString('en-US')} kcal${macros ? ` (${macros})` : ''}, which ${who}.${today} I will not suggest different targets${review}`;
+  // B-908-1: never re-endorse a stored target under the floor (decision 6).
+  const safe = Math.max(calories, fallbackFloor);
+  return `Your daily target is ${safe.toLocaleString('en-US')} kcal${macros ? ` (${macros})` : ''}, which ${who}.${today} I will not suggest different targets${review}`;
 }
 
 /**
