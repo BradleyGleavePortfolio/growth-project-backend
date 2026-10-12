@@ -914,6 +914,7 @@ export class OnboardingService {
 
           await tx.macroTarget.create({
             data: {
+              id: `auto-${randomUUID()}`,
               coach_id: owner.id,
               client_id: clientId,
               calories_kcal: macros.calories,

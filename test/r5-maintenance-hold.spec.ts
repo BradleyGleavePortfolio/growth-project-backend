@@ -267,7 +267,7 @@ describe('held client: the live MacroTarget follows the refreshed maintenance', 
     ['a coach deficit target', { calories_kcal: DEFICIT }, 'moderate', MAINTENANCE],
     [
       'an onboarding target',
-      { calories_kcal: MAINTENANCE, notes: NOTE },
+      { id: 'auto-1', calories_kcal: MAINTENANCE, notes: NOTE },
       'light',
       keep('light', 36),
     ],
@@ -280,6 +280,11 @@ describe('held client: the live MacroTarget follows the refreshed maintenance', 
     ['under 18, coach at maintenance', null, TEEN, keep('moderate')],
     ['adult, no readiness yes, deficit', { screening_any_yes: false }, PROFILE, DEFICIT],
   ])('%s: kept', async (_who, intake, profile, calories_kcal) => {
-    expect((await run(intake, profile, { calories_kcal })).rows).toHaveLength(1);
+    const w = world(intake, profile);
+    w.prisma.macroTarget = { create: w.create, findFirst: () => w.create.mock.results[0]?.value };
+    const plan = { calories_kcal, protein_g: 150, carbs_g: 200, fats_g: 60, notes: NOTE };
+    await w.macros.createForClient('coach-1', 'client-1', plan);
+    await w.profiles.updateProfile('client-1', { activity_level: 'moderate' }, NOW);
+    expect(w.create).toHaveBeenCalledTimes(1);
   });
 });

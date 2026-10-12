@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { Prisma, type UserProfile } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -195,8 +196,6 @@ async function screeningYes(tx: Prisma.TransactionClient, userId: string): Promi
   return intake?.screening_any_yes === true;
 }
 
-const SERVER_NOTE = /^(Initial target from the consultation|Updated after a profile change) \(/;
-
 /**
  * B-929-1 (owner decision 6): every reader prefers the live MacroTarget, so for
  * a held client one below the new maintenance, or (readiness yes) a server-written
@@ -210,12 +209,13 @@ async function computeHeld(tx: Prisma.TransactionClient, id: string, i: MacroInp
     orderBy: { effective_from: 'desc' },
   });
   const kcal = live?.calories_kcal ?? Infinity;
-  const off = m.maintenance_hold && SERVER_NOTE.test(live?.notes ?? '') && kcal !== m.calories;
+  const off = m.maintenance_hold && /^auto-/.test(live?.id ?? '') && kcal !== m.calories;
   if (!live || (kcal >= Math.max(m.floor_kcal, m.tdee) && !off)) return m;
   const why = m.maintenance_hold ? 'held at maintenance' : 'no deficit under 18';
   const { calories: calories_kcal, protein_g, carbs_g, fat_g: fats_g } = m;
   await tx.macroTarget.create({
     data: {
+      id: `auto-${randomUUID()}`,
       coach_id: live.coach_id,
       client_id: id,
       calories_kcal,
