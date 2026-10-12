@@ -2,7 +2,8 @@
 // other coach holds, in the move's own transaction. Approved or sent items
 // are history and stay (owner decision 4). Runs the real move code over
 // in-memory rows whose filters answer like Postgres (NULL never matches).
-import { payloadClientIds } from '../src/ai/gateway/ai-approval.service';
+import { AiApprovalService, payloadClientIds } from '../src/ai/gateway/ai-approval.service';
+import type { AuditService } from '../src/audit/audit.service';
 import type { StripeApiService } from '../src/billing/stripe-api.service';
 import { MOVED_CLIENT_PAYLOAD_KEYS, deleteDraftsLeftByMove } from '../src/coach/moved-client-drafts';
 import type { PrismaService } from '../src/prisma.service';
@@ -61,8 +62,8 @@ function table(rows: Row[]) {
 function world() {
   const user = (id: string, role: string, coach_id: string | null) => ({ id, role, coach_id, name: id, deleted_at: null });
   const ai = (id: string, coachId: string, clientId: string, status: string) => ({ id, coachId, clientId, status });
-  const gw = (id: string, tenant: string | null, subject: string, status: string, payload: Row = {}) =>
-    ({ id, tenant_coach_id: tenant, subject_user_id: subject, status, payload });
+  const gw = (id: string, tenant: string | null, subject: string, status: string, payload: Row = {}, requester = tenant) =>
+    ({ id, tenant_coach_id: tenant, requester_id: requester, subject_user_id: subject, status, payload });
   const msg = (id: string, coach_id: string, client_id: string) => ({ id, coach_id, client_id });
   const churn = (id: string, coach_id: string, client_id: string, status: string) => ({ id, coach_id, client_id, status });
   const db = {
@@ -90,6 +91,10 @@ function world() {
       gw('head1-client2-pending', 'head1', 'client2', 'pending', { clientId: 'client2' }),
       gw('no-tenant-client1-pending', null, 'client1', 'pending'),
       gw('sub1-client3-pending', 'sub1', 'client3', 'pending'),
+      // The workout builder stamps a sub-coach's draft with the head coach's tenant.
+      gw('sub1-in-head1-client3-pending', 'head1', 'client3', 'pending', {}, 'sub1'),
+      gw('head1-client3-pending', 'head1', 'client3', 'pending'),
+      gw('no-requester-head1-client3-pending', 'head1', 'client3', 'pending', {}, null),
     ]),
     messageDraft: table([
       msg('head1-client1-message', 'head1', 'client1'),
@@ -120,7 +125,10 @@ const AFTER_CLIENT1_TO_SUB1 = {
     'head1-client1-approved', 'head1-client2-draft', 'sub1-client1-draft',
     'sub1-client3-draft', 'sub1-client3-approved',
   ],
-  aiActionDraft: ['head1-client1-approved', 'head1-client2-pending', 'no-tenant-client1-pending', 'sub1-client3-pending'],
+  aiActionDraft: [
+    'head1-client1-approved', 'head1-client2-pending', 'no-tenant-client1-pending', 'sub1-client3-pending',
+    'sub1-in-head1-client3-pending', 'head1-client3-pending', 'no-requester-head1-client3-pending',
+  ],
   messageDraft: ['head1-client2-message', 'sub1-client3-message'],
   churnIntervention: ['head1-client1-churn-sent', 'head1-client2-churn-draft', 'sub1-client3-churn-draft'],
 };
@@ -138,14 +146,14 @@ describe('a client move deletes the drafts left behind (owner decision 17)', () 
     await w.subCoaches.reassignClient('head1', 'sub1', { clientId: 'client1' });
     const heldBySub1 = [
       ...w.db.aIDraft.rows.filter((r) => r.coachId === 'sub1'),
-      ...w.db.aiActionDraft.rows.filter((r) => r.tenant_coach_id === 'sub1'),
+      ...w.db.aiActionDraft.rows.filter((r) => r.tenant_coach_id === 'sub1' || r.requester_id === 'sub1'),
       ...w.db.messageDraft.rows.filter((r) => r.coach_id === 'sub1'),
       ...w.db.churnIntervention.rows.filter((r) => r.coach_id === 'sub1'),
     ].map((r) => r.id);
     // Only what sub1 already held before the move.
     expect(heldBySub1).toEqual([
       'sub1-client1-draft', 'sub1-client3-draft', 'sub1-client3-approved',
-      'sub1-client3-pending', 'sub1-client3-message', 'sub1-client3-churn-draft',
+      'sub1-client3-pending', 'sub1-in-head1-client3-pending', 'sub1-client3-message', 'sub1-client3-churn-draft',
     ]);
   });
 
@@ -159,6 +167,12 @@ describe('a client move deletes the drafts left behind (owner decision 17)', () 
     await w.subCoaches.reassignClient('head1', 'head1', { clientId: 'client1' });
     expect(w.ids().aIDraft).toEqual(AFTER_CLIENT1_TO_SUB1.aIDraft.filter((id) => id !== 'sub1-client1-draft'));
     expect(w.ids().aiActionDraft).toEqual(AFTER_CLIENT1_TO_SUB1.aiActionDraft);
+  });
+
+  it('taking a client back from a sub-coach deletes the sub-coach\'s drafts in the head coach\'s tenant', async () => {
+    const w = world();
+    await w.subCoaches.reassignClient('head1', 'head1', { clientId: 'client3' });
+    expect(w.ids().aiActionDraft.filter((id) => id.includes('client3'))).toEqual(['head1-client3-pending']);
   });
 
   it.each([
@@ -183,11 +197,16 @@ describe('a client move deletes the drafts left behind (owner decision 17)', () 
       ],
       aiActionDraft: [
         'head1-client1-pending', 'head1-client2-pending-names-client1', 'head1-client1-approved',
-        'head1-client2-pending', 'no-tenant-client1-pending',
+        'head1-client2-pending', 'no-tenant-client1-pending', 'head1-client3-pending',
       ],
       messageDraft: ['head1-client1-message', 'head1-client2-message'],
       churnIntervention: ['head1-client1-churn-edited', 'head1-client1-churn-sent', 'head1-client2-churn-draft'],
     });
+    // The head coach's pending list shows none of the sub-coach's drafts.
+    const pending = await new AiApprovalService(w.prisma, fakeOf<AuditService>({})).listPending({ tenantCoachId: 'head1' });
+    expect(pending.map((d) => d.id)).toEqual([
+      'head1-client1-pending', 'head1-client2-pending-names-client1', 'head1-client2-pending', 'head1-client3-pending',
+    ]);
   });
 
   it('matches every payload key that deciding a draft checks', () => {

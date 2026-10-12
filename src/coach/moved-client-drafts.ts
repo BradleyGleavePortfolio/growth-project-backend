@@ -13,8 +13,9 @@ export const MOVED_CLIENT_PAYLOAD_KEYS = ['clientId', 'client_id', 'target_clien
  *
  * For each moved client, held by anyone but `newCoachId`:
  *   - Coach AI drafts (AIDraft) that are not APPROVED;
- *   - AI approval drafts (AiActionDraft) in another coach's tenant that are
- *     not approved and name the client as subject or in the payload;
+ *   - AI approval drafts (AiActionDraft) with a tenant that are not approved,
+ *     name the client as subject or in the payload, and whose tenant or
+ *     requester is not the new coach;
  *   - message composer drafts (MessageDraft), which are never sent;
  *   - re-engagement drafts (ChurnIntervention) that are not sent.
  *
@@ -33,10 +34,17 @@ export async function deleteDraftsLeftByMove(
   await tx.aiActionDraft.deleteMany({
     where: {
       status: { not: 'approved' },
-      AND: [{ tenant_coach_id: { not: null } }, { tenant_coach_id: { not: newCoachId } }],
-      OR: [
-        { subject_user_id: { in: ids } },
-        ...ids.flatMap((id) => MOVED_CLIENT_PAYLOAD_KEYS.map((key) => ({ payload: { path: [key], equals: id } }))),
+      tenant_coach_id: { not: null },
+      AND: [
+        {
+          OR: [
+            { subject_user_id: { in: ids } },
+            ...ids.flatMap((id) => MOVED_CLIENT_PAYLOAD_KEYS.map((key) => ({ payload: { path: [key], equals: id } }))),
+          ],
+        },
+        // A sub-coach's workout builder draft carries the head coach's tenant,
+        // so the requester holds it too. A null requester is not the new coach.
+        { OR: [{ tenant_coach_id: { not: newCoachId } }, { requester_id: null }, { requester_id: { not: newCoachId } }] },
       ],
     },
   });
