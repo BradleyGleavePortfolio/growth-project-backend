@@ -1,5 +1,12 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { calorieFloorKcal } from './calorie-floor';
 import { CreateMacroTargetDto } from './macros.dto';
 
 import {
@@ -78,6 +85,16 @@ export class MacrosService {
 
   async createForClient(coachId: string, clientId: string, dto: CreateMacroTargetDto) {
     await this.assertClientOfCoach(coachId, clientId);
+    const profile = await this.prisma.userProfile.findUnique({
+      where: { user_id: clientId },
+      select: { sex: true },
+    });
+    const floor = calorieFloorKcal(profile?.sex);
+    if (dto.calories_kcal < floor) {
+      throw new BadRequestException(
+        `Calorie targets can't go below ${floor.toLocaleString('en-US')} for this client.`,
+      );
+    }
     const effective = dto.effective_from ? new Date(dto.effective_from) : new Date();
     const target = await this.prisma.macroTarget.create({
       data: {

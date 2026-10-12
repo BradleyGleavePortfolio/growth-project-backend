@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { calorieFloorKcal } from '../macros/calorie-floor';
 import { PrismaService } from '../prisma.service';
 import { romanContextInvalidate } from '../roman/context/roman-context-invalidation';
 import { sanitizePromptInput } from './utils/sanitize-prompt-input';
@@ -37,11 +38,6 @@ export const CONTEXT_LIMITS = {
   BIO_CHARS: 240,
   MEAL_PLAN_ITEMS: 12,
 };
-
-// Safety floor on calorie recommendations. The prompt forbids the model
-// from suggesting anything below this, on top of the post-response check
-// in GuardrailService.
-const CALORIE_FLOOR_FALLBACK = 1500;
 
 // Cache TTL: short enough that "I just logged a meal, ask the AI" is fresh,
 // long enough to absorb chat-burst usage (rapid follow-up questions reuse
@@ -335,7 +331,7 @@ export class ClientAIContextService {
         opted_in: requesterProfile?.show_on_leaderboard ?? false,
         rank: null, // rank is expensive to compute on every chat; AI uses opted_in signal only
       },
-      guardrails: this.buildGuardrails(prescribed, !!user.coach_id),
+      guardrails: this.buildGuardrails(prescribed, !!user.coach_id, profile?.sex),
       generated_at: new Date().toISOString(),
     };
     return ctx;
@@ -644,13 +640,15 @@ export class ClientAIContextService {
     };
   }
 
-  private buildGuardrails(prescribed: AppPrescribedTargets, hasCoach: boolean): AIGuardrails {
-    const floor =
-      prescribed.calories != null
-        ? Math.min(CALORIE_FLOOR_FALLBACK, Math.round(prescribed.calories * 0.8))
-        : CALORIE_FLOOR_FALLBACK;
+  private buildGuardrails(
+    prescribed: AppPrescribedTargets,
+    hasCoach: boolean,
+    sex: string | null | undefined,
+  ): AIGuardrails {
     return {
-      forbid_calorie_recommendations_below: floor,
+      // The prompt forbids replies below the client's hard floor and the
+      // post-check flags them; a lower prescribed target never lowers it.
+      forbid_calorie_recommendations_below: calorieFloorKcal(sex),
       forbid_contradicting_macros: prescribed.calories != null || prescribed.protein_g != null,
       refer_to_coach_for_medical: hasCoach,
       forbid_extreme_dieting_language: true,
@@ -739,7 +737,7 @@ export class ClientAIContextService {
       recent_wins: [],
       leaderboard: { opted_in: false, rank: null },
       guardrails: {
-        forbid_calorie_recommendations_below: CALORIE_FLOOR_FALLBACK,
+        forbid_calorie_recommendations_below: calorieFloorKcal(null),
         forbid_contradicting_macros: false,
         refer_to_coach_for_medical: false,
         forbid_extreme_dieting_language: true,
