@@ -383,6 +383,7 @@ function makeWorld() {
     workoutPlanRevision: { create: jest.fn(async () => ({ id: id('prev') })) },
     workoutProgramRevision: { create: jest.fn(async () => ({ id: id('grev') })) },
     macroTarget: {
+      findFirst: jest.fn(async () => macroTargets[macroTargets.length - 1] ?? null),
       create: jest.fn(async ({ data }: { data: Row }) => {
         macroTargets.push(data);
         return data;
@@ -612,7 +613,8 @@ describe('PUT /me/onboarding/consultation', () => {
     expect(intake.disclaimer_version).toBe('consult-consent-v3');
     expect(intake.disclaimer_accepted_at).toEqual(NOW);
     expect(intake.screening_any_yes).toBe(true);
-    expect(w.profiles[0]).toMatchObject({ sex: 'female', macro_target_calories: 1789 });
+    // P3 yes holds the fat-loss target at maintenance (decision 6): 1,789 + 500.
+    expect(w.profiles[0]).toMatchObject({ sex: 'female', macro_target_calories: 2289 });
     expect(JSON.stringify(w.profiles)).not.toMatch(/P3/);
     // Re-saving the same P0 version keeps the original accepted time.
     await w.svc.saveConsultation(
@@ -2157,7 +2159,11 @@ describe('CONSULT-ALL-BE-133: every client can finish the consultation (house se
   it('coachless flagged: a replayed completion alerts the house account once', async () => {
     const w = makeWorld();
     addHouseSet(w);
-    await w.consentThenSave('loner', { version: 'consult-v1', answers: { ...COMPLETE, P4: 'yes' } }, NOW);
+    await w.consentThenSave(
+      'loner',
+      { version: 'consult-v1', answers: { ...COMPLETE, P4: 'yes' } },
+      NOW,
+    );
     await w.svc.complete('loner', NOW);
     await w.svc.complete('loner', new Date(NOW.getTime() + 5000));
     expect(w.notifications.map((n) => n.user_id)).toEqual([HOUSE]);
@@ -2360,4 +2366,56 @@ describe('calorie floor: the consultation target never goes below the client flo
       }
     },
   );
+});
+
+describe('maintenance hold: a pregnancy or other readiness yes holds the consultation target', () => {
+  it.each(['P6', 'P1'])('%s yes on fat loss stores maintenance, not the deficit', async (key) => {
+    const answers = { ...COMPLETE, G1: 'fat_loss', [key]: 'yes' };
+    const resolved = resolveMacroInputs(macroRawFromAnswers(answers as Answers), NOW);
+    if (!resolved.ok) throw new Error('fixture incomplete');
+    const maintenance = computeMacros({ ...resolved.inputs, goal: 'maintenance' }).calories;
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers }, NOW);
+    expect((await w.svc.complete('client-1', NOW)).macros.calories).toBe(maintenance);
+    expect(w.macroTargets).toEqual([
+      expect.objectContaining({
+        calories_kcal: maintenance,
+        notes: expect.stringContaining('held at maintenance'),
+      }),
+    ]);
+    expect(w.profiles.find((p) => p.user_id === 'client-1')?.macro_target_calories).toBe(
+      maintenance,
+    );
+  });
+});
+
+describe('no deficit under 18: the consultation target for a 16-year-old', () => {
+  const minor = { ...COMPLETE, B2: '2010-04-01' };
+  const maintenanceOf = (answers: Record<string, unknown>): number => {
+    const resolved = resolveMacroInputs(macroRawFromAnswers(answers as Answers), NOW);
+    if (!resolved.ok) throw new Error('fixture incomplete');
+    return computeMacros({ ...resolved.inputs, goal: 'maintenance' }).calories;
+  };
+
+  it('fat loss stores maintenance with "no deficit under 18" on the note', async () => {
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers: minor }, NOW);
+    const maintenance = maintenanceOf(minor);
+    expect((await w.svc.complete('client-1', NOW)).macros.calories).toBe(maintenance);
+    expect(w.macroTargets).toEqual([
+      expect.objectContaining({
+        calories_kcal: maintenance,
+        notes: 'Initial target from the consultation (mifflin_st_jeor, no deficit under 18).',
+      }),
+    ]);
+  });
+
+  it('muscle gain keeps the +300 surplus', async () => {
+    const answers = { ...minor, G1: 'muscle_gain' };
+    const w = makeWorld();
+    await w.consentThenSave('client-1', { version: 'consult-v1', answers }, NOW);
+    expect((await w.svc.complete('client-1', NOW)).macros.calories).toBe(
+      maintenanceOf(answers) + 300,
+    );
+  });
 });

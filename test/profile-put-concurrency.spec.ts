@@ -110,6 +110,8 @@ function pgDouble(initial: Row | null, opts: DoubleOptions) {
         log.push('locked');
         return rows.has(uid) ? [{ id: rows.get(uid)?.id }] : [];
       },
+      // Read for the maintenance hold (decision 6); no consultation here.
+      clientOnboardingIntake: { findUnique: async () => null },
       userProfile: {
         findUnique: async ({ where }: { where: { user_id: string } }) => {
           log.push('read');
@@ -309,6 +311,7 @@ describe('B606-3: concurrent partial PUT /profile never stores targets inconsist
         attempts += 1;
         return fn({
           $queryRaw: async () => [],
+          clientOnboardingIntake: { findUnique: async () => null },
           userProfile: {
             findUnique: async () => null,
             create: async () => {

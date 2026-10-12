@@ -69,10 +69,9 @@ describe('coach-set targets (MacrosService.createForClient)', () => {
         await expect(saving).rejects.toThrow(
           new BadRequestException(`Calorie targets can't go below ${shown} for this client.`),
         );
-        expect(w.findProfile).toHaveBeenCalledWith({
-          where: { user_id: 'client-1' },
-          select: { sex: true },
-        });
+        expect(w.findProfile).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { user_id: 'client-1' } }),
+        );
         expect(w.create).not.toHaveBeenCalled();
       }
     },
