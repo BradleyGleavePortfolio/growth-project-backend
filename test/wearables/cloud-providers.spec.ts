@@ -160,6 +160,7 @@ describe('GET /v1/wearables/connections/oauth/callback (B-WEARLIST-125)', () => 
     expect(Reflect.getMetadata(ROLES_KEY, h)).toBeUndefined();
     for (const other of [
       ConnectionsController.prototype.startOauth,
+      ConnectionsController.prototype.completeOauth,
       ConnectionsController.prototype.list,
       ConnectionsController.prototype.disconnect,
       ConnectionsController.prototype.registerOnDevice,
@@ -168,16 +169,16 @@ describe('GET /v1/wearables/connections/oauth/callback (B-WEARLIST-125)', () => 
     }
   });
 
-  it('completes the exchange and sends the browser back to the app', async () => {
+  it('completes the exchange and sends the browser back to the app with the ticket (A6)', async () => {
     const handleCallback = jest
       .fn()
-      .mockResolvedValue({ success: true, provider: WearableProvider.OURA });
+      .mockResolvedValue({ provider: WearableProvider.OURA, ticket: 't-1' });
     const res = { redirect: jest.fn() };
     await makeCtrl(handleCallback).oauthCallback({ code: 'c1', state: 's1' }, res);
     expect(handleCallback).toHaveBeenCalledWith({ code: 'c1', state: 's1' });
     expect(res.redirect).toHaveBeenCalledWith(
       302,
-      'tgp://wearables/connected?status=ok&provider=OURA',
+      'tgp://wearables/connected?status=ok&provider=OURA&ticket=t-1',
     );
   });
 

@@ -12,6 +12,7 @@ import { OauthStateService } from '../oauth/oauth-state.service';
 import {
   DisconnectResult,
   OauthCallbackResult,
+  PendingLinkTicket,
   SafeWearableConnection,
   SAFE_CONNECTION_SELECT,
   StartOauthResult,
@@ -29,6 +30,32 @@ import { connectableCloudProviders } from './cloud-availability';
  * provider.
  */
 export const ON_DEVICE_ACCOUNT_ID = 'on-device';
+
+/**
+ * A6 (AUTHB-05): a finished provider sign-in, held until the person who
+ * started the link claims it from the signed-in app. Tokens are KMS-wrapped.
+ */
+interface PendingLink {
+  userId: string;
+  provider: WearableProvider;
+  externalAccountId: string | null;
+  encryptedRefresh: string;
+  encryptedAccess: string | null;
+  accessTokenExpiresAt: string | null;
+  scopes: string[];
+}
+
+function parsePendingLink(raw: string | null): PendingLink | null {
+  if (raw === null) return null;
+  try {
+    const link = JSON.parse(raw) as PendingLink;
+    return typeof link?.userId === 'string' && typeof link.encryptedRefresh === 'string'
+      ? link
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * PR-HK-1 — generic OAuth connect/callback + connection management service.
@@ -113,15 +140,17 @@ export class ConnectionsService {
   }
 
   /**
-   * Complete an OAuth callback: validate+consume the CSRF state (single-use,
+   * Handle an OAuth callback: validate+consume the CSRF state (single-use,
    * before any token exchange — #5), exchange the code via the connector
-   * (passing the PKCE verifier), KMS-wrap the returned tokens, and upsert the
-   * connection. NEVER returns tokens (#12).
+   * (passing the PKCE verifier) and KMS-wrap the returned tokens. A6
+   * (AUTHB-05): the public callback cannot tell who is in the browser, so it
+   * attaches nothing; it holds the link under a single-use ticket that only
+   * the starter can redeem with {@link completeLink}. NEVER returns tokens (#12).
    *
    * @throws BadRequestException on invalid/expired/replayed state or a failed
    *   exchange — with a GENERIC message (no token/secret leak).
    */
-  async handleCallback(input: { code: string; state: string }): Promise<OauthCallbackResult> {
+  async handleCallback(input: { code: string; state: string }): Promise<PendingLinkTicket> {
     // 1) Validate + consume state BEFORE touching the provider. A bad state
     //    must never trigger a token exchange.
     let stateRecord;
@@ -161,7 +190,36 @@ export class ConnectionsService {
       ? this.kms.encrypt(tokens.accessToken)
       : null;
 
-    // 4) Upsert the connection on the natural key
+    // 4) A6 (AUTHB-05): hold the link for the starter's signed-in app.
+    const pending: PendingLink = {
+      userId,
+      provider,
+      externalAccountId: tokens.externalAccountId ?? null,
+      encryptedRefresh,
+      encryptedAccess,
+      accessTokenExpiresAt: tokens.accessTokenExpiresAt?.toISOString() ?? null,
+      scopes: tokens.scopes ?? [],
+    };
+    const ticket = await this.oauthState.holdPendingLink(JSON.stringify(pending));
+    return { provider, ticket };
+  }
+
+  /**
+   * A6 (AUTHB-05): attach a held link for the signed-in caller. The ticket is
+   * taken (deleted) before the owner check, so a foreign, expired, used or
+   * made-up ticket attaches nothing and gets the same opaque 400.
+   */
+  async completeLink(userId: string, ticket: string): Promise<OauthCallbackResult> {
+    const link = parsePendingLink(await this.oauthState.takePendingLink(ticket));
+    if (!link || link.userId !== userId) {
+      if (link) {
+        this.logger.warn(`wearables.oauth.link_refused provider=${link.provider} user_id=${userId}`);
+      }
+      throw new BadRequestException('Invalid or expired wearable link.');
+    }
+    const { provider } = link;
+
+    // Upsert the connection on the natural key
     //    (user_id, provider, external_account_id). A re-link of an existing
     //    connection updates tokens + clears any prior disconnect/error state.
     //
@@ -170,12 +228,12 @@ export class ConnectionsService {
     //    we cannot use `upsert` on the compound key directly. We find-then-
     //    create/update, which also handles the null-account case correctly
     //    (a provider that returns no external account id).
-    const externalAccountId = tokens.externalAccountId ?? null;
+    const externalAccountId = link.externalAccountId;
     const connectionData = {
-      encrypted_refresh_token: encryptedRefresh,
-      encrypted_access_token: encryptedAccess,
-      access_token_expires_at: tokens.accessTokenExpiresAt ?? null,
-      scopes: tokens.scopes ?? [],
+      encrypted_refresh_token: link.encryptedRefresh,
+      encrypted_access_token: link.encryptedAccess,
+      access_token_expires_at: link.accessTokenExpiresAt ? new Date(link.accessTokenExpiresAt) : null,
+      scopes: link.scopes,
       status: WearableConnectionStatus.CONNECTED,
       last_error: null,
       disconnected_at: null,
