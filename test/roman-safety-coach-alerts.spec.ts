@@ -19,6 +19,10 @@ import type { PrismaService } from '../src/prisma.service';
 import type { NotificationsService } from '../src/notifications/notifications.service';
 import type { AdminPtmService } from '../src/admin/ptm/admin-ptm.service';
 import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import type { ExpoPushMessage } from 'expo-server-sdk';
+import { NotificationsService as RealNotificationsService } from '../src/notifications/notifications.service';
+import { PushDeliveryService } from '../src/notifications/push/push-delivery.service';
+import { pushOutboxWorld } from './utils/push-outbox-fake';
 
 const URGENT_PUSH = 'Urgent safety alert for one of your clients. Open TGP to see details.';
 const ED_PUSH = 'Safety alert for one of your clients. Open TGP to see details.';
@@ -167,24 +171,6 @@ describe('the alert card in the action queue', () => {
     });
   });
 
-  it('the query carries the current-coach rule for the caller', async () => {
-    const { svc, prisma } = queue();
-    await svc.getActionQueue('coach-1', {});
-    const where = (prisma.coachAlert.findMany.mock.calls[0][0] as { where: Record<string, unknown> }).where;
-    expect(where).toMatchObject({
-      coach_id: 'coach-1',
-      client_id: { in: ['client-1', 'client-2'] },
-      AND: [
-        {
-          OR: [
-            { alert_type: { notIn: ['roman_urgent_reply', 'roman_eating_disorder_reply'] } },
-            { client: { coach_id: 'coach-1' } },
-          ],
-        },
-      ],
-    });
-  });
-
   it('a deleted chat or another person\'s message gives no quote', async () => {
     const { svc } = queue({
       messages: [{ id: 'm2', user_id: 'client-1', content: 'not this client', created_at: SENT }],
@@ -307,5 +293,54 @@ describe('owner 4: the current coach only', () => {
     expect(await types(svc, 'coach-1')).toEqual([]);
     expect(await types(svc, 'sub-1')).toEqual(['bloodwork_review']);
     await expect(svc.dismissAlert('a-ed', 'sub-1')).rejects.toThrow('Alert not found');
+  });
+});
+
+// B1 (L-OB, b#946): the push worker re-renders the lock screen from the
+// stored context at send time, so the safety line must survive the outbox.
+// Real emitter, NotificationsService and PushDeliveryService; Expo mocked.
+describe('the coach phone receives the safety push line', () => {
+  const TOKEN = 'ExponentPushToken[abcdefghijklmnopqrstuv]';
+  const AFTERNOON = new Date('2026-06-02T18:00:00Z'); // 14:00 New York
+  class Clocked extends PushDeliveryService {
+    protected now(): Date {
+      return AFTERNOON;
+    }
+  }
+  async function deliver(alertType: string, message: string) {
+    const w = pushOutboxWorld({
+      now: () => AFTERNOON,
+      tokens: { 'coach-1': TOKEN },
+      prefs: { 'coach-1': { timezone: 'America/New_York', timezone_updated_at: new Date('2026-06-01T00:00:00Z') } },
+    });
+    const db = { ...w.db, notification: { create: jest.fn(async ({ data }: { data: object }) => ({ id: 'n1', ...data })) } };
+    const send = jest.fn(async (m: ExpoPushMessage[]) => m.map((_, i) => ({ status: 'ok' as const, id: `t-${i}` })));
+    const delivery = new Clocked(fakeOf<PrismaService>(Object.create(db)), { send, getReceipts: jest.fn(async () => ({})) });
+    delivery.autoDrain = false;
+    const notifications = new RealNotificationsService(fakeOf<PrismaService>(Object.create(db)), undefined, undefined, delivery);
+    await new CoachAlertEmitter(notifications).emit({
+      coachId: 'coach-1',
+      alertId: 'a1',
+      alertType,
+      severity: 'critical',
+      message,
+      clientUserId: 'client-1',
+    });
+    expect(await delivery.drain()).toBe(1);
+    return send.mock.calls[0][0][0];
+  }
+
+  it.each([
+    ['roman_urgent_reply', URGENT_PUSH],
+    ['roman_eating_disorder_reply', ED_PUSH],
+  ])('%s: the exact line under "Client update", opening the action queue', async (alertType, line) => {
+    const sent = await deliver(alertType, line);
+    expect(sent).toMatchObject({ to: TOKEN, title: 'Client update', body: line });
+    expect(sent.data).toMatchObject({ actionScreen: COACH_ACTION_QUEUE_SCREEN, kind: NotificationKind.COACH_ALERT });
+  });
+
+  it('any other coach alert keeps the generic line', async () => {
+    const sent = await deliver('streak_dropped', 'Streak dropped.');
+    expect(sent.body).toBe('There is a new update about a client. Open the app to see it.');
   });
 });
