@@ -237,6 +237,16 @@ describe('urgent_symptoms: a weight-loss medicine plus a red-flag symptom', () =
       "I take Ozempic and I'm wondering what pancreatitis feels like",
       'I just started Mounjaro and what are the symptoms of pancreatitis?',
       "I'm on Wegovy. What are the symptoms of pancreatitis?",
+      // R4 (L-913F-SOL): "this/these" points at a warning or leaflet, not a symptom.
+      'On Wegovy, what is this pancreatitis warning about?',
+      'On Wegovy, what are these warnings about gallstones?',
+      'On Wegovy, how serious is this pancreatitis warning?',
+      'On Wegovy, what does this warning about severe stomach pain mean?',
+      'On Wegovy, what does this warning about yellow eyes mean?',
+      'On Wegovy, what does this warning about trouble swallowing mean?',
+      'On Wegovy, what does this warning about a lump in the neck mean?',
+      'On Wegovy, why does this leaflet mention pancreatitis?',
+      'On Wegovy, why does this leaflet mention gallstones?',
     ]) {
       expect({ msg, cls: classifySafety(msg).class }).not.toEqual({ msg, cls: 'urgent_symptoms' });
     }
@@ -260,6 +270,17 @@ describe('urgent_symptoms: a weight-loss medicine plus a red-flag symptom', () =
       "Started Wegovy last week and what's this terrible stomach pain",
       "on ozempic and what's this severe stomach pain",
       "I'm on Ozempic, what's this severe stomach pain?",
+      // R4 (B-913-6, L-913F-OPUS): a plural noun with "are", "killing me", "so much".
+      'on ozempic, my stomach cramps are unbearable',
+      'on ozempic, my stomach cramps are really bad',
+      'on ozempic, my stomach cramps are awful',
+      "I'm on wegovy and my stomach pains are severe",
+      'on mounjaro, the stomach cramps are so bad',
+      'on ozempic my stomach cramps are getting worse',
+      'on ozempic, my stomach cramps have been terrible',
+      'on wegovy, these stomach cramps are unbearable',
+      'on ozempic, stomach pains are killing me',
+      'on ozempic and I have so much stomach pain',
     ]) {
       expect({ msg, cls: classifySafety(msg).class }).toEqual({ msg, cls: 'urgent_symptoms' });
     }

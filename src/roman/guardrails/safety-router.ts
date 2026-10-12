@@ -77,7 +77,7 @@ const URGENT_SYMPTOMS: RegExp[] = [
   // Severe or lasting stomach pain, pain reaching the back, or named
   // pancreas / gallbladder trouble.
   new RegExp(
-    `\\b(${SEVERE}|bad) ((upper )?${STOMACH} ?${PAIN}|pains? in (my |the )?(upper )?${STOMACH})\\b`,
+    `\\b(${SEVERE}|bad|so much) ((upper )?${STOMACH} ?${PAIN}|pains? in (my |the )?(upper )?${STOMACH})\\b`,
     'i',
   ),
   new RegExp(
@@ -85,7 +85,7 @@ const URGENT_SYMPTOMS: RegExp[] = [
     'i',
   ),
   new RegExp(
-    `\\b${STOMACH_PAIN}(,? (it'?s|it is|is|feels|has been|gets|is getting))? (really |so |very |extremely )?(${SEVERE}|bad|badly|severely|worse)\\b|\\b${STOMACH} (is killing me|really hurts|is really hurting|is in (so much|a lot of) pain|is in agony|(hurts?|is hurting|has been hurting) (so much|a lot|like crazy))\\b|\\b${STOMACH} (won'?t|will not|doesn'?t|does not) stop (hurting|aching|cramping)\\b`,
+    `\\b${STOMACH_PAIN}(,? (it'?s|it is|is|are|feels?|has been|have been|gets|is getting|are getting))? (really |so |very |extremely )?(${SEVERE}|bad|badly|severely|worse|killing me)\\b|\\b${STOMACH} (is killing me|really hurts|is really hurting|is in (so much|a lot of) pain|is in agony|(hurts?|is hurting|has been hurting) (so much|a lot|like crazy))\\b|\\b${STOMACH} (won'?t|will not|doesn'?t|does not) stop (hurting|aching|cramping)\\b`,
     'i',
   ),
   /\b(pancreatitis|gallstones?|pancreas (hurts|pain)|gall ?bladder( is| has been| keeps)? (attack|pain|problems?|issues?|trouble|hurts|hurting|aching|acting up|killing me)|pain (where|around|near) my gall ?bladder|(it'?s|it is|must be|could be) (my )?gall ?bladder)\b/i,
@@ -135,10 +135,12 @@ const NOT_A_REPORT = closelyAfter(
  * symptoms of pancreatitis are"); only I/my after the last opener is a report.
  * R3: a clause also starts after but/because/cause ("not sure what's going on
  * but severe stomach pain"), and "this/these" points at a symptom being had.
+ * R4: but not "this warning", "these leaflets", "this side effect list" (label reading).
  */
 const QUESTION_OPENER =
   /^\s*(is|are|can|could|does|do|should|would|will|when|any)\b|\b(what'?s?|how|why|which|wonder(ing)?|want to know|curious)\b/gi;
-const OWN_REPORT = /\b(i|i'?m|i'?ve|my|me|this|these)\b/i;
+const OWN_REPORT =
+  /\b(i|i'?m|i'?ve|my|me|(this|these)(?! (\w+ )?(warning|label|leaflet|side effect|list|info|insert|guide|sheet)))\b/i;
 const CLAUSE_JOIN = /\b(but|because|cause) /gi;
 const IN_THE_PAST = /^.{0,25}\b(years? (ago|back)|as a (kid|child|teen))\b/i;
 const negated = (sentence: string, m: RegExpExecArray) => NEGATED.test(sentence.slice(0, m.index));
@@ -149,10 +151,11 @@ function notAReport(sentence: string, m: RegExpExecArray): boolean {
   const clause = Math.max(sentence.lastIndexOf(',', m.index) + 1, ...joins); // "I'm on Ozempic, is ..."
   const opener = [...sentence.slice(clause, m.index).matchAll(QUESTION_OPENER)].pop();
   const after = opener && clause + (opener.index ?? 0) + opener[0].length;
+  const own = OWN_REPORT.exec(sentence.slice(after))?.index; // R4: sees "this ... warning"
   return (
     NOT_A_REPORT.test(sentence.slice(0, m.index)) ||
     IN_THE_PAST.test(sentence.slice(m.index + m[0].length)) ||
-    (after !== undefined && !OWN_REPORT.test(sentence.slice(after, m.index + m[0].length)))
+    (after !== undefined && !(own !== undefined && after + own < m.index + m[0].length))
   );
 }
 
