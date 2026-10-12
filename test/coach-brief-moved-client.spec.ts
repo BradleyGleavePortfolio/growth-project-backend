@@ -22,6 +22,8 @@ const delegations = [
   { sub_coach_id: 'S', head_coach_id: 'H', client_id: 'kept' },
 ];
 const messages = [
+  // Kai's unread note to a previous coach Y: that history stays with Kai, not with H's team.
+  { client_id: 'kept', coach_id: 'Y', sender_id: 'kept', body: 'Note for my previous coach', created_at: new Date() },
   { client_id: 'moved', coach_id: 'X', sender_id: 'moved', body: 'Private note for my new coach about my dose', created_at: new Date() },
   { client_id: 'kept', coach_id: 'H', sender_id: 'kept', body: 'Can we move my session', created_at: new Date() },
 ];
@@ -100,10 +102,12 @@ describe('F-DP4-3 coach brief after a client moves (owner decision 4)', () => {
     );
   });
 
-  it("an unread message on another coach's thread never reaches the brief, even for a client in scope", async () => {
+  it("an unread message on another coach's thread never reaches the brief, even for a current client", async () => {
     const { svc } = wire();
-    const agg = await svc['aggregateSoloContext']('S', ['moved', 'kept'], 'America/Los_Angeles', '2026-10-11', 'sub_coach');
-    expect(agg.unreadThreads.map((t) => t.client_id)).toEqual(['kept']);
+    const agg = await svc['aggregateSoloContext']('H', ['kept'], 'America/Los_Angeles', '2026-10-11', 'solo_coach');
+    expect(agg.unreadThreads).toEqual([
+      { client_id: 'kept', client_name: 'Kai Kept', message_preview: 'Can we move my session' },
+    ]);
   });
 
   it("old head coach's brief no longer counts the moved client or bills against them", async () => {
