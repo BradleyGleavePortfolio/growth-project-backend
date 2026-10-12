@@ -1322,13 +1322,11 @@ export class RomanService {
       // The coachless wording is true for everyone; never block the reply.
       this.logger.warn(`roman.fallback_coach_read_failed: ${romanErrorTag(err)}`);
     }
-    let text = romanEatingDisorderFallback(hasCoach);
-    if (
+    // Owner 57: the coach line follows the coach sentence when the alert went.
+    const told =
       hasCoach &&
-      (await this.alertCoachOfSafetyReply(caller, session, 'roman_eating_disorder_reply', userMessageId))
-    ) {
-      text = `${text} ${ROMAN_COACH_TOLD_LINE}`;
-    }
+      (await this.alertCoachOfSafetyReply(caller, session, 'roman_eating_disorder_reply', userMessageId));
+    const text = romanEatingDisorderFallback(hasCoach, told);
     yield* this.fixedSafetyReply(caller, session, text, ROMAN_EATING_DISORDER_FALLBACK_REASON);
   }
 

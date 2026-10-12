@@ -880,7 +880,10 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
     const { res, writes } = makeRes();
     await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
     const done = parseFrames(writes).find((f) => f.data?.type === 'done');
-    expect(done?.data.text).toBe(`${romanEatingDisorderFallback(true)} ${ROMAN_COACH_TOLD_LINE}`);
+    expect(done?.data.text).toBe(romanEatingDisorderFallback(true, true));
+    expect(done?.data.text).toContain(
+      `Messages reaches them. ${ROMAN_COACH_TOLD_LINE} A physician`,
+    );
     expect(anthropic.messages.stream).not.toHaveBeenCalled();
     expect(createAlert.mock.calls).toEqual([[edAlert(messages[0].id)]]);
   });
