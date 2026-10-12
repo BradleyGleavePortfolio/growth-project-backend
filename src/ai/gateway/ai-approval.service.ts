@@ -122,7 +122,7 @@ export class AiApprovalService {
       scope.status && (VALID_STATUSES as readonly string[]).includes(scope.status)
         ? (scope.status as ValidStatus)
         : 'pending';
-    return this.prisma.aiActionDraft.findMany({
+    const drafts = await this.prisma.aiActionDraft.findMany({
       where: {
         status: resolvedStatus,
         ...(scope.tenantCoachId ? { tenant_coach_id: scope.tenantCoachId } : {}),
@@ -131,6 +131,19 @@ export class AiApprovalService {
       orderBy: { created_at: 'desc' },
       take: limit,
     });
+    const coachId = scope.tenantCoachId;
+    if (!coachId) return drafts;
+    // The tenant was stamped when the draft was made; a client who has since
+    // moved to another coach takes their drafts with them (same rule as decide),
+    // whether the draft names them as its subject or in its payload.
+    const clientsOf = (d: (typeof drafts)[number]) =>
+      [d.subject_user_id ?? [], payloadClientIds(d.payload)].flat().filter((id) => id !== coachId);
+    const roster = await this.prisma.user.findMany({
+      where: { id: { in: [...new Set(drafts.flatMap(clientsOf))] }, coach_id: coachId },
+      select: { id: true },
+    });
+    const onRoster = new Set(roster.map((u) => u.id));
+    return drafts.filter((d) => clientsOf(d).every((id) => onRoster.has(id)));
   }
 
   async getById(id: string) {

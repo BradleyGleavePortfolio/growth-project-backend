@@ -153,6 +153,21 @@ Admin: any state ──POST /admin/users/:id/delete──► DELETED
    finishes after finalization finds no request row and deletes its own
    archive. The nightly export expiry also removes archives older than an
    hour that no row points to (B-608-3).
+7. Vendors (`account-deletion.vendors.ts`). Step 1 also collects what each
+   vendor needs (the email for Crisp, the person's own Stripe customer ids),
+   and after step 4 the transaction writes it as one `vendor_erasure_pending`
+   row keyed by the tombstone id, so the work commits if and only if the
+   deletion does. After commit each vendor is asked once: PostHog deletes the
+   person and their events (distinct id = user id), Crisp removes every
+   conversation and the profile of the email, Stripe deletes the customers
+   (saved cards and contact details; charges and invoices stay at Stripe;
+   coaches' connected accounts are never touched). Resend and Sentry
+   record `not_applicable` (transactional mail only; Sentry gets no person
+   data). Outcomes (`done`, `not_found`, `not_configured`, `not_applicable`,
+   `failed`) go to a `vendor_erasure` row with a random subject id. The work
+   row is then deleted, or narrowed to the failed vendors and only what they
+   need; the next nightly run retries those without touching the database
+   deletion. A missing key records `not_configured` and is not retried.
 
 ## Erasure manifest
 
@@ -222,6 +237,7 @@ and a bookmark therefore no longer opens anything.
 | `DELETION_FINALIZE_CRON`                                                                                                  | `0 3 * * *`                  | Nightly finalize job (03:00 UTC slot).                                                                                     |
 | `APPLE_TEAM_ID`, `APPLE_SIGNIN_KEY_ID`, `APPLE_SIGNIN_PRIVATE_KEY`; optional `APPLE_SIGNIN_CLIENT_ID` (default `com.growthproject.app`, the iOS bundle id; never read from `APPLE_AUDIENCES`) | unset                        | Sign in with Apple token revocation. Missing → `not_configured`, deletion still completes.                                 |
 | `SUPABASE_VOICE_BUCKET`, `SUPABASE_MEDIA_BUCKET`, `SUPABASE_BLOODWORK_BUCKET`                                             | `voice-notes`, `coach-media`, `bloodwork` | Buckets purged at finalization. A bloodwork `supabase` ref must be `<bloodwork bucket>/<client id>/<file>` (validated at registration; anything else is skipped and counted at deletion). |
+| `POSTHOG_PERSONAL_API_KEY` (scope `person:write`), `POSTHOG_PROJECT_ID`; `CRISP_WEBSITE_ID`, `CRISP_API_TOKEN` (`<identifier>:<key>`) | unset | Vendor erasure at PostHog and Crisp. Missing → `not_configured`, deletion still completes. |
 | `STRIPE_SECRET_KEY`, Mux credentials                                                                                      | —                            | Needed only if the person has live subscriptions or Mux assets; without them finalization fails closed, logs, and retries. |
 
 ## Tests
@@ -231,6 +247,7 @@ and a bookmark therefore no longer opens anything.
 | `test/account-deletion/lifecycle-races.spec.ts`           | Request/cancel/finalize state machine on an in-memory DB with row locks and rollback; Sol's six probes inverted (scrub failure rollback, Supabase returned error, fan-out failure, cancel after snapshot, re-request after snapshot, concurrent requests), cancel vs finalize 409, two cron workers, cutoff boundaries, non-identifying audit, admin delete, legacy link. |
 | `test/account-deletion/erasure-manifest-coverage.spec.ts` | Schema coverage, entry validity, seeded execution (A erased, B byte-identical).                                                                                                                                                                                                                                                                                           |
 | `test/account-deletion/manifest-fk-order.spec.ts`         | Delete order vs. FK constraints parsed from the migrations (RESTRICT / NO ACTION children first), pre-step SQL order.                                                                                                                                                                                                                                                       |
+| `test/account-deletion/vendor-erasure.spec.ts`            | Each vendor asked once with the right id, `not_configured` without a key, failure narrowed for retry, repeat is `not_found`, own Stripe customers only. Orchestration (after commit, retry without re-running the deletion) is in `lifecycle-races.spec.ts`. |
 | `test/account-deletion/storage-billing.spec.ts`           | Storage collection/purge and Stripe cancellation, fail-closed paths; own-prefix rule for bloodwork and voice keys.                                                                                                                                                                                                                                                                                                      |
 | `test/account-deletion/controller-roles.spec.ts`          | No role restriction on self endpoints (sub-coach), owner-only admin.                                                                                                                                                                                                                                                                                                      |
 | `test/account-deletion/drip-fence.spec.ts`                | Drip dispatcher never selects drops for deleted accounts.                                                                                                                                                                                                                                                                                                                 |

@@ -41,13 +41,15 @@ export class CoachCheckInsController {
   // the long-standing `reviewed_by_coach` flag and (only when
   // FEATURE_ROMAN_COACH_REVIEWED_AT is ON) re-stamps `coach_reviewed_at`, which
   // the client CompetencePill reads. 200 (acknowledgement, not creation); 404
-  // when the check-in is missing or belongs to another coach (no probing).
+  // unless the caller is the client's current coach, the check-in is that
+  // client's, and the client shares check-ins (no probing).
   @Post('clients/:client_id/check-ins/:check_in_id/reviewed')
   @HttpCode(200)
   async markReviewed(
     @Request() req: AuthedRequest,
+    @Param('client_id') clientId: string,
     @Param('check_in_id') checkInId: string,
   ) {
-    return this.checkIns.markReviewedByCoach(req.user.id, checkInId);
+    return this.checkIns.markReviewedByCoach(req.user.id, clientId, checkInId, req.user.role);
   }
 }

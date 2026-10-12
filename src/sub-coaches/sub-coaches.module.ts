@@ -6,8 +6,6 @@ import { PrismaService } from '../prisma.service';
 import { TeamModule } from '../team/team.module';
 import { SubCoachAnalyticsService } from './sub-coach-analytics.service';
 import { SubCoachInviteService } from './sub-coach-invite.service';
-import { SubCoachInvitesPublicController } from './sub-coach-invites-public.controller';
-import { SubCoachesController } from './sub-coaches.controller';
 import { SubCoachesService } from './sub-coaches.service';
 import { HeadCoachOnlyGuard } from './head-coach-only.guard';
 
@@ -20,7 +18,7 @@ import { HeadCoachOnlyGuard } from './head-coach-only.guard';
 // SubCoachAnalyticsService. All three are provided here.
 @Module({
   imports: [TeamModule],
-  controllers: [SubCoachInvitesPublicController, SubCoachesController],
+  // Routes off until v1.1 dual authorization (tgp-agent-context planning/V1_1_MUST_DO.md section 2).
   providers: [
     SubCoachesService,
     SubCoachInviteService,

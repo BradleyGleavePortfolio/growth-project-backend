@@ -1,4 +1,5 @@
 import { InviteLandingController } from '../src/invite-landing/invite-landing.controller';
+import { LoginThrottleResetService } from '../src/throttler/login-throttle-reset.service';
 import {
   InviteLandingService,
   buildAndroidIntentUrl,
@@ -50,7 +51,10 @@ describe('InviteLandingController', () => {
       previewCode: jest.fn(),
     };
     landingService = new InviteLandingService(inviteCodesMock as any);
-    controller = new InviteLandingController(landingService);
+    controller = new InviteLandingController(
+      landingService,
+      new LoginThrottleResetService(undefined),
+    );
   });
 
   describe('GET /join/:code', () => {

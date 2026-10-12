@@ -100,15 +100,14 @@ export class ScoutEntityDto {
   // The crawled record itself, kept as an opaque JSON object rather than a
   // nested validated DTO on purpose: the global ValidationPipe runs whitelist +
   // forbidNonWhitelisted, which would strip (and reject) the extractor-specific
-  // fields the R80 contract permits. Validating payload as a leaf object
-  // preserves those fields verbatim; the service applies a denylist redaction
-  // before persistence.
+  // fields the R80 contract permits. The service stores only the paths the
+  // platform's mapping declares (PRIV-04), then applies a denylist redaction.
   @ApiProperty({
     type: 'object',
     additionalProperties: true,
     description:
-      'Opaque source record. Extractor-specific fields are preserved verbatim; ' +
-      'the server strips a credential/prototype-pollution denylist before persistence.',
+      'Opaque source record. Only the fields the platform mapping declares are stored; ' +
+      'everything else is dropped before persistence.',
   })
   @IsObject()
   payload!: Prisma.InputJsonObject;

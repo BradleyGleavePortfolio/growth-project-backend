@@ -1,0 +1,35 @@
+-- Reverse of 20270410000000_core_health_row_rules. Only for a confirmed defect.
+--
+-- On production the migration's only change was FORCE row security on Invoice
+-- (everything else already existed from rls_fitness_backend.sql), so this
+-- returns production to its exact earlier state:
+ALTER TABLE "Invoice" NO FORCE ROW LEVEL SECURITY;
+
+-- A database built from the migration chain alone also got the rest. To take
+-- such a database back to its pre-D3 state, run this block as well. Never run
+-- it on production: it would remove row rules production has had since before
+-- this migration.
+-- DROP POLICY IF EXISTS "user_self_access"                ON "User";
+-- DROP POLICY IF EXISTS "user_profile_owner_access"       ON "UserProfile";
+-- DROP POLICY IF EXISTS "coach_subscription_owner_access" ON "CoachSubscription";
+-- DROP POLICY IF EXISTS "weight_log_owner_access"         ON "WeightLog";
+-- DROP POLICY IF EXISTS "workout_session_owner_access"    ON "WorkoutSession";
+-- DROP POLICY IF EXISTS "notification_owner_access"       ON "Notification";
+-- DROP POLICY IF EXISTS "notification_prefs_owner_access" ON "NotificationPreferences";
+-- DROP POLICY IF EXISTS "data_export_owner_access"        ON "DataExportRequest";
+-- DROP POLICY IF EXISTS "food_entry_owner_access"         ON "LoggedFoodEntry";
+-- DROP POLICY IF EXISTS "habit_owner_access"              ON "Habit";
+-- ALTER TABLE "ConnectAccount" NO FORCE ROW LEVEL SECURITY;
+-- ALTER TABLE "CheckIn"        DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "BloodworkPanel" DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "User"                    NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "UserProfile"             NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "CoachSubscription"       NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "WeightLog"               NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "WorkoutSession"          NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "InviteCode"              NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "Notification"            NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "NotificationPreferences" NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "DataExportRequest"       NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "LoggedFoodEntry"         NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY;
+-- ALTER TABLE "Habit"                   NO FORCE ROW LEVEL SECURITY, DISABLE ROW LEVEL SECURITY;

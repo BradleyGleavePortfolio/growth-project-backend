@@ -113,6 +113,15 @@ RUN node -e "['prisma/package.json','@prisma/client/package.json','@nestjs/core/
     && test -f scripts/release-required-verifiers.txt \
     && echo "artifact check OK"
 
+# Production mode is part of the image (K6). The server decides it is in
+# production only from NODE_ENV, and every built-in development fallback (data
+# export token, landing visitor hash, guest checkout salt, plaintext KMS marker)
+# is refused only when NODE_ENV=production, as are the boot checks for required
+# secrets (src/common/env-validation.ts). Set here so a missing Fly value can
+# never start this image in development mode. Runtime stage only, after the
+# install: the build stage needs devDependencies. A Fly value still overrides.
+ENV NODE_ENV=production
+
 # RELEASE_VERSION / GIT_SHA: commit the image was built from, read by
 # src/instrument.ts (Sentry release) — passed by .github/workflows/fly-deploy.yml.
 ARG RELEASE_VERSION=""

@@ -206,13 +206,33 @@ describe('CoachHomeController — ED.2 GET /coach/home/daily-rings', () => {
     await svc.getDailyRings('coach-7');
 
     for (const call of prisma.checkInCount.mock.calls) {
-      expect(call[0].where.coach_id).toBe('coach-7');
+      expect(call[0].where.user).toEqual({ coach_id: 'coach-7' });
     }
     expect(prisma.coachBriefCount.mock.calls[0][0].where.coach_id).toBe('coach-7');
     expect(prisma.conversationReviewCount.mock.calls[0][0].where.coach_id).toBe('coach-7');
     expect(prisma.coachMessageFindMany.mock.calls[0][0].where.coach_id).toBe('coach-7');
     // the review-arc "to review" query excludes the coach's own messages
     expect(prisma.coachMessageFindMany.mock.calls[0][0].where.NOT.sender_id).toBe('coach-7');
+  });
+
+  it("counts check-ins by the client's current coach: a moved client stops counting for the former coach", async () => {
+    setFlag(true);
+    const coachOf: Record<string, string> = { 'client-1': 'coach-B' };
+    // Logged and reviewed while client-1 was still coach-A's client.
+    const rows = [{ user_id: 'client-1', coach_id: 'coach-A', coach_reviewed_at: new Date() }];
+    const prisma = buildPrisma();
+    prisma.checkInCount.mockImplementation(async ({ where }: { where: Record<string, unknown> }) => {
+      const user = where.user as { coach_id?: string } | undefined;
+      return rows.filter(
+        (r) =>
+          (where.coach_id === undefined || where.coach_id === r.coach_id) &&
+          (user === undefined || user.coach_id === coachOf[r.user_id]) &&
+          (!where.coach_reviewed_at || r.coach_reviewed_at !== null),
+      ).length;
+    });
+    const rings = (coach: string) => new CoachHomeService(prisma.repo).getDailyRings(coach);
+    expect((await rings('coach-A')).checkIns).toEqual({ reviewed: 0, submitted: 0 });
+    expect((await rings('coach-B')).checkIns).toEqual({ reviewed: 1, submitted: 1 });
   });
 
   it('uses the controller req.user.id as the only coach input', async () => {

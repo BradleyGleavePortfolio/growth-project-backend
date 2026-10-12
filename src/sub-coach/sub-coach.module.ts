@@ -1,5 +1,4 @@
 import { Global, Module } from '@nestjs/common';
-import { SubCoachController } from './sub-coach.controller';
 import { SubCoachAssignmentService } from './sub-coach-assignment.service';
 import { SubCoachAnalyticsService } from './sub-coach-analytics.service';
 import { SubCoachCapacityService } from './sub-coach-capacity.service';
@@ -29,7 +28,7 @@ import { AuthModule } from '../auth/auth.module';
 @Global()
 @Module({
   imports: [AuditModule, AuthModule],
-  controllers: [SubCoachController],
+  // Routes off until v1.1 dual authorization (tgp-agent-context planning/V1_1_MUST_DO.md section 2).
   providers: [
     SubCoachAssignmentService,
     SubCoachAnalyticsService,

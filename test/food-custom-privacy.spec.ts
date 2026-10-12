@@ -200,10 +200,10 @@ describe('custom foods are private to their creator (UX-FOOD-PRIV-124)', () => {
     const { service } = setup();
     const { id } = await createAsA(service);
     const loggedFoodEntry = {
-      upsert: jest.fn(async ({ create }: { create: Record<string, unknown> }) => ({
+      create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
         id: 'entry-1',
-        ...create,
-        food_item: await service.getById(String(create.food_item_id), String(create.user_id)),
+        ...data,
+        food_item: await service.getById(String(data.food_item_id), String(data.user_id)),
       })),
     };
     const log = new LogService(
@@ -217,11 +217,11 @@ describe('custom foods are private to their creator (UX-FOOD-PRIV-124)', () => {
 
     await expect(log.logFood(B, entry(id))).rejects.toThrow('not found');
     await expect(log.logFood(B, entry('off_4006381333931'))).rejects.toThrow('not found');
-    expect(loggedFoodEntry.upsert).not.toHaveBeenCalled();
+    expect(loggedFoodEntry.create).not.toHaveBeenCalled();
 
     const logged = await log.logFood(A, entry(id));
-    expect(loggedFoodEntry.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ create: expect.objectContaining({ user_id: A, food_item_id: id }) }),
+    expect(loggedFoodEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ user_id: A, food_item_id: id }) }),
     );
     expect(logged).toMatchObject({ food_item: { name: "Grandma Rosa's lasagne", calories: 520 } });
   });

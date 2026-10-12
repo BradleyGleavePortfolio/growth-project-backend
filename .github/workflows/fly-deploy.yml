@@ -178,6 +178,9 @@ jobs:
       # ENV so Sentry releases and logs name the same commit). --image-label
       # names the pushed image after the commit so the post-deploy check can
       # bind running machines to it. SENTRY_AUTH_TOKEN stays a build secret.
+      # This repo is public, so this run log is public. When a release_command
+      # or health check fails, flyctl prints production app output, so its
+      # output goes to a runner-only file that is never printed or uploaded.
       - name: Deploy to Fly
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -186,6 +189,7 @@ jobs:
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
           SENTRY_PROJECT: ${{ secrets.SENTRY_PROJECT }}
         run: |
+          rc=0
           flyctl deploy --remote-only -a "${FLY_APP}" \
             --wait-timeout 5m \
             --image-label "sha-${RELEASE_SHA}" \
@@ -194,7 +198,12 @@ jobs:
             --build-arg SENTRY_DSN="${SENTRY_DSN}" \
             --build-arg SENTRY_ORG="${SENTRY_ORG}" \
             --build-arg SENTRY_PROJECT="${SENTRY_PROJECT}" \
-            --build-secret sentry_auth_token="${SENTRY_AUTH_TOKEN}"
+            --build-secret sentry_auth_token="${SENTRY_AUTH_TOKEN}" > "${RUNNER_TEMP}/flyctl-deploy.log" 2>&1 || rc=$?
+          if [ "${rc}" -ne 0 ]; then
+            echo "::error::flyctl deploy failed (exit ${rc}). Its output can hold production logs, so it is not shown in this public log. Read the logs privately in the Fly dashboard or with fly logs -a ${FLY_APP} --no-tail from an authorized terminal; see docs/deploy-runbook.md 11.3 and 11.4."
+            exit "${rc}"
+          fi
+          echo "flyctl deploy finished. Output is not shown in this public log; see docs/deploy-runbook.md 11.3."
 
       - name: Verify running machines bind to the authorized image
         env:

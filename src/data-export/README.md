@@ -89,6 +89,15 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `coach_playbook` | `CoachPlaybook` | Coaches only: the coach's own active Roman playbook (version, sections, red lines, build date). The source ledger, which lists other people's row ids, is left out. |
 | `wearable_connections` | `WearableConnection` | Provider, status, scopes and sync dates. Tokens, secret refs and errors are never exported. |
 | `wearable_samples` | `WearableSample` | Every wearable sample, oldest first: provider, metric, bucket, value, unit, start/end, source time zone, recorded date. |
+| `exercise_sets` | `ExerciseSet` | P2: every set inside the user's own workout sessions (exercise, muscle group, reps, weights, RPE, notes). |
+| `habit_logs` | `HabitLog` | P2: every completion of the user's own habits, oldest day first. |
+| `bloodwork_panels` | `BloodworkPanel` | P2: the user's panels, oldest first: date, source, label, the user's notes, review state and the coach review note the app shows them. Ciphertext columns and key references are left out. |
+| `bloodwork_results` | `BloodworkResult` | P2: every marker of those panels (value, unit, reference range, out-of-range flag). |
+| `onboarding_intake` | `ClientOnboardingIntake` | P2: the user's onboarding answers, health screening included, and the completion result. The completion claim fields are left out. |
+| `onboarding_intake_revisions` | `ClientOnboardingIntakeRevision` | P2: every earlier version of those answers, oldest first. |
+| `macro_targets` | `MacroTarget` | P2: every calorie and macro target set for the user (current and archived), with the note the app shows them. |
+| `assigned_workouts` | `ClientWorkoutAssignment` | P2: workouts a coach assigned: plan id, schedule, start and finish, the user's RPE, notes and logged results. Idempotency keys and draft ids are left out. |
+| `wearable_metric_preferences` | `WearableUserMetricPreference` | P2: which wearable the user chose as the source for each metric. |
 
 ---
 

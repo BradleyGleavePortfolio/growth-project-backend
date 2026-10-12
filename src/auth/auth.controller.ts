@@ -43,7 +43,7 @@ import {
   INVITE_CODE_MIN_LENGTH,
   INVITE_CODE_PATTERN,
 } from '../invite-codes/invite-codes.service';
-import { LoginThrottleResetService } from '../throttler/login-throttle-reset.service';
+import { LoginThrottleResetService, extractIp } from '../throttler/login-throttle-reset.service';
 import {
   SIGNUP_WITH_CODE_SKIP_THROTTLERS,
   THROTTLER_NAMES,
@@ -274,9 +274,15 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @HttpCode(HttpStatus.OK)
   async attachInviteCode(@Request() req: AuthedRequest, @Body() body: AttachInviteCodeDto) {
-    return this.inviteCodes.attachUserToCoachByCode(req.user.id, body.invite_code, {
-      coachSharingNotice: body.coach_sharing_notice,
-    });
+    return this.loginThrottleReset.guardInviteCodeLookup(
+      extractIp(req),
+      () =>
+        this.inviteCodes.attachUserToCoachByCode(req.user.id, body.invite_code, {
+          coachSharingNotice: body.coach_sharing_notice,
+        }),
+      undefined,
+      req.user.id,
+    );
   }
 
   @ApiBearerAuth('bearer')
@@ -293,7 +299,9 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async selectRole(@Request() req: AuthedRequest, @Body() body: SelectRoleDto) {
     const code = body.invite_code ?? body.coach_code;
-    return this.authService.selectRole(req.user.id, body.role, code);
+    const run = () => this.authService.selectRole(req.user.id, body.role, code);
+    if (!code) return run();
+    return this.loginThrottleReset.guardInviteCodeLookup(extractIp(req), run, undefined, req.user.id);
   }
 
   @ApiOperation({
@@ -309,7 +317,10 @@ export class AuthController {
   @Post('validate-invite-code')
   @Throttle({ [THROTTLER_NAMES.DEFAULT]: { ttl: 60_000, limit: 20 } })
   @HttpCode(HttpStatus.OK)
-  async validateInviteCode(@Body() body: ValidateInviteCodePublicDto) {
+  async validateInviteCode(
+    @Body() body: ValidateInviteCodePublicDto,
+    @Request() req?: AuditableRequest,
+  ) {
     const trimmed = body.code.trim();
     if (
       trimmed.length < INVITE_CODE_MIN_LENGTH ||
@@ -323,7 +334,11 @@ export class AuthController {
         message: 'Invite code format is invalid.',
       });
     }
-    const result = await this.inviteCodes.validate(trimmed);
+    const result = await this.loginThrottleReset.guardInviteCodeLookup(
+      extractIp(req),
+      () => this.inviteCodes.validate(trimmed),
+      (r) => !r.valid,
+    );
     if (!result.valid) return { valid: false };
     return {
       valid: true,
@@ -419,8 +434,10 @@ export class AuthController {
       limit: THROTTLER_ROUTE_LIMITS.AUTH_SIGNUP_WITH_CODE_PER_HOUR,
     },
   })
-  async signupWithCode(@Body() body: SignupWithCodeDto) {
-    return this.authService.signupWithCode(body);
+  async signupWithCode(@Body() body: SignupWithCodeDto, @Request() req?: AuditableRequest) {
+    const run = () => this.authService.signupWithCode(body);
+    if (!body.invite_code) return run();
+    return this.loginThrottleReset.guardInviteCodeLookup(extractIp(req), run);
   }
 
   @ApiOperation({
@@ -490,17 +507,6 @@ export class AuthController {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
-
-// Best-effort extraction of remote IP for rate-limit counter resets.
-// Resolution order matches UserThrottlerGuard.getTracker().
-function extractIp(req: Record<string, any>): string {
-  const flyIp = (req?.headers?.['fly-client-ip'] || '') as string;
-  if (flyIp.trim().length > 0) return flyIp.trim();
-  const xff = (req?.headers?.['x-forwarded-for'] || '') as string;
-  const fwdIp = xff.split(',')[0]?.trim();
-  if (fwdIp && fwdIp.length > 0) return fwdIp;
-  return req?.ip || req?.socket?.remoteAddress || req?.connection?.remoteAddress || 'unknown';
-}
 
 // Best-effort extraction of remote IP + User-Agent for audit-log context.
 function auditContext(req: AuditableRequest): { ip: string | null; userAgent: string | null } {

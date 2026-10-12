@@ -126,9 +126,10 @@ export class SubCoachScopeService {
    *
    * - Head coach: every `User.id` where coach_id = userId, role='student',
    *   not soft-deleted.
-   * - Sub-coach: every client_id from open SubCoachAssignment rows for
-   *   this sub-coach (joined to User to filter out soft-deleted clients
-   *   and non-students).
+   * - Sub-coach: the same own roster, plus every client_id from open
+   *   SubCoachAssignment rows for this sub-coach (joined to User to filter
+   *   out soft-deleted clients and non-students), while the client is still
+   *   the head coach's.
    *
    * Returns [] if the user has no clients (or isn't a coach at all).
    */
@@ -139,29 +140,33 @@ export class SubCoachScopeService {
     });
     if (!u || u.role !== 'coach') return [];
 
-    const headCoachId = await this.membershipHeadCoachIdFor(userId, u);
-    if (headCoachId) {
-      // Sub-coach: scope through SubCoachAssignment overlay.
-      const open = await this.prisma.subCoachAssignment.findMany({
-        where: { sub_coach_id: userId, unassigned_at: null },
-        select: { client_id: true },
-      });
-      if (open.length === 0) return [];
-      const ids = open.map((r) => r.client_id);
-      // Filter out soft-deleted clients / non-students at the DB level.
-      const live = await this.prisma.user.findMany({
-        where: { id: { in: ids }, role: 'student', deleted_at: null },
-        select: { id: true },
-      });
-      return live.map((r) => r.id);
-    }
-
-    // Head coach: own roster.
+    // Own roster. A sub-coach can be a client's current coach too, when a
+    // team move hands the client to them directly.
     const clients = await this.prisma.user.findMany({
       where: { coach_id: userId, role: 'student', deleted_at: null },
       select: { id: true },
     });
-    return clients.map((r) => r.id);
+    const own = clients.map((r) => r.id);
+
+    const headCoachId = await this.membershipHeadCoachIdFor(userId, u);
+    if (headCoachId) {
+      // Sub-coach: plus the SubCoachAssignment overlay.
+      const open = await this.prisma.subCoachAssignment.findMany({
+        where: { sub_coach_id: userId, head_coach_id: headCoachId, unassigned_at: null },
+        select: { client_id: true },
+      });
+      if (open.length === 0) return own;
+      const ids = open.map((r) => r.client_id);
+      // Filter out soft-deleted clients / non-students at the DB level.
+      // A client who has moved to another coach is out too: a coach move
+      // does not close the delegation row, so it alone is not enough.
+      const live = await this.prisma.user.findMany({
+        where: { id: { in: ids }, role: 'student', deleted_at: null, coach_id: headCoachId },
+        select: { id: true },
+      });
+      return [...own, ...live.map((r) => r.id)];
+    }
+    return own;
   }
 
   /**
