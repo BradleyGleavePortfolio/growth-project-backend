@@ -638,7 +638,11 @@ export class DataExportService {
         if (!current || current.status !== DataExportStatus.READY) continue;
         existing = current;
       }
-      if (this._isDownloadable(existing, now) && existing.created_at >= windowStart) {
+      if (
+        this._isDownloadable(existing, now) &&
+        existing.created_at >= windowStart &&
+        !(await this._isStaleCoachArchive(existing))
+      ) {
         const next = new Date(existing.created_at.getTime() + RATE_LIMIT_HRS * 60 * 60 * 1000);
         throw new ConflictException({
           code: C.RATE_LIMITED,
@@ -723,7 +727,12 @@ export class DataExportService {
       record = current;
     }
 
-    const downloadable = this._isDownloadable(record, now);
+    let downloadable = this._isDownloadable(record, now);
+    if (downloadable && (await this._isStaleCoachArchive(record))) {
+      await this._supersede(record);
+      record = { ...record, status: DataExportStatus.EXPIRED, file_url: null };
+      downloadable = false;
+    }
     let nextRequestAt: Date | null = null;
     if (record.status === DataExportStatus.PENDING || record.status === DataExportStatus.RUNNING) {
       nextRequestAt = new Date(record.created_at.getTime() + staleRunMs());
@@ -1129,7 +1138,43 @@ export class DataExportService {
       // disk before durable storage (gone with that machine).
       throw new GoneException({ code: C.FILE_MISSING, message: FILE_MISSING_MESSAGE });
     }
+    if (await this._isStaleCoachArchive(record)) {
+      await this._supersede(record);
+      throw new GoneException({ code: C.FILE_MISSING, message: FILE_MISSING_MESSAGE });
+    }
     return record;
+  }
+
+  /**
+   * B-938-1 (owner decision 4): a coach's archive requested before one of
+   * their clients moved away (team reassignment or ended delegation) holds
+   * that client's history, so it is retired and never served; the coach can
+   * request a fresh export at once. Client archives are never stale.
+   */
+  private async _isStaleCoachArchive(record: DataExportRequest): Promise<boolean> {
+    const owner = await this.prisma.user.findUnique({
+      where: { id: record.user_id },
+      select: { role: true, coach_id: true },
+    });
+    if (owner?.role !== 'coach') return false;
+    const since = { gte: record.created_at };
+    const from = (key: string) => ({ metadata: { path: [key], equals: record.user_id } });
+    const [moved, ended] = await Promise.all([
+      this.prisma.teamAuditEvent.findFirst({
+        where: {
+          event_kind: 'client_reassigned',
+          occurred_at: since,
+          head_coach_id: { in: [record.user_id, owner.coach_id ?? record.user_id] },
+          OR: [from('from_coach_id'), from('from_sub_coach_id')],
+        },
+        select: { id: true },
+      }),
+      this.prisma.subCoachAssignment.findFirst({
+        where: { sub_coach_id: record.user_id, unassigned_at: since },
+        select: { id: true },
+      }),
+    ]);
+    return Boolean(moved || ended);
   }
 
   /**
@@ -1655,7 +1700,13 @@ export class DataExportService {
       coach_guidelines: coachGuidelines,
       build_week_enrollment: buildWeekEnrollment,
       build_week_completions: buildWeekCompletions,
-      invite_codes: inviteCodes,
+      // B-938-2: a code a moved client accepted stays the coach's, without
+      // that client's id, acceptance date or invited email.
+      invite_codes: (inviteCodes as Array<Record<string, unknown>>).map((code) =>
+        code.accepted_by_user_id && !currentClientIds.includes(String(code.accepted_by_user_id))
+          ? { ...code, accepted_by_user_id: null, accepted_at: null, intended_email: null }
+          : code,
+      ),
       diagnostic_submissions: diagnosticSubmissions,
       ptm_signals: ptmSignals,
       ptm_predictions: ptmPredictions,

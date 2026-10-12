@@ -19,6 +19,10 @@ function matches(row: Row, where: Row): boolean {
     if (want === null) return row[key] === null || row[key] === undefined;
     if (typeof want === 'object' && 'in' in want)
       return (want as { in: unknown[] }).in.includes(row[key]);
+    if (typeof want === 'object' && 'gte' in want)
+      return row[key] instanceof Date && row[key] >= (want as { gte: Date }).gte;
+    if (typeof want === 'object' && 'path' in want)
+      return (row[key] as Row)?.[(want as { path: string[] }).path[0]] === (want as Row).equals;
     if (typeof want === 'object' && 'gt' in want)
       return String(row[key]) > String((want as { gt: unknown }).gt);
     if (typeof want === 'object') return false;
@@ -62,12 +66,17 @@ const tables: Record<string, Row[]> = {
     { id: 'm-c-a', sender_id: C, coach_id: A, client_id: C, body: 'C to A' },
     { id: 'm-a-d', sender_id: A, coach_id: A, client_id: D, body: 'A to D' },
   ],
+  inviteCode: [
+    { id: 'ic-c', coach_id: A, accepted_by_user_id: C, accepted_at: 'day', intended_email: 'c@x' },
+    { id: 'ic-d', coach_id: A, accepted_by_user_id: D, accepted_at: 'day', intended_email: 'd@x' },
+    { id: 'ic-open', coach_id: A, accepted_by_user_id: null, intended_email: 'new@x' },
+  ],
 };
 
-function store(): PrismaService {
+function store(extra: Record<string, Row[]> = {}): PrismaService {
   const delegate = (name: string) => {
     const findMany = async (args: { where: Row; take?: number }) =>
-      (tables[name] ?? [])
+      (extra[name] ?? tables[name] ?? [])
         .filter((r) => matches(r, args.where))
         .sort((x, y) => (String(x.id) < String(y.id) ? -1 : 1))
         .slice(0, args.take);
@@ -75,6 +84,11 @@ function store(): PrismaService {
       findMany,
       findFirst: async (args: { where: Row }) => (await findMany(args))[0] ?? null,
       findUnique: async (args: { where: Row }) => (await findMany(args))[0] ?? null,
+      create: async (args: { data: Row }) => ({ id: `${name}-new`, ...args.data }),
+      updateMany: async (args: { where: Row; data: Row }) => {
+        const hit = (await findMany(args)).map((r) => Object.assign(r, args.data));
+        return { count: hit.length };
+      },
     };
   };
   const prisma = new Proxy(
@@ -135,5 +149,92 @@ describe('former coach export (B-DP-4-1, owner decision 4)', () => {
     expect(ids(archive, 'coach_messages')).toEqual(['m-a-c', 'm-c-a']);
     const own = archive.coach_messages.find((m) => m.id === 'm-c-a');
     expect(own).toMatchObject({ body: 'C to A' });
+  });
+});
+
+describe("former coach's invite codes (B-938-2)", () => {
+  it("keeps the codes but drops a moved client's id, acceptance date and email", async () => {
+    const codes = (await exportOf(A)).invite_codes;
+    expect(JSON.stringify(codes)).not.toMatch(/client-moved|c@x/);
+    expect(codes.map((r) => r.id).sort()).toEqual(['ic-c', 'ic-d', 'ic-open']);
+    expect(codes.find((r) => r.id === 'ic-c')).toMatchObject({ accepted_at: null });
+    expect(codes.find((r) => r.id === 'ic-d')).toMatchObject({ accepted_by_user_id: D });
+    expect(codes.find((r) => r.id === 'ic-open')).toMatchObject({ intended_email: 'new@x' });
+  });
+});
+
+describe('archive built before a client moved (B-938-1)', () => {
+  const T0 = new Date(Date.now() - 60_000);
+  const archive = (id: string, user_id: string): Row => ({
+    id,
+    user_id,
+    status: 'READY',
+    file_url: `mem://${id}`,
+    created_at: T0,
+    completed_at: T0,
+    expires_at: new Date(Date.now() + 86_400_000),
+    file_size_bytes: 2,
+  });
+  let rows: Record<string, Row[]>;
+  let removed: string[];
+  const service = () => {
+    const svc = new DataExportService(store(rows));
+    // jest stubs jose; a token here is simply "<user>|<export>".
+    Object.assign(svc as object, {
+      store: {
+        kind: 'local',
+        owns: (url: string | null, id: string) => url === `mem://${id}`,
+        stat: async () => ({ size: 2 }),
+        read: async () => ({ size: 2, chunks: [Buffer.from('{}')] }),
+        remove: async (id: string) => void removed.push(id),
+      },
+      _mintDownloadToken: async (sub: string, eid: string) => ({ token: `${sub}|${eid}` }),
+      _verifyDownloadToken: async (t: string) => ({ sub: t.split('|')[0], eid: t.split('|')[1] }),
+    });
+    return svc;
+  };
+  const move = () =>
+    (rows.teamAuditEvent = [
+      {
+        id: 'ev',
+        event_kind: 'client_reassigned',
+        occurred_at: new Date(),
+        head_coach_id: A,
+        metadata: { from_coach_id: A, to_coach_id: B },
+      },
+    ]);
+
+  beforeEach(() => {
+    rows = { dataExportRequest: [archive('ex-a', A), archive('ex-c', C)] };
+    removed = [];
+  });
+
+  it("refuses the old coach's link from before the move and a new one, and deletes the archive", async () => {
+    const svc = service();
+    const before = await svc.createDownloadLink(A);
+    move();
+    await expect(svc.openDownload(before.token)).rejects.toMatchObject({ status: 410 });
+    expect(removed).toEqual(['ex-a']);
+    expect(rows.dataExportRequest[0]).toMatchObject({ status: 'EXPIRED', file_url: null });
+    rows.dataExportRequest[0] = archive('ex-a', A);
+    await expect(svc.createDownloadLink(A)).rejects.toMatchObject({ status: 410 });
+  });
+
+  it('stops offering the download in status and lets the coach request a fresh export', async () => {
+    move();
+    const status = await service().getLatestStatus(A);
+    expect(status).toMatchObject({ status: 'EXPIRED', download_available: false });
+    expect(status.download_token).toBeNull();
+    rows.dataExportRequest[0] = archive('ex-a', A);
+    const svc = service();
+    Reflect.set(svc, '_runExport', async () => undefined);
+    await expect(svc.requestExport(A)).resolves.toMatchObject({ id: 'dataExportRequest-new' });
+  });
+
+  it("does the same after a delegation ends, and leaves the moved client's own archive alone", async () => {
+    rows.subCoachAssignment = [{ id: 'sa', sub_coach_id: A, unassigned_at: new Date() }];
+    await expect(service().createDownloadLink(A)).rejects.toMatchObject({ status: 410 });
+    move();
+    await expect(service().createDownloadLink(C)).resolves.toMatchObject({ file_size_bytes: 2 });
   });
 });
