@@ -23,7 +23,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { AdminPtmService } from '../../admin/ptm/admin-ptm.service';
-import { CoachAlertsService } from '../coach-alerts.service';
+import { CoachAlertsService, ROMAN_SAFETY_ALERT_TYPES } from '../coach-alerts.service';
 import { SubCoachScopeService } from '../../sub-coach/sub-coach-scope.service';
 import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../../consent/consent.service';
 import { CHURN_FACTOR_SCOPES, coachVisibleFactors } from './churn-factor-scopes';
@@ -92,7 +92,9 @@ export type ActionQueueAlertType =
   | 'no_message_exchange'
   | 'high_churn_risk'
   | 'build_week_gate'
-  | 'bloodwork_review';
+  | 'bloodwork_review'
+  | 'roman_urgent_reply'
+  | 'roman_eating_disorder_reply';
 
 export interface ActionQueueItem {
   alert_id: string;
@@ -102,7 +104,25 @@ export interface ActionQueueItem {
   message: string;
   created_at: string;
   dismissed_at: string | null;
+  /**
+   * Roman safety alerts only (owner 22a, 57w): the client's message that
+   * prompted the reply, in full, and when they sent it. Null once the client
+   * deleted that chat.
+   */
+  quote?: string | null;
+  sent_at?: string | null;
 }
+
+/**
+ * Owner 57w / 57x: line 1 of the Roman safety alert card, built when the
+ * client's current coach reads the queue (the stored row names no one).
+ */
+const SAFETY_CARD_LINE: Partial<Record<string, (name: string) => string>> = {
+  roman_urgent_reply: (name) =>
+    `Urgent: Roman sent ${name} a medical safety reply. Check in with them →`,
+  roman_eating_disorder_reply: (name) =>
+    `Roman sent ${name} an eating-disorder safety reply. Check in with them →`,
+};
 
 export interface ActionQueueResponse {
   items: ActionQueueItem[];
@@ -130,6 +150,10 @@ function mapAlertType(backendType: string): ActionQueueAlertType {
       return 'weight_not_logged';
     case 'bloodwork_review':
       return 'bloodwork_review';
+    case 'roman_urgent_reply':
+      return 'roman_urgent_reply';
+    case 'roman_eating_disorder_reply':
+      return 'roman_eating_disorder_reply';
     default:
       // Unknown backend alert types are bucketed as high_churn_risk so
       // the mobile client still renders a row, but log a warning so we
@@ -822,6 +846,16 @@ export class CommandCenterService {
       client_id: { in: clientIds },
       acknowledged_at: null,
       ...visibleAlertsWhere(clientIds, shared),
+      // Owner 4: a Roman safety alert is seen only while the client's current
+      // coach is the one it was sent to (an old team's open assignment too).
+      AND: [
+        {
+          OR: [
+            { alert_type: { notIn: [...ROMAN_SAFETY_ALERT_TYPES] } },
+            { client: { coach_id: ownerCoachId } },
+          ],
+        },
+      ],
     };
     const where: Prisma.CoachAlertWhereInput = {
       ...baseWhere,
@@ -839,18 +873,54 @@ export class CommandCenterService {
         where: baseWhere,
       }),
     ]);
+    const quotes = await this.safetyQuotes(alerts);
 
-    const items: ActionQueueItem[] = alerts.map((alert) => ({
-      alert_id: alert.id,
-      client_id: alert.client_id,
-      client_name: alert.client?.name ?? 'Unknown',
-      alert_type: mapAlertType(alert.alert_type),
-      message: alert.message,
-      created_at: alert.created_at.toISOString(),
-      dismissed_at: alert.acknowledged_at?.toISOString() ?? null,
-    }));
+    const items: ActionQueueItem[] = alerts.map((alert) => {
+      const clientName = alert.client?.name ?? 'Unknown';
+      const line = SAFETY_CARD_LINE[alert.alert_type];
+      const quote = line ? quotes.get(alert.id) : undefined;
+      return {
+        alert_id: alert.id,
+        client_id: alert.client_id,
+        client_name: clientName,
+        alert_type: mapAlertType(alert.alert_type),
+        message: line ? line(clientName) : alert.message,
+        created_at: alert.created_at.toISOString(),
+        dismissed_at: alert.acknowledged_at?.toISOString() ?? null,
+        ...(line
+          ? { quote: quote?.content ?? null, sent_at: quote?.created_at.toISOString() ?? null }
+          : {}),
+      };
+    });
 
     return { items, total_pending: totalPending };
+  }
+
+  /**
+   * The client's own message behind each Roman safety alert in the page, by
+   * alert id: only that one message, only while its chat exists (a chat the
+   * client deleted is erased, and so is the quote).
+   */
+  private async safetyQuotes(
+    alerts: Array<{ id: string; client_id: string; alert_type: string; payload: Prisma.JsonValue }>,
+  ): Promise<Map<string, { content: string; created_at: Date }>> {
+    const refs = new Map<string, { alertId: string; clientId: string }>();
+    for (const a of alerts) {
+      const p = a.payload as { roman_message_id?: unknown } | null;
+      if (!SAFETY_CARD_LINE[a.alert_type] || typeof p?.roman_message_id !== 'string') continue;
+      refs.set(p.roman_message_id, { alertId: a.id, clientId: a.client_id });
+    }
+    const out = new Map<string, { content: string; created_at: Date }>();
+    if (refs.size === 0) return out;
+    const rows = await this.prisma.romanMessage.findMany({
+      where: { id: { in: [...refs.keys()] }, role: 'user', session: { deleted_at: null } },
+      select: { id: true, user_id: true, content: true, created_at: true },
+    });
+    for (const row of rows) {
+      const ref = refs.get(row.id);
+      if (ref && ref.clientId === row.user_id) out.set(ref.alertId, row);
+    }
+    return out;
   }
 
   // ── /action-queue/:alertId/dismiss ───────────────────────────────────

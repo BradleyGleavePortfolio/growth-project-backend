@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { NotificationsService } from '../notifications.service';
 import { NotificationKind } from '../notification-kind';
 import { dunningErrorCode } from '../../checkout/dunning-v2/dunning-v2.safe-error';
+import { COACH_ACTION_QUEUE_SCREEN, SAFETY_ALERT_PUSH_BODY } from '../push/lock-screen-copy';
 
 export interface CoachAlertNotificationPayload {
   /** The coach user ID to notify. */
@@ -59,6 +60,10 @@ export class CoachAlertEmitter {
   ): Promise<CoachAlertDelivery> {
     const { coachId, alertId, alertType, message, severity, clientUserId } = payload;
     const deepLink = clientUserId ? `tgp://coach/clients/${clientUserId}` : 'tgp://coach/alerts';
+    // A Roman safety alert (owner 22a, 57): the inbox row and the push open
+    // the coach's action queue, where the alert card is; the push gets its own
+    // fixed lock-screen line. Neither carries a name or the client's message.
+    const safety = Object.prototype.hasOwnProperty.call(SAFETY_ALERT_PUSH_BODY, alertType);
     const out: CoachAlertDelivery = { inapp: 'skipped', push: 'skipped' };
     if (only.inapp !== false) {
       try {
@@ -67,7 +72,13 @@ export class CoachAlertEmitter {
           user_id: coachId,
           kind: NotificationKind.COACH_ALERT,
           body: message.slice(0, 160),
-          payload: { alertId, alertType, severity, clientUserId },
+          payload: {
+            alertId,
+            alertType,
+            severity,
+            clientUserId,
+            ...(safety ? { actionScreen: COACH_ACTION_QUEUE_SCREEN } : {}),
+          },
           deep_link: deepLink,
           channel: 'inapp',
         });
@@ -90,6 +101,7 @@ export class CoachAlertEmitter {
           kind: NotificationKind.COACH_ALERT,
           body: message.slice(0, 160),
           deep_link: deepLink,
+          ...(safety ? { context: { safetyAlert: alertType } } : {}),
         });
         out.push = queued ? 'sent' : 'skipped';
       } catch (err) {
