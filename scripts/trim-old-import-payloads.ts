@@ -80,7 +80,9 @@ export async function trimOldImportPayloads(
   };
 
   for (;;) {
-    const ids = opts.apply ? await prisma.$transaction((tx) => batch(tx)) : await batch(prisma);
+    const ids = opts.apply
+      ? await prisma.$transaction((tx) => batch(tx), { timeout: 60_000, maxWait: 10_000 })
+      : await batch(prisma);
     if (ids.length === 0) break;
     cursor = ids[ids.length - 1];
     if (ids.length < take) break;

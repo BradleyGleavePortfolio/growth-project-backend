@@ -75,6 +75,10 @@ describe('trim-old-import-payloads (P3b)', () => {
     const first = await trimOldImportPayloads(client, { apply: true, batchSize: 2 });
     expect(first).toMatchObject({ mode: 'apply', rows_scanned: 4, rows_changed: 3 });
     expect(prisma.$transaction).toHaveBeenCalledTimes(3); // 2 + 2 + empty page
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+      timeout: 60_000,
+      maxWait: 10_000,
+    });
     expect([...store.values()].map((r) => r.payload)).toEqual([
       { name: 'Synthetic Client' },
       { name: 'Already Trimmed' },
