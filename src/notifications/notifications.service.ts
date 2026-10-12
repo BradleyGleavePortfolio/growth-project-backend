@@ -27,7 +27,7 @@ import { NotificationCategory, DEFAULT_NOTIFICATION_CATEGORY } from './notificat
 import { PushAbortedError, PushDeliveryResult } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { EnqueueResult, PushDeliveryService } from './push/push-delivery.service';
-import { COACH_ACTION_QUEUE_SCREEN, PushContext, lockScreenCopy } from './push/lock-screen-copy';
+import { PushContext, lockScreenCopy, safetyAlertTap } from './push/lock-screen-copy';
 import { resolveRecipientTimeZone } from './recipient-timezone';
 import { notificationPrefsPrefix, pushAllowedByPreferences } from './push/push-preferences';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
@@ -601,8 +601,10 @@ export class NotificationsService implements OnModuleInit {
                 input.context?.sessionId,
               ),
             ),
-            // A Roman safety alert push opens the coach's action queue.
-            ...(input.context?.safetyAlert ? { actionScreen: COACH_ACTION_QUEUE_SCREEN } : {}),
+            // Owner 57d: a Roman safety alert push opens that alert.
+            ...(input.context?.safetyAlert && input.context.alertId
+              ? safetyAlertTap(input.context.alertId)
+              : {}),
           },
           context: input.context ?? null,
           dedupeKey: input.dedupe_key ?? null,

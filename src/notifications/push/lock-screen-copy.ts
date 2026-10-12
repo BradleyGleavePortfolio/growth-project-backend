@@ -113,14 +113,28 @@ const TEMPLATES: Record<string, LockScreenCopy> = {
 
 // Owner 22a and 57: the lock-screen line of the two Roman safety coach alerts
 // (no name, no message), keyed by alert type. The title stays the coach-alert
-// title. The stored alert text is the same line, so the inbox row names no one.
+// title. The stored alert text is the same line.
 export const SAFETY_ALERT_PUSH_BODY: Readonly<Record<string, string>> = {
   roman_urgent_reply: 'Urgent safety alert for one of your clients. Open TGP to see details.',
   roman_eating_disorder_reply: 'Safety alert for one of your clients. Open TGP to see details.',
 };
 
-/** The mobile route a safety alert's push and inbox row open (the coach's action queue). */
-export const COACH_ACTION_QUEUE_SCREEN = 'CoachActionQueue';
+// Owner 57d: the coach's inbox row for the same alerts (no name, no message).
+export const SAFETY_ALERT_INBOX_BODY: Readonly<Record<string, string>> = {
+  roman_urgent_reply: 'Urgent safety alert for one of your clients. Tap to see details.',
+  roman_eating_disorder_reply: 'Safety alert for one of your clients. Tap to see details.',
+};
+
+/** The mobile route a safety alert's push and inbox row open: that one alert. */
+export const COACH_SAFETY_ALERT_SCREEN = 'CoachSafetyAlert';
+
+/** Owner 57d: the tap of a safety alert's push or inbox row opens that alert (ids only). */
+export function safetyAlertTap(alertId: string): {
+  actionScreen: string;
+  actionParams: { alertId: string };
+} {
+  return { actionScreen: COACH_SAFETY_ALERT_SCREEN, actionParams: { alertId } };
+}
 
 // B-653-4: a client's move request keeps the booking_rescheduled kind, but
 // nothing has moved until the coach approves.
@@ -152,6 +166,8 @@ export interface PushContext {
   moveRequested?: boolean;
   /** A coach_alert push for a Roman safety alert: its alert type. */
   safetyAlert?: string;
+  /** ...and its CoachAlert id, which the tap opens (owner 57d). */
+  alertId?: string;
 }
 
 function contextTime(context: PushContext | null | undefined): { at: Date; tz: string } | null {
