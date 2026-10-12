@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { AuthController } from '../src/auth/auth.controller';
+import { LoginThrottleResetService } from '../src/throttler/login-throttle-reset.service';
 
 // Focused controller spec for the public invite-code surface. Mobile QA on
 // PR #61 surfaced two production divergences this spec pins:
@@ -22,7 +23,7 @@ describe('AuthController.validateInviteCode (public)', () => {
     const auth = {} as any;
     // Phase 10: AuthController now accepts a third arg (LoginThrottleResetService).
     // Provide a minimal stub so the constructor type-checks.
-    const loginThrottleReset = { resetLoginCounters: jest.fn() } as any;
+    const loginThrottleReset = new LoginThrottleResetService(undefined);
     const controller = new AuthController(auth, inviteCodes, loginThrottleReset);
     return { controller, inviteCodes };
   };

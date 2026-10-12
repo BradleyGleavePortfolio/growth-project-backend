@@ -1,4 +1,5 @@
 import { InviteCodesController } from '../src/invite-codes/invite-codes.controller';
+import { LoginThrottleResetService } from '../src/throttler/login-throttle-reset.service';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 
 // Thin controller test — the meat is in invite-codes.service.spec.ts. This
@@ -14,7 +15,7 @@ describe('InviteCodesController (auth scoping)', () => {
       listForCoach: jest.fn().mockResolvedValue([]),
       revokeForCoach: jest.fn(),
     };
-    controller = new InviteCodesController(serviceMock as any);
+    controller = new InviteCodesController(serviceMock as any, new LoginThrottleResetService(undefined));
   });
 
   const reqAs = (id: string, role: 'coach' | 'student' = 'coach') =>
