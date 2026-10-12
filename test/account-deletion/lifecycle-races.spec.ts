@@ -248,6 +248,22 @@ describe('finalization', () => {
     expect(ctx.db.users.get(OTHER)?.deleted_at).toBeNull();
   });
 
+  it("a deleted coach's clients lose every unapproved draft about them once detached (owner decision 17)", async () => {
+    const ctx = build({ confirmedDaysAgo: GRACE + 1, role: 'coach' });
+    ctx.db.addUser({ id: 'client-1', coach_id: UID });
+    await ctx.service.finalizeUserDeletion(UID, { mode: 'cron' });
+    const calls = ctx.db.committedCalls;
+    const detach = calls.findIndex((c) => c.model === 'user' && JSON.stringify(c.args).includes('"data":{"coach_id":null}'));
+    const drafts = calls.filter((c, i) => i > detach && JSON.stringify(c.args).includes('client-1'));
+    expect(detach).toBeGreaterThanOrEqual(0);
+    expect(drafts.map((c) => `${c.model}.${c.method}`)).toEqual([
+      'aIDraft.deleteMany', 'aiActionDraft.deleteMany', 'messageDraft.deleteMany', 'churnIntervention.deleteMany',
+    ]);
+    // Nobody coaches them now, so no holder is spared; approved or sent items stay.
+    expect(drafts[0].args).toEqual({ where: { clientId: { in: ['client-1'] }, status: { not: 'APPROVED' } } });
+    expect(drafts[3].args).toEqual({ where: { client_id: { in: ['client-1'] }, status: { not: 'sent' } } });
+  });
+
   it('Sol probe 1 inverted (B-608-1): a failing required scrub rolls back everything and the cron retries', async () => {
     const ctx = build({ confirmedDaysAgo: GRACE + 1 });
     ctx.db.failOn('coachMessage', 'updateMany', new Error('DB scrub failed'));

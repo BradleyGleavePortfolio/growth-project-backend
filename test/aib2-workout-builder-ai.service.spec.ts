@@ -15,7 +15,7 @@ import { ExerciseLibraryService } from '../src/exercise-library/exercise-library
 import { CoachAIBudgetService } from '../src/ai-credits/coach-ai-budget.service';
 import { AiEgressService } from '../src/ai-egress/ai-egress.service';
 import { computeLockToken } from '../src/workout-builder/lock-token.helper';
-import { egressWithGrants, fakeOf, grantAllEgress } from './ai-egress/ai-egress.fakes';
+import { egressWithGrants, fakeOf, grantAllEgress, withTx } from './ai-egress/ai-egress.fakes';
 
 const PLAN = '11111111-1111-4111-8111-111111111111';
 const CLIENT = '22222222-2222-4222-8222-222222222222';
@@ -51,7 +51,7 @@ function buildPrisma() {
       }),
     },
   };
-  return prisma;
+  return withTx(prisma);
 }
 
 type Anthropic = jest.Mock<Promise<AiProviderResponse>, [AiProviderRequest]>;

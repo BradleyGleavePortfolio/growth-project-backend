@@ -66,6 +66,8 @@ function makeFixtures() {
     },
   } as any;
   prisma.$transaction = jest.fn(async (fn: (tx: unknown) => unknown) => fn(prisma));
+  // The FOR SHARE lock on the client's row before a draft is saved.
+  prisma.$queryRaw = jest.fn(async () => []);
 
   const stateImpl = {
     _ready: true as boolean,
@@ -500,7 +502,7 @@ describe('CoachAIService', () => {
       const svc = new CoachAIService(f.prisma, f.state, f.anthropic, f.ctxSvc, f.mealPlans, workouts);
       const draft = (id: string, coachId: string) =>
         f.drafts.push({ id, coachId, clientId: 'client1', type: 'INSIGHT', status: 'DRAFT', generatedPayload: { summary: '' }, createdAt: new Date() });
-      return { svc, scope, users, drafts: f.drafts, draft, prisma: f.prisma };
+      return { svc, scope, users, delegation, drafts: f.drafts, draft, prisma: f.prisma, anthropic: f.anthropic };
     }
 
     it('a valid current delegation still works for the sub-coach, as does the head coach', async () => {
@@ -547,6 +549,21 @@ describe('CoachAIService', () => {
       expect(await w.scope.getAuthorizedClientIds('head1')).toEqual([]);
       // The head coach's unapproved draft is deleted in the move (owner decision 17).
       expect(w.drafts.map((d) => d.id)).toEqual(['sub-a']);
+    });
+
+    it.each([
+      ['the head coach, after the client moved to head2', 'head1', (w: ReturnType<typeof world>) => { w.users.client1.coach_id = 'head2'; }],
+      ['the sub-coach, after the delegation closed', 'sub1', (w: ReturnType<typeof world>) => { Object.assign(w.delegation, { unassigned_at: new Date() }); }],
+    ])('a draft that finishes after the move is not saved for %s (owner decision 17)', async (_label, coachId, move) => {
+      const w = world();
+      w.anthropic.completeStructured.mockImplementation(async () => {
+        move(w);
+        return { data: { summary: 'Steady week' }, tokensIn: 1, tokensOut: 1, modelUsed: 'm', latencyMs: 1 };
+      });
+      await expect(w.svc.generateClientInsight(coachId, { clientId: 'client1' })).rejects.toThrow('Client not found');
+      expect(w.anthropic.completeStructured).toHaveBeenCalledTimes(1);
+      expect(w.prisma.$queryRaw).toHaveBeenCalledTimes(1);
+      expect(w.drafts).toEqual([]);
     });
   });
 });

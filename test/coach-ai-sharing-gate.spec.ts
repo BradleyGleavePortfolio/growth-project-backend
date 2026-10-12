@@ -16,7 +16,7 @@ import type { WorkoutContextService, WorkoutContextV2 } from '../src/ai/context/
 import { RomanAdjustService } from '../src/roman-adjust/roman-adjust.service';
 import { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
 import * as mocks from './_fixtures/coach-brief-mocks';
-import { fakeOf, grantAllEgress } from './ai-egress/ai-egress.fakes';
+import { fakeOf, grantAllEgress, withTx } from './ai-egress/ai-egress.fakes';
 
 const COACH = 'coach1';
 const SHARES = 'client-shares';
@@ -124,7 +124,7 @@ function coachAi(sharing: string[]) {
   const create = jest.fn(async ({ data }: { data: { inputContext: unknown } }) => ({ id: 'draft-1', ...data }));
   const prisma = { aIDraft: { create }, user: { findUnique: jest.fn(async () => ({ role: 'coach' })) } };
   const svc = new CoachAIService(
-    fakeOf(prisma), fakeOf({ isReady: () => true }), fakeOf({ completeStructured }),
+    fakeOf(withTx(prisma)), fakeOf({ isReady: () => true }), fakeOf({ completeStructured }),
     fakeOf({ build: jest.fn(async (clientId: string) => clientContext(clientId)) }), fakeOf({}),
     fakeOf({ assertCanAccessClient: jest.fn(async () => undefined) }), undefined,
     fakeOf<WorkoutContextService>({ build: jest.fn(async () => workoutContext) }), consentSharing(sharing),
@@ -208,7 +208,7 @@ describe('Stored weekly insight after a client turns a switch off (B-872-SOL-H-1
       },
     };
     const svc = new CoachAIService(
-      fakeOf(prisma), fakeOf({ isReady: () => true }), fakeOf({ completeStructured }),
+      fakeOf(withTx(prisma)), fakeOf({ isReady: () => true }), fakeOf({ completeStructured }),
       fakeOf({ build: jest.fn(async (clientId: string) => clientContext(clientId)) }), fakeOf({}),
       fakeOf({ assertCanAccessClient: jest.fn(async () => undefined) }), undefined,
       fakeOf<WorkoutContextService>({ build: jest.fn(async () => workoutContext) }), consentSharing([SHARES]),

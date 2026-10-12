@@ -7,11 +7,11 @@ import { deriveGatewayDataSubject } from '../src/ai/gateway/ai-gateway.service';
 import { AiEgressService } from '../src/ai-egress/ai-egress.service';
 import { AiConsentRequiredException } from '../src/ai-egress/ai-consent-required.exception';
 import { clientDataSubject, noClientDataSubject } from '../src/ai-egress/ai-egress.types';
-import { egressWithGrants, grantAllEgress } from './ai-egress/ai-egress.fakes';
+import { egressWithGrants, grantAllEgress, withTx } from './ai-egress/ai-egress.fakes';
 
 function buildPrisma() {
   const created = { audits: [] as any[], drafts: [] as any[] };
-  return {
+  return withTx({
     created,
     aiRequestAudit: {
       create: jest.fn(async ({ data }: any) => {
@@ -43,7 +43,7 @@ function buildPrisma() {
           : [],
       ),
     },
-  } as any;
+  } as any);
 }
 
 function buildSvc(
@@ -318,6 +318,27 @@ describe('AiGatewayService — R2b box-2 consent', () => {
       }),
     ).rejects.toBeInstanceOf(AiConsentRequiredException);
     expect(complete).not.toHaveBeenCalled();
+  });
+
+  it('a draft that finishes after its client moved is not saved for the old coach (owner decision 17)', async () => {
+    process.env.AI_GATEWAY_REQUIRE_APPROVAL = 'client_chat';
+    const { egress } = egressWithGrants(['client-1']);
+    const send = sendingAdapter(egress);
+    const prisma = buildPrisma();
+    let moveDuringCall = false;
+    const complete = jest.fn(async (req: any) => {
+      // client-1 moves to another coach while the model is answering.
+      if (moveDuringCall) prisma.user.findMany.mockResolvedValue([]);
+      return send(req);
+    });
+    const { svc } = buildSvc(prisma, egress, complete);
+    await expect(svc.invoke(coachAbout('client-1'))).resolves.toMatchObject({ approvalStatus: 'pending' });
+    expect(prisma.created.drafts).toHaveLength(1);
+    moveDuringCall = true;
+    await expect(svc.invoke(coachAbout('client-1'))).rejects.toThrow('Client not found');
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(prisma.created.drafts).toHaveLength(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
   });
 
   it('stub provider: nothing leaves the server, so no consent read', async () => {

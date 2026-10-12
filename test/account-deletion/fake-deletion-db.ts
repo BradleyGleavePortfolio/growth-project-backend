@@ -236,6 +236,8 @@ export class FakeDeletionDb {
         for (const w of pending.userWrites) if (w.id === u.id) Object.assign(merged, w.data);
         return merged;
       },
+      findMany: async (args: { where: Record<string, unknown> }) =>
+        [...this.users.values()].filter((u) => Object.entries(args.where).every(([k, v]) => u[k] === v)),
       update: async (args: { where: { id: string }; data: Record<string, unknown> }) => {
         this.maybeFail('user', 'update');
         if (!this.users.has(args.where.id)) throw new Error('record not found');
