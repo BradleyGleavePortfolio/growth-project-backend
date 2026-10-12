@@ -5,6 +5,20 @@ import { NotificationKind } from '../notifications/notification-kind';
 export const FLAGGED_JOIN_ALERT_BODY =
   'A client who just joined you was flagged for extra care in their consultation. Please review their answers before their first session.';
 
+/**
+ * The payload of both flag alerts (this one and the coached completion alert
+ * in onboarding.service.ts): the notification center routes a tap by
+ * actionScreen/actionParams, so a tap opens the client's consultation answers.
+ */
+export function flaggedClientPayload(clientId: string): Prisma.InputJsonObject {
+  return {
+    type: 'onboarding_screening_review',
+    client_id: clientId,
+    actionScreen: 'ClientConsultation',
+    actionParams: { clientId },
+  };
+}
+
 /** The two tables the alert reads and writes, inside the join's transaction. */
 export interface FlaggedJoinTx {
   clientOnboardingIntake?: Pick<Prisma.TransactionClient['clientOnboardingIntake'], 'findUnique'>;
@@ -42,13 +56,7 @@ export async function alertCoachOfFlaggedJoinTx(
       kind: NotificationKind.COACH_ALERT,
       channel: 'inapp',
       body: FLAGGED_JOIN_ALERT_BODY,
-      payload: {
-        type: 'onboarding_screening_review',
-        client_id: clientId,
-        // The notification center routes a tap by actionScreen/actionParams.
-        actionScreen: 'ClientConsultation',
-        actionParams: { clientId },
-      },
+      payload: flaggedClientPayload(clientId),
     },
   });
   return true;
