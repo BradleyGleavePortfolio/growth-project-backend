@@ -231,8 +231,7 @@ describe('AI consent ledger: coach-free copies (owner 62)', () => {
     const m = await service.grant('u_a', { version: V5CF, copy_sha256: V5CF_COPY_SHA });
     expect(m).toMatchObject({ granted: true, version: V5CF, current_version: V5CF, scope: 'memory', memory_copy: null });
     expect(await reader.hasClientAiConsent('u_a', 'memory', 'client')).toBe(true);
-    // Read without the variant (e.g. after the response): the live grant still reads its own copy.
-    expect((await service.getStatus('u_a')).current_version).toBe(V5CF);
+    expect((await service.getStatus('u_a', { coachFree: true })).current_version).toBe(V5CF);
   });
 
   it('a live coached grant reads its coached copy even when the coach-free copies are asked for', async () => {
@@ -263,8 +262,20 @@ describe('AI consent ledger: coach-free copies (owner 62)', () => {
     await expect(egress.assertMaySend(clientDataSubject('u_a', 'client', scope), 'anthropic', 'roman.chat')).resolves.toBeUndefined();
     expect(await egress.consentedClients(['u_a'], scope, 'client')).toEqual(new Set(['u_a']));
     expect((await egress.memoryGrantTimes(['u_a'], 'client')).has('u_a')).toBe(scope === 'memory');
-    // The client joins a coach: coach AI drafts and coach-method learning are refused (single and batch reads).
-    expect((await service.getStatus('u_a')).current_version).toBe(cf);
+    // The client joins a coach: the app's plain GET asks for the coached text again (nothing written) ...
+    expect(await service.getStatus('u_a')).toMatchObject({
+      granted: false,
+      state: 'needs_reconsent',
+      needs_reconsent: true,
+      version: cf,
+      scope: null,
+      upgrade: null,
+      current_version: V4,
+      copy: { version: V4, sha256: V4_COPY_SHA },
+      memory_copy: { version: 'client-ai-v5' },
+    });
+    expect(await service.getStatus('u_a', { coachFree: true })).toMatchObject({ granted: true, version: cf });
+    // ... and coach AI drafts and coach-method learning are refused (single and batch reads).
     await expect(
       egress.assertMaySend(clientDataSubject('u_a', 'coach', scope), 'anthropic', 'coach_ai.workout_program'),
     ).rejects.toBeInstanceOf(AiConsentRequiredException);

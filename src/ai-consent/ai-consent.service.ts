@@ -36,8 +36,10 @@
  * with every coach sentence or clause removed; same scopes, for the 'client'
  * audience only: a coach-free grant never covers coach AI drafts or
  * coach-method learning, also after the client joins a coach). The app asks
- * for them with GET ?variant=coach_free; a live coach-free grant always reads
- * its own copies, and a live coached grant its coached ones, whatever is asked.
+ * for them with GET ?variant=coach_free. A plain GET (a client with a coach)
+ * reads a live coach-free grant as needs_reconsent with the coached copy, so
+ * the app asks for the coached text; a live coached grant reads its coached
+ * copies whatever is asked.
  *
  * History is append-only: a decision is a new row with seq = latest.seq + 1.
  * The unique index (user_id, processor, purpose, seq) turns a race between two
@@ -320,16 +322,18 @@ export class AiConsentService implements ClientAiConsentReader {
 
   /**
    * `askCoachFree` (GET only): true for ?variant=coach_free (a client with no
-   * coach), false for a plain GET. A live grant always reads the copies of its
-   * own family. With no live grant, GET follows the ask (a client who joined a
-   * coach after withdrawing a coach-free grant is offered the coached copy) and
-   * a POST / DELETE response (no ask) follows the latest decision on file.
+   * coach), false for a plain GET (a client with a coach). A plain GET never
+   * reads a coach-free grant as live: it answers needs_reconsent with the
+   * coached copy, so the app asks for the coached text (owner 62; Roman for the
+   * client stays covered server-side). Otherwise a live grant reads the copies
+   * of its own family; with no live grant, GET follows the ask and a POST /
+   * DELETE response (no ask) follows the latest decision on file.
    */
   private toStatus(row: AiConsentLatestRow | null, askCoachFree?: boolean): ClientAiConsentStatus {
-    const scope = grantScope(row);
+    const onFileCoachFree = isCoachFreeClientAiVersion(row?.consent_version);
+    const scope = askCoachFree === false && onFileCoachFree ? null : grantScope(row);
     const memoryOn = isRomanMemoryEnabled();
     const granted = scope !== null;
-    const onFileCoachFree = isCoachFreeClientAiVersion(row?.consent_version);
     const coachFree = granted ? onFileCoachFree : (askCoachFree ?? onFileCoachFree);
     const copy =
       scope === 'memory' ? clientAiConsentV5Copy(coachFree) : clientAiConsentCopy(coachFree);
