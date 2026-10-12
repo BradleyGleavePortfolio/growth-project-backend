@@ -171,6 +171,13 @@ export function isCoachFreeClientAiVersion(version: unknown): boolean {
 }
 
 /**
+ * Who the AI output is for (ai-egress AiConsentAudience). A coach-free grant
+ * (owner 62) covers 'client' only: its text names Roman answering the
+ * client, not coach AI drafts or coach-method learning.
+ */
+export type ClientAiConsentAudience = 'coach' | 'client';
+
+/**
  * What a live grant covers. 'base': day-1 Roman and the coach's AI drafts
  * (every existing AI path). 'memory': base plus Roman v1.1 notes, summaries
  * and coach-method learning (FEATURE_ROMAN_MEMORY / FEATURE_ROMAN_PLAYBOOK).

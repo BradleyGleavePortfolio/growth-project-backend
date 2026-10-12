@@ -4,8 +4,8 @@
  *   getStatus(userId)            -> what GET /me/ai-consent returns
  *   grant(userId, dto, meta)     -> append a 'grant' row (idempotent)
  *   withdraw(userId, meta)       -> append a 'withdraw' row (idempotent)
- *   hasClientAiConsent(userId, scope?) -> ClientAiConsentReader (for R2b / AI paths)
- *   clientsWithAiConsent(ids, scope?)  -> ClientAiConsentReader batch form
+ *   hasClientAiConsent(userId, scope?, audience?) -> ClientAiConsentReader (for R2b / AI paths)
+ *   clientsWithAiConsent(ids, scope?, audience?)  -> ClientAiConsentReader batch form
  *
  * Accepted copies (client-ai-v5): a grant counts only for an accepted version
  * with that version's exact sha256 (CLIENT_AI_CONSENT_ACCEPTED). v4 gives the
@@ -33,9 +33,11 @@
  *
  * Coach-free copies (owner decision 62, 2026-10-12): a client with no coach
  * sees client-ai-v4-coach-free / client-ai-v5-coach-free (the same paragraphs
- * with every coach sentence or clause removed; same scopes). The app asks for
- * them with GET ?variant=coach_free; a live coach-free grant always reads its
- * own copies, and a live coached grant its coached ones, whatever is asked.
+ * with every coach sentence or clause removed; same scopes, for the 'client'
+ * audience only: a coach-free grant never covers coach AI drafts or
+ * coach-method learning, also after the client joins a coach). The app asks
+ * for them with GET ?variant=coach_free; a live coach-free grant always reads
+ * its own copies, and a live coached grant its coached ones, whatever is asked.
  *
  * History is append-only: a decision is a new row with seq = latest.seq + 1.
  * The unique index (user_id, processor, purpose, seq) turns a race between two
@@ -93,6 +95,7 @@ import {
   acceptedClientAiConsent,
   isAiConsentLedgerEnabled,
   isCoachFreeClientAiVersion,
+  type ClientAiConsentAudience,
   type ClientAiConsentScope,
 } from './ai-consent.constants';
 import type { GrantClientAiConsentDto } from './ai-consent.dto';
@@ -181,8 +184,16 @@ export function isMemoryGrant(row: AiConsentLatestRow | null): boolean {
   return grantScope(row) === 'memory';
 }
 
-/** Pure: does this latest row cover `scope`? */
-export function coversScope(row: AiConsentLatestRow | null, scope: ClientAiConsentScope): boolean {
+/**
+ * Pure: does this latest row cover `scope` for `audience`? A coach-free grant
+ * covers the 'client' audience only (owner 62); the default is 'coach'.
+ */
+export function coversScope(
+  row: AiConsentLatestRow | null,
+  scope: ClientAiConsentScope,
+  audience: ClientAiConsentAudience = 'coach',
+): boolean {
+  if (audience !== 'client' && isCoachFreeClientAiVersion(row?.consent_version)) return false;
   return scope === 'memory' ? isMemoryGrant(row) : isBaseGrant(row);
 }
 
@@ -308,17 +319,18 @@ export class AiConsentService implements ClientAiConsentReader {
   }
 
   /**
-   * `askCoachFree`: the app shows the coach-free copies (GET ?variant=coach_free,
-   * a client with no coach). A live grant always reads the copies of its own
-   * family; with no live grant the coach-free family is used when asked or when
-   * the latest decision on file is coach-free (a withdrawal of a coach-free grant).
+   * `askCoachFree` (GET only): true for ?variant=coach_free (a client with no
+   * coach), false for a plain GET. A live grant always reads the copies of its
+   * own family. With no live grant, GET follows the ask (a client who joined a
+   * coach after withdrawing a coach-free grant is offered the coached copy) and
+   * a POST / DELETE response (no ask) follows the latest decision on file.
    */
-  private toStatus(row: AiConsentLatestRow | null, askCoachFree = false): ClientAiConsentStatus {
+  private toStatus(row: AiConsentLatestRow | null, askCoachFree?: boolean): ClientAiConsentStatus {
     const scope = grantScope(row);
     const memoryOn = isRomanMemoryEnabled();
     const granted = scope !== null;
     const onFileCoachFree = isCoachFreeClientAiVersion(row?.consent_version);
-    const coachFree = granted ? onFileCoachFree : askCoachFree || onFileCoachFree;
+    const coachFree = granted ? onFileCoachFree : (askCoachFree ?? onFileCoachFree);
     const copy =
       scope === 'memory' ? clientAiConsentV5Copy(coachFree) : clientAiConsentCopy(coachFree);
     const isGrant = row?.action === AI_CONSENT_ACTION_GRANT;
@@ -489,11 +501,15 @@ export class AiConsentService implements ClientAiConsentReader {
   // ClientAiConsentReader — the narrow interface for R2b and every AI path.
   // ---------------------------------------------------------------------------
 
-  async hasClientAiConsent(userId: string, scope: ClientAiConsentScope = 'base'): Promise<boolean> {
+  async hasClientAiConsent(
+    userId: string,
+    scope: ClientAiConsentScope = 'base',
+    audience: ClientAiConsentAudience = 'coach',
+  ): Promise<boolean> {
     if (!isAiConsentLedgerEnabled()) return false;
     if (typeof userId !== 'string' || userId.length === 0) return false;
     try {
-      return coversScope(await this.latest(userId), scope);
+      return coversScope(await this.latest(userId), scope, audience);
     } catch (err) {
       this.logger.warn(`ai_consent.read_failed code=${prismaErrorCode(err)}`);
       return false;
@@ -503,12 +519,15 @@ export class AiConsentService implements ClientAiConsentReader {
   async clientsWithAiConsent(
     userIds: readonly string[],
     scope: ClientAiConsentScope = 'base',
+    audience: ClientAiConsentAudience = 'coach',
   ): Promise<ReadonlySet<string>> {
     const unique = batchIds(userIds, 'clientsWithAiConsent');
     if (!isAiConsentLedgerEnabled() || unique.length === 0) return new Set();
     try {
       const out = new Set<string>();
-      for (const [id, row] of await this.latestByUser(unique)) if (coversScope(row, scope)) out.add(id);
+      for (const [id, row] of await this.latestByUser(unique)) {
+        if (coversScope(row, scope, audience)) out.add(id);
+      }
       return out;
     } catch (err) {
       this.logger.warn(`ai_consent.batch_read_failed code=${prismaErrorCode(err)}`);
@@ -517,12 +536,17 @@ export class AiConsentService implements ClientAiConsentReader {
   }
 
   /** R11-M4: grant time of each live client-ai-v5 ('memory') grant among `userIds`. */
-  async memoryGrantTimes(userIds: readonly string[]): Promise<ReadonlyMap<string, Date>> {
+  async memoryGrantTimes(
+    userIds: readonly string[],
+    audience: ClientAiConsentAudience = 'coach',
+  ): Promise<ReadonlyMap<string, Date>> {
     const unique = batchIds(userIds, 'memoryGrantTimes');
     if (!isAiConsentLedgerEnabled() || unique.length === 0) return new Map();
     try {
       const out = new Map<string, Date>();
-      for (const [id, row] of await this.latestByUser(unique)) if (isMemoryGrant(row)) out.set(id, row.created_at);
+      for (const [id, row] of await this.latestByUser(unique)) {
+        if (coversScope(row, 'memory', audience)) out.set(id, row.created_at);
+      }
       return out;
     } catch (err) {
       this.logger.warn(`ai_consent.batch_read_failed code=${prismaErrorCode(err)}`);

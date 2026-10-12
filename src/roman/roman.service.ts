@@ -1418,7 +1418,7 @@ export class RomanService {
   ): Promise<{ augmentRun: RomanAugmentRun | null; sendSubject: AiDataSubject }> {
     const list = this.augmenters ?? [];
     if (list.length === 0) return { augmentRun: null, sendSubject: subject };
-    const granted = await this.egress.consentedClients([caller.id], 'memory');
+    const granted = await this.egress.consentedClients([caller.id], 'memory', 'client');
     if (!granted.has(caller.id)) {
       this.logger.log('roman.augment_dropped reason=no_memory_scope');
       const omitted = ROMAN_TURN_AUGMENT_ORDER.filter((k) => list.some((a) => a.kind === k));

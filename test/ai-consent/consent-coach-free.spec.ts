@@ -9,7 +9,9 @@
  *   - the pins recompute, and P0 paragraph 4 + box 2 equal the ledger copy;
  *   - P0 accepts all six versions by default, each only with its own digest;
  *   - the ledger: coach-free grants give the same scopes as their coached
- *     copies, GET ?variant=coach_free offers the coach-free copies, a live
+ *     copies for the client's own AI use only (never coach AI drafts or
+ *     coach-method learning, also after joining a coach), GET
+ *     ?variant=coach_free offers the coach-free copies, a live
  *     grant always reads its own family, and a wrong digest is 409 (the HTTP
  *     query is in test/ai-consent/ai-consent.controller.spec.ts).
  */
@@ -45,6 +47,9 @@ import {
   type ConsultConsentCopy,
 } from '../../src/onboarding/consult-consent-copy';
 import { acceptedConsentVersions, currentConsentVersionOf } from '../../src/onboarding/consultation-answers';
+import { AiEgressService } from '../../src/ai-egress/ai-egress.service';
+import { AiConsentRequiredException } from '../../src/ai-egress/ai-consent-required.exception';
+import { clientDataSubject } from '../../src/ai-egress/ai-egress.types';
 import { FakeLedgerPrisma } from './_support/fake-ledger-prisma';
 
 const sha = (t: string): string => createHash('sha256').update(t, 'utf8').digest('hex');
@@ -221,11 +226,11 @@ describe('AI consent ledger: coach-free copies (owner 62)', () => {
     const s = await service.grant('u_a', { version: V4CF, copy_sha256: V4CF_COPY_SHA });
     expect(s).toMatchObject({ granted: true, state: 'granted', version: V4CF, current_version: V4CF, scope: 'base' });
     expect(s.upgrade).toMatchObject({ version: V5CF, sha256: V5CF_COPY_SHA });
-    expect(await reader.hasClientAiConsent('u_a')).toBe(true);
-    expect(await reader.hasClientAiConsent('u_a', 'memory')).toBe(false);
+    expect(await reader.hasClientAiConsent('u_a', 'base', 'client')).toBe(true);
+    expect(await reader.hasClientAiConsent('u_a', 'memory', 'client')).toBe(false);
     const m = await service.grant('u_a', { version: V5CF, copy_sha256: V5CF_COPY_SHA });
     expect(m).toMatchObject({ granted: true, version: V5CF, current_version: V5CF, scope: 'memory', memory_copy: null });
-    expect(await reader.hasClientAiConsent('u_a', 'memory')).toBe(true);
+    expect(await reader.hasClientAiConsent('u_a', 'memory', 'client')).toBe(true);
     // Read without the variant (e.g. after the response): the live grant still reads its own copy.
     expect((await service.getStatus('u_a')).current_version).toBe(V5CF);
   });
@@ -237,12 +242,41 @@ describe('AI consent ledger: coach-free copies (owner 62)', () => {
     expect(s.upgrade?.version).toBe('client-ai-v5');
   });
 
-  it('after withdrawing a coach-free grant the coach-free copy stays on offer', async () => {
+  it('after withdrawing a coach-free grant: the response and ?variant=coach_free keep it; a plain GET offers the coached copy', async () => {
     await service.grant('u_a', { version: V4CF });
     const w = await service.withdraw('u_a');
     expect(w).toMatchObject({ state: 'withdrawn', granted: false, current_version: V4CF });
+    expect(await service.getStatus('u_a', { coachFree: true })).toMatchObject({ state: 'withdrawn', current_version: V4CF });
+    expect(await service.getStatus('u_a')).toMatchObject({ state: 'withdrawn', current_version: V4, copy: { sha256: V4_COPY_SHA } });
     expect(fake.rows[1]).toMatchObject({ action: 'withdraw', consent_version: V4CF, copy_sha256: V4CF_COPY_SHA });
-    expect(await reader.hasClientAiConsent('u_a')).toBe(false);
+    expect(await reader.hasClientAiConsent('u_a', 'base', 'client')).toBe(false);
+  });
+
+  it.each([
+    ['client-ai-v4-coach-free', V4CF, 'base', V4, V4_COPY_SHA],
+    ['client-ai-v5-coach-free', V5CF, 'memory', 'client-ai-v5', CLIENT_AI_CONSENT_ACCEPTED['client-ai-v5'].copy_sha256],
+  ] as const)('%s: Roman for the client only; coach AI is refused, also after joining a coach, until a coached grant', async (_l, cf, scope, coached, coachedSha) => {
+    const egress = new AiEgressService(reader);
+    await service.grant('u_a', { version: cf, copy_sha256: CLIENT_AI_CONSENT_ACCEPTED[cf].copy_sha256 });
+    await service.grant('u_b', { version: coached, copy_sha256: coachedSha });
+    // The client's own Roman use (chat; with v5 coach-free, Roman's notes) goes on.
+    await expect(egress.assertMaySend(clientDataSubject('u_a', 'client', scope), 'anthropic', 'roman.chat')).resolves.toBeUndefined();
+    expect(await egress.consentedClients(['u_a'], scope, 'client')).toEqual(new Set(['u_a']));
+    expect((await egress.memoryGrantTimes(['u_a'], 'client')).has('u_a')).toBe(scope === 'memory');
+    // The client joins a coach: coach AI drafts and coach-method learning are refused (single and batch reads).
+    expect((await service.getStatus('u_a')).current_version).toBe(cf);
+    await expect(
+      egress.assertMaySend(clientDataSubject('u_a', 'coach', scope), 'anthropic', 'coach_ai.workout_program'),
+    ).rejects.toBeInstanceOf(AiConsentRequiredException);
+    expect(await egress.consentedClients(['u_a'], scope)).toEqual(new Set());
+    expect(await egress.consentedClients(['u_a', 'u_b'], scope)).toEqual(new Set(['u_b']));
+    expect(await egress.memoryGrantTimes(['u_a'])).toEqual(new Map());
+    // A coached grant (the coached text) allows coach AI.
+    await service.grant('u_a', { version: coached, copy_sha256: coachedSha });
+    await expect(
+      egress.assertMaySend(clientDataSubject('u_a', 'coach', scope), 'anthropic', 'coach_ai.workout_program'),
+    ).resolves.toBeUndefined();
+    expect(await egress.consentedClients(['u_a', 'u_b'], scope)).toEqual(new Set(['u_a', 'u_b']));
   });
 
   it('a coach-free version with a coached digest (or the reverse) is 409 and writes nothing', async () => {
