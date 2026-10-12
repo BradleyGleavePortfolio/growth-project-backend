@@ -43,6 +43,12 @@ const SUPABASE_KEYS = {
   SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_leakcanary-Ab12_Cd34',
   SUPABASE_ANON_KEY: 'sb_publishable_leakcanary-Ef56_Gh78',
 };
+// The three signing secrets the operator generates (owner decisions 39 and 36).
+const SIGNING_SECRETS = {
+  VOICE_KEY_SIGNING_SECRET: 'leakcanary-voice-0123456789abcdef',
+  SIGNUP_MARKER_SIGNING_SECRET: 'leakcanary-signup-0123456789abcdef',
+  PUBLIC_LISTING_CURSOR_SECRET: 'leakcanary-cursor-0123456789abcdef',
+};
 // Fly machine ids (14 hex characters).
 const MACHINE_1 = 'e2865013b42d78';
 const MACHINE_2 = '148e272a5d7d89';
@@ -558,6 +564,7 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
           ...DEFAULT_SECRETS,
           MWB_AUTOSAVE_LOCK_TOKEN_SECRET: LOCK_SECRET,
           ...SUPABASE_KEYS,
+          ...SIGNING_SECRETS,
         },
       });
       expect(run.ok).toBe(true);
@@ -805,6 +812,30 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
       ]);
       expectNoLeak(run);
     });
+
+    it('signing secrets (owner decisions 39 and 36): all three are copied from GitHub in one staged set and proven in the machine', () => {
+      const run = runJob({
+        mode: 'apply',
+        deployStaged: true,
+        edits: {
+          'secrets.VOICE_KEY_SIGNING_SECRET': 'github-secret',
+          'secrets.SIGNUP_MARKER_SIGNING_SECRET': 'github-secret',
+          'secrets.PUBLIC_LISTING_CURSOR_SECRET': 'github-secret',
+        },
+        secrets: { ...DEFAULT_SECRETS, ...SIGNING_SECRETS },
+      });
+      expect(run.ok).toBe(true);
+      for (const n of Object.keys(SIGNING_SECRETS))
+        expect(planRow(run, n)).toBe(
+          `${n} | secret | github-secret | absent | absent | set | not on Fly`,
+        );
+      expect(writes(run)).toEqual([
+        'secrets set stage=1 names=VOICE_KEY_SIGNING_SECRET SIGNUP_MARKER_SIGNING_SECRET PUBLIC_LISTING_CURSOR_SECRET',
+        'secrets deploy',
+      ]);
+      expect(run.machine).toMatchObject(SIGNING_SECRETS);
+      expectNoLeak(run);
+    });
   });
 
   describe('fails closed with a specific message and a Fix, before any write', () => {
@@ -854,6 +885,7 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
           ...DEFAULT_SECRETS,
           MWB_AUTOSAVE_LOCK_TOKEN_SECRET: LOCK_SECRET,
           SUPABASE_SERVICE_ROLE_KEY: SUPABASE_KEYS.SUPABASE_SERVICE_ROLE_KEY,
+          ...SIGNING_SECRETS,
         },
       });
       expect(run.ok).toBe(false);
@@ -864,6 +896,29 @@ describe('fly-env-sync.yml behaviour (fake flyctl, real run: scripts)', () => {
       expect(step(run, STAGE).ran).toBe(false);
       expectNoLeak(run);
     });
+
+    it.each(Object.keys(SIGNING_SECRETS))(
+      'the checked-in manifest fails the plan until the %s GitHub secret exists, nothing written',
+      (name) => {
+        const run = runJob({
+          mode: 'apply',
+          checkedIn: true,
+          secrets: {
+            ...DEFAULT_SECRETS,
+            MWB_AUTOSAVE_LOCK_TOKEN_SECRET: LOCK_SECRET,
+            ...SUPABASE_KEYS,
+            ...Object.fromEntries(Object.entries(SIGNING_SECRETS).filter(([n]) => n !== name)),
+          },
+        });
+        expect(run.ok).toBe(false);
+        expect(writes(run)).toEqual([]);
+        expect(step(run, PLAN).out).toContain(
+          `${name} is declared "github-secret" but the GitHub Actions secret ${name} is empty or not set`,
+        );
+        expect(step(run, STAGE).ran).toBe(false);
+        expectNoLeak(run);
+      },
+    );
 
     it('GOOGLE_CLIENT_IDS with an empty entry fails its shape check without printing the value', () => {
       const bad = 'leakcanary-a.apps.googleusercontent.com,,leakcanary-b';
