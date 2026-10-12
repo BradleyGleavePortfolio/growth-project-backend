@@ -165,6 +165,8 @@ jobs:
           # BEGIN SOURCES (every manifest secret; each maps to the GitHub secret of the same name)
           GOOGLE_CLIENT_IDS: ${{ secrets.GOOGLE_CLIENT_IDS }}
           MWB_AUTOSAVE_LOCK_TOKEN_SECRET: ${{ secrets.MWB_AUTOSAVE_LOCK_TOKEN_SECRET }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           GOOGLE_OAUTH_REDIRECT_URI: ${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }}
@@ -172,6 +174,8 @@ jobs:
           DATA_EXPORT_DOWNLOAD_SECRET: ${{ secrets.DATA_EXPORT_DOWNLOAD_SECRET }}
           CONTRACT_PDF_URL_SECRET: ${{ secrets.CONTRACT_PDF_URL_SECRET }}
           SCHEDULING_WEBHOOK_SECRET: ${{ secrets.SCHEDULING_WEBHOOK_SECRET }}
+          VOICE_KEY_SIGNING_SECRET: ${{ secrets.VOICE_KEY_SIGNING_SECRET }}
+          SIGNUP_MARKER_SIGNING_SECRET: ${{ secrets.SIGNUP_MARKER_SIGNING_SECRET }}
           GARMIN_WEBHOOK_SALT: ${{ secrets.GARMIN_WEBHOOK_SALT }}
           WHOOP_WEBHOOK_SALT: ${{ secrets.WHOOP_WEBHOOK_SALT }}
           FITBIT_CLIENT_ID: ${{ secrets.FITBIT_CLIENT_ID }}
@@ -289,6 +293,8 @@ jobs:
           # BEGIN SOURCES (every manifest secret; each maps to the GitHub secret of the same name)
           GOOGLE_CLIENT_IDS: ${{ secrets.GOOGLE_CLIENT_IDS }}
           MWB_AUTOSAVE_LOCK_TOKEN_SECRET: ${{ secrets.MWB_AUTOSAVE_LOCK_TOKEN_SECRET }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           GOOGLE_OAUTH_REDIRECT_URI: ${{ secrets.GOOGLE_OAUTH_REDIRECT_URI }}
@@ -296,6 +302,8 @@ jobs:
           DATA_EXPORT_DOWNLOAD_SECRET: ${{ secrets.DATA_EXPORT_DOWNLOAD_SECRET }}
           CONTRACT_PDF_URL_SECRET: ${{ secrets.CONTRACT_PDF_URL_SECRET }}
           SCHEDULING_WEBHOOK_SECRET: ${{ secrets.SCHEDULING_WEBHOOK_SECRET }}
+          VOICE_KEY_SIGNING_SECRET: ${{ secrets.VOICE_KEY_SIGNING_SECRET }}
+          SIGNUP_MARKER_SIGNING_SECRET: ${{ secrets.SIGNUP_MARKER_SIGNING_SECRET }}
           GARMIN_WEBHOOK_SALT: ${{ secrets.GARMIN_WEBHOOK_SALT }}
           WHOOP_WEBHOOK_SALT: ${{ secrets.WHOOP_WEBHOOK_SALT }}
           FITBIT_CLIENT_ID: ${{ secrets.FITBIT_CLIENT_ID }}

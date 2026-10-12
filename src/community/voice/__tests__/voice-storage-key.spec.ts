@@ -288,6 +288,45 @@ describe('A-610-1 voice storage keys (real storage SDK request path)', () => {
     }
   });
 
+  it('K5: with VOICE_KEY_SIGNING_SECRET set, keys from the old derived secret publish only during the overlap', () => {
+    const prevService = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'sb_secret_test-service-role-key';
+    delete process.env.VOICE_KEY_SIGNING_SECRET;
+    try {
+      // Unset: today's behaviour, the derived secret signs and verifies.
+      const before = mintVoiceKey(ME, 'm4a');
+      expect(verifyPublishableVoiceKey(BUCKET, before, ME).ok).toBe(true);
+      process.env.VOICE_KEY_SIGNING_SECRET = 'k5-own-voice-secret-0123456789abcdef';
+      // In-flight key from before the switch still publishes; new keys use the own secret.
+      expect(verifyPublishableVoiceKey(BUCKET, before, ME).ok).toBe(true);
+      const after = mintVoiceKey(ME, 'm4a');
+      expect(verifyPublishableVoiceKey(BUCKET, after, ME).ok).toBe(true);
+      // After one publish window from process start the old secret no longer verifies.
+      const later = Date.now() + VOICE_KEY_PUBLISH_WINDOW_MS + 60_000;
+      const oldLate = (() => {
+        delete process.env.VOICE_KEY_SIGNING_SECRET;
+        const k = mintVoiceKey(ME, 'm4a', later);
+        process.env.VOICE_KEY_SIGNING_SECRET = 'k5-own-voice-secret-0123456789abcdef';
+        return k;
+      })();
+      expect(verifyPublishableVoiceKey(BUCKET, oldLate, ME, later + 1000)).toEqual({
+        ok: false,
+        reason: 'signature',
+      });
+      const ownLate = mintVoiceKey(ME, 'm4a', later);
+      expect(verifyPublishableVoiceKey(BUCKET, ownLate, ME, later + 1000).ok).toBe(true);
+      // A key from the own secret never verifies against the derived one.
+      delete process.env.VOICE_KEY_SIGNING_SECRET;
+      expect(verifyPublishableVoiceKey(BUCKET, after, ME)).toEqual({
+        ok: false,
+        reason: 'signature',
+      });
+    } finally {
+      if (prevService === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+      else process.env.SUPABASE_SERVICE_ROLE_KEY = prevService;
+    }
+  });
+
   it('read signing stays bound to the author folder: an existing legacy key signs only for its owner', async () => {
     const { provider, seen } = fakeStorage();
     const legacy = `${ME}/1700000000000-0123456789abcdef.m4a`;

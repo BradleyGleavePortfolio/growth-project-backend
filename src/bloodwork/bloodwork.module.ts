@@ -4,13 +4,11 @@ import { CoachGuard } from '../auth/coach.guard';
 import { JwksVerifierService } from '../auth/jwks.service';
 import { BloodworkService } from './bloodwork.service';
 import { BloodworkStaleScheduler } from './bloodwork-stale.scheduler';
-import { ClientBloodworkController } from './client-bloodwork.controller';
-import { CoachBloodworkController } from './coach-bloodwork.controller';
 
 // PrismaService, AuditService, and ConsentService are global. Guards are
 // provided locally, mirroring the CheckInsModule wiring.
 @Module({
-  controllers: [ClientBloodworkController, CoachBloodworkController],
+  // Routes off until Secure Form Submission (tgp-agent-context planning/V1_1_MUST_DO.md section 1).
   providers: [
     BloodworkService,
     BloodworkStaleScheduler,

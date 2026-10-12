@@ -91,6 +91,8 @@ module.exports = {
     '<rootDir>/src/feature-flags',
     '<rootDir>/src/talent-marketplace',
     '<rootDir>/src/extension-pair',
+    // Include colocated wearable unit specs without widening to all of src/.
+    '<rootDir>/src/wearables',
     // IMPORTER-E adds `src/scout` as a narrowly-scoped root so the scout
     // progress/completion unit specs colocated under src/scout/*.spec.ts are
     // discovered. Same rationale as the roots above: this slice owns those spec

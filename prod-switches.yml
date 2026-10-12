@@ -1268,6 +1268,18 @@ switches:
     auto_flip_on_in_prod: false
     owner: community
     description: "Used in code but not in ENV_RULES yet. Owner please claim."
+  - name: VOICE_KEY_SIGNING_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: community
+    description: "K5 (SEC-06) own HMAC secret for community voice storage keys. Unset = derived from SUPABASE_SERVICE_ROLE_KEY (today's behaviour). When set, old-key keys publish for 24h10m after each start."
+  - name: SIGNUP_MARKER_SIGNING_SECRET
+    tier: optional
+    prod_default: STUB_ALLOWED
+    auto_flip_on_in_prod: false
+    owner: auth
+    description: "K5 (SEC-06) own HMAC key for the sign-up attempt marker. Unset = SUPABASE_SERVICE_ROLE_KEY (today's behaviour). When set, old-key markers verify for 7 days after each start."
   - name: WAHOO_CLIENT_ID
     tier: optional
     prod_default: STUB_ALLOWED
