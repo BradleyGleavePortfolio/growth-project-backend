@@ -111,10 +111,10 @@ function world() {
   const prisma: PrismaService = fakeOf<PrismaService>({ ...db, $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma) });
   const team = fakeOf<TeamService>({ refreshCounters: async () => undefined });
   const ids = () => ({
-    aIDraft: db.aIDraft.rows.map((r) => r.id),
-    aiActionDraft: db.aiActionDraft.rows.map((r) => r.id),
-    messageDraft: db.messageDraft.rows.map((r) => r.id),
-    churnIntervention: db.churnIntervention.rows.map((r) => r.id),
+    aIDraft: db.aIDraft.rows.map((r) => String(r.id)),
+    aiActionDraft: db.aiActionDraft.rows.map((r) => String(r.id)),
+    messageDraft: db.messageDraft.rows.map((r) => String(r.id)),
+    churnIntervention: db.churnIntervention.rows.map((r) => String(r.id)),
   });
   return { db, prisma, subCoaches: new SubCoachesService(prisma, team), ids };
 }
