@@ -9,6 +9,8 @@
  */
 import type { PrismaService } from '../src/prisma.service';
 import { DataExportService } from '../src/data-export/data-export.service';
+import { SubCoachesService } from '../src/sub-coaches/sub-coaches.service';
+import type { TeamService } from '../src/team/team.service';
 
 type Row = Record<string, unknown>;
 
@@ -21,6 +23,8 @@ function matches(row: Row, where: Row): boolean {
       return (want as { in: unknown[] }).in.includes(row[key]);
     if (typeof want === 'object' && 'gte' in want)
       return row[key] instanceof Date && row[key] >= (want as { gte: Date }).gte;
+    if (typeof want === 'object' && 'lte' in want)
+      return row[key] instanceof Date && row[key] <= (want as { lte: Date }).lte;
     if (typeof want === 'object' && 'path' in want)
       return (row[key] as Row)?.[(want as { path: string[] }).path[0]] === (want as Row).equals;
     if (typeof want === 'object' && 'gt' in want)
@@ -84,17 +88,24 @@ function store(extra: Record<string, Row[]> = {}): PrismaService {
       findMany,
       findFirst: async (args: { where: Row }) => (await findMany(args))[0] ?? null,
       findUnique: async (args: { where: Row }) => (await findMany(args))[0] ?? null,
-      create: async (args: { data: Row }) => ({ id: `${name}-new`, ...args.data }),
+      create: async (args: { data: Row }) => {
+        const row = { id: `${name}-new`, created_at: new Date(), occurred_at: new Date(), ...args.data };
+        extra[name]?.push(row);
+        return row;
+      },
+      update: async (args: { where: Row; data: Row }) =>
+        Object.assign((await findMany(args))[0], args.data),
       updateMany: async (args: { where: Row; data: Row }) => {
         const hit = (await findMany(args)).map((r) => Object.assign(r, args.data));
         return { count: hit.length };
       },
     };
   };
-  const prisma = new Proxy(
+  const prisma: object = new Proxy(
     {},
     {
       get(_target, prop) {
+        if (prop === '$transaction') return (fn: (tx: object) => unknown) => fn(prisma);
         if (typeof prop !== 'string' || prop.startsWith('$') || prop === 'then') return undefined;
         return delegate(prop);
       },
@@ -140,15 +151,28 @@ describe('former coach export (B-DP-4-1, owner decision 4)', () => {
     expect(ids(archive, 'coach_messages')).toEqual(['m-a-d']);
   });
 
-  it("leaves the moved client's own export unchanged, history with the old coach included", async () => {
+  it("keeps the moved client's own history with the old coach in their own export", async () => {
     const archive = await exportOf(C);
     expect(ids(archive, 'meal_plans')).toEqual(['mp-c']);
     expect(ids(archive, 'coach_nudges')).toEqual(['cn-c']);
-    expect(ids(archive, 'message_drafts')).toEqual(['md-c']);
     expect(ids(archive, 'coach_guidelines')).toEqual(['cg-c']);
     expect(ids(archive, 'coach_messages')).toEqual(['m-a-c', 'm-c-a']);
     const own = archive.coach_messages.find((m) => m.id === 'm-c-a');
     expect(own).toMatchObject({ body: 'C to A' });
+  });
+
+  // Owner C-3: coach-side rows stay out of the client's export. A draft is
+  // the coach's unsent reply, never seen by the client.
+  it("leaves a coach's unsent draft out of a client's own export, former or current coach", async () => {
+    for (const [client, draft, sent] of [
+      [C, 'C draft', 'm-c-a'],
+      [D, 'D draft', 'm-a-d'],
+    ]) {
+      const archive = await exportOf(client);
+      expect(archive.message_drafts).toEqual([]);
+      expect(JSON.stringify(archive)).not.toContain(draft);
+      expect(ids(archive, 'coach_messages')).toContain(sent);
+    }
   });
 });
 
@@ -236,5 +260,60 @@ describe('archive built before a client moved (B-938-1)', () => {
     await expect(service().createDownloadLink(A)).rejects.toMatchObject({ status: 410 });
     move();
     await expect(service().createDownloadLink(C)).resolves.toMatchObject({ file_size_bytes: 2 });
+  });
+
+  // F-938 B1: head coach H delegated C to sub-coach S, then moves C to team
+  // coach X with the real writer. The move leaves the delegation open, but S
+  // loses C at once, so S's archive from before the move is never served.
+  it("retires a sub-coach's archive when the head coach moves a delegated client on", async () => {
+    const [H, S, X] = ['coach-head', 'coach-sub', 'coach-x'];
+    rows = {
+      user: [
+        { id: H, role: 'coach', coach_id: null, deleted_at: null },
+        { id: S, role: 'coach', coach_id: H, deleted_at: null },
+        { id: X, role: 'coach', coach_id: H, deleted_at: null },
+        { id: C, role: 'student', coach_id: H, deleted_at: null, name: 'Client' },
+      ],
+      teamSubCoachAssignment: [
+        { id: 'seat-s', head_coach_id: H, sub_coach_id: S, archived_at: null },
+        { id: 'seat-x', head_coach_id: H, sub_coach_id: X, archived_at: null },
+      ],
+      subCoachAssignment: [
+        {
+          id: 'del',
+          head_coach_id: H,
+          sub_coach_id: S,
+          client_id: C,
+          assigned_at: new Date(T0.getTime() - 60_000),
+          unassigned_at: null,
+        },
+      ],
+      teamAuditEvent: [],
+      coachMessage: [{ id: 'm-s-c', sender_id: S, coach_id: H, client_id: C, body: 'S to C' }],
+      dataExportRequest: [archive('ex-s', S)],
+    };
+    const svc = service();
+    const build = (Reflect.get(svc, '_buildArchive') as (u: string, e: string) => Promise<{ buffer: Buffer }>).bind(svc);
+    const sections = async () =>
+      JSON.parse((await build(S, '00000000-0000-4000-8000-000000000042')).buffer.toString('utf8'));
+    expect(ids(await sections(), 'coach_messages')).toEqual(['m-s-c']);
+    const before = await svc.createDownloadLink(S);
+
+    const team = { refreshCounters: async () => undefined } as Partial<TeamService> as TeamService;
+    await new SubCoachesService(store(rows), team).reassignClient(H, X, { clientId: C });
+    expect(rows.subCoachAssignment[0]).toMatchObject({ unassigned_at: null });
+
+    await expect(svc.openDownload(before.token)).rejects.toMatchObject({ status: 410 });
+    expect(removed).toEqual(['ex-s']);
+    rows.dataExportRequest[0] = archive('ex-s', S);
+    await expect(service().createDownloadLink(S)).rejects.toMatchObject({ status: 410 });
+    rows.dataExportRequest[0] = archive('ex-s', S);
+    const status = await service().getLatestStatus(S);
+    expect(status).toMatchObject({ status: 'EXPIRED', download_available: false });
+    expect(status.download_token).toBeNull();
+    rows.dataExportRequest[0] = archive('ex-s', S);
+    Reflect.set(svc, '_runExport', async () => undefined);
+    await expect(svc.requestExport(S)).resolves.toMatchObject({ status: 'PENDING' });
+    expect(JSON.stringify(await sections())).not.toContain(C);
   });
 });

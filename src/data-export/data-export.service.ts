@@ -1147,9 +1147,10 @@ export class DataExportService {
 
   /**
    * B-938-1 (owner decision 4): a coach's archive requested before one of
-   * their clients moved away (team reassignment or ended delegation) holds
-   * that client's history, so it is retired and never served; the coach can
-   * request a fresh export at once. Client archives are never stale.
+   * their clients moved away (team reassignment, ended delegation, or a move
+   * of a client delegated to them) holds that client's history, so it is
+   * retired and never served; the coach can request a fresh export at once.
+   * Client archives are never stale.
    */
   private async _isStaleCoachArchive(record: DataExportRequest): Promise<boolean> {
     const owner = await this.prisma.user.findUnique({
@@ -1159,7 +1160,7 @@ export class DataExportService {
     if (owner?.role !== 'coach') return false;
     const since = { gte: record.created_at };
     const from = (key: string) => ({ metadata: { path: [key], equals: record.user_id } });
-    const [moved, ended] = await Promise.all([
+    const [moved, ended, delegated] = await Promise.all([
       this.prisma.teamAuditEvent.findFirst({
         where: {
           event_kind: 'client_reassigned',
@@ -1173,8 +1174,30 @@ export class DataExportService {
         where: { sub_coach_id: record.user_id, unassigned_at: since },
         select: { id: true },
       }),
+      this.prisma.subCoachAssignment.findMany({
+        where: {
+          sub_coach_id: record.user_id,
+          unassigned_at: null,
+          assigned_at: { lte: record.created_at },
+        },
+        select: { client_id: true },
+      }),
     ]);
-    return Boolean(moved || ended);
+    if (moved || ended) return true;
+    if (delegated.length === 0) return false;
+    // A head coach moving a delegated client to another coach leaves the
+    // delegation open, but the sub-coach loses that client at once (A1).
+    const reassigned = await this.prisma.teamAuditEvent.findMany({
+      where: {
+        event_kind: 'client_reassigned',
+        occurred_at: since,
+        target_client_id: { in: delegated.map((d) => d.client_id) },
+      },
+      select: { target_client_id: true },
+    });
+    if (reassigned.length === 0) return false;
+    const current = new Set(await this.clientScope.getAuthorizedClientIds(record.user_id));
+    return reassigned.some((e) => e.target_client_id !== null && !current.has(e.target_client_id));
   }
 
   /**
@@ -1511,10 +1534,9 @@ export class DataExportService {
       this._streamAll('listItem', { user_id: userId }),
       this._streamCoachMessages(userId, noOrCurrentClient),
       this._streamAll('coachNudge', coachOrClient),
-      // A draft always names its client (client_id is required).
-      this._streamAll('messageDraft', {
-        OR: [{ client_id: userId }, { coach_id: userId, ...currentClient }],
-      }),
+      // Owner C-3: a draft is the coach's unsent reply, so it is coach-side
+      // only and never in the client's export. It always names its client.
+      this._streamAll('messageDraft', { coach_id: userId, ...currentClient }),
       this._streamAll('mealPlan', coachOrClient),
       this._streamAll('communityWin', { user_id: userId }),
       this._streamAll('coachGuideline', coachOrClient),
