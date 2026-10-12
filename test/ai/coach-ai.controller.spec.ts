@@ -307,6 +307,8 @@ describe('CoachAIService', () => {
       weeks: 2,
       daysPerWeek: 2,
     });
+    // Saving the draft ran its own transaction; the approve tests count theirs.
+    f.prisma.$transaction.mockClear();
     return draftId;
   }
 
