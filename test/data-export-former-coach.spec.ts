@@ -99,6 +99,12 @@ function store(extra: Record<string, Row[]> = {}): PrismaService {
         const hit = (await findMany(args)).map((r) => Object.assign(r, args.data));
         return { count: hit.length };
       },
+      deleteMany: async (args: { where: Row }) => {
+        const all = extra[name] ?? tables[name] ?? [];
+        const hit = all.filter((r) => matches(r, args.where));
+        for (const r of hit) all.splice(all.indexOf(r), 1);
+        return { count: hit.length };
+      },
     };
   };
   const prisma: object = new Proxy(
