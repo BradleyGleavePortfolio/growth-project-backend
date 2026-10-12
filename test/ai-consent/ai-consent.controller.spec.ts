@@ -170,6 +170,18 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
     });
   });
 
+  it('GET ?variant=coach_free -> the coach-free copies (owner 62); any other value -> the coached copies', async () => {
+    const free = await call('GET', '/me/ai-consent?variant=coach_free', 'u_a');
+    expect(free.status).toBe(200);
+    expect(free.body).toMatchObject({
+      current_version: 'client-ai-v4-coach-free',
+      copy: { version: 'client-ai-v4-coach-free' },
+    });
+    const other = await call('GET', '/me/ai-consent?variant=COACH_FREE', 'u_a');
+    expect(other.status).toBe(200);
+    expect(other.body).toMatchObject({ current_version: 'client-ai-v4', copy: { version: 'client-ai-v4' } });
+  });
+
   it('POST grant -> 200 granted; repeat is idempotent (one row)', async () => {
     const body = { version: 'client-ai-v4', copy_sha256: COPY_SHA, platform: 'ios', app_version: '1.0.0', locale: 'en-US' };
     const a = await call('POST', '/me/ai-consent/roman', 'u_a', body);

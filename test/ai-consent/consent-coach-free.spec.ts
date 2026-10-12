@@ -10,7 +10,8 @@
  *   - P0 accepts all six versions by default, each only with its own digest;
  *   - the ledger: coach-free grants give the same scopes as their coached
  *     copies, GET ?variant=coach_free offers the coach-free copies, a live
- *     grant always reads its own family, and a wrong digest is 409.
+ *     grant always reads its own family, and a wrong digest is 409 (the HTTP
+ *     query is in test/ai-consent/ai-consent.controller.spec.ts).
  */
 import { Logger, type DynamicModule } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -19,7 +20,6 @@ import { PrismaService } from '../../src/prisma.service';
 import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import { RolesGuard } from '../../src/auth/roles.guard';
 import { AiConsentService } from '../../src/ai-consent/ai-consent.service';
-import { AiConsentController } from '../../src/ai-consent/ai-consent.controller';
 import { CLIENT_AI_CONSENT_READER, type ClientAiConsentReader } from '../../src/ai-consent/ai-consent.reader';
 import { AiConsentModule } from '../../src/ai-consent/ai-consent.module';
 import {
@@ -256,15 +256,5 @@ describe('AI consent ledger: coach-free copies (owner 62)', () => {
       });
     }
     expect(fake.rows).toHaveLength(0);
-  });
-
-  it('the controller passes the coach-free variant only for exactly variant=coach_free', async () => {
-    const getStatus = jest.fn().mockResolvedValue({});
-    const controller = new AiConsentController({ getStatus } as unknown as AiConsentService);
-    const req = { user: { id: 'u_a' } } as never;
-    await controller.get(req, 'coach_free');
-    await controller.get(req, 'COACH_FREE');
-    await controller.get(req, undefined);
-    expect(getStatus.mock.calls).toEqual([['u_a', { coachFree: true }], ['u_a'], ['u_a']]);
   });
 });
