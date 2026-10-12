@@ -133,14 +133,20 @@ const NOT_A_REPORT = closelyAfter(
  * keep water down?", "I can't keep water down, what should I do?"). R2: the
  * question can start mid-clause ("I'm on Wegovy and want to know what the
  * symptoms of pancreatitis are"); only I/my after the last opener is a report.
+ * R3: a clause also starts after but/because/cause ("not sure what's going on
+ * but severe stomach pain"), and "this/these" points at a symptom being had.
  */
 const QUESTION_OPENER =
   /^\s*(is|are|can|could|does|do|should|would|will|when|any)\b|\b(what'?s?|how|why|which|wonder(ing)?|want to know|curious)\b/gi;
-const OWN_REPORT = /\b(i|i'?m|i'?ve|my|me)\b/i;
+const OWN_REPORT = /\b(i|i'?m|i'?ve|my|me|this|these)\b/i;
+const CLAUSE_JOIN = /\b(but|because|cause) /gi;
 const IN_THE_PAST = /^.{0,25}\b(years? (ago|back)|as a (kid|child|teen))\b/i;
 const negated = (sentence: string, m: RegExpExecArray) => NEGATED.test(sentence.slice(0, m.index));
 function notAReport(sentence: string, m: RegExpExecArray): boolean {
-  const clause = sentence.lastIndexOf(',', m.index) + 1; // "I'm on Ozempic, is ..."
+  const joins = [...sentence.slice(0, m.index).matchAll(CLAUSE_JOIN)].map(
+    (j) => (j.index ?? 0) + j[0].length,
+  );
+  const clause = Math.max(sentence.lastIndexOf(',', m.index) + 1, ...joins); // "I'm on Ozempic, is ..."
   const opener = [...sentence.slice(clause, m.index).matchAll(QUESTION_OPENER)].pop();
   const after = opener && clause + (opener.index ?? 0) + opener[0].length;
   return (

@@ -247,6 +247,19 @@ describe('urgent_symptoms: a weight-loss medicine plus a red-flag symptom', () =
       'On Wegovy, why is my stomach pain so bad?',
       "I'm on Wegovy and wondering why I can't keep water down",
       'on ozempic, my stomach hurts so much',
+      // R3 (B-913-5): a question word before but/because, or "what's this ...".
+      "on ozempic and not sure what's going on but severe stomach pain since last night",
+      "on ozempic. not sure what's going on but severe stomach pain since last night",
+      'on ozempic, no idea why but been throwing up all night',
+      "on wegovy, idk what's happening but keep throwing up",
+      "on ozempic and dont know why but can't keep water down",
+      "on mounjaro and don't know what to do because can't keep anything down",
+      "I'm on wegovy and I don't know how to describe it but the stomach pain is unbearable",
+      'on ozempic and not sure why but stomach pain is unbearable',
+      "I'm on Mounjaro and what is this sharp stomach pain?",
+      "Started Wegovy last week and what's this terrible stomach pain",
+      "on ozempic and what's this severe stomach pain",
+      "I'm on Ozempic, what's this severe stomach pain?",
     ]) {
       expect({ msg, cls: classifySafety(msg).class }).toEqual({ msg, cls: 'urgent_symptoms' });
     }
