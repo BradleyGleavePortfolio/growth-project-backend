@@ -10,9 +10,8 @@ import { PrismaService } from '../prisma.service';
 // "Verified" reuses existing coach-surface signals rather than a new flag:
 //   - role=owner    → always verified (mirrors the OWNER bypass elsewhere).
 //   - role=coach    → must NOT be a sub-coach (non-archived
-//                     TeamSubCoachAssignment) AND have an active/trialing/
-//                     grandfathered CoachSubscription (SubscriptionGuard's
-//                     entitled statuses). Covers solo + head coaches.
+//                     TeamSubCoachAssignment). Covers solo + head coaches.
+//                     No coach subscription check (owner TM-P1: no plans).
 // Students and sub-coaches are rejected.
 @Injectable()
 export class HirerVerifiedGuard implements CanActivate {
@@ -40,23 +39,6 @@ export class HirerVerifiedGuard implements CanActivate {
         message: 'Sub-coaches cannot post job listings.',
       });
     }
-
-    // Verified = active paying coach business.
-    const sub = await this.prisma.coachSubscription.findUnique({
-      where: { coach_id: user.id },
-    });
-    const status = sub?.status;
-    if (
-      status === 'active' ||
-      status === 'trialing' ||
-      status === 'grandfathered'
-    ) {
-      return true;
-    }
-
-    throw new ForbiddenException({
-      kind: 'hirer_not_verified',
-      message: 'A verified, active coach subscription is required to hire.',
-    });
+    return true;
   }
 }

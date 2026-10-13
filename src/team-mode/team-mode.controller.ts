@@ -45,7 +45,7 @@ export class TeamModeController {
   constructor(private readonly teamMode: TeamModeService) {}
 
   // POST /team/sub-coaches  body: { sub_coach_id }
-  // Q1, Q2: assign a sub-coach. Pro: paid Stripe seat. Everyone else: free.
+  // Q1, Q2: assign a sub-coach. No paid seat for any coach (owner TM-P1).
   @Post('sub-coaches')
   @UseGuards(JwtAuthGuard, CoachGuard, HeadCoachOnlyGuard)
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
