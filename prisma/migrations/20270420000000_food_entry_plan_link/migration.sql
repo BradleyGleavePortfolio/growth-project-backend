@@ -18,11 +18,13 @@
 -- row security (Postgres referential actions), so a coach deleting a slot
 -- clears the link on a client's entry the coach cannot read.
 --
--- Locks: ADD COLUMN with no default and ADD COLUMN with a constant default are
--- catalog-only (no rewrite) on Postgres 11+. The FK is added NOT VALID (brief
--- lock), then VALIDATE scans under SHARE UPDATE EXCLUSIVE, which does not
--- block food logging; every row is null, so validation cannot fail. The index
--- is built CONCURRENTLY in 20270420000001.
+-- Locks: Prisma runs this file as one implicit transaction, so its ACCESS
+-- EXCLUSIVE lock on LoggedFoodEntry lasts until the file ends. Everything here
+-- is catalog-only and short: ADD COLUMN with no default and with a constant
+-- default do not rewrite the table (Postgres 11+), and the FK is added NOT
+-- VALID (no scan). The validation scan runs in 20270420000001, after this file
+-- has committed, under SHARE UPDATE EXCLUSIVE. The index is built
+-- CONCURRENTLY in 20270420000002.
 
 SET lock_timeout = '5s';
 
@@ -31,5 +33,3 @@ ALTER TABLE "LoggedFoodEntry" ADD COLUMN "plan_slot_id" TEXT;
 ALTER TABLE "LoggedFoodEntry" ADD COLUMN "fills_usual_meal" BOOLEAN NOT NULL DEFAULT false;
 
 ALTER TABLE "LoggedFoodEntry" ADD CONSTRAINT "LoggedFoodEntry_plan_slot_id_fkey" FOREIGN KEY ("plan_slot_id") REFERENCES "DailyMealPlanSlot"("id") ON DELETE SET NULL ON UPDATE CASCADE NOT VALID;
-
-ALTER TABLE "LoggedFoodEntry" VALIDATE CONSTRAINT "LoggedFoodEntry_plan_slot_id_fkey";

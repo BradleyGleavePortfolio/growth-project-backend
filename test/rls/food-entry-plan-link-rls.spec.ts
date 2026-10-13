@@ -1,5 +1,5 @@
 /**
- * FOODLINK — live row security for the food log plan link (20270420000000, 20270420000001).
+ * FOODLINK — live row security for the food log plan link (20270420000000, 20270420000001, 20270420000002).
  *
  * Runs in the rls-live-tests job on a superuser copy of rls_replay (the whole migration chain
  * from empty). Principals are API shaped: SET LOCAL ROLE authenticated with the
