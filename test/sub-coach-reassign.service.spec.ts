@@ -74,28 +74,14 @@ describe('SubCoachReassignService', () => {
   let service: SubCoachReassignService;
   let prisma: PrismaService;
   let idempotency: ReturnType<typeof makeIdempotencyMock>;
-  let capacity: {
-    assertHasCapacityTx: jest.Mock;
-    assertHasCapacity: jest.Mock;
-    getCapacity: jest.Mock;
-  };
+  let capacity: { assertSubCoachBelongsTo: jest.Mock };
   let tx: TxMock;
 
   beforeEach(async () => {
     tx = makeTxMock();
     prisma = makePrismaWithTx(tx);
     idempotency = makeIdempotencyMock();
-    capacity = {
-      assertHasCapacityTx: jest.fn().mockResolvedValue(undefined),
-      assertHasCapacity: jest.fn().mockResolvedValue(undefined),
-      getCapacity: jest.fn().mockResolvedValue({
-        subCoachId: SUB_COACH_ID,
-        assignedClients: 5,
-        maxClients: 50,
-        planTier: 'flat_300',
-        hasCapacity: true,
-      }),
-    };
+    capacity = { assertSubCoachBelongsTo: jest.fn().mockResolvedValue(undefined) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -156,7 +142,7 @@ describe('SubCoachReassignService', () => {
       idempotency_key: IDEMPOTENCY_KEY,
     });
 
-    expect(capacity.assertHasCapacityTx).toHaveBeenCalled();
+    expect(capacity.assertSubCoachBelongsTo).toHaveBeenCalledWith(tx, HEAD_COACH_ID, SUB_COACH_ID);
     expect(tx.subCoachAssignment.create).toHaveBeenCalled();
     expect(tx.subCoachAssignment.update).not.toHaveBeenCalled();
     expect(tx.auditLog.create).toHaveBeenCalled();
@@ -301,7 +287,7 @@ describe('SubCoachReassignService', () => {
     expect(result.newSubCoachId).toBe(SUB_COACH_ID);
   });
 
-  it('returns clean 409 when capacity exhausted after P2034 retries', async () => {
+  it('TM-P1: rethrows the serialization error after P2034 retries, never a plan 409', async () => {
     (prisma.user.findFirst as jest.Mock)
       .mockResolvedValueOnce({ id: SUB_COACH_ID })
       .mockResolvedValueOnce({ id: CLIENT_ID, coach_id: HEAD_COACH_ID, role: 'student' });
@@ -311,13 +297,6 @@ describe('SubCoachReassignService', () => {
         clientVersion: '0.0.0',
       });
     });
-    capacity.getCapacity.mockResolvedValueOnce({
-      subCoachId: SUB_COACH_ID,
-      assignedClients: 50,
-      maxClients: 50,
-      planTier: 'flat_300',
-      hasCapacity: false,
-    });
 
     await expect(
       service.reassignClient(HEAD_COACH_ID, ACTOR_ID, 'coach', {
@@ -325,10 +304,10 @@ describe('SubCoachReassignService', () => {
         targetSubCoachId: SUB_COACH_ID,
         idempotency_key: IDEMPOTENCY_KEY,
       }),
-    ).rejects.toThrow(ConflictException);
+    ).rejects.toMatchObject({ code: 'P2034' });
   });
 
-  it('assignClient routes through reassignClient and enforces capacity', async () => {
+  it('assignClient routes through reassignClient and checks the team', async () => {
     (prisma.user.findFirst as jest.Mock)
       .mockResolvedValueOnce({ id: SUB_COACH_ID })
       .mockResolvedValueOnce({ id: CLIENT_ID, coach_id: HEAD_COACH_ID, role: 'student' });
@@ -339,7 +318,7 @@ describe('SubCoachReassignService', () => {
       idempotency_key: IDEMPOTENCY_KEY,
     });
 
-    expect(capacity.assertHasCapacityTx).toHaveBeenCalled();
+    expect(capacity.assertSubCoachBelongsTo).toHaveBeenCalledWith(tx, HEAD_COACH_ID, SUB_COACH_ID);
     expect(tx.auditLog.create).toHaveBeenCalled();
   });
 
@@ -359,5 +338,37 @@ describe('SubCoachReassignService', () => {
         idempotency_key: IDEMPOTENCY_KEY,
       }),
     ).rejects.toThrow(UnprocessableEntityException);
+  });
+
+  it('TM-P1: assigns a client to a sub-coach already above the old plan cap', async () => {
+    // The real capacity service. The old plan map capped a "starter" team's sub-coach at 25.
+    const teamCheck = jest.fn().mockResolvedValue({ id: SUB_COACH_ID });
+    Object.assign(tx, {
+      user: { findFirst: teamCheck },
+      coachProfile: { findUnique: jest.fn().mockResolvedValue({ plan_tier: 'starter' }) },
+    });
+    Object.assign(tx.subCoachAssignment, { count: jest.fn().mockResolvedValue(1000) });
+    (prisma.user.findFirst as jest.Mock)
+      .mockResolvedValueOnce({ id: SUB_COACH_ID })
+      .mockResolvedValueOnce({ id: CLIENT_ID, coach_id: HEAD_COACH_ID, role: 'student' });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        SubCoachReassignService,
+        SubCoachCapacityService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: SubCoachIdempotencyService, useValue: idempotency },
+      ],
+    }).compile();
+    const real = module.get(SubCoachReassignService);
+
+    const result = await real.assignClient(HEAD_COACH_ID, ACTOR_ID, 'coach', {
+      clientId: CLIENT_ID,
+      subCoachId: SUB_COACH_ID,
+      idempotency_key: IDEMPOTENCY_KEY,
+    });
+
+    expect(result.newSubCoachId).toBe(SUB_COACH_ID);
+    expect(tx.subCoachAssignment.create).toHaveBeenCalled();
+    expect(teamCheck).toHaveBeenCalled();
   });
 });

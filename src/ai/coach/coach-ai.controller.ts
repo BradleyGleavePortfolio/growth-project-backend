@@ -13,8 +13,6 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
-import { RequiresTier } from '../../billing/requires-tier.decorator';
-import { SubscriptionGuard } from '../../billing/subscription.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { THROTTLER_NAMES } from '../../throttler/throttler.config';
 import { CoachAIService } from './coach-ai.service';
@@ -40,14 +38,9 @@ function withoutSnapshot<T extends { inputContext?: unknown }>(draft: T): Omit<T
 // gate (CoachAIStateService) returns 503 ai_disabled when the engine is
 // off so a missing/invalid ANTHROPIC_API_KEY does not silently consume
 // the rate-limit budget.
-//
-// Hybrid pricing (spec §5): Coach AI is a Pro feature. @RequiresTier('pro')
-// is applied at the class level so every handler inherits it. Free coaches
-// receive 403 TIER_UPGRADE_REQUIRED in enforce mode.
 @ApiTags('coach-ai')
 @Controller('coach/ai')
-@RequiresTier('pro')
-@UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachAIController {
   constructor(
     private readonly svc: CoachAIService,

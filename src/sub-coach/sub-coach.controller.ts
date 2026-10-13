@@ -161,7 +161,7 @@ export class SubCoachController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Atomically reassign a client to another sub-coach (or back to head coach)' })
   @ApiResponse({ status: 200 })
-  @ApiResponse({ status: 409, description: 'Destination at capacity' })
+  @ApiResponse({ status: 409, description: 'Concurrent assignment for this client' })
   async reassignClient(
     @Request() req: AuthedRequest,
     @Param('id', new ParseUUIDPipe()) _subCoachIdInPath: string,
@@ -209,7 +209,7 @@ export class SubCoachController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Assign a client to this sub-coach' })
   @ApiResponse({ status: 200 })
-  @ApiResponse({ status: 409, description: 'Sub-coach at capacity' })
+  @ApiResponse({ status: 409, description: 'Concurrent assignment for this client' })
   async assignClient(
     @Request() req: AuthedRequest,
     @Param('id', new ParseUUIDPipe()) subCoachId: string,
