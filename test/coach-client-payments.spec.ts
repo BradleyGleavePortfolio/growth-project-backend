@@ -6,7 +6,10 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import type { User } from '@prisma/client';
 import { AuditService } from '../src/audit/audit.service';
 import { ClientBillingService } from '../src/checkout/client-billing.service';
-import { CoachClientPaymentsController } from '../src/checkout/coach-client-payments.controller';
+import {
+  CoachClientPaymentsController,
+  CoachSaleRefundController,
+} from '../src/checkout/coach-client-payments.controller';
 import { CoachClientPaymentsService } from '../src/checkout/coach-client-payments.service';
 import { CoachPaymentActionsFeatureGuard } from '../src/checkout/coach-payment-actions.feature';
 import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
@@ -199,8 +202,10 @@ describe('CF-COACH-PAY-BE-128 coach client payments', () => {
     });
 
     it('the controller mounts the flag guard and blocks active sub-coaches', () => {
-      const guards = Reflect.getMetadata(GUARDS_METADATA, CoachClientPaymentsController);
-      expect(guards).toEqual(expect.arrayContaining([CoachPaymentActionsFeatureGuard, NoActiveSubCoachGuard]));
+      for (const controller of [CoachClientPaymentsController, CoachSaleRefundController]) {
+        const guards = Reflect.getMetadata(GUARDS_METADATA, controller);
+        expect(guards).toEqual(expect.arrayContaining([CoachPaymentActionsFeatureGuard, NoActiveSubCoachGuard]));
+      }
     });
   });
 });

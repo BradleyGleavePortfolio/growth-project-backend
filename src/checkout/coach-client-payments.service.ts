@@ -161,6 +161,15 @@ export class CoachClientPaymentsService {
     return { refund, plan: await this.reload(actor, clientId, purchaseId) };
   }
 
+  /** CONTRACT-1: the seller refunds a sale by its id alone (a moved client's record has none). */
+  async refundSale(actor: User, purchaseId: string, input: CoachRefundDto) {
+    const sale = await this.prisma.clientPurchase.findUnique({
+      where: { id: purchaseId },
+      select: { client_user_id: true },
+    });
+    return this.refund(actor, sale?.client_user_id ?? '', purchaseId, input);
+  }
+
   pause(actor: User, clientId: string, purchaseId: string, key: string) {
     return this.setPause(actor, clientId, purchaseId, key, 'pause');
   }
@@ -400,8 +409,6 @@ function planView(row: PlanRow, actorId: string, billing: CoachPlanBilling) {
 function moneyPlan(p: CoachClientPlanView) {
   return {
     purchase_id: p.purchase_id,
-    package_name: p.package_name,
-    billing_type: p.billing_type,
     status: p.status,
     amount_cents: p.amount_cents,
     currency: p.currency,

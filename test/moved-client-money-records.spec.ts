@@ -23,13 +23,10 @@ const ANA = 'Ana Ruiz';
 const KEY = '33333333-3333-4333-8333-333333333333';
 const at = (day: number) => new Date(Date.UTC(2026, 9, day, 12));
 /** The only fields a purchase row about Ana keeps once she has moved (listed in the PR). */
-const KEPT = [
-  'amount_cents', 'billing_type', 'created_at', 'currency', 'id', 'package_id', 'status',
-];
+const KEPT = ['amount_cents', 'created_at', 'currency', 'id', 'status'];
 /** The only fields her plan keeps on the client payments routes. */
 const PLAN_KEPT = [
-  'actions', 'amount_cents', 'billing_type', 'created_at', 'currency', 'package_name', 'payments',
-  'purchase_id', 'status',
+  'actions', 'amount_cents', 'created_at', 'currency', 'payments', 'purchase_id', 'status',
 ];
 /** Never in the old coach's responses once Ana has moved: her id, email, card error, new coach. */
 const GONE_AFTER_MOVE = [CLIENT, 'ana@example.test', 'card_declined', NEW];
@@ -67,6 +64,7 @@ function world() {
     dunningState: [{
       id: 'd1', purchase_id: 'p1', status: 'active', failure_count: 1, step_index: 0,
       last_failed_amount_cents: 4900, last_failure_at: at(2), last_failure_reason: 'card_declined',
+      entered_at: at(2),
     }],
     chargeDispute: [{
       id: 'dp1', purchase_id: 'p1', status: 'needs_response', amount_cents: 4900,
@@ -104,6 +102,7 @@ function world() {
   const make = <T>(cls: new (...args: never[]) => T, ...deps: unknown[]): T =>
     Reflect.construct(cls, [prisma, ...deps]);
   return {
+    db,
     refunds,
     moveTo: (coachId: string) => Object.assign(db.state.user[0], { coach_id: coachId }),
     checkout: make(CheckoutService, {}, {}, {}, {}, {}),
@@ -256,6 +255,25 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
     expect(Object.keys(canceled.plan).sort()).toEqual(PLAN_KEPT);
   });
 
+  it('after the move the record id alone refunds and shows a dispute pause', async () => {
+    const w = world();
+    w.moveTo(NEW);
+    const [sale] = (await route(w, OLD, 'listOwn', {})).purchases;
+    const out = await w.payments.refundSale(coach(OLD), sale.id, {
+      idempotency_key: KEY, amount_cents: 500,
+    });
+    expect(w.refunds.createAdminRefund).toHaveBeenCalledWith(expect.objectContaining({
+      purchase_id: 'p1', charge_id: 'ch_1', amount_cents: 500, initiated_by_user_id: OLD,
+    }));
+    expect(Object.keys(out.plan).sort()).toEqual(PLAN_KEPT);
+    // A card failure never shows; a refund or dispute pause does, for the restart.
+    expect((await route(w, OLD, 'getOwn', sale.id)).dunning).toBeNull();
+    Object.assign(w.db.state.dunningState[0], { last_failure_reason: 'charge_disputed' });
+    expect((await route(w, OLD, 'getOwn', sale.id)).dunning).toEqual({
+      status: 'active', last_failure_reason: 'charge_disputed', entered_at: at(2),
+    });
+  });
+
   it("the client's new coach (any other coach) reads none of the old coach's records", async () => {
     const w = world();
     w.moveTo(NEW);
@@ -270,6 +288,8 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
     expect((await w.money.getAttention(NEW)).items).toEqual([]);
     expect((await w.payments.list(coach(NEW), CLIENT)).plans).toEqual([]);
     await expect(w.payments.refund(coach(NEW), CLIENT, 'p1', { idempotency_key: KEY }))
+      .rejects.toMatchObject(notFound);
+    await expect(w.payments.refundSale(coach(NEW), 'p1', { idempotency_key: KEY }))
       .rejects.toMatchObject(notFound);
     expect(await w.decisions.listPendingForCoach(NEW)).toEqual([]);
     expect(w.refunds.createAdminRefund).not.toHaveBeenCalled();

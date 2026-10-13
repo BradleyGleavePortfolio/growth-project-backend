@@ -40,7 +40,7 @@ import {
   COACH_TRANSFER_SELECT,
 } from './coach-payments.select';
 import { ADMIN_PURCHASE_OMIT } from './admin-purchase.select';
-import { keepMoneyRecordsOnly } from './moved-client-money';
+import { keepMoneyRecordsOnly, salePause } from './moved-client-money';
 import {
   CursorPageQueryDto,
   PAYMENT_OPS_DEFAULT_LIMIT,
@@ -751,15 +751,15 @@ export class CoachPaymentOpsController {
       }),
     ]);
     // CONTRACT-1: a client who moved away from the seller leaves only the
-    // money record, without payment-failure state; the ledger and transfers
-    // are the coach's own money.
+    // money record and a refund or dispute pause, never a card failure; the
+    // ledger and transfers are the coach's own money.
     const [record] = await keepMoneyRecordsOnly(this.prisma, purchase.coach_user_id, [purchase]);
     const moved = record !== purchase;
     return {
       purchase: record,
       split_ledger: splitEntries,
       transfers,
-      dunning: moved ? null : dunningState,
+      dunning: moved ? salePause(dunningState) : dunningState,
     };
   }
 

@@ -1,18 +1,21 @@
 import type { PrismaService } from '../prisma.service';
 import type { CoachPurchaseView } from './coach-payments.select';
+import { isBillingPauseReason } from './dunning-v2/dunning-v2.service';
 
 // CONTRACT-1 Option 1 (owner): "The old coach keeps their own money records
 // for that client (name, date, amount) and nothing else, for taxes, refunds
 // and disputes."
 //
-// One rule for every coach money read: a row about a client who has moved
-// away keeps the sale record (record id, date, amount, status, currency, which
-// of the coach's packages, one-time or recurring, and the client's name where
-// the route shows one) and loses the client's id (the link to their profile),
-// contact details, access and renewal state, and payment-failure details.
-// Lists about the client's current state (a package's subscribers, Needs
-// attention) leave them out. Refund and dispute actions still work: they
-// check the seller, not the roster.
+// One rule for every coach money read: a record about a client who has moved
+// away keeps the owner's list (record id, date, amount, status, currency, and
+// the client's name where the route shows one) and loses the client's id (the
+// link to their profile), contact details, access and renewal state, and
+// payment-failure details. Money charges also keep which package was sold and
+// its cadence, which the app needs to read the list (an owner decision is
+// waiting). Lists about the client's current state (a package's subscribers,
+// Needs attention) leave them out. The seller still
+// refunds (POST /v1/coach/purchases/:id/refund) and restarts a dispute pause
+// (POST /v1/coach/purchases/:id/dispute-restart) by the record id alone.
 
 type MovedPrisma = Pick<PrismaService, 'user' | 'subCoachAssignment'>;
 
@@ -49,8 +52,6 @@ export async function movedAwayClientIds(
 /** What a purchase row about a moved-away client keeps (CONTRACT-1): the sale, never the client. */
 const moneyRecord = (r: CoachPurchaseView) => ({
   id: r.id,
-  package_id: r.package_id,
-  billing_type: r.billing_type,
   amount_cents: r.amount_cents,
   currency: r.currency,
   status: r.status,
@@ -67,4 +68,12 @@ export async function keepMoneyRecordsOnly<T extends CoachPurchaseView>(
 ): Promise<Array<T | MoneyRecord>> {
   const moved = await movedAwayClientIds(prisma, coachId, rows.map((r) => r.client_user_id));
   return rows.map((r) => (moved.has(r.client_user_id) ? moneyRecord(r) : r));
+}
+
+type DunningPause = { status: string; last_failure_reason: string | null; entered_at: Date | null };
+
+/** A moved-away client's dunning row keeps only a refund or dispute pause (for the restart). */
+export function salePause(d: DunningPause | null): DunningPause | null {
+  if (!d || d.status !== 'active' || !isBillingPauseReason(d.last_failure_reason)) return null;
+  return { status: d.status, last_failure_reason: d.last_failure_reason, entered_at: d.entered_at };
 }
