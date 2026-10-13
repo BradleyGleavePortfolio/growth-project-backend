@@ -36,7 +36,9 @@ export function inTenantSql(headCoachId: string): Prisma.Sql {
  */
 export function planStaysInTenantWhere(headCoachId: string): Prisma.WorkoutPlanWhereInput {
   const inTenant = inTenantWhere(headCoachId);
-  const anyMoved = { assignments: { some: { NOT: { client: inTenant } } } };
+  // A client with no coach has left too (in SQL, NOT of a null comparison is not true).
+  const left: Prisma.UserWhereInput = { OR: [{ coach_id: null }, { NOT: inTenant }] };
+  const anyMoved = { assignments: { some: { client: left } } };
   return {
     OR: [
       { program_id: null },
