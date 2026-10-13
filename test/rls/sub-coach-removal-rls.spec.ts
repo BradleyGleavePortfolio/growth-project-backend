@@ -21,6 +21,8 @@ import * as path from 'path';
 import { NotFoundException } from '@nestjs/common';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
+import { fakeOf } from '../ai-egress/ai-egress.fakes';
+import type { StripeApiService } from '../../src/billing/stripe-api.service';
 import type { PrismaService } from '../../src/prisma.service';
 import { SubCoachCapacityService } from '../../src/sub-coach/sub-coach-capacity.service';
 import { SubCoachIdempotencyService } from '../../src/sub-coach/sub-coach-idempotency.service';
@@ -29,6 +31,7 @@ import { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.servic
 import { SubCoachesService } from '../../src/sub-coaches/sub-coaches.service';
 import type { TeamService } from '../../src/team/team.service';
 import { TeamModeService } from '../../src/team-mode/team-mode.service';
+import type { TeamModeTierResolverService } from '../../src/team-mode/tier-resolver.service';
 
 const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') {
@@ -40,9 +43,9 @@ const ACTION = 'sub_coach.assignment_closed_on_removal';
 
 (DB_URL ? describe : describe.skip)('SUBREVOKE: a removed sub-coach loses their clients at the row layer', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
-  const db = prisma as unknown as PrismaService;
-  const team = new TeamModeService(db, { isConfigured: () => false } as never, {} as never);
-  const subCoaches = new SubCoachesService(db, { refreshCounters: async () => undefined } as unknown as TeamService);
+  const db = fakeOf<PrismaService>(prisma);
+  const team = new TeamModeService(db, fakeOf<StripeApiService>({ isConfigured: () => false }), fakeOf<TeamModeTierResolverService>({}));
+  const subCoaches = new SubCoachesService(db, fakeOf<TeamService>({ refreshCounters: async () => undefined }));
   const reassign = new SubCoachReassignService(db, new SubCoachCapacityService(db), new SubCoachIdempotencyService(db));
   const scope = new SubCoachScopeService(db);
   // Fictional people, fresh ids per run. Heads h and b. Sub-coaches: s (seat
