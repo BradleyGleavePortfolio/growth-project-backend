@@ -188,8 +188,9 @@ export class SchedulingAccessService {
    * Owner 4 and HIST-2b: a coach reads a session with a client only while
    * that client may still book with them (bookableCoachIds). After a move,
    * every session with the client, cancelled or past, leaves the old coach at
-   * once: 404 by id, left out of their lists. The client keeps them all. The
-   * CoachingSession row policies hold the same rule (20270413000000).
+   * once: 404 for any read or action by id, left out of their lists. The
+   * client keeps them all. The CoachingSession row policies hold the same
+   * rule (20270413000000).
    */
   async assertSessionStillTheirs(
     actor: ActorContext,

@@ -568,8 +568,7 @@ export class SchedulingService {
   }
 
   async getSession(actor: ActorContext, sessionId: string): Promise<SessionView> {
-    const session = await this.lifecycle.loadSessionOrThrow(sessionId);
-    await this.access.assertSessionStillTheirs(actor, session);
+    const session = await this.lifecycle.loadSessionFor(actor, sessionId);
     this.access.assertCanViewSession(actor, session);
     return this.view(actor, session);
   }

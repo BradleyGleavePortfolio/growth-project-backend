@@ -234,13 +234,14 @@ describe('a client move cancels the old coach\'s upcoming sessions with them (ow
     expect(w.notices).toEqual([]);
 
     // Reads (owner 4): at once the old coach finds no session with the moved
-    // client, by id or in either list, and keeps the clients still theirs.
-    // The new coach never reads the old coach's session or its notes; the
-    // client keeps their whole history.
+    // client, by id, in either list or to act on, and keeps the clients still
+    // theirs. The new coach never reads the old coach's session or its notes;
+    // the client keeps their whole history.
     const leftBehind = sub1Sessions.filter((id) => id.startsWith(`sub1-${clientId}-`));
     expect(await listed(w, coach('sub1'))).toEqual([...kept].sort());
     for (const id of leftBehind) {
       await expect(w.scheduling.getSession(coach('sub1'), id)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(w.scheduling.cancelSession(coach('sub1'), id, {})).rejects.toBeInstanceOf(NotFoundException);
       await expect(w.scheduling.getSession(coach('head1'), id)).rejects.toBeInstanceOf(NotFoundException);
     }
     const client: ActorContext = { id: clientId, role: 'student', email: null, coach_id: 'head1' };

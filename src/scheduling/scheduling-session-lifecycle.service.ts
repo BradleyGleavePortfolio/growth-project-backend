@@ -317,7 +317,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     opts: TransitionOptions = {},
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     this.assertRequestOpen(existing, actor);
     this.assertTransition(existing, 'scheduled');
@@ -361,7 +361,7 @@ export class SchedulingSessionLifecycleService {
     reason?: string,
     opts: TransitionOptions = {},
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     this.assertRequestOpen(existing, actor);
     this.assertTransition(existing, 'declined');
@@ -397,7 +397,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     dto: RescheduleSessionDto,
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     await this.access.assertCanActAsParticipant(actor, existing);
     this.assertRequestOpen(existing, actor);
     if (existing.status !== 'requested' && existing.status !== 'scheduled') {
@@ -589,7 +589,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     dto: CancelSessionDto,
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     await this.access.assertCanActAsParticipant(actor, existing);
     this.assertRequestOpen(existing, actor);
     this.assertTransition(existing, 'canceled');
@@ -697,7 +697,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     dto: CompleteSessionDto,
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     this.assertTransition(existing, 'completed');
     assertHasStarted(existing, 'complete');
@@ -717,7 +717,7 @@ export class SchedulingSessionLifecycleService {
     reason?: string,
     opts: TransitionOptions = {},
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     this.assertTransition(existing, 'no_show');
     assertExpectedStart(existing, opts.expectedStartAt);
@@ -741,7 +741,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     dto: AttachManualVideoLinkDto,
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     const url = dto.video_url.trim();
     if (!MEETING_LINK_PATTERN.test(url)) {
@@ -805,6 +805,13 @@ export class SchedulingSessionLifecycleService {
   }
 
   // ── helpers ────────────────────────────────────────────────────────
+
+  /** Every read or action by id: a coach whose client moved away finds no session (owner 4). */
+  async loadSessionFor(actor: ActorContext, sessionId: string): Promise<CoachingSession> {
+    const session = await this.loadSessionOrThrow(sessionId);
+    await this.access.assertSessionStillTheirs(actor, session);
+    return session;
+  }
 
   async loadSessionOrThrow(sessionId: string): Promise<CoachingSession> {
     const session = await this.prisma.coachingSession.findUnique({ where: { id: sessionId } });
