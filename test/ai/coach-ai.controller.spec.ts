@@ -495,6 +495,10 @@ describe('CoachAIService', () => {
         return { count: gone.length };
       };
       for (const model of ['aiActionDraft', 'messageDraft', 'churnIntervention']) f.prisma[model] = { deleteMany: async () => ({ count: 0 }) };
+      // And the old coach's alerts, inbox rows and coach-side insights (owner 4).
+      for (const model of ['coachAlert', 'coachingSession', 'notification', 'pushOutbox', 'wearableInsightCache']) {
+        f.prisma[model] = { findMany: async () => [], updateMany: async () => ({ count: 0 }), deleteMany: async () => ({ count: 0 }) };
+      }
       f.prisma.subCoachAssignment = {
         findFirst: async ({ where }: any) => (matches(delegation, where) ? delegation : null),
         findMany: async ({ where }: any) => [delegation].filter((d) => matches(d, where)),

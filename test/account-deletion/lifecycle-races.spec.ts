@@ -258,10 +258,30 @@ describe('finalization', () => {
     expect(detach).toBeGreaterThanOrEqual(0);
     expect(drafts.map((c) => `${c.model}.${c.method}`)).toEqual([
       'aIDraft.deleteMany', 'aiActionDraft.deleteMany', 'messageDraft.deleteMany', 'churnIntervention.deleteMany',
+      'coachAlert.deleteMany', 'coachingSession.findMany', 'notification.deleteMany', 'wearableInsightCache.deleteMany',
     ]);
     // Nobody coaches them now, so no holder is spared; approved or sent items stay.
     expect(drafts[0].args).toEqual({ where: { clientId: { in: ['client-1'] }, status: { not: 'APPROVED' } } });
     expect(drafts[3].args).toEqual({ where: { client_id: { in: ['client-1'] }, status: { not: 'sent' } } });
+  });
+
+  it("a deleted coach's clients lose every alert and coach-side insight about them once detached (owner 4)", async () => {
+    const ctx = build({ confirmedDaysAgo: GRACE + 1, role: 'coach' });
+    ctx.db.addUser({ id: 'client-1', coach_id: UID });
+    await ctx.service.finalizeUserDeletion(UID, { mode: 'cron' });
+    const calls = ctx.db.committedCalls;
+    const detach = calls.findIndex((c) => c.model === 'user' && JSON.stringify(c.args).includes('"data":{"coach_id":null}'));
+    const about = calls.filter((c, i) => i > detach && JSON.stringify(c.args).includes('client-1'));
+    const call = (name: string) => about.find((c) => `${c.model}.${c.method}` === name)?.args;
+    // Nobody coaches them now: no open safety alert can pass on, and every holder's alerts and
+    // coach-side insight rows go. The client's own 'client' insight row stays.
+    expect(call('coachAlert.updateMany')).toBeUndefined();
+    expect(call('coachAlert.deleteMany')).toEqual({ where: { client_id: { in: ['client-1'] } } });
+    expect(call('wearableInsightCache.deleteMany')).toEqual({
+      where: { user_id: { in: ['client-1'] }, side: { startsWith: 'coach' } },
+    });
+    // The manifest already erased the deleted coach's own inbox; this pass names that coach only.
+    expect(call('notification.deleteMany')).toEqual({ where: { user_id: UID, OR: expect.any(Array) } });
   });
 
   it('Sol probe 1 inverted (B-608-1): a failing required scrub rolls back everything and the cron retries', async () => {
