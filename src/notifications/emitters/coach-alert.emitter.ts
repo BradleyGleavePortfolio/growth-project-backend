@@ -69,8 +69,9 @@ export class CoachAlertEmitter {
     // the client's message.
     const safety = Object.prototype.hasOwnProperty.call(SAFETY_ALERT_PUSH_BODY, alertType);
     // Owner 57q: the urgent medical alert's push goes out at once, even in
-    // quiet hours. Its own dedupe key keeps it one push per alert, so it is
-    // never folded into another client push waiting for the morning.
+    // quiet hours; the eating-disorder one waits until 08:00. Each safety push
+    // has its own dedupe key: one push per alert, never folded into another
+    // push for the same client and never taken over by one while it waits.
     const urgent = alertType === 'roman_urgent_reply';
     const out: CoachAlertDelivery = { inapp: 'skipped', push: 'skipped' };
     if (only.inapp !== false) {
@@ -109,8 +110,10 @@ export class CoachAlertEmitter {
           kind: NotificationKind.COACH_ALERT,
           body: message.slice(0, 160),
           deep_link: deepLink,
-          ...(safety ? { context: { safetyAlert: alertType, alertId } } : {}),
-          ...(urgent ? { urgent: true, dedupe_key: `coach_alert:${alertId}` } : {}),
+          ...(safety
+            ? { context: { safetyAlert: alertType, alertId }, dedupe_key: `coach_alert:${alertId}` }
+            : {}),
+          ...(urgent ? { urgent: true } : {}),
         });
         out.push = queued ? 'sent' : 'skipped';
       } catch (err) {

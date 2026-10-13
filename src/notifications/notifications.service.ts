@@ -557,8 +557,9 @@ export class NotificationsService implements OnModuleInit {
    * (lock-screen-copy.ts: no health details, no message text); `data`
    * carries only tap routing (the screen, the deep link and ids).
    *
-   * `dedupe_key` makes an event exactly once (booking events); without it,
-   * repeats in the same conversation (same kind and deep link) collapse.
+   * `dedupe_key` makes an event exactly once (booking events, each Roman
+   * safety coach alert) and it never collapses; without it, repeats in the
+   * same conversation (same kind and deep link) collapse.
    * With `tx` the push commits or rolls back with the caller's write.
    * Never throws without `tx`; returns null when suppressed or unwired.
    */
