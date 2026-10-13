@@ -5,7 +5,8 @@
  * none of another coach's rows, none of the head coach's rows to their
  * sub-coach, and, after a client moves, none of that client's coach-side rows
  * to the former coach. The row's own coach reads it first (the control), so a
- * zero means a policy refused the row, not that it is missing. coach_ltv_peak
+ * zero means a policy refused the row, not that it is missing. The new coach
+ * and the client still read the client's history after a move. coach_ltv_peak
  * is server-only (20261224000000 revokes the API roles), so every API caller,
  * its own coach too, is refused.
  * The service paths of the same routes: test/coach-home-cross-coach-reads.spec.ts.
@@ -29,19 +30,19 @@ if (!DB_URL && process.env.CI === 'true') {
   const mine: Record<string, { a: string; b: string }> = {};
 
   /** Runs `fn` in one transaction as the API role `authenticated`, with app.current_user_id = who. */
-  const asCoach = <T>(who: string, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> =>
+  const asUser = <T>(who: string, fn: (tx: Prisma.TransactionClient) => Promise<T>, role = 'coach'): Promise<T> =>
     prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
       await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, who);
-      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', 'coach', true)`);
+      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, role);
       return fn(tx);
     });
 
   /** Rows with this id that `who` sees; 'refused' when the role may not read the table. */
-  async function seen(table: string, rowId: string, who: string): Promise<number | 'refused'> {
+  async function seen(table: string, rowId: string, who: string, role = 'coach'): Promise<number | 'refused'> {
     try {
-      const [{ n }] = await asCoach(who, (tx) =>
-        tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM public."${table}" WHERE "id" = $1`, rowId));
+      const [{ n }] = await asUser(who, (tx) =>
+        tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM public."${table}" WHERE "id" = $1`, rowId), role);
       return n;
     } catch (err) {
       if (/42501|permission denied/.test(String(err))) return 'refused';
@@ -49,9 +50,9 @@ if (!DB_URL && process.env.CI === 'true') {
     }
   }
   const touchTarget = (who: string) =>
-    asCoach(who, (tx) => tx.$executeRawUnsafe(`UPDATE public."MacroTarget" SET "notes" = 'rls' WHERE "id" = $1`, mine.MacroTarget.a));
+    asUser(who, (tx) => tx.$executeRawUnsafe(`UPDATE public."MacroTarget" SET "notes" = 'rls' WHERE "id" = $1`, mine.MacroTarget.a));
   const newTarget = (who: string) =>
-    asCoach(who, (tx) => tx.$executeRawUnsafe(
+    asUser(who, (tx) => tx.$executeRawUnsafe(
       `INSERT INTO public."MacroTarget" ("id", "client_id", "coach_id", "calories_kcal", "protein_g", "carbs_g", "fats_g")
        VALUES ($1, $2, $3, 2000, 140, 200, 60)`,
       randomUUID(), clientA, who));
@@ -127,8 +128,12 @@ if (!DB_URL && process.env.CI === 'true') {
       expect(await seen(table, mine[table].a, a)).toBe(0);
     });
 
-    it('ClientSignal: the new coach reads the client\'s signals', async () => {
-      expect(await seen('ClientSignal', mine.ClientSignal.a, b)).toBe(1);
+    it.each(['ClientSignal', 'MacroTarget'])('%s: the new coach reads the client\'s row from before the move', async (table) => {
+      expect(await seen(table, mine[table].a, b)).toBe(1);
+    });
+
+    it('MacroTarget: the client still reads the target the former coach wrote', async () => {
+      expect(await seen('MacroTarget', mine.MacroTarget.a, clientA, 'student')).toBe(1);
     });
 
     it('MacroTarget: the former coach can neither change the target nor write a new one; the new coach can write', async () => {
