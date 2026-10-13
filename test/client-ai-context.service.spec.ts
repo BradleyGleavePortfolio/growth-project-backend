@@ -352,6 +352,19 @@ describe('ClientAIContextService.buildFresh', () => {
     expect(ctx.coach.has_coach).toBe(false);
   });
 
+  // Owner 139-13: the client's current plan stays theirs after a coach change.
+  it.each([['a new coach', 'coach-1'], ['no coach', null]])(
+    'keeps the meal plan an earlier coach made, with %s', async (_label, coachId) => {
+      const plan = { title: 'Cut week 1', notes: null, items: ['Oats'], updated_at: new Date('2026-09-01') };
+      const prisma = makePrisma({ user: { id: 'u1', name: 'Sam', coach_id: coachId, profile: null }, mealPlan: plan });
+      const ctx = await new ClientAIContextService(prisma).buildFresh('u1');
+      expect(ctx.current_meal_plan?.title).toBe('Cut week 1');
+      expect(prisma.mealPlan.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { client_id: 'u1', archived_at: null } }),
+      );
+    },
+  );
+
   it('caches context per user for the TTL window', async () => {
     const prisma = makePrisma({});
     const svc = new ClientAIContextService(prisma);

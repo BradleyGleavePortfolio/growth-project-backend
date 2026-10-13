@@ -36,6 +36,12 @@ function makePrisma() {
         if (!(v as any[]).some((clause) => matches(row, clause))) return false;
         continue;
       }
+      if (k === 'client') {
+        // Relation filter, like the database: the plan's client as they are now.
+        const client = users.find((u) => u.id === row.client_id);
+        if (!client || !matches(client, v)) return false;
+        continue;
+      }
       const val = (row as any)[k];
       if (v === null) {
         if (val !== null && val !== undefined) return false;
@@ -241,6 +247,38 @@ describe('MealPlansService', () => {
       await expect(
         svc.getOneForClient('client-1', p.id),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  // Owner 139-13: the client's history follows them. Owner 4: the former coach
+  // loses everything at once. `coach_id` on a plan is who made it.
+  describe('after the client moves from coach-A to coach-B', () => {
+    const move = () => {
+      prisma._users.find((u) => u.id === 'client-1')!.coach_id = 'coach-B';
+    };
+
+    it('the new coach sees, edits and archives the plan coach-A made', async () => {
+      const p = await svc.createForClient('coach-A', 'client-1', goodPlan);
+      move();
+      const list = await svc.listForClientByCoach('coach-B', 'client-1');
+      expect(list.map((x) => x.id)).toEqual([p.id]);
+      expect(list[0].coach_id).toBe('coach-A');
+      const updated = await svc.updateByCoach('coach-B', p.id, { title: 'Cut week 2' });
+      expect(updated.title).toBe('Cut week 2');
+      expect(await svc.archiveByCoach('coach-B', p.id)).toEqual({ archived: 1 });
+    });
+
+    it('the client keeps the plan, and the former coach gets the same 404 as a missing plan', async () => {
+      const p = await svc.createForClient('coach-A', 'client-1', goodPlan);
+      move();
+      expect((await svc.listForClient('client-1')).map((x) => x.id)).toEqual([p.id]);
+      expect((await svc.getOneForClient('client-1', p.id)).title).toBe('Cut week 1');
+      await expect(svc.listForClientByCoach('coach-A', 'client-1')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.updateByCoach('coach-A', p.id, { title: 'no' })).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      await expect(svc.archiveByCoach('coach-A', p.id)).rejects.toBeInstanceOf(NotFoundException);
+      expect(prisma._plans[0]).toMatchObject({ title: 'Cut week 1', archived_at: null });
     });
   });
 
