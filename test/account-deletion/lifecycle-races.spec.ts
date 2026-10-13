@@ -258,7 +258,7 @@ describe('finalization', () => {
     expect(detach).toBeGreaterThanOrEqual(0);
     expect(drafts.map((c) => `${c.model}.${c.method}`)).toEqual([
       'aIDraft.deleteMany', 'aiActionDraft.deleteMany', 'messageDraft.deleteMany', 'churnIntervention.deleteMany',
-      'coachAlert.deleteMany', 'notification.deleteMany', 'wearableInsightCache.deleteMany',
+      'coachAlert.deleteMany', 'coachingSession.findMany', 'notification.deleteMany', 'wearableInsightCache.deleteMany',
     ]);
     // Nobody coaches them now, so no holder is spared; approved or sent items stay.
     expect(drafts[0].args).toEqual({ where: { clientId: { in: ['client-1'] }, status: { not: 'APPROVED' } } });
