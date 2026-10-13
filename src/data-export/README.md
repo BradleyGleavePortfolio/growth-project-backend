@@ -61,7 +61,7 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `list_items` | `ListItem` | All fields. |
 | `coach_messages` | `CoachMessage` | Messages **sent by the user** are included verbatim. Messages sent by other parties that are visible to the user (as coach or client) appear as `{ id, sent_at, redacted: true, note: "..." }`. This protects third-party privacy while preserving the user's own message history. |
 | `coach_nudges` | `CoachNudge` | All rows where `coach_id` or `client_id` equals the user. |
-| `message_drafts` | `MessageDraft` | All rows where `coach_id` or `client_id` equals the user. |
+| `message_drafts` | `MessageDraft` | Coaches only: the coach's unsent drafts to clients they coach now. A draft is coach-side data, so a client's export returns `[]` (owner C-3). |
 | `meal_plans` | `MealPlan` | All rows where `coach_id` or `client_id` equals the user. |
 | `community_wins` | `CommunityWin` | Only wins authored by the user. |
 | `coach_guidelines` | `CoachGuideline` | All rows where `coach_id` or `client_id` equals the user. |
