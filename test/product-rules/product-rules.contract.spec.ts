@@ -44,10 +44,41 @@ import { METRIC_AGGREGATION, METRIC_BUCKET } from '../../src/wearables/samples/m
 jest.setTimeout(300_000);
 
 type Rule = 1 | 2 | 3 | 4;
-const KNOWN_GAPS: Array<{ id: string; rule: Rule; key: string; reason: string }> = [];
-const KNOWN_GAPS_CEILING = 0;
-const EXEMPT: Array<{ rule: Rule; key: string; reason: string }> = [];
-const EXEMPT_CEILING = 0;
+const KNOWN_GAPS: Array<{ id: string; rule: Rule; key: string; reason: string }> = [
+  { id: 'MOVECLEAN inbox', rule: 1, key: 'GET /notifications', reason: "the old coach's inbox row about the client stays; MOVECLEAN (b#960) deletes it" },
+  { id: 'HIST2A meal-plan assignees', rule: 1, key: 'GET /coach/daily-meal-plans/:id/assignments', reason: "the old coach's daily meal plan still lists the client; HIST2A (b#961) filters it" },
+  { id: 'HIST2A past session', rule: 1, key: 'GET /scheduling/sessions/:id', reason: 'the old coach still opens a past session with the client; HIST2A (b#961) answers 404' },
+  { id: 'HIST-2 program assignees', rule: 1, key: 'GET /workout-plans/:planId/assignments', reason: "a program's assignee list still names the client (HIST2A found, not fixed)" },
+  { id: 'MOVE chat list', rule: 1, key: 'GET /v1/coach/me/threads', reason: "the old coach's chat list still shows the client and the last message (read by coach only)" },
+  { id: 'CONTRACT-1 attention', rule: 1, key: 'GET /v1/coach/money/attention', reason: 'waiting on owner CONTRACT-1' },
+  { id: 'CONTRACT-1 subscribers', rule: 1, key: 'GET /v1/coach/packages/:id/subscribers', reason: 'waiting on owner CONTRACT-1' },
+  { id: 'CONTRACT-1 purchases', rule: 1, key: 'GET /v1/coach/payments/purchases', reason: 'waiting on owner CONTRACT-1' },
+  { id: 'CONTRACT-1 purchase', rule: 1, key: 'GET /v1/coach/payments/purchases/:id', reason: 'waiting on owner CONTRACT-1' },
+  { id: 'CONTRACT-1 sales', rule: 1, key: 'GET /v1/coach/purchases', reason: 'waiting on owner CONTRACT-1' },
+  { id: 'BRIEF4B', rule: 2, key: 'GET /coach/brief/today', reason: "the new coach's brief may show the old coach's private text; BRIEF4B is checking it" },
+  { id: 'HIST-4b meal plans', rule: 2, key: 'GET /coach/clients/:client_id/meal-plans', reason: "the new coach lists only the meal plans they wrote; waiting on owner HIST-4b" },
+  { id: 'HIST-4b past session', rule: 2, key: 'GET /scheduling/sessions/:id', reason: "the new coach can't open the client's past session; waiting on owner HIST-4b" },
+  { id: 'CONSENT-2 grant', rule: 3, key: 'POST /me/ai-consent/roman', reason: 'a coachless client can still grant AI consent; CONSENT-2 (b#954) answers 403' },
+  { id: 'CONTRACT-2', rule: 3, key: 'GET /roman/sessions/:id/messages', reason: 'waiting on owner CONTRACT-2' },
+  { id: 'ROMAN-READ ai context', rule: 3, key: 'GET /ai/context', reason: 'a coachless client still reads what the AI knows about them (62x: no Roman at all)' },
+  { id: 'ROMAN-READ ai structured', rule: 3, key: 'GET /ai/structured-context', reason: 'the same read, typed (62x: no Roman at all)' },
+  { id: 'ROMAN-READ roman context', rule: 3, key: 'GET /roman/context/me', reason: 'a coachless client still reads what Roman is grounded in (62x: no Roman at all)' },
+  { id: 'EDPUSH', rule: 4, key: 'another push never takes over a waiting safety push', reason: 'an ordinary push takes over a waiting eating-disorder push; EDPUSH (b#956) fixes it' },
+];
+const KNOWN_GAPS_CEILING = 19;
+const EXEMPT: Array<{ rule: Rule; key: string; reason: string }> = [
+  { rule: 1, key: 'GET /consent/check/:client_id/:scope', reason: 'it echoes the ids it was asked about and answers granted: false' },
+  { rule: 2, key: 'GET /coach/consultation', reason: "the coach's own set-up; it mints a random invite code for a coach with none, so two reads differ" },
+  { rule: 2, key: 'GET /coaches/me/invite-link', reason: "the coach's own link; it mints a random invite code for a coach with none, so two reads differ" },
+  { rule: 3, key: 'GET /roman/sessions', reason: '62x: a coachless client "may delete prior data here"; this is the list they delete from' },
+  { rule: 3, key: 'DELETE /roman/sessions', reason: '62x: a coachless client may delete prior data' },
+  { rule: 3, key: 'DELETE /roman/sessions/:id', reason: '62x: a coachless client may delete prior data' },
+  { rule: 3, key: 'GET /me/ai-consent', reason: 'CONSENT-2 (b#954) keeps it open so the app can read the consent state' },
+  { rule: 3, key: 'DELETE /me/ai-consent/roman', reason: 'CONSENT-2 (b#954) keeps it open: withdrawing only turns AI use off' },
+  { rule: 3, key: 'POST /coachless/roman-card/seen', reason: 'the coachless card that says Roman needs a coach; it records a view, no AI' },
+  { rule: 3, key: 'POST /coachless/roman-card/not-now', reason: 'the coachless card that says Roman needs a coach; it records Not now, no AI' },
+];
+const EXEMPT_CEILING = 10;
 
 const uuid = (n: number) => `0000000${n}-0000-4000-8000-00000000000${n}`;
 const [OLD, NEW, MOVED, COACHLESS, COACHED, ROW] = [1, 2, 3, 4, 5, 6].map(uuid);
@@ -78,7 +109,7 @@ const world = new World(models, enums);
 const db = asPrismaDouble(world.client);
 type State = 'before' | 'moved' | 'moved-restamped';
 
-/** One row of every model. A User FK named for a coach holds the coach; any other names the client. */
+/** One row of every model. A User FK named for a coach (or invited_by, the sub-coach) holds the coach; any other the client. */
 async function seed(state: State): Promise<void> {
   world.rows.clear();
   const user = models.get('User') as ModelDef;
@@ -99,7 +130,7 @@ async function seed(state: State): Promise<void> {
     let clients = false;
     for (const f of m.fields.values()) {
       if (isRelation(f, models)) continue;
-      const coachSide = /coach|tenant/i.test(f.name);
+      const coachSide = /coach|tenant|invited_by/i.test(f.name);
       clients ||= fkTo.get(f.name) === 'User' && !coachSide;
       row[f.name] = fkTo.get(f.name) === 'User' ? (coachSide ? 'COACH' : MOVED) : fkTo.has(f.name) || f.isId ? ROW : defaultFor(m, f, enums);
     }
