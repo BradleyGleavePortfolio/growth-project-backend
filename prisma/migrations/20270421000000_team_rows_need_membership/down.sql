@@ -2,7 +2,7 @@
 -- Restores app.is_subcoach_on_coach_team and app.community_win_teammate_visible
 -- verbatim (20261215000000_mwb_1_data_model and
 -- 20270211000000_community_reports_voice_notes_and_wins) and drops the
--- restrictive policy. This brings back the bare coach_id grant.
+-- two policies. This brings back the bare coach_id grant.
 -- No data to restore.
 
 BEGIN;
@@ -31,6 +31,7 @@ COMMENT ON FUNCTION app.is_subcoach_on_coach_team(text) IS
   'Security-definer RLS helper: true when app.current_user_id() is a sub-coach (role=coach with a non-null coach_id) on the supplied head coach''s team.';
 
 DROP POLICY IF EXISTS "p_workoutprogram_shared_needs_team" ON "WorkoutProgram";
+DROP POLICY IF EXISTS "p_workoutprogram_select_team_shared" ON "WorkoutProgram";
 
 CREATE OR REPLACE FUNCTION app.community_win_teammate_visible(p_author_id text, p_coach_id text)
 RETURNS boolean

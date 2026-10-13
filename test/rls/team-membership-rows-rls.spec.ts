@@ -34,7 +34,7 @@ const RLS = /row-level security/;
   // p (coach_id only, nothing else), m (seat under h archived, active seat
   // under b). Clients of h: ch and ch2, plus cx and cl for the delegations.
   const [h, b, s, x, l, p, m, ch, ch2, cx, cl] = Array.from({ length: 11 }, () => randomUUID());
-  const students = new Set([ch, ch2, cx, cl]);
+  const students = new Set<string>([ch, ch2, cx, cl]);
   const ids: Record<string, string> = {};
 
   /** Runs `fn` in one transaction as the API role `authenticated`, signed in as `who`. */

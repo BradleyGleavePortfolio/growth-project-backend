@@ -23,12 +23,17 @@
 --    without rewriting that policy, so it composes with #976, which ALTERs it,
 --    in either merge order. The same check on writes stops a non-member from
 --    publishing a tenant_shared row into someone else's tenant.
+--    p_workoutprogram_select_team_shared: a PERMISSIVE SELECT policy that lets
+--    a team member read the tenant coach's shared library masters, so a
+--    sub-coach whose coach_id names another head coach is not refused on the
+--    team they are seated on. Masters only (is_template, no client_id), which
+--    #976's tenant rule always admits.
 -- 3. app.community_win_teammate_visible(text, text): a coach-role viewer must
 --    also be on the win coach's team. Students, owners and every other check
 --    are unchanged.
 --
 -- No data changes. service_role and the migration role bypass RLS.
--- Reversible: down.sql restores both functions and drops the policy.
+-- Reversible: down.sql restores both functions and drops both policies.
 -- Live proof: test/rls/team-membership-rows-rls.spec.ts (rls-live-tests).
 
 BEGIN;
@@ -81,6 +86,12 @@ CREATE POLICY "p_workoutprogram_shared_needs_team" ON "WorkoutProgram" AS RESTRI
   WITH CHECK (("visibility" <> 'tenant_shared' OR app.is_owner() OR "coach_id" = app.current_user_id() OR app.is_subcoach_on_coach_team("coach_id")));
 COMMENT ON POLICY "p_workoutprogram_shared_needs_team" ON "WorkoutProgram" IS
   'SUBREVOKE2: restrictive. A tenant_shared program is read or written only by an owner admin, its tenant coach, or a member of that coach''s team (app.is_subcoach_on_coach_team). Fences the bare coach_id clause of p_workoutprogram_select.';
+
+DROP POLICY IF EXISTS "p_workoutprogram_select_team_shared" ON "WorkoutProgram";
+CREATE POLICY "p_workoutprogram_select_team_shared" ON "WorkoutProgram" AS PERMISSIVE FOR SELECT TO public
+  USING (("visibility" = 'tenant_shared' AND "is_template" AND "client_id" IS NULL AND app.is_subcoach_on_coach_team("coach_id")));
+COMMENT ON POLICY "p_workoutprogram_select_team_shared" ON "WorkoutProgram" IS
+  'SUBREVOKE2: a member of the tenant coach''s team (app.is_subcoach_on_coach_team, judged per head coach) may SELECT that tenant''s tenant_shared library masters.';
 
 -- 3. Community wins: a coach-role teammate needs team membership ---------------
 CREATE OR REPLACE FUNCTION app.community_win_teammate_visible(p_author_id text, p_coach_id text)
