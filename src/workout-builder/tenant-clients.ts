@@ -6,8 +6,6 @@
  */
 import { Prisma } from '@prisma/client';
 
-type Db = Pick<Prisma.TransactionClient, 'user' | 'clientWorkoutAssignment'>;
-
 /** Clients whose coach now is the head coach or a sub-coach on their team. */
 export function inTenantWhere(headCoachId: string): Prisma.UserWhereInput {
   return {
@@ -31,26 +29,20 @@ export function inTenantSql(headCoachId: string): Prisma.Sql {
 }
 
 /**
- * True while every client a program copy belongs to is still in the tenant:
- * `client_id`, or for older copies the clients assigned to its days.
+ * Plans a head coach still has: standalone plans, library days, and the days
+ * of a client's copy while every client it belongs to is still in the tenant
+ * (`client_id`, or for older copies the clients assigned to its days). One
+ * rule for the plan list (before paging) and every by-id read or write.
  */
-export async function copyStaysInTenant(
-  db: Db,
-  copy: { id: string; client_id: string | null },
-  headCoachId: string,
-): Promise<boolean> {
-  const clientIds = copy.client_id
-    ? [copy.client_id]
-    : (
-        await db.clientWorkoutAssignment.findMany({
-          where: { workout_plan: { program_id: copy.id } },
-          select: { client_id: true },
-          distinct: ['client_id'],
-        })
-      ).map((a) => a.client_id);
-  if (clientIds.length === 0) return true;
-  const staying = await db.user.count({
-    where: { id: { in: clientIds }, ...inTenantWhere(headCoachId) },
-  });
-  return staying === clientIds.length;
+export function planStaysInTenantWhere(headCoachId: string): Prisma.WorkoutPlanWhereInput {
+  const inTenant = inTenantWhere(headCoachId);
+  const anyMoved = { assignments: { some: { NOT: { client: inTenant } } } };
+  return {
+    OR: [
+      { program_id: null },
+      { program: { is: { is_template: true } } },
+      { program: { is: { client: { is: inTenant } } } },
+      { program: { is: { client_id: null, plans: { none: anyMoved } } } },
+    ],
+  };
 }

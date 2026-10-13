@@ -26,7 +26,10 @@ function build(opts: {
 }) {
   const prisma = {
     user: { findUnique: jest.fn(async () => ({ role: 'coach' })) },
-    workoutPlan: { findUnique: jest.fn(async () => opts.plan ?? DAY_PLAN) },
+    workoutPlan: {
+      findUnique: jest.fn(async () => opts.plan ?? DAY_PLAN),
+      count: jest.fn(async () => 1),
+    },
     workoutProgram: { findUnique: jest.fn(async () => opts.program) },
   };
   const subCoachScope = {
@@ -144,9 +147,7 @@ describe('WorkoutBuilderService.archivePlan: packaged programs keep a day (C-640
           archived_at: null,
         })),
         updateMany: jest.fn(async () => ({ count: 1 })),
-      },
-      workoutProgram: {
-        findUnique: jest.fn(async () => ({ id: 'master-1', is_template: true, client_id: null })),
+        count: jest.fn(async () => 1),
       },
       $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
     };

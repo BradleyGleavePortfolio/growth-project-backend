@@ -54,7 +54,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { isMwbTemplatesEnabled } from './mwb-templates.feature';
 import { assertLastDayMayGo, lockProgramMaster } from './program-guards';
-import { copyStaysInTenant } from './tenant-clients';
+import { inTenantWhere, planStaysInTenantWhere } from './tenant-clients';
 import {
   AssignProgramDto,
   CloneProgramResultDto,
@@ -318,6 +318,8 @@ export class WorkoutBuilderService {
       where: {
         coach_id: coachId,
         archived_at: null,
+        // Owner 4: a moved client's copy leaves the list before paging.
+        AND: [planStaysInTenantWhere(coachId)],
         ...(cursorWhere ?? {}),
       },
       orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
@@ -730,16 +732,7 @@ export class WorkoutBuilderService {
     if (this.subCoachScope && (await this.subCoachScope.isSubCoach(coachId))) {
       return { id: { in: await this.subCoachScope.getAuthorizedClientIds(coachId) } };
     }
-    return {
-      OR: [
-        { coach_id: coachId },
-        {
-          coach: {
-            sub_coach_assignments_as_sub: { some: { head_coach_id: coachId, archived_at: null } },
-          },
-        },
-      ],
-    };
+    return inTenantWhere(coachId);
   }
 
   /**
@@ -959,13 +952,14 @@ export class WorkoutBuilderService {
    * Owner 4: a day of a client's program copy is not found for the tenant
    * once that client has moved to another coach (tenant-clients.ts).
    */
-  private async assertNotMovedClientCopy(plan: { coach_id: string; program_id: string | null }) {
+  private async assertNotMovedClientCopy(plan: {
+    id: string;
+    coach_id: string;
+    program_id: string | null;
+  }) {
     if (!plan.program_id) return;
-    const copy = await this.prisma.workoutProgram.findUnique({
-      where: { id: plan.program_id },
-      select: { id: true, is_template: true, client_id: true },
-    });
-    if (copy && !copy.is_template && !(await copyStaysInTenant(this.prisma, copy, plan.coach_id))) {
+    const where = { id: plan.id, ...planStaysInTenantWhere(plan.coach_id) };
+    if ((await this.prisma.workoutPlan.count({ where })) === 0) {
       throw new NotFoundException('Workout plan not found');
     }
   }

@@ -45,7 +45,7 @@ import { Events } from '../analytics/events';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { WorkoutBuilderService } from './workout-builder.service';
 import { isMwbAutosaveUndoEnabled } from './workout-builder-autosave.feature';
-import { copyStaysInTenant } from './tenant-clients';
+import { planStaysInTenantWhere } from './tenant-clients';
 import {
   buildRevisionList,
   parseRevisionsLimit,
@@ -632,11 +632,9 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
     // (2) The tenant head coach edits their own plans and every client copy
     // still in the tenant; a moved client's copy is not found (owner 4).
     if (isTenantHead) {
-      if (program && plan.program_id) {
-        const copy = { id: plan.program_id, client_id: program.client_id };
-        if (!(await copyStaysInTenant(this.prisma, copy, plan.coach_id))) {
-          throw new NotFoundException('Workout plan not found');
-        }
+      const where = { id: planId, ...planStaysInTenantWhere(plan.coach_id) };
+      if (program && (await this.prisma.workoutPlan.count({ where })) === 0) {
+        throw new NotFoundException('Workout plan not found');
       }
       return;
     }

@@ -216,7 +216,7 @@ function makePrisma() {
           coach_id: data.coach_id,
           name: data.name,
           notes: data.notes ?? null,
-          created_at: new Date(),
+          created_at: data.created_at ?? new Date(),
           archived_at: data.archived_at ?? null,
         };
         dailyMealPlans.push(row);
@@ -229,6 +229,11 @@ function makePrisma() {
         const row = dailyMealPlans.find((p) => p.id === where.id);
         Object.assign(row, data);
         return { ...row };
+      }),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const rows = dailyMealPlans.filter((p) => matches(p, where));
+        for (const row of rows) Object.assign(row, data);
+        return { count: rows.length };
       }),
       findUnique: jest.fn(async ({ where }: any) => {
         const row = dailyMealPlans.find((p) => p.id === where.id);
@@ -281,6 +286,7 @@ function makePrisma() {
         const row = out[0];
         if (!row) return null;
         const copy: any = { ...row };
+        if (include?.client) copy.client = users.find((u) => u.id === row.client_id);
         if (include?.daily_meal_plan) {
           const plan = dailyMealPlans.find((p) => p.id === row.daily_meal_plan_id);
           copy.daily_meal_plan = plan ? hydratePlan({ ...plan }) : null;
@@ -483,6 +489,46 @@ describe('BUG-R2 — legacy meal-plans deduped onto real-meal-plans canonical', 
     ).rejects.toThrow('Daily meal plan not found');
     await real.updatePlan('coach-A', plan!.id, { name: 'Edited again' });
     expect(await seen('client-1')).toEqual(asAssigned);
+  });
+
+  it('HIST-2 (owner 4): a moved client keeps a plan that starts later, as it was, on both reads', async () => {
+    const NEXT_WEEK = '2026-05-27';
+    const { tpl, plan } = await coachBuildsAndAssigns(real, 'coach-A', 'client-1', NEXT_WEEK);
+    await real.assignPlan('coach-A', plan!.id, { client_id: 'client-2', starts_on: TODAY });
+    // GET /meal-plans: title, first meal, its calories, and the plan's own date.
+    const legacyRead = async (clientId: string) =>
+      (await legacy.listForClientWithCanonicalFallback(clientId)).map((p: any) => [
+        p.title,
+        p.items[0].name,
+        p.items[0].calories,
+        p.updated_at,
+      ]);
+    const asAssigned = [['Cut Phase — Daily', 'High-protein breakfast', 520, plan!.created_at]];
+    expect(await legacyRead('client-1')).toEqual(asAssigned);
+
+    // The move: client-1's coach is now coach-B. Then coach-A edits.
+    prisma._users.find((u: { id: string }) => u.id === 'client-1').coach_id = 'coach-B';
+    await real.updateTemplate('coach-A', tpl.id, { name: 'Edited breakfast', calories_kcal: 300 });
+    await real.updatePlan('coach-A', plan!.id, { name: 'Edited plan' });
+    expect(await legacyRead('client-1')).toEqual(asAssigned);
+    // GET /me/meal-plan/today on its start day.
+    const [{ daily_meal_plan: kept }] = (await real.getTodayForClient('client-1', NEXT_WEEK))
+      .assignments;
+    const t = kept.slots[0].meal_template;
+    expect([kept.name, t.name, t.calories_kcal, kept.created_at]).toEqual(asAssigned[0]);
+
+    // No coach opens the frozen copy; the coach's own client gets the edits.
+    for (const coachId of ['coach-A', 'coach-B']) {
+      await expect(real.getPlan(coachId, kept.id)).rejects.toThrow('Daily meal plan not found');
+    }
+    expect((await legacyRead('client-2'))[0].slice(0, 3)).toEqual([
+      'Edited plan',
+      'Edited breakfast',
+      300,
+    ]);
+    // A plan its coach archives still leaves the legacy read.
+    await real.archivePlan('coach-A', plan!.id);
+    expect(await legacyRead('client-2')).toEqual([]);
   });
 
   it('GET /me/meal-plan alias controller proxies to the canonical system (same shape as /me/meal-plan/today)', async () => {

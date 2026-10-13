@@ -738,7 +738,7 @@ describe('ownership (T4)', () => {
   });
 
   it('HIST-2 (owner 4): after a move the former coaches lose the past sessions, the client keeps them', async () => {
-    const { svc, db } = harness();
+    const { svc, db, notifications, auditWrites } = harness();
     const add = (id: string, coachId: string, typeId: string, start: string, end: string) =>
       db.addSession({
         id,
@@ -773,8 +773,17 @@ describe('ownership (T4)', () => {
       expect((await failure(svc.getSession(actor, id))).code).toBe('SESSION_NOT_FOUND');
       expect((await failure(svc.completeSession(actor, id, {}))).code).toBe('SESSION_NOT_FOUND');
       expect((await failure(svc.markNoShow(actor, id))).code).toBe('SESSION_NOT_FOUND');
+      expect((await failure(svc.cancelSession(actor, id, {}))).code).toBe('SESSION_NOT_FOUND');
+      const link = { video_url: 'https://meet.example.com/abc' };
+      expect((await failure(svc.attachManualVideoLink(actor, id, link))).code).toBe(
+        'SESSION_NOT_FOUND',
+      );
     }
+    // Nothing was written and nobody was told.
     expect(db.sessions.filter((s) => s.status === 'scheduled')).toHaveLength(3);
+    expect(db.sessions.map((s) => s.video_url)).toEqual([null, null, null]);
+    expect(auditWrites).toEqual([]);
+    expect(notifications.rows).toEqual([]);
     // The new coach never reads the former coaches' sessions or notes (4b).
     expect(await pastIds(OTHER_COACH)).toEqual([]);
     expect((await failure(svc.getSession(OTHER_COACH, 'head-past'))).code).toBe(

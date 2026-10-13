@@ -20,6 +20,7 @@ import {
   PROGRAM_READ_ONLY_MESSAGE,
   WorkoutBuilderAutosaveService,
 } from '../src/workout-builder/workout-builder-autosave.service';
+import { planStaysInTenantWhere } from '../src/workout-builder/tenant-clients';
 
 function fake<T>(value: unknown): T {
   return value as T;
@@ -51,8 +52,8 @@ function build(opts: {
   held?: Record<string, string[]>;
   /** Clients assigned to the days of the copy (older copies, no client_id). */
   assigned?: string[];
-  /** Clients who moved to a coach outside the tenant (owner 4). */
-  moved?: string[];
+  /** The copy's client moved to a coach outside the tenant (owner 4). */
+  moved?: boolean;
 }) {
   const plan = {
     coach_id: opts.planCoachId ?? HEAD,
@@ -64,12 +65,11 @@ function build(opts: {
       findUnique: jest.fn(async (args: { where: { id: string } }) => ({
         coach_id: opts.heads?.[args.where.id] ?? null,
       })),
-      count: jest.fn(
-        async (args: { where: { id: { in: string[] } } }) =>
-          args.where.id.in.filter((id) => !(opts.moved ?? []).includes(id)).length,
-      ),
     },
-    workoutPlan: { findUnique: jest.fn(async () => plan) },
+    workoutPlan: {
+      findUnique: jest.fn(async () => plan),
+      count: jest.fn(async () => (opts.moved ? 0 : 1)),
+    },
     clientWorkoutAssignment: {
       findMany: jest.fn(async () => (opts.assigned ?? []).map((client_id) => ({ client_id }))),
     },
@@ -248,29 +248,17 @@ describe('autosave owner + visibility gate (OR-112-18)', () => {
   });
 
   it('HIST-2 (owner 4): the head coach can no longer save the copy of a client who moved', async () => {
-    for (const opts of [
-      { program: copy(CLIENT_A), moved: [CLIENT_A] },
-      { program: copy(null), assigned: [CLIENT_A, CLIENT_B], moved: [CLIENT_B] },
-    ]) {
-      const { service, prisma } = build(opts);
-      await expect(service.applyAutosave(PLAN_ID, { userId: HEAD }, BODY)).rejects.toThrow(
-        new NotFoundException('Workout plan not found'),
-      );
-      expect(prisma.$transaction).not.toHaveBeenCalled();
-      const where = fake<{ where: { id: { in: string[] }; OR: unknown[] } }>(
-        prisma.user.count.mock.calls[0][0],
-      ).where;
-      expect(where.OR).toEqual([
-        { coach_id: HEAD },
-        {
-          coach: {
-            sub_coach_assignments_as_sub: { some: { head_coach_id: HEAD, archived_at: null } },
-          },
-        },
-      ]);
-    }
+    const { service, prisma } = build({ program: copy(CLIENT_A), moved: true });
+    await expect(service.applyAutosave(PLAN_ID, { userId: HEAD }, BODY)).rejects.toThrow(
+      new NotFoundException('Workout plan not found'),
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    // The plan list's rule (tenant-clients.ts); the live autosave suite runs it.
+    expect(prisma.workoutPlan.count).toHaveBeenCalledWith({
+      where: { id: PLAN_ID, ...planStaysInTenantWhere(HEAD) },
+    });
     // The client's own copy still saves while they stay in the tenant.
-    const stays = build({ program: copy(CLIENT_A), moved: [CLIENT_B] });
+    const stays = build({ program: copy(CLIENT_A) });
     expect(await outcome(stays.service.applyAutosave(PLAN_ID, { userId: HEAD }, BODY))).toBe(
       'allowed',
     );

@@ -255,8 +255,9 @@ export class RealMealPlansService {
    * Owner 4 + 139-13: a client who moved to another coach keeps the plan as it
    * was, and the former coach's later edits no longer reach them. Before an
    * edit, the moved clients' assignments of these plans move to a frozen copy
-   * of the plan and its meal templates. The copy is archived, so it is on none
-   * of the coach's lists and no coach route opens it; the client still reads it.
+   * of the plan and its meal templates, with the plan's own date. The copy is
+   * archived, so it is on none of the coach's lists and no coach route opens
+   * it; the client still reads it, on GET /meal-plans too (meal-plans.service.ts).
    */
   private async freezeForMovedClients(
     tx: Prisma.TransactionClient,
@@ -278,8 +279,9 @@ export class RealMealPlansService {
         include: { slots: { include: { meal_template: true } } },
       });
       if (!plan) continue;
+      const { coach_id, name, notes, created_at } = plan;
       const copy = await tx.dailyMealPlan.create({
-        data: { coach_id: plan.coach_id, name: plan.name, notes: plan.notes, archived_at: now },
+        data: { coach_id, name, notes, created_at, archived_at: now },
       });
       const frozen = new Map<string, string>();
       for (const { meal_template: t } of plan.slots) {
