@@ -6,7 +6,9 @@
  * sub-coach, and, after a client moves, none of that client's coach-side rows
  * to the former coach. The row's own coach reads it first (the control), so a
  * zero means a policy refused the row, not that it is missing. The new coach
- * and the client still read the client's history after a move. coach_ltv_peak
+ * and the client still read the client's history after a move. A removed
+ * sub-coach and their former head read none of each other's consultation rows,
+ * the API agreeing. coach_ltv_peak
  * is server-only (20261224000000 revokes the API roles), so every API caller,
  * its own coach too, is refused.
  * The service paths of the same routes: test/coach-home-cross-coach-reads.spec.ts.
@@ -17,6 +19,9 @@
 import { randomUUID } from 'crypto';
 import { Prisma, PrismaClient } from '@prisma/client';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
+import { OnboardingService } from '../../src/onboarding/onboarding.service';
+import type { PrismaService } from '../../src/prisma.service';
+import type { WorkoutBuilderService } from '../../src/workout-builder/workout-builder.service';
 
 const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') {
@@ -140,6 +145,43 @@ if (!DB_URL && process.env.CI === 'true') {
       expect(await touchTarget(a)).toBe(0);
       await expect(newTarget(a)).rejects.toThrow(/row-level security/);
       expect(await newTarget(b)).toBe(1);
+    });
+  });
+
+  describe('a removed sub-coach (seat archived, the delegation left open): consultation rows', () => {
+    // Head H; team member R with a seat; H's client X, delegated to R; R's own client Y.
+    const [h, r, x, y] = Array.from({ length: 4 }, () => randomUUID());
+    const rows: Record<string, [string, string]> = {};
+    const api = new OnboardingService(prisma as PrismaService, {} as WorkoutBuilderService);
+    /** The API answer, then the intake and revision rows `reader` sees for `client`. */
+    const audience = async (reader: string, client: string) => [
+      await api.canCoachRead(reader, client),
+      await seen('ClientOnboardingIntake', rows[client][0], reader),
+      await seen('ClientOnboardingIntakeRevision', rows[client][1], reader),
+    ];
+    const [YES, NO] = [[true, 1, 1], [false, 0, 0]];
+
+    beforeAll(async () => {
+      for (const [id, role, coach_id] of [[h, 'coach', null], [r, 'coach', h], [x, 'student', h], [y, 'student', r]] as const) {
+        await prisma.user.create({ data: { id, supabase_id: id, email: `${id}@example.test`, name: 'RLS person', role, coach_id } });
+      }
+      await prisma.teamSubCoachAssignment.create({ data: { head_coach_id: h, sub_coach_id: r } });
+      await prisma.subCoachAssignment.create({ data: { head_coach_id: h, sub_coach_id: r, client_id: x } });
+      for (const c of [x, y]) {
+        const intake = await prisma.clientOnboardingIntake.create({ data: { client_id: c, version: 'consult-v1', answers: { P1: 'no' } } });
+        const rev = await prisma.clientOnboardingIntakeRevision.create({
+          data: { intake_id: intake.id, client_id: c, revision: 1, version: 'consult-v1', answers: { P1: 'no' }, cause: 'save' },
+        });
+        rows[c] = [intake.id, rev.id];
+      }
+    });
+
+    it('API and both tables agree: removal ends both cross reads; a pair that never had a seat still counts', async () => {
+      expect([await audience(r, x), await audience(h, y)]).toEqual([YES, YES]);
+      await prisma.teamSubCoachAssignment.updateMany({ where: { head_coach_id: h }, data: { archived_at: new Date() } });
+      expect([await audience(r, x), await audience(h, y), await audience(r, y), await audience(h, x)]).toEqual([NO, NO, YES, YES]);
+      await prisma.teamSubCoachAssignment.deleteMany({ where: { head_coach_id: h } });
+      expect([await audience(r, x), await audience(h, y)]).toEqual([YES, YES]);
     });
   });
 });
