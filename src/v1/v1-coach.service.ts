@@ -232,15 +232,16 @@ export class V1CoachService {
   async listThreads(caller: Caller) {
     // Only the threads getThread opens (clientScope): a sub-coach sees the
     // clients assigned to them, and a client who moved to another coach
-    // leaves the old coach's list (owner 4). The owner's scope is {}.
+    // leaves the old coach's list (owner 4). Owners are not scoped.
     const scope = await this.clientScope(caller);
     const messagingCoachId = await this.messagingCoachIdFor(caller);
+    const inScope = caller.role === 'owner' ? {} : { client: scope };
 
     // Pull every coach-message row for this coach in a single query, then
     // fold per client. We over-fetch but the dataset is small (one coach has
     // tens of threads, hundreds of messages) and one round-trip beats N+1.
     const messages = await this.prisma.coachMessage.findMany({
-      where: { coach_id: messagingCoachId, client: scope },
+      where: { coach_id: messagingCoachId, ...inScope },
       orderBy: { created_at: 'desc' },
       select: {
         client_id: true,
