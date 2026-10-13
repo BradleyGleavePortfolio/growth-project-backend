@@ -1014,12 +1014,20 @@ export class CoachBriefService {
       // coach_id = sub-coach-id returns zero rows for every assigned
       // client. Scope by client_id IN clientIds AND sender_id != coachId
       // instead so the sub-coach actually sees their assigned-client
-      // inbound messages. For solo + head-coach modes this is
-      // equivalent to the coach_id scope because clientIds are exactly
-      // the coach's direct roster.
+      // inbound messages. Owner 4b: only the client's current thread (the
+      // one MessagingService opens). A moved client's thread with a former
+      // coach stays with that coach: solo mode reads coach_id = coachId,
+      // sub-coach mode reads threads of a head coach who hands them clients.
       this.prisma.coachMessage.findMany({
         where: {
           client_id: { in: clientIds },
+          ...(briefMode === 'sub_coach'
+            ? {
+                coach: {
+                  sub_coach_overlay_as_head: { some: { sub_coach_id: coachId, unassigned_at: null } },
+                },
+              }
+            : { coach_id: coachId }),
           read_at: null,
           // The message is unread by anyone with coach-side access AND
           // the sender is NOT the coach reading this brief — i.e. the

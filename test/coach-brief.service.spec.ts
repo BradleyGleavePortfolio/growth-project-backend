@@ -966,6 +966,60 @@ describe('CoachBriefService sub-coach unread messages — P1-5', () => {
     // Critically: we do NOT filter by coach_id (which is head-coach-scoped).
     const whereKeys = Object.keys(call.where);
     expect(whereKeys).not.toContain('coach_id');
+    // Owner 4b: only threads of a head coach who hands this sub-coach clients.
+    expect(call.where).toMatchObject({
+      coach: { sub_coach_overlay_as_head: { some: { sub_coach_id: subCoachId, unassigned_at: null } } },
+    });
+  });
+});
+
+// ─── BRIEF4B (owner 4b): a moved client's brief for the new coach ──────
+
+describe('CoachBriefService moved client — owner 4b', () => {
+  it("the new coach's brief has none of the former coach's chat and still shows the client's own logs", async () => {
+    const [NEW_COACH, OLD_COACH, MOVED, OTHER] = ['coach-new', 'coach-old', 'client-moved', 'client-other'];
+    const prisma = makeMockPrisma();
+    wireSoloDefaults(prisma, { coachId: NEW_COACH, clientIds: [MOVED, OTHER] });
+    prisma.coachBrief.updateMany.mockResolvedValue({ count: 1 });
+    prisma.coachBrief.update.mockImplementation(async ({ data }) => ({
+      id: 'b1', coach_id: NEW_COACH, brief_date: '2026-10-12', created_at: new Date(), ...data,
+    }));
+    // The moved client's own logs: a check-in today and a 4.6 lb weigh-in change.
+    prisma.checkIn.findMany.mockResolvedValue([{ user_id: MOVED }]);
+    prisma.$queryRaw.mockImplementation(async (sql: Prisma.Sql) =>
+      sql.strings.join('').includes('"WeightLog"')
+        ? [{ user_id: MOVED, user_name: 'Moved Client', delta_lbs: 4.6 }]
+        : [{ count: 0n }],
+    );
+    // Unread rows answered by the filter, like the database. The former
+    // coach's thread holds an unread line from each side.
+    const rows = [
+      { coach_id: OLD_COACH, client_id: MOVED, sender_id: OLD_COACH, body: 'FORMER-COACH-TEXT one', at: 3 },
+      { coach_id: OLD_COACH, client_id: MOVED, sender_id: MOVED, body: 'FORMER-COACH-TEXT two', at: 2 },
+      { coach_id: NEW_COACH, client_id: OTHER, sender_id: OTHER, body: 'See you Thursday', at: 1 },
+    ];
+    type MessageWhere = { client_id: { in: string[] }; coach_id?: string; NOT: { sender_id: string } };
+    prisma.coachMessage.findMany.mockImplementation(async ({ where }: { where: MessageWhere }) =>
+      rows
+        .filter((m) => where.client_id.in.includes(m.client_id))
+        .filter((m) => where.coach_id === undefined || m.coach_id === where.coach_id)
+        .filter((m) => m.sender_id !== where.NOT.sender_id)
+        .sort((a, b) => b.at - a.at)
+        .map((m) => ({ client_id: m.client_id, client: { name: m.client_id }, body: m.body, created_at: new Date() })),
+    );
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
+
+    const res = await svc.generateBrief(NEW_COACH, 'America/Los_Angeles', '2026-10-12', { force: true });
+
+    const data = prisma.coachBrief.update.mock.calls[0][0].data;
+    expect(JSON.stringify([res, data])).not.toContain('FORMER-COACH-TEXT');
+    const items: Array<{ type: string; client_id: string; detail: string }> = data.action_items;
+    expect(items.map((i) => `${i.type}:${i.client_id}`).sort()).toEqual([
+      `message_unread:${OTHER}`,
+      `weight_flag:${MOVED}`,
+    ]);
+    expect(items.find((i) => i.type === 'message_unread')?.detail).toBe('See you Thursday');
+    expect(data.brief_context).toMatchObject({ checked_in_today: 1, weight_logs_flagged: 1, unread_messages: 1 });
   });
 });
 
