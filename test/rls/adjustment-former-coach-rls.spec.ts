@@ -61,7 +61,7 @@ if (!DB_URL && process.env.CI === 'true') {
       const proposal = await prisma.workoutAdjustmentProposal.create({
         data: {
           coach_id: a, client_id: client, assignment_id: assignment.id, rule_key: 'high_rpe', rule_version: 1,
-          status: 'approved', severity: 'medium', signals: {}, proposed_change: {}, base_fingerprint: 'fp',
+          status: 'approved', severity: 'moderate', signals: {}, proposed_change: {}, base_fingerprint: 'fp',
           roman_text: 'RLS text', decided_at: new Date(),
         },
       });
