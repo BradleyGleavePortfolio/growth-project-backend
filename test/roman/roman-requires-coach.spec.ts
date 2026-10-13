@@ -25,7 +25,6 @@ import { AiService } from '../../src/ai/ai.service';
 import * as crisisRouter from '../../src/ai/ai-crisis-router';
 import { ClientEntitlementGuard } from '../../src/common/guards/client-entitlement.guard';
 import { HttpExceptionFilter } from '../../src/filters/http-exception.filter';
-import { PrismaService } from '../../src/prisma.service';
 import { RomanController } from '../../src/roman/roman.controller';
 import { RomanContextController } from '../../src/roman/context/roman-context.controller';
 import { RomanClientContextService } from '../../src/roman/context/roman-client-context.service';
@@ -138,10 +137,6 @@ describe('Part 1 — the 403 a client with no coach receives over HTTP', () => {
         { provide: RomanService, useValue: roman },
         { provide: AiService, useValue: ai },
         { provide: RomanClientContextService, useValue: romanContext },
-        {
-          provide: PrismaService,
-          useValue: { coachSubscription: { findUnique: async () => null } },
-        },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -302,10 +297,7 @@ describe('Part 1 — the 403 a client with no coach receives over HTTP', () => {
 describe('Part 2 — order of the checks on a Roman turn and the AI guide', () => {
   function roman() {
     const service = makeRoman();
-    const ctrl = new RomanController(
-      fakeOf(service),
-      fakeOf({ coachSubscription: { findUnique: async () => null } }),
-    );
+    const ctrl = new RomanController(fakeOf(service));
     return { service, ctrl };
   }
   function req(user: Record<string, unknown>): Request & AuthedRequest {

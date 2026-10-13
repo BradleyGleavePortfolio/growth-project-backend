@@ -2,9 +2,22 @@
  * Roman Phase 1 budgets and limits (brief §3).
  */
 
-/** Per-user user-turn caps per rolling 24h, by tier (brief §3). */
-export const ROMAN_RATE_LIMIT_FREE_PER_DAY = 50;
-export const ROMAN_RATE_LIMIT_PRO_PER_DAY = 500;
+/**
+ * Owner NOLOCK-R / NOLOCK-R2: the same Roman limits for every client and
+ * coach, never by plan, tier or subscription, each over the rolling window
+ * below. The coach's AI credit pool and one-off credit purchases still bound
+ * spend.
+ *   - messages: user turns (assertWithinRateLimit, 429 ROMAN_RATE_LIMIT).
+ *   - file uploads: files a client sends Roman. Roman takes no file yet; the
+ *     first upload path must count against this.
+ *   - adjustments: Roman actions that change the client's data (logging food,
+ *     adjusting a workout). Roman's tools only read; the first that writes
+ *     must count here. Coach-approved workout suggestions (src/roman-adjust)
+ *     are not counted until the owner decides whether they are one.
+ */
+export const ROMAN_MESSAGES_PER_DAY = 100;
+export const ROMAN_FILE_UPLOADS_PER_DAY = 3;
+export const ROMAN_ADJUSTMENTS_PER_DAY = 5;
 
 /** Rolling rate-limit window. */
 export const ROMAN_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -112,7 +125,7 @@ export const ROMAN_CURSOR_INVALID_MESSAGE =
  * bound is the coach's monthly AI credit pool). Env ROMAN_DAILY_COST_CAP_USD
  * (registered in ENV_RULES); default 100, sized to launch volume (operator
  * 121, 13:33): about 2,000 to 3,000 ordinary turns a day at $0.03 to $0.05
- * each, or 23 clients each at the full 50-turn limit at the worst-case
+ * each, or 11 clients each at the full 100-turn limit at the worst-case
  * reservation, so ordinary launch use never meets it. A turn
  * RESERVES the upper bound of its exact payload plus max output in the
  * content-free ledger (AiRequestAudit, capability `roman.chat`) under a

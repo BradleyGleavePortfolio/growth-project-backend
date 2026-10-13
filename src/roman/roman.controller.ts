@@ -12,11 +12,11 @@
  * must not depend on Roman chat being on (B-635-2).
  *
  * Auth: JwtAuthGuard authenticates every route. Roman is available to ALL
- * signed-in users on ANY tier (free + pro) — so there is no tier gate, only the
- * per-tier RATE limit applied in the service (brief §4). RomanFeatureGuard
- * returns 404 on every route while the feature flag is OFF. A client with no
- * coach gets 403 ROMAN_REQUIRES_COACH on open and send (owner 10-09 00:0x,
- * roman-requires-coach.ts); reading a transcript stays open.
+ * signed-in users with no plan, tier or subscription gate (owner NOLOCK-R):
+ * every client and coach gets the same daily turn cap, applied in the service.
+ * RomanFeatureGuard returns 404 on every route while the feature flag is OFF.
+ * A client with no coach gets 403 ROMAN_REQUIRES_COACH on open and send
+ * (owner 10-09 00:0x, roman-requires-coach.ts); reading a transcript stays open.
  *
  * Streaming: `POST …/messages` returns Server-Sent Events. The user turn is
  * persisted first; the assistant turn is streamed and persisted on completion
@@ -42,7 +42,6 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import type { AuthedRequest } from '../auth/auth-request';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
-import { PrismaService } from '../prisma.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { toRomanSseErrorFrame } from './roman-sse-error';
 import {
@@ -63,10 +62,7 @@ import {
 @Controller('roman')
 @UseGuards(JwtAuthGuard, RolesGuard, RomanFeatureGuard)
 export class RomanController {
-  constructor(
-    private readonly roman: RomanService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly roman: RomanService) {}
 
   // ─── POST /roman/sessions — open or resume ─────────────────────────────────
   @Post('sessions')
@@ -76,7 +72,7 @@ export class RomanController {
     // Owner 10-09 00:0x: a client with no coach gets 403 ROMAN_REQUIRES_COACH
     // (roman-requires-coach.ts) and no session is opened.
     assertRomanHasCoach(req.user);
-    const caller = await this.callerOf(req);
+    const caller = this.callerOf(req);
     const session = await this.roman.openOrResumeSession(caller, dto.surface);
     return this.toSessionView(session);
   }
@@ -92,7 +88,7 @@ export class RomanController {
     @Param('id') id: string,
     @Query() query: ListMessagesQueryDto,
   ) {
-    const caller = await this.callerOf(req);
+    const caller = this.callerOf(req);
     const page = await this.roman.listMessages(caller, id, {
       cursor: query.cursor,
       limit: query.limit,
@@ -112,7 +108,7 @@ export class RomanController {
     @Param('id') id: string,
     @Body() dto: SendMessageDto,
   ): Promise<void> {
-    const caller = await this.callerOf(req);
+    const caller = this.callerOf(req);
     // An emergency / self-harm / urgent-symptoms message is answered by a
     // deterministic SafetyRouter template: no model call, no spend, and none of
     // the client's data leaves the app. Neither the per-user turn limit, the
@@ -224,23 +220,9 @@ export class RomanController {
 
   // ─── helpers ───────────────────────────────────────────────────────────────
 
-  /**
-   * Build the RomanCaller from the authenticated user. Resolves the coach
-   * subscription tier (best-effort) so the service can apply the right
-   * rate-limit cap; absent a row, the caller is treated as free.
-   */
-  private async callerOf(req: AuthedRequest): Promise<RomanCaller> {
-    const user = req.user;
-    let tier: RomanCaller['tier'] = 'free';
-    try {
-      const sub = (await this.prisma.coachSubscription.findUnique({
-        where: { coach_id: user.id },
-      })) as { tier?: RomanCaller['tier'] } | null;
-      if (sub?.tier) tier = sub.tier;
-    } catch {
-      // No subscription model row / not a coach — free tier is the safe default.
-    }
-    return { id: user.id, role: user.role, tier };
+  /** The RomanCaller is the authenticated user; Roman never reads a plan or tier. */
+  private callerOf(req: AuthedRequest): RomanCaller {
+    return { id: req.user.id, role: req.user.role };
   }
 
   private toSessionView(session: {

@@ -957,7 +957,6 @@ export function makePersonaDb(): PersonaDb {
         return row ?? null;
       }),
     },
-    coachSubscription: { findUnique: jest.fn(async () => null) },
     // B-651-5: the spend admission takes a per-day advisory lock in its tx.
     $executeRaw: jest.fn(async () => 1),
     $transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma)),
@@ -991,6 +990,8 @@ export function makePersonaDb(): PersonaDb {
     bloodworkPanel: forbidden('bloodworkPanel'),
     clientPurchase: forbidden('clientPurchase'),
     coachSubscriptionInvoice: forbidden('coachSubscriptionInvoice'),
+    // Owner NOLOCK-R: Roman never reads a plan, tier or subscription.
+    coachSubscription: forbidden('coachSubscription'),
   };
 
   return {

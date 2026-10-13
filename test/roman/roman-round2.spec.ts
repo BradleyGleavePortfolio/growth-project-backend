@@ -45,7 +45,7 @@ afterEach(() => {
 
 // ─── doubles ────────────────────────────────────────────────────────────────
 
-const CLIENT = { id: 'client-1', role: 'student', tier: 'free' as const };
+const CLIENT = { id: 'client-1', role: 'student' };
 
 function session(over: Record<string, unknown> = {}) {
   return {

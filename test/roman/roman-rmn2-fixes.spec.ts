@@ -17,7 +17,7 @@ import { postCheckRomanReply } from '../../src/roman/guardrails/roman-post-check
 import type { RomanClientContext } from '../../src/roman/context/roman-client-context.types';
 import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 
-const CLIENT = { id: 'rmn2-client', role: 'student', tier: 'free' as const };
+const CLIENT = { id: 'rmn2-client', role: 'student' };
 const SESSION = fakeOf<RomanSession>({
   id: 'rmn2-session', user_id: CLIENT.id, surface: 'client',
   day_key: 'rmn2-day', message_count: 1, exclamation_used: false,

@@ -69,10 +69,7 @@ function controllerThatThrows(thrown: unknown) {
       throw thrown;
     }),
   };
-  return new RomanController(
-    fakeOf<RomanService>(service),
-    fakeOf({ coachSubscription: { findUnique: jest.fn(async () => null) } }),
-  );
+  return new RomanController(fakeOf<RomanService>(service));
 }
 
 function fakeReq(requestId?: string) {

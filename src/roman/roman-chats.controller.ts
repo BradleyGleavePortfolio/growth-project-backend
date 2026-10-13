@@ -107,7 +107,7 @@ export class RomanChatsController {
     await this.roman.deleteSession(this.callerOf(req), id);
   }
 
-  /** List and delete need no tier (no rate limit applies to them). */
+  /** List and delete apply no turn cap; the caller is the authenticated user. */
   private callerOf(req: AuthedRequest): RomanCaller {
     return { id: req.user.id, role: req.user.role };
   }

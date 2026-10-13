@@ -94,7 +94,7 @@ liveDescribe('B31-D1 live: Roman uses the coach AI credit pool (Postgres)', () =
     if (prisma) await prisma.$disconnect();
   });
 
-  const client: RomanCaller = { id: CLIENT, role: 'student', tier: 'free' };
+  const client: RomanCaller = { id: CLIENT, role: 'student' };
 
   it('a never-initialised pool gets the documented default period, and the turn is admitted', async () => {
     expect(await prisma.coachAIBudget.count({ where: { coach_user_id: COACH } })).toBe(0);
@@ -107,7 +107,7 @@ liveDescribe('B31-D1 live: Roman uses the coach AI credit pool (Postgres)', () =
 
   it('the coach on the coach surface uses the same pool', async () => {
     await expect(
-      roman.assertCoachPoolOpen({ id: COACH, role: 'coach', tier: 'free' }),
+      roman.assertCoachPoolOpen({ id: COACH, role: 'coach' }),
     ).resolves.toBe(COACH);
   });
 
@@ -137,7 +137,7 @@ liveDescribe('B31-D1 live: Roman uses the coach AI credit pool (Postgres)', () =
 
   it('a coachless student has no pool and is never refused by it', async () => {
     await expect(
-      roman.assertCoachPoolOpen({ id: SOLO, role: 'student', tier: 'free' }),
+      roman.assertCoachPoolOpen({ id: SOLO, role: 'student' }),
     ).resolves.toBeNull();
   });
 

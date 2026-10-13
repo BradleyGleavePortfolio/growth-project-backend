@@ -183,7 +183,7 @@ liveDescribe('B31 live: Roman context for a coachless client with NULL profile l
       ],
     }).compile();
     const svc = moduleRef.get(RomanService);
-    const caller: RomanCaller = { id: CLIENT, role: 'student', tier: 'free' };
+    const caller: RomanCaller = { id: CLIENT, role: 'student' };
     const load: (c: RomanCaller) => Promise<RomanClientContextBundle | null> = Reflect.get(
       svc,
       'loadTurnBundle',
