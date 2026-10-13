@@ -72,9 +72,7 @@ export class SubCoachesService {
   // unit tests that hand-construct SubCoachesService with just
   // (prisma, team), they're @Optional() and we fall back to building a
   // local instance on the same prisma/team — preserves the pre-split
-  // test surface and keeps test compatibility. The scheduling lifecycle
-  // (owner HIST-2b move cancels) is always injected in production too:
-  // SubCoachesModule imports SchedulingModule.
+  // test surface and keeps test compatibility.
   private readonly invites: SubCoachInviteService;
   private readonly analyticsService: SubCoachAnalyticsService;
 
@@ -83,6 +81,7 @@ export class SubCoachesService {
     private readonly team: TeamService,
     @Optional() invites?: SubCoachInviteService,
     @Optional() analyticsService?: SubCoachAnalyticsService,
+    // Always injected in production; hand-built unit tests may leave it out.
     @Optional() private readonly sessions?: SchedulingSessionLifecycleService,
   ) {
     this.invites = invites ?? new SubCoachInviteService(prisma, team, sessions);
