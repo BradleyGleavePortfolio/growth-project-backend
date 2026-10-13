@@ -637,6 +637,7 @@ export class SchedulingSessionLifecycleService {
   ): Promise<CoachingSession> {
     const existing = await this.loadSessionOrThrow(sessionId);
     this.access.assertIsSessionCoach(actor, existing);
+    await this.access.assertPastSessionStillTheirs(actor, existing);
     this.assertTransition(existing, 'completed');
     assertHasStarted(existing, 'complete');
     const updated = await this.compareAndSet(
@@ -657,6 +658,7 @@ export class SchedulingSessionLifecycleService {
   ): Promise<CoachingSession> {
     const existing = await this.loadSessionOrThrow(sessionId);
     this.access.assertIsSessionCoach(actor, existing);
+    await this.access.assertPastSessionStillTheirs(actor, existing);
     this.assertTransition(existing, 'no_show');
     assertExpectedStart(existing, opts.expectedStartAt);
     assertHasStarted(existing, 'no_show');

@@ -54,6 +54,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { isMwbTemplatesEnabled } from './mwb-templates.feature';
 import { assertLastDayMayGo, lockProgramMaster } from './program-guards';
+import { copyStaysInTenant } from './tenant-clients';
 import {
   AssignProgramDto,
   CloneProgramResultDto,
@@ -350,6 +351,7 @@ export class WorkoutBuilderService {
     if (plan.coach_id !== coachId && !(await this.canOpenTeamProgramDay(coachId, plan))) {
       throw new ForbiddenException();
     }
+    await this.assertNotMovedClientCopy(plan);
     return plan;
   }
 
@@ -927,6 +929,22 @@ export class WorkoutBuilderService {
     const plan = await this.prisma.workoutPlan.findUnique({ where: { id: planId } });
     if (!plan) throw new NotFoundException('Workout plan not found');
     if (plan.coach_id !== coachId) throw new ForbiddenException();
+    await this.assertNotMovedClientCopy(plan);
+  }
+
+  /**
+   * Owner 4: a day of a client's program copy is not found for the tenant
+   * once that client has moved to another coach (tenant-clients.ts).
+   */
+  private async assertNotMovedClientCopy(plan: { coach_id: string; program_id: string | null }) {
+    if (!plan.program_id) return;
+    const copy = await this.prisma.workoutProgram.findUnique({
+      where: { id: plan.program_id },
+      select: { id: true, is_template: true, client_id: true },
+    });
+    if (copy && !copy.is_template && !(await copyStaysInTenant(this.prisma, copy, plan.coach_id))) {
+      throw new NotFoundException('Workout plan not found');
+    }
   }
 
   private async assertClientBelongsToCoach(coachId: string, clientId: string) {

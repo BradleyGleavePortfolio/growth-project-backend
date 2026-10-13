@@ -145,6 +145,9 @@ describe('WorkoutBuilderService.archivePlan: packaged programs keep a day (C-640
         })),
         updateMany: jest.fn(async () => ({ count: 1 })),
       },
+      workoutProgram: {
+        findUnique: jest.fn(async () => ({ id: 'master-1', is_template: true, client_id: null })),
+      },
       $transaction: jest.fn(async (fn: (t: typeof tx) => unknown) => fn(tx)),
     };
     return { svc: new WorkoutBuilderService(fake(prisma)), prisma, tx };

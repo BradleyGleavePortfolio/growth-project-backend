@@ -10,7 +10,7 @@
  * `$transaction` (stubbed to throw a sentinel) and a refused call is a typed
  * 403 with a stable code that never opens a transaction.
  */
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AnalyticsService } from '../src/analytics/analytics.service';
 import { MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV } from '../src/workout-builder/lock-token.helper';
 import {
@@ -51,6 +51,8 @@ function build(opts: {
   held?: Record<string, string[]>;
   /** Clients assigned to the days of the copy (older copies, no client_id). */
   assigned?: string[];
+  /** Clients who moved to a coach outside the tenant (owner 4). */
+  moved?: string[];
 }) {
   const plan = {
     coach_id: opts.planCoachId ?? HEAD,
@@ -62,6 +64,10 @@ function build(opts: {
       findUnique: jest.fn(async (args: { where: { id: string } }) => ({
         coach_id: opts.heads?.[args.where.id] ?? null,
       })),
+      count: jest.fn(
+        async (args: { where: { id: { in: string[] } } }) =>
+          args.where.id.in.filter((id) => !(opts.moved ?? []).includes(id)).length,
+      ),
     },
     workoutPlan: { findUnique: jest.fn(async () => plan) },
     clientWorkoutAssignment: {
@@ -239,6 +245,35 @@ describe('autosave owner + visibility gate (OR-112-18)', () => {
         `403 client_not_assigned: ${CLIENT_NOT_ASSIGNED_MESSAGE}`,
       );
     });
+  });
+
+  it('HIST-2 (owner 4): the head coach can no longer save the copy of a client who moved', async () => {
+    for (const opts of [
+      { program: copy(CLIENT_A), moved: [CLIENT_A] },
+      { program: copy(null), assigned: [CLIENT_A, CLIENT_B], moved: [CLIENT_B] },
+    ]) {
+      const { service, prisma } = build(opts);
+      await expect(service.applyAutosave(PLAN_ID, { userId: HEAD }, BODY)).rejects.toThrow(
+        new NotFoundException('Workout plan not found'),
+      );
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      const where = fake<{ where: { id: { in: string[] }; OR: unknown[] } }>(
+        prisma.user.count.mock.calls[0][0],
+      ).where;
+      expect(where.OR).toEqual([
+        { coach_id: HEAD },
+        {
+          coach: {
+            sub_coach_assignments_as_sub: { some: { head_coach_id: HEAD, archived_at: null } },
+          },
+        },
+      ]);
+    }
+    // The client's own copy still saves while they stay in the tenant.
+    const stays = build({ program: copy(CLIENT_A), moved: [CLIENT_B] });
+    expect(await outcome(stays.service.applyAutosave(PLAN_ID, { userId: HEAD }, BODY))).toBe(
+      'allowed',
+    );
   });
 
   describe('standalone plans', () => {

@@ -269,10 +269,12 @@ export class RealMealPlansService {
     });
   }
 
+  // Owner 4: a client who moved to another coach leaves this list at once,
+  // the same client rule as assignPlan (assertClientOfCoach).
   async listAssignmentsForCoach(coachId: string, planId: string) {
     await this.assertPlanOwnedBy(coachId, planId);
     return this.prisma.dailyMealPlanAssignment.findMany({
-      where: { daily_meal_plan_id: planId },
+      where: { daily_meal_plan_id: planId, client: { coach_id: coachId, role: 'student' } },
       orderBy: { starts_on: 'asc' },
     });
   }

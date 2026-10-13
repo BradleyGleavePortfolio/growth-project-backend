@@ -55,6 +55,7 @@ import {
   SetProgramDayDto,
   UpdateProgramDto,
 } from './program-library.dto';
+import { inTenantSql, inTenantWhere } from './tenant-clients';
 
 /** Advisory-lock namespaces (int4). */
 const LOCK_NS_PROGRAM_GRID = 0x4d574247; // 'MWBG' — serialises grid writes per program
@@ -213,9 +214,10 @@ export class ProgramLibraryService {
 
   /**
    * Clients this actor may see in assignee lists and counts (B-640-2). Head
-   * coaches see their whole tenant (null = no extra filter); a sub-coach sees
-   * only the clients delegated to them through SubCoachAssignment, the same
-   * scope every other coach surface uses.
+   * coaches see the clients still in their tenant (null here; the callers add
+   * inTenantWhere / inTenantSql, so a client who moved to another coach is out
+   * at once, owner 4); a sub-coach sees only the clients delegated to them
+   * through SubCoachAssignment, the same scope every other coach surface uses.
    */
   private async visibleClientIds(actor: ProgramActor): Promise<Set<string> | null> {
     if (actor.authorKind !== 'sub_coach') return null;
@@ -346,7 +348,7 @@ export class ProgramLibraryService {
       _count: { _all: true },
     });
     const filledBy = new Map(filled.map((f) => [f.program_id ?? '', f._count._all]));
-    const assigned = await this.assignedCounts(ids, await this.visibleClientIds(actor));
+    const assigned = await this.assignedCounts(ids, actor);
     const pkgs = await this.prisma.coachPackageContent.groupBy({
       by: ['asset_id'],
       where: {
@@ -384,15 +386,17 @@ export class ProgramLibraryService {
    */
   private async assignedCounts(
     masterIds: string[],
-    visible: Set<string> | null,
+    actor: ProgramActor,
   ): Promise<Map<string, number>> {
     if (masterIds.length === 0) return new Map();
+    const visible = await this.visibleClientIds(actor);
     if (visible && visible.size === 0) return new Map();
     // Deleted (tombstoned) client accounts never count (B-640-3). A sub-coach
-    // counts only their own delegated clients (B-640-2).
+    // counts only their own delegated clients (B-640-2); a head coach only
+    // clients still in the tenant (owner 4).
     const scope = visible
       ? Prisma.sql`AND a."client_id" IN (${Prisma.join(Array.from(visible))})`
-      : Prisma.empty;
+      : inTenantSql(actor.tenantId);
     const rows = await this.prisma.$queryRaw<Array<{ master_id: string; n: number }>>`
       SELECT p."cloned_from_id" AS master_id, COUNT(DISTINCT a."client_id")::int AS n
       FROM "ClientWorkoutAssignment" a
@@ -1153,7 +1157,7 @@ export class ProgramLibraryService {
     );
     const cursor = this.decodeCursor(query.cursor);
     const clientScope: Prisma.ClientWorkoutAssignmentWhereInput = {
-      client: { deleted_at: null },
+      client: { deleted_at: null, ...(visible ? {} : inTenantWhere(actor.tenantId)) },
       ...(visible ? { client_id: { in: Array.from(visible) } } : {}),
     };
     const copies = await this.prisma.workoutProgram.findMany({

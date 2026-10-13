@@ -542,8 +542,11 @@ export class SchedulingService {
           ? { OR: [{ start_at: { lt: before } }, { start_at: before, id: { lt: beforeId } }] }
           : { start_at: { lt: before } }
         : {};
+      // Owner 4: a moved client's past sessions leave their former coach's list.
+      const stillTheirs =
+        actor.role === 'coach' ? await this.access.pastSessionsStillTheirs(actor.id) : {};
       const rows = await this.prisma.coachingSession.findMany({
-        where: { AND: [{ ...who, ...statusFilter, end_at: { lte: now } }, cursor] },
+        where: { AND: [{ ...who, ...statusFilter, end_at: { lte: now } }, cursor, stillTheirs] },
         orderBy: [{ start_at: 'desc' }, { id: 'desc' }],
         take: cap,
         include: SESSION_VIEW_INCLUDE,
@@ -569,6 +572,7 @@ export class SchedulingService {
   async getSession(actor: ActorContext, sessionId: string): Promise<SessionView> {
     const session = await this.lifecycle.loadSessionOrThrow(sessionId);
     this.access.assertCanViewSession(actor, session);
+    await this.access.assertPastSessionStillTheirs(actor, session);
     return this.view(actor, session);
   }
 

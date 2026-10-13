@@ -96,7 +96,7 @@ interface PrismaMock {
   workoutProgramRevision: {
     create: jest.Mock;
   };
-  user: { findUnique: jest.Mock };
+  user: { findUnique: jest.Mock; count: jest.Mock };
   workoutBuilderIdempotencyKey: {
     findUnique: jest.Mock;
     create: jest.Mock;
@@ -150,7 +150,7 @@ const makePrismaMock = (): PrismaMock => ({
   workoutProgramRevision: {
     create: jest.fn().mockResolvedValue({ id: 'prog-rev-1' }),
   },
-  user: { findUnique: jest.fn() },
+  user: { findUnique: jest.fn(), count: jest.fn() },
   workoutBuilderIdempotencyKey: {
     findUnique: jest.fn(),
     create: jest.fn(),
@@ -405,6 +405,46 @@ describe('WorkoutBuilderService', () => {
       await expect(service.getPlan(COACH_ID, basePlan.id)).rejects.toThrow(
         ForbiddenException,
       );
+    });
+
+    it('HIST-2 (owner 4): a day of a moved client\u2019s program copy is not found for the former coach', async () => {
+      prismaMock.workoutPlan.findUnique.mockResolvedValue({ ...basePlan, program_id: 'copy-1' });
+      prismaMock.workoutProgram.findUnique.mockResolvedValue({
+        id: 'copy-1',
+        is_template: false,
+        client_id: CLIENT_ID,
+      });
+      // The client's coach is now outside this coach's tenant.
+      prismaMock.user.count.mockResolvedValue(0);
+      const missing = new NotFoundException('Workout plan not found');
+      await expect(service.getPlan(COACH_ID, basePlan.id)).rejects.toThrow(missing);
+      await expect(service.updatePlan(COACH_ID, basePlan.id, { name: 'Renamed' })).rejects.toThrow(
+        missing,
+      );
+      await expect(service.setExercises(COACH_ID, basePlan.id, [])).rejects.toThrow(missing);
+      await expect(service.archivePlan(COACH_ID, basePlan.id)).rejects.toThrow(missing);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.workoutPlan.update).not.toHaveBeenCalled();
+      expect(prismaMock.user.count).toHaveBeenCalledWith({
+        where: {
+          id: { in: [CLIENT_ID] },
+          OR: [
+            { coach_id: COACH_ID },
+            {
+              coach: {
+                sub_coach_assignments_as_sub: {
+                  some: { head_coach_id: COACH_ID, archived_at: null },
+                },
+              },
+            },
+          ],
+        },
+      });
+      // While the client stays in the tenant the copy is still the coach's to open.
+      prismaMock.user.count.mockResolvedValue(1);
+      await expect(service.getPlan(COACH_ID, basePlan.id)).resolves.toMatchObject({
+        id: basePlan.id,
+      });
     });
   });
 

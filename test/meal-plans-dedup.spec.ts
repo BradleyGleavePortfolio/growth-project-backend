@@ -62,6 +62,11 @@ function makePrisma() {
         for (const clause of v as any[]) if (!matches(row, clause)) return false;
         continue;
       }
+      if (k === 'client') {
+        const client = users.find((u) => u.id === row.client_id);
+        if (!client || !matches(client, v)) return false;
+        continue;
+      }
       const val = (row as any)[k];
       if (v === null) {
         if (val !== null && val !== undefined) return false;
@@ -400,6 +405,23 @@ describe('BUG-R2 — legacy meal-plans deduped onto real-meal-plans canonical', 
     // And the canonical endpoint agrees.
     const today2 = await real.getTodayForClient('client-2', TODAY);
     expect(today2.assignments).toHaveLength(0);
+  });
+
+  it('HIST-2 (owner 4): a moved client leaves the former coach\u2019s plan assignments; the client keeps the plan', async () => {
+    const { plan } = await coachBuildsAndAssigns(real, 'coach-A', 'client-1', TODAY);
+    await real.assignPlan('coach-A', plan!.id, { client_id: 'client-2', starts_on: TODAY });
+    const listed = async () =>
+      (await real.listAssignmentsForCoach('coach-A', plan!.id)).map((a) => a.client_id);
+    expect(await listed()).toEqual(['client-1', 'client-2']);
+
+    // The move: client-1's coach is now coach-B.
+    prisma._users.find((u: { id: string }) => u.id === 'client-1').coach_id = 'coach-B';
+    expect(await listed()).toEqual(['client-2']);
+    expect(prisma._assignments).toHaveLength(2);
+
+    // History follows the client: today's plan is still theirs.
+    const today = await real.getTodayForClient('client-1', TODAY);
+    expect(today.assignments.map((a) => a.daily_meal_plan.name)).toEqual(['Cut Phase — Daily']);
   });
 
   it('GET /me/meal-plan alias controller proxies to the canonical system (same shape as /me/meal-plan/today)', async () => {

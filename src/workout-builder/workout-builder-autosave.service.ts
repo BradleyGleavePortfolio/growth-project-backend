@@ -45,6 +45,7 @@ import { Events } from '../analytics/events';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { WorkoutBuilderService } from './workout-builder.service';
 import { isMwbAutosaveUndoEnabled } from './workout-builder-autosave.feature';
+import { copyStaysInTenant } from './tenant-clients';
 import {
   buildRevisionList,
   parseRevisionsLimit,
@@ -563,9 +564,10 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
    *     gets 403 `program_read_only` with the duplicate path; a private master
    *     of another coach is 403 `plan_access_denied`.
    *   - A client's own copy (program.is_template = false): the tenant head
-   *     coach, or a team sub-coach who holds every client the copy belongs to
-   *     (open SubCoachAssignment; the client is `client_id`, or for older
-   *     copies the clients assigned to its days). Otherwise 403
+   *     coach while every client the copy belongs to is still in the tenant
+   *     (else 404, owner 4), or a team sub-coach who holds every client the
+   *     copy belongs to (open SubCoachAssignment; the client is `client_id`,
+   *     or for older copies the clients assigned to its days). Otherwise 403
    *     `client_not_assigned`.
    *   - A standalone plan (no program): only its own coach (plan.coach_id).
    *     A team sub-coach can no longer edit the head coach's standalone plans
@@ -627,8 +629,17 @@ export class WorkoutBuilderAutosaveService implements OnModuleInit {
       });
     }
 
-    // (2) The tenant head coach edits every client copy and their own plans.
-    if (isTenantHead) return;
+    // (2) The tenant head coach edits their own plans and every client copy
+    // still in the tenant; a moved client's copy is not found (owner 4).
+    if (isTenantHead) {
+      if (program && plan.program_id) {
+        const copy = { id: plan.program_id, client_id: program.client_id };
+        if (!(await copyStaysInTenant(this.prisma, copy, plan.coach_id))) {
+          throw new NotFoundException('Workout plan not found');
+        }
+      }
+      return;
+    }
     if (!(await inTeam())) {
       throw new ForbiddenException({
         code: PLAN_CODE_ACCESS_DENIED,
