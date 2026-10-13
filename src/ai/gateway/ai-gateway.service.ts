@@ -53,6 +53,7 @@ import {
 } from '../../ai-credits/client-purchase-policy';
 import { AiEgressService } from '../../ai-egress/ai-egress.service';
 import { SubCoachScopeService } from '../../sub-coach/sub-coach-scope.service';
+import { lockClientsForDraftWrite } from '../../coach/moved-client-drafts';
 import { isSubCoachOfAnotherCoach } from './workout-builder/workout-builder-sub-coach.gate';
 import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
 import {
@@ -477,7 +478,7 @@ export class AiGatewayService {
           throw err;
         }
       }
-      const draft = await this.prisma.aiActionDraft.create({
+      const write = (db: Prisma.TransactionClient) => db.aiActionDraft.create({
         data: {
           capability: req.capability,
           status: 'pending',
@@ -491,6 +492,17 @@ export class AiGatewayService {
           expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         },
       });
+      // Owner decision 17: the access check above runs again at write time, so
+      // a draft finished after its client moved is not saved for the old coach.
+      // (Stub mode makes no model call and skips that check.)
+      const draft =
+        adapter.name === 'stub'
+          ? await write(this.prisma)
+          : await this.prisma.$transaction(async (tx) => {
+              await lockClientsForDraftWrite(tx, namedClientIds(req));
+              await this.assertRequesterMayActOn(req);
+              return write(tx);
+            });
       approvalDraftId = draft.id;
       approvalStatus = 'pending';
     }
@@ -595,9 +607,15 @@ export class AiGatewayService {
     if (rest.length > 0) {
       const delegated = await this.prisma.subCoachAssignment.findMany({
         where: { sub_coach_id: req.requester.id, client_id: { in: rest }, unassigned_at: null },
-        select: { client_id: true },
+        select: { client_id: true, head_coach_id: true },
       });
-      for (const d of delegated) allowed.add(d.client_id);
+      // A coach move leaves the delegation open, so it counts only while the
+      // client is still on that head coach's roster.
+      const onRoster = delegated.length === 0 ? [] : await this.prisma.user.findMany({
+        where: { OR: delegated.map((d) => ({ id: d.client_id, coach_id: d.head_coach_id })) },
+        select: { id: true },
+      });
+      for (const u of onRoster) allowed.add(u.id);
     }
     if (named.some((id) => !allowed.has(id))) throw notFound();
   }
