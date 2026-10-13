@@ -338,11 +338,11 @@ export const ROMAN_SAFETY_TEMPLATES: Record<FixedReplyClass, string> = {
 };
 
 /**
- * The coach alert after an urgent_symptoms reply. It carries no symptom,
- * medicine or message text: the coach learns only that the reply was sent.
+ * Owner 22a and 57: added to Roman's reply when that reply alerted the
+ * client's current coach (urgent_symptoms, or eating_disorder_risk with the
+ * guided reply or the fixed fallback). Word for word.
  */
-export const ROMAN_URGENT_COACH_ALERT =
-  'Roman sent this client an urgent medical safety reply. Please check in with them.';
+export const ROMAN_COACH_TOLD_LINE = "We've let your coach know so they can check in with you.";
 
 /** Model id recorded on a short-circuited turn. */
 /**
@@ -374,11 +374,12 @@ export const ROMAN_SAFETY_ROUTER_MODEL_ID = 'safety-router';
  * in distress). Worded for a broad router match ("binge" also fires on TV).
  * When the AI can answer, the model replies under the hint below instead.
  */
-export function romanEatingDisorderFallback(hasCoach: boolean): string {
+export function romanEatingDisorderFallback(hasCoach: boolean, coachTold = false): string {
   return [
     'I am not able to answer in chat at the moment.',
     'If eating or food is weighing on you, you do not have to carry it alone.',
     ...(hasCoach ? ['Your coach would want to hear from you, and Messages reaches them.'] : []),
+    ...(hasCoach && coachTold ? [ROMAN_COACH_TOLD_LINE] : []),
     'A physician, or a qualified professional who works with eating concerns, is the right person to talk to, and it helps to tell someone you trust how you are doing.',
     'If you are in distress, call or text 988 in the United States, any hour, and a trained person will answer.',
     'If you are in immediate danger, call 911.',

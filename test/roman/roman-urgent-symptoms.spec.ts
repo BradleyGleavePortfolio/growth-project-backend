@@ -21,8 +21,9 @@ import {
   classifySafety,
   ROMAN_SAFETY_ROUTER_MODEL_ID,
   ROMAN_SAFETY_TEMPLATES,
-  ROMAN_URGENT_COACH_ALERT,
+  ROMAN_COACH_TOLD_LINE,
 } from '../../src/roman/guardrails/safety-router';
+import { SAFETY_ALERT_PUSH_BODY } from '../../src/notifications/push/lock-screen-copy';
 import { postCheckRomanReply } from '../../src/roman/guardrails/roman-post-check';
 import { AppModule } from '../../src/app.module';
 
@@ -301,6 +302,8 @@ describe('urgent_symptoms: a weight-loss medicine plus a red-flag symptom', () =
 const MESSAGE = "I'm on Zepbound and I can't keep any water down";
 const SESSION = fakeOf<RomanSession>({ id: 'sess_1', user_id: 'client-1', surface: 'client' });
 const CLIENT = { id: 'client-1', role: 'student' };
+// B-R1F: a reply that alerted the coach says so (owner 22a, 57).
+const TOLD = `${REPLY} ${ROMAN_COACH_TOLD_LINE}`;
 
 function harness(
   coachId: string | null,
@@ -351,15 +354,17 @@ async function drain(gen: AsyncGenerator<unknown>) {
 describe('urgent_symptoms on the live turn', () => {
   it('replies with the fixed text, never calls the model, and alerts the coach without symptom text', async () => {
     const h = harness('coach-1');
-    const chunks = await drain(h.svc.streamAssistantTurn(CLIENT, SESSION, { userMessage: MESSAGE }));
+    const chunks = await drain(
+      h.svc.streamAssistantTurn(CLIENT, SESSION, { userMessage: MESSAGE, userMessageId: 'msg_u1' }),
+    );
 
     expect(h.stream).not.toHaveBeenCalled();
     expect(chunks.map((c) => [c.type, c.text])).toEqual([
-      ['delta', REPLY],
-      ['done', REPLY],
+      ['delta', TOLD],
+      ['done', TOLD],
     ]);
     expect(h.messages).toEqual([
-      expect.objectContaining({ role: 'roman', content: REPLY, model_id: ROMAN_SAFETY_ROUTER_MODEL_ID }),
+      expect.objectContaining({ role: 'roman', content: TOLD, model_id: ROMAN_SAFETY_ROUTER_MODEL_ID }),
     ]);
     expect(h.audit.write.mock.calls[0][0]).toMatchObject({
       action: 'roman.safety_route',
@@ -371,7 +376,8 @@ describe('urgent_symptoms on the live turn', () => {
       clientId: 'client-1',
       alertType: 'roman_urgent_reply',
       severity: 'critical',
-      message: ROMAN_URGENT_COACH_ALERT,
+      message: SAFETY_ALERT_PUSH_BODY.roman_urgent_reply,
+      payload: { roman_message_id: 'msg_u1' },
     });
     expect(JSON.stringify(h.alerts.createAlert.mock.calls)).not.toMatch(/zepbound|water|keep/i);
   });
@@ -408,7 +414,7 @@ describe('urgent_symptoms on the live turn', () => {
     const symptom = "I can't keep any water down";
     await expect(h.svc.isSafetyShortCircuit(CLIENT, SESSION.id, symptom)).resolves.toBe(true);
     const chunks = await drain(h.svc.streamAssistantTurn(CLIENT, SESSION, { userMessage: symptom }));
-    expect(chunks[1]).toMatchObject({ type: 'done', text: REPLY });
+    expect(chunks[1]).toMatchObject({ type: 'done', text: TOLD });
     expect(h.stream).not.toHaveBeenCalled();
     expect(h.alerts.createAlert).toHaveBeenCalledTimes(1);
     expect(h.findMany.mock.calls[0][0]).toMatchObject({
@@ -433,7 +439,7 @@ describe('urgent_symptoms on the live turn', () => {
     await expect(h.svc.isSafetyShortCircuit(CLIENT, SESSION.id, symptom)).resolves.toBe(true);
     rows.unshift({ role: 'user', content: symptom }); // the controller stores the turn
     const chunks = await drain(h.svc.streamAssistantTurn(CLIENT, SESSION, { userMessage: symptom }));
-    expect(chunks[0]).toMatchObject({ type: 'delta', text: REPLY });
+    expect(chunks[0]).toMatchObject({ type: 'delta', text: TOLD });
     expect(h.stream).not.toHaveBeenCalled();
     expect(h.alerts.createAlert).toHaveBeenCalledTimes(1);
   });
@@ -464,7 +470,7 @@ describe('the coach alert for an urgent reply', () => {
       coachId: 'coach-1',
       clientId: 'client-1',
       alertType: 'roman_urgent_reply' as const,
-      message: ROMAN_URGENT_COACH_ALERT,
+      message: SAFETY_ALERT_PUSH_BODY.roman_urgent_reply,
     };
     await alerts.createAlert(input);
     await alerts.createAlert(input);
