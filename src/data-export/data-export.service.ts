@@ -298,25 +298,6 @@ const INVITE_REDEMPTION_EXPORT_SELECT: Record<string, true> = {
 };
 
 /**
- * Roman workout adjustments proposed for the user: the recovery signals they
- * were based on, the change and its outcome. The coach's own dismiss note and
- * the internal rule key are left out.
- */
-const WORKOUT_ADJUSTMENT_EXPORT_SELECT: Record<string, true> = {
-  id: true,
-  coach_id: true,
-  assignment_id: true,
-  status: true,
-  severity: true,
-  signals: true,
-  proposed_change: true,
-  applied_change: true,
-  roman_text: true,
-  decided_at: true,
-  created_at: true,
-};
-
-/**
  * Roman v1.1 memory (R11-M1): the notes Roman keeps about the user (live,
  * expired and superseded), with when each was said and when it expires. The
  * internal slot key and the source message id are left out.
@@ -1484,7 +1465,6 @@ export class DataExportService {
       broadcastDeliveries,
       coachCodeRedemptions,
       inviteRedemptions,
-      workoutAdjustments,
       romanClientNotes,
       romanClientSummaries,
       coachPlaybook,
@@ -1604,11 +1584,9 @@ export class DataExportService {
           orderBy: [{ redeemed_at: 'asc' }, { id: 'asc' }],
         },
       ),
-      this._streamAll(
-        'workoutAdjustmentProposal',
-        { client_id: userId },
-        { select: WORKOUT_ADJUSTMENT_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
-      ),
+      // Owner C-3: Roman's workout-change proposals (WorkoutAdjustmentProposal)
+      // are coach-side rows and are not exported (approve writes its change into
+      // the assignment itself). Account deletion still erases them.
       // R11-M1: Roman's notes and summaries about the user (their own rows only).
       this._streamAll(
         'romanClientNote',
@@ -1745,7 +1723,6 @@ export class DataExportService {
       broadcasts_received: broadcastDeliveries,
       coach_code_redemptions: coachCodeRedemptions,
       invite_redemptions: inviteRedemptions,
-      workout_adjustments: workoutAdjustments,
       roman_notes: romanClientNotes,
       roman_summaries: romanClientSummaries,
       coach_playbook: coachPlaybook,
