@@ -55,7 +55,7 @@ const KNOWN_GAPS: Array<{ id: string; rule: Rule; key: string; reason: string }>
   { id: 'CONTRACT-1 purchases', rule: 1, key: 'GET /v1/coach/payments/purchases', reason: 'waiting on owner CONTRACT-1' },
   { id: 'CONTRACT-1 purchase', rule: 1, key: 'GET /v1/coach/payments/purchases/:id', reason: 'waiting on owner CONTRACT-1' },
   { id: 'CONTRACT-1 sales', rule: 1, key: 'GET /v1/coach/purchases', reason: 'waiting on owner CONTRACT-1' },
-  { id: 'BRIEF4B', rule: 2, key: 'GET /coach/brief/today', reason: "the new coach's brief may show the old coach's private text; BRIEF4B is checking it" },
+  { id: 'BRIEF4B', rule: 2, key: 'GET /coach/brief/today', reason: "the new coach's brief shows the old coach's unread chat lines; BRIEF4B (b#964) fixes it" },
   { id: 'HIST-4b meal plans', rule: 2, key: 'GET /coach/clients/:client_id/meal-plans', reason: "the new coach lists only the meal plans they wrote; waiting on owner HIST-4b" },
   { id: 'HIST-4b past session', rule: 2, key: 'GET /scheduling/sessions/:id', reason: "the new coach can't open the client's past session; waiting on owner HIST-4b" },
   { id: 'CONSENT-2 grant', rule: 3, key: 'POST /me/ai-consent/roman', reason: 'a coachless client can still grant AI consent; CONSENT-2 (b#954) answers 403' },
