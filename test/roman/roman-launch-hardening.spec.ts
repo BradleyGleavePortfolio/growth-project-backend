@@ -67,7 +67,7 @@ afterEach(() => {
 
 // ─── fixtures ───────────────────────────────────────────────────────────────
 
-const CLIENT = { id: 'client-1', role: 'student', tier: 'free' as const };
+const CLIENT = { id: 'client-1', role: 'student' };
 
 function session() {
   return {
@@ -682,7 +682,7 @@ describe('FR1-651-1 Roman failure logs are content-free for every error class, n
 });
 
 describe('FR1-651-2 Roman failure copy is written for the caller (a coach is never told to message "your coach")', () => {
-  const COACH = { id: 'coach-1', role: 'coach', tier: 'free' as const };
+  const COACH = { id: 'coach-1', role: 'coach' };
   const coachSession = () => ({ ...session(), user_id: COACH.id, surface: 'coach' as const });
 
   it('over the daily cap: the coach gets the coach-audience copy on both checks', async () => {
@@ -832,7 +832,7 @@ describe('FR1-651-9 a chat deleted during the model call settles the ledger and 
 // sends the rules that say so, and the ledger and log record the coach
 // prompt version; a client turn keeps the client contract's PROMPT_VERSION.
 describe('COACH-ROMAN-SURFACE-130 a coach turn carries the coach rules and records the coach prompt version', () => {
-  const COACH = { id: 'coach-1', role: 'coach', tier: 'free' as const };
+  const COACH = { id: 'coach-1', role: 'coach' };
   const coachSession = () => ({ ...session(), user_id: COACH.id, surface: 'coach' as const });
 
   it('coach: no-client-data and no-invented-number rules sent, roman-coach-v1 in ledger and log; client: PROMPT_VERSION', async () => {

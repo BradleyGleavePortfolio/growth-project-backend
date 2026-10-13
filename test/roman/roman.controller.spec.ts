@@ -171,24 +171,15 @@ function makeService() {
   };
 }
 
-function makePrisma() {
-  return {
-    coachSubscription: {
-      findUnique: jest.fn(async () => null), // no row → free tier
-    },
-  };
-}
-
 function makeController() {
   const service = makeService();
-  const prisma = makePrisma();
-  const ctrl = new RomanController(service as never, prisma as never);
+  const ctrl = new RomanController(service as never);
   const req = {
     user: { id: 'user-A', role: 'student', coach_id: 'coach-1' },
     on: jest.fn(),
     off: jest.fn(),
   } as never;
-  return { ctrl, service, prisma, req };
+  return { ctrl, service, req };
 }
 
 // A fake express Response capturing SSE writes.
@@ -304,9 +295,8 @@ describe('RomanController — POST /roman/sessions (open or resume)', () => {
 
     expect(service.openOrResumeSession).toHaveBeenCalledTimes(1);
     const caller = (service.openOrResumeSession.mock.calls[0][0]) as unknown as RomanCaller;
-    expect(caller.id).toBe('user-A');
-    expect(caller.role).toBe('student');
-    expect(caller.tier).toBe('free'); // no CoachSubscription row
+    // NOLOCK-R: only the signed-in id and role; no plan, tier or subscription.
+    expect(caller).toEqual({ id: 'user-A', role: 'student' });
     expect(service.openOrResumeSession.mock.calls[0][1]).toBe('client');
 
     // Response is the camelCase mobile view, not the raw row.
@@ -318,15 +308,6 @@ describe('RomanController — POST /roman/sessions (open or resume)', () => {
     expect(out).toHaveProperty('startedAt');
     expect(out).toHaveProperty('lastActivityAt');
     expect(out).not.toHaveProperty('user_id'); // never leak owner column
-  });
-
-  it('resolves the pro tier when a CoachSubscription row exists', async () => {
-    flagOn();
-    const { ctrl, service, prisma, req } = makeController();
-    prisma.coachSubscription.findUnique.mockResolvedValueOnce({ tier: 'pro' } as never);
-    await ctrl.openSession(req, { surface: 'coach' });
-    const caller = service.openOrResumeSession.mock.calls[0][0] as unknown as RomanCaller;
-    expect(caller.tier).toBe('pro');
   });
 });
 

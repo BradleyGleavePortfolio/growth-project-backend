@@ -24,8 +24,8 @@ if (!TEST_DB_URL) {
   console.warn('[r11-memory-schema.live] MWB3_TEST_DATABASE_URL not set; live suite skipped.');
 }
 
-const A: RomanCaller = { id: 'r11-m1-live-a', role: 'student', tier: 'free' };
-const B: RomanCaller = { id: 'r11-m1-live-b', role: 'student', tier: 'free' };
+const A: RomanCaller = { id: 'r11-m1-live-a', role: 'student' };
+const B: RomanCaller = { id: 'r11-m1-live-b', role: 'student' };
 
 liveDescribe('R11-M1 live: a deleted chat keeps Roman notes with a null source (Postgres)', () => {
   let prisma: PrismaService;

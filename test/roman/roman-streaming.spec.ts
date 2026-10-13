@@ -265,7 +265,7 @@ function parseFrames(writes: string[]) {
     });
 }
 
-const FREE = { id: 'user-A', role: 'student', tier: 'free' as const };
+const FREE = { id: 'user-A', role: 'student' };
 
 describe('Roman SSE streaming — happy path', () => {
   it('translates Anthropic deltas into SSE frames and persists the full turn', async () => {
@@ -307,10 +307,7 @@ describe('Roman SSE streaming — happy path', () => {
     const { prisma } = makePrisma();
     const anthropic = makeAnthropic(['Let', "'s go"]);
     const service = new RomanService(prisma as never, grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)));
-    const ctrl = new RomanController(
-      service as never,
-      { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
-    );
+    const ctrl = new RomanController(service as never);
     const req = makeReq();
     const { res, writes, isEnded } = makeRes();
 
@@ -348,10 +345,7 @@ describe('Roman SSE streaming — client disconnect', () => {
     };
     const anthropic = makeAnthropic(['First ', 'second ', 'third'], gap);
     const service = new RomanService(prisma as never, grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)));
-    const ctrl = new RomanController(
-      service as never,
-      { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
-    );
+    const ctrl = new RomanController(service as never);
     const { res, writes, isEnded } = makeRes();
 
     await ctrl.sendMessage(req as never, res as never, 'sess_1', {
@@ -385,10 +379,7 @@ describe('Roman SSE streaming — client disconnect', () => {
     };
     const anthropic = makeAnthropic(['First ', 'second ', 'third'], gap);
     const service = new RomanService(prisma as never, grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)));
-    const ctrl = new RomanController(
-      service as never,
-      { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
-    );
+    const ctrl = new RomanController(service as never);
     const { res } = makeRes();
 
     await ctrl.sendMessage(req as never, res as never, 'sess_1', {
@@ -434,10 +425,7 @@ describe('Roman SSE streaming — client disconnect', () => {
     };
     const anthropic = makeAnthropic(['never-seen'], gap);
     const service = new RomanService(prisma as never, grantAllEgress(), AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)));
-    const ctrl = new RomanController(
-      service as never,
-      { coachSubscription: { findUnique: jest.fn(async () => null) } } as never,
-    );
+    const ctrl = new RomanController(service as never);
     const { res } = makeRes();
 
     await ctrl.sendMessage(req as never, res as never, 'sess_1', { content: 'x' });
@@ -487,10 +475,7 @@ describe('Roman — R2b box-2 consent', () => {
       egress,
       AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)),
     );
-    const ctrl = new RomanController(
-      fakeOf(service),
-      fakeOf({ coachSubscription: { findUnique: jest.fn(async () => null) } }),
-    );
+    const ctrl = new RomanController(fakeOf(service));
     return { service, ctrl, messages, anthropic, reader };
   }
 
@@ -580,7 +565,7 @@ describe('Roman — R2b box-2 consent', () => {
 
   it('coach caller: own scope, no client consent read', async () => {
     const { service, reader } = setup([]);
-    await expect(service.assertMayUseAi({ id: 'coach-1', role: 'coach', tier: 'free' })).resolves.toBeUndefined();
+    await expect(service.assertMayUseAi({ id: 'coach-1', role: 'coach' })).resolves.toBeUndefined();
     expect(reader.calls).toHaveLength(0);
   });
 });
@@ -597,10 +582,7 @@ describe('Roman — crisis messages are never blocked by the turn limit or the s
       grantAllEgress(),
       AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)),
     );
-    const ctrl = new RomanController(
-      fakeOf(service),
-      fakeOf({ coachSubscription: { findUnique: jest.fn(async () => null) } }),
-    );
+    const ctrl = new RomanController(fakeOf(service));
     return { ...made, anthropic, ctrl };
   }
   afterEach(() => {
@@ -699,10 +681,7 @@ describe('Roman — a crisis message is answered without box 2; nothing else is'
       egress,
       withModel ? AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)) : undefined,
     );
-    const ctrl = new RomanController(
-      fakeOf(service),
-      fakeOf({ coachSubscription: { findUnique: jest.fn(async () => null) } }),
-    );
+    const ctrl = new RomanController(fakeOf(service));
     return { ctrl, messages, anthropic };
   }
 
@@ -770,10 +749,7 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
       null,
       fakeOf<AuditService>(audit),
     );
-    const ctrl = new RomanController(
-      fakeOf(service),
-      fakeOf({ coachSubscription: { findUnique: jest.fn(async () => null) } }),
-    );
+    const ctrl = new RomanController(fakeOf(service));
     return { ...made, anthropic, audit, ctrl };
   }
   afterEach(() => {

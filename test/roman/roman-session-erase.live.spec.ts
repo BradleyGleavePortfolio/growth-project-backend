@@ -14,7 +14,7 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../src/prisma.service';
 import { RomanCaller, RomanService, dayKeyUtc, erasedDayKey } from '../../src/roman/roman.service';
-import { ROMAN_RATE_LIMIT_FREE_PER_DAY } from '../../src/roman/roman.constants';
+import { ROMAN_MESSAGES_PER_DAY } from '../../src/roman/roman.constants';
 import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import { bootstrapTestSchema } from '../utils/bootstrap-test-schema';
 import { resetPublicSchema } from '../utils/reset-public-schema';
@@ -31,8 +31,8 @@ function withPool(url: string): string {
   return url.includes('connection_limit=') ? url : `${url}${sep}connection_limit=8`;
 }
 
-const ME: RomanCaller = { id: 'b635-live-me', role: 'student', tier: 'free' };
-const OTHER: RomanCaller = { id: 'b635-live-other', role: 'student', tier: 'free' };
+const ME: RomanCaller = { id: 'b635-live-me', role: 'student' };
+const OTHER: RomanCaller = { id: 'b635-live-other', role: 'student' };
 
 liveDescribe('B-635-1 / C-635-1 live: Roman delete erases and frees the day key (Postgres)', () => {
   let prisma: PrismaService;
@@ -160,7 +160,7 @@ liveDescribe('B-635-1 / C-635-1 live: Roman delete erases and frees the day key 
   it('delete + reopen never resets the daily cap', async () => {
     const s = await svc.openOrResumeSession(ME, 'client');
     await prisma.romanMessage.createMany({
-      data: Array.from({ length: ROMAN_RATE_LIMIT_FREE_PER_DAY }, (_, i) => ({
+      data: Array.from({ length: ROMAN_MESSAGES_PER_DAY }, (_, i) => ({
         session_id: s.id,
         user_id: ME.id,
         role: 'user' as const,
@@ -237,7 +237,7 @@ liveDescribe('B-635-1 / C-635-1 live: Roman delete erases and frees the day key 
   it('B-635-2: the list pages every live chat newest first; delete-all erases prior days and today on both surfaces, nobody else, cap kept', async () => {
     const old = await seedChat(ME.id, 'client', '2026-09-20', new Date(Date.now() - 12 * DAY), [
       'old question',
-      ...Array.from({ length: ROMAN_RATE_LIMIT_FREE_PER_DAY - 4 }, (_, i) => `o${i}`),
+      ...Array.from({ length: ROMAN_MESSAGES_PER_DAY - 4 }, (_, i) => `o${i}`),
     ]);
     const coach = await seedChat(ME.id, 'coach', '2026-09-30', new Date(Date.now() - 2 * DAY), [
       'coach-surface question',
@@ -275,8 +275,8 @@ liveDescribe('B-635-1 / C-635-1 live: Roman delete erases and frees the day key 
     expect(
       (await prisma.romanSession.findUniqueOrThrow({ where: { id: theirs.id } })).deleted_at,
     ).toBeNull();
-    // The cap is not reset: 47 + 1 + 1 erased user turns plus this one is the
-    // free cap (without the erased counts it would be 1 of 50).
+    // The cap is not reset: 97 + 1 + 1 erased user turns plus this one is the
+    // cap (without the erased counts it would be 1 of 100).
     const fresh = await svc.openOrResumeSession(ME, 'client');
     await svc.appendMessage(ME, fresh.id, { role: 'user', content: 'after delete-all' });
     await expect(svc.assertWithinRateLimit(ME)).rejects.toMatchObject({
