@@ -18,6 +18,7 @@ import {
   AppleTokenRevocationService,
 } from './apple-token-revocation.service';
 import { executeErasureManifest } from './account-deletion.manifest';
+import { deleteDraftsLeftByMove } from '../coach/moved-client-drafts';
 import {
   TOMBSTONE_AUTH_PREFIX,
   RECEIPT_KEY_PREFIX,
@@ -811,13 +812,20 @@ export class AccountDeletionService {
           },
         });
 
-        // 3. Every user-referencing table (A-608-1).
+        // 3. Every user-referencing table (A-608-1). It detaches this user's
+        //    clients, who then have no coach: owner decision 17 deletes the
+        //    drafts about them that anyone still holds, after the detach.
+        const leftClients = await tx.user.findMany({
+          where: { coach_id: userId, role: 'student' },
+          select: { id: true },
+        });
         const steps = await executeErasureManifest(tx, {
           userId,
           email: user.email,
           tombstoneEmail,
           now,
         });
+        await deleteDraftsLeftByMove(tx, leftClients.map((c) => c.id), null);
         const rowsChanged = steps.reduce((sum, s) => sum + s.count, 0);
 
         // 4. Audit: lifecycle rows carry the user id, so they go; one outcome

@@ -25,7 +25,7 @@ import {
   COACH_AI_BUDGET_EXHAUSTED_CODE,
   COACH_AI_METERED_CAPABILITIES,
 } from '../../src/ai-credits/ai-credits.constants';
-import { fakeOf } from '../ai-egress/ai-egress.fakes';
+import { fakeOf, withTx } from '../ai-egress/ai-egress.fakes';
 
 type Method = 'generateWorkoutProgram' | 'generateMealPlan' | 'generateClientInsight';
 const METHODS: Array<[Method, string]> = [
@@ -99,7 +99,7 @@ function build(budget: object) {
   }));
   const prisma = { aIDraft: { create: jest.fn(async () => ({ id: 'draft-1' })) } };
   const svc = new CoachAIService(
-    fakeOf(prisma),
+    fakeOf(withTx(prisma)),
     fakeOf({ isReady: () => true }),
     fakeOf({ completeStructured }),
     fakeOf({ build: jest.fn(async () => ({ prescribed: { calories: null, protein_g: null } })) }),

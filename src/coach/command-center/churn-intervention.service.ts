@@ -46,6 +46,7 @@ import { UNTRUSTED_TEXT_RULE, fenceUntrusted } from '../../ai/utils/untrusted-te
 import { CHURN_FACTOR_SCOPES, coachVisibleFactors } from './churn-factor-scopes';
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import { PrismaService } from '../../prisma.service';
+import { isClientOf, lockClientsForDraftWrite } from '../moved-client-drafts';
 import { PtmService } from '../../ptm/ptm.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import {
@@ -488,13 +489,23 @@ export class ChurnInterventionService {
       });
     }
 
-    const intervention = await this.prisma.churnIntervention.update({
-      where: { id: claimed.id },
-      data: {
-        draft_text: draftText,
-        status: 'draft',
-      },
+    // Owner decision 17: saved only while the client is still this coach's;
+    // otherwise the pending row goes too.
+    const intervention = await this.prisma.$transaction(async (tx) => {
+      const [locked] = await lockClientsForDraftWrite(tx, [clientId]);
+      if (!isClientOf(locked, coachId)) {
+        await tx.churnIntervention.deleteMany({ where: { id: claimed.id } });
+        return null;
+      }
+      return tx.churnIntervention.update({
+        where: { id: claimed.id },
+        data: {
+          draft_text: draftText,
+          status: 'draft',
+        },
+      });
     });
+    if (!intervention) throw new NotFoundException('Client not found');
 
     return this.toDto(intervention, client.name);
   }
@@ -594,6 +605,9 @@ export class ChurnInterventionService {
 
     try {
       await this.prisma.$transaction(async (tx) => {
+        // Owner decision 4: refused once the client is no longer this coach's.
+        const [client] = await lockClientsForDraftWrite(tx, [intervention.client_id]);
+        if (!isClientOf(client, coachId)) throw new NotFoundException('Intervention not found');
         const claim = await tx.churnIntervention.updateMany({
           where: {
             id: interventionId,
