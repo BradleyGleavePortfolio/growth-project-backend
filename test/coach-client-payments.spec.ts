@@ -88,7 +88,7 @@ describe('CF-COACH-PAY-BE-128 coach client payments', () => {
     const w = build([plan(), plan({ id: 'p2', coach_user_id: 'coach-b' })], true);
     const { plans } = await w.service.list(A, CLIENT);
     expect(plans.map((p) => p.purchase_id)).toEqual(['p1']);
-    expect(plans[0].billing).toBe('paused');
+    expect(plans[0]).toMatchObject({ billing: 'paused' });
     expect(plans[0].actions).toEqual({ refund: true, pause: false, resume: true, cancel: true, restart: false });
     expect(plans[0].payments[0]).toEqual(expect.objectContaining({
       charge_id: 'ch_2', amount_cents: 5000, refunded_cents: 1000, refundable_cents: 3500,
@@ -146,11 +146,11 @@ describe('CF-COACH-PAY-BE-128 coach client payments', () => {
     const w = build([plan()]);
     const paused = await w.service.pause(A, CLIENT, 'p1', KEY);
     expect(w.stripe.pauseSubscriptionCollection).toHaveBeenCalledWith({ subscriptionId: 'sub_1', idempotencyKey: `tgp-coach-pause-p1-${KEY}` });
-    expect(paused.plan.billing).toBe('paused');
+    expect(paused.plan).toMatchObject({ billing: 'paused' });
     expect(w.audit.write).toHaveBeenCalledWith(expect.objectContaining({ action: 'coach_payments.billing_paused' }));
 
     const p = build([plan()], true);
-    expect((await p.service.resume(A, CLIENT, 'p1', KEY)).plan.billing).toBe('running');
+    expect((await p.service.resume(A, CLIENT, 'p1', KEY)).plan).toMatchObject({ billing: 'running' });
     expect(p.stripe.resumeSubscriptionCollection).toHaveBeenCalledWith({ subscriptionId: 'sub_1', idempotencyKey: `tgp-coach-resume-p1-${KEY}` });
 
     const r = build([plan({ status: 'refunded', dunning: { status: 'active', last_failure_reason: 'charge_refunded' } })]);

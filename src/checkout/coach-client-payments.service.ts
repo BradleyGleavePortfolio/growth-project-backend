@@ -105,7 +105,9 @@ export class CoachClientPaymentsService {
     const shown = rows.filter(
       (r) => r.settlements.length > 0 || LIVE_STATUSES.has(r.status) || isRefundOrDisputePaused(r),
     );
-    return { plans: await Promise.all(shown.map((r) => this.view(actor, r))) };
+    const plans = await Promise.all(shown.map((r) => this.view(actor, r)));
+    const moved = await this.movedAway(actor, clientId);
+    return { plans: plans.map((p) => (moved ? moneyPlan(p) : p)) };
   }
 
   async refund(actor: User, clientId: string, purchaseId: string, input: CoachRefundDto) {
@@ -186,7 +188,7 @@ export class CoachClientPaymentsService {
     await this.audit(actor, row, 'coach_payments.plan_canceled', { ...outcome, request_key: key });
     return {
       ...outcome,
-      ...((await this.movedAway(actor, row)) ? { access_ends_at: null } : {}),
+      ...((await this.movedAway(actor, clientId)) ? { access_ends_at: null } : {}),
       message: CANCEL_COPY[result.outcome],
       plan: await this.reload(actor, clientId, purchaseId),
     };
@@ -202,7 +204,9 @@ export class CoachClientPaymentsService {
   ) {
     const row = await this.scopedRow(actor, clientId, purchaseId);
     const current = await this.view(actor, row);
-    if (current.billing === (action === 'pause' ? 'paused' : 'running')) return { plan: current };
+    if (current.billing === (action === 'pause' ? 'paused' : 'running')) {
+      return { plan: await this.present(actor, clientId, current) };
+    }
     if (!current.actions[action] || !row.stripe_subscription_id) {
       throw this.notAllowed(current, action);
     }
@@ -221,7 +225,7 @@ export class CoachClientPaymentsService {
     }
     const audited = action === 'pause' ? 'billing_paused' : 'billing_resumed';
     await this.audit(actor, row, `coach_payments.${audited}`, { request_key: key });
-    return { plan: await this.view(actor, row, sub) };
+    return { plan: await this.present(actor, clientId, await this.view(actor, row, sub)) };
   }
 
   /** The client's paid plans this actor sold, or sold by a coach on the actor's team. */
@@ -266,18 +270,21 @@ export class CoachClientPaymentsService {
   }
 
   private async reload(actor: User, clientId: string, purchaseId: string) {
-    return this.view(actor, await this.scopedRow(actor, clientId, purchaseId));
+    const row = await this.scopedRow(actor, clientId, purchaseId);
+    return this.present(actor, clientId, await this.view(actor, row));
   }
 
   private async view(actor: User, row: PlanRow, sub?: StripeSubscriptionObject) {
-    const view = planView(row, actor.id, await this.billingOf(row, sub));
-    if (!(await this.movedAway(actor, row))) return view;
-    return { ...view, current_period_end: null, access_expires_at: null };
+    return planView(row, actor.id, await this.billingOf(row, sub));
   }
 
-  /** CONTRACT-1: a client who moved away keeps the sale and actions, never their access dates. */
-  private async movedAway(actor: User, row: PlanRow): Promise<boolean> {
-    return (await movedAwayClientIds(this.prisma, actor.id, [row.client_user_id])).size > 0;
+  /** CONTRACT-1: a plan of a client who moved away is shown as its money record only. */
+  private async present(actor: User, clientId: string, plan: CoachClientPlanView) {
+    return (await this.movedAway(actor, clientId)) ? moneyPlan(plan) : plan;
+  }
+
+  private async movedAway(actor: User, clientId: string): Promise<boolean> {
+    return (await movedAwayClientIds(this.prisma, actor.id, [clientId])).size > 0;
   }
 
   private async billingOf(row: PlanRow, sub?: StripeSubscriptionObject): Promise<CoachPlanBilling> {
@@ -386,6 +393,21 @@ function planView(row: PlanRow, actorId: string, billing: CoachPlanBilling) {
       restart: billing === 'paused_by_refund_or_dispute' && row.coach_user_id === actorId,
     },
     payments,
+  };
+}
+
+/** CONTRACT-1: the sale, its payments and the refund and restart actions; no access or renewal. */
+function moneyPlan(p: CoachClientPlanView) {
+  return {
+    purchase_id: p.purchase_id,
+    package_name: p.package_name,
+    billing_type: p.billing_type,
+    status: p.status,
+    amount_cents: p.amount_cents,
+    currency: p.currency,
+    created_at: p.created_at,
+    actions: { refund: p.actions.refund, restart: p.actions.restart },
+    payments: p.payments,
   };
 }
 

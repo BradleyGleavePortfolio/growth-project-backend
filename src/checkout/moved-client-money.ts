@@ -6,11 +6,13 @@ import type { CoachPurchaseView } from './coach-payments.select';
 // and disputes."
 //
 // One rule for every coach money read: a row about a client who has moved
-// away keeps the sale record (record id, the client's name, date, amount,
-// status, currency and the coach's own package) and loses the client's id
-// (the link to their profile), contact details, access dates and
-// payment-failure details. Refund and dispute actions still work: they check
-// the seller, not the roster.
+// away keeps the sale record (record id, date, amount, status, currency, which
+// of the coach's packages, one-time or recurring, and the client's name where
+// the route shows one) and loses the client's id (the link to their profile),
+// contact details, access and renewal state, and payment-failure details.
+// Lists about the client's current state (a package's subscribers, Needs
+// attention) leave them out. Refund and dispute actions still work: they
+// check the seller, not the roster.
 
 type MovedPrisma = Pick<PrismaService, 'user' | 'subCoachAssignment'>;
 
@@ -52,21 +54,17 @@ const moneyRecord = (r: CoachPurchaseView) => ({
   amount_cents: r.amount_cents,
   currency: r.currency,
   status: r.status,
-  entitlement_active: r.entitlement_active,
-  cancel_at_period_end: r.cancel_at_period_end,
   created_at: r.created_at,
 });
 
-export type MoneyRecord = ReturnType<typeof moneyRecord> & { client?: { name: string } };
+export type MoneyRecord = ReturnType<typeof moneyRecord>;
 
 /** The coach's purchase rows, each row about a moved-away client cut to its money record. */
-export async function keepMoneyRecordsOnly<
-  T extends CoachPurchaseView & { client?: { name: string } | null },
->(prisma: MovedPrisma, coachId: string, rows: T[]): Promise<Array<T | MoneyRecord>> {
+export async function keepMoneyRecordsOnly<T extends CoachPurchaseView>(
+  prisma: MovedPrisma,
+  coachId: string,
+  rows: T[],
+): Promise<Array<T | MoneyRecord>> {
   const moved = await movedAwayClientIds(prisma, coachId, rows.map((r) => r.client_user_id));
-  return rows.map((r) => {
-    if (!moved.has(r.client_user_id)) return r;
-    const record = moneyRecord(r);
-    return r.client ? { ...record, client: { name: r.client.name } } : record;
-  });
+  return rows.map((r) => (moved.has(r.client_user_id) ? moneyRecord(r) : r));
 }

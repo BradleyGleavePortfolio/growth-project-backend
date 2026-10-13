@@ -12,7 +12,7 @@ import { Prisma } from '@prisma/client';
 import type { CoachPackage } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { COACH_PURCHASE_SELECT } from '../checkout/coach-payments.select';
-import { keepMoneyRecordsOnly, type MoneyRecord } from '../checkout/moved-client-money';
+import { movedAwayClientIds } from '../checkout/moved-client-money';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { assertValidTrial, TRIAL_DAYS_NONE } from './trials/trial-rules';
 import {
@@ -182,7 +182,7 @@ export interface CoachPackageManagementView extends CoachPackage {
 }
 
 export interface SubscribersPage {
-  subscribers: Array<CoachSubscriberRow | MoneyRecord>;
+  subscribers: CoachSubscriberRow[];
   next_offset: number | null;
   total_returned: number;
   package_id: string;
@@ -864,12 +864,16 @@ export class PackagesService {
     });
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
+    // CONTRACT-1: every line of a subscriber row is the client's current access,
+    // so a client who moved away leaves the list; their sales stay in Money.
+    const ids = page.map((r) => r.client_user_id);
+    const moved = await movedAwayClientIds(this.prisma, coachUserId, ids);
+    const subscribers = page.filter((r) => !moved.has(r.client_user_id));
     const [view] = await this.managementViews([pkg]);
     return {
-      // CONTRACT-1: a client who moved away leaves only the money record.
-      subscribers: await keepMoneyRecordsOnly(this.prisma, coachUserId, page),
+      subscribers,
       next_offset: hasMore ? offset + limit : null,
-      total_returned: page.length,
+      total_returned: subscribers.length,
       package_id: packageId,
       currency: view.currency,
       subscriber_count: view.subscriber_count,

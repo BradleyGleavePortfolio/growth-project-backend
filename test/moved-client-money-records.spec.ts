@@ -24,11 +24,20 @@ const KEY = '33333333-3333-4333-8333-333333333333';
 const at = (day: number) => new Date(Date.UTC(2026, 9, day, 12));
 /** The only fields a purchase row about Ana keeps once she has moved (listed in the PR). */
 const KEPT = [
-  'amount_cents', 'billing_type', 'cancel_at_period_end', 'created_at', 'currency',
-  'entitlement_active', 'id', 'package_id', 'status',
+  'amount_cents', 'billing_type', 'created_at', 'currency', 'id', 'package_id', 'status',
+];
+/** The only fields her plan keeps on the client payments routes. */
+const PLAN_KEPT = [
+  'actions', 'amount_cents', 'billing_type', 'created_at', 'currency', 'package_name', 'payments',
+  'purchase_id', 'status',
 ];
 /** Never in the old coach's responses once Ana has moved: her id, email, card error, new coach. */
 const GONE_AFTER_MOVE = [CLIENT, 'ana@example.test', 'card_declined', NEW];
+/** Nor whether she still has access or renews. */
+const ACCESS = [
+  'entitlement_active', 'cancel_at_period_end', 'current_period_end', 'access_expires_at',
+  'billing',
+];
 
 const read = (db: StatefulPrisma, model: string) => ({
   findMany: async (args: Row = {}) => findMany(db, model, args),
@@ -49,7 +58,7 @@ function world() {
       amount_cents: 4900, currency: 'usd', billing_type: 'recurring', status: 'past_due',
       entitlement_active: true, access_expires_at: at(30), current_period_end: at(30),
       cancel_at_period_end: false, canceled_at: null, last_error: 'card_declined',
-      source: null, created_at: at(1), updated_at: at(2), stripe_subscription_id: null,
+      source: null, created_at: at(1), updated_at: at(2), stripe_subscription_id: 'sub_1',
       settlements: [{
         stripe_charge_id: 'ch_1', currency: 'usd', gross_cents: 4900, refunded_cents: 0,
         dispute_withdrawn_cents: 0, created_at: at(1),
@@ -83,6 +92,13 @@ function world() {
       id: 'r1', amount_cents: a.amount_cents, status: 'succeeded',
     })),
   };
+  const stripe = { retrieveSubscription: async () => ({ pause_collection: null }) };
+  const billing = {
+    cancelPlan: async () => ({
+      outcome: 'scheduled', access_ends_at: at(30).toISOString(), voided_invoice_count: 0,
+      voided_amount_cents: 0,
+    }),
+  };
   const headOf = { resolveHeadCoachId: async () => null };
   const audit = { write: async () => undefined };
   const make = <T>(cls: new (...args: never[]) => T, ...deps: unknown[]): T =>
@@ -94,7 +110,7 @@ function world() {
     ops: make(CoachPaymentOpsController, {}, {}, {}, {}, {}),
     packages: make(PackagesService, {}),
     money: make(CoachMoneyService),
-    payments: make(CoachClientPaymentsService, {}, refunds, {}, headOf, audit),
+    payments: make(CoachClientPaymentsService, stripe, refunds, billing, headOf, audit),
     decisions: make(PartialRefundDecisionService, {}),
   };
 }
@@ -190,13 +206,14 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
         id: 'p1', amount_cents: 4900, currency: 'usd', status: 'past_due', created_at: at(1),
       });
     }
-    expect(Object.keys(r.subscribers[0]).sort()).toEqual([...KEPT, 'client'].sort());
-    expect(r.subscribers[0].client).toEqual({ name: ANA });
+    // Every line of a subscriber row is her current access, so she leaves the list.
+    expect(r.subscribers).toEqual([]);
     expect(r.payment.dunning).toBeNull();
     expect(r.payment.split_ledger).toEqual([
       expect.objectContaining({ id: 'l1', amount_cents: 4802 }),
     ]);
     for (const gone of GONE_AFTER_MOVE) expect(JSON.stringify(r)).not.toContain(gone);
+    for (const key of ACCESS) expect(JSON.stringify(r)).not.toContain(`"${key}":`);
   });
 
   it('after the move Money keeps name, date and amount; nothing opens the client', async () => {
@@ -215,13 +232,17 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
     expect(r.decisions).toEqual([{ ...before.decisions[0], client_user_id: null }]);
   });
 
-  it('after the move the refund still works; the plan keeps payments, not dates', async () => {
+  it('after the move refund works; the plan keeps the sale and its payments', async () => {
     const w = world();
     const before = await readAll(w);
     w.moveTo(NEW);
-    const noDates = { current_period_end: null, access_expires_at: null };
     const { plans } = await w.payments.list(coach(OLD), CLIENT);
-    expect(plans).toEqual([{ ...before.plans[0], ...noDates }]);
+    expect(Object.keys(plans[0]).sort()).toEqual(PLAN_KEPT);
+    expect(plans[0]).toMatchObject({
+      purchase_id: 'p1', amount_cents: 4900, currency: 'usd', status: 'past_due',
+      created_at: at(1).toISOString(), payments: before.plans[0].payments,
+    });
+    expect(plans[0].actions).toEqual({ refund: true, restart: false });
     const out = await w.payments.refund(coach(OLD), CLIENT, 'p1', {
       idempotency_key: KEY, charge_id: 'ch_1', amount_cents: 1000,
     });
@@ -229,7 +250,10 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
       purchase_id: 'p1', charge_id: 'ch_1', amount_cents: 1000, initiated_by_user_id: OLD,
     }));
     expect(out.refund).toMatchObject({ charge_id: 'ch_1', amount_cents: 1000 });
-    expect(out.plan).toMatchObject({ purchase_id: 'p1', ...noDates });
+    expect(Object.keys(out.plan).sort()).toEqual(PLAN_KEPT);
+    const canceled = await w.payments.cancel(coach(OLD), CLIENT, 'p1', KEY);
+    expect(canceled).toMatchObject({ outcome: 'scheduled', access_ends_at: null });
+    expect(Object.keys(canceled.plan).sort()).toEqual(PLAN_KEPT);
   });
 
   it("the client's new coach (any other coach) reads none of the old coach's records", async () => {
