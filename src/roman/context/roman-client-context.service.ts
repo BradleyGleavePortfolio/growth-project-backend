@@ -467,7 +467,7 @@ export class RomanClientContextService {
       checkIns,
       guideline,
       coachMessages,
-      mealRow,
+      mealAssignment,
       consult,
       communityPosts,
       wearableConnections,
@@ -622,8 +622,10 @@ export class RomanClientContextService {
             select: { created_at: true, body: true, sender_id: true },
           }))
         : [],
-      // HIST3: today's daily meal plan, whoever assigned it. The archive rule
-      // is applied below, as on the client's own meal plan routes.
+      // HIST3: today's daily meal plan, whoever assigned it. An archive hides
+      // a plan only from its own coach's client (#961's client rule), so a
+      // moved client keeps an earlier coach's archived plan, frozen copy
+      // included (owner 4 / 139-13).
       ownHistory
         ? (queries++,
           this.prisma.dailyMealPlanAssignment.findFirst({
@@ -631,14 +633,15 @@ export class RomanClientContextService {
               client_id: userId,
               starts_on: { lte: dateOnly(today) },
               OR: [{ ends_on: null }, { ends_on: { gte: dateOnly(today) } }],
+              daily_meal_plan: user.coach_id
+                ? { OR: [{ archived_at: null }, { coach_id: { not: user.coach_id } }] }
+                : {},
             },
             orderBy: { starts_on: 'desc' },
             select: {
               daily_meal_plan: {
                 select: {
                   name: true,
-                  coach_id: true,
-                  archived_at: true,
                   slots: {
                     orderBy: { order: 'asc' },
                     take: 12,
@@ -1006,15 +1009,6 @@ export class RomanClientContextService {
     };
 
     // ── meal plan ──
-    // An archive hides a plan only from its own coach's client. A moved
-    // client keeps theirs whatever the earlier coach does next, including the
-    // archived frozen copy (owner 4 / 139-13; the rule of GET /meal-plans and
-    // the legacy today route, #961).
-    const mealPlan = mealRow?.daily_meal_plan;
-    const mealAssignment =
-      mealRow && mealPlan && !(mealPlan.archived_at && mealPlan.coach_id === user.coach_id)
-        ? mealRow
-        : null;
     const meal_plan = mealAssignment
       ? {
           title: clamp(mealAssignment.daily_meal_plan.name, 80) ?? 'Meal plan',
