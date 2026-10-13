@@ -15,3 +15,6 @@ node_modules
 
 # Local MCP client config holds bearer tokens — never commit
 .mcp.json
+
+# Roman live eval output (scripts/eval-roman-live.ts); attach to the go/no-go, never commit
+eval-results/
