@@ -86,6 +86,154 @@ export async function deleteDraftsHeldBy(
   await tx.churnIntervention.deleteMany({ where: { client_id: clientId, coach_id: holderId, status: { not: 'sent' } } });
 }
 
+// Roman's two safety alert types (backend #946). Plain strings, so this file
+// does not depend on the order in which the two PRs merge.
+const MOVED_CLIENT_SAFETY_ALERT_TYPES = ['roman_urgent_reply', 'roman_eating_disorder_reply'] as const;
+
+// Payload keys that name the client on a coach's inbox row: coach and flag
+// alerts, check-in rows, the first payment, a failed package drop.
+const MOVED_CLIENT_INBOX_KEYS = ['clientUserId', 'clientId', 'client_id', 'client_user_id'] as const;
+
+// A deep link that opens the client: their coach screens or their chat.
+const opensClient = (id: string, link: unknown): boolean =>
+  typeof link === 'string' &&
+  (link === `tgp://coach/clients/${id}` ||
+    link.startsWith(`tgp://coach/clients/${id}/`) ||
+    link === `tgp://messages/${id}`);
+
+const field = (json: Prisma.JsonValue, key: string): unknown =>
+  json !== null && typeof json === 'object' && !Array.isArray(json) ? json[key] : undefined;
+
+/**
+ * Deletes `holderId`'s inbox rows and unsent pushes about the clients: rows
+ * that open them, name them in the payload, or are about one of their
+ * sessions (booking rows, which carry the session id). Owner 57q: an unsent
+ * push for a safety alert passed to `passTo.coachId` goes to that coach
+ * instead, due now, so the push worker decides quiet hours again in that
+ * coach's own zone.
+ */
+async function deleteInboxAbout(
+  tx: Prisma.TransactionClient,
+  ids: string[],
+  holderId: string,
+  passTo: { coachId: string; alertIds: string[] } | null,
+): Promise<void> {
+  const sessions = await tx.coachingSession.findMany({
+    where: { client_id: { in: ids } },
+    select: { id: true },
+  });
+  const sessionIds = sessions.map((s) => s.id);
+  await tx.notification.deleteMany({
+    where: {
+      user_id: holderId,
+      OR: [
+        ...ids.flatMap((id) => [
+          { deep_link: `tgp://coach/clients/${id}` },
+          { deep_link: { startsWith: `tgp://coach/clients/${id}/` } },
+          { deep_link: `tgp://messages/${id}` },
+          ...MOVED_CLIENT_INBOX_KEYS.map((key) => ({ payload: { path: [key], equals: id } })),
+        ]),
+        ...sessionIds.map((id) => ({ payload: { path: ['sessionId'], equals: id } })),
+      ],
+    },
+  });
+  const pending = await tx.pushOutbox.findMany({
+    where: { user_id: holderId, status: 'pending' },
+    select: { id: true, data: true, context: true },
+  });
+  const about = pending.filter((p) => {
+    const session = field(p.context, 'sessionId');
+    const opens = ids.some((id) => opensClient(id, field(p.data, 'deepLink')));
+    return opens || (typeof session === 'string' && sessionIds.includes(session));
+  });
+  const follows = about.filter((p) => {
+    const alertId = field(p.context, 'alertId');
+    return typeof alertId === 'string' && passTo !== null && passTo.alertIds.includes(alertId);
+  });
+  if (passTo !== null && follows.length > 0) {
+    await tx.pushOutbox.updateMany({
+      where: { id: { in: follows.map((p) => p.id) } },
+      data: { user_id: passTo.coachId, not_before: new Date(), deferred_reason: null, time_zone: null },
+    });
+  }
+  const dropped = about.filter((p) => !follows.includes(p)).map((p) => p.id);
+  if (dropped.length > 0) await tx.pushOutbox.deleteMany({ where: { id: { in: dropped } } });
+}
+
+/**
+ * Owner 4: when a client moves, the coaches they left lose their alerts,
+ * inbox rows, unsent pushes and cached coach-side insights about them at
+ * once, in the transaction that moves them. For each moved client:
+ *   - alerts (CoachAlert) held by anyone but `newCoachId` (by anyone at all
+ *     when it is null) are deleted. Owner 57q: a Roman safety alert that is
+ *     still open passes to the new coach instead, the coach Roman alerts after
+ *     the move, so it is never lost; so does its push if it is still waiting.
+ *     A dismissed one is the old coach's handled item; the reply itself stays
+ *     in the client's Roman chat. With no coach now, nothing is passed or sent;
+ *   - `formerCoachId`'s inbox rows (Notification) and unsent pushes
+ *     (PushOutbox) about them are deleted (deleteInboxAbout). Money rows (a
+ *     purchase, refund, dispute or payout) open the coach's own billing and
+ *     use none of these keys, so they stay;
+ *   - coach-side wearable insight rows (side 'coach:<coachId>', or the shared
+ *     'coach' row stored before that key) of anyone but the new coach go.
+ * The client's own rows are never touched. Repeating it deletes nothing more.
+ */
+export async function deleteCoachRowsLeftByMove(
+  tx: Prisma.TransactionClient,
+  clientIds: readonly string[],
+  formerCoachId: string,
+  newCoachId: string | null,
+): Promise<void> {
+  if (clientIds.length === 0) return;
+  const ids = [...clientIds];
+  const others = newCoachId === null ? undefined : { not: newCoachId };
+  const passed: { id: string }[] =
+    newCoachId === null
+      ? []
+      : await tx.coachAlert.findMany({
+          where: {
+            client_id: { in: ids },
+            coach_id: others,
+            alert_type: { in: [...MOVED_CLIENT_SAFETY_ALERT_TYPES] },
+            acknowledged_at: null,
+          },
+          select: { id: true },
+        });
+  const alertIds = passed.map((a) => a.id);
+  if (newCoachId !== null && alertIds.length > 0) {
+    await tx.coachAlert.updateMany({ where: { id: { in: alertIds } }, data: { coach_id: newCoachId } });
+  }
+  await tx.coachAlert.deleteMany({ where: { client_id: { in: ids }, coach_id: others } });
+  if (formerCoachId !== newCoachId) {
+    await deleteInboxAbout(tx, ids, formerCoachId, newCoachId === null ? null : { coachId: newCoachId, alertIds });
+  }
+  await tx.wearableInsightCache.deleteMany({
+    where: {
+      user_id: { in: ids },
+      side: { startsWith: 'coach' },
+      ...(newCoachId === null ? {} : { NOT: { side: `coach:${newCoachId}` } }),
+    },
+  });
+}
+
+/**
+ * Owner 4 for a sub-coach handoff: the client stays the head coach's, so only
+ * `holderId` loses their inbox rows, unsent pushes and coach-side insight
+ * about them (and the shared 'coach' insight row, whose coach is unknown).
+ * Alerts belong to the client's coach of record, the head coach, so a
+ * handoff leaves them.
+ */
+export async function deleteCoachRowsHeldBy(
+  tx: Prisma.TransactionClient,
+  clientId: string,
+  holderId: string,
+): Promise<void> {
+  await deleteInboxAbout(tx, [clientId], holderId, null);
+  await tx.wearableInsightCache.deleteMany({
+    where: { user_id: clientId, side: { in: ['coach', `coach:${holderId}`] } },
+  });
+}
+
 export interface LockedClientRow {
   id: string;
   coach_id: string | null;
