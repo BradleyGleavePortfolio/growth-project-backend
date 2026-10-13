@@ -41,7 +41,9 @@ export type CoachAlertType =
   | 'consecutive_misses'
   | 'streak_dropped'
   | 'finance_eod_gap'
-  | 'bloodwork_review';
+  | 'bloodwork_review'
+  // Roman answered urgent symptoms on a weight-loss medicine (no symptom text).
+  | 'roman_urgent_reply';
 
 export type CoachAlertSeverity = 'info' | 'warning' | 'critical';
 
@@ -83,7 +85,8 @@ export class CoachAlertsService {
    * creation must never bubble into a user-facing 5xx.
    *
    * Dedup pattern: identical to the risk_red_transition path. The 24h window
-   * is applied uniformly to all alert types to prevent notification storms.
+   * applies to every alert type except roman_urgent_reply: each urgent reply
+   * is its own event, so an earlier unacknowledged one never hides it.
    */
   async createAlert(input: CreateAlertInput): Promise<CoachAlert> {
     const since = new Date(Date.now() - DEDUP_WINDOW_HOURS * HOUR_MS);
@@ -97,7 +100,7 @@ export class CoachAlertsService {
       },
       orderBy: { created_at: 'desc' },
     });
-    if (existing) {
+    if (existing && input.alertType !== 'roman_urgent_reply') {
       return existing;
     }
 

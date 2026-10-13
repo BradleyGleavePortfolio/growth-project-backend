@@ -113,13 +113,13 @@ export class RomanController {
     @Body() dto: SendMessageDto,
   ): Promise<void> {
     const caller = await this.callerOf(req);
-    // An emergency / self-harm message is answered by the deterministic
-    // SafetyRouter template (911 / 988): no model call, no spend, and none of
+    // An emergency / self-harm / urgent-symptoms message is answered by a
+    // deterministic SafetyRouter template: no model call, no spend, and none of
     // the client's data leaves the app. Neither the per-user turn limit, the
     // daily spend cap, nor the box-2 AI gate (which governs sending data to
     // the AI processor, CONSENT_D2_CONTRACT) may stand between the client and
     // that answer. Every other turn keeps all three checks.
-    const crisis = this.roman.isSafetyShortCircuit(dto.content);
+    const crisis = await this.roman.isSafetyShortCircuit(caller, id, dto.content);
     // CF-ROMAN-COPY-B-128 (owner default 10-07): an eating-disorder message
     // that one of the checks below refuses gets the fixed fallback (a pointer
     // to people, no model call) instead of the refusal.
