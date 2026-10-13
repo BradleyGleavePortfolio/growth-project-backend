@@ -247,8 +247,8 @@ describe('InviteCodesService', () => {
   //
   // These cover the paths the public invite landing (/join/:code) and the
   // mobile /auth/attach-invite-code endpoint sit on top of. The shape that
-  // matters most: when a coach is paused/canceled or the requester is an
-  // OWNER, the call must fail closed without leaking which case it was.
+  // matters most: when the requester is an OWNER, the call must fail closed
+  // without leaking which case it was. No coach plan check (owner TM-P1).
   // -----------------------------------------------------------------
 
   describe('previewCode (CoachProfile path)', () => {
@@ -318,33 +318,37 @@ describe('InviteCodesService', () => {
       });
     });
 
-    it('returns valid:false when the coach subscription is paused', async () => {
-      prismaMock.coachProfile.findUnique.mockResolvedValue({
-        id: 'cp-1',
-        user_id: 'coach-1',
-        business_name: null,
-        branding_accent_color: null,
-        branding_logo_url: null,
-        subscription_status: 'paused',
-        user: { id: 'coach-1', name: 'Lara', role: 'coach' },
-      });
-      prismaMock.coachSubscription.findUnique.mockResolvedValue({ status: 'paused' });
-      expect(await service.previewCode('GP-PAUSED')).toEqual({ valid: false });
-    });
-
-    it('returns valid:false when the coach subscription is canceled', async () => {
-      prismaMock.coachProfile.findUnique.mockResolvedValue({
-        id: 'cp-1',
-        user_id: 'coach-1',
-        business_name: null,
-        branding_accent_color: null,
-        branding_logo_url: null,
-        subscription_status: 'canceled',
-        user: { id: 'coach-1', name: 'Lara', role: 'coach' },
-      });
-      prismaMock.coachSubscription.findUnique.mockResolvedValue({ status: 'canceled' });
-      expect(await service.previewCode('GP-CANCEL')).toEqual({ valid: false });
-    });
+    // TM-P1 (owner: "There should be zero locks - there is no free or paid plan").
+    it.each([[{ status: 'paused' }], [{ status: 'canceled' }], [null]])(
+      'TM-P1: a coach whose old subscription row is %p still takes new clients',
+      async (sub) => {
+        prismaMock.coachProfile.findUnique.mockResolvedValue({
+          id: 'cp-1',
+          user_id: 'coach-1',
+          business_name: null,
+          branding_accent_color: null,
+          branding_logo_url: null,
+          subscription_status: sub?.status ?? null,
+          user: { id: 'coach-1', name: 'Lara', role: 'coach' },
+        });
+        prismaMock.coachSubscription.findUnique.mockResolvedValue(sub);
+        expect(await service.previewCode('GP-PAUSED')).toMatchObject({ valid: true });
+        expect(await service.acceptByToken('GP-PAUSED')).toMatchObject({ accepted: true });
+        prismaMock.coachProfile.findUnique.mockResolvedValue(null);
+        prismaMock.inviteCode.findUnique.mockResolvedValue({
+          id: 'ic-1',
+          coach_id: 'coach-1',
+          revoked: false,
+          expires_at: null,
+          created_at: new Date(),
+          max_uses: null,
+          used_count: 0,
+          coach: { id: 'coach-1', name: 'Lara', role: 'coach' },
+        });
+        expect(await service.acceptByToken('GP-ROW123')).toMatchObject({ accepted: true });
+        expect(prismaMock.coachSubscription.findUnique).not.toHaveBeenCalled();
+      },
+    );
 
     it('falls through to InviteCode when CoachProfile lookup misses', async () => {
       prismaMock.coachProfile.findUnique.mockResolvedValue(null);
@@ -456,20 +460,24 @@ describe('InviteCodesService', () => {
       expect(prismaMock.inviteCode.updateMany).not.toHaveBeenCalled();
     });
 
-    it('refuses to attach when the coach subscription is paused', async () => {
-      prismaMock.coachProfile.findUnique.mockResolvedValue({
-        id: 'cp-1',
-        user_id: 'coach-1',
-        subscription_status: 'paused',
-        user: { id: 'coach-1', role: 'coach' },
-      });
-      prismaMock.coachSubscription.findUnique.mockResolvedValue({ status: 'paused' });
-      prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1', role: 'student', coach_id: null });
-      await expect(
-        service.attachUserToCoachByCode('user-1', 'GP-PAUSED'),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      expect(prismaMock.user.update).not.toHaveBeenCalled();
-    });
+    it.each([[{ status: 'paused' }], [{ status: 'canceled' }], [null]])(
+      'TM-P1: attaches when the coach\'s old subscription row is %p',
+      async (sub) => {
+        prismaMock.coachProfile.findUnique.mockResolvedValue({
+          id: 'cp-1',
+          user_id: 'coach-1',
+          subscription_status: sub?.status ?? null,
+          user: { id: 'coach-1', role: 'coach' },
+        });
+        prismaMock.coachSubscription.findUnique.mockResolvedValue(sub);
+        prismaMock.user.findUnique.mockResolvedValue({ id: 'user-1', role: 'student', coach_id: null });
+        await expect(service.attachUserToCoachByCode('user-1', 'GP-PAUSED')).resolves.toMatchObject({
+          coach_id: 'coach-1',
+          already_attached: false,
+        });
+        expect(prismaMock.coachSubscription.findUnique).not.toHaveBeenCalled();
+      },
+    );
 
     it('attaches a STUDENT to the coach and sets coach_id', async () => {
       prismaMock.coachProfile.findUnique.mockResolvedValue({
