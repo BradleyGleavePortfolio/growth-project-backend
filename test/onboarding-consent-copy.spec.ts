@@ -68,8 +68,15 @@ describe('consult-consent-v3 text parity with mobile #310', () => {
     expect(V3.box2Label.startsWith('Optional: ')).toBe(true);
   });
 
-  it('the registry knows v3 and v4 only (no compat window for v2 or v1)', () => {
-    expect(Object.keys(CONSULT_CONSENT_COPIES)).toEqual([CONSULT_CONSENT_V3, CONSULT_CONSENT_V4]);
+  it('the registry knows v3 to v6 and the coach-free v5 / v6 only (no compat window for v2 or v1)', () => {
+    expect(Object.keys(CONSULT_CONSENT_COPIES)).toEqual([
+      CONSULT_CONSENT_V3,
+      CONSULT_CONSENT_V4,
+      'consult-consent-v5',
+      'consult-consent-v6',
+      'consult-consent-v5-coach-free',
+      'consult-consent-v6-coach-free',
+    ]);
     expect(consultConsentTextSha256('consult-consent-v3')).toBe(CONSULT_CONSENT_V3_TEXT_SHA256);
     expect(consultConsentTextSha256('consult-consent-v2')).toBeNull();
     expect(consultConsentTextSha256('consult-consent-v1')).toBeNull();
@@ -87,8 +94,15 @@ describe('accepted versions and the P0 truth rule', () => {
     text_sha256: MOBILE_CONSENT_COPY_SHA256,
   };
 
-  it('acceptedConsentVersions: default v3 + v4; the override keeps only versions with known text', () => {
-    const defaults = ['consult-consent-v3', 'consult-consent-v4'];
+  it('acceptedConsentVersions: default v3 to v6 + coach-free; the override keeps only versions with known text', () => {
+    const defaults = [
+      'consult-consent-v3',
+      'consult-consent-v4',
+      'consult-consent-v5',
+      'consult-consent-v6',
+      'consult-consent-v5-coach-free',
+      'consult-consent-v6-coach-free',
+    ];
     expect(acceptedConsentVersions({})).toEqual(defaults);
     expect(acceptedConsentVersions({ CONSULT_CONSENT_COPY_VERSIONS: '' })).toEqual(defaults);
     expect(
