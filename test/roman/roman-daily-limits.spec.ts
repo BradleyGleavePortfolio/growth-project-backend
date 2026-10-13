@@ -7,6 +7,7 @@
  * nothing to count: these checks fail the day that changes, so the first
  * upload path or Roman action that writes lands with its limit.
  */
+import 'reflect-metadata';
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { getMetadataStorage } from 'class-validator';
