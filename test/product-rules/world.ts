@@ -8,6 +8,7 @@ import * as path from 'path';
 // thousand calls as three people, past the 300 a minute default limit.
 process.env.RATELIMIT_AUTHED_PER_MIN = '10000';
 process.env.FEATURE_ROMAN_CHAT_ENABLED = 'true';
+process.env.FEATURE_MWB_TEMPLATES = 'true'; // Programs are on at launch (docs/runbooks/launch-flags.md).
 
 export type Row = Record<string, unknown>;
 type Args = { where?: Row; select?: Row; include?: Row; data?: unknown; take?: number; skip?: number };

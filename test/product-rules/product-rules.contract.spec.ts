@@ -55,7 +55,7 @@ const KNOWN_GAPS: Array<{ id: string; rule: Rule; key: string; reason: string }>
   { id: 'CONTRACT-1 purchases', rule: 1, key: 'GET /v1/coach/payments/purchases', reason: 'waiting on owner CONTRACT-1' },
   { id: 'CONTRACT-1 purchase', rule: 1, key: 'GET /v1/coach/payments/purchases/:id', reason: 'waiting on owner CONTRACT-1' },
   { id: 'CONTRACT-1 sales', rule: 1, key: 'GET /v1/coach/purchases', reason: 'waiting on owner CONTRACT-1' },
-  { id: 'BRIEF4B', rule: 2, key: 'GET /coach/brief/today', reason: "the new coach's brief shows the old coach's unread chat lines; BRIEF4B (b#964) fixes it" },
+  { id: 'BRIEF4B', rule: 2, key: 'GET /coach/brief/today', reason: 'fixed by backend #964, not merged yet' },
   { id: 'HIST-4b meal plans', rule: 2, key: 'GET /coach/clients/:client_id/meal-plans', reason: "the new coach lists only the meal plans they wrote; waiting on owner HIST-4b" },
   { id: 'HIST-4b past session', rule: 2, key: 'GET /scheduling/sessions/:id', reason: "the new coach can't open the client's past session; waiting on owner HIST-4b" },
   { id: 'CONSENT-2 grant', rule: 3, key: 'POST /me/ai-consent/roman', reason: 'a coachless client can still grant AI consent; CONSENT-2 (b#954) answers 403' },
@@ -99,8 +99,12 @@ const PRIVATE_4B = new Set(['CoachMessage', 'CoachNudge', 'CoachClientTag']);
 const PRIVATE_4B_TEXT = ['s:CoachMessage.', 's:CoachNudge.', 's:CoachClientTag.', 's:CoachingSession.coach_notes_md'];
 // A coach's own rows about a client (codes, sales, drafts, alerts, reviews, logs) are not the client's
 // history, so rule 2 never restamps them. Every other row with a client in it is the client's history.
-const COACH_SIDE = new Set(['AICallLog', 'AIDraft', 'ChurnIntervention', 'ClientPurchase', 'CoachAlert', 'CoachBroadcast', 'CoachGuideline',
-  'CoachWelcomeMessageJob', 'ContractEnvelope', 'ConversationReview', 'InviteCode', 'InviteRedemption', 'MessageDraft', 'PackageTrialUsage', 'TeamAuditEvent']);
+const COACH_SIDE = new Set(['AICallLog', 'AIDraft', 'AiActionDraft', 'AiRequestAudit', 'AuditLog', 'ChurnIntervention', 'ClientPurchase',
+  'CoachAlert', 'CoachBroadcast', 'CoachCodeRedemption', 'CoachFirstPaymentNotification', 'CoachGuideline', 'CoachPlaybookSource',
+  'CoachThreadState', 'CoachWelcomeMessageJob', 'ContractEnvelope', 'ConversationReview', 'InviteCode', 'InviteRedemption', 'MessageDraft',
+  'MessageReport', 'PackageTrialUsage', 'TeamAuditEvent', 'WorkoutAdjustmentProposal']);
+// Plain id columns (no @relation) that name a coach or a client hold the same people the foreign keys do.
+const PLAIN_PERSON = /^((tenant_|head_)?coach(_user)?_id|coachId|owner_user_id|client_id|clientId|subject_user_id)$/;
 // Owner 17: a move deletes the drafts other coaches hold, nothing else.
 const MOVE_MAY_DELETE = new Set(['AIDraft', 'AiActionDraft', 'MessageDraft', 'ChurnIntervention']);
 
@@ -109,7 +113,7 @@ const world = new World(models, enums);
 const db = asPrismaDouble(world.client);
 type State = 'before' | 'moved' | 'moved-restamped';
 
-/** One row of every model. A User FK named for a coach (or invited_by, the sub-coach) holds the coach; any other the client. */
+/** One row of every model. A person column named for a coach (or invited_by, owner_user) holds the coach; any other the client. */
 async function seed(state: State): Promise<void> {
   world.rows.clear();
   const user = models.get('User') as ModelDef;
@@ -130,9 +134,10 @@ async function seed(state: State): Promise<void> {
     let clients = false;
     for (const f of m.fields.values()) {
       if (isRelation(f, models)) continue;
-      const coachSide = /coach|tenant|invited_by/i.test(f.name);
-      clients ||= fkTo.get(f.name) === 'User' && !coachSide;
-      row[f.name] = fkTo.get(f.name) === 'User' ? (coachSide ? 'COACH' : MOVED) : fkTo.has(f.name) || f.isId ? ROW : defaultFor(m, f, enums);
+      const person = fkTo.get(f.name) === 'User' || (!fkTo.has(f.name) && f.type === 'String' && !f.list && PLAIN_PERSON.test(f.name));
+      const coachSide = /coach|tenant|invited_by|owner_user/i.test(f.name);
+      clients ||= person && !coachSide;
+      row[f.name] = person ? (coachSide ? 'COACH' : MOVED) : fkTo.has(f.name) || f.isId ? ROW : defaultFor(m, f, enums);
     }
     const restamped = state === 'moved-restamped' && clients && !PRIVATE_4B.has(m.name) && !COACH_SIDE.has(m.name);
     const coach = state !== 'before' && (restamped || CURRENT_COACH.has(m.name)) ? NEW : OLD;
@@ -266,10 +271,11 @@ describe('Rule 1: a moved client is gone for the old coach (owner 4)', () => {
     for (const k of ['GET /coach/clients', 'GET /coach/alerts', 'GET /notifications', 'GET /coach/clients/:id/summary']) expect(outcomes[k]).toBeDefined();
   });
 
-  it('the same read names the client before the move (the check can fail)', async () => {
+  // The roster, Roman's drafts (plain tenant_coach_id) and a program's assignees (plain coach_id, owner_user_id).
+  it.each(['coach/clients', 'ai/gateway/drafts', `v1/coach/programs/${ROW}/assignees`])('before the move, %s names the client (the check can fail)', async (path) => {
     await seed('before');
-    const roster = await call('old-coach', 'GET', 'coach/clients');
-    expect([roster.status, namesMoved(roster.text)]).toEqual([200, true]);
+    const res = await call('old-coach', 'GET', path);
+    expect([res.status, namesMoved(res.text)]).toEqual([200, true]);
   });
 
   it('no route the old coach can call answers with the moved client (404 or left out)', () => {
