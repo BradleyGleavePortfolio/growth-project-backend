@@ -978,8 +978,8 @@ describe('CoachBriefService sub-coach unread messages — P1-5', () => {
 // ─── BRIEF4B (owner 4b): a moved client's brief for the new coach ──────
 
 describe('CoachBriefService moved client — owner 4b', () => {
-  it("the new coach's brief has none of the former coach's chat and still shows the client's own logs", async () => {
-    const [NEW_COACH, OLD_COACH, MOVED, OTHER] = ['coach-new', 'coach-old', 'client-moved', 'client-other'];
+  const [NEW_COACH, OLD_COACH, MOVED, OTHER] = ['coach-new', 'coach-old', 'client-moved', 'client-other'];
+  function newCoachBrief() {
     const prisma = makeMockPrisma();
     wireSoloDefaults(prisma, { coachId: NEW_COACH, clientIds: [MOVED, OTHER] });
     prisma.coachBrief.updateMany.mockResolvedValue({ count: 1 });
@@ -1010,9 +1010,9 @@ describe('CoachBriefService moved client — owner 4b', () => {
         .map((m) => ({ client_id: m.client_id, client: { name: m.client_id }, body: m.body, created_at: new Date() })),
     );
     const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
-
-    const res = await svc.generateBrief(NEW_COACH, 'America/Los_Angeles', '2026-10-12', { force: true });
-
+    return { prisma, svc };
+  }
+  function expectOwnThreadOnly(prisma: ReturnType<typeof makeMockPrisma>, res: CoachBriefResponse) {
     const data = prisma.coachBrief.update.mock.calls[0][0].data;
     expect(JSON.stringify([res, data])).not.toContain('FORMER-COACH-TEXT');
     const items: Array<{ type: string; client_id: string; detail: string }> = data.action_items;
@@ -1022,16 +1022,41 @@ describe('CoachBriefService moved client — owner 4b', () => {
     ]);
     expect(items.find((i) => i.type === 'message_unread')?.detail).toBe('See you Thursday');
     expect(data.brief_context).toMatchObject({ checked_in_today: 1, weight_logs_flagged: 1, unread_messages: 1 });
+  }
+
+  it("the new coach's brief has none of the former coach's chat and still shows the client's own logs", async () => {
+    const { prisma, svc } = newCoachBrief();
+    const res = await svc.generateBrief(NEW_COACH, 'America/Los_Angeles', '2026-10-12', { force: true });
+    expectOwnThreadOnly(prisma, res);
+  });
+
+  it('a brief stored before this fix is written again on the normal read; history shows its day only', async () => {
+    const { prisma, svc } = newCoachBrief();
+    // No client list (B-939-1), and an item quoting the former coach's thread.
+    const legacy = {
+      id: 'b1', coach_id: NEW_COACH, brief_date: '2026-10-12', status: 'generated', brief_mode: 'solo_coach',
+      generated_by: 'fallback', narrative: 'Stored narrative.', brief_context: makeBriefContext(),
+      action_items: [{ type: 'message_unread', client_id: MOVED, client_name: MOVED, detail: 'FORMER-COACH-TEXT one' }],
+      generated_at: new Date('2026-10-12T13:00:00Z'), created_at: new Date('2026-10-12T13:00:00Z'),
+    };
+    prisma.coachBrief.findUnique.mockResolvedValue(legacy);
+    prisma.coachBrief.findMany.mockResolvedValue([legacy]);
+    prisma.coachBrief.count.mockResolvedValue(1);
+    const { items } = await svc.getBriefHistory(NEW_COACH, 1, 10);
+    expect(items.map((i) => [i.brief_date, i.status, i.summary])).toEqual([['2026-10-12', 'generated', null]]);
+    expectOwnThreadOnly(prisma, await svc.generateBrief(NEW_COACH, 'America/Los_Angeles', '2026-10-12'));
   });
 });
 
-// A brief stored before the thread fix, read the normal way (today and history).
+// A stored brief whose clients are all still this coach's is served as stored (B-939-1), read the
+// normal way (today and history). An item quoting another thread's text is still left out.
 describe('CoachBriefService stored brief with a moved client — owner 4b', () => {
   const [NEW_COACH, OLD_COACH, MOVED, OTHER, VOICE] = ['coach-new', 'coach-old', 'client-moved', 'client-other', 'client-voice'];
   const item = (type: string, client_id: string, detail: string) => ({ type, client_id, client_name: client_id, detail, priority: 1, deep_link: 'tgp://x' });
   const STORED = {
     id: 'b0', coach_id: NEW_COACH, brief_date: '2026-10-12', status: 'generated', brief_mode: 'solo_coach',
-    generated_by: 'fallback', narrative: 'Stored narrative.', brief_context: makeBriefContext({ weight_logs_flagged: 1 }),
+    generated_by: 'fallback', narrative: 'Stored narrative.',
+    brief_context: { ...makeBriefContext({ weight_logs_flagged: 1 }), scope_client_ids: [MOVED, OTHER, VOICE] },
     action_items: [
       item('message_unread', MOVED, 'FORMER-COACH-TEXT one'),
       item('message_unread', OTHER, 'See you Thursday'),
@@ -1052,6 +1077,7 @@ describe('CoachBriefService stored brief with a moved client — owner 4b', () =
     prisma.coachBrief.findUnique.mockResolvedValue(STORED);
     prisma.coachBrief.count.mockResolvedValue(1);
     prisma.coachBrief.findMany.mockResolvedValue([STORED]);
+    prisma.user.findMany.mockResolvedValue([{ id: MOVED }, { id: OTHER }, { id: VOICE }]);
     prisma.coachMessage.findMany.mockImplementation(async ({ where }: { where: { NOT: { sender_id: string }; OR: Term[] } }) =>
       MESSAGES.filter((m) => m.sender_id !== where.NOT.sender_id && where.OR.some((t) =>
         t.client_id === m.client_id && t.AND[0].coach_id === m.coach_id &&
