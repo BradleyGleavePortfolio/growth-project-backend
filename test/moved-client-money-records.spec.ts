@@ -203,8 +203,8 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
       ...before.charge,
       charge: { ...before.charge.charge, client: unlinked },
     });
-    // The failing card is the new coach's to chase; the dispute is the old coach's money.
-    expect(r.attention).toEqual([{ ...before.attention[1], client: unlinked }]);
+    // Both to-dos (failed card, dispute) were "Message Ana"; the charge above keeps its state.
+    expect(r.attention).toEqual([]);
     expect(r.decisions).toEqual([{ ...before.decisions[0], client_user_id: null }]);
   });
 

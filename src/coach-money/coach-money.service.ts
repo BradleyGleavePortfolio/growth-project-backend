@@ -1756,9 +1756,8 @@ export class CoachMoneyService {
       }),
     ]);
 
-    // CONTRACT-1: a client who moved away leaves the to-do list (messaging
-    // them about a card is gone with them; the charge stays in Charges). An
-    // open dispute on the coach's own sale stays, with the name and no link.
+    // CONTRACT-1: a client who moved away leaves the to-do list (each item's
+    // action is to message them); the charge stays in Charges with its state.
     const moved = await movedAwayClientIds(this.prisma, coachId, [
       ...failed.map((p) => p.client?.id),
       ...disputes.map((d) => d.purchase?.client?.id),
@@ -1795,10 +1794,11 @@ export class CoachMoneyService {
     }
     for (const dsp of disputes) {
       const c = dsp.purchase?.client;
+      if (c && moved.has(c.id)) continue;
       items.push({
         kind: 'dispute',
         id: `dispute:${dsp.id}`,
-        client: c ? { id: moved.has(c.id) ? '' : c.id, name: displayName(c) } : null,
+        client: c ? { id: c.id, name: displayName(c) } : null,
         amount_cents: dsp.amount_cents,
         currency: dsp.currency,
         created_at: dsp.created_at.toISOString(),
