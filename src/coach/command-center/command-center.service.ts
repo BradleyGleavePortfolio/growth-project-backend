@@ -19,7 +19,7 @@
 //     for all callers (the AdminPtmService.getRiskBoardForCoach path
 //     already does this; we preserve it).
 
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { AdminPtmService } from '../../admin/ptm/admin-ptm.service';
@@ -209,6 +209,35 @@ function safetyAlertsForCurrentCoach(callerId: string): Prisma.CoachAlertWhereIn
         ],
       },
     ],
+  };
+}
+
+/** One action queue row; a Roman safety alert gets its card line and quote. */
+function queueItem(
+  alert: {
+    id: string;
+    client_id: string;
+    alert_type: string;
+    message: string;
+    created_at: Date;
+    acknowledged_at: Date | null;
+    client?: { name: string | null } | null;
+  },
+  quote: { content: string; created_at: Date } | undefined,
+): ActionQueueItem {
+  const clientName = alert.client?.name ?? 'Unknown';
+  const line = SAFETY_CARD_LINE[alert.alert_type];
+  return {
+    alert_id: alert.id,
+    client_id: alert.client_id,
+    client_name: clientName,
+    alert_type: mapAlertType(alert.alert_type),
+    message: line ? line(clientName) : alert.message,
+    created_at: alert.created_at.toISOString(),
+    dismissed_at: alert.acknowledged_at?.toISOString() ?? null,
+    ...(line
+      ? { quote: quote?.content ?? null, sent_at: quote?.created_at.toISOString() ?? null }
+      : {}),
   };
 }
 
@@ -886,26 +915,32 @@ export class CommandCenterService {
       }),
     ]);
     const quotes = await this.safetyQuotes(alerts);
-
-    const items: ActionQueueItem[] = alerts.map((alert) => {
-      const clientName = alert.client?.name ?? 'Unknown';
-      const line = SAFETY_CARD_LINE[alert.alert_type];
-      const quote = line ? quotes.get(alert.id) : undefined;
-      return {
-        alert_id: alert.id,
-        client_id: alert.client_id,
-        client_name: clientName,
-        alert_type: mapAlertType(alert.alert_type),
-        message: line ? line(clientName) : alert.message,
-        created_at: alert.created_at.toISOString(),
-        dismissed_at: alert.acknowledged_at?.toISOString() ?? null,
-        ...(line
-          ? { quote: quote?.content ?? null, sent_at: quote?.created_at.toISOString() ?? null }
-          : {}),
-      };
-    });
-
+    const items = alerts.map((alert) => queueItem(alert, quotes.get(alert.id)));
     return { items, total_pending: totalPending };
+  }
+
+  // ── /action-queue/:alertId ───────────────────────────────────────────
+  /**
+   * Owner 57d: one Roman safety alert by id, for the tap of its push or inbox
+   * row. The same fields as its queue row, and the same rule: only the
+   * client's coach of record reads it. Another coach, an assistant, a former
+   * coach, another alert type or a deleted message is the same 404.
+   */
+  async getSafetyAlert(alertId: string, coachId: string): Promise<ActionQueueItem> {
+    const { clientIds, ownerCoachId } = await this.resolveScope(coachId);
+    const alert = await this.prisma.coachAlert.findFirst({
+      where: {
+        id: alertId,
+        alert_type: { in: [...ROMAN_SAFETY_ALERT_TYPES] },
+        coach_id: ownerCoachId,
+        client_id: { in: clientIds },
+        ...safetyAlertsForCurrentCoach(coachId),
+      },
+      include: { client: { select: { name: true } } },
+    });
+    const quote = alert ? (await this.safetyQuotes([alert])).get(alert.id) : undefined;
+    if (!alert || !quote) throw new NotFoundException('Alert not found');
+    return queueItem(alert, quote);
   }
 
   /**

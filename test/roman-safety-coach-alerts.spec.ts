@@ -3,14 +3,18 @@
 // B-R1F (owner 22a, 57, 57w, 57x): the two Roman safety coach alerts on the
 // coach side. The stored row and every push name no one and carry no message;
 // the alert card (action queue) is built for the client's current coach only,
-// with the client's one triggering message. No network, no DB.
+// with the client's one triggering message. R1F-2: the urgent push breaks
+// quiet hours (owner 57q), and a push or inbox tap reads that one alert by id
+// (owner 57d). No network, no DB.
 
 import { CoachAlertsService, onceAlertId } from '../src/coach/coach-alerts.service';
 import { CommandCenterService } from '../src/coach/command-center/command-center.service';
+import { CommandCenterController } from '../src/coach/command-center/command-center.controller';
+import type { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
 import { CoachAlertEmitter } from '../src/notifications/emitters/coach-alert.emitter';
 import { NotificationKind } from '../src/notifications/notification-kind';
 import {
-  COACH_ACTION_QUEUE_SCREEN,
+  COACH_SAFETY_ALERT_SCREEN,
   SAFETY_ALERT_PUSH_BODY,
   lockScreenCopy,
 } from '../src/notifications/push/lock-screen-copy';
@@ -19,6 +23,7 @@ import type { PrismaService } from '../src/prisma.service';
 import type { NotificationsService } from '../src/notifications/notifications.service';
 import type { AdminPtmService } from '../src/admin/ptm/admin-ptm.service';
 import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import type { AuthedRequest } from '../src/auth/auth-request';
 import type { ExpoPushMessage } from 'expo-server-sdk';
 import { NotificationsService as RealNotificationsService } from '../src/notifications/notifications.service';
 import { PushDeliveryService } from '../src/notifications/push/push-delivery.service';
@@ -26,6 +31,9 @@ import { pushOutboxWorld } from './utils/push-outbox-fake';
 
 const URGENT_PUSH = 'Urgent safety alert for one of your clients. Open TGP to see details.';
 const ED_PUSH = 'Safety alert for one of your clients. Open TGP to see details.';
+// Owner 57d: the coach's inbox row for the same alerts.
+const URGENT_INBOX = 'Urgent safety alert for one of your clients. Tap to see details.';
+const ED_INBOX = 'Safety alert for one of your clients. Tap to see details.';
 
 describe('the lock-screen push', () => {
   it('is the fixed line for each safety alert, under the coach-alert title, and never the alert text', () => {
@@ -48,21 +56,34 @@ describe('the emitter', () => {
   }
   const base = { coachId: 'coach-1', alertId: 'a1', severity: 'critical', clientUserId: 'client-1' };
 
-  it('a safety alert: the inbox row and the push open the action queue; the push gets the safety line', async () => {
+  it.each([
+    ['roman_urgent_reply', URGENT_PUSH, URGENT_INBOX],
+    ['roman_eating_disorder_reply', ED_PUSH, ED_INBOX],
+  ])('%s: the inbox row has its own line, and the row and the push open that alert', async (alertType, push, inbox) => {
     const { e, create, sendPush } = emitter();
+    await e.emit({ ...base, alertType, message: push });
+    const tap = { actionScreen: COACH_SAFETY_ALERT_SCREEN, actionParams: { alertId: 'a1' } };
+    expect(create.mock.calls[0][0]).toMatchObject({ body: inbox, payload: { alertId: 'a1', alertType, ...tap } });
+    expect(sendPush.mock.calls[0][0]).toMatchObject({ context: { safetyAlert: alertType, alertId: 'a1' } });
+  });
+
+  it('owner 57q: each safety alert is one push of its own; only the urgent one is urgent', async () => {
+    const { e, sendPush } = emitter();
     await e.emit({ ...base, alertType: 'roman_urgent_reply', message: URGENT_PUSH });
-    expect(create.mock.calls[0][0]).toMatchObject({
-      body: URGENT_PUSH,
-      payload: { alertId: 'a1', alertType: 'roman_urgent_reply', actionScreen: COACH_ACTION_QUEUE_SCREEN },
-    });
-    expect(sendPush.mock.calls[0][0]).toMatchObject({ context: { safetyAlert: 'roman_urgent_reply' } });
+    await e.emit({ ...base, alertId: 'a2', alertType: 'roman_eating_disorder_reply', message: ED_PUSH });
+    expect(sendPush.mock.calls[0][0]).toMatchObject({ urgent: true, dedupe_key: 'coach_alert:a1' });
+    expect(sendPush.mock.calls[1][0]).toMatchObject({ dedupe_key: 'coach_alert:a2' });
+    expect(sendPush.mock.calls[1][0]).not.toHaveProperty('urgent');
   });
 
   it('any other alert is unchanged', async () => {
     const { e, create, sendPush } = emitter();
     await e.emit({ ...base, alertType: 'streak_dropped', message: 'Streak dropped.' });
+    expect(create.mock.calls[0][0]).toMatchObject({ body: 'Streak dropped.' });
     expect(create.mock.calls[0][0].payload).not.toHaveProperty('actionScreen');
     expect(sendPush.mock.calls[0][0]).not.toHaveProperty('context');
+    expect(sendPush.mock.calls[0][0]).not.toHaveProperty('urgent');
+    expect(sendPush.mock.calls[0][0]).not.toHaveProperty('dedupe_key');
   });
 });
 
@@ -209,6 +230,7 @@ describe('owner 4: the current coach only', () => {
     if (w.client?.coach_id !== undefined && row.client.coach_id !== w.client.coach_id) return false;
     return true;
   }
+  const SENT_AT = new Date('2026-10-12T08:59:00Z');
   function world(clientCoach: string) {
     const users = [{ id: 'client-1', name: 'Jane Doe', coach_id: clientCoach }];
     const rows: Row[] = [
@@ -240,7 +262,7 @@ describe('owner 4: the current coach only', () => {
       },
       romanMessage: {
         findMany: jest.fn(async () => [
-          { id: 'm1', user_id: 'client-1', content: 'A persistent-vomiting message.', created_at: new Date() },
+          { id: 'm1', user_id: 'client-1', content: 'A persistent-vomiting message.', created_at: SENT_AT },
         ]),
       },
       user: { findMany: jest.fn(async () => []) },
@@ -259,7 +281,7 @@ describe('owner 4: the current coach only', () => {
       new CoachAlertsService(fakeOf<PrismaService>(prisma)),
       fakeOf<SubCoachScopeService>(scope),
     );
-    return { svc, rows };
+    return { svc, rows, prisma };
   }
   const types = async (svc: CommandCenterService, caller: string) =>
     (await svc.getActionQueue(caller, {})).items.map((i) => i.alert_type);
@@ -294,6 +316,36 @@ describe('owner 4: the current coach only', () => {
     expect(await types(svc, 'sub-1')).toEqual(['bloodwork_review']);
     await expect(svc.dismissAlert('a-ed', 'sub-1')).rejects.toThrow('Alert not found');
   });
+
+  // Owner 57d: the tap of a push or inbox row reads that one alert by id.
+  it('by id: the current coach gets the queue row, also after dismissing it', async () => {
+    const { svc, rows } = world('coach-1');
+    const item = await svc.getSafetyAlert('a-safe', 'coach-1');
+    expect(item).toEqual((await svc.getActionQueue('coach-1', {})).items[0]);
+    expect(item).toMatchObject({
+      alert_id: 'a-safe',
+      client_name: 'Jane Doe',
+      alert_type: 'roman_urgent_reply',
+      message: 'Urgent: Roman sent Jane Doe a medical safety reply. Check in with them →',
+      quote: 'A persistent-vomiting message.',
+      sent_at: SENT_AT.toISOString(),
+    });
+    rows[0].acknowledged_at = new Date('2026-10-12T10:00:00Z');
+    await expect(svc.getSafetyAlert('a-safe', 'coach-1')).resolves.toMatchObject({
+      dismissed_at: '2026-10-12T10:00:00.000Z',
+    });
+  });
+
+  it('by id: an assistant, a former coach, another alert type or a deleted message is the same 404', async () => {
+    const team = world('coach-1');
+    await expect(team.svc.getSafetyAlert('a-safe', 'sub-1')).rejects.toThrow('Alert not found');
+    await expect(team.svc.getSafetyAlert('a-labs', 'coach-1')).rejects.toThrow('Alert not found');
+    team.prisma.romanMessage.findMany.mockResolvedValueOnce([]);
+    await expect(team.svc.getSafetyAlert('a-ed', 'coach-1')).rejects.toThrow('Alert not found');
+    const moved = world('coach-2');
+    await expect(moved.svc.getSafetyAlert('a-safe', 'coach-1')).rejects.toThrow('Alert not found');
+    await expect(moved.svc.getSafetyAlert('a-safe', 'sub-1')).rejects.toThrow('Alert not found');
+  });
 });
 
 // B1 (L-OB, b#946): the push worker re-renders the lock screen from the
@@ -302,14 +354,16 @@ describe('owner 4: the current coach only', () => {
 describe('the coach phone receives the safety push line', () => {
   const TOKEN = 'ExponentPushToken[abcdefghijklmnopqrstuv]';
   const AFTERNOON = new Date('2026-06-02T18:00:00Z'); // 14:00 New York
+  let clock = AFTERNOON;
   class Clocked extends PushDeliveryService {
     protected now(): Date {
-      return AFTERNOON;
+      return clock;
     }
   }
-  async function deliver(alertType: string, message: string) {
+  function phone(at: Date) {
+    clock = at;
     const w = pushOutboxWorld({
-      now: () => AFTERNOON,
+      now: () => clock,
       tokens: { 'coach-1': TOKEN },
       prefs: { 'coach-1': { timezone: 'America/New_York', timezone_updated_at: new Date('2026-06-01T00:00:00Z') } },
     });
@@ -318,29 +372,160 @@ describe('the coach phone receives the safety push line', () => {
     const delivery = new Clocked(fakeOf<PrismaService>(Object.create(db)), { send, getReceipts: jest.fn(async () => ({})) });
     delivery.autoDrain = false;
     const notifications = new RealNotificationsService(fakeOf<PrismaService>(Object.create(db)), undefined, undefined, delivery);
-    await new CoachAlertEmitter(notifications).emit({
-      coachId: 'coach-1',
-      alertId: 'a1',
-      alertType,
-      severity: 'critical',
-      message,
-      clientUserId: 'client-1',
-    });
-    expect(await delivery.drain()).toBe(1);
-    return send.mock.calls[0][0][0];
+    const emit = (alertType: string, message: string, alertId = 'a1') =>
+      new CoachAlertEmitter(notifications).emit({
+        coachId: 'coach-1',
+        alertId,
+        alertType,
+        severity: 'critical',
+        message,
+        clientUserId: 'client-1',
+      });
+    return { rows: w.rows, delivery, send, emit };
+  }
+  async function deliver(alertType: string, message: string) {
+    const p = phone(AFTERNOON);
+    await p.emit(alertType, message);
+    expect(await p.delivery.drain()).toBe(1);
+    return p.send.mock.calls[0][0][0];
   }
 
   it.each([
     ['roman_urgent_reply', URGENT_PUSH],
     ['roman_eating_disorder_reply', ED_PUSH],
-  ])('%s: the exact line under "Client update", opening the action queue', async (alertType, line) => {
+  ])('%s: the exact line under "Client update", opening that alert', async (alertType, line) => {
     const sent = await deliver(alertType, line);
     expect(sent).toMatchObject({ to: TOKEN, title: 'Client update', body: line });
-    expect(sent.data).toMatchObject({ actionScreen: COACH_ACTION_QUEUE_SCREEN, kind: NotificationKind.COACH_ALERT });
+    expect(sent.data).toMatchObject({
+      actionScreen: COACH_SAFETY_ALERT_SCREEN,
+      actionParams: { alertId: 'a1' },
+      kind: NotificationKind.COACH_ALERT,
+    });
   });
 
   it('any other coach alert keeps the generic line', async () => {
     const sent = await deliver('streak_dropped', 'Streak dropped.');
     expect(sent.body).toBe('There is a new update about a client. Open the app to see it.');
+    expect(sent.data).toMatchObject({ actionScreen: 'NotificationCenter' });
+  });
+
+  // Owner 57q: quiet hours are 21:00-08:00 in the coach's zone (New York).
+  const NIGHT = new Date('2026-06-03T02:00:00Z'); // 22:00
+  const DAWN = new Date('2026-06-03T11:59:00Z'); // 07:59
+  const MORNING = new Date('2026-06-03T12:00:00Z'); // 08:00
+
+  it.each([
+    ['22:00', NIGHT],
+    ['07:59', DAWN],
+  ])('at %s the urgent alert push goes out at once', async (_label, at) => {
+    const p = phone(at);
+    await p.emit('roman_urgent_reply', URGENT_PUSH);
+    expect(p.rows[0]).toMatchObject({ urgent: true, not_before: at, deferred_reason: null });
+    expect(await p.delivery.drain()).toBe(1);
+    expect(p.send.mock.calls[0][0][0]).toMatchObject({ body: URGENT_PUSH });
+  });
+
+  it.each([
+    ['22:00', NIGHT],
+    ['07:59', DAWN],
+  ])('at %s the eating-disorder alert push still waits until 08:00', async (_label, at) => {
+    const p = phone(at);
+    await p.emit('roman_eating_disorder_reply', ED_PUSH);
+    expect(p.rows[0]).toMatchObject({ urgent: false, not_before: MORNING, deferred_reason: 'quiet_hours' });
+    expect(await p.delivery.drain()).toBe(0);
+    expect(p.send).not.toHaveBeenCalled();
+    clock = MORNING;
+    expect(await p.delivery.drain()).toBe(1);
+    expect(p.send.mock.calls[0][0][0]).toMatchObject({ body: ED_PUSH });
+  });
+
+  it.each([
+    ['before it', ['ed', 'urgent']],
+    ['while it waits to be sent', ['urgent', 'ed']],
+    ['just after it was sent', ['urgent', 'send', 'ed']],
+  ])('at 22:00, an eating-disorder alert %s leaves the urgent push whole and still waits until 08:00', async (_label, steps) => {
+    const p = phone(NIGHT);
+    for (const step of steps) {
+      if (step === 'urgent') await p.emit('roman_urgent_reply', URGENT_PUSH, 'a-urgent');
+      if (step === 'ed') await p.emit('roman_eating_disorder_reply', ED_PUSH, 'a-ed');
+      if (step === 'send') await p.delivery.drain();
+    }
+    await p.delivery.drain();
+    const sent = () =>
+      p.send.mock.calls.map(([[m]]) => [m.body, (m.data as { actionParams?: unknown }).actionParams]);
+    expect(sent()).toEqual([[URGENT_PUSH, { alertId: 'a-urgent' }]]);
+    expect(p.rows.find((r) => !r.urgent)).toMatchObject({ not_before: MORNING, deferred_reason: 'quiet_hours' });
+    clock = MORNING;
+    await p.delivery.drain();
+    expect(sent()).toEqual([
+      [URGENT_PUSH, { alertId: 'a-urgent' }],
+      [ED_PUSH, { alertId: 'a-ed' }],
+    ]);
+  });
+
+  // EDPUSH (owner 57q): the eating-disorder push waits for 08:00 on its own
+  // row. An ordinary coach alert for the same client (same collapse key)
+  // never takes it over, and it never takes over the ordinary one.
+  const OTHER_PUSH = 'There is a new update about a client. Open the app to see it.';
+  const lines = (p: ReturnType<typeof phone>) =>
+    p.send.mock.calls.map(([[m]]) => [m.body, (m.data as { actionParams?: unknown }).actionParams]);
+
+  it.each([
+    ['then an ordinary coach alert', ['ed', 'other']],
+    ['after an ordinary coach alert', ['other', 'ed']],
+  ])('at 22:00, an eating-disorder alert %s: at 08:00 both arrive, each with its own line', async (_label, steps) => {
+    const p = phone(NIGHT);
+    for (const step of steps) {
+      if (step === 'ed') await p.emit('roman_eating_disorder_reply', ED_PUSH, 'a-ed');
+      if (step === 'other') await p.emit('streak_dropped', 'Streak dropped.', 'a-other');
+    }
+    expect(p.rows).toHaveLength(2);
+    expect(p.rows.find((r) => r.dedupe_key === 'coach_alert:a-ed')).toMatchObject({
+      urgent: false,
+      not_before: MORNING,
+      deferred_reason: 'quiet_hours',
+    });
+    expect(await p.delivery.drain()).toBe(0);
+    clock = MORNING;
+    expect(await p.delivery.drain()).toBe(2);
+    expect(lines(p)).toHaveLength(2);
+    expect(lines(p)).toEqual(
+      expect.arrayContaining([
+        [ED_PUSH, { alertId: 'a-ed' }],
+        [OTHER_PUSH, undefined],
+      ]),
+    );
+  });
+
+  it('at 08:00, an ordinary coach alert just after the eating-disorder push was sent is not folded into it', async () => {
+    const p = phone(NIGHT);
+    await p.emit('roman_eating_disorder_reply', ED_PUSH, 'a-ed');
+    clock = MORNING;
+    expect(await p.delivery.drain()).toBe(1);
+    clock = new Date(MORNING.getTime() + 20_000);
+    await p.emit('streak_dropped', 'Streak dropped.', 'a-other');
+    expect(await p.delivery.drain()).toBe(1);
+    expect(lines(p)).toEqual([
+      [ED_PUSH, { alertId: 'a-ed' }],
+      [OTHER_PUSH, undefined],
+    ]);
+  });
+});
+
+describe('GET /coach/command-center/action-queue/:alertId (owner 57d)', () => {
+  it('reads that one alert for the signed-in coach', async () => {
+    const getSafetyAlert = jest.fn(async () => ({ alert_id: 'a1' }));
+    const controller = new CommandCenterController(
+      fakeOf<CommandCenterService>({ getSafetyAlert }),
+      fakeOf<ChurnInterventionService>({}),
+    );
+    expect(Reflect.getMetadata('path', CommandCenterController.prototype.getSafetyAlert)).toBe(
+      'action-queue/:alertId',
+    );
+    const req = fakeOf<AuthedRequest>({ user: { id: 'coach-1' } });
+    await expect(controller.getSafetyAlert(req, 'a1')).resolves.toEqual({
+      alert_id: 'a1',
+    });
+    expect(getSafetyAlert).toHaveBeenCalledWith('a1', 'coach-1');
   });
 });
