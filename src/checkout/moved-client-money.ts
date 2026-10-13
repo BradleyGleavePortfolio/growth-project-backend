@@ -52,22 +52,20 @@ export async function movedAwayClientIds(
   return new Set(away.filter((c) => !onChain(c)).map((c) => c.id));
 }
 
-/** What a purchase row about a moved-away client keeps (CONTRACT-1). */
-export const MONEY_RECORD_FIELDS = [
-  'id',
-  'package_id',
-  'billing_type',
-  'amount_cents',
-  'currency',
-  'status',
-  'entitlement_active',
-  'cancel_at_period_end',
-  'created_at',
-] as const;
+/** What a purchase row about a moved-away client keeps (CONTRACT-1): the sale, never the client. */
+const moneyRecord = (r: CoachPurchaseView) => ({
+  id: r.id,
+  package_id: r.package_id,
+  billing_type: r.billing_type,
+  amount_cents: r.amount_cents,
+  currency: r.currency,
+  status: r.status,
+  entitlement_active: r.entitlement_active,
+  cancel_at_period_end: r.cancel_at_period_end,
+  created_at: r.created_at,
+});
 
-export type MoneyRecord = Pick<CoachPurchaseView, (typeof MONEY_RECORD_FIELDS)[number]> & {
-  client?: { name: string };
-};
+export type MoneyRecord = ReturnType<typeof moneyRecord> & { client?: { name: string } };
 
 /** The coach's purchase rows, each row about a moved-away client cut to its money record. */
 export async function keepMoneyRecordsOnly<
@@ -76,7 +74,7 @@ export async function keepMoneyRecordsOnly<
   const moved = await movedAwayClientIds(prisma, coachId, rows.map((r) => r.client_user_id));
   return rows.map((r) => {
     if (!moved.has(r.client_user_id)) return r;
-    const record = Object.fromEntries(MONEY_RECORD_FIELDS.map((k) => [k, r[k]])) as MoneyRecord;
+    const record = moneyRecord(r);
     return r.client ? { ...record, client: { name: r.client.name } } : record;
   });
 }

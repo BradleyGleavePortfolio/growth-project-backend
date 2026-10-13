@@ -7,7 +7,7 @@ import 'reflect-metadata';
 import type { User } from '@prisma/client';
 import { CheckoutService } from '../src/checkout/checkout.service';
 import { CoachClientPaymentsService } from '../src/checkout/coach-client-payments.service';
-import { MONEY_RECORD_FIELDS, movedAwayClientIds } from '../src/checkout/moved-client-money';
+import { movedAwayClientIds } from '../src/checkout/moved-client-money';
 import { CoachPaymentOpsController } from '../src/checkout/payment-ops.controller';
 import { CoachMoneyService } from '../src/coach-money/coach-money.service';
 import { PackagesService } from '../src/packages/packages.service';
@@ -22,6 +22,11 @@ const CLIENT = 'client-ana';
 const ANA = 'Ana Ruiz';
 const KEY = '33333333-3333-4333-8333-333333333333';
 const at = (day: number) => new Date(Date.UTC(2026, 9, day, 12));
+/** The only fields a purchase row about Ana keeps once she has moved (listed in the PR). */
+const KEPT = [
+  'amount_cents', 'billing_type', 'cancel_at_period_end', 'created_at', 'currency',
+  'entitlement_active', 'id', 'package_id', 'status',
+];
 /** Never in the old coach's responses once Ana has moved: her id, email, card error, new coach. */
 const GONE_AFTER_MOVE = [CLIENT, 'ana@example.test', 'card_declined', NEW];
 
@@ -183,14 +188,13 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
     const w = world();
     w.moveTo(NEW);
     const r = await readAll(w);
-    const kept = [...MONEY_RECORD_FIELDS].sort();
     for (const row of [...r.purchases, ...r.payments, r.payment.purchase, ...r.failed]) {
-      expect(Object.keys(row).sort()).toEqual(kept);
+      expect(Object.keys(row).sort()).toEqual(KEPT);
       expect(row).toMatchObject({
         id: 'p1', amount_cents: 4900, currency: 'usd', status: 'past_due', created_at: at(1),
       });
     }
-    expect(Object.keys(r.subscribers[0]).sort()).toEqual([...kept, 'client'].sort());
+    expect(Object.keys(r.subscribers[0]).sort()).toEqual([...KEPT, 'client'].sort());
     expect(r.subscribers[0].client).toEqual({ name: ANA });
     expect(r.payment.dunning).toBeNull();
     expect(r.payment.split_ledger).toEqual([
