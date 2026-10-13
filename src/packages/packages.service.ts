@@ -12,6 +12,7 @@ import { Prisma } from '@prisma/client';
 import type { CoachPackage } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { COACH_PURCHASE_SELECT } from '../checkout/coach-payments.select';
+import { keepMoneyRecordsOnly, type MoneyRecord } from '../checkout/moved-client-money';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { assertValidTrial, TRIAL_DAYS_NONE } from './trials/trial-rules';
 import {
@@ -181,7 +182,7 @@ export interface CoachPackageManagementView extends CoachPackage {
 }
 
 export interface SubscribersPage {
-  subscribers: CoachSubscriberRow[];
+  subscribers: Array<CoachSubscriberRow | MoneyRecord>;
   next_offset: number | null;
   total_returned: number;
   package_id: string;
@@ -865,7 +866,8 @@ export class PackagesService {
     const page = hasMore ? rows.slice(0, limit) : rows;
     const [view] = await this.managementViews([pkg]);
     return {
-      subscribers: page,
+      // CONTRACT-1: a client who moved away leaves only the money record.
+      subscribers: await keepMoneyRecordsOnly(this.prisma, coachUserId, page),
       next_offset: hasMore ? offset + limit : null,
       total_returned: page.length,
       package_id: packageId,

@@ -22,6 +22,7 @@ import {
 } from './client-billing.service';
 import type { CoachRefundDto } from './coach-client-payments.controller';
 import { COACH_PURCHASE_SELECT } from './coach-payments.select';
+import { movedAwayClientIds } from './moved-client-money';
 import { isBillingPauseReason } from './dunning-v2/dunning-v2.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 
@@ -185,6 +186,7 @@ export class CoachClientPaymentsService {
     await this.audit(actor, row, 'coach_payments.plan_canceled', { ...outcome, request_key: key });
     return {
       ...outcome,
+      ...((await this.movedAway(actor, row)) ? { access_ends_at: null } : {}),
       message: CANCEL_COPY[result.outcome],
       plan: await this.reload(actor, clientId, purchaseId),
     };
@@ -268,7 +270,14 @@ export class CoachClientPaymentsService {
   }
 
   private async view(actor: User, row: PlanRow, sub?: StripeSubscriptionObject) {
-    return planView(row, actor.id, await this.billingOf(row, sub));
+    const view = planView(row, actor.id, await this.billingOf(row, sub));
+    if (!(await this.movedAway(actor, row))) return view;
+    return { ...view, current_period_end: null, access_expires_at: null };
+  }
+
+  /** CONTRACT-1: a client who moved away keeps the sale and actions, never their access dates. */
+  private async movedAway(actor: User, row: PlanRow): Promise<boolean> {
+    return (await movedAwayClientIds(this.prisma, actor.id, [row.client_user_id])).size > 0;
   }
 
   private async billingOf(row: PlanRow, sub?: StripeSubscriptionObject): Promise<CoachPlanBilling> {

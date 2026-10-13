@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { DUNNING_V2_CADENCE_DAYS } from '../checkout/dunning-v2/dunning-v2.cadence';
+import { movedAwayClientIds } from '../checkout/moved-client-money';
 
 // S-COACH (agent 111) — TGP Money read model for the coach Money page.
 //
@@ -1539,8 +1540,9 @@ export class CoachMoneyService {
     });
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
+    const moved = await movedAwayClientIds(this.prisma, coachId, page.map((r) => r.client?.id));
     return {
-      charges: page.map((r) => this.toCharge(r)),
+      charges: page.map((r) => this.toCharge(r, moved)),
       next_cursor: hasMore ? page[page.length - 1].id : null,
     };
   }
@@ -1570,8 +1572,9 @@ export class CoachMoneyService {
     });
     const t = foldTotals(coachId, slices, []);
     const settled = slices.some((s) => s.kind === 'destination');
+    const moved = await movedAwayClientIds(this.prisma, coachId, [row.client?.id]);
     return {
-      charge: this.toCharge(row),
+      charge: this.toCharge(row, moved),
       breakdown: {
         price_cents: settled ? t.gross_cents : row.amount_cents,
         processing_cents: t.processing_cents,
@@ -1635,7 +1638,7 @@ export class CoachMoneyService {
     refunds: Array<{ amount_cents: number }>;
     disputes: Array<{ status: string; amount_cents: number }>;
     splits: Array<{ id: string }>;
-  }): MoneyChargeDto {
+  }, moved: ReadonlySet<string>): MoneyChargeDto {
     const refunded = r.refunds.reduce((acc, x) => acc + x.amount_cents, 0);
     const openDispute = r.disputes.some((d) =>
       (OPEN_DISPUTE_STATUSES as readonly string[]).includes(d.status),
@@ -1662,7 +1665,11 @@ export class CoachMoneyService {
     else state = 'pending';
     return {
       id: r.id,
-      client: { id: r.client?.id ?? '', name: displayName(r.client) },
+      // CONTRACT-1: a client who moved away keeps their name, never a link.
+      client: {
+        id: r.client && !moved.has(r.client.id) ? r.client.id : '',
+        name: displayName(r.client),
+      },
       package: { id: r.package?.id ?? '', name: r.package?.name ?? 'Package' },
       amount_cents: r.amount_cents,
       currency: r.currency,
@@ -1749,9 +1756,17 @@ export class CoachMoneyService {
       }),
     ]);
 
+    // CONTRACT-1: a client who moved away leaves the to-do list (messaging
+    // them about a card is gone with them; the charge stays in Charges). An
+    // open dispute on the coach's own sale stays, with the name and no link.
+    const moved = await movedAwayClientIds(this.prisma, coachId, [
+      ...failed.map((p) => p.client?.id),
+      ...disputes.map((d) => d.purchase?.client?.id),
+    ]);
     const maxAttempts = DUNNING_V2_CADENCE_DAYS.length;
     const items: MoneyAttentionItem[] = [];
     for (const p of failed) {
+      if (p.client && moved.has(p.client.id)) continue;
       const d = p.dunning;
       const attempt = Math.min(
         maxAttempts,
@@ -1783,7 +1798,7 @@ export class CoachMoneyService {
       items.push({
         kind: 'dispute',
         id: `dispute:${dsp.id}`,
-        client: c ? { id: c.id, name: displayName(c) } : null,
+        client: c ? { id: moved.has(c.id) ? '' : c.id, name: displayName(c) } : null,
         amount_cents: dsp.amount_cents,
         currency: dsp.currency,
         created_at: dsp.created_at.toISOString(),

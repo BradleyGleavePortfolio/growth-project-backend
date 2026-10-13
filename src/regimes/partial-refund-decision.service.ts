@@ -18,6 +18,7 @@
 
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { movedAwayClientIds } from '../checkout/moved-client-money';
 import { PrismaService } from '../prisma.service';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { isNamedRegimesEnabled } from './named-regimes.feature';
@@ -28,7 +29,7 @@ export interface PendingRefundDecisionItem {
   stripe_refund_id: string;
   decision: string;
   created_at: Date;
-  client_user_id: string;
+  client_user_id: string | null;
   amount_cents: number;
 }
 
@@ -154,13 +155,21 @@ export class PartialRefundDecisionService {
         },
       },
     });
+    // CONTRACT-1: a client who moved away is never linked (the decision stays).
+    const moved = await movedAwayClientIds(
+      this.prisma,
+      coachUserId,
+      rows.map((r) => r.client_purchase.client_user_id),
+    );
     return rows.map((r) => ({
       id: r.id,
       client_purchase_id: r.client_purchase_id,
       stripe_refund_id: r.stripe_refund_id,
       decision: r.decision,
       created_at: r.created_at,
-      client_user_id: r.client_purchase.client_user_id,
+      client_user_id: moved.has(r.client_purchase.client_user_id)
+        ? null
+        : r.client_purchase.client_user_id,
       amount_cents: r.client_purchase.amount_cents,
     }));
   }

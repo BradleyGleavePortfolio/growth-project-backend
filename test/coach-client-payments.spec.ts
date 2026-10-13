@@ -69,7 +69,8 @@ function build(rows: Array<ReturnType<typeof plan>>, paused = false) {
   const audit = { write: jest.fn(async () => undefined) };
   const make = <T extends object>(cls: { prototype: T }, value: object): T => Object.assign(Object.create(cls.prototype), value);
   const service = new CoachClientPaymentsService(
-    make(PrismaService, { clientPurchase: { findMany } }),
+    // CONTRACT-1: no client here has moved away from their coach.
+    make(PrismaService, { clientPurchase: { findMany }, user: { findMany: async () => [] } }),
     make(StripeConnectApiService, stripe),
     make(RefundDisputeHandlerService, refunds),
     make(ClientBillingService, billing),

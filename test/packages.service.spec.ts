@@ -128,6 +128,8 @@ function makePrismaStub() {
         ).length,
       ),
     },
+    // CONTRACT-1: no client here has moved away from their coach.
+    user: { findMany: jest.fn(async () => []) },
   };
   return stub;
 }
