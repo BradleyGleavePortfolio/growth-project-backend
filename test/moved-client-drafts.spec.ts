@@ -254,9 +254,12 @@ describe('a sub-coach handoff deletes the drafts the sub-coach handing on holds 
       auditLog: table([]),
       $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
     });
+    // The in-transaction team check is assertHasCapacityTx until the plan cap goes (owner TM-P1), then
+    // assertSubCoachBelongsTo. The fake answers both, so this spec passes in either merge order.
+    const teamCheck = async () => undefined;
     const service = new SubCoachReassignService(
       prisma,
-      fakeOf<SubCoachCapacityService>({ assertHasCapacityTx: async () => undefined }),
+      fakeOf<SubCoachCapacityService>({ assertHasCapacityTx: teamCheck, assertSubCoachBelongsTo: teamCheck }),
       fakeOf<SubCoachIdempotencyService>({
         runWithIdempotency: async ({ runMutation }: { runMutation: () => Promise<unknown> }) => ({ response: await runMutation(), replay: false }),
       }),
