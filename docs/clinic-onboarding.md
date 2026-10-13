@@ -43,7 +43,9 @@ invalid_answers`.
 **The server stores what was shown.** A P0 counts as consent only when BOTH
 hold: `copy_version` is an accepted version (default `consult-consent-v3` and
 `consult-consent-v4`, the versions the server knows; v4 is the same screen with
-paragraph 4 = the ledger's `client-ai-v5` paragraph), AND `text_sha256` is the sha256 (UTF-8,
+paragraph 4 = the ledger's `client-ai-v5` paragraph; `consult-consent-v5` / `v6`
+are v3 / v4 without the clinic sentence, and `consult-consent-v5-coach-free` /
+`v6-coach-free` are those for a client with no coach, owner 62), AND `text_sha256` is the sha256 (UTF-8,
 lowercase hex) of that version's exact screen text. The text lives in
 `src/onboarding/consult-consent-copy.ts`: title, paragraphs 1-3, box 1 label,
 paragraph 4, box 2 label and footer joined with `"\n\n"`, byte-identical to
@@ -274,7 +276,8 @@ Effects, in order:
    split members by signup date.
 4. Coach flag: when any P1-P7 is yes, an injury is reported, or the rule
    requires review, an in-app `coach_alert` notification is created (no
-   screening details in the body) and `screening_flagged_at` is set.
+   screening details in the body, linked to `ClientConsultation` with
+   `{ clientId }` so a tap opens the answers) and `screening_flagged_at` is set.
 5. `UserProfile.onboardingCompleted = true`; intake `completed_at` and the
    frozen `completion_result` are written.
 6. Completion hooks: providers registered under
@@ -345,9 +348,14 @@ used by the RLS policies.
     "any_yes": true,
     "items": [{ "key": "P2", "question": "...", "answer": "yes", "note": "..." }]
   },
-  "consent": { "version": "consult-consent-v3", "agreed_at": "ISO" }
+  "consent": { "version": "consult-consent-v3", "agreed_at": "ISO" },
+  "client_name": "string | null"
 }
 ```
+
+`client_name` is the client's display name (null when blank), read after the
+access check above, so only a reader with live access gets it. Alert rows
+store no name; the coach's answers screen takes its heading from here.
 
 Question and option labels come from `consultation-definitions.ts`, generated
 from the mobile definitions so the coach sees the client's wording.
