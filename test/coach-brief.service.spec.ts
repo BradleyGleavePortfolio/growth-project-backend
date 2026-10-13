@@ -29,6 +29,7 @@ import {
 } from '../src/coach/brief/coach-brief.service';
 import type {
   BriefContextHeadCoach,
+  CoachBriefResponse,
 } from '../src/coach/brief/coach-brief.types';
 import { CoachBriefScheduler, briefPushPreview, briefSendTime } from '../src/coach/brief/coach-brief.scheduler';
 import { CoachDailyLogService } from '../src/coach/brief/coach-daily-log.service';
@@ -1020,6 +1021,62 @@ describe('CoachBriefService moved client — owner 4b', () => {
     ]);
     expect(items.find((i) => i.type === 'message_unread')?.detail).toBe('See you Thursday');
     expect(data.brief_context).toMatchObject({ checked_in_today: 1, weight_logs_flagged: 1, unread_messages: 1 });
+  });
+});
+
+// A brief stored before the thread fix, read the normal way (today and history).
+describe('CoachBriefService stored brief with a moved client — owner 4b', () => {
+  const [NEW_COACH, OLD_COACH, MOVED, OTHER, VOICE] = ['coach-new', 'coach-old', 'client-moved', 'client-other', 'client-voice'];
+  const item = (type: string, client_id: string, detail: string) => ({ type, client_id, client_name: client_id, detail, priority: 1, deep_link: 'tgp://x' });
+  const STORED = {
+    id: 'b0', coach_id: NEW_COACH, brief_date: '2026-10-12', status: 'generated', brief_mode: 'solo_coach',
+    generated_by: 'fallback', narrative: 'Stored narrative.', brief_context: makeBriefContext({ weight_logs_flagged: 1 }),
+    action_items: [
+      item('message_unread', MOVED, 'FORMER-COACH-TEXT one'),
+      item('message_unread', OTHER, 'See you Thursday'),
+      item('message_unread', VOICE, '(voice message)'),
+      item('weight_flag', MOVED, 'Weight change of 4.6 lbs needs review'),
+    ],
+    generated_at: new Date('2026-10-12T13:00:00Z'), created_at: new Date('2026-10-12T13:00:00Z'),
+  };
+  // Messages answered by the read's filter, like the database: client, thread, sender, text.
+  const MESSAGES = [
+    { coach_id: OLD_COACH, client_id: MOVED, sender_id: MOVED, body: 'FORMER-COACH-TEXT one' },
+    { coach_id: NEW_COACH, client_id: OTHER, sender_id: OTHER, body: 'See you Thursday' },
+    { coach_id: NEW_COACH, client_id: VOICE, sender_id: VOICE, body: null },
+  ];
+  type Term = { client_id: string; AND: [{ coach_id?: string }, { OR: Array<{ body: { startsWith: string } | null }> }] };
+  function service() {
+    const prisma = makeMockPrisma();
+    prisma.coachBrief.findUnique.mockResolvedValue(STORED);
+    prisma.coachBrief.count.mockResolvedValue(1);
+    prisma.coachBrief.findMany.mockResolvedValue([STORED]);
+    prisma.coachMessage.findMany.mockImplementation(async ({ where }: { where: { NOT: { sender_id: string }; OR: Term[] } }) =>
+      MESSAGES.filter((m) => m.sender_id !== where.NOT.sender_id && where.OR.some((t) =>
+        t.client_id === m.client_id && t.AND[0].coach_id === m.coach_id &&
+        t.AND[1].OR.some((b) => (b.body === null ? m.body === null : !!m.body?.startsWith(b.body.startsWith))))),
+    );
+    return new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
+  }
+  function expectNoFormerChat(res: CoachBriefResponse) {
+    expect(JSON.stringify(res)).not.toContain('FORMER-COACH-TEXT');
+    const items = (res.summary?.action_items ?? []) as Array<{ type: string; client_id?: string }>;
+    expect(items.map((i) => `${i.type}:${i.client_id}`)).toEqual([
+      `message_unread:${OTHER}`,
+      `message_unread:${VOICE}`,
+      `weight_flag:${MOVED}`,
+    ]);
+    expect(res.summary?.brief_context).toMatchObject({ weight_logs_flagged: 1 });
+  }
+
+  it("today: the stored brief is served without the former coach's chat and keeps the client's own logs", async () => {
+    expectNoFormerChat(await service().getOrGenerateTodaysBrief(NEW_COACH));
+  });
+
+  it('history: the stored brief keeps its day, the logs and the current-thread messages, not the former chat', async () => {
+    const { items } = await service().getBriefHistory(NEW_COACH, 1, 10);
+    expect(items.map((i) => [i.brief_date, i.status])).toEqual([['2026-10-12', 'generated']]);
+    expectNoFormerChat(items[0]);
   });
 });
 
