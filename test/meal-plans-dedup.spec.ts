@@ -62,6 +62,10 @@ function makePrisma() {
         for (const clause of v as any[]) if (!matches(row, clause)) return false;
         continue;
       }
+      if (k === 'NOT') {
+        if (matches(row, v)) return false;
+        continue;
+      }
       if (k === 'client') {
         const client = users.find((u) => u.id === row.client_id);
         if (!client || !matches(client, v)) return false;
@@ -187,7 +191,7 @@ function makePrisma() {
           fiber_g: data.fiber_g ?? null,
           items: data.items ?? null,
           created_at: new Date(),
-          archived_at: null,
+          archived_at: data.archived_at ?? null,
         };
         mealTemplates.push(row);
         return { ...row };
@@ -195,6 +199,15 @@ function makePrisma() {
       findMany: jest.fn(async ({ where }: any) =>
         mealTemplates.filter((t) => matches(t, where)).map((t) => ({ ...t })),
       ),
+      findFirst: jest.fn(async ({ where }: any) => {
+        const row = mealTemplates.find((t) => matches(t, where));
+        return row ? { ...row } : null;
+      }),
+      update: jest.fn(async ({ where, data }: any) => {
+        const row = mealTemplates.find((t) => t.id === where.id);
+        Object.assign(row, data);
+        return { ...row };
+      }),
     },
     dailyMealPlan: {
       create: jest.fn(async ({ data }: any) => {
@@ -204,9 +217,17 @@ function makePrisma() {
           name: data.name,
           notes: data.notes ?? null,
           created_at: new Date(),
-          archived_at: null,
+          archived_at: data.archived_at ?? null,
         };
         dailyMealPlans.push(row);
+        return { ...row };
+      }),
+      findMany: jest.fn(async ({ where }: any) =>
+        dailyMealPlans.filter((p) => matches(p, where)).map((p) => hydratePlan({ ...p })),
+      ),
+      update: jest.fn(async ({ where, data }: any) => {
+        const row = dailyMealPlans.find((p) => p.id === where.id);
+        Object.assign(row, data);
         return { ...row };
       }),
       findUnique: jest.fn(async ({ where }: any) => {
@@ -229,6 +250,9 @@ function makePrisma() {
         for (const d of data) dailyMealPlanSlots.push({ id: newId('slot'), order: 0, ...d });
         return { count: data.length };
       }),
+      findMany: jest.fn(async ({ where }: any) =>
+        dailyMealPlanSlots.filter((r) => matches(r, where)).map((r) => ({ ...r })),
+      ),
     },
     dailyMealPlanAssignment: {
       create: jest.fn(async ({ data }: any) => {
@@ -243,6 +267,11 @@ function makePrisma() {
         };
         assignments.push(row);
         return { ...row };
+      }),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const rows = assignments.filter((a) => matches(a, where));
+        for (const row of rows) Object.assign(row, data);
+        return { count: rows.length };
       }),
       findFirst: jest.fn(async ({ where, orderBy, include }: any) => {
         const out = sortBy(
@@ -422,6 +451,38 @@ describe('BUG-R2 — legacy meal-plans deduped onto real-meal-plans canonical', 
     // History follows the client: today's plan is still theirs.
     const today = await real.getTodayForClient('client-1', TODAY);
     expect(today.assignments.map((a) => a.daily_meal_plan.name)).toEqual(['Cut Phase — Daily']);
+  });
+
+  it('HIST-2 (owner 4): the former coach\u2019s later edits never reach a moved client, who keeps the plan as it was', async () => {
+    const { tpl, plan } = await coachBuildsAndAssigns(real, 'coach-A', 'client-1', TODAY);
+    await real.assignPlan('coach-A', plan!.id, { client_id: 'client-2', starts_on: TODAY });
+    const seen = async (clientId: string) =>
+      (await real.getTodayForClient(clientId, TODAY)).assignments.map((a) => {
+        const t = a.daily_meal_plan.slots[0].meal_template;
+        return [a.daily_meal_plan.name, t.name, t.calories_kcal];
+      });
+    const asAssigned = [['Cut Phase — Daily', 'High-protein breakfast', 520]];
+
+    // The move: client-1's coach is now coach-B. Then coach-A edits.
+    prisma._users.find((u: { id: string }) => u.id === 'client-1').coach_id = 'coach-B';
+    await real.updateTemplate('coach-A', tpl.id, { name: 'Edited breakfast', calories_kcal: 300 });
+    await real.updatePlan('coach-A', plan!.id, { name: 'Edited plan' });
+    expect(await seen('client-1')).toEqual(asAssigned);
+    expect(await seen('client-2')).toEqual([['Edited plan', 'Edited breakfast', 300]]);
+
+    // The frozen copy is on none of coach-A's lists and no coach route opens it.
+    const [kept] = (await real.getTodayForClient('client-1', TODAY)).assignments;
+    expect(kept.daily_meal_plan_id).not.toBe(plan!.id);
+    expect((await real.listPlans('coach-A')).map((p) => p.id)).toEqual([plan!.id]);
+    expect((await real.listTemplates('coach-A')).map((t) => t.id)).toEqual([tpl.id]);
+    await expect(real.getPlan('coach-A', kept.daily_meal_plan_id)).rejects.toThrow(
+      'Daily meal plan not found',
+    );
+    await expect(
+      real.updatePlan('coach-A', kept.daily_meal_plan_id, { name: 'Edited again' }),
+    ).rejects.toThrow('Daily meal plan not found');
+    await real.updatePlan('coach-A', plan!.id, { name: 'Edited again' });
+    expect(await seen('client-1')).toEqual(asAssigned);
   });
 
   it('GET /me/meal-plan alias controller proxies to the canonical system (same shape as /me/meal-plan/today)', async () => {
