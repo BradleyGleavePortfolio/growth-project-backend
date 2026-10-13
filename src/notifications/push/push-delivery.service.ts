@@ -12,7 +12,7 @@ import {
   FetchExpoPushClient,
   deadlineSignal,
 } from './expo-push-client';
-import { PushContext, lockScreenCopy } from './lock-screen-copy';
+import { PushContext, SAFETY_ALERT_PUSH_BODY, lockScreenCopy } from './lock-screen-copy';
 import { androidChannelFor } from './push-channels';
 import { quietHoursFor } from './push-quiet-hours';
 import { pushAllowedByPreferences } from './push-preferences';
@@ -175,6 +175,11 @@ function asContext(v: Prisma.JsonValue | null): PushContext | null {
     timeZone: str('timeZone') ?? null,
     otherPartyDisplayName: str('otherPartyDisplayName'),
     ...(o.moveRequested === true ? { moveRequested: true } : {}),
+    // B-R1F: a Roman safety coach alert keeps its own lock-screen line.
+    ...(typeof o.safetyAlert === 'string' &&
+    Object.prototype.hasOwnProperty.call(SAFETY_ALERT_PUSH_BODY, o.safetyAlert)
+      ? { safetyAlert: o.safetyAlert }
+      : {}),
   };
 }
 
@@ -251,6 +256,9 @@ export class PushDeliveryService {
         where: {
           user_id: push.userId,
           collapse_key: push.collapseKey,
+          // Owner 57q: an urgent push (the urgent safety alert) keeps its own
+          // text, tap and time; an ordinary push never folds into it.
+          urgent: false,
           created_at: { gte: new Date(now.getTime() - RECEIPT_MAX_AGE_MS) },
         },
         orderBy: { created_at: 'desc' },
