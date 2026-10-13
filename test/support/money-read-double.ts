@@ -197,8 +197,9 @@ export function moneyReadPrisma(db: StatefulPrisma) {
     connectAccount: {
       findUnique: async (args: Row) => findMany(db, 'connectAccount', args)[0] ?? null,
     },
-    // CONTRACT-1: whether a client still belongs to the coach (or their team).
+    // CONTRACT-1: whether a client is still on the coach's chain.
     user: { findMany: many('user') },
     teamSubCoachAssignment: { findMany: many('teamSubCoachAssignment') },
+    subCoachAssignment: { findMany: many('subCoachAssignment') },
   };
 }

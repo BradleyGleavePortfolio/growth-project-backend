@@ -12,12 +12,14 @@ import type { CoachPurchaseView } from './coach-payments.select';
 // payment-failure details. Refund and dispute actions still work: they check
 // the seller, not the roster.
 
-type MovedPrisma = Pick<PrismaService, 'user' | 'teamSubCoachAssignment'>;
+type MovedPrisma = Pick<PrismaService, 'user' | 'teamSubCoachAssignment' | 'subCoachAssignment'>;
 
 /**
- * The given clients who have moved away from `coachId`: their coach is
- * neither `coachId` nor one of `coachId`'s active sub-coaches (the team
- * chain), or they have no coach.
+ * The given clients who have moved away from `coachId`: no longer on the
+ * coach's chain (owner: "head coach, then the sub-coach who coaches them").
+ * A client stays when their coach is `coachId`, or one of `coachId`'s active
+ * sub-coaches, or `coachId`'s head coach with the client delegated to
+ * `coachId`. A coachless client has moved away from everyone.
  */
 export async function movedAwayClientIds(
   prisma: MovedPrisma,
@@ -30,16 +32,24 @@ export async function movedAwayClientIds(
     where: { id: { in: ids }, OR: [{ coach_id: null }, { coach_id: { not: coachId } }] },
     select: { id: true, coach_id: true },
   });
-  const coaches = [...new Set(away.flatMap((c) => (c.coach_id ? [c.coach_id] : [])))];
-  const team =
-    coaches.length === 0
-      ? []
-      : await prisma.teamSubCoachAssignment.findMany({
-          where: { head_coach_id: coachId, sub_coach_id: { in: coaches }, archived_at: null },
-          select: { sub_coach_id: true },
-        });
-  const subs = new Set(team.map((t) => t.sub_coach_id));
-  return new Set(away.filter((c) => !c.coach_id || !subs.has(c.coach_id)).map((c) => c.id));
+  if (away.length === 0) return new Set();
+  const awayIds = away.map((c) => c.id);
+  const [team, delegated] = await Promise.all([
+    prisma.teamSubCoachAssignment.findMany({
+      where: { head_coach_id: coachId, archived_at: null },
+      select: { sub_coach_id: true },
+    }),
+    prisma.subCoachAssignment.findMany({
+      where: { sub_coach_id: coachId, client_id: { in: awayIds }, unassigned_at: null },
+      select: { client_id: true, head_coach_id: true },
+    }),
+  ]);
+  const subCoaches = new Set(team.map((t) => t.sub_coach_id));
+  const onChain = (c: { id: string; coach_id: string | null }) =>
+    c.coach_id !== null &&
+    (subCoaches.has(c.coach_id) ||
+      delegated.some((d) => d.client_id === c.id && d.head_coach_id === c.coach_id));
+  return new Set(away.filter((c) => !onChain(c)).map((c) => c.id));
 }
 
 /** What a purchase row about a moved-away client keeps (CONTRACT-1). */
