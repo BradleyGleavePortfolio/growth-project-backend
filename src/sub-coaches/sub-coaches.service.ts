@@ -8,6 +8,10 @@ import {
 } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import {
+  SchedulingSessionLifecycleService,
+  type MoveCancelledSession,
+} from '../scheduling/scheduling-session-lifecycle.service';
 import { TeamService } from '../team/team.service';
 import { deleteCoachRowsLeftByMove, deleteDraftsLeftByMove } from '../coach/moved-client-drafts';
 import { SubCoachAnalyticsService } from './sub-coach-analytics.service';
@@ -77,8 +81,10 @@ export class SubCoachesService {
     private readonly team: TeamService,
     @Optional() invites?: SubCoachInviteService,
     @Optional() analyticsService?: SubCoachAnalyticsService,
+    // Always injected in production; hand-built unit tests may leave it out.
+    @Optional() private readonly sessions?: SchedulingSessionLifecycleService,
   ) {
-    this.invites = invites ?? new SubCoachInviteService(prisma, team);
+    this.invites = invites ?? new SubCoachInviteService(prisma, team, sessions);
     this.analyticsService =
       analyticsService ?? new SubCoachAnalyticsService(prisma);
   }
@@ -272,7 +278,10 @@ export class SubCoachesService {
       };
     }
 
+    let cancelled: MoveCancelledSession[] = [];
     const audit = await this.prisma.$transaction(async (tx) => {
+      // Owner HIST-2b: the old coach's upcoming sessions with this client end now.
+      cancelled = (await this.sessions?.cancelLeftByMove(tx, [client.id], previousCoachId)) ?? [];
       await tx.user.update({
         where: { id: client.id },
         data: { coach_id: toCoachId },
@@ -296,6 +305,7 @@ export class SubCoachesService {
         },
       });
     });
+    await this.sessions?.finishMoveCancels(headCoachId, cancelled);
 
     await this.team.refreshCounters(headCoachId);
 
