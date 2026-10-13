@@ -484,7 +484,7 @@ describe('CommandCenterService.dismissAlert', () => {
     const svc = new CommandCenterService(prisma, buildAdminPtm(), alerts);
     const out = await svc.dismissAlert('a1', 'c1');
     expect(out).toEqual({ ok: true });
-    expect(alerts.acknowledgeForScope).toHaveBeenCalledWith('a1', 'c1', ['u1']);
+    expect(alerts.acknowledgeForScope).toHaveBeenCalledWith('a1', 'c1', ['u1'], expect.anything());
     const out2 = await svc.dismissAlert('a1', 'c1');
     expect(out2).toEqual({ ok: true });
   });
@@ -914,7 +914,7 @@ describe('CC+SC P1b: sub-coach can dismiss an assigned client\'s alert', () => {
     // (coach_id = head, client_id IN ['u2']).
     const ok = await svc.dismissAlert('a-u2', 'sub');
     expect(ok).toEqual({ ok: true });
-    expect(alertsSvc.acknowledgeForScope).toHaveBeenCalledWith('a-u2', 'head', ['u2']);
+    expect(alertsSvc.acknowledgeForScope).toHaveBeenCalledWith('a-u2', 'head', ['u2'], expect.anything());
     expect(alerts.find((a) => a.id === 'a-u2')!.acknowledged_at).not.toBeNull();
 
     // u1 is NOT assigned to the sub-coach -> still denied (NotFound), no IDOR.
@@ -938,6 +938,7 @@ describe('CC+SC P1b: sub-coach can dismiss an assigned client\'s alert', () => {
       'a-u1',
       'head',
       expect.arrayContaining(['u1', 'u2', 'u3']),
+      expect.anything(),
     );
   });
 });

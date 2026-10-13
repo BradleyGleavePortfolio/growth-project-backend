@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type { CoachAlert, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -42,8 +43,28 @@ export type CoachAlertType =
   | 'streak_dropped'
   | 'finance_eod_gap'
   | 'bloodwork_review'
-  // Roman answered urgent symptoms on a weight-loss medicine (no symptom text).
-  | 'roman_urgent_reply';
+  // The two Roman safety alerts (owner 22a, 57): Roman's urgent medical safety
+  // reply, and its eating-disorder safety reply. The row holds no name and no
+  // message text; payload.roman_message_id points at the client's message.
+  | 'roman_urgent_reply'
+  | 'roman_eating_disorder_reply';
+
+export const ROMAN_SAFETY_ALERT_TYPES: readonly string[] = [
+  'roman_urgent_reply',
+  'roman_eating_disorder_reply',
+];
+
+/**
+ * A fixed alert id for an alert that may exist at most once per `key` (the
+ * eating-disorder alert: once per Roman conversation). A second create with
+ * the same id fails on the primary key, so a race cannot make two. UUID-shaped
+ * (version 5 layout) because the dismiss route parses a UUID.
+ */
+export function onceAlertId(alertType: CoachAlertType, key: string): string {
+  const h = createHash('sha256').update(`${alertType}:${key}`).digest('hex');
+  const variant = ((parseInt(h[16], 16) & 0x3) | 0x8).toString(16);
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-5${h.slice(13, 16)}-${variant}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
 
 export type CoachAlertSeverity = 'info' | 'warning' | 'critical';
 
@@ -59,6 +80,8 @@ export interface CreateAlertInput {
   severity?: CoachAlertSeverity;
   message: string;
   payload?: Record<string, unknown>;
+  /** onceAlertId(...): a repeat create throws the unique violation (P2002). */
+  id?: string;
 }
 
 export interface ListAlertsOptions {
@@ -85,27 +108,29 @@ export class CoachAlertsService {
    * creation must never bubble into a user-facing 5xx.
    *
    * Dedup pattern: identical to the risk_red_transition path. The 24h window
-   * applies to every alert type except roman_urgent_reply: each urgent reply
-   * is its own event, so an earlier unacknowledged one never hides it.
+   * applies to every alert type except the Roman safety alerts: each urgent
+   * reply is its own event, so an earlier unacknowledged one never hides it,
+   * and the eating-disorder alert is once per conversation (`id`).
    */
   async createAlert(input: CreateAlertInput): Promise<CoachAlert> {
-    const since = new Date(Date.now() - DEDUP_WINDOW_HOURS * HOUR_MS);
-    const existing = await this.prisma.coachAlert.findFirst({
-      where: {
-        coach_id: input.coachId,
-        client_id: input.clientId,
-        alert_type: input.alertType,
-        acknowledged_at: null,
-        created_at: { gte: since },
-      },
-      orderBy: { created_at: 'desc' },
-    });
-    if (existing && input.alertType !== 'roman_urgent_reply') {
-      return existing;
+    if (!ROMAN_SAFETY_ALERT_TYPES.includes(input.alertType)) {
+      const since = new Date(Date.now() - DEDUP_WINDOW_HOURS * HOUR_MS);
+      const existing = await this.prisma.coachAlert.findFirst({
+        where: {
+          coach_id: input.coachId,
+          client_id: input.clientId,
+          alert_type: input.alertType,
+          acknowledged_at: null,
+          created_at: { gte: since },
+        },
+        orderBy: { created_at: 'desc' },
+      });
+      if (existing) return existing;
     }
 
     const created = await this.prisma.coachAlert.create({
       data: {
+        ...(input.id ? { id: input.id } : {}),
         coach_id: input.coachId,
         client_id: input.clientId,
         alert_type: input.alertType,
@@ -169,10 +194,13 @@ export class CoachAlertsService {
     alertId: string,
     ownerCoachId: string,
     allowedClientIds: string[],
+    // B-R1F: a further caller rule (Roman safety alerts: current coach only).
+    extra: Prisma.CoachAlertWhereInput = {},
   ): Promise<CoachAlert> {
     return this.acknowledgeWhere(alertId, {
       coach_id: ownerCoachId,
       client_id: { in: allowedClientIds },
+      ...extra,
     });
   }
 

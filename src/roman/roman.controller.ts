@@ -166,7 +166,8 @@ export class RomanController {
       if (!edRisk) throw err;
       edFallback = true;
     }
-    await this.roman.appendMessage(caller, session.id, {
+    // The stored turn's id: a safety alert points at this one message.
+    const stored = await this.roman.appendMessage(caller, session.id, {
       role: 'user',
       content: dto.content,
     });
@@ -195,10 +196,11 @@ export class RomanController {
     req.on('close', onClose);
 
     const turn = edFallback
-      ? this.roman.streamEatingDisorderFallback(caller, session)
+      ? this.roman.streamEatingDisorderFallback(caller, session, stored?.id)
       : this.roman.streamAssistantTurn(caller, session, {
           signal: abort.signal,
           userMessage: dto.content,
+          userMessageId: stored?.id,
         });
     try {
       for await (const chunk of turn) {
