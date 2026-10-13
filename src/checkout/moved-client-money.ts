@@ -12,9 +12,9 @@ import { isBillingPauseReason } from './dunning-v2/dunning-v2.service';
 // link to their profile), contact details, access and renewal state, and
 // payment-failure details. Money charges and the tax export drop the package
 // and its cadence too; a charge keeps only whether it was one-time or
-// recurring, which the app needs to read the list (an owner decision is
-// waiting). Lists about the client's current state (a package's subscribers,
-// Needs attention) leave them out. The seller still
+// recurring, which the app needs to read the list (owner exception:
+// "#MONEY-BT - option 1"). Lists about the client's current state (a
+// package's subscribers, Needs attention) leave them out. The seller still
 // refunds (POST /v1/coach/purchases/:id/refund) and restarts a dispute pause
 // (POST /v1/coach/purchases/:id/dispute-restart) by the record id alone.
 
@@ -25,7 +25,10 @@ type MovedPrisma = Pick<PrismaService, 'user' | 'subCoachAssignment'>;
  * roster, by the roster's own rule (SubCoachScopeService): a client stays
  * while their coach is `coachId`, or while `coachId` is a sub-coach on that
  * coach's team with the client delegated to them. A coachless client has
- * moved away from everyone.
+ * moved away from everyone. Removing a sub-coach archives the pair's seat and
+ * can leave the delegation open, so an archived seat ends team membership; a
+ * delegation alone counts only for a pair that was never seated. Keep this in
+ * step with SubCoachScopeService's membership rule (the same rule, #978).
  */
 export async function movedAwayClientIds(
   prisma: MovedPrisma,
@@ -41,10 +44,26 @@ export async function movedAwayClientIds(
   if (away.length === 0) return new Set();
   const delegated = await prisma.subCoachAssignment.findMany({
     where: { sub_coach_id: coachId, client_id: { in: away.map((c) => c.id) }, unassigned_at: null },
-    select: { client_id: true, head_coach_id: true, sub_coach: { select: { coach_id: true } } },
+    select: {
+      client_id: true,
+      head_coach_id: true,
+      sub_coach: {
+        select: {
+          coach_id: true,
+          sub_coach_assignments_as_sub: {
+            where: { archived_at: { not: null } },
+            select: { head_coach_id: true },
+          },
+        },
+      },
+    },
   });
-  // A delegation counts while the client and the sub-coach both still belong to its head coach.
-  const live = delegated.filter((d) => d.sub_coach.coach_id === d.head_coach_id);
+  // A delegation counts while the client and the sub-coach both still belong to its head coach,
+  // and while that head coach has not removed the sub-coach (archived their seat).
+  const live = delegated.filter(({ head_coach_id: head, sub_coach: sub }) => {
+    const removed = sub.sub_coach_assignments_as_sub.some((seat) => seat.head_coach_id === head);
+    return sub.coach_id === head && !removed;
+  });
   const onTeam = (c: { id: string; coach_id: string | null }) =>
     live.some((d) => d.client_id === c.id && d.head_coach_id === c.coach_id);
   return new Set(away.filter((c) => !onTeam(c)).map((c) => c.id));

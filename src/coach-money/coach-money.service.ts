@@ -812,7 +812,7 @@ function displayName(u: { name?: string | null } | null | undefined): string {
 /**
  * CONTRACT-1: a charge to a client who moved away keeps their name, date and
  * amount, never a link, the package or its cadence. `billing_type` stays: the
- * app's charge reader needs it (an owner decision is waiting).
+ * app's charge reader needs it (owner exception: "#MONEY-BT - option 1").
  */
 function unlinkMoved(charge: MoneyChargeDto, moved: ReadonlySet<string>): MoneyChargeDto {
   if (!moved.has(charge.client.id)) return charge;

@@ -18,6 +18,8 @@ import { StatefulPrisma } from './support/stateful-prisma';
 type Row = Record<string, unknown>;
 const OLD = 'coach-old';
 const NEW = 'coach-new';
+/** A sub-coach on OLD's team. */
+const SUB = 'coach-sub';
 const CLIENT = 'client-ana';
 const ANA = 'Ana Ruiz';
 const KEY = '33333333-3333-4333-8333-333333333333';
@@ -42,16 +44,17 @@ const read = (db: StatefulPrisma, model: string) => ({
   findUnique: async (args: Row = {}) => findMany(db, model, { ...args, take: 1 })[0] ?? null,
 });
 
-function world() {
+/** One sale to Ana by `seller`; Ana's coach is OLD. */
+function world(seller = OLD) {
   const db = new StatefulPrisma();
   db.state = {
     user: [{ id: CLIENT, name: ANA, email: 'ana@example.test', coach_id: OLD }],
     coachPackage: [{
-      id: 'pkg-1', coach_id: OLD, name: 'Monthly coaching', currency: 'usd',
+      id: 'pkg-1', coach_id: seller, name: 'Monthly coaching', currency: 'usd',
       interval: 'month', interval_count: 1,
     }],
     clientPurchase: [{
-      id: 'p1', client_user_id: CLIENT, coach_user_id: OLD, package_id: 'pkg-1',
+      id: 'p1', client_user_id: CLIENT, coach_user_id: seller, package_id: 'pkg-1',
       amount_cents: 4900, currency: 'usd', billing_type: 'recurring', status: 'past_due',
       entitlement_active: true, access_expires_at: at(30), current_period_end: at(30),
       cancel_at_period_end: false, canceled_at: null, last_error: 'card_declined',
@@ -71,7 +74,7 @@ function world() {
       currency: 'usd', reason: 'fraudulent', evidence_due_by: at(20), created_at: at(3),
     }],
     splitLedgerEntry: [{
-      id: 'l1', purchase_id: 'p1', kind: 'destination', payee_user_id: OLD, amount_cents: 4802,
+      id: 'l1', purchase_id: 'p1', kind: 'destination', payee_user_id: seller, amount_cents: 4802,
       reversed_cents: 0, currency: 'usd', status: 'posted', created_at: at(1),
     }],
     partialRefundDecision: [{
@@ -141,6 +144,38 @@ async function readAll(w: World, coachId = OLD) {
     decisions: await w.decisions.listPendingForCoach(coachId),
   };
 }
+type Reads = Awaited<ReturnType<typeof readAll>>;
+
+/** Once Ana is off the reader's roster (`before`: still on it), only her money record is left. */
+function expectMoneyRecordsOnly(r: Reads, before: Reads) {
+  for (const row of [...r.purchases, ...r.payments, r.payment.purchase, ...r.failed]) {
+    expect(Object.keys(row).sort()).toEqual(KEPT);
+    expect(row).toMatchObject({
+      id: 'p1', amount_cents: 4900, currency: 'usd', status: 'past_due', created_at: at(1),
+    });
+  }
+  // Every line of a subscriber row is her current access, so she leaves the list.
+  expect(r.subscribers).toEqual([]);
+  expect(r.payment.dunning).toBeNull();
+  expect(r.payment.split_ledger).toEqual(before.payment.split_ledger);
+  // Written out, not derived from the earlier charge: the sale, never the client or package.
+  const kept = {
+    id: 'p1', client: { id: '', name: ANA }, package: { id: '', name: '' },
+    amount_cents: 4900, currency: 'usd', created_at: at(1).toISOString(),
+    billing_type: 'recurring', billing_interval: null, billing_interval_count: null,
+    state: before.charges[0].state, refunded_cents: 0, charged_back_cents: 0,
+  };
+  expect(r.charges).toEqual([kept]);
+  expect(r.charge).toEqual({ ...before.charge, charge: kept });
+  for (const gone of ['pkg-1', 'Monthly coaching']) {
+    expect(JSON.stringify([r.charges, r.charge])).not.toContain(gone);
+  }
+  // Both to-dos (failed card, dispute) were "Message Ana"; the charge above keeps its state.
+  expect(r.attention).toEqual([]);
+  expect(r.decisions).toEqual([{ ...before.decisions[0], client_user_id: null }]);
+  for (const gone of GONE_AFTER_MOVE) expect(JSON.stringify(r)).not.toContain(gone);
+  for (const key of ACCESS) expect(JSON.stringify(r)).not.toContain(`"${key}":`);
+}
 
 describe('CONTRACT-1 — the old coach keeps only the money records of a moved client', () => {
   it('a client on the coach\'s roster stays; anyone else has moved away', async () => {
@@ -153,11 +188,22 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
         { id: 'delegated', coach_id: OLD },
         { id: 'sub-a', coach_id: OLD },
         { id: 'sub-b', coach_id: NEW },
+        { id: 'sub-seated', coach_id: OLD },
+        { id: 'sub-removed', coach_id: OLD },
       ],
       subCoachAssignment: [
         { head_coach_id: OLD, sub_coach_id: 'sub-a', client_id: 'delegated', unassigned_at: null },
         { head_coach_id: OLD, sub_coach_id: 'sub-a', client_id: 'own', unassigned_at: at(1) },
         { head_coach_id: OLD, sub_coach_id: 'sub-b', client_id: 'delegated', unassigned_at: null },
+        ...['sub-seated', 'sub-removed'].map((sub_coach_id) => ({
+          head_coach_id: OLD, sub_coach_id, client_id: 'delegated', unassigned_at: null,
+        })),
+      ],
+      // sub-a was never seated on OLD's team (only removed from another head coach's).
+      teamSubCoachAssignment: [
+        { head_coach_id: NEW, sub_coach_id: 'sub-a', archived_at: at(1) },
+        { head_coach_id: OLD, sub_coach_id: 'sub-seated', archived_at: null },
+        { head_coach_id: OLD, sub_coach_id: 'sub-removed', archived_at: at(1) },
       ],
     };
     const prisma = { user: read(db, 'user'), subCoachAssignment: read(db, 'subCoachAssignment') };
@@ -170,6 +216,10 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
     expect(await movedFrom('sub-a')).toEqual(['none', 'other', 'own']);
     // A sub-coach who left the team loses the delegated client too.
     expect(await movedFrom('sub-b')).toEqual(['delegated', 'none', 'other', 'own']);
+    // A seated sub-coach keeps the delegated client; one the head coach removed (archived seat,
+    // delegation still open) does not.
+    expect(await movedFrom('sub-seated')).toEqual(['none', 'other', 'own']);
+    expect(await movedFrom('sub-removed')).toEqual(['delegated', 'none', 'other', 'own']);
   });
 
   it('before the move every route is unchanged: full rows, client links, dates', async () => {
@@ -195,49 +245,54 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
     expect(r.decisions[0].client_user_id).toBe(CLIENT);
   });
 
-  it('after the move each purchase row keeps only the money record', async () => {
-    const w = world();
-    w.moveTo(NEW);
-    const r = await readAll(w);
-    for (const row of [...r.purchases, ...r.payments, r.payment.purchase, ...r.failed]) {
-      expect(Object.keys(row).sort()).toEqual(KEPT);
-      expect(row).toMatchObject({
-        id: 'p1', amount_cents: 4900, currency: 'usd', status: 'past_due', created_at: at(1),
-      });
-    }
-    // Every line of a subscriber row is her current access, so she leaves the list.
-    expect(r.subscribers).toEqual([]);
-    expect(r.payment.dunning).toBeNull();
-    expect(r.payment.split_ledger).toEqual([
-      expect.objectContaining({ id: 'l1', amount_cents: 4802 }),
-    ]);
-    for (const gone of GONE_AFTER_MOVE) expect(JSON.stringify(r)).not.toContain(gone);
-    for (const key of ACCESS) expect(JSON.stringify(r)).not.toContain(`"${key}":`);
-  });
-
-  it('after the move Money keeps name, date and amount; nothing opens the client', async () => {
+  it('after the move every route keeps only the money record; nothing opens her', async () => {
     const w = world();
     const before = await readAll(w);
     expect(before.charges[0]).toMatchObject({
       package: { id: 'pkg-1', name: 'Monthly coaching' }, billing_interval: 'month',
     });
+    expect(before.payment.split_ledger).toEqual([
+      expect.objectContaining({ id: 'l1', amount_cents: 4802 }),
+    ]);
     w.moveTo(NEW);
-    const r = await readAll(w);
-    // Written out, not derived from the earlier charge: the sale, never the client or package.
-    const kept = {
-      id: 'p1', client: { id: '', name: ANA }, package: { id: '', name: '' },
-      amount_cents: 4900, currency: 'usd', created_at: at(1).toISOString(),
-      billing_type: 'recurring', billing_interval: null, billing_interval_count: null,
-      state: before.charges[0].state, refunded_cents: 0, charged_back_cents: 0,
+    expectMoneyRecordsOnly(await readAll(w), before);
+  });
+
+  it('a sub-coach the head coach removed keeps only the money records of their sale', async () => {
+    // OLD delegated Ana to SUB, who sold to her. Removing SUB archives their seat and can leave
+    // the delegation open; Ana stays OLD's client. An archived seat ends SUB's team membership
+    // (the roster's rule, #978), so SUB keeps only the money record, and still refunds it.
+    const w = world(SUB);
+    w.db.state.user.push({ id: SUB, role: 'coach', coach_id: OLD });
+    w.db.state.subCoachAssignment = [
+      { head_coach_id: OLD, sub_coach_id: SUB, client_id: CLIENT, unassigned_at: null },
+    ];
+    const inFull = async () => {
+      const r = await readAll(w, SUB);
+      expect(r.purchases[0]).toMatchObject({ client_user_id: CLIENT });
+      expect(r.charges[0].client.id).toBe(CLIENT);
+      expect(r.subscribers).toHaveLength(1);
+      return r;
     };
-    expect(r.charges).toEqual([kept]);
-    expect(r.charge).toEqual({ ...before.charge, charge: kept });
-    for (const gone of ['pkg-1', 'Monthly coaching', CLIENT]) {
-      expect(JSON.stringify([r.charges, r.charge])).not.toContain(gone);
-    }
-    // Both to-dos (failed card, dispute) were "Message Ana"; the charge above keeps its state.
-    expect(r.attention).toEqual([]);
-    expect(r.decisions).toEqual([{ ...before.decisions[0], client_user_id: null }]);
+    const saleRow = async () =>
+      (await w.money.exportCsv(SUB, { from: at(0), to: at(31) })).split('\r\n')[1].split(',');
+    // Never seated (a legacy delegation), then seated: Ana is SUB's client in full.
+    await inFull();
+    const seat = { head_coach_id: OLD, sub_coach_id: SUB, archived_at: null as Date | null };
+    w.db.state.teamSubCoachAssignment = [seat];
+    const before = await inFull();
+    const sale = await saleRow();
+    expect(sale.slice(4, 6)).toEqual([ANA, 'Monthly coaching']);
+    seat.archived_at = at(5);
+    expectMoneyRecordsOnly(await readAll(w, SUB), before);
+    expect(await saleRow()).toEqual(sale.map((c, i) => (i === 5 ? '' : c)));
+    const out = await w.payments.refundSale(coach(SUB), 'p1', {
+      idempotency_key: KEY, amount_cents: 500,
+    });
+    expect(w.refunds.createAdminRefund).toHaveBeenCalledWith(expect.objectContaining({
+      purchase_id: 'p1', charge_id: 'ch_1', amount_cents: 500, initiated_by_user_id: SUB,
+    }));
+    expect(Object.keys(out.plan).sort()).toEqual(PLAN_KEPT);
   });
 
   it('after the move the tax export keeps her name, date and amounts, not the package', async () => {

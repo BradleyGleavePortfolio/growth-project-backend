@@ -84,6 +84,14 @@ const RELATIONS: Record<string, Record<string, Relation>> = {
       resolve: (r, db) => (db.state.user ?? []).filter((u) => u.id === r.sub_coach_id),
     },
   },
+  user: {
+    sub_coach_assignments_as_sub: {
+      model: 'teamSubCoachAssignment',
+      many: true,
+      resolve: (r, db) =>
+        (db.state.teamSubCoachAssignment ?? []).filter((s) => s.sub_coach_id === r.id),
+    },
+  },
   splitLedgerEntry: {
     purchase: {
       model: 'clientPurchase',
