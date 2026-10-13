@@ -389,6 +389,8 @@ export interface TimedSliceRow extends SliceRow {
   created_at: Date;
   client_name: string | null;
   package_name: string | null;
+  /** The sale's client, so the tax export can tell a client who moved away (CONTRACT-1). */
+  client_id?: string | null;
 }
 
 /** A slice with reversed_cents > 0 and the events that reversed it. */
@@ -520,6 +522,8 @@ export interface MoneyOccurrence {
   amount_cents: number;
   client_name: string | null;
   package_name: string | null;
+  /** The sale's client, so the tax export can tell a client who moved away (CONTRACT-1). */
+  client_id?: string | null;
 }
 
 export interface WindowSlices {
@@ -805,9 +809,30 @@ function displayName(u: { name?: string | null } | null | undefined): string {
   return n.length > 0 ? n : 'Client';
 }
 
-/** CONTRACT-1: a charge to a client who moved away keeps their name, never a link. */
+/**
+ * CONTRACT-1: a charge to a client who moved away keeps their name, date and
+ * amount, never a link, the package or its cadence. `billing_type` stays: the
+ * app's charge reader needs it (an owner decision is waiting).
+ */
 function unlinkMoved(charge: MoneyChargeDto, moved: ReadonlySet<string>): MoneyChargeDto {
-  return moved.has(charge.client.id) ? { ...charge, client: { ...charge.client, id: '' } } : charge;
+  if (!moved.has(charge.client.id)) return charge;
+  return {
+    ...charge,
+    client: { ...charge.client, id: '' },
+    package: { id: '', name: '' },
+    billing_interval: null,
+    billing_interval_count: null,
+  };
+}
+
+/** CONTRACT-1: a tax-export row about a client who moved away keeps no package. */
+function withoutMovedPackage<T extends { client_id?: string | null; package_name: string | null }>(
+  rows: T[],
+  moved: ReadonlySet<string>,
+): T[] {
+  return rows.map((r) =>
+    r.client_id && moved.has(r.client_id) ? { ...r, package_name: null } : r,
+  );
 }
 
 // ── tax CSV (C-641-4) ─────────────────────────────────────────────────
@@ -1117,7 +1142,7 @@ export class CoachMoneyService {
       },
       purchase: {
         select: {
-          client: { select: { name: true } },
+          client: { select: { id: true, name: true } },
           package: { select: { name: true } },
           refunds: {
             where: { status: 'succeeded' },
@@ -1159,7 +1184,7 @@ export class CoachMoneyService {
       created_at: Date;
       reversal_postings?: ReversalPosting[];
       purchase: {
-        client: { name: string | null } | null;
+        client: { id?: string; name: string | null } | null;
         package: { name: string } | null;
         refunds: Array<{
           id?: string;
@@ -1212,6 +1237,7 @@ export class CoachMoneyService {
       // the sub-coach's buyer, so the name is not carried.
       client_name: withClient ? displayName(r.purchase?.client) : null,
       package_name: r.purchase?.package?.name ?? null,
+      client_id: withClient ? (r.purchase?.client?.id ?? null) : null,
       events,
       postings: r.reversal_postings ?? [],
     };
@@ -1308,7 +1334,7 @@ export class CoachMoneyService {
       purchase: {
         select: {
           currency: true,
-          client: { select: { name: true } },
+          client: { select: { id: true, name: true } },
           package: { select: { name: true } },
         },
       },
@@ -1352,6 +1378,7 @@ export class CoachMoneyService {
       amount_cents: x.amount_cents,
       client_name: displayName(x.purchase.client),
       package_name: x.purchase.package?.name ?? null,
+      client_id: x.purchase.client?.id ?? null,
     });
     return [
       ...refunds.map((x) => occurrence('refund', x, x.posted_at ?? x.created_at)),
@@ -1383,7 +1410,19 @@ export class CoachMoneyService {
       this.loadWindow(coachId, window, scope),
       this.loadOccurrences(coachId, window, scope),
     ]);
-    return buildMoneyCsv(coachId, window, { ...slices, occurrences });
+    // CONTRACT-1: a sale to a client who moved away keeps its name, date and
+    // amount in the file, not its package.
+    const moved = await movedAwayClientIds(
+      this.prisma,
+      coachId,
+      [...slices.salesSeller, ...slices.reversedSeller, ...occurrences].map((r) => r.client_id),
+    );
+    return buildMoneyCsv(coachId, window, {
+      ...slices,
+      salesSeller: withoutMovedPackage(slices.salesSeller, moved),
+      reversedSeller: withoutMovedPackage(slices.reversedSeller, moved),
+      occurrences: withoutMovedPackage(occurrences, moved),
+    });
   }
 
   /**

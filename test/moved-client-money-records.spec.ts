@@ -218,17 +218,38 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
   it('after the move Money keeps name, date and amount; nothing opens the client', async () => {
     const w = world();
     const before = await readAll(w);
+    expect(before.charges[0]).toMatchObject({
+      package: { id: 'pkg-1', name: 'Monthly coaching' }, billing_interval: 'month',
+    });
     w.moveTo(NEW);
     const r = await readAll(w);
-    const unlinked = { id: '', name: ANA };
-    expect(r.charges).toEqual([{ ...before.charges[0], client: unlinked }]);
-    expect(r.charge).toEqual({
-      ...before.charge,
-      charge: { ...before.charge.charge, client: unlinked },
-    });
+    // Written out, not derived from the earlier charge: the sale, never the client or package.
+    const kept = {
+      id: 'p1', client: { id: '', name: ANA }, package: { id: '', name: '' },
+      amount_cents: 4900, currency: 'usd', created_at: at(1).toISOString(),
+      billing_type: 'recurring', billing_interval: null, billing_interval_count: null,
+      state: before.charges[0].state, refunded_cents: 0, charged_back_cents: 0,
+    };
+    expect(r.charges).toEqual([kept]);
+    expect(r.charge).toEqual({ ...before.charge, charge: kept });
+    for (const gone of ['pkg-1', 'Monthly coaching', CLIENT]) {
+      expect(JSON.stringify([r.charges, r.charge])).not.toContain(gone);
+    }
     // Both to-dos (failed card, dispute) were "Message Ana"; the charge above keeps its state.
     expect(r.attention).toEqual([]);
     expect(r.decisions).toEqual([{ ...before.decisions[0], client_user_id: null }]);
+  });
+
+  it('after the move the tax export keeps her name, date and amounts, not the package', async () => {
+    const w = world();
+    const window = { from: at(0), to: at(31) };
+    const rows = async () =>
+      (await w.money.exportCsv(OLD, window)).trim().split('\r\n').slice(1).map((l) => l.split(','));
+    const before = await rows();
+    expect(before).toHaveLength(1);
+    expect(before[0].slice(1, 6)).toEqual(['sale', 'p1', '', ANA, 'Monthly coaching']);
+    w.moveTo(NEW);
+    expect(await rows()).toEqual([before[0].map((c, i) => (i === 5 ? '' : c))]);
   });
 
   it('after the move refund works; the plan keeps the sale and its payments', async () => {

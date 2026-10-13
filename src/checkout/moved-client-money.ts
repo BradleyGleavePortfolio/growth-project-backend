@@ -10,8 +10,9 @@ import { isBillingPauseReason } from './dunning-v2/dunning-v2.service';
 // away keeps the owner's list (record id, date, amount, status, currency, and
 // the client's name where the route shows one) and loses the client's id (the
 // link to their profile), contact details, access and renewal state, and
-// payment-failure details. Money charges also keep which package was sold and
-// its cadence, which the app needs to read the list (an owner decision is
+// payment-failure details. Money charges and the tax export drop the package
+// and its cadence too; a charge keeps only whether it was one-time or
+// recurring, which the app needs to read the list (an owner decision is
 // waiting). Lists about the client's current state (a package's subscribers,
 // Needs attention) leave them out. The seller still
 // refunds (POST /v1/coach/purchases/:id/refund) and restarts a dispute pause
