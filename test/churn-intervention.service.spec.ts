@@ -75,6 +75,10 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
         throw err;
       }
     }),
+    // The FOR SHARE client lock (src/coach/moved-client-drafts.ts): the users it names.
+    $queryRaw: jest.fn(async (_sql: TemplateStringsArray, ...values: any[]) =>
+      rows.users.filter((u) => values.flatMap((v) => v?.values ?? [v]).includes(u.id)),
+    ),
     user: {
       findMany: jest.fn(async ({ where }: any) => {
         return rows.users.filter((u) => {
@@ -194,6 +198,11 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
         };
         rows.interventions.push(row);
         return row;
+      }),
+      deleteMany: jest.fn(async ({ where }: any) => {
+        const before = rows.interventions.length;
+        rows.interventions = rows.interventions.filter((i) => i.id !== where.id);
+        return { count: before - rows.interventions.length };
       }),
       update: jest.fn(async ({ where, data }: any) => {
         const idx = rows.interventions.findIndex((i) => i.id === where.id);
@@ -504,6 +513,29 @@ describe('ChurnInterventionService.generateChurnDraft', () => {
     expect(prisma.rows.interventions.length).toBe(1);
     expect(prisma.rows.interventions[0].idempotency_key).toBe(VALID_UUID);
   });
+
+  it('does not save a draft that finishes after the client moved to another coach (owner decision 17)', async () => {
+    const prisma = buildPrisma({
+      users: [{ id: 'u1', name: 'Alice', coach_id: 'c1', role: 'student', deleted_at: null }],
+    });
+    const anthropic = buildAnthropicClient();
+    const reply = anthropic.messages.create;
+    anthropic.messages.create = jest.fn(async (...args: unknown[]) => {
+      prisma.rows.users[0].coach_id = 'c2';
+      return reply(...args);
+    });
+    const svc = new ChurnInterventionService(
+      prisma,
+      buildPtmService(),
+      buildConfig(),
+      grantAllEgress(),
+      buildNotifications(),
+      handleOf(anthropic),
+    );
+    await expect(svc.generateChurnDraft('c1', 'u1', { idempotency_key: VALID_UUID })).rejects.toThrow(/Client not found/);
+    expect(anthropic.messages.create).toHaveBeenCalledTimes(1);
+    expect(prisma.rows.interventions).toEqual([]);
+  });
 });
 
 describe('ChurnInterventionService.generateChurnDraft — R2b box-2 consent', () => {
@@ -713,6 +745,26 @@ describe('ChurnInterventionService.sendIntervention', () => {
     ).rejects.toThrow();
     // No nudge persisted.
     expect(prisma.rows.nudges.length).toBe(0);
+  });
+
+  it("refuses once the client is no longer this coach's client (owner decision 4)", async () => {
+    const prisma = buildSendTestPrisma();
+    prisma.rows.users[0].coach_id = 'c2';
+    const notif = buildNotifications();
+    const svc = new ChurnInterventionService(
+      prisma,
+      buildPtmService(),
+      buildConfig(),
+      grantAllEgress(),
+      notif,
+      handleOf(buildAnthropicClient()),
+    );
+    await expect(
+      svc.sendIntervention('c1', 'int-1', { message_text: 'msg', idempotency_key: VALID_UUID_2 }),
+    ).rejects.toThrow(/Intervention not found/);
+    expect(prisma.rows.nudges).toEqual([]);
+    expect(prisma.rows.interventions[0].status).toBe('draft');
+    expect(notif.pushToUser).not.toHaveBeenCalled();
   });
 });
 

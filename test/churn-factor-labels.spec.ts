@@ -2,7 +2,7 @@ import { AnthropicHandle, type AnthropicMessagesClient } from '../src/ai-egress/
 import { ConsentScope, ConsentService } from '../src/consent/consent.service';
 import { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
 import { CommandCenterService } from '../src/coach/command-center/command-center.service';
-import { fakeOf, grantAllEgress } from './ai-egress/ai-egress.fakes';
+import { fakeOf, grantAllEgress, withTx } from './ai-egress/ai-egress.fakes';
 
 // CHURN-LABELS-132: the churn-risk factor labels a coach sees follow the client's sharing. The at-risk
 // lists and the churn draft already need the four Coach sharing switches (Workouts, Food logs, Weigh-ins,
@@ -86,7 +86,7 @@ function churnService(factors: Factor[]) {
   const create = jest.fn(async (_body: { system: string }) => ({ content: [{ type: 'text', text: 'Checking in this week. Coach One' }] }));
   const ptm = { getLatestPrediction: async () => ({ risk_score: 0.7, factors }) };
   const svc = new ChurnInterventionService(
-    fakeOf(prisma), fakeOf(ptm), fakeOf({ get: () => undefined }), grantAllEgress(), undefined,
+    fakeOf(withTx(prisma, [{ coach_id: COACH, role: 'student', deleted_at: null }])), fakeOf(ptm), fakeOf({ get: () => undefined }), grantAllEgress(), undefined,
     AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>({ messages: { create } })), consent(),
   );
   return { svc, create, prisma };
