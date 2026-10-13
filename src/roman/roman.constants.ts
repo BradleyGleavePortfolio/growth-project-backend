@@ -3,10 +3,10 @@
  */
 
 /**
- * Owner NOLOCK-R / NOLOCK-R2: the same Roman limits for every client and
- * coach, never by plan, tier or subscription, each over the rolling window
- * below. The coach's AI credit pool and one-off credit purchases still bound
- * spend.
+ * Owner NOLOCK-R / NOLOCK-R2 / NOLOCK-R3: only clients have a daily Roman
+ * number, the same for every client, never by plan, tier or subscription,
+ * each over the rolling window below. Coaches and the owner have none; the
+ * coach's AI credit pool and one-off credit purchases bound their spend.
  *   - messages: user turns (assertWithinRateLimit, 429 ROMAN_RATE_LIMIT).
  *   - file uploads: files a client sends Roman. Roman takes no file yet; the
  *     first upload path must count against this.
@@ -184,15 +184,14 @@ export function romanAudienceOf(role: string | null | undefined): RomanAudience 
 /** The working next step that closes every coach-audience failure message. */
 const ROMAN_COACH_NEXT_STEP = 'Your clients, messages and the rest of the app work as usual.';
 
-/** 429: the caller used their rolling 24 h Roman turns. */
-export function romanRateLimitMessage(retryAfterSeconds: number, role: string = 'student'): string {
+/** 429: the client used their rolling 24 h Roman turns (only clients have a cap). */
+export function romanRateLimitMessage(retryAfterSeconds: number): string {
   const hours = Math.max(1, Math.round(retryAfterSeconds / 3600));
   const when = retryAfterSeconds < 3600 ? 'within the hour' : `in about ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
-  const next =
-    romanAudienceOf(role) === 'client'
-      ? 'Your coach is in Messages any time, and your plan and logs work as usual.'
-      : ROMAN_COACH_NEXT_STEP;
-  return `You have used your Roman conversations for today. Roman can talk again ${when}. ${next}`;
+  return (
+    `You have used your Roman conversations for today. Roman can talk again ${when}. ` +
+    'Your coach is in Messages any time, and your plan and logs work as usual.'
+  );
 }
 
 /** 503: today's Roman capacity (the daily spend cap) is used up. */

@@ -9,6 +9,9 @@
  *   default, ai-credits.constants.ts). No new grant, no Stripe.
  * - A pool that was spent gets the existing 402 COACH_AI_BUDGET_EXHAUSTED.
  * - A coachless student has no pool and is never refused by it.
+ * - Owner NOLOCK-R3: a coach with no plan row has no daily number (past 100
+ *   turns, no 429) while the spent pool still refuses; a client is still
+ *   refused at turn 101.
  * - The coach-method augmenter resolves the head coach (as the code defines).
  *
  * Gated on MWB3_TEST_DATABASE_URL; skipped with a logged reason elsewhere.
@@ -23,6 +26,7 @@ import {
   COACH_AI_BUDGET_EXHAUSTED_CODE,
   resolveMaxActualCents,
 } from '../../src/ai-credits/ai-credits.constants';
+import { ROMAN_MESSAGES_PER_DAY } from '../../src/roman/roman.constants';
 import { RomanService, type RomanCaller } from '../../src/roman/roman.service';
 import { RomanClientContextService } from '../../src/roman/context/roman-client-context.service';
 import { RomanCoachMethodAugmenter } from '../../src/roman/playbook/roman-coach-method.augmenter';
@@ -133,6 +137,42 @@ liveDescribe('B31-D1 live: Roman uses the coach AI credit pool (Postgres)', () =
     expect((err as HttpException).getResponse()).toMatchObject({
       code: COACH_AI_BUDGET_EXHAUSTED_CODE,
     });
+  });
+
+  const userTurns = (sessionId: string, userId: string, n: number) =>
+    prisma.romanMessage.createMany({
+      data: Array.from({ length: n }, (_, i) => ({
+        session_id: sessionId,
+        user_id: userId,
+        role: 'user' as const,
+        content: `t${i}`,
+      })),
+    });
+
+  it('NOLOCK-R3: a coach with no plan row passes 100 turns with no 429; a spent pool refuses', async () => {
+    const coach: RomanCaller = { id: COACH, role: 'coach' };
+    expect(await prisma.coachSubscription.count({ where: { coach_id: COACH } })).toBe(0);
+    const s = await roman.openOrResumeSession(coach, 'coach');
+    await userTurns(s.id, COACH, ROMAN_MESSAGES_PER_DAY + 50);
+    await expect(roman.assertWithinRateLimit(coach)).resolves.toBeUndefined();
+    // The pool was spent in the test above: only the pool limits a coach.
+    const err = await roman.assertCoachPoolOpen(coach).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HttpException);
+    expect((err as HttpException).getStatus()).toBe(402);
+    expect((err as HttpException).getResponse()).toMatchObject({
+      code: COACH_AI_BUDGET_EXHAUSTED_CODE,
+    });
+  });
+
+  it('NOLOCK-R2: a client is still refused at turn 101 with 429', async () => {
+    const s = await roman.openOrResumeSession(client, 'client');
+    await userTurns(s.id, CLIENT, ROMAN_MESSAGES_PER_DAY - 1);
+    await expect(roman.assertWithinRateLimit(client)).resolves.toBeUndefined();
+    await userTurns(s.id, CLIENT, 1);
+    const err = await roman.assertWithinRateLimit(client).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(HttpException);
+    expect((err as HttpException).getStatus()).toBe(429);
+    expect((err as HttpException).getResponse()).toMatchObject({ code: 'ROMAN_RATE_LIMIT' });
   });
 
   it('a coachless student has no pool and is never refused by it', async () => {

@@ -13,7 +13,8 @@
  *
  * Auth: JwtAuthGuard authenticates every route. Roman is available to ALL
  * signed-in users with no plan, tier or subscription gate (owner NOLOCK-R):
- * every client and coach gets the same daily turn cap, applied in the service.
+ * every client gets the same daily turn cap, applied in the service; coaches
+ * and the owner have none (NOLOCK-R3), only the coach AI credit pool.
  * RomanFeatureGuard returns 404 on every route while the feature flag is OFF.
  * A client with no coach gets 403 ROMAN_REQUIRES_COACH on open and send
  * (owner 10-09 00:0x, roman-requires-coach.ts); reading a transcript stays open.

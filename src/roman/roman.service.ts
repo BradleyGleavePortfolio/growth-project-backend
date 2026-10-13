@@ -829,16 +829,17 @@ export class RomanService {
   // ─── Rate limiting ─────────────────────────────────────────────────────────
 
   /**
-   * Throw a structured 429 when the caller has used ROMAN_MESSAGES_PER_DAY
-   * user turns in the rolling 24h (the same for everyone, owner NOLOCK-R).
+   * Throw a structured 429 when a client has used ROMAN_MESSAGES_PER_DAY
+   * user turns in the rolling 24h (the same for every client, owner NOLOCK-R).
    * Counts `user` turns in the rolling window, plus the content-free
    * count of user turns erased by `deleteSession` from a recently active
    * session (so deleting a chat never resets the cap; conservative: those
    * turns count until the erased session's last activity leaves the window).
-   * OWNER is exempt.
+   * Owner NOLOCK-R3: only clients have a daily number; a coach or the owner
+   * is never counted (the coach AI credit pool alone limits a coach).
    */
   async assertWithinRateLimit(caller: RomanCaller): Promise<void> {
-    if (caller.role === 'owner') return;
+    if (romanAudienceOf(caller.role) !== 'client') return;
     const since = new Date(Date.now() - ROMAN_RATE_LIMIT_WINDOW_MS);
     const live = await this.prisma.romanMessage.count({
       where: {
@@ -890,7 +891,7 @@ export class RomanService {
         {
           code: ROMAN_ERROR_RATE_LIMIT,
           retryAfterSeconds,
-          message: romanRateLimitMessage(retryAfterSeconds, caller.role),
+          message: romanRateLimitMessage(retryAfterSeconds),
         },
         HttpStatus.TOO_MANY_REQUESTS,
       );

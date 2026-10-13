@@ -1350,28 +1350,44 @@ describe('RomanService — messages', () => {
 });
 
 describe('RomanService — rate limiting', () => {
-  // Owner NOLOCK-R / NOLOCK-R2: one number for everyone, never a plan or tier.
-  it('100 messages a day for every client and coach; nobody else counts', async () => {
+  // Owner NOLOCK-R / NOLOCK-R2: one number for every client, never a plan or tier.
+  it('a client gets 100 messages a day: the 101st is refused; nobody else counts', async () => {
     expect(ROMAN_MESSAGES_PER_DAY).toBe(100);
-    for (const caller of [CALLER, { id: 'u_coach', role: 'coach' }]) {
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const seed = (id: string, userId: string, n: number) =>
+      seedSession(prisma, {
+        id,
+        userId,
+        dayKey: dayKeyUtc(),
+        startedAt: new Date(),
+        userTurns: Array.from({ length: n }, (_, i) => `t${i}`),
+      });
+    seed('s_mine', CALLER.id, ROMAN_MESSAGES_PER_DAY - 1);
+    // Another client's full day never counts toward this client's limit.
+    seed('s_other', 'u_b', ROMAN_MESSAGES_PER_DAY);
+    await expect(svc.assertWithinRateLimit(CALLER)).resolves.toBeUndefined();
+    await svc.appendMessage(CALLER, 's_mine', { role: 'user', content: 'one more' });
+    await expect(svc.assertWithinRateLimit(CALLER)).rejects.toMatchObject({
+      response: { code: 'ROMAN_RATE_LIMIT' },
+    });
+  });
+
+  // Owner NOLOCK-R3: coaches have no daily Roman number; only the AI credit pool limits them.
+  it('a coach or the owner past 100 messages today is never refused, and their turns are not counted', async () => {
+    for (const caller of [{ id: 'u_coach', role: 'coach' }, { id: 'u_owner', role: 'owner' }]) {
       const prisma = makeFakePrisma();
       const svc = new RomanService(asPrisma(prisma), grantAllEgress());
-      const seed = (id: string, userId: string, n: number) =>
-        seedSession(prisma, {
-          id,
-          userId,
-          dayKey: dayKeyUtc(),
-          startedAt: new Date(),
-          userTurns: Array.from({ length: n }, (_, i) => `t${i}`),
-        });
-      seed('s_mine', caller.id, ROMAN_MESSAGES_PER_DAY - 1);
-      // Another client's full day never counts toward this person's limit.
-      seed('s_other', 'u_b', ROMAN_MESSAGES_PER_DAY);
-      await expect(svc.assertWithinRateLimit(caller)).resolves.toBeUndefined();
-      await svc.appendMessage(caller, 's_mine', { role: 'user', content: 'one more' });
-      await expect(svc.assertWithinRateLimit(caller)).rejects.toMatchObject({
-        response: { code: 'ROMAN_RATE_LIMIT' },
+      seedSession(prisma, {
+        id: `s_${caller.id}`,
+        userId: caller.id,
+        surface: 'coach',
+        dayKey: dayKeyUtc(),
+        startedAt: new Date(),
+        userTurns: Array.from({ length: ROMAN_MESSAGES_PER_DAY + 50 }, (_, i) => `t${i}`),
       });
+      await expect(svc.assertWithinRateLimit(caller)).resolves.toBeUndefined();
+      expect(prisma.romanMessage.count).not.toHaveBeenCalled();
     }
   });
 
@@ -1394,14 +1410,6 @@ describe('RomanService — rate limiting', () => {
     expect(err).toBeInstanceOf(HttpException);
     expect((err as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
     expect((err as HttpException).getStatus()).toBe(429);
-  });
-
-  it('exempts the owner from the rate limit', async () => {
-    const prisma = makeFakePrisma();
-    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
-    await expect(
-      svc.assertWithinRateLimit({ id: 'u_owner', role: 'owner' }),
-    ).resolves.toBeUndefined();
   });
 });
 
