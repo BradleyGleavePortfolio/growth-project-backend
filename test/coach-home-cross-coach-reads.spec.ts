@@ -153,7 +153,7 @@ function seed(): void {
   }
 }
 
-const row = (model: string, id: string): Row => db.state[model].find((r: Row) => r.id === id);
+const row = (model: string, id: string): Row => db.state[model].find((r: Row) => r.id === id)!;
 const move = (client: string, to: string | null) => (row('user', client).coach_id = to);
 const archiveSeat = () => (row('teamSubCoachAssignment', 'seat-s').archived_at = new Date());
 
