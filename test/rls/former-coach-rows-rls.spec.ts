@@ -6,8 +6,8 @@
  * can't write into the old thread. The client still reads every message of
  * their own (nothing is deleted) but writes only into the current thread. The
  * new coach reads only the new thread. Nobody writes into a thread they are not
- * on by naming themselves as sender. Rows about the client who stayed are
- * unchanged.
+ * on, or as someone else, and only its author changes or deletes a line. Rows
+ * about the client who stayed are unchanged.
  *
  * Runs in the rls-live-tests job on a superuser copy of rls_replay.
  * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
@@ -157,13 +157,16 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(await seen('CoachMessage', msg, null)).toEqual([]);
   });
 
-  it('nobody writes into a thread they are not on, the old thread included', async () => {
+  it('nobody writes into a thread they are not on, or as someone else', async () => {
     const tries: Array<[string, [string, string, string]]> = [
       [oldCoach, [oldCoach, client, oldCoach]], // the old coach, old thread
       [teammate, [newCoach, client, teammate]], // open delegation, other team
       [stranger, [oldCoach, stayer, stranger]], // another coach, as sender
       [client, [oldCoach, stayer, client]], // another client, as sender
       [client, [oldCoach, client, client]], // the moved client, old thread
+      [client, [newCoach, client, newCoach]], // the client, as their coach
+      [newCoach, [newCoach, client, client]], // the coach, as their client
+      [teammate, [oldCoach, stayer, oldCoach]], // a teammate, as the head coach
     ];
     for (const [actor, [coach, c, sender]] of tries) {
       await expect(as(actor, (tx) => insertMessage(tx, [id(), coach, c, sender]))).rejects.toThrow(
@@ -172,24 +175,43 @@ if (!DB_URL && process.env.CI === 'true') {
     }
   });
 
-  it('the old thread is read-only for the client: no change, no delete', async () => {
-    const changed = await as(client, (tx) =>
-      tx.$executeRaw`UPDATE "CoachMessage" SET "body" = 'changed' WHERE "id" IN (${msg.old}, ${msg.reply})`,
-    );
-    const removed = await as(client, (tx) =>
-      tx.$executeRaw`DELETE FROM "CoachMessage" WHERE "id" IN (${msg.old}, ${msg.reply})`,
-    );
-    expect([changed, removed]).toEqual([0, 0]);
+  // [rows changed, rows deleted] when `actor` edits, then deletes, `ids`.
+  const changeAndDelete = async (actor: string, ids: string[]) => [
+    await as(actor, (tx) =>
+      tx.$executeRaw`UPDATE "CoachMessage" SET "body" = 'changed' WHERE "id" IN (${Prisma.join(ids)})`,
+    ),
+    await as(actor, (tx) =>
+      tx.$executeRaw`DELETE FROM "CoachMessage" WHERE "id" IN (${Prisma.join(ids)})`,
+    ),
+  ];
+
+  it('only its author changes or deletes a line, and the old thread is read-only', async () => {
+    const tries: Array<[string, string[]]> = [
+      [client, [msg.old, msg.reply]], // the moved client, old thread (own line included)
+      [client, [msg.fresh]], // the client, their coach's line
+      [oldCoach, [msg.stay]], // the coach, their client's line
+      [teammate, [msg.stay]], // a teammate, the client's line
+      [stayer, [msg.teamStay]], // the client, a teammate's line
+    ];
+    for (const [actor, ids] of tries) expect(await changeAndDelete(actor, ids)).toEqual([0, 0]);
     const kept = await prisma.$queryRaw<{ body: string }[]>`
-      SELECT "body" FROM "CoachMessage" WHERE "id" IN (${msg.old}, ${msg.reply})`;
-    expect(kept.map((r) => r.body)).toEqual(['RLS row', 'RLS row']);
+      SELECT "body" FROM "CoachMessage" WHERE "id" IN (${Prisma.join(Object.values(msg))})`;
+    expect(kept.map((r) => r.body)).toEqual(Object.values(msg).map(() => 'RLS row'));
   });
 
-  it('the people of a current thread still write into it', async () => {
-    await as(client, (tx) => insertMessage(tx, [id(), newCoach, client, client]));
-    await as(newCoach, (tx) => insertMessage(tx, [id(), newCoach, client, newCoach]));
-    await as(teammate, (tx) => insertMessage(tx, [id(), oldCoach, stayer, teammate]));
-    await as(oldCoach, (tx) => insertMessage(tx, [id(), oldCoach, stayer, oldCoach]));
+  it('the people of a current thread write, change and delete their own lines', async () => {
+    const own: Array<[string, string, string]> = [
+      [client, newCoach, client],
+      [newCoach, newCoach, client],
+      [teammate, oldCoach, stayer],
+      [oldCoach, oldCoach, stayer],
+      [stayer, oldCoach, stayer],
+    ];
+    for (const [actor, coach, c] of own) {
+      const line = id();
+      await as(actor, (tx) => insertMessage(tx, [line, coach, c, actor]));
+      expect(await changeAndDelete(actor, [line])).toEqual([1, 1]);
+    }
   });
 
   it("review markers and pin/mute rows: the old coach keeps only the stayer's", async () => {

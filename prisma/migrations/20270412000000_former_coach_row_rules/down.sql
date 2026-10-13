@@ -1,11 +1,11 @@
 -- Reverse of 20270412000000_former_coach_row_rules. Only for a confirmed
 -- defect: it lets a coach read and write a moved client's former rows again
--- through direct table access, and any signed-in user write into any thread
--- as its sender.
+-- through direct table access, any signed-in user write into any thread as
+-- its sender, and a thread's people write as one another.
 
 SET lock_timeout = '5s';
 
-DROP POLICY IF EXISTS "coach_message_client_history_read" ON "CoachMessage";
+DROP POLICY IF EXISTS "coach_message_participant_read" ON "CoachMessage";
 
 ALTER POLICY "coach_message_participant_access" ON "CoachMessage"
   USING (

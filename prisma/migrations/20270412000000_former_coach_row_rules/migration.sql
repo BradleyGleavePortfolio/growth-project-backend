@@ -8,11 +8,17 @@
 --
 -- One helper carries the rule: app.is_user_coached_by(client, coach), the
 -- existing SECURITY DEFINER function (20260607000000; fixed search_path,
--- granted to the API roles). A sub-coach writes as themselves under the
--- existing team helpers app.is_subcoach_of / app.is_subcoach_on_coach_team
--- (20261215000000): an open delegation for that client, on that coach's team.
--- That also closes the old sender branch, which let any signed-in user write
--- into any thread by naming themselves as sender_id.
+-- granted to the API roles).
+--
+-- CoachMessage gets two planes. Reading: the client reads every row of their
+-- own, and the thread's coach reads the current thread. Writing (and reading
+-- one's own lines): only the author, as sender_id, into a current thread
+-- they are on. That means its client, its coach, or a sub-coach with an open
+-- delegation for that client on that coach's team (the existing helpers
+-- app.is_subcoach_of / app.is_subcoach_on_coach_team, 20261215000000). That
+-- matches the API, where a send names the caller as sender and only the
+-- author may edit or delete. It also closes the old sender branch, which let
+-- any signed-in user write into any thread by naming themselves as sender_id.
 --
 -- No longer readable through RLS: a coach's view of rows whose client account
 -- was deleted (client_id NULL), and an owner's or former teammate's own sent
@@ -22,39 +28,40 @@
 
 SET lock_timeout = '5s';
 
--- CoachMessage: every command needs the current thread and one of its people.
+-- CoachMessage, writing: the author, into a current thread they are on.
 ALTER POLICY "coach_message_participant_access" ON "CoachMessage"
   USING (
     app.current_user_id() IS NOT NULL
+    AND "sender_id" = app.current_user_id()
     AND app.is_user_coached_by("client_id", "coach_id")
     AND (
       "client_id" = app.current_user_id()
       OR "coach_id" = app.current_user_id()
-      OR (
-        "sender_id" = app.current_user_id()
-        AND app.is_subcoach_of("client_id")
-        AND app.is_subcoach_on_coach_team("coach_id")
-      )
+      OR (app.is_subcoach_of("client_id") AND app.is_subcoach_on_coach_team("coach_id"))
     )
   )
   WITH CHECK (
     app.current_user_id() IS NOT NULL
+    AND "sender_id" = app.current_user_id()
     AND app.is_user_coached_by("client_id", "coach_id")
     AND (
       "client_id" = app.current_user_id()
       OR "coach_id" = app.current_user_id()
-      OR (
-        "sender_id" = app.current_user_id()
-        AND app.is_subcoach_of("client_id")
-        AND app.is_subcoach_on_coach_team("coach_id")
-      )
+      OR (app.is_subcoach_of("client_id") AND app.is_subcoach_on_coach_team("coach_id"))
     )
   );
 
--- The client's read-only history: every row of their own, any thread.
-CREATE POLICY "coach_message_client_history_read" ON "CoachMessage"
+-- CoachMessage, reading: the client's whole history (read-only outside the
+-- current thread), and the thread's coach while the client stays.
+CREATE POLICY "coach_message_participant_read" ON "CoachMessage"
   FOR SELECT TO public
-  USING (app.current_user_id() IS NOT NULL AND "client_id" = app.current_user_id());
+  USING (
+    app.current_user_id() IS NOT NULL
+    AND (
+      "client_id" = app.current_user_id()
+      OR ("coach_id" = app.current_user_id() AND app.is_user_coached_by("client_id", "coach_id"))
+    )
+  );
 
 -- ConversationReview (coach_id is the thread's coach): the client as before.
 ALTER POLICY "conversation_review_participant_access" ON "ConversationReview"
