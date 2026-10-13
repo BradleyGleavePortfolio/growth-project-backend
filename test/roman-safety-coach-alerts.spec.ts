@@ -23,6 +23,7 @@ import type { PrismaService } from '../src/prisma.service';
 import type { NotificationsService } from '../src/notifications/notifications.service';
 import type { AdminPtmService } from '../src/admin/ptm/admin-ptm.service';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import type { AuthedRequest } from '../src/auth/auth-request';
 import type { ExpoPushMessage } from 'expo-server-sdk';
 import { NotificationsService as RealNotificationsService } from '../src/notifications/notifications.service';
 import { PushDeliveryService } from '../src/notifications/push/push-delivery.service';
@@ -630,7 +631,8 @@ describe('GET /coach/command-center/action-queue/:alertId (owner 57d)', () => {
     expect(Reflect.getMetadata('path', CommandCenterController.prototype.getSafetyAlert)).toBe(
       'action-queue/:alertId',
     );
-    await expect(controller.getSafetyAlert({ user: { id: 'coach-1' } } as never, 'a1')).resolves.toEqual({
+    const req = fakeOf<AuthedRequest>({ user: { id: 'coach-1' } });
+    await expect(controller.getSafetyAlert(req, 'a1')).resolves.toEqual({
       alert_id: 'a1',
     });
     expect(getSafetyAlert).toHaveBeenCalledWith('a1', 'coach-1');
