@@ -212,6 +212,17 @@ function safetyAlertsForCurrentCoach(callerId: string): Prisma.CoachAlertWhereIn
   };
 }
 
+/**
+ * Owner 57q and the team chain: an alert is written to the client's coach of
+ * record, so a team sub-coach's own client's alerts carry the sub-coach's id
+ * and a delegated client's carry the head coach's. A sub-coach's queue reads
+ * both; a head coach reads only their own id, as before. Another sub-coach's
+ * id is never in the set.
+ */
+function alertCoachIds(callerId: string, ownerCoachId: string): string | { in: string[] } {
+  return ownerCoachId === callerId ? callerId : { in: [ownerCoachId, callerId] };
+}
+
 /** One action queue row; a Roman safety alert gets its card line and quote. */
 function queueItem(
   alert: {
@@ -325,7 +336,8 @@ export class CommandCenterService {
   // CoachAlert carry the head coach's id as coach_id — see
   // SubCoachScopeService.getHeadCoachIdForSubCoach), so we scope those
   // tables by (coach_id = head, client_id IN assigned) rather than the
-  // sub-coach's own id.
+  // sub-coach's own id. Alerts about the sub-coach's own clients are under
+  // the sub-coach's id, so alert reads use alertCoachIds.
   private async resolveScope(
     coachId: string,
   ): Promise<{ clientIds: string[]; ownerCoachId: string }> {
@@ -425,7 +437,7 @@ export class CommandCenterService {
       }),
       this.prisma.coachAlert.count({
         where: {
-          coach_id: ownerCoachId,
+          coach_id: alertCoachIds(coachId, ownerCoachId),
           client_id: { in: clientIds },
           acknowledged_at: null,
           ...visibleAlertsWhere(clientIds, shared),
@@ -879,10 +891,10 @@ export class CommandCenterService {
     const cursor = opts.before ? new Date(opts.before) : undefined;
     const cursorValid = cursor && Number.isFinite(cursor.getTime());
 
-    // SC-2: alerts are scoped to the SubCoachScope-resolved client set.
-    // CoachAlert.coach_id is the head coach id; a sub-coach only sees alerts
-    // for the clients assigned to them (client_id IN assigned), still under
-    // the head coach's ownership. A head coach with no clients sees nothing.
+    // SC-2: alerts are scoped to the SubCoachScope-resolved client set. A
+    // sub-coach only sees alerts for the clients assigned to them (client_id
+    // IN assigned), under the head coach's id or their own (alertCoachIds).
+    // A head coach with no clients sees nothing.
     const { clientIds, ownerCoachId } = await this.resolveScope(coachId);
     if (clientIds.length === 0) {
       return { items: [], total_pending: 0 };
@@ -892,7 +904,7 @@ export class CommandCenterService {
     // Coach sharing switch (visibleAlertsWhere).
     const shared = await this.sharedWith(ownerCoachId, clientIds);
     const baseWhere: Prisma.CoachAlertWhereInput = {
-      coach_id: ownerCoachId,
+      coach_id: alertCoachIds(coachId, ownerCoachId),
       client_id: { in: clientIds },
       acknowledged_at: null,
       ...visibleAlertsWhere(clientIds, shared),
@@ -932,7 +944,7 @@ export class CommandCenterService {
       where: {
         id: alertId,
         alert_type: { in: [...ROMAN_SAFETY_ALERT_TYPES] },
-        coach_id: ownerCoachId,
+        coach_id: alertCoachIds(coachId, ownerCoachId),
         client_id: { in: clientIds },
         ...safetyAlertsForCurrentCoach(coachId),
       },
@@ -990,7 +1002,8 @@ export class CommandCenterService {
     // assigned). For a head coach ownerCoachId is their own id and clientIds
     // is their full roster, so this is equivalent to the legacy ownership
     // check — head-coach behaviour unchanged. A sub-coach dismissing an
-    // alert for a client NOT assigned to them still 404s (no IDOR).
+    // alert for a client NOT assigned to them still 404s (no IDOR). Like the
+    // list, a sub-coach's alerts may be under their own id (alertCoachIds).
     const { clientIds, ownerCoachId } = await this.resolveScope(coachId);
     // CoachAlertsService.acknowledgeForScope is idempotent and IDOR-safe:
     //   * updateMany/findFirst scoped to (coach_id, client_id IN allowed)
@@ -999,7 +1012,7 @@ export class CommandCenterService {
     //   * returns existing row if already acknowledged (no double-write)
     await this.alertsService.acknowledgeForScope(
       alertId,
-      ownerCoachId,
+      alertCoachIds(coachId, ownerCoachId),
       clientIds,
       safetyAlertsForCurrentCoach(coachId),
     );
