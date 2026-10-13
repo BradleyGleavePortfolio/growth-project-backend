@@ -454,5 +454,18 @@ describe('V1CoachService', () => {
       // The client's old thread stays in place (HIST-4a: read-only history).
       expect(prisma._messages.filter((m) => m.coach_id === 'coach-A' && m.client_id === 'client-1')).toHaveLength(1);
     });
+
+    it('a sub-coach still lists only the clients assigned to them, in the head coach threads', async () => {
+      await svc.sendMessage(coach('coach-A'), 'client-1', 'a1', undefined);
+      await svc.sendMessage(coach('coach-A'), 'client-2', 'b1', undefined);
+      Object.defineProperty(svc, 'subCoachScope', {
+        value: {
+          isSubCoach: async (id: string) => id === 'sub-1',
+          getAuthorizedClientIds: async () => ['client-2'],
+          getHeadCoachIdForSubCoach: async (id: string) => (id === 'sub-1' ? 'coach-A' : null),
+        },
+      });
+      expect((await svc.listThreads(coach('sub-1'))).map((t) => t.clientId)).toEqual(['client-2']);
+    });
   });
 });
