@@ -96,12 +96,17 @@ import {
   ROMAN_SAFETY_ROUTE_REASON,
   ROMAN_SAFETY_ROUTER_MODEL_ID,
   ROMAN_SAFETY_TEMPLATES,
-  ROMAN_URGENT_COACH_ALERT,
+  ROMAN_COACH_TOLD_LINE,
 } from './guardrails/safety-router';
 import { postCheckRomanReply, type PostCheckContext } from './guardrails/roman-post-check';
 import { RomanClientContextService } from './context/roman-client-context.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
-import { CoachAlertsService } from '../coach/coach-alerts.service';
+import {
+  CoachAlertsService,
+  onceAlertId,
+  type CoachAlertType,
+} from '../coach/coach-alerts.service';
+import { SAFETY_ALERT_PUSH_BODY } from '../notifications/push/lock-screen-copy';
 import type {
   RomanClientContext,
   RomanClientContextBundle,
@@ -964,7 +969,8 @@ export class RomanService {
    *  2. Deterministic SafetyRouter on the normalised user text (A-R4-1).
    *     Emergency / self-harm / urgent symptoms answer with fixed templates:
    *     no model call, no client data loaded, nothing sent to a provider.
-   *     Urgent symptoms also alert the client's coach.
+   *     Urgent symptoms also alert the client's coach, and so does an
+   *     eating-disorder message once the reply is ready (owner 22a, 57).
    *  3. Box-2 consent via the single egress gate BEFORE any client data is
    *     read (B-R8-1); the gate re-reads the grant again inside the send.
    *  4. Daily spend cap: reserve the worst-case cost first, fail closed.
@@ -980,7 +986,7 @@ export class RomanService {
   async *streamAssistantTurn(
     caller: RomanCaller,
     session: RomanSession,
-    opts: { signal?: AbortSignal; userMessage?: string } = {},
+    opts: { signal?: AbortSignal; userMessage?: string; userMessageId?: string } = {},
   ): AsyncGenerator<RomanStreamChunk> {
     // Defence-in-depth flag re-check (brief §1.6): never drive the model OFF.
     if (!isRomanChatEnabled()) {
@@ -1001,8 +1007,13 @@ export class RomanService {
         route.class === 'self_harm' ||
         route.class === 'urgent_symptoms')
     ) {
-      const text = ROMAN_SAFETY_TEMPLATES[route.class];
-      if (route.class === 'urgent_symptoms') await this.alertCoachOfUrgentReply(caller);
+      let text = ROMAN_SAFETY_TEMPLATES[route.class];
+      if (
+        route.class === 'urgent_symptoms' &&
+        (await this.alertCoachOfSafetyReply(caller, session, 'roman_urgent_reply', opts.userMessageId))
+      ) {
+        text = `${text} ${ROMAN_COACH_TOLD_LINE}`;
+      }
       yield* this.fixedSafetyReply(caller, session, text, ROMAN_SAFETY_ROUTE_REASON[route.class]);
       return;
     }
@@ -1211,12 +1222,26 @@ export class RomanService {
       exclamationAllowed: false,
     });
 
+    // Owner 57: an eating-disorder message alerts the coach (once per
+    // conversation); the reply that did so says so, after the post-check.
+    const reply =
+      route.class === 'eating_disorder_risk' &&
+      checked.text.trim().length > 0 &&
+      (await this.alertCoachOfSafetyReply(
+        caller,
+        session,
+        'roman_eating_disorder_reply',
+        opts.userMessageId,
+      ))
+        ? `${checked.text}\n\n${ROMAN_COACH_TOLD_LINE}`
+        : checked.text;
+
     // Persisted ONCE, already checked: what is stored is what the client sees.
     let persisted: RomanMessage;
     try {
       persisted = await this.appendMessage(caller, session.id, {
         role: 'roman',
-        content: checked.text,
+        content: reply,
         promptTokens,
         completionTokens,
         modelId: ROMAN_MODEL_PHASE_1,
@@ -1250,8 +1275,8 @@ export class RomanService {
       `roman.turn session=${session.id} prompt_version=${romanPromptVersionOf(session.surface)} model_call=true rewritten=${checked.rewritten} guardrail_count=${checked.guardrails_applied.length} usage=${usage.kind} context=${bundle ? bundle.hash.slice(0, 12) : grounded ? 'unavailable' : 'none'}`,
     );
 
-    if (checked.text.length > 0) yield { type: 'delta', text: checked.text };
-    yield { type: 'done', text: checked.text, messageId: persisted.id, interrupted };
+    if (reply.length > 0) yield { type: 'delta', text: reply };
+    yield { type: 'done', text: reply, messageId: persisted.id, interrupted };
   }
 
   /**
@@ -1282,6 +1307,7 @@ export class RomanService {
   async *streamEatingDisorderFallback(
     caller: RomanCaller,
     session: RomanSession,
+    userMessageId?: string,
   ): AsyncGenerator<RomanStreamChunk> {
     let hasCoach = false;
     try {
@@ -1296,33 +1322,54 @@ export class RomanService {
       // The coachless wording is true for everyone; never block the reply.
       this.logger.warn(`roman.fallback_coach_read_failed: ${romanErrorTag(err)}`);
     }
-    const text = romanEatingDisorderFallback(hasCoach);
+    // Owner 57: the coach line follows the coach sentence when the alert went.
+    const told =
+      hasCoach &&
+      (await this.alertCoachOfSafetyReply(caller, session, 'roman_eating_disorder_reply', userMessageId));
+    const text = romanEatingDisorderFallback(hasCoach, told);
     yield* this.fixedSafetyReply(caller, session, text, ROMAN_EATING_DISORDER_FALLBACK_REASON);
   }
 
   /**
-   * Urgent symptoms on a weight-loss medicine: the client's coach gets the
-   * existing red-flag coach alert (in-app item and the quiet push), once per
-   * urgent reply. A coachless client gets the reply only. A failure is logged
-   * by code and never blocks the reply.
+   * Owner 22a and 57: a Roman safety reply alerts the client's current coach
+   * (the in-app alert and the quiet push). Urgent: one alert per urgent reply.
+   * Eating disorder: at most one per conversation (a fixed alert id, so a
+   * repeat or a race fails on the key). The row holds no name and no message
+   * text, only the id of the client's message (`roman_message_id`); the alert
+   * card reads it for the current coach only. True when this call created the
+   * alert. A coachless client, a repeat or a failure (logged by code) is
+   * false, and the reply is never blocked.
    */
-  private async alertCoachOfUrgentReply(caller: RomanCaller): Promise<void> {
-    if (caller.role !== 'student' || !this.coachAlerts) return;
+  private async alertCoachOfSafetyReply(
+    caller: RomanCaller,
+    session: RomanSession,
+    alertType: Extract<CoachAlertType, 'roman_urgent_reply' | 'roman_eating_disorder_reply'>,
+    userMessageId: string | undefined,
+  ): Promise<boolean> {
+    if (caller.role !== 'student' || session.surface !== 'client' || !this.coachAlerts) {
+      return false;
+    }
+    const urgent = alertType === 'roman_urgent_reply';
     try {
       const user = await this.prisma.user.findUnique({
         where: { id: caller.id },
         select: { coach_id: true },
       });
-      if (!user?.coach_id) return;
+      if (!user?.coach_id) return false;
       await this.coachAlerts.createAlert({
+        ...(urgent ? {} : { id: onceAlertId(alertType, session.id) }),
         coachId: user.coach_id,
         clientId: caller.id,
-        alertType: 'roman_urgent_reply',
-        severity: 'critical',
-        message: ROMAN_URGENT_COACH_ALERT,
+        alertType,
+        severity: urgent ? 'critical' : 'warning',
+        message: SAFETY_ALERT_PUSH_BODY[alertType],
+        payload: { roman_message_id: userMessageId ?? null },
       });
+      return true;
     } catch (err) {
-      this.logger.warn(`roman.urgent_alert_failed: ${romanErrorTag(err)}`);
+      if ((err as { code?: unknown } | null)?.code === 'P2002') return false;
+      this.logger.warn(`roman.safety_alert_failed: ${romanErrorTag(err)}`);
+      return false;
     }
   }
 
