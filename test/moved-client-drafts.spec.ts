@@ -5,7 +5,12 @@
 import { AiApprovalService, payloadClientIds } from '../src/ai/gateway/ai-approval.service';
 import type { AuditService } from '../src/audit/audit.service';
 import type { StripeApiService } from '../src/billing/stripe-api.service';
-import { MOVED_CLIENT_PAYLOAD_KEYS, deleteDraftsLeftByMove } from '../src/coach/moved-client-drafts';
+import { CoachAlertsService } from '../src/coach/coach-alerts.service';
+import {
+  MOVED_CLIENT_PAYLOAD_KEYS,
+  deleteCoachRowsLeftByMove,
+  deleteDraftsLeftByMove,
+} from '../src/coach/moved-client-drafts';
 import type { PrismaService } from '../src/prisma.service';
 import type { SubCoachCapacityService } from '../src/sub-coach/sub-coach-capacity.service';
 import type { SubCoachIdempotencyService } from '../src/sub-coach/sub-coach-idempotency.service';
@@ -24,10 +29,12 @@ function matches(row: Row, where: Where): boolean {
     if (cond === undefined) return true;
     if (key === 'AND') return (cond as Where[]).every((w) => matches(row, w));
     if (key === 'OR') return (cond as Where[]).some((w) => matches(row, w));
+    if (key === 'NOT') return !matches(row, cond as Where);
     const value = row[key];
     if (cond && typeof cond === 'object') {
-      const c = cond as { in?: unknown[]; not?: unknown; path?: string[]; equals?: unknown };
+      const c = cond as { in?: unknown[]; not?: unknown; path?: string[]; equals?: unknown; startsWith?: string };
       if (c.in) return c.in.includes(value);
+      if (c.startsWith !== undefined) return typeof value === 'string' && value.startsWith(c.startsWith);
       if ('not' in c) return value != null && value !== c.not;
       if (c.path) return value != null && (value as Row)[c.path[0]] === c.equals;
     }
@@ -70,6 +77,10 @@ function world() {
     ({ id, tenant_coach_id: tenant, requester_id: requester, subject_user_id: subject, status, payload });
   const msg = (id: string, coach_id: string, client_id: string) => ({ id, coach_id, client_id });
   const churn = (id: string, coach_id: string, client_id: string, status: string) => ({ id, coach_id, client_id, status });
+  const alert = (id: string, coach_id: string, client_id: string, alert_type: string, acknowledged_at: Date | null = null) =>
+    ({ id, coach_id, client_id, alert_type, acknowledged_at });
+  const note = (id: string, user_id: string, deep_link: string | null, payload: Row | null) => ({ id, user_id, deep_link, payload });
+  const insight = (user_id: string, side: string) => ({ id: `${user_id}-${side}`, user_id, side });
   const db = {
     user: table([
       user('head1', 'coach', null), user('sub1', 'coach', 'head1'),
@@ -111,6 +122,35 @@ function world() {
       churn('head1-client2-churn-draft', 'head1', 'client2', 'draft'),
       churn('sub1-client3-churn-draft', 'sub1', 'client3', 'draft'),
     ]),
+    coachAlert: table([
+      alert('head1-client1-risk', 'head1', 'client1', 'risk_red_transition'),
+      alert('head1-client1-urgent-open', 'head1', 'client1', 'roman_urgent_reply'),
+      alert('head1-client1-ed-dismissed', 'head1', 'client1', 'roman_eating_disorder_reply', new Date()),
+      alert('head1-client2-urgent-open', 'head1', 'client2', 'roman_urgent_reply'),
+      alert('sub1-client3-misses', 'sub1', 'client3', 'consecutive_misses'),
+      alert('sub1-client3-ed-open', 'sub1', 'client3', 'roman_eating_disorder_reply'),
+    ]),
+    // Each inbox row names the client the way its writer does.
+    notification: table([
+      note('head1-client1-alert', 'head1', 'tgp://coach/clients/client1', { alertId: 'a1', clientUserId: 'client1' }),
+      note('head1-client1-flag', 'head1', null, { type: 'onboarding_screening_review', client_id: 'client1' }),
+      note('head1-client1-checkins', 'head1', 'tgp://coach/clients/client1/checkins', null),
+      note('head1-client1-chat', 'head1', 'tgp://messages/client1', { threadId: 'client1' }),
+      note('head1-client1-first-payment', 'head1', null, { clientId: 'client1' }),
+      note('head1-client1-drip-failed', 'head1', null, { client_user_id: 'client1' }),
+      note('head1-client1-purchase', 'head1', 'tgp://coach/purchases/p1', { purchase_id: 'p1', buyer_id: 'client1' }),
+      note('head1-client10-alert', 'head1', 'tgp://coach/clients/client10', { clientUserId: 'client10' }),
+      note('head1-client2-alert', 'head1', 'tgp://coach/clients/client2', { clientUserId: 'client2' }),
+      note('client1-own-chat', 'client1', 'tgp://messages/client1', { threadId: 'client1' }),
+      note('sub1-client1-chat', 'sub1', 'tgp://messages/client1', { threadId: 'client1' }),
+      note('sub1-client3-alert', 'sub1', 'tgp://coach/clients/client3', { clientUserId: 'client3' }),
+    ]),
+    // 'coach' is the shared coach-side row stored before rows were keyed by coach (#947).
+    wearableInsightCache: table([
+      insight('client1', 'coach:head1'), insight('client1', 'coach:sub1'), insight('client1', 'coach'),
+      insight('client1', 'client'), insight('client2', 'coach:head1'),
+      insight('client3', 'coach:sub1'), insight('client3', 'coach:head1'), insight('client3', 'client'),
+    ]),
   };
   const prisma: PrismaService = fakeOf<PrismaService>({ ...db, $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma) });
   const team = fakeOf<TeamService>({ refreshCounters: async () => undefined });
@@ -120,8 +160,27 @@ function world() {
     messageDraft: db.messageDraft.rows.map((r) => String(r.id)),
     churnIntervention: db.churnIntervention.rows.map((r) => String(r.id)),
   });
-  return { db, prisma, subCoaches: new SubCoachesService(prisma, team), ids };
+  // Owner 4: what the coaches still hold; an alert shows its holder.
+  const held = () => ({
+    coachAlert: db.coachAlert.rows.map((r) => `${r.id} @${r.coach_id}`),
+    notification: db.notification.rows.map((r) => String(r.id)),
+    wearableInsightCache: db.wearableInsightCache.rows.map((r) => String(r.id)),
+  });
+  return { db, prisma, subCoaches: new SubCoachesService(prisma, team), ids, held };
 }
+
+const REMOVALS: Array<[string, (w: ReturnType<typeof world>) => Promise<unknown>]> = [
+  ['revoking the sub-coach', (w) => w.subCoaches.revoke('head1', 'sub1', {})],
+  [
+    'removing the sub-coach from the team',
+    (w) =>
+      new TeamModeService(
+        w.prisma,
+        fakeOf<StripeApiService>({ isConfigured: () => false }),
+        fakeOf<TeamModeTierResolverService>({}),
+      ).removeSubCoach({ headCoachId: 'head1', subCoachId: 'sub1' }),
+  ],
+];
 
 // head1 hands client1 to sub1 directly.
 const AFTER_CLIENT1_TO_SUB1 = {
@@ -179,18 +238,7 @@ describe('a client move deletes the drafts left behind (owner decision 17)', () 
     expect(w.ids().aiActionDraft.filter((id) => id.includes('client3'))).toEqual(['head1-client3-pending']);
   });
 
-  it.each([
-    ['revoking the sub-coach', (w: ReturnType<typeof world>) => w.subCoaches.revoke('head1', 'sub1', {})],
-    [
-      'removing the sub-coach from the team',
-      (w: ReturnType<typeof world>) =>
-        new TeamModeService(
-          w.prisma,
-          fakeOf<StripeApiService>({ isConfigured: () => false }),
-          fakeOf<TeamModeTierResolverService>({}),
-        ).removeSubCoach({ headCoachId: 'head1', subCoachId: 'sub1' }),
-    ],
-  ])('%s moves their clients to the head coach and deletes only those clients\' drafts', async (_label, remove) => {
+  it.each(REMOVALS)('%s moves their clients to the head coach and deletes only those clients\' drafts', async (_label, remove) => {
     const w = world();
     await remove(w);
     expect(w.db.user.rows.find((u) => u.id === 'client3')?.coach_id).toBe('head1');
@@ -215,6 +263,58 @@ describe('a client move deletes the drafts left behind (owner decision 17)', () 
 
   it('matches every payload key that deciding a draft checks', () => {
     for (const key of MOVED_CLIENT_PAYLOAD_KEYS) expect(payloadClientIds({ [key]: 'client1' })).toEqual(['client1']);
+  });
+});
+
+describe("a client move clears the old coach's alerts, inbox rows and coach-side insights (owner 4)", () => {
+  it('the old coach keeps nothing about the moved client, and an open safety alert passes to the new coach (57q)', async () => {
+    const w = world();
+    await w.subCoaches.reassignClient('head1', 'sub1', { clientId: 'client1' });
+    const after = {
+      coachAlert: [
+        'head1-client1-urgent-open @sub1', 'head1-client2-urgent-open @head1',
+        'sub1-client3-misses @sub1', 'sub1-client3-ed-open @sub1',
+      ],
+      // Money rows open the coach's own billing and stay; a client id that only starts the same stays.
+      notification: [
+        'head1-client1-purchase', 'head1-client10-alert', 'head1-client2-alert',
+        'client1-own-chat', 'sub1-client1-chat', 'sub1-client3-alert',
+      ],
+      wearableInsightCache: [
+        'client1-coach:sub1', 'client1-client', 'client2-coach:head1',
+        'client3-coach:sub1', 'client3-coach:head1', 'client3-client',
+      ],
+    };
+    expect(w.held()).toEqual(after);
+    // The alert lists: the old coach's leaves the client out; the new coach's has the open safety alert.
+    const alerts = new CoachAlertsService(w.prisma);
+    expect((await alerts.listForCoach({ coachId: 'head1' })).map((a) => a.client_id)).toEqual(['client2']);
+    expect((await alerts.listForCoach({ coachId: 'sub1' })).map((a) => a.id)).toEqual([
+      'head1-client1-urgent-open', 'sub1-client3-misses', 'sub1-client3-ed-open',
+    ]);
+    // Repeating it deletes and passes nothing more.
+    await w.prisma.$transaction((tx) => deleteCoachRowsLeftByMove(tx, ['client1'], 'head1', 'sub1'));
+    expect(w.held()).toEqual(after);
+  });
+
+  it.each(REMOVALS)("%s clears the sub-coach's rows about their clients; the head coach gets the open safety alert", async (_label, remove) => {
+    const w = world();
+    await remove(w);
+    expect(w.held()).toEqual({
+      coachAlert: [
+        'head1-client1-risk @head1', 'head1-client1-urgent-open @head1', 'head1-client1-ed-dismissed @head1',
+        'head1-client2-urgent-open @head1', 'sub1-client3-ed-open @head1',
+      ],
+      notification: [
+        'head1-client1-alert', 'head1-client1-flag', 'head1-client1-checkins', 'head1-client1-chat',
+        'head1-client1-first-payment', 'head1-client1-drip-failed', 'head1-client1-purchase',
+        'head1-client10-alert', 'head1-client2-alert', 'client1-own-chat', 'sub1-client1-chat',
+      ],
+      wearableInsightCache: [
+        'client1-coach:head1', 'client1-coach:sub1', 'client1-coach', 'client1-client',
+        'client2-coach:head1', 'client3-coach:head1', 'client3-client',
+      ],
+    });
   });
 });
 
@@ -289,6 +389,13 @@ describe('a sub-coach handoff deletes the drafts the sub-coach handing on holds 
     expect(h.open()).toEqual(['client2:sub1']);
     expect(h.ids()).toEqual(left(before, ['sub2-client1-draft']));
   });
+
+  it("deletes the sub-coach's inbox rows and coach-side insight about that client and leaves the head coach's alerts (owner 4)", async () => {
+    const h = handoff();
+    const before = h.held();
+    await h.move('sub2');
+    expect(h.held()).toEqual(left(before, ['sub1-client1-chat', 'client1-coach:sub1', 'client1-coach']));
+  });
 });
 
 describe('a client left with no coach loses every unapproved draft about them (owner decision 17)', () => {
@@ -300,6 +407,18 @@ describe('a client left with no coach loses every unapproved draft about them (o
       left(before, [
         'sub1-client3-draft', 'sub1-client3-pending', 'sub1-in-head1-client3-pending', 'head1-client3-pending',
         'no-requester-head1-client3-pending', 'sub1-client3-message', 'sub1-client3-churn-draft',
+      ]),
+    );
+  });
+
+  it('loses every alert and coach-side insight about them; there is no coach to pass an open safety alert to (owner 4)', async () => {
+    const w = world();
+    const before = w.held();
+    await w.prisma.$transaction((tx) => deleteCoachRowsLeftByMove(tx, ['client3'], 'sub1', null));
+    expect(w.held()).toEqual(
+      left(before, [
+        'sub1-client3-misses @sub1', 'sub1-client3-ed-open @sub1', 'sub1-client3-alert',
+        'client3-coach:sub1', 'client3-coach:head1',
       ]),
     );
   });

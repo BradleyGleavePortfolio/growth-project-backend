@@ -42,6 +42,10 @@ interface MockPrisma {
   aiActionDraft: { deleteMany: jest.Mock };
   messageDraft: { deleteMany: jest.Mock };
   churnIntervention: { deleteMany: jest.Mock };
+  // And the old coach's alerts, inbox rows and coach-side insights (owner 4).
+  coachAlert: { updateMany: jest.Mock; deleteMany: jest.Mock };
+  notification: { deleteMany: jest.Mock };
+  wearableInsightCache: { deleteMany: jest.Mock };
   $transaction: jest.Mock;
 }
 
@@ -86,6 +90,9 @@ function buildPrisma(overrides: Partial<MockPrisma> = {}): MockPrisma {
     aiActionDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
     messageDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
     churnIntervention: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    coachAlert: { updateMany: jest.fn(async () => ({ count: 0 })), deleteMany: jest.fn(async () => ({ count: 0 })) },
+    notification: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    wearableInsightCache: { deleteMany: jest.fn(async () => ({ count: 0 })) },
     $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
       cb(base as unknown),
     ),

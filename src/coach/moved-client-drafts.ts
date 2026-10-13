@@ -86,6 +86,90 @@ export async function deleteDraftsHeldBy(
   await tx.churnIntervention.deleteMany({ where: { client_id: clientId, coach_id: holderId, status: { not: 'sent' } } });
 }
 
+// Roman's two safety alert types (backend #946). Plain strings, so this file
+// does not depend on the order in which the two PRs merge.
+const MOVED_CLIENT_SAFETY_ALERT_TYPES = ['roman_urgent_reply', 'roman_eating_disorder_reply'] as const;
+
+// Payload keys that name the client on a coach's inbox row: coach and flag
+// alerts, check-in rows, the first payment, a failed package drop.
+const MOVED_CLIENT_INBOX_KEYS = ['clientUserId', 'clientId', 'client_id', 'client_user_id'] as const;
+
+// A coach's inbox row is about a client when it opens them (their coach
+// screens or their chat) or names them in its payload.
+const inboxRowsAbout = (ids: string[]): Prisma.NotificationWhereInput[] =>
+  ids.flatMap((id) => [
+    { deep_link: `tgp://coach/clients/${id}` },
+    { deep_link: { startsWith: `tgp://coach/clients/${id}/` } },
+    { deep_link: `tgp://messages/${id}` },
+    ...MOVED_CLIENT_INBOX_KEYS.map((key) => ({ payload: { path: [key], equals: id } })),
+  ]);
+
+/**
+ * Owner 4: when a client moves, the coaches they left lose their alerts,
+ * inbox rows and cached coach-side insights about them at once, in the
+ * transaction that moves them. For each moved client:
+ *   - alerts (CoachAlert) held by anyone but `newCoachId` (by anyone at all
+ *     when it is null) are deleted. Owner 57q: a Roman safety alert that is
+ *     still open passes to the new coach instead, the coach Roman alerts after
+ *     the move, so it is never lost. A dismissed one is the old coach's
+ *     handled item; the reply itself stays in the client's Roman chat;
+ *   - `formerCoachId`'s inbox rows (Notification) about them are deleted.
+ *     Money rows (a purchase, refund, dispute or payout) open the coach's own
+ *     billing and use none of these keys, so they stay;
+ *   - coach-side wearable insight rows (side 'coach:<coachId>', or the shared
+ *     'coach' row stored before that key) of anyone but the new coach go.
+ * The client's own rows are never touched. Repeating it deletes nothing more.
+ */
+export async function deleteCoachRowsLeftByMove(
+  tx: Prisma.TransactionClient,
+  clientIds: readonly string[],
+  formerCoachId: string,
+  newCoachId: string | null,
+): Promise<void> {
+  if (clientIds.length === 0) return;
+  const ids = [...clientIds];
+  const others = newCoachId === null ? undefined : { not: newCoachId };
+  if (newCoachId !== null) {
+    await tx.coachAlert.updateMany({
+      where: {
+        client_id: { in: ids },
+        coach_id: others,
+        alert_type: { in: [...MOVED_CLIENT_SAFETY_ALERT_TYPES] },
+        acknowledged_at: null,
+      },
+      data: { coach_id: newCoachId },
+    });
+  }
+  await tx.coachAlert.deleteMany({ where: { client_id: { in: ids }, coach_id: others } });
+  if (formerCoachId !== newCoachId) {
+    await tx.notification.deleteMany({ where: { user_id: formerCoachId, OR: inboxRowsAbout(ids) } });
+  }
+  await tx.wearableInsightCache.deleteMany({
+    where: {
+      user_id: { in: ids },
+      side: { startsWith: 'coach' },
+      ...(newCoachId === null ? {} : { NOT: { side: `coach:${newCoachId}` } }),
+    },
+  });
+}
+
+/**
+ * Owner 4 for a sub-coach handoff: the client stays the head coach's, so only
+ * `holderId` loses their inbox rows and coach-side insight about them (and the
+ * shared 'coach' insight row, whose coach is unknown). Alerts belong to the
+ * client's coach of record, the head coach, so a handoff leaves them.
+ */
+export async function deleteCoachRowsHeldBy(
+  tx: Prisma.TransactionClient,
+  clientId: string,
+  holderId: string,
+): Promise<void> {
+  await tx.notification.deleteMany({ where: { user_id: holderId, OR: inboxRowsAbout([clientId]) } });
+  await tx.wearableInsightCache.deleteMany({
+    where: { user_id: clientId, side: { in: ['coach', `coach:${holderId}`] } },
+  });
+}
+
 export interface LockedClientRow {
   id: string;
   coach_id: string | null;

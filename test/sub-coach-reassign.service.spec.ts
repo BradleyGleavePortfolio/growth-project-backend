@@ -30,6 +30,9 @@ type TxMock = {
   aiActionDraft: { deleteMany: jest.Mock };
   messageDraft: { deleteMany: jest.Mock };
   churnIntervention: { deleteMany: jest.Mock };
+  // And their inbox rows and coach-side insight about the client (owner 4).
+  notification: { deleteMany: jest.Mock };
+  wearableInsightCache: { deleteMany: jest.Mock };
 };
 
 function makeTxMock(initialOpen: unknown = null): TxMock {
@@ -46,6 +49,8 @@ function makeTxMock(initialOpen: unknown = null): TxMock {
     aiActionDraft: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     messageDraft: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     churnIntervention: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    notification: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    wearableInsightCache: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
   };
 }
 

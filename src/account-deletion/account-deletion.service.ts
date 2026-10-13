@@ -18,7 +18,7 @@ import {
   AppleTokenRevocationService,
 } from './apple-token-revocation.service';
 import { executeErasureManifest } from './account-deletion.manifest';
-import { deleteDraftsLeftByMove } from '../coach/moved-client-drafts';
+import { deleteCoachRowsLeftByMove, deleteDraftsLeftByMove } from '../coach/moved-client-drafts';
 import {
   TOMBSTONE_AUTH_PREFIX,
   RECEIPT_KEY_PREFIX,
@@ -826,6 +826,8 @@ export class AccountDeletionService {
           now,
         });
         await deleteDraftsLeftByMove(tx, leftClients.map((c) => c.id), null);
+        // Owner 4: and every alert and coach-side insight about them.
+        await deleteCoachRowsLeftByMove(tx, leftClients.map((c) => c.id), userId, null);
         const rowsChanged = steps.reduce((sum, s) => sum + s.count, 0);
 
         // 4. Audit: lifecycle rows carry the user id, so they go; one outcome
