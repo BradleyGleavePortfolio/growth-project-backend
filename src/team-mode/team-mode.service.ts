@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -16,17 +15,14 @@ import {
 } from './tier-resolver.service';
 
 // Locked decisions ─ ADR-0001 §10 (2026-05-10):
-//   Q1 — Pro: paid staff seats. Enterprise: included. Growth: blocked.
+//   Q1 — Pro: paid staff seats. Every other coach: included (owner TM-P1:
+//        zero locks, no plan gate).
 //   Q2 — Sub-coach: many-to-many of head coaches, capped at 2.
 //   Q3 — Removal auto-reassigns clients to initiating head coach.
 //   Q4 — Curated audit feed (15 event_kinds). Not a CRUD firehose.
 //   Q5 — Sub-coaches can invite clients directly (attribution path is
 //        wired in invite-codes.service.ts; this service only writes
 //        the matching audit event).
-//   Q6 — Tier gate enforced at controller; this service trusts the
-//        tier passed in by the controller and refuses to write a
-//        Stripe line item for a Growth tier head coach as a defence
-//        in depth.
 
 const SUB_COACH_HEAD_CAP = 2;
 
@@ -76,8 +72,7 @@ export class TeamModeService {
   ) {}
 
   // Q2: many-to-2 assignment with paid Stripe line on Pro.
-  // Q1: Growth refused at controller; this service is a defence in
-  //     depth. Enterprise creates the row but skips Stripe.
+  // Q1: every other tier creates the row and skips Stripe.
   async assignSubCoach(input: AssignSubCoachInput): Promise<AssignSubCoachResult> {
     const { headCoachId, subCoachId } = input;
     if (headCoachId === subCoachId) {
@@ -85,20 +80,6 @@ export class TeamModeService {
     }
 
     const tierResult = await this.tierResolver.resolveTier(headCoachId);
-    // Defence in depth. The controller's assertTeamModeAllowed blocks
-    // both "growth" AND "unknown"; the service mirrors that set so an
-    // internal call site (e.g. a future admin tooling path) cannot
-    // bypass the gate by skipping the controller. "pro" and
-    // "enterprise" are the only allowed tiers; everything else returns
-    // the same envelope shape the controller emits.
-    if (tierResult.tier !== 'pro' && tierResult.tier !== 'enterprise') {
-      throw new ForbiddenException({
-        kind: 'team_mode_locked',
-        current_tier: tierResult.tier,
-        required_tier: 'pro',
-        upsell_url: '/pricing',
-      });
-    }
 
     // Cap check — service-layer guard. The DB trigger is the second
     // line of defence so a concurrent double-write cannot exceed the

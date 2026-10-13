@@ -4,8 +4,7 @@
 //
 //   Q1: Pro = paid Stripe seat created on assignment.
 //       Enterprise = no Stripe call.
-//       Growth = throws structured ForbiddenException at the service
-//       defence-in-depth check.
+//       Growth = no plan lock (owner TM-P1), no Stripe call.
 //   Q2: ≥2 head coaches per sub-coach throws ConflictException with
 //       a structured envelope.
 //   Q3: removeSubCoach reassigns N clients in a single transaction,
@@ -16,7 +15,7 @@
 //   Q5 + Q6: covered in tier-resolver and controller specs.
 
 import 'reflect-metadata';
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { TeamModeService } from '../src/team-mode/team-mode.service';
 
 interface MockPrisma {
@@ -179,7 +178,7 @@ describe('TeamModeService.assignSubCoach', () => {
     expect(auditCalls).not.toContain('staff_seat_added');
   });
 
-  it('Q1+Q6: Growth tier is rejected with the structured upsell envelope', async () => {
+  it('TM-P1: Growth tier assigns with no plan lock and no Stripe call', async () => {
     const prisma = buildPrisma();
     const stripe = buildStripe();
     const tier = buildTier('growth');
@@ -189,11 +188,9 @@ describe('TeamModeService.assignSubCoach', () => {
       tier as never,
     );
 
-    await expect(
-      svc.assignSubCoach({ headCoachId: 'head-1', subCoachId: 'sub-1' }),
-    ).rejects.toThrow(ForbiddenException);
+    await svc.assignSubCoach({ headCoachId: 'head-1', subCoachId: 'sub-1' });
     expect(stripe.createSubscriptionItem).not.toHaveBeenCalled();
-    expect(prisma.teamSubCoachAssignment.create).not.toHaveBeenCalled();
+    expect(prisma.teamSubCoachAssignment.create).toHaveBeenCalled();
   });
 
   it('Q2: throws ConflictException with cap envelope when sub-coach already has 2 head coaches', async () => {

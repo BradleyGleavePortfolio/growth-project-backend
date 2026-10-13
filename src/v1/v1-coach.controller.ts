@@ -12,7 +12,6 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
-import { SubscriptionGuard } from '../billing/subscription.guard';
 import { V1SaveDraftDto, V1SendMessageDto } from './v1-coach.dto';
 import { V1CoachService } from './v1-coach.service';
 
@@ -20,9 +19,7 @@ import { V1CoachService } from './v1-coach.service';
 // the contracts in tgp-coach-console/INTEGRATION_NOTES.md exactly so the
 // console can be pointed at this origin without a translation shim.
 //
-// Auth: every route requires a JWT and a coach-or-owner role. SubscriptionGuard
-// gates write paths so a coach whose subscription is canceled or past_due
-// cannot continue sending messages; OWNER bypasses both checks.
+// Auth: every route requires a JWT and a coach-or-owner role.
 @ApiTags('coach-v1')
 @Controller('v1/coach/me')
 @UseGuards(JwtAuthGuard, CoachOrOwnerGuard)
@@ -53,7 +50,6 @@ export class V1CoachController {
   }
 
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
-  @UseGuards(SubscriptionGuard)
   @Post('threads/:clientId/messages')
   async sendMessage(
     @Request() req: AuthedRequest,
@@ -72,11 +68,8 @@ export class V1CoachController {
   }
 
   // Drafts are write-heavy (autosaved on every keystroke debounce), so the
-  // throttle ceiling is generous. SubscriptionGuard applies so a canceled
-  // coach cannot accumulate compose-state for messages they will never be
-  // able to send.
+  // throttle ceiling is generous.
   @Throttle({ default: { ttl: 60_000, limit: 120 } })
-  @UseGuards(SubscriptionGuard)
   @Post('threads/:clientId/draft')
   async saveDraft(
     @Request() req: AuthedRequest,

@@ -20,7 +20,6 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
-import { SubscriptionGuard } from '../billing/subscription.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { SkipClientEntitlement } from '../common/decorators/skip-client-entitlement.decorator';
 import { PrismaService } from '../prisma.service';
@@ -44,7 +43,7 @@ import { TrialUsageService } from './trials/trial-usage.service';
 
 @ApiTags('packages')
 @Controller('v1/coach/packages')
-@UseGuards(JwtAuthGuard, CoachOrOwnerGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, CoachOrOwnerGuard)
 // S-FEE round 4 (C-629-2): a body the DTO rejects answers 400 PACKAGE_INVALID
 // with the field and the next action, never a code-less validation array.
 // B-675-1: a 422 IDEMPOTENCY_KEY_REUSED carries the `package_id` the key made.
