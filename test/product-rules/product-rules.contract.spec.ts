@@ -15,7 +15,8 @@
  *    coach's chat, nudges, tags and session notes never reach the new coach, and
  *    the move deletes only drafts (no export step, no wipe).
  * 3. Coachless clients have no Roman (139-15): every Roman, AI and AI-consent
- *    route a client may call answers 403 ROMAN_REQUIRES_COACH.
+ *    route a client may call answers 403 ROMAN_REQUIRES_COACH, except opening,
+ *    listing and deleting their old Roman chats (CONTRACT-2 Option 1).
  * 4. Safety alerts are never lost or merged (57q), run on the real push outbox.
  *
  * KNOWN_GAPS: what fails on main today, skipped, each naming the PR, job or
@@ -69,25 +70,25 @@ const KNOWN_GAPS: Array<{ id: string; rule: Rule; key: string; reason: string }>
   { id: 'HIST-4b past session', rule: 2, key: 'GET /scheduling/sessions/:id', reason: "the new coach can't open the client's past session; fix: HIST-4b (owner)" },
   { id: 'HIST-4b program days', rule: 2, key: 'GET /workout-plans', reason: "the new coach's plan list leaves out the days of the client's program copy; fix: HIST-4b (owner)" },
   { id: 'CONSENT-2 grant', rule: 3, key: 'POST /me/ai-consent/roman', reason: 'a coachless client is not refused an AI grant; fix: #954 CONSENT-2' },
-  { id: 'CONTRACT-2', rule: 3, key: 'GET /roman/sessions/:id/messages', reason: 'may a coachless client open an old Roman chat; fix: CONTRACT-2 (owner)' },
   { id: 'GAPS3 ai context', rule: 3, key: 'GET /ai/context', reason: 'a coachless client still reads what the AI knows about them; fix: GAPS3 #970' },
   { id: 'GAPS3 ai structured', rule: 3, key: 'GET /ai/structured-context', reason: 'the same read, typed; fix: GAPS3 #970' },
   { id: 'GAPS3 roman context', rule: 3, key: 'GET /roman/context/me', reason: 'a coachless client still reads what Roman is grounded in; fix: GAPS3 #970' },
 ];
-const KNOWN_GAPS_CEILING = 22;
+const KNOWN_GAPS_CEILING = 21;
 const EXEMPT: Array<{ rule: Rule; key: string; reason: string }> = [
   { rule: 1, key: 'GET /consent/check/:client_id/:scope', reason: "it echoes the ids it was asked about and whether the caller's own grant stands, nothing else" },
   { rule: 2, key: 'GET /coach/consultation', reason: "the coach's own set-up; it mints a random invite code for a coach with none, so two reads differ" },
   { rule: 2, key: 'GET /coaches/me/invite-link', reason: "the coach's own link; it mints a random invite code for a coach with none, so two reads differ" },
-  { rule: 3, key: 'GET /roman/sessions', reason: '62x: a coachless client "may delete prior data here"; this is the list they delete from' },
-  { rule: 3, key: 'DELETE /roman/sessions', reason: '62x: a coachless client may delete prior data' },
-  { rule: 3, key: 'DELETE /roman/sessions/:id', reason: '62x: a coachless client may delete prior data' },
+  { rule: 3, key: 'GET /roman/sessions', reason: 'CONTRACT-2 Option 1 (owner): a coachless client lists their old Roman chats (62x: "may delete prior data here")' },
+  { rule: 3, key: 'GET /roman/sessions/:id/messages', reason: 'CONTRACT-2 Option 1 (owner): a coachless client opens an old Roman chat; Roman does not reply until they have a coach' },
+  { rule: 3, key: 'DELETE /roman/sessions', reason: 'CONTRACT-2 Option 1 (owner) and 62x: a coachless client may delete prior data' },
+  { rule: 3, key: 'DELETE /roman/sessions/:id', reason: 'CONTRACT-2 Option 1 (owner) and 62x: a coachless client may delete prior data' },
   { rule: 3, key: 'GET /me/ai-consent', reason: 'CONSENT-2 (b#954) keeps it open so the app can read the consent state' },
   { rule: 3, key: 'DELETE /me/ai-consent/roman', reason: 'CONSENT-2 (b#954) keeps it open: withdrawing only turns AI use off' },
   { rule: 3, key: 'POST /coachless/roman-card/seen', reason: 'the coachless card that says Roman needs a coach; it records a view, no AI' },
   { rule: 3, key: 'POST /coachless/roman-card/not-now', reason: 'the coachless card that says Roman needs a coach; it records Not now, no AI' },
 ];
-const EXEMPT_CEILING = 10;
+const EXEMPT_CEILING = 11;
 
 const uuid = (n: number) => `0000000${n}-0000-4000-8000-00000000000${n}`;
 const [OLD, NEW, MOVED, COACHLESS, COACHED, ROW] = [1, 2, 3, 4, 5, 6].map(uuid);
