@@ -11,10 +11,11 @@
 // unguarded.
 //
 // This spec pins both facts:
-//   1. The class-level guard stack is exactly {JwtAuthGuard, CoachGuard,
-//      SubscriptionGuard} on each coach controller (so a future refactor
+//   1. The class-level guard stack is exactly {JwtAuthGuard, CoachGuard}
+//      on each coach controller, with no SubscriptionGuard since owner
+//      TM-P1 (zero locks) (so a future refactor
 //      that drops or broadens it fails loudly).
-//   2. Every existing handler is still effectively protected by all three
+//   2. Every existing handler is still effectively protected by both
 //      guards (class-level metadata covers every method on the prototype).
 //   3. ClientMealPlanController keeps its own {JwtAuthGuard,
 //      ClientEntitlementGuard} stack — untouched by this refactor.
@@ -24,7 +25,6 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 
 import { JwtAuthGuard } from '../src/auth/auth.guard';
 import { CoachGuard } from '../src/auth/coach.guard';
-import { SubscriptionGuard } from '../src/billing/subscription.guard';
 import { ClientEntitlementGuard } from '../src/common/guards/client-entitlement.guard';
 import {
   ClientMealPlanController,
@@ -60,13 +60,9 @@ const DAILY_PLAN_HANDLERS = [
 
 describe('real-meal-plans — coach guard stack hoisted to class level', () => {
   describe('CoachMealTemplatesController', () => {
-    it('mounts JwtAuthGuard, CoachGuard, SubscriptionGuard at the class level', () => {
+    it('mounts JwtAuthGuard, CoachGuard at the class level (no plan gate)', () => {
       const names = guardNames(CoachMealTemplatesController);
-      expect(names).toEqual([
-        JwtAuthGuard.name,
-        CoachGuard.name,
-        SubscriptionGuard.name,
-      ]);
+      expect(names).toEqual([JwtAuthGuard.name, CoachGuard.name]);
     });
 
     it('does NOT duplicate the stack on any handler (class-level only)', () => {
@@ -85,13 +81,9 @@ describe('real-meal-plans — coach guard stack hoisted to class level', () => {
   });
 
   describe('CoachDailyMealPlansController', () => {
-    it('mounts JwtAuthGuard, CoachGuard, SubscriptionGuard at the class level', () => {
+    it('mounts JwtAuthGuard, CoachGuard at the class level (no plan gate)', () => {
       const names = guardNames(CoachDailyMealPlansController);
-      expect(names).toEqual([
-        JwtAuthGuard.name,
-        CoachGuard.name,
-        SubscriptionGuard.name,
-      ]);
+      expect(names).toEqual([JwtAuthGuard.name, CoachGuard.name]);
     });
 
     it('does NOT duplicate the stack on any handler (class-level only)', () => {

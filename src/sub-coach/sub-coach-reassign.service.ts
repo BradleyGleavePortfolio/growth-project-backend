@@ -51,7 +51,7 @@ const MAX_SERIALIZATION_RETRIES = 3;
  * share:
  *   - DTO validation (controller layer)
  *   - Atomic idempotency claim + payload/action validation (R19, F29)
- *   - Capacity enforcement inside the same transaction (F28, F44)
+ *   - Team check inside the same transaction (F28, F44); no plan cap
  *   - Serialization-failure (P2034) retries with exponential backoff
  *   - AuditLog persistence with correct action label (R1, R18, R22)
  *
@@ -204,9 +204,8 @@ export class SubCoachReassignService {
 
   /**
    * Run the reassignment transaction under SERIALIZABLE isolation, with
-   * bounded retries on P2034 (serialization failure / write conflict).
-   * After exhausting retries we re-check capacity outside any transaction
-   * and return a clean 409 if the slot is gone, otherwise rethrow.
+   * bounded retries on P2034 (serialization failure / write conflict),
+   * then rethrow.
    */
   private async runReassignTransactionWithRetry(args: {
     headCoachId: string;
@@ -247,19 +246,7 @@ export class SubCoachReassignService {
       }
     }
 
-    // Out of retries. If the destination is at capacity, surface a clean
-    // 409. Otherwise rethrow so the framework returns 500.
-    if (!args.unassigning) {
-      const cap = await this.capacity.getCapacity(
-        args.headCoachId,
-        args.targetSubCoachId,
-      );
-      if (!cap.hasCapacity) {
-        throw new ConflictException(
-          `Sub-coach has reached the maximum of ${cap.maxClients} clients for the ${cap.planTier} plan`,
-        );
-      }
-    }
+    // Out of retries: rethrow so the framework returns 500.
     throw lastError instanceof Error
       ? lastError
       : new Error('Sub-coach reassignment failed after retries');
@@ -360,9 +347,8 @@ export class SubCoachReassignService {
 
         // Open a new assignment if we're delegating to a sub-coach.
         if (!unassigning) {
-          // Capacity check INSIDE the transaction. Counts use the
-          // SubCoachAssignment table so they reflect the new model.
-          await this.capacity.assertHasCapacityTx(
+          // Team check INSIDE the transaction. No plan cap (owner TM-P1).
+          await this.capacity.assertSubCoachBelongsTo(
             tx,
             headCoachId,
             targetSubCoachId,

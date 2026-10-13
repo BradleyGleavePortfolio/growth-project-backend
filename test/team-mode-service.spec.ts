@@ -2,10 +2,7 @@
 //
 // ADR-0001 §10 — service-layer coverage of the locked decisions.
 //
-//   Q1: Pro = paid Stripe seat created on assignment.
-//       Enterprise = no Stripe call.
-//       Growth = throws structured ForbiddenException at the service
-//       defence-in-depth check.
+//   Q1: no tier gets a plan lock or a paid Stripe staff seat (owner TM-P1).
 //   Q2: ≥2 head coaches per sub-coach throws ConflictException with
 //       a structured envelope.
 //   Q3: removeSubCoach reassigns N clients in a single transaction,
@@ -16,7 +13,7 @@
 //   Q5 + Q6: covered in tier-resolver and controller specs.
 
 import 'reflect-metadata';
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import { TeamModeService } from '../src/team-mode/team-mode.service';
 
 interface MockPrisma {
@@ -138,7 +135,7 @@ afterEach(() => {
 });
 
 describe('TeamModeService.assignSubCoach', () => {
-  it('Q1+Q2: Pro tier creates a Stripe staff seat and writes assignment + audit events', async () => {
+  it('TM-P1: Pro tier creates no Stripe staff seat, even with the seat price set', async () => {
     process.env.STRIPE_PRICE_STAFF_SEAT = 'price_seat_1';
     const prisma = buildPrisma();
     const stripe = buildStripe();
@@ -154,21 +151,17 @@ describe('TeamModeService.assignSubCoach', () => {
       subCoachId: 'sub-1',
     });
 
-    expect(stripe.createSubscriptionItem).toHaveBeenCalledTimes(1);
-    expect((stripe.createSubscriptionItem.mock.calls[0] as unknown[])[0]).toMatchObject({
-      subscription: 'sub_X',
-      priceId: 'price_seat_1',
-      quantity: 1,
+    expect(stripe.createSubscriptionItem).not.toHaveBeenCalled();
+    expect(prisma.teamSubCoachAssignment.create).toHaveBeenCalledWith({
+      data: { head_coach_id: 'head-1', sub_coach_id: 'sub-1' },
     });
     expect(result.tier).toBe('pro');
-    expect(result.stripeSubscriptionItemId).toBe('si_test');
 
-    // sub_coach_assigned + staff_seat_added events both written.
+    // Only sub_coach_assigned; no paid staff_seat_added event.
     const auditCalls = prisma.teamAuditEvent.create.mock.calls.map(
       (c) => (c[0] as { data: { event_kind: string } }).data.event_kind,
     );
-    expect(auditCalls).toContain('sub_coach_assigned');
-    expect(auditCalls).toContain('staff_seat_added');
+    expect(auditCalls).toEqual(['sub_coach_assigned']);
   });
 
   it('Q1: Enterprise tier creates assignment WITHOUT a Stripe call', async () => {
@@ -187,18 +180,16 @@ describe('TeamModeService.assignSubCoach', () => {
     });
 
     expect(stripe.createSubscriptionItem).not.toHaveBeenCalled();
-    expect(result.stripeSubscriptionItemId).toBeNull();
     expect(result.tier).toBe('enterprise');
 
     const auditCalls = prisma.teamAuditEvent.create.mock.calls.map(
       (c) => (c[0] as { data: { event_kind: string } }).data.event_kind,
     );
-    // staff_seat_added is Pro-only — Enterprise should NOT emit it.
     expect(auditCalls).toContain('sub_coach_assigned');
     expect(auditCalls).not.toContain('staff_seat_added');
   });
 
-  it('Q1+Q6: Growth tier is rejected with the structured upsell envelope', async () => {
+  it('TM-P1: Growth tier assigns with no plan lock and no Stripe call', async () => {
     const prisma = buildPrisma();
     const stripe = buildStripe();
     const tier = buildTier('growth');
@@ -208,11 +199,9 @@ describe('TeamModeService.assignSubCoach', () => {
       tier as never,
     );
 
-    await expect(
-      svc.assignSubCoach({ headCoachId: 'head-1', subCoachId: 'sub-1' }),
-    ).rejects.toThrow(ForbiddenException);
+    await svc.assignSubCoach({ headCoachId: 'head-1', subCoachId: 'sub-1' });
     expect(stripe.createSubscriptionItem).not.toHaveBeenCalled();
-    expect(prisma.teamSubCoachAssignment.create).not.toHaveBeenCalled();
+    expect(prisma.teamSubCoachAssignment.create).toHaveBeenCalled();
   });
 
   it('Q2: throws ConflictException with cap envelope when sub-coach already has 2 head coaches', async () => {
