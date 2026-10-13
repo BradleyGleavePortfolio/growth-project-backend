@@ -28,24 +28,33 @@ if (!DB_URL && process.env.CI === 'true') {
   const [a, b, sub, clientA, clientB] = Array.from({ length: 5 }, () => randomUUID());
   const mine: Record<string, { a: string; b: string }> = {};
 
-  /** Rows with this id that `authenticated`, acting as `who`, sees; 'refused' when the role may not read the table. */
+  /** Runs `fn` in one transaction as the API role `authenticated`, with app.current_user_id = who. */
+  const asCoach = <T>(who: string, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> =>
+    prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
+      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, who);
+      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', 'coach', true)`);
+      return fn(tx);
+    });
+
+  /** Rows with this id that `who` sees; 'refused' when the role may not read the table. */
   async function seen(table: string, rowId: string, who: string): Promise<number | 'refused'> {
     try {
-      return await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-        await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
-        await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, who);
-        await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', 'coach', true)`);
-        const [{ n }] = await tx.$queryRawUnsafe<{ n: number }[]>(
-          `SELECT count(*)::int AS n FROM public."${table}" WHERE "id" = $1`,
-          rowId,
-        );
-        return n;
-      });
+      const [{ n }] = await asCoach(who, (tx) =>
+        tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS n FROM public."${table}" WHERE "id" = $1`, rowId));
+      return n;
     } catch (err) {
       if (/42501|permission denied/.test(String(err))) return 'refused';
       throw err;
     }
   }
+  const touchTarget = (who: string) =>
+    asCoach(who, (tx) => tx.$executeRawUnsafe(`UPDATE public."MacroTarget" SET "notes" = 'rls' WHERE "id" = $1`, mine.MacroTarget.a));
+  const newTarget = (who: string) =>
+    asCoach(who, (tx) => tx.$executeRawUnsafe(
+      `INSERT INTO public."MacroTarget" ("id", "client_id", "coach_id", "calories_kcal", "protein_g", "carbs_g", "fats_g")
+       VALUES ($1, $2, $3, 2000, 140, 200, 60)`,
+      randomUUID(), clientA, who));
 
   beforeAll(async () => {
     for (const [id, role, coach_id] of [
@@ -106,6 +115,11 @@ if (!DB_URL && process.env.CI === 'true') {
     },
   );
 
+  it('MacroTarget: the client\'s coach changes the target and writes a new one (control for the write rule)', async () => {
+    expect(await touchTarget(a)).toBe(1);
+    expect(await newTarget(a)).toBe(1);
+  });
+
   describe('after coach A\'s client moves to coach B', () => {
     beforeAll(() => prisma.user.update({ where: { id: clientA }, data: { coach_id: b } }));
 
@@ -115,6 +129,12 @@ if (!DB_URL && process.env.CI === 'true') {
 
     it('ClientSignal: the new coach reads the client\'s signals', async () => {
       expect(await seen('ClientSignal', mine.ClientSignal.a, b)).toBe(1);
+    });
+
+    it('MacroTarget: the former coach can neither change the target nor write a new one; the new coach can write', async () => {
+      expect(await touchTarget(a)).toBe(0);
+      await expect(newTarget(a)).rejects.toThrow(/row-level security/);
+      expect(await newTarget(b)).toBe(1);
     });
   });
 });
