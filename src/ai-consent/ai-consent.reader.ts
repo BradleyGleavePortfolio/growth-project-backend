@@ -15,16 +15,23 @@
  *     live grant of client-ai-v4 or client-ai-v5 with its exact sha256;
  *     'memory' (Roman v1.1 notes, summaries, coach-method learning) is a live
  *     client-ai-v5 grant only. A withdrawal ends both.
+ *   - `audience` (owner 62): who the output is for, default 'coach'. A
+ *     coach-free grant (client-ai-v4-coach-free / v5-coach-free) counts for
+ *     'client' only, never for coach AI drafts or coach-method learning.
  *
  * Inject with `@Inject(CLIENT_AI_CONSENT_READER)`; AiConsentModule exports it.
  */
-import type { ClientAiConsentScope } from './ai-consent.constants';
+import type { ClientAiConsentAudience, ClientAiConsentScope } from './ai-consent.constants';
 
 export const CLIENT_AI_CONSENT_READER = Symbol('CLIENT_AI_CONSENT_READER');
 
 export interface ClientAiConsentReader {
-  /** True only for a live grant that covers `scope` (default 'base'). Never throws. */
-  hasClientAiConsent(userId: string, scope?: ClientAiConsentScope): Promise<boolean>;
+  /** True only for a live grant that covers `scope` (default 'base') for `audience` (default 'coach'). Never throws. */
+  hasClientAiConsent(
+    userId: string,
+    scope?: ClientAiConsentScope,
+    audience?: ClientAiConsentAudience,
+  ): Promise<boolean>;
   /**
    * Batch form: the subset of `userIds` holding a live grant that covers
    * `scope` (default 'base'). At most AI_CONSENT_BATCH_MAX ids per call
@@ -34,10 +41,14 @@ export interface ClientAiConsentReader {
   clientsWithAiConsent(
     userIds: readonly string[],
     scope?: ClientAiConsentScope,
+    audience?: ClientAiConsentAudience,
   ): Promise<ReadonlySet<string>>;
   /**
    * R11-M4: when each live client-ai-v5 ('memory') grant among `userIds` was recorded (others
    * absent). Same batch limit and fail-closed rule as clientsWithAiConsent. Optional.
    */
-  memoryGrantTimes?(userIds: readonly string[]): Promise<ReadonlyMap<string, Date>>;
+  memoryGrantTimes?(
+    userIds: readonly string[],
+    audience?: ClientAiConsentAudience,
+  ): Promise<ReadonlyMap<string, Date>>;
 }
