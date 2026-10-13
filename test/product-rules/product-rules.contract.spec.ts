@@ -7,7 +7,9 @@
  *
  * 1. A moved client is gone for the old coach (owner 4): after a move (coach_id
  *    changes and deleteDraftsLeftByMove runs, as every move path does), no GET
- *    the old coach can call answers 2xx with the client in it.
+ *    the old coach can call answers 2xx with the client in it. Their own money
+ *    records may keep the client's name (CONTRACT-1), and the move cancels
+ *    their upcoming sessions with the client (HIST-2b).
  * 2. History follows the client (139-13, 4b): the new coach gets the same answer
  *    whether the client's rows carry the old coach or the new one, the old
  *    coach's chat, nudges, tags and session notes never reach the new coach, and
@@ -16,12 +18,13 @@
  *    route a client may call answers 403 ROMAN_REQUIRES_COACH.
  * 4. Safety alerts are never lost or merged (57q), run on the real push outbox.
  *
- * KNOWN_GAPS: what fails on main today, skipped. The guard fails if the list
- * grows, and when a gap is fixed (remove it and lower the ceiling). EXEMPT: not
- * a path of the rule, with the reason. Fix a new path instead of listing it.
+ * KNOWN_GAPS: what fails on main today, skipped, each naming the PR, job or
+ * owner decision that fixes it. The guard fails if the list grows, and when a
+ * gap is fixed (remove it and lower the ceiling). EXEMPT: not a path of the
+ * rule, with the reason. Fix a new path instead of listing it.
  */
 import 'reflect-metadata';
-import { ModelDef, Row, World, defaultFor, isRelation, parseSchema } from './world';
+import { ModelDef, Row, SEED_DATE, World, defaultFor, isRelation, parseSchema } from './world';
 import type { AddressInfo } from 'node:net';
 import { INestApplication, RequestMethod } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
@@ -33,6 +36,7 @@ import { JwksVerifierService } from '../../src/auth/jwks.service';
 import { deleteDraftsLeftByMove } from '../../src/coach/moved-client-drafts';
 import { IS_PUBLIC_KEY } from '../../src/common/decorators/public.decorator';
 import { ROLES_KEY } from '../../src/common/decorators/roles.decorator';
+import { ConsentScope } from '../../src/consent/consent.service';
 import { HttpExceptionFilter } from '../../src/filters/http-exception.filter';
 import { NotificationKind } from '../../src/notifications/notification-kind';
 import { PushDeliveryService } from '../../src/notifications/push/push-delivery.service';
@@ -44,28 +48,32 @@ import { METRIC_AGGREGATION, METRIC_BUCKET } from '../../src/wearables/samples/m
 jest.setTimeout(300_000);
 
 type Rule = 1 | 2 | 3 | 4;
+// HIST-2b, checked on the world rather than through a route.
+const MOVE_CANCELS = "a move cancels the old coach's upcoming session with the client and leaves the past one";
 const KNOWN_GAPS: Array<{ id: string; rule: Rule; key: string; reason: string }> = [
-  { id: 'MOVECLEAN inbox', rule: 1, key: 'GET /notifications', reason: "the old coach's inbox row about the client stays; MOVECLEAN (b#960) deletes it" },
-  { id: 'HIST2A meal-plan assignees', rule: 1, key: 'GET /coach/daily-meal-plans/:id/assignments', reason: "the old coach's daily meal plan still lists the client; HIST2A (b#961) filters it" },
-  { id: 'HIST2A past session', rule: 1, key: 'GET /scheduling/sessions/:id', reason: 'the old coach still opens a past session with the client; HIST2A (b#961) answers 404' },
-  { id: 'HIST-2 program assignees', rule: 1, key: 'GET /workout-plans/:planId/assignments', reason: "a program's assignee list still names the client (HIST2A found, not fixed)" },
-  { id: 'MOVE chat list', rule: 1, key: 'GET /v1/coach/me/threads', reason: "the old coach's chat list still shows the client and the last message (read by coach only)" },
-  { id: 'CONTRACT-1 attention', rule: 1, key: 'GET /v1/coach/money/attention', reason: 'waiting on owner CONTRACT-1' },
-  { id: 'CONTRACT-1 subscribers', rule: 1, key: 'GET /v1/coach/packages/:id/subscribers', reason: 'waiting on owner CONTRACT-1' },
-  { id: 'CONTRACT-1 purchases', rule: 1, key: 'GET /v1/coach/payments/purchases', reason: 'waiting on owner CONTRACT-1' },
-  { id: 'CONTRACT-1 purchase', rule: 1, key: 'GET /v1/coach/payments/purchases/:id', reason: 'waiting on owner CONTRACT-1' },
-  { id: 'CONTRACT-1 sales', rule: 1, key: 'GET /v1/coach/purchases', reason: 'waiting on owner CONTRACT-1' },
-  { id: 'BRIEF4B', rule: 2, key: 'GET /coach/brief/today', reason: 'fixed by backend #964, not merged yet' },
-  { id: 'HIST-4b meal plans', rule: 2, key: 'GET /coach/clients/:client_id/meal-plans', reason: "the new coach lists only the meal plans they wrote; waiting on owner HIST-4b" },
-  { id: 'HIST-4b past session', rule: 2, key: 'GET /scheduling/sessions/:id', reason: "the new coach can't open the client's past session; waiting on owner HIST-4b" },
-  { id: 'CONSENT-2 grant', rule: 3, key: 'POST /me/ai-consent/roman', reason: 'a coachless client can still grant AI consent; CONSENT-2 (b#954) answers 403' },
-  { id: 'CONTRACT-2', rule: 3, key: 'GET /roman/sessions/:id/messages', reason: 'waiting on owner CONTRACT-2' },
-  { id: 'ROMAN-READ ai context', rule: 3, key: 'GET /ai/context', reason: 'a coachless client still reads what the AI knows about them (62x: no Roman at all)' },
-  { id: 'ROMAN-READ ai structured', rule: 3, key: 'GET /ai/structured-context', reason: 'the same read, typed (62x: no Roman at all)' },
-  { id: 'ROMAN-READ roman context', rule: 3, key: 'GET /roman/context/me', reason: 'a coachless client still reads what Roman is grounded in (62x: no Roman at all)' },
-  { id: 'EDPUSH', rule: 4, key: 'another push never takes over a waiting safety push', reason: 'an ordinary push takes over a waiting eating-disorder push; EDPUSH (b#956) fixes it' },
+  { id: 'MOVECLEAN inbox', rule: 1, key: 'GET /notifications', reason: "the old coach's inbox row about the client stays; fix: #960 MOVECLEAN" },
+  { id: 'HIST2A meal-plan assignees', rule: 1, key: 'GET /coach/daily-meal-plans/:id/assignments', reason: "the old coach's daily meal plan still lists the client; fix: #961 HIST2A" },
+  { id: 'HIST2A past session', rule: 1, key: 'GET /scheduling/sessions/:id', reason: 'the old coach still opens a past session with the client; fix: #961 HIST2A' },
+  { id: 'HIST2A program assignees', rule: 1, key: 'GET /v1/coach/programs/:programId/assignees', reason: "the old coach's program still lists the client's copy; fix: #961 HIST2A" },
+  { id: 'HIST2B plan assignees', rule: 1, key: 'GET /workout-plans/:planId/assignments', reason: "a plan's assignment list still names the client; fix: #967 HIST2B" },
+  { id: 'HIST2C upcoming session', rule: 1, key: MOVE_CANCELS, reason: "nothing cancels the old coach's upcoming session with the client; fix: HIST2C" },
+  { id: 'GAPS1 chat list', rule: 1, key: 'GET /v1/coach/me/threads', reason: "the old coach's chat list still shows the client and the last message; fix: GAPS1" },
+  { id: 'MONEY1 attention', rule: 1, key: 'GET /v1/coach/money/attention', reason: "a dispute row still carries the client's id, not only the name; fix: MONEY1" },
+  { id: 'MONEY1 subscribers', rule: 1, key: 'GET /v1/coach/packages/:id/subscribers', reason: "a subscriber row still carries the client's id; fix: MONEY1" },
+  { id: 'MONEY1 purchases', rule: 1, key: 'GET /v1/coach/payments/purchases', reason: "a purchase row still carries the client's id; fix: MONEY1" },
+  { id: 'MONEY1 purchase', rule: 1, key: 'GET /v1/coach/payments/purchases/:id', reason: "one purchase still carries the client's id; fix: MONEY1" },
+  { id: 'MONEY1 sales', rule: 1, key: 'GET /v1/coach/purchases', reason: "a sale row still carries the client's id; fix: MONEY1" },
+  { id: 'BRIEF4B', rule: 2, key: 'GET /coach/brief/today', reason: "the new coach's brief shows the old coach's unread chat; fix: #964 BRIEF4B" },
+  { id: 'HIST-4b meal plans', rule: 2, key: 'GET /coach/clients/:client_id/meal-plans', reason: 'the new coach lists only the meal plans they wrote; fix: HIST-4b (owner)' },
+  { id: 'HIST-4b past session', rule: 2, key: 'GET /scheduling/sessions/:id', reason: "the new coach can't open the client's past session; fix: HIST-4b (owner)" },
+  { id: 'CONSENT-2 grant', rule: 3, key: 'POST /me/ai-consent/roman', reason: 'a coachless client is not refused an AI grant; fix: #954 CONSENT-2' },
+  { id: 'CONTRACT-2', rule: 3, key: 'GET /roman/sessions/:id/messages', reason: 'may a coachless client open an old Roman chat; fix: CONTRACT-2 (owner)' },
+  { id: 'GAPS3 ai context', rule: 3, key: 'GET /ai/context', reason: 'a coachless client still reads what the AI knows about them; fix: GAPS3' },
+  { id: 'GAPS3 ai structured', rule: 3, key: 'GET /ai/structured-context', reason: 'the same read, typed; fix: GAPS3' },
+  { id: 'GAPS3 roman context', rule: 3, key: 'GET /roman/context/me', reason: 'a coachless client still reads what Roman is grounded in; fix: GAPS3' },
+  { id: 'EDPUSH', rule: 4, key: 'another push never takes over a waiting safety push', reason: 'an ordinary push takes over a waiting eating-disorder push; fix: #956 EDPUSH' },
 ];
-const KNOWN_GAPS_CEILING = 19;
+const KNOWN_GAPS_CEILING = 21;
 const EXEMPT: Array<{ rule: Rule; key: string; reason: string }> = [
   { rule: 1, key: 'GET /consent/check/:client_id/:scope', reason: 'it echoes the ids it was asked about and answers granted: false' },
   { rule: 2, key: 'GET /coach/consultation', reason: "the coach's own set-up; it mints a random invite code for a coach with none, so two reads differ" },
@@ -82,6 +90,7 @@ const EXEMPT_CEILING = 10;
 
 const uuid = (n: number) => `0000000${n}-0000-4000-8000-00000000000${n}`;
 const [OLD, NEW, MOVED, COACHLESS, COACHED, ROW] = [1, 2, 3, 4, 5, 6].map(uuid);
+const COPY = uuid(8); // the client's copy of a program
 // The bearer token is the label; the JWT stand-in answers it as the user.
 const USERS: Array<[id: string, role: string, label: string]> = [
   [OLD, 'coach', 'old-coach'],
@@ -92,8 +101,6 @@ const USERS: Array<[id: string, role: string, label: string]> = [
 ];
 // Rows that decide who coaches whom: none, so only coach_id does.
 const AUTHORITY = new Set(['SubCoachAssignment', 'TeamSubCoachAssignment', 'SubCoachInvite']);
-// The client's sharing switches as they stand belong to the current coach.
-const CURRENT_COACH = new Set(['ClientCoachConsent']);
 // Owner 4b: the old coach's chat, nudges, tags and session notes stay with the old coach.
 const PRIVATE_4B = new Set(['CoachMessage', 'CoachNudge', 'CoachClientTag']);
 const PRIVATE_4B_TEXT = ['s:CoachMessage.', 's:CoachNudge.', 's:CoachClientTag.', 's:CoachingSession.coach_notes_md'];
@@ -103,10 +110,17 @@ const COACH_SIDE = new Set(['AICallLog', 'AIDraft', 'AiActionDraft', 'AiRequestA
   'CoachAlert', 'CoachBroadcast', 'CoachCodeRedemption', 'CoachFirstPaymentNotification', 'CoachGuideline', 'CoachPlaybookSource',
   'CoachThreadState', 'CoachWelcomeMessageJob', 'ContractEnvelope', 'ConversationReview', 'InviteCode', 'InviteRedemption', 'MessageDraft',
   'MessageReport', 'PackageTrialUsage', 'TeamAuditEvent', 'WorkoutAdjustmentProposal']);
-// Plain id columns (no @relation) that name a coach or a client hold the same people the foreign keys do.
-const PLAIN_PERSON = /^((tenant_|head_)?coach(_user)?_id|coachId|owner_user_id|client_id|clientId|subject_user_id)$/;
+// Plain id columns (no @relation) that say whose row it is hold the same people the foreign keys do. Who-did-it
+// stamps (author, actor, decided_by, accepted_by) keep their marker: no coach read is scoped by them.
+const PLAIN_PERSON = /^((tenant_|head_)?coach(_user)?_id|coachId|owner_user_id|payee_user_id|client_id|clientId|subject_user_id)$/;
 // Owner 17: a move deletes the drafts other coaches hold, nothing else.
 const MOVE_MAY_DELETE = new Set(['AIDraft', 'AiActionDraft', 'MessageDraft', 'ChurnIntervention']);
+// What every move path runs once coach_id changes. HIST2C adds its session cancel here when it lands.
+const move = () => deleteDraftsLeftByMove(db, [MOVED], NEW);
+// CONTRACT-1 Option 1: the old coach keeps their own money records for the client (name, date, amount; the record's
+// id, status and currency don't name anyone) and nothing else about the client or their new coach.
+const MONEY = /^v1\/coach\/(money|payments|purchases|packages\/:id\/subscribers)(\/|$)/;
+const moneyLeak = (t: string) => namesMoved(t.replace(/moved:name\b/g, '')) || t.includes(NEW);
 
 const { models, enums } = parseSchema();
 const world = new World(models, enums);
@@ -135,15 +149,31 @@ async function seed(state: State): Promise<void> {
     for (const f of m.fields.values()) {
       if (isRelation(f, models)) continue;
       const person = fkTo.get(f.name) === 'User' || (!fkTo.has(f.name) && f.type === 'String' && !f.list && PLAIN_PERSON.test(f.name));
-      const coachSide = /coach|tenant|invited_by|owner_user/i.test(f.name);
+      const coachSide = /coach|tenant|invited_by|owner_user|payee/i.test(f.name);
       clients ||= person && !coachSide;
       row[f.name] = person ? (coachSide ? 'COACH' : MOVED) : fkTo.has(f.name) || f.isId ? ROW : defaultFor(m, f, enums);
     }
     const restamped = state === 'moved-restamped' && clients && !PRIVATE_4B.has(m.name) && !COACH_SIDE.has(m.name);
-    const coach = state !== 'before' && (restamped || CURRENT_COACH.has(m.name)) ? NEW : OLD;
+    const coach = state !== 'before' && restamped ? NEW : OLD;
     for (const k of Object.keys(row)) if (row[k] === 'COACH') row[k] = coach;
     world.table(m.name).push(row);
   }
+  // The client shares every scope with both coaches. Nothing revokes the old coach's grants on a move, so only the move
+  // rules can hide the client from them, and the new coach reads real history, not a consent refusal.
+  const consent = world.table('ClientCoachConsent')[0];
+  world.rows.set('ClientCoachConsent', [OLD, NEW].flatMap((coach_id) => Object.values(ConsentScope).map((scope) =>
+    ({ ...consent, id: `${coach_id}:${scope}`, coach_id, scope, granted_at: SEED_DATE }))));
+  // Programs are template-first: coach A's master has no client and stays coach A's. The client runs a copy of it,
+  // with a day that holds the client's assignment; the copy is the client's history.
+  const [program, plan, assignment] = ['WorkoutProgram', 'WorkoutPlan', 'ClientWorkoutAssignment'].map((m) => world.table(m)[0]);
+  world.table('WorkoutProgram').push({ ...program, id: COPY, is_template: false, cloned_from_id: ROW, delivery_key: null });
+  world.table('WorkoutPlan').push({ ...plan, id: COPY, program_id: COPY, coach_id: program.coach_id });
+  world.table('ClientWorkoutAssignment').push({ ...assignment, id: COPY, workout_plan_id: COPY });
+  Object.assign(program, { client_id: null, coach_id: OLD, owner_user_id: OLD });
+  // HIST-2b: the generic session is past; this one, a week out with the old coach, is what a move cancels.
+  const [session] = world.table('CoachingSession');
+  const soon = SEED_DATE.getTime() + 8 * 86_400_000;
+  world.table('CoachingSession').push({ ...session, id: uuid(9), coach_id: OLD, status: 'scheduled', start_at: new Date(soon), end_at: new Date(soon + 3_600_000) });
   // The old coach's own inbox row about the client (the generic row is the client's).
   const note = world.table('Notification')[0];
   world.table('Notification').push({ ...note, id: uuid(7), user_id: OLD, payload: { client_id: MOVED }, deep_link: `/coach/clients/${MOVED}` });
@@ -151,7 +181,7 @@ async function seed(state: State): Promise<void> {
   const def = world.table('WearableMetricDef')[0];
   const metrics = Object.keys(METRIC_BUCKET) as Array<keyof typeof METRIC_BUCKET>;
   world.rows.set('WearableMetricDef', metrics.map((m) => ({ ...def, id: m, metric: m, bucket: METRIC_BUCKET[m], aggregation: METRIC_AGGREGATION[m] })));
-  if (state !== 'before') await deleteDraftsLeftByMove(db, [MOVED], NEW);
+  if (state !== 'before') await move();
 }
 
 interface Route {
@@ -193,6 +223,12 @@ const normal = (t: string) =>
   t.split(OLD).join('C').split(NEW).join('C').replace(/\d{4}-\d\d-\d\dT[\d:.]+Z|gen-\d+|"request_id":"\w+"/g, '_').replace(/"s:CoachingSession\.coach_notes_md"/g, 'null');
 const listed = (rule: Rule) => new Set([...KNOWN_GAPS, ...EXEMPT].filter((g) => g.rule === rule).map((g) => g.key));
 const unexpected = (rule: Rule, keys: string[]) => keys.filter((k) => !listed(rule).has(k));
+// A check that is not one route (rule 1's move, rule 4's outbox): skipped while listed, and seen by the guard.
+const CHECKS: Array<[Rule, string, () => Promise<boolean>]> = [];
+function check(rule: Rule, name: string, holds: () => Promise<boolean>): void {
+  CHECKS.push([rule, name, holds]);
+  (listed(rule).has(name) ? it.skip : it)(name, async () => expect(await holds()).toBe(true));
+}
 
 beforeAll(async () => {
   await seed('moved');
@@ -238,15 +274,19 @@ beforeAll(async () => {
   for (const r of routes.filter((x) => x.method === 'GET' && !/^(v1\/)?(admin|internal)\b/.test(x.path) && !(x.roles.length && x.roles.every((y) => y === 'owner')))) {
     await seed('moved');
     const old = await call('old-coach', 'GET', r.path);
-    const leak = ok(old.status) && namesMoved(old.text);
+    const leak = ok(old.status) && (MONEY.test(r.path) ? moneyLeak(old.text) : namesMoved(old.text));
     if (leak) found.leaks.push(r.key);
     const stampedOld = await call('new-coach', 'GET', r.path);
     if (ok(stampedOld.status) && PRIVATE_4B_TEXT.some((m) => stampedOld.text.includes(m))) found.private4b.push(r.key);
     await seed('moved-restamped');
     const stampedNew = await call('new-coach', 'GET', r.path);
-    if (stampedOld.status !== stampedNew.status || normal(stampedOld.text) !== normal(stampedNew.text)) found.hidden.push(r.key);
+    const [was, now] = [stampedOld.text, stampedNew.text].map(normal);
+    if (stampedOld.status !== stampedNew.status || was !== now) found.hidden.push(r.key);
+    // The log shows where the old coach's answer names the client, and where the new coach's two answers part.
     const at = Math.max(0, old.text.indexOf(MOVED) - 100);
-    outcomes[r.key] = `old ${old.status} | new ${stampedOld.status}->${stampedNew.status}${leak ? ` | ${old.text.slice(at, at + 160)}` : ''}`;
+    const parts = Math.max(0, [...was].findIndex((c, i) => c !== now[i]) - 60);
+    outcomes[r.key] = `old ${old.status} | new ${stampedOld.status}->${stampedNew.status}${leak ? ` | ${old.text.slice(at, at + 160)}` : ''}` +
+      (was !== now ? ` | ${was.slice(parts, parts + 160)} >> ${now.slice(parts, parts + 160)}` : '');
   }
 
   // Rule 3: every Roman, AI and AI-consent route a client may call.
@@ -271,8 +311,10 @@ describe('Rule 1: a moved client is gone for the old coach (owner 4)', () => {
     for (const k of ['GET /coach/clients', 'GET /coach/alerts', 'GET /notifications', 'GET /coach/clients/:id/summary']) expect(outcomes[k]).toBeDefined();
   });
 
-  // The roster, Roman's drafts (plain tenant_coach_id) and a program's assignees (plain coach_id, owner_user_id).
-  it.each(['coach/clients', 'ai/gateway/drafts', `v1/coach/programs/${ROW}/assignees`])('before the move, %s names the client (the check can fail)', async (path) => {
+  // The roster, Roman's drafts (plain tenant_coach_id), a program's clients (plain coach_id and owner_user_id, the
+  // client's copy) and check-ins (behind the client's consent): the fixture is real, so the check can fail.
+  const reads = ['coach/clients', 'ai/gateway/drafts', `v1/coach/programs/${ROW}/assignees`, `coach/clients/${MOVED}/check-ins`];
+  it.each(reads)('before the move, %s names the client', async (path) => {
     await seed('before');
     const res = await call('old-coach', 'GET', path);
     expect([res.status, namesMoved(res.text)]).toEqual([200, true]);
@@ -281,9 +323,23 @@ describe('Rule 1: a moved client is gone for the old coach (owner 4)', () => {
   it('no route the old coach can call answers with the moved client (404 or left out)', () => {
     expect(unexpected(1, found.leaks)).toEqual([]);
   });
+
+  check(1, MOVE_CANCELS, async () => {
+    await seed('before');
+    const past = JSON.stringify(world.table('CoachingSession')[0]);
+    await seed('moved');
+    const [after, upcoming] = world.table('CoachingSession');
+    return upcoming?.status === 'canceled' && JSON.stringify(after) === past;
+  });
 });
 
 describe('Rule 2: history follows the client (139-13, owner 4b)', () => {
+  it("after the move, the new coach reads the client's check-ins (the comparison sees real history)", async () => {
+    await seed('moved');
+    const res = await call('new-coach', 'GET', `coach/clients/${MOVED}/check-ins`);
+    expect([res.status, namesMoved(res.text)]).toEqual([200, true]);
+  });
+
   it("the new coach reads the client's history whichever coach's id it carries", () => {
     expect(unexpected(2, found.hidden)).toEqual([]);
   });
@@ -296,7 +352,7 @@ describe('Rule 2: history follows the client (139-13, owner 4b)', () => {
     await seed('before');
     const sizes = () => new Map([...world.rows].map(([m, rows]): [string, number] => [m, rows.length]));
     const was = sizes();
-    await deleteDraftsLeftByMove(db, [MOVED], NEW);
+    await move();
     const lost = [...sizes()].filter(([m, n]) => n < (was.get(m) ?? 0)).map(([m]) => m);
     expect(lost.length).toBeGreaterThan(0);
     expect(lost.filter((m) => !MOVE_MAY_DELETE.has(m))).toEqual([]);
@@ -365,7 +421,7 @@ const RULE4: Record<string, () => Promise<boolean>> = {
 };
 
 describe('Rule 4: safety alerts are never lost or merged (57q)', () => {
-  for (const [name, holds] of Object.entries(RULE4)) (listed(4).has(name) ? it.skip : it)(name, async () => expect(await holds()).toBe(true));
+  for (const [name, holds] of Object.entries(RULE4)) check(4, name, holds);
 });
 
 describe('Known gaps: skipped, and the list may only shrink', () => {
@@ -377,8 +433,8 @@ describe('Known gaps: skipped, and the list may only shrink', () => {
   });
 
   it('a fixed gap leaves the list (remove it and lower the ceiling)', async () => {
-    const failing: Record<Rule, string[]> = { 1: found.leaks, 2: [...found.hidden, ...found.private4b], 3: [...found.roman, ...found.romanCoached], 4: [] };
-    for (const [name, holds] of Object.entries(RULE4)) if (!(await holds())) failing[4].push(name);
+    const failing: Record<Rule, string[]> = { 1: [...found.leaks], 2: [...found.hidden, ...found.private4b], 3: [...found.roman, ...found.romanCoached], 4: [] };
+    for (const [rule, name, holds] of CHECKS) if (!(await holds())) failing[rule].push(name);
     expect([...KNOWN_GAPS, ...EXEMPT].filter((g) => !failing[g.rule].includes(g.key)).map((g) => g.key)).toEqual([]);
   });
 });

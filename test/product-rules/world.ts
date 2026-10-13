@@ -28,7 +28,8 @@ export interface ModelDef {
   fields: Map<string, FieldDef>;
   uniques: string[][];
 }
-const SEED_DATE = new Date('2026-10-01T12:00:00.000Z');
+// A day before the run: in the past, yet inside every "last N days" read, so no fixture ages into an empty answer.
+export const SEED_DATE = new Date(Date.now() - 86_400_000);
 
 export function parseSchema(): { models: Map<string, ModelDef>; enums: Map<string, string[]> } {
   const text = fs.readFileSync(path.join(__dirname, '..', '..', 'prisma', 'schema.prisma'), 'utf8');
