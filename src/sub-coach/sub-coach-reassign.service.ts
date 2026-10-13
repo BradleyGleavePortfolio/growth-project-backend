@@ -9,7 +9,7 @@ import { PrismaService } from '../prisma.service';
 import { AuditAction } from '../audit/audit.service';
 import { SubCoachCapacityService } from './sub-coach-capacity.service';
 import { SubCoachIdempotencyService } from './sub-coach-idempotency.service';
-import { deleteDraftsHeldBy } from '../coach/moved-client-drafts';
+import { deleteCoachRowsHeldBy, deleteDraftsHeldBy } from '../coach/moved-client-drafts';
 
 export interface ReassignClientDto {
   clientId: string;
@@ -341,6 +341,8 @@ export class SubCoachReassignService {
           });
           // Owner decision 17: the sub-coach handing the client on loses their drafts now.
           await deleteDraftsHeldBy(tx, clientId, open.sub_coach_id);
+          // Owner 4: and their inbox rows and coach-side insight about them.
+          await deleteCoachRowsHeldBy(tx, clientId, open.sub_coach_id);
         }
 
         // Open a new assignment if we're delegating to a sub-coach.
