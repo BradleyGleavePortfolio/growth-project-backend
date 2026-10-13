@@ -27,7 +27,7 @@ import { NotificationCategory, DEFAULT_NOTIFICATION_CATEGORY } from './notificat
 import { PushAbortedError, PushDeliveryResult } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { EnqueueResult, PushDeliveryService } from './push/push-delivery.service';
-import { PushContext, lockScreenCopy } from './push/lock-screen-copy';
+import { PushContext, lockScreenCopy, safetyAlertTap } from './push/lock-screen-copy';
 import { resolveRecipientTimeZone } from './recipient-timezone';
 import { notificationPrefsPrefix, pushAllowedByPreferences } from './push/push-preferences';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
@@ -557,8 +557,9 @@ export class NotificationsService implements OnModuleInit {
    * (lock-screen-copy.ts: no health details, no message text); `data`
    * carries only tap routing (the screen, the deep link and ids).
    *
-   * `dedupe_key` makes an event exactly once (booking events); without it,
-   * repeats in the same conversation (same kind and deep link) collapse.
+   * `dedupe_key` makes an event exactly once (booking events, each Roman
+   * safety coach alert) and it never collapses; without it, repeats in the
+   * same conversation (same kind and deep link) collapse.
    * With `tx` the push commits or rolls back with the caller's write.
    * Never throws without `tx`; returns null when suppressed or unwired.
    */
@@ -589,17 +590,23 @@ export class NotificationsService implements OnModuleInit {
           kind: input.kind,
           title: copy.title,
           body: copy.body,
-          data: pushTapData(
-            input.kind,
-            input.deep_link,
-            input.context?.sessionId,
-            await this.bookingRole(
-              tx ?? this.prisma,
+          data: {
+            ...pushTapData(
               input.kind,
-              input.user_id,
+              input.deep_link,
               input.context?.sessionId,
+              await this.bookingRole(
+                tx ?? this.prisma,
+                input.kind,
+                input.user_id,
+                input.context?.sessionId,
+              ),
             ),
-          ),
+            // Owner 57d: a Roman safety alert push opens that alert.
+            ...(input.context?.safetyAlert && input.context.alertId
+              ? safetyAlertTap(input.context.alertId)
+              : {}),
+          },
           context: input.context ?? null,
           dedupeKey: input.dedupe_key ?? null,
           collapseKey: `${input.kind}:${input.deep_link ?? ''}`,
