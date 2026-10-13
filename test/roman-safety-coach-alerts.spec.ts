@@ -66,13 +66,13 @@ describe('the emitter', () => {
     expect(sendPush.mock.calls[0][0]).toMatchObject({ context: { safetyAlert: alertType, alertId: 'a1' } });
   });
 
-  it('owner 57q: only the urgent alert push is urgent, one push per alert; the eating-disorder push is not', async () => {
+  it('owner 57q: each safety alert is one push of its own; only the urgent one is urgent', async () => {
     const { e, sendPush } = emitter();
     await e.emit({ ...base, alertType: 'roman_urgent_reply', message: URGENT_PUSH });
     await e.emit({ ...base, alertId: 'a2', alertType: 'roman_eating_disorder_reply', message: ED_PUSH });
     expect(sendPush.mock.calls[0][0]).toMatchObject({ urgent: true, dedupe_key: 'coach_alert:a1' });
+    expect(sendPush.mock.calls[1][0]).toMatchObject({ dedupe_key: 'coach_alert:a2' });
     expect(sendPush.mock.calls[1][0]).not.toHaveProperty('urgent');
-    expect(sendPush.mock.calls[1][0]).not.toHaveProperty('dedupe_key');
   });
 
   it('any other alert is unchanged', async () => {
@@ -82,6 +82,7 @@ describe('the emitter', () => {
     expect(create.mock.calls[0][0].payload).not.toHaveProperty('actionScreen');
     expect(sendPush.mock.calls[0][0]).not.toHaveProperty('context');
     expect(sendPush.mock.calls[0][0]).not.toHaveProperty('urgent');
+    expect(sendPush.mock.calls[0][0]).not.toHaveProperty('dedupe_key');
   });
 });
 
@@ -458,6 +459,54 @@ describe('the coach phone receives the safety push line', () => {
     expect(sent()).toEqual([
       [URGENT_PUSH, { alertId: 'a-urgent' }],
       [ED_PUSH, { alertId: 'a-ed' }],
+    ]);
+  });
+
+  // EDPUSH (owner 57q): the eating-disorder push waits for 08:00 on its own
+  // row. An ordinary coach alert for the same client (same collapse key)
+  // never takes it over, and it never takes over the ordinary one.
+  const OTHER_PUSH = 'There is a new update about a client. Open the app to see it.';
+  const lines = (p: ReturnType<typeof phone>) =>
+    p.send.mock.calls.map(([[m]]) => [m.body, (m.data as { actionParams?: unknown }).actionParams]);
+
+  it.each([
+    ['then an ordinary coach alert', ['ed', 'other']],
+    ['after an ordinary coach alert', ['other', 'ed']],
+  ])('at 22:00, an eating-disorder alert %s: at 08:00 both arrive, each with its own line', async (_label, steps) => {
+    const p = phone(NIGHT);
+    for (const step of steps) {
+      if (step === 'ed') await p.emit('roman_eating_disorder_reply', ED_PUSH, 'a-ed');
+      if (step === 'other') await p.emit('streak_dropped', 'Streak dropped.', 'a-other');
+    }
+    expect(p.rows).toHaveLength(2);
+    expect(p.rows.find((r) => r.dedupe_key === 'coach_alert:a-ed')).toMatchObject({
+      urgent: false,
+      not_before: MORNING,
+      deferred_reason: 'quiet_hours',
+    });
+    expect(await p.delivery.drain()).toBe(0);
+    clock = MORNING;
+    expect(await p.delivery.drain()).toBe(2);
+    expect(lines(p)).toHaveLength(2);
+    expect(lines(p)).toEqual(
+      expect.arrayContaining([
+        [ED_PUSH, { alertId: 'a-ed' }],
+        [OTHER_PUSH, undefined],
+      ]),
+    );
+  });
+
+  it('at 08:00, an ordinary coach alert just after the eating-disorder push was sent is not folded into it', async () => {
+    const p = phone(NIGHT);
+    await p.emit('roman_eating_disorder_reply', ED_PUSH, 'a-ed');
+    clock = MORNING;
+    expect(await p.delivery.drain()).toBe(1);
+    clock = new Date(MORNING.getTime() + 20_000);
+    await p.emit('streak_dropped', 'Streak dropped.', 'a-other');
+    expect(await p.delivery.drain()).toBe(1);
+    expect(lines(p)).toEqual([
+      [ED_PUSH, { alertId: 'a-ed' }],
+      [OTHER_PUSH, undefined],
     ]);
   });
 });
