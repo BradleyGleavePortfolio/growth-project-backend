@@ -88,8 +88,8 @@ consultation's `headline` (K1 headline, else the K1 `bio`) and `specialties`
 Both refuse:
 - Codes owned by a user whose role is no longer `coach` (defense
   against post-demotion redemption).
-- Codes whose owning coach has `subscription_status` of `canceled` or
-  `paused` (the coach is not currently accepting clients).
+
+There is no coach plan or subscription check (owner TM-P1: no coach plans).
 
 ## Atomic attach (the ONE canonical writer)
 
@@ -114,7 +114,7 @@ Both refuse:
      succeed; attach state cannot change, so there is nothing to protect);
    - to a **different** coach → `409 already_attached_to_different_coach`.
 4. New redemption: full lifecycle (revoked / expired / exhausted / coach
-   role), coach subscription (`coach_not_accepting_clients`), then in ONE
+   role), then in ONE
    transaction on a fresh read: intended-recipient check
    (`invite_intended_email_mismatch`), capacity-conditional seat bump
    (`used_count < max_uses`), first-redeemer attribution

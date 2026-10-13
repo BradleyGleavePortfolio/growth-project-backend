@@ -18,13 +18,6 @@ export type ResolvedCoachCode =
       usedCount: number;
     };
 
-/** Subscription states that let a coach take new clients (mirrors InviteCodesService). */
-export const ACCEPTING_SUBSCRIPTION_STATUSES: ReadonlySet<string> = new Set([
-  'active',
-  'trialing',
-  'grandfathered',
-]);
-
 /**
  * A1-COACHLESS — read-only code lookup shared by the featured-coach config
  * and the redemption route. It never writes and never attaches: the ONE
@@ -88,7 +81,7 @@ export class CoachCodeLookupService {
   /**
    * Why a NEW redemption of this code would be refused, or null when the code
    * is redeemable as far as the code itself goes. Order: unknown/non-coach ->
-   * revoked -> expired -> exhausted -> coach subscription.
+   * revoked -> expired -> exhausted. No coach plan check (owner TM-P1).
    */
   async refusalFor(
     resolved: ResolvedCoachCode | null,
@@ -102,18 +95,7 @@ export class CoachCodeLookupService {
       if (resolved.maxUses !== null && resolved.usedCount >= resolved.maxUses)
         return COACHLESS_ERROR.CODE_EXHAUSTED;
     }
-    if (!(await this.coachCanAcceptClients(resolved.coachId)))
-      return COACHLESS_ERROR.COACH_NOT_ACCEPTING;
     return null;
-  }
-
-  /** CoachSubscription is authoritative (CoachProfile.subscription_status is a stale mirror). */
-  async coachCanAcceptClients(coachId: string): Promise<boolean> {
-    const sub = await this.prisma.coachSubscription.findUnique({
-      where: { coach_id: coachId },
-      select: { status: true },
-    });
-    return !!sub && ACCEPTING_SUBSCRIPTION_STATUSES.has(sub.status);
   }
 
   /** Public-safe coach card for the attach moment and the banner. */
