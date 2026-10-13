@@ -805,6 +805,11 @@ function displayName(u: { name?: string | null } | null | undefined): string {
   return n.length > 0 ? n : 'Client';
 }
 
+/** CONTRACT-1: a charge to a client who moved away keeps their name, never a link. */
+function unlinkMoved(charge: MoneyChargeDto, moved: ReadonlySet<string>): MoneyChargeDto {
+  return moved.has(charge.client.id) ? { ...charge, client: { ...charge.client, id: '' } } : charge;
+}
+
 // ── tax CSV (C-641-4) ─────────────────────────────────────────────────
 
 /** Ledger rows per query the CSV export accepts before asking for a shorter period. */
@@ -1542,7 +1547,7 @@ export class CoachMoneyService {
     const page = hasMore ? rows.slice(0, limit) : rows;
     const moved = await movedAwayClientIds(this.prisma, coachId, page.map((r) => r.client?.id));
     return {
-      charges: page.map((r) => this.toCharge(r, moved)),
+      charges: page.map((r) => unlinkMoved(this.toCharge(r), moved)),
       next_cursor: hasMore ? page[page.length - 1].id : null,
     };
   }
@@ -1574,7 +1579,7 @@ export class CoachMoneyService {
     const settled = slices.some((s) => s.kind === 'destination');
     const moved = await movedAwayClientIds(this.prisma, coachId, [row.client?.id]);
     return {
-      charge: this.toCharge(row, moved),
+      charge: unlinkMoved(this.toCharge(row), moved),
       breakdown: {
         price_cents: settled ? t.gross_cents : row.amount_cents,
         processing_cents: t.processing_cents,
@@ -1638,7 +1643,7 @@ export class CoachMoneyService {
     refunds: Array<{ amount_cents: number }>;
     disputes: Array<{ status: string; amount_cents: number }>;
     splits: Array<{ id: string }>;
-  }, moved: ReadonlySet<string>): MoneyChargeDto {
+  }): MoneyChargeDto {
     const refunded = r.refunds.reduce((acc, x) => acc + x.amount_cents, 0);
     const openDispute = r.disputes.some((d) =>
       (OPEN_DISPUTE_STATUSES as readonly string[]).includes(d.status),
@@ -1665,11 +1670,7 @@ export class CoachMoneyService {
     else state = 'pending';
     return {
       id: r.id,
-      // CONTRACT-1: a client who moved away keeps their name, never a link.
-      client: {
-        id: r.client && !moved.has(r.client.id) ? r.client.id : '',
-        name: displayName(r.client),
-      },
+      client: { id: r.client?.id ?? '', name: displayName(r.client) },
       package: { id: r.package?.id ?? '', name: r.package?.name ?? 'Package' },
       amount_cents: r.amount_cents,
       currency: r.currency,
