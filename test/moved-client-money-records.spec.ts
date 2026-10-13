@@ -73,8 +73,7 @@ function world() {
     }],
   };
   const models = [
-    'user', 'teamSubCoachAssignment', 'subCoachAssignment', 'coachPackage', 'clientPurchase',
-    'dunningState',
+    'user', 'subCoachAssignment', 'coachPackage', 'clientPurchase', 'dunningState',
     'chargeDispute', 'chargeRefund', 'splitLedgerEntry', 'connectTransfer', 'connectAccount',
     'partialRefundDecision',
   ];
@@ -129,36 +128,33 @@ async function readAll(w: World, coachId = OLD) {
 }
 
 describe('CONTRACT-1 — the old coach keeps only the money records of a moved client', () => {
-  it('a client on the coach\'s chain stays; anyone else has moved away', async () => {
+  it('a client on the coach\'s roster stays; anyone else has moved away', async () => {
     const db = new StatefulPrisma();
     db.state = {
       user: [
         { id: 'own', coach_id: OLD },
         { id: 'other', coach_id: NEW },
         { id: 'none', coach_id: null },
-        { id: 'team', coach_id: 'sub-a' },
-        { id: 'left-team', coach_id: 'sub-b' },
         { id: 'delegated', coach_id: OLD },
-      ],
-      teamSubCoachAssignment: [
-        { head_coach_id: OLD, sub_coach_id: 'sub-a', archived_at: null },
-        { head_coach_id: OLD, sub_coach_id: 'sub-b', archived_at: at(1) },
+        { id: 'sub-a', coach_id: OLD },
+        { id: 'sub-b', coach_id: NEW },
       ],
       subCoachAssignment: [
         { head_coach_id: OLD, sub_coach_id: 'sub-a', client_id: 'delegated', unassigned_at: null },
         { head_coach_id: OLD, sub_coach_id: 'sub-a', client_id: 'own', unassigned_at: at(1) },
+        { head_coach_id: OLD, sub_coach_id: 'sub-b', client_id: 'delegated', unassigned_at: null },
       ],
     };
-    const prisma = Object.fromEntries(
-      ['user', 'teamSubCoachAssignment', 'subCoachAssignment'].map((m) => [m, read(db, m)]),
-    );
-    const ids = ['own', 'other', 'none', 'team', 'left-team', 'delegated', null];
+    const prisma = { user: read(db, 'user'), subCoachAssignment: read(db, 'subCoachAssignment') };
+    const ids = ['own', 'other', 'none', 'delegated', null];
     const movedFrom = async (coachId: string): Promise<string[]> =>
       [...(await Reflect.apply(movedAwayClientIds, undefined, [prisma, coachId, ids]))].sort();
-    // Head coach: their own clients and their active sub-coach's.
-    expect(await movedFrom(OLD)).toEqual(['left-team', 'none', 'other']);
-    // Sub-coach: their own and the ones delegated to them, never the rest of the team.
-    expect(await movedFrom('sub-a')).toEqual(['left-team', 'none', 'other', 'own']);
+    // The head coach keeps every client whose coach they are, delegated or not.
+    expect(await movedFrom(OLD)).toEqual(['none', 'other']);
+    // A sub-coach keeps only the clients delegated to them, never the rest of the team.
+    expect(await movedFrom('sub-a')).toEqual(['none', 'other', 'own']);
+    // A sub-coach who left the team loses the delegated client too.
+    expect(await movedFrom('sub-b')).toEqual(['delegated', 'none', 'other', 'own']);
   });
 
   it('before the move every route is unchanged: full rows, client links, dates', async () => {

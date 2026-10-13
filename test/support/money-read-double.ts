@@ -77,6 +77,13 @@ const RELATIONS: Record<string, Record<string, Relation>> = {
         (db.state.clientPurchase ?? []).filter((p) => p.id === r.client_purchase_id),
     },
   },
+  subCoachAssignment: {
+    sub_coach: {
+      model: 'user',
+      many: false,
+      resolve: (r, db) => (db.state.user ?? []).filter((u) => u.id === r.sub_coach_id),
+    },
+  },
   splitLedgerEntry: {
     purchase: {
       model: 'clientPurchase',
@@ -197,9 +204,8 @@ export function moneyReadPrisma(db: StatefulPrisma) {
     connectAccount: {
       findUnique: async (args: Row) => findMany(db, 'connectAccount', args)[0] ?? null,
     },
-    // CONTRACT-1: whether a client is still on the coach's chain.
+    // CONTRACT-1: whether a client is still on the coach's roster.
     user: { findMany: many('user') },
-    teamSubCoachAssignment: { findMany: many('teamSubCoachAssignment') },
     subCoachAssignment: { findMany: many('subCoachAssignment') },
   };
 }

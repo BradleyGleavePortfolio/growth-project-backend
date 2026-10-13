@@ -12,14 +12,14 @@ import type { CoachPurchaseView } from './coach-payments.select';
 // payment-failure details. Refund and dispute actions still work: they check
 // the seller, not the roster.
 
-type MovedPrisma = Pick<PrismaService, 'user' | 'teamSubCoachAssignment' | 'subCoachAssignment'>;
+type MovedPrisma = Pick<PrismaService, 'user' | 'subCoachAssignment'>;
 
 /**
- * The given clients who have moved away from `coachId`: no longer on the
- * coach's chain (owner: "head coach, then the sub-coach who coaches them").
- * A client stays when their coach is `coachId`, or one of `coachId`'s active
- * sub-coaches, or `coachId`'s head coach with the client delegated to
- * `coachId`. A coachless client has moved away from everyone.
+ * The given clients who have moved away from `coachId`: off the coach's
+ * roster, by the roster's own rule (SubCoachScopeService): a client stays
+ * while their coach is `coachId`, or while `coachId` is a sub-coach on that
+ * coach's team with the client delegated to them. A coachless client has
+ * moved away from everyone.
  */
 export async function movedAwayClientIds(
   prisma: MovedPrisma,
@@ -33,23 +33,15 @@ export async function movedAwayClientIds(
     select: { id: true, coach_id: true },
   });
   if (away.length === 0) return new Set();
-  const awayIds = away.map((c) => c.id);
-  const [team, delegated] = await Promise.all([
-    prisma.teamSubCoachAssignment.findMany({
-      where: { head_coach_id: coachId, archived_at: null },
-      select: { sub_coach_id: true },
-    }),
-    prisma.subCoachAssignment.findMany({
-      where: { sub_coach_id: coachId, client_id: { in: awayIds }, unassigned_at: null },
-      select: { client_id: true, head_coach_id: true },
-    }),
-  ]);
-  const subCoaches = new Set(team.map((t) => t.sub_coach_id));
-  const onChain = (c: { id: string; coach_id: string | null }) =>
-    c.coach_id !== null &&
-    (subCoaches.has(c.coach_id) ||
-      delegated.some((d) => d.client_id === c.id && d.head_coach_id === c.coach_id));
-  return new Set(away.filter((c) => !onChain(c)).map((c) => c.id));
+  const delegated = await prisma.subCoachAssignment.findMany({
+    where: { sub_coach_id: coachId, client_id: { in: away.map((c) => c.id) }, unassigned_at: null },
+    select: { client_id: true, head_coach_id: true, sub_coach: { select: { coach_id: true } } },
+  });
+  // A delegation counts while the client and the sub-coach both still belong to its head coach.
+  const live = delegated.filter((d) => d.sub_coach.coach_id === d.head_coach_id);
+  const onTeam = (c: { id: string; coach_id: string | null }) =>
+    live.some((d) => d.client_id === c.id && d.head_coach_id === c.coach_id);
+  return new Set(away.filter((c) => !onTeam(c)).map((c) => c.id));
 }
 
 /** What a purchase row about a moved-away client keeps (CONTRACT-1): the sale, never the client. */
