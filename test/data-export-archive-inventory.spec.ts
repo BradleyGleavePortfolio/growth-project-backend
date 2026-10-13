@@ -12,6 +12,7 @@
  * internal column shows up in the parsed archive.
  */
 import type { PrismaService } from '../src/prisma.service';
+import { ERASURE_MANIFEST } from '../src/account-deletion/account-deletion.manifest';
 import { DataExportService } from '../src/data-export/data-export.service';
 
 jest.mock('@sentry/node', () => ({ captureMessage: jest.fn(), captureException: jest.fn() }));
@@ -415,6 +416,7 @@ describe('data export paging (F-EXPORT-TIE)', () => {
 // W3-13 (B-DELETE-123): the export left out the data that went live on day 1
 // (community, broadcasts, coach codes, Roman adjustments, wearables), although
 // the privacy pages point people at the in-app export for a copy of it.
+// Owner C-3 later took Roman's workout-change proposals out (coach-side rows).
 describe('data export day-1 sections (W3-13)', () => {
   const day1: Record<string, Row[]> = {
     user: [{ id: U, email: 'u@example.test', expo_push_token: 'ExponentPushToken[secret]' }],
@@ -517,19 +519,18 @@ describe('data export day-1 sections (W3-13)', () => {
         redeemed_at: t(9),
       },
     ],
-    workoutAdjustmentProposal: [
-      {
-        id: 'wa1',
-        client_id: U,
-        coach_id: 'coach-1',
-        status: 'applied',
-        signals: { sleep_hours: 5.1 },
-        proposed_change: { volume: -0.2 },
-        rule_key: 'internal.rule',
-        dismiss_reason: 'coach note',
-        created_at: t(10),
-      },
-    ],
+    workoutAdjustmentProposal: ['pending', 'dismissed', 'approved'].map((status, i) => ({
+      id: `wa-${status}`,
+      client_id: U,
+      coach_id: 'coach-1',
+      status,
+      signals: { sleep_hours: 5.1 },
+      proposed_change: { volume: -0.2 },
+      roman_text: 'Short sleep this week: two fewer sets.',
+      rule_key: 'internal.rule',
+      dismiss_reason: status === 'dismissed' ? 'coach note' : null,
+      created_at: t(10 + i),
+    })),
     wearableConnection: [
       {
         id: 'wc1',
@@ -576,17 +577,40 @@ describe('data export day-1 sections (W3-13)', () => {
     expect(text).not.toContain('someone else');
   });
 
-  it('exports broadcasts received, code redemptions and Roman adjustments without internal fields', async () => {
+  it('exports broadcasts received and code redemptions without internal fields', async () => {
     const archive = await build(day1);
     expect(ids(archive.broadcasts_received)).toEqual(['bd1']);
     expect(stub<Row[]>(archive.broadcasts_received)[0]).not.toHaveProperty('lease_holder');
     expect(ids(archive.coach_code_redemptions)).toEqual(['ccr1']);
     expect(stub<Row[]>(archive.coach_code_redemptions)[0]).not.toHaveProperty('response');
     expect(ids(archive.invite_redemptions)).toEqual(['ir1']);
-    const [adjustment] = stub<Row[]>(archive.workout_adjustments);
-    expect(adjustment).toMatchObject({ id: 'wa1', signals: { sleep_hours: 5.1 } });
-    expect(adjustment).not.toHaveProperty('rule_key');
-    expect(adjustment).not.toHaveProperty('dismiss_reason');
+  });
+
+  it('leaves Roman workout-change proposals out, pending, dismissed or approved (owner C-3)', async () => {
+    const coachSide = { id: 'wa-as-coach', client_id: OTHER, coach_id: U, status: 'pending' };
+    const archive = await build({
+      ...day1,
+      workoutAdjustmentProposal: [...day1.workoutAdjustmentProposal, coachSide],
+    });
+    expect(archive).not.toHaveProperty('workout_adjustments');
+    const text = JSON.stringify(archive);
+    for (const id of ['wa-pending', 'wa-dismissed', 'wa-approved', 'wa-as-coach']) {
+      expect(text).not.toContain(id);
+    }
+    expect(text).not.toContain('sleep_hours');
+    expect(text).not.toContain('two fewer sets');
+  });
+
+  it('account deletion still erases those proposals (deletion manifest unchanged)', () => {
+    for (const field of ['client_id', 'coach_id', 'decided_by_id']) {
+      expect(ERASURE_MANIFEST).toContainEqual(
+        expect.objectContaining({
+          model: 'WorkoutAdjustmentProposal',
+          field,
+          action: { op: 'delete' },
+        }),
+      );
+    }
   });
 
   it('exports a coach own active Roman playbook, never a superseded one, another coach one or the source ledger', async () => {
