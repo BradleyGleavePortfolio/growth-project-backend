@@ -41,6 +41,12 @@
  * the coached copy, so the app asks for the coached text; a live coached
  * grant reads its coached copies whatever is asked.
  *
+ * Safety-reply exception (owner 57c, 2026-10-12): client-ai-v6 / v7 are the
+ * coached v4 / v5 copies with one sentence added (a coach sees the message
+ * behind an urgent medical or eating-disorder safety reply). With no live
+ * grant, GET ?variant=safety_exception offers them; a plain GET keeps v4 / v5,
+ * the text installed builds pin. A live grant reads its own generation.
+ *
  * History is append-only: a decision is a new row with seq = latest.seq + 1.
  * The unique index (user_id, processor, purpose, seq) turns a race between two
  * writers into a P2002 on the loser, which re-reads and re-decides (so two
@@ -93,6 +99,14 @@ import {
   CLIENT_AI_CONSENT_V5_PARAGRAPH,
   CLIENT_AI_CONSENT_V5_PARAGRAPH_SHA256,
   CLIENT_AI_CONSENT_V5_VERSION,
+  CLIENT_AI_CONSENT_V6_COPY_SHA256,
+  CLIENT_AI_CONSENT_V6_PARAGRAPH,
+  CLIENT_AI_CONSENT_V6_PARAGRAPH_SHA256,
+  CLIENT_AI_CONSENT_V6_VERSION,
+  CLIENT_AI_CONSENT_V7_COPY_SHA256,
+  CLIENT_AI_CONSENT_V7_PARAGRAPH,
+  CLIENT_AI_CONSENT_V7_PARAGRAPH_SHA256,
+  CLIENT_AI_CONSENT_V7_VERSION,
   CLIENT_AI_CONSENT_VERSION,
   acceptedClientAiConsent,
   isAiConsentLedgerEnabled,
@@ -199,9 +213,36 @@ export function coversScope(
   return scope === 'memory' ? isMemoryGrant(row) : isBaseGrant(row);
 }
 
-/** The v4 copy: offered to everyone without a live v5 grant (coach-free: owner 62). */
-export function clientAiConsentCopy(coachFree = false): ClientAiConsentCopy {
-  if (coachFree) {
+/**
+ * Which copies a status carries: 'pre57c' client-ai-v4 / v5 (what a plain GET
+ * offers, so installed builds keep their pinned text), 'coached' client-ai-v6 /
+ * v7 (owner 57c, the safety-reply exception; GET ?variant=safety_exception),
+ * 'coach_free' (owner 62).
+ */
+export type ClientAiCopyFamily = 'pre57c' | 'coached' | 'coach_free';
+
+function familyOfVersion(version: unknown): ClientAiCopyFamily {
+  if (isCoachFreeClientAiVersion(version)) return 'coach_free';
+  return version === CLIENT_AI_CONSENT_V6_VERSION || version === CLIENT_AI_CONSENT_V7_VERSION
+    ? 'coached'
+    : 'pre57c';
+}
+
+/** The base ('base' scope) copy of `family`. */
+export function clientAiConsentCopy(family: ClientAiCopyFamily = 'pre57c'): ClientAiConsentCopy {
+  if (family === 'coached') {
+    return {
+      version: CLIENT_AI_CONSENT_V6_VERSION,
+      processor: CLIENT_AI_CONSENT_PROCESSOR,
+      paragraph: {
+        text: CLIENT_AI_CONSENT_V6_PARAGRAPH,
+        sha256: CLIENT_AI_CONSENT_V6_PARAGRAPH_SHA256,
+      },
+      box_label: { text: CLIENT_AI_CONSENT_BOX_LABEL, sha256: CLIENT_AI_CONSENT_BOX_LABEL_SHA256 },
+      sha256: CLIENT_AI_CONSENT_V6_COPY_SHA256,
+    };
+  }
+  if (family === 'coach_free') {
     return {
       version: CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION,
       processor: CLIENT_AI_CONSENT_PROCESSOR,
@@ -225,9 +266,21 @@ export function clientAiConsentCopy(coachFree = false): ClientAiConsentCopy {
   };
 }
 
-/** The v5 copy (memory scope; coach-free: owner 62). */
-export function clientAiConsentV5Copy(coachFree = false): ClientAiConsentCopy {
-  if (coachFree) {
+/** The memory-scope copy of `family`. */
+export function clientAiConsentV5Copy(family: ClientAiCopyFamily = 'pre57c'): ClientAiConsentCopy {
+  if (family === 'coached') {
+    return {
+      version: CLIENT_AI_CONSENT_V7_VERSION,
+      processor: CLIENT_AI_CONSENT_PROCESSOR,
+      paragraph: {
+        text: CLIENT_AI_CONSENT_V7_PARAGRAPH,
+        sha256: CLIENT_AI_CONSENT_V7_PARAGRAPH_SHA256,
+      },
+      box_label: { text: CLIENT_AI_CONSENT_BOX_LABEL, sha256: CLIENT_AI_CONSENT_BOX_LABEL_SHA256 },
+      sha256: CLIENT_AI_CONSENT_V7_COPY_SHA256,
+    };
+  }
+  if (family === 'coach_free') {
     return {
       version: CLIENT_AI_CONSENT_V5_COACH_FREE_VERSION,
       processor: CLIENT_AI_CONSENT_PROCESSOR,
@@ -329,19 +382,27 @@ export class AiConsentService implements ClientAiConsentReader {
    * Roman for the client stays covered server-side). Otherwise a live grant
    * reads the copies of its own family; with no live grant, GET follows the ask
    * and a POST / DELETE response (no ask) follows the latest decision on file.
+   * `askSafety` (GET ?variant=safety_exception, owner 57c): with no live grant
+   * the coached copies are client-ai-v6 / v7; a plain GET keeps v4 / v5, the
+   * text installed builds pin.
    */
   private toStatus(
     row: AiConsentLatestRow | null,
     askCoachFree?: boolean,
     hasCoach = false,
+    askSafety = false,
   ): ClientAiConsentStatus {
-    const onFileCoachFree = isCoachFreeClientAiVersion(row?.consent_version);
-    const scope = hasCoach && onFileCoachFree ? null : grantScope(row);
+    const onFile = familyOfVersion(row?.consent_version);
+    const scope = hasCoach && onFile === 'coach_free' ? null : grantScope(row);
     const memoryOn = isRomanMemoryEnabled();
     const granted = scope !== null;
-    const coachFree = granted ? onFileCoachFree : !hasCoach && (askCoachFree ?? onFileCoachFree);
-    const copy =
-      scope === 'memory' ? clientAiConsentV5Copy(coachFree) : clientAiConsentCopy(coachFree);
+    const coachFree = granted
+      ? onFile === 'coach_free'
+      : !hasCoach && (askCoachFree ?? onFile === 'coach_free');
+    // A live grant, and a POST / DELETE response, read the copies on file; a GET follows the ask.
+    const coached = granted || askCoachFree === undefined ? onFile === 'coached' : askSafety;
+    const family: ClientAiCopyFamily = coachFree ? 'coach_free' : coached ? 'coached' : 'pre57c';
+    const copy = scope === 'memory' ? clientAiConsentV5Copy(family) : clientAiConsentCopy(family);
     const isGrant = row?.action === AI_CONSENT_ACTION_GRANT;
     const isWithdraw = row?.action === AI_CONSENT_ACTION_WITHDRAW;
     let state: ClientAiConsentState = 'not_granted';
@@ -360,21 +421,22 @@ export class AiConsentService implements ClientAiConsentReader {
       needs_reconsent: isGrant && !granted,
       copy,
       scope,
-      upgrade: scope === 'base' && memoryOn ? clientAiConsentV5Copy(coachFree) : null,
+      upgrade: scope === 'base' && memoryOn ? clientAiConsentV5Copy(family) : null,
       memory_on: memoryOn,
-      memory_copy: memoryOn && scope !== 'memory' ? clientAiConsentV5Copy(coachFree) : null,
+      memory_copy: memoryOn && scope !== 'memory' ? clientAiConsentV5Copy(family) : null,
     };
   }
 
   async getStatus(
     userId: string,
-    opts: { coachFree?: boolean; hasCoach?: boolean } = {},
+    opts: { coachFree?: boolean; hasCoach?: boolean; safetyException?: boolean } = {},
   ): Promise<ClientAiConsentStatus> {
     this.assertEnabled();
     return this.toStatus(
       await this.latestOr503(userId, 'status'),
       opts.coachFree === true,
       opts.hasCoach === true,
+      opts.safetyException === true,
     );
   }
 
