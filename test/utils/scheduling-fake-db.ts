@@ -237,6 +237,12 @@ export class SchedulingFakeDb {
         if (!type || !this.matches(type, is, 'other')) return false;
         continue;
       }
+      if (table === 'session' && key === 'client') {
+        const is = (cond as { is?: Row }).is;
+        const client = this.users.find((u) => u.id === row.client_id);
+        if (!client || !this.matches(client, is, 'other')) return false;
+        continue;
+      }
       if (!matchValue(row[key], cond)) return false;
     }
     return true;
@@ -361,6 +367,10 @@ export class SchedulingFakeDb {
     findFirst: async (args: { where?: Row }) => {
       await this.tick();
       return this.subAssignments.find((r) => this.matches(r, args.where, 'other')) ?? null;
+    },
+    findMany: async (args: { where?: Row }) => {
+      await this.tick();
+      return this.subAssignments.filter((r) => this.matches(r, args.where, 'other'));
     },
   };
 

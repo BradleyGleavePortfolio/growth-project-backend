@@ -183,4 +183,55 @@ export class SchedulingAccessService {
       ),
     );
   }
+
+  /**
+   * Owner 4 and HIST-2b: a coach reads a session with a client only while
+   * that client may still book with them (bookableCoachIds). After a move,
+   * every session with the client, cancelled or past, leaves the old coach at
+   * once: 404 by id, left out of their lists. The client keeps them all. The
+   * CoachingSession row policies hold the same rule (20270413000000).
+   */
+  async assertSessionStillTheirs(
+    actor: ActorContext,
+    session: Pick<CoachingSession, 'coach_id' | 'client_id'>,
+    db: Db = this.prisma,
+  ): Promise<void> {
+    if (actor.role !== 'coach' || session.coach_id !== actor.id || !session.client_id) return;
+    if (await this.clientStillBooks(session.client_id, actor.id, db)) return;
+    throw new NotFoundException(
+      schedulingError(SchedulingErrorCode.SESSION_NOT_FOUND, SESSION_NOT_FOUND_MESSAGE),
+    );
+  }
+
+  /** The same rule as a filter on a coach's own sessions, applied before paging. */
+  async sessionsStillTheirs(
+    coachId: string,
+    db: Db = this.prisma,
+  ): Promise<Prisma.CoachingSessionWhereInput> {
+    const open = await db.subCoachAssignment.findMany({
+      where: { sub_coach_id: coachId, unassigned_at: null },
+      select: { client_id: true },
+    });
+    const delegated: string[] = [];
+    for (const { client_id } of open) {
+      if (await this.clientStillBooks(client_id, coachId, db)) delegated.push(client_id);
+    }
+    return {
+      OR: [
+        { client_id: null },
+        { client: { is: { coach_id: coachId, role: 'student' } } },
+        ...(delegated.length > 0 ? [{ client_id: { in: delegated } }] : []),
+      ],
+    };
+  }
+
+  private async clientStillBooks(clientId: string, coachId: string, db: Db): Promise<boolean> {
+    const client = await db.user.findUnique({
+      where: { id: clientId },
+      select: { id: true, role: true, coach_id: true },
+    });
+    if (client?.role !== 'student') return false;
+    const ids = await this.bookableCoachIds({ ...client, role: 'student', email: null }, db);
+    return ids.includes(coachId);
+  }
 }

@@ -497,8 +497,9 @@ export class SchedulingService {
   /**
    * S-SCHED-2: upcoming (end_at > now, soonest first; includes a session in
    * progress) or past (end_at <= now, most recent first). Owners see all,
-   * coaches their own calendar, clients their own sessions (with any coach,
-   * so history survives a coach change).
+   * coaches their own calendar while each client may still book with them,
+   * clients their own sessions (with any coach, so history survives a coach
+   * change).
    *
    * S-SCHED-3 (B-634-4, C-634-3): keyset pages on the full sort key
    * (start_at, id), so rows that share a start time are never skipped or
@@ -530,7 +531,7 @@ export class SchedulingService {
       actor.role === 'owner'
         ? {}
         : actor.role === 'coach'
-          ? { coach_id: actor.id }
+          ? { coach_id: actor.id, ...(await this.access.sessionsStillTheirs(actor.id)) }
           : { client_id: actor.id };
     const statusFilter: Prisma.CoachingSessionWhereInput =
       args.statuses && args.statuses.length > 0 ? { status: { in: args.statuses } } : {};
@@ -568,6 +569,7 @@ export class SchedulingService {
 
   async getSession(actor: ActorContext, sessionId: string): Promise<SessionView> {
     const session = await this.lifecycle.loadSessionOrThrow(sessionId);
+    await this.access.assertSessionStillTheirs(actor, session);
     this.access.assertCanViewSession(actor, session);
     return this.view(actor, session);
   }

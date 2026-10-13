@@ -3,6 +3,7 @@
 // with the new coach." Runs every move path's real code and the real session
 // lifecycle over in-memory rows whose filters answer like Postgres.
 import 'reflect-metadata';
+import { NotFoundException } from '@nestjs/common';
 import { MODULE_METADATA } from '@nestjs/common/constants';
 import { AuditAction, AuditService } from '../src/audit/audit.service';
 import type { StripeApiService } from '../src/billing/stripe-api.service';
@@ -12,6 +13,8 @@ import type { SchedulingProviderRegistry } from '../src/scheduling/providers/sch
 import type { SchedulingOpenSlotsService } from '../src/scheduling/scheduling-open-slots.service';
 import { SchedulingSessionLifecycleService } from '../src/scheduling/scheduling-session-lifecycle.service';
 import { SchedulingModule } from '../src/scheduling/scheduling.module';
+import { SchedulingService } from '../src/scheduling/scheduling.service';
+import type { ActorContext } from '../src/scheduling/scheduling.types';
 import type { SubCoachCapacityService } from '../src/sub-coach/sub-coach-capacity.service';
 import type { SubCoachIdempotencyService } from '../src/sub-coach/sub-coach-idempotency.service';
 import { SubCoachReassignService } from '../src/sub-coach/sub-coach-reassign.service';
@@ -37,11 +40,13 @@ function matches(row: Row, where: Where = {}): boolean {
     if (key === 'OR') return (cond as Where[]).some((w) => matches(row, w));
     const value = row[key];
     if (!cond || typeof cond !== 'object' || cond instanceof Date) return same(value, cond);
-    const c = cond as { in?: unknown[]; not?: unknown; equals?: unknown; gt?: Date };
+    const c = cond as { in?: unknown[]; not?: unknown; equals?: unknown; gt?: Date; lte?: Date; is?: Where };
+    if (c.is) return value != null && matches(value as Row, c.is);
     return (!c.in || c.in.some((v) => same(v, value)))
       && (!('not' in c) || (value != null && !same(value, c.not)))
       && (!('equals' in c) || same(value, c.equals))
-      && (!c.gt || (value instanceof Date && value > c.gt));
+      && (!c.gt || (value instanceof Date && value > c.gt))
+      && (!c.lte || (value instanceof Date && value <= c.lte));
   });
 }
 
@@ -121,6 +126,10 @@ function world() {
       session('head2', 'client3', 'ahead', 'scheduled', 2),
     ],
   };
+  // A session reads its client like Prisma's `client` relation.
+  for (const s of seed.coachingSession) {
+    Object.defineProperty(s, 'client', { get: () => seed.user.find((u) => u.id === s.client_id) });
+  }
   // Models the spec does not seed start empty, so it keeps working as the
   // move paths gain more clean-ups.
   const writes = new Set<string>();
@@ -159,6 +168,7 @@ function world() {
     subCoaches: new SubCoachesService(prisma, team, undefined, undefined, lifecycle),
     teamMode: new TeamModeService(prisma, fakeOf<StripeApiService>({}), fakeOf<TeamModeTierResolverService>({}), lifecycle),
     handoff: new SubCoachReassignService(prisma, fakeOf<SubCoachCapacityService>({}), idempotency, lifecycle),
+    scheduling: new SchedulingService(prisma, new AuditService(prisma), providers, bookingEmitter, lifecycle, openSlots),
     session: (id: string) => model('coachingSession').rows.find((s) => s.id === id),
     statuses: () => Object.fromEntries(model('coachingSession').rows.map((s) => [s.id, s.status])),
     audits: (action: string) => model('auditLog').rows.filter((r) => r.action === action),
@@ -168,28 +178,38 @@ function world() {
 
 type World = ReturnType<typeof world>;
 const CLIENT3_CANCELLED = ['sub1-client3-ahead', 'sub1-client3-request'];
+const CLIENT3_ALL = ['ahead', 'request', 'past', 'done', 'cancelled'].map((what) => `sub1-client3-${what}`);
+const coach = (id: string): ActorContext => ({ id, role: 'coach', email: null, coach_id: null });
+// Every session id the actor reads in their upcoming and past lists.
+const listed = async (w: World, actor: ActorContext) =>
+  (await Promise.all((['upcoming', 'past'] as const).map((scope) => w.scheduling.listSessionsForActor(actor, { scope }))))
+    .flat().map((s) => s.id).sort();
 
 describe('a client move cancels the old coach\'s upcoming sessions with them (owner HIST-2b)', () => {
-  it.each<[string, (w: World) => Promise<unknown>, string, string[]]>([
+  // The last column is what sub1 still reads after the move: the clients
+  // still theirs (revoke and Team Mode removal end sub1's seat).
+  it.each<[string, (w: World) => Promise<unknown>, string, string[], string[]]>([
     [
       'moves sub1\'s client to themselves',
       (w) => w.subCoaches.reassignClient('head1', 'head1', { clientId: 'client3' }),
-      'client3', CLIENT3_CANCELLED,
+      'client3', CLIENT3_CANCELLED, ['sub1-client2-ahead'],
     ],
-    ['revokes sub1', (w) => w.subCoaches.revoke('head1', 'sub1', {}), 'client3', CLIENT3_CANCELLED],
+    ['revokes sub1', (w) => w.subCoaches.revoke('head1', 'sub1', {}), 'client3', CLIENT3_CANCELLED, []],
     [
       'removes sub1 from Team Mode',
       (w) => w.teamMode.removeSubCoach({ headCoachId: 'head1', subCoachId: 'sub1' }),
-      'client3', CLIENT3_CANCELLED,
+      'client3', CLIENT3_CANCELLED, [],
     ],
     [
       'takes a delegated client back from sub1',
       (w) => w.handoff.unassignClient('head1', 'head1', 'coach', { clientId: 'client2', idempotency_key: 'k1' }),
-      'client2', ['sub1-client2-ahead'],
+      'client2', ['sub1-client2-ahead'], CLIENT3_ALL,
     ],
-  ])('when the head coach %s', async (_, move, clientId, cancelled) => {
+  ])('when the head coach %s', async (_, move, clientId, cancelled, kept) => {
     const w = world();
     const before = w.statuses();
+    const sub1Sessions = Object.keys(before).filter((id) => id.startsWith('sub1-')).sort();
+    expect(await listed(w, coach('sub1'))).toEqual(sub1Sessions);
     await move(w);
 
     // Only the old coach's upcoming sessions with the moved client end. Past,
@@ -213,6 +233,21 @@ describe('a client move cancels the old coach\'s upcoming sessions with them (ow
     // and the client's notice waits for approved wording.
     expect(w.notices).toEqual([]);
 
+    // Reads (owner 4): at once the old coach finds no session with the moved
+    // client, by id or in either list, and keeps the clients still theirs.
+    // The new coach never reads the old coach's session or its notes; the
+    // client keeps their whole history.
+    const leftBehind = sub1Sessions.filter((id) => id.startsWith(`sub1-${clientId}-`));
+    expect(await listed(w, coach('sub1'))).toEqual([...kept].sort());
+    for (const id of leftBehind) {
+      await expect(w.scheduling.getSession(coach('sub1'), id)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(w.scheduling.getSession(coach('head1'), id)).rejects.toBeInstanceOf(NotFoundException);
+    }
+    const client: ActorContext = { id: clientId, role: 'student', email: null, coach_id: 'head1' };
+    expect(await listed(w, client)).toEqual(expect.arrayContaining(leftBehind));
+    expect(await w.scheduling.getSession(client, cancelled[0])).toMatchObject({ status: 'canceled', coach_notes_md: null });
+    expect(await w.scheduling.getSession(coach('head1'), 'head1-client1-ahead')).toMatchObject({ status: 'scheduled' });
+
     // A repeated move finds nothing left to cancel and writes nothing more.
     const audited = w.audits(AuditAction.SESSION_CANCELED).length;
     await w.lifecycle.finishMoveCancels('head1', await w.lifecycle.cancelLeftByMove(w.prisma, [clientId], 'sub1'));
@@ -222,8 +257,7 @@ describe('a client move cancels the old coach\'s upcoming sessions with them (ow
 
   it('returns what a coach cancel returns: a session holds no credit or payment, so both write only the session and its audit', async () => {
     const w = world();
-    const coach = { id: 'head1', role: 'coach' as const, email: null, coach_id: null };
-    await w.lifecycle.cancelSession(coach, 'head1-client1-ahead', {});
+    await w.lifecycle.cancelSession(coach('head1'), 'head1-client1-ahead', {});
     const byCoach = w.takeWrites();
     await w.lifecycle.finishMoveCancels('head1', await w.lifecycle.cancelLeftByMove(w.prisma, ['client3'], 'sub1'));
     expect(w.takeWrites()).toEqual(byCoach);
