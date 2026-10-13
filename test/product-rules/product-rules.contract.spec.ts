@@ -8,8 +8,8 @@
  * 1. A moved client is gone for the old coach (owner 4): after a move (coach_id
  *    changes and deleteDraftsLeftByMove runs, as every move path does), no GET
  *    the old coach can call answers 2xx with the client in it. Their own money
- *    records may keep the client's name (CONTRACT-1), and the move cancels
- *    their upcoming sessions with the client (HIST-2b).
+ *    records keep only the name, date, amount, id, status and currency
+ *    (CONTRACT-1), and the move cancels their upcoming sessions (HIST-2b).
  * 2. History follows the client (139-13, 4b): the new coach gets the same answer
  *    whether the client's rows carry the old coach or the new one, the old
  *    coach's chat, nudges, tags and session notes never reach the new coach, and
@@ -118,10 +118,18 @@ const PLAIN_PERSON = /^((tenant_|head_)?coach(_user)?_id|coachId|owner_user_id|p
 const MOVE_MAY_DELETE = new Set(['AIDraft', 'AiActionDraft', 'MessageDraft', 'ChurnIntervention']);
 // What every move path runs once coach_id changes. HIST2C adds its session cancel here when it lands.
 const move = () => deleteDraftsLeftByMove(db, [MOVED], NEW);
-// CONTRACT-1 Option 1: the old coach keeps their own money records for the client (name, date, amount; the record's
-// id, status and currency don't name anyone) and nothing else about the client or their new coach.
+// CONTRACT-1 Option 1: on the old coach's money routes, a record that names the moved client keeps the name, its date and
+// amount, and the record id, status (or state) and currency: the owner's list, not any code's. Any other field on it
+// fails, and so do the client's id or other details and anything naming the new coach.
 const MONEY = /^v1\/coach\/(money|payments|purchases|packages\/:id\/subscribers)(\/|$)/;
-const moneyLeak = (t: string) => namesMoved(t.replace(/moved:name\b/g, '')) || t.includes(NEW);
+const KEPT = /^(id|status|state|currency|date|(created|paid|charged|purchased|refunded|disputed)_at|\w*amount\w*|\w+_cents)$/;
+const isName = (v: unknown) => v === 'moved:name' || JSON.stringify(v) === '{"name":"moved:name"}';
+function extra(v: unknown): boolean {
+  if (!v || typeof v !== 'object') return false;
+  const record = Object.values(v).some(isName);
+  return Object.entries(v).some(([k, x]) => (record && !isName(x) && !KEPT.test(k)) || extra(x));
+}
+const moneyLeak = (t: string) => namesMoved(t.replace(/moved:name\b/g, '')) || t.includes(NEW) || (/^[[{]/.test(t) && extra(JSON.parse(t)));
 
 const { models, enums } = parseSchema();
 const world = new World(models, enums);
@@ -320,6 +328,12 @@ describe('Rule 1: a moved client is gone for the old coach (owner 4)', () => {
     const res = await call('old-coach', 'GET', path);
     expect([res.status, namesMoved(res.text)]).toEqual([200, true]);
   });
+
+  // CONTRACT-1's field check passes the owner's record and fails one field more (the check can fail).
+  const sale = { id: ROW, created_at: 'd', amount_cents: 1, currency: 'usd', status: 'paid', client: { name: 'moved:name' } };
+  it.each<[Row, boolean]>([[{}, false], [{ entitlement_active: true }, true], [{ cancel_at_period_end: false }, true], [{ access_ends_at: 'd' }, true],
+    [{ sessions_used: 1 }, true]])("a moved client's money record plus %j is a leak: %s", (more, leaks) =>
+    expect(moneyLeak(JSON.stringify({ items: [{ ...sale, ...more }] }))).toBe(leaks));
 
   it('no route the old coach can call answers with the moved client (404 or left out)', () => {
     expect(unexpected(1, found.leaks)).toEqual([]);
