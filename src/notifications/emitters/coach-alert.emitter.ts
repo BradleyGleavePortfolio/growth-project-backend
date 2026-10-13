@@ -2,7 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { NotificationsService } from '../notifications.service';
 import { NotificationKind } from '../notification-kind';
 import { dunningErrorCode } from '../../checkout/dunning-v2/dunning-v2.safe-error';
-import { COACH_ACTION_QUEUE_SCREEN, SAFETY_ALERT_PUSH_BODY } from '../push/lock-screen-copy';
+import {
+  SAFETY_ALERT_INBOX_BODY,
+  SAFETY_ALERT_PUSH_BODY,
+  safetyAlertTap,
+} from '../push/lock-screen-copy';
 
 export interface CoachAlertNotificationPayload {
   /** The coach user ID to notify. */
@@ -60,10 +64,14 @@ export class CoachAlertEmitter {
   ): Promise<CoachAlertDelivery> {
     const { coachId, alertId, alertType, message, severity, clientUserId } = payload;
     const deepLink = clientUserId ? `tgp://coach/clients/${clientUserId}` : 'tgp://coach/alerts';
-    // A Roman safety alert (owner 22a, 57): the inbox row and the push open
-    // the coach's action queue, where the alert card is; the push gets its own
-    // fixed lock-screen line. Neither carries a name or the client's message.
+    // A Roman safety alert (owner 22a, 57, 57d): the inbox row and the push
+    // open that alert; each has its own fixed line. Neither carries a name or
+    // the client's message.
     const safety = Object.prototype.hasOwnProperty.call(SAFETY_ALERT_PUSH_BODY, alertType);
+    // Owner 57q: the urgent medical alert's push goes out at once, even in
+    // quiet hours. Its own dedupe key keeps it one push per alert, so it is
+    // never folded into another client push waiting for the morning.
+    const urgent = alertType === 'roman_urgent_reply';
     const out: CoachAlertDelivery = { inapp: 'skipped', push: 'skipped' };
     if (only.inapp !== false) {
       try {
@@ -71,13 +79,13 @@ export class CoachAlertEmitter {
         const created = await this.notifications.createNotification({
           user_id: coachId,
           kind: NotificationKind.COACH_ALERT,
-          body: message.slice(0, 160),
+          body: safety ? SAFETY_ALERT_INBOX_BODY[alertType] : message.slice(0, 160),
           payload: {
             alertId,
             alertType,
             severity,
             clientUserId,
-            ...(safety ? { actionScreen: COACH_ACTION_QUEUE_SCREEN } : {}),
+            ...(safety ? safetyAlertTap(alertId) : {}),
           },
           deep_link: deepLink,
           channel: 'inapp',
@@ -101,7 +109,8 @@ export class CoachAlertEmitter {
           kind: NotificationKind.COACH_ALERT,
           body: message.slice(0, 160),
           deep_link: deepLink,
-          ...(safety ? { context: { safetyAlert: alertType } } : {}),
+          ...(safety ? { context: { safetyAlert: alertType, alertId } } : {}),
+          ...(urgent ? { urgent: true, dedupe_key: `coach_alert:${alertId}` } : {}),
         });
         out.push = queued ? 'sent' : 'skipped';
       } catch (err) {
