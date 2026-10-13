@@ -118,19 +118,23 @@ const PLAIN_PERSON = /^((tenant_|head_)?coach(_user)?_id|coachId|owner_user_id|p
 const MOVE_MAY_DELETE = new Set(['AIDraft', 'AiActionDraft', 'MessageDraft', 'ChurnIntervention']);
 // What every move path runs once coach_id changes. HIST2C adds its session cancel here when it lands.
 const move = () => deleteDraftsLeftByMove(db, [MOVED], NEW);
-// CONTRACT-1 Option 1: on the old coach's money routes, a record that names the moved client keeps the name, its date and
+// CONTRACT-1 Option 1: on the old coach's money routes, the moved client's money record keeps the name, its date and
 // amount, and the record id, status (or state) and currency: the owner's list, not any code's. Any other field with a
 // value fails (null or '' tells nothing), and so do the client's id or other details and anything naming the new coach.
+// A record is a row the route lists as a sale (`purchase(s)`, `subscriber(s)`, `charge(s)`, `failed(_payments)`), named
+// or not, or anything that names the client. Ledger, transfer and payout rows are the coach's own books (identity check).
 const MONEY = /^v1\/coach\/(money|payments|purchases|packages\/:id\/subscribers)(\/|$)/;
 const KEPT = /^(id|status|state|currency|date|(created|paid|charged|purchased|refunded|disputed)_at|\w*amount\w*|\w+_cents)$/;
+const SALES = /^(purchases?|subscribers?|charges?|failed(_payments)?)$/;
 const blank = (x: unknown) => x === null || x === '';
 // The client's name, alone or as the only value of an object ({ name } or { id: '', name }).
 const named = (x: unknown) => x === 'moved:name' ||
   (!!x && typeof x === 'object' && Object.values(x).includes('moved:name') && Object.values(x).every((y) => y === 'moved:name' || blank(y)));
-function extra(v: unknown): boolean {
+function extra(v: unknown, key = ''): boolean {
   if (!v || typeof v !== 'object') return false;
-  const record = Object.values(v).some(named);
-  return Object.entries(v).some(([k, x]) => (record && !named(x) && !blank(x) && !KEPT.test(k)) || extra(x));
+  if (Array.isArray(v)) return v.some((x) => extra(x, key));
+  const record = SALES.test(key) || Object.values(v).some(named);
+  return Object.entries(v).some(([k, x]) => (record && !named(x) && !blank(x) && !KEPT.test(k)) || extra(x, k));
 }
 const moneyLeak = (t: string) => namesMoved(t.replace(/moved:name\b/g, '')) || t.includes(NEW) || (/^[[{]/.test(t) && extra(JSON.parse(t)));
 
@@ -333,11 +337,17 @@ describe('Rule 1: a moved client is gone for the old coach (owner 4)', () => {
   });
 
   // CONTRACT-1's field check passes the owner's record and fails one field more (the check can fail).
-  const sale = { id: ROW, created_at: 'd', amount_cents: 1, currency: 'usd', status: 'paid', client: { name: 'moved:name' } };
+  const bare = { id: ROW, created_at: 'd', amount_cents: 1, currency: 'usd', status: 'paid' };
+  const sale = { ...bare, client: { name: 'moved:name' } };
   it.each<[Row, boolean]>([[{}, false], [{ client: { id: '', name: 'moved:name' }, access_ends_at: null }, false],
     [{ entitlement_active: true }, true], [{ cancel_at_period_end: false }, true], [{ access_ends_at: 'd' }, true],
     [{ sessions_used: 1 }, true]])("a moved client's money record plus %j is a leak: %s", (more, leaks) =>
     expect(moneyLeak(JSON.stringify({ items: [{ ...sale, ...more }] }))).toBe(leaks));
+  // A sale row with no name is held to the same list; the coach's own ledger rows are not.
+  const ledger = [{ ...bare, purchase_id: ROW, kind: 'sale', stripe_transfer_id: 'tr', posted_at: 'd' }];
+  it.each<[Row, boolean]>([[{ purchases: [bare] }, false], [{ purchases: [{ ...bare, entitlement_active: true }] }, true],
+    [{ purchase: bare, split_ledger: ledger }, false], [{ purchase: { ...bare, package_id: ROW }, split_ledger: ledger }, true]])(
+    'a money answer with no name, %j, is a leak: %s', (body, leaks) => expect(moneyLeak(JSON.stringify(body))).toBe(leaks));
 
   it('no route the old coach can call answers with the moved client (404 or left out)', () => {
     expect(unexpected(1, found.leaks)).toEqual([]);
