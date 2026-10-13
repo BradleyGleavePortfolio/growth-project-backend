@@ -593,9 +593,9 @@ const mealAssignments = [
 ];
 
 // Tables the builder must NEVER read (coach-private / other users' data).
-// Bookings (ctx-v3): the builder reads title / time / status of UPCOMING
-// sessions with the CURRENT coach, never coach_notes_md (canary below), never
-// past or declined sessions, never another coach's.
+// Bookings (ctx-v3): the builder reads title / time / status of the client's
+// UPCOMING sessions (any coach, HIST3), never coach_notes_md (canary below),
+// never past or declined sessions.
 export const coachingSessions = [
   {
     coach_id: COACH_A.id,

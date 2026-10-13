@@ -248,4 +248,37 @@ liveDescribe('HIST3 live: Roman context follows the client across coaches', () =
     const { context: c } = await ctx.buildFresh({ id: X, role: 'student' }, NOW);
     expect(c.targets).toMatchObject({ source: 'coach_set', calories: 2100 });
   });
+
+  it("meal plan archive rule (#961): an earlier coach's archived plan stays; the current coach's archived plan is hidden", async () => {
+    // Coach A archives the plan X still has (as #961's frozen copy is): X keeps it.
+    await prisma.dailyMealPlan.updateMany({
+      where: { coach_id: A, name: 'Earlier Meals' },
+      data: { archived_at: T('2026-10-07T00:00:00Z') },
+    });
+    const kept = await ctx.buildFresh({ id: X, role: 'student' }, NOW);
+    expect(kept.context.meal_plan?.title).toBe('Earlier Meals');
+    for (const s of [...PRIVATE, 'HIST3-Y']) expect(kept.rendered).not.toContain(s);
+
+    // X's newest assignment is coach B's own archived plan: hidden, as on the
+    // client's legacy today route.
+    const retired = await prisma.dailyMealPlan.create({
+      data: { coach_id: B, name: 'HIST3-B-RETIRED', archived_at: T('2026-10-07T00:00:00Z') },
+    });
+    await prisma.dailyMealPlanAssignment.create({
+      data: {
+        daily_meal_plan_id: retired.id,
+        client_id: X,
+        assigned_by_coach_id: B,
+        starts_on: T('2026-10-06T00:00:00Z'),
+      },
+    });
+    const hidden = await ctx.buildFresh({ id: X, role: 'student' }, NOW);
+    expect(hidden.context.meal_plan).toBeNull();
+    expect(hidden.rendered).not.toContain('HIST3-B-RETIRED');
+
+    // Another client never sees either plan.
+    const y = await ctx.buildFresh({ id: Y, role: 'student' }, NOW);
+    expect(y.context.meal_plan).toBeNull();
+    for (const s of ['Earlier Meals', 'HIST3-B-RETIRED']) expect(y.rendered).not.toContain(s);
+  });
 });
