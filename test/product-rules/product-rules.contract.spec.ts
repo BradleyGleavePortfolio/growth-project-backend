@@ -97,8 +97,8 @@ const CURRENT_COACH = new Set(['ClientCoachConsent']);
 // Owner 4b: the old coach's chat, nudges, tags and session notes stay with the old coach.
 const PRIVATE_4B = new Set(['CoachMessage', 'CoachNudge', 'CoachClientTag']);
 const PRIVATE_4B_TEXT = ['s:CoachMessage.', 's:CoachNudge.', 's:CoachClientTag.', 's:CoachingSession.coach_notes_md'];
-// A coach's own business rows about a client (codes, sales, drafts, alerts, reviews, logs) stay with
-// that coach, so rule 2 never restamps them. Every other row with a client in it is the client's history.
+// A coach's own rows about a client (codes, sales, drafts, alerts, reviews, logs) are not the client's
+// history, so rule 2 never restamps them. Every other row with a client in it is the client's history.
 const COACH_SIDE = new Set(['AICallLog', 'AIDraft', 'ChurnIntervention', 'ClientPurchase', 'CoachAlert', 'CoachBroadcast', 'CoachGuideline',
   'CoachWelcomeMessageJob', 'ContractEnvelope', 'ConversationReview', 'InviteCode', 'InviteRedemption', 'MessageDraft', 'PackageTrialUsage', 'TeamAuditEvent']);
 // Owner 17: a move deletes the drafts other coaches hold, nothing else.
