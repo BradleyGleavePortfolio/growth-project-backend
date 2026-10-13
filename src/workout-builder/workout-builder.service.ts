@@ -705,6 +705,7 @@ export class WorkoutBuilderService {
     const items = await this.prisma.clientWorkoutAssignment.findMany({
       where: {
         workout_plan_id: planId,
+        client: await this.stillTheirClientsWhere(coachId),
         ...(cursorWhere ?? {}),
       },
       orderBy: [{ scheduled_for: 'asc' }, { id: 'asc' }],
@@ -715,6 +716,28 @@ export class WorkoutBuilderService {
     const last = page[page.length - 1];
     const nextCursor = hasMore && last ? this.encodeCursor(last.scheduled_for, last.id) : null;
     return { items: page, nextCursor };
+  }
+
+  /**
+   * Owner 4: a client who moved to another coach leaves this coach's lists at
+   * once; their rows are kept, so history follows the client. A sub-coach
+   * keeps the clients they may open now. A head coach keeps clients whose
+   * coach is them or an active sub-coach on their team (the team chain).
+   */
+  private async stillTheirClientsWhere(coachId: string): Promise<Prisma.UserWhereInput> {
+    if (this.subCoachScope && (await this.subCoachScope.isSubCoach(coachId))) {
+      return { id: { in: await this.subCoachScope.getAuthorizedClientIds(coachId) } };
+    }
+    return {
+      OR: [
+        { coach_id: coachId },
+        {
+          coach: {
+            sub_coach_assignments_as_sub: { some: { head_coach_id: coachId, archived_at: null } },
+          },
+        },
+      ],
+    };
   }
 
   /**
