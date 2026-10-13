@@ -66,6 +66,10 @@ const CURRENT_COACH = new Set(['ClientCoachConsent']);
 // Owner 4b: the old coach's chat, nudges, tags and session notes stay with the old coach.
 const PRIVATE_4B = new Set(['CoachMessage', 'CoachNudge', 'CoachClientTag']);
 const PRIVATE_4B_TEXT = ['s:CoachMessage.', 's:CoachNudge.', 's:CoachClientTag.', 's:CoachingSession.coach_notes_md'];
+// A coach's own business rows about a client (codes, sales, drafts, alerts, reviews, logs) stay with
+// that coach, so rule 2 never restamps them. Every other row with a client in it is the client's history.
+const COACH_SIDE = new Set(['AICallLog', 'AIDraft', 'ChurnIntervention', 'ClientPurchase', 'CoachAlert', 'CoachBroadcast', 'CoachGuideline',
+  'CoachWelcomeMessageJob', 'ContractEnvelope', 'ConversationReview', 'InviteCode', 'InviteRedemption', 'MessageDraft', 'PackageTrialUsage', 'TeamAuditEvent']);
 // Owner 17: a move deletes the drafts other coaches hold, nothing else.
 const MOVE_MAY_DELETE = new Set(['AIDraft', 'AiActionDraft', 'MessageDraft', 'ChurnIntervention']);
 
@@ -99,7 +103,7 @@ async function seed(state: State): Promise<void> {
       clients ||= fkTo.get(f.name) === 'User' && !coachSide;
       row[f.name] = fkTo.get(f.name) === 'User' ? (coachSide ? 'COACH' : MOVED) : fkTo.has(f.name) || f.isId ? ROW : defaultFor(m, f, enums);
     }
-    const restamped = state === 'moved-restamped' && clients && !PRIVATE_4B.has(m.name);
+    const restamped = state === 'moved-restamped' && clients && !PRIVATE_4B.has(m.name) && !COACH_SIDE.has(m.name);
     const coach = state !== 'before' && (restamped || CURRENT_COACH.has(m.name)) ? NEW : OLD;
     for (const k of Object.keys(row)) if (row[k] === 'COACH') row[k] = coach;
     world.table(m.name).push(row);
@@ -148,9 +152,9 @@ async function call(user: string, method: string, path: string): Promise<{ statu
 }
 const ok = (status: number) => status >= 200 && status < 300;
 const namesMoved = (t: string) => t.includes(MOVED) || t.includes('moved:');
-// Coach ids, times and new ids aside; the new coach's own session notes are 4b-checked instead.
+// Coach ids, times, new ids and request ids aside; the new coach's own session notes are 4b-checked instead.
 const normal = (t: string) =>
-  t.split(OLD).join('C').split(NEW).join('C').replace(/\d{4}-\d\d-\d\dT[\d:.]+Z|gen-\d+/g, '_').replace(/"s:CoachingSession\.coach_notes_md"/g, 'null');
+  t.split(OLD).join('C').split(NEW).join('C').replace(/\d{4}-\d\d-\d\dT[\d:.]+Z|gen-\d+|"request_id":"\w+"/g, '_').replace(/"s:CoachingSession\.coach_notes_md"/g, 'null');
 const listed = (rule: Rule) => new Set([...KNOWN_GAPS, ...EXEMPT].filter((g) => g.rule === rule).map((g) => g.key));
 const unexpected = (rule: Rule, keys: string[]) => keys.filter((k) => !listed(rule).has(k));
 
