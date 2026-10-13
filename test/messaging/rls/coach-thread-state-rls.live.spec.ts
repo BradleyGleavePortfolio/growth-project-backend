@@ -177,7 +177,7 @@ itLive('CoachThreadState + CoachMessage v2 columns RLS as authenticated (live DB
     expect(rows).toEqual([{ relrowsecurity: true, relforcerowsecurity: true }]);
   });
 
-  it('RLS is ENABLE + FORCE on CoachMessage with exactly the production participant policy', async () => {
+  it('RLS is ENABLE + FORCE on CoachMessage with exactly its two policies', async () => {
     const rls = await prisma.$queryRaw<
       Array<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>
     >`
@@ -190,18 +190,27 @@ itLive('CoachThreadState + CoachMessage v2 columns RLS as authenticated (live DB
         roles: string[];
         cmd: string;
         qual: string;
-        with_check: string;
+        with_check: string | null;
       }>
     >`
       SELECT policyname, permissive, roles::text[] AS roles, cmd, qual, with_check
-        FROM pg_policies WHERE tablename = 'CoachMessage'`;
-    // 20270412000000 (GAPS1): coach-side rows only while the client is still
-    // with the thread's coach; test/rls/coach-message-move-rls.spec.ts.
+        FROM pg_policies WHERE tablename = 'CoachMessage' ORDER BY policyname`;
+    // 20270412000000 (GAPS1): the current thread only, and the client's
+    // read-only history; test/rls/former-coach-rows-rls.spec.ts.
     const expr =
-      '((app.current_user_id() IS NOT NULL) AND ((client_id = app.current_user_id()) OR ' +
-      '(((coach_id = app.current_user_id()) OR (sender_id = app.current_user_id())) AND ' +
-      'app.is_user_coached_by(client_id, coach_id))))';
+      '((app.current_user_id() IS NOT NULL) AND app.is_user_coached_by(client_id, coach_id) AND ' +
+      '((client_id = app.current_user_id()) OR (coach_id = app.current_user_id()) OR ' +
+      '((sender_id = app.current_user_id()) AND app.is_subcoach_of(client_id) AND ' +
+      'app.is_subcoach_on_coach_team(coach_id))))';
     expect(policies).toEqual([
+      {
+        policyname: 'coach_message_client_history_read',
+        permissive: 'PERMISSIVE',
+        roles: ['public'],
+        cmd: 'SELECT',
+        qual: '((app.current_user_id() IS NOT NULL) AND (client_id = app.current_user_id()))',
+        with_check: null,
+      },
       {
         policyname: 'coach_message_participant_access',
         permissive: 'PERMISSIVE',

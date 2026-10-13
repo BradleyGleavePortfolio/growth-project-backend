@@ -230,6 +230,42 @@ describe('InviteCodesService', () => {
       );
       expect(prismaMock.inviteCode.update).not.toHaveBeenCalled();
     });
+
+    it("owner 4: revoking follows the list's rule for a client who moved away", async () => {
+      // 'moved' now has another coach: only 'stays' is still on coach-1's roster.
+      const users = [{ id: 'moved', coach_id: 'coach-2' }, { id: 'stays', coach_id: 'coach-1' }];
+      prismaMock.user.findMany = jest.fn(async ({ where }: any) =>
+        users.filter((u) => where.id.in.includes(u.id) && u.coach_id === where.coach_id),
+      );
+      const row = (id: string, by: string | null, email: string | null) => ({
+        id,
+        coach_id: 'coach-1',
+        intended_email: email,
+        accepted_by_user_id: by,
+        revoked_at: null,
+      });
+      const revoke = (r: ReturnType<typeof row>) => {
+        prismaMock.inviteCode.findUnique.mockResolvedValue(r);
+        prismaMock.inviteCode.update.mockResolvedValue({ ...r, revoked: true });
+        return service.revokeForCoach('coach-1', r.id);
+      };
+
+      // The shareable code the moved client used: listed and revoked without their id.
+      prismaMock.inviteCode.findMany.mockResolvedValue([row('link', 'moved', null)]);
+      expect(await service.listForCoach('coach-1')).toEqual([row('link', null, null)]);
+      expect(await revoke(row('link', 'moved', null))).toEqual({
+        ...row('link', null, null),
+        revoked: true,
+      });
+      // The client who stayed: answered as before.
+      const stays = row('emailed-stays', 'stays', 'emailed-to-stays');
+      expect(await revoke(stays)).toEqual({ ...stays, revoked: true });
+      // The emailed invite the moved client accepted is gone for this coach.
+      prismaMock.inviteCode.update.mockClear();
+      const gone = row('emailed-moved', 'moved', 'emailed-to-moved');
+      await expect(revoke(gone)).rejects.toBeInstanceOf(NotFoundException);
+      expect(prismaMock.inviteCode.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('listForCoach', () => {

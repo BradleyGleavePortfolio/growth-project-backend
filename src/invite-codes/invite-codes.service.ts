@@ -587,11 +587,17 @@ export class InviteCodesService {
       where: { coach_id: coachId },
       orderBy: { created_at: 'desc' },
     });
-    // Owner 4: a client who accepted an invite and has since moved to another
-    // coach is no longer named here. "Still this coach's" is the redeemer
-    // list's rule below. An emailed invite was for that one person, so it
-    // leaves the list; a shareable code stays without their id (accepted_at
-    // stays, so it still reads as Accepted).
+    return this.withoutFormerClients(coachId, codes);
+  }
+
+  // Owner 4: every code this service answers a coach with. A client who
+  // accepted an invite and has since moved to another coach is no longer
+  // named. "Still this coach's" is the redeemer list's rule below. An emailed
+  // invite was for that one person, so it is dropped; a shareable code stays
+  // without their id (accepted_at stays, so it still reads as Accepted).
+  private async withoutFormerClients<
+    T extends { accepted_by_user_id: string | null; intended_email: string | null },
+  >(coachId: string, codes: T[]) {
     const acceptedBy = [...new Set(codes.flatMap((c) => c.accepted_by_user_id ?? []))];
     if (acceptedBy.length === 0) return codes;
     const current = await this.prisma.user.findMany({
@@ -714,11 +720,16 @@ export class InviteCodesService {
     if (existing.coach_id !== coachId) {
       throw new ForbiddenException('Invite code does not belong to caller');
     }
-    return this.prisma.inviteCode.update({
+    // The list's rule: a dropped invite is not found, and the answer never
+    // names a client who moved away.
+    const [shown] = await this.withoutFormerClients(coachId, [existing]);
+    if (!shown) throw new NotFoundException('Invite code not found');
+    const revoked = await this.prisma.inviteCode.update({
       where: { id: inviteCodeId },
       // A2 — stamp when it was turned off (kept if it was already revoked).
       data: { revoked: true, revoked_at: existing.revoked_at ?? new Date() },
     });
+    return { ...revoked, accepted_by_user_id: shown.accepted_by_user_id };
   }
 
   // Shared validation used by both the public endpoint and the signup wire-up.
