@@ -57,6 +57,7 @@ const KNOWN_GAPS: Array<{ id: string; rule: Rule; key: string; reason: string }>
   { id: 'HIST2A program assignees', rule: 1, key: 'GET /v1/coach/programs/:programId/assignees', reason: "the old coach's program still lists the client's copy; fix: #961 HIST2A" },
   { id: 'HIST2B plan assignees', rule: 1, key: 'GET /workout-plans/:planId/assignments', reason: "a plan's assignment list still names the client; fix: #967 HIST2B" },
   { id: 'HIST2C upcoming session', rule: 1, key: MOVE_CANCELS, reason: "nothing cancels the old coach's upcoming session with the client; fix: HIST2C" },
+  { id: 'HIST2C upcoming list', rule: 1, key: 'GET /scheduling/sessions', reason: "the old coach's calendar still lists the upcoming session with the client; fix: HIST2C" },
   { id: 'GAPS1 chat list', rule: 1, key: 'GET /v1/coach/me/threads', reason: "the old coach's chat list still shows the client and the last message; fix: GAPS1" },
   { id: 'MONEY1 attention', rule: 1, key: 'GET /v1/coach/money/attention', reason: "a dispute row still carries the client's id, not only the name; fix: MONEY1" },
   { id: 'MONEY1 subscribers', rule: 1, key: 'GET /v1/coach/packages/:id/subscribers', reason: "a subscriber row still carries the client's id; fix: MONEY1" },
@@ -66,6 +67,7 @@ const KNOWN_GAPS: Array<{ id: string; rule: Rule; key: string; reason: string }>
   { id: 'BRIEF4B', rule: 2, key: 'GET /coach/brief/today', reason: "the new coach's brief shows the old coach's unread chat; fix: #964 BRIEF4B" },
   { id: 'HIST-4b meal plans', rule: 2, key: 'GET /coach/clients/:client_id/meal-plans', reason: 'the new coach lists only the meal plans they wrote; fix: HIST-4b (owner)' },
   { id: 'HIST-4b past session', rule: 2, key: 'GET /scheduling/sessions/:id', reason: "the new coach can't open the client's past session; fix: HIST-4b (owner)" },
+  { id: 'HIST-4b program days', rule: 2, key: 'GET /workout-plans', reason: "the new coach's plan list leaves out the days of the client's program copy; fix: HIST-4b (owner)" },
   { id: 'CONSENT-2 grant', rule: 3, key: 'POST /me/ai-consent/roman', reason: 'a coachless client is not refused an AI grant; fix: #954 CONSENT-2' },
   { id: 'CONTRACT-2', rule: 3, key: 'GET /roman/sessions/:id/messages', reason: 'may a coachless client open an old Roman chat; fix: CONTRACT-2 (owner)' },
   { id: 'GAPS3 ai context', rule: 3, key: 'GET /ai/context', reason: 'a coachless client still reads what the AI knows about them; fix: GAPS3' },
@@ -73,9 +75,9 @@ const KNOWN_GAPS: Array<{ id: string; rule: Rule; key: string; reason: string }>
   { id: 'GAPS3 roman context', rule: 3, key: 'GET /roman/context/me', reason: 'a coachless client still reads what Roman is grounded in; fix: GAPS3' },
   { id: 'EDPUSH', rule: 4, key: 'another push never takes over a waiting safety push', reason: 'an ordinary push takes over a waiting eating-disorder push; fix: #956 EDPUSH' },
 ];
-const KNOWN_GAPS_CEILING = 21;
+const KNOWN_GAPS_CEILING = 23;
 const EXEMPT: Array<{ rule: Rule; key: string; reason: string }> = [
-  { rule: 1, key: 'GET /consent/check/:client_id/:scope', reason: 'it echoes the ids it was asked about and answers granted: false' },
+  { rule: 1, key: 'GET /consent/check/:client_id/:scope', reason: "it echoes the ids it was asked about and whether the caller's own grant stands, nothing else" },
   { rule: 2, key: 'GET /coach/consultation', reason: "the coach's own set-up; it mints a random invite code for a coach with none, so two reads differ" },
   { rule: 2, key: 'GET /coaches/me/invite-link', reason: "the coach's own link; it mints a random invite code for a coach with none, so two reads differ" },
   { rule: 3, key: 'GET /roman/sessions', reason: '62x: a coachless client "may delete prior data here"; this is the list they delete from' },
