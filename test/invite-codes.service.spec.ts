@@ -240,6 +240,41 @@ describe('InviteCodesService', () => {
       expect(args.where).toEqual({ coach_id: 'coach-1' });
       expect(args.orderBy).toEqual({ created_at: 'desc' });
     });
+
+    it('owner 4: an invite accepted by a client who moved away no longer names them', async () => {
+      const accepted = new Date('2026-10-01T00:00:00Z');
+      const code = (id: string, by: string | null, email: string | null) => ({
+        id,
+        coach_id: 'coach-1',
+        intended_email: email,
+        accepted_by_user_id: by,
+        accepted_at: by ? accepted : null,
+      });
+      prismaMock.inviteCode.findMany.mockResolvedValue([
+        code('emailed-moved', 'moved', 'emailed-to-moved'),
+        code('emailed-stays', 'stays', 'emailed-to-stays'),
+        code('link-used-by-moved', 'moved', null),
+        code('pending', null, 'emailed-to-new'),
+      ]);
+      // 'moved' now has another coach: only 'stays' is still on coach-1's roster.
+      const users = [{ id: 'moved', coach_id: 'coach-2' }, { id: 'stays', coach_id: 'coach-1' }];
+      prismaMock.user.findMany = jest.fn(async ({ where }: any) =>
+        users.filter((u) => where.id.in.includes(u.id) && u.coach_id === where.coach_id),
+      );
+
+      const out = await service.listForCoach('coach-1');
+      expect(out).toEqual([
+        code('emailed-stays', 'stays', 'emailed-to-stays'),
+        { ...code('link-used-by-moved', 'moved', null), accepted_by_user_id: null },
+        code('pending', null, 'emailed-to-new'),
+      ]);
+      expect(prismaMock.user.findMany.mock.calls[0][0].where).toEqual({
+        id: { in: ['moved', 'stays'] },
+        coach_id: 'coach-1',
+        role: 'student',
+        deleted_at: null,
+      });
+    });
   });
 
   // -----------------------------------------------------------------

@@ -583,9 +583,25 @@ export class InviteCodesService {
   }
 
   async listForCoach(coachId: string) {
-    return this.prisma.inviteCode.findMany({
+    const codes = await this.prisma.inviteCode.findMany({
       where: { coach_id: coachId },
       orderBy: { created_at: 'desc' },
+    });
+    // Owner 4: a client who accepted an invite and has since moved to another
+    // coach is no longer named here. "Still this coach's" is the redeemer
+    // list's rule below. An emailed invite was for that one person, so it
+    // leaves the list; a shareable code stays without their id (accepted_at
+    // stays, so it still reads as Accepted).
+    const acceptedBy = [...new Set(codes.flatMap((c) => c.accepted_by_user_id ?? []))];
+    if (acceptedBy.length === 0) return codes;
+    const current = await this.prisma.user.findMany({
+      where: { id: { in: acceptedBy }, coach_id: coachId, role: 'student', deleted_at: null },
+      select: { id: true },
+    });
+    const stays = new Set(current.map((u) => u.id));
+    return codes.flatMap((c) => {
+      if (!c.accepted_by_user_id || stays.has(c.accepted_by_user_id)) return [c];
+      return c.intended_email ? [] : [{ ...c, accepted_by_user_id: null }];
     });
   }
 

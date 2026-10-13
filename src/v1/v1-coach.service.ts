@@ -230,31 +230,17 @@ export class V1CoachService {
 
   // GET /v1/coach/me/threads — enriched thread list per integration notes.
   async listThreads(caller: Caller) {
-    const coachId = resolveCoachId(caller);
+    // Only the threads getThread opens (clientScope): a sub-coach sees the
+    // clients assigned to them, and a client who moved to another coach
+    // leaves the old coach's list (owner 4). The owner's scope is {}.
+    const scope = await this.clientScope(caller);
     const messagingCoachId = await this.messagingCoachIdFor(caller);
-    // For sub-coaches we restrict the thread list to clients explicitly
-    // assigned via SubCoachAssignment so they don't see the whole head-
-    // coach team's inbox.
-    const authorizedClientIds = this.subCoachScope
-      ? await this.subCoachScope.getAuthorizedClientIds(coachId)
-      : null;
-    const isSubCoach = this.subCoachScope
-      ? await this.subCoachScope.isSubCoach(coachId)
-      : false;
-    if (isSubCoach && authorizedClientIds && authorizedClientIds.length === 0) {
-      return [];
-    }
 
     // Pull every coach-message row for this coach in a single query, then
     // fold per client. We over-fetch but the dataset is small (one coach has
     // tens of threads, hundreds of messages) and one round-trip beats N+1.
     const messages = await this.prisma.coachMessage.findMany({
-      where: {
-        coach_id: messagingCoachId,
-        ...(isSubCoach && authorizedClientIds
-          ? { client_id: { in: authorizedClientIds } }
-          : {}),
-      },
+      where: { coach_id: messagingCoachId, client: scope },
       orderBy: { created_at: 'desc' },
       select: {
         client_id: true,

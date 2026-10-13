@@ -195,9 +195,12 @@ itLive('CoachThreadState + CoachMessage v2 columns RLS as authenticated (live DB
     >`
       SELECT policyname, permissive, roles::text[] AS roles, cmd, qual, with_check
         FROM pg_policies WHERE tablename = 'CoachMessage'`;
+    // 20270412000000 (GAPS1): coach-side rows only while the client is still
+    // with the thread's coach; test/rls/coach-message-move-rls.spec.ts.
     const expr =
-      '((app.current_user_id() IS NOT NULL) AND ((coach_id = app.current_user_id()) OR ' +
-      '(client_id = app.current_user_id()) OR (sender_id = app.current_user_id())))';
+      '((app.current_user_id() IS NOT NULL) AND ((client_id = app.current_user_id()) OR ' +
+      '(((coach_id = app.current_user_id()) OR (sender_id = app.current_user_id())) AND ' +
+      'app.is_user_coached_by(client_id, coach_id))))';
     expect(policies).toEqual([
       {
         policyname: 'coach_message_participant_access',
