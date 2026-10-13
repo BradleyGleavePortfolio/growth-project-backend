@@ -112,6 +112,20 @@ Accepted grants (`CLIENT_AI_CONSENT_ACCEPTED`; version AND its exact sha256):
 |---|---|---|
 | `client-ai-v4` | `base` | every day-1 AI path (Roman chat, coach AI drafts, brief, triage) |
 | `client-ai-v5` | `memory` | `base` + Roman v1.1 notes, summaries, coach-method learning |
+| `client-ai-v4-coach-free` | `base` | the client's own AI use only (`audience` 'client': Roman chat and other client-facing paths); never coach AI drafts, brief or triage (owner 62: v4 text with every coach sentence or clause removed) |
+| `client-ai-v5-coach-free` | `memory` | as `client-ai-v4-coach-free` + Roman v1.1 notes and summaries; never coach-method learning (owner 62: v5 text with every coach sentence or clause removed) |
+
+- Coach-free copies (owner 62, 2026-10-12): `GET /api/me/ai-consent?variant=coach_free`
+  (the app sends it for a client with no coach) offers `client-ai-v4-coach-free` as
+  `copy` and `client-ai-v5-coach-free` as `upgrade` / `memory_copy`. For a client
+  with a coach (`User.coach_id`), `GET` always offers the coached copies and reads
+  a live coach-free grant as `needs_reconsent`, so the app asks for the coached
+  text. Otherwise a live grant reads the copies of its own family, whatever is
+  asked; without a live grant `GET` follows the ask, and a POST / DELETE response
+  follows the latest decision on file. Coach-audience reads (`hasClientAiConsent` /
+  `clientsWithAiConsent` / `memoryGrantTimes` with `audience` 'coach', the default)
+  never count a coach-free grant, also after the client joins a coach; coach AI for
+  that client needs a coached grant.
 
 - v4 holders are never re-prompted and keep day-1 Roman unchanged. The 10-07
   app build pins v4: it POSTs v4 from the consultation and its Settings screen
@@ -140,7 +154,7 @@ Request (JSON; only these fields):
 
 | Field | Required | Rule |
 |---|---|---|
-| `version` | yes | string, `client-ai-v4` or `client-ai-v5` |
+| `version` | yes | string, `client-ai-v4`, `client-ai-v5`, `client-ai-v4-coach-free` or `client-ai-v5-coach-free` |
 | `copy_sha256` | no | 64 hex chars; when sent must equal that version's combined sha256 (case-insensitive) |
 | `platform` | no | `ios`, `android` or `web` |
 | `app_version` | no | max 32 chars, `[0-9A-Za-z.+-]` |

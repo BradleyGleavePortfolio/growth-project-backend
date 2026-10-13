@@ -27,11 +27,28 @@
  * paragraph 4 replaced by the client-ai-v5 paragraph (paragraph 4 + "\n\n" +
  * box 2 label hashes to the ledger's client-ai-v5 copy sha256). Accepted
  * next to v3: the 10-07 app build keeps sending v3, a later app sends v4.
+ *
+ * consult-consent-v5 / v6 (owner C-6 and C-6a Option 1, 2026-10-12): v3 / v4
+ * with only paragraph 3's last sentence (the clinic sentence) removed. Shown
+ * to a client with a coach.
+ *
+ * consult-consent-v5-coach-free / v6-coach-free (owner decision 62, Option 1,
+ * 2026-10-12): v5 / v6 for a client with no coach, made only by removing every
+ * coach sentence or clause, with no new words. One grammar join: paragraph
+ * 3's "collect and use" becomes "collects and uses" once The Growth Project is
+ * the only subject. Paragraph 4 + box 2 hash to the ledger's
+ * client-ai-v4-coach-free / client-ai-v5-coach-free copy sha256.
+ *
+ * v3 and v4 stay accepted: installed app builds still show and send them.
  */
 import { createHash } from 'node:crypto';
 
 export const CONSULT_CONSENT_V3 = 'consult-consent-v3';
 export const CONSULT_CONSENT_V4 = 'consult-consent-v4';
+export const CONSULT_CONSENT_V5 = 'consult-consent-v5';
+export const CONSULT_CONSENT_V6 = 'consult-consent-v6';
+export const CONSULT_CONSENT_V5_COACH_FREE = 'consult-consent-v5-coach-free';
+export const CONSULT_CONSENT_V6_COACH_FREE = 'consult-consent-v6-coach-free';
 
 /** The displayed parts of one P0 screen version, in display order. */
 export interface ConsultConsentCopy {
@@ -69,6 +86,44 @@ export const CONSULT_CONSENT_COPY_V4: ConsultConsentCopy = {
   ...CONSULT_CONSENT_COPY_V3,
   aiParagraph:
     "Roman, the assistant in this app, is powered by Anthropic, a third-party AI provider. If you allow it, your information is sent to Anthropic so Roman can answer your questions and your coach can use AI drafts about your training. Roman may keep notes and summaries about your training, preferences and circumstances to personalise his replies. Deleting a chat removes its messages but not these notes; deleting your account removes them. Roman may also learn your coach's methods, including from your coach's private session notes, and information about your training may help with that without identifying you. Roman never quotes those notes or shows you another client's information. Your coach never sees your conversations with Roman or his notes about you. Your conversations with Roman are kept until you delete them or delete your account.",
+};
+
+/** consult-consent-v5: v3 without the clinic sentence (owner C-6a). */
+export const CONSULT_CONSENT_COPY_V5: ConsultConsentCopy = {
+  ...CONSULT_CONSENT_COPY_V3,
+  paragraphs: [
+    CONSULT_CONSENT_COPY_V3.paragraphs[0],
+    CONSULT_CONSENT_COPY_V3.paragraphs[1],
+    'To coach you, The Growth Project and your coach collect and use what you share here: your profile, this consultation including the screening questions, your targets, food and workout logs, check-ins, any health, sleep or wearable data you choose to connect, your messages with your coach, and posts you write in the community. We use it only to provide your training. We never sell it.',
+  ],
+};
+
+/** consult-consent-v6: v4 without the clinic sentence (owner C-6a). */
+export const CONSULT_CONSENT_COPY_V6: ConsultConsentCopy = {
+  ...CONSULT_CONSENT_COPY_V5,
+  aiParagraph: CONSULT_CONSENT_COPY_V4.aiParagraph,
+};
+
+/** consult-consent-v5-coach-free: v5 with every coach sentence or clause removed (owner 62). */
+export const CONSULT_CONSENT_COPY_V5_COACH_FREE: ConsultConsentCopy = {
+  ...CONSULT_CONSENT_COPY_V5,
+  paragraphs: [
+    CONSULT_CONSENT_COPY_V3.paragraphs[0],
+    CONSULT_CONSENT_COPY_V3.paragraphs[1],
+    'To coach you, The Growth Project collects and uses what you share here: your profile, this consultation including the screening questions, your targets, food and workout logs, check-ins, any health, sleep or wearable data you choose to connect, and posts you write in the community. We use it only to provide your training. We never sell it.',
+  ],
+  box1Label:
+    'I agree to the training waiver, and to The Growth Project collecting and using my information to coach me.',
+  aiParagraph:
+    "Roman, the assistant in this app, is powered by Anthropic, a third-party AI provider. If you allow it, your information is sent to Anthropic so Roman can answer your questions. Only your own data is used, never another client's. Your conversations with Roman are kept until you delete them or delete your account.",
+  box2Label: 'Optional: I allow Roman to use my information, processed by Anthropic.',
+};
+
+/** consult-consent-v6-coach-free: v6 with every coach sentence or clause removed (owner 62). */
+export const CONSULT_CONSENT_COPY_V6_COACH_FREE: ConsultConsentCopy = {
+  ...CONSULT_CONSENT_COPY_V5_COACH_FREE,
+  aiParagraph:
+    "Roman, the assistant in this app, is powered by Anthropic, a third-party AI provider. If you allow it, your information is sent to Anthropic so Roman can answer your questions. Roman may keep notes and summaries about your training, preferences and circumstances to personalise his replies. Deleting a chat removes its messages but not these notes; deleting your account removes them. Roman never shows you another client's information. Your conversations with Roman are kept until you delete them or delete your account.",
 };
 
 /** Separator between displayed parts in every digest input. */
@@ -110,6 +165,20 @@ export const CONSULT_CONSENT_V4_TEXT_SHA256 =
   '74d0a48ad2b0a50f6f8e699fe6d131f0262f35ce1fff6248c9770d9267a5fb1a';
 export const CONSULT_CONSENT_V4_AI_SLICE_SHA256 =
   '8c19fca94c2455094c47b1802bb6693aff47d24c7b6df3b256d0a0e8e90fe8ee';
+/** v5 / v6 pins: screen text (aiSlice = v3 / v4 aiSlice, unchanged). */
+export const CONSULT_CONSENT_V5_TEXT_SHA256 =
+  '926b4ec8abe6d003798b44d720f625aa69871f59b4963cc5ec39f8599c2255fa';
+export const CONSULT_CONSENT_V6_TEXT_SHA256 =
+  '6b15d88b6bf9b77f11c526f073936264c6253fbc54474a7cdd8c55b564f5e9ee';
+/** Coach-free pins: screen text, and aiSlice = ledger client-ai-v4-coach-free / v5-coach-free copy sha256. */
+export const CONSULT_CONSENT_V5_COACH_FREE_TEXT_SHA256 =
+  'c56fc409ca188fdcd8a7f52209d72299e3bf19ea68bff0e01b35b1f3295826b5';
+export const CONSULT_CONSENT_V5_COACH_FREE_AI_SLICE_SHA256 =
+  '2a8c7973ba6047b58a0fdccb2604a796403d5b4773a6f6a73c98da3d84e68447';
+export const CONSULT_CONSENT_V6_COACH_FREE_TEXT_SHA256 =
+  'a1769134cf30a3208ef56a8906603d942fb2ca058db9c33c69f4ff14f223ee00';
+export const CONSULT_CONSENT_V6_COACH_FREE_AI_SLICE_SHA256 =
+  'c7cd7ebd3b47e3eb0e890a8efa932610c35716aa79ad4f139b6f0c0aad7128fe';
 
 /**
  * Every P0 copy version the server knows the exact text of, with the sha256
@@ -128,6 +197,22 @@ export const CONSULT_CONSENT_COPIES: Readonly<
   [CONSULT_CONSENT_V4]: {
     copy: CONSULT_CONSENT_COPY_V4,
     text_sha256: CONSULT_CONSENT_V4_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V5]: {
+    copy: CONSULT_CONSENT_COPY_V5,
+    text_sha256: CONSULT_CONSENT_V5_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V6]: {
+    copy: CONSULT_CONSENT_COPY_V6,
+    text_sha256: CONSULT_CONSENT_V6_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V5_COACH_FREE]: {
+    copy: CONSULT_CONSENT_COPY_V5_COACH_FREE,
+    text_sha256: CONSULT_CONSENT_V5_COACH_FREE_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V6_COACH_FREE]: {
+    copy: CONSULT_CONSENT_COPY_V6_COACH_FREE,
+    text_sha256: CONSULT_CONSENT_V6_COACH_FREE_TEXT_SHA256,
   },
 });
 
