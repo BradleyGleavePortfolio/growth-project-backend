@@ -22,7 +22,7 @@ import { fakeOf } from './ai-egress/ai-egress.fakes';
 import type { PrismaService } from '../src/prisma.service';
 import type { NotificationsService } from '../src/notifications/notifications.service';
 import type { AdminPtmService } from '../src/admin/ptm/admin-ptm.service';
-import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
 import type { ExpoPushMessage } from 'expo-server-sdk';
 import { NotificationsService as RealNotificationsService } from '../src/notifications/notifications.service';
@@ -67,13 +67,13 @@ describe('the emitter', () => {
     expect(sendPush.mock.calls[0][0]).toMatchObject({ context: { safetyAlert: alertType, alertId: 'a1' } });
   });
 
-  it('owner 57q: only the urgent alert push is urgent, one push per alert; the eating-disorder push is not', async () => {
+  it('owner 57q: each safety alert is one push of its own; only the urgent one is urgent', async () => {
     const { e, sendPush } = emitter();
     await e.emit({ ...base, alertType: 'roman_urgent_reply', message: URGENT_PUSH });
     await e.emit({ ...base, alertId: 'a2', alertType: 'roman_eating_disorder_reply', message: ED_PUSH });
     expect(sendPush.mock.calls[0][0]).toMatchObject({ urgent: true, dedupe_key: 'coach_alert:a1' });
+    expect(sendPush.mock.calls[1][0]).toMatchObject({ dedupe_key: 'coach_alert:a2' });
     expect(sendPush.mock.calls[1][0]).not.toHaveProperty('urgent');
-    expect(sendPush.mock.calls[1][0]).not.toHaveProperty('dedupe_key');
   });
 
   it('any other alert is unchanged', async () => {
@@ -83,6 +83,7 @@ describe('the emitter', () => {
     expect(create.mock.calls[0][0].payload).not.toHaveProperty('actionScreen');
     expect(sendPush.mock.calls[0][0]).not.toHaveProperty('context');
     expect(sendPush.mock.calls[0][0]).not.toHaveProperty('urgent');
+    expect(sendPush.mock.calls[0][0]).not.toHaveProperty('dedupe_key');
   });
 });
 
@@ -221,7 +222,7 @@ describe('owner 4: the current coach only', () => {
     if (w.AND && !w.AND.every((x: unknown) => matches(row, x))) return false;
     if (w.OR && !w.OR.some((x: unknown) => matches(row, x))) return false;
     if (w.id !== undefined && row.id !== w.id) return false;
-    if (w.coach_id !== undefined && row.coach_id !== w.coach_id) return false;
+    if (w.coach_id !== undefined && !(w.coach_id.in ?? [w.coach_id]).includes(row.coach_id)) return false;
     if (w.client_id?.in && !w.client_id.in.includes(row.client_id)) return false;
     if (w.alert_type?.in && !w.alert_type.in.includes(row.alert_type)) return false;
     if (w.alert_type?.notIn && w.alert_type.notIn.includes(row.alert_type)) return false;
@@ -345,6 +346,115 @@ describe('owner 4: the current coach only', () => {
     await expect(moved.svc.getSafetyAlert('a-safe', 'coach-1')).rejects.toThrow('Alert not found');
     await expect(moved.svc.getSafetyAlert('a-safe', 'sub-1')).rejects.toThrow('Alert not found');
   });
+
+  // Owner 57q and the team chain: Roman writes the alert to the client's coach
+  // of record, which can be a team sub-coach. The real SubCoachScopeService:
+  // head coach-1 has seats for sub-1 and sub-2; each coaches one client.
+  function team() {
+    const users = [
+      { id: 'coach-1', role: 'coach', coach_id: null, name: 'Head' },
+      { id: 'sub-1', role: 'coach', coach_id: 'coach-1', name: 'Sub one' },
+      { id: 'sub-2', role: 'coach', coach_id: 'coach-1', name: 'Sub two' },
+      { id: 'client-1', role: 'student', coach_id: 'sub-1', name: 'Jane Doe' },
+      { id: 'client-2', role: 'student', coach_id: 'sub-2', name: 'Sam Lee' },
+      { id: 'client-3', role: 'student', coach_id: 'coach-1', name: 'Ana Ruiz' },
+    ];
+    const rows: Row[] = [
+      ['a-sub1', 'sub-1', 'client-1'],
+      ['a-sub2', 'sub-2', 'client-2'],
+      ['a-head', 'coach-1', 'client-3'],
+    ].map(([id, coach_id, client_id]) => ({
+      id,
+      coach_id,
+      client_id,
+      alert_type: 'roman_urgent_reply',
+      message: URGENT_PUSH,
+      payload: { roman_message_id: `m-${client_id}` },
+      created_at: new Date('2026-10-12T09:00:00Z'),
+      acknowledged_at: null,
+    }));
+    const joined = () =>
+      rows.map((r) => {
+        const c = users.find((u) => u.id === r.client_id)!;
+        return { ...r, client: { name: c.name, coach_id: c.coach_id } };
+      });
+    const prisma = {
+      user: {
+        findUnique: jest.fn(async ({ where }: { where: { id: string } }) =>
+          users.find((u) => u.id === where.id) ?? null,
+        ),
+        findMany: jest.fn(async ({ where }: { where: { coach_id: string } }) =>
+          users.filter((u) => u.role === 'student' && u.coach_id === where.coach_id),
+        ),
+      },
+      teamSubCoachAssignment: {
+        findFirst: jest.fn(async ({ where }: { where: { head_coach_id: string; sub_coach_id: string } }) =>
+          where.head_coach_id === 'coach-1' && ['sub-1', 'sub-2'].includes(where.sub_coach_id) ? { id: 'seat' } : null,
+        ),
+      },
+      subCoachAssignment: { findMany: jest.fn(async () => []) },
+      coachAlert: {
+        findMany: jest.fn(async ({ where }: { where: unknown }) => joined().filter((r) => matches(r, where))),
+        count: jest.fn(async ({ where }: { where: unknown }) => joined().filter((r) => matches(r, where)).length),
+        findFirst: jest.fn(async ({ where }: { where: unknown }) => joined().find((r) => matches(r, where)) ?? null),
+        updateMany: jest.fn(async ({ where, data }: { where: unknown; data: { acknowledged_at: Date } }) => {
+          const hit = joined().filter((r) => matches(r, where));
+          for (const h of hit) rows.find((r) => r.id === h.id)!.acknowledged_at = data.acknowledged_at;
+          return { count: hit.length };
+        }),
+      },
+      romanMessage: {
+        findMany: jest.fn(async ({ where }: { where: { id: { in: string[] } } }) =>
+          where.id.in.map((id) => ({ id, user_id: id.replace(/^m-/, ''), content: 'The client message.', created_at: SENT_AT })),
+        ),
+      },
+      checkIn: { groupBy: jest.fn(async () => []), count: jest.fn(async () => 0) },
+      ptmPrediction: { groupBy: jest.fn(async () => []) },
+      clientSignal: { groupBy: jest.fn(async () => []) },
+      coachMessage: { count: jest.fn(async () => 0) },
+    };
+    const db = fakeOf<PrismaService>(prisma);
+    const svc = new CommandCenterService(
+      db,
+      fakeOf<AdminPtmService>({}),
+      new CoachAlertsService(db),
+      new SubCoachScopeService(db),
+    );
+    return { svc, rows, prisma };
+  }
+  const ids = async (svc: CommandCenterService, caller: string) => {
+    const out = await svc.getActionQueue(caller, {});
+    const overview = await svc.getOverview(caller);
+    return { ids: out.items.map((i) => i.alert_id), total: out.total_pending, open: overview.open_alerts };
+  };
+
+  it('a team sub-coach sees, counts, opens and dismisses the safety alert written to them', async () => {
+    const { svc, rows } = team();
+    expect(await ids(svc, 'sub-1')).toEqual({ ids: ['a-sub1'], total: 1, open: 1 });
+    await expect(svc.getSafetyAlert('a-sub1', 'sub-1')).resolves.toMatchObject({
+      alert_id: 'a-sub1',
+      client_name: 'Jane Doe',
+      quote: 'The client message.',
+    });
+    await expect(svc.dismissAlert('a-sub1', 'sub-1')).resolves.toEqual({ ok: true });
+    expect(rows[0].acknowledged_at).not.toBeNull();
+    expect(await ids(svc, 'sub-1')).toEqual({ ids: [], total: 0, open: 0 });
+  });
+
+  it('another sub-coach on the same team never sees, opens or dismisses it', async () => {
+    const { svc, rows } = team();
+    expect(await ids(svc, 'sub-2')).toEqual({ ids: ['a-sub2'], total: 1, open: 1 });
+    await expect(svc.getSafetyAlert('a-sub1', 'sub-2')).rejects.toThrow('Alert not found');
+    await expect(svc.dismissAlert('a-sub1', 'sub-2')).rejects.toThrow('Alert not found');
+    expect(rows[0].acknowledged_at).toBeNull();
+  });
+
+  it('the head coach is unchanged: their own alerts, read under their own id only', async () => {
+    const { svc, prisma } = team();
+    expect(await ids(svc, 'coach-1')).toEqual({ ids: ['a-head'], total: 1, open: 1 });
+    expect(prisma.coachAlert.findMany.mock.calls[0][0]).toMatchObject({ where: { coach_id: 'coach-1' } });
+    await expect(svc.dismissAlert('a-head', 'coach-1')).resolves.toEqual({ ok: true });
+  });
 });
 
 // B1 (L-OB, b#946): the push worker re-renders the lock screen from the
@@ -459,6 +569,54 @@ describe('the coach phone receives the safety push line', () => {
     expect(sent()).toEqual([
       [URGENT_PUSH, { alertId: 'a-urgent' }],
       [ED_PUSH, { alertId: 'a-ed' }],
+    ]);
+  });
+
+  // EDPUSH (owner 57q): the eating-disorder push waits for 08:00 on its own
+  // row. An ordinary coach alert for the same client (same collapse key)
+  // never takes it over, and it never takes over the ordinary one.
+  const OTHER_PUSH = 'There is a new update about a client. Open the app to see it.';
+  const lines = (p: ReturnType<typeof phone>) =>
+    p.send.mock.calls.map(([[m]]) => [m.body, (m.data as { actionParams?: unknown }).actionParams]);
+
+  it.each([
+    ['then an ordinary coach alert', ['ed', 'other']],
+    ['after an ordinary coach alert', ['other', 'ed']],
+  ])('at 22:00, an eating-disorder alert %s: at 08:00 both arrive, each with its own line', async (_label, steps) => {
+    const p = phone(NIGHT);
+    for (const step of steps) {
+      if (step === 'ed') await p.emit('roman_eating_disorder_reply', ED_PUSH, 'a-ed');
+      if (step === 'other') await p.emit('streak_dropped', 'Streak dropped.', 'a-other');
+    }
+    expect(p.rows).toHaveLength(2);
+    expect(p.rows.find((r) => r.dedupe_key === 'coach_alert:a-ed')).toMatchObject({
+      urgent: false,
+      not_before: MORNING,
+      deferred_reason: 'quiet_hours',
+    });
+    expect(await p.delivery.drain()).toBe(0);
+    clock = MORNING;
+    expect(await p.delivery.drain()).toBe(2);
+    expect(lines(p)).toHaveLength(2);
+    expect(lines(p)).toEqual(
+      expect.arrayContaining([
+        [ED_PUSH, { alertId: 'a-ed' }],
+        [OTHER_PUSH, undefined],
+      ]),
+    );
+  });
+
+  it('at 08:00, an ordinary coach alert just after the eating-disorder push was sent is not folded into it', async () => {
+    const p = phone(NIGHT);
+    await p.emit('roman_eating_disorder_reply', ED_PUSH, 'a-ed');
+    clock = MORNING;
+    expect(await p.delivery.drain()).toBe(1);
+    clock = new Date(MORNING.getTime() + 20_000);
+    await p.emit('streak_dropped', 'Streak dropped.', 'a-other');
+    expect(await p.delivery.drain()).toBe(1);
+    expect(lines(p)).toEqual([
+      [ED_PUSH, { alertId: 'a-ed' }],
+      [OTHER_PUSH, undefined],
     ]);
   });
 });

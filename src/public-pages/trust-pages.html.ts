@@ -164,7 +164,7 @@ interface TrustPageContent {
 //    stay behind a default-off flag are described with "if enabled".
 //  - Name every vendor that receives personal data, and only vendors that the
 //    code actually calls.
-//  - Never name the clinic partner. Say "clinic partner".
+//  - Never mention a clinic (owner C-6).
 // ---------------------------------------------------------------------------
 function privacyContent(): TrustPageContent {
   return {
@@ -254,13 +254,13 @@ function privacyContent(): TrustPageContent {
           // spaces and the opt-in leaderboard. Same text on the health policy.
           `${COMMUNITY_VISIBILITY_TEXT} Coaches can sort the members of their spaces by when they joined.`,
           LEADERBOARD_VISIBILITY_TEXT,
-          'Roman conversations are not visible to your coach, assistant coaches or any coach-facing screen. They are stored securely; TGP staff can access them only for support, safety and debugging.',
+          'Roman conversations are not visible to your coach, assistant coaches or any coach-facing screen. They are stored securely; TGP staff can access them only for support, safety and debugging. One exception: if Roman sends you an urgent medical safety reply or an eating-disorder safety reply, your coach sees the message that prompted it, so they can check in with you.',
           'TGP staff, only when needed to provide support, keep people safe, fix problems, secure the service or meet a legal duty.',
           'The service providers listed below, only to run the service for us.',
         ],
         paragraphs: [],
         closing: [
-          'Some coaches run programmes alongside a clinic partner. No account, consultation, coaching, health, wearable or Roman data is exchanged with any clinic partner, and clinic partners have no access to the app or to your data.',
+          'Whoever referred you to The Growth Project never sees your account or your data.',
         ],
       },
       {
@@ -470,7 +470,7 @@ function consumerHealthContent(): TrustPageContent {
       {
         heading: 'Who we do not share with',
         bullets: [
-          'No clinic partner. Some coaches run programmes alongside a clinic partner; no account, consultation, coaching, health, wearable or Roman data is exchanged with any clinic partner, and clinic partners have no access to the app.',
+          'Whoever referred you to The Growth Project never sees your account or your data.',
           'No data brokers or advertisers. We do not sell consumer health data and we do not share it for advertising.',
           'No affiliates. TGP has no affiliates that receive consumer health data.',
           'Food search providers (USDA FoodData Central and Open Food Facts) receive only the words you search for, never your identity or health data.',
