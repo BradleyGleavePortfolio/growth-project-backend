@@ -3,9 +3,14 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import {
+  SchedulingSessionLifecycleService,
+  type MoveCancelledSession,
+} from '../scheduling/scheduling-session-lifecycle.service';
 import { AuditAction } from '../audit/audit.service';
 import { SubCoachCapacityService } from './sub-coach-capacity.service';
 import { SubCoachIdempotencyService } from './sub-coach-idempotency.service';
@@ -65,6 +70,8 @@ export class SubCoachReassignService {
     private readonly prisma: PrismaService,
     private readonly capacity: SubCoachCapacityService,
     private readonly idempotency: SubCoachIdempotencyService,
+    // Always injected in production; hand-built unit tests may leave it out.
+    @Optional() private readonly sessions?: SchedulingSessionLifecycleService,
   ) {}
 
   /**
@@ -285,7 +292,8 @@ export class SubCoachReassignService {
       reason,
     } = args;
 
-    return this.prisma.$transaction(
+    let cancelled: MoveCancelledSession[] = [];
+    const result = await this.prisma.$transaction(
       async (tx) => {
         // Current open assignment (if any) for this client.
         const open = await tx.subCoachAssignment.findFirst({
@@ -347,6 +355,9 @@ export class SubCoachReassignService {
 
         // Close any open assignment first (history preserved).
         if (open) {
+          // Owner HIST-2b: the sub-coach handing the client on loses their upcoming sessions.
+          cancelled =
+            (await this.sessions?.cancelLeftByMove(tx, [clientId], open.sub_coach_id)) ?? [];
           await tx.subCoachAssignment.update({
             where: { id: open.id },
             data: { unassigned_at: new Date() },
@@ -401,6 +412,9 @@ export class SubCoachReassignService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
+    const role = actorRole === 'owner' ? 'owner' : 'coach';
+    await this.sessions?.finishMoveCancels(actorId, cancelled, role);
+    return result;
   }
 
   /**

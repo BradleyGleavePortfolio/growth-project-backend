@@ -6,10 +6,15 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { randomBytes, createHash } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import {
+  SchedulingSessionLifecycleService,
+  type MoveCancelledSession,
+} from '../scheduling/scheduling-session-lifecycle.service';
 import { TeamService } from '../team/team.service';
 import { deleteDraftsLeftByMove } from '../coach/moved-client-drafts';
 import type {
@@ -33,6 +38,8 @@ export class SubCoachInviteService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly team: TeamService,
+    // Always injected in production; hand-built unit tests may leave it out.
+    @Optional() private readonly sessions?: SchedulingSessionLifecycleService,
   ) {}
 
   // POST /sub-coaches/invites
@@ -680,8 +687,11 @@ export class SubCoachInviteService {
     });
     const reassignIds = clientsToReassign.map((c) => c.id);
 
+    let cancelled: MoveCancelledSession[] = [];
     await this.prisma.$transaction(async (tx) => {
       if (reassignIds.length > 0) {
+        // Owner HIST-2b: the sub-coach's upcoming sessions with these clients end now.
+        cancelled = (await this.sessions?.cancelLeftByMove(tx, reassignIds, subCoachId)) ?? [];
         await tx.user.updateMany({
           where: { id: { in: reassignIds } },
           data: { coach_id: headCoachId },
@@ -722,6 +732,7 @@ export class SubCoachInviteService {
         },
       });
     });
+    await this.sessions?.finishMoveCancels(headCoachId, cancelled);
 
     await this.team.refreshCounters(headCoachId);
 

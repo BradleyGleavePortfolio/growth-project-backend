@@ -150,6 +150,9 @@ export function isLapsedRequest(
 /** end_reason written when a request expires. */
 export const REQUEST_EXPIRED_END_REASON = 'request_expired';
 
+/** end_reason written when a client's move cancels a session (owner HIST-2b). */
+export const CLIENT_MOVED_END_REASON = 'client_moved';
+
 // Stable machine codes for scheduling failures. Every BadRequest/Conflict the
 // booking surface throws carries one of these as `code` (and, for older
 // clients, as `error`) plus a human message.
