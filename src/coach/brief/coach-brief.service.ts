@@ -2057,11 +2057,15 @@ export class CoachBriefService {
     // B-939-1: so does a brief built from a client who has since moved away.
     const withdrawnAt = await this.lastSharingWithdrawal(coachId);
     const builtFromMoved = await this.briefsWithMovedClients(coachId, rows);
-    const shown = await this.ownThreadPreviews(coachId, rows);
+    const withheld = (r: { id: string; generated_at: Date | null }) =>
+      writtenBefore(r, withdrawnAt) || builtFromMoved.has(r.id);
+    // Only a brief that is shown gets the thread check, so the old coach's
+    // request never reads a moved client's messages.
+    const shown = await this.ownThreadPreviews(coachId, rows.filter((r) => !withheld(r)));
     return {
       items: rows.map((r) => {
         const out = this.toResponse({ ...r, action_items: shown(r.action_items) });
-        return writtenBefore(r, withdrawnAt) || builtFromMoved.has(r.id) ? { ...out, summary: null } : out;
+        return withheld(r) ? { ...out, summary: null } : out;
       }),
       total,
       page,
@@ -2149,9 +2153,10 @@ export class CoachBriefService {
 
   /**
    * BRIEF4B (owner 4b): a stored brief shows an unread-message preview only
-   * while that text is in the client's thread with this coach. A brief stored
-   * before the thread fix may quote a moved client's chat with a former coach;
-   * that item is left out and the rest of the brief stays.
+   * while that text is in the client's thread with this coach; any other
+   * preview is left out and the rest of the brief stays. A brief stored before
+   * briefs recorded their clients never gets here: B-939-1 writes it again
+   * today and shows only its day and status in history.
    */
   private async ownThreadPreviews(
     coachId: string,
