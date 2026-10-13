@@ -1,0 +1,22 @@
+-- FOODLINK: index on "LoggedFoodEntry"."plan_slot_id" (20270420000000).
+--
+-- WHY: the ON DELETE SET NULL action looks up LoggedFoodEntry by plan_slot_id
+-- for every deleted DailyMealPlanSlot (a coach editing or deleting a plan);
+-- without the index each slot delete scans the table.
+--
+-- WHY CONCURRENTLY: LoggedFoodEntry is a hot, populated table. A plain CREATE
+-- INDEX blocks every food log write while it builds; CONCURRENTLY takes only a
+-- SHARE UPDATE EXCLUSIVE lock. It cannot run in a transaction block, and
+-- Prisma 6.19 does not wrap a migration file in one (as in
+-- 20260704000001_coach_brief_cwa_index_concurrent), so this file holds only
+-- this statement.
+--
+-- RE-RUN: IF NOT EXISTS makes it idempotent. After a failed build, drop any
+-- INVALID leftover (SELECT indexrelid::regclass FROM pg_index WHERE NOT
+-- indisvalid) with DROP INDEX CONCURRENTLY before re-running.
+--
+-- NAME: Prisma's generated name for @@index([plan_slot_id]) on
+-- LoggedFoodEntry, so `prisma migrate diff` stays drift-free.
+-- ROLLBACK: down.sql.
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "LoggedFoodEntry_plan_slot_id_idx" ON "LoggedFoodEntry"("plan_slot_id");
