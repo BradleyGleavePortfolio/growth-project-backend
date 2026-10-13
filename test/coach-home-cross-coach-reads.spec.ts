@@ -320,11 +320,18 @@ describe('READTESTS: the coach Home and client lookup reads stay inside the call
       expect(await ltv(S)).toEqual([0, 0, 0]);
     });
 
-    it('after leaving the team (seat archived, delegation closed): no catalog and no streaks of A\'s', async () => {
+    it('after removal (seat archived, the delegation left open as removal leaves it): no catalog and no streaks of A\'s', async () => {
       archiveSeat();
-      row('subCoachAssignment', 'del-s').unassigned_at = new Date();
+      expect(row('subCoachAssignment', 'del-s').unassigned_at).toBeNull();
       expect(await packages(S)).toEqual([]);
       expect(await streaks(S)).toEqual([]);
+      expect(await app.get(SubCoachScopeService).getAuthorizedClientIds(S)).toEqual([]);
+    });
+
+    it('control: a delegation-only sub-coach (never had a seat) still gets A\'s catalog and the delegated client', async () => {
+      db.state.teamSubCoachAssignment = [];
+      expect((await packages(S)).sort()).toEqual(['pkg-a', 'pkg-a-old']);
+      expect(await streaks(S)).toEqual([A2]);
     });
   });
 
