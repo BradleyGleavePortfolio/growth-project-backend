@@ -752,7 +752,9 @@ describe('R3 GET /roman/context/me', () => {
   it('returns the caller’s own structured context and nothing else', async () => {
     const { svc } = setup();
     const ctrl = new RomanContextController(svc);
-    const out = await ctrl.me(asAuthedRequestDouble({ user: { id: P1, role: 'student' } }));
+    const out = await ctrl.me(
+      asAuthedRequestDouble({ user: { id: P1, role: 'student', coach_id: 'coach-A' } }),
+    );
     expect(out.version).toBe('ctx-v3');
     expect(out.context.identity.first_name).toBe('Maya');
     expect(out.estimated_tokens).toBeLessThanOrEqual(ROMAN_CONTEXT_HARD_CAP_TOKENS);

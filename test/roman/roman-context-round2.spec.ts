@@ -82,7 +82,9 @@ describe('B-651-10 GET /roman/context/me failures are coded with specific copy',
     });
     const ctl = new RomanContextController(ctx);
     const r = await settle(
-      ctl.me(fakeOf<AuthedRequest>({ user: { id: CLIENT.id, role: 'student' } })),
+      ctl.me(
+        fakeOf<AuthedRequest>({ user: { id: CLIENT.id, role: 'student', coach_id: 'coach-1' } }),
+      ),
     );
     expect('err' in r).toBe(true);
     return runFilter('err' in r ? r.err : null);

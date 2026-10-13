@@ -87,6 +87,9 @@ export class AiController {
   @Get('context')
   @Throttle({ default: { ttl: 3600000, limit: 60 } })
   async getContext(@Request() req: AuthedRequest) {
+    // 139-15: a client with no coach has no Roman, so no AI context is built
+    // or read for them: 403 ROMAN_REQUIRES_COACH first.
+    assertRomanHasCoach(req.user);
     return this.aiService.getUserContext(req.user.id);
   }
 
@@ -97,6 +100,8 @@ export class AiController {
   @Get('structured-context')
   @Throttle({ default: { ttl: 3600000, limit: 60 } })
   async getStructuredContext(@Request() req: AuthedRequest) {
+    // 139-15: same 403 ROMAN_REQUIRES_COACH as /ai/context, before the read.
+    assertRomanHasCoach(req.user);
     return this.aiService.getStructuredContext(req.user.id);
   }
 }
