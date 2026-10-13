@@ -151,7 +151,8 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
       expect(sha(CLIENT_AI_CONSENT_V5_PARAGRAPH)).toBe(V5_PARAGRAPH_SHA);
       expect(sha(`${D1_PARAGRAPH}\n\n${CLIENT_AI_CONSENT_BOX_LABEL}`)).toBe(V5_COPY_SHA);
       expect(CLIENT_AI_CONSENT_V5_COPY_SHA256).toBe(V5_COPY_SHA);
-      expect(Object.keys(CLIENT_AI_CONSENT_ACCEPTED)).toEqual([V4, V5]);
+      // Plus their coach-free versions (owner 62, test/ai-consent/consent-coach-free.spec.ts).
+      expect(Object.keys(CLIENT_AI_CONSENT_ACCEPTED)).toEqual([V4, V5, `${V4}-coach-free`, `${V5}-coach-free`]);
       expect(CLIENT_AI_CONSENT_ACCEPTED[V4]).toEqual({ copy_sha256: V4_COPY_SHA, scope: 'base' });
       expect(CLIENT_AI_CONSENT_ACCEPTED[V5]).toEqual({ copy_sha256: V5_COPY_SHA, scope: 'memory' });
     });

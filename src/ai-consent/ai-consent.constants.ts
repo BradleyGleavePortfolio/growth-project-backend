@@ -115,6 +115,69 @@ export const CLIENT_AI_CONSENT_V5_COPY_SHA256 = sha256Hex(
 );
 
 /**
+ * Coach-free copies (owner decision 62, Option 1, 2026-10-12): what a client
+ * with no coach sees. The v4 and v5 paragraphs and the box label with every
+ * coach sentence or clause removed and no new words. Each gives the same scope
+ * as the copy it comes from (v4 coach-free 'base', v5 coach-free 'memory').
+ * Onboarding P0 consult-consent-v5-coach-free / v6-coach-free carry them.
+ */
+export const CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION = 'client-ai-v4-coach-free';
+export const CLIENT_AI_CONSENT_V5_COACH_FREE_VERSION = 'client-ai-v5-coach-free';
+
+export const CLIENT_AI_CONSENT_V4_COACH_FREE_PARAGRAPH =
+  'Roman, the assistant in this app, is powered by Anthropic, a third-party AI provider. ' +
+  'If you allow it, your information is sent to Anthropic so Roman can answer your questions. ' +
+  "Only your own data is used, never another client's. " +
+  'Your conversations with Roman are kept until you delete them or delete your account.';
+
+export const CLIENT_AI_CONSENT_V5_COACH_FREE_PARAGRAPH =
+  'Roman, the assistant in this app, is powered by Anthropic, a third-party AI provider. ' +
+  'If you allow it, your information is sent to Anthropic so Roman can answer your questions. ' +
+  'Roman may keep notes and summaries about your training, preferences and circumstances to ' +
+  'personalise his replies. ' +
+  'Deleting a chat removes its messages but not these notes; deleting your account removes them. ' +
+  "Roman never shows you another client's information. " +
+  'Your conversations with Roman are kept until you delete them or delete your account.';
+
+export const CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL =
+  'Optional: I allow Roman to use my information, processed by Anthropic.';
+
+export const CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL,
+);
+export const CLIENT_AI_CONSENT_V4_COACH_FREE_PARAGRAPH_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V4_COACH_FREE_PARAGRAPH,
+);
+export const CLIENT_AI_CONSENT_V5_COACH_FREE_PARAGRAPH_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V5_COACH_FREE_PARAGRAPH,
+);
+export const CLIENT_AI_CONSENT_V4_COACH_FREE_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V4_COACH_FREE_PARAGRAPH +
+    CLIENT_AI_CONSENT_COPY_SEPARATOR +
+    CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL,
+);
+export const CLIENT_AI_CONSENT_V5_COACH_FREE_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V5_COACH_FREE_PARAGRAPH +
+    CLIENT_AI_CONSENT_COPY_SEPARATOR +
+    CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL,
+);
+
+/** True for the coach-free copy versions (own names only). */
+export function isCoachFreeClientAiVersion(version: unknown): boolean {
+  return (
+    version === CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION ||
+    version === CLIENT_AI_CONSENT_V5_COACH_FREE_VERSION
+  );
+}
+
+/**
+ * Who the AI output is for (ai-egress AiConsentAudience). A coach-free grant
+ * (owner 62) covers 'client' only: its text names Roman answering the
+ * client, not coach AI drafts or coach-method learning.
+ */
+export type ClientAiConsentAudience = 'coach' | 'client';
+
+/**
  * What a live grant covers. 'base': day-1 Roman and the coach's AI drafts
  * (every existing AI path). 'memory': base plus Roman v1.1 notes, summaries
  * and coach-method learning (FEATURE_ROMAN_MEMORY / FEATURE_ROMAN_PLAYBOOK).
@@ -139,6 +202,14 @@ export const CLIENT_AI_CONSENT_ACCEPTED: Readonly<Record<string, AcceptedClientA
     }),
     [CLIENT_AI_CONSENT_V5_VERSION]: Object.freeze({
       copy_sha256: CLIENT_AI_CONSENT_V5_COPY_SHA256,
+      scope: 'memory' as const,
+    }),
+    [CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V4_COACH_FREE_COPY_SHA256,
+      scope: 'base' as const,
+    }),
+    [CLIENT_AI_CONSENT_V5_COACH_FREE_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V5_COACH_FREE_COPY_SHA256,
       scope: 'memory' as const,
     }),
   });

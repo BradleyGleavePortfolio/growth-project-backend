@@ -47,6 +47,7 @@ import {
   type PlanContent,
 } from './clinic-programs';
 import { writeProgramTree } from './program-writer';
+import { flaggedClientPayload } from './flagged-join-alert';
 import {
   ONBOARDING_COMPLETION_HOOKS,
   type OnboardingCompletionHook,
@@ -376,7 +377,7 @@ export class OnboardingService {
     clientId: string,
     revision?: number,
     now = new Date(),
-  ): Promise<ConsultationView> {
+  ): Promise<ConsultationView & { client_name: string | null }> {
     if (!(await this.canCoachRead(readerId, clientId)))
       throw new NotFoundException('Consultation not found');
     const intake = await this.prisma.clientOnboardingIntake.findUnique({
@@ -391,7 +392,14 @@ export class OnboardingService {
     const answers: Answers = isRecord(rev.answers)
       ? (JSON.parse(JSON.stringify(rev.answers)) as Answers)
       : {};
-    return buildConsultationView(
+    // The screen's heading. Read here, after the live tenancy check, because
+    // alert rows store no name (owner 4): a reader who lost access gets the
+    // 404 above and never the name.
+    const client = await this.prisma.user.findUnique({
+      where: { id: clientId },
+      select: { name: true },
+    });
+    const view = buildConsultationView(
       {
         version: rev.version,
         revision: rev.revision,
@@ -405,6 +413,7 @@ export class OnboardingService {
       { submitted_at: intake.completed_at, saved_at: rev.created_at },
       now,
     );
+    return { ...view, client_name: client?.name?.trim() || null };
   }
 
   /** Revision list for the coach view (newest first). */
@@ -986,14 +995,14 @@ export class OnboardingService {
           // coach they later join is told then (flagged-join-alert.ts).
           if (flagCoach && coach) {
             // In-app coach item. The body carries no screening details; a
-            // coach opens their client's intake for the answers.
+            // tap opens their client's consultation answers.
             await tx.notification.create({
               data: {
                 user_id: coach.id,
                 kind: 'coach_alert',
                 channel: 'inapp',
                 body: COACH_FLAG_BODY,
-                payload: { type: 'onboarding_screening_review', client_id: clientId },
+                payload: flaggedClientPayload(clientId),
               },
             });
           }

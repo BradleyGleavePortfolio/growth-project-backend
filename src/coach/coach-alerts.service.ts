@@ -192,7 +192,8 @@ export class CoachAlertsService {
    */
   async acknowledgeForScope(
     alertId: string,
-    ownerCoachId: string,
+    // AQSUB: a team sub-coach passes `{ in: [head, sub-coach] }`.
+    ownerCoachId: string | { in: string[] },
     allowedClientIds: string[],
     // B-R1F: a further caller rule (Roman safety alerts: current coach only).
     extra: Prisma.CoachAlertWhereInput = {},

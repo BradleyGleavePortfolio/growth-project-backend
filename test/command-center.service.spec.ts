@@ -159,7 +159,7 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
     coachAlert: {
       count: jest.fn(async ({ where }: any) => {
         return rows.alerts.filter((a) => {
-          if (where.coach_id && a.coach_id !== where.coach_id) return false;
+          if (where.coach_id && !(where.coach_id.in ?? [where.coach_id]).includes(a.coach_id)) return false;
           if (where.client_id?.in && !where.client_id.in.includes(a.client_id)) return false;
           if (where.acknowledged_at === null && a.acknowledged_at !== null) return false;
           return true;
@@ -167,7 +167,7 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
       }),
       findMany: jest.fn(async ({ where, take }: any) => {
         const filtered = rows.alerts.filter((a) => {
-          if (where.coach_id && a.coach_id !== where.coach_id) return false;
+          if (where.coach_id && !(where.coach_id.in ?? [where.coach_id]).includes(a.coach_id)) return false;
           if (where.client_id?.in && !where.client_id.in.includes(a.client_id)) return false;
           if (where.acknowledged_at === null && a.acknowledged_at !== null) return false;
           if (where.created_at?.lt && a.created_at >= where.created_at.lt) return false;
@@ -816,16 +816,18 @@ function buildScopedAdminPtm(allBoardRows: any[]): any {
 
 // An alerts-service fake whose acknowledgeForScope enforces the scoped
 // ownership exactly like CoachAlertsService.acknowledgeForScope does:
-// the alert must exist with coach_id = ownerCoachId AND client_id IN allowed.
+// the alert must exist with coach_id = ownerCoachId (or IN the sub-coach's
+// pair) AND client_id IN allowed.
 function buildScopedAlertsService(alerts: any[]): any {
   return {
     acknowledge: jest.fn(),
     acknowledgeForScope: jest.fn(
-      async (alertId: string, ownerCoachId: string, allowed: string[]) => {
+      async (alertId: string, ownerCoachId: string | { in: string[] }, allowed: string[]) => {
+        const coachIds = typeof ownerCoachId === 'string' ? [ownerCoachId] : ownerCoachId.in;
         const row = alerts.find(
           (a) =>
             a.id === alertId &&
-            a.coach_id === ownerCoachId &&
+            coachIds.includes(a.coach_id) &&
             allowed.includes(a.client_id),
         );
         if (!row) throw new Error('Alert not found');
@@ -911,10 +913,15 @@ describe('CC+SC P1b: sub-coach can dismiss an assigned client\'s alert', () => {
     const svc = new CommandCenterService(prisma, buildAdminPtm(), alertsSvc, scope);
 
     // u2 is assigned to the sub-coach -> dismiss succeeds, authorized on
-    // (coach_id = head, client_id IN ['u2']).
+    // (coach_id IN [head, sub], client_id IN ['u2']).
     const ok = await svc.dismissAlert('a-u2', 'sub');
     expect(ok).toEqual({ ok: true });
-    expect(alertsSvc.acknowledgeForScope).toHaveBeenCalledWith('a-u2', 'head', ['u2'], expect.anything());
+    expect(alertsSvc.acknowledgeForScope).toHaveBeenCalledWith(
+      'a-u2',
+      { in: ['head', 'sub'] },
+      ['u2'],
+      expect.anything(),
+    );
     expect(alerts.find((a) => a.id === 'a-u2')!.acknowledged_at).not.toBeNull();
 
     // u1 is NOT assigned to the sub-coach -> still denied (NotFound), no IDOR.
