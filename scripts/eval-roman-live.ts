@@ -5,7 +5,7 @@
  *   ROMAN_LIVE_EVAL=1 ANTHROPIC_API_KEY=... npm run eval:roman:live -- --model claude-sonnet-5-5
  *
  * NOT run in CI. Runs G1–G37 (test/roman/eval/golden-set.ts) against the REAL
- * model through the real Roman stack (R1 model config, R3 context builder,
+ * model through the real Roman stack (egress consent gate, R3 context builder,
  * R4 router + post-check) with the seeded in-memory personas — no database and
  * no production data. Writes eval-results/roman-<model>-<date>.json.
  *
@@ -53,8 +53,12 @@ const { RomanClientContextService } =
   require('../src/roman/context/roman-client-context.service') as typeof import('../src/roman/context/roman-client-context.service');
 const { FEATURE_ROMAN_CHAT_ENABLED_ENV } =
   require('../src/roman/roman.feature') as typeof import('../src/roman/roman.feature');
-const { ROMAN_MODEL_PRIMARY_ENV } =
-  require('../src/roman/model/roman-model.config') as typeof import('../src/roman/model/roman-model.config');
+const { ROMAN_MODEL_PHASE_1 } =
+  require('../src/roman/anthropic-client.provider') as typeof import('../src/roman/anthropic-client.provider');
+const { AiEgressService, AnthropicHandle } =
+  require('../src/ai-egress/ai-egress.service') as typeof import('../src/ai-egress/ai-egress.service');
+const { FakeConsentReader } =
+  require('../test/ai-egress/ai-egress.fakes') as typeof import('../test/ai-egress/ai-egress.fakes');
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 function arg(name: string, fallback: string): string {
@@ -71,23 +75,25 @@ async function main(): Promise<void> {
     console.error('ANTHROPIC_API_KEY is required.');
     process.exit(2);
   }
-  const model = arg('model', 'claude-sonnet-5-5');
+  const model = arg('model', ROMAN_MODEL_PHASE_1);
   const judgeModel = arg('judge', 'claude-opus-5-5');
   const only = arg('only', '').split(',').filter(Boolean);
   process.env[FEATURE_ROMAN_CHAT_ENABLED_ENV] = 'true';
-  process.env[ROMAN_MODEL_PRIMARY_ENV] = model;
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const db = makePersonaDb();
   const ctx = new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource());
-  const roman = new RomanService(db.prisma, anthropic);
-  roman.setClientContext(ctx);
-  // Count real model calls by wrapping the SDK stream method.
+  // The real egress consent gate; the synthetic personas hold a grant (as in
+  // test/roman/eval/harness.ts).
+  const egress = new AiEgressService(new FakeConsentReader([P1, P2, P3, P4]));
+  const roman = new RomanService(db.prisma, egress, AnthropicHandle.bind(anthropic), ctx);
+  // Count real model calls by wrapping the SDK stream method. Roman's model is
+  // the ROMAN_MODEL_PHASE_1 constant, so --model is applied here.
   let modelCalls = 0;
   const realStream = anthropic.messages.stream.bind(anthropic.messages);
-  anthropic.messages.stream = ((...args: Parameters<typeof realStream>) => {
+  anthropic.messages.stream = ((...[body, options]: Parameters<typeof realStream>) => {
     modelCalls++;
-    return realStream(...args);
+    return realStream({ ...body, model }, options);
   }) as typeof anthropic.messages.stream;
 
   // Every golden persona (P4 = the same-coach tenancy mirror added in G37).
