@@ -39,6 +39,7 @@ import { PushDeliveryService } from '../../src/notifications/push/push-delivery.
 import { PrismaService } from '../../src/prisma.service';
 import { asPrismaDouble } from '../../src/regimes/__tests__/prisma-test-double';
 import { ROMAN_REQUIRES_COACH } from '../../src/roman/roman-requires-coach';
+import { METRIC_AGGREGATION, METRIC_BUCKET } from '../../src/wearables/samples/metric-bucket.map';
 
 jest.setTimeout(300_000);
 
@@ -106,6 +107,10 @@ async function seed(state: State): Promise<void> {
   // The old coach's own inbox row about the client (the generic row is the client's).
   const note = world.table('Notification')[0];
   world.table('Notification').push({ ...note, id: uuid(7), user_id: OLD, payload: { client_id: MOVED }, deep_link: `/coach/clients/${MOVED}` });
+  // Reference rows the app checks at boot (a migration seeds them in production).
+  const def = world.table('WearableMetricDef')[0];
+  const metrics = Object.keys(METRIC_BUCKET) as Array<keyof typeof METRIC_BUCKET>;
+  world.rows.set('WearableMetricDef', metrics.map((m) => ({ ...def, id: m, metric: m, bucket: METRIC_BUCKET[m], aggregation: METRIC_AGGREGATION[m] })));
   if (state !== 'before') await deleteDraftsLeftByMove(db, [MOVED], NEW);
 }
 
@@ -150,6 +155,7 @@ const listed = (rule: Rule) => new Set([...KNOWN_GAPS, ...EXEMPT].filter((g) => 
 const unexpected = (rule: Rule, keys: string[]) => keys.filter((k) => !listed(rule).has(k));
 
 beforeAll(async () => {
+  await seed('moved');
   const ref = await Test.createTestingModule({ imports: [DiscoveryModule, AppModule] })
     .overrideProvider(PrismaService)
     .useValue(world.client)
