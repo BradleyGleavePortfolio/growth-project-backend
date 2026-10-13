@@ -99,10 +99,6 @@ describe('RomanChatsController — list and delete own chats (B-635-2)', () => {
       providers: [
         RomanFeatureGuard,
         { provide: RomanService, useValue: roman },
-        {
-          provide: PrismaService,
-          useValue: { coachSubscription: { findUnique: async () => null } },
-        },
       ],
     })
       .overrideGuard(JwtAuthGuard)
