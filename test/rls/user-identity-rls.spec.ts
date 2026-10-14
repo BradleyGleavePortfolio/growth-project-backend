@@ -224,10 +224,11 @@ const AUTH_UID_POLICIES = [
         SELECT "tablename" || '.' || "policyname" AS "policy", coalesce("qual", '') || ' ' || coalesce("with_check", '') AS "expr"
         FROM pg_policies WHERE "schemaname" = 'public' AND "tablename" <> 'User'
           AND coalesce("qual", '') || coalesce("with_check", '') LIKE '%"User"%' ORDER BY 1`;
-      const all = /(FROM|JOIN) (public\.)?"User"/g;
-      const callerKeyed = /FROM (public\.)?"User"( \w+)? WHERE \(*("User"|\w+)\.(supabase_id = \(auth\.uid\(\)\)::text|id = app\.current_user_id\(\))/g;
-      const flat = rows.map((r) => ({ ...r, expr: r.expr.replace(/\s+/g, ' ').replace(/\( /g, '(') }));
-      const loose = flat.filter((r) => (r.expr.match(all) ?? []).length !== (r.expr.match(callerKeyed) ?? []).length);
+      // Each "User" reference (FROM or JOIN, by alias) is pinned to the caller's own row.
+      const pinned = (expr: string, alias: string) =>
+        expr.includes(`${alias}.supabase_id = (auth.uid())::text`) || expr.includes(`${alias}.id = app.current_user_id()`);
+      const loose = rows.map((r) => ({ ...r, expr: r.expr.replace(/\s+/g, ' ') })).filter((r) =>
+        [...r.expr.matchAll(/(?:FROM|JOIN) (?:public\.)?"User"(?: (?!WHERE|ON|JOIN)(\w+))?/g)].some((m) => !pinned(r.expr, m[1] ?? '"User"')));
       expect(loose).toEqual([]);
       expect(rows.map((r) => r.policy)).toEqual(expect.arrayContaining(AUTH_UID_POLICIES));
     });
