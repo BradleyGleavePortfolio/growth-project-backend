@@ -172,7 +172,7 @@ export class PackageContentsService {
         // be emptied between the authoring check above and this insert.
         if (locked.length > 0) {
           const days = await tx.workoutPlan.count({
-            where: { program_id: input.asset_id, archived_at: null },
+            where: { program_id: input.asset_id, coach_id: tenantCoachId, archived_at: null },
           });
           if (days === 0) {
             throw new UnprocessableEntityException({
@@ -1108,7 +1108,7 @@ export class PackageContentsService {
               });
             }
             const days = await this.prisma.workoutPlan.count({
-              where: { program_id: program.id, archived_at: null },
+              where: { program_id: program.id, coach_id: tenantCoachId, archived_at: null },
             });
             if (days === 0) {
               throw new UnprocessableEntityException({

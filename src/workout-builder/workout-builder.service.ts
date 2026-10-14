@@ -53,7 +53,7 @@ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { isMwbTemplatesEnabled } from './mwb-templates.feature';
-import { assertLastDayMayGo, lockProgramMaster } from './program-guards';
+import { assertLastDayMayGo, lockProgramMaster, programDaysWhere } from './program-guards';
 import {
   AssignProgramDto,
   CloneProgramResultDto,
@@ -514,10 +514,11 @@ export class WorkoutBuilderService {
     planId: string,
   ): Promise<void> {
     const master = await lockProgramMaster(tx, programId);
+    if (!master) return;
     const others = await tx.workoutPlan.count({
-      where: { program_id: programId, archived_at: null, id: { not: planId } },
+      where: { ...programDaysWhere(master), id: { not: planId } },
     });
-    if (others > 0 || !master) return;
+    if (others > 0) return;
     await assertLastDayMayGo(tx, master);
   }
 
@@ -971,16 +972,16 @@ export class WorkoutBuilderService {
   // ─── MWB-1: programs — fork / clone / fan-out (§3.2, §3.4, §7.3) ──────────
 
   /**
-   * Deep-copy (by value) every plan + exercise under `sourceProgramId` into
-   * `newProgramId`, inside the caller's transaction. Returns the created
-   * plans. Each plan gets a fresh id and an `initial`/`clone` revision
+   * Deep-copy (by value) every day of `source` (programDaysWhere: only rows in
+   * its tenant) into `newProgramId`, inside the caller's transaction. Returns
+   * the created plans. Each plan gets a fresh id and an `initial`/`clone` revision
    * baseline so undo (later phase) has an anchor. `superset_group_id`s are
    * re-mapped into the NEW plan's namespace so two cloned plans can never
    * collide on a shared group id. Shared by forkTemplate + cloneProgramToClient.
    */
   private async copyProgramPlans(
     tx: Prisma.TransactionClient,
-    sourceProgramId: string,
+    source: { id: string; coach_id: string },
     newProgramId: string,
     opts: {
       isTemplate: boolean;
@@ -992,7 +993,7 @@ export class WorkoutBuilderService {
     },
   ) {
     const sourcePlans = await tx.workoutPlan.findMany({
-      where: { program_id: sourceProgramId, archived_at: null },
+      where: programDaysWhere(source),
       orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
       include: {
         exercises: {
@@ -1145,7 +1146,7 @@ export class WorkoutBuilderService {
             version: 1,
           },
         });
-        const plans = await this.copyProgramPlans(tx, sourceTemplateId, program.id, {
+        const plans = await this.copyProgramPlans(tx, source, program.id, {
           isTemplate: true,
           actingUserId,
           authorKind,
@@ -1315,7 +1316,7 @@ export class WorkoutBuilderService {
           }
           throw err;
         }
-        const plans = await this.copyProgramPlans(tx, masterProgramId, program.id, {
+        const plans = await this.copyProgramPlans(tx, master, program.id, {
           isTemplate: false,
           actingUserId: coachId,
           authorKind,
@@ -1433,7 +1434,7 @@ export class WorkoutBuilderService {
         await this.assertCanAccessClient(coachId, dto.client_id);
 
         const plans = await this.prisma.workoutPlan.findMany({
-          where: { program_id: programId, archived_at: null },
+          where: programDaysWhere(program),
           orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
           select: { id: true, week_index: true, day_index: true },
         });
