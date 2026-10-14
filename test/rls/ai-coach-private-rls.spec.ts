@@ -117,19 +117,19 @@ const DENIED = '42501';
     as(who, (tx) => tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS "n" FROM "${table}" WHERE "id" = $1`, rowId))
       .then((r) => r[0].n);
   const u = (k: Key | null) => (k ? id[k] : null);
-  const actionDraft = (who: Who | null, requester: Key | null, subject: Key | null, tenant: Key | null, rowId = randomUUID()) =>
+  const actionDraft = (who: Who | null, requester: Key | null, subject: Key | null, tenant: Key | null, rowId: string = randomUUID()) =>
     put(who, `INSERT INTO "AiActionDraft" ("id", "capability", "requester_id", "subject_user_id", "tenant_coach_id", "payload")
       VALUES ($1, 'draft.coach_message', $2, $3, $4, '{}'::jsonb)`, rowId, u(requester), u(subject), u(tenant));
-  const audit = (who: Who | null, requester: Key, subject: Key | null, tenant: Key | null, rowId = randomUUID()) =>
+  const audit = (who: Who | null, requester: Key, subject: Key | null, tenant: Key | null, rowId: string = randomUUID()) =>
     put(who, `INSERT INTO "AiRequestAudit" ("id", "request_id", "capability", "requester_id", "subject_user_id", "tenant_coach_id", "provider")
       VALUES ($1, $2, 'chat.client_coach', $3, $4, $5, 'stub')`, rowId, `req-${randomUUID()}`, u(requester), u(subject), u(tenant));
-  const aiDraft = (who: Who | null, coach: Key, client: Key, rowId = randomUUID()) =>
+  const aiDraft = (who: Who | null, coach: Key, client: Key, rowId: string = randomUUID()) =>
     put(who, `INSERT INTO "AIDraft" ("id", "coachId", "clientId", "type", "inputContext", "modelUsed", "promptVersion", "generatedPayload", "status", "updatedAt")
       VALUES ($1, $2, $3, 'INSIGHT', '{}'::jsonb, 'stub', 'v1', '{}'::jsonb, 'APPROVED', now())`, rowId, id[coach], id[client]);
-  const messageDraft = (who: Who | null, coach: Key, client: Key, rowId = randomUUID()) =>
+  const messageDraft = (who: Who | null, coach: Key, client: Key, rowId: string = randomUUID()) =>
     put(who, `INSERT INTO "MessageDraft" ("id", "coach_id", "client_id", "body", "updated_at") VALUES ($1, $2, $3, 'RLS draft', now())`,
       rowId, id[coach], id[client]);
-  const event = (who: Who | null, actor: Key, coach: Key | null, client: Key | null, rowId = randomUUID()) =>
+  const event = (who: Who | null, actor: Key, coach: Key | null, client: Key | null, rowId: string = randomUUID()) =>
     put(who, `INSERT INTO "ActivityEvent" ("id", "actor_id", "coach_id", "client_id", "type") VALUES ($1, $2, $3, $4, 'coach.message_sent')`,
       rowId, id[actor], u(coach), u(client));
   const decide = (who: Who, rowId: string) =>
