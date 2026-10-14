@@ -7,7 +7,10 @@ import { HttpException, HttpStatus } from '@nestjs/common';
  * 403 on the Roman AI routes (POST /roman/sessions, POST
  * /roman/sessions/:id/messages, POST /ai/chat) before anything is stored,
  * counted against a cap or sent to the AI, so no coach pool or daily budget is
- * touched. The app shows "Join a coach" for this code.
+ * touched. The app shows "Join a coach" for this code. 139-15 ("coachless
+ * clients have no access to roman at all"): the same 403 on Roman's context
+ * reads (GET /ai/context, GET /ai/structured-context, GET /roman/context/me),
+ * before anything is read.
  *
  * Unchanged: coaches and the owner; coached clients (coach AI pool and the
  * daily cap still apply); a crisis message (the fixed 988 / 911 answer, no AI
