@@ -83,7 +83,7 @@ try {
     FROM pg_attribute att JOIN pg_class c ON c.oid = att.attrelid JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'
     CROSS JOIN LATERAL aclexplode(att.attacl) a
     UNION ALL
-    SELECT 'default ' || d.defaclrole::regrole || ' ' || d.defaclnamespace::regnamespace || ' ' || d.defaclobjtype || ':' || a.grantor::regrole
+    SELECT 'default ' || d.defaclrole::regrole || ' ' || d.defaclnamespace::regnamespace || ' ' || d.defaclobjtype::text || ':' || a.grantor::regrole
            || ':' || a.grantee || ':' || a.privilege_type || ':' || a.is_grantable
     FROM pg_default_acl d CROSS JOIN LATERAL aclexplode(d.defaclacl) a) s(x)`];
   const MIG = 'prisma/migrations/20270502001000_public_role_grant_floor';
