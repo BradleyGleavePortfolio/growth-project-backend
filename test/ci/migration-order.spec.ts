@@ -23,7 +23,7 @@ function migration(name: string): void {
 
 function commit(): void {
   git('add', '.');
-  git('commit', '-m', 'ci: migration fixture');
+  git('commit', '-m', `ci: migration fixture on ${git('branch', '--show-current')}`);
 }
 
 function run() {
