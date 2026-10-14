@@ -3607,6 +3607,13 @@ enum CalendarProvider {
   // we add them when we ship the adapter.
 }
 
+// C4MOVED: which side made a session's most recent move. The owner moving a
+// session on the coach's behalf records `coach`.
+enum SessionMovedBy {
+  coach
+  client
+}
+
 enum SessionParticipantRole {
   coach
   client
@@ -3769,6 +3776,12 @@ model CoachingSession {
   // answer by (set on request and when a move asks again). At or after it
   // the request is closed as `expired` and the slot is free again.
   request_expires_at       DateTime?
+  // C4MOVED: the start before the most recent move, who made that move and
+  // when. Null until the session is first moved; set only by
+  // rescheduleSession (never by booking, cancel or no-show).
+  moved_from_start_at      DateTime?
+  moved_by_role            SessionMovedBy?
+  last_moved_at            DateTime?
   created_at               DateTime         @default(now())
   updated_at               DateTime         @default(now()) @updatedAt
 
