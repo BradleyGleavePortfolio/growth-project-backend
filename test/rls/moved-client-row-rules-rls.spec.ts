@@ -125,7 +125,8 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(await seen(A)).toEqual({
       plans: ['dMaster', 'dStandalone', 'dStays', 'dTeamed'],
       programs: ['master', 'pStays', 'pTeamed'],
-      assignments: ['cStays'],
+      // As the client's current coach A also reads the sub-coach's assignment for them (20270502000900).
+      assignments: ['cStays', 'cSubStays'],
       meals: ['mStays'],
       briefs: ['bStays'],
     });

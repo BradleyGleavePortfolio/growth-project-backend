@@ -141,7 +141,9 @@ if (!DB_URL && process.env.CI === 'true') {
       expect(await write('A', 'UPDATE', 'session.A')).toBe(1);
       expect(await write('K', 'UPDATE', 'session.A')).toBe(0);
       expect(await reads('K', ['assign.F', 'snap.F'])).toEqual({ 'assign.F': 1, 'snap.F': 1 });
-      expect(await write('K', 'UPDATE', 'assign.F')).toBe(0);
+      // DELETE, not UPDATE: before RLSLIVE1b an API-role UPDATE of an assignment
+      // stops at 42P17 (its CHECK reads WorkoutPlan, whose client policy reads it back).
+      expect(await write('K', 'DELETE', 'assign.F')).toBe(0);
       expect(await write('K', 'UPDATE', 'snap.F')).toBe(0);
       expect(await write('K', 'DELETE', 'snap.F')).toBe(0);
       expect(await write('F', 'UPDATE', 'snap.F')).toBe(0);
