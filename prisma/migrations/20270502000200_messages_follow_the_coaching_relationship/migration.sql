@@ -25,15 +25,17 @@
 --     theirs, and by the owner admin. Written (insert, update, delete) only by
 --     the sending coach, as coach_id, for a client they coach now.
 --   * ConversationReview: conversation_review_coach_access (FOR ALL) is the
---     marker's coach while the client is still theirs. The client reads only
---     the marker of their current thread (conversation_review_client_read:
---     the client's "coach reviewed" read, MessagingService.coachReviewForClient)
---     and writes none. owner_all unchanged.
+--     marker's coach while the client is still theirs. The client reads every
+--     marker of their own threads, old ones included (history follows the
+--     client; conversation_review_client_read backs the client's "coach
+--     reviewed" read, MessagingService.coachReviewForClient) and writes none.
+--     owner_all unchanged.
 --   * community_messages: a DM is inserted by its sender only as a member of
 --     the workspace (app.is_community_workspace_member), to a recipient who is
 --     a participant of that same workspace (new app.workspace_has_participant:
---     its coach or a member who was not removed). The coach and cohort
---     branches are unchanged.
+--     its coach or a member who was not removed). The workspace coach's DM
+--     needs that same recipient rule; the coach's cohort posts and the cohort
+--     branch are unchanged.
 -- Every branch keys on app.current_user_id() and the tenure helper
 -- app.is_user_coached_by (SECURITY DEFINER, 20260607000000), never auth.uid():
 -- a Data API caller (JWT, no GUC) reads and writes nothing here.
@@ -77,8 +79,8 @@ CREATE POLICY "conversation_review_coach_access" ON "ConversationReview"
 COMMENT ON POLICY "conversation_review_coach_access" ON "ConversationReview" IS '20270502000200: the marker coach reads and writes it while the client is still theirs.';
 CREATE POLICY "conversation_review_client_read" ON "ConversationReview"
   FOR SELECT TO public
-  USING (app.current_user_id() IS NOT NULL AND "client_id" = app.current_user_id() AND app.is_user_coached_by("client_id", "coach_id"));
-COMMENT ON POLICY "conversation_review_client_read" ON "ConversationReview" IS '20270502000200: the client reads the marker of the current thread only, and writes none.';
+  USING (app.current_user_id() IS NOT NULL AND "client_id" = app.current_user_id());
+COMMENT ON POLICY "conversation_review_client_read" ON "ConversationReview" IS '20270502000200: the client reads every marker of their own threads (history follows the client), and writes none.';
 
 -- community_messages: the DM branch.
 CREATE FUNCTION app.workspace_has_participant(p_workspace_id uuid, p_user_id text)
@@ -105,7 +107,8 @@ ALTER POLICY "community_messages_author_insert" ON "community_messages"
   WITH CHECK (
     "sender_id"::text = app.current_user_id()
     AND (
-      app.is_community_workspace_coach("workspace_id")
+      (app.is_community_workspace_coach("workspace_id")
+       AND ("scope" <> 'dm' OR app.workspace_has_participant("workspace_id", "recipient_user_id")))
       OR ("scope" = 'cohort' AND app.shares_community_cohort("cohort_id"))
       OR ("scope" = 'dm' AND app.is_community_workspace_member("workspace_id")
           AND app.workspace_has_participant("workspace_id", "recipient_user_id"))

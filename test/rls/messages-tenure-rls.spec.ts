@@ -178,6 +178,7 @@ const DENIED = '42501';
       expect(await nudge(backend('A'), 'L', 'A')).toBe(1);
       expect(await touch(backend('A'), 'ConversationReview', row.rK)).toBe(1);
       expect(await dm(backend('A'), 'A', 'C', ws.L)).toBe(1);
+      expect(await dm(backend('K'), 'K', 'C', ws.K)).toBe(1);
     });
   });
 
@@ -221,6 +222,10 @@ const DENIED = '42501';
       expect(await reads(backend('L'), 'CoachNudge', row.nK)).toBe(0);
       expect(await reads(backend('A'), 'CoachNudge', row.nF)).toBe(1);
       expect(await reads(backend('A'), 'CoachNudge', row.nK)).toBe(1);
+      for (const k of ['B', 'C'] as Key[]) { // another client
+        expect(await reads(backend(k), 'CoachNudge', row.nF)).toBe(0);
+        expect(await reads(backend(k), 'CoachNudge', row.nK)).toBe(0);
+      }
       expect(await touch(backend('K'), 'CoachNudge', row.nK)).toBe(1);
       for (const k of ['K', 'F'] as Key[]) expect(await touch(backend(k), 'CoachNudge', row.nF)).toBe(0);
       expect(await remove(backend('F'), 'CoachNudge', row.nF)).toBe(0);
@@ -242,7 +247,7 @@ const DENIED = '42501';
       expect(await reads(backend('A'), 'CoachNudge', row.nK)).toBe(1);
     });
 
-    it('review markers after the move: K reads and stamps his own; F loses his; the client writes none', async () => {
+    it('review markers after the move: K reads and stamps his own; F loses his; A reads both and writes none', async () => {
       expect(await reads(backend('K'), 'ConversationReview', row.rK)).toBe(1);
       expect(await reads(backend('K'), 'ConversationReview', row.rF)).toBe(0);
       expect(await reads(backend('F'), 'ConversationReview', row.rF)).toBe(0);
@@ -251,7 +256,11 @@ const DENIED = '42501';
       expect(await touch(backend('A'), 'ConversationReview', row.rK)).toBe(0);
       expect(await remove(backend('A'), 'ConversationReview', row.rK)).toBe(0);
       expect(await reads(backend('A'), 'ConversationReview', row.rK)).toBe(1); // the current thread's marker
-      expect(await reads(backend('A'), 'ConversationReview', row.rF)).toBe(0); // the former coach's marker
+      expect(await reads(backend('A'), 'ConversationReview', row.rF)).toBe(1); // the old thread's: history follows the client
+      for (const k of ['B', 'C'] as Key[]) { // another client
+        expect(await reads(backend(k), 'ConversationReview', row.rF)).toBe(0);
+        expect(await reads(backend(k), 'ConversationReview', row.rK)).toBe(0);
+      }
       expect(await review(backend('K'), 'K', 'B')).toBe(1);
       expect(await review(backend('A'), 'L', 'A')).toBe(DENIED);
       expect(await review(backend('A'), 'K', 'B')).toBe(DENIED);
@@ -267,6 +276,10 @@ const DENIED = '42501';
       expect(await dm(backend('A'), 'A', 'C', ws.K)).toBe(DENIED);
       expect(await dm(backend('A'), 'B', 'K', ws.K)).toBe(DENIED); // as someone else
       expect(await dm('anon', 'A', 'K', ws.K)).toBe(DENIED);
+      expect(await dm(backend('K'), 'K', 'A', ws.K)).toBe(1); // the workspace coach
+      expect(await dm(backend('K'), 'K', 'C', ws.K)).toBe(DENIED); // to someone outside his workspace
+      expect(await write(backend('K'), `INSERT INTO "community_messages" ("id", "workspace_id", "cohort_id", "scope", "sender_id", "body", "updated_at")
+        VALUES ($1::uuid, $2::uuid, $3::uuid, 'cohort', $4, 'RLS post', now())`, randomUUID(), ws.K, cohort.K, id.K)).toBe(1); // his cohort posts stay
       expect(await reads(backend('A'), 'community_messages', toCoach)).toBe(1);
       expect(await reads(backend('K'), 'community_messages', toCoach)).toBe(1);
       expect(await reads(backend('L'), 'community_messages', toCoach)).toBe(0);
