@@ -20,13 +20,12 @@
 --     the clients of the lesson's coach.
 --
 -- NOW:
---   * The client's current coach reads (SELECT only) the client's sessions,
---     their sets (through the SECURITY DEFINER helper
---     app.caller_coaches_session_owner, which reads no policy) and every
---     assignment of the client, from any coach's time. The snapshot SELECT
---     policy is unchanged: its current-coach branch now passes, because the
---     assignment it reads is visible to that coach. A former coach reads none
---     of it once the client has moved; another coach never did.
+--   * The client's current coach reads (SELECT only) the client's sessions
+--     and every assignment of the client, from any coach's time. The set and
+--     snapshot SELECT policies are unchanged: their current-coach branches now
+--     pass, because the session or assignment they read is visible to that
+--     coach. A former coach reads none of it once the client has moved;
+--     another coach never did.
 --   * Writes stay where they were. The coach branch of the ExerciseSet
 --     write policies, and the bare assigning-coach branch of the snapshot
 --     write policies, could only pass through a parent row the coach could
@@ -37,41 +36,22 @@
 --   * A client reads their own program copy (client_id) and the lessons of
 --     their current coach. Every other WorkoutProgram and Lesson branch is
 --     unchanged.
--- Unchanged: workout_session_owner_access, assignment_client_read,
+-- Unchanged: workout_session_owner_access, p_exerciseset_select,
+-- p_clientworkoutassignmentsnapshot_select, assignment_client_read,
 -- assignment_coach_manage, app.caller_coaches_client and every
 -- *_service_role_all policy.
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
 
-CREATE OR REPLACE FUNCTION app.caller_coaches_session_owner(target_workout_id text)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = ''
-AS $$
-  SELECT app.current_user_id() IS NOT NULL AND EXISTS (
-    SELECT 1
-    FROM public."WorkoutSession" ws
-    WHERE ws."id" = target_workout_id
-      AND app.is_current_coach_of(ws."user_id")
-  )
-$$;
-COMMENT ON FUNCTION app.caller_coaches_session_owner(text) IS
-  '20270502000900: true when the caller is the current coach of the user who logged the workout session. Reads no WorkoutSession policy.';
-REVOKE ALL ON FUNCTION app.caller_coaches_session_owner(text) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION app.caller_coaches_session_owner(text) TO authenticated, service_role;
-
--- H09: the current coach reads the client's sessions and sets.
+-- H09: the current coach reads the client's sessions, and through them
+-- (p_exerciseset_select, unchanged) their sets.
 DROP POLICY IF EXISTS "workout_session_current_coach_select" ON "WorkoutSession";
 CREATE POLICY "workout_session_current_coach_select" ON "WorkoutSession"
   FOR SELECT TO public
   USING (app.current_user_id() IS NOT NULL AND app.is_current_coach_of("user_id"));
 COMMENT ON POLICY "workout_session_current_coach_select" ON "WorkoutSession" IS '20270502000900: the client''s current coach reads the session.';
 
-ALTER POLICY "p_exerciseset_select" ON "ExerciseSet"
-  USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND (EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."user_id" = app.current_user_id()) OR app.caller_coaches_session_owner("workout_id")))));
 ALTER POLICY "p_exerciseset_insert" ON "ExerciseSet"
   WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."user_id" = app.current_user_id()))));
 ALTER POLICY "p_exerciseset_update" ON "ExerciseSet"
@@ -79,7 +59,6 @@ ALTER POLICY "p_exerciseset_update" ON "ExerciseSet"
   WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."user_id" = app.current_user_id()))));
 ALTER POLICY "p_exerciseset_delete" ON "ExerciseSet"
   USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND EXISTS (SELECT 1 FROM public."WorkoutSession" ws WHERE ws."id" = "ExerciseSet"."workout_id" AND ws."user_id" = app.current_user_id()))));
-COMMENT ON POLICY "p_exerciseset_select" ON "ExerciseSet" IS '20270502000900: owner admin, the user who logged the session, or that user''s current coach (app.caller_coaches_session_owner) reads the set.';
 COMMENT ON POLICY "p_exerciseset_insert" ON "ExerciseSet" IS '20270502000900: owner admin, or the user who logged the session, adds a set.';
 COMMENT ON POLICY "p_exerciseset_update" ON "ExerciseSet" IS '20270502000900: owner admin, or the user who logged the session, changes a set; CHECK re-verifies the session.';
 COMMENT ON POLICY "p_exerciseset_delete" ON "ExerciseSet" IS '20270502000900: owner admin, or the user who logged the session, deletes a set.';

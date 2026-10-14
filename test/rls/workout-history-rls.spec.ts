@@ -121,15 +121,18 @@ if (!DB_URL && process.env.CI === 'true') {
       await prisma.$executeRaw`UPDATE "User" SET "coach_id" = ${u.K} WHERE "id" = ${u.A}`;
     });
 
-    it('the current coach reads A\'s sessions, sets and F-era assignment; the former coach and another coach read none', async () => {
+    it('the current coach reads A\'s sessions, sets and F-era assignment; the former coach, another coach and other clients read none', async () => {
       expect(await reads('A', HISTORY)).toEqual(all(HISTORY, 1));
       expect(await reads('K', HISTORY)).toEqual(all(HISTORY, 1));
       expect(await reads('F', HISTORY)).toEqual(all(HISTORY, 0));
       expect(await reads('L', HISTORY)).toEqual(all(HISTORY, 0));
       expect(await reads('B', HISTORY)).toEqual(all(HISTORY, 0));
+      expect(await reads('C', HISTORY)).toEqual(all(HISTORY, 0));
       const C_ROWS = ['session.C', 'set.C', 'assign.C', 'snap.C'];
+      expect(await reads('C', C_ROWS)).toEqual(all(C_ROWS, 1));
       expect(await reads('L', C_ROWS)).toEqual(all(C_ROWS, 1));
       expect(await reads('K', C_ROWS)).toEqual(all(C_ROWS, 0));
+      expect(await reads('A', C_ROWS)).toEqual(all(C_ROWS, 0));
     });
 
     it('the new reads write nothing: only A writes their sets, and only the assigning coach writes a snapshot', async () => {
@@ -180,19 +183,9 @@ if (!DB_URL && process.env.CI === 'true') {
         out[r] = n;
       }
       out.write = await tx.$executeRawUnsafe(`UPDATE "ExerciseSet" SET "notes" = "notes" WHERE "id" = $1`, id('set.A'));
+      out.snapWrite = await tx.$executeRawUnsafe(`UPDATE "ClientWorkoutAssignmentSnapshot" SET "plan_name" = "plan_name" WHERE "id" = $1`, id('snap.F'));
       return out;
     });
-    expect(seen).toEqual({ ...all(rows, 1), write: 1 });
-  });
-
-  it('the helper is SECURITY DEFINER with an empty search_path, and only the API and service roles run it', async () => {
-    expect(await prisma.$queryRaw`
-      SELECT p."prosecdef" AS "definer", p."proconfig" AS "config",
-             has_function_privilege('anon', p."oid", 'EXECUTE') AS "anon",
-             has_function_privilege('authenticated', p."oid", 'EXECUTE') AS "authed",
-             has_function_privilege('service_role', p."oid", 'EXECUTE') AS "service"
-      FROM pg_proc p JOIN pg_namespace n ON n."oid" = p."pronamespace"
-      WHERE n."nspname" = 'app' AND p."proname" = 'caller_coaches_session_owner'`)
-      .toEqual([{ definer: true, config: ['search_path=""'], anon: false, authed: true, service: true }]);
+    expect(seen).toEqual({ ...all(rows, 1), write: 1, snapWrite: 1 });
   });
 });
