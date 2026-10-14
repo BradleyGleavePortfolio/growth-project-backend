@@ -26,6 +26,7 @@ import { RomanController } from '../../src/roman/roman.controller';
 import { RomanFeatureGuard } from '../../src/roman/roman-feature.guard';
 import { RomanService, type RomanCaller } from '../../src/roman/roman.service';
 import { ROMAN_REQUIRES_COACH } from '../../src/roman/roman-requires-coach';
+import { fakeOf } from '../ai-egress/ai-egress.fakes';
 import { FakeLedgerPrisma, type LedgerRow } from './_support/fake-ledger-prisma';
 
 const ENV = ['FEATURE_AI_CONSENT_LEDGER_ENABLED', 'FEATURE_ROMAN_CHAT_ENABLED', 'FEATURE_ROMAN_MEMORY'];
@@ -45,7 +46,9 @@ describe('W-CONSENT: a client with no coach is asked once; Roman waits for a coa
   let roman: ReturnType<typeof makeRoman>;
 
   // Roman's consent gate is the real one: RomanService.assertMayUseAi over the real egress gate.
-  const gate = { egress: null as unknown as AiEgressService, dataSubjectFor: RomanService.prototype.dataSubjectFor };
+  const gate: { egress?: AiEgressService; dataSubjectFor: RomanService['dataSubjectFor'] } = {
+    dataSubjectFor: RomanService.prototype.dataSubjectFor,
+  };
   function makeRoman() {
     const now = new Date('2026-10-14T07:00:00.000Z');
     const session = { id: 'sess_1', surface: 'client', message_count: 0, started_at: now, last_activity_at: now };
@@ -53,7 +56,7 @@ describe('W-CONSENT: a client with no coach is asked once; Roman waits for a coa
       openOrResumeSession: jest.fn(async () => session),
       getOwnedSession: jest.fn(async () => session),
       assertWithinRateLimit: jest.fn(async () => undefined),
-      assertMayUseAi: jest.fn((c: RomanCaller) => RomanService.prototype.assertMayUseAi.call(gate as unknown as RomanService, c)),
+      assertMayUseAi: jest.fn((c: RomanCaller) => RomanService.prototype.assertMayUseAi.call(fakeOf<RomanService>(gate), c)),
       assertDailyCapacity: jest.fn(async () => undefined),
       assertCoachPoolOpen: jest.fn(async () => null),
       isSafetyShortCircuit: jest.fn(async () => false),
