@@ -57,9 +57,11 @@ const statements = (sql: string): string[] => {
 };
 
 // Supabase's storage shape as far as row security goes: RLS on, ALL granted to
-// the API roles, owner supabase_storage_admin, Supabase's own foldername(), a
-// private size-limited voice-notes bucket and a public bucket with a normal
-// scoped policy (the control that the fence touches only voice-notes).
+// the API roles, owner supabase_storage_admin with ALL on the schema (as
+// Supabase grants it; the bucket_id foreign-key check runs as that owner),
+// Supabase's own foldername(), a private size-limited voice-notes bucket and a
+// public bucket with a normal scoped policy (the control that the fence touches
+// only voice-notes).
 const STORAGE_FIXTURE = `
 DO $roles$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_storage_admin') THEN
@@ -81,6 +83,7 @@ END $f$;
 ALTER TABLE storage.buckets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 GRANT USAGE ON SCHEMA storage TO anon, authenticated, service_role;
+GRANT ALL ON SCHEMA storage TO supabase_storage_admin;
 GRANT ALL ON storage.buckets, storage.objects TO anon, authenticated, service_role;
 ALTER TABLE storage.buckets OWNER TO supabase_storage_admin;
 ALTER TABLE storage.objects OWNER TO supabase_storage_admin;
@@ -110,7 +113,7 @@ const backend = (key: Key): Who => ({ role: 'authenticated', key, guc: true });
 const anon: Who = { role: 'anon' };
 const server: Who = { role: 'service_role' };
 const ROLE: Record<Key, string> = { A: 'student', B: 'student', K: 'coach' };
-const DENIED = '42501';
+const DENIED = '42501 rls'; // a row-security refusal, never a missing grant
 
 (DB_URL ? describe : describe.skip)('voice-note objects are reachable only through the server', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
@@ -135,13 +138,14 @@ const DENIED = '42501';
       }
       return query(tx);
     });
-  /** Rows written, or the SQLSTATE of the refusal. */
+  /** Rows written, or the SQLSTATE of the refusal (+ ' rls' when row security refused it). */
   const write = async (who: Who, sql: string, ...params: unknown[]): Promise<number | string> => {
     try {
       return await as(who, (tx) => tx.$executeRawUnsafe(sql, ...params));
     } catch (e) {
-      const err = e as { code?: string; meta?: { code?: string } };
-      return String(err.code === 'P2010' ? err.meta?.code : err.code);
+      const err = e as { code?: string; meta?: { code?: string }; message?: string };
+      const state = String(err.code === 'P2010' ? err.meta?.code : err.code);
+      return /violates row-level security policy/.test(String(err.message)) ? `${state} rls` : state;
     }
   };
   const sees = (who: Who, name: string, bucket = 'voice-notes') =>
