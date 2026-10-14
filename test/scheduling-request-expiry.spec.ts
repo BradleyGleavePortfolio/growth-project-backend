@@ -255,6 +255,8 @@ describe('S-SCHED-5 request lifecycle around the clear time', () => {
 
   it('a client move that asks the coach again starts a fresh answer window', async () => {
     const { svc } = harness();
+    // C4-NOTICE: 21 hours before the start, so this coach allows 12 hours' notice.
+    await svc.updateMyBookingOptions(COACH, { cancel_notice_hours: 12 });
     const r = await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
     jest.setSystemTime(new Date('2026-10-05T20:00:00.000Z'));
     const moved = await svc.rescheduleSession(CLIENT, r.id, {
