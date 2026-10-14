@@ -789,11 +789,13 @@ describe('ownership (T4)', () => {
     expect((await failure(svc.getSession(OTHER_COACH, 'head-past'))).code).toBe(
       'SESSION_NOT_FOUND',
     );
-    // The client keeps every session; the one still ahead stays on the former
-    // coach's calendar so it can still be cancelled.
+    // The client keeps every session. The one still ahead leaves the former
+    // coach too (owner HIST-2b: the move cancels it, and every session with a
+    // moved client leaves the former coach).
     expect((await pastIds(moved)).sort()).toEqual(['head-past', 'sub-past']);
     expect((await svc.getSession(moved, 'head-past')).coach_notes_md).toBeNull();
-    expect((await svc.getSession(COACH, 'ahead')).id).toBe('ahead');
+    expect((await svc.getSession(moved, 'ahead')).id).toBe('ahead');
+    expect((await failure(svc.getSession(COACH, 'ahead'))).code).toBe('SESSION_NOT_FOUND');
   });
 
   it('only the session coach approves, declines, completes or adds the link', async () => {
