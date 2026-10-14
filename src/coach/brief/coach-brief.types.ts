@@ -86,7 +86,8 @@ export interface BriefContextHeadCoach {
   dunning_in_progress: number;
   dunning_amount_cents: number;
 
-  // Empty, and team_size 0, while Team Mode is off (FEATURE_TEAM_MODE).
+  // Empty, and team_size 0, while Team Mode is off (FEATURE_TEAM_MODE); the
+  // API then leaves both keys out (BriefContextHeadCoachView).
   sub_coach_highlights: SubCoachHighlight[];
 
   // BRIEFTEAM (SUBM-BRIEF). Optional: briefs stored before it have neither.
@@ -94,6 +95,11 @@ export interface BriefContextHeadCoach {
   // Never sent to the AI writer (headCoachAiContext): not a business metric.
   activity?: HeadBriefActivity;
 }
+
+// A head brief as stored and sent: while Team Mode is off it has no team_size
+// and no sub_coach_highlights key (headCoachTeamView).
+export type BriefContextHeadCoachView = Omit<BriefContextHeadCoach, 'team_size' | 'sub_coach_highlights'> &
+  Partial<Pick<BriefContextHeadCoach, 'team_size' | 'sub_coach_highlights'>>;
 
 // The head coach's roster on the previous local day (`date`): clients who
 // joined (a code redemption, or an account created already on the roster)
@@ -112,8 +118,8 @@ export interface HeadBriefActivity {
   check_ins_date: string;
   check_ins_completed: number;
   check_ins_not_shared: number;
-  // The head coach's own clients with an unread message right now. While
-  // Team Mode is on, clients delegated to a sub-coach are left out.
+  // The head coach's own clients with an unread message right now; clients
+  // delegated to a sub-coach are always left out.
   clients_messaged: number;
 }
 
@@ -161,7 +167,7 @@ export interface BriefSummary {
   date: string;
   brief_mode: BriefMode;
   narrative: string;
-  brief_context: BriefContext | BriefContextHeadCoach;
+  brief_context: BriefContext | BriefContextHeadCoachView;
   // Solo + sub-coach briefs use ActionItem[]. Head-coach briefs use
   // HeadCoachActionItem (no client identifiers) plus, since BRIEFTEAM,
   // message_unread ActionItems for the head coach's own clients only

@@ -14,7 +14,7 @@ The Coach Brief is a once-per-day narrative that the TGP platform writes to a co
 - Mode-aware:
   - **solo_coach** — the coach manages their own clients. Brief covers their direct roster.
   - **sub_coach** — the coach is a sub-coach delegated to a head coach. Brief covers only the clients open-assigned to them via `SubCoachAssignment`.
-  - **head_coach** — the coach runs a team. Business metrics: revenue, MRR, dunning queue value, team headcount, sub-coach highlights, and (BRIEFTEAM, owner ruling SUBM-BRIEF) yesterday's net clients and check-ins and the head coach's own clients who messaged. The only client identifiers are the `message_unread` items for the head coach's **own** clients; never a sub-coach's client, workout ids or weight logs. Team-only items (sub-coach count, highlights, `sub_coach_operations`, `team_performance`) need `FEATURE_TEAM_MODE=true` (default off).
+  - **head_coach** — the coach runs a team. Business metrics: revenue, MRR, dunning queue value, team headcount, sub-coach highlights, and (BRIEFTEAM, owner ruling SUBM-BRIEF) yesterday's net clients and check-ins and the head coach's own clients who messaged. The only client identifiers are the `message_unread` items for the head coach's **own** clients; never a sub-coach's client, workout ids or weight logs. Team-only items (sub-coach count, highlights, `sub_coach_operations`, `team_performance`) need `FEATURE_TEAM_MODE=true` (default off); while it is off the `team_size` and `sub_coach_highlights` keys are absent, and a head brief stored under the other state is written again today and withheld in history.
 
 A deterministic fallback (no Claude) is used when the Anthropic call fails or the model output fails the voice contract validation.
 

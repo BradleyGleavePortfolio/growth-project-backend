@@ -58,6 +58,7 @@ import {
   ActionItem,
   BriefContext,
   BriefContextHeadCoach,
+  BriefContextHeadCoachView,
   BriefMode,
   BriefStatus,
   BriefSummary,
@@ -522,8 +523,6 @@ function buildHeadCoachFallbackSentences(ctx: BriefContextHeadCoach): string[] {
     sentences.push(
       `${ctx.team_size} ${plural(ctx.team_size, 'sub-coach supports', 'sub-coaches support')} ${ctx.team_clients_total} active ${plural(ctx.team_clients_total, 'client', 'clients')}, with ${ctx.new_clients_last_24h} new in the last 24 hours.`,
     );
-  } else {
-    sentences.push('No sub-coaches are active on the team right now.');
   }
 
   return sentences;
@@ -751,6 +750,14 @@ export function buildHeadCoachActionItems(
 export function headCoachAiContext(ctx: BriefContextHeadCoach): BriefContextHeadCoach {
   const { activity: _activity, ...business } = ctx;
   return business;
+}
+
+// BRIEFTEAM (Sol B2): while Team Mode is off a head brief is stored and sent
+// with no team key at all (the AI writer and fallback still read 0 / none).
+export function headCoachTeamView(ctx: BriefContextHeadCoach, teamMode: boolean): BriefContextHeadCoachView {
+  if (teamMode) return ctx;
+  const { team_size: _size, sub_coach_highlights: _highlights, ...rest } = ctx;
+  return rest;
 }
 
 // ─── Service ────────────────────────────────────────────────────────────
@@ -1131,6 +1138,7 @@ export class CoachBriefService {
   ): Promise<{
     context: BriefContextHeadCoach;
     actionItems: Array<ActionItem | HeadCoachActionItem>;
+    teamMode: boolean;
   }> {
     // Coach metadata
     const coachRow = await this.prisma.user.findUnique({
@@ -1378,8 +1386,7 @@ export class CoachBriefService {
     const team = await aggregateHeadBriefTeam(this.prisma, this.consent, {
       headCoachId: coachId,
       rosterClientIds: tenantClientIds,
-      delegatedClientIds,
-      teamMode,
+      ownClientIds: personallyManagedClients.map((c) => c.id),
       yesterday: {
         date: yesterday,
         start: startOfDayInTz(yesterday, timezone),
@@ -1443,7 +1450,7 @@ export class CoachBriefService {
       ),
     ].sort((a, b) => a.priority - b.priority || a.type.localeCompare(b.type));
 
-    return { context, actionItems };
+    return { context, actionItems, teamMode };
   }
 
   /**
@@ -1770,8 +1777,9 @@ export class CoachBriefService {
       });
       if (existing && existing.status === 'generated') {
         // B-872-SOL-130-1: a brief stored before a client turned off a Coach
-        // sharing switch is written again under the current switches.
-        if (writtenBefore(existing, await this.lastSharingWithdrawal(coachId))) {
+        // sharing switch is written again under the current switches, and so
+        // is a head brief written under the other Team Mode state (BRIEFTEAM).
+        if (headBriefMisfits(existing) || writtenBefore(existing, await this.lastSharingWithdrawal(coachId))) {
           return this.generateBrief(coachId, timezone, briefDate, { force: true });
         }
         return this.toResponse(existing);
@@ -1858,6 +1866,7 @@ export class CoachBriefService {
       const briefMode = await this.detectBriefMode(coachId);
 
       let context: BriefContext | BriefContextHeadCoach;
+      let stored: BriefContext | BriefContextHeadCoachView;
       let actionItems: Array<ActionItem | HeadCoachActionItem>;
       // R2b — what the AI may see (null = deterministic narrative only).
       let aiInput: BriefAiInput | null;
@@ -1871,6 +1880,7 @@ export class CoachBriefService {
           briefDate,
         );
         context = headRes.context;
+        stored = headCoachTeamView(context, headRes.teamMode);
         actionItems = headRes.actionItems;
         // Business metrics only (headcounts, money totals): no client
         // identifier and no health / activity field, pinned by the spec.
@@ -1891,6 +1901,7 @@ export class CoachBriefService {
           agg.context.brief_mode = 'sub_coach';
         }
         context = agg.context;
+        stored = agg.context;
         actionItems = buildActionItems({
           unreadThreads: agg.unreadThreads,
           flaggedWeightLogs: agg.flaggedWeightLogs,
@@ -1922,7 +1933,7 @@ export class CoachBriefService {
           // accidentally flag this freshly-generated row.
           generation_started_at: null,
           narrative,
-          brief_context: context as unknown as Prisma.JsonObject,
+          brief_context: stored as unknown as Prisma.JsonObject,
           action_items: actionItems as unknown as Prisma.JsonArray,
           generated_by,
           brief_mode: briefMode,
@@ -2168,7 +2179,8 @@ export class CoachBriefService {
       row.narrative &&
       row.brief_context &&
       row.action_items &&
-      briefMode
+      briefMode &&
+      !headBriefMisfits(row)
     ) {
       const generatedBy =
         row.generated_by === 'ai' ? 'ai' : 'fallback';
@@ -2178,7 +2190,7 @@ export class CoachBriefService {
         narrative: row.narrative,
         brief_context: row.brief_context as unknown as
           | BriefContext
-          | BriefContextHeadCoach,
+          | BriefContextHeadCoachView,
         // Head-coach items mix HeadCoachActionItem with the own-client
         // message_unread ActionItems; solo + sub-coach use ActionItem[].
         action_items: row.action_items as unknown as Array<ActionItem | HeadCoachActionItem>,
@@ -2200,6 +2212,17 @@ export class CoachBriefService {
 }
 
 // ─── Small helpers ──────────────────────────────────────────────────────
+
+/**
+ * BRIEFTEAM (Sol B2): true for a stored head brief written under the other
+ * Team Mode state (team keys present = on). It is never sent: today's brief is
+ * written again and history shows the day without its content.
+ */
+function headBriefMisfits(row: { brief_mode: string | null; brief_context: Prisma.JsonValue | null }): boolean {
+  const ctx = row.brief_context;
+  if (row.brief_mode !== 'head_coach' || !ctx || typeof ctx !== 'object' || Array.isArray(ctx)) return false;
+  return ('team_size' in ctx) !== isTeamModeEnabled();
+}
 
 /** B-872-SOL-130-1: true when a stored brief was written before `withdrawnAt`. */
 function writtenBefore(row: { generated_at: Date | null }, withdrawnAt: Date | null): boolean {

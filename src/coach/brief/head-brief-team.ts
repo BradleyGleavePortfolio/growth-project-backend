@@ -14,8 +14,9 @@ export interface HeadBriefTeamInput {
   headCoachId: string;
   // Active students: own (User.coach_id = head) plus delegated.
   rosterClientIds: string[];
-  delegatedClientIds: ReadonlySet<string>;
-  teamMode: boolean;
+  // The head coach's own clients: the roster minus every client delegated to
+  // a sub-coach, whatever the Team Mode switch says (HEAD-EXTRA 2).
+  ownClientIds: string[];
   // The previous local day: 'YYYY-MM-DD' and its instants in the coach's zone.
   yesterday: { date: string; start: Date; end: Date };
 }
@@ -38,12 +39,9 @@ export async function aggregateHeadBriefTeam(
   consent: ConsentService | undefined,
   input: HeadBriefTeamInput,
 ): Promise<HeadBriefTeamResult> {
-  const { headCoachId: head, rosterClientIds: roster, yesterday } = input;
+  const { headCoachId: head, rosterClientIds: roster, ownClientIds: ownIds, yesterday } = input;
   const window = { gte: yesterday.start, lte: yesterday.end };
 
-  // Clients who messaged: the head coach's own clients. With Team Mode on, a
-  // delegated client's thread is their sub-coach's work, so it is left out.
-  const ownIds = input.teamMode ? roster.filter((id) => !input.delegatedClientIds.has(id)) : roster;
   const sharing = await coachSharingCheck(consent, prisma, head);
   const checkInIds = roster.length ? await sharing(ConsentScope.FITNESS_HABITS_PROGRESS, roster) : [];
 
@@ -72,19 +70,21 @@ export async function aggregateHeadBriefTeam(
       : Promise.resolve(0),
     prisma.userBlock.findMany({ where: { blocker_id: head }, select: { blocked_id: true } }),
     // Unread = written by the client and not yet read (the inbox rule in
-    // MessagingService.unreadCountForCoach): newest per client.
+    // MessagingService.unreadCountForCoach), own clients still on the head
+    // coach's roster.
     ownIds.length
       ? prisma.coachMessage.findMany({
           where: {
             coach_id: head,
             client_id: { in: ownIds },
             sender_id: { in: ownIds },
+            client: { coach_id: head, archived_at: null },
             read_at: null,
             ...(isMessagingCoreV2Enabled() ? { deleted_at: null } : {}),
           },
           select: { client_id: true, body: true, client: { select: { name: true } } },
           orderBy: { created_at: 'desc' },
-          distinct: ['client_id'],
+          take: 100, // deduped by client below, as in the solo brief
         })
       : Promise.resolve([]),
   ]);
@@ -94,10 +94,12 @@ export async function aggregateHeadBriefTeam(
     ...createdOnRoster.map((u) => u.id),
   ]).size;
 
-  const blocked = new Set(blocks.map((b) => b.blocked_id));
+  // Blocked clients are left out; the first (newest) message per client wins.
+  const skip = new Set(blocks.map((b) => b.blocked_id));
   const unreadThreads: HeadBriefUnreadThread[] = [];
   for (const m of unread) {
-    if (!m.client_id || blocked.has(m.client_id)) continue;
+    if (!m.client_id || skip.has(m.client_id)) continue;
+    skip.add(m.client_id);
     unreadThreads.push({
       client_id: m.client_id,
       client_name: m.client?.name ?? 'Client',
