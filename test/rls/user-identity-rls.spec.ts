@@ -147,15 +147,14 @@ const AUTH_UID_POLICIES = [
   describe('under down.sql (the state before, exactly)', () => {
     beforeAll(() => apply('down.sql'));
 
-    it('restores user_self_access, the table-wide UPDATE grant and no helpers', async () => {
+    it('restores user_self_access and the table-wide UPDATE grant', async () => {
       expect(await userPolicies()).toEqual([{
         name: 'user_self_access', cmd: 'ALL', roles: '{public}',
         qual: '(id = app.current_user_id())', check: '(id = app.current_user_id())', comment: null,
       }]);
-      const [g] = await prisma.$queryRaw<{ a: boolean; u: boolean; h: string | null }[]>`
-        SELECT has_table_privilege('anon', '"User"', 'UPDATE') AS "a", has_table_privilege('authenticated', '"User"', 'UPDATE') AS "u",
-               to_regprocedure('app.caller_current_coach_id()')::text AS "h"`;
-      expect(g).toEqual({ a: true, u: true, h: null });
+      const [g] = await prisma.$queryRaw<{ a: boolean; u: boolean }[]>`
+        SELECT has_table_privilege('anon', '"User"', 'UPDATE') AS "a", has_table_privilege('authenticated', '"User"', 'UPDATE') AS "u"`;
+      expect(g).toEqual({ a: true, u: true });
     });
 
     it('the hole: A rewrites their own role; a coach cannot read their own client', async () => {
@@ -180,7 +179,7 @@ const AUTH_UID_POLICIES = [
     it('four policies, all keyed on app.current_user_id() only', async () => {
       const policies = await userPolicies();
       expect(policies.map((p) => ({ name: p.name, cmd: p.cmd, roles: p.roles, qual: p.qual, check: p.check }))).toEqual([
-        { name: 'user_client_reads_current_coach', cmd: 'SELECT', roles: '{authenticated}', qual: '(id = app.caller_current_coach_id())', check: null },
+        { name: 'user_client_reads_current_coach', cmd: 'SELECT', roles: '{authenticated}', qual: 'app.is_user_coached_by(app.current_user_id(), id)', check: null },
         { name: 'user_current_coach_reads_client', cmd: 'SELECT', roles: '{authenticated}', qual: 'app.is_current_coach_of(id)', check: null },
         { name: 'user_self_select', cmd: 'SELECT', roles: '{public}', qual: '(id = app.current_user_id())', check: null },
         { name: 'user_self_update', cmd: 'UPDATE', roles: '{public}', qual: '(id = app.current_user_id())', check: '(id = app.current_user_id())' },
@@ -193,26 +192,14 @@ const AUTH_UID_POLICIES = [
       expect(await updatable('anon')).toEqual([]);
     });
 
-    it('the new helper: SECURITY DEFINER, STABLE, fixed search_path, owner bypasses RLS, not executable by anon or PUBLIC', async () => {
-      const helpers = await prisma.$queryRaw<Record<string, unknown>[]>`
-        SELECT p.oid::regprocedure::text AS "fn", p."prosecdef" AS "definer", p."provolatile" AS "volatility",
-               p."proconfig"::text AS "config", r."rolname" AS "owner", (r."rolsuper" OR r."rolbypassrls") AS "ownerBypasses",
-               has_function_privilege('anon', p.oid, 'EXECUTE') AS "anon",
-               has_function_privilege('authenticated', p.oid, 'EXECUTE') AS "authenticated",
-               EXISTS (SELECT 1 FROM aclexplode(p."proacl") x WHERE x."grantee" = 0) AS "public"
-        FROM pg_proc p JOIN pg_roles r ON r.oid = p."proowner"
-        WHERE p.oid = 'app.caller_current_coach_id()'::regprocedure`;
-      expect(helpers).toEqual([{ fn: 'app.caller_current_coach_id()', definer: true, volatility: 's',
-        config: '{"search_path=pg_catalog, public"}', owner: 'postgres', ownerBypasses: true, anon: false, authenticated: true, public: false }]);
-    });
-
-    it('app.is_current_coach_of never re-enters "User" policies: it reads no table and calls the definer is_user_coached_by', async () => {
+    it('neither read branch re-enters "User" policies: both reach "User" only through the definer is_user_coached_by', async () => {
       const fns = await prisma.$queryRaw<{ fn: string; definer: boolean; ownerBypasses: boolean; src: string }[]>`
         SELECT p.oid::regprocedure::text AS "fn", p."prosecdef" AS "definer", (r."rolsuper" OR r."rolbypassrls") AS "ownerBypasses",
                p."prosrc" AS "src"
         FROM pg_proc p JOIN pg_roles r ON r.oid = p."proowner"
         WHERE p.oid IN ('app.is_current_coach_of(text)'::regprocedure, 'app.is_user_coached_by(text,text)'::regprocedure) ORDER BY 1`;
-      // K reading A (1, below) runs this branch live; a policy that re-entered "User" would raise 42P17.
+      // K reading A and A reading K (1, below) run both branches live; a loop back into "User" policies
+      // through a function would fail them (it shows as 54001, stack depth exceeded).
       const src = fns.map((f) => f.src.replace(/\s+/g, ' ').trim());
       expect(fns.map(({ fn, definer }) => ({ fn, definer }))).toEqual([
         { fn: 'app.is_current_coach_of(text)', definer: false }, { fn: 'app.is_user_coached_by(text,text)', definer: true }]);
@@ -242,8 +229,7 @@ const AUTH_UID_POLICIES = [
         WHERE n."nspname" NOT IN ('pg_catalog', 'information_schema') AND p."prosrc" LIKE '%"User"%' ORDER BY 1`;
       expect(fns.filter((f) => !f.safe)).toEqual([]);
       expect(fns.map((f) => f.fn)).toEqual(expect.arrayContaining([
-        'app.caller_coaches_client(text)', 'app.caller_current_coach_id()',
-        'app.is_user_coached_by(text,text)']));
+        'app.caller_coaches_client(text)', 'app.is_user_coached_by(text,text)']));
     });
 
     it('every other policy that sub-selects "User" reads only the caller\'s own row', async () => {

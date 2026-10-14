@@ -3,7 +3,7 @@
 -- coach_id, supabase_id) and delete it, and coach and client lose each other's
 -- row. Restores the state before it exactly: user_self_access (FOR ALL TO
 -- public, the 20270410000000 text, no comment), table-wide UPDATE for anon and
--- authenticated (the Supabase default grant), and no app.caller_current_coach_id().
+-- authenticated (the Supabase default grant).
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
@@ -20,7 +20,5 @@ CREATE POLICY "user_self_access" ON public."User"
 -- REVOKE on the table clears the column grant; then the table-wide grant returns.
 REVOKE UPDATE ON public."User" FROM anon, authenticated;
 GRANT UPDATE ON public."User" TO anon, authenticated;
-
-DROP FUNCTION IF EXISTS app.caller_current_coach_id();
 
 COMMIT;
