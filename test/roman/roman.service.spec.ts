@@ -1252,7 +1252,7 @@ describe('RomanService — rate limiting', () => {
     const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     await expect(
       svc.assertWithinRateLimit({ id: 'u_owner', role: 'owner' }),
-    ).resolves.toBeUndefined();
+    ).resolves.toBeNull(); // nothing counted, so nothing to give back
   });
 });
 
