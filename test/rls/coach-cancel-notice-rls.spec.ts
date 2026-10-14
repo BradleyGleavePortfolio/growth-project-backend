@@ -25,7 +25,12 @@ type Key = 'A' | 'B' | 'a' | 'b';
 type Who = { key: Key; guc: boolean; id?: string };
 const backend = (key: Key): Who => ({ key, guc: true });
 const dataApi = (key: Key): Who => ({ key, guc: false });
-const ROLE: Record<Key, 'coach' | 'student'> = { A: 'coach', B: 'coach', a: 'student', b: 'student' };
+const ROLE: Record<Key, 'coach' | 'student'> = {
+  A: 'coach',
+  B: 'coach',
+  a: 'student',
+  b: 'student',
+};
 const COACH_OF: Record<Key, Key | null> = { A: null, B: null, a: 'A', b: 'B' };
 const NOTICE: Record<'A' | 'B', number> = { A: 12, B: 48 };
 const DENIED = '42501';
@@ -137,10 +142,12 @@ const DENIED = '42501';
       where: { user_id: { in: [id.A, id.B] } },
       select: { user_id: true, booking_cancel_notice_hours: true },
     });
-    expect(Object.fromEntries(rows.map((r) => [r.user_id, r.booking_cancel_notice_hours]))).toEqual({
-      [id.A]: NOTICE.A,
-      [id.B]: NOTICE.B,
-    });
+    expect(Object.fromEntries(rows.map((r) => [r.user_id, r.booking_cancel_notice_hours]))).toEqual(
+      {
+        [id.A]: NOTICE.A,
+        [id.B]: NOTICE.B,
+      },
+    );
   });
 
   it('the Data API model (no backend id) reads and changes nothing, even the coach row itself', async () => {
