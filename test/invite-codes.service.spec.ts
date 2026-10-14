@@ -47,7 +47,7 @@ describe('InviteCodesService', () => {
   });
 
   describe('createForCoach', () => {
-    it('produces a code with the GP- prefix and unambiguous alphabet', async () => {
+    it('produces a code with the TGP- prefix and unambiguous alphabet', async () => {
       prismaMock.inviteCode.create.mockImplementation(async ({ data }: any) => ({
         id: 'ic-1',
         ...data,
@@ -56,9 +56,9 @@ describe('InviteCodesService', () => {
         revoked: false,
       }));
       const result = await service.createForCoach('coach-1', {});
-      expect(result.code).toMatch(/^GP-[A-Z2-9]{6}$/);
+      expect(result.code).toMatch(/^TGP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{7}$/);
       // Confusable chars must not appear in the alphabet.
-      expect(result.code.slice(3)).not.toMatch(/[01OIL]/);
+      expect(result.code.slice(4)).not.toMatch(/[01OIL]/);
       expect(result.coach_id).toBe('coach-1');
     });
 
@@ -76,7 +76,7 @@ describe('InviteCodesService', () => {
       });
       const result = await service.createForCoach('coach-1', {});
       expect(calls).toBe(3);
-      expect(result.code).toMatch(/^GP-/);
+      expect(result.code).toMatch(/^TGP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{7}$/);
     });
 
     it('rejects an expires_at in the past', async () => {
