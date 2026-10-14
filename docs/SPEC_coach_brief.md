@@ -98,7 +98,7 @@ All routes are mounted under `/coach/brief` and gated by `JwtAuthGuard + CoachGu
 
 | Table                  | RLS policy                                                                                                |
 |------------------------|-----------------------------------------------------------------------------------------------------------|
-| `CoachBrief`           | service_role bypass; coach SELECT on own rows only. **No** coach INSERT / UPDATE — server-only writes.    |
+| `CoachBrief`           | service_role bypass **only** (BRIEFTEAM2, 20270425000000): reads go through the API, which re-checks sharing, moves and delegation. Server-only writes. |
 | `CoachDailyLog`        | service_role bypass; coach SELECT / INSERT / UPDATE on own rows.                                          |
 | `CoachBriefPreferences`| service_role bypass; coach SELECT / INSERT / UPDATE on own row (preferences fields only).                 |
 | `CoachBriefPushLedger` | service_role bypass **only**. Coaches have NO direct policy — dedup state cannot be poisoned. (P1-9.)     |

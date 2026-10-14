@@ -8,7 +8,12 @@
 // and the message items match the phone's BRIEF-AGG contract (m#701).
 import { ForbiddenException, type ExecutionContext } from '@nestjs/common';
 import { CoachGuard } from '../src/auth/coach.guard';
-import { CoachBriefService, headCoachAiContext, headCoachTeamView } from '../src/coach/brief/coach-brief.service';
+import {
+  BriefNotFoundError,
+  CoachBriefService,
+  headCoachAiContext,
+  headCoachTeamView,
+} from '../src/coach/brief/coach-brief.service';
 import { aggregateHeadBriefTeam, previousDate } from '../src/coach/brief/head-brief-team';
 import type { BriefContextHeadCoach } from '../src/coach/brief/coach-brief.types';
 import type { PrismaService } from '../src/prisma.service';
@@ -78,7 +83,8 @@ function world() {
   const checkIns: Row[] = [
     { user_id: 'a1', date: new Date(`${DAY}T00:00:00.000Z`) },
     { user_id: 'a3', date: new Date(`${DAY}T00:00:00.000Z`) },
-    { user_id: 'a2', date: new Date('2026-05-23T00:00:00.000Z') },
+    { user_id: 'a2', date: new Date(`${DAY}T00:00:00.000Z`) },
+    { user_id: 'a1', date: new Date('2026-05-23T00:00:00.000Z') },
     { user_id: 'b1', date: new Date(`${DAY}T00:00:00.000Z`) },
   ];
   const at = (h: number) => new Date(Date.UTC(2026, 4, 25, h));
@@ -153,7 +159,7 @@ describe('aggregateHeadBriefTeam: one head coach, real filters', () => {
 
   it('counts check-ins of the roster on that day, only where shared', async () => {
     const r = await forHeadA();
-    // a1 + a3 on the day; a2 does not share (and checked in the day before).
+    // a1 + a3 on the day; a2 checked in that day but does not share; a1's earlier day is out.
     expect(r.activity).toMatchObject({ check_ins_date: DAY, check_ins_completed: 2, check_ins_not_shared: 1 });
   });
 
@@ -230,30 +236,29 @@ const MESSAGES = [
   { client_id: 'cdel', body: 'Only for my sub-coach', client: { name: 'Dana Cole' } },
 ];
 
-// One coach's CoachBrief rows in memory, keyed by brief_date.
+// CoachBrief rows, the head's clients and open delegations in memory; a test
+// may move or delegate a client between calls.
 function wireHead(prisma: MockPrisma, rows: Row[] = []) {
   const now = new Date();
+  const clients = [student('cown', 'head1', { created_at: now }), student('cdel', 'head1', { created_at: now })];
+  const delegations: Row[] = [{ head_coach_id: 'head1', sub_coach_id: 'sub1', client_id: 'cdel', unassigned_at: null }];
   prisma.teamSubCoachAssignment.findFirst.mockResolvedValue(null);
   prisma.teamSubCoachAssignment.count.mockResolvedValue(1);
   prisma.user.findUnique.mockResolvedValue({ name: 'Marcus Reed' });
   prisma.teamSubCoachAssignment.findMany.mockResolvedValue([
     { sub_coach_id: 'sub1', sub_coach: { id: 'sub1', name: 'Coach Priya' } },
   ]);
-  prisma.subCoachAssignment.findMany.mockResolvedValue([{ sub_coach_id: 'sub1', client_id: 'cdel' }]);
-  prisma.user.findMany
-    .mockResolvedValueOnce([{ id: 'cown', created_at: now }, { id: 'cdel', created_at: now }])
-    .mockResolvedValueOnce([{ id: 'cdel', created_at: now }])
-    .mockResolvedValueOnce([]);
+  prisma.subCoachAssignment.findMany.mockImplementation(async (a: { where: Row }) => delegations.filter((d) => matches(d, a.where)));
+  prisma.user.findMany.mockImplementation(async (a: { where: Row }) => clients.filter((c) => matches(c, a.where)));
   prisma.user.count.mockResolvedValue(0);
   prisma.checkIn.count.mockResolvedValue(7);
   prisma.coachMessage.findMany.mockImplementation(async (a: { where: { client_id: { in: string[] } } }) =>
     MESSAGES.filter((m) => a.where.client_id.in.includes(m.client_id)),
   );
-  prisma.chargeSettlement.aggregate
-    .mockResolvedValueOnce({ _sum: { gross_cents: 124000 }, _count: { _all: 4 } })
-    .mockResolvedValueOnce({ _sum: { gross_cents: 500000 } });
-  prisma.$queryRaw.mockResolvedValueOnce([{ mrr_cents: 0n }]).mockResolvedValueOnce([{ count: 1n, total: 4900n }]);
-  const at = (where: Row) => rows.find((r) => r.brief_date === where.brief_date);
+  prisma.chargeSettlement.aggregate.mockResolvedValue({ _sum: { gross_cents: 124000 }, _count: { _all: 4 } });
+  prisma.$queryRaw.mockResolvedValue([{ mrr_cents: 0n, count: 1n, total: 4900n }]);
+  const keys = ['id', 'coach_id', 'brief_date'];
+  const at = (where: Row) => rows.find((r) => keys.every((k) => where[k] === undefined || r[k] === where[k]));
   prisma.coachBrief.findUnique.mockImplementation(async (a: { where: { CoachBrief_coach_date_key: Row } }) => at(a.where.CoachBrief_coach_date_key) ?? null);
   prisma.coachBrief.create.mockImplementation(async () => rows[rows.push(generatingRow('b1', 'head1', now)) - 1]);
   prisma.coachBrief.updateMany.mockImplementation(async (a: { where: Row; data: Row }) => {
@@ -264,9 +269,11 @@ function wireHead(prisma: MockPrisma, rows: Row[] = []) {
   prisma.coachBrief.update.mockImplementation(async (a: { where: { CoachBrief_coach_date_key: Row }; data: Row }) =>
     Object.assign(at(a.where.CoachBrief_coach_date_key) ?? {}, a.data),
   );
-  prisma.coachBrief.count.mockImplementation(async () => rows.length);
-  prisma.coachBrief.findMany.mockImplementation(async () => rows);
-  return rows;
+  prisma.coachBrief.findFirst.mockImplementation(async (a: { where: Row }) => at(a.where) ?? null);
+  const own = (a: { where: Row }) => rows.filter((r) => r.coach_id === a.where.coach_id);
+  prisma.coachBrief.count.mockImplementation(async (a: { where: Row }) => own(a).length);
+  prisma.coachBrief.findMany.mockImplementation(async (a: { where: Row }) => own(a));
+  return { rows, clients, delegations };
 }
 
 async function withTeamMode<T>(on: boolean, run: () => Promise<T>): Promise<T> {
@@ -333,7 +340,7 @@ describe('CoachBriefService head brief with team data (BRIEFTEAM)', () => {
 
   it('history withholds a head brief stored under the other Team Mode state', async () => {
     const prisma = makeMockPrisma();
-    const rows = wireHead(prisma, [teamRow('2026-05-24')]);
+    const { rows } = wireHead(prisma, [teamRow('2026-05-24')]);
     const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
     await svc.generateBrief('head1', 'America/Los_Angeles', BRIEF_DATE);
     const history = await svc.getBriefHistory('head1', 1, 10);
@@ -345,6 +352,41 @@ describe('CoachBriefService head brief with team data (BRIEFTEAM)', () => {
     expect(traces(history)).toEqual([]);
     const on = await withTeamMode(true, () => svc.getBriefHistory('head1', 1, 10));
     expect(on.items.map((i) => i.summary !== null)).toEqual([true, false]);
+  });
+
+  // BRIEFTEAM2 (Sol B3): a stored brief names a client only while they are
+  // still the head coach's own; every return re-checks it.
+  const NAMED = ['Sarah Lee', 'Can we move my session?', 'tgp://messages/cown'];
+  it.each<[string, (w: ReturnType<typeof wireHead>) => unknown]>([
+    ['moves to another coach', (w) => Object.assign(w.clients[0], { coach_id: 'coachX' })],
+    ['is delegated to a sub-coach', (w) => w.delegations.push({ head_coach_id: 'head1', sub_coach_id: 'sub1', client_id: 'cown', unassigned_at: null })],
+    ['is archived', (w) => Object.assign(w.clients[0], { archived_at: new Date() })],
+  ])('generate, then the client %s: today is written again without them and history withholds the day', async (_, change) => {
+    const prisma = makeMockPrisma();
+    const w = wireHead(prisma);
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
+    const first = await svc.generateBrief('head1', 'America/Los_Angeles', BRIEF_DATE);
+    w.rows.push({ ...w.rows[0], id: 'b0', brief_date: '2026-05-24' });
+    for (const n of NAMED) expect(JSON.stringify(first)).toContain(n);
+    expect((await svc.getBriefHistory('head1', 1, 10)).items.every((i) => i.summary !== null)).toBe(true);
+    change(w);
+    const today = await svc.generateBrief('head1', 'America/Los_Angeles', BRIEF_DATE);
+    const history = await svc.getBriefHistory('head1', 1, 10);
+    expect(prisma.coachBrief.update).toHaveBeenCalledTimes(2);
+    for (const n of NAMED) expect(JSON.stringify([today, history])).not.toContain(n);
+    expect(history.items.map((i) => [i.brief_date, i.summary !== null])).toEqual([[BRIEF_DATE, true], ['2026-05-24', false]]);
+  });
+
+  it('another head coach and the sub-coach cannot read or mark the stored head brief', async () => {
+    const prisma = makeMockPrisma();
+    const { rows } = wireHead(prisma);
+    const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
+    await svc.generateBrief('head1', 'America/Los_Angeles', BRIEF_DATE);
+    for (const other of ['head2', 'sub1']) {
+      expect((await svc.getBriefHistory(other, 1, 10)).items).toEqual([]);
+      await expect(svc.markBriefRead(other, String(rows[0].id))).rejects.toBeInstanceOf(BriefNotFoundError);
+    }
+    expect(rows[0].read_at).toBeUndefined();
   });
 
   it('stores the day numbers and gives the phone a message row it can open (BRIEF-AGG)', async () => {

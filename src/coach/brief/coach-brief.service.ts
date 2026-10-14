@@ -40,7 +40,7 @@ import { usableTimeZone } from '../../notifications/local-time';
 import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
 import { isTeamModeEnabled } from '../../team-mode/team-mode.feature';
-import { aggregateHeadBriefTeam, previousDate } from './head-brief-team';
+import { aggregateHeadBriefTeam, namedClientIds, previousDate, stillOwnClientIds } from './head-brief-team';
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -1778,8 +1778,13 @@ export class CoachBriefService {
       if (existing && existing.status === 'generated') {
         // B-872-SOL-130-1: a brief stored before a client turned off a Coach
         // sharing switch is written again under the current switches, and so
-        // is a head brief written under the other Team Mode state (BRIEFTEAM).
-        if (headBriefMisfits(existing) || writtenBefore(existing, await this.lastSharingWithdrawal(coachId))) {
+        // is a head brief written under the other Team Mode state (BRIEFTEAM)
+        // or naming a client who is no longer the head's own (BRIEFTEAM2).
+        if (
+          headBriefMisfits(existing) ||
+          (await this.briefsNamingLostClients(coachId, [existing])).size > 0 ||
+          writtenBefore(existing, await this.lastSharingWithdrawal(coachId))
+        ) {
           return this.generateBrief(coachId, timezone, briefDate, { force: true });
         }
         return this.toResponse(existing);
@@ -2077,12 +2082,15 @@ export class CoachBriefService {
     ]);
 
     // B-872-SOL-130-1: a brief stored before a client turned off a Coach
-    // sharing switch keeps its day and status in history, not its content.
+    // sharing switch keeps its day and status in history, not its content;
+    // so does a head brief naming a client who has since left the head's own
+    // clients (BRIEFTEAM2).
     const withdrawnAt = await this.lastSharingWithdrawal(coachId);
+    const lost = await this.briefsNamingLostClients(coachId, rows);
     return {
       items: rows.map((r) => {
         const out = this.toResponse(r);
-        return writtenBefore(r, withdrawnAt) ? { ...out, summary: null } : out;
+        return writtenBefore(r, withdrawnAt) || lost.has(r.id) ? { ...out, summary: null } : out;
       }),
       total,
       page,
@@ -2143,6 +2151,22 @@ export class CoachBriefService {
   }
 
   // ── Map Prisma row → HTTP response shape.
+  // BRIEFTEAM2 (Sol B3): ids of stored head briefs whose message rows name a
+  // client who is no longer the head coach's own (moved, archived or
+  // delegated since). No query runs when no head brief names a client.
+  private async briefsNamingLostClients(
+    coachId: string,
+    rows: Array<{ id: string; brief_mode: string | null; action_items: Prisma.JsonValue | null }>,
+  ): Promise<Set<string>> {
+    const named = rows
+      .filter((r) => r.brief_mode === 'head_coach')
+      .map((r) => ({ id: r.id, clients: namedClientIds(r.action_items) }));
+    const ids = [...new Set(named.flatMap((r) => r.clients))];
+    if (!ids.length) return new Set();
+    const own = await stillOwnClientIds(this.prisma, coachId, ids);
+    return new Set(named.filter((r) => r.clients.some((c) => !own.has(c))).map((r) => r.id));
+  }
+
   private toResponse(row: {
     id: string;
     coach_id: string;
