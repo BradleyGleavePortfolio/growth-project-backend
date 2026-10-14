@@ -657,6 +657,17 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 
+      - name: Run Roman history-follows-client live spec (HIST3, owner 139-13)
+        # test/roman/roman-history-follows-client.live.spec.ts: on real Postgres,
+        # a client moved between coaches keeps their earlier coach's targets,
+        # workouts, meal plan, sessions and adjustments in Roman's context and
+        # timeline, while the earlier coach's thread, guideline and notes never
+        # follow (owner 4b), including in the coach AI gateway context. Same
+        # MWB3_TEST_DATABASE_URL gate and reset + full-schema bootstrap.
+        run: npx jest test/roman/roman-history-follows-client.live.spec.ts --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
       - name: Run refund reversal concurrency live spec (#674 B-674-1)
         # Two refunds reversing one slice / transfer at once both count, on
         # real Postgres behind a held row lock (same gate and bootstrap).

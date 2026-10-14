@@ -65,6 +65,9 @@ export class PrivateContextService {
       include: {
         profile: true,
         coach_messages_as_client: {
+          // Owner 4b (HIST3): only the thread with the client's CURRENT coach;
+          // a former coach's chat never reaches the new coach's AI context.
+          where: { coach: { students: { some: { id: subjectUserId } } } },
           orderBy: { created_at: 'desc' },
           take: workout ? 0 : 1,
         },
