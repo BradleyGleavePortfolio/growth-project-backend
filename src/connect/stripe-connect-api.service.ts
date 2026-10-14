@@ -752,11 +752,16 @@ export class StripeConnectApiService {
     return this.get(`/payment_intents/${encodeURIComponent(piId)}`);
   }
 
+  // C5RECEIPTS: expandInvoice brings the invoice lines (the receipt's period).
   async retrieveCharge(
     chargeId: string,
-    opts: { expandBalanceTransaction?: boolean } = {},
+    opts: { expandBalanceTransaction?: boolean; expandInvoice?: boolean } = {},
   ): Promise<StripeChargeObject> {
-    const query = opts.expandBalanceTransaction ? '?expand[]=balance_transaction' : '';
+    const expand = [
+      ...(opts.expandBalanceTransaction ? ['expand[]=balance_transaction'] : []),
+      ...(opts.expandInvoice ? ['expand[]=invoice'] : []),
+    ];
+    const query = expand.length > 0 ? `?${expand.join('&')}` : '';
     return this.get(`/charges/${encodeURIComponent(chargeId)}${query}`);
   }
 
