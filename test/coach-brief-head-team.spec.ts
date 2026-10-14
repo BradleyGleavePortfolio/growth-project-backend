@@ -83,7 +83,8 @@ function world() {
   const checkIns: Row[] = [
     { user_id: 'a1', date: new Date(`${DAY}T00:00:00.000Z`) },
     { user_id: 'a3', date: new Date(`${DAY}T00:00:00.000Z`) },
-    { user_id: 'a2', date: new Date('2026-05-23T00:00:00.000Z') },
+    { user_id: 'a2', date: new Date(`${DAY}T00:00:00.000Z`) },
+    { user_id: 'a1', date: new Date('2026-05-23T00:00:00.000Z') },
     { user_id: 'b1', date: new Date(`${DAY}T00:00:00.000Z`) },
   ];
   const at = (h: number) => new Date(Date.UTC(2026, 4, 25, h));
@@ -158,7 +159,7 @@ describe('aggregateHeadBriefTeam: one head coach, real filters', () => {
 
   it('counts check-ins of the roster on that day, only where shared', async () => {
     const r = await forHeadA();
-    // a1 + a3 on the day; a2 does not share (and checked in the day before).
+    // a1 + a3 on the day; a2 checked in that day but does not share; a1's earlier day is out.
     expect(r.activity).toMatchObject({ check_ins_date: DAY, check_ins_completed: 2, check_ins_not_shared: 1 });
   });
 
