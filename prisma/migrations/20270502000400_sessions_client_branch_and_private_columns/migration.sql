@@ -17,7 +17,10 @@
 --     before and after the change. Owner and coach branches are #972's text.
 --   * a client creates a session only as 'requested', or as 'scheduled' when
 --     its type is one of that coach's live instant-confirm (auto_approve)
---     types: the two statuses requestSession writes.
+--     types: the two statuses requestSession writes. It leaves the coach's
+--     side empty: coach_notes_md, video_url, video_meeting_id,
+--     calendar_event_id and provider_idempotency_key are NULL, as
+--     requestSession writes them (the guard below covers only UPDATE).
 --   * BEFORE UPDATE trigger: only the session's coach (app.current_user_id()
 --     = OLD.coach_id) or a role that bypasses row security (service_role,
 --     postgres) changes coach_notes_md, video_url, video_meeting_id,
@@ -88,11 +91,11 @@ CREATE TRIGGER "coaching_session_private_columns_guard"
   FOR EACH ROW EXECUTE FUNCTION app.coaching_session_private_columns_guard();
 
 ALTER POLICY "p_coachingsession_insert" ON "CoachingSession"
-  WITH CHECK (app.is_owner() OR (app.current_user_id() IS NOT NULL AND (("client_id" = app.current_user_id() AND app.is_user_coached_by("client_id", "coach_id") AND ("status" = 'requested' OR ("status" = 'scheduled' AND app.session_type_auto_approves("session_type_id", "coach_id")))) OR ("coach_id" = app.current_user_id() AND ("client_id" IS NULL OR app.client_still_books_caller("client_id"))))));
+  WITH CHECK (app.is_owner() OR (app.current_user_id() IS NOT NULL AND (("client_id" = app.current_user_id() AND app.is_user_coached_by("client_id", "coach_id") AND ("status" = 'requested' OR ("status" = 'scheduled' AND app.session_type_auto_approves("session_type_id", "coach_id"))) AND "coach_notes_md" IS NULL AND "video_url" IS NULL AND "video_meeting_id" IS NULL AND "calendar_event_id" IS NULL AND "provider_idempotency_key" IS NULL) OR ("coach_id" = app.current_user_id() AND ("client_id" IS NULL OR app.client_still_books_caller("client_id"))))));
 ALTER POLICY "p_coachingsession_update" ON "CoachingSession"
   USING (app.is_owner() OR (app.current_user_id() IS NOT NULL AND (("client_id" = app.current_user_id() AND app.is_user_coached_by("client_id", "coach_id")) OR ("coach_id" = app.current_user_id() AND ("client_id" IS NULL OR app.client_still_books_caller("client_id"))))))
   WITH CHECK (app.is_owner() OR (app.current_user_id() IS NOT NULL AND (("client_id" = app.current_user_id() AND app.is_user_coached_by("client_id", "coach_id")) OR ("coach_id" = app.current_user_id() AND ("client_id" IS NULL OR app.client_still_books_caller("client_id"))))));
-COMMENT ON POLICY "p_coachingsession_insert" ON "CoachingSession" IS '20270502000400: owner; the lead client with their own coach, as requested (scheduled only for that coach''s instant-confirm type); or the session coach while the client may still book with them (no client: always) may create the session.';
+COMMENT ON POLICY "p_coachingsession_insert" ON "CoachingSession" IS '20270502000400: owner; the lead client with their own coach, as requested (scheduled only for that coach''s instant-confirm type) with the coach''s side (notes, call link, meeting, calendar event, idempotency key) empty; or the session coach while the client may still book with them (no client: always) may create the session.';
 COMMENT ON POLICY "p_coachingsession_update" ON "CoachingSession" IS '20270502000400: owner, the lead client with their own coach, or the session coach while the client may still book with them (no client: always) may update the session, before and after the change. Coach-side columns: coaching_session_private_columns_guard.';
 
 COMMIT;
