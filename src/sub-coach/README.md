@@ -9,7 +9,7 @@ client reassignment.
 Sub-coaches are `User` rows with `role = 'coach'` and a `coach_id` pointing at
 their head coach **plus an explicit membership relation** created by that head
 coach: an active `TeamSubCoachAssignment` (Team Mode seat) or at least one open
-`SubCoachAssignment` (client delegation). Since clinic C13 (self-serve coach
+`SubCoachAssignment` (client delegation). Since C13 (self-serve coach
 signup) `role = 'coach' AND coach_id IS NOT NULL` alone is **not** sufficient —
 a self-serve coach who ends up with a `coach_id` through some other path (e.g.
 a historical guest-checkout purchase) must not inherit another coach's tenant.
