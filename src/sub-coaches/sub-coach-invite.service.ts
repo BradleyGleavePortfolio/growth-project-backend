@@ -12,6 +12,7 @@ import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { TeamService } from '../team/team.service';
 import { deleteDraftsLeftByMove } from '../coach/moved-client-drafts';
+import { endSubCoachSeat } from '../sub-coach/end-sub-coach-seat';
 import type {
   AcceptInviteResult,
   InvitePreviewView,
@@ -421,7 +422,10 @@ export class SubCoachInviteService {
       let assignment;
       if (existingAssignment && existingAssignment.archived_at) {
         // Re-activate the prior archived row instead of creating a dup,
-        // since (head_coach_id, sub_coach_id) is a unique pair.
+        // since (head_coach_id, sub_coach_id) is a unique pair. Only the seat
+        // comes back: removal closed every client assignment for the pair and
+        // nothing reopens them, so a re-invited sub-coach starts with no
+        // clients (SUBREVOKE, owner decision SUB-REINVITE option 1).
         assignment = await tx.teamSubCoachAssignment.update({
           where: { id: existingAssignment.id },
           data: { archived_at: null },
@@ -640,10 +644,8 @@ export class SubCoachInviteService {
       // Cannot safely reassign clients — sub-coach serves multiple heads.
       // Archive the assignment only; do NOT touch any User.coach_id.
       await this.prisma.$transaction(async (tx) => {
-        await tx.teamSubCoachAssignment.update({
-          where: { id: assignment.id },
-          data: { archived_at: new Date() },
-        });
+        // SUBREVOKE: the seat and this head coach's client assignments end together.
+        const closedAssignments = await endSubCoachSeat(tx, assignment.id, headCoachId, subCoachId);
         await tx.teamAuditEvent.create({
           data: {
             head_coach_id: headCoachId,
@@ -654,6 +656,7 @@ export class SubCoachInviteService {
             metadata: {
               sub_coach_id: subCoachId,
               reassigned_client_count: 0,
+              closed_assignment_count: closedAssignments,
               revoke_reason: payload.reason ?? null,
               skip_reason: 'multi_head_sub_coach',
             } as Prisma.InputJsonValue,
@@ -703,10 +706,8 @@ export class SubCoachInviteService {
           })),
         });
       }
-      await tx.teamSubCoachAssignment.update({
-        where: { id: assignment.id },
-        data: { archived_at: new Date() },
-      });
+      // SUBREVOKE: the seat and this head coach's client assignments end together.
+      const closedAssignments = await endSubCoachSeat(tx, assignment.id, headCoachId, subCoachId);
       await tx.teamAuditEvent.create({
         data: {
           head_coach_id: headCoachId,
@@ -717,6 +718,7 @@ export class SubCoachInviteService {
           metadata: {
             sub_coach_id: subCoachId,
             reassigned_client_count: reassignIds.length,
+            closed_assignment_count: closedAssignments,
             revoke_reason: payload.reason ?? null,
           } as Prisma.InputJsonValue,
         },

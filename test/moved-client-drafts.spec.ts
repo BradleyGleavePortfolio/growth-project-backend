@@ -75,6 +75,7 @@ function world() {
       { id: 'seat1', head_coach_id: 'head1', sub_coach_id: 'sub1', archived_at: null, stripe_subscription_item_id: null },
     ]),
     teamAuditEvent: table([]),
+    subCoachAssignment: table([]),
     aIDraft: table([
       ai('head1-client1-draft', 'head1', 'client1', 'DRAFT'),
       ai('head1-client1-rejected', 'head1', 'client1', 'REJECTED'),

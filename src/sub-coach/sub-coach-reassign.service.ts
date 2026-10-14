@@ -287,6 +287,23 @@ export class SubCoachReassignService {
 
     return this.prisma.$transaction(
       async (tx) => {
+        // SUBREVOKE: a pair that has ever had a seat may only get a new
+        // delegation while that seat is active, so a removed sub-coach gets
+        // no clients until re-invited. A pair that never had a seat (legacy
+        // delegation) is unaffected. FOR SHARE orders this against a
+        // concurrent removal (see endSubCoachSeat).
+        if (!unassigning) {
+          const [seat] = await tx.$queryRaw<Array<{ archived_at: Date | null }>>`
+            SELECT "archived_at" FROM "TeamSubCoachAssignment"
+            WHERE "head_coach_id" = ${headCoachId} AND "sub_coach_id" = ${targetSubCoachId}
+            FOR SHARE`;
+          if (seat && seat.archived_at !== null) {
+            throw new NotFoundException(
+              'Destination sub-coach not found or does not belong to this team',
+            );
+          }
+        }
+
         // Current open assignment (if any) for this client.
         const open = await tx.subCoachAssignment.findFirst({
           where: { client_id: clientId, unassigned_at: null },
