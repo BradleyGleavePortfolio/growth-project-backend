@@ -109,6 +109,21 @@ const DENIED = '42501';
   });
   afterAll(() => prisma.$disconnect());
 
+  it('every principal runs as a role that is not a superuser and does not bypass row security', async () => {
+    for (const k of keys) {
+      for (const who of [backend(k), dataApi(k)]) {
+        expect(
+          await as(who, (tx) =>
+            tx.$queryRawUnsafe<{ role: string; superuser: boolean; bypass: boolean }[]>(
+              `SELECT current_user::text AS "role", "rolsuper" AS "superuser", "rolbypassrls" AS "bypass"
+                 FROM pg_roles WHERE "rolname" = current_user`,
+            ),
+          ),
+        ).toEqual([{ role: 'authenticated', superuser: false, bypass: false }]);
+      }
+    }
+  });
+
   it('each coach reads their own notice; the other coach reads nothing', async () => {
     await control('A');
     expect(await reads(backend('B'), 'A')).toEqual([]);
