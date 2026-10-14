@@ -1,0 +1,1 @@
+-- Empty throwaway migration used only to prove the CI order guard rejects it.
