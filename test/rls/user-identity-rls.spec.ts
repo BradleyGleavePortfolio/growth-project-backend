@@ -39,6 +39,10 @@ const backend = (key: Key): Who => ({ key, guc: true });
 const dataApi = (key: Key): Who => ({ key, guc: false });
 const ROLE: Record<Key, string> = { A: 'student', K: 'coach', L: 'coach', F: 'coach', O: 'owner' };
 const SAFE_COLUMNS = ['leaderboard_display_name', 'name', 'phone', 'show_on_leaderboard'];
+// MOVEBILL (20270502001800): a SECURITY INVOKER trigger that answers no one. It only stamps
+// ClientPurchase.moved_away_at as the writer: the server's role bypasses row security, and the
+// API roles cannot write money rows (20270502000300), so no result depends on "User" rules.
+const INVOKER_TRIGGERS = ['delegation_end_marks_plans()'];
 // 20270502000800_workout_identity_current_user_id moved the seven workout plan and assignment
 // rules to app.current_user_id(); the tenant_shared branch of p_workoutprogram_select still
 // sub-selects the caller's own "User" row, so it keeps this check from passing on no rows.
@@ -225,9 +229,9 @@ const AUTH_UID_POLICIES = ['WorkoutProgram.p_workoutprogram_select'];
         SELECT p.oid::regprocedure::text AS "fn", (p."prosecdef" AND (r."rolsuper" OR r."rolbypassrls")) AS "safe"
         FROM pg_proc p JOIN pg_namespace n ON n.oid = p."pronamespace" JOIN pg_roles r ON r.oid = p."proowner"
         WHERE n."nspname" NOT IN ('pg_catalog', 'information_schema') AND p."prosrc" LIKE '%"User"%' ORDER BY 1`;
-      expect(fns.filter((f) => !f.safe)).toEqual([]);
+      expect(fns.filter((f) => !f.safe && !INVOKER_TRIGGERS.includes(f.fn))).toEqual([]);
       expect(fns.map((f) => f.fn)).toEqual(expect.arrayContaining([
-        'app.caller_coaches_client(text)', 'app.is_user_coached_by(text,text)']));
+        'app.caller_coaches_client(text)', 'app.is_user_coached_by(text,text)', ...INVOKER_TRIGGERS]));
     });
 
     it('every other policy that sub-selects "User" reads only the caller\'s own row', async () => {
