@@ -157,7 +157,7 @@ if (!DB_URL && process.env.CI === 'true') {
     expect((await stamps()).pAo).not.toBeNull();
   });
 
-  it('runs as the caller with a pinned search_path; an API role can neither read nor clear a stamp', async () => {
+  it('runs as the caller with a pinned search_path; an API party reads only its own rows and cannot clear a stamp', async () => {
     const fns = await prisma.$queryRaw<{ prosecdef: boolean; proconfig: string[] | null }[]>`
       SELECT p."prosecdef", p."proconfig" FROM pg_proc p
        WHERE p."proname" IN ('user_coach_move_marks_plans', 'delegation_end_marks_plans', 'client_coach_chain')`;
