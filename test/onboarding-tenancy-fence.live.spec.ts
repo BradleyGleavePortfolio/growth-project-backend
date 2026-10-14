@@ -227,10 +227,8 @@ liveDescribe('A607-3 live: completion tenancy fence vs coach transfer (Postgres)
 
   it('A-607-4: the last delegation close (User untouched) waits while the completion holds its decision', async () => {
     const { seatId, delegationId } = await membershipWorld();
-    await prisma.teamSubCoachAssignment.update({
-      where: { id: seatId },
-      data: { archived_at: new Date() },
-    });
+    // A delegation-only sub-coach: the pair never had a seat (an archived one is a removal).
+    await prisma.teamSubCoachAssignment.delete({ where: { id: seatId } });
     const r = await decisionHeldAgainst(() =>
       prisma.subCoachAssignment.update({
         where: { id: delegationId },
@@ -251,6 +249,11 @@ liveDescribe('A607-3 live: completion tenancy fence vs coach transfer (Postgres)
       where: { id: seatId },
       data: { archived_at: new Date() },
     });
+    // READTESTS: removal archives the seat and leaves the delegation open; that is no head either.
+    const removed = await prisma.$transaction(async (tx) =>
+      scope.lockMembershipHeadCoachIdInTx(tx, SUB, await lockUserRow(tx, SUB)),
+    );
+    expect(removed).toBeNull();
     await prisma.subCoachAssignment.update({
       where: { id: delegationId },
       data: { unassigned_at: new Date() },

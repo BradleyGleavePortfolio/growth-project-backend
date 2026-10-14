@@ -362,6 +362,7 @@ jobs:
             -c 'CREATE TRIGGER trg_enforce_subcoach_head_cap BEFORE INSERT OR UPDATE ON "TeamSubCoachAssignment" FOR EACH ROW EXECUTE FUNCTION enforce_subcoach_head_cap();' \
             -f scripts/ci/onboarding-intake-live-bootstrap.sql \
             -f prisma/migrations/20270212000000_clinic_onboarding_intake/migration.sql \
+            -f prisma/migrations/20270416000001_sub_coach_removed_seat/migration.sql \
             -f scripts/ci/onboarding-intake-live-grants.sql \
             -f scripts/ci/clinic-engagement-live-bootstrap.sql \
             -f prisma/migrations/20270213000000_clinic_engagement/migration.sql \
