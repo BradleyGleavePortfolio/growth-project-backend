@@ -404,7 +404,8 @@ export function planView(row: ClientPurchase, pkg: CoachPackage | null): ClientP
     trial_days: row.trial_days ?? null,
     trial_ends_at: state === 'trialing' ? iso(periodEnd) : null,
     can_cancel: live && !row.cancel_at_period_end,
-    can_resume: live && row.cancel_at_period_end,
+    // MOVEBILL: renewal a move ended (MOVE-BILLING) cannot be kept.
+    can_resume: live && row.cancel_at_period_end && !row.moved_away_at,
     can_resubscribe: ended,
     last_payment_error:
       state === 'payment_failed' || state === 'past_due'

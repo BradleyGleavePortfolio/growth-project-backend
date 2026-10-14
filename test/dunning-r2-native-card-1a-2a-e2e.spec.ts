@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { ForbiddenException, HttpException } from '@nestjs/common';
+import { ForbiddenException, HttpException, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
 import {
@@ -912,6 +912,8 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
     const move = (when: Date) => {
       purchaseRow(w)!.moved_away_at = when;
     };
+    // Opus C6: a move-driven cancel is logged as the move's, never as a client cancel.
+    const events = (log: jest.SpyInstance) => log.mock.calls.map(([m]) => String(m)).join('\n');
 
     it('outside dunning: renewal off, paid period kept, no refund or charge, nothing sent; other clients untouched', async () => {
       purchaseRow(w)!.current_period_end = at(20 * DAY);
@@ -933,7 +935,10 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 0, failed: 0 });
 
       move(at(DAY));
+      const log = jest.spyOn((w.billing as unknown as { logger: Logger }).logger, 'log');
       expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 1, failed: 0 });
+      expect(events(log)).toContain('"event":"billing.moved_plan_cancel_scheduled"');
+      expect(events(log)).not.toContain('billing.client_cancel');
       expect(w.stripe.subs.get('sub_dv2_client')?.cancel_at_period_end).toBe(true);
       expect(purchaseRow(w)).toMatchObject({
         status: 'active',
@@ -974,7 +979,10 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       expect(w.email.mock.calls.length).toBe(emails);
       expect(w.push.mock.calls.length).toBe(pushes);
 
+      const log = jest.spyOn((w.billing as unknown as { logger: Logger }).logger, 'log');
       expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 1, failed: 0 });
+      expect(events(log)).toContain('"event":"billing.moved_plan_cancel_in_dunning"');
+      expect(events(log)).not.toContain('billing.client_cancel');
       expect(w.stripe.invoices.get('in_dv2_renewal_1')?.status).toBe('void');
       expect(w.stripe.subs.get('sub_dv2_client')?.status).toBe('canceled');
       expect(w.stripe.stripeRetry('in_dv2_renewal_1')).toBe('not_open');

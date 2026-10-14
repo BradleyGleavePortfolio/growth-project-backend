@@ -4326,10 +4326,11 @@ model ClientPurchase {
   card_on_file     Boolean?
   // MOVEBILL (MOVE-BILLING / MOVE-LTV option 1) — when the client moved away
   // from the coach who sold this purchase. Stamped only by the database
-  // trigger trg_user_coach_move_marks_plans, in the move's own transaction
-  // (migration 20270424000000). NULL = never moved away. A stamped live
-  // subscription stops renewing (ClientBillingService.endPlansLeftByMove),
-  // its failed-payment notices stop, and ltv-metrics drops it from active
+  // triggers trg_user_coach_move_marks_plans and trg_delegation_end_marks_plans,
+  // in the move's own transaction (migration 20270424000000). NULL = never
+  // moved away. A stamped live subscription stops renewing
+  // (ClientBillingService.endPlansLeftByMove) and cannot be kept, its
+  // failed-payment notices stop, and ltv-metrics drops it from active
   // clients and MRR from this date.
   moved_away_at    DateTime?
 

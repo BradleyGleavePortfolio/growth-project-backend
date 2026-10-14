@@ -328,6 +328,11 @@ export function isDisputeCycle(state: DunningState | null | undefined): boolean 
 /** B-689-5: what the dispute ledger says was reversed on one plan. */
 type ReversedAmount = { currency: string; amount_cents: number };
 
+/** MOVEBILL (Opus C6): a cancel of a plan a move ended is logged as the move's, not the client's. */
+function cancelCause(p: { moved_away_at: Date | null }): 'moved_plan' | 'client' {
+  return p.moved_away_at ? 'moved_plan' : 'client';
+}
+
 function isDelinquent(p: PurchaseWithDunning): boolean {
   return DELINQUENT_STATUSES.has(p.status) || p.dunning?.status === 'active';
 }
@@ -1514,7 +1519,7 @@ export class ClientBillingService {
           ...(periodEnd ? { current_period_end: periodEnd } : {}),
         },
       });
-      this.logEvent('billing.client_cancel_scheduled', {
+      this.logEvent(`billing.${cancelCause(purchase)}_cancel_scheduled`, {
         purchase_id: purchase.id,
         access_ends_at: periodEnd?.toISOString() ?? null,
       });
@@ -1751,7 +1756,7 @@ export class ClientBillingService {
       }
     });
     if (settled === 'cleared') await this.resolveV1(purchase.id, 'cancel');
-    this.logEvent('billing.client_cancel_paid_meanwhile', {
+    this.logEvent(`billing.${cancelCause(purchase)}_cancel_paid_meanwhile`, {
       purchase_id: purchase.id,
       access_ends_at: periodEnd?.toISOString() ?? null,
     });
@@ -1858,7 +1863,7 @@ export class ClientBillingService {
         await this.fanout.cancelPendingForPurchase(purchase.id, 'subscription_canceled', tx);
       }
     });
-    this.logEvent('billing.client_cancel_in_dunning', {
+    this.logEvent(`billing.${cancelCause(purchase)}_cancel_in_dunning`, {
       purchase_id: purchase.id,
       voided_invoice_count: voidedCount,
       voided_amount_cents: voidedCents,
