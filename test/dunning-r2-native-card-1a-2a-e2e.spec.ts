@@ -1106,6 +1106,16 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
         status: 'trialing',
         cancel_at_period_end: true,
       });
+      // Stripe's own echo of renewal off leaves the started trial's access on.
+      await w.handler.handle(
+        fixture('customer.subscription.updated.cancel_at_period_end', {
+          status: 'trialing',
+          default_payment_method: 'pm_new_ok',
+          cancel_at: sec(at(TRIAL_END)),
+          canceled_at: null,
+          current_period_end: sec(at(TRIAL_END)),
+        }),
+      );
       expect(purchaseRow(w)).toMatchObject({
         status: 'trialing',
         entitlement_active: true,
