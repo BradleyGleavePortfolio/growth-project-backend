@@ -34,9 +34,16 @@ function withoutSnapshot<T extends { inputContext?: unknown }>(draft: T): Omit<T
   return rest;
 }
 
+// ROMAN-HOURLY (owner 2026-10-13, Option 1): each generation route allows 60 calls an hour per
+// coach, a safety ceiling no real coach reaches. The AI credit pool (CoachAIService.assertBudget)
+// is the real limit.
+const GENERATION_THROTTLE = {
+  [THROTTLER_NAMES.COACH_AI_GENERATION]: { ttl: 3_600_000, limit: 60 },
+};
+
 // Coach AI v1 — coach-only generation surface. Mounted at /coach/ai/*.
-// Every route is gated by JwtAuthGuard + CoachGuard. Throttles are tight
-// because each generation call costs real money on Anthropic; the boot
+// Every route is gated by JwtAuthGuard + CoachGuard. Each generation call
+// costs real money on Anthropic and is metered on the credit pool; the boot
 // gate (CoachAIStateService) returns 503 ai_disabled when the engine is
 // off so a missing/invalid ANTHROPIC_API_KEY does not silently consume
 // the rate-limit budget.
@@ -73,7 +80,7 @@ export class CoachAIController {
   // prevents cross-tenant generation; students never invoke generation.
   @Roles('coach', 'owner')
   @Post('workout-program')
-  @Throttle({ [THROTTLER_NAMES.COACH_AI_GENERATION]: { ttl: 3_600_000, limit: 5 } })
+  @Throttle(GENERATION_THROTTLE)
   async generateWorkoutProgram(
     @Request() req: AuthedRequest,
     @Body() body: GenerateWorkoutProgramDto,
@@ -86,7 +93,7 @@ export class CoachAIController {
   // themselves or anyone else through this path.
   @Roles('coach', 'owner')
   @Post('meal-plan')
-  @Throttle({ [THROTTLER_NAMES.COACH_AI_GENERATION]: { ttl: 3_600_000, limit: 5 } })
+  @Throttle(GENERATION_THROTTLE)
   async generateMealPlan(
     @Request() req: AuthedRequest,
     @Body() body: GenerateMealPlanDto,
@@ -99,7 +106,7 @@ export class CoachAIController {
   // client check applies before any Anthropic spend.
   @Roles('coach', 'owner')
   @Post('client-insight')
-  @Throttle({ [THROTTLER_NAMES.COACH_AI_GENERATION]: { ttl: 3_600_000, limit: 10 } })
+  @Throttle(GENERATION_THROTTLE)
   async generateClientInsight(
     @Request() req: AuthedRequest,
     @Body() body: GenerateClientInsightDto,
