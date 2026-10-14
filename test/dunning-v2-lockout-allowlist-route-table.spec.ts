@@ -217,7 +217,7 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
 // @OpenToCoachlessClient() stays reachable while locked, except AI guidance
 // (/ai/*), which stays locked like Roman and every paid value surface. Reviewed
 // one by one: each is the client's own logging (food, with /foods search,
-// barcode and manual entry; water, weight, habits, workouts, fasting),
+// barcode and manual entry, /me/foods favourites and saved meals; water, weight, habits, workouts, fasting),
 // targets, plans, check-ins or insights. A new marked route
 // turns this red on purpose.
 const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
@@ -245,6 +245,15 @@ const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'GET me/macros/current ClientMacrosController',
   'GET me/meal-plan ClientMealPlanAliasController',
   'GET me/meal-plan/today ClientMealPlanController',
+  // FOODSAVED: the client's own favourite foods and saved meals (food logging).
+  'GET me/foods/favorites SavedFoodsController',
+  'POST me/foods/favorites SavedFoodsController',
+  'DELETE me/foods/favorites/:fooditemid SavedFoodsController',
+  'GET me/foods/saved-meals SavedFoodsController',
+  'POST me/foods/saved-meals SavedFoodsController',
+  'PATCH me/foods/saved-meals/:id SavedFoodsController',
+  'DELETE me/foods/saved-meals/:id SavedFoodsController',
+  'POST me/foods/saved-meals/:id/log SavedFoodsController',
   'GET meal-plans ClientMealPlansController',
   'GET meal-plans/:id ClientMealPlansController',
   'GET nutrition/water WaterController',
