@@ -21,7 +21,7 @@ import {
 } from '../packages/trials/trial-checkout-capability';
 import { PrismaService } from '../prisma.service';
 import { paidJoinAllowed } from '../invite-codes/invite-codes.service';
-import { CheckoutService, isRecurringPackage } from './checkout.service';
+import { CheckoutService, isFreePackage, isRecurringPackage } from './checkout.service';
 import { errorLabel } from './error-label';
 import {
   CreateFailed,
@@ -201,7 +201,7 @@ export class SubscriptionCheckoutService {
     // $0 packages and invite-code grants never create Stripe objects. A
     // recurring package priced $0 is free too (claimable through
     // /v1/packages/:id/claim-free, which keys on amount_cents = 0).
-    if (pkg.amount_cents === 0 && (!isRecurringPackage(pkg) || pkg.billing_type === 'recurring')) {
+    if (isFreePackage(pkg)) {
       throw packageIsFree();
     }
     if (!isRecurringPackage(pkg)) {
