@@ -989,6 +989,23 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       expect(w.stripe.charges).toHaveLength(0);
     });
 
+    it('in dunning, until the plan is ended, the Day-10 lock never falls on the moved client', async () => {
+      const lockAt = at(10 * DAY + 7 * MIN);
+      // Control: with no move, the same cycle locks at Day 10.
+      const control = buildWorld();
+      await failRenewal(control);
+      jest.setSystemTime(lockAt);
+      expect((await control.v2.runSweep(lockAt)).locked).toBe(1);
+
+      jest.setSystemTime(at(0));
+      await failRenewal(w);
+      move(at(HOUR));
+      jest.setSystemTime(lockAt);
+      expect((await w.v2.runSweep(lockAt)).locked).toBe(0);
+      expect(stateRow(w)?.locked_out_at ?? null).toBeNull();
+      expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
+    });
+
     it('a Stripe failure is retried on the next run', async () => {
       move(at(DAY));
       jest
