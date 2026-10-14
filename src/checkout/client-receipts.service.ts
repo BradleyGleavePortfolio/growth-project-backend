@@ -27,7 +27,8 @@ import { normalizeCurrency } from './client-billing.money';
 // Stripe is read only for the rows a response returns, never for the summary.
 // A converted charge (settled in another currency) needs Stripe for what the
 // card paid; when that is unknown its paid and net amounts are null (refunds
-// stay in the card currency) and the yearly total is null, never mixed.
+// stay in the card currency), so is its status once it has refunds, and the
+// yearly total is null, never mixed.
 
 /** Stripe answers slower than this leave the Stripe-only fields null. */
 const STRIPE_DEADLINE_MS = 3_000;
@@ -52,7 +53,8 @@ export interface ClientReceipt {
   refunded_cents: number;
   refunds: Array<{ amount_cents: number; created_at: string }>;
   net_cents: number | null;
-  status: ReceiptStatus;
+  // null: refunded, but the amount is null, so full or partial is unknown.
+  status: ReceiptStatus | null;
   plan_name: string | null;
   coach_name: string | null;
   period_start: string | null;
@@ -76,7 +78,6 @@ const RECEIPT_SETTLEMENT_SELECT = {
   stripe_charge_id: true,
   currency: true,
   gross_cents: true,
-  refunded_cents: true,
   created_at: true,
   purchase: { select: { coach_user_id: true, currency: true, package: { select: { name: true } } } },
 } as const satisfies Prisma.ChargeSettlementSelect;
@@ -112,16 +113,14 @@ export function receiptMoney(
 
 /**
  * Net and status when the paid amount is unknown (a converted charge Stripe
- * could not price): net stays null, and the status compares the settlement's
- * own refunded and gross amounts, which are in one currency.
+ * could not price). With no refunds it is `paid`; with refunds, full or partial
+ * is unknown too. The settlement's refund debits are no guide: Stripe converts
+ * each refund at that day's rate, so a full refund can debit less than the gross.
  */
 export function unknownMoney(
-  settled: { gross_cents: number; refunded_cents: number },
   refundedCents: number,
-): { net_cents: null; status: ReceiptStatus } {
-  if (refundedCents === 0) return { net_cents: null, status: 'paid' };
-  const full = settled.refunded_cents > 0 && settled.refunded_cents >= settled.gross_cents;
-  return { net_cents: null, status: full ? 'refunded' : 'partly_refunded' };
+): { net_cents: null; status: ReceiptStatus | null } {
+  return { net_cents: null, status: refundedCents === 0 ? 'paid' : null };
 }
 
 /** The calendar year of `d` in `timeZone`. */
@@ -300,7 +299,7 @@ export class ClientReceiptsService {
             amount_cents: r.amount_cents,
             created_at: r.created_at.toISOString(),
           })),
-          ...(amount === null ? unknownMoney(row, refunded) : receiptMoney(amount, refunded)),
+          ...(amount === null ? unknownMoney(refunded) : receiptMoney(amount, refunded)),
           plan_name: row.purchase.package?.name ?? null,
           coach_name: coachName.get(row.purchase.coach_user_id) ?? null,
           period_start: details?.period_start ?? null,
