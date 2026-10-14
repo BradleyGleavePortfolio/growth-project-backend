@@ -68,6 +68,25 @@ const RLS = /row-level security/;
     asUser(who, (tx) => tx.$executeRawUnsafe(
       `INSERT INTO public."WorkoutProgramRevision" ("id","program_id","revision_index","structure_json","author_id","author_kind","cause")
        VALUES ($1, $2, 99, '{}'::jsonb, $3, 'coach', 'save')`, randomUUID(), programId, who));
+  /** Revision writes ($1 = row id): a real change to the row's content, and a delete. */
+  const tamper = {
+    WorkoutProgramRevision: `UPDATE public."WorkoutProgramRevision" SET "structure_json" = '{"tampered":true}'::jsonb WHERE "id" = $1`,
+    WorkoutPlanRevision: `UPDATE public."WorkoutPlanRevision" SET "plan_meta_json" = '{"tampered":true}'::jsonb WHERE "id" = $1`,
+  };
+  type Revisions = keyof typeof tamper;
+  const erase = (table: Revisions) => `DELETE FROM public."${table}" WHERE "id" = $1`;
+  /** A revision row's content, read with the test's own (bypass) connection; null once it is deleted. */
+  const content = async (table: Revisions, rowId: string) => (table === 'WorkoutProgramRevision'
+    ? (await prisma.workoutProgramRevision.findUnique({ where: { id: rowId } }))?.structure_json
+    : (await prisma.workoutPlanRevision.findUnique({ where: { id: rowId } }))?.plan_meta_json) ?? null;
+  /** A spare revision (content {}) written with the bypass connection, for writes that are meant to land. */
+  let spareIndex = 10;
+  const spareRevision = async (table: Revisions, parentId: string, author: string): Promise<string> => {
+    const row = { revision_index: spareIndex++, author_id: author, author_kind: 'coach', cause: 'save' };
+    return table === 'WorkoutProgramRevision'
+      ? (await prisma.workoutProgramRevision.create({ data: { ...row, program_id: parentId, structure_json: {} } })).id
+      : (await prisma.workoutPlanRevision.create({ data: { ...row, workout_plan_id: parentId, exercises_json: [], plan_meta_json: {} } })).id;
+  };
   /** Applies a migration file's statements in one transaction (comments dropped, BEGIN/COMMIT handled here). */
   const runSql = (file: 'migration.sql' | 'down.sql') => {
     const sql = fs.readFileSync(path.join(__dirname, '..', '..', 'prisma', 'migrations', MIGRATION, file), 'utf8');
@@ -93,8 +112,8 @@ const RLS = /row-level security/;
     for (const [sub, client] of [[x, cx], [l, cl]]) {
       await prisma.subCoachAssignment.create({ data: { head_coach_id: h, sub_coach_id: sub, client_id: client } });
     }
-    // Shared library rows: h's and b's masters, and one x published into h's tenant while seated.
-    for (const [key, coach, owner] of [['Ph', h, h], ['Pb', b, b], ['Px', h, x]]) {
+    // Shared library rows: h's and b's masters, and one each that x and s published into h's tenant while seated.
+    for (const [key, coach, owner] of [['Ph', h, h], ['Pb', b, b], ['Px', h, x], ['Ps', h, s]]) {
       const program = await prisma.workoutProgram.create({
         data: { coach_id: coach, owner_user_id: owner, visibility: 'tenant_shared', name: 'RLS shared', weeks: 4, days_per_week: 3 },
       });
@@ -118,6 +137,7 @@ const RLS = /row-level security/;
   afterAll(() => prisma.$disconnect());
 
   it('down.sql brings back the bare coach_id grant on this data; the migration takes it away again', async () => {
+    const spare = await spareRevision('WorkoutProgramRevision', ids.Px, x);
     await runSql('down.sql');
     expect(await onTeam(x, h)).toBe(true);
     expect(await onTeam(p, h)).toBe(true);
@@ -125,6 +145,9 @@ const RLS = /row-level security/;
     expect(await seen('WorkoutProgram', ids.Ph, x)).toBe(1);
     expect(await seen('CommunityWin', ids.win, x)).toBe(1);
     expect(await seen('WorkoutProgram', ids.Pb, m)).toBe(0);
+    // The old rules also let x change and delete revisions of the program x shared into h's library.
+    expect(await changed(x, tamper.WorkoutProgramRevision, spare)).toBe(1);
+    expect(await changed(x, erase('WorkoutProgramRevision'), spare)).toBe(1);
     await runSql('migration.sql');
     expect(await seen('WorkoutProgram', ids.Ph, s)).toBe(1);
     expect(await seen('WorkoutProgram', ids.Ph, x)).toBe(0);
@@ -198,6 +221,36 @@ const RLS = /row-level security/;
        VALUES ($1, $2, 99, '[]'::jsonb, '{}'::jsonb, $3, 'coach', 'save')`, randomUUID(), ids.plan, who));
     await expect(write(x)).rejects.toThrow(RLS);
     await expect(write(h)).resolves.toBe(1);
+  });
+
+  it('revision updates and deletes: a removed sub-coach changes 0 rows in either revision table; the owners still can', async () => {
+    // Each target is read 1 first by someone the rule admits; then x (and, for the plan, s) tries to change and delete it.
+    const denied: Array<[Revisions, string, string, string[]]> = [
+      ['WorkoutProgramRevision', ids.RPh, h, [x]], // the head coach's shared master
+      ['WorkoutProgramRevision', ids.RPx, s, [x]], // the program x shared into h's library while seated
+      ['WorkoutPlanRevision', ids.planRevision, h, [s, x]], // plan revisions stay with the plan's coach, as before
+    ];
+    for (const [table, row, reader, writers] of denied) {
+      expect(await seen(table, row, reader)).toBe(1);
+      for (const who of writers) {
+        expect(await changed(who, tamper[table], row)).toBe(0);
+        expect(await changed(who, erase(table), row)).toBe(0);
+      }
+      expect(await content(table, row)).toEqual({}); // still there, unchanged
+    }
+    // The same statements land for the rows' owners: h on spare revisions of h's master and plan, and s (still
+    // seated) on the revision of the program s shared into h's library.
+    const allowed: Array<[Revisions, string, string]> = [
+      ['WorkoutProgramRevision', await spareRevision('WorkoutProgramRevision', ids.Ph, h), h],
+      ['WorkoutProgramRevision', ids.RPs, s],
+      ['WorkoutPlanRevision', await spareRevision('WorkoutPlanRevision', ids.plan, h), h],
+    ];
+    for (const [table, row, who] of allowed) {
+      expect(await changed(who, tamper[table], row)).toBe(1);
+      expect(await content(table, row)).toEqual({ tampered: true });
+      expect(await changed(who, erase(table), row)).toBe(1);
+      expect(await content(table, row)).toBeNull();
+    }
   });
 
   it('community wins: a seated sub-coach and the author\'s teammates still see the win; a removed or coach_id-only coach does not', async () => {
