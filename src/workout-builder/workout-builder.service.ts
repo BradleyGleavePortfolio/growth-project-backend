@@ -1077,6 +1077,31 @@ export class WorkoutBuilderService {
   }
 
   /**
+   * PROGINSERT: the tenant a fork, clone or program assignment acts in. The
+   * same rule as ProgramLibraryService.resolveActor (C13): a coach is a team
+   * sub-coach, acting in the head coach's tenant, only with an explicit
+   * membership (SubCoachScopeService.getHeadCoachIdForSubCoach). A bare
+   * coach_id on a coach row (an old guest checkout) never moves the copy into
+   * someone else's tenant. Without the scope helper the actor stays in their
+   * own tenant.
+   */
+  private async actorTenant(
+    actingUserId: string,
+  ): Promise<{ tenantId: string; authorKind: 'coach' | 'sub_coach' }> {
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actingUserId },
+      select: { id: true },
+    });
+    if (!actor) throw new ForbiddenException('Acting user not found');
+    const headCoachId = this.subCoachScope
+      ? await this.subCoachScope.getHeadCoachIdForSubCoach(actingUserId)
+      : null;
+    return headCoachId
+      ? { tenantId: headCoachId, authorKind: 'sub_coach' }
+      : { tenantId: actingUserId, authorKind: 'coach' };
+  }
+
+  /**
    * MWB-1 (§7.3) — fork a template program into a NEW program owned by the
    * acting user. "Grab a building block, make it your own." The source must
    * be either `visibility='tenant_shared'` within the actor's tenant OR owned
@@ -1091,14 +1116,9 @@ export class WorkoutBuilderService {
     if (!source) throw new NotFoundException('Source template not found');
 
     // Authorisation: owner, OR a tenant_shared building block within the
-    // actor's tenant. We resolve the actor's tenant from their own user row
-    // (head coaches: their own id is the tenant; sub-coaches: their coach_id).
-    const actor = await this.prisma.user.findUnique({
-      where: { id: actingUserId },
-      select: { id: true, coach_id: true },
-    });
-    if (!actor) throw new ForbiddenException('Acting user not found');
-    const actorTenantId = actor.coach_id ?? actor.id;
+    // actor's tenant (head coaches: their own id; seated sub-coaches: their
+    // head coach's id, see actorTenant).
+    const { tenantId: actorTenantId, authorKind } = await this.actorTenant(actingUserId);
     const isOwner = source.owner_user_id === actingUserId;
     const isSharedInTenant =
       source.visibility === 'tenant_shared' && source.coach_id === actorTenantId;
@@ -1128,7 +1148,7 @@ export class WorkoutBuilderService {
         const plans = await this.copyProgramPlans(tx, sourceTemplateId, program.id, {
           isTemplate: true,
           actingUserId,
-          authorKind: actor.coach_id ? 'sub_coach' : 'coach',
+          authorKind,
           cause: 'initial',
           coachId: actorTenantId,
         });
@@ -1202,12 +1222,7 @@ export class WorkoutBuilderService {
     if (!master) throw new NotFoundException('Master program not found');
     // The coach must own the master (or it must be a tenant_shared block they
     // can reach) AND have access to the target client.
-    const actor = await this.prisma.user.findUnique({
-      where: { id: coachId },
-      select: { id: true, coach_id: true },
-    });
-    if (!actor) throw new ForbiddenException('Acting user not found');
-    const actorTenantId = actor.coach_id ?? actor.id;
+    const { tenantId: actorTenantId, authorKind } = await this.actorTenant(coachId);
     const canReachMaster =
       master.owner_user_id === coachId ||
       (master.visibility === 'tenant_shared' && master.coach_id === actorTenantId);
@@ -1303,7 +1318,7 @@ export class WorkoutBuilderService {
         const plans = await this.copyProgramPlans(tx, masterProgramId, program.id, {
           isTemplate: false,
           actingUserId: coachId,
-          authorKind: actor.coach_id ? 'sub_coach' : 'coach',
+          authorKind,
           cause: 'clone',
           coachId: actorTenantId,
         });
@@ -1318,7 +1333,7 @@ export class WorkoutBuilderService {
             revision_index: 0,
             structure_json: this.serialiseProgramStructure(program, plans),
             author_id: coachId,
-            author_kind: actor.coach_id ? 'sub_coach' : 'coach',
+            author_kind: authorKind,
             cause: 'clone',
           },
         });
@@ -1410,12 +1425,7 @@ export class WorkoutBuilderService {
           select: { id: true, owner_user_id: true, coach_id: true, visibility: true },
         });
         if (!program) throw new NotFoundException('Program not found');
-        const actor = await this.prisma.user.findUnique({
-          where: { id: coachId },
-          select: { id: true, coach_id: true },
-        });
-        if (!actor) throw new ForbiddenException('Acting user not found');
-        const actorTenantId = actor.coach_id ?? actor.id;
+        const { tenantId: actorTenantId } = await this.actorTenant(coachId);
         const canReach =
           program.owner_user_id === coachId ||
           (program.visibility === 'tenant_shared' && program.coach_id === actorTenantId);
