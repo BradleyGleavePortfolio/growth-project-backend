@@ -402,9 +402,9 @@ describe('FIX998 — the quote shows the dates of the attempt the checkout resum
     prisma.packageTrialUsage = makeTrialUsageTable();
     const stripe = makeFakeStripe();
     prisma._users.push(
-      { id: CLIENT, email: 'c@example.test', name: 'Client', coach_id: COACH },
-      { id: OTHER_CLIENT, email: 'o@example.test', name: 'Other', coach_id: COACH },
-      { id: COACH, email: 'k@example.test', name: 'Coach', coach_id: null },
+      { id: CLIENT, email: 'client', name: 'Client', coach_id: COACH },
+      { id: OTHER_CLIENT, email: 'other-client', name: 'Other', coach_id: COACH },
+      { id: COACH, email: 'coach', name: 'Coach', coach_id: null },
     );
     const rows = [
       pkgRow({ ...TRIAL, stripe_price_id: 'price_trial' }),
