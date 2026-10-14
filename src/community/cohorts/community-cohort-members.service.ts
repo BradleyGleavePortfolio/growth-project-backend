@@ -282,7 +282,11 @@ export class CommunityCohortMembersService {
     await this.assertWorkspaceCoach(cohort.workspace_id, user);
 
     const membership = await this.repo.findMembership(cohort.id, userId);
-    if (!membership) throw new NotFoundException(NOT_FOUND);
+    // Owner 137-8: a client who moved away is no longer this coach's to see or
+    // change, so their kept row answers exactly like a missing one.
+    if (!membership || (await this.safety.formerClientIds(user.id)).has(membership.user_id)) {
+      throw new NotFoundException(NOT_FOUND);
+    }
 
     // Never strip the owning coach's own membership (the `coach` role row).
     // Removing it would orphan the cohort. 403 regardless of who asks.

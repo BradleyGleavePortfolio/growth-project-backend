@@ -180,6 +180,16 @@ export class InMemoryPrisma {
     }
   }
 
+  /**
+   * The only raw read the community services make here: clientsWhoLeftCoach
+   * (app.community_author_moved). Seeded clients never change coach, so none
+   * has left; any other raw SQL throws (strict, as for delegates).
+   */
+  async $queryRaw(sql: TemplateStringsArray): Promise<Row[]> {
+    if (sql.join('?').includes('app.community_author_moved')) return [];
+    throw new Error(`InMemoryPrisma: unsupported raw query ${sql.join('?')}`);
+  }
+
   private snapshot(): Record<string, TableSnapshot> {
     const snap: Record<string, TableSnapshot> = {};
     for (const [name, array] of Object.entries(this.tables)) {

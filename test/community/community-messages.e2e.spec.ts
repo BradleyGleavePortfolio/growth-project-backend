@@ -47,6 +47,9 @@ import { AnalyticsService } from '../../src/analytics/analytics.service';
 import { liveDbUrl } from './_support/community-db';
 import { insertLiveUsers } from './_support/community-live-seed';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
+import { CommunityCoachInboxController } from '../../src/community/inbox/community-coach-inbox.controller';
+import { CommunityCoachInboxService } from '../../src/community/inbox/community-coach-inbox.service';
+import { CommunityCoachInboxRepository } from '../../src/community/inbox/community-coach-inbox.repository';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
@@ -142,8 +145,10 @@ itLive('community v1-3 cohort messages (live DB)', () => {
     await prismaForStub.$connect();
 
     const moduleRef: TestingModule = await Test.createTestingModule({
-      controllers: [CommunityMessagesController],
+      controllers: [CommunityMessagesController, CommunityCoachInboxController],
       providers: [
+        CommunityCoachInboxService,
+        CommunityCoachInboxRepository,
         CommunityMessagesService,
         CommunityMessagesRepository,
         // CommunityMessagesService validates plan-context tags on send.
@@ -467,6 +472,35 @@ itLive('community v1-3 cohort messages (live DB)', () => {
 
     const del = await call('DELETE', `/api/community/messages/${comment.id}`, asUser(ids.studentA));
     expect(del.status).toBe(404);
+  });
+
+  // 11 — COMMUNITYMOVE (owner 137-8): once Student A2 moves to coach B, coach
+  // A reads none of their cohort messages (list, single read, coach inbox);
+  // the messages stay, and Student A, who stayed, still reads them.
+  it('11. the former coach reads none of a moved client\'s messages', async () => {
+    const send = async (who: string, body: string) =>
+      (await call('POST', `/api/community/cohorts/${ids.cohortA}/messages`, asUser(who), { body })).body.message.id;
+    const moved = await send(ids.studentA2, 'week one done');
+    const stayed = await send(ids.studentA, 'me too');
+    const chat = async (who: string) =>
+      (await call('GET', `/api/community/cohorts/${ids.cohortA}/messages`, asUser(who))).body.messages.map((m: { id: string }) => m.id);
+    const inbox = async () =>
+      (await call('GET', '/api/community/me/coach-inbox?limit=100', asUser(ids.coachA))).body.items.map((i: { id: string }) => i.id);
+    expect(await chat(ids.coachA)).toEqual(expect.arrayContaining([moved, stayed]));
+    expect(await inbox()).toEqual(expect.arrayContaining([moved, stayed]));
+    expect((await call('GET', `/api/community/messages/${moved}`, asUser(ids.coachA))).status).toBe(200);
+
+    await prisma.user.update({ where: { id: ids.studentA2 }, data: { coach_id: ids.coachB } });
+
+    expect(await chat(ids.coachA)).not.toContain(moved);
+    expect(await inbox()).not.toContain(moved);
+    const gone = await call('GET', `/api/community/messages/${moved}`, asUser(ids.coachA));
+    expect(gone.status).toBe(404);
+    expect(gone.body.error).toBe('not_found');
+    expect(await chat(ids.coachA)).toContain(stayed);
+    expect(await inbox()).toContain(stayed);
+    expect(await chat(ids.studentA)).toEqual(expect.arrayContaining([moved, stayed]));
+    expect(await prisma.communityMessage.count({ where: { id: moved } })).toBe(1);
   });
 
   it('9. master flag off → 503 even on reads', async () => {

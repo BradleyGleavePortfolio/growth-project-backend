@@ -5,6 +5,7 @@ import type {
   User,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import { clientsWhoLeftCoach } from '../community-former-clients';
 
 /**
  * Data access for the coach inbox aggregator.
@@ -59,18 +60,21 @@ export class CommunityCoachInboxRepository {
    * is NOT a coach/assistant (a client) and which carries no coach reply
    * (coach_replied_at IS NULL). Ordered (created_at ASC, id ASC) — a stable FIFO
    * triage order with a deterministic tiebreak. Fetches `limit` rows; the caller
-   * derives next_cursor.
+   * derives next_cursor. Never from a client who moved away from `coachId`
+   * (owner 137-8; kept, not shown).
    */
   async unansweredMessages(params: {
     cohortIds: string[];
     limit: number;
     after: { createdAt: Date; id: string } | null;
+    coachId: string;
   }): Promise<MessageWithSender[]> {
     const { cohortIds, limit, after } = params;
     if (cohortIds.length === 0) return [];
     return this.prisma.communityMessage.findMany({
       where: {
         cohort_id: { in: cohortIds },
+        sender_id: { notIn: [...(await clientsWhoLeftCoach(this.prisma, params.coachId))] },
         scope: 'cohort',
         deleted_at: null,
         plan_context_type: null,
@@ -98,18 +102,21 @@ export class CommunityCoachInboxRepository {
    * coach/owner) that has NO coach-authored comment. Comments are stored as
    * CommunityMessage rows tagged plan_context_id = post.id (see
    * CommunityMessagesRepository.COMMENT_CONTEXT_TYPE). We fetch candidate posts
-   * then filter those with a coach comment in a second bounded query.
+   * then filter those with a coach comment in a second bounded query. Never
+   * from a client who moved away from `coachId` (owner 137-8).
    */
   async unansweredPosts(params: {
     cohortIds: string[];
     limit: number;
     after: { createdAt: Date; id: string } | null;
+    coachId: string;
   }): Promise<PostWithAuthor[]> {
     const { cohortIds, limit, after } = params;
     if (cohortIds.length === 0) return [];
     const candidates = await this.prisma.communityPost.findMany({
       where: {
         cohort_id: { in: cohortIds },
+        author_id: { notIn: [...(await clientsWhoLeftCoach(this.prisma, params.coachId))] },
         scope: 'cohort',
         deleted_at: null,
         author: { role: { notIn: ['coach', 'owner'] } },

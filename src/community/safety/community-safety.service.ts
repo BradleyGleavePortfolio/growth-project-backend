@@ -10,6 +10,7 @@ import { checkCommunityText } from './community-content-filter';
 import { memberFirstName } from '../member-display-name';
 import { SUPPORT_EMAIL } from '../../public-pages/trust-pages.html';
 import { winModerationWorkspaceId } from '../community-wins.policy';
+import { clientsWhoLeftCoach } from '../community-former-clients';
 import {
   COMMUNITY_MODERATION_NOTICE_KIND,
   type ModerationNoticeView,
@@ -186,15 +187,27 @@ export class CommunitySafetyService {
   }
 
   /**
-   * Ids hidden from the viewer in BOTH directions: users the viewer blocked
-   * and users who blocked the viewer. One query over both columns.
+   * Owner 137-8 (COMMUNITYMOVE): clients who moved away from this coach. Their
+   * rows stay, but the former coach reads none of them on any community
+   * surface (app.community_author_moved, the rule the row policies use).
+   */
+  formerClientIds(coachId: string): Promise<Set<string>> {
+    return clientsWhoLeftCoach(this.prisma, coachId);
+  }
+
+  /**
+   * Ids hidden from the viewer: users in a block relation with the viewer in
+   * either direction (one query over both columns), plus the clients who moved
+   * away from the viewer as their coach (formerClientIds).
    */
   async hiddenFromViewer(viewerId: string): Promise<Set<string>> {
-    const rows = await this.prisma.userBlock.findMany({
-      where: { OR: [{ blocker_id: viewerId }, { blocked_id: viewerId }] },
-      select: { blocker_id: true, blocked_id: true },
-    });
-    const hidden = new Set<string>();
+    const [rows, hidden] = await Promise.all([
+      this.prisma.userBlock.findMany({
+        where: { OR: [{ blocker_id: viewerId }, { blocked_id: viewerId }] },
+        select: { blocker_id: true, blocked_id: true },
+      }),
+      this.formerClientIds(viewerId),
+    ]);
     for (const r of rows) {
       if (r.blocker_id === viewerId) hidden.add(r.blocked_id);
       else if (r.blocked_id === viewerId) hidden.add(r.blocker_id);
@@ -232,7 +245,10 @@ export class CommunitySafetyService {
     notFoundBody: object,
   ): Promise<void> {
     if (!authorId || authorId === viewerId) return;
-    if (await this.isBlockedEitherWay(viewerId, authorId)) {
+    if (
+      (await this.isBlockedEitherWay(viewerId, authorId)) ||
+      (await this.formerClientIds(viewerId)).has(authorId)
+    ) {
       throw new NotFoundException(notFoundBody);
     }
   }

@@ -12,6 +12,8 @@ function stub<T>(v: unknown): T {
  */
 export function safetyWithBlocks(blocks: Array<[string, string]> = []): CommunitySafetyService {
   const prisma = {
+    // clientsWhoLeftCoach (COMMUNITYMOVE): no seeded client has changed coach.
+    $queryRaw: async () => [],
     userBlock: {
       // Two-way lookup (hiddenFromViewer): OR over blocker_id / blocked_id.
       findMany: async (args: {

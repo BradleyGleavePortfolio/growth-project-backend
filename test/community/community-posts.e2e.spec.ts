@@ -53,6 +53,9 @@ import { CommunityController } from '../../src/community/community.controller';
 import { CommunityService } from '../../src/community/community.service';
 import { CommunityRepository } from '../../src/community/community.repository';
 import { ClientEntitlementGuard } from '../../src/common/guards/client-entitlement.guard';
+import { CommunityCohortMembersController } from '../../src/community/cohorts/community-cohort-members.controller';
+import { CommunityCohortMembersService } from '../../src/community/cohorts/community-cohort-members.service';
+import { CommunityCohortMembersRepository } from '../../src/community/cohorts/community-cohort-members.repository';
 
 const itLive = liveDbUrl() ? describe : describe.skip;
 
@@ -78,6 +81,7 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
     coachB: '',
     studentA: '',
     studentB: '',
+    mover: '',
     coachNoSpace: '',
     studentNoSpace: '',
     wsA: '',
@@ -145,8 +149,10 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
     await prismaForStub.$connect();
 
     const moduleRef: TestingModule = await Test.createTestingModule({
-      controllers: [CommunityPostsController, CommunityController],
+      controllers: [CommunityPostsController, CommunityController, CommunityCohortMembersController],
       providers: [
+        CommunityCohortMembersService,
+        CommunityCohortMembersRepository,
         CommunityService,
         CommunityRepository,
         ClientEntitlementGuard,
@@ -204,6 +210,7 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
     ids.coachB = randomUUID();
     ids.studentA = randomUUID();
     ids.studentB = randomUUID();
+    ids.mover = randomUUID();
     ids.coachNoSpace = randomUUID();
     ids.studentNoSpace = randomUUID();
 
@@ -212,6 +219,7 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
       [ids.coachB, 'coach', 'Coach B', null],
       [ids.studentA, 'student', 'Student A', ids.coachA],
       [ids.studentB, 'student', 'Student B', ids.coachB],
+      [ids.mover, 'student', 'Morgan Mover', ids.coachA],
       // B-E2E-1: a coach with no community space and one client.
       [ids.coachNoSpace, 'coach', 'Coach C', null],
       [ids.studentNoSpace, 'student', 'Student C', ids.coachNoSpace],
@@ -232,15 +240,17 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
     });
     ids.cohortA = cohortA.id;
 
-    await prisma.communityMembership.create({
-      data: {
-        workspace_id: wsA.id,
-        cohort_id: cohortA.id,
-        user_id: ids.studentA,
-        role: 'student',
-        status: 'active',
-      },
-    });
+    for (const userId of [ids.studentA, ids.mover]) {
+      await prisma.communityMembership.create({
+        data: {
+          workspace_id: wsA.id,
+          cohort_id: cohortA.id,
+          user_id: userId,
+          role: 'student',
+          status: 'active',
+        },
+      });
+    }
   }
 
   async function cleanup() {
@@ -249,6 +259,7 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
       ids.coachB,
       ids.studentA,
       ids.studentB,
+      ids.mover,
       ids.coachNoSpace,
       ids.studentNoSpace,
     ].filter(Boolean);
@@ -480,5 +491,57 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
     expect(JSON.stringify([reply.body, mine.body, feed.body, thread.body])).not.toMatch(
       /Coach A|Student A/,
     );
+  });
+
+  // 10 — COMMUNITYMOVE (owner 137-8): after a client moves, the former coach
+  // reads none of their posts or comments (kept; the client who stayed still
+  // reads them), and Remove answers the kept membership with the plain 404.
+  it('10. the former coach reads none of a moved client\'s posts or comments, and Remove is 404', async () => {
+    const coachPost = await createPostAsCoach();
+    const write = async (who: string, path: string, body: object) =>
+      (await call('POST', `/api/community${path}`, asUser(who), body)).body;
+    const moverPost = (await write(ids.mover, `/workspaces/${ids.wsA}/posts`, { title: 'Week 1', body: 'done' })).post.id;
+    const stayerPost = (await write(ids.studentA, `/workspaces/${ids.wsA}/posts`, { title: 'Week 1', body: 'also' })).post.id;
+    const reply = (await write(ids.mover, `/posts/${coachPost}/comments`, { body: 'thanks' })).comment.id;
+    const feed = async (who: string) =>
+      (await call('GET', `/api/community/workspaces/${ids.wsA}/posts`, asUser(who))).body.posts.map((p: { id: string }) => p.id);
+    const thread = async (who: string) =>
+      (await call('GET', `/api/community/posts/${coachPost}/comments`, asUser(who))).body.comments.map((c: { id: string }) => c.id);
+    expect(await feed(ids.coachA)).toContain(moverPost);
+    expect(await thread(ids.coachA)).toContain(reply);
+    expect((await call('GET', `/api/community/posts/${moverPost}`, asUser(ids.coachA))).status).toBe(200);
+
+    await prisma.user.update({ where: { id: ids.mover }, data: { coach_id: ids.coachB } });
+
+    expect(await feed(ids.coachA)).not.toContain(moverPost);
+    expect(await thread(ids.coachA)).not.toContain(reply);
+    for (const path of [`/posts/${moverPost}`, `/posts/${moverPost}/comments`]) {
+      const res = await call('GET', `/api/community${path}`, asUser(ids.coachA));
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('community.post.not_found');
+    }
+    // The coach still reads the client who stayed; that client still reads the mover's history.
+    expect(await feed(ids.coachA)).toEqual(expect.arrayContaining([coachPost, stayerPost]));
+    expect(await feed(ids.studentA)).toContain(moverPost);
+    expect(await thread(ids.studentA)).toContain(reply);
+    expect(await prisma.communityPost.count({ where: { id: moverPost } })).toBe(1);
+
+    // B3: the kept (ended) membership answers the former coach like a missing one.
+    const removeAt = (cohortId: string, who: string) =>
+      call('DELETE', `/api/community/cohorts/${cohortId}/members/${ids.mover}`, asUser(who));
+    const gone = await removeAt(ids.cohortA, ids.coachA);
+    expect(gone.status).toBe(404);
+    expect(gone.body).toEqual(expect.objectContaining({ error: 'not_found', code: 'community.cohort.not_found' }));
+    expect(JSON.stringify(gone.body)).not.toMatch(/Morgan|example|removed/);
+    // The current coach's Remove still works, and again is an idempotent success.
+    const cohortB = await prisma.communityCohort.create({ data: { workspace_id: ids.wsB, name: 'Cohort B' } });
+    await prisma.communityMembership.create({
+      data: { workspace_id: ids.wsB, cohort_id: cohortB.id, user_id: ids.mover, role: 'student', status: 'active' },
+    });
+    for (let i = 0; i < 2; i++) {
+      const res = await removeAt(cohortB.id, ids.coachB);
+      expect(res.status).toBe(200);
+      expect(res.body.member).toEqual(expect.objectContaining({ user_id: ids.mover, status: 'removed' }));
+    }
   });
 });
