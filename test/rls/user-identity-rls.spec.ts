@@ -48,7 +48,7 @@ const AUTH_UID_POLICIES = [
 
 (DB_URL ? describe : describe.skip)('"User": users cannot rewrite their own role, coach or login id at the row layer', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
-  const keys: Key[] = ['A', 'K', 'L', 'F', 'O'];
+  const keys: Key[] = ['K', 'L', 'F', 'O', 'A']; // A last: A.coach_id references F
   const id = Object.fromEntries(keys.map((k) => [k, randomUUID()])) as Record<Key, string>;
   const sub = Object.fromEntries(keys.map((k) => [k, randomUUID()])) as Record<Key, string>;
   const run = randomUUID().slice(0, 8);
