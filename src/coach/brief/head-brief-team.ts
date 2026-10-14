@@ -7,6 +7,7 @@
 import { ConsentScope, type ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
 import { isMessagingCoreV2Enabled } from '../../messaging/messaging-core.feature';
+import type { Prisma } from '@prisma/client';
 import type { PrismaService } from '../../prisma.service';
 import type { HeadBriefActivity, HeadBriefClientsYesterday } from './coach-brief.types';
 
@@ -124,4 +125,31 @@ export function previousDate(date: string): string {
   const d = new Date(`${date}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() - 1);
   return d.toISOString().slice(0, 10);
+}
+
+// BRIEFTEAM2 (Sol B3): the clients a stored head brief names (its
+// message_unread rows carry client_id, name and preview).
+export function namedClientIds(actionItems: Prisma.JsonValue | null): string[] {
+  if (!Array.isArray(actionItems)) return [];
+  return actionItems.flatMap((i) => {
+    const id = i !== null && typeof i === 'object' && !Array.isArray(i) ? i.client_id : undefined;
+    return typeof id === 'string' ? [id] : [];
+  });
+}
+
+// Which of `ids` are the head coach's own right now: User.coach_id = head, an
+// active student, and not delegated to a sub-coach.
+export async function stillOwnClientIds(prisma: PrismaService, head: string, ids: string[]): Promise<Set<string>> {
+  const [own, delegated] = await Promise.all([
+    prisma.user.findMany({
+      where: { id: { in: ids }, coach_id: head, role: 'student', archived_at: null },
+      select: { id: true },
+    }),
+    prisma.subCoachAssignment.findMany({
+      where: { head_coach_id: head, client_id: { in: ids }, unassigned_at: null },
+      select: { client_id: true },
+    }),
+  ]);
+  const away = new Set(delegated.map((d) => d.client_id));
+  return new Set(own.map((u) => u.id).filter((id) => !away.has(id)));
 }

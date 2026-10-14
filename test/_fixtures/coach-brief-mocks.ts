@@ -33,6 +33,7 @@ export interface MockUserDelegate {
 
 export interface MockCoachBriefDelegate {
   findUnique: jest.Mock;
+  findFirst: jest.Mock;
   create: jest.Mock;
   update: jest.Mock;
   updateMany: jest.Mock;
@@ -133,6 +134,7 @@ export function makeMockPrisma(): MockPrisma {
     },
     coachBrief: {
       findUnique: jest.fn(),
+      findFirst: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
