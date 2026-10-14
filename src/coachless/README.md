@@ -90,3 +90,5 @@ A client with no coach gets `403` with `error`/`code` `ROMAN_REQUIRES_COACH` and
 an eating-disorder message on Roman the fixed fallback. Coached clients are unchanged (coach AI
 pool and daily cap). The scripted Roman card above makes no AI call and is unchanged, and so is
 the client's own logging.
+The same 403 answers Roman's context reads (`GET /ai/context`, `GET /ai/structured-context` and
+`GET /roman/context/me`) before anything is read (139-15).
