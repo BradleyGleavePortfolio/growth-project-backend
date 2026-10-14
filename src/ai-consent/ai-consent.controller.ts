@@ -6,8 +6,9 @@
  *          ?variant=coach_free   -> the coach-free copies (a client with no coach, owner 62)
  *          ?variant=safety_exception -> the coached client-ai-v6 / v7 copies (owner 57c)
  *   POST   /me/ai-consent/roman  {version, copy_sha256?, platform?, app_version?, locale?}
- *                                -> grant (idempotent); 409 CONSENT_VERSION_MISMATCH;
- *                                   403 ROMAN_REQUIRES_COACH for a client with no coach (owner 62x)
+ *                                -> grant (idempotent); 409 CONSENT_VERSION_MISMATCH. A client
+ *                                   with no coach is recorded the same way (W-CONSENT); Roman
+ *                                   stays 403 ROMAN_REQUIRES_COACH until a coach is linked
  *   DELETE /me/ai-consent/roman  -> withdraw (idempotent)
  *
  * The subject is always req.user.id. Guards: JwtAuthGuard + RolesGuard +
@@ -40,7 +41,6 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import type { AuthedRequest } from '../auth/auth-request';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { romanRequiresCoach, romanRequiresCoachException } from '../roman/roman-requires-coach';
 import { AI_CONSENT_ERROR_UNAVAILABLE, isAiConsentLedgerEnabled } from './ai-consent.constants';
 import { GrantClientAiConsentDto } from './ai-consent.dto';
 import { AiConsentService, type ClientAiConsentStatus } from './ai-consent.service';
@@ -91,10 +91,9 @@ export class AiConsentController {
     @Req() req: AuthedRequest,
     @Body() dto: GrantClientAiConsentDto,
   ): Promise<ClientAiConsentStatus> {
-    // Owner 62x: a client with no coach has no access to Roman, so no AI
-    // consent can be given: 403 ROMAN_REQUIRES_COACH, nothing written. A
-    // withdrawal (DELETE) stays open: it only ever turns AI use off.
-    if (romanRequiresCoach(req.user)) throw romanRequiresCoachException();
+    // W-CONSENT: a client with no coach is asked once and the grant is kept,
+    // exactly like a coached grant, so it applies the day a coach is linked.
+    // Roman and every AI route still answer 403 ROMAN_REQUIRES_COACH until then.
     return this.consent.grant(req.user.id, dto);
   }
 

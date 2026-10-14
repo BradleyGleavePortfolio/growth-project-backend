@@ -122,9 +122,11 @@ Accepted grants (`CLIENT_AI_CONSENT_ACCEPTED`; version AND its exact sha256):
   `client-ai-v7` as `upgrade` / `memory_copy` when there is no live grant. A plain `GET`
   keeps offering v4 / v5, the text installed builds pin. A live grant reads the copies of
   its own generation (v4 / v5, or v6 / v7) whatever is asked.
-- No coach, no grant (owner 62x): `POST /api/me/ai-consent/roman` from a client with no
-  coach is `403 ROMAN_REQUIRES_COACH` and writes nothing. `GET` and `DELETE` stay open
-  (a withdrawal only ever turns AI use off).
+- Asked once, before a coach (owner W-CONSENT): `POST /api/me/ai-consent/roman` from a
+  client with no coach records the grant exactly as for a coached client (same versions,
+  row and log line). Roman, the AI context reads and the client wearable insight stay
+  `403 ROMAN_REQUIRES_COACH` until a coach is linked; then the grant on file applies with
+  no new ask. `GET` and `DELETE` stay open, and a withdrawal works the same either way.
 
 - Coach-free copies (owner 62, 2026-10-12): `GET /api/me/ai-consent?variant=coach_free`
   (the app sends it for a client with no coach) offers `client-ai-v4-coach-free` as

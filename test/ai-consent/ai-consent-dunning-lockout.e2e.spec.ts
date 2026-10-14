@@ -44,8 +44,7 @@ class HeaderAuthGuard implements CanActivate {
     const req = ctx.switchToHttp().getRequest();
     const id = req.headers[H_USER];
     if (typeof id !== 'string' || !id) throw new UnauthorizedException();
-    // A billing-locked client has a coach (owner 62x refuses a grant without one).
-    req.user = { id, role: 'student', coach_id: 'coach_1' };
+    req.user = { id, role: 'student' };
     return true;
   }
 }

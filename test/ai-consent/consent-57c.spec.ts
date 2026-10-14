@@ -11,7 +11,8 @@
  *   - the ledger: v6 'base', v7 'memory'; GET ?variant=safety_exception offers
  *     them (a plain GET keeps v4 / v5 for installed builds); a live grant reads
  *     the copies of its own generation everywhere.
- * The HTTP query and the owner 62x refusal are in ai-consent.controller.spec.ts.
+ * The HTTP query is in ai-consent.controller.spec.ts; a client with no coach
+ * (W-CONSENT) in consent-coachless-grant.spec.ts.
  */
 import { Logger, type DynamicModule } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
