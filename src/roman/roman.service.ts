@@ -96,7 +96,7 @@ import {
 } from './guardrails/safety-router';
 import { postCheckRomanReply, type PostCheckContext } from './guardrails/roman-post-check';
 import { RomanClientContextService } from './context/roman-client-context.service';
-import { consumeRomanUsage } from './roman-usage';
+import { consumeRomanUsage, releaseRomanUsage, type RomanUsageDebit } from './roman-usage';
 import { isDunningV2Enabled } from '../checkout/dunning-v2/dunning-v2.feature';
 import { effectiveLock } from '../checkout/dunning-v2/dunning-effective-access';
 import { AuditAction, AuditService } from '../audit/audit.service';
@@ -835,8 +835,8 @@ export class RomanService {
    * local day), or throw the 429 ROMAN_RATE_LIMIT (roman-usage.ts). Coaches
    * and owners are not counted. The controller runs it after every other check.
    */
-  async assertWithinRateLimit(caller: RomanCaller): Promise<void> {
-    await consumeRomanUsage(this.prisma, caller, 'chat_message');
+  async assertWithinRateLimit(caller: RomanCaller, peek = false): Promise<RomanUsageDebit | null> {
+    return consumeRomanUsage(this.prisma, caller, 'chat_message', new Date(), peek);
   }
 
   // ─── AI consent (R2b) ────────────────────────────────────────────────────
@@ -917,7 +917,7 @@ export class RomanService {
   async *streamAssistantTurn(
     caller: RomanCaller,
     session: RomanSession,
-    opts: { signal?: AbortSignal; userMessage?: string; userMessageId?: string } = {},
+    opts: { signal?: AbortSignal; userMessage?: string; userMessageId?: string; usageDebit?: RomanUsageDebit | null } = {},
   ): AsyncGenerator<RomanStreamChunk> {
     // Defence-in-depth flag re-check (brief §1.6): never drive the model OFF.
     if (!isRomanChatEnabled()) {
@@ -1018,8 +1018,9 @@ export class RomanService {
           caller,
           (L.max_rounds + 1) * roundBound,
           (L.max_rounds + 1) * ROMAN_MAX_OUTPUT_TOKENS,
+          opts.usageDebit,
         )
-      : await this.reserveDailySpend(caller, payload.inputTokenBound);
+      : await this.reserveDailySpend(caller, payload.inputTokenBound, undefined, opts.usageDebit);
     // Every settle path that spent tokens also debits the coach pool (B-668-1).
     const settle = async (
       inputTokens: number,
@@ -1608,11 +1609,13 @@ export class RomanService {
    * cap: nothing is inserted and the turn is a coded 503 with specific copy.
    * Any ledger failure: coded 503, no provider call (fail closed).
    * R11-T2B: a tools turn passes the output bound of all its calls.
+   * ROMANCOUNT: a refused turn gives its counted message back here (`usageDebit`).
    */
   async reserveDailySpend(
     caller: RomanCaller,
     inputTokenBound: number,
     outputTokenBound: number = ROMAN_MAX_OUTPUT_TOKENS,
+    usageDebit: RomanUsageDebit | null = null,
   ): Promise<string> {
     const requestId = `roman:${randomUUID()}`;
     const cap = this.dailyCostCapUsd();
@@ -1634,7 +1637,10 @@ export class RomanService {
           agg._sum.prompt_token_estimate ?? 0,
           agg._sum.response_token_estimate ?? 0,
         );
-        if (used + reserveUsd > cap) return false;
+        if (used + reserveUsd > cap) {
+          if (usageDebit) await releaseRomanUsage(tx, usageDebit);
+          return false;
+        }
         await tx.aiRequestAudit.create({
           data: {
             request_id: requestId,

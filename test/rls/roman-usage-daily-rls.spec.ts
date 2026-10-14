@@ -46,9 +46,9 @@ if (!DB_URL && process.env.CI === 'true') {
   const rowsSeenBy = async (reader: string | null) =>
     (await asUser(reader, Prisma.sql`SELECT "client_id" FROM "roman_usage_daily"
       WHERE "client_id" IN (${client}, ${other})`)).map((r) => r.client_id);
-  /** True when the event is allowed (and counted), false on the 429. */
-  const passes = (who: string, event: RomanUsageEvent, now = AT) =>
-    consumeRomanUsage(fakeOf<PrismaService>(prisma), { id: who, role: 'student' }, event, now).then(
+  /** True when the event is allowed (and counted unless `peek`), false on the 429. */
+  const passes = (who: string, event: RomanUsageEvent, now = AT, peek = false) =>
+    consumeRomanUsage(fakeOf<PrismaService>(prisma), { id: who, role: 'student' }, event, now, peek).then(
       () => true,
       (e: unknown) => {
         if (e instanceof HttpException && e.getStatus() === 429) return false;
@@ -84,11 +84,14 @@ if (!DB_URL && process.env.CI === 'true') {
       where: { client_id_day: { client_id: client, day: DAY } },
       data: { messages: 99, files: 2, changes: 4 },
     });
+    expect(await passes(client, 'chat_message', AT, true)).toBe(true); // an eating-disorder-risk turn: never counted
+    expect((await counts(client))?.messages).toBe(99);
     for (const event of ['chat_message', 'meal_photo', 'roman_change'] as const) {
       expect(await passes(client, event)).toBe(true);
       expect(await passes(client, event)).toBe(false);
     }
     expect(await passes(client, 'file_upload')).toBe(false);
+    expect(await passes(client, 'chat_message', AT, true)).toBe(false); // ...but refused at the limit
     // Excluded events (a, b, d, e, safety replies) never count, even at every limit.
     for (const e of ['coach_approved_change', 'private_note', 'voice_logged_set', 'coach_import', 'safety_reply'] as const) {
       expect(await passes(client, e)).toBe(true);

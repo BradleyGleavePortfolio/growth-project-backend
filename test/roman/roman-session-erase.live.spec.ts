@@ -173,7 +173,7 @@ liveDescribe('B-635-1 / C-635-1 live: Roman delete erases and frees the day key 
     await expect(svc.assertWithinRateLimit(ME)).rejects.toMatchObject({
       response: { code: 'ROMAN_RATE_LIMIT' },
     });
-    await expect(svc.assertWithinRateLimit(OTHER)).resolves.toBeUndefined();
+    await expect(svc.assertWithinRateLimit(OTHER)).resolves.toMatchObject({ kind: 'messages' });
   });
 
   it("C-635-1: a legacy tombstone holding today's key is erased on open and a fresh session opens", async () => {

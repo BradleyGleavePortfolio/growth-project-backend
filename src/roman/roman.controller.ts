@@ -45,6 +45,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { toRomanSseErrorFrame } from './roman-sse-error';
+import type { RomanUsageDebit } from './roman-usage';
 import {
   assertRomanHasCoach,
   romanRequiresCoach,
@@ -125,6 +126,7 @@ export class RomanController {
     // to people, no model call) instead of the refusal.
     const edRisk = !crisis && this.roman.isEatingDisorderRisk(dto.content);
     let edFallback = false;
+    let usageDebit: RomanUsageDebit | null = null;
 
     // Owner 10-09 00:0x: a client with no coach gets 403 ROMAN_REQUIRES_COACH
     // first, before the rate limit, the turn is stored or any AI or pool
@@ -149,8 +151,9 @@ export class RomanController {
       // B-668-1 — the coach's monthly AI credit pool, before the turn is stored
       // (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).
       if (!crisis && !edFallback) await this.roman.assertCoachPoolOpen(caller);
-      // ROMANCOUNT — counted last, so a turn refused above never counts.
-      if (!crisis && !edFallback) await this.roman.assertWithinRateLimit(caller);
+      // ROMANCOUNT — counted last, so a turn refused above never counts (the spend
+      // admission gives it back). An eating-disorder-risk turn is checked, never counted.
+      if (!crisis && !edFallback) usageDebit = await this.roman.assertWithinRateLimit(caller, edRisk);
     } catch (err) {
       if (!edRisk) {
         // 429: the wait as a real Retry-After header (RFC 6585 §4).
@@ -195,6 +198,7 @@ export class RomanController {
           signal: abort.signal,
           userMessage: dto.content,
           userMessageId: stored?.id,
+          usageDebit,
         });
     try {
       for await (const chunk of turn) {

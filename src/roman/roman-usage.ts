@@ -2,7 +2,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { PrismaService } from '../prisma.service';
 import { resolveRecipientTimeZone } from '../notifications/recipient-timezone';
-import { addDays, dateOnly, localClock, localDayStart } from './context/roman-client-context.service';
+import { addDays, localClock, localDayStart } from './context/roman-client-context.service';
 import {
   ROMAN_DAILY_LIMITS, ROMAN_ERROR_RATE_LIMIT, type RomanUsageKind, romanDailyLimitMessage, romanRateLimitMessage,
 } from './roman.constants';
@@ -30,7 +30,7 @@ export type RomanUsageCaller = { id: string; role: string };
 
 type UsageDb = Pick<
   PrismaService,
-  '$queryRaw' | 'romanUsageDaily' | 'notificationPreferences' | 'coachProfile' | 'coachingSession' | 'user'
+  '$queryRaw' | 'notificationPreferences' | 'coachProfile' | 'coachingSession' | 'user'
 >;
 
 /** The local day (YYYY-MM-DD) of `now` in `timeZone` and its end, DST-safe. */
@@ -43,31 +43,37 @@ export function romanUsageDay(now: Date, timeZone: string): { day: string; reset
 const clientDay = async (db: UsageDb, clientId: string, now: Date) =>
   romanUsageDay(now, (await resolveRecipientTimeZone(db, clientId)) ?? 'UTC');
 
+/** One counted event, so a turn refused before any reply can give it back. */
+export type RomanUsageDebit = { clientId: string; kind: RomanUsageKind; day: string };
+
 /**
  * Count one Roman event for a client, or refuse it. One atomic statement, so
  * two requests at the limit never both pass. Over the limit: today's 429
  * ROMAN_RATE_LIMIT plus `kind` and `resets_at`. Coaches and owners are never
- * counted (only their AI credit pool limits them).
+ * counted (only their AI credit pool limits them). `peek` (an eating-disorder-
+ * risk turn): the same statement adds 0, so it is refused at the limit, never counted.
  */
 export async function consumeRomanUsage(
   db: UsageDb,
   caller: RomanUsageCaller,
   event: RomanUsageEvent,
   now: Date = new Date(),
-): Promise<void> {
+  peek = false,
+): Promise<RomanUsageDebit | null> {
   const kind = ROMAN_USAGE_KIND_OF[event];
-  if (!kind || caller.role !== 'student') return;
+  if (!kind || caller.role !== 'student') return null;
   const { day, resetsAt } = await clientDay(db, caller.id, now);
   const col = Prisma.raw(`"${kind}"`);
   const limit = ROMAN_DAILY_LIMITS[kind];
+  const step = peek ? 0 : 1;
   const counted = await db.$queryRaw<unknown[]>`
     INSERT INTO "roman_usage_daily" ("client_id", "day", ${col}, "updated_at")
-    VALUES (${caller.id}, ${day}::date, 1, CURRENT_TIMESTAMP)
+    VALUES (${caller.id}, ${day}::date, ${step}, CURRENT_TIMESTAMP)
     ON CONFLICT ("client_id", "day") DO UPDATE
-      SET ${col} = "roman_usage_daily".${col} + 1, "updated_at" = CURRENT_TIMESTAMP
+      SET ${col} = "roman_usage_daily".${col} + ${step}, "updated_at" = CURRENT_TIMESTAMP
       WHERE "roman_usage_daily".${col} < ${limit}
     RETURNING 1`;
-  if (counted.length > 0) return;
+  if (counted.length > 0) return peek ? null : { clientId: caller.id, kind, day };
   const retryAfterSeconds = Math.max(1, Math.ceil((resetsAt.getTime() - now.getTime()) / 1000));
   const message =
     kind === 'messages'
@@ -77,17 +83,9 @@ export async function consumeRomanUsage(
   throw new HttpException(body, HttpStatus.TOO_MANY_REQUESTS);
 }
 
-/** GET /me/roman/usage: today's counts, the limits and the reset. */
-export async function romanUsageToday(db: UsageDb, clientId: string, now: Date = new Date()) {
-  const { day, resetsAt } = await clientDay(db, clientId, now);
-  const row = await db.romanUsageDaily.findUnique({
-    where: { client_id_day: { client_id: clientId, day: dateOnly(day) } },
-    select: { messages: true, files: true, changes: true },
-  });
-  return {
-    day,
-    used: { messages: row?.messages ?? 0, files: row?.files ?? 0, changes: row?.changes ?? 0 },
-    limits: ROMAN_DAILY_LIMITS,
-    resets_at: resetsAt.toISOString(),
-  };
+/** Give a counted event back, inside the refusing transaction. */
+export function releaseRomanUsage(tx: Pick<Prisma.TransactionClient, '$executeRaw'>, debit: RomanUsageDebit) {
+  const col = Prisma.raw(`"${debit.kind}"`);
+  return tx.$executeRaw`UPDATE "roman_usage_daily" SET ${col} = ${col} - 1, "updated_at" = CURRENT_TIMESTAMP
+    WHERE "client_id" = ${debit.clientId} AND "day" = ${debit.day}::date AND ${col} > 0`;
 }
