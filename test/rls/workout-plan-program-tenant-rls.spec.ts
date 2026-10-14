@@ -19,7 +19,7 @@
 import { randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../src/prisma.service';
 import { ProgramDeliveryService } from '../../src/workout-builder/program-delivery.service';
 import { WorkoutBuilderService } from '../../src/workout-builder/workout-builder.service';
@@ -34,7 +34,8 @@ const MIGRATION = '20270428000000_plan_days_stay_in_program_tenant';
 const RLS = /row-level security/;
 
 (DB_URL ? describe : describe.skip)('PLANPROG: a plan points only at a program of its own tenant', () => {
-  const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
+  // PrismaService is the app's own client class, so the services take it as is.
+  const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
   // Fictional people, fresh ids per run. Head coaches h and b. s: a coach
   // seated on h's team. ch: h's client. cb: b's client. o: an owner admin.
   const [h, b, s, ch, cb, o] = Array.from({ length: 6 }, () => randomUUID());
@@ -201,7 +202,7 @@ const RLS = /row-level security/;
     })).map((p) => p.id).sort();
     const planted = [await plantDay(b, hProg, 0), await plantDay(ch, hProg, 4)];
     expect(await prisma.workoutPlan.count({ where: { program_id: hProg, id: { in: planted } } })).toBe(2);
-    const service = new WorkoutBuilderService(prisma as unknown as PrismaService);
+    const service = new WorkoutBuilderService(prisma);
 
     await service.cloneProgramToClient(hProg, ch, h);
     const clone = await prisma.workoutProgram.findFirstOrThrow({ where: { cloned_from_id: hProg, client_id: ch } });
@@ -218,7 +219,7 @@ const RLS = /row-level security/;
     });
     expect(assigned.map((a) => a.workout_plan_id).sort()).toEqual(real);
 
-    const delivered = await new ProgramDeliveryService(prisma as unknown as PrismaService).deliver({
+    const delivered = await new ProgramDeliveryService(prisma).deliver({
       masterProgramId: hProg,
       tenantCoachId: h,
       actingUserId: h,
