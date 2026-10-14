@@ -222,12 +222,13 @@ const DENIED = '42501';
       expect(await policies()).toEqual(chain);
     });
 
-    it('before the move: F, the current coach, reads every row about A; K and L read none', async () => {
+    it('before the move: F, the current coach, reads every row about A and writes prompts; K and L read none', async () => {
       expect(await sees(backend('F'))).toEqual(seen(1, 1, 1, 1));
       expect(await sees(backend('K'))).toEqual(seen(0, 0, 0, 0));
       expect(await sees(backend('L'))).toEqual(seen(0, 0, 0, 0));
       expect(await insertPrompt(backend('F'), 'HRV')).toBe(1);
       expect(await insertSource(backend('F'))).toBe(1);
+      expect(await write(backend('F'), `UPDATE "community_wearable_prompts" SET "actedOnAt" = now() WHERE "id" = $1::uuid`, row.prompt)).toBe(1);
     });
 
     it('after the move: K reads every F-era row about A; F reads none; L still none', async () => {
