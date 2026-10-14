@@ -37,14 +37,12 @@ const OLD_CHECK =
   '(app.is_owner() OR (user_id IS NULL) OR ((app.current_user_id() IS NOT NULL) AND (user_id = app.current_user_id())))';
 const NEW_CHECK = '(app.is_owner() OR ((app.current_user_id() IS NOT NULL) AND (user_id = app.current_user_id())))';
 
-type Who =
-  | { kind: 'dataApi' | 'backend'; k: 'A' | 'B' }
-  | { kind: 'owner' | 'service' | 'anon' };
-const dataApi = (k: 'A' | 'B'): Who => ({ kind: 'dataApi', k });
-const backend = (k: 'A' | 'B'): Who => ({ kind: 'backend', k });
-const owner: Who = { kind: 'owner' };
-const service: Who = { kind: 'service' };
-const anon: Who = { kind: 'anon' };
+type Who = { role: 'anon' | 'authenticated' | 'service_role'; key?: 'A' | 'B' | 'O'; guc?: boolean };
+const dataApi = (k: 'A' | 'B'): Who => ({ role: 'authenticated', key: k });
+const backend = (k: 'A' | 'B'): Who => ({ role: 'authenticated', key: k, guc: true });
+const owner: Who = { role: 'authenticated', key: 'O', guc: true };
+const service: Who = { role: 'service_role' };
+const anon: Who = { role: 'anon' };
 
 (DB_URL ? describe : describe.skip)('DiagnosticSubmission: a row written through row security needs a signed-in owner', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
@@ -56,14 +54,13 @@ const anon: Who = { kind: 'anon' };
 
   const as = <T>(who: Who, query: (tx: Prisma.TransactionClient) => Promise<T>) =>
     prisma.$transaction(async (tx: Prisma.TransactionClient) => {
-      const role = who.kind === 'service' ? 'service_role' : who.kind === 'anon' ? 'anon' : 'authenticated';
-      await tx.$executeRawUnsafe(`SET LOCAL ROLE ${role}`);
-      if (who.kind === 'dataApi' || who.kind === 'backend' || who.kind === 'owner') {
-        const k = who.kind === 'owner' ? 'O' : who.k;
-        await tx.$executeRawUnsafe(`SELECT set_config('request.jwt.claims', $1, true)`, JSON.stringify({ sub: sub[k], role }));
-        if (who.kind !== 'dataApi') {
+      await tx.$executeRawUnsafe(`SET LOCAL ROLE ${who.role}`);
+      const k = who.key;
+      if (k) {
+        await tx.$executeRawUnsafe(`SELECT set_config('request.jwt.claims', $1, true)`, JSON.stringify({ sub: sub[k], role: who.role }));
+        if (who.guc) {
           await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, id[k]);
-          await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, who.kind === 'owner' ? 'owner' : 'student');
+          await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, k === 'O' ? 'owner' : 'student');
         }
       }
       return query(tx);
