@@ -88,7 +88,7 @@ const DATA_API: Model = { jwt: true };
   /** The seven policies (plus #992's restrictive pair), their comments and the helper, as the catalog has them. */
   const catalog = async () => ({
     policies: await prisma.$queryRawUnsafe<{ policyname: string; qual: string | null; with_check: string | null }[]>(
-      `SELECT p.tablename, p.policyname, p.permissive, p.roles::text AS roles, p.cmd, p.qual, p.with_check,
+      `SELECT p.tablename::text AS tablename, p.policyname::text AS policyname, p.permissive, p.roles::text AS roles, p.cmd, p.qual, p.with_check,
               obj_description(pol.oid, 'pg_policy') AS comment
          FROM pg_policies p
          JOIN pg_policy pol ON pol.polname = p.policyname AND pol.polrelid = format('%I.%I', p.schemaname, p.tablename)::regclass
