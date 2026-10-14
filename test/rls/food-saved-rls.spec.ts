@@ -282,7 +282,7 @@ function stub<T>(value: unknown): T {
     const build = Reflect.get(exporter, '_buildArchive') as (u: string, e: string) => Promise<{ buffer: Buffer }>;
     const download = async (who: string): Promise<Record<string, Array<Record<string, unknown>>>> =>
       JSON.parse((await build.call(exporter, who, randomUUID())).buffer.toString('utf8'));
-    const ids = (rows: Array<{ id: unknown }>) => rows.map((r) => String(r.id)).sort();
+    const ids = (rows: Array<Record<string, unknown>>) => rows.map((r) => String(r.id)).sort();
     const exported = (d: Record<string, Array<Record<string, unknown>>>) =>
       ({ favs: ids(d.food_favorites), meals: ids(d.saved_meals), items: ids(d.saved_meal_items) });
     const rowsOf = async (who: string) => {
