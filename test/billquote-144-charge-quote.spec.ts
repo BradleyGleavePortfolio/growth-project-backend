@@ -479,14 +479,20 @@ describe('FIX998 — the quote shows the dates of the attempt the checkout resum
     expect(again.plan.trial_ends_at).toBe(quote?.trial_end);
     expect(w.stripeDate(again.subscription_id)).toBe(quote?.first_charge_at);
     expect(again.plan.first_charge_cents).toBe(quote?.due_today_cents);
+    expect((await w.buy(CLIENT, KEY)).subscription_id).toBe(first.subscription_id); // network retry
   });
 
-  it('trial: back after the reuse window: a fresh trial from now, the date checkout then sends', async () => {
+  // FIX998B — the same key past the window is retired too; the app retries once with a new key.
+  it.each([KEY2, KEY])('trial: back after the reuse window, retry key %s: a fresh trial from now, the date checkout then sends', async (key) => {
     const w = world();
     const first = await w.buy(CLIENT, KEY);
     at(24 * HOUR);
     const { quote } = await w.controller.detail(req, PKG);
-    const again = await w.buy(CLIENT, KEY2);
+    expect((await w.quotes()).get(PKG)).toEqual(quote);
+    const again = await w.buy(CLIENT, key).catch((err) => {
+      expect(err.getResponse().code).toBe('SUBSCRIPTION_ATTEMPT_EXPIRED');
+      return w.buy(CLIENT, KEY2);
+    });
     expect(again.subscription_id).not.toBe(first.subscription_id);
     expect(w.stripe.cancelSubscription).toHaveBeenCalledWith(first.subscription_id);
     expect(w.stripe.createSubscription.mock.calls[1][0].trialPeriodDays).toBe(14);
@@ -499,6 +505,17 @@ describe('FIX998 — the quote shows the dates of the attempt the checkout resum
     });
     expect(again.plan.trial_ends_at).toBe(quote?.trial_end);
     expect(w.stripeDate(again.subscription_id)).toBe(quote?.first_charge_at);
+    expect([...w.stripe._subs.values()].filter((s) => s.status !== 'canceled')).toHaveLength(1);
+  });
+
+  it('a trial whose card was saved is never retired by a same-key retry past the window', async () => {
+    const w = world();
+    const first = await w.buy(CLIENT, KEY);
+    w.stripe._saveTrialCard(first.subscription_id);
+    at(24 * HOUR);
+    await expect(w.buy(CLIENT, KEY)).rejects.toMatchObject({ response: { code: 'SUBSCRIPTION_ALREADY_ACTIVE' } });
+    expect(w.stripe.cancelSubscription).not.toHaveBeenCalled();
+    expect(w.stripe.createSubscription).toHaveBeenCalledTimes(1);
   });
 
   it('monthly: dismissed, back 12 h later: the next charge is the resumed subscription date', async () => {

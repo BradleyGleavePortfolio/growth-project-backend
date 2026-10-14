@@ -939,6 +939,19 @@ export class SubscriptionCheckoutService {
     }
     if (claimed || !cur.stripe_subscription_id) return this.mintSubscription(cur, pkg, true);
 
+    // FIX998B — one reuse rule with the quote: a trial attempt past the window is
+    // retired as R1-6 does for a new key (never once a card was saved); the app
+    // then starts afresh with a new key. Unconfirmed: replayed as before.
+    if (cur.trial_days != null && cur.created_at.getTime() <= resumeWindowStart().getTime()) {
+      let end: 'kept' | 'card_saved' | 'retired' = 'kept';
+      try {
+        end = await this.retireOneStaleTrial(cur, cur.stripe_subscription_id);
+      } catch (err) {
+        this.logger.warn(`stale trial attempt kept purchase=${cur.id} error=${errorLabel(err)}`);
+      }
+      if (end === 'card_saved') throw alreadyActive(cur);
+      if (end === 'retired') throw attemptExpired('timed_out');
+    }
     if (cur.stripe_client_secret) {
       // C-654-3 — the secret may be spent: the card was saved or the first
       // invoice paid a moment ago, before the webhook. Never hand it back.
