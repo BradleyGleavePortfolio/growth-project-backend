@@ -87,6 +87,7 @@ interface PrismaMock {
     findUnique: jest.Mock;
   };
   workoutProgram: {
+    count: jest.Mock;
     create: jest.Mock;
     findUnique: jest.Mock;
     findFirst: jest.Mock;
@@ -140,6 +141,8 @@ const makePrismaMock = (): PrismaMock => ({
     findUnique: jest.fn().mockResolvedValue(null),
   },
   workoutProgram: {
+    // 1: the source program stays in the tenant (programStaysInTenantWhere).
+    count: jest.fn().mockResolvedValue(1),
     create: jest.fn(),
     findUnique: jest.fn(),
     // No prior clone exists by default, so the G9 existence probe lets the

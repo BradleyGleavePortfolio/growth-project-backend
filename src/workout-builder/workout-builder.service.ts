@@ -54,7 +54,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { isMwbTemplatesEnabled } from './mwb-templates.feature';
 import { assertLastDayMayGo, lockProgramMaster, programDaysWhere } from './program-guards';
-import { inTenantWhere, planStaysInTenantWhere } from './tenant-clients';
+import { inTenantWhere, planStaysInTenantWhere, programStaysInTenantWhere } from './tenant-clients';
 import {
   AssignProgramDto,
   CloneProgramResultDto,
@@ -965,6 +965,20 @@ export class WorkoutBuilderService {
     }
   }
 
+  /**
+   * Owner 4: a moved client's program copy is not found as the source of a
+   * fork, clone or assignment either (the same rule, tenant-clients.ts).
+   */
+  private async assertSourceStaysInTenant(
+    program: { id: string; coach_id: string },
+    notFound: string,
+  ) {
+    const where = { id: program.id, ...programStaysInTenantWhere(program.coach_id) };
+    if ((await this.prisma.workoutProgram.count({ where })) === 0) {
+      throw new NotFoundException(notFound);
+    }
+  }
+
   private async assertClientBelongsToCoach(coachId: string, clientId: string) {
     const client = await this.prisma.user.findUnique({ where: { id: clientId } });
     if (!client) throw new NotFoundException('Client not found');
@@ -1163,6 +1177,7 @@ export class WorkoutBuilderService {
         'You may only fork a program you own or a tenant-shared building block in your business',
       );
     }
+    await this.assertSourceStaysInTenant(source, 'Source template not found');
 
     return this.prisma.$transaction(
       async (tx) => {
@@ -1268,6 +1283,7 @@ export class WorkoutBuilderService {
       // across a tenant boundary (BUILDER_BRIEF hard gate).
       throw new NotFoundException('Master program not found');
     }
+    await this.assertSourceStaysInTenant(master, 'Master program not found');
     // (2) Sub-coach scope: head coach OR open SubCoachAssignment. Foreign
     // coach with no access → 403 (assertCanAccessClient).
     await this.assertCanAccessClient(coachId, clientId);
@@ -1466,6 +1482,7 @@ export class WorkoutBuilderService {
           program.owner_user_id === coachId ||
           (program.visibility === 'tenant_shared' && program.coach_id === actorTenantId);
         if (!canReach) throw new ForbiddenException('You cannot assign this program');
+        await this.assertSourceStaysInTenant(program, 'Program not found');
         await this.assertCanAccessClient(coachId, dto.client_id);
 
         const plans = await this.prisma.workoutPlan.findMany({

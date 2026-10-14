@@ -35,16 +35,22 @@ export function inTenantSql(headCoachId: string): Prisma.Sql {
  * rule for the plan list (before paging) and every by-id read or write.
  */
 export function planStaysInTenantWhere(headCoachId: string): Prisma.WorkoutPlanWhereInput {
+  return {
+    OR: [{ program_id: null }, { program: { is: programStaysInTenantWhere(headCoachId) } }],
+  };
+}
+
+/** The same rule for a program, also as the source of a fork, clone or assignment. */
+export function programStaysInTenantWhere(headCoachId: string): Prisma.WorkoutProgramWhereInput {
   const inTenant = inTenantWhere(headCoachId);
   // A client with no coach has left too (in SQL, NOT of a null comparison is not true).
   const left: Prisma.UserWhereInput = { OR: [{ coach_id: null }, { NOT: inTenant }] };
   const anyMoved = { assignments: { some: { client: left } } };
   return {
     OR: [
-      { program_id: null },
-      { program: { is: { is_template: true } } },
-      { program: { is: { client: { is: inTenant } } } },
-      { program: { is: { client_id: null, plans: { none: anyMoved } } } },
+      { is_template: true },
+      { client: { is: inTenant } },
+      { client_id: null, plans: { none: anyMoved } },
     ],
   };
 }
