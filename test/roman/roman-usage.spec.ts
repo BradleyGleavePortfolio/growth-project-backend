@@ -106,12 +106,20 @@ describe('ROMANCOUNT: GET /me/roman/usage', () => {
     expect(none.used).toEqual({ messages: 0, files: 0, changes: 0 });
   });
 
-  it('clients only; a client with no coach gets 403 ROMAN_REQUIRES_COACH', async () => {
+  it('clients only: coaches and the owner are refused, nothing read; no coach is 403 ROMAN_REQUIRES_COACH', async () => {
     expect(Reflect.getMetadata('roles', RomanUsageController.prototype.usage)).toEqual(['student']);
-    const ctrl = new RomanUsageController(fakeOf<PrismaService>(fakeDb(true).db));
-    const as = (coach_id: string | null) => fakeOf<AuthedRequest>({ user: { ...CLIENT, coach_id } });
+    const { db, find } = fakeDb(true);
+    const ctrl = new RomanUsageController(fakeOf<PrismaService>(db));
+    const as = (coach_id: string | null, role = CLIENT.role) =>
+      fakeOf<AuthedRequest>({ user: { ...CLIENT, role, coach_id } });
+    for (const role of ['coach', 'owner']) {
+      const refused = await refusal(ctrl.usage(as(null, role)));
+      expect([refused.getStatus(), refused.message]).toEqual([403, 'Insufficient role']);
+    }
+    expect(find).not.toHaveBeenCalled();
     const err = await refusal(ctrl.usage(as(null)));
     expect([err.getStatus(), err.getResponse()]).toMatchObject([403, { code: 'ROMAN_REQUIRES_COACH' }]);
     await expect(ctrl.usage(as('c1'))).resolves.toMatchObject({ limits: ROMAN_DAILY_LIMITS });
+    expect(find.mock.calls[0][0]).toMatchObject({ where: { client_id_day: { client_id: CLIENT.id } } });
   });
 });
