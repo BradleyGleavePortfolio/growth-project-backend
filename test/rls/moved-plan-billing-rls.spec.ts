@@ -103,7 +103,9 @@ if (!DB_URL && process.env.CI === 'true') {
   const undelegate = (s: string, k: string) =>
     prisma.$executeRaw`UPDATE "SubCoachAssignment" SET "unassigned_at" = now()
       WHERE "client_id" = ${k} AND "sub_coach_id" = ${s} AND "unassigned_at" IS NULL`;
-  const noTeam = { refreshCounters: async () => undefined } as never;
+  /** A typed stand-in for a constructor dependency (T comes from the parameter). */
+  const fake = <T extends object>(impl: object): T => impl as T;
+  const noTeam = { refreshCounters: async () => undefined };
 
   beforeAll(async () => {
     for (const user of [...coaches, ...clients]) {
@@ -167,7 +169,8 @@ if (!DB_URL && process.env.CI === 'true') {
     const [grants] = await prisma.$queryRaw<{ sel: boolean; upd: boolean }[]>`
       SELECT has_table_privilege('authenticated', '"ClientPurchase"', 'SELECT') AS sel,
              has_table_privilege('authenticated', '"ClientPurchase"', 'UPDATE') AS upd`;
-    // No grant: the API role is refused (42501). A grant: the row rules show and change nothing.
+    // No grant: refused (42501). A grant: the pre-existing client_purchase_select lets each party
+    // read only its own purchases (moved_away_at included), and no row rule lets it clear a stamp.
     const denied = 'SQLSTATE 42501';
     const asApi = (who: string, role: string, run: (tx: Prisma.TransactionClient) => Promise<unknown>) =>
       prisma
@@ -179,11 +182,11 @@ if (!DB_URL && process.env.CI === 'true') {
           return run(tx);
         })
         .catch((e: { meta?: { code?: string } }) => 'SQLSTATE ' + (e.meta?.code ?? /Code: .(\w{5})/.exec(String(e))?.[1]));
-    // The moved client, the coach they left, an unrelated coach.
-    for (const [who, role] of [[c1, 'student'], [A, 'coach'], [Z, 'coach']]) {
+    // The moved client (its 3 plans), the coach they left (its 1 sale), a coach who sold them nothing.
+    for (const [who, role, own] of [[c1, 'student', 3], [A, 'coach', 1], [H, 'coach', 0]] as const) {
       const read = await asApi(who, role, async (tx) =>
         (await tx.$queryRaw<unknown[]>`SELECT "moved_away_at" FROM "ClientPurchase" WHERE "client_user_id" = ${c1}`).length);
-      expect(read).toBe(grants.sel ? 0 : denied);
+      expect(read).toBe(grants.sel ? own : denied);
       const cleared = await asApi(who, role, (tx) =>
         tx.$executeRaw`UPDATE "ClientPurchase" SET "moved_away_at" = NULL WHERE "id" = ${id('pA1')}`);
       expect(cleared).toBe(grants.upd ? 0 : denied);
@@ -220,7 +223,7 @@ if (!DB_URL && process.env.CI === 'true') {
 
   it('callers: a head coach reassigning a seat client H -> S1 keeps every plan; S1 -> H stamps S1', async () => {
     const { h, s1, k } = await team('h');
-    const svc = new SubCoachesService(prisma as never, noTeam);
+    const svc = new SubCoachesService(fake(prisma), fake(noTeam));
     await svc.reassignClient(h, s1, { clientId: k });
     expect(await left(k)).toEqual([]);
     await svc.reassignClient(h, h, { clientId: k });
@@ -229,9 +232,9 @@ if (!DB_URL && process.env.CI === 'true') {
 
   it('callers: a sub-coach revoke and a seat removal send S1 clients to H and stamp S1 only', async () => {
     const removals = [
-      (h: string, s: string) => new SubCoachInviteService(prisma as never, noTeam).revoke(h, s, {}),
+      (h: string, s: string) => new SubCoachInviteService(fake(prisma), fake(noTeam)).revoke(h, s, {}),
       (h: string, s: string) =>
-        new TeamModeService(prisma as never, {} as never, {} as never).removeSubCoach({ headCoachId: h, subCoachId: s }),
+        new TeamModeService(fake(prisma), fake({}), fake({})).removeSubCoach({ headCoachId: h, subCoachId: s }),
     ];
     for (const remove of removals) {
       const { h, s1, k } = await team('s1');
@@ -243,14 +246,14 @@ if (!DB_URL && process.env.CI === 'true') {
   it('callers: delegation assign, reassign and unassign (coach_id stays H) stamp each sub-coach left', async () => {
     const { h, s1, s2, k } = await team('h');
     const svc = new SubCoachReassignService(
-      prisma as never,
-      { assertHasCapacityTx: async () => undefined } as never,
-      {
+      fake(prisma),
+      fake({ assertHasCapacityTx: async () => undefined }),
+      fake({
         runWithIdempotency: async ({ runMutation }: { runMutation: () => Promise<unknown> }) => ({
           response: await runMutation(),
           replay: false,
         }),
-      } as never,
+      }),
     );
     const to = (target: string) =>
       svc.reassignClient(h, h, 'coach', { clientId: k, targetSubCoachId: target, idempotency_key: randomUUID() });

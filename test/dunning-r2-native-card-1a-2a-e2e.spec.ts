@@ -935,7 +935,7 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 0, failed: 0 });
 
       move(at(DAY));
-      const log = jest.spyOn((w.billing as unknown as { logger: Logger }).logger, 'log');
+      const log = jest.spyOn(Logger.prototype, 'log').mockClear();
       expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 1, failed: 0 });
       expect(events(log)).toContain('"event":"billing.moved_plan_cancel_scheduled"');
       expect(events(log)).not.toContain('billing.client_cancel');
@@ -979,7 +979,7 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       expect(w.email.mock.calls.length).toBe(emails);
       expect(w.push.mock.calls.length).toBe(pushes);
 
-      const log = jest.spyOn((w.billing as unknown as { logger: Logger }).logger, 'log');
+      const log = jest.spyOn(Logger.prototype, 'log').mockClear();
       expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 1, failed: 0 });
       expect(events(log)).toContain('"event":"billing.moved_plan_cancel_in_dunning"');
       expect(events(log)).not.toContain('billing.client_cancel');
