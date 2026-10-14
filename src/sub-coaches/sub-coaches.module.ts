@@ -3,6 +3,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
 import { JwksVerifierService } from '../auth/jwks.service';
 import { PrismaService } from '../prisma.service';
+import { SchedulingModule } from '../scheduling/scheduling.module';
 import { TeamModule } from '../team/team.module';
 import { SubCoachAnalyticsService } from './sub-coach-analytics.service';
 import { SubCoachInviteService } from './sub-coach-invite.service';
@@ -17,7 +18,7 @@ import { HeadCoachOnlyGuard } from './head-coach-only.guard';
 // lifecycle to SubCoachInviteService and engagement analytics to
 // SubCoachAnalyticsService. All three are provided here.
 @Module({
-  imports: [TeamModule],
+  imports: [TeamModule, SchedulingModule],
   // Routes off until v1.1 dual authorization (tgp-agent-context planning/V1_1_MUST_DO.md section 2).
   providers: [
     SubCoachesService,

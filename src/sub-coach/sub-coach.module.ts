@@ -7,6 +7,7 @@ import { SubCoachIdempotencyService } from './sub-coach-idempotency.service';
 import { SubCoachScopeService } from './sub-coach-scope.service';
 import { AuditModule } from '../audit/audit.module';
 import { AuthModule } from '../auth/auth.module';
+import { SchedulingModule } from '../scheduling/scheduling.module';
 
 /**
  * SubCoachModule
@@ -27,7 +28,7 @@ import { AuthModule } from '../auth/auth.module';
  */
 @Global()
 @Module({
-  imports: [AuditModule, AuthModule],
+  imports: [AuditModule, AuthModule, SchedulingModule],
   // Routes off until v1.1 dual authorization (tgp-agent-context planning/V1_1_MUST_DO.md section 2).
   providers: [
     SubCoachAssignmentService,
