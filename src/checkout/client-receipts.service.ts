@@ -24,6 +24,10 @@ import { normalizeCurrency } from './client-billing.money';
 // status computed here. Stripe-only fields (receipt number, card, statement
 // descriptor, receipt link, invoice period) come from the charge through the
 // existing Stripe client, cached briefly; any Stripe failure leaves them null.
+// Stripe is read only for the rows a response returns, never for the summary.
+// A converted charge (settled in another currency) needs Stripe for what the
+// card paid; when that is unknown its paid and net amounts are null (refunds
+// stay in the card currency) and the yearly total is null, never mixed.
 
 /** Stripe answers slower than this leave the Stripe-only fields null. */
 const STRIPE_DEADLINE_MS = 3_000;
@@ -42,11 +46,12 @@ export interface ClientReceipt {
   id: string;
   number: string | null;
   charged_at: string;
-  amount_cents: number;
+  // null: a converted charge whose card amount Stripe could not give.
+  amount_cents: number | null;
   currency: string;
   refunded_cents: number;
   refunds: Array<{ amount_cents: number; created_at: string }>;
-  net_cents: number;
+  net_cents: number | null;
   status: ReceiptStatus;
   plan_name: string | null;
   coach_name: string | null;
@@ -61,7 +66,7 @@ export interface ClientReceipt {
 export interface ClientReceiptList {
   receipts: ClientReceipt[];
   next_cursor: string | null;
-  // null when this year's receipts are in more than one currency.
+  // null when this year's total is not known in one currency.
   summary: { paid_this_year_cents: number | null; currency: string | null };
 }
 
@@ -71,6 +76,7 @@ const RECEIPT_SETTLEMENT_SELECT = {
   stripe_charge_id: true,
   currency: true,
   gross_cents: true,
+  refunded_cents: true,
   created_at: true,
   purchase: { select: { coach_user_id: true, currency: true, package: { select: { name: true } } } },
 } as const satisfies Prisma.ChargeSettlementSelect;
@@ -102,6 +108,20 @@ export function receiptMoney(
   if (refundedCents > 0 && net === 0) return { net_cents: 0, status: 'refunded' };
   if (refundedCents > 0) return { net_cents: net, status: 'partly_refunded' };
   return { net_cents: net, status: 'paid' };
+}
+
+/**
+ * Net and status when the paid amount is unknown (a converted charge Stripe
+ * could not price): net stays null, and the status compares the settlement's
+ * own refunded and gross amounts, which are in one currency.
+ */
+export function unknownMoney(
+  settled: { gross_cents: number; refunded_cents: number },
+  refundedCents: number,
+): { net_cents: null; status: ReceiptStatus } {
+  if (refundedCents === 0) return { net_cents: null, status: 'paid' };
+  const full = settled.refunded_cents > 0 && settled.refunded_cents >= settled.gross_cents;
+  return { net_cents: null, status: full ? 'refunded' : 'partly_refunded' };
 }
 
 /** The calendar year of `d` in `timeZone`. */
@@ -175,14 +195,15 @@ export class ClientReceiptsService {
       select: RECEIPT_SETTLEMENT_SELECT,
     });
     const page = rows.slice(0, take);
-    const [receipts, summary] = await Promise.all([
-      this.build(page, 'all'),
-      this.paidThisYear(clientUserId),
+    const [receipts, year] = await Promise.all([
+      this.build(page, true),
+      this.yearRows(clientUserId),
     ]);
     return {
       receipts,
       next_cursor: rows.length > take ? (page[page.length - 1]?.id ?? null) : null,
-      summary,
+      // After the page, so its converted rows are already in the cache.
+      summary: await this.paidThisYear(year),
     };
   }
 
@@ -192,12 +213,12 @@ export class ClientReceiptsService {
       select: RECEIPT_SETTLEMENT_SELECT,
     });
     if (!row) throw receiptNotFound();
-    const [receipt] = await this.build([row], 'all');
+    const [receipt] = await this.build([row], true);
     return receipt;
   }
 
-  /** Sum of net_cents for the client's calendar year, in the client's own time zone. */
-  private async paidThisYear(clientUserId: string): Promise<ClientReceiptList['summary']> {
+  /** The client's settlement rows in their own calendar year (time zone resolved). */
+  private async yearRows(clientUserId: string): Promise<SettlementRow[]> {
     const now = new Date();
     const [rows, zone] = await Promise.all([
       this.prisma.chargeSettlement.findMany({
@@ -213,22 +234,31 @@ export class ClientReceiptsService {
     ]);
     const timeZone = zone ?? 'UTC';
     const year = yearIn(now, timeZone);
-    const inYear = rows.filter((r) => yearIn(r.created_at, timeZone) === year);
-    const receipts = await this.build(inYear, 'converted');
+    return rows.filter((r) => yearIn(r.created_at, timeZone) === year);
+  }
+
+  /**
+   * Sum of net_cents for the year, with no Stripe read: a converted row counts
+   * only when its card amount is already cached, else the total is unknown.
+   */
+  private async paidThisYear(rows: SettlementRow[]): Promise<ClientReceiptList['summary']> {
+    const receipts = await this.build(rows, false);
     const currencies = new Set(receipts.map((r) => r.currency));
-    if (currencies.size > 1) return { paid_this_year_cents: null, currency: null };
-    return {
-      paid_this_year_cents: receipts.reduce((sum, r) => sum + r.net_cents, 0),
-      currency: receipts[0]?.currency ?? null,
-    };
+    let total = 0;
+    for (const r of receipts) {
+      if (r.net_cents === null || currencies.size > 1) {
+        return { paid_this_year_cents: null, currency: null };
+      }
+      total += r.net_cents;
+    }
+    return { paid_this_year_cents: total, currency: receipts[0]?.currency ?? null };
   }
 
   /**
    * Receipts for settlement rows the caller already scoped to the client.
-   * `enrich`: 'all' reads the Stripe-only fields for every row; 'converted'
-   * only for rows whose settlement currency is not the purchase currency.
+   * `readStripe`: read Stripe for every row; otherwise use only cached answers.
    */
-  private async build(rows: SettlementRow[], enrich: 'all' | 'converted'): Promise<ClientReceipt[]> {
+  private async build(rows: SettlementRow[], readStripe: boolean): Promise<ClientReceipt[]> {
     if (rows.length === 0) return [];
     const chargeIds = rows.map((r) => r.stripe_charge_id);
     const coachIds = [...new Set(rows.map((r) => r.purchase.coach_user_id))];
@@ -247,12 +277,16 @@ export class ClientReceiptsService {
     return Promise.all(
       rows.map(async (row) => {
         const converted = row.currency !== normalizeCurrency(row.purchase.currency);
-        const details =
-          enrich === 'all' || converted ? await this.chargeDetails(row.stripe_charge_id) : null;
+        const details = readStripe
+          ? await this.chargeDetails(row.stripe_charge_id)
+          : this.cachedDetails(row.stripe_charge_id);
         // A converted charge's settlement gross is in the platform currency;
-        // the client paid the Stripe charge amount in their own currency.
-        const useCharge = converted && details?.amount_cents != null && !!details.currency;
-        const amount = useCharge ? (details?.amount_cents ?? 0) : row.gross_cents;
+        // the client paid the Stripe charge amount in their own currency, the
+        // currency its refunds are in. Without that amount it is unknown.
+        const card =
+          converted && details?.amount_cents != null && details.currency ? details : null;
+        const amount = converted ? (card?.amount_cents ?? null) : row.gross_cents;
+        const currency = converted ? row.purchase.currency : row.currency;
         const own = refunds.filter((r) => r.stripe_charge_id === row.stripe_charge_id);
         const refunded = own.reduce((sum, r) => sum + r.amount_cents, 0);
         return {
@@ -260,13 +294,13 @@ export class ClientReceiptsService {
           number: details?.number ?? null,
           charged_at: row.created_at.toISOString(),
           amount_cents: amount,
-          currency: useCharge ? (details?.currency ?? row.currency) : normalizeCurrency(row.currency),
+          currency: card?.currency ?? normalizeCurrency(currency),
           refunded_cents: refunded,
           refunds: own.map((r) => ({
             amount_cents: r.amount_cents,
             created_at: r.created_at.toISOString(),
           })),
-          ...receiptMoney(amount, refunded),
+          ...(amount === null ? unknownMoney(row, refunded) : receiptMoney(amount, refunded)),
           plan_name: row.purchase.package?.name ?? null,
           coach_name: coachName.get(row.purchase.coach_user_id) ?? null,
           period_start: details?.period_start ?? null,
@@ -280,13 +314,18 @@ export class ClientReceiptsService {
     );
   }
 
+  /** A fresh cached answer for one charge, with no Stripe read; undefined if none. */
+  private cachedDetails(chargeId: string, now = Date.now()): ChargeDetails | null | undefined {
+    const hit = this.details.get(chargeId);
+    const ttl = hit?.value ? DETAILS_TTL_MS : DETAILS_FAILURE_TTL_MS;
+    return hit && now - hit.at < ttl ? hit.value : undefined;
+  }
+
   /** Cached Stripe-only fields of one charge; null when Stripe cannot answer. */
   private async chargeDetails(chargeId: string): Promise<ChargeDetails | null> {
     const now = Date.now();
-    const hit = this.details.get(chargeId);
-    if (hit && now - hit.at < (hit.value ? DETAILS_TTL_MS : DETAILS_FAILURE_TTL_MS)) {
-      return hit.value;
-    }
+    const hit = this.cachedDetails(chargeId, now);
+    if (hit !== undefined) return hit;
     let value: ChargeDetails | null = null;
     try {
       const charge = await withDeadline(

@@ -421,3 +421,92 @@ describe('cursor pagination', () => {
     expect(second.summary).toEqual(first.summary);
   });
 });
+
+describe('converted charge while Stripe is down (FIX1012 B1)', () => {
+  // 14900 GBP paid on the card, settled as 18800 USD; refunds are in GBP.
+  function convertedStore(): Store {
+    const store = baseStore();
+    store.purchases[0].currency = 'gbp';
+    store.settlements = [
+      settlement(1, 'pur-a', '2026-10-01T17:00:00Z', { gross_cents: 18800, refunded_cents: 6180 }),
+      settlement(2, 'pur-a', '2026-09-01T17:00:00Z', { gross_cents: 18800, refunded_cents: 18800 }),
+      settlement(3, 'pur-a', '2026-08-01T17:00:00Z', { gross_cents: 18800, refunded_cents: 0 }),
+    ];
+    store.refunds = [
+      { ...refund(1, 'ch_1', 4900, '2026-10-02T00:00:00Z'), currency: 'gbp' },
+      { ...refund(2, 'ch_2', 14900, '2026-09-02T00:00:00Z'), currency: 'gbp' },
+    ];
+    return store;
+  }
+  const money = (r: ClientReceipt) =>
+    [r.amount_cents, r.currency, r.refunded_cents, r.net_cents, r.status] as const;
+
+  it('never takes card-currency refunds off the settlement gross; no yearly total', async () => {
+    const { svc, stripe } = make(convertedStore());
+    for (const n of [1, 2, 3]) {
+      stripe.charges.set(`ch_${n}`, { id: `ch_${n}`, amount: 14900, currency: 'gbp' });
+    }
+    stripe.failing = true;
+    const res = await svc.list(CLIENT_A);
+    expect(res.receipts.map(money)).toEqual([
+      [null, 'gbp', 4900, null, 'partly_refunded'],
+      [null, 'gbp', 14900, null, 'refunded'],
+      [null, 'gbp', 0, null, 'paid'],
+    ]);
+    expect(res.receipts[0].refunds).toEqual([
+      { amount_cents: 4900, created_at: '2026-10-02T00:00:00.000Z' },
+    ]);
+    expect(res.summary).toEqual({ paid_this_year_cents: null, currency: null });
+    const one = await svc.get(CLIENT_A, uuid(1));
+    expect(money(one)).toEqual([null, 'gbp', 4900, null, 'partly_refunded']);
+    expect(JSON.stringify(res)).not.toMatch(/13900|18800|"usd"/);
+
+    // Stripe answers again once the 60 s failure cache ends: the card amounts.
+    stripe.failing = false;
+    jest.setSystemTime(new Date('2026-10-14T16:42:30Z'));
+    const back = await svc.list(CLIENT_A);
+    expect(back.receipts.map(money)).toEqual([
+      [14900, 'gbp', 4900, 10000, 'partly_refunded'],
+      [14900, 'gbp', 14900, 0, 'refunded'],
+      [14900, 'gbp', 0, 14900, 'paid'],
+    ]);
+    expect(back.summary).toEqual({ paid_this_year_cents: 24900, currency: 'gbp' });
+  });
+});
+
+describe('Stripe reads stay on the returned page (FIX1012 B2)', () => {
+  it('a one-row page of three converted receipts reads Stripe once on a cold cache', async () => {
+    const store = baseStore();
+    store.purchases[0].currency = 'gbp';
+    store.settlements = ['2026-08-01', '2026-09-01', '2026-10-01']
+      .map((day, i) => settlement(i + 1, 'pur-a', `${day}T17:00:00Z`, { gross_cents: 18800 }))
+      .concat(settlement(9, 'pur-b', '2026-10-01T17:00:00Z'));
+    const { svc, stripe } = make(store);
+    for (const n of [1, 2, 3]) {
+      stripe.charges.set(`ch_${n}`, { id: `ch_${n}`, amount: 14900, currency: 'gbp' });
+    }
+    const one = await svc.list(CLIENT_A, { limit: 1 });
+    expect(one.receipts.map((r) => r.id)).toEqual([uuid(3)]);
+    expect(stripe.calls.map((c) => c.id)).toEqual(['ch_3']);
+    // Two of this year's charges were not read, so the total is unknown, not guessed.
+    expect(one.summary).toEqual({ paid_this_year_cents: null, currency: null });
+
+    const all = await svc.list(CLIENT_A, { limit: 3 });
+    expect(stripe.calls.map((c) => c.id)).toEqual(['ch_3', 'ch_2', 'ch_1']);
+    expect(all.summary).toEqual({ paid_this_year_cents: 44700, currency: 'gbp' });
+
+    const again = await svc.list(CLIENT_A, { limit: 1 });
+    expect(stripe.calls).toHaveLength(3);
+    expect(again.summary).toEqual(all.summary);
+    const other = await svc.list(CLIENT_B);
+    expect(other.receipts.map((r) => r.id)).toEqual([uuid(9)]);
+    expect(other.summary).toEqual({ paid_this_year_cents: 14900, currency: 'usd' });
+  });
+
+  it('the yearly total of same-currency receipts reads no Stripe at all', async () => {
+    const { svc, stripe } = make();
+    const res = await svc.list(CLIENT_A, { limit: 1 });
+    expect(stripe.calls.map((c) => c.id)).toEqual(['ch_3']);
+    expect(res.summary).toEqual({ paid_this_year_cents: 14900 * 3, currency: 'usd' });
+  });
+});
