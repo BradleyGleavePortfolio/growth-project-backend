@@ -134,6 +134,9 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // LoggedFoodEntry.food_item_id is ON DELETE RESTRICT, so any entry pointing
   // at one goes first.
   { model: 'LoggedFoodEntry', field: 'food_item.created_by_user_id', action: del },
+  // FOODSAVED: favourites and saved meals (items cascade with their meal).
+  { model: 'FoodFavorite', field: 'user_id', action: del },
+  { model: 'SavedMeal', field: 'user_id', action: del },
   { model: 'FoodItem', field: 'created_by_user_id', action: del },
   // ExerciseSet and HabitLog hold ON DELETE RESTRICT FKs to their parents
   // (baseline migration), so the children go first (A-608-3).
