@@ -35,7 +35,9 @@ const statements = (file: string) =>
 
 const TABLES = ['BloodworkAttachment', 'BloodworkPanel', 'BloodworkResult', 'CheckIn', 'CoachAlert',
   'community_wearable_prompt_sources', 'community_wearable_prompts'];
-// The production text of every policy this migration touches (catalog of 2026-10-13).
+// The production text of every policy this migration touches (catalog of 2026-10-13,
+// whose dump folds the deparser's line breaks into single spaces, as flat() does).
+const flat = (sql: string | null) => sql && sql.replace(/\s+/g, ' ');
 const ALERT_OLD = '(app.is_owner() OR ((app.current_user_id() IS NOT NULL) AND ((coach_id = app.current_user_id()) OR (client_id = app.current_user_id()) OR app.is_current_coach_of(client_id))))';
 const panelOld = (t: string) => `(app.is_owner() OR (EXISTS ( SELECT 1 FROM "BloodworkPanel" bp WHERE ((bp.id = "${t}".panel_id) AND ((bp.client_id = app.current_user_id()) OR (bp.coach_id = app.current_user_id()) OR app.is_current_coach_of(bp.client_id))))))`;
 const SOURCES_OLD = '(EXISTS ( SELECT 1 FROM community_wearable_prompts p WHERE ((p.id = community_wearable_prompt_sources."promptId") AND app.is_community_workspace_coach(p."workspaceId"))))';
@@ -127,7 +129,8 @@ const DENIED = '42501';
     SELECT p."tablename" || '.' || p."policyname" AS "name", p."cmd", p."roles"::text AS "roles", p."qual",
            p."with_check" AS "check", obj_description(pp."oid", 'pg_policy') AS "comment"
     FROM pg_policies p JOIN pg_policy pp ON pp."polname" = p."policyname" AND pp."polrelid" = format('public.%I', p."tablename")::regclass
-    WHERE p."schemaname" = 'public' AND p."tablename"::text = ANY(${TABLES}::text[]) ORDER BY 1`;
+    WHERE p."schemaname" = 'public' AND p."tablename"::text = ANY(${TABLES}::text[]) ORDER BY 1`
+    .then((list) => list.map((p) => ({ ...p, qual: flat(p.qual), check: flat(p.check) })));
   const insertResult = (who: Who, panel = row.panel) => write(who,
     `INSERT INTO "BloodworkResult" ("id", "panel_id", "marker_name", "updated_at") VALUES ($1, $2, 'ferritin', now())`, randomUUID(), panel);
   const insertAttachment = (who: Who, panel = row.panel) => write(who,
