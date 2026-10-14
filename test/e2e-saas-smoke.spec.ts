@@ -257,7 +257,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       });
     });
 
-    it('previewCode hides paused/canceled coaches', async () => {
+    it('TM-P1: previewCode still shows a coach whose old subscription row is paused (no plan lock)', async () => {
       const prisma: any = {
         coachProfile: {
           findUnique: jest.fn(async () => ({
@@ -273,7 +273,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       };
       const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       const result = await inviteCodes.previewCode('GP-PAUSED');
-      expect(result).toEqual({ valid: false });
+      expect(result).toMatchObject({ valid: true, coach_id: 'coach-1' });
     });
 
     it('previewCode returns {valid:false} for an unknown code without leaking', async () => {
@@ -369,7 +369,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('refuses to link when the coach is paused', async () => {
+    it('TM-P1: links when the coach\'s old subscription row is paused (no plan lock)', async () => {
       const fake = fakeClientAttach();
       fake._users['student-1'] = {
         id: 'student-1',
@@ -386,7 +386,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       const inviteCodes = new InviteCodesService(fake as any, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       await expect(
         inviteCodes.attachUserToCoachByCode('student-1', 'GP-PAUS01'),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).resolves.toMatchObject({ coach_id: 'coach-1' });
     });
   });
 

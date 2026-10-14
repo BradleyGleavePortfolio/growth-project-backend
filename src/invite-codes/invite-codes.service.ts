@@ -156,7 +156,7 @@ export function inviteCodeLookupCandidates(raw: unknown): string[] {
 export const INVITE_ATTACH_ERROR = {
   /** Code unknown, revoked, expired, exhausted, or failed the seat race. */
   INVITE_CODE_INVALID: 'invite_code_invalid',
-  /** Coach subscription not active/trialing/grandfathered. */
+  /** Never thrown now (owner TM-P1: no coach plans); kept so older app builds still map it. */
   COACH_NOT_ACCEPTING_CLIENTS: 'coach_not_accepting_clients',
   /** Redeemer is already a client of a DIFFERENT coach; refuse to re-parent. */
   ALREADY_ATTACHED_TO_DIFFERENT_COACH: 'already_attached_to_different_coach',
@@ -305,13 +305,11 @@ export function inviteCodeRowLifecycle(
   return null;
 }
 
-const ACCEPTING_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'grandfathered'];
-
 /**
  * B-PACKAGE-135 — the checkout's one exception to "buy only from your own
  * coach": a client with NO coach may buy the PAID package their coach code
- * carries (a code that takes a new signup, for this person, coach accepting
- * clients). Else false: the caller keeps its non-leaking 404.
+ * carries (a code that takes a new signup, for this person; no coach plan
+ * check, owner TM-P1). Else false: the caller keeps its non-leaking 404.
  */
 export async function paidJoinAllowed(
   prisma: PrismaService,
@@ -342,11 +340,6 @@ export async function paidJoinAllowed(
       picked = { package_id: row.package_id, grant_mode: row.grant_mode };
     }
     if (coachId !== pkg.coach_id) return false;
-    const sub = await prisma.coachSubscription.findUnique({
-      where: { coach_id: coachId },
-      select: { status: true },
-    });
-    if (!sub || !ACCEPTING_SUBSCRIPTION_STATUSES.includes(sub.status)) return false;
     const joinPkg = await findJoinPackage(prisma, coachId, picked.package_id);
     return !!joinPkg && joinPkg.id === pkg.id && joinGrantMode(joinPkg, picked) === 'none';
   }
@@ -429,26 +422,6 @@ export class InviteCodesService {
     // keep working; when absent, codes never grant packages.
     @Optional() private readonly grants?: InviteGrantService,
   ) {}
-
-  /**
-   * Authoritative check: a coach may only accept new clients when their
-   * CoachSubscription is active, trialing, or grandfathered.
-   * CoachProfile.subscription_status is a stale mirror — always use
-   * CoachSubscription directly for access-control decisions.
-   */
-  private async assertCoachCanAcceptClients(coachId: string): Promise<void> {
-    const sub = await this.prisma.coachSubscription.findUnique({
-      where: { coach_id: coachId },
-      select: { status: true },
-    });
-    const allowed = sub && ACCEPTING_SUBSCRIPTION_STATUSES.includes(sub.status);
-    if (!allowed) {
-      throw new BadRequestException({
-        code: INVITE_ATTACH_ERROR.COACH_NOT_ACCEPTING_CLIENTS,
-        message: 'Coach is not currently accepting clients',
-      });
-    }
-  }
 
   // Generates a human-friendly `GP-XXXXXX` code. Retries on the (astronomically
   // unlikely) unique-collision so callers never see a spurious 500.
@@ -953,14 +926,6 @@ export class InviteCodesService {
         },
       });
       if (profile && profile.user && profile.user.role === 'coach') {
-        // Block coaches without an active subscription from accepting new
-        // clients via their default link. Uses CoachSubscription as the
-        // authoritative source rather than the stale mirror on CoachProfile.
-        try {
-          await this.assertCoachCanAcceptClients(profile.user.id);
-        } catch {
-          return { valid: false };
-        }
         return {
           valid: true,
           coach_id: profile.user.id,
@@ -1097,7 +1062,6 @@ export class InviteCodesService {
     } else if (target.coachRole !== 'coach') {
       throw invalidInviteCode();
     }
-    await this.assertCoachCanAcceptClients(target.coachId);
 
     // B-PACKAGE-135 — attached ONLY together with the code's one package.
     // Legacy wiring without InviteGrantService (old unit specs) keeps attach-only.
@@ -1661,15 +1625,6 @@ export class InviteCodesService {
         include: { user: { select: { id: true, name: true, role: true } } },
       });
       if (profile && profile.user && profile.user.role === 'coach') {
-        try {
-          await this.assertCoachCanAcceptClients(profile.user.id);
-        } catch {
-          return {
-            accepted: false,
-            reason: 'invalid',
-            message: 'This coach is not currently accepting clients.',
-          };
-        }
         return {
           accepted: true,
           email: null,
@@ -1717,17 +1672,6 @@ export class InviteCodesService {
           accepted: false,
           reason: 'invalid',
           message: 'This invite code is no longer valid.',
-        };
-      }
-
-      // Verify the coach still has an active subscription before accepting the invite.
-      try {
-        await this.assertCoachCanAcceptClients(record.coach.id);
-      } catch {
-        return {
-          accepted: false,
-          reason: 'invalid',
-          message: 'This coach is not currently accepting clients.',
         };
       }
 
