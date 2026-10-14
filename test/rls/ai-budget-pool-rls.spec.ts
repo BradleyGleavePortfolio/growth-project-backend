@@ -8,12 +8,16 @@
  * pool moves. Real AiGatewayService and CoachAIBudgetService on the replayed
  * migration chain; only the model provider and the consent reader are fakes.
  * The last case reads the pool rows as the API role `authenticated`.
+ * B1 (Sol, fix round 1): the coach a retained coach_id points at (b for a,
+ * h for the removed x) cannot name that coach-role user through
+ * POST /ai/gateway/invoke or the gateway: refused before their private
+ * context reaches the provider, with no provider call, draft or debit.
  *
  * Runs in the rls-live-tests job on a superuser copy of rls_replay.
  * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
  */
 import { randomUUID } from 'crypto';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../src/prisma.service';
 import { AiGatewayRequest, AiGatewayService } from '../../src/ai/gateway/ai-gateway.service';
@@ -24,6 +28,10 @@ import { StubProviderAdapter } from '../../src/ai/gateway/providers/stub-provide
 import type { AiProviderAdapter } from '../../src/ai/gateway/providers/ai-provider.types';
 import type { AnthropicProviderAdapter } from '../../src/ai/gateway/providers/anthropic-provider.adapter';
 import { CoachAIBudgetService } from '../../src/ai-credits/coach-ai-budget.service';
+import { AiGatewayController } from '../../src/ai/gateway/ai-gateway.controller';
+import type { AiApprovalService } from '../../src/ai/gateway/ai-approval.service';
+import { PrivateContextService } from '../../src/ai/gateway/private-context.service';
+import type { AuthedRequest } from '../../src/auth/auth-request';
 import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
@@ -35,27 +43,43 @@ if (!DB_URL && process.env.CI === 'true') {
 // A metered capability whose route runs any signed-in person as a client
 // (GET /wearables/insights/client; a coach passes the student role check).
 const CAPABILITY = 'wearable_insight.client';
+// A metered coach draft that needs approval (writes an AiActionDraft).
+const DRAFT = 'draft.coach_message';
 const GATEWAY_ENV = {
   AI_GATEWAY_ENABLED: 'true',
   AI_GATEWAY_PROVIDER: 'anthropic',
   ANTHROPIC_API_KEY: 'live-test',
-  AI_GATEWAY_CAPABILITIES: CAPABILITY,
+  AI_GATEWAY_CAPABILITIES: `${CAPABILITY},${DRAFT}`,
 };
 
 (DB_URL ? describe : describe.skip)('AIBUDGET: AI usage is charged only to the right coach pool', () => {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
   const budget = new CoachAIBudgetService(prisma);
+  const sent: string[] = []; // the system prompt of every provider call
   const model: AiProviderAdapter = {
     name: 'anthropic',
-    complete: async () => ({
-      provider: 'anthropic', model: 'live-test', text: 'ok', enabled: true, promptTokenEstimate: 1000, responseTokenEstimate: 200,
-    }),
+    complete: async (r) => {
+      sent.push(r.systemPrompt);
+      return { provider: 'anthropic', model: 'live-test', text: 'ok', enabled: true, promptTokenEstimate: 1000, responseTokenEstimate: 200 };
+    },
   };
   const gateway = new AiGatewayService(
     prisma, new AiGatewayConfig(), new AiRedactionService(),
     new AiProviderRegistry(new StubProviderAdapter(), fakeOf<AnthropicProviderAdapter>(model)),
     grantAllEgress(), budget,
   );
+  const route = new AiGatewayController(gateway, fakeOf<AiApprovalService>({}), new PrivateContextService(prisma));
+  /** POST /ai/gateway/invoke as `who`; naming a subject drafts a message to them. */
+  const viaRoute = (who: string, role: 'coach' | 'student', subject?: string) =>
+    route.invoke(fakeOf<AuthedRequest>({ user: { id: who, role, coach_id: null }, headers: {} }), {
+      capability: subject ? DRAFT : CAPABILITY,
+      message: 'Draft a check-in.',
+      subject_user_id: subject,
+      proposed_action: subject ? { clientId: subject, body: 'Checking in.' } : undefined,
+    });
+  const drafts = (subject: string) => prisma.aiActionDraft.count({ where: { subject_user_id: subject } });
+  /** Private context only that person's own profile holds. */
+  const secret = (id: string) => `private-${id}`;
   // Fictional people, fresh ids per run. Coaches: h (head coach), b (another
   // coach), a (coach_id = b, the old guest-checkout stamp; no seat), x (removed
   // from h's team: seat archived, coach_id = h kept), s (seated under h).
@@ -90,6 +114,9 @@ const GATEWAY_ENV = {
     ];
     for (const [id, role, coach_id] of people) {
       await prisma.user.create({ data: { id, supabase_id: id, email: `${id}@example.test`, name: 'Pool person', role, coach_id } });
+      await prisma.userProfile.create({
+        data: { user_id: id, equipment_access: [secret(id)], preferred_snacks: [], dietary_restrictions: [] },
+      });
     }
     await prisma.teamSubCoachAssignment.create({ data: { head_coach_id: h, sub_coach_id: x, archived_at: new Date('2027-04-01') } });
     await prisma.teamSubCoachAssignment.create({ data: { head_coach_id: h, sub_coach_id: s } });
@@ -123,6 +150,38 @@ const GATEWAY_ENV = {
     await expect(invoke({ requester: { id: a, role: 'coach' }, subjectUserId: ch, tenantCoachId: a }))
       .rejects.toBeInstanceOf(NotFoundException);
     expect(await usage()).toEqual(before);
+  });
+
+  it.each([
+    ['b names a, whose old coach_id is b', b, a],
+    ['h names x, the removed sub-coach whose coach_id is still h', h, x],
+  ])('B1: %s: refused before private context reaches the provider; no call, draft or debit', async (_t, linked, subject) => {
+    const before = await usage();
+    const calls = sent.length;
+    // The route: PrivateContextService refuses before the gateway runs.
+    await expect(viaRoute(linked, 'coach', subject)).rejects.toBeInstanceOf(ForbiddenException);
+    // The gateway on its own (any caller handing it a subject): the roster 404.
+    await expect(gateway.invoke({
+      capability: DRAFT, userMessage: 'Draft a check-in.', systemPrompt: secret(subject),
+      requester: { id: linked, role: 'coach' }, subjectUserId: subject, tenantCoachId: linked,
+      proposedActionPayload: { clientId: subject, body: 'Checking in.' },
+    })).rejects.toBeInstanceOf(NotFoundException);
+    expect(sent.length).toBe(calls);
+    expect(await drafts(subject)).toBe(0);
+    expect(await usage()).toEqual(before);
+  });
+
+  it('B1: through the route, self-use and a real client still reach the provider with their own context', async () => {
+    const calls = sent.length;
+    const draftsBefore = await drafts(ch);
+    const before = await usage();
+    await viaRoute(a, 'coach');
+    await viaRoute(ch, 'student');
+    await viaRoute(h, 'coach', ch);
+    const after = await usage();
+    expect(pools.filter((id) => after[id] !== before[id])).toEqual([h, a]);
+    expect(sent.slice(calls).map((p) => [a, ch].find((id) => p.includes(secret(id))))).toEqual([a, ch, ch]);
+    expect(await drafts(ch)).toBe(draftsBefore + 1);
   });
 
   it('as the API role, a coach reads only their own pool row and a client reads none', async () => {
