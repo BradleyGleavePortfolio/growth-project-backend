@@ -152,10 +152,10 @@ const AUTH_UID_POLICIES = [
         name: 'user_self_access', cmd: 'ALL', roles: '{public}',
         qual: '(id = app.current_user_id())', check: '(id = app.current_user_id())', comment: null,
       }]);
-      const [g] = await prisma.$queryRaw<{ a: boolean; u: boolean; h1: string | null; h2: string | null }[]>`
+      const [g] = await prisma.$queryRaw<{ a: boolean; u: boolean; h: string | null }[]>`
         SELECT has_table_privilege('anon', '"User"', 'UPDATE') AS "a", has_table_privilege('authenticated', '"User"', 'UPDATE') AS "u",
-               to_regprocedure('app.caller_coaches_user(text)')::text AS "h1", to_regprocedure('app.caller_current_coach_id()')::text AS "h2"`;
-      expect(g).toEqual({ a: true, u: true, h1: null, h2: null });
+               to_regprocedure('app.caller_current_coach_id()')::text AS "h"`;
+      expect(g).toEqual({ a: true, u: true, h: null });
     });
 
     it('the hole: A rewrites their own role; a coach cannot read their own client', async () => {
@@ -181,7 +181,7 @@ const AUTH_UID_POLICIES = [
       const policies = await userPolicies();
       expect(policies.map((p) => ({ name: p.name, cmd: p.cmd, roles: p.roles, qual: p.qual, check: p.check }))).toEqual([
         { name: 'user_client_reads_current_coach', cmd: 'SELECT', roles: '{authenticated}', qual: '(id = app.caller_current_coach_id())', check: null },
-        { name: 'user_current_coach_reads_client', cmd: 'SELECT', roles: '{authenticated}', qual: 'app.caller_coaches_user(id)', check: null },
+        { name: 'user_current_coach_reads_client', cmd: 'SELECT', roles: '{authenticated}', qual: 'app.is_current_coach_of(id)', check: null },
         { name: 'user_self_select', cmd: 'SELECT', roles: '{public}', qual: '(id = app.current_user_id())', check: null },
         { name: 'user_self_update', cmd: 'UPDATE', roles: '{public}', qual: '(id = app.current_user_id())', check: '(id = app.current_user_id())' },
       ]);
@@ -193,7 +193,7 @@ const AUTH_UID_POLICIES = [
       expect(await updatable('anon')).toEqual([]);
     });
 
-    it('both helpers: SECURITY DEFINER, STABLE, fixed search_path, owner bypasses RLS, not executable by anon or PUBLIC', async () => {
+    it('the new helper: SECURITY DEFINER, STABLE, fixed search_path, owner bypasses RLS, not executable by anon or PUBLIC', async () => {
       const helpers = await prisma.$queryRaw<Record<string, unknown>[]>`
         SELECT p.oid::regprocedure::text AS "fn", p."prosecdef" AS "definer", p."provolatile" AS "volatility",
                p."proconfig"::text AS "config", r."rolname" AS "owner", (r."rolsuper" OR r."rolbypassrls") AS "ownerBypasses",
@@ -201,11 +201,38 @@ const AUTH_UID_POLICIES = [
                has_function_privilege('authenticated', p.oid, 'EXECUTE') AS "authenticated",
                EXISTS (SELECT 1 FROM aclexplode(p."proacl") x WHERE x."grantee" = 0) AS "public"
         FROM pg_proc p JOIN pg_roles r ON r.oid = p."proowner"
-        WHERE p.oid IN ('app.caller_coaches_user(text)'::regprocedure, 'app.caller_current_coach_id()'::regprocedure) ORDER BY 1`;
-      const same = { definer: true, volatility: 's', config: '{"search_path=pg_catalog, public"}', owner: 'postgres',
-        ownerBypasses: true, anon: false, authenticated: true, public: false };
-      expect(helpers).toEqual([
-        { fn: 'app.caller_coaches_user(text)', ...same }, { fn: 'app.caller_current_coach_id()', ...same }]);
+        WHERE p.oid = 'app.caller_current_coach_id()'::regprocedure`;
+      expect(helpers).toEqual([{ fn: 'app.caller_current_coach_id()', definer: true, volatility: 's',
+        config: '{"search_path=pg_catalog, public"}', owner: 'postgres', ownerBypasses: true, anon: false, authenticated: true, public: false }]);
+    });
+
+    it('app.is_current_coach_of never re-enters "User" policies: it reads no table and calls the definer is_user_coached_by', async () => {
+      const fns = await prisma.$queryRaw<{ fn: string; definer: boolean; ownerBypasses: boolean; src: string }[]>`
+        SELECT p.oid::regprocedure::text AS "fn", p."prosecdef" AS "definer", (r."rolsuper" OR r."rolbypassrls") AS "ownerBypasses",
+               p."prosrc" AS "src"
+        FROM pg_proc p JOIN pg_roles r ON r.oid = p."proowner"
+        WHERE p.oid IN ('app.is_current_coach_of(text)'::regprocedure, 'app.is_user_coached_by(text,text)'::regprocedure) ORDER BY 1`;
+      // K reading A (1, below) runs this branch live; a policy that re-entered "User" would raise 42P17.
+      const src = fns.map((f) => f.src.replace(/\s+/g, ' ').trim());
+      expect(fns.map(({ fn, definer }) => ({ fn, definer }))).toEqual([
+        { fn: 'app.is_current_coach_of(text)', definer: false }, { fn: 'app.is_user_coached_by(text,text)', definer: true }]);
+      expect(src[0]).toBe(
+        'SELECT app.current_user_id() IS NOT NULL AND app.is_user_coached_by(client_user_id, app.current_user_id())');
+      expect(fns[1].ownerBypasses).toBe(true);
+      expect(src[1]).toContain('FROM public."User" u');
+    });
+
+    it('the migration fails closed if table-wide UPDATE survives the REVOKE', async () => {
+      const guard = statements('migration.sql').filter((s) => /^DO \$\$/.test(s));
+      const check = (role: string) => `has_table_privilege('${role}', 'public."User"', 'UPDATE')`;
+      expect(guard).toHaveLength(1);
+      expect(guard[0].replace(/\s+/g, ' ')).toContain(`IF ${check('authenticated')} OR ${check('anon')} THEN RAISE EXCEPTION`);
+      // Same block, with the table-wide grant back (as after a non-grantor REVOKE): it raises; rolled back.
+      await expect(prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+        await tx.$executeRawUnsafe('GRANT UPDATE ON public."User" TO authenticated');
+        await tx.$executeRawUnsafe(guard[0]);
+      })).rejects.toThrow(/survived the REVOKE/);
+      expect(await updatable('authenticated')).toEqual(SAFE_COLUMNS);
     });
 
     it('every function that reads "User" is SECURITY DEFINER under a bypass owner, so no answer depends on "User" rules', async () => {
@@ -215,7 +242,7 @@ const AUTH_UID_POLICIES = [
         WHERE n."nspname" NOT IN ('pg_catalog', 'information_schema') AND p."prosrc" LIKE '%"User"%' ORDER BY 1`;
       expect(fns.filter((f) => !f.safe)).toEqual([]);
       expect(fns.map((f) => f.fn)).toEqual(expect.arrayContaining([
-        'app.caller_coaches_client(text)', 'app.caller_coaches_user(text)', 'app.caller_current_coach_id()',
+        'app.caller_coaches_client(text)', 'app.caller_current_coach_id()',
         'app.is_user_coached_by(text,text)']));
     });
 
@@ -276,6 +303,23 @@ const AUTH_UID_POLICIES = [
         expect(await reads(backend('A'), 'K')).toBe(1);
         expect(await reads(backend('A'), 'L')).toBe(0);
         expect(await reads(backend('A'), 'F')).toBe(0);
+      });
+
+      it('coach and client read each other but write neither row: profile column 0 rows, other columns 42501', async () => {
+        const set = (who: Key, target: Key, col: string, value: string) =>
+          write(backend(who), `UPDATE "User" SET "${col}" = $1 WHERE "id" = $2`, value, id[target]);
+        const rows = () => prisma.$queryRaw<{ id: string; name: string; coach_id: string | null }[]>`
+          SELECT "id", "name", "coach_id" FROM "User" WHERE "id" IN (${id.A}, ${id.K}) ORDER BY "id"`;
+        const was = await rows();
+        expect(await reads(backend('K'), 'A')).toBe(1);
+        expect(await set('K', 'A', 'name', 'by K')).toBe(0);
+        expect(await set('K', 'A', 'coach_id', id.L)).toBe('42501');
+        expect(await reads(backend('K'), 'A')).toBe(1);
+        expect(await write(backend('K'), `DELETE FROM "User" WHERE "id" = $1`, id.A)).toBe(0);
+        expect(await reads(backend('A'), 'K')).toBe(1);
+        expect(await set('A', 'K', 'name', 'by A')).toBe(0);
+        expect(await set('A', 'K', 'coach_id', id.L)).toBe('42501');
+        expect(await rows()).toEqual(was);
       });
 
       it('app.is_owner() is unchanged: true for the owner, false for everyone else', async () => {
