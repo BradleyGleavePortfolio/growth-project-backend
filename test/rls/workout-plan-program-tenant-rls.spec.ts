@@ -208,9 +208,9 @@ const RLS = /row-level security/;
     const clone = await prisma.workoutProgram.findFirstOrThrow({ where: { cloned_from_id: hProg, client_id: ch } });
     expect((await copiedFrom(clone.id)).sort()).toEqual(real);
 
-    await service.forkTemplate(hProg, h);
-    const fork = await prisma.workoutProgram.findFirstOrThrow({ where: { cloned_from_id: hProg, is_template: true } });
-    expect((await copiedFrom(fork.id)).sort()).toEqual(real);
+    const fork = await service.forkTemplate(hProg, h);
+    expect(fork.program.forked_from_id).toBe(hProg);
+    expect((await copiedFrom(fork.program.id)).sort()).toEqual(real);
 
     await service.assignProgramToClient(h, hProg, { client_id: ch, start_date: '2027-05-03' });
     const assigned = await prisma.clientWorkoutAssignment.findMany({
