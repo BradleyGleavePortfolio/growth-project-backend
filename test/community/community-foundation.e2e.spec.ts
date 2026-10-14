@@ -76,6 +76,7 @@ itLive('community v1-2 foundation (live DB)', () => {
     coachA: '',
     coachB: '',
     student: '',
+    mover: '',
     noRoleUser: '',
     wsA: '',
     wsB: '',
@@ -187,6 +188,7 @@ itLive('community v1-2 foundation (live DB)', () => {
     ids.coachA = randomUUID();
     ids.coachB = randomUUID();
     ids.student = randomUUID();
+    ids.mover = randomUUID();
     ids.noRoleUser = randomUUID();
 
     // Full "User" rows (the DB runs the real migration chain); uuid-format
@@ -195,6 +197,7 @@ itLive('community v1-2 foundation (live DB)', () => {
       [ids.coachA, 'coach', 'Coach A', null],
       [ids.coachB, 'coach', 'Coach B', null],
       [ids.student, 'student', 'Sam Member', ids.coachA],
+      [ids.mover, 'student', 'Morgan Mover', ids.coachA],
       [ids.noRoleUser, 'student', 'No Role', null],
     ];
     await insertLiveUsers(prisma, users);
@@ -239,7 +242,7 @@ itLive('community v1-2 foundation (live DB)', () => {
   }
 
   async function cleanup() {
-    const userIds = [ids.coachA, ids.coachB, ids.student, ids.noRoleUser].filter(Boolean);
+    const userIds = [ids.coachA, ids.coachB, ids.student, ids.mover, ids.noRoleUser].filter(Boolean);
     // Workspaces cascade to cohorts + memberships; deleting them clears all
     // community rows this suite created. Users go last.
     await prisma.communityMembership.deleteMany({
@@ -434,5 +437,47 @@ itLive('community v1-2 foundation (live DB)', () => {
       expect(json.includes('student')).toBe(false);
       expect(/\bstudent\b/.test(json)).toBe(false);
     }
+  });
+
+  // 17 — COMMUNITYMOVE (owner 4): a client who changes coach leaves the old
+  // coach's community and the next /me joins them to the new coach's.
+  it("17. a client who moves from coach A to coach B lands in B's community, not A's", async () => {
+    const memberCount = async (coachId: string, cohortId: string): Promise<number> => {
+      const res = await call('GET', '/api/community/cohorts', asUser(coachId));
+      return res.body.cohorts.find((c: any) => c.id === cohortId).member_count;
+    };
+    const before = await call('GET', '/api/community/me', asUser(ids.mover));
+    expect(before.body.workspace_id).toBe(ids.wsA);
+    const oldMembershipId = before.body.membership.id;
+    const [countA, countB] = [
+      await memberCount(ids.coachA, ids.cohortA),
+      await memberCount(ids.coachB, ids.cohortB),
+    ];
+
+    await prisma.user.update({ where: { id: ids.mover }, data: { coach_id: ids.coachB } });
+
+    const after = await call('GET', '/api/community/me', asUser(ids.mover));
+    expect(after.status).toBe(200);
+    expect(after.body.workspace_id).toBe(ids.wsB);
+    expect(after.body.membership.id).not.toBe(oldMembershipId);
+    // Every server read of A's community is closed to the mover.
+    const wsA = await call('GET', `/api/community/workspaces/${ids.wsA}`, asUser(ids.mover));
+    expect(wsA.status).toBe(403);
+    const cohortA = await call('GET', `/api/community/cohorts/${ids.cohortA}`, asUser(ids.mover));
+    expect(cohortA.status).toBe(403);
+    const cohorts = await call('GET', '/api/community/cohorts', asUser(ids.mover));
+    expect(cohorts.body.cohorts.map((c: any) => c.id)).toEqual([ids.cohortB]);
+    const today = await call('GET', '/api/community/today', asUser(ids.mover));
+    expect(today.body.cohort.id).toBe(ids.cohortB);
+    // Coach A no longer counts the mover as a member; coach B does.
+    expect(await memberCount(ids.coachA, ids.cohortA)).toBe(countA - 1);
+    expect(await memberCount(ids.coachB, ids.cohortB)).toBe(countB + 1);
+    // The old membership is ended, not deleted.
+    const old = await prisma.communityMembership.findUnique({ where: { id: oldMembershipId } });
+    expect(old?.status).toBe('removed');
+    expect(old?.removed_at).not.toBeNull();
+    // The client who stayed is untouched.
+    const stayed = await call('GET', '/api/community/me', asUser(ids.student));
+    expect(stayed.body.workspace_id).toBe(ids.wsA);
   });
 });
