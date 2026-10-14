@@ -16,7 +16,10 @@ a historical guest-checkout purchase) must not inherit another coach's tenant.
 `SubCoachScopeService` enforces this (fail-closed: without a membership row the
 user is treated as the head coach of their own, usually empty, roster and a
 one-time warning is logged). The RLS helper `app.is_subcoach_on_coach_team`
-still uses the bare rule and is a documented follow-up.
+applies the same membership per head coach (an active seat, or a never-seated
+pair with `coach_id` = that head and an open delegation), so a removed
+sub-coach loses row-layer access to the head's shared programs too
+(`20270421000000_team_rows_need_membership`).
 
 **Client → sub-coach delegation is an overlay** stored in the
 `SubCoachAssignment` join table:
