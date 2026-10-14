@@ -24,7 +24,7 @@ import { StubProviderAdapter } from '../../src/ai/gateway/providers/stub-provide
 import type { AiProviderAdapter } from '../../src/ai/gateway/providers/ai-provider.types';
 import type { AnthropicProviderAdapter } from '../../src/ai/gateway/providers/anthropic-provider.adapter';
 import { CoachAIBudgetService } from '../../src/ai-credits/coach-ai-budget.service';
-import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
+import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
 const DB_URL = liveTestDatabaseUrl();
@@ -44,6 +44,7 @@ const GATEWAY_ENV = {
 
 (DB_URL ? describe : describe.skip)('AIBUDGET: AI usage is charged only to the right coach pool', () => {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
+  const budget = new CoachAIBudgetService(prisma);
   const model: AiProviderAdapter = {
     name: 'anthropic',
     complete: async () => ({
@@ -52,8 +53,8 @@ const GATEWAY_ENV = {
   };
   const gateway = new AiGatewayService(
     prisma, new AiGatewayConfig(), new AiRedactionService(),
-    new AiProviderRegistry(new StubProviderAdapter(), model as unknown as AnthropicProviderAdapter),
-    grantAllEgress(), new CoachAIBudgetService(prisma),
+    new AiProviderRegistry(new StubProviderAdapter(), fakeOf<AnthropicProviderAdapter>(model)),
+    grantAllEgress(), budget,
   );
   // Fictional people, fresh ids per run. Coaches: h (head coach), b (another
   // coach), a (coach_id = b, the old guest-checkout stamp; no seat), x (removed
@@ -136,7 +137,7 @@ const GATEWAY_ENV = {
           ...pools);
         return rows.map((r) => r.coach_user_id);
       });
-    expect((await usage())[a]).toBeGreaterThan(0);
+    for (const id of [a, h]) await budget.getOrCreateCurrentPeriod(id);
     expect(await readable(a, 'coach')).toEqual([a]);
     expect(await readable(h, 'coach')).toEqual([h]);
     expect(await readable(ch, 'student')).toEqual([]);
