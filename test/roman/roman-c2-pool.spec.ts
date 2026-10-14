@@ -21,7 +21,7 @@ import { ROMAN_SAFETY_TEMPLATES } from '../../src/roman/guardrails/safety-router
 import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
 import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 
-const CLIENT = { id: 'c2-client', role: 'student', tier: 'free' as const };
+const CLIENT = { id: 'c2-client', role: 'student' };
 const SESSION = fakeOf<RomanSession>({
   id: 'c2-session', user_id: CLIENT.id, surface: 'client',
   day_key: 'c2-day', message_count: 1, exclamation_used: false,

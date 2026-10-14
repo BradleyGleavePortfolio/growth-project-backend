@@ -67,7 +67,7 @@ afterEach(() => {
 
 // ─── fixtures ───────────────────────────────────────────────────────────────
 
-const CLIENT = { id: 'client-1', role: 'student', tier: 'free' as const };
+const CLIENT = { id: 'client-1', role: 'student' };
 
 function session() {
   return {
@@ -682,7 +682,7 @@ describe('FR1-651-1 Roman failure logs are content-free for every error class, n
 });
 
 describe('FR1-651-2 Roman failure copy is written for the caller (a coach is never told to message "your coach")', () => {
-  const COACH = { id: 'coach-1', role: 'coach', tier: 'free' as const };
+  const COACH = { id: 'coach-1', role: 'coach' };
   const coachSession = () => ({ ...session(), user_id: COACH.id, surface: 'coach' as const });
 
   it('over the daily cap: the coach gets the coach-audience copy on both checks', async () => {
@@ -738,15 +738,6 @@ describe('FR1-651-2 Roman failure copy is written for the caller (a coach is nev
     ).rejects.toMatchObject({ response: { message: ROMAN_NOT_CONFIGURED_MESSAGE_COACH } });
   });
 
-  it('rate-limit copy: client is pointed to the coach, coach to the rest of the app', () => {
-    expect(romanRateLimitMessage(5 * 3600, 'student')).toContain('Your coach is in Messages');
-    const coach = romanRateLimitMessage(5 * 3600, 'coach');
-    expect(coach).toBe(
-      'You have used your Roman conversations for today. Roman can talk again in about 5 hours. Your clients, messages and the rest of the app work as usual.',
-    );
-    expect(romanRateLimitMessage(600, 'owner')).not.toMatch(/your coach/i);
-  });
-
   it('every coach-audience copy follows the copy rules and never says "your coach"', () => {
     for (const t of [
       ROMAN_CAPACITY_REACHED_MESSAGE_COACH,
@@ -754,7 +745,6 @@ describe('FR1-651-2 Roman failure copy is written for the caller (a coach is nev
       ROMAN_MODEL_UNAVAILABLE_MESSAGE_COACH,
       ROMAN_NOT_CONFIGURED_MESSAGE_COACH,
       ROMAN_SWITCHED_OFF_MESSAGE_COACH,
-      romanRateLimitMessage(7200, 'coach'),
     ]) {
       expect(t).not.toMatch(/!|\bwe\b|\bus\b|something went wrong|your coach/i);
     }
@@ -832,7 +822,7 @@ describe('FR1-651-9 a chat deleted during the model call settles the ledger and 
 // sends the rules that say so, and the ledger and log record the coach
 // prompt version; a client turn keeps the client contract's PROMPT_VERSION.
 describe('COACH-ROMAN-SURFACE-130 a coach turn carries the coach rules and records the coach prompt version', () => {
-  const COACH = { id: 'coach-1', role: 'coach', tier: 'free' as const };
+  const COACH = { id: 'coach-1', role: 'coach' };
   const coachSession = () => ({ ...session(), user_id: COACH.id, surface: 'coach' as const });
 
   it('coach: no-client-data and no-invented-number rules sent, roman-coach-v1 in ledger and log; client: PROMPT_VERSION', async () => {

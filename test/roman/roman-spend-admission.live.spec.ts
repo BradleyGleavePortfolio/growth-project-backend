@@ -36,7 +36,6 @@ function withPool(url: string): string {
 const CALLERS: RomanCaller[] = Array.from({ length: 8 }, (_, i) => ({
   id: `b651-live-${i}`,
   role: 'student',
-  tier: 'free',
 }));
 
 /** Input bound whose reservation (bound + max output) costs exactly `usd`. */

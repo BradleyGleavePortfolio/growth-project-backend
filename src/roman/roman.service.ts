@@ -55,8 +55,7 @@ import {
   ROMAN_MAX_OUTPUT_TOKENS,
   ROMAN_MESSAGES_DEFAULT_LIMIT,
   ROMAN_MESSAGES_MAX_LIMIT,
-  ROMAN_RATE_LIMIT_FREE_PER_DAY,
-  ROMAN_RATE_LIMIT_PRO_PER_DAY,
+  ROMAN_MESSAGES_PER_DAY,
   ROMAN_RATE_LIMIT_WINDOW_MS,
   ROMAN_ERASED_DAY_KEY_PREFIX,
   ROMAN_SESSION_NOT_FOUND_MESSAGE,
@@ -132,8 +131,6 @@ import { RomanToolLoop, withToolFacts } from './tools/roman-tool-loop';
 export interface RomanCaller {
   id: string;
   role: string;
-  /** Coach tier when known; drives the rate-limit cap. Defaults to free. */
-  tier?: 'free' | 'pro' | 'enterprise' | null;
 }
 
 /** One emitted chunk of an assistant stream. */
@@ -831,25 +828,18 @@ export class RomanService {
 
   // ─── Rate limiting ─────────────────────────────────────────────────────────
 
-  /** The user-turn cap for a caller's tier (brief §3). */
-  rateLimitCapFor(caller: RomanCaller): number {
-    const tier = caller.tier ?? 'free';
-    return tier === 'free'
-      ? ROMAN_RATE_LIMIT_FREE_PER_DAY
-      : ROMAN_RATE_LIMIT_PRO_PER_DAY;
-  }
-
   /**
-   * Throw a structured 429 when the caller has exhausted their 24h user-turn
-   * budget. Counts `user` turns in the rolling window, plus the content-free
+   * Throw a structured 429 when a client has used ROMAN_MESSAGES_PER_DAY
+   * user turns in the rolling 24h (the same for every client, owner NOLOCK-R).
+   * Counts `user` turns in the rolling window, plus the content-free
    * count of user turns erased by `deleteSession` from a recently active
    * session (so deleting a chat never resets the cap; conservative: those
    * turns count until the erased session's last activity leaves the window).
-   * OWNER is exempt.
+   * Owner NOLOCK-R3: only clients have a daily number; a coach or the owner
+   * is never counted (the coach AI credit pool alone limits a coach).
    */
   async assertWithinRateLimit(caller: RomanCaller): Promise<void> {
-    if (caller.role === 'owner') return;
-    const cap = this.rateLimitCapFor(caller);
+    if (romanAudienceOf(caller.role) !== 'client') return;
     const since = new Date(Date.now() - ROMAN_RATE_LIMIT_WINDOW_MS);
     const live = await this.prisma.romanMessage.count({
       where: {
@@ -874,7 +864,7 @@ export class RomanService {
       _min: { last_activity_at: true },
     });
     const used = live + (erased._sum.message_count ?? 0);
-    if (used >= cap) {
+    if (used >= ROMAN_MESSAGES_PER_DAY) {
       // Retry-after = time until the oldest counted turn (or erased session's
       // last activity) falls out of the window.
       const oldest = await this.prisma.romanMessage.findFirst({
@@ -901,7 +891,7 @@ export class RomanService {
         {
           code: ROMAN_ERROR_RATE_LIMIT,
           retryAfterSeconds,
-          message: romanRateLimitMessage(retryAfterSeconds, caller.role),
+          message: romanRateLimitMessage(retryAfterSeconds),
         },
         HttpStatus.TOO_MANY_REQUESTS,
       );

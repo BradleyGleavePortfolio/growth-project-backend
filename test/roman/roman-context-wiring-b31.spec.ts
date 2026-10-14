@@ -31,7 +31,7 @@ import { RomanBackgroundSpendService } from '../../src/roman/background/roman-ba
 import { RomanCoachMethodAugmenter } from '../../src/roman/playbook/roman-coach-method.augmenter';
 import { resolveRomanCoachScope } from '../../src/roman/context/roman-coach-scope';
 
-const CALLER: RomanCaller = { id: 'b31-client', role: 'student', tier: 'free' };
+const CALLER: RomanCaller = { id: 'b31-client', role: 'student' };
 
 type Ctor = abstract new (...args: never[]) => unknown;
 

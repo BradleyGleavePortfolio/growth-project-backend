@@ -22,10 +22,7 @@ import {
   dayKeyUtc,
   erasedDayKey,
 } from '../../src/roman/roman.service';
-import {
-  ROMAN_RATE_LIMIT_FREE_PER_DAY,
-  ROMAN_RATE_LIMIT_PRO_PER_DAY,
-} from '../../src/roman/roman.constants';
+import { ROMAN_MESSAGES_PER_DAY } from '../../src/roman/roman.constants';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
 import { grantAllEgress, fakeOf } from '../ai-egress/ai-egress.fakes';
 import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
@@ -379,7 +376,7 @@ function asPrisma(fake: ReturnType<typeof makeFakePrisma>): PrismaService {
   return fake as unknown as PrismaService;
 }
 
-const CALLER: RomanCaller = { id: 'u_a', role: 'student', tier: 'free' };
+const CALLER: RomanCaller = { id: 'u_a', role: 'student' };
 
 // C-635-2: every "not yours / gone" answer is the same coded 404.
 const SESSION_NOT_FOUND = {
@@ -443,7 +440,7 @@ describe('RomanService — sessions', () => {
 // deletes them or their account. A client delete must ERASE the transcript
 // (box-2 copy client-ai-v4 and the privacy policy promise exactly that).
 describe('RomanService — client delete erases the conversation', () => {
-  const OTHER: RomanCaller = { id: 'u_b', role: 'student', tier: 'free' };
+  const OTHER: RomanCaller = { id: 'u_b', role: 'student' };
 
   it('hard-deletes every message of the session and clears the subject context', async () => {
     const prisma = makeFakePrisma();
@@ -508,13 +505,13 @@ describe('RomanService — client delete erases the conversation', () => {
     const prisma = makeFakePrisma();
     const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     const s = await svc.openOrResumeSession(CALLER, 'client');
-    for (let i = 0; i < ROMAN_RATE_LIMIT_FREE_PER_DAY; i++) {
+    for (let i = 0; i < ROMAN_MESSAGES_PER_DAY; i++) {
       await svc.appendMessage(CALLER, s.id, { role: 'user', content: `t${i}` });
     }
     await svc.deleteSession(CALLER, s.id);
     expect(prisma._state.messages).toHaveLength(0);
     // The shell keeps only a content-free count of the erased in-window turns.
-    expect(prisma._state.sessions[0].message_count).toBe(ROMAN_RATE_LIMIT_FREE_PER_DAY);
+    expect(prisma._state.sessions[0].message_count).toBe(ROMAN_MESSAGES_PER_DAY);
     await expect(svc.assertWithinRateLimit(CALLER)).rejects.toMatchObject({
       response: { code: 'ROMAN_RATE_LIMIT' },
     });
@@ -533,7 +530,7 @@ describe('RomanService — client delete erases the conversation', () => {
     const prisma = makeFakePrisma();
     const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     const s = await svc.openOrResumeSession(CALLER, 'client');
-    for (let i = 0; i < ROMAN_RATE_LIMIT_FREE_PER_DAY; i++) {
+    for (let i = 0; i < ROMAN_MESSAGES_PER_DAY; i++) {
       await svc.appendMessage(CALLER, s.id, { role: 'user', content: `t${i}` });
     }
     await svc.deleteSession(CALLER, s.id);
@@ -548,7 +545,7 @@ describe('RomanService — client delete erases the conversation', () => {
 // that key like Postgres; test/roman/roman-session-erase.live.spec.ts proves
 // the same sequences on a real database.
 describe('RomanService — same-day fresh session after a delete (B-635-1)', () => {
-  const OTHER: RomanCaller = { id: 'u_b', role: 'student', tier: 'free' };
+  const OTHER: RomanCaller = { id: 'u_b', role: 'student' };
 
   it('the fake enforces the real unique key across deleted rows (negative control)', async () => {
     const prisma = makeFakePrisma();
@@ -619,7 +616,7 @@ describe('RomanService — same-day fresh session after a delete (B-635-1)', () 
   it('delete + reopen (three chats in one day) never resets the daily cap', async () => {
     const prisma = makeFakePrisma();
     const svc = new RomanService(asPrisma(prisma), grantAllEgress());
-    const perChat = Math.ceil(ROMAN_RATE_LIMIT_FREE_PER_DAY / 3);
+    const perChat = Math.ceil(ROMAN_MESSAGES_PER_DAY / 3);
     for (let chat = 0; chat < 3; chat++) {
       const s = await svc.openOrResumeSession(CALLER, 'client');
       for (let i = 0; i < perChat; i++) {
@@ -656,7 +653,7 @@ describe('RomanService — same-day fresh session after a delete (B-635-1)', () 
 // rolling deploy) kept their transcript and subject context under a tombstone
 // that still holds a calendar day_key.
 describe('RomanService — pre-upgrade soft-deleted sessions are erased (C-635-1)', () => {
-  const OTHER: RomanCaller = { id: 'u_b', role: 'student', tier: 'free' };
+  const OTHER: RomanCaller = { id: 'u_b', role: 'student' };
 
   function seedLegacyTombstone(
     prisma: ReturnType<typeof makeFakePrisma>,
@@ -722,11 +719,11 @@ describe('RomanService — pre-upgrade soft-deleted sessions are erased (C-635-1
     expect(prisma._state.messages).toHaveLength(0);
   });
 
-  it('the legacy erase keeps the cap: 50 legacy turns today still block a new turn', async () => {
+  it('the legacy erase keeps the cap: a full cap of legacy turns today still blocks a new turn', async () => {
     const prisma = makeFakePrisma();
     const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     seedLegacyTombstone(prisma, CALLER.id, dayKeyUtc(), {
-      user: ROMAN_RATE_LIMIT_FREE_PER_DAY,
+      user: ROMAN_MESSAGES_PER_DAY,
       roman: 3,
     });
     await svc.openOrResumeSession(CALLER, 'client');
@@ -845,7 +842,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const daysAgo = (d: number) => new Date(Date.now() - d * DAY);
 
 describe('RomanService — the client can find and delete ANY chat, not only today\'s (B-635-2)', () => {
-  const OTHER: RomanCaller = { id: 'u_b', role: 'student', tier: 'free' };
+  const OTHER: RomanCaller = { id: 'u_b', role: 'student' };
 
   function seedHistory(prisma: ReturnType<typeof makeFakePrisma>) {
     const old = seedSession(prisma, {
@@ -1027,7 +1024,7 @@ describe('RomanService — the client can find and delete ANY chat, not only tod
       userId: CALLER.id,
       dayKey: '2026-10-01',
       startedAt: new Date(Date.now() - 60_000),
-      userTurns: Array.from({ length: ROMAN_RATE_LIMIT_FREE_PER_DAY - 1 }, (_, i) => `y${i}`),
+      userTurns: Array.from({ length: ROMAN_MESSAGES_PER_DAY - 1 }, (_, i) => `y${i}`),
     });
     const today = await svc.openOrResumeSession(CALLER, 'client');
     await svc.appendMessage(CALLER, today.id, { role: 'user', content: 'one more' });
@@ -1353,21 +1350,52 @@ describe('RomanService — messages', () => {
 });
 
 describe('RomanService — rate limiting', () => {
-  it('selects the free vs pro cap by tier', () => {
-    const svc = new RomanService(asPrisma(makeFakePrisma()), grantAllEgress());
-    expect(svc.rateLimitCapFor({ id: 'x', role: 'student', tier: 'free' })).toBe(
-      ROMAN_RATE_LIMIT_FREE_PER_DAY,
-    );
-    expect(svc.rateLimitCapFor({ id: 'x', role: 'coach', tier: 'pro' })).toBe(
-      ROMAN_RATE_LIMIT_PRO_PER_DAY,
-    );
+  // Owner NOLOCK-R / NOLOCK-R2: one number for every client, never a plan or tier.
+  it('a client gets 100 messages a day: the 101st is refused; nobody else counts', async () => {
+    expect(ROMAN_MESSAGES_PER_DAY).toBe(100);
+    const prisma = makeFakePrisma();
+    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+    const seed = (id: string, userId: string, n: number) =>
+      seedSession(prisma, {
+        id,
+        userId,
+        dayKey: dayKeyUtc(),
+        startedAt: new Date(),
+        userTurns: Array.from({ length: n }, (_, i) => `t${i}`),
+      });
+    seed('s_mine', CALLER.id, ROMAN_MESSAGES_PER_DAY - 1);
+    // Another client's full day never counts toward this client's limit.
+    seed('s_other', 'u_b', ROMAN_MESSAGES_PER_DAY);
+    await expect(svc.assertWithinRateLimit(CALLER)).resolves.toBeUndefined();
+    await svc.appendMessage(CALLER, 's_mine', { role: 'user', content: 'one more' });
+    await expect(svc.assertWithinRateLimit(CALLER)).rejects.toMatchObject({
+      response: { code: 'ROMAN_RATE_LIMIT' },
+    });
+  });
+
+  // Owner NOLOCK-R3: coaches have no daily Roman number; only the AI credit pool limits them.
+  it('a coach or the owner past 100 messages today is never refused, and their turns are not counted', async () => {
+    for (const caller of [{ id: 'u_coach', role: 'coach' }, { id: 'u_owner', role: 'owner' }]) {
+      const prisma = makeFakePrisma();
+      const svc = new RomanService(asPrisma(prisma), grantAllEgress());
+      seedSession(prisma, {
+        id: `s_${caller.id}`,
+        userId: caller.id,
+        surface: 'coach',
+        dayKey: dayKeyUtc(),
+        startedAt: new Date(),
+        userTurns: Array.from({ length: ROMAN_MESSAGES_PER_DAY + 50 }, (_, i) => `t${i}`),
+      });
+      await expect(svc.assertWithinRateLimit(caller)).resolves.toBeUndefined();
+      expect(prisma.romanMessage.count).not.toHaveBeenCalled();
+    }
   });
 
   it('throws a structured 429 once the cap is exhausted', async () => {
     const prisma = makeFakePrisma();
     const svc = new RomanService(asPrisma(prisma), grantAllEgress());
     const s = await svc.openOrResumeSession(CALLER, 'client');
-    for (let i = 0; i < ROMAN_RATE_LIMIT_FREE_PER_DAY; i++) {
+    for (let i = 0; i < ROMAN_MESSAGES_PER_DAY; i++) {
       await svc.appendMessage(CALLER, s.id, { role: 'user', content: `t${i}` });
     }
     await expect(svc.assertWithinRateLimit(CALLER)).rejects.toMatchObject({
@@ -1382,14 +1410,6 @@ describe('RomanService — rate limiting', () => {
     expect(err).toBeInstanceOf(HttpException);
     expect((err as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
     expect((err as HttpException).getStatus()).toBe(429);
-  });
-
-  it('exempts the owner from the rate limit', async () => {
-    const prisma = makeFakePrisma();
-    const svc = new RomanService(asPrisma(prisma), grantAllEgress());
-    await expect(
-      svc.assertWithinRateLimit({ id: 'u_owner', role: 'owner' }),
-    ).resolves.toBeUndefined();
   });
 });
 
