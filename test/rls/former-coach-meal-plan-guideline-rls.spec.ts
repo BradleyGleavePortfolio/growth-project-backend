@@ -212,7 +212,8 @@ if (!DB_URL && process.env.CI === 'true') {
       FROM pg_policy p JOIN pg_class c ON c."oid" = p."polrelid"
       WHERE c."relname" IN ('DailyMealPlan', 'MealTemplate', 'DailyMealPlanSlot', 'CoachGuideline', 'WorkoutAdjustmentProposal')
         AND p."polname" NOT LIKE '%service_role%' AND p."polname" NOT LIKE 'deny_all%'`;
-    const narrowed = rows.filter((r) => r.comment?.startsWith('20270419000000: ')).map((r) => r.policy).sort();
+    // 20270429000000 (GUIDEWRITE) narrows the three guideline writes further.
+    const narrowed = rows.filter((r) => /^202704(19|29)000000: /.test(r.comment ?? '')).map((r) => r.policy).sort();
     expect(narrowed).toEqual([
       'p_coachguideline_delete', 'p_coachguideline_insert', 'p_coachguideline_select', 'p_coachguideline_update',
       'p_dailymealplan_delete', 'p_dailymealplan_select', 'p_dailymealplan_update',
