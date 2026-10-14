@@ -23,13 +23,16 @@ interface Row {
   name: string;
 }
 
-function harness(row: Row) {
+function harness(row: Row, others: Record<string, Row> = {}) {
   process.env.PERPLEXITY_API_KEY = 'pk-test';
-  // Only the user's own row exists on this fake: a credit, audit or consent
-  // table touched by the coachless path would throw.
+  // Only User rows exist on this fake: a credit, audit or consent table
+  // touched by the coachless path would throw. `others` holds other clients'
+  // rows by id; any other id reads `row`.
   const prisma = {
     user: {
-      findUniqueOrThrow: jest.fn(async () => ({ ...row })),
+      findUniqueOrThrow: jest.fn(async (args: { where: { id: string } }) => ({
+        ...(others[args.where.id] ?? row),
+      })),
       update: jest.fn(async () => ({})),
     },
   };
@@ -87,16 +90,50 @@ describe('first-win: coachless clients get the fixed Day One note, no AI', () =>
   });
 
   it('with no approved note (set_first_goal) or no first name: the existing fixed message, still no AI', async () => {
+    // Word for word the deterministic messages already on main (no new text).
     const goal = harness(COACHLESS);
     const g = await goal.svc.complete('client-1', 'set_first_goal');
-    expect(g.aiMessage).toMatch(/^Setting a clear goal/);
+    expect(g.aiMessage).toBe(
+      'Setting a clear goal turns a direction into a destination. Every decision from here — what you eat, when you train — can now be tested against that target.',
+    );
     const blank = harness({ ...COACHLESS, name: '  ' });
     const b = await blank.svc.complete('client-1', 'first_meal');
-    expect(b.aiMessage).toMatch(/^Logging your first meal starts your nutrition baseline/);
-    for (const h of [goal, blank]) {
+    expect(b.aiMessage).toBe(
+      'Logging your first meal starts your nutrition baseline. Three days of honest data says more about your habits than any intake form.',
+    );
+    const blankWeight = harness({ ...COACHLESS, name: '' });
+    const w = await blankWeight.svc.complete('client-1', 'logged_first_weight');
+    expect(w.aiMessage).toBe(
+      'Your first weight log sets the baseline every future measurement is compared against. Tracking consistently, even on days the number is not where you want it, is the discipline that produces results over 90 days.',
+    );
+    const blankHabits = harness({ ...COACHLESS, name: '' });
+    const c = await blankHabits.svc.complete('client-1', 'first_checkin');
+    expect(c.aiMessage).toBe(
+      'Checking off your daily habits is the smallest unit of progress. One tick a day, repeated for 90 days, is the consistency that compounds into results.',
+    );
+    for (const h of [goal, blank, blankWeight, blankHabits]) {
       expect(h.create).toHaveBeenCalledTimes(0);
       expect(h.egressCall).toHaveBeenCalledTimes(0);
+      expect(h.reader.calls).toHaveLength(0);
     }
+  });
+
+  it("names only the caller: another client's row and first name never reach the response", async () => {
+    const { svc, prisma } = harness(COACHLESS, {
+      'client-2': { ...COACHLESS, name: 'Alex Moore' },
+    });
+    const res = await svc.complete('client-2', 'first_meal');
+    expect(res.aiMessage).toBe(
+      'Your first meal is logged, Alex. A few days of meals like this tell your plan more than any form.',
+    );
+    expect(res.aiMessage).not.toContain('Sam');
+    expect(prisma.user.findUniqueOrThrow).toHaveBeenCalledTimes(1);
+    expect(prisma.user.findUniqueOrThrow).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'client-2' } }),
+    );
+    expect(prisma.user.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'client-2' } }),
+    );
   });
 
   it('coached client: unchanged, the model writes the message', async () => {
