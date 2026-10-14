@@ -78,6 +78,12 @@ export interface MockClientWorkoutAssignmentDelegate {
 
 export interface MockCheckInDelegate {
   findMany: jest.Mock;
+  count: jest.Mock;
+}
+
+// BRIEFTEAM head-brief team data (src/coach/brief/head-brief-team.ts).
+export interface MockFindManyDelegate {
+  findMany: jest.Mock;
 }
 
 export interface MockNotificationPreferencesDelegate {
@@ -112,6 +118,8 @@ export interface MockPrisma {
   chargeSettlement: MockChargeSettlementDelegate;
   notificationPreferences: MockNotificationPreferencesDelegate;
   coachMessage: MockCoachMessageDelegate;
+  inviteRedemption: MockFindManyDelegate;
+  userBlock: MockFindManyDelegate;
   $queryRaw: jest.Mock;
 }
 
@@ -163,6 +171,7 @@ export function makeMockPrisma(): MockPrisma {
     },
     checkIn: {
       findMany: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
     },
     clientPurchase: {
       aggregate: jest.fn(),
@@ -178,6 +187,8 @@ export function makeMockPrisma(): MockPrisma {
     coachMessage: {
       findMany: jest.fn(),
     },
+    inviteRedemption: { findMany: jest.fn().mockResolvedValue([]) },
+    userBlock: { findMany: jest.fn().mockResolvedValue([]) },
     $queryRaw: jest.fn(),
   };
 }

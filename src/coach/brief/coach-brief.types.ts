@@ -86,7 +86,35 @@ export interface BriefContextHeadCoach {
   dunning_in_progress: number;
   dunning_amount_cents: number;
 
+  // Empty, and team_size 0, while Team Mode is off (FEATURE_TEAM_MODE).
   sub_coach_highlights: SubCoachHighlight[];
+
+  // BRIEFTEAM (SUBM-BRIEF). Optional: briefs stored before it have neither.
+  clients_yesterday?: HeadBriefClientsYesterday;
+  // Never sent to the AI writer (headCoachAiContext): not a business metric.
+  activity?: HeadBriefActivity;
+}
+
+// The head coach's roster on the previous local day (`date`): clients who
+// joined (a code redemption, or an account created already on the roster)
+// minus clients archived or erased that day. net = added - left.
+export interface HeadBriefClientsYesterday {
+  date: string;
+  added: number;
+  left: number;
+  net: number;
+}
+
+export interface HeadBriefActivity {
+  // Check-ins on `check_ins_date` (the previous local day) by roster clients
+  // whose Coach sharing switch for check-ins is on; the rest are counted in
+  // check_ins_not_shared (clients, not check-ins).
+  check_ins_date: string;
+  check_ins_completed: number;
+  check_ins_not_shared: number;
+  // The head coach's own clients with an unread message right now. While
+  // Team Mode is on, clients delegated to a sub-coach are left out.
+  clients_messaged: number;
 }
 
 // S-BRIEF-124: no 'workout_approval' (nothing in the app approves a workout).
@@ -134,10 +162,11 @@ export interface BriefSummary {
   brief_mode: BriefMode;
   narrative: string;
   brief_context: BriefContext | BriefContextHeadCoach;
-  // Solo + sub-coach briefs use ActionItem[]; head-coach briefs use
-  // HeadCoachActionItem[] (no client identifiers — see P1-3 / CPO
-  // ruling). Mobile branches on brief_mode to render the correct shape.
-  action_items: ActionItem[] | HeadCoachActionItem[];
+  // Solo + sub-coach briefs use ActionItem[]. Head-coach briefs use
+  // HeadCoachActionItem (no client identifiers) plus, since BRIEFTEAM,
+  // message_unread ActionItems for the head coach's own clients only
+  // (SUBM-BRIEF: "5 clients messaged you ->").
+  action_items: Array<ActionItem | HeadCoachActionItem>;
   generated_by: BriefGeneratedBy;
 }
 

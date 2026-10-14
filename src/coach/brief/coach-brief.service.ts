@@ -39,6 +39,8 @@ import { describeFailure } from '../../observability/log-pii';
 import { usableTimeZone } from '../../notifications/local-time';
 import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
+import { isTeamModeEnabled } from '../../team-mode/team-mode.feature';
+import { aggregateHeadBriefTeam, previousDate } from './head-brief-team';
 
 /**
  * Sentinel error surfaced by `markBriefRead` when the briefId either does
@@ -743,6 +745,14 @@ export function buildHeadCoachActionItems(
   );
 }
 
+// BRIEFTEAM: what the AI writer may see of a head-coach brief. The
+// coach_business_metrics exemption covers headcounts and money only, so the
+// activity counts (check-ins, clients who messaged) stay out.
+export function headCoachAiContext(ctx: BriefContextHeadCoach): BriefContextHeadCoach {
+  const { activity: _activity, ...business } = ctx;
+  return business;
+}
+
 // ─── Service ────────────────────────────────────────────────────────────
 
 @Injectable()
@@ -1104,13 +1114,14 @@ export class CoachBriefService {
     };
   }
 
-  // ── Head-coach aggregation: BUSINESS-ONLY team metrics. P1-3 + CPO
-  // ruling — never include client_id, client_name, workout IDs, weight
-  // logs, or unread message previews. The head coach is operating at
-  // COO level; individual client work happens through the sub-coach
-  // brief. P1-4 — derive team headcount + new clients from open
-  // SubCoachAssignment rows (the canonical sub-coach delegation source)
-  // PLUS the head coach's own non-delegated direct clients. User.coach_id
+  // ── Head-coach aggregation: team business metrics. P1-3 + CPO ruling,
+  // narrowed by SUBM-BRIEF (BRIEFTEAM): no workout IDs, weight logs or
+  // client of a sub-coach; the only client-level items are the head
+  // coach's OWN clients who messaged (message_unread). Activity counts
+  // never reach the AI writer (headCoachAiContext). P1-4 — derive team
+  // headcount + new clients from open SubCoachAssignment rows (the
+  // canonical sub-coach delegation source) PLUS the head coach's own
+  // non-delegated direct clients. User.coach_id
   // always points at the head coach, so attribution-by-coach_id would
   // over-count under the head and zero out under each sub.
   private async aggregateHeadCoachContext(
@@ -1119,7 +1130,7 @@ export class CoachBriefService {
     briefDate: string,
   ): Promise<{
     context: BriefContextHeadCoach;
-    actionItems: HeadCoachActionItem[];
+    actionItems: Array<ActionItem | HeadCoachActionItem>;
   }> {
     // Coach metadata
     const coachRow = await this.prisma.user.findUnique({
@@ -1360,6 +1371,22 @@ export class CoachBriefService {
     const dunningInProgress = Number(dunningStateRaw[0]?.count ?? 0);
     const dunningAmountCents = Number(dunningStateRaw[0]?.total ?? 0);
 
+    // BRIEFTEAM: yesterday's joins, leaves and check-ins, and the head
+    // coach's own clients who messaged. Team-only items need Team Mode.
+    const teamMode = isTeamModeEnabled();
+    const yesterday = previousDate(briefDate);
+    const team = await aggregateHeadBriefTeam(this.prisma, this.consent, {
+      headCoachId: coachId,
+      rosterClientIds: tenantClientIds,
+      delegatedClientIds,
+      teamMode,
+      yesterday: {
+        date: yesterday,
+        start: startOfDayInTz(yesterday, timezone),
+        end: endOfDayInTz(yesterday, timezone),
+      },
+    });
+
     // P1-4: sub-coach highlights derived from SubCoachAssignment, NOT
     // User.coach_id. Each sub-coach's active_clients = open assignments
     // pointing at them; new_clients_24h = those whose backing User row
@@ -1389,7 +1416,7 @@ export class CoachBriefService {
       date: briefDate,
       coach_name: coachName,
       coach_first_name: coachFirstName,
-      team_size: subCoaches.length,
+      team_size: teamMode ? subCoaches.length : 0,
       team_clients_total: teamClientsTotal,
       new_clients_last_24h: newClientsLast24h,
       total_revenue_today_cents: revenueTodayCents,
@@ -1398,11 +1425,23 @@ export class CoachBriefService {
       paid_today_count: revenueTodayCount,
       dunning_in_progress: dunningInProgress,
       dunning_amount_cents: dunningAmountCents,
-      sub_coach_highlights: subCoachHighlights,
+      sub_coach_highlights: teamMode ? subCoachHighlights : [],
+      clients_yesterday: team.clients_yesterday,
+      activity: team.activity,
     };
 
-    // Business-only action items — never client identifiers.
-    const actionItems = buildHeadCoachActionItems(context);
+    // Business items carry no client identifier. The only per-client items
+    // are message_unread for the head coach's own clients (SUBM-BRIEF).
+    const actionItems: Array<ActionItem | HeadCoachActionItem> = [
+      ...buildActionItems({
+        unreadThreads: team.unreadThreads,
+        flaggedWeightLogs: [],
+        missingCheckinClients: [],
+      }),
+      ...buildHeadCoachActionItems(context).filter(
+        (i) => teamMode || i.type !== 'team_performance',
+      ),
+    ].sort((a, b) => a.priority - b.priority || a.type.localeCompare(b.type));
 
     return { context, actionItems };
   }
@@ -1819,13 +1858,13 @@ export class CoachBriefService {
       const briefMode = await this.detectBriefMode(coachId);
 
       let context: BriefContext | BriefContextHeadCoach;
-      let actionItems: ActionItem[] | HeadCoachActionItem[];
+      let actionItems: Array<ActionItem | HeadCoachActionItem>;
       // R2b — what the AI may see (null = deterministic narrative only).
       let aiInput: BriefAiInput | null;
 
       if (briefMode === 'head_coach') {
-        // P1-3: head-coach is business-only. No client scope queries,
-        // no per-client action items, no client_id in the response.
+        // P1-3: business metrics, plus message_unread items for the head
+        // coach's own clients only (SUBM-BRIEF).
         const headRes = await this.aggregateHeadCoachContext(
           coachId,
           timezone,
@@ -1835,7 +1874,10 @@ export class CoachBriefService {
         actionItems = headRes.actionItems;
         // Business metrics only (headcounts, money totals): no client
         // identifier and no health / activity field, pinned by the spec.
-        aiInput = { ctx: context, subject: noClientDataSubject('coach_business_metrics') };
+        aiInput = {
+          ctx: headCoachAiContext(context),
+          subject: noClientDataSubject('coach_business_metrics'),
+        };
       } else {
         const clientIds = await this.resolveClientScope(coachId, briefMode);
         const agg = await this.aggregateSoloContext(
@@ -2137,13 +2179,9 @@ export class CoachBriefService {
         brief_context: row.brief_context as unknown as
           | BriefContext
           | BriefContextHeadCoach,
-        // Head-coach action items are HeadCoachActionItem[] (no
-        // client_id / client_name); solo + sub-coach use ActionItem[].
-        // The union in BriefSummary covers both shapes.
-        action_items:
-          briefMode === 'head_coach'
-            ? (row.action_items as unknown as HeadCoachActionItem[])
-            : (row.action_items as unknown as ActionItem[]),
+        // Head-coach items mix HeadCoachActionItem with the own-client
+        // message_unread ActionItems; solo + sub-coach use ActionItem[].
+        action_items: row.action_items as unknown as Array<ActionItem | HeadCoachActionItem>,
         generated_by: generatedBy,
       };
     }
