@@ -54,6 +54,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { isMwbTemplatesEnabled } from './mwb-templates.feature';
 import { assertLastDayMayGo, lockProgramMaster, programDaysWhere } from './program-guards';
+import { inTenantWhere, planStaysInTenantWhere } from './tenant-clients';
 import {
   AssignProgramDto,
   CloneProgramResultDto,
@@ -317,6 +318,8 @@ export class WorkoutBuilderService {
       where: {
         coach_id: coachId,
         archived_at: null,
+        // Owner 4: a moved client's copy leaves the list before paging.
+        AND: [planStaysInTenantWhere(coachId)],
         ...(cursorWhere ?? {}),
       },
       orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
@@ -350,6 +353,7 @@ export class WorkoutBuilderService {
     if (plan.coach_id !== coachId && !(await this.canOpenTeamProgramDay(coachId, plan))) {
       throw new ForbiddenException();
     }
+    await this.assertNotMovedClientCopy(plan);
     return plan;
   }
 
@@ -729,16 +733,7 @@ export class WorkoutBuilderService {
     if (this.subCoachScope && (await this.subCoachScope.isSubCoach(coachId))) {
       return { id: { in: await this.subCoachScope.getAuthorizedClientIds(coachId) } };
     }
-    return {
-      OR: [
-        { coach_id: coachId },
-        {
-          coach: {
-            sub_coach_assignments_as_sub: { some: { head_coach_id: coachId, archived_at: null } },
-          },
-        },
-      ],
-    };
+    return inTenantWhere(coachId);
   }
 
   /**
@@ -951,6 +946,23 @@ export class WorkoutBuilderService {
     const plan = await this.prisma.workoutPlan.findUnique({ where: { id: planId } });
     if (!plan) throw new NotFoundException('Workout plan not found');
     if (plan.coach_id !== coachId) throw new ForbiddenException();
+    await this.assertNotMovedClientCopy(plan);
+  }
+
+  /**
+   * Owner 4: a day of a client's program copy is not found for the tenant
+   * once that client has moved to another coach (tenant-clients.ts).
+   */
+  private async assertNotMovedClientCopy(plan: {
+    id: string;
+    coach_id: string;
+    program_id: string | null;
+  }) {
+    if (!plan.program_id) return;
+    const where = { id: plan.id, ...planStaysInTenantWhere(plan.coach_id) };
+    if ((await this.prisma.workoutPlan.count({ where })) === 0) {
+      throw new NotFoundException('Workout plan not found');
+    }
   }
 
   private async assertClientBelongsToCoach(coachId: string, clientId: string) {

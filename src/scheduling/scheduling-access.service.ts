@@ -140,6 +140,73 @@ export class SchedulingAccessService {
   }
 
   /**
+   * Owner 4: once a client moves to another coach, the past sessions their
+   * former coach held with them leave that coach's calendar at once (404 by
+   * id, left out of the past list). A coach keeps a past session while its
+   * lead client may still book with them (bookableCoachIds). Sessions still
+   * ahead stay, so the coach can still cancel them; the client always keeps
+   * their own.
+   */
+  async assertPastSessionStillTheirs(
+    actor: ActorContext,
+    session: Pick<CoachingSession, 'coach_id' | 'client_id' | 'end_at'>,
+    db: Db = this.prisma,
+  ): Promise<void> {
+    if (actor.role !== 'coach' || !session.client_id || session.end_at > new Date()) return;
+    const client = await db.user.findUnique({
+      where: { id: session.client_id },
+      select: { id: true, role: true, coach_id: true },
+    });
+    if (client?.role === 'student') {
+      const ids = await this.bookableCoachIds({ ...client, role: 'student', email: null }, db);
+      if (ids.includes(session.coach_id)) return;
+    }
+    throw new NotFoundException(
+      schedulingError(SchedulingErrorCode.SESSION_NOT_FOUND, SESSION_NOT_FOUND_MESSAGE),
+    );
+  }
+
+  /** The same rule as a filter on a coach's past sessions. */
+  async pastSessionsStillTheirs(
+    coachId: string,
+    db: Db = this.prisma,
+  ): Promise<Prisma.CoachingSessionWhereInput> {
+    const delegated = await this.delegatedClientIds(coachId, db);
+    return {
+      OR: [
+        { client_id: null },
+        { client: { is: { coach_id: coachId, role: 'student' } } },
+        ...(delegated.length > 0 ? [{ client_id: { in: delegated } }] : []),
+      ],
+    };
+  }
+
+  /** Clients who may book with this coach as their delegated sub-coach. */
+  private async delegatedClientIds(coachId: string, db: Db): Promise<string[]> {
+    const seats = await db.teamSubCoachAssignment.findMany({
+      where: { sub_coach_id: coachId, archived_at: null },
+      select: { head_coach_id: true },
+    });
+    if (seats.length === 0) return [];
+    const open = await db.subCoachAssignment.findMany({
+      where: {
+        sub_coach_id: coachId,
+        head_coach_id: { in: seats.map((s) => s.head_coach_id) },
+        unassigned_at: null,
+      },
+      select: { client_id: true, head_coach_id: true },
+    });
+    if (open.length === 0) return [];
+    const clients = await db.user.findMany({
+      where: { id: { in: open.map((o) => o.client_id) }, role: 'student' },
+      select: { id: true, coach_id: true },
+    });
+    return clients
+      .filter((c) => open.some((o) => o.client_id === c.id && o.head_coach_id === c.coach_id))
+      .map((c) => c.id);
+  }
+
+  /**
    * Move/cancel access. Coach of the session or owner; or the lead client
    * while the coach is still one of their bookable coaches.
    */

@@ -591,6 +591,7 @@ export class SchedulingSessionLifecycleService {
   ): Promise<CoachingSession> {
     const existing = await this.loadSessionFor(actor, sessionId);
     await this.access.assertCanActAsParticipant(actor, existing);
+    await this.access.assertPastSessionStillTheirs(actor, existing);
     this.assertRequestOpen(existing, actor);
     this.assertTransition(existing, 'canceled');
     assertExpectedStart(existing, dto.expected_start_at);
@@ -699,6 +700,7 @@ export class SchedulingSessionLifecycleService {
   ): Promise<CoachingSession> {
     const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
+    await this.access.assertPastSessionStillTheirs(actor, existing);
     this.assertTransition(existing, 'completed');
     assertHasStarted(existing, 'complete');
     const updated = await this.compareAndSet(
@@ -719,6 +721,7 @@ export class SchedulingSessionLifecycleService {
   ): Promise<CoachingSession> {
     const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
+    await this.access.assertPastSessionStillTheirs(actor, existing);
     this.assertTransition(existing, 'no_show');
     assertExpectedStart(existing, opts.expectedStartAt);
     assertHasStarted(existing, 'no_show');
@@ -743,6 +746,7 @@ export class SchedulingSessionLifecycleService {
   ): Promise<CoachingSession> {
     const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
+    await this.access.assertPastSessionStillTheirs(actor, existing);
     const url = dto.video_url.trim();
     if (!MEETING_LINK_PATTERN.test(url)) {
       throw new BadRequestException(

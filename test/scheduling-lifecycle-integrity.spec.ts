@@ -737,6 +737,65 @@ describe('ownership (T4)', () => {
     ).toBe('NOT_SESSION_PARTICIPANT');
   });
 
+  it('HIST-2 (owner 4): after a move the former coaches lose the past sessions, the client keeps them', async () => {
+    const { svc, db, notifications, auditWrites } = harness();
+    const add = (id: string, coachId: string, typeId: string, start: string, end: string) =>
+      db.addSession({
+        id,
+        coach_id: coachId,
+        client_id: 'client-1',
+        session_type_id: typeId,
+        status: 'scheduled',
+        start_at: new Date(start),
+        end_at: new Date(end),
+        coach_notes_md: 'Private note',
+      });
+    add('head-past', 'coach-1', 'st-open', '2026-10-01T17:00:00.000Z', '2026-10-01T17:30:00.000Z');
+    add('sub-past', 'coach-2', 'st-sub', '2026-10-01T17:00:00.000Z', '2026-10-01T17:30:00.000Z');
+    add('ahead', 'coach-1', 'st-open', TUE_1000, TUE_1030);
+    const pastIds = async (actor: ActorContext) =>
+      (await svc.listSessionsForActor(actor, { scope: 'past' })).map((s) => s.id);
+    // Before the move the head coach and the delegated sub-coach keep theirs.
+    expect(await pastIds(COACH)).toEqual(['head-past']);
+    expect(await pastIds(SUB_COACH)).toEqual(['sub-past']);
+    expect((await svc.getSession(SUB_COACH, 'sub-past')).coach_notes_md).toBe('Private note');
+
+    // The move: client-1's coach is now coach-3.
+    const row = db.users.find((u) => u.id === 'client-1');
+    if (row) row.coach_id = 'coach-3';
+    const moved: ActorContext = { ...CLIENT, coach_id: 'coach-3' };
+    expect(await pastIds(COACH)).toEqual([]);
+    expect(await pastIds(SUB_COACH)).toEqual([]);
+    for (const [actor, id] of [
+      [COACH, 'head-past'],
+      [SUB_COACH, 'sub-past'],
+    ] as const) {
+      expect((await failure(svc.getSession(actor, id))).code).toBe('SESSION_NOT_FOUND');
+      expect((await failure(svc.completeSession(actor, id, {}))).code).toBe('SESSION_NOT_FOUND');
+      expect((await failure(svc.markNoShow(actor, id))).code).toBe('SESSION_NOT_FOUND');
+      expect((await failure(svc.cancelSession(actor, id, {}))).code).toBe('SESSION_NOT_FOUND');
+      const link = { video_url: 'https://meet.example.com/abc' };
+      expect((await failure(svc.attachManualVideoLink(actor, id, link))).code).toBe(
+        'SESSION_NOT_FOUND',
+      );
+    }
+    // Nothing was written and nobody was told.
+    expect(db.sessions.filter((s) => s.status === 'scheduled')).toHaveLength(3);
+    expect(db.sessions.map((s) => s.video_url)).toEqual([null, null, null]);
+    expect(auditWrites).toEqual([]);
+    expect(notifications.rows).toEqual([]);
+    // The new coach never reads the former coaches' sessions or notes (4b).
+    expect(await pastIds(OTHER_COACH)).toEqual([]);
+    expect((await failure(svc.getSession(OTHER_COACH, 'head-past'))).code).toBe(
+      'SESSION_NOT_FOUND',
+    );
+    // The client keeps every session; the one still ahead stays on the former
+    // coach's calendar so it can still be cancelled.
+    expect((await pastIds(moved)).sort()).toEqual(['head-past', 'sub-past']);
+    expect((await svc.getSession(moved, 'head-past')).coach_notes_md).toBeNull();
+    expect((await svc.getSession(COACH, 'ahead')).id).toBe('ahead');
+  });
+
   it('only the session coach approves, declines, completes or adds the link', async () => {
     const { svc } = harness();
     const s = await svc.requestSession(CLIENT, request(CLIENT, 'st-q', TUE_1000, TUE_1015));

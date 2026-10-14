@@ -379,6 +379,10 @@ export class SchedulingFakeDb {
       await this.tick();
       return this.teamAssignments.find((r) => this.matches(r, args.where, 'other')) ?? null;
     },
+    findMany: async (args: { where?: Row }) => {
+      await this.tick();
+      return this.teamAssignments.filter((r) => this.matches(r, args.where, 'other'));
+    },
   };
 
   sessionType = {
