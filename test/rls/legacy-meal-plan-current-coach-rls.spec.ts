@@ -80,6 +80,14 @@ if (!DB_URL && process.env.CI === 'true') {
       () => { throw new Error('unreachable'); },
       (e: unknown) => { if (e instanceof Rollback) return e.n; throw e; },
     );
+  // Another client: C reads their own plan and none of A's; A reads none of C's.
+  // Each 0 follows the owning client's read of the same row = 1.
+  const clientsStayApart = async () => {
+    expect(await reads('C', ['meal.L'])).toEqual({ 'meal.L': 1 });
+    expect(await reads('A', ['meal.F', 'meal.K'])).toEqual({ 'meal.F': 1, 'meal.K': 1 });
+    expect(await reads('C', ['meal.F', 'meal.K'])).toEqual({ 'meal.F': 0, 'meal.K': 0 });
+    expect(await reads('A', ['meal.L'])).toEqual({ 'meal.L': 0 });
+  };
   const add = (who: string, tag: string, coach: string, client: string) =>
     as(who, (tx) => tx.$executeRaw`INSERT INTO "MealPlan" ("id", "coach_id", "client_id", "title", "items", "updated_at")
       VALUES (${id(tag)}, ${u[coach]}, ${u[client]}, 'Plan', '[]'::jsonb, now())`);
@@ -102,12 +110,15 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(await reads('A', ['meal.F', 'meal.F2'])).toEqual({ 'meal.F': 1, 'meal.F2': 1 });
   });
 
+  it('before the move, another client reads none of A\'s legacy plans, and A none of theirs', clientsStayApart);
+
   describe('after A moves from coach F to coach K', () => {
     beforeAll(async () => {
       await prisma.$executeRaw`UPDATE "User" SET "coach_id" = ${u.K} WHERE "id" = ${u.A}`;
     });
 
     it('the former coach reads, updates, deletes and adds none of A\'s legacy plans', async () => {
+      expect(await reads('A', ['meal.F', 'meal.F2', 'meal.K'])).toEqual({ 'meal.F': 1, 'meal.F2': 1, 'meal.K': 1 });
       expect(await reads('F', ['meal.F', 'meal.F2', 'meal.K'])).toEqual({ 'meal.F': 0, 'meal.F2': 0, 'meal.K': 0 });
       expect(await update('F', 'meal.F')).toBe(0);
       expect(await dryDelete('F', 'meal.F')).toBe(0);
@@ -126,6 +137,8 @@ if (!DB_URL && process.env.CI === 'true') {
       expect(await dryDelete('K', 'meal.K')).toBe(1);
       expect(await add('K', 'meal.K2', 'K', 'A')).toBe(1);
     });
+
+    it('another client still reads none of A\'s legacy plans, and A none of theirs', clientsStayApart);
 
     it('another coach\'s client stays out of reach', async () => {
       expect(await reads('L', ['meal.L'])).toEqual({ 'meal.L': 1 });
