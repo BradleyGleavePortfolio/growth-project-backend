@@ -179,16 +179,18 @@ function makePrisma(sessionOwner = 'user-A') {
 
   // B-651-5: the spend admission takes a per-day advisory lock in its tx.
   const $executeRaw = jest.fn(async () => 1);
+  const $queryRaw = jest.fn(async (): Promise<unknown[]> => [{}]);
   const prisma = {
     romanSession,
     romanMessage,
     aiRequestAudit,
     $executeRaw,
+    $queryRaw, // ROMANCOUNT daily count: a row back = counted, [] = at the limit.
     $transaction: jest.fn(async (fn: (tx: unknown) => unknown) =>
       fn({ romanMessage, romanSession, aiRequestAudit, $executeRaw }),
     ),
   };
-  return { prisma, session, messages, romanMessage, audits };
+  return { prisma, session, messages, romanMessage, audits, $queryRaw };
 }
 
 // ─── fake Anthropic client ────────────────────────────────────────────────────
@@ -668,9 +670,8 @@ describe('Roman — crisis messages are never blocked by the turn limit or the s
   );
 
   it('turn limit used up: an emergency message still gets the 911 template; an ordinary one gets the 429', async () => {
-    const { ctrl, anthropic, romanMessage } = setup();
-    romanMessage.count.mockResolvedValue(10_000);
-    romanMessage.findFirst.mockResolvedValue(null);
+    const { ctrl, anthropic, $queryRaw } = setup();
+    $queryRaw.mockResolvedValue([]);
     const { res, writes } = makeRes();
     await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', {
       content: 'I have crushing chest pain right now',
@@ -821,8 +822,8 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
   });
 
   it('turn limit used up: the fallback, no 429 and no Retry-After; an ordinary message still gets the 429', async () => {
-    const { ctrl, anthropic, romanMessage } = setup(['user-A']);
-    romanMessage.count.mockResolvedValue(10_000);
+    const { ctrl, anthropic, $queryRaw } = setup(['user-A']);
+    $queryRaw.mockResolvedValue([]);
     const { res, writes } = makeRes();
     await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
     const done = parseFrames(writes).find((f) => f.data?.type === 'done');

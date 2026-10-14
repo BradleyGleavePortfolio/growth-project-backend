@@ -87,8 +87,7 @@ function setup(initialUsedCents: number, inputTokens = 6000, ctx: object | null 
     user: { findUnique: jest.fn(async () => ({ coach_id: 'rmn2-coach' })) },
     teamSubCoachAssignment: { findFirst: jest.fn(async () => null) },
     coachAIBudget, romanSession, romanMessage, aiRequestAudit,
-    // ROMANCOUNT: the daily count (counted) and the dunning lock (ROMANCAP-C f).
-    $queryRaw: jest.fn(async () => [{}]),
+    $queryRaw: jest.fn(async () => [{}]), // ROMANCOUNT: the daily count (counted)
     dunningState: { findFirst: jest.fn(async () => (locked ? { id: 'd1', purchase_id: 'p1' } : null)) },
     clientPurchase: { findMany: jest.fn(async () => []) },
     // C2 (#669): the daily reservation runs inside a transaction behind an

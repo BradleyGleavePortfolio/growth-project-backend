@@ -55,11 +55,9 @@ if (!DB_URL && process.env.CI === 'true') {
         throw e;
       },
     );
-  const counts = (who: string, day = DAY) =>
-    prisma.romanUsageDaily.findUnique({
-      where: { client_id_day: { client_id: who, day } },
-      select: { messages: true, files: true, changes: true },
-    });
+  const select = { messages: true, files: true, changes: true };
+  const counts = (client_id: string, day = DAY) =>
+    prisma.romanUsageDaily.findUnique({ where: { client_id_day: { client_id, day } }, select });
 
   it('a client reads only their own row; a coach and no context read none (control: backend sees both)', async () => {
     expect(await prisma.romanUsageDaily.count({ where: { client_id: { in: [client, other] } } })).toBe(2);
@@ -114,11 +112,10 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(await passes(client, 'chat_message')).toBe(false);
   });
 
-  it('a client with a time zone is counted on their own local day (New York)', async () => {
+  it('a New York client: 03:30Z on 10-15 is still their 10-14 (at 100); 04:30Z is a new day', async () => {
     await prisma.notificationPreferences.create({
       data: { user_id: other, timezone: 'America/New_York', timezone_updated_at: AT },
     });
-    // 03:30Z on 10-15 is still 10-14 in New York, where `other` is at 100; 04:30Z is a new day.
     expect(await passes(other, 'chat_message', new Date('2026-10-15T03:30:00Z'))).toBe(false);
     expect(await passes(other, 'chat_message', new Date('2026-10-15T04:30:00Z'))).toBe(true);
   });

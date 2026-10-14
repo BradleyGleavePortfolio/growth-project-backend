@@ -9,13 +9,10 @@ import {
 
 /**
  * ROMANCOUNT: each client's daily Roman limits (owner: 100 messages, 3 file
- * uploads, 5 changes made by Roman, the same for every client). What counts
- * (ROMANCAP-C Option 1) is this one table; null = never counted:
- * (a) coach-approved change, (b) Roman's private notes, (d) voice-logged set,
- * (e) coach import screen, and safety replies. (c) A meal photo that also
- * logs food is 1 file. (f) A client locked out for not paying their coach
- * keeps the chat (counted as usual) but Roman loses their background context
- * (RomanService.streamAssistantTurn).
+ * uploads, 5 changes made by Roman). What counts (ROMANCAP-C Option 1) is this
+ * one table; null = never counted: (a), (b), (d), (e) and safety replies.
+ * (c) a meal photo that also logs food is 1 file. (f) a client locked out for
+ * not paying their coach keeps the chat but loses Roman's context (RomanService).
  */
 export const ROMAN_USAGE_KIND_OF = {
   chat_message: 'messages',

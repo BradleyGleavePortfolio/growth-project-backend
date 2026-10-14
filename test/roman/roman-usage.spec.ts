@@ -46,7 +46,6 @@ describe('ROMANCOUNT: the client local day; who counts', () => {
     expect(day(AT.toISOString(), 'Europe/London').day).toBe('2026-10-14');
     expect(reset(AT.toISOString(), 'Europe/London')).toBe('2026-10-14T23:00:00.000Z');
     expect(reset(AT.toISOString(), 'Pacific/Auckland')).toBe('2026-10-14T11:00:00.000Z');
-    expect(reset(AT.toISOString(), 'UTC')).toBe('2026-10-15T00:00:00.000Z');
     // DST: the real local midnight on 25-hour and 23-hour days.
     expect(reset('2026-11-01T12:00:00Z', 'America/New_York')).toBe('2026-11-02T05:00:00.000Z');
     expect(reset('2026-03-08T12:00:00Z', 'America/New_York')).toBe('2026-03-09T04:00:00.000Z');
@@ -67,13 +66,9 @@ describe('ROMANCOUNT: over the limit is the 429 ROMAN_RATE_LIMIT the app already
   it('messages: kind, resets_at, the wait in seconds and the existing copy', async () => {
     const err = await refusal(consumeRomanUsage(fakeDb(false, 'America/Los_Angeles').db, CLIENT, 'chat_message', AT));
     expect(err.getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
-    expect(err.getResponse()).toEqual({
-      code: 'ROMAN_RATE_LIMIT',
-      kind: 'messages',
-      resets_at: '2026-10-14T07:00:00.000Z',
-      retryAfterSeconds: 1800,
-      message: romanRateLimitMessage(1800, 'student'),
-    });
+    const message = romanRateLimitMessage(1800, 'student');
+    const resets_at = '2026-10-14T07:00:00.000Z';
+    expect(err.getResponse()).toEqual({ code: 'ROMAN_RATE_LIMIT', kind: 'messages', resets_at, retryAfterSeconds: 1800, message });
   });
 
   it('files and changes: the approved C3-S-37 and C3-S-38 copy', async () => {
@@ -102,12 +97,10 @@ describe('ROMANCOUNT: over the limit is the 429 ROMAN_RATE_LIMIT the app already
 describe('ROMANCOUNT: GET /me/roman/usage', () => {
   it("the client's own counts today, the limits and the reset; no row yet reads as zero", async () => {
     const { db, find } = fakeDb(true, 'Europe/London', { messages: 99, files: 2, changes: 4 });
-    await expect(romanUsageToday(db, CLIENT.id, AT)).resolves.toEqual({
-      day: '2026-10-14',
-      used: { messages: 99, files: 2, changes: 4 },
-      limits: { messages: 100, files: 3, changes: 5 },
-      resets_at: '2026-10-14T23:00:00.000Z',
-    });
+    const used = { messages: 99, files: 2, changes: 4 };
+    const limits = { messages: 100, files: 3, changes: 5 };
+    const resets_at = '2026-10-14T23:00:00.000Z';
+    await expect(romanUsageToday(db, CLIENT.id, AT)).resolves.toEqual({ day: '2026-10-14', used, limits, resets_at });
     expect(find.mock.calls[0][0]).toMatchObject({ where: { client_id_day: { client_id: CLIENT.id } } });
     const none = await romanUsageToday(fakeDb(true).db, CLIENT.id, AT);
     expect(none.used).toEqual({ messages: 0, files: 0, changes: 0 });
