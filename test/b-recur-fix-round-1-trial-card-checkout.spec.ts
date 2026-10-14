@@ -135,9 +135,11 @@ describe('B-654-1 checkout paths read the SetupIntent itself', () => {
     Object.assign(row, { status: 'trialing', moved_away_at: new Date() });
     row.created_at = new Date(Date.now() - 30 * HOUR);
     stripe._saveTrialCard('sub_1', 'pm_card');
-    await svc
-      .createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY2 })
-      .catch(() => undefined);
+    // The answer itself is the move-back edge (see the PR's Found 1); the money is pinned.
+    await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY2 }).then(
+      () => 'checkout',
+      (err: { getResponse?: () => { code?: string } }) => err.getResponse?.()?.code,
+    );
     expect(stripe.setSubscriptionDefaultPaymentMethod).not.toHaveBeenCalled();
     expect(stripe._subs.get('sub_1').cancel_at_period_end).toBe(true);
   });
