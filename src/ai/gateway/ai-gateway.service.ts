@@ -558,8 +558,10 @@ export class AiGatewayService {
   /**
    * R2b — the requester must be allowed to act on every client the gateway
    * derived from `subjectUserId` / the proposed payload before any consent
-   * state is consulted. Owners: allowed. Coaches: direct roster
-   * (User.coach_id) or an open SubCoachAssignment. A client: only itself.
+   * state is consulted. Owners: allowed. Coaches: a current client (role
+   * student) on their direct roster (User.coach_id) or in an open
+   * SubCoachAssignment; a coach row's coach_id is never a roster link
+   * (AIBUDGET B1). A client: only itself.
    * Anything else is the same opaque 404 the /coach/* routes use.
    * `dataClientIds` are excluded: those callers scope them (cohort-bounded).
    */
@@ -570,14 +572,19 @@ export class AiGatewayService {
       new NotFoundException({ code: 'client_not_found', message: 'Client not found.' });
     if (req.requester.role !== 'coach') throw notFound();
     const direct = await this.prisma.user.findMany({
-      where: { id: { in: named }, coach_id: req.requester.id },
+      where: { id: { in: named }, role: 'student', coach_id: req.requester.id },
       select: { id: true },
     });
     const allowed = new Set(direct.map((u) => u.id));
     const rest = named.filter((id) => !allowed.has(id));
     if (rest.length > 0) {
       const delegated = await this.prisma.subCoachAssignment.findMany({
-        where: { sub_coach_id: req.requester.id, client_id: { in: rest }, unassigned_at: null },
+        where: {
+          sub_coach_id: req.requester.id,
+          client_id: { in: rest },
+          unassigned_at: null,
+          client: { role: 'student' },
+        },
         select: { client_id: true },
       });
       for (const d of delegated) allowed.add(d.client_id);
