@@ -556,23 +556,6 @@ export class AiGatewayService {
   }
 
   /**
-   * Resolve the head-coach id whose budget this request debits.
-   *
-   * Priority order:
-   *   1. `tenantCoachId` if the caller stamped it (owner-impersonation
-   *      paths and capabilities that explicitly scope to a coach).
-   *   2. The subject's coach_id when the subject is a student (every
-   *      student carries their owning coach as coach_id).
-   *   3. The requester themselves when they are a coach or sub-coach
-   *      (CoachAIBudgetService.resolveHeadCoachId folds sub-coaches into
-   *      their head coach).
-   *
-   * Returns null when none of the above apply — the gateway treats null
-   * as "no budget to charge" and skips metering for the call. The
-   * structured log on the audit row still captures the requester so
-   * out-of-band reconciliation is possible.
-   */
-  /**
    * R2b — the requester must be allowed to act on every client the gateway
    * derived from `subjectUserId` / the proposed payload before any consent
    * state is consulted. Owners: allowed. Coaches: direct roster
@@ -602,6 +585,25 @@ export class AiGatewayService {
     if (named.some((id) => !allowed.has(id))) throw notFound();
   }
 
+  /**
+   * Resolve the pool (a head coach's CoachAIBudget) this request debits.
+   * CoachAIBudgetService.resolveHeadCoachId folds a coach with an active
+   * team seat into their head coach; everyone else keeps their own pool.
+   *
+   * Priority order:
+   *   1. `tenantCoachId` if the caller stamped it (every coach-side caller
+   *      does).
+   *   2. The subject: a client draws on their coach's pool, a coach or owner
+   *      on their own. Only a client's `coach_id` picks a pool. On a coach
+   *      row it is legacy data, an old guest-checkout stamp or a removed
+   *      sub-coach's old head coach, so it never does.
+   *   3. The requester themselves when they are a coach or owner.
+   *
+   * Returns null when none of the above apply — the gateway treats null
+   * as "no budget to charge" and skips metering for the call. The
+   * structured log on the audit row still captures the requester so
+   * out-of-band reconciliation is possible.
+   */
   private async resolveBudgetCoachId(
     req: AiGatewayRequest,
   ): Promise<string | null> {
@@ -610,18 +612,18 @@ export class AiGatewayService {
       return this.budget.resolveHeadCoachId(req.tenantCoachId);
     }
     if (req.subjectUserId) {
-      // Look up the subject to see if they have a coach_id (student path).
+      // Role first: a coach's own coach_id never picks the pool (AIBUDGET).
       const subject = await this.prisma.user
         .findUnique({
           where: { id: req.subjectUserId },
           select: { id: true, role: true, coach_id: true },
         })
         .catch(() => null);
+      if (subject && subject.role !== 'student') {
+        return this.budget.resolveHeadCoachId(subject.id);
+      }
       if (subject?.coach_id) {
         return this.budget.resolveHeadCoachId(subject.coach_id);
-      }
-      if (subject && (subject.role === 'coach' || subject.role === 'owner')) {
-        return this.budget.resolveHeadCoachId(subject.id);
       }
     }
     if (req.requester.role === 'coach' || req.requester.role === 'owner') {
