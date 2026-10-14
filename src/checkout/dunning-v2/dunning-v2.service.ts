@@ -910,6 +910,9 @@ export class DunningV2Service {
     if (!purchase || !DunningV2Service.isEligiblePurchase(purchase)) {
       return 'skipped';
     }
+    // MOVEBILL: a client who moved away is never locked out over the old
+    // coach's unpaid plan; the billing reconciler ends that plan (2A).
+    if (purchase.moved_away_at) return 'skipped';
     const dispute = isBillingPauseReason(row.last_failure_reason);
     if (dispute) {
       // B-628-8: a dispute cycle's evidence is the dispute itself, not the
@@ -2009,6 +2012,9 @@ export class DunningV2Service {
       include: { purchase: true },
     });
     if (!state || state.status !== 'active' || !state.entered_at) return null;
+    // MOVEBILL (MOVE-BILLING option 1): failed-payment notices for the coach
+    // the client moved away from stop at the move itself.
+    if (state.purchase.moved_away_at) return null;
     const purchase = state.purchase;
     const [client, coach, customer, prefs] = await Promise.all([
       this.prisma.user.findUnique({
