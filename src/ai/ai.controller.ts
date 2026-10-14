@@ -31,9 +31,12 @@ export const AI_GUIDE_RETIRED_CODE = 'AI_GUIDE_RETIRED';
 export class AiController {
   constructor(private aiService: AiService) {}
 
-  // Rate limited: 20 requests per hour per user (anti-abuse)
+  // ROMAN-HOURLY-SCOPE: 60/hour for coaches; other roles stay at 20.
   @Post('chat')
-  @Throttle({ default: { ttl: 3600000, limit: 20 } })
+  @Throttle({ default: {
+    ttl: 3600000,
+    limit: (ctx) => ctx.switchToHttp().getRequest<AuthedRequest>().user?.role === 'coach' ? 60 : 20,
+  } })
   async chat(@Request() req: AuthedRequest, @Body() body: ChatRequestDto) {
     // Owner 10-09 00:0x: the guide is Roman, so a client with no coach gets
     // 403 ROMAN_REQUIRES_COACH before any AI call, quota or pool check. A

@@ -144,12 +144,13 @@ export class PrivateContextService {
 
   private callerMaySee(
     caller: CallerScope,
-    subject: { id: string; coach_id: string | null },
+    subject: Pick<User, 'id' | 'role' | 'coach_id'>,
   ): boolean {
     if (caller.id === subject.id) return true; // self
+    // Only a current client of the caller (or any subject for an owner).
     return canCoachActOnClient(
       { id: caller.id, role: caller.role, coach_id: caller.coach_id ?? null },
-      { coach_id: subject.coach_id },
+      subject,
     );
   }
 }
