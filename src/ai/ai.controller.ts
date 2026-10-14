@@ -31,9 +31,12 @@ export const AI_GUIDE_RETIRED_CODE = 'AI_GUIDE_RETIRED';
 export class AiController {
   constructor(private aiService: AiService) {}
 
-  // Rate limited: 20 requests per hour per user (anti-abuse)
+  // ROMAN-HOURLY-SCOPE: 60/hour for coaches; other roles stay at 20.
   @Post('chat')
-  @Throttle({ default: { ttl: 3600000, limit: 20 } })
+  @Throttle({ default: {
+    ttl: 3600000,
+    limit: (ctx) => ctx.switchToHttp().getRequest<AuthedRequest>().user?.role === 'coach' ? 60 : 20,
+  } })
   async chat(@Request() req: AuthedRequest, @Body() body: ChatRequestDto) {
     // Owner 10-09 00:0x: the guide is Roman, so a client with no coach gets
     // 403 ROMAN_REQUIRES_COACH before any AI call, quota or pool check. A
@@ -87,6 +90,9 @@ export class AiController {
   @Get('context')
   @Throttle({ default: { ttl: 3600000, limit: 60 } })
   async getContext(@Request() req: AuthedRequest) {
+    // 139-15: a client with no coach has no Roman, so no AI context is built
+    // or read for them: 403 ROMAN_REQUIRES_COACH first.
+    assertRomanHasCoach(req.user);
     return this.aiService.getUserContext(req.user.id);
   }
 
@@ -97,6 +103,8 @@ export class AiController {
   @Get('structured-context')
   @Throttle({ default: { ttl: 3600000, limit: 60 } })
   async getStructuredContext(@Request() req: AuthedRequest) {
+    // 139-15: same 403 ROMAN_REQUIRES_COACH as /ai/context, before the read.
+    assertRomanHasCoach(req.user);
     return this.aiService.getStructuredContext(req.user.id);
   }
 }

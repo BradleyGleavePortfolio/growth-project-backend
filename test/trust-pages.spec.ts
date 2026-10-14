@@ -260,11 +260,13 @@ describe('Consumer Health Data Privacy Policy (/consumer-health-privacy)', () =>
     expect(text).toContain(SUPPORT_EMAIL);
   });
 
-  it('states no sale, no advertising use and no clinic-partner exchange', () => {
+  it('states no sale, no advertising use and nothing for whoever referred you (owner C-6a)', () => {
     const text = visibleText(renderTrustPage('consumer-health'));
     expect(text).toMatch(/do not sell consumer health data/);
     expect(text).toMatch(/do not use it for advertising or marketing/);
-    expect(text).toMatch(/No clinic partner/);
+    expect(text).toContain(
+      'Whoever referred you to The Growth Project never sees your account or your data.',
+    );
     expect(text).toMatch(/Roman conversations are never shared with your coach/);
   });
 
@@ -328,6 +330,10 @@ describe('Privacy Policy accuracy (/privacy)', () => {
   it('describes Roman: Anthropic, private from the coach, kept until deleted, client delete, staff access', () => {
     expect(text).toMatch(/Roman is an AI assistant powered by Anthropic/);
     expect(text).toMatch(/Roman conversations are not visible to your coach/);
+    // The one exception, right after it (the R1 / eating-disorder coach safety alerts).
+    expect(text).toContain(
+      'TGP staff can access them only for support, safety and debugging. One exception: if Roman sends you an urgent medical safety reply or an eating-disorder safety reply, your coach sees the message that prompted it, so they can check in with you.',
+    );
     // Owner rule (OR-110-1): past AI chats are kept, no time-based purge.
     expect(text).toMatch(/Roman conversations are kept until you delete them or your account/);
     expect(text).toMatch(/Roman conversations — kept until you delete them or your account/);
@@ -450,8 +456,8 @@ describe('Privacy Policy accuracy (/privacy)', () => {
     expect(text).toMatch(/We do not sell personal data/);
     expect(text).toMatch(/do not use health data for advertising or marketing/);
     expect(text).toMatch(/You must be 16 or older/);
-    expect(text).toMatch(
-      /No account, consultation, coaching, health, wearable or Roman data is exchanged with any clinic partner/,
+    expect(text).toContain(
+      'Whoever referred you to The Growth Project never sees your account or your data.',
     );
   });
 
@@ -528,11 +534,9 @@ describe('Terms of Service eligibility', () => {
 });
 
 describe('policy copy hygiene', () => {
-  it('mentions a clinic only as “clinic partner” (never by name)', () => {
+  it('never mentions a clinic (owner C-6)', () => {
     for (const slug of ALL_TRUST_PAGES) {
-      const text = visibleText(renderTrustPage(slug));
-      const mentions = text.match(/clinic\s*\w*/gi) ?? [];
-      for (const m of mentions) expect(m.toLowerCase()).toMatch(/^clinic partners?$/);
+      expect(visibleText(renderTrustPage(slug))).not.toMatch(/clinic/i);
     }
   });
 

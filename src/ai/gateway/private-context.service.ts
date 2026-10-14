@@ -65,6 +65,9 @@ export class PrivateContextService {
       include: {
         profile: true,
         coach_messages_as_client: {
+          // Owner 4b (HIST3): only the thread with the client's CURRENT coach;
+          // a former coach's chat never reaches the new coach's AI context.
+          where: { coach: { students: { some: { id: subjectUserId } } } },
           orderBy: { created_at: 'desc' },
           take: workout ? 0 : 1,
         },
@@ -144,12 +147,13 @@ export class PrivateContextService {
 
   private callerMaySee(
     caller: CallerScope,
-    subject: { id: string; coach_id: string | null },
+    subject: Pick<User, 'id' | 'role' | 'coach_id'>,
   ): boolean {
     if (caller.id === subject.id) return true; // self
+    // Only a current client of the caller (or any subject for an owner).
     return canCoachActOnClient(
       { id: caller.id, role: caller.role, coach_id: caller.coach_id ?? null },
-      { coach_id: subject.coach_id },
+      subject,
     );
   }
 }

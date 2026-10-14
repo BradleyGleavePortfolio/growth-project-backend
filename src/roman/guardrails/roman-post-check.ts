@@ -27,6 +27,7 @@ import {
   normalizeForSafety,
   ROMAN_PHYSICIAN_LINE_INJURY,
   ROMAN_PHYSICIAN_LINE_MEDICAL,
+  WEIGHT_LOSS_MEDICINES,
 } from './safety-router';
 
 /**
@@ -188,7 +189,10 @@ const MEDICATION_DIRECTIVE: RegExp[] = [
   /\b\d+(\.\d+)?\s?(mg|mcg|µg|milligrams?|micrograms?|iu|units of insulin)\b/i,
   /\b(take|taking|try|use|using|pop|start|grab|have)\s+(some\s+|an?\s+|a couple of\s+|two\s+)?(ibuprofen|advil|motrin|aleve|naproxen|acetaminophen|paracetamol|tylenol|aspirin|antibiotics?|painkillers?|pain ?relievers?|muscle relaxants?|anti-?inflammator(y|ies)|nsaids?|prednisone|cortisone|antihistamines?|benadryl|melatonin|sleeping pills?)\b/i,
   /\b(ibuprofen|advil|motrin|aleve|naproxen|acetaminophen|paracetamol|tylenol|aspirin|nsaids?|prednisone)\b[^.]{0,60}\b(twice|three times|every \d+ hours|daily|a day|per day|with food|before (bed|training))\b/i,
-  /\b(increase|decrease|lower|raise|stop|skip|double|halve|pause|change|adjust|time)\s+(taking\s+)?(your\s+)?(medication|meds|dose|prescription|metformin|ozempic|wegovy|mounjaro|semaglutide|tirzepatide)\b/i,
+  new RegExp(
+    `\\b(increase|decrease|lower|raise|stop|skip|double|halve|pause|change|adjust|time)\\s+(taking\\s+)?(your\\s+)?(medication|meds|dose|prescription|metformin|${WEIGHT_LOSS_MEDICINES})\\b`,
+    'i',
+  ),
   // B-666-1 (Opus): "carbs raise insulin" is physiology; changing the
   // client's own insulin is a medication directive.
   /\b(increase|decrease|lower|raise|stop|skip|double|halve|pause|change|adjust|time)\s+(taking\s+(your\s+)?|your\s+)insulin\b/i,

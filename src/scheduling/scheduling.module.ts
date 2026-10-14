@@ -75,7 +75,13 @@ import { SchedulingWebhookController } from './scheduling-webhook.controller';
     JwtAuthGuard,
     JwksVerifierService,
   ],
-  exports: [SchedulingService, GoogleOAuthService, GoogleCalendarService],
+  // The lifecycle is exported for the move paths (owner HIST-2b move cancels).
+  exports: [
+    SchedulingService,
+    SchedulingSessionLifecycleService,
+    GoogleOAuthService,
+    GoogleCalendarService,
+  ],
 })
 export class SchedulingModule implements OnModuleInit {
   private readonly logger = new Logger(SchedulingModule.name);

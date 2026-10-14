@@ -1080,6 +1080,86 @@ describe('WorkoutBuilderService', () => {
     });
   });
 
+  // ─── PROGINSERT: copies land only in a tenant the coach belongs to ────────
+
+  describe('fork / clone / assign tenant (PROGINSERT)', () => {
+    // 'p' is a coach whose coach_id points at COACH_ID with no team membership
+    // (an old guest checkout); 's' is a seated sub-coach of COACH_ID.
+    const ORIGINAL_FLAG = process.env.FEATURE_MWB_TEMPLATES;
+    const headFor: Record<string, string | null> = { p: null, s: COACH_ID };
+    let svc: WorkoutBuilderService;
+    beforeEach(async () => {
+      process.env.FEATURE_MWB_TEMPLATES = 'true';
+      prismaMock.user.findUnique.mockImplementation(({ where }: { where: { id: string } }) => {
+        if (where.id === 'p' || where.id === 's')
+          return Promise.resolve({ id: where.id, role: 'coach', coach_id: COACH_ID });
+        if (where.id === CLIENT_ID) return Promise.resolve({ id: CLIENT_ID, coach_id: COACH_ID });
+        return Promise.resolve(null);
+      });
+      prismaMock.workoutProgram.create.mockResolvedValue({ id: 'prog-copy', weeks: 4, days_per_week: 3 });
+      prismaMock.workoutProgram.update.mockResolvedValue({ id: 'prog-copy', head_revision_id: 'prog-rev-1' });
+      prismaMock.workoutPlan.findMany.mockResolvedValue([]);
+      const subCoachScope = {
+        getHeadCoachIdForSubCoach: jest.fn(async (id: string) => headFor[id] ?? null),
+        canAccessClient: jest.fn().mockResolvedValue(true),
+      };
+      const mod: TestingModule = await Test.createTestingModule({
+        providers: [
+          WorkoutBuilderService,
+          { provide: PrismaService, useValue: prismaMock },
+          { provide: SubCoachScopeService, useValue: subCoachScope },
+        ],
+      }).compile();
+      svc = mod.get<WorkoutBuilderService>(WorkoutBuilderService);
+    });
+    afterEach(() => {
+      if (ORIGINAL_FLAG === undefined) delete process.env.FEATURE_MWB_TEMPLATES;
+      else process.env.FEATURE_MWB_TEMPLATES = ORIGINAL_FLAG;
+    });
+    const program = (owner: string, coach: string, visibility = 'owner_only') => ({
+      id: 'prog-src', coach_id: coach, owner_user_id: owner, visibility, name: 'Block',
+      description: null, weeks: 4, days_per_week: 3, is_template: true, goal_tag: null,
+    });
+    const createdCoachId = () => prismaMock.workoutProgram.create.mock.calls[0][0].data.coach_id;
+
+    it('a bare coach_id does not move a fork or a client copy into that coach\'s tenant', async () => {
+      prismaMock.workoutProgram.findUnique.mockResolvedValue(program('p', 'p'));
+      await svc.forkTemplate('prog-src', 'p');
+      expect(createdCoachId()).toBe('p');
+      prismaMock.workoutProgram.create.mockClear();
+      await svc.cloneProgramToClient('prog-src', CLIENT_ID, 'p');
+      expect(createdCoachId()).toBe('p');
+      expect(prismaMock.workoutProgramRevision.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ author_kind: 'coach' }) }),
+      );
+    });
+
+    it('a bare coach_id does not reach that coach\'s shared programs', async () => {
+      prismaMock.workoutProgram.findUnique.mockResolvedValue(program(COACH_ID, COACH_ID, 'tenant_shared'));
+      await expect(svc.forkTemplate('prog-src', 'p')).rejects.toThrow(ForbiddenException);
+      await expect(svc.cloneProgramToClient('prog-src', CLIENT_ID, 'p')).rejects.toThrow(NotFoundException);
+      await expect(
+        svc.assignProgramToClient('p', 'prog-src', { client_id: CLIENT_ID, start_date: '2025-02-03T00:00:00Z' },
+          'efefefef-efef-4efe-8efe-efefefefefef'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prismaMock.workoutProgram.create).not.toHaveBeenCalled();
+    });
+
+    it('a seated sub-coach still forks and clones into the head coach\'s tenant', async () => {
+      prismaMock.workoutProgram.findUnique.mockResolvedValue(program(COACH_ID, COACH_ID, 'tenant_shared'));
+      await svc.forkTemplate('prog-src', 's');
+      expect(prismaMock.workoutProgram.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ coach_id: COACH_ID, owner_user_id: 's' }) }),
+      );
+      prismaMock.workoutProgram.create.mockClear();
+      await svc.cloneProgramToClient('prog-src', CLIENT_ID, 's');
+      expect(createdCoachId()).toBe(COACH_ID);
+      expect(prismaMock.workoutProgramRevision.create).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ author_kind: 'sub_coach' }) }),
+      );
+    });
+  });
+
   // ─── client-facing assignment endpoints ──────────────────────────────────
 
   describe('listMyAssignments', () => {
@@ -1098,6 +1178,73 @@ describe('WorkoutBuilderService', () => {
       await service.listMyAssignments(CLIENT_ID, { limit: 9999 });
       expect(prismaMock.clientWorkoutAssignment.findMany).toHaveBeenCalledWith(
         expect.objectContaining({ take: 51 }),
+      );
+    });
+  });
+
+  describe('listAssignments (owner 4: a moved client leaves the list)', () => {
+    const SUB_ID = 'sub-coach-uuid-1';
+    const MOVED_ID = 'client-moved-1';
+    const withScope = async (isSub: boolean) => {
+      const scope = {
+        isSubCoach: jest.fn().mockResolvedValue(isSub),
+        getAuthorizedClientIds: jest.fn().mockResolvedValue([CLIENT_ID]),
+      };
+      const mod: TestingModule = await Test.createTestingModule({
+        providers: [
+          WorkoutBuilderService,
+          { provide: PrismaService, useValue: prismaMock },
+          { provide: SubCoachScopeService, useValue: scope },
+        ],
+      }).compile();
+      prismaMock.clientWorkoutAssignment.findMany.mockResolvedValue([]);
+      return { svc: mod.get<WorkoutBuilderService>(WorkoutBuilderService), scope };
+    };
+
+    it('head coach: own and team-chain clients only; a moved client keeps their rows', async () => {
+      const { svc, scope } = await withScope(false);
+      prismaMock.workoutPlan.findUnique.mockResolvedValue(basePlan);
+
+      await svc.listAssignments(COACH_ID, basePlan.id);
+
+      // A client whose coach_id is now another coach matches neither branch.
+      expect(scope.getAuthorizedClientIds).not.toHaveBeenCalled();
+      expect(prismaMock.clientWorkoutAssignment.findMany.mock.calls[0][0].where).toEqual({
+        workout_plan_id: basePlan.id,
+        client: {
+          OR: [
+            { coach_id: COACH_ID },
+            {
+              coach: {
+                sub_coach_assignments_as_sub: {
+                  some: { head_coach_id: COACH_ID, archived_at: null },
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      // History follows the client: their own read has no coach filter.
+      await svc.listMyAssignments(MOVED_ID);
+      expect(prismaMock.clientWorkoutAssignment.findMany.mock.calls[1][0].where).toEqual({
+        client_id: MOVED_ID,
+      });
+    });
+
+    it('sub-coach: only the clients they may open now, before paging', async () => {
+      const { svc, scope } = await withScope(true);
+      prismaMock.user.findUnique.mockResolvedValue({ id: SUB_ID, role: 'coach' });
+      prismaMock.workoutPlan.findUnique.mockResolvedValue({ ...basePlan, coach_id: SUB_ID });
+
+      await svc.listAssignments(SUB_ID, basePlan.id, { limit: 10 });
+
+      expect(scope.getAuthorizedClientIds).toHaveBeenCalledWith(SUB_ID);
+      expect(prismaMock.clientWorkoutAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { workout_plan_id: basePlan.id, client: { id: { in: [CLIENT_ID] } } },
+          take: 11,
+        }),
       );
     });
   });

@@ -174,6 +174,9 @@ describe('WearableInsightsService', () => {
       const setArgs = mocks.cache.set.mock.calls[0];
       expect(setArgs[0]).toBe('coach');
       expect(setArgs[4].modelUsed).toBe('claude-sonnet-4.5');
+      // A1H: the coach-side row is read and written under this coach.
+      expect(mocks.cache.get).toHaveBeenCalledWith('coach', CLIENT, BUCKET, COACH);
+      expect(setArgs[5]).toBe(COACH);
     });
 
     it('client path uses the client capability + the user as subject', async () => {
@@ -194,6 +197,7 @@ describe('WearableInsightsService', () => {
       expect(call.capability).toBe(CLIENT_INSIGHT_CAPABILITY);
       expect(call.subjectUserId).toBe(CLIENT);
       expect(call.requester).toEqual({ id: CLIENT, role: 'student' });
+      expect(mocks.cache.get).toHaveBeenCalledWith('client', CLIENT, BUCKET, undefined);
     });
 
     it('extracts JSON even when the model wraps it in prose/fences', async () => {
