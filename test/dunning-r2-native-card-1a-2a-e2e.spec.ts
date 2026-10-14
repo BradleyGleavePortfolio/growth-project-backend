@@ -956,15 +956,21 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
     });
 
     it('in dunning: notices stop at the move; then the failed invoice is voided and the plan ends; nothing collected', async () => {
+      // Control: with no move, Stripe's failed Day-1 retry sends the client a notice.
+      const control = buildWorld();
+      await failRenewal(control);
+      await stripeRetryFails(control, at(DAY + HOUR), 2);
+      expect(control.email.mock.calls.length).toBeGreaterThan(0);
+      expect(control.push.mock.calls.length).toBeGreaterThan(0);
+
+      jest.setSystemTime(at(0));
       await failRenewal(w);
       const emails = w.email.mock.calls.length;
       const pushes = w.push.mock.calls.length;
-      expect(emails).toBeGreaterThan(0);
-      jest.setSystemTime(at(2 * DAY));
-      move(at(2 * DAY));
-      // Before the billing run: Stripe's next retry fails, and nothing is sent.
-      await stripeRetryFails(w, at(2 * DAY + HOUR), 2);
-      await w.v2.retryDueNotices(at(2 * DAY + 2 * HOUR));
+      move(at(DAY));
+      // Before the billing run: the same retry fails, and nothing is sent.
+      await stripeRetryFails(w, at(DAY + HOUR), 2);
+      await w.v2.retryDueNotices(at(DAY + 2 * HOUR));
       expect(w.email.mock.calls.length).toBe(emails);
       expect(w.push.mock.calls.length).toBe(pushes);
 
