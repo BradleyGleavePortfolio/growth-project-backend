@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { BadRequestException, HttpException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
 import { WearableMetricBucket } from '@prisma/client';
 import { ROMAN_REQUIRES_COACH } from '../../roman/roman-requires-coach';
@@ -439,14 +439,11 @@ describe('WearableInsightsController', () => {
     it('GAPS3-F1: no coach -> 403 ROMAN_REQUIRES_COACH, no insight read or made', async () => {
       const svc = makeSvc();
       const ctrl = makeController({ svc });
-      const err = await ctrl
-        .getClientInsight(reqFor('student', CLIENT, null), {
-          bucket: WearableMetricBucket.HEALTH_FITNESS,
-        })
-        .catch((e: HttpException) => e);
-      expect(err).toBeInstanceOf(HttpException);
-      expect((err as HttpException).getStatus()).toBe(403);
-      expect((err as HttpException).getResponse()).toMatchObject({ code: ROMAN_REQUIRES_COACH });
+      const bucket = WearableMetricBucket.HEALTH_FITNESS;
+      await expect(ctrl.getClientInsight(reqFor('student', CLIENT, null), { bucket })).rejects.toMatchObject({
+        status: 403,
+        response: { code: ROMAN_REQUIRES_COACH },
+      });
       expect(svc.generateForClient).not.toHaveBeenCalled();
     });
 

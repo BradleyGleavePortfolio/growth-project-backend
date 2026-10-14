@@ -6,9 +6,8 @@
  *          ?variant=coach_free   -> the coach-free copies (a client with no coach, owner 62)
  *          ?variant=safety_exception -> the coached client-ai-v6 / v7 copies (owner 57c)
  *   POST   /me/ai-consent/roman  {version, copy_sha256?, platform?, app_version?, locale?}
- *                                -> grant (idempotent); 409 CONSENT_VERSION_MISMATCH. A client
- *                                   with no coach is recorded the same way (W-CONSENT); Roman
- *                                   stays 403 ROMAN_REQUIRES_COACH until a coach is linked
+ *                                -> grant (idempotent); 409 CONSENT_VERSION_MISMATCH; a client
+ *                                   with no coach is recorded the same way (W-CONSENT)
  *   DELETE /me/ai-consent/roman  -> withdraw (idempotent)
  *
  * The subject is always req.user.id. Guards: JwtAuthGuard + RolesGuard +
@@ -91,9 +90,8 @@ export class AiConsentController {
     @Req() req: AuthedRequest,
     @Body() dto: GrantClientAiConsentDto,
   ): Promise<ClientAiConsentStatus> {
-    // W-CONSENT: a client with no coach is asked once and the grant is kept,
-    // exactly like a coached grant, so it applies the day a coach is linked.
-    // Roman and every AI route still answer 403 ROMAN_REQUIRES_COACH until then.
+    // W-CONSENT: a client with no coach is asked once and the grant is kept like a coached one;
+    // Roman and every AI route still answer 403 ROMAN_REQUIRES_COACH until a coach is linked.
     return this.consent.grant(req.user.id, dto);
   }
 
