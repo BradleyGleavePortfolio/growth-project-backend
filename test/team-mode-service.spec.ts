@@ -37,6 +37,13 @@ interface MockPrisma {
     findMany: jest.Mock;
     updateMany: jest.Mock;
   };
+  // A move deletes the drafts left behind (owner decision 17).
+  aIDraft: { deleteMany: jest.Mock };
+  aiActionDraft: { deleteMany: jest.Mock };
+  messageDraft: { deleteMany: jest.Mock };
+  churnIntervention: { deleteMany: jest.Mock };
+  // SUBREVOKE: removal closes the pair's client assignments.
+  subCoachAssignment: { updateMany: jest.Mock };
   $transaction: jest.Mock;
 }
 
@@ -77,6 +84,11 @@ function buildPrisma(overrides: Partial<MockPrisma> = {}): MockPrisma {
       findMany: jest.fn(async () => []),
       updateMany: txFns.user.updateMany,
     },
+    aIDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    aiActionDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    messageDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    churnIntervention: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    subCoachAssignment: { updateMany: jest.fn(async () => ({ count: 0 })) },
     $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
       cb(base as unknown),
     ),
@@ -307,6 +319,15 @@ describe('TeamModeService.removeSubCoach', () => {
       (c) => (c[0] as { data: { event_kind: string } }).data.event_kind,
     );
     expect(kinds).toContain('sub_coach_removed');
+    // SUBREVOKE: the seat is archived and the pair's client assignments close.
+    expect(prisma.teamSubCoachAssignment.update).toHaveBeenCalledWith({
+      where: { id: 'asn-1' },
+      data: { archived_at: expect.any(Date) },
+    });
+    expect(prisma.subCoachAssignment.updateMany).toHaveBeenCalledWith({
+      where: { head_coach_id: 'head-1', sub_coach_id: 'sub-1', unassigned_at: null },
+      data: { unassigned_at: expect.any(Date) },
+    });
     // 0 clients → no client_reassigned events.
     expect(kinds.filter((k) => k === 'client_reassigned')).toHaveLength(0);
   });

@@ -7,6 +7,7 @@ import { canCoachActOnClient } from '../../common/scope';
 import { CREATE_WORKOUT_PLAN_CAPABILITY } from './materialisers/create-workout-plan.materialiser';
 import { EDIT_WORKOUT_PLAN_CAPABILITY } from './materialisers/edit-workout-plan.materialiser';
 import { toInjuryAreas } from './workout-builder/training-substitutions';
+import { UNTRUSTED_TEXT_RULE, fenceUntrusted } from '../utils/untrusted-text';
 
 // B-AIB3-126 (plan section 1, SAFE 2): the workout capabilities get the minimised block — no name, body weight, height,
 // preferred snacks or coach message excerpt (the message row is not even read).
@@ -64,6 +65,9 @@ export class PrivateContextService {
       include: {
         profile: true,
         coach_messages_as_client: {
+          // Owner 4b (HIST3): only the thread with the client's CURRENT coach;
+          // a former coach's chat never reaches the new coach's AI context.
+          where: { coach: { students: { some: { id: subjectUserId } } } },
           orderBy: { created_at: 'desc' },
           take: workout ? 0 : 1,
         },
@@ -105,8 +109,9 @@ export class PrivateContextService {
     const systemPrompt =
       `You are an AI assistant operating inside The Growth Project.\n` +
       `Treat the CLIENT_CONTEXT block as the only source of truth about the client.\n` +
-      `Outputs about consequential actions are drafts and require human approval.\n\n` +
-      `CLIENT_CONTEXT:\n${JSON.stringify(block, null, 2)}`;
+      `Outputs about consequential actions are drafts and require human approval.\n` +
+      `${UNTRUSTED_TEXT_RULE}\n\n` +
+      `CLIENT_CONTEXT:\n${fenceUntrusted(block, 2)}`;
 
     const provenance: ProvenanceRef[] = [
       { source: 'user', ref: subject.id, count: 1, hash: hash(subject.id), origin: 'local' },
@@ -142,12 +147,13 @@ export class PrivateContextService {
 
   private callerMaySee(
     caller: CallerScope,
-    subject: { id: string; coach_id: string | null },
+    subject: Pick<User, 'id' | 'role' | 'coach_id'>,
   ): boolean {
     if (caller.id === subject.id) return true; // self
+    // Only a current client of the caller (or any subject for an owner).
     return canCoachActOnClient(
       { id: caller.id, role: caller.role, coach_id: caller.coach_id ?? null },
-      { coach_id: subject.coach_id },
+      subject,
     );
   }
 }

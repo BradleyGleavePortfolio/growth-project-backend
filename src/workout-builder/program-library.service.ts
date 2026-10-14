@@ -46,6 +46,7 @@ import {
   assertLastDayMayGo,
   assertNotInActiveClinicSet,
   lockProgramMaster,
+  programDaysWhere,
 } from './program-guards';
 import {
   BulkAssignProgramDto,
@@ -342,7 +343,7 @@ export class ProgramLibraryService {
     const ids = programs.map((p) => p.id);
     const filled = await this.prisma.workoutPlan.groupBy({
       by: ['program_id'],
-      where: { program_id: { in: ids }, archived_at: null },
+      where: { program_id: { in: ids }, coach_id: actor.tenantId, archived_at: null },
       _count: { _all: true },
     });
     const filledBy = new Map(filled.map((f) => [f.program_id ?? '', f._count._all]));
@@ -420,7 +421,7 @@ export class ProgramLibraryService {
     });
     const [summary] = await this.summarise(actor, [program]);
     const plans = await this.prisma.workoutPlan.findMany({
-      where: { program_id: programId, archived_at: null },
+      where: programDaysWhere(program),
       orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
       select: {
         id: true,
@@ -548,7 +549,7 @@ export class ProgramLibraryService {
           }
           if (dto.weeks !== undefined && dto.weeks < program.weeks) {
             const outside = await tx.workoutPlan.count({
-              where: { program_id: programId, archived_at: null, week_index: { gte: dto.weeks } },
+              where: { ...programDaysWhere(program), week_index: { gte: dto.weeks } },
             });
             if (outside > 0) {
               throw new ConflictException(
@@ -614,7 +615,7 @@ export class ProgramLibraryService {
   ): Promise<void> {
     const program = await tx.workoutProgram.findUniqueOrThrow({ where: { id: programId } });
     const plans = await tx.workoutPlan.findMany({
-      where: { program_id: programId, archived_at: null },
+      where: programDaysWhere(program),
       orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
       select: { id: true, name: true, week_index: true, day_index: true },
     });
@@ -685,7 +686,7 @@ export class ProgramLibraryService {
           const program = await this.loadEditableTx(tx, actor, programId);
           this.assertSlot(program, week, day);
           const taken = await tx.workoutPlan.findFirst({
-            where: { program_id: programId, week_index: week, day_index: day, archived_at: null },
+            where: { ...programDaysWhere(program), week_index: week, day_index: day },
             select: { id: true },
           });
           if (taken) {
@@ -759,6 +760,7 @@ export class ProgramLibraryService {
       src = await tx.workoutPlan.findFirst({
         where: {
           program_id: programId,
+          coach_id: actor.tenantId,
           week_index: dto.from_week_index,
           day_index: dto.from_day_index,
           archived_at: null,
@@ -866,7 +868,7 @@ export class ProgramLibraryService {
       const program = await this.loadEditableTx(tx, actor, programId);
       this.assertSlot(program, week, day);
       const plan = await tx.workoutPlan.findFirst({
-        where: { program_id: programId, week_index: week, day_index: day, archived_at: null },
+        where: { ...programDaysWhere(program), week_index: week, day_index: day },
         select: { id: true },
       });
       if (!plan) return; // already empty: idempotent
@@ -876,7 +878,7 @@ export class ProgramLibraryService {
       // last day is being removed at the same time.
       await lockProgramMaster(tx, programId);
       const remaining = await tx.workoutPlan.count({
-        where: { program_id: programId, archived_at: null },
+        where: programDaysWhere(program),
       });
       if (remaining <= 1) {
         // B-640-11: a packaged master, or one an active clinic consultation
@@ -921,7 +923,7 @@ export class ProgramLibraryService {
             },
           });
           const plans = await tx.workoutPlan.findMany({
-            where: { program_id: source.id, archived_at: null },
+            where: programDaysWhere(source),
             orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
             include: { exercises: { where: { archived_at: null }, orderBy: { order: 'asc' } } },
           });
@@ -1255,7 +1257,7 @@ export class ProgramLibraryService {
       );
     }
     const days = await this.prisma.workoutPlan.count({
-      where: { program_id: programId, archived_at: null },
+      where: programDaysWhere(master),
     });
     if (days === 0) {
       throw new UnprocessableEntityException(

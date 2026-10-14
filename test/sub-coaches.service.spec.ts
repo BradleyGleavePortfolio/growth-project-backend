@@ -54,6 +54,13 @@ interface MockPrisma {
   checkIn: { findMany: jest.Mock };
   coachMessage: { findMany: jest.Mock };
   clientWorkoutAssignment: { findMany: jest.Mock };
+  // A move deletes the drafts left behind (owner decision 17).
+  aIDraft: { deleteMany: jest.Mock };
+  aiActionDraft: { deleteMany: jest.Mock };
+  messageDraft: { deleteMany: jest.Mock };
+  churnIntervention: { deleteMany: jest.Mock };
+  // SUBREVOKE: revoke closes the pair's client assignments.
+  subCoachAssignment: { updateMany: jest.Mock };
   $transaction: jest.Mock;
 }
 
@@ -91,6 +98,11 @@ function buildPrisma(overrides: Partial<MockPrisma> = {}): MockPrisma {
     checkIn: { findMany: jest.fn(async () => []) },
     coachMessage: { findMany: jest.fn(async () => []) },
     clientWorkoutAssignment: { findMany: jest.fn(async () => []) },
+    aIDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    aiActionDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    messageDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    churnIntervention: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    subCoachAssignment: { updateMany: jest.fn(async () => ({ count: 0 })) },
     $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
       cb(base as unknown),
     ),
@@ -281,6 +293,11 @@ describe('SubCoachesService.revoke', () => {
     expect(prisma.teamAuditEvent.createMany).toHaveBeenCalledTimes(1);
     expect(prisma.teamAuditEvent.create).toHaveBeenCalledTimes(1);
     expect(prisma.teamSubCoachAssignment.update).toHaveBeenCalled();
+    // SUBREVOKE: the head coach's client assignments to the sub-coach close too.
+    expect(prisma.subCoachAssignment.updateMany).toHaveBeenCalledWith({
+      where: { head_coach_id: 'head-1', sub_coach_id: 'sub-1', unassigned_at: null },
+      data: { unassigned_at: expect.any(Date) },
+    });
     expect(team.refreshCounters).toHaveBeenCalledWith('head-1');
   });
 });

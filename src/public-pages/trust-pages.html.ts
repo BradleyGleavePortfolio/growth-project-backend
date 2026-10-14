@@ -333,8 +333,9 @@ function privacyContent(): TrustPageContent {
             'We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and ' +
             `${CLOSED_ACCOUNT_RECORD_TEXT}, so the records we must keep still point to one closed account. ` +
             'While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. ' +
+            'While asking our service providers to delete their copies is still being retried, we also keep the email address and Stripe customer reference they need. ' +
             `Once it is removed, we keep only ${ONE_WAY_CODE_TEXT}.`,
-          `You can also ask us to delete your account, or only some of your health data, by emailing ${SUPPORT_EMAIL}. We tell our service providers about deletion requests so they delete their copies too. At Stripe, deletion requests are handled with Stripe’s redaction tools; Stripe keeps the payment records the law requires.`,
+          `You can also ask us to delete your account, or only some of your health data, by emailing ${SUPPORT_EMAIL}. We tell our service providers about deletion requests so they delete their copies too. At Stripe, we delete your customer record and saved cards; Stripe keeps the payment records the law requires.`,
         ],
         links: [
           {

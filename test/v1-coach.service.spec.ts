@@ -126,7 +126,13 @@ function makePrisma() {
         return { ...row };
       }),
       findMany: jest.fn(async ({ where, orderBy, select }: any) => {
-        let out = messages.filter((m) => matches(m, where));
+        // `client` is a relation filter: match it on the client's User row.
+        const { client, ...own } = where ?? {};
+        const clientOk = (m: any) => {
+          const u = users.find((x) => x.id === m.client_id);
+          return !client || (u !== undefined && matches(u, client));
+        };
+        let out = messages.filter((m) => matches(m, own) && clientOk(m));
         if (orderBy?.created_at === 'desc') out.sort((a, b) => b.created_at - a.created_at);
         if (orderBy?.created_at === 'asc') out.sort((a, b) => a.created_at - b.created_at);
         if (select) return out.map((m) => {
@@ -432,6 +438,34 @@ describe('V1CoachService', () => {
       expect(t1.unreadCount).toBe(1);
       const t2 = threads.find((t) => t.clientId === 'client-2')!;
       expect(t2.unreadCount).toBe(0);
+    });
+
+    it("owner 4: a moved client leaves the old coach's list and the thread 404s; nothing is deleted", async () => {
+      await svc.sendMessage(coach('coach-A'), 'client-1', 'a1', undefined);
+      await svc.sendMessage(coach('coach-A'), 'client-2', 'b1', undefined);
+      prisma._users.find((u) => u.id === 'client-1')!.coach_id = 'coach-B'; // the move
+
+      expect((await svc.listThreads(coach('coach-A'))).map((t) => t.clientId)).toEqual(['client-2']);
+      await expect(svc.getThread(coach('coach-A'), 'client-1')).rejects.toBeInstanceOf(NotFoundException);
+      // The new coach's list is unchanged: the old thread never reaches it; their own does.
+      expect(await svc.listThreads(coach('coach-B'))).toEqual([]);
+      await svc.sendMessage(coach('coach-B'), 'client-1', 'hello', undefined);
+      expect((await svc.listThreads(coach('coach-B'))).map((t) => t.clientId)).toEqual(['client-1']);
+      // The client's old thread stays in place (HIST-4a: read-only history).
+      expect(prisma._messages.filter((m) => m.coach_id === 'coach-A' && m.client_id === 'client-1')).toHaveLength(1);
+    });
+
+    it('a sub-coach still lists only the clients assigned to them, in the head coach threads', async () => {
+      await svc.sendMessage(coach('coach-A'), 'client-1', 'a1', undefined);
+      await svc.sendMessage(coach('coach-A'), 'client-2', 'b1', undefined);
+      Object.defineProperty(svc, 'subCoachScope', {
+        value: {
+          isSubCoach: async (id: string) => id === 'sub-1',
+          getAuthorizedClientIds: async () => ['client-2'],
+          getHeadCoachIdForSubCoach: async (id: string) => (id === 'sub-1' ? 'coach-A' : null),
+        },
+      });
+      expect((await svc.listThreads(coach('sub-1'))).map((t) => t.clientId)).toEqual(['client-2']);
     });
   });
 });

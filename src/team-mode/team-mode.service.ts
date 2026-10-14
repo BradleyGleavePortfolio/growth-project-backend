@@ -5,10 +5,17 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import type { Prisma, TeamAuditEventKind } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import {
+  SchedulingSessionLifecycleService,
+  type MoveCancelledSession,
+} from '../scheduling/scheduling-session-lifecycle.service';
 import { StripeApiService } from '../billing/stripe-api.service';
+import { deleteDraftsLeftByMove } from '../coach/moved-client-drafts';
+import { endSubCoachSeat } from '../sub-coach/end-sub-coach-seat';
 import {
   CoachTier,
   TeamModeTierResolverService,
@@ -72,6 +79,8 @@ export class TeamModeService {
     private readonly prisma: PrismaService,
     private readonly stripeApi: StripeApiService,
     private readonly tierResolver: TeamModeTierResolverService,
+    // Always injected in production; hand-built unit tests may leave it out.
+    @Optional() private readonly sessions?: SchedulingSessionLifecycleService,
   ) {}
 
   // Q2: many-to-2 assignment with paid Stripe line on Pro.
@@ -263,10 +272,8 @@ export class TeamModeService {
       }
 
       await this.prisma.$transaction(async (tx) => {
-        await tx.teamSubCoachAssignment.update({
-          where: { id: assignment.id },
-          data: { archived_at: new Date() },
-        });
+        // SUBREVOKE: the seat and this head coach's client assignments end together.
+        const closedAssignments = await endSubCoachSeat(tx, assignment.id, headCoachId, subCoachId);
         await tx.teamAuditEvent.create({
           data: {
             head_coach_id: headCoachId,
@@ -277,6 +284,7 @@ export class TeamModeService {
             metadata: {
               sub_coach_id: subCoachId,
               reassigned_client_count: 0,
+              closed_assignment_count: closedAssignments,
               skip_reason: 'multi_head_sub_coach',
               stripe_error: stripeError,
             } as Prisma.InputJsonValue,
@@ -341,13 +349,18 @@ export class TeamModeService {
       }
     }
 
+    let cancelled: MoveCancelledSession[] = [];
     await this.prisma.$transaction(async (tx) => {
       // Reassign clients to the initiating head coach.
       if (reassignIds.length > 0) {
+        // Owner HIST-2b: the sub-coach's upcoming sessions with these clients end now.
+        cancelled = (await this.sessions?.cancelLeftByMove(tx, reassignIds, subCoachId)) ?? [];
         await tx.user.updateMany({
           where: { id: { in: reassignIds } },
           data: { coach_id: headCoachId },
         });
+        // Owner decision 17: drafts left behind for these clients go now.
+        await deleteDraftsLeftByMove(tx, reassignIds, headCoachId);
         // One client_reassigned event per client so the head coach can
         // filter their feed by client and see the trail.
         await tx.teamAuditEvent.createMany({
@@ -366,11 +379,9 @@ export class TeamModeService {
       }
 
       // Archive the assignment (soft-delete so the audit trail stays
-      // queryable on (sub_coach_id, archived_at) for forensics).
-      await tx.teamSubCoachAssignment.update({
-        where: { id: assignment.id },
-        data: { archived_at: new Date() },
-      });
+      // queryable on (sub_coach_id, archived_at) for forensics) and close
+      // this head coach's client assignments to the sub-coach (SUBREVOKE).
+      const closedAssignments = await endSubCoachSeat(tx, assignment.id, headCoachId, subCoachId);
 
       await tx.teamAuditEvent.create({
         data: {
@@ -382,6 +393,7 @@ export class TeamModeService {
           metadata: {
             sub_coach_id: subCoachId,
             reassigned_client_count: reassignIds.length,
+            closed_assignment_count: closedAssignments,
             stripe_error: stripeError,
           } as Prisma.InputJsonValue,
         },
@@ -403,6 +415,7 @@ export class TeamModeService {
         });
       }
     });
+    await this.sessions?.finishMoveCancels(headCoachId, cancelled);
 
     return {
       removed: true,

@@ -230,7 +230,7 @@ export class CoachHomeService {
    * reviewed: ConversationReview rows for this coach whose `coach_reviewed_at`
    *           lands within today's UTC window (most-recent semantics — a fresh
    *           review re-stamps the row, so a same-day review counts).
-   * total:    distinct clients who sent the coach a CoachMessage today. A
+   * total:    distinct current clients who sent the coach a CoachMessage today. A
    *           client message is one in the coach's thread whose `sender_id`
    *           is NOT the coach (the coach's own replies don't count as
    *           something to review). We count distinct `client_id`s rather
@@ -250,6 +250,9 @@ export class CoachHomeService {
       this.prisma.coachMessage.findMany({
         where: {
           coach_id: coachId,
+          // Only threads whose client this coach coaches now: a moved
+          // client's old thread is not "to review" (owner 4).
+          client: { coach_id: coachId },
           // Client-sent: anyone other than the coach in the thread. The
           // coach's own replies are not "to review".
           NOT: { sender_id: coachId },

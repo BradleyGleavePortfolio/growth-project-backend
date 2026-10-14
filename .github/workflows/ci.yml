@@ -362,6 +362,7 @@ jobs:
             -c 'CREATE TRIGGER trg_enforce_subcoach_head_cap BEFORE INSERT OR UPDATE ON "TeamSubCoachAssignment" FOR EACH ROW EXECUTE FUNCTION enforce_subcoach_head_cap();' \
             -f scripts/ci/onboarding-intake-live-bootstrap.sql \
             -f prisma/migrations/20270212000000_clinic_onboarding_intake/migration.sql \
+            -f prisma/migrations/20270416000001_sub_coach_removed_seat/migration.sql \
             -f scripts/ci/onboarding-intake-live-grants.sql \
             -f scripts/ci/clinic-engagement-live-bootstrap.sql \
             -f prisma/migrations/20270213000000_clinic_engagement/migration.sql \
@@ -653,6 +654,17 @@ jobs:
         # and reset + full-schema bootstrap; --runInBand so the per-file schema
         # rebuilds never race.
         run: npx jest test/roman/roman-context-null-lists.live.spec.ts test/roman/roman-coach-pool-b31d1.live.spec.ts --runInBand --testTimeout=120000
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Run Roman history-follows-client live spec (HIST3, owner 139-13)
+        # test/roman/roman-history-follows-client.live.spec.ts: on real Postgres,
+        # a client moved between coaches keeps their earlier coach's targets,
+        # workouts, meal plan, sessions and adjustments in Roman's context and
+        # timeline, while the earlier coach's thread, guideline and notes never
+        # follow (owner 4b), including in the coach AI gateway context. Same
+        # MWB3_TEST_DATABASE_URL gate and reset + full-schema bootstrap.
+        run: npx jest test/roman/roman-history-follows-client.live.spec.ts --runInBand --testTimeout=120000
         env:
           NODE_OPTIONS: --max-old-space-size=4096
 

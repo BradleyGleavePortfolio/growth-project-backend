@@ -12,6 +12,7 @@ import { Prisma, type ClinicProgramSet } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { computeMacros, resolveMacroInputs, type MacroResult } from '../macros/macro-calculator';
 import { WorkoutBuilderService } from '../workout-builder/workout-builder.service';
+import { programDaysWhere } from '../workout-builder/program-guards';
 import { writeProfileWithTargets, type ClearableProfileField } from '../profile/profile.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { buildConsultationView, type ConsultationView } from './consultation-view';
@@ -47,6 +48,7 @@ import {
   type PlanContent,
 } from './clinic-programs';
 import { writeProgramTree } from './program-writer';
+import { flaggedClientPayload } from './flagged-join-alert';
 import {
   ONBOARDING_COMPLETION_HOOKS,
   type OnboardingCompletionHook,
@@ -179,9 +181,6 @@ function isUniqueViolation(err: unknown): boolean {
 
 const COACH_FLAG_BODY =
   'A new client finished their consultation and was flagged for extra care. Please review before their first session.';
-// Decision 133-11: a coachless client's flag goes to the house account.
-const HOUSE_FLAG_BODY =
-  'A client without a coach finished their consultation and was flagged for extra care.';
 
 function conflict(
   code: OnboardingConflictCode,
@@ -308,10 +307,10 @@ export class OnboardingService {
    * INT-607-1: "head coach of" and "sub-coach on the team of" use main's
    * explicit membership rule (#597 C13 Opus A1, SubCoachScopeService): a coach
    * is on head H's team only when role = 'coach', coach_id = H AND an active
-   * TeamSubCoachAssignment(H, coach) or an open SubCoachAssignment(H, coach)
-   * exists. A bare coach_id is NOT membership: old guest checkouts stamped
-   * coach_id onto coach buyers (phantom sub-coaches), and the phantom "head"
-   * must never read the buyer coach's clients' screening answers.
+   * TeamSubCoachAssignment(H, coach), or for a never-seated pair an open
+   * SubCoachAssignment(H, coach). A bare coach_id is NOT membership: old guest
+   * checkouts stamped coach_id onto coach buyers (phantom sub-coaches), and the
+   * phantom "head" must never read the buyer coach's clients' screening answers.
    */
   async canCoachRead(readerId: string, clientId: string): Promise<boolean> {
     // A607-1: one CURRENT-tenancy predicate, evaluated from live rows on every
@@ -379,7 +378,7 @@ export class OnboardingService {
     clientId: string,
     revision?: number,
     now = new Date(),
-  ): Promise<ConsultationView> {
+  ): Promise<ConsultationView & { client_name: string | null }> {
     if (!(await this.canCoachRead(readerId, clientId)))
       throw new NotFoundException('Consultation not found');
     const intake = await this.prisma.clientOnboardingIntake.findUnique({
@@ -394,7 +393,14 @@ export class OnboardingService {
     const answers: Answers = isRecord(rev.answers)
       ? (JSON.parse(JSON.stringify(rev.answers)) as Answers)
       : {};
-    return buildConsultationView(
+    // The screen's heading. Read here, after the live tenancy check, because
+    // alert rows store no name (owner 4): a reader who lost access gets the
+    // 404 above and never the name.
+    const client = await this.prisma.user.findUnique({
+      where: { id: clientId },
+      select: { name: true },
+    });
+    const view = buildConsultationView(
       {
         version: rev.version,
         revision: rev.revision,
@@ -408,6 +414,7 @@ export class OnboardingService {
       { submitted_at: intake.completed_at, saved_at: rev.created_at },
       now,
     );
+    return { ...view, client_name: client?.name?.trim() || null };
   }
 
   /** Revision list for the coach view (newest first). */
@@ -777,7 +784,7 @@ export class OnboardingService {
         missing: resolved.missing,
       });
     }
-    const macros = computeMacros(resolved.inputs);
+    const macros = computeMacros({ ...resolved.inputs, screening_yes: screeningAnyYes(answers) });
 
     const resolvedSet = await this.resolveProgramSet(coach?.id ?? null);
     if (!resolvedSet) throw notConfigured(coach !== null);
@@ -914,13 +921,14 @@ export class OnboardingService {
 
           await tx.macroTarget.create({
             data: {
+              id: `auto-${randomUUID()}`,
               coach_id: owner.id,
               client_id: clientId,
               calories_kcal: macros.calories,
               protein_g: macros.protein_g,
               carbs_g: macros.carbs_g,
               fats_g: macros.fat_g,
-              notes: `Initial target from the consultation (${macros.method}${macros.floor_applied ? ', calorie floor applied' : ''}).`,
+              notes: `Initial target from the consultation (${macros.method}${macros.floor_applied ? ', calorie floor applied' : ''}${macros.maintenance_hold ? ', held at maintenance' : ''}${macros.no_deficit_under_18 ? ', no deficit under 18' : ''}).`,
               effective_from: now,
             },
           });
@@ -982,26 +990,20 @@ export class OnboardingService {
           };
 
           // screening_flagged_at above records the flag and the selection
-          // already applied the extra-care overlay. Who hears about it: the
-          // client's own coach; for a coachless client (owner decision
-          // 133-11) the house account, i.e. the live coach or owner account
-          // that holds the house set this completion used. Same in-app item,
-          // no other sender.
-          const alertTo = coach ? coach.id : source === 'house' ? set.coach_id : null;
-          if (flagCoach && alertTo) {
+          // already applied the extra-care overlay. Who hears about it now:
+          // the client's own coach only (one in-app item, no other sender).
+          // A coachless client's flag alerts nobody (owner decision 61a); the
+          // coach they later join is told then (flagged-join-alert.ts).
+          if (flagCoach && coach) {
             // In-app coach item. The body carries no screening details; a
-            // coach opens their client's intake for the answers. The house
-            // account cannot read a coachless client's intake (canCoachRead
-            // needs a coach on the client), so it learns only that a flag exists.
+            // tap opens their client's consultation answers.
             await tx.notification.create({
               data: {
-                user_id: alertTo,
+                user_id: coach.id,
                 kind: 'coach_alert',
                 channel: 'inapp',
-                body: coach ? COACH_FLAG_BODY : HOUSE_FLAG_BODY,
-                payload: coach
-                  ? { type: 'onboarding_screening_review', client_id: clientId }
-                  : { type: 'onboarding_screening_review', client_id: clientId, coachless: true },
+                body: COACH_FLAG_BODY,
+                payload: flaggedClientPayload(clientId),
               },
             });
           }
@@ -1209,7 +1211,7 @@ export class OnboardingService {
     }
 
     const masterPlans = await tx.workoutPlan.findMany({
-      where: { program_id: master.id, archived_at: null },
+      where: programDaysWhere(master),
       orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
       include: { exercises: { where: { archived_at: null }, orderBy: { order: 'asc' } } },
     });

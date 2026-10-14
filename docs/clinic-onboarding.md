@@ -276,7 +276,8 @@ Effects, in order:
    split members by signup date.
 4. Coach flag: when any P1-P7 is yes, an injury is reported, or the rule
    requires review, an in-app `coach_alert` notification is created (no
-   screening details in the body) and `screening_flagged_at` is set.
+   screening details in the body, linked to `ClientConsultation` with
+   `{ clientId }` so a tap opens the answers) and `screening_flagged_at` is set.
 5. `UserProfile.onboardingCompleted = true`; intake `completed_at` and the
    frozen `completion_result` are written.
 6. Completion hooks: providers registered under
@@ -347,9 +348,14 @@ used by the RLS policies.
     "any_yes": true,
     "items": [{ "key": "P2", "question": "...", "answer": "yes", "note": "..." }]
   },
-  "consent": { "version": "consult-consent-v3", "agreed_at": "ISO" }
+  "consent": { "version": "consult-consent-v3", "agreed_at": "ISO" },
+  "client_name": "string | null"
 }
 ```
+
+`client_name` is the client's display name (null when blank), read after the
+access check above, so only a reader with live access gets it. Alert rows
+store no name; the coach's answers screen takes its heading from here.
 
 Question and option labels come from `consultation-definitions.ts`, generated
 from the mobile definitions so the coach sees the client's wording.

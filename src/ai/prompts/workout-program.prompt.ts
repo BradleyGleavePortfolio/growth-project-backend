@@ -1,5 +1,6 @@
 import { ClientContext } from '../context/client-context.types';
 import { CoachAIPrompt } from './prompt.types';
+import { UNTRUSTED_TEXT_RULE, fenceUntrusted } from '../utils/untrusted-text';
 import { sanitizePromptInput } from '../utils/sanitize-prompt-input';
 import type { WorkoutContextV2 } from '../context/workout-context.service';
 import { InjuryAreaV2, PROGRAM_BOUNDS as PB, substitutionGuide, toInjuryAreas } from '../gateway/workout-builder/training-substitutions';
@@ -102,6 +103,8 @@ OUTPUT SCHEMA (return ONLY valid JSON conforming to this shape):
   ],
   "coach_notes": "<3-5 sentences on progression / cues / when to deload>"
 }
+
+${UNTRUSTED_TEXT_RULE}
 `;
 
 function validateRow(raw: unknown, weekIdx: number, dayIdx: number): WorkoutProgramExerciseRow {
@@ -135,7 +138,7 @@ function numberOf(v: unknown, field: string): number {
 
 export const WorkoutProgramPrompt: CoachAIPrompt<WorkoutProgramInput, WorkoutProgramPayload> = {
   name: 'workout-program',
-  version: 'v2',
+  version: 'v3',
   system: SYSTEM,
   buildUser(ctx, input) {
     const lines: string[] = [];
@@ -158,11 +161,11 @@ export const WorkoutProgramPrompt: CoachAIPrompt<WorkoutProgramInput, WorkoutPro
     }
     if (input.workoutContext) {
       lines.push('WORKOUT_CONTEXT:');
-      lines.push(JSON.stringify(input.workoutContext));
+      lines.push(fenceUntrusted(input.workoutContext));
     }
     lines.push('---');
     lines.push('CLIENT_CONTEXT:');
-    lines.push(JSON.stringify(serializeContextForPrompt(ctx), null, 2));
+    lines.push(fenceUntrusted(serializeContextForPrompt(ctx), 2));
     return lines.join('\n');
   },
   validate(raw: unknown): WorkoutProgramPayload {
