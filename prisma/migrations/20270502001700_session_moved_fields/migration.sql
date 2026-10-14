@@ -8,9 +8,18 @@
 -- grant (20270413000000), so no new reader exists at the row layer; the app
 -- reads them only through the session API, which already scopes every session
 -- to its own coach and client.
+-- Lock-safe: nullable columns with no default are a catalog-only change (no
+-- table rewrite); the short lock_timeout makes the deploy fail fast instead of
+-- queueing every session read behind a long transaction. Reverse: down.sql.
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '30s';
+
 CREATE TYPE "SessionMovedBy" AS ENUM ('coach', 'client');
 
 ALTER TABLE "CoachingSession"
   ADD COLUMN "moved_from_start_at" TIMESTAMP(3),
   ADD COLUMN "moved_by_role" "SessionMovedBy",
   ADD COLUMN "last_moved_at" TIMESTAMP(3);
+
+COMMIT;
