@@ -30,6 +30,7 @@ import { FakeLedgerPrisma, type LedgerRow } from './_support/fake-ledger-prisma'
 
 const ENV = ['FEATURE_AI_CONSENT_LEDGER_ENABLED', 'FEATURE_ROMAN_CHAT_ENABLED', 'FEATURE_ROMAN_MEMORY'];
 const V6 = { version: 'client-ai-v6', copy_sha256: V6_SHA };
+const V6_ROW = { consent_version: 'client-ai-v6', copy_sha256: V6_SHA };
 const EVIDENCE = { platform: 'ios', app_version: '1.4.0', locale: 'en-GB' };
 type Res = { status: number; body: Record<string, unknown>; raw: string };
 
@@ -132,7 +133,7 @@ describe('W-CONSENT: a client with no coach is asked once; Roman waits for a coa
     expect(a.body).toMatchObject({ granted: true, state: 'granted', version: 'client-ai-v6', scope: 'base' });
     expect(b.body).toEqual({ ...a.body, granted_at: expect.any(String) });
     const row = { processor: 'anthropic', purpose: 'client_ai_processing', seq: 1, action: 'grant' };
-    expect(recorded(rowsOf('u_a')[0])).toEqual({ ...row, ...V6, ...EVIDENCE });
+    expect(recorded(rowsOf('u_a')[0])).toEqual({ ...row, ...V6_ROW, ...EVIDENCE });
     expect(recorded(rowsOf('u_b')[0])).toEqual(recorded(rowsOf('u_a')[0]));
     expect(logLines).toContain('ai_consent.grant user=u_a version=client-ai-v6 seq=1');
     expect(logLines).toContain('ai_consent.grant user=u_b version=client-ai-v6 seq=1');
@@ -176,7 +177,7 @@ describe('W-CONSENT: a client with no coach is asked once; Roman waits for a coa
     expect(wa.body).toMatchObject({ granted: false, state: 'withdrawn', version: 'client-ai-v6' });
     expect(wb.body).toEqual({ ...wa.body, withdrawn_at: expect.any(String) });
     expect(recorded(rowsOf('u_a')[1])).toEqual(recorded(rowsOf('u_b')[1]));
-    expect(rowsOf('u_a')[1]).toMatchObject({ seq: 2, action: 'withdraw', ...V6 });
+    expect(rowsOf('u_a')[1]).toMatchObject({ seq: 2, action: 'withdraw', ...V6_ROW });
     users.u_a.coach_id = 'coach_1';
     for (const user of ['u_a', 'u_b']) {
       const r = await askRoman(user);
