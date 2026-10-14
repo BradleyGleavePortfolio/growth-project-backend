@@ -2,8 +2,9 @@
  * FOODSAVED (migration 20270502001300): favourites, saved meals and their items
  * are read and written by their client only, read by the client's current
  * coach, and a SavedMealItem follows its meal. Row access runs as the API role
- * `authenticated` (no RLS bypass) on the replayed chain, and every zero has a
- * control read of 1 of the same row first. The service cases call the real
+ * `authenticated` (no RLS bypass) on the replayed chain, with each person's JWT
+ * claims (their supabase_id, never their User id), and every zero comes right
+ * after a control read of 1 of the same row. The service cases call the real
  * SavedFoodsService and LogService on the superuser connection, as the API does.
  * Runs in rls-live-tests. Gate: TEST_DATABASE_URL (CI=true without it fails).
  */
@@ -51,6 +52,7 @@ function stub<T>(value: unknown): T {
   // b: k's client. c: h's client who fills up to the limits.
   const [h, k, a, b, c] = Array.from({ length: 5 }, () => randomUUID());
   const roleOf: Record<string, string> = { [h]: 'coach', [k]: 'coach' };
+  const supa = Object.fromEntries([h, k, a, b, c].map((id) => [id, randomUUID()]));
   let oats = '';
   let banana = '';
   let aCustom = '';
@@ -58,12 +60,18 @@ function stub<T>(value: unknown): T {
   let aItem = '';
   let aFav = '';
 
-  /** Runs `fn` in one transaction as the API role `authenticated`, signed in as `who` ('' = no user). */
+  /** Runs `fn` in one transaction as the API role `authenticated`, signed in as `who` ('' = no user): JWT claims
+   * and app context. `jwt:<id>` models the Data API: that person's JWT claims only, no app context. */
   const asUser = <T>(who: string, fn: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> =>
     prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const id = who.replace(/^jwt:/, '');
       await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
-      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, who);
-      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, roleOf[who] ?? 'student');
+      await tx.$executeRawUnsafe(`SELECT set_config('request.jwt.claims', $1, true)`,
+        JSON.stringify(id ? { sub: supa[id], role: 'authenticated' } : { role: 'authenticated' }));
+      if (id === who) {
+        await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, who);
+        await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, roleOf[who] ?? 'student');
+      }
       return fn(tx);
     });
   /** Rows of `table` with this id that `who` reads. */
@@ -74,11 +82,19 @@ function stub<T>(value: unknown): T {
   };
   /** Rows of `table` with this id that `who` changes with `sql` (an UPDATE or DELETE ... WHERE "id" = $1). */
   const changes = (who: string, sql: string, id: string) => asUser(who, (tx) => tx.$executeRawUnsafe(sql, id));
+  /** `control` reads the row (1), right before `who` reads it, or writes it with `sql` (WHERE "id" = $1): 0 rows. */
+  const zeroAfter = async (control: string, who: string, table: string, id: string, sql?: string) => {
+    expect(await seen(control, table, id)).toBe(1);
+    expect(await (sql ? changes(who, sql, id) : seen(who, table, id))).toBe(0);
+  };
+  const rowsOfA = (): Array<[string, string]> => [['FoodFavorite', aFav], ['SavedMeal', aMeal], ['SavedMealItem', aItem]];
   const insertFavorite = (who: string, owner: string, foodId: string) => asUser(who, (tx) => tx.$executeRawUnsafe(
     `INSERT INTO public."FoodFavorite" ("id","user_id","food_item_id") VALUES ($1, $2, $3)`, randomUUID(), owner, foodId));
   const insertItem = (who: string, mealId: string, position: number) => asUser(who, (tx) => tx.$executeRawUnsafe(
     `INSERT INTO public."SavedMealItem" ("id","saved_meal_id","food_item_id","position") VALUES ($1, $2, $3, $4)`,
     randomUUID(), mealId, oats, position));
+  const insertMeal = (who: string, owner: string) => asUser(who, (tx) => tx.$executeRawUnsafe(
+    `INSERT INTO public."SavedMeal" ("id","user_id","name","updated_at") VALUES ($1, $2, 'Taken', now())`, randomUUID(), owner));
   const runSql = (file: 'migration.sql' | 'down.sql') => {
     const sql = fs.readFileSync(path.join(__dirname, '..', '..', 'prisma', 'migrations', MIGRATION, file), 'utf8');
     const statements = sql.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n')
@@ -105,7 +121,7 @@ function stub<T>(value: unknown): T {
       [h, 'coach', null], [k, 'coach', null], [a, 'student', h], [b, 'student', k], [c, 'student', h],
     ];
     for (const [id, role, coach_id] of people) {
-      await prisma.user.create({ data: { id, supabase_id: id, email: `${id}@example.test`, name: 'RLS person', role, coach_id } });
+      await prisma.user.create({ data: { id, supabase_id: supa[id], email: `${id}@example.test`, name: 'RLS person', role, coach_id } });
     }
     oats = await catalogFood('RLS oats', 380, 13);
     banana = await catalogFood('RLS banana', 89, 1.1);
@@ -122,15 +138,13 @@ function stub<T>(value: unknown): T {
   afterAll(() => prisma.$disconnect());
 
   it('the client reads their own rows; another client reads none of them and cannot write them', async () => {
-    for (const [table, id] of [['FoodFavorite', aFav], ['SavedMeal', aMeal], ['SavedMealItem', aItem]]) {
-      expect(await seen(a, table, id)).toBe(1);
-      expect(await seen(b, table, id)).toBe(0);
-    }
+    for (const [table, id] of rowsOfA()) await zeroAfter(a, b, table, id);
     expect(await changes(a, `UPDATE public."SavedMeal" SET "name" = "name" WHERE "id" = $1`, aMeal)).toBe(1);
-    expect(await changes(b, `UPDATE public."SavedMeal" SET "name" = 'Taken' WHERE "id" = $1`, aMeal)).toBe(0);
-    expect(await changes(b, `DELETE FROM public."SavedMealItem" WHERE "id" = $1`, aItem)).toBe(0);
-    expect(await changes(b, `DELETE FROM public."FoodFavorite" WHERE "id" = $1`, aFav)).toBe(0);
+    await zeroAfter(a, b, 'SavedMeal', aMeal, `UPDATE public."SavedMeal" SET "name" = 'Taken' WHERE "id" = $1`);
+    await zeroAfter(a, b, 'SavedMealItem', aItem, `DELETE FROM public."SavedMealItem" WHERE "id" = $1`);
+    await zeroAfter(a, b, 'FoodFavorite', aFav, `DELETE FROM public."FoodFavorite" WHERE "id" = $1`);
     await expect(insertFavorite(b, a, banana)).rejects.toThrow(RLS);
+    await expect(insertMeal(b, a)).rejects.toThrow(RLS);
     await expect(insertItem(b, aMeal, 9)).rejects.toThrow(RLS);
     await expect(insertItem(a, aMeal, 9)).resolves.toBe(1);
     expect(await changes(a, `DELETE FROM public."SavedMealItem" WHERE "saved_meal_id" = $1 AND "position" = 9`, aMeal)).toBe(1);
@@ -141,28 +155,35 @@ function stub<T>(value: unknown): T {
   });
 
   it('the current coach reads the rows but cannot change them; another coach reads none', async () => {
-    for (const [table, id] of [['FoodFavorite', aFav], ['SavedMeal', aMeal], ['SavedMealItem', aItem]]) {
-      expect(await seen(h, table, id)).toBe(1);
-      expect(await seen(k, table, id)).toBe(0);
-    }
-    expect(await changes(h, `UPDATE public."SavedMeal" SET "name" = 'Coach' WHERE "id" = $1`, aMeal)).toBe(0);
-    expect(await changes(h, `UPDATE public."SavedMealItem" SET "position" = 7 WHERE "id" = $1`, aItem)).toBe(0);
-    expect(await changes(h, `DELETE FROM public."SavedMealItem" WHERE "id" = $1`, aItem)).toBe(0);
-    expect(await changes(h, `DELETE FROM public."FoodFavorite" WHERE "id" = $1`, aFav)).toBe(0);
+    for (const [table, id] of rowsOfA()) await zeroAfter(h, k, table, id);
+    await zeroAfter(h, h, 'SavedMeal', aMeal, `UPDATE public."SavedMeal" SET "name" = 'Coach' WHERE "id" = $1`);
+    await zeroAfter(h, h, 'SavedMealItem', aItem, `UPDATE public."SavedMealItem" SET "position" = 7 WHERE "id" = $1`);
+    await zeroAfter(h, h, 'SavedMealItem', aItem, `DELETE FROM public."SavedMealItem" WHERE "id" = $1`);
+    await zeroAfter(h, h, 'FoodFavorite', aFav, `DELETE FROM public."FoodFavorite" WHERE "id" = $1`);
     await expect(insertFavorite(h, a, banana)).rejects.toThrow(RLS);
     await expect(insertItem(h, aMeal, 9)).rejects.toThrow(RLS);
     expect((await prisma.savedMeal.findUniqueOrThrow({ where: { id: aMeal } })).name).toBe('Usual breakfast');
   });
 
   it('an API caller with no user reads nothing, and anon has no table access', async () => {
-    expect(await seen(a, 'SavedMeal', aMeal)).toBe(1);
-    for (const [table, id] of [['FoodFavorite', aFav], ['SavedMeal', aMeal], ['SavedMealItem', aItem]]) {
-      expect(await seen('', table, id)).toBe(0);
-    }
+    for (const [table, id] of rowsOfA()) await zeroAfter(a, '', table, id);
     await expect(prisma.$transaction(async (tx: Prisma.TransactionClient) => {
       await tx.$executeRawUnsafe('SET LOCAL ROLE anon');
       await tx.$queryRawUnsafe('SELECT count(*) FROM public."SavedMeal"');
     })).rejects.toThrow(/permission denied/);
+  });
+
+  it("the Data API with only the client's own JWT (no app context) reads none of the rows and writes none", async () => {
+    const jwtA = `jwt:${a}`;
+    for (const [table, id] of rowsOfA()) {
+      await zeroAfter(a, jwtA, table, id);
+      await zeroAfter(a, jwtA, table, id, `UPDATE public."${table}" SET "id" = "id" WHERE "id" = $1`);
+      await zeroAfter(a, jwtA, table, id, `DELETE FROM public."${table}" WHERE "id" = $1`);
+    }
+    await expect(insertFavorite(jwtA, a, banana)).rejects.toThrow(RLS);
+    await expect(insertMeal(jwtA, a)).rejects.toThrow(RLS);
+    await expect(insertItem(jwtA, aMeal, 9)).rejects.toThrow(RLS);
+    for (const [table, id] of rowsOfA()) expect(await seen(a, table, id)).toBe(1);
   });
 
   it('logging a saved meal writes one ordinary entry per food, same slot and time, totalled like single logs', async () => {
@@ -242,11 +263,13 @@ function stub<T>(value: unknown): T {
 
   it('a former coach reads nothing once the client moves; the new coach reads the history', async () => {
     const meal = await saved.createSavedMeal(a, { name: 'Moved meal', items: [{ food_item_id: oats }] });
-    expect(await seen(h, 'SavedMealItem', meal.items[0].id)).toBe(1);
+    const moved: Array<[string, string]> = [
+      ['FoodFavorite', (await saved.addFavorite(a, banana)).id], ['SavedMeal', meal.id], ['SavedMealItem', meal.items[0].id]];
+    for (const [table, id] of moved) expect(await seen(h, table, id)).toBe(1);
     await prisma.user.update({ where: { id: a }, data: { coach_id: k } });
-    expect(await seen(h, 'SavedMeal', meal.id)).toBe(0);
-    expect(await seen(h, 'SavedMealItem', meal.items[0].id)).toBe(0);
-    expect(await seen(k, 'SavedMeal', meal.id)).toBe(1);
-    expect(await seen(k, 'SavedMealItem', meal.items[0].id)).toBe(1);
+    for (const [table, id] of moved) {
+      await zeroAfter(a, h, table, id);
+      expect(await seen(k, table, id)).toBe(1);
+    }
   });
 });
