@@ -13,7 +13,7 @@
  *
  * Auth: JwtAuthGuard authenticates every route. Roman is available to ALL
  * signed-in users on ANY tier (free + pro) — so there is no tier gate, only the
- * per-tier RATE limit applied in the service (brief §4). RomanFeatureGuard
+ * client's daily Roman limits (ROMANCOUNT, roman-usage.ts). RomanFeatureGuard
  * returns 404 on every route while the feature flag is OFF. A client with no
  * coach gets 403 ROMAN_REQUIRES_COACH on open and send (owner 10-09 00:0x,
  * roman-requires-coach.ts); reading a transcript stays open.
@@ -135,23 +135,6 @@ export class RomanController {
       edFallback = true;
     }
 
-    // Rate-limit BEFORE persisting the user turn (so a rejected turn does not
-    // count against the cap). Throws a structured 429 Too Many Requests; we
-    // surface the retry budget as a real Retry-After header (RFC 6585 §4)
-    // before re-throwing so the NestJS filter serialises the body.
-    try {
-      if (!crisis) await this.roman.assertWithinRateLimit(caller);
-    } catch (err) {
-      if (edRisk) edFallback = true;
-      const payload = (
-        err as { getResponse?: () => unknown }
-      ).getResponse?.() as { retryAfterSeconds?: number } | undefined;
-      if (!edFallback && typeof payload?.retryAfterSeconds === 'number') {
-        res.setHeader('Retry-After', String(payload.retryAfterSeconds));
-      }
-      if (!edFallback) throw err;
-    }
-
     const session = await this.roman.getOwnedSession(caller, id);
     // R2b — a client without a live box-2 grant gets a plain 403
     // ai_consent_required (Settings > Privacy) before the turn is stored or
@@ -166,8 +149,15 @@ export class RomanController {
       // B-668-1 — the coach's monthly AI credit pool, before the turn is stored
       // (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).
       if (!crisis && !edFallback) await this.roman.assertCoachPoolOpen(caller);
+      // ROMANCOUNT — counted last, so a turn refused above never counts.
+      if (!crisis && !edFallback) await this.roman.assertWithinRateLimit(caller);
     } catch (err) {
-      if (!edRisk) throw err;
+      if (!edRisk) {
+        // 429: the wait as a real Retry-After header (RFC 6585 §4).
+        const retry = (err as { getResponse?: () => { retryAfterSeconds?: unknown } }).getResponse?.();
+        if (typeof retry?.retryAfterSeconds === 'number') res.setHeader('Retry-After', String(retry.retryAfterSeconds));
+        throw err;
+      }
       edFallback = true;
     }
     // The stored turn's id: a safety alert points at this one message.

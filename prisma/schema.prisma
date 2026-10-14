@@ -556,6 +556,7 @@ model User {
   roman_client_notes     RomanClientNote[]    @relation("RomanClientNoteClient")
   roman_client_summaries RomanClientSummary[] @relation("RomanClientSummaryClient")
   roman_memory_state     RomanMemoryState?    @relation("RomanMemoryStateClient")
+  roman_usage_daily      RomanUsageDaily[]    @relation("RomanUsageDailyClient")
 
   // R2a — AI processing consent ledger (box 2 of the onboarding consent
   // screen). Append-only grant / withdraw history; see AiProcessingConsentEvent.
@@ -8803,4 +8804,19 @@ model RomanMemoryState {
   summaries_through  DateTime? @db.Date
   last_run_at        DateTime?
   last_outcome       String?
+}
+
+// ROMANCOUNT: a client's Roman use on one local day (100 messages, 3 files,
+// 5 changes). Written only by src/roman/roman-usage.ts; RLS: own rows read.
+model RomanUsageDaily {
+  client_id  String
+  client     User     @relation("RomanUsageDailyClient", fields: [client_id], references: [id], onDelete: Cascade)
+  day        DateTime @db.Date
+  messages   Int      @default(0)
+  files      Int      @default(0)
+  changes    Int      @default(0)
+  updated_at DateTime @default(now())
+
+  @@id([client_id, day])
+  @@map("roman_usage_daily")
 }
