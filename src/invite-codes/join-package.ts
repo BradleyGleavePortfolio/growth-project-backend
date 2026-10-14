@@ -1,4 +1,5 @@
 import type { CoachPackage, InviteGrantMode, Prisma } from '@prisma/client';
+import type { ChargeQuote } from '../checkout/checkout.service';
 import { isFreeOffer } from '../packages/packages.service';
 
 // B-PACKAGE-135 — owner 2026-10-09: a coached client ALWAYS has a package.
@@ -30,6 +31,12 @@ export type JoinPackageView = {
   trial_days: number;
   /** True when the client pays nothing in the app for this join. */
   is_free: boolean;
+  /**
+   * JOINQUOTE — what paying for this join charges THIS client today and when
+   * the next charge falls (packageQuote, the rule of the client package reads).
+   * Only on a join paid in the app; null when granted. Valid when read.
+   */
+  quote: ChargeQuote | null;
 };
 
 export type JoinOutcome = {
@@ -125,6 +132,7 @@ export function joinPackageView(pkg: CoachPackage, mode: InviteGrantMode): JoinP
     duration_periods: pkg.duration_periods ?? null,
     trial_days: pkg.trial_days ?? 0,
     is_free: mode === 'free',
+    quote: null,
   };
 }
 

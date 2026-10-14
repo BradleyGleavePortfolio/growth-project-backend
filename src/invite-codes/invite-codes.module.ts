@@ -5,6 +5,7 @@ import { CoachCodeToolsService } from './coach-code-tools.service';
 import { InviteCodesController } from './invite-codes.controller';
 import { InviteCodesService } from './invite-codes.service';
 import { InviteGrantModule } from '../invite-grant/invite-grant.module';
+import { PackagesModule } from '../packages/packages.module';
 import { ThrottlerModule } from '../throttler/throttler.module';
 
 // PrismaService and SupabaseService are provided globally. Guards
@@ -14,9 +15,10 @@ import { ThrottlerModule } from '../throttler/throttler.module';
 // AuthService → InviteCodesService closes on the runtime side).
 //
 // BillingModule is imported so the invite-code controller can read coach
-// subscription state when redeeming a coach invite.
+// subscription state when redeeming a coach invite. PackagesModule gives
+// TrialUsageService for the paid join's quote (JOINQUOTE).
 @Module({
-  imports: [BillingModule, InviteGrantModule, ThrottlerModule],
+  imports: [BillingModule, InviteGrantModule, PackagesModule, ThrottlerModule],
   controllers: [InviteCodesController, CoachCodeToolsController],
   providers: [InviteCodesService, CoachCodeToolsService],
   exports: [InviteCodesService],
