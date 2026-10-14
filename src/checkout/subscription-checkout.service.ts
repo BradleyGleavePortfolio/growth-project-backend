@@ -430,8 +430,9 @@ export class SubscriptionCheckoutService {
         // pending_setup_intent = null once it succeeded.
         const setup = await readTrialSetup(this.stripe, row.stripe_client_secret, sub);
         if (trialCardSaved(setup)) {
-          await this.attachTrialCardQuietly(sub.id, setup.payment_method, row.id);
-          return 'card_saved';
+          // MOVEBILL2: a moved client's attempt never starts; the app says it closed.
+          const attached = await this.attachTrialCardQuietly(row, sub.id, setup.payment_method);
+          return attached ? 'card_saved' : 'ended';
         }
         if (setup?.status === 'processing') return 'processing';
         if (setup?.status === 'canceled') return 'ended';
@@ -1083,7 +1084,7 @@ export class SubscriptionCheckoutService {
         throw stripeFailure(err);
       }
       if (trialCardSaved(setup)) {
-        await this.attachTrialCardQuietly(sub.id, setup.payment_method, row.id);
+        await this.attachTrialCardQuietly(row, sub.id, setup.payment_method);
         return true;
       }
       // Sol B-679-10 — no SetupIntent: no sheet was ever stored or handed
@@ -1173,7 +1174,7 @@ export class SubscriptionCheckoutService {
         throw stripeFailure(err);
       }
       if (trialCardSaved(setup)) {
-        await this.attachTrialCardQuietly(sub.id, setup.payment_method, cur.id);
+        await this.attachTrialCardQuietly(cur, sub.id, setup.payment_method);
         throw alreadyActive({ ...cur, status: sub.status });
       }
       // B-679-10 — with no SetupIntent at all, no sheet was ever handed out:
@@ -1485,7 +1486,8 @@ export class SubscriptionCheckoutService {
       if (sub.default_payment_method && !sub.cancel_at_period_end) return 'card_saved';
       const setup = await readTrialSetup(this.stripe, row.stripe_client_secret, sub);
       if (trialCardSaved(setup)) {
-        await attachTrialCard(this.stripe, sub.id, setup.payment_method);
+        // MOVEBILL2: a moved client's attempt is left to end with its trial.
+        if (!(await attachTrialCard(this.stripe, row, sub.id, setup.payment_method))) return 'kept';
         this.logger.log(`billing.trial_card_attached purchase=${row.id} via=retire`);
         return 'card_saved';
       }
@@ -1523,7 +1525,7 @@ export class SubscriptionCheckoutService {
       if (setupIntentIdOf(row.stripe_client_secret)) {
         const setup = await readTrialSetup(this.stripe, row.stripe_client_secret);
         if (trialCardSaved(setup)) {
-          await this.attachTrialCardQuietly(subscriptionId, setup.payment_method, row.id);
+          await this.attachTrialCardQuietly(row, subscriptionId, setup.payment_method);
           return 'settled';
         }
         if (setup?.status === 'processing') return 'settled';
@@ -1564,18 +1566,21 @@ export class SubscriptionCheckoutService {
     }
   }
 
-  /** attachTrialCard that only logs on failure (the webhook path retries). */
+  /**
+   * attachTrialCard that only logs on failure (the webhook path retries).
+   * False only for an attempt a move ended (MOVEBILL2): its card never lifts
+   * the trial end, so that trial never converts into a charge.
+   */
   private async attachTrialCardQuietly(
+    row: ClientPurchase,
     subscriptionId: string,
     paymentMethodId: string,
-    purchaseId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
-      await attachTrialCard(this.stripe, subscriptionId, paymentMethodId);
+      return await attachTrialCard(this.stripe, row, subscriptionId, paymentMethodId);
     } catch (err) {
-      this.logger.warn(
-        `trial card attach deferred purchase=${purchaseId} error=${errorLabel(err)}`,
-      );
+      this.logger.warn(`trial card attach deferred purchase=${row.id} error=${errorLabel(err)}`);
+      return true;
     }
   }
 

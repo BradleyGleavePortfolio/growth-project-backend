@@ -115,6 +115,33 @@ describe('B-654-1 checkout paths read the SetupIntent itself', () => {
     expect(view.entitlement_active).toBe(false);
   });
 
+  it('MOVEBILL2 (Sol B3): plan read of a moved attempt whose card was saved: no lift, checkout ended', async () => {
+    // Control: the case above (unmoved) sets the default and lifts the end.
+    const { svc, stripe, prisma } = setup({ trial_days: 7 });
+    const out = await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
+    prisma._purchases[0].moved_away_at = new Date();
+    stripe._saveTrialCard('sub_1', 'pm_card');
+    const view = await svc.getPlan(CLIENT, out.purchase_id);
+    expect(stripe.setSubscriptionDefaultPaymentMethod).not.toHaveBeenCalled();
+    expect(stripe._subs.get('sub_1').cancel_at_period_end).toBe(true);
+    expect(view.checkout_state).toBe('ended');
+    expect(view.entitlement_active).toBe(false);
+  });
+
+  it("MOVEBILL2 (Sol B3): stale-trial cleanup and reuse never lift a moved attempt's trial end", async () => {
+    const { svc, stripe, prisma } = setup({ trial_days: 7 });
+    await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
+    const row = prisma._purchases[0];
+    Object.assign(row, { status: 'trialing', moved_away_at: new Date() });
+    row.created_at = new Date(Date.now() - 30 * HOUR);
+    stripe._saveTrialCard('sub_1', 'pm_card');
+    await svc
+      .createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY2 })
+      .catch(() => undefined);
+    expect(stripe.setSubscriptionDefaultPaymentMethod).not.toHaveBeenCalled();
+    expect(stripe._subs.get('sub_1').cancel_at_period_end).toBe(true);
+  });
+
   it('(failed before) stale-trial cleanup never cancels a trial whose card was saved; it sets the default and answers ALREADY_ACTIVE', async () => {
     const { svc, stripe, prisma } = setup({ trial_days: 7 });
     await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });

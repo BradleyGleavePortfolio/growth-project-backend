@@ -48,13 +48,21 @@ describe('Opus B-678-2 only the trial-card attach lifts the trial end', () => {
 
   it('control: the trial-card attach sends the card and the lift in one keyed request', async () => {
     const api = new Recording();
-    await trialCard.attachTrialCard(api, 'sub_t', 'pm_own');
+    const unmoved = { moved_away_at: null };
+    expect(await trialCard.attachTrialCard(api, unmoved, 'sub_t', 'pm_own')).toBe(true);
     expect(api.calls).toEqual([
       expect.objectContaining({
         form: 'default_payment_method=pm_own&cancel_at_period_end=false',
         key: 'tgp-trial-card-sub_t-pm_own',
       }),
     ]);
+  });
+
+  it('MOVEBILL2 (Sol B3): an attempt a move ended sends nothing, so its trial end is never lifted', async () => {
+    const api = new Recording();
+    const moved = { moved_away_at: new Date('2026-10-10T12:00:00Z') };
+    expect(await trialCard.attachTrialCard(api, moved, 'sub_t', 'pm_own')).toBe(false);
+    expect(api.calls).toEqual([]);
   });
 
   it('(failed before) a trial default Stripe set itself (end still set) is not the attempt card', () => {
