@@ -69,10 +69,12 @@ import {
   isIdempotencyMismatch,
   isResourceMissing,
   intentResult,
+  openAttemptWhere,
   packageTrialDays,
   planPriceFor,
   planView,
   reservedMarker,
+  resumeWindowStart,
   retryMarker,
   shareLinkMatches,
   sheetSecret,
@@ -562,15 +564,7 @@ export class SubscriptionCheckoutService {
       // 2. An open attempt for the same package (any key, B-679-1: any age;
       //    an unresolved attempt is never replaced by elapsed time) -> reuse it.
       const open = await tx.clientPurchase.findFirst({
-        where: {
-          client_user_id: args.clientId,
-          package_id: args.pkg.id,
-          billing_type: 'recurring',
-          entitlement_active: false,
-          trial_started_at: null,
-          status: { in: [...OPEN_ATTEMPT_STATUSES] },
-          idempotency_key: { startsWith: `sub-${args.clientId}-` },
-        },
+        where: openAttemptWhere(args.clientId, args.pkg.id),
         orderBy: { created_at: 'desc' },
       });
       if (open) return { kind: 'reuse', purchase: open };
@@ -1370,7 +1364,7 @@ export class SubscriptionCheckoutService {
   ): Promise<ClientPurchase[]> {
     const cardSaved: ClientPurchase[] = [];
     try {
-      const before = new Date(Date.now() - OPEN_ATTEMPT_MAX_AGE_MS);
+      const before = resumeWindowStart();
       // This plan's own open attempt keeps the reuse window (same-plan resume).
       const age = releaseOtherPlans
         ? { OR: [{ created_at: { lte: before } }, { package_id: { not: packageId } }] }

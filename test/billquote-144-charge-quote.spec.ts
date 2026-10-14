@@ -317,12 +317,13 @@ describe('BILLQUOTE — client package reads carry the quote, own coach only', (
       ),
       getById: jest.fn(async (id: string) => rows.find((r) => r.id === id) ?? null),
     };
+    const prisma = makeFakePrisma();
     const controller = new ClientPackagesController(
       stub<ConstructorParameters<typeof ClientPackagesController>[0]>(packages),
-      stub<ConstructorParameters<typeof ClientPackagesController>[1]>({}),
+      stub<ConstructorParameters<typeof ClientPackagesController>[1]>(prisma),
       trials,
     );
-    return { controller, packages };
+    return { controller, packages, prisma };
   }
   const req = (coachId: string | null) =>
     stub<Parameters<ClientPackagesController['list']>[0]>({
@@ -356,12 +357,13 @@ describe('BILLQUOTE — client package reads carry the quote, own coach only', (
 
   it("another coach's package is refused: 404, no quote, no trial read", async () => {
     const theirs = pkgRow({ coach_id: OTHER_COACH });
-    const { controller } = build([theirs]);
+    const { controller, prisma } = build([theirs]);
     const offers = jest.spyOn(TrialUsageService.prototype, 'offersForClient');
     await expect(controller.detail(req(COACH), PKG)).rejects.toBeInstanceOf(NotFoundException);
     expect(offers).not.toHaveBeenCalled();
     const list = await controller.list(req(COACH));
     expect(list.packages).toEqual([]);
+    expect(prisma.clientPurchase.findMany).not.toHaveBeenCalled();
   });
 
   it('a client with no coach gets no packages and no quotes', async () => {
@@ -369,5 +371,167 @@ describe('BILLQUOTE — client package reads carry the quote, own coach only', (
     expect(await controller.list(req(null))).toEqual({ packages: [] });
     expect(packages.listPublicForCoach).not.toHaveBeenCalled();
     await expect(controller.detail(req(null), PKG)).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+// FIX998 (Sol B1) — a client who opens a plan's sheet, dismisses it and comes
+// back inside the reuse window gets the SAME attempt back from the checkout,
+// with the dates Stripe already set. The quote reads that attempt through the
+// checkout's own rule and reports its dates; outside the window it is fresh.
+describe('FIX998 — the quote shows the dates of the attempt the checkout resumes', () => {
+  const OTHER_CLIENT = '66666666-6666-4666-8666-666666666666';
+  const PKG_MONTHLY = '77777777-7777-4777-8777-777777777777';
+  const KEY2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const HOUR = 3_600_000;
+  const at = (ms: number) => jest.setSystemTime(NOW.getTime() + ms);
+  const iso = (ms: number) => new Date(NOW.getTime() + ms).toISOString();
+  const req = stub<Parameters<ClientPackagesController['list']>[0]>({
+    user: { id: CLIENT, coach_id: COACH },
+  });
+
+  beforeEach(() => {
+    jest.useFakeTimers({
+      doNotFake: ['nextTick', 'setImmediate', 'setTimeout', 'setInterval', 'queueMicrotask'],
+    });
+    jest.setSystemTime(NOW);
+  });
+  afterEach(() => jest.useRealTimers());
+
+  function world() {
+    const prisma = makeFakePrisma();
+    prisma.packageTrialUsage = makeTrialUsageTable();
+    const stripe = makeFakeStripe();
+    prisma._users.push(
+      { id: CLIENT, email: 'c@example.test', name: 'Client', coach_id: COACH },
+      { id: OTHER_CLIENT, email: 'o@example.test', name: 'Other', coach_id: COACH },
+      { id: COACH, email: 'k@example.test', name: 'Coach', coach_id: null },
+    );
+    const rows = [
+      pkgRow({ ...TRIAL, stripe_price_id: 'price_trial' }),
+      pkgRow({ id: PKG_MONTHLY, stripe_price_id: 'price_monthly' }),
+    ];
+    prisma._packages.push(...rows);
+    prisma._accounts.push({
+      coach_user_id: COACH,
+      stripe_account_id: 'acct_coach',
+      charges_enabled: true,
+      deauthorized_at: null,
+    });
+    const packages = {
+      getById: jest.fn(async (id: string) => rows.find((r) => r.id === id) ?? null),
+      listPublicForCoach: jest.fn(async () => rows),
+    };
+    const feePolicy = {
+      planFor: jest.fn(async () => ({
+        application_fee_cents: 98,
+        head_coach_split_cents: 0,
+        head_coach_id: null,
+      })),
+    };
+    type Deps = ConstructorParameters<typeof SubscriptionCheckoutService>;
+    const capability = new TrialCheckoutCapability();
+    const checkout = new SubscriptionCheckoutService(
+      prisma,
+      stripe,
+      stub<Deps[2]>(packages),
+      stub<Deps[3]>({ ready: true }),
+      stub<Deps[4]>(feePolicy),
+      stub<Deps[5]>(makeCheckoutHelpers(prisma)),
+      capability,
+    );
+    const controller = new ClientPackagesController(
+      stub<ConstructorParameters<typeof ClientPackagesController>[0]>(packages),
+      prisma,
+      new TrialUsageService(prisma, capability),
+    );
+    /** Open the pay / trial sheet (subscription-intent); the client then dismisses it. */
+    const buy = (client: string, key: string, pkgId = PKG) =>
+      checkout.createSubscriptionIntent(client, { package_id: pkgId, idempotency_key: key });
+    /** Refresh the package list, as the app does when the client comes back. */
+    const quotes = async () => {
+      const byId = new Map<string, ChargeQuote | null>();
+      for (const p of (await controller.list(req)).packages) byId.set(p.id, p.quote);
+      return byId;
+    };
+    /** The date Stripe holds for a subscription (trial end, or next renewal). */
+    const stripeDate = (subId: string) =>
+      new Date(stripe._subs.get(subId).current_period_end * 1000).toISOString();
+    return { stripe, controller, buy, quotes, stripeDate };
+  }
+
+  it('trial: dismissed, back 12 h later: the quote is the retained trial end, and checkout resumes it', async () => {
+    const w = world();
+    const first = await w.buy(CLIENT, KEY);
+    expect(first.plan.trial_ends_at).toBe(iso(14 * DAY));
+    at(12 * HOUR);
+    const { quote } = await w.controller.detail(req, PKG);
+    const again = await w.buy(CLIENT, KEY2);
+    expect(again.reused).toBe(true);
+    expect(again.subscription_id).toBe(first.subscription_id);
+    expect(w.stripe.createSubscription).toHaveBeenCalledTimes(1);
+    // Not a fresh now + 14 days (that would be 12 h later than Stripe's).
+    expect(quote).toEqual({
+      due_today_cents: 0,
+      currency: 'usd',
+      first_charge_at: iso(14 * DAY),
+      trial_end: iso(14 * DAY),
+    });
+    expect(again.plan.trial_ends_at).toBe(quote?.trial_end);
+    expect(w.stripeDate(again.subscription_id)).toBe(quote?.first_charge_at);
+    expect(again.plan.first_charge_cents).toBe(quote?.due_today_cents);
+  });
+
+  it('trial: back after the reuse window: a fresh trial from now, the date checkout then sends', async () => {
+    const w = world();
+    const first = await w.buy(CLIENT, KEY);
+    at(24 * HOUR);
+    const { quote } = await w.controller.detail(req, PKG);
+    const again = await w.buy(CLIENT, KEY2);
+    expect(again.subscription_id).not.toBe(first.subscription_id);
+    expect(w.stripe.cancelSubscription).toHaveBeenCalledWith(first.subscription_id);
+    expect(w.stripe.createSubscription.mock.calls[1][0].trialPeriodDays).toBe(14);
+    const fresh = iso(24 * HOUR + 14 * DAY);
+    expect(quote).toEqual({
+      due_today_cents: 0,
+      currency: 'usd',
+      first_charge_at: fresh,
+      trial_end: fresh,
+    });
+    expect(again.plan.trial_ends_at).toBe(quote?.trial_end);
+    expect(w.stripeDate(again.subscription_id)).toBe(quote?.first_charge_at);
+  });
+
+  it('monthly: dismissed, back 12 h later: the next charge is the resumed subscription date', async () => {
+    const w = world();
+    const first = await w.buy(CLIENT, KEY, PKG_MONTHLY);
+    at(12 * HOUR);
+    const quote = (await w.quotes()).get(PKG_MONTHLY);
+    const again = await w.buy(CLIENT, KEY2, PKG_MONTHLY);
+    expect(again.reused).toBe(true);
+    expect(again.subscription_id).toBe(first.subscription_id);
+    expect(quote).toEqual({
+      due_today_cents: 4900,
+      currency: 'usd',
+      first_charge_at: w.stripeDate(first.subscription_id),
+      trial_end: null,
+    });
+    expect(again.plan.first_charge_cents).toBe(quote?.due_today_cents);
+  });
+
+  it("another client's attempt never shapes my quote, nor my attempt for another plan", async () => {
+    const w = world();
+    const theirs = await w.buy(OTHER_CLIENT, KEY);
+    const mine = await w.buy(CLIENT, KEY, PKG_MONTHLY);
+    at(12 * HOUR);
+    const quotes = await w.quotes();
+    // PKG: only the other client has an attempt, so mine is a fresh trial from now.
+    const fresh = iso(12 * HOUR + 14 * DAY);
+    expect(quotes.get(PKG)?.trial_end).toBe(fresh);
+    expect(quotes.get(PKG)?.first_charge_at).toBe(fresh);
+    expect(quotes.get(PKG_MONTHLY)?.first_charge_at).toBe(w.stripeDate(mine.subscription_id));
+    const bought = await w.buy(CLIENT, KEY2);
+    expect(bought.subscription_id).not.toBe(theirs.subscription_id);
+    expect(bought.plan.trial_ends_at).toBe(fresh);
+    expect(w.stripeDate(bought.subscription_id)).toBe(fresh);
   });
 });

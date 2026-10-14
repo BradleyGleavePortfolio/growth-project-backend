@@ -25,7 +25,15 @@ import { purchaseTrialView, type PurchaseTrialView } from '../packages/trials/tr
 import { COACH_PURCHASE_SELECT, type CoachPurchaseView } from './coach-payments.select';
 import { ContractRequiredException } from '../contracts/contract-required.exception';
 import type { TrialOffer } from '../packages/trials/trial-usage.service';
-import { packageTrialDays, planPriceFor } from './subscription-plan';
+import {
+  intentResult,
+  iso,
+  openAttemptWhere,
+  packageTrialDays,
+  planPriceFor,
+  resumeWindowStart,
+} from './subscription-plan';
+import { parseCheckoutTerms, termsStillOffered } from './subscription-terms';
 
 // CheckoutService — Stripe Checkout session minting + ClientPurchase row
 // lifecycle. This is the entry point clients hit to actually buy a package.
@@ -246,18 +254,67 @@ export function chargeQuote(
 }
 
 /**
+ * FIX998 — per package, this client's open attempt that the checkout would
+ * resume now: the checkout's own rule (openAttemptWhere, newest first),
+ * inside the reuse window. Only this client's rows are read.
+ */
+export async function resumableAttempts(
+  prisma: PrismaService,
+  clientId: string,
+  packageIds: string[],
+  now: Date,
+): Promise<Map<string, ClientPurchase>> {
+  const found = new Map<string, ClientPurchase>();
+  if (packageIds.length === 0) return found;
+  const rows = await prisma.clientPurchase.findMany({
+    where: {
+      ...openAttemptWhere(clientId, { in: packageIds }),
+      created_at: { gt: resumeWindowStart(now.getTime()) },
+    },
+    orderBy: { created_at: 'desc' },
+  });
+  for (const row of rows) if (!found.has(row.package_id)) found.set(row.package_id, row);
+  return found;
+}
+
+/**
+ * FIX998 — the quote of an attempt the checkout resumes: the checkout's answer
+ * for it (intentResult: its pinned terms and trial end) and its subscription's
+ * own next date. null when the checkout would start a fresh attempt instead
+ * (not created on Stripe yet, or its terms are no longer offered).
+ */
+function resumedQuote(open: ClientPurchase, pkg: CoachPackage): ChargeQuote | null {
+  const terms = parseCheckoutTerms(open.checkout_terms);
+  const next = iso(open.current_period_end);
+  if (!terms || !next || !termsStillOffered(terms, planPriceFor(pkg, 0), packageTrialDays(pkg))) {
+    return null;
+  }
+  const { plan } = intentResult(open, pkg, true);
+  return {
+    due_today_cents: plan.first_charge_cents,
+    currency: plan.currency,
+    first_charge_at: next,
+    trial_end: plan.trial_ends_at,
+  };
+}
+
+/**
  * The quote on the client package reads, for THIS client: the trial counts
  * only when trial_offer says this client gets it (the checkout's one-trial
- * rule; both records agree, B-TR8-120). null = the package cannot be bought
- * (the checkout refuses it the same way).
+ * rule; both records agree, B-TR8-120). `open` (resumableAttempts): the
+ * attempt the checkout resumes, whose dates the quote then reports. null =
+ * the package cannot be bought (the checkout refuses it the same way).
  */
 export function packageQuote(
   pkg: CoachPackage,
   offer: TrialOffer | undefined,
   now: Date,
+  open?: ClientPurchase,
 ): ChargeQuote | null {
   try {
-    return chargeQuote(pkg, offer?.available ? packageTrialDays(pkg) : 0, now);
+    const fresh = chargeQuote(pkg, offer?.available ? packageTrialDays(pkg) : 0, now);
+    const renewing = isRecurringPackage(pkg) && !isFreePackage(pkg);
+    return (open && renewing ? resumedQuote(open, pkg) : null) ?? fresh;
   } catch (err) {
     if (err instanceof ConflictException) return null;
     throw err;
