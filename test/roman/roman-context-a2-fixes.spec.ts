@@ -349,11 +349,11 @@ describe('Opus B-665-3 an open delegated sub-coach writes the plan and the threa
     expect(query_count).toBeLessThanOrEqual(ROMAN_CONTEXT_MAX_QUERIES);
   });
 
-  it('a closed delegation or one under another head coach adds nothing', async () => {
+  it("a closed delegation or one under another head coach: the plan stays (HIST3, the client's history), the thread message does not", async () => {
     for (const { svc } of [delegated(false), delegated(true, 'coach-B')]) {
       const { context } = await svc.build(caller, NOW);
-      expect(context.plan).toBeNull();
-      expect(context.meal_plan).toBeNull();
+      expect(context.plan?.today_session?.name).toBe('Sub plan');
+      expect(context.meal_plan).not.toBeNull();
       expect(JSON.stringify(context.coach.recent_messages)).not.toContain('step-ups');
     }
   });
