@@ -12,6 +12,15 @@ import { grantAllEgress } from './ai-egress/ai-egress.fakes';
 
 type Row = { id: string; name: string; coach_id: string; role: string; archived_at: null; created_at: Date };
 type Where = Record<string, unknown>;
+type Thread = {
+  coach_id?: string;
+  coach?: { sub_coach_overlay_as_head: { some: { sub_coach_id: string } } };
+};
+// The unread read (a client list), or a stored brief's preview check (client, thread and text).
+type MessageWhere = Thread & {
+  client_id?: { in: string[] };
+  OR?: Array<{ client_id: string; AND: [Thread, { OR: Array<{ body: { startsWith: string } }> }] }>;
+};
 
 const users: Row[] = [
   // Moved from head H's team to coach X today; S's delegation row is still open.
@@ -40,6 +49,13 @@ function matches(u: Row, w: Where): boolean {
   return true;
 }
 
+// Like the database: the coach's own threads, or a sub-coach's head coach's threads (P1-5).
+function inThread(m: { coach_id: string }, w: Thread): boolean {
+  const sub = w.coach?.sub_coach_overlay_as_head.some.sub_coach_id;
+  if (sub) return delegations.some((d) => d.sub_coach_id === sub && d.head_coach_id === m.coach_id);
+  return w.coach_id === undefined || w.coach_id === m.coach_id;
+}
+
 function wire() {
   const prisma = makeMockPrisma();
   prisma.user.findUnique.mockResolvedValue({ name: 'Sam Sub' });
@@ -56,10 +72,19 @@ function wire() {
     ),
   );
   prisma.coachMessage.findMany.mockImplementation(
-    ({ where, select }: { where: { client_id: { in: string[] } }; select: Record<string, any> }) =>
+    ({ where, select }: { where: MessageWhere; select: Record<string, any> }) =>
       Promise.resolve(
         messages
-          .filter((m) => where.client_id.in.includes(m.client_id))
+          .filter((m) =>
+            where.OR
+              ? where.OR.some(
+                  (t) =>
+                    t.client_id === m.client_id &&
+                    inThread(m, t.AND[0]) &&
+                    t.AND[1].OR.some((b) => m.body.startsWith(b.body.startsWith)),
+                )
+              : !!where.client_id?.in.includes(m.client_id) && inThread(m, where),
+          )
           .map((m) => {
             const client = users.find((u) => u.id === m.client_id)!;
             return {
@@ -174,6 +199,7 @@ describe('B-939-1 stored briefs after a client moves (owner decision 4)', () => 
     const out = await svc.generateBrief('S', 'America/Los_Angeles', '2026-10-10');
     expect(prisma.coachBrief.updateMany).not.toHaveBeenCalled();
     expect(out.summary?.narrative).toBe(KEPT_ONLY.narrative);
+    expect(out.summary?.action_items).toEqual(KEPT_ONLY.action_items);
   });
 
   it('history: a brief naming the moved client keeps its day and status, not its content', async () => {
@@ -187,6 +213,11 @@ describe('B-939-1 stored briefs after a client moves (owner decision 4)', () => 
     ]);
     expect(JSON.stringify(items)).not.toContain('Mia');
     expect(JSON.stringify(items)).not.toContain('Private note');
+    // Only the shown brief's previews are checked: the moved client's messages are never read.
+    const asked = prisma.coachMessage.findMany.mock.calls.flatMap(([args]) =>
+      args.where.OR.map((t: { client_id: string }) => t.client_id),
+    );
+    expect(asked).toEqual(['kept']);
   });
 
   it("a brief with no item still drops a moved client's check-in and workout counts, today and in history", async () => {

@@ -1024,12 +1024,14 @@ export class CoachBriefService {
       // coach_id = sub-coach-id returns zero rows for every assigned
       // client. Scope by client_id IN clientIds AND sender_id != coachId
       // instead so the sub-coach actually sees their assigned-client
-      // inbound messages. For solo + head-coach modes this is
-      // equivalent to the coach_id scope because clientIds are exactly
-      // the coach's direct roster.
+      // inbound messages. Owner 4b: only the client's current thread (the
+      // one MessagingService opens). A moved client's thread with a former
+      // coach stays with that coach: solo mode reads coach_id = coachId,
+      // sub-coach mode reads threads of a head coach who hands them clients.
       this.prisma.coachMessage.findMany({
         where: {
           client_id: { in: clientIds },
+          ...ownThreads(coachId, briefMode),
           read_at: null,
           // The message is unread by anyone with coach-side access AND
           // the sender is NOT the coach reading this brief — i.e. the
@@ -1758,7 +1760,8 @@ export class CoachBriefService {
         ) {
           return this.generateBrief(coachId, timezone, briefDate, { force: true });
         }
-        return this.toResponse(existing);
+        const shown = await this.ownThreadPreviews(coachId, [existing]);
+        return this.toResponse({ ...existing, action_items: shown(existing.action_items) });
       }
       if (existing && existing.status === 'generating') {
         // Fresh lease — another worker is actively generating. Return as
@@ -2054,10 +2057,15 @@ export class CoachBriefService {
     // B-939-1: so does a brief built from a client who has since moved away.
     const withdrawnAt = await this.lastSharingWithdrawal(coachId);
     const builtFromMoved = await this.briefsWithMovedClients(coachId, rows);
+    const withheld = (r: { id: string; generated_at: Date | null }) =>
+      writtenBefore(r, withdrawnAt) || builtFromMoved.has(r.id);
+    // Only a brief that is shown gets the thread check, so the old coach's
+    // request never reads a moved client's messages.
+    const shown = await this.ownThreadPreviews(coachId, rows.filter((r) => !withheld(r)));
     return {
       items: rows.map((r) => {
-        const out = this.toResponse(r);
-        return writtenBefore(r, withdrawnAt) || builtFromMoved.has(r.id) ? { ...out, summary: null } : out;
+        const out = this.toResponse({ ...r, action_items: shown(r.action_items) });
+        return withheld(r) ? { ...out, summary: null } : out;
       }),
       total,
       page,
@@ -2141,6 +2149,56 @@ export class CoachBriefService {
       }
     }
     return stale;
+  }
+
+  /**
+   * BRIEF4B (owner 4b): a stored brief shows an unread-message preview only
+   * while that text is in the client's thread with this coach; any other
+   * preview is left out and the rest of the brief stays. A brief stored before
+   * briefs recorded their clients never gets here: B-939-1 writes it again
+   * today and shows only its day and status in history.
+   */
+  private async ownThreadPreviews(
+    coachId: string,
+    rows: Array<{ brief_mode: string | null; action_items: Prisma.JsonValue | null }>,
+  ): Promise<(items: Prisma.JsonValue | null) => Prisma.JsonValue | null> {
+    const asked = rows.flatMap((r) => {
+      const items: Prisma.JsonValue[] = Array.isArray(r.action_items) ? r.action_items : [];
+      return items.flatMap((i) => {
+        const m = messageItem(i);
+        return m ? [{ ...m, mode: r.brief_mode }] : [];
+      });
+    });
+    if (asked.length === 0) return (items) => items;
+    const found = await this.prisma.coachMessage.findMany({
+      where: {
+        NOT: { sender_id: coachId },
+        OR: asked.map((m) => ({
+          client_id: m.client_id,
+          AND: [
+            ownThreads(coachId, m.mode),
+            {
+              OR: [
+                { body: { startsWith: m.detail.replace(/[\\%_]/g, '\\$&') } },
+                ...(m.detail === '(voice message)' ? [{ body: null }] : []),
+              ],
+            },
+          ],
+        })),
+      },
+      select: { client_id: true, body: true },
+    });
+    // The same text the item's detail was cut from (aggregateSoloContext, buildActionItems).
+    const inThread = new Set(
+      found.map((m) => `${m.client_id}\n${(m.body ?? '(voice message)').slice(0, 80)}`),
+    );
+    return (items) =>
+      Array.isArray(items)
+        ? items.filter((i) => {
+            const m = messageItem(i);
+            return !m || inThread.has(`${m.client_id}\n${m.detail}`);
+          })
+        : items;
   }
 
   // ── Force regenerate (POST /regenerate, throttled at the controller).
@@ -2251,6 +2309,24 @@ export class CoachBriefService {
 }
 
 // ─── Small helpers ──────────────────────────────────────────────────────
+
+/**
+ * Owner 4b: the coach's own chat threads, the ones MessagingService opens. A
+ * sub-coach's live under a head coach who hands them clients (P1-5). A moved
+ * client's thread with a former coach is never one of them.
+ */
+function ownThreads(coachId: string, briefMode: string | null): Prisma.CoachMessageWhereInput {
+  return briefMode === 'sub_coach'
+    ? { coach: { sub_coach_overlay_as_head: { some: { sub_coach_id: coachId, unassigned_at: null } } } }
+    : { coach_id: coachId };
+}
+
+/** A stored unread-message action item's client and preview, or null for any other item. */
+function messageItem(i: Prisma.JsonValue): { client_id: string; detail: string } | null {
+  if (!i || typeof i !== 'object' || Array.isArray(i) || i.type !== 'message_unread') return null;
+  const { client_id, detail } = i;
+  return typeof client_id === 'string' && typeof detail === 'string' ? { client_id, detail } : null;
+}
 
 /** B-872-SOL-130-1: true when a stored brief was written before `withdrawnAt`. */
 function writtenBefore(row: { generated_at: Date | null }, withdrawnAt: Date | null): boolean {
