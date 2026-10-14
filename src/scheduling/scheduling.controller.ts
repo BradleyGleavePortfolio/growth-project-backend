@@ -172,7 +172,7 @@ export class SchedulingController {
   @ApiOperation({
     summary: "Read the calling coach's booking options",
     description:
-      'Coach only, own data. Minimum notice (minutes), how far ahead clients may book (days), buffer before/after each session (minutes) and an optional daily maximum (null = no limit), plus the defaults and allowed ranges. A coach who never edited them gets the defaults (5 minutes, 120 days, 0, 0, no limit).',
+      'Coach only, own data. Minimum notice (minutes), how far ahead clients may book (days), buffer before/after each session (minutes), an optional daily maximum (null = no limit) and the notice clients need to move or cancel (cancel_notice_hours, 0 = until the start), plus the defaults and allowed ranges. A coach who never edited them gets the defaults (5 minutes, 120 days, 0, 0, no limit, 24 hours).',
   })
   @ApiResponse({ status: 200, description: 'Booking options.' })
   @ApiResponse({ status: 403, description: 'Not a coach.' })
@@ -184,7 +184,7 @@ export class SchedulingController {
   @ApiOperation({
     summary: "Change the calling coach's booking options",
     description:
-      'Coach only, own data. Any subset of min_notice_minutes, booking_window_days, buffer_before_minutes, buffer_after_minutes, daily_max_sessions (null removes the cap). Applies to new client bookings and client moves at once; open slots honour it.',
+      'Coach only, own data. Any subset of min_notice_minutes, booking_window_days, buffer_before_minutes, buffer_after_minutes, daily_max_sessions (null removes the cap), cancel_notice_hours (0 to 168). Applies to new client bookings and client moves at once; open slots honour it. cancel_notice_hours governs only a client's own move or cancel (409 CHANGES_LOCKED inside it), never new bookings or the coach.',
   })
   @ApiResponse({ status: 200, description: 'Saved booking options.' })
   @ApiResponse({ status: 400, description: 'INVALID_BOOKING_OPTIONS' })
