@@ -828,7 +828,7 @@ export class RomanService {
     });
   }
 
-  // ─── Daily limit (ROMANCOUNT) ──────────────────────────────────────────────
+  // ─── Rate limiting ─────────────────────────────────────────────────────────
 
   /**
    * Count this turn against the client's 100 Roman messages today (their

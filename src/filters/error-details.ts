@@ -79,8 +79,7 @@ export const ERROR_DETAIL_ALLOWLIST: Readonly<Record<string, Readonly<Record<str
     ROMAN_REQUIRES_COACH: {
       action: oneOf('JOIN_COACH'),
     },
-    // ROMANCOUNT — which daily Roman limit was reached and when it resets
-    // (the client's next local midnight), for the C3 limit screens.
+    // ROMANCOUNT — which daily Roman limit was reached and when it resets (local midnight).
     ROMAN_RATE_LIMIT: {
       kind: oneOf('messages', 'files', 'changes'),
       resets_at: isoOrNull,
