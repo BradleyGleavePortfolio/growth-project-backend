@@ -177,7 +177,7 @@ itLive('CoachThreadState + CoachMessage v2 columns RLS as authenticated (live DB
     expect(rows).toEqual([{ relrowsecurity: true, relforcerowsecurity: true }]);
   });
 
-  it('RLS is ENABLE + FORCE on CoachMessage with exactly the production participant policy', async () => {
+  it('RLS is ENABLE + FORCE on CoachMessage with exactly its two policies', async () => {
     const rls = await prisma.$queryRaw<
       Array<{ relrowsecurity: boolean; relforcerowsecurity: boolean }>
     >`
@@ -190,22 +190,36 @@ itLive('CoachThreadState + CoachMessage v2 columns RLS as authenticated (live DB
         roles: string[];
         cmd: string;
         qual: string;
-        with_check: string;
+        with_check: string | null;
       }>
     >`
       SELECT policyname, permissive, roles::text[] AS roles, cmd, qual, with_check
-        FROM pg_policies WHERE tablename = 'CoachMessage'`;
-    const expr =
-      '((app.current_user_id() IS NOT NULL) AND ((coach_id = app.current_user_id()) OR ' +
-      '(client_id = app.current_user_id()) OR (sender_id = app.current_user_id())))';
+        FROM pg_policies WHERE tablename = 'CoachMessage' ORDER BY policyname`;
+    // 20270412000000 (GAPS1): authors write into current threads; the client
+    // reads all their history; test/rls/former-coach-rows-rls.spec.ts.
+    const write =
+      '((app.current_user_id() IS NOT NULL) AND (sender_id = app.current_user_id()) AND ' +
+      'app.is_user_coached_by(client_id, coach_id) AND ((client_id = app.current_user_id()) OR ' +
+      '(coach_id = app.current_user_id()) OR ' +
+      '(app.is_subcoach_of(client_id) AND app.is_subcoach_on_coach_team(coach_id))))';
     expect(policies).toEqual([
       {
         policyname: 'coach_message_participant_access',
         permissive: 'PERMISSIVE',
         roles: ['public'],
         cmd: 'ALL',
-        qual: expr,
-        with_check: expr,
+        qual: write,
+        with_check: write,
+      },
+      {
+        policyname: 'coach_message_participant_read',
+        permissive: 'PERMISSIVE',
+        roles: ['public'],
+        cmd: 'SELECT',
+        qual:
+          '((app.current_user_id() IS NOT NULL) AND ((client_id = app.current_user_id()) OR ' +
+          '((coach_id = app.current_user_id()) AND app.is_user_coached_by(client_id, coach_id))))',
+        with_check: null,
       },
     ]);
   });
