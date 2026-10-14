@@ -21,6 +21,7 @@ import { COACH_A, COACH_B, buildCoachless } from './coachless/coachless-fixture'
 const NEW_FORMAT = /^TGP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{7}$/;
 const cast = <T>(value: unknown): T => value as T;
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)';
+const STU = { id: 'stu', role: 'student', coach_id: null };
 const service = (prisma: unknown) =>
   new InviteCodesService(cast(prisma), cast({ capture: jest.fn() }), cast({}), cast({}));
 
@@ -160,9 +161,8 @@ describe.each([
   });
 
   it('the coachless Home sheet finds the coach', async () => {
-    const { db, redemption } = await world();
-    addUser(db, { id: 'stu' });
-    expect(await redemption.check(user(db, 'stu'), typed)).toMatchObject({
+    const { redemption } = await world();
+    expect(await redemption.check(STU, typed)).toMatchObject({
       valid: true,
       coach: { id: coachId },
     });
@@ -194,7 +194,7 @@ describe('rotation and unknown codes', () => {
         status: 400,
         body: { code: 'invite_code_invalid' },
       });
-      expect(await redemption.check(user(db, 'stu'), c)).toMatchObject({
+      expect(await redemption.check(STU, c)).toMatchObject({
         valid: false,
         code: 'code_invalid',
       });
