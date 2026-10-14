@@ -83,6 +83,9 @@ const DATA_API: Model = { jwt: true };
   const insertPlan = (who: string, coach: string) => asUser(who, BACKEND, (tx) => tx.$executeRawUnsafe(
     `INSERT INTO public."WorkoutPlan" ("id","coach_id","name","type","updated_at") VALUES ($1, $2, 'RLS plan', 'strength', now())`,
     randomUUID(), coach));
+  /** Rows with this id in ClientWorkoutAssignment that `who` may update under `model` (a no-op write). */
+  const updatable = (rowId: string, who: string, model: Model) => asUser(who, model, (tx) => tx.$executeRawUnsafe(
+    `UPDATE public."ClientWorkoutAssignment" SET "post_notes" = "post_notes" WHERE "id" = $1`, rowId));
   const coaches = (who: string, client: string, model: Model = BACKEND) => asUser(who, model, (tx) =>
     tx.$queryRawUnsafe<{ ok: boolean }[]>('SELECT app.caller_coaches_client($1) AS ok', client)).then(([r]) => r.ok);
   /** The seven policies (plus #992's restrictive pair), their comments and the helper, as the catalog has them. */
@@ -166,10 +169,12 @@ const DATA_API: Model = { jwt: true };
     }
   });
 
+  // Measured with a write: assignment_coach_manage is the only rule that lets a coach update an
+  // assignment, while 20270502000900's assignment_current_coach_select also lets the current coach read it.
   it('assignment_coach_manage takes the role from app.current_user_role()', async () => {
-    expect(await seen('ClientWorkoutAssignment', row.ClientWorkoutAssignment, k, { guc: true, role: 'coach' })).toBe(1);
-    expect(await seen('ClientWorkoutAssignment', row.ClientWorkoutAssignment, k, { guc: true, role: 'student' })).toBe(0);
-    expect(await seen('ClientWorkoutAssignment', row.ClientWorkoutAssignment, k, { guc: true, role: '' })).toBe(0);
+    expect(await updatable(row.ClientWorkoutAssignment, k, { guc: true, role: 'coach' })).toBe(1);
+    expect(await updatable(row.ClientWorkoutAssignment, k, { guc: true, role: 'student' })).toBe(0);
+    expect(await updatable(row.ClientWorkoutAssignment, k, { guc: true, role: '' })).toBe(0);
   });
 
   it('writes: a coach writes plans, exercises and keys only as themselves, and never through a JWT alone', async () => {
