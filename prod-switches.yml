@@ -1519,3 +1519,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: payments
     description: "Smart Dunning v2 (10-day non-payment sequence: Day 0/1/3/7 notices, Day-10 lockout, immediate unlock on payment). Exactly 'true' enables; unset = v1 dunning. Default OFF; flip only per the S-DUNNING flip plan (PR body)."
+
+  # ── BRIEFTEAM (agent 143): Team Mode switch, read by
+  # src/team-mode/team-mode.feature.ts. Off for launch; TM6 flips it. ──
+  - name: FEATURE_TEAM_MODE
+    tier: optional
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: coach
+    description: "Team Mode switch. Today it only decides whether the head coach daily brief carries team-only items (sub-coach count and highlights, sub-coach and team action items). Exactly 'true' enables; unset = off. Flip only with TM6 and the mobile teamMode flag."

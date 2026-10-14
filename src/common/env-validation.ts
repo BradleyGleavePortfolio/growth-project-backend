@@ -2031,6 +2031,13 @@ export const ENV_RULES: EnvRule[] = [
       'CF-COACH-PAY-BE-128 coach payments per client: list, refund, pause/resume and cancel under /v1/coach/clients/:clientId/payments (src/checkout/coach-payment-actions.feature.ts). Only "true" enables; unset/other = every route 404 and the coach_payment_actions flag reads false.',
   },
   {
+    name: 'FEATURE_TEAM_MODE',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'Team Mode switch (src/team-mode/team-mode.feature.ts). Today it only decides whether the head coach daily brief carries team-only items (sub-coach count and highlights, sub-coach and team action items). Off for launch; TM6 turns it on with the mobile teamMode flag.',
+  },
+  {
     name: 'FEATURE_DUNNING_V2',
     values: ['true', 'false'],
     unsetIs: 'off',

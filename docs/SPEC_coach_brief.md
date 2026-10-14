@@ -14,7 +14,7 @@ The Coach Brief is a once-per-day narrative that the TGP platform writes to a co
 - Mode-aware:
   - **solo_coach** — the coach manages their own clients. Brief covers their direct roster.
   - **sub_coach** — the coach is a sub-coach delegated to a head coach. Brief covers only the clients open-assigned to them via `SubCoachAssignment`.
-  - **head_coach** — the coach runs a team. **Business-only**: revenue, MRR, dunning queue value, team headcount, sub-coach highlights. **NEVER** client identifiers, client_id, client_name, workout ids, weight logs, or unread message previews. (CPO ruling — see `agent-context/CPO_BRIEFING.md`.)
+  - **head_coach** — the coach runs a team. Business metrics: revenue, MRR, dunning queue value, team headcount, sub-coach highlights, and (BRIEFTEAM, owner ruling SUBM-BRIEF) yesterday's net clients and check-ins and the head coach's own clients who messaged. The only client identifiers are the `message_unread` items for the head coach's **own** clients; never a sub-coach's client, workout ids or weight logs. Team-only items (sub-coach count, highlights, `sub_coach_operations`, `team_performance`) need `FEATURE_TEAM_MODE=true` (default off); while it is off the `team_size` and `sub_coach_highlights` keys are absent, and a head brief stored under the other state is written again today and withheld in history.
 
 A deterministic fallback (no Claude) is used when the Anthropic call fails or the model output fails the voice contract validation.
 
@@ -59,9 +59,9 @@ All routes are mounted under `/coach/brief` and gated by `JwtAuthGuard + CoachGu
 
 `brief_context` for **solo / sub-coach** is `BriefContext`: roster size, check-ins, workouts pending, revenue today cents, dunning_in_progress, etc.
 
-`brief_context` for **head_coach** is `BriefContextHeadCoach`: `team_size`, `team_clients_total`, `total_revenue_today_cents`, `team_revenue_30d_cents`, `mrr_projected_cents`, `dunning_in_progress`, `dunning_amount_cents`, `new_clients_last_24h`, and `sub_coach_highlights[]`. No client-level fields.
+`brief_context` for **head_coach** is `BriefContextHeadCoach`: `team_size`, `team_clients_total`, `total_revenue_today_cents`, `team_revenue_30d_cents`, `mrr_projected_cents`, `dunning_in_progress`, `dunning_amount_cents`, `new_clients_last_24h`, `sub_coach_highlights[]`, `clients_yesterday` (`date`, `added`, `left`, `net`) and `activity` (`check_ins_date`, `check_ins_completed`, `check_ins_not_shared`, `clients_messaged`). No client-level fields. The AI writer gets this context without `activity` (`headCoachAiContext`).
 
-`action_items` for solo / sub-coach is `ActionItem[]` (`type`, `client_id`, `client_name`, `detail`, `priority`, `deep_link`). For head-coach it is `HeadCoachActionItem[]` (`type ∈ {team_revenue_review, dunning_queue, team_performance, sub_coach_operations}`, `detail`, `priority`, `deep_link` — **no client identifiers**).
+`action_items` for solo / sub-coach is `ActionItem[]` (`type`, `client_id`, `client_name`, `detail`, `priority`, `deep_link`). For head-coach it is `HeadCoachActionItem` (`type ∈ {team_revenue_review, dunning_queue, team_performance, sub_coach_operations}`, `detail`, `priority`, `deep_link` — **no client identifiers**) plus one `message_unread` `ActionItem` per own client with an unread message.
 
 ## 3. Generation pipeline
 

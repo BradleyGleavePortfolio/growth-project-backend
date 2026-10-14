@@ -687,7 +687,11 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
         { id: delegatedClientId, created_at: now },
       ])
       // delegated client lookup for created_at
-      .mockResolvedValueOnce([{ id: delegatedClientId, created_at: now }]);
+      .mockResolvedValueOnce([{ id: delegatedClientId, created_at: now }])
+      // BRIEFTEAM: accounts created yesterday on the roster
+      .mockResolvedValueOnce([]);
+    prisma.user.count.mockResolvedValue(0);
+    prisma.coachMessage.findMany.mockResolvedValue([]);
 
     // Revenue + dunning + MRR aggregates.
     prisma.chargeSettlement.aggregate
@@ -743,7 +747,11 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
     });
 
     const svc = new CoachBriefService(asPrismaService(prisma), asConfig(makeMockConfig()), grantAllEgress());
-    const result = await svc.generateBrief(coachId, 'America/Los_Angeles', '2026-05-25');
+    // Sub-coach attribution is a Team Mode item (BRIEFTEAM).
+    process.env.FEATURE_TEAM_MODE = 'true';
+    const result = await svc
+      .generateBrief(coachId, 'America/Los_Angeles', '2026-05-25')
+      .finally(() => delete process.env.FEATURE_TEAM_MODE);
 
     expect(result.summary?.brief_mode).toBe('head_coach');
     // Action items: no client_id, no client_name fields anywhere.
@@ -823,8 +831,9 @@ describe('CoachBriefService head-coach mode — business-only response (P1-3) + 
       { sub_coach_id: 'subX', sub_coach: { id: 'subX', name: 'Sub X' } },
     ]);
     prisma.subCoachAssignment.findMany.mockResolvedValue([]);
-    // headOwnedClients = []
-    prisma.user.findMany.mockResolvedValueOnce([]);
+    // headOwnedClients = [], then BRIEFTEAM's created-yesterday lookup
+    prisma.user.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    prisma.user.count.mockResolvedValue(0);
 
     const now = new Date();
     prisma.coachBrief.findUnique.mockResolvedValue(null);
