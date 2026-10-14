@@ -45,12 +45,14 @@ if (!DB_URL && process.env.CI === 'true') {
       await prisma.$executeRaw`INSERT INTO "WeightLog" ("id", "user_id", "date", "weight_lbs") VALUES (${id(`weight.${k}`)}, ${u[k]}, CURRENT_DATE, 180)`;
       await prisma.$executeRaw`INSERT INTO "UserProfile" ("id", "user_id", "updated_at") VALUES (${id(`profile.${k}`)}, ${u[k]}, now())`;
     }
-    // K's plan held by A (assigned after the move), and the legacy plans F and K wrote for A.
-    await prisma.$executeRaw`INSERT INTO "DailyMealPlan" ("id", "coach_id", "name") VALUES (${id('plan.K')}, ${u.K}, 'Plan')`;
-    await prisma.$executeRaw`INSERT INTO "MealTemplate" ("id", "coach_id", "name", "calories_kcal", "protein_g", "carbs_g", "fats_g")
-      VALUES (${id('template.K')}, ${u.K}, 'Meal', 500, 30, 50, 20)`;
-    await prisma.$executeRaw`INSERT INTO "DailyMealPlanSlot" ("id", "daily_meal_plan_id", "meal_template_id", "slot_label")
-      VALUES (${id('slot.K')}, ${id('plan.K')}, ${id('template.K')}, 'Lunch')`;
+    // K's plan held by A (assigned after the move), L's own plan, and the legacy plans F and K wrote for A.
+    for (const k of 'KL') {
+      await prisma.$executeRaw`INSERT INTO "DailyMealPlan" ("id", "coach_id", "name") VALUES (${id(`plan.${k}`)}, ${u[k]}, 'Plan')`;
+      await prisma.$executeRaw`INSERT INTO "MealTemplate" ("id", "coach_id", "name", "calories_kcal", "protein_g", "carbs_g", "fats_g")
+        VALUES (${id(`template.${k}`)}, ${u[k]}, 'Meal', 500, 30, 50, 20)`;
+      await prisma.$executeRaw`INSERT INTO "DailyMealPlanSlot" ("id", "daily_meal_plan_id", "meal_template_id", "slot_label")
+        VALUES (${id(`slot.${k}`)}, ${id(`plan.${k}`)}, ${id(`template.${k}`)}, 'Lunch')`;
+    }
     for (const k of 'FK') {
       await prisma.$executeRaw`INSERT INTO "MealPlan" ("id", "coach_id", "client_id", "title", "items", "updated_at")
         VALUES (${id(`meal.${k}`)}, ${u[k]}, ${u.A}, 'Plan', '[]'::jsonb, now())`;
@@ -146,6 +148,30 @@ if (!DB_URL && process.env.CI === 'true') {
       expect(await reads('B', PLAN)).toEqual(all(PLAN, 0));
       expect(await reads('C', PLAN)).toEqual(all(PLAN, 0));
       expect(await reads('L', PLAN)).toEqual(all(PLAN, 0));
+    });
+
+    it('another coach\'s plan or template named in K\'s rows grants A nothing', async () => {
+      const L_ROWS = ['plan.L', 'slot.L', 'template.L'];
+      expect(await reads('L', L_ROWS)).toEqual(all(L_ROWS, 1));
+      // B1: K cannot assign L's plan, or repoint A's assignment to it.
+      expect(await sqlState(assign('K', 'assign.KL', 'plan.L', 'A', 'K'))).toBe('42501');
+      expect(await sqlState(as('K', (tx) => tx.$executeRaw`UPDATE "DailyMealPlanAssignment"
+        SET "daily_meal_plan_id" = ${id('plan.L')} WHERE "id" = ${id('assign.A')}`))).toBe('42501');
+      // A row written outside the policy (here the superuser seed) still grants nothing.
+      await prisma.$executeRaw`INSERT INTO "DailyMealPlanAssignment" ("id", "daily_meal_plan_id", "client_id", "assigned_by_coach_id", "starts_on")
+        VALUES (${id('assign.KL')}, ${id('plan.L')}, ${u.A}, ${u.K}, CURRENT_DATE)`;
+      expect(await reads('A', ['assign.KL'])).toEqual({ 'assign.KL': 1 });
+      expect(await reads('A', L_ROWS)).toEqual(all(L_ROWS, 0));
+      // B2: K's slots naming L's template (inserted, or repointed from K's own).
+      const addSlot = (tag: string, template: string, order: number) => as('K', (tx) => tx.$executeRaw`INSERT INTO "DailyMealPlanSlot"
+        ("id", "daily_meal_plan_id", "meal_template_id", "slot_label", "order") VALUES (${id(tag)}, ${id('plan.K')}, ${id(template)}, 'Dinner', ${order})`);
+      expect(await addSlot('slot.KL', 'template.L', 1)).toBe(1);
+      expect(await addSlot('slot.KL2', 'template.K', 2)).toBe(1);
+      expect(await as('K', (tx) => tx.$executeRaw`UPDATE "DailyMealPlanSlot"
+        SET "meal_template_id" = ${id('template.L')} WHERE "id" = ${id('slot.KL2')}`)).toBe(1);
+      expect(await reads('A', ['slot.KL', 'slot.KL2', 'template.K'])).toEqual(all(['slot.KL', 'slot.KL2', 'template.K'], 1));
+      expect(await reads('A', ['template.L'])).toEqual({ 'template.L': 0 });
+      expect(await reads('L', ['template.L'])).toEqual({ 'template.L': 1 });
     });
 
     it('MealPlan: the client and current coach read it, only the current coach writes it, the former coach loses it', async () => {

@@ -26,9 +26,14 @@
 --     slots and templates, through two SECURITY DEFINER helpers. The template
 --     needs its own helper: DailyMealPlanSlot's SELECT policy reads
 --     MealTemplate, so a MealTemplate policy that read DailyMealPlanSlot
---     directly would recurse.
---   * DailyMealPlanAssignment writes: the assigning coach while the client is
---     theirs (the #976 rule); the client branch goes. SELECT is unchanged.
+--     directly would recurse. The grant needs the server's pairings
+--     (RealMealPlansService assertPlanOwnedBy / validateSlotTemplates): the
+--     plan's coach made the assignment, and the template's coach owns the
+--     plan. A row naming another coach's plan or template grants nothing; a
+--     plan a former coach assigned stays readable after a move.
+--   * DailyMealPlanAssignment writes: the assigning coach, for their own plan,
+--     while the client is theirs (the #976 rule); the client branch goes.
+--     SELECT is unchanged.
 --   * MealPlan writes: the plan's coach for their own current client. SELECT:
 --     the client, or the client's current coach; the bare coach_id branch only
 --     covers a plan whose client was removed (client_id NULL).
@@ -46,12 +51,14 @@ AS $$
   SELECT app.current_user_id() IS NOT NULL AND EXISTS (
     SELECT 1
     FROM public."DailyMealPlanAssignment" a
+    JOIN public."DailyMealPlan" p ON p."id" = a."daily_meal_plan_id"
     WHERE a."daily_meal_plan_id" = target_plan_id
       AND a."client_id" = app.current_user_id()
+      AND p."coach_id" = a."assigned_by_coach_id"
   )
 $$;
 COMMENT ON FUNCTION app.caller_holds_meal_plan(text) IS
-  '20270502000700: true when the caller is a client holding an assignment of the plan. Reads no DailyMealPlan row.';
+  '20270502000700: true when the caller is a client holding an assignment of the plan made by the plan''s coach.';
 
 CREATE OR REPLACE FUNCTION app.caller_holds_meal_template(target_template_id text)
 RETURNS boolean
@@ -63,12 +70,15 @@ AS $$
   SELECT EXISTS (
     SELECT 1
     FROM public."DailyMealPlanSlot" s
+    JOIN public."DailyMealPlan" p ON p."id" = s."daily_meal_plan_id"
+    JOIN public."MealTemplate" t ON t."id" = s."meal_template_id"
     WHERE s."meal_template_id" = target_template_id
+      AND t."coach_id" = p."coach_id"
       AND app.caller_holds_meal_plan(s."daily_meal_plan_id")
   )
 $$;
 COMMENT ON FUNCTION app.caller_holds_meal_template(text) IS
-  '20270502000700: true when a slot of a plan the caller holds uses the template. Reads no MealTemplate row.';
+  '20270502000700: true when a slot of a plan the caller holds uses the template, and the template''s coach owns that plan.';
 
 REVOKE ALL ON FUNCTION app.caller_holds_meal_plan(text) FROM PUBLIC;
 REVOKE ALL ON FUNCTION app.caller_holds_meal_template(text) FROM PUBLIC;
@@ -111,12 +121,12 @@ COMMENT ON POLICY "p_mealtemplate_select_assigned_client" ON "MealTemplate" IS '
 
 -- H05: only the client's coach writes plan assignments (SELECT unchanged).
 ALTER POLICY "p_dailymealplanassignment_insert" ON "DailyMealPlanAssignment"
-  WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "assigned_by_coach_id" = app.current_user_id() AND app.is_current_coach_of("client_id"))));
-COMMENT ON POLICY "p_dailymealplanassignment_insert" ON "DailyMealPlanAssignment" IS '20270502000700: the owner, or the assigning coach for a client who is theirs. The client does not write assignments.';
+  WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "assigned_by_coach_id" = app.current_user_id() AND app.is_current_coach_of("client_id") AND EXISTS (SELECT 1 FROM public."DailyMealPlan" dmp WHERE dmp."id" = "DailyMealPlanAssignment"."daily_meal_plan_id" AND dmp."coach_id" = app.current_user_id()))));
+COMMENT ON POLICY "p_dailymealplanassignment_insert" ON "DailyMealPlanAssignment" IS '20270502000700: the owner, or the assigning coach, for their own plan and a client who is theirs. The client does not write assignments.';
 ALTER POLICY "p_dailymealplanassignment_update" ON "DailyMealPlanAssignment"
   USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "assigned_by_coach_id" = app.current_user_id() AND app.is_current_coach_of("client_id"))))
-  WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "assigned_by_coach_id" = app.current_user_id() AND app.is_current_coach_of("client_id"))));
-COMMENT ON POLICY "p_dailymealplanassignment_update" ON "DailyMealPlanAssignment" IS '20270502000700: the owner, or the assigning coach while the client is still theirs, before and after the change. The client does not write assignments.';
+  WITH CHECK ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "assigned_by_coach_id" = app.current_user_id() AND app.is_current_coach_of("client_id") AND EXISTS (SELECT 1 FROM public."DailyMealPlan" dmp WHERE dmp."id" = "DailyMealPlanAssignment"."daily_meal_plan_id" AND dmp."coach_id" = app.current_user_id()))));
+COMMENT ON POLICY "p_dailymealplanassignment_update" ON "DailyMealPlanAssignment" IS '20270502000700: the owner, or the assigning coach while the client is still theirs, before and after the change; the new row names their own plan. The client does not write assignments.';
 ALTER POLICY "p_dailymealplanassignment_delete" ON "DailyMealPlanAssignment"
   USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND "assigned_by_coach_id" = app.current_user_id() AND app.is_current_coach_of("client_id"))));
 COMMENT ON POLICY "p_dailymealplanassignment_delete" ON "DailyMealPlanAssignment" IS '20270502000700: the owner, or the assigning coach while the client is still theirs. The client does not write assignments.';
