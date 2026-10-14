@@ -184,7 +184,7 @@ export class SchedulingController {
   @ApiOperation({
     summary: "Change the calling coach's booking options",
     description:
-      'Coach only, own data. Any subset of min_notice_minutes, booking_window_days, buffer_before_minutes, buffer_after_minutes, daily_max_sessions (null removes the cap), cancel_notice_hours (0 to 168). Applies to new client bookings and client moves at once; open slots honour it. cancel_notice_hours governs only a client's own move or cancel (409 CHANGES_LOCKED inside it), never new bookings or the coach.',
+      'Coach only, own data. Any subset of min_notice_minutes, booking_window_days, buffer_before_minutes, buffer_after_minutes, daily_max_sessions (null removes the cap), cancel_notice_hours (0 to 168). Applies to new client bookings and client moves at once; open slots honour it. cancel_notice_hours governs only a client moving or cancelling their own session (409 CHANGES_LOCKED inside it), never new bookings or the coach.',
   })
   @ApiResponse({ status: 200, description: 'Saved booking options.' })
   @ApiResponse({ status: 400, description: 'INVALID_BOOKING_OPTIONS' })
