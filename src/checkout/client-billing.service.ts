@@ -1967,6 +1967,55 @@ export class ClientBillingService {
   }
 
   /**
+   * MOVEBILL (owner MOVE-BILLING option 1): a client who moved away from the
+   * coach who sold a subscription (ClientPurchase.moved_away_at, stamped by
+   * the database in the move's own transaction) is not charged by that coach
+   * again. Each such subscription that can still bill goes through the same
+   * cancel the client has: outside dunning, renewal off and access to the end
+   * of the paid period (option A); in dunning, the failed invoices voided and
+   * the subscription ended now, which stops Stripe's retries and every
+   * failed-payment notice (2A). No refund; nothing is sent to anyone. Never
+   * throws: a failed row is tried again on the next run.
+   */
+  async endPlansLeftByMove(): Promise<{ ended: number; failed: number }> {
+    const rows = await this.prisma.clientPurchase.findMany({
+      where: {
+        moved_away_at: { not: null },
+        billing_type: 'recurring',
+        stripe_subscription_id: { not: null },
+        status: { in: LIVE_SUBSCRIPTION_STATUSES },
+        OR: [
+          { cancel_at_period_end: false },
+          { status: { in: [...DELINQUENT_STATUSES] } },
+          { dunning: { is: { status: 'active' } } },
+        ],
+      },
+      select: { id: true, client_user_id: true },
+      orderBy: { moved_away_at: 'asc' },
+      take: 100,
+    });
+    let ended = 0;
+    let failed = 0;
+    for (const row of rows) {
+      try {
+        const res = await this.cancelPlan(row.client_user_id, row.id);
+        ended += 1;
+        this.logEvent('billing.moved_plan_renewal_off', {
+          purchase_id: row.id,
+          outcome: res.outcome,
+          access_ends_at: res.access_ends_at,
+        });
+      } catch (err) {
+        failed += 1;
+        this.logger.warn(
+          `moved plan: renewal off failed purchase=${row.id}: ${dunningErrorCode(err)}`,
+        );
+      }
+    }
+    return { ended, failed };
+  }
+
+  /**
    * C-689-2 (Opus): a failed attempt moves the operation to the back of the
    * queue (and waits the settle window again), so failing operations never
    * starve newer ones out of the `take: 100` page.

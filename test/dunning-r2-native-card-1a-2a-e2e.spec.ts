@@ -903,4 +903,116 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       expect(String(day7.data.subject)).toMatch(/^Final notice: access pauses on /);
     });
   });
+
+  // MOVEBILL (owner MOVE-BILLING option 1). The database stamps
+  // moved_away_at in the move's own transaction (trg_user_coach_move_marks_plans,
+  // proven on Postgres in test/rls/moved-plan-billing-rls.spec.ts); here the
+  // stamp is set directly and everything after it runs for real.
+  describe('MOVEBILL: a move stops the old coach billing the client', () => {
+    const move = (when: Date) => {
+      purchaseRow(w)!.moved_away_at = when;
+    };
+
+    it('outside dunning: renewal off, paid period kept, no refund or charge, nothing sent; other clients untouched', async () => {
+      purchaseRow(w)!.current_period_end = at(20 * DAY);
+      purchaseRow(w)!.access_expires_at = at(20 * DAY);
+      w.stripe.subs.get('sub_dv2_client')!.current_period_end = sec(at(20 * DAY));
+      w.fake.seed('clientPurchase', {
+        id: 'purchase-other',
+        client_user_id: 'client-2',
+        coach_user_id: 'coach-1',
+        package_id: 'pkg-1',
+        status: 'active',
+        entitlement_active: true,
+        billing_type: 'recurring',
+        amount_cents: 15000,
+        currency: 'usd',
+        stripe_subscription_id: 'sub_other',
+        cancel_at_period_end: false,
+      });
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 0, failed: 0 });
+
+      move(at(DAY));
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 1, failed: 0 });
+      expect(w.stripe.subs.get('sub_dv2_client')?.cancel_at_period_end).toBe(true);
+      expect(purchaseRow(w)).toMatchObject({
+        status: 'active',
+        entitlement_active: true,
+        cancel_at_period_end: true,
+      });
+      expect(w.stripe.callsOf('voidInvoice')).toHaveLength(0);
+      expect(w.stripe.callsOf('cancelSubscription')).toHaveLength(0);
+      expect(w.stripe.charges).toHaveLength(0);
+      expect(w.push).not.toHaveBeenCalled();
+      expect(w.email).not.toHaveBeenCalled();
+      jest.setSystemTime(at(15 * DAY));
+      expect(await entitlementVerdict(w)).toBe('allowed');
+      // Done once; the other client's plan is never read for Stripe.
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 0, failed: 0 });
+      expect(w.stripe.callsOf('setCancelAtPeriodEnd')).toHaveLength(1);
+      expect(w.fake.find('clientPurchase', { id: 'purchase-other' })).toMatchObject({
+        cancel_at_period_end: false,
+      });
+    });
+
+    it('in dunning: notices stop at the move; then the failed invoice is voided and the plan ends; nothing collected', async () => {
+      await failRenewal(w);
+      const emails = w.email.mock.calls.length;
+      const pushes = w.push.mock.calls.length;
+      expect(emails).toBeGreaterThan(0);
+      jest.setSystemTime(at(2 * DAY));
+      move(at(2 * DAY));
+      // Before the billing run: Stripe's next retry fails, and nothing is sent.
+      await stripeRetryFails(w, at(2 * DAY + HOUR), 2);
+      await w.v2.retryDueNotices(at(2 * DAY + 2 * HOUR));
+      expect(w.email.mock.calls.length).toBe(emails);
+      expect(w.push.mock.calls.length).toBe(pushes);
+
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 1, failed: 0 });
+      expect(w.stripe.invoices.get('in_dv2_renewal_1')?.status).toBe('void');
+      expect(w.stripe.subs.get('sub_dv2_client')?.status).toBe('canceled');
+      expect(w.stripe.stripeRetry('in_dv2_renewal_1')).toBe('not_open');
+      expect(purchaseRow(w)).toMatchObject({ status: 'canceled', entitlement_active: false });
+      expect(stateRow(w)?.status).toBe('abandoned');
+      for (const t of [at(7 * DAY + HOUR), at(10 * DAY + 7 * MIN)]) {
+        jest.setSystemTime(t);
+        expect(await w.v2.runSweep(t)).toEqual({ locked: 0, advanced: 0, skipped: 0 });
+      }
+      expect(w.email.mock.calls.length).toBe(emails);
+      expect(w.push.mock.calls.length).toBe(pushes);
+      expect(w.stripe.charges).toHaveLength(0);
+    });
+
+    it('a Stripe failure is retried on the next run', async () => {
+      move(at(DAY));
+      jest
+        .spyOn(w.stripe, 'setCancelAtPeriodEnd')
+        .mockRejectedValueOnce(new Error('stripe unavailable'));
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 0, failed: 1 });
+      expect(purchaseRow(w)?.cancel_at_period_end).toBe(false);
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 1, failed: 0 });
+      expect(w.stripe.subs.get('sub_dv2_client')?.cancel_at_period_end).toBe(true);
+    });
+
+    it('dunning v1 (v2 off): a due email for a moved client is skipped, not sent', async () => {
+      delete process.env['FEATURE_DUNNING_V2'];
+      const send = jest.fn(async () => ({ status: 'sent' }));
+      const v1 = new DunningService(w.fake.client(), stub(w.stripe), stub({ send }));
+      w.fake.seed('dunningState', { id: 'ds-v1', purchase_id: 'purchase-1', status: 'active', step_index: -1 });
+      w.fake.seed('dunningAttempt', {
+        id: 'da-v1',
+        dunning_state_id: 'ds-v1',
+        step_index: 0,
+        status: 'pending',
+        scheduled_for: at(0),
+      });
+      move(at(0));
+      expect(await v1.tick(at(HOUR))).toEqual({ sent: 0, skipped: 1, failed: 0 });
+      expect(send).not.toHaveBeenCalled();
+      expect(w.fake.find('dunningAttempt', { id: 'da-v1' })).toMatchObject({
+        status: 'skipped',
+        failure_reason: 'client_moved',
+      });
+    });
+  });
 });
