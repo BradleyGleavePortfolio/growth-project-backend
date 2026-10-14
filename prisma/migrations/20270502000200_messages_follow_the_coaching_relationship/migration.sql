@@ -83,7 +83,7 @@ CREATE POLICY "conversation_review_client_read" ON "ConversationReview"
 COMMENT ON POLICY "conversation_review_client_read" ON "ConversationReview" IS '20270502000200: the client reads every marker of their own threads (history follows the client), and writes none.';
 
 -- community_messages: the DM branch.
-CREATE FUNCTION app.workspace_has_participant(p_workspace_id uuid, p_user_id text)
+CREATE OR REPLACE FUNCTION app.workspace_has_participant(p_workspace_id uuid, p_user_id text)
 RETURNS boolean
 LANGUAGE sql
 STABLE
