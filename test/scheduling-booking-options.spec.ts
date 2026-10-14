@@ -18,6 +18,8 @@ import { SchedulingProviderRegistry } from '../src/scheduling/providers/scheduli
 import { StubCalendarAdapter } from '../src/scheduling/providers/stub-calendar.adapter';
 import { StubVideoAdapter } from '../src/scheduling/providers/stub-video.adapter';
 import { ZoomVideoAdapter } from '../src/scheduling/providers/zoom-video.adapter';
+import { expireLapsedForCoach } from '../src/scheduling/request-expiry';
+import { SchedulingSessionLifecycleService } from '../src/scheduling/scheduling-session-lifecycle.service';
 import { SchedulingService } from '../src/scheduling/scheduling.service';
 import type { ActorContext } from '../src/scheduling/scheduling.types';
 import { SchedulingFakeDb, asPrisma } from './utils/scheduling-fake-db';
@@ -85,7 +87,9 @@ function harness() {
     new ZoomVideoAdapter(),
   );
   const svc = new SchedulingService(asPrisma(db), audit, providers, emitter);
-  return { db, svc };
+  // The HIST-2b move cascade's entry point (cancelLeftByMove), on the same rows.
+  const lifecycle = new SchedulingSessionLifecycleService(asPrisma(db), audit, providers, emitter);
+  return { db, svc, lifecycle };
 }
 
 function book(svc: SchedulingService, actor: ActorContext, start: string) {
@@ -604,6 +608,40 @@ describe('moved fields (moved_from_start_at, moved_by_role, last_moved_at)', () 
       status: 'no_show',
       ...movedBy('coach', local(7, '10:00')),
     });
+  });
+
+  it('decline, approval of a request, expiry and the move cascade leave them null', async () => {
+    const { svc, db, lifecycle } = harness();
+    const request = (id: string, start: string, expires: Date | null = null) =>
+      db.addSession({
+        id,
+        coach_id: 'coach-1',
+        client_id: 'client-1',
+        session_type_id: 'st-open',
+        status: 'requested',
+        start_at: new Date(start),
+        end_at: new Date(plus(start, 30)),
+        request_expires_at: expires,
+      });
+    request('to-decline', local(8, '10:00'));
+    request('to-approve', local(8, '11:00'));
+    request('to-expire', local(8, '12:00'), new Date(NOW.getTime() - 60_000));
+    confirmed(db, 'to-cascade', local(9, '10:00'));
+    await expect(svc.declineSession(COACH, 'to-decline')).resolves.toMatchObject({
+      status: 'declined',
+      ...UNMOVED,
+    });
+    await expect(svc.approveSession(COACH, 'to-approve')).resolves.toMatchObject({
+      status: 'scheduled',
+      ...UNMOVED,
+    });
+    expect(await expireLapsedForCoach(asPrisma(db), 'coach-1', NOW)).toHaveLength(1);
+    const cascaded = await lifecycle.cancelLeftByMove(asPrisma(db), ['client-1'], 'coach-1');
+    expect(cascaded.map((c) => c.row.id).sort()).toEqual(['to-approve', 'to-cascade']);
+    for (const { row } of cascaded) expect(row).toMatchObject({ status: 'canceled', ...UNMOVED });
+    const stored = (id: string) => db.sessions.find((s) => s.id === id);
+    expect(stored('to-decline')).toMatchObject({ status: 'declined', ...UNMOVED });
+    expect(stored('to-expire')).toMatchObject({ status: 'expired', ...UNMOVED });
   });
 
   it('another coach, their client and another client cannot read them (the existing 404)', async () => {

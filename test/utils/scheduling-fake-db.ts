@@ -473,12 +473,22 @@ export class SchedulingFakeDb {
     },
   };
 
+  // C4MOVED (#1021): a `select` returns only the selected keys, like Prisma,
+  // so a reader that lists its columns gets nothing else. Every findUnique /
+  // findMany records its select (undefined = the full row) in sessionSelects.
+  sessionSelects: Array<Row | undefined> = [];
+  private shapeSession(row: Row, args: { include?: Row; select?: Row }): Row {
+    const full = args.include || args.select ? this.withSessionRelations(row) : { ...row };
+    if (!args.select) return full;
+    return Object.fromEntries(Object.keys(args.select).map((k) => [k, full[k]]));
+  }
+
   coachingSession = {
-    findUnique: async (args: { where: { id: string }; include?: Row }) => {
+    findUnique: async (args: { where: { id: string }; include?: Row; select?: Row }) => {
       await this.tick();
+      this.sessionSelects.push(args.select);
       const row = this.sessions.find((s) => s.id === args.where.id);
-      if (!row) return null;
-      return args.include ? this.withSessionRelations(row) : { ...row };
+      return row ? this.shapeSession(row, args) : null;
     },
     findUniqueOrThrow: async (args: { where: { id: string } }) => {
       await this.tick();
@@ -494,10 +504,12 @@ export class SchedulingFakeDb {
     findMany: async (args: {
       where?: Row;
       include?: Row;
+      select?: Row;
       orderBy?: Row | Row[];
       take?: number;
     }) => {
       await this.tick();
+      this.sessionSelects.push(args.select);
       let rows = this.sessions.filter((s) => this.matches(s, args.where, 'session'));
       // Lexicographic multi-key ORDER BY, e.g. [{ start_at: 'desc' }, { id: 'desc' }].
       const keys = (Array.isArray(args.orderBy) ? args.orderBy : args.orderBy ? [args.orderBy] : [])
@@ -512,7 +524,7 @@ export class SchedulingFakeDb {
         return 0;
       });
       if (typeof args.take === 'number') rows = rows.slice(0, args.take);
-      return rows.map((r) => (args.include ? this.withSessionRelations(r) : { ...r }));
+      return rows.map((r) => this.shapeSession(r, args));
     },
     count: async (args: { where?: Row }) => {
       await this.tick();
@@ -545,6 +557,17 @@ export class SchedulingFakeDb {
         count += 1;
       }
       return { count };
+    },
+    // The HIST-2b move cascade (cancelLeftByMove) reads back what it closed.
+    updateManyAndReturn: async (args: { where?: Row; data: Row }) => {
+      await this.tick();
+      const out: Row[] = [];
+      for (let i = 0; i < this.sessions.length; i++) {
+        if (!this.matches(this.sessions[i], args.where, 'session')) continue;
+        this.sessions[i] = { ...this.sessions[i], ...args.data, updated_at: new Date() };
+        out.push({ ...this.sessions[i] });
+      }
+      return out;
     },
   };
 

@@ -7,6 +7,8 @@
  * wording and tap routing, the missing-link prompt, idempotency across
  * sweeps, re-arming after a reschedule, and the explicit launch switch.
  */
+import * as fs from 'fs';
+import * as path from 'path';
 import { AuditService } from '../src/audit/audit.service';
 import { BookingEmitter } from '../src/notifications/emitters/booking.emitter';
 import { NotificationKind } from '../src/notifications/notification-kind';
@@ -14,7 +16,8 @@ import {
   NotificationsService,
   type CreateNotificationInput,
 } from '../src/notifications/notifications.service';
-import { SessionReminderJob } from '../src/scheduling/jobs/reminder.job';
+import { EXPIRED_SESSION_SELECT } from '../src/scheduling/jobs/request-expiry.job';
+import { REMINDER_SESSION_SELECT, SessionReminderJob } from '../src/scheduling/jobs/reminder.job';
 import { GoogleCalendarAdapter } from '../src/scheduling/providers/google-calendar.adapter';
 import { GoogleMeetAdapter } from '../src/scheduling/providers/google-meet.adapter';
 import { SchedulingProviderRegistry } from '../src/scheduling/providers/scheduling-provider.registry';
@@ -241,6 +244,68 @@ describe('re-arming after a move', () => {
     fake.pushes = [];
     await sweep24h(job);
     expect(fake.pushes.map((p) => p.userId).sort()).toEqual(['client-1', 'coach-1']);
+  });
+});
+
+// C4MOVED (#1021): the reminder and expiry jobs read only the session columns
+// they use, so the moved fields (moved_from_start_at, moved_by_role,
+// last_moved_at) stay inside the session API. The double returns only the
+// selected keys, so every suite that runs these jobs runs them on narrow rows.
+describe('session columns the jobs read (C4MOVED)', () => {
+  const MOVED_KEYS = ['moved_from_start_at', 'moved_by_role', 'last_moved_at'];
+
+  it('each job selects exactly its columns, none of them a moved field', () => {
+    expect(Object.keys(REMINDER_SESSION_SELECT).sort()).toEqual([
+      ...['approved_at', 'client_id', 'coach_id', 'created_at', 'id'],
+      ...['session_type_id', 'start_at', 'status', 'video_url'],
+    ]);
+    expect(Object.keys(EXPIRED_SESSION_SELECT).sort()).toEqual([
+      ...['client_id', 'coach_id', 'id', 'request_expires_at'],
+      ...['session_type_id', 'start_at', 'status'],
+    ]);
+  });
+
+  it.each(['reminder.job.ts', 'request-expiry.job.ts'])(
+    '%s: every session read lists its columns',
+    (file) => {
+      const src = fs.readFileSync(
+        path.join(__dirname, '..', 'src', 'scheduling', 'jobs', file),
+        'utf8',
+      );
+      const calls = src.split(/coachingSession\.find\w*\(/).slice(1);
+      expect(calls.length).toBeGreaterThan(1);
+      for (const call of calls) expect(call.slice(0, call.indexOf('});'))).toMatch(/\bselect: /);
+    },
+  );
+
+  it('a moved session is reminded exactly like one that never moved', async () => {
+    const moved = build();
+    addSession(moved.db, 's1', 3 * 60);
+    const start = new Date(NOW.getTime() + 60 * MIN);
+    await moved.svc.rescheduleSession(COACH, 's1', {
+      start_at: start.toISOString(),
+      end_at: new Date(start.getTime() + 30 * MIN).toISOString(),
+    });
+    expect(moved.db.sessions[0]).toMatchObject({ start_at: start, moved_by_role: 'coach' });
+    moved.fake.rows = [];
+    moved.fake.pushes = [];
+    moved.db.sessionSelects.length = 0;
+    await sweep1h(moved.job);
+
+    const control = build();
+    addSession(control.db, 's1', 60);
+    await sweep1h(control.job);
+
+    expect(moved.fake.pushes).toHaveLength(2);
+    expect(moved.fake.pushes).toEqual(control.fake.pushes);
+    expect(moved.fake.rows).toEqual(control.fake.rows);
+    // The band, catch-up and fence reads all use the job's column list; no
+    // session read in the sweep loads a full row or a moved field.
+    expect(moved.db.sessionSelects).toContainEqual(REMINDER_SESSION_SELECT);
+    for (const select of moved.db.sessionSelects) {
+      expect(select).toBeDefined();
+      for (const key of MOVED_KEYS) expect(select).not.toHaveProperty(key);
+    }
   });
 });
 
