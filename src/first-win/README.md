@@ -19,6 +19,8 @@ The `winType` field is informational only. It does not change which database fie
 
 Sets `first_win_completed_at = now()` on the first call. Subsequent calls return the original timestamp with no DB write (idempotent). Returns a 2-sentence AI-generated message explaining what the first step the client chose means for them (the win is recorded when the card is tapped, before anything is logged).
 
+A client with no coach (`romanRequiresCoach`, the check behind Roman's 403 `ROMAN_REQUIRES_COACH`) gets a fixed note from Roman instead, with no AI call: C3-S-85 (`first_meal`), C3-S-86 (`logged_first_weight`) or C3-S-87 (`first_checkin`) with the client's first name. With no first name, or for `set_first_goal`, the deterministic message below is returned. The response shape is the same.
+
 **Request:**
 
 ```json
