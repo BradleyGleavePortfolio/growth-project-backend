@@ -228,3 +228,42 @@ describe('Stream 1 — P1-4: AiGatewayService throws 402 when budget exhausted',
     expect(budget.recordUsage).toHaveBeenCalled();
   });
 });
+
+describe('AIBUDGET C2: the typed coach drafts are admitted, debited and stopped at 402', () => {
+  const ORIGINAL_ENV = process.env;
+  const DRAFTS = ['draft.assign_workout', 'draft.assign_meal_plan', 'draft.send_notification'];
+  beforeEach(() => {
+    process.env = {
+      ...ORIGINAL_ENV, AI_GATEWAY_ENABLED: 'true', AI_GATEWAY_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-ant-test',
+      AI_GATEWAY_CAPABILITIES: DRAFTS.join(','),
+      // Metering only: no approval draft, so no payload is needed.
+      AI_GATEWAY_REQUIRE_APPROVAL: 'flag.escalation',
+    };
+  });
+  afterAll(() => { process.env = ORIGINAL_ENV; });
+  const gatewayWith = (allowed: boolean) => {
+    const budget = buildBudgetMock({ allowed, actualUsed: allowed ? 0 : 4000, totalAvailable: 4000 });
+    const registry = buildRegistry();
+    const svc = new AiGatewayService(
+      buildPrismaMock(), new AiGatewayConfig(), new AiRedactionService(), registry, grantAllEgress(), budget,
+    );
+    const call = (capability: string) => svc.invoke({
+      capability, requester: { id: 'coach-1', role: 'coach' }, tenantCoachId: 'coach-1', userMessage: 'hi', systemPrompt: 'x',
+    });
+    return { budget, provider: registry.resolve('anthropic').complete as jest.Mock, call };
+  };
+
+  it.each(DRAFTS)('%s: headroom -> admitted and debited from the coach pool', async (capability) => {
+    const { budget, call } = gatewayWith(true);
+    await call(capability);
+    expect(budget.canCharge).toHaveBeenCalledWith('coach-1', 0);
+    expect(budget.recordUsage).toHaveBeenCalledWith(expect.objectContaining({ coachId: 'coach-1', capability }));
+  });
+
+  it.each(DRAFTS)('%s: pool used up -> 402 before any provider call', async (capability) => {
+    const { budget, provider, call } = gatewayWith(false);
+    await expect(call(capability)).rejects.toBeInstanceOf(CoachAiBudgetExhaustedException);
+    expect(provider).not.toHaveBeenCalled();
+    expect(budget.recordUsage).not.toHaveBeenCalled();
+  });
+});

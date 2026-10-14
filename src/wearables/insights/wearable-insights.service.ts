@@ -158,6 +158,12 @@ export class WearableInsightsService {
     promptVersion: string;
   }): Promise<T | EmptyInsight> {
     const { audience, subjectUserId, bucket } = opts;
+    // Owner 4 (A1H): coach-side cache rows are keyed by coach and client.
+    // The insight is written for this coach (their name in the prompt, their
+    // message draft), so it is never served to another coach, such as the new
+    // coach after a move. The coach id is undefined on the client side.
+    const cacheCoachId = audience === 'coach' ? opts.tenantCoachId : undefined;
+    const cacheKey = [audience, subjectUserId, bucket, cacheCoachId] as const;
 
     // R2b — the client's live box-2 grant is required BEFORE the cache is
     // read: an AI insight generated from the client's data is not served
@@ -172,7 +178,7 @@ export class WearableInsightsService {
 
     // 1. Cache check — a fresh (non-expired, non-invalidated) row short-
     //    circuits the whole pipeline. No LLM call, no audit row.
-    const cached = (await this.cache.get(audience, subjectUserId, bucket)) as T | null;
+    const cached = (await this.cache.get(...cacheKey)) as T | null;
     if (cached) {
       this.logger.debug(
         `insight cache HIT audience=${audience} user=${subjectUserId} bucket=${bucket}`,
@@ -199,7 +205,7 @@ export class WearableInsightsService {
       this.logger.warn(
         `insight LLM call failed/timed out audience=${audience} user=${subjectUserId}: ${(err as Error).message}`,
       );
-      const stale = (await this.cache.getEvenIfStale(audience, subjectUserId, bucket)) as T | null;
+      const stale = (await this.cache.getEvenIfStale(...cacheKey)) as T | null;
       if (stale) return stale;
       return emptyInsight();
     }
@@ -217,7 +223,7 @@ export class WearableInsightsService {
         this.logger.warn(
           `insight repair call failed audience=${audience}: ${(err as Error).message}`,
         );
-        const stale = (await this.cache.getEvenIfStale(audience, subjectUserId, bucket)) as T | null;
+        const stale = (await this.cache.getEvenIfStale(...cacheKey)) as T | null;
         return stale ?? emptyInsight();
       }
       parsed = this.tryParse(opts.schema, repaired);
@@ -225,7 +231,7 @@ export class WearableInsightsService {
         this.logger.warn(
           `insight output invalid after repair audience=${audience} user=${subjectUserId} — failing explicit`,
         );
-        const stale = (await this.cache.getEvenIfStale(audience, subjectUserId, bucket)) as T | null;
+        const stale = (await this.cache.getEvenIfStale(...cacheKey)) as T | null;
         return stale ?? emptyInsight();
       }
     }
@@ -239,7 +245,7 @@ export class WearableInsightsService {
       this.logger.warn(
         `insight guardrail REJECT audience=${audience} user=${subjectUserId} reason=${guarded.reason}`,
       );
-      const stale = (await this.cache.getEvenIfStale(audience, subjectUserId, bucket)) as T | null;
+      const stale = (await this.cache.getEvenIfStale(...cacheKey)) as T | null;
       return stale ?? emptyInsight();
     }
     const safe = guarded.value as T;
@@ -247,10 +253,14 @@ export class WearableInsightsService {
     // 7. Persist to cache (model_used + prompt_version recorded for audit).
     //    The gateway already wrote the AiRequestAudit row inside invoke().
     try {
-      await this.cache.set(audience, subjectUserId, bucket, safe, {
-        modelUsed: this.lastModelUsed,
-        promptVersion: opts.promptVersion,
-      });
+      await this.cache.set(
+        audience,
+        subjectUserId,
+        bucket,
+        safe,
+        { modelUsed: this.lastModelUsed, promptVersion: opts.promptVersion },
+        cacheCoachId,
+      );
     } catch (err) {
       // A cache write failure must not fail the request — the insight is
       // already computed and safe to return.

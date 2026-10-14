@@ -3,9 +3,14 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import {
+  SchedulingSessionLifecycleService,
+  type MoveCancelledSession,
+} from '../scheduling/scheduling-session-lifecycle.service';
 import { AuditAction } from '../audit/audit.service';
 import { SubCoachCapacityService } from './sub-coach-capacity.service';
 import { SubCoachIdempotencyService } from './sub-coach-idempotency.service';
@@ -65,6 +70,8 @@ export class SubCoachReassignService {
     private readonly prisma: PrismaService,
     private readonly capacity: SubCoachCapacityService,
     private readonly idempotency: SubCoachIdempotencyService,
+    // Always injected in production; hand-built unit tests may leave it out.
+    @Optional() private readonly sessions?: SchedulingSessionLifecycleService,
   ) {}
 
   /**
@@ -285,8 +292,26 @@ export class SubCoachReassignService {
       reason,
     } = args;
 
-    return this.prisma.$transaction(
+    let cancelled: MoveCancelledSession[] = [];
+    const result = await this.prisma.$transaction(
       async (tx) => {
+        // SUBREVOKE: a pair that has ever had a seat may only get a new
+        // delegation while that seat is active, so a removed sub-coach gets
+        // no clients until re-invited. A pair that never had a seat (legacy
+        // delegation) is unaffected. FOR SHARE orders this against a
+        // concurrent removal (see endSubCoachSeat).
+        if (!unassigning) {
+          const [seat] = await tx.$queryRaw<Array<{ archived_at: Date | null }>>`
+            SELECT "archived_at" FROM "TeamSubCoachAssignment"
+            WHERE "head_coach_id" = ${headCoachId} AND "sub_coach_id" = ${targetSubCoachId}
+            FOR SHARE`;
+          if (seat && seat.archived_at !== null) {
+            throw new NotFoundException(
+              'Destination sub-coach not found or does not belong to this team',
+            );
+          }
+        }
+
         // Current open assignment (if any) for this client.
         const open = await tx.subCoachAssignment.findFirst({
           where: { client_id: clientId, unassigned_at: null },
@@ -347,6 +372,9 @@ export class SubCoachReassignService {
 
         // Close any open assignment first (history preserved).
         if (open) {
+          // Owner HIST-2b: the sub-coach handing the client on loses their upcoming sessions.
+          cancelled =
+            (await this.sessions?.cancelLeftByMove(tx, [clientId], open.sub_coach_id)) ?? [];
           await tx.subCoachAssignment.update({
             where: { id: open.id },
             data: { unassigned_at: new Date() },
@@ -401,6 +429,9 @@ export class SubCoachReassignService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
+    const role = actorRole === 'owner' ? 'owner' : 'coach';
+    await this.sessions?.finishMoveCancels(actorId, cancelled, role);
+    return result;
   }
 
   /**

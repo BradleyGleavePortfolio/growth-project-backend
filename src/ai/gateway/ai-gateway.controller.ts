@@ -55,9 +55,12 @@ export class AiGatewayController {
     return this.gateway.getStatus();
   }
 
-  // 20 calls / hour / user — same envelope as /ai/chat.
+  // ROMAN-HOURLY-SCOPE: 60/hour for coaches; other roles stay at 20.
   @Post('invoke')
-  @Throttle({ default: { ttl: 3600000, limit: 20 } })
+  @Throttle({ default: {
+    ttl: 3600000,
+    limit: (ctx) => ctx.switchToHttp().getRequest<AuthedRequest>().user?.role === 'coach' ? 60 : 20,
+  } })
   async invoke(
     @Request() req: AuthedRequest,
     @Body()

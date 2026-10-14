@@ -125,57 +125,34 @@ describe('B31-D1: the coach AI credit pool reaches every Roman spender through N
   });
 });
 
-describe('B31: plan side for coached and coachless students', () => {
+describe('HIST3: own history for students, whoever set it (owner 139-13)', () => {
   const coach = { id: 'coach-1', role: 'coach', deleted_at: null };
 
-  it('a coachless student reads plan rows from their own tenant only', () => {
-    const s = resolveRomanCoachScope({
-      userRole: 'student',
-      callerRole: 'student',
-      coach: null,
-      overlay: null,
-      userId: 'client-1',
-    });
-    expect(s.coachId).toBeNull();
-    expect(s.coachSide).toEqual([]);
-    expect(s.planSide).toEqual(['client-1']);
-  });
-
-  it('a coached student keeps the coach side (never their own tenant)', () => {
-    const s = resolveRomanCoachScope({
+  it('a coached or coachless student reads their own history; the thread stays with the current coach', () => {
+    const coached = resolveRomanCoachScope({
       userRole: 'student',
       callerRole: 'student',
       coach,
       overlay: { head_coach_id: 'coach-1', sub_coach_id: 'sub-1' },
-      userId: 'client-1',
     });
-    expect(s.planSide).toEqual(['coach-1', 'sub-1']);
+    expect(coached).toMatchObject({ ownHistory: true, coachSide: ['coach-1', 'sub-1'] });
+    const coachless = resolveRomanCoachScope({
+      userRole: 'student',
+      callerRole: 'student',
+      coach: null,
+      overlay: null,
+    });
+    expect(coachless).toMatchObject({ ownHistory: true, coachId: null, coachSide: [] });
   });
 
-  it('a non-student caller or role mismatch gets no plan side', () => {
+  it('a non-student caller or role mismatch gets no history and no coach side', () => {
     for (const [userRole, callerRole] of [
       ['coach', 'coach'],
       ['student', 'coach'],
       ['coach', 'student'],
     ]) {
-      const s = resolveRomanCoachScope({
-        userRole,
-        callerRole,
-        coach: null,
-        overlay: null,
-        userId: 'u',
-      });
-      expect(s.planSide).toEqual([]);
+      const s = resolveRomanCoachScope({ userRole, callerRole, coach, overlay: null });
+      expect(s).toMatchObject({ ownHistory: false, coachId: null, coachSide: [] });
     }
-  });
-
-  it('without a user id a coachless student has no plan side (old callers unchanged)', () => {
-    const s = resolveRomanCoachScope({
-      userRole: 'student',
-      callerRole: 'student',
-      coach: null,
-      overlay: null,
-    });
-    expect(s.planSide).toEqual([]);
   });
 });

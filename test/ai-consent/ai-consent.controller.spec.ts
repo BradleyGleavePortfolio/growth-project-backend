@@ -33,11 +33,13 @@ import {
 } from '../../src/ai-consent/ai-consent.controller';
 import { RomanFeatureGuard } from '../../src/roman/roman-feature.guard';
 import { ClientEntitlementGuard } from '../../src/common/guards/client-entitlement.guard';
+import { CLIENT_AI_CONSENT_V4_COACH_FREE_COPY_SHA256 } from '../../src/ai-consent/ai-consent.constants';
 import { FakeLedgerPrisma } from './_support/fake-ledger-prisma';
 
 const COPY_SHA = 'fbf821401d4313c6a301a6cc08d3870bb117c293fbb970e321bf87f49abe34f4';
 const H_USER = 'x-test-user';
 const H_ROLE = 'x-test-role';
+const H_COACH = 'x-test-coach';
 
 /** Stand-in for JwtAuthGuard: the caller is whoever the test header names. */
 class HeaderAuthGuard implements CanActivate {
@@ -45,7 +47,7 @@ class HeaderAuthGuard implements CanActivate {
     const req = ctx.switchToHttp().getRequest();
     const id = req.headers[H_USER];
     if (typeof id !== 'string' || !id) throw new UnauthorizedException();
-    req.user = { id, role: req.headers[H_ROLE] ?? 'student' };
+    req.user = { id, role: req.headers[H_ROLE] ?? 'student', coach_id: req.headers[H_COACH] ?? null };
     return true;
   }
 }
@@ -68,6 +70,7 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
     user: string | null,
     body?: unknown,
     role = 'student',
+    coachId?: string,
   ): Promise<HttpResult> {
     return new Promise((resolve, reject) => {
       const payload = body === undefined ? undefined : JSON.stringify(body);
@@ -75,6 +78,7 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
       if (user) {
         headers[H_USER] = user;
         headers[H_ROLE] = role;
+        if (coachId) headers[H_COACH] = coachId;
       }
       if (payload !== undefined) {
         headers['content-type'] = 'application/json';
@@ -168,6 +172,28 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
         box_label: { text: expect.stringContaining('Optional: I allow Roman') },
       },
     });
+  });
+
+  it('GET ?variant=coach_free -> the coach-free copies (owner 62); any other value -> the coached copies', async () => {
+    const free = await call('GET', '/me/ai-consent?variant=coach_free', 'u_a');
+    expect(free.status).toBe(200);
+    expect(free.body).toMatchObject({
+      current_version: 'client-ai-v4-coach-free',
+      copy: { version: 'client-ai-v4-coach-free' },
+    });
+    const other = await call('GET', '/me/ai-consent?variant=COACH_FREE', 'u_a');
+    expect(other.status).toBe(200);
+    expect(other.body).toMatchObject({ current_version: 'client-ai-v4', copy: { version: 'client-ai-v4' } });
+  });
+
+  it('a live coach-free grant reads as live without a coach (any GET) and as needs_reconsent with a coach', async () => {
+    const body = { version: 'client-ai-v4-coach-free', copy_sha256: CLIENT_AI_CONSENT_V4_COACH_FREE_COPY_SHA256 };
+    expect((await call('POST', '/me/ai-consent/roman', 'u_a', body)).status).toBe(200);
+    for (const path of ['/me/ai-consent', '/me/ai-consent?variant=coach_free']) {
+      expect((await call('GET', path, 'u_a')).body).toMatchObject({ granted: true, version: 'client-ai-v4-coach-free' });
+      const joined = await call('GET', path, 'u_a', undefined, 'student', 'coach_1');
+      expect(joined.body).toMatchObject({ granted: false, state: 'needs_reconsent', current_version: 'client-ai-v4' });
+    }
   });
 
   it('POST grant -> 200 granted; repeat is idempotent (one row)', async () => {

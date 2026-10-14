@@ -53,7 +53,7 @@ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { isMwbTemplatesEnabled } from './mwb-templates.feature';
-import { assertLastDayMayGo, lockProgramMaster } from './program-guards';
+import { assertLastDayMayGo, lockProgramMaster, programDaysWhere } from './program-guards';
 import { inTenantWhere, planStaysInTenantWhere } from './tenant-clients';
 import {
   AssignProgramDto,
@@ -518,10 +518,11 @@ export class WorkoutBuilderService {
     planId: string,
   ): Promise<void> {
     const master = await lockProgramMaster(tx, programId);
+    if (!master) return;
     const others = await tx.workoutPlan.count({
-      where: { program_id: programId, archived_at: null, id: { not: planId } },
+      where: { ...programDaysWhere(master), id: { not: planId } },
     });
-    if (others > 0 || !master) return;
+    if (others > 0) return;
     await assertLastDayMayGo(tx, master);
   }
 
@@ -1006,16 +1007,16 @@ export class WorkoutBuilderService {
   // ─── MWB-1: programs — fork / clone / fan-out (§3.2, §3.4, §7.3) ──────────
 
   /**
-   * Deep-copy (by value) every plan + exercise under `sourceProgramId` into
-   * `newProgramId`, inside the caller's transaction. Returns the created
-   * plans. Each plan gets a fresh id and an `initial`/`clone` revision
+   * Deep-copy (by value) every day of `source` (programDaysWhere: only rows in
+   * its tenant) into `newProgramId`, inside the caller's transaction. Returns
+   * the created plans. Each plan gets a fresh id and an `initial`/`clone` revision
    * baseline so undo (later phase) has an anchor. `superset_group_id`s are
    * re-mapped into the NEW plan's namespace so two cloned plans can never
    * collide on a shared group id. Shared by forkTemplate + cloneProgramToClient.
    */
   private async copyProgramPlans(
     tx: Prisma.TransactionClient,
-    sourceProgramId: string,
+    source: { id: string; coach_id: string },
     newProgramId: string,
     opts: {
       isTemplate: boolean;
@@ -1027,7 +1028,7 @@ export class WorkoutBuilderService {
     },
   ) {
     const sourcePlans = await tx.workoutPlan.findMany({
-      where: { program_id: sourceProgramId, archived_at: null },
+      where: programDaysWhere(source),
       orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
       include: {
         exercises: {
@@ -1112,6 +1113,31 @@ export class WorkoutBuilderService {
   }
 
   /**
+   * PROGINSERT: the tenant a fork, clone or program assignment acts in. The
+   * same rule as ProgramLibraryService.resolveActor (C13): a coach is a team
+   * sub-coach, acting in the head coach's tenant, only with an explicit
+   * membership (SubCoachScopeService.getHeadCoachIdForSubCoach). A bare
+   * coach_id on a coach row (an old guest checkout) never moves the copy into
+   * someone else's tenant. Without the scope helper the actor stays in their
+   * own tenant.
+   */
+  private async actorTenant(
+    actingUserId: string,
+  ): Promise<{ tenantId: string; authorKind: 'coach' | 'sub_coach' }> {
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actingUserId },
+      select: { id: true },
+    });
+    if (!actor) throw new ForbiddenException('Acting user not found');
+    const headCoachId = this.subCoachScope
+      ? await this.subCoachScope.getHeadCoachIdForSubCoach(actingUserId)
+      : null;
+    return headCoachId
+      ? { tenantId: headCoachId, authorKind: 'sub_coach' }
+      : { tenantId: actingUserId, authorKind: 'coach' };
+  }
+
+  /**
    * MWB-1 (§7.3) — fork a template program into a NEW program owned by the
    * acting user. "Grab a building block, make it your own." The source must
    * be either `visibility='tenant_shared'` within the actor's tenant OR owned
@@ -1126,14 +1152,9 @@ export class WorkoutBuilderService {
     if (!source) throw new NotFoundException('Source template not found');
 
     // Authorisation: owner, OR a tenant_shared building block within the
-    // actor's tenant. We resolve the actor's tenant from their own user row
-    // (head coaches: their own id is the tenant; sub-coaches: their coach_id).
-    const actor = await this.prisma.user.findUnique({
-      where: { id: actingUserId },
-      select: { id: true, coach_id: true },
-    });
-    if (!actor) throw new ForbiddenException('Acting user not found');
-    const actorTenantId = actor.coach_id ?? actor.id;
+    // actor's tenant (head coaches: their own id; seated sub-coaches: their
+    // head coach's id, see actorTenant).
+    const { tenantId: actorTenantId, authorKind } = await this.actorTenant(actingUserId);
     const isOwner = source.owner_user_id === actingUserId;
     const isSharedInTenant =
       source.visibility === 'tenant_shared' && source.coach_id === actorTenantId;
@@ -1160,10 +1181,10 @@ export class WorkoutBuilderService {
             version: 1,
           },
         });
-        const plans = await this.copyProgramPlans(tx, sourceTemplateId, program.id, {
+        const plans = await this.copyProgramPlans(tx, source, program.id, {
           isTemplate: true,
           actingUserId,
-          authorKind: actor.coach_id ? 'sub_coach' : 'coach',
+          authorKind,
           cause: 'initial',
           coachId: actorTenantId,
         });
@@ -1237,12 +1258,7 @@ export class WorkoutBuilderService {
     if (!master) throw new NotFoundException('Master program not found');
     // The coach must own the master (or it must be a tenant_shared block they
     // can reach) AND have access to the target client.
-    const actor = await this.prisma.user.findUnique({
-      where: { id: coachId },
-      select: { id: true, coach_id: true },
-    });
-    if (!actor) throw new ForbiddenException('Acting user not found');
-    const actorTenantId = actor.coach_id ?? actor.id;
+    const { tenantId: actorTenantId, authorKind } = await this.actorTenant(coachId);
     const canReachMaster =
       master.owner_user_id === coachId ||
       (master.visibility === 'tenant_shared' && master.coach_id === actorTenantId);
@@ -1335,10 +1351,10 @@ export class WorkoutBuilderService {
           }
           throw err;
         }
-        const plans = await this.copyProgramPlans(tx, masterProgramId, program.id, {
+        const plans = await this.copyProgramPlans(tx, master, program.id, {
           isTemplate: false,
           actingUserId: coachId,
-          authorKind: actor.coach_id ? 'sub_coach' : 'coach',
+          authorKind,
           cause: 'clone',
           coachId: actorTenantId,
         });
@@ -1353,7 +1369,7 @@ export class WorkoutBuilderService {
             revision_index: 0,
             structure_json: this.serialiseProgramStructure(program, plans),
             author_id: coachId,
-            author_kind: actor.coach_id ? 'sub_coach' : 'coach',
+            author_kind: authorKind,
             cause: 'clone',
           },
         });
@@ -1445,12 +1461,7 @@ export class WorkoutBuilderService {
           select: { id: true, owner_user_id: true, coach_id: true, visibility: true },
         });
         if (!program) throw new NotFoundException('Program not found');
-        const actor = await this.prisma.user.findUnique({
-          where: { id: coachId },
-          select: { id: true, coach_id: true },
-        });
-        if (!actor) throw new ForbiddenException('Acting user not found');
-        const actorTenantId = actor.coach_id ?? actor.id;
+        const { tenantId: actorTenantId } = await this.actorTenant(coachId);
         const canReach =
           program.owner_user_id === coachId ||
           (program.visibility === 'tenant_shared' && program.coach_id === actorTenantId);
@@ -1458,7 +1469,7 @@ export class WorkoutBuilderService {
         await this.assertCanAccessClient(coachId, dto.client_id);
 
         const plans = await this.prisma.workoutPlan.findMany({
-          where: { program_id: programId, archived_at: null },
+          where: programDaysWhere(program),
           orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
           select: { id: true, week_index: true, day_index: true },
         });

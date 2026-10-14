@@ -34,6 +34,7 @@ import { SchedulingAccessService } from './scheduling-access.service';
 import { SchedulingOpenSlotsService } from './scheduling-open-slots.service';
 import {
   BOOKING_OPTION_LIMITS,
+  CLIENT_MOVED_END_REASON,
   DEFAULT_BOOKING_OPTIONS,
   MAX_BOOKING_HORIZON_DAYS,
   MAX_PENDING_REQUESTS_PER_COACH,
@@ -316,7 +317,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     opts: TransitionOptions = {},
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     this.assertRequestOpen(existing, actor);
     this.assertTransition(existing, 'scheduled');
@@ -360,7 +361,7 @@ export class SchedulingSessionLifecycleService {
     reason?: string,
     opts: TransitionOptions = {},
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     this.assertRequestOpen(existing, actor);
     this.assertTransition(existing, 'declined');
@@ -396,7 +397,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     dto: RescheduleSessionDto,
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     await this.access.assertCanActAsParticipant(actor, existing);
     this.assertRequestOpen(existing, actor);
     if (existing.status !== 'requested' && existing.status !== 'scheduled') {
@@ -588,7 +589,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     dto: CancelSessionDto,
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     await this.access.assertCanActAsParticipant(actor, existing);
     await this.access.assertPastSessionStillTheirs(actor, existing);
     this.assertRequestOpen(existing, actor);
@@ -629,6 +630,67 @@ export class SchedulingSessionLifecycleService {
     return updated;
   }
 
+  /**
+   * Owner HIST-2b Option 1: "A move cancels the old coach's upcoming sessions
+   * with that client. The old coach's calendar frees up, and the client books
+   * with the new coach." Runs in the move's own transaction, so the two commit
+   * together. Every session of the moved clients with `formerCoachId` that is
+   * still ahead and still holds time is cancelled the way a coach cancel leaves
+   * it. Past and finished sessions stay. A repeated move finds nothing left.
+   * After commit, pass the result to finishMoveCancels.
+   */
+  async cancelLeftByMove(
+    tx: Tx,
+    clientIds: readonly string[],
+    formerCoachId: string,
+  ): Promise<MoveCancelledSession[]> {
+    const now = new Date();
+    const ahead = {
+      coach_id: formerCoachId,
+      status: { in: [...OCCUPYING_SESSION_STATUSES] },
+      start_at: { gt: now },
+    };
+    const seen = await tx.coachingSession.findMany({
+      where: { ...ahead, client_id: { in: [...clientIds] } },
+      select: { id: true, status: true },
+    });
+    const cancelled: MoveCancelledSession[] = [];
+    for (const { id, status } of seen) {
+      const [row] = await tx.coachingSession.updateManyAndReturn({
+        where: { ...ahead, id },
+        data: { status: 'canceled', ended_at: now, end_reason: CLIENT_MOVED_END_REASON },
+      });
+      if (row) cancelled.push({ from: status, row });
+    }
+    return cancelled;
+  }
+
+  /**
+   * The rest of a coach cancel, once the move has committed: the coach's open
+   * times refresh, each cancel is audited, and its calendar event and meeting
+   * are cancelled. Nobody is notified: no notice names the client to the old
+   * coach (owner 4), and the client's notice waits for approved wording.
+   * Never throws, because the move has already happened.
+   */
+  async finishMoveCancels(
+    actorId: string,
+    cancelled: readonly MoveCancelledSession[],
+    role: ActorContext['role'] = 'coach',
+  ): Promise<void> {
+    const actor: ActorContext = { id: actorId, role, email: null, coach_id: null };
+    for (const { from, row } of cancelled) {
+      this.openSlots.invalidateCoach(row.coach_id);
+      await this.writeTransitionAudit(
+        AuditAction.SESSION_CANCELED,
+        actor,
+        { ...row, status: from },
+        'canceled',
+        { reason: CLIENT_MOVED_END_REASON },
+      );
+      if (row.calendar_event_id || row.video_meeting_id) await this.cancelProviderArtifacts(row);
+    }
+  }
+
   // ── complete / no-show ─────────────────────────────────────────────
 
   async completeSession(
@@ -636,7 +698,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     dto: CompleteSessionDto,
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     await this.access.assertPastSessionStillTheirs(actor, existing);
     this.assertTransition(existing, 'completed');
@@ -657,7 +719,7 @@ export class SchedulingSessionLifecycleService {
     reason?: string,
     opts: TransitionOptions = {},
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     await this.access.assertPastSessionStillTheirs(actor, existing);
     this.assertTransition(existing, 'no_show');
@@ -682,7 +744,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     dto: AttachManualVideoLinkDto,
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     await this.access.assertPastSessionStillTheirs(actor, existing);
     const url = dto.video_url.trim();
@@ -747,6 +809,13 @@ export class SchedulingSessionLifecycleService {
   }
 
   // ── helpers ────────────────────────────────────────────────────────
+
+  /** Every read or action by id: a coach whose client moved away finds no session (owner 4). */
+  async loadSessionFor(actor: ActorContext, sessionId: string): Promise<CoachingSession> {
+    const session = await this.loadSessionOrThrow(sessionId);
+    await this.access.assertSessionStillTheirs(actor, session);
+    return session;
+  }
 
   async loadSessionOrThrow(sessionId: string): Promise<CoachingSession> {
     const session = await this.prisma.coachingSession.findUnique({ where: { id: sessionId } });
@@ -1310,6 +1379,12 @@ function assertDurationMinutes(expected: number, start: Date, end: Date): void {
 function assertHasStarted(existing: CoachingSession, action: 'complete' | 'no_show'): void {
   if (existing.start_at.getTime() <= Date.now()) return;
   throw notStartedYet(action);
+}
+
+/** A session a client move cancelled, with the status it had. */
+export interface MoveCancelledSession {
+  from: SessionStatus;
+  row: CoachingSession;
 }
 
 export interface TransitionOptions {
