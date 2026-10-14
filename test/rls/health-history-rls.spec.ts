@@ -135,7 +135,7 @@ const DENIED = '42501';
   const insertPanel = (who: Who, coach: Key) => write(who,
     `INSERT INTO "BloodworkPanel" ("id", "client_id", "coach_id", "collection_date", "updated_at") VALUES ($1, $2, $3, now(), now())`,
     randomUUID(), id.A, id[coach]);
-  const insertAlert = (who: Who | null, alertId = randomUUID()) => {
+  const insertAlert = (who: Who | null, alertId: string = randomUUID()) => {
     const sql = `INSERT INTO "CoachAlert" ("id", "coach_id", "client_id", "alert_type", "message") VALUES ($1, $2, $3, 'risk_red_transition', 'RLS test alert')`;
     return who ? write(who, sql, alertId, id.K, id.A) : prisma.$executeRawUnsafe(sql, alertId, id.K, id.A);
   };
