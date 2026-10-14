@@ -64,8 +64,10 @@ WITH held AS (
   UNION ALL
   SELECT 'DEFAULT', '', a.grantee, a.privilege_type, a.is_grantable
   FROM pg_default_acl d
+  JOIN pg_roles o ON o.oid = d.defaclrole AND o.rolname = 'postgres'
+  JOIN pg_namespace dn ON dn.oid = d.defaclnamespace AND dn.nspname = 'public'
   CROSS JOIN LATERAL aclexplode(d.defaclacl) a
-  WHERE d.defaclrole = 'postgres'::regrole AND d.defaclnamespace = 'public'::regnamespace AND d.defaclobjtype = 'r'
+  WHERE d.defaclobjtype = 'r'
 )
 SELECT h.target, h.col, r.rolname AS grantee, h.privilege_type AS privilege, bool_or(h.is_grantable) AS grantable
 FROM held h
