@@ -6,7 +6,8 @@
  * POST /roman/sessions, POST /roman/sessions/:id/messages and POST /ai/chat,
  * before anything is stored, counted or sent to the AI. Coached clients,
  * coaches and the owner are unchanged, and a crisis message still gets its
- * fixed answer.
+ * fixed answer. 139-15: the same 403 on GET /ai/context, GET
+ * /ai/structured-context and GET /roman/context/me, before anything is read.
  *
  * Part 1 boots a real Nest HTTP app with the production ValidationPipe and
  * HttpExceptionFilter (stub services, no DB) to pin the wire body. Part 2 calls
@@ -26,6 +27,8 @@ import { ClientEntitlementGuard } from '../../src/common/guards/client-entitleme
 import { HttpExceptionFilter } from '../../src/filters/http-exception.filter';
 import { PrismaService } from '../../src/prisma.service';
 import { RomanController } from '../../src/roman/roman.controller';
+import { RomanContextController } from '../../src/roman/context/roman-context.controller';
+import { RomanClientContextService } from '../../src/roman/context/roman-client-context.service';
 import { RomanFeatureGuard } from '../../src/roman/roman-feature.guard';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
 import { RomanService } from '../../src/roman/roman.service';
@@ -84,6 +87,18 @@ function makeAi() {
       model_used: 'anthropic',
       degraded: false,
     })),
+    getUserContext: jest.fn(async (..._a: unknown[]) => ({ user: { id: 'client-b' } })),
+    getStructuredContext: jest.fn(async (..._a: unknown[]) => ({ coach: { name: 'Dana' } })),
+  };
+}
+
+function makeRomanContext() {
+  return {
+    buildFresh: jest.fn(async (..._a: unknown[]) => ({
+      context: { version: 1 },
+      generated_at: new Date('2026-10-12T07:00:00.000Z'),
+      estimated_tokens: 10,
+    })),
   };
 }
 
@@ -110,17 +125,19 @@ afterEach(() => {
 describe('Part 1 — the 403 a client with no coach receives over HTTP', () => {
   const roman = makeRoman();
   const ai = makeAi();
+  const romanContext = makeRomanContext();
   let app: INestApplication;
   let baseUrl = '';
   let user: Record<string, unknown> = COACHLESS;
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      controllers: [RomanController, AiController],
+      controllers: [RomanController, AiController, RomanContextController],
       providers: [
         RomanFeatureGuard,
         { provide: RomanService, useValue: roman },
         { provide: AiService, useValue: ai },
+        { provide: RomanClientContextService, useValue: romanContext },
         {
           provide: PrismaService,
           useValue: { coachSubscription: { findUnique: async () => null } },
@@ -161,12 +178,23 @@ describe('Part 1 — the 403 a client with no coach receives over HTTP', () => {
     path: string,
     body: unknown,
   ): Promise<{ status: number; body: Record<string, unknown> }> {
+    return send('POST', path, JSON.stringify(body));
+  }
+
+  function get(path: string): Promise<{ status: number; body: Record<string, unknown> }> {
+    return send('GET', path, '');
+  }
+
+  function send(
+    method: 'POST' | 'GET',
+    path: string,
+    payload: string,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
     return new Promise((resolve, reject) => {
-      const payload = JSON.stringify(body);
       const req = http.request(
         `${baseUrl}${path}`,
         {
-          method: 'POST',
+          method,
           headers: {
             'content-type': 'application/json',
             'content-length': Buffer.byteLength(payload),
@@ -222,6 +250,36 @@ describe('Part 1 — the 403 a client with no coach receives over HTTP', () => {
   it('POST /ai/chat: 403 ROMAN_REQUIRES_COACH and the AI guide is never called', async () => {
     expectRequiresCoach(await post('/ai/chat', { message: 'What should I eat today?' }));
     expect(ai.chat).not.toHaveBeenCalled();
+  });
+
+  it('GET /ai/context: 403 ROMAN_REQUIRES_COACH and the AI context is never built (139-15)', async () => {
+    expectRequiresCoach(await get('/ai/context'));
+    expect(ai.getUserContext).not.toHaveBeenCalled();
+  });
+
+  it('GET /ai/structured-context: 403 ROMAN_REQUIRES_COACH and the context is never read (139-15)', async () => {
+    expectRequiresCoach(await get('/ai/structured-context'));
+    expect(ai.getStructuredContext).not.toHaveBeenCalled();
+  });
+
+  it('GET /roman/context/me: 403 ROMAN_REQUIRES_COACH and Roman context is never built (139-15)', async () => {
+    expectRequiresCoach(await get('/roman/context/me'));
+    expect(romanContext.buildFresh).not.toHaveBeenCalled();
+  });
+
+  it('a coached client still reads all three context routes, unchanged', async () => {
+    user = COACHED;
+    const context = await get('/ai/context');
+    expect(context.status).toBe(200);
+    expect(ai.getUserContext).toHaveBeenCalledWith('client-b');
+    const structured = await get('/ai/structured-context');
+    expect(structured.status).toBe(200);
+    expect(structured.body).toEqual({ coach: { name: 'Dana' } });
+    expect(ai.getStructuredContext).toHaveBeenCalledWith('client-b');
+    const grounded = await get('/roman/context/me');
+    expect(grounded.status).toBe(200);
+    expect(grounded.body).toMatchObject({ version: 1, estimated_tokens: 10 });
+    expect(romanContext.buildFresh).toHaveBeenCalledWith({ id: 'client-b', role: 'student' });
   });
 
   it('a coached client opens a session; the retired AI guide answers with the fixed reply (R2)', async () => {
