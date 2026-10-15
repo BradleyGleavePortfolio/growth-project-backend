@@ -79,6 +79,8 @@ function makeService(blocks: Array<[string, string]> = []) {
     ),
     canAccessCohort: jest.fn(async () => true),
     isWorkspaceCoach: jest.fn(async (_id: string, userId: string) => userId === coach.id),
+    // C6-BVIS: the spaces the rule opens (was the events repository's own row query).
+    listAccessibleCohortIds: jest.fn(async (): Promise<string[]> => []),
     // Membership-role resolvers used by RSVP eligibility (F1). By default a
     // non-coach caller resolves to an active STUDENT membership so the happy
     // path RSVPs; tests override these to model an assistant / co_coach row.
@@ -141,7 +143,6 @@ function makeService(blocks: Array<[string, string]> = []) {
     claimReminderRecipients: jest.fn(
       async (): Promise<Array<{ id: string; user_id: string }>> => [],
     ),
-    activeCohortIds: jest.fn(async () => []),
     findScheduledStartingBefore: jest.fn(async (): Promise<CommunityEvent[]> => []),
     findDueForLive: jest.fn(async () => []),
   };
@@ -348,11 +349,11 @@ describe('CommunityEventsService (v2-3)', () => {
     it('bounds a plain member to workspace-wide + their own cohorts', async () => {
       const { service, access, repo } = makeService();
       // The caller is an active member of cohort A only.
-      repo.activeCohortIds.mockResolvedValue([COHORT_A] as never);
+      access.listAccessibleCohortIds.mockResolvedValue([COHORT_A]);
       await service.list(client as never, WS, {});
       // Not a coach/owner → list is scoped to the caller's accessible cohorts.
       expect(access.isWorkspaceCoach).toHaveBeenCalledWith(WS, client.id);
-      expect(repo.activeCohortIds).toHaveBeenCalledWith(WS, client.id);
+      expect(access.listAccessibleCohortIds).toHaveBeenCalledWith(WS, client.id);
       expect(repo.list).toHaveBeenCalledWith(
         expect.objectContaining({
           workspaceId: WS,
@@ -362,8 +363,8 @@ describe('CommunityEventsService (v2-3)', () => {
     });
 
     it('a member of no cohort sees only workspace-wide events', async () => {
-      const { service, repo } = makeService();
-      repo.activeCohortIds.mockResolvedValue([] as never);
+      const { service, access, repo } = makeService();
+      access.listAccessibleCohortIds.mockResolvedValue([]);
       await service.list(client as never, WS, {});
       expect(repo.list).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -376,7 +377,7 @@ describe('CommunityEventsService (v2-3)', () => {
       const { service, repo } = makeService();
       await service.list(coach as never, WS, {});
       expect(repo.list).toHaveBeenCalledWith(expect.objectContaining({ cohortScope: null }));
-      expect(repo.activeCohortIds).not.toHaveBeenCalled();
+      expect(access.listAccessibleCohortIds).not.toHaveBeenCalled();
     });
   });
 
