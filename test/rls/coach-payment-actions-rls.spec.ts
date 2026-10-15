@@ -176,6 +176,7 @@ class Rollback extends Error {
           actor_role: 'coach', target_user_id: id[client], tenant_coach_id: id[coach], target_id: purchase });
         return { data, readers: [] };
       case 'GuestCheckout':
+        delete data.updated_at;
         Object.assign(data, { package_id: packages[side], created_user_id: id[client],
           stripe_payment_intent_id: `pi_${randomUUID()}`, guest_email: `rls-${randomUUID()}`,
           guest_name: 'RLS', idempotency_key: randomUUID() });
