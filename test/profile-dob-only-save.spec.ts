@@ -1,5 +1,17 @@
 import 'reflect-metadata';
-import { BadRequestException, ConflictException, ValidationPipe } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  ValidationPipe,
+  type ExecutionContext,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { JwtAuthGuard } from '../src/auth/auth.guard';
+import { AGE_CONFIRMATION_REQUIRED } from '../src/auth/client-age';
+import type { JwksVerifierService } from '../src/auth/jwks.service';
+import type { PtmService } from '../src/ptm/ptm.service';
+import { ClientMacrosController } from '../src/macros/macros.controller';
 import { ProfileController } from '../src/profile/profile.controller';
 import { ProfileService, writeProfileWithTargets } from '../src/profile/profile.service';
 import { UpdateProfileDto } from '../src/profile/profile.dto';
@@ -31,6 +43,7 @@ const without = (k: keyof typeof COMPLETE) =>
 const asPrisma = (m: object): PrismaService => m as PrismaService;
 const asTx = (m: object): Prisma.TransactionClient => m as Prisma.TransactionClient;
 const asReq = (m: object): AuthedRequest => m as AuthedRequest;
+const stub = <T extends object>(m: object): T => m as T;
 
 const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
 const validate = (body: unknown): Promise<UpdateProfileDto> =>
@@ -110,5 +123,37 @@ describe('AGESAVE: PUT /profile stores a date of birth on its own', () => {
     const h = profileHarness(null);
     const out = await writeProfileWithTargets(asTx(h.prisma), ID, { date_of_birth: new Date(ADULT) }, new Date(), 'allow_incomplete');
     expect(out.row?.date_of_birth).toEqual(new Date(ADULT));
+  });
+});
+
+describe('AGESAVE + AGEGATE16: the saved date is what lets a refused client in', () => {
+  // The real guard reads the same stored row the real PUT /profile writes.
+  const UNDER_16 = `${new Date().getUTCFullYear() - 14}-01-01`;
+  const route = async (h: ReturnType<typeof profileHarness>) => {
+    h.prisma.user = { findUnique: jest.fn(async () => ({ id: ID, role: 'student', deleted_at: null, deletion_scheduled_at: null })) };
+    const deps = { verify: jest.fn(async () => ({ sub: ID })), emit: jest.fn() };
+    const guard = new JwtAuthGuard(asPrisma(h.prisma), stub<JwksVerifierService>(deps), new Reflector(), stub<PtmService>(deps));
+    const req = { headers: { authorization: 'Bearer t' } };
+    const handler = ClientMacrosController.prototype.current;
+    const ctx = { switchToHttp: () => ({ getRequest: () => req }), getHandler: () => handler, getClass: () => ClientMacrosController };
+    const out = await guard.canActivate(stub<ExecutionContext>(ctx)).catch((e: unknown) => e);
+    return out instanceof ForbiddenException && (out.getResponse() as { code?: string }).code === AGE_CONFIRMATION_REQUIRED ? 'refused' : out;
+  };
+
+  it.each(AGE_SAVE_ROWS)('%s: refused, saves an adult date alone, then gets in', async (_label, initial) => {
+    const h = profileHarness(initial);
+    expect(await route(h)).toBe('refused');
+    await h.put({ date_of_birth: ADULT });
+    expect(await route(h)).toBe(true);
+  });
+
+  it.each(AGE_SAVE_ROWS)('%s: under-16, malformed and missing dates never unlock', async (_label, initial) => {
+    const h = profileHarness(initial);
+    await h.put({ date_of_birth: UNDER_16 });
+    expect(await route(h)).toBe('refused');
+    for (const body of [{ date_of_birth: 'not a date' }, {}]) {
+      await h.put(body).catch((e: unknown) => e);
+      expect(await route(h)).toBe('refused');
+    }
   });
 });
