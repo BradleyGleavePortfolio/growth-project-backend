@@ -179,7 +179,7 @@ class Rollback extends Error {
         delete data.updated_at;
         Object.assign(data, { package_id: packages[side], created_user_id: id[client],
           stripe_payment_intent_id: `pi_${randomUUID()}`, guest_email: `rls-${randomUUID()}`,
-          guest_name: 'RLS', idempotency_key: randomUUID() });
+          guest_name: 'RLS', idempotency_key: randomUUID(), expires_at: now });
         return { data, readers: [] };
       case 'ScheduledDrop':
         Object.assign(data, { client_purchase_id: purchase, content_id: randomUUID(), asset_type: 'workout',
