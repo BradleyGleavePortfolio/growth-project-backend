@@ -407,7 +407,6 @@ describe('urgent_symptoms on the live turn', () => {
   const LINE_1 = "We've let your coach know so they can check in with you.";
   const LINE_2 =
     'If Roman sends you a crisis safety reply, your coach is told that it happened, but not what you wrote, so they can check in with you.';
-  const PAGE_2 = `prompted it, so they can check in with you. ${LINE_2} You can turn Roman’s memory off`;
   it('both lines are pinned word for word (straight apostrophe, as the urgent line)', () => {
     expect(ROMAN_COACH_TOLD_LINE).toBe(LINE_1);
   });
@@ -447,9 +446,8 @@ describe('urgent_symptoms on the live turn', () => {
         ['done', told],
       ]);
       expect(h.messages).toEqual([expect.objectContaining({ role: 'roman', content: told })]);
-      expect(renderTrustPage('privacy').split(LINE_2)).toHaveLength(2);
-      expect(renderTrustPage('privacy')).toContain(PAGE_2);
-      expect(renderTrustPage('consumer-health')).not.toContain(LINE_2);
+      // Every place on the pages: test/trust-pages.spec.ts (#CRISIS-PRIVACY-PLACES).
+      expect(renderTrustPage('privacy')).toContain(LINE_2);
       expect(h.stream).not.toHaveBeenCalled();
       expect(h.alerts.createAlert).toHaveBeenCalledTimes(1);
       expect(h.alerts.createAlert).toHaveBeenCalledWith({
