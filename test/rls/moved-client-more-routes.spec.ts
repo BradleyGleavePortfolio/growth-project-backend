@@ -119,7 +119,7 @@ if (!DB_URL && process.env.CI === 'true') {
     [
       'broadcast workout card',
       (co, day) =>
-        cards.resolve({ actorId: co, tenantId: co, clientIds: [] }, { type: 'workout', ref_id: day }, 'group'),
+        cards.resolve({ actorId: co, tenantId: co, clientIds: [] }, { type: 'workout', ref_id: day }),
       'ok',
       'card.ref_not_found',
     ],

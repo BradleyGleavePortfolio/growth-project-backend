@@ -93,7 +93,7 @@ function makePrisma(opts: {
     coachGuideline: {
       findUnique: jest.fn().mockResolvedValue(opts.guidelines ?? null),
     },
-    mealPlan: {
+    dailyMealPlanAssignment: {
       findFirst: jest.fn().mockResolvedValue(opts.mealPlan ?? null),
     },
     // M1 additions — new models fetched by buildFresh()

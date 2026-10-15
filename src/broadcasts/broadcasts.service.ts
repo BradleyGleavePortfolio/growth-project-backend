@@ -120,7 +120,7 @@ export class BroadcastsService {
 
   async validateCard(actorId: string, rawCard: unknown) {
     const scope = await this.scopes.resolve(actorId);
-    return this.cards.resolve(scope, parseCardSpec(rawCard), 'group');
+    return this.cards.resolve(scope, parseCardSpec(rawCard));
   }
 
   // ---- create / update -------------------------------------------------
@@ -140,7 +140,7 @@ export class BroadcastsService {
     const card =
       input.card == null
         ? null
-        : await this.cards.resolve(scope, parseCardSpec(input.card), 'group');
+        : await this.cards.resolve(scope, parseCardSpec(input.card));
     let sendAt: Date | null = null;
     if (input.send_at != null) {
       if (typeof input.send_at !== 'string' || Number.isNaN(Date.parse(input.send_at))) {
