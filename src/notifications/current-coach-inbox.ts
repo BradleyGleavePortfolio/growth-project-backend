@@ -31,17 +31,27 @@ const access = new WeakMap<PrismaService, [SubCoachScopeService, SchedulingAcces
  * own clients, plus a live delegation while the client is still the head
  * coach's); their sessions with anyone else are the ones Calendar no longer
  * serves (SchedulingAccessService.sessionsStillTheirs: the client may no
- * longer book with them).
+ * longer book with them). A fixed number of reads, whatever the roster. A
+ * client has no clients and runs no sessions: they are only ever themselves.
  */
-async function reach(db: PrismaService, userId: string): Promise<{ mine: string[]; left: string[] }> {
+async function reach(
+  db: PrismaService,
+  userId: string,
+  coach = false,
+): Promise<{ mine: string[]; left: string[] }> {
+  const me = coach ? null : await db.user.findUnique({ where: { id: userId }, select: { role: true } });
+  if (me?.role === 'student') return { mine: [userId], left: [] };
   let rules = access.get(db);
   if (!rules) {
     rules = [new SubCoachScopeService(db), new SchedulingAccessService(db)];
     access.set(db, rules);
   }
-  const clients = await rules[0].getAuthorizedClientIds(userId);
+  const [clients, still] = await Promise.all([
+    rules[0].getAuthorizedClientIds(userId),
+    rules[1].sessionsStillTheirs(userId),
+  ]);
   const sessions = await db.coachingSession.findMany({
-    where: { coach_id: userId, NOT: await rules[1].sessionsStillTheirs(userId) },
+    where: { coach_id: userId, NOT: still },
     select: { id: true },
   });
   return { mine: [userId, ...clients], left: sessions.map((s) => s.id) };
@@ -65,13 +75,13 @@ export async function currentCoachInbox(db: PrismaService, userId: string): Prom
   };
 }
 
-/** The same rule for one queued push, at send time (its tap link). */
+/** The same rule for one queued push to a coach, at send time (its tap link). */
 export async function pushStillCurrent(db: PrismaService, userId: string, data: Prisma.JsonValue): Promise<boolean> {
   const link = data && typeof data === 'object' && !Array.isArray(data) ? data.deepLink : null;
   if (typeof link !== 'string') return true;
   const client = CLIENT_LINKS.some((p) => link.startsWith(p));
   if (!client && !SESSION_LINKS.some((p) => link.startsWith(p))) return true;
-  const { mine, left } = await reach(db, userId);
+  const { mine, left } = await reach(db, userId, true);
   return client
     ? CLIENT_LINKS.some((p) => mine.some((id) => link === p + id || link.startsWith(`${p}${id}/`)))
     : !SESSION_LINKS.some((p) => left.some((id) => link === p + id));

@@ -52,9 +52,10 @@ const table = <T extends object>(rows: T[]) => ({
   findMany: jest.fn(async ({ where }: { where: unknown }) => rows.filter((r) => whereMatches(r, where))),
 });
 
-// client-1 belongs to head coach-1, who delegated them to sub-1 (Team Mode
-// data the app keeps serving today); coach-2 is the coach they move to.
-function world(reader: string) {
+// client-1 (and any more of the roster) belongs to head coach-1, who delegated
+// them to sub-1 (Team Mode data the app keeps serving today); coach-2 is the
+// coach client-1 moves to.
+function world(reader: string, roster = 1) {
   clock = NIGHT;
   const person = (id: string, role: string, coach_id: string | null) => ({ id, role, coach_id, deleted_at: null });
   const people = [
@@ -62,11 +63,12 @@ function world(reader: string) {
     person('sub-1', 'coach', 'coach-1'),
     person('coach-2', 'coach', null),
     person('coach-3', 'coach', null),
-    person('client-1', 'student', 'coach-1'),
   ];
+  const clients = Array.from({ length: roster }, (_, i) => `client-${i + 1}`);
+  people.push(...clients.map((id) => person(id, 'student', 'coach-1')));
   const seats = [{ head_coach_id: 'coach-1', sub_coach_id: 'sub-1', archived_at: null }];
-  const delegations = [{ client_id: 'client-1', head_coach_id: 'coach-1', sub_coach_id: 'sub-1', unassigned_at: null as Date | null }];
-  const sessions = [{ id: 'sess-1', coach_id: reader, client_id: 'client-1', status: 'scheduled' }];
+  const delegations = clients.map((client_id) => ({ client_id, head_coach_id: 'coach-1', sub_coach_id: 'sub-1', unassigned_at: null as Date | null }));
+  const sessions = clients.map((client_id, i) => ({ id: `sess-${i + 1}`, coach_id: reader, client_id, status: 'scheduled' }));
   const w = pushOutboxWorld({
     now: () => clock,
     tokens: { [reader]: TOKEN },
@@ -105,6 +107,11 @@ function world(reader: string) {
     },
   };
   const prisma = fakeOf<PrismaService>(Object.create(db));
+  // Every read of the tables that decide who still coaches whom.
+  const reads = () =>
+    [db.user, db.teamSubCoachAssignment, db.subCoachAssignment, db.coachingSession]
+      .flatMap((t) => Object.values(t))
+      .reduce((n, f) => n + (jest.isMockFunction(f) ? f.mock.calls.length : 0), 0);
   const send = jest.fn(async (m: ExpoPushMessage[]) => m.map((_, i) => ({ status: 'ok' as const, id: `t-${i}` })));
   const delivery = new Clocked(prisma, { send, getReceipts: jest.fn(async () => ({})) });
   delivery.autoDrain = false;
@@ -123,7 +130,7 @@ function world(reader: string) {
   };
   // The first payment is written inside the purchase transaction.
   const tx = fakeOf<Prisma.TransactionClient>(prisma);
-  return { reader, prisma, tx, notifications, delivery, send, flagTx, control, move, undelegate, inbox, outbox: w.rows };
+  return { reader, prisma, tx, notifications, delivery, send, flagTx, control, move, undelegate, inbox, outbox: w.rows, reads };
 }
 type World = ReturnType<typeof world>;
 
@@ -206,5 +213,35 @@ describe('NOTIFYMOVE: a client\'s notifications stay with every coach still auth
     await new MessageReceivedEmitter(w.notifications).emit('client-1', { senderName: 'Coach K', threadId: 'client-1' });
     const own = await new NotificationsController(w.notifications).listNotifications(req('client-1'), {});
     expect(own.items.map((r) => r.kind).sort()).toEqual([NotificationKind.MESSAGE_RECEIVED, NotificationKind.MISSED_CHECKIN]);
+  });
+
+  // Sol B1 (fix round 2): authorising the inbox, the badge and every push
+  // costs a fixed, small number of reads, whatever the size of the roster.
+  it('the inbox, the badge and a push cost the same reads for 1 or 12 delegated clients; a client pays one', async () => {
+    const cost = async (roster: number) => {
+      const w = world('sub-1', roster);
+      await new BookingEmitter(w.notifications, w.prisma).emitBooked({ sessionId: 'sess-1', coachUserId: 'sub-1', clientDisplayName: 'Jane Doe', scheduledAt: new Date('2026-06-09T15:00:00Z') });
+      const inbox = new NotificationsController(w.notifications);
+      const spent = async (run: () => Promise<unknown>) => {
+        const before = w.reads();
+        await run();
+        return w.reads() - before;
+      };
+      const paid = [
+        await spent(() => inbox.listNotifications(req('sub-1'), {})),
+        await spent(() => inbox.getUnreadCount(req('sub-1'))),
+        await spent(() => inbox.listNotifications(req('client-1'), {})),
+        await spent(() => inbox.getUnreadCount(req('client-1'))),
+        await spent(async () => {
+          clock = MORNING;
+          await w.delivery.drain();
+        }),
+      ];
+      expect(w.outbox.filter((r) => r.user_id === 'sub-1').map((r) => r.result_code)).toEqual(['sent']);
+      return paid;
+    };
+    const one = await cost(1);
+    expect(one.slice(0, 4)).toEqual([10, 10, 1, 1]);
+    expect(await cost(12)).toEqual(one);
   });
 });
