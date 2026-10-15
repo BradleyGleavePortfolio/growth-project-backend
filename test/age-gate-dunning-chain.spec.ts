@@ -79,7 +79,9 @@ const ROWS: Array<[string, string, string, unknown, Cls, string, string | undefi
   ['payment recovery: update card', 'POST', '/api/v1/checkout/payment-method/setup-intent', {}, ClientBillingController, 'createSetupIntent', AGE_CONFIRMATION_REQUIRED, 'answers'],
   ['delete my account', 'POST', '/me/delete-account', {}, AccountDeletionController, 'requestDeletion', 'answers', 'answers'],
   ['download my data', 'GET', '/api/v1/me/data-export/status', undefined, DataExportController, 'getStatus', 'answers', 'answers'],
-  ['a paid client route', 'GET', '/api/v1/me/macros/current', undefined, ClientMacrosController, 'current', AGE_CONFIRMATION_REQUIRED, LOCKED_DUNNING_CODE],
+  ['a client route the lock closes', 'PATCH', '/users/me/preferences', {}, UsersController, 'patchPreferences', AGE_CONFIRMATION_REQUIRED, LOCKED_DUNNING_CODE],
+  ['a basic function the lock keeps open (food targets)', 'GET', '/api/v1/me/macros/current', undefined, ClientMacrosController, 'current', AGE_CONFIRMATION_REQUIRED, 'answers'],
+  ['sign-out clears the push token (FIXAGE2 R5)', 'PATCH', '/users/me/push-token', { token: null }, UsersController, 'updatePushToken', LOCKED_DUNNING_CODE, LOCKED_DUNNING_CODE],
 ];
 
 describe('FIXAGE2 R8: age gate then payment lock, one locked client not yet confirmed 16+', () => {
@@ -121,11 +123,5 @@ describe('FIXAGE2 R8: age gate then payment lock, one locked client not yet conf
     ] as Array<[string | undefined, string, unknown]>) {
       expect([m, p, b, isAgeConfirmationWhileLocked(m, p, b)]).toEqual([m, p, b, false]);
     }
-  });
-
-  it('FIXAGE2 R5: the sign-out push-token clear passes the age gate (the payment lock is unchanged)', async () => {
-    const c = chain();
-    const out = await c.send('PATCH', '/users/me/push-token', { token: null }, UsersController, h(UsersController, 'updatePushToken'));
-    expect(out).not.toBe(AGE_CONFIRMATION_REQUIRED);
   });
 });
