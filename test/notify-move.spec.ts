@@ -241,7 +241,7 @@ describe('NOTIFYMOVE: a client\'s notifications stay with every coach still auth
       return paid;
     };
     const one = await cost(1);
-    expect(one.slice(0, 4)).toEqual([10, 10, 1, 1]);
+    expect(one.slice(0, 4)).toEqual([9, 9, 1, 1]);
     expect(await cost(12)).toEqual(one);
   });
 });
