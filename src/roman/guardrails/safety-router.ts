@@ -338,8 +338,9 @@ export const ROMAN_SAFETY_TEMPLATES: Record<FixedReplyClass, string> = {
 };
 
 /**
- * Owner 22a and 57: added to Roman's reply when that reply alerted the
- * client's current coach (urgent_symptoms, or eating_disorder_risk with the
+ * Owner 22a, 57 and #CRISIS-WORDING: added to Roman's reply when that reply
+ * alerted the client's current coach (urgent_symptoms, emergency or self_harm
+ * while FEATURE_ROMAN_CRISIS_ALERT is on, or eating_disorder_risk with the
  * guided reply or the fixed fallback). Word for word.
  */
 export const ROMAN_COACH_TOLD_LINE = "We've let your coach know so they can check in with you.";

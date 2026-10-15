@@ -22,6 +22,10 @@ import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import type { AuthedRequest } from '../../src/auth/auth-request';
 import { AI_GUIDE_RETIRED_REPLY, AiController } from '../../src/ai/ai.controller';
 import { AiService } from '../../src/ai/ai.service';
+import { AiApprovalService } from '../../src/ai/gateway/ai-approval.service';
+import { AiGatewayController } from '../../src/ai/gateway/ai-gateway.controller';
+import { AiGatewayService } from '../../src/ai/gateway/ai-gateway.service';
+import { PrivateContextService } from '../../src/ai/gateway/private-context.service';
 import * as crisisRouter from '../../src/ai/ai-crisis-router';
 import { ClientEntitlementGuard } from '../../src/common/guards/client-entitlement.guard';
 import { HttpExceptionFilter } from '../../src/filters/http-exception.filter';
@@ -364,6 +368,33 @@ describe('Part 1 — the 403 a client with no coach receives over HTTP', () => {
       }
     });
   });
+
+  // ROMANROUTES: the same rule on the two /ai context reads. Every caller who
+  // is not a client gets the existing refusal and nothing is read. (A coached
+  // client reading both is pinned above, unchanged.)
+  describe('ROMANROUTES: GET /ai/context and GET /ai/structured-context answer clients only', () => {
+    const NOT_CLIENTS: ReadonlyArray<[string, Record<string, unknown>, string]> = [
+      ['a coach', COACH, 'Insufficient role'],
+      ['a coach who is also linked to a coach', { ...COACH, coach_id: 'coach-2' }, 'Insufficient role'],
+      ['the owner', OWNER, 'Insufficient role'],
+      ['a sub-coach', { id: 'sub-1', role: 'sub_coach', coach_id: 'coach-1' }, 'Insufficient role'],
+      ['a caller with no role', { id: 'user-x', role: null, coach_id: null }, 'Authenticated user required'],
+    ];
+    for (const [who, caller, message] of NOT_CLIENTS) {
+      it(`${who} gets 403 ${message} on both routes and no context is built`, async () => {
+        user = caller;
+        for (const path of ['/ai/context', '/ai/structured-context']) {
+          const res = await get(path);
+          expect(res.status).toBe(403);
+          expect(res.body).toMatchObject({ statusCode: 403, message });
+          expect(Object.keys(res.body)).not.toContain('user');
+          expect(Object.keys(res.body)).not.toContain('coach');
+        }
+        expect(ai.getUserContext).not.toHaveBeenCalled();
+        expect(ai.getStructuredContext).not.toHaveBeenCalled();
+      });
+    }
+  });
 });
 
 describe('Part 2 — order of the checks on a Roman turn and the AI guide', () => {
@@ -430,5 +461,115 @@ describe('Part 2 — order of the checks on a Roman turn and the AI guide', () =
       status: 403,
     });
     expect(ai.chat).not.toHaveBeenCalled();
+  });
+});
+
+// ROMANROUTES: POST /ai/gateway/invoke sends the caller's message to the model.
+// A client with no coach gets 403 ROMAN_REQUIRES_COACH before the paywall, the
+// context load or the model; coaches and coached clients are unchanged. The
+// real ClientEntitlementGuard runs (package lookup stubbed).
+describe('Part 3 — ROMANROUTES: POST /ai/gateway/invoke needs a coach', () => {
+  const findFirst = jest.fn(async (..._a: unknown[]): Promise<{ id: string } | null> => null);
+  const loadClientContext = jest.fn(async (..._a: unknown[]) => ({ systemPrompt: 'ctx', provenance: [] }));
+  const invoke = jest.fn(async (..._a: unknown[]) => ({ requestId: 'req_1', reply: 'ok', draftMode: false }));
+  let app: INestApplication;
+  let baseUrl = '';
+  let user: Record<string, unknown> = COACHLESS;
+
+  beforeAll(async () => {
+    const moduleRef = await Test.createTestingModule({
+      controllers: [AiGatewayController],
+      providers: [
+        { provide: AiGatewayService, useValue: { invoke, getStatus: () => ({ enabled: true }) } },
+        { provide: AiApprovalService, useValue: {} },
+        { provide: PrivateContextService, useValue: { loadClientContext } },
+        { provide: PrismaService, useValue: { clientPurchase: { findFirst } } },
+      ],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({
+        canActivate: (ctx: ExecutionContext) => {
+          ctx.switchToHttp().getRequest<{ user?: unknown }>().user = user;
+          return true;
+        },
+      })
+      .compile();
+    app = moduleRef.createNestApplication();
+    app.useGlobalFilters(new HttpExceptionFilter());
+    await app.listen(0);
+    const addr = app.getHttpServer().address();
+    baseUrl = `http://127.0.0.1:${typeof addr === 'object' && addr ? addr.port : 0}`;
+  });
+
+  afterAll(async () => {
+    if (app) await app.close();
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    findFirst.mockResolvedValue(null);
+  });
+
+  async function call(path = '/ai/gateway/invoke', method = 'POST') {
+    const body = JSON.stringify({ capability: 'client.chat', message: 'What should I eat today?' });
+    const res = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: method === 'POST' ? body : undefined,
+    });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  }
+
+  function expectRequiresCoachAndNothingSent(res: { status: number; body: Record<string, unknown> }) {
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({
+      statusCode: 403,
+      error: ROMAN_REQUIRES_COACH,
+      code: ROMAN_REQUIRES_COACH,
+      message: ROMAN_REQUIRES_COACH_MESSAGE,
+      action: 'JOIN_COACH',
+    });
+    expect(loadClientContext).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+  }
+
+  it('a client with no coach and no package: 403 ROMAN_REQUIRES_COACH (not the 402 paywall), no model call', async () => {
+    user = COACHLESS;
+    expectRequiresCoachAndNothingSent(await call());
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it('a client with no coach who still holds a paid package: 403 ROMAN_REQUIRES_COACH, no model call', async () => {
+    user = COACHLESS;
+    findFirst.mockResolvedValue({ id: 'purchase-1' });
+    expectRequiresCoachAndNothingSent(await call());
+  });
+
+  it('a client with no coach gets the same 403 on the gateway status read', async () => {
+    user = COACHLESS;
+    expectRequiresCoachAndNothingSent(await call('/ai/gateway/status', 'GET'));
+  });
+
+  it('a coached client with a package is unchanged: the model is called for them', async () => {
+    user = COACHED;
+    findFirst.mockResolvedValue({ id: 'purchase-1' });
+    const res = await call();
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ request_id: 'req_1', reply: 'ok' });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(invoke.mock.calls[0][0]).toMatchObject({ requester: { id: 'client-b', role: 'student' } });
+  });
+
+  it('a coached client with no package still gets the 402 paywall, unchanged', async () => {
+    user = COACHED;
+    const res = await call();
+    expect(res.status).toBe(402);
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  it('a coach is unchanged (open to coaches by design)', async () => {
+    user = COACH;
+    expect((await call()).status).toBe(201);
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 });

@@ -1008,15 +1008,15 @@ export class RomanService {
         route.class === 'urgent_symptoms')
     ) {
       // Owner 22a and ROMAN-CRISIS-ALERT: every fixed reply alerts the coach
-      // (a crisis reply only once its switch is on); only the urgent reply
-      // says so (the line is approved for it alone).
+      // (a crisis reply only once its switch is on), and a reply that did says
+      // so (#CRISIS-WORDING).
       const urgent = route.class === 'urgent_symptoms';
       const alertType = urgent ? 'roman_urgent_reply' : 'roman_crisis_reply';
       const told =
         (urgent || isRomanCrisisAlertEnabled()) &&
         (await this.alertCoachOfSafetyReply(caller, session, alertType, opts.userMessageId));
       const text = ROMAN_SAFETY_TEMPLATES[route.class];
-      const reply = urgent && told ? `${text} ${ROMAN_COACH_TOLD_LINE}` : text;
+      const reply = told ? `${text} ${ROMAN_COACH_TOLD_LINE}` : text;
       yield* this.fixedSafetyReply(caller, session, reply, ROMAN_SAFETY_ROUTE_REASON[route.class]);
       return;
     }

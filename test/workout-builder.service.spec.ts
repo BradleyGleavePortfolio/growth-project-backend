@@ -23,6 +23,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../src/prisma.service';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
+import { planStaysInTenantWhere } from '../src/workout-builder/tenant-clients';
 import { WorkoutType } from '../src/workout-builder/workout-builder.dto';
 import { WorkoutBuilderService, romanAdjustedSets } from '../src/workout-builder/workout-builder.service';
 
@@ -60,6 +61,7 @@ const revisionTx = (lastIndex: number | null = 2) => ({
 
 interface PrismaMock {
   workoutPlan: {
+    count: jest.Mock;
     create: jest.Mock;
     findMany: jest.Mock;
     findUnique: jest.Mock;
@@ -85,6 +87,7 @@ interface PrismaMock {
     findUnique: jest.Mock;
   };
   workoutProgram: {
+    count: jest.Mock;
     create: jest.Mock;
     findUnique: jest.Mock;
     findFirst: jest.Mock;
@@ -112,6 +115,7 @@ interface PrismaMock {
 
 const makePrismaMock = (): PrismaMock => ({
   workoutPlan: {
+    count: jest.fn().mockResolvedValue(1),
     create: jest.fn(),
     findMany: jest.fn(),
     findUnique: jest.fn(),
@@ -137,6 +141,8 @@ const makePrismaMock = (): PrismaMock => ({
     findUnique: jest.fn().mockResolvedValue(null),
   },
   workoutProgram: {
+    // 1: the source program stays in the tenant (programStaysInTenantWhere).
+    count: jest.fn().mockResolvedValue(1),
     create: jest.fn(),
     findUnique: jest.fn(),
     // No prior clone exists by default, so the G9 existence probe lets the
@@ -406,6 +412,29 @@ describe('WorkoutBuilderService', () => {
         ForbiddenException,
       );
     });
+
+    it('HIST-2 (owner 4): a day of a moved client\u2019s program copy is not found for the former coach', async () => {
+      prismaMock.workoutPlan.findUnique.mockResolvedValue({ ...basePlan, program_id: 'copy-1' });
+      // The copy's client is now outside this coach's tenant: no plan matches.
+      prismaMock.workoutPlan.count.mockResolvedValue(0);
+      const missing = new NotFoundException('Workout plan not found');
+      await expect(service.getPlan(COACH_ID, basePlan.id)).rejects.toThrow(missing);
+      await expect(service.updatePlan(COACH_ID, basePlan.id, { name: 'Renamed' })).rejects.toThrow(
+        missing,
+      );
+      await expect(service.setExercises(COACH_ID, basePlan.id, [])).rejects.toThrow(missing);
+      await expect(service.archivePlan(COACH_ID, basePlan.id)).rejects.toThrow(missing);
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(prismaMock.workoutPlan.update).not.toHaveBeenCalled();
+      expect(prismaMock.workoutPlan.count).toHaveBeenCalledWith({
+        where: { id: basePlan.id, ...planStaysInTenantWhere(COACH_ID) },
+      });
+      // While the client stays in the tenant the copy is still the coach's to open.
+      prismaMock.workoutPlan.count.mockResolvedValue(1);
+      await expect(service.getPlan(COACH_ID, basePlan.id)).resolves.toMatchObject({
+        id: basePlan.id,
+      });
+    });
   });
 
   // ─── listPlans keyset pagination ─────────────────────────────────────────
@@ -434,6 +463,17 @@ describe('WorkoutBuilderService', () => {
       prismaMock.workoutPlan.findMany.mockResolvedValue([basePlan]);
       const result = await service.listPlans(COACH_ID, { limit: 50 });
       expect(result.nextCursor).toBeNull();
+    });
+
+    it('HIST-2 (owner 4): a moved client\u2019s copy leaves the list before paging', async () => {
+      prismaMock.workoutPlan.findMany.mockResolvedValue([]);
+      await service.listPlans(COACH_ID, { limit: 10 });
+      expect(prismaMock.workoutPlan.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { coach_id: COACH_ID, archived_at: null, AND: [planStaysInTenantWhere(COACH_ID)] },
+          take: 11,
+        }),
+      );
     });
   });
 

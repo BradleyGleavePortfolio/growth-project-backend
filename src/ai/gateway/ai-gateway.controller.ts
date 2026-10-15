@@ -22,6 +22,7 @@ import { AiApprovalService } from './ai-approval.service';
 import { PrivateContextService } from './private-context.service';
 import { ClientEntitlementGuard } from '../../common/guards/client-entitlement.guard';
 import { SkipClientEntitlement } from '../../common/decorators/skip-client-entitlement.decorator';
+import { RomanRequiresCoachGuard } from '../../roman/roman-requires-coach';
 
 // Thin HTTP surface for the gateway. Two intentional split-points:
 //
@@ -38,9 +39,12 @@ import { SkipClientEntitlement } from '../../common/decorators/skip-client-entit
 // side from feature services. This generic endpoint is here so the
 // console / mobile can drive the v1 chat-with-approval surface
 // without each capability requiring its own controller.
+//
+// A client with no coach has no Roman (139-15): 403 ROMAN_REQUIRES_COACH on
+// every route here, before the paywall, the context load or the model.
 @ApiTags('ai-gateway')
 @Controller('ai/gateway')
-@UseGuards(JwtAuthGuard, ClientEntitlementGuard)
+@UseGuards(JwtAuthGuard, RomanRequiresCoachGuard, ClientEntitlementGuard)
 export class AiGatewayController {
   constructor(
     private gateway: AiGatewayService,

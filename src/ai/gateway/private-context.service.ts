@@ -8,6 +8,8 @@ import { CREATE_WORKOUT_PLAN_CAPABILITY } from './materialisers/create-workout-p
 import { EDIT_WORKOUT_PLAN_CAPABILITY } from './materialisers/edit-workout-plan.materialiser';
 import { toInjuryAreas } from './workout-builder/training-substitutions';
 import { UNTRUSTED_TEXT_RULE, fenceUntrusted } from '../utils/untrusted-text';
+import { ConsentScope, ConsentService } from '../../consent/consent.service';
+import { weightIfShared } from '../../consent/coach-sharing-gate';
 
 // B-AIB3-126 (plan section 1, SAFE 2): the workout capabilities get the minimised block — no name, body weight, height,
 // preferred snacks or coach message excerpt (the message row is not even read).
@@ -44,7 +46,12 @@ interface CallerScope {
 export class PrivateContextService {
   private readonly logger = new Logger(PrivateContextService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // C8-S: the client's Weigh-ins switch for a coach caller. Deliberately NOT @Optional:
+    // ConsentModule is @Global, so DI always injects it. Only positional unit tests omit it.
+    private readonly consent?: ConsentService,
+  ) {}
 
   // Loads a sanitized, structured snapshot of a client's coaching state
   // for AI consumption. Throws ForbiddenException if the caller is not
@@ -80,6 +87,11 @@ export class PrivateContextService {
     }
 
     const profile = subject.profile;
+    // C8-S: the client always reads their own weight; a coach only while Weigh-ins is shared.
+    const weighIns =
+      caller.id === subject.id ||
+      !this.consent ||
+      (await this.consent.coachCanAccess(caller.id, subject.id, ConsentScope.FITNESS_BODY_METRICS, caller.role));
     const lastMessage = workout ? undefined : subject.coach_messages_as_client[0];
 
     // Sanitized, structured block. NEVER include email, phone,
@@ -104,7 +116,9 @@ export class PrivateContextService {
         : null,
       last_coach_message_excerpt: lastMessage?.body?.slice(0, 240) ?? null,
     };
-    const block = workout ? workoutBlock(subject.role, profile) : fullBlock;
+    const block = workout
+      ? workoutBlock(subject.role, profile)
+      : { ...fullBlock, profile: fullBlock.profile && weightIfShared(fullBlock.profile, weighIns) };
 
     const systemPrompt =
       `You are an AI assistant operating inside The Growth Project.\n` +
