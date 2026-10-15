@@ -154,7 +154,15 @@ describe('P0 copy: clinic sentence removed (C-6a) and coach-free versions (owner
 
   it('P0 accepts all six versions by default, each only with its own digest', () => {
     const all = Object.keys(PINS);
-    expect(acceptedConsentVersions({})).toEqual(['consult-consent-v3', 'consult-consent-v4', ...all]);
+    expect(acceptedConsentVersions({})).toEqual([
+      'consult-consent-v3',
+      'consult-consent-v4',
+      ...all,
+      // Owner 57c / 62y2 (test/ai-consent/consent-57c.spec.ts).
+      'consult-consent-v7',
+      'consult-consent-v8',
+      'consult-consent-v7-coach-free',
+    ]);
     const p0 = (copy_version: string, text_sha256: string) => ({
       agreed: true,
       copy_version,

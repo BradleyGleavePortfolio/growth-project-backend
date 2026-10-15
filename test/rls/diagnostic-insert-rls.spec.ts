@@ -82,7 +82,9 @@ const anon: Who = { role: 'anon' };
     } catch (e) {
       const err = e as { code?: string; meta?: { code?: string; message?: string }; message?: string };
       const text = `${err.message ?? ''} ${err.meta?.message ?? ''}`;
-      const cause = /row-level security/.test(text) ? 'rls' : /permission denied for function/.test(text) ? 'helper' : text;
+      const cause = /row-level security/.test(text) ? 'rls'
+        : /permission denied for function/.test(text) ? 'helper'
+        : /permission denied for table/.test(text) ? 'grant' : text;
       return `${err.code === 'P2010' ? err.meta?.code : err.code} ${cause}`;
     }
     const [{ count }] = await prisma.$queryRaw<{ count: number }[]>`
@@ -115,7 +117,8 @@ const anon: Who = { role: 'anon' };
     it('the hole: a signed-in Data API caller inserts an anonymous row; anon errors', async () => {
       expect(await insert(service, null)).toBe(1);
       expect(await insert(dataApi('A'), null)).toBe(1);
-      expect(await insert(anon, null)).toBe('42501 helper');
+      // 20270502001000_public_role_grant_floor took INSERT from anon, so anon now stops at the grant.
+      expect(await insert(anon, null)).toBe('42501 grant');
     });
   });
 
@@ -147,7 +150,7 @@ const anon: Who = { role: 'anon' };
       expect(await insert(service, null)).toBe(1);
       expect(await insert(owner, null)).toBe(1);
       expect(await insert(owner, id.A)).toBe(1);
-      expect(await insert(anon, null)).toBe('42501 helper');
+      expect(await insert(anon, null)).toBe('42501 grant');
     });
 
     it('reads are unchanged: only the attributed user reads their row', async () => {

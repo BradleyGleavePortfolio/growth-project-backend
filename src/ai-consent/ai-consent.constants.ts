@@ -115,6 +115,45 @@ export const CLIENT_AI_CONSENT_V5_COPY_SHA256 = sha256Hex(
 );
 
 /**
+ * The safety-reply exception (owner 57c, Option 1, 2026-10-12), the same
+ * sentence as the privacy page: a coach sees the one message that prompted an
+ * urgent medical or eating-disorder safety reply.
+ */
+export const CLIENT_AI_CONSENT_SAFETY_EXCEPTION =
+  'One exception: if Roman sends you an urgent medical safety reply or an eating-disorder safety ' +
+  'reply, your coach sees the message that prompted it, so they can check in with you.';
+
+/**
+ * client-ai-v6 / client-ai-v7 (owner 57c): the coached v4 / v5 paragraphs with
+ * the exception added right after the sentence that says the coach does not
+ * see Roman chats (the end of v4; before v5's last sentence). Same box label,
+ * same scopes (v6 'base', v7 'memory'). GET offers them to a client with a
+ * coach who has no live grant; a live v4 / v5 grant keeps reading its own copies.
+ */
+export const CLIENT_AI_CONSENT_V6_VERSION = 'client-ai-v6';
+export const CLIENT_AI_CONSENT_V7_VERSION = 'client-ai-v7';
+
+export const CLIENT_AI_CONSENT_V6_PARAGRAPH =
+  CLIENT_AI_CONSENT_PARAGRAPH + ' ' + CLIENT_AI_CONSENT_SAFETY_EXCEPTION;
+
+const V5_LAST_SENTENCE =
+  'Your conversations with Roman are kept until you delete them or delete your account.';
+export const CLIENT_AI_CONSENT_V7_PARAGRAPH =
+  CLIENT_AI_CONSENT_V5_PARAGRAPH.slice(0, -V5_LAST_SENTENCE.length) +
+  CLIENT_AI_CONSENT_SAFETY_EXCEPTION +
+  ' ' +
+  V5_LAST_SENTENCE;
+
+export const CLIENT_AI_CONSENT_V6_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V6_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V7_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V7_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V6_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V6_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+export const CLIENT_AI_CONSENT_V7_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V7_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+
+/**
  * Coach-free copies (owner decision 62, Option 1, 2026-10-12): what a client
  * with no coach sees. The v4 and v5 paragraphs and the box label with every
  * coach sentence or clause removed and no new words. Each gives the same scope
@@ -202,6 +241,14 @@ export const CLIENT_AI_CONSENT_ACCEPTED: Readonly<Record<string, AcceptedClientA
     }),
     [CLIENT_AI_CONSENT_V5_VERSION]: Object.freeze({
       copy_sha256: CLIENT_AI_CONSENT_V5_COPY_SHA256,
+      scope: 'memory' as const,
+    }),
+    [CLIENT_AI_CONSENT_V6_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V6_COPY_SHA256,
+      scope: 'base' as const,
+    }),
+    [CLIENT_AI_CONSENT_V7_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V7_COPY_SHA256,
       scope: 'memory' as const,
     }),
     [CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION]: Object.freeze({

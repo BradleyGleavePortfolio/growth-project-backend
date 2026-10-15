@@ -203,8 +203,11 @@ jobs:
     # assert-rls-floor.mjs then fails, in every non-system schema, on: a table
     # or partition without RLS or FORCE, a view open to anon/authenticated
     # without security_invoker, a constant-true policy for anon/authenticated/
-    # public, an IS NOT DISTINCT FROM policy, or a SECURITY DEFINER function
-    # without a pinned search_path. Allowed exceptions live in scripts/ci/
+    # public, an IS NOT DISTINCT FROM policy, a SECURITY DEFINER function
+    # without a pinned search_path, or (check f, RLSGRANTS) anon/authenticated
+    # holding TRUNCATE/TRIGGER/REFERENCES/MAINTAIN on a public table or in the
+    # default privileges for new ones, or anon holding INSERT/UPDATE/DELETE
+    # outside the reviewed anonWrites list. Allowed exceptions live in scripts/ci/
     # rls-known-gaps.json, which can only shrink: a repaired entry fails as
     # stale, and rls-lists.mjs fails any entry the base commit does not have.
     # The self-test then proves each rule fails on a negative fixture. This
