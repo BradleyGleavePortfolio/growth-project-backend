@@ -100,10 +100,14 @@ STABLE
 SECURITY INVOKER
 SET search_path = ''
 AS $fn$
-  SELECT app.workspace_has_participant(p_workspace_id, app.current_user_id())
+  SELECT EXISTS (
+    SELECT 1 FROM public."community_cohorts" c
+    WHERE c."workspace_id" = p_workspace_id AND c."visibility" <> 'public'
+      AND app.community_can_access(c."id", app.current_user_id())
+  )
 $fn$;
 COMMENT ON FUNCTION app.is_community_workspace_member(uuid) IS
-  'Caller is a participant of the workspace (app.workspace_has_participant, 20270502002400). search_path pinned to '''' (S1-DB-01).';
+  'Caller passes app.community_can_access for a space of the workspace that is not public (20270502002400). search_path pinned to '''' (S1-DB-01).';
 
 CREATE OR REPLACE FUNCTION app.workspace_has_participant(p_workspace_id uuid, p_user_id text)
 RETURNS boolean
