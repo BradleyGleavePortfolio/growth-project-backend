@@ -28,4 +28,5 @@ jobs:
       - name: Fetch main and check migration names
         run: |
           git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
-          node scripts/ci/migration-order.js
+          git show origin/main:scripts/ci/migration-order.js > "$RUNNER_TEMP/migration-order.js"
+          node "$RUNNER_TEMP/migration-order.js"
