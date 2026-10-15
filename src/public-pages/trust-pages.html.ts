@@ -23,7 +23,7 @@
 // Mounted outside the /api prefix in main.ts so they resolve as bare
 // paths under app.trygrowthproject.com.
 
-import { isRomanCrisisAlertEnabled } from '../roman/roman.feature';
+import { ROMAN_CRISIS_TOLD_SENTENCE, isRomanCrisisAlertEnabled } from '../roman/roman.feature';
 
 // Source of truth for the official support contact (owner ruling
 // 2026-10-01 14:19 PDT: one support email everywhere). Used in every trust,
@@ -40,9 +40,7 @@ export const POLICY_LAST_REVIEWED = '2026-10-15';
 // safety-reply exception sentence on these pages, only while Roman's crisis
 // reply can alert the coach (switch read per render).
 function crisisToldText(): string {
-  return isRomanCrisisAlertEnabled()
-    ? ' If Roman sends you a crisis safety reply, your coach is told that it happened, but not what you wrote, so they can check in with you.'
-    : '';
+  return isRomanCrisisAlertEnabled() ? ` ${ROMAN_CRISIS_TOLD_SENTENCE}` : '';
 }
 
 // Who sees community and leaderboard data (B-PRIVACY-1). Shared by /privacy
