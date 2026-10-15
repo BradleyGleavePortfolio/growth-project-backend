@@ -10,7 +10,8 @@
  *     ledger copy;
  *   - the ledger: v6 'base', v7 'memory'; GET ?variant=safety_exception offers
  *     them (a plain GET keeps v4 / v5 for installed builds); a live grant reads
- *     the copies of its own generation everywhere.
+ *     the copies of its own generation everywhere (its memory offer follows the
+ *     ask: consent-v7-offer.spec.ts).
  * The HTTP query is in ai-consent.controller.spec.ts; a client with no coach
  * (W-CONSENT) in consent-coachless-grant.spec.ts.
  */
@@ -186,11 +187,11 @@ describe('AI consent ledger: client-ai-v6 / v7 (owner 57c)', () => {
     expect(plain.memory_copy?.version).toBe('client-ai-v7');
   });
 
-  it('a live v4 / v5 grant keeps reading v4 / v5 (installed builds), also when the new copies are asked for', async () => {
+  it('a live v4 / v5 grant keeps reading v4 / v5 when asked; a v4 holder is offered memory as v7', async () => {
     await service.grant('u_a', { version: 'client-ai-v4' });
     const v4 = await service.getStatus('u_a', ask);
     expect(v4).toMatchObject({ granted: true, version: 'client-ai-v4', current_version: 'client-ai-v4' });
-    expect(v4.upgrade?.version).toBe('client-ai-v5');
+    expect(v4.upgrade?.version).toBe('client-ai-v7');
     await service.grant('u_b', { version: 'client-ai-v5' });
     expect(await service.getStatus('u_b', ask)).toMatchObject({ granted: true, current_version: 'client-ai-v5' });
   });

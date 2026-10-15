@@ -121,7 +121,10 @@ Accepted grants (`CLIENT_AI_CONSENT_ACCEPTED`; version AND its exact sha256):
   (the app sends it from the CONSENT-2 build on) offers `client-ai-v6` as `copy` and
   `client-ai-v7` as `upgrade` / `memory_copy` when there is no live grant. A plain `GET`
   keeps offering v4 / v5, the text installed builds pin. A live grant reads the copies of
-  its own generation (v4 / v5, or v6 / v7) whatever is asked.
+  its own generation (v4 / v5, or v6 / v7) whatever is asked, but a new agreement is offered
+  in the asked copies: a live v4 holder asking `safety_exception` gets `client-ai-v7` as
+  `upgrade` / `memory_copy` (CONSENTV7). `POST` and `DELETE` take the same `?variant=` for
+  the status they return; without one they read the copies on file.
 - Asked once, before a coach (owner W-CONSENT): `POST /api/me/ai-consent/roman` from a client with no
   coach is recorded exactly like a coached grant. Roman and every AI route stay `403 ROMAN_REQUIRES_COACH`
   until a coach is linked; then that grant applies with no new ask. `GET` and `DELETE` stay open.

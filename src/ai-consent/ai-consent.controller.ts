@@ -9,6 +9,8 @@
  *                                -> grant (idempotent); 409 CONSENT_VERSION_MISMATCH; a client
  *                                   with no coach is recorded the same way (W-CONSENT)
  *   DELETE /me/ai-consent/roman  -> withdraw (idempotent)
+ *   POST and DELETE take the same ?variant= for the status they return; without one it reads
+ *   the copies on file (installed builds).
  *
  * The subject is always req.user.id. Guards: JwtAuthGuard + RolesGuard +
  * AiConsentLedgerGuard (503 AI_CONSENT_UNAVAILABLE while
@@ -42,7 +44,11 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AI_CONSENT_ERROR_UNAVAILABLE, isAiConsentLedgerEnabled } from './ai-consent.constants';
 import { GrantClientAiConsentDto } from './ai-consent.dto';
-import { AiConsentService, type ClientAiConsentStatus } from './ai-consent.service';
+import {
+  AiConsentService,
+  type ClientAiConsentAsk,
+  type ClientAiConsentStatus,
+} from './ai-consent.service';
 
 /** 503 on every ledger route while the flag is off (runs before body validation). */
 @Injectable()
@@ -58,6 +64,17 @@ export class AiConsentLedgerGuard implements CanActivate {
   }
 }
 
+/**
+ * ?variant= as the copies the app shows, read the same way on GET, POST and DELETE, so every
+ * response offers them (owner 57c, CONSENTV7). Any other value (or none) reads the coached copies,
+ * as before. A client with a coach never reads a coach-free grant as live (owner 62).
+ */
+function askOf(req: AuthedRequest, variant: unknown): ClientAiConsentAsk {
+  const hasCoach = typeof req.user.coach_id === 'string' && req.user.coach_id.length > 0;
+  const safetyException = variant === 'safety_exception';
+  return { hasCoach, coachFree: variant === 'coach_free', safetyException };
+}
+
 @Controller('me/ai-consent')
 @UseGuards(JwtAuthGuard, RolesGuard, AiConsentLedgerGuard)
 export class AiConsentController {
@@ -70,16 +87,7 @@ export class AiConsentController {
     @Req() req: AuthedRequest,
     @Query('variant') variant?: unknown,
   ): Promise<ClientAiConsentStatus> {
-    // Any other value (or none) reads the coached copies, as before. A client
-    // with a coach never reads a coach-free grant as live (owner 62).
-    const hasCoach = typeof req.user.coach_id === 'string' && req.user.coach_id.length > 0;
-    if (variant === 'coach_free') {
-      return this.consent.getStatus(req.user.id, { coachFree: true, hasCoach });
-    }
-    return this.consent.getStatus(req.user.id, {
-      hasCoach,
-      safetyException: variant === 'safety_exception',
-    });
+    return this.consent.getStatus(req.user.id, askOf(req, variant));
   }
 
   @Post('roman')
@@ -89,17 +97,23 @@ export class AiConsentController {
   async grant(
     @Req() req: AuthedRequest,
     @Body() dto: GrantClientAiConsentDto,
+    @Query('variant') variant?: unknown,
   ): Promise<ClientAiConsentStatus> {
     // W-CONSENT: a client with no coach is asked once and the grant is kept like a coached one;
     // Roman and every AI route still answer 403 ROMAN_REQUIRES_COACH until a coach is linked.
-    return this.consent.grant(req.user.id, dto);
+    const ask = variant === undefined ? undefined : askOf(req, variant);
+    return this.consent.grant(req.user.id, dto, {}, ask);
   }
 
   @Delete('roman')
   @Header('Cache-Control', 'no-store')
   @HttpCode(HttpStatus.OK)
   @Roles('student', 'coach', 'owner')
-  async withdraw(@Req() req: AuthedRequest): Promise<ClientAiConsentStatus> {
-    return this.consent.withdraw(req.user.id);
+  async withdraw(
+    @Req() req: AuthedRequest,
+    @Query('variant') variant?: unknown,
+  ): Promise<ClientAiConsentStatus> {
+    const ask = variant === undefined ? undefined : askOf(req, variant);
+    return this.consent.withdraw(req.user.id, {}, ask);
   }
 }
