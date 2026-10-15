@@ -23,3 +23,17 @@ export async function coachSharingCheck(
     return clientIds.filter((_, i) => allowed[i]);
   };
 }
+
+/** The fields that hold a weight on a row a coach read sends: a check-in's, and the profile's current and target. */
+const WEIGHT_FIELDS = ['weight_kg', 'current_weight_lbs', 'target_weight_lbs'] as const;
+
+/**
+ * C8-S (SoT A2 item 12): a coach-facing read returns a client's weight only while that client's
+ * Weigh-ins switch (`fitness.body_metrics`, ConsentService.coachCanAccess) is on. Off, each weight
+ * field reads null, the shape an unshared slice already has (roster and summary `profile: null`);
+ * the rest of the row stays.
+ */
+export function weightIfShared<T extends object>(row: T, weighIns: boolean): T {
+  if (weighIns) return row;
+  return { ...row, ...Object.fromEntries(WEIGHT_FIELDS.filter((f) => f in row).map((f) => [f, null])) };
+}
