@@ -25,6 +25,7 @@ import { PlanContextService } from '../../src/community/plan-context/plan-contex
 import { PrismaService } from '../../src/prisma.service';
 import type { PlaybookSignalsService } from '../../src/roman/playbook/playbook-signals.service';
 import { PlaybookSourceCollector } from '../../src/roman/playbook/playbook-sources';
+import type { PlaybookSignals } from '../../src/roman/playbook/playbook-signals.types';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
 const DB_URL = liveTestDatabaseUrl();
@@ -41,7 +42,7 @@ if (!DB_URL && process.env.CI === 'true') {
     prisma,
     stub<CoachAIBudgetService>({ resolveHeadCoachId: async (id: string) => id }),
     stub<AiEgressService>({ consentedClients: async () => new Set<string>() }),
-    stub<PlaybookSignalsService>({ compute: async () => ({}) as never }),
+    stub<PlaybookSignalsService>({ compute: async () => stub<PlaybookSignals>({}) }),
   );
   const context = new ClientAIContextService(prisma);
   // Fictional people, fresh ids per run. a: former coach, b: current, c: another coach.
