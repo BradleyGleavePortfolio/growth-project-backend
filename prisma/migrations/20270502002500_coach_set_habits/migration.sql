@@ -1,8 +1,8 @@
 -- HB1 (agent 147): coach-set habits, safe edits, archive keeps history.
 -- Second lock (RLS-MODE Option 1): the server reads and writes through
 -- Prisma's service-role connection, which bypasses row security, and scopes
--- every habit query to the signed-in client itself. Additive; no row changes.
--- Reverse: down.sql.
+-- every habit query to the signed-in client itself. Additive, plus one row
+-- change: the sort_order backfill below. Reverse: down.sql.
 --
 -- Columns. Every existing habit reads as the client's own daily habit with no
 -- reminder:
@@ -27,6 +27,10 @@
 --     when its habit is: no second guard. Before, the current coach read every
 --     log (with no sharing check) and no habit name. Only the habit's client
 --     writes logs. The owner-admin branch goes with the old rule.
+--   * A habit and its ticks stay with their client and habit: only a role
+--     that bypasses row security (the server, the FK actions) changes
+--     Habit.user_id, Habit.assigned_by_coach_id or HabitLog.habit_id
+--     (habit_ownership_guard). HabitLog has no user_id.
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
@@ -51,6 +55,13 @@ ALTER TABLE "Habit"
     AND ("times_per_week" IS NULL OR "times_per_week" BETWEEN 1 AND 7)
     AND ("reminder_time" IS NULL OR "reminder_time" ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$')
   );
+
+-- Keep today's order: GET /habits had no ORDER BY and Habit has no created_at,
+-- so the app lists a client's habits in physical row order (ctid). Number them
+-- 0, 1, ... in that order; a new habit goes after the last.
+UPDATE "Habit" h SET "sort_order" = o."n"
+FROM (SELECT "id", (row_number() OVER (PARTITION BY "user_id" ORDER BY ctid) - 1)::int AS "n" FROM "Habit") o
+WHERE h."id" = o."id" AND o."n" > 0;
 
 ALTER TABLE "HabitLog" ADD COLUMN "client_log_id" UUID;
 CREATE UNIQUE INDEX "HabitLog_habit_id_client_log_id_key" ON "HabitLog"("habit_id", "client_log_id");
@@ -111,5 +122,32 @@ ALTER POLICY "p_habitlog_delete" ON "HabitLog"
   USING (EXISTS (SELECT 1 FROM public."Habit" h WHERE h."id" = "HabitLog"."habit_id" AND h."user_id" = app.current_user_id()));
 COMMENT ON POLICY "p_habitlog_delete" ON "HabitLog" IS
   '20270502002500: only the habit''s client deletes a log.';
+
+CREATE FUNCTION app.habit_ownership_guard()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $$
+BEGIN
+  IF (SELECT r."rolbypassrls" OR r."rolsuper" FROM pg_catalog.pg_roles r WHERE r."rolname" = current_user) THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'habit_ownership_guard: a habit and its ticks stay with their client and habit'
+    USING ERRCODE = '42501';
+END
+$$;
+COMMENT ON FUNCTION app.habit_ownership_guard() IS
+  '20270502002500: BEFORE UPDATE guard on Habit (user_id, assigned_by_coach_id) and HabitLog (habit_id): only a role that bypasses row security changes them.';
+REVOKE ALL ON FUNCTION app.habit_ownership_guard() FROM PUBLIC;
+CREATE TRIGGER "habit_ownership_guard"
+  BEFORE UPDATE OF "user_id", "assigned_by_coach_id" ON "Habit"
+  FOR EACH ROW
+  WHEN (NEW."user_id" IS DISTINCT FROM OLD."user_id" OR NEW."assigned_by_coach_id" IS DISTINCT FROM OLD."assigned_by_coach_id")
+  EXECUTE FUNCTION app.habit_ownership_guard();
+CREATE TRIGGER "habitlog_ownership_guard"
+  BEFORE UPDATE OF "habit_id" ON "HabitLog"
+  FOR EACH ROW
+  WHEN (NEW."habit_id" IS DISTINCT FROM OLD."habit_id")
+  EXECUTE FUNCTION app.habit_ownership_guard();
 
 COMMIT;
