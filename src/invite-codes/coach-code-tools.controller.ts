@@ -67,7 +67,7 @@ export class CoachCodeToolsController {
   }
 
   @ApiOperation({
-    summary: 'Create a GP- code (Idempotency-Key header makes a retry return the first code)',
+    summary: 'Create a TGP- code (Idempotency-Key header makes a retry return the first code)',
   })
   @ApiResponse({ status: 201, description: 'Created (or the replayed first code, replayed=true).' })
   @Roles('coach', 'owner')
