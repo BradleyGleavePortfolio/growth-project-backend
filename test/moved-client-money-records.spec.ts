@@ -326,9 +326,9 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
     }));
     expect(out.refund).toMatchObject({ charge_id: 'ch_1', amount_cents: 1000 });
     expect(Object.keys(out.plan).sort()).toEqual(PLAN_KEPT);
-    const canceled = await w.payments.cancel(coach(OLD), CLIENT, 'p1', KEY);
-    expect(canceled).toMatchObject({ outcome: 'scheduled', access_ends_at: null });
-    expect(Object.keys(canceled.plan).sort()).toEqual(PLAN_KEPT);
+    for (const act of ['pause', 'resume', 'cancel'] as const) {
+      await expect(w.payments[act](coach(OLD), CLIENT, 'p1', KEY)).rejects.toMatchObject({ status: 404 });
+    }
   });
 
   it('after the move the record id alone refunds and shows a dispute pause', async () => {

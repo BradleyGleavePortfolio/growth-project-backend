@@ -179,7 +179,7 @@ export class CoachClientPaymentsService {
   }
 
   async cancel(actor: User, clientId: string, purchaseId: string, key: string) {
-    const row = await this.scopedRow(actor, clientId, purchaseId);
+    const row = await this.scopedRow(actor, clientId, purchaseId, true);
     const current = await this.view(actor, row);
     if (!current.actions.cancel) throw this.notAllowed(current, 'cancel');
     let result: CancelPlanResult;
@@ -197,7 +197,6 @@ export class CoachClientPaymentsService {
     await this.audit(actor, row, 'coach_payments.plan_canceled', { ...outcome, request_key: key });
     return {
       ...outcome,
-      ...((await this.movedAway(actor, clientId)) ? { access_ends_at: null } : {}),
       message: CANCEL_COPY[result.outcome],
       plan: await this.reload(actor, clientId, purchaseId),
     };
@@ -211,11 +210,9 @@ export class CoachClientPaymentsService {
     key: string,
     action: 'pause' | 'resume',
   ) {
-    const row = await this.scopedRow(actor, clientId, purchaseId);
+    const row = await this.scopedRow(actor, clientId, purchaseId, true);
     const current = await this.view(actor, row);
-    if (current.billing === (action === 'pause' ? 'paused' : 'running')) {
-      return { plan: await this.present(actor, clientId, current) };
-    }
+    if (current.billing === (action === 'pause' ? 'paused' : 'running')) return { plan: current };
     if (!current.actions[action] || !row.stripe_subscription_id) {
       throw this.notAllowed(current, action);
     }
@@ -234,7 +231,7 @@ export class CoachClientPaymentsService {
     }
     const audited = action === 'pause' ? 'billing_paused' : 'billing_resumed';
     await this.audit(actor, row, `coach_payments.${audited}`, { request_key: key });
-    return { plan: await this.present(actor, clientId, await this.view(actor, row, sub)) };
+    return { plan: await this.view(actor, row, sub) };
   }
 
   /** The client's paid plans this actor sold, or sold by a coach on the actor's team. */
@@ -265,9 +262,10 @@ export class CoachClientPaymentsService {
     return out;
   }
 
-  private async scopedRow(actor: User, clientId: string, purchaseId: string): Promise<PlanRow> {
+  /** `current` (pause, resume, cancel act on the plan): a coach the client left gets the same 404. */
+  private async scopedRow(actor: User, clientId: string, purchaseId: string, current = false) {
     const [row] = await this.scopedRows(actor, clientId, purchaseId);
-    if (!row) {
+    if (!row || (current && (await this.movedAway(actor, clientId)))) {
       throw new NotFoundException(
         coded(
           'PLAN_NOT_FOUND',
