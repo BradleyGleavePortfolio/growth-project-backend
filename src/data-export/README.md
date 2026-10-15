@@ -96,7 +96,7 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `onboarding_intake` | `ClientOnboardingIntake` | P2: the user's onboarding answers, health screening included, and the completion result. The completion claim fields are left out. |
 | `onboarding_intake_revisions` | `ClientOnboardingIntakeRevision` | P2: every earlier version of those answers, oldest first. |
 | `macro_targets` | `MacroTarget` | P2: every calorie and macro target set for the user (current and archived), with the note the app shows them. |
-| `assigned_workouts` | `ClientWorkoutAssignment` | P2: workouts a coach assigned: plan id, schedule, start and finish, the user's RPE, notes and logged results. Idempotency keys and draft ids are left out. |
+| `assigned_workouts` | `ClientWorkoutAssignment` | P2: workouts a coach assigned: plan id, schedule, start and finish, a skipped day, the coach's note for the day, the user's RPE, notes and logged results. Idempotency keys and draft ids are left out. |
 | `wearable_metric_preferences` | `WearableUserMetricPreference` | P2: which wearable the user chose as the source for each metric. |
 
 ---

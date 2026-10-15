@@ -10,9 +10,11 @@ import {
   ADJUST_UNDO_WINDOW_MS,
   FEATURE_ROMAN_ADJUST_ENABLED_ENV,
 } from '../../src/roman-adjust/roman-adjust.constants';
+import type { Prisma } from '@prisma/client';
 import {
   WorkoutBuilderService,
   parseAssignmentRows,
+  romanAdjustedSets,
 } from '../../src/workout-builder/workout-builder.service';
 import { egressWithGrants, fakeOf } from '../ai-egress/ai-egress.fakes';
 
@@ -280,6 +282,20 @@ describe('approve / edit / dismiss / undo', () => {
     expect(v.status).toBe('edited');
     expect(v.applied_change).toMatchObject({ sets_before: 18, sets_after: 17, volume_pct: 6 });
     expect(w.setsOf('asg-maya')).toEqual([4, 4, 3, 3, 3]);
+  });
+
+  it("C1V2-C1: the coach's reason reaches the client's day with each count before the change", async () => {
+    const { w, id } = await pending();
+    const v = await w.svc.approve(COACH, id, NOW, '  Bench drops today.  ');
+    expect(v.applied_change).toMatchObject({ client_reason: 'Bench drops today.' });
+    const row = { applied_change: w.proposals[0].applied_change as Prisma.JsonValue, decided_at: NOW };
+    expect(romanAdjustedSets([row])).toEqual([
+      { order: 0, sets: 3, sets_before: 5, client_reason: 'Bench drops today.' },
+      { order: 1, sets: 3, sets_before: 4, client_reason: 'Bench drops today.' },
+    ]);
+    const edited = await pending();
+    await edited.w.svc.edit(COACH, edited.id, { sets: [{ order: 0, sets: 4 }], client_reason: 'Lighter.' }, NOW);
+    expect(edited.w.proposals[0].applied_change).toMatchObject({ client_reason: 'Lighter.' });
   });
 
   it('edit with a percentage applies that percentage', async () => {

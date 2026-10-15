@@ -114,6 +114,7 @@ function asChange(v: Prisma.JsonValue | null): AdjustChange | null {
       sets_before: Number(x.sets_before),
       sets_after: Number(x.sets_after),
     })),
+    ...(typeof o.client_reason === 'string' ? { client_reason: o.client_reason } : {}),
   };
 }
 
@@ -341,8 +342,8 @@ export class RomanAdjustService {
 
   // ─── decisions ────────────────────────────────────────────────────────────
 
-  async approve(coachId: string, id: string, now: Date = new Date()): Promise<AdjustProposalView> {
-    return this.apply(coachId, id, 'approved', null, now);
+  async approve(coachId: string, id: string, now: Date = new Date(), clientReason?: string): Promise<AdjustProposalView> {
+    return this.apply(coachId, id, 'approved', null, now, clientReason);
   }
 
   /**
@@ -352,7 +353,7 @@ export class RomanAdjustService {
   async edit(
     coachId: string,
     id: string,
-    input: { volume_pct?: number; sets?: Array<{ order: number; sets: number }> },
+    input: { volume_pct?: number; sets?: Array<{ order: number; sets: number }>; client_reason?: string },
     now: Date = new Date(),
   ): Promise<AdjustProposalView> {
     const hasPct = typeof input.volume_pct === 'number';
@@ -361,7 +362,7 @@ export class RomanAdjustService {
     if (hasPct && (!Number.isInteger(input.volume_pct) || (input.volume_pct ?? 0) < 5 || (input.volume_pct ?? 0) > 50)) {
       throw adjustError('EDIT_INVALID');
     }
-    return this.apply(coachId, id, 'edited', input, now);
+    return this.apply(coachId, id, 'edited', input, now, input.client_reason);
   }
 
   private async apply(
@@ -370,6 +371,7 @@ export class RomanAdjustService {
     action: 'approved' | 'edited',
     edit: { volume_pct?: number; sets?: Array<{ order: number; sets: number }> } | null,
     now: Date,
+    clientReason?: string,
   ): Promise<AdjustProposalView> {
     const p = await this.ownPending(coachId, id);
     if (!(await this.egress.consentedClients([p.client_id])).has(p.client_id)) {
@@ -397,6 +399,7 @@ export class RomanAdjustService {
         else if (typeof edit.volume_pct === 'number') change = cutVolume(cur.exercises, edit.volume_pct);
         else change = setsChange(cur.exercises, new Map((edit.sets ?? []).map((s) => [s.order, s.sets])));
         if (!change) throw new ApplyRefused('invalid');
+        if (clientReason?.trim()) change = { ...change, client_reason: clientReason.trim() };
         const write = await this.workoutBuilder.replaceAssignmentSets(tx, p.assignment_id, {
           expectedFingerprint: p.base_fingerprint,
           sets: new Map(change.exercises.map((e) => [e.order, e.sets_after])),

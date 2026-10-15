@@ -2666,6 +2666,8 @@ model WorkoutPlanExercise {
   superset_group_id        String?
   notes                    String?
   archived_at              DateTime?
+  // C1V2-C1: the coach's chosen swaps (catalog ids or slugs), first choice first.
+  alternative_external_ids String[]    @default([])
 
   // (workout_plan_id, order) uniqueness is a *partial* unique index
   // declared in raw SQL (WHERE archived_at IS NULL) — Prisma cannot
@@ -2695,6 +2697,10 @@ model ClientWorkoutAssignment {
   // R43 Coach Brief — coach has reviewed/approved a completed submission.
   // null while waiting on coach approval; set when coach taps approve.
   approved_by_coach_at       DateTime?
+  // C1V2-C1: the client skipped this day (never once completed), and the
+  // coach's note to the client for it.
+  skipped_at                 DateTime?
+  client_note                String?
 
   // Stream 2 — AI execution. Set by `AssignWorkoutMaterializer` when a
   // `draft.assign_workout` is approved. NULL for human-assigned workouts.

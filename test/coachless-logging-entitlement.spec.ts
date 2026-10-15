@@ -121,6 +121,7 @@ const OPEN_ROUTES: ReadonlyArray<[AnyCtor, string, string]> = [
   [ClientMealPlanController, 'today', 'GET /me/meal-plan/today'],
   [AssignmentController, 'listMine', 'GET /assignments/me'],
   [AssignmentController, 'complete', 'PATCH /assignments/:id/complete'],
+  [AssignmentController, 'update', 'PATCH /assignments/:id'],
   [AiController, 'chat', 'POST /ai/chat'],
   [AiController, 'getStructuredContext', 'GET /ai/structured-context'],
 ];
