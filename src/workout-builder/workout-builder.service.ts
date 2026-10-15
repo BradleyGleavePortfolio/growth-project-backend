@@ -219,6 +219,11 @@ export class WorkoutBuilderService {
     routeKey: string,
     idempotencyKey: string | null | undefined,
     op: () => Promise<T>,
+    // Owner 4: the assignment rows a cached body holds. A completed replay
+    // returns it only while each row's client is still this user's
+    // (assertCanAccessClient), whatever client the retry names; else that
+    // guard's error, with no write and no push.
+    cachedAssignmentIds?: (cached: T) => string[],
   ): Promise<T> {
     if (!idempotencyKey) return op();
 
@@ -251,7 +256,16 @@ export class WorkoutBuilderService {
           throw new ConflictException('Request in progress — retry in a moment');
         }
         if (existing.status === 'completed') {
-          return existing.response_json as unknown as T;
+          const cached = existing.response_json as unknown as T;
+          if (cachedAssignmentIds) {
+            const rows = await this.prisma.clientWorkoutAssignment.findMany({
+              where: { id: { in: cachedAssignmentIds(cached) } },
+              select: { client_id: true },
+              distinct: ['client_id'],
+            });
+            for (const row of rows) await this.assertCanAccessClient(userId, row.client_id);
+          }
+          return cached;
         }
         // status === 'in_progress' → concurrent retry. Surface 409 so
         // the client can back off; we do NOT run the mutation a second time.
@@ -672,6 +686,7 @@ export class WorkoutBuilderService {
         this.emitAssignmentPush(dto.client_id, created.id, planId);
         return created;
       },
+      (cached) => [cached.id],
     );
   }
 
@@ -1496,6 +1511,7 @@ export class WorkoutBuilderService {
         this.emitAssignmentPush(dto.client_id, created[0].id, plans[0].id);
         return { assignments: created };
       },
+      (cached) => cached.assignments.map((row) => row.id),
     );
   }
 

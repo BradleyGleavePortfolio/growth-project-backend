@@ -12,7 +12,7 @@
  * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
  */
 import { randomUUID } from 'crypto';
-import { NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../src/prisma.service';
 import {
   RegimeRevisionRetentionService,
@@ -76,6 +76,17 @@ if (!DB_URL && process.env.CI === 'true') {
       builder.assignProgramToClient(a, ids.copy, { client_id: c, ...start }, key.copyProgram),
     libraryDay: () => builder.setExercises(a, ids.libraryDay, exercises, key.libraryDay),
   };
+  // Sol B3 at 16faf200: each assignment route that caches a client's rows,
+  // on A's own library source, so only the replay's cached-client check decides.
+  const push = { createNotification: jest.fn(async () => undefined), sendPush: jest.fn() };
+  const pushing = new WorkoutBuilderService(prisma, undefined, undefined, push as never);
+  const assigns: Array<[string, (client_id: string, k: string) => Promise<unknown>]> = [
+    ['assignPlan', (client_id, k) => pushing.assignPlan(a, ids.sourceDay, { client_id, ...at }, k)],
+    [
+      'assignProgramToClient',
+      (client_id, k) => pushing.assignProgramToClient(a, ids.source, { client_id, ...start }, k),
+    ],
+  ];
 
   beforeAll(async () => {
     const people: Array<[string, 'coach' | 'student', string | null]> = [
@@ -95,6 +106,7 @@ if (!DB_URL && process.env.CI === 'true') {
     await program('archiveControl', a, c);
     await program('stayCopy', a, d);
     await program('libraryB', b);
+    await program('source', a);
     for (const name of Object.keys(saves)) key[name] = randomUUID();
     process.env.FEATURE_MWB_TEMPLATES = 'true';
   });
@@ -141,6 +153,38 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(after).toEqual(copy);
     expect(await rows()).toEqual(before);
   });
+
+  it.each(assigns)(
+    "%s: a moved client's cached assignment never replays, whatever client the retry names",
+    async (_route, assign) => {
+      const mover = randomUUID();
+      const person = { supabase_id: mover, email: `hist2a2-${mover}`, name: 'Live person' };
+      await prisma.user.create({ data: { id: mover, ...person, role: 'student', coach_id: a } });
+      const [moverKey, stayKey] = [randomUUID(), randomUUID()];
+      const [revs, exs, planRevs, assigned, ledger] = await rows();
+      push.createNotification.mockClear();
+      // Control: A assigns to the mover, and the same key replays the stored body.
+      const stored = json(await assign(mover, moverKey));
+      expect(json(await assign(mover, moverKey))).toEqual(stored);
+      const filled = [revs, exs, planRevs, assigned + 1, ledger + 1];
+      expect(await rows()).toEqual(filled);
+
+      await prisma.user.update({ where: { id: mover }, data: { coach_id: b } });
+      for (const client of [d, mover]) {
+        const replay = assign(client, moverKey);
+        await expect(replay).rejects.toBeInstanceOf(ForbiddenException);
+        await expect(replay).rejects.toThrow('Client does not belong to this coach');
+      }
+      expect(await rows()).toEqual(filled);
+      expect(push.createNotification).toHaveBeenCalledTimes(1);
+
+      // A permitted replay (staying client d) returns the stored body; one write.
+      const kept = json(await assign(d, stayKey));
+      expect(json(await assign(d, stayKey))).toEqual(kept);
+      expect(await rows()).toEqual([revs, exs, planRevs, assigned + 2, ledger + 2]);
+      expect(push.createNotification).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("masters, a staying client's copy and the new coach go on as before", async () => {
     const renamed = await regimes.updateRegime(a, ids.library, 'Library 2');
