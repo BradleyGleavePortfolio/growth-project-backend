@@ -24,9 +24,7 @@ export interface MemberPageCursor {
 /**
  * B-AUTHZ-1: who a coach may add to a cohort. A target qualifies only when it
  * is a live client of the workspace coach (`coach_id` match, not deleted) or
- * already on the workspace's team (an active co-coach row). C6-BVIS: an active
- * client row no longer qualifies; the rule keeps a client who moved away out
- * of every space of the old coach.
+ * already on the workspace's team (an active co-coach row; C6-BVIS).
  */
 export interface AssignTargetScope {
   workspaceId: string;

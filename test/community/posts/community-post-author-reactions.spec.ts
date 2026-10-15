@@ -50,7 +50,6 @@ describe('community posts and replies: author first name and reactions (CF-COMM-
     broadcastCommunityEvent: jest.fn(async () => undefined),
   };
 
-  // C6-BVIS: the members are the coach's clients (the rule for chosen-members spaces).
   function user(role: string, name: string): User {
     const coachId = role === 'student' ? coach.id : null;
     return stub<User>(db.seed('user', { role, name, deleted_at: null, coach_id: coachId }));

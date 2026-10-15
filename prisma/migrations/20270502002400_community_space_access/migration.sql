@@ -1,9 +1,5 @@
--- C6-BVIS (agent 147; A2 item 12, A6.15 137-8): a person reads or writes a
--- community space only while app.community_can_access(space, person) is true
--- (before: any row not removed, so a client who changed coach kept the old
--- coach's spaces). Spaces get a visibility (default members, as today) and
--- package links; the helpers every community policy calls now ask the rule.
--- No anon grant (B-PUBLIC).
+-- C6-BVIS: a person reads or writes a community space only while
+-- app.community_can_access(space, person) is true. No anon grant (B-PUBLIC).
 
 BEGIN;
 
@@ -33,7 +29,7 @@ CREATE POLICY "community_cohort_packages_coach_all" ON "community_cohort_package
   USING (EXISTS (SELECT 1 FROM "community_cohorts" c WHERE c."id" = "cohort_id" AND app.is_community_workspace_coach(c."workspace_id")))
   WITH CHECK (EXISTS (SELECT 1 FROM "community_cohorts" c WHERE c."id" = "cohort_id" AND app.is_community_workspace_coach(c."workspace_id")));
 
-CREATE FUNCTION app.community_can_access(p_cohort_id uuid, p_user_id text)
+CREATE FUNCTION app.community_can_access(p_cohort_id uuid, p_user_id text, p_listed boolean DEFAULT false)
 RETURNS boolean
 LANGUAGE sql
 STABLE
@@ -52,7 +48,8 @@ AS $fn$
         OR (
           NOT EXISTS (SELECT 1 FROM public."community_workspace_bans" b
                       WHERE b."workspace_id" = c."workspace_id" AND b."user_id" = p_user_id AND b."lifted_at" IS NULL)
-          AND (m."status" = 'active' OR (m."id" IS NULL AND c."visibility" IN ('clients', 'package')))
+          AND (m."status" = 'active' OR (p_listed AND m."status" <> 'removed')
+               OR (m."id" IS NULL AND c."visibility" IN ('clients', 'package')))
           AND (
             m."role" <> 'student' OR c."visibility" = 'public'
             OR (u."coach_id" = w."coach_id"
@@ -70,15 +67,13 @@ AS $fn$
       )
   )
 $fn$;
-ALTER FUNCTION app.community_can_access(uuid, text) OWNER TO postgres;
-REVOKE ALL ON FUNCTION app.community_can_access(uuid, text) FROM PUBLIC;
-REVOKE ALL ON FUNCTION app.community_can_access(uuid, text) FROM anon;
-GRANT EXECUTE ON FUNCTION app.community_can_access(uuid, text) TO authenticated, service_role;
-COMMENT ON FUNCTION app.community_can_access(uuid, text) IS
-  '20270502002400 (C6-BVIS): the one rule for who reads or writes a community space. The workspace coach always; otherwise not banned in the workspace and: the coach''s team (an active co-coach row); public = an active row; members = an active row and the person''s coach is the space''s coach; clients = no row or an active one and that coach; package = as clients plus an entitled, unexpired purchase from that coach of a linked package. Row security (through the community helpers) and CommunityAccessService both call it.';
+ALTER FUNCTION app.community_can_access(uuid, text, boolean) OWNER TO postgres;
+REVOKE ALL ON FUNCTION app.community_can_access(uuid, text, boolean) FROM PUBLIC;
+REVOKE ALL ON FUNCTION app.community_can_access(uuid, text, boolean) FROM anon;
+GRANT EXECUTE ON FUNCTION app.community_can_access(uuid, text, boolean) TO authenticated, service_role;
+COMMENT ON FUNCTION app.community_can_access(uuid, text, boolean) IS '20270502002400: the one rule for a community space. p_listed (rosters, Remove, membership rows) also counts a row that is not removed, so a pending invitation is listed; content reads and writes use the default.';
 
--- The rule for a space of the workspace that is not public (the Hall, DMs and
--- workspace-wide rows). DEFINER, so the helpers below read no table under RLS.
+-- A non-public space of the workspace (the Hall, DMs); DEFINER: no RLS loop.
 CREATE FUNCTION app.community_workspace_open(p_workspace_id uuid, p_user_id text)
 RETURNS boolean
 LANGUAGE sql
@@ -135,16 +130,15 @@ COMMENT ON FUNCTION app.workspace_has_participant(uuid, text) IS
   '20270502002400: the user is the workspace coach or passes app.community_can_access for a space of the workspace that is not public (the Hall, DMs and workspace-wide rows).';
 
 ALTER POLICY "community_memberships_coach_all" ON "community_memberships"
-  USING (app.is_community_workspace_coach("workspace_id") AND app.community_can_access("cohort_id", "user_id"))
+  USING (app.is_community_workspace_coach("workspace_id") AND app.community_can_access("cohort_id", "user_id", true))
   WITH CHECK (app.is_community_workspace_coach("workspace_id"));
 
 ALTER POLICY "community_memberships_self_or_shared_cohort_select" ON "community_memberships"
   USING (
     "user_id"::text = app.current_user_id()
-    OR (app.shares_community_cohort("cohort_id") AND app.community_can_access("cohort_id", "user_id"))
+    OR (app.shares_community_cohort("cohort_id") AND app.community_can_access("cohort_id", "user_id", true))
   );
 
--- A sender edits or deletes their own space message only while they may write there.
 ALTER POLICY "community_messages_author_update" ON "community_messages"
   USING (app.is_community_workspace_coach("workspace_id")
          OR ("sender_id"::text = app.current_user_id() AND ("scope" <> 'cohort' OR app.shares_community_cohort("cohort_id"))))

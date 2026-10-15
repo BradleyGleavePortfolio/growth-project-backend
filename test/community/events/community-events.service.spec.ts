@@ -79,8 +79,8 @@ function makeService(blocks: Array<[string, string]> = []) {
     ),
     canAccessCohort: jest.fn(async () => true),
     isWorkspaceCoach: jest.fn(async (_id: string, userId: string) => userId === coach.id),
-    // C6-BVIS: the spaces the rule opens (was the events repository's own row query).
     listAccessibleCohortIds: jest.fn(async (): Promise<string[]> => []),
+    readersOf: jest.fn(async (_ws: string, _c: string | null, people: string[]) => people),
     // Membership-role resolvers used by RSVP eligibility (F1). By default a
     // non-coach caller resolves to an active STUDENT membership so the happy
     // path RSVPs; tests override these to model an assistant / co_coach row.
@@ -501,6 +501,16 @@ describe('CommunityEventsService (v2-3)', () => {
       });
       expect(repo.claimReminderRecipients).toHaveBeenCalledTimes(1);
       expect(push.sendCommunityPush).toHaveBeenCalledTimes(1);
+    });
+
+    it('reminds only the RSVPs who may still read the event (C6-BVIS: a client who moved is skipped)', async () => {
+      const { service, access, repo, push } = makeService();
+      repo.findScheduledStartingBefore.mockResolvedValue([baseEvent({ starts_at: new Date('2026-07-01T20:00:00.000Z') })]);
+      repo.claimReminderRecipients.mockResolvedValue([{ id: 'r1', user_id: client.id }, { id: 'r2', user_id: stranger.id }]);
+      access.readersOf.mockResolvedValue([client.id]);
+      await service.runTomorrowPromotion(new Date('2026-07-01T12:00:00.000Z'), 24 * 60 * 60 * 1000, 100);
+      expect(access.readersOf).toHaveBeenCalledWith(WS, null, [client.id, stranger.id]);
+      expect(push.sendCommunityPush.mock.calls).toEqual([[expect.objectContaining({ recipientId: client.id })]]);
     });
 
     it('CAS loser (count===0) promotes nothing and emits no ping/push', async () => {

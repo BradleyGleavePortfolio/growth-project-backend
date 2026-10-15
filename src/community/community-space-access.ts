@@ -1,21 +1,17 @@
 import type { PrismaService } from '../prisma.service';
 
-/**
- * C6-BVIS: a person reads or writes a community space only while
- * app.community_can_access(space, person) is true (migration 20270502002400).
- * Row security calls the same SQL function; the server asks it here, never a
- * copy of the rule. Takes [spaceId, personId] pairs and returns the keys
- * (spaceAccessKey) of the pairs that pass. One round trip; none for no pairs.
- */
+/** C6-BVIS: keys (spaceAccessKey) of the [space, person] pairs app.community_can_access passes, one
+ * round trip. `listed` also counts a row that is not removed (rosters: a pending invitation). */
 export async function spacesOpenTo(
   prisma: PrismaService,
   pairs: ReadonlyArray<readonly [string, string]>,
+  listed = false,
 ): Promise<Set<string>> {
   if (pairs.length === 0) return new Set();
   const rows = await prisma.$queryRaw<{ k: string }[]>`
     SELECT t."c"::text || ':' || t."u" AS "k"
     FROM unnest(${pairs.map((p) => p[0])}::uuid[], ${pairs.map((p) => p[1])}::text[]) AS t("c", "u")
-    WHERE app.community_can_access(t."c", t."u")`;
+    WHERE app.community_can_access(t."c", t."u", ${listed}::boolean)`;
   return new Set(rows.map((r) => r.k));
 }
 
@@ -31,7 +27,8 @@ export async function rowsWithSpaceAccess<T>(
   prisma: PrismaService,
   rows: T[],
   pair: (row: T) => readonly [string, string],
+  listed = false,
 ): Promise<T[]> {
-  const open = await spacesOpenTo(prisma, rows.map(pair));
+  const open = await spacesOpenTo(prisma, rows.map(pair), listed);
   return rows.filter((r) => open.has(spaceAccessKey(...pair(r))));
 }

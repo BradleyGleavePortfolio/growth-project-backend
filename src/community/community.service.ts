@@ -237,7 +237,7 @@ export class CommunityService {
       event: eventRow,
       pinnedPost: pinnedRow,
       challenge: challengeRow,
-    } = await this.repo.findTodayContent(workspace.id, new Date());
+    } = await this.repo.findTodayContent(workspace.id, user.id, new Date());
     // Two-way block: Today never surfaces a pinned post, event or challenge
     // authored by someone in a block relation with the caller (the Hall,
     // events and challenges lists hide them too). One block lookup.

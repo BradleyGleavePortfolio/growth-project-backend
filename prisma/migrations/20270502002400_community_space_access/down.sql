@@ -1,6 +1,4 @@
--- Rollback of 20270502002400 (C6-BVIS): the helpers and the four policies get
--- back their earlier predicates (20261224000000, 20270502000200,
--- 20261212000000), then the rule, the package link and the visibility go.
+-- Rollback of 20270502002400: earlier helpers and policies, then drop the rest.
 
 BEGIN;
 
@@ -75,7 +73,7 @@ COMMENT ON FUNCTION app.shares_community_cohort(uuid) IS
   'Caller shares the cohort via a non-removed membership. search_path pinned to '''' (S1-DB-01).';
 
 DROP FUNCTION app.community_workspace_open(uuid, text);
-DROP FUNCTION app.community_can_access(uuid, text);
+DROP FUNCTION app.community_can_access(uuid, text, boolean);
 
 DROP TABLE "community_cohort_packages";
 

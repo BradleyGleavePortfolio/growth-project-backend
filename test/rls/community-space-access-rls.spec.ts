@@ -1,26 +1,16 @@
-/**
- * C6-BVIS: one rule decides who reads or writes a community space,
- * app.community_can_access(space, person) (migration 20270502002400). Row
- * security and the server ask the same function.
- *
- * Runs in the rls-live-tests job on a superuser copy of rls_replay. Row reads
- * and writes run as role authenticated (no BYPASSRLS) with the backend identity
- * (app.current_user_id/_role and the JWT sub); the server paths run the real
- * access service and repositories on the same database.
- * Coach X owns four spaces, one per visibility; Y is another coach with one
- * space. I is X's client in every scope (joined the public space, a member of
- * the members space, holds X's package); O is X's client with nothing else; E
- * is X's client whose package ended; M was X's client in every scope and moves
- * to Y; N has no coach and joined X's public space; Z is Y's client. Every 0
- * or refusal follows a read of 1 by the same person.
- * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
- */
+// C6-BVIS: app.community_can_access decides who reads or writes a space; rows run as role authenticated,
+// server paths run the real services. X, Y coach; I is X's client in every scope; O is X's client; E's
+// package ended; M moves X -> Y; N has no coach (X's public space); Z is Y's client. Every 0 follows a 1.
 import { randomUUID } from 'crypto';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { NotFoundException } from '@nestjs/common';
+import { Prisma, PrismaClient, type User } from '@prisma/client';
+import { CommunityCohortMembersRepository } from '../../src/community/cohorts/community-cohort-members.repository';
+import { CommunityCohortMembersService } from '../../src/community/cohorts/community-cohort-members.service';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { CommunityRepository } from '../../src/community/community.repository';
 import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
 import type { PrismaService } from '../../src/prisma.service';
+import type { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 import { stub } from '../utils/trial-fakes';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
@@ -228,6 +218,34 @@ const EDIT_OWN = `UPDATE "community_messages" SET "body" = "body"`;
       await prisma.$executeRaw`INSERT INTO "community_memberships" ("id", "workspace_id", "cohort_id", "user_id", "role", "status", "updated_at")
         VALUES (${randomUUID()}::uuid, ${ws.X}::uuid, ${space.mem}::uuid, ${id.Y}, 'assistant', 'active', now())`;
       expect([await count('Y', 'community_messages', msg.mem), await send('Y', 'mem')]).toEqual([1, 1]);
+    });
+
+    describe('an invitation by email: the coach manages it while the person is their client; it opens nothing', () => {
+      const members = new CommunityCohortMembersService(access, new CommunityCohortMembersRepository(stub<PrismaService>(prisma)), stub<CommunitySafetyService>({}));
+      const coach = stub<User>(user('X'));
+      const event = uuids(['mem', 'cli'] as const);
+      beforeAll(() => prisma.communityEvent.createMany({ data: (['mem', 'cli'] as const).map((s, i) => ({ id: event[s],
+        workspace_id: ws.X, cohort_id: space[s], created_by_id: id.X, title: 'RLS event', starts_at: new Date(Date.now() + (i + 1) * 36e5) })) }));
+
+      it.each([{ who: 'a current client', moved: false }, { who: 'a client who then moves away', moved: true }])('$who', async ({ moved }) => {
+        const { member } = await members.assign(coach, space.mem, { email: `space-access-${id.E}`, role: 'student' });
+        expect([member.status, await count('E', 'community_messages', msg.cli)]).toEqual(['invited', 1]);
+        expect([await count('E', 'community_messages', msg.mem), await send('E', 'mem'), await access.canAccessCohort(cohort('mem'), user('E'))])
+          .toEqual([0, DENIED, false]); // the invitee reads and writes nothing there
+        if (moved) await prisma.$executeRaw`UPDATE "User" SET "coach_id" = ${id.Y} WHERE "id" = ${id.E}`;
+        expect(await count('X', 'community_memberships', row.Imem)).toBe(1);
+        const n = moved ? 0 : 1;
+        expect({
+          rls: [await count('X', 'community_memberships', member.id),
+            await write('X', `UPDATE "community_memberships" SET "updated_at" = now() WHERE "id" = $1::uuid`, member.id)],
+          list: (await members.list(coach, space.mem, {})).members.filter((m) => m.user_id === id.E).length,
+          replyPush: (await access.readersOf(ws.X, null, [id.E])).length, // the reply push on their Hall post
+          reminderPush: (await access.readersOf(ws.X, space.cli, [id.E])).length,
+          today: (await foundation.findTodayContent(ws.X, id.E, new Date())).event?.id ?? null, // never the nearer mem event
+        }).toEqual({ rls: [n, n], list: n, replyPush: n, reminderPush: n, today: moved ? null : event.cli });
+        const cancel = members.remove(coach, space.mem, id.E);
+        await (moved ? expect(cancel).rejects.toBeInstanceOf(NotFoundException) : expect(cancel).resolves.toMatchObject({ member: { status: 'removed' } }));
+      });
     });
   });
 });

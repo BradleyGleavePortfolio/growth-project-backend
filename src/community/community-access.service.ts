@@ -52,10 +52,7 @@ export class CommunityAccessService {
     return this.prisma.communityPost.findUnique({ where: { id: postId } });
   }
 
-  /**
-   * The person's membership row in a space (any status), or null when the one
-   * rule (app.community_can_access, C6-BVIS) keeps them out of the space.
-   */
+  /** The person's membership row in a space (any status), or null when the rule keeps them out. */
   async membershipInCohort(cohortId: string, userId: string): Promise<CommunityMembership | null> {
     const m = await this.prisma.communityMembership.findUnique({
       where: { cohort_id_user_id: { cohort_id: cohortId, user_id: userId } },
@@ -63,12 +60,7 @@ export class CommunityAccessService {
     return m && (await canEnterSpace(this.prisma, cohortId, userId)) ? m : null;
   }
 
-  /**
-   * The spaces of a workspace the person may read and write (the one rule).
-   * The challenge, voice, search, classroom and event lists push these into
-   * their repository query so a page and its cursor only ever hold rows the
-   * person may read (never post-filtered after pagination).
-   */
+  /** The spaces of a workspace the rule opens; lists put these in their query (never post-filter a page). */
   async listAccessibleCohortIds(workspaceId: string, userId: string): Promise<string[]> {
     return (await this.openSpaces(workspaceId, userId)).map((c) => c.id);
   }
@@ -81,17 +73,19 @@ export class CommunityAccessService {
     return rowsWithSpaceAccess(this.prisma, spaces, (c) => [c.id, userId] as const);
   }
 
-  /** The rows whose person the rule lets into the space (rosters). */
+  /** Membership rows listed in the space (rosters, Remove): the rule, a pending invitation counted. */
   async peopleInSpace<T>(cohortId: string, rows: T[], personOf: (row: T) => string): Promise<T[]> {
-    return rowsWithSpaceAccess(this.prisma, rows, (r) => [cohortId, personOf(r)] as const);
+    return rowsWithSpaceAccess(this.prisma, rows, (r) => [cohortId, personOf(r)] as const, true);
   }
 
-  /**
-   * The person's first active row in a space of the workspace that is not
-   * public and that the rule lets them into, or null. Workspace-wide surfaces
-   * (the Hall, DMs, workspace voice and events) are the coach's circle; a
-   * public space opens only itself.
-   */
+  /** Push recipients: the people who may read a row of the workspace (of its space, if any) now. */
+  async readersOf(workspaceId: string, cohortId: string | null, people: string[]): Promise<string[]> {
+    if (cohortId) return rowsWithSpaceAccess(this.prisma, people, (id) => [cohortId, id] as const);
+    const ok = await Promise.all(people.map((id) => this.canAccessWorkspace(workspaceId, { id, role: 'student' })));
+    return people.filter((_, i) => ok[i]);
+  }
+
+  /** The person's first active row in a non-public space the rule opens (the Hall, DMs), or null. */
   async membershipInWorkspace(
     workspaceId: string,
     userId: string,
@@ -125,11 +119,7 @@ export class CommunityAccessService {
     return ws !== null;
   }
 
-  /**
-   * True when the user may read and write in a space: app.community_can_access
-   * (the workspace coach always; otherwise the space's visibility decides), or
-   * the platform owner's support override. Gates every cohort read and write.
-   */
+  /** True when the user may read and write in a space: the rule, or the platform owner's override. */
   async canAccessCohort(
     cohort: Pick<CommunityCohort, 'id' | 'workspace_id'>,
     user: { id: string; role: string },
@@ -138,11 +128,7 @@ export class CommunityAccessService {
     return canEnterSpace(this.prisma, cohort.id, user.id);
   }
 
-  /**
-   * True when the user may read workspace-wide content (the Hall, workspace
-   * lists): the owning coach, the platform owner, or a person the rule lets
-   * into a space of the workspace that is not public.
-   */
+  /** True when the user may read workspace-wide content: the coach, the owner, or a non-public space opens. */
   async canAccessWorkspace(
     workspaceId: string,
     user: { id: string; role: string },

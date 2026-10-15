@@ -24,12 +24,7 @@ export const DEFAULT_COHORT_NAME = 'All members';
 export class CommunityRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * The caller's oldest active row in a space that is not public and that the
-   * one rule (app.community_can_access, C6-BVIS) lets them into, or null. A
-   * client who moved has none left in the old coach's community, so /me joins
-   * them to their coach's.
-   */
+  /** The caller's oldest active row in a non-public space the rule opens (C6-BVIS), or null. */
   async findActiveMembershipForUser(userId: string) {
     const rows = await this.prisma.communityMembership.findMany({
       where: { user_id: userId, status: 'active', cohort: { visibility: { not: 'public' } } },
@@ -133,7 +128,7 @@ export class CommunityRepository {
     return def?.id === cohort.id;
   }
 
-  /** Active rows of a cohort whose person the rule still lets in. */
+  /** Active-member count for a cohort. */
   async cohortMemberCount(cohortId: string): Promise<number> {
     const rows = await this.prisma.communityMembership.findMany({
       where: { cohort_id: cohortId, status: 'active' },
@@ -162,8 +157,7 @@ export class CommunityRepository {
 
   /**
    * Cohorts the caller can see:
-   *  - students: the spaces of their rows and of their coach's community that
-   *    the rule lets them into;
+   *  - students: the spaces of their rows and their coach's community the rule opens;
    *  - coaches:  all cohorts in workspaces they own;
    *  - owners:   every cohort.
    * Scope is always server-derived from the caller's role/identity.
@@ -225,12 +219,16 @@ export class CommunityRepository {
   /**
    * Bounded "Today" content for a workspace, fetched concurrently (no N+1):
    * nearest upcoming event, most-recently-pinned post, active challenge with
-   * the nearest ends_at.
+   * the nearest ends_at; workspace-wide or in a space the rule opens to the caller.
    */
-  async findTodayContent(workspaceId: string, now: Date) {
+  async findTodayContent(workspaceId: string, userId: string, now: Date) {
+    const spaces = await this.prisma.communityCohort.findMany({ where: { workspace_id: workspaceId }, select: { id: true } });
+    const open = await rowsWithSpaceAccess(this.prisma, spaces, (c) => [c.id, userId] as const);
+    const inSpace = { OR: [{ cohort_id: null }, { cohort_id: { in: open.map((c) => c.id) } }] };
     const [event, pinnedPost, challenge] = await Promise.all([
       this.prisma.communityEvent.findFirst({
         where: {
+          ...inSpace,
           workspace_id: workspaceId,
           state: 'scheduled',
           starts_at: { gte: now },
@@ -240,6 +238,7 @@ export class CommunityRepository {
       }),
       this.prisma.communityPost.findFirst({
         where: {
+          ...inSpace,
           workspace_id: workspaceId,
           pinned_at: { not: null },
           visibility: 'active',
@@ -249,6 +248,7 @@ export class CommunityRepository {
       }),
       this.prisma.communityChallenge.findFirst({
         where: {
+          ...inSpace,
           workspace_id: workspaceId,
           status: 'active',
           archived_at: null,
@@ -286,7 +286,7 @@ export class CommunityRepository {
     });
   }
 
-  /** Active cohort ids the caller belongs to and the rule lets them into. */
+  /** Active cohort ids the caller belongs to. */
   async findActiveCohortIdsForUser(userId: string): Promise<string[]> {
     const rows = await this.prisma.communityMembership.findMany({
       where: { user_id: userId, status: 'active' },

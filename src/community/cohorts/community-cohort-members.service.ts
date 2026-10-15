@@ -207,8 +207,7 @@ export class CommunityCohortMembersService {
     // Two-way block on the member roster: a member does not see people they
     // blocked or who blocked them. The coach's management view stays complete
     // (the coach administers every membership; moderation and ban act on it).
-    // C6-BVIS: the roster is the people the rule lets into the space now (a
-    // client who moved away leaves every roster of the old coach at once).
+    // C6-BVIS: the rows the rule lists (a current client's invitation; never a moved client).
     const inSpace = await this.access.peopleInSpace(cohort.id, rows, (m) => m.user_id);
     const visible = isCoach
       ? inSpace
@@ -286,8 +285,7 @@ export class CommunityCohortMembersService {
 
     const membership = await this.repo.findMembership(cohort.id, userId);
     if (!membership) throw new NotFoundException(NOT_FOUND);
-    // C6-BVIS: an open row of a person the rule keeps out (a client who moved
-    // away) answers like no row at all, before any name or email.
+    // C6-BVIS: an open row the rule does not list answers like no row, before any name or email.
     if (
       membership.status !== 'removed' &&
       (await this.access.peopleInSpace(cohort.id, [membership], (m) => m.user_id)).length === 0

@@ -3953,7 +3953,6 @@ model CoachPackage {
   // behaves exactly as today (paywall-only, zero content rows).
   is_sellable Boolean               @default(false)
   contents    CoachPackageContent[]
-  // C6-BVIS: the community spaces this package opens.
   community_spaces CommunityCohortPackage[]
 
   // PR-6 — draft/publish lifecycle. null = DRAFT (not purchasable); a
@@ -7124,7 +7123,6 @@ model CommunityCohort {
   @@map("community_cohorts")
 }
 
-/// C6-BVIS: the packages that open a package space.
 model CommunityCohortPackage {
   cohort_id  String   @db.Uuid
   package_id String
