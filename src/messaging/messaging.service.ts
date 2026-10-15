@@ -742,8 +742,10 @@ export class MessagingService {
     // realtime ping, push, audit, analytics or PTM signal. The INSERT commits
     // only while the caller still holds the job's lease (holdWelcomeLease);
     // otherwise WelcomeLeaseLostError is thrown before any persistence or
-    // fan-out.
-    options: { welcome?: { jobId: string; lease: string } } = {},
+    // fan-out. `aiDraftId` (ROMANMARK) is the approved Roman draft this message
+    // began as, passed only by the two Roman message materialisers and stored
+    // as CoachMessage.ai_draft_id, which both thread routes return (the mark).
+    options: { welcome?: { jobId: string; lease: string }; aiDraftId?: string } = {},
   ) {
     // Back-compat: existing test fixtures and pre-Phase-6C call sites pass
     // a bare string. Normalize to the payload shape so the new code only
@@ -781,6 +783,7 @@ export class MessagingService {
       voice_duration_sec: voice?.duration_sec ?? null,
       voice_size_bytes: voice?.size_bytes ?? null,
       voice_content_type: voice?.content_type ?? null,
+      ...(options.aiDraftId ? { ai_draft_id: options.aiDraftId } : {}),
     };
     // Main merge (B-609-3 + A3-MSG-CORE): a welcome-job send (internal only,
     // never carries client_message_id or reply_to_id) keeps the lease-fenced
