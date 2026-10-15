@@ -39,12 +39,10 @@ const backend = (key: Key): Who => ({ key, guc: true });
 const dataApi = (key: Key): Who => ({ key, guc: false });
 const ROLE: Record<Key, string> = { A: 'student', K: 'coach', L: 'coach', F: 'coach', O: 'owner' };
 const SAFE_COLUMNS = ['leaderboard_display_name', 'name', 'phone', 'show_on_leaderboard'];
-const AUTH_UID_POLICIES = [
-  'ClientWorkoutAssignment.assignment_client_read', 'ClientWorkoutAssignment.assignment_coach_manage',
-  'WorkoutBuilderIdempotencyKey.WorkoutBuilderIdempotencyKey_owner', 'WorkoutPlan.WorkoutPlan_coach_owner',
-  'WorkoutPlan.client_read_assigned_plans', 'WorkoutPlanExercise.WorkoutPlanExercise_through_plan',
-  'WorkoutPlanExercise.client_read_assigned_exercises',
-];
+// 20270502000800_workout_identity_current_user_id moved the seven workout plan and assignment
+// rules to app.current_user_id(); the tenant_shared branch of p_workoutprogram_select still
+// sub-selects the caller's own "User" row, so it keeps this check from passing on no rows.
+const AUTH_UID_POLICIES = ['WorkoutProgram.p_workoutprogram_select'];
 
 (DB_URL ? describe : describe.skip)('"User": users cannot rewrite their own role, coach or login id at the row layer', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
