@@ -101,23 +101,25 @@ export class MealPlansService {
     return this.prisma.mealPlan.create({ data });
   }
 
-  // Coach's plans for a specific client, newest first, excluding archived.
-  // Composite (coach_id, client_id, created_at) index makes this a single seek.
+  // The client's plans, newest first, excluding archived. Owner 139-13: the
+  // client's history follows them, so the current coach sees every plan,
+  // whichever coach made it (`coach_id` stays the author, kept as history).
   async listForClientByCoach(coachId: string, clientId: string) {
     await this.assertClientOfCoach(coachId, clientId);
     return this.prisma.mealPlan.findMany({
-      where: { coach_id: coachId, client_id: clientId, archived_at: null },
+      where: { client_id: clientId, archived_at: null },
       orderBy: { created_at: 'desc' },
     });
   }
 
-  // Coach updates a plan. Must belong to *this* coach — 404 if missing or
-  // owned by a different coach. Already-archived plans are not editable;
+  // Coach updates a plan. The plan's client must be *this* coach's client
+  // now, not the coach who made it (owner 4): 404 if missing or the client
+  // is another coach's. Already-archived plans are not editable;
   // returning 404 in that case is intentional so callers can't probe for
   // archived ids.
   async updateByCoach(coachId: string, planId: string, dto: UpdateMealPlanDto) {
     const existing = await this.prisma.mealPlan.findFirst({
-      where: { id: planId, coach_id: coachId, archived_at: null },
+      where: { id: planId, client: { coach_id: coachId }, archived_at: null },
       select: { id: true, days: true },
     });
     if (!existing) throw new NotFoundException('Meal plan not found');
@@ -148,7 +150,7 @@ export class MealPlansService {
   // 404 mirrors the update path above and is what the mobile client expects.
   async archiveByCoach(coachId: string, planId: string) {
     const result = await this.prisma.mealPlan.updateMany({
-      where: { id: planId, coach_id: coachId, archived_at: null },
+      where: { id: planId, client: { coach_id: coachId }, archived_at: null },
       data: { archived_at: new Date() },
     });
     if (result.count === 0) throw new NotFoundException('Meal plan not found');

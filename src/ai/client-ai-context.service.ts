@@ -204,12 +204,11 @@ export class ClientAIContextService {
             },
           })
         : Promise.resolve(null),
-      user.coach_id
-        ? this.prisma.mealPlan.findFirst({
-            where: { coach_id: user.coach_id, client_id: userId, archived_at: null },
-            orderBy: { updated_at: 'desc' },
-          })
-        : Promise.resolve(null),
+      // Owner 139-13: the client's plan stays theirs, whichever coach made it.
+      this.prisma.mealPlan.findFirst({
+        where: { client_id: userId, archived_at: null },
+        orderBy: { updated_at: 'desc' },
+      }),
       // M1: active fast (end_time IS NULL)
       this.prisma.fastingWindow.findFirst({
         where: { user_id: userId, end_time: null },
