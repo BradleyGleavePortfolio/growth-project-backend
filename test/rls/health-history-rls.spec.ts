@@ -289,5 +289,23 @@ const DENIED = '42501';
       expect(await sees(backend('F'))).toEqual(seen(1, 1, 1, 1));
       for (const k of ['A', 'K', 'F'] as Key[]) expect(await sees(dataApi(k))).toEqual(seen(0, 0, 0, 0));
     });
+
+    // ROMAN-CRISIS-ALERT: the new crisis alert row (as Roman writes it: no
+    // message id) is read and resolved by the client's current coach only.
+    it('a crisis alert: only the current coach reads and resolves it; the client and other coaches never', async () => {
+      const crisis = `ca3-${run}`;
+      const ack = `UPDATE "CoachAlert" SET "acknowledged_at" = now() WHERE "id" = $1`;
+      expect(await prisma.$executeRaw`INSERT INTO "CoachAlert" ("id", "coach_id", "client_id", "alert_type", "severity", "message")
+        VALUES (${crisis}, ${id.F}, ${id.A}, 'roman_crisis_reply', 'critical', 'RLS test alert')`).toBe(1);
+      expect(await reads(backend('F'), 'CoachAlert', crisis)).toBe(1);
+      for (const k of ['K', 'L', 'A', 'C'] as Key[]) expect(await reads(backend(k), 'CoachAlert', crisis)).toBe(0);
+      for (const k of ['F', 'A'] as Key[]) expect(await reads(dataApi(k), 'CoachAlert', crisis)).toBe(0);
+      expect(await write(backend('F'), ack, crisis)).toBe(1);
+      for (const k of ['K', 'L', 'A'] as Key[]) expect(await write(backend(k), ack, crisis)).toBe(0);
+      await moveA('K');
+      expect(await reads(backend('K'), 'CoachAlert', crisis)).toBe(1);
+      expect(await reads(backend('F'), 'CoachAlert', crisis)).toBe(0);
+      await moveA('F');
+    });
   });
 });

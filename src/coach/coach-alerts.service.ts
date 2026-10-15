@@ -43,15 +43,19 @@ export type CoachAlertType =
   | 'streak_dropped'
   | 'finance_eod_gap'
   | 'bloodwork_review'
-  // The two Roman safety alerts (owner 22a, 57): Roman's urgent medical safety
-  // reply, and its eating-disorder safety reply. The row holds no name and no
-  // message text; payload.roman_message_id points at the client's message.
+  // The Roman safety alerts (owner 22a, 57, ROMAN-CRISIS-ALERT): Roman's
+  // urgent medical safety reply, its eating-disorder safety reply, and its
+  // emergency or self-harm (crisis) reply. The row holds no name and no
+  // message text; payload.roman_message_id points at the client's message,
+  // except on the crisis alert, which points at nothing they wrote.
   | 'roman_urgent_reply'
-  | 'roman_eating_disorder_reply';
+  | 'roman_eating_disorder_reply'
+  | 'roman_crisis_reply';
 
 export const ROMAN_SAFETY_ALERT_TYPES: readonly string[] = [
   'roman_urgent_reply',
   'roman_eating_disorder_reply',
+  'roman_crisis_reply',
 ];
 
 /**
@@ -109,7 +113,7 @@ export class CoachAlertsService {
    *
    * Dedup pattern: identical to the risk_red_transition path. The 24h window
    * applies to every alert type except the Roman safety alerts: each urgent
-   * reply is its own event, so an earlier unacknowledged one never hides it,
+   * or crisis reply is its own event, so an earlier unacknowledged one never hides it,
    * and the eating-disorder alert is once per conversation (`id`).
    */
   async createAlert(input: CreateAlertInput): Promise<CoachAlert> {

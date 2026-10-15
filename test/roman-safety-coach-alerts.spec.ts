@@ -34,6 +34,8 @@ const ED_PUSH = 'Safety alert for one of your clients. Open TGP to see details.'
 // Owner 57d: the coach's inbox row for the same alerts.
 const URGENT_INBOX = 'Urgent safety alert for one of your clients. Tap to see details.';
 const ED_INBOX = 'Safety alert for one of your clients. Tap to see details.';
+// ROMAN-CRISIS-ALERT: the approved in-app title, first name only.
+const CRISIS_LINE = 'Roman sent Jane a crisis safety reply. Please check in with them today.';
 
 describe('the lock-screen push', () => {
   it('is the fixed line for each safety alert, under the coach-alert title, and never the alert text', () => {
@@ -44,7 +46,12 @@ describe('the lock-screen push', () => {
     expect(urgent).toEqual({ title: plain.title, body: URGENT_PUSH });
     expect(ed).toEqual({ title: plain.title, body: ED_PUSH });
     expect(lockScreenCopy(NotificationKind.COACH_ALERT, 'x', { safetyAlert: 'toString' }, now)).toEqual(plain);
-    expect(SAFETY_ALERT_PUSH_BODY).toEqual({ roman_urgent_reply: URGENT_PUSH, roman_eating_disorder_reply: ED_PUSH });
+    // ROMAN-CRISIS-ALERT: the crisis alert reuses the approved urgent line.
+    expect(SAFETY_ALERT_PUSH_BODY).toEqual({
+      roman_urgent_reply: URGENT_PUSH,
+      roman_eating_disorder_reply: ED_PUSH,
+      roman_crisis_reply: URGENT_PUSH,
+    });
   });
 });
 
@@ -59,6 +66,7 @@ describe('the emitter', () => {
   it.each([
     ['roman_urgent_reply', URGENT_PUSH, URGENT_INBOX],
     ['roman_eating_disorder_reply', ED_PUSH, ED_INBOX],
+    ['roman_crisis_reply', URGENT_PUSH, URGENT_INBOX],
   ])('%s: the inbox row has its own line, and the row and the push open that alert', async (alertType, push, inbox) => {
     const { e, create, sendPush } = emitter();
     await e.emit({ ...base, alertType, message: push });
@@ -67,13 +75,15 @@ describe('the emitter', () => {
     expect(sendPush.mock.calls[0][0]).toMatchObject({ context: { safetyAlert: alertType, alertId: 'a1' } });
   });
 
-  it('owner 57q: each safety alert is one push of its own; only the urgent one is urgent', async () => {
+  it('owner 57q: each safety alert is one push of its own; only the urgent and crisis ones are urgent', async () => {
     const { e, sendPush } = emitter();
     await e.emit({ ...base, alertType: 'roman_urgent_reply', message: URGENT_PUSH });
     await e.emit({ ...base, alertId: 'a2', alertType: 'roman_eating_disorder_reply', message: ED_PUSH });
+    await e.emit({ ...base, alertId: 'a3', alertType: 'roman_crisis_reply', message: URGENT_PUSH });
     expect(sendPush.mock.calls[0][0]).toMatchObject({ urgent: true, dedupe_key: 'coach_alert:a1' });
     expect(sendPush.mock.calls[1][0]).toMatchObject({ dedupe_key: 'coach_alert:a2' });
     expect(sendPush.mock.calls[1][0]).not.toHaveProperty('urgent');
+    expect(sendPush.mock.calls[2][0]).toMatchObject({ urgent: true, dedupe_key: 'coach_alert:a3', body: URGENT_PUSH });
   });
 
   it('any other alert is unchanged', async () => {
@@ -153,6 +163,18 @@ describe('the alert card in the action queue', () => {
         acknowledged_at: null,
         client: { name: 'Jane Doe' },
       },
+      {
+        // Roman stores no message id on a crisis alert; even one is never read.
+        id: 'a-crisis',
+        coach_id: 'coach-1',
+        client_id: 'client-1',
+        alert_type: 'roman_crisis_reply',
+        message: URGENT_PUSH,
+        payload: { roman_message_id: 'm1' },
+        created_at: new Date('2026-10-12T06:00:00Z'),
+        acknowledged_at: null,
+        client: { name: 'Jane Doe' },
+      },
     ];
     const messages = opts.messages ?? [
       { id: 'm1', user_id: 'client-1', content: 'A persistent-vomiting message, in full.', created_at: SENT },
@@ -187,6 +209,17 @@ describe('the alert card in the action queue', () => {
     });
     expect(out.items[2]).toEqual(expect.not.objectContaining({ quote: expect.anything() }));
     expect(out.items[2].message).toBe('New labs uploaded.');
+    expect(out.items[3]).toEqual({
+      alert_id: 'a-crisis',
+      client_id: 'client-1',
+      client_name: 'Jane Doe',
+      alert_type: 'roman_crisis_reply',
+      message: CRISIS_LINE,
+      created_at: '2026-10-12T06:00:00.000Z',
+      dismissed_at: null,
+      quote: null,
+      sent_at: null,
+    });
     expect(prisma.romanMessage.findMany.mock.calls[0][0]).toMatchObject({
       where: { id: { in: ['m1', 'm2'] }, role: 'user', session: { deleted_at: null } },
     });
@@ -237,6 +270,7 @@ describe('owner 4: the current coach only', () => {
       ['a-safe', 'roman_urgent_reply', URGENT_PUSH, { roman_message_id: 'm1' }],
       ['a-ed', 'roman_eating_disorder_reply', ED_PUSH, { roman_message_id: 'm1' }],
       ['a-labs', 'bloodwork_review', 'New labs uploaded.', null],
+      ['a-crisis', 'roman_crisis_reply', URGENT_PUSH, null],
     ].map(([id, alert_type, message, payload]) => ({
       id: id as string,
       coach_id: 'coach-1',
@@ -286,13 +320,14 @@ describe('owner 4: the current coach only', () => {
   const types = async (svc: CommandCenterService, caller: string) =>
     (await svc.getActionQueue(caller, {})).items.map((i) => i.alert_type);
 
-  it('the current coach sees both safety alerts and the quote, and can dismiss one', async () => {
+  it('the current coach sees every safety alert and the quote, and can dismiss one', async () => {
     const { svc, rows } = world('coach-1');
     const out = await svc.getActionQueue('coach-1', {});
     expect(out.items.map((i) => i.alert_type)).toEqual([
       'roman_urgent_reply',
       'roman_eating_disorder_reply',
       'bloodwork_review',
+      'roman_crisis_reply',
     ]);
     expect(out.items[0].quote).toBe('A persistent-vomiting message.');
     await expect(svc.dismissAlert('a-safe', 'coach-1')).resolves.toEqual({ ok: true });
@@ -315,6 +350,20 @@ describe('owner 4: the current coach only', () => {
     expect(await types(svc, 'coach-1')).toEqual([]);
     expect(await types(svc, 'sub-1')).toEqual(['bloodwork_review']);
     await expect(svc.dismissAlert('a-ed', 'sub-1')).rejects.toThrow('Alert not found');
+    await expect(svc.dismissAlert('a-crisis', 'coach-1')).rejects.toThrow('Alert not found');
+  });
+
+  it('ROMAN-CRISIS-ALERT by id: the current coach opens it with no quote; others get the 404', async () => {
+    const { svc, prisma } = world('coach-1');
+    await expect(svc.getSafetyAlert('a-crisis', 'coach-1')).resolves.toMatchObject({
+      alert_type: 'roman_crisis_reply',
+      message: CRISIS_LINE,
+      quote: null,
+      sent_at: null,
+    });
+    expect(prisma.romanMessage.findMany).not.toHaveBeenCalled();
+    await expect(svc.getSafetyAlert('a-crisis', 'sub-1')).rejects.toThrow('Alert not found');
+    await expect(world('coach-2').svc.getSafetyAlert('a-crisis', 'coach-1')).rejects.toThrow('Alert not found');
   });
 
   // Owner 57d: the tap of a push or inbox row reads that one alert by id.
@@ -502,6 +551,7 @@ describe('the coach phone receives the safety push line', () => {
   it.each([
     ['roman_urgent_reply', URGENT_PUSH],
     ['roman_eating_disorder_reply', ED_PUSH],
+    ['roman_crisis_reply', URGENT_PUSH],
   ])('%s: the exact line under "Client update", opening that alert', async (alertType, line) => {
     const sent = await deliver(alertType, line);
     expect(sent).toMatchObject({ to: TOKEN, title: 'Client update', body: line });
@@ -524,11 +574,12 @@ describe('the coach phone receives the safety push line', () => {
   const MORNING = new Date('2026-06-03T12:00:00Z'); // 08:00
 
   it.each([
-    ['22:00', NIGHT],
-    ['07:59', DAWN],
-  ])('at %s the urgent alert push goes out at once', async (_label, at) => {
+    ['22:00', 'roman_urgent_reply', NIGHT],
+    ['07:59', 'roman_urgent_reply', DAWN],
+    ['22:00', 'roman_crisis_reply', NIGHT],
+  ])('at %s the %s push goes out at once', async (_label, alertType, at) => {
     const p = phone(at);
-    await p.emit('roman_urgent_reply', URGENT_PUSH);
+    await p.emit(alertType, URGENT_PUSH);
     expect(p.rows[0]).toMatchObject({ urgent: true, not_before: at, deferred_reason: null });
     expect(await p.delivery.drain()).toBe(1);
     expect(p.send.mock.calls[0][0][0]).toMatchObject({ body: URGENT_PUSH });
