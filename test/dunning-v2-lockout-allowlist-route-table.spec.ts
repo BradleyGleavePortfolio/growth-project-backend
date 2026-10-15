@@ -256,6 +256,7 @@ const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'GET workouts WorkoutController',
   'GET workouts/volume WorkoutController',
   'PATCH assignments/:assignmentid/complete AssignmentController',
+  'PATCH habits/:id HabitsController',
   'PATCH weight/:id WeightController',
   'POST check-ins ClientCheckInsController',
   'POST fasting/end FastingController',

@@ -140,6 +140,14 @@ describe('ClientAIContextService.buildFresh', () => {
     expect(ctx.guardrails.forbid_contradicting_macros).toBe(false);
   });
 
+  it('lists only the habits the client has not removed (HB1 archive)', async () => {
+    const prisma = makePrisma({});
+    await new ClientAIContextService(prisma).buildFresh('u1');
+    expect(prisma.habit.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { user_id: 'u1', archived_at: null } }),
+    );
+  });
+
   it('surfaces coach relationship and last message excerpt without coach PII', async () => {
     const prisma = makePrisma({
       lastMsg: {
