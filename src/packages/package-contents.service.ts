@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { PrismaService } from '../prisma.service';
 import { PackagesService } from './packages.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+import { planStaysInTenantWhere } from '../workout-builder/tenant-clients';
 import {
   CADENCE_PAYLOAD_SCHEMAS,
   CreateContentSchema,
@@ -1125,6 +1126,7 @@ export class PackageContentsService {
             id: input.asset_id,
             coach_id: tenantCoachId,
             archived_at: null,
+            ...planStaysInTenantWhere(tenantCoachId),
           },
           select: { id: true },
         });

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { planStaysInTenantWhere } from '../workout-builder/tenant-clients';
 import { broadcastError } from './broadcast-errors';
 import type { CoachScope } from './broadcast-scope.service';
 
@@ -106,7 +107,12 @@ export class CardsService {
         return { type: 'check_in', ref_id: null, snapshot: { title: 'Check-in', note } };
       case 'workout': {
         const p = await this.prisma.workoutPlan.findFirst({
-          where: { id: spec.ref_id, coach_id: { in: owners }, archived_at: null },
+          where: {
+            id: spec.ref_id,
+            coach_id: { in: owners },
+            archived_at: null,
+            ...planStaysInTenantWhere(scope.tenantId),
+          },
           select: { id: true, name: true, type: true, duration_estimate_minutes: true },
         });
         if (!p) throw notFound();
