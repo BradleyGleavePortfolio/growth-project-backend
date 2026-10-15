@@ -17,6 +17,7 @@ import { ClientMacrosController } from '../src/macros/macros.controller';
 import { LogController } from '../src/log/log.controller';
 import { ClientMessagingController } from '../src/messaging/client-messaging.controller';
 import { RomanController } from '../src/roman/roman.controller';
+import { UsersController } from '../src/users/users.controller';
 import { VALIDATORS } from '../src/onboarding/consultation-answers';
 
 // AGEGATE16 (owner #C8-UNDER18-B): "if they dont agree theyre over 16 they
@@ -133,6 +134,23 @@ describe('AGEGATE16: every client confirms 16 or older before client routes answ
         const { outcome } = await h.call('joiner', cls, handler);
         expect([cls.name, handler.name, outcome]).toEqual([cls.name, handler.name, true]);
       }
+    }
+  });
+
+  // FIXAGE2 R5: "a client the age gate refuses can sign out at once, from
+  // every place that offers Sign out." Every server call the app's signOut()
+  // makes, and nothing else on the same controller.
+  const SIGN_OUT_CALLS: Array<[string, Cls, (...a: unknown[]) => unknown]> = [
+    ['PATCH /users/me/push-token (clear this phone)', UsersController, UsersController.prototype.updatePushToken],
+  ];
+  it.each(JOIN_PATHS)('%s: every call sign-out makes answers; the rest of /users stays refused', async (_path, row, stored) => {
+    const h = harness({ joiner: { id: 'u-join', ...row } }, stored === undefined ? {} : { 'u-join': stored });
+    for (const [name, cls, handler] of SIGN_OUT_CALLS) {
+      expect([name, (await h.call('joiner', cls, handler)).outcome]).toEqual([name, true]);
+    }
+    const open = new Set(SIGN_OUT_CALLS.map(([, , m]) => m));
+    for (const handler of methodsOf(UsersController).filter((m) => !open.has(m))) {
+      expect([handler.name, refused((await h.call('joiner', UsersController, handler)).outcome)]).toEqual([handler.name, true]);
     }
   });
 
