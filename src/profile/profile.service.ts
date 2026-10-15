@@ -80,10 +80,17 @@ export class ProfileService {
     // NOTHING is written. On success the same write stores the freshly
     // computed, floor-respecting targets and that row is returned, so the
     // PUT response, GET /profile and GET /me/macros/current agree.
+    // AGESAVE (#C8-UNDER18-B): a body that carries only a date of birth (the
+    // app's age step) is stored on its own, like the consultation's writer:
+    // targets are computed when the merged row is complete and cleared when
+    // it is not, so they still always equal the calculator on the stored row.
+    const fields = Object.keys(payload).filter((k) => k !== 'user_id');
+    const dobOnly = fields.length === 1 && fields[0] === 'date_of_birth';
+    const mode = dobOnly ? 'allow_incomplete' : 'require_complete';
     const written = await this.runSerialised((tx) =>
-      writeProfileWithTargets(tx, userId, payload, now, 'require_complete'),
+      writeProfileWithTargets(tx, userId, payload, now, mode),
     );
-    if (!written.ok) {
+    if (!written.ok && mode === 'require_complete') {
       throw new ConflictException({
         code: 'consultation_incomplete',
         message: 'Profile is missing inputs required to compute targets.',
