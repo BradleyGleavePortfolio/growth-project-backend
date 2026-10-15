@@ -39,6 +39,15 @@ function expectFailure(dir: string, reason: string): void {
   expect(result.stderr).toContain(`rename it above ${NEWEST}`);
 }
 
+function historicalGroup(): void {
+  git('checkout', 'main');
+  migration('20270401000000_historical');
+  commit();
+  git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  git('checkout', 'feature');
+  git('merge', 'main', '--no-edit');
+}
+
 beforeEach(() => {
   repo = mkdtempSync(join(tmpdir(), 'migration-order-'));
   git('init', '-b', 'main');
@@ -102,8 +111,37 @@ describe('migration-order CLI (real Git fixtures, no database)', () => {
     git('checkout', 'main');
     migration('20270401000000_duplicate');
     commit();
+    git('branch', 'tree-with-duplicate');
+    git('rm', '-r', 'prisma/migrations/20270401000000_duplicate');
+    commit();
     git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git('checkout', 'tree-with-duplicate');
+    expect(run().stdout).toContain('new directories: (none)');
     expectFailure(OLDEST, 'shares timestamp prefix 20270401000000 with 20270401000000_duplicate');
+  });
+
+  it('passes an unchanged historical duplicate group already on main', () => {
+    historicalGroup();
+    const result = run();
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('new directories: (none)');
+    expect(result.stderr).toBe('');
+  });
+
+  it('fails a new member of a historical duplicate group', () => {
+    historicalGroup();
+    const dir = '20270401000000_z_new_member';
+    migration(dir);
+    commit();
+    expectFailure(dir, 'shares timestamp prefix 20270401000000');
+  });
+
+  it('fails a new duplicate group while historical groups remain unchanged', () => {
+    historicalGroup();
+    migration(ABOVE);
+    migration('20270502001800_other');
+    commit();
+    expectFailure('20270502001800_other', `shares timestamp prefix 20270502001800 with ${ABOVE}`);
   });
 
   it('fails a prefix that only collides with newly advanced main, despite sorting above it', () => {

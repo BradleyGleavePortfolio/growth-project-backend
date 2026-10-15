@@ -17,6 +17,7 @@ function check() {
   const main = git('rev-parse', '--verify', 'origin/main^{commit}').trim();
   const base = git('merge-base', main, 'HEAD').trim();
   const mainDirs = directories(main);
+  const mainSet = new Set(mainDirs);
   // Default string sort, not locale/numeric sort: Prisma orders by directory name.
   const newest = [...mainDirs].sort().pop();
   if (!newest) throw new Error('origin/main has no migration directories');
@@ -44,20 +45,23 @@ function check() {
     if (dir <= newest) fail(dir, 'sorts at or below main');
   }
 
-  // Check the whole tree, not just the additions. Include main to catch a stale
-  // PR whose prefix now collides with a directory that will arrive on merge.
+  // Check head plus main, grandfathering only pairs already present on main.
+  // A new member of any historical group still fails, including on stale PRs.
   const prefixes = new Map();
   for (const dir of [...new Set([...mainDirs, ...headDirs])].sort()) {
     const prefix = /^(\d+)(?:_|$)/.exec(dir)?.[1];
     if (!prefix) continue;
     const previous = prefixes.get(prefix);
-    if (previous) fail(dir, `shares timestamp prefix ${prefix} with ${previous}`);
-    else prefixes.set(prefix, dir);
+    if (previous) {
+      if (!mainSet.has(previous) || !mainSet.has(dir)) {
+        fail(dir, `shares timestamp prefix ${prefix} with ${previous}`);
+      }
+    } else prefixes.set(prefix, dir);
   }
   if (!failed) {
     process.stdout.write(addedDirs.length
-      ? 'migration-order: all new migrations sort above main; timestamp prefixes are unique.\n'
-      : 'migration-order: no new migrations; timestamp prefixes are unique.\n');
+      ? 'migration-order: all new migrations sort above main; no new timestamp collisions.\n'
+      : 'migration-order: no new migrations; no new timestamp collisions.\n');
   }
   return failed ? 1 : 0;
 }
