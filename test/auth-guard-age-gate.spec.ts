@@ -140,11 +140,12 @@ describe('AGEGATE16: every client confirms 16 or older before client routes answ
   // FIXAGE2 R5: "a client the age gate refuses can sign out at once, from
   // every place that offers Sign out." Every server call the app's signOut()
   // makes, and nothing else on the same controller.
-  const SIGN_OUT_CALLS: Array<[string, Cls, (...a: unknown[]) => unknown]> = [
-    ['PATCH /users/me/push-token (clear this phone)', UsersController, UsersController.prototype.updatePushToken],
-  ];
+  const SIGN_OUT_CALLS: Array<[string, Cls, (...a: unknown[]) => unknown]> = methodsOf(UsersController)
+    .filter((m) => m.name === 'updatePushToken')
+    .map((m) => ['PATCH /users/me/push-token (clear this phone)', UsersController, m]);
   it.each(JOIN_PATHS)('%s: every call sign-out makes answers; the rest of /users stays refused', async (_path, row, stored) => {
     const h = harness({ joiner: { id: 'u-join', ...row } }, stored === undefined ? {} : { 'u-join': stored });
+    expect(SIGN_OUT_CALLS).toHaveLength(1);
     for (const [name, cls, handler] of SIGN_OUT_CALLS) {
       expect([name, (await h.call('joiner', cls, handler)).outcome]).toEqual([name, true]);
     }

@@ -46,7 +46,8 @@ function chain() {
     clientPurchase: { findMany: jest.fn(async () => []) },
   };
   const jwks: any = { verify: jest.fn(async (t: string) => ({ sub: t })) };
-  const auth = new JwtAuthGuard(prisma, jwks, new Reflector(), { emit: jest.fn() } as any);
+  const ptm: any = { emit: jest.fn() };
+  const auth = new JwtAuthGuard(prisma, jwks, new Reflector(), ptm);
   const lock = new DunningLockoutGuard(prisma);
   const send = async (method: string, path: string, body: unknown, cls: Cls, handler: Handler) => {
     const req: Record<string, unknown> = { method, path, body, headers: { authorization: 'Bearer locked' } };
