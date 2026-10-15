@@ -90,14 +90,14 @@ export class ProfileService {
     const written = await this.runSerialised((tx) =>
       writeProfileWithTargets(tx, userId, payload, now, mode),
     );
-    if (!written.ok && mode === 'require_complete') {
-      throw new ConflictException({
-        code: 'consultation_incomplete',
-        message: 'Profile is missing inputs required to compute targets.',
-        missing: written.missing,
-      });
-    }
-    return written.row;
+    if (written.ok) return written.row;
+    // A date-only body was stored even though the row is still partial.
+    if (mode === 'allow_incomplete' && written.row) return written.row;
+    throw new ConflictException({
+      code: 'consultation_incomplete',
+      message: 'Profile is missing inputs required to compute targets.',
+      missing: written.missing,
+    });
   }
 
   /**
