@@ -311,7 +311,7 @@ function expectCoachProvisioned(prisma: any, userId: string, provider: string) {
 
   const profile = prisma._profiles.find((p: any) => p.user_id === userId);
   expect(profile).toBeDefined();
-  expect(profile.invite_code).toMatch(/^GP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/);
+  expect(profile.invite_code).toMatch(/^TGP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{7}$/);
 
   const audits = roleAudits(prisma);
   expect(audits).toHaveLength(1);

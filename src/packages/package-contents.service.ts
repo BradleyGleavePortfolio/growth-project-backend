@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { PrismaService } from '../prisma.service';
 import { PackagesService } from './packages.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+import { planStaysInTenantWhere } from '../workout-builder/tenant-clients';
 import {
   CADENCE_PAYLOAD_SCHEMAS,
   CreateContentSchema,
@@ -172,7 +173,7 @@ export class PackageContentsService {
         // be emptied between the authoring check above and this insert.
         if (locked.length > 0) {
           const days = await tx.workoutPlan.count({
-            where: { program_id: input.asset_id, archived_at: null },
+            where: { program_id: input.asset_id, coach_id: tenantCoachId, archived_at: null },
           });
           if (days === 0) {
             throw new UnprocessableEntityException({
@@ -1108,7 +1109,7 @@ export class PackageContentsService {
               });
             }
             const days = await this.prisma.workoutPlan.count({
-              where: { program_id: program.id, archived_at: null },
+              where: { program_id: program.id, coach_id: tenantCoachId, archived_at: null },
             });
             if (days === 0) {
               throw new UnprocessableEntityException({
@@ -1125,6 +1126,7 @@ export class PackageContentsService {
             id: input.asset_id,
             coach_id: tenantCoachId,
             archived_at: null,
+            ...planStaysInTenantWhere(tenantCoachId),
           },
           select: { id: true },
         });

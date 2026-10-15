@@ -115,6 +115,108 @@ export const CLIENT_AI_CONSENT_V5_COPY_SHA256 = sha256Hex(
 );
 
 /**
+ * The safety-reply exception (owner 57c, Option 1, 2026-10-12), the same
+ * sentence as the privacy page: a coach sees the one message that prompted an
+ * urgent medical or eating-disorder safety reply.
+ */
+export const CLIENT_AI_CONSENT_SAFETY_EXCEPTION =
+  'One exception: if Roman sends you an urgent medical safety reply or an eating-disorder safety ' +
+  'reply, your coach sees the message that prompted it, so they can check in with you.';
+
+/**
+ * client-ai-v6 / client-ai-v7 (owner 57c): the coached v4 / v5 paragraphs with
+ * the exception added right after the sentence that says the coach does not
+ * see Roman chats (the end of v4; before v5's last sentence). Same box label,
+ * same scopes (v6 'base', v7 'memory'). GET offers them to a client with a
+ * coach who has no live grant; a live v4 / v5 grant keeps reading its own copies.
+ */
+export const CLIENT_AI_CONSENT_V6_VERSION = 'client-ai-v6';
+export const CLIENT_AI_CONSENT_V7_VERSION = 'client-ai-v7';
+
+export const CLIENT_AI_CONSENT_V6_PARAGRAPH =
+  CLIENT_AI_CONSENT_PARAGRAPH + ' ' + CLIENT_AI_CONSENT_SAFETY_EXCEPTION;
+
+const V5_LAST_SENTENCE =
+  'Your conversations with Roman are kept until you delete them or delete your account.';
+export const CLIENT_AI_CONSENT_V7_PARAGRAPH =
+  CLIENT_AI_CONSENT_V5_PARAGRAPH.slice(0, -V5_LAST_SENTENCE.length) +
+  CLIENT_AI_CONSENT_SAFETY_EXCEPTION +
+  ' ' +
+  V5_LAST_SENTENCE;
+
+export const CLIENT_AI_CONSENT_V6_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V6_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V7_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V7_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V6_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V6_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+export const CLIENT_AI_CONSENT_V7_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V7_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+
+/**
+ * Coach-free copies (owner decision 62, Option 1, 2026-10-12): what a client
+ * with no coach sees. The v4 and v5 paragraphs and the box label with every
+ * coach sentence or clause removed and no new words. Each gives the same scope
+ * as the copy it comes from (v4 coach-free 'base', v5 coach-free 'memory').
+ * Onboarding P0 consult-consent-v5-coach-free / v6-coach-free carry them.
+ */
+export const CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION = 'client-ai-v4-coach-free';
+export const CLIENT_AI_CONSENT_V5_COACH_FREE_VERSION = 'client-ai-v5-coach-free';
+
+export const CLIENT_AI_CONSENT_V4_COACH_FREE_PARAGRAPH =
+  'Roman, the assistant in this app, is powered by Anthropic, a third-party AI provider. ' +
+  'If you allow it, your information is sent to Anthropic so Roman can answer your questions. ' +
+  "Only your own data is used, never another client's. " +
+  'Your conversations with Roman are kept until you delete them or delete your account.';
+
+export const CLIENT_AI_CONSENT_V5_COACH_FREE_PARAGRAPH =
+  'Roman, the assistant in this app, is powered by Anthropic, a third-party AI provider. ' +
+  'If you allow it, your information is sent to Anthropic so Roman can answer your questions. ' +
+  'Roman may keep notes and summaries about your training, preferences and circumstances to ' +
+  'personalise his replies. ' +
+  'Deleting a chat removes its messages but not these notes; deleting your account removes them. ' +
+  "Roman never shows you another client's information. " +
+  'Your conversations with Roman are kept until you delete them or delete your account.';
+
+export const CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL =
+  'Optional: I allow Roman to use my information, processed by Anthropic.';
+
+export const CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL,
+);
+export const CLIENT_AI_CONSENT_V4_COACH_FREE_PARAGRAPH_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V4_COACH_FREE_PARAGRAPH,
+);
+export const CLIENT_AI_CONSENT_V5_COACH_FREE_PARAGRAPH_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V5_COACH_FREE_PARAGRAPH,
+);
+export const CLIENT_AI_CONSENT_V4_COACH_FREE_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V4_COACH_FREE_PARAGRAPH +
+    CLIENT_AI_CONSENT_COPY_SEPARATOR +
+    CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL,
+);
+export const CLIENT_AI_CONSENT_V5_COACH_FREE_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V5_COACH_FREE_PARAGRAPH +
+    CLIENT_AI_CONSENT_COPY_SEPARATOR +
+    CLIENT_AI_CONSENT_COACH_FREE_BOX_LABEL,
+);
+
+/** True for the coach-free copy versions (own names only). */
+export function isCoachFreeClientAiVersion(version: unknown): boolean {
+  return (
+    version === CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION ||
+    version === CLIENT_AI_CONSENT_V5_COACH_FREE_VERSION
+  );
+}
+
+/**
+ * Who the AI output is for (ai-egress AiConsentAudience). A coach-free grant
+ * (owner 62) covers 'client' only: its text names Roman answering the
+ * client, not coach AI drafts or coach-method learning.
+ */
+export type ClientAiConsentAudience = 'coach' | 'client';
+
+/**
  * What a live grant covers. 'base': day-1 Roman and the coach's AI drafts
  * (every existing AI path). 'memory': base plus Roman v1.1 notes, summaries
  * and coach-method learning (FEATURE_ROMAN_MEMORY / FEATURE_ROMAN_PLAYBOOK).
@@ -139,6 +241,22 @@ export const CLIENT_AI_CONSENT_ACCEPTED: Readonly<Record<string, AcceptedClientA
     }),
     [CLIENT_AI_CONSENT_V5_VERSION]: Object.freeze({
       copy_sha256: CLIENT_AI_CONSENT_V5_COPY_SHA256,
+      scope: 'memory' as const,
+    }),
+    [CLIENT_AI_CONSENT_V6_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V6_COPY_SHA256,
+      scope: 'base' as const,
+    }),
+    [CLIENT_AI_CONSENT_V7_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V7_COPY_SHA256,
+      scope: 'memory' as const,
+    }),
+    [CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V4_COACH_FREE_COPY_SHA256,
+      scope: 'base' as const,
+    }),
+    [CLIENT_AI_CONSENT_V5_COACH_FREE_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V5_COACH_FREE_COPY_SHA256,
       scope: 'memory' as const,
     }),
   });

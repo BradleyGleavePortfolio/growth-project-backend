@@ -35,8 +35,11 @@ import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egre
 import type { AuditService } from '../../src/audit/audit.service';
 import {
   romanEatingDisorderFallback,
+  ROMAN_COACH_TOLD_LINE,
   ROMAN_SAFETY_TEMPLATES,
 } from '../../src/roman/guardrails/safety-router';
+import { onceAlertId, type CoachAlertsService } from '../../src/coach/coach-alerts.service';
+import { SAFETY_ALERT_PUSH_BODY } from '../../src/notifications/push/lock-screen-copy';
 import { ROMAN_MET_BEFORE_LINE } from '../../src/roman/roman.prompts';
 import { ROMAN_MODEL_PHASE_1 } from '../../src/roman/anthropic-client.provider';
 import {
@@ -757,7 +760,7 @@ describe('Roman — a crisis message is answered without box 2; nothing else is'
 // does. A returning client's prompt says Roman has met them before.
 describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-COPY-B-128)', () => {
   const ED = 'I have been making myself throw up after meals';
-  function setup(granted: string[], coachId: string | null = null) {
+  function setup(granted: string[], coachId: string | null = null, createAlert?: jest.Mock) {
     const made = makePrisma();
     const anthropic = makeAnthropic(['Hi', '.']);
     const { egress } = egressWithGrants(granted);
@@ -769,6 +772,10 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
       AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)),
       null,
       fakeOf<AuditService>(audit),
+      null,
+      null,
+      null,
+      createAlert ? fakeOf<CoachAlertsService>({ createAlert }) : undefined,
     );
     const ctrl = new RomanController(
       fakeOf(service),
@@ -837,6 +844,66 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
     expect(anthropic.messages.stream).toHaveBeenCalledTimes(1);
     const done = parseFrames(writes).find((f) => f.data?.type === 'done');
     expect(done?.data.text).not.toBe(romanEatingDisorderFallback(false));
+  });
+
+  // B-R1F (owner 22a, 57): the eating-disorder coach alert, once per conversation.
+  const edAlert = (messageId: string) => ({
+    id: onceAlertId('roman_eating_disorder_reply', 'sess_1'),
+    coachId: 'coach-1',
+    clientId: 'user-A',
+    alertType: 'roman_eating_disorder_reply',
+    severity: 'warning',
+    message: SAFETY_ALERT_PUSH_BODY.roman_eating_disorder_reply,
+    payload: { roman_message_id: messageId },
+  });
+
+  it('AI available, coached client: the guided reply alerts the coach once and says so', async () => {
+    const createAlert = jest.fn(async () => ({}));
+    const { ctrl, anthropic, messages } = setup(['user-A'], 'coach-1', createAlert);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
+    expect(anthropic.messages.stream).toHaveBeenCalledTimes(1);
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(`Hi.\n\n${ROMAN_COACH_TOLD_LINE}`);
+    expect(messages.map((m) => [m.role, m.content])).toEqual([
+      ['user', ED],
+      ['roman', done?.data.text],
+    ]);
+    expect(createAlert.mock.calls).toEqual([[edAlert(messages[0].id)]]);
+    expect(JSON.stringify(createAlert.mock.calls)).not.toContain('throw up');
+  });
+
+  it('daily cap reached, coached client: the fixed fallback alerts the coach and says so', async () => {
+    process.env.ROMAN_DAILY_COST_CAP_USD = '0';
+    const createAlert = jest.fn(async () => ({}));
+    const { ctrl, anthropic, messages } = setup(['user-A'], 'coach-1', createAlert);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(romanEatingDisorderFallback(true, true));
+    expect(done?.data.text).toContain(
+      `Messages reaches them. ${ROMAN_COACH_TOLD_LINE} A physician`,
+    );
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+    expect(createAlert.mock.calls).toEqual([[edAlert(messages[0].id)]]);
+  });
+
+  it('a second eating-disorder message in the same conversation: no second alert, no coach line', async () => {
+    const dup = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+    const createAlert = jest.fn().mockRejectedValue(dup);
+    const { ctrl } = setup(['user-A'], 'coach-1', createAlert);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe('Hi.');
+    expect(createAlert).toHaveBeenCalledTimes(1);
+  });
+
+  it('an ordinary message never alerts the coach', async () => {
+    const createAlert = jest.fn(async () => ({}));
+    const { ctrl } = setup(['user-A'], 'coach-1', createAlert);
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(makeRes().res), 'sess_1', { content: 'hello' });
+    expect(createAlert).not.toHaveBeenCalled();
   });
 
   it('returning client: the system prompt says Roman has met them; a first chat does not', async () => {

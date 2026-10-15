@@ -65,11 +65,21 @@ describe('consult-consent-v3 text parity with mobile #310', () => {
     expect(text).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
     // Straight apostrophes only (the digest is over these exact bytes).
     expect(text).not.toMatch(/[\u2018\u2019\u201C\u201D]/);
-    expect(V3.box2Label.startsWith('Optional: ')).toBe(true);
+    expect(V3.box2Label?.startsWith('Optional: ')).toBe(true);
   });
 
-  it('the registry knows v3 and v4 only (no compat window for v2 or v1)', () => {
-    expect(Object.keys(CONSULT_CONSENT_COPIES)).toEqual([CONSULT_CONSENT_V3, CONSULT_CONSENT_V4]);
+  it('the registry knows v3 to v8 and the coach-free v5 to v7 only (no compat window for v2 or v1)', () => {
+    expect(Object.keys(CONSULT_CONSENT_COPIES)).toEqual([
+      CONSULT_CONSENT_V3,
+      CONSULT_CONSENT_V4,
+      'consult-consent-v5',
+      'consult-consent-v6',
+      'consult-consent-v5-coach-free',
+      'consult-consent-v6-coach-free',
+      'consult-consent-v7',
+      'consult-consent-v8',
+      'consult-consent-v7-coach-free',
+    ]);
     expect(consultConsentTextSha256('consult-consent-v3')).toBe(CONSULT_CONSENT_V3_TEXT_SHA256);
     expect(consultConsentTextSha256('consult-consent-v2')).toBeNull();
     expect(consultConsentTextSha256('consult-consent-v1')).toBeNull();
@@ -87,8 +97,18 @@ describe('accepted versions and the P0 truth rule', () => {
     text_sha256: MOBILE_CONSENT_COPY_SHA256,
   };
 
-  it('acceptedConsentVersions: default v3 + v4; the override keeps only versions with known text', () => {
-    const defaults = ['consult-consent-v3', 'consult-consent-v4'];
+  it('acceptedConsentVersions: default v3 to v8 + coach-free; the override keeps only versions with known text', () => {
+    const defaults = [
+      'consult-consent-v3',
+      'consult-consent-v4',
+      'consult-consent-v5',
+      'consult-consent-v6',
+      'consult-consent-v5-coach-free',
+      'consult-consent-v6-coach-free',
+      'consult-consent-v7',
+      'consult-consent-v8',
+      'consult-consent-v7-coach-free',
+    ];
     expect(acceptedConsentVersions({})).toEqual(defaults);
     expect(acceptedConsentVersions({ CONSULT_CONSENT_COPY_VERSIONS: '' })).toEqual(defaults);
     expect(
@@ -148,11 +168,11 @@ describe('CONSULT_CONSENT_COPY_VERSIONS env rule (S-ENVTRUTH)', () => {
     ]);
     const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
     try {
-      const env = { CONSULT_CONSENT_COPY_VERSIONS: 'consult-consent-v3, consult-consent-v8' };
+      const env = { CONSULT_CONSENT_COPY_VERSIONS: 'consult-consent-v3, consult-consent-v9' };
       expect(acceptedConsentVersions(env)).toEqual(['consult-consent-v3']);
       expect(acceptedConsentVersions(env)).toEqual(['consult-consent-v3']);
       expect(warn).toHaveBeenCalledTimes(1);
-      expect(String(warn.mock.calls[0][0])).toMatch(/consult-consent-v8/);
+      expect(String(warn.mock.calls[0][0])).toMatch(/consult-consent-v9/);
     } finally {
       warn.mockRestore();
     }

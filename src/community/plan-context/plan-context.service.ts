@@ -75,7 +75,7 @@ export class PlanContextService {
   async validate(user: User, tag: PlanContextTag): Promise<PlanContextTag> {
     switch (tag.type) {
       case 'workout': {
-        const plan = await this.repo.findWorkoutPlan(tag.workout_plan_id);
+        const plan = await this.repo.findWorkoutPlan(tag.workout_plan_id, user.id);
         if (!plan) throw new UnprocessableEntityException(INVALID_REFERENCE);
         this.assertOwner(plan.coach_id, user.id);
         if (tag.exercise_id) {
@@ -121,7 +121,7 @@ export class PlanContextService {
   ): Promise<PlanContextSnapshot> {
     switch (query.type) {
       case 'workout': {
-        const plan = await this.repo.findWorkoutPlan(query.id);
+        const plan = await this.repo.findWorkoutPlan(query.id, user.id);
         if (!plan || !this.ownedBy(plan.coach_id, user.id)) {
           throw new NotFoundException(NOT_FOUND);
         }

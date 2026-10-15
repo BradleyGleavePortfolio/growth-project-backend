@@ -3,8 +3,11 @@
  * Settings > Privacy "Roman and AI" row (D2 contract, R2a).
  *
  *   GET    /me/ai-consent        -> ClientAiConsentStatus (state + copy text + sha256)
+ *          ?variant=coach_free   -> the coach-free copies (a client with no coach, owner 62)
+ *          ?variant=safety_exception -> the coached client-ai-v6 / v7 copies (owner 57c)
  *   POST   /me/ai-consent/roman  {version, copy_sha256?, platform?, app_version?, locale?}
- *                                -> grant (idempotent); 409 CONSENT_VERSION_MISMATCH
+ *                                -> grant (idempotent); 409 CONSENT_VERSION_MISMATCH; a client
+ *                                   with no coach is recorded the same way (W-CONSENT)
  *   DELETE /me/ai-consent/roman  -> withdraw (idempotent)
  *
  * The subject is always req.user.id. Guards: JwtAuthGuard + RolesGuard +
@@ -28,6 +31,7 @@ import {
   HttpStatus,
   Injectable,
   Post,
+  Query,
   Req,
   ServiceUnavailableException,
   UseGuards,
@@ -62,8 +66,20 @@ export class AiConsentController {
   @Get()
   @Header('Cache-Control', 'no-store')
   @Roles('student', 'coach', 'owner')
-  async get(@Req() req: AuthedRequest): Promise<ClientAiConsentStatus> {
-    return this.consent.getStatus(req.user.id);
+  async get(
+    @Req() req: AuthedRequest,
+    @Query('variant') variant?: unknown,
+  ): Promise<ClientAiConsentStatus> {
+    // Any other value (or none) reads the coached copies, as before. A client
+    // with a coach never reads a coach-free grant as live (owner 62).
+    const hasCoach = typeof req.user.coach_id === 'string' && req.user.coach_id.length > 0;
+    if (variant === 'coach_free') {
+      return this.consent.getStatus(req.user.id, { coachFree: true, hasCoach });
+    }
+    return this.consent.getStatus(req.user.id, {
+      hasCoach,
+      safetyException: variant === 'safety_exception',
+    });
   }
 
   @Post('roman')
@@ -74,6 +90,8 @@ export class AiConsentController {
     @Req() req: AuthedRequest,
     @Body() dto: GrantClientAiConsentDto,
   ): Promise<ClientAiConsentStatus> {
+    // W-CONSENT: a client with no coach is asked once and the grant is kept like a coached one;
+    // Roman and every AI route still answer 403 ROMAN_REQUIRES_COACH until a coach is linked.
     return this.consent.grant(req.user.id, dto);
   }
 

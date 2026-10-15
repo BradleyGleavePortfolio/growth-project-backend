@@ -4,7 +4,7 @@
 // piece under the size limit (operator 116 size ruling). Nothing in R1 calls
 // this file; R2 (subscription-checkout.service.ts) is its only caller.
 import { ConflictException, HttpException } from '@nestjs/common';
-import type { ClientPurchase, CoachPackage } from '@prisma/client';
+import type { ClientPurchase, CoachPackage, Prisma } from '@prisma/client';
 import {
   StripeConnectApiError,
   type StripeSubscriptionCheckoutObject,
@@ -16,6 +16,11 @@ export const ADVISORY_LOCK_NAMESPACE_SUBSCRIPTION_CHECKOUT = 0x73_75_62_63;
 
 /** Stripe expires an unpaid `incomplete` subscription after 23 hours. */
 export const OPEN_ATTEMPT_MAX_AGE_MS = 23 * 3600 * 1000;
+
+/** Open attempts created after this are resumed; older ones are retired or expired. */
+export function resumeWindowStart(nowMs: number = Date.now()): Date {
+  return new Date(nowMs - OPEN_ATTEMPT_MAX_AGE_MS);
+}
 
 /**
  * Statuses of a row that is an attempt nobody has paid for yet (with
@@ -38,6 +43,25 @@ export const LIVE_SUBSCRIPTION_STATUSES = ['active', 'past_due', 'unpaid'] as co
 
 /** Statuses of an attempt that is over; its key can never start a plan again. */
 export const ENDED_ATTEMPT_STATUSES = new Set(['expired', 'canceled', 'incomplete_expired']);
+
+/**
+ * This client's open attempt(s) for the package(s): the attempt the checkout
+ * resumes (decide step 2). FIX998: the package quote reads the same rule.
+ */
+export function openAttemptWhere(
+  clientId: string,
+  packageId: string | { in: string[] },
+): Prisma.ClientPurchaseWhereInput {
+  return {
+    client_user_id: clientId,
+    package_id: packageId,
+    billing_type: 'recurring',
+    entitlement_active: false,
+    trial_started_at: null,
+    status: { in: [...OPEN_ATTEMPT_STATUSES] },
+    idempotency_key: { startsWith: `sub-${clientId}-` },
+  };
+}
 
 /** Most stale trial attempts retired per checkout call (bounded Stripe work). */
 export const STALE_TRIAL_RETIRE_LIMIT = 3;

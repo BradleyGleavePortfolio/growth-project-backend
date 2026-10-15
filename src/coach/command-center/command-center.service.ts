@@ -19,11 +19,11 @@
 //     for all callers (the AdminPtmService.getRiskBoardForCoach path
 //     already does this; we preserve it).
 
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { AdminPtmService } from '../../admin/ptm/admin-ptm.service';
-import { CoachAlertsService } from '../coach-alerts.service';
+import { CoachAlertsService, ROMAN_SAFETY_ALERT_TYPES, currentCoachAlerts } from '../coach-alerts.service';
 import { SubCoachScopeService } from '../../sub-coach/sub-coach-scope.service';
 import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../../consent/consent.service';
 import { CHURN_FACTOR_SCOPES, coachVisibleFactors } from './churn-factor-scopes';
@@ -92,7 +92,10 @@ export type ActionQueueAlertType =
   | 'no_message_exchange'
   | 'high_churn_risk'
   | 'build_week_gate'
-  | 'bloodwork_review';
+  | 'bloodwork_review'
+  | 'roman_urgent_reply'
+  | 'roman_eating_disorder_reply'
+  | 'roman_crisis_reply';
 
 export interface ActionQueueItem {
   alert_id: string;
@@ -102,7 +105,28 @@ export interface ActionQueueItem {
   message: string;
   created_at: string;
   dismissed_at: string | null;
+  /**
+   * Roman safety alerts only (owner 22a, 57w): the client's message that
+   * prompted the reply, in full, and when they sent it. Null once the client
+   * deleted that chat, and always null on a crisis alert (ROMAN-CRISIS-ALERT).
+   */
+  quote?: string | null;
+  sent_at?: string | null;
 }
+
+/**
+ * Owner 57w / 57x: line 1 of the Roman safety alert card, built when the
+ * client's current coach reads the queue (the stored row names no one).
+ */
+const SAFETY_CARD_LINE: Partial<Record<string, (name: string) => string>> = {
+  roman_urgent_reply: (name) =>
+    `Urgent: Roman sent ${name} a medical safety reply. Check in with them →`,
+  roman_eating_disorder_reply: (name) =>
+    `Roman sent ${name} an eating-disorder safety reply. Check in with them →`,
+  // ROMAN-CRISIS-ALERT, approved word for word: the first name only.
+  roman_crisis_reply: (name) =>
+    `Roman sent ${name.trim().split(/\s+/)[0] || name} a crisis safety reply. Please check in with them today.`,
+};
 
 export interface ActionQueueResponse {
   items: ActionQueueItem[];
@@ -130,6 +154,12 @@ function mapAlertType(backendType: string): ActionQueueAlertType {
       return 'weight_not_logged';
     case 'bloodwork_review':
       return 'bloodwork_review';
+    case 'roman_urgent_reply':
+      return 'roman_urgent_reply';
+    case 'roman_eating_disorder_reply':
+      return 'roman_eating_disorder_reply';
+    case 'roman_crisis_reply':
+      return 'roman_crisis_reply';
     default:
       // Unknown backend alert types are bucketed as high_churn_risk so
       // the mobile client still renders a row, but log a warning so we
@@ -165,6 +195,66 @@ function visibleAlertsWhere(clientIds: string[], shared: SharedClientIds): Prism
       { alert_type: { in: RISK_ALERT_TYPES }, client_id: { in: shared.allFour } },
       { alert_type: { notIn: [...CHECK_IN_ALERT_TYPES, ...RISK_ALERT_TYPES] }, client_id: { in: clientIds } },
     ],
+  };
+}
+
+/**
+ * Owner 4 and B-R1F: a Roman safety alert, and the client's message on its
+ * card, is for the client's current coach only. The caller must be the
+ * client's coach of record: an assistant on the team, or a coach the client
+ * has left, never sees, counts or dismisses it. Other alert types keep the
+ * team rule.
+ */
+function safetyAlertsForCurrentCoach(callerId: string): Prisma.CoachAlertWhereInput {
+  return {
+    AND: [
+      {
+        OR: [
+          { alert_type: { notIn: [...ROMAN_SAFETY_ALERT_TYPES] } },
+          currentCoachAlerts(callerId),
+        ],
+      },
+    ],
+  };
+}
+
+/**
+ * Owner 57q and the team chain: an alert is written to the client's coach of
+ * record, so a team sub-coach's own client's alerts carry the sub-coach's id
+ * and a delegated client's carry the head coach's. A sub-coach's queue reads
+ * both; a head coach reads only their own id, as before. Another sub-coach's
+ * id is never in the set.
+ */
+function alertCoachIds(callerId: string, ownerCoachId: string): string | { in: string[] } {
+  return ownerCoachId === callerId ? callerId : { in: [ownerCoachId, callerId] };
+}
+
+/** One action queue row; a Roman safety alert gets its card line and quote. */
+function queueItem(
+  alert: {
+    id: string;
+    client_id: string;
+    alert_type: string;
+    message: string;
+    created_at: Date;
+    acknowledged_at: Date | null;
+    client?: { name: string | null } | null;
+  },
+  quote: { content: string; created_at: Date } | undefined,
+): ActionQueueItem {
+  const clientName = alert.client?.name ?? 'Unknown';
+  const line = SAFETY_CARD_LINE[alert.alert_type];
+  return {
+    alert_id: alert.id,
+    client_id: alert.client_id,
+    client_name: clientName,
+    alert_type: mapAlertType(alert.alert_type),
+    message: line ? line(clientName) : alert.message,
+    created_at: alert.created_at.toISOString(),
+    dismissed_at: alert.acknowledged_at?.toISOString() ?? null,
+    ...(line
+      ? { quote: quote?.content ?? null, sent_at: quote?.created_at.toISOString() ?? null }
+      : {}),
   };
 }
 
@@ -252,7 +342,8 @@ export class CommandCenterService {
   // CoachAlert carry the head coach's id as coach_id — see
   // SubCoachScopeService.getHeadCoachIdForSubCoach), so we scope those
   // tables by (coach_id = head, client_id IN assigned) rather than the
-  // sub-coach's own id.
+  // sub-coach's own id. Alerts about the sub-coach's own clients are under
+  // the sub-coach's id, so alert reads use alertCoachIds.
   private async resolveScope(
     coachId: string,
   ): Promise<{ clientIds: string[]; ownerCoachId: string }> {
@@ -352,10 +443,11 @@ export class CommandCenterService {
       }),
       this.prisma.coachAlert.count({
         where: {
-          coach_id: ownerCoachId,
+          coach_id: alertCoachIds(coachId, ownerCoachId),
           client_id: { in: clientIds },
           acknowledged_at: null,
           ...visibleAlertsWhere(clientIds, shared),
+          ...safetyAlertsForCurrentCoach(coachId),
         },
       }),
       // CC-1: pending_actions is a DISTINCT source from open_alerts. Open
@@ -805,10 +897,10 @@ export class CommandCenterService {
     const cursor = opts.before ? new Date(opts.before) : undefined;
     const cursorValid = cursor && Number.isFinite(cursor.getTime());
 
-    // SC-2: alerts are scoped to the SubCoachScope-resolved client set.
-    // CoachAlert.coach_id is the head coach id; a sub-coach only sees alerts
-    // for the clients assigned to them (client_id IN assigned), still under
-    // the head coach's ownership. A head coach with no clients sees nothing.
+    // SC-2: alerts are scoped to the SubCoachScope-resolved client set. A
+    // sub-coach only sees alerts for the clients assigned to them (client_id
+    // IN assigned), under the head coach's id or their own (alertCoachIds).
+    // A head coach with no clients sees nothing.
     const { clientIds, ownerCoachId } = await this.resolveScope(coachId);
     if (clientIds.length === 0) {
       return { items: [], total_pending: 0 };
@@ -818,10 +910,11 @@ export class CommandCenterService {
     // Coach sharing switch (visibleAlertsWhere).
     const shared = await this.sharedWith(ownerCoachId, clientIds);
     const baseWhere: Prisma.CoachAlertWhereInput = {
-      coach_id: ownerCoachId,
+      coach_id: alertCoachIds(coachId, ownerCoachId),
       client_id: { in: clientIds },
       acknowledged_at: null,
       ...visibleAlertsWhere(clientIds, shared),
+      ...safetyAlertsForCurrentCoach(coachId),
     };
     const where: Prisma.CoachAlertWhereInput = {
       ...baseWhere,
@@ -839,18 +932,68 @@ export class CommandCenterService {
         where: baseWhere,
       }),
     ]);
-
-    const items: ActionQueueItem[] = alerts.map((alert) => ({
-      alert_id: alert.id,
-      client_id: alert.client_id,
-      client_name: alert.client?.name ?? 'Unknown',
-      alert_type: mapAlertType(alert.alert_type),
-      message: alert.message,
-      created_at: alert.created_at.toISOString(),
-      dismissed_at: alert.acknowledged_at?.toISOString() ?? null,
-    }));
-
+    const quotes = await this.safetyQuotes(alerts);
+    const items = alerts.map((alert) => queueItem(alert, quotes.get(alert.id)));
     return { items, total_pending: totalPending };
+  }
+
+  // ── /action-queue/:alertId ───────────────────────────────────────────
+  /**
+   * Owner 57d: one Roman safety alert by id, for the tap of its push or inbox
+   * row. The same fields as its queue row, and the same rule: only the
+   * client's coach of record reads it. Another coach, an assistant, a former
+   * coach, another alert type or a deleted message is the same 404. A crisis
+   * alert has no message to quote.
+   */
+  async getSafetyAlert(alertId: string, coachId: string): Promise<ActionQueueItem> {
+    const { clientIds, ownerCoachId } = await this.resolveScope(coachId);
+    const alert = await this.prisma.coachAlert.findFirst({
+      where: {
+        id: alertId,
+        alert_type: { in: [...ROMAN_SAFETY_ALERT_TYPES] },
+        coach_id: alertCoachIds(coachId, ownerCoachId),
+        client_id: { in: clientIds },
+        ...safetyAlertsForCurrentCoach(coachId),
+      },
+      include: { client: { select: { name: true } } },
+    });
+    const quote = alert ? (await this.safetyQuotes([alert])).get(alert.id) : undefined;
+    if (!alert || (!quote && alert.alert_type !== 'roman_crisis_reply')) {
+      throw new NotFoundException('Alert not found');
+    }
+    return queueItem(alert, quote);
+  }
+
+  /**
+   * The client's own message behind each Roman safety alert in the page, by
+   * alert id: only that one message, only while its chat exists (a chat the
+   * client deleted is erased, and so is the quote). Never for a crisis alert.
+   */
+  private async safetyQuotes(
+    alerts: Array<{ id: string; client_id: string; alert_type: string; payload: Prisma.JsonValue }>,
+  ): Promise<Map<string, { content: string; created_at: Date }>> {
+    const refs = new Map<string, Array<{ alertId: string; clientId: string }>>();
+    for (const a of alerts) {
+      const p = a.payload as { roman_message_id?: unknown } | null;
+      if (a.alert_type === 'roman_crisis_reply' || !SAFETY_CARD_LINE[a.alert_type]) continue;
+      if (typeof p?.roman_message_id !== 'string') continue;
+      refs.set(p.roman_message_id, [
+        ...(refs.get(p.roman_message_id) ?? []),
+        { alertId: a.id, clientId: a.client_id },
+      ]);
+    }
+    const out = new Map<string, { content: string; created_at: Date }>();
+    if (refs.size === 0) return out;
+    const rows = await this.prisma.romanMessage.findMany({
+      where: { id: { in: [...refs.keys()] }, role: 'user', session: { deleted_at: null } },
+      select: { id: true, user_id: true, content: true, created_at: true },
+    });
+    for (const row of rows) {
+      for (const ref of refs.get(row.id) ?? []) {
+        if (ref.clientId === row.user_id) out.set(ref.alertId, row);
+      }
+    }
+    return out;
   }
 
   // ── /action-queue/:alertId/dismiss ───────────────────────────────────
@@ -869,7 +1012,8 @@ export class CommandCenterService {
     // assigned). For a head coach ownerCoachId is their own id and clientIds
     // is their full roster, so this is equivalent to the legacy ownership
     // check — head-coach behaviour unchanged. A sub-coach dismissing an
-    // alert for a client NOT assigned to them still 404s (no IDOR).
+    // alert for a client NOT assigned to them still 404s (no IDOR). Like the
+    // list, a sub-coach's alerts may be under their own id (alertCoachIds).
     const { clientIds, ownerCoachId } = await this.resolveScope(coachId);
     // CoachAlertsService.acknowledgeForScope is idempotent and IDOR-safe:
     //   * updateMany/findFirst scoped to (coach_id, client_id IN allowed)
@@ -878,8 +1022,9 @@ export class CommandCenterService {
     //   * returns existing row if already acknowledged (no double-write)
     await this.alertsService.acknowledgeForScope(
       alertId,
-      ownerCoachId,
+      alertCoachIds(coachId, ownerCoachId),
       clientIds,
+      safetyAlertsForCurrentCoach(coachId),
     );
     return { ok: true };
   }

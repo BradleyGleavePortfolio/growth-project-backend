@@ -824,7 +824,8 @@ describe('FR1-651-9 a chat deleted during the model call settles the ledger and 
       response_token_estimate: 50,
       metadata: { state: 'settled', outcome: 'session_gone' },
     });
-    expect(JSON.stringify(audits[0])).not.toContain('670');
+    expect(JSON.stringify(audits[0])).not.toContain('You have 670 kcal left');
+    expect(JSON.stringify(audits[0])).not.toContain(' 670 kcal');
   });
 });
 

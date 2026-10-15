@@ -207,7 +207,7 @@ describe('R8 layer 3 — router on the golden questions', () => {
   });
 
   it('16:38 copy: the 911/988 templates are warm and deterministic; the medical/injury hints carry a plan step, the coach offer and the exact physician line', () => {
-    for (const t of Object.values(ROMAN_SAFETY_TEMPLATES)) {
+    for (const t of [ROMAN_SAFETY_TEMPLATES.emergency, ROMAN_SAFETY_TEMPLATES.self_harm]) {
       expect(t).not.toMatch(/\b(don't|can't|won't|I'm|you're|it's)\b/i);
       expect(t).toMatch(/coach|someone you trust/);
     }

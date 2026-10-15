@@ -6,10 +6,12 @@
  * - The subject is ALWAYS the caller id passed in by the controller/service,
  *   which comes from the JWT. Nothing here reads a client id from a body.
  * - Every query carries `user_id = caller` or `client_id = caller`.
- * - Coach-owned rows (MacroTarget, ClientWorkoutAssignment, CoachGuideline,
- *   CoachMessage, DailyMealPlanAssignment) ALSO require the coach id to equal
- *   the client's CURRENT coach (`User.coach_id`), and that coach must not be
- *   soft-deleted. A non-student caller gets no coach-owned facts.
+ * - HIST3 (owner 139-13): what the client was given (MacroTarget,
+ *   ClientWorkoutAssignment, DailyMealPlanAssignment, CoachingSession) is read
+ *   by `client_id` alone, so it follows the client from coach to coach.
+ *   The coach's own conversation (CoachGuideline, CoachMessage, coaching
+ *   style) ALSO requires the client's CURRENT coach (`User.coach_id`), not
+ *   soft-deleted (owner 4b). A non-student caller gets neither.
  * - No cross-request persistent cache of client data. The only memo is a 15 s
  *   in-process entry keyed by (user_id, local_date), invalidated by
  *   `invalidateForUser` and by the process-wide hook in
@@ -25,9 +27,9 @@
  *   windows so the block stays inside the renderer's token cap.
  * - Excluded by construction: other users' data (every query is scoped to
  *   the caller), coach-private notes (CoachingSession is read ONLY for the
- *   client's own upcoming bookings with the current coach, with a narrow
- *   select of title, start/end time and status; notes, links and coach-private
- *   fields are never selected), email,
+ *   client's own upcoming bookings, with a narrow select of title, start/end
+ *   time and status; notes, links and coach-private fields are never
+ *   selected), an earlier coach's thread and guideline, email,
  *   phone, last name, raw ids, exact DOB, bloodwork, payments, wearable
  *   credentials/tokens (WearableConnection is read for provider + status only).
  */
@@ -435,20 +437,16 @@ export class RomanClientContextService {
       return { context: this.emptyContext(clock, now, ['user']), query_count: queries };
     }
 
-    // Coach-owned facts only for a student (DB and JWT role) whose current
-    // coach is live, plus an open sub-coach delegation from that coach
-    // (B-665-3). The rule lives in roman-coach-scope.ts (shared with the
-    // v1.1 timeline reader).
-    const { coach, coachId, coachSide, planSide } = resolveRomanCoachScope({
+    // The client's own history (ownHistory) for a student (DB and JWT role);
+    // the coach's conversation only from a live current coach, plus an open
+    // sub-coach delegation from that coach (B-665-3). The rule lives in
+    // roman-coach-scope.ts (shared with the v1.1 timeline reader).
+    const { coach, coachId, coachSide, ownHistory } = resolveRomanCoachScope({
       userRole: user.role,
       callerRole: caller.role,
       coach: user.coach,
       overlay,
-      userId,
     });
-    // B31: whose plan and targets rows are the client's (the coach side, or the
-    // coachless client's own tenant); coach-only facts below still need coachId.
-    const planOwner = coachId ?? planSide[0] ?? null;
 
     const today = clock.local_date;
     const d7 = addDays(today, -6);
@@ -476,12 +474,12 @@ export class RomanClientContextService {
       wearableSamples,
       bookings,
     ] = await Promise.all([
-      planOwner
+      // HIST3: the newest effective target, whoever set it (= GET /me/macros/current).
+      ownHistory
         ? (queries++,
           this.prisma.macroTarget.findFirst({
             where: {
               client_id: userId,
-              coach_id: planOwner,
               archived_at: null,
               effective_from: { lte: now },
             },
@@ -502,13 +500,13 @@ export class RomanClientContextService {
         },
       })),
       // B-665-4: history (adherence, completions) and upcoming (today, next)
-      // are read separately, each with a cap+1 completeness check.
-      planSide.length > 0
+      // are read separately, each with a cap+1 completeness check. HIST3:
+      // every assigner (= GET /assignments/me).
+      ownHistory
         ? (queries++,
           this.prisma.clientWorkoutAssignment.findMany({
             where: {
               client_id: userId,
-              assigned_by_coach_id: { in: planSide },
               scheduled_for: {
                 gte: localDayStart(d14, tz),
                 lt: localDayStart(addDays(today, 1), tz),
@@ -526,12 +524,11 @@ export class RomanClientContextService {
             },
           }))
         : [],
-      planSide.length > 0
+      ownHistory
         ? (queries++,
           this.prisma.clientWorkoutAssignment.findMany({
             where: {
               client_id: userId,
-              assigned_by_coach_id: { in: planSide },
               scheduled_for: {
                 gte: localDayStart(today, tz),
                 lt: localDayStart(addDays(plus14, 1), tz),
@@ -625,15 +622,20 @@ export class RomanClientContextService {
             select: { created_at: true, body: true, sender_id: true },
           }))
         : [],
-      coachId
+      // HIST3: today's daily meal plan, whoever assigned it. An archive hides
+      // a plan only from its own coach's client (#961's client rule), so a
+      // moved client keeps an earlier coach's archived plan, frozen copy
+      // included (owner 4 / 139-13).
+      ownHistory
         ? (queries++,
           this.prisma.dailyMealPlanAssignment.findFirst({
             where: {
               client_id: userId,
-              assigned_by_coach_id: { in: coachSide },
               starts_on: { lte: dateOnly(today) },
               OR: [{ ends_on: null }, { ends_on: { gte: dateOnly(today) } }],
-              daily_meal_plan: { archived_at: null },
+              daily_meal_plan: user.coach_id
+                ? { OR: [{ archived_at: null }, { coach_id: { not: user.coach_id } }] }
+                : {},
             },
             orderBy: { starts_on: 'desc' },
             select: {
@@ -693,14 +695,14 @@ export class RomanClientContextService {
           source_tz: true,
         },
       })),
-      // Upcoming sessions with the CURRENT coach (bookings). Title, time and
-      // status only: never coach_notes_md, recaps, video links or provider ids.
-      coachId
+      // The client's upcoming sessions (bookings), with any coach (HIST3; =
+      // GET /scheduling/sessions). Title, time and status only: never
+      // coach_notes_md, recaps, video links or provider ids.
+      ownHistory
         ? (queries++,
           this.prisma.coachingSession.findMany({
             where: {
               client_id: userId,
-              coach_id: coachId,
               status: { in: [...ROMAN_BOOKING_STATUSES] },
               start_at: { gte: now },
             },
@@ -749,9 +751,9 @@ export class RomanClientContextService {
     // ── targets ──
     const targets: RomanCtxTargets = macroTarget
       ? {
-          // B31: a coachless client's MacroTarget is the consultation's own
-          // calculation, never a coach's.
-          source: coachId ? 'coach_set' : 'onboarding_calculated',
+          // B31: a row in the client's own tenant (the coachless house plan) is
+          // the consultation's own calculation; any other row a coach set.
+          source: macroTarget.coach_id === userId ? 'onboarding_calculated' : 'coach_set',
           calories: macroTarget.calories_kcal,
           protein_g: macroTarget.protein_g,
           carbs_g: macroTarget.carbs_g,
@@ -974,7 +976,7 @@ export class RomanClientContextService {
       { preferences: user.wearable_metric_preferences ?? [], complete: wearablesComplete },
     );
 
-    // ── bookings (upcoming, current coach only) ──
+    // ── bookings (upcoming, any coach: HIST3) ──
     const upcoming_sessions: RomanCtxBooking[] = bookings.map((b): RomanCtxBooking => {
       const c = localClock(b.start_at, clock.timezone);
       return {

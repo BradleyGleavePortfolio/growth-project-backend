@@ -19,6 +19,7 @@ import {
   LocalArchiveStore,
 } from './data-export-archive.store';
 import { PrismaService } from '../prisma.service';
+import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { DataExportRequest, DataExportStatus, Prisma } from '@prisma/client';
 import * as Sentry from '@sentry/node';
 import * as crypto from 'crypto';
@@ -539,6 +540,8 @@ function archiveFileName(record: Pick<DataExportRequest, 'completed_at' | 'creat
 export class DataExportService {
   private readonly logger = new Logger(DataExportService.name);
   private readonly store: DataExportArchiveStore;
+  // A1's "which clients does this coach have now" (own roster plus current delegations).
+  private readonly clientScope: SubCoachScopeService;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -576,6 +579,7 @@ export class DataExportService {
       );
     }
     this.store = store ?? new LocalArchiveStore();
+    this.clientScope = new SubCoachScopeService(prisma);
   }
 
   /** The archive store in use (supabase in production). */
@@ -634,7 +638,11 @@ export class DataExportService {
         if (!current || current.status !== DataExportStatus.READY) continue;
         existing = current;
       }
-      if (this._isDownloadable(existing, now) && existing.created_at >= windowStart) {
+      if (
+        this._isDownloadable(existing, now) &&
+        existing.created_at >= windowStart &&
+        !(await this._isStaleCoachArchive(existing))
+      ) {
         const next = new Date(existing.created_at.getTime() + RATE_LIMIT_HRS * 60 * 60 * 1000);
         throw new ConflictException({
           code: C.RATE_LIMITED,
@@ -719,7 +727,12 @@ export class DataExportService {
       record = current;
     }
 
-    const downloadable = this._isDownloadable(record, now);
+    let downloadable = this._isDownloadable(record, now);
+    if (downloadable && (await this._isStaleCoachArchive(record))) {
+      await this._supersede(record);
+      record = { ...record, status: DataExportStatus.EXPIRED, file_url: null };
+      downloadable = false;
+    }
     let nextRequestAt: Date | null = null;
     if (record.status === DataExportStatus.PENDING || record.status === DataExportStatus.RUNNING) {
       nextRequestAt = new Date(record.created_at.getTime() + staleRunMs());
@@ -1125,7 +1138,66 @@ export class DataExportService {
       // disk before durable storage (gone with that machine).
       throw new GoneException({ code: C.FILE_MISSING, message: FILE_MISSING_MESSAGE });
     }
+    if (await this._isStaleCoachArchive(record)) {
+      await this._supersede(record);
+      throw new GoneException({ code: C.FILE_MISSING, message: FILE_MISSING_MESSAGE });
+    }
     return record;
+  }
+
+  /**
+   * B-938-1 (owner decision 4): a coach's archive requested before one of
+   * their clients moved away (team reassignment, ended delegation, or a move
+   * of a client delegated to them) holds that client's history, so it is
+   * retired and never served; the coach can request a fresh export at once.
+   * Client archives are never stale.
+   */
+  private async _isStaleCoachArchive(record: DataExportRequest): Promise<boolean> {
+    const owner = await this.prisma.user.findUnique({
+      where: { id: record.user_id },
+      select: { role: true, coach_id: true },
+    });
+    if (owner?.role !== 'coach') return false;
+    const since = { gte: record.created_at };
+    const from = (key: string) => ({ metadata: { path: [key], equals: record.user_id } });
+    const [moved, ended, delegated] = await Promise.all([
+      this.prisma.teamAuditEvent.findFirst({
+        where: {
+          event_kind: 'client_reassigned',
+          occurred_at: since,
+          head_coach_id: { in: [record.user_id, owner.coach_id ?? record.user_id] },
+          OR: [from('from_coach_id'), from('from_sub_coach_id')],
+        },
+        select: { id: true },
+      }),
+      this.prisma.subCoachAssignment.findFirst({
+        where: { sub_coach_id: record.user_id, unassigned_at: since },
+        select: { id: true },
+      }),
+      this.prisma.subCoachAssignment.findMany({
+        where: {
+          sub_coach_id: record.user_id,
+          unassigned_at: null,
+          assigned_at: { lte: record.created_at },
+        },
+        select: { client_id: true },
+      }),
+    ]);
+    if (moved || ended) return true;
+    if (delegated.length === 0) return false;
+    // A head coach moving a delegated client to another coach leaves the
+    // delegation open, but the sub-coach loses that client at once (A1).
+    const reassigned = await this.prisma.teamAuditEvent.findMany({
+      where: {
+        event_kind: 'client_reassigned',
+        occurred_at: since,
+        target_client_id: { in: delegated.map((d) => d.client_id) },
+      },
+      select: { target_client_id: true },
+    });
+    if (reassigned.length === 0) return false;
+    const current = new Set(await this.clientScope.getAuthorizedClientIds(record.user_id));
+    return reassigned.some((e) => e.target_client_id !== null && !current.has(e.target_client_id));
   }
 
   /**
@@ -1361,6 +1433,17 @@ export class DataExportService {
   ): Promise<{ buffer: Buffer; sha256: string }> {
     const startedAt = new Date();
 
+    // B-DP-4-1 (owner decision 4): when a client moves, the old coach loses
+    // everything at once and the history stays with the client. The coach
+    // side of each client-linked section keeps only rows about a client the
+    // exporter coaches now, or about no client; the client side is unchanged.
+    const currentClientIds = await this.clientScope.getAuthorizedClientIds(userId);
+    const currentClient = { client_id: { in: currentClientIds } };
+    const noOrCurrentClient = { OR: [{ client_id: null }, currentClient] };
+    const coachOrClient = {
+      OR: [{ client_id: userId }, { coach_id: userId, ...noOrCurrentClient }],
+    };
+
     const [
       user,
       profile,
@@ -1449,20 +1532,14 @@ export class DataExportService {
       this._streamAll('checkIn', { user_id: userId }),
       this._streamAll('savedRecipe', { user_id: userId }),
       this._streamAll('listItem', { user_id: userId }),
-      this._streamCoachMessages(userId),
-      this._streamAll('coachNudge', {
-        OR: [{ coach_id: userId }, { client_id: userId }],
-      }),
-      this._streamAll('messageDraft', {
-        OR: [{ coach_id: userId }, { client_id: userId }],
-      }),
-      this._streamAll('mealPlan', {
-        OR: [{ coach_id: userId }, { client_id: userId }],
-      }),
+      this._streamCoachMessages(userId, noOrCurrentClient),
+      this._streamAll('coachNudge', coachOrClient),
+      // Owner C-3: a draft is the coach's unsent reply, so it is coach-side
+      // only and never in the client's export. It always names its client.
+      this._streamAll('messageDraft', { coach_id: userId, ...currentClient }),
+      this._streamAll('mealPlan', coachOrClient),
       this._streamAll('communityWin', { user_id: userId }),
-      this._streamAll('coachGuideline', {
-        OR: [{ coach_id: userId }, { client_id: userId }],
-      }),
+      this._streamAll('coachGuideline', coachOrClient),
       this.prisma.buildWeekEnrollment.findUnique({ where: { user_id: userId } }),
       this._streamBuildWeekCompletions(userId),
       this._streamAll('inviteCode', { coach_id: userId }),
@@ -1645,7 +1722,13 @@ export class DataExportService {
       coach_guidelines: coachGuidelines,
       build_week_enrollment: buildWeekEnrollment,
       build_week_completions: buildWeekCompletions,
-      invite_codes: inviteCodes,
+      // B-938-2: a code a moved client accepted stays the coach's, without
+      // that client's id, acceptance date or invited email.
+      invite_codes: (inviteCodes as Array<Record<string, unknown>>).map((code) =>
+        code.accepted_by_user_id && !currentClientIds.includes(String(code.accepted_by_user_id))
+          ? { ...code, accepted_by_user_id: null, accepted_at: null, intended_email: null }
+          : code,
+      ),
       diagnostic_submissions: diagnosticSubmissions,
       ptm_signals: ptmSignals,
       ptm_predictions: ptmPredictions,
@@ -1772,11 +1855,19 @@ export class DataExportService {
    * CoachMessage export. Messages sent by the requesting user are returned
    * verbatim. Messages sent by a third party that are visible to the user
    * are redacted to protect the other party's privacy rights under GDPR.
-   * Pages follow the primary key like _streamAll.
+   * Pages follow the primary key like _streamAll. As the coach or sender,
+   * only messages about a client the user coaches now (`coachSideClient`,
+   * B-DP-4-1) or about no client; as the client, all of them.
    */
-  private async _streamCoachMessages(userId: string): Promise<unknown[]> {
-    const where = {
-      OR: [{ sender_id: userId }, { coach_id: userId }, { client_id: userId }],
+  private async _streamCoachMessages(
+    userId: string,
+    coachSideClient: Prisma.CoachMessageWhereInput,
+  ): Promise<unknown[]> {
+    const where: Prisma.CoachMessageWhereInput = {
+      OR: [
+        { client_id: userId },
+        { OR: [{ sender_id: userId }, { coach_id: userId }], AND: [coachSideClient] },
+      ],
     };
     return this._readAllById(
       'coachMessage',
