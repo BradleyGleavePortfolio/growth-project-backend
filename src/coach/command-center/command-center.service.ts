@@ -23,7 +23,7 @@ import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { AdminPtmService } from '../../admin/ptm/admin-ptm.service';
-import { CoachAlertsService, ROMAN_SAFETY_ALERT_TYPES } from '../coach-alerts.service';
+import { CoachAlertsService, ROMAN_SAFETY_ALERT_TYPES, currentCoachAlerts } from '../coach-alerts.service';
 import { SubCoachScopeService } from '../../sub-coach/sub-coach-scope.service';
 import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../../consent/consent.service';
 import { CHURN_FACTOR_SCOPES, coachVisibleFactors } from './churn-factor-scopes';
@@ -125,7 +125,7 @@ const SAFETY_CARD_LINE: Partial<Record<string, (name: string) => string>> = {
     `Roman sent ${name} an eating-disorder safety reply. Check in with them →`,
   // ROMAN-CRISIS-ALERT, approved word for word: the first name only.
   roman_crisis_reply: (name) =>
-    `Roman sent ${name.split(' ')[0]} a crisis safety reply. Please check in with them today.`,
+    `Roman sent ${name.trim().split(/\s+/)[0] || name} a crisis safety reply. Please check in with them today.`,
 };
 
 export interface ActionQueueResponse {
@@ -211,7 +211,7 @@ function safetyAlertsForCurrentCoach(callerId: string): Prisma.CoachAlertWhereIn
       {
         OR: [
           { alert_type: { notIn: [...ROMAN_SAFETY_ALERT_TYPES] } },
-          { client: { coach_id: callerId } },
+          currentCoachAlerts(callerId),
         ],
       },
     ],

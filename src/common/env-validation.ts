@@ -2320,6 +2320,13 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Roman voice copy v2.',
   },
   {
+    name: 'FEATURE_ROMAN_CRISIS_ALERT',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason:
+      'ROMAN-CRISIS-ALERT: the coach alert after Roman sends the 911 or 988 reply (src/roman/roman.feature.ts). Off = no crisis alert, as before. Turn on only after the app that opens it (SAFETYWORDS-M) is on phones.',
+  },
+  {
     name: 'FEATURE_ROMAN_FIRST_PAYMENT',
     tier: 'optional',
     default: 'unset → off (only "true")',

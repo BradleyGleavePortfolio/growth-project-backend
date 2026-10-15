@@ -59,6 +59,17 @@ export const ROMAN_SAFETY_ALERT_TYPES: readonly string[] = [
 ];
 
 /**
+ * Owner 4 (137-8): a client's alerts are for their current coach only. Once
+ * the client moves, the coach they left loses every one at once, of every
+ * type: no list, read or dismiss. The one current-coach rule, used by the
+ * routes here and by the Command Center; the inbox row follows it too
+ * (NotificationsService.inboxWhere).
+ */
+export function currentCoachAlerts(coachId: string): Prisma.CoachAlertWhereInput {
+  return { client: { coach_id: coachId } };
+}
+
+/**
  * A fixed alert id for an alert that may exist at most once per `key` (the
  * eating-disorder alert: once per Roman conversation). A second create with
  * the same id fails on the primary key, so a race cannot make two. UUID-shaped
@@ -151,6 +162,7 @@ export class CoachAlertsService {
     const limit = clamp(opts.limit ?? DEFAULT_BATCH_LIMIT, 1, MAX_BATCH_LIMIT);
     const where: Prisma.CoachAlertWhereInput = {
       coach_id: opts.coachId,
+      ...currentCoachAlerts(opts.coachId),
     };
     if (typeof opts.acknowledged === 'boolean') {
       where.acknowledged_at = opts.acknowledged ? { not: null } : null;
@@ -177,7 +189,7 @@ export class CoachAlertsService {
    * acknowledged; we re-read to disambiguate.
    */
   async acknowledge(alertId: string, coachId: string): Promise<CoachAlert> {
-    return this.acknowledgeWhere(alertId, { coach_id: coachId });
+    return this.acknowledgeWhere(alertId, { coach_id: coachId, ...currentCoachAlerts(coachId) });
   }
 
   /**

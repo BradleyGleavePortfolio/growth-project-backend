@@ -16,7 +16,7 @@ import type { CoachAlertEmitter } from '../../src/notifications/emitters/coach-a
 import { RomanService } from '../../src/roman/roman.service';
 import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
 import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
-import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
+import { FEATURE_ROMAN_CHAT_ENABLED_ENV, FEATURE_ROMAN_CRISIS_ALERT_ENV } from '../../src/roman/roman.feature';
 import {
   classifySafety,
   ROMAN_SAFETY_ROUTER_MODEL_ID,
@@ -29,14 +29,18 @@ import { AppModule } from '../../src/app.module';
 import { GOLDEN_SET } from './eval/golden-set';
 
 const FLAG = FEATURE_ROMAN_CHAT_ENABLED_ENV;
-let saved: string | undefined;
+const CRISIS = FEATURE_ROMAN_CRISIS_ALERT_ENV;
+let saved: Array<string | undefined> = [];
 beforeEach(() => {
-  saved = process.env[FLAG];
+  saved = [process.env[FLAG], process.env[CRISIS]];
   process.env[FLAG] = 'true';
+  delete process.env[CRISIS]; // the crisis alert switch is off by default
 });
 afterEach(() => {
-  if (saved === undefined) delete process.env[FLAG];
-  else process.env[FLAG] = saved;
+  [FLAG, CRISIS].forEach((k, i) => {
+    if (saved[i] === undefined) delete process.env[k];
+    else process.env[k] = saved[i];
+  });
 });
 
 const REPLY =
@@ -397,12 +401,28 @@ describe('urgent_symptoms on the live turn', () => {
     expect(chunks[1]).toMatchObject({ type: 'done', text: REPLY });
   });
 
-  // ROMAN-CRISIS-ALERT (owner Option 1): the 911 and 988 replies alert the
-  // client's current coach (coach-2; coach-1 coached them before), with no
-  // client text and no message id, and the reply gains no line.
+  // ROMAN-CRISIS-ALERT (owner Option 1), behind its switch: off (the
+  // default, or any value but true), the 911 and 988 replies alert no one, as
+  // before.
+  it.each([
+    ['emergency', undefined],
+    ['self_harm', undefined],
+    ['self_harm', 'false'],
+  ] as const)('%s with the crisis switch %s: the fixed reply and no alert, as before', async (cls, sw) => {
+    if (sw) process.env[CRISIS] = sw;
+    const message = GOLDEN_SET.find((g) => g.router === cls)!.question;
+    const h = harness('coach-2');
+    const chunks = await drain(h.svc.streamAssistantTurn(CLIENT, SESSION, { userMessage: message }));
+    expect(chunks[1]).toMatchObject({ type: 'done', text: ROMAN_SAFETY_TEMPLATES[cls] });
+    expect(h.alerts.createAlert).not.toHaveBeenCalled();
+  });
+
+  // On: the reply alerts the client's current coach, with no client text and
+  // no message id, and the reply gains no line.
   it.each(['emergency', 'self_harm'] as const)(
-    '%s: the fixed reply and exactly one crisis alert for the current coach only',
+    '%s with the crisis switch on: the fixed reply and exactly one crisis alert for the current coach',
     async (cls) => {
+      process.env[CRISIS] = 'true';
       const message = GOLDEN_SET.find((g) => g.router === cls)!.question;
       expect(classifySafety(message).class).toBe(cls);
       const h = harness('coach-2');
@@ -419,7 +439,7 @@ describe('urgent_symptoms on the live turn', () => {
         message: SAFETY_ALERT_PUSH_BODY.roman_urgent_reply,
       });
       const row = JSON.stringify(h.alerts.createAlert.mock.calls);
-      for (const leak of [message, 'msg_u1', 'coach-1']) expect(row).not.toContain(leak);
+      for (const leak of [message, 'msg_u1']) expect(row).not.toContain(leak);
 
       const coachless = harness(null);
       const alone = await drain(coachless.svc.streamAssistantTurn(CLIENT, SESSION, turn));

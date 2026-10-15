@@ -139,6 +139,9 @@ export function safetyAlertTap(alertId: string): {
   return { actionScreen: COACH_SAFETY_ALERT_SCREEN, actionParams: { alertId } };
 }
 
+/** A coach alert's inbox row and push open its client: this link plus the client id. */
+export const COACH_CLIENT_LINK = 'tgp://coach/clients/';
+
 // B-653-4: a client's move request keeps the booking_rescheduled kind, but
 // nothing has moved until the coach approves.
 const MOVE_REQUESTED_COPY: LockScreenCopy = {

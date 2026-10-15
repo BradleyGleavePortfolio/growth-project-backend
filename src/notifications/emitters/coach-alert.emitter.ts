@@ -3,6 +3,7 @@ import { NotificationsService } from '../notifications.service';
 import { NotificationKind } from '../notification-kind';
 import { dunningErrorCode } from '../../checkout/dunning-v2/dunning-v2.safe-error';
 import {
+  COACH_CLIENT_LINK,
   SAFETY_ALERT_INBOX_BODY,
   SAFETY_ALERT_PUSH_BODY,
   safetyAlertTap,
@@ -63,7 +64,7 @@ export class CoachAlertEmitter {
     _verifiedPush?: VerifiedCoachPush,
   ): Promise<CoachAlertDelivery> {
     const { coachId, alertId, alertType, message, severity, clientUserId } = payload;
-    const deepLink = clientUserId ? `tgp://coach/clients/${clientUserId}` : 'tgp://coach/alerts';
+    const deepLink = clientUserId ? `${COACH_CLIENT_LINK}${clientUserId}` : 'tgp://coach/alerts';
     // A Roman safety alert (owner 22a, 57, 57d): the inbox row and the push
     // open that alert; each has its own fixed line. Neither carries a name or
     // the client's message.

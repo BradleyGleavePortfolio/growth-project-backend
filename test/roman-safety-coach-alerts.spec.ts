@@ -7,7 +7,10 @@
 // quiet hours (owner 57q), and a push or inbox tap reads that one alert by id
 // (owner 57d). No network, no DB.
 
+import { NotFoundException } from '@nestjs/common';
 import { CoachAlertsService, onceAlertId } from '../src/coach/coach-alerts.service';
+import { CoachAlertsController } from '../src/coach/coach-alerts.controller';
+import { NotificationsController } from '../src/notifications/notifications.controller';
 import { CommandCenterService } from '../src/coach/command-center/command-center.service';
 import { CommandCenterController } from '../src/coach/command-center/command-center.controller';
 import type { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
@@ -394,6 +397,141 @@ describe('owner 4: the current coach only', () => {
     const moved = world('coach-2');
     await expect(moved.svc.getSafetyAlert('a-safe', 'coach-1')).rejects.toThrow('Alert not found');
     await expect(moved.svc.getSafetyAlert('a-safe', 'sub-1')).rejects.toThrow('Alert not found');
+  });
+
+  // B1 (FIX1030), owner 4: one current-coach rule on every path that reads or
+  // changes a coach alert or its inbox row, for every alert type. Coach-1's
+  // client has one alert of each type, each put in coach-1's inbox by the real
+  // emitter, and coach-1 has two other inbox rows (a payout notice, a digest).
+  // Control: coach-1 reaches all of it. Then the client moves to coach-2, and
+  // coach-1 reaches none of the alerts at once; the two other rows stay.
+  describe('after a move, the former coach loses every alert path at once', () => {
+    type N = { id: string; user_id: string; kind: string; deep_link: string | null; read_at: Date | null; inbox_hidden: boolean };
+    function nHit(r: N, w: any): boolean {
+      const link = w.deep_link;
+      return (
+        (!w.OR || w.OR.some((x: unknown) => nHit(r, x))) &&
+        (!w.NOT || !nHit(r, w.NOT)) &&
+        (w.id === undefined || r.id === w.id) &&
+        (w.user_id === undefined || r.user_id === w.user_id) &&
+        (w.read_at === undefined || r.read_at === null) &&
+        (w.inbox_hidden === undefined || r.inbox_hidden === w.inbox_hidden) &&
+        (w.kind?.not === undefined || r.kind !== w.kind.not) &&
+        (link === undefined ||
+          (link === null ? r.deep_link === null : link.in ? link.in.includes(r.deep_link) : !!r.deep_link?.startsWith(link.startsWith)))
+      );
+    }
+    const TYPES = ['roman_crisis_reply', 'roman_urgent_reply', 'roman_eating_disorder_reply', 'bloodwork_review'];
+    async function world(move: boolean) {
+      const users = [{ id: 'client-1', coach_id: 'coach-1' }];
+      const rows: Row[] = TYPES.map((alert_type, i) => ({
+        id: `a-${i}`,
+        coach_id: 'coach-1',
+        client_id: 'client-1',
+        alert_type,
+        message: 'Fixed line.',
+        payload: alert_type === 'roman_crisis_reply' ? null : { roman_message_id: 'm1' },
+        created_at: new Date('2026-10-12T09:00:00Z'),
+        acknowledged_at: null,
+      }));
+      const other = { user_id: 'coach-1', read_at: null, inbox_hidden: false };
+      const inbox: N[] = [
+        { ...other, id: 'n-payout', kind: NotificationKind.COACH_ALERT, deep_link: 'tgp://coach/payouts' },
+        { ...other, id: 'n-digest', kind: 'coach_digest', deep_link: null },
+      ];
+      const hits = (where: unknown) => inbox.filter((r) => nHit(r, where));
+      const joined = () => rows.map((r) => ({ ...r, client: { name: 'Jane Doe', coach_id: users[0].coach_id } }));
+      const prisma = {
+        coachAlert: {
+          findMany: jest.fn(async ({ where }: { where: unknown }) => joined().filter((r) => matches(r, where))),
+          count: jest.fn(async ({ where }: { where: unknown }) => joined().filter((r) => matches(r, where)).length),
+          findFirst: jest.fn(async ({ where }: { where: unknown }) => joined().find((r) => matches(r, where)) ?? null),
+          updateMany: jest.fn(async ({ where, data }: { where: unknown; data: { acknowledged_at: Date } }) => {
+            const hit = joined().filter((r) => matches(r, where));
+            for (const h of hit) rows.find((r) => r.id === h.id)!.acknowledged_at = data.acknowledged_at;
+            return { count: hit.length };
+          }),
+        },
+        romanMessage: {
+          findMany: jest.fn(async () => [{ id: 'm1', user_id: 'client-1', content: 'A message.', created_at: SENT_AT }]),
+        },
+        user: { findMany: jest.fn(async ({ where }: { where: { coach_id: string } }) => users.filter((u) => u.coach_id === where.coach_id)) },
+        notification: {
+          findMany: jest.fn(async ({ where, take }: { where: unknown; take: number }) => hits(where).slice(0, take)),
+          count: jest.fn(async ({ where }: { where: unknown }) => hits(where).length),
+          findFirst: jest.fn(async ({ where }: { where: unknown }) => hits(where)[0] ?? null),
+          update: jest.fn(async ({ where, data }: { where: { id: string }; data: object }) =>
+            Object.assign(inbox.find((r) => r.id === where.id)!, data),
+          ),
+          updateMany: jest.fn(async ({ where, data }: { where: unknown; data: object }) => ({
+            count: hits(where).map((r) => Object.assign(r, data)).length,
+          })),
+        },
+        checkIn: { groupBy: jest.fn(async () => []), count: jest.fn(async () => 0) },
+        ptmPrediction: { groupBy: jest.fn(async () => []) },
+        clientSignal: { groupBy: jest.fn(async () => []) },
+        coachMessage: { count: jest.fn(async () => 0) },
+      };
+      const emitter = new CoachAlertEmitter(
+        fakeOf<NotificationsService>({
+          createNotification: async (n: Omit<N, 'id' | 'read_at' | 'inbox_hidden'>) =>
+            inbox.push({ ...n, id: `n-${inbox.length}`, read_at: null, inbox_hidden: false }),
+          sendPush: async () => null,
+        }),
+      );
+      for (const r of rows) {
+        await emitter.emit({ coachId: r.coach_id, alertId: r.id, alertType: r.alert_type, message: r.message, severity: 'critical', clientUserId: r.client_id });
+      }
+      const alerts = new CoachAlertsService(fakeOf<PrismaService>(prisma));
+      const scope = {
+        getAuthorizedClientIds: async (id: string) => users.filter((u) => u.coach_id === id).map((u) => u.id),
+        getHeadCoachIdForSubCoach: async () => null,
+      };
+      const cc = new CommandCenterService(fakeOf<PrismaService>(prisma), fakeOf<AdminPtmService>({}), alerts, fakeOf<SubCoachScopeService>(scope));
+      const alertInbox = inbox.filter((r) => r.deep_link === 'tgp://coach/clients/client-1').map((r) => r.id);
+      expect(alertInbox).toHaveLength(TYPES.length);
+      if (move) users[0].coach_id = 'coach-2';
+      return {
+        ids: rows.map((r) => r.id),
+        alertInbox,
+        alerts: new CoachAlertsController(alerts),
+        cc: new CommandCenterController(cc, fakeOf<ChurnInterventionService>({})),
+        inbox: new NotificationsController(new RealNotificationsService(fakeOf<PrismaService>(prisma))),
+      };
+    }
+    type W = Awaited<ReturnType<typeof world>>;
+    const req = fakeOf<AuthedRequest>({ user: { id: 'coach-1' } });
+    // How many of the ids the path serves; its 404 counts as none.
+    const served = async (ids: string[], call: (id: string) => Promise<unknown>) => {
+      let n = 0;
+      for (const id of ids) {
+        n += await call(id).then(
+          () => 1,
+          (e: unknown) => {
+            if (e instanceof NotFoundException) return 0;
+            throw e;
+          },
+        );
+      }
+      return n;
+    };
+    const PATHS: Array<[string, number, number, (w: W) => Promise<number>]> = [
+      ['GET /coach/alerts', 4, 0, async (w) => (await w.alerts.list(req)).length],
+      ['POST /coach/alerts/:id/acknowledge', 4, 0, (w) => served(w.ids, (id) => w.alerts.acknowledge(req, id))],
+      ['GET /coach/command-center/overview (open alerts)', 4, 0, async (w) => (await w.cc.getOverview(req)).open_alerts],
+      ['GET /coach/command-center/action-queue', 4, 0, async (w) => (await w.cc.getActionQueue(req)).items.length],
+      ['GET /coach/command-center/action-queue/:alertId (safety types)', 3, 0, (w) => served(w.ids, (id) => w.cc.getSafetyAlert(req, id))],
+      ['POST /coach/command-center/action-queue/:alertId/dismiss', 4, 0, (w) => served(w.ids, (id) => w.cc.dismissAlert(req, id))],
+      ['GET /notifications (rows)', 6, 2, async (w) => (await w.inbox.listNotifications(req, {})).items.length],
+      ['GET /notifications (unread count)', 6, 2, async (w) => (await w.inbox.listNotifications(req, {})).unreadCount],
+      ['GET /notifications/unread-count', 6, 2, async (w) => (await w.inbox.getUnreadCount(req)).count],
+      ['POST /notifications/:id/read', 4, 0, (w) => served(w.alertInbox, (id) => w.inbox.markRead(id, req))],
+      ['POST /notifications/mark-all-read', 6, 2, async (w) => (await w.inbox.markAllRead(req)).updated],
+    ];
+    it.each(PATHS)('%s: %i for the current coach, then %i once the client has moved', async (_path, before, after, run) => {
+      expect(await run(await world(false))).toBe(before);
+      expect(await run(await world(true))).toBe(after);
+    });
   });
 
   // Owner 57q and the team chain: Roman writes the alert to the client's coach

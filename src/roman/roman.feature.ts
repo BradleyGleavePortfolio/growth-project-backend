@@ -41,3 +41,15 @@ export function isRomanChatEnabled(
 ): boolean {
   return isExplicitlyTrue(env[FEATURE_ROMAN_CHAT_ENABLED_ENV]);
 }
+
+/**
+ * ROMAN-CRISIS-ALERT switch (DEFAULT OFF, same rule as above): the coach alert
+ * after Roman's 911 or 988 reply. Off, no crisis alert is written, as before.
+ * Order: the app that opens the alert (SAFETYWORDS-M) is on phones, then the
+ * owner turns this on.
+ */
+export const FEATURE_ROMAN_CRISIS_ALERT_ENV = 'FEATURE_ROMAN_CRISIS_ALERT';
+
+export function isRomanCrisisAlertEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return isExplicitlyTrue(env[FEATURE_ROMAN_CRISIS_ALERT_ENV]);
+}

@@ -65,7 +65,7 @@ import {
   ROMAN_ERASE_SWEEP_BATCH,
   ROMAN_ERASE_SWEEP_MAX_BATCHES,
 } from './roman.constants';
-import { isRomanChatEnabled } from './roman.feature';
+import { isRomanChatEnabled, isRomanCrisisAlertEnabled } from './roman.feature';
 import {
   ROMAN_LOGGABLE_ERROR_NAMES,
   romanErrorTag,
@@ -1007,11 +1007,14 @@ export class RomanService {
         route.class === 'self_harm' ||
         route.class === 'urgent_symptoms')
     ) {
-      // Owner 22a and ROMAN-CRISIS-ALERT: every fixed reply alerts the coach;
-      // only the urgent reply says so (the line is approved for it alone).
+      // Owner 22a and ROMAN-CRISIS-ALERT: every fixed reply alerts the coach
+      // (a crisis reply only once its switch is on); only the urgent reply
+      // says so (the line is approved for it alone).
       const urgent = route.class === 'urgent_symptoms';
       const alertType = urgent ? 'roman_urgent_reply' : 'roman_crisis_reply';
-      const told = await this.alertCoachOfSafetyReply(caller, session, alertType, opts.userMessageId);
+      const told =
+        (urgent || isRomanCrisisAlertEnabled()) &&
+        (await this.alertCoachOfSafetyReply(caller, session, alertType, opts.userMessageId));
       const text = ROMAN_SAFETY_TEMPLATES[route.class];
       const reply = urgent && told ? `${text} ${ROMAN_COACH_TOLD_LINE}` : text;
       yield* this.fixedSafetyReply(caller, session, reply, ROMAN_SAFETY_ROUTE_REASON[route.class]);
