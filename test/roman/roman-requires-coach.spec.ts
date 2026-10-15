@@ -42,6 +42,8 @@ const FLAG = FEATURE_ROMAN_CHAT_ENABLED_ENV;
 const COACHLESS = { id: 'client-a', role: 'student', coach_id: null };
 const COACHED = { id: 'client-b', role: 'student', coach_id: 'coach-1' };
 const COACH = { id: 'coach-1', role: 'coach', coach_id: null };
+const OWNER = { id: 'owner-1', role: 'owner', coach_id: null };
+const COACHED_C = { id: 'client-c', role: 'student', coach_id: 'coach-1' };
 
 function session() {
   const now = new Date('2026-10-09T07:00:00.000Z');
@@ -296,6 +298,71 @@ describe('Part 1 — the 403 a client with no coach receives over HTTP', () => {
   it('a coach with no coach of their own is not a client: Roman opens', async () => {
     user = COACH;
     expect((await post('/roman/sessions', { surface: 'client' })).status).toBe(200);
+  });
+
+  // ROMANCTX-ROLE: RolesGuard lets a coach through @Roles('student') and the
+  // owner through every route, so GET /roman/context/me refuses them itself
+  // with the guard's own 403 (same rule as GET /me/roman/usage, #1020).
+  describe('ROMANCTX-ROLE: GET /roman/context/me answers clients only', () => {
+    function expectInsufficientRole(res: { status: number; body: Record<string, unknown> }) {
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ statusCode: 403, message: 'Insufficient role' });
+      expect(res.body).not.toHaveProperty('context');
+      expect(romanContext.buildFresh).not.toHaveBeenCalled();
+    }
+
+    it('a coach gets 403 Insufficient role and no context is built', async () => {
+      user = COACH;
+      expectInsufficientRole(await get('/roman/context/me'));
+    });
+
+    it('a coach who is also linked to a coach gets 403 Insufficient role too', async () => {
+      user = { ...COACH, coach_id: 'coach-2' };
+      expectInsufficientRole(await get('/roman/context/me'));
+    });
+
+    it('the owner gets 403 Insufficient role and no context is built', async () => {
+      user = OWNER;
+      expectInsufficientRole(await get('/roman/context/me'));
+    });
+
+    it('a client with no coach still gets 403 ROMAN_REQUIRES_COACH, nothing read', async () => {
+      user = COACHLESS;
+      expectRequiresCoach(await get('/roman/context/me'));
+      expect(romanContext.buildFresh).not.toHaveBeenCalled();
+    });
+
+    it('each coached client gets 200 with only their own context (keyed on the signed-in user)', async () => {
+      // The stub echoes whose context it built, so a body can only be the caller's.
+      const ownContext = async (...a: unknown[]) => ({
+        context: { version: 1, owner_id: (a[0] as { id: string }).id },
+        generated_at: new Date('2026-10-12T07:00:00.000Z'),
+        estimated_tokens: 10,
+      });
+      const usual = romanContext.buildFresh.getMockImplementation();
+      romanContext.buildFresh.mockImplementation(ownContext);
+      try {
+        user = COACHED;
+        const b = await get('/roman/context/me?client_id=client-c');
+        expect(b.status).toBe(200);
+        expect(b.body).toEqual({
+          version: 1,
+          as_of: '2026-10-12T07:00:00.000Z',
+          estimated_tokens: 10,
+          context: { version: 1, owner_id: 'client-b' },
+        });
+        user = COACHED_C;
+        const c = await get('/roman/context/me');
+        expect(c.status).toBe(200);
+        expect(c.body.context).toEqual({ version: 1, owner_id: 'client-c' });
+        expect(romanContext.buildFresh.mock.calls).toEqual([
+          [{ id: 'client-b', role: 'student' }],
+          [{ id: 'client-c', role: 'student' }],
+        ]);
+      } finally {
+        if (usual) romanContext.buildFresh.mockImplementation(usual);
+      }
+    });
   });
 });
 
