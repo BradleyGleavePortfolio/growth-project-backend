@@ -204,10 +204,30 @@ export class ClientAIContextService {
             },
           })
         : Promise.resolve(null),
+      // Today's day plan (MEAL:DAY) from the client's current coach, live only.
       user.coach_id
-        ? this.prisma.mealPlan.findFirst({
-            where: { coach_id: user.coach_id, client_id: userId, archived_at: null },
-            orderBy: { updated_at: 'desc' },
+        ? this.prisma.dailyMealPlanAssignment.findFirst({
+            where: {
+              client_id: userId,
+              starts_on: { lte: today },
+              OR: [{ ends_on: null }, { ends_on: { gte: today } }],
+              daily_meal_plan: { coach_id: user.coach_id, archived_at: null },
+            },
+            orderBy: { starts_on: 'desc' },
+            select: {
+              daily_meal_plan: {
+                select: {
+                  name: true,
+                  notes: true,
+                  created_at: true,
+                  slots: {
+                    orderBy: { order: 'asc' },
+                    take: CONTEXT_LIMITS.MEAL_PLAN_ITEMS,
+                    select: { slot_label: true, meal_template: { select: { name: true } } },
+                  },
+                },
+              },
+            },
           })
         : Promise.resolve(null),
       // M1: active fast (end_time IS NULL)
@@ -314,7 +334,7 @@ export class ClientAIContextService {
         notes: clampStr(c.notes, 200),
       })),
       coach: this.buildCoachRelationship(coachRecord, recentCoachMessages, activeGuidelines),
-      current_meal_plan: this.summarizeMealPlan(currentMealPlan),
+      current_meal_plan: this.summarizeMealPlan(currentMealPlan?.daily_meal_plan ?? null),
       // M1 additions
       fasting: this.buildFastingSummary(activeFast, lastCompletedFast),
       next_session: nextSession
@@ -608,35 +628,17 @@ export class ClientAIContextService {
   }
 
   private summarizeMealPlan(plan: {
-    title: string;
+    name: string;
     notes: string | null;
-    items: unknown;
-    updated_at: Date;
+    created_at: Date;
+    slots: Array<{ slot_label: string; meal_template: { name: string } }>;
   } | null): MealPlanSummary | null {
     if (!plan) return null;
-    // `items` is JSON. We accept array-of-strings, array-of-{name},
-    // or anything else (rendered as JSON.stringify as a last resort).
-    const raw = plan.items;
-    let lines: string[] = [];
-    if (Array.isArray(raw)) {
-      lines = raw
-        .map((it) => {
-          if (typeof it === 'string') return it;
-          if (it && typeof it === 'object') {
-            const o = it as Record<string, unknown>;
-            if (typeof o.name === 'string') return o.name;
-            if (typeof o.text === 'string') return o.text;
-            return JSON.stringify(o);
-          }
-          return String(it);
-        })
-        .slice(0, CONTEXT_LIMITS.MEAL_PLAN_ITEMS);
-    }
     return {
-      title: plan.title,
+      title: plan.name,
       notes: clampStr(plan.notes, 200),
-      items_text: lines,
-      updated_at: plan.updated_at.toISOString(),
+      items_text: plan.slots.map((s) => `${s.slot_label}: ${s.meal_template.name}`),
+      updated_at: plan.created_at.toISOString(),
     };
   }
 
