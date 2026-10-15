@@ -183,7 +183,7 @@ const refusal = (p: Promise<unknown>) =>
 const saved = { flag: process.env.FEATURE_COACH_PAYMENT_ACTIONS, key: process.env.STRIPE_SECRET_KEY };
 beforeEach(() => {
   process.env.FEATURE_COACH_PAYMENT_ACTIONS = 'true';
-  process.env.STRIPE_SECRET_KEY = 'sk_test_payready_synthetic';
+  process.env.STRIPE_SECRET_KEY = 'sk_test_payreadysynthetic';
 });
 afterAll(() => {
   for (const [name, value] of [['FEATURE_COACH_PAYMENT_ACTIONS', saved.flag], ['STRIPE_SECRET_KEY', saved.key]] as const) {
