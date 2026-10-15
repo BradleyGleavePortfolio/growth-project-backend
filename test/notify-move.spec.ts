@@ -139,6 +139,8 @@ const TYPES: Array<[string, boolean, (w: World) => Promise<unknown>]> = [
   ['message received', true, (w) => new MessageReceivedEmitter(w.notifications).emit(w.reader, { senderName: 'Jane Doe', threadId: 'client-1' })],
   ['session booked', true, (w) =>
     new BookingEmitter(w.notifications, w.prisma).emitBooked({ sessionId: 'sess-1', coachUserId: w.reader, clientDisplayName: 'Jane Doe', scheduledAt: new Date('2026-06-09T15:00:00Z') })],
+  ['session cancelled (the shared session link)', true, (w) =>
+    new BookingEmitter(w.notifications, w.prisma).emitCancelled({ sessionId: 'sess-1', recipientUserId: w.reader, recipientRole: 'coach', cancellingPartyDisplayName: 'Jane Doe', scheduledAt: new Date('2026-06-09T15:00:00Z'), cancelReason: null })],
   ['first payment', false, (w) => new FirstPaymentEmitter(w.notifications).emit(w.reader, { amount: 5000, currency: 'usd', clientId: 'client-1' }, w.tx)],
 ];
 
