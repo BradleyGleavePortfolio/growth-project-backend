@@ -1,5 +1,6 @@
+import { WearableMetricType } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { ConsentService } from './consent.service';
+import { ConsentScope, ConsentService } from './consent.service';
 
 /** The ids, out of `clientIds`, whose `scope` log the coach may read. */
 export type CoachSharingCheck = (scope: string, clientIds: string[]) => Promise<string[]>;
@@ -36,4 +37,23 @@ const WEIGHT_FIELDS = ['weight_kg', 'current_weight_lbs', 'target_weight_lbs'] a
 export function weightIfShared<T extends object>(row: T, weighIns: boolean): T {
   if (weighIns) return row;
   return { ...row, ...Object.fromEntries(WEIGHT_FIELDS.filter((f) => f in row).map((f) => [f, null])) };
+}
+
+/** The device samples that are a weight: body weight and body fat (wearables, Health Connect, HealthKit). */
+export const WEIGHT_METRICS: readonly WearableMetricType[] = [WearableMetricType.BODY_WEIGHT_KG, WearableMetricType.BODY_FAT_PCT];
+
+/**
+ * WEIGHTWALL (SoT A2 item 12): the one "can this caller see this client's weight" check. Yes for the
+ * client themselves; a coach only while that client's Weigh-ins switch is on for them
+ * (ConsentService.coachCanAccess, `fitness.body_metrics`; the owner account passes). No means no
+ * weight, no body fat and no number computed from them, from any source.
+ */
+export async function seesWeight(
+  consent: ConsentService | undefined,
+  callerId: string,
+  clientId: string,
+  callerRole?: string,
+): Promise<boolean> {
+  if (callerId === clientId || !consent) return true;
+  return consent.coachCanAccess(callerId, clientId, ConsentScope.FITNESS_BODY_METRICS, callerRole);
 }

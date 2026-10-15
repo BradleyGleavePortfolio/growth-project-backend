@@ -55,6 +55,11 @@ export function coachScopedContext(ctx: ClientContext, s: CoachSharing): ClientC
   return {
     ...ctx,
     profile: s.weighIns ? ctx.profile : { ...ctx.profile, height_cm: null, current_weight_lbs: null, target_weight_lbs: null },
+    // WEIGHTWALL: with no MacroTarget row (effective_from null) these are the profile's targets,
+    // computed from current and target weight, so Weigh-ins off sends none of them.
+    prescribed: s.weighIns || ctx.prescribed.effective_from != null
+      ? ctx.prescribed
+      : { ...ctx.prescribed, calories: null, protein_g: null, carbs_g: null, fat_g: null },
     weight_trend_90d: s.weighIns ? ctx.weight_trend_90d : [],
     today: s.food ? ctx.today : { date: ctx.today.date, ...noFood },
     food_log_totals_last_7d: s.food ? ctx.food_log_totals_last_7d : { days_logged: 0, avg_calories: 0, avg_protein_g: 0, avg_carbs_g: 0, avg_fat_g: 0 },

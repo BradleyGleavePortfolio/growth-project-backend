@@ -120,7 +120,7 @@ export class WearableInsightsController {
   ): Promise<CoachInsightResponse> {
     const { clientId, bucket } = parseOrThrow(CoachQuerySchema, rawQuery);
     await this.svc.assertCoachOwnsClient(req.user.id, clientId, req.user.role);
-    const payload = await this.svc.generateForCoach(req.user.id, clientId, bucket);
+    const payload = await this.svc.generateForCoach(req.user.id, clientId, bucket, req.user.role);
     // Validate the wire response against the locked union contract (full
     // coach insight OR the strict empty state). Both branches are exact-
     // field; an empty fallback can never leak a contract-violating shape.
