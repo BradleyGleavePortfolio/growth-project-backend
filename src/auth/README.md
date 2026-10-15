@@ -130,6 +130,14 @@ gates pass. Deleted accounts never produce a signal.
 - `forgot-password` always returns a generic 200 message. Errors are
   logged but never surfaced to the caller, so the endpoint cannot be
   used to enumerate registered emails.
+- Age gate (AGEGATE16, owner #C8-UNDER18-B): `JwtAuthGuard` answers 403
+  `AGE_CONFIRMATION_REQUIRED` to a client (role `student`) whose profile
+  `date_of_birth` is missing or under `MIN_CLIENT_AGE` (16), on every route
+  without `@AllowBeforeAgeConfirmed()` (`src/auth/client-age.ts`). Opted out:
+  `/auth/*`, `/me/onboarding`, `/me/ai-consent`, `/consent/*`, `/profile`
+  (where the app saves the answer), account deletion and data export.
+  Coaches, sub-coaches and owners are never asked. The guard reads only the
+  caller's own profile row.
 
 ## Throttling
 
@@ -326,6 +334,7 @@ honoured **only** on the branch that inserts a brand-new `User` row
 |---|---|
 | `test/auth.service.spec.ts` | Signup, login, Google linkage, role selection, invite-code redemption (happy path + races + revoked/expired) |
 | `test/auth-guard-deletion-lockout.spec.ts` | GDPR lifecycle gate: scheduled-for-deletion lockout, scrubbed-user lockout, healthy users pass through |
+| `test/auth-guard-age-gate.spec.ts` | AGEGATE16: every way a client account is made is refused until a date of birth of 16 or older is on file; confirmed clients, coaches and owners unchanged; opted-out routes answer; only the caller's own profile is read |
 | `test/ptm-app-open-dedup.spec.ts` | app_open emit on first request, 4-hour dedup window, re-emit after window expiry, no emit for deleted users, overflow pruning |
 
 The DTO mass-assignment guard (`test/dto-mass-assignment.spec.ts`) covers

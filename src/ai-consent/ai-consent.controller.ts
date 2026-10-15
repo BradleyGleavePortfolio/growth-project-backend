@@ -41,6 +41,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { AI_CONSENT_ERROR_UNAVAILABLE, isAiConsentLedgerEnabled } from './ai-consent.constants';
 import { GrantClientAiConsentDto } from './ai-consent.dto';
 import { AiConsentService, type ClientAiConsentStatus } from './ai-consent.service';
+import { AllowBeforeAgeConfirmed } from '../auth/client-age';
 
 /** 503 on every ledger route while the flag is off (runs before body validation). */
 @Injectable()
@@ -58,6 +59,7 @@ export class AiConsentLedgerGuard implements CanActivate {
 
 @Controller('me/ai-consent')
 @UseGuards(JwtAuthGuard, RolesGuard, AiConsentLedgerGuard)
+@AllowBeforeAgeConfirmed()
 export class AiConsentController {
   constructor(private readonly consent: AiConsentService) {}
 
