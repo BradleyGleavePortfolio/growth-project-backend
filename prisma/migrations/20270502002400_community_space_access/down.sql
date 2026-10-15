@@ -1,11 +1,18 @@
--- Rollback of 20270502002400 (C6-BVIS): the helpers and the two membership
--- policies get back their exact earlier text (20261224000000, 20270502000200,
+-- Rollback of 20270502002400 (C6-BVIS): the helpers and the four policies get
+-- back their earlier predicates (20261224000000, 20270502000200,
 -- 20261212000000), then the rule, the package link and the visibility go.
 
 BEGIN;
 
 SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '30s';
+
+ALTER POLICY "community_messages_author_update" ON "community_messages"
+  USING ("sender_id"::text = app.current_user_id() OR app.is_community_workspace_coach("workspace_id"))
+  WITH CHECK ("sender_id"::text = app.current_user_id() OR app.is_community_workspace_coach("workspace_id"));
+
+ALTER POLICY "community_messages_author_delete" ON "community_messages"
+  USING ("sender_id"::text = app.current_user_id() OR app.is_community_workspace_coach("workspace_id"));
 
 ALTER POLICY "community_memberships_coach_all" ON "community_memberships"
   USING (app.is_community_workspace_coach("workspace_id"))

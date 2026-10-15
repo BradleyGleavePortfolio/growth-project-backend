@@ -48,6 +48,7 @@ const OPEN: Record<Space, Key[]> = {
 const CONTROL: Record<Key, AnySpace> = { X: 'mem', Y: 'ymem', I: 'mem', O: 'cli', E: 'cli', M: 'pub', N: 'pub', Z: 'ymem' };
 const DENIED = '42501';
 const COMMENT = 'community_post_comment';
+const EDIT_OWN = `UPDATE "community_messages" SET "body" = "body"`;
 
 (DB_URL ? describe : describe.skip)('one rule decides who reads or writes a community space', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
@@ -148,7 +149,9 @@ const COMMENT = 'community_post_comment';
       expect(await count('X', 'community_memberships', row.Mmem)).toBe(1);
       expect(await count('I', 'community_memberships', row.Mmem)).toBe(1);
       expect(await access.canAccessCohort(cohort('mem'), user('M'))).toBe(true);
+      expect([await send('M', 'mem'), await write('M', EDIT_OWN)]).toEqual([1, 1]); // edits their own message
       await moveM('Y');
+      expect(await write('M', EDIT_OWN)).toBe(0); // no filter, so only the update rule decides
       expect(await count('M', 'community_messages', msg.mem)).toBe(0);
       expect(await count('M', 'community_messages', comment.mem)).toBe(0);
       expect(await count('M', 'community_posts', post.mem)).toBe(0);

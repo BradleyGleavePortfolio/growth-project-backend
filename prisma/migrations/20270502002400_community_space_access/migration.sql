@@ -132,4 +132,15 @@ ALTER POLICY "community_memberships_self_or_shared_cohort_select" ON "community_
     OR (app.shares_community_cohort("cohort_id") AND app.community_can_access("cohort_id", "user_id"))
   );
 
+-- A sender edits or deletes their own space message only while they may write there.
+ALTER POLICY "community_messages_author_update" ON "community_messages"
+  USING (app.is_community_workspace_coach("workspace_id")
+         OR ("sender_id"::text = app.current_user_id() AND ("scope" <> 'cohort' OR app.shares_community_cohort("cohort_id"))))
+  WITH CHECK (app.is_community_workspace_coach("workspace_id")
+         OR ("sender_id"::text = app.current_user_id() AND ("scope" <> 'cohort' OR app.shares_community_cohort("cohort_id"))));
+
+ALTER POLICY "community_messages_author_delete" ON "community_messages"
+  USING (app.is_community_workspace_coach("workspace_id")
+         OR ("sender_id"::text = app.current_user_id() AND ("scope" <> 'cohort' OR app.shares_community_cohort("cohort_id"))));
+
 COMMIT;
