@@ -1,13 +1,9 @@
--- C6-BVIS (agent 147; A2 item 12, #C6S2-LAYERS-DEPTH, #C6S2-COACHLESS-PUBLIC,
--- A6.15 137-8): a person reads or writes a community space only while
--- app.community_can_access(space, person) is true. Before, access was "holds a
--- row that was not removed", so a client who changed coach kept the old
--- coach's spaces, Hall and DMs, and the old coach kept their row.
--- The space gets a visibility (default members: every space works as today),
--- packages can open a package space, and the community helpers every
--- community policy already calls now ask the rule. Workspace-wide rows (the
--- Hall, DMs) need a space that is not public. A membership row is read by
--- others only while its person passes the rule. No anon grant (B-PUBLIC).
+-- C6-BVIS (agent 147; A2 item 12, A6.15 137-8): a person reads or writes a
+-- community space only while app.community_can_access(space, person) is true
+-- (before: any row not removed, so a client who changed coach kept the old
+-- coach's spaces). Spaces get a visibility (default members, as today) and
+-- package links; the helpers every community policy calls now ask the rule.
+-- No anon grant (B-PUBLIC).
 
 BEGIN;
 
@@ -81,6 +77,24 @@ GRANT EXECUTE ON FUNCTION app.community_can_access(uuid, text) TO authenticated,
 COMMENT ON FUNCTION app.community_can_access(uuid, text) IS
   '20270502002400 (C6-BVIS): the one rule for who reads or writes a community space. The workspace coach always; otherwise not banned in the workspace and: the coach''s team (an active co-coach row); public = an active row; members = an active row and the person''s coach is the space''s coach; clients = no row or an active one and that coach; package = as clients plus an entitled, unexpired purchase from that coach of a linked package. Row security (through the community helpers) and CommunityAccessService both call it.';
 
+-- The rule for a space of the workspace that is not public (the Hall, DMs and
+-- workspace-wide rows). DEFINER, so the helpers below read no table under RLS.
+CREATE FUNCTION app.community_workspace_open(p_workspace_id uuid, p_user_id text)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $fn$
+  SELECT EXISTS (SELECT 1 FROM public."community_cohorts" c
+                 WHERE c."workspace_id" = p_workspace_id AND c."visibility" <> 'public'
+                   AND app.community_can_access(c."id", p_user_id))
+$fn$;
+ALTER FUNCTION app.community_workspace_open(uuid, text) OWNER TO postgres;
+REVOKE ALL ON FUNCTION app.community_workspace_open(uuid, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION app.community_workspace_open(uuid, text) FROM anon;
+GRANT EXECUTE ON FUNCTION app.community_workspace_open(uuid, text) TO authenticated, service_role;
+
 CREATE OR REPLACE FUNCTION app.shares_community_cohort(p_cohort_id uuid)
 RETURNS boolean
 LANGUAGE sql
@@ -100,11 +114,7 @@ STABLE
 SECURITY INVOKER
 SET search_path = ''
 AS $fn$
-  SELECT EXISTS (
-    SELECT 1 FROM public."community_cohorts" c
-    WHERE c."workspace_id" = p_workspace_id AND c."visibility" <> 'public'
-      AND app.community_can_access(c."id", app.current_user_id())
-  )
+  SELECT app.community_workspace_open(p_workspace_id, app.current_user_id())
 $fn$;
 COMMENT ON FUNCTION app.is_community_workspace_member(uuid) IS
   'Caller passes app.community_can_access for a space of the workspace that is not public (20270502002400). search_path pinned to '''' (S1-DB-01).';
@@ -118,9 +128,7 @@ SET search_path = pg_catalog, public
 AS $fn$
   SELECT p_workspace_id IS NOT NULL AND p_user_id IS NOT NULL AND (
     EXISTS (SELECT 1 FROM public."community_workspaces" w WHERE w."id" = p_workspace_id AND w."coach_id" = p_user_id)
-    OR EXISTS (SELECT 1 FROM public."community_cohorts" c
-               WHERE c."workspace_id" = p_workspace_id AND c."visibility" <> 'public'
-                 AND app.community_can_access(c."id", p_user_id))
+    OR app.community_workspace_open(p_workspace_id, p_user_id)
   )
 $fn$;
 COMMENT ON FUNCTION app.workspace_has_participant(uuid, text) IS

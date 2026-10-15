@@ -158,12 +158,9 @@ export class InMemoryPrisma {
   }
 
   /**
-   * C6-BVIS: the one raw query the community code sends (spacesOpenTo:
-   * app.community_can_access per [space, person] pair), on the in-memory rows.
-   * Chosen-members spaces only (the column default; these specs seed no other
-   * visibility): the workspace coach, or not banned there with an active row
-   * that is a co-coach row or whose person is the space coach's client. Any
-   * other raw query throws.
+   * C6-BVIS spacesOpenTo (app.community_can_access per pair) for chosen-members
+   * spaces: the coach, or not banned with an active row that is a co-coach row
+   * or whose person is the coach's client. Any other raw query throws.
    */
   async $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<Row[]> {
     if (!strings.join('').includes('app.community_can_access')) throw new Error('InMemoryPrisma: unsupported $queryRaw');

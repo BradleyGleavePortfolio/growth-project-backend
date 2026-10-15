@@ -74,6 +74,7 @@ $fn$;
 COMMENT ON FUNCTION app.shares_community_cohort(uuid) IS
   'Caller shares the cohort via a non-removed membership. search_path pinned to '''' (S1-DB-01).';
 
+DROP FUNCTION app.community_workspace_open(uuid, text);
 DROP FUNCTION app.community_can_access(uuid, text);
 
 DROP TABLE "community_cohort_packages";
