@@ -44,7 +44,8 @@ export function isRomanChatEnabled(
 
 /**
  * ROMAN-CRISIS-ALERT switch (DEFAULT OFF, same rule as above): the coach alert
- * after Roman's 911 or 988 reply. Off, no crisis alert is written, as before.
+ * after Roman's 911 or 988 reply. Off, no crisis alert is written and neither
+ * #CRISIS-WORDING line shows (reply, privacy page), as before.
  * Order: the app that opens the alert (SAFETYWORDS-M) is on phones, then the
  * owner turns this on.
  */

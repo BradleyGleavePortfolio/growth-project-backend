@@ -27,6 +27,7 @@ import { SAFETY_ALERT_PUSH_BODY } from '../../src/notifications/push/lock-screen
 import { postCheckRomanReply } from '../../src/roman/guardrails/roman-post-check';
 import { AppModule } from '../../src/app.module';
 import { GOLDEN_SET } from './eval/golden-set';
+import { renderTrustPage } from '../../src/public-pages/trust-pages.html';
 
 const FLAG = FEATURE_ROMAN_CHAT_ENABLED_ENV;
 const CRISIS = FEATURE_ROMAN_CRISIS_ALERT_ENV;
@@ -401,9 +402,19 @@ describe('urgent_symptoms on the live turn', () => {
     expect(chunks[1]).toMatchObject({ type: 'done', text: REPLY });
   });
 
+  // #CRISIS-WORDING (owner op 1), word for word: line 1 on a crisis reply that
+  // alerted the coach, line 2 on the privacy page right after the exception.
+  const LINE_1 = "We've let your coach know so they can check in with you.";
+  const LINE_2 =
+    'If Roman sends you a crisis safety reply, your coach is told that it happened, but not what you wrote, so they can check in with you.';
+  const PAGE_2 = `prompted it, so they can check in with you. ${LINE_2} You can turn Roman’s memory off`;
+  it('both lines are pinned word for word (straight apostrophe, as the urgent line)', () => {
+    expect(ROMAN_COACH_TOLD_LINE).toBe(LINE_1);
+  });
+
   // ROMAN-CRISIS-ALERT (owner Option 1), behind its switch: off (the
   // default, or any value but true), the 911 and 988 replies alert no one, as
-  // before.
+  // before, and neither line shows.
   it.each([
     ['emergency', undefined],
     ['self_harm', undefined],
@@ -415,12 +426,14 @@ describe('urgent_symptoms on the live turn', () => {
     const chunks = await drain(h.svc.streamAssistantTurn(CLIENT, SESSION, { userMessage: message }));
     expect(chunks[1]).toMatchObject({ type: 'done', text: ROMAN_SAFETY_TEMPLATES[cls] });
     expect(h.alerts.createAlert).not.toHaveBeenCalled();
+    expect(renderTrustPage('privacy')).not.toContain(LINE_2);
   });
 
   // On: the reply alerts the client's current coach, with no client text and
-  // no message id, and the reply gains no line.
+  // no message id, and says so (line 1); the privacy page says it (line 2).
+  // Coachless: no alert, so no line 1.
   it.each(['emergency', 'self_harm'] as const)(
-    '%s with the crisis switch on: the fixed reply and exactly one crisis alert for the current coach',
+    '%s with the crisis switch on: the fixed reply with line 1, line 2 on the page, one alert for the current coach',
     async (cls) => {
       process.env[CRISIS] = 'true';
       const message = GOLDEN_SET.find((g) => g.router === cls)!.question;
@@ -428,7 +441,15 @@ describe('urgent_symptoms on the live turn', () => {
       const h = harness('coach-2');
       const turn = { userMessage: message, userMessageId: 'msg_u1' };
       const chunks = await drain(h.svc.streamAssistantTurn(CLIENT, SESSION, turn));
-      expect(chunks[1]).toMatchObject({ type: 'done', text: ROMAN_SAFETY_TEMPLATES[cls] });
+      const told = `${ROMAN_SAFETY_TEMPLATES[cls]} ${LINE_1}`;
+      expect(chunks.map((c) => [c.type, c.text])).toEqual([
+        ['delta', told],
+        ['done', told],
+      ]);
+      expect(h.messages).toEqual([expect.objectContaining({ role: 'roman', content: told })]);
+      expect(renderTrustPage('privacy').split(LINE_2)).toHaveLength(2);
+      expect(renderTrustPage('privacy')).toContain(PAGE_2);
+      expect(renderTrustPage('consumer-health')).not.toContain(LINE_2);
       expect(h.stream).not.toHaveBeenCalled();
       expect(h.alerts.createAlert).toHaveBeenCalledTimes(1);
       expect(h.alerts.createAlert).toHaveBeenCalledWith({
