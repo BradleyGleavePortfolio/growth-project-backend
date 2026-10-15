@@ -12,9 +12,10 @@
  * Consent: a client's information is used only when that client holds the
  * Roman v1.1 'memory' scope (client-ai-v5), read once per run through the
  * egress gate. Coach-to-client messages and private session notes come only
- * from those clients, and a guideline or meal plan written for one client is
- * client information too, so it is read only for those clients. Coach-wide
- * guidelines, templates and library plans carry no client and are always read.
+ * from those clients, and a guideline written for one client is client
+ * information too, so it is read only for those clients. Coach-wide
+ * guidelines, templates and library plans (workout and day meal plans, live
+ * only) carry no client and are always read.
  *
  * Output: scrubbed items (600 characters each, 40,000 in total), the source
  * ledger (ids only, the CoachPlaybookSource shape), its sha256 digest, the
@@ -164,10 +165,11 @@ export class PlaybookSourceCollector {
         },
         take: L.workoutPlans,
       }),
-      this.prisma.mealPlan.findMany({
-        where: { coach_id: { in: team }, archived_at: null, OR: forClient },
-        orderBy: { updated_at: 'desc' },
-        select: { id: true, client_id: true, title: true, notes: true },
+      // Day plans (MEAL:DAY), live only: a moved client's frozen copy is archived.
+      this.prisma.dailyMealPlan.findMany({
+        where: { coach_id: { in: team }, archived_at: null },
+        orderBy: { created_at: 'desc' },
+        select: { id: true, name: true, notes: true },
         take: L.mealPlans,
       }),
     ]);
@@ -222,8 +224,8 @@ export class PlaybookSourceCollector {
       ...mealPlans.map((m) => ({
         kind: 'meal_plan' as const,
         id: m.id,
-        raw: m.notes ? `${m.title}: ${m.notes}` : m.title,
-        clientId: m.client_id,
+        raw: m.notes ? `${m.name}: ${m.notes}` : m.name,
+        clientId: null,
         private: false,
       })),
       ...notes.map((n) => ({ kind: 'session_note' as const, id: n.id, raw: n.coach_notes_md ?? '', clientId: n.client_id, private: true })),

@@ -46,22 +46,25 @@ describe('CardsService.resolve (tenancy)', () => {
         interval_count: 1,
       })),
     },
-    mealPlan: {
-      findFirst: jest.fn(async () => ({ id: REF, title: 'Lean week', client_id: 'client-9' })),
+    dailyMealPlan: {
+      findFirst: jest.fn(async (args: { where: Record<string, unknown> }) => {
+        where.push(args.where);
+        return { id: REF, name: 'Lean day' };
+      }),
     },
     sessionType: { findFirst: jest.fn(async () => null) },
   };
   const svc = new CardsService(stub<PrismaService>(prisma));
 
   it('a reference outside the tenant answers card.ref_not_found and the query is tenant-bounded', async () => {
-    expect(await codeOf(svc.resolve(scope, { type: 'workout', ref_id: REF }, 'group'))).toBe(
+    expect(await codeOf(svc.resolve(scope, { type: 'workout', ref_id: REF }))).toBe(
       'card.ref_not_found',
     );
     expect(where[0]).toMatchObject({ id: REF, coach_id: { in: ['coach-a'] }, archived_at: null });
   });
 
   it('snapshots come from the server row, never the request', async () => {
-    const card = await svc.resolve(scope, { type: 'package', ref_id: REF }, 'group');
+    const card = await svc.resolve(scope, { type: 'package', ref_id: REF });
     expect(card).toEqual({
       type: 'package',
       ref_id: REF,
@@ -77,19 +80,9 @@ describe('CardsService.resolve (tenancy)', () => {
     });
   });
 
-  it('a client-specific meal plan cannot go to a group or to another client', async () => {
-    expect(await codeOf(svc.resolve(scope, { type: 'meal_plan', ref_id: REF }, 'group'))).toBe(
-      'card.meal_plan_client_specific',
-    );
-    expect(
-      await codeOf(
-        svc.resolve(scope, { type: 'meal_plan', ref_id: REF }, { clientId: 'client-1' }),
-      ),
-    ).toBe('card.ref_not_found');
-    expect(
-      await codeOf(
-        svc.resolve(scope, { type: 'meal_plan', ref_id: REF }, { clientId: 'client-9' }),
-      ),
-    ).toBe('resolved');
+  it("a meal plan card is the coach's own live day plan (MEAL:DAY), snapshot from the server row", async () => {
+    const card = await svc.resolve(scope, { type: 'meal_plan', ref_id: REF });
+    expect(card).toEqual({ type: 'meal_plan', ref_id: REF, snapshot: { title: 'Lean day', note: null } });
+    expect(where[where.length - 1]).toEqual({ id: REF, coach_id: { in: ['coach-a'] }, archived_at: null });
   });
 });
