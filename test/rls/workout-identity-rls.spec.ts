@@ -83,6 +83,14 @@ const DATA_API: Model = { jwt: true };
   const insertPlan = (who: string, coach: string) => asUser(who, BACKEND, (tx) => tx.$executeRawUnsafe(
     `INSERT INTO public."WorkoutPlan" ("id","coach_id","name","type","updated_at") VALUES ($1, $2, 'RLS plan', 'strength', now())`,
     randomUUID(), coach));
+  /** Rows with this id in ClientWorkoutAssignment that `who` may delete under `model`; always rolled back. */
+  const deletable = (rowId: string, who: string, model: Model) => asUser(who, model, async (tx) => {
+    const n = await tx.$executeRawUnsafe(`DELETE FROM public."ClientWorkoutAssignment" WHERE "id" = $1`, rowId);
+    throw Object.assign(new Error('roll back the probe'), { n });
+  }).catch((e: { n?: number }) => {
+    if (typeof e.n !== 'number') throw e;
+    return e.n;
+  });
   const coaches = (who: string, client: string, model: Model = BACKEND) => asUser(who, model, (tx) =>
     tx.$queryRawUnsafe<{ ok: boolean }[]>('SELECT app.caller_coaches_client($1) AS ok', client)).then(([r]) => r.ok);
   /** The seven policies (plus #992's restrictive pair), their comments and the helper, as the catalog has them. */
@@ -166,10 +174,13 @@ const DATA_API: Model = { jwt: true };
     }
   });
 
+  // Measured with a rolled-back delete: assignment_coach_manage is the only rule that lets a coach delete
+  // an assignment, while 20270502000900's assignment_current_coach_select also lets the current coach read it.
   it('assignment_coach_manage takes the role from app.current_user_role()', async () => {
-    expect(await seen('ClientWorkoutAssignment', row.ClientWorkoutAssignment, k, { guc: true, role: 'coach' })).toBe(1);
-    expect(await seen('ClientWorkoutAssignment', row.ClientWorkoutAssignment, k, { guc: true, role: 'student' })).toBe(0);
-    expect(await seen('ClientWorkoutAssignment', row.ClientWorkoutAssignment, k, { guc: true, role: '' })).toBe(0);
+    expect(await deletable(row.ClientWorkoutAssignment, k, { guc: true, role: 'coach' })).toBe(1);
+    expect(await deletable(row.ClientWorkoutAssignment, k, { guc: true, role: 'student' })).toBe(0);
+    expect(await deletable(row.ClientWorkoutAssignment, k, { guc: true, role: '' })).toBe(0);
+    expect(await exists('ClientWorkoutAssignment', row.ClientWorkoutAssignment)).toBe(1);
   });
 
   it('writes: a coach writes plans, exercises and keys only as themselves, and never through a JWT alone', async () => {
