@@ -374,7 +374,7 @@ describe('CommunityEventsService (v2-3)', () => {
     });
 
     it('a workspace coach sees every cohort (unscoped)', async () => {
-      const { service, repo } = makeService();
+      const { service, access, repo } = makeService();
       await service.list(coach as never, WS, {});
       expect(repo.list).toHaveBeenCalledWith(expect.objectContaining({ cohortScope: null }));
       expect(access.listAccessibleCohortIds).not.toHaveBeenCalled();
