@@ -46,7 +46,10 @@ if (!DB_URL && process.env.CI === 'true') {
 }
 
 (DB_URL ? describe : describe.skip)('A paid package after its source client moves', () => {
-  const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
+  // The API's pool, not the runner's single connection: delivery inside the
+  // checkout transaction reads on other connections, as in production.
+  const url = DB_URL.replace('connection_limit=1', 'connection_limit=5');
+  const prisma = new PrismaService({ datasources: { db: { url } } });
   const stub = <T>(part: Partial<T>) => part as T;
   const scope = new SubCoachScopeService(prisma);
   const registry = new AssignableAssetResolverRegistry([
