@@ -102,7 +102,7 @@ describe('owner 62y2: the coach-free "Before we start" without Roman', () => {
       'Nothing is sent until you continue.',
     ]);
     expect(CONSULT_CONSENT_COPY_V5_COACH_FREE.footer.startsWith('Nothing is sent until you continue. ')).toBe(true);
-    expect(consultConsentScreenText(CONSULT_CONSENT_COPY_V7_COACH_FREE)).not.toMatch(/Roman|Anthropic|Optional|clinic/i);
+    expect(consultConsentScreenText(CONSULT_CONSENT_COPY_V7_COACH_FREE)).not.toMatch(/Roman|Anthropic|Optional|cl[i]nic/i);
   });
 });
 
