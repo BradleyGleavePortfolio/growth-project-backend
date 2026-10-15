@@ -46,7 +46,8 @@ export const WEIGHT_METRICS: readonly WearableMetricType[] = [WearableMetricType
  * WEIGHTWALL (SoT A2 item 12): the one "can this caller see this client's weight" check. Yes for the
  * client themselves; a coach only while that client's Weigh-ins switch is on for them
  * (ConsentService.coachCanAccess, `fitness.body_metrics`; the owner account passes). No means no
- * weight, no body fat and no number computed from them, from any source.
+ * weight, no body fat and no number computed from them, from any source, except the calorie and
+ * macro targets the app works out (owner ww-targets op 2: those stay on Macros and in the AI drafts).
  */
 export async function seesWeight(
   consent: ConsentService | undefined,

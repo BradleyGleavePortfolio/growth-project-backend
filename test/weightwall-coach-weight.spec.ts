@@ -25,11 +25,12 @@ import type { MealPlansService } from '../src/meal-plans/meal-plans.service';
 import type { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
 
 // WEIGHTWALL (SoT A2 items 12-15): a coach the client keeps Weigh-ins from never sees the client's
-// weight, body fat or any number computed from them, from any source. One table walks every coach
-// route this job closes (device samples, the coach device insight, the macro refusal, the coach AI
+// weight, body fat or any number computed from them, from any source, except the targets the app
+// works out (owner ww-targets op 2: they stay on Macros and in the coach AI drafts). One table walks
+// every coach route (device samples, the coach device insight, the macro refusal, the coach AI
 // drafts) with Weigh-ins on and off, for the current coach, a former coach whose old grants are
-// still on, and a sub-coach. Every weight and every number made from one is a unique value; the
-// device metric names count too. What the model was sent and what was stored count as seen.
+// still on, and a sub-coach. Every weight and the maintenance number is a unique value; the device
+// metric names count too. What the model was sent and what was stored count as seen.
 
 function stub<T>(v: unknown): T {
   return v as T;
@@ -52,8 +53,8 @@ const FOUR = [
   ConsentScope.FITNESS_HABITS_PROGRESS,
 ];
 
-// Device weight 83.7 kg and body fat 21.9 %; profile 184.4 / 166.6 lbs and its computed targets
-// 2471.1 kcal, 173.3 g protein, 247.7 g carbs, 73.7 g fat; the maintenance number (below).
+// Device weight 83.7 kg and body fat 21.9 %; profile 184.4 / 166.6 lbs; the maintenance number (below).
+// The profile's worked-out targets 2471.1 kcal, 173.3 g protein, 247.7 g carbs, 73.7 g fat are not weight.
 const PROFILE = {
   id: 'profile-j', user_id: J, sex: 'male', current_weight_lbs: 184.4, target_weight_lbs: 166.6, height_cm: 170,
   date_of_birth: yearsAgo(30), activity_level: 'active', goal_type: 'fat_loss', workout_experience: 'beginner',
@@ -67,9 +68,9 @@ function maintenanceOf(profile: typeof PROFILE): number {
   return Math.max(m.floor_kcal, m.tdee);
 }
 const MAINTENANCE = maintenanceOf(PROFILE);
-const WEIGHT = ['BODY_WEIGHT_KG', 'BODY_FAT_PCT', '83.7', '21.9', '184.4', '166.6', '2471.1', '173.3', '247.7', '73.7',
-  MAINTENANCE.toLocaleString('en-US')];
-const seen = (out: unknown) => WEIGHT.filter((w) => JSON.stringify(out).includes(w));
+const WEIGHT = ['BODY_WEIGHT_KG', 'BODY_FAT_PCT', '83.7', '21.9', '184.4', '166.6', MAINTENANCE.toLocaleString('en-US')];
+const TARGETS = ['2471.1', '173.3', '247.7', '73.7'];
+const seen = (out: unknown, list = WEIGHT) => list.filter((w) => JSON.stringify(out).includes(w));
 
 // Minimal Prisma where-matcher: AND, equality, null, date, in, notIn, not, gt/gte/lt/lte; a compound
 // unique key matches on its parts.
@@ -240,7 +241,7 @@ describe.each(COACH_READS)('WEIGHTWALL %s', (_path, read) => {
   });
 
   it('a former coach after the move: nothing, though their old grants are still on', async () => {
-    expect(seen(await run(read, await routes({ weighIns: true }), FORMER))).toEqual([]);
+    expect(seen(await run(read, await routes({ weighIns: true }), FORMER), [...WEIGHT, ...TARGETS])).toEqual([]);
   });
 
   it('a sub-coach: no weight, though the client shares Weigh-ins with the head coach', async () => {
@@ -265,6 +266,18 @@ describe('WEIGHTWALL Weigh-ins off: the not-shared shape', () => {
     const out = await off.insights.getCoachInsight(caller(NOW_COACH), { clientId: J, bucket: 'HEALTH_FITNESS' });
     expect(seen([out, off.sent()])).toEqual([]);
   });
+
+  it.each(COACH_READS.filter(([path]) => path.startsWith('POST /coach/ai/')))(
+    '%s: the worked-out targets still reach the prompt and the stored draft, the weight does not (owner ww-targets op 2)',
+    async (_path, read) => {
+      const r = await routes({ weighIns: false });
+      await read(r, NOW_COACH);
+      const prescribed = { calories: 2471.1, protein_g: 173.3, carbs_g: 247.7, fat_g: 73.7 };
+      expect(r.t.aIDraft[0]).toMatchObject({ inputContext: { prescribed } });
+      expect(seen(r.sent()[1], TARGETS)).toEqual(TARGETS);
+      expect(seen(r.sent())).toEqual([]);
+    },
+  );
 
   it('a coach-set target still reaches the coach AI (it is the coach\'s own number)', async () => {
     const r = await routes({ weighIns: false, coachTarget: true });
