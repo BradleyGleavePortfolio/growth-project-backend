@@ -1,7 +1,8 @@
 /**
  * The subset of a Prisma `where` the notification inbox uses, read the way
  * Postgres reads it: AND / OR / NOT (one or a list), equality, null, not,
- * in / notIn, startsWith, gte / gt / lt, and a JSON `path` + `equals`.
+ * in / notIn, startsWith, gte / gt / lt, a JSON `path` + `equals`, and a
+ * to-one relation `is`.
  */
 type W = Record<string, unknown>;
 
@@ -11,6 +12,7 @@ function field(actual: unknown, cond: unknown): boolean {
     return cond instanceof Date ? actual instanceof Date && +actual === +cond : actual === cond;
   }
   const c = cond as W;
+  if ('is' in c) return !!actual && whereMatches(actual as object, c.is);
   if ('path' in c) {
     const at = (c.path as string[]).reduce<unknown>((o, k) => (o && typeof o === 'object' ? (o as W)[k] : undefined), actual);
     return at === c.equals;

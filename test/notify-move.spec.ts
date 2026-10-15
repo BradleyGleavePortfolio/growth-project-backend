@@ -1,15 +1,19 @@
 /**
  * NOTIFYMOVE (owner 4, 137-8): when a client moves, the coach they left loses
- * every notification about them at once, and the client keeps their own.
+ * every notification about them at once, and the client keeps their own. A
+ * coach who is still authorised for the client (their direct coach, or the
+ * sub-coach the head coach delegated them to) keeps every one.
  *
  * One table over every coach-facing notification type that names a client,
- * each written by its real writer at 23:00 in the coach's zone (so every push
- * waits in the outbox for 08:00, like the eating-disorder alert push), and
- * every path that serves it: the inbox list, its unread count, the badge,
- * mark read, mark all read, and the push at send time. The current coach gets
- * each one; after the client moves to another coach, the coach they left gets
- * 0 rows, a 404, and no push (the queued push is dropped as obsolete). Money
- * notices and digests name no client and stay.
+ * each written by its real writer at 23:00 in the reader's zone (so every push
+ * waits in the outbox for 08:00, like the eating-disorder alert push), every
+ * path that serves it (the inbox list, its unread count, the badge, mark read,
+ * mark all read, and the push at send time), and every reader: the current
+ * direct coach and the current delegated sub-coach get each one; a sub-coach
+ * whose delegation ended, the old coach and the old sub-coach of a client who
+ * moved, and an unrelated coach get 0 rows, a 404, and no push (the queued
+ * push is dropped as obsolete). Money notices and digests name no client and
+ * stay.
  */
 import { NotFoundException } from '@nestjs/common';
 import type { ExpoPushMessage } from 'expo-server-sdk';
@@ -43,19 +47,30 @@ class Clocked extends PushDeliveryService {
 }
 
 type Row = Record<string, unknown> & { id: string; read_at: Date | null };
+const table = <T extends object>(rows: T[]) => ({
+  findFirst: jest.fn(async ({ where }: { where: unknown }) => rows.find((r) => whereMatches(r, where)) ?? null),
+  findMany: jest.fn(async ({ where }: { where: unknown }) => rows.filter((r) => whereMatches(r, where))),
+});
 
-function world() {
+// client-1 belongs to head coach-1, who delegated them to sub-1 (Team Mode
+// data the app keeps serving today); coach-2 is the coach they move to.
+function world(reader: string) {
   clock = NIGHT;
-  const users: Record<string, { role: string; coach_id: string | null }> = {
-    'coach-1': { role: 'coach', coach_id: null },
-    'coach-2': { role: 'coach', coach_id: null },
-    'client-1': { role: 'student', coach_id: 'coach-1' },
-  };
-  const sessions = [{ id: 'sess-1', coach_id: 'coach-1', client_id: 'client-1', status: 'scheduled' }];
+  const person = (id: string, role: string, coach_id: string | null) => ({ id, role, coach_id, deleted_at: null });
+  const people = [
+    person('coach-1', 'coach', null),
+    person('sub-1', 'coach', 'coach-1'),
+    person('coach-2', 'coach', null),
+    person('coach-3', 'coach', null),
+    person('client-1', 'student', 'coach-1'),
+  ];
+  const seats = [{ head_coach_id: 'coach-1', sub_coach_id: 'sub-1', archived_at: null }];
+  const delegations = [{ client_id: 'client-1', head_coach_id: 'coach-1', sub_coach_id: 'sub-1', unassigned_at: null as Date | null }];
+  const sessions = [{ id: 'sess-1', coach_id: reader, client_id: 'client-1', status: 'scheduled' }];
   const w = pushOutboxWorld({
     now: () => clock,
-    tokens: { 'coach-1': TOKEN },
-    prefs: { 'coach-1': { timezone: 'America/New_York', timezone_updated_at: NIGHT, muted: false } },
+    tokens: { [reader]: TOKEN },
+    prefs: { [reader]: { timezone: 'America/New_York', timezone_updated_at: NIGHT, muted: false } },
   });
   const inbox: Row[] = [];
   const hits = (where: unknown) => inbox.filter((r) => whereMatches(r, where));
@@ -77,14 +92,16 @@ function world() {
     notification,
     user: {
       ...w.db.user,
-      findUnique: jest.fn(async ({ where }: { where: { id: string } }) => ({ ...users[where.id], expo_push_token: where.id === 'coach-1' ? TOKEN : null })),
-      findMany: jest.fn(async ({ where }: { where: { coach_id: string } }) =>
-        Object.keys(users).filter((id) => users[id].coach_id === where.coach_id).map((id) => ({ id })),
-      ),
+      ...table(people),
+      findUnique: jest.fn(async ({ where }: { where: { id: string } }) => ({ ...people.find((u) => u.id === where.id), expo_push_token: w.tokens[where.id] ?? null })),
     },
+    teamSubCoachAssignment: table(seats),
+    subCoachAssignment: table(delegations),
     coachingSession: {
       findUnique: jest.fn(async ({ where }: { where: { id: string } }) => sessions.find((s) => s.id === where.id) ?? null),
-      findMany: jest.fn(async ({ where }: { where: unknown }) => sessions.filter((s) => whereMatches(s, where))),
+      findMany: jest.fn(async ({ where }: { where: unknown }) =>
+        sessions.map((s) => ({ ...s, client: people.find((u) => u.id === s.client_id) })).filter((s) => whereMatches(s, where)),
+      ),
     },
   };
   const prisma = fakeOf<PrismaService>(Object.create(db));
@@ -97,81 +114,93 @@ function world() {
     notification,
   });
   const control = (kind: NotificationKindValue, deep_link?: string) =>
-    notifications.createNotification({ user_id: 'coach-1', kind, body: 'A notice.', ...(deep_link ? { deep_link } : {}) });
+    notifications.createNotification({ user_id: reader, kind, body: 'A notice.', ...(deep_link ? { deep_link } : {}) });
   const move = () => {
-    users['client-1'].coach_id = 'coach-2';
+    people[4].coach_id = 'coach-2';
+  };
+  const undelegate = () => {
+    delegations[0].unassigned_at = NIGHT;
   };
   // The first payment is written inside the purchase transaction.
   const tx = fakeOf<Prisma.TransactionClient>(prisma);
-  return { prisma, tx, notifications, delivery, send, flagTx, control, move, inbox, outbox: w.rows };
+  return { reader, prisma, tx, notifications, delivery, send, flagTx, control, move, undelegate, inbox, outbox: w.rows };
 }
 type World = ReturnType<typeof world>;
 
 // Every coach-facing type that names a client: [type, has a push, its real writer].
 const TYPES: Array<[string, boolean, (w: World) => Promise<unknown>]> = [
   ['coach alert (eating-disorder reply)', true, (w) =>
-    new CoachAlertEmitter(w.notifications).emit({ coachId: 'coach-1', alertId: 'a-1', alertType: 'roman_eating_disorder_reply', severity: 'critical', message: 'A safety alert.', clientUserId: 'client-1' })],
+    new CoachAlertEmitter(w.notifications).emit({ coachId: w.reader, alertId: 'a-1', alertType: 'roman_eating_disorder_reply', severity: 'critical', message: 'A safety alert.', clientUserId: 'client-1' })],
   ['check-in submitted', true, (w) =>
-    new CheckinSubmittedEmitter(w.notifications).emit({ coachId: 'coach-1', clientDisplayName: 'Jane Doe', clientUserId: 'client-1', streakDays: 3 })],
+    new CheckinSubmittedEmitter(w.notifications).emit({ coachId: w.reader, clientDisplayName: 'Jane Doe', clientUserId: 'client-1', streakDays: 3 })],
   ['missed check-in', true, (w) =>
-    new MissedCheckinEmitter(w.notifications).emit({ daysMissed: 2, clientDisplayName: 'Jane Doe', coachId: 'coach-1', clientUserId: 'client-1' })],
-  ['onboarding flag', false, (w) => alertCoachOfFlaggedJoinTx(w.flagTx, 'client-1', 'coach-1')],
-  ['message received', true, (w) => new MessageReceivedEmitter(w.notifications).emit('coach-1', { senderName: 'Jane Doe', threadId: 'client-1' })],
+    new MissedCheckinEmitter(w.notifications).emit({ daysMissed: 2, clientDisplayName: 'Jane Doe', coachId: w.reader, clientUserId: 'client-1' })],
+  ['onboarding flag', false, (w) => alertCoachOfFlaggedJoinTx(w.flagTx, 'client-1', w.reader)],
+  ['message received', true, (w) => new MessageReceivedEmitter(w.notifications).emit(w.reader, { senderName: 'Jane Doe', threadId: 'client-1' })],
   ['session booked', true, (w) =>
-    new BookingEmitter(w.notifications, w.prisma).emitBooked({ sessionId: 'sess-1', coachUserId: 'coach-1', clientDisplayName: 'Jane Doe', scheduledAt: new Date('2026-06-09T15:00:00Z') })],
-  ['first payment', false, (w) => new FirstPaymentEmitter(w.notifications).emit('coach-1', { amount: 5000, currency: 'usd', clientId: 'client-1' }, w.tx)],
+    new BookingEmitter(w.notifications, w.prisma).emitBooked({ sessionId: 'sess-1', coachUserId: w.reader, clientDisplayName: 'Jane Doe', scheduledAt: new Date('2026-06-09T15:00:00Z') })],
+  ['first payment', false, (w) => new FirstPaymentEmitter(w.notifications).emit(w.reader, { amount: 5000, currency: 'usd', clientId: 'client-1' }, w.tx)],
+];
+
+// Every reader: [who, the change while the push waits for 08:00, keeps everything].
+const READERS: Array<[string, string, ((w: World) => void) | null, boolean]> = [
+  ['the current direct coach', 'coach-1', null, true],
+  ['the current delegated sub-coach', 'sub-1', null, true],
+  ['a sub-coach whose delegation ended', 'sub-1', (w) => w.undelegate(), false],
+  ['the old coach of a client who moved', 'coach-1', (w) => w.move(), false],
+  ['the old sub-coach of a client who moved', 'sub-1', (w) => w.move(), false],
+  ['an unrelated coach', 'coach-3', null, false],
 ];
 
 const req = (id: string) => fakeOf<AuthedRequest>({ user: { id } });
-const coach = req('coach-1');
 const CONTROLS = 3;
 
-async function setUp(write: (w: World) => Promise<unknown>, moved: boolean) {
-  const w = world();
+async function setUp(write: (w: World) => Promise<unknown>, reader: string, change: ((w: World) => void) | null) {
+  const w = world(reader);
   await w.control(NotificationKind.COACH_ALERT, PAYOUT_NOTICE_DEEP_LINK);
   await w.control(NotificationKind.COACH_NEW_PURCHASE, 'tgp://coach/purchases/p-1');
   await w.control(NotificationKind.COACH_DIGEST);
   await write(w);
-  // The rows the type wrote for the coach (a first payment adds a hidden push twin).
-  const written = w.inbox.filter((r) => r.user_id === 'coach-1').slice(CONTROLS);
+  // The rows the type wrote for the reader (a first payment adds a hidden push twin).
+  const written = w.inbox.filter((r) => r.user_id === reader).slice(CONTROLS);
   const named = written.filter((r) => !r.inbox_hidden).map((r) => r.id);
   expect(named.length).toBeGreaterThan(0);
   expect(await w.delivery.drain()).toBe(0); // 23:00: every push waits for 08:00
-  if (moved) w.move();
+  change?.(w);
   clock = MORNING;
   await w.delivery.drain();
   const pushes = w.send.mock.calls.flatMap((c) => c[0]).filter((m) => m.to === TOKEN).length;
-  return { w, named, written: written.length, pushes, inbox: new NotificationsController(w.notifications) };
+  return { w, me: req(reader), named, written: written.length, pushes, inbox: new NotificationsController(w.notifications) };
 }
 
-describe('NOTIFYMOVE: a moved client\'s notifications leave the coach they left', () => {
-  const opened = async (ids: string[], c: NotificationsController) => {
+describe('NOTIFYMOVE: a client\'s notifications stay with every coach still authorised for them, and only them', () => {
+  const opened = async (ids: string[], s: S) => {
     let n = 0;
-    for (const id of ids) n += await c.markRead(id, coach).then(() => 1, (e: unknown) => (e instanceof NotFoundException ? 0 : Promise.reject(e)));
+    for (const id of ids) n += await s.inbox.markRead(id, s.me).then(() => 1, (e: unknown) => (e instanceof NotFoundException ? 0 : Promise.reject(e)));
     return n;
   };
   type S = Awaited<ReturnType<typeof setUp>>;
-  // [path, what it serves, what the current coach gets; the coach they left gets the controls only].
+  // [path, what it serves, what a reader who keeps everything gets; everyone else gets the controls only].
   const PATHS: Array<[string, (s: S) => Promise<number>, (s: S, push: boolean) => number, number]> = [
-    ['GET /notifications (rows)', async (s) => (await s.inbox.listNotifications(coach, {})).items.length, (s) => s.named.length + CONTROLS, CONTROLS],
-    ['GET /notifications (unread count)', async (s) => (await s.inbox.listNotifications(coach, {})).unreadCount, (s) => s.named.length + CONTROLS, CONTROLS],
-    ['GET /notifications/unread-count (badge)', async (s) => (await s.inbox.getUnreadCount(coach)).count, (s) => s.named.length + CONTROLS, CONTROLS],
-    ['POST /notifications/:id/read', (s) => opened(s.named, s.inbox), (s) => s.named.length, 0],
-    ['POST /notifications/mark-all-read', async (s) => (await s.inbox.markAllRead(coach)).updated, (s) => s.written + CONTROLS, CONTROLS],
+    ['GET /notifications (rows)', async (s) => (await s.inbox.listNotifications(s.me, {})).items.length, (s) => s.named.length + CONTROLS, CONTROLS],
+    ['GET /notifications (unread count)', async (s) => (await s.inbox.listNotifications(s.me, {})).unreadCount, (s) => s.named.length + CONTROLS, CONTROLS],
+    ['GET /notifications/unread-count (badge)', async (s) => (await s.inbox.getUnreadCount(s.me)).count, (s) => s.named.length + CONTROLS, CONTROLS],
+    ['POST /notifications/:id/read', (s) => opened(s.named, s), (s) => s.named.length, 0],
+    ['POST /notifications/mark-all-read', async (s) => (await s.inbox.markAllRead(s.me)).updated, (s) => s.written + CONTROLS, CONTROLS],
     ['push at send time (08:00)', async (s) => s.pushes, (_s, push) => (push ? 1 : 0), 0],
   ];
   describe.each(TYPES)('%s', (_type, push, write) => {
-    it.each(PATHS)('%s: the current coach gets it; the coach they left gets nothing', async (_path, read, current, left) => {
-      const before = await setUp(write, false);
-      const after = await setUp(write, true);
-      expect(await read(before)).toBe(current(before, push));
-      expect(await read(after)).toBe(left);
-      if (push) expect(after.w.outbox.filter((r) => r.user_id === 'coach-1').map((r) => r.result_code)).toEqual(['obsolete']);
+    describe.each(READERS)('%s', (_who, reader, change, keeps) => {
+      it.each(PATHS)('%s', async (_path, read, all, controls) => {
+        const s = await setUp(write, reader, change);
+        expect(await read(s)).toBe(keeps ? all(s, push) : controls);
+        if (push) expect(s.w.outbox.filter((r) => r.user_id === reader).map((r) => r.result_code)).toEqual([keeps ? 'sent' : 'obsolete']);
+      });
     });
   });
 
   it('the client keeps their own history after the move', async () => {
-    const { w } = await setUp((x) => new MissedCheckinEmitter(x.notifications).emit({ daysMissed: 2, clientDisplayName: 'Jane Doe', coachId: 'coach-1', clientUserId: 'client-1' }), true);
+    const { w } = await setUp((x) => new MissedCheckinEmitter(x.notifications).emit({ daysMissed: 2, clientDisplayName: 'Jane Doe', coachId: 'coach-1', clientUserId: 'client-1' }), 'coach-1', (x) => x.move());
     await new MessageReceivedEmitter(w.notifications).emit('client-1', { senderName: 'Coach K', threadId: 'client-1' });
     const own = await new NotificationsController(w.notifications).listNotifications(req('client-1'), {});
     expect(own.items.map((r) => r.kind).sort()).toEqual([NotificationKind.MESSAGE_RECEIVED, NotificationKind.MISSED_CHECKIN]);

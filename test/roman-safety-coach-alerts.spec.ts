@@ -454,7 +454,11 @@ describe('owner 4: the current coach only', () => {
         romanMessage: {
           findMany: jest.fn(async () => [{ id: 'm1', user_id: 'client-1', content: 'A message.', created_at: SENT_AT }]),
         },
-        user: { findMany: jest.fn(async ({ where }: { where: { coach_id: string } }) => users.filter((u) => u.coach_id === where.coach_id)) },
+        user: {
+          findUnique: jest.fn(async () => ({ role: 'coach', coach_id: null })),
+          findMany: jest.fn(async ({ where }: { where: { coach_id: string } }) => users.filter((u) => u.coach_id === where.coach_id)),
+        },
+        subCoachAssignment: { findMany: jest.fn(async () => []) },
         coachingSession: { findMany: jest.fn(async () => []) },
         notification: {
           findMany: jest.fn(async ({ where, take }: { where: unknown; take: number }) => hits(where).slice(0, take)),

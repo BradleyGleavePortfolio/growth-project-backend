@@ -538,8 +538,9 @@ export class PushDeliveryService {
         where: { id: row.user_id },
         select: { expo_push_token: true, role: true },
       });
-      // Owner 4: a push to a coach about a client who has since moved on (one
-      // that waited for 08:00, say) is not sent to the coach they left.
+      // Owner 4: a push to a coach about a client or session they no longer
+      // coach (the client moved, or the delegation ended, while it waited for
+      // 08:00, say) is not sent.
       if (user?.role === 'coach' && !(await pushStillCurrent(this.prisma, row.user_id, row.data))) {
         return await this.finish(row, 'dropped', 'obsolete');
       }

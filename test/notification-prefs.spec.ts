@@ -19,7 +19,8 @@ const storedPrefs = new Map<string, Record<string, unknown>>();
 const storedNotifications: unknown[] = [];
 
 const mockPrisma = {
-  user: { findMany: jest.fn().mockResolvedValue([]) },
+  user: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn().mockResolvedValue(null) },
+  subCoachAssignment: { findMany: jest.fn().mockResolvedValue([]) },
   coachingSession: { findMany: jest.fn().mockResolvedValue([]) },
   notificationPreferences: {
     findUnique: jest.fn(({ where }: { where: { user_id: string } }) =>
