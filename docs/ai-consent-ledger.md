@@ -114,6 +114,17 @@ Accepted grants (`CLIENT_AI_CONSENT_ACCEPTED`; version AND its exact sha256):
 | `client-ai-v5` | `memory` | `base` + Roman v1.1 notes, summaries, coach-method learning |
 | `client-ai-v4-coach-free` | `base` | the client's own AI use only (`audience` 'client': Roman chat and other client-facing paths); never coach AI drafts, brief or triage (owner 62: v4 text with every coach sentence or clause removed) |
 | `client-ai-v5-coach-free` | `memory` | as `client-ai-v4-coach-free` + Roman v1.1 notes and summaries; never coach-method learning (owner 62: v5 text with every coach sentence or clause removed) |
+| `client-ai-v6` | `base` | as `client-ai-v4` (owner 57c: v4 text + the safety-reply exception sentence) |
+| `client-ai-v7` | `memory` | as `client-ai-v5` (owner 57c: v5 text + the safety-reply exception sentence) |
+
+- Safety-reply exception (owner 57c, 2026-10-12): `GET /api/me/ai-consent?variant=safety_exception`
+  (the app sends it from the CONSENT-2 build on) offers `client-ai-v6` as `copy` and
+  `client-ai-v7` as `upgrade` / `memory_copy` when there is no live grant. A plain `GET`
+  keeps offering v4 / v5, the text installed builds pin. A live grant reads the copies of
+  its own generation (v4 / v5, or v6 / v7) whatever is asked.
+- Asked once, before a coach (owner W-CONSENT): `POST /api/me/ai-consent/roman` from a client with no
+  coach is recorded exactly like a coached grant. Roman and every AI route stay `403 ROMAN_REQUIRES_COACH`
+  until a coach is linked; then that grant applies with no new ask. `GET` and `DELETE` stay open.
 
 - Coach-free copies (owner 62, 2026-10-12): `GET /api/me/ai-consent?variant=coach_free`
   (the app sends it for a client with no coach) offers `client-ai-v4-coach-free` as
@@ -154,7 +165,7 @@ Request (JSON; only these fields):
 
 | Field | Required | Rule |
 |---|---|---|
-| `version` | yes | string, `client-ai-v4`, `client-ai-v5`, `client-ai-v4-coach-free` or `client-ai-v5-coach-free` |
+| `version` | yes | string, `client-ai-v4`, `client-ai-v5`, `client-ai-v6`, `client-ai-v7`, `client-ai-v4-coach-free` or `client-ai-v5-coach-free` |
 | `copy_sha256` | no | 64 hex chars; when sent must equal that version's combined sha256 (case-insensitive) |
 | `platform` | no | `ios`, `android` or `web` |
 | `app_version` | no | max 32 chars, `[0-9A-Za-z.+-]` |

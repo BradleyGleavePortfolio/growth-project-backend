@@ -179,6 +179,8 @@ describe('PublicPagesController trust pages', () => {
 
   it('emits a last-reviewed date in ISO-8601 (YYYY-MM-DD) form', () => {
     expect(POLICY_LAST_REVIEWED).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    // Owner 62w: 2026-10-12 (the 57c consent follow-ups), or the later deploy day.
+    expect(POLICY_LAST_REVIEWED >= '2026-10-12').toBe(true);
   });
 
   it('marks the consumer health page active in the nav on that page only', () => {
@@ -267,7 +269,10 @@ describe('Consumer Health Data Privacy Policy (/consumer-health-privacy)', () =>
     expect(text).toContain(
       'Whoever referred you to The Growth Project never sees your account or your data.',
     );
-    expect(text).toMatch(/Roman conversations are never shared with your coach/);
+    // Owner 57c: the one exception, right after it.
+    expect(text).toContain(
+      'Your Roman conversations are never shared with your coach. One exception: if Roman sends you an urgent medical safety reply or an eating-disorder safety reply, your coach sees the message that prompted it, so they can check in with you.',
+    );
   });
 
   it('states the owner-approved D2 Consent section byte for byte (approved 2026-10-01 09:07 PDT)', () => {
@@ -356,7 +361,7 @@ describe('Privacy Policy accuracy (/privacy)', () => {
       'With Roman’s memory off, only your own data is used — never another client’s, and never your coach’s private notes about you.',
     );
     expect(text).toContain(
-      'Roman’s memory is part of the Roman permission you give in the consultation, and it is on unless you turn it off. Roman keeps notes and summaries about your training, preferences and circumstances, from your Roman chats and from everything you log or connect in the app, to personalise his replies. Roman may also learn your coach’s methods, including from your coach’s private session notes, and information about your training may help with that without identifying you. Roman never quotes those notes or shows you another client’s information. Your coach never sees your conversations with Roman or his notes about you. You can turn Roman’s memory off at any time in Settings > Privacy > Roman and AI; Roman then stops using his notes until you turn it back on. Turning memory off, withdrawing the AI agreement or deleting a chat does not delete the notes: they are kept with your account and deleted when you delete your account.',
+      'Roman’s memory is part of the Roman permission you give in the consultation, and it is on unless you turn it off. Roman keeps notes and summaries about your training, preferences and circumstances, from your Roman chats and from everything you log or connect in the app, to personalise his replies. Roman may also learn your coach’s methods, including from your coach’s private session notes, and information about your training may help with that without identifying you. Roman never quotes those notes or shows you another client’s information. Your coach never sees your conversations with Roman or his notes about you. One exception: if Roman sends you an urgent medical safety reply or an eating-disorder safety reply, your coach sees the message that prompted it, so they can check in with you. You can turn Roman’s memory off at any time in Settings > Privacy > Roman and AI; Roman then stops using his notes until you turn it back on. Turning memory off, withdrawing the AI agreement or deleting a chat does not delete the notes: they are kept with your account and deleted when you delete your account.',
     );
     expect(text).toContain('food, water and habit logs, workouts and workout history, check-ins, bookings,');
     expect(text).toContain(

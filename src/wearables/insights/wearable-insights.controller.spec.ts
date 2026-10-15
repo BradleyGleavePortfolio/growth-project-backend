@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { BadRequestException } from '@nestjs/common';
 import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
 import { WearableMetricBucket } from '@prisma/client';
+import { ROMAN_REQUIRES_COACH } from '../../roman/roman-requires-coach';
 import { WearableInsightsController } from './wearable-insights.controller';
 import {
   CoachInsight,
@@ -63,8 +64,11 @@ function makeSvc(): WearableInsightsServiceDouble {
   });
 }
 
-function reqFor(role: string, id: string) {
-  return makeAuthedRequest(role, id);
+// A client with a coach unless a test passes null (GAPS3-F1: no coach, no AI insight).
+function reqFor(role: string, id: string, coachId: string | null = COACH) {
+  const req = makeAuthedRequest(role, id);
+  if (role === 'student') req.user.coach_id = coachId;
+  return req;
 }
 
 function approvalDeps(decideResult: Record<string, unknown>): ApprovalDeps {
@@ -430,6 +434,17 @@ describe('WearableInsightsController', () => {
       await expect(
         ctrl.getClientInsight(reqFor('student', CLIENT), {}),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('GAPS3-F1: no coach -> 403 ROMAN_REQUIRES_COACH, no insight read or made', async () => {
+      const svc = makeSvc();
+      const ctrl = makeController({ svc });
+      const bucket = WearableMetricBucket.HEALTH_FITNESS;
+      await expect(ctrl.getClientInsight(reqFor('student', CLIENT, null), { bucket })).rejects.toMatchObject({
+        status: 403,
+        response: { code: ROMAN_REQUIRES_COACH },
+      });
+      expect(svc.generateForClient).not.toHaveBeenCalled();
     });
 
     it('never calls the coach generator from the client endpoint', async () => {
