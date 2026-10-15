@@ -264,7 +264,7 @@ describe("INT-607-1: phantom chain under main's explicit membership rule (#597 C
     expect(await audience(w, 'client-t')).toEqual(['team-coach']);
   });
 
-  it('an open delegation is membership too (main rule), and revoking it removes the head', async () => {
+  it('an open delegation is membership for a pair that never had a seat, and revoking it removes the head', async () => {
     const w = world();
     w.seats[0].archived_at = NOW;
     w.scas.push({
@@ -274,6 +274,9 @@ describe("INT-607-1: phantom chain under main's explicit membership rule (#597 C
       client_id: 'client-h',
       unassigned_at: null,
     });
+    // READTESTS: an archived seat is a removal; the delegation it left open keeps no head.
+    expect(await audience(w, 'client-t')).toEqual(['team-coach']);
+    w.seats.splice(0, 1);
     expect(await audience(w, 'client-t')).toEqual(['head', 'team-coach']);
     w.scas[w.scas.length - 1].unassigned_at = NOW;
     expect(await audience(w, 'client-t')).toEqual(['team-coach']);

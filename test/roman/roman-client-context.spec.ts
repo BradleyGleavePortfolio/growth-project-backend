@@ -289,7 +289,7 @@ describe('R3 builder — P1 Maya golden facts', () => {
     expect(db.forbiddenTouched).toEqual([]);
   });
 
-  it('every query is scoped to the caller (and coach-owned ones to the current coach)', async () => {
+  it("every query is scoped to the caller; the coach's conversation to the current coach (HIST3)", async () => {
     const { svc, db } = setup();
     await svc.build(student(P1), NOW);
     const byTable = (t: string) => db.wheres.filter((w) => w.table === t).map((w) => w.where ?? {});
@@ -307,10 +307,15 @@ describe('R3 builder — P1 Maya golden facts', () => {
     for (const w of byTable('communityPost'))
       expect(w).toMatchObject({ author_id: P1, deleted_at: null, visibility: 'active' });
     expect(byTable('communityPost').length).toBeGreaterThan(0);
-    for (const w of byTable('macroTarget'))
-      expect(w).toMatchObject({ client_id: P1, coach_id: 'coach-A', archived_at: null });
-    for (const w of byTable('clientWorkoutAssignment'))
-      expect(w).toMatchObject({ client_id: P1, assigned_by_coach_id: { in: ['coach-A'] } });
+    // HIST3: what the client was given is read by client id alone, any coach.
+    for (const w of byTable('macroTarget')) {
+      expect(w).toMatchObject({ client_id: P1, archived_at: null });
+      expect(w).not.toHaveProperty('coach_id');
+    }
+    for (const w of byTable('clientWorkoutAssignment')) {
+      expect(w).toMatchObject({ client_id: P1 });
+      expect(w).not.toHaveProperty('assigned_by_coach_id');
+    }
     for (const w of byTable('coachGuideline'))
       expect(w).toMatchObject({ client_id: P1, coach_id: 'coach-A' });
     for (const w of byTable('coachMessage'))
@@ -319,8 +324,14 @@ describe('R3 builder — P1 Maya golden facts', () => {
         coach_id: 'coach-A',
         sender_id: { in: ['coach-A', P1] },
       });
-    for (const w of byTable('dailyMealPlanAssignment'))
-      expect(w).toMatchObject({ client_id: P1, assigned_by_coach_id: { in: ['coach-A'] } });
+    for (const w of byTable('dailyMealPlanAssignment')) {
+      expect(w).toMatchObject({ client_id: P1 });
+      expect(w).not.toHaveProperty('assigned_by_coach_id');
+    }
+    for (const w of byTable('coachingSession')) {
+      expect(w).toMatchObject({ client_id: P1 });
+      expect(w).not.toHaveProperty('coach_id');
+    }
     for (const w of byTable('subCoachAssignment'))
       expect(w).toMatchObject({ client_id: P1, unassigned_at: null });
     for (const t of [
@@ -752,7 +763,9 @@ describe('R3 GET /roman/context/me', () => {
   it('returns the caller’s own structured context and nothing else', async () => {
     const { svc } = setup();
     const ctrl = new RomanContextController(svc);
-    const out = await ctrl.me(asAuthedRequestDouble({ user: { id: P1, role: 'student' } }));
+    const out = await ctrl.me(
+      asAuthedRequestDouble({ user: { id: P1, role: 'student', coach_id: 'coach-A' } }),
+    );
     expect(out.version).toBe('ctx-v3');
     expect(out.context.identity.first_name).toBe('Maya');
     expect(out.estimated_tokens).toBeLessThanOrEqual(ROMAN_CONTEXT_HARD_CAP_TOKENS);

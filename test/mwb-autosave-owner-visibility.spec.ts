@@ -10,7 +10,7 @@
  * `$transaction` (stubbed to throw a sentinel) and a refused call is a typed
  * 403 with a stable code that never opens a transaction.
  */
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { AnalyticsService } from '../src/analytics/analytics.service';
 import { MWB_AUTOSAVE_LOCK_TOKEN_SECRET_ENV } from '../src/workout-builder/lock-token.helper';
 import {
@@ -20,6 +20,7 @@ import {
   PROGRAM_READ_ONLY_MESSAGE,
   WorkoutBuilderAutosaveService,
 } from '../src/workout-builder/workout-builder-autosave.service';
+import { planStaysInTenantWhere } from '../src/workout-builder/tenant-clients';
 
 function fake<T>(value: unknown): T {
   return value as T;
@@ -51,6 +52,8 @@ function build(opts: {
   held?: Record<string, string[]>;
   /** Clients assigned to the days of the copy (older copies, no client_id). */
   assigned?: string[];
+  /** The copy's client moved to a coach outside the tenant (owner 4). */
+  moved?: boolean;
 }) {
   const plan = {
     coach_id: opts.planCoachId ?? HEAD,
@@ -63,7 +66,10 @@ function build(opts: {
         coach_id: opts.heads?.[args.where.id] ?? null,
       })),
     },
-    workoutPlan: { findUnique: jest.fn(async () => plan) },
+    workoutPlan: {
+      findUnique: jest.fn(async () => plan),
+      count: jest.fn(async () => (opts.moved ? 0 : 1)),
+    },
     clientWorkoutAssignment: {
       findMany: jest.fn(async () => (opts.assigned ?? []).map((client_id) => ({ client_id }))),
     },
@@ -239,6 +245,23 @@ describe('autosave owner + visibility gate (OR-112-18)', () => {
         `403 client_not_assigned: ${CLIENT_NOT_ASSIGNED_MESSAGE}`,
       );
     });
+  });
+
+  it('HIST-2 (owner 4): the head coach can no longer save the copy of a client who moved', async () => {
+    const { service, prisma } = build({ program: copy(CLIENT_A), moved: true });
+    await expect(service.applyAutosave(PLAN_ID, { userId: HEAD }, BODY)).rejects.toThrow(
+      new NotFoundException('Workout plan not found'),
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    // The plan list's rule (tenant-clients.ts); the live autosave suite runs it.
+    expect(prisma.workoutPlan.count).toHaveBeenCalledWith({
+      where: { id: PLAN_ID, ...planStaysInTenantWhere(HEAD) },
+    });
+    // The client's own copy still saves while they stay in the tenant.
+    const stays = build({ program: copy(CLIENT_A) });
+    expect(await outcome(stays.service.applyAutosave(PLAN_ID, { userId: HEAD }, BODY))).toBe(
+      'allowed',
+    );
   });
 
   describe('standalone plans', () => {

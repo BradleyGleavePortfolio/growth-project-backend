@@ -206,6 +206,7 @@ export function pushOutboxWorld(opts: {
       findUnique: jest.fn(async ({ where }: { where: { id: string } }) => ({
         expo_push_token: tokens[where.id] ?? null,
       })),
+      findMany: jest.fn(async () => []), // a coach's clients (the inbox rule): none here
       updateMany: jest.fn(async ({ where }: { where: { id: string; expo_push_token: string } }) => {
         if (tokens[where.id] === where.expo_push_token) {
           tokens[where.id] = null;

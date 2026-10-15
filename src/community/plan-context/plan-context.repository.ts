@@ -7,6 +7,7 @@ import type {
   WorkoutPlanExercise,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import { planStaysInTenantWhere } from '../../workout-builder/tenant-clients';
 
 /**
  * Data access for v2-1 plan-context tag resolution.
@@ -25,9 +26,9 @@ import { PrismaService } from '../../prisma.service';
 export class PlanContextRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** A workout plan by id, or null. */
-  async findWorkoutPlan(id: string): Promise<WorkoutPlan | null> {
-    return this.prisma.workoutPlan.findUnique({ where: { id } });
+  /** A workout plan by id, or null; a moved client's copy day is null for `coachId` (owner 4). */
+  async findWorkoutPlan(id: string, coachId: string): Promise<WorkoutPlan | null> {
+    return this.prisma.workoutPlan.findUnique({ where: { id, AND: [planStaysInTenantWhere(coachId)] } });
   }
 
   /**

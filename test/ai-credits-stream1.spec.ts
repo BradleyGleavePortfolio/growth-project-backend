@@ -640,12 +640,8 @@ describe('Stream 1 — T10/T11: RLS policies present in the migration', () => {
   // ("did anyone delete a policy?") but explicitly NOT a behavioural
   // RLS check.
 
-  // eslint-disable-next-line jest/no-disabled-tests
-  it.skip('T10: coach A SELECT on coach B\'s budget returns 0 rows [needs Postgres rig]', () => {
-    // TODO(round-2): testcontainers Postgres, run the round-1 migration,
-    // INSERT two budgets, SET app.current_user_id to coach A, SELECT
-    // coach B's row. Expect 0 rows.
-  });
+  // T10 (coach A reads none of coach B's budget) runs live on the replayed
+  // migration chain in test/rls/sub-coach-removal-rls.spec.ts.
 
   // eslint-disable-next-line jest/no-disabled-tests
   it.skip('T11: coach INSERT/UPDATE on CoachCreditPackPurchase is refused by RLS [needs Postgres rig]', () => {

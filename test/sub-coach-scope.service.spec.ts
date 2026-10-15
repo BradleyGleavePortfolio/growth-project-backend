@@ -268,4 +268,32 @@ describe('SubCoachScopeService', () => {
       expect(await svc.getHeadCoachIdForSubCoach(SUB_COACH)).toBeNull();
     });
   });
+
+  // Owner 4 (A1H): an assigned client counts only while still on the head
+  // coach's roster. A move does not close the delegation row, so the
+  // sub-coach loses the client at once through the roster check alone.
+  it('a delegated client who moved off the head coach roster is out of scope', async () => {
+    const MOVED_OUT = 'client-moved-out';
+    const MOVED_TO_OTHER_SUB = 'client-moved-to-other-sub';
+    const prisma = buildPrismaMock({
+      callerRole: 'coach',
+      callerCoachId: HEAD_COACH,
+      assignedToSub: [CLIENT_A, MOVED_OUT, MOVED_TO_OTHER_SUB],
+    });
+    const coachOf: Record<string, string> = {
+      [CLIENT_A]: HEAD_COACH,
+      [MOVED_OUT]: 'another-head-coach',
+      [MOVED_TO_OTHER_SUB]: OTHER_SUB,
+    };
+    // The overlay lookup returns only ids whose current coach matches its filter.
+    (prisma.user.findMany as jest.Mock).mockImplementation(({ where }: any) => {
+      const ids: string[] = where.id?.in ?? [];
+      const live = ids.filter((id) => coachOf[id] === where.coach_id);
+      return Promise.resolve(live.map((id) => ({ id })));
+    });
+    const svc = await build(prisma);
+    expect(await svc.getAuthorizedClientIds(SUB_COACH)).toEqual([CLIENT_A]);
+    expect(await svc.canAccessClient(SUB_COACH, MOVED_OUT)).toBe(false);
+    expect(await svc.canAccessClient(SUB_COACH, MOVED_TO_OTHER_SUB)).toBe(false);
+  });
 });

@@ -263,7 +263,7 @@ export interface RomanCtxWearables {
   days: RomanCtxWearableDay[];
 }
 
-/** An upcoming coaching session (booking) with the current coach. */
+/** An upcoming coaching session (booking) of the client, with any coach (HIST3). */
 export interface RomanCtxBooking {
   date: string;
   weekday: string;

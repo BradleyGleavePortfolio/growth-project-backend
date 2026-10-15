@@ -25,6 +25,16 @@ import { purchaseTrialView, type PurchaseTrialView } from '../packages/trials/tr
 import { COACH_PURCHASE_SELECT, type CoachPurchaseView } from './coach-payments.select';
 import { keepMoneyRecordsOnly, type MoneyRecord } from './moved-client-money';
 import { ContractRequiredException } from '../contracts/contract-required.exception';
+import type { TrialOffer } from '../packages/trials/trial-usage.service';
+import {
+  intentResult,
+  iso,
+  openAttemptWhere,
+  packageTrialDays,
+  planPriceFor,
+  resumeWindowStart,
+} from './subscription-plan';
+import { parseCheckoutTerms, termsStillOffered } from './subscription-terms';
 
 // CheckoutService — Stripe Checkout session minting + ClientPurchase row
 // lifecycle. This is the entry point clients hit to actually buy a package.
@@ -170,6 +180,146 @@ export function isRecurringPackage(
       pkg.recurring_amount_cents > 0 &&
       pkg.recurring_interval != null)
   );
+}
+
+/**
+ * A free package: claimed through POST /v1/packages/:id/claim-free, never
+ * charged. A combo whose one-time part is $0 still renews, so it is not free.
+ */
+export function isFreePackage(
+  pkg: Pick<
+    CoachPackage,
+    'amount_cents' | 'billing_type' | 'recurring_amount_cents' | 'recurring_interval'
+  >,
+): boolean {
+  return pkg.amount_cents === 0 && (!isRecurringPackage(pkg) || pkg.billing_type === 'recurring');
+}
+
+/** BILLQUOTE — what buying a package charges, told to the client before they tap pay. */
+export interface ChargeQuote {
+  /** Charged at checkout: the price, or one-time part + first period; 0 in a free trial. */
+  due_today_cents: number;
+  currency: string;
+  /** The next charge after today: the trial end, else the first renewal; null if none. */
+  first_charge_at: string | null;
+  /** When the free trial ends; null without a trial. */
+  trial_end: string | null;
+}
+
+const DAY_MS = 86_400_000;
+
+/** Stripe's next billing date: same instant N weeks/months/years on, day clamped to month end. */
+function addPeriod(from: Date, interval: 'week' | 'month' | 'year', count: number): Date {
+  if (interval === 'week') return new Date(from.getTime() + count * 7 * DAY_MS);
+  const d = new Date(from.getTime());
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() + (interval === 'year' ? 12 * count : count));
+  const lastDay = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(day, lastDay));
+  return d;
+}
+
+/**
+ * BILLQUOTE (agent 144) — the one rule for what buying `pkg` charges. The
+ * one-time PaymentIntent charges `due_today_cents`; the subscription checkout
+ * pins planPriceFor(pkg, trialDays) (the function used here) and sends
+ * trial_period_days = trialDays, so Stripe ends the trial trialDays x 24 h
+ * from now. Throws like the checkout (PACKAGE_INTERVAL_INVALID) for a
+ * renewing package with no valid cadence.
+ */
+export function chargeQuote(
+  pkg: CoachPackage,
+  trialDays: number,
+  now: Date = new Date(),
+): ChargeQuote {
+  if (isFreePackage(pkg) || !isRecurringPackage(pkg)) {
+    // One charge today (a free package's amount_cents is 0), nothing after.
+    return {
+      due_today_cents: pkg.amount_cents,
+      currency: pkg.currency,
+      first_charge_at: null,
+      trial_end: null,
+    };
+  }
+  const price = planPriceFor(pkg, trialDays);
+  const trialEnd =
+    price.trial_days > 0 ? new Date(now.getTime() + price.trial_days * DAY_MS) : null;
+  const next = trialEnd ?? addPeriod(now, price.interval, price.interval_count);
+  return {
+    due_today_cents: price.first_charge_cents,
+    currency: price.currency,
+    first_charge_at: next.toISOString(),
+    trial_end: trialEnd ? trialEnd.toISOString() : null,
+  };
+}
+
+/**
+ * FIX998 — per package, this client's open attempt that the checkout would
+ * resume now: the checkout's own rule (openAttemptWhere, newest first),
+ * inside the reuse window. Only this client's rows are read.
+ */
+export async function resumableAttempts(
+  prisma: PrismaService,
+  clientId: string,
+  packageIds: string[],
+  now: Date,
+): Promise<Map<string, ClientPurchase>> {
+  const found = new Map<string, ClientPurchase>();
+  if (packageIds.length === 0) return found;
+  const rows = await prisma.clientPurchase.findMany({
+    where: {
+      ...openAttemptWhere(clientId, { in: packageIds }),
+      created_at: { gt: resumeWindowStart(now.getTime()) },
+    },
+    orderBy: { created_at: 'desc' },
+  });
+  for (const row of rows) if (!found.has(row.package_id)) found.set(row.package_id, row);
+  return found;
+}
+
+/**
+ * FIX998 — the quote of an attempt the checkout resumes: the checkout's answer
+ * for it (intentResult: its pinned terms and trial end) and its subscription's
+ * own next date. null when the checkout would start a fresh attempt instead
+ * (not created on Stripe yet, or its terms are no longer offered).
+ */
+function resumedQuote(open: ClientPurchase, pkg: CoachPackage): ChargeQuote | null {
+  const terms = parseCheckoutTerms(open.checkout_terms);
+  const next = iso(open.current_period_end);
+  if (!terms || !next || !termsStillOffered(terms, planPriceFor(pkg, 0), packageTrialDays(pkg))) {
+    return null;
+  }
+  const { plan } = intentResult(open, pkg, true);
+  return {
+    due_today_cents: plan.first_charge_cents,
+    currency: plan.currency,
+    first_charge_at: next,
+    trial_end: plan.trial_ends_at,
+  };
+}
+
+/**
+ * The quote on the client package reads, for THIS client: the trial counts
+ * only when trial_offer says this client gets it (the checkout's one-trial
+ * rule; both records agree, B-TR8-120). `open` (resumableAttempts): the
+ * attempt the checkout resumes, whose dates the quote then reports. null =
+ * the package cannot be bought (the checkout refuses it the same way).
+ */
+export function packageQuote(
+  pkg: CoachPackage,
+  offer: TrialOffer | undefined,
+  now: Date,
+  open?: ClientPurchase,
+): ChargeQuote | null {
+  try {
+    const fresh = chargeQuote(pkg, offer?.available ? packageTrialDays(pkg) : 0, now);
+    const renewing = isRecurringPackage(pkg) && !isFreePackage(pkg);
+    return (open && renewing ? resumedQuote(open, pkg) : null) ?? fresh;
+  } catch (err) {
+    if (err instanceof ConflictException) return null;
+    throw err;
+  }
 }
 
 @Injectable()
@@ -720,10 +870,12 @@ export class CheckoutService {
       // client + same key → Stripe collapses to the same PaymentIntent.
       const stripeIdempotencyKey = `stripe-idempotency-${client.id}-${input.idempotency_key}`;
 
+      // BILLQUOTE — the charge the client package reads quoted (chargeQuote).
+      const charge = chargeQuote(pkg, 0);
       const [paymentIntent, ephemeralKey] = await Promise.all([
         this.stripeConnect.createPaymentIntent({
-          amount: pkg.amount_cents,
-          currency: pkg.currency,
+          amount: charge.due_today_cents,
+          currency: charge.currency,
           customer: customer.stripe_customer_id,
           // Audit #3 P1-10 — connected coach is the settlement merchant
           // for risk and statement-descriptor purposes.
