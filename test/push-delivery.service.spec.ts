@@ -490,6 +490,7 @@ function serviceWorld(prefs: Record<string, Record<string, unknown>> = {}) {
         status: 'scheduled',
         start_at: new Date('2026-06-02T13:00:00Z'),
       })),
+      findMany: jest.fn(async () => []), // a coach's sessions with someone not their client: none
     },
     user: {
       ...w.db.user,

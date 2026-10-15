@@ -20,6 +20,7 @@ const storedNotifications: unknown[] = [];
 
 const mockPrisma = {
   user: { findMany: jest.fn().mockResolvedValue([]) },
+  coachingSession: { findMany: jest.fn().mockResolvedValue([]) },
   notificationPreferences: {
     findUnique: jest.fn(({ where }: { where: { user_id: string } }) =>
       Promise.resolve(storedPrefs.get(where.user_id) ?? null),

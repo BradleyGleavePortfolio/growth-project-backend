@@ -31,6 +31,7 @@ import type { ExpoPushMessage } from 'expo-server-sdk';
 import { NotificationsService as RealNotificationsService } from '../src/notifications/notifications.service';
 import { PushDeliveryService } from '../src/notifications/push/push-delivery.service';
 import { pushOutboxWorld } from './utils/push-outbox-fake';
+import { whereMatches } from './utils/notification-where';
 
 const URGENT_PUSH = 'Urgent safety alert for one of your clients. Open TGP to see details.';
 const ED_PUSH = 'Safety alert for one of your clients. Open TGP to see details.';
@@ -419,20 +420,6 @@ describe('owner 4: the current coach only', () => {
   // coach-1 reaches none of the alerts at once; the two other rows stay.
   describe('after a move, the former coach loses every alert path at once', () => {
     type N = { id: string; user_id: string; kind: string; deep_link: string | null; read_at: Date | null; inbox_hidden: boolean };
-    function nHit(r: N, w: any): boolean {
-      const link = w.deep_link;
-      return (
-        (!w.OR || w.OR.some((x: unknown) => nHit(r, x))) &&
-        (!w.NOT || !nHit(r, w.NOT)) &&
-        (w.id === undefined || r.id === w.id) &&
-        (w.user_id === undefined || r.user_id === w.user_id) &&
-        (w.read_at === undefined || r.read_at === null) &&
-        (w.inbox_hidden === undefined || r.inbox_hidden === w.inbox_hidden) &&
-        (w.kind?.not === undefined || r.kind !== w.kind.not) &&
-        (link === undefined ||
-          (link === null ? r.deep_link === null : link.in ? link.in.includes(r.deep_link) : !!r.deep_link?.startsWith(link.startsWith)))
-      );
-    }
     const TYPES = ['roman_crisis_reply', 'roman_urgent_reply', 'roman_eating_disorder_reply', 'bloodwork_review'];
     async function world(move: boolean) {
       const users = [{ id: 'client-1', coach_id: 'coach-1' }];
@@ -451,7 +438,7 @@ describe('owner 4: the current coach only', () => {
         { ...other, id: 'n-payout', kind: NotificationKind.COACH_ALERT, deep_link: 'tgp://coach/payouts' },
         { ...other, id: 'n-digest', kind: 'coach_digest', deep_link: null },
       ];
-      const hits = (where: unknown) => inbox.filter((r) => nHit(r, where));
+      const hits = (where: unknown) => inbox.filter((r) => whereMatches(r, where));
       const joined = () => rows.map((r) => ({ ...r, client: { name: 'Jane Doe', coach_id: users[0].coach_id } }));
       const prisma = {
         coachAlert: {
@@ -468,6 +455,7 @@ describe('owner 4: the current coach only', () => {
           findMany: jest.fn(async () => [{ id: 'm1', user_id: 'client-1', content: 'A message.', created_at: SENT_AT }]),
         },
         user: { findMany: jest.fn(async ({ where }: { where: { coach_id: string } }) => users.filter((u) => u.coach_id === where.coach_id)) },
+        coachingSession: { findMany: jest.fn(async () => []) },
         notification: {
           findMany: jest.fn(async ({ where, take }: { where: unknown; take: number }) => hits(where).slice(0, take)),
           count: jest.fn(async ({ where }: { where: unknown }) => hits(where).length),

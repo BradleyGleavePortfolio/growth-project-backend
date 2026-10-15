@@ -18,6 +18,7 @@ import { quietHoursFor } from './push-quiet-hours';
 import { pushAllowedByPreferences } from './push-preferences';
 import { usableTimeZone } from '../local-time';
 import { resolveRecipientTimeZone } from '../recipient-timezone';
+import { pushStillCurrent } from '../current-coach-inbox';
 
 // Device delivery for inbox notifications (C-643-2), through a durable
 // outbox (B-NOTIF-5: B-648-1, B-648-6, C-648-4 / OR-113-5, C-648-5).
@@ -535,8 +536,13 @@ export class PushDeliveryService {
 
       const user = await this.prisma.user.findUnique({
         where: { id: row.user_id },
-        select: { expo_push_token: true },
+        select: { expo_push_token: true, role: true },
       });
+      // Owner 4: a push to a coach about a client who has since moved on (one
+      // that waited for 08:00, say) is not sent to the coach they left.
+      if (user?.role === 'coach' && !(await pushStillCurrent(this.prisma, row.user_id, row.data))) {
+        return await this.finish(row, 'dropped', 'obsolete');
+      }
       const token = user?.expo_push_token ?? null;
       if (!token) return await this.finish(row, 'dropped', 'no-token');
       if (!Expo.isExpoPushToken(token)) {
