@@ -65,7 +65,7 @@ import {
   ROMAN_ERASE_SWEEP_BATCH,
   ROMAN_ERASE_SWEEP_MAX_BATCHES,
 } from './roman.constants';
-import { isRomanChatEnabled } from './roman.feature';
+import { isRomanChatEnabled, isRomanCrisisAlertEnabled } from './roman.feature';
 import {
   ROMAN_LOGGABLE_ERROR_NAMES,
   romanErrorTag,
@@ -1007,14 +1007,17 @@ export class RomanService {
         route.class === 'self_harm' ||
         route.class === 'urgent_symptoms')
     ) {
-      let text = ROMAN_SAFETY_TEMPLATES[route.class];
-      if (
-        route.class === 'urgent_symptoms' &&
-        (await this.alertCoachOfSafetyReply(caller, session, 'roman_urgent_reply', opts.userMessageId))
-      ) {
-        text = `${text} ${ROMAN_COACH_TOLD_LINE}`;
-      }
-      yield* this.fixedSafetyReply(caller, session, text, ROMAN_SAFETY_ROUTE_REASON[route.class]);
+      // Owner 22a and ROMAN-CRISIS-ALERT: every fixed reply alerts the coach
+      // (a crisis reply only once its switch is on), and a reply that did says
+      // so (#CRISIS-WORDING).
+      const urgent = route.class === 'urgent_symptoms';
+      const alertType = urgent ? 'roman_urgent_reply' : 'roman_crisis_reply';
+      const told =
+        (urgent || isRomanCrisisAlertEnabled()) &&
+        (await this.alertCoachOfSafetyReply(caller, session, alertType, opts.userMessageId));
+      const text = ROMAN_SAFETY_TEMPLATES[route.class];
+      const reply = told ? `${text} ${ROMAN_COACH_TOLD_LINE}` : text;
+      yield* this.fixedSafetyReply(caller, session, reply, ROMAN_SAFETY_ROUTE_REASON[route.class]);
       return;
     }
 
@@ -1331,25 +1334,29 @@ export class RomanService {
   }
 
   /**
-   * Owner 22a and 57: a Roman safety reply alerts the client's current coach
-   * (the in-app alert and the quiet push). Urgent: one alert per urgent reply.
-   * Eating disorder: at most one per conversation (a fixed alert id, so a
-   * repeat or a race fails on the key). The row holds no name and no message
-   * text, only the id of the client's message (`roman_message_id`); the alert
-   * card reads it for the current coach only. True when this call created the
-   * alert. A coachless client, a repeat or a failure (logged by code) is
-   * false, and the reply is never blocked.
+   * Owner 22a, 57 and ROMAN-CRISIS-ALERT: a Roman safety reply alerts the
+   * client's current coach (the in-app alert and the quiet push). Urgent and
+   * crisis (emergency, self-harm): one alert per reply. Eating disorder: at
+   * most one per conversation (a fixed alert id, so a repeat or a race fails
+   * on the key). The row holds no name and no message text, only the id of
+   * the client's message (`roman_message_id`), which the alert card reads for
+   * the current coach only; a crisis row holds not even that. True when this
+   * call created the alert. A coachless client, a repeat or a failure (logged
+   * by code) is false, and the reply is never blocked.
    */
   private async alertCoachOfSafetyReply(
     caller: RomanCaller,
     session: RomanSession,
-    alertType: Extract<CoachAlertType, 'roman_urgent_reply' | 'roman_eating_disorder_reply'>,
+    alertType: Extract<
+      CoachAlertType,
+      'roman_urgent_reply' | 'roman_eating_disorder_reply' | 'roman_crisis_reply'
+    >,
     userMessageId: string | undefined,
   ): Promise<boolean> {
     if (caller.role !== 'student' || session.surface !== 'client' || !this.coachAlerts) {
       return false;
     }
-    const urgent = alertType === 'roman_urgent_reply';
+    const once = alertType === 'roman_eating_disorder_reply';
     try {
       const user = await this.prisma.user.findUnique({
         where: { id: caller.id },
@@ -1357,13 +1364,15 @@ export class RomanService {
       });
       if (!user?.coach_id) return false;
       await this.coachAlerts.createAlert({
-        ...(urgent ? {} : { id: onceAlertId(alertType, session.id) }),
+        ...(once ? { id: onceAlertId(alertType, session.id) } : {}),
         coachId: user.coach_id,
         clientId: caller.id,
         alertType,
-        severity: urgent ? 'critical' : 'warning',
+        severity: once ? 'warning' : 'critical',
         message: SAFETY_ALERT_PUSH_BODY[alertType],
-        payload: { roman_message_id: userMessageId ?? null },
+        ...(alertType === 'roman_crisis_reply'
+          ? {}
+          : { payload: { roman_message_id: userMessageId ?? null } }),
       });
       return true;
     } catch (err) {

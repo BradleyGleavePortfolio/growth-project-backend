@@ -50,8 +50,8 @@ export const WEIGHT_LOSS_MEDICINES =
 /**
  * Operator ruling (B-913-2, R1): for the urgent route only, the client's own
  * injection counts as the medicine ("since my shot I can't keep anything
- * down"): the fixed reply says "Contact your prescribing clinic", which fits
- * any prescribed injection. "My flu shot" is not "my shot".
+ * down"): the fixed reply says "Contact your doctor or prescriber", which
+ * fits any prescribed injection. "My flu shot" is not "my shot".
  */
 const OWN_INJECTION =
   'my (weekly |last |latest )?(shots?|jabs?|injections?|pens?)|the shot|shot day';
@@ -332,14 +332,15 @@ export const ROMAN_SAFETY_TEMPLATES: Record<FixedReplyClass, string> = {
     'If you are in immediate danger, call 911. ' +
     'If you can, let someone you trust know where you are so they can sit with you. ' +
     'You matter, and talking to a person right now is the right next step.',
-  // Owner decision 6 wording, word for word.
+  // Owner C6a (Option 1) wording, word for word.
   urgent_symptoms:
-    'This needs medical attention. Contact your prescribing clinic today. If symptoms are severe, call 911.',
+    'This needs medical attention. Contact your doctor or prescriber today. If symptoms are severe, call 911.',
 };
 
 /**
- * Owner 22a and 57: added to Roman's reply when that reply alerted the
- * client's current coach (urgent_symptoms, or eating_disorder_risk with the
+ * Owner 22a, 57 and #CRISIS-WORDING: added to Roman's reply when that reply
+ * alerted the client's current coach (urgent_symptoms, emergency or self_harm
+ * while FEATURE_ROMAN_CRISIS_ALERT is on, or eating_disorder_risk with the
  * guided reply or the fixed fallback). Word for word.
  */
 export const ROMAN_COACH_TOLD_LINE = "We've let your coach know so they can check in with you.";
@@ -355,11 +356,11 @@ export const ROMAN_COACH_TOLD_LINE = "We've let your coach know so they can chec
  */
 export const ROMAN_SAFETY_ROUTE_REASON: Record<
   FixedReplyClass,
-  'call_911' | 'call_988' | 'contact_clinic'
+  'call_911' | 'call_988' | 'contact_prescriber'
 > = {
   emergency: 'call_911',
   self_harm: 'call_988',
-  urgent_symptoms: 'contact_clinic',
+  urgent_symptoms: 'contact_prescriber',
 };
 
 export const ROMAN_SAFETY_ROUTER_MODEL_ID = 'safety-router';

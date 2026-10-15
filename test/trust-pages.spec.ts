@@ -16,6 +16,7 @@ import { renderHelpPage } from '../src/public-pages/help-pages.html';
 import { TRIAGE_CATEGORIES } from '../src/community/ai-triage/triage-output.schema';
 import buildInboxTriagePrompt from '../src/community/ai-triage/prompts/inbox-triage.prompt';
 import { renderDownloadPage, renderSignupPage } from '../src/public-pages/public-pages.html';
+import { FEATURE_ROMAN_CRISIS_ALERT_ENV } from '../src/roman/roman.feature';
 
 const ALL_TRUST_PAGES: TrustPage[] = ['privacy', 'consumer-health', 'terms', 'security', 'status'];
 
@@ -818,5 +819,49 @@ describe('Terms of Service intro (F10, S-IOSREV C-4)', () => {
       'These terms describe the agreement between you and The Growth Project (“TGP”) when you use our software.',
     );
     expect(text).not.toMatch(/company policy draft|written as a company policy/i);
+  });
+});
+
+// #CRISIS-PRIVACY-PLACES (owner op 1): every place the public pages state the
+// Roman safety-reply exception also states the crisis alert, exactly once, and
+// only while FEATURE_ROMAN_CRISIS_ALERT is on. PLACES is the whole list.
+describe('the crisis sentence follows every Roman safety-reply exception (#CRISIS-PRIVACY-PLACES)', () => {
+  const EXCEPTION =
+    'One exception: if Roman sends you an urgent medical safety reply or an eating-disorder safety reply, your coach sees the message that prompted it, so they can check in with you.';
+  const TOLD =
+    'If Roman sends you a crisis safety reply, your coach is told that it happened, but not what you wrote, so they can check in with you.';
+  const PLACES: Array<[TrustPage, string, string]> = [
+    ['privacy', 'Who can see your data', 'only for support, safety and debugging.'],
+    ['privacy', 'Roman and AI', 'his notes about you.'],
+    ['consumer-health', 'Categories we share', 'never shared with your coach.'],
+  ];
+  // The page HTML-escapes every bullet and paragraph.
+  const esc = (t: string) =>
+    t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/'/g, '&#39;');
+  const count = (html: string, t: string) => html.split(esc(t)).length - 1;
+  const saved = process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV];
+  afterEach(() => {
+    if (saved === undefined) delete process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV];
+    else process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV] = saved;
+  });
+
+  it('the list is every exception on the public pages', () => {
+    const all = ALL_TRUST_PAGES.map((p) => renderTrustPage(p)).join('');
+    expect(count(all, EXCEPTION)).toBe(PLACES.length);
+  });
+
+  const ROWS = PLACES.flatMap((p) => [[...p, false] as const, [...p, true] as const]);
+  it.each(ROWS)('%s "%s" (after "%s"), switch on: %s', (page, heading, before, on) => {
+    if (on) process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV] = 'true';
+    else delete process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV];
+    const html = renderTrustPage(page);
+    const start = html.indexOf(`<h2>${heading}</h2>`);
+    const section = html.slice(start, html.indexOf('</section>', start));
+    // Directly after the exception, inside the same bullet or paragraph.
+    const placed = esc(`${before} ${EXCEPTION}${on ? ` ${TOLD}` : ''}`);
+    expect(start).toBeGreaterThan(0);
+    expect(section.split(placed)).toHaveLength(2);
+    expect(count(section, TOLD)).toBe(on ? 1 : 0);
+    expect(count(html, TOLD)).toBe(on ? PLACES.filter(([p]) => p === page).length : 0);
   });
 });
