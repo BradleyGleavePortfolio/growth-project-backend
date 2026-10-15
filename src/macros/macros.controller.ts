@@ -36,7 +36,7 @@ export class CoachMacrosController {
     @Param('clientId') clientId: string,
     @Body() dto: CreateMacroTargetDto,
   ) {
-    return this.macros.createForClient(req.user.id, clientId, dto);
+    return this.macros.createForClient(req.user.id, clientId, dto, req.user.role);
   }
 
   // GET /coach/clients/:clientId/macros — full history (newest first).

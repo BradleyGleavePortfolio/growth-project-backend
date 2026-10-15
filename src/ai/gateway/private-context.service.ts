@@ -8,8 +8,8 @@ import { CREATE_WORKOUT_PLAN_CAPABILITY } from './materialisers/create-workout-p
 import { EDIT_WORKOUT_PLAN_CAPABILITY } from './materialisers/edit-workout-plan.materialiser';
 import { toInjuryAreas } from './workout-builder/training-substitutions';
 import { UNTRUSTED_TEXT_RULE, fenceUntrusted } from '../utils/untrusted-text';
-import { ConsentScope, ConsentService } from '../../consent/consent.service';
-import { weightIfShared } from '../../consent/coach-sharing-gate';
+import { ConsentService } from '../../consent/consent.service';
+import { seesWeight, weightIfShared } from '../../consent/coach-sharing-gate';
 
 // B-AIB3-126 (plan section 1, SAFE 2): the workout capabilities get the minimised block — no name, body weight, height,
 // preferred snacks or coach message excerpt (the message row is not even read).
@@ -88,10 +88,7 @@ export class PrivateContextService {
 
     const profile = subject.profile;
     // C8-S: the client always reads their own weight; a coach only while Weigh-ins is shared.
-    const weighIns =
-      caller.id === subject.id ||
-      !this.consent ||
-      (await this.consent.coachCanAccess(caller.id, subject.id, ConsentScope.FITNESS_BODY_METRICS, caller.role));
+    const weighIns = await seesWeight(this.consent, caller.id, subject.id, caller.role);
     const lastMessage = workout ? undefined : subject.coach_messages_as_client[0];
 
     // Sanitized, structured block. NEVER include email, phone,

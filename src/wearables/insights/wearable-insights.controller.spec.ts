@@ -148,6 +148,7 @@ describe('WearableInsightsController', () => {
         COACH,
         CLIENT,
         WearableMetricBucket.SLEEP_RECOVERY,
+        'coach',
       );
       // Coach schema fields present (full-insight branch of the union).
       expect(isEmptyInsight(out)).toBe(false);
