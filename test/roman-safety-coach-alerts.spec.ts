@@ -131,7 +131,7 @@ describe('alert storage', () => {
 
 describe('the alert card in the action queue', () => {
   const SENT = new Date('2026-10-12T09:41:00Z');
-  function queue(opts: { messages?: Array<Record<string, unknown>> } = {}) {
+  function queue(opts: { messages?: Array<Record<string, unknown>>; crisisName?: string } = {}) {
     const alerts = [
       {
         id: 'a-urgent',
@@ -176,7 +176,7 @@ describe('the alert card in the action queue', () => {
         payload: { roman_message_id: 'm1' },
         created_at: new Date('2026-10-12T06:00:00Z'),
         acknowledged_at: null,
-        client: { name: 'Jane Doe' },
+        client: { name: opts.crisisName ?? 'Jane Doe' },
       },
     ];
     const messages = opts.messages ?? [
@@ -226,6 +226,18 @@ describe('the alert card in the action queue', () => {
     expect(prisma.romanMessage.findMany.mock.calls[0][0]).toMatchObject({
       where: { id: { in: ['m1', 'm2'] }, role: 'user', session: { deleted_at: null } },
     });
+  });
+
+  // The crisis card's first name: a leading space or a one-word name still
+  // gives it; with no word in the name, the name as the urgent card shows it.
+  it.each([
+    [' Jane Doe', 'Jane'],
+    ['Jane', 'Jane'],
+    ['  ', '  '],
+  ])('the crisis card names %j as %j', async (crisisName, first) => {
+    const { svc } = queue({ crisisName });
+    const out = await svc.getActionQueue('coach-1', {});
+    expect(out.items[3].message).toBe(CRISIS_LINE.replace('Jane', first));
   });
 
   it('a deleted chat or another person\'s message gives no quote', async () => {
