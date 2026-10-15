@@ -78,6 +78,8 @@ describe('consult-consent-v3 text parity with mobile #310', () => {
       'consult-consent-v6-coach-free',
       'consult-consent-v7',
       'consult-consent-v8',
+      'consult-consent-v8-coach-free',
+      'consult-consent-v9-coach-free',
       'consult-consent-v7-coach-free',
     ]);
     expect(consultConsentTextSha256('consult-consent-v3')).toBe(CONSULT_CONSENT_V3_TEXT_SHA256);
@@ -107,6 +109,8 @@ describe('accepted versions and the P0 truth rule', () => {
       'consult-consent-v6-coach-free',
       'consult-consent-v7',
       'consult-consent-v8',
+      'consult-consent-v8-coach-free',
+      'consult-consent-v9-coach-free',
       'consult-consent-v7-coach-free',
     ];
     expect(acceptedConsentVersions({})).toEqual(defaults);

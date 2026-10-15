@@ -20,6 +20,8 @@ import {
   CONSULT_CONSENT_V6_COACH_FREE,
   CONSULT_CONSENT_V7,
   CONSULT_CONSENT_V7_COACH_FREE,
+  CONSULT_CONSENT_V8_COACH_FREE,
+  CONSULT_CONSENT_V9_COACH_FREE,
   CONSULT_CONSENT_V8,
   consultConsentTextSha256,
   unknownConsultConsentVersions,
@@ -46,6 +48,8 @@ export const CONSULTATION_VERSION = 'consult-v1';
  * versions whose exact text the server knows (CONSULT_CONSENT_COPIES): an
  * unknown name can never be verified, so it is ignored (logged once as a
  * warning), and a list with no known name falls back to the default.
+ * The default also holds v8-coach-free / v9-coach-free (no coach, with the
+ * Roman choice, W-CONSENT / FIX684).
  *
  * Box 2 (optional AI processing by Anthropic) is NOT part of P0: it is
  * recorded by the AI consent ledger (`POST /me/ai-consent/roman`), is never
@@ -62,6 +66,8 @@ export const DEFAULT_CONSULT_CONSENT_COPY_VERSIONS: readonly string[] = Object.f
   CONSULT_CONSENT_V6_COACH_FREE,
   CONSULT_CONSENT_V7,
   CONSULT_CONSENT_V8,
+  CONSULT_CONSENT_V8_COACH_FREE,
+  CONSULT_CONSENT_V9_COACH_FREE,
   CONSULT_CONSENT_V7_COACH_FREE,
 ]);
 
