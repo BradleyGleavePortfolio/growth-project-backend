@@ -200,7 +200,7 @@ honoured **only** on the branch that inserts a brand-new `User` row
 - `coach` runs one transaction: `User.role='coach', coach_id=null`
   (forced), `CoachSubscription` upsert `{tier:'free', status:'active',
   update:{}}` (same as `becomeCoach`; never overwrites a row), a
-  `CoachProfile` with a fresh `GP-` invite code, **and** the
+  `CoachProfile` with a fresh `TGP-` invite code, **and** the
   `user.role_changed` audit row (`AuditService.writeTx`, actor = target,
   `actor_role = null`, `metadata.via='signup_role_choice'`, request IP /
   user-agent on every provider). The audit write is not best-effort here:
