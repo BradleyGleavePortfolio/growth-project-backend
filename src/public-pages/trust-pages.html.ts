@@ -32,7 +32,7 @@ export const SUPPORT_EMAIL = 'Bradleyapple1031@gmail.com';
 
 // Last-reviewed date for the policy text. Bump when copy changes.
 // Format ISO-8601 (UTC) so it sorts and renders consistently.
-export const POLICY_LAST_REVIEWED = '2026-10-12';
+export const POLICY_LAST_REVIEWED = '2026-10-15';
 
 // Who sees community and leaderboard data (B-PRIVACY-1). Shared by /privacy
 // "Who can see your data" and /consumer-health-privacy "Categories we share".
