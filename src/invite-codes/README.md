@@ -139,6 +139,10 @@ transaction (a failed grant rolls the attach back). Paid: no attach, no seat, no
 (`paidJoinAllowed`). The purchase's entitlement attaches the client (`attachPaidJoinTx`). Every result carries
 `join` (`invite_join` on the auth routes). Tests: `test/invite-grant.spec.ts` (B-PACKAGE-135 block).
 
+JOINQUOTE: a paid join's `join.package.quote` is what that checkout charges this client (`packageQuote`, the
+rule of the client package reads: their trial offer and the attempt the checkout would resume), read fresh on
+every call; `null` when granted. Tests: `test/joinquote-144-join-quote.spec.ts`.
+
 Tests: `test/invite-attach-idempotent-replay.spec.ts`,
 `test/select-role-canonical-attach.spec.ts`,
 `test/invite-attach-reliability.spec.ts`.

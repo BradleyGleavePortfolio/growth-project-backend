@@ -39,6 +39,8 @@ import {
   grantCoachSharingAtJoinTx,
 } from '../consent/coach-sharing-notice';
 import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
+import { TrialUsageService } from '../packages/trials/trial-usage.service';
+import { packageQuote, resumableAttempts } from '../checkout/checkout.service';
 
 type ValidationSuccess = {
   valid: true;
@@ -428,6 +430,8 @@ export class InviteCodesService {
     // Clinic C01 — optional so existing 4-arg constructions (tests, scripts)
     // keep working; when absent, codes never grant packages.
     @Optional() private readonly grants?: InviteGrantService,
+    // JOINQUOTE — the paid join's quote; absent (legacy wiring) = no quote.
+    @Optional() private readonly trials?: TrialUsageService,
   ) {}
 
   /**
@@ -1112,7 +1116,8 @@ export class InviteCodesService {
         });
         if (intendedRecipientMismatch(row?.intended_email ?? null, me.email)) throw intendedEmailMismatch();
       }
-      return { role: me.role, coach_id: null, already_attached: false, join: plan.join };
+      const join = await this.withQuote(userId, plan);
+      return { role: me.role, coach_id: null, already_attached: false, join };
     }
     const joinActive = plan && this.grants ? await this.grants.joinGrantActive(me, plan.pkg) : true;
     if (joinActive === null) throw joinPackageUnavailable();
@@ -1287,7 +1292,23 @@ export class InviteCodesService {
       where: { client_user_id: userId, package_id: plan.pkg.id, entitlement_active: true },
       select: { id: true },
     });
-    return { grant: null, join: held ? { ...plan.join, status: 'granted' } : plan.join };
+    if (held) return { grant: null, join: { ...plan.join, status: 'granted' } };
+    return { grant: null, join: await this.withQuote(userId, plan) };
+  }
+
+  /**
+   * JOINQUOTE — a paid join's package carries the quote for THIS client, by the
+   * steps of GET /v1/clients/me/coach/packages/:id: the client's trial offer,
+   * the open attempt the checkout would resume, then packageQuote. None of it
+   * needs a coach, like the join checkout. Read fresh on every call.
+   */
+  private async withQuote(userId: string, plan: JoinPlan): Promise<JoinOutcome> {
+    if (!this.trials) return plan.join;
+    const now = new Date();
+    const offers = await this.trials.offersForClient(userId, [plan.pkg]);
+    const open = await resumableAttempts(this.prisma, userId, [plan.pkg.id], now);
+    const quote = packageQuote(plan.pkg, offers.get(plan.pkg.id), now, open.get(plan.pkg.id));
+    return { ...plan.join, package: { ...plan.join.package, quote } };
   }
 
   /** C01 — post-commit, never-throwing grant for a bound code. */
