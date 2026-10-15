@@ -125,7 +125,8 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(await seen(A)).toEqual({
       plans: ['dMaster', 'dStandalone', 'dStays', 'dTeamed'],
       programs: ['master', 'pStays', 'pTeamed'],
-      assignments: ['cStays'],
+      // As the client's current coach A also reads the sub-coach's assignment for them (20270502000900).
+      assignments: ['cStays', 'cSubStays'],
       meals: ['mStays'],
       briefs: ['bStays'],
     });
@@ -140,9 +141,11 @@ if (!DB_URL && process.env.CI === 'true') {
       .toEqual([{ moved: false, stays: true }]);
   });
 
-  it('the new coach reads their own rows for the client, never the former coach\'s', async () => {
+  it('the new coach reads their own rows for the client, never the former coach\'s, and every workout assignment of the client', async () => {
+    // History follows the client (20270502000900): the current coach reads the
+    // client's assignments from every coach's time; plans and programs stay the writer's.
     expect(await seen(Z)).toEqual({
-      plans: ['dZ'], programs: ['pZ'], assignments: ['cZ'], meals: ['mZ'], briefs: ['bZ'],
+      plans: ['dZ'], programs: ['pZ'], assignments: ['cLegacy', 'cMoved', 'cSubMoved', 'cZ'], meals: ['mZ'], briefs: ['bZ'],
     });
   });
 
@@ -153,8 +156,8 @@ if (!DB_URL && process.env.CI === 'true') {
     ]);
     const s = await seen(stays);
     expect([s.plans, s.assignments, s.meals]).toEqual([['dStays'], ['cStays', 'cSubStays'], ['mStays']]);
-    // No policy admits a client to programs or briefs, before or after (unchanged).
-    expect([m.programs, m.briefs, s.programs, s.briefs]).toEqual([[], [], [], []]);
+    // A client reads their own program copies from every coach (20270502000900), and no briefs.
+    expect([m.programs, m.briefs, s.programs, s.briefs]).toEqual([['pMoved', 'pSubMoved', 'pZ'], [], ['pStays', 'pSubStays'], []]);
   });
 
   it('an unrelated coach and client read none of it', async () => {
