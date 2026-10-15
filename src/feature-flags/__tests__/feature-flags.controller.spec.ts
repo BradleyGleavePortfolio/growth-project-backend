@@ -36,6 +36,7 @@ describe('FeatureFlagsController', () => {
     coachless_home: true,
     messaging_core_v2: true,
     coach_payment_actions: true,
+    roman_crisis_alert: true,
   };
 
   beforeEach(() => {
