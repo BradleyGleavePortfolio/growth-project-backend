@@ -26,8 +26,8 @@ function commit(): void {
   git('commit', '-m', `ci: migration fixture on ${git('branch', '--show-current')}`);
 }
 
-function run() {
-  return spawnSync(process.execPath, [SCRIPT], { cwd: repo, encoding: 'utf8' });
+function run(script = SCRIPT) {
+  return spawnSync(process.execPath, [script], { cwd: repo, encoding: 'utf8' });
 }
 
 function expectFailure(dir: string, reason: string): void {
@@ -68,6 +68,27 @@ beforeEach(() => {
 afterEach(() => rmSync(repo, { recursive: true, force: true }));
 
 describe('migration-order CLI (real Git fixtures, no database)', () => {
+  it.each([
+    { dir: ABOVE, status: 0 },
+    { dir: '20270101000000_guard_probe', status: 1 },
+  ])('runs main’s extracted checker against a stale head: $dir', ({ dir, status }) => {
+    git('checkout', 'main');
+    mkdirSync(join(repo, 'scripts/ci'), { recursive: true });
+    writeFileSync(join(repo, 'scripts/ci/migration-order.js'), readFileSync(SCRIPT));
+    commit();
+    git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+    git('checkout', 'feature');
+    migration(dir);
+    commit();
+    expect(git('ls-tree', 'HEAD', 'scripts/ci/migration-order.js')).toBe('');
+    const extracted = join(repo, '.git', 'migration-order.js');
+    writeFileSync(extracted, git('show', 'origin/main:scripts/ci/migration-order.js'));
+    const result = run(extracted);
+    expect(result.status).toBe(status);
+    expect(result.stdout).toContain(`new directories: ${dir}`);
+    if (status === 1) expect(result.stderr).toContain('sorts at or below main');
+  });
+
   it('passes above newest even when main advanced after the PR forked', () => {
     migration(ABOVE);
     commit();
@@ -195,6 +216,7 @@ it('wires one database-free PR job for all bases, with the actual PR head and fe
   });
   expect(job.steps.flatMap((step) => step.run || []).join('\n')).toBe(
     'git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main\n' +
-    'node scripts/ci/migration-order.js\n',
+    'git show origin/main:scripts/ci/migration-order.js > "$RUNNER_TEMP/migration-order.js"\n' +
+    'node "$RUNNER_TEMP/migration-order.js"\n',
   );
 });
