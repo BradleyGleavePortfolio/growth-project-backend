@@ -20,6 +20,8 @@ import { Prisma, PrismaClient } from '@prisma/client';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { CommunityRepository } from '../../src/community/community.repository';
 import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
+import type { PrismaService } from '../../src/prisma.service';
+import { stub } from '../utils/trial-fakes';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
 const DB_URL = liveTestDatabaseUrl();
@@ -49,9 +51,9 @@ const COMMENT = 'community_post_comment';
 
 (DB_URL ? describe : describe.skip)('one rule decides who reads or writes a community space', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
-  const access = new CommunityAccessService(prisma as never);
-  const foundation = new CommunityRepository(prisma as never);
-  const messages = new CommunityMessagesRepository(prisma as never);
+  const access = new CommunityAccessService(stub<PrismaService>(prisma));
+  const foundation = new CommunityRepository(stub<PrismaService>(prisma));
+  const messages = new CommunityMessagesRepository(stub<PrismaService>(prisma));
   const uuids = <K extends string>(keys: readonly K[]) => Object.fromEntries(keys.map((k) => [k, randomUUID()])) as Record<K, string>;
   const ALL: AnySpace[] = [...SPACES, 'ymem'];
   const id = uuids(PEOPLE);
@@ -203,7 +205,7 @@ const COMMENT = 'community_post_comment';
       expect(listed.filter((c) => c.workspace_id === ws.X).map((c) => c.id).sort()).toEqual(mine);
     });
 
-    it('access ends the moment the rule turns false: a package ends, a public member is removed, a ban', async () => {
+    it('access ends the moment the rule turns false (a package ends, a public member is removed, a ban); the team always', async () => {
       expect(await count('I', 'community_messages', msg.pkg)).toBe(1);
       await prisma.$executeRaw`UPDATE "ClientPurchase" SET "access_expires_at" = (now() AT TIME ZONE 'UTC') - interval '1 minute'
         WHERE "client_user_id" = ${id.I}`;
@@ -218,6 +220,11 @@ const COMMENT = 'community_post_comment';
       expect(await count('O', 'community_messages', msg.cli)).toBe(0);
       expect(await access.canAccessCohort(cohort('cli'), user('O'))).toBe(false);
       expect(await count('X', 'community_messages', msg.cli)).toBe(1); // the coach always
+      // The coach's team: a co-coach row opens the space whoever coaches them.
+      expect(await count('Y', 'community_messages', msg.ymem)).toBe(1);
+      await prisma.$executeRaw`INSERT INTO "community_memberships" ("id", "workspace_id", "cohort_id", "user_id", "role", "status", "updated_at")
+        VALUES (${randomUUID()}::uuid, ${ws.X}::uuid, ${space.mem}::uuid, ${id.Y}, 'assistant', 'active', now())`;
+      expect([await count('Y', 'community_messages', msg.mem), await send('Y', 'mem')]).toEqual([1, 1]);
     });
   });
 });

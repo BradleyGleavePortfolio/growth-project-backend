@@ -84,8 +84,10 @@ describe('two-way block: posts, comments, cohort messages and DMs (in-memory Pri
     broadcastCommunityEvent: jest.fn(async () => undefined),
   };
 
+  // C6-BVIS: the members are the coach's clients (the rule for chosen-members spaces).
   function user(role: string, name: string): User {
-    return stub<User>(db.seed('user', { role, name, deleted_at: null, coach_id: null }));
+    const coachId = role === 'student' ? coach.id : null;
+    return stub<User>(db.seed('user', { role, name, deleted_at: null, coach_id: coachId }));
   }
 
   beforeEach(() => {

@@ -276,7 +276,7 @@ export class CommunityEventsService {
     } else if (isPrivileged) {
       cohortScope = null;
     } else {
-      const accessibleCohortIds = await this.events.activeCohortIds(workspaceId, user.id);
+      const accessibleCohortIds = await this.access.listAccessibleCohortIds(workspaceId, user.id);
       cohortScope = { accessibleCohortIds };
     }
 

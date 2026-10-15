@@ -151,6 +151,10 @@ function memoryPrisma() {
     },
     communityWorkspaceBan: { findFirst: jest.fn(async () => null) },
     communityMessage: { count: jest.fn(async () => 0) },
+    // C6-BVIS spacesOpenTo: the coach's own client is let into the coach's space.
+    $queryRaw: jest.fn(async (_q: unknown, spaces: string[], people: string[]) =>
+      spaces.map((c, i) => ({ k: `${c}:${people[i]}` })),
+    ),
   };
   return { db, prisma };
 }

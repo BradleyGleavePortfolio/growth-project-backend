@@ -84,6 +84,10 @@ function fakePrisma(memberships: MembershipRow[], bannedUserIds: string[] = []) 
             .map((m) => ({ user_id: m.user_id, notify_level: m.notify_level })),
       ),
     },
+    // C6-BVIS spacesOpenTo: every seeded member is still let into the space.
+    $queryRaw: jest.fn(async (_q: unknown, spaces: string[], people: string[]) =>
+      spaces.map((c, i) => ({ k: `${c}:${people[i]}` })),
+    ),
     communityWorkspaceBan: {
       findMany: jest.fn(
         async (args: { where: { workspace_id: string; user_id: { in: string[] } } }) =>

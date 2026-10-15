@@ -157,6 +157,29 @@ export class InMemoryPrisma {
     return full;
   }
 
+  /**
+   * C6-BVIS: the one raw query the community code sends (spacesOpenTo:
+   * app.community_can_access per [space, person] pair), on the in-memory rows.
+   * Chosen-members spaces only (the column default; these specs seed no other
+   * visibility): the workspace coach, or not banned there with an active row
+   * that is a co-coach row or whose person is the space coach's client. Any
+   * other raw query throws.
+   */
+  async $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<Row[]> {
+    if (!strings.join('').includes('app.community_can_access')) throw new Error('InMemoryPrisma: unsupported $queryRaw');
+    const [spaces, people] = values as [string[], string[]];
+    return spaces.flatMap((c, i) => {
+      const u = people[i];
+      const ws = this.table('communityWorkspace').find((w) =>
+        this.table('communityCohort').some((r) => r.id === c && r.workspace_id === w.id));
+      const open = !!ws && (ws.coach_id === u || (
+        !this.table('communityWorkspaceBan').some((b) => b.workspace_id === ws.id && b.user_id === u && b.lifted_at == null) &&
+        this.table('communityMembership').some((m) => m.cohort_id === c && m.user_id === u && m.status === 'active' &&
+          (m.role !== 'student' || this.table('user').some((p) => p.id === u && p.coach_id === ws.coach_id)))));
+      return open ? [{ k: `${c}:${u}` }] : [];
+    });
+  }
+
   async $transaction<T>(fn: (tx: InMemoryPrisma) => Promise<T>): Promise<T> {
     const snapshot = this.snapshot();
     const writes: string[] = [];

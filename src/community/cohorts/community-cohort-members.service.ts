@@ -161,7 +161,7 @@ export class CommunityCohortMembersService {
   /**
    * Who a cohort assignment may target. `null` (no restriction) only for the
    * platform owner; every coach is limited to the workspace coach's live
-   * roster plus people already active in the workspace.
+   * roster plus the workspace's team (active co-coach rows; C6-BVIS).
    */
   private async assignScope(workspaceId: string, user: User): Promise<AssignTargetScope | null> {
     if (user.role === 'owner') return null;
@@ -207,9 +207,12 @@ export class CommunityCohortMembersService {
     // Two-way block on the member roster: a member does not see people they
     // blocked or who blocked them. The coach's management view stays complete
     // (the coach administers every membership; moderation and ban act on it).
+    // C6-BVIS: the roster is the people the rule lets into the space now (a
+    // client who moved away leaves every roster of the old coach at once).
+    const inSpace = await this.access.peopleInSpace(cohort.id, rows, (m) => m.user_id);
     const visible = isCoach
-      ? rows
-      : await this.safety.filterBlocked(user.id, rows, (m) => m.user_id);
+      ? inSpace
+      : await this.safety.filterBlocked(user.id, inSpace, (m) => m.user_id);
 
     return CohortMemberListResponseSchema.parse({
       members: visible.map((m) => (isCoach ? this.coachView(m) : this.rosterView(m))),
@@ -232,7 +235,7 @@ export class CommunityCohortMembersService {
     const prismaRole = API_TO_PRISMA_ROLE[body.role];
 
     // B-AUTHZ-1: the target must already belong to this coach's world (their
-    // live client roster, or an active member of this workspace) before any
+    // live client roster, or the workspace's team; C6-BVIS) before any
     // lookup data is returned or any membership/ban row changes. A foreign or
     // unknown target gets the same coded 404, so the endpoint never confirms
     // that another coach's client exists. The platform owner may override.
@@ -283,6 +286,14 @@ export class CommunityCohortMembersService {
 
     const membership = await this.repo.findMembership(cohort.id, userId);
     if (!membership) throw new NotFoundException(NOT_FOUND);
+    // C6-BVIS: an open row of a person the rule keeps out (a client who moved
+    // away) answers like no row at all, before any name or email.
+    if (
+      membership.status !== 'removed' &&
+      (await this.access.peopleInSpace(cohort.id, [membership], (m) => m.user_id)).length === 0
+    ) {
+      throw new NotFoundException(NOT_FOUND);
+    }
 
     // Never strip the owning coach's own membership (the `coach` role row).
     // Removing it would orphan the cohort. 403 regardless of who asks.

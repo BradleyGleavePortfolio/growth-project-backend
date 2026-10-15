@@ -362,7 +362,7 @@ export class CommunityService {
     const workspace = await this.repo.findWorkspaceById(cohort.workspace_id);
     const isOwner = workspace?.coach_id === user.id;
     const membership = await this.repo.findMembershipInCohort(cohortId, user.id);
-    const canRead = role === 'owner' || isOwner || membership?.status === 'active';
+    const canRead = role === 'owner' || isOwner || (await this.repo.canEnterCohort(cohortId, user.id));
 
     if (!canRead) {
       throw new ForbiddenException(FORBIDDEN_COHORT);
