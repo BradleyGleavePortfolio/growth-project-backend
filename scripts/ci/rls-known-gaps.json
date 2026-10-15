@@ -1,5 +1,5 @@
 {
-  "_readme": "Ratchet for scripts/ci/assert-rls-floor.mjs (rls-floor-guard); format and rules in scripts/ci/rls-lists.mjs. Entries may only be removed, never added or widened (checked against the base commit). tables = check a, one allowance per missing flag (rlsOff, forceOff): a newly missing flag fails, and a repaired listed flag fails as stale until it is removed. policies = check c findings with a tracked fix; referenceData = reviewed public catalogs. Both name one exact constant-true SELECT policy (table, policy, cmd, roles); a constant-true INSERT/UPDATE/DELETE/ALL policy is never exempt.",
+  "_readme": "Ratchet for scripts/ci/assert-rls-floor.mjs (rls-floor-guard); format and rules in scripts/ci/rls-lists.mjs. Entries may only be removed, never added or widened (checked against the base commit). tables = check a, one allowance per missing flag (rlsOff, forceOff): a newly missing flag fails, and a repaired listed flag fails as stale until it is removed. policies = check c findings with a tracked fix; referenceData = reviewed public catalogs. Both name one exact constant-true SELECT policy (table, policy, cmd, roles); a constant-true INSERT/UPDATE/DELETE/ALL policy is never exempt. anonWrites = check f: a reviewed anon INSERT/UPDATE/DELETE grant on one public table (table, privileges, finding, reason); TRUNCATE/TRIGGER/REFERENCES/MAINTAIN and default privileges are never exempt.",
   "tables": [
     {
       "table": "public._prisma_migrations",
@@ -8,6 +8,7 @@
       "reason": "Permanent by design: deliberate NO FORCE (20261213000000_rls_tier5): RLS is on with a service_role-only policy, and the owner that runs migrate deploy must still write it."
     }
   ],
+  "anonWrites": [],
   "policies": [],
   "referenceData": [
     {
