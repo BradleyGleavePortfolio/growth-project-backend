@@ -142,7 +142,7 @@ describe('AGEGATE16: every client confirms 16 or older before client routes answ
   // makes, and nothing else on the same controller.
   const SIGN_OUT_CALLS: Array<[string, Cls, (...a: unknown[]) => unknown]> = methodsOf(UsersController)
     .filter((m) => m.name === 'updatePushToken')
-    .map((m) => ['PATCH /users/me/push-token (clear this phone)', UsersController, m]);
+    .map((m): [string, Cls, (...a: unknown[]) => unknown] => ['PATCH /users/me/push-token (clear this phone)', UsersController, m]);
   it.each(JOIN_PATHS)('%s: every call sign-out makes answers; the rest of /users stays refused', async (_path, row, stored) => {
     const h = harness({ joiner: { id: 'u-join', ...row } }, stored === undefined ? {} : { 'u-join': stored });
     expect(SIGN_OUT_CALLS).toHaveLength(1);
