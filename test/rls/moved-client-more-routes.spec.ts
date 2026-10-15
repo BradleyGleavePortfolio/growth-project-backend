@@ -1,9 +1,10 @@
 /**
- * MOVEGAPS (owner 4, 139-13): four more routes that read a day of a client's
+ * MOVEGAPS (owner 4, 139-13): three more routes that read a day of a client's
  * program copy by id follow the move rule (`planStaysInTenantWhere`): the
- * broadcast workout card, attaching a plan to a package, the AI workout
- * builder (propose, and applying an edit) and community plan tags (resolve
- * and send). One row per route, each with a fresh client C of coach A: the
+ * broadcast workout card, the AI workout builder (propose, and applying an
+ * edit) and community plan tags (resolve and send). Attaching a plan to a
+ * package takes only the coach's own workouts now (package-move-fulfilment
+ * spec). One row per route, each with a fresh client C of coach A: the
  * call works before C moves (the control), then A gets the route's existing
  * refusal with nothing written; A's staying client and C's new coach B are
  * unchanged. Real services on the superuser connection (service_role, as the
@@ -14,7 +15,7 @@
  * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
  */
 import { randomUUID } from 'crypto';
-import type { AiActionDraft, CoachPackage, User } from '@prisma/client';
+import type { AiActionDraft, User } from '@prisma/client';
 import type { AiGatewayConfig, ResolvedAiConfig } from '../../src/ai/gateway/ai-gateway.config';
 import type { AiGatewayService } from '../../src/ai/gateway/ai-gateway.service';
 import {
@@ -24,13 +25,10 @@ import {
 import { WorkoutBuilderAiService } from '../../src/ai/gateway/workout-builder/workout-builder-ai.service';
 import type { WorkoutBuilderStatusService } from '../../src/ai/gateway/workout-builder/workout-builder-status.service';
 import type { AnalyticsService } from '../../src/analytics/analytics.service';
-import type { AuditService } from '../../src/audit/audit.service';
 import { CardsService } from '../../src/broadcasts/cards.service';
 import { PlanContextRepository } from '../../src/community/plan-context/plan-context.repository';
 import { PlanContextService } from '../../src/community/plan-context/plan-context.service';
 import type { ExerciseLibraryService } from '../../src/exercise-library/exercise-library.service';
-import { PackageContentsService } from '../../src/packages/package-contents.service';
-import type { PackagesService } from '../../src/packages/packages.service';
 import { PrismaService } from '../../src/prisma.service';
 import type { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.service';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
@@ -40,14 +38,12 @@ if (!DB_URL && process.env.CI === 'true') {
   throw new Error('moved-client-more-routes: CI=true but no TEST_DATABASE_URL; not skipping.');
 }
 
-(DB_URL ? describe : describe.skip)("A moved client's copy day leaves four more routes", () => {
+(DB_URL ? describe : describe.skip)("A moved client's copy day leaves three more routes", () => {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
   /** Only what each route reaches before its move check and its control answer. */
   const stub = <T>(part: Partial<T>) => part as T;
   const noTeam = stub<SubCoachScopeService>({ getHeadCoachIdForSubCoach: async () => null });
   const cards = new CardsService(prisma);
-  const packages = stub<PackagesService>({ requireOwnedPackage: async () => stub<CoachPackage>({}) });
-  const contents = new PackageContentsService(prisma, packages, noTeam, stub<AuditService>({}));
   const paused = stub<AiGatewayConfig>({ resolve: () => stub<ResolvedAiConfig>({ capabilityAllowed: false }) });
   const ai = new WorkoutBuilderAiService(
     prisma, stub<AiGatewayService>({}), paused, noTeam,
@@ -57,7 +53,6 @@ if (!DB_URL && process.env.CI === 'true') {
   const tags = new PlanContextService(new PlanContextRepository(prisma));
   // Fictional people, fresh ids per run. Coaches a and b; d: a's client who stays.
   const [a, b, d] = Array.from({ length: 3 }, () => randomUUID());
-  const pkg: Record<string, string> = {};
   let stay = '';
 
   const person = (id: string, role: 'coach' | 'student', coach_id: string | null) =>
@@ -124,15 +119,6 @@ if (!DB_URL && process.env.CI === 'true') {
       'card.ref_not_found',
     ],
     [
-      'attach a plan to a package',
-      (co, day) =>
-        contents.attach(co, co, pkg[co], {
-          asset_type: 'workout_plan', asset_id: day, cadence_kind: 'immediate', cadence_payload: {},
-        }),
-      'ok',
-      'ASSET_NOT_FOUND',
-    ],
-    [
       'AI workout builder propose',
       (co, day) => ai.propose({ id: co, role: 'coach' }, { mode: 'edit', plan_id: day, instruction: 'Add a set' }),
       'AI_NOT_CONFIGURED', // read the day and its head, then the paused capability answers
@@ -159,11 +145,7 @@ if (!DB_URL && process.env.CI === 'true') {
   ];
 
   beforeAll(async () => {
-    for (const coach of [a, b]) {
-      await person(coach, 'coach', null);
-      const data = { coach_id: coach, name: 'Block', amount_cents: 4900 };
-      pkg[coach] = (await prisma.coachPackage.create({ data })).id;
-    }
+    for (const coach of [a, b]) await person(coach, 'coach', null);
     await person(d, 'student', a);
     stay = await copyDay(a, d);
     process.env.FEATURE_MWB_AI_LIVE_CREATE = 'true';
