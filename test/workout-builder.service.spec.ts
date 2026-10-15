@@ -1182,6 +1182,73 @@ describe('WorkoutBuilderService', () => {
     });
   });
 
+  describe('listAssignments (owner 4: a moved client leaves the list)', () => {
+    const SUB_ID = 'sub-coach-uuid-1';
+    const MOVED_ID = 'client-moved-1';
+    const withScope = async (isSub: boolean) => {
+      const scope = {
+        isSubCoach: jest.fn().mockResolvedValue(isSub),
+        getAuthorizedClientIds: jest.fn().mockResolvedValue([CLIENT_ID]),
+      };
+      const mod: TestingModule = await Test.createTestingModule({
+        providers: [
+          WorkoutBuilderService,
+          { provide: PrismaService, useValue: prismaMock },
+          { provide: SubCoachScopeService, useValue: scope },
+        ],
+      }).compile();
+      prismaMock.clientWorkoutAssignment.findMany.mockResolvedValue([]);
+      return { svc: mod.get<WorkoutBuilderService>(WorkoutBuilderService), scope };
+    };
+
+    it('head coach: own and team-chain clients only; a moved client keeps their rows', async () => {
+      const { svc, scope } = await withScope(false);
+      prismaMock.workoutPlan.findUnique.mockResolvedValue(basePlan);
+
+      await svc.listAssignments(COACH_ID, basePlan.id);
+
+      // A client whose coach_id is now another coach matches neither branch.
+      expect(scope.getAuthorizedClientIds).not.toHaveBeenCalled();
+      expect(prismaMock.clientWorkoutAssignment.findMany.mock.calls[0][0].where).toEqual({
+        workout_plan_id: basePlan.id,
+        client: {
+          OR: [
+            { coach_id: COACH_ID },
+            {
+              coach: {
+                sub_coach_assignments_as_sub: {
+                  some: { head_coach_id: COACH_ID, archived_at: null },
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      // History follows the client: their own read has no coach filter.
+      await svc.listMyAssignments(MOVED_ID);
+      expect(prismaMock.clientWorkoutAssignment.findMany.mock.calls[1][0].where).toEqual({
+        client_id: MOVED_ID,
+      });
+    });
+
+    it('sub-coach: only the clients they may open now, before paging', async () => {
+      const { svc, scope } = await withScope(true);
+      prismaMock.user.findUnique.mockResolvedValue({ id: SUB_ID, role: 'coach' });
+      prismaMock.workoutPlan.findUnique.mockResolvedValue({ ...basePlan, coach_id: SUB_ID });
+
+      await svc.listAssignments(SUB_ID, basePlan.id, { limit: 10 });
+
+      expect(scope.getAuthorizedClientIds).toHaveBeenCalledWith(SUB_ID);
+      expect(prismaMock.clientWorkoutAssignment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { workout_plan_id: basePlan.id, client: { id: { in: [CLIENT_ID] } } },
+          take: 11,
+        }),
+      );
+    });
+  });
+
   describe('getMyAssignment (P1-4 — 403 vs 404)', () => {
     it('404s when the row does not exist', async () => {
       prismaMock.clientWorkoutAssignment.findUnique.mockResolvedValue(null);

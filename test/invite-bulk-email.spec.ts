@@ -63,7 +63,7 @@ describe('InviteCodesService.bulkInvite — email pipeline', () => {
     expect(callOne.to).toBe('a@example.com');
     expect(callOne.idempotencyKey).toMatch(/^invite:ic-/);
     expect(callOne.data.coach_name).toBe('Sam Trainer');
-    expect(callOne.data.invite_code).toMatch(/^GP-/);
+    expect(callOne.data.invite_code).toMatch(/^TGP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{7}$/);
     expect(callOne.data.recipient_name).toBe('Alice');
     expect(callOne.data.accept_url).toContain(callOne.data.invite_code);
 

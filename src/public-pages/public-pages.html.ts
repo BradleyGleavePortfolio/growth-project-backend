@@ -19,7 +19,7 @@ export type DownloadPlatform = 'ios' | 'android';
 // top of this file.
 import { SUPPORT_EMAIL } from './trust-pages.html';
 
-// Invite codes follow `GP-XXXXXX`-style minting (see InviteCodesService) and
+// Invite codes follow `TGP-XXXXXXX`-style minting (see InviteCodesService) and
 // are validated via ValidateInviteCodeDto at 3–32 chars. We mirror that here
 // AND constrain the alphabet to `[A-Za-z0-9-]` so an arbitrary query string
 // can never reflect into the rendered page or a mailto subject. Anything

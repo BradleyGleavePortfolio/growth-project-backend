@@ -185,3 +185,27 @@ describe('F-927-A7 — code-consuming routes share the miss limit', () => {
     expect(resolve).not.toHaveBeenCalled();
   });
 });
+
+// CODEGEN (AUTHA-07) — an IPv6 /64 is one network, the unit a single server is
+// handed. Keyed on the full address, every address of a /64 had its own budget.
+describe('AUTHA-07 — an IPv6 /64 shares one miss budget', () => {
+  it('60 misses from 60 addresses of one /64 block that /64; the next /64 works', async () => {
+    const { codes } = build();
+    for (let i = 0; i < INVITE_CODE_MISSES_PER_HOUR; i++) {
+      const ip = from(`2001:db8:7:9:${i.toString(16)}::1`);
+      expect((await codes.previewInvite(guess(i), ip)).valid).toBe(false);
+    }
+    await expect(codes.previewInvite(REAL, from('2001:db8:7:9:ffff::2'))).rejects.toEqual(limited);
+    const longForm = from('2001:0db8:0007:0009::abcd');
+    await expect(codes.previewInvite(REAL, longForm)).rejects.toEqual(limited);
+    expect((await codes.previewInvite(REAL, from('2001:db8:7:a::1'))).valid).toBe(true);
+  });
+
+  it('IPv4 keeps one budget per address, shared with its IPv4-mapped IPv6 form', async () => {
+    const { codes } = build();
+    for (let i = 0; i < INVITE_CODE_MISSES_PER_HOUR; i++)
+      await codes.previewInvite(guess(i), from('::ffff:203.0.113.60'));
+    await expect(codes.previewInvite(REAL, from('203.0.113.60'))).rejects.toEqual(limited);
+    expect((await codes.previewInvite(REAL, from('203.0.113.61'))).valid).toBe(true);
+  });
+});
