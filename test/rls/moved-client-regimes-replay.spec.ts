@@ -13,6 +13,7 @@
  */
 import { randomUUID } from 'crypto';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import type { NotificationsService } from '../../src/notifications/notifications.service';
 import { PrismaService } from '../../src/prisma.service';
 import {
   RegimeRevisionRetentionService,
@@ -78,8 +79,9 @@ if (!DB_URL && process.env.CI === 'true') {
   };
   // Sol B3 at 16faf200: each assignment route that caches a client's rows,
   // on A's own library source, so only the replay's cached-client check decides.
-  const push = { createNotification: jest.fn(async () => undefined), sendPush: jest.fn() };
-  const pushing = new WorkoutBuilderService(prisma, undefined, undefined, push as never);
+  const push = { createNotification: jest.fn(async () => null), sendPush: jest.fn(async () => null) };
+  const sink: Partial<NotificationsService> = push;
+  const pushing = new WorkoutBuilderService(prisma, undefined, undefined, sink as NotificationsService);
   const assigns: Array<[string, (client_id: string, k: string) => Promise<unknown>]> = [
     ['assignPlan', (client_id, k) => pushing.assignPlan(a, ids.sourceDay, { client_id, ...at }, k)],
     [
