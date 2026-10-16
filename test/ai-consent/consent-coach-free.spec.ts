@@ -162,6 +162,9 @@ describe('P0 copy: clinic sentence removed (C-6a) and coach-free versions (owner
       'consult-consent-v7',
       'consult-consent-v8',
       'consult-consent-v7-coach-free',
+      // CRISIS-APP-COPY (test/ai-consent/consent-crisis-sentence.spec.ts).
+      'consult-consent-v9',
+      'consult-consent-v10',
     ]);
     const p0 = (copy_version: string, text_sha256: string) => ({
       agreed: true,

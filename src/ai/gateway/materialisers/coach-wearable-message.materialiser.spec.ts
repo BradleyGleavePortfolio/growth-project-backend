@@ -119,9 +119,12 @@ describe('CoachWearableMessageMaterializer', () => {
         data: { materialised_at: expect.any(Date) },
       });
       // Sent as the tenant coach, to the payload's client, with the body.
-      expect(messaging.sendAsCoach).toHaveBeenCalledWith(COACH, CLIENT, {
-        body: 'Your recovery looks strong this week — keep the sleep window.',
-      });
+      expect(messaging.sendAsCoach).toHaveBeenCalledWith(
+        COACH,
+        CLIENT,
+        { body: 'Your recovery looks strong this week — keep the sleep window.' },
+        { aiDraftId: DRAFT_ID },
+      );
       // Downstream ref recorded.
       expect(prisma.update).toHaveBeenCalledWith({
         where: { id: DRAFT_ID },

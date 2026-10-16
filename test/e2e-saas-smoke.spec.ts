@@ -471,7 +471,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         coachGuideline: {
           findUnique: jest.fn(async () => ({ content: 'No alcohol on training days.' })),
         },
-        mealPlan: { findFirst: jest.fn(async () => null) },
+        dailyMealPlanAssignment: { findFirst: jest.fn(async () => null) },
         // M1 additions — new models fetched by buildFresh()
         fastingWindow: { findFirst: jest.fn(async () => null) },
         coachingSession: { findFirst: jest.fn(async () => null) },

@@ -86,7 +86,7 @@ function fakeDb(tables: Record<string, Row[]>) {
     checkIn: model('checkIn'),
     coachMessage: model('coachMessage'),
     coachGuideline: model('coachGuideline'),
-    mealPlan: model('mealPlan'),
+    dailyMealPlanAssignment: model('dailyMealPlanAssignment'),
     fastingWindow: model('fastingWindow'),
     coachingSession: model('coachingSession'),
     communityWin: model('communityWin'),

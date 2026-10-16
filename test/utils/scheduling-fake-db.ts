@@ -255,7 +255,7 @@ export class SchedulingFakeDb {
     return {
       ...row,
       session_type: type,
-      coach: coach ? { id: coach.id, name: coach.name } : null,
+      coach: coach ? { id: coach.id, name: coach.name, coach_profile: coach.coach_profile } : null,
       client: client ? { id: client.id, name: client.name } : null,
     };
   }
@@ -378,6 +378,10 @@ export class SchedulingFakeDb {
     findFirst: async (args: { where?: Row }) => {
       await this.tick();
       return this.teamAssignments.find((r) => this.matches(r, args.where, 'other')) ?? null;
+    },
+    findMany: async (args: { where?: Row }) => {
+      await this.tick();
+      return this.teamAssignments.filter((r) => this.matches(r, args.where, 'other'));
     },
   };
 
