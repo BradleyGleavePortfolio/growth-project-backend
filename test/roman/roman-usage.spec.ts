@@ -1,8 +1,12 @@
 // ROMANCOUNT (agent 145): 100 messages / 3 files / 5 changes a client a day,
 // reset at their local midnight. Real Postgres: test/rls/roman-usage-daily-rls.spec.ts.
+import 'reflect-metadata';
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { consumeRomanUsage, romanUsageDay } from '../../src/roman/roman-usage';
-import { romanRateLimitMessage } from '../../src/roman/roman.constants';
+import type { PrismaService } from '../../src/prisma.service';
+import type { AuthedRequest } from '../../src/auth/auth-request';
+import { consumeRomanUsage, romanUsageDay, romanUsageToday } from '../../src/roman/roman-usage';
+import { RomanUsageController } from '../../src/roman/roman-usage.controller';
+import { ROMAN_DAILY_LIMITS, romanRateLimitMessage } from '../../src/roman/roman.constants';
 import { pickErrorDetails } from '../../src/filters/error-details';
 import { fakeOf } from '../ai-egress/ai-egress.fakes';
 
@@ -10,8 +14,9 @@ const CLIENT = { id: 'rc-client', role: 'student' };
 const AT = new Date('2026-10-14T06:30:00Z');
 
 /** `$queryRaw` answers the atomic statement: a row back = counted. */
-function fakeDb(counted: boolean, tz: string | null = null) {
+function fakeDb(counted: boolean, tz: string | null = null, row: unknown = null) {
   const $queryRaw = jest.fn(async (..._a: unknown[]) => (counted ? [{ '?column?': 1 }] : []));
+  const find = jest.fn(async (..._a: unknown[]) => row);
   const db = fakeOf<Parameters<typeof consumeRomanUsage>[0]>({
     $queryRaw,
     notificationPreferences: {
@@ -20,8 +25,9 @@ function fakeDb(counted: boolean, tz: string | null = null) {
     coachProfile: { findUnique: jest.fn(async () => null) },
     coachingSession: { findUnique: jest.fn(async () => null) },
     user: { findUnique: jest.fn(async () => ({ coach_id: null })) },
+    romanUsageDaily: { findUnique: find },
   });
-  return { db, $queryRaw };
+  return { db, $queryRaw, find };
 }
 
 async function refusal(p: Promise<unknown>): Promise<HttpException> {
@@ -85,5 +91,35 @@ describe('ROMANCOUNT: over the limit is the 429 ROMAN_RATE_LIMIT the app already
     const body = { kind: 'files', resets_at, retryAfterSeconds: 1800 };
     expect(pickErrorDetails(429, 'ROMAN_RATE_LIMIT', body)).toEqual({ kind: 'files', resets_at });
     expect(pickErrorDetails(429, 'ROMAN_RATE_LIMIT', { kind: 'other' })).toEqual({});
+  });
+});
+
+describe('ROMANCOUNT: GET /me/roman/usage', () => {
+  it("the client's own counts today, the limits and the reset; no row yet reads as zero", async () => {
+    const { db, find } = fakeDb(true, 'Europe/London', { messages: 99, files: 2, changes: 4 });
+    const used = { messages: 99, files: 2, changes: 4 };
+    const limits = { messages: 100, files: 3, changes: 5 };
+    const resets_at = '2026-10-14T23:00:00.000Z';
+    await expect(romanUsageToday(db, CLIENT.id, AT)).resolves.toEqual({ day: '2026-10-14', used, limits, resets_at });
+    expect(find.mock.calls[0][0]).toMatchObject({ where: { client_id_day: { client_id: CLIENT.id } } });
+    const none = await romanUsageToday(fakeDb(true).db, CLIENT.id, AT);
+    expect(none.used).toEqual({ messages: 0, files: 0, changes: 0 });
+  });
+
+  it('clients only: coaches and the owner are refused, nothing read; no coach is 403 ROMAN_REQUIRES_COACH', async () => {
+    expect(Reflect.getMetadata('roles', RomanUsageController.prototype.usage)).toEqual(['student']);
+    const { db, find } = fakeDb(true);
+    const ctrl = new RomanUsageController(fakeOf<PrismaService>(db));
+    const as = (coach_id: string | null, role = CLIENT.role) =>
+      fakeOf<AuthedRequest>({ user: { ...CLIENT, role, coach_id } });
+    for (const role of ['coach', 'owner']) {
+      const refused = await refusal(ctrl.usage(as(null, role)));
+      expect([refused.getStatus(), refused.message]).toEqual([403, 'Insufficient role']);
+    }
+    expect(find).not.toHaveBeenCalled();
+    const err = await refusal(ctrl.usage(as(null)));
+    expect([err.getStatus(), err.getResponse()]).toMatchObject([403, { code: 'ROMAN_REQUIRES_COACH' }]);
+    await expect(ctrl.usage(as('c1'))).resolves.toMatchObject({ limits: ROMAN_DAILY_LIMITS });
+    expect(find.mock.calls[0][0]).toMatchObject({ where: { client_id_day: { client_id: CLIENT.id } } });
   });
 });
