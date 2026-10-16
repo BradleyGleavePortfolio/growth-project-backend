@@ -87,7 +87,7 @@ if (!DB_URL && process.env.CI === 'true') {
   const drafts: string[] = [];
   const stored = async (capability: string, tenant: string, requester: string | null, payload: Prisma.InputJsonObject) => {
     const row = await prisma.aiActionDraft.create({
-      data: { id: randomUUID(), capability, tenant_coach_id: tenant, requester_id: requester, payload: { capability, ...payload } },
+      data: { id: randomUUID(), capability, tenant_coach_id: tenant, requester_id: requester, payload },
     });
     drafts.push(row.id);
     return row;
@@ -128,14 +128,14 @@ if (!DB_URL && process.env.CI === 'true') {
     [
       'AI create seeded from a day of the copy',
       async (c, client) => create.materialize(await stored(CREATE_WORKOUT_PLAN_CAPABILITY, a, a, {
-        target_client_id: client, template_seed: { source_template_plan_id: c.day }, diff: add,
+        capability: CREATE_WORKOUT_PLAN_CAPABILITY, target_client_id: client, template_seed: { source_template_plan_id: c.day }, diff: add,
       })),
       'AI_LIVE_CREATE_SEED_NOT_FOUND',
     ],
     [
       'AI create into the copy',
       async (c, client) => create.materialize(await stored(CREATE_WORKOUT_PLAN_CAPABILITY, a, a, {
-        target_client_id: client, target_program_id: c.program, diff: add,
+        capability: CREATE_WORKOUT_PLAN_CAPABILITY, target_client_id: client, target_program_id: c.program, diff: add,
       })),
       'AI_LIVE_CREATE_PROGRAM_NOT_FOUND',
     ],
@@ -150,7 +150,7 @@ if (!DB_URL && process.env.CI === 'true') {
       'partial approval of an AI edit of a day of the copy',
       async (c) => {
         const draft = await stored(EDIT_WORKOUT_PLAN_CAPABILITY, a, null, {
-          target_plan_id: c.day, base_revision_index: 0,
+          capability: EDIT_WORKOUT_PLAN_CAPABILITY, target_plan_id: c.day, base_revision_index: 0,
           diff: [{ kind: 'update_exercise', client_ref: 'a', sets: 5 }, { kind: 'update_exercise', client_ref: 'b', sets: 4 }],
         });
         return approvals.decide({ draftId: draft.id, decider: { id: a, role: 'coach' }, decision: 'approved', acceptedChangeIds: ['c0'] });
@@ -194,7 +194,7 @@ if (!DB_URL && process.env.CI === 'true') {
     const mine = await copy(a, c);
     const delegation = await prisma.subCoachAssignment.create({ data: { head_coach_id: a, sub_coach_id: s, client_id: c } });
     const subCreate = async () => outcome(create.materialize(await stored(CREATE_WORKOUT_PLAN_CAPABILITY, a, s, {
-      target_client_id: c, diff: add,
+      capability: CREATE_WORKOUT_PLAN_CAPABILITY, target_client_id: c, diff: add,
     })));
     // [reader, [program, day, exercise] of c's copy before the move, after it]
     const readers: Array<[string, number[], number[]]> = [
@@ -222,7 +222,7 @@ if (!DB_URL && process.env.CI === 'true') {
     await prisma.subCoachAssignment.update({ where: { id: delegation.id }, data: { unassigned_at: new Date() } });
     const open = await prisma.subCoachAssignment.create({ data: { head_coach_id: a, sub_coach_id: s, client_id: e } });
     const forE = async () => outcome(create.materialize(await stored(CREATE_WORKOUT_PLAN_CAPABILITY, a, s, {
-      target_client_id: e, diff: add,
+      capability: CREATE_WORKOUT_PLAN_CAPABILITY, target_client_id: e, diff: add,
     })));
     expect(await forE()).toBe('ok');
     await prisma.subCoachAssignment.update({ where: { id: open.id }, data: { unassigned_at: new Date() } });
