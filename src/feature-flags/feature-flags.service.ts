@@ -7,6 +7,7 @@ import {
 } from './feature-flags.dto';
 import { isMessagingCoreV2Enabled } from '../messaging/messaging-core.feature';
 import { isCoachPaymentActionsEnabled } from '../checkout/coach-payment-actions.feature';
+import { isRomanCrisisAlertEnabled } from '../roman/roman.feature';
 
 /**
  * D5 = B+γ — server-side feature-flag evaluation.
@@ -77,6 +78,9 @@ export class FeatureFlagsService {
       messaging_core_v2: isMessagingCoreV2Enabled(),
       // CF-COACH-PAY-BE-128: coach refund/pause/cancel per client; never for clients.
       coach_payment_actions: isCoachOrOwner && isCoachPaymentActionsEnabled(),
+      // CRISIS-APP-COPY: the Roman crisis alert switch, so the app states the
+      // crisis sentence exactly while the server alerts the coach.
+      roman_crisis_alert: isRomanCrisisAlertEnabled(),
     };
   }
 

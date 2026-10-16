@@ -50,6 +50,14 @@
  * with client-ai-v7, the text the app shows (CONSENTV7). POST and DELETE read the
  * same ?variant= for their response; without one they read the copies on file.
  *
+ * Crisis sentence (CRISIS-APP-COPY, owner op 1, 2026-10-15): client-ai-v8 / v9
+ * are v6 / v7 with the approved crisis sentence right after the exception.
+ * With no live grant, GET ?variant=crisis_alert offers them while
+ * FEATURE_ROMAN_CRISIS_ALERT is on and v6 / v7 while it is off. A live v8 / v9
+ * grant reads its own copies while the switch is on and the v6 / v7 copies
+ * (same scope; the grant still counts) while it is off, so no response carries
+ * the sentence while the switch is off.
+ *
  * History is append-only: a decision is a new row with seq = latest.seq + 1.
  * The unique index (user_id, processor, purpose, seq) turns a race between two
  * writers into a P2002 on the loser, which re-reads and re-decides (so two
@@ -73,6 +81,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { isRomanMemoryEnabled } from '../roman/memory/roman-memory.feature';
+import { isRomanCrisisAlertEnabled } from '../roman/roman.feature';
 import {
   AI_CONSENT_ACTION_GRANT,
   AI_CONSENT_ACTION_WITHDRAW,
@@ -110,6 +119,14 @@ import {
   CLIENT_AI_CONSENT_V7_PARAGRAPH,
   CLIENT_AI_CONSENT_V7_PARAGRAPH_SHA256,
   CLIENT_AI_CONSENT_V7_VERSION,
+  CLIENT_AI_CONSENT_V8_COPY_SHA256,
+  CLIENT_AI_CONSENT_V8_PARAGRAPH,
+  CLIENT_AI_CONSENT_V8_PARAGRAPH_SHA256,
+  CLIENT_AI_CONSENT_V8_VERSION,
+  CLIENT_AI_CONSENT_V9_COPY_SHA256,
+  CLIENT_AI_CONSENT_V9_PARAGRAPH,
+  CLIENT_AI_CONSENT_V9_PARAGRAPH_SHA256,
+  CLIENT_AI_CONSENT_V9_VERSION,
   CLIENT_AI_CONSENT_VERSION,
   acceptedClientAiConsent,
   isAiConsentLedgerEnabled,
@@ -186,6 +203,7 @@ export interface ClientAiConsentAsk {
   coachFree?: boolean;
   hasCoach?: boolean;
   safetyException?: boolean;
+  crisisAlert?: boolean;
 }
 
 export interface AiConsentRequestMeta {
@@ -228,12 +246,17 @@ export function coversScope(
  * Which copies a status carries: 'pre57c' client-ai-v4 / v5 (what a plain GET
  * offers, so installed builds keep their pinned text), 'coached' client-ai-v6 /
  * v7 (owner 57c, the safety-reply exception; GET ?variant=safety_exception),
- * 'coach_free' (owner 62).
+ * 'crisis' client-ai-v8 / v9 (v6 / v7 + the crisis sentence; GET
+ * ?variant=crisis_alert while FEATURE_ROMAN_CRISIS_ALERT is on), 'coach_free'
+ * (owner 62).
  */
-export type ClientAiCopyFamily = 'pre57c' | 'coached' | 'coach_free';
+export type ClientAiCopyFamily = 'pre57c' | 'coached' | 'crisis' | 'coach_free';
 
 function familyOfVersion(version: unknown): ClientAiCopyFamily {
   if (isCoachFreeClientAiVersion(version)) return 'coach_free';
+  if (version === CLIENT_AI_CONSENT_V8_VERSION || version === CLIENT_AI_CONSENT_V9_VERSION) {
+    return 'crisis';
+  }
   return version === CLIENT_AI_CONSENT_V6_VERSION || version === CLIENT_AI_CONSENT_V7_VERSION
     ? 'coached'
     : 'pre57c';
@@ -241,6 +264,18 @@ function familyOfVersion(version: unknown): ClientAiCopyFamily {
 
 /** The base ('base' scope) copy of `family`. */
 export function clientAiConsentCopy(family: ClientAiCopyFamily = 'pre57c'): ClientAiConsentCopy {
+  if (family === 'crisis') {
+    return {
+      version: CLIENT_AI_CONSENT_V8_VERSION,
+      processor: CLIENT_AI_CONSENT_PROCESSOR,
+      paragraph: {
+        text: CLIENT_AI_CONSENT_V8_PARAGRAPH,
+        sha256: CLIENT_AI_CONSENT_V8_PARAGRAPH_SHA256,
+      },
+      box_label: { text: CLIENT_AI_CONSENT_BOX_LABEL, sha256: CLIENT_AI_CONSENT_BOX_LABEL_SHA256 },
+      sha256: CLIENT_AI_CONSENT_V8_COPY_SHA256,
+    };
+  }
   if (family === 'coached') {
     return {
       version: CLIENT_AI_CONSENT_V6_VERSION,
@@ -279,6 +314,18 @@ export function clientAiConsentCopy(family: ClientAiCopyFamily = 'pre57c'): Clie
 
 /** The memory-scope copy of `family`. */
 export function clientAiConsentV5Copy(family: ClientAiCopyFamily = 'pre57c'): ClientAiConsentCopy {
+  if (family === 'crisis') {
+    return {
+      version: CLIENT_AI_CONSENT_V9_VERSION,
+      processor: CLIENT_AI_CONSENT_PROCESSOR,
+      paragraph: {
+        text: CLIENT_AI_CONSENT_V9_PARAGRAPH,
+        sha256: CLIENT_AI_CONSENT_V9_PARAGRAPH_SHA256,
+      },
+      box_label: { text: CLIENT_AI_CONSENT_BOX_LABEL, sha256: CLIENT_AI_CONSENT_BOX_LABEL_SHA256 },
+      sha256: CLIENT_AI_CONSENT_V9_COPY_SHA256,
+    };
+  }
   if (family === 'coached') {
     return {
       version: CLIENT_AI_CONSENT_V7_VERSION,
@@ -396,12 +443,16 @@ export class AiConsentService implements ClientAiConsentReader {
    * `askSafety` (GET ?variant=safety_exception, owner 57c): with no live grant
    * the coached copies are client-ai-v6 / v7, and a live v4 grant's memory offer is
    * client-ai-v7; a plain GET keeps v4 / v5, the text installed builds pin.
+   * `askCrisis` (?variant=crisis_alert, CRISIS-APP-COPY): as `askSafety`, with
+   * client-ai-v8 / v9 while FEATURE_ROMAN_CRISIS_ALERT is on. While it is off every
+   * 'crisis' read (asked or on file) gives the v6 / v7 copies instead.
    */
   private toStatus(
     row: AiConsentLatestRow | null,
     askCoachFree?: boolean,
     hasCoach = false,
     askSafety = false,
+    askCrisis = false,
   ): ClientAiConsentStatus {
     const onFile = familyOfVersion(row?.consent_version);
     const scope = hasCoach && onFile === 'coach_free' ? null : grantScope(row);
@@ -411,8 +462,11 @@ export class AiConsentService implements ClientAiConsentReader {
       ? onFile === 'coach_free'
       : !hasCoach && (askCoachFree ?? onFile === 'coach_free');
     // A live grant, and a POST / DELETE with no ?variant=, read the copies on file; else the ask.
-    const coached = granted || askCoachFree === undefined ? onFile === 'coached' : askSafety;
-    const family: ClientAiCopyFamily = coachFree ? 'coach_free' : coached ? 'coached' : 'pre57c';
+    const onFileRead = granted || askCoachFree === undefined;
+    const crisis = onFileRead ? onFile === 'crisis' : askCrisis;
+    const coached = onFileRead ? onFile === 'coached' : askSafety || askCrisis;
+    let family: ClientAiCopyFamily = coachFree ? 'coach_free' : coached ? 'coached' : 'pre57c';
+    if (!coachFree && crisis) family = isRomanCrisisAlertEnabled() ? 'crisis' : 'coached';
     // A new agreement (memory on, Allow) is offered in the copies the app shows (CONSENTV7).
     const offer: ClientAiCopyFamily = askSafety && !coachFree ? 'coached' : family;
     const copy = scope === 'memory' ? clientAiConsentV5Copy(family) : clientAiConsentCopy(family);
@@ -451,6 +505,7 @@ export class AiConsentService implements ClientAiConsentReader {
       ask.coachFree === true,
       ask.hasCoach === true,
       ask.safetyException === true,
+      ask.crisisAlert === true,
     );
   }
 

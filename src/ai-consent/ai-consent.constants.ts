@@ -20,6 +20,7 @@
  * at new text.
  */
 import { createHash } from 'node:crypto';
+import { ROMAN_CRISIS_TOLD_SENTENCE } from '../roman/roman.feature';
 
 /**
  * Copy version of the box-2 text. Bump with any change to the text below.
@@ -154,6 +155,35 @@ export const CLIENT_AI_CONSENT_V7_COPY_SHA256 = sha256Hex(
 );
 
 /**
+ * client-ai-v8 / client-ai-v9 (CRISIS-APP-COPY, owner op 1, 2026-10-15): the
+ * v6 / v7 paragraphs with the approved crisis sentence right after the
+ * exception sentence, nothing else changed. Same box label, same scopes (v8
+ * 'base', v9 'memory'). GET ?variant=crisis_alert offers them only while
+ * FEATURE_ROMAN_CRISIS_ALERT is on; v4 to v7 keep their text and digests.
+ */
+export const CLIENT_AI_CONSENT_V8_VERSION = 'client-ai-v8';
+export const CLIENT_AI_CONSENT_V9_VERSION = 'client-ai-v9';
+
+export const CLIENT_AI_CONSENT_V8_PARAGRAPH =
+  CLIENT_AI_CONSENT_V6_PARAGRAPH + ' ' + ROMAN_CRISIS_TOLD_SENTENCE;
+export const CLIENT_AI_CONSENT_V9_PARAGRAPH =
+  CLIENT_AI_CONSENT_V5_PARAGRAPH.slice(0, -V5_LAST_SENTENCE.length) +
+  CLIENT_AI_CONSENT_SAFETY_EXCEPTION +
+  ' ' +
+  ROMAN_CRISIS_TOLD_SENTENCE +
+  ' ' +
+  V5_LAST_SENTENCE;
+
+export const CLIENT_AI_CONSENT_V8_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V8_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V9_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V9_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V8_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V8_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+export const CLIENT_AI_CONSENT_V9_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V9_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+
+/**
  * Coach-free copies (owner decision 62, Option 1, 2026-10-12): what a client
  * with no coach sees. The v4 and v5 paragraphs and the box label with every
  * coach sentence or clause removed and no new words. Each gives the same scope
@@ -249,6 +279,14 @@ export const CLIENT_AI_CONSENT_ACCEPTED: Readonly<Record<string, AcceptedClientA
     }),
     [CLIENT_AI_CONSENT_V7_VERSION]: Object.freeze({
       copy_sha256: CLIENT_AI_CONSENT_V7_COPY_SHA256,
+      scope: 'memory' as const,
+    }),
+    [CLIENT_AI_CONSENT_V8_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V8_COPY_SHA256,
+      scope: 'base' as const,
+    }),
+    [CLIENT_AI_CONSENT_V9_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V9_COPY_SHA256,
       scope: 'memory' as const,
     }),
     [CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION]: Object.freeze({

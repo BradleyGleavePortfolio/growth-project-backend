@@ -5,6 +5,8 @@
  *   GET    /me/ai-consent        -> ClientAiConsentStatus (state + copy text + sha256)
  *          ?variant=coach_free   -> the coach-free copies (a client with no coach, owner 62)
  *          ?variant=safety_exception -> the coached client-ai-v6 / v7 copies (owner 57c)
+ *          ?variant=crisis_alert -> client-ai-v8 / v9 (v6 / v7 + the crisis sentence) while
+ *                                   FEATURE_ROMAN_CRISIS_ALERT is on, v6 / v7 while it is off
  *   POST   /me/ai-consent/roman  {version, copy_sha256?, platform?, app_version?, locale?}
  *                                -> grant (idempotent); 409 CONSENT_VERSION_MISMATCH; a client
  *                                   with no coach is recorded the same way (W-CONSENT)
@@ -66,13 +68,18 @@ export class AiConsentLedgerGuard implements CanActivate {
 
 /**
  * ?variant= as the copies the app shows, read the same way on GET, POST and DELETE, so every
- * response offers them (owner 57c, CONSENTV7). Any other value (or none) reads the coached copies,
- * as before. A client with a coach never reads a coach-free grant as live (owner 62).
+ * response offers them (owner 57c, CONSENTV7, CRISIS-APP-COPY). Any other value (or none) reads the
+ * copies a plain GET offers, as before. A client with a coach never reads a coach-free grant as live
+ * (owner 62).
  */
 function askOf(req: AuthedRequest, variant: unknown): ClientAiConsentAsk {
   const hasCoach = typeof req.user.coach_id === 'string' && req.user.coach_id.length > 0;
-  const safetyException = variant === 'safety_exception';
-  return { hasCoach, coachFree: variant === 'coach_free', safetyException };
+  return {
+    hasCoach,
+    coachFree: variant === 'coach_free',
+    safetyException: variant === 'safety_exception',
+    crisisAlert: variant === 'crisis_alert',
+  };
 }
 
 @Controller('me/ai-consent')

@@ -48,10 +48,18 @@
  * footer keeps only "Nothing is sent until you continue." (the rest named the
  * removed choice). A client with no coach makes no Roman choice here.
  *
+ * consult-consent-v9 / v10 (CRISIS-APP-COPY, owner op 1, 2026-10-15): v7 / v8
+ * with the approved crisis sentence right after the exception in paragraph 4.
+ * Paragraph 4 + box 2 hash to the ledger's client-ai-v8 / client-ai-v9 copy
+ * sha256. An app shows them only while GET /me/ai-consent?variant=crisis_alert
+ * offers client-ai-v8 / v9 (FEATURE_ROMAN_CRISIS_ALERT on). The sentence comes
+ * from roman.feature (no ledger import).
+ *
  * v3 to v6 and the v5 / v6 coach-free versions stay accepted: installed app
  * builds still show and send them.
  */
 import { createHash } from 'node:crypto';
+import { ROMAN_CRISIS_TOLD_SENTENCE } from '../roman/roman.feature';
 
 export const CONSULT_CONSENT_V3 = 'consult-consent-v3';
 export const CONSULT_CONSENT_V4 = 'consult-consent-v4';
@@ -62,6 +70,8 @@ export const CONSULT_CONSENT_V6_COACH_FREE = 'consult-consent-v6-coach-free';
 export const CONSULT_CONSENT_V7 = 'consult-consent-v7';
 export const CONSULT_CONSENT_V8 = 'consult-consent-v8';
 export const CONSULT_CONSENT_V7_COACH_FREE = 'consult-consent-v7-coach-free';
+export const CONSULT_CONSENT_V9 = 'consult-consent-v9';
+export const CONSULT_CONSENT_V10 = 'consult-consent-v10';
 
 /** The displayed parts of one P0 screen version, in display order. */
 export interface ConsultConsentCopy {
@@ -158,6 +168,17 @@ export const CONSULT_CONSENT_COPY_V8: ConsultConsentCopy = {
     ' Your conversations with Roman are kept until you delete them or delete your account.',
 };
 
+/** consult-consent-v9 / v10: v7 / v8 with the crisis sentence after the exception (CRISIS-APP-COPY). */
+const withCrisisSentence = (copy: ConsultConsentCopy): ConsultConsentCopy => ({
+  ...copy,
+  aiParagraph: (copy.aiParagraph ?? '').replace(
+    SAFETY_EXCEPTION,
+    `${SAFETY_EXCEPTION} ${ROMAN_CRISIS_TOLD_SENTENCE}`,
+  ),
+});
+export const CONSULT_CONSENT_COPY_V9: ConsultConsentCopy = withCrisisSentence(CONSULT_CONSENT_COPY_V7);
+export const CONSULT_CONSENT_COPY_V10: ConsultConsentCopy = withCrisisSentence(CONSULT_CONSENT_COPY_V8);
+
 /** consult-consent-v7-coach-free: v5-coach-free without paragraph 4 and box 2 (owner 62y2). */
 export const CONSULT_CONSENT_COPY_V7_COACH_FREE: ConsultConsentCopy = {
   title: CONSULT_CONSENT_COPY_V5_COACH_FREE.title,
@@ -230,6 +251,15 @@ export const CONSULT_CONSENT_V8_AI_SLICE_SHA256 =
   '15c1b92f0c68e485d8e2c4d399c00eeb17a16291da8fae636260e085cada0842';
 export const CONSULT_CONSENT_V7_COACH_FREE_TEXT_SHA256 =
   '82dddf635ee262e30e8a69e7a4a39be3e1255470d70b12e42a757f7578ee95a3';
+/** CRISIS-APP-COPY pins: screen text, and aiSlice = ledger client-ai-v8 / v9 copy sha256. */
+export const CONSULT_CONSENT_V9_TEXT_SHA256 =
+  '1daf2cde65d223686b4bd60f786b85866f93714176dcc8781ff94b4c9f0e30bf';
+export const CONSULT_CONSENT_V9_AI_SLICE_SHA256 =
+  'af4cc4fa55aa72cab8e7c6cdcee881d6ba1f448df048088e47acd5e7d479e0ef';
+export const CONSULT_CONSENT_V10_TEXT_SHA256 =
+  '5f36acf2704699f1e7faa68d7c65b8b8ed1f1988d197774a61914b97f22ff512';
+export const CONSULT_CONSENT_V10_AI_SLICE_SHA256 =
+  '16074f18ce0e985e35ba7cfb3f12233cd993159585a35759c4580a730ed3c9dd';
 
 /**
  * Every P0 copy version the server knows the exact text of, with the sha256
@@ -276,6 +306,14 @@ export const CONSULT_CONSENT_COPIES: Readonly<
   [CONSULT_CONSENT_V7_COACH_FREE]: {
     copy: CONSULT_CONSENT_COPY_V7_COACH_FREE,
     text_sha256: CONSULT_CONSENT_V7_COACH_FREE_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V9]: {
+    copy: CONSULT_CONSENT_COPY_V9,
+    text_sha256: CONSULT_CONSENT_V9_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V10]: {
+    copy: CONSULT_CONSENT_COPY_V10,
+    text_sha256: CONSULT_CONSENT_V10_TEXT_SHA256,
   },
 });
 
