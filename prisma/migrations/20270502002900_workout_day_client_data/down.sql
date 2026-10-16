@@ -1,4 +1,4 @@
--- Reverse of 20270502002200_workout_day_client_data. Only for a confirmed
+-- Reverse of 20270502002900_workout_day_client_data. Only for a confirmed
 -- defect: drops the coach's swaps, the client's skips and the coach's day
 -- notes (data loss for those three columns only).
 BEGIN;

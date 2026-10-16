@@ -2,7 +2,8 @@
  * C1V2-C1: workout data for the Coach's page logging screens.
  *   1. PATCH /assignments/:id: who may move, skip or note a day (own client,
  *      other client, current coach, delegated sub-coach, former coach,
- *      unrelated coach, coachless client), the move window, one field a call.
+ *      unrelated coach, coachless client), the move window, one field a call;
+ *      and GET /assignments/:id: only the client reads them back.
  *   2. The agreed request shapes: swaps on a saved row, completion_payload
  *      exercises[].swap_reason / skip_note (older payloads still accepted).
  *   3. Every copy of a planned exercise carries the coach's swaps: one test
@@ -79,6 +80,15 @@ describe('PATCH /assignments/:id: who moves, skips and notes a day', () => {
       await expect(w.svc.updateAssignment(who, day, dto, NOW)).rejects.toThrow(ForbiddenException);
       expect(w.days[day]).toEqual(before);
     }
+  });
+
+  it.each(CALLERS)('read by %s of %s (%s): only the client reads their day, its note, skip and swaps', async (who, day) => {
+    const snapshot = { exercises_json: [{ order: 0, exercise_external_id: 'bench', alternative_external_ids: ['db-bench'] }] };
+    const w = world({ skipped_at: NOW, client_note: 'Easy pace', snapshot, adjustment_proposals: [] });
+    const read = w.svc.getMyAssignment(who, day);
+    if (who === 'A') await expect(read).resolves.toMatchObject({ skipped_at: NOW, client_note: 'Easy pace', exercises: snapshot.exercises_json });
+    else if (who === 'Z') await expect(read).resolves.toMatchObject({ id: 'day-Z', client_note: null });
+    else await expect(read).rejects.toThrow(ForbiddenException);
   });
 
   it('a move lands from 2 days back (today in every time zone) to 7 days ahead', async () => {
