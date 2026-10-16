@@ -29,9 +29,13 @@
 --    plans keep renewing (H still owns the client; owner decision MOVE-TEAM
 --    pending) and S's are stamped when the client leaves S; a storefront
 --    seller never in the chain is never stamped. On "User" only clients (role
---    student) count. All three functions are SECURITY INVOKER with a pinned
---    search_path: they run as the role that made the move (the server's role
---    bypasses RLS) and grant nothing. ClientPurchase policies are unchanged.
+--    student) count. All three pin search_path. The chain helper and the
+--    coach_id trigger are SECURITY INVOKER: they run as the role that made the
+--    move (the server's role bypasses RLS). The delegation trigger reads
+--    "User", so it is SECURITY DEFINER under its RLS-bypassing owner (RLSIDENT,
+--    20270502000000); EXECUTE is revoked and SubCoachAssignment refuses anon
+--    and authenticated every row, so only the server fires it. ClientPurchase
+--    policies are unchanged.
 
 SET lock_timeout = '5s';
 
@@ -88,7 +92,7 @@ CREATE TRIGGER trg_user_coach_move_marks_plans
 CREATE OR REPLACE FUNCTION public.delegation_end_marks_plans()
 RETURNS trigger
 LANGUAGE plpgsql
-SECURITY INVOKER
+SECURITY DEFINER
 SET search_path = pg_catalog, public, pg_temp
 AS $function$
 BEGIN
