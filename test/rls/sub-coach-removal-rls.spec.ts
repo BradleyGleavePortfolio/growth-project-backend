@@ -147,7 +147,8 @@ const ACTION = 'sub_coach.assignment_closed_on_removal';
   it('the head coach\'s and the seller\'s own rows are kept', async () => {
     expect(await seen('ClientWorkoutAssignment', cwa[h], h)).toBe(1);
     expect(await open(h, l)).toBe(1);
-    expect(await seen('ClientPurchase', ids.sale, s)).toBe(1);
+    // Read as the server: ClientPurchase is server-only since 20270502003500 (BILLRAW).
+    expect(await prisma.clientPurchase.count({ where: { id: ids.sale, coach_user_id: s } })).toBe(1);
   });
 
   it('revoking a sub-coach who serves two head coaches closes only this head coach\'s assignments', async () => {
