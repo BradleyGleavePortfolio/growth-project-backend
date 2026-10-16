@@ -36,10 +36,7 @@ import { describeFailure } from '../observability/log-pii';
 import { isMessagingCoreV2Enabled } from './messaging-core.feature';
 import { coachBroadcastsEnabled } from '../broadcasts/broadcasts.feature';
 import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
-import {
-  broadcastThreadUpdated,
-  type ThreadUpdateKind,
-} from './messaging-realtime';
+import { THREAD_UPDATED_EVENT, type ThreadUpdateKind } from './messaging-realtime';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -429,9 +426,9 @@ export class MessagingService {
 
   /**
    * After a thread mutation that is not a new message (edit, delete, pin,
-   * read): ping the other participant with an empty `thread-updated` event
-   * (B-709-1: public channel, so no ids; `_kind` / `_messageId` document the
-   * call site only) and, when coach-authored content changed, bust the
+   * read): ping both people in the chat with an empty `thread-updated` event
+   * on their private topics (MSGRT; `_kind` / `_messageId` document the call
+   * site only) and, when coach-authored content changed, bust the
    * client's AI context cache so Roman never quotes an edited or deleted
    * coach message. Fire-and-forget; never fails the request.
    */
@@ -441,7 +438,7 @@ export class MessagingService {
     _messageId: string | null,
     opts: { coachContentChanged?: boolean } = {},
   ): void {
-    void broadcastThreadUpdated(this.supabase, thread.otherPartyId);
+    void this.supabase.pingChat(thread, THREAD_UPDATED_EVENT);
     if (opts.coachContentChanged) {
       this.aiContext.invalidateForUser(thread.clientId);
     }
@@ -811,11 +808,11 @@ export class MessagingService {
     // A3-MSG-CORE: an idempotent replay likewise returns the original row and
     // runs NO side effects (no second ping, push, audit, analytics or PTM signal).
     if (duplicate) return created;
-    // Realtime ping to the recipient (the client). No body is sent over the
-    // wire — just a refresh signal. The mobile client refetches via the
-    // authenticated REST endpoint when it receives the ping. Fire-and-
-    // forget so a Realtime hiccup never delays the API response.
-    void this.supabase.broadcastNewMessage(clientId);
+    // Realtime ping to both people in the chat (MSGRT: their private topics).
+    // No body is sent over the wire — just a refresh signal. The mobile client
+    // refetches via the authenticated REST endpoint when it receives the ping.
+    // Fire-and-forget so a Realtime hiccup never delays the API response.
+    void this.supabase.pingChat({ coachId: threadCoachId, clientId }, 'new-message');
     // Push notification — block check already ran above. Skipped when the
     // client muted this thread (v2). Fire-and-forget.
     this.notifyNewMessage(clientId, coachId, threadCoachId, clientId);
@@ -932,8 +929,8 @@ export class MessagingService {
     );
     // A3-MSG-CORE: replay → original row, no side effects (see sendAsCoach).
     if (replayed) return created;
-    // Ping the coach.
-    void this.supabase.broadcastNewMessage(coachId);
+    // Ping both people in the chat (MSGRT).
+    void this.supabase.pingChat({ coachId, clientId }, 'new-message');
     // Push notification — block check already ran above. Skipped when the
     // coach muted this thread (v2).
     this.notifyNewMessage(coachId, clientId, coachId, clientId);
@@ -1023,7 +1020,7 @@ export class MessagingService {
       data: { read_at: new Date() },
     });
     await this.markMessageNotificationsRead(coachId, clientId);
-    // A3-MSG-CORE: live read receipt for the client (v2, ID-only ping).
+    // A3-MSG-CORE: live read receipt (v2, empty ping to both people, MSGRT).
     if (result.count > 0 && isMessagingCoreV2Enabled()) {
       this.notifyThreadUpdated(
         {
@@ -1169,7 +1166,7 @@ export class MessagingService {
       data: { read_at: new Date() },
     });
     await this.markMessageNotificationsRead(clientId, clientId);
-    // A3-MSG-CORE: live read receipt for the coach (v2, ID-only ping).
+    // A3-MSG-CORE: live read receipt (v2, empty ping to both people, MSGRT).
     if (result.count > 0 && isMessagingCoreV2Enabled()) {
       this.notifyThreadUpdated(
         {

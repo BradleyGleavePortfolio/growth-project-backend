@@ -129,11 +129,11 @@ function makeWorld() {
 describe('SUBCOACH-SCOPE-V1-132 — a sub-coach reaches only the client threads assigned to them', () => {
   let world: ReturnType<typeof makeWorld>;
   let service: V1CoachService;
-  let supabase: { broadcastNewMessage: jest.Mock };
+  let supabase: { pingChat: jest.Mock };
 
   beforeEach(async () => {
     world = makeWorld();
-    supabase = { broadcastNewMessage: jest.fn(async () => undefined) };
+    supabase = { pingChat: jest.fn(async () => undefined) };
     const mod = await Test.createTestingModule({
       providers: [
         V1CoachService,
@@ -164,7 +164,7 @@ describe('SUBCOACH-SCOPE-V1-132 — a sub-coach reaches only the client threads 
     await expect(service.sendMessage(coach(SUB), 'theirs', 'Hello')).rejects.toBeInstanceOf(NotFoundException);
     expect(world.prisma.coachMessage.create).not.toHaveBeenCalled();
     expect(world.messages).toHaveLength(2);
-    expect(supabase.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(supabase.pingChat).not.toHaveBeenCalled();
     expect(world.drafts).toHaveLength(1);
   });
 
