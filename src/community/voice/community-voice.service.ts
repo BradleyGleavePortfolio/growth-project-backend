@@ -464,7 +464,7 @@ export class CommunityVoiceService {
   }
 
   /**
-   * Fire an ID-only ping on the cohort channel for a channel/cohort voice note.
+   * Fire an ID-only ping to everyone who may read the space of a cohort voice note.
    * Reuses the v1-4 postCreated broadcast contract (PostCreatedPayload) so we
    * do not widen the closed broadcast payload union (out of this lane's OWNS).
    * DM notes are not broadcast on a community channel (the messaging realtime
@@ -474,10 +474,8 @@ export class CommunityVoiceService {
     if (row.conversation_id !== null) return;
     const cohortId = row.cohort_id;
     if (!cohortId) return; // workspace-hall notes ride the REST poll floor.
-    const shard = this.realtime.cohortShard(cohortId);
-    const channel = this.realtime.channels.cohort(cohortId, shard);
     await this.realtime.broadcastCommunityEvent(
-      channel,
+      { workspaceId: row.workspace_id, cohortId },
       COMMUNITY_BROADCAST_EVENTS.postCreated,
       {
         id: row.id,
