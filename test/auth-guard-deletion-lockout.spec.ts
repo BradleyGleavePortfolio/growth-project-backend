@@ -35,7 +35,11 @@ describe('JwtAuthGuard — GDPR lifecycle lockout', () => {
   }
 
   function buildGuard(user: any, reflector: Reflector) {
-    const prisma: any = { user: { findUnique: jest.fn(async () => user) } };
+    // AGEGATE16: the client here has confirmed 16 or older (date of birth on file).
+    const prisma: any = {
+      user: { findUnique: jest.fn(async () => user) },
+      userProfile: { findUnique: jest.fn(async () => ({ date_of_birth: new Date('1990-01-01T00:00:00Z') })) },
+    };
     const jwks: any = { verify: jest.fn(async () => ({ sub: 'sup-1' })) };
     // PtmService stub — emit is fire-and-forget; the stub captures calls so
     // tests can assert it was NOT invoked for deleted / locked-out users.

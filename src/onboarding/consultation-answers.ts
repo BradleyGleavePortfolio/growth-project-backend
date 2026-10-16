@@ -8,6 +8,7 @@
  * Exact value shapes are documented in docs/clinic-onboarding.md.
  */
 import { ageInYears, LBS_PER_KG } from '../macros/macro-calculator';
+import { MIN_CLIENT_AGE } from '../auth/client-age';
 import type { SelectionAnswers } from './program-rules';
 import type { ClearableProfileField } from '../profile/profile.service';
 import { Logger } from '@nestjs/common';
@@ -226,7 +227,7 @@ export const VALIDATORS: Readonly<Record<string, Validator>> = {
     const d = isoDate(v);
     if (!d) return 'must be YYYY-MM-DD';
     const age = ageInYears(d, now);
-    return age >= 16 && age <= 100 ? null : 'age must be 16-100';
+    return age >= MIN_CLIENT_AGE && age <= 100 ? null : 'age must be 16-100';
   },
   // { height_cm, weight_lbs, unit } (mobile always sends lbs; unit is the
   // display preference). weight_kg is accepted instead of weight_lbs.

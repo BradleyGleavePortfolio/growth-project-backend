@@ -66,6 +66,8 @@ const prismaStub = {
       return u ? { ...u, deleted_at: null, deletion_scheduled_at: null } : null;
     },
   },
+  // AGEGATE16: every client here has confirmed 16 or older.
+  userProfile: { findUnique: async () => ({ date_of_birth: new Date('1990-01-01T00:00:00Z') }) },
 };
 const ptmStub = { emit: jest.fn() };
 

@@ -19,6 +19,7 @@ import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { ConsentService } from './consent.service';
 import { CoachSharingNoticeDto, GrantConsentDto, RevokeConsentDto } from './consent.dto';
 import { CoachSharingFirstSignInService } from './coach-sharing-first-sign-in.service';
+import { AllowBeforeAgeConfirmed } from '../auth/client-age';
 
 // Client-facing consent surface. Mounted at /consent/* so the mobile app
 // has one path prefix to learn. Every route requires a logged-in user;
@@ -28,6 +29,7 @@ import { CoachSharingFirstSignInService } from './coach-sharing-first-sign-in.se
 @Controller('consent')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
+@AllowBeforeAgeConfirmed()
 export class ConsentController {
   constructor(
     private readonly consent: ConsentService,
