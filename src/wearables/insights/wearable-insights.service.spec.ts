@@ -15,7 +15,8 @@ import {
   EmptyInsightSchema,
   isEmptyInsight,
 } from './insight-output.schema';
-import { grantAllEgress } from '../../../test/ai-egress/ai-egress.fakes';
+import type { ConsentService } from '../../consent/consent.service';
+import { fakeOf, grantAllEgress } from '../../../test/ai-egress/ai-egress.fakes';
 
 // PR-HK-4 service contract tests. The gateway, cache, and prisma are all
 // mocked so we exercise the orchestration: cache short-circuit, LLM
@@ -198,6 +199,25 @@ describe('WearableInsightsService', () => {
       expect(call.subjectUserId).toBe(CLIENT);
       expect(call.requester).toEqual({ id: CLIENT, role: 'student' });
       expect(mocks.cache.get).toHaveBeenCalledWith('client', CLIENT, BUCKET, undefined);
+    });
+
+    // C6-SERVER: a prompt copy edit bumps its version, so the stored row says which wording ran.
+    it.each([
+      [WearableMetricBucket.HEALTH_FITNESS, true, 'coach-hf-v2'],
+      [WearableMetricBucket.SLEEP_RECOVERY, false, 'coach-sr-v2+no-weigh-ins'],
+    ])('a new %s coach insight (Weigh-ins %s) is stored as %s', async (bucket, weighIns, version) => {
+      const mocks = makeMocks();
+      mocks.gateway.invoke.mockResolvedValue(gatewayReply(validCoachJson()));
+      const consent = fakeOf<ConsentService>({ coachCanAccess: async () => weighIns });
+      const svc = new WearableInsightsService(
+        fakeOf(mocks.prisma),
+        fakeOf(mocks.gateway),
+        fakeOf(mocks.cache),
+        grantAllEgress(),
+        consent,
+      );
+      await svc.generateForCoach(COACH, CLIENT, bucket);
+      expect(mocks.cache.set.mock.calls[0][4].promptVersion).toBe(version);
     });
 
     it('extracts JSON even when the model wraps it in prose/fences', async () => {
