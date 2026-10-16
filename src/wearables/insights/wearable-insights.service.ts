@@ -2,6 +2,8 @@ import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { WearableMetricBucket } from '@prisma/client';
 import { ZodSchema } from 'zod';
 import { PrismaService } from '../../prisma.service';
+import { ConsentService } from '../../consent/consent.service';
+import { seesWeight, WEIGHT_METRICS } from '../../consent/coach-sharing-gate';
 import { AiEgressService } from '../../ai-egress/ai-egress.service';
 import { isAiEgressRefusal } from '../../ai-egress/ai-consent-required.exception';
 import { clientDataSubject } from '../../ai-egress/ai-egress.types';
@@ -64,6 +66,9 @@ export const LLM_TIMEOUT_MS = 30_000;
 // Trailing window for the trend digest.
 const TREND_WINDOW_DAYS = INSIGHT_WINDOW_DAYS;
 
+// WEIGHTWALL: the prompt-version mark on a coach insight made without device weight or body fat.
+export const WITHOUT_WEIGHT_MARK = '+no-weigh-ins';
+
 type PromptBuilderFn = (input: BuildPromptInput) => BuildPromptResult;
 
 @Injectable()
@@ -76,6 +81,7 @@ export class WearableInsightsService {
     private readonly cache: InsightCacheService,
     // R2b — box-2 consent gate (also guards cached AI output).
     private readonly egress: AiEgressService,
+    private readonly consent?: ConsentService,
   ) {}
 
   // Authorization: assert the coach (or owner) currently owns the
@@ -108,8 +114,10 @@ export class WearableInsightsService {
     coachId: string,
     clientId: string,
     bucket: WearableMetricBucket,
+    coachRole?: string,
   ): Promise<CoachInsightResponse> {
     return this.generate<CoachInsight>({
+      weighIns: await seesWeight(this.consent, coachId, clientId, coachRole),
       audience: 'coach',
       subjectUserId: clientId,
       requesterId: coachId,
@@ -129,6 +137,7 @@ export class WearableInsightsService {
     bucket: WearableMetricBucket,
   ): Promise<ClientInsightResponse> {
     return this.generate<ClientInsight>({
+      weighIns: true,
       audience: 'client',
       subjectUserId: userId,
       requesterId: userId,
@@ -146,6 +155,7 @@ export class WearableInsightsService {
 
   // ── Core flow ───────────────────────────────────────────────────────
   private async generate<T extends CoachInsight | ClientInsight>(opts: {
+    weighIns: boolean;
     audience: InsightAudience;
     subjectUserId: string;
     requesterId: string;
@@ -164,6 +174,15 @@ export class WearableInsightsService {
     // coach after a move. The coach id is undefined on the client side.
     const cacheCoachId = audience === 'coach' ? opts.tenantCoachId : undefined;
     const cacheKey = [audience, subjectUserId, bucket, cacheCoachId] as const;
+    // WEIGHTWALL: Weigh-ins off, the insight is made without device weight or body fat and stored
+    // under a marked prompt version, and only a marked one is served, so an insight cached while
+    // Weigh-ins was on never reaches the coach after it goes off.
+    const version = opts.weighIns ? opts.promptVersion : `${opts.promptVersion}${WITHOUT_WEIGHT_MARK}`;
+    const fromCache = (stale: boolean): Promise<T | null> => {
+      const read = stale ? 'getEvenIfStale' : 'get';
+      const row = opts.weighIns ? this.cache[read](...cacheKey) : this.cache[read](...cacheKey, version);
+      return row as Promise<T | null>;
+    };
 
     // R2b — the client's live box-2 grant is required BEFORE the cache is
     // read: an AI insight generated from the client's data is not served
@@ -178,7 +197,7 @@ export class WearableInsightsService {
 
     // 1. Cache check — a fresh (non-expired, non-invalidated) row short-
     //    circuits the whole pipeline. No LLM call, no audit row.
-    const cached = (await this.cache.get(...cacheKey)) as T | null;
+    const cached = await fromCache(false);
     if (cached) {
       this.logger.debug(
         `insight cache HIT audience=${audience} user=${subjectUserId} bucket=${bucket}`,
@@ -188,7 +207,7 @@ export class WearableInsightsService {
 
     // 2. Fetch the last-14d samples for the bucket (the prompt layer never
     //    touches the DB; we own retrieval so the tenant boundary is here).
-    const samples = await this.fetchSamples(subjectUserId, bucket);
+    const samples = await this.fetchSamples(subjectUserId, bucket, opts.weighIns);
     const userContext = await this.buildUserContext(subjectUserId, opts.tenantCoachId);
 
     // 3. Build the bucket+audience prompt.
@@ -205,7 +224,7 @@ export class WearableInsightsService {
       this.logger.warn(
         `insight LLM call failed/timed out audience=${audience} user=${subjectUserId}: ${(err as Error).message}`,
       );
-      const stale = (await this.cache.getEvenIfStale(...cacheKey)) as T | null;
+      const stale = await fromCache(true);
       if (stale) return stale;
       return emptyInsight();
     }
@@ -223,7 +242,7 @@ export class WearableInsightsService {
         this.logger.warn(
           `insight repair call failed audience=${audience}: ${(err as Error).message}`,
         );
-        const stale = (await this.cache.getEvenIfStale(...cacheKey)) as T | null;
+        const stale = await fromCache(true);
         return stale ?? emptyInsight();
       }
       parsed = this.tryParse(opts.schema, repaired);
@@ -231,7 +250,7 @@ export class WearableInsightsService {
         this.logger.warn(
           `insight output invalid after repair audience=${audience} user=${subjectUserId} — failing explicit`,
         );
-        const stale = (await this.cache.getEvenIfStale(...cacheKey)) as T | null;
+        const stale = await fromCache(true);
         return stale ?? emptyInsight();
       }
     }
@@ -245,7 +264,7 @@ export class WearableInsightsService {
       this.logger.warn(
         `insight guardrail REJECT audience=${audience} user=${subjectUserId} reason=${guarded.reason}`,
       );
-      const stale = (await this.cache.getEvenIfStale(...cacheKey)) as T | null;
+      const stale = await fromCache(true);
       return stale ?? emptyInsight();
     }
     const safe = guarded.value as T;
@@ -258,7 +277,7 @@ export class WearableInsightsService {
         subjectUserId,
         bucket,
         safe,
-        { modelUsed: this.lastModelUsed, promptVersion: opts.promptVersion },
+        { modelUsed: this.lastModelUsed, promptVersion: version },
         cacheCoachId,
       );
     } catch (err) {
@@ -371,10 +390,16 @@ Return ONLY a single valid JSON object matching the schema exactly. No prose, no
   private async fetchSamples(
     userId: string,
     bucket: WearableMetricBucket,
+    weighIns: boolean,
   ): Promise<InsightSample[]> {
     const since = new Date(Date.now() - TREND_WINDOW_DAYS * 24 * 60 * 60 * 1000);
     const rows = await this.prisma.wearableSample.findMany({
-      where: { user_id: userId, bucket, start_at: { gte: since } },
+      where: {
+        user_id: userId,
+        bucket,
+        start_at: { gte: since },
+        ...(weighIns ? {} : { metric: { notIn: [...WEIGHT_METRICS] } }),
+      },
       orderBy: { start_at: 'asc' },
       select: {
         metric: true,

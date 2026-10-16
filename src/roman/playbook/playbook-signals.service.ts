@@ -152,28 +152,6 @@ function volumePct(v: Prisma.JsonValue | null | undefined): number | null {
   return typeof n === 'number' && Number.isFinite(n) ? n : null;
 }
 
-/** Meals per day of one legacy/AI meal plan: median meals per day, else distinct item times. */
-export function mealsPerDayOfPlan(items: Prisma.JsonValue, days: Prisma.JsonValue | null): number | null {
-  if (Array.isArray(days)) {
-    const counts: number[] = [];
-    for (const d of days) {
-      const meals = jsonObject(d as Prisma.JsonValue)?.meals;
-      if (Array.isArray(meals) && meals.length > 0) counts.push(meals.length);
-    }
-    const m = median(counts);
-    if (m !== null) return m;
-  }
-  if (Array.isArray(items)) {
-    const times = new Set<string>();
-    for (const it of items) {
-      const t = jsonObject(it as Prisma.JsonValue)?.time_of_day;
-      if (typeof t === 'string' && t.trim()) times.add(t.trim().toLowerCase());
-    }
-    if (times.size > 0) return times.size;
-  }
-  return null;
-}
-
 function inBounds(v: number | null | undefined): v is number {
   return (
     typeof v === 'number' &&
@@ -203,7 +181,7 @@ export class PlaybookSignalsService {
     const team = await this.teamOf(coachId);
     const clientFilter = opts.clientIds ? { in: [...opts.clientIds] } : undefined;
 
-    const [planExercises, assignments, proposals, targets, dailyAssignments, mealPlans] = await Promise.all([
+    const [planExercises, assignments, proposals, targets, dailyAssignments] = await Promise.all([
       this.prisma.workoutPlanExercise.findMany({
         where: { archived_at: null, workout_plan: { coach_id: { in: team }, archived_at: null } },
         select: { exercise_external_id: true },
@@ -276,12 +254,6 @@ export class PlaybookSignalsService {
         select: { client_id: true, daily_meal_plan: { select: { _count: { select: { slots: true } } } } },
         take: LIMITS.rowsPerSource,
       }),
-      this.prisma.mealPlan.findMany({
-        where: { coach_id: { in: team }, archived_at: null, client_id: clientFilter ?? { not: null } },
-        orderBy: { created_at: 'desc' },
-        select: { client_id: true, items: true, days: true },
-        take: LIMITS.rowsPerSource,
-      }),
     ]);
 
     // Exercise ids needing a catalog row: programmed exercises, scheduled
@@ -318,7 +290,7 @@ export class PlaybookSignalsService {
       adjustments: this.adjustments(proposals),
       substitutions: this.substitutions(subPairs, catalog),
       macros: this.macros(targets, now),
-      meals: this.meals(dailyAssignments, mealPlans),
+      meals: this.meals(dailyAssignments),
     };
   }
 
@@ -545,18 +517,12 @@ export class PlaybookSignalsService {
 
   private meals(
     daily: Array<{ client_id: string; daily_meal_plan: { _count: { slots: number } } }>,
-    plans: Array<{ client_id: string | null; items: Prisma.JsonValue; days: Prisma.JsonValue | null }>,
   ): PlaybookMealsSignal | null {
-    // Newest first: a client's latest structured day plan wins, else its latest meal plan.
+    // Newest first: a client's latest day plan (MEAL:DAY) wins.
     const perClient = new Map<string, number>();
     for (const d of daily) {
       if (perClient.has(d.client_id) || d.daily_meal_plan._count.slots <= 0) continue;
       perClient.set(d.client_id, d.daily_meal_plan._count.slots);
-    }
-    for (const p of plans) {
-      if (!p.client_id || perClient.has(p.client_id)) continue;
-      const n = mealsPerDayOfPlan(p.items, p.days);
-      if (n !== null) perClient.set(p.client_id, n);
     }
     if (perClient.size < MIN_CLIENTS) return null;
     const m = median([...perClient.values()]);

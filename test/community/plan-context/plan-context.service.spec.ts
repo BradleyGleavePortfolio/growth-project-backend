@@ -117,8 +117,8 @@ describe('PlanContextService', () => {
       );
     });
 
-    it('throws 403 when the meal plan owner is null (unownable)', async () => {
-      repo.findMealPlan.mockResolvedValue({ id: MEAL, coach_id: null });
+    it("throws 403 when the day plan is another coach's", async () => {
+      repo.findMealPlan.mockResolvedValue({ id: MEAL, coach_id: 'coach-other' });
       await expect(service.validate(coach, tag)).rejects.toBeInstanceOf(
         ForbiddenException,
       );
@@ -236,7 +236,7 @@ describe('PlanContextService', () => {
       repo.findMealPlan.mockResolvedValue({
         id: MEAL,
         coach_id: COACH,
-        title: 'Cut Phase',
+        name: 'Cut Phase',
       });
       const snap = await service.resolve(coach, {
         type: 'meal',

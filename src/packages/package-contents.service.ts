@@ -11,7 +11,6 @@ import { z } from 'zod';
 import { PrismaService } from '../prisma.service';
 import { PackagesService } from './packages.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
-import { planStaysInTenantWhere } from '../workout-builder/tenant-clients';
 import {
   CADENCE_PAYLOAD_SCHEMAS,
   CreateContentSchema,
@@ -1126,7 +1125,10 @@ export class PackageContentsService {
             id: input.asset_id,
             coach_id: tenantCoachId,
             archived_at: null,
-            ...planStaysInTenantWhere(tenantCoachId),
+            // PKG-MOVE-FULFILMENT: only the coach's own workouts, a saved workout or
+            // a master program's day. A client's copy is that client's history and
+            // leaves with them when they move, so a buyer could never receive it.
+            OR: [{ program_id: null }, { program: { is: { is_template: true } } }],
           },
           select: { id: true },
         });
