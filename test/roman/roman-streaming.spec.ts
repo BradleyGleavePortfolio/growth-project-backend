@@ -45,6 +45,7 @@ import { ROMAN_MODEL_PHASE_1 } from '../../src/roman/anthropic-client.provider';
 import {
   ROMAN_ERROR_CAPACITY_REACHED,
   ROMAN_ERROR_RATE_LIMIT,
+  ROMAN_PRICE_PER_MTOK,
 } from '../../src/roman/roman.constants';
 
 // ─── flag harness (streaming requires the feature ON) ─────────────────────────
@@ -179,16 +180,18 @@ function makePrisma(sessionOwner = 'user-A') {
 
   // B-651-5: the spend admission takes a per-day advisory lock in its tx.
   const $executeRaw = jest.fn(async () => 1);
+  const $queryRaw = jest.fn(async (): Promise<unknown[]> => [{}]);
   const prisma = {
     romanSession,
     romanMessage,
     aiRequestAudit,
     $executeRaw,
+    $queryRaw, // ROMANCOUNT daily count: a row back = counted, [] = at the limit.
     $transaction: jest.fn(async (fn: (tx: unknown) => unknown) =>
       fn({ romanMessage, romanSession, aiRequestAudit, $executeRaw }),
     ),
   };
-  return { prisma, session, messages, romanMessage, audits };
+  return { prisma, session, messages, romanMessage, audits, $queryRaw };
 }
 
 // ─── fake Anthropic client ────────────────────────────────────────────────────
@@ -668,9 +671,8 @@ describe('Roman — crisis messages are never blocked by the turn limit or the s
   );
 
   it('turn limit used up: an emergency message still gets the 911 template; an ordinary one gets the 429', async () => {
-    const { ctrl, anthropic, romanMessage } = setup();
-    romanMessage.count.mockResolvedValue(10_000);
-    romanMessage.findFirst.mockResolvedValue(null);
+    const { ctrl, anthropic, $queryRaw } = setup();
+    $queryRaw.mockResolvedValue([]);
     const { res, writes } = makeRes();
     await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', {
       content: 'I have crushing chest pain right now',
@@ -821,8 +823,8 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
   });
 
   it('turn limit used up: the fallback, no 429 and no Retry-After; an ordinary message still gets the 429', async () => {
-    const { ctrl, anthropic, romanMessage } = setup(['user-A']);
-    romanMessage.count.mockResolvedValue(10_000);
+    const { ctrl, anthropic, $queryRaw } = setup(['user-A']);
+    $queryRaw.mockResolvedValue([]);
     const { res, writes } = makeRes();
     await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
     const done = parseFrames(writes).find((f) => f.data?.type === 'done');
@@ -835,6 +837,31 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
       .sendMessage(fakeOf(makeReq()), fakeOf(second.res), 'sess_1', { content: 'hello' })
       .catch((e: unknown) => e);
     expect(err).toMatchObject({ response: { code: ROMAN_ERROR_RATE_LIMIT } });
+  });
+
+  it('ROMANCOUNT: an eating-disorder message below the limit gets the guided answer, never counted; the next one is', async () => {
+    const t = setup(['user-A']);
+    const first = makeRes();
+    await t.ctrl.sendMessage(fakeOf(makeReq()), fakeOf(first.res), 'sess_1', { content: ED });
+    expect(parseFrames(first.writes).find((f) => f.data?.type === 'done')?.data.text).toBe('Hi.');
+    await t.ctrl.sendMessage(fakeOf(makeReq()), fakeOf(makeRes().res), 'sess_1', { content: 'hello' });
+    expect(t.anthropic.messages.stream).toHaveBeenCalledTimes(2);
+    expect(t.$queryRaw.mock.calls.map((c) => (c as unknown[]).includes(0))).toEqual([true, false]); // adds 0, then 1
+  });
+
+  it('ROMANCOUNT: the spend admission refuses (room left, not for this turn): each of three retries gives its count back', async () => {
+    process.env.ROMAN_DAILY_COST_CAP_USD = '1';
+    const t = setup(['user-A']);
+    const nearCap = { prompt_token_estimate: Math.floor(999_000 / ROMAN_PRICE_PER_MTOK.input), response_token_estimate: 0 };
+    t.prisma.aiRequestAudit.aggregate.mockResolvedValue({ _sum: nearCap }); // 0.999 of 1 used: this turn does not fit
+    for (let i = 0; i < 3; i++) {
+      const { res, writes } = makeRes();
+      await t.ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: 'hello' });
+      expect(parseFrames(writes).find((f) => f.event === 'error')?.data.code).toBe(ROMAN_ERROR_CAPACITY_REACHED);
+    }
+    const givenBack = t.prisma.$executeRaw.mock.calls.filter((c) => String((c as unknown[])[0]).includes('UPDATE "roman_usage_daily"'));
+    expect([t.$queryRaw.mock.calls.length, givenBack.length]).toEqual([3, 3]); // counted, then given back, each time
+    expect(t.anthropic.messages.stream).not.toHaveBeenCalled();
   });
 
   it('AI available: an eating-disorder message is answered by the model under its hint, not the fallback', async () => {
