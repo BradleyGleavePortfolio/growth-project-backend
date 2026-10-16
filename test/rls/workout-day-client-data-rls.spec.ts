@@ -1,5 +1,5 @@
 /**
- * C1V2-C1 (20270502002900): the new workout-day columns follow the row rules
+ * C1V2-C1 (20270502003400): the new workout-day columns follow the row rules
  * they sit on, on the replayed migration chain as the non-bypass
  * `authenticated` role. Coach K coaches B, coach L coaches C, and client A
  * starts with coach F, then moves to K. Columns: the swaps
