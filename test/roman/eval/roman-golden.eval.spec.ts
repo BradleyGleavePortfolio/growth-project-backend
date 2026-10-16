@@ -455,7 +455,7 @@ describe('R8 layer 7 — tools, memory and coach method (G38–G47)', () => {
   const bench = (user_id: string, date: string, w: number) => ({ exercise_name: 'Dumbbell Bench Press',
     sets_completed: 3, reps_per_set: [8, 8, 8], weight_per_set: [w, w, w], rpe: 8, workout: { user_id, date: D(date) } });
   const oats = { client_id: P1, kind: 'diet_dislike', text: 'Dislikes oats', source_at: D('2026-09-20'), superseded_at: null, expires_at: null };
-  const squats = { coach_id: COACH_A.id, version: 1, status: 'active', red_lines: [],
+  const squats = { coach_id: COACH_A.id, version: 1, status: 'active', red_lines: [], sources: [],
     sections: { exercises: { substitutions: [{ for: 'Back squat', use: 'Goblet squat', when: 'knees ache', basis: 'observed', evidence_count: 4 }] } } };
   const toolWorld = (wrapTools?: (t: RomanToolbox) => RomanToolbox) => {
     const w = makeWorld(undefined, { tools: true, augmenters: true, wrapTools });

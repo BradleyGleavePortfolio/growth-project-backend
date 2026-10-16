@@ -6,16 +6,22 @@
  * coach's active playbook, re-validated with validateCoachPlaybook (invalid -> null). Red lines become plain
  * rules and post_check.red_lines. Whether the block may be sent is the R11-T2A 'memory' scope rule.
  * Cache: rendered block by (coach_id, version), 10 minutes, at most 200 keys.
+ * PLAYBOOK-WITHDRAW: a version is used only while every client in its source ledger holds the memory grant, read
+ * through the one egress consent path on every turn (never cached; a failed read is no grant). Otherwise the turn
+ * gets no block (Roman still answers), the version is marked stale (superseded, so no other turn on any machine
+ * uses it) and the scheduler rebuilds it at once from what the collector may still read.
  */
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
+import { AiEgressService } from '../../ai-egress/ai-egress.service';
 import type { RomanAugmentCaller, RomanTurnAugment, RomanTurnAugmenter } from '../augment/roman-turn-augmenter';
 import type { RomanClientContextBundle } from '../context/roman-client-context.types';
 import { resolveRomanCoachScope } from '../context/roman-coach-scope';
 import { estimateTokens } from '../context/roman-client-context.renderer';
 import { isRomanPlaybookEnabled } from './roman-playbook.feature';
+import { PlaybookBuilderScheduler } from './playbook-builder.scheduler';
 import {
   PLAYBOOK_SECTION_KEYS,
   validateCoachPlaybook,
@@ -99,7 +105,7 @@ export function renderCoachMethod(content: CoachPlaybookContent): { block: strin
 export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
   readonly kind = 'coach_method' as const;
   private readonly logger = new Logger(RomanCoachMethodAugmenter.name);
-  private readonly cache = new Map<string, { at: number; value: RomanTurnAugment | null }>();
+  private readonly cache = new Map<string, { at: number; value: RomanTurnAugment | null; sourceClientIds: string[] }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -108,10 +114,17 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
     @Optional()
     @Inject(CoachAIBudgetService)
     private readonly budget: CoachAIBudgetService | null = null,
+    // PLAYBOOK-WITHDRAW (@Global AiEgressModule): without the one consent path, no block.
+    @Optional()
+    @Inject(AiEgressService)
+    private readonly egress: AiEgressService | null = null,
+    @Optional()
+    @Inject(PlaybookBuilderScheduler)
+    private readonly scheduler: PlaybookBuilderScheduler | null = null,
   ) {}
 
   async augment(caller: RomanAugmentCaller, _bundle: RomanClientContextBundle, _message: string): Promise<RomanTurnAugment | null> {
-    if (!isRomanPlaybookEnabled() || caller.role !== 'student' || !this.budget) return null;
+    if (!isRomanPlaybookEnabled() || caller.role !== 'student' || !this.budget || !this.egress) return null;
     const headCoachId = await this.headCoachOf(caller);
     if (!headCoachId) return null;
 
@@ -122,22 +135,55 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
     });
     if (!active) return null;
 
-    const key = `${headCoachId}:${active.version}`;
+    const entry = await this.versionOf(headCoachId, active.version);
+    if (!entry?.value) return null;
+    if (!(await this.sourcesHoldGrant(entry.sourceClientIds))) {
+      await this.markStale(headCoachId, active.version);
+      return null;
+    }
+    return entry.value;
+  }
+
+  /** The rendered block and the version's source clients, cached by (coach_id, version). */
+  private async versionOf(headCoachId: string, version: number) {
+    const key = `${headCoachId}:${version}`;
     const now = Date.now();
     const hit = this.cache.get(key);
-    if (hit && now - hit.at < COACH_METHOD_CACHE_TTL_MS) return hit.value;
+    if (hit && now - hit.at < COACH_METHOD_CACHE_TTL_MS) return hit;
     if (hit) this.cache.delete(key);
 
     const row = await this.prisma.coachPlaybook.findFirst({
-      where: { coach_id: headCoachId, version: active.version, status: 'active' },
-      select: { sections: true, red_lines: true },
+      where: { coach_id: headCoachId, version, status: 'active' },
+      select: {
+        sections: true,
+        red_lines: true,
+        sources: { where: { client_id: { not: null } }, select: { client_id: true } },
+      },
     });
     if (!row) return null;
-    const value = this.build(row.sections, row.red_lines);
+    const sourceClientIds = [...new Set(row.sources.map((s) => s.client_id).filter((id): id is string => !!id))];
+    const entry = { at: now, value: this.build(row.sections, row.red_lines), sourceClientIds };
     const oldest = this.cache.size >= COACH_METHOD_CACHE_MAX ? this.cache.keys().next().value : undefined;
     if (oldest !== undefined) this.cache.delete(oldest);
-    this.cache.set(key, { at: now, value });
-    return value;
+    this.cache.set(key, entry);
+    return entry;
+  }
+
+  /** PLAYBOOK-WITHDRAW: every source client holds the memory grant now (a live read; a failed read is no grant). */
+  private async sourcesHoldGrant(clientIds: string[]): Promise<boolean> {
+    if (clientIds.length === 0) return true;
+    const granted = (await this.egress?.consentedClients(clientIds, 'memory')) ?? new Set<string>();
+    return clientIds.every((id) => granted.has(id));
+  }
+
+  /** PLAYBOOK-WITHDRAW: supersede the version; the turn that does starts the rebuild without that client. */
+  private async markStale(headCoachId: string, version: number): Promise<void> {
+    const { count } = await this.prisma.coachPlaybook.updateMany({
+      where: { coach_id: headCoachId, version, status: 'active' },
+      data: { status: 'superseded' },
+    });
+    this.logger.warn(`roman.coach_method_stale marked=${count}`);
+    if (count > 0) void this.scheduler?.rebuildNow(headCoachId);
   }
 
   /** Current live coach (roman-coach-scope rule), folded into its head coach. */

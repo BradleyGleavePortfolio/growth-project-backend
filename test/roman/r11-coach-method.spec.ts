@@ -33,7 +33,9 @@ import { makePersonaDb, FakeSafetyIntakeSource, NOW, LOCAL_TODAY_PT, P1, COACH_A
 
 type Coach = { id: string; role: string; deleted_at: Date | null };
 type UserRow = { role: string; coach: Coach | null };
-type PlaybookRow = { coach_id: string; version: number; status: string; sections: unknown; red_lines: unknown };
+type PlaybookRow = {
+  coach_id: string; version: number; status: string; sections: unknown; red_lines: unknown; sources: Array<{ client_id: string }>;
+};
 
 const item = (text: string, basis: 'stated' | 'observed' = 'observed', evidence_count = 3) => ({ text, basis, evidence_count });
 
@@ -52,6 +54,7 @@ function playbook(coach_id: string, version: number, marker: string, status = 'a
       recovery: { sleep_target: [item('Eight hours in bed')] },
     },
     red_lines: [{ kind: 'no_train_through_pain', text: 'Never train through sharp pain', basis: 'stated', evidence_count: 2 }],
+    sources: [],
   };
 }
 
@@ -80,6 +83,7 @@ function harness(opts: HarnessOpts) {
   const augmenter = new RomanCoachMethodAugmenter(
     fakeOf<PrismaService>(prisma),
     opts.noBudget ? null : fakeOf<CoachAIBudgetService>(budget),
+    grantAllEgress(),
   );
   const run = (caller: { id: string; role: string } = student) => augmenter.augment(caller, BUNDLE, 'hi');
   return { prisma, users, playbooks, augmenter, run };
