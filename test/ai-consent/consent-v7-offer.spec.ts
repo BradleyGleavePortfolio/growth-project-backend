@@ -6,7 +6,9 @@
  * (another person's rows): test/rls/ai-processing-consent-ledger-rls.spec.ts.
  *
  * Table: live grant x action x ?variant= (none: installed builds; safety_exception: the consent
- * stack; crisis_alert is not on main, b#1041).
+ * stack; crisis_alert: the crisis build, CRISIS-APP-COPY). FEATURE_ROMAN_CRISIS_ALERT is on for
+ * every row except the crisis_alert rows marked "switch off", which must answer exactly as
+ * safety_exception does (no response carries the crisis sentence while the switch is off).
  *   allow      GET (no grant) or DELETE (live grant) offers `memory_copy`; POST it.
  *   memory on  a live base grant: GET offers `upgrade` = `memory_copy`; POST it.
  *   memory off a live memory grant: POST the base copy the app shows.
@@ -21,6 +23,7 @@ import { JwtAuthGuard } from '../../src/auth/auth.guard';
 import { PrismaService } from '../../src/prisma.service';
 import { HttpExceptionFilter } from '../../src/filters/http-exception.filter';
 import { AiConsentModule } from '../../src/ai-consent/ai-consent.module';
+import { FEATURE_ROMAN_CRISIS_ALERT_ENV } from '../../src/roman/roman.feature';
 import { FakeLedgerPrisma } from './_support/fake-ledger-prisma';
 
 // The pinned digests (docs/ai-consent-ledger.md; the mobile consent stack pins the same).
@@ -29,9 +32,17 @@ const SHA: Record<string, string> = {
   'client-ai-v5': '8c19fca94c2455094c47b1802bb6693aff47d24c7b6df3b256d0a0e8e90fe8ee',
   'client-ai-v6': '52066998fbccac128c78a68dc19c45c4e067d169c4b3e5aaaa0d7821a7a1ee38',
   'client-ai-v7': '15c1b92f0c68e485d8e2c4d399c00eeb17a16291da8fae636260e085cada0842',
+  'client-ai-v8': 'af4cc4fa55aa72cab8e7c6cdcee881d6ba1f448df048088e47acd5e7d479e0ef',
+  'client-ai-v9': '16074f18ce0e985e35ba7cfb3f12233cd993159585a35759c4580a730ed3c9dd',
 };
-const ENV = ['FEATURE_AI_CONSENT_LEDGER_ENABLED', 'FEATURE_ROMAN_MEMORY'];
+const ENV = [
+  'FEATURE_AI_CONSENT_LEDGER_ENABLED',
+  'FEATURE_ROMAN_MEMORY',
+  FEATURE_ROMAN_CRISIS_ALERT_ENV,
+];
 const ASK = 'safety_exception';
+const CRISIS = 'crisis_alert';
+const CRISIS_OFF = 'crisis_alert (switch off)';
 type Action = 'allow' | 'memory on' | 'memory off';
 type Res = { status: number; body: Record<string, any> };
 const v = (n: string | null): string | null => (n ? `client-ai-${n}` : null);
@@ -69,7 +80,33 @@ const ROWS: [string, Action, string, string | null, string | null][] = [
   ['v7', 'allow', ASK, 'v7', null],
   ['v7', 'memory on', ASK, null, null],
   ['v7', 'memory off', ASK, 'v6', 'v7'],
+  ['none', 'allow', CRISIS, 'v9', null],
+  ['none', 'memory on', CRISIS, null, null],
+  ['none', 'memory off', CRISIS, null, null],
+  ['v4', 'allow', CRISIS, 'v9', null],
+  ['v4', 'memory on', CRISIS, 'v9', null],
+  ['v4', 'memory off', CRISIS, null, null],
+  ['v5', 'allow', CRISIS, 'v9', null],
+  ['v5', 'memory on', CRISIS, null, null],
+  ['v5', 'memory off', CRISIS, 'v8', 'v9'],
+  ['v5', 'memory off', CRISIS, 'v4', 'v9'], // the m#723 build posts the base of the copy on file
+  ['v6', 'allow', CRISIS, 'v9', null],
+  ['v6', 'memory on', CRISIS, 'v9', null],
+  ['v6', 'memory off', CRISIS, null, null],
+  ['v7', 'allow', CRISIS, 'v9', null],
+  ['v7', 'memory on', CRISIS, null, null],
+  ['v7', 'memory off', CRISIS, 'v8', 'v9'],
+  ['v8', 'allow', CRISIS, 'v9', null],
+  ['v8', 'memory on', CRISIS, 'v9', null],
+  ['v8', 'memory off', CRISIS, null, null],
+  ['v9', 'allow', CRISIS, 'v9', null],
+  ['v9', 'memory on', CRISIS, null, null],
+  ['v9', 'memory off', CRISIS, 'v8', 'v9'],
 ];
+// Switch off: the crisis ask answers exactly as the safety_exception ask (v6 / v7, never v8 / v9).
+for (const [live, action, , rec, next] of ROWS.filter((r) => r[2] === ASK)) {
+  ROWS.push([live, action, CRISIS_OFF, rec, next]);
+}
 
 describe('CONSENTV7: the memory-on grant records the text the client was shown', () => {
   const saved = ENV.map((k) => process.env[k]);
@@ -119,10 +156,11 @@ describe('CONSENTV7: the memory-on grant records the text the client was shown',
 
   const title = 'live %s, %s, ?variant=%s: records %s, then offers memory as %s';
   it.each(ROWS)(title, async (live, action, ask, rec, next) => {
+    if (ask === CRISIS_OFF) delete process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV];
     const grant = live === 'none' ? null : v(live);
     if (grant) expect((await post(grant)).status).toBe(200);
     const before = fake.rows.map((r) => ({ ...r }));
-    const q = ask ? `?variant=${ask}` : '';
+    const q = ask ? `?variant=${ask === CRISIS_OFF ? CRISIS : ask}` : '';
     const s = grant && action === 'allow' ? await call('DELETE', `/roman${q}`) : await call('GET', q);
     if (grant && action !== 'allow') expect(s.body.copy.version).toBe(grant); // a grant keeps its text
     const base = action === 'memory on' && s.body.scope === 'base';

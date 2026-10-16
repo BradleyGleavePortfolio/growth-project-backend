@@ -181,8 +181,9 @@ export interface ClientAiConsentStatus {
   scope: ClientAiConsentScope | null;
   /**
    * For a live base-only holder while FEATURE_ROMAN_MEMORY is on: the memory copy
-   * the app asked for (v7 with ?variant=safety_exception, else that grant's own: v5
-   * for v4, v7 for v6). Otherwise null (memory off, no live grant, or memory).
+   * the app asked for (v7 with ?variant=safety_exception, v9 with ?variant=crisis_alert while
+   * FEATURE_ROMAN_CRISIS_ALERT is on, else that grant's own: v5 for v4, v7 for v6). Otherwise
+   * null (memory off, no live grant, or memory).
    */
   upgrade: ClientAiConsentCopy | null;
   /**
@@ -468,7 +469,8 @@ export class AiConsentService implements ClientAiConsentReader {
     let family: ClientAiCopyFamily = coachFree ? 'coach_free' : coached ? 'coached' : 'pre57c';
     if (!coachFree && crisis) family = isRomanCrisisAlertEnabled() ? 'crisis' : 'coached';
     // A new agreement (memory on, Allow) is offered in the copies the app shows (CONSENTV7).
-    const offer: ClientAiCopyFamily = askSafety && !coachFree ? 'coached' : family;
+    const asked = askCrisis && isRomanCrisisAlertEnabled() ? 'crisis' : 'coached';
+    const offer: ClientAiCopyFamily = !coachFree && (askSafety || askCrisis) ? asked : family;
     const copy = scope === 'memory' ? clientAiConsentV5Copy(family) : clientAiConsentCopy(family);
     const isGrant = row?.action === AI_CONSENT_ACTION_GRANT;
     const isWithdraw = row?.action === AI_CONSENT_ACTION_WITHDRAW;

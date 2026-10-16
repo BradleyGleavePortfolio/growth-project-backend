@@ -133,7 +133,9 @@ Accepted grants (`CLIENT_AI_CONSENT_ACCEPTED`; version AND its exact sha256):
   v8 / v9 grant reads its own copies while the switch is on and the v6 / v7 copies (same scope, the grant
   still counts) while it is off, so no response carries the sentence while the switch is off. A plain
   `GET` and `?variant=safety_exception` never offer v8 / v9. v4 to v7 stay accepted with unchanged text,
-  so no one is asked again; a live v6 / v7 grant keeps reading v6 / v7. The P0 twins are
+  so no one is asked again; a live v6 / v7 grant keeps reading v6 / v7. As with `safety_exception`, a
+  new agreement follows the ask: a live v4 / v6 holder asking `crisis_alert` gets `client-ai-v9` as
+  `upgrade` / `memory_copy` while the switch is on (`client-ai-v7` while it is off). The P0 twins are
   `consult-consent-v9` / `v10` (paragraph 4 + box 2 = the v8 / v9 copy). `GET /api/me/feature-flags`
   carries `roman_crisis_alert` (the same switch) for the app's Trust Center and Roman chats lines.
 - Asked once, before a coach (owner W-CONSENT): `POST /api/me/ai-consent/roman` from a client with no
