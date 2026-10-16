@@ -328,6 +328,11 @@ export function isDisputeCycle(state: DunningState | null | undefined): boolean 
 /** B-689-5: what the dispute ledger says was reversed on one plan. */
 type ReversedAmount = { currency: string; amount_cents: number };
 
+/** MOVEBILL (Opus C6): a cancel of a plan a move ended is logged as the move's, not the client's. */
+function cancelCause(p: { moved_away_at: Date | null }): 'moved_plan' | 'client' {
+  return p.moved_away_at ? 'moved_plan' : 'client';
+}
+
 function isDelinquent(p: PurchaseWithDunning): boolean {
   return DELINQUENT_STATUSES.has(p.status) || p.dunning?.status === 'active';
 }
@@ -1514,7 +1519,7 @@ export class ClientBillingService {
           ...(periodEnd ? { current_period_end: periodEnd } : {}),
         },
       });
-      this.logEvent('billing.client_cancel_scheduled', {
+      this.logEvent(`billing.${cancelCause(purchase)}_cancel_scheduled`, {
         purchase_id: purchase.id,
         access_ends_at: periodEnd?.toISOString() ?? null,
       });
@@ -1751,7 +1756,7 @@ export class ClientBillingService {
       }
     });
     if (settled === 'cleared') await this.resolveV1(purchase.id, 'cancel');
-    this.logEvent('billing.client_cancel_paid_meanwhile', {
+    this.logEvent(`billing.${cancelCause(purchase)}_cancel_paid_meanwhile`, {
       purchase_id: purchase.id,
       access_ends_at: periodEnd?.toISOString() ?? null,
     });
@@ -1858,7 +1863,7 @@ export class ClientBillingService {
         await this.fanout.cancelPendingForPurchase(purchase.id, 'subscription_canceled', tx);
       }
     });
-    this.logEvent('billing.client_cancel_in_dunning', {
+    this.logEvent(`billing.${cancelCause(purchase)}_cancel_in_dunning`, {
       purchase_id: purchase.id,
       voided_invoice_count: voidedCount,
       voided_amount_cents: voidedCents,
@@ -1964,6 +1969,55 @@ export class ClientBillingService {
       }
     }
     return { finished, applied, failed };
+  }
+
+  /**
+   * MOVEBILL (owner MOVE-BILLING option 1): a client who moved away from the
+   * coach who sold a subscription (ClientPurchase.moved_away_at, stamped by
+   * the database in the move's own transaction) is not charged by that coach
+   * again. Each such subscription that can still bill goes through the same
+   * cancel the client has: outside dunning, renewal off and access to the end
+   * of the paid period (option A); in dunning, the failed invoices voided and
+   * the subscription ended now, which stops Stripe's retries and every
+   * failed-payment notice (2A). No refund; nothing is sent to anyone. Never
+   * throws: a failed row is tried again on the next run.
+   */
+  async endPlansLeftByMove(): Promise<{ ended: number; failed: number }> {
+    const rows = await this.prisma.clientPurchase.findMany({
+      where: {
+        moved_away_at: { not: null },
+        billing_type: 'recurring',
+        stripe_subscription_id: { not: null },
+        status: { in: LIVE_SUBSCRIPTION_STATUSES },
+        OR: [
+          { cancel_at_period_end: false },
+          { status: { in: [...DELINQUENT_STATUSES] } },
+          { dunning: { is: { status: 'active' } } },
+        ],
+      },
+      select: { id: true, client_user_id: true },
+      orderBy: { moved_away_at: 'asc' },
+      take: 100,
+    });
+    let ended = 0;
+    let failed = 0;
+    for (const row of rows) {
+      try {
+        const res = await this.cancelPlan(row.client_user_id, row.id);
+        ended += 1;
+        this.logEvent('billing.moved_plan_renewal_off', {
+          purchase_id: row.id,
+          outcome: res.outcome,
+          access_ends_at: res.access_ends_at,
+        });
+      } catch (err) {
+        failed += 1;
+        this.logger.warn(
+          `moved plan: renewal off failed purchase=${row.id}: ${dunningErrorCode(err)}`,
+        );
+      }
+    }
+    return { ended, failed };
   }
 
   /**

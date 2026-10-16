@@ -7,6 +7,13 @@ import { dunningErrorCode } from './dunning-v2/dunning-v2.safe-error';
 export const CLIENT_BILLING_RECONCILE_CRON_EXPRESSION = '37 * * * *';
 
 /**
+ * MOVEBILL: every 5 minutes, so a moved client's old plan stops renewing
+ * within minutes of the move (its failed-payment notices stop at the move
+ * itself: the dunning senders skip a stamped purchase).
+ */
+export const MOVED_PLAN_RENEWAL_CRON_EXPRESSION = '*/5 * * * *';
+
+/**
  * S-DUNNING-R2 (owner 2A) — finishes a client's in-dunning cancel whose
  * Stripe cancel did not complete after the invoice was voided (the voided
  * invoice turns the subscription active again, so an unfinished cancel would
@@ -21,6 +28,7 @@ export const CLIENT_BILLING_RECONCILE_CRON_EXPRESSION = '37 * * * *';
 export class ClientBillingReconciler {
   private readonly logger = new Logger(ClientBillingReconciler.name);
   private running = false;
+  private movedRunning = false;
 
   constructor(private readonly billing: ClientBillingService) {}
 
@@ -43,6 +51,26 @@ export class ClientBillingReconciler {
       this.logger.error(`client billing reconcile: fatal error: ${dunningErrorCode(err)}`);
     } finally {
       this.running = false;
+    }
+  }
+
+  /** MOVEBILL (MOVE-BILLING option 1): renewal off on plans left by a move. */
+  @Cron(MOVED_PLAN_RENEWAL_CRON_EXPRESSION, {
+    name: 'client-billing-moved-plans',
+    timeZone: 'UTC',
+  })
+  async handleMovedPlans(): Promise<void> {
+    if (this.movedRunning) return;
+    this.movedRunning = true;
+    try {
+      const out = await this.billing.endPlansLeftByMove();
+      if (out.ended + out.failed > 0) {
+        this.logger.log(JSON.stringify({ event: 'client_billing.moved_plans_completed', ...out }));
+      }
+    } catch (err: unknown) {
+      this.logger.error(`moved plans: fatal error: ${dunningErrorCode(err)}`);
+    } finally {
+      this.movedRunning = false;
     }
   }
 }

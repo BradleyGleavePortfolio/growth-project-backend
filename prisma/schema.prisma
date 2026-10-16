@@ -4415,6 +4415,15 @@ model ClientPurchase {
   // end really charges a card; access is decided separately (a started trial
   // keeps access after the card is removed).
   card_on_file     Boolean?
+  // MOVEBILL (MOVE-BILLING / MOVE-LTV option 1) — when the client moved away
+  // from the coach who sold this purchase. Stamped only by the database
+  // triggers trg_user_coach_move_marks_plans and trg_delegation_end_marks_plans,
+  // in the move's own transaction (migration 20270502003200). NULL = never
+  // moved away. A stamped live subscription stops renewing
+  // (ClientBillingService.endPlansLeftByMove) and cannot be kept, its
+  // failed-payment notices stop, and ltv-metrics drops it from active
+  // clients and MRR from this date.
+  moved_away_at    DateTime?
 
   @@index([client_user_id, status])
   @@index([coach_user_id, status])
@@ -4426,6 +4435,7 @@ model ClientPurchase {
   @@index([source])
   // B-TRIALS-3 — the trial-notice reconciler (started trials ending soon).
   @@index([status, trial_ends_at])
+  @@index([moved_away_at])
 }
 
 // B-TRIALS (OR-113-2) — one free trial per client per coach (anti-abuse).
