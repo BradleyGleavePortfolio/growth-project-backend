@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS realtime.messages (
     "inserted_at" timestamp NOT NULL DEFAULT now()
 );
 ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE realtime.messages FORCE ROW LEVEL SECURITY;
 CREATE OR REPLACE FUNCTION realtime.topic()
     RETURNS text
     LANGUAGE sql
