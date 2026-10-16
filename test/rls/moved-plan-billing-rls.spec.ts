@@ -157,18 +157,24 @@ if (!DB_URL && process.env.CI === 'true') {
     expect((await stamps()).pAo).not.toBeNull();
   });
 
-  it('runs as the caller with a pinned search_path; an API party reads only its own rows and cannot clear a stamp', async () => {
-    const fns = await prisma.$queryRaw<{ prosecdef: boolean; proconfig: string[] | null }[]>`
-      SELECT p."prosecdef", p."proconfig" FROM pg_proc p
-       WHERE p."proname" IN ('user_coach_move_marks_plans', 'delegation_end_marks_plans', 'client_coach_chain')`;
-    expect(fns).toHaveLength(3);
-    for (const fn of fns) {
-      expect(fn.prosecdef).toBe(false);
-      expect((fn.proconfig ?? []).some((c) => c.startsWith('search_path='))).toBe(true);
-    }
-    const [grants] = await prisma.$queryRaw<{ sel: boolean; upd: boolean }[]>`
+  it('pins search_path; only the delegation trigger (it reads "User") is DEFINER; an API party runs no trigger, ends no delegation, reads only its own rows and cannot clear a stamp', async () => {
+    const fns = await prisma.$queryRaw<{ fn: string; definer: boolean; bypass: boolean; api: boolean; proconfig: string[] | null }[]>`
+      SELECT p."proname"::text AS fn, p."prosecdef" AS definer, (r."rolsuper" OR r."rolbypassrls") AS bypass, p."proconfig",
+             has_function_privilege('anon', p.oid, 'EXECUTE') OR has_function_privilege('authenticated', p.oid, 'EXECUTE') AS api
+        FROM pg_proc p JOIN pg_roles r ON r.oid = p."proowner"
+       WHERE p."proname" IN ('user_coach_move_marks_plans', 'delegation_end_marks_plans', 'client_coach_chain') ORDER BY 1`;
+    // RLSIDENT (user-identity-rls): a function that reads "User" is DEFINER under a row-security-bypassing owner.
+    expect(fns.map(({ fn, definer, api }) => ({ fn, definer, api }))).toEqual([
+      { fn: 'client_coach_chain', definer: false, api: true },
+      { fn: 'delegation_end_marks_plans', definer: true, api: false },
+      { fn: 'user_coach_move_marks_plans', definer: false, api: false },
+    ]);
+    expect(fns[1].bypass).toBe(true);
+    for (const fn of fns) expect((fn.proconfig ?? []).some((c) => c.startsWith('search_path='))).toBe(true);
+    const [grants] = await prisma.$queryRaw<{ sel: boolean; upd: boolean; sca: boolean }[]>`
       SELECT has_table_privilege('authenticated', '"ClientPurchase"', 'SELECT') AS sel,
-             has_table_privilege('authenticated', '"ClientPurchase"', 'UPDATE') AS upd`;
+             has_table_privilege('authenticated', '"ClientPurchase"', 'UPDATE') AS upd,
+             has_table_privilege('authenticated', '"SubCoachAssignment"', 'UPDATE') AS sca`;
     // No grant: refused (42501). A grant: the pre-existing client_purchase_select lets each party
     // read only its own purchases (moved_away_at included), and no row rule lets it clear a stamp.
     const denied = 'SQLSTATE 42501';
@@ -192,6 +198,18 @@ if (!DB_URL && process.env.CI === 'true') {
       expect(cleared).toBe(grants.upd ? 0 : denied);
     }
     expect((await stamps()).pA1).not.toBeNull();
+    // Neither the head nor the sub-coach can end an open delegation over the API, so neither fires the DEFINER
+    // trigger (SubCoachAssignment refuses anon and authenticated every row); the server's end (control) stamps S1.
+    const d = await team('h');
+    await delegate(d.h, d.s1, d.k);
+    for (const who of [d.h, d.s1]) {
+      const ended = await asApi(who, 'coach', (tx) =>
+        tx.$executeRaw`UPDATE "SubCoachAssignment" SET "unassigned_at" = now() WHERE "client_id" = ${d.k}`);
+      expect(ended).toBe(grants.sca ? 0 : denied);
+    }
+    expect(await left(d.k)).toEqual([]);
+    await undelegate(d.s1, d.k);
+    expect(await left(d.k)).toEqual([d.s1]);
   });
 
   it('delegations: a start keeps every plan; a change, an end or a delete stamps the sub-coach left; the head keeps billing', async () => {
