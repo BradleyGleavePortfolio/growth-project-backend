@@ -5,7 +5,9 @@
  *
  * ROWS is every P0 screen the app shows today: with a coach and with no coach
  * (W-CONSENT: the Roman choice under "Before you join a coach"), memory off and
- * on. Each row builds the shown screen from its parts in display order
+ * on; with no coach also while FEATURE_ROMAN_CRISIS_ALERT is on (the crisis
+ * twins, paragraph 4 = client-ai-v8 / v9; the coached crisis screens are rows
+ * of consent-crisis-sentence.spec.ts). Each row builds the shown screen from its parts in display order
  * (paragraph 4 and box 2 from the AI consent ledger, the heading and lead word
  * for word) and proves: it hashes to the version's pin (the app pins the same
  * value), the registry holds exactly that text, the verifier accepts the record
@@ -18,6 +20,8 @@ import {
   CLIENT_AI_CONSENT_BOX_LABEL,
   CLIENT_AI_CONSENT_V6_PARAGRAPH,
   CLIENT_AI_CONSENT_V7_PARAGRAPH,
+  CLIENT_AI_CONSENT_V8_PARAGRAPH,
+  CLIENT_AI_CONSENT_V9_PARAGRAPH,
 } from '../../src/ai-consent/ai-consent.constants';
 import {
   CONSULT_CONSENT_COPIES,
@@ -93,6 +97,20 @@ const ROWS: Array<[string, string, string[], string, string]> = [
     '4a1e19730f3fab3b8a6a8119f5425cd3c0f6ed2f502d229d25dbb7fe5df35771',
     'client-ai-v7',
   ],
+  [
+    'no coach, memory off, crisis switch on',
+    'consult-consent-v10-coach-free',
+    noCoach(CLIENT_AI_CONSENT_V8_PARAGRAPH),
+    'b79c1f039e2832560593390b7b66a91f61b2e7be5eb55ef3509ecd7a100d7c4c',
+    'client-ai-v8',
+  ],
+  [
+    'no coach, memory on, crisis switch on',
+    'consult-consent-v11-coach-free',
+    noCoach(CLIENT_AI_CONSENT_V9_PARAGRAPH),
+    '3528b10d50d8e7bb67a3065b86ba2b5cf33f3891b8194be413c78f2519e3257f',
+    'client-ai-v9',
+  ],
 ];
 
 // Every older version, as it was (#CRISIS-OLD-CONSENT op 1: nobody is asked again).
@@ -127,7 +145,12 @@ describe('FIX684: each P0 record rebuilds the screen shown (coached, no coach, e
     const withRoman = Object.entries(CONSULT_CONSENT_COPIES)
       .filter(([, e]) => e.copy.romanIntro !== undefined)
       .map(([v]) => v);
-    expect(withRoman.sort()).toEqual(['consult-consent-v8-coach-free', 'consult-consent-v9-coach-free']);
+    expect(withRoman.sort()).toEqual([
+      'consult-consent-v10-coach-free',
+      'consult-consent-v11-coach-free',
+      'consult-consent-v8-coach-free',
+      'consult-consent-v9-coach-free',
+    ]);
     for (const v of withRoman) expect(ROWS.map(([, rv]) => rv)).toContain(v);
   });
 

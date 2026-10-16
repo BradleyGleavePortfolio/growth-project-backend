@@ -4,9 +4,11 @@
  * it, exactly while FEATURE_ROMAN_CRISIS_ALERT is on and never while it is off.
  *
  * LIST is every place this repo serves (search-backed, see the CRISISAPP PR):
- *   - the consultation box 2 paragraph (P0 v7 / v8 -> v9 / v10): the app shows
- *     the P0 version whose paragraph 4 + box 2 equal the AI copy the server
- *     offers, so the row reads that copy and finds its P0 twin;
+ *   - the consultation box 2 paragraph (P0 v7 / v8 -> v9 / v10; with no coach,
+ *     W-CONSENT, v8-coach-free / v9-coach-free -> v10-coach-free / v11-coach-free):
+ *     the app shows the P0 version of its screen family (coached, or no coach with
+ *     the Roman choice) whose paragraph 4 + box 2 equal the AI copy the server
+ *     offers, so the row reads that copy and finds its P0 twin in that family;
  *   - the AI agreement, GET /me/ai-consent?variant=crisis_alert (client-ai-v6 /
  *     v7 -> v8 / v9), with no grant and with a live new grant;
  *   - the yes/no the app's Trust Center and Roman chats read
@@ -65,6 +67,8 @@ const OLD_P0: Record<string, string> = {
   'consult-consent-v7': '7711079209acecedfb50c31787787124af843f076154e9bfbd1e33550e861e09',
   'consult-consent-v8': 'b98e160e884aecdca059b90f7a88803ba84eeac79b692e83eba9f734f93274b2',
   'consult-consent-v7-coach-free': '82dddf635ee262e30e8a69e7a4a39be3e1255470d70b12e42a757f7578ee95a3',
+  'consult-consent-v8-coach-free': '5369ee9c57412dd2233850a7cae2043a32645431ee3b3484a14c19b8c503c633',
+  'consult-consent-v9-coach-free': '4a1e19730f3fab3b8a6a8119f5425cd3c0f6ed2f502d229d25dbb7fe5df35771',
 };
 const OLD_AI: Record<string, string> = {
   'client-ai-v4': 'fbf821401d4313c6a301a6cc08d3870bb117c293fbb970e321bf87f49abe34f4',
@@ -78,6 +82,8 @@ const OLD_AI: Record<string, string> = {
 const NEW_P0: Record<string, string> = {
   'consult-consent-v9': '1daf2cde65d223686b4bd60f786b85866f93714176dcc8781ff94b4c9f0e30bf',
   'consult-consent-v10': '5f36acf2704699f1e7faa68d7c65b8b8ed1f1988d197774a61914b97f22ff512',
+  'consult-consent-v10-coach-free': 'b79c1f039e2832560593390b7b66a91f61b2e7be5eb55ef3509ecd7a100d7c4c',
+  'consult-consent-v11-coach-free': '3528b10d50d8e7bb67a3065b86ba2b5cf33f3891b8194be413c78f2519e3257f',
 };
 const NEW_AI: Record<string, string> = {
   'client-ai-v8': 'af4cc4fa55aa72cab8e7c6cdcee881d6ba1f448df048088e47acd5e7d479e0ef',
@@ -92,10 +98,13 @@ const AI_COPIES = new Map<string, ClientAiConsentCopy>(
 );
 const copySha = (c: ClientAiConsentCopy): string => sha(`${c.paragraph.text}\n\n${c.box_label.text}`);
 
-/** The P0 version whose paragraph 4 + box 2 is exactly this AI copy (the app shows it next to the copy). */
-function p0Twin(copy: ClientAiConsentCopy): string {
+/** The P0 version of this screen family whose paragraph 4 + box 2 is exactly this AI copy (shown next to it). */
+function p0Twin(copy: ClientAiConsentCopy, noCoach: boolean): string {
   const twins = Object.entries(CONSULT_CONSENT_COPIES).filter(
-    ([, e]) => e.copy.aiParagraph !== undefined && sha(consultConsentAiSliceText(e.copy)) === copy.sha256,
+    ([, e]) =>
+      e.copy.aiParagraph !== undefined &&
+      (e.copy.romanIntro !== undefined) === noCoach &&
+      sha(consultConsentAiSliceText(e.copy)) === copy.sha256,
   );
   expect(twins).toHaveLength(1);
   return twins[0][0];
@@ -125,8 +134,8 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
   let fake: FakeLedgerPrisma;
   let controller: AiConsentController;
   let service: AiConsentService;
-  const req = (id: string): AuthedRequest => ({
-    user: { id, role: 'student', coach_id: 'coach_1' } as AuthedRequest['user'],
+  const req = (id: string, coach_id: string | null = 'coach_1'): AuthedRequest => ({
+    user: { id, role: 'student', coach_id } as AuthedRequest['user'],
   });
 
   beforeEach(async () => {
@@ -160,19 +169,32 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
   });
 
   const asked = async () => controller.get(req('u_new'), 'crisis_alert');
+  const askedNoCoach = async () => controller.get(req('u_no_coach', null), 'crisis_alert');
   const liveGrant = async (version: string) => {
     await service.grant('u_live', { version, copy_sha256: CLIENT_AI_CONSENT_ACCEPTED[version].copy_sha256 });
     return controller.get(req('u_live'), 'crisis_alert');
   };
   const ai = (c: ClientAiConsentCopy | null) => ({ version: c?.version ?? 'none', text: c?.paragraph.text ?? null });
-  const p0 = (c: ClientAiConsentCopy | null) => {
-    const version = p0Twin(c as ClientAiConsentCopy);
+  const p0 = (c: ClientAiConsentCopy | null, noCoach = false) => {
+    const version = p0Twin(c as ClientAiConsentCopy, noCoach);
     return { version, text: consultConsentScreenText(CONSULT_CONSENT_COPIES[version].copy) };
   };
   type Read = () => Promise<{ version: string; text: string | null }>;
   const LIST: Array<[string, Read, string, string]> = [
     ['consultation box 2, base', async () => p0((await asked()).copy), 'consult-consent-v7', 'consult-consent-v9'],
     ['consultation box 2, memory', async () => p0((await asked()).memory_copy), 'consult-consent-v8', 'consult-consent-v10'],
+    [
+      'consultation box 2, no coach, base',
+      async () => p0((await askedNoCoach()).copy, true),
+      'consult-consent-v8-coach-free',
+      'consult-consent-v10-coach-free',
+    ],
+    [
+      'consultation box 2, no coach, memory',
+      async () => p0((await askedNoCoach()).memory_copy, true),
+      'consult-consent-v9-coach-free',
+      'consult-consent-v11-coach-free',
+    ],
     ['AI agreement, base', async () => ai((await asked()).copy), 'client-ai-v6', 'client-ai-v8'],
     ['AI agreement, memory', async () => ai((await asked()).memory_copy), 'client-ai-v7', 'client-ai-v9'],
     ['AI agreement, live client-ai-v8 grant', async () => ai((await liveGrant('client-ai-v8')).copy), 'client-ai-v6', 'client-ai-v8'],
@@ -210,6 +232,8 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
     const twins: Array<[string, string]> = [
       ['consult-consent-v7', 'consult-consent-v9'],
       ['consult-consent-v8', 'consult-consent-v10'],
+      ['consult-consent-v8-coach-free', 'consult-consent-v10-coach-free'],
+      ['consult-consent-v9-coach-free', 'consult-consent-v11-coach-free'],
     ];
     for (const [off, on] of twins) {
       const text = consultConsentScreenText(CONSULT_CONSENT_COPIES[on].copy);
@@ -235,7 +259,14 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
     const rowVersions = LIST.flatMap(([, , off, on]) => [off, on]).filter((v) => !v.startsWith('roman_'));
     expect(texts.filter(([, t]) => t.includes(EXCEPTION)).map(([v]) => v).sort()).toEqual([...new Set(rowVersions)].sort());
     expect(texts.filter(([, t]) => t.includes(TOLD)).map(([v]) => v).sort()).toEqual(
-      ['client-ai-v8', 'client-ai-v9', 'consult-consent-v10', 'consult-consent-v9'],
+      [
+        'client-ai-v8',
+        'client-ai-v9',
+        'consult-consent-v10',
+        'consult-consent-v10-coach-free',
+        'consult-consent-v11-coach-free',
+        'consult-consent-v9',
+      ],
     );
     // In source, outside tests: only the two consent modules and the public pages state it.
     const root = join(__dirname, '..', '..', 'src');
