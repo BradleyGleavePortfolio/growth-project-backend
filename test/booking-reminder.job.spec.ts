@@ -449,7 +449,7 @@ describe('SessionReminderJob — schedule generation fence (Sol B-647-1)', () =>
     lowerOffsetMinutes: 60 * 24 - 15,
     upperOffsetMinutes: 60 * 24 + 15,
     kind: NotificationKind.BOOKING_REMINDER_24H,
-    emit: (recipient: string, otherName: string, s: FakeSession) =>
+    emit: (recipient: string, otherName: string, s: Pick<FakeSession, 'id' | 'start_at'>) =>
       emitter.emitReminder24h({
         recipientUserId: recipient,
         otherPartyDisplayName: otherName,
@@ -461,7 +461,7 @@ describe('SessionReminderJob — schedule generation fence (Sol B-647-1)', () =>
     lowerOffsetMinutes: 55,
     upperOffsetMinutes: 65,
     kind: NotificationKind.BOOKING_REMINDER_1H,
-    emit: (recipient: string, otherName: string, s: FakeSession) =>
+    emit: (recipient: string, otherName: string, s: Pick<FakeSession, 'id' | 'start_at'>) =>
       emitter.emitReminder1h({
         recipientUserId: recipient,
         otherPartyDisplayName: otherName,

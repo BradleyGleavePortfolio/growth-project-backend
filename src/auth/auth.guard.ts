@@ -12,6 +12,11 @@ import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
 import { ALLOW_DELETION_SCHEDULED_KEY } from '../common/decorators/allow-deletion-scheduled.decorator';
 import { PtmService } from '../ptm/ptm.service';
 import {
+  AGE_CONFIRMATION_REQUIRED,
+  ALLOW_BEFORE_AGE_CONFIRMED_KEY,
+  confirmsMinClientAge,
+} from './client-age';
+import {
   ACCOUNT_DELETED_BODY,
   findDeletionReceipt,
   isReceiptLive,
@@ -148,6 +153,26 @@ export class JwtAuthGuard implements CanActivate {
         throw new ForbiddenException(
           'Account is scheduled for deletion; cancel the deletion to regain access',
         );
+      }
+    }
+
+    // AGEGATE16 (owner #C8-UNDER18-B): a client enters only after confirming
+    // 16 or older, read from their own profile's date of birth (client-age.ts).
+    const beforeAgeOk = this.reflector.getAllAndOverride<boolean>(
+      ALLOW_BEFORE_AGE_CONFIRMED_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (user.role === 'student' && !beforeAgeOk) {
+      const profile = await this.prisma.userProfile.findUnique({
+        where: { user_id: user.id },
+        select: { date_of_birth: true },
+      });
+      if (!confirmsMinClientAge(profile?.date_of_birth, new Date())) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          code: AGE_CONFIRMATION_REQUIRED,
+          message: 'Age confirmation required',
+        });
       }
     }
 

@@ -753,4 +753,45 @@ describe('S-MWB-2 fix round: actor scope, deleted clients, assignee paging', () 
     );
     expect(second.where.OR).toHaveLength(2);
   });
+
+  it("HIST-2 (owner 4): a client who moved to another coach leaves the head coach's assignee list and assigned count", async () => {
+    const { prisma } = makePrisma();
+    const { svc } = makeService(prisma);
+    await svc.listAssignees('coach-1', 'master-1');
+    const args = fake<{
+      where: { coach_id: string; plans: { some: { assignments: { some: unknown } } } };
+      select: { plans: { select: { assignments: { where: unknown } } } };
+    }>(prisma.workoutProgram.findMany.mock.calls[0][0]);
+    // The client's coach now must be the head coach or a sub-coach on their team.
+    const scope = {
+      client: {
+        deleted_at: null,
+        OR: [
+          { coach_id: 'coach-1' },
+          {
+            coach: {
+              sub_coach_assignments_as_sub: { some: { head_coach_id: 'coach-1', archived_at: null } },
+            },
+          },
+        ],
+      },
+    };
+    expect(args.where.coach_id).toBe('coach-1');
+    expect(args.where.plans.some.assignments.some).toEqual(scope);
+    expect(args.select.plans.select.assignments.where).toEqual(scope);
+
+    prisma.workoutProgram.findMany.mockResolvedValueOnce([{ ...MASTER }]);
+    await svc.listPrograms('coach-1', {});
+    const sqlCall = prisma.$queryRaw.mock.calls.find((c) =>
+      fake<string[]>(c[0]).join('?').includes('cloned_from_id'),
+    );
+    const fragments = (sqlCall ?? [])
+      .slice(1)
+      .map((v) => fake<{ strings?: string[]; values?: unknown[] }>(v));
+    const tenant = fragments.find((f) => f.strings?.join('?').includes('TeamSubCoachAssignment'));
+    expect(tenant?.strings?.join('?')).toMatch(
+      /u\."coach_id" = \?.*"TeamSubCoachAssignment" t.*t\."sub_coach_id" = u\."coach_id"/s,
+    );
+    expect(tenant?.values).toEqual(['coach-1', 'coach-1']);
+  });
 });

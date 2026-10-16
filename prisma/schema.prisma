@@ -219,6 +219,7 @@ model User {
   notification_prefs             NotificationPreferences?
   preferences                    UserPreferences?
   habits                         Habit[]
+  assigned_habits                Habit[]                  @relation("HabitAssignedByCoach")
   lesson_completions             LessonCompletion[]
   check_ins                      CheckIn[]
   water_logs                     WaterLog[]
@@ -558,6 +559,7 @@ model User {
   roman_client_notes     RomanClientNote[]    @relation("RomanClientNoteClient")
   roman_client_summaries RomanClientSummary[] @relation("RomanClientSummaryClient")
   roman_memory_state     RomanMemoryState?    @relation("RomanMemoryStateClient")
+  roman_usage_daily      RomanUsageDaily[]    @relation("RomanUsageDailyClient")
 
   // R2a — AI processing consent ledger (box 2 of the onboarding consent
   // screen). Append-only grant / withdraw history; see AiProcessingConsentEvent.
@@ -624,6 +626,9 @@ model CoachProfile {
   booking_buffer_after_min   Int                 @default(0)
   // NULL = no daily cap.
   booking_daily_max          Int?
+  // C4-NOTICE: how many hours before the start a client's own move or cancel
+  // locks (0 = until the start). Range 0 to 168, enforced by the API.
+  booking_cancel_notice_hours Int                @default(24)
   created_by_owner_id        String?
   created_by_owner           User?               @relation("CoachProfileCreatedBy", fields: [created_by_owner_id], references: [id])
   created_at                 DateTime            @default(now())
@@ -1231,28 +1236,54 @@ model NotificationPreferences {
   nudge_inactive_inapp             Boolean @default(true)
 }
 
+// HB1: how a habit is planned. days: on schedule_days; times_per_week: that
+// many days a week, any days.
+enum HabitScheduleKind {
+  daily
+  days
+  times_per_week
+}
+
 model Habit {
-  id           String     @id @default(uuid())
-  user_id      String
-  user         User       @relation(fields: [user_id], references: [id])
-  name         String
-  category     String     @default("custom")
-  target_value Float?
-  unit         String?
-  logs         HabitLog[]
+  id                   String            @id @default(uuid())
+  user_id              String
+  user                 User              @relation(fields: [user_id], references: [id])
+  name                 String
+  category             String            @default("custom")
+  target_value         Float?
+  unit                 String?
+  // HB1: the coach who set the habit (null for the client's own) and their note.
+  assigned_by_coach_id String?
+  assigned_by_coach    User?             @relation("HabitAssignedByCoach", fields: [assigned_by_coach_id], references: [id], onDelete: SetNull)
+  coach_note           String?           @db.VarChar(500)
+  schedule_kind        HabitScheduleKind @default(daily)
+  // 0 = Sunday ... 6 = Saturday.
+  schedule_days        Int[]             @default([])
+  times_per_week       Int?
+  reminder_enabled     Boolean           @default(false)
+  // Local time, "HH:mm".
+  reminder_time        String?
+  starts_on            DateTime?         @db.Date
+  sort_order           Int               @default(0)
+  // Removing a habit archives it; its logs stay in the client's history.
+  archived_at          DateTime?
+  logs                 HabitLog[]
 }
 
 model HabitLog {
-  id        String   @id @default(uuid())
-  habit_id  String
-  habit     Habit    @relation(fields: [habit_id], references: [id])
-  date      DateTime @db.Date
-  value     Float?
-  completed Boolean  @default(false)
-  logged_at DateTime @default(now())
+  id            String   @id @default(uuid())
+  habit_id      String
+  habit         Habit    @relation(fields: [habit_id], references: [id])
+  date          DateTime @db.Date
+  value         Float?
+  completed     Boolean  @default(false)
+  logged_at     DateTime @default(now())
+  // HB1: the app's id for an offline tick, so a resend does not log twice.
+  client_log_id String?  @db.Uuid
 
   // Hot path: habit completion queries filter by (habit_id, date).
   @@index([habit_id, date])
+  @@unique([habit_id, client_log_id])
 }
 
 model Lesson {
@@ -1412,12 +1443,12 @@ model CoachMessage {
   // Apple 1.2 safety — reverse relation for MessageReport.
   reports            MessageReport[] @relation("MessageReportTarget")
 
-  // Stream 2 — AI execution capabilities. Set by `CoachMessageMaterializer`
-  // when a `draft.coach_message` (or merged `draft.client_message`) is
-  // approved. NULL for human-written messages. `@unique` is the schema-
-  // level idempotency guard — two concurrent approve calls cannot
-  // produce two CoachMessage rows; the second INSERT trips P2002 and
-  // the materialiser falls through to its "already_materialised" branch.
+  // ROMANMARK — the approved Roman draft (`draft.coach_message` or
+  // `draft.coach_wearable_message`) this message began as, written only through
+  // sendAsCoach's internal `aiDraftId` option by those two materialisers. Both
+  // thread routes return it; the phones show the Roman mark when it is set.
+  // NULL for every other message. No foreign key, so the mark outlives the
+  // draft. `@unique`: one message per draft (a second insert trips P2002).
   ai_draft_id String? @unique
   // C05 item 6 (B-609-3) — set only by the coach welcome scheduler: the id of
   // the CoachWelcomeMessageJob that produced this row. `@unique` is the
@@ -3650,6 +3681,13 @@ enum CalendarProvider {
   // we add them when we ship the adapter.
 }
 
+// C4MOVED: which side made a session's most recent move. The owner moving a
+// session on the coach's behalf records `coach`.
+enum SessionMovedBy {
+  coach
+  client
+}
+
 enum SessionParticipantRole {
   coach
   client
@@ -3812,6 +3850,12 @@ model CoachingSession {
   // answer by (set on request and when a move asks again). At or after it
   // the request is closed as `expired` and the slot is free again.
   request_expires_at       DateTime?
+  // C4MOVED: the start before the most recent move, who made that move and
+  // when. Null until the session is first moved; set only by
+  // rescheduleSession (never by booking, cancel or no-show).
+  moved_from_start_at      DateTime?
+  moved_by_role            SessionMovedBy?
+  last_moved_at            DateTime?
   created_at               DateTime         @default(now())
   updated_at               DateTime         @default(now()) @updatedAt
 
@@ -3999,6 +4043,7 @@ model CoachPackage {
   // behaves exactly as today (paywall-only, zero content rows).
   is_sellable Boolean               @default(false)
   contents    CoachPackageContent[]
+  community_spaces CommunityCohortPackage[]
 
   // PR-6 — draft/publish lifecycle. null = DRAFT (not purchasable); a
   // non-null timestamp = PUBLISHED (purchasable, value is the most
@@ -6941,6 +6986,14 @@ enum CommunityPostScope {
   cohort
 }
 
+/// C6-BVIS: who a space is for. app.community_can_access (20270502002400) is the rule.
+enum CommunitySpaceVisibility {
+  public
+  clients
+  package
+  members
+}
+
 enum CommunityPostType {
   text
   lesson
@@ -7142,6 +7195,7 @@ model CommunityCohort {
   created_at   DateTime              @default(now()) @db.Timestamptz(6)
   updated_at   DateTime              @updatedAt @db.Timestamptz(6)
   archived_at  DateTime?             @db.Timestamptz(6)
+  visibility   CommunitySpaceVisibility @default(members)
 
   workspace   CommunityWorkspace    @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
   memberships CommunityMembership[]
@@ -7149,6 +7203,7 @@ model CommunityCohort {
   events      CommunityEvent[]
   challenges  CommunityChallenge[]
   voice_notes CommunityVoiceNote[]
+  packages    CommunityCohortPackage[]
 
   @@unique([workspace_id, name])
   // Cohort list ordered for a workspace (coach + client surfaces).
@@ -7156,6 +7211,18 @@ model CommunityCohort {
   // Archived-cohort filtering within a workspace.
   @@index([workspace_id, archived_at])
   @@map("community_cohorts")
+}
+
+model CommunityCohortPackage {
+  cohort_id  String   @db.Uuid
+  package_id String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  cohort  CommunityCohort @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+  package CoachPackage    @relation(fields: [package_id], references: [id], onDelete: Cascade)
+
+  @@id([cohort_id, package_id])
+  @@map("community_cohort_packages")
 }
 
 model CommunityMembership {
@@ -8849,4 +8916,19 @@ model RomanMemoryState {
   summaries_through  DateTime? @db.Date
   last_run_at        DateTime?
   last_outcome       String?
+}
+
+// ROMANCOUNT: a client's Roman use on one local day (100 messages, 3 files,
+// 5 changes). Written only by src/roman/roman-usage.ts; RLS: own rows read.
+model RomanUsageDaily {
+  client_id  String
+  client     User     @relation("RomanUsageDailyClient", fields: [client_id], references: [id], onDelete: Cascade)
+  day        DateTime @db.Date
+  messages   Int      @default(0)
+  files      Int      @default(0)
+  changes    Int      @default(0)
+  updated_at DateTime @default(now())
+
+  @@id([client_id, day])
+  @@map("roman_usage_daily")
 }

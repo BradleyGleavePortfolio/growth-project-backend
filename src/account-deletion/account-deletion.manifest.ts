@@ -151,6 +151,8 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CheckIn', field: 'coach_id', action: detach('coach_id') },
   { model: 'HabitLog', field: 'habit.user_id', action: del },
   { model: 'Habit', field: 'user_id', action: del },
+  // HB1: habits a deleted coach set stay with their client, as the client's own.
+  { model: 'Habit', field: 'assigned_by_coach_id', action: detach('assigned_by_coach_id') },
   { model: 'LessonCompletion', field: 'user_id', action: del },
   { model: 'SavedRecipe', field: 'user_id', action: del },
   { model: 'ListItem', field: 'user_id', action: del },
@@ -246,6 +248,7 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'RomanClientNote', field: 'client_id', action: del },
   { model: 'RomanClientSummary', field: 'client_id', action: del },
   { model: 'RomanMemoryState', field: 'client_id', action: del },
+  { model: 'RomanUsageDaily', field: 'client_id', action: del },
   { model: 'RomanMessage', field: 'user_id', action: del },
   { model: 'RomanSession', field: 'user_id', action: del },
   { model: 'UserAIQuota', field: 'user_id', action: del },

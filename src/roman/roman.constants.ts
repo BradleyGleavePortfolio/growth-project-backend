@@ -2,9 +2,9 @@
  * Roman Phase 1 budgets and limits (brief §3).
  */
 
-/** Per-user user-turn caps per rolling 24h, by tier (brief §3). */
-export const ROMAN_RATE_LIMIT_FREE_PER_DAY = 50;
-export const ROMAN_RATE_LIMIT_PRO_PER_DAY = 500;
+/** ROMANCOUNT (owner): each client's Roman limits per local day (roman-usage.ts). */
+export const ROMAN_DAILY_LIMITS = { messages: 100, files: 3, changes: 5 } as const;
+export type RomanUsageKind = keyof typeof ROMAN_DAILY_LIMITS;
 
 /** Rolling rate-limit window. */
 export const ROMAN_RATE_LIMIT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -171,10 +171,23 @@ export function romanAudienceOf(role: string | null | undefined): RomanAudience 
 /** The working next step that closes every coach-audience failure message. */
 const ROMAN_COACH_NEXT_STEP = 'Your clients, messages and the rest of the app work as usual.';
 
-/** 429: the caller used their rolling 24 h Roman turns. */
-export function romanRateLimitMessage(retryAfterSeconds: number, role: string = 'student'): string {
+/** When a daily Roman limit resets, in plain words. */
+function romanResetWhen(retryAfterSeconds: number): string {
   const hours = Math.max(1, Math.round(retryAfterSeconds / 3600));
-  const when = retryAfterSeconds < 3600 ? 'within the hour' : `in about ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+  return retryAfterSeconds < 3600 ? 'within the hour' : `in about ${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+}
+
+/** 429 for the files and changes limits: C3-S-37 / C3-S-38 (ROMANCAP-W, approved). */
+export function romanDailyLimitMessage(kind: 'files' | 'changes', retryAfterSeconds: number): string {
+  const when = romanResetWhen(retryAfterSeconds);
+  return kind === 'files'
+    ? `You have sent Roman today's 3 files. Roman can take another file ${when}. You can keep chatting with Roman, and your coach is in Messages any time.`
+    : `Roman has made today's 5 changes for you. He can make another ${when}. You can still log and edit everything yourself, and your coach is in Messages any time.`;
+}
+
+/** 429: the client used today's Roman messages. */
+export function romanRateLimitMessage(retryAfterSeconds: number, role: string = 'student'): string {
+  const when = romanResetWhen(retryAfterSeconds);
   const next =
     romanAudienceOf(role) === 'client'
       ? 'Your coach is in Messages any time, and your plan and logs work as usual.'

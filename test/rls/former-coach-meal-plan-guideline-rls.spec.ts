@@ -123,7 +123,10 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(await seen('C')).toEqual({ plans: ['pC'], templates: ['tC'], slots: ['sC'], guidelines: ['gCZ'] });
     expect(await seen('S')).toEqual({ plans: ['pS'], templates: ['tS'], slots: ['sS'], guidelines: ['gST'] });
     expect(await seen('B')).toEqual({ plans: [], templates: [], slots: [], guidelines: [] });
-    expect(await seen('X')).toEqual({ plans: [], templates: [], slots: [], guidelines: ['gAX'] });
+    // A client reads the plans they hold, their slots and templates (20270502000700).
+    expect(await seen('X')).toEqual({
+      plans: ['pFrozen', 'pShared'], templates: ['tFrozen', 'tShared'], slots: ['sFrozen', 'sShared'], guidelines: ['gAX'],
+    });
     expect(await writes('A', 'UPDATE', FENCED)).toEqual(all(FENCED, 1));
   });
 
@@ -171,7 +174,10 @@ if (!DB_URL && process.env.CI === 'true') {
     });
 
     it('the client keeps every guideline and meal-plan assignment they had', async () => {
-      expect(await seen('X')).toEqual({ plans: [], templates: [], slots: [], guidelines: ['gAX', 'gBX'] });
+      expect(await seen('X')).toEqual({
+        plans: ['pB', 'pFrozen', 'pShared'], templates: ['tB', 'tFrozen', 'tShared'], slots: ['sB', 'sFrozen', 'sShared'],
+        guidelines: ['gAX', 'gBX'],
+      });
       const holds = await asUser('X', (tx) => ours(tx, 'DailyMealPlanAssignment'));
       expect(holds).toEqual(['pB.X', 'pFrozen.X', 'pShared.X']);
     });
@@ -180,7 +186,7 @@ if (!DB_URL && process.env.CI === 'true') {
       expect(await seen('C')).toEqual({ plans: ['pC'], templates: ['tC'], slots: ['sC'], guidelines: ['gCZ'] });
       expect(await writes('C', 'UPDATE', ['pC', 'tC', 'sC', 'gCZ', 'gAX', 'gBX', 'pFrozen', 'pB']))
         .toEqual({ pC: 1, tC: 1, sC: 1, gCZ: 1, gAX: 0, gBX: 0, pFrozen: 0, pB: 0 });
-      expect(await seen('Z')).toEqual({ plans: [], templates: [], slots: [], guidelines: ['gCZ'] });
+      expect(await seen('Z')).toEqual({ plans: ['pC'], templates: ['tC'], slots: ['sC'], guidelines: ['gCZ'] });
     });
 
     it('a sub-coach reaches these rows only as the client\'s own coach; after removal, nothing', async () => {
@@ -212,7 +218,8 @@ if (!DB_URL && process.env.CI === 'true') {
       FROM pg_policy p JOIN pg_class c ON c."oid" = p."polrelid"
       WHERE c."relname" IN ('DailyMealPlan', 'MealTemplate', 'DailyMealPlanSlot', 'CoachGuideline', 'WorkoutAdjustmentProposal')
         AND p."polname" NOT LIKE '%service_role%' AND p."polname" NOT LIKE 'deny_all%'`;
-    const narrowed = rows.filter((r) => r.comment?.startsWith('20270419000000: ')).map((r) => r.policy).sort();
+    // 20270429000000 (GUIDEWRITE) narrows the three guideline writes further.
+    const narrowed = rows.filter((r) => /^202704(19|29)000000: /.test(r.comment ?? '')).map((r) => r.policy).sort();
     expect(narrowed).toEqual([
       'p_coachguideline_delete', 'p_coachguideline_insert', 'p_coachguideline_select', 'p_coachguideline_update',
       'p_dailymealplan_delete', 'p_dailymealplan_select', 'p_dailymealplan_update',

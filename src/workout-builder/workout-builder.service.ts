@@ -54,6 +54,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { isMwbTemplatesEnabled } from './mwb-templates.feature';
 import { assertLastDayMayGo, lockProgramMaster, programDaysWhere } from './program-guards';
+import { inTenantWhere, planStaysInTenantWhere, programStaysInTenantWhere } from './tenant-clients';
 import {
   AssignProgramDto,
   CloneProgramResultDto,
@@ -218,6 +219,11 @@ export class WorkoutBuilderService {
     routeKey: string,
     idempotencyKey: string | null | undefined,
     op: () => Promise<T>,
+    // Owner 4: the assignment rows a cached body holds. A completed replay
+    // returns it only while each row's client is still this user's
+    // (assertCanAccessClient), whatever client the retry names; else that
+    // guard's error, with no write and no push.
+    cachedAssignmentIds?: (cached: T) => string[],
   ): Promise<T> {
     if (!idempotencyKey) return op();
 
@@ -250,7 +256,16 @@ export class WorkoutBuilderService {
           throw new ConflictException('Request in progress — retry in a moment');
         }
         if (existing.status === 'completed') {
-          return existing.response_json as unknown as T;
+          const cached = existing.response_json as unknown as T;
+          if (cachedAssignmentIds) {
+            const rows = await this.prisma.clientWorkoutAssignment.findMany({
+              where: { id: { in: cachedAssignmentIds(cached) } },
+              select: { client_id: true },
+              distinct: ['client_id'],
+            });
+            for (const row of rows) await this.assertCanAccessClient(userId, row.client_id);
+          }
+          return cached;
         }
         // status === 'in_progress' → concurrent retry. Surface 409 so
         // the client can back off; we do NOT run the mutation a second time.
@@ -317,6 +332,8 @@ export class WorkoutBuilderService {
       where: {
         coach_id: coachId,
         archived_at: null,
+        // Owner 4: a moved client's copy leaves the list before paging.
+        AND: [planStaysInTenantWhere(coachId)],
         ...(cursorWhere ?? {}),
       },
       orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
@@ -350,6 +367,7 @@ export class WorkoutBuilderService {
     if (plan.coach_id !== coachId && !(await this.canOpenTeamProgramDay(coachId, plan))) {
       throw new ForbiddenException();
     }
+    await this.assertNotMovedClientCopy(plan);
     return plan;
   }
 
@@ -551,18 +569,15 @@ export class WorkoutBuilderService {
       throw new BadRequestException('Exercise order values must be unique within a plan');
     }
 
+    // Owner 4: auth runs before the ledger, so a saved key replays only while
+    // the plan is still this coach's (a moved client's copy is not found).
+    await this.assertCoach(coachId);
+    await this.assertPlanOwnership(coachId, planId);
     return this.withIdempotency(
       coachId,
       `workout-builder:setExercises:${planId}`,
       idempotencyKey,
       async () => {
-        // Auth/ownership checks run only after the ledger confirms no
-        // completed response exists for this key. Otherwise a client
-        // that legitimately succeeded once would get a 409 on retry
-        // because an assignment was created in between.
-        await this.assertCoach(coachId);
-        await this.assertPlanOwnership(coachId, planId);
-
         // The exercise mutation is serialised against concurrent
         // setExercises calls on the same plan via a `FOR UPDATE` lock on
         // the WorkoutPlan row inside a serializable transaction, so two
@@ -637,23 +652,19 @@ export class WorkoutBuilderService {
     dto: CreateAssignmentDto,
     idempotencyKey?: string | null,
   ) {
+    // Owner 4: the plan and client checks run before the ledger, so a saved
+    // key replays only while both are still this coach's.
+    await this.assertCoach(coachId);
+    await this.assertPlanOwnership(coachId, planId);
+    // MWB-1 (§7.2): widen from head-coach-only to head-coach OR open
+    // sub-coach. Legacy head-coach behaviour is preserved exactly when
+    // SubCoachScopeService is not wired (unit-test construction).
+    await this.assertCanAccessClient(coachId, dto.client_id);
     return this.withIdempotency(
       coachId,
       `workout-builder:assignPlan:${planId}`,
       idempotencyKey,
       async () => {
-        // Auth/ownership and the client-belongs check run only after the
-        // ledger confirms no completed response exists for this key. If
-        // the original call succeeded and a sub-coach reassignment later
-        // changed who owns the client, the retry should still replay the
-        // cached success rather than 4xx on a now-stale precondition.
-        await this.assertCoach(coachId);
-        await this.assertPlanOwnership(coachId, planId);
-        // MWB-1 (§7.2): widen from head-coach-only to head-coach OR open
-        // sub-coach. Legacy head-coach behaviour is preserved exactly when
-        // SubCoachScopeService is not wired (unit-test construction).
-        await this.assertCanAccessClient(coachId, dto.client_id);
-
         // MWB-1 (§3.3): the assignment row AND its immutable plan snapshot are
         // written in one transaction so a client can never observe an
         // assignment without its frozen exercise list. Later coach edits to
@@ -675,6 +686,7 @@ export class WorkoutBuilderService {
         this.emitAssignmentPush(dto.client_id, created.id, planId);
         return created;
       },
+      (cached) => [cached.id],
     );
   }
 
@@ -729,16 +741,7 @@ export class WorkoutBuilderService {
     if (this.subCoachScope && (await this.subCoachScope.isSubCoach(coachId))) {
       return { id: { in: await this.subCoachScope.getAuthorizedClientIds(coachId) } };
     }
-    return {
-      OR: [
-        { coach_id: coachId },
-        {
-          coach: {
-            sub_coach_assignments_as_sub: { some: { head_coach_id: coachId, archived_at: null } },
-          },
-        },
-      ],
-    };
+    return inTenantWhere(coachId);
   }
 
   /**
@@ -951,6 +954,37 @@ export class WorkoutBuilderService {
     const plan = await this.prisma.workoutPlan.findUnique({ where: { id: planId } });
     if (!plan) throw new NotFoundException('Workout plan not found');
     if (plan.coach_id !== coachId) throw new ForbiddenException();
+    await this.assertNotMovedClientCopy(plan);
+  }
+
+  /**
+   * Owner 4: a day of a client's program copy is not found for the tenant
+   * once that client has moved to another coach (tenant-clients.ts).
+   */
+  private async assertNotMovedClientCopy(plan: {
+    id: string;
+    coach_id: string;
+    program_id: string | null;
+  }) {
+    if (!plan.program_id) return;
+    const where = { id: plan.id, ...planStaysInTenantWhere(plan.coach_id) };
+    if ((await this.prisma.workoutPlan.count({ where })) === 0) {
+      throw new NotFoundException('Workout plan not found');
+    }
+  }
+
+  /**
+   * Owner 4: a moved client's program copy is not found as the source of a
+   * fork, clone or assignment either (the same rule, tenant-clients.ts).
+   */
+  private async assertSourceStaysInTenant(
+    program: { id: string; coach_id: string },
+    notFound: string,
+  ) {
+    const where = { id: program.id, ...programStaysInTenantWhere(program.coach_id) };
+    if ((await this.prisma.workoutProgram.count({ where })) === 0) {
+      throw new NotFoundException(notFound);
+    }
   }
 
   private async assertClientBelongsToCoach(coachId: string, clientId: string) {
@@ -1151,6 +1185,7 @@ export class WorkoutBuilderService {
         'You may only fork a program you own or a tenant-shared building block in your business',
       );
     }
+    await this.assertSourceStaysInTenant(source, 'Source template not found');
 
     return this.prisma.$transaction(
       async (tx) => {
@@ -1256,6 +1291,7 @@ export class WorkoutBuilderService {
       // across a tenant boundary (BUILDER_BRIEF hard gate).
       throw new NotFoundException('Master program not found');
     }
+    await this.assertSourceStaysInTenant(master, 'Master program not found');
     // (2) Sub-coach scope: head coach OR open SubCoachAssignment. Foreign
     // coach with no access → 403 (assertCanAccessClient).
     await this.assertCanAccessClient(coachId, clientId);
@@ -1438,24 +1474,26 @@ export class WorkoutBuilderService {
     dto: AssignProgramDto,
     idempotencyKey?: string | null,
   ) {
+    // Owner 4: the source and client checks run before the ledger, so a saved
+    // key replays only while both are still this coach's.
+    await this.assertCoach(coachId);
+    const program = await this.prisma.workoutProgram.findUnique({
+      where: { id: programId },
+      select: { id: true, owner_user_id: true, coach_id: true, visibility: true },
+    });
+    if (!program) throw new NotFoundException('Program not found');
+    const { tenantId: actorTenantId } = await this.actorTenant(coachId);
+    const canReach =
+      program.owner_user_id === coachId ||
+      (program.visibility === 'tenant_shared' && program.coach_id === actorTenantId);
+    if (!canReach) throw new ForbiddenException('You cannot assign this program');
+    await this.assertSourceStaysInTenant(program, 'Program not found');
+    await this.assertCanAccessClient(coachId, dto.client_id);
     return this.withIdempotency(
       coachId,
       `workout-builder:assignProgram:${programId}`,
       idempotencyKey,
       async () => {
-        await this.assertCoach(coachId);
-        const program = await this.prisma.workoutProgram.findUnique({
-          where: { id: programId },
-          select: { id: true, owner_user_id: true, coach_id: true, visibility: true },
-        });
-        if (!program) throw new NotFoundException('Program not found');
-        const { tenantId: actorTenantId } = await this.actorTenant(coachId);
-        const canReach =
-          program.owner_user_id === coachId ||
-          (program.visibility === 'tenant_shared' && program.coach_id === actorTenantId);
-        if (!canReach) throw new ForbiddenException('You cannot assign this program');
-        await this.assertCanAccessClient(coachId, dto.client_id);
-
         const plans = await this.prisma.workoutPlan.findMany({
           where: programDaysWhere(program),
           orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
@@ -1473,6 +1511,7 @@ export class WorkoutBuilderService {
         this.emitAssignmentPush(dto.client_id, created[0].id, plans[0].id);
         return { assignments: created };
       },
+      (cached) => cached.assignments.map((row) => row.id),
     );
   }
 
