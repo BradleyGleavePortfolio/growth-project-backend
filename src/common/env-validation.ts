@@ -1945,6 +1945,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'ZOOM_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → stub adapter (only "true" enables)',
     reason: 'Not used in v1 / Zoom scheduling provider is not part of the launch.',
