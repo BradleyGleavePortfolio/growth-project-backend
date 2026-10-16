@@ -19,6 +19,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { assertNotInActiveClinicSet } from '../workout-builder/program-guards';
+import { programStaysInTenantWhere } from '../workout-builder/tenant-clients';
 import { RegimeRevisionRetentionService } from './regime-revision-retention.service';
 
 export interface RegimeListItem {
@@ -76,11 +77,12 @@ export class RegimesService {
   /**
    * Resolve a regime the calling coach owns, or throw 404. We deliberately
    * 404 (not 403) on a regime owned by another coach so the existence of
-   * another coach's regime is never leaked.
+   * another coach's regime is never leaked. Owner 4: a moved client's program
+   * copy is not found either (the shared move rule, tenant-clients.ts).
    */
   private async requireOwnedRegime(coachId: string, id: string) {
     const program = await this.prisma.workoutProgram.findFirst({
-      where: { id, coach_id: coachId, is_regime: true },
+      where: { id, coach_id: coachId, is_regime: true, ...programStaysInTenantWhere(coachId) },
       select: {
         id: true,
         name: true,
@@ -108,7 +110,12 @@ export class RegimesService {
     await this.assertCoach(coachId);
 
     const programs = await this.prisma.workoutProgram.findMany({
-      where: { coach_id: coachId, is_regime: true, archived_at: null },
+      where: {
+        coach_id: coachId,
+        is_regime: true,
+        archived_at: null,
+        ...programStaysInTenantWhere(coachId),
+      },
       orderBy: { updated_at: 'desc' },
       select: {
         id: true,
@@ -177,7 +184,7 @@ export class RegimesService {
     await this.assertCoach(coachId);
 
     const program = await this.prisma.workoutProgram.findFirst({
-      where: { id: programId, coach_id: coachId },
+      where: { id: programId, coach_id: coachId, ...programStaysInTenantWhere(coachId) },
       select: { id: true },
     });
     if (!program) {

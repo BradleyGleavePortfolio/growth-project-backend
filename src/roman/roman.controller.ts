@@ -13,7 +13,7 @@
  *
  * Auth: JwtAuthGuard authenticates every route. Roman is available to ALL
  * signed-in users on ANY tier (free + pro) — so there is no tier gate, only the
- * per-tier RATE limit applied in the service (brief §4). RomanFeatureGuard
+ * client's daily Roman limits (ROMANCOUNT, roman-usage.ts). RomanFeatureGuard
  * returns 404 on every route while the feature flag is OFF. A client with no
  * coach gets 403 ROMAN_REQUIRES_COACH on open and send (owner 10-09 00:0x,
  * roman-requires-coach.ts); reading a transcript stays open.
@@ -45,6 +45,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { toRomanSseErrorFrame } from './roman-sse-error';
+import type { RomanUsageDebit } from './roman-usage';
 import {
   assertRomanHasCoach,
   romanRequiresCoach,
@@ -59,6 +60,7 @@ import {
   OpenSessionDto,
   SendMessageDto,
 } from './roman.dto';
+import { KeepRomanContext } from './context/roman-context-invalidation';
 
 @Controller('roman')
 @UseGuards(JwtAuthGuard, RolesGuard, RomanFeatureGuard)
@@ -106,6 +108,8 @@ export class RomanController {
   // ─── POST /roman/sessions/:id/messages — submit a turn, stream the reply ───
   @Post('sessions/:id/messages')
   @Roles('student', 'coach', 'owner')
+  // The turn reads the context; it writes nothing the context reads.
+  @KeepRomanContext()
   async sendMessage(
     @Req() req: Request & AuthedRequest,
     @Res() res: Response,
@@ -125,6 +129,7 @@ export class RomanController {
     // to people, no model call) instead of the refusal.
     const edRisk = !crisis && this.roman.isEatingDisorderRisk(dto.content);
     let edFallback = false;
+    let usageDebit: RomanUsageDebit | null = null;
 
     // Owner 10-09 00:0x: a client with no coach gets 403 ROMAN_REQUIRES_COACH
     // first, before the rate limit, the turn is stored or any AI or pool
@@ -133,23 +138,6 @@ export class RomanController {
     if (!crisis && romanRequiresCoach(req.user)) {
       if (!edRisk) throw romanRequiresCoachException();
       edFallback = true;
-    }
-
-    // Rate-limit BEFORE persisting the user turn (so a rejected turn does not
-    // count against the cap). Throws a structured 429 Too Many Requests; we
-    // surface the retry budget as a real Retry-After header (RFC 6585 §4)
-    // before re-throwing so the NestJS filter serialises the body.
-    try {
-      if (!crisis) await this.roman.assertWithinRateLimit(caller);
-    } catch (err) {
-      if (edRisk) edFallback = true;
-      const payload = (
-        err as { getResponse?: () => unknown }
-      ).getResponse?.() as { retryAfterSeconds?: number } | undefined;
-      if (!edFallback && typeof payload?.retryAfterSeconds === 'number') {
-        res.setHeader('Retry-After', String(payload.retryAfterSeconds));
-      }
-      if (!edFallback) throw err;
     }
 
     const session = await this.roman.getOwnedSession(caller, id);
@@ -166,8 +154,16 @@ export class RomanController {
       // B-668-1 — the coach's monthly AI credit pool, before the turn is stored
       // (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).
       if (!crisis && !edFallback) await this.roman.assertCoachPoolOpen(caller);
+      // ROMANCOUNT — counted last, so a turn refused above never counts (the spend
+      // admission gives it back). An eating-disorder-risk turn is checked, never counted.
+      if (!crisis && !edFallback) usageDebit = await this.roman.assertWithinRateLimit(caller, edRisk);
     } catch (err) {
-      if (!edRisk) throw err;
+      if (!edRisk) {
+        // 429: the wait as a real Retry-After header (RFC 6585 §4).
+        const retry = (err as { getResponse?: () => { retryAfterSeconds?: unknown } }).getResponse?.();
+        if (typeof retry?.retryAfterSeconds === 'number') res.setHeader('Retry-After', String(retry.retryAfterSeconds));
+        throw err;
+      }
       edFallback = true;
     }
     // The stored turn's id: a safety alert points at this one message.
@@ -205,6 +201,7 @@ export class RomanController {
           signal: abort.signal,
           userMessage: dto.content,
           userMessageId: stored?.id,
+          usageDebit,
         });
     try {
       for await (const chunk of turn) {

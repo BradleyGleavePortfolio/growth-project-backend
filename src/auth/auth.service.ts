@@ -304,7 +304,7 @@ export class AuthService {
   //                                        {tier free, status active, update {}}
   //                                        (identical to becomeCoach; never
   //                                        overwrites a row) + CoachProfile with
-  //                                        a fresh GP- invite code (what
+  //                                        a fresh TGP- invite code (what
   //                                        /coaches/me/invite-link would
   //                                        otherwise lazily mint). Then a
   //                                        USER_ROLE_CHANGED audit row with
@@ -404,7 +404,7 @@ export class AuthService {
 
   // CoachProfile.invite_code is @unique. A unique violation inside an
   // interactive transaction aborts it, so we pick a free candidate up front
-  // (31^6 space; a collision after this check is astronomically unlikely and
+  // (31^7 space; a collision after this check is astronomically unlikely and
   // is retried once more by createSignupUser).
   private async pickUnusedCoachInviteCode(): Promise<string> {
     for (let attempt = 0; attempt < SIGNUP_COACH_CODE_ATTEMPTS; attempt++) {

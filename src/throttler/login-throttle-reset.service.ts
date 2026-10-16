@@ -11,6 +11,7 @@ import type { ThrottlerStorage } from '@nestjs/throttler';
 import { createHash } from 'crypto';
 import { blockedCheckFor, resetFor, strictIncrementFor } from './throttler.config';
 import { describeFailure } from '../observability/log-pii';
+import { ipRateLimitBucket } from './ip-bucket';
 
 // Clinic C13 fix round (Grok B5) — per-IP ceiling on brand-new COACH accounts
 // minted through /auth/google and /auth/apple. Those routes carry login
@@ -81,6 +82,8 @@ export function accountFailureBucket(email: string): { key: string; name: string
 // lookups (preview, /join, /invite, validate-invite-code, invites/accept).
 // Only misses count; a blocked address is refused BEFORE the lookup so a hit
 // cannot be confirmed either. Storage errors fail OPEN like the route throttles.
+// AUTHA-07 — the address is the network: IPv4 as is, IPv6 by its /64
+// (ipRateLimitBucket), so rotating addresses inside one block is one budget.
 export const INVITE_CODE_MISSES_PER_HOUR = 60;
 const INVITE_CODE_MISS_THROTTLER = 'invite-code-miss';
 // F-927-A7 — a thrown "no such code" refusal from a code-consuming route is a
@@ -242,7 +245,7 @@ export class LoginThrottleResetService {
     userId?: string,
   ): Promise<T> {
     if (!this.storage) return lookup();
-    const keys = [`invite-code-miss:ip:${ip}`];
+    const keys = [`invite-code-miss:ip:${ipRateLimitBucket(ip)}`];
     if (userId) keys.push(`invite-code-miss:user:${userId}`);
     for (const key of keys) {
       let blocked = false;

@@ -25,6 +25,8 @@ type TxMock = {
     create: jest.Mock;
   };
   auditLog: { create: jest.Mock };
+  // SUBREVOKE: the destination seat, read FOR SHARE. [] = the pair never had a seat.
+  $queryRaw: jest.Mock;
 };
 
 function makeTxMock(initialOpen: unknown = null): TxMock {
@@ -37,6 +39,7 @@ function makeTxMock(initialOpen: unknown = null): TxMock {
     auditLog: {
       create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
     },
+    $queryRaw: jest.fn().mockResolvedValue([]),
   };
 }
 
@@ -155,6 +158,31 @@ describe('SubCoachReassignService', () => {
     expect(result.newSubCoachId).toBe(SUB_COACH_ID);
     expect(result.previousSubCoachId).toBeNull();
     expect(idempotency.runWithIdempotency).toHaveBeenCalled();
+  });
+
+  // SUBREVOKE: a removed sub-coach (archived seat) gets no new clients; an
+  // active seat and a never-seated (legacy) pair both still can.
+  it.each([
+    ['an active seat', [{ archived_at: null }], true],
+    ['a pair that never had a seat', [], true],
+    ['an archived seat (removed sub-coach)', [{ archived_at: new Date('2027-04-01') }], false],
+  ])('assigning to a sub-coach with %s', async (_label, seat, allowed) => {
+    tx.$queryRaw.mockResolvedValue(seat);
+    (prisma.user.findFirst as jest.Mock)
+      .mockResolvedValueOnce({ id: SUB_COACH_ID })
+      .mockResolvedValueOnce({ id: CLIENT_ID, coach_id: HEAD_COACH_ID, role: 'student' });
+    const run = service.reassignClient(HEAD_COACH_ID, ACTOR_ID, 'coach', {
+      clientId: CLIENT_ID,
+      targetSubCoachId: SUB_COACH_ID,
+      idempotency_key: IDEMPOTENCY_KEY,
+    });
+    if (allowed) {
+      await expect(run).resolves.toMatchObject({ newSubCoachId: SUB_COACH_ID });
+      expect(tx.subCoachAssignment.create).toHaveBeenCalled();
+    } else {
+      await expect(run).rejects.toThrow(NotFoundException);
+      expect(tx.subCoachAssignment.create).not.toHaveBeenCalled();
+    }
   });
 
   it('closes prior assignment + opens new on reassign to a different sub-coach', async () => {

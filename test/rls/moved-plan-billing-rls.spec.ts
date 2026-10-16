@@ -1,6 +1,6 @@
 /**
  * MOVEBILL (owner MOVE-BILLING / MOVE-LTV option 1) on the replayed migration
- * chain (20270502001800): a move stamps ClientPurchase.moved_away_at, in the
+ * chain (20270502003200): a move stamps ClientPurchase.moved_away_at, in the
  * move's own transaction, on the moving client's plans sold by a coach in
  * their old chain who is not in the new one (app.client_coach_chain; owner
  * TM-M1 note: the coach, the head coach of a seated sub-coach, a delegated

@@ -32,6 +32,7 @@ import { randomUUID } from 'crypto';
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { programDaysWhere } from './program-guards';
 
 /** Advisory-lock namespace (int4) for program delivery keys. */
 export const ADVISORY_LOCK_NAMESPACE_MWB_DELIVERY = 0x4d574244; // 'MWBD'
@@ -146,7 +147,7 @@ export class ProgramDeliveryService {
       });
     }
     const masterPlans = await tx.workoutPlan.findMany({
-      where: { program_id: master.id, archived_at: null },
+      where: programDaysWhere(master),
       orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
       include: { exercises: { where: { archived_at: null }, orderBy: { order: 'asc' } } },
     });

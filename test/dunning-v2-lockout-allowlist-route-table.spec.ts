@@ -179,6 +179,8 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'checkout/payment-method/setup-intent',
   'checkout/purchases',
   'checkout/purchases/:purchaseid/drops',
+  'checkout/receipts', // ClientReceiptsController — the client's own receipts (C5RECEIPTS)
+  'checkout/receipts/:receiptid',
   'checkout/sessions',
   'checkout/sessions/:sessionid/confirm',
   'checkout/subscription-intent', // B-RECUR SubscriptionCheckoutController (native subscriptions)
@@ -254,6 +256,7 @@ const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'GET workouts WorkoutController',
   'GET workouts/volume WorkoutController',
   'PATCH assignments/:assignmentid/complete AssignmentController',
+  'PATCH habits/:id HabitsController',
   'PATCH weight/:id WeightController',
   'POST check-ins ClientCheckInsController',
   'POST fasting/end FastingController',

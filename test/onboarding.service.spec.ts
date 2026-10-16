@@ -197,6 +197,13 @@ function makeWorld() {
         );
         return seat ? [{ id: seat.id }] : [];
       }
+      // READTESTS: the pair's seat row in any state (an archived one ends membership).
+      if (
+        /FROM "TeamSubCoachAssignment" WHERE "head_coach_id" = \? AND "sub_coach_id" = \? LIMIT 1 FOR SHARE$/.test(sql)
+      ) {
+        const seat = teamSeats.find((a) => a.head_coach_id === values[0] && a.sub_coach_id === values[1]);
+        return seat ? [{ id: seat.id }] : [];
+      }
       if (
         /FROM "SubCoachAssignment" WHERE "head_coach_id" = \? AND "sub_coach_id" = \? AND "unassigned_at" IS NULL LIMIT 1 FOR SHARE$/.test(
           sql,

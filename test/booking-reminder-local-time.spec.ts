@@ -78,12 +78,14 @@ function buildWorld(opts: {
         where.id === session.id ? { coach_id: session.coach_id } : null,
       ),
     },
+    subCoachAssignment: { findMany: jest.fn(async () => []) }, // the inbox rule: no delegations
     $transaction: ledger.$transaction,
     notificationDeliveryLog: ledger.notificationDeliveryLog,
     user: {
       findUnique: jest.fn(async ({ where }: { where: { id: string } }) =>
         names[where.id] ? { name: names[where.id] } : null,
       ),
+      findMany: jest.fn(async () => []),
     },
     notificationPreferences: {
       findUnique: jest.fn(async ({ where }: { where: { user_id: string } }) => {

@@ -18,6 +18,7 @@ import { CoachGuard } from '../../auth/coach.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { THROTTLER_NAMES } from '../../throttler/throttler.config';
 import { PrismaService } from '../../prisma.service';
+import { assertRomanHasCoach } from '../../roman/roman-requires-coach';
 import { AiApprovalService } from '../../ai/gateway/ai-approval.service';
 import { COACH_WEARABLE_MESSAGE_CAPABILITY } from '../../ai/gateway/materialisers/coach-wearable-message.materialiser';
 import { WearableInsightsService } from './wearable-insights.service';
@@ -119,7 +120,7 @@ export class WearableInsightsController {
   ): Promise<CoachInsightResponse> {
     const { clientId, bucket } = parseOrThrow(CoachQuerySchema, rawQuery);
     await this.svc.assertCoachOwnsClient(req.user.id, clientId, req.user.role);
-    const payload = await this.svc.generateForCoach(req.user.id, clientId, bucket);
+    const payload = await this.svc.generateForCoach(req.user.id, clientId, bucket, req.user.role);
     // Validate the wire response against the locked union contract (full
     // coach insight OR the strict empty state). Both branches are exact-
     // field; an empty fallback can never leak a contract-violating shape.
@@ -239,6 +240,10 @@ export class WearableInsightsController {
     @Query() rawQuery: unknown,
   ): Promise<ClientInsightResponse> {
     const { bucket } = parseOrThrow(ClientQuerySchema, rawQuery);
+    // GAPS3-F1 option 1: the insight is Roman's, so a client with no coach
+    // gets 403 ROMAN_REQUIRES_COACH before any cache read or AI call, even
+    // with a stored AI grant (W-CONSENT keeps it for the day a coach is linked).
+    assertRomanHasCoach(req.user);
     const payload = await this.svc.generateForClient(req.user.id, bucket);
     // Same locked-union validation as the coach path.
     return ClientInsightResponseSchema.parse(payload);

@@ -301,7 +301,7 @@ describe('C02 — signup-policy exposes the legacy mobile field names alongside 
     // Canonical fields are untouched.
     expect(policy.invite_code_required).toBe(false);
     expect(policy.invite_code_field).toBe('invite_code');
-    expect(policy.invite_code).toEqual({ min_length: 3, max_length: 32, prefix: 'GP-' });
+    expect(policy.invite_code).toEqual({ min_length: 3, max_length: 32, prefix: 'TGP-' });
   });
 
   it('google_signin_enabled is true exactly when providers includes google', () => {

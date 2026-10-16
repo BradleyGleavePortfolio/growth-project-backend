@@ -24,9 +24,10 @@ import { PrismaService } from '../prisma.service';
  * user is a SUB-COACH iff role='coach' AND coach_id is non-null AND the head
  * coach has an EXPLICIT membership relation with them — an active
  * `TeamSubCoachAssignment(head_coach_id = coach_id, sub_coach_id = user)`
- * (Team Mode seat / accepted sub-coach invite) or an open
- * `SubCoachAssignment(head_coach_id = coach_id, sub_coach_id = user)` (the
- * head coach delegated a client to them). A bare `coach_id` on a coach row
+ * (Team Mode seat / accepted sub-coach invite) or, for a pair that never had
+ * a seat, an open `SubCoachAssignment(head_coach_id = coach_id, sub_coach_id
+ * = user)` (the head coach delegated a client to them). An archived seat is a
+ * removal and ends membership. A bare `coach_id` on a coach row
  * is NOT enough: guest checkout used to stamp `coach_id` onto any buyer, so a
  * self-serve coach who bought another coach's package became a phantom
  * sub-coach with tenant-wide access. Without a membership row the caller is
@@ -69,10 +70,21 @@ export class SubCoachScopeService {
     });
     if (teamSeat) return u.coach_id;
 
-    const delegation = await this.prisma.subCoachAssignment.findFirst({
-      where: { head_coach_id: u.coach_id, sub_coach_id: userId, unassigned_at: null },
+    // Removing a sub-coach (TeamModeService.removeSubCoach,
+    // SubCoachInviteService.revoke) archives the pair's one seat row and
+    // leaves their client delegations open, so a seat row found here means
+    // removed. An open delegation proves membership only for a sub-coach who
+    // never had a seat.
+    const archivedSeat = await this.prisma.teamSubCoachAssignment.findFirst({
+      where: { head_coach_id: u.coach_id, sub_coach_id: userId },
       select: { id: true },
     });
+    const delegation = archivedSeat
+      ? null
+      : await this.prisma.subCoachAssignment.findFirst({
+          where: { head_coach_id: u.coach_id, sub_coach_id: userId, unassigned_at: null },
+          select: { id: true },
+        });
     if (delegation) return u.coach_id;
 
     if (!this.warnedNoMembership.has(userId)) {
@@ -91,12 +103,14 @@ export class SubCoachScopeService {
    *
    * `u` must be the caller's already-locked `User` row (`FOR SHARE`), so a
    * change of the coach pointer or role waits for, or is seen by, the caller.
-   * The membership row that proves the head (an open team seat, else an open
-   * delegation) is read `FOR SHARE` too: a seat archival or the close of the
-   * last delegation, which main commits WITHOUT touching `User`, either
-   * committed first (and the row no longer matches, so no head) or waits until
-   * the caller commits. A membership added after this read serialises after
-   * the caller, which is consistent with the null it saw.
+   * The membership row that proves the head (an open team seat, else, for a
+   * pair that never had a seat, an open delegation) is read `FOR SHARE` too,
+   * and so is an archived seat, which ends membership (a re-invite waits). A
+   * seat archival or the close of the last delegation, which main commits
+   * WITHOUT touching `User`, either committed first (and the row no longer
+   * matches, so no head) or waits until the caller commits. A membership added
+   * after this read serialises after the caller, which is consistent with the
+   * null it saw.
    */
   async lockMembershipHeadCoachIdInTx(
     tx: Prisma.TransactionClient,
@@ -109,6 +123,11 @@ export class SubCoachScopeService {
       WHERE "head_coach_id" = ${u.coach_id} AND "sub_coach_id" = ${userId} AND "archived_at" IS NULL
       LIMIT 1 FOR SHARE`;
     if (seat.length > 0) return u.coach_id;
+    const archivedSeat = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "TeamSubCoachAssignment"
+      WHERE "head_coach_id" = ${u.coach_id} AND "sub_coach_id" = ${userId}
+      LIMIT 1 FOR SHARE`;
+    if (archivedSeat.length > 0) return null;
     const delegation = await tx.$queryRaw<Array<{ id: string }>>`
       SELECT "id" FROM "SubCoachAssignment"
       WHERE "head_coach_id" = ${u.coach_id} AND "sub_coach_id" = ${userId} AND "unassigned_at" IS NULL

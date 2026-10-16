@@ -59,7 +59,7 @@ function fakePrisma(tables: Record<string, Row[]>) {
     'coachGuideline',
     'workoutProgram',
     'workoutPlan',
-    'mealPlan',
+    'dailyMealPlan',
     'coachingSession',
     'coachMessage',
     'exerciseCatalogItem',
@@ -119,11 +119,11 @@ function tables(over: Record<string, Row[]> = {}): Record<string, Row[]> {
       { id: 'plan-o', coach_id: O, archived_at: null, is_template: false, program_id: null, name: 'Other Plan', exercises: [] },
     ],
     exerciseCatalogItem: [{ id: 'ex-bench', slug: 'barbell-bench-press', source_ref: null, name: 'Barbell Bench Press' }],
-    mealPlan: [
-      { id: 'mp-wide', coach_id: H, client_id: null, archived_at: null, title: 'High protein base', notes: 'Four meals, carbs around training.' },
-      { id: 'mp-c1', coach_id: H, client_id: C1, archived_at: null, title: 'Cut for Zelda', notes: null },
-      { id: 'mp-c2', coach_id: H, client_id: C2, archived_at: null, title: 'Marcus private plan', notes: 'secret' },
-      { id: 'mp-o', coach_id: O, client_id: null, archived_at: null, title: 'Other meal plan', notes: null },
+    dailyMealPlan: [
+      { id: 'mp-wide', coach_id: H, archived_at: null, name: 'High protein base', notes: 'Four meals, carbs around training.' },
+      // A moved client's frozen copy is archived: never read.
+      { id: 'mp-frozen', coach_id: H, archived_at: daysAgo(1), name: 'Marcus private plan', notes: 'secret' },
+      { id: 'mp-o', coach_id: O, archived_at: null, name: 'Other meal plan', notes: null },
     ],
     coachingSession: [
       { id: 'sn-c1', coach_id: H, client_id: C1, start_at: daysAgo(5), coach_notes_md: 'Zelda said the knee hurts, call 415-555-0101 on 2026-10-01.' },
@@ -190,12 +190,12 @@ describe('R11-P3b-1 playbook sources: tenancy', () => {
 });
 
 describe('R11-P3b-1 playbook sources: memory-scope consent', () => {
-  it('uses only memory-scope clients for messages, notes and client-bound guidelines or meal plans', async () => {
+  it('uses only memory-scope clients for messages, notes and client-bound guidelines', async () => {
     const { svc, egress } = collector(tables());
     const out = await svc.collect(H, NOW);
     expect(egress.consentedClients).toHaveBeenCalledWith([C1, C2, C3], 'memory');
     expect(out.consentedClientIds).toEqual([C1, C3]);
-    expect(ids(out)).toEqual(['g-c1', 'g-wide', 'm-c1', 'm-c3', 'mp-c1', 'mp-wide', 'plan-h', 'sn-c1', 'tpl-h']);
+    expect(ids(out)).toEqual(['g-c1', 'g-wide', 'm-c1', 'm-c3', 'mp-wide', 'plan-h', 'sn-c1', 'tpl-h']);
     expect(out.items.map((i) => i.text).join('\n')).not.toMatch(/Marcus|secret|private/);
     expect(out.ledger).toContainEqual({ source_kind: 'session_note', source_id: 'sn-c1', client_id: C1 });
     expect(out.ledger).toContainEqual({ source_kind: 'guideline', source_id: 'g-wide' });

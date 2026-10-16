@@ -15,6 +15,8 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { IngestionService } from '../ingestion/ingestion.service';
+import { ConsentService } from '../../consent/consent.service';
+import { seesWeight, WEIGHT_METRICS } from '../../consent/coach-sharing-gate';
 import { WearableConnectionStatus } from '../connections/types';
 import {
   metricsInBucket,
@@ -120,6 +122,7 @@ export class WearableSamplesService implements OnModuleInit {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ingestion: IngestionService,
+    private readonly consent?: ConsentService,
   ) {}
 
   /**
@@ -272,9 +275,12 @@ export class WearableSamplesService implements OnModuleInit {
       });
     }
 
-    const metrics = query.metric
-      ? [query.metric]
-      : metricsInBucket(query.bucket);
+    // WEIGHTWALL: device weight and body fat follow the client's Weigh-ins switch; off, a coach
+    // gets no series for them (the app's existing no-data state).
+    const weighIns = await seesWeight(this.consent, requesterId, subjectUserId, requesterRole);
+    const metrics = (query.metric ? [query.metric] : metricsInBucket(query.bucket)).filter(
+      (m) => weighIns || !WEIGHT_METRICS.includes(m),
+    );
 
     // Resolve every metric's series. Each metric is at most one resolveBest()
     // (preferred) or one findMany (compare-all) plus an optional aggregation

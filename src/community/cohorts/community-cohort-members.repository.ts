@@ -24,7 +24,7 @@ export interface MemberPageCursor {
 /**
  * B-AUTHZ-1: who a coach may add to a cohort. A target qualifies only when it
  * is a live client of the workspace coach (`coach_id` match, not deleted) or
- * already holds an active membership somewhere in the same workspace.
+ * already on the workspace's team (an active co-coach row; C6-BVIS).
  */
 export interface AssignTargetScope {
   workspaceId: string;
@@ -39,7 +39,7 @@ function assignTargetFilter(scope: AssignTargetScope | null): Prisma.UserWhereIn
       { coach_id: scope.coachId },
       {
         community_memberships: {
-          some: { workspace_id: scope.workspaceId, status: 'active' },
+          some: { workspace_id: scope.workspaceId, status: 'active', role: { not: 'student' } },
         },
       },
     ],
