@@ -66,6 +66,9 @@ const party = (key: Key): Who => ({ key, role: 'authenticated', guc: true });
 const CALLERS: [string, Who][] = [...(['A', 'K', 'F', 'L'] as Key[]).map((k): [string, Who] => [k, party(k)]),
   ['A, JWT only', { key: 'A', role: 'authenticated', guc: false }], ['anon', { key: null, role: 'anon', guc: false }]];
 type Grant = { target: string; col: string; grantee: string; privilege: string; grantable: boolean };
+// Sorted here: the catalog's names sort in collation "C", the backup's text columns in the database default.
+const sorted = (list: Grant[]) => list.map((g) => [[g.target, g.col, g.grantee, g.privilege].join(' '), g] as const)
+  .sort(([x], [y]) => (x < y ? -1 : x > y ? 1 : 0)).map(([, g]) => g);
 class Rollback extends Error { constructor(readonly value: unknown) { super('rollback'); } }
 
 (DB_URL ? describe : describe.skip)('billing rows are server-only', () => {
@@ -95,8 +98,8 @@ class Rollback extends Error { constructor(readonly value: unknown) { super('rol
      CROSS JOIN LATERAL aclexplode(x.acl) a
      WHERE c.relnamespace = 'public'::regnamespace AND c.relname = ANY(${TABLES}::text[])
        AND a.grantee IN (0::oid, 'anon'::regrole::oid, 'authenticated'::regrole::oid)
-     GROUP BY 1, 2, 3, 4 ORDER BY 1, 2, 3, 4`;
-  const backup = () => prisma.$queryRaw<Grant[]>`SELECT * FROM app.billing_api_grant_backup ORDER BY 1, 2, 3, 4`;
+     GROUP BY 1, 2, 3, 4`.then(sorted);
+  const backup = () => prisma.$queryRaw<Grant[]>`SELECT * FROM app.billing_api_grant_backup`.then(sorted);
   /** Rows of `rowId` read as the server (the superuser connection): the control. */
   const server = (table: string, rowId: string) =>
     prisma.$queryRawUnsafe<unknown[]>(`SELECT "id" FROM ${target(table)} WHERE "id" = $1`, rowId).then((x) => x.length);
