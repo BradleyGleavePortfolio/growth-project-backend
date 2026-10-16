@@ -1,7 +1,9 @@
 import type { CoachingSession, Prisma, SessionStatus } from '@prisma/client';
+import { toBookingOptions } from './scheduling-open-slots.service';
 import {
   MEETING_LINK_PATTERN,
   OCCUPYING_SESSION_STATUSES,
+  changeLockedAt,
   isLapsedRequest,
 } from './scheduling.types';
 import type { ActorContext } from './scheduling.types';
@@ -14,7 +16,9 @@ import type { ActorContext } from './scheduling.types';
 //   - clients never receive coach-only fields (coach_notes_md, provider
 //     idempotency/meeting/calendar ids); they read as null,
 //   - both apps get the same derived state instead of re-deriving it:
-//       cancellable / reschedulable: the server's own rules for this viewer,
+//       cancellable / reschedulable: the server's own rules for this viewer
+//         (C4-NOTICE: for the client, open until change_locked_at, the
+//         start minus the session's own coach's notice),
 //       meeting_link_status: 'ready' (usable https/tel link),
 //         'pending' (confirmed, no link yet: client shows a calm waiting
 //         state, coach shows an "add the call link" action),
@@ -34,7 +38,13 @@ export const SESSION_VIEW_INCLUDE = {
       archived_at: true,
     },
   },
-  coach: { select: { id: true, name: true } },
+  coach: {
+    select: {
+      id: true,
+      name: true,
+      coach_profile: { select: { booking_cancel_notice_hours: true } },
+    },
+  },
   client: { select: { id: true, name: true } },
 } satisfies Prisma.CoachingSessionInclude;
 
@@ -47,7 +57,11 @@ export type SessionWithRelations = CoachingSession & {
     is_welcome: boolean;
     archived_at: Date | null;
   } | null;
-  coach?: { id: string; name: string } | null;
+  coach?: {
+    id: string;
+    name: string;
+    coach_profile?: { booking_cancel_notice_hours?: number | null } | null;
+  } | null;
   client?: { id: string; name: string } | null;
 };
 
@@ -72,6 +86,8 @@ export interface SessionView extends Omit<
   meeting_link_status: MeetingLinkStatus;
   cancellable: boolean;
   reschedulable: boolean;
+  /** C4-NOTICE: when the client's own move or cancel locks; null for coaches (never bound). */
+  change_locked_at: Date | null;
 }
 
 export function meetingLinkStatus(
@@ -97,7 +113,12 @@ export function toSessionView(
   // before the sweep writes it, so both apps show the exact clear time.
   const status: SessionStatus = isLapsedRequest(row, now) ? 'expired' : row.status;
   const occupying = (OCCUPYING_SESSION_STATUSES as readonly string[]).includes(status);
-  const notStarted = row.start_at.getTime() > now.getTime();
+  // C4-NOTICE: a client may change the session until its coach's notice
+  // starts; coaches until the start, as before.
+  const lockAt = isClientViewer
+    ? changeLockedAt(row.start_at, toBookingOptions(coach?.coach_profile).cancel_notice_hours)
+    : row.start_at;
+  const changeOpen = lockAt.getTime() > now.getTime();
   return {
     ...base,
     status,
@@ -122,7 +143,8 @@ export function toSessionView(
     coach_name: coach?.name ?? null,
     client_name: client?.name ?? null,
     meeting_link_status: meetingLinkStatus({ status, video_url: row.video_url }),
-    cancellable: occupying && (isClientViewer ? notStarted : true),
-    reschedulable: (status === 'requested' || status === 'scheduled') && notStarted,
+    cancellable: occupying && (isClientViewer ? changeOpen : true),
+    reschedulable: (status === 'requested' || status === 'scheduled') && changeOpen,
+    change_locked_at: isClientViewer ? lockAt : null,
   };
 }

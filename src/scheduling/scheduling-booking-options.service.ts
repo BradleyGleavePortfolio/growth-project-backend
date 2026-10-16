@@ -29,6 +29,7 @@ const SELECT = {
   booking_buffer_before_min: true,
   booking_buffer_after_min: true,
   booking_daily_max: true,
+  booking_cancel_notice_hours: true,
 } as const;
 
 const LABELS: Record<keyof BookingOptions, string> = {
@@ -37,6 +38,7 @@ const LABELS: Record<keyof BookingOptions, string> = {
   buffer_before_minutes: 'Buffer before each session (minutes)',
   buffer_after_minutes: 'Buffer after each session (minutes)',
   daily_max_sessions: 'Daily maximum (sessions)',
+  cancel_notice_hours: 'Notice to move or cancel (hours)',
 };
 
 function assertCoach(actor: ActorContext): void {
@@ -76,6 +78,7 @@ export function mergeBookingOptions(
     'booking_window_days',
     'buffer_before_minutes',
     'buffer_after_minutes',
+    'cancel_notice_hours',
   ] as const;
   for (const key of intKeys) {
     const value: unknown = patch[key];
@@ -143,6 +146,7 @@ export class SchedulingBookingOptionsService {
       booking_buffer_before_min: next.buffer_before_minutes,
       booking_buffer_after_min: next.buffer_after_minutes,
       booking_daily_max: next.daily_max_sessions,
+      booking_cancel_notice_hours: next.cancel_notice_hours,
     };
     const saved = await this.prisma.coachProfile.update({
       where: { user_id: actor.id },
