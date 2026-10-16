@@ -78,8 +78,8 @@ describe('AUDIT-05-125 a near-faint now and a person not breathing stay 911', ()
 });
 
 describe('AUDIT-05-125 the client reply contract names 988 and 911 for a crisis the router misses', () => {
-  it('carries the crisis section under roman-client-v4', () => {
-    expect(PROMPT_VERSION).toBe('roman-client-v4');
+  it('carries the crisis section under roman-client-v5', () => {
+    expect(PROMPT_VERSION).toBe('roman-client-v5');
     expect(ROMAN_GUARDRAIL_CONTRACT).toContain('## Crisis and emergencies');
     expect(ROMAN_GUARDRAIL_CONTRACT).toContain('988 Suicide & Crisis Lifeline');
     expect(ROMAN_GUARDRAIL_CONTRACT).toMatch(/call 911 if they are in immediate danger/);

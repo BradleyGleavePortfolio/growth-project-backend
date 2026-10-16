@@ -116,7 +116,6 @@ function fakeDb(opts: { missingSlug?: string } = {}) {
 
 const base = {
   coachEmail: 'owner@example.com',
-  spaceName: 'Clinic community',
   allMembersName: 'All members',
   dryRun: false,
 };
@@ -188,6 +187,7 @@ describe('seedClinicPrograms', () => {
       }),
     );
     expect(w.workspaces).toHaveLength(1);
+    expect(w.workspaces[0].name).toBe('Community');
     expect(w.cohorts.map((c) => c.name)).toEqual([
       'All members',
       'Steady Foundations',

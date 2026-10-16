@@ -8,9 +8,10 @@
  * zero means a policy refused the row, not that it is missing. The new coach
  * and the client still read the client's history after a move. A removed
  * sub-coach and their former head read none of each other's consultation rows,
- * the API agreeing. coach_ltv_peak
- * is server-only (20261224000000 revokes the API roles), so every API caller,
- * its own coach too, is refused.
+ * the API agreeing. coach_ltv_peak (20261224000000) and ConnectAccount,
+ * PayoutSnapshot and ClientPurchase (BILLRAW, 20270502003500) are server-only
+ * (the API roles are revoked), so every API caller, its own coach too, is
+ * refused, after the server reads the row (the control).
  * The service paths of the same routes: test/coach-home-cross-coach-reads.spec.ts.
  *
  * Runs in the rls-live-tests job on a superuser copy of rls_replay.
@@ -98,7 +99,7 @@ if (!DB_URL && process.env.CI === 'true') {
   });
   afterAll(() => prisma.$disconnect());
 
-  it.each(['ConnectAccount', 'PayoutSnapshot', 'CoachPackage', 'ClientPurchase', 'CoachAIBudget'])(
+  it.each(['CoachPackage', 'CoachAIBudget'])(
     '%s: coach A reads their own row; coach B and A\'s sub-coach read none of it, and A reads none of B\'s',
     async (table) => {
       expect(await seen(table, mine[table].a, a)).toBe(1);
@@ -108,9 +109,12 @@ if (!DB_URL && process.env.CI === 'true') {
     },
   );
 
-  it('coach_ltv_peak: every API caller is refused, the row\'s own coach too', async () => {
-    for (const who of [a, b, sub]) expect(await seen('coach_ltv_peak', mine.coach_ltv_peak.a, who)).toBe('refused');
-  });
+  it.each(['coach_ltv_peak', 'ConnectAccount', 'PayoutSnapshot', 'ClientPurchase'])(
+    '%s: every API caller is refused, the row\'s own coach too', async (table) => {
+      expect(await prisma.$queryRawUnsafe(`SELECT "id" FROM public."${table}" WHERE "id" = $1`, mine[table].a)).toHaveLength(1);
+      for (const who of [a, b, sub]) expect(await seen(table, mine[table].a, who)).toBe('refused');
+    },
+  );
 
   it.each(['ClientSignal', 'MacroTarget'])(
     '%s: the client\'s coach reads the row; another coach and the sub-coach read none of it',
