@@ -12,6 +12,7 @@ import { Prisma, type ClinicProgramSet } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { computeMacros, resolveMacroInputs, type MacroResult } from '../macros/macro-calculator';
 import { WorkoutBuilderService } from '../workout-builder/workout-builder.service';
+import { programDaysWhere } from '../workout-builder/program-guards';
 import { writeProfileWithTargets, type ClearableProfileField } from '../profile/profile.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { buildConsultationView, type ConsultationView } from './consultation-view';
@@ -306,10 +307,10 @@ export class OnboardingService {
    * INT-607-1: "head coach of" and "sub-coach on the team of" use main's
    * explicit membership rule (#597 C13 Opus A1, SubCoachScopeService): a coach
    * is on head H's team only when role = 'coach', coach_id = H AND an active
-   * TeamSubCoachAssignment(H, coach) or an open SubCoachAssignment(H, coach)
-   * exists. A bare coach_id is NOT membership: old guest checkouts stamped
-   * coach_id onto coach buyers (phantom sub-coaches), and the phantom "head"
-   * must never read the buyer coach's clients' screening answers.
+   * TeamSubCoachAssignment(H, coach), or for a never-seated pair an open
+   * SubCoachAssignment(H, coach). A bare coach_id is NOT membership: old guest
+   * checkouts stamped coach_id onto coach buyers (phantom sub-coaches), and the
+   * phantom "head" must never read the buyer coach's clients' screening answers.
    */
   async canCoachRead(readerId: string, clientId: string): Promise<boolean> {
     // A607-1: one CURRENT-tenancy predicate, evaluated from live rows on every
@@ -1210,7 +1211,7 @@ export class OnboardingService {
     }
 
     const masterPlans = await tx.workoutPlan.findMany({
-      where: { program_id: master.id, archived_at: null },
+      where: programDaysWhere(master),
       orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
       include: { exercises: { where: { archived_at: null }, orderBy: { order: 'asc' } } },
     });

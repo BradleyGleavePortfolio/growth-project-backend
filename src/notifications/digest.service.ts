@@ -369,9 +369,15 @@ export class DigestService {
       reason: 'No check-in in 3+ days',
     }));
 
-    // Unread messages.
+    // Unread messages, in threads whose client is still this coach's: a moved
+    // client's old thread no longer counts (owner 4).
     const unreadMessages = await this.prisma.coachMessage.count({
-      where: { coach_id: coachId, sender_id: { not: coachId }, read_at: null },
+      where: {
+        coach_id: coachId,
+        client: { coach_id: coachId },
+        sender_id: { not: coachId },
+        read_at: null,
+      },
     });
 
     // Weekly stats.

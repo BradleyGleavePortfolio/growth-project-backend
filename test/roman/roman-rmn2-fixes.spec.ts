@@ -15,6 +15,7 @@ import { ROMAN_COACH_POOL_EMPTY_MESSAGE } from '../../src/roman/roman.constants'
 import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
 import { postCheckRomanReply } from '../../src/roman/guardrails/roman-post-check';
 import type { RomanClientContext } from '../../src/roman/context/roman-client-context.types';
+import type { RomanClientContextService } from '../../src/roman/context/roman-client-context.service';
 import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 
 const CLIENT = { id: 'rmn2-client', role: 'student', tier: 'free' as const };
@@ -43,7 +44,7 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-function setup(initialUsedCents: number, inputTokens = 6000) {
+function setup(initialUsedCents: number, inputTokens = 6000, ctx: object | null = null, locked = false) {
   const row = {
     id: 'rmn2-budget', coach_user_id: 'rmn2-coach',
     period_start: new Date('2026-10-01T00:00:00Z'),
@@ -86,6 +87,9 @@ function setup(initialUsedCents: number, inputTokens = 6000) {
     user: { findUnique: jest.fn(async () => ({ coach_id: 'rmn2-coach' })) },
     teamSubCoachAssignment: { findFirst: jest.fn(async () => null) },
     coachAIBudget, romanSession, romanMessage, aiRequestAudit,
+    $queryRaw: jest.fn(async () => [{}]), // ROMANCOUNT: the daily count (counted)
+    dunningState: { findFirst: jest.fn(async () => (locked ? { id: 'd1', purchase_id: 'p1' } : null)) },
+    clientPurchase: { findMany: jest.fn(async () => []) },
     // C2 (#669): the daily reservation runs inside a transaction behind an
     // advisory lock, so the tx carries the ledger and $executeRaw too.
     $transaction: jest.fn(async (fn: (tx: object) => Promise<unknown>) =>
@@ -108,8 +112,9 @@ function setup(initialUsedCents: number, inputTokens = 6000) {
   const handle = AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(client));
   const budget = new CoachAIBudgetService(prisma);
   const usage = jest.spyOn(budget, 'recordUsage');
-  const svc = new RomanService(prisma, grantAllEgress(), handle, null, null, budget);
-  return { svc, row, client, usage };
+  const context = ctx ? fakeOf<RomanClientContextService>(ctx) : null;
+  const svc = new RomanService(prisma, grantAllEgress(), handle, context, null, budget);
+  return { svc, row, client, usage, prisma };
 }
 
 async function turn(svc: RomanService): Promise<void> {
@@ -192,4 +197,28 @@ describe('B-668-3 (Sol) a lunch entry cannot validate a whole-day logged total',
         .toEqual({ text: reply, guardrails_applied: [], rewritten: false });
     },
   );
+});
+
+describe('ROMANCOUNT: the daily count keeps the coach pool; (f) locked-out clients', () => {
+  afterEach(() => delete process.env.FEATURE_DUNNING_V2);
+
+  it('a counted client turn still debits the coach AI credit pool once', async () => {
+    const { svc, usage, prisma } = setup(0);
+    await svc.assertWithinRateLimit(CLIENT);
+    await turn(svc);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
+    expect(usage).toHaveBeenCalledTimes(1);
+  });
+
+  it('(f) locked out for not paying their coach: the chat works, Roman gets no background context', async () => {
+    process.env.FEATURE_DUNNING_V2 = 'true';
+    for (const locked of [true, false]) {
+      const getBundle = jest.fn(async () => null);
+      const { svc, client } = setup(0, 6000, { getBundle }, locked);
+      await turn(svc);
+      expect(getBundle).toHaveBeenCalledTimes(locked ? 0 : 1); // control: not locked out
+      expect(client.messages.stream).toHaveBeenCalledTimes(1);
+      if (locked) expect(JSON.stringify(client.messages.stream.mock.calls[0])).toContain('CLIENT DATA UNAVAILABLE');
+    }
+  });
 });

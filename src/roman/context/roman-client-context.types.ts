@@ -263,7 +263,7 @@ export interface RomanCtxWearables {
   days: RomanCtxWearableDay[];
 }
 
-/** An upcoming coaching session (booking) with the current coach. */
+/** An upcoming coaching session (booking) of the client, with any coach (HIST3). */
 export interface RomanCtxBooking {
   date: string;
   weekday: string;
@@ -318,6 +318,8 @@ export interface RomanClientContextBundle {
   estimated_tokens: number;
   /** Number of Prisma queries the build issued (≤ 16 by contract). */
   query_count: number;
+  /** Coach-side ids (head coach, open sub-coach) whose writes drop this memo entry. Never rendered. */
+  coach_side?: string[];
 }
 
 /**

@@ -26,6 +26,7 @@ import { AllowDeletionScheduled } from '../common/decorators/allow-deletion-sche
 import type { AuthedRequest, AuditableRequest } from '../auth/auth-request';
 import { AccountDeletionService } from './account-deletion.service';
 import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { AllowBeforeAgeConfirmed } from '../auth/client-age';
 
 // DTOs ────────────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,7 @@ export class RequestDeletionDto {
 @ApiResponse({ status: 401, description: 'Missing or invalid bearer token.' })
 @Controller()
 @UseGuards(JwtAuthGuard)
+@AllowBeforeAgeConfirmed()
 export class AccountDeletionController {
   constructor(private readonly deletionService: AccountDeletionService) {}
 

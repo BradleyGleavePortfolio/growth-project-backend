@@ -217,6 +217,7 @@ export class DunningLockoutGuard implements CanActivate {
     if (isPrivacyOperationWhileLocked(req.method, path)) return true;
     if (isCoachThreadOperationWhileLocked(req.method, path)) return true;
     if (isBasicFunctionWhileLocked(this.isMarkedOpen(context), path)) return true;
+    if (isAgeConfirmationWhileLocked(req.method, path, (req as { body?: unknown }).body)) return true;
 
     const userId = req.user?.id;
     if (!userId) return true; // unauthenticated routes are handled by auth guards
@@ -329,6 +330,18 @@ export function isCoachThreadOperationWhileLocked(
   path: string,
 ): boolean {
   return matchesOperation(COACH_THREAD_OPERATIONS, method, path);
+}
+
+/**
+ * FIXAGE2 R8 (owner #C8-UNDER18-B): the app's age step saves exactly
+ * PUT /profile with a body of only `date_of_birth` (AGEGATE16). A locked
+ * client the age gate refuses can make that one save, then meets this lock
+ * as usual, with its payment recovery. Any other profile write stays locked.
+ */
+export function isAgeConfirmationWhileLocked(method: string | undefined, path: string, body: unknown): boolean {
+  if (!matchesOperation([['PUT', 'profile']], method, path)) return false;
+  const keys = body && typeof body === 'object' ? Object.keys(body) : [];
+  return keys.length === 1 && keys[0] === 'date_of_birth';
 }
 
 function matchesOperation(

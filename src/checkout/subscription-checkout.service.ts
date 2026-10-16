@@ -21,7 +21,7 @@ import {
 } from '../packages/trials/trial-checkout-capability';
 import { PrismaService } from '../prisma.service';
 import { paidJoinAllowed } from '../invite-codes/invite-codes.service';
-import { CheckoutService, isRecurringPackage } from './checkout.service';
+import { CheckoutService, isFreePackage, isRecurringPackage } from './checkout.service';
 import { errorLabel } from './error-label';
 import {
   CreateFailed,
@@ -69,10 +69,12 @@ import {
   isIdempotencyMismatch,
   isResourceMissing,
   intentResult,
+  openAttemptWhere,
   packageTrialDays,
   planPriceFor,
   planView,
   reservedMarker,
+  resumeWindowStart,
   retryMarker,
   shareLinkMatches,
   sheetSecret,
@@ -201,7 +203,7 @@ export class SubscriptionCheckoutService {
     // $0 packages and invite-code grants never create Stripe objects. A
     // recurring package priced $0 is free too (claimable through
     // /v1/packages/:id/claim-free, which keys on amount_cents = 0).
-    if (pkg.amount_cents === 0 && (!isRecurringPackage(pkg) || pkg.billing_type === 'recurring')) {
+    if (isFreePackage(pkg)) {
       throw packageIsFree();
     }
     if (!isRecurringPackage(pkg)) {
@@ -564,15 +566,7 @@ export class SubscriptionCheckoutService {
       // 2. An open attempt for the same package (any key, B-679-1: any age;
       //    an unresolved attempt is never replaced by elapsed time) -> reuse it.
       const open = await tx.clientPurchase.findFirst({
-        where: {
-          client_user_id: args.clientId,
-          package_id: args.pkg.id,
-          billing_type: 'recurring',
-          entitlement_active: false,
-          trial_started_at: null,
-          status: { in: [...OPEN_ATTEMPT_STATUSES] },
-          idempotency_key: { startsWith: `sub-${args.clientId}-` },
-        },
+        where: openAttemptWhere(args.clientId, args.pkg.id),
         orderBy: { created_at: 'desc' },
       });
       if (open) return { kind: 'reuse', purchase: open };
@@ -947,6 +941,19 @@ export class SubscriptionCheckoutService {
     }
     if (claimed || !cur.stripe_subscription_id) return this.mintSubscription(cur, pkg, true);
 
+    // FIX998B — one reuse rule with the quote: a trial attempt past the window is
+    // retired as R1-6 does for a new key (never once a card was saved); the app
+    // then starts afresh with a new key. Unconfirmed: replayed as before.
+    if (cur.trial_days != null && cur.created_at.getTime() <= resumeWindowStart().getTime()) {
+      let end: 'kept' | 'card_saved' | 'retired' = 'kept';
+      try {
+        end = await this.retireOneStaleTrial(cur, cur.stripe_subscription_id);
+      } catch (err) {
+        this.logger.warn(`stale trial attempt kept purchase=${cur.id} error=${errorLabel(err)}`);
+      }
+      if (end === 'card_saved') throw alreadyActive(cur);
+      if (end === 'retired') throw attemptExpired('timed_out');
+    }
     if (cur.stripe_client_secret) {
       // C-654-3 — the secret may be spent: the card was saved or the first
       // invoice paid a moment ago, before the webhook. Never hand it back.
@@ -1372,7 +1379,7 @@ export class SubscriptionCheckoutService {
   ): Promise<ClientPurchase[]> {
     const cardSaved: ClientPurchase[] = [];
     try {
-      const before = new Date(Date.now() - OPEN_ATTEMPT_MAX_AGE_MS);
+      const before = resumeWindowStart();
       // This plan's own open attempt keeps the reuse window (same-plan resume).
       const age = releaseOtherPlans
         ? { OR: [{ created_at: { lte: before } }, { package_id: { not: packageId } }] }

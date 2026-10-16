@@ -18,6 +18,8 @@ import { SchedulingProviderRegistry } from '../src/scheduling/providers/scheduli
 import { StubCalendarAdapter } from '../src/scheduling/providers/stub-calendar.adapter';
 import { StubVideoAdapter } from '../src/scheduling/providers/stub-video.adapter';
 import { ZoomVideoAdapter } from '../src/scheduling/providers/zoom-video.adapter';
+import { expireLapsedForCoach } from '../src/scheduling/request-expiry';
+import { SchedulingSessionLifecycleService } from '../src/scheduling/scheduling-session-lifecycle.service';
 import { SchedulingService } from '../src/scheduling/scheduling.service';
 import type { ActorContext } from '../src/scheduling/scheduling.types';
 import { SchedulingFakeDb, asPrisma } from './utils/scheduling-fake-db';
@@ -85,7 +87,9 @@ function harness() {
     new ZoomVideoAdapter(),
   );
   const svc = new SchedulingService(asPrisma(db), audit, providers, emitter);
-  return { db, svc };
+  // The HIST-2b move cascade's entry point (cancelLeftByMove), on the same rows.
+  const lifecycle = new SchedulingSessionLifecycleService(asPrisma(db), audit, providers, emitter);
+  return { db, svc, lifecycle };
 }
 
 function book(svc: SchedulingService, actor: ActorContext, start: string) {
@@ -143,6 +147,7 @@ describe('coach booking options endpoints (GET/PATCH /scheduling/coach/booking-o
       buffer_before_minutes: 0,
       buffer_after_minutes: 0,
       daily_max_sessions: null,
+      cancel_notice_hours: 24,
     });
     expect(view.defaults).toEqual({
       min_notice_minutes: 5,
@@ -150,6 +155,7 @@ describe('coach booking options endpoints (GET/PATCH /scheduling/coach/booking-o
       buffer_before_minutes: 0,
       buffer_after_minutes: 0,
       daily_max_sessions: null,
+      cancel_notice_hours: 24,
     });
   });
 
@@ -301,5 +307,384 @@ describe('daily maximum', () => {
         end_at: local(6, '14:30'),
       }),
     ).resolves.toMatchObject({ start_at: new Date(local(6, '14:00')) });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C4-NOTICE (owner Option 1): each coach sets how many hours before the start a
+// client's own move or cancel locks (default 24). Coaches, the server's own
+// flows and new bookings are never bound by it.
+// ---------------------------------------------------------------------------
+describe('notice to move or cancel (cancel_notice_hours)', () => {
+  const HOUR = 3_600_000;
+  // Thursday 2026-10-08 10:00 PDT, 74 hours after NOW.
+  const START = local(8, '10:00');
+  afterEach(() => jest.setSystemTime(NOW));
+
+  function confirmed(db: SchedulingFakeDb, id: string, start = START, coachId = 'coach-1') {
+    db.addSession({
+      id,
+      coach_id: coachId,
+      client_id: coachId === 'coach-1' ? 'client-1' : 'client-3',
+      session_type_id: coachId === 'coach-1' ? 'st-open' : null,
+      status: 'scheduled',
+      start_at: new Date(start),
+      end_at: new Date(plus(start, 30)),
+    });
+  }
+  function at(iso: string, offsetMs = 0): void {
+    jest.setSystemTime(new Date(new Date(iso).getTime() + offsetMs));
+  }
+
+  it('defaults to 24 hours: open slots and the client session carry it; not the coach', async () => {
+    const { svc, db } = harness();
+    confirmed(db, 's1');
+    const payload = await svc.getOpenSlots(CLIENT, 'coach-1', {
+      from: local(8, '00:00'),
+      to: local(9, '00:00'),
+      session_type_id: 'st-open',
+    });
+    expect(payload.cancel_notice_hours).toBe(24);
+    const view = await svc.getSession(CLIENT, 's1');
+    expect(view.change_locked_at?.toISOString()).toBe(plus(START, -24 * 60));
+    expect(view).toMatchObject({ cancellable: true, reschedulable: true });
+    // The coach's profile row itself never rides along.
+    expect(JSON.stringify(view)).not.toContain('booking_cancel_notice_hours');
+    const coachView = await svc.getSession(COACH, 's1');
+    expect(coachView.change_locked_at).toBeNull();
+  });
+
+  it.each([24, 12, 48])(
+    'with %i hours: a client may cancel or move one minute before the lock, not at it',
+    async (hours) => {
+      const { svc, db } = harness();
+      if (hours !== 24) await svc.updateMyBookingOptions(COACH, { cancel_notice_hours: hours });
+      for (const id of ['early-cancel', 'early-move', 'late']) confirmed(db, id);
+      const lockAt = plus(START, -hours * 60);
+
+      at(lockAt, -60_000);
+      const open = await svc.getSession(CLIENT, 'early-cancel');
+      expect(open).toMatchObject({ cancellable: true, reschedulable: true });
+      expect(open.change_locked_at?.toISOString()).toBe(lockAt);
+      await expect(svc.cancelSession(CLIENT, 'early-cancel', {})).resolves.toMatchObject({
+        status: 'canceled',
+      });
+      await expect(
+        svc.rescheduleSession(CLIENT, 'early-move', {
+          start_at: local(8, '14:00'),
+          end_at: local(8, '14:30'),
+        }),
+      ).resolves.toMatchObject({ start_at: new Date(local(8, '14:00')) });
+
+      at(lockAt);
+      const locked = await svc.getSession(CLIENT, 'late');
+      expect(locked).toMatchObject({ cancellable: false, reschedulable: false });
+      const cancel = await failure(svc.cancelSession(CLIENT, 'late', {}));
+      expect(cancel).toMatchObject({ status: 409, code: 'CHANGES_LOCKED' });
+      const move = await failure(
+        svc.rescheduleSession(CLIENT, 'late', {
+          start_at: local(8, '15:00'),
+          end_at: local(8, '15:30'),
+        }),
+      );
+      expect(move).toMatchObject({ status: 409, code: 'CHANGES_LOCKED' });
+      expect(db.sessions.find((s) => s.id === 'late')).toMatchObject({
+        status: 'scheduled',
+        start_at: new Date(START),
+      });
+    },
+  );
+
+  it('with 0 hours: changes stay open until the start, as before', async () => {
+    const { svc, db } = harness();
+    await svc.updateMyBookingOptions(COACH, { cancel_notice_hours: 0 });
+    confirmed(db, 's1');
+    confirmed(db, 's2', local(8, '11:00'));
+    at(START, -60_000);
+    const view = await svc.getSession(CLIENT, 's1');
+    expect(view).toMatchObject({ cancellable: true, reschedulable: true });
+    expect(view.change_locked_at?.toISOString()).toBe(START);
+    await expect(svc.cancelSession(CLIENT, 's1', {})).resolves.toMatchObject({
+      status: 'canceled',
+    });
+    at(local(8, '11:00'));
+    expect((await failure(svc.cancelSession(CLIENT, 's2', {}))).code).toBe('SESSION_STARTED');
+  });
+
+  it('a coach can still cancel or move inside the notice', async () => {
+    const { svc, db } = harness();
+    confirmed(db, 'moved');
+    confirmed(db, 'cancelled', local(8, '12:00'));
+    at(START, -HOUR);
+    await expect(
+      svc.rescheduleSession(COACH, 'moved', {
+        start_at: local(8, '15:00'),
+        end_at: local(8, '15:30'),
+      }),
+    ).resolves.toMatchObject({ start_at: new Date(local(8, '15:00')) });
+    await expect(svc.cancelSession(COACH, 'cancelled', {})).resolves.toMatchObject({
+      status: 'canceled',
+    });
+  });
+
+  it('booking a time inside the notice stays allowed; the client then cannot change it', async () => {
+    const { svc } = harness();
+    const s = await book(svc, CLIENT, local(5, '15:00')); // 7 hours from now
+    expect(s).toMatchObject({ status: 'scheduled', cancellable: false, reschedulable: false });
+    expect((await failure(svc.cancelSession(CLIENT, s.id, {}))).code).toBe('CHANGES_LOCKED');
+  });
+
+  it("another coach's notice never applies, and one coach's edit never changes another's", async () => {
+    const { svc, db } = harness();
+    db.addUser({ id: 'coach-2', name: 'Coach Lee', role: 'coach' });
+    db.addUser({ id: 'client-3', name: 'Client Three', role: 'student', coach_id: 'coach-2' });
+    const COACH_2: ActorContext = { id: 'coach-2', role: 'coach', email: null, coach_id: null };
+    const CLIENT_3: ActorContext = {
+      id: 'client-3',
+      role: 'student',
+      email: null,
+      coach_id: 'coach-2',
+    };
+    await svc.updateMyBookingOptions(COACH_2, { cancel_notice_hours: 0 });
+    expect((await svc.getMyBookingOptions(COACH)).cancel_notice_hours).toBe(24);
+    confirmed(db, 'mine');
+    confirmed(db, 'theirs', START, 'coach-2');
+    at(START, -12 * HOUR);
+    expect(await svc.getSession(CLIENT, 'mine')).toMatchObject({ cancellable: false });
+    expect((await failure(svc.cancelSession(CLIENT, 'mine', {}))).code).toBe('CHANGES_LOCKED');
+    expect(await svc.getSession(CLIENT_3, 'theirs')).toMatchObject({ cancellable: true });
+    await expect(svc.cancelSession(CLIENT_3, 'theirs', {})).resolves.toMatchObject({
+      status: 'canceled',
+    });
+    // Neither client reads the other's session.
+    expect((await failure(svc.getSession(CLIENT_3, 'mine'))).status).toBe(404);
+  });
+
+  it('counts elapsed hours across the DST change in the coach zone', async () => {
+    const { svc, db } = harness();
+    // Sunday 2026-11-01 10:00 PST (clocks went back at 02:00). 24 hours
+    // earlier is Saturday 11:00 PDT.
+    const sunday = '2026-11-01T18:00:00.000Z';
+    confirmed(db, 'ok', sunday);
+    confirmed(db, 'late', sunday);
+    const view = await svc.getSession(CLIENT, 'ok');
+    expect(view.change_locked_at?.toISOString()).toBe('2026-10-31T18:00:00.000Z');
+    at('2026-10-31T17:59:00.000Z');
+    await expect(svc.cancelSession(CLIENT, 'ok', {})).resolves.toMatchObject({
+      status: 'canceled',
+    });
+    at('2026-10-31T18:00:00.000Z');
+    expect((await failure(svc.cancelSession(CLIENT, 'late', {}))).code).toBe('CHANGES_LOCKED');
+  });
+
+  it.each([
+    [{ cancel_notice_hours: -1 }],
+    [{ cancel_notice_hours: 169 }],
+    [{ cancel_notice_hours: 1.5 }],
+    [JSON.parse('{"cancel_notice_hours":"24"}')],
+  ])('refuses %j with INVALID_BOOKING_OPTIONS', async (patch) => {
+    const { svc } = harness();
+    const f = await failure(svc.updateMyBookingOptions(COACH, patch));
+    expect(f).toMatchObject({ status: 400, code: 'INVALID_BOOKING_OPTIONS' });
+    expect(f.message).toBe(
+      'Notice to move or cancel (hours) must be a whole number from 0 to 168.',
+    );
+  });
+
+  it('accepts the range ends, and a client cannot set it', async () => {
+    const { svc } = harness();
+    for (const hours of [168, 0]) {
+      await expect(
+        svc.updateMyBookingOptions(COACH, { cancel_notice_hours: hours }),
+      ).resolves.toMatchObject({ cancel_notice_hours: hours });
+    }
+    const f = await failure(svc.updateMyBookingOptions(CLIENT, { cancel_notice_hours: 0 }));
+    expect(f.status).toBe(403);
+    expect((await svc.getMyBookingOptions(COACH)).cancel_notice_hours).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// C4MOVED (MOCKUP-3 C4 slice 6): a session records the start it had before its
+// most recent move, who moved it and when (C4-S-100, C4-S-101). Only a move
+// that changes the start writes them.
+// ---------------------------------------------------------------------------
+describe('moved fields (moved_from_start_at, moved_by_role, last_moved_at)', () => {
+  const START = local(8, '10:00');
+  const UNMOVED = { moved_from_start_at: null, moved_by_role: null, last_moved_at: null };
+  afterEach(() => jest.setSystemTime(NOW));
+
+  function confirmed(db: SchedulingFakeDb, id: string, start = START, type = 'st-open') {
+    db.addSession({
+      id,
+      coach_id: 'coach-1',
+      client_id: 'client-1',
+      session_type_id: type,
+      status: 'scheduled',
+      start_at: new Date(start),
+      end_at: new Date(plus(start, 30)),
+    });
+  }
+  function move(svc: SchedulingService, actor: ActorContext, id: string, start: string, min = 30) {
+    return svc.rescheduleSession(actor, id, { start_at: start, end_at: plus(start, min) });
+  }
+  function movedBy(role: 'coach' | 'client', from: string, at: Date = NOW) {
+    return { moved_from_start_at: new Date(from), moved_by_role: role, last_moved_at: at };
+  }
+
+  it('a coach move records the previous start, coach and when; both views carry them', async () => {
+    const { svc, db } = harness();
+    confirmed(db, 's1');
+    await expect(move(svc, COACH, 's1', local(8, '14:00'))).resolves.toMatchObject({
+      start_at: new Date(local(8, '14:00')),
+      ...movedBy('coach', START),
+    });
+    expect(await svc.getSession(CLIENT, 's1')).toMatchObject(movedBy('coach', START));
+    expect(await svc.getSession(COACH, 's1')).toMatchObject(movedBy('coach', START));
+    expect((await svc.listUpcomingForActor(CLIENT))[0]).toMatchObject(movedBy('coach', START));
+  });
+
+  it("a client's move of a confirmed session records client; the coach's approval keeps it", async () => {
+    const { svc, db } = harness();
+    db.addSessionType({
+      id: 'st-ask',
+      coach_id: 'coach-1',
+      name: 'Check-in call',
+      duration_minutes: 30,
+      auto_approve: false,
+    });
+    confirmed(db, 's1', START, 'st-ask');
+    await expect(move(svc, CLIENT, 's1', local(8, '14:00'))).resolves.toMatchObject({
+      status: 'requested',
+      ...movedBy('client', START),
+    });
+    jest.setSystemTime(new Date(NOW.getTime() + 3_600_000));
+    await expect(svc.approveSession(COACH, 's1')).resolves.toMatchObject({
+      status: 'scheduled',
+      start_at: new Date(local(8, '14:00')),
+      ...movedBy('client', START),
+    });
+  });
+
+  it('a second move keeps only the latest previous start, mover and time', async () => {
+    const { svc, db } = harness();
+    confirmed(db, 's1');
+    await move(svc, COACH, 's1', local(8, '14:00'));
+    const later = new Date(NOW.getTime() + 2 * 3_600_000);
+    jest.setSystemTime(later);
+    await expect(move(svc, CLIENT, 's1', local(8, '15:00'))).resolves.toMatchObject({
+      start_at: new Date(local(8, '15:00')),
+      ...movedBy('client', local(8, '14:00'), later),
+    });
+  });
+
+  it('a new end at the same start is not a move', async () => {
+    const { svc, db } = harness();
+    confirmed(db, 's1');
+    await expect(move(svc, COACH, 's1', START, 45)).resolves.toMatchObject({
+      end_at: new Date(plus(START, 45)),
+      ...UNMOVED,
+    });
+  });
+
+  it('booking, cancel and no-show leave them unchanged', async () => {
+    const { svc, db } = harness();
+    await expect(book(svc, CLIENT, local(8, '12:00'))).resolves.toMatchObject(UNMOVED);
+    confirmed(db, 'never-moved', local(9, '10:00'));
+    await expect(svc.cancelSession(CLIENT, 'never-moved', {})).resolves.toMatchObject({
+      status: 'canceled',
+      ...UNMOVED,
+    });
+    confirmed(db, 'to-cancel');
+    confirmed(db, 'to-miss', local(7, '10:00'));
+    await move(svc, COACH, 'to-cancel', local(8, '14:00'));
+    await move(svc, COACH, 'to-miss', local(7, '14:00'));
+    await expect(svc.cancelSession(CLIENT, 'to-cancel', {})).resolves.toMatchObject({
+      status: 'canceled',
+      ...movedBy('coach', START),
+    });
+    jest.setSystemTime(new Date(plus(local(7, '14:00'), 40)));
+    await expect(svc.markNoShow(COACH, 'to-miss')).resolves.toMatchObject({
+      status: 'no_show',
+      ...movedBy('coach', local(7, '10:00')),
+    });
+  });
+
+  it('decline, approval of a request, expiry and the move cascade leave them null', async () => {
+    const { svc, db, lifecycle } = harness();
+    const request = (id: string, start: string, expires: Date | null = null) =>
+      db.addSession({
+        id,
+        coach_id: 'coach-1',
+        client_id: 'client-1',
+        session_type_id: 'st-open',
+        status: 'requested',
+        start_at: new Date(start),
+        end_at: new Date(plus(start, 30)),
+        request_expires_at: expires,
+      });
+    request('to-decline', local(8, '10:00'));
+    request('to-approve', local(8, '11:00'));
+    request('to-expire', local(8, '12:00'), new Date(NOW.getTime() - 60_000));
+    confirmed(db, 'to-cascade', local(9, '10:00'));
+    await expect(svc.declineSession(COACH, 'to-decline')).resolves.toMatchObject({
+      status: 'declined',
+      ...UNMOVED,
+    });
+    await expect(svc.approveSession(COACH, 'to-approve')).resolves.toMatchObject({
+      status: 'scheduled',
+      ...UNMOVED,
+    });
+    expect(await expireLapsedForCoach(asPrisma(db), 'coach-1', NOW)).toHaveLength(1);
+    const cascaded = await lifecycle.cancelLeftByMove(asPrisma(db), ['client-1'], 'coach-1');
+    expect(cascaded.map((c) => c.row.id).sort()).toEqual(['to-approve', 'to-cascade']);
+    for (const { row } of cascaded) expect(row).toMatchObject({ status: 'canceled', ...UNMOVED });
+    const stored = (id: string) => db.sessions.find((s) => s.id === id);
+    expect(stored('to-decline')).toMatchObject({ status: 'declined', ...UNMOVED });
+    expect(stored('to-expire')).toMatchObject({ status: 'expired', ...UNMOVED });
+  });
+
+  it('another coach, their client and another client cannot read them (the existing 404)', async () => {
+    const { svc, db } = harness();
+    db.addUser({ id: 'coach-2', name: 'Coach Lee', role: 'coach' });
+    db.addUser({ id: 'client-3', name: 'Client Three', role: 'student', coach_id: 'coach-2' });
+    const COACH_2: ActorContext = { id: 'coach-2', role: 'coach', email: null, coach_id: null };
+    const CLIENT_3: ActorContext = {
+      id: 'client-3',
+      role: 'student',
+      email: null,
+      coach_id: 'coach-2',
+    };
+    confirmed(db, 's1');
+    await move(svc, COACH, 's1', local(8, '14:00'));
+    for (const actor of [COACH_2, CLIENT_3, CLIENT_2]) {
+      expect((await failure(svc.getSession(actor, 's1'))).status).toBe(404);
+      expect(await svc.listUpcomingForActor(actor)).toEqual([]);
+    }
+  });
+
+  it('older app builds ignore them: the view only adds three keys and keeps every other', async () => {
+    const { svc, db } = harness();
+    confirmed(db, 's1');
+    const NEW_KEYS = ['last_moved_at', 'moved_by_role', 'moved_from_start_at'];
+    const before = await svc.getSession(CLIENT, 's1');
+    expect(before).toMatchObject(UNMOVED);
+    // The keys the session view had before C4MOVED, unchanged.
+    expect(Object.keys(before).filter((k) => !NEW_KEYS.includes(k)).sort()).toEqual(
+      [
+        ...['id', 'coach_id', 'client_id', 'session_type_id', 'status', 'start_at', 'end_at'],
+        ...['title', 'coach_notes_md', 'client_recap_md', 'video_provider', 'video_url'],
+        ...['video_meeting_id', 'calendar_provider', 'calendar_event_id', 'approved_at'],
+        ...['provider_idempotency_key', 'ended_at', 'end_reason', 'request_expires_at'],
+        ...['created_at', 'updated_at', 'session_type', 'coach_name', 'client_name'],
+        ...['meeting_link_status', 'cancellable', 'reschedulable', 'change_locked_at'],
+      ].sort(),
+    );
+    const after = await move(svc, CLIENT, 's1', local(8, '14:00'));
+    expect(Object.keys(after).sort()).toEqual(Object.keys(before).sort());
+    // Apart from the times, every earlier field reads the same after a move.
+    const rest = (v: object) =>
+      Object.entries(v).filter(([k]) => !NEW_KEYS.includes(k) && !k.endsWith('_at'));
+    expect(rest(after)).toEqual(rest(before));
   });
 });

@@ -85,7 +85,8 @@ describe('two-way block: posts, comments, cohort messages and DMs (in-memory Pri
   };
 
   function user(role: string, name: string): User {
-    return stub<User>(db.seed('user', { role, name, deleted_at: null, coach_id: null }));
+    const coachId = role === 'student' ? coach.id : null;
+    return stub<User>(db.seed('user', { role, name, deleted_at: null, coach_id: coachId }));
   }
 
   beforeEach(() => {
@@ -290,6 +291,7 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
         findCohort: async () => ({ id: COHORT, workspace_id: WS }),
         membershipInCohort: async () => ({ status: 'active' }),
         isWorkspaceCoach: async () => isCoach,
+        peopleInSpace: async <T>(_cohortId: string, rows: T[]) => rows,
       };
       const repo = {
         findCohort: async () => ({ id: COHORT, workspace_id: WS }),
@@ -415,6 +417,7 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
             findCohort: async () => ({ id: COHORT, workspace_id: WS }),
             membershipInCohort: async () => ({ status: 'active' }),
             isWorkspaceCoach: async () => isCoach,
+            peopleInSpace: async <T>(_cohortId: string, rows: T[]) => rows,
           }),
           stub<CommunityCohortMembersRepository>({ listMembers: async () => [row] }),
           safetyWithBlocks(blocks),

@@ -4,7 +4,9 @@
  *
  * Own data only: the subject is `req.user.id`, there is no parameter. Behind
  * the same guards as every /roman route (404 while the feature flag is off).
- * Students only — the coach surface gets no client data at launch.
+ * Clients only (assertRomanClient): a coach or the owner gets 403 "Insufficient
+ * role", a client with no coach 403 ROMAN_REQUIRES_COACH, before anything is
+ * read.
  */
 
 import {
@@ -25,6 +27,7 @@ import type { AuthedRequest } from '../../auth/auth-request';
 import { RolesGuard } from '../../auth/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RomanFeatureGuard } from '../roman-feature.guard';
+import { assertRomanClient } from '../roman-requires-coach';
 import { RomanClientContextService } from './roman-client-context.service';
 import { romanErrorTag, romanSanitizedError } from '../roman-error-tag';
 import {
@@ -45,6 +48,7 @@ export class RomanContextController {
   @Roles('student')
   @Throttle({ default: { ttl: 60_000, limit: 20 } })
   async me(@Req() req: AuthedRequest) {
+    assertRomanClient(req.user);
     let bundle: Awaited<ReturnType<RomanClientContextService['buildFresh']>>;
     try {
       bundle = await this.context.buildFresh({ id: req.user.id, role: req.user.role });

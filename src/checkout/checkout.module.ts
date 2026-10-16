@@ -19,6 +19,8 @@ import { CoachClientPaymentsController } from './coach-client-payments.controlle
 import { CoachClientPaymentsService } from './coach-client-payments.service';
 import { ClientBillingReconciler } from './client-billing.reconciler';
 import { ClientBillingService } from './client-billing.service';
+import { ClientReceiptsController } from './client-receipts.controller';
+import { ClientReceiptsService } from './client-receipts.service';
 import { DunningService } from './dunning.service';
 import { DunningV2Module } from './dunning-v2/dunning-v2.module';
 import {
@@ -94,6 +96,8 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     ClientBillingController,
     // CF-COACH-PAY-BE-128 — coach payments per client (flag default off).
     CoachClientPaymentsController,
+    // C5RECEIPTS — the client's own receipts (GET /v1/checkout/receipts[/:id]).
+    ClientReceiptsController,
   ],
   providers: [
     CheckoutService,
@@ -114,6 +118,7 @@ import { PayoutsV2Module } from '../payouts-v2/payouts-v2.module';
     // S-FEE round 5 (OR-111-1) — payout notice delivery + Money read side.
     PayoutNoticeService,
     CoachClientPaymentsService,
+    ClientReceiptsService,
   ],
   exports: [
     CheckoutService,

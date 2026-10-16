@@ -16,7 +16,7 @@ import type { CoachAlertEmitter } from '../../src/notifications/emitters/coach-a
 import { RomanService } from '../../src/roman/roman.service';
 import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
 import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
-import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
+import { FEATURE_ROMAN_CHAT_ENABLED_ENV, FEATURE_ROMAN_CRISIS_ALERT_ENV } from '../../src/roman/roman.feature';
 import {
   classifySafety,
   ROMAN_SAFETY_ROUTER_MODEL_ID,
@@ -26,20 +26,26 @@ import {
 import { SAFETY_ALERT_PUSH_BODY } from '../../src/notifications/push/lock-screen-copy';
 import { postCheckRomanReply } from '../../src/roman/guardrails/roman-post-check';
 import { AppModule } from '../../src/app.module';
+import { GOLDEN_SET } from './eval/golden-set';
+import { renderTrustPage } from '../../src/public-pages/trust-pages.html';
 
 const FLAG = FEATURE_ROMAN_CHAT_ENABLED_ENV;
-let saved: string | undefined;
+const CRISIS = FEATURE_ROMAN_CRISIS_ALERT_ENV;
+let saved: Array<string | undefined> = [];
 beforeEach(() => {
-  saved = process.env[FLAG];
+  saved = [process.env[FLAG], process.env[CRISIS]];
   process.env[FLAG] = 'true';
+  delete process.env[CRISIS]; // the crisis alert switch is off by default
 });
 afterEach(() => {
-  if (saved === undefined) delete process.env[FLAG];
-  else process.env[FLAG] = saved;
+  [FLAG, CRISIS].forEach((k, i) => {
+    if (saved[i] === undefined) delete process.env[k];
+    else process.env[k] = saved[i];
+  });
 });
 
 const REPLY =
-  'This needs medical attention. Contact your prescribing clinic today. If symptoms are severe, call 911.';
+  'This needs medical attention. Contact your doctor or prescriber today. If symptoms are severe, call 911.';
 
 const MEDICINES = [
   ...'Ozempic Wegovy Rybelsus semaglutide Mounjaro Zepbound tirzepatide Victoza Saxenda'.split(' '),
@@ -368,7 +374,7 @@ describe('urgent_symptoms on the live turn', () => {
     ]);
     expect(h.audit.write.mock.calls[0][0]).toMatchObject({
       action: 'roman.safety_route',
-      metadata: { route_reason: 'contact_clinic' },
+      metadata: { route_reason: 'contact_prescriber' },
     });
     expect(h.alerts.createAlert).toHaveBeenCalledTimes(1);
     expect(h.alerts.createAlert).toHaveBeenCalledWith({
@@ -396,11 +402,70 @@ describe('urgent_symptoms on the live turn', () => {
     expect(chunks[1]).toMatchObject({ type: 'done', text: REPLY });
   });
 
-  it('the 911 and 988 templates still alert no one', async () => {
-    const h = harness('coach-1');
-    await drain(h.svc.streamAssistantTurn(CLIENT, SESSION, { userMessage: 'I have chest pain right now' }));
-    expect(h.alerts.createAlert).not.toHaveBeenCalled();
+  // #CRISIS-WORDING (owner op 1), word for word: line 1 on a crisis reply that
+  // alerted the coach, line 2 on the privacy page right after the exception.
+  const LINE_1 = "We've let your coach know so they can check in with you.";
+  const LINE_2 =
+    'If Roman sends you a crisis safety reply, your coach is told that it happened, but not what you wrote, so they can check in with you.';
+  it('both lines are pinned word for word (straight apostrophe, as the urgent line)', () => {
+    expect(ROMAN_COACH_TOLD_LINE).toBe(LINE_1);
   });
+
+  // ROMAN-CRISIS-ALERT (owner Option 1), behind its switch: off (the
+  // default, or any value but true), the 911 and 988 replies alert no one, as
+  // before, and neither line shows.
+  it.each([
+    ['emergency', undefined],
+    ['self_harm', undefined],
+    ['self_harm', 'false'],
+  ] as const)('%s with the crisis switch %s: the fixed reply and no alert, as before', async (cls, sw) => {
+    if (sw) process.env[CRISIS] = sw;
+    const message = GOLDEN_SET.find((g) => g.router === cls)!.question;
+    const h = harness('coach-2');
+    const chunks = await drain(h.svc.streamAssistantTurn(CLIENT, SESSION, { userMessage: message }));
+    expect(chunks[1]).toMatchObject({ type: 'done', text: ROMAN_SAFETY_TEMPLATES[cls] });
+    expect(h.alerts.createAlert).not.toHaveBeenCalled();
+    expect(renderTrustPage('privacy')).not.toContain(LINE_2);
+  });
+
+  // On: the reply alerts the client's current coach, with no client text and
+  // no message id, and says so (line 1); the privacy page says it (line 2).
+  // Coachless: no alert, so no line 1.
+  it.each(['emergency', 'self_harm'] as const)(
+    '%s with the crisis switch on: the fixed reply with line 1, line 2 on the page, one alert for the current coach',
+    async (cls) => {
+      process.env[CRISIS] = 'true';
+      const message = GOLDEN_SET.find((g) => g.router === cls)!.question;
+      expect(classifySafety(message).class).toBe(cls);
+      const h = harness('coach-2');
+      const turn = { userMessage: message, userMessageId: 'msg_u1' };
+      const chunks = await drain(h.svc.streamAssistantTurn(CLIENT, SESSION, turn));
+      const told = `${ROMAN_SAFETY_TEMPLATES[cls]} ${LINE_1}`;
+      expect(chunks.map((c) => [c.type, c.text])).toEqual([
+        ['delta', told],
+        ['done', told],
+      ]);
+      expect(h.messages).toEqual([expect.objectContaining({ role: 'roman', content: told })]);
+      // Every place on the pages: test/trust-pages.spec.ts (#CRISIS-PRIVACY-PLACES).
+      expect(renderTrustPage('privacy')).toContain(LINE_2);
+      expect(h.stream).not.toHaveBeenCalled();
+      expect(h.alerts.createAlert).toHaveBeenCalledTimes(1);
+      expect(h.alerts.createAlert).toHaveBeenCalledWith({
+        coachId: 'coach-2',
+        clientId: 'client-1',
+        alertType: 'roman_crisis_reply',
+        severity: 'critical',
+        message: SAFETY_ALERT_PUSH_BODY.roman_urgent_reply,
+      });
+      const row = JSON.stringify(h.alerts.createAlert.mock.calls);
+      for (const leak of [message, 'msg_u1']) expect(row).not.toContain(leak);
+
+      const coachless = harness(null);
+      const alone = await drain(coachless.svc.streamAssistantTurn(CLIENT, SESSION, turn));
+      expect(alone[1]).toMatchObject({ type: 'done', text: ROMAN_SAFETY_TEMPLATES[cls] });
+      expect(coachless.alerts.createAlert).not.toHaveBeenCalled();
+    },
+  );
 
   it('the controller treats it as a fixed reply, so no limit, consent or coach check stands in the way', async () => {
     const { svc } = harness(null);
@@ -452,8 +517,8 @@ describe('urgent_symptoms on the live turn', () => {
   }, 60000);
 });
 
-describe('the coach alert for an urgent reply', () => {
-  it('each urgent reply is its own alert: an earlier unacknowledged one never hides it', async () => {
+describe('the coach alert for an urgent or crisis reply', () => {
+  it.each(['roman_urgent_reply', 'roman_crisis_reply'] as const)('%s: each reply is its own alert: an earlier unacknowledged one never hides it', async (alertType) => {
     const earlier = { id: 'alert_0', acknowledged_at: null, created_at: new Date() };
     const prisma = {
       coachAlert: {
@@ -469,8 +534,8 @@ describe('the coach alert for an urgent reply', () => {
     const input = {
       coachId: 'coach-1',
       clientId: 'client-1',
-      alertType: 'roman_urgent_reply' as const,
-      message: SAFETY_ALERT_PUSH_BODY.roman_urgent_reply,
+      alertType,
+      message: SAFETY_ALERT_PUSH_BODY[alertType],
     };
     await alerts.createAlert(input);
     await alerts.createAlert(input);

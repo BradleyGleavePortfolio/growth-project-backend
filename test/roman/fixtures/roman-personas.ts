@@ -230,7 +230,8 @@ const macroTargets = [
     effective_from: D('2026-09-20'),
     archived_at: null,
   },
-  // P1 — an OLD coach's row: must be excluded (coach_id != current coach)
+  // P1 — an OLD coach's older row: superseded by the newer row above (HIST3:
+  // the newest effective target wins, whichever coach set it)
   {
     id: 'mt-maya-old',
     client_id: P1,
@@ -436,18 +437,8 @@ const assignments = [
     snapshot: null,
     workout_plan: { ...planA, name: 'Full Body A' },
   },
-  // P1 — assigned by the OLD coach: excluded
-  {
-    id: 'a-old',
-    client_id: P1,
-    assigned_by_coach_id: COACH_B.id,
-    scheduled_for: new Date('2026-10-02T14:00:00Z'),
-    completed_at: null,
-    post_rpe: null,
-    post_notes: 'OLD-COACH-CANARY',
-    snapshot: null,
-    workout_plan: { ...planA, name: 'OLD-COACH-CANARY Session' },
-  },
+  // HIST3: an earlier coach's assignments are the client's own history and
+  // reach Roman; test/roman/roman-history-follows-client.live.spec.ts proves it.
   // P2
   {
     id: 'a-dan',
@@ -602,9 +593,9 @@ const mealAssignments = [
 ];
 
 // Tables the builder must NEVER read (coach-private / other users' data).
-// Bookings (ctx-v3): the builder reads title / time / status of UPCOMING
-// sessions with the CURRENT coach, never coach_notes_md (canary below), never
-// past or declined sessions, never another coach's.
+// Bookings (ctx-v3): the builder reads title / time / status of the client's
+// UPCOMING sessions (any coach, HIST3), never coach_notes_md (canary below),
+// never past or declined sessions.
 export const coachingSessions = [
   {
     coach_id: COACH_A.id,

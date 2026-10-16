@@ -5,6 +5,7 @@ import { CoachAlertsService } from '../coach/coach-alerts.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
 import { isCoachReviewedAtEnabled } from '../roman/coach-reviewed.feature';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
+import { weightIfShared } from '../consent/coach-sharing-gate';
 import type { CreateCheckInDto, ListCheckInsQueryDto } from './check-ins.dto';
 
 const DEFAULT_LIMIT = 30;
@@ -356,7 +357,7 @@ export class CheckInsService {
       );
     }
 
-    return this.prisma.checkIn.findMany({
+    const rows = await this.prisma.checkIn.findMany({
       where: {
         user_id: clientId,
         date: {
@@ -367,6 +368,11 @@ export class CheckInsService {
       orderBy: { date: 'desc' },
       take: limit,
     });
+    // C8-S: a check-in's weight follows the Weigh-ins switch, not this one.
+    const weighIns =
+      !this.consent ||
+      (await this.consent.coachCanAccess(coachId, clientId, ConsentScope.FITNESS_BODY_METRICS, callerRole));
+    return rows.map((row) => weightIfShared(row, weighIns));
   }
 
   // ---- coach review (ED.6) ----

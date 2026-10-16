@@ -20,12 +20,14 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { SaveConsultationDto } from './onboarding.dto';
 import { OnboardingService } from './onboarding.service';
+import { AllowBeforeAgeConfirmed } from '../auth/client-age';
 
 /** Client-side consultation onboarding (contract: clinic onboarding v1). */
 @ApiTags('onboarding')
 @Controller('me/onboarding')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
+@AllowBeforeAgeConfirmed()
 export class OnboardingController {
   constructor(private readonly onboarding: OnboardingService) {}
 

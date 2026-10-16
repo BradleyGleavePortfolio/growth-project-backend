@@ -7,7 +7,7 @@ into daily targets. Callers:
 
 | Caller                                                      | Behaviour when inputs are missing                                                     |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `PUT /profile` (`ProfileService.updateProfile`)             | 409 `{ code: "consultation_incomplete", missing }`; nothing is written.               |
+| `PUT /profile` (`ProfileService.updateProfile`)             | 409 `{ code: "consultation_incomplete", missing }`; nothing is written (a date of birth alone is stored). |
 | `POST /coach/macros/preset` (`MacrosService.computePreset`) | 400 (`Invalid preset input`), including an unknown `activity_level` (no silent 1.55). |
 | `POST /me/onboarding/complete` (C05/C07)                    | 409 `consultation_incomplete`.                                                        |
 
@@ -42,6 +42,11 @@ date of birth, sex, activity level, goal) the request returns
 `409 { code: "consultation_incomplete", message, missing: [...] }` and no field
 is stored. `missing` uses the calculator's names: `weight`, `height_cm`,
 `date_of_birth`, `sex`, `activity_level`, `goal`.
+
+One exception (AGESAVE): a body whose only field is `date_of_birth` (the
+app's age step) is stored even when other inputs are missing, the same way the
+consultation's writer stores its answers: targets are computed when the merged
+row is complete and cleared when it is not. Nothing else is invented.
 
 ## Reading targets
 

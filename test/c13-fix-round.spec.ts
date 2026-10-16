@@ -97,7 +97,7 @@ describe('AuthController google/apple wiring (Opus C5 / Grok B1, B5)', () => {
 });
 
 describe('AdminService invite-code sampler (Grok C6)', () => {
-  it('ensureCoachProfile mints GP- codes from the uniform randomInt alphabet', async () => {
+  it('ensureCoachProfile mints TGP- codes from the uniform randomInt alphabet', async () => {
     const codes: string[] = [];
     const prisma: any = {
       coachProfile: {
@@ -113,9 +113,9 @@ describe('AdminService invite-code sampler (Grok C6)', () => {
     const svc = new AdminService(prisma, analytics, audit);
     for (let i = 0; i < 50; i++) await svc.ensureCoachProfile(`u-${i}`);
     expect(codes).toHaveLength(50);
-    for (const c of codes) expect(c).toMatch(/^GP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/);
+    for (const c of codes) expect(c).toMatch(/^TGP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{7}$/);
     // No 0/O/1/I/L — the ambiguous glyphs are excluded from the alphabet.
-    expect(codes.map((c) => c.slice(3)).join('')).not.toMatch(/[01OIL]/);
+    expect(codes.map((c) => c.slice(4)).join('')).not.toMatch(/[01OIL]/);
   });
 });
 

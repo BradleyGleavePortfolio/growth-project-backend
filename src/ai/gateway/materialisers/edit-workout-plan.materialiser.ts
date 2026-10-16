@@ -10,6 +10,7 @@ import { PrismaService } from '../../../prisma.service';
 import { AnalyticsService } from '../../../analytics/analytics.service';
 import { Events } from '../../../analytics/events';
 import { SubCoachScopeService } from '../../../sub-coach/sub-coach-scope.service';
+import { planStaysInTenantWhere } from '../../../workout-builder/tenant-clients';
 import {
   CapabilityMaterializer,
   MaterializeResult,
@@ -366,7 +367,7 @@ export class EditWorkoutPlanMaterializer implements CapabilityMaterializer {
     requesterId: string,
   ): Promise<void> {
     const plan = await this.prisma.workoutPlan.findUnique({
-      where: { id: planId },
+      where: { id: planId, AND: [planStaysInTenantWhere(tenantCoachId)] },
       select: { id: true, coach_id: true },
     });
     if (!plan) {
