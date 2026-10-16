@@ -178,6 +178,7 @@ export class CoachWearableMessageMaterializer implements CapabilityMaterializer 
         draft.tenant_coach_id,
         payload.clientId,
         { body: payload.body },
+        { aiDraftId: draft.id },
       );
       sentId = created.id;
     } catch (err) {

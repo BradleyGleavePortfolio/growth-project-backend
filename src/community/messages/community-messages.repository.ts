@@ -4,6 +4,7 @@ import type { CommunityMessage } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import type { PlanContextTag } from '../plan-context/plan-context.dto';
 import { bannedAmong } from '../community-ban';
+import { rowsWithSpaceAccess } from '../community-space-access';
 
 /**
  * Data access for cohort messages and post-comments.
@@ -74,7 +75,12 @@ export class CommunityMessagesRepository {
       params.workspaceId,
       rows.map((r) => r.user_id),
     );
-    return rows.filter((r) => !banned.has(r.user_id));
+    // C6-BVIS: only people the rule still lets into the space get the push.
+    return rowsWithSpaceAccess(
+      this.prisma,
+      rows.filter((r) => !banned.has(r.user_id)),
+      (r) => [params.cohortId, r.user_id] as const,
+    );
   }
 
   /**

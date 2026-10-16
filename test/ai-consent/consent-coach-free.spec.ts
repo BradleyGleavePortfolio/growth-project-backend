@@ -161,7 +161,16 @@ describe('P0 copy: clinic sentence removed (C-6a) and coach-free versions (owner
       // Owner 57c / 62y2 (test/ai-consent/consent-57c.spec.ts).
       'consult-consent-v7',
       'consult-consent-v8',
+      // W-CONSENT with the Roman choice (test/ai-consent/consent-coachless-screen.spec.ts).
+      'consult-consent-v8-coach-free',
+      'consult-consent-v9-coach-free',
       'consult-consent-v7-coach-free',
+      // CRISIS-APP-COPY (test/ai-consent/consent-crisis-sentence.spec.ts).
+      'consult-consent-v9',
+      'consult-consent-v10',
+      // Their crisis twins with no coach (test/ai-consent/consent-crisis-sentence.spec.ts).
+      'consult-consent-v10-coach-free',
+      'consult-consent-v11-coach-free',
     ]);
     const p0 = (copy_version: string, text_sha256: string) => ({
       agreed: true,

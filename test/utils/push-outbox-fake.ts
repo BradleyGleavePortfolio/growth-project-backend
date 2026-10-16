@@ -220,6 +220,7 @@ export function pushOutboxWorld(opts: {
         async ({ where }: { where: { id: string } }) => sessions[where.id] ?? null,
       ),
     },
+    subCoachAssignment: { findMany: jest.fn(async () => []) }, // the inbox rule: no delegations
   };
   return { rows, tokens, sessions, prefs, db };
 }

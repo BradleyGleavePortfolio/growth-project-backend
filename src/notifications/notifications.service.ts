@@ -22,12 +22,13 @@ import {
   TimeZoneSource,
 } from './notifications.dto';
 import { usableTimeZone } from './local-time';
-import { NotificationKind, NotificationKindValue } from './notification-kind';
+import { NotificationKindValue } from './notification-kind';
 import { NotificationCategory, DEFAULT_NOTIFICATION_CATEGORY } from './notification-category.enum';
 import { PushAbortedError, PushDeliveryResult } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { EnqueueResult, PushDeliveryService } from './push/push-delivery.service';
-import { COACH_CLIENT_LINK, PushContext, lockScreenCopy, safetyAlertTap } from './push/lock-screen-copy';
+import { PushContext, lockScreenCopy, safetyAlertTap } from './push/lock-screen-copy';
+import { currentCoachInbox } from './current-coach-inbox';
 import { resolveRecipientTimeZone } from './recipient-timezone';
 import { notificationPrefsPrefix, pushAllowedByPreferences } from './push/push-preferences';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
@@ -735,24 +736,9 @@ export class NotificationsService implements OnModuleInit {
     });
   }
 
-  /**
-   * The user's inbox. Owner 4 (137-8): the inbox row of a client's coach alert
-   * follows the alert (currentCoachAlerts): it is for the client's current
-   * coach only, so the coach a client left no longer lists, counts, opens or
-   * marks it. The emitter links that row to the client (COACH_CLIENT_LINK);
-   * every other row is unchanged.
-   */
-  private async inboxWhere(userId: string): Promise<Prisma.NotificationWhereInput> {
-    const clients = await this.prisma.user.findMany({ where: { coach_id: userId }, select: { id: true } });
-    return {
-      user_id: userId,
-      OR: [
-        { kind: { not: NotificationKind.COACH_ALERT } },
-        { deep_link: null },
-        { NOT: { deep_link: { startsWith: COACH_CLIENT_LINK } } },
-        { deep_link: { in: clients.map((c) => `${COACH_CLIENT_LINK}${c.id}`) } },
-      ],
-    };
+  /** The user's inbox: a moved client's rows leave the coach they left (current-coach-inbox.ts). */
+  private inboxWhere(userId: string): Promise<Prisma.NotificationWhereInput> {
+    return currentCoachInbox(this.prisma, userId);
   }
 
   // ── Push delivery (Phase 6B baseline, extended Phase 9) ──────────────────
