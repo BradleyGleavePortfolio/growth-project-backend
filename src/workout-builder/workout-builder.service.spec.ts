@@ -7,6 +7,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { WorkoutBuilderService } from './workout-builder.service';
 import { PrismaService } from '../prisma.service';
+import { ConsentService } from '../consent/consent.service';
 import { WorkoutType } from './workout-builder.dto';
 
 const COACH_ID = 'coach-uuid-1';
@@ -59,6 +60,8 @@ describe('WorkoutBuilderService', () => {
       providers: [
         WorkoutBuilderService,
         { provide: PrismaService, useValue: prismaMock },
+        // SHAREGATE: the consent gate is required; these fixtures share everything.
+        { provide: ConsentService, useValue: { coachCanAccess: async () => true } },
       ],
     }).compile();
 

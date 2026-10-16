@@ -21,11 +21,15 @@ import {
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { Prisma } from '@prisma/client';
+import { ConsentService } from '../src/consent/consent.service';
 import { PrismaService } from '../src/prisma.service';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import { planStaysInTenantWhere } from '../src/workout-builder/tenant-clients';
 import { WorkoutType } from '../src/workout-builder/workout-builder.dto';
 import { WorkoutBuilderService, romanAdjustedSets } from '../src/workout-builder/workout-builder.service';
+
+// SHAREGATE: every client here shares Workouts (the gate's own rows: test/rls/sharegate-workout-results.spec.ts).
+const allShared = { provide: ConsentService, useValue: { coachCanAccess: async () => true } };
 
 const COACH_ID = 'coach-uuid-1';
 const CLIENT_ID = 'client-uuid-1';
@@ -208,6 +212,7 @@ describe('WorkoutBuilderService', () => {
       providers: [
         WorkoutBuilderService,
         { provide: PrismaService, useValue: prismaMock },
+        allShared,
       ],
     }).compile();
 
@@ -811,6 +816,7 @@ describe('WorkoutBuilderService', () => {
         providers: [
           WorkoutBuilderService,
           { provide: PrismaService, useValue: prismaMock },
+          allShared,
           {
             provide: SubCoachScopeService,
             useValue: subCoachScope,
@@ -1147,6 +1153,7 @@ describe('WorkoutBuilderService', () => {
         providers: [
           WorkoutBuilderService,
           { provide: PrismaService, useValue: prismaMock },
+          allShared,
           { provide: SubCoachScopeService, useValue: subCoachScope },
         ],
       }).compile();
@@ -1234,6 +1241,7 @@ describe('WorkoutBuilderService', () => {
         providers: [
           WorkoutBuilderService,
           { provide: PrismaService, useValue: prismaMock },
+          allShared,
           { provide: SubCoachScopeService, useValue: scope },
         ],
       }).compile();
@@ -1277,12 +1285,17 @@ describe('WorkoutBuilderService', () => {
       prismaMock.user.findUnique.mockResolvedValue({ id: SUB_ID, role: 'coach' });
       prismaMock.workoutPlan.findUnique.mockResolvedValue({ ...basePlan, coach_id: SUB_ID });
 
+      prismaMock.clientWorkoutAssignment.findMany.mockResolvedValueOnce([{ client_id: CLIENT_ID }]);
       await svc.listAssignments(SUB_ID, basePlan.id, { limit: 10 });
 
       expect(scope.getAuthorizedClientIds).toHaveBeenCalledWith(SUB_ID);
       expect(prismaMock.clientWorkoutAssignment.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { workout_plan_id: basePlan.id, client: { id: { in: [CLIENT_ID] } } },
+          where: {
+            workout_plan_id: basePlan.id,
+            client: { id: { in: [CLIENT_ID] } },
+            client_id: { in: [CLIENT_ID] },
+          },
           take: 11,
         }),
       );

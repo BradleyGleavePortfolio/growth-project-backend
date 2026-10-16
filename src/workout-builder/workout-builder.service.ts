@@ -48,6 +48,8 @@ import {
 import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { coachSharingCheck } from '../consent/coach-sharing-gate';
+import { ConsentScope, ConsentService } from '../consent/consent.service';
 import { DripTriggerService } from '../packages/drip-trigger.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -136,6 +138,8 @@ export class WorkoutBuilderService {
     // service or a push failure never blocks the authoritative assignment row.
     @Optional()
     private readonly notifications?: NotificationsService,
+    // SHAREGATE — Coach sharing switches; no @Optional() (see coach-sharing-gate.ts).
+    private readonly consent?: ConsentService,
   ) {}
 
   // ─── RBAC guard ───────────────────────────────────────────────────────────
@@ -694,6 +698,11 @@ export class WorkoutBuilderService {
    * Per-plan assignment list. Keyset paginated by (scheduled_for ASC,
    * id ASC) so upcoming sessions come first and ordering matches the
    * (workout_plan_id, scheduled_for) composite index.
+   *
+   * SHAREGATE: a client's rows (with how each workout went) only while that
+   * client shares Workouts with this coach, as on the client summary
+   * (coachSharingCheck, ConsentService.coachCanAccess; the owner passes).
+   * Off, none of their rows; a failed consent read fails the request.
    */
   async listAssignments(
     coachId: string,
@@ -715,10 +724,20 @@ export class WorkoutBuilderService {
           ],
         }
       : undefined;
+    const client = await this.stillTheirClientsWhere(coachId);
+    const onPlan = await this.prisma.clientWorkoutAssignment.findMany({
+      where: { workout_plan_id: planId, client },
+      select: { client_id: true },
+      distinct: ['client_id'],
+    });
+    const sharing = await coachSharingCheck(this.consent, this.prisma, coachId);
+    const shared = await sharing(ConsentScope.FITNESS_WORKOUTS, onPlan.map((a) => a.client_id));
+    if (shared.length === 0) return { items: [], nextCursor: null };
     const items = await this.prisma.clientWorkoutAssignment.findMany({
       where: {
         workout_plan_id: planId,
-        client: await this.stillTheirClientsWhere(coachId),
+        client,
+        client_id: { in: shared },
         ...(cursorWhere ?? {}),
       },
       orderBy: [{ scheduled_for: 'asc' }, { id: 'asc' }],

@@ -38,6 +38,8 @@ import {
   acceptedCoachSharingNotice,
   grantCoachSharingAtJoinTx,
 } from '../consent/coach-sharing-notice';
+import { coachSharingCheck } from '../consent/coach-sharing-gate';
+import { ConsentScope, ConsentService } from '../consent/consent.service';
 import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 import { TrialUsageService } from '../packages/trials/trial-usage.service';
 import { packageQuote, resumableAttempts } from '../checkout/checkout.service';
@@ -435,6 +437,8 @@ export class InviteCodesService {
     @Optional() private readonly grants?: InviteGrantService,
     // JOINQUOTE — the paid join's quote; absent (legacy wiring) = no quote.
     @Optional() private readonly trials?: TrialUsageService,
+    // SHAREGATE — Coach sharing switches; no @Optional() (see coach-sharing-gate.ts).
+    private readonly consent?: ConsentService,
   ) {}
 
   /**
@@ -675,24 +679,32 @@ export class InviteCodesService {
 
     // Last-active derived from the most recent WorkoutSession /
     // LoggedFoodEntry / CheckIn. Single round-trip across all three.
+    // SHAREGATE: each kind counts only while the client shares it with this
+    // coach (the roster's rule; coachSharingCheck, the owner passes).
     const candidateIds = candidates.map((c) => c.id);
     const lastActiveByUser = new Map<string, Date>();
     if (candidateIds.length > 0) {
+      const sharing = await coachSharingCheck(this.consent, this.prisma, coachId);
+      const [workoutIds, foodIds, checkInIds] = await Promise.all([
+        sharing(ConsentScope.FITNESS_WORKOUTS, candidateIds),
+        sharing(ConsentScope.FITNESS_FOOD_MACROS, candidateIds),
+        sharing(ConsentScope.FITNESS_HABITS_PROGRESS, candidateIds),
+      ]);
       const [workouts, foods, checkIns] = await Promise.all([
         this.prisma.workoutSession.findMany({
-          where: { user_id: { in: candidateIds } },
+          where: { user_id: { in: workoutIds } },
           orderBy: { created_at: 'desc' },
           distinct: ['user_id'],
           select: { user_id: true, created_at: true },
         }),
         this.prisma.loggedFoodEntry.findMany({
-          where: { user_id: { in: candidateIds } },
+          where: { user_id: { in: foodIds } },
           orderBy: { logged_at: 'desc' },
           distinct: ['user_id'],
           select: { user_id: true, logged_at: true },
         }),
         this.prisma.checkIn.findMany({
-          where: { user_id: { in: candidateIds } },
+          where: { user_id: { in: checkInIds } },
           orderBy: { logged_at: 'desc' },
           distinct: ['user_id'],
           select: { user_id: true, logged_at: true },
