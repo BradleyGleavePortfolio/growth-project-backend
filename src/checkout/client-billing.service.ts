@@ -104,6 +104,13 @@ const LIVE_SUBSCRIPTION_STATUSES = ['active', 'trialing', 'past_due', 'unpaid'];
 
 const PAID_SUB_STATUSES: ReadonlySet<string> = new Set(['active', 'trialing']);
 
+/**
+ * MOVEBILL2 (Sol B3): subscriptions a move ends. Its own list, so it never
+ * follows a change to the card-default list above: 'trialing' stays in, as a
+ * started trial converts at its end into a first charge.
+ */
+const MOVED_PLAN_END_STATUSES = ['active', 'trialing', 'past_due', 'unpaid'];
+
 export type CardUpdateOutcome =
   | 'paid' // every approved open invoice is paid
   | 'saved' // the card is saved; nothing was owed (or nothing payable here)
@@ -1988,7 +1995,7 @@ export class ClientBillingService {
         moved_away_at: { not: null },
         billing_type: 'recurring',
         stripe_subscription_id: { not: null },
-        status: { in: LIVE_SUBSCRIPTION_STATUSES },
+        status: { in: MOVED_PLAN_END_STATUSES },
         OR: [
           { cancel_at_period_end: false },
           { status: { in: [...DELINQUENT_STATUSES] } },
