@@ -3,10 +3,14 @@
  *
  * A sent coach message carries CoachMessage.ai_draft_id (the mobile app draws
  * the small Roman face under it) only when that id names a Roman message draft
- * of the same coach and client, the server itself marked the draft's text as
- * Roman's (ROMAN_MESSAGE_SOURCE below, never taken from a caller), and the
- * client allows AI help at the moment it is sent (S-06). MessagingService
- * .sendAsCoach applies the rule for every path that can write the column.
+ * of the same coach and client and the server itself marked the draft's text
+ * as Roman's (ROMAN_MESSAGE_SOURCE below, never taken from a caller).
+ * MessagingService.sendAsCoach applies the rule for every path that can write
+ * the column. Consent is decided when Roman writes the text, not at send
+ * (#ROMANMARK-CONSENT-MARK op 1): Roman's text comes only from a model call
+ * through AiEgressService, which reads the client's live grant first and
+ * refuses after a withdrawal (S-06), so a draft written while the client
+ * allowed AI help keeps the mark when it is sent after they turn it off.
  *
  * This file imports nothing, so MessagingService, the gateway and the wearable
  * approve route can all read it without an import cycle.

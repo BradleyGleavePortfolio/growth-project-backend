@@ -1,8 +1,10 @@
 /**
  * ROMANMARK-B1 + ROMANMARK-BE: a coach message carries its draft id
  * (CoachMessage.ai_draft_id, the Roman mark) only when Roman wrote the draft on
- * the server for that coach and client, and the client allows AI help when it
- * is sent (S-06). PATHS walks every way a coach-thread message is written,
+ * the server for that coach and client. Consent counts when Roman writes it
+ * (#ROMANMARK-CONSENT-MARK op 1): a draft written while the client allowed AI
+ * help is sent with its mark after they turn it off, and no draft is written
+ * after that. PATHS walks every way a coach-thread message is written,
  * through the real controllers, services, gateway, consent ledger and
  * materialisers on the replayed migration chain, and reads each result back
  * at the row layer as role authenticated (no row-security bypass): the
@@ -42,6 +44,7 @@ import { CoachWearableMessageMaterializer } from '../../src/ai/gateway/materiali
 import { AiConsentService } from '../../src/ai-consent/ai-consent.service';
 import { CLIENT_AI_CONSENT_VERSION } from '../../src/ai-consent/ai-consent.constants';
 import { AiEgressService } from '../../src/ai-egress/ai-egress.service';
+import { AiConsentRequiredException } from '../../src/ai-egress/ai-consent-required.exception';
 import { InsightCacheService } from '../../src/wearables/insights/insight-cache.service';
 import { WearableInsightsService } from '../../src/wearables/insights/wearable-insights.service';
 import { WearableInsightsController } from '../../src/wearables/insights/wearable-insights.controller';
@@ -64,7 +67,7 @@ const ENV = {
 const MODEL_TEXT = 'Great week. Keep the evening walks going.';
 const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.';
 
-(DB_URL ? describe : describe.skip)('The Roman mark: only a server-written Roman draft, only while the client allows AI help', () => {
+(DB_URL ? describe : describe.skip)('The Roman mark: only a server-written Roman draft, written while the client allowed AI help', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
   const db = cast<PrismaService>(prisma);
   // Coach K and client A share the thread; coach L and L's client C are another tenant.
@@ -79,8 +82,7 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
   const consent = new AiConsentService(db);
   const egress = new AiEgressService(consent);
   const messaging = new MessagingService(db, cast({ broadcastNewMessage: quiet }), cast({ capture: quiet }),
-    cast({ emit: quiet }), cast({ emit: quiet }), cast({ write: quiet }), cast({ invalidateForUser: quiet }),
-    null, undefined, null, egress);
+    cast({ emit: quiet }), cast({ emit: quiet }), cast({ write: quiet }), cast({ invalidateForUser: quiet }));
   const coachApi = new CoachMessagingController(messaging, cast({}), cast({}));
   const clientApi = new ClientMessagingController(messaging, cast({}), cast({}));
   const approvals = new AiApprovalService(db, cast({ write: quiet }), new CapabilityMaterializerRegistry([
@@ -112,11 +114,11 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
     const row = await prisma.aiActionDraft.findUniqueOrThrow({ where: { id: out.draft_id } });
     return { draftId: out.draft_id, messageId: String(row.materialised_ref) };
   };
-  /** A withdraws AI help just before the send, then grants it again for the later paths. */
-  const withdrawn = async (send: () => Promise<Sent>): Promise<Sent> => {
+  /** A withdraws AI help just before `step`, then grants it again for the later paths. */
+  const withdrawn = <T>(step: () => Promise<T>) => async (): Promise<T> => {
     await consent.withdraw(A);
     try {
-      return await send();
+      return await step();
     } finally {
       await consent.grant(A, { version: CLIENT_AI_CONSENT_VERSION });
     }
@@ -134,8 +136,9 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
   let pendingK = '';
 
   // The rule's list: every writer of a coach-thread message, and what its row must carry. 'marked' = the
-  // approved draft's id; 'unmarked' = sent, ai_draft_id null; 400 / 403 = refused, no draft and no message.
-  type Expect = 'marked' | 'unmarked' | 400 | 403;
+  // approved draft's id; 'unmarked' = sent, ai_draft_id null; any REFUSED key = that refusal, no draft and no message.
+  const REFUSED = { 400: BadRequestException, 403: ForbiddenException, ai_consent_required: AiConsentRequiredException };
+  type Expect = 'marked' | 'unmarked' | keyof typeof REFUSED;
   const PATHS: Array<[string, Expect, () => Promise<Sent | null>]> = [
     ['Roman reply draft (the model\'s own text), approved', 'marked', romanReply],
     ['wearable insight, sent as Roman suggested', 'marked', wearable(WearableMetricBucket.SLEEP_RECOVERY, 'approve')],
@@ -144,12 +147,13 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
       refused(() => askRoman(K, { proposed_action: { clientId: A, body: 'My own words.' } }))],
     ['stored draft holding caller text (no server mark), approved', 'unmarked', () => decide(K, legacyDraft)],
     ['wearable approve with no stored Roman suggestion', 'unmarked', wearable(WearableMetricBucket.HEALTH_FITNESS, 'approve')],
-    ['Roman reply draft, AI help withdrawn before send', 'unmarked', async () => {
+    ['Roman reply draft written while AI help was on, sent after it is withdrawn', 'marked', async () => {
       const draftId = String(await askRoman(K));
-      return withdrawn(() => decide(K, draftId));
+      return withdrawn(() => decide(K, draftId))();
     }],
-    ['wearable insight, AI help withdrawn before send', 'unmarked',
-      () => withdrawn(wearable(WearableMetricBucket.SLEEP_RECOVERY, 'approve'))],
+    ['wearable insight Roman wrote while AI help was on, sent after it is withdrawn', 'marked',
+      withdrawn(wearable(WearableMetricBucket.SLEEP_RECOVERY, 'approve'))],
+    ['Roman reply draft asked for after AI help is withdrawn', 'ai_consent_required', withdrawn(refused(() => askRoman(K)))],
     ['another coach approves this coach\'s Roman draft', 403, refused(() => decide(L, pendingK))],
     ['another coach sends with this coach\'s Roman draft id', 403,
       refused(() => messaging.sendAsCoach(L, C, { body: 'Hi' }, { aiDraftId: pendingK }))],
@@ -221,8 +225,8 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
 
   it.each(PATHS.map(([path, expected]) => ({ path, expected })))('$path: $expected', async ({ path, expected }) => {
     const out = outcome.get(path)!;
-    if (expected === 400 || expected === 403) {
-      expect(out.error).toBeInstanceOf(expected === 400 ? BadRequestException : ForbiddenException);
+    if (expected !== 'marked' && expected !== 'unmarked') {
+      expect(out.error).toBeInstanceOf(REFUSED[expected]);
       expect([out.drafts, out.messages]).toEqual([0, 0]);
       return;
     }

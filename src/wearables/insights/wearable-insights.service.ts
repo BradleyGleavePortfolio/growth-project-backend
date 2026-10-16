@@ -113,6 +113,8 @@ export class WearableInsightsService {
    * ROMANMARK-BE: true when Roman's own message suggestion for this coach,
    * client and bucket is stored (fresh or stale). Only then does the approve
    * route mark the draft as Roman's text; the coach may still edit it (S-08).
+   * Roman wrote it through the egress gate (generate) while the client allowed
+   * AI help, so it keeps the mark after a later withdrawal (#ROMANMARK-CONSENT-MARK op 1).
    */
   async hasRomanSuggestion(coachId: string, clientId: string, bucket: WearableMetricBucket): Promise<boolean> {
     const row = await this.cache.getEvenIfStale('coach', clientId, bucket, coachId);

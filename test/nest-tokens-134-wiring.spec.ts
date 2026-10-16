@@ -28,7 +28,6 @@ import { MessagesSafetyService } from '../src/messages-safety/messages-safety.se
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 import { VoiceUploadProvider } from '../src/community/voice/voice-upload.provider';
 import { MessagingService } from '../src/messaging/messaging.service';
-import { AiEgressService } from '../src/ai-egress/ai-egress.service';
 import { AiApprovalService } from '../src/ai/gateway/ai-approval.service';
 import {
   CAPABILITY_MATERIALIZERS,
@@ -152,8 +151,6 @@ describe('NEST-TOKENS-134: production shape (the whole AppModule, as main.ts boo
     const messaging = moduleRef.get(MessagingService, { strict: false });
     expect(Reflect.get(messaging, 'safety')).toBeInstanceOf(MessagesSafetyService);
     expect(Reflect.get(messaging, 'voiceUpload')).toBeInstanceOf(VoiceUploadProvider);
-    // ROMANMARK-BE: the consent read behind the Roman mark arrives through DI.
-    expect(Reflect.get(messaging, 'egress')).toBeInstanceOf(AiEgressService);
     const approvals = moduleRef.get(AiApprovalService, { strict: false });
     const registry = Reflect.get(approvals, 'materialisers');
     expect(registry).toBeInstanceOf(CapabilityMaterializerRegistry);

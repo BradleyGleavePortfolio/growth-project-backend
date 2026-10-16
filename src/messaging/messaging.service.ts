@@ -36,7 +36,6 @@ import { describeFailure } from '../observability/log-pii';
 import { isMessagingCoreV2Enabled } from './messaging-core.feature';
 import { coachBroadcastsEnabled } from '../broadcasts/broadcasts.feature';
 import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
-import { AiEgressService } from '../ai-egress/ai-egress.service';
 import { isRomanMessageDraft } from '../ai/gateway/roman-message-draft';
 import {
   broadcastThreadUpdated,
@@ -162,10 +161,6 @@ export class MessagingService {
     // lazily build one from the already-injected SupabaseService, so behaviour
     // is identical whether or not DI supplied it.
     @Optional() @Inject(VoiceUploadProvider) private voiceUpload: VoiceUploadProvider | null = null,
-    // ROMANMARK-BE: the client's AI consent read for the Roman mark (romanMark).
-    // Global in production DI; absent in legacy unit-test DI, where no message
-    // is ever marked (fail closed).
-    @Optional() @Inject(AiEgressService) private egress: AiEgressService | null = null,
   ) {}
 
   // Resolve the extracted signed-upload provider, lazily constructing one from
@@ -740,9 +735,11 @@ export class MessagingService {
    * shared by every path that writes it (only sendAsCoach does). The draft id
    * must name a draft of this coach about this client, else 403 and nothing is
    * sent. The mark is kept only for a Roman message draft whose text the
-   * server marked as Roman's (roman-message-draft.ts) while the client allows
-   * AI help for their coach right now (S-06); otherwise the message is sent
-   * without it.
+   * server marked as Roman's (roman-message-draft.ts); otherwise the message
+   * is sent without it. Consent is not read here: the marker is written only
+   * on text Roman wrote through the egress gate's live grant read, so a draft
+   * written while the client allowed AI help keeps its mark when sent after
+   * they turn it off (#ROMANMARK-CONSENT-MARK op 1).
    */
   private async romanMark(coachId: string, clientId: string, draftId: string): Promise<string | null> {
     const draft = await this.prisma.aiActionDraft.findUnique({
@@ -752,9 +749,7 @@ export class MessagingService {
     if (!draft || draft.tenant_coach_id !== coachId || draft.subject_user_id !== clientId) {
       throw new ForbiddenException({ error: 'AI_DRAFT_OUTSIDE_THREAD' });
     }
-    if (!isRomanMessageDraft(draft) || !this.egress) return null;
-    const consented = await this.egress.consentedClients([clientId]);
-    return consented.has(clientId) ? draftId : null;
+    return isRomanMessageDraft(draft) ? draftId : null;
   }
 
   // ---- send ----
