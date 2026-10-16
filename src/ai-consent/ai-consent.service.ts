@@ -45,7 +45,10 @@
  * coached v4 / v5 copies with one sentence added (a coach sees the message
  * behind an urgent medical or eating-disorder safety reply). With no live
  * grant, GET ?variant=safety_exception offers them; a plain GET keeps v4 / v5,
- * the text installed builds pin. A live grant reads its own generation.
+ * the text installed builds pin. A live grant reads its own generation, and its
+ * memory offer follows the ask: a v4 holder who asks for v6 / v7 turns memory on
+ * with client-ai-v7, the text the app shows (CONSENTV7). POST and DELETE read the
+ * same ?variant= for their response; without one they read the copies on file.
  *
  * Crisis sentence (CRISIS-APP-COPY, owner op 1, 2026-10-15): client-ai-v8 / v9
  * are v6 / v7 with the approved crisis sentence right after the exception.
@@ -177,8 +180,10 @@ export interface ClientAiConsentStatus {
   /** What the live grant covers; null when there is no live grant. */
   scope: ClientAiConsentScope | null;
   /**
-   * For a live v4 (base-only) holder while FEATURE_ROMAN_MEMORY is on: the v5
-   * copy that adds 'memory'. Otherwise null (memory off, no live grant, or v5).
+   * For a live base-only holder while FEATURE_ROMAN_MEMORY is on: the memory copy
+   * the app asked for (v7 with ?variant=safety_exception, v9 with ?variant=crisis_alert while
+   * FEATURE_ROMAN_CRISIS_ALERT is on, else that grant's own: v5 for v4, v7 for v6). Otherwise
+   * null (memory off, no live grant, or memory).
    */
   upgrade: ClientAiConsentCopy | null;
   /**
@@ -192,6 +197,14 @@ export interface ClientAiConsentStatus {
    * already v5). Null while memory is off, so an app shows today's v4 text.
    */
   memory_copy: ClientAiConsentCopy | null;
+}
+
+/** The copies the app asked for (?variant=, see the controller). */
+export interface ClientAiConsentAsk {
+  coachFree?: boolean;
+  hasCoach?: boolean;
+  safetyException?: boolean;
+  crisisAlert?: boolean;
 }
 
 export interface AiConsentRequestMeta {
@@ -420,20 +433,20 @@ export class AiConsentService implements ClientAiConsentReader {
   }
 
   /**
-   * `askCoachFree` (GET only): true for ?variant=coach_free (the app's ask for a
-   * client with no coach), false for a plain GET. `hasCoach` (GET only): the
+   * `askCoachFree` (GET, or a POST / DELETE with ?variant=): true for ?variant=coach_free
+   * (the app's ask for a client with no coach), false for a plain GET. `hasCoach` (with it): the
    * caller has a coach (User.coach_id). For a client with a coach GET always
    * offers the coached copies, and a live coach-free grant never reads as live:
    * GET answers needs_reconsent, so the app asks for the coached text (owner 62;
    * Roman for the client stays covered server-side). Otherwise a live grant
    * reads the copies of its own family; with no live grant, GET follows the ask
-   * and a POST / DELETE response (no ask) follows the latest decision on file.
+   * and a POST / DELETE response with no ask follows the latest decision on file.
    * `askSafety` (GET ?variant=safety_exception, owner 57c): with no live grant
-   * the coached copies are client-ai-v6 / v7; a plain GET keeps v4 / v5, the
-   * text installed builds pin. `askCrisis` (GET ?variant=crisis_alert,
-   * CRISIS-APP-COPY): as `askSafety`, with client-ai-v8 / v9 while
-   * FEATURE_ROMAN_CRISIS_ALERT is on. While it is off every 'crisis' read
-   * (asked or on file) gives the v6 / v7 copies instead.
+   * the coached copies are client-ai-v6 / v7, and a live v4 grant's memory offer is
+   * client-ai-v7; a plain GET keeps v4 / v5, the text installed builds pin.
+   * `askCrisis` (?variant=crisis_alert, CRISIS-APP-COPY): as `askSafety`, with
+   * client-ai-v8 / v9 while FEATURE_ROMAN_CRISIS_ALERT is on. While it is off every
+   * 'crisis' read (asked or on file) gives the v6 / v7 copies instead.
    */
   private toStatus(
     row: AiConsentLatestRow | null,
@@ -449,12 +462,15 @@ export class AiConsentService implements ClientAiConsentReader {
     const coachFree = granted
       ? onFile === 'coach_free'
       : !hasCoach && (askCoachFree ?? onFile === 'coach_free');
-    // A live grant, and a POST / DELETE response, read the copies on file; a GET follows the ask.
+    // A live grant, and a POST / DELETE with no ?variant=, read the copies on file; else the ask.
     const onFileRead = granted || askCoachFree === undefined;
     const crisis = onFileRead ? onFile === 'crisis' : askCrisis;
     const coached = onFileRead ? onFile === 'coached' : askSafety || askCrisis;
     let family: ClientAiCopyFamily = coachFree ? 'coach_free' : coached ? 'coached' : 'pre57c';
     if (!coachFree && crisis) family = isRomanCrisisAlertEnabled() ? 'crisis' : 'coached';
+    // A new agreement (memory on, Allow) is offered in the copies the app shows (CONSENTV7).
+    const asked = askCrisis && isRomanCrisisAlertEnabled() ? 'crisis' : 'coached';
+    const offer: ClientAiCopyFamily = !coachFree && (askSafety || askCrisis) ? asked : family;
     const copy = scope === 'memory' ? clientAiConsentV5Copy(family) : clientAiConsentCopy(family);
     const isGrant = row?.action === AI_CONSENT_ACTION_GRANT;
     const isWithdraw = row?.action === AI_CONSENT_ACTION_WITHDRAW;
@@ -474,29 +490,30 @@ export class AiConsentService implements ClientAiConsentReader {
       needs_reconsent: isGrant && !granted,
       copy,
       scope,
-      upgrade: scope === 'base' && memoryOn ? clientAiConsentV5Copy(family) : null,
+      upgrade: scope === 'base' && memoryOn ? clientAiConsentV5Copy(offer) : null,
       memory_on: memoryOn,
-      memory_copy: memoryOn && scope !== 'memory' ? clientAiConsentV5Copy(family) : null,
+      memory_copy: memoryOn && scope !== 'memory' ? clientAiConsentV5Copy(offer) : null,
     };
   }
 
-  async getStatus(
-    userId: string,
-    opts: {
-      coachFree?: boolean;
-      hasCoach?: boolean;
-      safetyException?: boolean;
-      crisisAlert?: boolean;
-    } = {},
-  ): Promise<ClientAiConsentStatus> {
-    this.assertEnabled();
+  /** toStatus for the request's ask; with none (POST / DELETE, no ?variant=) the copies on file. */
+  private statusFor(
+    row: AiConsentLatestRow | null,
+    ask?: ClientAiConsentAsk,
+  ): ClientAiConsentStatus {
+    if (!ask) return this.toStatus(row);
     return this.toStatus(
-      await this.latestOr503(userId, 'status'),
-      opts.coachFree === true,
-      opts.hasCoach === true,
-      opts.safetyException === true,
-      opts.crisisAlert === true,
+      row,
+      ask.coachFree === true,
+      ask.hasCoach === true,
+      ask.safetyException === true,
+      ask.crisisAlert === true,
     );
+  }
+
+  async getStatus(userId: string, opts: ClientAiConsentAsk = {}): Promise<ClientAiConsentStatus> {
+    this.assertEnabled();
+    return this.statusFor(await this.latestOr503(userId, 'status'), opts);
   }
 
   /**
@@ -514,6 +531,7 @@ export class AiConsentService implements ClientAiConsentReader {
     userId: string,
     dto: GrantClientAiConsentDto,
     meta: AiConsentRequestMeta = {},
+    ask?: ClientAiConsentAsk,
   ): Promise<ClientAiConsentStatus> {
     this.assertEnabled();
     // Defence in depth behind the DTO (Sol B-622-3): a supplied digest must be
@@ -543,6 +561,7 @@ export class AiConsentService implements ClientAiConsentReader {
         locale: dto.locale ?? meta.locale ?? null,
       },
       { version: dto.version, copy_sha256: accepted.copy_sha256 },
+      ask,
     );
   }
 
@@ -550,13 +569,23 @@ export class AiConsentService implements ClientAiConsentReader {
    * Record box 2 as withdrawn. Idempotent: when there is no decision on record
    * or the latest decision is already a withdraw, nothing is written.
    */
-  async withdraw(userId: string, meta: AiConsentRequestMeta = {}): Promise<ClientAiConsentStatus> {
+  async withdraw(
+    userId: string,
+    meta: AiConsentRequestMeta = {},
+    ask?: ClientAiConsentAsk,
+  ): Promise<ClientAiConsentStatus> {
     this.assertEnabled();
-    return this.append(userId, AI_CONSENT_ACTION_WITHDRAW, {
-      platform: meta.platform ?? null,
-      app_version: meta.app_version ?? null,
-      locale: meta.locale ?? null,
-    });
+    return this.append(
+      userId,
+      AI_CONSENT_ACTION_WITHDRAW,
+      {
+        platform: meta.platform ?? null,
+        app_version: meta.app_version ?? null,
+        locale: meta.locale ?? null,
+      },
+      undefined,
+      ask,
+    );
   }
 
   private async append(
@@ -568,6 +597,7 @@ export class AiConsentService implements ClientAiConsentReader {
       version: CLIENT_AI_CONSENT_VERSION,
       copy_sha256: CLIENT_AI_CONSENT_COPY_SHA256,
     },
+    ask?: ClientAiConsentAsk,
   ): Promise<ClientAiConsentStatus> {
     for (let attempt = 1; attempt <= AI_CONSENT_WRITE_ATTEMPTS; attempt += 1) {
       // Re-read on every attempt (a P2002 means another writer won); a failed
@@ -579,13 +609,13 @@ export class AiConsentService implements ClientAiConsentReader {
         isBaseGrant(row) &&
         row.consent_version === grantCopy.version
       ) {
-        return this.toStatus(row);
+        return this.statusFor(row, ask);
       }
       if (
         action === AI_CONSENT_ACTION_WITHDRAW &&
         (row === null || row.action === AI_CONSENT_ACTION_WITHDRAW)
       ) {
-        return this.toStatus(row);
+        return this.statusFor(row, ask);
       }
       // A withdraw refers to the grant it ends; a grant to the copy it accepts.
       const consent_version =
@@ -613,7 +643,7 @@ export class AiConsentService implements ClientAiConsentReader {
         this.logger.log(
           `ai_consent.${action} user=${userId} version=${consent_version} seq=${created.seq}`,
         );
-        return this.toStatus(created);
+        return this.statusFor(created, ask);
       } catch (err) {
         if (isUniqueViolation(err) && attempt < AI_CONSENT_WRITE_ATTEMPTS) continue;
         if (isUniqueViolation(err)) {
