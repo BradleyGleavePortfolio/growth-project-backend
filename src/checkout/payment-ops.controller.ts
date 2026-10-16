@@ -750,16 +750,14 @@ export class CoachPaymentOpsController {
         select: COACH_DUNNING_SELECT,
       }),
     ]);
-    // CONTRACT-1: a client who moved away from the seller leaves only the
-    // money record and a refund or dispute pause, never a card failure; the
-    // ledger and transfers are the coach's own money.
+    // CONTRACT-1: a client who moved away from the seller leaves the money record and a refund or
+    // dispute pause, never a card failure; the ledger and transfers are the coach's own money.
     const [record] = await keepMoneyRecordsOnly(this.prisma, purchase.coach_user_id, [purchase]);
-    const moved = record !== purchase;
     return {
       purchase: record,
       split_ledger: splitEntries,
       transfers,
-      dunning: moved ? salePause(dunningState) : dunningState,
+      dunning: record === purchase ? dunningState : salePause(dunningState),
     };
   }
 

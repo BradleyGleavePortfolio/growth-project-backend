@@ -4,34 +4,20 @@ import { isBillingPauseReason } from './dunning-v2/dunning-v2.service';
 
 // CONTRACT-1 Option 1 (owner): "The old coach keeps their own money records
 // for that client (name, date, amount) and nothing else, for taxes, refunds
-// and disputes."
-//
-// One rule for every coach money read: a record about a client who has moved
-// away keeps the owner's list (record id, date, amount, status, currency, and
-// the client's name where the route shows one) and loses the client's id (the
-// link to their profile), contact details, access and renewal state, and
-// payment-failure details. Money charges and the tax export drop the package
-// and its cadence too; a charge keeps only whether it was one-time or
-// recurring, which the app needs to read the list (owner exception:
-// "#MONEY-BT - option 1"). Lists about the client's current state (a
-// package's subscribers, Needs attention) leave them out. The seller still
-// refunds (POST /v1/coach/purchases/:id/refund) and restarts a dispute pause
-// (POST /v1/coach/purchases/:id/dispute-restart) by the record id alone.
-
-type MovedPrisma = Pick<PrismaService, 'user' | 'subCoachAssignment'>;
+// and disputes." Every coach money read keeps that, plus the record's id,
+// status and currency, for a client who moved away, and leaves out rows that
+// are only their current state. The seller still refunds and restarts by id.
 
 /**
- * The given clients who have moved away from `coachId`: off the coach's
- * roster, by the roster's own rule (SubCoachScopeService): a client stays
- * while their coach is `coachId`, or while `coachId` is a sub-coach on that
- * coach's team with the client delegated to them. A coachless client has
- * moved away from everyone. Removing a sub-coach archives the pair's seat and
- * can leave the delegation open, so an archived seat ends team membership; a
- * delegation alone counts only for a pair that was never seated. Keep this in
- * step with SubCoachScopeService's membership rule (the same rule, #978).
+ * The given clients who are off `coachId`'s roster, by the roster's own rule
+ * (SubCoachScopeService; keep the two in step): a client stays while their
+ * coach is `coachId`, or while `coachId` is a sub-coach on that coach's team
+ * with the client delegated to them. An archived seat (the head coach removed
+ * the sub-coach) ends that even while the delegation is open; a delegation
+ * alone counts for a pair never seated. A coachless client has moved away.
  */
 export async function movedAwayClientIds(
-  prisma: MovedPrisma,
+  prisma: PrismaService,
   coachId: string,
   clientIds: Iterable<string | null | undefined>,
 ): Promise<Set<string>> {
@@ -58,8 +44,6 @@ export async function movedAwayClientIds(
       },
     },
   });
-  // A delegation counts while the client and the sub-coach both still belong to its head coach,
-  // and while that head coach has not removed the sub-coach (archived their seat).
   const live = delegated.filter(({ head_coach_id: head, sub_coach: sub }) => {
     const removed = sub.sub_coach_assignments_as_sub.some((seat) => seat.head_coach_id === head);
     return sub.coach_id === head && !removed;
@@ -69,20 +53,17 @@ export async function movedAwayClientIds(
   return new Set(away.filter((c) => !onTeam(c)).map((c) => c.id));
 }
 
-/** What a purchase row about a moved-away client keeps (CONTRACT-1): the sale, never the client. */
-const moneyRecord = (r: CoachPurchaseView) => ({
-  id: r.id,
-  amount_cents: r.amount_cents,
-  currency: r.currency,
-  status: r.status,
-  created_at: r.created_at,
-});
+/** What a purchase row about a moved-away client keeps: the sale, never the client. */
+const moneyRecord = (r: CoachPurchaseView) => {
+  const { id, amount_cents, currency, status, created_at } = r;
+  return { id, amount_cents, currency, status, created_at };
+};
 
 export type MoneyRecord = ReturnType<typeof moneyRecord>;
 
 /** The coach's purchase rows, each row about a moved-away client cut to its money record. */
 export async function keepMoneyRecordsOnly<T extends CoachPurchaseView>(
-  prisma: MovedPrisma,
+  prisma: PrismaService,
   coachId: string,
   rows: T[],
 ): Promise<Array<T | MoneyRecord>> {

@@ -276,18 +276,14 @@ export class CoachClientPaymentsService {
     return row;
   }
 
+  /** CONTRACT-1: a plan of a client who moved away is shown as its money record only. */
   private async reload(actor: User, clientId: string, purchaseId: string) {
-    const row = await this.scopedRow(actor, clientId, purchaseId);
-    return this.present(actor, clientId, await this.view(actor, row));
+    const plan = await this.view(actor, await this.scopedRow(actor, clientId, purchaseId));
+    return (await this.movedAway(actor, clientId)) ? moneyPlan(plan) : plan;
   }
 
   private async view(actor: User, row: PlanRow, sub?: StripeSubscriptionObject) {
     return planView(row, actor.id, await this.billingOf(row, sub));
-  }
-
-  /** CONTRACT-1: a plan of a client who moved away is shown as its money record only. */
-  private async present(actor: User, clientId: string, plan: CoachClientPlanView) {
-    return (await this.movedAway(actor, clientId)) ? moneyPlan(plan) : plan;
   }
 
   private async movedAway(actor: User, clientId: string): Promise<boolean> {
@@ -405,15 +401,9 @@ function planView(row: PlanRow, actorId: string, billing: CoachPlanBilling) {
 
 /** CONTRACT-1: the sale, its payments and the refund and restart actions; no access or renewal. */
 function moneyPlan(p: CoachClientPlanView) {
-  return {
-    purchase_id: p.purchase_id,
-    status: p.status,
-    amount_cents: p.amount_cents,
-    currency: p.currency,
-    created_at: p.created_at,
-    actions: { refund: p.actions.refund, restart: p.actions.restart },
-    payments: p.payments,
-  };
+  const { purchase_id, status, amount_cents, currency, created_at, payments } = p;
+  const actions = { refund: p.actions.refund, restart: p.actions.restart };
+  return { purchase_id, status, amount_cents, currency, created_at, actions, payments };
 }
 
 /** One entry per settled charge, newest first. Cross-currency settlements are not coach-refundable. */

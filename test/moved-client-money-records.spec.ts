@@ -94,12 +94,6 @@ function world(seller = OLD) {
     })),
   };
   const stripe = { retrieveSubscription: async () => ({ pause_collection: null }) };
-  const billing = {
-    cancelPlan: async () => ({
-      outcome: 'scheduled', access_ends_at: at(30).toISOString(), voided_invoice_count: 0,
-      voided_amount_cents: 0,
-    }),
-  };
   const headOf = { resolveHeadCoachId: async () => null };
   const audit = { write: async () => undefined };
   const make = <T>(cls: new (...args: never[]) => T, ...deps: unknown[]): T =>
@@ -112,7 +106,7 @@ function world(seller = OLD) {
     ops: make(CoachPaymentOpsController, {}, {}, {}, {}, {}),
     packages: make(PackagesService, {}),
     money: make(CoachMoneyService),
-    payments: make(CoachClientPaymentsService, stripe, refunds, billing, headOf, audit),
+    payments: make(CoachClientPaymentsService, stripe, refunds, {}, headOf, audit),
     decisions: make(PartialRefundDecisionService, {}),
   };
 }
@@ -145,6 +139,19 @@ async function readAll(w: World, coachId = OLD) {
   };
 }
 type Reads = Awaited<ReturnType<typeof readAll>>;
+
+/** The coach's tax export for the month, as cells per row (no header). */
+const csvRows = async (w: World, coachId: string) =>
+  (await w.money.exportCsv(coachId, { from: at(0), to: at(31) }))
+    .trim().split('\r\n').slice(1).map((l) => l.split(','));
+
+/** The refund reached the refund path as `by`; its reply keeps only the plan's money record. */
+function expectRefunded(w: World, out: { plan: object }, by: string, amount_cents: number) {
+  expect(w.refunds.createAdminRefund).toHaveBeenCalledWith(expect.objectContaining({
+    purchase_id: 'p1', charge_id: 'ch_1', amount_cents, initiated_by_user_id: by,
+  }));
+  expect(Object.keys(out.plan).sort()).toEqual(PLAN_KEPT);
+}
 
 /** Once Ana is off the reader's roster (`before`: still on it), only her money record is left. */
 function expectMoneyRecordsOnly(r: Reads, before: Reads) {
@@ -222,8 +229,9 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
     expect(await movedFrom('sub-removed')).toEqual(['delegated', 'none', 'other', 'own']);
   });
 
-  it('before the move every route is unchanged: full rows, client links, dates', async () => {
-    const r = await readAll(world());
+  it('before the move every route is in full; after it, only the money record', async () => {
+    const w = world();
+    const r = await readAll(w);
     const rows = [...r.purchases, ...r.payments, r.payment.purchase, ...r.failed, ...r.subscribers];
     for (const row of rows) {
       expect(row).toMatchObject({
@@ -235,6 +243,10 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
     expect(r.failed[0].dunning).toMatchObject({ status: 'active' });
     const linked = { id: CLIENT, name: ANA };
     expect([r.charges[0].client, r.charge.charge.client]).toEqual([linked, linked]);
+    expect(r.charges[0]).toMatchObject({
+      package: { id: 'pkg-1', name: 'Monthly coaching' }, billing_interval: 'month',
+    });
+    expect(r.payment.split_ledger).toEqual([expect.objectContaining({ id: 'l1', amount_cents: 4802 })]);
     expect(r.attention.map((i) => [i.kind, i.client])).toEqual([
       ['failed_payment', linked],
       ['dispute', linked],
@@ -243,19 +255,8 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
       current_period_end: at(30).toISOString(), access_expires_at: at(30).toISOString(),
     });
     expect(r.decisions[0].client_user_id).toBe(CLIENT);
-  });
-
-  it('after the move every route keeps only the money record; nothing opens her', async () => {
-    const w = world();
-    const before = await readAll(w);
-    expect(before.charges[0]).toMatchObject({
-      package: { id: 'pkg-1', name: 'Monthly coaching' }, billing_interval: 'month',
-    });
-    expect(before.payment.split_ledger).toEqual([
-      expect.objectContaining({ id: 'l1', amount_cents: 4802 }),
-    ]);
     w.moveTo(NEW);
-    expectMoneyRecordsOnly(await readAll(w), before);
+    expectMoneyRecordsOnly(await readAll(w), r);
   });
 
   it('a sub-coach the head coach removed keeps only the money records of their sale', async () => {
@@ -274,8 +275,7 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
       expect(r.subscribers).toHaveLength(1);
       return r;
     };
-    const saleRow = async () =>
-      (await w.money.exportCsv(SUB, { from: at(0), to: at(31) })).split('\r\n')[1].split(',');
+    const saleRow = async () => (await csvRows(w, SUB))[0];
     // Never seated (a legacy delegation), then seated: Ana is SUB's client in full.
     await inFull();
     const seat = { head_coach_id: OLD, sub_coach_id: SUB, archived_at: null as Date | null };
@@ -286,25 +286,36 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
     seat.archived_at = at(5);
     expectMoneyRecordsOnly(await readAll(w, SUB), before);
     expect(await saleRow()).toEqual(sale.map((c, i) => (i === 5 ? '' : c)));
-    const out = await w.payments.refundSale(coach(SUB), 'p1', {
-      idempotency_key: KEY, amount_cents: 500,
-    });
-    expect(w.refunds.createAdminRefund).toHaveBeenCalledWith(expect.objectContaining({
-      purchase_id: 'p1', charge_id: 'ch_1', amount_cents: 500, initiated_by_user_id: SUB,
-    }));
-    expect(Object.keys(out.plan).sort()).toEqual(PLAN_KEPT);
+    const out = await w.payments.refundSale(coach(SUB), 'p1', { idempotency_key: KEY, amount_cents: 500 });
+    expectRefunded(w, out, SUB, 500);
   });
 
-  it('after the move the tax export keeps her name, date and amounts, not the package', async () => {
+  it('after the move no tax-export row names her package, as seller or head coach', async () => {
+    // OLD's sale p1: its sale, a reversal, and a refund of a later charge. SUB's sale p2 to Ana
+    // paid OLD a head-coach share, later reversed. After the move OLD has no tie to Ana (nor to
+    // SUB): the rows are OLD's own money history, read by payee.
     const w = world();
-    const window = { from: at(0), to: at(31) };
-    const rows = async () =>
-      (await w.money.exportCsv(OLD, window)).trim().split('\r\n').slice(1).map((l) => l.split(','));
-    const before = await rows();
-    expect(before).toHaveLength(1);
-    expect(before[0].slice(1, 6)).toEqual(['sale', 'p1', '', ANA, 'Monthly coaching']);
+    const { clientPurchase, splitLedgerEntry } = w.db.state;
+    Object.assign(splitLedgerEntry[0], { stripe_charge_id: 'ch_1', reversed_cents: 980, reversed_at: at(6) });
+    clientPurchase.push({ id: 'p2', client_user_id: CLIENT, coach_user_id: SUB, package_id: 'pkg-1', source: null });
+    splitLedgerEntry.push({
+      id: 'l2', purchase_id: 'p2', kind: 'head_coach_split', payee_user_id: OLD, amount_cents: 490,
+      reversed_cents: 98, reversed_at: at(7), currency: 'usd', status: 'posted', created_at: at(2),
+    });
+    w.db.state.chargeRefund = [{
+      id: 'rf1', purchase_id: 'p1', status: 'succeeded', amount_cents: 1000, posted_at: at(8),
+      stripe_charge_id: 'ch_2',
+    }];
+    const before = await csvRows(w, OLD);
+    expect(before.map((r) => r.slice(1, 6))).toEqual([
+      ['sale', 'p1', 'ch_1', ANA, 'Monthly coaching'],
+      ['team_share', 'p2', '', '', 'Monthly coaching'],
+      ['reversal', 'p1', 'ch_1', ANA, 'Monthly coaching'],
+      ['team_share_reversal', 'p2', '', '', 'Monthly coaching'],
+      ['refund', 'p1', 'ch_2', ANA, 'Monthly coaching'],
+    ]);
     w.moveTo(NEW);
-    expect(await rows()).toEqual([before[0].map((c, i) => (i === 5 ? '' : c))]);
+    expect(await csvRows(w, OLD)).toEqual(before.map((r) => r.map((c, i) => (i === 5 ? '' : c))));
   });
 
   it('after the move refund works; the plan keeps the sale and its payments', async () => {
@@ -321,11 +332,8 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
     const out = await w.payments.refund(coach(OLD), CLIENT, 'p1', {
       idempotency_key: KEY, charge_id: 'ch_1', amount_cents: 1000,
     });
-    expect(w.refunds.createAdminRefund).toHaveBeenCalledWith(expect.objectContaining({
-      purchase_id: 'p1', charge_id: 'ch_1', amount_cents: 1000, initiated_by_user_id: OLD,
-    }));
+    expectRefunded(w, out, OLD, 1000);
     expect(out.refund).toMatchObject({ charge_id: 'ch_1', amount_cents: 1000 });
-    expect(Object.keys(out.plan).sort()).toEqual(PLAN_KEPT);
     for (const act of ['pause', 'resume', 'cancel'] as const) {
       await expect(w.payments[act](coach(OLD), CLIENT, 'p1', KEY)).rejects.toMatchObject({ status: 404 });
     }
@@ -335,13 +343,8 @@ describe('CONTRACT-1 — the old coach keeps only the money records of a moved c
     const w = world();
     w.moveTo(NEW);
     const [sale] = (await route(w, OLD, 'listOwn', {})).purchases;
-    const out = await w.payments.refundSale(coach(OLD), sale.id, {
-      idempotency_key: KEY, amount_cents: 500,
-    });
-    expect(w.refunds.createAdminRefund).toHaveBeenCalledWith(expect.objectContaining({
-      purchase_id: 'p1', charge_id: 'ch_1', amount_cents: 500, initiated_by_user_id: OLD,
-    }));
-    expect(Object.keys(out.plan).sort()).toEqual(PLAN_KEPT);
+    const out = await w.payments.refundSale(coach(OLD), sale.id, { idempotency_key: KEY, amount_cents: 500 });
+    expectRefunded(w, out, OLD, 500);
     // A card failure never shows; a refund or dispute pause does, for the restart.
     expect((await route(w, OLD, 'getOwn', sale.id)).dunning).toBeNull();
     Object.assign(w.db.state.dunningState[0], { last_failure_reason: 'charge_disputed' });

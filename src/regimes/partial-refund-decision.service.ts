@@ -156,11 +156,8 @@ export class PartialRefundDecisionService {
       },
     });
     // CONTRACT-1: a client who moved away is never linked (the decision stays).
-    const moved = await movedAwayClientIds(
-      this.prisma,
-      coachUserId,
-      rows.map((r) => r.client_purchase.client_user_id),
-    );
+    const ids = rows.map((r) => r.client_purchase.client_user_id);
+    const moved = await movedAwayClientIds(this.prisma, coachUserId, ids);
     return rows.map((r) => ({
       id: r.id,
       client_purchase_id: r.client_purchase_id,

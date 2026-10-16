@@ -6,10 +6,7 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import type { User } from '@prisma/client';
 import { AuditService } from '../src/audit/audit.service';
 import { ClientBillingService } from '../src/checkout/client-billing.service';
-import {
-  CoachClientPaymentsController,
-  CoachSaleRefundController,
-} from '../src/checkout/coach-client-payments.controller';
+import { CoachClientPaymentsController, CoachSaleRefundController } from '../src/checkout/coach-client-payments.controller';
 import { CoachClientPaymentsService } from '../src/checkout/coach-client-payments.service';
 import { CoachPaymentActionsFeatureGuard } from '../src/checkout/coach-payment-actions.feature';
 import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
@@ -149,11 +146,11 @@ describe('CF-COACH-PAY-BE-128 coach client payments', () => {
     const w = build([plan()]);
     const paused = await w.service.pause(A, CLIENT, 'p1', KEY);
     expect(w.stripe.pauseSubscriptionCollection).toHaveBeenCalledWith({ subscriptionId: 'sub_1', idempotencyKey: `tgp-coach-pause-p1-${KEY}` });
-    expect(paused.plan).toMatchObject({ billing: 'paused' });
+    expect(paused.plan.billing).toBe('paused');
     expect(w.audit.write).toHaveBeenCalledWith(expect.objectContaining({ action: 'coach_payments.billing_paused' }));
 
     const p = build([plan()], true);
-    expect((await p.service.resume(A, CLIENT, 'p1', KEY)).plan).toMatchObject({ billing: 'running' });
+    expect((await p.service.resume(A, CLIENT, 'p1', KEY)).plan.billing).toBe('running');
     expect(p.stripe.resumeSubscriptionCollection).toHaveBeenCalledWith({ subscriptionId: 'sub_1', idempotencyKey: `tgp-coach-resume-p1-${KEY}` });
 
     const r = build([plan({ status: 'refunded', dunning: { status: 'active', last_failure_reason: 'charge_refunded' } })]);
@@ -202,10 +199,9 @@ describe('CF-COACH-PAY-BE-128 coach client payments', () => {
     });
 
     it('the controller mounts the flag guard and blocks active sub-coaches', () => {
-      for (const controller of [CoachClientPaymentsController, CoachSaleRefundController]) {
-        const guards = Reflect.getMetadata(GUARDS_METADATA, controller);
-        expect(guards).toEqual(expect.arrayContaining([CoachPaymentActionsFeatureGuard, NoActiveSubCoachGuard]));
-      }
+      const guards = Reflect.getMetadata(GUARDS_METADATA, CoachClientPaymentsController);
+      expect(guards).toEqual(expect.arrayContaining([CoachPaymentActionsFeatureGuard, NoActiveSubCoachGuard]));
+      expect(Reflect.getMetadata(GUARDS_METADATA, CoachSaleRefundController)).toEqual(guards);
     });
   });
 });

@@ -112,9 +112,8 @@ export class CoachClientPaymentsController {
   }
 }
 
-// CONTRACT-1: the seller refunds one of their sales by its id alone, so a sale
-// to a client who moved away (whose money record has no client id) can still
-// be refunded. Same guards, body and reply as the per-client refund.
+// CONTRACT-1: the seller refunds a sale by its id alone (a moved-away client's money record has no
+// client id). Same guards, body and reply as the per-client refund.
 @ApiTags('coach-payments')
 @Controller('v1/coach/purchases')
 @UseGuards(CoachPaymentActionsFeatureGuard, JwtAuthGuard, CoachOrOwnerGuard, NoActiveSubCoachGuard)

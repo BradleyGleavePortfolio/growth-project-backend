@@ -389,7 +389,7 @@ export interface TimedSliceRow extends SliceRow {
   created_at: Date;
   client_name: string | null;
   package_name: string | null;
-  /** The sale's client, so the tax export can tell a client who moved away (CONTRACT-1). */
+  /** The sale's client, to find a client who moved away (CONTRACT-1); never exported. */
   client_id?: string | null;
 }
 
@@ -522,7 +522,7 @@ export interface MoneyOccurrence {
   amount_cents: number;
   client_name: string | null;
   package_name: string | null;
-  /** The sale's client, so the tax export can tell a client who moved away (CONTRACT-1). */
+  /** The sale's client, to find a client who moved away (CONTRACT-1); never exported. */
   client_id?: string | null;
 }
 
@@ -809,11 +809,8 @@ function displayName(u: { name?: string | null } | null | undefined): string {
   return n.length > 0 ? n : 'Client';
 }
 
-/**
- * CONTRACT-1: a charge to a client who moved away keeps their name, date and
- * amount, never a link, the package or its cadence. `billing_type` stays: the
- * app's charge reader needs it (owner exception: "#MONEY-BT - option 1").
- */
+// CONTRACT-1: a charge to a client who moved away keeps the name, date and amount, never a link,
+// the package or its cadence; billing_type stays (owner exception "#MONEY-BT - option 1").
 function unlinkMoved(charge: MoneyChargeDto, moved: ReadonlySet<string>): MoneyChargeDto {
   if (!moved.has(charge.client.id)) return charge;
   return {
@@ -823,16 +820,6 @@ function unlinkMoved(charge: MoneyChargeDto, moved: ReadonlySet<string>): MoneyC
     billing_interval: null,
     billing_interval_count: null,
   };
-}
-
-/** CONTRACT-1: a tax-export row about a client who moved away keeps no package. */
-function withoutMovedPackage<T extends { client_id?: string | null; package_name: string | null }>(
-  rows: T[],
-  moved: ReadonlySet<string>,
-): T[] {
-  return rows.map((r) =>
-    r.client_id && moved.has(r.client_id) ? { ...r, package_name: null } : r,
-  );
 }
 
 // ── tax CSV (C-641-4) ─────────────────────────────────────────────────
@@ -1237,7 +1224,7 @@ export class CoachMoneyService {
       // the sub-coach's buyer, so the name is not carried.
       client_name: withClient ? displayName(r.purchase?.client) : null,
       package_name: r.purchase?.package?.name ?? null,
-      client_id: withClient ? (r.purchase?.client?.id ?? null) : null,
+      client_id: r.purchase?.client?.id ?? null,
       events,
       postings: r.reversal_postings ?? [],
     };
@@ -1410,19 +1397,13 @@ export class CoachMoneyService {
       this.loadWindow(coachId, window, scope),
       this.loadOccurrences(coachId, window, scope),
     ]);
-    // CONTRACT-1: a sale to a client who moved away keeps its name, date and
-    // amount in the file, not its package.
-    const moved = await movedAwayClientIds(
-      this.prisma,
-      coachId,
-      [...slices.salesSeller, ...slices.reversedSeller, ...occurrences].map((r) => r.client_id),
-    );
-    return buildMoneyCsv(coachId, window, {
-      ...slices,
-      salesSeller: withoutMovedPackage(slices.salesSeller, moved),
-      reversedSeller: withoutMovedPackage(slices.reversedSeller, moved),
-      occurrences: withoutMovedPackage(occurrences, moved),
-    });
+    // CONTRACT-1: every row about a client who moved away (the coach's own sale, refund or
+    // chargeback, or a head-coach share of a sub-coach's sale) keeps its amounts, not the package.
+    const all = { ...slices, occurrences };
+    const rows = Object.values(all).flat();
+    const moved = await movedAwayClientIds(this.prisma, coachId, rows.map((r) => r.client_id));
+    for (const r of rows) if (r.client_id && moved.has(r.client_id)) r.package_name = null;
+    return buildMoneyCsv(coachId, window, all);
   }
 
   /**
