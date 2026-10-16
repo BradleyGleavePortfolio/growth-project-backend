@@ -5,6 +5,8 @@
  *   GET    /me/ai-consent        -> ClientAiConsentStatus (state + copy text + sha256)
  *          ?variant=coach_free   -> the coach-free copies (a client with no coach, owner 62)
  *          ?variant=safety_exception -> the coached client-ai-v6 / v7 copies (owner 57c)
+ *          ?variant=crisis_alert -> client-ai-v8 / v9 (v6 / v7 + the crisis sentence) while
+ *                                   FEATURE_ROMAN_CRISIS_ALERT is on, v6 / v7 while it is off
  *   POST   /me/ai-consent/roman  {version, copy_sha256?, platform?, app_version?, locale?}
  *                                -> grant (idempotent); 409 CONSENT_VERSION_MISMATCH; a client
  *                                   with no coach is recorded the same way (W-CONSENT)
@@ -79,6 +81,7 @@ export class AiConsentController {
     return this.consent.getStatus(req.user.id, {
       hasCoach,
       safetyException: variant === 'safety_exception',
+      crisisAlert: variant === 'crisis_alert',
     });
   }
 

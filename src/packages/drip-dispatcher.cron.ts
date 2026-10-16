@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import type { Prisma, ScheduledDrop } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
@@ -584,7 +584,9 @@ export class DripDispatcherCron {
     now: Date,
   ): Promise<'retried' | 'failed_permanently'> {
     const nextAttempt = drop.attempt_count + 1;
-    const isPermanent = nextAttempt >= MAX_ATTEMPTS;
+    // PKG-MOVE-FULFILMENT: a source the coach can no longer deliver (a moved
+    // client's copy day) never comes back; fail at once and tell the coach.
+    const isPermanent = nextAttempt >= MAX_ATTEMPTS || err instanceof NotFoundException;
     const reason = (err.message ?? 'unknown').slice(0, 500);
 
     if (!isPermanent) {
@@ -655,7 +657,7 @@ export class DripDispatcherCron {
           package_id: purchase.package_id,
           content_id: drop.content_id,
           asset_type: drop.asset_type,
-          attempts: MAX_ATTEMPTS,
+          attempts: drop.attempt_count + 1,
           failure_reason: reason,
         },
         deep_link: `tgp://coach/clients/${purchase.client_user_id}`,

@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type {
   CheckIn,
   CoachPackage,
-  MealPlan,
+  DailyMealPlan,
   WorkoutPlan,
   WorkoutPlanExercise,
 } from '@prisma/client';
@@ -49,9 +49,12 @@ export class PlanContextRepository {
     });
   }
 
-  /** A meal plan by id, or null. */
-  async findMealPlan(id: string): Promise<MealPlan | null> {
-    return this.prisma.mealPlan.findUnique({ where: { id } });
+  /**
+   * A live day plan (MEAL:DAY) by id, or null. An archived plan never resolves:
+   * that includes the frozen copy a moved client keeps (owner 4, 139-13).
+   */
+  async findMealPlan(id: string): Promise<DailyMealPlan | null> {
+    return this.prisma.dailyMealPlan.findFirst({ where: { id, archived_at: null } });
   }
 
   /** A coach package by id, or null. */

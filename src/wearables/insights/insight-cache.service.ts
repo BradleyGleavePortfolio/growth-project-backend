@@ -81,11 +81,14 @@ export class InsightCacheService {
     userId: string,
     bucket: WearableMetricBucket,
     coachId?: string,
+    onlyVersion?: string,
   ): Promise<AnyInsight | null> {
     const row = await this.prisma.wearableInsightCache.findUnique({
       where: this.buildWhere(audience, userId, bucket, coachId),
     });
     if (!row) return null;
+    // WEIGHTWALL: a caller that needs one prompt version (an insight made without weight) gets no other.
+    if (onlyVersion !== undefined && row.prompt_version !== onlyVersion) return null;
     if (row.expires_at.getTime() <= Date.now()) {
       // Expired — treat as a miss. We do not delete here (cheap to leave;
       // the next set() upserts over it, and the sync path prunes).
@@ -102,11 +105,14 @@ export class InsightCacheService {
     userId: string,
     bucket: WearableMetricBucket,
     coachId?: string,
+    onlyVersion?: string,
   ): Promise<AnyInsight | null> {
     const row = await this.prisma.wearableInsightCache.findUnique({
       where: this.buildWhere(audience, userId, bucket, coachId),
     });
     if (!row) return null;
+    // WEIGHTWALL: a caller that needs one prompt version (an insight made without weight) gets no other.
+    if (onlyVersion !== undefined && row.prompt_version !== onlyVersion) return null;
     return row.payload as unknown as AnyInsight;
   }
 

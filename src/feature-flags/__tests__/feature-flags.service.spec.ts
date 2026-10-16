@@ -17,6 +17,7 @@ const FLAG_ENVS = [
   'FEATURE_COMMUNITY_CLASSROOM_POSTS',
   'FEATURE_COMMUNITY_EVENTS',
   'FEATURE_COACHLESS_HOME',
+  'FEATURE_ROMAN_CRISIS_ALERT',
 ] as const;
 
 describe('FeatureFlagsService', () => {
@@ -58,6 +59,7 @@ describe('FeatureFlagsService', () => {
       coachless_home: false,
       messaging_core_v2: false,
       coach_payment_actions: false,
+      roman_crisis_alert: false,
     });
   });
 

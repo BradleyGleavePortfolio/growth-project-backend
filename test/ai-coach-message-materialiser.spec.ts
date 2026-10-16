@@ -137,9 +137,13 @@ describe('CoachMessageMaterializer', () => {
     const mat = new CoachMessageMaterializer(prisma, messaging);
     const result = await mat.materialize(draft);
     expect(messaging.sendAsCoach).toHaveBeenCalledTimes(1);
-    expect(messaging.sendAsCoach).toHaveBeenCalledWith('coach-1', draft.payload.clientId, {
-      body: draft.payload.body,
-    });
+    // ROMANMARK: the message records the draft it began as.
+    expect(messaging.sendAsCoach).toHaveBeenCalledWith(
+      'coach-1',
+      draft.payload.clientId,
+      { body: draft.payload.body },
+      { aiDraftId: draft.id },
+    );
     expect(result).toEqual({ status: 'sent', ref: 'msg-abc-123' });
     // The draft row is marked materialised + carries the downstream ref.
     expect(prisma.row().materialised_at).not.toBeNull();
