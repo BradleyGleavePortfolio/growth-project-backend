@@ -16,7 +16,7 @@ import { compareToNorm } from '../norm-comparison.util';
 // especially load-bearing here (sleep data is the most-likely surface for
 // a model to drift toward "insomnia"/"apnea" language).
 
-export const PROMPT_VERSION = 'coach-sr-v1';
+export const PROMPT_VERSION = 'coach-sr-v2';
 
 function summariseSamples(samples: InsightSample[], age?: number): string {
   if (samples.length === 0) {

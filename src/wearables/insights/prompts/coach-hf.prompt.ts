@@ -21,7 +21,7 @@ import { compareToNorm } from '../norm-comparison.util';
 // The builder is PURE — it touches no database. The service fetches the
 // samples and hands them in; the builder shapes the prompt.
 
-export const PROMPT_VERSION = 'coach-hf-v1';
+export const PROMPT_VERSION = 'coach-hf-v2';
 
 // Render the last-14d samples into a compact, redacted, norm-enriched
 // digest the model can reason over. Provider-origin strings are scrubbed

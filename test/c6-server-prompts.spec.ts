@@ -1,14 +1,18 @@
-// Owner rule C-6 (A1): server-side text never uses the barred
-// medical-practice word. The pattern is written as a character class so this
-// file never carries the word itself.
+// Owner rule C-6 (A1): no text a model or a person reads uses the barred
+// medical-practice word. The word is only ever assembled at runtime, so this
+// file never carries it.
 //
-// One guard, class-first: (1) every source file that builds an AI prompt (a
-// path with "prompt", or a "You are ..." / REPLY CONTRACT / system: block) is
-// free of the word, so a new prompt is covered without editing this list;
-// (2) each prompt C6-SERVER reworded renders without it and keeps its
-// boundary sentence (meaning kept, wording pinned).
+// One guard, class-first (SoT A2 items 12-13): every file under src/ is
+// scanned except the short EXEMPT list below. In .ts files the guard reads
+// every string and template literal, which is where prompts, Roman tool
+// descriptions, safety-router hints, Roman's fixed safe replies, JSON-repair
+// prompts, coach drafting prompts, Swagger text, errors, pushes, emails and
+// pages live. It skips comments, import paths and regex literals (detector
+// patterns), and only a whole word trips it, so identifiers and machine codes
+// built on the word do not. Other files (email templates, JSON) are read whole.
 import { readdirSync, readFileSync } from 'fs';
 import { join, relative } from 'path';
+import * as ts from 'typescript';
 import { WearableMetricBucket } from '@prisma/client';
 import { AiService } from '../src/ai/ai.service';
 import { buildRomanSystemPrompt } from '../src/roman/roman.prompts';
@@ -18,29 +22,86 @@ import { buildCoachSrPrompt } from '../src/wearables/insights/prompts/coach-sr.p
 import { fakeOf } from './ai-egress/ai-egress.fakes';
 
 const BARRED = /cl[i]nic/i;
-const SRC = join(__dirname, '..', 'src');
-const PROMPT_BLOCK = /You are (an?|the|GP|Roman)\b|REPLY CONTRACT|\bsystem: /;
+const WORD = /(?<![\w$])cl[i]nic(?:al(?:ly)?|ians?|s)?(?![\w$])/i;
+const W = ['cl', 'inic'].join('');
+const ROOT = join(__dirname, '..');
 
-function sources(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    const p = join(dir, e.name);
-    if (e.isDirectory()) return sources(p);
-    return e.name.endsWith('.ts') && !e.name.endsWith('.spec.ts') ? [p] : [];
-  });
+// Path (from the repo root) -> why nobody reads it. Keep this list short.
+const EXEMPT: Array<[RegExp, string]> = [
+  [/^src\/onboarding\/consult-consent-copy\.ts$/, 'pinned historical consent copy v3/v4 (sha256-pinned)'],
+  [/^src\/common\/env-validation\.ts$/, 'env var names and operator-only startup reasons'],
+  [/\.md$/, 'developer handbooks, never sent to a model or shown in the app'],
+  [/\.spec\.ts$/, 'tests, never shipped'],
+];
+const exempt = (path: string) => EXEMPT.some(([re]) => re.test(path));
+
+function walk(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+    e.isDirectory() ? walk(join(dir, e.name)) : [relative(ROOT, join(dir, e.name))],
+  );
 }
 
-describe('C-6: no barred word in server-side AI prompts', () => {
-  const promptFiles = sources(SRC).filter(
-    (p) => /prompt/i.test(relative(SRC, p)) || PROMPT_BLOCK.test(readFileSync(p, 'utf8')),
-  );
+function readable(path: string, text: string): string[] {
+  if (!path.endsWith('.ts')) return [text];
+  const out: string[] = [];
+  const visit = (n: ts.Node): void => {
+    if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) return;
+    if (ts.isStringLiteral(n) || ts.isTemplateLiteralToken(n)) out.push(n.text);
+    ts.forEachChild(n, visit);
+  };
+  visit(ts.createSourceFile(path, text, ts.ScriptTarget.Latest));
+  return out;
+}
 
-  it('finds the prompt sources (the discovery rule still matches)', () => {
-    expect(promptFiles.length).toBeGreaterThanOrEqual(20);
+const hits = (files: Array<[string, string]>) =>
+  files
+    .filter(([p, t]) => !exempt(p) && BARRED.test(t) && readable(p, t).some((s) => WORD.test(s)))
+    .map(([p]) => p);
+
+describe('C-6: no barred word in any server-side text a model or person reads', () => {
+  const scanned = walk(join(ROOT, 'src')).filter((p) => !exempt(p));
+
+  it('every scanned file under src/ is free of the word', () => {
+    const files = scanned.map((p): [string, string] => [p, readFileSync(join(ROOT, p), 'utf8')]);
+    expect(hits(files)).toEqual([]);
   });
 
-  it('every prompt source file is free of the word', () => {
-    const hits = promptFiles.filter((p) => BARRED.test(readFileSync(p, 'utf8')));
-    expect(hits.map((p) => relative(SRC, p))).toEqual([]);
+  it.each([
+    'src/roman/tools/roman-read-tools.ts',
+    'src/roman/guardrails/safety-router.ts',
+    'src/roman/guardrails/roman-post-check.ts',
+    'src/roman/guardrails/roman-guardrail.contract.ts',
+    'src/roman/memory/roman-client-memory.augmenter.ts',
+    'src/wearables/insights/wearable-insights.service.ts',
+    'src/community/ai-triage/ai-triage.service.ts',
+    'src/coach/brief/coach-brief.service.ts',
+    'src/ai/adapters/anthropic.adapter.ts',
+    'src/ai/coach/coach-ai-execution.controller.ts',
+    'src/ai/ai.service.ts',
+    'src/public-pages/trust-pages.html.ts',
+    'src/email/templates/payment-receipt.hbs',
+  ])('%s is scanned', (p) => {
+    expect(scanned).toContain(p);
+  });
+
+  const dto = 'src/invite-codes/coach-code-tools.dto.ts';
+  const plant = (line: string) => hits([[dto, `${readFileSync(join(ROOT, dto), 'utf8')}\n${line}\n`]]);
+
+  it.each([
+    `export const A = 'Ask the ${W} front desk';`,
+    `export const A = \`${W.toUpperCase()}AL CARE for \${'you'}\`;`,
+    `export const A = { description: "${W[0].toUpperCase()}${W.slice(1)}ians only" };`,
+  ])('a planted word fails the guard: %s', (line) => {
+    expect(plant(line)).toEqual([dto]);
+  });
+
+  it.each([
+    `export const ${W}ProgramSet = 'program_in_${W}_set';`,
+    `// a comment naming the ${W}`,
+    `export const DETECT = /(doctor|${W}ian)/i;`,
+    `export { A } from './${W}-programs';`,
+  ])('identifiers, comments, detectors and paths pass: %s', (line) => {
+    expect(plant(line)).toEqual([]);
   });
 
   const legacy = new AiService(
@@ -63,11 +124,7 @@ describe('C-6: no barred word in server-side AI prompts', () => {
   const sr = buildCoachSrPrompt({ ...wear, bucket: WearableMetricBucket.SLEEP_RECOVERY });
 
   it.each([
-    [
-      'legacy assistant',
-      legacy,
-      '- A registered dietician with 15 years of performance experience\n',
-    ],
+    ['legacy assistant', legacy, '- A performance coach with 15 years of experience\n'],
     [
       'Roman client contract',
       buildRomanSystemPrompt({ surface: 'client', voice }),

@@ -16,7 +16,8 @@
 /** Recorded per turn (log line) and stated in the system block. */
 // roman-client-v4 (AUDIT-05-125): adds the crisis section, the safety net for
 // a crisis message the deterministic SafetyRouter does not match.
-export const PROMPT_VERSION = 'roman-client-v4';
+// roman-client-v5 (C6-SERVER, owner rule C-6): one reworded tone sentence.
+export const PROMPT_VERSION = 'roman-client-v5';
 
 export const ROMAN_GUARDRAIL_CONTRACT = `# REPLY CONTRACT (${PROMPT_VERSION})
 
