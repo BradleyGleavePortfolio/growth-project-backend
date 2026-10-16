@@ -126,7 +126,11 @@ describe('B-674-2 — owner recovery routes over HTTP with the real guards', () 
   beforeAll(async () => {
     process.env.ADMIN_SERVICE_TOKEN = 'opaque-service-token';
     const jwt = Reflect.construct(JwtAuthGuard, [
-      { user: { findUnique: async ({ where }: Row) => users[where.supabase_id] ?? null } },
+      {
+        user: { findUnique: async ({ where }: Row) => users[where.supabase_id] ?? null },
+        // AGEGATE16: the student has confirmed 16 or older, so the role check decides.
+        userProfile: { findUnique: async () => ({ date_of_birth: new Date('1990-01-01T00:00:00Z') }) },
+      },
       {
         verify: async (token: string) => {
           if (!token.startsWith('jwt-')) throw new Error('not a JWT');
