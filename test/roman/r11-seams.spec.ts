@@ -69,10 +69,11 @@ describe('R11-00 prompt seam', () => {
   // client hashes re-pinned for the roman-client-v4 crisis section (AUDIT-05-125),
   // then for CF-ROMAN-COPY-B-128 (client framing assumes no coach, real tab names).
   // Re-pinned again: the calorie floor no longer yields to a lower coach target.
+  // Re-pinned for C6-SERVER (owner rule C-6): one reworded tone sentence.
   const MAIN = {
     client_plain: {
       input: { surface: 'client' as const, voice: v0 },
-      hash: '902662c227a26156a3ee9a77deb0e7fa9c8289d6c4a3dd8cd6c701bb8e8c62de',
+      hash: 'f9adb89d90cdbd96c20f7e884854a2954fc07030898dfaf0c1ab4d6dc4944303',
     },
     coach_plain: {
       input: {
@@ -90,11 +91,11 @@ describe('R11-00 prompt seam', () => {
         routerHint: 'Hint line.',
         clientData: CLIENT_DATA,
       },
-      hash: '119e3bc5de78835724c1347db8f20e6dcf0a60d864729d2ccb59e71450db780f',
+      hash: 'd3bdd3ec5661abdd7b8037d7e3a1cdf0f0dcc12ce3b4d2976d9ecae3b6655e2c',
     },
     client_unavailable: {
       input: { surface: 'client' as const, voice: v1, clientDataUnavailable: true },
-      hash: '5219fc945d9478ce85a863b730fae0d02bca59a0efbb3575df6251123662e747',
+      hash: 'fb093cbdc2c92437927c537663a6ddd6c415fe1767ed8e73fa2968f0b48dd572',
     },
   };
 
