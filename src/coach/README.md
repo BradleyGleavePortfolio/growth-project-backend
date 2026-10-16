@@ -38,6 +38,7 @@ coach's own roster.
 | `GET` | `/coach/clients/risk-board` | **coach / owner** | `?bucket=green\|amber\|red&cursor=ISO&limit=N` | `{ data: CoachRiskBoardRow[], next_cursor: string\|null, generated_at: string }` |
 | `GET` | `/coach/clients/:id/timeline?days=N` | coach / owner | `:id`, `days` | 90-day event stream; `client` is `{ id, name, archived_at }` |
 | `GET` | `/coach/clients/:id/summary?date=YYYY-MM-DD` | coach / owner | `:id`, `date` | One-day macro tally + 30-day weight |
+| `GET` | `/coach/clients/:id/week` | coach / owner | `:id` | This week's workout assignments, Monday to Sunday in the client's time zone: `{ week_start, today, shared, assignments: [{ id, day, scheduled_for, completed_at }] }`; 404 unless the client is the caller's now; `shared: false` and no rows when Workouts is not shared |
 | `GET` | `/coach/my-guidelines` | client (student; package required) | — | The signed-in client's guideline from their current coach: `{ description, created_at, updated_at }`, or an empty body when there is none (`client-guidelines.controller.ts`) |
 | `GET` | `/coach/guidelines/:client_id` | coach / owner | `:client_id` | Guideline coach has set on a client |
 | `POST` | `/coach/guidelines/:client_id` | coach / owner | `:client_id`, body | Upsert guideline |
