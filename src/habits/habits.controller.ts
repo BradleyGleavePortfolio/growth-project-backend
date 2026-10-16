@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards, Request, HttpCode, GoneException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, Request, HttpCode, GoneException } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { HabitsService } from './habits.service';
@@ -6,7 +6,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
-import { CreateHabitDto, LogHabitDto } from './habits.dto';
+import { CreateHabitDto, LogHabitDto, UpdateHabitDto } from './habits.dto';
 
 @ApiTags('habits')
 @Controller('habits')
@@ -26,6 +26,12 @@ export class HabitsController {
   @Post()
   async createHabit(@Request() req: AuthedRequest, @Body() body: CreateHabitDto) {
     return this.habitsService.createHabit(req.user.id, body);
+  }
+
+  // HB1: the client edits their habit; on one their coach set, only its reminder.
+  @Patch(':id')
+  async updateHabit(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: UpdateHabitDto) {
+    return this.habitsService.updateHabit(req.user.id, id, body);
   }
 
   @Post(':id/log')
@@ -50,6 +56,7 @@ export class HabitsController {
     );
   }
 
+  // Archives the habit; its logs stay in the client's history (HB1).
   @Delete(':id')
   @HttpCode(204)
   async deleteHabit(@Request() req: AuthedRequest, @Param('id') id: string) {

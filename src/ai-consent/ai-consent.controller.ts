@@ -4,8 +4,12 @@
  *
  *   GET    /me/ai-consent        -> ClientAiConsentStatus (state + copy text + sha256)
  *          ?variant=coach_free   -> the coach-free copies (a client with no coach, owner 62)
+ *          ?variant=safety_exception -> the coached client-ai-v6 / v7 copies (owner 57c)
+ *          ?variant=crisis_alert -> client-ai-v8 / v9 (v6 / v7 + the crisis sentence) while
+ *                                   FEATURE_ROMAN_CRISIS_ALERT is on, v6 / v7 while it is off
  *   POST   /me/ai-consent/roman  {version, copy_sha256?, platform?, app_version?, locale?}
- *                                -> grant (idempotent); 409 CONSENT_VERSION_MISMATCH
+ *                                -> grant (idempotent); 409 CONSENT_VERSION_MISMATCH; a client
+ *                                   with no coach is recorded the same way (W-CONSENT)
  *   DELETE /me/ai-consent/roman  -> withdraw (idempotent)
  *
  * The subject is always req.user.id. Guards: JwtAuthGuard + RolesGuard +
@@ -41,6 +45,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { AI_CONSENT_ERROR_UNAVAILABLE, isAiConsentLedgerEnabled } from './ai-consent.constants';
 import { GrantClientAiConsentDto } from './ai-consent.dto';
 import { AiConsentService, type ClientAiConsentStatus } from './ai-consent.service';
+import { AllowBeforeAgeConfirmed } from '../auth/client-age';
 
 /** 503 on every ledger route while the flag is off (runs before body validation). */
 @Injectable()
@@ -58,6 +63,7 @@ export class AiConsentLedgerGuard implements CanActivate {
 
 @Controller('me/ai-consent')
 @UseGuards(JwtAuthGuard, RolesGuard, AiConsentLedgerGuard)
+@AllowBeforeAgeConfirmed()
 export class AiConsentController {
   constructor(private readonly consent: AiConsentService) {}
 
@@ -71,9 +77,14 @@ export class AiConsentController {
     // Any other value (or none) reads the coached copies, as before. A client
     // with a coach never reads a coach-free grant as live (owner 62).
     const hasCoach = typeof req.user.coach_id === 'string' && req.user.coach_id.length > 0;
-    return variant === 'coach_free'
-      ? this.consent.getStatus(req.user.id, { coachFree: true, hasCoach })
-      : this.consent.getStatus(req.user.id, { hasCoach });
+    if (variant === 'coach_free') {
+      return this.consent.getStatus(req.user.id, { coachFree: true, hasCoach });
+    }
+    return this.consent.getStatus(req.user.id, {
+      hasCoach,
+      safetyException: variant === 'safety_exception',
+      crisisAlert: variant === 'crisis_alert',
+    });
   }
 
   @Post('roman')
@@ -84,6 +95,8 @@ export class AiConsentController {
     @Req() req: AuthedRequest,
     @Body() dto: GrantClientAiConsentDto,
   ): Promise<ClientAiConsentStatus> {
+    // W-CONSENT: a client with no coach is asked once and the grant is kept like a coached one;
+    // Roman and every AI route still answer 403 ROMAN_REQUIRES_COACH until a coach is linked.
     return this.consent.grant(req.user.id, dto);
   }
 

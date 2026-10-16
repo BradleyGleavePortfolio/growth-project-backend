@@ -130,7 +130,7 @@ function uniqueViolation(): Prisma.PrismaClientKnownRequestError {
 describe('cloneProgramToClient — Serializable transaction (MWB-2 §3.3)', () => {
   let service: WorkoutBuilderService;
   let prisma: {
-    workoutProgram: { findUnique: jest.Mock };
+    workoutProgram: { findUnique: jest.Mock; count: jest.Mock };
     user: { findUnique: jest.Mock };
     subCoachAssignment: { findMany: jest.Mock };
     $transaction: jest.Mock;
@@ -141,7 +141,10 @@ describe('cloneProgramToClient — Serializable transaction (MWB-2 §3.3)', () =
     process.env.FEATURE_MWB_TEMPLATES = 'true';
 
     prisma = {
-      workoutProgram: { findUnique: jest.fn().mockResolvedValue(master) },
+      workoutProgram: {
+        findUnique: jest.fn().mockResolvedValue(master),
+        count: jest.fn().mockResolvedValue(1),
+      },
       user: {
         findUnique: jest.fn().mockImplementation(
           ({ where }: { where: { id: string } }) => {

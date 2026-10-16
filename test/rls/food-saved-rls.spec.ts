@@ -1,5 +1,5 @@
 /**
- * FOODSAVED (migration 20270502001300): favourites, saved meals and their items
+ * FOODSAVED (migration 20270502003100): favourites, saved meals and their items
  * are read and written by their client only, read by the client's current
  * coach, and a SavedMealItem follows its meal. Row access runs as the API role
  * `authenticated` (no RLS bypass) on the replayed chain, with each person's JWT
@@ -34,7 +34,7 @@ if (!DB_URL && process.env.CI === 'true') {
   throw new Error('food-saved-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.');
 }
 
-const MIGRATION = '20270502001300_food_favorites_saved_meals';
+const MIGRATION = '20270502003100_food_favorites_saved_meals';
 const RLS = /row-level security/;
 const TABLES = ['FoodFavorite', 'SavedMeal', 'SavedMealItem'] as const;
 

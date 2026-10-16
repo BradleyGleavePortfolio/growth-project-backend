@@ -155,6 +155,10 @@ export class UpdateBookingOptionsDto {
   @IsOptional()
   @IsInt({ message: 'Daily maximum must be a whole number of sessions, or empty for no limit.' })
   daily_max_sessions?: number | null;
+
+  @IsOptional()
+  @IsInt({ message: 'Notice to move or cancel must be a whole number of hours.' })
+  cancel_notice_hours?: number;
 }
 
 export class RequestSessionDto {

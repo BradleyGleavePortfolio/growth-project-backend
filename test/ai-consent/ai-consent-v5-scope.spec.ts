@@ -151,8 +151,19 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
       expect(sha(CLIENT_AI_CONSENT_V5_PARAGRAPH)).toBe(V5_PARAGRAPH_SHA);
       expect(sha(`${D1_PARAGRAPH}\n\n${CLIENT_AI_CONSENT_BOX_LABEL}`)).toBe(V5_COPY_SHA);
       expect(CLIENT_AI_CONSENT_V5_COPY_SHA256).toBe(V5_COPY_SHA);
-      // Plus their coach-free versions (owner 62, test/ai-consent/consent-coach-free.spec.ts).
-      expect(Object.keys(CLIENT_AI_CONSENT_ACCEPTED)).toEqual([V4, V5, `${V4}-coach-free`, `${V5}-coach-free`]);
+      // Plus client-ai-v6 / v7 (owner 57c, test/ai-consent/consent-57c.spec.ts), v8 / v9
+      // (CRISIS-APP-COPY, consent-crisis-sentence.spec.ts) and the coach-free
+      // versions (owner 62, test/ai-consent/consent-coach-free.spec.ts).
+      expect(Object.keys(CLIENT_AI_CONSENT_ACCEPTED)).toEqual([
+        V4,
+        V5,
+        'client-ai-v6',
+        'client-ai-v7',
+        'client-ai-v8',
+        'client-ai-v9',
+        `${V4}-coach-free`,
+        `${V5}-coach-free`,
+      ]);
       expect(CLIENT_AI_CONSENT_ACCEPTED[V4]).toEqual({ copy_sha256: V4_COPY_SHA, scope: 'base' });
       expect(CLIENT_AI_CONSENT_ACCEPTED[V5]).toEqual({ copy_sha256: V5_COPY_SHA, scope: 'memory' });
     });
@@ -333,7 +344,7 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
     it.each([
       ['v5 with the v4 sha256', { version: V5, copy_sha256: V4_COPY_SHA }],
       ['v4 with the v5 sha256', { version: V4, copy_sha256: V5_COPY_SHA }],
-      ['an unknown version', { version: 'client-ai-v6' }],
+      ['an unknown version', { version: 'client-ai-v99' }],
     ])('409 CONSENT_VERSION_MISMATCH for %s, nothing written', async (_l, dto) => {
       await expect(service.grant('u_a', dto)).rejects.toMatchObject({
         status: 409,

@@ -18,6 +18,7 @@ import * as Sentry from '@sentry/node';
 import { DataExportDownload, DataExportService } from './data-export.service';
 import { SUPPORT_EMAIL } from '../public-pages/trust-pages.html';
 import { Public } from '../common/decorators/public.decorator';
+import { AllowBeforeAgeConfirmed } from '../auth/client-age';
 
 /**
  * DataExportController — GDPR Article 20 right to data portability.
@@ -30,6 +31,7 @@ import { Public } from '../common/decorators/public.decorator';
  * authenticated owner by POST /download-link.
  */
 @Controller('v1/me/data-export')
+@AllowBeforeAgeConfirmed()
 export class DataExportController {
   private readonly logger = new Logger(DataExportController.name);
 
