@@ -100,6 +100,7 @@ describe('R11-00 prompt seam', () => {
   };
 
   it('no augments (absent, empty, blank) -> the prompt hash equals main', () => {
+    expect(Object.fromEntries(Object.entries(MAIN).map(([n, c]) => [n, sha(buildRomanSystemPrompt(c.input))]))).toEqual({});
     for (const [name, c] of Object.entries(MAIN)) {
       expect([name, sha(buildRomanSystemPrompt(c.input))]).toEqual([name, c.hash]);
       expect([name, sha(buildRomanSystemPrompt({ ...c.input, augments: [] }))]).toEqual([
