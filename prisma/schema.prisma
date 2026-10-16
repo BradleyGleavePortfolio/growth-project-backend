@@ -623,6 +623,9 @@ model CoachProfile {
   booking_buffer_after_min   Int                 @default(0)
   // NULL = no daily cap.
   booking_daily_max          Int?
+  // C4-NOTICE: how many hours before the start a client's own move or cancel
+  // locks (0 = until the start). Range 0 to 168, enforced by the API.
+  booking_cancel_notice_hours Int                @default(24)
   created_by_owner_id        String?
   created_by_owner           User?               @relation("CoachProfileCreatedBy", fields: [created_by_owner_id], references: [id])
   created_at                 DateTime            @default(now())
@@ -1367,12 +1370,12 @@ model CoachMessage {
   // Apple 1.2 safety — reverse relation for MessageReport.
   reports            MessageReport[] @relation("MessageReportTarget")
 
-  // Stream 2 — AI execution capabilities. Set by `CoachMessageMaterializer`
-  // when a `draft.coach_message` (or merged `draft.client_message`) is
-  // approved. NULL for human-written messages. `@unique` is the schema-
-  // level idempotency guard — two concurrent approve calls cannot
-  // produce two CoachMessage rows; the second INSERT trips P2002 and
-  // the materialiser falls through to its "already_materialised" branch.
+  // ROMANMARK — the approved Roman draft (`draft.coach_message` or
+  // `draft.coach_wearable_message`) this message began as, written only through
+  // sendAsCoach's internal `aiDraftId` option by those two materialisers. Both
+  // thread routes return it; the phones show the Roman mark when it is set.
+  // NULL for every other message. No foreign key, so the mark outlives the
+  // draft. `@unique`: one message per draft (a second insert trips P2002).
   ai_draft_id String? @unique
   // C05 item 6 (B-609-3) — set only by the coach welcome scheduler: the id of
   // the CoachWelcomeMessageJob that produced this row. `@unique` is the

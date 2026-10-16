@@ -33,6 +33,7 @@ function makePrismaStub() {
 
   function filterMatch(row: any, where: any): boolean {
     return Object.entries(where).every(([k, v]) => {
+      if (k === 'OR' && Array.isArray(v)) return v.some((w) => filterMatch(row, w));
       if (v === null) return row[k] === null || row[k] === undefined;
       if (typeof v === 'object' && v !== null) {
         return Object.entries(v as any).every(([sk, sv]) => {

@@ -60,6 +60,7 @@ import {
   OpenSessionDto,
   SendMessageDto,
 } from './roman.dto';
+import { KeepRomanContext } from './context/roman-context-invalidation';
 
 @Controller('roman')
 @UseGuards(JwtAuthGuard, RolesGuard, RomanFeatureGuard)
@@ -107,6 +108,8 @@ export class RomanController {
   // ─── POST /roman/sessions/:id/messages — submit a turn, stream the reply ───
   @Post('sessions/:id/messages')
   @Roles('student', 'coach', 'owner')
+  // The turn reads the context; it writes nothing the context reads.
+  @KeepRomanContext()
   async sendMessage(
     @Req() req: Request & AuthedRequest,
     @Res() res: Response,

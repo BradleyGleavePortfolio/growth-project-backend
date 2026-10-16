@@ -96,7 +96,7 @@ client-facing surface.
    `RolesGuard` requires `role === 'owner'`.
 2. `promoteUser` updates `User.role` and, when promoting to `coach`,
    calls `ensureCoachProfile` to lazy-create the `CoachProfile` with a
-   unique `GP-XXXXXX`-style invite code.
+   unique `TGP-XXXXXXX`-style invite code.
 3. `getCoachDetail` aggregates 7-day counts from `LoggedFoodEntry`,
    `WorkoutSession`, and `CoachMessage` over the coach's roster in
    parallel. Empty rosters short-circuit to zeros.

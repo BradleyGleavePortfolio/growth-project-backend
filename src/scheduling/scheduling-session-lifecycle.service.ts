@@ -31,7 +31,7 @@ import type {
 } from './dto/scheduling.dto';
 import { SchedulingProviderRegistry } from './providers/scheduling-provider.registry';
 import { SchedulingAccessService } from './scheduling-access.service';
-import { SchedulingOpenSlotsService } from './scheduling-open-slots.service';
+import { SchedulingOpenSlotsService, toBookingOptions } from './scheduling-open-slots.service';
 import {
   BOOKING_OPTION_LIMITS,
   CLIENT_MOVED_END_REASON,
@@ -43,6 +43,7 @@ import {
   OCCUPYING_SESSION_STATUSES,
   SESSION_NOT_FOUND_MESSAGE,
   SchedulingErrorCode,
+  changeLockedAt,
   formatNoticeMinutes,
   hasUsableLink,
   requestExpiresAt,
@@ -418,6 +419,7 @@ export class SchedulingSessionLifecycleService {
         ),
       );
     }
+    if (isClient) await this.assertClientChangeOpen(existing, now);
     const { start, end } = parseInterval(dto.start_at, dto.end_at);
     assertWithinBookingWindow(start, now, OUTER_BOOKING_BOUNDS);
 
@@ -596,12 +598,22 @@ export class SchedulingSessionLifecycleService {
     assertExpectedStart(existing, dto.expected_start_at);
     const clientCancel = actor.role === 'student';
     if (clientCancel && existing.start_at.getTime() <= Date.now()) throw clientCancelTooLate();
+    const noticeHours = clientCancel ? await this.assertClientChangeOpen(existing, new Date()) : 0;
     const updated = await this.compareAndSet(
       existing,
       'canceled',
       { ended_at: new Date(), end_reason: dto.reason ?? null },
       {
-        ...(clientCancel ? { start: 'future' as const, onStarted: clientCancelTooLate } : {}),
+        ...(clientCancel
+          ? {
+              start: 'future' as const,
+              leadMs: noticeHours * 3_600_000,
+              onStarted: () =>
+                existing.start_at.getTime() <= Date.now()
+                  ? clientCancelTooLate()
+                  : changesLocked(noticeHours, existing.start_at),
+            }
+          : {}),
         requestOpenFor: viewerOf(actor),
       },
     );
@@ -940,6 +952,8 @@ export class SchedulingSessionLifecycleService {
     data: Prisma.CoachingSessionUpdateManyMutationInput,
     fence: {
       start?: 'future' | 'started';
+      /** With start 'future': the start must also be at least this far ahead (C4-NOTICE). */
+      leadMs?: number;
       onStarted?: () => HttpException;
       /** S-SCHED-5: a request transition must land before its clear time. */
       requestOpenFor?: 'client' | 'coach';
@@ -947,7 +961,7 @@ export class SchedulingSessionLifecycleService {
   ): Promise<CoachingSession> {
     const now = new Date();
     const startFilter: Prisma.DateTimeFilter = { equals: existing.start_at };
-    if (fence.start === 'future') startFilter.gt = now;
+    if (fence.start === 'future') startFilter.gt = new Date(now.getTime() + (fence.leadMs ?? 0));
     if (fence.start === 'started') startFilter.lte = now;
     const guardRequest = fence.requestOpenFor !== undefined && existing.status === 'requested';
     const res = await this.prisma.coachingSession.updateMany({
@@ -970,6 +984,23 @@ export class SchedulingSessionLifecycleService {
       if (fence.onStarted) throw fence.onStarted();
     }
     throw stateChanged();
+  }
+
+  /**
+   * C4-NOTICE (owner Option 1): a client's own move or cancel must come
+   * before the notice set by this session's own coach (default 24 hours).
+   * Returns the notice in hours. Coaches and server flows never call this.
+   */
+  private async assertClientChangeOpen(existing: CoachingSession, now: Date): Promise<number> {
+    const profile = await this.prisma.coachProfile.findUnique({
+      where: { user_id: existing.coach_id },
+      select: { booking_cancel_notice_hours: true },
+    });
+    const hours = toBookingOptions(profile).cancel_notice_hours;
+    if (changeLockedAt(existing.start_at, hours).getTime() <= now.getTime()) {
+      throw changesLocked(hours, existing.start_at);
+    }
+    return hours;
   }
 
   // S-SCHED-5: a request that is closed by expiry, or has reached its clear
@@ -1442,6 +1473,19 @@ function clientCancelTooLate(): ConflictException {
       'This session has already started, so it cannot be cancelled from the app. Message your coach instead.',
     ),
   );
+}
+
+// C4-NOTICE: a client's own move or cancel inside the coach's notice. The app
+// shows its own copy for a code, never this message raw; the body carries the
+// lock time so the app can show it in the client's own zone.
+function changesLocked(hours: number, startAt: Date): ConflictException {
+  return new ConflictException({
+    ...schedulingError(
+      SchedulingErrorCode.CHANGES_LOCKED,
+      `Changes are locked within ${hours} hour${hours === 1 ? '' : 's'} of the start. Message your coach if you need help changing this session.`,
+    ),
+    change_locked_at: changeLockedAt(startAt, hours).toISOString(),
+  });
 }
 
 function notStartedYet(action: 'complete' | 'no_show'): ConflictException {

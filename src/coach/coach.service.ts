@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../consent/consent.service';
+import { weightIfShared } from '../consent/coach-sharing-gate';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 
 // Concrete payload shapes for the timeline/summary slices below. These
@@ -490,7 +491,7 @@ export class CoachService {
     // timeline still renders. Owners bypass the check.
     const flags = await this.loadFitnessConsents(coachId, clientId, callerRole);
 
-    const [meals, workouts, weights, checkIns] = await Promise.all([
+    const [meals, workouts, weights, sharedCheckIns] = await Promise.all([
       flags.food
         ? this.prisma.loggedFoodEntry.findMany({
             // Use `date` (the actual eat date the user recorded) for timeline
@@ -534,6 +535,8 @@ export class CoachService {
           })
         : Promise.resolve<CheckInRow[]>([]),
     ]);
+    // C8-S: a check-in's weight follows Weigh-ins, not Check-ins and habits (rows and events alike).
+    const checkIns = sharedCheckIns.map((c) => weightIfShared(c, flags.bodyMetrics));
 
     const events: Array<{ type: string; date: Date; ref: unknown }> = [
       // Use `date` (eat date) not `logged_at` (sync timestamp) for timeline

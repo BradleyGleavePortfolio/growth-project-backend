@@ -39,6 +39,8 @@ import {
   grantCoachSharingAtJoinTx,
 } from '../consent/coach-sharing-notice';
 import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
+import { TrialUsageService } from '../packages/trials/trial-usage.service';
+import { packageQuote, resumableAttempts } from '../checkout/checkout.service';
 
 type ValidationSuccess = {
   valid: true;
@@ -50,11 +52,13 @@ type ValidationFailure = { valid: false; reason: string };
 export type ValidationResult = ValidationSuccess | ValidationFailure;
 
 // Unambiguous alphabet — no 0/O, 1/I/L — so codes read unambiguously over the
-// phone or in handwriting. 31 chars × 6 positions = 31^6 ≈ 8.9×10^8
-// combinations, plenty for the foreseeable code volume.
+// phone or in handwriting. Owner 138-8 (decision 26): new codes are
+// `TGP-XXXXXXX`, 31^7 ≈ 2.75×10^10 (~34.7 bits, AUTHA-07). Codes minted
+// before it (`GP-XXXXXX`, 31^6) and owner vanity codes keep resolving: every
+// lookup is by the stored string, never by its shape.
 const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
-const CODE_LENGTH = 6;
-const CODE_PREFIX = 'GP-';
+const CODE_LENGTH = 7;
+const CODE_PREFIX = 'TGP-';
 const MAX_GENERATION_ATTEMPTS = 10;
 // AUDIT-17-125 — most redeemers listed for one code ("Who joined").
 const REDEEMERS_LIMIT = 500;
@@ -70,7 +74,7 @@ export const INVITE_CODE_MAX_LENGTH = 32;
 // dashes only. Mobile mirrors this to gate input before POST.
 export const INVITE_CODE_PATTERN = /^[A-Za-z0-9-]+$/;
 
-// Stateless `GP-XXXXXX` candidate generator shared with AuthService (C13
+// Stateless `TGP-XXXXXXX` candidate generator shared with AuthService (C13
 // signup-time coach provisioning mints the CoachProfile.invite_code inside
 // the signup transaction, where the retry-on-P2002 loop below cannot run).
 // Same alphabet/length as the private `generateCode` so codes are
@@ -127,11 +131,11 @@ export function isWellFormedInviteCode(value: unknown): value is string {
 /**
  * HUNT-03-124 — the forms a typed code is looked up under, in order: exactly
  * as typed (trimmed), then upper-case, then upper-case with the dash after
- * "GP" restored. Codes are stored upper-case ("GP-XXXXXX" and owner vanity
- * codes such as "GP-BRADLEY"), so "gp-bradley" and "GPBRADLEY" reach the
- * stored code while an exact stored code always wins. Only well-formed forms
- * are returned (a code with a space inside stays malformed), so nothing
- * malformed reaches the DB.
+ * "TGP" or "GP" restored. Codes are stored upper-case ("TGP-XXXXXXX", older
+ * "GP-XXXXXX" and owner vanity codes such as "GP-BRADLEY"), so "tgpk7m2qx3",
+ * "gp-bradley" and "GPBRADLEY" reach the stored code while an exact stored
+ * code always wins. Only well-formed forms are returned (a code with a space
+ * inside stays malformed), so nothing malformed reaches the DB.
  */
 export function inviteCodeLookupCandidates(raw: unknown): string[] {
   if (typeof raw !== 'string') return [];
@@ -140,8 +144,9 @@ export function inviteCodeLookupCandidates(raw: unknown): string[] {
   const upper = trimmed.toUpperCase();
   const out = [trimmed];
   if (upper !== trimmed) out.push(upper);
-  if (/^GP[A-Z0-9]/.test(upper)) {
-    const dashed = `${CODE_PREFIX}${upper.slice(2)}`;
+  const prefixed = /^(T?GP)([A-Z0-9].*)$/.exec(upper);
+  if (prefixed) {
+    const dashed = `${prefixed[1]}-${prefixed[2]}`;
     if (isWellFormedInviteCode(dashed)) out.push(dashed);
   }
   return out;
@@ -428,6 +433,8 @@ export class InviteCodesService {
     // Clinic C01 — optional so existing 4-arg constructions (tests, scripts)
     // keep working; when absent, codes never grant packages.
     @Optional() private readonly grants?: InviteGrantService,
+    // JOINQUOTE — the paid join's quote; absent (legacy wiring) = no quote.
+    @Optional() private readonly trials?: TrialUsageService,
   ) {}
 
   /**
@@ -450,7 +457,7 @@ export class InviteCodesService {
     }
   }
 
-  // Generates a human-friendly `GP-XXXXXX` code. Retries on the (astronomically
+  // Generates a human-friendly `TGP-XXXXXXX` code. Retries on the (astronomically
   // unlikely) unique-collision so callers never see a spurious 500.
   private generateCode(): string {
     return generateInviteCodeCandidate();
@@ -551,7 +558,7 @@ export class InviteCodesService {
         throw err;
       }
     }
-    // Astronomically unlikely: 10 consecutive collisions against a 30-bit space.
+    // Astronomically unlikely: 10 consecutive collisions against a 31^7 space.
     throw new InternalServerErrorException('Could not generate a unique invite code');
   }
 
@@ -881,7 +888,7 @@ export class InviteCodesService {
   }
 
   /**
-   * A2 — a `GP-XXXXXX` candidate that is not in use as a coach link OR an
+   * A2 — a `TGP-XXXXXXX` candidate that is not in use as a coach link OR an
    * InviteCode row (attach resolves the coach link first, so a cross-table
    * duplicate would shadow a row). The unique indexes stay the final word;
    * callers still retry on P2002.
@@ -909,7 +916,7 @@ export class InviteCodesService {
   async previewCode(code: string): Promise<InvitePreview> {
     // Anonymous preview — distinctId is the (already opaque) code itself so
     // PostHog can deduplicate repeated previews from the same client without
-    // needing a logged-in user. The code is non-PII (random GP-XXXXXX).
+    // needing a logged-in user. The code is non-PII (random TGP-XXXXXXX).
     this.analytics.capture(`code:${code}`, Events.INVITE_PREVIEWED, {});
 
     // HUNT-03-124: try the typed forms in order (exact first), so a code
@@ -1112,7 +1119,8 @@ export class InviteCodesService {
         });
         if (intendedRecipientMismatch(row?.intended_email ?? null, me.email)) throw intendedEmailMismatch();
       }
-      return { role: me.role, coach_id: null, already_attached: false, join: plan.join };
+      const join = await this.withQuote(userId, plan);
+      return { role: me.role, coach_id: null, already_attached: false, join };
     }
     const joinActive = plan && this.grants ? await this.grants.joinGrantActive(me, plan.pkg) : true;
     if (joinActive === null) throw joinPackageUnavailable();
@@ -1287,7 +1295,23 @@ export class InviteCodesService {
       where: { client_user_id: userId, package_id: plan.pkg.id, entitlement_active: true },
       select: { id: true },
     });
-    return { grant: null, join: held ? { ...plan.join, status: 'granted' } : plan.join };
+    if (held) return { grant: null, join: { ...plan.join, status: 'granted' } };
+    return { grant: null, join: await this.withQuote(userId, plan) };
+  }
+
+  /**
+   * JOINQUOTE — a paid join's package carries the quote for THIS client, by the
+   * steps of GET /v1/clients/me/coach/packages/:id: the client's trial offer,
+   * the open attempt the checkout would resume, then packageQuote. None of it
+   * needs a coach, like the join checkout. Read fresh on every call.
+   */
+  private async withQuote(userId: string, plan: JoinPlan): Promise<JoinOutcome> {
+    if (!this.trials) return plan.join;
+    const now = new Date();
+    const offers = await this.trials.offersForClient(userId, [plan.pkg]);
+    const open = await resumableAttempts(this.prisma, userId, [plan.pkg.id], now);
+    const quote = packageQuote(plan.pkg, offers.get(plan.pkg.id), now, open.get(plan.pkg.id));
+    return { ...plan.join, package: { ...plan.join.package, quote } };
   }
 
   /** C01 — post-commit, never-throwing grant for a bound code. */

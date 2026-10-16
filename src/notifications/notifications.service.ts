@@ -22,12 +22,12 @@ import {
   TimeZoneSource,
 } from './notifications.dto';
 import { usableTimeZone } from './local-time';
-import { NotificationKindValue } from './notification-kind';
+import { NotificationKind, NotificationKindValue } from './notification-kind';
 import { NotificationCategory, DEFAULT_NOTIFICATION_CATEGORY } from './notification-category.enum';
 import { PushAbortedError, PushDeliveryResult } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { EnqueueResult, PushDeliveryService } from './push/push-delivery.service';
-import { PushContext, lockScreenCopy, safetyAlertTap } from './push/lock-screen-copy';
+import { COACH_CLIENT_LINK, PushContext, lockScreenCopy, safetyAlertTap } from './push/lock-screen-copy';
 import { resolveRecipientTimeZone } from './recipient-timezone';
 import { notificationPrefsPrefix, pushAllowedByPreferences } from './push/push-preferences';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
@@ -630,7 +630,8 @@ export class NotificationsService implements OnModuleInit {
    */
   async listNotifications(userId: string, query: GetNotificationsQueryDto) {
     const limit = Math.min(query.limit ?? 20, 100);
-    const where: Record<string, unknown> = { user_id: userId, ...INBOX_HIDES_PUSH_TWINS };
+    const inbox = await this.inboxWhere(userId);
+    const where: Record<string, unknown> = { ...inbox, ...INBOX_HIDES_PUSH_TWINS };
 
     if (query.filter === 'unread') {
       where.read_at = null;
@@ -660,7 +661,7 @@ export class NotificationsService implements OnModuleInit {
     const nextCursor = hasNextPage ? items[items.length - 1].id : null;
 
     const unreadCount = await this.prisma.notification.count({
-      where: { user_id: userId, read_at: null, ...INBOX_HIDES_PUSH_TWINS },
+      where: { ...inbox, read_at: null, ...INBOX_HIDES_PUSH_TWINS },
     });
 
     // Phase 2: when the panel is empty, attach the Roman empty-state copy +
@@ -698,10 +699,10 @@ export class NotificationsService implements OnModuleInit {
    * does not belong to the requesting user.
    */
   async markRead(notificationId: string, userId: string) {
-    const row = await this.prisma.notification.findUnique({
-      where: { id: notificationId },
+    const row = await this.prisma.notification.findFirst({
+      where: { ...(await this.inboxWhere(userId)), id: notificationId },
     });
-    if (!row || row.user_id !== userId) {
+    if (!row) {
       throw new NotFoundException('Notification not found');
     }
     if (row.read_at) {
@@ -718,7 +719,7 @@ export class NotificationsService implements OnModuleInit {
    */
   async markAllRead(userId: string) {
     const result = await this.prisma.notification.updateMany({
-      where: { user_id: userId, read_at: null },
+      where: { ...(await this.inboxWhere(userId)), read_at: null },
       data: { read_at: new Date() },
     });
     return { updated: result.count };
@@ -730,8 +731,28 @@ export class NotificationsService implements OnModuleInit {
    */
   async getUnreadCount(userId: string): Promise<number> {
     return this.prisma.notification.count({
-      where: { user_id: userId, read_at: null, ...INBOX_HIDES_PUSH_TWINS },
+      where: { ...(await this.inboxWhere(userId)), read_at: null, ...INBOX_HIDES_PUSH_TWINS },
     });
+  }
+
+  /**
+   * The user's inbox. Owner 4 (137-8): the inbox row of a client's coach alert
+   * follows the alert (currentCoachAlerts): it is for the client's current
+   * coach only, so the coach a client left no longer lists, counts, opens or
+   * marks it. The emitter links that row to the client (COACH_CLIENT_LINK);
+   * every other row is unchanged.
+   */
+  private async inboxWhere(userId: string): Promise<Prisma.NotificationWhereInput> {
+    const clients = await this.prisma.user.findMany({ where: { coach_id: userId }, select: { id: true } });
+    return {
+      user_id: userId,
+      OR: [
+        { kind: { not: NotificationKind.COACH_ALERT } },
+        { deep_link: null },
+        { NOT: { deep_link: { startsWith: COACH_CLIENT_LINK } } },
+        { deep_link: { in: clients.map((c) => `${COACH_CLIENT_LINK}${c.id}`) } },
+      ],
+    };
   }
 
   // ── Push delivery (Phase 6B baseline, extended Phase 9) ──────────────────

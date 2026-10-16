@@ -51,6 +51,7 @@ function world(prefs: Record<string, unknown> = {}) {
     Object.entries(where).every(([k, v]) => {
       if (k === 'created_at') return row.created_at >= (v as { gte: Date }).gte;
       if (k === 'read_at') return row.read_at == null;
+      if (k === 'OR') return true; // the coach-alert inbox rule: no coach alert here
       return (row[k] ?? null) === v;
     });
   const db = {

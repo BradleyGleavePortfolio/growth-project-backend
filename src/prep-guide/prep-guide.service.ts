@@ -12,9 +12,9 @@ export interface AggregatedIngredient {
 }
 
 export interface PrepGuideResult {
-  source: 'plan' | 'library';
+  source: 'library';
   week_filter_applied: false;
-  // Compatibility echo only: legacy plans have no weekly schedule.
+  // Compatibility echo only: the guide is not filtered by week.
   week_start: string;
   recipes: Array<{
     id: string;
@@ -42,58 +42,18 @@ export class PrepGuideService {
 
   async getWeeklyPrepGuide(viewer: RecipeViewer, weekStart: string): Promise<PrepGuideResult> {
     const userId = viewer.id;
-    // Legacy plans have no weekly schedule; weekStart is echoed, not filtered.
-    // Find this client's unarchived plans.
-    // The meal plan items are stored as JSON. We extract recipe_id fields if present.
-    const mealPlans = await this.prisma.mealPlan.findMany({
-      where: {
-        client_id: userId,
-        archived_at: null,
-      },
-      orderBy: { created_at: 'desc' },
-      take: 5, // Use the 5 most recent active plans
-    });
-
-    // Collect recipe IDs referenced in meal plan items.
-    const referencedRecipeIds = new Set<string>();
-
-    for (const plan of mealPlans) {
-      const items: unknown = plan.items;
-      // Support both array and object formats from mobile.
-      const itemArray: unknown[] = Array.isArray(items)
-        ? items
-        : items && typeof items === 'object'
-          ? Object.values(items as Record<string, unknown>)
-          : [];
-      for (const item of itemArray) {
-        if (item && typeof item === 'object' && 'recipe_id' in item) {
-          const recipeId = (item as { recipe_id?: unknown }).recipe_id;
-          if (typeof recipeId === 'string') referencedRecipeIds.add(recipeId);
-        }
-      }
-    }
-
-    // Every recipe read goes through the shared visibility policy
-    // (src/recipes/recipe-access.ts): a meal-plan item can only surface a
-    // recipe this client could open in Recipes (their own, or one their coach
-    // shares with clients). There is no platform-wide fallback: with no
-    // referenced recipe, the guide shows the latest visible ones (up to 6).
-    // A shared recipe declaring an allergen saved on the client's profile is
-    // left out here too (CF-ALLERGY-128), so it adds nothing to the list.
+    // weekStart is echoed, not filtered. A day plan (MEAL:DAY) names no
+    // recipes, so the guide shows the latest recipes this client can open in
+    // Recipes (src/recipes/recipe-access.ts: their own, or one their coach
+    // shares with clients), up to 6, with no platform-wide fallback. A shared
+    // recipe declaring an allergen saved on the client's profile is left out
+    // (CF-ALLERGY-128), so it adds nothing to the list.
     const avoid = await loadViewerAllergens(this.prisma, userId);
-    const visible = visibleRecipesWhere(viewer, avoid);
-    let recipes;
-    if (referencedRecipeIds.size > 0) {
-      recipes = await this.prisma.recipe.findMany({
-        where: { AND: [{ id: { in: Array.from(referencedRecipeIds) } }, visible] },
-      });
-    } else {
-      recipes = await this.prisma.recipe.findMany({
-        where: visible,
-        orderBy: { created_at: 'desc' },
-        take: 6,
-      });
-    }
+    const recipes = await this.prisma.recipe.findMany({
+      where: visibleRecipesWhere(viewer, avoid),
+      orderBy: { created_at: 'desc' },
+      take: 6,
+    });
 
     // Aggregate ingredients across all recipes.
     const ingredientMap = new Map<string, AggregatedIngredient>();
@@ -122,7 +82,7 @@ export class PrepGuideService {
     }
 
     return {
-      source: referencedRecipeIds.size > 0 ? 'plan' : 'library',
+      source: 'library',
       week_filter_applied: false,
       week_start: weekStart,
       recipes: recipes.map(toRecipeView).map((r) => ({

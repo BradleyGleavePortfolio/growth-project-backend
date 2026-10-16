@@ -67,18 +67,12 @@ export function assertCoachMessagePayload(
  *     a non-null value means the side-effect has already fired and we
  *     return `already_materialised`.
  *
- * Idempotency note: MessagingService does NOT currently support a
- * caller-supplied idempotency key (no unique constraint that would dedupe
- * a duplicate `sendAsCoach` call). Until that lands, this materialiser
- * relies on the `materialised_at` column. The race window between two
- * concurrent decide() calls is closed by the row-level lock the wrapping
- * UPDATE in `AiApprovalService.decide` takes on the draft row plus the
- * conditional UPDATE here (WHERE materialised_at IS NULL).
- *
- * TODO(messaging): add `idempotency_key` (or natural-key) support on
- * `coach_messages` so we can drop the conditional-UPDATE optimistic check
- * and let the DB enforce single-emit at the row level. Tracked alongside
- * PR AI-3.
+ * Idempotency note: the race window between two concurrent decide() calls
+ * is closed by the row-level lock the wrapping UPDATE in
+ * `AiApprovalService.decide` takes on the draft row plus the conditional
+ * UPDATE here (WHERE materialised_at IS NULL). ROMANMARK: the message also
+ * carries `ai_draft_id = draft.id` (the Roman mark), and that column is
+ * unique, so the database refuses a second message for the same draft.
  */
 @Injectable()
 export class CoachMessageMaterializer implements CapabilityMaterializer {
@@ -185,6 +179,7 @@ export class CoachMessageMaterializer implements CapabilityMaterializer {
         draft.tenant_coach_id,
         payload.clientId,
         { body: payload.body },
+        { aiDraftId: draft.id },
       );
       sentId = created.id;
     } catch (err) {

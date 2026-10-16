@@ -43,6 +43,8 @@ import { RomanBackgroundSpendService } from './background/roman-background-spend
 import { RomanNotesWriter } from './memory/roman-notes.writer';
 import { RomanNotesScheduler } from './memory/roman-notes.scheduler';
 import { CoachModule } from '../coach/coach.module';
+import { APP_INTERCEPTOR } from '@nestjs/core';
+import { RomanContextInvalidationInterceptor } from './context/roman-context-invalidation';
 
 @Module({
   // CoachAlertsService: the coach alert after an urgent-symptoms reply.
@@ -87,6 +89,9 @@ import { CoachModule } from '../coach/coach.module';
     // R11-M4: notes from chats (inert while FEATURE_ROMAN_MEMORY is off).
     RomanNotesWriter,
     RomanNotesScheduler,
+    // ROMANCACHE: every successful app write drops the writer's Roman context
+    // memo (and their clients', for a coach) before the response is sent.
+    { provide: APP_INTERCEPTOR, useClass: RomanContextInvalidationInterceptor },
   ],
   exports: [RomanService, RomanBackgroundSpendService],
 })
