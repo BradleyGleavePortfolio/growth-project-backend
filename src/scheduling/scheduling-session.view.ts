@@ -23,7 +23,9 @@ import type { ActorContext } from './scheduling.types';
 //         'pending' (confirmed, no link yet: client shows a calm waiting
 //         state, coach shows an "add the call link" action),
 //         'awaiting_approval' (request not confirmed yet), 'none' (closed),
-//   - the appointment type and the other party's name ride along.
+//   - the appointment type and the other party's name ride along,
+//   - C4MOVED: both viewers get the row's moved_from_start_at, moved_by_role
+//     ('coach' or 'client') and last_moved_at, null until the first move.
 // All original columns stay present (additive), so older app builds keep
 // working.
 
