@@ -14,6 +14,7 @@ import { AuditService } from '../../src/audit/audit.service';
 import { AppleVerifierService } from '../../src/auth/apple-verifier.service';
 import { AuthService } from '../../src/auth/auth.service';
 import { GoogleVerifierService } from '../../src/auth/google-verifier.service';
+import { ConsentService } from '../../src/consent/consent.service';
 import { EmailService } from '../../src/email/email.service';
 import { InviteCodesService } from '../../src/invite-codes/invite-codes.service';
 import { PrismaService } from '../../src/prisma.service';
@@ -139,6 +140,8 @@ export async function attachServices(
       { provide: AuditService, useValue: doubles.audit },
       { provide: AppleVerifierService, useValue: doubles.verifier },
       { provide: GoogleVerifierService, useValue: doubles.verifier },
+      // SHAREGATE: the redeemers list's sharing gate is required; nothing here reads it.
+      { provide: ConsentService, useValue: { coachCanAccess: async () => true } },
     ],
   }).compile();
   return {
