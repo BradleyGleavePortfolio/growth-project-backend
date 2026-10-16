@@ -1020,7 +1020,7 @@ export class MessagingService {
       data: { read_at: new Date() },
     });
     await this.markMessageNotificationsRead(coachId, clientId);
-    // A3-MSG-CORE: live read receipt for the client (v2, ID-only ping).
+    // A3-MSG-CORE: live read receipt (v2, empty ping to both people, MSGRT).
     if (result.count > 0 && isMessagingCoreV2Enabled()) {
       this.notifyThreadUpdated(
         {
@@ -1166,7 +1166,7 @@ export class MessagingService {
       data: { read_at: new Date() },
     });
     await this.markMessageNotificationsRead(clientId, clientId);
-    // A3-MSG-CORE: live read receipt for the coach (v2, ID-only ping).
+    // A3-MSG-CORE: live read receipt (v2, empty ping to both people, MSGRT).
     if (result.count > 0 && isMessagingCoreV2Enabled()) {
       this.notifyThreadUpdated(
         {
