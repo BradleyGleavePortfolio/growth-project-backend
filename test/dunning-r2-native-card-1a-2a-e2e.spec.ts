@@ -1046,4 +1046,90 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       });
     });
   });
+
+  // MOVEBILL2 (Sol B3): a started, card-backed trial converts at its end into
+  // the first charge for the coach; a move before that ends it like any plan.
+  describe('MOVEBILL2: a moved trial never converts for the old coach', () => {
+    const TRIAL_END = 5 * DAY;
+    /** The client saved a card two days ago; the trial converts at TRIAL_END. */
+    const startedTrial = (x: World) => {
+      Object.assign(purchaseRow(x)!, {
+        status: 'trialing',
+        trial_days: 7,
+        trial_started_at: at(-2 * DAY),
+        current_period_end: at(TRIAL_END),
+        access_expires_at: at(TRIAL_END),
+      });
+      Object.assign(x.stripe.subs.get('sub_dv2_client')!, {
+        status: 'trialing',
+        default_payment_method: 'pm_new_ok',
+        current_period_end: sec(at(TRIAL_END)),
+      });
+    };
+    /** Stripe at trial end: a set end cancels it; otherwise it charges the first period. */
+    const trialEnds = async (x: World) => {
+      jest.setSystemTime(at(TRIAL_END));
+      const sub = x.stripe.subs.get('sub_dv2_client')!;
+      if (sub.cancel_at_period_end) {
+        sub.status = 'canceled';
+        await x.handler.handle(
+          fixture('customer.subscription.deleted', { canceled_at: sec(at(TRIAL_END)) }),
+        );
+        return;
+      }
+      x.stripe.addInvoice({
+        id: 'in_first_after_trial',
+        subscription: 'sub_dv2_client',
+        amount_due: 15000,
+        created: sec(at(TRIAL_END)),
+      });
+      expect(x.stripe.stripeRetry('in_first_after_trial')).toBe('paid');
+    };
+    const writes = (x: World) =>
+      x.stripe.calls.map((c) => c.op).filter((op) => !/^(retrieve|list)/.test(op));
+
+    it('control: an unmoved started trial is left alone and converts into its first charge', async () => {
+      startedTrial(w);
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 0, failed: 0 });
+      await trialEnds(w);
+      expect(w.stripe.charges).toEqual([
+        expect.objectContaining({ invoice: 'in_first_after_trial', amount: 15000 }),
+      ]);
+    });
+
+    it('moved days before conversion: trial access kept, never converts, no charge, no refund', async () => {
+      startedTrial(w);
+      purchaseRow(w)!.moved_away_at = at(DAY);
+      jest.setSystemTime(at(DAY + 5 * MIN));
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 1, failed: 0 });
+      expect(w.stripe.subs.get('sub_dv2_client')).toMatchObject({
+        status: 'trialing',
+        cancel_at_period_end: true,
+      });
+      // Stripe's own echo of renewal off leaves the started trial's access on.
+      await w.handler.handle(
+        fixture('customer.subscription.updated.cancel_at_period_end', {
+          status: 'trialing',
+          default_payment_method: 'pm_new_ok',
+          cancel_at: sec(at(TRIAL_END)),
+          canceled_at: null,
+          current_period_end: sec(at(TRIAL_END)),
+        }),
+      );
+      expect(purchaseRow(w)).toMatchObject({
+        status: 'trialing',
+        entitlement_active: true,
+        cancel_at_period_end: true,
+      });
+      jest.setSystemTime(at(3 * DAY));
+      expect(await entitlementVerdict(w)).toBe('allowed');
+      await trialEnds(w);
+      expect(w.stripe.charges).toHaveLength(0);
+      expect(purchaseRow(w)).toMatchObject({ status: 'canceled', entitlement_active: false });
+      // The one Stripe write is renewal off: no void, cancel-now, charge or refund.
+      expect(writes(w)).toEqual(['setCancelAtPeriodEnd']);
+      expect(w.push).not.toHaveBeenCalled();
+      expect(w.email).not.toHaveBeenCalled();
+    });
+  });
 });

@@ -1040,8 +1040,12 @@ export class CheckoutWebhookHandlerService {
       // on_subscription) leaves the create-time end on: attach anyway, the
       // same write lifts it. Only the attempt's own card already on is done.
       if (sub.status === 'trialing' && !trialOwnCardOn(sub)) {
-        await attachTrialCard(this.stripeConnect, sub.id, paymentMethod);
-        this.logger.log(`billing.trial_card_attached purchase=${row.id} via=webhook`);
+        // MOVEBILL2: a moved client's attempt keeps its trial end (no charge).
+        if (await attachTrialCard(this.stripeConnect, row, sub.id, paymentMethod)) {
+          this.logger.log(`billing.trial_card_attached purchase=${row.id} via=webhook`);
+        } else {
+          this.logger.log(`billing.trial_card_not_attached purchase=${row.id} reason=moved`);
+        }
       }
       return { purchaseId: row.id, ok: true };
     } catch (err) {
