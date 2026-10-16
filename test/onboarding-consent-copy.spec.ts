@@ -16,6 +16,7 @@ import {
 } from '../src/onboarding/consult-consent-copy';
 import {
   DEFAULT_CONSULT_CONSENT_COPY_VERSION,
+  DEFAULT_CONSULT_CONSENT_COPY_VERSIONS,
   acceptedConsentVersions,
   currentConsentVersionOf,
   isCurrentConsentAnswer,
@@ -68,7 +69,7 @@ describe('consult-consent-v3 text parity with mobile #310', () => {
     expect(V3.box2Label?.startsWith('Optional: ')).toBe(true);
   });
 
-  it('the registry knows v3 to v10 and the coach-free v5 to v7 only (no compat window for v2 or v1)', () => {
+  it('the registry knows v3 to v10 and the coach-free v5 to v11 only (no compat window for v2 or v1)', () => {
     expect(Object.keys(CONSULT_CONSENT_COPIES)).toEqual([
       CONSULT_CONSENT_V3,
       CONSULT_CONSENT_V4,
@@ -78,9 +79,13 @@ describe('consult-consent-v3 text parity with mobile #310', () => {
       'consult-consent-v6-coach-free',
       'consult-consent-v7',
       'consult-consent-v8',
+      'consult-consent-v8-coach-free',
+      'consult-consent-v9-coach-free',
       'consult-consent-v7-coach-free',
       'consult-consent-v9',
       'consult-consent-v10',
+      'consult-consent-v10-coach-free',
+      'consult-consent-v11-coach-free',
     ]);
     expect(consultConsentTextSha256('consult-consent-v3')).toBe(CONSULT_CONSENT_V3_TEXT_SHA256);
     expect(consultConsentTextSha256('consult-consent-v2')).toBeNull();
@@ -99,7 +104,7 @@ describe('accepted versions and the P0 truth rule', () => {
     text_sha256: MOBILE_CONSENT_COPY_SHA256,
   };
 
-  it('acceptedConsentVersions: default v3 to v10 + coach-free; the override keeps only versions with known text', () => {
+  it('acceptedConsentVersions: default v3 to v10 + coach-free v5 to v11; the override keeps only versions with known text', () => {
     const defaults = [
       'consult-consent-v3',
       'consult-consent-v4',
@@ -109,9 +114,13 @@ describe('accepted versions and the P0 truth rule', () => {
       'consult-consent-v6-coach-free',
       'consult-consent-v7',
       'consult-consent-v8',
+      'consult-consent-v8-coach-free',
+      'consult-consent-v9-coach-free',
       'consult-consent-v7-coach-free',
       'consult-consent-v9',
       'consult-consent-v10',
+      'consult-consent-v10-coach-free',
+      'consult-consent-v11-coach-free',
     ];
     expect(acceptedConsentVersions({})).toEqual(defaults);
     expect(acceptedConsentVersions({ CONSULT_CONSENT_COPY_VERSIONS: '' })).toEqual(defaults);
@@ -157,10 +166,13 @@ describe('accepted versions and the P0 truth rule', () => {
 describe('CONSULT_CONSENT_COPY_VERSIONS env rule (S-ENVTRUTH)', () => {
   const rule = ENV_RULES.find((r) => r.name === 'CONSULT_CONSENT_COPY_VERSIONS');
 
-  it('is registered as optional with its real default and no boot validator', () => {
+  it('is registered as optional with its real default (every name, in order) and no boot validator', () => {
     expect(rule).toBeDefined();
     expect(rule?.tier).toBe('optional');
-    expect(rule?.default).toMatch(/consult-consent-v3/);
+    expect(DEFAULT_CONSULT_CONSENT_COPY_VERSIONS).toHaveLength(15);
+    expect(rule?.default).toBe(
+      `${DEFAULT_CONSULT_CONSENT_COPY_VERSIONS.join(',')} (unset, empty, or no known name -> all fifteen)`,
+    );
     expect(rule?.validate).toBeUndefined();
   });
 

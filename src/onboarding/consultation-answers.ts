@@ -8,6 +8,7 @@
  * Exact value shapes are documented in docs/clinic-onboarding.md.
  */
 import { ageInYears, LBS_PER_KG } from '../macros/macro-calculator';
+import { MIN_CLIENT_AGE } from '../auth/client-age';
 import type { SelectionAnswers } from './program-rules';
 import type { ClearableProfileField } from '../profile/profile.service';
 import { Logger } from '@nestjs/common';
@@ -20,9 +21,13 @@ import {
   CONSULT_CONSENT_V6_COACH_FREE,
   CONSULT_CONSENT_V7,
   CONSULT_CONSENT_V7_COACH_FREE,
+  CONSULT_CONSENT_V8_COACH_FREE,
+  CONSULT_CONSENT_V9_COACH_FREE,
   CONSULT_CONSENT_V8,
   CONSULT_CONSENT_V9,
   CONSULT_CONSENT_V10,
+  CONSULT_CONSENT_V10_COACH_FREE,
+  CONSULT_CONSENT_V11_COACH_FREE,
   consultConsentTextSha256,
   unknownConsultConsentVersions,
 } from './consult-consent-copy';
@@ -49,6 +54,9 @@ export const CONSULTATION_VERSION = 'consult-v1';
  * versions whose exact text the server knows (CONSULT_CONSENT_COPIES): an
  * unknown name can never be verified, so it is ignored (logged once as a
  * warning), and a list with no known name falls back to the default.
+ * The default also holds v8-coach-free / v9-coach-free (no coach, with the
+ * Roman choice, W-CONSENT / FIX684) and their crisis twins v10-coach-free /
+ * v11-coach-free (CRISIS-APP-COPY).
  *
  * Box 2 (optional AI processing by Anthropic) is NOT part of P0: it is
  * recorded by the AI consent ledger (`POST /me/ai-consent/roman`), is never
@@ -65,9 +73,13 @@ export const DEFAULT_CONSULT_CONSENT_COPY_VERSIONS: readonly string[] = Object.f
   CONSULT_CONSENT_V6_COACH_FREE,
   CONSULT_CONSENT_V7,
   CONSULT_CONSENT_V8,
+  CONSULT_CONSENT_V8_COACH_FREE,
+  CONSULT_CONSENT_V9_COACH_FREE,
   CONSULT_CONSENT_V7_COACH_FREE,
   CONSULT_CONSENT_V9,
   CONSULT_CONSENT_V10,
+  CONSULT_CONSENT_V10_COACH_FREE,
+  CONSULT_CONSENT_V11_COACH_FREE,
 ]);
 
 const warnedConsentVersionLists = new Set<string>();
@@ -226,7 +238,7 @@ export const VALIDATORS: Readonly<Record<string, Validator>> = {
     const d = isoDate(v);
     if (!d) return 'must be YYYY-MM-DD';
     const age = ageInYears(d, now);
-    return age >= 16 && age <= 100 ? null : 'age must be 16-100';
+    return age >= MIN_CLIENT_AGE && age <= 100 ? null : 'age must be 16-100';
   },
   // { height_cm, weight_lbs, unit } (mobile always sends lbs; unit is the
   // display preference). weight_kg is accepted instead of weight_lbs.

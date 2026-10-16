@@ -204,26 +204,32 @@ export class SchedulingAccessService {
     );
   }
 
-  /** The same rule as a filter on a coach's own sessions, applied before paging. */
+  /**
+   * The same rule as a filter on a coach's own sessions, applied before
+   * paging, in at most two reads whatever the roster: the coach's open
+   * delegations (one per client), then their live seats with those head
+   * coaches; the session query itself checks the client is still the head's.
+   */
   async sessionsStillTheirs(
     coachId: string,
     db: Db = this.prisma,
   ): Promise<Prisma.CoachingSessionWhereInput> {
     const open = await db.subCoachAssignment.findMany({
       where: { sub_coach_id: coachId, unassigned_at: null },
-      select: { client_id: true },
+      select: { client_id: true, head_coach_id: true },
     });
-    const delegated: string[] = [];
-    for (const { client_id } of open) {
-      if (await this.clientStillBooks(client_id, coachId, db)) delegated.push(client_id);
-    }
-    return {
-      OR: [
-        { client_id: null },
-        { client: { is: { coach_id: coachId, role: 'student' } } },
-        ...(delegated.length > 0 ? [{ client_id: { in: delegated } }] : []),
-      ],
-    };
+    const heads = open.map((d) => d.head_coach_id);
+    const seats = heads.length
+      ? await db.teamSubCoachAssignment.findMany({
+          where: { sub_coach_id: coachId, archived_at: null, head_coach_id: { in: heads } },
+          select: { head_coach_id: true },
+        })
+      : [];
+    const delegated = open
+      .filter((d) => seats.some((s) => s.head_coach_id === d.head_coach_id))
+      .map((d) => ({ id: d.client_id, coach_id: d.head_coach_id }));
+    const client = { role: 'student' as const, OR: [{ coach_id: coachId }, ...delegated] };
+    return { OR: [{ client_id: null }, { client: { is: client } }] };
   }
 
   private async clientStillBooks(clientId: string, coachId: string, db: Db): Promise<boolean> {

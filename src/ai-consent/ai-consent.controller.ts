@@ -51,6 +51,7 @@ import {
   type ClientAiConsentAsk,
   type ClientAiConsentStatus,
 } from './ai-consent.service';
+import { AllowBeforeAgeConfirmed } from '../auth/client-age';
 
 /** 503 on every ledger route while the flag is off (runs before body validation). */
 @Injectable()
@@ -84,6 +85,7 @@ function askOf(req: AuthedRequest, variant: unknown): ClientAiConsentAsk {
 
 @Controller('me/ai-consent')
 @UseGuards(JwtAuthGuard, RolesGuard, AiConsentLedgerGuard)
+@AllowBeforeAgeConfirmed()
 export class AiConsentController {
   constructor(private readonly consent: AiConsentService) {}
 
