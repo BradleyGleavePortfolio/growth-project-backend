@@ -36,6 +36,8 @@ import { describeFailure } from '../observability/log-pii';
 import { isMessagingCoreV2Enabled } from './messaging-core.feature';
 import { coachBroadcastsEnabled } from '../broadcasts/broadcasts.feature';
 import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
+import { AiEgressService } from '../ai-egress/ai-egress.service';
+import { isRomanMessageDraft } from '../ai/gateway/roman-message-draft';
 import {
   broadcastThreadUpdated,
   type ThreadUpdateKind,
@@ -160,6 +162,10 @@ export class MessagingService {
     // lazily build one from the already-injected SupabaseService, so behaviour
     // is identical whether or not DI supplied it.
     @Optional() @Inject(VoiceUploadProvider) private voiceUpload: VoiceUploadProvider | null = null,
+    // ROMANMARK-BE: the client's AI consent read for the Roman mark (romanMark).
+    // Global in production DI; absent in legacy unit-test DI, where no message
+    // is ever marked (fail closed).
+    @Optional() @Inject(AiEgressService) private egress: AiEgressService | null = null,
   ) {}
 
   // Resolve the extracted signed-upload provider, lazily constructing one from
@@ -729,6 +735,28 @@ export class MessagingService {
     return rows.filter((m) => m.sender_id !== otherPartyId);
   }
 
+  /**
+   * ROMANMARK-BE: the one gate on CoachMessage.ai_draft_id (the Roman mark),
+   * shared by every path that writes it (only sendAsCoach does). The draft id
+   * must name a draft of this coach about this client, else 403 and nothing is
+   * sent. The mark is kept only for a Roman message draft whose text the
+   * server marked as Roman's (roman-message-draft.ts) while the client allows
+   * AI help for their coach right now (S-06); otherwise the message is sent
+   * without it.
+   */
+  private async romanMark(coachId: string, clientId: string, draftId: string): Promise<string | null> {
+    const draft = await this.prisma.aiActionDraft.findUnique({
+      where: { id: draftId },
+      select: { capability: true, tenant_coach_id: true, subject_user_id: true, provenance: true },
+    });
+    if (!draft || draft.tenant_coach_id !== coachId || draft.subject_user_id !== clientId) {
+      throw new ForbiddenException({ error: 'AI_DRAFT_OUTSIDE_THREAD' });
+    }
+    if (!isRomanMessageDraft(draft) || !this.egress) return null;
+    const consented = await this.egress.consentedClients([clientId]);
+    return consented.has(clientId) ? draftId : null;
+  }
+
   // ---- send ----
 
   async sendAsCoach(
@@ -743,8 +771,9 @@ export class MessagingService {
     // only while the caller still holds the job's lease (holdWelcomeLease);
     // otherwise WelcomeLeaseLostError is thrown before any persistence or
     // fan-out. `aiDraftId` (ROMANMARK) is the approved Roman draft this message
-    // began as, passed only by the two Roman message materialisers and stored
-    // as CoachMessage.ai_draft_id, which both thread routes return (the mark).
+    // began as, passed only by the two Roman message materialisers. It is
+    // stored as CoachMessage.ai_draft_id (the mark both thread routes return)
+    // only through romanMark (ROMANMARK-BE).
     options: { welcome?: { jobId: string; lease: string }; aiDraftId?: string } = {},
   ) {
     // Back-compat: existing test fixtures and pre-Phase-6C call sites pass
@@ -777,13 +806,14 @@ export class MessagingService {
     // so existing head-coach queries keep returning them. For sub-coaches
     // the sender_id captures who actually sent.
     const threadCoachId = client.coach_id ?? coachId;
+    const aiDraftId = options.aiDraftId ? await this.romanMark(coachId, clientId, options.aiDraftId) : null;
     const messageData = {
       body,
       voice_url: voice?.url ?? null,
       voice_duration_sec: voice?.duration_sec ?? null,
       voice_size_bytes: voice?.size_bytes ?? null,
       voice_content_type: voice?.content_type ?? null,
-      ...(options.aiDraftId ? { ai_draft_id: options.aiDraftId } : {}),
+      ...(aiDraftId ? { ai_draft_id: aiDraftId } : {}),
     };
     // Main merge (B-609-3 + A3-MSG-CORE): a welcome-job send (internal only,
     // never carries client_message_id or reply_to_id) keeps the lease-fenced

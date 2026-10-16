@@ -75,7 +75,6 @@ const GATEWAY_ENV = {
       capability: subject ? DRAFT : CAPABILITY,
       message: 'Draft a check-in.',
       subject_user_id: subject,
-      proposed_action: subject ? { clientId: subject, body: 'Checking in.' } : undefined,
     });
   const drafts = (subject: string) => prisma.aiActionDraft.count({ where: { subject_user_id: subject } });
   /** Private context only that person's own profile holds. */
@@ -164,7 +163,6 @@ const GATEWAY_ENV = {
     await expect(gateway.invoke({
       capability: DRAFT, userMessage: 'Draft a check-in.', systemPrompt: secret(subject),
       requester: { id: linked, role: 'coach' }, subjectUserId: subject, tenantCoachId: linked,
-      proposedActionPayload: { clientId: subject, body: 'Checking in.' },
     })).rejects.toBeInstanceOf(NotFoundException);
     expect(sent.length).toBe(calls);
     expect(await drafts(subject)).toBe(0);

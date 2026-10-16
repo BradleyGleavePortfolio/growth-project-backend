@@ -44,6 +44,7 @@ import {
   isMwbLiveCreateCapability,
   MWB_LIVE_CREATE_CAPABILITIES,
 } from './mwb-live-create.feature';
+import { ROMAN_MESSAGE_CAPABILITIES, ROMAN_MESSAGE_SOURCE } from './roman-message-draft';
 import { AuditService } from '../../audit/audit.service';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
@@ -215,6 +216,14 @@ export class AiGatewayService {
       });
     }
 
+    // ROMANMARK-BE: a Roman message draft holds only text Roman wrote on the
+    // server (step 4 below), so a sent message never carries the Roman mark
+    // over a caller's own words. A caller-supplied proposed action is refused
+    // before any provider call, budget read or draft.
+    if (ROMAN_MESSAGE_CAPABILITIES.has(req.capability) && req.proposedActionPayload !== undefined) {
+      throw new BadRequestException({ error: 'AI_DRAFT_PAYLOAD_SERVER_WRITTEN', capability: req.capability });
+    }
+
     // B-AIBSUB-126 — Ask AI is not offered to sub-coaches at launch (the
     // status route 404s for them too). Same 404 for every way in (propose,
     // POST /ai/gateway/invoke), before any draft, budget read or provider call.
@@ -370,7 +379,10 @@ export class AiGatewayService {
 
     const responseHash = sha256(response.text);
     // B-AIB2-126 — only the gateway may mark a payload model-authored.
-    const provenance = (req.provenance ?? []).filter((p) => p.source !== WORKOUT_BUILDER_MODEL_DIFF_SOURCE);
+    // ROMANMARK-BE: only the gateway may mark a message draft Roman's text.
+    const provenance = (req.provenance ?? []).filter(
+      (p) => p.source !== WORKOUT_BUILDER_MODEL_DIFF_SOURCE && p.source !== ROMAN_MESSAGE_SOURCE,
+    );
     const redactionSummary = redacted.summary;
 
     // Stream 1 — post-call atomic usage recording. Runs ONLY when the
@@ -434,6 +446,16 @@ export class AiGatewayService {
     if (req.resolveProposedAction) {
       modelPayload = await req.resolveProposedAction(response, { providerFailed: errorMsg !== null });
       if (modelPayload) provenance.push({ source: WORKOUT_BUILDER_MODEL_DIFF_SOURCE, hash: sha256(JSON.stringify(modelPayload)), count: 1 });
+    }
+    // ROMANMARK-BE: a Roman reply draft is the model's own reply to the named
+    // client, written here. No draft when no model ran (the stub's text, a
+    // provider failure) or no client is named; a wearable message draft comes
+    // only from POST /v1/wearables/insights/approve, never from here.
+    if (ROMAN_MESSAGE_CAPABILITIES.has(req.capability)) {
+      const romanWrote =
+        req.capability === COACH_MESSAGE_CAPABILITY && response.enabled && errorMsg === null && !!req.subjectUserId;
+      modelPayload = romanWrote ? { clientId: req.subjectUserId, body: response.text.trim() } : null;
+      if (modelPayload) provenance.push({ source: ROMAN_MESSAGE_SOURCE, hash: sha256(JSON.stringify(modelPayload)), count: 1 });
     }
 
     if (approvalRequired && modelPayload !== null) {
