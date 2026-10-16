@@ -110,16 +110,18 @@ export class WearableInsightsService {
   }
 
   /**
-   * ROMANMARK-BE: true when Roman's own message suggestion for this coach,
-   * client and bucket is stored (fresh or stale). Only then does the approve
-   * route mark the draft as Roman's text; the coach may still edit it (S-08).
-   * Roman wrote it through the egress gate (generate) while the client allowed
-   * AI help, so it keeps the mark after a later withdrawal (#ROMANMARK-CONSENT-MARK op 1).
+   * ROMANMARK-BE: Roman's own message suggestion for this coach, client and
+   * bucket as stored (fresh or stale, trimmed), else null. The approve route
+   * marks its draft as Roman's text only for this exact text or the coach's
+   * explicit edit of it (S-08). Roman wrote it through the egress gate
+   * (generate: live grant read before the cache write) while the client
+   * allowed AI help, so it keeps the mark after a later withdrawal
+   * (#ROMANMARK-CONSENT-MARK op 1).
    */
-  async hasRomanSuggestion(coachId: string, clientId: string, bucket: WearableMetricBucket): Promise<boolean> {
+  async romanSuggestion(coachId: string, clientId: string, bucket: WearableMetricBucket): Promise<string | null> {
     const row = await this.cache.getEvenIfStale('coach', clientId, bucket, coachId);
     const text: unknown = row ? Reflect.get(row, 'suggested_message_draft') : null;
-    return typeof text === 'string' && text.trim().length > 0;
+    return typeof text === 'string' && text.trim().length > 0 ? text.trim() : null;
   }
 
   // ── Public API ─────────────────────────────────────────────────────

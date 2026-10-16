@@ -21,7 +21,7 @@ import { WearableInsightsController } from './wearable-insights.controller';
 export type WearableInsightsServiceDouble = jest.Mocked<
   Pick<
     WearableInsightsService,
-    'assertCoachOwnsClient' | 'generateForCoach' | 'generateForClient' | 'hasRomanSuggestion'
+    'assertCoachOwnsClient' | 'generateForCoach' | 'generateForClient' | 'romanSuggestion'
   >
 >;
 
@@ -44,7 +44,7 @@ export function makeServiceDouble(
     assertCoachOwnsClient: jest.fn().mockResolvedValue(undefined),
     generateForCoach: jest.fn().mockResolvedValue(defaults.coachInsight),
     generateForClient: jest.fn().mockResolvedValue(defaults.clientInsight),
-    hasRomanSuggestion: jest.fn().mockResolvedValue(true),
+    romanSuggestion: jest.fn().mockResolvedValue(null),
   };
 }
 
@@ -100,7 +100,7 @@ export function makeController(overrides: {
   // so we route through the structural Pick first).
   const svcWide = overrides.svc as Pick<
     WearableInsightsService,
-    'assertCoachOwnsClient' | 'generateForCoach' | 'generateForClient' | 'hasRomanSuggestion'
+    'assertCoachOwnsClient' | 'generateForCoach' | 'generateForClient' | 'romanSuggestion'
   > as WearableInsightsService;
   return new WearableInsightsController(
     svcWide,

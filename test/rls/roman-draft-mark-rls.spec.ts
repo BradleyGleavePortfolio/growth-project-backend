@@ -108,8 +108,8 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
     ({ draftId, messageId: String((await gatewayApi.decide(req(who), draftId, { decision: 'approved' })).materialised_ref) });
   const romanReply = async () => decide(K, String(await askRoman(K)));
   /** POST /v1/wearables/insights/approve as K. */
-  const wearable = (bucket: WearableMetricBucket, action: 'approve' | 'edit') => async (): Promise<Sent> => {
-    const draft_body = action === 'edit' ? 'Edited: keep the wind-down going.' : SUGGESTED;
+  const wearable = (bucket: WearableMetricBucket, action: 'approve' | 'edit',
+    draft_body = action === 'edit' ? 'Edited: keep the wind-down going.' : SUGGESTED) => async (): Promise<Sent> => {
     const out = await wearableApi.approveInsight(req(K), { client_id: A, bucket, draft_body, action });
     const row = await prisma.aiActionDraft.findUniqueOrThrow({ where: { id: out.draft_id } });
     return { draftId: out.draft_id, messageId: String(row.materialised_ref) };
@@ -147,6 +147,8 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
       refused(() => askRoman(K, { proposed_action: { clientId: A, body: 'My own words.' } }))],
     ['stored draft holding caller text (no server mark), approved', 'unmarked', () => decide(K, legacyDraft)],
     ['wearable approve with no stored Roman suggestion', 'unmarked', wearable(WearableMetricBucket.HEALTH_FITNESS, 'approve')],
+    ['wearable approve whose body is not Roman\'s stored suggestion', 'unmarked',
+      wearable(WearableMetricBucket.SLEEP_RECOVERY, 'approve', 'My own words.')],
     ['Roman reply draft written while AI help was on, sent after it is withdrawn', 'marked', async () => {
       const draftId = String(await askRoman(K));
       return withdrawn(() => decide(K, draftId))();

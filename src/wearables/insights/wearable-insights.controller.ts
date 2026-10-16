@@ -172,10 +172,11 @@ export class WearableInsightsController {
     // requester keeps that guard inert without weakening any other check
     // (the tenant boundary + coach-owns-client above are the real authz).
     // ROMANMARK-BE: the draft is marked as Roman's text (the Roman mark when
-    // sent) only when Roman's suggestion for this coach, client and bucket is
-    // stored here; the coach may edit it first (S-08, romanmark-insight op 1).
-    // Without one the message still sends, unmarked.
-    const roman = await this.svc.hasRomanSuggestion(req.user.id, body.client_id, body.bucket);
+    // sent) only when it carries Roman's stored suggestion for this coach,
+    // client and bucket: that exact text, or the coach's explicit edit of it
+    // (S-08, romanmark-insight op 1). Any other body still sends, unmarked.
+    const suggestion = await this.svc.romanSuggestion(req.user.id, body.client_id, body.bucket);
+    const roman = suggestion !== null && (body.action === 'edit' || body.draft_body.trim() === suggestion);
     const draft = await this.prisma.aiActionDraft.create({
       data: {
         capability: COACH_WEARABLE_MESSAGE_CAPABILITY,
