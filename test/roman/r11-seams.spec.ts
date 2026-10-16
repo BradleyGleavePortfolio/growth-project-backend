@@ -69,11 +69,11 @@ describe('R11-00 prompt seam', () => {
   // client hashes re-pinned for the roman-client-v4 crisis section (AUDIT-05-125),
   // then for CF-ROMAN-COPY-B-128 (client framing assumes no coach, real tab names).
   // Re-pinned again: the calorie floor no longer yields to a lower coach target.
-  // Re-pinned for C6-SERVER (owner rule C-6): one reworded tone sentence.
+  // Re-pinned for C6-SERVER (owner rule C-6): one reworded tone sentence, roman-client-v5.
   const MAIN = {
     client_plain: {
       input: { surface: 'client' as const, voice: v0 },
-      hash: 'f9adb89d90cdbd96c20f7e884854a2954fc07030898dfaf0c1ab4d6dc4944303',
+      hash: '8689412117cc976775272e7d36111a648ffdafa1e83f8319f6808776eb2babb4',
     },
     coach_plain: {
       input: {
@@ -91,16 +91,15 @@ describe('R11-00 prompt seam', () => {
         routerHint: 'Hint line.',
         clientData: CLIENT_DATA,
       },
-      hash: 'd3bdd3ec5661abdd7b8037d7e3a1cdf0f0dcc12ce3b4d2976d9ecae3b6655e2c',
+      hash: '3652015e737dee2dbceae7d4b161887c9f9e03001a1ae592463b2c8bee0bb6c4',
     },
     client_unavailable: {
       input: { surface: 'client' as const, voice: v1, clientDataUnavailable: true },
-      hash: 'fb093cbdc2c92437927c537663a6ddd6c415fe1767ed8e73fa2968f0b48dd572',
+      hash: '7c2436d8d6bb8549b2448a6dd839858839e049cbe797d831005690963c9fa3e8',
     },
   };
 
   it('no augments (absent, empty, blank) -> the prompt hash equals main', () => {
-    expect(Object.fromEntries(Object.entries(MAIN).map(([n, c]) => [n, sha(buildRomanSystemPrompt(c.input))]))).toEqual({});
     for (const [name, c] of Object.entries(MAIN)) {
       expect([name, sha(buildRomanSystemPrompt(c.input))]).toEqual([name, c.hash]);
       expect([name, sha(buildRomanSystemPrompt({ ...c.input, augments: [] }))]).toEqual([
