@@ -168,7 +168,7 @@ export class ClientAIContextService {
         orderBy: { date: 'asc' },
       }),
       this.prisma.habit.findMany({
-        where: { user_id: userId },
+        where: { user_id: userId, archived_at: null },
         take: CONTEXT_LIMITS.HABITS,
         include: {
           logs: {
