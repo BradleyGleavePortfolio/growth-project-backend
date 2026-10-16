@@ -100,6 +100,8 @@ describe('first-sign-in coach sharing (share-link buyers)', () => {
     addUser(db, { id: 'buyer', coach_id: COACH_A });
     expect(await sharing.accept('buyer', undefined)).toEqual({ coach_sharing_granted: false, coach_id: null });
     expect(await sharing.accept('buyer', 'coach_sharing_join_v0')).toEqual({ coach_sharing_granted: false, coach_id: null });
+    // W-SU-1 is v2: a build that showed the v1 sentence records nothing.
+    expect(await sharing.accept('buyer', 'coach_sharing_join_v1')).toEqual({ coach_sharing_granted: false, coach_id: null });
     expect(rowsFor(db, 'buyer')).toHaveLength(0);
     expect(audit.writeTx).not.toHaveBeenCalled();
   });
