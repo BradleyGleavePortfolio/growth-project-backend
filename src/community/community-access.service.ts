@@ -7,6 +7,7 @@ import type {
 } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { isBannedFromWorkspace } from './community-ban';
+import { canEnterSpace, rowsWithSpaceAccess } from './community-space-access';
 
 /**
  * Shared authorization queries for the v1-3 write surfaces.
@@ -51,39 +52,54 @@ export class CommunityAccessService {
     return this.prisma.communityPost.findUnique({ where: { id: postId } });
   }
 
-  /** The caller's membership row in a cohort (any status), or null. */
+  /** The person's membership row in a space (any status), or null when the rule keeps them out. */
   async membershipInCohort(cohortId: string, userId: string): Promise<CommunityMembership | null> {
-    return this.prisma.communityMembership.findUnique({
+    const m = await this.prisma.communityMembership.findUnique({
       where: { cohort_id_user_id: { cohort_id: cohortId, user_id: userId } },
     });
+    return m && (await canEnterSpace(this.prisma, cohortId, userId)) ? m : null;
   }
 
-  /**
-   * The cohort ids a member is an ACTIVE member of within a workspace. The
-   * challenge list pushes these into the repository query so a non-coach's page
-   * and cursor anchor are scoped to rows they may actually read — never
-   * post-filtered after pagination (which would let a hidden cohort row become a
-   * public cursor token). An empty result means the member sees only
-   * workspace-wide (cohort_id = null) challenges.
-   */
+  /** The spaces of a workspace the rule opens; lists put these in their query (never post-filter a page). */
   async listAccessibleCohortIds(workspaceId: string, userId: string): Promise<string[]> {
-    if (await this.isBanned(workspaceId, userId)) return [];
-    const rows = await this.prisma.communityMembership.findMany({
-      where: { workspace_id: workspaceId, user_id: userId, status: 'active' },
-      select: { cohort_id: true },
-    });
-    return rows.map((r) => r.cohort_id);
+    return (await this.openSpaces(workspaceId, userId)).map((c) => c.id);
   }
 
-  /** The caller's first active membership row in a workspace, or null. */
+  private async openSpaces(workspaceId: string, userId: string) {
+    const spaces = await this.prisma.communityCohort.findMany({
+      where: { workspace_id: workspaceId },
+      select: { id: true, visibility: true },
+    });
+    return rowsWithSpaceAccess(this.prisma, spaces, (c) => [c.id, userId] as const);
+  }
+
+  /** Membership rows listed in the space (rosters, Remove): the rule, a pending invitation counted. */
+  async peopleInSpace<T>(cohortId: string, rows: T[], personOf: (row: T) => string): Promise<T[]> {
+    return rowsWithSpaceAccess(this.prisma, rows, (r) => [cohortId, personOf(r)] as const, true);
+  }
+
+  /** Push recipients: the people who may read a row of the workspace (of its space, if any) now. */
+  async readersOf(workspaceId: string, cohortId: string | null, people: string[]): Promise<string[]> {
+    if (cohortId) return rowsWithSpaceAccess(this.prisma, people, (id) => [cohortId, id] as const);
+    const ok = await Promise.all(people.map((id) => this.canAccessWorkspace(workspaceId, { id, role: 'student' })));
+    return people.filter((_, i) => ok[i]);
+  }
+
+  /** The person's first active row in a non-public space the rule opens (the Hall, DMs), or null. */
   async membershipInWorkspace(
     workspaceId: string,
     userId: string,
   ): Promise<CommunityMembership | null> {
-    if (await this.isBanned(workspaceId, userId)) return null;
-    return this.prisma.communityMembership.findFirst({
-      where: { workspace_id: workspaceId, user_id: userId, status: 'active' },
+    const rows = await this.prisma.communityMembership.findMany({
+      where: {
+        workspace_id: workspaceId,
+        user_id: userId,
+        status: 'active',
+        cohort: { visibility: { not: 'public' } },
+      },
     });
+    const open = await rowsWithSpaceAccess(this.prisma, rows, (m) => [m.cohort_id, userId] as const);
+    return open[0] ?? null;
   }
 
   /**
@@ -103,32 +119,22 @@ export class CommunityAccessService {
     return ws !== null;
   }
 
-  /**
-   * True when the user may READ within a cohort: an active member, the owning
-   * coach, or the platform owner. Used to gate cohort message reads/writes.
-   */
+  /** True when the user may read and write in a space: the rule, or the platform owner's override. */
   async canAccessCohort(
     cohort: Pick<CommunityCohort, 'id' | 'workspace_id'>,
     user: { id: string; role: string },
   ): Promise<boolean> {
     if (user.role === 'owner') return true;
-    if (await this.isWorkspaceCoach(cohort.workspace_id, user.id)) return true;
-    if (await this.isBanned(cohort.workspace_id, user.id)) return false;
-    const m = await this.membershipInCohort(cohort.id, user.id);
-    return m?.status === 'active';
+    return canEnterSpace(this.prisma, cohort.id, user.id);
   }
 
-  /**
-   * True when the user may READ within a workspace: an active member, the owning
-   * coach, or the platform owner.
-   */
+  /** True when the user may read workspace-wide content: the coach, the owner, or a non-public space opens. */
   async canAccessWorkspace(
     workspaceId: string,
     user: { id: string; role: string },
   ): Promise<boolean> {
     if (user.role === 'owner') return true;
     if (await this.isWorkspaceCoach(workspaceId, user.id)) return true;
-    const m = await this.membershipInWorkspace(workspaceId, user.id);
-    return m !== null;
+    return (await this.openSpaces(workspaceId, user.id)).some((c) => c.visibility !== 'public');
   }
 }
