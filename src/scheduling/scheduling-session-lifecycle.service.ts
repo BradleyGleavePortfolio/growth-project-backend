@@ -493,6 +493,16 @@ export class SchedulingSessionLifecycleService {
           start_at: start,
           end_at: end,
           status: nextStatus,
+          // C4MOVED: the start before this move, who moved it and when (the
+          // client sees what changed). Only a move that changes the start
+          // writes these; a new end alone keeps the last move.
+          ...(start.getTime() !== current.start_at.getTime()
+            ? {
+                moved_from_start_at: current.start_at,
+                moved_by_role: isClient ? ('client' as const) : ('coach' as const),
+                last_moved_at: now,
+              }
+            : {}),
           ...(nextStatus === 'requested' && current.status === 'scheduled'
             ? { approved_at: null }
             : {}),

@@ -151,6 +151,9 @@ function memoryPrisma() {
     },
     communityWorkspaceBan: { findFirst: jest.fn(async () => null) },
     communityMessage: { count: jest.fn(async () => 0) },
+    $queryRaw: jest.fn(async (_q: unknown, spaces: string[], people: string[]) =>
+      spaces.map((c, i) => ({ k: `${c}:${people[i]}` })),
+    ),
   };
   return { db, prisma };
 }

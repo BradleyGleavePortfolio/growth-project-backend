@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
+import { canEnterSpace, rowsWithSpaceAccess } from './community-space-access';
 
 /** Names for a coach's auto-created space (B-E2E-1); they match the clinic seed. */
 export const DEFAULT_WORKSPACE_NAME = 'Community';
@@ -23,12 +24,13 @@ export const DEFAULT_COHORT_NAME = 'All members';
 export class CommunityRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** The caller's active membership row (any cohort), or null. */
+  /** The caller's oldest active row in a non-public space the rule opens (C6-BVIS), or null. */
   async findActiveMembershipForUser(userId: string) {
-    return this.prisma.communityMembership.findFirst({
-      where: { user_id: userId, status: 'active' },
+    const rows = await this.prisma.communityMembership.findMany({
+      where: { user_id: userId, status: 'active', cohort: { visibility: { not: 'public' } } },
       orderBy: { joined_at: 'asc' },
     });
+    return (await rowsWithSpaceAccess(this.prisma, rows, (m) => [m.cohort_id, userId] as const))[0] ?? null;
   }
 
   /** The workspace a coach owns, or null. */
@@ -128,9 +130,11 @@ export class CommunityRepository {
 
   /** Active-member count for a cohort. */
   async cohortMemberCount(cohortId: string): Promise<number> {
-    return this.prisma.communityMembership.count({
+    const rows = await this.prisma.communityMembership.findMany({
       where: { cohort_id: cohortId, status: 'active' },
+      select: { user_id: true },
     });
+    return (await rowsWithSpaceAccess(this.prisma, rows, (m) => [cohortId, m.user_id] as const)).length;
   }
 
   async findWorkspaceById(workspaceId: string) {
@@ -139,21 +143,21 @@ export class CommunityRepository {
     });
   }
 
-  /** True when the caller holds an active membership in the workspace. */
+  /** True when the rule lets the caller into a space of the workspace that is not public. */
   async userHasMembershipInWorkspace(
     workspaceId: string,
     userId: string,
   ): Promise<boolean> {
-    const m = await this.prisma.communityMembership.findFirst({
-      where: { workspace_id: workspaceId, user_id: userId, status: 'active' },
+    const spaces = await this.prisma.communityCohort.findMany({
+      where: { workspace_id: workspaceId, visibility: { not: 'public' } },
       select: { id: true },
     });
-    return m !== null;
+    return (await rowsWithSpaceAccess(this.prisma, spaces, (c) => [c.id, userId] as const)).length > 0;
   }
 
   /**
    * Cohorts the caller can see:
-   *  - students: cohorts with an active membership of theirs;
+   *  - students: the spaces of their rows and their coach's community the rule opens;
    *  - coaches:  all cohorts in workspaces they own;
    *  - owners:   every cohort.
    * Scope is always server-derived from the caller's role/identity.
@@ -177,15 +181,21 @@ export class CommunityRepository {
         orderBy: [{ workspace_id: 'asc' }, { sort_order: 'asc' }],
       });
     }
-    return this.prisma.communityCohort.findMany({
+    const me = await this.prisma.user.findUnique({
+      where: { id: params.userId },
+      select: { coach_id: true },
+    });
+    const candidates = await this.prisma.communityCohort.findMany({
       where: {
         archived_at: null,
-        memberships: {
-          some: { user_id: params.userId, status: 'active' },
-        },
+        OR: [
+          { memberships: { some: { user_id: params.userId, status: 'active' } } },
+          ...(me?.coach_id ? [{ workspace: { coach_id: me.coach_id } }] : []),
+        ],
       },
       orderBy: [{ workspace_id: 'asc' }, { sort_order: 'asc' }],
     });
+    return rowsWithSpaceAccess(this.prisma, candidates, (c) => [c.id, params.userId] as const);
   }
 
   async findCohortById(cohortId: string) {
@@ -194,7 +204,12 @@ export class CommunityRepository {
     });
   }
 
-  /** The caller's active membership in a specific cohort, or null. */
+  /** True when the rule lets the caller into the cohort. */
+  async canEnterCohort(cohortId: string, userId: string): Promise<boolean> {
+    return canEnterSpace(this.prisma, cohortId, userId);
+  }
+
+  /** The caller's membership in a specific cohort (any status), or null. */
   async findMembershipInCohort(cohortId: string, userId: string) {
     return this.prisma.communityMembership.findUnique({
       where: { cohort_id_user_id: { cohort_id: cohortId, user_id: userId } },
@@ -204,12 +219,16 @@ export class CommunityRepository {
   /**
    * Bounded "Today" content for a workspace, fetched concurrently (no N+1):
    * nearest upcoming event, most-recently-pinned post, active challenge with
-   * the nearest ends_at.
+   * the nearest ends_at; workspace-wide or in a space the rule opens to the caller.
    */
-  async findTodayContent(workspaceId: string, now: Date) {
+  async findTodayContent(workspaceId: string, userId: string, now: Date) {
+    const spaces = await this.prisma.communityCohort.findMany({ where: { workspace_id: workspaceId }, select: { id: true } });
+    const open = await rowsWithSpaceAccess(this.prisma, spaces, (c) => [c.id, userId] as const);
+    const inSpace = { OR: [{ cohort_id: null }, { cohort_id: { in: open.map((c) => c.id) } }] };
     const [event, pinnedPost, challenge] = await Promise.all([
       this.prisma.communityEvent.findFirst({
         where: {
+          ...inSpace,
           workspace_id: workspaceId,
           state: 'scheduled',
           starts_at: { gte: now },
@@ -219,6 +238,7 @@ export class CommunityRepository {
       }),
       this.prisma.communityPost.findFirst({
         where: {
+          ...inSpace,
           workspace_id: workspaceId,
           pinned_at: { not: null },
           visibility: 'active',
@@ -228,6 +248,7 @@ export class CommunityRepository {
       }),
       this.prisma.communityChallenge.findFirst({
         where: {
+          ...inSpace,
           workspace_id: workspaceId,
           status: 'active',
           archived_at: null,
@@ -271,6 +292,7 @@ export class CommunityRepository {
       where: { user_id: userId, status: 'active' },
       select: { cohort_id: true },
     });
-    return rows.map((r) => r.cohort_id);
+    const open = await rowsWithSpaceAccess(this.prisma, rows, (r) => [r.cohort_id, userId] as const);
+    return open.map((r) => r.cohort_id);
   }
 }
