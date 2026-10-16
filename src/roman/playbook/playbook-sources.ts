@@ -82,21 +82,26 @@ interface Candidate {
 }
 
 /**
- * PLAYBOOK-WITHDRAW: digest format. From 'ledger-v2' the ledger names every client a version learned from
- * (signals are computed only from ledger clients), so a stored version whose digest is not this digest of its own
- * ledger rows (built before v2, or a row removed since) is not used by the coach-method augmenter.
+ * PLAYBOOK-WITHDRAW: digest format. From 'ledger-v2' the digest also covers the clients eligible at the build (the
+ * collector's `consented`, whose figures the version used), so without a stored list the coach-method augmenter can
+ * tell whether any of them has since turned AI off or left. A version built before v2, or whose ledger rows were
+ * removed since, never matches.
  */
 export const PLAYBOOK_LEDGER_DIGEST_VERSION = 'ledger-v2';
 
-/** sha256 over the ledger sorted by kind, id, client (order of reads never matters). */
+/** sha256 over the ledger sorted by kind, id, client, and the eligible clients sorted (read order never matters). */
 export function playbookLedgerDigest(
   ledger: readonly { source_kind: string; source_id: string; client_id?: string | null }[],
+  eligibleClientIds: readonly string[],
 ): string {
   const rows = ledger
     .map((r) => [r.source_kind, r.source_id, r.client_id ?? ''])
     .sort((a, b) => a.join('\u0000').localeCompare(b.join('\u0000')));
-  return createHash('sha256').update(JSON.stringify([PLAYBOOK_LEDGER_DIGEST_VERSION, rows])).digest('hex');
+  const clients = [...new Set(eligibleClientIds)].sort();
+  return createHash('sha256').update(JSON.stringify([PLAYBOOK_LEDGER_DIGEST_VERSION, rows, clients])).digest('hex');
 }
+
+const PERSON = { id: true, name: true, leaderboard_display_name: true, email: true, phone: true } as const;
 
 function oneLine(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
@@ -111,8 +116,13 @@ export class PlaybookSourceCollector {
     private readonly signals: PlaybookSignalsService,
   ) {}
 
-  async collect(headCoachId: string, now: Date = new Date()): Promise<PlaybookSources> {
-    const L = PLAYBOOK_SOURCE_LIMITS;
+  /**
+   * PLAYBOOK-WITHDRAW: the one client definition of a head coach's playbook: the team (head + active sub-coaches),
+   * its live students (not deleted or scheduled for deletion; id order, so each read sees the same rows) and, of
+   * those, the ones holding the memory grant now, read through egress (`consented`, sorted). Builds learn only from
+   * `consented`; the coach-method augmenter retires a version once any client eligible at its build no longer is.
+   */
+  async eligibleClients(headCoachId: string) {
     const head = await this.budget.resolveHeadCoachId(headCoachId);
     const subs = await this.prisma.teamSubCoachAssignment.findMany({
       where: { head_coach_id: head, archived_at: null },
@@ -120,16 +130,22 @@ export class PlaybookSourceCollector {
     });
     const subIds = [...new Set(subs.map((s) => s.sub_coach_id).filter((id) => id !== head))];
     const team = [head, ...subIds];
+    const clients = await this.prisma.user.findMany({
+      where: { coach_id: { in: team }, role: 'student', deletion_scheduled_at: null, deleted_at: null },
+      orderBy: { id: 'asc' },
+      select: PERSON,
+      take: PLAYBOOK_SOURCE_LIMITS.rosterRows,
+    });
+    const clientIds = clients.map((c) => c.id);
+    const granted = clientIds.length ? await this.egress.consentedClients(clientIds, 'memory') : new Set<string>();
+    const consented = clientIds.filter((id) => granted.has(id)).sort();
+    return { head, team, subIds, clients, consented };
+  }
 
-    const person = { id: true, name: true, leaderboard_display_name: true, email: true, phone: true } as const;
-    const [clients, subCoaches] = await Promise.all([
-      this.prisma.user.findMany({
-        where: { coach_id: { in: team }, role: 'student', deletion_scheduled_at: null, deleted_at: null },
-        select: person,
-        take: L.rosterRows,
-      }),
-      subIds.length ? this.prisma.user.findMany({ where: { id: { in: subIds } }, select: person }) : [],
-    ]);
+  async collect(headCoachId: string, now: Date = new Date()): Promise<PlaybookSources> {
+    const L = PLAYBOOK_SOURCE_LIMITS;
+    const { head, team, subIds, clients, consented } = await this.eligibleClients(headCoachId);
+    const subCoaches = subIds.length ? await this.prisma.user.findMany({ where: { id: { in: subIds } }, select: PERSON }) : [];
     const roster = buildPlaybookRoster(
       [...clients, ...subCoaches].map((p) => ({
         name: p.name,
@@ -139,9 +155,6 @@ export class PlaybookSourceCollector {
       })),
     );
 
-    const clientIds = clients.map((c) => c.id);
-    const granted = clientIds.length ? await this.egress.consentedClients(clientIds, 'memory') : new Set<string>();
-    const consented = clientIds.filter((id) => granted.has(id)).sort();
     const forClient = [{ client_id: null }, ...(consented.length ? [{ client_id: { in: consented } }] : [])];
 
     const [guidelines, templates, plans, mealPlans] = await Promise.all([
@@ -253,15 +266,13 @@ export class PlaybookSourceCollector {
       ledger.push(c.clientId ? { source_kind: c.kind, source_id: c.id, client_id: c.clientId } : { source_kind: c.kind, source_id: c.id });
     }
 
-    // PLAYBOOK-WITHDRAW: figures only from clients the ledger names, so the ledger is every client this version used.
-    const ledgerClients = [...new Set(ledger.flatMap((r) => (r.client_id ? [r.client_id] : [])))].sort();
-    const signals = await this.signals.compute(head, { clientIds: ledgerClients, now });
+    const signals = await this.signals.compute(head, { clientIds: consented, now });
     return {
       headCoachId: head,
       roster,
       items,
       ledger,
-      digest: playbookLedgerDigest(ledger),
+      digest: playbookLedgerDigest(ledger, consented),
       consentedClientIds: consented,
       signals,
     };

@@ -2,14 +2,15 @@
  * PLAYBOOK-WITHDRAW (AICONSENT-INVENTORY GAP-1): a client who turns AI off
  * leaves Roman's coach playbook at once. One row per case, each with a fresh
  * coach A and clients X (a session note), Y and Z (coach messages) and W (no
- * note or message), all on the memory grant (client-ai-v5) with a workout this
- * week, and v1 built by the real builder (fake model, real spend ledger, so
- * v1's own charged build is on record) and the real signals: the ledger names
- * every client v1 learned from, figures included (X, Y, Z; never W). Then Y's
- * next Roman turn: the coach-method block only while v1's ledger is whole and
- * every client in it still holds the grant, read through the one egress
- * consent path; otherwise no block, v1 superseded, and the rebuild runs at
- * once (the 6-hour gap does not hold it) from the clients who may still be read.
+ * note or message), all on the memory grant (client-ai-v5), and V without it,
+ * each with a workout this week. v1 is built by the real builder (fake model,
+ * real spend ledger, so v1's own charged build is on record) and the real
+ * signals: texts from X, Y, Z and figures from W, X, Y, Z (the collector's
+ * eligible clients). Then Y's next Roman turn: the coach-method block only
+ * while every client eligible at the build still is (same client definition,
+ * read through the one egress consent path; a new grant does not count);
+ * otherwise no block, v1 superseded, and the rebuild runs at once (the 6-hour
+ * gap does not hold it) from the clients who may still be read.
  * Real services on the superuser connection (service_role, as the API runs).
  * Each row then reads and writes A's playbook versions and their source
  * ledger as the signed-in API role (authenticated, non-bypass) for A, X, Y, W
@@ -62,8 +63,9 @@ const STATEMENTS: Array<[string, string]> = [
   ['DELETE FROM "CoachPlaybookSource" WHERE "playbook_id" = $1', READ_LEDGER],
 ];
 
-type People = { a: string; c: string; x: string; y: string; z: string; w: string };
+type People = { a: string; c: string; x: string; y: string; z: string; w: string; v: string };
 type Client = 'x' | 'y' | 'z' | 'w';
+type Rebuild = { ledger: Client[]; eligible: Client[] };
 type Row = { source_kind: string; source_id: string; client_id: string | null };
 /** The digest format before ledger-v2 (a version built before this fix). */
 const preV2Digest = (rows: Row[]) =>
@@ -100,7 +102,7 @@ const preV2Digest = (rows: Row[]) =>
   const handle = AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(model));
   const builder = new PlaybookBuilderService(prisma, budget, egress, collector, new RomanBackgroundSpendService(prisma), handle);
   const scheduler = new PlaybookBuilderScheduler(builder);
-  const augmenter = new RomanCoachMethodAugmenter(prisma, budget, egress, scheduler);
+  const augmenter = new RomanCoachMethodAugmenter(prisma, budget, egress, scheduler, collector);
   const saved: Record<string, string | undefined> = {};
 
   const person = (id: string, role: 'coach' | 'student', coach_id: string | null) =>
@@ -151,19 +153,27 @@ const preV2Digest = (rows: Row[]) =>
   });
   afterEach(() => jest.restoreAllMocks());
 
-  // [case, what happens before Y's next turn, the block is sent, the clients the rebuild learns from (null: no rebuild)]
-  const CASES: Array<[string, (p: People) => Promise<unknown>, boolean, Client[] | null]> = [
-    ['every source client still consents', async () => undefined, true, null],
-    ['source client X turns AI off', (p) => consent.withdraw(p.x), false, ['y', 'z']],
-    ['W, whose data v1 never used, turns AI off', (p) => consent.withdraw(p.w), true, null],
+  const all: Rebuild = { ledger: ['x', 'y', 'z'], eligible: ['w', 'x', 'y', 'z'] };
+  // [case, what happens before Y's next turn, the block is sent, the rebuild's text clients and eligible clients (null: none)]
+  const CASES: Array<[string, (p: People) => Promise<unknown>, boolean, Rebuild | null]> = [
+    ['every eligible client still consents', async () => undefined, true, null],
+    ['source client X turns AI off', (p) => consent.withdraw(p.x), false, { ledger: ['y', 'z'], eligible: ['w', 'y', 'z'] }],
+    ['W, counted only in the figures, turns AI off', (p) => consent.withdraw(p.w), false, { ledger: ['x', 'y', 'z'], eligible: ['x', 'y', 'z'] }],
+    [
+      'X moves to another coach',
+      (p) => prisma.user.update({ where: { id: p.x }, data: { coach_id: p.c } }),
+      false,
+      { ledger: ['y', 'z'], eligible: ['w', 'y', 'z'] },
+    ],
+    ['V turns AI on after the build', (p) => consent.grant(p.v, { version: CLIENT_AI_CONSENT_V5_VERSION }), true, null],
     [
       'the consent read fails',
       async () => jest.spyOn(consent, 'clientsWithAiConsent').mockRejectedValueOnce(new Error('consent read failed')),
       false,
-      ['x', 'y', 'z'],
+      all,
     ],
     [
-      'a version built before its ledger named every client',
+      'a version built before this fix (digest without the eligible clients)',
       async (p) => {
         const [v1] = await versions(p.a);
         const rows = await prisma.coachPlaybookSource.findMany({
@@ -173,17 +183,19 @@ const preV2Digest = (rows: Row[]) =>
         await prisma.coachPlaybook.update({ where: { id: v1.id }, data: { source_digest: preV2Digest(rows) } });
       },
       false,
-      ['x', 'y', 'z'],
+      all,
     ],
   ];
 
-  it.each(CASES)('%s', async (_case, before, sent, rebuiltFrom) => {
-    const p: People = { a: randomUUID(), c: randomUUID(), x: randomUUID(), y: randomUUID(), z: randomUUID(), w: randomUUID() };
+  it.each(CASES)('%s', async (_case, before, sent, rebuilt) => {
+    const p: People = {
+      a: randomUUID(), c: randomUUID(), x: randomUUID(), y: randomUUID(), z: randomUUID(), w: randomUUID(), v: randomUUID(),
+    };
     for (const coach of [p.a, p.c]) await person(coach, 'coach', null);
     const plan = await prisma.workoutPlan.create({ data: { coach_id: p.a, name: 'Conditioning', type: 'cardio' } });
-    for (const client of [p.x, p.y, p.z, p.w]) {
+    for (const client of [p.x, p.y, p.z, p.w, p.v]) {
       await person(client, 'student', p.a);
-      await consent.grant(client, { version: CLIENT_AI_CONSENT_V5_VERSION });
+      if (client !== p.v) await consent.grant(client, { version: CLIENT_AI_CONSENT_V5_VERSION });
       await prisma.clientWorkoutAssignment.create({
         data: { workout_plan_id: plan.id, client_id: client, assigned_by_coach_id: p.a, scheduled_for: daysAgo(2) },
       });
@@ -197,13 +209,12 @@ const preV2Digest = (rows: Row[]) =>
     bodies.length = 0;
     signalsFor.length = 0;
 
-    // v1 learned from X, Y and Z (the control): their texts, and figures from them only (W's workout is not counted).
-    const xyz = [p.x, p.y, p.z].sort();
+    // v1 (the control): texts from X, Y and Z, figures from W, X, Y and Z (V has no grant, so its workout is not counted).
     expect(await builder.buildFor(p.a)).toBe('built');
     for (const text of [NOTE_X, MESSAGE_Y, MESSAGE_Z]) expect(bodies[0]).toContain(text);
     const [v1] = await versions(p.a);
-    expect(learnedFrom(v1)).toEqual(xyz);
-    expect(signalsFor).toEqual([{ clients: xyz, schedule: 3 }]);
+    expect(learnedFrom(v1)).toEqual([p.x, p.y, p.z].sort());
+    expect(signalsFor).toEqual([{ clients: [p.w, p.x, p.y, p.z].sort(), schedule: 4 }]);
 
     const rebuild = jest.spyOn(scheduler, 'rebuildNow');
     const send = jest.spyOn(egress, 'anthropicMessagesCreate');
@@ -219,15 +230,14 @@ const preV2Digest = (rows: Row[]) =>
       expect(rebuild).toHaveBeenCalledTimes(1);
       expect(rebuild).toHaveBeenCalledWith(p.a);
       await rebuild.mock.results[0].value;
-      const all = await versions(p.a);
-      expect(all.map((v) => [v.version, v.status])).toEqual([[1, 'superseded'], [2, 'active']]);
-      const ids = (rebuiltFrom ?? []).map((k) => p[k]).sort();
-      expect(learnedFrom(all[1])).toEqual(ids);
+      const after = await versions(p.a);
+      expect(after.map((v) => [v.version, v.status])).toEqual([[1, 'superseded'], [2, 'active']]);
+      const ids = (rebuilt?.ledger ?? []).map((k) => p[k]).sort();
+      const eligible = (rebuilt?.eligible ?? []).map((k) => p[k]).sort();
+      expect(learnedFrom(after[1])).toEqual(ids);
       expect(send).toHaveBeenCalledTimes(1);
-      // The send is checked for every client who may be read (W too); texts and figures come from the ledger clients.
-      const readable = [p.w, ...ids].sort();
-      expect(send.mock.calls[0][1]).toEqual({ kind: 'client_data', clientIds: readable, audience: 'coach', scope: 'memory' });
-      expect(signalsFor[1]).toEqual({ clients: ids, schedule: ids.length >= 3 ? ids.length : null });
+      expect(send.mock.calls[0][1]).toEqual({ kind: 'client_data', clientIds: eligible, audience: 'coach', scope: 'memory' });
+      expect(signalsFor[1]).toEqual({ clients: eligible, schedule: eligible.length >= 3 ? eligible.length : null });
       expect(bodies[1].includes(NOTE_X)).toBe(ids.includes(p.x));
       expect(bodies[1]).toContain(MESSAGE_Y);
       expect((await turnOf(p.y))?.block).toContain(COACH_METHOD_HEADING); // Y's next turn gets v2

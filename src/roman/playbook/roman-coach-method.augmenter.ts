@@ -6,11 +6,11 @@
  * coach's active playbook, re-validated with validateCoachPlaybook (invalid -> null). Red lines become plain
  * rules and post_check.red_lines. Whether the block may be sent is the R11-T2A 'memory' scope rule.
  * Cache: rendered block by (coach_id, version), 10 minutes, at most 200 keys.
- * PLAYBOOK-WITHDRAW: a version is used only while its source ledger is whole (its stored digest is the digest of its
- * ledger rows, so the ledger names every client it learned from) and every client in it holds the memory grant, read
- * through the one egress consent path on every turn (never cached; a failed read is no grant). Otherwise the turn
- * gets no block (Roman still answers), the version is marked stale (superseded, so no other turn on any machine
- * uses it) and the scheduler rebuilds it at once from what the collector may still read.
+ * PLAYBOOK-WITHDRAW: a version is used only while every client eligible at its build (the collector's one client
+ * definition: a live client of the team holding the memory grant, whose texts and figures it learned from) still
+ * is, read through the one egress consent path on every turn (never cached; a failed read is no grant). Otherwise
+ * the turn gets no block (Roman still answers), the version is marked stale (superseded, so no other turn on any
+ * machine uses it) and the scheduler rebuilds it at once from what the collector may still read.
  */
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -23,7 +23,7 @@ import { resolveRomanCoachScope } from '../context/roman-coach-scope';
 import { estimateTokens } from '../context/roman-client-context.renderer';
 import { isRomanPlaybookEnabled } from './roman-playbook.feature';
 import { PlaybookBuilderScheduler } from './playbook-builder.scheduler';
-import { playbookLedgerDigest } from './playbook-sources';
+import { PlaybookSourceCollector, playbookLedgerDigest } from './playbook-sources';
 import {
   PLAYBOOK_SECTION_KEYS,
   validateCoachPlaybook,
@@ -103,14 +103,20 @@ export function renderCoachMethod(content: CoachPlaybookContent): { block: strin
   return { block, redLines };
 }
 
+/** A version's rendered block (cached), and what the live eligibility check compares against. */
+type CoachMethodVersion = {
+  at: number;
+  value: RomanTurnAugment | null;
+  ledger: Array<{ source_kind: string; source_id: string; client_id: string | null }>;
+  digest: string;
+  builtAt: number;
+};
+
 @Injectable()
 export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
   readonly kind = 'coach_method' as const;
   private readonly logger = new Logger(RomanCoachMethodAugmenter.name);
-  private readonly cache = new Map<
-    string,
-    { at: number; value: RomanTurnAugment | null; sourceClientIds: string[]; ledgerWhole: boolean }
-  >();
+  private readonly cache = new Map<string, CoachMethodVersion>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -126,10 +132,15 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
     @Optional()
     @Inject(PlaybookBuilderScheduler)
     private readonly scheduler: PlaybookBuilderScheduler | null = null,
+    // PLAYBOOK-WITHDRAW: the builds' client definition; without it, no block.
+    @Optional()
+    @Inject(PlaybookSourceCollector)
+    private readonly collector: PlaybookSourceCollector | null = null,
   ) {}
 
   async augment(caller: RomanAugmentCaller, _bundle: RomanClientContextBundle, _message: string): Promise<RomanTurnAugment | null> {
-    if (!isRomanPlaybookEnabled() || caller.role !== 'student' || !this.budget || !this.egress) return null;
+    if (!isRomanPlaybookEnabled() || caller.role !== 'student') return null;
+    if (!this.budget || !this.egress || !this.collector) return null;
     const headCoachId = await this.headCoachOf(caller);
     if (!headCoachId) return null;
 
@@ -142,15 +153,15 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
 
     const entry = await this.versionOf(headCoachId, active.version);
     if (!entry?.value) return null;
-    if (!entry.ledgerWhole || !(await this.sourcesHoldGrant(entry.sourceClientIds))) {
+    if (!(await this.noneLeftSinceBuild(headCoachId, entry))) {
       await this.markStale(headCoachId, active.version);
       return null;
     }
     return entry.value;
   }
 
-  /** The rendered block and the version's source clients, cached by (coach_id, version). */
-  private async versionOf(headCoachId: string, version: number) {
+  /** The rendered block, the version's ledger, digest and build time, cached by (coach_id, version). */
+  private async versionOf(headCoachId: string, version: number): Promise<CoachMethodVersion | null> {
     const key = `${headCoachId}:${version}`;
     const now = Date.now();
     const hit = this.cache.get(key);
@@ -163,24 +174,37 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
         sections: true,
         red_lines: true,
         source_digest: true,
+        built_at: true,
         sources: { select: { source_kind: true, source_id: true, client_id: true } },
       },
     });
     if (!row) return null;
-    const sourceClientIds = [...new Set(row.sources.map((s) => s.client_id).filter((id): id is string => !!id))];
-    const ledgerWhole = playbookLedgerDigest(row.sources) === row.source_digest;
-    const entry = { at: now, value: this.build(row.sections, row.red_lines), sourceClientIds, ledgerWhole };
+    const entry: CoachMethodVersion = {
+      at: now,
+      value: this.build(row.sections, row.red_lines),
+      ledger: row.sources,
+      digest: row.source_digest,
+      builtAt: row.built_at.getTime(),
+    };
     const oldest = this.cache.size >= COACH_METHOD_CACHE_MAX ? this.cache.keys().next().value : undefined;
     if (oldest !== undefined) this.cache.delete(oldest);
     this.cache.set(key, entry);
     return entry;
   }
 
-  /** PLAYBOOK-WITHDRAW: every source client holds the memory grant now (a live read; a failed read is no grant). */
-  private async sourcesHoldGrant(clientIds: string[]): Promise<boolean> {
-    if (clientIds.length === 0) return true;
-    const granted = (await this.egress?.consentedClients(clientIds, 'memory')) ?? new Set<string>();
-    return clientIds.every((id) => granted.has(id));
+  /**
+   * PLAYBOOK-WITHDRAW: no client eligible at the build has since turned AI off or left (a live read; a failed read is
+   * no grant). The stored digest covers the ledger and the clients eligible at the build, so it must equal the digest
+   * over the ledger and the clients eligible now, less any whose memory grant came after the build (a new grant never
+   * retires a version). A version built before ledger-v2, or whose ledger rows were removed, never matches.
+   */
+  private async noneLeftSinceBuild(headCoachId: string, entry: CoachMethodVersion): Promise<boolean> {
+    if (!this.collector || !this.egress) return false;
+    const { consented } = await this.collector.eligibleClients(headCoachId);
+    if (playbookLedgerDigest(entry.ledger, consented) === entry.digest) return true;
+    const grantedAt = await this.egress.memoryGrantTimes(consented);
+    const atBuild = consented.filter((id) => !((grantedAt.get(id)?.getTime() ?? 0) > entry.builtAt));
+    return atBuild.length < consented.length && playbookLedgerDigest(entry.ledger, atBuild) === entry.digest;
   }
 
   /** PLAYBOOK-WITHDRAW: supersede the version; the turn that does starts the rebuild without that client. */
