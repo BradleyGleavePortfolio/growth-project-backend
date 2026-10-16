@@ -14,7 +14,7 @@ const WITH_ITEMS = { items: { orderBy: { position: 'asc' }, include: WITH_FOOD }
 /**
  * FOODSAVED: a client's favourite foods and saved meals. Every query is scoped
  * to the signed-in client (the server's connection bypasses RLS; the row rules
- * in 20270502001300 are the second line). Another person's row reads as not
+ * in 20270502003100 are the second line). Another person's row reads as not
  * found, like a missing id.
  */
 @Injectable()

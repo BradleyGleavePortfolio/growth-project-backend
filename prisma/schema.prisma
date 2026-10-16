@@ -1010,7 +1010,7 @@ model LoggedFoodEntry {
 // FOODSAVED (agent 145): a client's favourite foods and saved meals, logged
 // again from the add sheet. Each item stores the portion the way
 // LoggedFoodEntry does, so logging a saved meal writes ordinary entries.
-// Row rules: 20270502001300_food_favorites_saved_meals (owner only, the
+// Row rules: 20270502003100_food_favorites_saved_meals (owner only, the
 // current coach reads).
 model FoodFavorite {
   id           String   @id @default(uuid())
