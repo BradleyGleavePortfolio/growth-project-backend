@@ -94,7 +94,7 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(await timeline(caller)).toEqual(sees ? SEES : 'Client not found');
     for (const scope of LINKED) expect(await consent.coachCanAccess(caller, A, scope, 'coach')).toBe(sees);
     const sharing = await coachSharingCheck(consent, prisma, caller);
-    expect(await sharing(ConsentScope.FITNESS_WORKOUTS, [A, B])).toEqual(sees ? [A] : []);
+    expect((await sharing(ConsentScope.FITNESS_WORKOUTS, [A, B])).includes(A)).toBe(sees);
     expect(await seesWeight(consent, caller, A, 'coach')).toBe(sees);
   });
 

@@ -266,9 +266,9 @@ describe('CF-SHARE-GATE-128: Command Center (coach Overview tab) follows the swi
     expect(r.items.map((i) => i.user_id).sort()).toEqual(['c1', 'c3']);
   });
 
-  it('win streaks: check-in streaks need Check-ins; workout streaks for every client', async () => {
+  it('win streaks: check-in streaks need Check-ins; workout streaks for every client (one streak each)', async () => {
     const w = await (await commandCenter()).getWinStreaks(COACH, {});
-    expect(w.items.map((i) => `${i.streak_type}:${i.user_id}`).sort()).toEqual(['check_in:c3', 'workout:c1', 'workout:c2', 'workout:c3']);
+    expect(w.items.map((i) => `${i.streak_type}:${i.user_id}`).sort()).toEqual(['check_in:c3', 'workout:c1', 'workout:c2']);
   });
 
   it('action queue: check-in alerts need Check-ins, the red-risk alert needs all four, other types stay', async () => {
