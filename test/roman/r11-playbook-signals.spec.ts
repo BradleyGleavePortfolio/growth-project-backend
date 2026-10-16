@@ -364,6 +364,21 @@ describe('R11-P2 playbook signals: 3-client minimum', () => {
     expect(out.adjustments).toEqual([]);
   });
 
+  it('PLAYBOOK-WITHDRAW: a program copy delivered to one client counts only when that client is passed in', async () => {
+    const t = buildTables();
+    const copy = { coach_id: H, archived_at: null, program_id: 'prog-copy', program: { client_id: CLIENTS[3] } };
+    t.workoutPlanExercise = [
+      ...t.workoutPlanExercise,
+      ...[0, 1, 2].map((order) => ({ exercise_external_id: 'ex-legpress', order, archived_at: null, workout_plan: copy })),
+    ];
+    const names = async (clientIds?: string[]) =>
+      (await service(t).svc.compute(H, { now: NOW, clientIds })).top_exercises.map((e) => e.name);
+    expect(await names(CLIENTS.slice(0, 3))).not.toContain('Leg Press');
+    expect(await names(CLIENTS.slice(0, 3))).toContain('Back Squat'); // client-free plans stay
+    expect(await names(CLIENTS)).toContain('Leg Press');
+    expect(await names()).toContain('Leg Press');
+  });
+
   it('a sub-metric under the floor is null while the others stay', async () => {
     const t = buildTables();
     // Only two fat-loss clients resolve a maintenance estimate.

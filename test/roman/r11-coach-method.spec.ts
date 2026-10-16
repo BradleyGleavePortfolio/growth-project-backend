@@ -36,7 +36,7 @@ type Coach = { id: string; role: string; deleted_at: Date | null };
 type UserRow = { role: string; coach: Coach | null };
 type PlaybookRow = {
   coach_id: string; version: number; status: string; sections: unknown; red_lines: unknown; sources: Array<{ client_id: string }>;
-  source_digest: string; built_at: Date;
+  source_digest: string;
 };
 
 const item = (text: string, basis: 'stated' | 'observed' = 'observed', evidence_count = 3) => ({ text, basis, evidence_count });
@@ -57,8 +57,7 @@ function playbook(coach_id: string, version: number, marker: string, status = 'a
     },
     red_lines: [{ kind: 'no_train_through_pain', text: 'Never train through sharp pain', basis: 'stated', evidence_count: 2 }],
     sources: [],
-    source_digest: playbookLedgerDigest([], []),
-    built_at: NOW,
+    source_digest: playbookLedgerDigest([], [], coach_id),
   };
 }
 
@@ -87,9 +86,8 @@ function harness(opts: HarnessOpts) {
   const augmenter = new RomanCoachMethodAugmenter(
     fakeOf<PrismaService>(prisma),
     opts.noBudget ? null : fakeOf<CoachAIBudgetService>(budget),
-    grantAllEgress(),
     null,
-    fakeOf<PlaybookSourceCollector>({ eligibleClients: async () => ({ consented: [] }) }),
+    fakeOf<PlaybookSourceCollector>({ eligibleClients: async () => ({ head: COACH_A.id, consented: [] }) }),
   );
   const run = (caller: { id: string; role: string } = student) => augmenter.augment(caller, BUNDLE, 'hi');
   return { prisma, users, playbooks, augmenter, run };

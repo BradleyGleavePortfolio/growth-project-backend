@@ -82,23 +82,46 @@ interface Candidate {
 }
 
 /**
- * PLAYBOOK-WITHDRAW: digest format. From 'ledger-v2' the digest also covers the clients eligible at the build (the
- * collector's `consented`, whose figures the version used), so without a stored list the coach-method augmenter can
- * tell whether any of them has since turned AI off or left. A version built before v2, or whose ledger rows were
- * removed since, never matches.
+ * PLAYBOOK-WITHDRAW: digest format `ledger-v2:<ledger sha256>:<client tags>`. The tags name every client eligible at
+ * the build (the collector's `consented`, whose texts and figures the version used), so `playbookDigestHolds` can
+ * tell at use time whether any of them is no longer eligible, without a new column and without storing raw ids.
  */
 export const PLAYBOOK_LEDGER_DIGEST_VERSION = 'ledger-v2';
+type LedgerRow = { source_kind: string; source_id: string; client_id?: string | null };
 
-/** sha256 over the ledger sorted by kind, id, client, and the eligible clients sorted (read order never matters). */
-export function playbookLedgerDigest(
-  ledger: readonly { source_kind: string; source_id: string; client_id?: string | null }[],
-  eligibleClientIds: readonly string[],
-): string {
+/** sha256 over the ledger sorted by kind, id, client (read order never matters). */
+function ledgerSha(ledger: readonly LedgerRow[]): string {
   const rows = ledger
     .map((r) => [r.source_kind, r.source_id, r.client_id ?? ''])
     .sort((a, b) => a.join('\u0000').localeCompare(b.join('\u0000')));
-  const clients = [...new Set(eligibleClientIds)].sort();
-  return createHash('sha256').update(JSON.stringify([PLAYBOOK_LEDGER_DIGEST_VERSION, rows, clients])).digest('hex');
+  return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
+}
+
+/** A client's tag in its head coach's digest: 64 bits of sha256(head, client). */
+function clientTag(headCoachId: string, clientId: string): string {
+  return createHash('sha256').update(`${headCoachId}\u0000${clientId}`).digest('hex').slice(0, 16);
+}
+
+export function playbookLedgerDigest(ledger: readonly LedgerRow[], eligibleClientIds: readonly string[], headCoachId: string): string {
+  const tags = [...new Set(eligibleClientIds.map((id) => clientTag(headCoachId, id)))].sort();
+  return `${PLAYBOOK_LEDGER_DIGEST_VERSION}:${ledgerSha(ledger)}:${tags.join(',')}`;
+}
+
+/**
+ * PLAYBOOK-WITHDRAW: true only for a ledger-v2 digest whose ledger rows are all still there and whose every client
+ * (each tag, and each ledger client) is in `eligibleNow`. A client who joined since does not matter.
+ */
+export function playbookDigestHolds(
+  digest: string,
+  ledger: readonly LedgerRow[],
+  eligibleNow: readonly string[],
+  headCoachId: string,
+): boolean {
+  const [format, sha, tags, ...rest] = digest.split(':');
+  if (format !== PLAYBOOK_LEDGER_DIGEST_VERSION || sha !== ledgerSha(ledger) || tags === undefined || rest.length) return false;
+  const now = new Set(eligibleNow.map((id) => clientTag(headCoachId, id)));
+  const ledgerClients = ledger.flatMap((r) => (r.client_id ? [clientTag(headCoachId, r.client_id)] : []));
+  return [...(tags ? tags.split(',') : []), ...ledgerClients].every((t) => now.has(t));
 }
 
 const PERSON = { id: true, name: true, leaderboard_display_name: true, email: true, phone: true } as const;
@@ -272,7 +295,7 @@ export class PlaybookSourceCollector {
       roster,
       items,
       ledger,
-      digest: playbookLedgerDigest(ledger, consented),
+      digest: playbookLedgerDigest(ledger, consented, head),
       consentedClientIds: consented,
       signals,
     };

@@ -183,7 +183,17 @@ export class PlaybookSignalsService {
 
     const [planExercises, assignments, proposals, targets, dailyAssignments] = await Promise.all([
       this.prisma.workoutPlanExercise.findMany({
-        where: { archived_at: null, workout_plan: { coach_id: { in: team }, archived_at: null } },
+        where: {
+          archived_at: null,
+          workout_plan: {
+            coach_id: { in: team },
+            archived_at: null,
+            // PLAYBOOK-WITHDRAW: a program copy delivered to one client counts only for the clients passed in.
+            ...(clientFilter
+              ? { OR: [{ program_id: null }, { program: { client_id: null } }, { program: { client_id: clientFilter } }] }
+              : {}),
+          },
+        },
         select: { exercise_external_id: true },
         take: LIMITS.rowsPerSource,
       }),

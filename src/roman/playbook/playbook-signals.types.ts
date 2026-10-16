@@ -107,8 +107,9 @@ export interface PlaybookSignals {
 export interface PlaybookSignalsOptions {
   /**
    * When set, client-derived figures use only these clients (R11-P3b passes
-   * the clients with memory-scope AI consent). Coach-authored plan contents
-   * (top exercises) are not client data and ignore it.
+   * the clients with memory-scope AI consent). Top exercises keep every
+   * client-free plan; a program copy delivered to one client counts only when
+   * that client is in this list (PLAYBOOK-WITHDRAW).
    */
   clientIds?: readonly string[];
   /** Clock override for tests. */

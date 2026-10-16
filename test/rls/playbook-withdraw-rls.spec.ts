@@ -1,20 +1,21 @@
 /**
- * PLAYBOOK-WITHDRAW (AICONSENT-INVENTORY GAP-1): a client who turns AI off
- * leaves Roman's coach playbook at once. One row per case, each with a fresh
- * coach A and clients X (a session note), Y and Z (coach messages) and W (no
- * note or message), all on the memory grant (client-ai-v5), and V without it,
- * each with a workout this week. v1 is built by the real builder (fake model,
- * real spend ledger, so v1's own charged build is on record) and the real
- * signals: texts from X, Y, Z and figures from W, X, Y, Z (the collector's
- * eligible clients). Then Y's next Roman turn: the coach-method block only
- * while every client eligible at the build still is (same client definition,
- * read through the one egress consent path; a new grant does not count);
- * otherwise no block, v1 superseded, and the rebuild runs at once (the 6-hour
- * gap does not hold it) from the clients who may still be read.
+ * PLAYBOOK-WITHDRAW (AICONSENT-INVENTORY GAP-1; operator rulings 1 and 3): a
+ * client who is no longer eligible leaves Roman's coach playbook at once. One
+ * row per case, each with a fresh coach A and clients X (a session note), Y and
+ * Z (coach messages) and W (no note or message), all on the memory grant
+ * (client-ai-v5) with a workout this week, and V, a client of another coach C
+ * on the same grant. v1 is built by the real builder (fake model, real spend
+ * ledger, so v1's own charged build is on record) and the real signals: texts
+ * from X, Y, Z and figures from W, X, Y, Z (the collector's eligible clients).
+ * Then Y's next Roman turn: the coach-method block only while every client v1
+ * names is still eligible (the same `eligibleClients`, read through the one
+ * egress consent path; a client who joins does not count); otherwise no block,
+ * v1 superseded, and the rebuild runs at once (the 6-hour gap does not hold
+ * it) from the clients who are still eligible.
  * Real services on the superuser connection (service_role, as the API runs).
  * Each row then reads and writes A's playbook versions and their source
  * ledger as the signed-in API role (authenticated, non-bypass) for A, X, Y, W
- * and another coach C, and as anon: 42501, each after a control of 1 as the server.
+ * and C, and as anon: 42501, each after a control of 1 as the server.
  *
  * Runs in the rls-live-tests job on a superuser copy of rls_replay.
  * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
@@ -67,7 +68,7 @@ type People = { a: string; c: string; x: string; y: string; z: string; w: string
 type Client = 'x' | 'y' | 'z' | 'w';
 type Rebuild = { ledger: Client[]; eligible: Client[] };
 type Row = { source_kind: string; source_id: string; client_id: string | null };
-/** The digest format before ledger-v2 (a version built before this fix). */
+/** The digest format before this fix (a sha256 of the ledger alone). */
 const preV2Digest = (rows: Row[]) =>
   createHash('sha256')
     .update(JSON.stringify(rows.map((r) => [r.source_kind, r.source_id, r.client_id ?? '']).sort((a, b) => a.join('\u0000').localeCompare(b.join('\u0000')))))
@@ -102,7 +103,7 @@ const preV2Digest = (rows: Row[]) =>
   const handle = AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(model));
   const builder = new PlaybookBuilderService(prisma, budget, egress, collector, new RomanBackgroundSpendService(prisma), handle);
   const scheduler = new PlaybookBuilderScheduler(builder);
-  const augmenter = new RomanCoachMethodAugmenter(prisma, budget, egress, scheduler, collector);
+  const augmenter = new RomanCoachMethodAugmenter(prisma, budget, scheduler, collector);
   const saved: Record<string, string | undefined> = {};
 
   const person = (id: string, role: 'coach' | 'student', coach_id: string | null) =>
@@ -154,18 +155,16 @@ const preV2Digest = (rows: Row[]) =>
   afterEach(() => jest.restoreAllMocks());
 
   const all: Rebuild = { ledger: ['x', 'y', 'z'], eligible: ['w', 'x', 'y', 'z'] };
+  const set = (id: string, data: { coach_id?: string | null; deletion_scheduled_at?: Date }) => prisma.user.update({ where: { id }, data });
   // [case, what happens before Y's next turn, the block is sent, the rebuild's text clients and eligible clients (null: none)]
   const CASES: Array<[string, (p: People) => Promise<unknown>, boolean, Rebuild | null]> = [
     ['every eligible client still consents', async () => undefined, true, null],
     ['source client X turns AI off', (p) => consent.withdraw(p.x), false, { ledger: ['y', 'z'], eligible: ['w', 'y', 'z'] }],
     ['W, counted only in the figures, turns AI off', (p) => consent.withdraw(p.w), false, { ledger: ['x', 'y', 'z'], eligible: ['x', 'y', 'z'] }],
-    [
-      'X moves to another coach',
-      (p) => prisma.user.update({ where: { id: p.x }, data: { coach_id: p.c } }),
-      false,
-      { ledger: ['y', 'z'], eligible: ['w', 'y', 'z'] },
-    ],
-    ['V turns AI on after the build', (p) => consent.grant(p.v, { version: CLIENT_AI_CONSENT_V5_VERSION }), true, null],
+    ['the coach removes W', (p) => set(p.w, { coach_id: null }), false, { ledger: ['x', 'y', 'z'], eligible: ['x', 'y', 'z'] }],
+    ['X moves to another coach', (p) => set(p.x, { coach_id: p.c }), false, { ledger: ['y', 'z'], eligible: ['w', 'y', 'z'] }],
+    ['Z schedules account deletion', (p) => set(p.z, { deletion_scheduled_at: new Date() }), false, { ledger: ['x', 'y'], eligible: ['w', 'x', 'y'] }],
+    ['a new eligible client joins (V moves to A)', (p) => set(p.v, { coach_id: p.a }), true, null],
     [
       'the consent read fails',
       async () => jest.spyOn(consent, 'clientsWithAiConsent').mockRejectedValueOnce(new Error('consent read failed')),
@@ -173,7 +172,7 @@ const preV2Digest = (rows: Row[]) =>
       all,
     ],
     [
-      'a version built before this fix (digest without the eligible clients)',
+      'a version built before this fix',
       async (p) => {
         const [v1] = await versions(p.a);
         const rows = await prisma.coachPlaybookSource.findMany({
@@ -193,9 +192,11 @@ const preV2Digest = (rows: Row[]) =>
     };
     for (const coach of [p.a, p.c]) await person(coach, 'coach', null);
     const plan = await prisma.workoutPlan.create({ data: { coach_id: p.a, name: 'Conditioning', type: 'cardio' } });
-    for (const client of [p.x, p.y, p.z, p.w, p.v]) {
+    await person(p.v, 'student', p.c);
+    await consent.grant(p.v, { version: CLIENT_AI_CONSENT_V5_VERSION });
+    for (const client of [p.x, p.y, p.z, p.w]) {
       await person(client, 'student', p.a);
-      if (client !== p.v) await consent.grant(client, { version: CLIENT_AI_CONSENT_V5_VERSION });
+      await consent.grant(client, { version: CLIENT_AI_CONSENT_V5_VERSION });
       await prisma.clientWorkoutAssignment.create({
         data: { workout_plan_id: plan.id, client_id: client, assigned_by_coach_id: p.a, scheduled_for: daysAgo(2) },
       });
@@ -209,7 +210,7 @@ const preV2Digest = (rows: Row[]) =>
     bodies.length = 0;
     signalsFor.length = 0;
 
-    // v1 (the control): texts from X, Y and Z, figures from W, X, Y and Z (V has no grant, so its workout is not counted).
+    // v1 (the control): texts from X, Y and Z, figures from W, X, Y and Z (V is not A's client yet).
     expect(await builder.buildFor(p.a)).toBe('built');
     for (const text of [NOTE_X, MESSAGE_Y, MESSAGE_Z]) expect(bodies[0]).toContain(text);
     const [v1] = await versions(p.a);

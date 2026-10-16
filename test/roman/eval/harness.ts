@@ -96,17 +96,16 @@ export function makeWorld(
   p.romanClientSummary = { findMany: jest.fn(async () => []) };
   p.coachPlaybook = { findFirst: jest.fn(async (a: W) => where(rows.playbooks, a.where)[0] ?? null) };
   const budget = fakeOf<CoachAIBudgetService>({ resolveHeadCoachId: async (id: string) => id });
-  const egress = new AiEgressService(reader);
-  const eligible = fakeOf<PlaybookSourceCollector>({ eligibleClients: async () => ({ consented: [] }) });
+  const eligible = fakeOf<PlaybookSourceCollector>({ eligibleClients: async (head: string) => ({ head, consented: [] }) });
   const roman = new RomanService(
     fakeOf(db.prisma),
-    egress,
+    new AiEgressService(reader),
     AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(model.client)),
     ctx,
     null,
     null,
     r11.augmenters
-      ? [new RomanClientMemoryAugmenter(db.prisma), new RomanCoachMethodAugmenter(db.prisma, budget, egress, null, eligible)]
+      ? [new RomanClientMemoryAugmenter(db.prisma), new RomanCoachMethodAugmenter(db.prisma, budget, null, eligible)]
       : null,
     r11.tools ? (r11.wrapTools ?? ((t: RomanToolbox) => t))(new RomanReadToolbox(db.prisma, new RomanTimelineReader(db.prisma))) : null,
   );
