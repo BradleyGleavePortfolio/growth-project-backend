@@ -83,8 +83,9 @@ const buildAudit = () =>
   }) as any;
 
 // #SHARE-SIMPLE: who each coach coaches now (SubCoachScopeService.getAuthorizedClientIds).
+const stub = <T>(v: unknown) => v as T;
 const coachesNow = (roster: Record<string, string[]> = {}) =>
-  ({ getAuthorizedClientIds: jest.fn(async (id: string) => roster[id] ?? []) }) as unknown as SubCoachScopeService;
+  stub<SubCoachScopeService>({ getAuthorizedClientIds: jest.fn(async (id: string) => roster[id] ?? []) });
 
 describe('ConsentService', () => {
   it('rowIsGranted: silence is not consent', () => {

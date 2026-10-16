@@ -24,7 +24,8 @@ if (!DB_URL && process.env.CI === 'true') {
 
 (DB_URL ? describe : describe.skip)('SHARE-UNWIND: workouts, food logs and weigh-ins reach the coach now and no one else', () => {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
-  const audit = { write: jest.fn(async () => undefined) } as unknown as AuditService;
+  const stub = <T>(part: Partial<T>) => part as T;
+  const audit = stub<AuditService>({ write: jest.fn(async () => undefined) });
   const consent = new ConsentService(prisma, audit, new SubCoachScopeService(prisma));
   const service = new CoachService(prisma, audit, consent, new SubCoachScopeService(prisma));
   const [F, K, U, S, E, A, B] = Array.from({ length: 7 }, () => randomUUID());

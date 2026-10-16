@@ -18,6 +18,7 @@ import { RomanAdjustService } from '../src/roman-adjust/roman-adjust.service';
 import { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
 import * as mocks from './_fixtures/coach-brief-mocks';
 import { fakeOf, grantAllEgress } from './ai-egress/ai-egress.fakes';
+import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 
 const COACH = 'coach1';
 const SHARES = 'client-shares';
@@ -45,7 +46,7 @@ function consentSharing(sharing: string[]): ConsentService {
         ),
   );
   const coaches = { getAuthorizedClientIds: async (id: string) => (id === COACH ? [SHARES, PRIVATE] : []) };
-  return new ConsentService(fakeOf({ clientCoachConsent: { findUnique, findMany } }), fakeOf({}), fakeOf(coaches));
+  return new ConsentService(fakeOf({ clientCoachConsent: { findUnique, findMany } }), fakeOf({}), fakeOf<SubCoachScopeService>(coaches));
 }
 
 describe('Coach daily brief (B1)', () => {
