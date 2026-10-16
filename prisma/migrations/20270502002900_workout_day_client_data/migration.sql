@@ -1,8 +1,8 @@
 -- C1V2-C1: workout data for the Coach's page logging screens. Three columns,
 -- no policy change, no data change.
 --   * WorkoutPlanExercise.alternative_external_ids: the coach's chosen swaps
---     for a planned exercise (exercise catalog ids or slugs, first choice
---     first). Existing rows read the empty list.
+--     for a planned exercise (exercise ids as exercise_external_id holds
+--     them, first choice first). Existing rows read the empty list.
 --   * ClientWorkoutAssignment.skipped_at: the client skipped this day.
 --   * ClientWorkoutAssignment.client_note: the coach's note to the client for
 --     this day.

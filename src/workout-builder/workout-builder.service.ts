@@ -575,7 +575,6 @@ export class WorkoutBuilderService {
     // the plan is still this coach's (a moved client's copy is not found).
     await this.assertCoach(coachId);
     await this.assertPlanOwnership(coachId, planId);
-    await this.assertCatalogAlternatives(rows);
     return this.withIdempotency(
       coachId,
       `workout-builder:setExercises:${planId}`,
@@ -958,7 +957,9 @@ export class WorkoutBuilderService {
    * (scheduled_for) or skips (skip) their own day while it is neither completed
    * nor skipped; a new date runs from two days back (today in every time zone)
    * to seven days ahead. The client's current coach, or a delegated sub-coach,
-   * writes the day's note to the client (client_note). Anyone else: 403.
+   * writes the day's note to the client (client_note) and reads back only
+   * { id, client_note }: a note write never returns the day's logged results,
+   * which follow the client's Workouts sharing switch. Anyone else: 403.
    */
   async updateAssignment(userId: string, assignmentId: string, dto: UpdateAssignmentDto, now = new Date()) {
     const sent = [dto.scheduled_for != null, dto.skip != null, dto.client_note !== undefined].filter(Boolean).length;
@@ -967,7 +968,11 @@ export class WorkoutBuilderService {
     if (!a) throw new NotFoundException('Assignment not found');
     if (dto.client_note !== undefined) {
       await this.assertCanAccessClient(userId, a.client_id);
-      return this.prisma.clientWorkoutAssignment.update({ where: { id: assignmentId }, data: { client_note: dto.client_note?.trim() || null } });
+      return this.prisma.clientWorkoutAssignment.update({
+        where: { id: assignmentId },
+        data: { client_note: dto.client_note?.trim() || null },
+        select: { id: true, client_note: true },
+      });
     }
     if (a.client_id !== userId) throw new ForbiddenException('Access denied');
     const at = dto.scheduled_for ? new Date(dto.scheduled_for) : null;
@@ -984,18 +989,6 @@ export class WorkoutBuilderService {
   }
 
   // ─── Guards ───────────────────────────────────────────────────────────────
-
-  /** C1V2-C1: every swap the coach picks is an exercise catalog row (id, slug or source ref, as the catalog read finds it). */
-  private async assertCatalogAlternatives(rows: readonly UpsertExerciseRowDto[]) {
-    const ids = [...new Set(rows.flatMap((r) => r.alternative_external_ids ?? []))];
-    if (ids.length === 0) return;
-    const found = await this.prisma.exerciseCatalogItem.findMany({
-      where: { OR: [{ id: { in: ids } }, { slug: { in: ids } }, { source_ref: { in: ids } }] },
-      select: { id: true, slug: true, source_ref: true },
-    });
-    const known = new Set(found.flatMap((f) => [f.id, f.slug, f.source_ref]));
-    if (ids.some((id) => !known.has(id))) throw new BadRequestException('alternative_external_ids must name exercise catalog rows');
-  }
 
   private async assertPlanOwnership(coachId: string, planId: string) {
     const plan = await this.prisma.workoutPlan.findUnique({ where: { id: planId } });

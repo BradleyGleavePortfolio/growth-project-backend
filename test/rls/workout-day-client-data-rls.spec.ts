@@ -6,7 +6,8 @@
  * (WorkoutPlanExercise.alternative_external_ids, and the copy the client
  * trains in ClientWorkoutAssignmentSnapshot.exercises_json), and the skipped
  * day and the coach's note (ClientWorkoutAssignment.skipped_at, client_note).
- * Every 0 below follows a read or write of the same row that returned 1.
+ * Every 0 below follows a 1 for the same caller on a row of the same kind
+ * (its control read or write).
  *
  * Runs in the rls-live-tests job. Gate: TEST_DATABASE_URL. No URL -> skip,
  * except under CI=true (hard failure).
@@ -40,7 +41,7 @@ if (!DB_URL && process.env.CI === 'true') {
       await prisma.$executeRaw`INSERT INTO "User" ("id", "supabase_id", "email", "name", "role", "coach_id")
         VALUES (${u[k]}, ${sub[k]}, ${`wd-${u[k]}`}, 'RLS user', ${isCoach(k) ? 'coach' : 'student'}::"Role", ${coachOf[k] ? u[coachOf[k]] : null})`;
     }
-    for (const [coach, client] of [['F', 'A'], ['L', 'C']]) {
+    for (const [coach, client] of [['F', 'A'], ['K', 'B'], ['L', 'C']]) {
       await prisma.$executeRaw`INSERT INTO "WorkoutPlan" ("id", "coach_id", "name", "type", "updated_at")
         VALUES (${id(`plan.${coach}`)}, ${u[coach]}, 'Day', 'strength', now())`;
       await prisma.$executeRaw`INSERT INTO "WorkoutPlanExercise" ("id", "workout_plan_id", "exercise_external_id", "order", "sets", "reps_or_duration_seconds", "alternative_external_ids")
@@ -74,6 +75,7 @@ if (!DB_URL && process.env.CI === 'true') {
   const write = (who: string, sql: string, r: string) =>
     as(who, (tx) => tx.$executeRawUnsafe(sql, id(r))).then((n) => n, (e: unknown) => /Code: `([0-9A-Z]{5})`/.exec(String(e))?.[1] ?? 'refused');
   const A_ROWS = ['ex.F', 'assign.F', 'snap.F'];
+  const K_ROWS = ['ex.K', 'assign.K', 'snap.K'];
   const L_ROWS = ['ex.L', 'assign.L', 'snap.L'];
   const DAY_ROWS = ['assign.F', 'snap.F'];
   // A no-op write of the three day columns: counts the rows a role may write.
@@ -84,9 +86,11 @@ if (!DB_URL && process.env.CI === 'true') {
       SELECT "rolbypassrls" AS "bypass" FROM pg_roles WHERE "rolname" = current_user`)).toEqual([{ bypass: false }]);
   });
 
-  it('before the move: A and coach F read them; coach K, coach L and client C read none', async () => {
+  it('before the move: A and coach F read them; coach K, coach L and client C read none (each after reading 1 of their own)', async () => {
     expect(await reads('A', A_ROWS)).toEqual(all(A_ROWS, 1));
     expect(await reads('F', A_ROWS)).toEqual(all(A_ROWS, 1));
+    expect(await reads('B', K_ROWS)).toEqual(all(K_ROWS, 1));
+    expect(await reads('K', K_ROWS)).toEqual(all(K_ROWS, 1));
     expect(await reads('K', DAY_ROWS)).toEqual(all(DAY_ROWS, 0));
     expect(await reads('C', L_ROWS)).toEqual(all(L_ROWS, 1));
     expect(await reads('C', A_ROWS)).toEqual(all(A_ROWS, 0));
@@ -100,7 +104,7 @@ if (!DB_URL && process.env.CI === 'true') {
 
   it("only the plan's coach writes its swaps", async () => {
     const sql = `UPDATE "WorkoutPlanExercise" SET "alternative_external_ids" = "alternative_external_ids" WHERE "id" = $1`;
-    expect(await write('F', sql, 'ex.F')).toBe(1);
+    for (const [who, own] of [['F', 'ex.F'], ['K', 'ex.K'], ['L', 'ex.L']]) expect(await write(who, sql, own)).toBe(1);
     for (const who of [...'AKLBC']) expect(await write(who, sql, 'ex.F')).toBe(0);
   });
 

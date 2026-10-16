@@ -120,7 +120,7 @@ export class UpsertExerciseRowDto {
   @MaxLength(500)
   notes?: string;
 
-  /** C1V2-C1: the coach's chosen swaps, first choice first (exercise catalog id, slug or source ref). */
+  /** C1V2-C1: the coach's chosen swaps, first choice first; ids as exercise_external_id takes them (an /exercises id or a seed: id). */
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(5)

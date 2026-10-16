@@ -214,6 +214,7 @@ export class RomanAdjustService {
         scheduled_for: { gte: new Date(now.getTime() - 86_400_000), lte: horizon },
         started_at: null,
         completed_at: null,
+        skipped_at: null,
       },
       orderBy: { scheduled_for: 'asc' },
       select: { id: true, client_id: true, scheduled_for: true },

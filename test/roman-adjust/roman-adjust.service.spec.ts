@@ -210,6 +210,12 @@ describe('scan', () => {
     expect(w.setsOf('asg-maya')).toEqual([5, 4, 3, 3, 3]);
   });
 
+  it('C1V2-C1: a day the client skipped gets no proposal', async () => {
+    const w = world();
+    w.assignments[0].skipped_at = NOW;
+    expect((await w.svc.listForCoach(COACH, NOW)).proposals).toEqual([]);
+  });
+
   it('re-scanning is idempotent: one proposal per workout and rule', async () => {
     const w = world();
     await w.svc.refreshForCoach(COACH, NOW, true);

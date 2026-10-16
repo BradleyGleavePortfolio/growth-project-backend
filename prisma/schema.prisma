@@ -2697,7 +2697,7 @@ model WorkoutPlanExercise {
   superset_group_id        String?
   notes                    String?
   archived_at              DateTime?
-  // C1V2-C1: the coach's chosen swaps (catalog ids or slugs), first choice first.
+  // C1V2-C1: the coach's chosen swaps (ids as exercise_external_id holds them), first choice first.
   alternative_external_ids String[]    @default([])
 
   // (workout_plan_id, order) uniqueness is a *partial* unique index
