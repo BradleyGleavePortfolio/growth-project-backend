@@ -54,18 +54,11 @@ export const COACH_FITNESS_SCOPES: readonly string[] = [
   ConsentScope.FITNESS_HABITS_PROGRESS,
 ];
 
-// #SHARE-SIMPLE (owner op 1): workouts, food logs and typed-in weight are not switches. The join accept
-// covers them: they go to the client's coach now (SubCoachScopeService: their own roster, or a sub-coach's
-// open delegation while the client is still the head coach's), never to a former, unrelated or other coach.
-// A stored grant or revoke for them is history only.
-export const COACH_LINK_SCOPES: ReadonlySet<string> = new Set([
-  ConsentScope.FITNESS_WORKOUTS,
-  ConsentScope.FITNESS_FOOD_MACROS,
-  ConsentScope.FITNESS_BODY_METRICS,
-]);
-
-// The Coach sharing switch a client can still turn off: Check-ins and habits.
-export const COACH_SWITCH_SCOPES: readonly string[] = COACH_FITNESS_SCOPES.filter((s) => !COACH_LINK_SCOPES.has(s));
+// #SHARE-SIMPLE and #SHARE-JOIN (owner, op 1 each): none of the four is a switch; the AI switch is the only
+// one. The join accept covers them: they go to the client's coach now (SubCoachScopeService: their own roster,
+// or a sub-coach's open delegation while the client is still the head coach's), never to a former, unrelated
+// or other coach. A stored grant or revoke for them is history only.
+export const COACH_LINK_SCOPES: ReadonlySet<string> = new Set(COACH_FITNESS_SCOPES);
 
 const ALL_SCOPES: ConsentScopeValue[] = Object.values(ConsentScope);
 const SCOPE_SET: Set<string> = new Set(ALL_SCOPES);
@@ -279,7 +272,7 @@ export class ConsentService {
     if (!ConsentService.isKnownScope(scope)) {
       throw new BadRequestException(`Unknown consent scope: ${scope}`);
     }
-    // #SHARE-SIMPLE: an older app's Workouts, Food logs or Weigh-ins switch. 410 and nothing written, so
+    // #SHARE-SIMPLE: an older app's Workouts, Food logs, Weigh-ins or Check-ins switch. 410 and nothing written, so
     // its switch goes back to on (the truth) and the stored history stays as it was.
     if (COACH_LINK_SCOPES.has(scope)) {
       throw new GoneException(`${scope} is not a switch: it always goes to the client's current coach`);
@@ -354,9 +347,9 @@ export class ConsentService {
 
   // Coach-side gating helper. `coachId` is the caller, `clientId` is the
   // resource owner. Owners bypass the check (platform admin can see
-  // everything; the audit log records that they did). Workouts, food logs and
-  // weigh-ins (COACH_LINK_SCOPES) follow the coaching relationship only; every
-  // other scope needs a granted consent row for this coach.
+  // everything; the audit log records that they did). Workouts, food logs,
+  // weigh-ins, check-ins and habits (COACH_LINK_SCOPES) follow the coaching
+  // relationship only; every other scope needs a granted row for this coach.
   //
   // Returns true when access is allowed; callers can throw / 403 / hide
   // data when false. Centralizing the check here means the rule lives in
@@ -415,7 +408,7 @@ export class ConsentService {
   // consent row (see above). The client app reads it so it never asks a
   // client to share data that coach can already see, and so Settings says
   // plainly that turning a scope off does not hide it from that account.
-  // #SHARE-SIMPLE: workouts, food logs and weigh-ins read `granted` exactly
+  // #SHARE-SIMPLE: workouts, food logs, weigh-ins and check-ins read `granted` exactly
   // when that coach can read them (coachCanAccess), so an older app never
   // shows one as not shared; their dates stay the stored history.
   async myConsentView(

@@ -1,12 +1,12 @@
-// SHARE-UNWIND (#SHARE-SIMPLE, SoT A2 item 13): one place decides whether a coach reads a client's
-// workouts, food logs or weigh-ins: ConsentService (coachCanAccess, grantedScopesByClient). Every other
+// SHARE-UNWIND (#SHARE-SIMPLE, #SHARE-JOIN, SoT A2 item 13): one place decides whether a coach reads a client's
+// workouts, food logs, weigh-ins, check-ins or habits: ConsentService (coachCanAccess, grantedScopesByClient). Every other
 // source file that touches the consent table is listed with why it is not such a read; a new direct read
 // of the table fails here. The reads that go through the rule are walked in share-unwind-rls.spec.ts.
 import { readdirSync, readFileSync } from 'fs';
 import { join, relative } from 'path';
 
 const ROOT = join(__dirname, '..');
-const SWITCH_ONLY = /clientCoachConsent\.findFirst\(\{\s*where: \{[^}]*scope: \{ in: \[\.\.\.COACH_SWITCH_SCOPES\] \}/;
+const SWITCH_ONLY = /clientCoachConsent\.findFirst\(\{\s*where: \{[^}]*scope: \{ in: \[\.\.\.(INSIGHT|BRIEF)_SHARING_SCOPES\] \}/;
 const NOT_A_LINKED_READ: Record<string, [number, RegExp]> = {
   // The rule itself, and the client's own consent screens and history.
   'src/consent/consent.service.ts': [9, /COACH_LINK_SCOPES\.has\(scope\)/],
@@ -14,12 +14,12 @@ const NOT_A_LINKED_READ: Record<string, [number, RegExp]> = {
   'src/consent/coach-sharing-notice.ts': [2, /tx\.clientCoachConsent\.upsert/],
   // "Has this client made a choice yet", for the first sign-in sentence.
   'src/consent/coach-sharing-first-sign-in.service.ts': [1, /clientCoachConsent\.count/],
-  // When a Check-ins and habits switch last went off, for stored insights and briefs.
+  // When a switch last went off (old rows only: revoke is 410), to hide stored insights and briefs; never to show.
   'src/ai/coach/coach-ai.service.ts': [1, SWITCH_ONLY],
   'src/coach/brief/coach-brief.service.ts': [1, SWITCH_ONLY],
 };
 
-it('SHARE-UNWIND: no coach read of workouts, food logs or weigh-ins goes around ConsentService', () => {
+it('SHARE-UNWIND: no coach read of workouts, food, weigh-ins, check-ins or habits goes around ConsentService', () => {
   const files = readdirSync(join(ROOT, 'src'), { recursive: true, encoding: 'utf8' })
     .filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts'))
     .map((f) => relative(ROOT, join(ROOT, 'src', f)))

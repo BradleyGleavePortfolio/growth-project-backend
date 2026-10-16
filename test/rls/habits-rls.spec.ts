@@ -1,8 +1,8 @@
 /**
  * HB1 (20270502002500): one row rule for habits and their logs, on the
  * replayed migration chain as the non-bypass `authenticated` role. Client A
- * moves from coach F to coach K. K also coaches B, who shares workouts with K
- * but turned habits sharing off, and D, who shares habits with K; L coaches C;
+ * moves from coach F to coach K. K also coaches B, who turned habits sharing
+ * off (no longer counts: 20270502003600), and D, who shares habits with K; L coaches C;
  * S is a sub-coach seated under K with an open delegation of A. A shares habits
  * (fitness.habits_progress) with F, K and S; C shares them with L. A log is
  * read exactly when its habit is (found-not-fixed 6). A habit and its ticks
@@ -25,7 +25,7 @@ if (!DB_URL && process.env.CI === 'true') {
 const DENIED = '42501';
 const HABITS_SCOPE = 'fitness.habits_progress';
 
-(DB_URL ? describe : describe.skip)('Row rules: habits and their logs follow the current coach and the sharing switch', () => {
+(DB_URL ? describe : describe.skip)('Row rules: habits and their logs follow the current coach, whatever the old switch says', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
   const u: Record<string, string> = Object.fromEntries([...'FKLSABCD'].map((k) => [k, randomUUID()]));
   const coachOf: Record<string, string> = { A: 'F', B: 'K', C: 'L', D: 'K' };
@@ -147,11 +147,11 @@ const HABITS_SCOPE = 'fitness.habits_progress';
         VALUES (${randomUUID()}, ${u.K}, ${u.S}, ${u.A})`;
     });
 
-    it('K sets and edits only habits K set, for a client who shares habits; only the client ticks', () =>
+    it('K sets and edits only habits K set, for a client K coaches; only the client ticks', () =>
       steps([
         ['K', 'set', ['h.K.A', 'A', 'K'], 1],
         ['K', 'set', ['h.x1', 'A', null], DENIED], // the setter is always the coach writing
-        ['K', 'set', ['h.x2', 'B', 'K'], DENIED], // B does not share habits with K
+        ['K', 'set', ['h.x2', 'B', 'K'], 1], // B's old habits switch-off no longer counts
         ['F', 'set', ['h.x3', 'A', 'F'], DENIED], // the former coach
         ['L', 'set', ['h.x4', 'A', 'L'], DENIED], // another coach
         ['S', 'set', ['h.x5', 'A', 'S'], DENIED], // the assistant coach
@@ -192,7 +192,7 @@ const HABITS_SCOPE = 'fitness.habits_progress';
       ['A', ['own.A', 'F.A', 'K.A']], // the client: every habit of theirs, whoever set it
       ['B', ['own.B']],
       ['D', ['own.D']], // the other client who shares habits with K: none of A's
-      ['K', ['own.A', 'F.A', 'K.A', 'own.D']], // the current coach of clients who share habits; not B's
+      ['K', ['own.A', 'F.A', 'K.A', 'own.B', 'own.D']], // the current coach of every client, B's old switch-off too
       ['L', ['own.C']], // another coach: only their own client's
       ['F', []], // the former coach: none, not even the habit F set
       ['S', []], // the assistant coach: a delegation and a consent row open nothing

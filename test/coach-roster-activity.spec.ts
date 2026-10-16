@@ -13,9 +13,9 @@ type CoachControllerArgs = ConstructorParameters<typeof CoachController>;
 // UX-COACHLOOKUP-124: GET /coach/clients carries, per client, the latest
 // logged day and the check-ins waiting for review, so the coach's Clients
 // list can show how each client is doing without opening them. Every slice
-// follows the client summary's rule (#SHARE-SIMPLE: workouts, food logs and
-// weigh-ins, with the profile, for the coach's current clients; check-ins only
-// where shared); token columns never leave the server.
+// follows the client summary's rule (#SHARE-SIMPLE, #SHARE-JOIN: every slice,
+// with the profile, for the coach's current clients, whatever the old
+// switches say); token columns never leave the server.
 
 const day = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
@@ -100,7 +100,7 @@ const granted = (client_id: string, scope: string) => ({
 });
 
 describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
-  it('coach sees workouts, food, weigh-ins and the profile for every client, check-ins only where shared; tokens never sent', async () => {
+  it('coach sees every slice and the profile for each client they coach, switches or not; tokens never sent', async () => {
     const prisma = makePrisma([
       granted('c1', ConsentScope.FITNESS_FOOD_MACROS),
       granted('c1', ConsentScope.FITNESS_WORKOUTS),
@@ -118,11 +118,7 @@ describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
     const req = stub<Parameters<CoachController['getClients']>[0]>({ user: { id: 'coach-A', role: 'coach' } });
     const rows = await controller.getClients(req, 'all');
 
-    expect(prisma.clientCoachConsent.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ coach_id: 'coach-A', client_id: { in: ['c1', 'c2'] } }),
-      }),
-    );
+    expect(prisma.clientCoachConsent.findMany).not.toHaveBeenCalled(); // no switch left to read
     const [ana, ben] = rows;
     expect(ana.id).toBe('c1');
     expect(ana.activity).toEqual({
@@ -143,8 +139,8 @@ describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
       last_food_on: '2026-10-06',
       last_workout_on: '2026-10-06',
       last_weigh_in_on: '2026-10-06',
-      last_check_in_on: null,
-      check_ins_to_review: null,
+      last_check_in_on: '2026-10-05',
+      check_ins_to_review: 1,
     });
     expect(ben.profile).toEqual(expect.objectContaining({ id: 'p-c2' }));
     expect(prisma.loggedFoodEntry.groupBy.mock.calls[0][0].where.user_id.in).toEqual(['c1', 'c2']);
@@ -157,7 +153,7 @@ describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
     }
   });
 
-  it('the profile and the weigh-in count toward last active; check-ins wait for that switch', async () => {
+  it('the profile, the weigh-in and the check-ins count without a stored grant', async () => {
     const prisma = makePrisma([
       granted('c1', ConsentScope.FITNESS_BODY_METRICS),
       granted('c1', ConsentScope.FITNESS_FOOD_MACROS),
@@ -167,7 +163,7 @@ describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
     expect(ana.profile).toEqual(expect.objectContaining({ id: 'p-c1' }));
     expect(ana.activity.last_weigh_in_on).toBe('2026-10-06');
     expect(ana.activity.last_active_on).toBe('2026-10-06');
-    expect(ana.activity.check_ins_to_review).toBeNull();
+    expect(ana.activity.check_ins_to_review).toBe(2);
   });
 
   it('owner sees every slice without a consent read', async () => {

@@ -31,8 +31,16 @@ import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone
 import { aiProgramStartIso } from './ai-program-start';
 import { WorkoutContextService, WorkoutContextV2 } from '../context/workout-context.service';
 import { applyProgramSafety, toInjuryAreas } from '../gateway/workout-builder/training-substitutions';
-import { COACH_SWITCH_SCOPES, ConsentScope, ConsentService } from '../../consent/consent.service';
+import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
+
+/** B-872-SOL-H-131-1 — the Coach sharing switches a stored weekly insight can hold logs of. */
+const INSIGHT_SHARING_SCOPES: readonly string[] = [
+  ConsentScope.FITNESS_BODY_METRICS,
+  ConsentScope.FITNESS_FOOD_MACROS,
+  ConsentScope.FITNESS_WORKOUTS,
+  ConsentScope.FITNESS_HABITS_PROGRESS,
+];
 
 /** COACH-AI-GATE-130 — which of the client's logs they share with the coach (Settings > Privacy > Coach sharing). */
 export interface CoachSharing { weighIns: boolean; food: boolean; workouts: boolean; checkIns: boolean }
@@ -443,8 +451,8 @@ export class CoachAIService {
   }
 
   /**
-   * B-872-SOL-H-131-1 — a weekly insight stored before its client turned off the Coach sharing switch
-   * (Check-ins and habits; #SHARE-SIMPLE) for this coach comes back without its content: it may describe a log the client
+   * B-872-SOL-H-131-1 — a weekly insight stored before its client turned off one of the four Coach
+   * sharing switches for this coach comes back without its content: it may describe a log the client
    * now keeps private. A re-grant clears revoked_at, so the insight shows again. The owner account
    * reads every log; hand-built unit tests without ConsentService keep their all-shared fixtures.
    */
@@ -453,9 +461,7 @@ export class CoachAIService {
     const caller = await this.prisma.user.findUnique({ where: { id: coachId }, select: { role: true } });
     if (caller?.role === 'owner') return draft;
     const withdrawn = await this.prisma.clientCoachConsent.findFirst({
-      where: {
-        coach_id: coachId, client_id: draft.clientId, scope: { in: [...COACH_SWITCH_SCOPES] }, revoked_at: { gt: draft.createdAt },
-      },
+      where: { coach_id: coachId, client_id: draft.clientId, scope: { in: [...INSIGHT_SHARING_SCOPES] }, revoked_at: { gt: draft.createdAt } },
       select: { id: true },
     });
     return withdrawn ? { ...draft, generatedPayload: null } : draft;
