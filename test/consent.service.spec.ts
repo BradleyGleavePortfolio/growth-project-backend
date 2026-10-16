@@ -1,8 +1,12 @@
+import { GoneException } from '@nestjs/common';
 import {
   ConsentAuditAction,
   ConsentScope,
   ConsentService,
+  COACH_FITNESS_SCOPES as COACH_FITNESS_ALL,
+  COACH_LINK_SCOPES,
 } from '../src/consent/consent.service';
+import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 
 // In-memory Prisma stub. Records ClientCoachConsent rows in a single map
 // keyed by (client, coach, scope) so the upsert path mirrors the real
@@ -78,6 +82,10 @@ const buildAudit = () =>
     list: jest.fn(async () => []),
   }) as any;
 
+// #SHARE-SIMPLE: who each coach coaches now (SubCoachScopeService.getAuthorizedClientIds).
+const coachesNow = (roster: Record<string, string[]> = {}) =>
+  ({ getAuthorizedClientIds: jest.fn(async (id: string) => roster[id] ?? []) }) as unknown as SubCoachScopeService;
+
 describe('ConsentService', () => {
   it('rowIsGranted: silence is not consent', () => {
     expect(ConsentService.rowIsGranted(null)).toBe(false);
@@ -150,9 +158,9 @@ describe('ConsentService', () => {
       const prisma = buildPrisma([{ id: 'coach-1', role: 'coach' }]);
       const audit = buildAudit();
       const svc = new ConsentService(prisma, audit);
-      await svc.grant('client-1', 'coach-1', ConsentScope.FITNESS_WORKOUTS);
-      await svc.revoke('client-1', 'coach-1', ConsentScope.FITNESS_WORKOUTS);
-      const row = await svc.grant('client-1', 'coach-1', ConsentScope.FITNESS_WORKOUTS);
+      await svc.grant('client-1', 'coach-1', ConsentScope.FITNESS_HABITS_PROGRESS);
+      await svc.revoke('client-1', 'coach-1', ConsentScope.FITNESS_HABITS_PROGRESS);
+      const row = await svc.grant('client-1', 'coach-1', ConsentScope.FITNESS_HABITS_PROGRESS);
       expect(row.granted).toBe(true);
       // grant + revoke + grant = 3 audit writes
       expect(audit.write).toHaveBeenCalledTimes(3);
@@ -247,7 +255,7 @@ describe('ConsentService', () => {
         await svc.coachCanAccess(
           'coach-1',
           'client-1',
-          ConsentScope.FITNESS_WORKOUTS,
+          ConsentScope.FITNESS_HABITS_PROGRESS,
           'coach',
         ),
       ).toBe(false);
@@ -256,12 +264,12 @@ describe('ConsentService', () => {
     it('coach is allowed only for granted scopes; revoke flips to false', async () => {
       const prisma = buildPrisma([{ id: 'coach-1', role: 'coach' }]);
       const svc = new ConsentService(prisma, buildAudit());
-      await svc.grant('client-1', 'coach-1', ConsentScope.FITNESS_WORKOUTS);
+      await svc.grant('client-1', 'coach-1', ConsentScope.FITNESS_HABITS_PROGRESS);
       expect(
         await svc.coachCanAccess(
           'coach-1',
           'client-1',
-          ConsentScope.FITNESS_WORKOUTS,
+          ConsentScope.FITNESS_HABITS_PROGRESS,
           'coach',
         ),
       ).toBe(true);
@@ -270,16 +278,16 @@ describe('ConsentService', () => {
         await svc.coachCanAccess(
           'coach-1',
           'client-1',
-          ConsentScope.FITNESS_FOOD_MACROS,
+          ConsentScope.HEALTH_BLOODWORK,
           'coach',
         ),
       ).toBe(false);
-      await svc.revoke('client-1', 'coach-1', ConsentScope.FITNESS_WORKOUTS);
+      await svc.revoke('client-1', 'coach-1', ConsentScope.FITNESS_HABITS_PROGRESS);
       expect(
         await svc.coachCanAccess(
           'coach-1',
           'client-1',
-          ConsentScope.FITNESS_WORKOUTS,
+          ConsentScope.FITNESS_HABITS_PROGRESS,
           'coach',
         ),
       ).toBe(false);
@@ -318,54 +326,89 @@ describe('ConsentService', () => {
 
   // B-SHARE-126: the client app's coach-sharing screen reads GET /consent/me.
   describe('myConsentView (GET /consent/me body)', () => {
-    const FITNESS = [
-      ConsentScope.FITNESS_WORKOUTS,
-      ConsentScope.FITNESS_FOOD_MACROS,
-      ConsentScope.FITNESS_BODY_METRICS,
-      ConsentScope.FITNESS_HABITS_PROGRESS,
-    ];
-
-    it('a coach-role coach: owner_access false and the four fitness scopes start not shared', async () => {
+    it('a coach-role coach: owner_access false; workouts, food and weigh-ins shown granted while they coach the client', async () => {
       const prisma = buildPrisma([{ id: 'coach-1', role: 'coach' }]);
-      const svc = new ConsentService(prisma, buildAudit());
+      const svc = new ConsentService(prisma, buildAudit(), coachesNow({ 'coach-1': ['client-1'] }));
       const view = await svc.myConsentView('client-1', 'coach-1');
       expect(view.owner_access).toBe(false);
-      for (const scope of FITNESS) {
-        const row = view.consents.find((r) => r.scope === scope);
-        expect(row).toMatchObject({ granted: false, granted_at: null, revoked_at: null });
+      for (const scope of COACH_LINK_SCOPES) {
+        expect(view.consents.find((r) => r.scope === scope)).toMatchObject({ granted: true, granted_at: null, revoked_at: null });
       }
-      expect(await svc.coachCanAccess('coach-1', 'client-1', ConsentScope.FITNESS_FOOD_MACROS, 'coach')).toBe(false);
+      expect(view.consents.find((r) => r.scope === ConsentScope.FITNESS_HABITS_PROGRESS)?.granted).toBe(false);
+      const other = await new ConsentService(prisma, buildAudit(), coachesNow()).myConsentView('client-1', 'coach-1');
+      expect(other.consents.filter((r) => COACH_LINK_SCOPES.has(r.scope)).map((r) => r.granted)).toEqual([false, false, false]);
     });
 
-    it('sharing the four scopes shows them granted and opens them to the coach; a revoke closes one again', async () => {
-      const prisma = buildPrisma([{ id: 'coach-1', role: 'coach' }]);
-      const svc = new ConsentService(prisma, buildAudit());
-      for (const scope of FITNESS) await svc.grant('client-1', 'coach-1', scope);
-      await svc.revoke('client-1', 'coach-1', ConsentScope.FITNESS_BODY_METRICS);
-      const view = await svc.myConsentView('client-1', 'coach-1');
-      const granted = (scope: string) => view.consents.find((r) => r.scope === scope)?.granted;
-      expect(granted(ConsentScope.FITNESS_WORKOUTS)).toBe(true);
-      expect(granted(ConsentScope.FITNESS_FOOD_MACROS)).toBe(true);
-      expect(granted(ConsentScope.FITNESS_HABITS_PROGRESS)).toBe(true);
-      expect(granted(ConsentScope.FITNESS_BODY_METRICS)).toBe(false);
-      expect(await svc.coachCanAccess('coach-1', 'client-1', ConsentScope.FITNESS_WORKOUTS, 'coach')).toBe(true);
-      expect(await svc.coachCanAccess('coach-1', 'client-1', ConsentScope.FITNESS_BODY_METRICS, 'coach')).toBe(false);
-    });
-
-    it('an owner-role coach: owner_access true, rows unchanged (no row is still not granted)', async () => {
+    it('an owner-role coach: owner_access true; workouts, food and weigh-ins granted', async () => {
       const prisma = buildPrisma([{ id: 'owner-1', role: 'owner' }]);
-      const svc = new ConsentService(prisma, buildAudit());
+      const svc = new ConsentService(prisma, buildAudit(), coachesNow());
       const view = await svc.myConsentView('client-1', 'owner-1');
       expect(view.owner_access).toBe(true);
-      expect(view.consents.find((r) => r.scope === ConsentScope.FITNESS_WORKOUTS)?.granted).toBe(false);
+      expect(view.consents.find((r) => r.scope === ConsentScope.FITNESS_WORKOUTS)?.granted).toBe(true);
     });
 
     it('an unknown coach id: owner_access false', async () => {
       const prisma = buildPrisma([]);
-      const svc = new ConsentService(prisma, buildAudit());
+      const svc = new ConsentService(prisma, buildAudit(), coachesNow());
       const view = await svc.myConsentView('client-1', 'nobody');
       expect(view.owner_access).toBe(false);
       expect(view.consents).toHaveLength(13);
+    });
+  });
+
+  // #SHARE-SIMPLE (owner op 1): one rule for workouts, food logs and weigh-ins. Client A moved from F to K,
+  // turned all four Coach sharing switches off for K before the change, and still has F's old grants. S is
+  // K's sub-coach with an open delegation for A; E's delegation ended; U coaches someone else.
+  describe('#SHARE-SIMPLE: workouts, food logs and weigh-ins follow the coaching relationship', () => {
+    const A = 'client-a';
+    const roster = { K: [A], S: [A], F: [], E: [], U: ['client-b'] };
+    const setup = async () => {
+      const prisma = buildPrisma(['K', 'S', 'F', 'E', 'U'].map((id) => ({ id, role: 'coach' })));
+      const audit = buildAudit();
+      const svc = new ConsentService(prisma, audit, coachesNow(roster));
+      for (const scope of [...COACH_LINK_SCOPES, ConsentScope.FITNESS_HABITS_PROGRESS]) {
+        await svc.grant(A, 'F', scope);
+        await svc.grant(A, 'K', scope);
+      }
+      for (const r of prisma._consents.filter((c: any) => c.coach_id === 'K')) r.revoked_at = new Date();
+      audit.write.mockClear();
+      return { prisma, audit, svc };
+    };
+
+    it.each<[string, string, string, boolean]>([
+      ['K, the current coach, despite the old switch-off', 'K', 'coach', true],
+      ['S, a sub-coach with an open delegation', 'S', 'coach', true],
+      ['F, the former coach, despite the old grant', 'F', 'coach', false],
+      ['E, whose delegation ended', 'E', 'coach', false],
+      ['U, an unrelated coach', 'U', 'coach', false],
+      ['the owner account', 'U', 'owner', true],
+    ])('%s', async (_who, coach, role, sees) => {
+      const { svc } = await setup();
+      for (const scope of COACH_LINK_SCOPES) {
+        expect(await svc.coachCanAccess(coach, A, scope, role)).toBe(sees);
+      }
+      const batch = await svc.grantedScopesByClient(coach, [A, 'client-b'], [...COACH_LINK_SCOPES], role);
+      expect([...(batch.get(A) ?? [])]).toEqual(sees ? [...COACH_LINK_SCOPES] : []);
+    });
+
+    it('Check-ins and habits is still a switch: it follows the stored row', async () => {
+      const { svc } = await setup();
+      expect(await svc.coachCanAccess('K', A, ConsentScope.FITNESS_HABITS_PROGRESS, 'coach')).toBe(false);
+      expect((await svc.grantedScopesByClient('K', [A], COACH_FITNESS_ALL, 'coach')).get(A)).toEqual(new Set(COACH_LINK_SCOPES));
+      await svc.grant(A, 'K', ConsentScope.FITNESS_HABITS_PROGRESS);
+      expect(await svc.coachCanAccess('K', A, ConsentScope.FITNESS_HABITS_PROGRESS, 'coach')).toBe(true);
+    });
+
+    it('an older app turning one off gets 410; nothing is written and the history stays', async () => {
+      const { prisma, audit, svc } = await setup();
+      const before = JSON.stringify(prisma._consents);
+      for (const scope of COACH_LINK_SCOPES) {
+        await expect(svc.revoke(A, 'K', scope)).rejects.toBeInstanceOf(GoneException);
+      }
+      expect(JSON.stringify(prisma._consents)).toBe(before);
+      expect(audit.write).not.toHaveBeenCalled();
+      await svc.revoke(A, 'K', ConsentScope.FITNESS_HABITS_PROGRESS);
+      expect(await svc.coachCanAccess('K', A, ConsentScope.FITNESS_WORKOUTS, 'coach')).toBe(true);
     });
   });
 });

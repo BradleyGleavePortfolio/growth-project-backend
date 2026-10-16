@@ -1,6 +1,7 @@
 import { CoachController } from '../src/coach/coach.controller';
 import { CoachService } from '../src/coach/coach.service';
 import { ConsentScope, ConsentService } from '../src/consent/consent.service';
+import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 
 /** Typed test double: the fake implements only what the unit under test calls. */
 function stub<T>(v: unknown): T {
@@ -12,8 +13,9 @@ type CoachControllerArgs = ConstructorParameters<typeof CoachController>;
 // UX-COACHLOOKUP-124: GET /coach/clients carries, per client, the latest
 // logged day and the check-ins waiting for review, so the coach's Clients
 // list can show how each client is doing without opening them. Every slice
-// follows the client summary's per-scope consent rule; the profile is sent
-// only with body-metrics consent; token columns never leave the server.
+// follows the client summary's rule (#SHARE-SIMPLE: workouts, food logs and
+// weigh-ins, with the profile, for the coach's current clients; check-ins only
+// where shared); token columns never leave the server.
 
 const day = (s: string) => new Date(`${s}T00:00:00.000Z`);
 
@@ -85,7 +87,11 @@ function makePrisma(consentRows: Array<Record<string, unknown>>) {
 }
 
 const audit = stub<CoachServiceArgs[1]>({ write: jest.fn(async () => undefined) });
-const consentService = stub<ConsentService>({}); // presence turns real gating on
+// The real rule; coach-A coaches c1 and c2 now.
+const consentFor = (prisma: unknown) =>
+  new ConsentService(stub(prisma), stub({ write: jest.fn() }), stub<SubCoachScopeService>({
+    getAuthorizedClientIds: async (id: string) => (id === 'coach-A' ? ['c1', 'c2'] : []),
+  }));
 const granted = (client_id: string, scope: string) => ({
   client_id,
   scope,
@@ -94,7 +100,7 @@ const granted = (client_id: string, scope: string) => ({
 });
 
 describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
-  it('coach sees only the shared slices per client; profile only with body metrics; tokens never sent', async () => {
+  it('coach sees workouts, food, weigh-ins and the profile for every client, check-ins only where shared; tokens never sent', async () => {
     const prisma = makePrisma([
       granted('c1', ConsentScope.FITNESS_FOOD_MACROS),
       granted('c1', ConsentScope.FITNESS_WORKOUTS),
@@ -102,7 +108,7 @@ describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
       // c2 granted food once and later revoked it: hidden.
       { ...granted('c2', ConsentScope.FITNESS_FOOD_MACROS), revoked_at: day('2026-09-10') },
     ]);
-    const svc = new CoachService(stub<CoachServiceArgs[0]>(prisma), audit, consentService);
+    const svc = new CoachService(stub<CoachServiceArgs[0]>(prisma), audit, consentFor(prisma));
     const controller = new CoachController(
       svc,
       stub<CoachControllerArgs[1]>({ capture: jest.fn() }),
@@ -121,29 +127,27 @@ describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
     expect(ana.id).toBe('c1');
     expect(ana.activity).toEqual({
       shared: true,
-      last_active_on: '2026-10-05',
+      last_active_on: '2026-10-06',
       last_food_on: '2026-10-05',
       last_workout_on: '2026-10-02',
-      last_weigh_in_on: null,
+      last_weigh_in_on: '2026-10-06',
       last_check_in_on: '2026-10-04',
       check_ins_to_review: 2,
     });
-    // No body-metrics consent: no profile, and the weigh-in is not counted.
-    expect(ana.profile).toBeNull();
-    expect(prisma.weightLog.groupBy).not.toHaveBeenCalled();
+    expect(ana.profile).toEqual(expect.objectContaining({ id: 'p-c1' }));
 
+    // c2 turned Food logs off before #SHARE-SIMPLE and never shared check-ins.
     expect(ben.activity).toEqual({
-      shared: false,
-      last_active_on: null,
-      last_food_on: null,
-      last_workout_on: null,
-      last_weigh_in_on: null,
+      shared: true,
+      last_active_on: '2026-10-06',
+      last_food_on: '2026-10-06',
+      last_workout_on: '2026-10-06',
+      last_weigh_in_on: '2026-10-06',
       last_check_in_on: null,
       check_ins_to_review: null,
     });
-    expect(ben.profile).toBeNull();
-    // c2's food rows were never read.
-    expect(prisma.loggedFoodEntry.groupBy.mock.calls[0][0].where.user_id.in).toEqual(['c1']);
+    expect(ben.profile).toEqual(expect.objectContaining({ id: 'p-c2' }));
+    expect(prisma.loggedFoodEntry.groupBy.mock.calls[0][0].where.user_id.in).toEqual(['c1', 'c2']);
 
     for (const r of rows) {
       expect(r).not.toHaveProperty('deletion_token_hash');
@@ -153,12 +157,12 @@ describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
     }
   });
 
-  it('body-metrics consent sends the profile and counts the weigh-in toward last active', async () => {
+  it('the profile and the weigh-in count toward last active; check-ins wait for that switch', async () => {
     const prisma = makePrisma([
       granted('c1', ConsentScope.FITNESS_BODY_METRICS),
       granted('c1', ConsentScope.FITNESS_FOOD_MACROS),
     ]);
-    const svc = new CoachService(stub<CoachServiceArgs[0]>(prisma), audit, consentService);
+    const svc = new CoachService(stub<CoachServiceArgs[0]>(prisma), audit, consentFor(prisma));
     const [ana] = await svc.withRosterActivity('coach-A', 'coach', await svc.getClients('coach-A', 'all', 'coach'));
     expect(ana.profile).toEqual(expect.objectContaining({ id: 'p-c1' }));
     expect(ana.activity.last_weigh_in_on).toBe('2026-10-06');
@@ -168,7 +172,7 @@ describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
 
   it('owner sees every slice without a consent read', async () => {
     const prisma = makePrisma([]);
-    const svc = new CoachService(stub<CoachServiceArgs[0]>(prisma), audit, consentService);
+    const svc = new CoachService(stub<CoachServiceArgs[0]>(prisma), audit, consentFor(prisma));
     const rows = await svc.withRosterActivity('owner-1', 'owner', await svc.getClients('owner-1', 'all', 'owner'));
     expect(prisma.clientCoachConsent.findMany).not.toHaveBeenCalled();
     expect(rows[1].activity).toEqual(
@@ -179,7 +183,7 @@ describe('GET /coach/clients roster activity (UX-COACHLOOKUP-124)', () => {
 
   it('an empty page makes no extra queries', async () => {
     const prisma = makePrisma([]);
-    const svc = new CoachService(stub<CoachServiceArgs[0]>(prisma), audit, consentService);
+    const svc = new CoachService(stub<CoachServiceArgs[0]>(prisma), audit, consentFor(prisma));
     expect(await svc.withRosterActivity('coach-A', 'coach', [])).toEqual([]);
     expect(prisma.clientCoachConsent.findMany).not.toHaveBeenCalled();
     expect(prisma.loggedFoodEntry.groupBy).not.toHaveBeenCalled();

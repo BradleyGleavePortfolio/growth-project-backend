@@ -1,8 +1,9 @@
 /**
- * COACH-AI-GATE-130 — the four Coach sharing switches (Settings > Privacy > Coach sharing) gate the
- * coach's daily brief, the Coach AI drafts, Roman adjust proposals and the churn draft. Real services
- * and a real ConsentService; Prisma fakes answer by the ids asked, like the database. Client SHARES
- * shares everything; client PRIVATE turned all four switches off on 10-01.
+ * COACH-AI-GATE-130 — what the coach's daily brief, the Coach AI drafts, Roman adjust proposals and the
+ * churn draft read. Real services and a real ConsentService; Prisma fakes answer by the ids asked, like
+ * the database. COACH coaches both clients. Client SHARES shares everything; client PRIVATE turned all
+ * four switches off on 10-01. #SHARE-SIMPLE: only Check-ins and habits is still a switch, so PRIVATE's
+ * weigh-ins, food logs and workouts still reach COACH.
  */
 import type { Prisma } from '@prisma/client';
 import { ForbiddenException } from '@nestjs/common';
@@ -43,11 +44,12 @@ function consentSharing(sharing: string[]): ConsentService {
           })),
         ),
   );
-  return new ConsentService(fakeOf({ clientCoachConsent: { findUnique, findMany } }), fakeOf({}));
+  const coaches = { getAuthorizedClientIds: async (id: string) => (id === COACH ? [SHARES, PRIVATE] : []) };
+  return new ConsentService(fakeOf({ clientCoachConsent: { findUnique, findMany } }), fakeOf({}), fakeOf(coaches));
 }
 
 describe('Coach daily brief (B1)', () => {
-  it('leaves out the check-ins, weigh-ins and workouts a client stopped sharing', async () => {
+  it('leaves out the check-ins a client stopped sharing; their weigh-ins and workouts stay', async () => {
     const prisma = mocks.makeMockPrisma();
     mocks.wireSoloDefaults(prisma, { coachId: COACH, clientIds: [SHARES, PRIVATE] });
     prisma.coachBrief.updateMany.mockResolvedValue({ count: 1 });
@@ -72,10 +74,12 @@ describe('Coach daily brief (B1)', () => {
 
     const data = prisma.coachBrief.update.mock.calls[0][0].data;
     const items: Array<{ type: string; client_id: string }> = data.action_items;
-    expect(items.map((i) => `${i.type}:${i.client_id}`).sort()).toEqual([`checkin_missing:${SHARES}`, `weight_flag:${SHARES}`]);
+    expect(items.map((i) => `${i.type}:${i.client_id}`).sort()).toEqual(
+      [`checkin_missing:${SHARES}`, `weight_flag:${PRIVATE}`, `weight_flag:${SHARES}`],
+    );
     expect(data.brief_context).toMatchObject({
-      roster_size: 2, missed_checkin: 1, weight_logs_flagged: 1, workouts_completed_today: 1,
-      not_shared: { check_ins: 1, weigh_ins: 1, workouts: 1 },
+      roster_size: 2, missed_checkin: 1, weight_logs_flagged: 2, workouts_completed_today: 2,
+      not_shared: { check_ins: 1, weigh_ins: 0, workouts: 0 },
     });
     expect(data.narrative).toContain('No check-ins yet today from the 1 client sharing check-ins');
     const prompt: string = anthropic.messages.create.mock.calls[0][0].messages[0].content;
@@ -113,9 +117,6 @@ const workoutContext: WorkoutContextV2 = {
   coach_style: null,
 };
 
-// Values only the client's four logs hold: weigh-ins, food, workouts, check-ins.
-const LOG_VALUES = ['184.6', '2310', '2290', 'knee hurt on squats', 'rough week at work', '4.5', '262.5'];
-
 function coachAi(sharing: string[]) {
   const completeStructured = jest.fn(async (_p: { system: string; user: string }) => ({
     data: { summary: 'Steady week.', wins: [], concerns: [], suggested_actions: [], questions_for_coach: [], days: [], coach_notes: '' },
@@ -135,15 +136,16 @@ function coachAi(sharing: string[]) {
 }
 
 describe('Coach AI drafts (B2)', () => {
-  it('weekly insight for a client who shares nothing: no weights, food, workouts, mood, sleep or notes sent or stored', async () => {
+  it('weekly insight for a client who turned every switch off: no check-in mood, sleep or notes sent or stored', async () => {
     const { svc, sent, stored } = coachAi([SHARES]);
     await svc.generateClientInsight(COACH, { clientId: PRIVATE });
-    for (const v of LOG_VALUES) {
+    for (const v of ['rough week at work', '4.5']) {
       expect(sent()).not.toContain(v);
       expect(stored()).not.toContain(v);
     }
     expect(sent()).not.toMatch(/"mood": 2/);
-    expect(sent()).toContain('NOT_SHARED_WITH_COACH: weigh-ins, food logs, workout logs, check-ins and habits.');
+    for (const v of ['184.6', '2310', 'knee hurt on squats']) expect(sent()).toContain(v);
+    expect(sent()).toContain('NOT_SHARED_WITH_COACH: check-ins and habits.');
   });
 
   it('weekly insight for a client who shares everything is unchanged', async () => {
@@ -153,13 +155,11 @@ describe('Coach AI drafts (B2)', () => {
     expect(sent()).not.toContain('NOT_SHARED_WITH_COACH');
   });
 
-  it('workout program and meal plan for a client who shares nothing: no logged sets, effort, sleep or food', async () => {
+  it('workout program for a client who turned every switch off: no check-in sleep', async () => {
     const { svc, sent } = coachAi([SHARES]);
     await svc.generateWorkoutProgram(COACH, { clientId: PRIVATE, weeks: 4, daysPerWeek: 3 });
-    for (const v of ['225', '262.5', '"adherence_pct_4w":75', '4.5', '"post_rpe": 9']) expect(sent()).not.toContain(v);
-    const meal = coachAi([SHARES]);
-    await meal.svc.generateMealPlan(COACH, { clientId: PRIVATE, days: 7 });
-    for (const v of ['184.6', '2310', '2290']) expect(meal.sent()).not.toContain(v);
+    expect(sent()).not.toContain('4.5');
+    expect(sent()).toContain('262.5');
   });
 
   it('draft responses never carry the stored snapshot', async () => {
@@ -198,11 +198,11 @@ describe('Stored weekly insight after a client turns a switch off (B-872-SOL-H-1
           (rows[where.id] = { ...rows[where.id], ...data })),
       },
       user: { findUnique: jest.fn(async () => ({ role })) },
-      // Answers like the database: a Weigh-ins row for this coach and client revoked after the asked time.
+      // Answers like the database: a Check-ins and habits row for this coach and client revoked after the asked time.
       clientCoachConsent: {
         findFirst: jest.fn(async ({ where }: { where: Withdrawn }) =>
           revokedAt && where.coach_id === COACH && where.client_id === SHARES &&
-          where.scope.in.includes(ConsentScope.FITNESS_BODY_METRICS) && revokedAt > where.revoked_at.gt
+          where.scope.in.includes(ConsentScope.FITNESS_HABITS_PROGRESS) && revokedAt > where.revoked_at.gt
             ? { id: 'consent-1' }
             : null),
       },
@@ -216,7 +216,7 @@ describe('Stored weekly insight after a client turns a switch off (B-872-SOL-H-1
     return { svc, setRevokedAt: (at: Date | null) => { revokedAt = at; } };
   }
 
-  it('generate, then Weigh-ins off: read, edit and reject return the insight without its content', async () => {
+  it('generate, then Check-ins and habits off: read, edit and reject return the insight without its content', async () => {
     const { svc, setRevokedAt } = insightFlow();
     const controller = new CoachAIController(svc, fakeOf({}));
     const req = fakeOf<Parameters<CoachAIController['getDraft']>[0]>({ user: { id: COACH } });
@@ -233,7 +233,7 @@ describe('Stored weekly insight after a client turns a switch off (B-872-SOL-H-1
     }
   });
 
-  it('approve after Weigh-ins off returns no content; the owner account still reads it', async () => {
+  it('approve after Check-ins and habits off returns no content; the owner account still reads it', async () => {
     const coach = insightFlow();
     const { draftId } = await coach.svc.generateClientInsight(COACH, { clientId: SHARES });
     coach.setRevokedAt(new Date('2026-10-06T08:00:00Z'));
@@ -255,7 +255,7 @@ describe('Stored weekly insight after a client turns a switch off (B-872-SOL-H-1
 });
 
 describe('Roman adjust proposals (U3)', () => {
-  it('reads workout effort ratings only for clients who share workouts', async () => {
+  it('reads workout effort ratings for every client the coach coaches (#SHARE-SIMPLE)', async () => {
     type Where = { where: { client_id: { in: string[] }; completed_at?: unknown } };
     const findMany = jest.fn(async ({ where }: Where) =>
       where.completed_at ? [] : where.client_id.in.map((id) => ({ id: `a-${id}`, client_id: id, scheduled_for: new Date('2026-10-08T16:00:00Z') })),
@@ -268,7 +268,7 @@ describe('Roman adjust proposals (U3)', () => {
     const svc = new RomanAdjustService(fakeOf(prisma), fakeOf({}), grantAllEgress(), consentSharing([SHARES]));
     await svc.refreshForCoach(COACH, new Date('2026-10-07T16:00:00Z'), true);
     const completions = findMany.mock.calls.find(([args]) => args.where.completed_at);
-    expect(completions?.[0].where.client_id.in).toEqual([SHARES]);
+    expect(completions?.[0].where.client_id.in).toEqual([SHARES, PRIVATE]);
   });
 });
 
@@ -333,15 +333,17 @@ describe('Stored briefs after a client turns a switch off (B-872-SOL-130-1)', ()
     return { prisma, svc, lastRevoke };
   }
 
-  it("today: a brief stored before the switch went off is written again without that client's weigh-in", async () => {
-    const { prisma, svc } = briefService(new Date('2026-10-07T14:00:00Z'));
+  it("today: a brief stored before the switch went off is written again without that client's check-ins", async () => {
+    const { prisma, svc, lastRevoke } = briefService(new Date('2026-10-07T14:00:00Z'));
     const out = await svc.generateBrief(COACH, 'America/Los_Angeles', '2026-10-07');
+    expect(lastRevoke).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ scope: { in: [ConsentScope.FITNESS_HABITS_PROGRESS] } }),
+    }));
     expect(prisma.coachBrief.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'generating' }) }),
     );
     const items = (out.summary?.action_items ?? []) as Array<{ type: string; client_id?: string }>;
-    expect(items.some((i) => i.client_id === PRIVATE)).toBe(false);
-    expect(JSON.stringify(out)).not.toContain('Sam Private');
+    expect(items.filter((i) => i.client_id === PRIVATE).map((i) => i.type)).toEqual(['weight_flag']);
   });
 
   it('today: a brief stored after the last switch change is served as stored', async () => {

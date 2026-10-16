@@ -31,6 +31,8 @@ import type { WorkoutBuilderService } from '../src/workout-builder/workout-build
 // drafts) with Weigh-ins on and off, for the current coach, a former coach whose old grants are
 // still on, and a sub-coach. Every weight and the maintenance number is a unique value; the device
 // metric names count too. What the model was sent and what was stored count as seen.
+// #SHARE-SIMPLE (owner op 1): weigh-ins are no longer a switch, so an old Weigh-ins switch-off no longer
+// hides them from the current coach; a coach who does not coach the client now still gets none.
 
 function stub<T>(v: unknown): T {
   return v as T;
@@ -236,20 +238,20 @@ describe.each(COACH_READS)('WEIGHTWALL %s', (_path, read) => {
     expect(seen(await run(read, await routes({ weighIns: true }), NOW_COACH))).not.toEqual([]);
   });
 
-  it('Weigh-ins off: the current coach gets no weight and no number made from it', async () => {
-    expect(seen(await run(read, await routes({ weighIns: false }), NOW_COACH))).toEqual([]);
+  it('an old Weigh-ins switch-off: the current coach still gets the weight', async () => {
+    expect(seen(await run(read, await routes({ weighIns: false }), NOW_COACH))).not.toEqual([]);
   });
 
   it('a former coach after the move: nothing, though their old grants are still on', async () => {
     expect(seen(await run(read, await routes({ weighIns: true }), FORMER), [...WEIGHT, ...TARGETS])).toEqual([]);
   });
 
-  it('a sub-coach: no weight, though the client shares Weigh-ins with the head coach', async () => {
+  it('a sub-coach without a delegation for the client: no weight', async () => {
     expect(seen(await run(read, await routes({ weighIns: true }), SUB))).toEqual([]);
   });
 });
 
-describe('WEIGHTWALL Weigh-ins off: the not-shared shape', () => {
+describe('WEIGHTWALL an old Weigh-ins switch-off (#SHARE-SIMPLE)', () => {
   it('device series and the insight prompt keep every other metric', async () => {
     const r = await routes({ weighIns: false });
     const out = await r.samples.getSamples(caller(NOW_COACH), { bucket: 'HEALTH_FITNESS', clientId: J, ...WINDOW });
@@ -258,24 +260,24 @@ describe('WEIGHTWALL Weigh-ins off: the not-shared shape', () => {
     expect(JSON.stringify(r.sent()[0])).toContain('STEPS');
   });
 
-  it('an insight cached while Weigh-ins was on is not served after it goes off', async () => {
+  it('an insight cached while Weigh-ins was on is still served after an old switch-off', async () => {
     const on = await routes({ weighIns: true, cachedInsight: true });
     expect(JSON.stringify(await on.insights.getCoachInsight(caller(NOW_COACH), { clientId: J, bucket: 'HEALTH_FITNESS' })))
       .toContain('83.7');
     const off = await routes({ weighIns: false, cachedInsight: true });
     const out = await off.insights.getCoachInsight(caller(NOW_COACH), { clientId: J, bucket: 'HEALTH_FITNESS' });
-    expect(seen([out, off.sent()])).toEqual([]);
+    expect(seen([out, off.sent()])).not.toEqual([]);
   });
 
   it.each(COACH_READS.filter(([path]) => path.startsWith('POST /coach/ai/')))(
-    '%s: the worked-out targets still reach the prompt and the stored draft, the weight does not (owner ww-targets op 2)',
+    '%s: the worked-out targets and the weight reach the prompt and the stored draft (owner ww-targets op 2)',
     async (_path, read) => {
       const r = await routes({ weighIns: false });
       await read(r, NOW_COACH);
       const prescribed = { calories: 2471.1, protein_g: 173.3, carbs_g: 247.7, fat_g: 73.7 };
       expect(r.t.aIDraft[0]).toMatchObject({ inputContext: { prescribed } });
       expect(seen(r.sent()[1], TARGETS)).toEqual(TARGETS);
-      expect(seen(r.sent())).toEqual([]);
+      expect(seen(r.sent())).not.toEqual([]);
     },
   );
 
@@ -284,26 +286,12 @@ describe('WEIGHTWALL Weigh-ins off: the not-shared shape', () => {
     await r.ai.generateMealPlan(NOW_COACH, { clientId: J, days: 3 });
     expect(r.t.aIDraft[0]).toMatchObject({ inputContext: { prescribed: { calories: 2222, protein_g: 155 } } });
     expect(JSON.stringify(r.sent()[1])).toContain('2222');
-    expect(seen(r.sent())).toEqual([]);
   });
 });
 
-describe('WEIGHTWALL the macro refusal: exactly as safe, with the reason in place of the number', () => {
-  const FLOOR = "This target is below this client's safe floor.";
-  const REASONS: Array<[string, WorldOpts, string]> = [
-    ['pregnancy yes', { weighIns: false, answers: { P6: 'yes' } },
-      `${FLOOR} They answered yes to the pregnancy question in their consultation, so calories stay at maintenance.`],
-    ['another readiness yes', { weighIns: false, answers: { P1: 'yes', P6: 'no' } },
-      `${FLOOR} They answered yes to a readiness question in their consultation, so calories stay at maintenance.`],
-    ['under 18', { weighIns: false, screening: false, answers: {}, ageYears: 16 },
-      `${FLOOR} They are under 18, so calories can't go below maintenance.`],
-  ];
-
-  it.each(REASONS)('Weigh-ins off, %s: the reason and no number', async (_why, o, message) => {
-    const r = await routes(o);
-    await expect(r.macros.create(caller(NOW_COACH), J, BELOW)).rejects.toThrow(message);
-  });
-
+describe('WEIGHTWALL the macro refusal: exactly as safe', () => {
+  // #SHARE-SIMPLE: the reason-in-place-of-the-number refusal is now reached only by a coach who passes the
+  // macro access check but does not coach the client now; no such caller exists, so it has no case here.
   it('Weigh-ins on: today\'s message, number included', async () => {
     const r = await routes({ weighIns: true });
     await expect(r.macros.create(caller(NOW_COACH), J, BELOW)).rejects.toThrow(

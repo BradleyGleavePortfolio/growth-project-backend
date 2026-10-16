@@ -44,7 +44,9 @@ function consent(): ConsentService {
     where.client_id.in.flatMap((id) => where.scope.in.filter((s) => has(where.coach_id, id, s)).map((s) => row(id, s)));
   const findUnique = async ({ where: { ClientCoachConsent_client_coach_scope_key: k } }: OneArgs) =>
     has(k.coach_id, k.client_id, k.scope) ? row(k.client_id, k.scope) : null;
-  return new ConsentService(fakeOf({ clientCoachConsent: { findMany, findUnique } }), fakeOf({}));
+  // #SHARE-SIMPLE: COACH coaches every client now.
+  const coaches = { getAuthorizedClientIds: async (id: string) => (id === COACH ? CLIENTS : []) };
+  return new ConsentService(fakeOf({ clientCoachConsent: { findMany, findUnique } }), fakeOf({}), fakeOf(coaches));
 }
 
 // One prediction per client, every client with the same factors.

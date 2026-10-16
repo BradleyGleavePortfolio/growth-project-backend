@@ -63,7 +63,7 @@ describe('first-sign-in coach sharing (share-link buyers)', () => {
       coach_id: COACH_A,
       coach_name: 'Coach A',
     });
-    expect(await consent.coachCanAccess(COACH_A, 'buyer', ConsentScope.FITNESS_FOOD_MACROS, 'coach')).toBe(false);
+    expect(await consent.coachCanAccess(COACH_A, 'buyer', ConsentScope.FITNESS_HABITS_PROGRESS, 'coach')).toBe(false);
 
     expect(await sharing.accept('buyer', V1)).toEqual({ coach_sharing_granted: true, coach_id: COACH_A });
 
@@ -84,7 +84,7 @@ describe('first-sign-in coach sharing (share-link buyers)', () => {
         }),
       }),
     );
-    expect(await consent.coachCanAccess(COACH_A, 'buyer', ConsentScope.FITNESS_FOOD_MACROS, 'coach')).toBe(true);
+    expect(await consent.coachCanAccess(COACH_A, 'buyer', ConsentScope.FITNESS_HABITS_PROGRESS, 'coach')).toBe(true);
     expect(await consent.coachCanAccess(COACH_A, 'buyer', ConsentScope.FITNESS_WORKOUTS, 'coach')).toBe(true);
     expect(await consent.coachCanAccess(COACH_A, 'buyer', ConsentScope.HEALTH_BLOODWORK, 'coach')).toBe(false);
     expect(await consent.coachCanAccess(COACH_A, 'buyer', ConsentScope.ONBOARDING_AGREEMENT, 'coach')).toBe(false);
@@ -108,14 +108,15 @@ describe('first-sign-in coach sharing (share-link buyers)', () => {
   it('a choice already made in Settings is never overridden (no sentence, no grant)', async () => {
     const { db, sharing, consent } = await build();
     addUser(db, { id: 'chose', coach_id: COACH_A });
-    await consent.grant('chose', COACH_A, ConsentScope.FITNESS_FOOD_MACROS);
-    await consent.revoke('chose', COACH_A, ConsentScope.FITNESS_FOOD_MACROS);
+    await consent.grant('chose', COACH_A, ConsentScope.FITNESS_HABITS_PROGRESS);
+    await consent.revoke('chose', COACH_A, ConsentScope.FITNESS_HABITS_PROGRESS);
 
     expect((await sharing.view('chose')).applies).toBe(false);
     expect(await sharing.accept('chose', V1)).toEqual({ coach_sharing_granted: false, coach_id: COACH_A });
     expect(rowsFor(db, 'chose')).toHaveLength(1);
-    expect(await consent.coachCanAccess(COACH_A, 'chose', ConsentScope.FITNESS_FOOD_MACROS, 'coach')).toBe(false);
-    expect(await consent.coachCanAccess(COACH_A, 'chose', ConsentScope.FITNESS_WORKOUTS, 'coach')).toBe(false);
+    expect(await consent.coachCanAccess(COACH_A, 'chose', ConsentScope.FITNESS_HABITS_PROGRESS, 'coach')).toBe(false);
+    // #SHARE-SIMPLE: workouts are not a switch; they reach the client's coach.
+    expect(await consent.coachCanAccess(COACH_A, 'chose', ConsentScope.FITNESS_WORKOUTS, 'coach')).toBe(true);
   });
 
   it('a client without a coach sees no sentence and records nothing', async () => {

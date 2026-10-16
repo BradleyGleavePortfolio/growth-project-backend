@@ -37,7 +37,7 @@ import {
 import { createAnthropicClient } from '../../ai-egress/provider-clients';
 import { describeFailure } from '../../observability/log-pii';
 import { usableTimeZone } from '../../notifications/local-time';
-import { ConsentScope, ConsentService } from '../../consent/consent.service';
+import { COACH_SWITCH_SCOPES, ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
 
 /**
@@ -95,14 +95,6 @@ export const BRIEF_TARGET_NARRATIVE_CHARS = 450;
 // Anthropic timeout above so a healthy generation finishes before the
 // next caller would attempt a takeover.
 export const BRIEF_GENERATION_LEASE_MS = 5 * 60 * 1000;
-
-// B-872-SOL-130-1: the Coach sharing switches a stored brief can hold logs of.
-const BRIEF_SHARING_SCOPES: readonly string[] = [
-  ConsentScope.FITNESS_WORKOUTS,
-  ConsentScope.FITNESS_FOOD_MACROS,
-  ConsentScope.FITNESS_BODY_METRICS,
-  ConsentScope.FITNESS_HABITS_PROGRESS,
-];
 
 // B-939-1: the clients a stored brief was built from. Kept on the server for
 // the moved-client check; never sent to the app.
@@ -2074,9 +2066,9 @@ export class CoachBriefService {
   }
 
   /**
-   * B-872-SOL-130-1 — when a client of this coach last turned off a Coach
-   * sharing switch. A brief stored before then may hold a log that client has
-   * since hidden. Null when nobody has, for the owner account (it reads every
+   * B-872-SOL-130-1 — when a client of this coach last turned off the Coach
+   * sharing switch (Check-ins and habits; #SHARE-SIMPLE). A brief stored before
+   * then may hold a log that client has since hidden. Null when nobody has, for the owner account (it reads every
    * log), and in hand-built unit tests without ConsentService.
    */
   private async lastSharingWithdrawal(coachId: string): Promise<Date | null> {
@@ -2084,7 +2076,7 @@ export class CoachBriefService {
     const coach = await this.prisma.user.findUnique({ where: { id: coachId }, select: { role: true } });
     if (coach?.role === 'owner') return null;
     const row = await this.prisma.clientCoachConsent.findFirst({
-      where: { coach_id: coachId, scope: { in: [...BRIEF_SHARING_SCOPES] }, revoked_at: { not: null } },
+      where: { coach_id: coachId, scope: { in: [...COACH_SWITCH_SCOPES] }, revoked_at: { not: null } },
       orderBy: { revoked_at: 'desc' },
       select: { revoked_at: true },
     });
