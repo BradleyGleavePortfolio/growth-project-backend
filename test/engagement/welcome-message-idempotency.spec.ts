@@ -35,7 +35,7 @@ function harness() {
     coachWelcomeMessageJob: jobs,
   };
   prisma.$transaction = async (fn: (tx: unknown) => Promise<unknown>) => fn(prisma);
-  const broadcastNewMessage = jest.fn(async () => undefined);
+  const pingChat = jest.fn(async () => undefined);
   const emit = jest.fn();
   const write = jest.fn(async () => undefined);
   const capture = jest.fn();
@@ -43,7 +43,7 @@ function harness() {
   const invalidateForUser = jest.fn();
   const svc = new MessagingService(
     cast<PrismaService>(prisma),
-    cast<SupabaseService>({ broadcastNewMessage }),
+    cast<SupabaseService>({ pingChat }),
     cast<AnalyticsService>({ capture }),
     cast<PtmService>({ emit: ptmEmit }),
     cast<MessageReceivedEmitter>({ emit }),
@@ -51,7 +51,7 @@ function harness() {
     cast<ClientAIContextService>({ invalidateForUser }),
   );
   const fanOut = () => ({
-    pings: broadcastNewMessage.mock.calls.length,
+    pings: pingChat.mock.calls.length,
     audits: write.mock.calls.length,
     analytics: capture.mock.calls.length,
     ptm: ptmEmit.mock.calls.length,
