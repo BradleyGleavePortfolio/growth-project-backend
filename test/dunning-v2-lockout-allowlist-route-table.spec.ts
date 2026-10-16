@@ -264,6 +264,7 @@ const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'GET weight/history WeightController',
   'GET workouts WorkoutController',
   'GET workouts/volume WorkoutController',
+  'PATCH assignments/:assignmentid AssignmentController', // C1V2-C1: the client moves or skips their own day
   'PATCH assignments/:assignmentid/complete AssignmentController',
   'PATCH habits/:id HabitsController',
   'PATCH weight/:id WeightController',

@@ -616,7 +616,7 @@ export class CoachService {
     const rows = shared
       ? await this.prisma.clientWorkoutAssignment.findMany({
           where: { client_id: clientId, scheduled_for: { gte: week.from, lt: week.to } },
-          select: { id: true, scheduled_for: true, completed_at: true },
+          select: { id: true, scheduled_for: true, completed_at: true, skipped_at: true },
           orderBy: [{ scheduled_for: 'asc' }, { id: 'asc' }],
         })
       : [];

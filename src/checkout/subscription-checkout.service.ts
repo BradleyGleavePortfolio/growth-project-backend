@@ -479,7 +479,9 @@ export class SubscriptionCheckoutService {
     }
     const pkg = await this.prisma.coachPackage.findUnique({ where: { id: row.package_id } });
     if (!row.cancel_at_period_end) return planView(row, pkg);
-    if (row.status === 'canceled' || !row.entitlement_active) {
+    // MOVEBILL: a move ended this renewal (MOVE-BILLING); the plan is never
+    // offered as keepable (planView can_resume), and a direct call is refused.
+    if (row.status === 'canceled' || !row.entitlement_active || row.moved_away_at) {
       throw new ConflictException({
         code: 'PLAN_ALREADY_ENDED',
         error: 'PLAN_ALREADY_ENDED',

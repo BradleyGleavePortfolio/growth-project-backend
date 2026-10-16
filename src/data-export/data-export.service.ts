@@ -454,6 +454,8 @@ const ASSIGNED_WORKOUT_EXPORT_SELECT: Record<string, true> = {
   post_notes: true,
   completion_payload: true,
   approved_by_coach_at: true,
+  skipped_at: true,
+  client_note: true,
 };
 
 /** Why an archive must go although no request row owns it (B-608-11). */

@@ -587,7 +587,7 @@ export class CommunityEventsService {
   ): void {
     if (fromState === toState) return;
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.event(event.id),
+      { workspaceId: event.workspace_id, cohortId: event.cohort_id },
       COMMUNITY_BROADCAST_EVENTS.eventStateChanged,
       {
         eventId: event.id,
@@ -607,7 +607,7 @@ export class CommunityEventsService {
    */
   private broadcastCreated(event: CommunityEvent): void {
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.event(event.id),
+      { workspaceId: event.workspace_id, cohortId: event.cohort_id },
       COMMUNITY_BROADCAST_EVENTS.eventCreated,
       {
         eventId: event.id,
@@ -626,7 +626,7 @@ export class CommunityEventsService {
    */
   private broadcastRsvpChanged(event: CommunityEvent): void {
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.event(event.id),
+      { workspaceId: event.workspace_id, cohortId: event.cohort_id },
       COMMUNITY_BROADCAST_EVENTS.eventRsvpChanged,
       {
         eventId: event.id,

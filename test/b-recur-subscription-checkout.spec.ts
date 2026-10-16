@@ -519,6 +519,26 @@ describe('plan read model + keep-my-plan', () => {
     expect(kept.can_cancel).toBe(true);
   });
 
+  it('MOVEBILL: a renewal a move ended keeps its paid period, but Keep plan is not offered and is refused', async () => {
+    const { svc, stripe, prisma } = setup();
+    const out = await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
+    const end = new Date(Date.now() + 20 * 86400_000);
+    Object.assign(prisma._purchases[0], {
+      status: 'active',
+      entitlement_active: true,
+      current_period_end: end,
+      cancel_at_period_end: true,
+      moved_away_at: new Date(),
+    });
+    expect(await svc.getPlan(CLIENT, out.purchase_id)).toEqual(
+      expect.objectContaining({ state: 'active', access_ends_at: end.toISOString(), can_resume: false }),
+    );
+    const err = await codeOf(svc.resumePlan(CLIENT, out.purchase_id, KEY2));
+    expect([err.status, err.body.code]).toEqual([409, 'PLAN_ALREADY_ENDED']);
+    expect(stripe.resumeSubscription).not.toHaveBeenCalled();
+    expect(prisma._purchases[0].cancel_at_period_end).toBe(true);
+  });
+
   it('a foreign or unknown plan id -> 404 PURCHASE_NOT_FOUND', async () => {
     const { svc } = setup();
     const out = await svc.createSubscriptionIntent(CLIENT, {

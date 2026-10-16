@@ -40,6 +40,7 @@ import {
   COACH_TRANSFER_SELECT,
 } from './coach-payments.select';
 import { ADMIN_PURCHASE_OMIT } from './admin-purchase.select';
+import { keepMoneyRecordsOnly, salePause } from './moved-client-money';
 import {
   CursorPageQueryDto,
   PAYMENT_OPS_DEFAULT_LIMIT,
@@ -697,7 +698,11 @@ export class CoachPaymentOpsController {
     const hasMore = rows.length > limit;
     const purchases = hasMore ? rows.slice(0, limit) : rows;
     const next_cursor = hasMore ? purchases[purchases.length - 1].id : null;
-    return { purchases, next_cursor };
+    // CONTRACT-1: a client who moved away leaves only the money record.
+    return {
+      purchases: await keepMoneyRecordsOnly(this.prisma, req.user.id, purchases),
+      next_cursor,
+    };
   }
 
   // Coach drill-down on one purchase. Lookup is scoped by
@@ -745,11 +750,14 @@ export class CoachPaymentOpsController {
         select: COACH_DUNNING_SELECT,
       }),
     ]);
+    // CONTRACT-1: a client who moved away from the seller leaves the money record and a refund or
+    // dispute pause, never a card failure; the ledger and transfers are the coach's own money.
+    const [record] = await keepMoneyRecordsOnly(this.prisma, purchase.coach_user_id, [purchase]);
     return {
-      purchase,
+      purchase: record,
       split_ledger: splitEntries,
       transfers,
-      dunning: dunningState,
+      dunning: record === purchase ? dunningState : salePause(dunningState),
     };
   }
 
@@ -949,7 +957,7 @@ export class CoachPaymentOpsController {
       orderBy: { updated_at: 'desc' },
       take: 100,
     });
-    return { failed: purchases };
+    return { failed: await keepMoneyRecordsOnly(this.prisma, req.user.id, purchases) };
   }
 
   // Effective fee policy for this coach (default + override). Lets a

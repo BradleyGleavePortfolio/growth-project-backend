@@ -43,11 +43,11 @@ import {
 } from './program-rules';
 import {
   materialiseClientPlans,
-  type ExerciseRow,
   type Materialisation,
   type PlanContent,
 } from './clinic-programs';
 import { writeProgramTree } from './program-writer';
+import { alternativesOf } from '../workout-builder/plan-exercise-fields';
 import { flaggedClientPayload } from './flagged-join-alert';
 import {
   ONBOARDING_COMPLETION_HOOKS,
@@ -1224,7 +1224,7 @@ export class OnboardingService {
         week_index: p.week_index ?? 0,
         day_index: p.day_index ?? 0,
       },
-      exercises: p.exercises.map((e): ExerciseRow => ({
+      exercises: p.exercises.map((e) => ({
         exercise_external_id: e.exercise_external_id,
         order: e.order,
         sets: e.sets,
@@ -1233,6 +1233,7 @@ export class OnboardingService {
         rest_seconds: e.rest_seconds,
         superset_group_id: e.superset_group_id,
         notes: e.notes,
+        alternative_external_ids: alternativesOf(e),
       })),
     }));
     const plans = materialiseClientPlans(content, sel.program_key, sel, m);

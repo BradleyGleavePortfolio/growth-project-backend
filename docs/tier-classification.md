@@ -73,7 +73,7 @@ None — all SubscriptionGuard usages in `src/` match the spec seed list or are 
 | Controller | Route | Reason |
 |---|---|---|
 | Practice type controller | `/coach/practice` | No guard today, spec §1 non-goal. Cross-pillar is free (spec decision). |
-| AssignmentController | `GET /assignments/me`, `GET /assignments/:id`, `PATCH /assignments/:assignmentId/complete` | Client-facing; uses `ClientEntitlementGuard`, not `SubscriptionGuard`. |
+| AssignmentController | `GET /assignments/me`, `GET /assignments/:id`, `PATCH /assignments/:assignmentId/complete`, `PATCH /assignments/:assignmentId` | Client-facing; uses `ClientEntitlementGuard`, not `SubscriptionGuard`. |
 | InviteLanding / public routes | `/join/:code`, `/invite/:code` | Public unauthenticated routes. |
 
 ### White-label / custom-domain routes
