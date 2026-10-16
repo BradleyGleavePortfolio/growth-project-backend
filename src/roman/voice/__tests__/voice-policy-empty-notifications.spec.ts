@@ -18,7 +18,9 @@ import { FEATURE_ROMAN_COPY_V2_ENV } from '../voice-policy.feature';
 
 function fakePrisma(rows: unknown[]) {
   return {
-    user: { findMany: jest.fn().mockResolvedValue([]) },
+    user: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn().mockResolvedValue(null) },
+    subCoachAssignment: { findMany: jest.fn().mockResolvedValue([]) },
+    coachingSession: { findMany: jest.fn().mockResolvedValue([]) },
     notification: {
       findMany: jest.fn().mockResolvedValue(rows),
       count: jest.fn().mockResolvedValue(0),
