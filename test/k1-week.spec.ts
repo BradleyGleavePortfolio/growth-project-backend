@@ -134,6 +134,12 @@ describe('K1WEEK service: the zone that defines the week, and the gates', () => 
     expect(bounds()).toEqual(['2026-10-12T04:00:00.000Z', '2026-10-19T04:00:00.000Z']);
   });
 
+  it('C1V2-C1: a shared week reads each day\'s skipped_at, so a skipped day is not read as missed', async () => {
+    const { service, findMany } = await build({});
+    await service.getClientWeek('caller', 'client', 'coach', {}, NOW);
+    expect(findMany.mock.calls[0][0]).toMatchObject({ select: { completed_at: true, skipped_at: true } });
+  });
+
   it('no zone of their own: the client\'s coach\'s profile zone', async () => {
     const { service, bounds } = await build({ zones: { caller: 'Asia/Tokyo' }, profiles: { head: 'America/Chicago' } });
     await service.getClientWeek('caller', 'client', 'coach', {}, NOW);

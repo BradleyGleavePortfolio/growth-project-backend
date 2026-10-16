@@ -183,6 +183,8 @@ function buildPrisma() {
         id: 'pkg-1', coach_id: COACH, currency: 'usd', interval: 'month', interval_count: 1,
       })),
     },
+    // CONTRACT-1: no client here has moved away from their coach.
+    user: { findMany: jest.fn(async () => []) },
   };
 }
 

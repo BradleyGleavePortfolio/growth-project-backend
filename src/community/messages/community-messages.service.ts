@@ -185,15 +185,12 @@ export class CommunityMessagesService {
         repliedAt: created.created_at,
       });
     }
-    // v1-4 post-write tail: best-effort realtime ping (IDs only). The cohort
-    // shard is derived from the WRITE RESULT's cohort_id (never request
-    // params) so a foreign cohortId cannot mis-route the broadcast (#5 IDOR).
+    // v1-4 post-write tail: best-effort realtime ping (IDs only) to everyone who
+    // may read the space now. The space comes from the WRITE RESULT's cohort_id
+    // (never request params) so a foreign cohortId cannot mis-route it (#5 IDOR).
     // void-prefixed fire-and-forget — never blocks or fails the write (#24).
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.cohort(
-        created.cohort_id ?? cohort.id,
-        this.realtime.cohortShard(created.cohort_id ?? cohort.id),
-      ),
+      { workspaceId: created.workspace_id, cohortId: created.cohort_id ?? cohort.id },
       COMMUNITY_BROADCAST_EVENTS.messageCreated,
       {
         id: created.id,
@@ -326,10 +323,7 @@ export class CommunityMessagesService {
     }
     const updated = await this.repo.updateBody(m, body);
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.cohort(
-        updated.cohort_id ?? m.cohort_id,
-        this.realtime.cohortShard(updated.cohort_id ?? m.cohort_id),
-      ),
+      { workspaceId: cohort.workspace_id, cohortId: cohort.id },
       COMMUNITY_BROADCAST_EVENTS.messageUpdated,
       {
         id: updated.id,

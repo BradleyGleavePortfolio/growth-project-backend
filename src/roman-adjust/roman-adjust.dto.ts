@@ -10,7 +10,9 @@ import {
   IsIn,
   IsInt,
   IsOptional,
+  IsString,
   Max,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -27,8 +29,16 @@ export class AdjustSetsRowDto {
   sets!: number;
 }
 
+/** POST /coach/adjustments/:id/approve. C1V2-C1: the coach's reason the client reads on that day. */
+export class ApproveAdjustmentDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  client_reason?: string;
+}
+
 /** POST /coach/adjustments/:id/edit: a percentage OR explicit set counts. */
-export class EditAdjustmentDto {
+export class EditAdjustmentDto extends ApproveAdjustmentDto {
   @IsOptional()
   @IsInt()
   @Min(5)

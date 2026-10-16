@@ -1413,8 +1413,8 @@ describe('WorkoutBuilderService', () => {
       });
       const result = await service.getMyAssignment(CLIENT_ID, 'asgn-r');
       expect(result.roman_adjusted_sets).toEqual([
-        { order: 1, sets: 2 },
-        { order: 2, sets: 3 },
+        { order: 1, sets: 2, sets_before: 4, client_reason: null },
+        { order: 2, sets: 3, sets_before: 4, client_reason: null },
       ]);
       expect(result).not.toHaveProperty('adjustment_proposals');
     });
@@ -1464,7 +1464,7 @@ describe('WorkoutBuilderService', () => {
       const page = await service.listMyAssignments(CLIENT_ID);
       const items = page.items as Array<{ id: string; roman_adjusted_sets: unknown }>;
       expect(items.map((i) => [i.id, i.roman_adjusted_sets])).toEqual([
-        ['asgn-1', [{ order: 1, sets: 3 }, { order: 2, sets: 3 }]],
+        ['asgn-1', [{ order: 1, sets: 3, sets_before: 4, client_reason: null }, { order: 2, sets: 3, sets_before: 4, client_reason: null }]],
         ['asgn-2', []],
       ]);
       expect(items[0]).not.toHaveProperty('adjustment_proposals');
@@ -1488,7 +1488,7 @@ describe('WorkoutBuilderService', () => {
             decided_at: new Date('2026-10-06T10:00:00Z'),
           },
         ]),
-      ).toEqual([{ order: 4, sets: 3 }]);
+      ).toEqual([{ order: 4, sets: 3, sets_before: 4, client_reason: null }]);
       expect(romanAdjustedSets(undefined)).toEqual([]);
     });
   });

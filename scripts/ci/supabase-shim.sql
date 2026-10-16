@@ -95,3 +95,29 @@ ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT ALL ON SEQUENCES TO anon, authenticated, service_role;
 ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
   GRANT ALL ON FUNCTIONS TO anon, authenticated, service_role;
+
+-- ── realtime schema (C10RT) ──────────────────────────────────────────────
+-- Supabase Realtime authorization: a join or send on a private topic is
+-- allowed when the joining role's policies on realtime.messages pass, with the
+-- topic in the realtime.topic GUC (realtime.topic()). The stub has the columns
+-- those policies read; RLS on and forced, as the floor requires everywhere.
+CREATE SCHEMA IF NOT EXISTS realtime;
+CREATE TABLE IF NOT EXISTS realtime.messages (
+  "id" uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+  "topic" text NOT NULL,
+  "extension" text NOT NULL,
+  "payload" jsonb,
+  "event" text,
+  "private" boolean DEFAULT false,
+  "updated_at" timestamp NOT NULL DEFAULT now(),
+  "inserted_at" timestamp NOT NULL DEFAULT now()
+);
+ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE realtime.messages FORCE ROW LEVEL SECURITY;
+CREATE OR REPLACE FUNCTION realtime.topic()
+RETURNS text
+LANGUAGE sql
+STABLE
+AS $function$ SELECT nullif(current_setting('realtime.topic', true), '')::text $function$;
+GRANT USAGE ON SCHEMA realtime TO anon, authenticated, service_role;
+GRANT SELECT, INSERT ON realtime.messages TO anon, authenticated, service_role;
