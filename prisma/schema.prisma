@@ -8594,7 +8594,7 @@ model AiProcessingConsentEvent {
   purpose         String
   /// 1-based position in this user's history for (processor, purpose).
   seq             Int
-  /// 'grant' or 'withdraw' (CHECK constraint in the migration).
+  /// 'grant' or 'withdraw'; 'decline' (a coach's "Not now") from 20270502003900.
   action          String
   /// Copy version the decision refers to (the version shown for a grant; the
   /// withdrawn grant's version for a withdraw).

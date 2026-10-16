@@ -133,7 +133,7 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
       select: { sections: true, red_lines: true },
     });
     if (!row) return null;
-    const value = this.build(row.sections, row.red_lines);
+    const value = this.build(row.sections, row.red_lines, headCoachId);
     const oldest = this.cache.size >= COACH_METHOD_CACHE_MAX ? this.cache.keys().next().value : undefined;
     if (oldest !== undefined) this.cache.delete(oldest);
     this.cache.set(key, { at: now, value });
@@ -152,7 +152,8 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
     return coachId ? this.budget.resolveHeadCoachId(coachId) : null;
   }
 
-  private build(sections: unknown, redLines: unknown): RomanTurnAugment | null {
+  /** COACH-AI-CONSENT: `coachId` rides on the block, so the turn sends it only while that coach allows AI. */
+  private build(sections: unknown, redLines: unknown, coachId: string): RomanTurnAugment | null {
     const checked = validateCoachPlaybook({ sections, red_lines: redLines });
     if (!checked.ok) {
       this.logger.warn(`roman.coach_method_invalid issues=${checked.issues.length}`);
@@ -165,6 +166,7 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
       hash: createHash('sha256').update(rendered.block).digest('hex'),
       estimated_tokens: estimateTokens(rendered.block),
       ...(rendered.redLines.length > 0 ? { post_check: { red_lines: rendered.redLines } } : {}),
+      coach_id: coachId,
     };
   }
 }

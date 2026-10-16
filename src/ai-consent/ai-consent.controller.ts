@@ -13,6 +13,10 @@
  *   DELETE /me/ai-consent/roman  -> withdraw (idempotent)
  *   POST and DELETE take the same ?variant= for the status they return; without one it reads
  *   the copies on file (installed builds).
+ *   GET    /me/ai-consent/coach          -> CoachAiConsentStatus (the coach's own grant, coach-ai-v1)
+ *   POST   /me/ai-consent/coach          {version, copy_sha256, ...} -> grant (Allow)
+ *   POST   /me/ai-consent/coach/decline  {version, copy_sha256, ...} -> "Not now"
+ *   DELETE /me/ai-consent/coach          -> withdraw (the Settings switch). Coach and owner only.
  *
  * The subject is always req.user.id. Guards: JwtAuthGuard + RolesGuard +
  * AiConsentLedgerGuard (503 AI_CONSENT_UNAVAILABLE while
@@ -44,12 +48,19 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import type { AuthedRequest } from '../auth/auth-request';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
-import { AI_CONSENT_ERROR_UNAVAILABLE, isAiConsentLedgerEnabled } from './ai-consent.constants';
+import {
+  AI_CONSENT_ACTION_DECLINE,
+  AI_CONSENT_ACTION_GRANT,
+  AI_CONSENT_ACTION_WITHDRAW,
+  AI_CONSENT_ERROR_UNAVAILABLE,
+  isAiConsentLedgerEnabled,
+} from './ai-consent.constants';
 import { GrantClientAiConsentDto } from './ai-consent.dto';
 import {
   AiConsentService,
   type ClientAiConsentAsk,
   type ClientAiConsentStatus,
+  type CoachAiConsentStatus,
 } from './ai-consent.service';
 import { AllowBeforeAgeConfirmed } from '../auth/client-age';
 
@@ -124,5 +135,43 @@ export class AiConsentController {
   ): Promise<ClientAiConsentStatus> {
     const ask = variant === undefined ? undefined : askOf(req, variant);
     return this.consent.withdraw(req.user.id, {}, ask);
+  }
+
+  // COACH-AI-CONSENT (owner ruling op 2): the one-time ask reads `asked`, so it shows once per account.
+  @Get('coach')
+  @Header('Cache-Control', 'no-store')
+  @Roles('coach', 'owner')
+  async getCoach(@Req() req: AuthedRequest): Promise<CoachAiConsentStatus> {
+    return this.consent.getCoachStatus(req.user.id);
+  }
+
+  @Post('coach')
+  @Header('Cache-Control', 'no-store')
+  @HttpCode(HttpStatus.OK)
+  @Roles('coach', 'owner')
+  async grantCoach(
+    @Req() req: AuthedRequest,
+    @Body() dto: GrantClientAiConsentDto,
+  ): Promise<CoachAiConsentStatus> {
+    return this.consent.decideCoach(req.user.id, AI_CONSENT_ACTION_GRANT, dto);
+  }
+
+  @Post('coach/decline')
+  @Header('Cache-Control', 'no-store')
+  @HttpCode(HttpStatus.OK)
+  @Roles('coach', 'owner')
+  async declineCoach(
+    @Req() req: AuthedRequest,
+    @Body() dto: GrantClientAiConsentDto,
+  ): Promise<CoachAiConsentStatus> {
+    return this.consent.decideCoach(req.user.id, AI_CONSENT_ACTION_DECLINE, dto);
+  }
+
+  @Delete('coach')
+  @Header('Cache-Control', 'no-store')
+  @HttpCode(HttpStatus.OK)
+  @Roles('coach', 'owner')
+  async withdrawCoach(@Req() req: AuthedRequest): Promise<CoachAiConsentStatus> {
+    return this.consent.decideCoach(req.user.id, AI_CONSENT_ACTION_WITHDRAW);
   }
 }

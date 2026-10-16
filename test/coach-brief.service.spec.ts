@@ -60,8 +60,8 @@ function callClaudeAllAllowed(
     ctx,
     subject:
       ctx.brief_mode === 'head_coach'
-        ? noClientDataSubject('coach_business_metrics')
-        : clientDataSubject(['client-1'], 'coach'),
+        ? noClientDataSubject('coach_business_metrics', 'coach1')
+        : clientDataSubject(['client-1'], 'coach', 'base', 'coach1'),
   };
   return svc.callClaude(ctx, ai);
 }
@@ -2095,7 +2095,7 @@ describe('CoachBriefService — R2b box-2 consent', () => {
   }
   const soloAi = (ids: string[]): BriefAiInput => ({
     ctx: ACTIVE_CTX(),
-    subject: clientDataSubject(ids, 'coach'),
+    subject: clientDataSubject(ids, 'coach', 'base', 'coach1'),
   });
 
   it('grant: the AI narrative is generated', async () => {
@@ -2135,7 +2135,7 @@ describe('CoachBriefService — R2b box-2 consent', () => {
     it('every client allowed: the full context, all ids as subject', async () => {
       const { svc } = build(['c1', 'c2']);
       const out = await args(svc, ['c1', 'c2']);
-      expect(out?.subject).toEqual(clientDataSubject(['c1', 'c2'], 'coach'));
+      expect(out?.subject).toEqual(clientDataSubject(['c1', 'c2'], 'coach', 'base', 'coach1'));
       expect(out?.scope).toBeUndefined();
     });
 
@@ -2162,7 +2162,7 @@ describe('CoachBriefService — R2b box-2 consent', () => {
       svc['aggregateSoloContext'] = aggregate;
       const out = await args(svc, ['c1', 'c2', 'c3']);
       expect(aggregate).toHaveBeenCalledWith('coach1', ['c2'], 'America/Los_Angeles', '2026-05-25', 'solo_coach');
-      expect(out?.subject).toEqual(clientDataSubject(['c2'], 'coach'));
+      expect(out?.subject).toEqual(clientDataSubject(['c2'], 'coach', 'base', 'coach1'));
       expect(out?.scope).toEqual({ consented: 1, roster: 3 });
       expect(buildBriefPrompt(restricted, out?.scope)).toContain('cover only the 1 of 3 clients who allowed AI help');
     });
