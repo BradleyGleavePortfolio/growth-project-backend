@@ -51,6 +51,9 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `weight_logs` | `WeightLog` | All fields. |
 | `food_entries` | `LoggedFoodEntry` | All fields. |
 | `custom_foods` | `FoodItem` | Custom foods the user created (private to them), oldest first: name, brand, serving, nutrient basis, macros and micros, tags, aliases, image, barcode, date. Shared catalog foods are not personal data and are left out. |
+| `food_favorites` | `FoodFavorite` | All fields of the user's own favourite foods, oldest first. A food is named by `food_item_id` (as in `food_entries`). |
+| `saved_meals` | `SavedMeal` | All fields of the user's own saved meals, oldest first. |
+| `saved_meal_items` | `SavedMealItem` | All fields of the foods in those meals (food, portion, position), grouped by meal in their order. |
 | `workout_sessions` | `WorkoutSession` | All fields. |
 | `fasting_windows` | `FastingWindow` | All fields. |
 | `water_logs` | `WaterLog` | All fields. |

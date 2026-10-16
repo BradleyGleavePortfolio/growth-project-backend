@@ -211,6 +211,8 @@ model User {
   coach_playbook_sources         CoachPlaybookSource[]    @relation("CoachPlaybookSourceClient")
   logged_entries                 LoggedFoodEntry[]
   custom_foods                   FoodItem[]               @relation("FoodItemCreator")
+  food_favorites                 FoodFavorite[]
+  saved_meals                    SavedMeal[]
   workouts                       WorkoutSession[]
   fasting_windows                FastingWindow[]
   weight_logs                    WeightLog[]
@@ -970,6 +972,8 @@ model FoodItem {
   nutrient_basis      NutrientBasis     @default(PER_100G)
   created_at          DateTime          @default(now())
   log_entries         LoggedFoodEntry[]
+  favorites           FoodFavorite[]
+  saved_meal_items    SavedMealItem[]
   // UX-FOOD-PRIV-124: the person who typed this food in (POST /foods only).
   // A custom food is private to its creator; null is the shared catalog
   // (seeded, USDA and OpenFoodFacts imports, rows created before 20270403).
@@ -1001,6 +1005,48 @@ model LoggedFoodEntry {
 
   // Hot path: LogService.getDaily + CoachService.getClientSummary both query by (user_id, date).
   @@index([user_id, date])
+}
+
+// FOODSAVED (agent 145): a client's favourite foods and saved meals, logged
+// again from the add sheet. Each item stores the portion the way
+// LoggedFoodEntry does, so logging a saved meal writes ordinary entries.
+// Row rules: 20270502003100_food_favorites_saved_meals (owner only, the
+// current coach reads).
+model FoodFavorite {
+  id           String   @id @default(uuid())
+  user_id      String
+  user         User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  food_item_id String
+  food_item    FoodItem @relation(fields: [food_item_id], references: [id], onDelete: Cascade)
+  created_at   DateTime @default(now())
+
+  @@unique([user_id, food_item_id])
+}
+
+model SavedMeal {
+  id         String          @id @default(uuid())
+  user_id    String
+  user       User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  name       String
+  created_at DateTime        @default(now())
+  updated_at DateTime        @updatedAt
+  items      SavedMealItem[]
+
+  @@index([user_id])
+}
+
+model SavedMealItem {
+  id                  String    @id @default(uuid())
+  saved_meal_id       String
+  saved_meal          SavedMeal @relation(fields: [saved_meal_id], references: [id], onDelete: Cascade)
+  food_item_id        String
+  food_item           FoodItem  @relation(fields: [food_item_id], references: [id], onDelete: Cascade)
+  quantity_multiplier Float     @default(1.0)
+  original_quantity   Float?
+  original_unit       String?
+  position            Int
+
+  @@unique([saved_meal_id, position])
 }
 
 model WorkoutSession {
