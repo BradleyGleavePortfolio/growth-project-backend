@@ -134,7 +134,8 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // LoggedFoodEntry.food_item_id is ON DELETE RESTRICT, so any entry pointing
   // at one goes first.
   { model: 'LoggedFoodEntry', field: 'food_item.created_by_user_id', action: del },
-  // FOODSAVED: favourites and saved meals (items cascade with their meal).
+  // FOODSAVED: favourites and saved meals (items cascade with their meal). The
+  // data export carries the same rows (food_favorites, saved_meals, saved_meal_items).
   { model: 'FoodFavorite', field: 'user_id', action: del },
   { model: 'SavedMeal', field: 'user_id', action: del },
   { model: 'FoodItem', field: 'created_by_user_id', action: del },

@@ -6,6 +6,8 @@
  * claims (their supabase_id, never their User id), and every zero comes right
  * after a control read of 1 of the same row. The service cases call the real
  * SavedFoodsService and LogService on the superuser connection, as the API does.
+ * The last case builds the real data-export archive for two clients and a coach,
+ * then runs the account-deletion manifest's FOODSAVED steps.
  * Runs in rls-live-tests. Gate: TEST_DATABASE_URL (CI=true without it fails).
  */
 import { randomUUID } from 'crypto';
@@ -19,6 +21,8 @@ import { PrismaService } from '../../src/prisma.service';
 import { FoodService } from '../../src/food/food.service';
 import { LogService } from '../../src/log/log.service';
 import { SavedFoodsService } from '../../src/log/saved-foods.service';
+import { DataExportService } from '../../src/data-export/data-export.service';
+import { ERASURE_MANIFEST, executeErasureManifest } from '../../src/account-deletion/account-deletion.manifest';
 import { CreateSavedMealDto, FAVORITES_MAX, SAVED_MEALS_MAX } from '../../src/log/saved-foods.dto';
 import type { AnalyticsService } from '../../src/analytics/analytics.service';
 import type { PtmService } from '../../src/ptm/ptm.service';
@@ -271,5 +275,42 @@ function stub<T>(value: unknown): T {
       await zeroAfter(a, h, table, id);
       expect(await seen(k, table, id)).toBe(1);
     }
+  });
+
+  it("a client's data download holds their own favourites and saved meals, items in order; erasure takes the same rows", async () => {
+    const exporter = new DataExportService(prisma);
+    const build = Reflect.get(exporter, '_buildArchive') as (u: string, e: string) => Promise<{ buffer: Buffer }>;
+    const download = async (who: string): Promise<Record<string, Array<Record<string, unknown>>>> =>
+      JSON.parse((await build.call(exporter, who, randomUUID())).buffer.toString('utf8'));
+    const ids = (rows: Array<Record<string, unknown>>) => rows.map((r) => String(r.id)).sort();
+    const exported = (d: Record<string, Array<Record<string, unknown>>>) =>
+      ({ favs: ids(d.food_favorites), meals: ids(d.saved_meals), items: ids(d.saved_meal_items) });
+    const rowsOf = async (who: string) => {
+      const meals = await prisma.savedMeal.findMany({ where: { user_id: who }, include: { items: true } });
+      const favs = await prisma.foodFavorite.findMany({ where: { user_id: who } });
+      return { favs: ids(favs), meals: ids(meals), items: ids(meals.flatMap((m) => m.items)) };
+    };
+    const plate = await saved.createSavedMeal(a, { name: 'Export plate',
+      items: [oats, banana, aCustom].map((food_item_id, n) => ({ food_item_id, quantity_multiplier: n + 1 })) });
+    await saved.addFavorite(b, oats);
+    const [aRows, bRows] = [await rowsOf(a), await rowsOf(b)];
+    expect([aRows.favs.length, aRows.meals.length, aRows.items.length, bRows.favs.length, bRows.items.length]).toEqual([2, 2, 4, 1, 1]);
+    const [aDownload, bDownload, kDownload] = [await download(a), await download(b), await download(k)];
+    // Each client's download holds exactly their own rows; a coach's never holds a client's (k coaches both now).
+    expect(exported(aDownload)).toEqual(aRows);
+    expect(exported(bDownload)).toEqual(bRows);
+    expect(exported(kDownload)).toEqual({ favs: [], meals: [], items: [] });
+    expect(aDownload.saved_meals).toContainEqual(expect.objectContaining({ id: plate.id, name: 'Export plate', user_id: a }));
+    expect(aDownload.saved_meal_items.filter((i) => i.saved_meal_id === plate.id)
+      .map((i) => [i.food_item_id, i.quantity_multiplier, i.position])).toEqual([[oats, 1, 0], [banana, 2, 1], [aCustom, 3, 2]]);
+    // Account deletion erases exactly what the download carried: all of A's rows, none of B's.
+    const foodSteps = ERASURE_MANIFEST.filter((e) => e.model === 'FoodFavorite' || e.model === 'SavedMeal');
+    expect(foodSteps.map((e) => [e.model, e.field, e.action.op]))
+      .toEqual([['FoodFavorite', 'user_id', 'delete'], ['SavedMeal', 'user_id', 'delete']]);
+    await prisma.$transaction((tx: Prisma.TransactionClient) => executeErasureManifest(tx,
+      { userId: a, email: `${a}@example.test`, tombstoneEmail: `${randomUUID()}@example.test`, now: new Date() }, foodSteps));
+    expect(await rowsOf(a)).toEqual({ favs: [], meals: [], items: [] });
+    expect(exported(await download(a))).toEqual({ favs: [], meals: [], items: [] });
+    expect(await rowsOf(b)).toEqual(bRows);
   });
 });
