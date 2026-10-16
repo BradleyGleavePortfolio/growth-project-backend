@@ -17,6 +17,7 @@ import {
 } from '../../src/roman/playbook/roman-coach-method.augmenter';
 import { ROMAN_COACH_METHOD_AUGMENTER } from '../../src/roman/augment/roman-turn-augmenter';
 import { FEATURE_ROMAN_PLAYBOOK_ENV } from '../../src/roman/playbook/roman-playbook.feature';
+import { playbookLedgerDigest } from '../../src/roman/playbook/playbook-sources';
 import type { RomanClientContextBundle } from '../../src/roman/context/roman-client-context.types';
 import type { CoachAIBudgetService } from '../../src/ai-credits/coach-ai-budget.service';
 import type { PrismaService } from '../../src/prisma.service';
@@ -35,6 +36,7 @@ type Coach = { id: string; role: string; deleted_at: Date | null };
 type UserRow = { role: string; coach: Coach | null };
 type PlaybookRow = {
   coach_id: string; version: number; status: string; sections: unknown; red_lines: unknown; sources: Array<{ client_id: string }>;
+  source_digest: string;
 };
 
 const item = (text: string, basis: 'stated' | 'observed' = 'observed', evidence_count = 3) => ({ text, basis, evidence_count });
@@ -55,6 +57,7 @@ function playbook(coach_id: string, version: number, marker: string, status = 'a
     },
     red_lines: [{ kind: 'no_train_through_pain', text: 'Never train through sharp pain', basis: 'stated', evidence_count: 2 }],
     sources: [],
+    source_digest: playbookLedgerDigest([]),
   };
 }
 

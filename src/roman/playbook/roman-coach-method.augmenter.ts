@@ -6,7 +6,8 @@
  * coach's active playbook, re-validated with validateCoachPlaybook (invalid -> null). Red lines become plain
  * rules and post_check.red_lines. Whether the block may be sent is the R11-T2A 'memory' scope rule.
  * Cache: rendered block by (coach_id, version), 10 minutes, at most 200 keys.
- * PLAYBOOK-WITHDRAW: a version is used only while every client in its source ledger holds the memory grant, read
+ * PLAYBOOK-WITHDRAW: a version is used only while its source ledger is whole (its stored digest is the digest of its
+ * ledger rows, so the ledger names every client it learned from) and every client in it holds the memory grant, read
  * through the one egress consent path on every turn (never cached; a failed read is no grant). Otherwise the turn
  * gets no block (Roman still answers), the version is marked stale (superseded, so no other turn on any machine
  * uses it) and the scheduler rebuilds it at once from what the collector may still read.
@@ -22,6 +23,7 @@ import { resolveRomanCoachScope } from '../context/roman-coach-scope';
 import { estimateTokens } from '../context/roman-client-context.renderer';
 import { isRomanPlaybookEnabled } from './roman-playbook.feature';
 import { PlaybookBuilderScheduler } from './playbook-builder.scheduler';
+import { playbookLedgerDigest } from './playbook-sources';
 import {
   PLAYBOOK_SECTION_KEYS,
   validateCoachPlaybook,
@@ -105,7 +107,10 @@ export function renderCoachMethod(content: CoachPlaybookContent): { block: strin
 export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
   readonly kind = 'coach_method' as const;
   private readonly logger = new Logger(RomanCoachMethodAugmenter.name);
-  private readonly cache = new Map<string, { at: number; value: RomanTurnAugment | null; sourceClientIds: string[] }>();
+  private readonly cache = new Map<
+    string,
+    { at: number; value: RomanTurnAugment | null; sourceClientIds: string[]; ledgerWhole: boolean }
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -137,7 +142,7 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
 
     const entry = await this.versionOf(headCoachId, active.version);
     if (!entry?.value) return null;
-    if (!(await this.sourcesHoldGrant(entry.sourceClientIds))) {
+    if (!entry.ledgerWhole || !(await this.sourcesHoldGrant(entry.sourceClientIds))) {
       await this.markStale(headCoachId, active.version);
       return null;
     }
@@ -157,12 +162,14 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
       select: {
         sections: true,
         red_lines: true,
-        sources: { where: { client_id: { not: null } }, select: { client_id: true } },
+        source_digest: true,
+        sources: { select: { source_kind: true, source_id: true, client_id: true } },
       },
     });
     if (!row) return null;
     const sourceClientIds = [...new Set(row.sources.map((s) => s.client_id).filter((id): id is string => !!id))];
-    const entry = { at: now, value: this.build(row.sections, row.red_lines), sourceClientIds };
+    const ledgerWhole = playbookLedgerDigest(row.sources) === row.source_digest;
+    const entry = { at: now, value: this.build(row.sections, row.red_lines), sourceClientIds, ledgerWhole };
     const oldest = this.cache.size >= COACH_METHOD_CACHE_MAX ? this.cache.keys().next().value : undefined;
     if (oldest !== undefined) this.cache.delete(oldest);
     this.cache.set(key, entry);

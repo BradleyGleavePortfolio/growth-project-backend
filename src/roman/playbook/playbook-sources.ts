@@ -81,12 +81,21 @@ interface Candidate {
   private: boolean;
 }
 
+/**
+ * PLAYBOOK-WITHDRAW: digest format. From 'ledger-v2' the ledger names every client a version learned from
+ * (signals are computed only from ledger clients), so a stored version whose digest is not this digest of its own
+ * ledger rows (built before v2, or a row removed since) is not used by the coach-method augmenter.
+ */
+export const PLAYBOOK_LEDGER_DIGEST_VERSION = 'ledger-v2';
+
 /** sha256 over the ledger sorted by kind, id, client (order of reads never matters). */
-export function playbookLedgerDigest(ledger: readonly PlaybookLedgerRow[]): string {
+export function playbookLedgerDigest(
+  ledger: readonly { source_kind: string; source_id: string; client_id?: string | null }[],
+): string {
   const rows = ledger
     .map((r) => [r.source_kind, r.source_id, r.client_id ?? ''])
     .sort((a, b) => a.join('\u0000').localeCompare(b.join('\u0000')));
-  return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
+  return createHash('sha256').update(JSON.stringify([PLAYBOOK_LEDGER_DIGEST_VERSION, rows])).digest('hex');
 }
 
 function oneLine(text: string): string {
@@ -244,7 +253,9 @@ export class PlaybookSourceCollector {
       ledger.push(c.clientId ? { source_kind: c.kind, source_id: c.id, client_id: c.clientId } : { source_kind: c.kind, source_id: c.id });
     }
 
-    const signals = await this.signals.compute(head, { clientIds: consented, now });
+    // PLAYBOOK-WITHDRAW: figures only from clients the ledger names, so the ledger is every client this version used.
+    const ledgerClients = [...new Set(ledger.flatMap((r) => (r.client_id ? [r.client_id] : [])))].sort();
+    const signals = await this.signals.compute(head, { clientIds: ledgerClients, now });
     return {
       headCoachId: head,
       roster,

@@ -243,7 +243,7 @@ describe('R11-P3b-1 playbook sources: digest and no egress', () => {
     const sorted = out.ledger
       .map((r) => [r.source_kind, r.source_id, r.client_id ?? ''])
       .sort((a, b) => a.join('\u0000').localeCompare(b.join('\u0000')));
-    expect(out.digest).toBe(createHash('sha256').update(JSON.stringify(sorted)).digest('hex'));
+    expect(out.digest).toBe(createHash('sha256').update(JSON.stringify(['ledger-v2', sorted])).digest('hex'));
     expect(playbookLedgerDigest([...out.ledger].reverse())).toBe(out.digest);
     expect(playbookLedgerDigest(out.ledger.slice(1))).not.toBe(out.digest);
   });
