@@ -4,8 +4,15 @@
 // (CommunityRealtimeService, the real SQL). X, Y coach; I and M are X's clients with a row in X's
 // members space S; N has no coach and joined X's public space P; Z is Y's client. Every 0 follows a 1.
 import { randomUUID } from 'crypto';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient, type User } from '@prisma/client';
+import { CommunityAccessService } from '../../src/community/community-access.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../../src/community/community-events';
+import { CommunityDmsRepository } from '../../src/community/dms/community-dms.repository';
+import { CommunityDmsService } from '../../src/community/dms/community-dms.service';
+import { CommunityMessagesRepository } from '../../src/community/messages/community-messages.repository';
+import { CommunityReactionsRepository } from '../../src/community/reactions/community-reactions.repository';
+import { CommunityReactionsService } from '../../src/community/reactions/community-reactions.service';
+import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 import { CommunityRealtimeService, type CommunityAudience } from '../../src/community/realtime/community-realtime.service';
 import type { AnalyticsService } from '../../src/analytics/analytics.service';
 import type { PrismaService } from '../../src/prisma.service';
@@ -65,12 +72,13 @@ const DENIED = '42501';
     stub<AnalyticsService>({ capture: () => undefined }),
     stub<PrismaService>(prisma),
   );
+  const heard = () => sent.map((s) => `${PEOPLE.find((k) => topic(k) === s.topic) ?? s.topic}${s.private === true ? '' : ' (not private)'}`).sort();
   const hears = async (audience: CommunityAudience): Promise<string[]> => {
     sent.length = 0;
     await realtime.broadcastCommunityEvent(audience, COMMUNITY_BROADCAST_EVENTS.messageCreated,
       { id: randomUUID(), cohortId: space.S, authorId: id.X, createdAt: new Date().toISOString() },
       { distinctId: id.X, channelKind: 'cohort' });
-    return sent.map((s) => `${PEOPLE.find((k) => topic(k) === s.topic) ?? s.topic}${s.private === true ? '' : ' (not private)'}`).sort();
+    return heard();
   };
 
   beforeAll(async () => {
@@ -131,6 +139,54 @@ const DENIED = '42501';
       `INSERT INTO realtime.messages ("topic", "extension") VALUES ($1, 'broadcast')`, topic('I')));
     const err = await sendOwn.then(() => null, (e: { code?: string; meta?: { code?: string } }) => e);
     expect(String(err?.code === 'P2010' ? err.meta?.code : err?.code)).toBe(DENIED);
+  });
+
+  it('a DM and its reactions reach both people only while the DM is open; removal, a ban and a move end it at once', async () => {
+    const db = stub<PrismaService>(prisma);
+    const [access, safety, dmRepo] = [new CommunityAccessService(db), new CommunitySafetyService(db), new CommunityDmsRepository(db)];
+    const dms = new CommunityDmsService(access, dmRepo, realtime, stub({ sendCommunityPush: async () => undefined }), safety);
+    const reactions = new CommunityReactionsService(access, new CommunityReactionsRepository(db), new CommunityMessagesRepository(db),
+      stub({}), realtime, safety);
+    const spy = jest.spyOn(realtime, 'broadcastCommunityEvent');
+    const I = stub<User>({ id: id.I, role: 'student' });
+    const dm = async (from: string, to: string) => (await dmRepo.createDm({ workspaceId: ws.X,
+      dmKey: CommunityDmsRepository.dmKey(ws.X, from, to), senderId: from, recipientId: to, body: 'hi' })).id;
+    await prisma.$executeRaw`UPDATE "community_workspaces" SET "dm_enabled_default" = true WHERE "id" = ${ws.X}::uuid`;
+    const [mine, theirs] = [await dm(id.I, id.M), await dm(id.M, id.I)];
+    const acts: [string, () => Promise<unknown>, Key[]][] = [
+      ['I sends M a DM', () => dms.send(I, ws.X, id.M, 'hello'), ['M']],
+      ['I reacts to their own message', () => reactions.react(I, 'message', mine, '👍'), ['I', 'M']],
+      ['I reacts to M\'s message', () => reactions.react(I, 'message', theirs, '👍'), ['I', 'M']],
+      ['I takes a reaction off their own message', () => reactions.unreact(I, 'message', mine, '👍'), ['I', 'M']],
+      ['I takes a reaction off M\'s message', () => reactions.unreact(I, 'message', theirs, '👍'), ['I', 'M']],
+    ];
+    // Each departure is undone after its row, so the next row starts from an open DM.
+    const departures: [string, () => Promise<unknown>, () => Promise<unknown>][] = [
+      ['M is removed from S', () => prisma.$executeRaw`UPDATE "community_memberships" SET "status" = 'removed' WHERE "user_id" = ${id.M}`,
+        () => prisma.$executeRaw`UPDATE "community_memberships" SET "status" = 'active' WHERE "user_id" = ${id.M}`],
+      ['M is banned from the workspace', () => prisma.$executeRaw`INSERT INTO "community_workspace_bans" ("id", "workspace_id", "user_id")
+        VALUES (${randomUUID()}::uuid, ${ws.X}::uuid, ${id.M})`,
+        () => prisma.$executeRaw`UPDATE "community_workspace_bans" SET "lifted_at" = now() WHERE "user_id" = ${id.M}`],
+      ['M moves to coach Y', () => prisma.$executeRaw`UPDATE "User" SET "coach_id" = ${id.Y} WHERE "id" = ${id.M}`,
+        () => prisma.$executeRaw`UPDATE "User" SET "coach_id" = ${id.X} WHERE "id" = ${id.M}`],
+    ];
+    for (const [departure, depart, undo] of departures) {
+      for (const when of ['before', departure]) {
+        if (when === departure) await depart();
+        // M may still join their own topic (the 1), so only the server's audience keeps M out (the 0).
+        expect({ when, joins: await listen('M', 'M', 'broadcast') }).toEqual({ when, joins: 1 });
+        for (const [what, run, people] of acts) {
+          sent.length = 0;
+          spy.mockClear();
+          const status = await run().then(() => 200, (e: { getStatus(): number }) => e.getStatus());
+          await Promise.all(spy.mock.results.map((r) => r.value)); // every ping has been sent
+          const want = when === 'before' ? { status: 200, hears: people } : { status: 404, hears: [] };
+          expect({ when, what, status, hears: heard() }).toEqual({ when, what, ...want });
+        }
+      }
+      await undo();
+    }
+    spy.mockRestore();
   });
 
   it('each ping reaches exactly who may read it now, on private topics; removal, a move and a ban take effect at once', async () => {

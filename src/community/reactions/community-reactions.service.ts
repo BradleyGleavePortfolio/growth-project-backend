@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import type { CommunityResponse, CommunityResponseTargetType, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { type CommunityAudience, CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
+import { assertDmOpen } from '../dms/community-dms.service';
 import { CommunityMessagesRepository } from '../messages/community-messages.repository';
 import { CommunityPostsRepository } from '../posts/community-posts.repository';
 import { COMMENT_CONTEXT_TYPE } from '../messages/community-messages.repository';
@@ -130,8 +131,15 @@ export class CommunityReactionsService {
     } else if (!(await this.access.canAccessWorkspace(msg.workspace_id, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
-    // DM rows are only addressable by their two participants.
+    // DM rows are only addressable by their two participants, and only while the DM is open to
+    // both (assertDmOpen, the DM read rule), so both may hear the ping.
     assertDmParticipantIfDm(msg, user.id, NOT_FOUND);
+    if (msg.dm_key) {
+      const other = (msg.sender_id === user.id ? msg.recipient_user_id : msg.sender_id) ?? '';
+      await assertDmOpen(this.access, this.safety, msg.workspace_id, user.id, other).catch((e: unknown) => {
+        throw e instanceof HttpException ? new NotFoundException(NOT_FOUND) : e;
+      });
+    }
     // Two-way block: content the caller cannot see cannot be reacted to.
     await this.safety.assertVisibleTo(user.id, msg.sender_id, NOT_FOUND);
 
