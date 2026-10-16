@@ -49,9 +49,11 @@ import {
   THROTTLER_NAMES,
   THROTTLER_ROUTE_LIMITS,
 } from '../throttler/throttler.config';
+import { AllowBeforeAgeConfirmed } from './client-age';
 
 @ApiTags('auth')
 @Controller('auth')
+@AllowBeforeAgeConfirmed()
 export class AuthController {
   constructor(
     private authService: AuthService,

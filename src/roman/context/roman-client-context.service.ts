@@ -14,8 +14,8 @@
  *   soft-deleted (owner 4b). A non-student caller gets neither.
  * - No cross-request persistent cache of client data. The only memo is a 15 s
  *   in-process entry keyed by (user_id, local_date), invalidated by
- *   `invalidateForUser` and by the process-wide hook in
- *   roman-context-invalidation.ts.
+ *   `invalidateForUser` after every successful app write by the client or
+ *   their coach (the process-wide hook in roman-context-invalidation.ts).
  *
  * SCOPE (owner ruling 2026-09-30 16:31 #6)
  * - Roman sees ALL of the client's OWN data: profile, full consultation incl.
@@ -293,9 +293,14 @@ export class RomanClientContextService {
     onRomanContextInvalidate((userId) => this.invalidateForUser(userId));
   }
 
-  /** Drop the memo for one user (write paths call this via the global hook). */
+  /**
+   * Drop the memo for one user and for every client whose bundle reads that
+   * user's rows as their coach side (write paths call this via the global hook).
+   */
   invalidateForUser(userId: string): void {
-    this.memo.delete(userId);
+    for (const [key, entry] of this.memo) {
+      if (key === userId || entry.bundle.coach_side?.includes(userId)) this.memo.delete(key);
+    }
     // Only a build in flight can be stale; with none, nothing needs fencing.
     if (this.inFlight.has(userId)) {
       this.generation.set(userId, (this.generation.get(userId) ?? 0) + 1);
@@ -369,7 +374,7 @@ export class RomanClientContextService {
     caller: { id: string; role: string },
     now: Date = new Date(),
   ): Promise<RomanClientContextBundle> {
-    const { context, query_count } = await this.build(caller, now);
+    const { context, query_count, coach_side } = await this.build(caller, now);
     const rendered = renderClientContext(context);
     if (query_count > ROMAN_CONTEXT_MAX_QUERIES) {
       this.logger.warn(
@@ -383,6 +388,7 @@ export class RomanClientContextService {
       generated_at: now,
       estimated_tokens: rendered.estimated_tokens,
       query_count,
+      coach_side,
     };
   }
 
@@ -390,7 +396,7 @@ export class RomanClientContextService {
   async build(
     caller: { id: string; role: string },
     now: Date = new Date(),
-  ): Promise<{ context: RomanClientContext; query_count: number }> {
+  ): Promise<{ context: RomanClientContext; query_count: number; coach_side: string[] }> {
     const userId = caller.id;
     let queries = 0;
 
@@ -434,7 +440,11 @@ export class RomanClientContextService {
     const clock = localClock(now, user?.notification_prefs?.timezone ?? DEFAULT_TZ);
     const missing: string[] = [];
     if (!user) {
-      return { context: this.emptyContext(clock, now, ['user']), query_count: queries };
+      return {
+        context: this.emptyContext(clock, now, ['user']),
+        query_count: queries,
+        coach_side: [],
+      };
     }
 
     // The client's own history (ownHistory) for a student (DB and JWT role);
@@ -1096,7 +1106,7 @@ export class RomanClientContextService {
       meal_plan,
       data_quality: { generated_at: now.toISOString(), missing, truncated },
     };
-    return { context, query_count: queries };
+    return { context, query_count: queries, coach_side: coachSide };
   }
 
   private emptyContext(clock: LocalClock, now: Date, missing: string[]): RomanClientContext {

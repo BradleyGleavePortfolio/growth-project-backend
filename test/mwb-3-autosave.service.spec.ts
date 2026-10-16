@@ -56,6 +56,7 @@ const PLAN_ID = '11111111-1111-4111-8111-111111111111';
 
 liveDescribe('WorkoutBuilderAutosaveService (live DB, MWB-3 §6 autosave)', () => {
   let prisma: PrismaClient;
+  let builder: WorkoutBuilderService;
   let autosave: WorkoutBuilderAutosaveService;
 
   beforeAll(async () => {
@@ -65,7 +66,7 @@ liveDescribe('WorkoutBuilderAutosaveService (live DB, MWB-3 §6 autosave)', () =
     await bootstrapTestSchema(prisma);
 
     const scope = new SubCoachScopeService(prisma as unknown as PrismaService);
-    const builder = new WorkoutBuilderService(
+    builder = new WorkoutBuilderService(
       prisma as unknown as PrismaService,
       undefined,
       scope,
@@ -94,6 +95,7 @@ liveDescribe('WorkoutBuilderAutosaveService (live DB, MWB-3 §6 autosave)', () =
     // Clean slate (FK child order).
     await prisma.workoutPlanRevision.deleteMany({});
     await prisma.workoutPlanExercise.deleteMany({});
+    await prisma.workoutProgram.deleteMany({});
     await prisma.workoutPlan.deleteMany({});
     await prisma.user.deleteMany({
       where: { id: { in: [COACH_ID, SUBCOACH_ID, CLIENT_ID] } },
@@ -305,6 +307,59 @@ liveDescribe('WorkoutBuilderAutosaveService (live DB, MWB-3 §6 autosave)', () =
       'squat',
       'bench',
     ]);
+  }, 60_000);
+
+  // ── HIST-2 (owner 4): one rule for the plan list, day reads and autosave ──
+  it("a moved client's copy leaves the head coach's plans; the client keeps it", async () => {
+    const owner = { coach_id: COACH_ID, owner_user_id: COACH_ID };
+    const dayOf = async (program: { is_template: boolean; client_id?: string }) => {
+      const p = await prisma.workoutProgram.create({
+        data: { ...owner, name: 'P', weeks: 1, days_per_week: 1, ...program },
+      });
+      const day = { coach_id: COACH_ID, name: 'Day 1', type: 'strength' as const };
+      return (await prisma.workoutPlan.create({ data: { ...day, program_id: p.id } })).id;
+    };
+    const library = await dayOf({ is_template: true });
+    const copy = await dayOf({ is_template: false, client_id: CLIENT_ID });
+    const older = await dayOf({ is_template: false }); // linked by its assignment only
+    for (const workout_plan_id of [copy, older]) {
+      await prisma.clientWorkoutAssignment.create({
+        data: {
+          workout_plan_id,
+          client_id: CLIENT_ID,
+          assigned_by_coach_id: COACH_ID,
+          scheduled_for: new Date(),
+        },
+      });
+    }
+    const listed = async () =>
+      (await builder.listPlans(COACH_ID)).items.map((p) => (p as { id: string }).id).sort();
+    const all = [PLAN_ID, library, copy, older].sort();
+    const kept = [PLAN_ID, library].sort();
+    expect(await listed()).toEqual(all);
+
+    // The team chain keeps the client: their coach is now a sub-coach on the team.
+    await prisma.user.update({ where: { id: CLIENT_ID }, data: { coach_id: SUBCOACH_ID } });
+    expect(await listed()).toEqual(all);
+    // The sub-coach leaves the team with the client, then the client has no coach.
+    await prisma.teamSubCoachAssignment.updateMany({ data: { archived_at: new Date() } });
+    expect(await listed()).toEqual(kept);
+    await prisma.user.update({ where: { id: CLIENT_ID }, data: { coach_id: null } });
+    expect(await listed()).toEqual(kept);
+    const body = {
+      base_revision_index: 0,
+      lock_token: '0'.repeat(16),
+      ops: [insertOp('squat', 3)],
+      cause: 'manual_edit',
+    };
+    for (const id of [copy, older]) {
+      await expect(builder.getPlan(COACH_ID, id)).rejects.toThrow('Workout plan not found');
+      await expect(autosave.applyAutosave(id, { userId: COACH_ID }, body)).rejects.toThrow(
+        'Workout plan not found',
+      );
+    }
+    // History follows the client.
+    expect((await builder.listMyAssignments(CLIENT_ID)).items).toHaveLength(2);
   }, 60_000);
 
   // ── Matrix #11: author_kind correctness ───────────────────────────────────

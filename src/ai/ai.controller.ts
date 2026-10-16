@@ -10,7 +10,7 @@ import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-cl
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { AI_GUIDE_CRISIS_REPLIES, classifyAiGuideCrisis } from './ai-crisis-router';
-import { assertRomanHasCoach } from '../roman/roman-requires-coach';
+import { assertRomanClient, assertRomanHasCoach } from '../roman/roman-requires-coach';
 
 // R2 (audit MED-01, MED-02): Guidance is retired, so Roman is the only AI
 // chat. App builds already in users' hands still call POST /ai/chat until
@@ -90,9 +90,9 @@ export class AiController {
   @Get('context')
   @Throttle({ default: { ttl: 3600000, limit: 60 } })
   async getContext(@Request() req: AuthedRequest) {
-    // 139-15: a client with no coach has no Roman, so no AI context is built
-    // or read for them: 403 ROMAN_REQUIRES_COACH first.
-    assertRomanHasCoach(req.user);
+    // Clients only, before anything is built: a coach or the owner gets 403
+    // "Insufficient role", a client with no coach 403 ROMAN_REQUIRES_COACH.
+    assertRomanClient(req.user);
     return this.aiService.getUserContext(req.user.id);
   }
 
@@ -103,8 +103,8 @@ export class AiController {
   @Get('structured-context')
   @Throttle({ default: { ttl: 3600000, limit: 60 } })
   async getStructuredContext(@Request() req: AuthedRequest) {
-    // 139-15: same 403 ROMAN_REQUIRES_COACH as /ai/context, before the read.
-    assertRomanHasCoach(req.user);
+    // Same refusals as /ai/context, before the read.
+    assertRomanClient(req.user);
     return this.aiService.getStructuredContext(req.user.id);
   }
 }

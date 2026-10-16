@@ -14,7 +14,12 @@
 //      true USING or WITH CHECK, unless that exact SELECT policy (table, name,
 //      roles) is listed in "referenceData" or "policies";
 //   d. a policy expression uses IS NOT DISTINCT FROM (NULL matches NULL);
-//   e. a SECURITY DEFINER function has no fixed search_path.
+//   e. a SECURITY DEFINER function has no fixed search_path;
+//   f. the public API roles hold a right above the grant floor
+//      (scripts/ci/rls-grant-floor.mjs): TRUNCATE, TRIGGER, REFERENCES or
+//      MAINTAIN for anon/authenticated, or INSERT/UPDATE/DELETE for anon, on a
+//      public table, or in the default privileges for new tables. Only an anon
+//      write listed in "anonWrites" is allowed.
 // Ratchet: a listed allowance that no longer matches a finding fails as STALE
 // ENTRY, and scripts/ci/rls-lists.mjs fails any allowance the base commit does
 // not have, so the lists can only shrink. Usage: RLS_FLOOR_DATABASE_URL=... node <this file>
@@ -23,6 +28,7 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { assertLocalDbUrl, cleanEnv } from './local-db-url.mjs';
 import { gapIdentities, policyId } from './rls-lists.mjs';
+import { GRANT_FLOOR_SQL, grantId } from './rls-grant-floor.mjs';
 
 const url = process.env.RLS_FLOOR_DATABASE_URL || '';
 const gapsFile = process.env.RLS_KNOWN_GAPS_FILE || 'scripts/ci/rls-known-gaps.json';
@@ -87,7 +93,8 @@ SELECT json_build_object(
                      p.proconfig::text AS cfg
               FROM pg_proc p JOIN s ON s.oid = p.pronamespace
               WHERE p.prosecdef AND p.oid NOT IN (SELECT objid FROM ext)
-                AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) g WHERE g LIKE 'search\_path=%')) f)
+                AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) g WHERE g LIKE 'search\_path=%')) f),
+  'f', (${GRANT_FLOOR_SQL})
 )`;
 
 const out = execFileSync('psql', [url, '-XAtq', '-v', 'ON_ERROR_STOP=1', '-c', SQL], { encoding: 'utf8', env: cleanEnv() });
@@ -106,10 +113,12 @@ const CHECKS = {
   c: 'constant-true policy',
   d: 'IS NOT DISTINCT FROM in policy',
   e: 'SECURITY DEFINER without search_path',
+  f: 'API role grant above the floor',
 };
 const rows = [];
 const seen = new Set();
-const RESULT = { tables: 'KNOWN GAP', policies: 'KNOWN GAP', referenceData: 'REFERENCE DATA' };
+const RESULT = { tables: 'KNOWN GAP', policies: 'KNOWN GAP', anonWrites: 'KNOWN GAP', referenceData: 'REFERENCE DATA' };
+const SECTION_CHECK = { tables: 'a', anonWrites: 'f' };
 const judge = (check, id, detail) => {
   const g = allow.get(id);
   if (g) seen.add(id);
@@ -120,8 +129,9 @@ for (const f of cat.a) {
   if (f.forceOff) judge('a', `${f.object} :: FORCE off`, f.kind);
 }
 for (const f of cat.c) judge('c', policyId(f.table, f.policy, f.cmd, f.roles), f.detail);
+for (const f of cat.f) judge('f', grantId(f), `${f.kind}: ${f.role} holds ${f.priv}`);
 for (const [id, g] of allow) {
-  if (!seen.has(id)) rows.push({ check: g.section === 'tables' ? 'a' : 'c', object: id, result: 'STALE ENTRY', detail: `listed (${g.entry.finding || 'reference data'}) but no longer found: remove it from ${gapsFile}` });
+  if (!seen.has(id)) rows.push({ check: SECTION_CHECK[g.section] || 'c', object: id, result: 'STALE ENTRY', detail: `listed (${g.entry.finding || 'reference data'}) but no longer found: remove it from ${gapsFile}` });
 }
 for (const k of ['b', 'd', 'e']) for (const f of cat[k]) rows.push({ check: k, object: f.object, result: 'FAIL', detail: f.detail });
 

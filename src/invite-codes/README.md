@@ -35,17 +35,21 @@ back to `InviteCode` rows.
 
 ## Code shape
 
-`GP-XXXXXX`, where `XXXXXX` is six characters from the unambiguous
-alphabet `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (no `0/O/1/I/L`). Generation
-uses `crypto.randomBytes` and retries on `P2002` for the unique
-constraint on `code` / `invite_code`. Two collisions in a row are
-already astronomically unlikely; ten in a row surfaces an internal
-error.
+New codes are `TGP-XXXXXXX` (owner 138-8): seven characters from the
+unambiguous alphabet `23456789ABCDEFGHJKMNPQRSTUVWXYZ` (no `0/O/1/I/L`),
+31^7 ≈ 2.75×10^10 (~34.7 bits). Generation uses `crypto.randomInt` and
+retries on `P2002` for the unique constraint on `code` / `invite_code`;
+ten collisions in a row surfaces an internal error. Codes minted before
+(`GP-XXXXXX`, 31^6) and owner vanity codes keep working on every path:
+lookups use the stored string, never its shape.
 
-The 30-bit space is small enough that brute-force enumeration is the
-relevant threat — every public path is throttled (preview at 30/min,
-validate-invite-code at 20/min) so guessing a valid code is
-infeasible.
+Guessing is bounded by the A7 wrong-code limit
+(`LoginThrottleResetService.guardInviteCodeLookup`): 60 wrong codes an
+hour per network, and per account when signed in, shared by every public
+lookup (preview, `/join`, `/invite`, validate, accept) and every route
+that redeems a code. A network is one IPv4 address or one IPv6 /64
+(`ipRateLimitBucket`), so rotating addresses inside one IPv6 block buys
+no fresh budget.
 
 ## Endpoints
 
@@ -101,8 +105,8 @@ Both refuse:
 1. Trim and resolve the code to its coach (`CoachProfile` permanent code
    first, then `InviteCode` row) with **no** lifecycle checks yet. The typed
    form is tried exactly first, then upper-case, then with the dash after
-   `GP` restored (`inviteCodeLookupCandidates`), so `gp-bradley` and
-   `GPBRADLEY` reach the stored `GP-BRADLEY`; everything after uses the stored
+   `TGP` or `GP` restored (`inviteCodeLookupCandidates`), so `tgpk7m2qx3`,
+   `gp-bradley` and `GPBRADLEY` reach the stored code; everything after uses the stored
    code. `previewCode` (signup-screen check and `/join/<code>` landing) uses
    the same forms.
 2. Refuse `owner` (`owner_cannot_redeem`) and `coach` / `sub_coach`
@@ -139,6 +143,10 @@ transaction (a failed grant rolls the attach back). Paid: no attach, no seat, no
 (`paidJoinAllowed`). The purchase's entitlement attaches the client (`attachPaidJoinTx`). Every result carries
 `join` (`invite_join` on the auth routes). Tests: `test/invite-grant.spec.ts` (B-PACKAGE-135 block).
 
+JOINQUOTE: a paid join's `join.package.quote` is what that checkout charges this client (`packageQuote`, the
+rule of the client package reads: their trial offer and the attempt the checkout would resume), read fresh on
+every call; `null` when granted. Tests: `test/joinquote-144-join-quote.spec.ts`.
+
 Tests: `test/invite-attach-idempotent-replay.spec.ts`,
 `test/select-role-canonical-attach.spec.ts`,
 `test/invite-attach-reliability.spec.ts`.
@@ -153,7 +161,7 @@ flag is off. `:id` is an `InviteCode` id or the literal `coach-link`.
 | Method | Path | Behavior |
 |---|---|---|
 | `GET` | `/coach/codes` | Coach link first, then shareable codes (no single-recipient invites) with status (`active`, `retiring`, `revoked`, `expired`, `used_up`), `join_url` = `qr_payload` (`https://app.trygrowthproject.com/join/<code>`), package, lineage and exact ledger usage (`signups_total`, `signups_7d`) |
-| `POST` | `/coach/codes` | Create a `GP-XXXXXX` code (unlimited, no expiry unless set; optional label, `max_uses`, `expires_at`, package + grant mode checked by `InviteGrantService.assertBindablePackage` and written in the same INSERT as the code). `Idempotency-Key` header (8-128 visible characters, else `400 idempotency_key_invalid`): a retry returns the first code (`replayed: true`) |
+| `POST` | `/coach/codes` | Create a `TGP-XXXXXXX` code (unlimited, no expiry unless set; optional label, `max_uses`, `expires_at`, package + grant mode checked by `InviteGrantService.assertBindablePackage` and written in the same INSERT as the code). `Idempotency-Key` header (8-128 visible characters, else `400 idempotency_key_invalid`): a retry returns the first code (`replayed: true`) |
 | `POST` | `/coach/codes/:id/rotate` | New code with the same settings, linked by `rotated_from_id`; the old one is revoked now (`grace_hours` 0, default) or keeps working until `now + grace_hours` (max 168). A retried rotate returns the existing successor. `coach-link` requires `expected_code` (the link on screen), archives the old link code as an InviteCode row (with `successor_code`) so it keeps resolving, and a retry returns the first successor without writing |
 | `POST` | `/coach/codes/:id/revoke` | Turn a code off (idempotent). The coach link can only be rotated (`409 coach_link_not_revocable`) |
 | `GET` | `/coach/codes/signups?days=30` | Exact daily signups (1-90 days) in the coach's time zone (`CoachProfile.timezone`, else `America/Los_Angeles`), zero-filled, overall / `by_code` / `by_package`, with `unusual_today` (today >= 3 and >= 3x the trailing 7-day average) to catch a leaked code |

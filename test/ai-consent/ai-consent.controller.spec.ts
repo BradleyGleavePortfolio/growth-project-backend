@@ -196,6 +196,21 @@ describe('/me/ai-consent HTTP contract (R2a)', () => {
     }
   });
 
+  it('owner 57c: GET ?variant=safety_exception offers client-ai-v6 with the exception; a plain GET keeps client-ai-v4', async () => {
+    const asked = await call('GET', '/me/ai-consent?variant=safety_exception', 'u_a');
+    expect(asked.body).toMatchObject({ current_version: 'client-ai-v6', copy: { version: 'client-ai-v6' } });
+    expect((asked.body?.copy as { paragraph: { text: string } }).paragraph.text).toContain(
+      'One exception: if Roman sends you an urgent medical safety reply',
+    );
+    const plain = await call('GET', '/me/ai-consent', 'u_a');
+    expect(plain.body).toMatchObject({ current_version: 'client-ai-v4', copy: { version: 'client-ai-v4' } });
+    const sha = (asked.body?.copy as { sha256: string }).sha256;
+    const g = await call('POST', '/me/ai-consent/roman', 'u_a', { version: 'client-ai-v6', copy_sha256: sha });
+    expect(g.body).toMatchObject({ granted: true, version: 'client-ai-v6', current_version: 'client-ai-v6' });
+    // A live v6 grant reads its own copy on every GET.
+    expect((await call('GET', '/me/ai-consent', 'u_a')).body).toMatchObject({ granted: true, current_version: 'client-ai-v6' });
+  });
+
   it('POST grant -> 200 granted; repeat is idempotent (one row)', async () => {
     const body = { version: 'client-ai-v4', copy_sha256: COPY_SHA, platform: 'ios', app_version: '1.0.0', locale: 'en-US' };
     const a = await call('POST', '/me/ai-consent/roman', 'u_a', body);

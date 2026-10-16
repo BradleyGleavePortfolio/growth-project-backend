@@ -59,6 +59,9 @@ export function daysFromItems(items: MealPlanItemDto[]): Prisma.InputJsonValue |
     });
 }
 
+// Owner 4: a plan's client is still this coach's (the assertClientOfCoach rule).
+const stillTheirs = (coachId: string) => ({ coach_id: coachId, role: 'student' as const });
+
 @Injectable()
 export class MealPlansService {
   constructor(private prisma: PrismaService) {}
@@ -117,7 +120,7 @@ export class MealPlansService {
   // archived ids.
   async updateByCoach(coachId: string, planId: string, dto: UpdateMealPlanDto) {
     const existing = await this.prisma.mealPlan.findFirst({
-      where: { id: planId, coach_id: coachId, archived_at: null },
+      where: { id: planId, coach_id: coachId, client: stillTheirs(coachId), archived_at: null },
       select: { id: true, days: true },
     });
     if (!existing) throw new NotFoundException('Meal plan not found');
@@ -148,7 +151,7 @@ export class MealPlansService {
   // 404 mirrors the update path above and is what the mobile client expects.
   async archiveByCoach(coachId: string, planId: string) {
     const result = await this.prisma.mealPlan.updateMany({
-      where: { id: planId, coach_id: coachId, archived_at: null },
+      where: { id: planId, coach_id: coachId, client: stillTheirs(coachId), archived_at: null },
       data: { archived_at: new Date() },
     });
     if (result.count === 0) throw new NotFoundException('Meal plan not found');
@@ -220,6 +223,7 @@ export class MealPlansService {
       // row's own creation so two same-day assignments are still ordered.
       orderBy: [{ starts_on: 'desc' }, { created_at: 'desc' }],
       include: {
+        client: { select: { coach_id: true } },
         daily_meal_plan: {
           include: {
             slots: {
@@ -232,7 +236,10 @@ export class MealPlansService {
     });
     if (!assignment || !assignment.daily_meal_plan) return null;
     const plan = assignment.daily_meal_plan;
-    if (plan.archived_at) return null;
+    // Archive hides a plan from its own coach's client. A moved client keeps
+    // their plan whatever the former coach does next, frozen copy included
+    // (owner 4, 139-13; the same client rule as freezeForMovedClients).
+    if (plan.archived_at && assignment.client.coach_id === plan.coach_id) return null;
 
     // Each canonical slot → one legacy `items[]` entry. `slot_label` maps to
     // the legacy free-form `time_of_day`; the template macros map onto the

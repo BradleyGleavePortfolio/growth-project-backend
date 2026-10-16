@@ -42,6 +42,9 @@ export const FEATURE_FLAG_KEYS = [
   'messaging_core_v2',
   // CF-COACH-PAY-BE-128 ← FEATURE_COACH_PAYMENT_ACTIONS (coach/owner only, not community).
   'coach_payment_actions',
+  // CRISIS-APP-COPY ← FEATURE_ROMAN_CRISIS_ALERT (every role, not community): the app
+  // adds the crisis sentence to its Trust Center and Roman chats text only while true.
+  'roman_crisis_alert',
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];

@@ -43,16 +43,31 @@ export type CoachAlertType =
   | 'streak_dropped'
   | 'finance_eod_gap'
   | 'bloodwork_review'
-  // The two Roman safety alerts (owner 22a, 57): Roman's urgent medical safety
-  // reply, and its eating-disorder safety reply. The row holds no name and no
-  // message text; payload.roman_message_id points at the client's message.
+  // The Roman safety alerts (owner 22a, 57, ROMAN-CRISIS-ALERT): Roman's
+  // urgent medical safety reply, its eating-disorder safety reply, and its
+  // emergency or self-harm (crisis) reply. The row holds no name and no
+  // message text; payload.roman_message_id points at the client's message,
+  // except on the crisis alert, which points at nothing they wrote.
   | 'roman_urgent_reply'
-  | 'roman_eating_disorder_reply';
+  | 'roman_eating_disorder_reply'
+  | 'roman_crisis_reply';
 
 export const ROMAN_SAFETY_ALERT_TYPES: readonly string[] = [
   'roman_urgent_reply',
   'roman_eating_disorder_reply',
+  'roman_crisis_reply',
 ];
+
+/**
+ * Owner 4 (137-8): a client's alerts are for their current coach only. Once
+ * the client moves, the coach they left loses every one at once, of every
+ * type: no list, read or dismiss. The one current-coach rule, used by the
+ * routes here and by the Command Center; the inbox row follows it too
+ * (NotificationsService.inboxWhere).
+ */
+export function currentCoachAlerts(coachId: string): Prisma.CoachAlertWhereInput {
+  return { client: { coach_id: coachId } };
+}
 
 /**
  * A fixed alert id for an alert that may exist at most once per `key` (the
@@ -109,7 +124,7 @@ export class CoachAlertsService {
    *
    * Dedup pattern: identical to the risk_red_transition path. The 24h window
    * applies to every alert type except the Roman safety alerts: each urgent
-   * reply is its own event, so an earlier unacknowledged one never hides it,
+   * or crisis reply is its own event, so an earlier unacknowledged one never hides it,
    * and the eating-disorder alert is once per conversation (`id`).
    */
   async createAlert(input: CreateAlertInput): Promise<CoachAlert> {
@@ -147,6 +162,7 @@ export class CoachAlertsService {
     const limit = clamp(opts.limit ?? DEFAULT_BATCH_LIMIT, 1, MAX_BATCH_LIMIT);
     const where: Prisma.CoachAlertWhereInput = {
       coach_id: opts.coachId,
+      ...currentCoachAlerts(opts.coachId),
     };
     if (typeof opts.acknowledged === 'boolean') {
       where.acknowledged_at = opts.acknowledged ? { not: null } : null;
@@ -173,7 +189,7 @@ export class CoachAlertsService {
    * acknowledged; we re-read to disambiguate.
    */
   async acknowledge(alertId: string, coachId: string): Promise<CoachAlert> {
-    return this.acknowledgeWhere(alertId, { coach_id: coachId });
+    return this.acknowledgeWhere(alertId, { coach_id: coachId, ...currentCoachAlerts(coachId) });
   }
 
   /**

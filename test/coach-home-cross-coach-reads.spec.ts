@@ -100,6 +100,8 @@ function seed(): void {
   person(B1, 'student', B, 'Bea Client');
   db.state.userProfile.push({ user_id: A, avatar_url: 'https://example.test/ava.png' });
   db.state.userProfile.push({ user_id: B, avatar_url: 'https://example.test/ben.png' });
+  // AGEGATE16: the clients have confirmed 16 or older.
+  for (const c of [A1, A2, B1]) db.state.userProfile.push({ user_id: c, date_of_birth: new Date('1990-01-01T00:00:00Z') });
   db.state.teamSubCoachAssignment.push({ id: 'seat-s', head_coach_id: A, sub_coach_id: S, archived_at: null, created_at: ago(60) });
   db.state.subCoachAssignment.push({ id: 'del-s', head_coach_id: A, sub_coach_id: S, client_id: A2, unassigned_at: null });
   for (const [coach, acct, payout, cents] of [[A, 'acct_a', 'po_a', 12300], [B, 'acct_b', 'po_b', 4500]] as const) {
