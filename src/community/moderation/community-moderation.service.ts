@@ -521,11 +521,11 @@ export class CommunityModerationService {
       }
     }
 
-    // v1-4 post-action tail — best-effort realtime ping on the moderation
-    // channel (IDs + enum action only, NEVER the moderation reason/notes,
+    // v1-4 post-action tail — best-effort realtime ping to the workspace coach,
+    // who moderates it (IDs + enum action only, NEVER the moderation reason/notes,
     // #24/#36). Mobile moderators refetch the queue via authenticated REST.
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.moderation(resolved.workspace_id),
+      { coachOf: resolved.workspace_id },
       COMMUNITY_BROADCAST_EVENTS.moderationActionCreated,
       {
         actionId: resolved.id,

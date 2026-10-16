@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { CommunityResponse, CommunityResponseTargetType, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
-import { CommunityRealtimeService } from '../realtime/community-realtime.service';
+import { type CommunityAudience, CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
 import { CommunityMessagesRepository } from '../messages/community-messages.repository';
 import { CommunityPostsRepository } from '../posts/community-posts.repository';
@@ -33,6 +33,8 @@ interface ResolvedTarget {
   targetType: CommunityResponseTargetType;
   targetId: string;
   targetCreatedAt: Date | null;
+  /** Who may read the target, so who hears its reaction pings. */
+  audience: CommunityAudience;
 }
 
 /**
@@ -56,33 +58,23 @@ export class CommunityReactionsService {
   ) {}
 
   /**
-   * Broadcast a reaction-changed ping. The channel is derived from the
-   * RESOLVED target (never request params, #5 IDOR): a `post` target pings the
-   * workspace hall; a `message`/`comment` target pings the owning cohort shard
-   * when it has one, else the workspace hall. The payload carries the opaque
-   * response `kind` discriminator and a +/-1 delta — NEVER the emoji glyph.
+   * Broadcast a reaction-changed ping to the RESOLVED target's readers (never
+   * request params, #5 IDOR): a `post` pings the Hall's readers; a `message`/
+   * `comment` pings its space's readers, a DM's two people, else the Hall's.
+   * The payload carries the opaque response `kind` discriminator and a +/-1
+   * delta — NEVER the emoji glyph.
    */
-  private async emitReactionChanged(
+  private emitReactionChanged(
     user: User,
     t: ResolvedTarget,
     apiType: ApiTargetType,
     responseKind: string,
     delta: number,
-  ): Promise<void> {
-    let channel = this.realtime.channels.workspace(t.workspaceId);
-    let channelKind: 'workspace' | 'cohort' = 'workspace';
-    if (t.targetType !== 'post') {
-      const msg = await this.messagesRepo.findById(t.targetId);
-      if (msg?.cohort_id) {
-        channel = this.realtime.channels.cohort(
-          msg.cohort_id,
-          this.realtime.cohortShard(msg.cohort_id),
-        );
-        channelKind = 'cohort';
-      }
-    }
+  ): void {
+    const space = 'cohortId' in t.audience && t.audience.cohortId !== null;
+    const channelKind = 'people' in t.audience ? 'user' : space ? 'cohort' : 'workspace';
     void this.realtime.broadcastCommunityEvent(
-      channel,
+      t.audience,
       COMMUNITY_BROADCAST_EVENTS.reactionChanged,
       {
         targetType: apiType,
@@ -113,6 +105,7 @@ export class CommunityReactionsService {
         targetType: 'post',
         targetId: post.id,
         targetCreatedAt: post.created_at,
+        audience: { workspaceId: post.workspace_id, cohortId: null },
       };
     }
 
@@ -147,6 +140,9 @@ export class CommunityReactionsService {
       targetType: isComment ? 'comment' : 'message',
       targetId: msg.id,
       targetCreatedAt: msg.created_at,
+      audience: msg.dm_key
+        ? { people: [msg.sender_id, msg.recipient_user_id ?? msg.sender_id] }
+        : { workspaceId: msg.workspace_id, cohortId: msg.cohort_id },
     };
   }
 
@@ -188,7 +184,7 @@ export class CommunityReactionsService {
     // `kind` is the OPAQUE NAMED reaction discriminator (like, fire, love…),
     // NOT the target type and NOT the raw emoji glyph (no-PII doctrine — the
     // glyph stays in the DB / authenticated REST refetch only).
-    void this.emitReactionChanged(user, t, apiType, reactionKindForEmoji(emoji), 1);
+    this.emitReactionChanged(user, t, apiType, reactionKindForEmoji(emoji), 1);
     return this.summarise(apiType, t.targetId, rows, user.id);
   }
 
@@ -208,7 +204,7 @@ export class CommunityReactionsService {
     const rows = await this.visibleReactions(user, t);
     // `kind` is the OPAQUE NAMED reaction discriminator — see react(); never
     // the target type, never the raw emoji glyph.
-    void this.emitReactionChanged(user, t, apiType, reactionKindForEmoji(emoji), -1);
+    this.emitReactionChanged(user, t, apiType, reactionKindForEmoji(emoji), -1);
     return this.summarise(apiType, t.targetId, rows, user.id);
   }
 }

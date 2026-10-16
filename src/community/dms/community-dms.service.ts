@@ -185,12 +185,12 @@ export class CommunityDmsService {
       body,
     });
     // v1-4 post-write tail (after gateDmRead, inside authoriseDm). Best-effort
-    // realtime refetch ping on the RECIPIENT's private user channel — IDs only,
+    // realtime refetch ping to the RECIPIENT's private topic only — IDs only,
     // never the DM body (#24/#36). DMs have no dedicated broadcast event in the
     // v1-4 channel/event contract, so we reuse the message-created refetch
     // signal: the recipient pings → refetches the thread via authenticated REST.
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.user(recipientId),
+      { people: [recipientId] },
       COMMUNITY_BROADCAST_EVENTS.messageCreated,
       {
         id: created.id,

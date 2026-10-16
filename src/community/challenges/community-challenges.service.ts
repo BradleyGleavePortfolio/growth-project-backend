@@ -446,10 +446,10 @@ export class CommunityChallengesService {
     const next = updated.progress_value.toNumber();
     const percent = target !== null && target > 0 ? Math.min(next / target, 1) : 0;
 
-    // Best-effort realtime ping (IDs + percent only, no PII). The progress
-    // channel is per-challenge; clients refetch their own row via REST.
+    // Best-effort realtime ping (IDs + percent only, no PII) to the participant
+    // alone (the leaderboard is opt-in); their devices refetch their row via REST.
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.challenge(challengeId),
+      { people: [user.id] },
       COMMUNITY_BROADCAST_EVENTS.challengeProgressChanged,
       { challengeId, userId: user.id, percent },
       { distinctId: user.id, channelKind: 'challenge' },
