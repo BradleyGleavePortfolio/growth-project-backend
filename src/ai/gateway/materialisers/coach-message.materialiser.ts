@@ -70,9 +70,10 @@ export function assertCoachMessagePayload(
  * Idempotency note: the race window between two concurrent decide() calls
  * is closed by the row-level lock the wrapping UPDATE in
  * `AiApprovalService.decide` takes on the draft row plus the conditional
- * UPDATE here (WHERE materialised_at IS NULL). ROMANMARK: the message also
- * carries `ai_draft_id = draft.id` (the Roman mark), and that column is
- * unique, so the database refuses a second message for the same draft.
+ * UPDATE here (WHERE materialised_at IS NULL). ROMANMARK: a marked message
+ * also carries `ai_draft_id = draft.id` (the Roman mark; ROMANMARK-BE: kept
+ * only by MessagingService.romanMark), and that column is unique, so the
+ * database refuses a second marked message for the same draft.
  */
 @Injectable()
 export class CoachMessageMaterializer implements CapabilityMaterializer {
