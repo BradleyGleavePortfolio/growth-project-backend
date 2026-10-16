@@ -27,6 +27,7 @@ import {
   WorkoutDiffSchema,
 } from './__shared/workout-diff.types';
 import { isMwbAiLiveCreateEnabled } from '../mwb-live-create.feature';
+import { alternativesOf } from '../../../workout-builder/plan-exercise-fields';
 import {
   LiveCreateMaterialiseError,
   coercePrismaWriteConflict,
@@ -437,6 +438,7 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
         rest_seconds: true,
         superset_group_id: true,
         notes: true,
+        alternative_external_ids: true,
       },
     });
     return {
@@ -455,6 +457,7 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
         rest_seconds: r.rest_seconds ?? null,
         superset_group_id: r.superset_group_id ?? null,
         notes: r.notes ?? null,
+        alternative_external_ids: alternativesOf(r),
       })),
     };
   }
