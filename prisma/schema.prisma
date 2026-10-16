@@ -3970,6 +3970,7 @@ model CoachPackage {
   // behaves exactly as today (paywall-only, zero content rows).
   is_sellable Boolean               @default(false)
   contents    CoachPackageContent[]
+  community_spaces CommunityCohortPackage[]
 
   // PR-6 — draft/publish lifecycle. null = DRAFT (not purchasable); a
   // non-null timestamp = PUBLISHED (purchasable, value is the most
@@ -6912,6 +6913,14 @@ enum CommunityPostScope {
   cohort
 }
 
+/// C6-BVIS: who a space is for. app.community_can_access (20270502002400) is the rule.
+enum CommunitySpaceVisibility {
+  public
+  clients
+  package
+  members
+}
+
 enum CommunityPostType {
   text
   lesson
@@ -7113,6 +7122,7 @@ model CommunityCohort {
   created_at   DateTime              @default(now()) @db.Timestamptz(6)
   updated_at   DateTime              @updatedAt @db.Timestamptz(6)
   archived_at  DateTime?             @db.Timestamptz(6)
+  visibility   CommunitySpaceVisibility @default(members)
 
   workspace   CommunityWorkspace    @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
   memberships CommunityMembership[]
@@ -7120,6 +7130,7 @@ model CommunityCohort {
   events      CommunityEvent[]
   challenges  CommunityChallenge[]
   voice_notes CommunityVoiceNote[]
+  packages    CommunityCohortPackage[]
 
   @@unique([workspace_id, name])
   // Cohort list ordered for a workspace (coach + client surfaces).
@@ -7127,6 +7138,18 @@ model CommunityCohort {
   // Archived-cohort filtering within a workspace.
   @@index([workspace_id, archived_at])
   @@map("community_cohorts")
+}
+
+model CommunityCohortPackage {
+  cohort_id  String   @db.Uuid
+  package_id String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  cohort  CommunityCohort @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
+  package CoachPackage    @relation(fields: [package_id], references: [id], onDelete: Cascade)
+
+  @@id([cohort_id, package_id])
+  @@map("community_cohort_packages")
 }
 
 model CommunityMembership {

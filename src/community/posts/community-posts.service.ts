@@ -344,7 +344,7 @@ export class CommunityPostsService {
     );
     // Push the post author (not the commenter) that their post got a reply.
     // Fire-and-forget; gated behind FEATURE_COMMUNITY_PUSH inside the service.
-    if (post.author_id !== user.id) {
+    if (post.author_id !== user.id && (await this.access.readersOf(post.workspace_id, null, [post.author_id])).length) {
       void this.communityPush.sendCommunityPush({
         recipientId: post.author_id,
         kind: NotificationKind.COMMUNITY_POST_REPLIED,
