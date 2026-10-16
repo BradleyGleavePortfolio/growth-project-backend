@@ -144,6 +144,10 @@ class Rollback extends Error { constructor(readonly n: number) { super('rollback
   let chain: Awaited<ReturnType<typeof policies>> = [];
 
   beforeAll(async () => {
+    // BILLRAW (20270502003500) took every right on five of these tables from the API roles. Give authenticated
+    // back what it held before, so this suite keeps proving the row rules underneath (billing-rows-server-only-rls).
+    await prisma.$executeRawUnsafe(`GRANT SELECT, INSERT, UPDATE, DELETE ON "ChargeRefund", "ClientPurchase",
+      "CoachSubscription", "ConnectAccount", "ConnectCustomer" TO authenticated`);
     for (const k of keys) {
       const coach = k === 'A' ? id.F : k === 'C' ? id.L : null;
       await prisma.$executeRaw`INSERT INTO "User" ("id", "supabase_id", "email", "name", "role", "coach_id")
