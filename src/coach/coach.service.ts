@@ -1,10 +1,12 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../consent/consent.service';
 import { weightIfShared } from '../consent/coach-sharing-gate';
+import { resolveRecipientTimeZone } from '../notifications/recipient-timezone';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+import { clientWeek } from './client-week';
 
 // Concrete payload shapes for the timeline/summary slices below. These
 // derive their structure from the Prisma findMany calls so adding columns
@@ -560,6 +562,69 @@ export class CoachService {
         body_metrics: flags.bodyMetrics,
         habits_progress: flags.habitsProgress,
       },
+    };
+  }
+
+  /**
+   * K1WEEK: one client's workout assignments this week, for the client file's
+   * This week ring (planning/MOCKUP3/K1, Style C). The summary sends only the
+   * 20 latest, so a delivered program's future days pushed this week out.
+   * The week is Monday to Sunday in the CLIENT's time zone (their phone's,
+   * else their coach's), so the coach's ring is the one the client lives: a
+   * session is missed only once the client's own day is over. Then the
+   * caller's own zone, then Pacific (the coach brief's last resort). Same
+   * gates as the summary: the client must be the caller's now (head coach, or
+   * a sub-coach with an open delegation), else 404, so a former or another
+   * coach reads nothing; the Workouts switch off returns shared: false and no
+   * rows. Every assignment counts, whoever made it: history follows the client.
+   */
+  async getClientWeek(
+    coachId: string,
+    clientId: string,
+    callerRole?: string,
+    auditCtx: AuditContext = {},
+    now: Date = new Date(),
+  ) {
+    const scope = await this.scopeClientsBy(coachId, callerRole);
+    const client = await this.prisma.user.findFirst({
+      where: { AND: [{ id: clientId, role: 'student', deleted_at: null }, scope] },
+      select: { id: true },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    void this.audit.write({
+      action: AuditAction.COACH_VIEWED_CLIENT_DATA,
+      actorId: coachId,
+      actorRole: callerRole ?? 'coach',
+      targetUserId: clientId,
+      targetType: 'user',
+      targetId: clientId,
+      tenantCoachId: coachId,
+      ip: auditCtx.ip ?? null,
+      userAgent: auditCtx.userAgent ?? null,
+      metadata: { view: 'week' },
+    });
+
+    const [zone, { workouts: shared }] = await Promise.all([
+      resolveRecipientTimeZone(this.prisma, clientId),
+      this.loadFitnessConsents(coachId, clientId, callerRole),
+    ]);
+    const week = clientWeek(
+      now,
+      zone ?? (await resolveRecipientTimeZone(this.prisma, coachId)) ?? 'America/Los_Angeles',
+    );
+    const rows = shared
+      ? await this.prisma.clientWorkoutAssignment.findMany({
+          where: { client_id: clientId, scheduled_for: { gte: week.from, lt: week.to } },
+          select: { id: true, scheduled_for: true, completed_at: true },
+          orderBy: [{ scheduled_for: 'asc' }, { id: 'asc' }],
+        })
+      : [];
+    return {
+      week_start: week.start,
+      today: week.today,
+      shared,
+      assignments: rows.map((r) => ({ ...r, day: week.dayOf(r.scheduled_for) })),
     };
   }
 
