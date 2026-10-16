@@ -94,9 +94,8 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(await reads('L', A_ROWS)).toEqual(all(A_ROWS, 0));
   });
 
-  it('before the move: only the assigning coach F writes the day row (assignment_coach_manage, unchanged); A, K, L, B and C write none', async () => {
-    expect(await write('F', DAY_WRITE, 'assign.F')).toBe(1);
-    for (const who of [...'AKLBC']) expect(await write(who, DAY_WRITE, 'assign.F')).not.toBe(1);
+  it('before the move: no API role writes the day row, the assigning coach F included (the backend writes it as service_role)', async () => {
+    for (const who of [...'FAKLBC']) expect(await write(who, DAY_WRITE, 'assign.F')).not.toBe(1);
   });
 
   it("only the plan's coach writes its swaps", async () => {

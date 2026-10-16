@@ -10,9 +10,8 @@
 -- client (20270502000800, 20270502000900): the client reads their own
 -- assignment and its snapshot, the current coach reads every assignment of
 -- their client, a former coach reads none; only the plan's coach writes its
--- exercises, and only the assigning coach, while the client is still theirs,
--- writes an assignment (assignment_coach_manage). The backend writes through
--- service_role.
+-- exercises, and no API role writes an assignment (the backend writes through
+-- service_role).
 -- Live proof: test/rls/workout-day-client-data-rls.spec.ts (rls-live-tests).
 -- Reverse: down.sql.
 BEGIN;
