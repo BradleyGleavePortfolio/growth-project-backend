@@ -123,14 +123,19 @@ Accepted grants (`CLIENT_AI_CONSENT_ACCEPTED`; version AND its exact sha256):
   (the app sends it from the CONSENT-2 build on) offers `client-ai-v6` as `copy` and
   `client-ai-v7` as `upgrade` / `memory_copy` when there is no live grant. A plain `GET`
   keeps offering v4 / v5, the text installed builds pin. A live grant reads the copies of
-  its own generation (v4 / v5, or v6 / v7) whatever is asked.
+  its own generation (v4 / v5, or v6 / v7) whatever is asked, but a new agreement is offered
+  in the asked copies: a live v4 holder asking `safety_exception` gets `client-ai-v7` as
+  `upgrade` / `memory_copy` (CONSENTV7). `POST` and `DELETE` take the same `?variant=` for
+  the status they return; without one they read the copies on file.
 - Crisis sentence (CRISIS-APP-COPY, owner op 1, 2026-10-15): `GET /api/me/ai-consent?variant=crisis_alert`
   offers `client-ai-v8` as `copy` and `client-ai-v9` as `upgrade` / `memory_copy` when there is no
   live grant and `FEATURE_ROMAN_CRISIS_ALERT` is on; while it is off the same ask gets v6 / v7. A live
   v8 / v9 grant reads its own copies while the switch is on and the v6 / v7 copies (same scope, the grant
   still counts) while it is off, so no response carries the sentence while the switch is off. A plain
   `GET` and `?variant=safety_exception` never offer v8 / v9. v4 to v7 stay accepted with unchanged text,
-  so no one is asked again; a live v6 / v7 grant keeps reading v6 / v7. The P0 twins are
+  so no one is asked again; a live v6 / v7 grant keeps reading v6 / v7. As with `safety_exception`, a
+  new agreement follows the ask: a live v4 / v6 holder asking `crisis_alert` gets `client-ai-v9` as
+  `upgrade` / `memory_copy` while the switch is on (`client-ai-v7` while it is off). The P0 twins are
   `consult-consent-v9` / `v10` (paragraph 4 + box 2 = the v8 / v9 copy). `GET /api/me/feature-flags`
   carries `roman_crisis_alert` (the same switch) for the app's Trust Center and Roman chats lines.
 - Asked once, before a coach (owner W-CONSENT): `POST /api/me/ai-consent/roman` from a client with no
