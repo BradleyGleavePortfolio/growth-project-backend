@@ -243,6 +243,7 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'RomanClientNote', field: 'client_id', action: del },
   { model: 'RomanClientSummary', field: 'client_id', action: del },
   { model: 'RomanMemoryState', field: 'client_id', action: del },
+  { model: 'RomanUsageDaily', field: 'client_id', action: del },
   { model: 'RomanMessage', field: 'user_id', action: del },
   { model: 'RomanSession', field: 'user_id', action: del },
   { model: 'UserAIQuota', field: 'user_id', action: del },
