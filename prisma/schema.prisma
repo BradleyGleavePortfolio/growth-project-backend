@@ -217,6 +217,7 @@ model User {
   notification_prefs             NotificationPreferences?
   preferences                    UserPreferences?
   habits                         Habit[]
+  assigned_habits                Habit[]                  @relation("HabitAssignedByCoach")
   lesson_completions             LessonCompletion[]
   check_ins                      CheckIn[]
   water_logs                     WaterLog[]
@@ -1189,28 +1190,54 @@ model NotificationPreferences {
   nudge_inactive_inapp             Boolean @default(true)
 }
 
+// HB1: how a habit is planned. days: on schedule_days; times_per_week: that
+// many days a week, any days.
+enum HabitScheduleKind {
+  daily
+  days
+  times_per_week
+}
+
 model Habit {
-  id           String     @id @default(uuid())
-  user_id      String
-  user         User       @relation(fields: [user_id], references: [id])
-  name         String
-  category     String     @default("custom")
-  target_value Float?
-  unit         String?
-  logs         HabitLog[]
+  id                   String            @id @default(uuid())
+  user_id              String
+  user                 User              @relation(fields: [user_id], references: [id])
+  name                 String
+  category             String            @default("custom")
+  target_value         Float?
+  unit                 String?
+  // HB1: the coach who set the habit (null for the client's own) and their note.
+  assigned_by_coach_id String?
+  assigned_by_coach    User?             @relation("HabitAssignedByCoach", fields: [assigned_by_coach_id], references: [id], onDelete: SetNull)
+  coach_note           String?           @db.VarChar(500)
+  schedule_kind        HabitScheduleKind @default(daily)
+  // 0 = Sunday ... 6 = Saturday.
+  schedule_days        Int[]             @default([])
+  times_per_week       Int?
+  reminder_enabled     Boolean           @default(false)
+  // Local time, "HH:mm".
+  reminder_time        String?
+  starts_on            DateTime?         @db.Date
+  sort_order           Int               @default(0)
+  // Removing a habit archives it; its logs stay in the client's history.
+  archived_at          DateTime?
+  logs                 HabitLog[]
 }
 
 model HabitLog {
-  id        String   @id @default(uuid())
-  habit_id  String
-  habit     Habit    @relation(fields: [habit_id], references: [id])
-  date      DateTime @db.Date
-  value     Float?
-  completed Boolean  @default(false)
-  logged_at DateTime @default(now())
+  id            String   @id @default(uuid())
+  habit_id      String
+  habit         Habit    @relation(fields: [habit_id], references: [id])
+  date          DateTime @db.Date
+  value         Float?
+  completed     Boolean  @default(false)
+  logged_at     DateTime @default(now())
+  // HB1: the app's id for an offline tick, so a resend does not log twice.
+  client_log_id String?  @db.Uuid
 
   // Hot path: habit completion queries filter by (habit_id, date).
   @@index([habit_id, date])
+  @@unique([habit_id, client_log_id])
 }
 
 model Lesson {
