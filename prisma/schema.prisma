@@ -622,6 +622,9 @@ model CoachProfile {
   booking_buffer_after_min   Int                 @default(0)
   // NULL = no daily cap.
   booking_daily_max          Int?
+  // C4-NOTICE: how many hours before the start a client's own move or cancel
+  // locks (0 = until the start). Range 0 to 168, enforced by the API.
+  booking_cancel_notice_hours Int                @default(24)
   created_by_owner_id        String?
   created_by_owner           User?               @relation("CoachProfileCreatedBy", fields: [created_by_owner_id], references: [id])
   created_at                 DateTime            @default(now())

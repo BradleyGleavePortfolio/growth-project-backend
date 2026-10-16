@@ -255,7 +255,7 @@ export class SchedulingFakeDb {
     return {
       ...row,
       session_type: type,
-      coach: coach ? { id: coach.id, name: coach.name } : null,
+      coach: coach ? { id: coach.id, name: coach.name, coach_profile: coach.coach_profile } : null,
       client: client ? { id: client.id, name: client.name } : null,
     };
   }
