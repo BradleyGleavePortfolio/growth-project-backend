@@ -16,6 +16,7 @@
 import { Module } from '@nestjs/common';
 import { RomanController } from './roman.controller';
 import { RomanChatsController } from './roman-chats.controller';
+import { RomanUsageController } from './roman-usage.controller';
 import { RomanService } from './roman.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
 import { romanAnthropicClientProvider } from './anthropic-client.provider';
@@ -52,7 +53,8 @@ import { RomanContextInvalidationInterceptor } from './context/roman-context-inv
   // feature flag: deleting your chats never depends on Roman being on.
   // RomanContextController: GET /roman/context/me, the client's own view of
   // exactly what Roman is grounded in (behind the chat flag, students only).
-  controllers: [RomanController, RomanChatsController, RomanContextController],
+  // RomanUsageController: GET /me/roman/usage, the client's daily Roman counts.
+  controllers: [RomanController, RomanChatsController, RomanContextController, RomanUsageController],
   // RomanErasureSweep runs regardless of FEATURE_ROMAN_CHAT_ENABLED: finishing
   // the erasure of chats a client deleted is a privacy duty, not a chat feature.
   // Grounding (OR-113-2): the context builder and its REQUIRED consultation

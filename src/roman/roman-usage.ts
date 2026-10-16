@@ -2,7 +2,7 @@ import { HttpException, HttpStatus } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { PrismaService } from '../prisma.service';
 import { resolveRecipientTimeZone } from '../notifications/recipient-timezone';
-import { addDays, localClock, localDayStart } from './context/roman-client-context.service';
+import { addDays, dateOnly, localClock, localDayStart } from './context/roman-client-context.service';
 import {
   ROMAN_DAILY_LIMITS, ROMAN_ERROR_RATE_LIMIT, type RomanUsageKind, romanDailyLimitMessage, romanRateLimitMessage,
 } from './roman.constants';
@@ -30,7 +30,7 @@ export type RomanUsageCaller = { id: string; role: string };
 
 type UsageDb = Pick<
   PrismaService,
-  '$queryRaw' | 'notificationPreferences' | 'coachProfile' | 'coachingSession' | 'user'
+  '$queryRaw' | 'romanUsageDaily' | 'notificationPreferences' | 'coachProfile' | 'coachingSession' | 'user'
 >;
 
 /** The local day (YYYY-MM-DD) of `now` in `timeZone` and its end, DST-safe. */
@@ -88,4 +88,19 @@ export function releaseRomanUsage(tx: Pick<Prisma.TransactionClient, '$executeRa
   const col = Prisma.raw(`"${debit.kind}"`);
   return tx.$executeRaw`UPDATE "roman_usage_daily" SET ${col} = ${col} - 1, "updated_at" = CURRENT_TIMESTAMP
     WHERE "client_id" = ${debit.clientId} AND "day" = ${debit.day}::date AND ${col} > 0`;
+}
+
+/** GET /me/roman/usage: today's counts, the limits and the reset. */
+export async function romanUsageToday(db: UsageDb, clientId: string, now: Date = new Date()) {
+  const { day, resetsAt } = await clientDay(db, clientId, now);
+  const row = await db.romanUsageDaily.findUnique({
+    where: { client_id_day: { client_id: clientId, day: dateOnly(day) } },
+    select: { messages: true, files: true, changes: true },
+  });
+  return {
+    day,
+    used: { messages: row?.messages ?? 0, files: row?.files ?? 0, changes: row?.changes ?? 0 },
+    limits: ROMAN_DAILY_LIMITS,
+    resets_at: resetsAt.toISOString(),
+  };
 }

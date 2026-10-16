@@ -57,6 +57,19 @@
  *
  * v3 to v6 and the v5 / v6 coach-free versions stay accepted: installed app
  * builds still show and send them.
+ *
+ * consult-consent-v8-coach-free / v9-coach-free (W-CONSENT, FIX684,
+ * 2026-10-15): what a client with no coach is shown since W-CONSENT put the
+ * Roman choice back on that screen: v7-coach-free with "Before you join a
+ * coach" and its lead after box 1, then v7 / v8's paragraph 4 and box 2
+ * (memory off / on). Paragraph 4 + box 2 hash to the ledger's client-ai-v6 /
+ * v7 copy sha256, the version box 2 grants. v7-coach-free stays accepted and
+ * unchanged (#CRISIS-OLD-CONSENT op 1: older records stay as they are).
+ *
+ * consult-consent-v10-coach-free / v11-coach-free (CRISIS-APP-COPY, CONSENT-TWINS,
+ * 2026-10-15): v8-coach-free / v9-coach-free with v9 / v10's paragraph 4, so
+ * the crisis sentence follows the exception (client-ai-v8 / v9 copy sha256).
+ * Shown only while ?variant=crisis_alert offers client-ai-v8 / v9.
  */
 import { createHash } from 'node:crypto';
 import { ROMAN_CRISIS_TOLD_SENTENCE } from '../roman/roman.feature';
@@ -80,6 +93,8 @@ export interface ConsultConsentCopy {
   paragraphs: readonly string[];
   /** Box 1 (required): waiver + collection and use for coaching. */
   box1Label: string;
+  /** Heading and lead after box 1, above paragraph 4 (no coach, W-CONSENT). Absent: none. */
+  romanIntro?: readonly string[];
   /** Paragraph 4, shown above box 2 (Roman and AI, processed by Anthropic). Absent: no Roman choice. */
   aiParagraph?: string;
   /** Box 2 (optional, unticked by default). Never part of the P0 record. Absent with paragraph 4. */
@@ -187,6 +202,37 @@ export const CONSULT_CONSENT_COPY_V7_COACH_FREE: ConsultConsentCopy = {
   footer: 'Nothing is sent until you continue.',
 };
 
+/**
+ * consult-consent-v8-coach-free / v9-coach-free (W-CONSENT, FIX684): v7-coach-free with the Roman
+ * choice under "Before you join a coach", then v7 / v8's paragraph 4 and box 2 (memory off / on).
+ */
+export const CONSULT_CONSENT_V8_COACH_FREE = 'consult-consent-v8-coach-free';
+export const CONSULT_CONSENT_V9_COACH_FREE = 'consult-consent-v9-coach-free';
+export const CONSULT_CONSENT_V10_COACH_FREE = 'consult-consent-v10-coach-free';
+export const CONSULT_CONSENT_V11_COACH_FREE = 'consult-consent-v11-coach-free';
+const withRomanChoice = (coached: ConsultConsentCopy): ConsultConsentCopy => ({
+  ...CONSULT_CONSENT_COPY_V7_COACH_FREE,
+  romanIntro: [
+    'Before you join a coach',
+    'Roman works with a coach, so he is not available until you join one. If you allow this now, Roman is ready on the day you join and you will not be asked again.',
+  ],
+  aiParagraph: coached.aiParagraph,
+  box2Label: coached.box2Label,
+});
+export const CONSULT_CONSENT_COPY_V8_COACH_FREE = withRomanChoice(CONSULT_CONSENT_COPY_V7);
+export const CONSULT_CONSENT_COPY_V9_COACH_FREE = withRomanChoice(CONSULT_CONSENT_COPY_V8);
+export const CONSULT_CONSENT_COPY_V10_COACH_FREE = withRomanChoice(CONSULT_CONSENT_COPY_V9);
+export const CONSULT_CONSENT_COPY_V11_COACH_FREE = withRomanChoice(CONSULT_CONSENT_COPY_V10);
+/** Their pins: screen text (aiSlice = v7 / v8 / v9 / v10 aiSlice = ledger client-ai-v6 / v7 / v8 / v9 copy sha256). */
+export const CONSULT_CONSENT_V8_COACH_FREE_TEXT_SHA256 =
+  '5369ee9c57412dd2233850a7cae2043a32645431ee3b3484a14c19b8c503c633';
+export const CONSULT_CONSENT_V9_COACH_FREE_TEXT_SHA256 =
+  '4a1e19730f3fab3b8a6a8119f5425cd3c0f6ed2f502d229d25dbb7fe5df35771';
+export const CONSULT_CONSENT_V10_COACH_FREE_TEXT_SHA256 =
+  'b79c1f039e2832560593390b7b66a91f61b2e7be5eb55ef3509ecd7a100d7c4c';
+export const CONSULT_CONSENT_V11_COACH_FREE_TEXT_SHA256 =
+  '3528b10d50d8e7bb67a3065b86ba2b5cf33f3891b8194be413c78f2519e3257f';
+
 /** Separator between displayed parts in every digest input. */
 export const CONSULT_CONSENT_SEPARATOR = '\n\n';
 
@@ -196,6 +242,7 @@ export function consultConsentScreenText(copy: ConsultConsentCopy): string {
     copy.title,
     ...copy.paragraphs,
     copy.box1Label,
+    ...(copy.romanIntro ?? []),
     ...(copy.aiParagraph === undefined ? [] : [copy.aiParagraph]),
     ...(copy.box2Label === undefined ? [] : [copy.box2Label]),
     copy.footer,
@@ -303,6 +350,14 @@ export const CONSULT_CONSENT_COPIES: Readonly<
     copy: CONSULT_CONSENT_COPY_V8,
     text_sha256: CONSULT_CONSENT_V8_TEXT_SHA256,
   },
+  [CONSULT_CONSENT_V8_COACH_FREE]: {
+    copy: CONSULT_CONSENT_COPY_V8_COACH_FREE,
+    text_sha256: CONSULT_CONSENT_V8_COACH_FREE_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V9_COACH_FREE]: {
+    copy: CONSULT_CONSENT_COPY_V9_COACH_FREE,
+    text_sha256: CONSULT_CONSENT_V9_COACH_FREE_TEXT_SHA256,
+  },
   [CONSULT_CONSENT_V7_COACH_FREE]: {
     copy: CONSULT_CONSENT_COPY_V7_COACH_FREE,
     text_sha256: CONSULT_CONSENT_V7_COACH_FREE_TEXT_SHA256,
@@ -314,6 +369,14 @@ export const CONSULT_CONSENT_COPIES: Readonly<
   [CONSULT_CONSENT_V10]: {
     copy: CONSULT_CONSENT_COPY_V10,
     text_sha256: CONSULT_CONSENT_V10_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V10_COACH_FREE]: {
+    copy: CONSULT_CONSENT_COPY_V10_COACH_FREE,
+    text_sha256: CONSULT_CONSENT_V10_COACH_FREE_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V11_COACH_FREE]: {
+    copy: CONSULT_CONSENT_COPY_V11_COACH_FREE,
+    text_sha256: CONSULT_CONSENT_V11_COACH_FREE_TEXT_SHA256,
   },
 });
 
