@@ -159,6 +159,8 @@ function buildPrisma() {
         name: 'Client',
         coach_id: COACH,
       })),
+      // CONTRACT-1: no client here has moved away from their coach.
+      findMany: jest.fn(async () => []),
     },
   };
 }

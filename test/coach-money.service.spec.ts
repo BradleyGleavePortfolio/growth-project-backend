@@ -190,6 +190,8 @@ function buildPrisma() {
     chargeDispute: { findMany: jest.fn(async (_args?: unknown): Promise<unknown[]> => []) },
     chargeRefund: { findMany: jest.fn(async (_args?: unknown): Promise<unknown[]> => []) },
     connectAccount: { findUnique: jest.fn(async (_args?: unknown): Promise<unknown> => null) },
+    // CONTRACT-1: no client here has moved away from their coach.
+    user: { findMany: jest.fn(async (_args?: unknown): Promise<unknown[]> => []) },
   };
 }
 

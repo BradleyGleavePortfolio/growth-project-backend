@@ -23,6 +23,7 @@ import { CheckoutContractGate } from '../contracts/checkout-contract-gate.servic
 import { CLIENT_PURCHASE_SELECT, type ClientPurchaseView } from './client-purchases.select';
 import { purchaseTrialView, type PurchaseTrialView } from '../packages/trials/trial-view';
 import { COACH_PURCHASE_SELECT, type CoachPurchaseView } from './coach-payments.select';
+import { keepMoneyRecordsOnly, type MoneyRecord } from './moved-client-money';
 import { ContractRequiredException } from '../contracts/contract-required.exception';
 import type { TrialOffer } from '../packages/trials/trial-usage.service';
 import {
@@ -1141,10 +1142,11 @@ export class CheckoutService {
   //
   // C-641-2 / OR-112-19: GET /v1/coach/purchases is a coach route, so it uses
   // the coach allow-list; the raw row carries the CLIENT's Stripe secrets.
+  // CONTRACT-1: a client who moved away leaves only the money record.
   async listForCoach(
     coachUserId: string,
     opts: { cursor?: string; limit?: number } = {},
-  ): Promise<{ items: CoachPurchaseView[]; hasMore: boolean }> {
+  ): Promise<{ items: Array<CoachPurchaseView | MoneyRecord>; hasMore: boolean }> {
     const take = Math.min(opts.limit ?? 50, 100);
     const rows = await this.prisma.clientPurchase.findMany({
       where: { coach_user_id: coachUserId },
@@ -1154,7 +1156,8 @@ export class CheckoutService {
       select: COACH_PURCHASE_SELECT,
     });
     const hasMore = rows.length > take;
-    return { items: hasMore ? rows.slice(0, take) : rows, hasMore };
+    const items = hasMore ? rows.slice(0, take) : rows;
+    return { items: await keepMoneyRecordsOnly(this.prisma, coachUserId, items), hasMore };
   }
 
   async createBillingPortalSession(
