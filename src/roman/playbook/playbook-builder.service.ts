@@ -189,8 +189,8 @@ export class PlaybookBuilderService {
     const consented = src.consentedClientIds;
     if (consented.length === 0 && src.ledger.some((r) => r.client_id)) return 'unsafe_ledger';
     const subject = consented.length
-      ? clientDataSubject(consented, 'coach', 'memory')
-      : noClientDataSubject('coach_own_scope');
+      ? clientDataSubject(consented, 'coach', 'memory', head)
+      : noClientDataSubject('coach_own_scope', head);
 
     const user = JSON.stringify({
       signals: src.signals,

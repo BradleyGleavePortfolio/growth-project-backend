@@ -711,9 +711,11 @@ export function deriveGatewayDataSubject(req: AiGatewayRequest): AiDataSubject {
   const ids = [...new Set([...namedClientIds(req), ...(req.dataClientIds ?? [])])].filter(
     (id) => typeof id === 'string' && id.length > 0,
   );
-  if (ids.length === 0) return noClientDataSubject('coach_own_scope');
-  const audience = req.requester.role === 'coach' || req.requester.role === 'owner' ? 'coach' : 'client';
-  return clientDataSubject(ids, audience);
+  const isStaff = req.requester.role === 'coach' || req.requester.role === 'owner';
+  // COACH-AI-CONSENT: a coach or owner's request also needs their own grant.
+  const coachId = isStaff ? req.requester.id : undefined;
+  if (ids.length === 0) return noClientDataSubject('coach_own_scope', coachId);
+  return clientDataSubject(ids, isStaff ? 'coach' : 'client', 'base', coachId);
 }
 
 // B-AIB2-126 — provenance source of a payload the model wrote via `resolveProposedAction`. Callers cannot set it (stripped above).

@@ -41,6 +41,15 @@ export class FakeConsentReader implements ClientAiConsentReader {
     if (this.readFails) return new Set();
     return new Set(userIds.filter((id) => this.grantAll || this.granted.has(id)));
   }
+
+  /** COACH-AI-CONSENT: every coach holds their own grant unless listed (kept apart from client reads). */
+  readonly coachesWithout = new Set<string>();
+  readonly coachCalls: string[] = [];
+
+  async hasCoachAiConsent(coachId: string): Promise<boolean> {
+    this.coachCalls.push(coachId);
+    return !this.coachesWithout.has(coachId);
+  }
 }
 
 export function egressWithGrants(granted: Iterable<string> = []): {

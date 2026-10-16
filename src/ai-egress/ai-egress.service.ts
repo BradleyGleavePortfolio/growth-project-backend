@@ -12,6 +12,11 @@
  *      A subject with scope 'memory' (Roman v1.1) needs a live client-ai-v5
  *      grant for every listed client; a v4 grant covers 'base' only; a
  *      coach-free grant (owner 62) counts only for a 'client' audience;
+ *      COACH-AI-CONSENT: a subject naming `coachId` also needs that coach's
+ *      live coach-ai-v1 grant, read the same way, first (403
+ *      coach_ai_consent_required); a coach audience or coach reason without
+ *      `coachId`, or a coach subject for any processor but Anthropic, is a
+ *      policy refusal;
  *   3. fails closed: no grant, an older copy, ledger flag off, a ledger read
  *      error, an unexpected throw, a client subject with no ids, or client
  *      data aimed at a processor other than Anthropic all refuse the send;
@@ -38,11 +43,12 @@ import AnthropicSdk from '@anthropic-ai/sdk';
 import type Anthropic from '@anthropic-ai/sdk';
 import OpenAISdk from 'openai';
 import type OpenAI from 'openai';
-import { AI_CONSENT_BATCH_MAX } from '../ai-consent/ai-consent.constants';
+import { AI_CONSENT_BATCH_MAX, COACH_AI_CONSENT_TITLE } from '../ai-consent/ai-consent.constants';
 import { CLIENT_AI_CONSENT_READER, ClientAiConsentReader } from '../ai-consent/ai-consent.reader';
 import {
   AiConsentRequiredException,
   AiEgressPolicyException,
+  CoachAiConsentRequiredException,
   isAiEgressRefusal,
 } from './ai-consent-required.exception';
 import {
@@ -53,6 +59,7 @@ import {
   AiProcessor,
   CONSENTED_AI_PROCESSOR,
   NO_CLIENT_DATA_REASONS,
+  needsCoachGrant,
 } from './ai-egress.types';
 
 export type AnthropicStream = ReturnType<Anthropic['messages']['stream']>;
@@ -204,6 +211,20 @@ export class AiEgressService {
     processor: AiProcessor,
     surface: AiEgressSurface,
   ): Promise<void> {
+    // COACH-AI-CONSENT: the coach's own grant first, on top of every client check below.
+    const coachId = subject.coachId;
+    if (!coachId && needsCoachGrant(subject)) {
+      this.logger.error(`ai_egress.blocked surface=${surface} reason=coach_subject_without_id`);
+      throw new AiEgressPolicyException();
+    }
+    if (coachId && processor !== CONSENTED_AI_PROCESSOR) {
+      this.logger.error(`ai_egress.blocked surface=${surface} reason=coach_processor_not_consented`);
+      throw new AiEgressPolicyException();
+    }
+    if (coachId && !(await this.coachConsented(coachId))) {
+      this.logger.log(`ai_egress.refused surface=${surface} reason=no_coach_grant`);
+      throw new CoachAiConsentRequiredException(COACH_AI_CONSENT_TITLE);
+    }
     if (subject.kind === 'no_client_data') {
       if (!(NO_CLIENT_DATA_REASONS as readonly string[]).includes(subject.reason)) {
         this.logger.error(`ai_egress.blocked surface=${surface} reason=unknown_exemption`);
@@ -230,6 +251,20 @@ export class AiEgressService {
         `ai_egress.refused surface=${surface} reason=no_live_grant scope=${scope} clients=${ids.length} missing=${missing}`,
       );
       throw new AiConsentRequiredException(subject.audience);
+    }
+  }
+
+  /**
+   * COACH-AI-CONSENT: true only while `coachId` holds a live coach-ai-v1 grant, read now (never
+   * cached, so a withdrawal stops the next request). Fails closed: an error, or a reader without
+   * this read, is no grant.
+   */
+  async coachConsented(coachId: string): Promise<boolean> {
+    try {
+      return (await this.consent.hasCoachAiConsent?.(coachId)) === true;
+    } catch {
+      this.logger.warn('ai_egress.coach_consent_read_failed (treated as no grant)');
+      return false;
     }
   }
 

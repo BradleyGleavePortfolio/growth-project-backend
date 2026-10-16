@@ -111,6 +111,10 @@ export class PlaybookSourceCollector {
     });
     const subIds = [...new Set(subs.map((s) => s.sub_coach_id).filter((id) => id !== head))];
     const team = [head, ...subIds];
+    // COACH-AI-CONSENT: a sub-coach's own text is read only while they allow AI (read now);
+    // the head's grant is re-read at send (the builder's subject names the head).
+    const allowed = await Promise.all(subIds.map((id) => this.egress.coachConsented(id)));
+    const authors = [head, ...subIds.filter((_, i) => allowed[i])];
 
     const person = { id: true, name: true, leaderboard_display_name: true, email: true, phone: true } as const;
     const [clients, subCoaches] = await Promise.all([
@@ -137,13 +141,13 @@ export class PlaybookSourceCollector {
 
     const [guidelines, templates, plans, mealPlans] = await Promise.all([
       this.prisma.coachGuideline.findMany({
-        where: { coach_id: { in: team }, OR: forClient },
+        where: { coach_id: { in: authors }, OR: forClient },
         orderBy: { updated_at: 'desc' },
         select: { id: true, client_id: true, content: true },
         take: L.guidelines,
       }),
       this.prisma.workoutProgram.findMany({
-        where: { owner_user_id: { in: team }, is_template: true, archived_at: null },
+        where: { owner_user_id: { in: authors }, is_template: true, archived_at: null },
         orderBy: { updated_at: 'desc' },
         select: { id: true, name: true, description: true, weeks: true, days_per_week: true },
         take: L.templates,
@@ -151,7 +155,7 @@ export class PlaybookSourceCollector {
       // Library plans and template days only; a program day cloned onto one
       // client is that client's copy and is learned from its template instead.
       this.prisma.workoutPlan.findMany({
-        where: { coach_id: { in: team }, archived_at: null, OR: [{ is_template: true }, { program_id: null }] },
+        where: { coach_id: { in: authors }, archived_at: null, OR: [{ is_template: true }, { program_id: null }] },
         orderBy: { updated_at: 'desc' },
         select: {
           id: true,
@@ -167,7 +171,7 @@ export class PlaybookSourceCollector {
       }),
       // Day plans (MEAL:DAY), live only: a moved client's frozen copy is archived.
       this.prisma.dailyMealPlan.findMany({
-        where: { coach_id: { in: team }, archived_at: null },
+        where: { coach_id: { in: authors }, archived_at: null },
         orderBy: { created_at: 'desc' },
         select: { id: true, name: true, notes: true },
         take: L.mealPlans,
@@ -178,7 +182,7 @@ export class PlaybookSourceCollector {
     const notes = consented.length
       ? await this.prisma.coachingSession.findMany({
           where: {
-            coach_id: { in: team },
+            coach_id: { in: authors },
             client_id: { in: consented },
             coach_notes_md: { not: null },
             start_at: { gte: new Date(now.getTime() - L.sessionNoteDays * DAY_MS), lte: now },
@@ -192,7 +196,7 @@ export class PlaybookSourceCollector {
       ? await this.prisma.coachMessage.findMany({
           where: {
             coach_id: { in: team },
-            sender_id: { in: team },
+            sender_id: { in: authors },
             client_id: { in: consented },
             deleted_at: null,
             body: { not: null },
