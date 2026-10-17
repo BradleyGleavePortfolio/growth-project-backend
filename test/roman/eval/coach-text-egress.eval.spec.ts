@@ -11,6 +11,7 @@
 import 'reflect-metadata';
 import { makeWorld, runTurn, student, withRomanEnabled, type TurnResult } from './harness';
 import { COACH_A, LOCAL_TODAY_PT, NOW, P1 } from '../fixtures/roman-personas';
+import { playbookLedgerDigest } from '../../../src/roman/playbook/playbook-sources';
 
 withRomanEnabled();
 // The fixtures' NOW (2026-09-30 17:30 PT), so "today" and the next session are fixed.
@@ -47,7 +48,8 @@ const GATES = ['allowed', 'no grant', 'read error'] as const;
 type Gate = (typeof GATES)[number];
 const OWN = 'Thanks Alex, knee felt fine';
 const REPLY = 'Keep logging your meals this week.';
-const SQUATS = { coach_id: COACH_A.id, version: 1, status: 'active', red_lines: [],
+const SQUATS = { coach_id: COACH_A.id, version: 1, status: 'active', red_lines: [], sources: [],
+  source_digest: playbookLedgerDigest([], [], COACH_A.id),
   sections: { exercises: { substitutions: [{ for: 'Back squat', use: 'Goblet squat', when: 'knees ache', basis: 'observed', evidence_count: 4 }] } } };
 
 type Block = { type?: string; content?: unknown };
