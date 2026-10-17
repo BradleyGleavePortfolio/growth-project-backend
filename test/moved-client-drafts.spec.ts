@@ -97,6 +97,8 @@ function world() {
       gw('head1-client3-pending', 'head1', 'client3', 'pending'),
       gw('no-requester-head1-client3-pending', 'head1', 'client3', 'pending', {}, null),
     ]),
+    // No program copies: a plan-only draft's move is proven live (test/rls/moved-client-plan-drafts.spec.ts).
+    workoutPlan: table([]),
     messageDraft: table([
       msg('head1-client1-message', 'head1', 'client1'),
       msg('head1-client2-message', 'head1', 'client2'),

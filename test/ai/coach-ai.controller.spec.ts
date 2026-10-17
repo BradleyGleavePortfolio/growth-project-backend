@@ -491,6 +491,7 @@ describe('CoachAIService', () => {
         return { count: gone.length };
       };
       for (const model of ['aiActionDraft', 'messageDraft', 'churnIntervention']) f.prisma[model] = { deleteMany: async () => ({ count: 0 }) };
+      f.prisma.workoutPlan = { findMany: async () => [] }; // no program copies
       f.prisma.subCoachAssignment = {
         findFirst: async ({ where }: any) => (matches(delegation, where) ? delegation : null),
         findMany: async ({ where }: any) => [delegation].filter((d) => matches(d, where)),
