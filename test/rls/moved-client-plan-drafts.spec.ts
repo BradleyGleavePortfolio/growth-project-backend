@@ -123,7 +123,7 @@ if (!DB_URL && process.env.CI === 'true') {
     prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
       await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, who);
-      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, role[who]);
+      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, role[who] ?? '');
       await tx.$executeRawUnsafe(`SELECT set_config('request.jwt.claims', $1, true)`, JSON.stringify({ sub: who }));
       return fn(tx);
     });

@@ -73,7 +73,7 @@ export function payloadPlanId(payload: unknown): string | null {
 }
 
 /** Owner 4: days the tenant still has (planStaysInTenantWhere), so a day of a moved client's program copy is not found. */
-function tenantDayWhere(tenantCoachId: string): Prisma.WorkoutPlanWhereInput {
+function tenantDayWhere(tenantCoachId: string): { coach_id: string; AND: Prisma.WorkoutPlanWhereInput[] } {
   return { coach_id: tenantCoachId, AND: [planStaysInTenantWhere(tenantCoachId)] };
 }
 
