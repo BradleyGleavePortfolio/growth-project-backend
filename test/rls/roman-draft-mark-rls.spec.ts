@@ -152,7 +152,7 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
   // approved draft's id; 'unmarked' = sent, ai_draft_id null; any REFUSED key = that refusal, no draft and no message.
   const MISMATCH = 'WEARABLE_SUGGESTION_MISMATCH';
   const REFUSED = { 400: BadRequestException, 403: ForbiddenException, ai_consent_required: AiConsentRequiredException,
-    [MISMATCH]: BadRequestException };
+    WEARABLE_SUGGESTION_MISMATCH: BadRequestException };
   const SPACES = 'wearable approve whose body is Roman\'s suggestion with extra spaces (sends the stored text)';
   type Expect = 'marked' | 'unmarked' | keyof typeof REFUSED;
   const PATHS: Array<[string, Expect, () => Promise<Sent | null>]> = [
