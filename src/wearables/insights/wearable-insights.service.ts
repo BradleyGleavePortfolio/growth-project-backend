@@ -111,9 +111,9 @@ export class WearableInsightsService {
 
   /**
    * ROMANMARK-BE: Roman's own message suggestion for this coach, client and
-   * bucket as stored (fresh or stale, trimmed), else null. The approve route
-   * marks its draft as Roman's text only for this exact text or the coach's
-   * explicit edit of it (S-08). Roman wrote it through the egress gate
+   * bucket exactly as stored (fresh, or expired by its 6 h TTL or a sync),
+   * else null. The approve route sends only this text, marked, and marks the
+   * coach's explicit edit of it (S-08). Roman wrote it through the egress gate
    * (generate: live grant read before the cache write) while the client
    * allowed AI help, so it keeps the mark after a later withdrawal
    * (#ROMANMARK-CONSENT-MARK op 1).
@@ -121,7 +121,7 @@ export class WearableInsightsService {
   async romanSuggestion(coachId: string, clientId: string, bucket: WearableMetricBucket): Promise<string | null> {
     const row = await this.cache.getEvenIfStale('coach', clientId, bucket, coachId);
     const text: unknown = row ? Reflect.get(row, 'suggested_message_draft') : null;
-    return typeof text === 'string' && text.trim().length > 0 ? text.trim() : null;
+    return typeof text === 'string' && text.trim().length > 0 ? text : null;
   }
 
   // ── Public API ─────────────────────────────────────────────────────
