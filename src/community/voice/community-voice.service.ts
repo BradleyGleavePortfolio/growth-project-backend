@@ -292,6 +292,7 @@ export class CommunityVoiceService {
       if (!(await this.access.canAccessCohort(cohort, user))) {
         throw new NotFoundException(NOT_FOUND);
       }
+      await this.access.assertCanPost(cohort, user);
       return { cohortId: cohort.id, conversationId: null };
     }
     // Workspace-hall note — any member of the workspace may post.

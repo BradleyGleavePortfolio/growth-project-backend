@@ -163,6 +163,8 @@ export class CommunityMessagesService {
     if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
+    // C6-B1: a section takes no messages; a coach-only space only the coach's.
+    await this.access.assertCanPost(cohort, user);
     // Apple 1.2: objectionable-content filter before anything is written.
     this.safety.assertAllowed(body);
     // v2-1: validate + authorize any attached plan-context tag BEFORE the write
