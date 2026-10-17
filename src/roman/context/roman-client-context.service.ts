@@ -346,7 +346,12 @@ export class RomanClientContextService {
     if (hit && hit.expires_at > now.getTime()) {
       // A day boundary in the client's timezone invalidates "today".
       const clock = localClock(now, hit.bundle.context.identity.timezone);
-      if (clock.local_date === hit.local_date) return hit.bundle;
+      // COACH-TEXT: every coach whose words the entry holds must still allow AI
+      // (read now, so turning AI off reaches the next turn on every machine).
+      const text = hit.bundle.coach_text ?? [];
+      const ok = await this.egress.consentedCoaches(text);
+      const still = this.memo.get(caller.id) === hit && text.every((id) => ok.has(id));
+      if (clock.local_date === hit.local_date && still) return hit.bundle;
     }
     if (hit) this.memo.delete(caller.id);
     this.inFlight.set(caller.id, (this.inFlight.get(caller.id) ?? 0) + 1);
@@ -381,7 +386,7 @@ export class RomanClientContextService {
     caller: { id: string; role: string },
     now: Date = new Date(),
   ): Promise<RomanClientContextBundle> {
-    const { context, query_count, coach_side } = await this.build(caller, now);
+    const { context, query_count, coach_side, coach_text } = await this.build(caller, now);
     const rendered = renderClientContext(context);
     if (query_count > ROMAN_CONTEXT_MAX_QUERIES) {
       this.logger.warn(
@@ -396,6 +401,7 @@ export class RomanClientContextService {
       estimated_tokens: rendered.estimated_tokens,
       query_count,
       coach_side,
+      coach_text,
     };
   }
 
@@ -403,7 +409,12 @@ export class RomanClientContextService {
   async build(
     caller: { id: string; role: string },
     now: Date = new Date(),
-  ): Promise<{ context: RomanClientContext; query_count: number; coach_side: string[] }> {
+  ): Promise<{
+    context: RomanClientContext;
+    query_count: number;
+    coach_side: string[];
+    coach_text: string[];
+  }> {
     const userId = caller.id;
     let queries = 0;
 
@@ -451,6 +462,7 @@ export class RomanClientContextService {
         context: this.emptyContext(clock, now, ['user']),
         query_count: queries,
         coach_side: [],
+        coach_text: [],
       };
     }
 
@@ -1137,7 +1149,7 @@ export class RomanClientContextService {
       meal_plan,
       data_quality: { generated_at: now.toISOString(), missing, truncated },
     };
-    return { context, query_count: queries, coach_side: coachSide };
+    return { context, query_count: queries, coach_side: coachSide, coach_text: [...allowed] };
   }
 
   private emptyContext(clock: LocalClock, now: Date, missing: string[]): RomanClientContext {

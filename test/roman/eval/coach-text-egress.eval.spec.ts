@@ -9,7 +9,7 @@
 // test/rls/coach-text-egress-rls.spec.ts.
 
 import 'reflect-metadata';
-import { makeWorld, runTurn, withRomanEnabled, type TurnResult } from './harness';
+import { makeWorld, runTurn, student, withRomanEnabled, type TurnResult } from './harness';
 import { COACH_A, LOCAL_TODAY_PT, NOW, P1 } from '../fixtures/roman-personas';
 
 withRomanEnabled();
@@ -95,5 +95,15 @@ describe("COACH-TEXT: a coach's own words in a client turn follow that coach's A
     expect(t.reply).toBe(REPLY);
     expect(t.client_data).toContain(OWN);
     expect(t['history tool']).toContain(OWN);
+  });
+
+  it('a context memo entry built while the coach allowed AI is not reused once they turn it off', async () => {
+    const w = makeWorld();
+    expect((await w.ctx.getBundle(student(P1), NOW)).rendered).toContain('Keep dairy out');
+    expect((await w.ctx.getBundle(student(P1), NOW)).rendered).toContain('Keep dairy out');
+    w.consent.coachesWithout.add(COACH_A.id);
+    const after = await w.ctx.getBundle(student(P1), NOW);
+    expect(after.rendered).not.toContain('Keep dairy out');
+    expect(after.rendered).toContain(OWN);
   });
 });

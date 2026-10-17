@@ -273,8 +273,10 @@ export class AiEgressService {
    * true right now (each read now; a read error is no grant). A client's Roman request carries a
    * coach's own words (guideline, notes, messages) only for the coaches in this set.
    */
-  async consentedCoaches(coachIds: readonly (string | null | undefined)[]): Promise<ReadonlySet<string>> {
-    const unique = [...new Set(coachIds.filter((id): id is string => typeof id === 'string' && id.length > 0))];
+  async consentedCoaches(
+    coachIds: readonly (string | null | undefined)[],
+  ): Promise<ReadonlySet<string>> {
+    const unique = [...new Set(coachIds.filter((id): id is string => !!id))];
     const ok = await Promise.all(unique.map((id) => this.coachConsented(id)));
     return new Set(unique.filter((_, i) => ok[i]));
   }
