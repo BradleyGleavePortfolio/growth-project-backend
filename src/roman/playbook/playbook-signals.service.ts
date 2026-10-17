@@ -161,6 +161,25 @@ function inBounds(v: number | null | undefined): v is number {
   );
 }
 
+/**
+ * PLAYBOOK-WITHDRAW: plans whose exercises count for these clients. Library plans and template days are client-free
+ * by design (the collector's text rule). Any other day is a client's program and counts only while its client is
+ * one of them: the program's `client_id`, or for an older copy (no `client_id`) every client assigned to its days;
+ * with neither, it does not count.
+ */
+function plansOfClients(clientIds: readonly string[]): Prisma.WorkoutPlanWhereInput {
+  const assigned = (where: Prisma.ClientWorkoutAssignmentWhereInput) => ({ assignments: { some: where } });
+  const others = { client_id: { notIn: [...clientIds] } };
+  return {
+    OR: [
+      { is_template: true },
+      { program_id: null },
+      { program: { client_id: { in: [...clientIds] } } },
+      { program: { client_id: null, plans: { some: assigned({}), none: assigned(others) } } },
+    ],
+  };
+}
+
 interface CatalogEntry {
   name: string;
   primary_muscle: string;
@@ -183,7 +202,14 @@ export class PlaybookSignalsService {
 
     const [planExercises, assignments, proposals, targets, dailyAssignments] = await Promise.all([
       this.prisma.workoutPlanExercise.findMany({
-        where: { archived_at: null, workout_plan: { coach_id: { in: team }, archived_at: null } },
+        where: {
+          archived_at: null,
+          workout_plan: {
+            coach_id: { in: team },
+            archived_at: null,
+            ...(opts.clientIds ? plansOfClients(opts.clientIds) : {}),
+          },
+        },
         select: { exercise_external_id: true },
         take: LIMITS.rowsPerSource,
       }),

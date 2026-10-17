@@ -63,7 +63,6 @@ describe('first-sign-in coach sharing (share-link buyers)', () => {
       coach_id: COACH_A,
       coach_name: 'Coach A',
     });
-    expect(await consent.coachCanAccess(COACH_A, 'buyer', ConsentScope.FITNESS_FOOD_MACROS, 'coach')).toBe(false);
 
     expect(await sharing.accept('buyer', V1)).toEqual({ coach_sharing_granted: true, coach_id: COACH_A });
 
@@ -101,6 +100,8 @@ describe('first-sign-in coach sharing (share-link buyers)', () => {
     addUser(db, { id: 'buyer', coach_id: COACH_A });
     expect(await sharing.accept('buyer', undefined)).toEqual({ coach_sharing_granted: false, coach_id: null });
     expect(await sharing.accept('buyer', 'coach_sharing_join_v0')).toEqual({ coach_sharing_granted: false, coach_id: null });
+    // W-SU-1 is v2: a build that showed the v1 sentence records nothing.
+    expect(await sharing.accept('buyer', 'coach_sharing_join_v1')).toEqual({ coach_sharing_granted: false, coach_id: null });
     expect(rowsFor(db, 'buyer')).toHaveLength(0);
     expect(audit.writeTx).not.toHaveBeenCalled();
   });
@@ -109,13 +110,14 @@ describe('first-sign-in coach sharing (share-link buyers)', () => {
     const { db, sharing, consent } = await build();
     addUser(db, { id: 'chose', coach_id: COACH_A });
     await consent.grant('chose', COACH_A, ConsentScope.FITNESS_FOOD_MACROS);
-    await consent.revoke('chose', COACH_A, ConsentScope.FITNESS_FOOD_MACROS);
+    rowsFor(db, 'chose')[0].revoked_at = new Date(); // an old Food logs switch-off, before #SHARE-SIMPLE
 
     expect((await sharing.view('chose')).applies).toBe(false);
     expect(await sharing.accept('chose', V1)).toEqual({ coach_sharing_granted: false, coach_id: COACH_A });
     expect(rowsFor(db, 'chose')).toHaveLength(1);
-    expect(await consent.coachCanAccess(COACH_A, 'chose', ConsentScope.FITNESS_FOOD_MACROS, 'coach')).toBe(false);
-    expect(await consent.coachCanAccess(COACH_A, 'chose', ConsentScope.FITNESS_WORKOUTS, 'coach')).toBe(false);
+    // #SHARE-SIMPLE: no switch counts; all four reach the client's coach.
+    expect(await consent.coachCanAccess(COACH_A, 'chose', ConsentScope.FITNESS_FOOD_MACROS, 'coach')).toBe(true);
+    expect(await consent.coachCanAccess(COACH_A, 'chose', ConsentScope.FITNESS_WORKOUTS, 'coach')).toBe(true);
   });
 
   it('a client without a coach sees no sentence and records nothing', async () => {

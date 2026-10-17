@@ -59,7 +59,10 @@ it("coach digest: a moved client's check-ins and unread messages leave the forme
     },
   });
   const consent = Object.create(ConsentService.prototype);
-  Object.defineProperty(consent, 'coachCanAccess', { value: async (_coach: string, client: string) => client !== 'client-2' });
+  Object.defineProperty(consent, 'grantedScopesByClient', {
+    value: async (_coach: string, ids: string[], scopes: string[]) =>
+      new Map(ids.filter((id) => id !== 'client-2').map((id) => [id, new Set(scopes)])),
+  });
   const svc = new DigestService(prisma, Object.create(NotificationsService.prototype), new ConfigService({}), consent);
 
   const former = await svc['_buildCoachDigestData']('coach-A', 'weekly');
