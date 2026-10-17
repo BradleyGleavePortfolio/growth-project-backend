@@ -14,12 +14,15 @@
  * each with a plan-only draft; h's staying client d with one too (unchanged
  * by every move). Real services on the superuser connection (service_role,
  * as the API runs); the row half runs as the signed-in API role, which does
- * not bypass row security, a control of 1 before each 0.
+ * not bypass row security, a control of 1 before each 0. The last case runs
+ * down.sql to show the old row access, then re-applies the migration.
  *
  * Runs in the rls-live-tests job on a superuser copy of rls_replay.
  * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
  */
 import { randomUUID } from 'crypto';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import type { Prisma } from '@prisma/client';
 import { AiApprovalService } from '../../src/ai/gateway/ai-approval.service';
 import { WORKOUT_BUILDER_MODEL_DIFF_SOURCE } from '../../src/ai/gateway/ai-gateway.service';
@@ -38,6 +41,11 @@ const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') {
   throw new Error('moved-client-plan-drafts: CI=true but no TEST_DATABASE_URL; not skipping.');
 }
+const DIR = join(__dirname, '..', '..', 'prisma', 'migrations', '20270502004200_ai_drafts_follow_their_day');
+/** A migration file's statements; BEGIN/COMMIT become the one transaction that applies them. */
+const statements = (file: string) =>
+  readFileSync(join(DIR, file), 'utf8').replace(/^--.*$/gm, '').split(/;\s*$/m)
+    .map((s) => s.trim()).filter((s) => s && !/^(BEGIN|COMMIT)$/i.test(s));
 
 (DB_URL ? describe : describe.skip)("A moved client's plan-only AI drafts leave the former coach", () => {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
@@ -210,5 +218,25 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(await rowLayer(w.h, w.draft.stay)).toEqual([1, 0]);
     expect(await outcome(approvals.decide({ draftId: w.draft.stay, decider: { id: w.h, role: 'coach' }, decision: 'rejected' })))
       .toBe('ok');
+  });
+
+  it('down.sql brings back the former coach\'s row access; the migration closes it again with the same policy', async () => {
+    const w = await world('h');
+    const b = randomUUID();
+    await person(b, 'coach', null);
+    await prisma.user.update({ where: { id: w.c }, data: { coach_id: b } });
+    const apply = (file: string) =>
+      prisma.$transaction(async (tx) => {
+        for (const s of statements(file)) await tx.$executeRawUnsafe(s);
+      });
+    const policy = () => prisma.$queryRaw<{ permissive: string; cmd: string; qual: string }[]>`
+      SELECT "permissive", "cmd", "qual" FROM pg_policies WHERE "policyname" = 'ai_action_draft_day_stays'`;
+    const chain = await policy();
+    expect(chain.map((p) => [p.permissive, p.cmd])).toEqual([['RESTRICTIVE', 'ALL']]);
+    expect(await rowLayer(w.h, w.draft.sub)).toEqual([0, 0]);
+    await apply('down.sql');
+    expect([await policy(), await rowLayer(w.h, w.draft.sub)]).toEqual([[], [1, 1]]);
+    await apply('migration.sql');
+    expect([await policy(), await rowLayer(w.h, w.draft.sub)]).toEqual([chain, [0, 0]]);
   });
 });
