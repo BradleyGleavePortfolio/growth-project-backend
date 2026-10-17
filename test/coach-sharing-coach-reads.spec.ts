@@ -171,7 +171,7 @@ function makePrisma() {
 
 function setup() {
   const prisma = makePrisma();
-  const coaches = stub<SubCoachScopeService>({ getAuthorizedClientIds: jest.fn(async (id: string) => (id === COACH ? ['c1', 'c3'] : [])) });
+  const coaches = stub<SubCoachScopeService>({ getAuthorizedClientIds: jest.fn(async (id: string) => (id === COACH ? ['c1', 'c3'] : id === 'sub-1' ? ['c1', 'c2', 'c3'] : [])) });
   const consent = new ConsentService(stub<PrismaService>(prisma), stub<AuditService>({ write: jest.fn() }), coaches);
   const board = jest.fn(async (_coachId: string, opts: { clientIds?: string[] }) => ({
     data: (opts.clientIds ?? []).map((user_id) => ({ user_id, name: user_id, bucket: 'red', last_signal_at: null })),
@@ -312,7 +312,7 @@ describe('B-865-SOL-130-1: GET /v1/coach/me/clients and churn-at-risk follow the
     } },
     { provide: SupabaseService, useValue: {} },
     { provide: AuditService, useValue: { write: jest.fn() } },
-    // 'sub-1' is a sub-coach of COACH; the grants belong to COACH.
+    // 'sub-1' is COACH's seated sub-coach (c1 and c3 delegated, c2 his own client); he reads as himself.
     { provide: SubCoachScopeService, useValue: {
       isSubCoach: jest.fn(async (id: string) => id === 'sub-1'),
       getAuthorizedClientIds: jest.fn(async () => ['c1', 'c2', 'c3']),
@@ -348,7 +348,7 @@ describe('B-865-SOL-130-1: GET /v1/coach/me/clients and churn-at-risk follow the
     expect(seen(coach)).toEqual(['c1:check-in:workout', 'c2:-:-', 'c3:check-in:workout']);
     // A hidden check-in date is not turned into a "No check-in" risk reason.
     expect(coach.map((r) => r.riskReason ?? '').filter((r) => /check-in/i.test(r))).toEqual([]);
-    expect(seen(await rows('sub-1', 'coach'))).toEqual(['c1:check-in:workout', 'c2:-:-', 'c3:check-in:workout']);
+    expect(seen(await rows('sub-1', 'coach'))).toEqual(['c1:check-in:workout', 'c2:check-in:workout', 'c3:check-in:workout']);
     expect(seen(await rows('owner-1', 'owner'))).toEqual(['c1:check-in:workout', 'c2:check-in:workout', 'c3:check-in:workout']);
   });
 
@@ -391,7 +391,7 @@ describe('B-865-SOL-130-2: GET /v1/coach/me/threads and the churn draft follow t
       } },
       { provide: SupabaseService, useValue: {} },
       { provide: AuditService, useValue: { write: jest.fn() } },
-      // 'sub-1' is a sub-coach of COACH; the grants belong to COACH.
+      // 'sub-1' is COACH's seated sub-coach (c1 and c3 delegated, c2 his own client); he reads as himself.
       { provide: SubCoachScopeService, useValue: {
         isSubCoach: jest.fn(async (id: string) => id === 'sub-1'),
         getAuthorizedClientIds: jest.fn(async () => ['c1', 'c2', 'c3']),
@@ -402,7 +402,7 @@ describe('B-865-SOL-130-2: GET /v1/coach/me/threads and the churn draft follow t
     return { providers, checkInGroupBy };
   }
 
-  it('threads: a hidden check-in date gives no risk; a sub-coach reads under the head coach grant; the owner account reads all', async () => {
+  it('threads: a hidden check-in date gives no risk; a sub-coach reads as himself; the owner account reads all', async () => {
     const { providers, checkInGroupBy } = threadsModule();
     const mod = await Test.createTestingModule({ providers }).compile();
     const ctrl = new V1CoachController(mod.get(V1CoachService));
@@ -412,7 +412,7 @@ describe('B-865-SOL-130-2: GET /v1/coach/me/threads and the churn draft follow t
     // c1 and c3 share Check-ins and habits (30 days without one: watch); c2 turned it off.
     expect(await risk(COACH, 'coach')).toEqual({ c1: 'watch', c2: 'healthy', c3: 'watch' });
     expect(checkInGroupBy.mock.calls[0][0].where).toEqual({ user_id: { in: ['c1', 'c3'] } });
-    expect(await risk('sub-1', 'coach')).toEqual({ c1: 'watch', c2: 'healthy', c3: 'watch' });
+    expect(await risk('sub-1', 'coach')).toEqual({ c1: 'watch', c2: 'watch', c3: 'watch' });
     expect(await risk('owner-1', 'owner')).toEqual({ c1: 'watch', c2: 'watch', c3: 'watch' });
   });
 

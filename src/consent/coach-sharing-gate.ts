@@ -8,7 +8,7 @@ export type CoachSharingCheck = (scope: string, clientIds: string[]) => Promise<
 /**
  * COACH-AI-GATE-130 — which clients' `scope` logs a coach-side reader of many clients or of AI input may
  * read. Same rule as the client summary, in one batch: ConsentService.grantedScopesByClient (workouts, food
- * logs and weigh-ins: the client's coach now; Check-ins and habits: that switch; the owner passes).
+ * logs, weigh-ins, check-ins and habits: the client's coach now; the owner passes).
  * `consent` is missing only in hand-built unit tests (the services take it without @Optional(), so
  * Nest fails at boot rather than run without it); those keep their all-shared fixtures.
  */
