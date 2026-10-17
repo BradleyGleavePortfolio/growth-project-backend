@@ -679,6 +679,7 @@ export class WorkoutBuilderService {
               client_id: dto.client_id,
               assigned_by_coach_id: coachId,
               scheduled_for: new Date(dto.scheduled_for),
+              scheduled_time: dto.scheduled_time ?? null,
             },
           });
           await this.writeAssignmentSnapshot(tx, assignment.id, planId);
@@ -957,21 +958,26 @@ export class WorkoutBuilderService {
    * (scheduled_for) or skips (skip) their own day while it is neither completed
    * nor skipped; a new date runs from two days back (today in every time zone)
    * to seven days ahead. The client's current coach, or a delegated sub-coach,
-   * writes the day's note to the client (client_note) and reads back only
-   * { id, client_note }: a note write never returns the day's logged results,
-   * which follow the client's Workouts sharing switch. Anyone else: 403.
+   * writes the day's note to the client (client_note) or, C2-C0, its planned
+   * time (scheduled_time), and reads back only { id, <that field> }: a coach
+   * write never returns the day's logged results, which follow the client's
+   * Workouts sharing switch. Anyone else: 403.
    */
   async updateAssignment(userId: string, assignmentId: string, dto: UpdateAssignmentDto, now = new Date()) {
-    const sent = [dto.scheduled_for != null, dto.skip != null, dto.client_note !== undefined].filter(Boolean).length;
-    if (sent !== 1) throw new BadRequestException('Send exactly one of scheduled_for, skip, client_note');
+    const sent = [dto.scheduled_for != null, dto.skip != null, dto.client_note !== undefined, dto.scheduled_time !== undefined].filter(Boolean).length;
+    if (sent !== 1) throw new BadRequestException('Send exactly one of scheduled_for, skip, client_note, scheduled_time');
     const a = await this.prisma.clientWorkoutAssignment.findUnique({ where: { id: assignmentId }, select: { client_id: true } });
     if (!a) throw new NotFoundException('Assignment not found');
-    if (dto.client_note !== undefined) {
+    if (dto.client_note !== undefined || dto.scheduled_time !== undefined) {
       await this.assertCanAccessClient(userId, a.client_id);
+      const where = { id: assignmentId };
+      if (dto.scheduled_time !== undefined) {
+        return this.prisma.clientWorkoutAssignment.update({
+          where, data: { scheduled_time: dto.scheduled_time }, select: { id: true, scheduled_time: true },
+        });
+      }
       return this.prisma.clientWorkoutAssignment.update({
-        where: { id: assignmentId },
-        data: { client_note: dto.client_note?.trim() || null },
-        select: { id: true, client_note: true },
+        where, data: { client_note: dto.client_note?.trim() || null }, select: { id: true, client_note: true },
       });
     }
     if (a.client_id !== userId) throw new ForbiddenException('Access denied');
@@ -1545,7 +1551,7 @@ export class WorkoutBuilderService {
         }
 
         const created = await this.prisma.$transaction((tx) =>
-          this.fanOutProgramPlans(tx, plans, coachId, dto.client_id, dto.start_date),
+          this.fanOutProgramPlans(tx, plans, coachId, dto.client_id, dto.start_date, dto.scheduled_time),
         );
 
         // One push for the whole program (avoid N notifications).
@@ -1609,13 +1615,14 @@ export class WorkoutBuilderService {
     return this.fanOutProgramPlans(tx, plans, coachId, clientId, startDate);
   }
 
-  /** Shared by assignProgramToClient and writeProgramAssignmentsInTx. */
+  /** Shared by assignProgramToClient and writeProgramAssignmentsInTx; every day gets `scheduledTime` (C2-C0). */
   private async fanOutProgramPlans(
     tx: Prisma.TransactionClient,
     plans: Array<{ id: string; week_index: number | null; day_index: number | null }>,
     coachId: string,
     clientId: string,
     startDateIso: string,
+    scheduledTime: string | null = null,
   ): Promise<Array<{ id: string }>> {
     const startDate = new Date(startDateIso);
     const DAY_MS = 24 * 60 * 60 * 1000;
@@ -1630,6 +1637,7 @@ export class WorkoutBuilderService {
           client_id: clientId,
           assigned_by_coach_id: coachId,
           scheduled_for: scheduledFor,
+          scheduled_time: scheduledTime,
         },
       });
       await this.writeAssignmentSnapshot(tx, assignment.id, plan.id);

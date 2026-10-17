@@ -188,6 +188,14 @@ describe('ProgramDeliveryService.deliverInTx', () => {
     expect(out.first_assignment_id).toBe(writes.clientWorkoutAssignment[0].id);
   });
 
+  it("C2-C0: every delivered day carries the coach's planned time; a package (no time) writes none", async () => {
+    for (const [scheduledTime, written] of [['18:00', '18:00'], [undefined, null]] as const) {
+      const { tx, writes } = makeTx();
+      await service().deliverInTx(fake(tx), { ...input, scheduledTime });
+      expect(writes.clientWorkoutAssignment.map((a) => a.scheduled_time)).toEqual([written, written]);
+    }
+  });
+
   it('replays an already-delivered key without writing anything', async () => {
     const { tx, writes } = makeTx({ existingKey: 'copy-9' });
     const out = await service().deliverInTx(fake(tx), input);

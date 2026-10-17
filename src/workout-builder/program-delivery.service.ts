@@ -54,6 +54,8 @@ export interface DeliverProgramInput {
   startAt: Date;
   deliveryKey: string;
   source: ProgramDeliverySource;
+  /** C2-C0: the coach's planned training time on every day, "HH:MM"; absent = no time (a package). */
+  scheduledTime?: string | null;
 }
 
 export interface DeliveredProgram {
@@ -227,6 +229,7 @@ export class ProgramDeliveryService {
         client_id: input.clientId,
         assigned_by_coach_id: input.actingUserId,
         scheduled_for: scheduledFor,
+        scheduled_time: input.scheduledTime ?? null,
       });
       snapshotRows.push({
         assignment_id: assignmentId,

@@ -2778,6 +2778,8 @@ model ClientWorkoutAssignment {
   // coach's note to the client for it.
   skipped_at                 DateTime?
   client_note                String?
+  // C2-C0: the coach's planned training time that day, local "HH:MM" (24-hour); null = no time set.
+  scheduled_time             String?
 
   // Stream 2 — AI execution. Set by `AssignWorkoutMaterializer` when a
   // `draft.assign_workout` is approved. NULL for human-assigned workouts.
@@ -3164,6 +3166,8 @@ model DailyMealPlanSlot {
   meal_template      MealTemplate  @relation(fields: [meal_template_id], references: [id], onDelete: Restrict)
   slot_label         String
   order              Int           @default(0)
+  // C2-C0: the coach's planned time for this meal, local "HH:MM" (24-hour); null = plan order, no time.
+  time_of_day        String?
 
   @@unique([daily_meal_plan_id, slot_label, order])
   @@index([daily_meal_plan_id])
