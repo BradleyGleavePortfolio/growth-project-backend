@@ -1,6 +1,7 @@
 // CONTRACT-1 (a former coach keeps only their own money records) over every coach client payments read and action: real guards
 // and service (service_role, as the API runs), Stripe, refund and cancel recorders, a control before the move, and the sale read
-// as the signed-in API role (non-bypass; a control of 1 before each 0). Runs in rls-live-tests.
+// as the signed-in API role (non-bypass): refused for every caller since BILLRAW (20270502003500), after a server read of 1 (the
+// control). Runs in rls-live-tests.
 import { randomUUID } from 'crypto';
 import type { User } from '@prisma/client';
 import { CoachClientPaymentsService } from '../../src/checkout/coach-client-payments.service';
@@ -14,7 +15,7 @@ const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') throw new Error('moved-client-payments: CI=true, no TEST_DATABASE_URL.');
 const NF = '404 PLAN_NOT_FOUND', OK = 'ok', NONE = [NF, NF, NF, NF, NF];
 // [row, actor, seller of the sale, guards, list, [refund, by sale, pause, resume, cancel], calls sent, row read]
-type Row = [string, string, string, string, string[], string[], string[], number];
+type Row = [string, string, string, string, string[], string[], string[]];
 (DB_URL ? describe : describe.skip)('coach client payments after a move: the money record only', () => {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
   const [K, F, S, L, A] = Array.from({ length: 5 }, () => randomUUID()); // A moves from coach F to coach K
@@ -38,7 +39,8 @@ type Row = [string, string, string, string, string[], string[], string[], number
     () => svc.resume(u, A, id, key), () => svc.cancel(u, A, id, key)];
   const seen = (u: User, id: string) => prisma.$transaction([prisma.$queryRawUnsafe(`SELECT set_config('role', 'authenticated', true),
     set_config('app.current_user_id', $1, true), set_config('app.current_user_role', $2, true), set_config('request.jwt.claims', $3, true)`,
-    u.id, u.role, `{"sub":"${u.id}"}`), prisma.clientPurchase.count({ where: { id } })]).then(([, n]) => n);
+    u.id, u.role, `{"sub":"${u.id}"}`), prisma.clientPurchase.count({ where: { id } })])
+    .then(([, n]) => n, (e) => (/42501/.test(String(e)) ? 'refused' : Promise.reject(e)));
   beforeAll(async () => {
     for (const [id, role, coach_id] of [[K, 'coach', null], [F, 'coach', null], [L, 'coach', null], [S, 'coach', K], [A, 'student', F]] as const) {
       user[id] = await prisma.user.create({ data: { id, supabase_id: id, email: `pay-${id}`, name: 'Live person', role, coach_id } });
@@ -57,18 +59,19 @@ type Row = [string, string, string, string, string[], string[], string[], number
   });
   afterAll(() => prisma.$disconnect());
   it.each<Row>([
-    ['current coach K, own sale', K, K, OK, ['plan'], [OK, OK, OK, OK, OK], ['refund', 'refund', 'pause', 'cancel'], 1],
-    ['former coach F, own sale', F, F, OK, ['record'], [OK, OK, NF, NF, NF], ['refund', 'refund'], 1],
-    ['current coach K, the sale F made', K, F, OK, ['plan'], NONE, [], 0],
-    ["K's sub-coach S", S, K, '403 sub_coach_billing_blocked', [], NONE, [], 0],
-    ['other coach L', L, K, OK, [], NONE, [], 0],
-    ['client A', A, K, '403', [], NONE, [], 1],
-  ])('%s', async (_row, actorId, seller, guard, list, results, calls, rows) => {
+    ['current coach K, own sale', K, K, OK, ['plan'], [OK, OK, OK, OK, OK], ['refund', 'refund', 'pause', 'cancel']],
+    ['former coach F, own sale', F, F, OK, ['record'], [OK, OK, NF, NF, NF], ['refund', 'refund']],
+    ['current coach K, the sale F made', K, F, OK, ['plan'], NONE, []],
+    ["K's sub-coach S", S, K, '403 sub_coach_billing_blocked', [], NONE, []],
+    ['other coach L', L, K, OK, [], NONE, []],
+    ['client A', A, K, '403', [], NONE, []],
+  ])('%s', async (_row, actorId, seller, guard, list, results, calls) => {
     const u = user[actorId];
     sent = [];
     const plans = (await svc.list(u, A)).plans.map((p) => ('billing' in p ? 'plan' : 'record'));
     const done: string[] = []; // in order: each action sees the one before it
     for (const act of acts(u, sale[seller])) done.push(await outcome(act));
-    expect([await gate(u), plans, done, sent, await seen(u, sale[seller])]).toEqual([guard, list, results, calls, rows]);
+    const server = await prisma.clientPurchase.count({ where: { id: sale[seller] } });
+    expect([await gate(u), plans, done, sent, server, await seen(u, sale[seller])]).toEqual([guard, list, results, calls, 1, 'refused']);
   });
 });

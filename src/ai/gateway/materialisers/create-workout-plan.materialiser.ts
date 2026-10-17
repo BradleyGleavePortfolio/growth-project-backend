@@ -27,6 +27,8 @@ import {
   WorkoutDiffSchema,
 } from './__shared/workout-diff.types';
 import { isMwbAiLiveCreateEnabled } from '../mwb-live-create.feature';
+import { alternativesOf } from '../../../workout-builder/plan-exercise-fields';
+import { planStaysInTenantWhere, programStaysInTenantWhere } from '../../../workout-builder/tenant-clients';
 import {
   LiveCreateMaterialiseError,
   coercePrismaWriteConflict,
@@ -375,9 +377,10 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
 
   /**
    * Load a template plan's exercises as a deep-copied baseline snapshot
-   * (Option-C seed). The template MUST belong to the tenant; the fork starts
-   * from its live (non-archived) exercise rows. The seed is read-only — a
-   * FRESH plan id is written by the caller (brief Test matrix #2).
+   * (Option-C seed). The template MUST belong to the tenant, and a day of a
+   * moved client's program copy is not found (owner 4, tenant-clients.ts);
+   * the fork starts from its live (non-archived) exercise rows. The seed is
+   * read-only — a FRESH plan id is written by the caller (brief Test matrix #2).
    */
   private async loadTemplateSeedSnapshot(
     tx: Prisma.TransactionClient,
@@ -385,7 +388,7 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
     tenantCoachId: string,
   ): Promise<PlanSnapshot> {
     const seed = await tx.workoutPlan.findUnique({
-      where: { id: sourceTemplatePlanId },
+      where: { id: sourceTemplatePlanId, AND: [planStaysInTenantWhere(tenantCoachId)] },
       select: {
         id: true,
         coach_id: true,
@@ -437,6 +440,7 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
         rest_seconds: true,
         superset_group_id: true,
         notes: true,
+        alternative_external_ids: true,
       },
     });
     return {
@@ -455,18 +459,19 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
         rest_seconds: r.rest_seconds ?? null,
         superset_group_id: r.superset_group_id ?? null,
         notes: r.notes ?? null,
+        alternative_external_ids: alternativesOf(r),
       })),
     };
   }
 
-  /** Assert an existing program belongs to the tenant; return its id. */
+  /** Assert an existing program belongs to the tenant and is no moved client's copy (owner 4); return its id. */
   private async assertProgramInTenant(
     tx: Prisma.TransactionClient,
     programId: string,
     tenantCoachId: string,
   ): Promise<string> {
     const program = await tx.workoutProgram.findUnique({
-      where: { id: programId },
+      where: { id: programId, AND: [programStaysInTenantWhere(tenantCoachId)] },
       select: { id: true, coach_id: true },
     });
     if (!program || program.coach_id !== tenantCoachId) {

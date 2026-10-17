@@ -89,6 +89,8 @@ export interface AdjustChange {
   sets_before: number;
   sets_after: number;
   exercises: AdjustExerciseChange[];
+  /** C1V2-C1: the coach's reason the client reads on the adjusted day (applied changes only). */
+  client_reason?: string;
 }
 
 /** Local calendar date (YYYY-MM-DD) of `d` in `timeZone`; UTC on a bad zone. */

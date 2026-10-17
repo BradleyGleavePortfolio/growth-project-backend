@@ -6,6 +6,8 @@
  * CI discovers this file on its own copy of the fully replayed migration chain.
  * No policy changes: production grants are tested first, then temporary CRUD
  * grants (rolled back with the query) isolate RLS from missing table privileges.
+ * BILLRAW (20270502003500) took the API roles' grants on the six payout and
+ * refund-decision tables (grants: 'none').
  * JWT-only requests deliberately have no app identity; they must see nothing.
  */
 import { randomUUID } from 'crypto';
@@ -24,24 +26,24 @@ if (!DB_URL && process.env.CI === 'true') {
 type Config = { table: string; set: string; key?: string; owner?: 'crud' | 'read-update';
   grants?: 'none' | 'authenticated'; anonHelper?: boolean; selfInsert?: string };
 const TABLES = [
-  { table: 'ChargeSettlement', set: '"refunded_cents" = 100', owner: 'crud', anonHelper: true },
-  { table: 'PayoutAdjustmentNotice', set: '"customer_refunded_cents" = 101', owner: 'crud', anonHelper: true },
-  { table: 'PayeeRecovery', set: '"amount_cents" = 101', owner: 'crud', anonHelper: true },
-  { table: 'ConnectTransfer', set: '"amount_cents" = 101', owner: 'crud', anonHelper: true },
+  { table: 'ChargeSettlement', set: '"refunded_cents" = 100', owner: 'crud', grants: 'none', anonHelper: true },
+  { table: 'PayoutAdjustmentNotice', set: '"customer_refunded_cents" = 101', owner: 'crud', grants: 'none', anonHelper: true },
+  { table: 'PayeeRecovery', set: '"amount_cents" = 101', owner: 'crud', grants: 'none', anonHelper: true },
+  { table: 'ConnectTransfer', set: '"amount_cents" = 101', owner: 'crud', grants: 'none', anonHelper: true },
   { table: 'TransferReversalOp', set: '"amount_cents" = 101', owner: 'crud', anonHelper: true },
   { table: 'DunningState', set: '"status" = \'refunded\'' },
   { table: 'DunningNoticeDelivery', set: '"status" = \'canceled\'', grants: 'authenticated' },
   { table: 'DunningAttempt', set: '"status" = \'cancelled\'', grants: 'none' },
   { table: 'PaymentRecoveryToken', set: '"used_at" = now()', grants: 'none' },
   { table: 'AuditLog', set: '"action" = \'rls.changed\'', owner: 'crud', anonHelper: true },
-  { table: 'SplitLedgerEntry', set: '"amount_cents" = 101', owner: 'crud', anonHelper: true },
+  { table: 'SplitLedgerEntry', set: '"amount_cents" = 101', owner: 'crud', grants: 'none', anonHelper: true },
   { table: 'SplitLedgerReversal', set: '"cents" = 101' },
   { table: 'GuestCheckout', set: '"status" = \'refunded\'' },
   { table: 'ScheduledDrop', set: '"status" = \'refunded\'', grants: 'none' },
   { table: 'CronLease', set: '"holder" = \'rls.changed\'', key: 'name', owner: 'crud', anonHelper: true },
   { table: 'ClientBillingLease', set: '"fence" = 1', key: 'purchase_id', grants: 'authenticated' },
   { table: 'ClientBillingOperation', set: '"phase" = \'done\'', grants: 'authenticated' },
-  { table: 'PartialRefundDecision', set: '"decision" = \'keep_drops\'', owner: 'read-update', anonHelper: true },
+  { table: 'PartialRefundDecision', set: '"decision" = \'keep_drops\'', owner: 'read-update', grants: 'none', anonHelper: true },
   { table: 'Notification', set: '"read_at" = now()', selfInsert: 'user_id' },
 ] as const satisfies readonly Config[];
 type Table = typeof TABLES[number]['table'];
@@ -112,6 +114,8 @@ class Rollback extends Error {
         if (who) {
           if (grantTable) {
             await tx.$executeRawUnsafe(`GRANT SELECT, INSERT, UPDATE, DELETE ON public.${quote(grantTable)} TO ${who.sqlRole}`);
+            // PartialRefundDecision's row rule reads its ClientPurchase, server-only since 20270502003500 (BILLRAW).
+            await tx.$executeRawUnsafe(`GRANT SELECT ON public."ClientPurchase" TO ${who.sqlRole}`);
           }
           await tx.$executeRawUnsafe(`SET LOCAL ROLE ${who.sqlRole}`);
           await tx.$executeRawUnsafe(`SELECT set_config('request.jwt.claims', $1, true)`,

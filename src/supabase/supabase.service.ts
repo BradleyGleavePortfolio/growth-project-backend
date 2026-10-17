@@ -1,11 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient, RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { WebSocket as WS } from 'ws';
+import { describeFailure } from '../observability/log-pii';
+import { messagesTopic, type ChatPair, type ChatPingEvent } from '../messaging/messaging-realtime';
+
+const PING_TIMEOUT_MS = 1500;
+const logger = new Logger('SupabaseService');
 
 @Injectable()
 export class SupabaseService {
   private client: SupabaseClient;
-  private readonly logger = new Logger(SupabaseService.name);
 
   constructor() {
     // Node 20 lacks native WebSocket; supabase-js >=2.105 requires an explicit
@@ -27,58 +31,31 @@ export class SupabaseService {
   }
 
   /**
-   * Send a Realtime Broadcast ping on the user's message channel. The mobile
-   * client subscribes to this channel and refetches its message thread when
-   * the ping arrives.
-   *
-   * Critically: this carries NO message body. Just a refresh signal. The
-   * actual data is delivered through the authenticated REST API which
-   * enforces tenant isolation. This means we don't depend on RLS being
-   * configured for messaging — even a misconfigured Realtime channel can't
-   * leak data because no data is sent.
-   *
-   * Failures are swallowed: if the broadcast can't be sent (network, Supabase
-   * outage), the mobile client's 60s backstop poll will still catch up.
+   * MSGRT: the one sender of coach-client message pings. Every send path, edit,
+   * delete, pin and read receipt calls it with the chat's two people (see
+   * messaging-realtime.ts). Each gets one REST broadcast (httpSend, no socket
+   * join) on their own PRIVATE topic with an empty payload: a refresh signal,
+   * never message content. Bounded by a 1500 ms timeout and never rejects (a
+   * failure is logged; the app's 60 s poll catches up), so callers `void` it.
    */
-  async broadcastNewMessage(userId: string): Promise<void> {
-    if (!userId) return;
-    try {
-      const channel = this.client.channel(`messages:${userId}`);
-      // Subscribe-and-send pattern: Realtime requires the channel to be
-      // subscribed before send() will deliver. We subscribe, send, then
-      // immediately remove — it's a fire-and-forget signal.
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => resolve(), 1500);
-        channel.subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            try {
-              await channel.send({
-                type: 'broadcast',
-                event: 'new-message',
-                payload: {},
-              });
-            } catch (sendErr) {
-              // Log the delivery failure so it appears in Fly logs / Datadog.
-              // We do NOT surface this to the caller — Realtime is best-effort
-              // and the client's 60s backstop poll will catch up — but we want
-              // visibility into Supabase Realtime degradation events.
-              this.logger.warn(
-                `broadcastNewMessage send failed for ${userId}: ${
-                  (sendErr as Error).message
-                }`,
-              );
-            }
-            clearTimeout(timeout);
-            resolve();
+  async pingChat(chat: ChatPair, event: ChatPingEvent): Promise<void> {
+    const people = [...new Set([chat.coachId, chat.clientId])].filter(Boolean);
+    await Promise.all(
+      people.map(async (userId) => {
+        let channel: RealtimeChannel | null = null;
+        try {
+          channel = this.getClient().channel(messagesTopic(userId), { config: { private: true } });
+          const res = await channel.httpSend(event, {}, { timeout: PING_TIMEOUT_MS });
+          if (!res.success) throw new Error(res.error);
+        } catch (err) {
+          logger.warn(`${event} ping failed: ${describeFailure(err)}`);
+        } finally {
+          if (channel) {
+            await this.getClient().removeChannel(channel)
+              .catch((err) => logger.warn(`${event} ping cleanup failed: ${describeFailure(err)}`));
           }
-        });
-      });
-      await this.client.removeChannel(channel);
-    } catch (err) {
-      // Realtime is best-effort — never fail the request because of it.
-      this.logger.warn(
-        `broadcastNewMessage failed for ${userId}: ${(err as Error).message}`,
-      );
-    }
+        }
+      }),
+    );
   }
 }

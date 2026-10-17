@@ -8,6 +8,8 @@ import { Prisma, type AiActionDraft } from '@prisma/client';
 import { PrismaService } from '../../../prisma.service';
 import { NotificationsService } from '../../../notifications/notifications.service';
 import { NotificationKind } from '../../../notifications/notification-kind';
+import { alternativesOf } from '../../../workout-builder/plan-exercise-fields';
+import { planStaysInTenantWhere } from '../../../workout-builder/tenant-clients';
 import {
   CapabilityMaterializer,
   MaterializeResult,
@@ -132,7 +134,8 @@ export class AssignWorkoutMaterializer implements CapabilityMaterializer {
       });
     }
 
-    if (!draft.tenant_coach_id) {
+    const tenantCoachId = draft.tenant_coach_id;
+    if (!tenantCoachId) {
       throw new Error(
         `AssignWorkoutMaterializer: draft ${draft.id} has no tenant_coach_id`,
       );
@@ -165,8 +168,9 @@ export class AssignWorkoutMaterializer implements CapabilityMaterializer {
         // MWB-1 (§3.3): read the plan WITH its live exercise rows so we can
         // freeze an immutable snapshot into the assignment, exactly like the
         // human assign path (WorkoutBuilderService.writeAssignmentSnapshot).
+        // Owner 4: a day of a moved client's program copy is not found (tenant-clients.ts).
         const plan = await tx.workoutPlan.findUnique({
-          where: { id: payload.workoutPlanId },
+          where: { id: payload.workoutPlanId, AND: [planStaysInTenantWhere(tenantCoachId)] },
           select: {
             id: true,
             coach_id: true,
@@ -185,6 +189,7 @@ export class AssignWorkoutMaterializer implements CapabilityMaterializer {
                 rest_seconds: true,
                 superset_group_id: true,
                 notes: true,
+                alternative_external_ids: true,
               },
             },
           },
@@ -230,6 +235,7 @@ export class AssignWorkoutMaterializer implements CapabilityMaterializer {
             rest_seconds: e.rest_seconds ?? null,
             superset_group_id: e.superset_group_id ?? null,
             notes: e.notes ?? null,
+            alternative_external_ids: alternativesOf(e),
           }));
         await tx.clientWorkoutAssignmentSnapshot.create({
           data: {

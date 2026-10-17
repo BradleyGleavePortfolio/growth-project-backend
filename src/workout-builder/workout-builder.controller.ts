@@ -65,6 +65,7 @@ import {
   CompleteAssignmentDto,
   CreateAssignmentDto,
   CreateWorkoutPlanDto,
+  UpdateAssignmentDto,
   UpdateWorkoutPlanDto,
   UpsertExerciseRowsDto,
 } from './workout-builder.dto';
@@ -437,5 +438,22 @@ export class AssignmentController {
     @Body() dto: CompleteAssignmentDto,
   ) {
     return this.workoutBuilder.completeAssignment(req.user.id, assignmentId, dto);
+  }
+
+  @Patch(':assignmentId')
+  @ApiOperation({
+    summary:
+      'C1V2-C1: the client moves (scheduled_for) or skips (skip: true) their own open day; ' +
+      "the client's coach writes the day's note (client_note). One field per call.",
+  })
+  @ApiResponse({ status: 200, description: 'Assignment.' })
+  @ApiResponse({ status: 403, description: "Not this assignment's client (move, skip) or coach (note)." })
+  @ApiResponse({ status: 409, description: 'Already completed or skipped.' })
+  update(
+    @Req() req: AuthedRequest,
+    @Param('assignmentId', new ParseUUIDPipe()) assignmentId: string,
+    @Body() dto: UpdateAssignmentDto,
+  ) {
+    return this.workoutBuilder.updateAssignment(req.user.id, assignmentId, dto);
   }
 }

@@ -607,7 +607,7 @@ describe('OR-113-2 launch hardening', () => {
       voice: { quipsInSession: 0, exclamationUsed: false },
       clientData: '<client_data as_of="x">{}</client_data>',
     });
-    expect(p).toContain('REPLY CONTRACT (roman-client-v4)');
+    expect(p).toContain('REPLY CONTRACT (roman-client-v5)');
     expect(p).toContain('<client_data as_of="x">{}</client_data>');
   });
 });

@@ -615,7 +615,6 @@ const LEGACY_EXCEPTION_TEXT: Readonly<Record<string, number>> = {
   'src/storefront/guest-checkout.service.ts': 2,
   'src/storefront/lost-webhook-reconcile.service.ts': 5,
   'src/sub-coach/sub-coach-idempotency.service.ts': 2,
-  'src/supabase/supabase.service.ts': 2,
   'src/talent-marketplace/admin-moderation.service.ts': 1,
   'src/talent-marketplace/anti-bot/in-house-anti-bot.provider.ts': 2,
   'src/team/team.service.ts': 1,

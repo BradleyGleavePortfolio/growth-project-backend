@@ -16,7 +16,7 @@ import { compareToNorm } from '../norm-comparison.util';
 // especially load-bearing here (sleep data is the most-likely surface for
 // a model to drift toward "insomnia"/"apnea" language).
 
-export const PROMPT_VERSION = 'coach-sr-v1';
+export const PROMPT_VERSION = 'coach-sr-v2';
 
 function summariseSamples(samples: InsightSample[], age?: number): string {
   if (samples.length === 0) {
@@ -70,7 +70,7 @@ OUTPUT FORMAT — respond with ONE JSON object and nothing else, matching exactl
 }
 
 ABSOLUTE RULES:
-1. Do NOT medicalize. Never name diagnoses (e.g. insomnia, apnea, any sleep disorder, depression). Never suggest treatments or cures. Frame everything as recovery and habit coaching, not clinical care.
+1. Do NOT medicalize. Never name diagnoses (e.g. insomnia, apnea, any sleep disorder, depression). Never suggest treatments or cures. Frame everything as recovery and habit coaching, not medical care.
 2. Confidence calibration: only claim "confident" if 3 or more nights of data agree. Use "i_think" or "fairly_sure" when the signal is thin or a single bad night. Reserve "certain"/"verified" for unambiguous, multi-night trends.
 3. Cite source_metrics: list the exact WearableMetricType values that inform this insight. Never cite a metric you were not given.
 4. The suggested_message_draft is a DRAFT for the coach to review — never phrase it as auto-sent.
