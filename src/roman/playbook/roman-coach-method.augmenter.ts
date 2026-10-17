@@ -6,6 +6,12 @@
  * coach's active playbook, re-validated with validateCoachPlaybook (invalid -> null). Red lines become plain
  * rules and post_check.red_lines. Whether the block may be sent is the R11-T2A 'memory' scope rule.
  * Cache: rendered block by (coach_id, version), 10 minutes, at most 200 keys.
+ * PLAYBOOK-WITHDRAW: a version is used only while every client eligible at its build (the collector's one client
+ * definition, `eligibleClients`: a live client of the team holding the memory grant, read through the one egress
+ * consent path; the version learned texts and figures only from them) still is, checked on every turn (never
+ * cached; a failed consent, roster or team read fails closed). A client who joined since does not count. Otherwise
+ * the turn gets no block (Roman still answers), the version is marked stale (superseded, so no other turn on any
+ * machine uses it) and the scheduler rebuilds it at once from what the collector may still read.
  */
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -16,6 +22,9 @@ import type { RomanClientContextBundle } from '../context/roman-client-context.t
 import { resolveRomanCoachScope } from '../context/roman-coach-scope';
 import { estimateTokens } from '../context/roman-client-context.renderer';
 import { isRomanPlaybookEnabled } from './roman-playbook.feature';
+import { PlaybookBuilderScheduler } from './playbook-builder.scheduler';
+import { PlaybookSourceCollector, playbookDigestHolds } from './playbook-sources';
+import { romanErrorTag } from '../roman-error-tag';
 import {
   PLAYBOOK_SECTION_KEYS,
   validateCoachPlaybook,
@@ -95,11 +104,19 @@ export function renderCoachMethod(content: CoachPlaybookContent): { block: strin
   return { block, redLines };
 }
 
+/** A version's rendered block (cached), and what the live eligibility check compares against. */
+type CoachMethodVersion = {
+  at: number;
+  value: RomanTurnAugment | null;
+  ledger: Array<{ source_kind: string; source_id: string; client_id: string | null }>;
+  digest: string;
+};
+
 @Injectable()
 export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
   readonly kind = 'coach_method' as const;
   private readonly logger = new Logger(RomanCoachMethodAugmenter.name);
-  private readonly cache = new Map<string, { at: number; value: RomanTurnAugment | null }>();
+  private readonly cache = new Map<string, CoachMethodVersion>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -108,10 +125,18 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
     @Optional()
     @Inject(CoachAIBudgetService)
     private readonly budget: CoachAIBudgetService | null = null,
+    @Optional()
+    @Inject(PlaybookBuilderScheduler)
+    private readonly scheduler: PlaybookBuilderScheduler | null = null,
+    // PLAYBOOK-WITHDRAW: the builds' client definition; without it, no block.
+    @Optional()
+    @Inject(PlaybookSourceCollector)
+    private readonly collector: PlaybookSourceCollector | null = null,
   ) {}
 
   async augment(caller: RomanAugmentCaller, _bundle: RomanClientContextBundle, _message: string): Promise<RomanTurnAugment | null> {
-    if (!isRomanPlaybookEnabled() || caller.role !== 'student' || !this.budget) return null;
+    if (!isRomanPlaybookEnabled() || caller.role !== 'student') return null;
+    if (!this.budget || !this.collector) return null;
     const headCoachId = await this.headCoachOf(caller);
     if (!headCoachId) return null;
 
@@ -122,22 +147,68 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
     });
     if (!active) return null;
 
-    const key = `${headCoachId}:${active.version}`;
+    const entry = await this.versionOf(headCoachId, active.version);
+    if (!entry?.value) return null;
+    if (!(await this.noneLeftSinceBuild(headCoachId, entry))) {
+      await this.markStale(headCoachId, active.version);
+      return null;
+    }
+    return entry.value;
+  }
+
+  /** The rendered block, the version's ledger and digest, cached by (coach_id, version). */
+  private async versionOf(headCoachId: string, version: number): Promise<CoachMethodVersion | null> {
+    const key = `${headCoachId}:${version}`;
     const now = Date.now();
     const hit = this.cache.get(key);
-    if (hit && now - hit.at < COACH_METHOD_CACHE_TTL_MS) return hit.value;
+    if (hit && now - hit.at < COACH_METHOD_CACHE_TTL_MS) return hit;
     if (hit) this.cache.delete(key);
 
     const row = await this.prisma.coachPlaybook.findFirst({
-      where: { coach_id: headCoachId, version: active.version, status: 'active' },
-      select: { sections: true, red_lines: true },
+      where: { coach_id: headCoachId, version, status: 'active' },
+      select: {
+        sections: true,
+        red_lines: true,
+        source_digest: true,
+        sources: { select: { source_kind: true, source_id: true, client_id: true } },
+      },
     });
     if (!row) return null;
-    const value = this.build(row.sections, row.red_lines, headCoachId);
+    const entry: CoachMethodVersion = {
+      at: now,
+      value: this.build(row.sections, row.red_lines, headCoachId),
+      ledger: row.sources,
+      digest: row.source_digest,
+    };
     const oldest = this.cache.size >= COACH_METHOD_CACHE_MAX ? this.cache.keys().next().value : undefined;
     if (oldest !== undefined) this.cache.delete(oldest);
-    this.cache.set(key, { at: now, value });
-    return value;
+    this.cache.set(key, entry);
+    return entry;
+  }
+
+  /**
+   * PLAYBOOK-WITHDRAW: every client the version names (digest and ledger) passes `eligibleClients` now. A failed
+   * roster or team read counts as a failed check, as a failed consent read does (fail closed: retire and rebuild).
+   */
+  private async noneLeftSinceBuild(headCoachId: string, entry: CoachMethodVersion): Promise<boolean> {
+    if (!this.collector) return false;
+    try {
+      const { head, consented } = await this.collector.eligibleClients(headCoachId);
+      return playbookDigestHolds(entry.digest, entry.ledger, consented, head);
+    } catch (err) {
+      this.logger.warn(`roman.coach_method_eligibility_read_failed: ${romanErrorTag(err)}`);
+      return false;
+    }
+  }
+
+  /** PLAYBOOK-WITHDRAW: supersede the version; the turn that does starts the rebuild without that client. */
+  private async markStale(headCoachId: string, version: number): Promise<void> {
+    const { count } = await this.prisma.coachPlaybook.updateMany({
+      where: { coach_id: headCoachId, version, status: 'active' },
+      data: { status: 'superseded' },
+    });
+    this.logger.warn(`roman.coach_method_stale marked=${count}`);
+    if (count > 0) void this.scheduler?.rebuildNow(headCoachId);
   }
 
   /** Current live coach (roman-coach-scope rule), folded into its head coach. */

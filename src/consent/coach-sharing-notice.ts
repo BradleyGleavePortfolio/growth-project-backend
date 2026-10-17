@@ -10,8 +10,10 @@ import { ConsentAuditAction, ConsentScope, ConsentService } from './consent.serv
 //
 // The client app prints one sentence directly above the join / accept button
 // the client already taps when a coach relationship starts:
-//   "Joining shares your workouts, food logs, weigh-ins and check-ins with
-//    <coach name>. Change this any time in Settings > Privacy."
+//   "Joining shares your workouts, food logs, weigh-ins, check-ins and any
+//    Apple Health data you connect with <coach name>. You can stop new Apple
+//    Health data in your phone's Apple Health permissions." (W-SU-1, v2; the
+//    app holds the text. Builds that know only v1 show and send nothing.)
 // and sends the version of that sentence as `coach_sharing_notice` on the
 // same request. Only then, and only when that request is the one that links
 // the client to the coach, the link transaction records the four fitness
@@ -19,7 +21,7 @@ import { ConsentAuditAction, ConsentScope, ConsentService } from './consent.serv
 // app build, a surface that did not show the sentence) links exactly as
 // before and grants nothing. No other scope (bloodwork, finance, wearables
 // insights, onboarding agreement) and no AI consent is touched here.
-export const COACH_SHARING_NOTICE_VERSION = 'coach_sharing_join_v1';
+export const COACH_SHARING_NOTICE_VERSION = 'coach_sharing_join_v2';
 export const COACH_SHARING_NOTICE_FIELD = 'coach_sharing_notice';
 // Audit metadata `source` for grants recorded this way.
 export const COACH_SHARING_JOIN_SOURCE = 'coach_join_notice';

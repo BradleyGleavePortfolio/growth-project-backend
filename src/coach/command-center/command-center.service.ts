@@ -313,17 +313,15 @@ export class CommandCenterService {
     private readonly consent?: ConsentService,
   ) {}
 
-  // CF-SHARE-GATE-128: which of these clients share what (Settings > Privacy >
-  // Coach sharing). The grant belongs to the coach the client joined,
-  // `ownerCoachId`: a head coach reads under their own grant, a sub-coach
-  // under the head coach's, as for alerts and messages. The owner account has
+  // CF-SHARE-GATE-128, #SHARE-SIMPLE: whose logs the signed-in head or sub-coach (`coachId`) may read:
+  // ConsentService's one roster check (the head's id names only alert and message rows). The owner account has
   // no Command Center roster (getAuthorizedClientIds is coach-only), so there
   // is no owner bypass to keep here.
-  private async sharedWith(ownerCoachId: string, clientIds: string[]): Promise<SharedClientIds> {
+  private async sharedWith(coachId: string, clientIds: string[]): Promise<SharedClientIds> {
     if (!this.consent) {
       return { habits: clientIds, workouts: clientIds, allFour: clientIds };
     }
-    const granted = await this.consent.grantedScopesByClient(ownerCoachId, clientIds, COACH_FITNESS_SCOPES);
+    const granted = await this.consent.grantedScopesByClient(coachId, clientIds, COACH_FITNESS_SCOPES);
     const has = (id: string, scope: string) => granted.get(id)?.has(scope) === true;
     return {
       habits: clientIds.filter((id) => has(id, ConsentScope.FITNESS_HABITS_PROGRESS)),
@@ -411,7 +409,7 @@ export class CommandCenterService {
     // CF-SHARE-GATE-128: check-in tiles and streaks read only clients who
     // share Check-ins and habits; the at-risk count only clients who share all
     // four; alerts follow visibleAlertsWhere. Messages are not a switch.
-    const shared = await this.sharedWith(ownerCoachId, clientIds);
+    const shared = await this.sharedWith(coachId, clientIds);
 
     const [
       activeTodayGroups,
@@ -558,10 +556,10 @@ export class CommandCenterService {
     // exactly the clients the caller may see. For a head coach `clientIds`
     // is their full roster, so the board is identical to before — behaviour
     // unchanged.
-    const { clientIds: rosterIds, ownerCoachId } = await this.resolveScope(coachId);
+    const { clientIds: rosterIds } = await this.resolveScope(coachId);
     // CF-SHARE-GATE-128: the churn-risk score and its top factor read all four
     // kinds of logs, so a client appears here only while sharing all four.
-    const { allFour: clientIds } = await this.sharedWith(ownerCoachId, rosterIds);
+    const { allFour: clientIds } = await this.sharedWith(coachId, rosterIds);
     if (clientIds.length === 0) {
       return { items: [], total_at_risk: 0 };
     }
@@ -590,7 +588,7 @@ export class CommandCenterService {
     // churn-intervention.service.ts). Falls back to an activity-based label
     // only when a user has no parseable factors.
     const topFactorMap = await this.loadTopFactors(
-      ownerCoachId,
+      coachId,
       filtered.map((r) => r.user_id),
     );
 
@@ -626,7 +624,7 @@ export class CommandCenterService {
   // CHURN-LABELS-132: only a factor the client shares with this coach, under
   // the same grant as sharedWith (churn-factor-scopes.ts).
   private async loadTopFactors(
-    ownerCoachId: string,
+    coachId: string,
     userIds: string[],
   ): Promise<Map<string, string>> {
     const result = new Map<string, string>();
@@ -651,7 +649,7 @@ export class CommandCenterService {
       select: { user_id: true, factors: true },
     });
     const granted = this.consent
-      ? await this.consent.grantedScopesByClient(ownerCoachId, userIds, CHURN_FACTOR_SCOPES)
+      ? await this.consent.grantedScopesByClient(coachId, userIds, CHURN_FACTOR_SCOPES)
       : null;
     for (const p of predictions) {
       const shared = granted === null ? 'all' : granted.get(p.user_id) ?? new Set<string>();
@@ -690,13 +688,13 @@ export class CommandCenterService {
 
     // SC-2: roster scoped via SubCoachScopeService (head = full roster,
     // sub = assigned clients only).
-    const { clientIds, ownerCoachId, nameMap } = await this.resolveScopeWithNames(coachId);
+    const { clientIds, nameMap } = await this.resolveScopeWithNames(coachId);
     if (clientIds.length === 0) {
       return { items: [], total_active_streaks: 0 };
     }
     // CF-SHARE-GATE-128: check-in streaks only for clients who share Check-ins
     // and habits, workout streaks only for clients who share Workouts.
-    const shared = await this.sharedWith(ownerCoachId, clientIds);
+    const shared = await this.sharedWith(coachId, clientIds);
     const sevenDaysAgo = new Date(Date.now() - 7 * ONE_DAY_MS);
 
     const checkInStreaks = await this.prisma.clientSignal.findMany({
@@ -908,7 +906,7 @@ export class CommandCenterService {
 
     // CF-SHARE-GATE-128: alerts built from a client's logs follow that log's
     // Coach sharing switch (visibleAlertsWhere).
-    const shared = await this.sharedWith(ownerCoachId, clientIds);
+    const shared = await this.sharedWith(coachId, clientIds);
     const baseWhere: Prisma.CoachAlertWhereInput = {
       coach_id: alertCoachIds(coachId, ownerCoachId),
       client_id: { in: clientIds },

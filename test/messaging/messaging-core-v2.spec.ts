@@ -33,7 +33,6 @@ import {
   MessagingCoreV2Guard,
 } from '../../src/messaging/messaging-core.feature';
 import { resolveIdempotencyKey } from '../../src/messaging/messaging-idempotency';
-import { broadcastThreadUpdated } from '../../src/messaging/messaging-realtime';
 
 const COACH = '11111111-1111-4111-8111-111111111111';
 const CLIENT = '22222222-2222-4222-8222-222222222222';
@@ -148,7 +147,7 @@ function build(opts: { blocked?: string[]; eitherBlocked?: boolean } = {}) {
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   const supabase = {
-    broadcastNewMessage: jest.fn().mockResolvedValue(undefined),
+    pingChat: jest.fn().mockResolvedValue(undefined),
     getClient: jest.fn(() => ({
       channel: () => ({
         subscribe: (cb: (s: string) => void) => cb('SUBSCRIBED'),
@@ -253,7 +252,7 @@ describe('idempotent send (offline queue)', () => {
     const again = await t.messaging.sendAsClient(CLIENT, { body: 'hi', client_message_id: KEY });
     expect(again).toBe(first);
     expect(t.prisma.coachMessage.create).toHaveBeenCalledTimes(1);
-    expect(t.supabase.broadcastNewMessage).toHaveBeenCalledTimes(1);
+    expect(t.supabase.pingChat).toHaveBeenCalledTimes(1);
     expect(t.audit.write).toHaveBeenCalledTimes(1);
     expect(t.analytics.capture).toHaveBeenCalledTimes(1);
   });
@@ -280,7 +279,7 @@ describe('idempotent send (offline queue)', () => {
     );
     const out = await t.messaging.sendAsClient(CLIENT, { body: 'hi', client_message_id: KEY });
     expect(out).toBe(winner);
-    expect(t.supabase.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(t.supabase.pingChat).not.toHaveBeenCalled();
   });
 
   it('legacy sends without a key create exactly the legacy row shape', async () => {
@@ -627,7 +626,7 @@ describe('mute and inbox pin (private per user)', () => {
     await t.messaging.sendAsClient(CLIENT, 'hi');
     await flush();
     await flush();
-    expect(t.supabase.broadcastNewMessage).toHaveBeenCalledWith(COACH);
+    expect(t.supabase.pingChat).toHaveBeenCalledWith({ coachId: COACH, clientId: CLIENT }, 'new-message');
     expect(t.messageReceived.emit).not.toHaveBeenCalled();
     expect(t.prisma.coachThreadState.findUnique.mock.calls[0][0].where).toEqual({
       CoachThreadState_user_thread_key: { user_id: COACH, coach_id: COACH, client_id: CLIENT },
@@ -686,7 +685,7 @@ describe('read-up-to and live read receipts', () => {
       read_at: null,
       created_at: { lte: cutoff },
     });
-    expect(t.supabase.getClient).toHaveBeenCalled();
+    expect(t.supabase.pingChat).toHaveBeenCalledWith(expect.objectContaining({ coachId: COACH, clientId: CLIENT }), 'thread-updated');
   });
 
   it('a target outside the thread is 404; flag OFF with a target is 503; no target = legacy', async () => {
@@ -707,7 +706,7 @@ describe('read-up-to and live read receipts', () => {
     expect(t.prisma.coachMessage.updateMany.mock.calls[0][0].where).not.toHaveProperty(
       'created_at',
     );
-    expect(t.supabase.getClient).not.toHaveBeenCalled();
+    expect(t.supabase.pingChat).not.toHaveBeenCalled();
   });
 });
 
@@ -841,18 +840,33 @@ describe('unified inbox', () => {
   });
 });
 
-describe('thread-updated ping on the public channel (B-709-1)', () => {
-  it('carries an empty payload: no client id, message id or change kind', async () => {
-    const send = jest.fn().mockResolvedValue('ok');
-    const channel = jest.fn(() => ({
-      subscribe: (cb: (s: string) => void) => cb('SUBSCRIBED'),
-      send,
-    }));
-    const supabase = dep(SupabaseService, {
-      getClient: () => ({ channel, removeChannel: jest.fn().mockResolvedValue('ok') }),
-    });
-    await broadcastThreadUpdated(supabase, COACH);
-    expect(channel).toHaveBeenCalledWith(`messages:${COACH}`);
-    expect(send).toHaveBeenCalledWith({ type: 'broadcast', event: 'thread-updated', payload: {} });
+describe('pingChat: the one sender of message pings (MSGRT)', () => {
+  const realtime = (httpSend: jest.Mock) => {
+    const channel = jest.fn(() => ({ httpSend }));
+    const removeChannel = jest.fn().mockResolvedValue('ok');
+    return { channel, removeChannel, supabase: dep(SupabaseService, { getClient: () => ({ channel, removeChannel }) }) };
+  };
+
+  it('one ping per person in the chat, on their private topic, with an empty payload', async () => {
+    const httpSend = jest.fn().mockResolvedValue({ success: true });
+    const r = realtime(httpSend);
+    await r.supabase.pingChat({ coachId: COACH, clientId: CLIENT }, 'thread-updated');
+    expect(r.channel.mock.calls).toEqual([
+      [`messages:user:${COACH}`, { config: { private: true } }],
+      [`messages:user:${CLIENT}`, { config: { private: true } }],
+    ]);
+    expect(httpSend.mock.calls).toEqual([
+      ['thread-updated', {}, { timeout: 1500 }],
+      ['thread-updated', {}, { timeout: 1500 }],
+    ]);
+    expect(r.removeChannel).toHaveBeenCalledTimes(2);
+  });
+
+  it('never rejects: a refused or failing send is logged and its channel still released', async () => {
+    const httpSend = jest.fn().mockResolvedValueOnce({ success: false, status: 403, error: 'denied' })
+      .mockRejectedValueOnce(new Error('offline'));
+    const r = realtime(httpSend);
+    await expect(r.supabase.pingChat({ coachId: COACH, clientId: CLIENT }, 'new-message')).resolves.toBeUndefined();
+    expect(r.removeChannel).toHaveBeenCalledTimes(2);
   });
 });

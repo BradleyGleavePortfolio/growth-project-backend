@@ -309,36 +309,16 @@ export class CoachService {
     });
   }
 
-  // Batch form of loadFitnessConsents for one roster page: one query, the same
-  // rule as ConsentService.coachCanAccess (owner bypass; otherwise a granted
-  // row for this coach, client and scope). No ConsentService (legacy unit
+  // Batch form of loadFitnessConsents for one roster page, by the same rule
+  // (ConsentService.grantedScopesByClient). No ConsentService (legacy unit
   // tests) means every scope is granted, as in loadFitnessConsents.
   private async rosterFitnessConsents(
     coachId: string,
     clientIds: string[],
     callerRole?: string,
   ): Promise<Map<string, Set<string>>> {
-    const fitness = [
-      ConsentScope.FITNESS_WORKOUTS,
-      ConsentScope.FITNESS_FOOD_MACROS,
-      ConsentScope.FITNESS_BODY_METRICS,
-      ConsentScope.FITNESS_HABITS_PROGRESS,
-    ] as string[];
-    if (callerRole === 'owner' || !this.consent) {
-      return new Map(clientIds.map((id) => [id, new Set(fitness)]));
-    }
-    const consentRows = await this.prisma.clientCoachConsent.findMany({
-      where: { coach_id: coachId, client_id: { in: clientIds }, scope: { in: fitness } },
-      select: { client_id: true, scope: true, granted_at: true, revoked_at: true },
-    });
-    const out = new Map<string, Set<string>>();
-    for (const r of consentRows) {
-      if (!ConsentService.rowIsGranted(r)) continue;
-      const set = out.get(r.client_id) ?? new Set<string>();
-      set.add(r.scope);
-      out.set(r.client_id, set);
-    }
-    return out;
+    if (!this.consent) return new Map(clientIds.map((id) => [id, new Set(COACH_FITNESS_SCOPES)]));
+    return this.consent.grantedScopesByClient(coachId, clientIds, COACH_FITNESS_SCOPES, callerRole);
   }
 
   // CF-SHARE-GATE-128: per-switch client ids for the roster-wide dashboards

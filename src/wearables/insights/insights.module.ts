@@ -13,8 +13,8 @@ import { InsightCacheService } from './insight-cache.service';
  *     guardrails, 30s timeout with graceful degradation, dual-role schema
  *     projection.
  *   - {@link InsightCacheService} — 6h TTL read/write over the PR-HK-0
- *     WearableInsightCache table (sync-driven invalidation is a row delete,
- *     performed by PR-HK-0's IngestionService — not edited here).
+ *     WearableInsightCache table (a sync expires the rows, in
+ *     IngestionService).
  *   - {@link WearableInsightsController} — coach + client GET endpoints plus
  *     the HK-6a coach approval POST endpoint.
  *

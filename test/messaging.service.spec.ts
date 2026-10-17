@@ -190,7 +190,7 @@ describe('MessagingService', () => {
     );
     // Stub the SupabaseService — Realtime broadcasts are best-effort and
     // unrelated to the messaging-service unit under test.
-    const supabaseStub = { broadcastNewMessage: jest.fn().mockResolvedValue(undefined) } as any;
+    const supabaseStub = { pingChat: jest.fn().mockResolvedValue(undefined) } as any;
     const analyticsStub = { capture: jest.fn(), identify: jest.fn() } as any;
     const ptmStub = { emit: jest.fn() } as any;
     const messageReceivedStub = { emit: jest.fn().mockResolvedValue(undefined) } as any;
