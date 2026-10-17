@@ -192,7 +192,7 @@ describe('C-6: no barred word in any server-side text a model or person reads', 
     ['day narrative', 'prisma/seed-build-week.json', [{ narrative: `${W}al care` }], 3],
     ['food name', 'prisma/data/seed-foods.json', [{ name: W }], 3],
     ['program description', PROGRAM_SEED, { programs: [{ description: W }] }, 4],
-    ['nested version is still copy', PROGRAM_SEED, { programs: [{ fixture_version: W }] }, 4],
+    ['nested version is still copy', PROGRAM_SEED, { programs: [{ fixture_version: `${W}-programs.v1` }] }, 4],
     ['prose is not a machine version', PROGRAM_SEED, { fixture_version: `Ask the ${W}` }, 2],
   ])('seed text fails with a masked file and source line: %s', (_case, p, value, line) => {
     expect(hits([[p, JSON.stringify(value, null, 2)]])).toEqual([
