@@ -107,9 +107,10 @@ export interface PlaybookSignals {
 export interface PlaybookSignalsOptions {
   /**
    * When set, client-derived figures use only these clients (R11-P3b passes
-   * the clients with memory-scope AI consent). Top exercises keep every
-   * client-free plan; a program copy delivered to one client counts only when
-   * that client is in this list (PLAYBOOK-WITHDRAW).
+   * the clients with memory-scope AI consent). Top exercises keep library
+   * plans and template days; a client's program counts only while its client
+   * (its client_id, or every client assigned to an older copy's days) is in
+   * this list (PLAYBOOK-WITHDRAW).
    */
   clientIds?: readonly string[];
   /** Clock override for tests. */

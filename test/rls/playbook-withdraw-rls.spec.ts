@@ -7,6 +7,10 @@
  * on the same grant. v1 is built by the real builder (fake model, real spend
  * ledger, so v1's own charged build is on record) and the real signals: texts
  * from X, Y, Z and figures from W, X, Y, Z (the collector's eligible clients).
+ * Its top exercises come from a master (always), X's Ask AI one-off plan (the
+ * real materialiser saves it as X's program) and an older copy linked only by
+ * W's assignment, each only while that client is eligible, and never from a
+ * client's program with no client on record.
  * Then Y's next Roman turn: the coach-method block only while every client v1
  * names is still eligible (the same `eligibleClients`, read through the one
  * egress consent path; a client who joins does not count); otherwise no block,
@@ -22,6 +26,11 @@
  */
 import { createHash, randomUUID } from 'crypto';
 import type { CoachAIBudgetService } from '../../src/ai-credits/coach-ai-budget.service';
+import {
+  CREATE_WORKOUT_PLAN_CAPABILITY,
+  CreateWorkoutPlanMaterializer,
+} from '../../src/ai/gateway/materialisers/create-workout-plan.materialiser';
+import type { AnalyticsService } from '../../src/analytics/analytics.service';
 import { AiConsentService } from '../../src/ai-consent/ai-consent.service';
 import { CLIENT_AI_CONSENT_V5_VERSION } from '../../src/ai-consent/ai-consent.constants';
 import { AiEgressService, AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
@@ -34,6 +43,7 @@ import { PlaybookSignalsService } from '../../src/roman/playbook/playbook-signal
 import type { PlaybookSignalsOptions } from '../../src/roman/playbook/playbook-signals.types';
 import { PlaybookSourceCollector } from '../../src/roman/playbook/playbook-sources';
 import { COACH_METHOD_HEADING, RomanCoachMethodAugmenter } from '../../src/roman/playbook/roman-coach-method.augmenter';
+import { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.service';
 import { fakeOf } from '../ai-egress/ai-egress.fakes';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
@@ -53,7 +63,12 @@ const DRAFT = {
   },
   red_lines: [{ kind: 'no_train_through_pain', text: 'Never train through sharp pain.', basis: 'stated', evidence_count: 3 }],
 };
-const FLAGS = { FEATURE_ROMAN_PLAYBOOK: 'true', FEATURE_AI_CONSENT_LEDGER_ENABLED: 'true' };
+const FLAGS = { FEATURE_ROMAN_PLAYBOOK: 'true', FEATURE_AI_CONSENT_LEDGER_ENABLED: 'true', FEATURE_MWB_AI_LIVE_CREATE: 'true' };
+// Catalog lifts, one per kind of plan: a master, X's Ask AI one-off, an older copy assigned to W, a copy with no client.
+const LIFTS = { master: randomUUID(), drafted: randomUUID(), older: randomUUID(), unlinked: randomUUID() };
+const NAMES: Record<keyof typeof LIFTS, string> = {
+  master: 'Master Lift', drafted: 'Drafted Lift', older: 'Older Copy Lift', unlinked: 'Unlinked Copy Lift',
+};
 const READ_VERSION = 'SELECT 1 FROM "CoachPlaybook" WHERE "id" = $1';
 const READ_LEDGER = 'SELECT 1 FROM "CoachPlaybookSource" WHERE "playbook_id" = $1 LIMIT 1';
 // [statement on one version, the server's control read of the same row]
@@ -67,6 +82,9 @@ const STATEMENTS: Array<[string, string]> = [
 type People = { a: string; c: string; x: string; y: string; z: string; w: string; v: string };
 type Client = 'x' | 'y' | 'z' | 'w';
 type Rebuild = { ledger: Client[]; eligible: Client[] };
+/** Top exercises for these eligible clients: the master, X's one-off while X is eligible, W's older copy while W is. */
+const liftsFor = (eligible: Client[]) =>
+  [NAMES.master, ...(eligible.includes('x') ? [NAMES.drafted] : []), ...(eligible.includes('w') ? [NAMES.older] : [])].sort();
 type Row = { source_kind: string; source_id: string; client_id: string | null };
 /** The digest format before this fix (a sha256 of the ledger alone). */
 const preV2Digest = (rows: Row[]) =>
@@ -80,13 +98,15 @@ const preV2Digest = (rows: Row[]) =>
   const consent = new AiConsentService(prisma);
   const egress = new AiEgressService(consent);
   const budget = stub<CoachAIBudgetService>({ resolveHeadCoachId: async (id: string) => id });
-  // The real signals, recording each build's client list and how many clients its schedule figure counts.
+  // The real signals, recording each build's client list, how many clients its schedule figure counts and its top exercises.
   const realSignals = new PlaybookSignalsService(prisma, budget);
-  const signalsFor: Array<{ clients: string[]; schedule: number | null }> = [];
+  const signalsFor: Array<{ clients: string[]; schedule: number | null; lifts: string[] }> = [];
   const signals = stub<PlaybookSignalsService>({
     compute: async (coach: string, opts: PlaybookSignalsOptions = {}) => {
       const out = await realSignals.compute(coach, opts);
-      signalsFor.push({ clients: [...(opts.clientIds ?? [])], schedule: out.schedule?.clients ?? null });
+      signalsFor.push({
+        clients: [...(opts.clientIds ?? [])], schedule: out.schedule?.clients ?? null, lifts: out.top_exercises.map((e) => e.name).sort(),
+      });
       return out;
     },
   });
@@ -104,6 +124,7 @@ const preV2Digest = (rows: Row[]) =>
   const builder = new PlaybookBuilderService(prisma, budget, egress, collector, new RomanBackgroundSpendService(prisma), handle);
   const scheduler = new PlaybookBuilderScheduler(builder);
   const augmenter = new RomanCoachMethodAugmenter(prisma, budget, scheduler, collector);
+  const create = new CreateWorkoutPlanMaterializer(prisma, new SubCoachScopeService(prisma), stub<AnalyticsService>({ capture: () => undefined }));
   const saved: Record<string, string | undefined> = {};
 
   const person = (id: string, role: 'coach' | 'student', coach_id: string | null) =>
@@ -118,6 +139,29 @@ const preV2Digest = (rows: Row[]) =>
     });
   const learnedFrom = (v: { sources: Array<{ client_id: string | null }> }) =>
     [...new Set(v.sources.map((s) => s.client_id).filter(Boolean))].sort();
+  /** A one-day program of coach `a` with `lift`, saved with no client (a master, or a copy from before client ids); its day. */
+  const program = async (a: string, is_template: boolean, lift: string) => {
+    const { id } = await prisma.workoutProgram.create({
+      data: { coach_id: a, owner_user_id: a, name: 'Block', weeks: 1, days_per_week: 1, is_template },
+    });
+    const day = await prisma.workoutPlan.create({
+      data: { coach_id: a, name: 'Day 1', type: 'strength', program_id: id, week_index: 0, day_index: 0, is_template },
+    });
+    await prisma.workoutPlanExercise.create({
+      data: { workout_plan_id: day.id, exercise_external_id: lift, order: 0, sets: 3, reps_or_duration_seconds: 8 },
+    });
+    return day.id;
+  };
+
+  /** How many rows of program `id` the signed-in API role (non-bypass) reads as `who`. */
+  const programSeen = (who: { id: string; role: string }, id: string) =>
+    prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
+      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, who.id);
+      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, who.role);
+      await tx.$executeRawUnsafe(`SELECT set_config('request.jwt.claims', $1, true)`, JSON.stringify({ sub: who.id, role: 'authenticated' }));
+      return tx.workoutProgram.count({ where: { id } });
+    });
 
   /** The statement's row count as `who` in a rolled-back transaction (row security applies), or its SQLSTATE. */
   const asCaller = async (who: { id: string; role: string } | null, sql: string, id: string): Promise<number | string> => {
@@ -139,10 +183,15 @@ const preV2Digest = (rows: Row[]) =>
     }
   };
 
-  beforeAll(() => {
+  beforeAll(async () => {
     for (const [k, v] of Object.entries(FLAGS)) {
       saved[k] = process.env[k];
       process.env[k] = v;
+    }
+    for (const [k, id] of Object.entries(LIFTS) as Array<[keyof typeof LIFTS, string]>) {
+      await prisma.exerciseCatalogItem.create({
+        data: { id, slug: `pbwithdraw-${id}`, name: NAMES[k], category: 'strength', primary_muscle: 'quads' },
+      });
     }
   });
   afterAll(async () => {
@@ -161,13 +210,20 @@ const preV2Digest = (rows: Row[]) =>
     ['every eligible client still consents', async () => undefined, true, null],
     ['source client X turns AI off', (p) => consent.withdraw(p.x), false, { ledger: ['y', 'z'], eligible: ['w', 'y', 'z'] }],
     ['W, counted only in the figures, turns AI off', (p) => consent.withdraw(p.w), false, { ledger: ['x', 'y', 'z'], eligible: ['x', 'y', 'z'] }],
-    ['the coach removes W', (p) => set(p.w, { coach_id: null }), false, { ledger: ['x', 'y', 'z'], eligible: ['x', 'y', 'z'] }],
+    // Archive keeps a client coached (and eligible) by design; a client with no coach has left A's roster.
+    ["W leaves A's roster", (p) => set(p.w, { coach_id: null }), false, { ledger: ['x', 'y', 'z'], eligible: ['x', 'y', 'z'] }],
     ['X moves to another coach', (p) => set(p.x, { coach_id: p.c }), false, { ledger: ['y', 'z'], eligible: ['w', 'y', 'z'] }],
     ['Z schedules account deletion', (p) => set(p.z, { deletion_scheduled_at: new Date() }), false, { ledger: ['x', 'y'], eligible: ['w', 'x', 'y'] }],
     ['a new eligible client joins (V moves to A)', (p) => set(p.v, { coach_id: p.a }), true, null],
     [
       'the consent read fails',
       async () => jest.spyOn(consent, 'clientsWithAiConsent').mockRejectedValueOnce(new Error('consent read failed')),
+      false,
+      all,
+    ],
+    [
+      'the roster read fails',
+      async () => jest.spyOn(collector, 'eligibleClients').mockRejectedValueOnce(new Error('roster read failed')),
       false,
       all,
     ],
@@ -207,6 +263,31 @@ const preV2Digest = (rows: Row[]) =>
     for (const [client, body] of [[p.y, MESSAGE_Y], [p.z, MESSAGE_Z]]) {
       await prisma.coachMessage.create({ data: { coach_id: p.a, client_id: client, sender_id: p.a, body, created_at: daysAgo(1) } });
     }
+    // X's Ask AI one-off plan, approved through the real materialiser: saved as X's program.
+    const drafted = await create.materialize(
+      await prisma.aiActionDraft.create({
+        data: {
+          capability: CREATE_WORKOUT_PLAN_CAPABILITY, tenant_coach_id: p.a, requester_id: p.a,
+          payload: {
+            capability: CREATE_WORKOUT_PLAN_CAPABILITY, target_client_id: p.x,
+            diff: [{ kind: 'add_exercise', client_ref: 'd1', exercise_external_id: LIFTS.drafted, sets: 3, reps_or_duration_seconds: 8 }],
+          },
+        },
+      }),
+    );
+    const day = await prisma.workoutPlan.findUniqueOrThrow({ where: { id: drafted.ref ?? '' }, select: { program: true } });
+    expect(day.program).toMatchObject({ is_template: false, client_id: p.x });
+    // Row security on it: its coach A and its client X read it (the control); Y and another coach C do not.
+    const readers = [{ id: p.a, role: 'coach' }, { id: p.x, role: 'student' }, { id: p.y, role: 'student' }, { id: p.c, role: 'coach' }];
+    const seen: number[] = [];
+    for (const who of readers) seen.push(await programSeen(who, day.program?.id ?? ''));
+    expect(seen).toEqual([1, 1, 0, 0]);
+    await program(p.a, true, LIFTS.master);
+    const older = await program(p.a, false, LIFTS.older);
+    await prisma.clientWorkoutAssignment.create({
+      data: { workout_plan_id: older, client_id: p.w, assigned_by_coach_id: p.a, scheduled_for: daysAgo(3) },
+    });
+    await program(p.a, false, LIFTS.unlinked);
     bodies.length = 0;
     signalsFor.length = 0;
 
@@ -215,7 +296,7 @@ const preV2Digest = (rows: Row[]) =>
     for (const text of [NOTE_X, MESSAGE_Y, MESSAGE_Z]) expect(bodies[0]).toContain(text);
     const [v1] = await versions(p.a);
     expect(learnedFrom(v1)).toEqual([p.x, p.y, p.z].sort());
-    expect(signalsFor).toEqual([{ clients: [p.w, p.x, p.y, p.z].sort(), schedule: 4 }]);
+    expect(signalsFor).toEqual([{ clients: [p.w, p.x, p.y, p.z].sort(), schedule: 4, lifts: liftsFor(['w', 'x', 'y', 'z']) }]);
 
     const rebuild = jest.spyOn(scheduler, 'rebuildNow');
     const send = jest.spyOn(egress, 'anthropicMessagesCreate');
@@ -238,7 +319,9 @@ const preV2Digest = (rows: Row[]) =>
       expect(learnedFrom(after[1])).toEqual(ids);
       expect(send).toHaveBeenCalledTimes(1);
       expect(send.mock.calls[0][1]).toEqual({ kind: 'client_data', clientIds: eligible, audience: 'coach', scope: 'memory' });
-      expect(signalsFor[1]).toEqual({ clients: eligible, schedule: eligible.length >= 3 ? eligible.length : null });
+      expect(signalsFor[1]).toEqual({
+        clients: eligible, schedule: eligible.length >= 3 ? eligible.length : null, lifts: liftsFor(rebuilt?.eligible ?? []),
+      });
       expect(bodies[1].includes(NOTE_X)).toBe(ids.includes(p.x));
       expect(bodies[1]).toContain(MESSAGE_Y);
       expect((await turnOf(p.y))?.block).toContain(COACH_METHOD_HEADING); // Y's next turn gets v2

@@ -9,9 +9,9 @@
  * PLAYBOOK-WITHDRAW: a version is used only while every client eligible at its build (the collector's one client
  * definition, `eligibleClients`: a live client of the team holding the memory grant, read through the one egress
  * consent path; the version learned texts and figures only from them) still is, checked on every turn (never
- * cached; a failed read is no grant). A client who joined since does not count. Otherwise the turn gets no block
- * (Roman still answers), the version is marked stale (superseded, so no other turn on any machine uses it) and the
- * scheduler rebuilds it at once from what the collector may still read.
+ * cached; a failed consent, roster or team read fails closed). A client who joined since does not count. Otherwise
+ * the turn gets no block (Roman still answers), the version is marked stale (superseded, so no other turn on any
+ * machine uses it) and the scheduler rebuilds it at once from what the collector may still read.
  */
 import { createHash } from 'node:crypto';
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
@@ -24,6 +24,7 @@ import { estimateTokens } from '../context/roman-client-context.renderer';
 import { isRomanPlaybookEnabled } from './roman-playbook.feature';
 import { PlaybookBuilderScheduler } from './playbook-builder.scheduler';
 import { PlaybookSourceCollector, playbookDigestHolds } from './playbook-sources';
+import { romanErrorTag } from '../roman-error-tag';
 import {
   PLAYBOOK_SECTION_KEYS,
   validateCoachPlaybook,
@@ -185,11 +186,19 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
     return entry;
   }
 
-  /** PLAYBOOK-WITHDRAW: every client the version names (digest and ledger) passes `eligibleClients` now. */
+  /**
+   * PLAYBOOK-WITHDRAW: every client the version names (digest and ledger) passes `eligibleClients` now. A failed
+   * roster or team read counts as a failed check, as a failed consent read does (fail closed: retire and rebuild).
+   */
   private async noneLeftSinceBuild(headCoachId: string, entry: CoachMethodVersion): Promise<boolean> {
     if (!this.collector) return false;
-    const { head, consented } = await this.collector.eligibleClients(headCoachId);
-    return playbookDigestHolds(entry.digest, entry.ledger, consented, head);
+    try {
+      const { head, consented } = await this.collector.eligibleClients(headCoachId);
+      return playbookDigestHolds(entry.digest, entry.ledger, consented, head);
+    } catch (err) {
+      this.logger.warn(`roman.coach_method_eligibility_read_failed: ${romanErrorTag(err)}`);
+      return false;
+    }
   }
 
   /** PLAYBOOK-WITHDRAW: supersede the version; the turn that does starts the rebuild without that client. */
