@@ -365,6 +365,30 @@ export const ROMAN_SAFETY_ROUTE_REASON: Record<
 
 export const ROMAN_SAFETY_ROUTER_MODEL_ID = 'safety-router';
 
+/** CRISIS-2B: the actions the app offers under a fixed crisis reply, in this order. */
+export type RomanSafetyAction = 'call_988' | 'text_988' | 'message_coach';
+
+/**
+ * Owner "#CRISIS-2B - all 3 buttons": the actions under Roman's fixed
+ * emergency or self-harm reply. The stored reply is the marker (a Roman turn
+ * that starts with one of those two templates, with or without the told
+ * line), so the live answer and every later read of it agree. Call and text
+ * 988 for everyone; message_coach only while the caller is a client with a
+ * coach now. Null for every other turn, the urgent-symptoms reply and the
+ * eating-disorder replies included.
+ */
+export function romanSafetyActions(
+  turn: { role: string; content: string },
+  hasCoach: boolean,
+): RomanSafetyAction[] | null {
+  const crisis =
+    turn.role === 'roman' &&
+    (turn.content.startsWith(ROMAN_SAFETY_TEMPLATES.emergency) ||
+      turn.content.startsWith(ROMAN_SAFETY_TEMPLATES.self_harm));
+  if (!crisis) return null;
+  return hasCoach ? ['call_988', 'text_988', 'message_coach'] : ['call_988', 'text_988'];
+}
+
 /**
  * CF-ROMAN-COPY-B-128 (owner default 10-07): the fixed reply to an
  * eating_disorder_risk message the AI cannot answer (AI help off, the turn
