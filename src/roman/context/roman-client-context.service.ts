@@ -12,6 +12,10 @@
  *   The coach's own conversation (CoachGuideline, CoachMessage, coaching
  *   style) ALSO requires the client's CURRENT coach (`User.coach_id`), not
  *   soft-deleted (owner 4b). A non-student caller gets neither.
+ * - COACH-TEXT (owner "#COACH-TEXT - op 1"): a coach's own words (guideline,
+ *   messages, target note, exercise cues, coaching style) are kept only while
+ *   that coach allows AI (`AiEgressService.consentedCoaches`, read now; a read
+ *   error is no grant). Otherwise they are left out and Roman still answers.
  * - No cross-request persistent cache of client data. The only memo is a 15 s
  *   in-process entry keyed by (user_id, local_date), invalidated by
  *   `invalidateForUser` after every successful app write by the client or
@@ -37,6 +41,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import { AiEgressService } from '../../ai-egress/ai-egress.service';
 import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
 import { renderClientContext } from './roman-client-context.renderer';
 import {
@@ -288,6 +293,8 @@ export class RomanClientContextService {
     // client-scoped intake reader (RomanConsultationIntakeSource, #607 data);
     // there is no silent default that reports "no answers" for everyone.
     @Inject(ROMAN_SAFETY_INTAKE_SOURCE) intake: RomanSafetyIntakeSource,
+    // COACH-TEXT: the coach's own AI grant, the one test (b#1067). Required.
+    private readonly egress: AiEgressService,
   ) {
     this.intake = intake;
     onRomanContextInvalidate((userId) => this.invalidateForUser(userId));
@@ -457,6 +464,8 @@ export class RomanClientContextService {
       coach: user.coach,
       overlay,
     });
+    // COACH-TEXT: which coach-side coaches allow AI, read beside the queries below.
+    const sideAllowed = this.egress.consentedCoaches(coachSide);
 
     const today = clock.local_date;
     const d7 = addDays(today, -6);
@@ -551,6 +560,7 @@ export class RomanClientContextService {
               completed_at: true,
               post_rpe: true,
               post_notes: true,
+              assigned_by_coach_id: true,
               snapshot: { select: { plan_name: true, plan_type: true, exercises_json: true } },
               workout_plan: {
                 select: {
@@ -609,28 +619,34 @@ export class RomanClientContextService {
         },
       })),
       coachId
-        ? (queries++,
-          this.prisma.coachGuideline.findFirst({
-            where: { coach_id: coachId, client_id: userId },
-            select: { content: true },
-          }))
+        ? sideAllowed.then((ok) => {
+            if (!ok.has(coachId)) return null;
+            queries++;
+            return this.prisma.coachGuideline.findFirst({
+              where: { coach_id: coachId, client_id: userId },
+              select: { content: true },
+            });
+          })
         : null,
       // Ruling #6: the recent client ↔ coach thread, BOTH directions. Still
       // scoped to (current coach, this client); senders are the coach side
       // (head coach and an open delegated sub-coach) or the client.
+      // COACH-TEXT: a coach-side sender only while they allow AI.
       coachId
-        ? (queries++,
-          this.prisma.coachMessage.findMany({
-            where: {
-              coach_id: coachId,
-              client_id: userId,
-              sender_id: { in: [...coachSide, userId] },
-              body: { not: null },
-            },
-            orderBy: { created_at: 'desc' },
-            take: ROMAN_CTX_LIMITS.coach_messages,
-            select: { created_at: true, body: true, sender_id: true },
-          }))
+        ? sideAllowed.then((ok) => {
+            queries++;
+            return this.prisma.coachMessage.findMany({
+              where: {
+                coach_id: coachId,
+                client_id: userId,
+                sender_id: { in: [...coachSide.filter((id) => ok.has(id)), userId] },
+                body: { not: null },
+              },
+              orderBy: { created_at: 'desc' },
+              take: ROMAN_CTX_LIMITS.coach_messages,
+              select: { created_at: true, body: true, sender_id: true },
+            });
+          })
         : [],
       // HIST3: today's daily meal plan, whoever assigned it. An archive hides
       // a plan only from its own coach's client (#961's client rule), so a
@@ -734,6 +750,21 @@ export class RomanClientContextService {
 
     // Exercise names for the next/today session (one catalog lookup).
     const sessionsNeedingNames = pickSessions(upcoming, today, dayOf);
+    // COACH-TEXT: a target note or an exercise cue can come from an earlier
+    // coach (HIST3), who needs their own grant too. The client's own rows (the
+    // house plan) are the client's words.
+    const sideOk = await sideAllowed;
+    const picked = [sessionsNeedingNames.today, sessionsNeedingNames.next];
+    const others = [macroTarget?.coach_id, ...picked.map((s) => s?.row.assigned_by_coach_id)].filter(
+      (id) => id !== userId && !coachSide.includes(id ?? ''),
+    );
+    const allowed = new Set([...sideOk, ...(await this.egress.consentedCoaches(others))]);
+    const mayUse = (author: string) => author === userId || allowed.has(author);
+    for (const s of picked) {
+      if (s && !mayUse(s.row.assigned_by_coach_id)) {
+        s.rawExercises = s.rawExercises.map((e) => ({ ...e, notes: null }));
+      }
+    }
     const externalIds = new Set<string>();
     for (const s of [sessionsNeedingNames.today, sessionsNeedingNames.next]) {
       for (const ex of s?.rawExercises ?? []) externalIds.add(ex.exercise_external_id);
@@ -773,7 +804,7 @@ export class RomanClientContextService {
             profile?.water_goal_oz != null ? Math.round(profile.water_goal_oz * 29.5735) : null,
           meals_per_day: profile?.meals_per_day ?? null,
           effective_from: ymdOf(macroTarget.effective_from),
-          notes: clamp(macroTarget.notes, 200),
+          notes: mayUse(macroTarget.coach_id) ? clamp(macroTarget.notes, 200) : null,
         }
       : profile?.macro_target_calories != null
         ? {
@@ -951,7 +982,7 @@ export class RomanClientContextService {
     // ── coach ──
     const recent_messages: RomanCtxCoachMessage[] = [...coachMessages]
       .reverse() // oldest first for the model
-      .filter((m) => m.sender_id === userId || coachSide.includes(m.sender_id ?? ''))
+      .filter((m) => m.sender_id === userId || sideOk.has(m.sender_id ?? ''))
       .map((m) => ({
         date: ymdOf(m.created_at),
         from: (m.sender_id === userId ? 'client' : 'coach') as 'coach' | 'client',
@@ -963,7 +994,7 @@ export class RomanClientContextService {
       coach_first_name: coachId ? firstName(coach?.name) : null,
       guidelines: clamp(guideline?.content, 1500),
       recent_messages,
-      ...coachingStyleBlock(coachId ? coach?.coach_profile : null),
+      ...coachingStyleBlock(coachId && sideOk.has(coachId) ? coach?.coach_profile : null),
     };
     if (!coachId) missing.push('coach');
 
@@ -1208,6 +1239,7 @@ type AssignmentRow = {
   completed_at: Date | null;
   post_rpe: number | null;
   post_notes: string | null;
+  assigned_by_coach_id: string;
   snapshot: { plan_name: string; plan_type: string; exercises_json: Prisma.JsonValue } | null;
   workout_plan: {
     name: string;

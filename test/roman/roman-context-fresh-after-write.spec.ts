@@ -63,7 +63,7 @@ import { SchedulingController } from '../../src/scheduling/scheduling.controller
 import { WeightController } from '../../src/weight/weight.controller';
 import { ProgramLibraryController } from '../../src/workout-builder/program-library.controller';
 import { WorkoutController } from '../../src/workout/workout.controller';
-import { fakeOf } from '../ai-egress/ai-egress.fakes';
+import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import {
   COACH_A,
   FakeSafetyIntakeSource,
@@ -88,7 +88,7 @@ beforeEach(() => _resetRomanContextListeners());
 function setup() {
   const db = makePersonaDb();
   const intake = new FakeSafetyIntakeSource();
-  return { db, intake, svc: new RomanClientContextService(db.prisma, intake) };
+  return { db, intake, svc: new RomanClientContextService(db.prisma, intake, grantAllEgress()) };
 }
 
 function find(rows: Rec[], pick: (r: Rec) => boolean): Rec {

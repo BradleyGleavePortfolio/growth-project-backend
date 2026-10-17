@@ -20,6 +20,7 @@ import {
 } from '../../src/roman/context/roman-coach-scope';
 import { localDayStart } from '../../src/roman/context/roman-client-context.service';
 import { matches } from './fixtures/roman-personas';
+import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
 
 type Row = Record<string, any>;
 const TZ = 'America/Los_Angeles';
@@ -158,6 +159,7 @@ function makeDb() {
   const reader = new RomanTimelineReader(
     // @ts-expect-error partial structural Prisma double: only the delegates the reader issues are stubbed.
     prisma,
+    grantAllEgress(),
   );
   return { reader, users, tables, log };
 }

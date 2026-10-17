@@ -23,6 +23,7 @@ import { RomanTimelineReader } from '../../src/roman/memory/roman-timeline.reade
 import { PrivateContextService } from '../../src/ai/gateway/private-context.service';
 import { bootstrapTestSchema } from '../utils/bootstrap-test-schema';
 import { resetPublicSchema } from '../utils/reset-public-schema';
+import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
 
 const TEST_DB_URL = process.env.MWB3_TEST_DATABASE_URL || '';
 const liveDescribe = TEST_DB_URL ? describe : describe.skip;
@@ -54,8 +55,8 @@ liveDescribe('HIST3 live: Roman context follows the client across coaches', () =
     await prisma.$connect();
     await resetPublicSchema(prisma);
     await bootstrapTestSchema(prisma);
-    ctx = new RomanClientContextService(prisma, new RomanConsultationIntakeSource(prisma));
-    timeline = new RomanTimelineReader(prisma);
+    ctx = new RomanClientContextService(prisma, new RomanConsultationIntakeSource(prisma), grantAllEgress());
+    timeline = new RomanTimelineReader(prisma, grantAllEgress());
 
     const user = (id: string, name: string, role: 'coach' | 'student', coach_id?: string) =>
       prisma.user.create({

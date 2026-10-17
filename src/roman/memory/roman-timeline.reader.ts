@@ -20,6 +20,9 @@
  *   coach's open sub-coach delegation, through the same rule as the per-turn
  *   context (roman-coach-scope.ts). A former coach's thread drops out the
  *   moment the client is reassigned (owner 4b).
+ * - COACH-TEXT (owner "#COACH-TEXT - op 1"): a coach's messages and session
+ *   recaps only while that coach allows AI (`AiEgressService.consentedCoaches`,
+ *   read now; a read error is no grant). The client's own messages stay.
  * - A missing or soft-deleted client reads nothing.
  *
  * NEVER SELECTED: CoachingSession.coach_notes_md, video links and provider ids;
@@ -38,6 +41,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma.service';
+import { AiEgressService } from '../../ai-egress/ai-egress.service';
 import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
 import {
   ROMAN_WEARABLE_METRICS,
@@ -143,7 +147,11 @@ interface ReadPlan {
 
 @Injectable()
 export class RomanTimelineReader {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    // COACH-TEXT: the coach's own AI grant, the one test (b#1067). Required.
+    private readonly egress: AiEgressService,
+  ) {}
 
   async read(clientId: string, opts: RomanTimelineReadOptions): Promise<RomanTimelinePage> {
     const fromMs = opts.from?.getTime?.() ?? Number.NaN;
@@ -609,11 +617,12 @@ export class RomanTimelineReader {
 
   /** message: the client <-> current coach thread, both directions, text only. */
   private async messages(p: ReadPlan): Promise<Batch> {
+    const ok = await this.egress.consentedCoaches(p.coachSide);
     const rows = await this.prisma.coachMessage.findMany({
       where: {
         coach_id: p.coachId,
         client_id: p.clientId,
-        sender_id: { in: [...p.coachSide, p.clientId] },
+        sender_id: { in: [...p.coachSide.filter((id) => ok.has(id)), p.clientId] },
         body: { not: null },
         deleted_at: null,
         created_at: p.instants,
@@ -644,9 +653,12 @@ export class RomanTimelineReader {
         start_at: true,
         end_at: true,
         status: true,
+        coach_id: true,
         client_recap_md: true,
       },
     });
+    // COACH-TEXT: the recap is the session coach's own words.
+    const ok = await this.egress.consentedCoaches(rows.map((r) => r.coach_id));
     const events = rows.map((r) =>
       this.event(
         p,
@@ -662,7 +674,7 @@ export class RomanTimelineReader {
             Math.round((r.end_at.getTime() - r.start_at.getTime()) / 60000),
           ),
         },
-        clamp(r.client_recap_md, 600),
+        ok.has(r.coach_id) ? clamp(r.client_recap_md, 600) : null,
       ),
     );
     return { kinds: ['booking'], events, horizon: this.horizonOf(rows, CAP, (r) => r.start_at) };
