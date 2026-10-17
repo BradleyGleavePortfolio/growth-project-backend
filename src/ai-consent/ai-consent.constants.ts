@@ -327,7 +327,7 @@ export const COACH_AI_CONSENT_COPY_SHA256 = sha256Hex(
   COACH_AI_CONSENT_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + COACH_AI_CONSENT_TITLE,
 );
 
-/** Ledger row actions (CHECK in the migrations). 'decline' (20270502003900): a coach's "Not now". */
+/** Ledger row actions (CHECK in the migrations). 'decline' (20270502004300): a coach's "Not now". */
 export const AI_CONSENT_ACTION_GRANT = 'grant';
 export const AI_CONSENT_ACTION_WITHDRAW = 'withdraw';
 export const AI_CONSENT_ACTION_DECLINE = 'decline';
