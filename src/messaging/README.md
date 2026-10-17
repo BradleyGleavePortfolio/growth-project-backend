@@ -55,11 +55,13 @@ single seek per page. `limit` is clamped to 1..100, default 50.
 
 ## Realtime
 
-Sends fire `SupabaseService.broadcastNewMessage(recipientId)` after the
-DB write. The broadcast carries no body — just a refresh signal. The
-mobile client refetches via the authenticated REST endpoint when the
-ping arrives. The broadcast is fire-and-forget so a Realtime hiccup
-never delays the API response.
+Sends fire `SupabaseService.pingChat({ coachId, clientId }, 'new-message')`
+after the DB write: one ping to the private topic `messages:user:<User.id>` of
+each of the two people in the chat, and nobody else (MSGRT, policy
+`messages_realtime_own_topic_receive`, migration 20270502003700). The ping
+carries no body — just a refresh signal. The mobile client refetches via the
+authenticated REST endpoint when the ping arrives. The ping is
+fire-and-forget so a Realtime hiccup never delays the API response.
 
 ## Tenancy and security rules
 
@@ -94,7 +96,7 @@ mode, so unknown fields fail closed.
 
 | Var | Purpose |
 |---|---|
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Used by `SupabaseService.broadcastNewMessage` |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Used by `SupabaseService.pingChat` |
 
 No messaging-specific env vars beyond Supabase.
 
@@ -220,10 +222,10 @@ client_message_id)). `reply_to_id` (v2) quotes a live message of the same
 thread; thread reads then carry `reply_to { id, sender_id, kind, preview }`
 and `deleted`.
 
-Realtime: non-message changes ping `messages:<userId>` with the distinct event
-`thread-updated` and an empty payload `{}` (the channel is public, so no ids),
-so edits and read receipts never trigger the new-message banner; the app
-refetches over the authenticated routes.
+Realtime: non-message changes ping both people's private topics with the
+distinct event `thread-updated` and an empty payload `{}`, so edits and read
+receipts never trigger the new-message path; the app refetches over the
+authenticated routes.
 
 Errors: every failure carries `{ code, error, message }` with a stable
 `messaging.*` code (see `messaging-errors.ts`). Blocking parity: edit and pin

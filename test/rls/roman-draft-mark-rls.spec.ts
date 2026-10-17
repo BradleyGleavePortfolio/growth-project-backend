@@ -81,7 +81,7 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
   const quiet = async () => undefined;
   const consent = new AiConsentService(db);
   const egress = new AiEgressService(consent);
-  const messaging = new MessagingService(db, cast({ broadcastNewMessage: quiet }), cast({ capture: quiet }),
+  const messaging = new MessagingService(db, cast({ pingChat: quiet }), cast({ capture: quiet }),
     cast({ emit: quiet }), cast({ emit: quiet }), cast({ write: quiet }), cast({ invalidateForUser: quiet }));
   const coachApi = new CoachMessagingController(messaging, cast({}), cast({}));
   const clientApi = new ClientMessagingController(messaging, cast({}), cast({}));
