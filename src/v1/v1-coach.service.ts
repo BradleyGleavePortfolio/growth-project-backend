@@ -482,7 +482,7 @@ export class V1CoachService {
       payload: { messageId: created.id, snippetId: snippetId ?? null },
     });
     void this.clearDraft(threadCoachId, clientId);
-    void this.supabase.broadcastNewMessage(clientId);
+    void this.supabase.pingChat({ coachId: threadCoachId, clientId }, 'new-message');
     if (caller.role === 'owner') {
       void this.audit.write({
         action: AuditAction.MESSAGE_SENT_BY_OWNER,
