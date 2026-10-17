@@ -2,7 +2,7 @@
  * HB1 (20270502002500): one row rule for habits and their logs, on the
  * replayed migration chain as the non-bypass `authenticated` role. Client A
  * moves from coach F to coach K. K also coaches B, who turned habits sharing
- * off (no longer counts: 20270502003600), and D, who shares habits with K; L coaches C;
+ * off (no longer counts: 20270502004000), and D, who shares habits with K; L coaches C;
  * S is a sub-coach seated under K with an open delegation of A. A shares habits
  * (fitness.habits_progress) with F, K and S; C shares them with L. A log is
  * read exactly when its habit is (found-not-fixed 6). A habit and its ticks

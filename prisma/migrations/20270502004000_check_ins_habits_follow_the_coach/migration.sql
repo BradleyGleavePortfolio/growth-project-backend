@@ -19,6 +19,6 @@ AS $$
   SELECT app.is_current_coach_of(client_user_id)
 $$;
 COMMENT ON FUNCTION app.current_coach_has_scope(text, text) IS
-  '20270502003600: true when the caller is the client''s current coach; the consent scope no longer counts (SHARE-UNWIND).';
+  '20270502004000: true when the caller is the client''s current coach; the consent scope no longer counts (SHARE-UNWIND).';
 
 COMMIT;

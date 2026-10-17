@@ -1,4 +1,4 @@
--- Reverse of 20270502003600_check_ins_habits_follow_the_coach, for a confirmed defect only: the
+-- Reverse of 20270502004000_check_ins_habits_follow_the_coach, for a confirmed defect only: the
 -- 20270502002500 body and comment come back, so a coach reads a client's habits again only while that
 -- client's stored Check-ins and habits row is granted. No rows change.
 BEGIN;
