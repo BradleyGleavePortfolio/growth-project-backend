@@ -70,9 +70,9 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
 (DB_URL ? describe : describe.skip)('The Roman mark: only a server-written Roman draft, written while the client allowed AI help', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
   const db = cast<PrismaService>(prisma);
-  // Coach K and client A share the thread; coach L and L's client C are another tenant.
-  const [K, A, L, C] = Array.from({ length: 4 }, () => randomUUID());
-  const role: Record<string, 'coach' | 'student'> = { [K]: 'coach', [A]: 'student', [L]: 'coach', [C]: 'student' };
+  // Coach K and client A share the thread; B is K's other client; coach L and L's client C are another tenant.
+  const [K, A, B, L, C] = Array.from({ length: 5 }, () => randomUUID());
+  const role: Record<string, 'coach' | 'student'> = { [K]: 'coach', [A]: 'student', [B]: 'student', [L]: 'coach', [C]: 'student' };
   const req = (id: string) => cast<AuthedRequest>({ user: { id, role: role[id], coach_id: null }, headers: {} });
   const welcome = { jobId: randomUUID(), lease: randomUUID() };
   const legacyDraft = randomUUID();
@@ -159,6 +159,8 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
     ['another coach approves this coach\'s Roman draft', 403, refused(() => decide(L, pendingK))],
     ['another coach sends with this coach\'s Roman draft id', 403,
       refused(() => messaging.sendAsCoach(L, C, { body: 'Hi' }, { aiDraftId: pendingK }))],
+    ['same coach sends with a Roman draft about another of his clients', 403,
+      refused(() => messaging.sendAsCoach(K, B, { body: 'Hi' }, { aiDraftId: pendingK }))],
     ['coach composer, typed, body names a draft id', 'unmarked', plain(() => coachApi.send(req(K), A, forged('Hi')))],
     ['coach composer, voice note', 'unmarked', plain(() => coachApi.send(req(K), A, { voice }))],
     ['coach welcome', 'unmarked', plain(() => messaging.sendAsCoach(K, A, { body: 'Welcome' }, { welcome }))],
@@ -169,7 +171,7 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
   const outcome = new Map<string, { sent?: Sent; error?: unknown; drafts: number; messages: number }>();
   const counts = async () => [
     await prisma.aiActionDraft.count({ where: { tenant_coach_id: { in: [K, L] } } }),
-    await prisma.coachMessage.count({ where: { client_id: { in: [A, C] } } }),
+    await prisma.coachMessage.count({ where: { client_id: { in: [A, B, C] } } }),
   ];
   const messageIds = () => [...outcome.values()].flatMap((o) => (o.sent ? [o.sent.messageId] : []));
   const mark = (path: string, expected: Expect) => (expected === 'marked' ? outcome.get(path)?.sent?.draftId : null);
@@ -188,7 +190,7 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
 
   beforeAll(async () => {
     Object.assign(process.env, ENV);
-    for (const [id, coach_id] of [[K, null], [L, null], [A, K], [C, L]] as Array<[string, string | null]>) {
+    for (const [id, coach_id] of [[K, null], [L, null], [A, K], [B, K], [C, L]] as Array<[string, string | null]>) {
       await prisma.user.create({
         data: { id, supabase_id: id, email: `roman-mark-${id}`, name: 'RLS person', role: role[id], coach_id },
       });
@@ -262,13 +264,13 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
     expect(await clientApi.listThread(req(C), {})).toEqual([]);
   });
 
-  it('row layer: the coach and client read every row; another coach and client read none', async () => {
+  it('row layer: the coach and client read every row; another coach, another client and the coach\'s other client read none', async () => {
     const ids = messageIds();
     const count = async (who: string) => {
       const { bypass, rows } = await readAs(who, ids);
       return { bypass, rows: rows.length };
     };
     expect([await count(K), await count(A)]).toEqual([{ bypass: false, rows: ids.length }, { bypass: false, rows: ids.length }]);
-    expect([await count(L), await count(C)]).toEqual([{ bypass: false, rows: 0 }, { bypass: false, rows: 0 }]);
+    expect([await count(L), await count(C), await count(B)]).toEqual(Array(3).fill({ bypass: false, rows: 0 }));
   });
 });
