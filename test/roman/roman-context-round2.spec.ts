@@ -15,7 +15,7 @@ import type { RomanClientContextBundle } from '../../src/roman/context/roman-cli
 import { HttpExceptionFilter } from '../../src/filters/http-exception.filter';
 import type { AuthedRequest } from '../../src/auth/auth-request';
 import type { PrismaService } from '../../src/prisma.service';
-import { fakeOf } from '../ai-egress/ai-egress.fakes';
+import { fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 
 beforeEach(() => {
   jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
@@ -126,6 +126,7 @@ describe('C-651-4 the context memo does not keep expired bundles or per-user fen
     const svc = new RomanClientContextService(
       fakeOf<PrismaService>({}),
       fakeOf({ summarize: jest.fn(async () => null) }),
+      grantAllEgress(),
     );
     jest.spyOn(svc, 'buildFresh').mockImplementation(async () => bundleFor(LEAN));
     return svc;
@@ -152,6 +153,7 @@ describe('C-651-4 the context memo does not keep expired bundles or per-user fen
     const svc = new RomanClientContextService(
       fakeOf<PrismaService>({}),
       fakeOf({ summarize: jest.fn(async () => null) }),
+      grantAllEgress(),
     );
     let release: () => void = () => undefined;
     jest.spyOn(svc, 'buildFresh').mockImplementation(

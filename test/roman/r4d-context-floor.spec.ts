@@ -9,12 +9,13 @@ import 'reflect-metadata';
 import { RomanClientContextService } from '../../src/roman/context/roman-client-context.service';
 import { renderClientContext } from '../../src/roman/context/roman-client-context.renderer';
 import { makePersonaDb, FakeSafetyIntakeSource, NOW, P1 } from './fixtures/roman-personas';
+import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
 
 const caller = { id: P1, role: 'student' };
 
 function setup() {
   const db = makePersonaDb();
-  return { db, svc: new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource()) };
+  return { db, svc: new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource(), grantAllEgress()) };
 }
 
 describe('R4d: the context Roman reads uses the floor-lifted target', () => {
