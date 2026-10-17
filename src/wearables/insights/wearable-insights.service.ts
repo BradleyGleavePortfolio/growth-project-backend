@@ -109,6 +109,21 @@ export class WearableInsightsService {
     }
   }
 
+  /**
+   * ROMANMARK-BE: Roman's own message suggestion for this coach, client and
+   * bucket exactly as stored (fresh, or expired by its 6 h TTL or a sync),
+   * else null. The approve route sends only this text, marked, and marks the
+   * coach's explicit edit of it (S-08). Roman wrote it through the egress gate
+   * (generate: live grant read before the cache write) while the client
+   * allowed AI help, so it keeps the mark after a later withdrawal
+   * (#ROMANMARK-CONSENT-MARK op 1).
+   */
+  async romanSuggestion(coachId: string, clientId: string, bucket: WearableMetricBucket): Promise<string | null> {
+    const row = await this.cache.getEvenIfStale('coach', clientId, bucket, coachId);
+    const text: unknown = row ? Reflect.get(row, 'suggested_message_draft') : null;
+    return typeof text === 'string' && text.trim().length > 0 ? text : null;
+  }
+
   // ── Public API ─────────────────────────────────────────────────────
   async generateForCoach(
     coachId: string,

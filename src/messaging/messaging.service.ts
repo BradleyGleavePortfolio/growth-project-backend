@@ -36,6 +36,7 @@ import { describeFailure } from '../observability/log-pii';
 import { isMessagingCoreV2Enabled } from './messaging-core.feature';
 import { coachBroadcastsEnabled } from '../broadcasts/broadcasts.feature';
 import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
+import { isRomanMessageDraft } from '../ai/gateway/roman-message-draft';
 import { THREAD_UPDATED_EVENT, type ThreadUpdateKind } from './messaging-realtime';
 
 const DEFAULT_LIMIT = 50;
@@ -726,6 +727,28 @@ export class MessagingService {
     return rows.filter((m) => m.sender_id !== otherPartyId);
   }
 
+  /**
+   * ROMANMARK-BE: the one gate on CoachMessage.ai_draft_id (the Roman mark),
+   * shared by every path that writes it (only sendAsCoach does). The draft id
+   * must name a draft of this coach about this client, else 403 and nothing is
+   * sent. The mark is kept only for a Roman message draft whose text the
+   * server marked as Roman's (roman-message-draft.ts); otherwise the message
+   * is sent without it. Consent is not read here: the marker is written only
+   * on text Roman wrote through the egress gate's live grant read, so a draft
+   * written while the client allowed AI help keeps its mark when sent after
+   * they turn it off (#ROMANMARK-CONSENT-MARK op 1).
+   */
+  private async romanMark(coachId: string, clientId: string, draftId: string): Promise<string | null> {
+    const draft = await this.prisma.aiActionDraft.findUnique({
+      where: { id: draftId },
+      select: { capability: true, tenant_coach_id: true, subject_user_id: true, provenance: true },
+    });
+    if (!draft || draft.tenant_coach_id !== coachId || draft.subject_user_id !== clientId) {
+      throw new ForbiddenException({ error: 'AI_DRAFT_OUTSIDE_THREAD' });
+    }
+    return isRomanMessageDraft(draft) ? draftId : null;
+  }
+
   // ---- send ----
 
   async sendAsCoach(
@@ -740,8 +763,9 @@ export class MessagingService {
     // only while the caller still holds the job's lease (holdWelcomeLease);
     // otherwise WelcomeLeaseLostError is thrown before any persistence or
     // fan-out. `aiDraftId` (ROMANMARK) is the approved Roman draft this message
-    // began as, passed only by the two Roman message materialisers and stored
-    // as CoachMessage.ai_draft_id, which both thread routes return (the mark).
+    // began as, passed only by the two Roman message materialisers. It is
+    // stored as CoachMessage.ai_draft_id (the mark both thread routes return)
+    // only through romanMark (ROMANMARK-BE).
     options: { welcome?: { jobId: string; lease: string }; aiDraftId?: string } = {},
   ) {
     // Back-compat: existing test fixtures and pre-Phase-6C call sites pass
@@ -774,13 +798,14 @@ export class MessagingService {
     // so existing head-coach queries keep returning them. For sub-coaches
     // the sender_id captures who actually sent.
     const threadCoachId = client.coach_id ?? coachId;
+    const aiDraftId = options.aiDraftId ? await this.romanMark(coachId, clientId, options.aiDraftId) : null;
     const messageData = {
       body,
       voice_url: voice?.url ?? null,
       voice_duration_sec: voice?.duration_sec ?? null,
       voice_size_bytes: voice?.size_bytes ?? null,
       voice_content_type: voice?.content_type ?? null,
-      ...(options.aiDraftId ? { ai_draft_id: options.aiDraftId } : {}),
+      ...(aiDraftId ? { ai_draft_id: aiDraftId } : {}),
     };
     // Main merge (B-609-3 + A3-MSG-CORE): a welcome-job send (internal only,
     // never carries client_message_id or reply_to_id) keeps the lease-fenced
