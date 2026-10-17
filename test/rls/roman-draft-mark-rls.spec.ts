@@ -4,7 +4,10 @@
  * the server for that coach and client. Consent counts when Roman writes it
  * (#ROMANMARK-CONSENT-MARK op 1): a draft written while the client allowed AI
  * help is sent with its mark after they turn it off, and no draft is written
- * after that. PATHS walks every way a coach-thread message is written,
+ * after that. A wearable `approve` sends Roman's stored suggestion, marked,
+ * when its body matches it after the app's trim, and is refused (400, nothing
+ * sent) otherwise; a sync expires the suggestion and keeps it for that check.
+ * PATHS walks every way a coach-thread message is written,
  * through the real controllers, services, gateway, consent ledger and
  * materialisers on the replayed migration chain, and reads each result back
  * at the row layer as role authenticated (no row-security bypass): the
@@ -17,7 +20,7 @@
  */
 import { randomUUID } from 'crypto';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { PrismaClient, WearableMetricBucket } from '@prisma/client';
+import { PrismaClient, WearableMetricBucket, WearableMetricType, WearableProvider } from '@prisma/client';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
 import { cast } from '../engagement/_fake-db';
 import type { PrismaService } from '../../src/prisma.service';
@@ -48,6 +51,7 @@ import { AiConsentRequiredException } from '../../src/ai-egress/ai-consent-requi
 import { InsightCacheService } from '../../src/wearables/insights/insight-cache.service';
 import { WearableInsightsService } from '../../src/wearables/insights/wearable-insights.service';
 import { WearableInsightsController } from '../../src/wearables/insights/wearable-insights.controller';
+import { IngestionService } from '../../src/wearables/ingestion/ingestion.service';
 import { AutoMessageAssetResolver } from '../../src/packages/asset-resolvers/auto-message.resolver';
 import { ResolverSubCoachScope } from '../../src/packages/asset-resolvers/sub-coach-scope.helper';
 
@@ -94,6 +98,8 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
   const gatewayApi = new AiGatewayController(gateway, approvals, new PrivateContextService(db));
   const cache = new InsightCacheService(db);
   const wearableApi = new WearableInsightsController(new WearableInsightsService(db, gateway, cache, egress), approvals, db);
+  const ingestion = new IngestionService(db);
+  const watch = randomUUID();
   const scope = new ResolverSubCoachScope(
     cast({ canAccessClient: async () => true, getHeadCoachIdForSubCoach: async () => null }));
   const autoMessage = new AutoMessageAssetResolver(messaging, scope, db);
@@ -113,6 +119,13 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
     const out = await wearableApi.approveInsight(req(K), { client_id: A, bucket, draft_body, action });
     const row = await prisma.aiActionDraft.findUniqueOrThrow({ where: { id: out.draft_id } });
     return { draftId: out.draft_id, messageId: String(row.materialised_ref) };
+  };
+  /** A's watch syncs a night's sleep through the real ingest path just before `step`. */
+  const synced = (step: () => Promise<Sent>) => async (): Promise<Sent> => {
+    await ingestion.ingest([{ userId: A, connectionId: watch, provider: WearableProvider.OURA,
+      metric: WearableMetricType.SLEEP_TOTAL_MIN, bucket: WearableMetricBucket.SLEEP_RECOVERY, value: 450, unit: 'min',
+      startAt: new Date(Date.now() - 8 * 3_600_000), endAt: new Date() }]);
+    return step();
   };
   /** A withdraws AI help just before `step`, then grants it again for the later paths. */
   const withdrawn = <T>(step: () => Promise<T>) => async (): Promise<T> => {
@@ -137,18 +150,24 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
 
   // The rule's list: every writer of a coach-thread message, and what its row must carry. 'marked' = the
   // approved draft's id; 'unmarked' = sent, ai_draft_id null; any REFUSED key = that refusal, no draft and no message.
-  const REFUSED = { 400: BadRequestException, 403: ForbiddenException, ai_consent_required: AiConsentRequiredException };
+  const MISMATCH = 'WEARABLE_SUGGESTION_MISMATCH';
+  const REFUSED = { 400: BadRequestException, 403: ForbiddenException, ai_consent_required: AiConsentRequiredException,
+    WEARABLE_SUGGESTION_MISMATCH: BadRequestException };
+  const SPACES = 'wearable approve whose body is Roman\'s suggestion with extra spaces (sends the stored text)';
   type Expect = 'marked' | 'unmarked' | keyof typeof REFUSED;
   const PATHS: Array<[string, Expect, () => Promise<Sent | null>]> = [
     ['Roman reply draft (the model\'s own text), approved', 'marked', romanReply],
     ['wearable insight, sent as Roman suggested', 'marked', wearable(WearableMetricBucket.SLEEP_RECOVERY, 'approve')],
+    [SPACES, 'marked', wearable(WearableMetricBucket.SLEEP_RECOVERY, 'approve', `  ${SUGGESTED}\n`)],
     ['wearable insight, edited before sending (S-08)', 'marked', wearable(WearableMetricBucket.SLEEP_RECOVERY, 'edit')],
     ['Roman reply invoke with the coach\'s own proposed_action', 400,
       refused(() => askRoman(K, { proposed_action: { clientId: A, body: 'My own words.' } }))],
     ['stored draft holding caller text (no server mark), approved', 'unmarked', () => decide(K, legacyDraft)],
-    ['wearable approve with no stored Roman suggestion', 'unmarked', wearable(WearableMetricBucket.HEALTH_FITNESS, 'approve')],
-    ['wearable approve whose body is not Roman\'s stored suggestion', 'unmarked',
+    ['wearable approve with no stored Roman suggestion', MISMATCH, wearable(WearableMetricBucket.HEALTH_FITNESS, 'approve')],
+    ['wearable approve whose body is not Roman\'s stored suggestion', MISMATCH,
       wearable(WearableMetricBucket.SLEEP_RECOVERY, 'approve', 'My own words.')],
+    ['wearable insight sent as Roman suggested after the client\'s watch syncs', 'marked',
+      synced(wearable(WearableMetricBucket.SLEEP_RECOVERY, 'approve'))],
     ['Roman reply draft written while AI help was on, sent after it is withdrawn', 'marked', async () => {
       const draftId = String(await askRoman(K));
       return withdrawn(() => decide(K, draftId))();
@@ -196,6 +215,7 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
       });
     }
     await consent.grant(A, { version: CLIENT_AI_CONSENT_VERSION });
+    await prisma.wearableConnection.create({ data: { id: watch, user_id: A, provider: WearableProvider.OURA } });
     // Roman's stored suggestion for K about A's sleep (the wearable insight panel shows it).
     await cache.set('coach', A, WearableMetricBucket.SLEEP_RECOVERY, {
       observation: 'Sleep held steady.', hypothesis: 'The routine is working.', suggested_action: 'Keep it going.',
@@ -231,6 +251,7 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
     const out = outcome.get(path)!;
     if (expected !== 'marked' && expected !== 'unmarked') {
       expect(out.error).toBeInstanceOf(REFUSED[expected]);
+      if (expected === MISMATCH) expect((out.error as BadRequestException).getResponse()).toEqual({ error: MISMATCH });
       expect([out.drafts, out.messages]).toEqual([0, 0]);
       return;
     }
@@ -242,9 +263,15 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
     expect(await readAs(A, [id])).toEqual(want);
   });
 
-  it('a Roman reply message holds the model\'s text, written by the server', async () => {
-    const { rows } = await readAs(K, [outcome.get(PATHS[0][0])!.sent!.messageId]);
-    expect(rows.map((r) => r.body)).toEqual([MODEL_TEXT]);
+  it('the server writes the text: the model\'s reply, and Roman\'s stored suggestion for an approve with extra spaces', async () => {
+    const body = async (path: string) => (await readAs(K, [outcome.get(path)!.sent!.messageId])).rows.map((r) => r.body);
+    expect([await body(PATHS[0][0]), await body(SPACES)]).toEqual([[MODEL_TEXT], [SUGGESTED]]);
+  });
+
+  it('the sync expired Roman\'s stored suggestion (the next read makes a new one) and kept its text', async () => {
+    const key = ['coach', A, WearableMetricBucket.SLEEP_RECOVERY, K] as const;
+    expect(await cache.get(...key)).toBeNull();
+    expect(await cache.getEvenIfStale(...key)).toMatchObject({ suggested_message_draft: SUGGESTED });
   });
 
   it.each(['false', 'true'])('GET /messages and GET /coach/clients/:id/messages return each draft id (v2 %s)', async (v2) => {

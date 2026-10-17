@@ -176,14 +176,21 @@ export class WearableInsightsController {
     // protects LLM-generated drafts. Here the human IS the author, so a null
     // requester keeps that guard inert without weakening any other check
     // (the tenant boundary + coach-owns-client above are the real authz).
-    // ROMANMARK-BE: the draft is marked as Roman's text (the Roman mark when
-    // sent) only when it carries Roman's stored suggestion for this coach,
-    // client and bucket: that exact text, or the coach's explicit edit of it
-    // (S-08, romanmark-insight op 1). Any other body still sends, unmarked.
+    // ROMANMARK-BE: `approve` sends Roman's stored suggestion for this coach,
+    // client and bucket as stored, marked as Roman's text (the Roman mark).
+    // Its body must equal that suggestion after the same trim the app makes
+    // before it sends `approve`; a real difference, or no stored suggestion,
+    // is refused (400 WEARABLE_SUGGESTION_MISMATCH) before anything is written
+    // or sent. `edit` sends the coach's text, marked when a suggestion is
+    // stored (S-08, romanmark-insight op 1).
     const suggestion = body.action === 'dismiss'
       ? null
       : await this.svc.romanSuggestion(req.user.id, body.client_id, body.bucket);
-    const roman = suggestion !== null && (body.action === 'edit' || body.draft_body.trim() === suggestion);
+    const text = body.action === 'approve' ? suggestion : body.draft_body;
+    if (text === null || text.trim() !== body.draft_body.trim()) {
+      throw new BadRequestException({ error: 'WEARABLE_SUGGESTION_MISMATCH' });
+    }
+    const roman = suggestion !== null && body.action !== 'reject';
     const draft = await this.prisma.aiActionDraft.create({
       data: {
         capability: COACH_WEARABLE_MESSAGE_CAPABILITY,
@@ -194,7 +201,7 @@ export class WearableInsightsController {
         payload: {
           clientId: body.client_id,
           bucket: body.bucket,
-          body: body.draft_body,
+          body: text,
         } as Prisma.InputJsonValue,
         rationale: `Approved from wearable insight (bucket=${body.bucket}, action=${body.action})`,
         redacted_inputs: {} as Prisma.InputJsonValue,

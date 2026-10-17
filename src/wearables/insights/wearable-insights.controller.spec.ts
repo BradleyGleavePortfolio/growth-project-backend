@@ -238,6 +238,7 @@ describe('WearableInsightsController', () => {
 
     it('approve → creates draft, decides approved, returns ok shape', async () => {
       const svc = makeSvc();
+      svc.romanSuggestion.mockResolvedValue('Great recovery week — protect that sleep.');
       const deps = approvalDeps({
         materialised_at: new Date(MATERIALISED),
         decided_at: new Date(MATERIALISED),
