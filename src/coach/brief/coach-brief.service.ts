@@ -187,15 +187,16 @@ export function buildSoloCoachSystemPrompt(): string {
   return `You write a fitness coach's daily brief in TGP. It arrives once each morning from Roman, the coach's private assistant, and turns scattered information into a few highlights, like a discreet, polished butler briefing a busy principal.
 
 Rules (all mandatory):
-- The first sentence is exactly "Good morning, <coach first name>." using the first name given.
-- Then the highlights, most important first: money that came in, messages waiting for a reply, check-ins, workouts completed, anything flagged. Use the exact numbers and dollar amounts given. Leave out anything that is zero, unless nothing happened at all.
+- Write only today's facts, most important first: money received since midnight, messages waiting for a reply, weight changes needing a look, check-ins and workouts completed today. Use the exact numbers and dollar amounts given. Leave out anything that is zero, unless nothing happened at all.
+- Messages waiting, weight flags and active payment retries describe the current state; do not claim they all arrived or started today. Leave out roster totals and upcoming renewals.
+- The phone writes "Good morning, <coach first name>." using the coach's first name and, when there are actions, "Where would you like to start?". Do not write either line or any other greeting, question or sign-off.
 - If failed payments are being retried, say the retries run automatically and nothing is needed from the coach.
-- If there are action items, end with one short sentence that points to them below, matching the count given.
+- Never add a closing sentence about buttons, action items or details below. Stop after the facts.
 - 2 to 4 short sentences, under ${BRIEF_TARGET_NARRATIVE_CHARS} characters in total.
 - Plain prose only: no lists, no markdown, no headings, no emojis, no exclamation marks.
 - No first person: never use "I", "we", "us" or "our". State the facts directly, for example "$98 came in from 2 payments since midnight."
 - Never invent names, numbers or events that are not in the data. Do not sign the brief.
-- Output only the brief text.`;
+- Output only the factual narrative, without the phone-written lines.`;
 }
 
 export function buildHeadCoachSystemPrompt(): string {
@@ -204,16 +205,17 @@ export function buildHeadCoachSystemPrompt(): string {
 This coach runs a team, so the brief is about the business, not single clients.
 
 Rules (all mandatory):
-- The first sentence is exactly "Good morning, <coach first name>." using the first name given.
-- Then the business highlights, most important first: team revenue today, monthly recurring revenue, failed payments being retried, team growth and sub-coach highlights. Use the exact numbers and dollar amounts given. Leave out anything that is zero, unless nothing happened at all.
+- Write only today's business facts, most important first: team revenue received since midnight, failed payments being retried automatically and team activity explicitly recorded today. Use the exact numbers and dollar amounts given. Leave out anything that is zero, unless nothing happened at all.
+- Active payment retries describe the current state; do not claim they all started today. Leave out monthly recurring revenue, last-30-day revenue, roster totals and last-24-hour growth or highlights; those are not today's events.
+- The phone writes "Good morning, <coach first name>." using the coach's first name and, when there are actions, "Where would you like to start?". Do not write either line or any other greeting, question or sign-off.
 - If failed payments are being retried, say the retries run automatically and nothing is needed from the coach.
 - Never mention individual clients.
-- If there are action items, end with one short sentence that points to them below.
+- Never add a closing sentence about buttons, action items or details below. Stop after the facts.
 - 2 to 4 short sentences, under ${BRIEF_TARGET_NARRATIVE_CHARS} characters in total.
 - Plain prose only: no lists, no markdown, no headings, no emojis, no exclamation marks.
 - No first person: never use "I", "we", "us" or "our". State the facts directly.
 - Never invent names, numbers or events that are not in the data. Do not sign the brief.
-- Output only the brief text.`;
+- Output only the factual narrative, without the phone-written lines.`;
 }
 
 // P1-8 fix round 5: sanitize user-controlled string fields (coach
@@ -304,20 +306,6 @@ function sanitizeHeadCoachCtxForPrompt(
 }
 
 function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
-  // Completed workouts are reported, never an action item (S-BRIEF-124
-  // B-398-1: nothing in the app approves a workout).
-  const actionCount =
-    ctx.weight_logs_flagged +
-    ctx.unread_messages +
-    (ctx.missed_checkin > 0 ? 1 : 0);
-
-  const handoffHint =
-    actionCount === 0
-      ? 'No action items today.'
-      : actionCount === 1
-        ? 'End with a handoff to 1 action item.'
-        : `End with a handoff to ${actionCount} action items.`;
-
   const parts: string[] = [
     `Coach first name: ${ctx.coach_first_name}`,
     `Coach full name: ${ctx.coach_name}`,
@@ -340,7 +328,7 @@ function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
       ? `→ Retries for the ${ctx.dunning_in_progress} failed payment${ctx.dunning_in_progress > 1 ? 's' : ''} run automatically; nothing is needed from the coach.`
       : `→ No failed payments.`,
     ``,
-    handoffHint,
+    `Write only today's facts and current waiting items from the data above. The phone supplies the greeting and action question; do not add a greeting, question or closing sentence about buttons or items below.`,
   ];
 
   return parts.join('\n');
@@ -350,17 +338,6 @@ function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
 // no per-client workout / message / weight counts. Only revenue, MRR,
 // dunning value, team headcount, and sub-coach highlights.
 function buildHeadCoachPrompt(ctx: BriefContextHeadCoach): string {
-  const businessActionCount =
-    (ctx.dunning_in_progress > 0 ? 1 : 0) +
-    (ctx.total_revenue_today_cents > 0 ? 1 : 0) +
-    (ctx.sub_coach_highlights.length > 0 ? 1 : 0);
-  const handoffHint =
-    businessActionCount === 0
-      ? 'No team-level action items today.'
-      : businessActionCount === 1
-        ? 'End with a handoff to 1 team action item.'
-        : `End with a handoff to ${businessActionCount} team action items.`;
-
   const parts: string[] = [
     `Coach first name: ${ctx.coach_first_name}`,
     `Coach full name: ${ctx.coach_name}`,
@@ -386,8 +363,8 @@ function buildHeadCoachPrompt(ctx: BriefContextHeadCoach): string {
             `  - ${sc.coach_name}: ${sc.active_clients} active client(s), +${sc.new_clients_24h} new in 24h`,
         )),
     ``,
-    `→ This coach runs a team. Lead with team revenue and TGP dunning handling. Mention sub-coach highlights if notable. NEVER mention individual clients by name; that's the sub-coach brief, not the head coach's.`,
-    handoffHint,
+    `→ This coach runs a team. Lead with team revenue since midnight and TGP dunning handling. Leave out background metrics that are not today's events. NEVER mention individual clients by name; that's the sub-coach brief, not the head coach's.`,
+    `Write only today's business facts from the data above. The phone supplies the greeting and action question; do not add a greeting, question or closing sentence about buttons or items below.`,
   ];
 
   return parts.join('\n');
@@ -1560,7 +1537,7 @@ export class CoachBriefService {
         `CoachBrief Claude output failed contract (${violation}) for ${logRef}; attempting one repair`,
       );
 
-      const repairPrompt = `${userPrompt}\n\nThe previous response broke the format (${violation}). Output a fresh brief that:\n- Opens with the sentence "Good morning, ${safeCoachFirstName}."\n- Is 2 to 4 complete sentences.\n- Uses no first person ("I", "we", "us", "our"), no exclamation marks and no emojis.\n- Contains no markdown, no bullet points, no meta prefix like "Here is".\n- Stays under ${BRIEF_TARGET_NARRATIVE_CHARS} characters.`;
+      const repairPrompt = `${userPrompt}\n\nThe previous response broke the format (${violation}). Output a fresh factual narrative that:\n- Contains only today's facts and current waiting items; uses the exact numbers and dollar amounts given.\n- Leaves the greeting using the coach's first name and "Where would you like to start?" to the phone; never adds a greeting, question or closing sentence about buttons or items below.\n- Is 2 to 4 complete sentences.\n- Uses no first person ("I", "we", "us", "our"), no exclamation marks and no emojis.\n- Contains no markdown, no bullet points, no meta prefix like "Here is".\n- Stays under ${BRIEF_TARGET_NARRATIVE_CHARS} characters.`;
 
       const secondAttempt = await this.invokeClaudeOnce(
         client,

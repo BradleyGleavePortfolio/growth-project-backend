@@ -1460,6 +1460,63 @@ describe('buildSoloCoachSystemPrompt / buildHeadCoachSystemPrompt', () => {
     expect(p).toContain('team');
     expect(p).toContain('Never mention individual clients');
   });
+
+  it.each([
+    ['solo / sub-coach', buildSoloCoachSystemPrompt],
+    ['head coach', buildHeadCoachSystemPrompt],
+  ])('%s leaves the greeting, question and buttons to the phone', (_mode, build) => {
+    const prompt = build();
+    expect(prompt).toContain('The phone writes "Good morning, <coach first name>."');
+    expect(prompt).toContain('using the coach\'s first name');
+    expect(prompt).toContain('"Where would you like to start?"');
+    expect(prompt).toContain('Do not write either line or any other greeting, question or sign-off.');
+    expect(prompt).toContain('Never add a closing sentence about buttons, action items or details below. Stop after the facts.');
+    expect(prompt).toContain('never use "I", "we", "us" or "our"');
+    expect(prompt).toContain('Never invent names, numbers or events');
+    expect(prompt).toContain('nothing is needed from the coach');
+    expect(prompt).toContain('Output only the factual narrative, without the phone-written lines.');
+    expect(prompt).not.toMatch(/first sentence is exactly|end with one short sentence/i);
+  });
+
+  it('distinguishes today from background periods without changing the data', () => {
+    expect(buildSoloCoachSystemPrompt()).toContain('Leave out roster totals and upcoming renewals.');
+    expect(buildSoloCoachSystemPrompt()).toContain('do not claim they all arrived or started today');
+    expect(buildHeadCoachSystemPrompt()).toContain('Leave out monthly recurring revenue, last-30-day revenue, roster totals and last-24-hour growth or highlights');
+  });
+
+  it.each([
+    ['quiet solo', makeBriefContext({ unread_messages: 0, weight_logs_flagged: 0, missed_checkin: 0 })],
+    ['one solo item', makeBriefContext({ unread_messages: 1, weight_logs_flagged: 0, missed_checkin: 0 })],
+    ['many solo items', makeBriefContext({ unread_messages: 6, weight_logs_flagged: 1 })],
+    ['quiet head coach', makeHeadCoachContext({ total_revenue_today_cents: 0, dunning_in_progress: 0, sub_coach_highlights: [] })],
+    ['busy head coach', makeHeadCoachContext()],
+  ])('%s user prompt never requests a button handoff', (_mode, ctx) => {
+    const prompt = buildBriefPrompt(ctx);
+    expect(prompt).not.toMatch(/end with a handoff/i);
+    expect(prompt).toContain('The phone supplies the greeting and action question');
+    expect(prompt).toContain('do not add a greeting, question or closing sentence about buttons or items below');
+  });
+
+  it('uses the same factual-only wording on the repair request', async () => {
+    const anthropic = makeMockAnthropic(['An incomplete reply', 'An incomplete reply']);
+    const svc = new CoachBriefService(
+      asPrismaService(makeMockPrisma()), asConfig(makeMockConfig()),
+      grantAllEgress(), asAnthropic(anthropic),
+    );
+    await callClaudeAllAllowed(svc, makeBriefContext({ unread_messages: 1 }));
+    expect(anthropic.messages.create).toHaveBeenCalledTimes(2);
+    const repair = anthropic.messages.create.mock.calls[1][0].messages[0].content;
+    expect(repair).toContain('Contains only today\'s facts and current waiting items');
+    expect(repair).toContain('Leaves the greeting using the coach\'s first name');
+    expect(repair).toContain('never adds a greeting, question or closing sentence about buttons or items below');
+    expect(repair).not.toContain('Opens with the sentence');
+    expect(repair).not.toMatch(/end with a handoff/i);
+  });
+
+  it('records the existing runtime blocker: A-1 facts alone fail the name validator', () => {
+    const facts = '$1,240 came in from 4 payments since midnight. 3 messages are waiting for a reply, and 1 weight change needs a look. One failed payment is being retried automatically, so nothing is needed from you there.';
+    expect(validateClaudeNarrative(facts, 'Jordan')).toBe('missing_first_name');
+  });
 });
 
 describe('bucketDateLocal', () => {
