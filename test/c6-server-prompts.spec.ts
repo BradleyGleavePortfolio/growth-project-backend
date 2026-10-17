@@ -2,8 +2,8 @@
 // medical-practice word. The word is only ever assembled at runtime, so this
 // file never carries it.
 //
-// One guard, class-first (SoT A2 items 12-13): every file under src/ is
-// scanned except the short EXEMPT list below. In .ts files the guard reads
+// One guard, class-first (SoT A2 items 12-13): src/ and client-readable seeds
+// are scanned except the short EXEMPT list below. In .ts files the guard reads
 // every string and template literal, which is where prompts, Roman tool
 // descriptions, safety-router hints, Roman's fixed safe replies, JSON-repair
 // prompts, coach drafting prompts, Swagger text, errors, pushes, emails and
@@ -11,15 +11,26 @@
 // folded first, so a split word is read whole. It skips comments, import paths
 // and regex literals (detector patterns). The word trips it with a glued
 // letter prefix (sub-, non-, pre-) but not inside identifiers and machine
-// codes built on it. Other files (email templates, JSON, contract templates)
-// are read whole.
+// codes built on it. JSON strings are decoded, with only the root fixture
+// version's machine identifier skipped. Other files are read line by line.
 import { createHash } from 'crypto';
 import { readdirSync, readFileSync } from 'fs';
 import { join, relative } from 'path';
 import * as ts from 'typescript';
 import { WearableMetricBucket } from '@prisma/client';
 import { AiService } from '../src/ai/ai.service';
-import { CONSULT_CONSENT_COPY_V3 } from '../src/onboarding/consult-consent-copy';
+import {
+  CONSULT_CONSENT_COPIES,
+  CONSULT_CONSENT_COPY_V3,
+  CONSULT_CONSENT_V3,
+  CONSULT_CONSENT_V4,
+  consultConsentScreenText,
+} from '../src/onboarding/consult-consent-copy';
+import {
+  clientAiConsentCopy,
+  clientAiConsentV5Copy,
+  ClientAiCopyFamily,
+} from '../src/ai-consent/ai-consent.service';
 import { buildRomanSystemPrompt } from '../src/roman/roman.prompts';
 import buildInboxTriagePrompt from '../src/community/ai-triage/prompts/inbox-triage.prompt';
 import { buildCoachHfPrompt } from '../src/wearables/insights/prompts/coach-hf.prompt';
@@ -30,6 +41,10 @@ const BARRED = /cl[i]nic/i;
 const WORD = /(?<![\d_$])cl[i]nic(?:al(?:ly)?|ians?|s)?(?![\w$])/i;
 const W = ['cl', 'inic'].join('');
 const ROOT = join(__dirname, '..');
+const mask = (s: string) => s.replace(new RegExp(W, 'gi'), '[C-6 word]');
+const CONSENT = 'src/onboarding/consult-consent-copy.ts';
+const AI_CONSENT = 'src/ai-consent/ai-consent.service.ts';
+const PROGRAM_SEED = `seed/${W}-programs.v1.json`;
 
 // Path (from the repo root) -> why nobody reads it. Keep this list short.
 const EXEMPT: Array<[RegExp, string]> = [
@@ -53,9 +68,20 @@ function walk(dir: string): string[] {
   );
 }
 
-function readable(path: string, text: string): string[] {
-  if (!path.endsWith('.ts')) return [text];
-  const out: string[] = [];
+type Readable = { text: string; line: number };
+
+function readable(path: string, text: string): Readable[] {
+  const json = path.endsWith('.json');
+  if (!path.endsWith('.ts') && !json) {
+    return text.split('\n').map((text, i) => ({ text, line: i + 1 }));
+  }
+  const source = json
+    ? ts.parseJsonText(path, text)
+    : ts.createSourceFile(path, text, ts.ScriptTarget.Latest);
+  const statement = source.statements[0];
+  const jsonRoot = json && statement && ts.isExpressionStatement(statement)
+    ? statement.expression : undefined;
+  const out: Readable[] = [];
   const fold = (n: ts.Node): string | undefined => {
     if (ts.isStringLiteral(n) || ts.isTemplateLiteralToken(n)) return n.text;
     if (ts.isParenthesizedExpression(n)) return fold(n.expression);
@@ -84,25 +110,45 @@ function readable(path: string, text: string): string[] {
   };
   const visit = (n: ts.Node): void => {
     if (ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) return;
+    // This root metadata field is an operator-only id, not program copy.
+    if (
+      json && ts.isPropertyAssignment(n) &&
+      ts.isStringLiteral(n.name) && n.name.text === 'fixture_version' &&
+      jsonRoot && ts.isObjectLiteralExpression(jsonRoot) && jsonRoot.properties.includes(n) &&
+      ts.isStringLiteral(n.initializer) &&
+      /^[a-z0-9]+(?:[-_.][a-z0-9]+)+$/i.test(n.initializer.text)
+    ) return;
     const s = fold(n);
     if (s === undefined) ts.forEachChild(n, visit);
-    else out.push(s);
+    else out.push({ text: s, line: source.getLineAndCharacterOfPosition(n.getStart(source)).line + 1 });
   };
-  visit(ts.createSourceFile(path, text, ts.ScriptTarget.Latest));
+  visit(source);
   return out;
 }
 
-const hits = (files: Array<[string, string]>) =>
-  files
-    .filter(
-      ([p, t]) => !exempt(p) && readable(p, t).some((s) => WORD.test(s) && sha(s) !== HISTORIC[p]),
+const violations = (path: string, parts: Readable[], rendered = false) =>
+  parts
+    .filter(({ text }) =>
+      (rendered ? BARRED : WORD).test(text) && (rendered || sha(text) !== HISTORIC[path]),
     )
-    .map(([p]) => p);
+    .map(({ line }) => `${mask(path)}:${line}: [C-6 word]`);
+
+const hits = (files: Array<[string, string]>) =>
+  files.flatMap(([p, t]) => exempt(p) ? [] : violations(p, readable(p, t)));
+
+const sourceLine = (path: string, marker: string) =>
+  readFileSync(join(ROOT, path), 'utf8').split('\n').findIndex((line) => line.includes(marker)) + 1;
 
 describe('C-6: no barred word in any server-side text a model or person reads', () => {
-  const scanned = walk(join(ROOT, 'src')).filter((p) => !exempt(p));
+  const scanned = [
+    ...walk(join(ROOT, 'src')),
+    ...walk(join(ROOT, 'prisma')).filter((p) => /^prisma\/seed-[^/]+$/.test(p)),
+    ...walk(join(ROOT, 'seed')).filter((p) => /^seed\/[^/]+\.v1\.json$/.test(p)),
+    // seed-foods.ts reads the client-visible names from this fixture.
+    'prisma/data/seed-foods.json',
+  ].filter((p) => !exempt(p));
 
-  it('every scanned file under src/ is free of the word', () => {
+  it('every scanned source and seed file is free of the word', () => {
     const files = scanned.map((p): [string, string] => [p, readFileSync(join(ROOT, p), 'utf8')]);
     expect(hits(files)).toEqual([]);
   });
@@ -122,18 +168,51 @@ describe('C-6: no barred word in any server-side text a model or person reads', 
     'src/public-pages/trust-pages.html.ts',
     'src/email/templates/payment-receipt.hbs',
     'src/contracts/templates/seed/platform-waiver-v1.md',
-    'src/onboarding/consult-consent-copy.ts',
-  ])('%s is scanned', (p) => {
-    expect(scanned).toContain(p);
+    CONSENT,
+    'prisma/seed-diagnostic.json',
+    'prisma/seed-build-week.json',
+    'prisma/seed-foods.ts',
+    'prisma/seed-recipes.ts',
+    'prisma/data/seed-foods.json',
+    PROGRAM_SEED,
+  ].map((p) => [mask(p), p]))('%s is scanned', (_label, p) => {
+    expect(scanned.map(mask)).toContain(mask(p));
   });
 
-  // Planted rows: [case, real file under src/, line appended to it].
+  // Planted rows: [case, real file, line appended to it].
   const dto = 'src/invite-codes/coach-code-tools.dto.ts';
-  const consent = 'src/onboarding/consult-consent-copy.ts';
+  const consent = CONSENT;
   const historic = CONSULT_CONSENT_COPY_V3.paragraphs[2];
   const [a, b] = [W.slice(0, 2), W.slice(2)];
   const plant = (p: string, line: string) =>
     hits([[p, `${readFileSync(join(ROOT, p), 'utf8')}\n${line}\n`]]);
+
+  it.each<[string, string, unknown, number]>([
+    ['diagnostic question', 'prisma/seed-diagnostic.json', { prompt: W }, 2],
+    ['day narrative', 'prisma/seed-build-week.json', [{ narrative: `${W}al care` }], 3],
+    ['food name', 'prisma/data/seed-foods.json', [{ name: W }], 3],
+    ['program description', PROGRAM_SEED, { programs: [{ description: W }] }, 4],
+    ['nested version is still copy', PROGRAM_SEED, { programs: [{ fixture_version: `${W}-programs.v1` }] }, 4],
+    ['prose is not a machine version', PROGRAM_SEED, { fixture_version: `Ask the ${W}` }, 2],
+  ])('seed text fails with a masked file and source line: %s', (_case, p, value, line) => {
+    expect(hits([[p, JSON.stringify(value, null, 2)]])).toEqual([
+      `${mask(p)}:${line}: [C-6 word]`,
+    ]);
+  });
+
+  it('decodes JSON escapes before checking seed copy', () => {
+    const escaped = [...W].map((c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`).join('');
+    expect(hits([[PROGRAM_SEED, `{\n  "name": "${escaped}"\n}`]])).toEqual([
+      `${mask(PROGRAM_SEED)}:2: [C-6 word]`,
+    ]);
+  });
+
+  it('JSON machine identifiers stay allowed', () => {
+    expect(hits([[PROGRAM_SEED, JSON.stringify({
+      fixture_version: `${W}-programs.v1`,
+      code: `program_in_${W}_set`,
+    })]])).toEqual([]);
+  });
 
   it.each([
     ['plain string', dto, `export const A = 'Ask the ${W} front desk';`],
@@ -150,8 +229,11 @@ describe('C-6: no barred word in any server-side text a model or person reads', 
     ['new consent copy', consent, `export const V = 'Ask the ${W} desk';`],
     ['historic string, edited', consent, `export const V = ${JSON.stringify(`${historic} `)};`],
     ['historic string elsewhere', dto, `export const A = ${JSON.stringify(historic)};`],
+    ['food seed name', 'prisma/seed-foods.ts', `const NAME = '${W}';`],
+    ['recipe seed description', 'prisma/seed-recipes.ts', `const DESC = '${a}' + '${b}al';`],
   ])('a planted word fails the guard: %s', (_case, p, line) => {
-    expect(plant(p, line)).toEqual([p]);
+    const lineNumber = readFileSync(join(ROOT, p), 'utf8').split('\n').length + 1;
+    expect(plant(p, line)).toEqual([`${mask(p)}:${lineNumber}: [C-6 word]`]);
   });
 
   it.each([
@@ -168,6 +250,39 @@ describe('C-6: no barred word in any server-side text a model or person reads', 
   ])('identifiers, comments, detectors, paths and exempt files pass: %s', (_case, p, line) => {
     expect(plant(p, line)).toEqual([]);
   });
+
+  // v1/v2 were retired; v3/v4 are pinned acknowledgements, never server-offered
+  // copy. Every other entry, including a future spread of either, must be clean.
+  it.each(Object.entries(CONSULT_CONSENT_COPIES).filter(
+    ([version]) => version !== CONSULT_CONSENT_V3 && version !== CONSULT_CONSENT_V4,
+  ))('%s renders without the word', (_version, { copy }) => {
+    expect(violations(CONSENT, [{
+      text: consultConsentScreenText(copy),
+      line: sourceLine(CONSENT, 'export const CONSULT_CONSENT_COPIES:'),
+    }], true)).toEqual([]);
+  });
+
+  it.each<ClientAiCopyFamily>(['pre57c', 'coached', 'crisis', 'coach_free'])(
+    'every server-offered AI consent scope renders without the word: %s',
+    (family) => {
+      for (const render of [clientAiConsentCopy, clientAiConsentV5Copy]) {
+        const copy = render(family);
+        expect(violations(AI_CONSENT, [{
+          text: `${copy.paragraph.text}\n\n${copy.box_label.text}`,
+          line: sourceLine(AI_CONSENT, `export function ${render.name}(`),
+        }], true)).toEqual([]);
+      }
+    },
+  );
+
+  it.each([CONSULT_CONSENT_V3, CONSULT_CONSENT_V4])(
+    'a newly rendered spread of pinned %s fails, without its historic exemption',
+    (version) => {
+      const copy = { ...CONSULT_CONSENT_COPIES[version].copy };
+      expect(violations(CONSENT, [{ text: consultConsentScreenText(copy), line: 1 }], true))
+        .toEqual([`${CONSENT}:1: [C-6 word]`]);
+    },
+  );
 
   const legacy = new AiService(
     fakeOf({}),
@@ -211,7 +326,7 @@ describe('C-6: no barred word in any server-side text a model or person reads', 
       'Frame everything as recovery and habit coaching, not medical care.',
     ],
   ])('%s renders without the word and keeps its boundary', (_name, text, kept) => {
-    expect(text).not.toMatch(BARRED);
+    expect(violations('rendered-server-prompt', [{ text, line: 1 }], true)).toEqual([]);
     expect(text).toContain(kept);
   });
 });

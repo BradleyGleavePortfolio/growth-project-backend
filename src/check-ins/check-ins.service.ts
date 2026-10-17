@@ -82,8 +82,8 @@ export class CheckInsService {
     return client;
   }
 
-  // CF-SHARE-GATE-128: the client's "Check-ins and habits" switch (Settings >
-  // Privacy > Coach sharing). The owner account reads every scope.
+  // CF-SHARE-GATE-128, #SHARE-JOIN: ConsentService's one rule (the client's coach
+  // now; a sub-coach during an open delegation). The owner account reads all.
   private async checkInsShared(
     coachId: string,
     clientId: string,

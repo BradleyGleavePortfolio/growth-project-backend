@@ -81,13 +81,50 @@ interface Candidate {
   private: boolean;
 }
 
-/** sha256 over the ledger sorted by kind, id, client (order of reads never matters). */
-export function playbookLedgerDigest(ledger: readonly PlaybookLedgerRow[]): string {
+/**
+ * PLAYBOOK-WITHDRAW: digest format `ledger-v2:<ledger sha256>:<client tags>`. The tags name every client eligible at
+ * the build (the collector's `consented`, whose texts and figures the version used), so `playbookDigestHolds` can
+ * tell at use time whether any of them is no longer eligible, without a new column and without storing raw ids.
+ */
+export const PLAYBOOK_LEDGER_DIGEST_VERSION = 'ledger-v2';
+type LedgerRow = { source_kind: string; source_id: string; client_id?: string | null };
+
+/** sha256 over the ledger sorted by kind, id, client (read order never matters). */
+function ledgerSha(ledger: readonly LedgerRow[]): string {
   const rows = ledger
     .map((r) => [r.source_kind, r.source_id, r.client_id ?? ''])
     .sort((a, b) => a.join('\u0000').localeCompare(b.join('\u0000')));
   return createHash('sha256').update(JSON.stringify(rows)).digest('hex');
 }
+
+/** A client's tag in its head coach's digest: 64 bits of sha256(head, client). */
+function clientTag(headCoachId: string, clientId: string): string {
+  return createHash('sha256').update(`${headCoachId}\u0000${clientId}`).digest('hex').slice(0, 16);
+}
+
+export function playbookLedgerDigest(ledger: readonly LedgerRow[], eligibleClientIds: readonly string[], headCoachId: string): string {
+  const tags = [...new Set(eligibleClientIds.map((id) => clientTag(headCoachId, id)))].sort();
+  return `${PLAYBOOK_LEDGER_DIGEST_VERSION}:${ledgerSha(ledger)}:${tags.join(',')}`;
+}
+
+/**
+ * PLAYBOOK-WITHDRAW: true only for a ledger-v2 digest whose ledger rows are all still there and whose every client
+ * (each tag, and each ledger client) is in `eligibleNow`. A client who joined since does not matter.
+ */
+export function playbookDigestHolds(
+  digest: string,
+  ledger: readonly LedgerRow[],
+  eligibleNow: readonly string[],
+  headCoachId: string,
+): boolean {
+  const [format, sha, tags, ...rest] = digest.split(':');
+  if (format !== PLAYBOOK_LEDGER_DIGEST_VERSION || sha !== ledgerSha(ledger) || tags === undefined || rest.length) return false;
+  const now = new Set(eligibleNow.map((id) => clientTag(headCoachId, id)));
+  const ledgerClients = ledger.flatMap((r) => (r.client_id ? [clientTag(headCoachId, r.client_id)] : []));
+  return [...(tags ? tags.split(',') : []), ...ledgerClients].every((t) => now.has(t));
+}
+
+const PERSON = { id: true, name: true, leaderboard_display_name: true, email: true, phone: true } as const;
 
 function oneLine(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
@@ -102,8 +139,13 @@ export class PlaybookSourceCollector {
     private readonly signals: PlaybookSignalsService,
   ) {}
 
-  async collect(headCoachId: string, now: Date = new Date()): Promise<PlaybookSources> {
-    const L = PLAYBOOK_SOURCE_LIMITS;
+  /**
+   * PLAYBOOK-WITHDRAW: the one client definition of a head coach's playbook: the team (head + active sub-coaches),
+   * its live students (not deleted or scheduled for deletion; id order, so each read sees the same rows) and, of
+   * those, the ones holding the memory grant now, read through egress (`consented`, sorted). Builds learn only from
+   * `consented`; the coach-method augmenter retires a version once any client eligible at its build no longer is.
+   */
+  async eligibleClients(headCoachId: string) {
     const head = await this.budget.resolveHeadCoachId(headCoachId);
     const subs = await this.prisma.teamSubCoachAssignment.findMany({
       where: { head_coach_id: head, archived_at: null },
@@ -111,20 +153,26 @@ export class PlaybookSourceCollector {
     });
     const subIds = [...new Set(subs.map((s) => s.sub_coach_id).filter((id) => id !== head))];
     const team = [head, ...subIds];
+    const clients = await this.prisma.user.findMany({
+      where: { coach_id: { in: team }, role: 'student', deletion_scheduled_at: null, deleted_at: null },
+      orderBy: { id: 'asc' },
+      select: PERSON,
+      take: PLAYBOOK_SOURCE_LIMITS.rosterRows,
+    });
+    const clientIds = clients.map((c) => c.id);
+    const granted = clientIds.length ? await this.egress.consentedClients(clientIds, 'memory') : new Set<string>();
+    const consented = clientIds.filter((id) => granted.has(id)).sort();
+    return { head, team, subIds, clients, consented };
+  }
+
+  async collect(headCoachId: string, now: Date = new Date()): Promise<PlaybookSources> {
+    const L = PLAYBOOK_SOURCE_LIMITS;
+    const { head, team, subIds, clients, consented } = await this.eligibleClients(headCoachId);
     // COACH-AI-CONSENT: a sub-coach's own text is read only while they allow AI (read now);
     // the head's grant is re-read at send (the builder's subject names the head).
     const allowed = await Promise.all(subIds.map((id) => this.egress.coachConsented(id)));
     const authors = [head, ...subIds.filter((_, i) => allowed[i])];
-
-    const person = { id: true, name: true, leaderboard_display_name: true, email: true, phone: true } as const;
-    const [clients, subCoaches] = await Promise.all([
-      this.prisma.user.findMany({
-        where: { coach_id: { in: team }, role: 'student', deletion_scheduled_at: null, deleted_at: null },
-        select: person,
-        take: L.rosterRows,
-      }),
-      subIds.length ? this.prisma.user.findMany({ where: { id: { in: subIds } }, select: person }) : [],
-    ]);
+    const subCoaches = subIds.length ? await this.prisma.user.findMany({ where: { id: { in: subIds } }, select: PERSON }) : [];
     const roster = buildPlaybookRoster(
       [...clients, ...subCoaches].map((p) => ({
         name: p.name,
@@ -134,9 +182,6 @@ export class PlaybookSourceCollector {
       })),
     );
 
-    const clientIds = clients.map((c) => c.id);
-    const granted = clientIds.length ? await this.egress.consentedClients(clientIds, 'memory') : new Set<string>();
-    const consented = clientIds.filter((id) => granted.has(id)).sort();
     const forClient = [{ client_id: null }, ...(consented.length ? [{ client_id: { in: consented } }] : [])];
 
     const [guidelines, templates, plans, mealPlans] = await Promise.all([
@@ -254,7 +299,7 @@ export class PlaybookSourceCollector {
       roster,
       items,
       ledger,
-      digest: playbookLedgerDigest(ledger),
+      digest: playbookLedgerDigest(ledger, consented, head),
       consentedClientIds: consented,
       signals,
     };

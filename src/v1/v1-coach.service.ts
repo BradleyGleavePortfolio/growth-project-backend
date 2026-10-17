@@ -152,13 +152,13 @@ export class V1CoachService {
     since.setDate(since.getDate() - 14);
 
     // B-865-SOL-130-1: the last check-in date follows "Check-ins and habits"
-    // and the last workout date follows "Workouts", under the grant of the
-    // coach the client joined (the head coach's for a sub-coach). The owner
+    // and the last workout date follows "Workouts", for the caller as reader
+    // (a sub-coach as himself, never as the head coach: #SHARE-SIMPLE). The owner
     // account reads all. A date the client does not share stays null, and the
     // risk does not use it.
     const granted = this.consent
       ? await this.consent.grantedScopesByClient(
-          messagingCoachId,
+          coachId,
           clientIds,
           [ConsentScope.FITNESS_HABITS_PROGRESS, ConsentScope.FITNESS_WORKOUTS],
           caller.role,
@@ -295,12 +295,12 @@ export class V1CoachService {
     const now = new Date();
     const presenceCutoff = new Date(now.getTime() - ACTIVE_PRESENCE_MINUTES * 60_000);
     // B-865-SOL-130-2: as in listClients, the risk reads the last check-in date
-    // only for clients who share "Check-ins and habits", under the grant of the
-    // coach the client joined (the head coach's for a sub-coach). The owner
+    // only for clients who share "Check-ins and habits" with the caller as reader
+    // (a sub-coach as himself, never as the head coach: #SHARE-SIMPLE). The owner
     // account reads all. A hidden date gives no check-in reason.
     const granted = this.consent
       ? await this.consent.grantedScopesByClient(
-          messagingCoachId,
+          caller.id,
           clientIds,
           [ConsentScope.FITNESS_HABITS_PROGRESS],
           caller.role,
@@ -482,7 +482,7 @@ export class V1CoachService {
       payload: { messageId: created.id, snippetId: snippetId ?? null },
     });
     void this.clearDraft(threadCoachId, clientId);
-    void this.supabase.broadcastNewMessage(clientId);
+    void this.supabase.pingChat({ coachId: threadCoachId, clientId }, 'new-message');
     if (caller.role === 'owner') {
       void this.audit.write({
         action: AuditAction.MESSAGE_SENT_BY_OWNER,

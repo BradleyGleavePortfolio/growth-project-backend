@@ -364,6 +364,31 @@ describe('R11-P2 playbook signals: 3-client minimum', () => {
     expect(out.adjustments).toEqual([]);
   });
 
+  it('PLAYBOOK-WITHDRAW: a client program counts only while its client is passed in; plans and masters stay', async () => {
+    const t = buildTables();
+    const day = (program: Row) => ({ coach_id: H, archived_at: null, program_id: 'prog', is_template: program.is_template, program });
+    const rows = (id: string, program: Row) =>
+      [0, 1, 2].map((order) => ({ exercise_external_id: id, order, archived_at: null, workout_plan: day(program) }));
+    t.exerciseCatalogItem = [
+      ...t.exerciseCatalogItem,
+      { id: 'ex-thrust', slug: 'hip-thrust', source_ref: 'seed:legs-009', name: 'Hip Thrust', primary_muscle: 'glutes' },
+      { id: 'ex-stepup', slug: 'step-up', source_ref: 'seed:legs-010', name: 'Step Up', primary_muscle: 'quads' },
+    ];
+    t.workoutPlanExercise = [
+      ...t.workoutPlanExercise,
+      ...rows('ex-legpress', { is_template: false, client_id: CLIENTS[3] }), // one client's copy
+      ...rows('ex-thrust', { is_template: true, client_id: null }), // a master
+      ...rows('ex-stepup', { is_template: false, client_id: null }), // a client's program, client unknown
+    ];
+    const names = async (clientIds?: string[]) =>
+      (await service(t).svc.compute(H, { now: NOW, clientIds })).top_exercises.map((e) => e.name);
+    expect(await names(CLIENTS.slice(0, 3))).toEqual(expect.arrayContaining(['Back Squat', 'Hip Thrust']));
+    expect(await names(CLIENTS.slice(0, 3))).not.toContain('Leg Press');
+    expect(await names(CLIENTS)).toContain('Leg Press');
+    expect(await names(CLIENTS)).not.toContain('Step Up');
+    expect(await names()).toEqual(expect.arrayContaining(['Leg Press', 'Step Up'])); // no client list: unchanged
+  });
+
   it('a sub-metric under the floor is null while the others stay', async () => {
     const t = buildTables();
     // Only two fat-loss clients resolve a maintenance estimate.

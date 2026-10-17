@@ -6,9 +6,9 @@ import { ConsentScope, ConsentService } from './consent.service';
 export type CoachSharingCheck = (scope: string, clientIds: string[]) => Promise<string[]>;
 
 /**
- * COACH-AI-GATE-130 — the client's Coach sharing switches (Settings > Privacy > Coach sharing) for
- * coach-side readers of many clients or of AI input. Same rule as the client summary:
- * ConsentService.coachCanAccess (a granted row for this coach, client and scope; the owner passes).
+ * COACH-AI-GATE-130 — which clients' `scope` logs a coach-side reader of many clients or of AI input may
+ * read. Same rule as the client summary, in one batch: ConsentService.grantedScopesByClient (workouts, food
+ * logs, weigh-ins, check-ins and habits: the client's coach now; the owner passes).
  * `consent` is missing only in hand-built unit tests (the services take it without @Optional(), so
  * Nest fails at boot rather than run without it); those keep their all-shared fixtures.
  */
@@ -20,8 +20,8 @@ export async function coachSharingCheck(
   if (!consent) return async (_scope, clientIds) => clientIds;
   const caller = await prisma.user.findUnique({ where: { id: coachId }, select: { role: true } });
   return async (scope, clientIds) => {
-    const allowed = await Promise.all(clientIds.map((id) => consent.coachCanAccess(coachId, id, scope, caller?.role)));
-    return clientIds.filter((_, i) => allowed[i]);
+    const granted = await consent.grantedScopesByClient(coachId, clientIds, [scope], caller?.role);
+    return clientIds.filter((id) => granted.get(id)?.has(scope) === true);
   };
 }
 
@@ -29,10 +29,10 @@ export async function coachSharingCheck(
 const WEIGHT_FIELDS = ['weight_kg', 'current_weight_lbs', 'target_weight_lbs'] as const;
 
 /**
- * C8-S (SoT A2 item 12): a coach-facing read returns a client's weight only while that client's
- * Weigh-ins switch (`fitness.body_metrics`, ConsentService.coachCanAccess) is on. Off, each weight
- * field reads null, the shape an unshared slice already has (roster and summary `profile: null`);
- * the rest of the row stays.
+ * C8-S (SoT A2 item 12): a coach-facing read returns a client's weight only to a coach who may read
+ * weigh-ins (`fitness.body_metrics`, ConsentService.coachCanAccess: the client's coach now). Otherwise
+ * each weight field reads null, the shape an unshared slice already has (roster and summary
+ * `profile: null`); the rest of the row stays.
  */
 export function weightIfShared<T extends object>(row: T, weighIns: boolean): T {
   if (weighIns) return row;
@@ -44,7 +44,7 @@ export const WEIGHT_METRICS: readonly WearableMetricType[] = [WearableMetricType
 
 /**
  * WEIGHTWALL (SoT A2 item 12): the one "can this caller see this client's weight" check. Yes for the
- * client themselves; a coach only while that client's Weigh-ins switch is on for them
+ * client themselves; a coach only while they coach that client now
  * (ConsentService.coachCanAccess, `fitness.body_metrics`; the owner account passes). No means no
  * weight, no body fat and no number computed from them, from any source, except the calorie and
  * macro targets the app works out (owner ww-targets op 2: those stay on Macros and in the AI drafts).

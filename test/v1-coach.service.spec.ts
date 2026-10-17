@@ -283,7 +283,7 @@ describe('V1CoachService', () => {
       { id: 'client-2', name: 'C2', email: 'c2@x.com', role: 'student', coach_id: 'coach-A', archived_at: null, created_at: new Date('2026-01-03'), profile: { avatar_url: null } },
       { id: 'client-other', name: 'C3', email: 'c3@x.com', role: 'student', coach_id: 'coach-B', archived_at: null, created_at: new Date('2026-01-04'), profile: { avatar_url: null } },
     );
-    const supabaseStub = { broadcastNewMessage: jest.fn().mockResolvedValue(undefined) } as any;
+    const supabaseStub = { pingChat: jest.fn().mockResolvedValue(undefined) } as any;
     const auditStub = { write: jest.fn().mockResolvedValue(undefined) } as any;
     svc = new V1CoachService(prisma as any, supabaseStub, auditStub);
   });
@@ -360,7 +360,7 @@ describe('V1CoachService', () => {
         getAuthorizedClientIds: jest.fn().mockResolvedValue(['client-1']),
       } as any;
       const supabaseStub = {
-        broadcastNewMessage: jest.fn().mockResolvedValue(undefined),
+        pingChat: jest.fn().mockResolvedValue(undefined),
       } as any;
       const auditStubLocal = { write: jest.fn().mockResolvedValue(undefined) } as any;
       const svcWithSub = new V1CoachService(

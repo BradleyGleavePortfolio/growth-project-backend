@@ -1,5 +1,5 @@
 /**
- * COACH-AI-CONSENT-BE (20270502003900): a coach's own AI grant, live on the replayed chain. The
+ * COACH-AI-CONSENT-BE (20270502004300): a coach's own AI grant, live on the replayed chain. The
  * real AiConsentService writes the ledger (server role) and reads it as the non-bypass
  * `authenticated` role, as the coach (own rows only); the real AiEgressService decides. Coaches:
  * N never asked, D "Not now", W allowed then turned off, G allowed. Clients of G: K without a
@@ -24,7 +24,7 @@ const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') {
   throw new Error('coach-ai-consent-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.');
 }
-const DIR = join(__dirname, '../../prisma/migrations/20270502003900_coach_ai_consent_decline');
+const DIR = join(__dirname, '../../prisma/migrations/20270502004300_coach_ai_consent_decline');
 const COPY = { version: 'coach-ai-v1', copy_sha256: COACH_AI_CONSENT_COPY_SHA256 };
 
 (DB_URL ? describe : describe.skip)('A coach’s own AI grant: ledger rows and the egress gate', () => {

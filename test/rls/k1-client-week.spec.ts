@@ -141,12 +141,14 @@ if (!DB_URL && process.env.CI === 'true') {
     await refused(K, C);
   });
 
-  it('A turns Workouts sharing off for K: shared false and no rows', async () => {
+  it("A's old Workouts sharing-off for K no longer hides the week from K (#SHARE-SIMPLE)", async () => {
     await prisma.clientCoachConsent.updateMany({
       where: { client_id: A, coach_id: K, scope: ConsentScope.FITNESS_WORKOUTS },
       data: { revoked_at: new Date('2026-10-14T13:00:00Z') },
     });
-    expect(await week(K, A)).toEqual({ week_start: '2026-10-12', today: '2026-10-14', shared: false, assignments: [] });
+    const out = await week(K, A);
+    expect(out.shared).toBe(true);
+    expect(out.assignments.map((r) => [r.id, r.day, r.completed_at !== null])).toEqual(aWeek());
   });
 
   it('A moves on to L: K and the sub-coach get 404; at the row layer L reads the week, K none of it', async () => {

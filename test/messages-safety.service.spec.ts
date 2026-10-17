@@ -467,7 +467,7 @@ describe('MessagingService — block-aware list + unread filters', () => {
   let safety: MessagesSafetyService;
   let svc: MessagingService;
 
-  const supabaseStub = { broadcastNewMessage: jest.fn() } as unknown as Parameters<typeof Object>[0];
+  const supabaseStub = { pingChat: jest.fn() } as unknown as Parameters<typeof Object>[0];
   const ptmStub = { emit: jest.fn() };
   const messageReceived = { emit: jest.fn().mockResolvedValue(undefined) };
   const aiContext = { invalidateForUser: jest.fn() };
@@ -571,7 +571,7 @@ describe('MessagingService — fail-closed block enforcement on send', () => {
   let prisma: ReturnType<typeof makePrisma>;
   let safety: MessagesSafetyService;
   let svc: MessagingService;
-  let supabaseStub: { broadcastNewMessage: jest.Mock };
+  let supabaseStub: { pingChat: jest.Mock };
   let messageReceived: { emit: jest.Mock };
   let ptmStub: { emit: jest.Mock };
   let aiContext: { invalidateForUser: jest.Mock };
@@ -583,7 +583,7 @@ describe('MessagingService — fail-closed block enforcement on send', () => {
       { id: 'client-1', role: 'student', coach_id: 'coach-1', name: 'Client' },
     );
 
-    supabaseStub = { broadcastNewMessage: jest.fn() };
+    supabaseStub = { pingChat: jest.fn() };
     messageReceived = { emit: jest.fn().mockResolvedValue(undefined) };
     ptmStub = { emit: jest.fn() };
     aiContext = { invalidateForUser: jest.fn() };
@@ -638,7 +638,7 @@ describe('MessagingService — fail-closed block enforcement on send', () => {
       (prisma.coachMessage as unknown as { create: jest.Mock }).create,
     ).not.toHaveBeenCalled();
     expect(prisma._messages.length).toBe(messagesBefore);
-    expect(supabaseStub.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(supabaseStub.pingChat).not.toHaveBeenCalled();
     expect(messageReceived.emit).not.toHaveBeenCalled();
   });
 
@@ -651,7 +651,7 @@ describe('MessagingService — fail-closed block enforcement on send', () => {
     expect(
       (prisma.coachMessage as unknown as { create: jest.Mock }).create,
     ).not.toHaveBeenCalled();
-    expect(supabaseStub.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(supabaseStub.pingChat).not.toHaveBeenCalled();
     expect(messageReceived.emit).not.toHaveBeenCalled();
   });
 
@@ -667,7 +667,7 @@ describe('MessagingService — fail-closed block enforcement on send', () => {
       (prisma.coachMessage as unknown as { create: jest.Mock }).create,
     ).not.toHaveBeenCalled();
     expect(prisma._messages.length).toBe(messagesBefore);
-    expect(supabaseStub.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(supabaseStub.pingChat).not.toHaveBeenCalled();
     expect(messageReceived.emit).not.toHaveBeenCalled();
   });
 
@@ -680,7 +680,7 @@ describe('MessagingService — fail-closed block enforcement on send', () => {
     expect(
       (prisma.coachMessage as unknown as { create: jest.Mock }).create,
     ).not.toHaveBeenCalled();
-    expect(supabaseStub.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(supabaseStub.pingChat).not.toHaveBeenCalled();
     expect(messageReceived.emit).not.toHaveBeenCalled();
   });
 

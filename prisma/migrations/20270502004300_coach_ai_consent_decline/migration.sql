@@ -4,7 +4,7 @@
 -- one-time ask shows once per account. No column, policy or data change: RLS
 -- stays service_role all, own rows read-only, anon denied
 -- (20270203000000_ai_processing_consent_ledger).
--- Order: after 20270502003600 (FIX1061), 003700 (MSGRT), 003800 (MOVEPROG).
+-- Order: after 20270502004000 (SHARE-UNWIND), main's newest at the merge.
 -- Live proof: test/rls/coach-ai-consent-rls.spec.ts (rls-live-tests).
 -- Reverse: down.sql.
 BEGIN;

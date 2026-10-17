@@ -269,7 +269,7 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
                 payload.target_program_id,
                 tenantCoachId,
               )
-            : await this.createProgram(tx, tenantCoachId, requesterId, snapshot);
+            : await this.createProgram(tx, tenantCoachId, requesterId, payload.target_client_id, snapshot);
 
           const plan = await tx.workoutPlan.create({
             data: {
@@ -487,12 +487,16 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
    * Create a fresh WorkoutProgram for the tenant plus a v1
    * WorkoutProgramRevision (cause='initial', author_kind='ai'). A single
    * AI-created plan lives as the lone "day" of a 1-week / 1-day program — the
-   * minimal container the schema requires.
+   * minimal container the schema requires. It is that client's program
+   * (`client_id`, as every client copy), so the client-copy rules follow it
+   * (PLAYBOOK-WITHDRAW: it counts in the coach playbook only while the client
+   * may be learned from).
    */
   private async createProgram(
     tx: Prisma.TransactionClient,
     tenantCoachId: string,
     requesterId: string,
+    clientId: string,
     snapshot: PlanSnapshot,
   ): Promise<string> {
     const program = await tx.workoutProgram.create({
@@ -504,6 +508,7 @@ export class CreateWorkoutPlanMaterializer implements CapabilityMaterializer {
         weeks: 1,
         days_per_week: 1,
         is_template: false,
+        client_id: clientId,
         version: 1,
       },
     });

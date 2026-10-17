@@ -1,4 +1,4 @@
--- Reverse of 20270502003900_coach_ai_consent_decline. Deletes the 'decline'
+-- Reverse of 20270502004300_coach_ai_consent_decline. Deletes the 'decline'
 -- rows (coaches' "Not now"; those coaches read as not asked again, so the
 -- one-time ask shows once more), then restores the two-action CHECK exactly.
 -- Coach grants and withdrawals stay (the old CHECK allows them).

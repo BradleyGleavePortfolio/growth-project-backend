@@ -1,8 +1,9 @@
 /**
- * COACH-AI-GATE-130 — the four Coach sharing switches (Settings > Privacy > Coach sharing) gate the
- * coach's daily brief, the Coach AI drafts, Roman adjust proposals and the churn draft. Real services
- * and a real ConsentService; Prisma fakes answer by the ids asked, like the database. Client SHARES
- * shares everything; client PRIVATE turned all four switches off on 10-01.
+ * COACH-AI-GATE-130 — the coach's daily brief, the Coach AI drafts, Roman adjust proposals and the churn
+ * draft read only the logs ConsentService lets the coach read. Real services and a real ConsentService;
+ * Prisma fakes answer by the ids asked, like the database. Client SHARES shares everything; client PRIVATE
+ * turned all four switches off on 10-01 and (#SHARE-SIMPLE: switches no longer count) is not COACH's client
+ * now, while the roster fakes still list them, so each reader's own check is what is tested.
  */
 import type { Prisma } from '@prisma/client';
 import { ForbiddenException } from '@nestjs/common';
@@ -17,6 +18,7 @@ import { RomanAdjustService } from '../src/roman-adjust/roman-adjust.service';
 import { ChurnInterventionService } from '../src/coach/command-center/churn-intervention.service';
 import * as mocks from './_fixtures/coach-brief-mocks';
 import { fakeOf, grantAllEgress } from './ai-egress/ai-egress.fakes';
+import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 
 const COACH = 'coach1';
 const SHARES = 'client-shares';
@@ -43,7 +45,8 @@ function consentSharing(sharing: string[]): ConsentService {
           })),
         ),
   );
-  return new ConsentService(fakeOf({ clientCoachConsent: { findUnique, findMany } }), fakeOf({}));
+  const coaches = fakeOf<SubCoachScopeService>({ getAuthorizedClientIds: async (id: string) => (id === COACH ? sharing : []) });
+  return new ConsentService(fakeOf({ clientCoachConsent: { findUnique, findMany } }), fakeOf({}), coaches);
 }
 
 describe('Coach daily brief (B1)', () => {

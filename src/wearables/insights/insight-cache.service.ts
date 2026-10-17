@@ -13,14 +13,11 @@ import {
 // Schema note (PR-HK-0): the persisted table keys on
 // (user_id, side, bucket, window_days) and tracks freshness via
 // `generated_at` + `expires_at` (generated_at + 6h, unless a new sync
-// arrives — in which case PR-HK-0's IngestionService DELETES the row via
-// invalidateInsightCache). There is no soft `invalidated_at` column: a
-// sync-driven invalidation is a row delete, so "invalidated" and "missing"
-// collapse to the same observable state — `get` returns null. We model the
-// task's "treat as stale if invalidated" requirement by honouring
-// `expires_at` (TTL) AND treating an absent row as a miss; the
-// IngestionService's delete-on-sync is what makes a sync invalidate the
-// cache without this service editing IngestionService.
+// arrives — in which case IngestionService.invalidateInsightCache sets
+// `expires_at` to now). `get` treats an expired or absent row as a miss, so a
+// sync makes the next read regenerate; the expired row keeps Roman's last
+// text for `getEvenIfStale` (ROMANMARK-BE: the approve route still finds the
+// suggestion the coach is looking at).
 //
 // Owner 4 (A1H): a coach-side row belongs to the coach it was made for. Its
 // `side` is 'coach:<coachId>', so it is only ever served back to that coach.
@@ -28,7 +25,7 @@ import {
 // its message draft (a miss, so a fresh one is generated for them), and the
 // old coach is already refused by the current-coach check
 // (WearableInsightsService.assertCoachOwnsClient). Rows written before this
-// key (side 'coach') are never read again; the next sync deletes them.
+// key (side 'coach') are never read again.
 
 // All insight windows use a fixed 14-day trend window (the service fetches
 // last-14d samples). Stored on the row so a future multi-window design can
@@ -74,8 +71,8 @@ export class InsightCacheService {
   }
 
   // Return the cached insight ONLY if a row exists AND it has not expired.
-  // A missing row (cache miss, or a sync-driven delete = invalidation) and
-  // an expired row both return null so the service regenerates.
+  // A missing row and an expired row (its TTL passed, or a sync expired it)
+  // both return null so the service regenerates.
   async get(
     audience: InsightAudience,
     userId: string,

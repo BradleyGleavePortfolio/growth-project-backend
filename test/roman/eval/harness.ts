@@ -21,6 +21,7 @@ import type { RomanToolbox } from '../../../src/roman/tools/roman-tool.types';
 import { RomanTimelineReader } from '../../../src/roman/memory/roman-timeline.reader';
 import { RomanClientMemoryAugmenter } from '../../../src/roman/memory/roman-client-memory.augmenter';
 import { RomanCoachMethodAugmenter } from '../../../src/roman/playbook/roman-coach-method.augmenter';
+import type { PlaybookSourceCollector } from '../../../src/roman/playbook/playbook-sources';
 import {
   matches,
   makePersonaDb,
@@ -96,6 +97,7 @@ export function makeWorld(
   p.romanClientSummary = { findMany: jest.fn(async () => []) };
   p.coachPlaybook = { findFirst: jest.fn(async (a: W) => where(rows.playbooks, a.where)[0] ?? null) };
   const budget = fakeOf<CoachAIBudgetService>({ resolveHeadCoachId: async (id: string) => id });
+  const eligible = fakeOf<PlaybookSourceCollector>({ eligibleClients: async (head: string) => ({ head, consented: [] }) });
   const roman = new RomanService(
     fakeOf(db.prisma),
     egress,
@@ -104,7 +106,7 @@ export function makeWorld(
     null,
     null,
     r11.augmenters
-      ? [new RomanClientMemoryAugmenter(db.prisma), new RomanCoachMethodAugmenter(db.prisma, budget)]
+      ? [new RomanClientMemoryAugmenter(db.prisma), new RomanCoachMethodAugmenter(db.prisma, budget, null, eligible)]
       : null,
     r11.tools ? (r11.wrapTools ?? ((t: RomanToolbox) => t))(new RomanReadToolbox(db.prisma, new RomanTimelineReader(db.prisma, egress))) : null,
   );

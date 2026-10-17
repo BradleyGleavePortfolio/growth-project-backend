@@ -21,6 +21,7 @@ import type { PlaybookSignalsService } from '../../src/roman/playbook/playbook-s
 import {
   PLAYBOOK_SOURCE_LIMITS,
   PlaybookSourceCollector,
+  playbookDigestHolds,
   playbookLedgerDigest,
 } from '../../src/roman/playbook/playbook-sources';
 
@@ -255,9 +256,17 @@ describe('R11-P3b-1 playbook sources: digest and no egress', () => {
     const sorted = out.ledger
       .map((r) => [r.source_kind, r.source_id, r.client_id ?? ''])
       .sort((a, b) => a.join('\u0000').localeCompare(b.join('\u0000')));
-    expect(out.digest).toBe(createHash('sha256').update(JSON.stringify(sorted)).digest('hex'));
-    expect(playbookLedgerDigest([...out.ledger].reverse())).toBe(out.digest);
-    expect(playbookLedgerDigest(out.ledger.slice(1))).not.toBe(out.digest);
+    const sha = createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
+    // PLAYBOOK-WITHDRAW: plus a tag per client eligible at the build (C2 has no memory grant).
+    const tag = (id: string) => createHash('sha256').update(`${H}\u0000${id}`).digest('hex').slice(0, 16);
+    expect(out.digest).toBe(`ledger-v2:${sha}:${[tag(C1), tag(C3)].sort().join(',')}`);
+    expect(playbookLedgerDigest([...out.ledger].reverse(), [C3, C1], H)).toBe(out.digest);
+    expect(playbookLedgerDigest(out.ledger.slice(1), [C1, C3], H)).not.toBe(out.digest);
+    // Holds while every client it names is eligible; a client who joined does not matter.
+    expect(playbookDigestHolds(out.digest, out.ledger, [C2, C1, C3], H)).toBe(true);
+    expect(playbookDigestHolds(out.digest, out.ledger, [C1], H)).toBe(false);
+    expect(playbookDigestHolds(out.digest, out.ledger.slice(1), [C1, C3], H)).toBe(false);
+    expect(playbookDigestHolds(sha, out.ledger, [C1, C3], H)).toBe(false); // the pre-fix format
   });
 
   it('makes no model call and no writes', () => {
