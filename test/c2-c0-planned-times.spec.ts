@@ -11,6 +11,7 @@
  * mwb-program-library.service.spec.ts and mwb-program-delivery.service.spec.ts;
  * the row rules in test/rls/planned-times-rls.spec.ts.
  */
+import 'reflect-metadata';
 import { readdirSync, readFileSync } from 'fs';
 import { join, relative } from 'path';
 import { plainToInstance } from 'class-transformer';
