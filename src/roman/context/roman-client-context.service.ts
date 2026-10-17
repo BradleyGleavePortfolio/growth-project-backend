@@ -16,6 +16,9 @@
  *   messages, target note, exercise cues, coaching style) are kept only while
  *   that coach allows AI (`AiEgressService.consentedCoaches`, read now; a read
  *   error is no grant). Otherwise they are left out and Roman still answers.
+ * - CAC-NAME (owner "#CAC-NAME - op 1"): under the same check, nothing that
+ *   names the coach either: no first name, and that coach's plan, program and
+ *   meal plan titles become generic ("Workout", none, "Meal plan").
  * - No cross-request persistent cache of client data. The only memo is a 15 s
  *   in-process entry keyed by (user_id, local_date), invalidated by
  *   `invalidateForUser` after every successful app write by the client or
@@ -550,6 +553,7 @@ export class RomanClientContextService {
               completed_at: true,
               post_rpe: true,
               post_notes: true,
+              assigned_by_coach_id: true,
               snapshot: { select: { plan_name: true } },
               workout_plan: { select: { name: true, program: { select: { name: true } } } },
             },
@@ -679,6 +683,7 @@ export class RomanClientContextService {
             select: {
               daily_meal_plan: {
                 select: {
+                  coach_id: true,
                   name: true,
                   slots: {
                     orderBy: { order: 'asc' },
@@ -767,9 +772,12 @@ export class RomanClientContextService {
     // house plan) are the client's words.
     const sideOk = await sideAllowed;
     const picked = [sessionsNeedingNames.today, sessionsNeedingNames.next];
-    const others = [macroTarget?.coach_id, ...picked.map((s) => s?.row.assigned_by_coach_id)].filter(
-      (id) => id !== userId && !coachSide.includes(id ?? ''),
-    );
+    // CAC-NAME: every assigner (plan titles) and the meal plan's coach too.
+    const others = [
+      macroTarget?.coach_id,
+      mealAssignment?.daily_meal_plan.coach_id,
+      ...[...history, ...upcoming].map((a) => a.assigned_by_coach_id),
+    ].filter((id) => id !== userId && !coachSide.includes(id ?? ''));
     const allowed = new Set([...sideOk, ...(await this.egress.consentedCoaches(others))]);
     const mayUse = (author: string) => author === userId || allowed.has(author);
     for (const s of picked) {
@@ -945,6 +953,7 @@ export class RomanClientContextService {
       nameById,
       today,
       dayOf,
+      mayUse,
     );
     if (!plan) missing.push('plan');
 
@@ -1003,7 +1012,8 @@ export class RomanClientContextService {
       .filter((m): m is RomanCtxCoachMessage => m.excerpt !== null);
     const coachBlock = {
       has_coach: coachId !== null,
-      coach_first_name: coachId ? firstName(coach?.name) : null,
+      // CAC-NAME: "your coach" until that coach allows AI.
+      coach_first_name: coachId && sideOk.has(coachId) ? firstName(coach?.name) : null,
       guidelines: clamp(guideline?.content, 1500),
       recent_messages,
       ...coachingStyleBlock(coachId && sideOk.has(coachId) ? coach?.coach_profile : null),
@@ -1064,7 +1074,9 @@ export class RomanClientContextService {
     // ── meal plan ──
     const meal_plan = mealAssignment
       ? {
-          title: clamp(mealAssignment.daily_meal_plan.name, 80) ?? 'Meal plan',
+          title: mayUse(mealAssignment.daily_meal_plan.coach_id)
+            ? (clamp(mealAssignment.daily_meal_plan.name, 80) ?? 'Meal plan')
+            : 'Meal plan',
           items: mealAssignment.daily_meal_plan.slots
             .map((s) => {
               const label = clamp(s.slot_label, 30) ?? 'Meal';
@@ -1267,9 +1279,17 @@ type HistoryRow = {
   completed_at: Date | null;
   post_rpe: number | null;
   post_notes: string | null;
+  assigned_by_coach_id: string;
   snapshot: { plan_name: string } | null;
   workout_plan: { name: string; program: { name: string } | null };
 };
+
+type MayUse = (author: string) => boolean;
+/** CAC-NAME: a plan title is its assigner's; generic until that coach allows AI. */
+const titleOf = (a: HistoryRow, mayUse: MayUse): string =>
+  (mayUse(a.assigned_by_coach_id)
+    ? clamp(a.snapshot?.plan_name ?? a.workout_plan.name, 80)
+    : null) ?? 'Workout';
 type DayOf = (d: Date) => string;
 
 function rawExercisesOf(a: AssignmentRow): RawExercise[] {
@@ -1311,7 +1331,12 @@ function pickSessions(
   };
 }
 
-function toSession(p: PickedSession, nameById: Map<string, string>, dayOf: DayOf): RomanCtxSession {
+function toSession(
+  p: PickedSession,
+  nameById: Map<string, string>,
+  dayOf: DayOf,
+  mayUse: MayUse,
+): RomanCtxSession {
   const exercises: RomanCtxExercise[] = p.rawExercises.map((e) => ({
     name: clamp(nameById.get(e.exercise_external_id) ?? 'Exercise', 60) ?? 'Exercise',
     sets: e.sets,
@@ -1320,7 +1345,7 @@ function toSession(p: PickedSession, nameById: Map<string, string>, dayOf: DayOf
   }));
   return {
     date: dayOf(p.row.scheduled_for),
-    name: clamp(p.row.snapshot?.plan_name ?? p.row.workout_plan.name, 80) ?? 'Workout',
+    name: titleOf(p.row, mayUse),
     type: clamp(p.row.snapshot?.plan_type ?? p.row.workout_plan.type, 30),
     exercises,
   };
@@ -1337,6 +1362,7 @@ function buildPlan(
   nameById: Map<string, string>,
   today: string,
   dayOf: DayOf,
+  mayUse: MayUse,
 ): RomanCtxPlan | null {
   const { history, upcoming } = rows;
   if (history.length === 0 && upcoming.length === 0) return null;
@@ -1347,7 +1373,7 @@ function buildPlan(
     .reverse()
     .map((a) => ({
       date: dayOf(a.scheduled_for),
-      name: clamp(a.snapshot?.plan_name ?? a.workout_plan.name, 80) ?? 'Workout',
+      name: titleOf(a, mayUse),
       post_rpe: a.post_rpe ?? null,
       has_notes: !!a.post_notes,
       notes: clamp(a.post_notes, 140),
@@ -1358,15 +1384,17 @@ function buildPlan(
     upcoming.map((a) => dayOf(a.scheduled_for)).filter((d) => d > today),
   );
   return {
-    program_name: clamp(anchor.workout_plan.program?.name ?? null, 80),
+    program_name: mayUse(anchor.assigned_by_coach_id)
+      ? clamp(anchor.workout_plan.program?.name ?? null, 80)
+      : null,
     // Unknown (null) when the upcoming read hit its cap.
     days_per_week:
       rows.upcomingComplete && upcomingDays.size
         ? Math.min(7, Math.ceil(upcomingDays.size / 2))
         : null,
     assigned_at: null,
-    today_session: picked.today ? toSession(picked.today, nameById, dayOf) : null,
-    next_session: picked.next ? toSession(picked.next, nameById, dayOf) : null,
+    today_session: picked.today ? toSession(picked.today, nameById, dayOf, mayUse) : null,
+    next_session: picked.next ? toSession(picked.next, nameById, dayOf, mayUse) : null,
     recent_completions: completions,
     adherence_14d:
       rows.historyComplete && history.length

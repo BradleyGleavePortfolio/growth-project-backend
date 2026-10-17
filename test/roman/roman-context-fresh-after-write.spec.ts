@@ -342,6 +342,7 @@ const FAMILIES: Family[] = [
         starts_on: D('2026-09-30'),
         ends_on: null,
         daily_meal_plan: {
+          coach_id: COACH_A.id,
           archived_at: null,
           name: 'High protein 1700',
           slots: [

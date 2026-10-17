@@ -6,7 +6,8 @@
 // note, exercise cue, coaching style, coach method and session recap reach the model request.
 // Without that grant, or when the read fails, none of them does, and P1 still gets an answer from
 // their own data. The live ledger states (never asked, "Not now", turned off) are in
-// test/rls/coach-text-egress-rls.spec.ts.
+// test/rls/coach-text-egress-rls.spec.ts. CAC-NAME (owner "#CAC-NAME - op 1"): the coach's first
+// name and the plan, program and meal plan titles follow the same grant.
 
 import 'reflect-metadata';
 import { makeWorld, runTurn, student, withRomanEnabled, type TurnResult } from './harness';
@@ -43,6 +44,11 @@ const SOURCES: ReadonlyArray<readonly [string, Part, string]> = [
   ['coach method', 'system', 'Goblet squat instead of Back squat'],
   ['message', 'history tool', 'Great week Maya'],
   ['session recap', 'history tool', 'Deload next week'],
+  ['first name', 'client_data', '"coach_first_name":"Alex"'],
+  ['plan title', 'client_data', 'Full Body B'],
+  ['program title', 'client_data', 'Program A Foundations'],
+  ['meal plan title', 'client_data', 'Dairy-free 1450'],
+  ['plan title', 'history tool', 'Full Body B'],
 ];
 const GATES = ['allowed', 'no grant', 'read error'] as const;
 type Gate = (typeof GATES)[number];
@@ -75,7 +81,7 @@ async function turn(gate: Gate): Promise<{ reply: string } & Record<Part, string
       throw new Error('ledger down');
     };
   }
-  const input = { kinds: ['message', 'booking'], from: '2026-09-24', to: LOCAL_TODAY_PT };
+  const input = { kinds: ['message', 'booking', 'workout_done'], from: '2026-09-24', to: LOCAL_TODAY_PT };
   const t = await runTurn(w, { persona: 'P1', question: 'How did my week go?' }, {
     script: [{ tool_use: [{ name: 'read_history', input }] }, REPLY],
   });

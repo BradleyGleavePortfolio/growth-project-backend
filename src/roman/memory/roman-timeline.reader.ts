@@ -23,6 +23,8 @@
  * - COACH-TEXT (owner "#COACH-TEXT - op 1"): a coach's messages and session
  *   recaps only while that coach allows AI (`AiEgressService.consentedCoaches`,
  *   read now; a read error is no grant). The client's own messages stay.
+ *   CAC-NAME (owner "#CAC-NAME - op 1"): under the same check, an assigned
+ *   plan's title reads "Workout" until its assigner allows AI.
  * - A missing or soft-deleted client reads nothing.
  *
  * NEVER SELECTED: CoachingSession.coach_notes_md, video links and provider ids;
@@ -400,14 +402,18 @@ export class RomanTimelineReader {
         completed_at: true,
         post_rpe: true,
         post_notes: true,
+        assigned_by_coach_id: true,
         snapshot: { select: { plan_name: true } },
         workout_plan: { select: { name: true } },
       },
     });
+    const ok = await this.egress.consentedCoaches(rows.map((r) => r.assigned_by_coach_id));
     const today = p.dayOf(p.now);
     const events: RomanTimelineEvent[] = [];
     for (const r of rows) {
-      const plan_name = clamp(r.snapshot?.plan_name ?? r.workout_plan?.name, 80) ?? 'Workout';
+      const titled = r.assigned_by_coach_id === p.clientId || ok.has(r.assigned_by_coach_id);
+      const name = titled ? (r.snapshot?.plan_name ?? r.workout_plan?.name) : null;
+      const plan_name = clamp(name, 80) ?? 'Workout';
       if (r.completed_at) {
         events.push(
           this.event(

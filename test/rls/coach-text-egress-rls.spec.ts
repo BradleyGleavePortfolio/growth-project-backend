@@ -6,8 +6,10 @@
  * message back. The real AiConsentService reads the ledger as the non-bypass `authenticated` role,
  * as the coach (own rows only); the real AiEgressService decides. The real context builder (the
  * per-turn client_data) and the real read_history tool run on the superuser connection, as the API
- * runs. Table: state x source. Roman still answers: the client's own message and plan stay in every
- * request. Every 0 has its 1: coach G's words are in G's client's request and in no other.
+ * runs. Table: state x source. Roman still answers: the client's own message and the plan's sets stay
+ * in every request. Every 0 has its 1: coach G's words are in G's client's request and in no other.
+ * CAC-NAME (owner "#CAC-NAME - op 1"): so are the coach's first name and the titles of the plan,
+ * program and meal plan the coach gave; without the grant Roman gets "your coach" and generic titles.
  *
  * Runs in the rls-live-tests job. Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true
  * (hard failure).
@@ -48,8 +50,14 @@ const SOURCES = [
   ['style', 'context'],
   ['message', 'history tool'],
   ['recap', 'history tool'],
+  ['name', 'context'],
+  ['plan', 'context'],
+  ['program', 'context'],
+  ['meal', 'context'],
+  ['plan', 'history tool'],
 ] as const;
-const WORDS = ['guideline', 'message', 'note', 'cue', 'recap'] as const;
+const WORDS = ['guideline', 'message', 'note', 'cue', 'recap', 'name', 'plan', 'program', 'meal'] as const;
+const SETS = '"sets":3';
 
 (DB_URL ? describe : describe.skip)("A coach's own words in their client's Roman request", () => {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
@@ -91,7 +99,7 @@ const WORDS = ['guideline', 'message', 'note', 'cue', 'recap'] as const;
   const request = async (k: K) => {
     const caller = { id: client[k], role: 'student' };
     const { rendered } = await context.buildFresh(caller, NOW);
-    const input = { kinds: ['message', 'booking'], from: ymd(-5 * DAY), to: ymd(DAY) };
+    const input = { kinds: ['message', 'booking', 'workout_done'], from: ymd(-5 * DAY), to: ymd(DAY) };
     const history = await tools.run(caller, 'read_history', input, { now: NOW });
     expect(history.ok).toBe(true);
     return { context: rendered, 'history tool': history.content };
@@ -103,7 +111,7 @@ const WORDS = ['guideline', 'message', 'note', 'cue', 'recap'] as const;
     process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED = 'true';
     for (const k of KEYS) {
       const [c, s] = [coach[k], client[k]];
-      await prisma.user.create({ data: { id: c, supabase_id: c, email: `ct-${c}`, name: `Coach ${k}`, role: 'coach' } });
+      await prisma.user.create({ data: { id: c, supabase_id: c, email: `ct-${c}`, name: word(k, 'name'), role: 'coach' } });
       await prisma.user.create({
         data: { id: s, supabase_id: s, email: `ct-${s}`, name: `Client ${k}`, role: 'student', coach_id: c },
       });
@@ -121,7 +129,12 @@ const WORDS = ['guideline', 'message', 'note', 'cue', 'recap'] as const;
           notes: word(k, 'note'), effective_from: at(-7 * DAY),
         },
       });
-      const plan = await prisma.workoutPlan.create({ data: { coach_id: c, name: word(k, 'plan'), type: 'strength' } });
+      const program = await prisma.workoutProgram.create({
+        data: { coach_id: c, owner_user_id: c, is_template: false, name: word(k, 'program'), weeks: 1, days_per_week: 1 },
+      });
+      const plan = await prisma.workoutPlan.create({
+        data: { coach_id: c, name: word(k, 'plan'), type: 'strength', program_id: program.id, week_index: 0, day_index: 0 },
+      });
       await prisma.workoutPlanExercise.create({
         data: {
           workout_plan_id: plan.id, exercise_external_id: 'seed:squat-001', order: 0, sets: 3,
@@ -130,6 +143,18 @@ const WORDS = ['guideline', 'message', 'note', 'cue', 'recap'] as const;
       });
       await prisma.clientWorkoutAssignment.create({
         data: { workout_plan_id: plan.id, client_id: s, assigned_by_coach_id: c, scheduled_for: at(DAY) },
+      });
+      await prisma.clientWorkoutAssignment.create({
+        data: {
+          workout_plan_id: plan.id, client_id: s, assigned_by_coach_id: c, scheduled_for: at(-DAY),
+          completed_at: at(-DAY + 3_600_000),
+        },
+      });
+      await prisma.dailyMealPlan.create({
+        data: {
+          coach_id: c, name: word(k, 'meal'),
+          assignments: { create: { client_id: s, assigned_by_coach_id: c, starts_on: at(-7 * DAY) } },
+        },
       });
       await prisma.coachingSession.create({
         data: {
@@ -169,7 +194,14 @@ const WORDS = ['guideline', 'message', 'note', 'cue', 'recap'] as const;
     expect(r[part].includes(source === 'style' ? STYLE : word(k, source))).toBe(kept);
     // Roman still answers, from the client's own data.
     expect(r[part]).toContain(word(k, 'own'));
-    expect(r.context).toContain(word(k, 'plan'));
+    expect(r.context).toContain(SETS);
+  });
+
+  it.each(STATES.filter(([, , , kept]) => !kept))('%s: Roman gets "your coach" and generic titles', async (_l, k) => {
+    const { context: c } = await requestOf(k);
+    for (const generic of ['"coach_first_name":null', '"program_name":null', '"name":"Workout"', '"title":"Meal plan"']) {
+      expect(c).toContain(generic);
+    }
   });
 
   it("no client's request carries another coach's words", async () => {
@@ -177,7 +209,7 @@ const WORDS = ['guideline', 'message', 'note', 'cue', 'recap'] as const;
       const r = await requestOf(k);
       const all = `${r.context}\n${r['history tool']}`;
       for (const o of KEYS.filter((x) => x !== k)) {
-        for (const s of [...WORDS, 'own', 'plan']) expect(all).not.toContain(word(o, s));
+        for (const s of [...WORDS, 'own']) expect(all).not.toContain(word(o, s));
       }
     }
   });
@@ -192,7 +224,7 @@ const WORDS = ['guideline', 'message', 'note', 'cue', 'recap'] as const;
     expect(r.context).not.toContain(STYLE);
     expect(r.context).toContain(word('G', 'own'));
     expect(r['history tool']).toContain(word('G', 'own'));
-    expect(r.context).toContain(word('G', 'plan'));
+    expect(r.context).toContain(SETS);
     // Control: the same read on the right role carries them again.
     expect((await request('G')).context).toContain(word('G', 'guideline'));
   });
