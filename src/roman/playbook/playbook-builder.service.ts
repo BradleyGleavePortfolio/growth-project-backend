@@ -179,13 +179,17 @@ export class PlaybookBuilderService {
     const src = await this.collector.collect(coachId, now);
     const head = src.headCoachId;
     if (src.items.length === 0) return 'no_sources';
-    const active = await this.prisma.coachPlaybook.findFirst({
-      where: { coach_id: head, status: 'active' },
-      select: { source_digest: true, built_at: true },
+    const latest = await this.prisma.coachPlaybook.findFirst({
+      where: { coach_id: head },
+      orderBy: { version: 'desc' },
+      select: { status: true, source_digest: true, built_at: true },
     });
+    const active = latest?.status === 'active' ? latest : null;
+    // PLAYBOOK-WITHDRAW: a newest version marked stale (superseded, no successor) is rebuilt at once.
+    const staleSince = latest && !active ? latest.built_at : null;
     if (active?.source_digest === src.digest) return 'unchanged';
     if (active && builtTooRecently(active.built_at, now)) return 'too_recent';
-    if (await this.chargedTooRecently(head, now)) return 'too_recent';
+    if (await this.chargedTooRecently(head, now, staleSince)) return 'too_recent';
     const consented = src.consentedClientIds;
     if (consented.length === 0 && src.ledger.some((r) => r.client_id)) return 'unsafe_ledger';
     const subject = consented.length
@@ -297,8 +301,11 @@ export class PlaybookBuilderService {
    * ledger the spend service writes (one row per reservation); a row settled
    * at 0 tokens (consent refused, an HTTP error) was not charged and does not
    * count. A successful build's row gives the same answer as built_at.
+   * PLAYBOOK-WITHDRAW: with `staleSince` (the stale version's built_at) only
+   * an attempt after that build counts, so the stale build never holds its
+   * own rebuild and a charged failure after it still does.
    */
-  private async chargedTooRecently(head: string, now: Date): Promise<boolean> {
+  private async chargedTooRecently(head: string, now: Date, staleSince: Date | null): Promise<boolean> {
     const last = await this.prisma.aiRequestAudit.findFirst({
       where: {
         capability: ROMAN_PLAYBOOK_CAPABILITY,
@@ -309,7 +316,8 @@ export class PlaybookBuilderService {
       orderBy: { created_at: 'desc' },
       select: { created_at: true, metadata: true },
     });
-    return last !== null && builtTooRecently(attemptRunAt(last.created_at, last.metadata), now);
+    const at = last && attemptRunAt(last.created_at, last.metadata);
+    return !!at && (!staleSince || at > staleSince) && builtTooRecently(at, now);
   }
 
   /** Head coaches with at least one live client; never-built and oldest first. */
