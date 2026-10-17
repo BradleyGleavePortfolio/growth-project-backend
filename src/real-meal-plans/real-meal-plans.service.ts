@@ -216,17 +216,38 @@ export class RealMealPlansService {
         },
       });
       if (dto.slots) {
-        await tx.dailyMealPlanSlot.deleteMany({
+        // FOODLINK: a slot whose (slot_label, order) is still listed keeps its row (and so the client's food
+        // logs linked to it); only its meal changes. Unlisted slots are deleted (their links go null), new
+        // ones created. Kept rows keep their key, so the unique (plan, label, order) cannot collide.
+        const next = dto.slots.map((s, idx) => ({
+          meal_template_id: s.meal_template_id,
+          slot_label: s.slot_label,
+          order: s.order ?? idx,
+        }));
+        const key = (s: { slot_label: string; order: number }) => `${s.slot_label}#${s.order}`;
+        const wanted = new Map(next.map((s) => [key(s), s]));
+        const existing = await tx.dailyMealPlanSlot.findMany({
           where: { daily_meal_plan_id: planId },
+          select: { id: true, slot_label: true, order: true, meal_template_id: true },
         });
-        if (dto.slots.length > 0) {
+        const gone = existing.filter((e) => !wanted.has(key(e))).map((e) => e.id);
+        if (gone.length > 0) {
+          await tx.dailyMealPlanSlot.deleteMany({ where: { id: { in: gone } } });
+        }
+        for (const e of existing) {
+          const w = wanted.get(key(e));
+          if (w && w.meal_template_id !== e.meal_template_id) {
+            await tx.dailyMealPlanSlot.update({
+              where: { id: e.id },
+              data: { meal_template_id: w.meal_template_id },
+            });
+          }
+        }
+        const kept = new Set(existing.map(key));
+        const fresh = next.filter((s) => !kept.has(key(s)));
+        if (fresh.length > 0) {
           await tx.dailyMealPlanSlot.createMany({
-            data: dto.slots.map((s, idx) => ({
-              daily_meal_plan_id: planId,
-              meal_template_id: s.meal_template_id,
-              slot_label: s.slot_label,
-              order: s.order ?? idx,
-            })),
+            data: fresh.map((s) => ({ daily_meal_plan_id: planId, ...s })),
           });
         }
       }
