@@ -65,6 +65,18 @@ export function payloadClientIds(payload: unknown): string[] {
   return [...ids];
 }
 
+/** The workout day an AI workout edit draft changes (`target_plan_id`), else null. */
+export function payloadPlanId(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  const id = (payload as Record<string, unknown>).target_plan_id;
+  return typeof id === 'string' && id.length > 0 ? id : null;
+}
+
+/** Owner 4: days the tenant still has (planStaysInTenantWhere), so a day of a moved client's program copy is not found. */
+function tenantDayWhere(tenantCoachId: string): Prisma.WorkoutPlanWhereInput {
+  return { coach_id: tenantCoachId, AND: [planStaysInTenantWhere(tenantCoachId)] };
+}
+
 /**
  * B-AIB2-126 — true when the gateway marked this live-create draft model-written (the AI workout builder). Only the gateway
  * can add the marker (it strips caller provenance with that source). No payload hash: JSONB reorders keys on the way back.
@@ -144,7 +156,18 @@ export class AiApprovalService {
       select: { id: true },
     });
     const onRoster = new Set(roster.map((u) => u.id));
-    return drafts.filter((d) => clientsOf(d).every((id) => onRoster.has(id)));
+    // A draft that edits a workout day goes with the day: the day of a moved
+    // client's program copy is no longer the tenant's (same rule as decide).
+    const days = [...new Set(drafts.flatMap((d) => payloadPlanId(d.payload) ?? []))];
+    const kept = days.length === 0 ? [] : await this.prisma.workoutPlan.findMany({
+      where: { id: { in: days }, ...tenantDayWhere(coachId) },
+      select: { id: true },
+    });
+    const keptDays = new Set(kept.map((p) => p.id));
+    return drafts.filter((d) => {
+      const day = payloadPlanId(d.payload);
+      return clientsOf(d).every((id) => onRoster.has(id)) && (day === null || keptDays.has(day));
+    });
   }
 
   async getById(id: string) {
@@ -170,7 +193,7 @@ export class AiApprovalService {
   ): Promise<string | null> {
     const planId = typeof payload.target_plan_id === 'string' ? payload.target_plan_id : null;
     if (!planId) return subsetLimitBreach(emptyPlanSnapshot(), fullDiff, subset, null);
-    const inTenant = tenantCoachId ? { coach_id: tenantCoachId, AND: [planStaysInTenantWhere(tenantCoachId)] } : {};
+    const inTenant = tenantCoachId ? tenantDayWhere(tenantCoachId) : {};
     const plan = await this.prisma.workoutPlan.findUnique({
       where: { id: planId, ...inTenant }, select: { id: true, coach_id: true, head_revision_id: true, program_id: true, week_index: true },
     });
@@ -252,6 +275,16 @@ export class AiApprovalService {
         if (named?.coach_id !== input.decider.id) {
           throw new ForbiddenException('Draft is outside your tenant');
         }
+      }
+      // Owner 4: a draft that edits a workout day is decided (approved in
+      // full or in part, or rejected) only while the tenant still has the day.
+      const day = payloadPlanId(draft.payload);
+      if (day) {
+        const kept = await this.prisma.workoutPlan.findUnique({
+          where: { id: day, ...tenantDayWhere(input.decider.id) },
+          select: { id: true },
+        });
+        if (!kept) throw new ForbiddenException('Draft is outside your tenant');
       }
     }
 

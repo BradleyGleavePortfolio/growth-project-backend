@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client';
+import { copyDaysWhere } from '../workout-builder/tenant-clients';
 
 // Payload keys that name the client an AI approval draft acts on. The same
 // keys as PAYLOAD_CLIENT_ID_KEYS in src/ai/gateway/ai-approval.service.ts,
@@ -14,8 +15,9 @@ export const MOVED_CLIENT_PAYLOAD_KEYS = ['clientId', 'client_id', 'target_clien
  * For each moved client, held by anyone but `newCoachId`:
  *   - Coach AI drafts (AIDraft) that are not APPROVED;
  *   - AI approval drafts (AiActionDraft) with a tenant that are not approved,
- *     name the client as subject or in the payload, and whose tenant or
- *     requester is not the new coach;
+ *     name the client as subject or in the payload, or edit a day of the
+ *     client's program copy (`target_plan_id`; a plan-only draft names no
+ *     client), and whose tenant or requester is not the new coach;
  *   - message composer drafts (MessageDraft), which are never sent;
  *   - re-engagement drafts (ChurnIntervention) that are not sent.
  *
@@ -31,6 +33,7 @@ export async function deleteDraftsLeftByMove(
   await tx.aIDraft.deleteMany({
     where: { clientId: { in: ids }, coachId: { not: newCoachId }, status: { not: 'APPROVED' } },
   });
+  const days = await tx.workoutPlan.findMany({ where: copyDaysWhere(ids), select: { id: true } });
   await tx.aiActionDraft.deleteMany({
     where: {
       status: { not: 'approved' },
@@ -40,6 +43,7 @@ export async function deleteDraftsLeftByMove(
           OR: [
             { subject_user_id: { in: ids } },
             ...ids.flatMap((id) => MOVED_CLIENT_PAYLOAD_KEYS.map((key) => ({ payload: { path: [key], equals: id } }))),
+            ...days.map((d) => ({ payload: { path: ['target_plan_id'], equals: d.id } })),
           ],
         },
         // A sub-coach's workout builder draft carries the head coach's tenant,

@@ -155,7 +155,8 @@ if (!DB_URL && process.env.CI === 'true') {
         });
         return approvals.decide({ draftId: draft.id, decider: { id: a, role: 'coach' }, decision: 'approved', acceptedChangeIds: ['c0'] });
       },
-      'REVISION_STALE',
+      // MOVEPROG-DRAFTS: deciding refuses a draft whose day the tenant no longer has, before the partial check.
+      'Forbidden',
     ],
   ];
 
