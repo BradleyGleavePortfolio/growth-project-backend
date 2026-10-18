@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException } from '@nestjs/common';
+import { NotFoundException } from '@nestjs/common';
 import { SubCoachCapacityService } from '../src/sub-coach/sub-coach-capacity.service';
 import { PrismaService } from '../src/prisma.service';
 
@@ -36,57 +36,32 @@ describe('SubCoachCapacityService', () => {
     ).rejects.toThrow(NotFoundException);
   });
 
-  it('returns capacity with flat_300 defaults when no profile', async () => {
-    (prisma.user.findFirst as jest.Mock).mockResolvedValue({ id: SUB_COACH_ID });
-    (prisma.coachProfile.findUnique as jest.Mock).mockResolvedValue(null);
-    (prisma.subCoachAssignment.count as jest.Mock).mockResolvedValue(10);
-
-    const result = await service.getCapacity(HEAD_COACH_ID, SUB_COACH_ID);
-    expect(result.maxClients).toBe(50);
-    expect(result.planTier).toBe('flat_300');
-    expect(result.assignedClients).toBe(10);
-    expect(result.hasCapacity).toBe(true);
-  });
-
-  it('returns hasCapacity=false when at limit', async () => {
+  it('TM-P1: returns the client count with no plan cap, even above the old starter cap', async () => {
     (prisma.user.findFirst as jest.Mock).mockResolvedValue({ id: SUB_COACH_ID });
     (prisma.coachProfile.findUnique as jest.Mock).mockResolvedValue({ plan_tier: 'starter' });
-    (prisma.subCoachAssignment.count as jest.Mock).mockResolvedValue(25);
+    (prisma.subCoachAssignment.count as jest.Mock).mockResolvedValue(1000);
 
     const result = await service.getCapacity(HEAD_COACH_ID, SUB_COACH_ID);
-    expect(result.maxClients).toBe(25);
-    expect(result.hasCapacity).toBe(false);
+    expect(result).toEqual({ subCoachId: SUB_COACH_ID, assignedClients: 1000 });
+    expect(prisma.coachProfile.findUnique).not.toHaveBeenCalled();
   });
 
-  it('assertHasCapacity throws ConflictException when at limit', async () => {
-    (prisma.user.findFirst as jest.Mock).mockResolvedValue({ id: SUB_COACH_ID });
-    (prisma.coachProfile.findUnique as jest.Mock).mockResolvedValue({ plan_tier: 'starter' });
-    (prisma.subCoachAssignment.count as jest.Mock).mockResolvedValue(25);
-
-    await expect(
-      service.assertHasCapacity(HEAD_COACH_ID, SUB_COACH_ID),
-    ).rejects.toThrow(ConflictException);
-  });
-
-  it('assertHasCapacityTx uses the provided transaction client', async () => {
+  it('assertSubCoachBelongsTo uses the provided transaction client', async () => {
     const tx = {
       user: { findFirst: jest.fn().mockResolvedValue({ id: SUB_COACH_ID }) },
-      coachProfile: { findUnique: jest.fn().mockResolvedValue({ plan_tier: 'growth' }) },
-      subCoachAssignment: { count: jest.fn().mockResolvedValue(99) },
-    } as unknown as Parameters<typeof service.assertHasCapacityTx>[0];
+    } as unknown as Parameters<typeof service.assertSubCoachBelongsTo>[0];
     await expect(
-      service.assertHasCapacityTx(tx, HEAD_COACH_ID, SUB_COACH_ID),
+      service.assertSubCoachBelongsTo(tx, HEAD_COACH_ID, SUB_COACH_ID),
     ).resolves.toBeUndefined();
+    expect(prisma.user.findFirst).not.toHaveBeenCalled();
   });
 
-  it('assertHasCapacityTx throws ConflictException when tx count >= cap', async () => {
+  it('assertSubCoachBelongsTo throws NotFoundException for a coach off the team', async () => {
     const tx = {
-      user: { findFirst: jest.fn().mockResolvedValue({ id: SUB_COACH_ID }) },
-      coachProfile: { findUnique: jest.fn().mockResolvedValue({ plan_tier: 'growth' }) },
-      subCoachAssignment: { count: jest.fn().mockResolvedValue(100) },
-    } as unknown as Parameters<typeof service.assertHasCapacityTx>[0];
+      user: { findFirst: jest.fn().mockResolvedValue(null) },
+    } as unknown as Parameters<typeof service.assertSubCoachBelongsTo>[0];
     await expect(
-      service.assertHasCapacityTx(tx, HEAD_COACH_ID, SUB_COACH_ID),
-    ).rejects.toThrow(ConflictException);
+      service.assertSubCoachBelongsTo(tx, HEAD_COACH_ID, SUB_COACH_ID),
+    ).rejects.toThrow(NotFoundException);
   });
 });

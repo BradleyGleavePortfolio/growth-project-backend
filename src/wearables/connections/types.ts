@@ -90,6 +90,16 @@ export interface OauthCallbackResult {
   provider: WearableProvider;
 }
 
+/**
+ * A6 (AUTHB-05): a provider sign-in the callback holds for the app to finish.
+ * The ticket is opaque and single-use; only the person who started the link
+ * can redeem it. Never includes tokens.
+ */
+export interface PendingLinkTicket {
+  provider: WearableProvider;
+  ticket: string;
+}
+
 /** Result of a soft-disconnect. */
 export interface DisconnectResult {
   success: true;
