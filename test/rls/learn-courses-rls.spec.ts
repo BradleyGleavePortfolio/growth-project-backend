@@ -11,6 +11,7 @@
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { LessonsService } from '../../src/lessons/lessons.service';
 import { PrismaService } from '../../src/prisma.service';
@@ -108,6 +109,16 @@ class Rollback extends Error {
     });
     expect(await view(A)).toEqual({ courses: [], weeks: [], lessons: [F], ...none });
     expect(await view(L)).toEqual({ courses: [LC], weeks: [LW], lessons: [LX], ...none });
+  });
+
+  it('GET /lessons and /lessons/recommended list only single lessons; a course lesson is not completed there', async () => {
+    const service = new LessonsService(prisma);
+    const ids = (rows: Array<{ id: string }>) => set(...rows.map((r) => r.id));
+    for (const who of [K, A, B]) {
+      expect(ids(await service.getLessons(who))).toEqual([F]);
+      expect(ids(await service.getRecommended(who))).toEqual([F]);
+    }
+    await expect(service.completeLesson(A, X1)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('a week opens on its day, at once for an all-at-once course or after open-all; an ended enrolment keeps what had opened', async () => {
