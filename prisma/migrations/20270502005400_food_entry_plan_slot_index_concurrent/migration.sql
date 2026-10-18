@@ -1,4 +1,4 @@
--- FOODLINK: index on "LoggedFoodEntry"."plan_slot_id" (20270420000000).
+-- FOODLINK: index on "LoggedFoodEntry"."plan_slot_id" (20270502005200).
 --
 -- WHY: the ON DELETE SET NULL action looks up LoggedFoodEntry by plan_slot_id
 -- for every deleted DailyMealPlanSlot (a coach editing or deleting a plan);

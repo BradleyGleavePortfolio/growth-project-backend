@@ -1,13 +1,13 @@
 /**
- * FOODLINK — live row security for the food log plan link (20270420000000, 20270420000001, 20270420000002).
+ * FOODLINK — live row security for the food log plan link (20270502005200, 20270502005300, 20270502005400).
  *
  * Runs in the rls-live-tests job on a superuser copy of rls_replay (the whole migration chain
  * from empty). Principals are API shaped: SET LOCAL ROLE authenticated with the
  * app.current_user_id / app.current_user_role GUCs the policies read.
  *
- * Proves: LoggedFoodEntry keeps ENABLE + FORCE and its one owner-only policy, which covers the
- * new columns; client B's context reads, edits and deletes none of client A's entries on the
- * same date, link included (the read GET /log/daily makes, decision 141-4 test 13); a coach
+ * Proves: LoggedFoodEntry keeps ENABLE + FORCE and only its owner policy and the current coach's
+ * SELECT policy (20270502000700), which cover the new columns; client B's context reads, edits
+ * and deletes none of client A's entries on the same date, link included (the read GET /log/daily makes, decision 141-4 test 13); a coach
  * deleting a plan meal under row security clears the link on a client's entry the coach cannot
  * read and deletes no food log; the columns, FK and index have the names Prisma generates.
  * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
@@ -68,16 +68,20 @@ if (!DB_URL && process.env.CI === 'true') {
   }, 60_000);
   afterAll(() => prisma.$disconnect());
 
-  it('LoggedFoodEntry keeps ENABLE + FORCE and only its owner policy, which covers the new columns', async () => {
+  it('LoggedFoodEntry keeps ENABLE + FORCE and only its owner and current-coach policies, which cover the new columns', async () => {
     const [flags] = await prisma.$queryRaw<{ on: boolean; forced: boolean }[]>`
       SELECT relrowsecurity AS "on", relforcerowsecurity AS forced FROM pg_class WHERE oid = '"LoggedFoodEntry"'::regclass`;
     expect(flags).toEqual({ on: true, forced: true });
-    const policies = await prisma.$queryRaw<{ policyname: string; cmd: string; qual: string; with_check: string }[]>`
-      SELECT policyname, cmd, qual, with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = 'LoggedFoodEntry'`;
-    expect(policies).toHaveLength(1);
-    expect(policies[0]).toMatchObject({ policyname: 'food_entry_owner_access', cmd: 'ALL' });
-    expect(policies[0].qual).toMatch(/user_id = app\.current_user_id\(\)/);
-    expect(policies[0].with_check).toMatch(/user_id = app\.current_user_id\(\)/);
+    const policies = await prisma.$queryRaw<{ policyname: string; cmd: string; qual: string; with_check: string | null }[]>`
+      SELECT policyname, cmd, qual, with_check FROM pg_policies WHERE schemaname = 'public' AND tablename = 'LoggedFoodEntry'
+      ORDER BY policyname`;
+    expect(policies.map((p) => [p.policyname, p.cmd])).toEqual([
+      ['food_entry_current_coach_select', 'SELECT'],
+      ['food_entry_owner_access', 'ALL'],
+    ]);
+    expect(policies[0].qual).toMatch(/is_current_coach_of\(user_id\)/);
+    expect(policies[1].qual).toMatch(/user_id = app\.current_user_id\(\)/);
+    expect(policies[1].with_check).toMatch(/user_id = app\.current_user_id\(\)/);
   });
 
   it("each client reads only their own entries and links on the same date (GET /log/daily's read)", async () => {
