@@ -16,10 +16,9 @@
  * present). Re-delivery of the same event is safe — re-applies the same
  * state, no exceptions.
  *
- * Raw-body handling: Nest's default body parser deserialises JSON before
- * this handler runs. We re-serialise it (JSON.stringify is deterministic
- * over the shapes Mux ships) and feed that to the verifier — mirrors
- * the approach taken in src/billing/stripe-webhook.controller.ts.
+ * Raw-body handling: the HMAC covers the exact bytes Mux sent (req.rawBody,
+ * from `rawBody: true` in main.ts), the same path as
+ * src/billing/stripe-webhook.controller.ts. Never re-serialised JSON.
  */
 
 import {
@@ -31,6 +30,7 @@ import {
   HttpStatus,
   Logger,
   Post,
+  Req,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
@@ -86,12 +86,12 @@ export class MuxWebhookController {
   @Post('mux')
   @HttpCode(HttpStatus.OK)
   async receive(
+    @Req() req: { rawBody?: Buffer },
     @Body() body: MuxEvent,
     @Headers('mux-signature') signature: string,
   ) {
-    const raw = JSON.stringify(body ?? {});
     const ok = this.mux.verifyWebhookSignature({
-      payload: raw,
+      rawBody: req.rawBody,
       signatureHeader: signature,
     });
     if (!ok) {
