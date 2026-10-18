@@ -872,8 +872,8 @@ describe('unified inbox', () => {
     t.prisma.coachMessage.findFirst.mockResolvedValueOnce({ ...cols, card: card_type ? { card_type } : null });
     const coach = await t.inbox.inboxForCoach(COACH, {});
     const client = await t.inbox.inboxForClient(CLIENT);
+    for (const out of [client, coach]) expect(phoneInbox.safeParse(out).error).toBeUndefined();
     for (const [out, isMine] of [[coach, false], [client, true]] as const) {
-      expect(phoneInbox.safeParse(out).error).toBeUndefined();
       expect(out.items[0].last_message).toEqual({
         id: 'm1',
         sender_id: CLIENT,
