@@ -53,7 +53,7 @@ jobs:
       - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           # Confirmed runtime, pinned to the patch for reproducibility (R114/R124).
-          node-version: '20.20.1'
+          node-version: '22.23.3'
       - name: Record Node and npm versions
         shell: bash
         run: |
