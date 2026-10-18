@@ -164,7 +164,8 @@ button[aria-busy=true]::after{content:"";display:inline-block;width:1em;height:1
 .foot{margin:1rem .25rem 0;font-size:.8125rem;color:var(--muted);text-align:center}.state{margin:0;font:500 1.375rem/1.35 var(--serif)}[hidden]{display:none!important}`;
 
 // Static browser script: reads only #cfg, never interpolated. Same flow for
-// the wallet buttons and the card form: elements.submit(), POST checkout
+// the wallet buttons (their billing contact carries the buyer's name) and the
+// card form: elements.submit(), POST checkout
 // (idempotency key kept per tab and email), then stripe.confirmPayment.
 const CLIENT_JS = `(function(){
 var c=JSON.parse(document.getElementById('cfg').textContent),$=function(i){return document.getElementById(i)};
@@ -178,7 +179,7 @@ var el=stripe.elements({mode:c.mode,amount:c.amount,currency:'usd',onBehalfOf:c.
 appearance:{theme:'stripe',variables:{colorPrimary:'#2C4A36',colorText:'#1A1A18',colorTextSecondary:'#6B675F',colorDanger:'#B91C1C',colorBackground:'#ffffff',borderRadius:'12px',fontSizeBase:'16px'},rules:{'.Input':{border:'1px solid #DCD5CC',boxShadow:'none'}}}});
 var pe=el.create('payment',{fields:{billingDetails:{name:'never',email:'never'}},wallets:{applePay:'never',googlePay:'never',link:'never'}});
 pe.on('loaderror',function(){b.disabled=true;m.textContent=c.copy.failed});pe.mount('#card');
-var x=el.create('expressCheckout',{emailRequired:true,buttonHeight:48,paymentMethods:{link:'never',paypal:'never',amazonPay:'never'}});
+var x=el.create('expressCheckout',{emailRequired:true,billingAddressRequired:true,buttonHeight:48,paymentMethods:{link:'never',paypal:'never',amazonPay:'never'}});
 x.on('ready',function(e){if(e.availablePaymentMethods)$('or').hidden=false;else $('express').hidden=true});
 x.on('loaderror',function(){$('express').hidden=true});
 x.mount('#express');
