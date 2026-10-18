@@ -58,7 +58,7 @@ describe('select-role delegates to the canonical attach writer', () => {
     expect(code(db, 'GP-B1ROW1').used_count).toBe(1);
   });
 
-  it('enforces the intended recipient and the coach subscription; nothing is written on refusal', async () => {
+  it('enforces the intended recipient (nothing written on refusal); no coach plan lock (TM-P1)', async () => {
     const { db, auth } = await build();
     addUser(db, { id: 'stu', email: 'someone-else@example.test' });
     addRowCode(db, {
@@ -71,11 +71,11 @@ describe('select-role delegates to the canonical attach writer', () => {
       status: 400,
     });
     expect(code(db, 'GP-B1MAIL').used_count).toBe(0);
-    db.state.coachSubscription.find((s) => s.coach_id === COACH_B)!.status = 'canceled';
-    expect(await outcome(auth.selectRole('stu', 'student', 'GP-BBBBBB'))).toMatchObject({
-      status: 400,
-    });
     expect(user(db, 'stu').coach_id).toBeNull();
+    db.state.coachSubscription.find((s) => s.coach_id === COACH_B)!.status = 'canceled';
+    expect(await outcome(auth.selectRole('stu', 'student', 'GP-BBBBBB'))).toEqual({
+      ok: { role: 'student', coach_id: COACH_B },
+    });
   });
 
   for (const role of ['coach', 'sub_coach', 'owner']) {
