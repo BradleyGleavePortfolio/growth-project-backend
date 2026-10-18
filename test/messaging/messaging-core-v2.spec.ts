@@ -116,6 +116,7 @@ function build(opts: { blocked?: string[]; eitherBlocked?: boolean } = {}) {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       upsert: jest.fn().mockResolvedValue({ id: 'e1', kind: 'object', target: 'x', attempts: 0 }),
     },
+    coachMessageCard: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     $executeRaw: jest.fn().mockResolvedValue(1),
   };
   const prisma = {
@@ -237,7 +238,8 @@ describe('FEATURE_MESSAGING_CORE_V2 kill switch', () => {
     const r = row();
     t.prisma.coachMessage.findMany.mockResolvedValue([r]);
     const out = await t.messaging.listThreadForClient(CLIENT, {});
-    expect(t.prisma.coachMessage.findMany.mock.calls[0][0]).not.toHaveProperty('include');
+    // SHARE-BE: the card relation is read with every flag (a share card reads always).
+    expect(t.prisma.coachMessage.findMany.mock.calls[0][0]).not.toHaveProperty('include.reply_to');
     expect(out).toEqual([r]);
   });
 });
@@ -504,6 +506,8 @@ describe('delete (tombstone)', () => {
         create: expect.objectContaining({ reason: 'author_delete' }),
       }),
     );
+    // SHARE-BE: a tombstone keeps no card (a deleted share card is gone too).
+    expect(t.tx.coachMessageCard.deleteMany).toHaveBeenCalledWith({ where: { message_id: MSG } });
     expect(out.deleted).toBe(true);
     expect(out.body).toBeNull();
     expect(JSON.stringify(t.audit.write.mock.calls[0][0])).not.toMatch(/Original words/);
@@ -817,6 +821,21 @@ describe('unified inbox', () => {
     expect(p2.next_cursor).toBeNull();
     const unread = await t.inbox.inboxForCoach(COACH, { filter: 'unread' });
     expect(unread.items.map((i) => i.client_id)).toEqual([CLIENT]);
+  });
+
+  it('SHARE-BE: a message that is only a card previews as kind card for coach and client', async () => {
+    const t = build();
+    const shared = { ...lastRows()[0], body: null, has_card: true };
+    const bare = { ...lastRows()[1], deleted_at: null, has_card: false };
+    t.prisma.$queryRaw.mockResolvedValueOnce([shared, bare]);
+    const coach = await t.inbox.inboxForCoach(COACH, {});
+    expect(coach.items.map((i) => [i.client_id, i.last_message?.kind])).toEqual([
+      [OTHER_CLIENT, 'text'],
+      [CLIENT, 'card'],
+    ]);
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce({ ...shared, card: { id: 'c1' } });
+    const client = await t.inbox.inboxForClient(CLIENT);
+    expect(client.items[0].last_message).toMatchObject({ kind: 'card', preview: '' });
   });
 
   it('client: coachless is a valid empty inbox; coached shows the one coach thread', async () => {
