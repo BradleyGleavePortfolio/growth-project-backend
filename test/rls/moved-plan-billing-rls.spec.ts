@@ -265,7 +265,7 @@ if (!DB_URL && process.env.CI === 'true') {
     const { h, s1, s2, k } = await team('h');
     const svc = new SubCoachReassignService(
       fake(prisma),
-      fake({ assertHasCapacityTx: async () => undefined }),
+      fake({ assertSubCoachBelongsTo: async () => undefined }),
       fake({
         runWithIdempotency: async ({ runMutation }: { runMutation: () => Promise<unknown> }) => ({
           response: await runMutation(),
