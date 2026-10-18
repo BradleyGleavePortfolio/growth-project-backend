@@ -408,14 +408,19 @@ export class RealMealPlansService {
       daily_meal_plan_id: planId,
       client: { coach_id: coachId, role: 'student' },
     };
-    const held = await this.prisma.dailyMealPlanAssignment.findFirst({ where, select: { starts_on: true, ends_on: true } });
-    if (!held) throw new NotFoundException('Assignment not found');
-    const endsOn = new Date(dto.ends_on);
-    if (endsOn < held.starts_on) {
-      await this.prisma.dailyMealPlanAssignment.deleteMany({ where });
-    } else if (!held.ends_on || endsOn < held.ends_on) {
-      await this.prisma.dailyMealPlanAssignment.updateMany({ where, data: { ends_on: endsOn } });
+    if (!(await this.prisma.dailyMealPlanAssignment.findFirst({ where, select: { id: true } }))) {
+      throw new NotFoundException('Assignment not found');
     }
+    // Each write re-checks its own rule in its WHERE, so two ends at once settle on the earlier day.
+    const endsOn = new Date(dto.ends_on);
+    const removed = await this.prisma.dailyMealPlanAssignment.deleteMany({
+      where: { ...where, starts_on: { gt: endsOn } },
+    });
+    if (removed.count) return;
+    await this.prisma.dailyMealPlanAssignment.updateMany({
+      where: { ...where, OR: [{ ends_on: null }, { ends_on: { gt: endsOn } }] },
+      data: { ends_on: endsOn },
+    });
   }
 
   // Client-side: list "today's" plan(s). A plan applies on a given date
