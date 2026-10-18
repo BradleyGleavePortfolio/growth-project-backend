@@ -1,6 +1,6 @@
 # Auto-detect text files; commit text with LF line endings.
 # Prevents Windows clones from injecting CRLF into files that ship into a
-# Linux-only deploy target (Fly's release_command runs in node:20-slim).
+# Linux-only deploy target (Fly's release_command runs in node:22-bookworm-slim).
 * text=auto eol=lf
 
 # Anything that runs inside the Fly image MUST be LF, full stop. CRLF in a
