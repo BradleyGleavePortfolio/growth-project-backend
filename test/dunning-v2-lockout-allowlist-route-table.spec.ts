@@ -220,7 +220,7 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
 // (/ai/*), which stays locked like Roman and every paid value surface. Reviewed
 // one by one: each is the client's own logging (food, with /foods search,
 // barcode and manual entry, /me/foods favourites and saved meals; water, weight, habits, workouts, fasting),
-// targets, plans, check-ins or insights. A new marked route
+// targets, plans, check-ins, insights, or the coach's guidelines and lessons. A new marked route
 // turns this red on purpose.
 const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'DELETE fasting/:id FastingController',
@@ -236,6 +236,11 @@ const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'GET assignments/:assignmentid AssignmentController',
   'GET assignments/me AssignmentController',
   'GET check-ins ClientCheckInsController',
+  // #LEARN-LOCK op 1: the coach's guidelines and lessons never lock.
+  'GET coach/my-guidelines ClientGuidelinesController',
+  'GET lessons LessonsController',
+  'GET lessons/recommended LessonsController',
+  'POST lessons/:id/complete LessonsController',
   'GET check-ins/:id ClientCheckInsController',
   'GET fasting/history FastingController',
   'GET habits HabitsController',
