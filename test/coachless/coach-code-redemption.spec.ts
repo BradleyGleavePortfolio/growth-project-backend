@@ -151,16 +151,21 @@ describe('coach-code redemption — specific error codes', () => {
     expect(user(db, 'stu').coach_id).toBeNull();
   });
 
-  it('coach without an active subscription -> 409 coach_not_accepting', async () => {
-    const { db, redemption } = await buildCoachless();
-    db.state.coachSubscription.find((s) => s.coach_id === COACH_B)!.status = 'canceled';
-    addUser(db, { id: 'stu' });
-    expect(await redeem(redemption, 'stu', 'GP-BBBBBB')).toMatchObject({
-      status: 409,
-      body: { code: 'coach_not_accepting' },
-    });
-    expect(user(db, 'stu').coach_id).toBeNull();
-  });
+  it.each(['canceled', 'missing'])(
+    'TM-P1: a coach whose old subscription row is %s still takes the client (no plan lock)',
+    async (state) => {
+      const { db, redemption } = await buildCoachless();
+      const subs = db.state.coachSubscription;
+      const i = subs.findIndex((s) => s.coach_id === COACH_B);
+      if (state === 'missing') subs.splice(i, 1);
+      else subs[i].status = state;
+      addUser(db, { id: 'stu' });
+      expect(await redeem(redemption, 'stu', 'GP-BBBBBB')).toMatchObject({
+        ok: { already_attached: false },
+      });
+      expect(user(db, 'stu').coach_id).toBe(COACH_B);
+    },
+  );
 
   it('the owner pausing the featured offer refuses its code with coach_not_accepting before any write', async () => {
     const { db, redemption } = await buildCoachless();
@@ -265,15 +270,15 @@ describe('coach-code redemption — Idempotency-Key', () => {
   });
 
   it('a failed key can be retried once the cause is fixed', async () => {
-    const { db, redemption } = await buildCoachless();
-    const sub = db.state.coachSubscription.find((s) => s.coach_id === COACH_B)!;
-    sub.status = 'canceled';
+    const { db, redemption, featured } = await buildCoachless();
+    db.state.featuredCoachConfig.push(featuredRow({ accepting_clients: false }));
     addUser(db, { id: 'stu' });
     expect(await redeem(redemption, 'stu', 'GP-BBBBBB')).toMatchObject({
       status: 409,
       body: { code: 'coach_not_accepting' },
     });
-    sub.status = 'active';
+    db.state.featuredCoachConfig[0].accepting_clients = true;
+    featured.invalidate();
     expect(await redeem(redemption, 'stu', 'GP-BBBBBB')).toMatchObject({
       ok: { already_attached: false },
     });

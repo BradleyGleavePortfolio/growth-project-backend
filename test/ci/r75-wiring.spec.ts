@@ -243,7 +243,7 @@ describe('R75 executable wiring contracts', () => {
     expect(job['continue-on-error']).not.toBe(true);
     const setup = job.steps.find((entry) => entry.uses?.startsWith('actions/setup-node@'));
     expect(setup?.uses).toMatch(/^actions\/setup-node@[a-f0-9]{40}$/);
-    expect(setup?.with?.['node-version']).toBe('20.20.1');
+    expect(setup?.with?.['node-version']).toBe('22.23.3');
     const checkout = job.steps.find((entry) => entry.uses?.startsWith('actions/checkout@'));
     expect(checkout?.with?.['persist-credentials']).toBe(false);
     expect(checkout?.with?.['fetch-depth']).toBe(0);
