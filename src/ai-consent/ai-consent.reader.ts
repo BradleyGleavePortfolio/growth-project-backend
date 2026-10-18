@@ -51,4 +51,9 @@ export interface ClientAiConsentReader {
     userIds: readonly string[],
     audience?: ClientAiConsentAudience,
   ): Promise<ReadonlyMap<string, Date>>;
+  /**
+   * COACH-AI-CONSENT: true only for the coach's own live coach-ai-v1 grant, read now. Never throws.
+   * Optional; the egress gate treats a reader without it as "no grant" (fail closed).
+   */
+  hasCoachAiConsent?(coachId: string): Promise<boolean>;
 }

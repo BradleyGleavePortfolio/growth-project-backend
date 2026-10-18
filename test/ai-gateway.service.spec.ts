@@ -268,7 +268,7 @@ describe('AiGatewayService — R2b box-2 consent', () => {
     const { svc } = buildSvc(buildPrisma(), egress, complete);
     await svc.invoke(coachAbout('client-1'));
     expect(complete).toHaveBeenCalledTimes(1);
-    expect(complete.mock.calls[0][0].dataSubject).toEqual(clientDataSubject('client-1', 'coach'));
+    expect(complete.mock.calls[0][0].dataSubject).toEqual(clientDataSubject('client-1', 'coach', 'base', 'coach-1'));
   });
 
   it('no grant: 403 ai_consent_required, provider never called, no stub fallback', async () => {
@@ -349,7 +349,7 @@ describe('deriveGatewayDataSubject (R2b)', () => {
   it('coach about own scope -> no client data', () => {
     expect(
       deriveGatewayDataSubject({ ...base, requester: { id: 'coach-1', role: 'coach' }, subjectUserId: 'coach-1' }),
-    ).toEqual(noClientDataSubject('coach_own_scope'));
+    ).toEqual(noClientDataSubject('coach_own_scope', 'coach-1'));
   });
   it('client with no subject -> themself, client audience', () => {
     expect(deriveGatewayDataSubject({ ...base, requester: { id: 'client-1', role: 'student' } })).toEqual(
@@ -365,6 +365,6 @@ describe('deriveGatewayDataSubject (R2b)', () => {
         proposedActionPayload: { target_client_id: 'b', client_id: 'a' },
         dataClientIds: ['c'],
       }),
-    ).toEqual(clientDataSubject(['a', 'b', 'c'], 'coach'));
+    ).toEqual(clientDataSubject(['a', 'b', 'c'], 'coach', 'base', 'coach-1'));
   });
 });

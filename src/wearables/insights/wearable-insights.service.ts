@@ -205,7 +205,9 @@ export class WearableInsightsService {
     // ai_consent_required). Coach callers reach this only after
     // assertCoachOwnsClient, so the answer is no cross-tenant oracle.
     await this.egress.assertMaySend(
-      clientDataSubject(subjectUserId, audience === 'coach' ? 'coach' : 'client'),
+      audience === 'coach'
+        ? clientDataSubject(subjectUserId, 'coach', 'base', opts.requesterId)
+        : clientDataSubject(subjectUserId, 'client'),
       'anthropic',
       'wearables.insight',
     );

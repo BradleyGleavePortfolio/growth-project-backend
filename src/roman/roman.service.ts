@@ -845,11 +845,12 @@ export class RomanService {
    * Whose data a Roman turn sends. A client (role `student`) sends their own
    * conversation: their live box-2 grant is required. Coaches and owners
    * chat about their own work; the server loads no client record into the
-   * prompt (coach_own_scope).
+   * prompt (coach_own_scope), and their own grant is required
+   * (COACH-AI-CONSENT, 403 coach_ai_consent_required).
    */
   dataSubjectFor(caller: RomanCaller): AiDataSubject {
     return caller.role === 'coach' || caller.role === 'owner'
-      ? noClientDataSubject('coach_own_scope')
+      ? noClientDataSubject('coach_own_scope', caller.id)
       : clientDataSubject(caller.id, 'client');
   }
 
@@ -1459,9 +1460,18 @@ export class RomanService {
       const omitted = ROMAN_TURN_AUGMENT_ORDER.filter((k) => list.some((a) => a.kind === k));
       return { augmentRun: { applied: [], omitted }, sendSubject: subject };
     }
-    const run = await this.runAugmenters(caller, bundle, userMessage);
+    const ran = await this.runAugmenters(caller, bundle, userMessage);
+    // COACH-AI-CONSENT: a block made from a coach's own text (coach method) is left out unless that
+    // coach allows AI (read now); a kept one sends with the coach named, so the gate re-reads it.
+    const coachId = ran?.applied.find((a) => a.coach_id)?.coach_id;
+    const keep = !coachId || (await this.egress.coachConsented(coachId));
+    const dropped = keep || !ran ? [] : ran.applied.filter((a) => a.coach_id).map((a) => a.kind);
+    const run = ran && dropped.length
+      ? { applied: ran.applied.filter((a) => !a.coach_id), omitted: [...ran.omitted, ...dropped] }
+      : ran;
     if (!run || run.applied.length === 0) return { augmentRun: run, sendSubject: subject };
-    return { augmentRun: run, sendSubject: clientDataSubject(caller.id, 'client', 'memory') };
+    const memory = clientDataSubject(caller.id, 'client', 'memory', keep ? coachId : undefined);
+    return { augmentRun: run, sendSubject: memory };
   }
 
   /**

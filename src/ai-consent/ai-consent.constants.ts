@@ -307,10 +307,34 @@ export function acceptedClientAiConsent(version: unknown): AcceptedClientAiConse
     : null;
 }
 
-/** Ledger row actions (CHECK constraint in the migration). */
+/**
+ * COACH-AI-CONSENT (owner ruling "#COACH-AI-CONSENT - op 2", text approved 2026-10-16): a coach's
+ * own grant, its own purpose in this ledger. CAC-1 is the title and sign-up box label, CAC-2 the
+ * paragraph; digest as for the client copies. The app shows CAC-3 and CAC-4.
+ */
+export const COACH_AI_CONSENT_VERSION = 'coach-ai-v1';
+export const COACH_AI_CONSENT_PURPOSE = 'coach_ai_processing';
+/** CAC-1. Exact text. */
+export const COACH_AI_CONSENT_TITLE = 'Turn on Roman';
+/** CAC-2. Exact text. */
+export const COACH_AI_CONSENT_PARAGRAPH =
+  'Roman runs on Anthropic, an outside AI company. ' +
+  'Anything you type to Roman, and your coaching notes, go to Anthropic. ' +
+  "A client's data is never sent unless that client allowed AI.";
+export const COACH_AI_CONSENT_TITLE_SHA256 = sha256Hex(COACH_AI_CONSENT_TITLE);
+export const COACH_AI_CONSENT_PARAGRAPH_SHA256 = sha256Hex(COACH_AI_CONSENT_PARAGRAPH);
+export const COACH_AI_CONSENT_COPY_SHA256 = sha256Hex(
+  COACH_AI_CONSENT_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + COACH_AI_CONSENT_TITLE,
+);
+
+/** Ledger row actions (CHECK in the migrations). 'decline' (20270502004300): a coach's "Not now". */
 export const AI_CONSENT_ACTION_GRANT = 'grant';
 export const AI_CONSENT_ACTION_WITHDRAW = 'withdraw';
-export type AiConsentAction = typeof AI_CONSENT_ACTION_GRANT | typeof AI_CONSENT_ACTION_WITHDRAW;
+export const AI_CONSENT_ACTION_DECLINE = 'decline';
+export type AiConsentAction =
+  | typeof AI_CONSENT_ACTION_GRANT
+  | typeof AI_CONSENT_ACTION_WITHDRAW
+  | typeof AI_CONSENT_ACTION_DECLINE;
 
 /** Structured error codes. */
 export const AI_CONSENT_ERROR_VERSION_MISMATCH = 'CONSENT_VERSION_MISMATCH';

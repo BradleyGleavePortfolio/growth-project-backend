@@ -41,6 +41,20 @@ export class AiConsentRequiredException extends ForbiddenException {
 }
 
 /**
+ * COACH-AI-CONSENT: a request made by or for a coach, or carrying a coach's own
+ * text, while that coach has no live coach-ai-v1 grant (never asked, "Not now"
+ * or turned off). 403 with one code the app maps to its "Roman is off" screen;
+ * the gate passes the approved title CAC-1 as the message (no new words).
+ */
+export const COACH_AI_CONSENT_REQUIRED_CODE = 'coach_ai_consent_required';
+
+export class CoachAiConsentRequiredException extends ForbiddenException {
+  constructor(message: string) {
+    super({ code: COACH_AI_CONSENT_REQUIRED_CODE, message });
+  }
+}
+
+/**
  * A call site asked to send client data somewhere the consent copy does not
  * cover (a processor other than Anthropic) or declared a client subject with
  * no client id. This is a server defect, never a client choice, so it is a
@@ -61,9 +75,13 @@ export class AiEgressPolicyException extends ServiceUnavailableException {
   }
 }
 
-/** True for either refusal; callers that degrade on provider errors must rethrow these. */
+/** True for every refusal; callers that degrade on provider errors must rethrow these. */
 export function isAiEgressRefusal(
   err: unknown,
-): err is AiConsentRequiredException | AiEgressPolicyException {
-  return err instanceof AiConsentRequiredException || err instanceof AiEgressPolicyException;
+): err is AiConsentRequiredException | CoachAiConsentRequiredException | AiEgressPolicyException {
+  return (
+    err instanceof AiConsentRequiredException ||
+    err instanceof CoachAiConsentRequiredException ||
+    err instanceof AiEgressPolicyException
+  );
 }

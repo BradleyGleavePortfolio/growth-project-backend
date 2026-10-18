@@ -40,6 +40,7 @@ import {
   CLIENT_AI_CONSENT_V5_COPY_SHA256,
   CLIENT_AI_CONSENT_V5_PARAGRAPH,
   CLIENT_AI_CONSENT_V5_VERSION,
+  COACH_AI_CONSENT_COPY_SHA256,
 } from '../../src/ai-consent/ai-consent.constants';
 import { AiConsentRequiredException } from '../../src/ai-egress/ai-consent-required.exception';
 import { AiEgressService, AnthropicHandle } from '../../src/ai-egress/ai-egress.service';
@@ -396,6 +397,7 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
     it('a v5 holder: memory subject sends; a mixed v5 + v4 memory subject is refused', async () => {
       await service.grant('u_a', { version: V5 });
       await service.grant('u_b', { version: V4 });
+      await service.decideCoach('c_1', 'grant', { version: 'coach-ai-v1', copy_sha256: COACH_AI_CONSENT_COPY_SHA256 });
       const { egress, create, handle } = gate();
       await egress.anthropicMessagesCreate(
         handle,
@@ -407,7 +409,7 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
       await expect(
         egress.anthropicMessagesCreate(
           handle,
-          clientDataSubject(['u_a', 'u_b'], 'coach', 'memory'),
+          clientDataSubject(['u_a', 'u_b'], 'coach', 'memory', 'c_1'),
           'roman.chat',
           PARAMS,
         ),
