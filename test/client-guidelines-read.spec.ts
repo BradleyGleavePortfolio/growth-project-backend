@@ -31,13 +31,18 @@ class HeaderAuthGuard implements CanActivate {
   }
 }
 
-const coachOf: Record<string, string | null> = { 'client-1': 'coach-1', 'client-2': 'coach-1', 'client-solo': null };
+// client-moved left coach-1 for coach-2; coach-1's old row for them is still stored.
+const coachOf: Record<string, string | null> = {
+  'client-1': 'coach-1', 'client-2': 'coach-1', 'client-solo': null, 'client-moved': 'coach-2',
+};
+const row = (content: string) => ({
+  content,
+  created_at: new Date('2026-10-01T12:00:00.000Z'),
+  updated_at: new Date('2026-10-03T09:30:00.000Z'),
+});
 const guidelines: Record<string, { content: string; created_at: Date; updated_at: Date }> = {
-  'coach-1:client-1': {
-    content: 'Walk 20 minutes after dinner.',
-    created_at: new Date('2026-10-01T12:00:00.000Z'),
-    updated_at: new Date('2026-10-03T09:30:00.000Z'),
-  },
+  'coach-1:client-1': row('Walk 20 minutes after dinner.'),
+  'coach-1:client-moved': row('Old plan from a past coach.'),
 };
 const prisma = {
   user: {
@@ -53,12 +58,8 @@ const prisma = {
       },
     ),
   },
-  // ClientEntitlementGuard: every client has an active package except client-unpaid.
-  clientPurchase: {
-    findFirst: jest.fn(async (args: { where: { client_user_id: string } }) =>
-      args.where.client_user_id === 'client-unpaid' ? null : { id: 'p1', status: 'active', access_expires_at: null },
-    ),
-  },
+  // ClientEntitlementGuard: no client here has a paid package (a lapsed plan).
+  clientPurchase: { findFirst: jest.fn(async () => null) },
 };
 
 describe('GET /coach/my-guidelines: a client reads their coach guidelines', () => {
@@ -130,9 +131,18 @@ describe('GET /coach/my-guidelines: a client reads their coach guidelines', () =
     expect(prisma.user.findUnique).toHaveBeenCalledWith({ where: { id: 'client-2' }, select: { coach_id: true } });
   });
 
-  it('a client without an active package gets the paywall (402), like the rest of Train, and nothing is read', async () => {
-    expect((await call('client-unpaid:student')).status).toBe(402);
-    expect(prisma.coachGuideline.findUnique).not.toHaveBeenCalled();
+  it('#LEARN-LOCK op 1: a lapsed plan never locks the guidelines, and no package is looked up', async () => {
+    expect((await call('client-1:student')).status).toBe(200);
+    expect(prisma.coachGuideline.findUnique).toHaveBeenCalledTimes(1);
+    expect(prisma.clientPurchase.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("a past coach's guideline stays closed: a moved client reads only their current coach's row", async () => {
+    expect(await call('client-moved:student')).toEqual({ status: 200, text: '' });
+    expect(prisma.coachGuideline.findUnique).toHaveBeenCalledWith({
+      where: { CoachGuideline_coach_client_key: { coach_id: 'coach-2', client_id: 'client-moved' } },
+      select: { content: true, created_at: true, updated_at: true },
+    });
   });
 
   it('the coach-side guideline routes stay coach-only', async () => {

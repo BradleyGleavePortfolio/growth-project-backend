@@ -100,6 +100,24 @@ export class LessonsService {
     });
   }
 
+  /**
+   * L5: only the coach who wrote a lesson deletes it. Any other caller's id
+   * matches no row: another coach gets 404 (the route never says whose lesson
+   * an id is), a client 403. Completion marks point only at their lesson
+   * (FK RESTRICT), so they go in the same transaction; nothing else refers to
+   * a lesson. The row rule agrees (p_lesson_delete, p_lessoncompletion_delete).
+   */
+  async deleteLesson(userId: string, id: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+    if (user?.role !== 'coach') throw new ForbiddenException('Coach access required');
+    const own = { id, coach_id: userId };
+    const [, { count }] = await this.prisma.$transaction([
+      this.prisma.lessonCompletion.deleteMany({ where: { lesson: own } }),
+      this.prisma.lesson.deleteMany({ where: own }),
+    ]);
+    if (count === 0) throw new NotFoundException('Lesson not found');
+  }
+
   async completeLesson(userId: string, lessonId: string) {
     // Only a lesson this client can see may be marked complete.
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
