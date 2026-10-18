@@ -48,7 +48,7 @@ export const CommunityCohortResponseSchema = z
     kind: z.enum(SPACE_KINDS),
     posting_policy: z.enum(POSTING_POLICIES),
     visibility: z.enum(SPACE_VISIBILITIES),
-    package_ids: z.array(z.string()),
+    package_ids: z.array(z.string()).nullable(), // C6-ACCESS: the coach's view only; null to a member
     member_count: z.number().int().nonnegative(),
     created_at: z.string().datetime(),
     my_membership: z

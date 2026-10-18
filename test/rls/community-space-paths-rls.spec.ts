@@ -2,12 +2,16 @@
 // app.community_can_access, walked as one table. Rows run as role authenticated; server paths run the
 // real services. X, Y coach; I is X's client in every space; O is X's client with no row anywhere; N has
 // no coach and joined X's public space; Z is Y's client. X's spaces: pub (public), cli (clients),
-// pkg (package; I holds a live purchase), mem (chosen members), arc (clients, archived). Y has ycli.
-// Each person's first read is their control space (a 1), so every 0 follows a 1.
+// pkg (package; I holds a live purchase), mem (chosen members), arc (clients, archived), drf (clients,
+// set back to draft; I keeps an active row). Y has ycli. C6-ACCESS (agent 158) adds drf, the packages a
+// space shows and links, and PATCH draft. Each person's first read is their control space (a 1), so
+// every 0 follows a 1.
 import { randomUUID } from 'crypto';
 import { Prisma, PrismaClient, type User } from '@prisma/client';
 import { CommunityCohortMembersRepository } from '../../src/community/cohorts/community-cohort-members.repository';
 import { CommunityCohortMembersService } from '../../src/community/cohorts/community-cohort-members.service';
+import { CommunityCohortWriteRepository } from '../../src/community/cohorts/community-cohort-write.repository';
+import { CommunityCohortWriteService } from '../../src/community/cohorts/community-cohort-write.service';
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { readersNow } from '../../src/community/community-space-access';
 import { CommunityRepository } from '../../src/community/community.repository';
@@ -36,12 +40,14 @@ if (!DB_URL && process.env.CI === 'true') {
 }
 
 type Key = 'X' | 'Y' | 'I' | 'O' | 'N' | 'Z';
-type Space = 'pub' | 'cli' | 'pkg' | 'mem' | 'arc' | 'ycli';
+type Space = 'pub' | 'cli' | 'pkg' | 'mem' | 'arc' | 'drf' | 'ycli';
 const PEOPLE: Key[] = ['X', 'Y', 'I', 'O', 'N', 'Z']; // coaches first: clients reference them
-const SPACES: Space[] = ['arc', 'mem', 'pkg', 'cli', 'pub', 'ycli']; // newest pinned post first
+const SPACES: Space[] = ['drf', 'arc', 'mem', 'pkg', 'cli', 'pub', 'ycli']; // newest pinned post first
 const COACH: Record<Key, Key | null> = { X: null, Y: null, I: 'X', O: 'X', N: null, Z: 'Y' };
 const ROLE = (k: Key) => (k === 'X' || k === 'Y' ? 'coach' : 'student');
-const VISIBILITY: Record<Space, string> = { pub: 'public', cli: 'clients', pkg: 'package', mem: 'members', arc: 'clients', ycli: 'clients' };
+const VISIBILITY: Record<Space, string> = { pub: 'public', cli: 'clients', pkg: 'package', mem: 'members', arc: 'clients', drf: 'clients',
+  ycli: 'clients' };
+const STATUS: Partial<Record<Space, string>> = { arc: 'archived', drf: 'draft' }; // else active
 // The one rule: who gets into each space.
 const OPEN: Record<Space, Key[]> = {
   pub: ['X', 'I', 'N'], // the coach and whoever joined
@@ -49,9 +55,12 @@ const OPEN: Record<Space, Key[]> = {
   pkg: ['X', 'I'], // X's clients with a live purchase of a linked package
   mem: ['X', 'I'], // X's clients with an active row
   arc: ['X'], // archived: the coach only
+  drf: ['X'], // draft: the coach only, an active row or not
   ycli: ['Y', 'Z'],
 };
-const ACTIVE_ROW: Record<Space, Key[]> = { pub: ['I', 'N'], cli: ['I'], pkg: ['I'], mem: ['I'], arc: [], ycli: ['Z'] };
+const ACTIVE_ROW: Record<Space, Key[]> = { pub: ['I', 'N'], cli: ['I'], pkg: ['I'], mem: ['I'], arc: [], drf: ['I'], ycli: ['Z'] };
+// The coach's roster (p_listed) of a draft still lists its people, so the coach manages it before it goes live.
+const LISTED: Record<Space, Key[]> = { ...OPEN, drf: ['X', 'I', 'O'] };
 // The Hall, DMs and wins open with a space that is not public (N's only space is public).
 const HALL: Record<'X' | 'Y', Key[]> = { X: ['X', 'I', 'O'], Y: ['Y', 'Z'] };
 const CONTROL: Record<Key, Space> = { X: 'arc', Y: 'ycli', I: 'mem', O: 'cli', N: 'pub', Z: 'ycli' };
@@ -128,19 +137,22 @@ const sorted = (xs: string[]) => [...xs].sort();
     ['reactions: a message', (k, s) => react(k, 'message', msg[s])],
     ['reactions: a post', (k, s) => react(k, 'post', post[s])],
     ['members: read the roster', (k, s) => got(members.list(user(k), space[s], {}))],
+    ['the space: which packages open it (its coach only)', (k, s) => got(community.getCohort(user(k), space[s]), (r) => r.package_ids !== null),
+      (k, s) => k === coachOf(s)],
     ['reports: a message', (k, s) => got(moderation.report(user(k), 'message', msg[s], 'spam', undefined))],
     ['reports: a post', (k, s) => got(moderation.report(user(k), 'post', post[s], 'spam', undefined))],
     ['search, Today, classroom: the spaces pushed to the query', async (k, s) => Number((await access.listAccessibleCohortIds(ws[coachOf(s)], id[k])).includes(space[s]))],
     ['RLS: the message row', (k, s) => count(k, 'community_messages', msg[s])],
     ['RLS: a comment row', (k, s) => count(k, 'community_messages', comment[s])],
     ['RLS: the post row', (k, s) => count(k, 'community_posts', post[s])],
-    ['RLS: a membership row', (k, s) => count(k, 'community_memberships', row[s])],
+    ['RLS: a membership row (a person always reads their own)', (k, s) => count(k, 'community_memberships', row[s]),
+      (k, s) => OPEN[s].includes(k) || (s === 'drf' && k === 'I')],
   ];
   // Who a space reaches without being asked.
   const AUDIENCES: Array<[string, (s: Space) => Promise<string[]>, (s: Space) => string[]]> = [
     ['realtime: who is pinged', (s) => readersNow(db, ws[coachOf(s)], space[s]), (s) => ids(OPEN[s])],
     ['members: who the roster lists', async (s) => (await members.list(user(coachOf(s)), space[s], {})).members.map((m) => m.user_id),
-      (s) => ids(OPEN[s])],
+      (s) => ids(LISTED[s])],
     ['members: the count', async (s) => [String(await foundation.cohortMemberCount({ id: space[s], workspace_id: ws[coachOf(s)] }))],
       (s) => [String(OPEN[s].length)]],
     ['push: who a message reaches (an active row; B3 widens it)', async (s) =>
@@ -161,7 +173,7 @@ const sorted = (xs: string[]) => [...xs].sort();
       const [w, by] = [ws[coachOf(s)], id[coachOf(s)]];
       await prisma.$executeRawUnsafe(`INSERT INTO "community_cohorts" ("id", "workspace_id", "name", "visibility", "status", "archived_at", "updated_at")
         VALUES ($1::uuid, $2::uuid, $3, $4::"CommunitySpaceVisibility", $5::"CommunityCohortStatus", $6::timestamp, now())`,
-      space[s], w, `RLS ${s}`, VISIBILITY[s], s === 'arc' ? 'archived' : 'active', s === 'arc' ? new Date() : null);
+      space[s], w, `RLS ${s}`, VISIBILITY[s], STATUS[s] ?? 'active', s === 'arc' ? new Date() : null);
       await prisma.$executeRawUnsafe(MESSAGE, msg[s], w, space[s], by, null, null);
       await prisma.$executeRaw`INSERT INTO "community_posts" ("id", "workspace_id", "cohort_id", "author_id", "scope", "pinned_at", "updated_at")
         VALUES (${post[s]}::uuid, ${w}::uuid, ${space[s]}::uuid, ${by}, 'cohort', now() - make_interval(mins => ${i}::int), now())`;
@@ -226,5 +238,41 @@ const sorted = (xs: string[]) => [...xs].sort();
         workspace: Number(await access.canAccessWorkspace(ws.X, user(k))),
       }).toEqual({ who: k, hall: n, report: n, react: n, wins: n, workspace: n });
     }
+  });
+
+  // C6-ACCESS: what the coach sets is what the rule reads. Run last: these add spaces to X's workspace.
+  describe('the coach sets a space up (create and PATCH)', () => {
+    const spaces = new CommunityCohortWriteService(access, new CommunityCohortWriteRepository(db));
+    const pkg = { live: `pkg-${run}`, archived: `pkg-${run}-archived`, off: `pkg-${run}-off`, otherCoach: `pkg-${run}-y` };
+    beforeAll(async () => {
+      for (const [p, by, active, archived] of [[pkg.archived, 'X', true, 'now()'], [pkg.off, 'X', false, 'NULL'], [pkg.otherCoach, 'Y', true, 'NULL']] as const) {
+        await prisma.$executeRawUnsafe(`INSERT INTO "CoachPackage" ("id", "coach_id", "name", "amount_cents", "is_active", "archived_at", "updated_at")
+          VALUES ($1, $2, 'RLS package', 1000, $3, ${archived}, now())`, p, id[by], active);
+      }
+    });
+
+    it('a package space links only live packages of its own coach; every other is the one 400', async () => {
+      const seen: unknown[] = [];
+      for (const p of [pkg.live, pkg.archived, pkg.off, pkg.otherCoach]) {
+        seen.push(await spaces.create(user('X'), ws.X, { name: `RLS ${p}`, visibility: 'package', package_ids: [p] })
+          .then((r) => r.cohort.package_ids, (e: { response?: { code?: string } }) => e.response?.code));
+      }
+      const BAD = 'community.cohort.invalid_packages';
+      expect(seen).toEqual([[pkg.live], BAD, BAD, BAD]);
+    });
+
+    it('PATCH back to draft closes a space to everyone but its coach; going live opens it again', async () => {
+      const { cohort } = await spaces.create(user('X'), ws.X, { name: `RLS draft ${run}`, visibility: 'clients' });
+      const open = async () => {
+        const seen: number[] = [];
+        for (const k of ['X', 'I', 'O'] as const) seen.push(Number(await access.canAccessCohort(cohort, user(k))));
+        return seen;
+      };
+      expect(await open()).toEqual([1, 1, 1]);
+      await spaces.update(user('X'), cohort.id, { status: 'draft' });
+      expect(await open()).toEqual([1, 0, 0]);
+      await spaces.update(user('X'), cohort.id, { status: 'active' });
+      expect(await open()).toEqual([1, 1, 1]);
+    });
   });
 });
