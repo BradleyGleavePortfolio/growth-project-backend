@@ -145,6 +145,8 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // prisma/migrations and fails when a parent is deleted before such a child.
   { model: 'ExerciseSet', field: 'workout.user_id', action: del },
   { model: 'WorkoutSession', field: 'user_id', action: del },
+  // TRAIN-BE2: a coach's workout comments go with the coach; a client's go with their workouts (FK cascade).
+  { model: 'WorkoutComment', field: 'coach_id', action: del },
   { model: 'FastingWindow', field: 'user_id', action: del },
   { model: 'WeightLog', field: 'user_id', action: del },
   { model: 'WaterLog', field: 'user_id', action: del },

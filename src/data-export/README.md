@@ -92,6 +92,7 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `wearable_connections` | `WearableConnection` | Provider, status, scopes and sync dates. Tokens, secret refs and errors are never exported. |
 | `wearable_samples` | `WearableSample` | Every wearable sample, oldest first: provider, metric, bucket, value, unit, start/end, source time zone, recorded date. |
 | `exercise_sets` | `ExerciseSet` | P2: every set inside the user's own workout sessions (exercise, muscle group, reps, weights, RPE, notes). |
+| `workout_comments` | `WorkoutComment` | TRAIN-BE2: every coach comment on the user's own workout sessions (workout, coach id, text, when). |
 | `habit_logs` | `HabitLog` | P2: every completion of the user's own habits, oldest day first. |
 | `bloodwork_panels` | `BloodworkPanel` | P2: the user's panels, oldest first: date, source, label, the user's notes, review state and the coach review note the app shows them. Ciphertext columns and key references are left out. |
 | `bloodwork_results` | `BloodworkResult` | P2: every marker of those panels (value, unit, reference range, out-of-range flag). |
