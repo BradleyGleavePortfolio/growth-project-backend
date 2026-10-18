@@ -26,6 +26,7 @@ import {
   ValidateBy,
   ValidateNested,
 } from 'class-validator';
+import { IsTimeOfDay } from '../common/validators/time-of-day';
 
 // ─── Enums (mirror Prisma) ────────────────────────────────────────────────────
 
@@ -151,6 +152,11 @@ export class CreateAssignmentDto {
 
   @IsDateString()
   scheduled_for!: string;
+
+  /** C2-C0: the coach's planned training time that day, "HH:MM"; absent = no time. */
+  @IsOptional()
+  @IsTimeOfDay()
+  scheduled_time?: string | null;
 }
 
 // MWB-1 (§3.4): program-level assignment fan-out. Assigns every plan
@@ -165,6 +171,11 @@ export class AssignProgramDto {
   /** Anchor date for week 0 / day 0. Each plan is scheduled relative to it. */
   @IsDateString()
   start_date!: string;
+
+  /** C2-C0: one planned training time, "HH:MM", for every day of the program; absent = no time. */
+  @IsOptional()
+  @IsTimeOfDay()
+  scheduled_time?: string | null;
 }
 
 // ─── MWB-2: clone-to-client (FEATURE_MWB_TEMPLATES) ───────────────────────────
@@ -278,7 +289,7 @@ export function completionPayloadShapeOk(payload: unknown): boolean {
  * C1V2-C1: PATCH /assignments/:assignmentId, exactly one field. The client
  * moves (scheduled_for) or skips (skip: true) their own day; the client's
  * coach writes the day's note to the client (client_note; null or blank
- * clears it).
+ * clears it) and, C2-C0, the day's planned time (scheduled_time; null clears it).
  */
 export class UpdateAssignmentDto {
   @IsOptional()
@@ -293,4 +304,8 @@ export class UpdateAssignmentDto {
   @IsString()
   @MaxLength(COACH_TEXT_MAX)
   client_note?: string | null;
+
+  @IsOptional()
+  @IsTimeOfDay()
+  scheduled_time?: string | null;
 }

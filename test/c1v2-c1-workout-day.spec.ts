@@ -5,7 +5,8 @@
  *      unrelated coach, coachless client), the move window, one field a call;
  *      and GET /assignments/:id: only the client reads them back.
  *      A coach's note write replies with the note only, never the day's
- *      logged results (Workouts sharing on or off).
+ *      logged results (Workouts sharing on or off). C2-C0: the coach's planned
+ *      time for the day (scheduled_time) follows the note's callers and reply.
  *   2. The agreed request shapes: swaps on a saved row (ExerciseDB and seed:
  *      ids, as the builder's library hands them back), completion_payload
  *      exercises[].swap_reason / skip_note (older payloads still accepted).
@@ -71,9 +72,10 @@ describe('PATCH /assignments/:id: who moves, skips and notes a day', () => {
     ['move', MOVE, { scheduled_for: new Date('2026-10-17T00:00:00Z') }],
     ['skip', { skip: true }, { skipped_at: NOW }],
     ['note', { client_note: ' Easy pace today ' }, { client_note: 'Easy pace today' }],
+    ['time', { scheduled_time: '17:30' }, { scheduled_time: '17:30' }],
   ];
   // [action, caller, day]: allowed. Every other caller below is refused.
-  const ALLOWED = new Set(['move A day-A', 'move Z day-Z', 'skip A day-A', 'skip Z day-Z', 'note K day-A', 'note S day-A']);
+  const ALLOWED = new Set(['move A day-A', 'move Z day-Z', 'skip A day-A', 'skip Z day-Z', 'note K day-A', 'note S day-A', 'time K day-A', 'time S day-A']);
   const CALLERS: Array<[string, string, string]> = [
     ['A', 'day-A', 'own client'], ['C', 'day-A', 'other client'], ['K', 'day-A', 'current coach'], ['S', 'day-A', 'delegated sub-coach'],
     ['F', 'day-A', 'former coach'], ['L', 'day-A', 'unrelated coach'], ['Z', 'day-Z', 'coachless client, own day'],
@@ -120,21 +122,25 @@ describe('PATCH /assignments/:id: who moves, skips and notes a day', () => {
     await expect(w.svc.updateAssignment('K', 'day-A', { client_note: '  ' }, NOW)).resolves.toMatchObject({ client_note: null });
     await expect(w.svc.updateAssignment('A', 'day-A', {}, NOW)).rejects.toThrow(BadRequestException);
     await expect(w.svc.updateAssignment('A', 'day-A', { skip: true, ...MOVE }, NOW)).rejects.toThrow(BadRequestException);
+    await expect(w.svc.updateAssignment('K', 'day-A', { client_note: 'Hi', scheduled_time: '07:00' }, NOW)).rejects.toThrow(BadRequestException);
   });
 });
 
-describe("a coach's note write never returns the day's logged results", () => {
+describe("a coach's note or time write never returns the day's logged results", () => {
   // Everything a coach reads only while the client shares Workouts.
   const RESULTS = {
     started_at: NOW, completed_at: NOW, skipped_at: NOW, post_rpe: 8, post_notes: 'Felt strong', completion_payload: { exercises: [{ sets: [{ reps: 8 }] }] },
   };
-  const NOTES: Array<[string, string, string | null]> = [['set', ' Easy pace ', 'Easy pace'], ['clear', '  ', null]];
-  const table = ['K', 'S'].flatMap((who) => [false, true].flatMap((shares) => NOTES.map(([action, sent, kept]) => ({ who, shares, action, sent, kept }))));
+  const WRITES: Array<[string, UpdateAssignmentDto, Row]> = [
+    ['note set', { client_note: ' Easy pace ' }, { client_note: 'Easy pace' }], ['note clear', { client_note: '  ' }, { client_note: null }],
+    ['time set', { scheduled_time: '06:30' }, { scheduled_time: '06:30' }], ['time clear', { scheduled_time: null }, { scheduled_time: null }],
+  ];
+  const table = ['K', 'S'].flatMap((who) => [false, true].flatMap((shares) => WRITES.map(([action, dto, kept]) => ({ who, shares, action, dto, kept }))));
 
-  it.each(table)('$action by $who, A shares Workouts: $shares -> { id, client_note } only', async ({ who, shares, sent, kept }) => {
-    const w = world(RESULTS, shares);
-    await expect(w.svc.updateAssignment(who, 'day-A', { client_note: sent }, NOW)).resolves.toEqual({ id: 'day-A', client_note: kept });
-    expect(w.days['day-A']).toMatchObject({ ...RESULTS, client_note: kept });
+  it.each(table)('$action by $who, A shares Workouts: $shares -> { id, <that field> } only', async ({ who, shares, dto, kept }) => {
+    const w = world({ ...RESULTS, scheduled_time: '17:30' }, shares);
+    await expect(w.svc.updateAssignment(who, 'day-A', dto, NOW)).resolves.toEqual({ id: 'day-A', ...kept });
+    expect(w.days['day-A']).toMatchObject({ ...RESULTS, ...kept });
   });
 });
 

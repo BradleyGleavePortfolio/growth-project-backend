@@ -1286,6 +1286,7 @@ export class ProgramLibraryService {
           startAt,
           dto.allow_repeat === true,
           idempotencyKey,
+          dto.scheduled_time ?? null,
         ),
       );
     }
@@ -1313,6 +1314,7 @@ export class ProgramLibraryService {
     startAt: Date,
     allowRepeat: boolean,
     idempotencyKey: string,
+    scheduledTime: string | null,
   ): Promise<BulkAssignResult> {
     try {
       await this.workoutBuilder.assertCanAccessClient(actor.id, clientId);
@@ -1349,11 +1351,12 @@ export class ProgramLibraryService {
         message: 'This client account no longer exists.',
       };
     }
-    // The key is the whole logical intent (C-640-8): master, start date and the
-    // repeat choice. Reusing one Idempotency-Key for a different program or a
-    // different start date is a NEW intent, never a silent replay of the first
-    // result; it then meets the already-assigned guard below like any request.
-    const intent = `${masterId}:${startAt.toISOString().slice(0, 10)}:${allowRepeat ? 'repeat' : 'once'}`;
+    // The key is the whole logical intent (C-640-8): master, start date, the
+    // repeat choice and (C2-C0) the planned time. Reusing one Idempotency-Key
+    // for a different program, start date or time is a NEW intent, never a
+    // silent replay of the first result; it then meets the already-assigned
+    // guard below like any request. No time keeps the key as it was.
+    const intent = `${masterId}:${startAt.toISOString().slice(0, 10)}:${allowRepeat ? 'repeat' : 'once'}${scheduledTime ? `@${scheduledTime}` : ''}`;
     const deliveryKey = `bulk:${actor.id}:${intent}:${idempotencyKey}:${clientId}`;
     try {
       return await this.prisma.$transaction(
@@ -1393,6 +1396,7 @@ export class ProgramLibraryService {
             startAt,
             deliveryKey,
             source: 'bulk_assign',
+            scheduledTime,
           });
           return {
             client_id: clientId,

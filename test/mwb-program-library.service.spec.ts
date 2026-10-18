@@ -720,6 +720,21 @@ describe('S-MWB-2 fix round: actor scope, deleted clients, assignee paging', () 
     expect(keys[1]).toBe('bulk:coach-1:master-1:2026-10-12:repeat:same:c1');
   });
 
+  it('C2-C0: the planned time reaches the delivery and is part of the intent; no time keeps the key as it was', async () => {
+    const { prisma, tx } = makePrisma();
+    tx.workoutProgram.findFirst.mockResolvedValue(null);
+    const { svc, delivery } = makeService(prisma);
+    await svc.bulkAssign('coach-1', 'master-1', { client_ids: ['c1'], start_date: '2026-10-05' }, 'same');
+    await svc.bulkAssign('coach-1', 'master-1', { client_ids: ['c1'], start_date: '2026-10-05', scheduled_time: '18:00' }, 'same');
+    const calls = delivery.deliverInTx.mock.calls.map(
+      (c) => fake<[unknown, { deliveryKey: string; scheduledTime: string | null }]>(c)[1],
+    );
+    expect(calls.map((c) => [c.deliveryKey, c.scheduledTime])).toEqual([
+      ['bulk:coach-1:master-1:2026-10-05:once:same:c1', null],
+      ['bulk:coach-1:master-1:2026-10-05:once@18:00:same:c1', '18:00'],
+    ]);
+  });
+
   it('C-640-10 listAssignees: pages over copies (limit + next_cursor) and never lists a deleted account', async () => {
     const { prisma } = makePrisma();
     const copy = (id: string, at: string, client: string) => ({

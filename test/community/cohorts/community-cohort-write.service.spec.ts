@@ -48,6 +48,8 @@ function cohort(over: Partial<CommunityCohort> = {}): CommunityCohort {
     ends_at: null,
     capacity: null,
     sort_order: 0,
+    kind: 'chat',
+    posting_policy: 'all',
     created_at: now,
     updated_at: now,
     archived_at: null,
@@ -131,6 +133,24 @@ describe('CommunityCohortWriteService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
+    it.each([
+      [undefined, 'chat', 'all'],
+      ['chat', 'chat', 'all'],
+      ['announcement', 'announcement', 'coach'],
+      ['section', 'section', 'all'],
+    ] as const)('C6-B1: kind %s makes a %s space that %s may post in', async (kind, made, policy) => {
+      access.findWorkspace.mockResolvedValue({ id: WS_A });
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      repo.nameTakenInWorkspace.mockResolvedValue(false);
+      repo.create.mockResolvedValue(cohort({ kind: made, posting_policy: policy }));
+
+      const res = await service.create(coachA, WS_A, { name: 'News', kind });
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: made, postingPolicy: policy }),
+      );
+      expect(res.cohort).toMatchObject({ kind: made, posting_policy: policy });
+    });
+
     it('400s when ends_at precedes starts_at', async () => {
       access.findWorkspace.mockResolvedValue({ id: WS_A });
       access.isWorkspaceCoach.mockResolvedValue(true);
@@ -155,6 +175,19 @@ describe('CommunityCohortWriteService', () => {
         name: 'Renamed',
       } as never);
       expect(res.cohort.name).toBe('Renamed');
+    });
+
+    it('C6-B1: the coach sets who may post in a space', async () => {
+      repo.findById.mockResolvedValue(cohort());
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      repo.update.mockResolvedValue(cohort({ posting_policy: 'coach' }));
+
+      const res = await service.update(coachA, COHORT_A, { posting_policy: 'coach' });
+      expect(repo.update).toHaveBeenCalledWith(
+        COHORT_A,
+        expect.objectContaining({ postingPolicy: 'coach' }),
+      );
+      expect(res.cohort.posting_policy).toBe('coach');
     });
 
     it('404s an unknown cohort', async () => {

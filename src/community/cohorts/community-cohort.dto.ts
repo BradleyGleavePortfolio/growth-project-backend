@@ -23,6 +23,11 @@ const trim = ({ value }: { value: unknown }): unknown =>
 export const COHORT_WRITE_STATUSES = ['draft', 'active', 'archived'] as const;
 export type CohortWriteStatus = (typeof COHORT_WRITE_STATUSES)[number];
 
+// C6-B1: the Prisma enums CommunitySpaceKind and CommunityPostingPolicy. A new
+// announcement space takes the coach's messages only; any other starts open.
+export const SPACE_KINDS = ['chat', 'announcement', 'section'] as const;
+export const POSTING_POLICIES = ['all', 'coach'] as const;
+
 /** POST /community/workspaces/:workspaceId/cohorts — create a cohort. */
 export class CreateCohortDto {
   @Transform(trim)
@@ -50,6 +55,10 @@ export class CreateCohortDto {
   @IsOptional()
   @IsISO8601({}, { message: 'ends_at must be an ISO 8601 timestamp' })
   ends_at?: string;
+
+  @IsOptional()
+  @IsIn(SPACE_KINDS)
+  kind?: (typeof SPACE_KINDS)[number];
 }
 
 /** PATCH /community/cohorts/:cohortId — update a cohort (all fields optional). */
@@ -84,6 +93,10 @@ export class UpdateCohortDto {
   @IsOptional()
   @IsIn(COHORT_WRITE_STATUSES, { message: 'unsupported cohort status' })
   status?: CohortWriteStatus;
+
+  @IsOptional()
+  @IsIn(POSTING_POLICIES)
+  posting_policy?: (typeof POSTING_POLICIES)[number];
 }
 
 // ── Response schema (Zod, matching the v1-2 .parse() convention) ───────────
@@ -99,6 +112,8 @@ export const CommunityCohortAdminSchema = z
     starts_at: z.string().datetime().nullable(),
     ends_at: z.string().datetime().nullable(),
     sort_order: z.number().int(),
+    kind: z.enum(SPACE_KINDS),
+    posting_policy: z.enum(POSTING_POLICIES),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
     archived_at: z.string().datetime().nullable(),

@@ -157,6 +157,7 @@ export class RealMealPlansService {
             // Stable ordering: caller-provided order wins, otherwise
             // index in the input array.
             order: s.order ?? idx,
+            time_of_day: s.time_of_day ?? null,
           })),
         });
       }
@@ -226,6 +227,7 @@ export class RealMealPlansService {
               meal_template_id: s.meal_template_id,
               slot_label: s.slot_label,
               order: s.order ?? idx,
+              time_of_day: s.time_of_day ?? null,
             })),
           });
         }
@@ -309,6 +311,7 @@ export class RealMealPlansService {
             meal_template_id: frozen.get(s.meal_template_id) ?? s.meal_template_id,
             slot_label: s.slot_label,
             order: s.order,
+            time_of_day: s.time_of_day,
           })),
         });
       }

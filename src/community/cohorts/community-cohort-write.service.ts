@@ -67,6 +67,8 @@ export class CommunityCohortWriteService {
       starts_at: c.starts_at?.toISOString() ?? null,
       ends_at: c.ends_at?.toISOString() ?? null,
       sort_order: c.sort_order,
+      kind: c.kind,
+      posting_policy: c.posting_policy,
       created_at: c.created_at.toISOString(),
       updated_at: c.updated_at.toISOString(),
       archived_at: c.archived_at?.toISOString() ?? null,
@@ -120,6 +122,8 @@ export class CommunityCohortWriteService {
       throw new ConflictException(NAME_CONFLICT);
     }
 
+    // C6-B1: an announcement space takes the coach's messages only.
+    const kind = body.kind ?? 'chat';
     const created = await this.repo.create({
       workspaceId,
       name: body.name,
@@ -127,6 +131,8 @@ export class CommunityCohortWriteService {
       capacity: body.capacity ?? null,
       startsAt,
       endsAt,
+      kind,
+      postingPolicy: kind === 'announcement' ? 'coach' : 'all',
     });
     return this.response(created);
   }
@@ -171,6 +177,7 @@ export class CommunityCohortWriteService {
       startsAt,
       endsAt,
       status: body.status,
+      postingPolicy: body.posting_policy,
     });
     return this.response(updated);
   }

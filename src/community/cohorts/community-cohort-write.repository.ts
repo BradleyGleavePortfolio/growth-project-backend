@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { CommunityCohort } from '@prisma/client';
+import type { CommunityCohort, CommunityPostingPolicy, CommunitySpaceKind } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 
 /**
@@ -20,6 +20,8 @@ export interface CreateCohortInput {
   capacity: number | null;
   startsAt: Date | null;
   endsAt: Date | null;
+  kind: CommunitySpaceKind;
+  postingPolicy: CommunityPostingPolicy;
 }
 
 export interface UpdateCohortInput {
@@ -29,6 +31,7 @@ export interface UpdateCohortInput {
   startsAt?: Date | null;
   endsAt?: Date | null;
   status?: 'draft' | 'active' | 'archived';
+  postingPolicy?: CommunityPostingPolicy;
 }
 
 @Injectable()
@@ -59,6 +62,8 @@ export class CommunityCohortWriteRepository {
         starts_at: input.startsAt,
         ends_at: input.endsAt,
         status: 'active',
+        kind: input.kind,
+        posting_policy: input.postingPolicy,
         sort_order: await this.nextSortOrder(input.workspaceId),
       },
     });
@@ -100,6 +105,7 @@ export class CommunityCohortWriteRepository {
         ...(input.startsAt !== undefined ? { starts_at: input.startsAt } : {}),
         ...(input.endsAt !== undefined ? { ends_at: input.endsAt } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.postingPolicy !== undefined ? { posting_policy: input.postingPolicy } : {}),
       },
     });
   }

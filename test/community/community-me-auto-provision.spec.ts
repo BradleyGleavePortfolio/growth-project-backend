@@ -27,6 +27,9 @@ type Cohort = {
   workspace_id: string;
   name: string;
   sort_order: number;
+  kind: string;
+  posting_policy: string;
+  visibility: string;
   status: 'active';
   archived_at: null;
   created_at: Date;
@@ -86,25 +89,15 @@ function memoryPrisma() {
       ),
     },
     communityCohort: {
-      upsert: jest.fn(
-        async ({
-          create,
-        }: {
-          create: { workspace_id: string; name: string; sort_order: number };
-        }) => {
-          const found = db.cohorts.find(
-            (c) => c.workspace_id === create.workspace_id && c.name === create.name,
+      createMany: jest.fn(
+        async ({ data }: { data: Array<Omit<Cohort, 'id' | 'status' | 'archived_at' | 'created_at'>> }) => {
+          const fresh = data.filter(
+            (d) => !db.cohorts.some((c) => c.workspace_id === d.workspace_id && c.name === d.name),
           );
-          if (found) return found;
-          const row: Cohort = {
-            id: id(),
-            ...create,
-            status: 'active',
-            archived_at: null,
-            created_at: new Date(),
-          };
-          db.cohorts.push(row);
-          return row;
+          for (const d of fresh) {
+            db.cohorts.push({ id: id(), ...d, status: 'active', archived_at: null, created_at: new Date() });
+          }
+          return { count: fresh.length };
         },
       ),
       findFirst: jest.fn(
@@ -183,7 +176,7 @@ describe('B-E2E-1: /community/me creates the coach space on first open', () => {
     return { db, service };
   }
 
-  it('a client of a coach with no space gets the space, the All members cohort and a membership', async () => {
+  it('a client of a coach with no space gets the space, Announcements and Everyone, and a membership', async () => {
     const { db, service } = build();
     const me = await service.getMe(client);
 
@@ -193,7 +186,10 @@ describe('B-E2E-1: /community/me creates the coach space on first open', () => {
       name: 'Community',
       slug: `coach-${COACH_ID}`,
     });
-    expect(db.cohorts.map((c) => [c.name, c.sort_order])).toEqual([['All members', 0]]);
+    expect(db.cohorts.map((c) => [c.name, c.kind, c.posting_policy, c.visibility, c.sort_order])).toEqual([
+      ['Announcements', 'announcement', 'coach', 'clients', 0],
+      ['Everyone', 'chat', 'all', 'clients', 1],
+    ]);
     expect(me.workspace_id).toBe(db.ws[0].id);
     expect(me.membership).not.toBeNull();
     expect(me.membership?.role).toBe('client');
@@ -207,7 +203,7 @@ describe('B-E2E-1: /community/me creates the coach space on first open', () => {
     const coachMe = await service.getMe(coach);
 
     expect(db.ws).toHaveLength(1);
-    expect(db.cohorts).toHaveLength(1);
+    expect(db.cohorts).toHaveLength(2);
     expect(db.members).toHaveLength(1);
     expect(again.workspace_id).toBe(first.workspace_id);
     expect(coachMe.workspace_id).toBe(first.workspace_id);
@@ -219,6 +215,15 @@ describe('B-E2E-1: /community/me creates the coach space on first open', () => {
     expect(coachMe.workspace_id).toBe(db.ws[0].id);
     await service.getMe(client);
     expect(db.ws).toHaveLength(1);
+  });
+
+  it('C6-B1: a renamed default space is never made again', async () => {
+    const { db, service } = build();
+    await service.getMe(coach);
+    db.cohorts[0].name = 'News';
+    await service.getMe(coach);
+    await service.getMe(client);
+    expect(db.cohorts.map((c) => c.name)).toEqual(['News', 'Everyone']);
   });
 
   it('a client with no coach gets no space (unchanged)', async () => {

@@ -106,6 +106,7 @@ function makeService(provider: VoiceUploadProvider) {
     isWorkspaceCoach: jest.fn().mockResolvedValue(false),
     canAccessWorkspace: jest.fn().mockResolvedValue(true),
     canAccessCohort: jest.fn().mockResolvedValue(true),
+    assertCanPost: jest.fn().mockResolvedValue(undefined),
     listAccessibleCohortIds: jest.fn().mockResolvedValue([COHORT]),
     membershipInWorkspace: jest.fn().mockResolvedValue(true),
   };
