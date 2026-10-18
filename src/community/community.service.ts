@@ -363,9 +363,9 @@ export class CommunityService {
     }
 
     const workspace = await this.repo.findWorkspaceById(cohort.workspace_id);
-    const isOwner = workspace?.coach_id === user.id;
+    const coachView = role === 'owner' || workspace?.coach_id === user.id;
     const membership = await this.repo.findMembershipInCohort(cohortId, user.id);
-    const canRead = role === 'owner' || isOwner || (await this.repo.canEnterCohort(cohortId, user.id));
+    const canRead = coachView || (await this.repo.canEnterCohort(cohortId, user.id));
 
     if (!canRead) {
       throw new ForbiddenException(FORBIDDEN_COHORT);
@@ -380,7 +380,7 @@ export class CommunityService {
       kind: cohort.kind,
       posting_policy: cohort.posting_policy,
       visibility: cohort.visibility,
-      package_ids: cohort.packages.map((l) => l.package_id),
+      package_ids: coachView ? cohort.packages.map((l) => l.package_id) : null, // C6-ACCESS: coach only
       member_count: await this.repo.cohortMemberCount(cohort),
       created_at: cohort.created_at.toISOString(),
       my_membership:
