@@ -36,6 +36,11 @@ const NAME_CONFLICT = {
   code: 'community.cohort.name_taken',
 } as const;
 
+const ARCHIVED = {
+  error: 'conflict',
+  code: 'community.cohort.archived',
+} as const;
+
 const BAD_DATES = {
   error: 'bad_request',
   code: 'community.cohort.invalid_date_range',
@@ -187,6 +192,8 @@ export class CommunityCohortWriteService {
     // cohort's workspace, resolved from the persisted row (never the URL or
     // body), so a coach of workspace A cannot mutate a cohort of workspace B.
     await this.assertWorkspaceCoach(cohort.workspace_id, user);
+    // C6-BVIS: a deleted space stays deleted; PATCH cannot reopen or reshape it.
+    if (cohort.archived_at) throw new ConflictException(ARCHIVED);
 
     const startsAt = this.parseDate(body.starts_at);
     const endsAt = this.parseDate(body.ends_at);

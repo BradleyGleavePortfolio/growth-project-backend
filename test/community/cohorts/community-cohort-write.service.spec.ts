@@ -13,9 +13,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { User } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import type { CohortWithPackages, SpaceAccessInput } from '../../../src/community/cohorts/community-cohort-write.repository';
 import { CommunityCohortWriteService } from '../../../src/community/cohorts/community-cohort-write.service';
-import type { CreateCohortDto, SpaceVisibility, UpdateCohortDto } from '../../../src/community/cohorts/community-cohort.dto';
+import { UpdateCohortDto } from '../../../src/community/cohorts/community-cohort.dto';
+import type { CreateCohortDto, SpaceVisibility } from '../../../src/community/cohorts/community-cohort.dto';
 
 type AccessMock = {
   findWorkspace: jest.Mock;
@@ -248,6 +251,17 @@ describe('CommunityCohortWriteService', () => {
         expect.objectContaining({ postingPolicy: 'coach' }),
       );
       expect(res.cohort.posting_policy).toBe('coach');
+    });
+
+    it('C6-BVIS: a deleted space is not patched, and archived is not a PATCH status', async () => {
+      repo.findById.mockResolvedValue(cohort({ status: 'archived', archived_at: new Date() }));
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      await expect(service.update(coachA, COHORT_A, { status: 'active' })).rejects.toMatchObject({
+        response: { code: 'community.cohort.archived' },
+      });
+      expect(repo.update).not.toHaveBeenCalled();
+      const errors = await validate(plainToInstance(UpdateCohortDto, { status: 'archived' }));
+      expect(errors.map((e) => e.property)).toEqual(['status']);
     });
 
     it('404s an unknown cohort', async () => {

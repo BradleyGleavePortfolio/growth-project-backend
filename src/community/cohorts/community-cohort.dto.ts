@@ -19,10 +19,10 @@ import { z } from 'zod';
 const trim = ({ value }: { value: unknown }): unknown =>
   typeof value === 'string' ? value.trim() : value;
 
-// Cohort lifecycle states a coach may set via the API. Mirrors the Prisma enum
-// CommunityCohortStatus (draft | active | archived); `archived` is also driven
-// by the DELETE route (soft archive), but PATCH may move draft↔active.
-export const COHORT_WRITE_STATUSES = ['draft', 'active', 'archived'] as const;
+// Cohort lifecycle states a coach may set via the API (Prisma enum
+// CommunityCohortStatus): PATCH moves draft↔active. C6-BVIS: DELETE is the one
+// way to archive, since the rule closes a space on the archived_at it sets.
+export const COHORT_WRITE_STATUSES = ['draft', 'active'] as const;
 export type CohortWriteStatus = (typeof COHORT_WRITE_STATUSES)[number];
 
 // C6-B1: the Prisma enums CommunitySpaceKind and CommunityPostingPolicy. A new

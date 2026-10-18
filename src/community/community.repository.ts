@@ -136,9 +136,8 @@ export class CommunityRepository {
     return def?.id === cohort.id;
   }
 
-  /** Active-member count for a cohort. */
-  /** C6-BVIS: everyone the rule lets into the space now, the coach included; a client of a
-   * clients or package space counts with no row. */
+  /** C6-BVIS: everyone who can open the space now, the coach included; a client of a
+   * clients or package space counts with no row. The roster also lists a pending invitation. */
   async cohortMemberCount(cohort: Pick<CommunityCohort, 'id' | 'workspace_id'>): Promise<number> {
     return (await readersNow(this.prisma, cohort.workspace_id, cohort.id)).length;
   }
