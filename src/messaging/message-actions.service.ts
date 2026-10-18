@@ -163,7 +163,7 @@ export class MessageActionsService {
 
   /**
    * Delete for everyone. Idempotent: deleting a tombstone returns it again.
-   * Content columns (body, voice) are erased in the SAME transaction that
+   * Content (body, voice, any card) is erased in the SAME transaction that
    * records durable erasure work for the voice object (community voice
    * erasure ledger, retried by its cron until storage confirms removal), and
    * the message is unpinned. The row stays so thread order, read state and
@@ -199,6 +199,8 @@ export class MessageActionsService {
       if (res.count > 0 && voiceKey) {
         await recordVoiceErasures(tx, objectTargets([voiceKey]), 'author_delete', deletedAt);
       }
+      // SHARE-BE: a tombstone keeps no card either (a deleted share is gone).
+      if (res.count > 0) await tx.coachMessageCard.deleteMany({ where: { message_id: row.id } });
       return res.count;
     });
     if (count === 0) {

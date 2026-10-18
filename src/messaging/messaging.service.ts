@@ -38,6 +38,7 @@ import { coachBroadcastsEnabled } from '../broadcasts/broadcasts.feature';
 import { messagingError, MESSAGING_ERRORS } from './messaging-errors';
 import { isRomanMessageDraft } from '../ai/gateway/roman-message-draft';
 import { THREAD_UPDATED_EVENT, type ThreadUpdateKind } from './messaging-realtime';
+import { SHARE_CARD_TYPE, shareCardOf } from './share-card';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -63,6 +64,11 @@ export interface SendMessagePayload {
   // A3-MSG-CORE: swipe-reply target, validated to be in the same thread and
   // not deleted. Requires FEATURE_MESSAGING_CORE_V2.
   reply_to_id?: string;
+}
+
+// SHARE-BE: a client send may carry one share card (share-card.ts), alone.
+export interface ClientSendPayload extends SendMessagePayload {
+  card?: unknown;
 }
 
 /**
@@ -620,9 +626,8 @@ export class MessagingService {
   private async listThread(coachId: string, clientId: string, opts: ListOpts) {
     const limit = this.clampLimit(opts.limit);
     const before = this.parseBefore(opts.before);
-    const v2 = isMessagingCoreV2Enabled();
-    const withCards = coachBroadcastsEnabled();
-    return this.prisma.coachMessage.findMany({
+    const card = { select: { card_type: true, ref_id: true, snapshot: true } } as const;
+    const rows = await this.prisma.coachMessage.findMany({
       where: {
         coach_id: coachId,
         client_id: clientId,
@@ -630,14 +635,11 @@ export class MessagingService {
       },
       orderBy: { created_at: 'desc' },
       take: limit,
-      // A4 — rich card (workout, meal plan, booking, package, check-in) as a
-      // server-validated snapshot, read only while FEATURE_COACH_BROADCASTS is
-      // on. A3-MSG-CORE: the quoted message for swipe-replies (v2 only). With
-      // both flags off the query is byte-identical to the legacy one.
-      ...(withCards && v2
+      // A3-MSG-CORE: the quoted message for swipe-replies (v2 only).
+      ...(isMessagingCoreV2Enabled()
         ? {
             include: {
-              card: { select: { card_type: true, ref_id: true, snapshot: true } },
+              card,
               reply_to: {
                 select: {
                   id: true,
@@ -649,28 +651,16 @@ export class MessagingService {
               },
             },
           }
-        : withCards
-          ? {
-              include: {
-                card: { select: { card_type: true, ref_id: true, snapshot: true } },
-              },
-            }
-          : v2
-            ? {
-                include: {
-                  reply_to: {
-                    select: {
-                      id: true,
-                      sender_id: true,
-                      body: true,
-                      voice_url: true,
-                      deleted_at: true,
-                    },
-                  },
-                },
-              }
-            : {}),
+        : { include: { card } }),
     });
+    // A4: a coach card (workout, meal plan, booking, package, check-in) reads
+    // only while FEATURE_COACH_BROADCASTS is on. SHARE-BE: a client's share
+    // card reads whatever that flag says. Every row carries a `card` key
+    // (null on ordinary messages), which the store build already ignores.
+    if (coachBroadcastsEnabled()) return rows;
+    return rows.map((r) =>
+      r.card && r.card.card_type !== SHARE_CARD_TYPE ? { ...r, card: null } : r,
+    );
   }
 
   // A3-MSG-CORE: v2 adds `reply_to` + `deleted` to each row (flag-gated).
@@ -918,12 +908,18 @@ export class MessagingService {
     }
   }
 
-  async sendAsClient(clientId: string, payload: SendMessagePayload | string) {
+  async sendAsClient(clientId: string, payload: ClientSendPayload | string) {
     // Back-compat: see sendAsCoach.
-    const normalized: SendMessagePayload =
+    const normalized: ClientSendPayload =
       typeof payload === 'string' ? { body: payload } : payload;
+    // Only ever the thread with the client's CURRENT coach (409 when none).
     const coachId = await this.requireClientCoachId(clientId);
-    this.assertSendablePayload(normalized, clientId);
+    const share = shareCardOf(normalized);
+    // SHARE-BE: only a client sends a share, only to their current coach. A
+    // coach reaching this route by the coach-to-student role bypass gets the
+    // same 404 as a foreign thread.
+    if (share) await this.assertClientOfCoach(coachId, clientId);
+    else this.assertSendablePayload(normalized, clientId);
     const trimmedBody =
       typeof normalized.body === 'string' ? normalized.body.trim() : '';
     const body = trimmedBody.length > 0 ? trimmedBody : null;
@@ -949,11 +945,16 @@ export class MessagingService {
         voice_duration_sec: voice?.duration_sec ?? null,
         voice_size_bytes: voice?.size_bytes ?? null,
         voice_content_type: voice?.content_type ?? null,
+        // Same insert, so a share never lands without its card.
+        ...(share ? { card: { create: { card_type: SHARE_CARD_TYPE, snapshot: share } } } : {}),
       },
       normalized,
     );
+    const out = share
+      ? { ...created, card: { card_type: SHARE_CARD_TYPE, ref_id: null, snapshot: share } }
+      : created;
     // A3-MSG-CORE: replay → original row, no side effects (see sendAsCoach).
-    if (replayed) return created;
+    if (replayed) return out;
     // Ping both people in the chat (MSGRT).
     void this.supabase.pingChat({ coachId, clientId }, 'new-message');
     // Push notification — block check already ran above. Skipped when the
@@ -968,7 +969,7 @@ export class MessagingService {
       targetId: created.id,
       tenantCoachId: coachId,
       metadata: {
-        message_kind: voice ? 'voice' : 'text',
+        message_kind: share ? 'share' : voice ? 'voice' : 'text',
         body_length: body?.length ?? 0,
         voice_duration_sec: voice?.duration_sec ?? null,
       },
@@ -990,7 +991,7 @@ export class MessagingService {
         voice: false,
       });
     }
-    return created;
+    return out;
   }
 
   // ---- voice upload (signed URL) ----
