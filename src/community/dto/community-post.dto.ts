@@ -70,7 +70,7 @@ export const CommunityPostSchema = z
     workspace_id: z.guid(),
     cohort_id: z.guid().nullable(),
     author_user_id: z.guid(),
-    // First name only (memberFirstName); full names show only on a clients-space roster (#C6-MEMBER-NAMES).
+    // First name (memberFirstName); full name where #C6-NAMES-EVERYWHERE allows (fullNamesFor).
     author_name: z.string(),
     title: z.string().nullable(),
     body: z.string().nullable(),

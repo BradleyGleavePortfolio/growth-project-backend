@@ -105,7 +105,8 @@ export class CommunityController {
    * GET /community/feed
    * The last 30 member wins the caller may see: the coach's moderated circle,
    * or only the caller's own wins when the coach runs no community space
-   * (community-wins.policy.ts). Block-filtered both ways; first names only.
+   * (community-wins.policy.ts). Block-filtered both ways; first names, full
+   * names where #C6-NAMES-EVERYWHERE allows (fullNamesFor).
    * Response: [{ id, user_id, display_name, title, description, created_at,
    * is_mine, displayName, action, createdAt }] (the last three are the
    * legacy keys older app builds read).
