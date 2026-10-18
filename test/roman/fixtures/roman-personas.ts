@@ -567,6 +567,7 @@ const mealAssignments = [
     starts_on: D('2026-09-28'),
     ends_on: null,
     daily_meal_plan: {
+      coach_id: COACH_A.id,
       archived_at: null,
       name: 'Dairy-free 1450',
       slots: [
@@ -588,7 +589,7 @@ const mealAssignments = [
     assigned_by_coach_id: COACH_A.id,
     starts_on: D('2026-09-01'),
     ends_on: null,
-    daily_meal_plan: { archived_at: null, name: 'ZELDA-CANARY plan', slots: [] },
+    daily_meal_plan: { coach_id: COACH_A.id, archived_at: null, name: 'ZELDA-CANARY plan', slots: [] },
   },
 ];
 
