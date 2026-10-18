@@ -4,7 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { CommunityCohort, CommunityMembershipRole, User } from '@prisma/client';
+import type {
+  CommunityCohort,
+  CommunityMembershipRole,
+  CommunitySpaceVisibility,
+  User,
+} from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunitySafetyService } from '../safety/community-safety.service';
 import { memberFirstName } from '../member-display-name';
@@ -66,6 +71,14 @@ const PRISMA_TO_API_ROLE: Record<CommunityMembershipRole, 'student' | 'co_coach'
   coach: 'coach',
 };
 
+// C6-BVIS: why a client is in a space, by its visibility (k04 "Who has access, and why").
+const ACCESS_REASON: Record<CommunitySpaceVisibility, 'client' | 'package' | 'member'> = {
+  public: 'member',
+  clients: 'client',
+  package: 'package',
+  members: 'member',
+};
+
 /**
  * Cohort membership administration.
  *
@@ -106,8 +119,17 @@ export class CommunityCohortMembersService {
     return { id: m.user_id, name: m.user.name, email: m.user.email, row: m };
   }
 
-  /** The coach sees every field; anyone else the first name and role only (client privacy). */
-  private memberView(p: SpacePerson, coachView: boolean, role: CohortMemberView['role']): CohortMemberView {
+  /**
+   * The coach sees every field and, on the roster, why the person is in
+   * (C6-BVIS; `access` is null where it is not worked out). Anyone else sees
+   * the first name and role only (client privacy).
+   */
+  private memberView(
+    p: SpacePerson,
+    coachView: boolean,
+    role: CohortMemberView['role'],
+    access: CohortMemberView['access'] = null,
+  ): CohortMemberView {
     return {
       id: p.row?.id ?? null,
       user_id: p.id,
@@ -116,6 +138,7 @@ export class CommunityCohortMembersService {
       status: coachView ? (p.row?.status ?? 'active') : null,
       email: coachView ? p.email : null,
       joined_at: coachView ? (p.row?.joined_at?.toISOString() ?? null) : null,
+      access: coachView ? access : null,
     };
   }
 
@@ -177,9 +200,19 @@ export class CommunityCohortMembersService {
     // blocked or who blocked them. The coach's management view stays complete
     // (the coach administers every membership; moderation and ban act on it).
     const visible = isCoach ? page : await this.safety.filterBlocked(user.id, page, (p) => p.id);
+    const bought =
+      isCoach && coachId && cohort.visibility === 'package'
+        ? await this.repo.packageAccess(cohort.id, coachId, page.map((p) => p.id))
+        : new Map<string, { package_id: string; until: Date | null }>();
+    const why = (p: SpacePerson, role: CohortMemberView['role']): CohortMemberView['access'] => {
+      const reason =
+        p.id === coachId ? 'coach' : role !== 'student' ? 'team' : ACCESS_REASON[cohort.visibility];
+      const sale = reason === 'package' ? bought.get(p.id) : undefined;
+      return { reason, package_id: sale?.package_id ?? null, until: sale?.until?.toISOString() ?? null };
+    };
 
     return CohortMemberListResponseSchema.parse({
-      members: visible.map((p) => this.memberView(p, isCoach, roleOf(p))),
+      members: visible.map((p) => this.memberView(p, isCoach, roleOf(p), why(p, roleOf(p)))),
       next_cursor: page.length === limit ? this.encodeCursor(page[page.length - 1].id) : null,
     });
   }

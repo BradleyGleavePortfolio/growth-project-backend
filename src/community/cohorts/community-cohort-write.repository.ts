@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import type { CommunityCohort, CommunityPostingPolicy, CommunitySpaceKind } from '@prisma/client';
+import type {
+  CommunityCohort,
+  CommunityPostingPolicy,
+  CommunitySpaceKind,
+  CommunitySpaceVisibility,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 
 /**
@@ -13,6 +18,17 @@ import { PrismaService } from '../../prisma.service';
  * (community_cohorts_coach_all, community_memberships_coach_all) remains as
  * defence-in-depth for any non-service-role connection.
  */
+/** C6-BVIS: a space with the packages that open it (package visibility only). */
+export type CohortWithPackages = CommunityCohort & { packages: { package_id: string }[] };
+const PACKAGES = { packages: { select: { package_id: true } } } as const;
+
+/** Who the space opens to; the links are replaced whole. */
+export interface SpaceAccessInput {
+  visibility: CommunitySpaceVisibility;
+  packageIds: string[];
+}
+const links = (a: SpaceAccessInput) => a.packageIds.map((package_id) => ({ package_id }));
+
 export interface CreateCohortInput {
   workspaceId: string;
   name: string;
@@ -22,6 +38,7 @@ export interface CreateCohortInput {
   endsAt: Date | null;
   kind: CommunitySpaceKind;
   postingPolicy: CommunityPostingPolicy;
+  access: SpaceAccessInput;
 }
 
 export interface UpdateCohortInput {
@@ -32,6 +49,7 @@ export interface UpdateCohortInput {
   endsAt?: Date | null;
   status?: 'draft' | 'active' | 'archived';
   postingPolicy?: CommunityPostingPolicy;
+  access?: SpaceAccessInput;
 }
 
 @Injectable()
@@ -52,7 +70,7 @@ export class CommunityCohortWriteRepository {
     return top ? top.sort_order + 1 : 0;
   }
 
-  async create(input: CreateCohortInput): Promise<CommunityCohort> {
+  async create(input: CreateCohortInput): Promise<CohortWithPackages> {
     return this.prisma.communityCohort.create({
       data: {
         workspace_id: input.workspaceId,
@@ -64,13 +82,16 @@ export class CommunityCohortWriteRepository {
         status: 'active',
         kind: input.kind,
         posting_policy: input.postingPolicy,
+        visibility: input.access.visibility,
+        packages: { create: links(input.access) },
         sort_order: await this.nextSortOrder(input.workspaceId),
       },
+      include: PACKAGES,
     });
   }
 
-  async findById(cohortId: string): Promise<CommunityCohort | null> {
-    return this.prisma.communityCohort.findUnique({ where: { id: cohortId } });
+  async findById(cohortId: string): Promise<CohortWithPackages | null> {
+    return this.prisma.communityCohort.findUnique({ where: { id: cohortId }, include: PACKAGES });
   }
 
   /** True when another cohort in the same workspace already uses `name`. */
@@ -93,7 +114,7 @@ export class CommunityCohortWriteRepository {
   async update(
     cohortId: string,
     input: UpdateCohortInput,
-  ): Promise<CommunityCohort> {
+  ): Promise<CohortWithPackages> {
     return this.prisma.communityCohort.update({
       where: { id: cohortId },
       data: {
@@ -106,7 +127,11 @@ export class CommunityCohortWriteRepository {
         ...(input.endsAt !== undefined ? { ends_at: input.endsAt } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
         ...(input.postingPolicy !== undefined ? { posting_policy: input.postingPolicy } : {}),
+        ...(input.access
+          ? { visibility: input.access.visibility, packages: { deleteMany: {}, create: links(input.access) } }
+          : {}),
       },
+      include: PACKAGES,
     });
   }
 
@@ -116,12 +141,18 @@ export class CommunityCohortWriteRepository {
    * members. Messages and posts are intentionally left intact (still readable);
    * only membership status changes. Sets archived_at + status='archived'.
    */
-  async archive(cohortId: string): Promise<CommunityCohort> {
+  /** How many of `ids` are packages of this coach. */
+  async coachPackageCount(coachId: string, ids: string[]): Promise<number> {
+    return this.prisma.coachPackage.count({ where: { coach_id: coachId, id: { in: ids } } });
+  }
+
+  async archive(cohortId: string): Promise<CohortWithPackages> {
     const now = new Date();
     const [cohort] = await this.prisma.$transaction([
       this.prisma.communityCohort.update({
         where: { id: cohortId },
         data: { status: 'archived', archived_at: now },
+        include: PACKAGES,
       }),
       this.prisma.communityMembership.updateMany({
         where: { cohort_id: cohortId, status: { not: 'removed' } },

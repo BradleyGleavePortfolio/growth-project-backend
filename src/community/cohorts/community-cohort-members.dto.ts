@@ -68,6 +68,15 @@ export const CohortMemberSchema = z
     status: z.enum(['invited', 'active', 'muted', 'removed']).nullable(),
     email: z.string().nullable(),
     joined_at: z.string().datetime().nullable(),
+    // C6-BVIS, coach roster only: why the person is in; a package space adds the purchase.
+    access: z
+      .object({
+        reason: z.enum(['coach', 'team', 'client', 'package', 'member']),
+        package_id: z.string().nullable(),
+        until: z.string().datetime().nullable(),
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 

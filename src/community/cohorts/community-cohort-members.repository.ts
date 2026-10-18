@@ -78,6 +78,33 @@ export class CommunityCohortMembersRepository {
       .sort((a, b) => (a.id < b.id ? -1 : 1));
   }
 
+  /** C6-BVIS: why each client is in a package space, the live purchase of a linked package that
+   * runs longest (no end first), as app.community_can_access counts it. */
+  async packageAccess(
+    cohortId: string,
+    coachId: string,
+    ids: string[],
+  ): Promise<Map<string, { package_id: string; until: Date | null }>> {
+    const live = await this.prisma.clientPurchase.findMany({
+      where: {
+        client_user_id: { in: ids },
+        coach_user_id: coachId,
+        entitlement_active: true,
+        OR: [{ access_expires_at: null }, { access_expires_at: { gt: new Date() } }],
+        package: { community_spaces: { some: { cohort_id: cohortId } } },
+      },
+      select: { client_user_id: true, package_id: true, access_expires_at: true },
+    });
+    const best = new Map<string, { package_id: string; until: Date | null }>();
+    for (const p of live) {
+      const had = best.get(p.client_user_id);
+      if (!had || (had.until && (!p.access_expires_at || p.access_expires_at > had.until))) {
+        best.set(p.client_user_id, { package_id: p.package_id, until: p.access_expires_at });
+      }
+    }
+    return best;
+  }
+
   async findMembership(cohortId: string, userId: string): Promise<MembershipWithUser | null> {
     return this.prisma.communityMembership.findUnique({
       where: { cohort_id_user_id: { cohort_id: cohortId, user_id: userId } },

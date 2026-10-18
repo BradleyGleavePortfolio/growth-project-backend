@@ -338,6 +338,7 @@ export class CommunityService {
         is_default: await this.repo.isDefaultCohort(c),
         kind: c.kind,
         posting_policy: c.posting_policy,
+        visibility: c.visibility,
         member_count: await this.repo.cohortMemberCount(c),
         my_role: role,
       })),
@@ -378,6 +379,8 @@ export class CommunityService {
       is_default: await this.repo.isDefaultCohort(cohort),
       kind: cohort.kind,
       posting_policy: cohort.posting_policy,
+      visibility: cohort.visibility,
+      package_ids: cohort.packages.map((l) => l.package_id),
       member_count: await this.repo.cohortMemberCount(cohort),
       created_at: cohort.created_at.toISOString(),
       my_membership:
