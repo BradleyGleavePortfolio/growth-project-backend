@@ -86,7 +86,6 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `broadcasts_received` | `CoachBroadcastDelivery` | Coach broadcasts delivered to the user: broadcast id, message id, status, dates. The text is the coach's message and follows the `coach_messages` redaction. |
 | `coach_code_redemptions` | `CoachCodeRedemption` | Coach-code redemption attempts: status, outcome, coach id, date. The stored response is left out. |
 | `invite_redemptions` | `InviteRedemption` | Invite and QR codes the user redeemed: coach id, code, source, package id, date. |
-| `workout_adjustments` | `WorkoutAdjustmentProposal` | Roman workout adjustments proposed for the user: status, severity, the recovery signals used, the proposed and applied change, Roman's text, dates. The coach's dismiss note and the internal rule key are left out. |
 | `roman_notes` | `RomanClientNote` | Notes Roman keeps about the user (live, expired and superseded), oldest first: kind, text, when it was said, expiry, when it was superseded, date. The internal slot key and source message id are left out. Kept when a chat is deleted; removed with the account. |
 | `roman_summaries` | `RomanClientSummary` | The user's day, week and month summaries, oldest period first: period, start date, text, generated date. The internal facts blob, input digest and model id are left out. The memory job state (`RomanMemoryState`) is internal and not exported. |
 | `coach_playbook` | `CoachPlaybook` | Coaches only: the coach's own active Roman playbook (version, sections, red lines, build date). The source ledger, which lists other people's row ids, is left out. |
@@ -101,6 +100,8 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `macro_targets` | `MacroTarget` | P2: every calorie and macro target set for the user (current and archived), with the note the app shows them. |
 | `assigned_workouts` | `ClientWorkoutAssignment` | P2: workouts a coach assigned: plan id, schedule, start and finish, a skipped day, the coach's note for the day, the user's RPE, notes and logged results. Idempotency keys and draft ids are left out. |
 | `wearable_metric_preferences` | `WearableUserMetricPreference` | P2: which wearable the user chose as the source for each metric. |
+
+Not exported (owner C-3, coach-side data): Roman's workout-change proposals (`WorkoutAdjustmentProposal`, any status) and their events (`WorkoutAdjustmentEvent`). Approve writes its change into the assignment itself. Account deletion still erases them (`src/account-deletion/account-deletion.manifest.ts`).
 
 ---
 
