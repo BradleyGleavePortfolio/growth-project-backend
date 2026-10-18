@@ -7,6 +7,7 @@ import { weightIfShared } from '../consent/coach-sharing-gate';
 import { resolveRecipientTimeZone } from '../notifications/recipient-timezone';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { clientWeek } from './client-week';
+import { ROMAN_SAFETY_ALERT_TYPES } from './coach-alerts.service';
 
 // Concrete payload shapes for the timeline/summary slices below. These
 // derive their structure from the Prisma findMany calls so adding columns
@@ -708,7 +709,7 @@ export class CoachService {
     // Per-scope consent gating, same shape as getClientTimeline.
     const flags = await this.loadFitnessConsents(coachId, clientId, callerRole);
 
-    const [todayEntries, weightLogs, recentWorkouts, recentAssignments] = await Promise.all([
+    const [todayEntries, weightLogs, recentWorkouts, recentAssignments, safetyAlert] = await Promise.all([
       flags.food
         ? this.prisma.loggedFoodEntry.findMany({
             // Filter by `date` (eat date) not `logged_at` (server sync time)
@@ -743,6 +744,21 @@ export class CoachService {
             take: 20,
           })
         : Promise.resolve([]),
+      // CRISIS-2B: the newest open Roman safety alert, for the client's coach
+      // now only (the alert card's rule: written to this coach, not dismissed).
+      // An assistant coach, an owner or a former coach reads null.
+      client.coach_id === coachId
+        ? this.prisma.coachAlert.findFirst({
+            where: {
+              client_id: clientId,
+              coach_id: coachId,
+              alert_type: { in: [...ROMAN_SAFETY_ALERT_TYPES] },
+              acknowledged_at: null,
+            },
+            orderBy: { created_at: 'desc' },
+            select: { id: true, alert_type: true, created_at: true },
+          })
+        : Promise.resolve(null),
     ]);
 
     let total_calories = 0, total_protein_g = 0, total_carbs_g = 0, total_fat_g = 0;
@@ -776,6 +792,14 @@ export class CoachService {
         body_metrics: flags.bodyMetrics,
         habits_progress: flags.habitsProgress,
       },
+      // Ids and a type only, never the client's words.
+      open_safety_alert: safetyAlert
+        ? {
+            alert_id: safetyAlert.id,
+            alert_type: safetyAlert.alert_type,
+            created_at: safetyAlert.created_at,
+          }
+        : null,
     };
   }
 

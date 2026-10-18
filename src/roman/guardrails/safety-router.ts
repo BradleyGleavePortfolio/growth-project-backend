@@ -365,6 +365,39 @@ export const ROMAN_SAFETY_ROUTE_REASON: Record<
 
 export const ROMAN_SAFETY_ROUTER_MODEL_ID = 'safety-router';
 
+/** CRISIS-2B: the actions the app offers under a fixed crisis reply; the app keeps this order. */
+export type RomanSafetyAction = 'call_911' | 'call_988' | 'text_988' | 'message_coach';
+
+/**
+ * Owner "thw call 911 988 buttons - Nevermind, do them!" (operator ruling
+ * 6243611810): each fixed reply's actions lead with the number it names first.
+ */
+const ROMAN_SAFETY_ACTIONS = {
+  emergency: ['call_911', 'call_988', 'text_988'],
+  self_harm: ['call_988', 'text_988', 'call_911'],
+} as const satisfies Record<'emergency' | 'self_harm', readonly RomanSafetyAction[]>;
+
+/**
+ * Owner "#CRISIS-2B - all 3 buttons": the actions under Roman's fixed
+ * emergency or self-harm reply. The stored reply is the marker (a Roman turn
+ * that starts with one of those two templates, with or without the told
+ * line), so the live answer and every later read of it agree. Call 911, call
+ * and text 988 for everyone; message_coach last, only while the caller is a
+ * client with a coach now. Null for every other turn, the urgent-symptoms
+ * reply and the eating-disorder replies included.
+ */
+export function romanSafetyActions(
+  turn: { role: string; content: string },
+  hasCoach: boolean,
+): RomanSafetyAction[] | null {
+  const cls = (['emergency', 'self_harm'] as const).find(
+    (c) => turn.role === 'roman' && turn.content.startsWith(ROMAN_SAFETY_TEMPLATES[c]),
+  );
+  if (!cls) return null;
+  const actions: RomanSafetyAction[] = [...ROMAN_SAFETY_ACTIONS[cls]];
+  return hasCoach ? [...actions, 'message_coach'] : actions;
+}
+
 /**
  * CF-ROMAN-COPY-B-128 (owner default 10-07): the fixed reply to an
  * eating_disorder_risk message the AI cannot answer (AI help off, the turn
