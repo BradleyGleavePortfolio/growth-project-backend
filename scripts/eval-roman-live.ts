@@ -82,10 +82,10 @@ async function main(): Promise<void> {
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const db = makePersonaDb();
-  const ctx = new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource());
   // The real egress consent gate; the synthetic personas hold a grant (as in
   // test/roman/eval/harness.ts).
   const egress = new AiEgressService(new FakeConsentReader([P1, P2, P3, P4]));
+  const ctx = new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource(), egress);
   const roman = new RomanService(db.prisma, egress, AnthropicHandle.bind(anthropic), ctx);
   // Count real model calls by wrapping the SDK stream method. Roman's model is
   // the ROMAN_MODEL_PHASE_1 constant, so --model is applied here.
