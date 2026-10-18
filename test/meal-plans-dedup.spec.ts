@@ -258,6 +258,12 @@ function makePrisma() {
       findMany: jest.fn(async ({ where }: any) =>
         dailyMealPlanSlots.filter((r) => matches(r, where)).map((r) => ({ ...r })),
       ),
+      deleteMany: jest.fn(async ({ where }: any) => {
+        const kept = dailyMealPlanSlots.filter((r) => !matches(r, where));
+        const count = dailyMealPlanSlots.length - kept.length;
+        dailyMealPlanSlots.splice(0, dailyMealPlanSlots.length, ...kept);
+        return { count };
+      }),
     },
     dailyMealPlanAssignment: {
       create: jest.fn(async ({ data }: any) => {
@@ -489,6 +495,28 @@ describe('BUG-R2 — legacy meal-plans deduped onto real-meal-plans canonical', 
     ).rejects.toThrow('Daily meal plan not found');
     await real.updatePlan('coach-A', plan!.id, { name: 'Edited again' });
     expect(await seen('client-1')).toEqual(asAssigned);
+  });
+
+  it("C2-C0: the coach's meal times reach the client, an edit retimes them, a moved client keeps theirs; no other coach writes them", async () => {
+    const tpl = await real.createTemplate('coach-A', { name: 'Oats', calories_kcal: 400, protein_g: 20, carbs_g: 60, fats_g: 8 });
+    const plan = await real.createPlan('coach-A', {
+      name: 'Day',
+      slots: [{ meal_template_id: tpl.id, slot_label: 'breakfast', time_of_day: '07:30' }, { meal_template_id: tpl.id, slot_label: 'lunch' }],
+    });
+    for (const client_id of ['client-1', 'client-2']) await real.assignPlan('coach-A', plan!.id, { client_id, starts_on: TODAY });
+    const times = async (clientId: string) =>
+      (await real.getTodayForClient(clientId, TODAY)).assignments[0].daily_meal_plan.slots.map((s) => [s.slot_label, s.time_of_day]);
+    const asAssigned = [['breakfast', '07:30'], ['lunch', null]];
+    expect(await times('client-1')).toEqual(asAssigned);
+
+    // The move: client-1's coach is now coach-B. Then coach-A retimes the day.
+    prisma._users.find((u: { id: string }) => u.id === 'client-1').coach_id = 'coach-B';
+    const retimed = [{ meal_template_id: tpl.id, slot_label: 'breakfast' as const, time_of_day: '08:00' }, { meal_template_id: tpl.id, slot_label: 'lunch' as const, time_of_day: '12:30' }];
+    await real.updatePlan('coach-A', plan!.id, { slots: retimed });
+    expect(await times('client-2')).toEqual([['breakfast', '08:00'], ['lunch', '12:30']]);
+    expect(await times('client-1')).toEqual(asAssigned);
+    await expect(real.updatePlan('coach-B', plan!.id, { slots: [] })).rejects.toThrow('Daily meal plan not found');
+    expect(await times('client-2')).toEqual([['breakfast', '08:00'], ['lunch', '12:30']]);
   });
 
   it('HIST-2 (owner 4): a moved client keeps a plan that starts later, as it was, on both reads', async () => {

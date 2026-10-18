@@ -436,10 +436,10 @@ export class AssignmentController {
   @ApiOperation({
     summary:
       'C1V2-C1: the client moves (scheduled_for) or skips (skip: true) their own open day; ' +
-      "the client's coach writes the day's note (client_note). One field per call.",
+      "the client's coach writes the day's note (client_note) or planned time (scheduled_time, HH:MM). One field per call.",
   })
   @ApiResponse({ status: 200, description: 'Assignment.' })
-  @ApiResponse({ status: 403, description: "Not this assignment's client (move, skip) or coach (note)." })
+  @ApiResponse({ status: 403, description: "Not this assignment's client (move, skip) or coach (note, time)." })
   @ApiResponse({ status: 409, description: 'Already completed or skipped.' })
   update(
     @Req() req: AuthedRequest,

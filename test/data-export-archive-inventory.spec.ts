@@ -753,6 +753,7 @@ describe('data export health records (P2 / DATA-07)', () => {
         idempotency_key: 'idem-secret',
         skipped_at: t(4),
         client_note: 'Easy pace today',
+        scheduled_time: '06:30',
       },
       {
         id: 'cwa-other',
@@ -828,6 +829,7 @@ describe('data export health records (P2 / DATA-07)', () => {
       post_notes: 'Knee felt fine',
       skipped_at: t(4).toISOString(),
       client_note: 'Easy pace today',
+      scheduled_time: '06:30',
     });
     expect(ids(archive.wearable_metric_preferences)).toEqual(['wp1']);
     const text = JSON.stringify(archive);
