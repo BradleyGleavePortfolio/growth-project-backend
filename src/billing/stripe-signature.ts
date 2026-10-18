@@ -95,16 +95,20 @@ export function verifyStripeSignature(opts: {
     throw new StripeSignatureError('Webhook secret not configured');
   }
 
-  const parts: Record<string, string[]> = {};
+  // A Map, not a plain object: the header is attacker-supplied, and a segment
+  // named `__proto__` or `constructor` must stay an unknown key (ignored like
+  // `v0`), never resolve to Object.prototype and crash the handler with a 500.
+  const parts = new Map<string, string[]>();
   for (const segment of signatureHeader.split(',')) {
     const eq = segment.indexOf('=');
     if (eq === -1) continue;
     const k = segment.slice(0, eq).trim();
-    const v = segment.slice(eq + 1).trim();
-    (parts[k] ||= []).push(v);
+    const list = parts.get(k) ?? [];
+    list.push(segment.slice(eq + 1).trim());
+    parts.set(k, list);
   }
-  const tStr = parts['t']?.[0];
-  const v1List = parts['v1'] ?? [];
+  const tStr = parts.get('t')?.[0];
+  const v1List = parts.get('v1') ?? [];
   if (!tStr || v1List.length === 0) {
     throw new StripeSignatureError('Malformed signature header');
   }

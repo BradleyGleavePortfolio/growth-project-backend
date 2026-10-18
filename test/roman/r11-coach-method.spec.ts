@@ -256,7 +256,7 @@ describe('R11-P4 coach method through RomanService.streamAssistantTurn', () => {
     });
     const augment = jest.spyOn(method.augmenter, 'augment');
     const handle = AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic));
-    const ctx = new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource());
+    const ctx = new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource(), grantAllEgress());
     const svc = new RomanService(fakeOf(db.prisma), grantAllEgress(), handle, ctx, null, null, [method.augmenter]);
     const session = { id: 's1', user_id: caller.id, surface, day_key: LOCAL_TODAY_PT, message_count: 0, started_at: NOW,
       last_activity_at: NOW, quips_in_session: 0, exclamation_used: false, subject_context_json: null, created_at: NOW,

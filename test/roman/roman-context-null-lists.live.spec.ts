@@ -50,7 +50,7 @@ liveDescribe('B31 live: Roman context for a coachless client with NULL profile l
     await prisma.$connect();
     await resetPublicSchema(prisma);
     await bootstrapTestSchema(prisma);
-    ctx = new RomanClientContextService(prisma, new RomanConsultationIntakeSource(prisma));
+    ctx = new RomanClientContextService(prisma, new RomanConsultationIntakeSource(prisma), grantAllEgress());
     await prisma.user.create({
       data: {
         id: CLIENT,

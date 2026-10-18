@@ -31,6 +31,7 @@ import {
   CLIENT_AI_CONSENT_V4_COACH_FREE_PARAGRAPH,
   CLIENT_AI_CONSENT_V5_COACH_FREE_COPY_SHA256,
   CLIENT_AI_CONSENT_V5_COACH_FREE_PARAGRAPH,
+  COACH_AI_CONSENT_COPY_SHA256,
 } from '../../src/ai-consent/ai-consent.constants';
 import {
   CONSULT_CONSENT_COPIES,
@@ -273,6 +274,7 @@ describe('AI consent ledger: coach-free copies (owner 62)', () => {
     ['client-ai-v5-coach-free', V5CF, 'memory', 'client-ai-v5', CLIENT_AI_CONSENT_ACCEPTED['client-ai-v5'].copy_sha256],
   ] as const)('%s: Roman for the client only; coach AI is refused, also after joining a coach, until a coached grant', async (_l, cf, scope, coached, coachedSha) => {
     const egress = new AiEgressService(reader);
+    await service.decideCoach('c_1', 'grant', { version: 'coach-ai-v1', copy_sha256: COACH_AI_CONSENT_COPY_SHA256 });
     await service.grant('u_a', { version: cf, copy_sha256: CLIENT_AI_CONSENT_ACCEPTED[cf].copy_sha256 });
     await service.grant('u_b', { version: coached, copy_sha256: coachedSha });
     // The client's own Roman use (chat; with v5 coach-free, Roman's notes) goes on.
@@ -303,7 +305,7 @@ describe('AI consent ledger: coach-free copies (owner 62)', () => {
     expect(fake.rows).toHaveLength(rows);
     // ... and coach AI drafts and coach-method learning are refused (single and batch reads).
     await expect(
-      egress.assertMaySend(clientDataSubject('u_a', 'coach', scope), 'anthropic', 'coach_ai.workout_program'),
+      egress.assertMaySend(clientDataSubject('u_a', 'coach', scope, 'c_1'), 'anthropic', 'coach_ai.workout_program'),
     ).rejects.toBeInstanceOf(AiConsentRequiredException);
     expect(await egress.consentedClients(['u_a'], scope)).toEqual(new Set());
     expect(await egress.consentedClients(['u_a', 'u_b'], scope)).toEqual(new Set(['u_b']));
@@ -311,7 +313,7 @@ describe('AI consent ledger: coach-free copies (owner 62)', () => {
     // A coached grant (the coached text) allows coach AI.
     await service.grant('u_a', { version: coached, copy_sha256: coachedSha });
     await expect(
-      egress.assertMaySend(clientDataSubject('u_a', 'coach', scope), 'anthropic', 'coach_ai.workout_program'),
+      egress.assertMaySend(clientDataSubject('u_a', 'coach', scope, 'c_1'), 'anthropic', 'coach_ai.workout_program'),
     ).resolves.toBeUndefined();
     expect(await egress.consentedClients(['u_a', 'u_b'], scope)).toEqual(new Set(['u_a', 'u_b']));
   });

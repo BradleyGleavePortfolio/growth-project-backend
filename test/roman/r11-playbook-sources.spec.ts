@@ -145,12 +145,13 @@ function tables(over: Record<string, Row[]> = {}): Record<string, Row[]> {
   };
 }
 
-function collector(t: Record<string, Row[]>, memory: readonly string[] = [C1, C3, OC]) {
+function collector(t: Record<string, Row[]>, memory: readonly string[] = [C1, C3, OC], noAi: readonly string[] = []) {
   const { prisma, calls } = fakePrisma(t);
   const budget = { resolveHeadCoachId: jest.fn(async (id: string) => (id === S ? H : id)) };
   const egress = {
     consentedClients: jest.fn(async (ids: readonly string[], scope: string) =>
       new Set(scope === 'memory' ? ids.filter((id) => memory.includes(id)) : ids)),
+    coachConsented: jest.fn(async (id: string) => !noAi.includes(id)),
   };
   const signals = { compute: jest.fn(async () => SIGNALS) };
   const svc = new PlaybookSourceCollector(
@@ -174,6 +175,17 @@ describe('R11-P3b-1 playbook sources: tenancy', () => {
     expect(calls.coachingSession[0].where.coach_id).toEqual({ in: [H, S] });
     expect(calls.workoutProgram[0].where.owner_user_id).toEqual({ in: [H, S] });
     expect(JSON.stringify(out.items)).not.toMatch(/Other|Olive/);
+  });
+
+  it('COACH-AI-CONSENT: a sub-coach who has not allowed AI is not read; the head still is', async () => {
+    const { svc, calls, egress } = collector(tables(), undefined, [S]);
+    const out = await svc.collect(H, NOW);
+    expect(egress.coachConsented).toHaveBeenCalledWith(S);
+    expect(calls.coachMessage[0].where.sender_id).toEqual({ in: [H] });
+    expect(calls.coachingSession[0].where.coach_id).toEqual({ in: [H] });
+    expect(calls.workoutProgram[0].where.owner_user_id).toEqual({ in: [H] });
+    // tpl-h and m-c3 are the sub-coach's own text.
+    expect(ids(out)).toEqual(['g-c1', 'g-wide', 'm-c1', 'mp-wide', 'plan-h', 'sn-c1']);
   });
 
   it('folds a sub-coach into its head coach', async () => {

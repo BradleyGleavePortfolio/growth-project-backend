@@ -72,18 +72,20 @@ describe('HirerVerifiedGuard', () => {
     expect(findUnique).not.toHaveBeenCalled();
   });
 
-  it('rejects a coach with a past_due subscription', async () => {
-    const { guard } = makeGuard({ subscription: { status: 'past_due' } });
-    await expect(
-      guard.canActivate(ctx({ id: 'c1', role: 'coach' })),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+  // TM-P1: no coach plans, so an inactive or missing subscription row never blocks hiring.
+  it('TM-P1: allows a coach with an inactive subscription row, without reading it', async () => {
+    for (const status of ['past_due', 'canceled']) {
+      const { guard, findUnique } = makeGuard({ subscription: { status } });
+      await expect(guard.canActivate(ctx({ id: 'c1', role: 'coach' }))).resolves.toBe(true);
+      expect(findUnique).not.toHaveBeenCalled();
+    }
   });
 
-  it('rejects a coach with no subscription row', async () => {
+  it('TM-P1: allows a coach with no subscription row', async () => {
     const { guard } = makeGuard({ subscription: null });
     await expect(
       guard.canActivate(ctx({ id: 'c1', role: 'coach' })),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).resolves.toBe(true);
   });
 
   it('rejects a student', async () => {

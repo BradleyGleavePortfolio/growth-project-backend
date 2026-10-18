@@ -318,7 +318,7 @@ describe('R11-00 turn seam (RomanService.streamAssistantTurn)', () => {
   ) {
     const db = makePersonaDb();
     const ctx = withContext
-      ? new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource())
+      ? new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource(), egress)
       : null;
     const anthropic = makeAnthropic();
     const svc = new RomanService(

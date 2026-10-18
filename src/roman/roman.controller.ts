@@ -21,6 +21,10 @@
  * Streaming: `POST …/messages` returns Server-Sent Events. The user turn is
  * persisted first; the assistant turn is streamed and persisted on completion
  * (or partial-with-interrupted on client disconnect — brief §1.3).
+ *
+ * CRISIS-2B: Roman's fixed emergency or self-harm reply carries
+ * `safety_actions` on the SSE `done` frame and in the message list, for an app
+ * that sends ROMAN_SAFETY_ACTIONS_HEADER.
  */
 
 import {
@@ -44,6 +48,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
+import { romanSafetyActions, type RomanSafetyAction } from './guardrails/safety-router';
 import { toRomanSseErrorFrame } from './roman-sse-error';
 import type { RomanUsageDebit } from './roman-usage';
 import {
@@ -61,6 +66,14 @@ import {
   SendMessageDto,
 } from './roman.dto';
 import { KeepRomanContext } from './context/roman-context-invalidation';
+
+/**
+ * CRISIS-2B: an app that reads `safety_actions` sends this header with the
+ * value 1. Builds without it parse Roman's views strictly and refuse an
+ * unknown key, so they get today's exact shape and the crisis reply still
+ * reaches them.
+ */
+export const ROMAN_SAFETY_ACTIONS_HEADER = 'x-roman-safety-actions';
 
 @Controller('roman')
 @UseGuards(JwtAuthGuard, RolesGuard, RomanFeatureGuard)
@@ -99,8 +112,9 @@ export class RomanController {
       cursor: query.cursor,
       limit: query.limit,
     });
+    const marker = this.safetyMarker(req);
     return {
-      messages: page.messages.map((m) => this.toMessageView(m)),
+      messages: page.messages.map((m) => ({ ...this.toMessageView(m), ...marker(m) })),
       nextCursor: page.nextCursor,
     };
   }
@@ -191,6 +205,7 @@ export class RomanController {
       (res as { flushHeaders: () => void }).flushHeaders();
     }
 
+    const marker = this.safetyMarker(req);
     const abort = new AbortController();
     const onClose = () => abort.abort();
     req.on('close', onClose);
@@ -205,7 +220,11 @@ export class RomanController {
         });
     try {
       for await (const chunk of turn) {
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        const frame =
+          chunk.type === 'done'
+            ? { ...chunk, ...marker({ role: 'roman', content: chunk.text ?? '' }) }
+            : chunk;
+        res.write(`data: ${JSON.stringify(frame)}\n\n`);
         if (chunk.type === 'done') break;
       }
     } catch (err) {
@@ -238,6 +257,21 @@ export class RomanController {
       // No subscription model row / not a coach — free tier is the safe default.
     }
     return { id: user.id, role: user.role, tier };
+  }
+
+  /**
+   * CRISIS-2B: `{ safety_actions }` for a fixed crisis reply when the app sent
+   * ROMAN_SAFETY_ACTIONS_HEADER, otherwise nothing (the key is left out).
+   * message_coach needs a coach now: `req.user` is the fresh User row
+   * (JwtAuthGuard), and only a client's coach_id is their coach.
+   */
+  private safetyMarker(req: AuthedRequest) {
+    const asked = req.headers?.[ROMAN_SAFETY_ACTIONS_HEADER] === '1';
+    const hasCoach = req.user.role === 'student' && !!req.user.coach_id;
+    return (turn: { role: string; content: string }): { safety_actions?: RomanSafetyAction[] } => {
+      const actions = asked ? romanSafetyActions(turn, hasCoach) : null;
+      return actions ? { safety_actions: actions } : {};
+    };
   }
 
   private toSessionView(session: {

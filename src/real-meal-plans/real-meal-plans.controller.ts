@@ -17,7 +17,6 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
-import { SubscriptionGuard } from '../billing/subscription.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import {
@@ -31,7 +30,7 @@ import { RealMealPlansService } from './real-meal-plans.service';
 
 @ApiTags('real-meal-plans')
 @Controller()
-@UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachMealTemplatesController {
   constructor(private readonly meals: RealMealPlansService) {}
 
@@ -68,7 +67,7 @@ export class CoachMealTemplatesController {
 
 @ApiTags('real-meal-plans')
 @Controller()
-@UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachDailyMealPlansController {
   constructor(private readonly meals: RealMealPlansService) {}
 

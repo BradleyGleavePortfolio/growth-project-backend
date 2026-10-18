@@ -1447,7 +1447,7 @@ export class CoachBriefService {
     const granted = await this.egress.consentedClients(clientIds);
     const aiIds = clientIds.filter((id) => granted.has(id));
     if (aiIds.length === 0) return null;
-    const subject = clientDataSubject(aiIds, 'coach');
+    const subject = clientDataSubject(aiIds, 'coach', 'base', coachId);
     if (aiIds.length === clientIds.length) return { ctx: fullContext, subject };
     const restricted = await this.aggregateSoloContext(coachId, aiIds, timezone, briefDate, briefMode);
     restricted.context.brief_mode = fullContext.brief_mode;
@@ -1863,7 +1863,7 @@ export class CoachBriefService {
         scopeClientIds = headRes.scopeClientIds;
         // Business metrics only (headcounts, money totals): no client
         // identifier and no health / activity field, pinned by the spec.
-        aiInput = { ctx: context, subject: noClientDataSubject('coach_business_metrics') };
+        aiInput = { ctx: context, subject: noClientDataSubject('coach_business_metrics', coachId) };
       } else {
         const clientIds = await this.resolveClientScope(coachId, briefMode);
         scopeClientIds = clientIds;
