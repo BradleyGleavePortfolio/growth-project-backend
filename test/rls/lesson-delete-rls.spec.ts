@@ -22,7 +22,7 @@ if (!DB_URL && process.env.CI === 'true') {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
   const service = new LessonsService(prisma);
   const [K, L, B, M, X, Y, W, Z] = Array.from({ length: 8 }, () => randomUUID());
-  const coaches = new Set([K, L]);
+  const coaches = new Set<string>([K, L]);
 
   beforeAll(async () => {
     for (const [id, coach_id] of [[K, null], [L, null], [B, K], [M, L]] as const) {
