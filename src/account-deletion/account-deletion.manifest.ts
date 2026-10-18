@@ -155,6 +155,8 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // HB1: habits a deleted coach set stay with their client, as the client's own.
   { model: 'Habit', field: 'assigned_by_coach_id', action: detach('assigned_by_coach_id') },
   { model: 'LessonCompletion', field: 'user_id', action: del },
+  { model: 'LessonProgress', field: 'user_id', action: del },
+  { model: 'CourseEnrolment', field: 'user_id', action: del },
   { model: 'SavedRecipe', field: 'user_id', action: del },
   { model: 'ListItem', field: 'user_id', action: del },
   { model: 'BuildWeekEnrollment', field: 'user_id', action: del },
@@ -179,6 +181,17 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // Lessons other people completed stay (frozen content); the rest are removed.
   { model: 'Lesson', field: 'coach_id', action: del, where: { completions: { none: {} } } },
   { model: 'Lesson', field: 'coach_id', action: retain(FROZEN_PLAN) },
+  // LEARN-BE1: a course week or course goes once nothing hangs off it; one a
+  // client is enrolled in stays (frozen content).
+  { model: 'CourseModule', field: 'coach_id', action: del, where: { lessons: { none: {} } } },
+  { model: 'CourseModule', field: 'coach_id', action: retain(FROZEN_PLAN) },
+  {
+    model: 'Course',
+    field: 'coach_id',
+    action: del,
+    where: { modules: { none: {} }, enrolments: { none: {} } },
+  },
+  { model: 'Course', field: 'coach_id', action: retain(FROZEN_PLAN) },
 
   // ── Workout and meal programming
   // Roman approve-to-adjust (#655): a proposal carries the client's recovery

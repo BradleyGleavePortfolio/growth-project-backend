@@ -221,6 +221,9 @@ model User {
   habits                         Habit[]
   assigned_habits                Habit[]                  @relation("HabitAssignedByCoach")
   lesson_completions             LessonCompletion[]
+  courses                        Course[]
+  course_enrolments              CourseEnrolment[]
+  lesson_progress                LessonProgress[]
   check_ins                      CheckIn[]
   water_logs                     WaterLog[]
   created_routines               WorkoutRoutine[]         @relation("RoutineCreator")
@@ -1300,10 +1303,23 @@ model Lesson {
   order_index Int                @default(0)
   completions LessonCompletion[]
   created_at  DateTime           @default(now())
+  // LEARN-BE1 (20270502006000): a lesson inside a course week. module_id null is a
+  // single lesson outside any course (Learn). order_index orders it inside its week.
+  // The composite key keeps a lesson in its own coach's weeks; a trigger keeps its
+  // video to its own coach's media.
+  module_id      String?
+  module         CourseModule?    @relation(fields: [module_id, coach_id], references: [id, coach_id], onDelete: Restrict, onUpdate: Restrict)
+  kind           LessonKind       @default(page)
+  body_markdown  String?
+  media_asset_id String?
+  media_asset    CoachMediaAsset? @relation(fields: [media_asset_id], references: [id])
+  progress       LessonProgress[]
 
   @@index([coach_id])
+  @@index([module_id])
 }
 
+// One completion per client per lesson (20270502006100 keeps the first).
 model LessonCompletion {
   id           String   @id @default(uuid())
   lesson_id    String
@@ -1311,6 +1327,107 @@ model LessonCompletion {
   user_id      String
   user         User     @relation(fields: [user_id], references: [id])
   completed_at DateTime @default(now())
+
+  @@unique([lesson_id, user_id])
+}
+
+// LEARN-BE1: courses in Train > Learn (#LEARN-COURSE-STYLE, option weeks).
+// Row rules: 20270502006000_learn_courses. The coach owns a course, its weeks
+// and lessons; an enrolled client reads it once published, and a lesson once
+// its week is open (app.course_module_open). Progress belongs to the client;
+// the client's current coach reads it.
+enum CourseStatus {
+  draft
+  published
+  archived
+}
+
+enum CourseWeekRule {
+  one_at_a_time
+  all_at_once
+}
+
+enum CourseStartRule {
+  on_grant
+  next_monday
+}
+
+enum CourseEnrolmentSource {
+  package
+  direct
+}
+
+enum LessonKind {
+  video
+  page
+  both
+}
+
+model Course {
+  id          String            @id @default(uuid())
+  coach_id    String
+  coach       User              @relation(fields: [coach_id], references: [id])
+  title       String            @db.VarChar(120)
+  summary     String?
+  status      CourseStatus      @default(draft)
+  week_rule   CourseWeekRule    @default(one_at_a_time)
+  start_rule  CourseStartRule   @default(on_grant)
+  created_at  DateTime          @default(now())
+  updated_at  DateTime          @updatedAt
+  archived_at DateTime?
+  modules     CourseModule[]
+  enrolments  CourseEnrolment[]
+
+  @@unique([id, coach_id])
+  @@index([coach_id])
+}
+
+// A course week. opens_after_days counts from the client's start day.
+model CourseModule {
+  id               String   @id @default(uuid())
+  course_id        String
+  coach_id         String
+  course           Course   @relation(fields: [course_id, coach_id], references: [id, coach_id], onDelete: Restrict, onUpdate: Restrict)
+  position         Int
+  title            String   @db.VarChar(120)
+  note             String?
+  opens_after_days Int      @default(0)
+  lessons          Lesson[]
+
+  @@unique([id, coach_id])
+  @@index([course_id])
+}
+
+// Written by the server only (a package grant or the coach adding a client).
+model CourseEnrolment {
+  id            String                @id @default(uuid())
+  course_id     String
+  course        Course                @relation(fields: [course_id], references: [id])
+  user_id       String
+  user          User                  @relation(fields: [user_id], references: [id])
+  starts_on     DateTime              @db.Date
+  source        CourseEnrolmentSource
+  source_id     String?
+  // Set when the coach opens every week for this client.
+  opened_all_at DateTime?
+  created_at    DateTime              @default(now())
+  ended_at      DateTime?
+
+  @@unique([course_id, user_id])
+  @@index([user_id])
+}
+
+// Where a client is in a lesson (resume point and seconds watched).
+model LessonProgress {
+  user_id          String
+  user             User     @relation(fields: [user_id], references: [id])
+  lesson_id        String
+  lesson           Lesson   @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+  position_seconds Int      @default(0)
+  watched_seconds  Int      @default(0)
+  updated_at       DateTime @updatedAt
+
+  @@id([user_id, lesson_id])
 }
 
 // Daily/weekly check-ins logged by clients. Original mobile flow used `mood`,
@@ -6604,6 +6721,7 @@ model CoachMediaAsset {
   mux_error_message String?
   created_at        DateTime  @default(now())
   archived_at       DateTime?
+  lessons           Lesson[]
 
   @@index([coach_id, archived_at, kind])
   @@index([coach_id, archived_at, kind, status])
