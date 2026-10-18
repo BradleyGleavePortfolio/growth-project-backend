@@ -4,10 +4,12 @@
  *
  *   ROMAN_LIVE_EVAL=1 ANTHROPIC_API_KEY=... npm run eval:roman:live -- --model claude-sonnet-5-5
  *
- * NOT run in CI. Runs G1–G37 (test/roman/eval/golden-set.ts) against the REAL
- * model through the real Roman stack (egress consent gate, R3 context builder,
- * R4 router + post-check) with the seeded in-memory personas — no database and
- * no production data. Writes eval-results/roman-<model>-<date>.json.
+ * NOT run in CI. Runs G1–G37 (test/roman/eval/golden-set.ts; G29/G30 skipped)
+ * against the REAL model through the real Roman stack (egress consent gate, R3
+ * context builder, R4 router + post-check) with the seeded in-memory personas —
+ * no database and no production data. Each case runs alone (runLiveCase), as
+ * test/roman/eval/eval-roman-live.spec.ts proves with a stub SDK. Writes
+ * eval-results/roman-<model>-<date>.json.
  *
  * Grading:
  *   - deterministic must-contain / must-not-contain / regex checks and the
@@ -26,7 +28,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import Anthropic from '@anthropic-ai/sdk';
-import type { GoldenPersona } from '../test/roman/eval/golden-set';
+import type { GoldenItem } from '../test/roman/eval/golden-set';
+import type { AnthropicMessagesClient } from '../src/ai-egress/ai-egress.service';
 
 // ── jest shim for the persona fixture (which uses jest.fn for call recording) ──
 type AnyFn = (...args: never[]) => unknown;
@@ -45,8 +48,10 @@ const jestShim = {
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { GOLDEN_SET, SAFETY_ITEMS, GROUNDING_ITEMS, checkGoldenReply } =
   require('../test/roman/eval/golden-set') as typeof import('../test/roman/eval/golden-set');
-const { makePersonaDb, FakeSafetyIntakeSource, P1, P2, P3, P4, NOW, LOCAL_TODAY_PT } =
+const { makePersonaDb, FakeSafetyIntakeSource, P1, P2, P3, P4, NOW } =
   require('../test/roman/fixtures/roman-personas') as typeof import('../test/roman/fixtures/roman-personas');
+const { PERSONA_ID, clientSession, student } =
+  require('../test/roman/eval/harness') as typeof import('../test/roman/eval/harness');
 const { RomanService } =
   require('../src/roman/roman.service') as typeof import('../src/roman/roman.service');
 const { RomanClientContextService } =
@@ -66,6 +71,42 @@ function arg(name: string, fallback: string): string {
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : fallback;
 }
 
+/** Cases the live run skips: multi-turn / freshness, covered by the CI harness and the device check. */
+export const LIVE_SKIP = new Set(['G29', 'G30']);
+
+/** The fixtures' seeded "today" (NOW), never the wall clock, grounds every case. */
+class FixtureClockContext extends RomanClientContextService {
+  getBundle(caller: { id: string; role: string }, now: Date = NOW) {
+    return super.getBundle(caller, now);
+  }
+}
+
+/**
+ * One golden case the way production answers it (RomanController): a fresh
+ * synthetic world (nothing carries over from an earlier case or persona), the
+ * real egress gate, the case's question stored as the user turn, then
+ * RomanService streams the reply from that stored transcript.
+ */
+export async function runLiveCase(client: AnthropicMessagesClient, item: GoldenItem): Promise<string> {
+  const db = makePersonaDb();
+  // The synthetic personas hold a grant (as in test/roman/eval/harness.ts).
+  const egress = new AiEgressService(new FakeConsentReader([P1, P2, P3, P4]));
+  const ctx = new FixtureClockContext(db.prisma, new FakeSafetyIntakeSource(), egress);
+  const roman = new RomanService(db.prisma, egress, AnthropicHandle.bind(client), ctx);
+  const caller = student(PERSONA_ID[item.persona]);
+  const session = clientSession(caller.id);
+  const stored = await roman.appendMessage(caller, session.id, { role: 'user', content: item.question });
+  let reply = '';
+  for await (const c of roman.streamAssistantTurn(caller, session, {
+    userMessage: item.question,
+    userMessageId: stored.id,
+  })) {
+    if (c.type === 'done') reply = c.text ?? reply;
+    else if (c.type === 'error') reply = `[error] ${JSON.stringify(c)}`;
+  }
+  return reply;
+}
+
 async function main(): Promise<void> {
   if (process.env.ROMAN_LIVE_EVAL !== '1') {
     console.error('Refusing to run: set ROMAN_LIVE_EVAL=1 (this script is not part of CI).');
@@ -81,12 +122,6 @@ async function main(): Promise<void> {
   process.env[FEATURE_ROMAN_CHAT_ENABLED_ENV] = 'true';
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  const db = makePersonaDb();
-  // The real egress consent gate; the synthetic personas hold a grant (as in
-  // test/roman/eval/harness.ts).
-  const egress = new AiEgressService(new FakeConsentReader([P1, P2, P3, P4]));
-  const ctx = new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource(), egress);
-  const roman = new RomanService(db.prisma, egress, AnthropicHandle.bind(anthropic), ctx);
   // Count real model calls by wrapping the SDK stream method. Roman's model is
   // the ROMAN_MODEL_PHASE_1 constant, so --model is applied here.
   let modelCalls = 0;
@@ -96,24 +131,6 @@ async function main(): Promise<void> {
     return realStream({ ...body, model }, options);
   }) as typeof anthropic.messages.stream;
 
-  // Every golden persona (P4 = the same-coach tenancy mirror added in G37).
-  const personaId: Record<GoldenPersona, string> = { P1, P2, P3, P4 };
-  const session = (user_id: string) => ({
-    id: `live_${user_id}`,
-    user_id,
-    surface: 'client' as const,
-    day_key: LOCAL_TODAY_PT,
-    message_count: 0,
-    started_at: NOW,
-    last_activity_at: NOW,
-    quips_in_session: 0,
-    exclamation_used: false,
-    subject_context_json: null,
-    created_at: NOW,
-    updated_at: NOW,
-    deleted_at: null,
-  });
-
   const results: Array<Record<string, unknown>> = [];
   const latencies: number[] = [];
   let exclamations = 0;
@@ -121,23 +138,16 @@ async function main(): Promise<void> {
 
   for (const item of GOLDEN_SET) {
     if (only.length && !only.includes(item.id)) continue;
-    if (item.id === 'G29' || item.id === 'G30') {
+    if (LIVE_SKIP.has(item.id)) {
       results.push({
         id: item.id,
         skipped: 'multi-turn / freshness item — covered by the CI harness and the device check',
       });
       continue;
     }
-    const uid = personaId[item.persona];
     const before = modelCalls;
     const t0 = Date.now();
-    let reply = '';
-    for await (const c of roman.streamAssistantTurn({ id: uid, role: 'student' }, session(uid), {
-      userMessage: item.question,
-    })) {
-      if (c.type === 'done') reply = c.text ?? reply;
-      else if (c.type === 'error') reply = `[error] ${JSON.stringify(c)}`;
-    }
+    const reply = await runLiveCase(anthropic, item);
     const ms = Date.now() - t0;
     latencies.push(ms);
     const calls = modelCalls - before;
@@ -225,7 +235,9 @@ async function main(): Promise<void> {
   process.exit(summary.pass ? 0 : 1);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
