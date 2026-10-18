@@ -236,3 +236,22 @@ Audit: edit, delete, pin, unpin write AuditLog rows with lengths and ids only.
 RLS: `CoachThreadState` is ENABLE + FORCE, self-only plus owner staff, proven
 live by `test/messaging/rls/coach-thread-state-rls.live.spec.ts`
 (community-live-tests job).
+
+## SHARE-BE: a client's share card
+
+`POST /messages` (client only) also takes `card: { type: 'share', snapshot }`
+and nothing else (no `body`, no `voice`). `snapshot` is a closed schema
+(`share-card.ts`): `kind` (`weigh_in_run` | `recent_best`), `value` (one
+number: days in the run, or the weight in lb; 0 < value <= 10000), `words`
+(the card's own words, 1-60 characters, one line), `to` and optional `from`
+(real `YYYY-MM-DD` days, `from <= to`), under a 512-byte cap. Anything else
+answers 400 `{ error: 'SHARE_CARD_INVALID' }`. The card is stored in
+`coach_message_cards` (`card_type 'share'`, `ref_id` NULL) in the same insert
+as the message, only in the thread with the client's current coach
+(coachless: 409 `NO_COACH_ASSIGNED`). The coach send DTO has no `card`, so a
+coach cannot send one. Thread reads return `card` on every row; a share card
+reads whatever `FEATURE_COACH_BROADCASTS` says, coach cards only while it is
+on. In both inboxes a message that is only a card keeps `kind: 'text'` with
+an empty preview and adds `card_type: 'share'`, so the phone's closed `kind`
+list still parses; the coach brief shows no preview for it, never the voice
+label. Deleting the message deletes its card.

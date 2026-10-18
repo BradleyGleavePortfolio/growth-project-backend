@@ -11,6 +11,7 @@
 import { HttpException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { CoachMessage } from '@prisma/client';
+import { z } from 'zod';
 import { PrismaService } from '../../src/prisma.service';
 import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
@@ -116,6 +117,7 @@ function build(opts: { blocked?: string[]; eitherBlocked?: boolean } = {}) {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       upsert: jest.fn().mockResolvedValue({ id: 'e1', kind: 'object', target: 'x', attempts: 0 }),
     },
+    coachMessageCard: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     $executeRaw: jest.fn().mockResolvedValue(1),
   };
   const prisma = {
@@ -237,7 +239,8 @@ describe('FEATURE_MESSAGING_CORE_V2 kill switch', () => {
     const r = row();
     t.prisma.coachMessage.findMany.mockResolvedValue([r]);
     const out = await t.messaging.listThreadForClient(CLIENT, {});
-    expect(t.prisma.coachMessage.findMany.mock.calls[0][0]).not.toHaveProperty('include');
+    // SHARE-BE: the card relation is read with every flag (a share card reads always).
+    expect(t.prisma.coachMessage.findMany.mock.calls[0][0]).not.toHaveProperty('include.reply_to');
     expect(out).toEqual([r]);
   });
 });
@@ -504,6 +507,8 @@ describe('delete (tombstone)', () => {
         create: expect.objectContaining({ reason: 'author_delete' }),
       }),
     );
+    // SHARE-BE: a tombstone keeps no card (a deleted share card is gone too).
+    expect(t.tx.coachMessageCard.deleteMany).toHaveBeenCalledWith({ where: { message_id: MSG } });
     expect(out.deleted).toBe(true);
     expect(out.body).toBeNull();
     expect(JSON.stringify(t.audit.write.mock.calls[0][0])).not.toMatch(/Original words/);
@@ -817,6 +822,67 @@ describe('unified inbox', () => {
     expect(p2.next_cursor).toBeNull();
     const unread = await t.inbox.inboxForCoach(COACH, { filter: 'unread' });
     expect(unread.items.map((i) => i.client_id)).toEqual([CLIENT]);
+  });
+
+  // SHARE-BE: the phone's inbox schema today (growth-project-mobile src/api/messagingV2Api.ts,
+  // InboxResponseSchema): objects are not strict, but `kind` is a closed enum and one bad
+  // row fails the whole response, so every newest message must still parse.
+  const phoneInbox = z.object({
+    items: z.array(
+      z.object({
+        thread_id: z.string(),
+        kind: z.literal('coach_client'),
+        coach_id: z.string(),
+        client_id: z.string(),
+        counterpart: z.object({ user_id: z.string(), display_name: z.string() }),
+        last_message: z
+          .object({
+            id: z.string(),
+            sender_id: z.string().nullable(),
+            is_mine: z.boolean(),
+            kind: z.enum(['text', 'voice', 'deleted']),
+            preview: z.string(),
+            created_at: z.string().min(1),
+            edited: z.boolean(),
+          })
+          .nullable(),
+        unread_count: z.number().int().nonnegative(),
+        muted: z.boolean(),
+        muted_until: z.string().min(1).nullable(),
+        pinned: z.boolean(),
+        blocked_by_me: z.boolean(),
+        last_activity_at: z.string().min(1).nullable(),
+      }),
+    ),
+    next_cursor: z.string().nullable(),
+    total_unread: z.number().int().nonnegative(),
+  });
+
+  type Over = Record<string, unknown> & { card_type: string | null };
+  it.each<[string, Over, Record<string, unknown>]>([
+    ['a share card only', { body: null, card_type: 'share' }, { kind: 'text', preview: '', card_type: 'share' }],
+    ['text', { card_type: null }, { kind: 'text', preview: 'Hello coach' }],
+    ['a voice note', { body: null, voice_url: 'v/1.m4a', card_type: null }, { kind: 'voice', preview: '' }],
+    // A tombstone stored before SHARE-BE kept its card row; it still reads as deleted.
+    ['a tombstone', { body: null, deleted_at: at('2026-10-02T09:00:00Z'), card_type: 'workout' }, { kind: 'deleted', preview: '' }],
+  ])('SHARE-BE: newest message is %s: both inboxes parse with the phone schema', async (_label, over, want) => {
+    const t = build();
+    const { card_type, ...cols } = { ...lastRows()[0], ...over };
+    t.prisma.$queryRaw.mockResolvedValueOnce([{ ...cols, card_type }]);
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce({ ...cols, card: card_type ? { card_type } : null });
+    const coach = await t.inbox.inboxForCoach(COACH, {});
+    const client = await t.inbox.inboxForClient(CLIENT);
+    for (const out of [client, coach]) expect(phoneInbox.safeParse(out).error).toBeUndefined();
+    for (const [out, isMine] of [[coach, false], [client, true]] as const) {
+      expect(out.items[0].last_message).toEqual({
+        id: 'm1',
+        sender_id: CLIENT,
+        is_mine: isMine,
+        created_at: '2026-10-01T09:00:00.000Z',
+        edited: false,
+        ...want,
+      });
+    }
   });
 
   it('client: coachless is a valid empty inbox; coached shows the one coach thread', async () => {

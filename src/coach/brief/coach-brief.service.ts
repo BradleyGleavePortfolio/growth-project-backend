@@ -1046,6 +1046,7 @@ export class CoachBriefService {
           coach_id: true,
           client: { select: { name: true, coach_id: true } },
           body: true,
+          card: { select: { id: true } },
           created_at: true,
         },
         orderBy: { created_at: 'desc' },
@@ -1077,7 +1078,7 @@ export class CoachBriefService {
       threadByClient.set(m.client_id, {
         client_id: m.client_id,
         client_name: m.client?.name ?? 'Client',
-        message_preview: m.body ?? '(voice message)',
+        message_preview: briefPreview(m),
       });
     }
     const unreadThreads = Array.from(threadByClient.values());
@@ -2179,19 +2180,19 @@ export class CoachBriefService {
             ownThreads(coachId, m.mode),
             {
               OR: [
-                { body: { startsWith: m.detail.replace(/[\\%_]/g, '\\$&') } },
-                ...(m.detail === '(voice message)' ? [{ body: null }] : []),
+                ...(m.detail
+                  ? [{ body: { startsWith: m.detail.replace(/[\\%_]/g, '\\$&') } }]
+                  : []),
+                ...(!m.detail || m.detail === VOICE_PREVIEW ? [{ body: null }] : []),
               ],
             },
           ],
         })),
       },
-      select: { client_id: true, body: true },
+      select: { client_id: true, body: true, card: { select: { id: true } } },
     });
     // The same text the item's detail was cut from (aggregateSoloContext, buildActionItems).
-    const inThread = new Set(
-      found.map((m) => `${m.client_id}\n${(m.body ?? '(voice message)').slice(0, 80)}`),
-    );
+    const inThread = new Set(found.map((m) => `${m.client_id}\n${briefPreview(m).slice(0, 80)}`));
     return (items) =>
       Array.isArray(items)
         ? items.filter((i) => {
@@ -2319,6 +2320,12 @@ function ownThreads(coachId: string, briefMode: string | null): Prisma.CoachMess
   return briefMode === 'sub_coach'
     ? { coach: { sub_coach_overlay_as_head: { some: { sub_coach_id: coachId, unassigned_at: null } } } }
     : { coach_id: coachId };
+}
+
+const VOICE_PREVIEW = '(voice message)';
+/** An unread message's preview: its text, else none for a card (SHARE-BE), else the voice label. */
+function briefPreview(m: { body: string | null; card: { id: string } | null }): string {
+  return m.body ?? (m.card ? '' : VOICE_PREVIEW);
 }
 
 /** A stored unread-message action item's client and preview, or null for any other item. */

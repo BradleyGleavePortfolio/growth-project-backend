@@ -16,6 +16,12 @@ export interface InboxLastMessage {
   sender_id: string | null;
   is_mine: boolean;
   kind: 'text' | 'voice' | 'deleted';
+  /**
+   * SHARE-BE: the card type of a message that is only a card (a client's
+   * share), else absent. `kind` stays `text` with an empty preview, so an app
+   * that knows only text, voice and deleted still reads the inbox.
+   */
+  card_type?: string;
   preview: string;
   created_at: string;
   edited: boolean;
@@ -53,6 +59,7 @@ interface LastRow {
   deleted_at: Date | null;
   edited_at: Date | null;
   created_at: Date;
+  card_type: string | null;
 }
 
 interface Ranked {
@@ -120,6 +127,9 @@ export class MessagingInboxService {
       sender_id: row.sender_id,
       is_mine: row.sender_id === callerId,
       kind: deleted ? 'deleted' : row.body ? 'text' : row.voice_url ? 'voice' : 'text',
+      ...(!deleted && !row.body && !row.voice_url && row.card_type
+        ? { card_type: row.card_type }
+        : {}),
       preview: deleted ? '' : previewText(row.body, INBOX_PREVIEW_MAX),
       created_at: row.created_at.toISOString(),
       edited: !deleted && row.edited_at !== null,
@@ -153,7 +163,9 @@ export class MessagingInboxService {
     const last = await this.prisma.$queryRaw<LastRow[]>(Prisma.sql`
       SELECT DISTINCT ON (m."client_id")
              m."id", m."client_id", m."sender_id", m."body", m."voice_url",
-             m."deleted_at", m."edited_at", m."created_at"
+             m."deleted_at", m."edited_at", m."created_at",
+             (SELECT c."card_type" FROM "coach_message_cards" c WHERE c."message_id" = m."id")
+               AS "card_type"
         FROM "CoachMessage" m
        WHERE m."coach_id" = ${threadCoachId}
          AND m."client_id" = ANY(${clientIds}::text[])
@@ -265,6 +277,7 @@ export class MessagingInboxService {
           deleted_at: true,
           edited_at: true,
           created_at: true,
+          card: { select: { card_type: true } },
         },
       }),
       blockedList.length > 0
@@ -305,7 +318,10 @@ export class MessagingInboxService {
       coach_id: coachId,
       client_id: clientId,
       counterpart: { user_id: coachId, display_name: coach?.name?.trim() || 'Your coach' },
-      last_message: row && !blockedByMe ? this.lastMessageView(row, clientId) : null,
+      last_message:
+        row && !blockedByMe
+          ? this.lastMessageView({ ...row, card_type: row.card?.card_type ?? null }, clientId)
+          : null,
       unread_count: blockedByMe ? 0 : unreadTotal,
       muted,
       muted_until: muted && state?.muted_until ? state.muted_until.toISOString() : null,
