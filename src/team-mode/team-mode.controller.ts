@@ -3,7 +3,6 @@ import {
   Body,
   Controller,
   Delete,
-  ForbiddenException,
   Get,
   Param,
   Post,
@@ -19,16 +18,8 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
 import { AssignSubCoachDto } from './team-mode.dto';
 import { TeamModeService } from './team-mode.service';
-import { TeamModeTierResolverService } from './tier-resolver.service';
 import { HeadCoachOnlyGuard } from '../sub-coaches/head-coach-only.guard';
 
-// ADR-0001 §10 Q6 — tier gate.
-//
-// Growth: blocked with 403 + structured upsell envelope.
-// Pro and Enterprise: allowed.
-// `unknown` tier (no CoachSubscription row, or price id not in the
-// configured set) is also blocked — paid features default to deny.
-const ALLOWED_TIERS = new Set(['pro', 'enterprise']);
 const TEAM_AUDIT_EVENT_KINDS: ReadonlyArray<TeamAuditEventKind> = [
   'session_held',
   'message_sent',
@@ -47,17 +38,14 @@ const TEAM_AUDIT_EVENT_KINDS: ReadonlyArray<TeamAuditEventKind> = [
   'staff_seat_removed',
 ];
 
+// No coach plan gate on Team Mode (owner TM-P1: zero locks).
 @ApiTags('team-mode')
 @Controller('team')
 export class TeamModeController {
-  constructor(
-    private readonly teamMode: TeamModeService,
-    private readonly tierResolver: TeamModeTierResolverService,
-  ) {}
+  constructor(private readonly teamMode: TeamModeService) {}
 
   // POST /team/sub-coaches  body: { sub_coach_id }
-  // Q1, Q2: assign a sub-coach. Pro: paid Stripe seat. Enterprise: free.
-  // Q6: Growth blocked with upsell envelope.
+  // Q1, Q2: assign a sub-coach. No paid seat for any coach (owner TM-P1).
   @Post('sub-coaches')
   @UseGuards(JwtAuthGuard, CoachGuard, HeadCoachOnlyGuard)
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
@@ -65,7 +53,6 @@ export class TeamModeController {
     @Req() req: AuthedRequest,
     @Body() dto: AssignSubCoachDto,
   ) {
-    await this.assertTeamModeAllowed(req.user.id);
     return this.teamMode.assignSubCoach({
       headCoachId: req.user.id,
       subCoachId: dto.sub_coach_id,
@@ -76,7 +63,6 @@ export class TeamModeController {
   @Get('sub-coaches')
   @UseGuards(JwtAuthGuard, CoachGuard)
   async listSubCoaches(@Req() req: AuthedRequest) {
-    await this.assertTeamModeAllowed(req.user.id);
     return this.teamMode.listSubCoaches(req.user.id);
   }
 
@@ -89,7 +75,6 @@ export class TeamModeController {
     @Req() req: AuthedRequest,
     @Param('subCoachId') subCoachId: string,
   ) {
-    await this.assertTeamModeAllowed(req.user.id);
     return this.teamMode.removeSubCoach({
       headCoachId: req.user.id,
       subCoachId,
@@ -109,8 +94,6 @@ export class TeamModeController {
     @Query('cursor') cursor?: string,
     @Query('limit') limitRaw?: string,
   ) {
-    await this.assertTeamModeAllowed(req.user.id);
-
     let eventKind: TeamAuditEventKind | undefined;
     if (eventKindRaw) {
       if (!TEAM_AUDIT_EVENT_KINDS.includes(eventKindRaw as TeamAuditEventKind)) {
@@ -139,21 +122,5 @@ export class TeamModeController {
       cursor,
       limit,
     });
-  }
-
-  // Q6 tier gate. Returns 403 with structured envelope when the head
-  // coach is on Growth (or unknown). The envelope shape lets the
-  // mobile UI show a tier-specific upsell screen rather than a
-  // generic "permission denied".
-  private async assertTeamModeAllowed(headCoachId: string): Promise<void> {
-    const { tier } = await this.tierResolver.resolveTier(headCoachId);
-    if (!ALLOWED_TIERS.has(tier)) {
-      throw new ForbiddenException({
-        kind: 'team_mode_locked',
-        current_tier: tier,
-        required_tier: 'pro',
-        upsell_url: '/pricing',
-      });
-    }
   }
 }

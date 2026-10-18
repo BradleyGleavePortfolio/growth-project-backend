@@ -241,13 +241,16 @@ describe('CoachMediaMuxWebhookController — signature (real HMAC, rawBody)', ()
     });
     const body = { id: 'evt-1', type: 'video.asset.ready', data: { id: 'asset-1' } };
     const req = makeReq(body);
-    await expect(
-      ctrl.receive(
-        { rawBody: req.rawBody } as unknown as Parameters<typeof ctrl.receive>[0],
-        body,
-        'bogus-signature',
-      ),
-    ).rejects.toThrow(BadRequestException);
+    // SECALERTS-BE: a prototype-named header segment is a 400 too, not a 500.
+    for (const signature of ['bogus-signature', '__proto__=x,constructor=y']) {
+      await expect(
+        ctrl.receive(
+          { rawBody: req.rawBody } as unknown as Parameters<typeof ctrl.receive>[0],
+          body,
+          signature,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    }
   });
 
   it('accepts a valid signature signed over rawBody (audit P1-2)', async () => {

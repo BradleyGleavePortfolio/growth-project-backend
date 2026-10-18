@@ -50,6 +50,15 @@ const STATE_ENTROPY_BYTES = 32;
 const REDIS_KEY_PREFIX = 'wearables:oauth:state:';
 
 /**
+ * A6 (AUTHB-05): how long a finished provider sign-in waits for the signed-in
+ * app to claim it (ms). The app claims it within seconds of the redirect.
+ */
+export const PENDING_LINK_TTL_MS = 5 * 60 * 1000;
+
+/** A6: pending links live apart from states, so neither can stand in for the other. */
+const LINK_KEY_PREFIX = 'wearables:oauth:link:';
+
+/**
  * The server-side record bound to an issued `state`. Persisted opaquely; the
  * `pkceVerifier` is the secret half of PKCE and is NEVER returned to the
  * client — only the internal callback handler consumes it.
@@ -265,6 +274,26 @@ export class OauthStateService implements OnModuleDestroy {
       throw new Error('Invalid or expired OAuth state.');
     }
     return parsed;
+  }
+
+  /**
+   * A6 (AUTHB-05): hold a finished provider sign-in under a fresh opaque,
+   * single-use 256-bit ticket that expires after {@link PENDING_LINK_TTL_MS}.
+   * The value is stored as given; callers pass only KMS-wrapped tokens.
+   */
+  async holdPendingLink(value: string): Promise<string> {
+    const ticket = base64url(randomBytes(STATE_ENTROPY_BYTES));
+    await this.store.set(`${LINK_KEY_PREFIX}${ticket}`, value, PENDING_LINK_TTL_MS);
+    return ticket;
+  }
+
+  /**
+   * A6: atomically take (read and delete) a held link. Null when the ticket is
+   * unknown, expired or already used.
+   */
+  async takePendingLink(ticket: string): Promise<string | null> {
+    if (!ticket || typeof ticket !== 'string') return null;
+    return this.store.consume(`${LINK_KEY_PREFIX}${ticket}`);
   }
 
   async onModuleDestroy(): Promise<void> {
