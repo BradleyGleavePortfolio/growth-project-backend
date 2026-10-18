@@ -48,7 +48,7 @@ import type {
 } from '../../src/roman/context/roman-client-context.types';
 import { buildRomanSystemPrompt, ROMAN_COACH_PROMPT_VERSION } from '../../src/roman/roman.prompts';
 import { PROMPT_VERSION } from '../../src/roman/guardrails/roman-guardrail.contract';
-import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
+import { AiEgressService, AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
 import { egressWithGrants, fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import { PrismaService } from '../../src/prisma.service';
 
@@ -398,6 +398,7 @@ describe('B-R3-1 the production graph binds the real consultation source', () =>
     const mod = await Test.createTestingModule({
       providers: [
         { provide: PrismaService, useValue: prisma },
+        { provide: AiEgressService, useValue: grantAllEgress() },
         RomanClientContextService,
         RomanConsultationIntakeSource,
         { provide: ROMAN_SAFETY_INTAKE_SOURCE, useExisting: RomanConsultationIntakeSource },

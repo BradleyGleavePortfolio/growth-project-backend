@@ -16,7 +16,7 @@ import {
   AnthropicHandle,
   type AnthropicMessagesClient,
 } from '../../../src/ai-egress/ai-egress.service';
-import { fakeOf } from '../../ai-egress/ai-egress.fakes';
+import { fakeOf, grantAllEgress } from '../../ai-egress/ai-egress.fakes';
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../../src/roman/roman.feature';
 import { _resetRomanContextListeners } from '../../../src/roman/context/roman-context-invalidation';
 import {
@@ -219,7 +219,7 @@ describe('R11-M5 client memory in a Roman turn', () => {
       fakeOf(db.prisma),
       egress,
       AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)),
-      new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource()),
+      new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource(), grantAllEgress()),
       null,
       null,
       [new RomanClientMemoryAugmenter(fakeOf(db.prisma))],
