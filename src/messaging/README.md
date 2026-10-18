@@ -251,5 +251,7 @@ as the message, only in the thread with the client's current coach
 (coachless: 409 `NO_COACH_ASSIGNED`). The coach send DTO has no `card`, so a
 coach cannot send one. Thread reads return `card` on every row; a share card
 reads whatever `FEATURE_COACH_BROADCASTS` says, coach cards only while it is
-on. The inbox preview kind is `card` for a message that is only a card.
-Deleting the message deletes its card.
+on. In both inboxes a message that is only a card keeps `kind: 'text'` with
+an empty preview and adds `card_type: 'share'`, so the phone's closed `kind`
+list still parses; the coach brief shows no preview for it, never the voice
+label. Deleting the message deletes its card.
