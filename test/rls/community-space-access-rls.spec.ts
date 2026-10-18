@@ -236,7 +236,7 @@ const EDIT_OWN = `UPDATE "community_messages" SET "body" = "body"`;
         expect(await count('X', 'community_memberships', row.Imem)).toBe(1);
         const n = moved ? 0 : 1;
         expect({
-          rls: [await count('X', 'community_memberships', member.id),
+          rls: [await count('X', 'community_memberships', String(member.id)),
             await write('X', `UPDATE "community_memberships" SET "updated_at" = now() WHERE "id" = $1::uuid`, member.id)],
           list: (await members.list(coach, space.mem, {})).members.filter((m) => m.user_id === id.E).length,
           replyPush: (await access.readersOf(ws.X, null, [id.E])).length, // the reply push on their Hall post

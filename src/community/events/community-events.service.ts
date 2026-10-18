@@ -548,8 +548,13 @@ export class CommunityEventsService {
     const membership = event.cohort_id
       ? await this.access.membershipInCohort(event.cohort_id, user.id)
       : await this.access.membershipInWorkspace(event.workspace_id, user.id);
+    // C6-BVIS: a client a clients or package space lets in with no row RSVPs there as a student.
+    const rowless =
+      !!event.cohort_id &&
+      membership === null &&
+      (await this.access.canAccessCohort({ id: event.cohort_id, workspace_id: event.workspace_id }, user));
     const activeStudentMember =
-      membership !== null && membership.status === 'active' && membership.role === 'student';
+      rowless || (membership !== null && membership.status === 'active' && membership.role === 'student');
     if (privilegedRole || owningCoach || !activeStudentMember) {
       throw new ForbiddenException({
         error: 'forbidden',

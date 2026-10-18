@@ -117,7 +117,7 @@ describe('CommunityCohortMembersService', () => {
       access.findCohort.mockResolvedValue(space());
       access.isWorkspaceCoach.mockResolvedValue(false);
       access.canAccessCohort.mockResolvedValue(false);
-      await expect(service.list(student, COHORT_A, {} as never)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.list(student, COHORT_A, {})).rejects.toBeInstanceOf(NotFoundException);
       expect(repo.people).not.toHaveBeenCalled();
     });
 
@@ -132,9 +132,9 @@ describe('CommunityCohortMembersService', () => {
       access.findCohort.mockResolvedValue(space());
       access.isWorkspaceCoach.mockResolvedValue(true);
       repo.people.mockResolvedValue([jane, sam]);
-      const first = await service.list(coachA, COHORT_A, { limit: '1' } as never);
+      const first = await service.list(coachA, COHORT_A, { limit: '1' });
       expect(first.members.map((m) => m.user_id)).toEqual([jane.id]);
-      const next = await service.list(coachA, COHORT_A, { limit: '1', cursor: first.next_cursor } as never);
+      const next = await service.list(coachA, COHORT_A, { limit: '1', cursor: first.next_cursor ?? undefined });
       expect(next.members.map((m) => m.user_id)).toEqual([sam.id]);
     });
   });

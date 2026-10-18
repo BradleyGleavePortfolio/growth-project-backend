@@ -296,7 +296,7 @@ export class CommunityPostsService {
       ...(input.body !== undefined ? { body: input.body } : {}),
     });
     void this.realtime.broadcastCommunityEvent(
-      { workspaceId: updated.workspace_id, cohortId: null },
+      { workspaceId: updated.workspace_id, cohortId: updated.cohort_id ?? null }, // C6-BVIS: a space post pings its space
       COMMUNITY_BROADCAST_EVENTS.postUpdated,
       {
         id: updated.id,
@@ -338,10 +338,10 @@ export class CommunityPostsService {
       postId: post.id,
       body,
     });
-    // v1-4 post-write tail — realtime ping to the post's readers, the Hall
-    // (a comment is a CommunityMessage; the post author refetches via REST).
+    // v1-4 post-write tail — realtime ping to the post's readers: its space, or
+    // the Hall (a comment is a CommunityMessage; the author refetches via REST).
     void this.realtime.broadcastCommunityEvent(
-      { workspaceId: post.workspace_id, cohortId: null },
+      { workspaceId: post.workspace_id, cohortId: post.cohort_id ?? null },
       COMMUNITY_BROADCAST_EVENTS.messageCreated,
       {
         id: created.id,
@@ -349,11 +349,11 @@ export class CommunityPostsService {
         authorId: created.sender_id,
         createdAt: created.created_at.toISOString(),
       },
-      { distinctId: created.sender_id, channelKind: 'workspace' },
+      { distinctId: created.sender_id, channelKind: post.cohort_id ? 'cohort' : 'workspace' },
     );
     // Push the post author (not the commenter) that their post got a reply.
     // Fire-and-forget; gated behind FEATURE_COMMUNITY_PUSH inside the service.
-    if (post.author_id !== user.id && (await this.access.readersOf(post.workspace_id, null, [post.author_id])).length) {
+    if (post.author_id !== user.id && (await this.access.readersOf(post.workspace_id, post.cohort_id ?? null, [post.author_id])).length) {
       void this.communityPush.sendCommunityPush({
         recipientId: post.author_id,
         kind: NotificationKind.COMMUNITY_POST_REPLIED,

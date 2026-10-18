@@ -20,7 +20,9 @@ import type { CommunityNotificationsService } from '../../src/community/notifica
 import type { PlanContextService } from '../../src/community/plan-context/plan-context.service';
 import { CommunityPostsRepository } from '../../src/community/posts/community-posts.repository';
 import { CommunityPostsService } from '../../src/community/posts/community-posts.service';
+import { COMMUNITY_REACTION_EMOJI } from '../../src/community/reactions/community-emoji.allowlist';
 import { CommunityReactionsRepository } from '../../src/community/reactions/community-reactions.repository';
+import { CommunityReactionsService } from '../../src/community/reactions/community-reactions.service';
 import type { CommunityRealtimeService } from '../../src/community/realtime/community-realtime.service';
 import type { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
 import type { VoiceUploadProvider } from '../../src/community/voice/voice-upload.provider';
@@ -68,7 +70,10 @@ const sorted = (xs: string[]) => [...xs].sort();
   const realtime = stub<CommunityRealtimeService>({ broadcastCommunityEvent: async () => undefined });
   const push = stub<CommunityNotificationsService>({ pushEnabled: () => false });
   const chat = new CommunityMessagesService(access, messages, realtime, stub<PlanContextService>({}), safety, push);
-  const posts = new CommunityPostsService(access, postsRepo, messages, realtime, push, safety, new CommunityReactionsRepository(db));
+  const reactionsRepo = new CommunityReactionsRepository(db);
+  const posts = new CommunityPostsService(access, postsRepo, messages, realtime, push, safety, reactionsRepo);
+  const reactions = new CommunityReactionsService(access, reactionsRepo, messages, postsRepo, realtime, safety);
+  const react = (k: Key, type: 'message' | 'post', target: string) => got(reactions.react(user(k), type, target, COMMUNITY_REACTION_EMOJI[0]));
   const members = new CommunityCohortMembersService(access, new CommunityCohortMembersRepository(db), safety);
   const moderation = new CommunityModerationService(access, new CommunityModerationRepository(db), messages, postsRepo, realtime, push,
     db, stub<VoiceUploadProvider>({}));
@@ -101,9 +106,9 @@ const sorted = (xs: string[]) => [...xs].sort();
     as(k, (tx) => tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS "n" FROM "${table}" WHERE "id" = $1::uuid`, rowId))
       .then((r) => r[0].n);
   // 1 when the path hands the person the space's row, 0 when it refuses (404/403) or leaves it out.
-  const got = async (p: Promise<unknown>, has: (r: never) => boolean = () => true): Promise<number> => {
+  const got = async <T>(p: Promise<T>, has: (r: T) => boolean = () => true): Promise<number> => {
     try {
-      return has((await p) as never) ? 1 : 0;
+      return has(await p) ? 1 : 0;
     } catch (e) {
       if ((e as { status?: number }).status === 404 || (e as { status?: number }).status === 403) return 0;
       throw e;
@@ -114,12 +119,14 @@ const sorted = (xs: string[]) => [...xs].sort();
 
   // The paths a person takes into a space (rg in the PR body lists each one).
   const READS: Array<[string, (k: Key, s: Space) => Promise<number>, ((k: Key, s: Space) => boolean)?]> = [
-    ['messages: list', (k, s) => got(chat.list(user(k), space[s], {}), (r: { messages: { id: string }[] }) => r.messages.some((m) => m.id === msg[s]))],
+    ['messages: list', (k, s) => got(chat.list(user(k), space[s], {}), (r) => r.messages.some((m) => m.id === msg[s]))],
     ['messages: get by id', (k, s) => got(chat.getOne(user(k), msg[s]))],
     ['messages: send', (k, s) => got(chat.send(user(k), space[s], 'RLS hello'))],
-    ['posts: a post and its comments', (k, s) => got(posts.listComments(user(k), post[s]), (r: { comments: { id: string }[] }) => r.comments.some((c) => c.id === comment[s]))],
+    ['posts: a post and its comments', (k, s) => got(posts.listComments(user(k), post[s]), (r) => r.comments.some((c) => c.id === comment[s]))],
     ['posts: the Hall list (opens with a space that is not public)', (k, s) => got(posts.list(user(k), ws[coachOf(s)], {}),
-      (r: { posts: { id: string }[] }) => r.posts.some((p) => p.id === post[s])), (k, s) => OPEN[s].includes(k) && HALL[coachOf(s)].includes(k)],
+      (r) => r.posts.some((p) => p.id === post[s])), (k, s) => OPEN[s].includes(k) && HALL[coachOf(s)].includes(k)],
+    ['reactions: a message', (k, s) => react(k, 'message', msg[s])],
+    ['reactions: a post', (k, s) => react(k, 'post', post[s])],
     ['members: read the roster', (k, s) => got(members.list(user(k), space[s], {}))],
     ['reports: a message', (k, s) => got(moderation.report(user(k), 'message', msg[s], 'spam', undefined))],
     ['reports: a post', (k, s) => got(moderation.report(user(k), 'post', post[s], 'spam', undefined))],
@@ -213,9 +220,10 @@ const sorted = (xs: string[]) => [...xs].sort();
         who: k,
         hall: await got(posts.listComments(user(k), hall)),
         report: await got(moderation.report(user(k), 'post', hall, 'spam', undefined)),
+        react: await react(k, 'post', hall),
         wins: (await community.getFeed(id[k])).filter((w) => w.user_id === id.I).length,
         workspace: Number(await access.canAccessWorkspace(ws.X, user(k))),
-      }).toEqual({ who: k, hall: n, report: n, wins: n, workspace: n });
+      }).toEqual({ who: k, hall: n, report: n, react: n, wins: n, workspace: n });
     }
   });
 });

@@ -96,9 +96,11 @@ export class CommunityReactionsService {
     if (apiType === 'post') {
       const post = await this.postsRepo.findById(targetId);
       if (!post || post.deleted_at) throw new NotFoundException(NOT_FOUND);
-      if (!(await this.access.canAccessWorkspace(post.workspace_id, user))) {
-        throw new NotFoundException(NOT_FOUND);
-      }
+      // C6-BVIS: a post of a space takes reactions from whoever the rule lets in; its ping stays there.
+      const open = post.cohort_id
+        ? await this.access.canAccessCohort({ id: post.cohort_id, workspace_id: post.workspace_id }, user)
+        : await this.access.canAccessWorkspace(post.workspace_id, user);
+      if (!open) throw new NotFoundException(NOT_FOUND);
       // Two-way block: content the caller cannot see cannot be reacted to.
       await this.safety.assertVisibleTo(user.id, post.author_id, NOT_FOUND);
       return {
@@ -106,7 +108,7 @@ export class CommunityReactionsService {
         targetType: 'post',
         targetId: post.id,
         targetCreatedAt: post.created_at,
-        audience: { workspaceId: post.workspace_id, cohortId: null },
+        audience: { workspaceId: post.workspace_id, cohortId: post.cohort_id ?? null },
       };
     }
 
