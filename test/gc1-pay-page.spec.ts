@@ -152,7 +152,8 @@ describe('GC-1 pay page GET /p/:token', () => {
     expect(res.headers['x-robots-tag']).toBe('noindex, nofollow');
     expect(res.headers['cache-control']).toBe('private, no-store');
     // Every executable script carries this response's nonce; a new nonce per load.
-    const scripts = res.body.match(/<script[^>]*>/g) ?? [];
+    const scripts = res.body.match(/<script[^>]*>/gi) ?? [];
+    expect(scripts).toHaveLength(3);
     expect(scripts.filter((s) => !s.includes('application/json')).every((s) => s.includes(`nonce="${nonce}"`))).toBe(true);
     expect((await get(`/p/${A}`)).headers['content-security-policy']).not.toContain(nonce);
     expect((await get(`/api/p/${A}`)).status).toBe(404);
