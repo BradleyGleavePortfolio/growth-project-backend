@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   IsIn,
+  Matches,
   Max,
   MaxLength,
   Min,
@@ -104,4 +105,11 @@ export class AssignDailyPlanDto {
   @IsString() client_id!: string;
   @IsISO8601() starts_on!: string;
   @IsOptional() @IsISO8601() ends_on?: string;
+}
+
+/** MEALPLAN-END: the client's last day on the plan. A day before it starts removes it. */
+export class EndDailyPlanAssignmentDto {
+  @IsISO8601({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'ends_on must be a date in the form YYYY-MM-DD' })
+  ends_on!: string;
 }
