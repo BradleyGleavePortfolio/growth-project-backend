@@ -190,28 +190,33 @@ export class MuxService {
    * Verify a Mux webhook signature header.
    *
    * Format: "t=<unix_ts>,v1=<hex_signature>"
-   * Signed payload: "<t>.<raw_body>"
+   * Signed payload: "<t>.<raw_body>", raw_body being the exact request bytes
+   * (req.rawBody via `rawBody: true` in main.ts, as for Stripe), never
+   * re-serialised JSON. No raw bytes, no verification.
    * MAC: HMAC-SHA256 keyed by MUX_WEBHOOK_SECRET.
    *
    * Mux uses Stripe's exact header shape and algorithm, so this delegates
    * to the one verifier in src/billing/stripe-signature.ts (constant-time
-   * compare, 300 s tolerance, prototype-safe header parsing).
+   * compare, Mux's documented 5-minute tolerance, prototype-safe parsing).
    *
    * Returns true on a valid signature. Returns false (does NOT throw)
    * on any failure mode so the controller can map cleanly to 400. The
    * caller decides whether to log the rejection.
    */
   verifyWebhookSignature(opts: {
-    payload: string;
+    rawBody: Buffer | undefined;
     signatureHeader: string | undefined | null;
-    toleranceSeconds?: number;
-    now?: () => number;
   }): boolean {
+    if (!Buffer.isBuffer(opts.rawBody)) {
+      this.logger.error('Mux webhook without raw body: main.ts must keep rawBody: true');
+      return false;
+    }
     try {
       verifyStripeSignature({
-        ...opts,
+        payload: opts.rawBody.toString('utf8'),
         signatureHeader: opts.signatureHeader ?? '',
         secret: this.config.get<string>('MUX_WEBHOOK_SECRET'),
+        toleranceSeconds: 300,
       });
       return true;
     } catch {
