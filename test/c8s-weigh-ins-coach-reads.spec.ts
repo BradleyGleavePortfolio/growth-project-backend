@@ -107,6 +107,7 @@ function world(weighInsShared: boolean) {
     workoutSession: [],
     clientWorkoutAssignment: [],
     message: [],
+    coachAlert: [],
   };
   const model = (name: string) => ({
     findMany: jest.fn(async (a: { where?: Where } = {}) => t[name].filter((r) => matches(r, a.where))),
