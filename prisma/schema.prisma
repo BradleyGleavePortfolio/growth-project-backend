@@ -7014,6 +7014,19 @@ enum CommunitySpaceVisibility {
   members
 }
 
+/// C6-B1: what a space holds. A section groups spaces and takes no messages.
+enum CommunitySpaceKind {
+  chat
+  announcement
+  section
+}
+
+/// C6-B1: who starts a message in a space. Replies follow the access rule.
+enum CommunityPostingPolicy {
+  all
+  coach
+}
+
 enum CommunityPostType {
   text
   lesson
@@ -7216,6 +7229,8 @@ model CommunityCohort {
   updated_at   DateTime              @updatedAt @db.Timestamptz(6)
   archived_at  DateTime?             @db.Timestamptz(6)
   visibility   CommunitySpaceVisibility @default(members)
+  kind           CommunitySpaceKind     @default(chat)
+  posting_policy CommunityPostingPolicy @default(all)
 
   workspace   CommunityWorkspace    @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
   memberships CommunityMembership[]

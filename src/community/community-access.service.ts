@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable } from '@nestjs/common';
 import type {
   CommunityCohort,
   CommunityMembership,
@@ -126,6 +126,24 @@ export class CommunityAccessService {
   ): Promise<boolean> {
     if (user.role === 'owner') return true;
     return canEnterSpace(this.prisma, cohort.id, user.id);
+  }
+
+  /**
+   * C6-B1: 403 unless the user may start a message in a space they can enter.
+   * A section takes none; a coach-only space takes its coach's (or, as in
+   * canAccessCohort, the platform owner's) only. Replies and reactions need
+   * only access. app.community_can_post (20270502004600) holds direct writes.
+   */
+  async assertCanPost(
+    cohort: Pick<CommunityCohort, 'workspace_id' | 'kind' | 'posting_policy'>,
+    user: { id: string; role: string },
+  ): Promise<void> {
+    const open =
+      cohort.kind !== 'section' &&
+      (cohort.posting_policy !== 'coach' ||
+        user.role === 'owner' ||
+        (await this.isWorkspaceCoach(cohort.workspace_id, user.id)));
+    if (!open) throw new ForbiddenException({ error: 'forbidden', code: 'community.space.read_only' });
   }
 
   /** True when the user may read workspace-wide content: the coach, the owner, or a non-public space opens. */

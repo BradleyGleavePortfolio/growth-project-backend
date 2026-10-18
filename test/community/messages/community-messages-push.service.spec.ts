@@ -117,6 +117,7 @@ function build(opts: {
   const access = {
     findCohort: jest.fn(async () => ({ id: COHORT, workspace_id: WORKSPACE })),
     canAccessCohort: jest.fn(async () => true),
+    assertCanPost: jest.fn(async () => undefined),
   };
   const realtime = {
     channels: { cohort: jest.fn(() => 'cohort-channel') },

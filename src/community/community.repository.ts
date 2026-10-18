@@ -2,9 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { canEnterSpace, rowsWithSpaceAccess } from './community-space-access';
 
-/** Names for a coach's auto-created space (B-E2E-1); they match the clinic seed. */
+/** Name of a coach's auto-created community (B-E2E-1); the seed script reuses it. */
 export const DEFAULT_WORKSPACE_NAME = 'Community';
-export const DEFAULT_COHORT_NAME = 'All members';
+
+/**
+ * C6-B1 (owner ruling C6-HALL-POSTS op 1): the two spaces every coach starts
+ * with, open to all the coach's clients. Announcements takes the coach's
+ * messages only (members reply in threads); Everyone is open chat. Both renamable.
+ */
+export const DEFAULT_SPACES = [
+  { name: 'Announcements', kind: 'announcement', posting_policy: 'coach', sort_order: 0 },
+  { name: 'Everyone', kind: 'chat', posting_policy: 'all', sort_order: 1 },
+] as const;
 
 /**
  * Data-access layer for the Community v1-2 foundation endpoints.
@@ -42,11 +51,12 @@ export class CommunityRepository {
   }
 
   /**
-   * B-E2E-1: the coach's community space, created on first open when the coach
-   * has none, in the same shape as scripts/seed-clinic-programs.ts (a workspace
-   * plus its first cohort, "All members", sort_order 0). Both writes are upserts
-   * on unique keys (workspace slug, cohort workspace_id + name), so two first
-   * opens at once land on the same rows. An archived space stays archived.
+   * B-E2E-1: the coach's community, created on first open when the coach has
+   * none, with the DEFAULT_SPACES (C6-B1). Both writes are idempotent on unique
+   * keys (workspace slug, space workspace_id + name), so two first opens at once
+   * land on the same rows. The spaces are written only on the call that finds no
+   * open community, so a renamed default never comes back. An archived
+   * community stays archived.
    */
   async ensureWorkspaceForCoach(coachId: string) {
     const existing = await this.findWorkspaceOwnedByCoach(coachId);
@@ -58,12 +68,9 @@ export class CommunityRepository {
       update: {},
     });
     if (workspace.coach_id !== coachId || workspace.archived_at) return null;
-    await this.prisma.communityCohort.upsert({
-      where: {
-        workspace_id_name: { workspace_id: workspace.id, name: DEFAULT_COHORT_NAME },
-      },
-      create: { workspace_id: workspace.id, name: DEFAULT_COHORT_NAME, sort_order: 0 },
-      update: {},
+    await this.prisma.communityCohort.createMany({
+      data: DEFAULT_SPACES.map((s) => ({ ...s, workspace_id: workspace.id, visibility: 'clients' as const })),
+      skipDuplicates: true,
     });
     return workspace;
   }
