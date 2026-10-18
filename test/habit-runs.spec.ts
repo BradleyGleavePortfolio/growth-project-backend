@@ -27,6 +27,15 @@ describe('HabitDays.runs: planned days in a row, shown from 2 up, the best kept'
     expect(habit(over, days).runs()).toEqual({ run_days: run, best_run_days: best });
   });
 
+  // A late tick heals the run: runs are read from the ticks, never stored (#WORDING-HB3, #HB3-OPEN-YESTERDAY op 1).
+  it.each<[string, string[], number | null, string, number]>([
+    ['yesterday, marked this morning', oct(5, 12), null, '2026-10-13', 9],
+    ['a day last week, marked today', [...oct(8, 10), ...oct(12, 13)], 2, '2026-10-11', 6],
+  ])('a late tick heals the run: %s', (_name, days, before, late, healed) => {
+    expect(habit({}, days).runs().run_days).toBe(before);
+    expect(habit({}, [...days, late]).runs()).toEqual({ run_days: healed, best_run_days: healed });
+  });
+
   it('a habit made before start dates were stored begins on its first tick', () => {
     expect(habit({ starts_on: null }, oct(11, 13)).runs()).toEqual({ run_days: 3, best_run_days: 3 });
   });
@@ -63,10 +72,16 @@ describe('summarize: GET /habits/summary', () => {
     expect(s.habits).toEqual([{ id: 'water', planned: 4, done: 2 }, { id: 'run', planned: 2, done: 1 }]);
   });
 
-  it('the best week has the most done; fewer planned breaks a tie', () => {
+  it('the best week has the most done', () => {
     const s = summarize([water, run], dayFromYmd('2026-10-12'), dayFromYmd('2026-10-18'), TODAY);
     // Sep 28 week: nothing ticked; Oct 5 week: 5 water + 1 run, of 7 + 2; this week: 2 + 1, of 7 + 2.
     expect(s.best_week).toEqual({ start: '2026-10-05', end: '2026-10-11', planned: 9, done: 6 });
+  });
+
+  it('of tied weeks, the most recent is the best week (#HB3-BEST-WEEK), even with more planned', () => {
+    // From Wednesday Sep 30: that week plans 5 and does 3; the Oct 5 week plans 7 and does 3.
+    const walk = habit({ starts_on: new Date('2026-09-30') }, ['2026-09-30', '2026-10-01', '2026-10-02', ...oct(5, 7)]);
+    expect(summarize([walk], TODAY, TODAY, TODAY).best_week).toEqual({ start: '2026-10-05', end: '2026-10-11', planned: 7, done: 3 });
   });
 
   it('has no best week before the first tick, and no days with no habits', () => {

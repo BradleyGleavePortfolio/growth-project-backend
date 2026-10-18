@@ -27,7 +27,7 @@ const atLeastTwo = (n: number) => (n >= 2 ? n : null);
 // A habit begins on its start date, or on its first tick if that came earlier
 // (habits made before start dates were stored), else today. Runs and the best
 // week look back two years at most, so a start date typed far back stays cheap.
-const LOOK_BACK_DAYS = 731;
+export const LOOK_BACK_DAYS = 731;
 function firstDay(plan: HabitPlan, done: Set<number>, today: number) {
   return Math.max(today - LOOK_BACK_DAYS, Math.min(plan.starts_on ? toDay(plan.starts_on) : today, ...done));
 }
@@ -90,15 +90,15 @@ export class HabitDays {
 }
 
 // GET /habits/summary: every day from `from` to `to`, each habit over the
-// range, and the client's best week so far (most done; fewer planned breaks a
-// tie; the latest wins after that).
+// range, and the client's best week so far: the most done, and the most recent
+// of tied weeks (#HB3-BEST-WEEK).
 export function summarize(habits: HabitDays[], from: number, to: number, today: number) {
   const total = (count: (h: HabitDays) => Count) => habits.reduce((sum, h) => add(sum, count(h)), { planned: 0, done: 0 });
   const days = span(from, to).map((day) => ({ date: ymd(day), ...total((h) => h.day(day)) }));
   let best: (Count & { start: string; end: string }) | null = null;
   for (let mon = monday(Math.min(today, ...habits.map((h) => h.start))); mon <= today; mon += 7) {
     const week = total((h) => h.count(mon, mon + 6));
-    if (week.done > 0 && (!best || week.done > best.done || (week.done === best.done && week.planned <= best.planned))) {
+    if (week.done > 0 && week.done >= (best?.done ?? 0)) {
       best = { start: ymd(mon), end: ymd(mon + 6), ...week };
     }
   }

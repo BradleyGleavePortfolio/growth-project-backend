@@ -135,23 +135,43 @@ describe('HabitsService', () => {
   });
 
   // HB3. 05:00 UTC on Thursday Oct 15 is still Wednesday Oct 14, 22:00, in Los Angeles.
-  describe('HB3: runs, counts and the today-or-yesterday rule, in the client\'s calendar', () => {
+  describe('HB3: runs, counts and the open days for a tick, in the client\'s calendar', () => {
     beforeEach(() => jest.useFakeTimers({ now: new Date('2026-10-15T05:00:00Z'), doNotFake: ['nextTick', 'setImmediate'] }));
     afterEach(() => jest.useRealTimers());
     const inLosAngeles = () =>
       prismaMock.notificationPreferences.findUnique.mockResolvedValue({ timezone: 'America/Los_Angeles', timezone_updated_at: new Date() });
 
-    it.each<[string, boolean, string[], string[]]>([
-      ['their own zone', true, ['2026-10-14', '2026-10-13', '2026-10-14T00:00:00.000Z'], ['2026-10-15', '2026-10-12', '2026-09-30']],
-      ['no zone known (a day either side of UTC)', false, ['2026-10-16', '2026-10-13'], ['2026-10-17', '2026-10-12']],
-    ])('POST /habits/:id/log in %s takes only today or yesterday', async (_zone, known, open, closed) => {
+    // #WORDING-HB3: any day from the habit's start (Oct 3) up to the client's today; a refusal is a code, no words.
+    it.each<[string, boolean, string[], [string, string][]]>([
+      ['their own zone', true, ['2026-10-14', '2026-10-13', '2026-10-05', '2026-10-03', '2026-10-14T00:00:00.000Z'],
+        [['2026-10-15', 'HABIT_FUTURE_DAY'], ['2026-11-02', 'HABIT_FUTURE_DAY'], ['2026-10-02', 'HABIT_BEFORE_START']]],
+      ['no zone known (a day of slack around UTC)', false, ['2026-10-16', '2026-10-15', '2026-10-02'],
+        [['2026-10-17', 'HABIT_FUTURE_DAY'], ['2026-10-01', 'HABIT_BEFORE_START']]],
+    ])('POST /habits/:id/log in %s takes any day from the start to today, never a future day', async (_zone, known, open, closed) => {
       if (known) inLosAngeles();
+      prismaMock.habit.findFirst.mockResolvedValue({ ...own, starts_on: new Date('2026-10-03') });
       for (const date of open) await expect(service.logHabit('user-1', 'habit-1', { date })).resolves.toBeDefined();
-      for (const date of closed) {
+      for (const [date, code] of closed) {
         const refused = await service.logHabit('user-1', 'habit-1', { date }).then(() => null, (e: BadRequestException) => e.getResponse());
-        expect(refused).toMatchObject({ code: 'HABIT_DAY_CLOSED' });
+        expect(refused).toEqual({ code });
       }
       expect(prismaMock.habitLog.create).toHaveBeenCalledTimes(open.length);
+    });
+
+    it('a late tick heals the run on the next GET /habits', async () => {
+      inLosAngeles();
+      const habit = { ...own, schedule_days: [], starts_on: new Date('2026-10-01'), logs: [] };
+      prismaMock.habit.findFirst.mockResolvedValue(habit);
+      prismaMock.habit.findMany.mockResolvedValue([habit]);
+      const stored = ['2026-10-10', '2026-10-12', '2026-10-13'].map((d) => ({ habit_id: 'habit-1', date: new Date(d) }));
+      prismaMock.habitLog.findMany.mockImplementation(() => Promise.resolve(stored));
+      prismaMock.habitLog.create.mockImplementation(({ data }: { data: { habit_id: string; date: Date } }) => {
+        stored.push(data);
+        return Promise.resolve(data);
+      });
+      await expect(service.getHabits('user-1')).resolves.toMatchObject([{ run_days: 2, best_run_days: 2 }]);
+      await service.logHabit('user-1', 'habit-1', { date: '2026-10-11', completed: true });
+      await expect(service.getHabits('user-1')).resolves.toMatchObject([{ run_days: 4, best_run_days: 4 }]);
     });
 
     it('a tick with no date is today in the client\'s calendar, not the server\'s', async () => {
@@ -185,7 +205,10 @@ describe('HabitsService', () => {
       const summary = await service.getSummary('user-1', { from: '2026-10-13', to: '2026-10-14' });
       const live = { user_id: 'user-1', archived_at: null };
       expect(prismaMock.habit.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: live }));
-      expect(prismaMock.habitLog.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { completed: true, habit: live } }));
+      // Ticks are read from two years back only (the maths never looks further).
+      expect(prismaMock.habitLog.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { completed: true, date: { gte: new Date('2024-10-14T00:00:00Z') }, habit: live },
+      }));
       expect(summary).toMatchObject({
         days: [{ date: '2026-10-13', planned: 1, done: 1 }, { date: '2026-10-14', planned: 1, done: 0 }],
         habits: [{ id: 'habit-1', planned: 2, done: 1 }],

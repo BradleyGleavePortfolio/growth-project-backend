@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma.service';
 import { CreateHabitDto, HabitSummaryQuery, LogHabitDto, REMINDER_FIELDS, UpdateHabitDto } from './habits.dto';
 import { resolveRecipientTimeZoneWithSource } from '../notifications/recipient-timezone';
 import { localDate } from '../roman-adjust/roman-adjust.rules';
-import { HabitDays, dayFromYmd, monday, summarize, toDay, ymd } from './habit-runs';
+import { HabitDays, LOOK_BACK_DAYS, dayFromYmd, monday, summarize, toDay, ymd } from './habit-runs';
 
 // A habit on chosen days names at least one; a times-a-week habit says how many.
 function planIsComplete(h: { schedule_kind?: string; schedule_days?: number[] | null; times_per_week?: number | null }) {
@@ -76,15 +76,15 @@ export class HabitsService {
     // SECURITY: verify the habit belongs to the requesting user before writing a log
     // (audit C7 — IDOR: any authenticated user could log completions against any
     // other user's habit by guessing/obtaining the habit UUID).
-    await this.ownHabit(userId, habitId);
+    const habit = await this.ownHabit(userId, habitId);
 
-    // HB3: a tick is for today or yesterday in the client's calendar. While their
-    // own zone is unknown, a day either side is allowed so no one is refused.
+    // HB3 (#WORDING-HB3): a tick is for any day from the habit's start up to the
+    // client's today in their own calendar (a day of slack while their zone is
+    // unknown). A refusal carries a code only; the app shows its own words.
     const { today, slack } = await this.clientToday(userId);
     const day = data.date ? dayFromYmd(data.date.slice(0, 10)) : today;
-    if (!(day >= today - 1 - slack && day <= today + slack)) {
-      throw new BadRequestException({ code: 'HABIT_DAY_CLOSED', message: 'You can mark today or yesterday.' });
-    }
+    if (day > today + slack) throw new BadRequestException({ code: 'HABIT_FUTURE_DAY' });
+    if (habit.starts_on && day < toDay(habit.starts_on) - slack) throw new BadRequestException({ code: 'HABIT_BEFORE_START' });
     const targetDate = new Date(`${ymd(day)}T00:00:00Z`);
 
     const existing = await this.prisma.habitLog.findFirst({
@@ -138,17 +138,19 @@ export class HabitsService {
     return { today, slack: zone?.source === 'recipient' ? 0 : 1 };
   }
 
-  // The caller's live habits in list order, each with the days it was ticked done.
+  // The caller's live habits in list order, each with the days it was ticked done
+  // in the two years the maths looks back.
   private async liveHabits(userId: string) {
     const live = { user_id: userId, archived_at: null };
-    const [habits, ticks, { today }] = await Promise.all([
+    const { today } = await this.clientToday(userId);
+    const since = new Date(`${ymd(today - LOOK_BACK_DAYS)}T00:00:00Z`);
+    const [habits, ticks] = await Promise.all([
       this.prisma.habit.findMany({
         where: live,
         orderBy: [{ sort_order: 'asc' }, { id: 'asc' }],
         include: { logs: { orderBy: { date: 'desc' }, take: 30 } },
       }),
-      this.prisma.habitLog.findMany({ where: { completed: true, habit: live }, select: { habit_id: true, date: true } }),
-      this.clientToday(userId),
+      this.prisma.habitLog.findMany({ where: { completed: true, date: { gte: since }, habit: live }, select: { habit_id: true, date: true } }),
     ]);
     const done = (id: string) => new Set(ticks.filter((t) => t.habit_id === id).map((t) => toDay(t.date)));
     return { today, habits: habits.map((habit) => ({ habit, days: new HabitDays(habit, done(habit.id), today) })) };
