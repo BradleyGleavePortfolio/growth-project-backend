@@ -78,7 +78,7 @@ function makePrisma() {
       }
       if (k === 'coach') {
         // The one coach filter used here: DailyMealPlan.coach.students none { id } (the client is not theirs).
-        const { id } = v.students.none;
+        const { id } = (v as { students: { none: { id: string } } }).students.none;
         if (users.some((u) => u.id === id && u.coach_id === row.coach_id)) return false;
         continue;
       }
