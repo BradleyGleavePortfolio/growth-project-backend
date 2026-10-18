@@ -17,7 +17,10 @@
 import 'reflect-metadata';
 import { CheckoutController, CoachPurchasesController } from '../src/checkout/checkout.controller';
 import { CheckoutService } from '../src/checkout/checkout.service';
-import { CLIENT_PURCHASE_SELECT } from '../src/checkout/client-purchases.select';
+import {
+  CLIENT_PURCHASE_LIST_SELECT,
+  CLIENT_PURCHASE_SELECT,
+} from '../src/checkout/client-purchases.select';
 import { COACH_FORBIDDEN_FIELD_PATTERN } from '../src/checkout/coach-payments.select';
 
 const CLIENT = 'client-1';
@@ -235,10 +238,11 @@ describe('OR-112-19 — purchase lists send no Stripe client secrets', () => {
     ]);
     expect(out.next_cursor).toBeNull();
     assertNoSecrets(out);
-    // The query itself asks for the allow-list, not the raw row.
+    // The query itself asks for the allow-list (plus the two private fields
+    // C5-S1 reads and drops), not the raw row.
     expect(prisma.clientPurchase.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        select: CLIENT_PURCHASE_SELECT,
+        select: CLIENT_PURCHASE_LIST_SELECT,
         where: { client_user_id: CLIENT },
       }),
     );

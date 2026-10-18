@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client';
+import { parseCheckoutTerms, planPriceFromTerms } from './subscription-terms';
 
 // OR-112-19 — explicit field allow-list for the client's own purchase reads
 // (GET /v1/checkout/purchases).
@@ -48,3 +49,38 @@ export const CLIENT_PURCHASE_SELECT = {
 export type ClientPurchaseView = Prisma.ClientPurchaseGetPayload<{
   select: typeof CLIENT_PURCHASE_SELECT;
 }>;
+
+// C5-S1 (agent 157) — two private fields read only to say what the checkout
+// charged first. checkout_terms holds Stripe price ids and is never sent; the
+// subscription id only tells a renewing sale from a one-time one.
+export const CLIENT_PURCHASE_LIST_SELECT = {
+  ...CLIENT_PURCHASE_SELECT,
+  checkout_terms: true,
+  stripe_subscription_id: true,
+} as const satisfies Prisma.ClientPurchaseSelect;
+
+type ClientPurchaseListRow = Prisma.ClientPurchaseGetPayload<{
+  select: typeof CLIENT_PURCHASE_LIST_SELECT;
+}>;
+
+/**
+ * What the purchase's checkout charged first, in cents: the price of a
+ * one-time sale; for a subscription its pinned terms (one-time part plus the
+ * first period, 0 in a free trial). null when the server does not know (a
+ * subscription without pinned terms), so the app shows no amount rather than
+ * a guess. amount_cents of a subscription is the renewal, not this.
+ */
+export function firstChargeCents(row: ClientPurchaseListRow): number | null {
+  const terms = parseCheckoutTerms(row.checkout_terms);
+  if (terms) return planPriceFromTerms(terms).first_charge_cents;
+  if (row.billing_type === 'recurring' || row.stripe_subscription_id) return null;
+  return row.amount_cents;
+}
+
+/** The client's view of one listed purchase: private fields dropped. */
+export function toClientPurchaseView(
+  row: ClientPurchaseListRow,
+): ClientPurchaseView & { first_charge_cents: number | null } {
+  const { checkout_terms: _terms, stripe_subscription_id: _sub, ...view } = row;
+  return { ...view, first_charge_cents: firstChargeCents(row) };
+}
