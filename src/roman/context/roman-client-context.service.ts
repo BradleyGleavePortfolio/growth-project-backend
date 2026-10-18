@@ -19,6 +19,9 @@
  * - CAC-NAME (owner "#CAC-NAME - op 1"): under the same check, nothing that
  *   names the coach either: no first name, and that coach's plan, program and
  *   meal plan titles become generic ("Workout", none, "Meal plan").
+ *   CAC-HIDE (owner "#CAC-HIDE - op 1"): so do that coach's booking titles
+ *   and the meal names in their plan, the client's logged workout titles
+ *   (under the current coach), and the client's messages say "your coach".
  * - No cross-request persistent cache of client data. The only memo is a 15 s
  *   in-process entry keyed by (user_id, local_date), invalidated by
  *   `invalidateForUser` after every successful app write by the client or
@@ -252,6 +255,19 @@ const firstName = (name: string | null | undefined): string => {
   const t = (name ?? '').trim().split(/\s+/)[0] ?? '';
   return clamp(t, 40) ?? 'there';
 };
+/** CAC-NAME / CAC-HIDE: a label a coach set reaches Roman only while `ok`; otherwise `generic`. */
+export const coachLabel = (ok: boolean, s: string | null | undefined, max: number, generic: string) =>
+  (ok ? clamp(s, max) : null) ?? generic;
+/** CAC-HIDE: the client's own words, with the coach (full name or any part) as "your coach". */
+export function withoutCoachName(text: string | null, coach: string | null | undefined) {
+  const name = (coach ?? '').normalize('NFC').trim();
+  const parts = [...new Set([name, ...name.split(/\s+/)])].filter((s) => s.length > 1);
+  if (!text || !parts.length) return text;
+  const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const alt = parts.sort((a, b) => b.length - a.length).map(esc).join('|');
+  const re = new RegExp(`(?<![\\p{L}\\p{N}])(?:${alt})(?![\\p{L}\\p{N}])`, 'giu');
+  return text.normalize('NFC').replace(re, 'your coach');
+}
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 const clampQA = (xs: RomanCtxQA[] | null | undefined, max: number): RomanCtxQA[] =>
@@ -751,7 +767,7 @@ export class RomanClientContextService {
             },
             orderBy: { start_at: 'asc' },
             take: ROMAN_CTX_LIMITS.bookings,
-            select: { title: true, start_at: true, end_at: true, status: true },
+            select: { title: true, start_at: true, end_at: true, status: true, coach_id: true },
           }))
         : [],
     ]);
@@ -772,14 +788,17 @@ export class RomanClientContextService {
     // house plan) are the client's words.
     const sideOk = await sideAllowed;
     const picked = [sessionsNeedingNames.today, sessionsNeedingNames.next];
-    // CAC-NAME: every assigner (plan titles) and the meal plan's coach too.
+    // CAC-NAME / CAC-HIDE: every assigner, the meal plan's coach and each booking's coach.
     const others = [
       macroTarget?.coach_id,
       mealAssignment?.daily_meal_plan.coach_id,
       ...[...history, ...upcoming].map((a) => a.assigned_by_coach_id),
+      ...bookings.map((b) => b.coach_id),
     ].filter((id) => id !== userId && !coachSide.includes(id ?? ''));
     const allowed = new Set([...sideOk, ...(await this.egress.consentedCoaches(others))]);
     const mayUse = (author: string) => author === userId || allowed.has(author);
+    // CAC-HIDE: what the client wrote may carry the current coach's name or plan titles.
+    const coachOk = !coachId || sideOk.has(coachId);
     for (const s of picked) {
       if (s && !mayUse(s.row.assigned_by_coach_id)) {
         s.rawExercises = s.rawExercises.map((e) => ({ ...e, notes: null }));
@@ -960,7 +979,7 @@ export class RomanClientContextService {
     // ── logged workouts ──
     const logged_workouts: RomanCtxLoggedWorkout[] = workoutSessions.map((w) => ({
       date: ymdOf(w.date),
-      name: clamp(w.workout_name, 80) ?? 'Workout',
+      name: coachLabel(coachOk, w.workout_name, 80, 'Workout'),
       type: clamp(w.workout_type, 40) ?? 'other',
       duration_minutes: w.duration_minutes ?? null,
       intensity: String(w.intensity),
@@ -1007,16 +1026,16 @@ export class RomanClientContextService {
       .map((m) => ({
         date: ymdOf(m.created_at),
         from: (m.sender_id === userId ? 'client' : 'coach') as 'coach' | 'client',
-        excerpt: clamp(m.body, 200),
+        excerpt: clamp(coachOk ? m.body : withoutCoachName(m.body, coach?.name), 200),
       }))
       .filter((m): m is RomanCtxCoachMessage => m.excerpt !== null);
     const coachBlock = {
       has_coach: coachId !== null,
       // CAC-NAME: "your coach" until that coach allows AI.
-      coach_first_name: coachId && sideOk.has(coachId) ? firstName(coach?.name) : null,
+      coach_first_name: coachId && coachOk ? firstName(coach?.name) : null,
       guidelines: clamp(guideline?.content, 1500),
       recent_messages,
-      ...coachingStyleBlock(coachId && sideOk.has(coachId) ? coach?.coach_profile : null),
+      ...coachingStyleBlock(coachId && coachOk ? coach?.coach_profile : null),
     };
     if (!coachId) missing.push('coach');
 
@@ -1050,7 +1069,7 @@ export class RomanClientContextService {
           0,
           Math.round((b.end_at.getTime() - b.start_at.getTime()) / 60000),
         ),
-        title: clamp(b.title, 80) ?? 'Coaching session',
+        title: coachLabel(mayUse(b.coach_id), b.title, 80, 'Coaching session'),
         status: b.status === 'requested' ? 'requested' : 'confirmed',
       };
     });
@@ -1072,16 +1091,15 @@ export class RomanClientContextService {
     };
 
     // ── meal plan ──
+    const mealOk = !!mealAssignment && mayUse(mealAssignment.daily_meal_plan.coach_id);
     const meal_plan = mealAssignment
       ? {
-          title: mayUse(mealAssignment.daily_meal_plan.coach_id)
-            ? (clamp(mealAssignment.daily_meal_plan.name, 80) ?? 'Meal plan')
-            : 'Meal plan',
+          title: coachLabel(mealOk, mealAssignment.daily_meal_plan.name, 80, 'Meal plan'),
           items: mealAssignment.daily_meal_plan.slots
             .map((s) => {
               const label = clamp(s.slot_label, 30) ?? 'Meal';
-              const name = clamp(s.meal_template.name, 60) ?? '';
-              return `${label}: ${name} (${s.meal_template.calories_kcal} kcal, ${s.meal_template.protein_g} g protein)`;
+              const name = coachLabel(mealOk, s.meal_template.name, 60, '');
+              return `${label}${name && `: ${name}`} (${s.meal_template.calories_kcal} kcal, ${s.meal_template.protein_g} g protein)`;
             })
             .slice(0, 12),
         }
@@ -1286,10 +1304,10 @@ type HistoryRow = {
 
 type MayUse = (author: string) => boolean;
 /** CAC-NAME: a plan title is its assigner's; generic until that coach allows AI. */
-const titleOf = (a: HistoryRow, mayUse: MayUse): string =>
-  (mayUse(a.assigned_by_coach_id)
-    ? clamp(a.snapshot?.plan_name ?? a.workout_plan.name, 80)
-    : null) ?? 'Workout';
+const titleOf = (a: HistoryRow, mayUse: MayUse): string => {
+  const title = a.snapshot?.plan_name ?? a.workout_plan.name;
+  return coachLabel(mayUse(a.assigned_by_coach_id), title, 80, 'Workout');
+};
 type DayOf = (d: Date) => string;
 
 function rawExercisesOf(a: AssignmentRow): RawExercise[] {

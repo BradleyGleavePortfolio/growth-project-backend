@@ -7,7 +7,8 @@
 // Without that grant, or when the read fails, none of them does, and P1 still gets an answer from
 // their own data. The live ledger states (never asked, "Not now", turned off) are in
 // test/rls/coach-text-egress-rls.spec.ts. CAC-NAME (owner "#CAC-NAME - op 1"): the coach's first
-// name and the plan, program and meal plan titles follow the same grant.
+// name and the plan, program and meal plan titles follow the same grant; CAC-HIDE (owner "#CAC-HIDE -
+// op 1"): so do booking titles, meal names, logged workout titles and the coach's name in P1's message.
 
 import 'reflect-metadata';
 import { makeWorld, runTurn, student, withRomanEnabled, type TurnResult } from './harness';
@@ -49,10 +50,17 @@ const SOURCES: ReadonlyArray<readonly [string, Part, string]> = [
   ['program title', 'client_data', 'Program A Foundations'],
   ['meal plan title', 'client_data', 'Dairy-free 1450'],
   ['plan title', 'history tool', 'Full Body B'],
+  ['name in the client message', 'client_data', 'Thanks Alex'],
+  ['booking title', 'client_data', 'Form check: squat'],
+  ['meal name', 'client_data', 'Egg scramble'],
+  ['logged workout title', 'client_data', 'Walk + core'],
+  ['name in the client message', 'history tool', 'Thanks Alex'],
+  ['booking title', 'history tool', '"title":"Review"'],
+  ['logged workout title', 'history tool', 'Walk + core'],
 ];
 const GATES = ['allowed', 'no grant', 'read error'] as const;
 type Gate = (typeof GATES)[number];
-const OWN = 'Thanks Alex, knee felt fine';
+const OWN = 'knee felt fine on the squats';
 const REPLY = 'Keep logging your meals this week.';
 const SQUATS = { coach_id: COACH_A.id, version: 1, status: 'active', red_lines: [], sources: [],
   source_digest: playbookLedgerDigest([], [], COACH_A.id),

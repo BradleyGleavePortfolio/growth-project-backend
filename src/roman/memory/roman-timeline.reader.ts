@@ -24,7 +24,10 @@
  *   recaps only while that coach allows AI (`AiEgressService.consentedCoaches`,
  *   read now; a read error is no grant). The client's own messages stay.
  *   CAC-NAME (owner "#CAC-NAME - op 1"): under the same check, an assigned
- *   plan's title reads "Workout" until its assigner allows AI.
+ *   plan's title reads "Workout" until its assigner allows AI. CAC-HIDE (owner
+ *   "#CAC-HIDE - op 1"): so do booking titles and coach-set habit names (their
+ *   coach), and logged workout titles and the coach's name in the client's
+ *   messages (the current coach).
  * - A missing or soft-deleted client reads nothing.
  *
  * NEVER SELECTED: CoachingSession.coach_notes_md, video links and provider ids;
@@ -48,11 +51,13 @@ import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
 import {
   ROMAN_WEARABLE_METRICS,
   addDays,
+  coachLabel,
   dateOnly,
   localClock,
   localDateOf,
   localDayStart,
   summarizeWearables,
+  withoutCoachName,
 } from '../context/roman-client-context.service';
 import { resolveRomanCoachScope } from '../context/roman-coach-scope';
 import {
@@ -81,6 +86,8 @@ const clamp = (s: string | null | undefined, max: number): string | null => {
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 const ymdOf = (d: Date): string => d.toISOString().slice(0, 10);
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+/** CAC-HIDE: the current coach (if any) allows AI, so the client's words may name them. */
+const coachAllows = async (p: ReadPlan) => !p.coachId || (await p.sideOk).has(p.coachId);
 
 // ─── cursor ──────────────────────────────────────────────────────────────────
 
@@ -143,6 +150,10 @@ interface ReadPlan {
   lastDay: string;
   coachId: string | null;
   coachSide: string[];
+  /** COACH-TEXT / CAC-HIDE: the coach-side coaches who allow AI, read once per page. */
+  sideOk: Promise<ReadonlySet<string>>;
+  /** CAC-HIDE: the current coach's name, kept out of the client's words until they allow AI. */
+  coachName: string | null;
   preferences: { metric: string; preferred_provider: string }[];
   now: Date;
 }
@@ -184,7 +195,7 @@ export class RomanTimelineReader {
         select: {
           role: true,
           deleted_at: true,
-          coach: { select: { id: true, role: true, deleted_at: true } },
+          coach: { select: { id: true, role: true, deleted_at: true, name: true } },
           notification_prefs: { select: { timezone: true } },
           wearable_metric_preferences: {
             where: { metric: { in: [...ROMAN_WEARABLE_METRICS] } },
@@ -233,6 +244,8 @@ export class RomanTimelineReader {
       lastDay,
       coachId: scope.coachId,
       coachSide: scope.coachSide,
+      sideOk: this.egress.consentedCoaches(scope.coachSide),
+      coachName: scope.coach?.name ?? null,
       preferences: (user.wearable_metric_preferences ?? []).map((p) => ({
         metric: String(p.metric),
         preferred_provider: String(p.preferred_provider),
@@ -412,8 +425,8 @@ export class RomanTimelineReader {
     const events: RomanTimelineEvent[] = [];
     for (const r of rows) {
       const titled = r.assigned_by_coach_id === p.clientId || ok.has(r.assigned_by_coach_id);
-      const name = titled ? (r.snapshot?.plan_name ?? r.workout_plan?.name) : null;
-      const plan_name = clamp(name, 80) ?? 'Workout';
+      const title = r.snapshot?.plan_name ?? r.workout_plan?.name;
+      const plan_name = coachLabel(titled, title, 80, 'Workout');
       if (r.completed_at) {
         events.push(
           this.event(
@@ -458,6 +471,7 @@ export class RomanTimelineReader {
         _count: { select: { exercises: true } },
       },
     });
+    const coachOk = await coachAllows(p);
     const events = rows.map((r) =>
       this.dayEvent(
         p,
@@ -466,7 +480,7 @@ export class RomanTimelineReader {
         'WorkoutSession',
         r.id,
         {
-          name: clamp(r.workout_name, 80) ?? 'Workout',
+          name: coachLabel(coachOk, r.workout_name, 80, 'Workout'),
           type: clamp(r.workout_type, 40) ?? 'other',
           duration_minutes: r.duration_minutes ?? null,
           intensity: String(r.intensity),
@@ -515,12 +529,17 @@ export class RomanTimelineReader {
         date: true,
         value: true,
         completed: true,
-        habit: { select: { name: true, category: true, unit: true, target_value: true } },
+        habit: {
+          select: { name: true, category: true, unit: true, target_value: true, assigned_by_coach_id: true },
+        },
       },
     });
+    // CAC-HIDE: a habit the coach set is named only while that coach allows AI.
+    const ok = await this.egress.consentedCoaches(rows.map((r) => r.habit.assigned_by_coach_id));
+    const named = (by: string | null) => !by || ok.has(by);
     const events = rows.map((r) =>
       this.dayEvent(p, r.date, 'habit', 'HabitLog', r.id, {
-        habit: clamp(r.habit.name, 60) ?? 'Habit',
+        habit: coachLabel(named(r.habit.assigned_by_coach_id), r.habit.name, 60, 'Habit'),
         category: clamp(r.habit.category, 40),
         value: num(r.value),
         target: num(r.habit.target_value),
@@ -623,7 +642,8 @@ export class RomanTimelineReader {
 
   /** message: the client <-> current coach thread, both directions, text only. */
   private async messages(p: ReadPlan): Promise<Batch> {
-    const ok = await this.egress.consentedCoaches(p.coachSide);
+    const ok = await p.sideOk;
+    const coachOk = await coachAllows(p);
     const rows = await this.prisma.coachMessage.findMany({
       where: {
         coach_id: p.coachId,
@@ -639,7 +659,7 @@ export class RomanTimelineReader {
     });
     const events: RomanTimelineEvent[] = [];
     for (const r of rows) {
-      const text = clamp(r.body, 300);
+      const text = clamp(coachOk ? r.body : withoutCoachName(r.body, p.coachName), 300);
       if (!text) continue;
       const from = r.sender_id === p.clientId ? 'client' : 'coach';
       events.push(this.event(p, r.created_at, 'message', 'CoachMessage', r.id, { from }, text));
@@ -663,7 +683,7 @@ export class RomanTimelineReader {
         client_recap_md: true,
       },
     });
-    // COACH-TEXT: the recap is the session coach's own words.
+    // COACH-TEXT / CAC-HIDE: the recap and the title are the session coach's.
     const ok = await this.egress.consentedCoaches(rows.map((r) => r.coach_id));
     const events = rows.map((r) =>
       this.event(
@@ -673,7 +693,7 @@ export class RomanTimelineReader {
         'CoachingSession',
         r.id,
         {
-          title: clamp(r.title, 80) ?? 'Coaching session',
+          title: coachLabel(ok.has(r.coach_id), r.title, 80, 'Coaching session'),
           status: String(r.status),
           duration_minutes: Math.max(
             0,

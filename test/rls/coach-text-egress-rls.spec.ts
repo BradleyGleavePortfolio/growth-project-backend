@@ -10,6 +10,8 @@
  * in every request. Every 0 has its 1: coach G's words are in G's client's request and in no other.
  * CAC-NAME (owner "#CAC-NAME - op 1"): so are the coach's first name and the titles of the plan,
  * program and meal plan the coach gave; without the grant Roman gets "your coach" and generic titles.
+ * CAC-HIDE (owner "#CAC-HIDE - op 1"): so are the coach's booking titles, habit names and the meal
+ * names in their plan, the client's logged workout titles and the coach's name in the client's message.
  *
  * Runs in the rls-live-tests job. Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true
  * (hard failure).
@@ -55,8 +57,15 @@ const SOURCES = [
   ['program', 'context'],
   ['meal', 'context'],
   ['plan', 'history tool'],
+  ['booking', 'context'],
+  ['dish', 'context'],
+  ['workout', 'context'],
+  ['name', 'history tool'],
+  ['booking', 'history tool'],
+  ['habit', 'history tool'],
+  ['workout', 'history tool'],
 ] as const;
-const WORDS = ['guideline', 'message', 'note', 'cue', 'recap', 'name', 'plan', 'program', 'meal'] as const;
+const WORDS = ['guideline', 'message', 'note', 'cue', 'recap', 'name', 'plan', 'program', 'meal', 'booking', 'dish', 'workout', 'habit'] as const;
 const SETS = '"sets":3';
 
 (DB_URL ? describe : describe.skip)("A coach's own words in their client's Roman request", () => {
@@ -99,7 +108,7 @@ const SETS = '"sets":3';
   const request = async (k: K) => {
     const caller = { id: client[k], role: 'student' };
     const { rendered } = await context.buildFresh(caller, NOW);
-    const input = { kinds: ['message', 'booking', 'workout_done'], from: ymd(-5 * DAY), to: ymd(DAY) };
+    const input = { kinds: ['message', 'booking', 'workout_done', 'habit'], from: ymd(-5 * DAY), to: ymd(DAY) };
     const history = await tools.run(caller, 'read_history', input, { now: NOW });
     expect(history.ok).toBe(true);
     return { context: rendered, 'history tool': history.content };
@@ -111,7 +120,7 @@ const SETS = '"sets":3';
     process.env.FEATURE_AI_CONSENT_LEDGER_ENABLED = 'true';
     for (const k of KEYS) {
       const [c, s] = [coach[k], client[k]];
-      await prisma.user.create({ data: { id: c, supabase_id: c, email: `ct-${c}`, name: word(k, 'name'), role: 'coach' } });
+      await prisma.user.create({ data: { id: c, supabase_id: c, email: `ct-${c}`, name: `${word(k, 'name')} Reyes`, role: 'coach' } });
       await prisma.user.create({
         data: { id: s, supabase_id: s, email: `ct-${s}`, name: `Client ${k}`, role: 'student', coach_id: c },
       });
@@ -121,7 +130,10 @@ const SETS = '"sets":3';
         data: { coach_id: c, client_id: s, sender_id: c, body: word(k, 'message'), created_at: at(-DAY) },
       });
       await prisma.coachMessage.create({
-        data: { coach_id: c, client_id: s, sender_id: s, body: word(k, 'own'), created_at: at(-DAY + 60_000) },
+        data: {
+          coach_id: c, client_id: s, sender_id: s, created_at: at(-DAY + 60_000),
+          body: `${word(k, 'own')} thanks ${word(k, 'name')}, see you ${word(k, 'name').toLowerCase()}`,
+        },
       });
       await prisma.macroTarget.create({
         data: {
@@ -150,18 +162,28 @@ const SETS = '"sets":3';
           completed_at: at(-DAY + 3_600_000),
         },
       });
+      const dish = await prisma.mealTemplate.create({
+        data: { coach_id: c, name: word(k, 'dish'), calories_kcal: 500, protein_g: 40, carbs_g: 50, fats_g: 15 },
+      });
       await prisma.dailyMealPlan.create({
         data: {
-          coach_id: c, name: word(k, 'meal'),
+          coach_id: c, name: word(k, 'meal'), slots: { create: { slot_label: 'breakfast', meal_template_id: dish.id } },
           assignments: { create: { client_id: s, assigned_by_coach_id: c, starts_on: at(-7 * DAY) } },
         },
       });
       await prisma.coachingSession.create({
         data: {
-          coach_id: c, client_id: s, title: 'Check-in', status: 'completed', start_at: at(-2 * DAY),
+          coach_id: c, client_id: s, title: word(k, 'booking'), status: 'completed', start_at: at(-2 * DAY),
           end_at: at(-2 * DAY + 45 * 60_000), client_recap_md: word(k, 'recap'),
         },
       });
+      await prisma.coachingSession.create({
+        data: { coach_id: c, client_id: s, title: word(k, 'booking'), status: 'scheduled', start_at: at(2 * DAY), end_at: at(2 * DAY + 30 * 60_000) },
+      });
+      for (const [name, by] of [[word(k, 'habit'), c], [`${word(k, 'own')}-habit`, null]] as const) {
+        await prisma.habit.create({ data: { user_id: s, name, assigned_by_coach_id: by, logs: { create: { date: at(-DAY), completed: true } } } });
+      }
+      await prisma.workoutSession.create({ data: { user_id: s, date: at(-DAY), workout_name: word(k, 'workout'), workout_type: 'strength' } });
     }
     await consent.decideCoach(coach.D, 'decline', COPY);
     await consent.decideCoach(coach.G, 'grant', COPY);
@@ -198,10 +220,17 @@ const SETS = '"sets":3';
   });
 
   it.each(STATES.filter(([, , , kept]) => !kept))('%s: Roman gets "your coach" and generic titles', async (_l, k) => {
-    const { context: c } = await requestOf(k);
-    for (const generic of ['"coach_first_name":null', '"program_name":null', '"name":"Workout"', '"title":"Meal plan"']) {
+    const { context: c, 'history tool': h } = await requestOf(k);
+    for (const generic of ['"coach_first_name":null', '"program_name":null', '"name":"Workout"', '"title":"Meal plan"',
+      '"title":"Coaching session"', 'breakfast (500 kcal', 'thanks your coach, see you your coach']) {
       expect(c).toContain(generic);
     }
+    for (const generic of ['"title":"Coaching session"', '"habit":"Habit"', '"name":"Workout"', 'thanks your coach']) {
+      expect(h).toContain(generic);
+    }
+    // Any case, any part of the name; the client's own habit keeps its name.
+    expect(`${c}\n${h}`.toLowerCase()).not.toContain(word(k, 'name').toLowerCase());
+    expect(h).toContain(`${word(k, 'own')}-habit`);
   });
 
   it("no client's request carries another coach's words", async () => {
