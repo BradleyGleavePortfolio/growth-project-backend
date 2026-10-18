@@ -1,4 +1,6 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   IsIn,
   IsInt,
   IsISO8601,
@@ -27,9 +29,27 @@ export type CohortWriteStatus = (typeof COHORT_WRITE_STATUSES)[number];
 // announcement space takes the coach's messages only; any other starts open.
 export const SPACE_KINDS = ['chat', 'announcement', 'section'] as const;
 export const POSTING_POLICIES = ['all', 'coach'] as const;
+// C6-BVIS: the Prisma enum CommunitySpaceVisibility, who a space opens to. A package
+// space opens to the coach's clients with a live purchase of one of its package_ids.
+export const SPACE_VISIBILITIES = ['public', 'clients', 'package', 'members'] as const;
+export type SpaceVisibility = (typeof SPACE_VISIBILITIES)[number];
+
+/** Who a space opens to; the same two fields on create and update. */
+class SpaceAccessFields {
+  @IsOptional()
+  @IsIn(SPACE_VISIBILITIES)
+  visibility?: SpaceVisibility;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(50)
+  @IsString({ each: true })
+  @MaxLength(64, { each: true })
+  package_ids?: string[];
+}
 
 /** POST /community/workspaces/:workspaceId/cohorts — create a cohort. */
-export class CreateCohortDto {
+export class CreateCohortDto extends SpaceAccessFields {
   @Transform(trim)
   @IsString()
   @MinLength(2, { message: 'name must be at least 2 characters' })
@@ -62,7 +82,7 @@ export class CreateCohortDto {
 }
 
 /** PATCH /community/cohorts/:cohortId — update a cohort (all fields optional). */
-export class UpdateCohortDto {
+export class UpdateCohortDto extends SpaceAccessFields {
   @IsOptional()
   @Transform(trim)
   @IsString()
@@ -114,6 +134,8 @@ export const CommunityCohortAdminSchema = z
     sort_order: z.number().int(),
     kind: z.enum(SPACE_KINDS),
     posting_policy: z.enum(POSTING_POLICIES),
+    visibility: z.enum(SPACE_VISIBILITIES),
+    package_ids: z.array(z.string()),
     created_at: z.string().datetime(),
     updated_at: z.string().datetime(),
     archived_at: z.string().datetime().nullable(),

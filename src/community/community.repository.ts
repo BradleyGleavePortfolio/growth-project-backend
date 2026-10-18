@@ -207,6 +207,7 @@ export class CommunityRepository {
   async findCohortById(cohortId: string) {
     return this.prisma.communityCohort.findUnique({
       where: { id: cohortId },
+      include: { packages: { select: { package_id: true } } }, // C6-BVIS: what opens a package space
     });
   }
 

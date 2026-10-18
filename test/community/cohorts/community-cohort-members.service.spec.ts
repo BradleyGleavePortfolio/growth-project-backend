@@ -55,6 +55,7 @@ describe('CommunityCohortMembersService', () => {
   };
   let repo: {
     people: jest.Mock;
+    packageAccess: jest.Mock;
     findMembership: jest.Mock;
     findUserByEmail: jest.Mock;
     findUserById: jest.Mock;
@@ -74,6 +75,7 @@ describe('CommunityCohortMembersService', () => {
     };
     repo = {
       people: jest.fn(),
+      packageAccess: jest.fn(),
       findMembership: jest.fn(),
       findUserByEmail: jest.fn(),
       findUserById: jest.fn(),
@@ -96,10 +98,25 @@ describe('CommunityCohortMembersService', () => {
       repo.people.mockResolvedValue([jane, sam]);
 
       const res = await service.list(coachA, COHORT_A, {} as never);
-      expect(res.members.map((m) => [m.id, m.status, m.email, m.role])).toEqual([
-        [jane.row.id, 'active', 'jane@example.com', 'student'],
-        [null, 'active', 'sam@example.com', 'student'],
+      expect(res.members.map((m) => [m.id, m.status, m.email, m.role, m.access?.reason])).toEqual([
+        [jane.row.id, 'active', 'jane@example.com', 'student', 'client'],
+        [null, 'active', 'sam@example.com', 'student', 'client'],
       ]);
+    });
+
+    it('k04: names the package and its end for a client of a package space; the coach is the coach', async () => {
+      const coach = { id: coachA.id, name: 'Coach A', email: 'a@example.com', row: null };
+      access.findCohort.mockResolvedValue(space('package'));
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      repo.people.mockResolvedValue([sam, coach]);
+      repo.packageAccess.mockResolvedValue(new Map([[sam.id, { package_id: 'pkg-1', until: new Date('2026-12-09T00:00:00.000Z') }]]));
+
+      const res = await service.list(coachA, COHORT_A, {});
+      expect(res.members.map((m) => [m.role, m.access])).toEqual([
+        ['student', { reason: 'package', package_id: 'pkg-1', until: '2026-12-09T00:00:00.000Z' }],
+        ['coach', { reason: 'coach', package_id: null, until: null }],
+      ]);
+      expect(repo.packageAccess).toHaveBeenCalledWith(COHORT_A, coachA.id, [sam.id, coachA.id]);
     });
 
     it('sanitizes the roster for a non-coach the rule lets in (no PII/status)', async () => {
@@ -110,7 +127,7 @@ describe('CommunityCohortMembersService', () => {
 
       const res = await service.list(student, COHORT_A, {} as never);
       // client privacy: other members see the first name only
-      expect(res.members[0]).toMatchObject({ display_name: 'Jane', status: null, email: null, joined_at: null });
+      expect(res.members[0]).toMatchObject({ display_name: 'Jane', status: null, email: null, joined_at: null, access: null });
     });
 
     it('404s a reader the rule keeps out (non-leak)', async () => {
