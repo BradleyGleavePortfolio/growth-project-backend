@@ -19,7 +19,7 @@ export const COACHLESS_ERROR = {
   CODE_EXHAUSTED: 'code_exhausted',
   /** A single-recipient code redeemed from a different email. */
   CODE_EMAIL_MISMATCH: 'code_email_mismatch',
-  /** The coach cannot take new clients (subscription, or the owner paused the featured offer). */
+  /** The owner paused the featured offer (no coach plan check, owner TM-P1). */
   COACH_NOT_ACCEPTING: 'coach_not_accepting',
   /** The caller already has a different coach (no re-parenting by code). */
   ALREADY_ATTACHED: 'already_attached',

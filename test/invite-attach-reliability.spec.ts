@@ -380,7 +380,7 @@ describe('C03 — attachUserToCoachByCode re-parent rules', () => {
     expect(prisma._users.get('stu-1')?.coach_id).toBe(COACH_A);
   });
 
-  it('every other failure carries a safe code (invalid code, paused coach, owner)', async () => {
+  it('every other failure carries a safe code (invalid code, owner); a past_due coach is not a failure (TM-P1)', async () => {
     const paused = makeAttachPrisma({
       users: [
         { id: 'stu-1', email: 'stu@example.com', role: 'student', coach_id: null },
@@ -395,8 +395,9 @@ describe('C03 — attachUserToCoachByCode re-parent rules', () => {
     const invalid = await captureHttp(svc.attachUserToCoachByCode('stu-1', 'GP-NOPE'));
     expect(inviteAttachErrorCode(invalid)).toBe('invite_code_invalid');
     expect(invalid.message).toBe('Invalid or expired invite code'); // legacy message preserved
-    const notAccepting = await captureHttp(svc.attachUserToCoachByCode('stu-1', 'GP-PAUSED'));
-    expect(inviteAttachErrorCode(notAccepting)).toBe('coach_not_accepting_clients');
+    await expect(svc.attachUserToCoachByCode('stu-1', 'GP-PAUSED')).resolves.toMatchObject({
+      coach_id: 'coach-p',
+    });
     const owner = await captureHttp(svc.attachUserToCoachByCode('own-1', 'GP-COACHA'));
     expect(inviteAttachErrorCode(owner)).toBe('owner_cannot_redeem');
     // Unknown errors collapse to attach_failed and never leak the message.
@@ -526,8 +527,8 @@ describe('C03 — auth flows report invite_attached / invite_attach_error', () =
       previewCode: jest.fn(async () => ({ valid: true })),
       attachUserToCoachByCode: jest.fn(async () => {
         throw new ConflictException({
-          code: INVITE_ATTACH_ERROR.COACH_NOT_ACCEPTING_CLIENTS,
-          message: 'Coach is not currently accepting clients',
+          code: INVITE_ATTACH_ERROR.ALREADY_ATTACHED_TO_DIFFERENT_COACH,
+          message: 'You are already attached to a different coach',
         });
       }),
     };
@@ -539,7 +540,7 @@ describe('C03 — auth flows report invite_attached / invite_attach_error', () =
       invite_code: 'GP-COACHA',
     });
     expect(res.invite_attached).toBe(false);
-    expect(res.invite_attach_error).toBe('coach_not_accepting_clients');
+    expect(res.invite_attach_error).toBe('already_attached_to_different_coach');
     expect(res.user_id).toBe('u-1');
     expect(res.requires_verification).toBe(true);
     expect(deps.analytics.capture).toHaveBeenCalledWith(
@@ -547,7 +548,7 @@ describe('C03 — auth flows report invite_attached / invite_attach_error', () =
       expect.any(String),
       expect.objectContaining({
         invite_attached: false,
-        invite_attach_error: 'coach_not_accepting_clients',
+        invite_attach_error: 'already_attached_to_different_coach',
       }),
     );
   });
