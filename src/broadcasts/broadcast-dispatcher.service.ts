@@ -445,7 +445,7 @@ export class BroadcastDispatcherService {
         if (res.count !== 1) throw new LeaseLostError();
         return msg.id;
       });
-      void this.supabase.broadcastNewMessage(client.id);
+      void this.supabase.pingChat({ coachId: b.coach_id, clientId: client.id }, 'new-message');
       if (pushDecision === 'pending') {
         const senderName = await this.senderName(authorId);
         await this.messageReceived.emit(client.id, { senderName, threadId: client.id });

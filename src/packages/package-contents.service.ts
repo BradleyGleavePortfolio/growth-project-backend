@@ -172,7 +172,7 @@ export class PackageContentsService {
         // be emptied between the authoring check above and this insert.
         if (locked.length > 0) {
           const days = await tx.workoutPlan.count({
-            where: { program_id: input.asset_id, archived_at: null },
+            where: { program_id: input.asset_id, coach_id: tenantCoachId, archived_at: null },
           });
           if (days === 0) {
             throw new UnprocessableEntityException({
@@ -1108,7 +1108,7 @@ export class PackageContentsService {
               });
             }
             const days = await this.prisma.workoutPlan.count({
-              where: { program_id: program.id, archived_at: null },
+              where: { program_id: program.id, coach_id: tenantCoachId, archived_at: null },
             });
             if (days === 0) {
               throw new UnprocessableEntityException({
@@ -1125,6 +1125,10 @@ export class PackageContentsService {
             id: input.asset_id,
             coach_id: tenantCoachId,
             archived_at: null,
+            // PKG-MOVE-FULFILMENT: only the coach's own workouts, a saved workout or
+            // a master program's day. A client's copy is that client's history and
+            // leaves with them when they move, so a buyer could never receive it.
+            OR: [{ program_id: null }, { program: { is: { is_template: true } } }],
           },
           select: { id: true },
         });

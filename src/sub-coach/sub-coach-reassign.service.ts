@@ -3,9 +3,14 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import {
+  SchedulingSessionLifecycleService,
+  type MoveCancelledSession,
+} from '../scheduling/scheduling-session-lifecycle.service';
 import { AuditAction } from '../audit/audit.service';
 import { SubCoachCapacityService } from './sub-coach-capacity.service';
 import { SubCoachIdempotencyService } from './sub-coach-idempotency.service';
@@ -50,7 +55,7 @@ const MAX_SERIALIZATION_RETRIES = 3;
  * share:
  *   - DTO validation (controller layer)
  *   - Atomic idempotency claim + payload/action validation (R19, F29)
- *   - Capacity enforcement inside the same transaction (F28, F44)
+ *   - Team check inside the same transaction (F28, F44); no plan cap
  *   - Serialization-failure (P2034) retries with exponential backoff
  *   - AuditLog persistence with correct action label (R1, R18, R22)
  *
@@ -65,6 +70,8 @@ export class SubCoachReassignService {
     private readonly prisma: PrismaService,
     private readonly capacity: SubCoachCapacityService,
     private readonly idempotency: SubCoachIdempotencyService,
+    // Always injected in production; hand-built unit tests may leave it out.
+    @Optional() private readonly sessions?: SchedulingSessionLifecycleService,
   ) {}
 
   /**
@@ -203,9 +210,8 @@ export class SubCoachReassignService {
 
   /**
    * Run the reassignment transaction under SERIALIZABLE isolation, with
-   * bounded retries on P2034 (serialization failure / write conflict).
-   * After exhausting retries we re-check capacity outside any transaction
-   * and return a clean 409 if the slot is gone, otherwise rethrow.
+   * bounded retries on P2034 (serialization failure / write conflict),
+   * then rethrow.
    */
   private async runReassignTransactionWithRetry(args: {
     headCoachId: string;
@@ -246,19 +252,7 @@ export class SubCoachReassignService {
       }
     }
 
-    // Out of retries. If the destination is at capacity, surface a clean
-    // 409. Otherwise rethrow so the framework returns 500.
-    if (!args.unassigning) {
-      const cap = await this.capacity.getCapacity(
-        args.headCoachId,
-        args.targetSubCoachId,
-      );
-      if (!cap.hasCapacity) {
-        throw new ConflictException(
-          `Sub-coach has reached the maximum of ${cap.maxClients} clients for the ${cap.planTier} plan`,
-        );
-      }
-    }
+    // Out of retries: rethrow so the framework returns 500.
     throw lastError instanceof Error
       ? lastError
       : new Error('Sub-coach reassignment failed after retries');
@@ -285,8 +279,26 @@ export class SubCoachReassignService {
       reason,
     } = args;
 
-    return this.prisma.$transaction(
+    let cancelled: MoveCancelledSession[] = [];
+    const result = await this.prisma.$transaction(
       async (tx) => {
+        // SUBREVOKE: a pair that has ever had a seat may only get a new
+        // delegation while that seat is active, so a removed sub-coach gets
+        // no clients until re-invited. A pair that never had a seat (legacy
+        // delegation) is unaffected. FOR SHARE orders this against a
+        // concurrent removal (see endSubCoachSeat).
+        if (!unassigning) {
+          const [seat] = await tx.$queryRaw<Array<{ archived_at: Date | null }>>`
+            SELECT "archived_at" FROM "TeamSubCoachAssignment"
+            WHERE "head_coach_id" = ${headCoachId} AND "sub_coach_id" = ${targetSubCoachId}
+            FOR SHARE`;
+          if (seat && seat.archived_at !== null) {
+            throw new NotFoundException(
+              'Destination sub-coach not found or does not belong to this team',
+            );
+          }
+        }
+
         // Current open assignment (if any) for this client.
         const open = await tx.subCoachAssignment.findFirst({
           where: { client_id: clientId, unassigned_at: null },
@@ -347,6 +359,9 @@ export class SubCoachReassignService {
 
         // Close any open assignment first (history preserved).
         if (open) {
+          // Owner HIST-2b: the sub-coach handing the client on loses their upcoming sessions.
+          cancelled =
+            (await this.sessions?.cancelLeftByMove(tx, [clientId], open.sub_coach_id)) ?? [];
           await tx.subCoachAssignment.update({
             where: { id: open.id },
             data: { unassigned_at: new Date() },
@@ -355,9 +370,8 @@ export class SubCoachReassignService {
 
         // Open a new assignment if we're delegating to a sub-coach.
         if (!unassigning) {
-          // Capacity check INSIDE the transaction. Counts use the
-          // SubCoachAssignment table so they reflect the new model.
-          await this.capacity.assertHasCapacityTx(
+          // Team check INSIDE the transaction. No plan cap (owner TM-P1).
+          await this.capacity.assertSubCoachBelongsTo(
             tx,
             headCoachId,
             targetSubCoachId,
@@ -401,6 +415,9 @@ export class SubCoachReassignService {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
+    const role = actorRole === 'owner' ? 'owner' : 'coach';
+    await this.sessions?.finishMoveCancels(actorId, cancelled, role);
+    return result;
   }
 
   /**

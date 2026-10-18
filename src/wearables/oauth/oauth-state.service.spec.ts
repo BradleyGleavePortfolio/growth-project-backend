@@ -5,6 +5,7 @@ import {
   RedisOauthStateStore,
   OAUTH_STATE_TTL_MS,
   OauthStateStore,
+  PENDING_LINK_TTL_MS,
 } from './oauth-state.service';
 import { generateChallenge } from './pkce.util';
 
@@ -174,6 +175,28 @@ describe('OauthStateService', () => {
         expect.stringContaining('wearables:oauth:state:'),
       );
       expect(record.userId).toBe(USER);
+    });
+
+    // A6 (AUTHB-05): a held link has its own namespace and a shorter life.
+    it('holds a pending link under its own key with SET ... PX 5 min, taken with GETDEL', async () => {
+      const redis = {
+        set: jest.fn().mockResolvedValue('OK'),
+        getdel: jest.fn().mockResolvedValue('held'),
+        quit: jest.fn().mockResolvedValue('OK'),
+      };
+      const redisSvc = new OauthStateService(new RedisOauthStateStore(redis));
+      const ticket = await redisSvc.holdPendingLink('held');
+      expect(ticket).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(redis.set).toHaveBeenCalledWith(
+        `wearables:oauth:link:${ticket}`,
+        'held',
+        'PX',
+        PENDING_LINK_TTL_MS,
+      );
+      await expect(redisSvc.takePendingLink(ticket)).resolves.toBe('held');
+      expect(redis.getdel).toHaveBeenCalledWith(`wearables:oauth:link:${ticket}`);
+      await expect(redisSvc.takePendingLink('')).resolves.toBeNull();
+      expect(redis.getdel).toHaveBeenCalledTimes(1);
     });
 
     it('rejects when Redis returns null (expired/unknown/replayed)', async () => {

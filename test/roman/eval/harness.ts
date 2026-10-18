@@ -21,6 +21,7 @@ import type { RomanToolbox } from '../../../src/roman/tools/roman-tool.types';
 import { RomanTimelineReader } from '../../../src/roman/memory/roman-timeline.reader';
 import { RomanClientMemoryAugmenter } from '../../../src/roman/memory/roman-client-memory.augmenter';
 import { RomanCoachMethodAugmenter } from '../../../src/roman/playbook/roman-coach-method.augmenter';
+import type { PlaybookSourceCollector } from '../../../src/roman/playbook/playbook-sources';
 import {
   matches,
   makePersonaDb,
@@ -74,12 +75,13 @@ export function makeWorld(
 ): HarnessWorld & { r11: R11Rows; consent: ScopedConsentReader } {
   const db = makePersonaDb();
   const intake = new FakeSafetyIntakeSource();
-  const ctx = new RomanClientContextService(db.prisma, intake);
   const model = makeStubModel(defaultReply);
   // B-R8-1: the production RomanService over the production egress gate; the
   // only fake is the consent ledger read. Every persona holds a live grant
-  // unless a spec revokes it.
+  // unless a spec revokes it. COACH-TEXT: so does every coach (coachesWithout).
   const reader = new ScopedConsentReader([P1, P2, P3, P4]);
+  const egress = new AiEgressService(reader);
+  const ctx = new RomanClientContextService(db.prisma, intake, egress);
   const rows: R11Rows = { exerciseSets: [], notes: [], playbooks: [] };
   const p = fakeOf<Record<string, unknown>>(db.prisma);
   type W = { where?: Record<string, unknown> };
@@ -95,17 +97,18 @@ export function makeWorld(
   p.romanClientSummary = { findMany: jest.fn(async () => []) };
   p.coachPlaybook = { findFirst: jest.fn(async (a: W) => where(rows.playbooks, a.where)[0] ?? null) };
   const budget = fakeOf<CoachAIBudgetService>({ resolveHeadCoachId: async (id: string) => id });
+  const eligible = fakeOf<PlaybookSourceCollector>({ eligibleClients: async (head: string) => ({ head, consented: [] }) });
   const roman = new RomanService(
     fakeOf(db.prisma),
-    new AiEgressService(reader),
+    egress,
     AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(model.client)),
     ctx,
     null,
     null,
     r11.augmenters
-      ? [new RomanClientMemoryAugmenter(db.prisma), new RomanCoachMethodAugmenter(db.prisma, budget)]
+      ? [new RomanClientMemoryAugmenter(db.prisma), new RomanCoachMethodAugmenter(db.prisma, budget, null, eligible)]
       : null,
-    r11.tools ? (r11.wrapTools ?? ((t: RomanToolbox) => t))(new RomanReadToolbox(db.prisma, new RomanTimelineReader(db.prisma))) : null,
+    r11.tools ? (r11.wrapTools ?? ((t: RomanToolbox) => t))(new RomanReadToolbox(db.prisma, new RomanTimelineReader(db.prisma, egress))) : null,
   );
   return { db, ctx, intake, model, roman, consent: reader, r11: rows };
 }

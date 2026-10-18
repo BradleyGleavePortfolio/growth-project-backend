@@ -54,8 +54,8 @@ function store(): StatefulPrisma {
   db.model('notification');
   db.state.user.push(
     { id: COACH, name: 'Coach One', email: 'coach@example.test' },
-    { id: 'client-1', name: 'Ana Ruiz', email: 'ana@example.test' },
-    { id: 'client-2', name: 'Sam Lee', email: 'sam@example.test' },
+    { id: 'client-1', name: 'Ana Ruiz', email: 'ana@example.test', coach_id: COACH },
+    { id: 'client-2', name: 'Sam Lee', email: 'sam@example.test', coach_id: COACH },
   );
   db.state.coachPackage.push({ id: 'pkg-1', name: 'Monthly coaching', interval: 'month' });
   return db;

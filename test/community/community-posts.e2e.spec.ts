@@ -327,8 +327,12 @@ itLive('community v1-3 Lab posts + comments (live DB)', () => {
     expect(ws?.name).toBe('Community');
     const cohorts = await prisma.communityCohort.findMany({
       where: { workspace_id: workspaceId },
+      orderBy: { sort_order: 'asc' },
     });
-    expect(cohorts.map((c) => [c.name, c.sort_order])).toEqual([['All members', 0]]);
+    expect(cohorts.map((c) => [c.name, c.kind, c.posting_policy, c.sort_order])).toEqual([
+      ['Announcements', 'announcement', 'coach', 0],
+      ['Everyone', 'chat', 'all', 1],
+    ]);
 
     // Second open and the coach's own open land on the same space.
     const again = await call('GET', '/api/community/me', asUser(ids.studentNoSpace));

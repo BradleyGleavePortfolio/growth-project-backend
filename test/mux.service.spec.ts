@@ -142,5 +142,19 @@ describe('MuxService', () => {
         svc.verifyWebhookSignature({ payload: '{}', signatureHeader: null }),
       ).toBe(false);
     });
+
+    // SECALERTS-BE (CodeQL js/remote-property-injection): a prototype-named
+    // segment returns false (400), never throws (500), and cannot spoil a
+    // real signature.
+    it.each(['__proto__', 'constructor', 'toString'])('a %s segment is refused, not a crash', (key) => {
+      const svc = new MuxService(makeConfig({ MUX_WEBHOOK_SECRET: secret }));
+      const payload = JSON.stringify({ type: 'video.asset.ready' });
+      const forged = `${key}=x,${signMuxPayload(payload, 'wrong')}`;
+      for (const signatureHeader of [`${key}=x`, forged]) {
+        expect(svc.verifyWebhookSignature({ payload, signatureHeader })).toBe(false);
+      }
+      const genuine = `${key}=x,${signMuxPayload(payload, secret)}`;
+      expect(svc.verifyWebhookSignature({ payload, signatureHeader: genuine })).toBe(true);
+    });
   });
 });

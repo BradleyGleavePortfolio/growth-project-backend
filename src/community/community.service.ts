@@ -237,7 +237,7 @@ export class CommunityService {
       event: eventRow,
       pinnedPost: pinnedRow,
       challenge: challengeRow,
-    } = await this.repo.findTodayContent(workspace.id, new Date());
+    } = await this.repo.findTodayContent(workspace.id, user.id, new Date());
     // Two-way block: Today never surfaces a pinned post, event or challenge
     // authored by someone in a block relation with the caller (the Hall,
     // events and challenges lists hide them too). One block lookup.
@@ -336,6 +336,8 @@ export class CommunityService {
         workspace_id: c.workspace_id,
         name: c.name,
         is_default: await this.repo.isDefaultCohort(c),
+        kind: c.kind,
+        posting_policy: c.posting_policy,
         member_count: await this.repo.cohortMemberCount(c.id),
         my_role: role,
       })),
@@ -362,7 +364,7 @@ export class CommunityService {
     const workspace = await this.repo.findWorkspaceById(cohort.workspace_id);
     const isOwner = workspace?.coach_id === user.id;
     const membership = await this.repo.findMembershipInCohort(cohortId, user.id);
-    const canRead = role === 'owner' || isOwner || membership?.status === 'active';
+    const canRead = role === 'owner' || isOwner || (await this.repo.canEnterCohort(cohortId, user.id));
 
     if (!canRead) {
       throw new ForbiddenException(FORBIDDEN_COHORT);
@@ -374,6 +376,8 @@ export class CommunityService {
       workspace_id: cohort.workspace_id,
       name: cohort.name,
       is_default: await this.repo.isDefaultCohort(cohort),
+      kind: cohort.kind,
+      posting_policy: cohort.posting_policy,
       member_count: await this.repo.cohortMemberCount(cohort.id),
       created_at: cohort.created_at.toISOString(),
       my_membership:

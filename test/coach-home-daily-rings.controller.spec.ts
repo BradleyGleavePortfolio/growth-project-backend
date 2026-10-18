@@ -235,6 +235,26 @@ describe('CoachHomeController — ED.2 GET /coach/home/daily-rings', () => {
     expect((await rings('coach-B')).checkIns).toEqual({ reviewed: 1, submitted: 1 });
   });
 
+  it("counts conversations to review by the client's current coach: a moved client's old thread stops counting", async () => {
+    setFlag(true);
+    const coachOf: Record<string, string> = { 'client-1': 'coach-B' };
+    // client-1 wrote to coach-A this morning, moved, then wrote to coach-B.
+    const rows = [
+      { coach_id: 'coach-A', client_id: 'client-1' },
+      { coach_id: 'coach-B', client_id: 'client-1' },
+    ];
+    const prisma = buildPrisma();
+    prisma.coachMessageFindMany.mockImplementation(async ({ where }: { where: Record<string, unknown> }) => {
+      const client = where.client as { coach_id?: string } | undefined;
+      return rows
+        .filter((r) => r.coach_id === where.coach_id && (!client || client.coach_id === coachOf[r.client_id]))
+        .map((r) => ({ client_id: r.client_id }));
+    });
+    const rings = (coach: string) => new CoachHomeService(prisma.repo).getDailyRings(coach);
+    expect((await rings('coach-A')).review.totalConversations).toBe(0);
+    expect((await rings('coach-B')).review.totalConversations).toBe(1);
+  });
+
   it('uses the controller req.user.id as the only coach input', async () => {
     setFlag(true);
     const prisma = buildPrisma({ checkInSubmitted: 2 });

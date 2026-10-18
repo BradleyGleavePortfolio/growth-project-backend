@@ -31,9 +31,10 @@ import type {
 } from './dto/scheduling.dto';
 import { SchedulingProviderRegistry } from './providers/scheduling-provider.registry';
 import { SchedulingAccessService } from './scheduling-access.service';
-import { SchedulingOpenSlotsService } from './scheduling-open-slots.service';
+import { SchedulingOpenSlotsService, toBookingOptions } from './scheduling-open-slots.service';
 import {
   BOOKING_OPTION_LIMITS,
+  CLIENT_MOVED_END_REASON,
   DEFAULT_BOOKING_OPTIONS,
   MAX_BOOKING_HORIZON_DAYS,
   MAX_PENDING_REQUESTS_PER_COACH,
@@ -42,6 +43,7 @@ import {
   OCCUPYING_SESSION_STATUSES,
   SESSION_NOT_FOUND_MESSAGE,
   SchedulingErrorCode,
+  changeLockedAt,
   formatNoticeMinutes,
   hasUsableLink,
   requestExpiresAt,
@@ -316,7 +318,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     opts: TransitionOptions = {},
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     this.assertRequestOpen(existing, actor);
     this.assertTransition(existing, 'scheduled');
@@ -360,7 +362,7 @@ export class SchedulingSessionLifecycleService {
     reason?: string,
     opts: TransitionOptions = {},
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     this.assertRequestOpen(existing, actor);
     this.assertTransition(existing, 'declined');
@@ -396,7 +398,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     dto: RescheduleSessionDto,
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     await this.access.assertCanActAsParticipant(actor, existing);
     this.assertRequestOpen(existing, actor);
     if (existing.status !== 'requested' && existing.status !== 'scheduled') {
@@ -417,6 +419,7 @@ export class SchedulingSessionLifecycleService {
         ),
       );
     }
+    if (isClient) await this.assertClientChangeOpen(existing, now);
     const { start, end } = parseInterval(dto.start_at, dto.end_at);
     assertWithinBookingWindow(start, now, OUTER_BOOKING_BOUNDS);
 
@@ -490,6 +493,16 @@ export class SchedulingSessionLifecycleService {
           start_at: start,
           end_at: end,
           status: nextStatus,
+          // C4MOVED: the start before this move, who moved it and when (the
+          // client sees what changed). Only a move that changes the start
+          // writes these; a new end alone keeps the last move.
+          ...(start.getTime() !== current.start_at.getTime()
+            ? {
+                moved_from_start_at: current.start_at,
+                moved_by_role: isClient ? ('client' as const) : ('coach' as const),
+                last_moved_at: now,
+              }
+            : {}),
           ...(nextStatus === 'requested' && current.status === 'scheduled'
             ? { approved_at: null }
             : {}),
@@ -588,19 +601,29 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     dto: CancelSessionDto,
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     await this.access.assertCanActAsParticipant(actor, existing);
     this.assertRequestOpen(existing, actor);
     this.assertTransition(existing, 'canceled');
     assertExpectedStart(existing, dto.expected_start_at);
     const clientCancel = actor.role === 'student';
     if (clientCancel && existing.start_at.getTime() <= Date.now()) throw clientCancelTooLate();
+    const noticeHours = clientCancel ? await this.assertClientChangeOpen(existing, new Date()) : 0;
     const updated = await this.compareAndSet(
       existing,
       'canceled',
       { ended_at: new Date(), end_reason: dto.reason ?? null },
       {
-        ...(clientCancel ? { start: 'future' as const, onStarted: clientCancelTooLate } : {}),
+        ...(clientCancel
+          ? {
+              start: 'future' as const,
+              leadMs: noticeHours * 3_600_000,
+              onStarted: () =>
+                existing.start_at.getTime() <= Date.now()
+                  ? clientCancelTooLate()
+                  : changesLocked(noticeHours, existing.start_at),
+            }
+          : {}),
         requestOpenFor: viewerOf(actor),
       },
     );
@@ -628,6 +651,67 @@ export class SchedulingSessionLifecycleService {
     return updated;
   }
 
+  /**
+   * Owner HIST-2b Option 1: "A move cancels the old coach's upcoming sessions
+   * with that client. The old coach's calendar frees up, and the client books
+   * with the new coach." Runs in the move's own transaction, so the two commit
+   * together. Every session of the moved clients with `formerCoachId` that is
+   * still ahead and still holds time is cancelled the way a coach cancel leaves
+   * it. Past and finished sessions stay. A repeated move finds nothing left.
+   * After commit, pass the result to finishMoveCancels.
+   */
+  async cancelLeftByMove(
+    tx: Tx,
+    clientIds: readonly string[],
+    formerCoachId: string,
+  ): Promise<MoveCancelledSession[]> {
+    const now = new Date();
+    const ahead = {
+      coach_id: formerCoachId,
+      status: { in: [...OCCUPYING_SESSION_STATUSES] },
+      start_at: { gt: now },
+    };
+    const seen = await tx.coachingSession.findMany({
+      where: { ...ahead, client_id: { in: [...clientIds] } },
+      select: { id: true, status: true },
+    });
+    const cancelled: MoveCancelledSession[] = [];
+    for (const { id, status } of seen) {
+      const [row] = await tx.coachingSession.updateManyAndReturn({
+        where: { ...ahead, id },
+        data: { status: 'canceled', ended_at: now, end_reason: CLIENT_MOVED_END_REASON },
+      });
+      if (row) cancelled.push({ from: status, row });
+    }
+    return cancelled;
+  }
+
+  /**
+   * The rest of a coach cancel, once the move has committed: the coach's open
+   * times refresh, each cancel is audited, and its calendar event and meeting
+   * are cancelled. Nobody is notified: no notice names the client to the old
+   * coach (owner 4), and the client's notice waits for approved wording.
+   * Never throws, because the move has already happened.
+   */
+  async finishMoveCancels(
+    actorId: string,
+    cancelled: readonly MoveCancelledSession[],
+    role: ActorContext['role'] = 'coach',
+  ): Promise<void> {
+    const actor: ActorContext = { id: actorId, role, email: null, coach_id: null };
+    for (const { from, row } of cancelled) {
+      this.openSlots.invalidateCoach(row.coach_id);
+      await this.writeTransitionAudit(
+        AuditAction.SESSION_CANCELED,
+        actor,
+        { ...row, status: from },
+        'canceled',
+        { reason: CLIENT_MOVED_END_REASON },
+      );
+      if (row.calendar_event_id || row.video_meeting_id) await this.cancelProviderArtifacts(row);
+    }
+  }
+
   // ── complete / no-show ─────────────────────────────────────────────
 
   async completeSession(
@@ -635,7 +719,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     dto: CompleteSessionDto,
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     this.assertTransition(existing, 'completed');
     assertHasStarted(existing, 'complete');
@@ -655,7 +739,7 @@ export class SchedulingSessionLifecycleService {
     reason?: string,
     opts: TransitionOptions = {},
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     this.assertTransition(existing, 'no_show');
     assertExpectedStart(existing, opts.expectedStartAt);
@@ -679,7 +763,7 @@ export class SchedulingSessionLifecycleService {
     sessionId: string,
     dto: AttachManualVideoLinkDto,
   ): Promise<CoachingSession> {
-    const existing = await this.loadSessionOrThrow(sessionId);
+    const existing = await this.loadSessionFor(actor, sessionId);
     this.access.assertIsSessionCoach(actor, existing);
     const url = dto.video_url.trim();
     if (!MEETING_LINK_PATTERN.test(url)) {
@@ -743,6 +827,13 @@ export class SchedulingSessionLifecycleService {
   }
 
   // ── helpers ────────────────────────────────────────────────────────
+
+  /** Every read or action by id: a coach whose client moved away finds no session (owner 4). */
+  async loadSessionFor(actor: ActorContext, sessionId: string): Promise<CoachingSession> {
+    const session = await this.loadSessionOrThrow(sessionId);
+    await this.access.assertSessionStillTheirs(actor, session);
+    return session;
+  }
 
   async loadSessionOrThrow(sessionId: string): Promise<CoachingSession> {
     const session = await this.prisma.coachingSession.findUnique({ where: { id: sessionId } });
@@ -871,6 +962,8 @@ export class SchedulingSessionLifecycleService {
     data: Prisma.CoachingSessionUpdateManyMutationInput,
     fence: {
       start?: 'future' | 'started';
+      /** With start 'future': the start must also be at least this far ahead (C4-NOTICE). */
+      leadMs?: number;
       onStarted?: () => HttpException;
       /** S-SCHED-5: a request transition must land before its clear time. */
       requestOpenFor?: 'client' | 'coach';
@@ -878,7 +971,7 @@ export class SchedulingSessionLifecycleService {
   ): Promise<CoachingSession> {
     const now = new Date();
     const startFilter: Prisma.DateTimeFilter = { equals: existing.start_at };
-    if (fence.start === 'future') startFilter.gt = now;
+    if (fence.start === 'future') startFilter.gt = new Date(now.getTime() + (fence.leadMs ?? 0));
     if (fence.start === 'started') startFilter.lte = now;
     const guardRequest = fence.requestOpenFor !== undefined && existing.status === 'requested';
     const res = await this.prisma.coachingSession.updateMany({
@@ -901,6 +994,23 @@ export class SchedulingSessionLifecycleService {
       if (fence.onStarted) throw fence.onStarted();
     }
     throw stateChanged();
+  }
+
+  /**
+   * C4-NOTICE (owner Option 1): a client's own move or cancel must come
+   * before the notice set by this session's own coach (default 24 hours).
+   * Returns the notice in hours. Coaches and server flows never call this.
+   */
+  private async assertClientChangeOpen(existing: CoachingSession, now: Date): Promise<number> {
+    const profile = await this.prisma.coachProfile.findUnique({
+      where: { user_id: existing.coach_id },
+      select: { booking_cancel_notice_hours: true },
+    });
+    const hours = toBookingOptions(profile).cancel_notice_hours;
+    if (changeLockedAt(existing.start_at, hours).getTime() <= now.getTime()) {
+      throw changesLocked(hours, existing.start_at);
+    }
+    return hours;
   }
 
   // S-SCHED-5: a request that is closed by expiry, or has reached its clear
@@ -1308,6 +1418,12 @@ function assertHasStarted(existing: CoachingSession, action: 'complete' | 'no_sh
   throw notStartedYet(action);
 }
 
+/** A session a client move cancelled, with the status it had. */
+export interface MoveCancelledSession {
+  from: SessionStatus;
+  row: CoachingSession;
+}
+
 export interface TransitionOptions {
   /** The start time on the caller's screen (ISO). Mismatch -> 409 SESSION_MOVED. */
   expectedStartAt?: string | null;
@@ -1367,6 +1483,19 @@ function clientCancelTooLate(): ConflictException {
       'This session has already started, so it cannot be cancelled from the app. Message your coach instead.',
     ),
   );
+}
+
+// C4-NOTICE: a client's own move or cancel inside the coach's notice. The app
+// shows its own copy for a code, never this message raw; the body carries the
+// lock time so the app can show it in the client's own zone.
+function changesLocked(hours: number, startAt: Date): ConflictException {
+  return new ConflictException({
+    ...schedulingError(
+      SchedulingErrorCode.CHANGES_LOCKED,
+      `Changes are locked within ${hours} hour${hours === 1 ? '' : 's'} of the start. Message your coach if you need help changing this session.`,
+    ),
+    change_locked_at: changeLockedAt(startAt, hours).toISOString(),
+  });
 }
 
 function notStartedYet(action: 'complete' | 'no_show'): ConflictException {

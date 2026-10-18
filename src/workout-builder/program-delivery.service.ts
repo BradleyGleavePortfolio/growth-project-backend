@@ -32,6 +32,8 @@ import { randomUUID } from 'crypto';
 import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { alternativesOf } from './plan-exercise-fields';
+import { programDaysWhere } from './program-guards';
 
 /** Advisory-lock namespace (int4) for program delivery keys. */
 export const ADVISORY_LOCK_NAMESPACE_MWB_DELIVERY = 0x4d574244; // 'MWBD'
@@ -52,6 +54,8 @@ export interface DeliverProgramInput {
   startAt: Date;
   deliveryKey: string;
   source: ProgramDeliverySource;
+  /** C2-C0: the coach's planned training time on every day, "HH:MM"; absent = no time (a package). */
+  scheduledTime?: string | null;
 }
 
 export interface DeliveredProgram {
@@ -146,7 +150,7 @@ export class ProgramDeliveryService {
       });
     }
     const masterPlans = await tx.workoutPlan.findMany({
-      where: { program_id: master.id, archived_at: null },
+      where: programDaysWhere(master),
       orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
       include: { exercises: { where: { archived_at: null }, orderBy: { order: 'asc' } } },
     });
@@ -182,6 +186,7 @@ export class ProgramDeliveryService {
         rest_seconds: e.rest_seconds ?? null,
         superset_group_id: remap(e.superset_group_id ?? null),
         notes: e.notes ?? null,
+        alternative_external_ids: alternativesOf(e),
       }));
       planRows.push({
         id: planId,
@@ -224,6 +229,7 @@ export class ProgramDeliveryService {
         client_id: input.clientId,
         assigned_by_coach_id: input.actingUserId,
         scheduled_for: scheduledFor,
+        scheduled_time: input.scheduledTime ?? null,
       });
       snapshotRows.push({
         assignment_id: assignmentId,

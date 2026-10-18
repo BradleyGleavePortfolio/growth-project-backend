@@ -2,11 +2,12 @@ import { Injectable } from '@nestjs/common';
 import type {
   CheckIn,
   CoachPackage,
-  MealPlan,
+  DailyMealPlan,
   WorkoutPlan,
   WorkoutPlanExercise,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import { planStaysInTenantWhere } from '../../workout-builder/tenant-clients';
 
 /**
  * Data access for v2-1 plan-context tag resolution.
@@ -25,9 +26,9 @@ import { PrismaService } from '../../prisma.service';
 export class PlanContextRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /** A workout plan by id, or null. */
-  async findWorkoutPlan(id: string): Promise<WorkoutPlan | null> {
-    return this.prisma.workoutPlan.findUnique({ where: { id } });
+  /** A workout plan by id, or null; a moved client's copy day is null for `coachId` (owner 4). */
+  async findWorkoutPlan(id: string, coachId: string): Promise<WorkoutPlan | null> {
+    return this.prisma.workoutPlan.findUnique({ where: { id, AND: [planStaysInTenantWhere(coachId)] } });
   }
 
   /**
@@ -48,9 +49,12 @@ export class PlanContextRepository {
     });
   }
 
-  /** A meal plan by id, or null. */
-  async findMealPlan(id: string): Promise<MealPlan | null> {
-    return this.prisma.mealPlan.findUnique({ where: { id } });
+  /**
+   * A live day plan (MEAL:DAY) by id, or null. An archived plan never resolves:
+   * that includes the frozen copy a moved client keeps (owner 4, 139-13).
+   */
+  async findMealPlan(id: string): Promise<DailyMealPlan | null> {
+    return this.prisma.dailyMealPlan.findFirst({ where: { id, archived_at: null } });
   }
 
   /** A coach package by id, or null. */

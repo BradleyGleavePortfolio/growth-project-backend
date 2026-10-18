@@ -20,8 +20,6 @@ import type { AuthedRequest } from '../../auth/auth-request';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { RequiresTier } from '../../billing/requires-tier.decorator';
-import { SubscriptionGuard } from '../../billing/subscription.guard';
 import { AiGatewayService } from '../gateway/ai-gateway.service';
 import {
   ASSIGN_WORKOUT_CAPABILITY,
@@ -133,12 +131,11 @@ export class DraftSendNotificationDto {
  *   2. The role gate is at THREE concentric layers (controller +
  *      gateway + materialiser) — the spec §3 hard role boundary — and
  *      a dedicated controller is the natural primary defence.
- *   3. Per-endpoint throttle tuning (assign_workout 5/hr feels right;
- *      send_notification can be tighter since the side-effect is a
- *      push and rate-limiting matters more there).
+ *   3. Per-endpoint hourly throttles: 60/hr for coaches (owner
+ *      ROMAN-HOURLY-SCOPE); other roles keep their existing limits.
  *
  * Every route here is `@Roles('coach', 'owner')` + `JwtAuthGuard` +
- * `CoachGuard` + `SubscriptionGuard` (tier=pro). Owners are listed for
+ * `CoachGuard`. Owners are listed for
  * the same self-documenting parity with the rest of /coach/ai/*; the
  * RolesGuard owner-bypass would admit them anyway. Clients hitting any
  * of these endpoints get 403 from the CoachGuard BEFORE the gateway
@@ -152,8 +149,7 @@ export class DraftSendNotificationDto {
  */
 @ApiTags('coach-ai-execution')
 @Controller('v1/coach/ai/draft')
-@RequiresTier('pro')
-@UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachAIExecutionController {
   private readonly logger = new Logger(CoachAIExecutionController.name);
 
@@ -175,7 +171,10 @@ export class CoachAIExecutionController {
    * draft id so mobile can route into the pending-drafts inbox.
    */
   @Roles('coach', 'owner')
-  @Throttle({ default: { ttl: 3600000, limit: 30 } })
+  @Throttle({ default: {
+    ttl: 3600000,
+    limit: (ctx) => ctx.switchToHttp().getRequest<AuthedRequest>().user?.role === 'coach' ? 60 : 30,
+  } })
   @Post('assign-workout')
   async draftAssignWorkout(
     @Request() req: AuthedRequest,
@@ -207,7 +206,10 @@ export class CoachAIExecutionController {
    * Same envelope as assign-workout; capability = draft.assign_meal_plan.
    */
   @Roles('coach', 'owner')
-  @Throttle({ default: { ttl: 3600000, limit: 30 } })
+  @Throttle({ default: {
+    ttl: 3600000,
+    limit: (ctx) => ctx.switchToHttp().getRequest<AuthedRequest>().user?.role === 'coach' ? 60 : 30,
+  } })
   @Post('assign-meal-plan')
   async draftAssignMealPlan(
     @Request() req: AuthedRequest,
@@ -237,14 +239,14 @@ export class CoachAIExecutionController {
 
   /**
    * `POST /v1/coach/ai/draft/send-notification`
-   * Tighter throttle (10/hr) because the side-effect is a push and a
-   * compromised coach account spamming pushes is a worse outcome than
-   * spamming workout/meal-plan drafts (those are not delivered until
-   * the coach also approves; for notifications the delivery + approval
-   * step are basically the same event).
+   * Hourly throttle: 60 for coaches, 10 for other roles. The notification
+   * is still delivered only after approval.
    */
   @Roles('coach', 'owner')
-  @Throttle({ default: { ttl: 3600000, limit: 10 } })
+  @Throttle({ default: {
+    ttl: 3600000,
+    limit: (ctx) => ctx.switchToHttp().getRequest<AuthedRequest>().user?.role === 'coach' ? 60 : 10,
+  } })
   @Post('send-notification')
   async draftSendNotification(
     @Request() req: AuthedRequest,

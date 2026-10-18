@@ -51,6 +51,20 @@ export const REQUEST_EXPIRY_NOTICE_FRESH_HOURS = 24;
 export const REQUEST_EXPIRY_NOTICE_LEASE_MS = 4 * 60_000;
 export const REQUEST_EXPIRY_NOTICE_MAX_ATTEMPTS = 3;
 
+// C4MOVED (#1021): the only CoachingSession columns the notice and recovery
+// passes read. Both select exactly these, so a column the job does not use
+// (the moved fields, notes, recap) never reaches it.
+export const EXPIRED_SESSION_SELECT = {
+  id: true,
+  coach_id: true,
+  client_id: true,
+  session_type_id: true,
+  status: true,
+  start_at: true,
+  request_expires_at: true,
+} as const;
+type ExpiredSession = Pick<CoachingSession, keyof typeof EXPIRED_SESSION_SELECT>;
+
 export interface RequestExpirySweepResult {
   lease: 'acquired' | 'held';
   expired: number;
@@ -193,7 +207,7 @@ export class BookingRequestExpiryJob {
     const since = new Date(now.getTime() - REQUEST_EXPIRY_NOTICE_FRESH_HOURS * 3_600_000);
     let cursor: { at: Date; id: string } | null = null;
     for (;;) {
-      const page: CoachingSession[] = await this.prisma.coachingSession.findMany({
+      const page: ExpiredSession[] = await this.prisma.coachingSession.findMany({
         where: {
           status: 'expired',
           end_reason: REQUEST_EXPIRED_END_REASON,
@@ -209,6 +223,7 @@ export class BookingRequestExpiryJob {
         },
         orderBy: [{ request_expires_at: 'asc' }, { id: 'asc' }],
         take: REQUEST_EXPIRY_PAGE,
+        select: EXPIRED_SESSION_SELECT,
       });
       if (page.length === 0) return;
       const last = page[page.length - 1];
@@ -232,7 +247,7 @@ export class BookingRequestExpiryJob {
 
   // Both sides' notice rows in one transaction: all or none.
   private async claimNotices(
-    session: CoachingSession,
+    session: ExpiredSession,
     now: Date,
     result: RequestExpirySweepResult,
   ): Promise<NoticeRow[]> {
@@ -274,7 +289,7 @@ export class BookingRequestExpiryJob {
   }
 
   private async deliver(
-    session: CoachingSession,
+    session: ExpiredSession,
     claim: NoticeRow,
     now: Date,
     result: RequestExpirySweepResult,
@@ -351,6 +366,7 @@ export class BookingRequestExpiryJob {
     if (rows.length === 0) return;
     const sessions = await this.prisma.coachingSession.findMany({
       where: { id: { in: [...new Set(rows.map((r) => r.session_id))] } },
+      select: EXPIRED_SESSION_SELECT,
     });
     const byId = new Map(sessions.map((s) => [s.id, s]));
     for (const row of rows) {

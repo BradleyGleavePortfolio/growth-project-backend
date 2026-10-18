@@ -29,6 +29,7 @@ type AccessMock = {
   isWorkspaceCoach: jest.Mock;
   canAccessWorkspace: jest.Mock;
   canAccessCohort: jest.Mock;
+  assertCanPost: jest.Mock;
   listAccessibleCohortIds: jest.Mock;
   membershipInWorkspace: jest.Mock;
 };
@@ -116,6 +117,7 @@ describe('CommunityVoiceService', () => {
       isWorkspaceCoach: jest.fn().mockResolvedValue(false),
       canAccessWorkspace: jest.fn().mockResolvedValue(true),
       canAccessCohort: jest.fn().mockResolvedValue(true),
+      assertCanPost: jest.fn().mockResolvedValue(undefined),
       listAccessibleCohortIds: jest.fn().mockResolvedValue([COHORT_A]),
       membershipInWorkspace: jest.fn().mockResolvedValue(true),
     };

@@ -77,6 +77,12 @@ export const COACH_AI_METERED_CAPABILITIES: ReadonlySet<string> = new Set([
   // they are turned on (owner A6.4: every AI turn debits the pool).
   'draft.create_workout_plan',
   'draft.edit_workout_plan',
+  // AIBUDGET C2 — the three typed coach drafts (/v1/coach/ai/draft/*). Off
+  // in the manifest today; listed so they are admitted and debited like
+  // every other model call the moment they are turned on.
+  'draft.assign_workout',
+  'draft.assign_meal_plan',
+  'draft.send_notification',
 ]);
 
 /** Resolve the actual ceiling at call time so test env mutations stick. */

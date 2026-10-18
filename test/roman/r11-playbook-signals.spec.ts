@@ -18,7 +18,6 @@ import { computeMacros, resolveMacroInputs } from '../../src/macros/macro-calcul
 import {
   PlaybookSignalsService,
   classifyStrengthDay,
-  mealsPerDayOfPlan,
   median,
   splitOf,
 } from '../../src/roman/playbook/playbook-signals.service';
@@ -90,7 +89,6 @@ function fakePrisma(tables: Tables) {
     'workoutAdjustmentProposal',
     'macroTarget',
     'dailyMealPlanAssignment',
-    'mealPlan',
     'exerciseCatalogItem',
   ]) {
     models[name] = model(name);
@@ -235,25 +233,9 @@ function buildTables(clients: string[] = CLIENTS): Tables {
   const dailyMealPlanAssignment: Row[] = [
     ...(team[0] ? [daily(team[0], H, 4, 3), daily(team[0], H, 6, 30)] : []),
     ...(team[1] ? [daily(team[1], S, 3, 3)] : []),
+    ...(team[2] ? [daily(team[2], H, 5, 2)] : []),
     ...OTHER_CLIENTS.map((c) => daily(c, O, 9, 1)),
   ];
-  const mealPlan: Row[] = [
-    ...(team[2]
-      ? [
-          {
-            client_id: team[2],
-            coach_id: H,
-            archived_at: null,
-            created_at: daysAgo(2),
-            title: PLAN_TITLES[2],
-            items: [],
-            days: [{ meals: [{}, {}, {}, {}, {}] }, { meals: [{}, {}, {}, {}, {}] }],
-          },
-        ]
-      : []),
-    { client_id: OTHER_CLIENTS[0], coach_id: O, archived_at: null, created_at: daysAgo(1), items: [], days: [{ meals: [{}] }] },
-  ];
-
   return {
     teamSubCoachAssignment: [
       { head_coach_id: H, sub_coach_id: S, archived_at: null },
@@ -265,7 +247,6 @@ function buildTables(clients: string[] = CLIENTS): Tables {
     workoutAdjustmentProposal,
     macroTarget,
     dailyMealPlanAssignment,
-    mealPlan,
     exerciseCatalogItem: CATALOG,
   };
 }
@@ -292,7 +273,7 @@ describe('R11-P2 playbook signals: tenancy (only the team’s own rows)', () => 
 
     expect(out.team_size).toBe(2);
     // Every query is bounded to the team ids.
-    for (const name of ['clientWorkoutAssignment', 'macroTarget', 'workoutAdjustmentProposal', 'mealPlan']) {
+    for (const name of ['clientWorkoutAssignment', 'macroTarget', 'workoutAdjustmentProposal', 'dailyMealPlanAssignment']) {
       const where = calls[name][0].where;
       const ids = (where.coach_id ?? where.assigned_by_coach_id).in;
       expect([...ids].sort()).toEqual([H, S].sort());
@@ -341,7 +322,7 @@ describe('R11-P2 playbook signals: tenancy (only the team’s own rows)', () => 
     expect(out.macros!.deficit_pct_median).toBe(Math.round(median(deficits)!));
     expect(out.macros!.surplus_pct_median).toBeNull();
 
-    // Meals: latest day plan (4, not the older 6), 3 slots, 5 meals -> median 4.
+    // Meals: latest day plan (4, not the older 6), 3 slots, 5 slots -> median 4.
     expect(out.meals).toEqual({ meals_per_day_median: 4, clients: 3 });
   });
 
@@ -376,11 +357,36 @@ describe('R11-P2 playbook signals: 3-client minimum', () => {
     const { svc, calls } = service(buildTables());
     const out = await svc.compute(H, { now: NOW, clientIds: CLIENTS.slice(0, 2) });
     expect(calls.macroTarget[0].where.client_id).toEqual({ in: CLIENTS.slice(0, 2) });
-    expect(calls.mealPlan[0].where.client_id).toEqual({ in: CLIENTS.slice(0, 2) });
+    expect(calls.dailyMealPlanAssignment[0].where.client_id).toEqual({ in: CLIENTS.slice(0, 2) });
     expect(out.macros).toBeNull();
     expect(out.meals).toBeNull();
     expect(out.schedule).toBeNull();
     expect(out.adjustments).toEqual([]);
+  });
+
+  it('PLAYBOOK-WITHDRAW: a client program counts only while its client is passed in; plans and masters stay', async () => {
+    const t = buildTables();
+    const day = (program: Row) => ({ coach_id: H, archived_at: null, program_id: 'prog', is_template: program.is_template, program });
+    const rows = (id: string, program: Row) =>
+      [0, 1, 2].map((order) => ({ exercise_external_id: id, order, archived_at: null, workout_plan: day(program) }));
+    t.exerciseCatalogItem = [
+      ...t.exerciseCatalogItem,
+      { id: 'ex-thrust', slug: 'hip-thrust', source_ref: 'seed:legs-009', name: 'Hip Thrust', primary_muscle: 'glutes' },
+      { id: 'ex-stepup', slug: 'step-up', source_ref: 'seed:legs-010', name: 'Step Up', primary_muscle: 'quads' },
+    ];
+    t.workoutPlanExercise = [
+      ...t.workoutPlanExercise,
+      ...rows('ex-legpress', { is_template: false, client_id: CLIENTS[3] }), // one client's copy
+      ...rows('ex-thrust', { is_template: true, client_id: null }), // a master
+      ...rows('ex-stepup', { is_template: false, client_id: null }), // a client's program, client unknown
+    ];
+    const names = async (clientIds?: string[]) =>
+      (await service(t).svc.compute(H, { now: NOW, clientIds })).top_exercises.map((e) => e.name);
+    expect(await names(CLIENTS.slice(0, 3))).toEqual(expect.arrayContaining(['Back Squat', 'Hip Thrust']));
+    expect(await names(CLIENTS.slice(0, 3))).not.toContain('Leg Press');
+    expect(await names(CLIENTS)).toContain('Leg Press');
+    expect(await names(CLIENTS)).not.toContain('Step Up');
+    expect(await names()).toEqual(expect.arrayContaining(['Leg Press', 'Step Up'])); // no client list: unchanged
   });
 
   it('a sub-metric under the floor is null while the others stay', async () => {
@@ -430,14 +436,9 @@ describe('R11-P2 playbook signals: pure helpers', () => {
     expect(splitOf({ conditioning: 5 })).toBe('mixed');
   });
 
-  it('median and meals per day', () => {
+  it('median', () => {
     expect(median([])).toBeNull();
     expect(median([3, 1, 2])).toBe(2);
     expect(median([1, 2, 3, 4])).toBe(2.5);
-    expect(mealsPerDayOfPlan([], [{ meals: [{}, {}, {}] }, { meals: [{}, {}, {}, {}] }, { meals: [{}, {}, {}] }])).toBe(3);
-    expect(
-      mealsPerDayOfPlan([{ time_of_day: 'Breakfast' }, { time_of_day: 'breakfast' }, { time_of_day: 'Lunch' }], null),
-    ).toBe(2);
-    expect(mealsPerDayOfPlan([{ name: 'oats' }], null)).toBeNull();
   });
 });

@@ -53,13 +53,16 @@ import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
 import { isMwbTemplatesEnabled } from './mwb-templates.feature';
-import { assertLastDayMayGo, lockProgramMaster } from './program-guards';
+import { assertLastDayMayGo, lockProgramMaster, programDaysWhere } from './program-guards';
+import { inTenantWhere, planStaysInTenantWhere, programStaysInTenantWhere } from './tenant-clients';
+import { alternativesOf } from './plan-exercise-fields';
 import {
   AssignProgramDto,
   CloneProgramResultDto,
   CompleteAssignmentDto,
   CreateAssignmentDto,
   CreateWorkoutPlanDto,
+  UpdateAssignmentDto,
   UpdateWorkoutPlanDto,
   UpsertExerciseRowDto,
 } from './workout-builder.dto';
@@ -218,6 +221,11 @@ export class WorkoutBuilderService {
     routeKey: string,
     idempotencyKey: string | null | undefined,
     op: () => Promise<T>,
+    // Owner 4: the assignment rows a cached body holds. A completed replay
+    // returns it only while each row's client is still this user's
+    // (assertCanAccessClient), whatever client the retry names; else that
+    // guard's error, with no write and no push.
+    cachedAssignmentIds?: (cached: T) => string[],
   ): Promise<T> {
     if (!idempotencyKey) return op();
 
@@ -250,7 +258,16 @@ export class WorkoutBuilderService {
           throw new ConflictException('Request in progress — retry in a moment');
         }
         if (existing.status === 'completed') {
-          return existing.response_json as unknown as T;
+          const cached = existing.response_json as unknown as T;
+          if (cachedAssignmentIds) {
+            const rows = await this.prisma.clientWorkoutAssignment.findMany({
+              where: { id: { in: cachedAssignmentIds(cached) } },
+              select: { client_id: true },
+              distinct: ['client_id'],
+            });
+            for (const row of rows) await this.assertCanAccessClient(userId, row.client_id);
+          }
+          return cached;
         }
         // status === 'in_progress' → concurrent retry. Surface 409 so
         // the client can back off; we do NOT run the mutation a second time.
@@ -317,6 +334,8 @@ export class WorkoutBuilderService {
       where: {
         coach_id: coachId,
         archived_at: null,
+        // Owner 4: a moved client's copy leaves the list before paging.
+        AND: [planStaysInTenantWhere(coachId)],
         ...(cursorWhere ?? {}),
       },
       orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
@@ -350,6 +369,7 @@ export class WorkoutBuilderService {
     if (plan.coach_id !== coachId && !(await this.canOpenTeamProgramDay(coachId, plan))) {
       throw new ForbiddenException();
     }
+    await this.assertNotMovedClientCopy(plan);
     return plan;
   }
 
@@ -514,10 +534,11 @@ export class WorkoutBuilderService {
     planId: string,
   ): Promise<void> {
     const master = await lockProgramMaster(tx, programId);
+    if (!master) return;
     const others = await tx.workoutPlan.count({
-      where: { program_id: programId, archived_at: null, id: { not: planId } },
+      where: { ...programDaysWhere(master), id: { not: planId } },
     });
-    if (others > 0 || !master) return;
+    if (others > 0) return;
     await assertLastDayMayGo(tx, master);
   }
 
@@ -550,18 +571,15 @@ export class WorkoutBuilderService {
       throw new BadRequestException('Exercise order values must be unique within a plan');
     }
 
+    // Owner 4: auth runs before the ledger, so a saved key replays only while
+    // the plan is still this coach's (a moved client's copy is not found).
+    await this.assertCoach(coachId);
+    await this.assertPlanOwnership(coachId, planId);
     return this.withIdempotency(
       coachId,
       `workout-builder:setExercises:${planId}`,
       idempotencyKey,
       async () => {
-        // Auth/ownership checks run only after the ledger confirms no
-        // completed response exists for this key. Otherwise a client
-        // that legitimately succeeded once would get a 409 on retry
-        // because an assignment was created in between.
-        await this.assertCoach(coachId);
-        await this.assertPlanOwnership(coachId, planId);
-
         // The exercise mutation is serialised against concurrent
         // setExercises calls on the same plan via a `FOR UPDATE` lock on
         // the WorkoutPlan row inside a serializable transaction, so two
@@ -609,6 +627,7 @@ export class WorkoutBuilderService {
                   rest_seconds: r.rest_seconds ?? null,
                   superset_group_id: r.superset_group_id ?? null,
                   notes: r.notes ?? null,
+                  alternative_external_ids: alternativesOf(r),
                 })),
               });
             }
@@ -636,23 +655,19 @@ export class WorkoutBuilderService {
     dto: CreateAssignmentDto,
     idempotencyKey?: string | null,
   ) {
+    // Owner 4: the plan and client checks run before the ledger, so a saved
+    // key replays only while both are still this coach's.
+    await this.assertCoach(coachId);
+    await this.assertPlanOwnership(coachId, planId);
+    // MWB-1 (§7.2): widen from head-coach-only to head-coach OR open
+    // sub-coach. Legacy head-coach behaviour is preserved exactly when
+    // SubCoachScopeService is not wired (unit-test construction).
+    await this.assertCanAccessClient(coachId, dto.client_id);
     return this.withIdempotency(
       coachId,
       `workout-builder:assignPlan:${planId}`,
       idempotencyKey,
       async () => {
-        // Auth/ownership and the client-belongs check run only after the
-        // ledger confirms no completed response exists for this key. If
-        // the original call succeeded and a sub-coach reassignment later
-        // changed who owns the client, the retry should still replay the
-        // cached success rather than 4xx on a now-stale precondition.
-        await this.assertCoach(coachId);
-        await this.assertPlanOwnership(coachId, planId);
-        // MWB-1 (§7.2): widen from head-coach-only to head-coach OR open
-        // sub-coach. Legacy head-coach behaviour is preserved exactly when
-        // SubCoachScopeService is not wired (unit-test construction).
-        await this.assertCanAccessClient(coachId, dto.client_id);
-
         // MWB-1 (§3.3): the assignment row AND its immutable plan snapshot are
         // written in one transaction so a client can never observe an
         // assignment without its frozen exercise list. Later coach edits to
@@ -664,6 +679,7 @@ export class WorkoutBuilderService {
               client_id: dto.client_id,
               assigned_by_coach_id: coachId,
               scheduled_for: new Date(dto.scheduled_for),
+              scheduled_time: dto.scheduled_time ?? null,
             },
           });
           await this.writeAssignmentSnapshot(tx, assignment.id, planId);
@@ -674,6 +690,7 @@ export class WorkoutBuilderService {
         this.emitAssignmentPush(dto.client_id, created.id, planId);
         return created;
       },
+      (cached) => [cached.id],
     );
   }
 
@@ -705,6 +722,7 @@ export class WorkoutBuilderService {
     const items = await this.prisma.clientWorkoutAssignment.findMany({
       where: {
         workout_plan_id: planId,
+        client: await this.stillTheirClientsWhere(coachId),
         ...(cursorWhere ?? {}),
       },
       orderBy: [{ scheduled_for: 'asc' }, { id: 'asc' }],
@@ -715,6 +733,19 @@ export class WorkoutBuilderService {
     const last = page[page.length - 1];
     const nextCursor = hasMore && last ? this.encodeCursor(last.scheduled_for, last.id) : null;
     return { items: page, nextCursor };
+  }
+
+  /**
+   * Owner 4: a client who moved to another coach leaves this coach's lists at
+   * once; their rows are kept, so history follows the client. A sub-coach
+   * keeps the clients they may open now. A head coach keeps clients whose
+   * coach is them or an active sub-coach on their team (the team chain).
+   */
+  private async stillTheirClientsWhere(coachId: string): Promise<Prisma.UserWhereInput> {
+    if (this.subCoachScope && (await this.subCoachScope.isSubCoach(coachId))) {
+      return { id: { in: await this.subCoachScope.getAuthorizedClientIds(coachId) } };
+    }
+    return inTenantWhere(coachId);
   }
 
   /**
@@ -855,6 +886,7 @@ export class WorkoutBuilderService {
         completion_idempotency_key: dto.idempotency_key,
         started_at: dto.started_at ? new Date(dto.started_at) : null,
         completion_payload: (dto.completion_payload as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        skipped_at: null,
       },
     });
 
@@ -921,12 +953,84 @@ export class WorkoutBuilderService {
     throw new ConflictException('Assignment already completed');
   }
 
+  /**
+   * C1V2-C1: PATCH /assignments/:id, one field per call. The client moves
+   * (scheduled_for) or skips (skip) their own day while it is neither completed
+   * nor skipped; a new date runs from two days back (today in every time zone)
+   * to seven days ahead. The client's current coach, or a delegated sub-coach,
+   * writes the day's note to the client (client_note) or, C2-C0, its planned
+   * time (scheduled_time), and reads back only { id, <that field> }: a coach
+   * write never returns the day's logged results, which follow the client's
+   * Workouts sharing switch. Anyone else: 403.
+   */
+  async updateAssignment(userId: string, assignmentId: string, dto: UpdateAssignmentDto, now = new Date()) {
+    const sent = [dto.scheduled_for != null, dto.skip != null, dto.client_note !== undefined, dto.scheduled_time !== undefined].filter(Boolean).length;
+    if (sent !== 1) throw new BadRequestException('Send exactly one of scheduled_for, skip, client_note, scheduled_time');
+    const a = await this.prisma.clientWorkoutAssignment.findUnique({ where: { id: assignmentId }, select: { client_id: true } });
+    if (!a) throw new NotFoundException('Assignment not found');
+    if (dto.client_note !== undefined || dto.scheduled_time !== undefined) {
+      await this.assertCanAccessClient(userId, a.client_id);
+      const where = { id: assignmentId };
+      if (dto.scheduled_time !== undefined) {
+        return this.prisma.clientWorkoutAssignment.update({
+          where, data: { scheduled_time: dto.scheduled_time }, select: { id: true, scheduled_time: true },
+        });
+      }
+      return this.prisma.clientWorkoutAssignment.update({
+        where, data: { client_note: dto.client_note?.trim() || null }, select: { id: true, client_note: true },
+      });
+    }
+    if (a.client_id !== userId) throw new ForbiddenException('Access denied');
+    const at = dto.scheduled_for ? new Date(dto.scheduled_for) : null;
+    const day = 24 * 60 * 60 * 1000;
+    if (at && (at.getTime() < now.getTime() - 2 * day || at.getTime() > now.getTime() + 7 * day)) {
+      throw new BadRequestException('scheduled_for must fall between 2 days ago and 7 days ahead');
+    }
+    const moved = await this.prisma.clientWorkoutAssignment.updateMany({
+      where: { id: assignmentId, client_id: userId, completed_at: null, skipped_at: null },
+      data: at ? { scheduled_for: at } : { skipped_at: now },
+    });
+    if (moved.count !== 1) throw new ConflictException('Assignment already completed or skipped');
+    return this.prisma.clientWorkoutAssignment.findUnique({ where: { id: assignmentId } });
+  }
+
   // ─── Guards ───────────────────────────────────────────────────────────────
 
   private async assertPlanOwnership(coachId: string, planId: string) {
     const plan = await this.prisma.workoutPlan.findUnique({ where: { id: planId } });
     if (!plan) throw new NotFoundException('Workout plan not found');
     if (plan.coach_id !== coachId) throw new ForbiddenException();
+    await this.assertNotMovedClientCopy(plan);
+  }
+
+  /**
+   * Owner 4: a day of a client's program copy is not found for the tenant
+   * once that client has moved to another coach (tenant-clients.ts).
+   */
+  private async assertNotMovedClientCopy(plan: {
+    id: string;
+    coach_id: string;
+    program_id: string | null;
+  }) {
+    if (!plan.program_id) return;
+    const where = { id: plan.id, ...planStaysInTenantWhere(plan.coach_id) };
+    if ((await this.prisma.workoutPlan.count({ where })) === 0) {
+      throw new NotFoundException('Workout plan not found');
+    }
+  }
+
+  /**
+   * Owner 4: a moved client's program copy is not found as the source of a
+   * fork, clone or assignment either (the same rule, tenant-clients.ts).
+   */
+  private async assertSourceStaysInTenant(
+    program: { id: string; coach_id: string },
+    notFound: string,
+  ) {
+    const where = { id: program.id, ...programStaysInTenantWhere(program.coach_id) };
+    if ((await this.prisma.workoutProgram.count({ where })) === 0) {
+      throw new NotFoundException(notFound);
+    }
   }
 
   private async assertClientBelongsToCoach(coachId: string, clientId: string) {
@@ -971,16 +1075,16 @@ export class WorkoutBuilderService {
   // ─── MWB-1: programs — fork / clone / fan-out (§3.2, §3.4, §7.3) ──────────
 
   /**
-   * Deep-copy (by value) every plan + exercise under `sourceProgramId` into
-   * `newProgramId`, inside the caller's transaction. Returns the created
-   * plans. Each plan gets a fresh id and an `initial`/`clone` revision
+   * Deep-copy (by value) every day of `source` (programDaysWhere: only rows in
+   * its tenant) into `newProgramId`, inside the caller's transaction. Returns
+   * the created plans. Each plan gets a fresh id and an `initial`/`clone` revision
    * baseline so undo (later phase) has an anchor. `superset_group_id`s are
    * re-mapped into the NEW plan's namespace so two cloned plans can never
    * collide on a shared group id. Shared by forkTemplate + cloneProgramToClient.
    */
   private async copyProgramPlans(
     tx: Prisma.TransactionClient,
-    sourceProgramId: string,
+    source: { id: string; coach_id: string },
     newProgramId: string,
     opts: {
       isTemplate: boolean;
@@ -992,7 +1096,7 @@ export class WorkoutBuilderService {
     },
   ) {
     const sourcePlans = await tx.workoutPlan.findMany({
-      where: { program_id: sourceProgramId, archived_at: null },
+      where: programDaysWhere(source),
       orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
       include: {
         exercises: {
@@ -1040,6 +1144,7 @@ export class WorkoutBuilderService {
         rest_seconds: e.rest_seconds ?? null,
         superset_group_id: remapGroup(e.superset_group_id ?? null),
         notes: e.notes ?? null,
+        alternative_external_ids: alternativesOf(e),
       }));
       if (rows.length > 0) {
         await tx.workoutPlanExercise.createMany({
@@ -1077,6 +1182,31 @@ export class WorkoutBuilderService {
   }
 
   /**
+   * PROGINSERT: the tenant a fork, clone or program assignment acts in. The
+   * same rule as ProgramLibraryService.resolveActor (C13): a coach is a team
+   * sub-coach, acting in the head coach's tenant, only with an explicit
+   * membership (SubCoachScopeService.getHeadCoachIdForSubCoach). A bare
+   * coach_id on a coach row (an old guest checkout) never moves the copy into
+   * someone else's tenant. Without the scope helper the actor stays in their
+   * own tenant.
+   */
+  private async actorTenant(
+    actingUserId: string,
+  ): Promise<{ tenantId: string; authorKind: 'coach' | 'sub_coach' }> {
+    const actor = await this.prisma.user.findUnique({
+      where: { id: actingUserId },
+      select: { id: true },
+    });
+    if (!actor) throw new ForbiddenException('Acting user not found');
+    const headCoachId = this.subCoachScope
+      ? await this.subCoachScope.getHeadCoachIdForSubCoach(actingUserId)
+      : null;
+    return headCoachId
+      ? { tenantId: headCoachId, authorKind: 'sub_coach' }
+      : { tenantId: actingUserId, authorKind: 'coach' };
+  }
+
+  /**
    * MWB-1 (§7.3) — fork a template program into a NEW program owned by the
    * acting user. "Grab a building block, make it your own." The source must
    * be either `visibility='tenant_shared'` within the actor's tenant OR owned
@@ -1091,14 +1221,9 @@ export class WorkoutBuilderService {
     if (!source) throw new NotFoundException('Source template not found');
 
     // Authorisation: owner, OR a tenant_shared building block within the
-    // actor's tenant. We resolve the actor's tenant from their own user row
-    // (head coaches: their own id is the tenant; sub-coaches: their coach_id).
-    const actor = await this.prisma.user.findUnique({
-      where: { id: actingUserId },
-      select: { id: true, coach_id: true },
-    });
-    if (!actor) throw new ForbiddenException('Acting user not found');
-    const actorTenantId = actor.coach_id ?? actor.id;
+    // actor's tenant (head coaches: their own id; seated sub-coaches: their
+    // head coach's id, see actorTenant).
+    const { tenantId: actorTenantId, authorKind } = await this.actorTenant(actingUserId);
     const isOwner = source.owner_user_id === actingUserId;
     const isSharedInTenant =
       source.visibility === 'tenant_shared' && source.coach_id === actorTenantId;
@@ -1107,6 +1232,7 @@ export class WorkoutBuilderService {
         'You may only fork a program you own or a tenant-shared building block in your business',
       );
     }
+    await this.assertSourceStaysInTenant(source, 'Source template not found');
 
     return this.prisma.$transaction(
       async (tx) => {
@@ -1125,10 +1251,10 @@ export class WorkoutBuilderService {
             version: 1,
           },
         });
-        const plans = await this.copyProgramPlans(tx, sourceTemplateId, program.id, {
+        const plans = await this.copyProgramPlans(tx, source, program.id, {
           isTemplate: true,
           actingUserId,
-          authorKind: actor.coach_id ? 'sub_coach' : 'coach',
+          authorKind,
           cause: 'initial',
           coachId: actorTenantId,
         });
@@ -1202,12 +1328,7 @@ export class WorkoutBuilderService {
     if (!master) throw new NotFoundException('Master program not found');
     // The coach must own the master (or it must be a tenant_shared block they
     // can reach) AND have access to the target client.
-    const actor = await this.prisma.user.findUnique({
-      where: { id: coachId },
-      select: { id: true, coach_id: true },
-    });
-    if (!actor) throw new ForbiddenException('Acting user not found');
-    const actorTenantId = actor.coach_id ?? actor.id;
+    const { tenantId: actorTenantId, authorKind } = await this.actorTenant(coachId);
     const canReachMaster =
       master.owner_user_id === coachId ||
       (master.visibility === 'tenant_shared' && master.coach_id === actorTenantId);
@@ -1217,6 +1338,7 @@ export class WorkoutBuilderService {
       // across a tenant boundary (BUILDER_BRIEF hard gate).
       throw new NotFoundException('Master program not found');
     }
+    await this.assertSourceStaysInTenant(master, 'Master program not found');
     // (2) Sub-coach scope: head coach OR open SubCoachAssignment. Foreign
     // coach with no access → 403 (assertCanAccessClient).
     await this.assertCanAccessClient(coachId, clientId);
@@ -1300,10 +1422,10 @@ export class WorkoutBuilderService {
           }
           throw err;
         }
-        const plans = await this.copyProgramPlans(tx, masterProgramId, program.id, {
+        const plans = await this.copyProgramPlans(tx, master, program.id, {
           isTemplate: false,
           actingUserId: coachId,
-          authorKind: actor.coach_id ? 'sub_coach' : 'coach',
+          authorKind,
           cause: 'clone',
           coachId: actorTenantId,
         });
@@ -1318,7 +1440,7 @@ export class WorkoutBuilderService {
             revision_index: 0,
             structure_json: this.serialiseProgramStructure(program, plans),
             author_id: coachId,
-            author_kind: actor.coach_id ? 'sub_coach' : 'coach',
+            author_kind: authorKind,
             cause: 'clone',
           },
         });
@@ -1399,31 +1521,28 @@ export class WorkoutBuilderService {
     dto: AssignProgramDto,
     idempotencyKey?: string | null,
   ) {
+    // Owner 4: the source and client checks run before the ledger, so a saved
+    // key replays only while both are still this coach's.
+    await this.assertCoach(coachId);
+    const program = await this.prisma.workoutProgram.findUnique({
+      where: { id: programId },
+      select: { id: true, owner_user_id: true, coach_id: true, visibility: true },
+    });
+    if (!program) throw new NotFoundException('Program not found');
+    const { tenantId: actorTenantId } = await this.actorTenant(coachId);
+    const canReach =
+      program.owner_user_id === coachId ||
+      (program.visibility === 'tenant_shared' && program.coach_id === actorTenantId);
+    if (!canReach) throw new ForbiddenException('You cannot assign this program');
+    await this.assertSourceStaysInTenant(program, 'Program not found');
+    await this.assertCanAccessClient(coachId, dto.client_id);
     return this.withIdempotency(
       coachId,
       `workout-builder:assignProgram:${programId}`,
       idempotencyKey,
       async () => {
-        await this.assertCoach(coachId);
-        const program = await this.prisma.workoutProgram.findUnique({
-          where: { id: programId },
-          select: { id: true, owner_user_id: true, coach_id: true, visibility: true },
-        });
-        if (!program) throw new NotFoundException('Program not found');
-        const actor = await this.prisma.user.findUnique({
-          where: { id: coachId },
-          select: { id: true, coach_id: true },
-        });
-        if (!actor) throw new ForbiddenException('Acting user not found');
-        const actorTenantId = actor.coach_id ?? actor.id;
-        const canReach =
-          program.owner_user_id === coachId ||
-          (program.visibility === 'tenant_shared' && program.coach_id === actorTenantId);
-        if (!canReach) throw new ForbiddenException('You cannot assign this program');
-        await this.assertCanAccessClient(coachId, dto.client_id);
-
         const plans = await this.prisma.workoutPlan.findMany({
-          where: { program_id: programId, archived_at: null },
+          where: programDaysWhere(program),
           orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
           select: { id: true, week_index: true, day_index: true },
         });
@@ -1432,13 +1551,14 @@ export class WorkoutBuilderService {
         }
 
         const created = await this.prisma.$transaction((tx) =>
-          this.fanOutProgramPlans(tx, plans, coachId, dto.client_id, dto.start_date),
+          this.fanOutProgramPlans(tx, plans, coachId, dto.client_id, dto.start_date, dto.scheduled_time),
         );
 
         // One push for the whole program (avoid N notifications).
         this.emitAssignmentPush(dto.client_id, created[0].id, plans[0].id);
         return { assignments: created };
       },
+      (cached) => cached.assignments.map((row) => row.id),
     );
   }
 
@@ -1495,13 +1615,14 @@ export class WorkoutBuilderService {
     return this.fanOutProgramPlans(tx, plans, coachId, clientId, startDate);
   }
 
-  /** Shared by assignProgramToClient and writeProgramAssignmentsInTx. */
+  /** Shared by assignProgramToClient and writeProgramAssignmentsInTx; every day gets `scheduledTime` (C2-C0). */
   private async fanOutProgramPlans(
     tx: Prisma.TransactionClient,
     plans: Array<{ id: string; week_index: number | null; day_index: number | null }>,
     coachId: string,
     clientId: string,
     startDateIso: string,
+    scheduledTime: string | null = null,
   ): Promise<Array<{ id: string }>> {
     const startDate = new Date(startDateIso);
     const DAY_MS = 24 * 60 * 60 * 1000;
@@ -1516,6 +1637,7 @@ export class WorkoutBuilderService {
           client_id: clientId,
           assigned_by_coach_id: coachId,
           scheduled_for: scheduledFor,
+          scheduled_time: scheduledTime,
         },
       });
       await this.writeAssignmentSnapshot(tx, assignment.id, plan.id);
@@ -1693,6 +1815,7 @@ export class WorkoutBuilderService {
             rest_seconds: r.rest_seconds ?? null,
             superset_group_id: r.superset_group_id ?? null,
             notes: r.notes ?? null,
+            alternative_external_ids: alternativesOf(r),
           })),
         ),
         plan_meta_json: planMetaJson(plan),
@@ -1723,6 +1846,7 @@ export class WorkoutBuilderService {
       rest_seconds: number | null;
       superset_group_id: string | null;
       notes: string | null;
+      alternative_external_ids?: string[];
     }>,
   ): Prisma.InputJsonValue {
     return rows
@@ -1737,6 +1861,7 @@ export class WorkoutBuilderService {
         rest_seconds: r.rest_seconds ?? null,
         superset_group_id: r.superset_group_id ?? null,
         notes: r.notes ?? null,
+        alternative_external_ids: alternativesOf(r),
       })) as unknown as Prisma.InputJsonValue;
   }
 
@@ -1772,6 +1897,7 @@ export class WorkoutBuilderService {
             rest_seconds: true,
             superset_group_id: true,
             notes: true,
+            alternative_external_ids: true,
           },
         },
       },
@@ -1849,6 +1975,10 @@ export interface AppliedAdjustmentRow {
 export interface RomanAdjustedSet {
   order: number;
   sets: number;
+  /** C1V2-C1: the set count before the coach's first change; null on an older row without it. */
+  sets_before: number | null;
+  /** C1V2-C1: the coach's reason for the client, from the latest change; null when none was given. */
+  client_reason: string | null;
 }
 
 /**
@@ -1858,15 +1988,16 @@ export interface RomanAdjustedSet {
  * Malformed rows are skipped. Empty when nothing was applied.
  */
 export function romanAdjustedSets(rows: readonly AppliedAdjustmentRow[] | undefined): RomanAdjustedSet[] {
-  const byOrder = new Map<number, number>();
+  const byOrder = new Map<number, RomanAdjustedSet>();
   const ordered = [...(rows ?? [])].sort(
     (a, b) => (a.decided_at?.getTime() ?? 0) - (b.decided_at?.getTime() ?? 0),
   );
   for (const row of ordered) {
     const change = row.applied_change;
     if (!change || typeof change !== 'object' || Array.isArray(change)) continue;
-    const exercises = (change as Record<string, unknown>).exercises;
+    const { exercises, client_reason: reason } = change as Record<string, unknown>;
     if (!Array.isArray(exercises)) continue;
+    const client_reason = typeof reason === 'string' && reason.trim() ? reason.trim() : null;
     for (const x of exercises) {
       if (!x || typeof x !== 'object') continue;
       const e = x as Record<string, unknown>;
@@ -1874,10 +2005,11 @@ export function romanAdjustedSets(rows: readonly AppliedAdjustmentRow[] | undefi
       if (typeof order !== 'number' || !Number.isInteger(order)) continue;
       if (typeof after !== 'number' || !Number.isInteger(after) || after < 1) continue;
       if (after === before) continue;
-      byOrder.set(order, after);
+      const sets_before = typeof before === 'number' && Number.isInteger(before) ? before : null;
+      byOrder.set(order, { order, sets: after, sets_before: byOrder.get(order)?.sets_before ?? sets_before, client_reason });
     }
   }
-  return [...byOrder.entries()].sort((a, b) => a[0] - b[0]).map(([order, sets]) => ({ order, sets }));
+  return [...byOrder.values()].filter((r) => r.sets !== r.sets_before).sort((a, b) => a.order - b.order);
 }
 
 /** One exercise row of an assignment snapshot (MWB-1 `exercises_json`). */
@@ -1890,6 +2022,8 @@ export interface AssignmentExerciseRow {
   rest_seconds: number | null;
   superset_group_id: string | null;
   notes: string | null;
+  /** C1V2-C1: the coach's swaps; absent on a row frozen before them. */
+  alternative_external_ids?: string[];
 }
 
 /** Defensive parse of a snapshot's `exercises_json`; malformed rows are skipped. */
@@ -1909,6 +2043,7 @@ export function parseAssignmentRows(json: unknown): AssignmentExerciseRow[] {
       rest_seconds: typeof o.rest_seconds === 'number' ? o.rest_seconds : null,
       superset_group_id: typeof o.superset_group_id === 'string' ? o.superset_group_id : null,
       notes: typeof o.notes === 'string' ? o.notes : null,
+      alternative_external_ids: alternativesOf(o),
     });
   }
   return out.sort((a, b) => a.order - b.order);

@@ -46,6 +46,7 @@ import {
   planMetaOpChangesAField,
   updateExerciseOpChangesAField,
 } from './workout-diff.types';
+import { alternativesOf } from '../../../../workout-builder/plan-exercise-fields';
 
 /**
  * Thrown when a diff op is internally consistent (passes zod) but cannot be
@@ -82,6 +83,7 @@ function cloneExercise(e: PlanExerciseSnapshot): PlanExerciseSnapshot {
     rest_seconds: e.rest_seconds,
     superset_group_id: e.superset_group_id,
     notes: e.notes,
+    alternative_external_ids: alternativesOf(e),
   };
 }
 

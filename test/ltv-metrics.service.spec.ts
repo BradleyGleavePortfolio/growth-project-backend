@@ -24,6 +24,7 @@ function makePurchase(overrides: Partial<{
   canceled_at: Date | null;
   current_period_end: Date | null;
   cancel_at_period_end: boolean;
+  moved_away_at: Date | null;
 }> = {}) {
   return {
     id: Math.random().toString(36).slice(2),
@@ -39,6 +40,7 @@ function makePurchase(overrides: Partial<{
     canceled_at: overrides.canceled_at ?? null,
     current_period_end: overrides.current_period_end ?? null,
     cancel_at_period_end: overrides.cancel_at_period_end ?? false,
+    moved_away_at: overrides.moved_away_at ?? null,
   };
 }
 
@@ -1226,6 +1228,67 @@ describe('LtvMetricsService', () => {
       const result = await service.getMetrics('coach-1');
       expect(result).toHaveProperty('nrr_is_stub');
       expect(result.nrr_is_stub).toBe(true);
+    });
+  });
+
+  describe('MOVE-LTV: a client who moved away stops counting from the move date', () => {
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    const daysAgo = (n: number) => new Date(Date.now() - n * DAY_MS);
+
+    it('drops a moved client from active clients and MRR while their plan runs out its paid period', async () => {
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'stays', amount_cents: 20000, status: 'active' }),
+        // Renewal already off, access to the period end, still status active.
+        makePurchase({
+          client_user_id: 'moved',
+          amount_cents: 15000,
+          status: 'active',
+          entitlement_active: true,
+          cancel_at_period_end: true,
+          moved_away_at: daysAgo(2),
+        }),
+        makePurchase({
+          client_user_id: 'moved',
+          billing_type: 'one_time',
+          amount_cents: 50000,
+          status: 'paid',
+          entitlement_active: true,
+          moved_away_at: daysAgo(2),
+        }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+
+      expect(result.mrr_cents).toBe(20000);
+      expect(result.active_client_count).toBe(1);
+      expect(result.revenue_per_client_month_cents).toBe(20000);
+      // Still the coach's own sales only (tenant scope unchanged), now with the move date.
+      const args = mockPrisma.clientPurchase.findMany.mock.calls[0][0];
+      expect(args.where).toEqual({ coach_user_id: 'coach-1' });
+      expect(args.select.moved_away_at).toBe(true);
+    });
+
+    it('counts a moved client in MRR 30 days ago only when the move came after that date', async () => {
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'stays', amount_cents: 10000, created_at: daysAgo(60) }),
+        makePurchase({ client_user_id: 'movedLongAgo', amount_cents: 20000, created_at: daysAgo(60), moved_away_at: daysAgo(40) }),
+        makePurchase({ client_user_id: 'movedRecently', amount_cents: 15000, created_at: daysAgo(60), moved_away_at: daysAgo(10) }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+
+      expect(result.mrr_cents).toBe(10000);
+      expect(result.mrr_30d_ago_cents).toBe(25000);
+      expect(result.mrr_trend).toBe('down');
+    });
+
+    it('ends the client\'s time with the former coach at the move, not at the later period end', async () => {
+      mockPrisma.clientPurchase.findMany.mockResolvedValue([
+        makePurchase({ client_user_id: 'stays', created_at: daysAgo(90) }),
+        makePurchase({ client_user_id: 'moved', created_at: daysAgo(90), cancel_at_period_end: true, moved_away_at: new Date(Date.now() - 1000) }),
+      ]);
+      const result = await service.getMetrics('coach-1');
+
+      expect(result.active_client_count).toBe(1);
+      expect(result.churn_rate_pct).toBe(50);
     });
   });
 

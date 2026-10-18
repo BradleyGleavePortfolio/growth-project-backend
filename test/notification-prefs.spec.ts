@@ -19,6 +19,9 @@ const storedPrefs = new Map<string, Record<string, unknown>>();
 const storedNotifications: unknown[] = [];
 
 const mockPrisma = {
+  user: { findMany: jest.fn().mockResolvedValue([]), findUnique: jest.fn().mockResolvedValue(null) },
+  subCoachAssignment: { findMany: jest.fn().mockResolvedValue([]) },
+  coachingSession: { findMany: jest.fn().mockResolvedValue([]) },
   notificationPreferences: {
     findUnique: jest.fn(({ where }: { where: { user_id: string } }) =>
       Promise.resolve(storedPrefs.get(where.user_id) ?? null),
@@ -44,6 +47,7 @@ const mockPrisma = {
       return Promise.resolve(row);
     }),
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     findMany: jest.fn().mockResolvedValue([]),
     count: jest.fn().mockResolvedValue(0),
     update: jest.fn(),
@@ -195,23 +199,17 @@ describe('createNotification preference gating', () => {
 // ── markRead ────────────────────────────────────────────────────────────────────
 
 describe('markRead', () => {
-  it('throws NotFoundException when notification does not exist', async () => {
-    mockPrisma.notification.findUnique.mockResolvedValueOnce(null);
+  it('throws NotFoundException when the user has no such notification', async () => {
+    mockPrisma.notification.findFirst.mockResolvedValueOnce(null);
     await expect(service.markRead('nonexistent', 'u1')).rejects.toThrow('Notification not found');
-  });
-
-  it('throws NotFoundException when notification belongs to a different user', async () => {
-    mockPrisma.notification.findUnique.mockResolvedValueOnce({
-      id: 'n1',
-      user_id: 'u2',
-      read_at: null,
+    expect(mockPrisma.notification.findFirst).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: 'nonexistent', user_id: 'u1' }),
     });
-    await expect(service.markRead('n1', 'u1')).rejects.toThrow('Notification not found');
   });
 
   it('returns existing row without update when already read', async () => {
     const existing = { id: 'n1', user_id: 'u1', read_at: new Date() };
-    mockPrisma.notification.findUnique.mockResolvedValueOnce(existing);
+    mockPrisma.notification.findFirst.mockResolvedValueOnce(existing);
     const result = await service.markRead('n1', 'u1');
     expect(result).toEqual(existing);
     expect(mockPrisma.notification.update).not.toHaveBeenCalled();
@@ -226,7 +224,7 @@ describe('markAllRead', () => {
     const result = await service.markAllRead('u1');
     expect(result).toEqual({ updated: 5 });
     expect(mockPrisma.notification.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { user_id: 'u1', read_at: null } }),
+      expect.objectContaining({ where: expect.objectContaining({ user_id: 'u1', read_at: null }) }),
     );
   });
 });

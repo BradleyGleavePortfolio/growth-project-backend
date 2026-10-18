@@ -21,6 +21,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { IsTimeOfDay } from '../common/validators/time-of-day';
 
 /** Weeks a program may span (one training block up to a year). */
 export const PROGRAM_MAX_WEEKS = 52;
@@ -173,4 +174,9 @@ export class BulkAssignProgramDto {
   @IsOptional()
   @IsBoolean()
   allow_repeat?: boolean;
+
+  /** C2-C0: one planned training time, "HH:MM", on every day of the program; absent = no time. */
+  @IsOptional()
+  @IsTimeOfDay()
+  scheduled_time?: string | null;
 }

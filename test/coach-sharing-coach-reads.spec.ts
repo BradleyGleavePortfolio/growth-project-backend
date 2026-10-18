@@ -28,6 +28,9 @@ import type { GenerateChurnDraftDto } from '../src/coach/command-center/churn-in
 // Privacy > Coach sharing (Workouts, Food logs, Weigh-ins, Check-ins and
 // habits) and their coach must stop seeing that kind of log, and anything
 // built from it, on every coach read. The owner account keeps its bypass.
+// #SHARE-SIMPLE, #SHARE-JOIN (owner op 1): no switch counts now; all four reach
+// the client's coach now and no one else, so "shares" and "switches" in the
+// names below mean that rule: COACH coaches c1 and c3, not c2.
 // Every case goes through a controller or an unchanged service signature, so
 // this file compiles on main and fails there on behaviour.
 
@@ -90,8 +93,9 @@ const FOOD_TOTALS = [
   { user_id: 'c3', total_kcal: 300, total_protein_g: 20, total_carbs_g: 30, total_fat_g: 5 },
 ];
 
-// c1 shares all four; c2 shared all four and turned every one off; c3 shares
-// only "Check-ins and habits". Every client has the same logs.
+// The roster lists all three; COACH coaches c1 and c3 now. c1 shares all four;
+// c2 shared all four and turned every one off; c3 shares only "Check-ins and
+// habits". Every client has the same logs.
 function makePrisma() {
   const ids = ['c1', 'c2', 'c3'];
   const grant = (client_id: string, scope: string, revoked: boolean) => ({
@@ -167,7 +171,8 @@ function makePrisma() {
 
 function setup() {
   const prisma = makePrisma();
-  const consent = new ConsentService(stub<PrismaService>(prisma), stub<AuditService>({ write: jest.fn() }));
+  const coaches = stub<SubCoachScopeService>({ getAuthorizedClientIds: jest.fn(async (id: string) => (id === COACH ? ['c1', 'c3'] : id === 'sub-1' ? ['c1', 'c2', 'c3'] : [])) });
+  const consent = new ConsentService(stub<PrismaService>(prisma), stub<AuditService>({ write: jest.fn() }), coaches);
   const board = jest.fn(async (_coachId: string, opts: { clientIds?: string[] }) => ({
     data: (opts.clientIds ?? []).map((user_id) => ({ user_id, name: user_id, bucket: 'red', last_signal_at: null })),
     next_cursor: null,
@@ -203,27 +208,29 @@ describe('CF-SHARE-GATE-128: roster dashboards count only what each client share
   const service = (s: ReturnType<typeof setup>) =>
     new CoachService(stub<PrismaService>(s.prisma), stub<AuditService>({ write: jest.fn() }), s.consent);
 
-  it('GET /coach/dashboard: food totals only for clients sharing Food logs', async () => {
+  it('GET /coach/dashboard: food totals for each client COACH coaches now, switches or not', async () => {
     const s = setup();
-    expect(await service(s).getDashboard(COACH, 'coach')).toEqual({ logs_today: 1, total_kcal: 500, logging_rate: 1 });
+    expect(await service(s).getDashboard(COACH, 'coach')).toEqual({ logs_today: 2, total_kcal: 800, logging_rate: 1 });
   });
 
-  it('GET /coach/alerts: weight alert needs Weigh-ins, missed-workout alert needs Workouts', async () => {
+  it('GET /coach/alerts: weight and missed-workout alerts for each client COACH coaches now', async () => {
     const alerts = await service(setup()).getAlerts(COACH, 'coach');
-    expect(alerts.map((a) => `${a.type}:${a.client_id}`).sort()).toEqual(['missed_workouts:c1', 'weight_increasing:c1']);
+    expect(alerts.map((a) => `${a.type}:${a.client_id}`).sort()).toEqual([
+      'missed_workouts:c1', 'missed_workouts:c3', 'weight_increasing:c1', 'weight_increasing:c3',
+    ]);
   });
 
   it('GET /coach/dashboard/summary: each count and flag follows its switch; the owner account sees all', async () => {
     const coach = await service(setup()).getDashboardSummary(COACH, 'coach');
-    expect(coach.stats).toEqual({ total_clients: 3, active_today: 1, unread_messages: 0, pending_checkins: 2 });
-    expect(coach.attention_needed.map((a) => `${a.reason}:${a.client_id}`)).toEqual(['weight_flag:c1', 'no_checkin:c3']);
+    expect(coach.stats).toEqual({ total_clients: 3, active_today: 2, unread_messages: 0, pending_checkins: 2 });
+    expect(coach.attention_needed.map((a) => `${a.reason}:${a.client_id}`)).toEqual(['weight_flag:c1', 'weight_flag:c3']);
 
     const owner = await service(setup()).getDashboardSummary(COACH, 'owner');
     expect(owner.attention_needed.map((a) => a.client_id)).toEqual(['c1', 'c2', 'c3']);
     expect(owner.stats.pending_checkins).toBe(3);
   });
 
-  it('GET /coach/clients/risk-board: only clients sharing all four; the owner account sees all', async () => {
+  it('GET /coach/clients/risk-board: only clients COACH coaches now; the owner account sees all', async () => {
     const s = setup();
     const ctrl = new CoachController(
       service(s),
@@ -231,7 +238,7 @@ describe('CF-SHARE-GATE-128: roster dashboards count only what each client share
       stub<AdminPtmService>({ getRiskBoardForCoach: s.board }),
     );
     const query = stub<RiskBoardQueryDto>({});
-    expect((await ctrl.getCoachRiskBoard(req('coach'), query)).data.map((r) => r.user_id)).toEqual(['c1']);
+    expect((await ctrl.getCoachRiskBoard(req('coach'), query)).data.map((r) => r.user_id)).toEqual(['c1', 'c3']);
     expect((await ctrl.getCoachRiskBoard(req('owner'), query)).data.map((r) => r.user_id)).toEqual(['c1', 'c2', 'c3']);
   });
 });
@@ -250,25 +257,25 @@ describe('CF-SHARE-GATE-128: Command Center (coach Overview tab) follows the swi
       active_today: 2,
       pending_actions: 2,
       win_streak_count: 1,
-      at_risk_count: 1,
-      open_alerts: 3,
+      at_risk_count: 2,
+      open_alerts: 4,
     });
   });
 
-  it('at-risk lists only clients sharing all four', async () => {
+  it('at-risk lists only clients COACH coaches now', async () => {
     const r = await (await commandCenter()).getAtRisk(COACH, {});
-    expect(r.items.map((i) => i.user_id)).toEqual(['c1']);
+    expect(r.items.map((i) => i.user_id).sort()).toEqual(['c1', 'c3']);
   });
 
-  it('win streaks: check-in streaks need Check-ins, workout streaks need Workouts', async () => {
+  it('win streaks: only for clients COACH coaches now (one streak each)', async () => {
     const w = await (await commandCenter()).getWinStreaks(COACH, {});
     expect(w.items.map((i) => `${i.streak_type}:${i.user_id}`).sort()).toEqual(['check_in:c3', 'workout:c1']);
   });
 
   it('action queue: check-in alerts need Check-ins, the red-risk alert needs all four, other types stay', async () => {
     const q = await (await commandCenter()).getActionQueue(COACH, {});
-    expect(q.items.map((i) => i.alert_id).sort()).toEqual(['a1', 'a4', 'a5']);
-    expect(q.total_pending).toBe(3);
+    expect(q.items.map((i) => i.alert_id).sort()).toEqual(['a1', 'a4', 'a5', 'a6']);
+    expect(q.total_pending).toBe(4);
   });
 });
 
@@ -305,7 +312,7 @@ describe('B-865-SOL-130-1: GET /v1/coach/me/clients and churn-at-risk follow the
     } },
     { provide: SupabaseService, useValue: {} },
     { provide: AuditService, useValue: { write: jest.fn() } },
-    // 'sub-1' is a sub-coach of COACH; the grants belong to COACH.
+    // 'sub-1' is COACH's seated sub-coach (c1 and c3 delegated, c2 his own client); he reads as himself.
     { provide: SubCoachScopeService, useValue: {
       isSubCoach: jest.fn(async (id: string) => id === 'sub-1'),
       getAuthorizedClientIds: jest.fn(async () => ['c1', 'c2', 'c3']),
@@ -330,7 +337,7 @@ describe('B-865-SOL-130-1: GET /v1/coach/me/clients and churn-at-risk follow the
     ...(consent ? [{ provide: ConsentService, useValue: consent }] : []),
   ];
 
-  it('roster: the check-in date needs Check-ins, the workout date needs Workouts; sub-coach and owner keep their grant rules', async () => {
+  it('roster: check-in and workout dates only for clients COACH coaches now; sub-coach and owner keep their rules', async () => {
     const mod = await Test.createTestingModule({ providers: v1Providers(setup().consent) }).compile();
     const ctrl = new V1CoachController(mod.get(V1CoachService));
     const rows = async (id: string, role: string) => ctrl.listClients(stub<AuthedRequest>({ user: { id, role } }));
@@ -338,18 +345,18 @@ describe('B-865-SOL-130-1: GET /v1/coach/me/clients and churn-at-risk follow the
       rs.map((r) => `${r.id}:${r.lastCheckInAt ? 'check-in' : '-'}:${r.lastWorkoutAt ? 'workout' : '-'}`);
 
     const coach = await rows(COACH, 'coach');
-    expect(seen(coach)).toEqual(['c1:check-in:workout', 'c2:-:-', 'c3:check-in:-']);
+    expect(seen(coach)).toEqual(['c1:check-in:workout', 'c2:-:-', 'c3:check-in:workout']);
     // A hidden check-in date is not turned into a "No check-in" risk reason.
     expect(coach.map((r) => r.riskReason ?? '').filter((r) => /check-in/i.test(r))).toEqual([]);
-    expect(seen(await rows('sub-1', 'coach'))).toEqual(['c1:check-in:workout', 'c2:-:-', 'c3:check-in:-']);
+    expect(seen(await rows('sub-1', 'coach'))).toEqual(['c1:check-in:workout', 'c2:check-in:workout', 'c3:check-in:workout']);
     expect(seen(await rows('owner-1', 'owner'))).toEqual(['c1:check-in:workout', 'c2:check-in:workout', 'c3:check-in:workout']);
   });
 
-  it('churn-at-risk lists only clients sharing all four; the owner account sees all', async () => {
+  it('churn-at-risk lists only clients COACH coaches now; the owner account sees all', async () => {
     const mod = await Test.createTestingModule({ providers: churnProviders(setup().consent) }).compile();
     const ctrl = new CommandCenterController(stub<CommandCenterService>({}), mod.get(ChurnInterventionService));
     const listed = async (role: string) => (await ctrl.getChurnAtRisk(req(role))).items.map((i) => i.user_id);
-    expect(await listed('coach')).toEqual(['c1']);
+    expect(await listed('coach')).toEqual(['c1', 'c3']);
     expect(await listed('owner')).toEqual(['c1', 'c2', 'c3']);
   });
 
@@ -384,7 +391,7 @@ describe('B-865-SOL-130-2: GET /v1/coach/me/threads and the churn draft follow t
       } },
       { provide: SupabaseService, useValue: {} },
       { provide: AuditService, useValue: { write: jest.fn() } },
-      // 'sub-1' is a sub-coach of COACH; the grants belong to COACH.
+      // 'sub-1' is COACH's seated sub-coach (c1 and c3 delegated, c2 his own client); he reads as himself.
       { provide: SubCoachScopeService, useValue: {
         isSubCoach: jest.fn(async (id: string) => id === 'sub-1'),
         getAuthorizedClientIds: jest.fn(async () => ['c1', 'c2', 'c3']),
@@ -395,7 +402,7 @@ describe('B-865-SOL-130-2: GET /v1/coach/me/threads and the churn draft follow t
     return { providers, checkInGroupBy };
   }
 
-  it('threads: a hidden check-in date gives no risk; a sub-coach reads under the head coach grant; the owner account reads all', async () => {
+  it('threads: a hidden check-in date gives no risk; a sub-coach reads as himself; the owner account reads all', async () => {
     const { providers, checkInGroupBy } = threadsModule();
     const mod = await Test.createTestingModule({ providers }).compile();
     const ctrl = new V1CoachController(mod.get(V1CoachService));
@@ -405,7 +412,7 @@ describe('B-865-SOL-130-2: GET /v1/coach/me/threads and the churn draft follow t
     // c1 and c3 share Check-ins and habits (30 days without one: watch); c2 turned it off.
     expect(await risk(COACH, 'coach')).toEqual({ c1: 'watch', c2: 'healthy', c3: 'watch' });
     expect(checkInGroupBy.mock.calls[0][0].where).toEqual({ user_id: { in: ['c1', 'c3'] } });
-    expect(await risk('sub-1', 'coach')).toEqual({ c1: 'watch', c2: 'healthy', c3: 'watch' });
+    expect(await risk('sub-1', 'coach')).toEqual({ c1: 'watch', c2: 'watch', c3: 'watch' });
     expect(await risk('owner-1', 'owner')).toEqual({ c1: 'watch', c2: 'watch', c3: 'watch' });
   });
 
@@ -434,14 +441,13 @@ describe('B-865-SOL-130-2: GET /v1/coach/me/threads and the churn draft follow t
     const draft = (role: string, clientId: string) =>
       ctrl.generateChurnDraft(req(role), clientId, stub<GenerateChurnDraftDto>({ idempotency_key: KEY }));
 
-    // c2 turned all four off; c3 shares only Check-ins and habits.
-    for (const id of ['c2', 'c3']) {
-      await expect(draft('coach', id)).rejects.toThrow(ForbiddenException);
-    }
+    // c2 is not COACH's client now (their old switch-offs do not count either way).
+    await expect(draft('coach', 'c2')).rejects.toThrow(ForbiddenException);
     for (const fn of Object.values(reads)) expect(fn).not.toHaveBeenCalled();
 
-    // c1 shares all four, and the owner account reads all: both go on to the AI consent check.
+    // COACH coaches c1 and c3, and the owner account reads all: they go on to the AI consent check.
     await expect(draft('coach', 'c1')).rejects.toThrow('AI consent check reached');
+    await expect(draft('coach', 'c3')).rejects.toThrow('AI consent check reached');
     await expect(draft('owner', 'c2')).rejects.toThrow('AI consent check reached');
   });
 });

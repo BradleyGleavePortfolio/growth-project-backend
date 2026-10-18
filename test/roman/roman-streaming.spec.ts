@@ -20,9 +20,12 @@
 // service `opts.signal.aborted`) is genuinely tested, not mocked away.
 
 import 'reflect-metadata';
-import { RomanController } from '../../src/roman/roman.controller';
+import { RomanController, ROMAN_SAFETY_ACTIONS_HEADER } from '../../src/roman/roman.controller';
 import { RomanService } from '../../src/roman/roman.service';
-import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
+import {
+  FEATURE_ROMAN_CHAT_ENABLED_ENV,
+  FEATURE_ROMAN_CRISIS_ALERT_ENV,
+} from '../../src/roman/roman.feature';
 import { egressWithGrants, fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import {
   AI_EGRESS_POLICY_CODE,
@@ -35,13 +38,18 @@ import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egre
 import type { AuditService } from '../../src/audit/audit.service';
 import {
   romanEatingDisorderFallback,
+  ROMAN_COACH_TOLD_LINE,
   ROMAN_SAFETY_TEMPLATES,
 } from '../../src/roman/guardrails/safety-router';
+import * as safetyRouter from '../../src/roman/guardrails/safety-router';
+import { onceAlertId, type CoachAlertsService } from '../../src/coach/coach-alerts.service';
+import { SAFETY_ALERT_PUSH_BODY } from '../../src/notifications/push/lock-screen-copy';
 import { ROMAN_MET_BEFORE_LINE } from '../../src/roman/roman.prompts';
 import { ROMAN_MODEL_PHASE_1 } from '../../src/roman/anthropic-client.provider';
 import {
   ROMAN_ERROR_CAPACITY_REACHED,
   ROMAN_ERROR_RATE_LIMIT,
+  ROMAN_PRICE_PER_MTOK,
 } from '../../src/roman/roman.constants';
 
 // ─── flag harness (streaming requires the feature ON) ─────────────────────────
@@ -176,16 +184,18 @@ function makePrisma(sessionOwner = 'user-A') {
 
   // B-651-5: the spend admission takes a per-day advisory lock in its tx.
   const $executeRaw = jest.fn(async () => 1);
+  const $queryRaw = jest.fn(async (): Promise<unknown[]> => [{}]);
   const prisma = {
     romanSession,
     romanMessage,
     aiRequestAudit,
     $executeRaw,
+    $queryRaw, // ROMANCOUNT daily count: a row back = counted, [] = at the limit.
     $transaction: jest.fn(async (fn: (tx: unknown) => unknown) =>
       fn({ romanMessage, romanSession, aiRequestAudit, $executeRaw }),
     ),
   };
-  return { prisma, session, messages, romanMessage, audits };
+  return { prisma, session, messages, romanMessage, audits, $queryRaw };
 }
 
 // ─── fake Anthropic client ────────────────────────────────────────────────────
@@ -665,9 +675,8 @@ describe('Roman — crisis messages are never blocked by the turn limit or the s
   );
 
   it('turn limit used up: an emergency message still gets the 911 template; an ordinary one gets the 429', async () => {
-    const { ctrl, anthropic, romanMessage } = setup();
-    romanMessage.count.mockResolvedValue(10_000);
-    romanMessage.findFirst.mockResolvedValue(null);
+    const { ctrl, anthropic, $queryRaw } = setup();
+    $queryRaw.mockResolvedValue([]);
     const { res, writes } = makeRes();
     await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', {
       content: 'I have crushing chest pain right now',
@@ -757,7 +766,7 @@ describe('Roman — a crisis message is answered without box 2; nothing else is'
 // does. A returning client's prompt says Roman has met them before.
 describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-COPY-B-128)', () => {
   const ED = 'I have been making myself throw up after meals';
-  function setup(granted: string[], coachId: string | null = null) {
+  function setup(granted: string[], coachId: string | null = null, createAlert?: jest.Mock) {
     const made = makePrisma();
     const anthropic = makeAnthropic(['Hi', '.']);
     const { egress } = egressWithGrants(granted);
@@ -769,6 +778,10 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
       AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(anthropic)),
       null,
       fakeOf<AuditService>(audit),
+      null,
+      null,
+      null,
+      createAlert ? fakeOf<CoachAlertsService>({ createAlert }) : undefined,
     );
     const ctrl = new RomanController(
       fakeOf(service),
@@ -814,8 +827,8 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
   });
 
   it('turn limit used up: the fallback, no 429 and no Retry-After; an ordinary message still gets the 429', async () => {
-    const { ctrl, anthropic, romanMessage } = setup(['user-A']);
-    romanMessage.count.mockResolvedValue(10_000);
+    const { ctrl, anthropic, $queryRaw } = setup(['user-A']);
+    $queryRaw.mockResolvedValue([]);
     const { res, writes } = makeRes();
     await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
     const done = parseFrames(writes).find((f) => f.data?.type === 'done');
@@ -830,6 +843,31 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
     expect(err).toMatchObject({ response: { code: ROMAN_ERROR_RATE_LIMIT } });
   });
 
+  it('ROMANCOUNT: an eating-disorder message below the limit gets the guided answer, never counted; the next one is', async () => {
+    const t = setup(['user-A']);
+    const first = makeRes();
+    await t.ctrl.sendMessage(fakeOf(makeReq()), fakeOf(first.res), 'sess_1', { content: ED });
+    expect(parseFrames(first.writes).find((f) => f.data?.type === 'done')?.data.text).toBe('Hi.');
+    await t.ctrl.sendMessage(fakeOf(makeReq()), fakeOf(makeRes().res), 'sess_1', { content: 'hello' });
+    expect(t.anthropic.messages.stream).toHaveBeenCalledTimes(2);
+    expect(t.$queryRaw.mock.calls.map((c) => (c as unknown[]).includes(0))).toEqual([true, false]); // adds 0, then 1
+  });
+
+  it('ROMANCOUNT: the spend admission refuses (room left, not for this turn): each of three retries gives its count back', async () => {
+    process.env.ROMAN_DAILY_COST_CAP_USD = '1';
+    const t = setup(['user-A']);
+    const nearCap = { prompt_token_estimate: Math.floor(999_000 / ROMAN_PRICE_PER_MTOK.input), response_token_estimate: 0 };
+    t.prisma.aiRequestAudit.aggregate.mockResolvedValue({ _sum: nearCap }); // 0.999 of 1 used: this turn does not fit
+    for (let i = 0; i < 3; i++) {
+      const { res, writes } = makeRes();
+      await t.ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: 'hello' });
+      expect(parseFrames(writes).find((f) => f.event === 'error')?.data.code).toBe(ROMAN_ERROR_CAPACITY_REACHED);
+    }
+    const givenBack = t.prisma.$executeRaw.mock.calls.filter((c) => String((c as unknown[])[0]).includes('UPDATE "roman_usage_daily"'));
+    expect([t.$queryRaw.mock.calls.length, givenBack.length]).toEqual([3, 3]); // counted, then given back, each time
+    expect(t.anthropic.messages.stream).not.toHaveBeenCalled();
+  });
+
   it('AI available: an eating-disorder message is answered by the model under its hint, not the fallback', async () => {
     const { ctrl, anthropic } = setup(['user-A']);
     const { res, writes } = makeRes();
@@ -837,6 +875,66 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
     expect(anthropic.messages.stream).toHaveBeenCalledTimes(1);
     const done = parseFrames(writes).find((f) => f.data?.type === 'done');
     expect(done?.data.text).not.toBe(romanEatingDisorderFallback(false));
+  });
+
+  // B-R1F (owner 22a, 57): the eating-disorder coach alert, once per conversation.
+  const edAlert = (messageId: string) => ({
+    id: onceAlertId('roman_eating_disorder_reply', 'sess_1'),
+    coachId: 'coach-1',
+    clientId: 'user-A',
+    alertType: 'roman_eating_disorder_reply',
+    severity: 'warning',
+    message: SAFETY_ALERT_PUSH_BODY.roman_eating_disorder_reply,
+    payload: { roman_message_id: messageId },
+  });
+
+  it('AI available, coached client: the guided reply alerts the coach once and says so', async () => {
+    const createAlert = jest.fn(async () => ({}));
+    const { ctrl, anthropic, messages } = setup(['user-A'], 'coach-1', createAlert);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
+    expect(anthropic.messages.stream).toHaveBeenCalledTimes(1);
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(`Hi.\n\n${ROMAN_COACH_TOLD_LINE}`);
+    expect(messages.map((m) => [m.role, m.content])).toEqual([
+      ['user', ED],
+      ['roman', done?.data.text],
+    ]);
+    expect(createAlert.mock.calls).toEqual([[edAlert(messages[0].id)]]);
+    expect(JSON.stringify(createAlert.mock.calls)).not.toContain('throw up');
+  });
+
+  it('daily cap reached, coached client: the fixed fallback alerts the coach and says so', async () => {
+    process.env.ROMAN_DAILY_COST_CAP_USD = '0';
+    const createAlert = jest.fn(async () => ({}));
+    const { ctrl, anthropic, messages } = setup(['user-A'], 'coach-1', createAlert);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe(romanEatingDisorderFallback(true, true));
+    expect(done?.data.text).toContain(
+      `Messages reaches them. ${ROMAN_COACH_TOLD_LINE} A physician`,
+    );
+    expect(anthropic.messages.stream).not.toHaveBeenCalled();
+    expect(createAlert.mock.calls).toEqual([[edAlert(messages[0].id)]]);
+  });
+
+  it('a second eating-disorder message in the same conversation: no second alert, no coach line', async () => {
+    const dup = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+    const createAlert = jest.fn().mockRejectedValue(dup);
+    const { ctrl } = setup(['user-A'], 'coach-1', createAlert);
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(res), 'sess_1', { content: ED });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done');
+    expect(done?.data.text).toBe('Hi.');
+    expect(createAlert).toHaveBeenCalledTimes(1);
+  });
+
+  it('an ordinary message never alerts the coach', async () => {
+    const createAlert = jest.fn(async () => ({}));
+    const { ctrl } = setup(['user-A'], 'coach-1', createAlert);
+    await ctrl.sendMessage(fakeOf(makeReq()), fakeOf(makeRes().res), 'sess_1', { content: 'hello' });
+    expect(createAlert).not.toHaveBeenCalled();
   });
 
   it('returning client: the system prompt says Roman has met them; a first chat does not', async () => {
@@ -853,5 +951,123 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
     await back.ctrl.sendMessage(fakeOf(makeReq()), fakeOf(makeRes().res), 'sess_1', { content: 'hello' });
     const sys1 = (back.anthropic.messages.stream.mock.calls[0][0] as { system: string }).system;
     expect(sys1).toContain(ROMAN_MET_BEFORE_LINE);
+  });
+});
+
+// CRISIS-2B (owner "#CRISIS-2B - all 3 buttons"): Roman's fixed emergency or
+// self-harm reply carries safety_actions on the SSE done frame and in the
+// message list, for an app that sends the opt-in header. Every other reply,
+// and every app without the header, keeps today's exact shape. classifySafety
+// is stubbed, so no crisis wording appears here. Call 911 (owner "thw call 911
+// 988 buttons - Nevermind, do them!"): each reply leads with the number it
+// names first, and message_coach comes last.
+describe('Roman — safety_actions on the fixed crisis reply (CRISIS-2B)', () => {
+  type Cls = 'emergency' | 'self_harm' | 'urgent_symptoms' | 'normal';
+  const COACHED = { id: 'user-A', role: 'student', coach_id: 'coach-1' };
+  const COACHLESS = { id: 'user-A', role: 'student', coach_id: null };
+  // An assistant coach's coach_id is their head coach: still no coach to message.
+  const ASSISTANT = { id: 'user-A', role: 'coach', coach_id: 'coach-1' };
+  const OPT_IN = { [ROMAN_SAFETY_ACTIONS_HEADER]: '1' };
+  const CALLS = {
+    emergency: ['call_911', 'call_988', 'text_988'],
+    self_harm: ['call_988', 'text_988', 'call_911'],
+  };
+  const coached = (cls: keyof typeof CALLS) => [...CALLS[cls], 'message_coach'];
+  let saved: string | undefined;
+  beforeEach(() => {
+    saved = process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV];
+    process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV] = 'true';
+  });
+  afterEach(() => {
+    jest.restoreAllMocks();
+    if (saved === undefined) delete process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV];
+    else process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV] = saved;
+  });
+
+  async function turn(cls: Cls, user: object = COACHED, headers: object = OPT_IN) {
+    jest.spyOn(safetyRouter, 'classifySafety').mockReturnValue({
+      class: cls,
+      matched: cls === 'normal' ? null : 'x',
+      short_circuit: cls !== 'normal',
+    });
+    const made = makePrisma();
+    const createAlert = jest.fn(async (_a: unknown) => ({ id: 'alert-1' }));
+    const prisma = { ...made.prisma, user: { findUnique: jest.fn(async () => ({ coach_id: 'coach-1' })) } };
+    const service = new RomanService(
+      fakeOf(prisma),
+      grantAllEgress(),
+      AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(makeAnthropic(['Hi', '.']))),
+      null,
+      null,
+      null,
+      null,
+      null,
+      fakeOf<CoachAlertsService>({ createAlert }),
+    );
+    const ctrl = new RomanController(
+      fakeOf(service),
+      fakeOf({ coachSubscription: { findUnique: jest.fn(async () => null) } }),
+    );
+    const { res, writes } = makeRes();
+    await ctrl.sendMessage(fakeOf({ ...makeReq(), user, headers }), fakeOf(res), 'sess_1', { content: 'x' });
+    const done = parseFrames(writes).find((f) => f.data?.type === 'done')?.data;
+    const page = await ctrl.listMessages(fakeOf({ user, headers }), 'sess_1', {});
+    const reply = page.messages.find((m) => m.role === 'roman');
+    const mine = page.messages.find((m) => m.role === 'user');
+    return { done, reply, mine, createAlert };
+  }
+
+  it.each(['emergency', 'self_harm'] as const)(
+    '%s: a coached client gets the calls in reply order, then message coach, live and on every later read',
+    async (cls) => {
+      const { done, reply, mine } = await turn(cls);
+      expect(done.text).toBe(`${ROMAN_SAFETY_TEMPLATES[cls]} ${ROMAN_COACH_TOLD_LINE}`);
+      expect(done.safety_actions).toEqual(coached(cls));
+      expect(reply?.content).toBe(done.text);
+      expect(reply).toMatchObject({ id: done.messageId, safety_actions: coached(cls) });
+      expect(mine).not.toHaveProperty('safety_actions');
+    },
+  );
+
+  it.each(['emergency', 'self_harm'] as const)(
+    '%s, no coach to message: a coachless client and an assistant coach get the calls only',
+    async (cls) => {
+      for (const user of [COACHLESS, ASSISTANT]) {
+        const { done, reply } = await turn(cls, user);
+        expect(done.safety_actions).toEqual(CALLS[cls]);
+        expect(reply?.safety_actions).toEqual(CALLS[cls]);
+      }
+    },
+  );
+
+  it('the urgent-symptoms reply and a model reply carry no safety_actions', async () => {
+    for (const cls of ['urgent_symptoms', 'normal'] as const) {
+      const { done, reply } = await turn(cls);
+      expect(done).not.toHaveProperty('safety_actions');
+      expect(reply).not.toHaveProperty('safety_actions');
+    }
+  });
+
+  it('an app without the header gets the exact old shapes; the coach alert is the same either way', async () => {
+    const before = await turn('self_harm', COACHED, {});
+    expect(Object.keys(before.done).sort()).toEqual(['interrupted', 'messageId', 'text', 'type']);
+    expect(Object.keys(before.reply ?? {}).sort()).toEqual(['content', 'createdAt', 'id', 'interrupted', 'role']);
+    const after = await turn('self_harm');
+    expect(after.createAlert.mock.calls).toEqual(before.createAlert.mock.calls);
+    expect(after.createAlert).toHaveBeenCalledTimes(1);
+  });
+
+  it('only a Roman turn that starts with the emergency or self-harm reply is marked', () => {
+    const { romanSafetyActions } = safetyRouter;
+    const roman = (content: string) => ({ role: 'roman', content });
+    const told = (cls: keyof typeof CALLS) => `${ROMAN_SAFETY_TEMPLATES[cls]} ${ROMAN_COACH_TOLD_LINE}`;
+    expect(romanSafetyActions(roman(ROMAN_SAFETY_TEMPLATES.emergency), false)).toEqual(CALLS.emergency);
+    expect(romanSafetyActions(roman(ROMAN_SAFETY_TEMPLATES.self_harm), false)).toEqual(CALLS.self_harm);
+    expect(romanSafetyActions(roman(told('emergency')), true)).toEqual(coached('emergency'));
+    expect(romanSafetyActions(roman(told('self_harm')), true)).toEqual(coached('self_harm'));
+    expect(romanSafetyActions({ role: 'user', content: ROMAN_SAFETY_TEMPLATES.self_harm }, true)).toBeNull();
+    expect(romanSafetyActions(roman(ROMAN_SAFETY_TEMPLATES.urgent_symptoms), true)).toBeNull();
+    expect(romanSafetyActions(roman(romanEatingDisorderFallback(true)), true)).toBeNull();
+    expect(romanSafetyActions(roman('Hi.'), true)).toBeNull();
   });
 });

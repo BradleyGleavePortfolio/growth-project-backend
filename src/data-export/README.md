@@ -51,6 +51,9 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `weight_logs` | `WeightLog` | All fields. |
 | `food_entries` | `LoggedFoodEntry` | All fields. |
 | `custom_foods` | `FoodItem` | Custom foods the user created (private to them), oldest first: name, brand, serving, nutrient basis, macros and micros, tags, aliases, image, barcode, date. Shared catalog foods are not personal data and are left out. |
+| `food_favorites` | `FoodFavorite` | All fields of the user's own favourite foods, oldest first. A food is named by `food_item_id` (as in `food_entries`). |
+| `saved_meals` | `SavedMeal` | All fields of the user's own saved meals, oldest first. |
+| `saved_meal_items` | `SavedMealItem` | All fields of the foods in those meals (food, portion, position), grouped by meal in their order. |
 | `workout_sessions` | `WorkoutSession` | All fields. |
 | `fasting_windows` | `FastingWindow` | All fields. |
 | `water_logs` | `WaterLog` | All fields. |
@@ -95,7 +98,7 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `onboarding_intake` | `ClientOnboardingIntake` | P2: the user's onboarding answers, health screening included, and the completion result. The completion claim fields are left out. |
 | `onboarding_intake_revisions` | `ClientOnboardingIntakeRevision` | P2: every earlier version of those answers, oldest first. |
 | `macro_targets` | `MacroTarget` | P2: every calorie and macro target set for the user (current and archived), with the note the app shows them. |
-| `assigned_workouts` | `ClientWorkoutAssignment` | P2: workouts a coach assigned: plan id, schedule, start and finish, the user's RPE, notes and logged results. Idempotency keys and draft ids are left out. |
+| `assigned_workouts` | `ClientWorkoutAssignment` | P2: workouts a coach assigned: plan id, schedule, start and finish, a skipped day, the coach's note for the day, the user's RPE, notes and logged results. Idempotency keys and draft ids are left out. |
 | `wearable_metric_preferences` | `WearableUserMetricPreference` | P2: which wearable the user chose as the source for each metric. |
 
 Not exported (owner C-3, coach-side data): Roman's workout-change proposals (`WorkoutAdjustmentProposal`, any status) and their events (`WorkoutAdjustmentEvent`). Approve writes its change into the assignment itself. Account deletion still erases them (`src/account-deletion/account-deletion.manifest.ts`).

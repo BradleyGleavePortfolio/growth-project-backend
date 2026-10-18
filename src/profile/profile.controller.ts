@@ -6,11 +6,13 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UpdateProfileDto } from './profile.dto';
+import { AllowBeforeAgeConfirmed } from '../auth/client-age';
 
 @ApiTags('profile')
 @Controller('profile')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('student')
+@AllowBeforeAgeConfirmed()
 export class ProfileController {
   constructor(private profileService: ProfileService) {}
 

@@ -53,6 +53,7 @@ import {
 } from '../../../src/roman/guardrails/roman-guardrail.contract';
 import { ROMAN_POST_CHECK_TEMPLATES } from '../../../src/roman/guardrails/roman-post-check';
 import { ROMAN_MODEL_PHASE_1 } from '../../../src/roman/anthropic-client.provider';
+import { playbookLedgerDigest } from '../../../src/roman/playbook/playbook-sources';
 import { AiConsentRequiredException } from '../../../src/ai-egress/ai-consent-required.exception';
 
 const byId = (id: string): GoldenItem => GOLDEN_SET.find((g) => g.id === id)!;
@@ -207,7 +208,7 @@ describe('R8 layer 3 — router on the golden questions', () => {
   });
 
   it('16:38 copy: the 911/988 templates are warm and deterministic; the medical/injury hints carry a plan step, the coach offer and the exact physician line', () => {
-    for (const t of Object.values(ROMAN_SAFETY_TEMPLATES)) {
+    for (const t of [ROMAN_SAFETY_TEMPLATES.emergency, ROMAN_SAFETY_TEMPLATES.self_harm]) {
       expect(t).not.toMatch(/\b(don't|can't|won't|I'm|you're|it's)\b/i);
       expect(t).toMatch(/coach|someone you trust/);
     }
@@ -455,7 +456,8 @@ describe('R8 layer 7 — tools, memory and coach method (G38–G47)', () => {
   const bench = (user_id: string, date: string, w: number) => ({ exercise_name: 'Dumbbell Bench Press',
     sets_completed: 3, reps_per_set: [8, 8, 8], weight_per_set: [w, w, w], rpe: 8, workout: { user_id, date: D(date) } });
   const oats = { client_id: P1, kind: 'diet_dislike', text: 'Dislikes oats', source_at: D('2026-09-20'), superseded_at: null, expires_at: null };
-  const squats = { coach_id: COACH_A.id, version: 1, status: 'active', red_lines: [],
+  const squats = { coach_id: COACH_A.id, version: 1, status: 'active', red_lines: [], sources: [],
+    source_digest: playbookLedgerDigest([], [], COACH_A.id),
     sections: { exercises: { substitutions: [{ for: 'Back squat', use: 'Goblet squat', when: 'knees ache', basis: 'observed', evidence_count: 4 }] } } };
   const toolWorld = (wrapTools?: (t: RomanToolbox) => RomanToolbox) => {
     const w = makeWorld(undefined, { tools: true, augmenters: true, wrapTools });

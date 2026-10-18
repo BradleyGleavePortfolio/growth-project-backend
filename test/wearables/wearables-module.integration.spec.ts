@@ -19,6 +19,7 @@ import { Global, Module } from '@nestjs/common';
 import { AiGatewayService } from '../../src/ai/gateway/ai-gateway.service';
 import { AiEgressService } from '../../src/ai-egress/ai-egress.service';
 import { AiApprovalService } from '../../src/ai/gateway/ai-approval.service';
+import { ConsentService } from '../../src/consent/consent.service';
 import { AuthModule } from '../../src/auth/auth.module';
 import { FEATURE_WEARABLES_CLOUD_CONNECTORS_ENV } from '../../src/wearables/cloud-connectors.feature';
 
@@ -44,8 +45,10 @@ class EmptyAuthModuleStub {}
     { provide: AiApprovalService, useValue: {} },
     // R2b — production gets the egress gate from the @Global AiEgressModule.
     { provide: AiEgressService, useValue: {} },
+    // WEIGHTWALL — production gets the Weigh-ins check from the @Global ConsentModule.
+    { provide: ConsentService, useValue: {} },
   ],
-  exports: [AiGatewayService, AiApprovalService, AiEgressService],
+  exports: [AiGatewayService, AiApprovalService, AiEgressService, ConsentService],
 })
 class AiGatewayTestDoubleModule {}
 

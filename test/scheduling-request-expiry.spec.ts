@@ -16,6 +16,7 @@ import {
 import type { EnqueueResult } from '../src/notifications/push/push-delivery.service';
 import {
   BookingRequestExpiryJob,
+  EXPIRED_SESSION_SELECT,
   REQUEST_EXPIRY_LEASE_NAME,
 } from '../src/scheduling/jobs/request-expiry.job';
 import { SchedulingJobLeaseService } from '../src/scheduling/jobs/scheduling-job-lease.service';
@@ -255,6 +256,8 @@ describe('S-SCHED-5 request lifecycle around the clear time', () => {
 
   it('a client move that asks the coach again starts a fresh answer window', async () => {
     const { svc } = harness();
+    // C4-NOTICE: 21 hours before the start, so this coach allows 12 hours' notice.
+    await svc.updateMyBookingOptions(COACH, { cancel_notice_hours: 12 });
     const r = await svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
     jest.setSystemTime(new Date('2026-10-05T20:00:00.000Z'));
     const moved = await svc.rescheduleSession(CLIENT, r.id, {
@@ -413,6 +416,55 @@ describe('S-SCHED-5 expiry sweep', () => {
     expect(notifications.pushes.filter((p) => p.title === 'Session request closed')).toHaveLength(
       6,
     );
+  });
+});
+
+// C4MOVED (#1021): the notice and recovery passes read only the columns they
+// use (the double returns only selected keys), so a request the client moved
+// closes and is announced exactly like one that never moved.
+describe('S-SCHED-5 expiry sweep reads only its session columns (C4MOVED)', () => {
+  const WED_1000 = '2026-10-07T17:00:00.000Z';
+  const WED_1015 = '2026-10-07T17:15:00.000Z';
+
+  async function lapseAndSweep(h: ReturnType<typeof harness>, id: string): Promise<void> {
+    const row = h.db.sessions.find((s) => s.id === id);
+    jest.setSystemTime(row?.request_expires_at as Date);
+    h.notifications.rows.length = 0;
+    h.notifications.pushes.length = 0;
+    h.db.sessionSelects.length = 0;
+    // The first push fails, so the next tick's recovery pass runs too.
+    h.notifications.pushResult = null;
+    expect(await h.job.sweep(new Date())).toMatchObject({ expired: 1, retrying: 2 });
+    h.notifications.pushResult = QUEUED;
+    const next = new Date(Date.now() + 5 * 60_000);
+    expect(await h.job.sweep(next)).toMatchObject({ recovered: 2, notified: 2 });
+  }
+
+  it('a moved request lapses, closes and is announced as before; no read loads a moved field', async () => {
+    const moved = harness();
+    const r = await moved.svc.requestSession(CLIENT, req(CLIENT, 'st-q'));
+    await moved.svc.rescheduleSession(CLIENT, r.id, { start_at: WED_1000, end_at: WED_1015 });
+    expect(moved.db.sessions.find((s) => s.id === r.id)).toMatchObject({
+      status: 'requested',
+      moved_by_role: 'client',
+    });
+    await lapseAndSweep(moved, r.id);
+
+    jest.setSystemTime(NOW);
+    const control = harness();
+    const c = await control.svc.requestSession(CLIENT, req(CLIENT, 'st-q', WED_1000, WED_1015));
+    await lapseAndSweep(control, c.id);
+
+    expect(moved.db.sessions.find((s) => s.id === r.id)?.status).toBe('expired');
+    expect(moved.notifications.pushes).toEqual(control.notifications.pushes);
+    expect(moved.notifications.rows).toEqual(control.notifications.rows);
+    expect(moved.db.sessionSelects).toContainEqual(EXPIRED_SESSION_SELECT);
+    for (const select of moved.db.sessionSelects) {
+      expect(select).toBeDefined();
+      for (const key of ['moved_from_start_at', 'moved_by_role', 'last_moved_at']) {
+        expect(select).not.toHaveProperty(key);
+      }
+    }
   });
 });
 

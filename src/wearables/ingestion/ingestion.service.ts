@@ -28,7 +28,7 @@ import { computeDedupKey } from './dedup.util';
  *  - #8  validation — every sample is validated before it touches the DB;
  *    an invalid batch is rejected loud (no partial silent drops).
  *  - #21 no N+1 — inserts are a SINGLE createMany; the connection update is
- *    a SINGLE updateMany; cache invalidation is a SINGLE deleteMany per
+ *    a SINGLE updateMany; cache invalidation is a SINGLE updateMany per
  *    affected (user, bucket) — never a per-row loop.
  *  - #28/#29 dedup — createMany(skipDuplicates) keyed on the UNIQUE
  *    dedup_key makes re-ingestion idempotent.
@@ -57,7 +57,7 @@ export class IngestionService {
    *     3. SINGLE createMany(skipDuplicates) on dedup_key (idempotent,
    *        #21/#28).
    *     4. SINGLE updateMany bumping each touched connection's last_synced_at.
-   *     5. SINGLE deleteMany per affected (user, bucket) to invalidate stale
+   *     5. SINGLE updateMany per affected (user, bucket) to expire stale
    *        WearableInsightCache rows so the next read regenerates insights.
    *  On success: redacted success log. On failure: redacted error log then
    *  re-throw (fail-loud, #36).
@@ -156,7 +156,7 @@ export class IngestionService {
           });
 
           // (5) Invalidate cached insights for each affected (user, bucket).
-          // One deleteMany per distinct pair — bounded by the
+          // One updateMany per distinct pair — bounded by the
           // (≤2 buckets × #users) pairs in the batch, not by row count.
           await this.invalidateInsightCache(samples, tx);
 
@@ -264,8 +264,10 @@ export class IngestionService {
   }
 
   /**
-   * Delete stale insight-cache rows for each affected (user, bucket). Batched
-   * per distinct pair so cost is bounded by pairs, not samples (#21).
+   * Expire the insight-cache rows for each affected (user, bucket), so the
+   * next read regenerates them. Expired, not deleted (ROMANMARK-BE): Roman's
+   * stored suggestion stays readable, so a coach approving the text they are
+   * still looking at sends it marked. Batched per distinct pair (#21).
    */
   private async invalidateInsightCache(
     samples: NormalizedSample[],
@@ -281,8 +283,9 @@ export class IngestionService {
 
     await Promise.all(
       [...pairs.values()].map(({ userId, bucket }) =>
-        tx.wearableInsightCache.deleteMany({
+        tx.wearableInsightCache.updateMany({
           where: { user_id: userId, bucket },
+          data: { expires_at: new Date() },
         }),
       ),
     );

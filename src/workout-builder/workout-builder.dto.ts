@@ -7,6 +7,8 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayUnique,
+  Equals,
   IsArray,
   IsDateString,
   IsEnum,
@@ -21,8 +23,10 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateBy,
   ValidateNested,
 } from 'class-validator';
+import { IsTimeOfDay } from '../common/validators/time-of-day';
 
 // ─── Enums (mirror Prisma) ────────────────────────────────────────────────────
 
@@ -116,6 +120,16 @@ export class UpsertExerciseRowDto {
   @IsString()
   @MaxLength(500)
   notes?: string;
+
+  /** C1V2-C1: the coach's chosen swaps, first choice first; ids as exercise_external_id takes them (an /exercises id or a seed: id). */
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  @MaxLength(200, { each: true })
+  alternative_external_ids?: string[];
 }
 
 // Wrapper so class-validator actually validates each row in the array.
@@ -138,6 +152,11 @@ export class CreateAssignmentDto {
 
   @IsDateString()
   scheduled_for!: string;
+
+  /** C2-C0: the coach's planned training time that day, "HH:MM"; absent = no time. */
+  @IsOptional()
+  @IsTimeOfDay()
+  scheduled_time?: string | null;
 }
 
 // MWB-1 (§3.4): program-level assignment fan-out. Assigns every plan
@@ -152,6 +171,11 @@ export class AssignProgramDto {
   /** Anchor date for week 0 / day 0. Each plan is scheduled relative to it. */
   @IsDateString()
   start_date!: string;
+
+  /** C2-C0: one planned training time, "HH:MM", for every day of the program; absent = no time. */
+  @IsOptional()
+  @IsTimeOfDay()
+  scheduled_time?: string | null;
 }
 
 // ─── MWB-2: clone-to-client (FEATURE_MWB_TEMPLATES) ───────────────────────────
@@ -220,9 +244,19 @@ export class CompleteAssignmentDto {
    * Free-form completion payload (per-set logs, RPE per exercise, etc).
    * Schema kept open at this layer so the mobile app can evolve the
    * shape without coordinated backend deploys. Stored as Jsonb.
+   * C1V2-C1: when `exercises` is sent it is a list, and each exercise's
+   * `swap_reason` (why they swapped) and `skip_note` (why they skipped), when
+   * set, are text of at most 500 characters. Older payloads read as before.
    */
   @IsOptional()
   @IsObject()
+  @ValidateBy({
+    name: 'completionPayloadShape',
+    validator: {
+      validate: completionPayloadShapeOk,
+      defaultMessage: () => 'completion_payload.exercises must be a list; swap_reason and skip_note are text of at most 500 characters',
+    },
+  })
   completion_payload?: Record<string, unknown>;
 
   /** RPE (Rating of Perceived Exertion) 1–10. */
@@ -236,4 +270,42 @@ export class CompleteAssignmentDto {
   @IsString()
   @MaxLength(1000)
   post_notes?: string;
+}
+
+/** Longest coach or client note on a workout day (client_note, client_reason, swap_reason, skip_note). */
+export const COACH_TEXT_MAX = 500;
+
+/** C1V2-C1: the agreed completion_payload.exercises[] fields (see CompleteAssignmentDto). */
+export function completionPayloadShapeOk(payload: unknown): boolean {
+  const list = (payload as { exercises?: unknown } | null)?.exercises;
+  if (list == null) return true;
+  return Array.isArray(list) && list.every((e) => ['swap_reason', 'skip_note'].every((k) => {
+    const v = (e as Record<string, unknown> | null)?.[k];
+    return v == null || (typeof v === 'string' && v.length <= COACH_TEXT_MAX);
+  }));
+}
+
+/**
+ * C1V2-C1: PATCH /assignments/:assignmentId, exactly one field. The client
+ * moves (scheduled_for) or skips (skip: true) their own day; the client's
+ * coach writes the day's note to the client (client_note; null or blank
+ * clears it) and, C2-C0, the day's planned time (scheduled_time; null clears it).
+ */
+export class UpdateAssignmentDto {
+  @IsOptional()
+  @IsDateString()
+  scheduled_for?: string;
+
+  @IsOptional()
+  @Equals(true)
+  skip?: true;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(COACH_TEXT_MAX)
+  client_note?: string | null;
+
+  @IsOptional()
+  @IsTimeOfDay()
+  scheduled_time?: string | null;
 }

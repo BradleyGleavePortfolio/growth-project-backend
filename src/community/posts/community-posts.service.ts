@@ -204,9 +204,10 @@ export class CommunityPostsService {
       title: input.title,
       body: input.body,
     });
-    // v1-4 post-write tail — best-effort realtime ping (IDs only, #24/#36).
+    // v1-4 post-write tail — best-effort realtime ping (IDs only, #24/#36) to
+    // everyone who may read the Hall now (readablePost: canAccessWorkspace).
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.workspace(created.workspace_id),
+      { workspaceId: created.workspace_id, cohortId: null },
       COMMUNITY_BROADCAST_EVENTS.postCreated,
       {
         id: created.id,
@@ -287,7 +288,7 @@ export class CommunityPostsService {
       ...(input.body !== undefined ? { body: input.body } : {}),
     });
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.workspace(updated.workspace_id),
+      { workspaceId: updated.workspace_id, cohortId: null },
       COMMUNITY_BROADCAST_EVENTS.postUpdated,
       {
         id: updated.id,
@@ -329,10 +330,10 @@ export class CommunityPostsService {
       postId: post.id,
       body,
     });
-    // v1-4 post-write tail — realtime reaction-feed ping on the workspace hall
+    // v1-4 post-write tail — realtime ping to the post's readers, the Hall
     // (a comment is a CommunityMessage; the post author refetches via REST).
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.workspace(post.workspace_id),
+      { workspaceId: post.workspace_id, cohortId: null },
       COMMUNITY_BROADCAST_EVENTS.messageCreated,
       {
         id: created.id,
@@ -344,7 +345,7 @@ export class CommunityPostsService {
     );
     // Push the post author (not the commenter) that their post got a reply.
     // Fire-and-forget; gated behind FEATURE_COMMUNITY_PUSH inside the service.
-    if (post.author_id !== user.id) {
+    if (post.author_id !== user.id && (await this.access.readersOf(post.workspace_id, null, [post.author_id])).length) {
       void this.communityPush.sendCommunityPush({
         recipientId: post.author_id,
         kind: NotificationKind.COMMUNITY_POST_REPLIED,

@@ -51,6 +51,7 @@ describe('CommunityCohortMembersService', () => {
     findWorkspace: jest.Mock;
     isWorkspaceCoach: jest.Mock;
     membershipInCohort: jest.Mock;
+    peopleInSpace: jest.Mock;
   };
   let repo: {
     listMembers: jest.Mock;
@@ -69,6 +70,7 @@ describe('CommunityCohortMembersService', () => {
       findWorkspace: jest.fn().mockResolvedValue({ id: WS_A, coach_id: coachA.id }),
       isWorkspaceCoach: jest.fn(),
       membershipInCohort: jest.fn(),
+      peopleInSpace: jest.fn(async (_cohortId: string, rows: unknown[]) => rows),
     };
     repo = {
       listMembers: jest.fn(),

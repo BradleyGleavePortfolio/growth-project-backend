@@ -17,8 +17,10 @@ import type { User } from '@prisma/client';
  *
  *   prisma.user.findMany({ where: { ...scopeToCoach(user), role: 'student' } })
  *
- * `assertCoachOwnsClient` is the single-record form: it throws unless
- * the caller is OWNER or the client's `coach_id` matches the caller.
+ * `canCoachActOnClient` is the single-record form: true for an OWNER, or
+ * a COACH whose current client (role `student`) points at them. A coach
+ * row's `coach_id` (legacy data, an old guest-checkout stamp, a removed
+ * sub-coach) is never a roster link.
  */
 export type ScopeUser = Pick<User, 'id' | 'role' | 'coach_id'>;
 
@@ -40,10 +42,10 @@ export function isOwner(user: Pick<User, 'role'> | null | undefined): boolean {
 
 export function canCoachActOnClient(
   user: ScopeUser,
-  client: Pick<User, 'coach_id'> | null | undefined,
+  client: Pick<User, 'role' | 'coach_id'> | null | undefined,
 ): boolean {
   if (!user) return false;
   if (user.role === 'owner') return true;
   if (!client) return false;
-  return user.role === 'coach' && client.coach_id === user.id;
+  return user.role === 'coach' && client.role === 'student' && client.coach_id === user.id;
 }

@@ -36,6 +36,12 @@ function makePrisma() {
         if (!(v as any[]).some((clause) => matches(row, clause))) return false;
         continue;
       }
+      if (k === 'client') {
+        // The plan's client as the database joins it (client_id -> User).
+        const client = users.find((u) => u.id === row.client_id);
+        if (!client || !matches(client, v)) return false;
+        continue;
+      }
       const val = (row as any)[k];
       if (v === null) {
         if (val !== null && val !== undefined) return false;

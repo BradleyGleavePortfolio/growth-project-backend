@@ -13,6 +13,9 @@ import { ConnectionsController } from './connections.controller';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { IS_PUBLIC_KEY } from '../../common/decorators/public.decorator';
 import { ConnectProviderDto } from './dto/connect-provider.dto';
+import { CompleteOauthDto } from './dto/complete-oauth.dto';
+import { ROLES_KEY } from '../../common/decorators/roles.decorator';
+import { WearablesCloudConnectorsGuard } from '../cloud-connectors.feature';
 import { OauthCallbackDto } from './dto/oauth-callback.dto';
 import { DisconnectProviderParamDto } from './dto/disconnect-provider.dto';
 import type { AuthedRequest } from '../../auth/auth-request';
@@ -25,6 +28,7 @@ const THROTTLE_LIMIT_DEFAULT_KEY = 'THROTTLER:LIMITdefault';
 interface ServiceShape {
   startOauth: jest.Mock;
   handleCallback: jest.Mock;
+  completeLink: jest.Mock;
   list: jest.Mock;
   disconnect: jest.Mock;
 }
@@ -45,6 +49,7 @@ describe('ConnectionsController', () => {
     service = {
       startOauth: jest.fn(),
       handleCallback: jest.fn(),
+      completeLink: jest.fn(),
       list: jest.fn(),
       disconnect: jest.fn(),
     };
@@ -82,6 +87,18 @@ describe('ConnectionsController', () => {
       expect(Reflect.getMetadata(THROTTLE_LIMIT_DEFAULT_KEY, h)).toBe(20);
     });
 
+    // A6 (AUTHB-05): the app finishes the link signed in, as a client only.
+    it('POST oauth/complete is signed-in, client-only, behind the cloud switch, throttled', () => {
+      const h = controller.completeOauth;
+      expect(Reflect.getMetadata(PATH_METADATA, h)).toBe('oauth/complete');
+      expect(Reflect.getMetadata(METHOD_METADATA, h)).toBe(RequestMethod.POST);
+      expect(Reflect.getMetadata(HTTP_CODE_METADATA, h)).toBe(200);
+      expect(Reflect.getMetadata(IS_PUBLIC_KEY, h)).toBeUndefined();
+      expect(Reflect.getMetadata(ROLES_KEY, h)).toEqual(['student']);
+      expect(Reflect.getMetadata(GUARDS_METADATA, h)).toContain(WearablesCloudConnectorsGuard);
+      expect(Reflect.getMetadata(THROTTLE_LIMIT_DEFAULT_KEY, h)).toBe(10);
+    });
+
     it('GET / (list) is a GET route', () => {
       const h = controller.list;
       expect(Reflect.getMetadata(PATH_METADATA, h)).toBe('/');
@@ -106,18 +123,25 @@ describe('ConnectionsController', () => {
       expect(res).toEqual({ authorizationUrl: 'u', state: 's' });
     });
 
-    it('oauthCallback forwards code + state and sends the browser back to the app', async () => {
+    it('oauthCallback forwards code + state and sends the browser back to the app with the ticket', async () => {
       service.handleCallback.mockResolvedValue({
-        success: true,
         provider: WearableProvider.OURA,
+        ticket: 't-1',
       });
       const res = makeRes();
       await controller.oauthCallback({ code: 'c1', state: 's1' }, res);
       expect(service.handleCallback).toHaveBeenCalledWith({ code: 'c1', state: 's1' });
       expect(res.redirect).toHaveBeenCalledWith(
         302,
-        'tgp://wearables/connected?status=ok&provider=OURA',
+        'tgp://wearables/connected?status=ok&provider=OURA&ticket=t-1',
       );
+    });
+
+    it('completeOauth finishes the link for req.user.id with the body ticket', async () => {
+      service.completeLink.mockResolvedValue({ success: true, provider: WearableProvider.OURA });
+      const res = await controller.completeOauth(makeReq('user-5'), { ticket: 't-1' });
+      expect(service.completeLink).toHaveBeenCalledWith('user-5', 't-1');
+      expect(res).toEqual({ success: true, provider: WearableProvider.OURA });
     });
 
     it('list passes the caller id only', async () => {
@@ -170,6 +194,15 @@ describe('ConnectionsController', () => {
       });
       const errors = await validate(dto);
       expect(errors.some((e) => e.property === 'state')).toBe(true);
+    });
+
+    it('CompleteOauthDto accepts a ticket and rejects an empty or oversized one', async () => {
+      expect(await validate(plainToInstance(CompleteOauthDto, { ticket: 'a'.repeat(43) }))).toHaveLength(0);
+      expect(await validate(plainToInstance(CompleteOauthDto, { ticket: '' }))).toHaveLength(1);
+      expect(await validate(plainToInstance(CompleteOauthDto, {}))).toHaveLength(1);
+      expect(
+        await validate(plainToInstance(CompleteOauthDto, { ticket: 'x'.repeat(513) })),
+      ).toHaveLength(1);
     });
 
     it('DisconnectProviderParamDto rejects an unknown provider', async () => {

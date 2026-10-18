@@ -435,6 +435,9 @@ const ASSIGNED_WORKOUT_EXPORT_SELECT: Record<string, true> = {
   post_notes: true,
   completion_payload: true,
   approved_by_coach_at: true,
+  skipped_at: true,
+  client_note: true,
+  scheduled_time: true,
 };
 
 /** Why an archive must go although no request row owns it (B-608-11). */
@@ -1433,6 +1436,9 @@ export class DataExportService {
       weightLogs,
       loggedEntries,
       customFoods,
+      foodFavorites,
+      savedMeals,
+      savedMealItems,
       workouts,
       fastingWindows,
       waterLogs,
@@ -1503,6 +1509,15 @@ export class DataExportService {
         'foodItem',
         { created_by_user_id: userId },
         { select: CUSTOM_FOOD_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      // FOODSAVED: the user's own favourite foods and saved meals, and each
+      // meal's foods in their order (account deletion erases all three).
+      this._streamAll('foodFavorite', { user_id: userId }, { orderBy: CHRONOLOGICAL }),
+      this._streamAll('savedMeal', { user_id: userId }, { orderBy: CHRONOLOGICAL }),
+      this._streamAll(
+        'savedMealItem',
+        { saved_meal: { user_id: userId } },
+        { orderBy: [{ saved_meal_id: 'asc' }, { position: 'asc' }] },
       ),
       this._streamAll('workoutSession', { user_id: userId }),
       this._streamAll('fastingWindow', { user_id: userId }),
@@ -1682,6 +1697,9 @@ export class DataExportService {
       weight_logs: weightLogs,
       food_entries: loggedEntries,
       custom_foods: customFoods,
+      food_favorites: foodFavorites,
+      saved_meals: savedMeals,
+      saved_meal_items: savedMealItems,
       workout_sessions: workouts,
       fasting_windows: fastingWindows,
       water_logs: waterLogs,

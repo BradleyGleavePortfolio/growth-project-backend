@@ -17,7 +17,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RomanAdjustFeatureGuard } from './roman-adjust.guard';
 import { RomanAdjustService } from './roman-adjust.service';
-import { DismissAdjustmentDto, EditAdjustmentDto } from './roman-adjust.dto';
+import { ApproveAdjustmentDto, DismissAdjustmentDto, EditAdjustmentDto } from './roman-adjust.dto';
 
 @ApiTags('roman-adjust')
 @ApiBearerAuth()
@@ -37,15 +37,15 @@ export class RomanAdjustController {
   @Post(':id/approve')
   @HttpCode(200)
   @ApiOperation({ summary: "Apply Roman's suggested set counts to the client's next workout." })
-  approve(@Req() req: AuthedRequest, @Param('id', ParseUUIDPipe) id: string) {
-    return this.adjust.approve(req.user.id, id);
+  approve(@Req() req: AuthedRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: ApproveAdjustmentDto) {
+    return this.adjust.approve(req.user.id, id, undefined, dto.client_reason);
   }
 
   @Post(':id/edit')
   @HttpCode(200)
   @ApiOperation({ summary: "Apply the coach's own reduction instead of Roman's." })
   edit(@Req() req: AuthedRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: EditAdjustmentDto) {
-    return this.adjust.edit(req.user.id, id, { volume_pct: dto.volume_pct, sets: dto.sets });
+    return this.adjust.edit(req.user.id, id, { volume_pct: dto.volume_pct, sets: dto.sets, client_reason: dto.client_reason });
   }
 
   @Post(':id/dismiss')

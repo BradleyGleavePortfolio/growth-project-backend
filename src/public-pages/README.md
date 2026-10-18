@@ -163,7 +163,8 @@ public pages until it is built and audited.
 - Roman copy must match the owner rulings and the D2 two-box consent
   (owner-approved 2026-10-01 09:07 PDT): box 1 (required) is the
   personal-training waiver plus collection and use for coaching
-  (`consult-consent-v3`, backend #607 / mobile #310); box 2 (optional, unticked) is Roman and coach
+  (`consult-consent-v3`, backend #607 / mobile #310; `v5` / `v6` and their coach-free versions since
+  owner 62); box 2 (optional, unticked) is Roman and coach
   AI drafts processed by Anthropic (AI consent ledger, `client-ai-v4`, backend #635),
   withdrawn in Settings > Privacy > Roman and AI; stopping all
   collection is Settings > Account > Delete account. Also: private from
@@ -171,7 +172,9 @@ public pages until it is built and audited.
   until the client deletes them or the account (owner OR-110-1: no
   time-based purge), client delete. The consumer health "Consent" section is
   the approved text byte for byte (pinned in `test/trust-pages.spec.ts`).
-- The clinic partner is never named. Copy says "clinic partner".
+- Never mention a clinic (owner C-6). The closing line of "Who can see your data"
+  and the first bullet of "Who we do not share with" say, exactly: "Whoever referred
+  you to The Growth Project never sees your account or your data." (owner C-6a).
 - What a deletion keeps is written once in `trust-pages.html.ts`
   (`CLOSED_ACCOUNT_RECORD_TEXT`, `ONE_WAY_CODE_TEXT`,
   `ANTHROPIC_RETENTION_TEXT`, `DEIDENTIFIED_TEXT`) and used by both

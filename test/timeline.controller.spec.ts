@@ -68,22 +68,28 @@ describe('TimelineController', () => {
 
   // ── Lane validation ────────────────────────────────────────────────────────
 
-  it('accepts all four valid lanes', async () => {
+  it('accepts the three lanes and drops the retired coach lane', async () => {
     const req = makeAuthedReq();
     await expect(
       controller.getTimeline(req, 30, 'body,win,coach,friction', undefined, 20),
     ).resolves.not.toThrow();
 
     const query = mockTimelineService.getTimeline.mock.calls[0][1];
-    expect(query.lanes).toEqual(['body', 'win', 'coach', 'friction']);
+    expect(query.lanes).toEqual(['body', 'win', 'friction']);
+  });
+
+  it('answers a coach-only request with no lanes, never a 400 (#TIMELINE-COACH op 1)', async () => {
+    await controller.getTimeline(makeAuthedReq(), 30, 'coach', undefined, 10);
+
+    expect(mockTimelineService.getTimeline.mock.calls[0][1].lanes).toEqual([]);
   });
 
   it('accepts a single lane', async () => {
     const req = makeAuthedReq();
-    await controller.getTimeline(req, 30, 'coach', undefined, 10);
+    await controller.getTimeline(req, 30, 'win', undefined, 10);
 
     const query = mockTimelineService.getTimeline.mock.calls[0][1];
-    expect(query.lanes).toEqual(['coach']);
+    expect(query.lanes).toEqual(['win']);
   });
 
   it('throws BadRequestException for unknown lane values', async () => {
@@ -93,12 +99,12 @@ describe('TimelineController', () => {
     ).rejects.toThrow(BadRequestException);
   });
 
-  it('defaults to all 4 lanes when lanes param is omitted', async () => {
+  it('defaults to all 3 lanes when lanes param is omitted', async () => {
     const req = makeAuthedReq();
     await controller.getTimeline(req, 30, undefined, undefined, 20);
 
     const query = mockTimelineService.getTimeline.mock.calls[0][1];
-    expect(query.lanes).toHaveLength(4);
+    expect(query.lanes).toEqual(['body', 'win', 'friction']);
   });
 
   // ── since_days clamping ────────────────────────────────────────────────────
@@ -148,8 +154,8 @@ describe('TimelineController', () => {
           lane: 'body',
           eventType: 'weight_logged',
           at: '2025-10-01T08:00:00.000Z',
-          title: 'Weight logged — 185.0 lbs',
-          metadata: { weightLbs: 185.0, deltaLbs: null, streakDays: 1 },
+          title: 'Weighed in at 185.0 lb',
+          metadata: { weightLbs: 185.0, trendLbs: null },
         },
       ],
       nextCursor: null,

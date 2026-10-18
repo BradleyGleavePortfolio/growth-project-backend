@@ -278,8 +278,8 @@ itLive('community v2-1 plan-context tags (live DB)', () => {
     });
     ids.planB = planB.id;
 
-    const mealA = await prisma.mealPlan.create({
-      data: { coach_id: ids.coachA, title: 'Cut Phase', items: [] },
+    const mealA = await prisma.dailyMealPlan.create({
+      data: { coach_id: ids.coachA, name: 'Cut Phase' },
     });
     ids.mealA = mealA.id;
 
@@ -319,7 +319,7 @@ itLive('community v2-1 plan-context tags (live DB)', () => {
     });
     await prisma.checkIn.deleteMany({ where: { id: { in: [ids.checkInA].filter(Boolean) } } });
     await prisma.coachPackage.deleteMany({ where: { id: { in: [ids.packageA].filter(Boolean) } } });
-    await prisma.mealPlan.deleteMany({ where: { id: { in: [ids.mealA].filter(Boolean) } } });
+    await prisma.dailyMealPlan.deleteMany({ where: { id: { in: [ids.mealA].filter(Boolean) } } });
     await prisma.workoutPlanExercise.deleteMany({
       where: { id: { in: [ids.exerciseA].filter(Boolean) } },
     });
