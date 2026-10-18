@@ -1005,9 +1005,20 @@ model LoggedFoodEntry {
   // Idempotency key set by the mobile offline queue. Allows the backend to
   // upsert on flush so a crash-then-retry does not create duplicate entries.
   client_uuid         String?  @unique
+  // FOODLINK: the coach's plan meal this entry was logged for (the Food tab's "Ate it as planned" or
+  // "Something else"). Null for every other log and every older row. Set only by POST /log/food, and only
+  // when the slot is in a meal plan assigned to this client on the entry's date. SET NULL: a plan edit or
+  // deletion never deletes or blocks a food log; the entry just stops counting for that plan meal.
+  plan_slot_id        String?
+  plan_slot           DailyMealPlanSlot? @relation(fields: [plan_slot_id], references: [id], onDelete: SetNull)
+  // FOODLINK: set by the Food tab's "Your usual day" (Repeat or Something else) for a client with no plan.
+  // False for every other log and every older row.
+  fills_usual_meal    Boolean  @default(false)
 
   // Hot path: LogService.getDaily + CoachService.getClientSummary both query by (user_id, date).
   @@index([user_id, date])
+  // SET NULL looks entries up by slot on every slot delete (plan edits, coach deletion).
+  @@index([plan_slot_id])
 }
 
 // FOODSAVED (agent 145): a client's favourite foods and saved meals, logged
@@ -3285,6 +3296,7 @@ model DailyMealPlanSlot {
   order              Int           @default(0)
   // C2-C0: the coach's planned time for this meal, local "HH:MM" (24-hour); null = plan order, no time.
   time_of_day        String?
+  food_log_entries   LoggedFoodEntry[]
 
   @@unique([daily_meal_plan_id, slot_label, order])
   @@index([daily_meal_plan_id])

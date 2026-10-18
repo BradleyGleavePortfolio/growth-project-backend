@@ -260,6 +260,14 @@ function makePrisma() {
         for (const d of data) dailyMealPlanSlots.push({ id: newId('slot'), order: 0, ...d });
         return { count: data.length };
       }),
+      create: jest.fn(async ({ data }: any) => {
+        const row = { id: newId('slot'), order: 0, ...data };
+        dailyMealPlanSlots.push(row);
+        return { ...row };
+      }),
+      update: jest.fn(async ({ where, data }: any) =>
+        Object.assign(dailyMealPlanSlots.find((r) => r.id === where.id), data),
+      ),
       findMany: jest.fn(async ({ where }: any) =>
         dailyMealPlanSlots.filter((r) => matches(r, where)).map((r) => ({ ...r })),
       ),
@@ -270,6 +278,8 @@ function makePrisma() {
         return { count };
       }),
     },
+    // FOODLINK: no food is logged in these specs; the moved-client link follow is in the live suite.
+    loggedFoodEntry: { updateMany: jest.fn(async () => ({ count: 0 })) },
     dailyMealPlanAssignment: {
       create: jest.fn(async ({ data }: any) => {
         const row = {
