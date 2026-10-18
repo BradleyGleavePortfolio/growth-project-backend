@@ -7,6 +7,7 @@ BEGIN;
 SET LOCAL lock_timeout = '5s';
 
 DROP POLICY IF EXISTS "p_lesson_select_enrolled" ON "Lesson";
+DROP POLICY IF EXISTS "Course_enrolled_select" ON "Course";
 ALTER POLICY "p_lesson_select" ON "Lesson"
   USING ((app.is_owner() OR (app.current_user_id() IS NOT NULL AND ("coach_id" = app.current_user_id() OR app.is_user_coached_by(app.current_user_id(), "coach_id")))));
 COMMENT ON POLICY "p_lesson_select" ON "Lesson" IS '20270502000900: owner admin, the lesson''s coach, or a current client of that coach reads the lesson.';
