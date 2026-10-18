@@ -61,7 +61,7 @@ all of these hold:
 
 - the owner enabled it;
 - pitch copy exists;
-- the featured coach is accepting (owner switch on, active subscription, code valid);
+- the featured coach is accepting (owner switch on, code valid);
 - the client has no coach.
 
 Caps, all editable by the owner:
