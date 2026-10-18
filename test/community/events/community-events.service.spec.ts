@@ -461,9 +461,9 @@ describe('CommunityEventsService (v2-3)', () => {
       store[EVT].cohort_id = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
       access.membershipInCohort.mockResolvedValue(null);
       expect((await service.rsvp(client as never, EVT, 'going')).rsvp.status).toBe('going');
-      access.canAccessCohort.mockResolvedValue(false);
+      access.canAccessCohort.mockResolvedValue(false); // outside the rule the event itself is not found
       await expect(service.rsvp(client as never, EVT, 'going')).rejects.toMatchObject({
-        response: { code: 'community.event.rsvp_not_eligible' },
+        response: { code: 'community.event.not_found' },
       });
     });
 
