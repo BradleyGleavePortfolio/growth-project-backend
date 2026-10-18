@@ -30,9 +30,9 @@ const stub = <T>(value: unknown): T => value as T;
 function setup() {
   const entries: Row[] = [];
   const slots: Row[] = [
-    { id: SLOT_A, daily_meal_plan_id: 'plan-a', slot_label: 'breakfast', order: 0, meal_template_id: 'tpl-oats' },
-    { id: SLOT_B, daily_meal_plan_id: 'plan-b', slot_label: 'breakfast', order: 0, meal_template_id: 'tpl-oats' },
-    { id: SLOT_SHARED, daily_meal_plan_id: 'plan-shared', slot_label: 'lunch', order: 0, meal_template_id: 'tpl-oats' },
+    { id: SLOT_A, daily_meal_plan_id: 'plan-a', slot_label: 'breakfast', order: 0, meal_template_id: 'tpl-oats', time_of_day: null },
+    { id: SLOT_B, daily_meal_plan_id: 'plan-b', slot_label: 'breakfast', order: 0, meal_template_id: 'tpl-oats', time_of_day: null },
+    { id: SLOT_SHARED, daily_meal_plan_id: 'plan-shared', slot_label: 'lunch', order: 0, meal_template_id: 'tpl-oats', time_of_day: null },
   ];
   const plans: Row[] = ['plan-a', 'plan-b', 'plan-shared'].map((id) => ({ id, coach_id: COACH, archived_at: null }));
   const assignments: Row[] = [
@@ -92,6 +92,8 @@ function setup() {
       findUnique: jest.fn(async ({ where }: Row) => ({ id: where.id, slots: slots.filter((s) => s.daily_meal_plan_id === where.id) })),
     },
     mealTemplate: { findMany: jest.fn(async ({ where }: Row) => where.id.in.map((id: string) => ({ id }))) },
+    // Every client here is still the coach's, so no plan edit freezes a copy (moved clients: the live suite).
+    dailyMealPlanAssignment: { findMany: jest.fn(async () => []) },
     dailyMealPlanSlot: {
       findFirst: slotLookup,
       findMany: jest.fn(async ({ where }: Row) => slots.filter((s) => s.daily_meal_plan_id === where.daily_meal_plan_id).map((s) => ({ ...s }))),
@@ -246,7 +248,7 @@ describe('FOODLINK — validation (the real ValidationPipe)', () => {
 describe('FOODLINK — a coach editing a plan keeps the meals already logged', () => {
   it('9. a kept (label, order) keeps its id and links; a removed slot unlinks; a new slot gets a new id', async () => {
     const { log, plansService, slots, entries, entry } = setup();
-    slots.push({ id: 'slot-a-lunch', daily_meal_plan_id: 'plan-a', slot_label: 'lunch', order: 0, meal_template_id: 'tpl-oats' });
+    slots.push({ id: 'slot-a-lunch', daily_meal_plan_id: 'plan-a', slot_label: 'lunch', order: 0, meal_template_id: 'tpl-oats', time_of_day: null });
     await log.logFood(A, entry({ plan_slot_id: SLOT_A }));
     await log.logFood(A, entry({ meal_type: 'lunch', plan_slot_id: 'slot-a-lunch' }));
 
@@ -263,6 +265,18 @@ describe('FOODLINK — a coach editing a plan keeps the meals already logged', (
     expect(planA.find((s) => s.slot_label === 'dinner')).toMatchObject({ id: expect.stringMatching(/^slot-new-/), order: 1 });
     expect(entries.map((e) => e.plan_slot_id)).toEqual([SLOT_A, null]);
     expect(slots.filter((s) => s.daily_meal_plan_id !== 'plan-a')).toHaveLength(2);
+  });
+
+  it("9. a kept slot takes the coach's new time and keeps its id and link; an untimed meal clears its time", async () => {
+    const { log, plansService, slots, entries, entry } = setup();
+    await log.logFood(A, entry({ plan_slot_id: SLOT_A }));
+    await plansService.updatePlan(COACH, 'plan-a', {
+      slots: [{ slot_label: 'breakfast', order: 0, meal_template_id: 'tpl-oats', time_of_day: '07:30' }],
+    });
+    expect(slots.find((s) => s.id === SLOT_A)).toMatchObject({ meal_template_id: 'tpl-oats', time_of_day: '07:30' });
+    await plansService.updatePlan(COACH, 'plan-a', { slots: [{ slot_label: 'breakfast', order: 0, meal_template_id: 'tpl-oats' }] });
+    expect(slots.find((s) => s.id === SLOT_A)).toMatchObject({ time_of_day: null });
+    expect(entries[0].plan_slot_id).toBe(SLOT_A);
   });
 
   it('9. an unchanged slot list writes nothing to the slots', async () => {

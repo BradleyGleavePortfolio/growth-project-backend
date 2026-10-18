@@ -301,7 +301,7 @@ export class RealMealPlansService {
         daily_meal_plan_id: { in: planIds },
         NOT: { client: { coach_id: coachId, role: 'student' } },
       },
-      select: { id: true, daily_meal_plan_id: true },
+      select: { id: true, daily_meal_plan_id: true, client_id: true },
     });
     const now = new Date();
     for (const planId of new Set(moved.map((a) => a.daily_meal_plan_id))) {
@@ -333,20 +333,28 @@ export class RealMealPlansService {
         });
         frozen.set(t.id, row.id);
       }
-      if (plan.slots.length > 0) {
-        await tx.dailyMealPlanSlot.createMany({
-          data: plan.slots.map((s) => ({
+      const held = moved.filter((a) => a.daily_meal_plan_id === planId);
+      const clientIds = [...new Set(held.map((a) => a.client_id))];
+      for (const s of plan.slots) {
+        const { id } = await tx.dailyMealPlanSlot.create({
+          data: {
             daily_meal_plan_id: copy.id,
             meal_template_id: frozen.get(s.meal_template_id) ?? s.meal_template_id,
             slot_label: s.slot_label,
             order: s.order,
             time_of_day: s.time_of_day,
-          })),
+          },
+          select: { id: true },
+        });
+        // FOODLINK: the moved clients' meals logged for this slot follow it to the copy, so their plan still
+        // shows them eaten; every other client's links stay on the live slot.
+        await tx.loggedFoodEntry.updateMany({
+          where: { plan_slot_id: s.id, user_id: { in: clientIds } },
+          data: { plan_slot_id: id },
         });
       }
-      const ids = moved.filter((a) => a.daily_meal_plan_id === planId).map((a) => a.id);
       await tx.dailyMealPlanAssignment.updateMany({
-        where: { id: { in: ids } },
+        where: { id: { in: held.map((a) => a.id) } },
         data: { daily_meal_plan_id: copy.id },
       });
     }

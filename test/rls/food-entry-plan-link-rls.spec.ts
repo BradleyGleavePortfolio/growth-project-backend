@@ -7,13 +7,18 @@
  *
  * Proves: LoggedFoodEntry keeps ENABLE + FORCE and only its owner policy and the current coach's
  * SELECT policy (20270502000700), which cover the new columns; client B's context reads, edits
- * and deletes none of client A's entries on the same date, link included (the read GET /log/daily makes, decision 141-4 test 13); a coach
- * deleting a plan meal under row security clears the link on a client's entry the coach cannot
- * read and deletes no food log; the columns, FK and index have the names Prisma generates.
+ * and deletes none of client A's entries on the same date, link included (the read GET
+ * /log/daily makes, decision 141-4 test 13); a coach deleting a plan meal under row security
+ * clears the link on a client's entry the coach cannot read and deletes no food log; a client
+ * who moved coach keeps every meal they logged done on the frozen copy of their plan after the
+ * former coach edits the plan or a meal, while the staying client's links stay on the live plan;
+ * the columns, FK and index have the names Prisma generates.
  * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
  */
 import { randomUUID } from 'crypto';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../src/prisma.service';
+import { RealMealPlansService } from '../../src/real-meal-plans/real-meal-plans.service';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
 const DB_URL = liveTestDatabaseUrl();
@@ -22,7 +27,7 @@ if (!DB_URL && process.env.CI === 'true') {
 }
 
 (DB_URL ? describe : describe.skip)('LoggedFoodEntry plan link: row security (FOODLINK)', () => {
-  const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
+  const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
   const [a, b, coach] = [randomUUID(), randomUUID(), randomUUID()];
   const [slot, slot2, plan, plan2, food] = [randomUUID(), randomUUID(), randomUUID(), randomUUID(), randomUUID()];
   const [entryA, entryA2, entryB] = [randomUUID(), randomUUID(), randomUUID()];
@@ -114,6 +119,82 @@ if (!DB_URL && process.env.CI === 'true') {
     await prisma.$executeRaw`DELETE FROM "DailyMealPlan" WHERE "id" = ${plan2}`;
     expect(await stored(entryA2)).toMatchObject({ user_id: a, plan_slot_id: null, fills_usual_meal: true });
     expect(await prisma.loggedFoodEntry.count({ where: { id: { in: [entryA, entryA2, entryB] } } })).toBe(3);
+  });
+
+  describe("a moved client's logged meals follow the frozen copy of their plan (freezeForMovedClients)", () => {
+    // The production service on the server's connection; X moves from coach A to coach B, Y stays.
+    const meals = new RealMealPlansService(prisma);
+    const [coachA, coachB, x, y] = [randomUUID(), randomUUID(), randomUUID(), randomUUID()];
+    const DAY = '2026-10-12';
+    const ids: Record<string, string> = {};
+    // What a client's day read shows (GET /me/meal-plan/today): each plan meal, its time, and done if a food is linked to it.
+    const day = async (client: string) => {
+      const linked = new Set((await prisma.loggedFoodEntry.findMany({ where: { user_id: client } })).map((e) => e.plan_slot_id));
+      const { assignments } = await meals.getTodayForClient(client, DAY);
+      return assignments.flatMap(({ daily_meal_plan: p }) =>
+        p.slots.map((s) => `${p.name} ${s.slot_label} ${s.time_of_day ?? '-'} ${linked.has(s.id) ? 'done' : 'open'}`)).sort();
+    };
+    const count = (who: string, role: string, sql: string, arg: string) =>
+      as(who, async (tx) => (await tx.$queryRawUnsafe<{ n: number }[]>(sql, arg))[0].n, role);
+    const ENTRIES = `SELECT count(*)::int AS "n" FROM "LoggedFoodEntry" WHERE "user_id" = $1`;
+    const LINKED_SLOTS = `SELECT count(*)::int AS "n" FROM "DailyMealPlanSlot" s JOIN "LoggedFoodEntry" e ON e."plan_slot_id" = s."id" WHERE e."user_id" = $1`;
+
+    beforeAll(async () => {
+      for (const [id, role, coachId] of [[coachA, 'coach', null], [coachB, 'coach', null], [x, 'student', coachA], [y, 'student', coachA]]) {
+        await prisma.$executeRaw`INSERT INTO "User" ("id", "supabase_id", "email", "name", "role", "coach_id")
+          VALUES (${id}, ${id}, ${`${id}@example.test`}, 'RLS user', ${role}::"Role", ${coachId})`;
+      }
+      for (const name of ['Oats', 'Rice', 'Eggs']) {
+        ids[name] = (await meals.createTemplate(coachA, { name, calories_kcal: 400, protein_g: 20, carbs_g: 50, fats_g: 10 })).id;
+      }
+      const dayPlan = await meals.createPlan(coachA, { name: 'Day', slots: [
+        { meal_template_id: ids.Oats, slot_label: 'breakfast', time_of_day: '07:30' }, { meal_template_id: ids.Rice, slot_label: 'lunch' },
+      ] });
+      const otherPlan = await meals.createPlan(coachA, { name: 'Other', slots: [{ meal_template_id: ids.Eggs, slot_label: 'dinner' }] });
+      [ids.Day, ids.Other] = [dayPlan!.id, otherPlan!.id];
+      for (const client_id of [x, y]) {
+        for (const plan of [dayPlan!, otherPlan!]) {
+          await meals.assignPlan(coachA, plan.id, { client_id, starts_on: '2026-10-01' });
+          for (const slot of plan.slots) {
+            await prisma.loggedFoodEntry.create({ data: { user_id: client_id, date: new Date(DAY), meal_type: 'breakfast', food_item_id: food, plan_slot_id: slot.id } });
+          }
+        }
+      }
+      await prisma.$executeRaw`UPDATE "User" SET "coach_id" = ${coachB} WHERE "id" = ${x}`;
+    }, 60_000);
+
+    const asLogged = ['Day breakfast 07:30 done', 'Day lunch - done', 'Other dinner - done'];
+
+    it('before any edit, both clients see every meal they logged done', async () => {
+      expect(await day(x)).toEqual(asLogged);
+      expect(await day(y)).toEqual(asLogged);
+    });
+
+    it("coach A retimes a meal and removes one: X's day is as it was, all done; Y's kept meal stays done; no food log is deleted", async () => {
+      await meals.updatePlan(coachA, ids.Day, { slots: [{ meal_template_id: ids.Oats, slot_label: 'breakfast', time_of_day: '08:00' }] });
+      expect(await day(x)).toEqual(asLogged);
+      expect(await day(y)).toEqual(['Day breakfast 08:00 done', 'Other dinner - done']);
+      expect(await prisma.loggedFoodEntry.count({ where: { user_id: { in: [x, y] } } })).toBe(6);
+    });
+
+    it("coach A edits a meal another plan uses: X's copy of that plan keeps the meal done; Y's stays on the live plan", async () => {
+      await meals.updateTemplate(coachA, ids.Eggs, { name: 'Eggs, edited' });
+      expect(await day(x)).toEqual(asLogged);
+      expect(await day(y)).toEqual(['Day breakfast 08:00 done', 'Other dinner - done']);
+      const held = (client: string) => meals.getTodayForClient(client, DAY).then((d) => d.assignments.map((a) => a.daily_meal_plan_id).sort());
+      expect(await held(y)).toEqual([ids.Day, ids.Other].sort());
+      expect((await held(x)).some((id) => id === ids.Day || id === ids.Other)).toBe(false);
+    });
+
+    it('under row security, X opens every plan meal its foods name; coach A reads none of X\'s foods after reading Y\'s; coach B reads X\'s', async () => {
+      expect(await count(x, 'student', LINKED_SLOTS, x)).toBe(3);
+      expect(await count(y, 'student', LINKED_SLOTS, y)).toBe(2);
+      expect(await count(y, 'student', ENTRIES, y)).toBe(3);
+      expect(await count(y, 'student', ENTRIES, x)).toBe(0);
+      expect(await count(coachA, 'coach', ENTRIES, y)).toBe(3);
+      expect(await count(coachA, 'coach', ENTRIES, x)).toBe(0);
+      expect(await count(coachB, 'coach', ENTRIES, x)).toBe(3);
+    });
   });
 
   it('the columns, FK and index exist with the names Prisma generates', async () => {
