@@ -183,6 +183,11 @@ the user actually typed. Coach views render "6 oz chicken" instead of
 "1.7008x chicken". The canonical math value remains
 `quantity_multiplier`.
 
+`LoggedFoodEntry.plan_slot_id` names the plan meal an entry was logged for
+(kept only for the caller's own plan on that date; ON DELETE SET NULL) and
+`fills_usual_meal` marks a coachless "Your usual day" meal. Both are
+optional on `POST /log/food`, returned by `GET /log/daily`, never editable.
+
 ### Redis cache for searches
 
 `FoodService` caches the merged + scored search result list in Redis

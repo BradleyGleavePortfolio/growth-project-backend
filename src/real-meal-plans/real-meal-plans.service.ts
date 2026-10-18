@@ -225,18 +225,39 @@ export class RealMealPlansService {
         },
       });
       if (dto.slots) {
-        await tx.dailyMealPlanSlot.deleteMany({
+        // FOODLINK: a slot whose (slot_label, order) is still listed keeps its row (and so the client's food
+        // logs linked to it); only its meal and time change. Unlisted slots are deleted (their links go null),
+        // new ones created. Kept rows keep their key, so the unique (plan, label, order) cannot collide.
+        const next = dto.slots.map((s, idx) => ({
+          meal_template_id: s.meal_template_id,
+          slot_label: s.slot_label,
+          order: s.order ?? idx,
+          time_of_day: s.time_of_day ?? null,
+        }));
+        const key = (s: { slot_label: string; order: number }) => `${s.slot_label}#${s.order}`;
+        const wanted = new Map(next.map((s) => [key(s), s]));
+        const existing = await tx.dailyMealPlanSlot.findMany({
           where: { daily_meal_plan_id: planId },
+          select: { id: true, slot_label: true, order: true, meal_template_id: true, time_of_day: true },
         });
-        if (dto.slots.length > 0) {
+        const gone = existing.filter((e) => !wanted.has(key(e))).map((e) => e.id);
+        if (gone.length > 0) {
+          await tx.dailyMealPlanSlot.deleteMany({ where: { id: { in: gone } } });
+        }
+        for (const e of existing) {
+          const w = wanted.get(key(e));
+          if (w && (w.meal_template_id !== e.meal_template_id || w.time_of_day !== e.time_of_day)) {
+            await tx.dailyMealPlanSlot.update({
+              where: { id: e.id },
+              data: { meal_template_id: w.meal_template_id, time_of_day: w.time_of_day },
+            });
+          }
+        }
+        const kept = new Set(existing.map(key));
+        const fresh = next.filter((s) => !kept.has(key(s)));
+        if (fresh.length > 0) {
           await tx.dailyMealPlanSlot.createMany({
-            data: dto.slots.map((s, idx) => ({
-              daily_meal_plan_id: planId,
-              meal_template_id: s.meal_template_id,
-              slot_label: s.slot_label,
-              order: s.order ?? idx,
-              time_of_day: s.time_of_day ?? null,
-            })),
+            data: fresh.map((s) => ({ daily_meal_plan_id: planId, ...s })),
           });
         }
       }
@@ -280,7 +301,7 @@ export class RealMealPlansService {
         daily_meal_plan_id: { in: planIds },
         NOT: { client: { coach_id: coachId, role: 'student' } },
       },
-      select: { id: true, daily_meal_plan_id: true },
+      select: { id: true, daily_meal_plan_id: true, client_id: true },
     });
     const now = new Date();
     for (const planId of new Set(moved.map((a) => a.daily_meal_plan_id))) {
@@ -312,20 +333,28 @@ export class RealMealPlansService {
         });
         frozen.set(t.id, row.id);
       }
-      if (plan.slots.length > 0) {
-        await tx.dailyMealPlanSlot.createMany({
-          data: plan.slots.map((s) => ({
+      const held = moved.filter((a) => a.daily_meal_plan_id === planId);
+      const clientIds = [...new Set(held.map((a) => a.client_id))];
+      for (const s of plan.slots) {
+        const { id } = await tx.dailyMealPlanSlot.create({
+          data: {
             daily_meal_plan_id: copy.id,
             meal_template_id: frozen.get(s.meal_template_id) ?? s.meal_template_id,
             slot_label: s.slot_label,
             order: s.order,
             time_of_day: s.time_of_day,
-          })),
+          },
+          select: { id: true },
+        });
+        // FOODLINK: the moved clients' meals logged for this slot follow it to the copy, so their plan still
+        // shows them eaten; every other client's links stay on the live slot.
+        await tx.loggedFoodEntry.updateMany({
+          where: { plan_slot_id: s.id, user_id: { in: clientIds } },
+          data: { plan_slot_id: id },
         });
       }
-      const ids = moved.filter((a) => a.daily_meal_plan_id === planId).map((a) => a.id);
       await tx.dailyMealPlanAssignment.updateMany({
-        where: { id: { in: ids } },
+        where: { id: { in: held.map((a) => a.id) } },
         data: { daily_meal_plan_id: copy.id },
       });
     }
