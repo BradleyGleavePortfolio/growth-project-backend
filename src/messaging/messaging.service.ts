@@ -100,6 +100,12 @@ type ReplyRow = Pick<
   'id' | 'sender_id' | 'body' | 'voice_url' | 'deleted_at'
 >;
 
+/** A thread row as read: its card (or null) and, on v2, the quoted message. */
+type ThreadRow = CoachMessage & {
+  card: { card_type: string; ref_id: string | null; snapshot: Prisma.JsonValue } | null;
+  reply_to?: ReplyRow | null;
+};
+
 /** Collapse whitespace and cap a body for a quoted/inbox preview. */
 export function previewText(body: string | null, max: number): string {
   const text = (body ?? '').replace(/\s+/g, ' ').trim();
@@ -623,36 +629,35 @@ export class MessagingService {
   // the client can pass the oldest timestamp it has seen to fetch the next
   // page without duplicates. Composite index (coach_id, client_id, created_at)
   // makes this a single seek.
-  private async listThread(coachId: string, clientId: string, opts: ListOpts) {
+  private async listThread(
+    coachId: string,
+    clientId: string,
+    opts: ListOpts,
+  ): Promise<ThreadRow[]> {
     const limit = this.clampLimit(opts.limit);
     const before = this.parseBefore(opts.before);
-    const card = { select: { card_type: true, ref_id: true, snapshot: true } } as const;
-    const rows = await this.prisma.coachMessage.findMany({
+    const query = {
       where: {
         coach_id: coachId,
         client_id: clientId,
         ...(before ? { created_at: { lt: before } } : {}),
       },
-      orderBy: { created_at: 'desc' },
+      orderBy: { created_at: 'desc' as const },
       take: limit,
-      // A3-MSG-CORE: the quoted message for swipe-replies (v2 only).
-      ...(isMessagingCoreV2Enabled()
-        ? {
-            include: {
-              card,
-              reply_to: {
-                select: {
-                  id: true,
-                  sender_id: true,
-                  body: true,
-                  voice_url: true,
-                  deleted_at: true,
-                },
-              },
+    };
+    const card = { select: { card_type: true, ref_id: true, snapshot: true } } as const;
+    // A3-MSG-CORE: the quoted message for swipe-replies (v2 only).
+    const rows: ThreadRow[] = isMessagingCoreV2Enabled()
+      ? await this.prisma.coachMessage.findMany({
+          ...query,
+          include: {
+            card,
+            reply_to: {
+              select: { id: true, sender_id: true, body: true, voice_url: true, deleted_at: true },
             },
-          }
-        : { include: { card } }),
-    });
+          },
+        })
+      : await this.prisma.coachMessage.findMany({ ...query, include: { card } });
     // A4: a coach card (workout, meal plan, booking, package, check-in) reads
     // only while FEATURE_COACH_BROADCASTS is on. SHARE-BE: a client's share
     // card reads whatever that flag says. Every row carries a `card` key
