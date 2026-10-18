@@ -28,6 +28,7 @@ function world() {
   const row: Row = { ...STORED };
   const tx = {
     $queryRaw: jest.fn(async () => []),
+    clientOnboardingIntake: { findUnique: jest.fn(async () => null) },
     userProfile: {
       findUnique: jest.fn(async () => ({ ...row })),
       update: jest.fn(async ({ data }: { data: Row }) => Object.assign(row, data)),

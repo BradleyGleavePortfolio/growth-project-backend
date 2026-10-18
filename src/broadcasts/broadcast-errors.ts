@@ -74,10 +74,6 @@ export const BROADCAST_ERRORS = {
     HttpStatus.BAD_REQUEST,
     'That item is no longer in your library, so it cannot be attached. Choose another one.',
   ],
-  'card.meal_plan_client_specific': [
-    HttpStatus.BAD_REQUEST,
-    'This meal plan belongs to one client, so it cannot go to a group. Send it in that client’s thread or choose a template.',
-  ],
   'saved_reply.not_found': [
     HttpStatus.NOT_FOUND,
     'This saved reply no longer exists. Pull to refresh your saved replies.',

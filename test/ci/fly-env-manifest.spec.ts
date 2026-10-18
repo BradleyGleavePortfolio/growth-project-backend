@@ -269,6 +269,21 @@ describe('the checked-in manifest', () => {
       expect([n, m.secrets[n], n in m.excluded]).toEqual([n, 'github-secret', false]);
   });
 
+  it('copies the three signing secrets from GitHub (owner decisions 39 and 36: the operator generates them)', () => {
+    const m = base();
+    for (const n of [
+      'VOICE_KEY_SIGNING_SECRET',
+      'SIGNUP_MARKER_SIGNING_SECRET',
+      'PUBLIC_LISTING_CURSOR_SECRET',
+    ])
+      expect([
+        n,
+        m.secrets[n],
+        n in m.excluded,
+        /owner decisions? (36 and )?39\b/.test(m.gates[n]),
+      ]).toEqual([n, 'github-secret', false, true]);
+  });
+
   it('every FEATURE_COMMUNITY_* name in ENV_RULES is managed or excluded with a reason', () => {
     const m = base();
     for (const r of ENV_RULES.filter((x) => x.name.startsWith('FEATURE_COMMUNITY_')))

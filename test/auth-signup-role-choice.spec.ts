@@ -14,6 +14,7 @@ import {
   AuthService,
   isServerMintedSignupMarker,
   mintSignupAttemptMarker,
+  SIGNUP_MARKER_LEGACY_WINDOW_MS,
 } from '../src/auth/auth.service';
 import { AppleAuthDto, GoogleAuthDto, RegisterDto, SignupWithCodeDto } from '../src/auth/auth.dto';
 import { AuditAction, AuditService } from '../src/audit/audit.service';
@@ -310,7 +311,7 @@ function expectCoachProvisioned(prisma: any, userId: string, provider: string) {
 
   const profile = prisma._profiles.find((p: any) => p.user_id === userId);
   expect(profile).toBeDefined();
-  expect(profile.invite_code).toMatch(/^GP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{6}$/);
+  expect(profile.invite_code).toMatch(/^TGP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{7}$/);
 
   const audits = roleAudits(prisma);
   expect(audits).toHaveLength(1);
@@ -1863,6 +1864,28 @@ describe('A-597-1 — registration retains identities; no destructive compensati
       expect(isServerMintedSignupMarker(m, 'a@example.test')).toBe(false);
     } finally {
       process.env.SUPABASE_SERVICE_ROLE_KEY = key;
+    }
+  });
+
+  it('K5: SIGNUP_MARKER_SIGNING_SECRET signs new markers; service-key markers verify only during the overlap', () => {
+    delete process.env.SIGNUP_MARKER_SIGNING_SECRET;
+    const before = mintSignupAttemptMarker('a@example.test');
+    process.env.SIGNUP_MARKER_SIGNING_SECRET = 'k5-own-signup-secret-0123456789abcdef';
+    try {
+      const after = mintSignupAttemptMarker('a@example.test');
+      expect(isServerMintedSignupMarker(after, 'a@example.test')).toBe(true);
+      expect(isServerMintedSignupMarker(after, 'b@example.test')).toBe(false);
+      // Marker minted before the switch still verifies inside the window, never after it.
+      expect(isServerMintedSignupMarker(before, 'a@example.test')).toBe(true);
+      const later = Date.now() + SIGNUP_MARKER_LEGACY_WINDOW_MS + 60_000;
+      expect(isServerMintedSignupMarker(before, 'a@example.test', later)).toBe(false);
+      expect(isServerMintedSignupMarker(after, 'a@example.test', later)).toBe(true);
+      // The new marker is not keyed with the service-role key.
+      delete process.env.SIGNUP_MARKER_SIGNING_SECRET;
+      expect(isServerMintedSignupMarker(after, 'a@example.test')).toBe(false);
+      expect(isServerMintedSignupMarker(before, 'a@example.test', later)).toBe(true);
+    } finally {
+      delete process.env.SIGNUP_MARKER_SIGNING_SECRET;
     }
   });
 

@@ -294,17 +294,17 @@ describe('QR payload and helpers', () => {
 });
 
 describe('create', () => {
-  it('mints a GP- code, unlimited and open-ended by default, with an audit row', async () => {
+  it('mints a TGP- code, unlimited and open-ended by default, with an audit row', async () => {
     const { tools, audit } = build();
     const { code, replayed } = await tools.create(
       coachA,
-      { label: '  Clinic   front desk ' },
+      { label: '  Front   desk ' },
       null,
     );
     expect(replayed).toBe(false);
-    expect(code.code).toMatch(/^GP-[2-9A-HJKMNP-Z]{6}$/);
+    expect(code.code).toMatch(/^TGP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{7}$/);
     expect(code).toMatchObject({
-      label: 'Clinic front desk',
+      label: 'Front desk',
       max_uses: null,
       expires_at: null,
       status: 'active',

@@ -93,7 +93,7 @@ function makePrisma(opts: {
     coachGuideline: {
       findUnique: jest.fn().mockResolvedValue(opts.guidelines ?? null),
     },
-    mealPlan: {
+    dailyMealPlanAssignment: {
       findFirst: jest.fn().mockResolvedValue(opts.mealPlan ?? null),
     },
     // M1 additions — new models fetched by buildFresh()
@@ -138,6 +138,14 @@ describe('ClientAIContextService.buildFresh', () => {
     expect(ctx.prescribed.calories).toBeNull();
     expect(ctx.coach.has_coach).toBe(false);
     expect(ctx.guardrails.forbid_contradicting_macros).toBe(false);
+  });
+
+  it('lists only the habits the client has not removed (HB1 archive)', async () => {
+    const prisma = makePrisma({});
+    await new ClientAIContextService(prisma).buildFresh('u1');
+    expect(prisma.habit.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { user_id: 'u1', archived_at: null } }),
+    );
   });
 
   it('surfaces coach relationship and last message excerpt without coach PII', async () => {
@@ -198,6 +206,21 @@ describe('ClientAIContextService.buildFresh', () => {
     expect(ctx.guardrails.refer_to_coach_for_medical).toBe(true);
     expect(ctx.guardrails.forbid_calorie_recommendations_below).toBeGreaterThanOrEqual(1500);
   });
+
+  it.each([
+    ['female', 1200],
+    ['male', 1500],
+    ['prefer_not_to_say', 1500],
+    [null, 1500],
+  ])(
+    'sets the calorie guardrail to the %s floor of %i, even under a lower target',
+    async (sex, floor) => {
+      const base = await makePrisma({}).user.findUnique({ where: { id: 'u1' } });
+      const user = { ...base, profile: { ...base.profile, sex, macro_target_calories: 1000 } };
+      const ctx = await new ClientAIContextService(makePrisma({ user })).buildFresh('u1');
+      expect(ctx.guardrails.forbid_calorie_recommendations_below).toBe(floor);
+    },
+  );
 
   it('surfaces dietary_pattern, dietary_restrictions, and workout_days_per_week from profile', async () => {
     const prisma = makePrisma({

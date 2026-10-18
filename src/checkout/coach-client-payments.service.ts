@@ -22,6 +22,7 @@ import {
 } from './client-billing.service';
 import type { CoachRefundDto } from './coach-client-payments.controller';
 import { COACH_PURCHASE_SELECT } from './coach-payments.select';
+import { movedAwayClientIds } from './moved-client-money';
 import { isBillingPauseReason } from './dunning-v2/dunning-v2.service';
 import { RefundDisputeHandlerService } from './refund-dispute-handler.service';
 
@@ -104,7 +105,9 @@ export class CoachClientPaymentsService {
     const shown = rows.filter(
       (r) => r.settlements.length > 0 || LIVE_STATUSES.has(r.status) || isRefundOrDisputePaused(r),
     );
-    return { plans: await Promise.all(shown.map((r) => this.view(actor, r))) };
+    const plans = await Promise.all(shown.map((r) => this.view(actor, r)));
+    const moved = await this.movedAway(actor, clientId);
+    return { plans: plans.map((p) => (moved ? moneyPlan(p) : p)) };
   }
 
   async refund(actor: User, clientId: string, purchaseId: string, input: CoachRefundDto) {
@@ -158,6 +161,15 @@ export class CoachClientPaymentsService {
     return { refund, plan: await this.reload(actor, clientId, purchaseId) };
   }
 
+  /** CONTRACT-1: the seller refunds a sale by its id alone (a moved client's record has none). */
+  async refundSale(actor: User, purchaseId: string, input: CoachRefundDto) {
+    const sale = await this.prisma.clientPurchase.findUnique({
+      where: { id: purchaseId },
+      select: { client_user_id: true },
+    });
+    return this.refund(actor, sale?.client_user_id ?? '', purchaseId, input);
+  }
+
   pause(actor: User, clientId: string, purchaseId: string, key: string) {
     return this.setPause(actor, clientId, purchaseId, key, 'pause');
   }
@@ -167,7 +179,7 @@ export class CoachClientPaymentsService {
   }
 
   async cancel(actor: User, clientId: string, purchaseId: string, key: string) {
-    const row = await this.scopedRow(actor, clientId, purchaseId);
+    const row = await this.scopedRow(actor, clientId, purchaseId, true);
     const current = await this.view(actor, row);
     if (!current.actions.cancel) throw this.notAllowed(current, 'cancel');
     let result: CancelPlanResult;
@@ -198,7 +210,7 @@ export class CoachClientPaymentsService {
     key: string,
     action: 'pause' | 'resume',
   ) {
-    const row = await this.scopedRow(actor, clientId, purchaseId);
+    const row = await this.scopedRow(actor, clientId, purchaseId, true);
     const current = await this.view(actor, row);
     if (current.billing === (action === 'pause' ? 'paused' : 'running')) return { plan: current };
     if (!current.actions[action] || !row.stripe_subscription_id) {
@@ -250,9 +262,10 @@ export class CoachClientPaymentsService {
     return out;
   }
 
-  private async scopedRow(actor: User, clientId: string, purchaseId: string): Promise<PlanRow> {
+  /** `current` (pause, resume, cancel act on the plan): a coach the client left gets the same 404. */
+  private async scopedRow(actor: User, clientId: string, purchaseId: string, current = false) {
     const [row] = await this.scopedRows(actor, clientId, purchaseId);
-    if (!row) {
+    if (!row || (current && (await this.movedAway(actor, clientId)))) {
       throw new NotFoundException(
         coded(
           'PLAN_NOT_FOUND',
@@ -263,12 +276,18 @@ export class CoachClientPaymentsService {
     return row;
   }
 
+  /** CONTRACT-1: a plan of a client who moved away is shown as its money record only. */
   private async reload(actor: User, clientId: string, purchaseId: string) {
-    return this.view(actor, await this.scopedRow(actor, clientId, purchaseId));
+    const plan = await this.view(actor, await this.scopedRow(actor, clientId, purchaseId));
+    return (await this.movedAway(actor, clientId)) ? moneyPlan(plan) : plan;
   }
 
   private async view(actor: User, row: PlanRow, sub?: StripeSubscriptionObject) {
     return planView(row, actor.id, await this.billingOf(row, sub));
+  }
+
+  private async movedAway(actor: User, clientId: string): Promise<boolean> {
+    return (await movedAwayClientIds(this.prisma, actor.id, [clientId])).size > 0;
   }
 
   private async billingOf(row: PlanRow, sub?: StripeSubscriptionObject): Promise<CoachPlanBilling> {
@@ -378,6 +397,13 @@ function planView(row: PlanRow, actorId: string, billing: CoachPlanBilling) {
     },
     payments,
   };
+}
+
+/** CONTRACT-1: the sale, its payments and the refund and restart actions; no access or renewal. */
+function moneyPlan(p: CoachClientPlanView) {
+  const { purchase_id, status, amount_cents, currency, created_at, payments } = p;
+  const actions = { refund: p.actions.refund, restart: p.actions.restart };
+  return { purchase_id, status, amount_cents, currency, created_at, actions, payments };
 }
 
 /** One entry per settled charge, newest first. Cross-currency settlements are not coach-refundable. */

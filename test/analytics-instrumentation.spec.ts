@@ -164,7 +164,7 @@ describe('analytics instrumentation — messaging', () => {
         }),
       },
     };
-    const supabase: any = { broadcastNewMessage: jest.fn() };
+    const supabase: any = { pingChat: jest.fn() };
     const ptm: any = { emit: jest.fn() };
     const messageReceived: any = { emit: jest.fn().mockResolvedValue(undefined) };
     const audit: any = { write: jest.fn().mockResolvedValue(undefined) };
@@ -208,7 +208,7 @@ describe('analytics instrumentation — log service', () => {
     const analytics = makeAnalytics();
     const prisma: any = {
       loggedFoodEntry: {
-        upsert: jest.fn(async ({ create: data }: any) => ({
+        create: jest.fn(async ({ data }: any) => ({
           id: 'l1',
           ...data,
           food_item: { calories: 100, protein_g: 0, carbs_g: 0, fat_g: 0 },

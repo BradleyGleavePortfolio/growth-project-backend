@@ -7,6 +7,9 @@ import { canCoachActOnClient } from '../../common/scope';
 import { CREATE_WORKOUT_PLAN_CAPABILITY } from './materialisers/create-workout-plan.materialiser';
 import { EDIT_WORKOUT_PLAN_CAPABILITY } from './materialisers/edit-workout-plan.materialiser';
 import { toInjuryAreas } from './workout-builder/training-substitutions';
+import { UNTRUSTED_TEXT_RULE, fenceUntrusted } from '../utils/untrusted-text';
+import { ConsentService } from '../../consent/consent.service';
+import { seesWeight, weightIfShared } from '../../consent/coach-sharing-gate';
 
 // B-AIB3-126 (plan section 1, SAFE 2): the workout capabilities get the minimised block — no name, body weight, height,
 // preferred snacks or coach message excerpt (the message row is not even read).
@@ -43,7 +46,12 @@ interface CallerScope {
 export class PrivateContextService {
   private readonly logger = new Logger(PrivateContextService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // C8-S: the client's Weigh-ins switch for a coach caller. Deliberately NOT @Optional:
+    // ConsentModule is @Global, so DI always injects it. Only positional unit tests omit it.
+    private readonly consent?: ConsentService,
+  ) {}
 
   // Loads a sanitized, structured snapshot of a client's coaching state
   // for AI consumption. Throws ForbiddenException if the caller is not
@@ -64,6 +72,9 @@ export class PrivateContextService {
       include: {
         profile: true,
         coach_messages_as_client: {
+          // Owner 4b (HIST3): only the thread with the client's CURRENT coach;
+          // a former coach's chat never reaches the new coach's AI context.
+          where: { coach: { students: { some: { id: subjectUserId } } } },
           orderBy: { created_at: 'desc' },
           take: workout ? 0 : 1,
         },
@@ -76,6 +87,8 @@ export class PrivateContextService {
     }
 
     const profile = subject.profile;
+    // C8-S: the client always reads their own weight; a coach only while Weigh-ins is shared.
+    const weighIns = await seesWeight(this.consent, caller.id, subject.id, caller.role);
     const lastMessage = workout ? undefined : subject.coach_messages_as_client[0];
 
     // Sanitized, structured block. NEVER include email, phone,
@@ -100,13 +113,16 @@ export class PrivateContextService {
         : null,
       last_coach_message_excerpt: lastMessage?.body?.slice(0, 240) ?? null,
     };
-    const block = workout ? workoutBlock(subject.role, profile) : fullBlock;
+    const block = workout
+      ? workoutBlock(subject.role, profile)
+      : { ...fullBlock, profile: fullBlock.profile && weightIfShared(fullBlock.profile, weighIns) };
 
     const systemPrompt =
       `You are an AI assistant operating inside The Growth Project.\n` +
       `Treat the CLIENT_CONTEXT block as the only source of truth about the client.\n` +
-      `Outputs about consequential actions are drafts and require human approval.\n\n` +
-      `CLIENT_CONTEXT:\n${JSON.stringify(block, null, 2)}`;
+      `Outputs about consequential actions are drafts and require human approval.\n` +
+      `${UNTRUSTED_TEXT_RULE}\n\n` +
+      `CLIENT_CONTEXT:\n${fenceUntrusted(block, 2)}`;
 
     const provenance: ProvenanceRef[] = [
       { source: 'user', ref: subject.id, count: 1, hash: hash(subject.id), origin: 'local' },
@@ -142,12 +158,13 @@ export class PrivateContextService {
 
   private callerMaySee(
     caller: CallerScope,
-    subject: { id: string; coach_id: string | null },
+    subject: Pick<User, 'id' | 'role' | 'coach_id'>,
   ): boolean {
     if (caller.id === subject.id) return true; // self
+    // Only a current client of the caller (or any subject for an owner).
     return canCoachActOnClient(
       { id: caller.id, role: caller.role, coach_id: caller.coach_id ?? null },
-      { coach_id: subject.coach_id },
+      subject,
     );
   }
 }

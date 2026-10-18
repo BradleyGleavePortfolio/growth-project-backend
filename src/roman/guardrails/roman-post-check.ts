@@ -27,6 +27,7 @@ import {
   normalizeForSafety,
   ROMAN_PHYSICIAN_LINE_INJURY,
   ROMAN_PHYSICIAN_LINE_MEDICAL,
+  WEIGHT_LOSS_MEDICINES,
 } from './safety-router';
 
 /**
@@ -188,7 +189,10 @@ const MEDICATION_DIRECTIVE: RegExp[] = [
   /\b\d+(\.\d+)?\s?(mg|mcg|µg|milligrams?|micrograms?|iu|units of insulin)\b/i,
   /\b(take|taking|try|use|using|pop|start|grab|have)\s+(some\s+|an?\s+|a couple of\s+|two\s+)?(ibuprofen|advil|motrin|aleve|naproxen|acetaminophen|paracetamol|tylenol|aspirin|antibiotics?|painkillers?|pain ?relievers?|muscle relaxants?|anti-?inflammator(y|ies)|nsaids?|prednisone|cortisone|antihistamines?|benadryl|melatonin|sleeping pills?)\b/i,
   /\b(ibuprofen|advil|motrin|aleve|naproxen|acetaminophen|paracetamol|tylenol|aspirin|nsaids?|prednisone)\b[^.]{0,60}\b(twice|three times|every \d+ hours|daily|a day|per day|with food|before (bed|training))\b/i,
-  /\b(increase|decrease|lower|raise|stop|skip|double|halve|pause|change|adjust|time)\s+(taking\s+)?(your\s+)?(medication|meds|dose|prescription|metformin|ozempic|wegovy|mounjaro|semaglutide|tirzepatide)\b/i,
+  new RegExp(
+    `\\b(increase|decrease|lower|raise|stop|skip|double|halve|pause|change|adjust|time)\\s+(taking\\s+)?(your\\s+)?(medication|meds|dose|prescription|metformin|${WEIGHT_LOSS_MEDICINES})\\b`,
+    'i',
+  ),
   // B-666-1 (Opus): "carbs raise insulin" is physiology; changing the
   // client's own insulin is a medication directive.
   /\b(increase|decrease|lower|raise|stop|skip|double|halve|pause|change|adjust|time)\s+(taking\s+(your\s+)?|your\s+)insulin\b/i,
@@ -704,24 +708,32 @@ function restateTargets(ctx: PostCheckContext | null, fallbackFloor: number): st
   const coach = coachName(ctx);
   const calories = ctx?.targets.calories ?? null;
   if (!ctx || ctx.targets.source === 'none' || calories === null) {
-    const setter = coachless(ctx) ? '' : ` ${coach === 'your coach' ? 'Your coach' : coach} can set them from Messages.`;
+    const setter = coachless(ctx)
+      ? ''
+      : ` ${coach === 'your coach' ? 'Your coach' : coach} can set them from Messages.`;
     return `You do not have daily targets set yet, so I will not guess at numbers.${setter} I will not suggest going below ${fallbackFloor.toLocaleString('en-US')} kcal a day.`;
   }
   const t = ctx.targets;
   const who = t.source === 'coach_set' ? `${coach} set` : 'the app calculated';
+  // B-908-1: never re-endorse a stored target under the floor (decision 6).
+  const safe = Math.max(calories, fallbackFloor);
+  // C-908-5/6: when the floor lifts the target, the grams and the kcal left
+  // come from that same number, so the reply adds up. Otherwise unchanged.
+  const lifted = safe !== calories && calories > 0;
+  const g = (v: number) => (lifted ? Math.round((v * safe) / calories) : v);
   const macros = [
-    t.protein_g != null ? `${t.protein_g} g protein` : null,
-    t.carbs_g != null ? `${t.carbs_g} g carbs` : null,
-    t.fat_g != null ? `${t.fat_g} g fat` : null,
+    t.protein_g != null ? `${g(t.protein_g)} g protein` : null,
+    t.carbs_g != null ? `${g(t.carbs_g)} g carbs` : null,
+    t.fat_g != null ? `${g(t.fat_g)} g fat` : null,
   ]
     .filter(Boolean)
     .join(', ');
   const today =
     ctx.today.meals_logged > 0 && ctx.today.remaining_kcal != null
-      ? ` So far today you have logged ${ctx.today.kcal} kcal and ${ctx.today.protein_g} g protein, leaving ${ctx.today.remaining_kcal} kcal.`
+      ? ` So far today you have logged ${ctx.today.kcal} kcal and ${ctx.today.protein_g} g protein, leaving ${lifted ? Math.round(safe - ctx.today.kcal) : ctx.today.remaining_kcal} kcal.`
       : '';
   const review = coachless(ctx) ? '.' : `; if you would like them reviewed, message ${coach}.`;
-  return `Your daily target is ${calories.toLocaleString('en-US')} kcal${macros ? ` (${macros})` : ''}, which ${who}.${today} I will not suggest different targets${review}`;
+  return `Your daily target is ${safe.toLocaleString('en-US')} kcal${macros ? ` (${macros})` : ''}, which ${who}.${today} I will not suggest different targets${review}`;
 }
 
 /**

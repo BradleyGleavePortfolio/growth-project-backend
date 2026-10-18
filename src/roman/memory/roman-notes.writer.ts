@@ -76,8 +76,8 @@ export class RomanNotesWriter {
       LIMIT ${ROMAN_NOTES_LIMITS.clients}`;
     if (candidates.length === 0) return result;
 
-    const consented = await this.egress.consentedClients(candidates.map((c) => c.client_id), 'memory');
-    const grants = await this.egress.memoryGrantTimes([...consented]);
+    const consented = await this.egress.consentedClients(candidates.map((c) => c.client_id), 'memory', 'client');
+    const grants = await this.egress.memoryGrantTimes([...consented], 'client');
     for (const c of candidates) {
       const grantAt = grants.get(c.client_id);
       let outcome: RomanNotesOutcome;

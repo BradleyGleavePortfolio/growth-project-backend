@@ -679,7 +679,7 @@ describe('CoachWelcomeService — B-609-3: a still-live stale lease-holder never
   // is persisted or fanned out and A reports superseded.
   function realMessaging(h: ReturnType<typeof harness>) {
     const fanOut = {
-      broadcastNewMessage: jest.fn(async () => undefined),
+      pingChat: jest.fn(async () => undefined),
       capture: jest.fn(),
       ptm: jest.fn(),
       push: jest.fn(),
@@ -695,7 +695,7 @@ describe('CoachWelcomeService — B-609-3: a still-live stale lease-holder never
     const svc = new MessagingService(
       cast<PrismaService>(db),
       cast<ConstructorParameters<typeof MessagingService>[1]>({
-        broadcastNewMessage: fanOut.broadcastNewMessage,
+        pingChat: fanOut.pingChat,
       }),
       cast<ConstructorParameters<typeof MessagingService>[2]>({ capture: fanOut.capture }),
       cast<ConstructorParameters<typeof MessagingService>[3]>({ emit: fanOut.ptm }),

@@ -111,6 +111,22 @@ describe('B-654-1 setup_intent.succeeded makes the saved card the default', () =
     expect(row().trial_started_at).toBeInstanceOf(Date);
   });
 
+  it("MOVEBILL2 (Sol B3): a moved client's card save never lifts the trial end; nothing is granted", async () => {
+    // Control: the case above (unmoved) lifts the end and grants the trial.
+    const { svc, prisma, stripe, liveSub, row } = webhookSetup({ moved_away_at: new Date() });
+    const ev = siEvent();
+    const pre = await svc.prefetchForOuterTx(ev);
+    expect((await svc.handle(ev, prisma, pre)).claimed).toBe(true);
+    expect(stripe.setSubscriptionDefaultPaymentMethod).not.toHaveBeenCalled();
+    expect(liveSub.cancel_at_period_end).toBe(true);
+    await svc.handle(
+      { id: 'evt_su', type: 'customer.subscription.updated', data: { object: { ...liveSub } } },
+      prisma,
+    );
+    expect(row().entitlement_active).toBe(false);
+    expect(row().trial_started_at).toBeNull();
+  });
+
   it('(failed before) a failed Stripe write throws in handle so Stripe redelivers', async () => {
     const { svc, prisma, stripe } = webhookSetup();
     stripe.setSubscriptionDefaultPaymentMethod.mockRejectedValueOnce(new Error('stripe down'));

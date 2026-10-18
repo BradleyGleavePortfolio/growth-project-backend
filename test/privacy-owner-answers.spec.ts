@@ -46,7 +46,6 @@ const NEW_SENTENCES = [
   'Email logs in Resend — 30 days.',
   'Product analytics in PostHog — a deleted person is removed from PostHog within 30 days of the deletion.',
   'PostHog — product analytics. Session recording is off.',
-  'At Stripe, deletion requests are handled with Stripe’s redaction tools; Stripe keeps the payment records the law requires.',
   DEIDENTIFIED,
   HEALTH_USE,
 ];
@@ -80,12 +79,21 @@ describe('#611 owner answers O-611-1..6', () => {
     expect(DOC).toMatch(/Procedure \(ADOPTED by the owner 2026-10-03/);
   });
 
-  it('O-611-5: Stripe redaction, Sentry 90 days, Resend 30 days, PostHog recording off and removal within 30 days', () => {
-    expect(privacy).toContain('Stripe’s redaction tools; Stripe keeps the payment records the law requires.');
+  it('O-611-5 / decision 24: Stripe customer and card deletion, Sentry 90 days, Resend 30 days, PostHog recording off and removal within 30 days', () => {
+    expect(privacy).toContain(
+      'At Stripe, we delete your customer record and saved cards; Stripe keeps the payment records the law requires.',
+    );
+    expect(privacy).not.toContain('Stripe’s redaction tools');
     expect(privacy).toContain('Error reports in Sentry — 90 days.');
     expect(privacy).toContain('Email logs in Resend — 30 days.');
     expect(privacy).toContain('PostHog — product analytics. Session recording is off.');
     expect(privacy).toContain('a deleted person is removed from PostHog within 30 days of the deletion.');
+  });
+
+  it('decision 24: provider retry references follow the sign-in provider retention sentence', () => {
+    expect(privacy).toContain(
+      'While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. While asking our service providers to delete their copies is still being retried, we also keep the email address and Stripe customer reference they need.',
+    );
   });
 
   it('O-611-6: de-identified data (RCW 19.373.010) and health data use (Apple 5.1.3) on both policies', () => {

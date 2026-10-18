@@ -161,8 +161,17 @@ describe('Dockerfile / .dockerignore — production artifact shape (structural o
     expect(runtime).toMatch(/test -f prisma\/seed-diagnostic\.json/);
   });
 
-  it('does not bake NODE_ENV or secrets, keeps Sentry token as a build secret in the build stage only', () => {
-    expect(df).not.toMatch(/ENV NODE_ENV/);
+  it('runtime stage bakes NODE_ENV=production after the install; build stage does not (K6)', () => {
+    const build = df.slice(0, df.indexOf('AS runtime'));
+    const runtime = df.slice(df.indexOf('AS runtime'));
+    expect(build).not.toMatch(/NODE_ENV/);
+    expect(runtime.match(/^ENV NODE_ENV=.*$/gm)).toEqual(['ENV NODE_ENV=production']);
+    const env = runtime.indexOf('ENV NODE_ENV=production');
+    expect(env).toBeGreaterThan(runtime.indexOf('npm ci --omit=dev'));
+    expect(env).toBeLessThan(runtime.indexOf('CMD ['));
+  });
+
+  it('does not bake secrets, keeps Sentry token as a build secret in the build stage only', () => {
     expect(df).not.toMatch(/ENV SENTRY_AUTH_TOKEN/);
     const build = df.slice(0, df.indexOf('AS runtime'));
     expect(build).toMatch(/--mount=type=secret,id=sentry_auth_token/);

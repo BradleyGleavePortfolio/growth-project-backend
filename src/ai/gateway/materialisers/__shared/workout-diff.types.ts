@@ -29,6 +29,7 @@
  */
 
 import { z } from 'zod';
+import { alternativesOf } from '../../../../workout-builder/plan-exercise-fields';
 
 /** Discriminator literals for the diff op union. Exported for exhaustive switches. */
 export const WORKOUT_DIFF_OP_KINDS = [
@@ -298,6 +299,8 @@ export interface PlanExerciseSnapshot {
   rest_seconds: number | null;
   superset_group_id: string | null;
   notes: string | null;
+  /** C1V2-C1: the coach's swaps, carried as the row has them. */
+  alternative_external_ids?: string[];
 }
 
 export interface PlanMetaSnapshot {
@@ -339,6 +342,7 @@ export interface PersistableExerciseRow {
   rest_seconds: number | null;
   superset_group_id: string | null;
   notes: string | null;
+  alternative_external_ids?: string[];
 }
 
 /** Project a snapshot's exercises onto the persistable DB column set (ordered). */
@@ -357,6 +361,7 @@ export function toPersistableRows(
       rest_seconds: e.rest_seconds ?? null,
       superset_group_id: e.superset_group_id ?? null,
       notes: e.notes ?? null,
+      alternative_external_ids: alternativesOf(e),
     }));
 }
 
@@ -381,6 +386,7 @@ export function serialiseSnapshotExercises(
       rest_seconds: e.rest_seconds ?? null,
       superset_group_id: e.superset_group_id ?? null,
       notes: e.notes ?? null,
+      alternative_external_ids: alternativesOf(e),
     }));
 }
 
@@ -429,6 +435,7 @@ export function snapshotFromRevisionJson(
     superset_group_id:
       typeof r.superset_group_id === 'string' ? r.superset_group_id : null,
     notes: typeof r.notes === 'string' ? r.notes : null,
+    alternative_external_ids: alternativesOf(r),
   }));
   // Canonicalise order on load so a legacy/sparse revision is normalised.
   exercises

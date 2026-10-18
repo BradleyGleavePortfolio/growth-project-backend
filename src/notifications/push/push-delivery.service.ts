@@ -12,12 +12,13 @@ import {
   FetchExpoPushClient,
   deadlineSignal,
 } from './expo-push-client';
-import { PushContext, lockScreenCopy } from './lock-screen-copy';
+import { PushContext, SAFETY_ALERT_PUSH_BODY, lockScreenCopy } from './lock-screen-copy';
 import { androidChannelFor } from './push-channels';
 import { quietHoursFor } from './push-quiet-hours';
 import { pushAllowedByPreferences } from './push-preferences';
 import { usableTimeZone } from '../local-time';
 import { resolveRecipientTimeZone } from '../recipient-timezone';
+import { pushStillCurrent } from '../current-coach-inbox';
 
 // Device delivery for inbox notifications (C-643-2), through a durable
 // outbox (B-NOTIF-5: B-648-1, B-648-6, C-648-4 / OR-113-5, C-648-5).
@@ -55,8 +56,10 @@ import { resolveRecipientTimeZone } from '../recipient-timezone';
 //     time). Repeats in one conversation collapse: while a push for the same
 //     thread is unsent it takes the newest copy, and a repeat within
 //     COLLAPSE_WINDOW_MS of a sent one is folded into it (the inbox row still
-//     exists). A per-user burst cap (USER_WINDOW_MAX per USER_WINDOW_MS)
-//     DEFERS non-urgent pushes to when the window has room; it never drops.
+//     exists). A push with a dedupe key (a booking event, each Roman safety
+//     coach alert) never collapses with another. A per-user burst cap
+//     (USER_WINDOW_MAX per USER_WINDOW_MS) DEFERS non-urgent pushes to when
+//     the window has room; it never drops.
 //   - Quiet hours (OR-113-5): 21:00-08:00 in the recipient's zone, non-urgent
 //     pushes wait until 08:00 local; urgent ones go now (push-quiet-hours.ts).
 //     A deferred booking reminder is re-checked when it is sent (the session
@@ -175,6 +178,11 @@ function asContext(v: Prisma.JsonValue | null): PushContext | null {
     timeZone: str('timeZone') ?? null,
     otherPartyDisplayName: str('otherPartyDisplayName'),
     ...(o.moveRequested === true ? { moveRequested: true } : {}),
+    // B-R1F: a Roman safety coach alert keeps its own lock-screen line.
+    ...(typeof o.safetyAlert === 'string' &&
+    Object.prototype.hasOwnProperty.call(SAFETY_ALERT_PUSH_BODY, o.safetyAlert)
+      ? { safetyAlert: o.safetyAlert }
+      : {}),
   };
 }
 
@@ -251,6 +259,12 @@ export class PushDeliveryService {
         where: {
           user_id: push.userId,
           collapse_key: push.collapseKey,
+          // Owner 57q: an urgent push (the urgent safety alert) keeps its own
+          // text, tap and time; an ordinary push never folds into it.
+          urgent: false,
+          // Nor into a push with its own identity (each safety alert, waiting
+          // for 08:00 or just sent): that row is never taken over or folded.
+          dedupe_key: null,
           created_at: { gte: new Date(now.getTime() - RECEIPT_MAX_AGE_MS) },
         },
         orderBy: { created_at: 'desc' },
@@ -522,8 +536,14 @@ export class PushDeliveryService {
 
       const user = await this.prisma.user.findUnique({
         where: { id: row.user_id },
-        select: { expo_push_token: true },
+        select: { expo_push_token: true, role: true },
       });
+      // Owner 4: a push to a coach about a client or session they no longer
+      // coach (the client moved, or the delegation ended, while it waited for
+      // 08:00, say) is not sent.
+      if (user?.role === 'coach' && !(await pushStillCurrent(this.prisma, row.user_id, row.data))) {
+        return await this.finish(row, 'dropped', 'obsolete');
+      }
       const token = user?.expo_push_token ?? null;
       if (!token) return await this.finish(row, 'dropped', 'no-token');
       if (!Expo.isExpoPushToken(token)) {

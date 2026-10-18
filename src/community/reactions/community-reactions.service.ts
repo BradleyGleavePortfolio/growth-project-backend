@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { HttpException, Injectable, NotFoundException } from '@nestjs/common';
 import type { CommunityResponse, CommunityResponseTargetType, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
-import { CommunityRealtimeService } from '../realtime/community-realtime.service';
+import { type CommunityAudience, CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
+import { assertDmOpen } from '../dms/community-dms.service';
 import { CommunityMessagesRepository } from '../messages/community-messages.repository';
 import { CommunityPostsRepository } from '../posts/community-posts.repository';
 import { COMMENT_CONTEXT_TYPE } from '../messages/community-messages.repository';
@@ -33,6 +34,8 @@ interface ResolvedTarget {
   targetType: CommunityResponseTargetType;
   targetId: string;
   targetCreatedAt: Date | null;
+  /** Who may read the target, so who hears its reaction pings. */
+  audience: CommunityAudience;
 }
 
 /**
@@ -56,33 +59,23 @@ export class CommunityReactionsService {
   ) {}
 
   /**
-   * Broadcast a reaction-changed ping. The channel is derived from the
-   * RESOLVED target (never request params, #5 IDOR): a `post` target pings the
-   * workspace hall; a `message`/`comment` target pings the owning cohort shard
-   * when it has one, else the workspace hall. The payload carries the opaque
-   * response `kind` discriminator and a +/-1 delta — NEVER the emoji glyph.
+   * Broadcast a reaction-changed ping to the RESOLVED target's readers (never
+   * request params, #5 IDOR): a `post` pings the Hall's readers; a `message`/
+   * `comment` pings its space's readers, a DM's two people, else the Hall's.
+   * The payload carries the opaque response `kind` discriminator and a +/-1
+   * delta — NEVER the emoji glyph.
    */
-  private async emitReactionChanged(
+  private emitReactionChanged(
     user: User,
     t: ResolvedTarget,
     apiType: ApiTargetType,
     responseKind: string,
     delta: number,
-  ): Promise<void> {
-    let channel = this.realtime.channels.workspace(t.workspaceId);
-    let channelKind: 'workspace' | 'cohort' = 'workspace';
-    if (t.targetType !== 'post') {
-      const msg = await this.messagesRepo.findById(t.targetId);
-      if (msg?.cohort_id) {
-        channel = this.realtime.channels.cohort(
-          msg.cohort_id,
-          this.realtime.cohortShard(msg.cohort_id),
-        );
-        channelKind = 'cohort';
-      }
-    }
+  ): void {
+    const space = 'cohortId' in t.audience && t.audience.cohortId !== null;
+    const channelKind = 'people' in t.audience ? 'user' : space ? 'cohort' : 'workspace';
     void this.realtime.broadcastCommunityEvent(
-      channel,
+      t.audience,
       COMMUNITY_BROADCAST_EVENTS.reactionChanged,
       {
         targetType: apiType,
@@ -103,9 +96,11 @@ export class CommunityReactionsService {
     if (apiType === 'post') {
       const post = await this.postsRepo.findById(targetId);
       if (!post || post.deleted_at) throw new NotFoundException(NOT_FOUND);
-      if (!(await this.access.canAccessWorkspace(post.workspace_id, user))) {
-        throw new NotFoundException(NOT_FOUND);
-      }
+      // C6-BVIS: a post of a space takes reactions from whoever the rule lets in; its ping stays there.
+      const open = post.cohort_id
+        ? await this.access.canAccessCohort({ id: post.cohort_id, workspace_id: post.workspace_id }, user)
+        : await this.access.canAccessWorkspace(post.workspace_id, user);
+      if (!open) throw new NotFoundException(NOT_FOUND);
       // Two-way block: content the caller cannot see cannot be reacted to.
       await this.safety.assertVisibleTo(user.id, post.author_id, NOT_FOUND);
       return {
@@ -113,6 +108,7 @@ export class CommunityReactionsService {
         targetType: 'post',
         targetId: post.id,
         targetCreatedAt: post.created_at,
+        audience: { workspaceId: post.workspace_id, cohortId: post.cohort_id ?? null },
       };
     }
 
@@ -137,8 +133,15 @@ export class CommunityReactionsService {
     } else if (!(await this.access.canAccessWorkspace(msg.workspace_id, user))) {
       throw new NotFoundException(NOT_FOUND);
     }
-    // DM rows are only addressable by their two participants.
+    // DM rows are only addressable by their two participants, and only while the DM is open to
+    // both (assertDmOpen, the DM read rule), so both may hear the ping.
     assertDmParticipantIfDm(msg, user.id, NOT_FOUND);
+    if (msg.dm_key) {
+      const other = (msg.sender_id === user.id ? msg.recipient_user_id : msg.sender_id) ?? '';
+      await assertDmOpen(this.access, this.safety, msg.workspace_id, user.id, other).catch((e: unknown) => {
+        throw e instanceof HttpException ? new NotFoundException(NOT_FOUND) : e;
+      });
+    }
     // Two-way block: content the caller cannot see cannot be reacted to.
     await this.safety.assertVisibleTo(user.id, msg.sender_id, NOT_FOUND);
 
@@ -147,6 +150,9 @@ export class CommunityReactionsService {
       targetType: isComment ? 'comment' : 'message',
       targetId: msg.id,
       targetCreatedAt: msg.created_at,
+      audience: msg.dm_key
+        ? { people: [msg.sender_id, msg.recipient_user_id ?? msg.sender_id] }
+        : { workspaceId: msg.workspace_id, cohortId: msg.cohort_id },
     };
   }
 
@@ -188,7 +194,7 @@ export class CommunityReactionsService {
     // `kind` is the OPAQUE NAMED reaction discriminator (like, fire, love…),
     // NOT the target type and NOT the raw emoji glyph (no-PII doctrine — the
     // glyph stays in the DB / authenticated REST refetch only).
-    void this.emitReactionChanged(user, t, apiType, reactionKindForEmoji(emoji), 1);
+    this.emitReactionChanged(user, t, apiType, reactionKindForEmoji(emoji), 1);
     return this.summarise(apiType, t.targetId, rows, user.id);
   }
 
@@ -208,7 +214,7 @@ export class CommunityReactionsService {
     const rows = await this.visibleReactions(user, t);
     // `kind` is the OPAQUE NAMED reaction discriminator — see react(); never
     // the target type, never the raw emoji glyph.
-    void this.emitReactionChanged(user, t, apiType, reactionKindForEmoji(emoji), -1);
+    this.emitReactionChanged(user, t, apiType, reactionKindForEmoji(emoji), -1);
     return this.summarise(apiType, t.targetId, rows, user.id);
   }
 }

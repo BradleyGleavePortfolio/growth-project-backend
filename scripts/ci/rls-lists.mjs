@@ -6,6 +6,8 @@
 //   scripts/ci/rls-suites-pending.json  read by run-rls-suites.mjs (rls-live-tests)
 // Every entry has identities that pin its exact exception shape:
 //   tables          "<table> :: RLS off" and/or "<table> :: FORCE off", one per flag
+//   anonWrites      "<table> :: anon INSERT|UPDATE|DELETE", one per listed privilege
+//                   (check f; no other right and no default privilege can be listed)
 //   policies,       "<table> / <policy> :: SELECT to <roles>". Only a constant-true
 //   referenceData   SELECT policy can be listed, never INSERT/UPDATE/DELETE/ALL
 //   suites (pending), operatorOnly   "<list> :: <path>"
@@ -19,6 +21,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
+import { ANON_WRITES, grantId } from './rls-grant-floor.mjs';
 
 export const GAPS_FILE = 'scripts/ci/rls-known-gaps.json';
 export const SUITES_FILE = 'scripts/ci/rls-suites-pending.json';
@@ -42,6 +45,13 @@ export function gapIdentities(doc, file = GAPS_FILE) {
     need(Object.keys(e).every((k) => ['table', 'rlsOff', 'forceOff', 'finding', 'reason'].includes(k)), file, 'unknown field', e);
     if (e.rlsOff) add(`${e.table} :: RLS off`, 'tables', e);
     if (e.forceOff) add(`${e.table} :: FORCE off`, 'tables', e);
+  }
+  for (const e of doc.anonWrites || []) {
+    need(String(e.table).startsWith('public.') && e.finding && e.reason && Array.isArray(e.privileges) && e.privileges.length > 0
+      && e.privileges.every((p) => ANON_WRITES.includes(p)), file,
+      'an "anonWrites" entry needs a public.<table>, finding, reason and privileges (INSERT/UPDATE/DELETE only)', e);
+    need(Object.keys(e).every((k) => ['table', 'privileges', 'finding', 'reason'].includes(k)), file, 'unknown field', e);
+    for (const p of e.privileges) add(grantId({ object: e.table, role: 'anon', priv: p }), 'anonWrites', e);
   }
   for (const section of ['policies', 'referenceData']) {
     for (const e of doc[section] || []) {

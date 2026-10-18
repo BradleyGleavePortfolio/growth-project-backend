@@ -55,11 +55,13 @@ single seek per page. `limit` is clamped to 1..100, default 50.
 
 ## Realtime
 
-Sends fire `SupabaseService.broadcastNewMessage(recipientId)` after the
-DB write. The broadcast carries no body — just a refresh signal. The
-mobile client refetches via the authenticated REST endpoint when the
-ping arrives. The broadcast is fire-and-forget so a Realtime hiccup
-never delays the API response.
+Sends fire `SupabaseService.pingChat({ coachId, clientId }, 'new-message')`
+after the DB write: one ping to the private topic `messages:user:<User.id>` of
+each of the two people in the chat, and nobody else (MSGRT, policy
+`messages_realtime_own_topic_receive`, migration 20270502003700). The ping
+carries no body — just a refresh signal. The mobile client refetches via the
+authenticated REST endpoint when the ping arrives. The ping is
+fire-and-forget so a Realtime hiccup never delays the API response.
 
 ## Tenancy and security rules
 
@@ -94,7 +96,7 @@ mode, so unknown fields fail closed.
 
 | Var | Purpose |
 |---|---|
-| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Used by `SupabaseService.broadcastNewMessage` |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Used by `SupabaseService.pingChat` |
 
 No messaging-specific env vars beyond Supabase.
 
@@ -220,10 +222,10 @@ client_message_id)). `reply_to_id` (v2) quotes a live message of the same
 thread; thread reads then carry `reply_to { id, sender_id, kind, preview }`
 and `deleted`.
 
-Realtime: non-message changes ping `messages:<userId>` with the distinct event
-`thread-updated` and an empty payload `{}` (the channel is public, so no ids),
-so edits and read receipts never trigger the new-message banner; the app
-refetches over the authenticated routes.
+Realtime: non-message changes ping both people's private topics with the
+distinct event `thread-updated` and an empty payload `{}`, so edits and read
+receipts never trigger the new-message path; the app refetches over the
+authenticated routes.
 
 Errors: every failure carries `{ code, error, message }` with a stable
 `messaging.*` code (see `messaging-errors.ts`). Blocking parity: edit and pin
@@ -234,3 +236,22 @@ Audit: edit, delete, pin, unpin write AuditLog rows with lengths and ids only.
 RLS: `CoachThreadState` is ENABLE + FORCE, self-only plus owner staff, proven
 live by `test/messaging/rls/coach-thread-state-rls.live.spec.ts`
 (community-live-tests job).
+
+## SHARE-BE: a client's share card
+
+`POST /messages` (client only) also takes `card: { type: 'share', snapshot }`
+and nothing else (no `body`, no `voice`). `snapshot` is a closed schema
+(`share-card.ts`): `kind` (`weigh_in_run` | `recent_best`), `value` (one
+number: days in the run, or the weight in lb; 0 < value <= 10000), `words`
+(the card's own words, 1-60 characters, one line), `to` and optional `from`
+(real `YYYY-MM-DD` days, `from <= to`), under a 512-byte cap. Anything else
+answers 400 `{ error: 'SHARE_CARD_INVALID' }`. The card is stored in
+`coach_message_cards` (`card_type 'share'`, `ref_id` NULL) in the same insert
+as the message, only in the thread with the client's current coach
+(coachless: 409 `NO_COACH_ASSIGNED`). The coach send DTO has no `card`, so a
+coach cannot send one. Thread reads return `card` on every row; a share card
+reads whatever `FEATURE_COACH_BROADCASTS` says, coach cards only while it is
+on. In both inboxes a message that is only a card keeps `kind: 'text'` with
+an empty preview and adds `card_type: 'share'`, so the phone's closed `kind`
+list still parses; the coach brief shows no preview for it, never the voice
+label. Deleting the message deletes its card.

@@ -84,6 +84,9 @@ function fakePrisma(memberships: MembershipRow[], bannedUserIds: string[] = []) 
             .map((m) => ({ user_id: m.user_id, notify_level: m.notify_level })),
       ),
     },
+    $queryRaw: jest.fn(async (_q: unknown, spaces: string[], people: string[]) =>
+      spaces.map((c, i) => ({ k: `${c}:${people[i]}` })),
+    ),
     communityWorkspaceBan: {
       findMany: jest.fn(
         async (args: { where: { workspace_id: string; user_id: { in: string[] } } }) =>
@@ -114,6 +117,7 @@ function build(opts: {
   const access = {
     findCohort: jest.fn(async () => ({ id: COHORT, workspace_id: WORKSPACE })),
     canAccessCohort: jest.fn(async () => true),
+    assertCanPost: jest.fn(async () => undefined),
   };
   const realtime = {
     channels: { cohort: jest.fn(() => 'cohort-channel') },

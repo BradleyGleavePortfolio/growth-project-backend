@@ -1,4 +1,4 @@
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import type { ClientPurchase, Prisma } from '@prisma/client';
 import { AssignableAssetResolverRegistry } from './asset-resolvers/assignable-asset-resolver.registry';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -6,6 +6,7 @@ import { NotificationKind } from '../notifications/notification-kind';
 import { PrismaService } from '../prisma.service';
 import { computeFireAt, type CadenceKind } from './drip-fire-at';
 import { attachPaidJoinTx } from '../invite-codes/join-package';
+import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 
 // PR-9 (Packages & Drip-Feed) — REAL fan-out body.
 //
@@ -70,7 +71,8 @@ import { attachPaidJoinTx } from '../invite-codes/join-package';
 //   PurchaseFanout row, every ScheduledDrop seed — together. Stripe (or
 //   the guest reconciler) then retries the same event id and the
 //   StripeProcessedEvent dedup + PR-7 per-type uniques make the retry
-//   safe.
+//   safe. One exception: a source that is not found (a moved client's copy
+//   day) is left due for the dispatcher, which fails it at once.
 //
 //   Rationale: PR-7's at-least-once contract is documented assuming a
 //   crash between successful materialisation and ref-persist (the
@@ -217,7 +219,11 @@ export class PurchaseFanoutService {
     // that coach's client in this tx; a coached client is left alone.
     const inApp = ctx.entrypoint === 'in_app_hosted' || ctx.entrypoint === 'in_app_ps';
     if (inApp && ctx.clientId && ctx.coachId && typeof tx.user?.updateMany === 'function') {
-      await attachPaidJoinTx(tx, ctx.clientId, ctx.coachId);
+      // Owner 61a: only the purchase that attaches tells the coach about a
+      // flagged consultation (a webhook replay attaches nothing).
+      if (await attachPaidJoinTx(tx, ctx.clientId, ctx.coachId)) {
+        await alertCoachOfFlaggedJoinTx(tx, ctx.clientId, ctx.coachId);
+      }
     }
 
     // Defensive: legacy unit-test wiring may pass a minimal stub that
@@ -357,7 +363,17 @@ export class PurchaseFanoutService {
         );
         continue;
       }
-      const result = await this.resolvers.materialise(drop.asset_type, materialiseInput);
+      // PKG-MOVE-FULFILMENT: a source the coach can no longer deliver (a moved
+      // client's copy day) never comes back, so it must not roll the sale back
+      // for Stripe to retry. The drop stays due; the dispatcher fails it at once
+      // and alerts the coach.
+      let result: { materialisedRef: string };
+      try {
+        result = await this.resolvers.materialise(drop.asset_type, materialiseInput);
+      } catch (err) {
+        if (err instanceof NotFoundException) continue;
+        throw err;
+      }
 
       await tx.scheduledDrop.update({
         where: { id: drop.id },

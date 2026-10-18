@@ -152,13 +152,13 @@ export class V1CoachService {
     since.setDate(since.getDate() - 14);
 
     // B-865-SOL-130-1: the last check-in date follows "Check-ins and habits"
-    // and the last workout date follows "Workouts", under the grant of the
-    // coach the client joined (the head coach's for a sub-coach). The owner
+    // and the last workout date follows "Workouts", for the caller as reader
+    // (a sub-coach as himself, never as the head coach: #SHARE-SIMPLE). The owner
     // account reads all. A date the client does not share stays null, and the
     // risk does not use it.
     const granted = this.consent
       ? await this.consent.grantedScopesByClient(
-          messagingCoachId,
+          coachId,
           clientIds,
           [ConsentScope.FITNESS_HABITS_PROGRESS, ConsentScope.FITNESS_WORKOUTS],
           caller.role,
@@ -230,31 +230,18 @@ export class V1CoachService {
 
   // GET /v1/coach/me/threads — enriched thread list per integration notes.
   async listThreads(caller: Caller) {
-    const coachId = resolveCoachId(caller);
+    // Only the threads getThread opens (clientScope): a sub-coach sees the
+    // clients assigned to them, and a client who moved to another coach
+    // leaves the old coach's list (owner 4). Owners are not scoped.
+    const scope = await this.clientScope(caller);
     const messagingCoachId = await this.messagingCoachIdFor(caller);
-    // For sub-coaches we restrict the thread list to clients explicitly
-    // assigned via SubCoachAssignment so they don't see the whole head-
-    // coach team's inbox.
-    const authorizedClientIds = this.subCoachScope
-      ? await this.subCoachScope.getAuthorizedClientIds(coachId)
-      : null;
-    const isSubCoach = this.subCoachScope
-      ? await this.subCoachScope.isSubCoach(coachId)
-      : false;
-    if (isSubCoach && authorizedClientIds && authorizedClientIds.length === 0) {
-      return [];
-    }
+    const inScope = caller.role === 'owner' ? {} : { client: scope };
 
     // Pull every coach-message row for this coach in a single query, then
     // fold per client. We over-fetch but the dataset is small (one coach has
     // tens of threads, hundreds of messages) and one round-trip beats N+1.
     const messages = await this.prisma.coachMessage.findMany({
-      where: {
-        coach_id: messagingCoachId,
-        ...(isSubCoach && authorizedClientIds
-          ? { client_id: { in: authorizedClientIds } }
-          : {}),
-      },
+      where: { coach_id: messagingCoachId, ...inScope },
       orderBy: { created_at: 'desc' },
       select: {
         client_id: true,
@@ -308,12 +295,12 @@ export class V1CoachService {
     const now = new Date();
     const presenceCutoff = new Date(now.getTime() - ACTIVE_PRESENCE_MINUTES * 60_000);
     // B-865-SOL-130-2: as in listClients, the risk reads the last check-in date
-    // only for clients who share "Check-ins and habits", under the grant of the
-    // coach the client joined (the head coach's for a sub-coach). The owner
+    // only for clients who share "Check-ins and habits" with the caller as reader
+    // (a sub-coach as himself, never as the head coach: #SHARE-SIMPLE). The owner
     // account reads all. A hidden date gives no check-in reason.
     const granted = this.consent
       ? await this.consent.grantedScopesByClient(
-          messagingCoachId,
+          caller.id,
           clientIds,
           [ConsentScope.FITNESS_HABITS_PROGRESS],
           caller.role,
@@ -495,7 +482,7 @@ export class V1CoachService {
       payload: { messageId: created.id, snippetId: snippetId ?? null },
     });
     void this.clearDraft(threadCoachId, clientId);
-    void this.supabase.broadcastNewMessage(clientId);
+    void this.supabase.pingChat({ coachId: threadCoachId, clientId }, 'new-message');
     if (caller.role === 'owner') {
       void this.audit.write({
         action: AuditAction.MESSAGE_SENT_BY_OWNER,

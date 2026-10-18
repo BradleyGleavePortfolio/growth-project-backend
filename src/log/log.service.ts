@@ -39,17 +39,18 @@ export class LogService {
       notes: data.notes,
     };
     // Upsert on client_uuid so a flush retry after a mobile crash is idempotent.
-    // When client_uuid is absent we fall back to the sentinel '__none__' which
-    // can never collide (real UUIDs use a different character space).
-    const created = await this.prisma.loggedFoodEntry.upsert({
-      where: { client_uuid: data.client_uuid ?? '__none__' },
-      create: {
-        ...entryData,
-        client_uuid: data.client_uuid ?? null,
-      },
-      update: {}, // no-op if already exists — idempotent on retry
-      include: { food_item: true },
-    });
+    // D2 (AUTHB-03): no key means a plain create. client_uuid is unique across
+    // all users, so a shared fallback key (or another person's key) used to
+    // return their entry and save nothing; such an entry is never returned.
+    const created = data.client_uuid
+      ? await this.prisma.loggedFoodEntry.upsert({
+          where: { client_uuid: data.client_uuid },
+          create: { ...entryData, client_uuid: data.client_uuid },
+          update: {}, // no-op if already exists — idempotent on retry
+          include: { food_item: true },
+        })
+      : await this.prisma.loggedFoodEntry.create({ data: entryData, include: { food_item: true } });
+    if (created.user_id !== userId) throw new NotFoundException('Entry not found');
     this.analytics.capture(userId, Events.CLIENT_FOOD_LOGGED, {
       meal_type: data.meal_type,
     });

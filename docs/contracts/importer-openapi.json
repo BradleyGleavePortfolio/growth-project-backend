@@ -522,7 +522,7 @@
           },
           "payload": {
             "additionalProperties": true,
-            "description": "Opaque source record. Extractor-specific fields are preserved verbatim; the server strips a credential/prototype-pollution denylist before persistence.",
+            "description": "Opaque source record. Only the fields the platform mapping declares are stored; everything else is dropped before persistence.",
             "type": "object"
           },
           "sourceId": {

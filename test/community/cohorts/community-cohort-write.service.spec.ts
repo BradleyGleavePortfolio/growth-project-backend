@@ -12,8 +12,13 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import type { CommunityCohort, User } from '@prisma/client';
+import type { User } from '@prisma/client';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import type { CohortWithPackages, SpaceAccessInput } from '../../../src/community/cohorts/community-cohort-write.repository';
 import { CommunityCohortWriteService } from '../../../src/community/cohorts/community-cohort-write.service';
+import { UpdateCohortDto } from '../../../src/community/cohorts/community-cohort.dto';
+import type { CreateCohortDto, SpaceVisibility } from '../../../src/community/cohorts/community-cohort.dto';
 
 type AccessMock = {
   findWorkspace: jest.Mock;
@@ -26,6 +31,7 @@ type RepoMock = {
   nameTakenInWorkspace: jest.Mock;
   update: jest.Mock;
   archive: jest.Mock;
+  coachPackageCount: jest.Mock;
 };
 
 const WS_A = '11111111-1111-1111-1111-111111111111';
@@ -36,7 +42,7 @@ const coachA = { id: 'coach-a', role: 'coach' } as unknown as User;
 const coachB = { id: 'coach-b', role: 'coach' } as unknown as User;
 const owner = { id: 'platform-owner', role: 'owner' } as unknown as User;
 
-function cohort(over: Partial<CommunityCohort> = {}): CommunityCohort {
+function cohort(over: Partial<CohortWithPackages> = {}): CohortWithPackages {
   const now = new Date('2026-01-01T00:00:00.000Z');
   return {
     id: COHORT_A,
@@ -48,11 +54,15 @@ function cohort(over: Partial<CommunityCohort> = {}): CommunityCohort {
     ends_at: null,
     capacity: null,
     sort_order: 0,
+    kind: 'chat',
+    posting_policy: 'all',
+    visibility: 'members',
+    packages: [],
     created_at: now,
     updated_at: now,
     archived_at: null,
     ...over,
-  } as CommunityCohort;
+  };
 }
 
 describe('CommunityCohortWriteService', () => {
@@ -72,6 +82,7 @@ describe('CommunityCohortWriteService', () => {
       nameTakenInWorkspace: jest.fn(),
       update: jest.fn(),
       archive: jest.fn(),
+      coachPackageCount: jest.fn(async (_coach: string, ids: string[]) => ids.filter((i) => i.startsWith('own')).length),
     };
     service = new CommunityCohortWriteService(
       access as never,
@@ -131,6 +142,24 @@ describe('CommunityCohortWriteService', () => {
       ).rejects.toBeInstanceOf(ConflictException);
     });
 
+    it.each([
+      [undefined, 'chat', 'all'],
+      ['chat', 'chat', 'all'],
+      ['announcement', 'announcement', 'coach'],
+      ['section', 'section', 'all'],
+    ] as const)('C6-B1: kind %s makes a %s space that %s may post in', async (kind, made, policy) => {
+      access.findWorkspace.mockResolvedValue({ id: WS_A });
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      repo.nameTakenInWorkspace.mockResolvedValue(false);
+      repo.create.mockResolvedValue(cohort({ kind: made, posting_policy: policy }));
+
+      const res = await service.create(coachA, WS_A, { name: 'News', kind });
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: made, postingPolicy: policy }),
+      );
+      expect(res.cohort).toMatchObject({ kind: made, posting_policy: policy });
+    });
+
     it('400s when ends_at precedes starts_at', async () => {
       access.findWorkspace.mockResolvedValue({ id: WS_A });
       access.isWorkspaceCoach.mockResolvedValue(true);
@@ -141,6 +170,60 @@ describe('CommunityCohortWriteService', () => {
           ends_at: '2026-05-01T00:00:00.000Z',
         } as never),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  // C6-BVIS (#COMMUNITY-ACCESS): the coach picks who a space opens to. A package space takes one or
+  // more of the coach's own packages ('own-*' here); any other takes none. Every miss is one 400.
+  describe('who a space opens to', () => {
+    const OK = (visibility: SpaceVisibility, packageIds: string[]): SpaceAccessInput => ({ visibility, packageIds });
+    const links = (ids: string[]) => ids.map((package_id) => ({ package_id }));
+    beforeEach(() => {
+      access.findWorkspace.mockResolvedValue({ id: WS_A, coach_id: coachA.id });
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      repo.nameTakenInWorkspace.mockResolvedValue(false);
+      repo.create.mockImplementation(async (i) => cohort({ visibility: i.access.visibility, packages: links(i.access.packageIds) }));
+      repo.update.mockImplementation(async (_id, i) => cohort(i.access ? { visibility: i.access.visibility } : {}));
+    });
+
+    const CREATE: Array<[Partial<CreateCohortDto>, SpaceAccessInput | null]> = [
+      [{}, OK('members', [])],
+      [{ visibility: 'public' }, OK('public', [])],
+      [{ visibility: 'clients' }, OK('clients', [])],
+      [{ visibility: 'package', package_ids: ['own-1', 'own-2', 'own-1'] }, OK('package', ['own-1', 'own-2'])],
+      [{ visibility: 'package' }, null],
+      [{ visibility: 'package', package_ids: ['own-1', 'other-coach'] }, null],
+      [{ visibility: 'clients', package_ids: ['own-1'] }, null],
+    ];
+    it.each(CREATE)('create %j -> %j', async (body, want) => {
+      const made = service.create(coachA, WS_A, { name: 'Space', ...body });
+      if (!want) {
+        await expect(made).rejects.toMatchObject({ response: { code: 'community.cohort.invalid_packages' } });
+        expect(repo.create).not.toHaveBeenCalled();
+        return;
+      }
+      expect((await made).cohort).toMatchObject({ visibility: want.visibility, package_ids: want.packageIds });
+      expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({ access: want }));
+    });
+
+    const UPDATE: Array<[UpdateCohortDto, SpaceAccessInput | null | undefined]> = [
+      [{ name: 'Renamed' }, undefined],
+      [{ visibility: 'clients' }, OK('clients', [])],
+      [{ package_ids: ['own-2'] }, OK('package', ['own-2'])],
+      [{ visibility: 'package' }, OK('package', ['own-1'])],
+      [{ package_ids: [] }, null],
+      [{ visibility: 'members', package_ids: ['own-1'] }, null],
+    ];
+    it.each(UPDATE)('update a package space %j -> %j', async (body, want) => {
+      repo.findById.mockResolvedValue(cohort({ visibility: 'package', packages: links(['own-1']) }));
+      const done = service.update(coachA, COHORT_A, body);
+      if (want === null) {
+        await expect(done).rejects.toMatchObject({ response: { code: 'community.cohort.invalid_packages' } });
+        expect(repo.update).not.toHaveBeenCalled();
+        return;
+      }
+      await done;
+      expect(repo.update).toHaveBeenCalledWith(COHORT_A, expect.objectContaining({ access: want }));
     });
   });
 
@@ -155,6 +238,30 @@ describe('CommunityCohortWriteService', () => {
         name: 'Renamed',
       } as never);
       expect(res.cohort.name).toBe('Renamed');
+    });
+
+    it('C6-B1: the coach sets who may post in a space', async () => {
+      repo.findById.mockResolvedValue(cohort());
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      repo.update.mockResolvedValue(cohort({ posting_policy: 'coach' }));
+
+      const res = await service.update(coachA, COHORT_A, { posting_policy: 'coach' });
+      expect(repo.update).toHaveBeenCalledWith(
+        COHORT_A,
+        expect.objectContaining({ postingPolicy: 'coach' }),
+      );
+      expect(res.cohort.posting_policy).toBe('coach');
+    });
+
+    it('C6-BVIS: a deleted space is not patched, and archived is not a PATCH status', async () => {
+      repo.findById.mockResolvedValue(cohort({ status: 'archived', archived_at: new Date() }));
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      await expect(service.update(coachA, COHORT_A, { status: 'active' })).rejects.toMatchObject({
+        response: { code: 'community.cohort.archived' },
+      });
+      expect(repo.update).not.toHaveBeenCalled();
+      const errors = await validate(plainToInstance(UpdateCohortDto, { status: 'archived' }));
+      expect(errors.map((e) => e.property)).toEqual(['status']);
     });
 
     it('404s an unknown cohort', async () => {

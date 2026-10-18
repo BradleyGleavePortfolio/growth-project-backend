@@ -1,5 +1,6 @@
 import { ClientContext } from '../context/client-context.types';
 import { CoachAIPrompt } from './prompt.types';
+import { UNTRUSTED_TEXT_RULE, fenceUntrusted } from '../utils/untrusted-text';
 
 // Coach AI v1 — weekly client insight prompt. Lower-temperature, fixed
 // shape so the coach console can render it consistently.
@@ -36,6 +37,8 @@ OUTPUT SCHEMA (return ONLY valid JSON conforming to this shape):
   "suggested_actions": ["<bullet>", "..."],
   "questions_for_coach": ["<bullet>", "..."]
 }
+
+${UNTRUSTED_TEXT_RULE}
 `;
 
 function stringArray(v: unknown, field: string): string[] {
@@ -45,7 +48,7 @@ function stringArray(v: unknown, field: string): string[] {
 
 export const ClientInsightPrompt: CoachAIPrompt<ClientInsightInput, ClientInsightPayload> = {
   name: 'client-insight',
-  version: 'v1',
+  version: 'v2',
   system: SYSTEM,
   buildUser(ctx, input) {
     const lines: string[] = [];
@@ -53,7 +56,7 @@ export const ClientInsightPrompt: CoachAIPrompt<ClientInsightInput, ClientInsigh
     lines.push(`window_days: ${input.windowDays ?? 7}`);
     lines.push('---');
     lines.push('CLIENT_CONTEXT:');
-    lines.push(JSON.stringify(serializeContextForPrompt(ctx), null, 2));
+    lines.push(fenceUntrusted(serializeContextForPrompt(ctx), 2));
     return lines.join('\n');
   },
   validate(raw: unknown): ClientInsightPayload {

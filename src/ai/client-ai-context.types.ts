@@ -152,9 +152,7 @@ export interface CoachRelationship {
 export interface MealPlanSummary {
   title: string;
   notes: string | null;
-  // Plan items kept as opaque strings — coach-authored meal lines copied as
-  // text. We don't try to parse the JSON shape; the AI sees what the coach
-  // wrote.
+  // One line per meal of today's day plan (MEAL:DAY): "<slot>: <meal name>".
   items_text: string[];
   updated_at: string;
 }

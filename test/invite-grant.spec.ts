@@ -17,6 +17,7 @@ import { ConsentService } from '../src/consent/consent.service';
 import { CheckoutContractGate } from '../src/contracts/checkout-contract-gate.service';
 import { PurchaseFanoutService } from '../src/packages/purchase-fanout.service';
 import { InviteGrantController } from '../src/invite-grant/invite-grant.controller';
+import { LoginThrottleResetService } from '../src/throttler/login-throttle-reset.service';
 import { CreatePackageDto, UpdatePackageDto } from '../src/packages/packages.dto';
 import { ValidationPipe } from '@nestjs/common';
 import { PrismaService } from '../src/prisma.service';
@@ -533,7 +534,7 @@ async function build(
   const grants = moduleRef.get(InviteGrantService);
   const inviteCodes = moduleRef.get(InviteCodesService);
   const guard = new ClientEntitlementGuard(asPrisma(prisma), makeReflector());
-  const controller = new InviteGrantController(grants);
+  const controller = new InviteGrantController(grants, new LoginThrottleResetService(undefined));
   return { grants, inviteCodes, guard, controller, auditMock, fanoutMock };
 }
 const coachActor = { id: COACH, role: 'coach', email: 'b@example.com' };

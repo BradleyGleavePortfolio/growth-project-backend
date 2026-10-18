@@ -479,6 +479,16 @@ export class DunningService {
         skipped += 1;
         continue;
       }
+      // MOVEBILL (MOVE-BILLING option 1): failed-payment emails for the coach
+      // the client moved away from stop at the move itself.
+      if (purchase.moved_away_at) {
+        await this.prisma.dunningAttempt.update({
+          where: { id: attempt.id },
+          data: { status: 'skipped', failure_reason: 'client_moved' },
+        });
+        skipped += 1;
+        continue;
+      }
 
       const result = await this.fireAttempt(attempt, state, purchase, now);
       if (result === 'sent') sent += 1;

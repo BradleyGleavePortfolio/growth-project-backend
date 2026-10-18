@@ -6,13 +6,14 @@ import { CoachCodeRedemptionService } from './coach-code-redemption.service';
 import { CoachlessHomeService } from './coachless-home.service';
 import { CoachlessPromptService } from './coachless-prompt.service';
 import { FeaturedCoachService } from './featured-coach.service';
+import { ThrottlerModule } from '../throttler/throttler.module';
 
 // A1-COACHLESS — coachless Home (banner + scripted Roman card), the owner's
 // featured-coach config and post-signup coach-code redemption. PrismaService
 // and the auth guards are global; InviteCodesModule exports the canonical
 // attach writer this module delegates to.
 @Module({
-  imports: [InviteCodesModule],
+  imports: [InviteCodesModule, ThrottlerModule],
   controllers: [CoachlessController, FeaturedCoachAdminController],
   providers: [
     CoachCodeLookupService,

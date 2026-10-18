@@ -255,9 +255,11 @@ export class CommunityModerationService {
     if (apiType === 'post') {
       const post = await this.postsRepo.findById(targetId);
       if (!post || post.deleted_at) throw new NotFoundException(NOT_FOUND);
-      if (!(await this.access.canAccessWorkspace(post.workspace_id, user))) {
-        throw new NotFoundException(NOT_FOUND);
-      }
+      // C6-BVIS: a post of a space is reported by whoever the rule lets in, as a message.
+      const open = post.cohort_id
+        ? await this.access.canAccessCohort({ id: post.cohort_id, workspace_id: post.workspace_id }, user)
+        : await this.access.canAccessWorkspace(post.workspace_id, user);
+      if (!open) throw new NotFoundException(NOT_FOUND);
       return {
         workspaceId: post.workspace_id,
         targetType: 'post',
@@ -521,11 +523,11 @@ export class CommunityModerationService {
       }
     }
 
-    // v1-4 post-action tail — best-effort realtime ping on the moderation
-    // channel (IDs + enum action only, NEVER the moderation reason/notes,
+    // v1-4 post-action tail — best-effort realtime ping to the workspace coach,
+    // who moderates it (IDs + enum action only, NEVER the moderation reason/notes,
     // #24/#36). Mobile moderators refetch the queue via authenticated REST.
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.moderation(resolved.workspace_id),
+      { coachOf: resolved.workspace_id },
       COMMUNITY_BROADCAST_EVENTS.moderationActionCreated,
       {
         actionId: resolved.id,

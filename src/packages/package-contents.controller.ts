@@ -20,7 +20,6 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
-import { SubscriptionGuard } from '../billing/subscription.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { PackagesService } from './packages.service';
 import { PackageContentsService } from './package-contents.service';
@@ -36,7 +35,7 @@ import {
 // PR-8 — Coach package CONTENTS authoring endpoints.
 //
 // Mirrors the controller conventions of CoachPackagesController:
-//   - same guards (JwtAuthGuard, CoachOrOwnerGuard, SubscriptionGuard)
+//   - same guards (JwtAuthGuard, CoachOrOwnerGuard)
 //   - same role allow-list ('coach', 'owner')
 //   - sub-coach scope via PackagesService.resolveEffectiveCoachId
 //   - IDOR check via PackagesService.requireOwnedPackage (inside the
@@ -52,7 +51,7 @@ import {
 
 @ApiTags('packages')
 @Controller('v1/coach/packages/:id/contents')
-@UseGuards(JwtAuthGuard, CoachOrOwnerGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, CoachOrOwnerGuard)
 export class CoachPackageContentsController {
   constructor(
     private packages: PackagesService,

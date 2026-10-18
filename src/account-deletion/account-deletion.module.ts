@@ -7,6 +7,7 @@ import { AccountDeletionService } from './account-deletion.service';
 import { AppleTokenRevocationService } from './apple-token-revocation.service';
 import { AccountDeletionStorageService } from './account-deletion.storage';
 import { AccountDeletionBillingService } from './account-deletion.billing';
+import { AccountDeletionVendorsService } from './account-deletion.vendors';
 import { StripeApiService } from '../billing/stripe-api.service';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 
@@ -24,8 +25,10 @@ import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
     AppleTokenRevocationService,
     AccountDeletionStorageService,
     AccountDeletionBillingService,
+    AccountDeletionVendorsService,
     StripeApiService,
-    // Sol B-679-7 — stateless REST client; finds unbound checkout subscriptions.
+    // Sol B-679-7 — stateless REST client; finds unbound checkout subscriptions
+    // and deletes the person's Stripe customers.
     StripeConnectApiService,
   ],
   exports: [AccountDeletionService],

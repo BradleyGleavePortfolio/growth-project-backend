@@ -19,6 +19,7 @@ import {
   LocalArchiveStore,
 } from './data-export-archive.store';
 import { PrismaService } from '../prisma.service';
+import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { DataExportRequest, DataExportStatus, Prisma } from '@prisma/client';
 import * as Sentry from '@sentry/node';
 import * as crypto from 'crypto';
@@ -297,25 +298,6 @@ const INVITE_REDEMPTION_EXPORT_SELECT: Record<string, true> = {
 };
 
 /**
- * Roman workout adjustments proposed for the user: the recovery signals they
- * were based on, the change and its outcome. The coach's own dismiss note and
- * the internal rule key are left out.
- */
-const WORKOUT_ADJUSTMENT_EXPORT_SELECT: Record<string, true> = {
-  id: true,
-  coach_id: true,
-  assignment_id: true,
-  status: true,
-  severity: true,
-  signals: true,
-  proposed_change: true,
-  applied_change: true,
-  roman_text: true,
-  decided_at: true,
-  created_at: true,
-};
-
-/**
  * Roman v1.1 memory (R11-M1): the notes Roman keeps about the user (live,
  * expired and superseded), with when each was said and when it expires. The
  * internal slot key and the source message id are left out.
@@ -380,6 +362,82 @@ const WEARABLE_SAMPLE_EXPORT_SELECT: Record<string, true> = {
   end_at: true,
   source_tz: true,
   recorded_at: true,
+};
+
+/**
+ * P2 (DATA-07): bloodwork panels the user entered, with their own notes and
+ * the coach review note the app already shows them. The plaintext columns are
+ * dual-written with the encrypted ones; ciphertext and key references are
+ * left out.
+ */
+const BLOODWORK_PANEL_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  coach_id: true,
+  collection_date: true,
+  source: true,
+  panel_label: true,
+  notes: true,
+  review_state: true,
+  reviewed_at: true,
+  review_note: true,
+  validation_status: true,
+  is_stale: true,
+  source_missing: true,
+  ai_processing_allowed: true,
+  submitted_at: true,
+  created_at: true,
+  updated_at: true,
+};
+
+/** P2: onboarding answers (health screening included). The completion claim fields are internal. */
+const ONBOARDING_INTAKE_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  version: true,
+  answers: true,
+  completed_chapters: true,
+  disclaimer_version: true,
+  disclaimer_accepted_at: true,
+  screening_any_yes: true,
+  screening_flagged_at: true,
+  saved_at: true,
+  first_session_date: true,
+  preferred_training_time: true,
+  selected_program_key: true,
+  completed_at: true,
+  completion_result: true,
+  created_at: true,
+  updated_at: true,
+};
+
+/** P2: every earlier version of the onboarding answers. */
+const ONBOARDING_REVISION_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  revision: true,
+  version: true,
+  answers: true,
+  completed_chapters: true,
+  disclaimer_version: true,
+  disclaimer_accepted_at: true,
+  screening_any_yes: true,
+  cause: true,
+  created_at: true,
+};
+
+/** P2: workouts a coach assigned and how the user logged them. Idempotency keys and draft ids are internal. */
+const ASSIGNED_WORKOUT_EXPORT_SELECT: Record<string, true> = {
+  id: true,
+  workout_plan_id: true,
+  assigned_by_coach_id: true,
+  scheduled_for: true,
+  started_at: true,
+  completed_at: true,
+  post_rpe: true,
+  post_notes: true,
+  completion_payload: true,
+  approved_by_coach_at: true,
+  skipped_at: true,
+  client_note: true,
+  scheduled_time: true,
 };
 
 /** Why an archive must go although no request row owns it (B-608-11). */
@@ -466,6 +524,8 @@ function archiveFileName(record: Pick<DataExportRequest, 'completed_at' | 'creat
 export class DataExportService {
   private readonly logger = new Logger(DataExportService.name);
   private readonly store: DataExportArchiveStore;
+  // A1's "which clients does this coach have now" (own roster plus current delegations).
+  private readonly clientScope: SubCoachScopeService;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -503,6 +563,7 @@ export class DataExportService {
       );
     }
     this.store = store ?? new LocalArchiveStore();
+    this.clientScope = new SubCoachScopeService(prisma);
   }
 
   /** The archive store in use (supabase in production). */
@@ -561,7 +622,11 @@ export class DataExportService {
         if (!current || current.status !== DataExportStatus.READY) continue;
         existing = current;
       }
-      if (this._isDownloadable(existing, now) && existing.created_at >= windowStart) {
+      if (
+        this._isDownloadable(existing, now) &&
+        existing.created_at >= windowStart &&
+        !(await this._isStaleCoachArchive(existing))
+      ) {
         const next = new Date(existing.created_at.getTime() + RATE_LIMIT_HRS * 60 * 60 * 1000);
         throw new ConflictException({
           code: C.RATE_LIMITED,
@@ -646,7 +711,12 @@ export class DataExportService {
       record = current;
     }
 
-    const downloadable = this._isDownloadable(record, now);
+    let downloadable = this._isDownloadable(record, now);
+    if (downloadable && (await this._isStaleCoachArchive(record))) {
+      await this._supersede(record);
+      record = { ...record, status: DataExportStatus.EXPIRED, file_url: null };
+      downloadable = false;
+    }
     let nextRequestAt: Date | null = null;
     if (record.status === DataExportStatus.PENDING || record.status === DataExportStatus.RUNNING) {
       nextRequestAt = new Date(record.created_at.getTime() + staleRunMs());
@@ -1052,7 +1122,66 @@ export class DataExportService {
       // disk before durable storage (gone with that machine).
       throw new GoneException({ code: C.FILE_MISSING, message: FILE_MISSING_MESSAGE });
     }
+    if (await this._isStaleCoachArchive(record)) {
+      await this._supersede(record);
+      throw new GoneException({ code: C.FILE_MISSING, message: FILE_MISSING_MESSAGE });
+    }
     return record;
+  }
+
+  /**
+   * B-938-1 (owner decision 4): a coach's archive requested before one of
+   * their clients moved away (team reassignment, ended delegation, or a move
+   * of a client delegated to them) holds that client's history, so it is
+   * retired and never served; the coach can request a fresh export at once.
+   * Client archives are never stale.
+   */
+  private async _isStaleCoachArchive(record: DataExportRequest): Promise<boolean> {
+    const owner = await this.prisma.user.findUnique({
+      where: { id: record.user_id },
+      select: { role: true, coach_id: true },
+    });
+    if (owner?.role !== 'coach') return false;
+    const since = { gte: record.created_at };
+    const from = (key: string) => ({ metadata: { path: [key], equals: record.user_id } });
+    const [moved, ended, delegated] = await Promise.all([
+      this.prisma.teamAuditEvent.findFirst({
+        where: {
+          event_kind: 'client_reassigned',
+          occurred_at: since,
+          head_coach_id: { in: [record.user_id, owner.coach_id ?? record.user_id] },
+          OR: [from('from_coach_id'), from('from_sub_coach_id')],
+        },
+        select: { id: true },
+      }),
+      this.prisma.subCoachAssignment.findFirst({
+        where: { sub_coach_id: record.user_id, unassigned_at: since },
+        select: { id: true },
+      }),
+      this.prisma.subCoachAssignment.findMany({
+        where: {
+          sub_coach_id: record.user_id,
+          unassigned_at: null,
+          assigned_at: { lte: record.created_at },
+        },
+        select: { client_id: true },
+      }),
+    ]);
+    if (moved || ended) return true;
+    if (delegated.length === 0) return false;
+    // A head coach moving a delegated client to another coach leaves the
+    // delegation open, but the sub-coach loses that client at once (A1).
+    const reassigned = await this.prisma.teamAuditEvent.findMany({
+      where: {
+        event_kind: 'client_reassigned',
+        occurred_at: since,
+        target_client_id: { in: delegated.map((d) => d.client_id) },
+      },
+      select: { target_client_id: true },
+    });
+    if (reassigned.length === 0) return false;
+    const current = new Set(await this.clientScope.getAuthorizedClientIds(record.user_id));
+    return reassigned.some((e) => e.target_client_id !== null && !current.has(e.target_client_id));
   }
 
   /**
@@ -1288,6 +1417,17 @@ export class DataExportService {
   ): Promise<{ buffer: Buffer; sha256: string }> {
     const startedAt = new Date();
 
+    // B-DP-4-1 (owner decision 4): when a client moves, the old coach loses
+    // everything at once and the history stays with the client. The coach
+    // side of each client-linked section keeps only rows about a client the
+    // exporter coaches now, or about no client; the client side is unchanged.
+    const currentClientIds = await this.clientScope.getAuthorizedClientIds(userId);
+    const currentClient = { client_id: { in: currentClientIds } };
+    const noOrCurrentClient = { OR: [{ client_id: null }, currentClient] };
+    const coachOrClient = {
+      OR: [{ client_id: userId }, { coach_id: userId, ...noOrCurrentClient }],
+    };
+
     const [
       user,
       profile,
@@ -1296,6 +1436,9 @@ export class DataExportService {
       weightLogs,
       loggedEntries,
       customFoods,
+      foodFavorites,
+      savedMeals,
+      savedMealItems,
       workouts,
       fastingWindows,
       waterLogs,
@@ -1328,12 +1471,20 @@ export class DataExportService {
       broadcastDeliveries,
       coachCodeRedemptions,
       inviteRedemptions,
-      workoutAdjustments,
       romanClientNotes,
       romanClientSummaries,
       coachPlaybook,
       wearableConnections,
       wearableSamples,
+      exerciseSets,
+      habitLogs,
+      bloodworkPanels,
+      bloodworkResults,
+      onboardingIntake,
+      onboardingRevisions,
+      macroTargets,
+      assignedWorkouts,
+      wearablePreferences,
     ] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
@@ -1359,6 +1510,15 @@ export class DataExportService {
         { created_by_user_id: userId },
         { select: CUSTOM_FOOD_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
       ),
+      // FOODSAVED: the user's own favourite foods and saved meals, and each
+      // meal's foods in their order (account deletion erases all three).
+      this._streamAll('foodFavorite', { user_id: userId }, { orderBy: CHRONOLOGICAL }),
+      this._streamAll('savedMeal', { user_id: userId }, { orderBy: CHRONOLOGICAL }),
+      this._streamAll(
+        'savedMealItem',
+        { saved_meal: { user_id: userId } },
+        { orderBy: [{ saved_meal_id: 'asc' }, { position: 'asc' }] },
+      ),
       this._streamAll('workoutSession', { user_id: userId }),
       this._streamAll('fastingWindow', { user_id: userId }),
       this._streamAll('waterLog', { user_id: userId }),
@@ -1367,20 +1527,14 @@ export class DataExportService {
       this._streamAll('checkIn', { user_id: userId }),
       this._streamAll('savedRecipe', { user_id: userId }),
       this._streamAll('listItem', { user_id: userId }),
-      this._streamCoachMessages(userId),
-      this._streamAll('coachNudge', {
-        OR: [{ coach_id: userId }, { client_id: userId }],
-      }),
-      this._streamAll('messageDraft', {
-        OR: [{ coach_id: userId }, { client_id: userId }],
-      }),
-      this._streamAll('mealPlan', {
-        OR: [{ coach_id: userId }, { client_id: userId }],
-      }),
+      this._streamCoachMessages(userId, noOrCurrentClient),
+      this._streamAll('coachNudge', coachOrClient),
+      // Owner C-3: a draft is the coach's unsent reply, so it is coach-side
+      // only and never in the client's export. It always names its client.
+      this._streamAll('messageDraft', { coach_id: userId, ...currentClient }),
+      this._streamAll('mealPlan', coachOrClient),
       this._streamAll('communityWin', { user_id: userId }),
-      this._streamAll('coachGuideline', {
-        OR: [{ coach_id: userId }, { client_id: userId }],
-      }),
+      this._streamAll('coachGuideline', coachOrClient),
       this.prisma.buildWeekEnrollment.findUnique({ where: { user_id: userId } }),
       this._streamBuildWeekCompletions(userId),
       this._streamAll('inviteCode', { coach_id: userId }),
@@ -1445,11 +1599,9 @@ export class DataExportService {
           orderBy: [{ redeemed_at: 'asc' }, { id: 'asc' }],
         },
       ),
-      this._streamAll(
-        'workoutAdjustmentProposal',
-        { client_id: userId },
-        { select: WORKOUT_ADJUSTMENT_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
-      ),
+      // Owner C-3: Roman's workout-change proposals (WorkoutAdjustmentProposal)
+      // are coach-side rows and are not exported (approve writes its change into
+      // the assignment itself). Account deletion still erases them.
       // R11-M1: Roman's notes and summaries about the user (their own rows only).
       this._streamAll(
         'romanClientNote',
@@ -1479,6 +1631,43 @@ export class DataExportService {
         { user_id: userId },
         { select: WEARABLE_SAMPLE_EXPORT_SELECT, orderBy: [{ start_at: 'asc' }, { id: 'asc' }] },
       ),
+      // P2 (DATA-07): health records reached only through the user's own rows.
+      this._streamAll('exerciseSet', { workout: { user_id: userId } }),
+      this._streamAll(
+        'habitLog',
+        { habit: { user_id: userId } },
+        { orderBy: [{ date: 'asc' }, { id: 'asc' }] },
+      ),
+      this._streamAll(
+        'bloodworkPanel',
+        { client_id: userId },
+        { select: BLOODWORK_PANEL_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll(
+        'bloodworkResult',
+        { panel: { client_id: userId } },
+        { orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll(
+        'clientOnboardingIntake',
+        { client_id: userId },
+        { select: ONBOARDING_INTAKE_EXPORT_SELECT },
+      ),
+      this._streamAll(
+        'clientOnboardingIntakeRevision',
+        { client_id: userId },
+        { select: ONBOARDING_REVISION_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      this._streamAll('macroTarget', { client_id: userId }, { orderBy: CHRONOLOGICAL }),
+      this._streamAll(
+        'clientWorkoutAssignment',
+        { client_id: userId },
+        {
+          select: ASSIGNED_WORKOUT_EXPORT_SELECT,
+          orderBy: [{ scheduled_for: 'asc' }, { id: 'asc' }],
+        },
+      ),
+      this._streamAll('wearableUserMetricPreference', { user_id: userId }),
     ]);
 
     // The push token is a send credential for the user's phone: the archive
@@ -1508,6 +1697,9 @@ export class DataExportService {
       weight_logs: weightLogs,
       food_entries: loggedEntries,
       custom_foods: customFoods,
+      food_favorites: foodFavorites,
+      saved_meals: savedMeals,
+      saved_meal_items: savedMealItems,
       workout_sessions: workouts,
       fasting_windows: fastingWindows,
       water_logs: waterLogs,
@@ -1526,7 +1718,13 @@ export class DataExportService {
       coach_guidelines: coachGuidelines,
       build_week_enrollment: buildWeekEnrollment,
       build_week_completions: buildWeekCompletions,
-      invite_codes: inviteCodes,
+      // B-938-2: a code a moved client accepted stays the coach's, without
+      // that client's id, acceptance date or invited email.
+      invite_codes: (inviteCodes as Array<Record<string, unknown>>).map((code) =>
+        code.accepted_by_user_id && !currentClientIds.includes(String(code.accepted_by_user_id))
+          ? { ...code, accepted_by_user_id: null, accepted_at: null, intended_email: null }
+          : code,
+      ),
       diagnostic_submissions: diagnosticSubmissions,
       ptm_signals: ptmSignals,
       ptm_predictions: ptmPredictions,
@@ -1543,12 +1741,20 @@ export class DataExportService {
       broadcasts_received: broadcastDeliveries,
       coach_code_redemptions: coachCodeRedemptions,
       invite_redemptions: inviteRedemptions,
-      workout_adjustments: workoutAdjustments,
       roman_notes: romanClientNotes,
       roman_summaries: romanClientSummaries,
       coach_playbook: coachPlaybook,
       wearable_connections: wearableConnections,
       wearable_samples: wearableSamples,
+      exercise_sets: exerciseSets,
+      habit_logs: habitLogs,
+      bloodwork_panels: bloodworkPanels,
+      bloodwork_results: bloodworkResults,
+      onboarding_intake: onboardingIntake,
+      onboarding_intake_revisions: onboardingRevisions,
+      macro_targets: macroTargets,
+      assigned_workouts: assignedWorkouts,
+      wearable_metric_preferences: wearablePreferences,
     };
 
     const jsonForHash = JSON.stringify(archive);
@@ -1644,11 +1850,19 @@ export class DataExportService {
    * CoachMessage export. Messages sent by the requesting user are returned
    * verbatim. Messages sent by a third party that are visible to the user
    * are redacted to protect the other party's privacy rights under GDPR.
-   * Pages follow the primary key like _streamAll.
+   * Pages follow the primary key like _streamAll. As the coach or sender,
+   * only messages about a client the user coaches now (`coachSideClient`,
+   * B-DP-4-1) or about no client; as the client, all of them.
    */
-  private async _streamCoachMessages(userId: string): Promise<unknown[]> {
-    const where = {
-      OR: [{ sender_id: userId }, { coach_id: userId }, { client_id: userId }],
+  private async _streamCoachMessages(
+    userId: string,
+    coachSideClient: Prisma.CoachMessageWhereInput,
+  ): Promise<unknown[]> {
+    const where: Prisma.CoachMessageWhereInput = {
+      OR: [
+        { client_id: userId },
+        { OR: [{ sender_id: userId }, { coach_id: userId }], AND: [coachSideClient] },
+      ],
     };
     return this._readAllById(
       'coachMessage',

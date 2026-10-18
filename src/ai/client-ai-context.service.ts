@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { calorieFloorKcal } from '../macros/calorie-floor';
 import { PrismaService } from '../prisma.service';
 import { romanContextInvalidate } from '../roman/context/roman-context-invalidation';
 import { sanitizePromptInput } from './utils/sanitize-prompt-input';
@@ -37,11 +38,6 @@ export const CONTEXT_LIMITS = {
   BIO_CHARS: 240,
   MEAL_PLAN_ITEMS: 12,
 };
-
-// Safety floor on calorie recommendations. The prompt forbids the model
-// from suggesting anything below this, on top of the post-response check
-// in GuardrailService.
-const CALORIE_FLOOR_FALLBACK = 1500;
 
 // Cache TTL: short enough that "I just logged a meal, ask the AI" is fresh,
 // long enough to absorb chat-burst usage (rapid follow-up questions reuse
@@ -172,7 +168,7 @@ export class ClientAIContextService {
         orderBy: { date: 'asc' },
       }),
       this.prisma.habit.findMany({
-        where: { user_id: userId },
+        where: { user_id: userId, archived_at: null },
         take: CONTEXT_LIMITS.HABITS,
         include: {
           logs: {
@@ -208,10 +204,30 @@ export class ClientAIContextService {
             },
           })
         : Promise.resolve(null),
+      // Today's day plan (MEAL:DAY) from the client's current coach, live only.
       user.coach_id
-        ? this.prisma.mealPlan.findFirst({
-            where: { coach_id: user.coach_id, client_id: userId, archived_at: null },
-            orderBy: { updated_at: 'desc' },
+        ? this.prisma.dailyMealPlanAssignment.findFirst({
+            where: {
+              client_id: userId,
+              starts_on: { lte: today },
+              OR: [{ ends_on: null }, { ends_on: { gte: today } }],
+              daily_meal_plan: { coach_id: user.coach_id, archived_at: null },
+            },
+            orderBy: { starts_on: 'desc' },
+            select: {
+              daily_meal_plan: {
+                select: {
+                  name: true,
+                  notes: true,
+                  created_at: true,
+                  slots: {
+                    orderBy: { order: 'asc' },
+                    take: CONTEXT_LIMITS.MEAL_PLAN_ITEMS,
+                    select: { slot_label: true, meal_template: { select: { name: true } } },
+                  },
+                },
+              },
+            },
           })
         : Promise.resolve(null),
       // M1: active fast (end_time IS NULL)
@@ -318,7 +334,7 @@ export class ClientAIContextService {
         notes: clampStr(c.notes, 200),
       })),
       coach: this.buildCoachRelationship(coachRecord, recentCoachMessages, activeGuidelines),
-      current_meal_plan: this.summarizeMealPlan(currentMealPlan),
+      current_meal_plan: this.summarizeMealPlan(currentMealPlan?.daily_meal_plan ?? null),
       // M1 additions
       fasting: this.buildFastingSummary(activeFast, lastCompletedFast),
       next_session: nextSession
@@ -335,7 +351,7 @@ export class ClientAIContextService {
         opted_in: requesterProfile?.show_on_leaderboard ?? false,
         rank: null, // rank is expensive to compute on every chat; AI uses opted_in signal only
       },
-      guardrails: this.buildGuardrails(prescribed, !!user.coach_id),
+      guardrails: this.buildGuardrails(prescribed, !!user.coach_id, profile?.sex),
       generated_at: new Date().toISOString(),
     };
     return ctx;
@@ -612,45 +628,29 @@ export class ClientAIContextService {
   }
 
   private summarizeMealPlan(plan: {
-    title: string;
+    name: string;
     notes: string | null;
-    items: unknown;
-    updated_at: Date;
+    created_at: Date;
+    slots: Array<{ slot_label: string; meal_template: { name: string } }>;
   } | null): MealPlanSummary | null {
     if (!plan) return null;
-    // `items` is JSON. We accept array-of-strings, array-of-{name},
-    // or anything else (rendered as JSON.stringify as a last resort).
-    const raw = plan.items;
-    let lines: string[] = [];
-    if (Array.isArray(raw)) {
-      lines = raw
-        .map((it) => {
-          if (typeof it === 'string') return it;
-          if (it && typeof it === 'object') {
-            const o = it as Record<string, unknown>;
-            if (typeof o.name === 'string') return o.name;
-            if (typeof o.text === 'string') return o.text;
-            return JSON.stringify(o);
-          }
-          return String(it);
-        })
-        .slice(0, CONTEXT_LIMITS.MEAL_PLAN_ITEMS);
-    }
     return {
-      title: plan.title,
+      title: plan.name,
       notes: clampStr(plan.notes, 200),
-      items_text: lines,
-      updated_at: plan.updated_at.toISOString(),
+      items_text: plan.slots.map((s) => `${s.slot_label}: ${s.meal_template.name}`),
+      updated_at: plan.created_at.toISOString(),
     };
   }
 
-  private buildGuardrails(prescribed: AppPrescribedTargets, hasCoach: boolean): AIGuardrails {
-    const floor =
-      prescribed.calories != null
-        ? Math.min(CALORIE_FLOOR_FALLBACK, Math.round(prescribed.calories * 0.8))
-        : CALORIE_FLOOR_FALLBACK;
+  private buildGuardrails(
+    prescribed: AppPrescribedTargets,
+    hasCoach: boolean,
+    sex: string | null | undefined,
+  ): AIGuardrails {
     return {
-      forbid_calorie_recommendations_below: floor,
+      // The prompt forbids replies below the client's hard floor and the
+      // post-check flags them; a lower prescribed target never lowers it.
+      forbid_calorie_recommendations_below: calorieFloorKcal(sex),
       forbid_contradicting_macros: prescribed.calories != null || prescribed.protein_g != null,
       refer_to_coach_for_medical: hasCoach,
       forbid_extreme_dieting_language: true,
@@ -739,7 +739,7 @@ export class ClientAIContextService {
       recent_wins: [],
       leaderboard: { opted_in: false, rank: null },
       guardrails: {
-        forbid_calorie_recommendations_below: CALORIE_FLOOR_FALLBACK,
+        forbid_calorie_recommendations_below: calorieFloorKcal(null),
         forbid_contradicting_macros: false,
         refer_to_coach_for_medical: false,
         forbid_extreme_dieting_language: true,

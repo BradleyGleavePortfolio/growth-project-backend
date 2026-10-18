@@ -309,8 +309,12 @@ jobs:
           #    `schema "auth" does not exist` if we did not re-bootstrap.
           # _supabase_bootstrap.sql is idempotent by design (see the file's
           # header comment) so re-running it is safe.
+          # `app` is dropped too: the migrations create it, and since
+          # 20270502001000_public_role_grant_floor it holds a table
+          # (app.public_role_grant_floor_backup) that a public-only reset left
+          # behind, so the next forward apply failed on CREATE TABLE.
           reset_and_migrate_forward() {
-            $PSQL -c 'DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS auth CASCADE; CREATE SCHEMA public;' >/dev/null
+            $PSQL -c 'DROP SCHEMA IF EXISTS public CASCADE; DROP SCHEMA IF EXISTS auth CASCADE; DROP SCHEMA IF EXISTS app CASCADE; CREATE SCHEMA public;' >/dev/null
             $PSQL -f prisma/migrations/_supabase_bootstrap.sql >/dev/null
             npx prisma migrate deploy >/dev/null
           }

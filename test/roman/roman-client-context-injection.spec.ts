@@ -63,7 +63,7 @@ function asAuthedRequestDouble<T extends object>(mock: T): AuthedRequest {
 function setup() {
   const db = makePersonaDb();
   const intake = new FakeSafetyIntakeSource();
-  const svc = new RomanClientContextService(db.prisma, intake);
+  const svc = new RomanClientContextService(db.prisma, intake, grantAllEgress());
   return { db, intake, svc };
 }
 const student = (id: string) => ({ id, role: 'student' });

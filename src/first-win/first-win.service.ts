@@ -3,6 +3,8 @@ import { PrismaService } from '../prisma.service';
 import { AiEgressService, PerplexityHandle } from '../ai-egress/ai-egress.service';
 import { noClientDataSubject } from '../ai-egress/ai-egress.types';
 import { createPerplexityClient } from '../ai-egress/provider-clients';
+import { romanRequiresCoach } from '../roman/roman-requires-coach';
+import { firstNameOf } from '../engagement/welcome-template';
 
 export type WinType =
   | 'logged_first_weight'
@@ -34,6 +36,26 @@ const FALLBACK_MESSAGES: Record<WinType, string> = {
   first_meal:
     'Logging your first meal starts your nutrition baseline. Three days of honest data says more about your habits than any intake form.',
 };
+
+// GAPS3-F2 (owner: "clients with no coach get a NON-AI Day One win that pops
+// up in Roman's character"), wording approved verbatim (owner item 16,
+// 2026-10-14; DECISIONS #C3-DAYONE): C3-S-85 meal, C3-S-86 weight, C3-S-87
+// habits. Fixed text; no AI call.
+const COACHLESS_NOTES: Partial<Record<WinType, (name: string) => string>> = {
+  first_meal: (name) =>
+    `Your first meal is logged, ${name}. A few days of meals like this tell your plan more than any form.`,
+  logged_first_weight: (name) =>
+    `Your starting weight is in, ${name}. Every weigh-in from here is measured against today.`,
+  first_checkin: (name) =>
+    `Today's habits are ticked, ${name}. One tick a day is how a streak starts.`,
+};
+
+/** The fixed note; with no approved note or no first name, the deterministic message above. */
+function coachlessNote(winType: WinType, name: string | null): string {
+  const note = COACHLESS_NOTES[winType];
+  const first = firstNameOf(name);
+  return note && first ? note(first) : FALLBACK_MESSAGES[winType];
+}
 
 @Injectable()
 export class FirstWinService {
@@ -81,7 +103,7 @@ export class FirstWinService {
     // Read current state first to avoid a write on every call (idempotency).
     const user = await this.prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { first_win_completed_at: true },
+      select: { first_win_completed_at: true, role: true, coach_id: true, name: true },
     });
 
     let completedAt: Date;
@@ -101,7 +123,12 @@ export class FirstWinService {
     // we still await here — the delay is acceptable (< 3s in practice) because
     // this is a one-time first-open event. See README for the async-polling
     // alternative if latency becomes a concern.
-    const aiMessage = await this.generateFirstDataPointMessage(winType);
+    // A client with no coach (the same check as Roman's 403
+    // ROMAN_REQUIRES_COACH, on the row read above in this request) gets the
+    // fixed note: no provider, egress, consent read or credit use.
+    const aiMessage = romanRequiresCoach(user)
+      ? coachlessNote(winType, user.name)
+      : await this.generateFirstDataPointMessage(winType);
 
     return { completedAt, aiMessage };
   }

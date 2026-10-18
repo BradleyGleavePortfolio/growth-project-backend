@@ -1,11 +1,14 @@
 import {
   BadRequestException,
+  GoneException,
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 
 // Canonical consent scopes. Strings are stored as-is in
 // ClientCoachConsent.scope (not a SQL enum) so adding a scope is a code
@@ -43,14 +46,19 @@ export const ConsentScope = {
 
 export type ConsentScopeValue = (typeof ConsentScope)[keyof typeof ConsentScope];
 
-// The four Settings > Privacy > Coach sharing switches: Workouts, Food logs,
-// Weigh-ins, Check-ins and habits.
+// The four kinds of logs a coach reads: workouts, food logs, weigh-ins, check-ins and habits.
 export const COACH_FITNESS_SCOPES: readonly string[] = [
   ConsentScope.FITNESS_WORKOUTS,
   ConsentScope.FITNESS_FOOD_MACROS,
   ConsentScope.FITNESS_BODY_METRICS,
   ConsentScope.FITNESS_HABITS_PROGRESS,
 ];
+
+// #SHARE-SIMPLE and #SHARE-JOIN (owner, op 1 each): none of the four is a switch; the AI switch is the only
+// one. The join accept covers them: they go to the client's coach now (SubCoachScopeService: their own roster,
+// or a sub-coach's open delegation while the client is still the head coach's), never to a former, unrelated
+// or other coach. A stored grant or revoke for them is history only.
+export const COACH_LINK_SCOPES: ReadonlySet<string> = new Set(COACH_FITNESS_SCOPES);
 
 const ALL_SCOPES: ConsentScopeValue[] = Object.values(ConsentScope);
 const SCOPE_SET: Set<string> = new Set(ALL_SCOPES);
@@ -83,11 +91,17 @@ interface AuditContext {
 @Injectable()
 export class ConsentService {
   private readonly logger = new Logger(ConsentService.name);
+  private readonly coaches: SubCoachScopeService;
 
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
-  ) {}
+    // #SHARE-SIMPLE: who coaches a client now. Injected from the @Global SubCoachModule; a hand-built
+    // ConsentService gets the same rule on its own Prisma.
+    @Optional() coaches?: SubCoachScopeService,
+  ) {
+    this.coaches = coaches ?? new SubCoachScopeService(prisma);
+  }
 
   private readonly grantedListeners: Array<
     (clientId: string, coachId: string, scope: string) => unknown
@@ -258,6 +272,11 @@ export class ConsentService {
     if (!ConsentService.isKnownScope(scope)) {
       throw new BadRequestException(`Unknown consent scope: ${scope}`);
     }
+    // #SHARE-SIMPLE: an older app's Workouts, Food logs, Weigh-ins or Check-ins switch. 410 and nothing written, so
+    // its switch goes back to on (the truth) and the stored history stays as it was.
+    if (COACH_LINK_SCOPES.has(scope)) {
+      throw new GoneException(`${scope} is not a switch: it always goes to the client's current coach`);
+    }
 
     const now = new Date();
     const existing = await this.prisma.clientCoachConsent.findUnique({
@@ -327,9 +346,10 @@ export class ConsentService {
   }
 
   // Coach-side gating helper. `coachId` is the caller, `clientId` is the
-  // resource owner. Owners bypass the consent check (platform admin can
-  // see everything; the audit log records that they did). Coaches must
-  // hold a granted consent row for the requested scope.
+  // resource owner. Owners bypass the check (platform admin can see
+  // everything; the audit log records that they did). Workouts, food logs,
+  // weigh-ins, check-ins and habits (COACH_LINK_SCOPES) follow the coaching
+  // relationship only; every other scope needs a granted row for this coach.
   //
   // Returns true when access is allowed; callers can throw / 403 / hide
   // data when false. Centralizing the check here means the rule lives in
@@ -341,14 +361,20 @@ export class ConsentService {
     callerRole?: string,
   ): Promise<boolean> {
     if (callerRole === 'owner') return true;
+    if (COACH_LINK_SCOPES.has(scope)) return (await this.coachesNow(coachId)).has(clientId);
     return this.isGranted(clientId, coachId, scope);
   }
 
-  // Batch form of coachCanAccess for one coach and many clients, in one query:
-  // client id -> the scopes (out of `scopes`) this coach may read. Same rule:
-  // the owner account reads every scope; anyone else needs a granted row for
-  // this coach, client and scope. A client with nothing granted has no entry.
-  // (CoachService.rosterFitnessConsents applies the same rule to the roster.)
+  // #SHARE-SIMPLE: the clients this coach coaches now (the roster rule, SubCoachScopeService).
+  private async coachesNow(coachId: string): Promise<Set<string>> {
+    return new Set(await this.coaches.getAuthorizedClientIds(coachId));
+  }
+
+  // Batch form of coachCanAccess for one coach and many clients, in one query
+  // per kind: client id -> the scopes (out of `scopes`) this coach may read.
+  // Same rule: the owner account reads every scope; COACH_LINK_SCOPES follow
+  // the coaching relationship; anyone else needs a granted row for this
+  // coach, client and scope. A client with nothing granted has no entry.
   async grantedScopesByClient(
     coachId: string,
     clientIds: readonly string[],
@@ -360,16 +386,19 @@ export class ConsentService {
     }
     const out = new Map<string, Set<string>>();
     if (clientIds.length === 0 || scopes.length === 0) return out;
+    const add = (id: string, scope: string) => out.set(id, (out.get(id) ?? new Set<string>()).add(scope));
+    const linked = scopes.filter((s) => COACH_LINK_SCOPES.has(s));
+    const switched = scopes.filter((s) => !COACH_LINK_SCOPES.has(s));
+    if (linked.length > 0) {
+      const mine = await this.coachesNow(coachId);
+      for (const id of clientIds) if (mine.has(id)) linked.forEach((s) => add(id, s));
+    }
+    if (switched.length === 0) return out;
     const rows = await this.prisma.clientCoachConsent.findMany({
-      where: { coach_id: coachId, client_id: { in: [...clientIds] }, scope: { in: [...scopes] } },
+      where: { coach_id: coachId, client_id: { in: [...clientIds] }, scope: { in: switched } },
       select: { client_id: true, scope: true, granted_at: true, revoked_at: true },
     });
-    for (const r of rows) {
-      if (!ConsentService.rowIsGranted(r)) continue;
-      const set = out.get(r.client_id) ?? new Set<string>();
-      set.add(r.scope);
-      out.set(r.client_id, set);
-    }
+    for (const r of rows) if (ConsentService.rowIsGranted(r)) add(r.client_id, r.scope);
     return out;
   }
 
@@ -379,7 +408,9 @@ export class ConsentService {
   // consent row (see above). The client app reads it so it never asks a
   // client to share data that coach can already see, and so Settings says
   // plainly that turning a scope off does not hide it from that account.
-  // It does not change who can read what; "no row" still means not shared.
+  // #SHARE-SIMPLE: workouts, food logs, weigh-ins and check-ins read `granted` exactly
+  // when that coach can read them (coachCanAccess), so an older app never
+  // shows one as not shared; their dates stay the stored history.
   async myConsentView(
     clientId: string,
     coachId: string,
@@ -388,7 +419,12 @@ export class ConsentService {
       this.listForClient(clientId, coachId),
       this.prisma.user.findUnique({ where: { id: coachId }, select: { role: true } }),
     ]);
-    return { consents, owner_access: coach?.role === 'owner' };
+    const seen = await this.grantedScopesByClient(coachId, [clientId], [...COACH_LINK_SCOPES], coach?.role);
+    const linked = (c: ConsentRow) => ({ ...c, granted: seen.get(clientId)?.has(c.scope) === true });
+    return {
+      consents: consents.map((c) => (COACH_LINK_SCOPES.has(c.scope) ? linked(c) : c)),
+      owner_access: coach?.role === 'owner',
+    };
   }
 
   // Admin visibility surface — returns the full consent matrix for a

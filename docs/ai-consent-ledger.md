@@ -112,6 +112,47 @@ Accepted grants (`CLIENT_AI_CONSENT_ACCEPTED`; version AND its exact sha256):
 |---|---|---|
 | `client-ai-v4` | `base` | every day-1 AI path (Roman chat, coach AI drafts, brief, triage) |
 | `client-ai-v5` | `memory` | `base` + Roman v1.1 notes, summaries, coach-method learning |
+| `client-ai-v4-coach-free` | `base` | the client's own AI use only (`audience` 'client': Roman chat and other client-facing paths); never coach AI drafts, brief or triage (owner 62: v4 text with every coach sentence or clause removed) |
+| `client-ai-v5-coach-free` | `memory` | as `client-ai-v4-coach-free` + Roman v1.1 notes and summaries; never coach-method learning (owner 62: v5 text with every coach sentence or clause removed) |
+| `client-ai-v6` | `base` | as `client-ai-v4` (owner 57c: v4 text + the safety-reply exception sentence) |
+| `client-ai-v7` | `memory` | as `client-ai-v5` (owner 57c: v5 text + the safety-reply exception sentence) |
+| `client-ai-v8` | `base` | as `client-ai-v4` (CRISIS-APP-COPY: v6 text + the approved crisis sentence right after the exception; combined sha256 `af4cc4fa55aa72cab8e7c6cdcee881d6ba1f448df048088e47acd5e7d479e0ef`) |
+| `client-ai-v9` | `memory` | as `client-ai-v5` (CRISIS-APP-COPY: v7 text + the approved crisis sentence right after the exception; combined sha256 `16074f18ce0e985e35ba7cfb3f12233cd993159585a35759c4580a730ed3c9dd`) |
+
+- Safety-reply exception (owner 57c, 2026-10-12): `GET /api/me/ai-consent?variant=safety_exception`
+  (the app sends it from the CONSENT-2 build on) offers `client-ai-v6` as `copy` and
+  `client-ai-v7` as `upgrade` / `memory_copy` when there is no live grant. A plain `GET`
+  keeps offering v4 / v5, the text installed builds pin. A live grant reads the copies of
+  its own generation (v4 / v5, or v6 / v7) whatever is asked, but a new agreement is offered
+  in the asked copies: a live v4 holder asking `safety_exception` gets `client-ai-v7` as
+  `upgrade` / `memory_copy` (CONSENTV7). `POST` and `DELETE` take the same `?variant=` for
+  the status they return; without one they read the copies on file.
+- Crisis sentence (CRISIS-APP-COPY, owner op 1, 2026-10-15): `GET /api/me/ai-consent?variant=crisis_alert`
+  offers `client-ai-v8` as `copy` and `client-ai-v9` as `upgrade` / `memory_copy` when there is no
+  live grant and `FEATURE_ROMAN_CRISIS_ALERT` is on; while it is off the same ask gets v6 / v7. A live
+  v8 / v9 grant reads its own copies while the switch is on and the v6 / v7 copies (same scope, the grant
+  still counts) while it is off, so no response carries the sentence while the switch is off. A plain
+  `GET` and `?variant=safety_exception` never offer v8 / v9. v4 to v7 stay accepted with unchanged text,
+  so no one is asked again; a live v6 / v7 grant keeps reading v6 / v7. As with `safety_exception`, a
+  new agreement follows the ask: a live v4 / v6 holder asking `crisis_alert` gets `client-ai-v9` as
+  `upgrade` / `memory_copy` while the switch is on (`client-ai-v7` while it is off). The P0 twins are
+  `consult-consent-v9` / `v10` (paragraph 4 + box 2 = the v8 / v9 copy). `GET /api/me/feature-flags`
+  carries `roman_crisis_alert` (the same switch) for the app's Trust Center and Roman chats lines.
+- Asked once, before a coach (owner W-CONSENT): `POST /api/me/ai-consent/roman` from a client with no
+  coach is recorded exactly like a coached grant. Roman and every AI route stay `403 ROMAN_REQUIRES_COACH`
+  until a coach is linked; then that grant applies with no new ask. `GET` and `DELETE` stay open.
+
+- Coach-free copies (owner 62, 2026-10-12): `GET /api/me/ai-consent?variant=coach_free`
+  (the app sends it for a client with no coach) offers `client-ai-v4-coach-free` as
+  `copy` and `client-ai-v5-coach-free` as `upgrade` / `memory_copy`. For a client
+  with a coach (`User.coach_id`), `GET` always offers the coached copies and reads
+  a live coach-free grant as `needs_reconsent`, so the app asks for the coached
+  text. Otherwise a live grant reads the copies of its own family, whatever is
+  asked; without a live grant `GET` follows the ask, and a POST / DELETE response
+  follows the latest decision on file. Coach-audience reads (`hasClientAiConsent` /
+  `clientsWithAiConsent` / `memoryGrantTimes` with `audience` 'coach', the default)
+  never count a coach-free grant, also after the client joins a coach; coach AI for
+  that client needs a coached grant.
 
 - v4 holders are never re-prompted and keep day-1 Roman unchanged. The 10-07
   app build pins v4: it POSTs v4 from the consultation and its Settings screen
@@ -140,7 +181,7 @@ Request (JSON; only these fields):
 
 | Field | Required | Rule |
 |---|---|---|
-| `version` | yes | string, `client-ai-v4` or `client-ai-v5` |
+| `version` | yes | string, `client-ai-v4`, `client-ai-v5`, `client-ai-v6`, `client-ai-v7`, `client-ai-v8`, `client-ai-v9`, `client-ai-v4-coach-free` or `client-ai-v5-coach-free` |
 | `copy_sha256` | no | 64 hex chars; when sent must equal that version's combined sha256 (case-insensitive) |
 | `platform` | no | `ios`, `android` or `web` |
 | `app_version` | no | max 32 chars, `[0-9A-Za-z.+-]` |

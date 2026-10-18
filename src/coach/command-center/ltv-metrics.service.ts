@@ -64,6 +64,13 @@ function toMonthlyAmountCents(
   return amountCents;
 }
 
+/** MOVE-LTV: the earlier of the cancel and the move away from this coach. */
+function endOfClientTime(p: { canceled_at: Date | null; moved_away_at: Date | null }): Date | null {
+  if (!p.moved_away_at) return p.canceled_at;
+  if (!p.canceled_at || p.moved_away_at < p.canceled_at) return p.moved_away_at;
+  return p.canceled_at;
+}
+
 @Injectable()
 export class LtvMetricsService {
   private readonly logger = new Logger(LtvMetricsService.name);
@@ -80,7 +87,7 @@ export class LtvMetricsService {
     // We pull all non-draft statuses so we can compute historical metrics.
     // Issue 1 fix: interval and interval_count live on CoachPackage, not
     // ClientPurchase. Join via the `package` relation.
-    const allPurchases = await this.prisma.clientPurchase.findMany({
+    const rows = await this.prisma.clientPurchase.findMany({
       where: { coach_user_id: coachUserId },
       select: {
         id: true,
@@ -94,6 +101,7 @@ export class LtvMetricsService {
         canceled_at: true,
         current_period_end: true,
         cancel_at_period_end: true,
+        moved_away_at: true,
         // Issue 1: join CoachPackage to get interval fields
         package: {
           select: {
@@ -103,6 +111,13 @@ export class LtvMetricsService {
         },
       },
     });
+    // MOVE-LTV (owner, option 1): a client who moved away from this coach
+    // stops counting from the move date (moved_away_at, stamped in the move's
+    // own transaction), even while the plan runs out its paid period. Below,
+    // canceled_at is therefore the end of the client's time with this coach:
+    // the cancel or the move, whichever came first. Money already paid is
+    // not read or changed here.
+    const allPurchases = rows.map((p) => ({ ...p, canceled_at: endOfClientTime(p) }));
 
     // Determine dominant currency (most common across active purchases, or usd)
     const currency = this.resolveCurrency(allPurchases);
@@ -112,9 +127,8 @@ export class LtvMetricsService {
     // OR status in (active, paid) — the entitlement flag is the canonical bit.
     const activePurchases = allPurchases.filter(
       (p) =>
-        p.entitlement_active ||
-        p.status === 'active' ||
-        p.status === 'paid',
+        !p.moved_away_at &&
+        (p.entitlement_active || p.status === 'active' || p.status === 'paid'),
     );
     const activeClientIds = new Set(activePurchases.map((p) => p.client_user_id));
     const activeClientCount = activeClientIds.size;
@@ -122,7 +136,7 @@ export class LtvMetricsService {
     // ── MRR (current) ────────────────────────────────────────────────────────
     // Only recurring purchases with status=active contribute to MRR.
     const activeRecurring = allPurchases.filter(
-      (p) => p.billing_type === 'recurring' && p.status === 'active',
+      (p) => p.billing_type === 'recurring' && p.status === 'active' && !p.moved_away_at,
     );
     const mrrCents = activeRecurring.reduce((sum, p) => {
       // Issue 1: read interval fields from the joined package

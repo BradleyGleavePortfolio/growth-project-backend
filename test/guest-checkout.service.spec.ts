@@ -886,6 +886,44 @@ describe('GuestCheckoutService', () => {
         });
         expect(prisma.clientPurchase.create).toHaveBeenCalledTimes(1);
       });
+
+      // Owner 61a: that attach is a join. A consultation flagged before the
+      // client had a coach tells the package coach once, in the app only.
+      it('an orphaned STUDENT whose consultation was flagged: the package coach gets the one join alert', async () => {
+        const checkoutRow = existingBuyerCheckout('gc-61a-student', 'pi_61a_student');
+        armExistingSupabaseUser(checkoutRow);
+        prisma.user.upsert.mockResolvedValueOnce({
+          id: 'usr-orphan',
+          role: 'student',
+          coach_id: null,
+          supabase_id: 'sb-freecoach',
+        });
+        prisma.user.update.mockResolvedValueOnce({
+          id: 'usr-orphan',
+          role: 'student',
+          coach_id: 'coach-victim',
+        });
+        const flagged = new Date('2026-10-01T10:00:00.000Z');
+        const intakes = {
+          findUnique: jest.fn().mockResolvedValue({ completed_at: flagged, screening_flagged_at: flagged }),
+        };
+        const inbox = { create: jest.fn().mockResolvedValue({ id: 'n-61a' }) };
+        Object.assign(prisma, { clientOnboardingIntake: intakes, notification: inbox });
+
+        await service.handlePaymentSucceeded('pi_61a_student');
+
+        expect(intakes.findUnique).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { client_id: 'usr-orphan' } }),
+        );
+        expect(inbox.create).toHaveBeenCalledTimes(1);
+        expect(inbox.create.mock.calls[0][0].data).toMatchObject({
+          user_id: 'coach-victim',
+          kind: 'coach_alert',
+          channel: 'inapp',
+          body: 'A client who just joined you was flagged for extra care in their consultation. Please review their answers before their first session.',
+          payload: { client_id: 'usr-orphan', actionScreen: 'ClientConsultation' },
+        });
+      });
     });
   });
 

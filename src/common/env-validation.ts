@@ -303,6 +303,34 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'PostHog project key for product analytics. AnalyticsModule is a no-op when unset.',
   },
   {
+    name: 'POSTHOG_PERSONAL_API_KEY',
+    tier: 'optional',
+    default: 'unset → account deletion records posthog not_configured and skips PostHog',
+    reason:
+      'PostHog personal API key (phx_…, scope person:write; the project key POSTHOG_KEY cannot delete). Account deletion uses it with POSTHOG_PROJECT_ID to delete the person and their events (account-deletion.vendors.ts).',
+  },
+  {
+    name: 'POSTHOG_PROJECT_ID',
+    tier: 'optional',
+    default: 'unset → account deletion records posthog not_configured and skips PostHog',
+    reason:
+      'Numeric id of the PostHog project the app and server send events to. Not secret. Used with POSTHOG_PERSONAL_API_KEY by account deletion.',
+  },
+  {
+    name: 'CRISP_WEBSITE_ID',
+    tier: 'optional',
+    default: 'unset → account deletion records crisp not_configured and skips Crisp',
+    reason:
+      'Crisp website (workspace) id, the same value as the app\'s EXPO_PUBLIC_CRISP_WEBSITE_ID. Not secret. Used with CRISP_API_TOKEN by account deletion to remove the person\'s support conversations and profile.',
+  },
+  {
+    name: 'CRISP_API_TOKEN',
+    tier: 'optional',
+    default: 'unset → account deletion records crisp not_configured and skips Crisp',
+    reason:
+      'Crisp website token as "<identifier>:<key>" (Crisp: Settings > Workspace Settings > Advanced configuration > API Token). Secret. Account deletion only.',
+  },
+  {
     name: 'PERPLEXITY_API_KEY',
     tier: 'optional',
     reason: 'Perplexity API key. AI chat falls back to a deterministic responder when unset.',
@@ -1412,7 +1440,7 @@ export const ENV_RULES: EnvRule[] = [
     name: 'CONSULT_CONSENT_COPY_VERSIONS',
     tier: 'optional',
     default:
-      "consult-consent-v3,consult-consent-v4 (unset, empty, or no known name -> ['consult-consent-v3', 'consult-consent-v4'])",
+      "consult-consent-v3,consult-consent-v4,consult-consent-v5,consult-consent-v6,consult-consent-v5-coach-free,consult-consent-v6-coach-free,consult-consent-v7,consult-consent-v8,consult-consent-v8-coach-free,consult-consent-v9-coach-free,consult-consent-v7-coach-free,consult-consent-v9,consult-consent-v10,consult-consent-v10-coach-free,consult-consent-v11-coach-free (unset, empty, or no known name -> all fifteen)",
     reason:
       "Comma-separated onboarding P0 (consent box 1) copy versions the intake accepts (#607). A P0 counts only when its copy_version is listed AND its text_sha256 equals that version's pinned full-screen digest (src/onboarding/consult-consent-copy.ts), so only versions whose exact text the server knows can be listed; unknown names are ignored (logged once as a warning by the onboarding module). Leave unset at launch.",
   },
@@ -1442,7 +1470,15 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'derived from SUPABASE_SERVICE_ROLE_KEY (HMAC); unset both -> every voice publish fails closed',
     reason:
-      'A-610-1 (#610) — secret behind the issuance MAC on community voice storage keys (src/community/voice/voice-storage-key.ts). Only keys the server minted for the caller in the last 24h can be published. Rotating it invalidates unpublished upload URLs only (published notes keep working). Use 32+ random characters.',
+      'A-610-1 (#610) — secret behind the issuance MAC on community voice storage keys (src/community/voice/voice-storage-key.ts). Only keys the server minted for the caller in the last 24h can be published. K5 (SEC-06): when set, keys minted with the derived secret still publish for the first 24h10m after each start, so setting it breaks no upload in flight. Rotating it later invalidates unpublished upload URLs only (published notes keep working). Use 64 hex characters (openssl rand -hex 32).',
+  },
+  {
+    name: 'SIGNUP_MARKER_SIGNING_SECRET',
+    tier: 'optional',
+    default:
+      'SUPABASE_SERVICE_ROLE_KEY (HMAC key); both unset or shorter than 16 -> no marker verifies (stranded sign-up adoption off)',
+    reason:
+      'K5 (SEC-06) — HMAC key for the sign-up attempt marker (src/auth/auth.service.ts signupAttemptMac) that lets a confirmed email sign-up with no local account be adopted at first password sign-in. When set, markers minted with SUPABASE_SERVICE_ROLE_KEY still verify for the first 7 days after each start. Use 64 hex characters (openssl rand -hex 32).',
   },
   {
     name: 'VOICE_NOTE_MAX_BYTES',
@@ -1909,6 +1945,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'ZOOM_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → stub adapter (only "true" enables)',
     reason: 'Not used in v1 / Zoom scheduling provider is not part of the launch.',
@@ -2282,6 +2320,13 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Roman voice copy v2.',
+  },
+  {
+    name: 'FEATURE_ROMAN_CRISIS_ALERT',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason:
+      'ROMAN-CRISIS-ALERT: the coach alert after Roman sends the 911 or 988 reply (src/roman/roman.feature.ts). Off = no crisis alert, as before. On also adds the approved crisis sentence to the public pages, to client-ai-v8 / v9 (GET /me/ai-consent?variant=crisis_alert) and to the roman_crisis_alert feature flag the app reads. Turn on only after the app that opens it (SAFETYWORDS-M) is on phones and CRISISAPP / CRISISAPP-M are live.',
   },
   {
     name: 'FEATURE_ROMAN_FIRST_PAYMENT',

@@ -66,14 +66,24 @@ function withoutQuery(value: string): string {
   return cut === -1 ? value : value.slice(0, cut);
 }
 
+/** B-918-2: Crisp people URLs carry the person's email in the path. */
+function redactCrispPath(value: string): string {
+  return value.replace(/(api\.crisp\.chat)[^\s?#]*/gi, '$1/[redacted]');
+}
+
 function scrubSpanData<D extends object>(data: D | undefined): D | undefined {
   if (!data) return data;
   const out = { ...data };
   for (const key of URL_ATTRIBUTES) {
     const value: unknown = Reflect.get(out, key);
-    if (typeof value === 'string') Reflect.set(out, key, withoutQuery(value));
+    if (typeof value === 'string') Reflect.set(out, key, redactCrispPath(withoutQuery(value)));
   }
   for (const key of QUERY_ATTRIBUTES) Reflect.deleteProperty(out, key);
+  if (Object.values(out).some((v) => typeof v === 'string' && v.includes('api.crisp.chat'))) {
+    for (const key of ['url.path', 'http.target']) {
+      if (typeof Reflect.get(out, key) === 'string') Reflect.set(out, key, '/[redacted]');
+    }
+  }
   return out;
 }
 
@@ -87,7 +97,9 @@ function scrubSpanData<D extends object>(data: D | undefined): D | undefined {
  */
 export function scrubTransactionEvent<T extends SentryTransactionEvent>(event: T): T {
   const out: T = { ...event };
-  if (typeof out.transaction === 'string') out.transaction = withoutQuery(out.transaction);
+  if (typeof out.transaction === 'string') {
+    out.transaction = redactCrispPath(withoutQuery(out.transaction));
+  }
   if (out.request) {
     const request = { ...out.request };
     delete request.query_string;
@@ -106,7 +118,7 @@ export function scrubTransactionEvent<T extends SentryTransactionEvent>(event: T
       data: scrubSpanData(span.data) ?? span.data,
       description:
         typeof span.description === 'string' && (span.op ?? '').startsWith('http')
-          ? withoutQuery(span.description)
+          ? redactCrispPath(withoutQuery(span.description))
           : span.description,
     }));
   }
@@ -135,6 +147,12 @@ export function buildSentryOptions(
     },
     beforeSendTransaction(event) {
       return scrubTransactionEvent(event);
+    },
+    // B-918-2: fetch breadcrumbs ride along on transactions; drop Crisp paths.
+    beforeBreadcrumb(breadcrumb) {
+      const url: unknown = breadcrumb.data?.url;
+      if (typeof url !== 'string') return breadcrumb;
+      return { ...breadcrumb, data: { ...breadcrumb.data, url: redactCrispPath(url) } };
     },
     beforeSend(event, hint) {
       const original = hint.originalException;
