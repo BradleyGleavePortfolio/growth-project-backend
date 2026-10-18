@@ -18,7 +18,7 @@
 ############################
 # build stage
 ############################
-FROM node:20-slim AS build
+FROM node:22-bookworm-slim AS build
 
 # ca-certificates is required so the Sentry sourcemap upload step can verify
 # TLS to sentry.io; openssl is required by Prisma engines.
@@ -32,7 +32,7 @@ COPY prisma ./prisma/
 COPY scripts ./scripts/
 
 # Git hooks are meaningless inside an image build, and the `prepare` script
-# (`lefthook install`) execs `git`, which node:20-slim does not ship. Strip the
+# (`lefthook install`) execs `git`, which node:22-bookworm-slim does not ship. Strip the
 # script instead of setting LEFTHOOK=0 (which does not gate `install`).
 # `postinstall` (prisma generate) and native-module install scripts still run.
 RUN npm pkg delete scripts.prepare
@@ -72,7 +72,7 @@ RUN npx tsc -p tsconfig.house-seed.json \
 ############################
 # runtime stage
 ############################
-FROM node:20-slim AS runtime
+FROM node:22-bookworm-slim AS runtime
 
 RUN apt-get update -qq && apt-get install -y --no-install-recommends openssl ca-certificates \
     && rm -rf /var/lib/apt/lists/*

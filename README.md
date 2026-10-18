@@ -183,6 +183,11 @@ the user actually typed. Coach views render "6 oz chicken" instead of
 "1.7008x chicken". The canonical math value remains
 `quantity_multiplier`.
 
+`LoggedFoodEntry.plan_slot_id` names the plan meal an entry was logged for
+(kept only for the caller's own plan on that date; ON DELETE SET NULL) and
+`fills_usual_meal` marks a coachless "Your usual day" meal. Both are
+optional on `POST /log/food`, returned by `GET /log/daily`, never editable.
+
 ### Redis cache for searches
 
 `FoodService` caches the merged + scored search result list in Redis
@@ -1670,6 +1675,12 @@ approval). Full shapes: [docs/clinic-onboarding.md](docs/clinic-onboarding.md).
 `DailyMealPlanAssignment` over a date range. Coach surface lives under
 `/coach/meal-templates` and `/coach/daily-meal-plans`. Client surface
 is `GET /me/meal-plan/today`.
+
+`POST /coach/daily-meal-plans/:id/assignments/:assignmentId/end` with
+`{ ends_on: "YYYY-MM-DD" }` (204) sets the client's last day on the plan.
+It never extends one, and an end before the start removes it. Only the
+plan's coach can end it, for a client who is still theirs. A plan its
+coach archives leaves that coach's clients' `GET /me/meal-plan/today`.
 
 ### Bulk client invite
 
