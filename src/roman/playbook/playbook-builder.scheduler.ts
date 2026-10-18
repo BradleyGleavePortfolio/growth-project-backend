@@ -5,6 +5,8 @@
  * builder skips a coach whose playbook or last charged attempt, a failed one
  * included, is under 6 hours old (PB-GAP-130, PB-FAIL-LIMIT-131), the boot
  * run included, so restarts cannot add a second paid attempt inside 6 hours.
+ * PLAYBOOK-WITHDRAW: rebuildNow builds one coach at once, off the request
+ * path, after the coach-method augmenter marked a version stale.
  */
 import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
@@ -44,6 +46,19 @@ export class PlaybookBuilderScheduler implements OnApplicationBootstrap, OnModul
       await this.builder.runOnce();
     } catch (err) {
       this.logger.error(`roman.playbook_run_failed: ${romanErrorTag(err)}`);
+    } finally {
+      this.running = false;
+    }
+  }
+
+  /** PLAYBOOK-WITHDRAW: rebuild one coach now (skipped while a run is going). Never throws. */
+  async rebuildNow(coachId: string): Promise<void> {
+    if (this.running || !isRomanPlaybookEnabled()) return;
+    this.running = true;
+    try {
+      this.logger.log(`roman.playbook_rebuild_now outcome=${await this.builder.buildFor(coachId)}`);
+    } catch (err) {
+      this.logger.error(`roman.playbook_rebuild_now_failed: ${romanErrorTag(err)}`);
     } finally {
       this.running = false;
     }

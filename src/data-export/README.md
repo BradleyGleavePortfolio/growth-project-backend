@@ -51,6 +51,9 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `weight_logs` | `WeightLog` | All fields. |
 | `food_entries` | `LoggedFoodEntry` | All fields. |
 | `custom_foods` | `FoodItem` | Custom foods the user created (private to them), oldest first: name, brand, serving, nutrient basis, macros and micros, tags, aliases, image, barcode, date. Shared catalog foods are not personal data and are left out. |
+| `food_favorites` | `FoodFavorite` | All fields of the user's own favourite foods, oldest first. A food is named by `food_item_id` (as in `food_entries`). |
+| `saved_meals` | `SavedMeal` | All fields of the user's own saved meals, oldest first. |
+| `saved_meal_items` | `SavedMealItem` | All fields of the foods in those meals (food, portion, position), grouped by meal in their order. |
 | `workout_sessions` | `WorkoutSession` | All fields. |
 | `fasting_windows` | `FastingWindow` | All fields. |
 | `water_logs` | `WaterLog` | All fields. |
@@ -61,7 +64,7 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `list_items` | `ListItem` | All fields. |
 | `coach_messages` | `CoachMessage` | Messages **sent by the user** are included verbatim. Messages sent by other parties that are visible to the user (as coach or client) appear as `{ id, sent_at, redacted: true, note: "..." }`. This protects third-party privacy while preserving the user's own message history. |
 | `coach_nudges` | `CoachNudge` | All rows where `coach_id` or `client_id` equals the user. |
-| `message_drafts` | `MessageDraft` | All rows where `coach_id` or `client_id` equals the user. |
+| `message_drafts` | `MessageDraft` | Coaches only: the coach's unsent drafts to clients they coach now. A draft is coach-side data, so a client's export returns `[]` (owner C-3). |
 | `meal_plans` | `MealPlan` | All rows where `coach_id` or `client_id` equals the user. |
 | `community_wins` | `CommunityWin` | Only wins authored by the user. |
 | `coach_guidelines` | `CoachGuideline` | All rows where `coach_id` or `client_id` equals the user. |
@@ -83,7 +86,6 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `broadcasts_received` | `CoachBroadcastDelivery` | Coach broadcasts delivered to the user: broadcast id, message id, status, dates. The text is the coach's message and follows the `coach_messages` redaction. |
 | `coach_code_redemptions` | `CoachCodeRedemption` | Coach-code redemption attempts: status, outcome, coach id, date. The stored response is left out. |
 | `invite_redemptions` | `InviteRedemption` | Invite and QR codes the user redeemed: coach id, code, source, package id, date. |
-| `workout_adjustments` | `WorkoutAdjustmentProposal` | Roman workout adjustments proposed for the user: status, severity, the recovery signals used, the proposed and applied change, Roman's text, dates. The coach's dismiss note and the internal rule key are left out. |
 | `roman_notes` | `RomanClientNote` | Notes Roman keeps about the user (live, expired and superseded), oldest first: kind, text, when it was said, expiry, when it was superseded, date. The internal slot key and source message id are left out. Kept when a chat is deleted; removed with the account. |
 | `roman_summaries` | `RomanClientSummary` | The user's day, week and month summaries, oldest period first: period, start date, text, generated date. The internal facts blob, input digest and model id are left out. The memory job state (`RomanMemoryState`) is internal and not exported. |
 | `coach_playbook` | `CoachPlaybook` | Coaches only: the coach's own active Roman playbook (version, sections, red lines, build date). The source ledger, which lists other people's row ids, is left out. |
@@ -96,8 +98,10 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `onboarding_intake` | `ClientOnboardingIntake` | P2: the user's onboarding answers, health screening included, and the completion result. The completion claim fields are left out. |
 | `onboarding_intake_revisions` | `ClientOnboardingIntakeRevision` | P2: every earlier version of those answers, oldest first. |
 | `macro_targets` | `MacroTarget` | P2: every calorie and macro target set for the user (current and archived), with the note the app shows them. |
-| `assigned_workouts` | `ClientWorkoutAssignment` | P2: workouts a coach assigned: plan id, schedule, start and finish, the user's RPE, notes and logged results. Idempotency keys and draft ids are left out. |
+| `assigned_workouts` | `ClientWorkoutAssignment` | P2: workouts a coach assigned: plan id, schedule, start and finish, a skipped day, the coach's note for the day, the user's RPE, notes and logged results. Idempotency keys and draft ids are left out. |
 | `wearable_metric_preferences` | `WearableUserMetricPreference` | P2: which wearable the user chose as the source for each metric. |
+
+Not exported (owner C-3, coach-side data): Roman's workout-change proposals (`WorkoutAdjustmentProposal`, any status) and their events (`WorkoutAdjustmentEvent`). Approve writes its change into the assignment itself. Account deletion still erases them (`src/account-deletion/account-deletion.manifest.ts`).
 
 ---
 

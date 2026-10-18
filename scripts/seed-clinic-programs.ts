@@ -26,7 +26,7 @@
  *   DATABASE_URL                 (required)
  *   CLINIC_OWNER_COACH_EMAIL     owner coach account that owns the masters
  *     or CLINIC_OWNER_COACH_ID
- *   CLINIC_SPACE_NAME            default "Clinic community"
+ *   CLINIC_SPACE_NAME            default "Community" (DEFAULT_WORKSPACE_NAME)
  *   CLINIC_ALL_MEMBERS_NAME      default "All members"
  *
  * House set (CONSULT-ALL-BE-133, owner decision 28): --house marks the set
@@ -42,6 +42,7 @@ import { join } from 'path';
 import { PrismaClient } from '@prisma/client';
 import { parseFixture, type ParsedFixture } from '../src/onboarding/clinic-programs';
 import { writeProgramTree } from '../src/onboarding/program-writer';
+import { DEFAULT_WORKSPACE_NAME } from '../src/community/community.repository';
 
 export interface SeedEnv {
   NODE_ENV?: string;
@@ -96,7 +97,7 @@ export async function seedClinicPrograms(
     env: SeedEnv;
     coachEmail?: string;
     coachId?: string;
-    spaceName: string;
+    spaceName?: string;
     allMembersName: string;
     dryRun: boolean;
     /** Mark the set as the platform's house set (see the header). */
@@ -163,7 +164,7 @@ export async function seedClinicPrograms(
       const workspace =
         (await tx.communityWorkspace.findUnique({ where: { slug } })) ??
         (await tx.communityWorkspace.create({
-          data: { coach_id: coach.id, name: opts.spaceName, slug },
+          data: { coach_id: coach.id, name: opts.spaceName ?? DEFAULT_WORKSPACE_NAME, slug },
         }));
       if (workspace.coach_id !== coach.id)
         throw new Error(`Workspace slug ${slug} belongs to another coach.`);
@@ -246,7 +247,7 @@ async function main(): Promise<void> {
       env: process.env,
       coachEmail: process.env.CLINIC_OWNER_COACH_EMAIL,
       coachId: process.env.CLINIC_OWNER_COACH_ID,
-      spaceName: process.env.CLINIC_SPACE_NAME ?? 'Clinic community',
+      spaceName: process.env.CLINIC_SPACE_NAME,
       allMembersName: process.env.CLINIC_ALL_MEMBERS_NAME ?? 'All members',
       dryRun: process.argv.includes('--dry-run'),
       house: process.argv.includes('--house'),

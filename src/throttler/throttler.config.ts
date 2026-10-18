@@ -43,9 +43,9 @@ import {
 // POST /v1/checkout/sessions               | checkout-mint           | CHECKOUT_MINT_PER_HOUR / hour (user)
 // POST /v1/checkout/payment-intent         | checkout-mint           | shared
 // POST /v1/checkout/subscription-intent    | checkout-mint           | shared
-// POST /coach/ai/workout-program           | coach-ai-generation     | 5 / hour (user)
-// POST /coach/ai/meal-plan                 | coach-ai-generation     | 5 / hour (user)
-// POST /coach/ai/client-insight            | coach-ai-generation     | 10 / hour (user)
+// POST /coach/ai/workout-program           | coach-ai-generation     | 60 / hour (user)
+// POST /coach/ai/meal-plan                 | coach-ai-generation     | 60 / hour (user)
+// POST /coach/ai/client-insight            | coach-ai-generation     | 60 / hour (user)
 
 export const THROTTLER_NAMES = {
   /** Per-minute hard cap on login attempts per IP (credential stuffing brake). */
@@ -92,8 +92,8 @@ export const THROTTLER_NAMES = {
    *  meal-plan, client-insight). Each call hits Anthropic and costs real
    *  money, so we want this bucket to be independently observable and
    *  tunable from the global `default` bucket. Per-route limits are set
-   *  inline on each handler's @Throttle decorator (workout/meal: 5/hr,
-   *  client-insight: 10/hr). The named bucket itself just declares the
+   *  inline on each handler's @Throttle decorator (coach-ai.controller.ts:
+   *  60/hr per route, owner ROMAN-HOURLY). The named bucket itself just declares the
    *  baseline ttl/limit so the throttler module knows about it. */
   COACH_AI_GENERATION: 'coach-ai-generation',
   /** H4 #7 (token enumeration) — IP-WIDE second layer for the public
@@ -364,9 +364,8 @@ export const THROTTLER_LIMITS = [
   // Coach AI credit-pack checkout: 5/min/user (Stream 1)
   { name: THROTTLER_NAMES.COACH_AI_CREDIT_PACK_CHECKOUT, ttl: 60_000, limit: COACH_AI_CREDIT_PACK_CHECKOUT_PER_MIN },
   // Coach AI generation: baseline 10/hour/user. Per-route @Throttle
-  // decorators in coach-ai.controller.ts override this with tighter
-  // limits (5/hr for workout-program + meal-plan, 10/hr for
-  // client-insight). The named bucket exists so AI spend is
+  // decorators override it (coach-ai.controller.ts: 60/hr per route,
+  // owner ROMAN-HOURLY). The named bucket exists so AI spend is
   // independently observable + tunable from the default bucket.
   { name: THROTTLER_NAMES.COACH_AI_GENERATION, ttl: 3_600_000, limit: 10 },
   // H4 #7 — IP-WIDE storefront join layer. The GLOBAL baseline limit here is

@@ -8,6 +8,7 @@ import type { z } from 'zod';
 import { PrismaService } from '../../../prisma.service';
 import { SubCoachScopeService } from '../../../sub-coach/sub-coach-scope.service';
 import { computeLockToken } from '../../../workout-builder/lock-token.helper';
+import { planStaysInTenantWhere } from '../../../workout-builder/tenant-clients';
 import { SEED_EXERCISES } from '../../../exercise-library/seed-catalog';
 import { ExerciseLibraryService } from '../../../exercise-library/exercise-library.service';
 import { AiGatewayService } from '../ai-gateway.service';
@@ -66,7 +67,9 @@ export class WorkoutBuilderAiService {
     let weekRows: WeekRow[] | null = null;
     if (input.plan_id) {
       const select = { id: true, coach_id: true, version: true, head_revision_id: true, archived_at: true, program_id: true, week_index: true };
-      const plan = await this.prisma.workoutPlan.findUnique({ where: { id: input.plan_id }, select });
+      // Owner 4: a day of a moved client's program copy is not found (tenant-clients.ts).
+      const moveRule = tenantCoachId ? [planStaysInTenantWhere(tenantCoachId)] : [];
+      const plan = await this.prisma.workoutPlan.findUnique({ where: { id: input.plan_id, AND: moveRule }, select });
       if (!plan || plan.archived_at || (requester.role !== 'owner' && plan.coach_id !== tenantCoachId)) {
         throw new NotFoundException({ code: 'plan_not_found', message: 'Workout not found.' });
       }

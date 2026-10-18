@@ -55,6 +55,8 @@ export interface RomanTurnAugment {
   readonly hash: string;
   readonly estimated_tokens: number;
   readonly post_check?: RomanTurnAugmentPostCheck;
+  /** COACH-AI-CONSENT: the coach whose own text made the block; sent only while they allow AI. */
+  readonly coach_id?: string;
 }
 
 export interface RomanTurnAugmenter {
@@ -90,6 +92,7 @@ export interface RomanAppliedAugment {
   readonly hash: string;
   readonly estimated_tokens: number;
   readonly post_check?: RomanTurnAugmentPostCheck;
+  readonly coach_id?: string;
 }
 
 export interface RomanAugmentRun {
@@ -173,6 +176,7 @@ export async function runRomanTurnAugmenters(
         hash: r.out.hash,
         estimated_tokens: r.out.estimated_tokens,
         ...(r.out.post_check ? { post_check: r.out.post_check } : {}),
+        ...(r.out.coach_id ? { coach_id: r.out.coach_id } : {}),
       });
     }
   }

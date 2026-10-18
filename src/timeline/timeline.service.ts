@@ -8,15 +8,14 @@ import type {
   BodyWeightEvent,
   WinStreakEvent,
   WinBuildWeekDay7Event,
-  CoachTextNoteEvent,
-  CoachVoiceNoteEvent,
   FrictionMissedDayEvent,
 } from './timeline.types';
+import { KG_PER_LB } from '../macros/macro-calculator';
 
 /**
  * TimelineService — Phase 7B.
  *
- * Composes the 4-lane chronological feed from existing Prisma tables.
+ * Composes the 3-lane chronological feed from existing Prisma tables.
  * NO new database tables are created. Every event is derived on the fly.
  *
  * PRIVACY CONTRACT:
@@ -26,14 +25,17 @@ import type {
  *   - PTM `risk_score` is NEVER included in any event. The score is
  *     advisory and model-internal (see ptm.types.ts doctrine).
  *
+ *   - No coach message ever appears (#TIMELINE-COACH op 1): CoachMessage is
+ *     never read here, for any coach, current or past. Messages stay in
+ *     Messages.
+ *
  * LANE SOURCES:
- *   Body  — WeightLog rows (one event per logged entry).
+ *   Body  — WeightLog rows (one event per logged entry), in the client's unit,
+ *           with the C8 Progress trend (one reading a day, latest wins,
+ *           10% smoothing; mobile src/components/progress/weightTrend.ts).
  *   Win   — ClientSignal rows (checkin_streak threshold crossings,
  *           finance_milestone signals) + BuildWeekEnrollment day-7 completions.
- *   Coach — CoachMessage rows directed to this client from their coach
- *           (text + voice, direction: coach_to_client).
- *   Friction — ClientSignal rows of type checkin_miss, aggregated into
- *             missed-day markers.
+ *   Friction — ClientSignal rows of type checkin_miss: a plain "No check-in".
  */
 @Injectable()
 export class TimelineService {
@@ -66,15 +68,12 @@ export class TimelineService {
     const lanesRequested = new Set(query.lanes);
 
     // Collect events from each requested lane in parallel, then merge.
-    const [bodyEvents, winEvents, coachEvents, frictionEvents] = await Promise.all([
+    const [bodyEvents, winEvents, frictionEvents] = await Promise.all([
       lanesRequested.has('body')
         ? this.buildBodyEvents(userId, sinceDate, beforeAt)
         : Promise.resolve([] as TimelineEvent[]),
       lanesRequested.has('win')
         ? this.buildWinEvents(userId, sinceDate, beforeAt)
-        : Promise.resolve([] as TimelineEvent[]),
-      lanesRequested.has('coach')
-        ? this.buildCoachEvents(userId, sinceDate, beforeAt)
         : Promise.resolve([] as TimelineEvent[]),
       lanesRequested.has('friction')
         ? this.buildFrictionEvents(userId, sinceDate, beforeAt)
@@ -84,7 +83,6 @@ export class TimelineService {
     const all: TimelineEvent[] = [
       ...bodyEvents,
       ...winEvents,
-      ...coachEvents,
       ...frictionEvents,
     ];
 
@@ -116,63 +114,42 @@ export class TimelineService {
     since: Date,
     before: Date,
   ): Promise<TimelineEvent[]> {
-    const weights = await this.prisma.weightLog.findMany({
-      where: {
-        user_id: userId,
-        date: { gte: since, lte: before },
-      },
-      orderBy: { date: 'desc' },
-      take: 200,
-    });
+    const [weights, profile] = await Promise.all([
+      this.prisma.weightLog.findMany({
+        where: {
+          user_id: userId,
+          date: { gte: since, lte: before },
+        },
+        orderBy: [{ date: 'desc' }, { logged_at: 'desc' }],
+        take: 200,
+      }),
+      this.prisma.userProfile.findUnique({ where: { user_id: userId }, select: { weight_unit: true } }),
+    ]);
+    const kg = profile?.weight_unit === 'kg';
+    const show = (lbs: number) => `${(Math.round((kg ? lbs * KG_PER_LB : lbs) * 10) / 10).toFixed(1)} ${kg ? 'kg' : 'lb'}`;
 
-    let streakDays = 0;
-    // Build a quick date-set for streak calculation.
-    const dateSortedAsc = [...weights].sort(
-      (a, b) => a.date.getTime() - b.date.getTime(),
-    );
+    // C8 trend: one reading a day (the latest wins), smoothed 10% a day; shown from the second day.
+    const daily = new Map<number, number>();
+    for (const w of [...weights].reverse()) daily.set(w.date.getTime(), w.weight_lbs);
+    const trendOn = new Map<number, number>();
+    let trend: number | null = null;
+    for (const [day, lbs] of daily) {
+      if (trend === null) trend = lbs;
+      else trendOn.set(day, (trend += 0.1 * (lbs - trend)));
+    }
 
-    // Pre-compute id → ascending-index map so the inner loop is O(1)
-    // instead of O(n) findIndex, giving O(n) total vs previous O(n²).
-    const ascIdxById = new Map<string, number>(
-      dateSortedAsc.map((w, i) => [w.id, i]),
-    );
-
-    const events: TimelineEvent[] = weights.map((w, _idx) => {
-      // Compute delta vs previous log (the entry right before this in the ascending list).
-      const ascIdx = ascIdxById.get(w.id) ?? 0;
-      const prior = ascIdx > 0 ? dateSortedAsc[ascIdx - 1] : null;
-      const deltaLbs = prior ? w.weight_lbs - prior.weight_lbs : null;
-
-      // Simple consecutive-day streak count up to each entry.
-      if (ascIdx === 0) {
-        streakDays = 1;
-      } else {
-        const prevDate = dateSortedAsc[ascIdx - 1].date;
-        const dayGap = Math.round(
-          (w.date.getTime() - prevDate.getTime()) / 86400000,
-        );
-        streakDays = dayGap === 1 ? streakDays + 1 : 1;
-      }
-
-      const event: BodyWeightEvent = {
+    return weights.map((w): BodyWeightEvent => {
+      const trendLbs = trendOn.get(w.date.getTime()) ?? null;
+      return {
         id: this.makeId(w.date.toISOString(), w.id),
         lane: 'body',
         eventType: 'weight_logged',
         at: w.date.toISOString(),
-        title: `Weight logged — ${w.weight_lbs.toFixed(1)} lbs`,
-        body: deltaLbs != null
-          ? `${deltaLbs > 0 ? '+' : ''}${deltaLbs.toFixed(1)} lbs from previous entry${w.notes ? `. ${w.notes}` : ''}`
-          : w.notes ?? undefined,
-        metadata: {
-          weightLbs: w.weight_lbs,
-          deltaLbs,
-          streakDays,
-        },
+        title: `Weighed in at ${show(w.weight_lbs)}`,
+        body: [trendLbs === null ? null : `Trend ${show(trendLbs)}`, w.notes].filter(Boolean).join('. ') || undefined,
+        metadata: { weightLbs: w.weight_lbs, trendLbs },
       };
-      return event;
     });
-
-    return events;
   }
 
   // ─── Win lane ──────────────────────────────────────────────────────────────
@@ -204,8 +181,7 @@ export class TimelineService {
         lane: 'win',
         eventType: 'checkin_streak_milestone',
         at: sig.recorded_at.toISOString(),
-        title: `${threshold}-day check-in streak reached`,
-        body: `${threshold} consecutive days of check-ins completed.`,
+        title: `${threshold} days of check-ins in a row`,
         metadata: {
           streakDays: threshold,
           threshold,
@@ -261,8 +237,7 @@ export class TimelineService {
         lane: 'win',
         eventType: 'build_week_complete',
         at: bw.completed_at.toISOString(),
-        title: 'Build Week complete — Day 7 of 7',
-        body: 'All seven days of the guided coaching arc were finished.',
+        title: 'Build Week complete, day 7 of 7',
         metadata: {
           enrollmentId: bw.id,
           dayCompleted: 7,
@@ -272,69 +247,6 @@ export class TimelineService {
     }
 
     return events;
-  }
-
-  // ─── Coach lane ────────────────────────────────────────────────────────────
-
-  private async buildCoachEvents(
-    userId: string,
-    since: Date,
-    before: Date,
-  ): Promise<TimelineEvent[]> {
-    // Fetch coach messages sent TO this client FROM their coach.
-    // The CoachMessage model uses sender_id to record who sent the message.
-    // Coach-to-client: sender_id is NOT the client (i.e. the coach sent it).
-    const messages = await this.prisma.coachMessage.findMany({
-      where: {
-        client_id: userId,
-        // Messages where the sender is not the client = coach-to-client direction.
-        sender_id: { not: userId },
-        created_at: { gte: since, lte: before },
-      },
-      include: {
-        sender: { select: { name: true } },
-      },
-      orderBy: { created_at: 'desc' },
-      take: 200,
-    });
-
-    return messages.map((msg) => {
-      const coachName = (msg.sender as { name?: string | null })?.name ?? 'Coach';
-      const isVoice = Boolean(msg.voice_url);
-
-      if (isVoice) {
-        const event: CoachVoiceNoteEvent = {
-          id: this.makeId(msg.created_at.toISOString(), msg.id),
-          lane: 'coach',
-          eventType: 'coach_voice_note',
-          at: msg.created_at.toISOString(),
-          title: `Voice note from ${coachName}`,
-          body: msg.voice_duration_sec
-            ? `${Math.round(msg.voice_duration_sec)}s audio message.`
-            : 'Audio message.',
-          metadata: {
-            messageId: msg.id,
-            coachName,
-            durationSec: msg.voice_duration_sec ?? 0,
-          },
-        };
-        return event;
-      }
-
-      const event: CoachTextNoteEvent = {
-        id: this.makeId(msg.created_at.toISOString(), msg.id),
-        lane: 'coach',
-        eventType: 'coach_text_note',
-        at: msg.created_at.toISOString(),
-        title: `Note from ${coachName}`,
-        body: msg.body?.slice(0, 280) ?? undefined,
-        metadata: {
-          messageId: msg.id,
-          coachName,
-        },
-      };
-      return event;
-    });
   }
 
   // ─── Friction lane ─────────────────────────────────────────────────────────
@@ -359,8 +271,7 @@ export class TimelineService {
       lane: 'friction',
       eventType: 'missed_checkin',
       at: sig.recorded_at.toISOString(),
-      title: `${Math.round(sig.value ?? 1)} missed check-in${(sig.value ?? 1) > 1 ? 's' : ''}`,
-      body: 'Check-in not submitted. Logged for honest record.',
+      title: 'No check-in',
       metadata: {
         consecutiveMisses: Math.round(sig.value ?? 1),
       },

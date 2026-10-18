@@ -36,6 +36,18 @@ const DM_DISABLED = {
   code: 'community.dm.disabled',
 } as const;
 
+/** C10RT: the DM rule, for reading a DM (authoriseDm) and for who hears a DM row's reaction pings.
+ * Both people still hold a membership the rule opens (owner and coach included), so a removal, a ban
+ * or a coach move ends the DM for both at once, and neither blocked the other (Apple 1.2). Throws the
+ * refusal `a` gets; returns a's and b's memberships. */
+export async function assertDmOpen(access: CommunityAccessService, safety: CommunitySafetyService,
+  workspaceId: string, a: string, b: string): Promise<CommunityMembership[]> {
+  const [ma, mb] = await Promise.all([a, b].map((p) => access.membershipInWorkspace(workspaceId, p)));
+  if (!ma || !mb) throw new NotFoundException(DM_NOT_FOUND);
+  await safety.assertDmAllowed(a, b);
+  return [ma, mb];
+}
+
 /**
  * 1:1 direct messages within a workspace.
  *
@@ -136,18 +148,8 @@ export class CommunityDmsService {
     if (!workspace) throw new NotFoundException(DM_NOT_FOUND);
     if (sender.id === recipientId) throw new NotFoundException(DM_NOT_FOUND);
 
-    const senderMembership = await this.access.membershipInWorkspace(workspaceId, sender.id);
-    const recipientMembership = await this.access.membershipInWorkspace(workspaceId, recipientId);
-    // Owner/coach may not bypass membership for DMs: a DM is between two
-    // workspace participants. Both must hold an active membership row.
-    if (!senderMembership || !recipientMembership) {
-      throw new NotFoundException(DM_NOT_FOUND);
-    }
-
-    this.gateDmRead(senderMembership, workspace);
-    this.gateDmRead(recipientMembership, workspace);
-    // Apple 1.2: a block in either direction closes the DM (open, read, send).
-    await this.safety.assertDmAllowed(sender.id, recipientId);
+    const pair = await assertDmOpen(this.access, this.safety, workspaceId, sender.id, recipientId);
+    for (const membership of pair) this.gateDmRead(membership, workspace);
 
     return CommunityDmsRepository.dmKey(workspaceId, sender.id, recipientId);
   }
@@ -185,12 +187,12 @@ export class CommunityDmsService {
       body,
     });
     // v1-4 post-write tail (after gateDmRead, inside authoriseDm). Best-effort
-    // realtime refetch ping on the RECIPIENT's private user channel — IDs only,
+    // realtime refetch ping to the RECIPIENT's private topic only — IDs only,
     // never the DM body (#24/#36). DMs have no dedicated broadcast event in the
     // v1-4 channel/event contract, so we reuse the message-created refetch
     // signal: the recipient pings → refetches the thread via authenticated REST.
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.user(recipientId),
+      { people: [recipientId] },
       COMMUNITY_BROADCAST_EVENTS.messageCreated,
       {
         id: created.id,

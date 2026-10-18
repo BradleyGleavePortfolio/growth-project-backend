@@ -13,14 +13,19 @@ import {
 // Schema note (PR-HK-0): the persisted table keys on
 // (user_id, side, bucket, window_days) and tracks freshness via
 // `generated_at` + `expires_at` (generated_at + 6h, unless a new sync
-// arrives — in which case PR-HK-0's IngestionService DELETES the row via
-// invalidateInsightCache). There is no soft `invalidated_at` column: a
-// sync-driven invalidation is a row delete, so "invalidated" and "missing"
-// collapse to the same observable state — `get` returns null. We model the
-// task's "treat as stale if invalidated" requirement by honouring
-// `expires_at` (TTL) AND treating an absent row as a miss; the
-// IngestionService's delete-on-sync is what makes a sync invalidate the
-// cache without this service editing IngestionService.
+// arrives — in which case IngestionService.invalidateInsightCache sets
+// `expires_at` to now). `get` treats an expired or absent row as a miss, so a
+// sync makes the next read regenerate; the expired row keeps Roman's last
+// text for `getEvenIfStale` (ROMANMARK-BE: the approve route still finds the
+// suggestion the coach is looking at).
+//
+// Owner 4 (A1H): a coach-side row belongs to the coach it was made for. Its
+// `side` is 'coach:<coachId>', so it is only ever served back to that coach.
+// After a client moves, the new coach never gets the old coach's insight or
+// its message draft (a miss, so a fresh one is generated for them), and the
+// old coach is already refused by the current-coach check
+// (WearableInsightsService.assertCoachOwnsClient). Rows written before this
+// key (side 'coach') are never read again.
 
 // All insight windows use a fixed 14-day trend window (the service fetches
 // last-14d samples). Stored on the row so a future multi-window design can
@@ -30,9 +35,13 @@ export const INSIGHT_WINDOW_DAYS = 14;
 // 6-hour TTL per the locked decision.
 export const INSIGHT_TTL_MS = 6 * 60 * 60 * 1000;
 
-// Map the public audience label to the persisted `side` discriminator.
-function audienceToSide(audience: InsightAudience): string {
-  return audience; // 'coach' | 'client' map 1:1 to the side column
+// Map the public audience label to the persisted `side` discriminator. The
+// client side is 'client'. The coach side is keyed by coach as well as
+// client, so it needs the coach id (fail loud, never a shared coach row).
+function audienceToSide(audience: InsightAudience, coachId?: string): string {
+  if (audience === 'client') return 'client';
+  if (!coachId) throw new Error('A coach-side insight cache key needs the coach id');
+  return `coach:${coachId}`;
 }
 
 @Injectable()
@@ -42,17 +51,19 @@ export class InsightCacheService {
   constructor(private readonly prisma: PrismaService) {}
 
   // Cache-key helper, exposed for the service + tests. The logical key is
-  // `${audience}:${userId}:${bucket}` per the spec; the physical key adds
-  // the window. Returned as the Prisma compound-unique selector shape.
+  // `${audience}:${userId}:${bucket}` per the spec, plus the coach for the
+  // coach side; the physical key adds the window. Returned as the Prisma
+  // compound-unique selector shape. `coachId` is required for 'coach'.
   buildWhere(
     audience: InsightAudience,
     userId: string,
     bucket: WearableMetricBucket,
+    coachId?: string,
   ): Prisma.WearableInsightCacheWhereUniqueInput {
     return {
       WearableInsight_subject_side_bucket_window_key: {
         user_id: userId,
-        side: audienceToSide(audience),
+        side: audienceToSide(audience, coachId),
         bucket,
         window_days: INSIGHT_WINDOW_DAYS,
       },
@@ -60,17 +71,21 @@ export class InsightCacheService {
   }
 
   // Return the cached insight ONLY if a row exists AND it has not expired.
-  // A missing row (cache miss, or a sync-driven delete = invalidation) and
-  // an expired row both return null so the service regenerates.
+  // A missing row and an expired row (its TTL passed, or a sync expired it)
+  // both return null so the service regenerates.
   async get(
     audience: InsightAudience,
     userId: string,
     bucket: WearableMetricBucket,
+    coachId?: string,
+    onlyVersion?: string,
   ): Promise<AnyInsight | null> {
     const row = await this.prisma.wearableInsightCache.findUnique({
-      where: this.buildWhere(audience, userId, bucket),
+      where: this.buildWhere(audience, userId, bucket, coachId),
     });
     if (!row) return null;
+    // WEIGHTWALL: a caller that needs one prompt version (an insight made without weight) gets no other.
+    if (onlyVersion !== undefined && row.prompt_version !== onlyVersion) return null;
     if (row.expires_at.getTime() <= Date.now()) {
       // Expired — treat as a miss. We do not delete here (cheap to leave;
       // the next set() upserts over it, and the sync path prunes).
@@ -86,11 +101,15 @@ export class InsightCacheService {
     audience: InsightAudience,
     userId: string,
     bucket: WearableMetricBucket,
+    coachId?: string,
+    onlyVersion?: string,
   ): Promise<AnyInsight | null> {
     const row = await this.prisma.wearableInsightCache.findUnique({
-      where: this.buildWhere(audience, userId, bucket),
+      where: this.buildWhere(audience, userId, bucket, coachId),
     });
     if (!row) return null;
+    // WEIGHTWALL: a caller that needs one prompt version (an insight made without weight) gets no other.
+    if (onlyVersion !== undefined && row.prompt_version !== onlyVersion) return null;
     return row.payload as unknown as AnyInsight;
   }
 
@@ -102,12 +121,13 @@ export class InsightCacheService {
     bucket: WearableMetricBucket,
     payload: CoachInsight | ClientInsight,
     meta: { modelUsed: string; promptVersion: string },
+    coachId?: string,
   ): Promise<void> {
     const now = new Date();
     const expiresAt = new Date(now.getTime() + INSIGHT_TTL_MS);
-    const side = audienceToSide(audience);
+    const side = audienceToSide(audience, coachId);
     await this.prisma.wearableInsightCache.upsert({
-      where: this.buildWhere(audience, userId, bucket),
+      where: this.buildWhere(audience, userId, bucket, coachId),
       create: {
         user_id: userId,
         side,

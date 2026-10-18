@@ -48,6 +48,7 @@ const BOOKING_OPTION_SELECT = {
   booking_buffer_before_min: true,
   booking_buffer_after_min: true,
   booking_daily_max: true,
+  booking_cancel_notice_hours: true,
 } as const;
 
 export function toBookingOptions(
@@ -58,6 +59,7 @@ export function toBookingOptions(
         booking_buffer_before_min?: number | null;
         booking_buffer_after_min?: number | null;
         booking_daily_max?: number | null;
+        booking_cancel_notice_hours?: number | null;
       }
     | null
     | undefined,
@@ -72,6 +74,7 @@ export function toBookingOptions(
     buffer_before_minutes: pick(row?.booking_buffer_before_min, d.buffer_before_minutes),
     buffer_after_minutes: pick(row?.booking_buffer_after_min, d.buffer_after_minutes),
     daily_max_sessions: typeof cap === 'number' && Number.isInteger(cap) && cap > 0 ? cap : null,
+    cancel_notice_hours: pick(row?.booking_cancel_notice_hours, d.cancel_notice_hours),
   };
 }
 
@@ -215,6 +218,7 @@ export class SchedulingOpenSlotsService {
       duration_minutes: duration,
       min_notice_minutes: inputs.options.min_notice_minutes,
       booking_window_days: inputs.options.booking_window_days,
+      cancel_notice_hours: inputs.options.cancel_notice_hours,
       slots,
     };
     if (this._openSlotsCache.size >= SchedulingOpenSlotsService.MAX_CACHE_ENTRIES) {

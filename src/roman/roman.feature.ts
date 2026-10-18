@@ -41,3 +41,27 @@ export function isRomanChatEnabled(
 ): boolean {
   return isExplicitlyTrue(env[FEATURE_ROMAN_CHAT_ENABLED_ENV]);
 }
+
+/**
+ * ROMAN-CRISIS-ALERT switch (DEFAULT OFF, same rule as above): the coach alert
+ * after Roman's 911 or 988 reply. Off, no crisis alert is written and neither
+ * #CRISIS-WORDING line shows (reply, privacy page), as before.
+ * Order: the app that opens the alert (SAFETYWORDS-M) is on phones and the
+ * app's crisis sentence (CRISISAPP / CRISISAPP-M) is live, then the owner
+ * turns this on.
+ */
+export const FEATURE_ROMAN_CRISIS_ALERT_ENV = 'FEATURE_ROMAN_CRISIS_ALERT';
+
+export function isRomanCrisisAlertEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return isExplicitlyTrue(env[FEATURE_ROMAN_CRISIS_ALERT_ENV]);
+}
+
+/**
+ * #CRISIS-WORDING (owner op 1), word for word. It follows the Roman
+ * safety-reply exception sentence wherever a text states it, only while the
+ * switch above is on: the public pages (crisisToldText), client-ai-v8 / v9
+ * and consult-consent-v9 / v10 (CRISISAPP), and the app's Trust Center and
+ * Roman chats (the roman_crisis_alert feature flag).
+ */
+export const ROMAN_CRISIS_TOLD_SENTENCE =
+  'If Roman sends you a crisis safety reply, your coach is told that it happened, but not what you wrote, so they can check in with you.';

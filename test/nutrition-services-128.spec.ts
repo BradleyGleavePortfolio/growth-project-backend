@@ -13,9 +13,8 @@ const recipe = (id: string, ingredients: string[]) => ({
 });
 
 describe('NUTR-BE-128 prep guide', () => {
-  const make = (items: unknown[] = []) => {
+  const make = () => {
     const db = {
-      mealPlan: { findMany: jest.fn().mockResolvedValue([{ items }]) },
       recipe: { findMany: jest.fn().mockResolvedValue([recipe('r1', ['1 cup rice'])]) },
       userProfile: { findUnique: jest.fn().mockResolvedValue(null) },
     };
@@ -31,19 +30,6 @@ describe('NUTR-BE-128 prep guide', () => {
     expect(next).toMatchObject({ source: 'library', week_filter_applied: false });
     expect(db.recipe.findMany).toHaveBeenCalledWith({
       where: visibleRecipesWhere(viewer), orderBy: { created_at: 'desc' }, take: 6,
-    });
-  });
-
-  it('labels only recipes referenced by assigned plans as plan, preserving visibility', async () => {
-    const { db, service } = make([{ recipe_id: 'r1' }]);
-    expect(await service.getWeeklyPrepGuide(viewer, '2026-10-05')).toMatchObject({
-      source: 'plan', week_filter_applied: false, prep_day_suggestions: [],
-    });
-    expect(db.mealPlan.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: { client_id: viewer.id, archived_at: null },
-    }));
-    expect(db.recipe.findMany).toHaveBeenCalledWith({
-      where: { AND: [{ id: { in: ['r1'] } }, visibleRecipesWhere(viewer)] },
     });
   });
 

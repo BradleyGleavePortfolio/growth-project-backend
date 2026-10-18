@@ -48,15 +48,12 @@ import {
   ROMAN_ERASE_UNCONFIRMED_MESSAGE,
   ROMAN_ERROR_CURSOR_INVALID,
   ROMAN_ERROR_ERASE_INCOMPLETE,
-  ROMAN_ERROR_RATE_LIMIT,
   ROMAN_ERROR_SESSION_NOT_FOUND,
   ROMAN_ERROR_UNAVAILABLE,
   ROMAN_MAX_CONTEXT_TURNS,
   ROMAN_MAX_OUTPUT_TOKENS,
   ROMAN_MESSAGES_DEFAULT_LIMIT,
   ROMAN_MESSAGES_MAX_LIMIT,
-  ROMAN_RATE_LIMIT_FREE_PER_DAY,
-  ROMAN_RATE_LIMIT_PRO_PER_DAY,
   ROMAN_RATE_LIMIT_WINDOW_MS,
   ROMAN_ERASED_DAY_KEY_PREFIX,
   ROMAN_SESSION_NOT_FOUND_MESSAGE,
@@ -65,7 +62,7 @@ import {
   ROMAN_ERASE_SWEEP_BATCH,
   ROMAN_ERASE_SWEEP_MAX_BATCHES,
 } from './roman.constants';
-import { isRomanChatEnabled } from './roman.feature';
+import { isRomanChatEnabled, isRomanCrisisAlertEnabled } from './roman.feature';
 import {
   ROMAN_LOGGABLE_ERROR_NAMES,
   romanErrorTag,
@@ -82,7 +79,6 @@ import {
   romanAudienceOf,
   romanCoachPoolEmptyMessage,
   romanFailureMessage,
-  romanRateLimitMessage,
 } from './roman.constants';
 import { CoachAIBudgetService } from '../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../ai-credits/budget-exhausted.exception';
@@ -96,10 +92,20 @@ import {
   ROMAN_SAFETY_ROUTE_REASON,
   ROMAN_SAFETY_ROUTER_MODEL_ID,
   ROMAN_SAFETY_TEMPLATES,
+  ROMAN_COACH_TOLD_LINE,
 } from './guardrails/safety-router';
 import { postCheckRomanReply, type PostCheckContext } from './guardrails/roman-post-check';
 import { RomanClientContextService } from './context/roman-client-context.service';
+import { consumeRomanUsage, releaseRomanUsage, type RomanUsageDebit } from './roman-usage';
+import { isDunningV2Enabled } from '../checkout/dunning-v2/dunning-v2.feature';
+import { effectiveLock } from '../checkout/dunning-v2/dunning-effective-access';
 import { AuditAction, AuditService } from '../audit/audit.service';
+import {
+  CoachAlertsService,
+  onceAlertId,
+  type CoachAlertType,
+} from '../coach/coach-alerts.service';
+import { SAFETY_ALERT_PUSH_BODY } from '../notifications/push/lock-screen-copy';
 import type {
   RomanClientContext,
   RomanClientContextBundle,
@@ -252,6 +258,10 @@ export class RomanService {
     @Optional()
     @Inject(ROMAN_TOOLBOX)
     private readonly toolbox: RomanToolbox | null = null,
+    // The coach red-flag alert after an urgent_symptoms reply (CoachModule).
+    @Optional()
+    @Inject(CoachAlertsService)
+    private readonly coachAlerts: CoachAlertsService | null = null,
   ) {}
 
   // ─── Sessions ──────────────────────────────────────────────────────────────
@@ -820,81 +830,13 @@ export class RomanService {
 
   // ─── Rate limiting ─────────────────────────────────────────────────────────
 
-  /** The user-turn cap for a caller's tier (brief §3). */
-  rateLimitCapFor(caller: RomanCaller): number {
-    const tier = caller.tier ?? 'free';
-    return tier === 'free'
-      ? ROMAN_RATE_LIMIT_FREE_PER_DAY
-      : ROMAN_RATE_LIMIT_PRO_PER_DAY;
-  }
-
   /**
-   * Throw a structured 429 when the caller has exhausted their 24h user-turn
-   * budget. Counts `user` turns in the rolling window, plus the content-free
-   * count of user turns erased by `deleteSession` from a recently active
-   * session (so deleting a chat never resets the cap; conservative: those
-   * turns count until the erased session's last activity leaves the window).
-   * OWNER is exempt.
+   * Count this turn against the client's 100 Roman messages today (their
+   * local day), or throw the 429 ROMAN_RATE_LIMIT (roman-usage.ts). Coaches
+   * and owners are not counted. The controller runs it after every other check.
    */
-  async assertWithinRateLimit(caller: RomanCaller): Promise<void> {
-    if (caller.role === 'owner') return;
-    const cap = this.rateLimitCapFor(caller);
-    const since = new Date(Date.now() - ROMAN_RATE_LIMIT_WINDOW_MS);
-    const live = await this.prisma.romanMessage.count({
-      where: {
-        user_id: caller.id,
-        role: 'user',
-        created_at: { gte: since },
-      },
-    });
-    // Content-free counts kept by erased shells (deleteSession / the sweep).
-    // Summed in the database, so any number of deleted chats counts in full.
-    // Unerased pre-upgrade tombstones are excluded: their messages still
-    // exist and are already in `live`.
-    const erased = await this.prisma.romanSession.aggregate({
-      where: {
-        user_id: caller.id,
-        deleted_at: { not: null },
-        day_key: { startsWith: ROMAN_ERASED_DAY_KEY_PREFIX },
-        last_activity_at: { gte: since },
-        message_count: { gt: 0 },
-      },
-      _sum: { message_count: true },
-      _min: { last_activity_at: true },
-    });
-    const used = live + (erased._sum.message_count ?? 0);
-    if (used >= cap) {
-      // Retry-after = time until the oldest counted turn (or erased session's
-      // last activity) falls out of the window.
-      const oldest = await this.prisma.romanMessage.findFirst({
-        where: {
-          user_id: caller.id,
-          role: 'user',
-          created_at: { gte: since },
-        },
-        orderBy: { created_at: 'asc' },
-      });
-      const candidates = [
-        ...(oldest ? [oldest.created_at.getTime()] : []),
-        ...(erased._min.last_activity_at ? [erased._min.last_activity_at.getTime()] : []),
-      ];
-      const earliest = candidates.length > 0 ? Math.min(...candidates) : null;
-      const retryAfterSeconds =
-        earliest !== null
-          ? Math.max(
-              1,
-              Math.ceil((earliest + ROMAN_RATE_LIMIT_WINDOW_MS - Date.now()) / 1000),
-            )
-          : Math.ceil(ROMAN_RATE_LIMIT_WINDOW_MS / 1000);
-      throw new HttpException(
-        {
-          code: ROMAN_ERROR_RATE_LIMIT,
-          retryAfterSeconds,
-          message: romanRateLimitMessage(retryAfterSeconds, caller.role),
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
-    }
+  async assertWithinRateLimit(caller: RomanCaller, peek = false): Promise<RomanUsageDebit | null> {
+    return consumeRomanUsage(this.prisma, caller, 'chat_message', new Date(), peek);
   }
 
   // ─── AI consent (R2b) ────────────────────────────────────────────────────
@@ -903,11 +845,12 @@ export class RomanService {
    * Whose data a Roman turn sends. A client (role `student`) sends their own
    * conversation: their live box-2 grant is required. Coaches and owners
    * chat about their own work; the server loads no client record into the
-   * prompt (coach_own_scope).
+   * prompt (coach_own_scope), and their own grant is required
+   * (COACH-AI-CONSENT, 403 coach_ai_consent_required).
    */
   dataSubjectFor(caller: RomanCaller): AiDataSubject {
     return caller.role === 'coach' || caller.role === 'owner'
-      ? noClientDataSubject('coach_own_scope')
+      ? noClientDataSubject('coach_own_scope', caller.id)
       : clientDataSubject(caller.id, 'client');
   }
 
@@ -956,8 +899,10 @@ export class RomanService {
    *
    *  1. Feature flag + provider key (coded 503s, never a raw SDK error).
    *  2. Deterministic SafetyRouter on the normalised user text (A-R4-1).
-   *     Emergency / self-harm answer with fixed templates: no model call, no
-   *     client data loaded, nothing sent anywhere.
+   *     Emergency / self-harm / urgent symptoms answer with fixed templates:
+   *     no model call, no client data loaded, nothing sent to a provider.
+   *     Urgent symptoms also alert the client's coach, and so does an
+   *     eating-disorder message once the reply is ready (owner 22a, 57).
    *  3. Box-2 consent via the single egress gate BEFORE any client data is
    *     read (B-R8-1); the gate re-reads the grant again inside the send.
    *  4. Daily spend cap: reserve the worst-case cost first, fail closed.
@@ -973,7 +918,7 @@ export class RomanService {
   async *streamAssistantTurn(
     caller: RomanCaller,
     session: RomanSession,
-    opts: { signal?: AbortSignal; userMessage?: string } = {},
+    opts: { signal?: AbortSignal; userMessage?: string; userMessageId?: string; usageDebit?: RomanUsageDebit | null } = {},
   ): AsyncGenerator<RomanStreamChunk> {
     // Defence-in-depth flag re-check (brief §1.6): never drive the model OFF.
     if (!isRomanChatEnabled()) {
@@ -983,11 +928,28 @@ export class RomanService {
       });
     }
     const userMessage = opts.userMessage ?? (await this.latestUserMessage(caller, session.id));
-    const route = classifySafety(userMessage);
+    // B-913-2: the controller has stored this turn; skip it so this reads the
+    // same five earlier turns as the controller's pre-check.
+    const earlier = await this.earlierUserText(caller, session.id, userMessage);
+    const route = classifySafety(userMessage, earlier);
 
-    if (route.short_circuit && (route.class === 'emergency' || route.class === 'self_harm')) {
+    if (
+      route.short_circuit &&
+      (route.class === 'emergency' ||
+        route.class === 'self_harm' ||
+        route.class === 'urgent_symptoms')
+    ) {
+      // Owner 22a and ROMAN-CRISIS-ALERT: every fixed reply alerts the coach
+      // (a crisis reply only once its switch is on), and a reply that did says
+      // so (#CRISIS-WORDING).
+      const urgent = route.class === 'urgent_symptoms';
+      const alertType = urgent ? 'roman_urgent_reply' : 'roman_crisis_reply';
+      const told =
+        (urgent || isRomanCrisisAlertEnabled()) &&
+        (await this.alertCoachOfSafetyReply(caller, session, alertType, opts.userMessageId));
       const text = ROMAN_SAFETY_TEMPLATES[route.class];
-      yield* this.fixedSafetyReply(caller, session, text, ROMAN_SAFETY_ROUTE_REASON[route.class]);
+      const reply = told ? `${text} ${ROMAN_COACH_TOLD_LINE}` : text;
+      yield* this.fixedSafetyReply(caller, session, reply, ROMAN_SAFETY_ROUTE_REASON[route.class]);
       return;
     }
 
@@ -1015,7 +977,8 @@ export class RomanService {
     let bundle: RomanClientContextBundle | null = null;
     let contextUnavailable = false;
     if (grounded) {
-      bundle = await this.loadTurnBundle(caller);
+      // ROMANCAP-C (f): locked out for not paying their coach: chat, no context.
+      bundle = (await this.lockedOut(caller)) ? null : await this.loadTurnBundle(caller);
       contextUnavailable = bundle === null;
     }
     // R11-00: grounded turns with a bundle only; the coach surface never
@@ -1059,8 +1022,9 @@ export class RomanService {
           caller,
           (L.max_rounds + 1) * roundBound,
           (L.max_rounds + 1) * ROMAN_MAX_OUTPUT_TOKENS,
+          opts.usageDebit,
         )
-      : await this.reserveDailySpend(caller, payload.inputTokenBound);
+      : await this.reserveDailySpend(caller, payload.inputTokenBound, undefined, opts.usageDebit);
     // Every settle path that spent tokens also debits the coach pool (B-668-1).
     const settle = async (
       inputTokens: number,
@@ -1195,12 +1159,26 @@ export class RomanService {
       exclamationAllowed: false,
     });
 
+    // Owner 57: an eating-disorder message alerts the coach (once per
+    // conversation); the reply that did so says so, after the post-check.
+    const reply =
+      route.class === 'eating_disorder_risk' &&
+      checked.text.trim().length > 0 &&
+      (await this.alertCoachOfSafetyReply(
+        caller,
+        session,
+        'roman_eating_disorder_reply',
+        opts.userMessageId,
+      ))
+        ? `${checked.text}\n\n${ROMAN_COACH_TOLD_LINE}`
+        : checked.text;
+
     // Persisted ONCE, already checked: what is stored is what the client sees.
     let persisted: RomanMessage;
     try {
       persisted = await this.appendMessage(caller, session.id, {
         role: 'roman',
-        content: checked.text,
+        content: reply,
         promptTokens,
         completionTokens,
         modelId: ROMAN_MODEL_PHASE_1,
@@ -1234,18 +1212,22 @@ export class RomanService {
       `roman.turn session=${session.id} prompt_version=${romanPromptVersionOf(session.surface)} model_call=true rewritten=${checked.rewritten} guardrail_count=${checked.guardrails_applied.length} usage=${usage.kind} context=${bundle ? bundle.hash.slice(0, 12) : grounded ? 'unavailable' : 'none'}`,
     );
 
-    if (checked.text.length > 0) yield { type: 'delta', text: checked.text };
-    yield { type: 'done', text: checked.text, messageId: persisted.id, interrupted };
+    if (reply.length > 0) yield { type: 'delta', text: reply };
+    yield { type: 'done', text: reply, messageId: persisted.id, interrupted };
   }
 
   /**
-   * True when the SafetyRouter answers this message with a fixed emergency /
-   * self-harm template (no model call, no spend). The controller uses it so a
-   * crisis message is never blocked by the turn limit or the spend cap.
+   * True when the SafetyRouter answers this message with a fixed emergency,
+   * self-harm or urgent-symptoms template (no model call, no spend). The
+   * controller uses it so such a message is never blocked by the turn limit,
+   * the spend cap or the coach requirement.
    */
-  isSafetyShortCircuit(message: string): boolean {
-    const route = classifySafety(message);
-    return route.short_circuit && (route.class === 'emergency' || route.class === 'self_harm');
+  async isSafetyShortCircuit(
+    caller: RomanCaller,
+    sessionId: string,
+    message: string,
+  ): Promise<boolean> {
+    return classifySafety(message, await this.earlierUserText(caller, sessionId)).short_circuit;
   }
 
   /** CF-ROMAN-COPY-B-128: true when the message gets the eating-disorder fallback if the AI cannot answer. */
@@ -1262,6 +1244,7 @@ export class RomanService {
   async *streamEatingDisorderFallback(
     caller: RomanCaller,
     session: RomanSession,
+    userMessageId?: string,
   ): AsyncGenerator<RomanStreamChunk> {
     let hasCoach = false;
     try {
@@ -1276,8 +1259,61 @@ export class RomanService {
       // The coachless wording is true for everyone; never block the reply.
       this.logger.warn(`roman.fallback_coach_read_failed: ${romanErrorTag(err)}`);
     }
-    const text = romanEatingDisorderFallback(hasCoach);
+    // Owner 57: the coach line follows the coach sentence when the alert went.
+    const told =
+      hasCoach &&
+      (await this.alertCoachOfSafetyReply(caller, session, 'roman_eating_disorder_reply', userMessageId));
+    const text = romanEatingDisorderFallback(hasCoach, told);
     yield* this.fixedSafetyReply(caller, session, text, ROMAN_EATING_DISORDER_FALLBACK_REASON);
+  }
+
+  /**
+   * Owner 22a, 57 and ROMAN-CRISIS-ALERT: a Roman safety reply alerts the
+   * client's current coach (the in-app alert and the quiet push). Urgent and
+   * crisis (emergency, self-harm): one alert per reply. Eating disorder: at
+   * most one per conversation (a fixed alert id, so a repeat or a race fails
+   * on the key). The row holds no name and no message text, only the id of
+   * the client's message (`roman_message_id`), which the alert card reads for
+   * the current coach only; a crisis row holds not even that. True when this
+   * call created the alert. A coachless client, a repeat or a failure (logged
+   * by code) is false, and the reply is never blocked.
+   */
+  private async alertCoachOfSafetyReply(
+    caller: RomanCaller,
+    session: RomanSession,
+    alertType: Extract<
+      CoachAlertType,
+      'roman_urgent_reply' | 'roman_eating_disorder_reply' | 'roman_crisis_reply'
+    >,
+    userMessageId: string | undefined,
+  ): Promise<boolean> {
+    if (caller.role !== 'student' || session.surface !== 'client' || !this.coachAlerts) {
+      return false;
+    }
+    const once = alertType === 'roman_eating_disorder_reply';
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: caller.id },
+        select: { coach_id: true },
+      });
+      if (!user?.coach_id) return false;
+      await this.coachAlerts.createAlert({
+        ...(once ? { id: onceAlertId(alertType, session.id) } : {}),
+        coachId: user.coach_id,
+        clientId: caller.id,
+        alertType,
+        severity: once ? 'warning' : 'critical',
+        message: SAFETY_ALERT_PUSH_BODY[alertType],
+        ...(alertType === 'roman_crisis_reply'
+          ? {}
+          : { payload: { roman_message_id: userMessageId ?? null } }),
+      });
+      return true;
+    } catch (err) {
+      if ((err as { code?: unknown } | null)?.code === 'P2002') return false;
+      this.logger.warn(`roman.safety_alert_failed: ${romanErrorTag(err)}`);
+      return false;
+    }
   }
 
   /** A deterministic safety reply: stored once, audited by reason code only, then emitted. */
@@ -1418,15 +1454,54 @@ export class RomanService {
   ): Promise<{ augmentRun: RomanAugmentRun | null; sendSubject: AiDataSubject }> {
     const list = this.augmenters ?? [];
     if (list.length === 0) return { augmentRun: null, sendSubject: subject };
-    const granted = await this.egress.consentedClients([caller.id], 'memory');
+    const granted = await this.egress.consentedClients([caller.id], 'memory', 'client');
     if (!granted.has(caller.id)) {
       this.logger.log('roman.augment_dropped reason=no_memory_scope');
       const omitted = ROMAN_TURN_AUGMENT_ORDER.filter((k) => list.some((a) => a.kind === k));
       return { augmentRun: { applied: [], omitted }, sendSubject: subject };
     }
-    const run = await this.runAugmenters(caller, bundle, userMessage);
+    const ran = await this.runAugmenters(caller, bundle, userMessage);
+    // COACH-AI-CONSENT: a block made from a coach's own text (coach method) is left out unless that
+    // coach allows AI (read now); a kept one sends with the coach named, so the gate re-reads it.
+    const coachId = ran?.applied.find((a) => a.coach_id)?.coach_id;
+    const keep = !coachId || (await this.egress.coachConsented(coachId));
+    const dropped = keep || !ran ? [] : ran.applied.filter((a) => a.coach_id).map((a) => a.kind);
+    const run = ran && dropped.length
+      ? { applied: ran.applied.filter((a) => !a.coach_id), omitted: [...ran.omitted, ...dropped] }
+      : ran;
     if (!run || run.applied.length === 0) return { augmentRun: run, sendSubject: subject };
-    return { augmentRun: run, sendSubject: clientDataSubject(caller.id, 'client', 'memory') };
+    const memory = clientDataSubject(caller.id, 'client', 'memory', keep ? coachId : undefined);
+    return { augmentRun: run, sendSubject: memory };
+  }
+
+  /**
+   * The caller's own last few turns in the session, for the safety router: a
+   * weight-loss medicine named earlier counts for a red flag reported now.
+   * Scoped to the caller, so an unverified session id reads nothing else.
+   * `storedTurn`: the current turn, already stored, is skipped (B-913-2), so the
+   * pre-check (before storing) and the reply path read the same five turns.
+   */
+  private async earlierUserText(
+    caller: RomanCaller,
+    sessionId: string,
+    storedTurn?: string,
+  ): Promise<string> {
+    try {
+      const rows = await this.prisma.romanMessage.findMany({
+        where: { session_id: sessionId, user_id: caller.id, role: 'user' },
+        orderBy: { created_at: 'desc' },
+        take: storedTurn === undefined ? 5 : 6,
+        select: { content: true },
+      });
+      if (storedTurn !== undefined && rows[0]?.content === storedTurn) rows.shift();
+      return rows
+        .slice(0, 5)
+        .map((r) => r.content)
+        .join('. ');
+    } catch (err) {
+      this.logger.warn(`roman.safety_history_failed: ${romanErrorTag(err)}`);
+      return '';
+    }
   }
 
   /** Newest user turn of the caller's session (the controller stores it first). */
@@ -1437,6 +1512,17 @@ export class RomanService {
       select: { content: true },
     });
     return row?.content ?? '';
+  }
+
+  /** The Day-10 dunning lock (DunningLockoutGuard's rule); fails open like the guard. */
+  private async lockedOut(caller: RomanCaller): Promise<boolean> {
+    if (!isDunningV2Enabled()) return false;
+    try {
+      return (await effectiveLock(this.prisma, caller.id)).locked;
+    } catch (err) {
+      this.logger.warn(`roman.lock_check_failed: ${romanErrorTag(err)}`);
+      return false;
+    }
   }
 
   /**
@@ -1542,11 +1628,13 @@ export class RomanService {
    * cap: nothing is inserted and the turn is a coded 503 with specific copy.
    * Any ledger failure: coded 503, no provider call (fail closed).
    * R11-T2B: a tools turn passes the output bound of all its calls.
+   * ROMANCOUNT: a refused turn gives its counted message back here (`usageDebit`).
    */
   async reserveDailySpend(
     caller: RomanCaller,
     inputTokenBound: number,
     outputTokenBound: number = ROMAN_MAX_OUTPUT_TOKENS,
+    usageDebit: RomanUsageDebit | null = null,
   ): Promise<string> {
     const requestId = `roman:${randomUUID()}`;
     const cap = this.dailyCostCapUsd();
@@ -1568,7 +1656,10 @@ export class RomanService {
           agg._sum.prompt_token_estimate ?? 0,
           agg._sum.response_token_estimate ?? 0,
         );
-        if (used + reserveUsd > cap) return false;
+        if (used + reserveUsd > cap) {
+          if (usageDebit) await releaseRomanUsage(tx, usageDebit);
+          return false;
+        }
         await tx.aiRequestAudit.create({
           data: {
             request_id: requestId,

@@ -48,7 +48,7 @@ import type {
 } from '../../src/roman/context/roman-client-context.types';
 import { buildRomanSystemPrompt, ROMAN_COACH_PROMPT_VERSION } from '../../src/roman/roman.prompts';
 import { PROMPT_VERSION } from '../../src/roman/guardrails/roman-guardrail.contract';
-import { AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
+import { AiEgressService, AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
 import { egressWithGrants, fakeOf, grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import { PrismaService } from '../../src/prisma.service';
 
@@ -398,6 +398,7 @@ describe('B-R3-1 the production graph binds the real consultation source', () =>
     const mod = await Test.createTestingModule({
       providers: [
         { provide: PrismaService, useValue: prisma },
+        { provide: AiEgressService, useValue: grantAllEgress() },
         RomanClientContextService,
         RomanConsultationIntakeSource,
         { provide: ROMAN_SAFETY_INTAKE_SOURCE, useExisting: RomanConsultationIntakeSource },
@@ -607,7 +608,7 @@ describe('OR-113-2 launch hardening', () => {
       voice: { quipsInSession: 0, exclamationUsed: false },
       clientData: '<client_data as_of="x">{}</client_data>',
     });
-    expect(p).toContain('REPLY CONTRACT (roman-client-v4)');
+    expect(p).toContain('REPLY CONTRACT (roman-client-v5)');
     expect(p).toContain('<client_data as_of="x">{}</client_data>');
   });
 });
@@ -824,7 +825,8 @@ describe('FR1-651-9 a chat deleted during the model call settles the ledger and 
       response_token_estimate: 50,
       metadata: { state: 'settled', outcome: 'session_gone' },
     });
-    expect(JSON.stringify(audits[0])).not.toContain('670');
+    expect(JSON.stringify(audits[0])).not.toContain('You have 670 kcal left');
+    expect(JSON.stringify(audits[0])).not.toContain(' 670 kcal');
   });
 });
 

@@ -189,6 +189,14 @@ export class CoachController {
     return this.coachService.getClientSummary(req.user.id, clientId, date, req.user.role, auditContext(req));
   }
 
+  // K1WEEK: this week's workout assignments for the client file's ring, in the
+  // client's own week. 404 unless the client is the caller's now.
+  @Roles('coach', 'owner')
+  @Get('clients/:id/week')
+  async getClientWeek(@Request() req: AuthedRequest, @Param('id') clientId: string) {
+    return this.coachService.getClientWeek(req.user.id, clientId, req.user.role, auditContext(req));
+  }
+
   // GET /coach/my-guidelines (the client's own read) lives in
   // ClientGuidelinesController: this class's CoachGuard refused every client.
   @Get('guidelines/:client_id')

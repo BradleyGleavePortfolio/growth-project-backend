@@ -197,6 +197,13 @@ function makeWorld() {
         );
         return seat ? [{ id: seat.id }] : [];
       }
+      // READTESTS: the pair's seat row in any state (an archived one ends membership).
+      if (
+        /FROM "TeamSubCoachAssignment" WHERE "head_coach_id" = \? AND "sub_coach_id" = \? LIMIT 1 FOR SHARE$/.test(sql)
+      ) {
+        const seat = teamSeats.find((a) => a.head_coach_id === values[0] && a.sub_coach_id === values[1]);
+        return seat ? [{ id: seat.id }] : [];
+      }
       if (
         /FROM "SubCoachAssignment" WHERE "head_coach_id" = \? AND "sub_coach_id" = \? AND "unassigned_at" IS NULL LIMIT 1 FOR SHARE$/.test(
           sql,
@@ -850,11 +857,17 @@ describe('POST /me/onboarding/complete', () => {
     const w = await ready({ ...COMPLETE, T1: 'advanced', S1: '5', P4: 'yes' });
     const res = await w.svc.complete('client-1', NOW);
     expect(res.program).toMatchObject({ key: 'steady-foundations', days_per_week: 2 });
+    // FLAG-2: linked like the join alert, so a tap opens the client's answers.
     expect(w.notifications).toEqual([
       expect.objectContaining({
         user_id: 'coach-1',
         kind: 'coach_alert',
-        payload: { type: 'onboarding_screening_review', client_id: 'client-1' },
+        payload: {
+          type: 'onboarding_screening_review',
+          client_id: 'client-1',
+          actionScreen: 'ClientConsultation',
+          actionParams: { clientId: 'client-1' },
+        },
       }),
     ]);
     expect(String(w.notifications[0].body)).not.toMatch(/P4|heart|chest|pregnan/i);
@@ -1028,6 +1041,23 @@ describe('GET /coach/clients/:clientId/consultation', () => {
     await notFound(w.svc.getCoachConsultation('client-1', 'client-1', undefined, NOW));
     await notFound(w.svc.listCoachConsultationRevisions('other-coach', 'client-1'));
     await notFound(w.svc.getCoachConsultation('coach-1', 'client-1', 99, NOW));
+  });
+
+  it("FLAG-2: carries the client's name to readers with live access only", async () => {
+    const w = await saved();
+    const client = w.users.find((u) => u.id === 'client-1')!;
+    client.name = '  Sam Lee ';
+    const nameFor = async (reader: string) =>
+      (await w.svc.getCoachConsultation(reader, 'client-1', undefined, NOW)).client_name;
+    expect(await nameFor('coach-1')).toBe('Sam Lee');
+    expect(await nameFor('sub-1')).toBe('Sam Lee');
+    await notFound(nameFor('other-coach'));
+    // The client moves: the old coach gets the uniform 404, so no name.
+    client.coach_id = 'other-coach';
+    await notFound(nameFor('coach-1'));
+    expect(await nameFor('other-coach')).toBe('Sam Lee');
+    client.name = ' ';
+    expect(await nameFor('other-coach')).toBeNull();
   });
 });
 

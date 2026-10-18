@@ -121,8 +121,11 @@ const OPEN_ROUTES: ReadonlyArray<[AnyCtor, string, string]> = [
   [ClientMealPlanController, 'today', 'GET /me/meal-plan/today'],
   [AssignmentController, 'listMine', 'GET /assignments/me'],
   [AssignmentController, 'complete', 'PATCH /assignments/:id/complete'],
+  [AssignmentController, 'update', 'PATCH /assignments/:id'],
   [AiController, 'chat', 'POST /ai/chat'],
   [AiController, 'getStructuredContext', 'GET /ai/structured-context'],
+  // #LEARN-LOCK op 1: the guidelines never lock (the current coach's row only).
+  [ClientGuidelinesController, 'getMyGuidelines', 'GET /coach/my-guidelines'],
 ];
 
 // Places that need a real coach: unchanged, still 402 without a package.
@@ -132,7 +135,6 @@ const COACH_ONLY_ROUTES: ReadonlyArray<[AnyCtor, string, string]> = [
   [CommunityController, 'getFeed', 'GET /community/feed'],
   [CommunityController, 'postWin', 'POST /community/wins'],
   [AiGatewayController, 'invoke', 'POST /ai/gateway/invoke'],
-  [ClientGuidelinesController, 'getMyGuidelines', 'GET /coach/my-guidelines'],
 ];
 
 describe('B1 + B23 — every client uses the basic functions on their own data', () => {
@@ -179,11 +181,10 @@ describe('B23 contract — every controller with the paywall guard is classified
   const OPEN = new Set<AnyCtor>([
     LogController, WorkoutController, ClientMacrosController, FastingController, ClientCheckInsController,
     HolisticInsightsController, ClientMealPlansController, ClientMealPlanAliasController,
-    ClientMealPlanController, AssignmentController, AiController,
+    ClientMealPlanController, AssignmentController, AiController, ClientGuidelinesController,
   ]);
   const COACH_ONLY = new Set<AnyCtor>([
     SchedulingController, ClientMessagingController, CommunityController, AiGatewayController,
-    ClientGuidelinesController,
   ]);
 
   function marked(target: object): boolean {

@@ -122,21 +122,21 @@ describe('AiGatewayService', () => {
   });
 
   it('opens a pending AiActionDraft for capabilities that require approval', async () => {
-    process.env.AI_GATEWAY_REQUIRE_APPROVAL = 'draft.coach_message';
+    process.env.AI_GATEWAY_REQUIRE_APPROVAL = 'draft.send_notification';
     const { svc, prisma } = buildSvc();
     const result = await svc.invoke({
-      capability: 'draft.coach_message',
+      capability: 'draft.send_notification',
       requester: { id: 'coach-1', role: 'coach' },
       subjectUserId: 'client-1',
       tenantCoachId: 'coach-1',
       userMessage: 'Draft a check-in nudge for the client.',
       systemPrompt: 'context',
-      // PR AI-3 (PRODUCT-1): payload must match CoachMessagePayloadSchema —
-      // { clientId: uuid, body: non-empty string } — or draft creation 400s
-      // BEFORE persistence. UUIDs are required (not just any string) so the
-      // downstream MessagingService.sendAsCoach call can resolve a client.
+      // PR AI-3 (PRODUCT-1): payload must match the capability's schema or
+      // draft creation 400s BEFORE persistence. (ROMANMARK-BE: a Roman
+      // message draft takes no caller payload, so a notification is used.)
       proposedActionPayload: {
         clientId: '22222222-2222-2222-2222-222222222222',
+        kind: 'check_in',
         body: 'Hey, how is the week?',
       },
     });
@@ -170,22 +170,36 @@ describe('AiGatewayService', () => {
     expect(result.auditId).toBe('');
   });
 
-  it('rejects a draft.coach_message invocation with a malformed payload BEFORE persisting the draft row (PR AI-3 PRODUCT-1)', async () => {
+  it('ROMANMARK-BE: a Roman message draft refuses a caller payload, and the stub opens no draft', async () => {
+    process.env.AI_GATEWAY_REQUIRE_APPROVAL = 'draft.coach_message,draft.coach_wearable_message';
+    const { svc, prisma } = buildSvc();
+    const ask = { requester: { id: 'coach-1', role: 'coach' as const }, subjectUserId: 'client-1', tenantCoachId: 'coach-1', userMessage: 'Draft a reply.', systemPrompt: 'context' };
+    for (const capability of ['draft.coach_message', 'draft.coach_wearable_message']) {
+      await expect(
+        svc.invoke({ ...ask, capability, proposedActionPayload: { clientId: '22222222-2222-2222-2222-222222222222', body: 'My own words.' } }),
+      ).rejects.toMatchObject({ response: { error: 'AI_DRAFT_PAYLOAD_SERVER_WRITTEN', capability } });
+      const out = await svc.invoke({ ...ask, capability });
+      expect(out.approvalDraftId).toBeNull();
+    }
+    expect(prisma.aiActionDraft.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects a draft invocation with a malformed payload BEFORE persisting the draft row (PR AI-3 PRODUCT-1)', async () => {
     // Verifies the shift-left validation: malformed payloads must 400 at
     // invoke time so the coach never sees a broken draft card. Critically,
     // aiActionDraft.create must NOT be called — we don't want orphan rows
     // that the materialiser would later reject.
-    process.env.AI_GATEWAY_REQUIRE_APPROVAL = 'draft.coach_message';
+    process.env.AI_GATEWAY_REQUIRE_APPROVAL = 'draft.send_notification';
     const { svc, prisma } = buildSvc();
     await expect(
       svc.invoke({
-        capability: 'draft.coach_message',
+        capability: 'draft.send_notification',
         requester: { id: 'coach-1', role: 'coach' },
         subjectUserId: 'client-1',
         tenantCoachId: 'coach-1',
         userMessage: 'Draft a nudge.',
         systemPrompt: 'context',
-        // clientId is not a UUID + body is empty whitespace — two violations.
+        // clientId is not a UUID and kind is missing.
         proposedActionPayload: { clientId: 'not-a-uuid', body: '   ' },
       }),
     ).rejects.toMatchObject({
@@ -254,7 +268,7 @@ describe('AiGatewayService — R2b box-2 consent', () => {
     const { svc } = buildSvc(buildPrisma(), egress, complete);
     await svc.invoke(coachAbout('client-1'));
     expect(complete).toHaveBeenCalledTimes(1);
-    expect(complete.mock.calls[0][0].dataSubject).toEqual(clientDataSubject('client-1', 'coach'));
+    expect(complete.mock.calls[0][0].dataSubject).toEqual(clientDataSubject('client-1', 'coach', 'base', 'coach-1'));
   });
 
   it('no grant: 403 ai_consent_required, provider never called, no stub fallback', async () => {
@@ -335,7 +349,7 @@ describe('deriveGatewayDataSubject (R2b)', () => {
   it('coach about own scope -> no client data', () => {
     expect(
       deriveGatewayDataSubject({ ...base, requester: { id: 'coach-1', role: 'coach' }, subjectUserId: 'coach-1' }),
-    ).toEqual(noClientDataSubject('coach_own_scope'));
+    ).toEqual(noClientDataSubject('coach_own_scope', 'coach-1'));
   });
   it('client with no subject -> themself, client audience', () => {
     expect(deriveGatewayDataSubject({ ...base, requester: { id: 'client-1', role: 'student' } })).toEqual(
@@ -351,6 +365,6 @@ describe('deriveGatewayDataSubject (R2b)', () => {
         proposedActionPayload: { target_client_id: 'b', client_id: 'a' },
         dataClientIds: ['c'],
       }),
-    ).toEqual(clientDataSubject(['a', 'b', 'c'], 'coach'));
+    ).toEqual(clientDataSubject(['a', 'b', 'c'], 'coach', 'base', 'coach-1'));
   });
 });

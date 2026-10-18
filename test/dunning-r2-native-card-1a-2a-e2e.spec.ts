@@ -1,6 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { ForbiddenException, HttpException } from '@nestjs/common';
+import { ForbiddenException, HttpException, Logger } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { CheckoutWebhookHandlerService } from '../src/checkout/checkout-webhook-handler.service';
 import {
@@ -901,6 +901,235 @@ describe('S-DUNNING-R2: native card update, owner rulings 1A / 2A (stateful Stri
       expect(coachMail?.template).toBe(EmailTemplateKey.DUNNING_V2_COACH);
       const day7 = w.email.mock.calls.filter((c) => c[0].to === 'client@tgp.invalid').pop()?.[0];
       expect(String(day7.data.subject)).toMatch(/^Final notice: access pauses on /);
+    });
+  });
+
+  // MOVEBILL (owner MOVE-BILLING option 1). The database stamps
+  // moved_away_at in the move's own transaction (trg_user_coach_move_marks_plans,
+  // proven on Postgres in test/rls/moved-plan-billing-rls.spec.ts); here the
+  // stamp is set directly and everything after it runs for real.
+  describe('MOVEBILL: a move stops the old coach billing the client', () => {
+    const move = (when: Date) => {
+      purchaseRow(w)!.moved_away_at = when;
+    };
+    // Opus C6: a move-driven cancel is logged as the move's, never as a client cancel.
+    const events = (log: jest.SpyInstance) => log.mock.calls.map(([m]) => String(m)).join('\n');
+
+    it('outside dunning: renewal off, paid period kept, no refund or charge, nothing sent; other clients untouched', async () => {
+      purchaseRow(w)!.current_period_end = at(20 * DAY);
+      purchaseRow(w)!.access_expires_at = at(20 * DAY);
+      w.stripe.subs.get('sub_dv2_client')!.current_period_end = sec(at(20 * DAY));
+      w.fake.seed('clientPurchase', {
+        id: 'purchase-other',
+        client_user_id: 'client-2',
+        coach_user_id: 'coach-1',
+        package_id: 'pkg-1',
+        status: 'active',
+        entitlement_active: true,
+        billing_type: 'recurring',
+        amount_cents: 15000,
+        currency: 'usd',
+        stripe_subscription_id: 'sub_other',
+        cancel_at_period_end: false,
+      });
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 0, failed: 0 });
+
+      move(at(DAY));
+      const log = jest.spyOn(Logger.prototype, 'log').mockClear();
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 1, failed: 0 });
+      expect(events(log)).toContain('"event":"billing.moved_plan_cancel_scheduled"');
+      expect(events(log)).not.toContain('billing.client_cancel');
+      expect(w.stripe.subs.get('sub_dv2_client')?.cancel_at_period_end).toBe(true);
+      expect(purchaseRow(w)).toMatchObject({
+        status: 'active',
+        entitlement_active: true,
+        cancel_at_period_end: true,
+      });
+      expect(w.stripe.callsOf('voidInvoice')).toHaveLength(0);
+      expect(w.stripe.callsOf('cancelSubscription')).toHaveLength(0);
+      expect(w.stripe.charges).toHaveLength(0);
+      expect(w.push).not.toHaveBeenCalled();
+      expect(w.email).not.toHaveBeenCalled();
+      jest.setSystemTime(at(15 * DAY));
+      expect(await entitlementVerdict(w)).toBe('allowed');
+      // Done once; the other client's plan is never read for Stripe.
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 0, failed: 0 });
+      expect(w.stripe.callsOf('setCancelAtPeriodEnd')).toHaveLength(1);
+      expect(w.fake.find('clientPurchase', { id: 'purchase-other' })).toMatchObject({
+        cancel_at_period_end: false,
+      });
+    });
+
+    it('in dunning: notices stop at the move; then the failed invoice is voided and the plan ends; nothing collected', async () => {
+      // Control: with no move, Stripe's failed Day-1 retry sends the client a notice.
+      const control = buildWorld();
+      await failRenewal(control);
+      await stripeRetryFails(control, at(DAY + HOUR), 2);
+      expect(control.email.mock.calls.length).toBeGreaterThan(0);
+      expect(control.push.mock.calls.length).toBeGreaterThan(0);
+
+      jest.setSystemTime(at(0));
+      await failRenewal(w);
+      const emails = w.email.mock.calls.length;
+      const pushes = w.push.mock.calls.length;
+      move(at(DAY));
+      // Before the billing run: the same retry fails, and nothing is sent.
+      await stripeRetryFails(w, at(DAY + HOUR), 2);
+      await w.v2.retryDueNotices(at(DAY + 2 * HOUR));
+      expect(w.email.mock.calls.length).toBe(emails);
+      expect(w.push.mock.calls.length).toBe(pushes);
+
+      const log = jest.spyOn(Logger.prototype, 'log').mockClear();
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 1, failed: 0 });
+      expect(events(log)).toContain('"event":"billing.moved_plan_cancel_in_dunning"');
+      expect(events(log)).not.toContain('billing.client_cancel');
+      expect(w.stripe.invoices.get('in_dv2_renewal_1')?.status).toBe('void');
+      expect(w.stripe.subs.get('sub_dv2_client')?.status).toBe('canceled');
+      expect(w.stripe.stripeRetry('in_dv2_renewal_1')).toBe('not_open');
+      expect(purchaseRow(w)).toMatchObject({ status: 'canceled', entitlement_active: false });
+      expect(stateRow(w)?.status).toBe('abandoned');
+      for (const t of [at(7 * DAY + HOUR), at(10 * DAY + 7 * MIN)]) {
+        jest.setSystemTime(t);
+        expect(await w.v2.runSweep(t)).toEqual({ locked: 0, advanced: 0, skipped: 0 });
+      }
+      expect(w.email.mock.calls.length).toBe(emails);
+      expect(w.push.mock.calls.length).toBe(pushes);
+      expect(w.stripe.charges).toHaveLength(0);
+    });
+
+    it('in dunning, until the plan is ended, the Day-10 lock never falls on the moved client', async () => {
+      const lockAt = at(10 * DAY + 7 * MIN);
+      // Control: with no move, the same cycle locks at Day 10.
+      const control = buildWorld();
+      await failRenewal(control);
+      jest.setSystemTime(lockAt);
+      expect((await control.v2.runSweep(lockAt)).locked).toBe(1);
+
+      jest.setSystemTime(at(0));
+      await failRenewal(w);
+      move(at(HOUR));
+      jest.setSystemTime(lockAt);
+      expect((await w.v2.runSweep(lockAt)).locked).toBe(0);
+      expect(stateRow(w)?.locked_out_at ?? null).toBeNull();
+      expect(await lockVerdict(w, '/api/v1/workouts')).toBe('allowed');
+    });
+
+    it('a Stripe failure is retried on the next run', async () => {
+      move(at(DAY));
+      jest
+        .spyOn(w.stripe, 'setCancelAtPeriodEnd')
+        .mockRejectedValueOnce(new Error('stripe unavailable'));
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 0, failed: 1 });
+      expect(purchaseRow(w)?.cancel_at_period_end).toBe(false);
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 1, failed: 0 });
+      expect(w.stripe.subs.get('sub_dv2_client')?.cancel_at_period_end).toBe(true);
+    });
+
+    it('dunning v1 (v2 off): a due email for a moved client is skipped, not sent', async () => {
+      delete process.env['FEATURE_DUNNING_V2'];
+      const send = jest.fn(async () => ({ status: 'sent' }));
+      const v1 = new DunningService(w.fake.client(), stub(w.stripe), stub({ send }));
+      w.fake.seed('dunningState', { id: 'ds-v1', purchase_id: 'purchase-1', status: 'active', step_index: -1 });
+      w.fake.seed('dunningAttempt', {
+        id: 'da-v1',
+        dunning_state_id: 'ds-v1',
+        step_index: 0,
+        status: 'pending',
+        scheduled_for: at(0),
+      });
+      move(at(0));
+      expect(await v1.tick(at(HOUR))).toEqual({ sent: 0, skipped: 1, failed: 0 });
+      expect(send).not.toHaveBeenCalled();
+      expect(w.fake.find('dunningAttempt', { id: 'da-v1' })).toMatchObject({
+        status: 'skipped',
+        failure_reason: 'client_moved',
+      });
+    });
+  });
+
+  // MOVEBILL2 (Sol B3): a started, card-backed trial converts at its end into
+  // the first charge for the coach; a move before that ends it like any plan.
+  describe('MOVEBILL2: a moved trial never converts for the old coach', () => {
+    const TRIAL_END = 5 * DAY;
+    /** The client saved a card two days ago; the trial converts at TRIAL_END. */
+    const startedTrial = (x: World) => {
+      Object.assign(purchaseRow(x)!, {
+        status: 'trialing',
+        trial_days: 7,
+        trial_started_at: at(-2 * DAY),
+        current_period_end: at(TRIAL_END),
+        access_expires_at: at(TRIAL_END),
+      });
+      Object.assign(x.stripe.subs.get('sub_dv2_client')!, {
+        status: 'trialing',
+        default_payment_method: 'pm_new_ok',
+        current_period_end: sec(at(TRIAL_END)),
+      });
+    };
+    /** Stripe at trial end: a set end cancels it; otherwise it charges the first period. */
+    const trialEnds = async (x: World) => {
+      jest.setSystemTime(at(TRIAL_END));
+      const sub = x.stripe.subs.get('sub_dv2_client')!;
+      if (sub.cancel_at_period_end) {
+        sub.status = 'canceled';
+        await x.handler.handle(
+          fixture('customer.subscription.deleted', { canceled_at: sec(at(TRIAL_END)) }),
+        );
+        return;
+      }
+      x.stripe.addInvoice({
+        id: 'in_first_after_trial',
+        subscription: 'sub_dv2_client',
+        amount_due: 15000,
+        created: sec(at(TRIAL_END)),
+      });
+      expect(x.stripe.stripeRetry('in_first_after_trial')).toBe('paid');
+    };
+    const writes = (x: World) =>
+      x.stripe.calls.map((c) => c.op).filter((op) => !/^(retrieve|list)/.test(op));
+
+    it('control: an unmoved started trial is left alone and converts into its first charge', async () => {
+      startedTrial(w);
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 0, failed: 0 });
+      await trialEnds(w);
+      expect(w.stripe.charges).toEqual([
+        expect.objectContaining({ invoice: 'in_first_after_trial', amount: 15000 }),
+      ]);
+    });
+
+    it('moved days before conversion: trial access kept, never converts, no charge, no refund', async () => {
+      startedTrial(w);
+      purchaseRow(w)!.moved_away_at = at(DAY);
+      jest.setSystemTime(at(DAY + 5 * MIN));
+      expect(await w.billing.endPlansLeftByMove()).toEqual({ ended: 1, failed: 0 });
+      expect(w.stripe.subs.get('sub_dv2_client')).toMatchObject({
+        status: 'trialing',
+        cancel_at_period_end: true,
+      });
+      // Stripe's own echo of renewal off leaves the started trial's access on.
+      await w.handler.handle(
+        fixture('customer.subscription.updated.cancel_at_period_end', {
+          status: 'trialing',
+          default_payment_method: 'pm_new_ok',
+          cancel_at: sec(at(TRIAL_END)),
+          canceled_at: null,
+          current_period_end: sec(at(TRIAL_END)),
+        }),
+      );
+      expect(purchaseRow(w)).toMatchObject({
+        status: 'trialing',
+        entitlement_active: true,
+        cancel_at_period_end: true,
+      });
+      jest.setSystemTime(at(3 * DAY));
+      expect(await entitlementVerdict(w)).toBe('allowed');
+      await trialEnds(w);
+      expect(w.stripe.charges).toHaveLength(0);
+      expect(purchaseRow(w)).toMatchObject({ status: 'canceled', entitlement_active: false });
+      // The one Stripe write is renewal off: no void, cancel-now, charge or refund.
+      expect(writes(w)).toEqual(['setCancelAtPeriodEnd']);
+      expect(w.push).not.toHaveBeenCalled();
+      expect(w.email).not.toHaveBeenCalled();
     });
   });
 });

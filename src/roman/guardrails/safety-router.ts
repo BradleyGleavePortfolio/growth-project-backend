@@ -1,15 +1,21 @@
 /**
  * SafetyRouter — deterministic, pre-model classification of the user's turn
  * (PLAN_roman_intelligence §2.2 step 5, §4.6). Pure functions, no I/O, no
- * model call. `emergency` and `self_harm` short-circuit to fixed templates;
- * the other classes add a forced hint to the system block and tighten the
- * post-check.
+ * model call. `emergency`, `self_harm` and `urgent_symptoms` short-circuit to
+ * fixed templates; the other classes add a forced hint to the system block and
+ * tighten the post-check.
  */
 
 import { CRISIS_EMERGENCY_PATTERNS, CRISIS_SELF_HARM_PATTERNS } from '../../ai/ai-crisis-router';
 
 export type SafetyClass =
-  'emergency' | 'self_harm' | 'eating_disorder_risk' | 'medical_scope' | 'injury_pain' | 'normal';
+  | 'emergency'
+  | 'self_harm'
+  | 'urgent_symptoms'
+  | 'eating_disorder_risk'
+  | 'medical_scope'
+  | 'injury_pain'
+  | 'normal';
 
 export interface SafetyRouteResult {
   class: SafetyClass;
@@ -31,6 +37,142 @@ export interface SafetyRouteResult {
  */
 const EMERGENCY: readonly RegExp[] = CRISIS_EMERGENCY_PATTERNS;
 const SELF_HARM: readonly RegExp[] = CRISIS_SELF_HARM_PATTERNS;
+
+/**
+ * GLP-1 and related weight-loss medicines: semaglutide (Ozempic, Wegovy,
+ * Rybelsus), tirzepatide (Mounjaro, Zepbound), liraglutide (Victoza, Saxenda),
+ * dulaglutide (Trulicity), exenatide (Byetta, Bydureon), retatrutide, a few
+ * common misspellings, and "weight loss shot" style wording. Gates the
+ * urgent_symptoms route and feeds the post-check's medication-directive rule.
+ */
+export const WEIGHT_LOSS_MEDICINES =
+  'ozempic|ozempik|ozempick|wegovy|wegovey|rybelsus|semaglutide?|sema|mounjaro|monjaro|mounjuro|zepbound|zepbond|tirzepatide|tirzepetide|tirz|victoza|saxenda|liraglutide|trulicity|dulaglutide|byetta|bydureon|exenatide|retatrutide|glp[- ]?1s?|(weight[- ]?loss|fat|skinny|diet) (shots?|jabs?|injections?|pens?|medications?|medicines?|meds|drugs?)';
+/**
+ * Operator ruling (B-913-2, R1): for the urgent route only, the client's own
+ * injection counts as the medicine ("since my shot I can't keep anything
+ * down"): the fixed reply says "Contact your doctor or prescriber", which
+ * fits any prescribed injection. "My flu shot" is not "my shot".
+ */
+const OWN_INJECTION =
+  'my (weekly |last |latest )?(shots?|jabs?|injections?|pens?)|the shot|shot day';
+const WEIGHT_LOSS_MEDICINE = new RegExp(`\\b(${WEIGHT_LOSS_MEDICINES}|${OWN_INJECTION})\\b`, 'i');
+
+/**
+ * Red-flag symptoms from the warnings and Medication Guides in the FDA labels
+ * for these medicines (pancreatitis, gallbladder disease, dehydration, serious
+ * allergic reaction, low blood sugar, thyroid tumors). Acute emergencies
+ * (throat closing, cannot breathe, about to pass out) are caught first by
+ * EMERGENCY. Each pattern is tested per sentence (see NOT_A_REPORT).
+ */
+const STOMACH = '(stomach|belly|abdominal|abdomen|tummy)';
+const PAIN = '(pains?|aches?|cramps?|cramping)';
+const SEVERE =
+  '(severe|really bad|very bad|terrible|horrible|awful|intense|extreme|unbearable|excruciating|agonizing|sharp|worst|constant|persistent)';
+// B-913-1: "stomachache", "has hurt", "has been hurting", "pains in".
+const STOMACH_PAIN = `(${STOMACH} ?${PAIN}|${STOMACH} (hurts?|is hurting|keeps hurting|has hurt|has been hurting)|pains? in (my |the )?(upper )?${STOMACH})`;
+const CANT = "(can'?t|cannot|can not|unable to|couldn'?t|could not)";
+const INTAKE = '(anything|water|fluids?|liquids?|drinks?|food)';
+const KEEPABLE = `(any )?${INTAKE}( (or|and) ${INTAKE})?`;
+const URGENT_SYMPTOMS: RegExp[] = [
+  // Severe or lasting stomach pain, pain reaching the back, or named
+  // pancreas / gallbladder trouble.
+  new RegExp(
+    `\\b(${SEVERE}|bad|so much) ((upper )?${STOMACH} ?${PAIN}|pains? in (my |the )?(upper )?${STOMACH})\\b`,
+    'i',
+  ),
+  new RegExp(
+    `\\b${STOMACH_PAIN}\\b.{0,30}\\b((won'?t|will not|doesn'?t|does not) (go away|stop|ease|let up)|(to|into|through) (my |the )?back|for (\\d+|two|three|four|five|several|a few) (days|hours)|all (day|night))\\b`,
+    'i',
+  ),
+  new RegExp(
+    `\\b${STOMACH_PAIN}(,? (it'?s|it is|is|are|feels?|has been|have been|gets|is getting|are getting))? (really |so |very |extremely )?(${SEVERE}|bad|badly|severely|worse|killing me)\\b|\\b${STOMACH} (is killing me|really hurts|is really hurting|is in (so much|a lot of) pain|is in agony|(hurts?|is hurting|has been hurting) (so much|a lot|like crazy))\\b|\\b${STOMACH} (won'?t|will not|doesn'?t|does not) stop (hurting|aching|cramping)\\b`,
+    'i',
+  ),
+  /\b(pancreatitis|gallstones?|pancreas (hurts|pain)|gall ?bladder( is| has been| keeps)? (attack|pain|problems?|issues?|trouble|hurts|hurting|aching|acting up|killing me)|pain (where|around|near) my gall ?bladder|(it'?s|it is|must be|could be) (my )?gall ?bladder)\b/i,
+  // Vomiting that will not stop, not keeping fluids down, severe dehydration.
+  new RegExp(
+    `\\b${CANT} (even )?(keep|hold) (${KEEPABLE}( (at all|either|today|anymore))? down|down ${KEEPABLE})\\b|\\bnothing (stays|will stay) down\\b`,
+    'i',
+  ),
+  /\b(keep|keeps|kept|nonstop|non-stop|constant|constantly|persistent|uncontrollable|can'?t stop|cannot stop) (vomitt?ing|throwing up|puking)\b/i,
+  /\b(vomitt?(ing|ed)?|throw(ing)? up|threw up|thrown up|puk(e|ing|ed))\b.{0,30}\b((won'?t|will not|doesn'?t|does not|can'?t|cannot) stop|all (day|night)|nonstop|non-stop|constantly|repeatedly|over and over|for (\d+|two|three|several|a few) (days|hours)|since (yesterday|last night)|(\d+|several|many) times)\b/i,
+  /\b(severely|very|really|so|extremely|badly) dehydrated\b|\b(haven'?t|have not|hasn'?t|barely) (peed|urinated|been able to drink)\b/i,
+  // Yellow skin or eyes.
+  /\b(yellow(ing|ish)?( of)? (my |the )?(skin|eyes?)|(skin|eyes?)( (is|are|look|looks|looking|turned|turning|went|gone|seem|seems|has|have|kind of|a bit|really|very))* yellow(ish)?|jaundiced?)\b/i,
+  // A serious allergic reaction: swelling of the face, lips, tongue or
+  // throat, trouble swallowing, hives or a severe rash.
+  /\b(face|lips?|tongue|throat|mouth|eyelids?)( (is|are|got|has|have|went|keeps?|started))* (swollen|swelling|swelled|puff(ed|ing) up)\b|\b(swollen|swelling (of|in)( my)?) (face|lips?|tongue|throat|mouth|eyelids?)\b/i,
+  /\b((broke|breaking|broken) out in hives|(i have|i've got|i got|covered in) hives|hives all over|severe (rash|itching)|rash all over|itch(y|ing) all over|(trouble|difficulty|problems?) swallowing)\b/i,
+  // Fainting (not "passed out at 9pm" or "on the sofa": that is sleep).
+  /\b(i|i'?ve|i have|i had)( (just|nearly|almost|also|then|suddenly|actually))? (fainted|collapsed|passed out|blacked out|lost consciousness)\b(?! (at \d|on (the |my )?(couch|sofa)|in (the |my )?bed|watching|early))|\b(fainting|passing out|blacking out)\b/i,
+  // Very low blood sugar, reported.
+  /\b(i'?m|i am|i'?ve|i have|i get|i keep getting|my) (\w+ )?(low blood sugar|(blood )?sugars? (is |are |was |were |keeps? )?(really |very |so |too |dangerously )?(low|dropping|crashing|tanking)|hypoglycemi[ac]|a hypo)\b/i,
+  /\b((shaky|shaking|trembling|sweaty|sweating)\b.{0,20}\b(confused|disoriented)|(confused|disoriented)\b.{0,20}\b(shaky|shaking|trembling|sweaty|sweating))\b(?! (about|by|with|on|why|how|what|if|whether)\b)/i,
+  // A lump or swelling in the neck.
+  /\b(lump|bump|nodule|swelling)\b.{0,25}\bneck\b|\bneck (is |looks |feels |seems )?(swollen|lumpy)\b|\bswollen neck\b/i,
+];
+
+/**
+ * Words just before a match that make it something other than a report:
+ * "no vomiting", "I have not fainted", "I don't take Ozempic"; for symptoms
+ * also a question about the risk ("can Wegovy cause pancreatitis", "worried
+ * about low blood sugar", "watch for").
+ */
+const NEGATION = "no|not|never|without|don'?t|doesn'?t|didn'?t|haven'?t|hasn'?t|isn'?t|aren'?t|wasn'?t";
+const closelyAfter = (cues: string) =>
+  new RegExp(`\\b(${cues})( (?!and |but )[^\\s,]+){0,2} $`, 'i');
+const NEGATED = closelyAfter(NEGATION);
+const NOT_A_REPORT = closelyAfter(
+  `${NEGATION}|cause|causes|risks? of|chance of|worr(y|ied|ying) about|watch (out )?for|afraid of|scared of|if|avoid|prevent`,
+);
+/**
+ * B-913-3: a question or a past event is not a report. "What are the symptoms
+ * of pancreatitis", "is gallbladder pain a side effect?", "what should I do if
+ * I can't keep water down?", "I had gallstones years ago" go to the model; a
+ * first-person report in a question still fires ("is it normal that I can't
+ * keep water down?", "I can't keep water down, what should I do?"). R2: the
+ * question can start mid-clause ("I'm on Wegovy and want to know what the
+ * symptoms of pancreatitis are"); only I/my after the last opener is a report.
+ * R3: a clause also starts after but/because/cause ("not sure what's going on
+ * but severe stomach pain"), and "this/these" points at a symptom being had.
+ * R4: but not "this warning", "these leaflets", "this side effect list" (label reading). R5: "this side effect" and "these warning signs" still point at a symptom.
+ */
+const QUESTION_OPENER =
+  /^\s*(is|are|can|could|does|do|should|would|will|when|any)\b|\b(what'?s?|how|why|which|wonder(ing)?|want to know|curious)\b/gi;
+const OWN_REPORT =
+  /\b(i|i'?m|i'?ve|my|me|(this|these)(?! (\w+ )?(warning(?!s? signs?\b)|label|leaflet|side effects? (list|sheet|leaflet|info|warning|label|guide|insert)|list|info|insert|guide|sheet)))\b/i;
+const CLAUSE_JOIN = /\b(but|because|cause) /gi;
+const IN_THE_PAST = /^.{0,25}\b(years? (ago|back)|as a (kid|child|teen))\b/i;
+const negated = (sentence: string, m: RegExpExecArray) => NEGATED.test(sentence.slice(0, m.index));
+function notAReport(sentence: string, m: RegExpExecArray): boolean {
+  const joins = [...sentence.slice(0, m.index).matchAll(CLAUSE_JOIN)].map(
+    (j) => (j.index ?? 0) + j[0].length,
+  );
+  const clause = Math.max(sentence.lastIndexOf(',', m.index) + 1, ...joins); // "I'm on Ozempic, is ..."
+  const opener = [...sentence.slice(clause, m.index).matchAll(QUESTION_OPENER)].pop();
+  const after = opener && clause + (opener.index ?? 0) + opener[0].length;
+  const own = OWN_REPORT.exec(sentence.slice(after))?.index; // R4: sees "this ... warning"
+  return (
+    NOT_A_REPORT.test(sentence.slice(0, m.index)) ||
+    IN_THE_PAST.test(sentence.slice(m.index + m[0].length)) ||
+    (after !== undefined && !(own !== undefined && after + own < m.index + m[0].length))
+  );
+}
+
+/** The first pattern stated in any sentence of the text and not undercut by `skip`. */
+function stated(
+  patterns: readonly RegExp[],
+  text: string,
+  skip: (sentence: string, m: RegExpExecArray) => boolean,
+): RegExp | undefined {
+  for (const sentence of text.split(/[.!?;]+/)) {
+    for (const rx of patterns) {
+      const m = rx.exec(sentence);
+      if (m && !skip(sentence, m)) return rx;
+    }
+  }
+  return undefined;
+}
 
 const EATING_DISORDER: RegExp[] = [
   /\bpurg(e|ing|ed)\b/i,
@@ -86,6 +228,7 @@ const INJURY_PAIN: RegExp[] = [
 const ORDER: Array<{ cls: SafetyClass; patterns: readonly RegExp[]; short_circuit: boolean }> = [
   { cls: 'emergency', patterns: EMERGENCY, short_circuit: true },
   { cls: 'self_harm', patterns: SELF_HARM, short_circuit: true },
+  { cls: 'urgent_symptoms', patterns: URGENT_SYMPTOMS, short_circuit: true },
   { cls: 'eating_disorder_risk', patterns: EATING_DISORDER, short_circuit: false },
   { cls: 'medical_scope', patterns: MEDICAL_SCOPE, short_circuit: false },
   { cls: 'injury_pain', patterns: INJURY_PAIN, short_circuit: false },
@@ -140,10 +283,21 @@ export function asksForSubFloorIntake(text: string): boolean {
   return false;
 }
 
-/** Classify one user message. Deterministic; first class in priority order wins. */
-export function classifySafety(message: string): SafetyRouteResult {
+/**
+ * Classify one user message. Deterministic; first class in priority order wins.
+ * urgent_symptoms needs a weight-loss medicine taken (this message or the
+ * client's earlier turns, `earlierUserText`) and a red flag in this message.
+ */
+export function classifySafety(message: string, earlierUserText = ''): SafetyRouteResult {
   const text = normalizeForSafety(message);
   for (const { cls, patterns, short_circuit } of ORDER) {
+    if (cls === 'urgent_symptoms') {
+      const taken = `${text}. ${normalizeForSafety(earlierUserText)}`;
+      const rx =
+        stated([WEIGHT_LOSS_MEDICINE], taken, negated) && stated(patterns, text, notAReport);
+      if (rx) return { class: cls, matched: rx.source, short_circuit };
+      continue;
+    }
     for (const rx of patterns) {
       if (rx.test(text)) return { class: cls, matched: rx.source, short_circuit };
     }
@@ -159,12 +313,13 @@ export function classifySafety(message: string): SafetyRouteResult {
 /**
  * Owner ruling 2026-09-30 16:38: the safety copy is "butlered up" (warm,
  * composed, Alfred-like) and gives something genuinely useful beyond "talk
- * to your doctor". The 911 / 988 routing stays. These two templates are
+ * to your doctor". The 911 / 988 routing stays. These templates are
  * DETERMINISTIC: no model call is ever made for them, so what follows is the
  * exact text the client sees. No contractions, no exclamation marks, no
  * emoji, no promise of an action Roman does not perform.
  */
-export const ROMAN_SAFETY_TEMPLATES: Record<'emergency' | 'self_harm', string> = {
+type FixedReplyClass = 'emergency' | 'self_harm' | 'urgent_symptoms';
+export const ROMAN_SAFETY_TEMPLATES: Record<FixedReplyClass, string> = {
   emergency:
     'Please stop what you are doing and call 911 now, or your local emergency number. ' +
     'If you are able, stay where you are, unlock the door, and keep your phone within reach so help can find you quickly. ' +
@@ -177,7 +332,18 @@ export const ROMAN_SAFETY_TEMPLATES: Record<'emergency' | 'self_harm', string> =
     'If you are in immediate danger, call 911. ' +
     'If you can, let someone you trust know where you are so they can sit with you. ' +
     'You matter, and talking to a person right now is the right next step.',
+  // Owner C6a (Option 1) wording, word for word.
+  urgent_symptoms:
+    'This needs medical attention. Contact your doctor or prescriber today. If symptoms are severe, call 911.',
 };
+
+/**
+ * Owner 22a, 57 and #CRISIS-WORDING: added to Roman's reply when that reply
+ * alerted the client's current coach (urgent_symptoms, emergency or self_harm
+ * while FEATURE_ROMAN_CRISIS_ALERT is on, or eating_disorder_risk with the
+ * guided reply or the fixed fallback). Word for word.
+ */
+export const ROMAN_COACH_TOLD_LINE = "We've let your coach know so they can check in with you.";
 
 /** Model id recorded on a short-circuited turn. */
 /**
@@ -188,13 +354,49 @@ export const ROMAN_SAFETY_TEMPLATES: Record<'emergency' | 'self_harm', string> =
  * OR-115-2: these templates answer without the box-2 AI consent grant and
  * without any provider call.
  */
-export const ROMAN_SAFETY_ROUTE_REASON: Record<'emergency' | 'self_harm', 'call_911' | 'call_988'> =
-  {
-    emergency: 'call_911',
-    self_harm: 'call_988',
-  };
+export const ROMAN_SAFETY_ROUTE_REASON: Record<
+  FixedReplyClass,
+  'call_911' | 'call_988' | 'contact_prescriber'
+> = {
+  emergency: 'call_911',
+  self_harm: 'call_988',
+  urgent_symptoms: 'contact_prescriber',
+};
 
 export const ROMAN_SAFETY_ROUTER_MODEL_ID = 'safety-router';
+
+/** CRISIS-2B: the actions the app offers under a fixed crisis reply; the app keeps this order. */
+export type RomanSafetyAction = 'call_911' | 'call_988' | 'text_988' | 'message_coach';
+
+/**
+ * Owner "thw call 911 988 buttons - Nevermind, do them!" (operator ruling
+ * 6243611810): each fixed reply's actions lead with the number it names first.
+ */
+const ROMAN_SAFETY_ACTIONS = {
+  emergency: ['call_911', 'call_988', 'text_988'],
+  self_harm: ['call_988', 'text_988', 'call_911'],
+} as const satisfies Record<'emergency' | 'self_harm', readonly RomanSafetyAction[]>;
+
+/**
+ * Owner "#CRISIS-2B - all 3 buttons": the actions under Roman's fixed
+ * emergency or self-harm reply. The stored reply is the marker (a Roman turn
+ * that starts with one of those two templates, with or without the told
+ * line), so the live answer and every later read of it agree. Call 911, call
+ * and text 988 for everyone; message_coach last, only while the caller is a
+ * client with a coach now. Null for every other turn, the urgent-symptoms
+ * reply and the eating-disorder replies included.
+ */
+export function romanSafetyActions(
+  turn: { role: string; content: string },
+  hasCoach: boolean,
+): RomanSafetyAction[] | null {
+  const cls = (['emergency', 'self_harm'] as const).find(
+    (c) => turn.role === 'roman' && turn.content.startsWith(ROMAN_SAFETY_TEMPLATES[c]),
+  );
+  if (!cls) return null;
+  const actions: RomanSafetyAction[] = [...ROMAN_SAFETY_ACTIONS[cls]];
+  return hasCoach ? [...actions, 'message_coach'] : actions;
+}
 
 /**
  * CF-ROMAN-COPY-B-128 (owner default 10-07): the fixed reply to an
@@ -206,11 +408,12 @@ export const ROMAN_SAFETY_ROUTER_MODEL_ID = 'safety-router';
  * in distress). Worded for a broad router match ("binge" also fires on TV).
  * When the AI can answer, the model replies under the hint below instead.
  */
-export function romanEatingDisorderFallback(hasCoach: boolean): string {
+export function romanEatingDisorderFallback(hasCoach: boolean, coachTold = false): string {
   return [
     'I am not able to answer in chat at the moment.',
     'If eating or food is weighing on you, you do not have to carry it alone.',
     ...(hasCoach ? ['Your coach would want to hear from you, and Messages reaches them.'] : []),
+    ...(hasCoach && coachTold ? [ROMAN_COACH_TOLD_LINE] : []),
     'A physician, or a qualified professional who works with eating concerns, is the right person to talk to, and it helps to tell someone you trust how you are doing.',
     'If you are in distress, call or text 988 in the United States, any hour, and a trained person will answer.',
     'If you are in immediate danger, call 911.',
@@ -235,7 +438,7 @@ export const ROMAN_PHYSICIAN_LINE_INJURY =
   'If it persists, gets worse, or is severe, please see a physician.';
 
 export const ROMAN_ROUTER_HINTS: Record<
-  Exclude<SafetyClass, 'emergency' | 'self_harm' | 'normal'>,
+  Exclude<SafetyClass, FixedReplyClass | 'normal'>,
   string
 > = {
   eating_disorder_risk:

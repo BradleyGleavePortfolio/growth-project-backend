@@ -3,7 +3,9 @@
  *
  * Tests that TimelineService correctly composes events from synthetic
  * fixture data, orders them reverse-chronologically, respects lane
- * filters, paginates correctly, and never exposes PTM risk_score.
+ * filters, paginates correctly, never exposes PTM risk_score, and never reads
+ * a coach message (#TIMELINE-COACH op 1; live proof in
+ * test/rls/timeline-no-coach-messages-rls.spec.ts).
  */
 import { Test, TestingModule } from '@nestjs/testing';
 import { TimelineService } from '../src/timeline/timeline.service';
@@ -13,13 +15,14 @@ import { PrismaService } from '../src/prisma.service';
 
 const UID = 'user_test_001';
 
+// Newest first, as the service's orderBy returns them.
 const WEIGHT_LOGS = [
   {
-    id: 'wl_1',
+    id: 'wl_3',
     user_id: UID,
-    date: new Date('2025-10-01T08:00:00Z'),
-    weight_lbs: 185.0,
-    notes: 'Morning weigh-in',
+    date: new Date('2025-10-03T08:00:00Z'),
+    weight_lbs: 184.0,
+    notes: null,
   },
   {
     id: 'wl_2',
@@ -29,11 +32,11 @@ const WEIGHT_LOGS = [
     notes: null,
   },
   {
-    id: 'wl_3',
+    id: 'wl_1',
     user_id: UID,
-    date: new Date('2025-10-03T08:00:00Z'),
-    weight_lbs: 184.0,
-    notes: null,
+    date: new Date('2025-10-01T08:00:00Z'),
+    weight_lbs: 185.0,
+    notes: 'Morning weigh-in',
   },
 ];
 
@@ -77,6 +80,7 @@ const BUILD_WEEK_COMPLETIONS = [
   },
 ];
 
+// A tripwire: the service must never read these.
 const COACH_MESSAGES = [
   {
     id: 'msg_1',
@@ -117,6 +121,9 @@ function makePrismaMock() {
   return {
     weightLog: {
       findMany: jest.fn().mockResolvedValue(WEIGHT_LOGS),
+    },
+    userProfile: {
+      findUnique: jest.fn().mockResolvedValue({ weight_unit: 'lbs' }),
     },
     clientSignal: {
       findMany: jest.fn().mockImplementation(({ where }) => {
@@ -160,7 +167,7 @@ describe('TimelineService', () => {
   it('returns events in reverse-chronological order', async () => {
     const result = await service.getTimeline(UID, {
       sinceDays: 180,
-      lanes: ['body', 'win', 'coach', 'friction'],
+      lanes: ['body', 'win', 'friction'],
       limit: 50,
     });
 
@@ -194,16 +201,6 @@ describe('TimelineService', () => {
     expect(result.events.every((e) => e.lane === 'win')).toBe(true);
     expect(prismaMock.weightLog.findMany).not.toHaveBeenCalled();
     expect(prismaMock.coachMessage.findMany).not.toHaveBeenCalled();
-  });
-
-  it('returns only coach events when lanes=coach', async () => {
-    const result = await service.getTimeline(UID, {
-      sinceDays: 180,
-      lanes: ['coach'],
-      limit: 50,
-    });
-
-    expect(result.events.every((e) => e.lane === 'coach')).toBe(true);
   });
 
   it('returns only friction events when lanes=friction', async () => {
@@ -247,18 +244,19 @@ describe('TimelineService', () => {
     expect((bwEvent as any).metadata.dayCompleted).toBe(7);
   });
 
-  // ── Coach lane: voice vs text ──────────────────────────────────────────────
+  // ── No coach lane ──────────────────────────────────────────────────────────
 
-  it('distinguishes voice notes from text notes in coach lane', async () => {
+  it('never reads a coach message, whatever lanes are asked for', async () => {
     const result = await service.getTimeline(UID, {
       sinceDays: 180,
-      lanes: ['coach'],
+      lanes: ['body', 'win', 'friction'],
       limit: 50,
     });
 
-    const eventTypes = new Set(result.events.map((e) => (e as any).eventType));
-    expect(eventTypes.has('coach_text_note')).toBe(true);
-    expect(eventTypes.has('coach_voice_note')).toBe(true);
+    expect(prismaMock.coachMessage.findMany).not.toHaveBeenCalled();
+    expect(new Set(result.events.map((e) => e.lane))).toEqual(new Set(['body', 'win', 'friction']));
+    const words = result.events.map((e) => `${e.title} ${e.body ?? ''}`).join(' ');
+    expect(words).not.toMatch(/Coach Alex|momentum|note/i);
   });
 
   // ── Privacy: no PTM risk_score ─────────────────────────────────────────────
@@ -266,7 +264,7 @@ describe('TimelineService', () => {
   it('never exposes ptm risk_score anywhere in any event', async () => {
     const result = await service.getTimeline(UID, {
       sinceDays: 180,
-      lanes: ['body', 'win', 'coach', 'friction'],
+      lanes: ['body', 'win', 'friction'],
       limit: 50,
     });
 
@@ -281,7 +279,7 @@ describe('TimelineService', () => {
   it('returns nextCursor when more events exist beyond the limit', async () => {
     const result = await service.getTimeline(UID, {
       sinceDays: 180,
-      lanes: ['body', 'win', 'coach', 'friction'],
+      lanes: ['body', 'win', 'friction'],
       limit: 2,
     });
 
@@ -296,7 +294,7 @@ describe('TimelineService', () => {
   it('returns null nextCursor when all events fit in one page', async () => {
     const result = await service.getTimeline(UID, {
       sinceDays: 180,
-      lanes: ['body', 'win', 'coach', 'friction'],
+      lanes: ['body', 'win', 'friction'],
       limit: 50,
     });
 
@@ -319,25 +317,41 @@ describe('TimelineService', () => {
     });
   });
 
-  // ── Body lane: delta calculation ───────────────────────────────────────────
+  // ── Body lane: unit and trend ──────────────────────────────────────────────
 
-  it('calculates weight delta from previous entry', async () => {
-    const result = await service.getTimeline(UID, {
-      sinceDays: 180,
-      lanes: ['body'],
-      limit: 50,
-    });
+  const bodyRows = async () =>
+    (await service.getTimeline(UID, { sinceDays: 180, lanes: ['body'], limit: 50 })).events.map(
+      ({ title, body, metadata }) => ({ title, body, metadata }),
+    );
 
-    const weightEvents = result.events.filter(
-      (e) => (e as any).eventType === 'weight_logged',
-    );
-    // The second weight entry should show a -0.5 delta vs the first.
-    const secondEntry = weightEvents.find(
-      (e) => (e as any).metadata.weightLbs === 184.5,
-    );
-    if (secondEntry) {
-      expect((secondEntry as any).metadata.deltaLbs).toBeCloseTo(-0.5, 1);
-    }
+  it('shows each weigh-in with the C8 trend from the second day, notes kept', async () => {
+    expect(await bodyRows()).toEqual([
+      { title: 'Weighed in at 184.0 lb', body: 'Trend 184.9 lb', metadata: { weightLbs: 184.0, trendLbs: expect.closeTo(184.855, 6) } },
+      { title: 'Weighed in at 184.5 lb', body: 'Trend 185.0 lb', metadata: { weightLbs: 184.5, trendLbs: expect.closeTo(184.95, 6) } },
+      { title: 'Weighed in at 185.0 lb', body: 'Morning weigh-in', metadata: { weightLbs: 185.0, trendLbs: null } },
+    ]);
+  });
+
+  it("shows weigh-ins in the client's unit", async () => {
+    prismaMock.userProfile.findUnique.mockResolvedValue({ weight_unit: 'kg' });
+    const [newest] = await bodyRows();
+    expect([newest.title, newest.body]).toEqual(['Weighed in at 83.5 kg', 'Trend 83.8 kg']);
+    expect(prismaMock.userProfile.findUnique).toHaveBeenCalledWith({ where: { user_id: UID }, select: { weight_unit: true } });
+  });
+
+  // ── Wording ────────────────────────────────────────────────────────────────
+
+  it('words streaks, Build Week and missed check-ins plainly, with no count on a miss', async () => {
+    const result = await service.getTimeline(UID, { sinceDays: 180, lanes: ['win', 'friction'], limit: 50 });
+    const words = result.events
+      .filter((e) => e.eventType !== 'finance_milestone')
+      .map(({ title, body }) => [title, body]);
+    expect(words).toEqual([
+      ['30 days of check-ins in a row', undefined],
+      ['No check-in', undefined],
+      ['Build Week complete, day 7 of 7', undefined],
+      ['7 days of check-ins in a row', undefined],
+    ]);
   });
 
   // ── Friction lane: consecutive miss count ──────────────────────────────────

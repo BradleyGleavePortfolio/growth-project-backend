@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
 import { DUNNING_V2_CADENCE_DAYS } from '../checkout/dunning-v2/dunning-v2.cadence';
+import { movedAwayClientIds } from '../checkout/moved-client-money';
 
 // S-COACH (agent 111) — TGP Money read model for the coach Money page.
 //
@@ -388,6 +389,8 @@ export interface TimedSliceRow extends SliceRow {
   created_at: Date;
   client_name: string | null;
   package_name: string | null;
+  /** The sale's client, to find a client who moved away (CONTRACT-1); never exported. */
+  client_id?: string | null;
 }
 
 /** A slice with reversed_cents > 0 and the events that reversed it. */
@@ -519,6 +522,8 @@ export interface MoneyOccurrence {
   amount_cents: number;
   client_name: string | null;
   package_name: string | null;
+  /** The sale's client, to find a client who moved away (CONTRACT-1); never exported. */
+  client_id?: string | null;
 }
 
 export interface WindowSlices {
@@ -802,6 +807,19 @@ export function chargeCadence(
 function displayName(u: { name?: string | null } | null | undefined): string {
   const n = (u?.name ?? '').trim();
   return n.length > 0 ? n : 'Client';
+}
+
+// CONTRACT-1: a charge to a client who moved away keeps the name, date and amount, never a link,
+// the package or its cadence; billing_type stays (owner exception "#MONEY-BT - option 1").
+function unlinkMoved(charge: MoneyChargeDto, moved: ReadonlySet<string>): MoneyChargeDto {
+  if (!moved.has(charge.client.id)) return charge;
+  return {
+    ...charge,
+    client: { ...charge.client, id: '' },
+    package: { id: '', name: '' },
+    billing_interval: null,
+    billing_interval_count: null,
+  };
 }
 
 // ── tax CSV (C-641-4) ─────────────────────────────────────────────────
@@ -1111,7 +1129,7 @@ export class CoachMoneyService {
       },
       purchase: {
         select: {
-          client: { select: { name: true } },
+          client: { select: { id: true, name: true } },
           package: { select: { name: true } },
           refunds: {
             where: { status: 'succeeded' },
@@ -1153,7 +1171,7 @@ export class CoachMoneyService {
       created_at: Date;
       reversal_postings?: ReversalPosting[];
       purchase: {
-        client: { name: string | null } | null;
+        client: { id?: string; name: string | null } | null;
         package: { name: string } | null;
         refunds: Array<{
           id?: string;
@@ -1206,6 +1224,7 @@ export class CoachMoneyService {
       // the sub-coach's buyer, so the name is not carried.
       client_name: withClient ? displayName(r.purchase?.client) : null,
       package_name: r.purchase?.package?.name ?? null,
+      client_id: r.purchase?.client?.id ?? null,
       events,
       postings: r.reversal_postings ?? [],
     };
@@ -1302,7 +1321,7 @@ export class CoachMoneyService {
       purchase: {
         select: {
           currency: true,
-          client: { select: { name: true } },
+          client: { select: { id: true, name: true } },
           package: { select: { name: true } },
         },
       },
@@ -1346,6 +1365,7 @@ export class CoachMoneyService {
       amount_cents: x.amount_cents,
       client_name: displayName(x.purchase.client),
       package_name: x.purchase.package?.name ?? null,
+      client_id: x.purchase.client?.id ?? null,
     });
     return [
       ...refunds.map((x) => occurrence('refund', x, x.posted_at ?? x.created_at)),
@@ -1377,7 +1397,13 @@ export class CoachMoneyService {
       this.loadWindow(coachId, window, scope),
       this.loadOccurrences(coachId, window, scope),
     ]);
-    return buildMoneyCsv(coachId, window, { ...slices, occurrences });
+    // CONTRACT-1: every row about a client who moved away (the coach's own sale, refund or
+    // chargeback, or a head-coach share of a sub-coach's sale) keeps its amounts, not the package.
+    const all = { ...slices, occurrences };
+    const rows = Object.values(all).flat();
+    const moved = await movedAwayClientIds(this.prisma, coachId, rows.map((r) => r.client_id));
+    for (const r of rows) if (r.client_id && moved.has(r.client_id)) r.package_name = null;
+    return buildMoneyCsv(coachId, window, all);
   }
 
   /**
@@ -1539,8 +1565,9 @@ export class CoachMoneyService {
     });
     const hasMore = rows.length > limit;
     const page = hasMore ? rows.slice(0, limit) : rows;
+    const moved = await movedAwayClientIds(this.prisma, coachId, page.map((r) => r.client?.id));
     return {
-      charges: page.map((r) => this.toCharge(r)),
+      charges: page.map((r) => unlinkMoved(this.toCharge(r), moved)),
       next_cursor: hasMore ? page[page.length - 1].id : null,
     };
   }
@@ -1570,8 +1597,9 @@ export class CoachMoneyService {
     });
     const t = foldTotals(coachId, slices, []);
     const settled = slices.some((s) => s.kind === 'destination');
+    const moved = await movedAwayClientIds(this.prisma, coachId, [row.client?.id]);
     return {
-      charge: this.toCharge(row),
+      charge: unlinkMoved(this.toCharge(row), moved),
       breakdown: {
         price_cents: settled ? t.gross_cents : row.amount_cents,
         processing_cents: t.processing_cents,
@@ -1749,9 +1777,16 @@ export class CoachMoneyService {
       }),
     ]);
 
+    // CONTRACT-1: a client who moved away leaves the to-do list (each item's
+    // action is to message them); the charge stays in Charges with its state.
+    const moved = await movedAwayClientIds(this.prisma, coachId, [
+      ...failed.map((p) => p.client?.id),
+      ...disputes.map((d) => d.purchase?.client?.id),
+    ]);
     const maxAttempts = DUNNING_V2_CADENCE_DAYS.length;
     const items: MoneyAttentionItem[] = [];
     for (const p of failed) {
+      if (p.client && moved.has(p.client.id)) continue;
       const d = p.dunning;
       const attempt = Math.min(
         maxAttempts,
@@ -1780,6 +1815,7 @@ export class CoachMoneyService {
     }
     for (const dsp of disputes) {
       const c = dsp.purchase?.client;
+      if (c && moved.has(c.id)) continue;
       items.push({
         kind: 'dispute',
         id: `dispute:${dsp.id}`,

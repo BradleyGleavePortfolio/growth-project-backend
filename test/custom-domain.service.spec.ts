@@ -11,7 +11,7 @@
  *
  * We also cover:
  *   - DNS verify integrates with DnsVerifier (timeout reason propagates)
- *   - free-tier coaches receive 402 PAYMENT_REQUIRED
+ *   - no coach plan lock: free-tier and row-less coaches claim like anyone
  *   - input normalisation strips scheme/path/port + lowercases
  *   - release() is idempotent
  */
@@ -19,8 +19,6 @@
 import {
   BadRequestException,
   ConflictException,
-  HttpException,
-  HttpStatus,
   NotFoundException,
 } from '@nestjs/common';
 import { CustomDomainService } from '../src/landing-pages/custom-domain.service';
@@ -217,28 +215,23 @@ describe('CustomDomainService', () => {
       );
     });
 
-    it('returns 402 PAYMENT_REQUIRED for free-tier coaches', async () => {
+    // Owner TM-P1: zero locks. No plan check on a custom-domain claim.
+    it('lets a free-tier coach claim a custom domain', async () => {
       const freePage = makePage({ id: 'page-free', coach_id: 'coach-free' });
       const prisma = makePrisma([freePage], [FREE]);
       const svc = new CustomDomainService(prisma, makeDnsStub({ status: 'ok' }));
 
-      await expect(
-        svc.claim('coach-free', 'page-free', 'coaching.example.com'),
-      ).rejects.toMatchObject({
-        status: HttpStatus.PAYMENT_REQUIRED,
-      });
+      const out = await svc.claim('coach-free', 'page-free', 'coaching.example.com');
+      expect(out.custom_domain).toBe('coaching.example.com');
     });
 
-    it('treats coaches with no CoachSubscription row as free (402)', async () => {
+    it('lets a coach with no CoachSubscription row claim a custom domain', async () => {
       const orphanPage = makePage({ id: 'page-orphan', coach_id: 'coach-orphan' });
       const prisma = makePrisma([orphanPage], []); // no subscription row
       const svc = new CustomDomainService(prisma, makeDnsStub({ status: 'ok' }));
 
-      const thrown = await svc
-        .claim('coach-orphan', 'page-orphan', 'a.example.com')
-        .catch((e) => e);
-      expect(thrown).toBeInstanceOf(HttpException);
-      expect((thrown as HttpException).getStatus()).toBe(HttpStatus.PAYMENT_REQUIRED);
+      const out = await svc.claim('coach-orphan', 'page-orphan', 'a.example.com');
+      expect(out.custom_domain).toBe('a.example.com');
     });
 
     it('throws NotFoundException when the page does not belong to the coach', async () => {

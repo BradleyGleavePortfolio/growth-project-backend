@@ -85,7 +85,7 @@ itLive('A4 broadcasts on a live database', () => {
       p,
       scopes,
       segments,
-      stub<SupabaseService>({ broadcastNewMessage: async () => undefined }),
+      stub<SupabaseService>({ pingChat: async () => undefined }),
       stub<MessageReceivedEmitter>({ emit: async (uid: string) => void emits.push(uid) }),
     );
     return { service, dispatcher };

@@ -7,8 +7,8 @@
  *
  * It also builds RomanService through Nest DI (as RomanModule does) and proves
  * a grounded turn gets the bundle, and that a coachless client's own-tenant
- * plan and targets (the CONSULT-ALL-BE-133 house clone tenant) reach Roman
- * while a coached client never reads their own-tenant rows.
+ * plan and targets (the CONSULT-ALL-BE-133 house clone tenant) reach Roman,
+ * and still do once the client has a coach (HIST3, owner 139-13).
  *
  * Gated on MWB3_TEST_DATABASE_URL (the mwb-3-live-tests CI job); skipped
  * with a logged reason elsewhere.
@@ -50,7 +50,7 @@ liveDescribe('B31 live: Roman context for a coachless client with NULL profile l
     await prisma.$connect();
     await resetPublicSchema(prisma);
     await bootstrapTestSchema(prisma);
-    ctx = new RomanClientContextService(prisma, new RomanConsultationIntakeSource(prisma));
+    ctx = new RomanClientContextService(prisma, new RomanConsultationIntakeSource(prisma), grantAllEgress());
     await prisma.user.create({
       data: {
         id: CLIENT,
@@ -208,7 +208,7 @@ liveDescribe('B31 live: Roman context for a coachless client with NULL profile l
     expect(c.data_quality.missing).not.toContain('plan');
   });
 
-  it('a coached client never reads their own-tenant rows (coach side only)', async () => {
+  it('HIST3: a coached client keeps their own-tenant plan and targets (history follows the client)', async () => {
     await prisma.user.create({
       data: {
         id: COACH,
@@ -231,8 +231,7 @@ liveDescribe('B31 live: Roman context for a coachless client with NULL profile l
     await selfPlan(COACHED, 'Self Day');
     const c = (await ctx.buildFresh({ id: COACHED, role: 'student' }, NOW)).context;
     expect(c.coach.has_coach).toBe(true);
-    expect(c.plan).toBeNull();
-    expect(c.targets.source).toBe('none');
-    expect(JSON.stringify(c)).not.toContain('Self Day');
+    expect(c.plan?.today_session?.name).toBe('Self Day');
+    expect(c.targets).toMatchObject({ source: 'onboarding_calculated', calories: 2400 });
   });
 });

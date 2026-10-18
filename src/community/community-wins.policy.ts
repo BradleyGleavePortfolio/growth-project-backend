@@ -55,7 +55,8 @@ export async function winModerationWorkspaceId(
 /**
  * Users among `userIds` who were removed (banned) from the workspace: an
  * active durable ban (community_workspace_bans, B-610-2), or at least one
- * `removed` membership row there and no active one.
+ * `removed` membership row there and no active one. Rows of an archived space
+ * do not count: archiving a space removes its rows, not its people (C6-BVIS).
  */
 export async function removedFromWorkspace(
   prisma: PrismaService,
@@ -64,7 +65,7 @@ export async function removedFromWorkspace(
 ): Promise<Set<string>> {
   if (userIds.length === 0) return new Set();
   const rows = await prisma.communityMembership.findMany({
-    where: { workspace_id: workspaceId, user_id: { in: userIds } },
+    where: { workspace_id: workspaceId, user_id: { in: userIds }, cohort: { archived_at: null } },
     select: { user_id: true, status: true },
   });
   const removedRow = new Set<string>();

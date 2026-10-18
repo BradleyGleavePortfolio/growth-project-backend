@@ -45,6 +45,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import type { AuthedRequest } from '../../auth/auth-request';
 import {
   CommandCenterService,
+  type ActionQueueItem,
   type ActionQueueResponse,
   type AtRiskResponse,
   type CommandCenterOverview,
@@ -200,6 +201,25 @@ export class CommandCenterController {
       limit: parseInt0(limit),
       before,
     });
+  }
+
+  // Owner 57d: one Roman safety alert, opened from its push or inbox row.
+  // Only the client's coach of record reads it (CommandCenterService
+  // getSafetyAlert); anything else is a uniform 404, and the app falls back
+  // to the action queue.
+  @Roles('coach', 'owner')
+  @Get('action-queue/:alertId')
+  @ApiOperation({
+    summary: 'One Roman safety alert, as its action queue row.',
+    description:
+      'For the current coach of the client only. Foreign, former-coach, other ' +
+      'alert types and deleted messages resolve as NotFoundException.',
+  })
+  async getSafetyAlert(
+    @Request() req: AuthedRequest,
+    @Param('alertId', new ParseUUIDPipe()) alertId: string,
+  ): Promise<ActionQueueItem> {
+    return this.commandCenter.getSafetyAlert(alertId, req.user.id);
   }
 
   // Coach mutates one of their own alerts (acknowledge / dismiss).

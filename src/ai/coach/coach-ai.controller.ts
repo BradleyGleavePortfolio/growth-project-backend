@@ -13,8 +13,6 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
-import { RequiresTier } from '../../billing/requires-tier.decorator';
-import { SubscriptionGuard } from '../../billing/subscription.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { THROTTLER_NAMES } from '../../throttler/throttler.config';
 import { CoachAIService } from './coach-ai.service';
@@ -34,20 +32,22 @@ function withoutSnapshot<T extends { inputContext?: unknown }>(draft: T): Omit<T
   return rest;
 }
 
+// ROMAN-HOURLY (owner 2026-10-13, Option 1): each generation route allows 60 calls an hour per
+// coach, a safety ceiling no real coach reaches. The AI credit pool (CoachAIService.assertBudget)
+// is the real limit.
+const GENERATION_THROTTLE = {
+  [THROTTLER_NAMES.COACH_AI_GENERATION]: { ttl: 3_600_000, limit: 60 },
+};
+
 // Coach AI v1 — coach-only generation surface. Mounted at /coach/ai/*.
-// Every route is gated by JwtAuthGuard + CoachGuard. Throttles are tight
-// because each generation call costs real money on Anthropic; the boot
+// Every route is gated by JwtAuthGuard + CoachGuard. Each generation call
+// costs real money on Anthropic and is metered on the credit pool; the boot
 // gate (CoachAIStateService) returns 503 ai_disabled when the engine is
 // off so a missing/invalid ANTHROPIC_API_KEY does not silently consume
 // the rate-limit budget.
-//
-// Hybrid pricing (spec §5): Coach AI is a Pro feature. @RequiresTier('pro')
-// is applied at the class level so every handler inherits it. Free coaches
-// receive 403 TIER_UPGRADE_REQUIRED in enforce mode.
 @ApiTags('coach-ai')
 @Controller('coach/ai')
-@RequiresTier('pro')
-@UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachAIController {
   constructor(
     private readonly svc: CoachAIService,
@@ -73,7 +73,7 @@ export class CoachAIController {
   // prevents cross-tenant generation; students never invoke generation.
   @Roles('coach', 'owner')
   @Post('workout-program')
-  @Throttle({ [THROTTLER_NAMES.COACH_AI_GENERATION]: { ttl: 3_600_000, limit: 5 } })
+  @Throttle(GENERATION_THROTTLE)
   async generateWorkoutProgram(
     @Request() req: AuthedRequest,
     @Body() body: GenerateWorkoutProgramDto,
@@ -86,7 +86,7 @@ export class CoachAIController {
   // themselves or anyone else through this path.
   @Roles('coach', 'owner')
   @Post('meal-plan')
-  @Throttle({ [THROTTLER_NAMES.COACH_AI_GENERATION]: { ttl: 3_600_000, limit: 5 } })
+  @Throttle(GENERATION_THROTTLE)
   async generateMealPlan(
     @Request() req: AuthedRequest,
     @Body() body: GenerateMealPlanDto,
@@ -99,7 +99,7 @@ export class CoachAIController {
   // client check applies before any Anthropic spend.
   @Roles('coach', 'owner')
   @Post('client-insight')
-  @Throttle({ [THROTTLER_NAMES.COACH_AI_GENERATION]: { ttl: 3_600_000, limit: 10 } })
+  @Throttle(GENERATION_THROTTLE)
   async generateClientInsight(
     @Request() req: AuthedRequest,
     @Body() body: GenerateClientInsightDto,

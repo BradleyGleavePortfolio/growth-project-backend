@@ -32,6 +32,9 @@ Every top-level key in the export JSON maps to one Prisma model. The table below
 | `NotificationPreferences` | All | — |
 | `WeightLog` | All | — |
 | `LoggedFoodEntry` | All | — |
+| `FoodFavorite` | All | The user's own favourite foods. |
+| `SavedMeal` | All | The user's own saved meals. |
+| `SavedMealItem` | All | The foods in those meals, in their order. |
 | `WorkoutSession` | All | — |
 | `FastingWindow` | All | — |
 | `WaterLog` | All | — |
@@ -42,7 +45,7 @@ Every top-level key in the export JSON maps to one Prisma model. The table below
 | `ListItem` | All | — |
 | `CoachMessage` | Partial | Messages sent BY the user: verbatim. Messages sent by other parties but visible to the user: `{ id, sent_at, redacted: true }`. Third-party content is redacted to protect the other party's rights under GDPR. |
 | `CoachNudge` | All | Rows where `coach_id` or `client_id` matches. |
-| `MessageDraft` | All | Rows where `coach_id` or `client_id` matches. |
+| `MessageDraft` | Partial | Coaches only: the coach's unsent drafts to clients they coach now. Coach-side data, never in a client's export. |
 | `MealPlan` | All | Rows where `coach_id` or `client_id` matches. |
 | `CommunityWin` | All | Wins authored by the user only. |
 | `CoachGuideline` | All | Rows where `coach_id` or `client_id` matches. |

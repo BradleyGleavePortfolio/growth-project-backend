@@ -5,14 +5,19 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { CommunityCohort, User } from '@prisma/client';
+import type { User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
-import { CommunityCohortWriteRepository } from './community-cohort-write.repository';
+import {
+  CohortWithPackages,
+  CommunityCohortWriteRepository,
+  SpaceAccessInput,
+} from './community-cohort-write.repository';
 import {
   CommunityCohortAdminResponse,
   CommunityCohortAdminResponseSchema,
   CommunityCohortAdminView,
   CreateCohortDto,
+  SpaceVisibility,
   UpdateCohortDto,
 } from './community-cohort.dto';
 
@@ -31,9 +36,19 @@ const NAME_CONFLICT = {
   code: 'community.cohort.name_taken',
 } as const;
 
+const ARCHIVED = {
+  error: 'conflict',
+  code: 'community.cohort.archived',
+} as const;
+
 const BAD_DATES = {
   error: 'bad_request',
   code: 'community.cohort.invalid_date_range',
+} as const;
+
+const BAD_PACKAGES = {
+  error: 'bad_request',
+  code: 'community.cohort.invalid_packages',
 } as const;
 
 /**
@@ -56,7 +71,7 @@ export class CommunityCohortWriteService {
     private readonly repo: CommunityCohortWriteRepository,
   ) {}
 
-  private view(c: CommunityCohort): CommunityCohortAdminView {
+  private view(c: CohortWithPackages): CommunityCohortAdminView {
     return {
       id: c.id,
       workspace_id: c.workspace_id,
@@ -67,13 +82,17 @@ export class CommunityCohortWriteService {
       starts_at: c.starts_at?.toISOString() ?? null,
       ends_at: c.ends_at?.toISOString() ?? null,
       sort_order: c.sort_order,
+      kind: c.kind,
+      posting_policy: c.posting_policy,
+      visibility: c.visibility,
+      package_ids: c.packages.map((l) => l.package_id),
       created_at: c.created_at.toISOString(),
       updated_at: c.updated_at.toISOString(),
       archived_at: c.archived_at?.toISOString() ?? null,
     };
   }
 
-  private response(c: CommunityCohort): CommunityCohortAdminResponse {
+  private response(c: CohortWithPackages): CommunityCohortAdminResponse {
     return CommunityCohortAdminResponseSchema.parse({ cohort: this.view(c) });
   }
 
@@ -85,6 +104,30 @@ export class CommunityCohortWriteService {
     if (user.role === 'owner') return;
     if (await this.access.isWorkspaceCoach(workspaceId, user.id)) return;
     throw new ForbiddenException(FORBIDDEN);
+  }
+
+  /**
+   * C6-BVIS (#COMMUNITY-ACCESS): the coach picks who a space opens to. A package
+   * space takes one or more of the workspace coach's own packages; any other
+   * takes none. Every miss is the same 400, so another coach's package id is
+   * never confirmed.
+   */
+  private async spaceAccess(
+    workspaceId: string,
+    visibility: SpaceVisibility,
+    ids: string[],
+  ): Promise<SpaceAccessInput> {
+    const packageIds = [...new Set(ids)];
+    const coachId =
+      visibility === 'package' && packageIds.length > 0
+        ? (await this.access.findWorkspace(workspaceId))?.coach_id
+        : undefined;
+    const ok =
+      visibility === 'package'
+        ? !!coachId && (await this.repo.coachPackageCount(coachId, packageIds)) === packageIds.length
+        : packageIds.length === 0;
+    if (!ok) throw new BadRequestException(BAD_PACKAGES);
+    return { visibility, packageIds };
   }
 
   private parseDate(value: string | undefined): Date | null | undefined {
@@ -120,6 +163,10 @@ export class CommunityCohortWriteService {
       throw new ConflictException(NAME_CONFLICT);
     }
 
+    // C6-B1: an announcement space takes the coach's messages only. C6-BVIS:
+    // with no visibility the space keeps the column default, chosen members.
+    const kind = body.kind ?? 'chat';
+    const access = await this.spaceAccess(workspaceId, body.visibility ?? 'members', body.package_ids ?? []);
     const created = await this.repo.create({
       workspaceId,
       name: body.name,
@@ -127,6 +174,9 @@ export class CommunityCohortWriteService {
       capacity: body.capacity ?? null,
       startsAt,
       endsAt,
+      kind,
+      postingPolicy: kind === 'announcement' ? 'coach' : 'all',
+      access,
     });
     return this.response(created);
   }
@@ -142,6 +192,8 @@ export class CommunityCohortWriteService {
     // cohort's workspace, resolved from the persisted row (never the URL or
     // body), so a coach of workspace A cannot mutate a cohort of workspace B.
     await this.assertWorkspaceCoach(cohort.workspace_id, user);
+    // C6-BVIS: a deleted space stays deleted; PATCH cannot reopen or reshape it.
+    if (cohort.archived_at) throw new ConflictException(ARCHIVED);
 
     const startsAt = this.parseDate(body.starts_at);
     const endsAt = this.parseDate(body.ends_at);
@@ -163,6 +215,18 @@ export class CommunityCohortWriteService {
       throw new ConflictException(NAME_CONFLICT);
     }
 
+    // C6-BVIS: a package space keeps its packages unless new ones come.
+    const visibility = body.visibility ?? cohort.visibility;
+    const linked = cohort.packages.map((l) => l.package_id);
+    const access =
+      body.visibility === undefined && body.package_ids === undefined
+        ? undefined
+        : await this.spaceAccess(
+            cohort.workspace_id,
+            visibility,
+            body.package_ids ?? (visibility === 'package' ? linked : []),
+          );
+
     const updated = await this.repo.update(cohortId, {
       name: body.name,
       description:
@@ -171,6 +235,8 @@ export class CommunityCohortWriteService {
       startsAt,
       endsAt,
       status: body.status,
+      postingPolicy: body.posting_policy,
+      access,
     });
     return this.response(updated);
   }

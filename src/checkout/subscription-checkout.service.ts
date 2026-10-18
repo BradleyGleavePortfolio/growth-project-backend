@@ -21,7 +21,7 @@ import {
 } from '../packages/trials/trial-checkout-capability';
 import { PrismaService } from '../prisma.service';
 import { paidJoinAllowed } from '../invite-codes/invite-codes.service';
-import { CheckoutService, isRecurringPackage } from './checkout.service';
+import { CheckoutService, isFreePackage, isRecurringPackage } from './checkout.service';
 import { errorLabel } from './error-label';
 import {
   CreateFailed,
@@ -69,10 +69,12 @@ import {
   isIdempotencyMismatch,
   isResourceMissing,
   intentResult,
+  openAttemptWhere,
   packageTrialDays,
   planPriceFor,
   planView,
   reservedMarker,
+  resumeWindowStart,
   retryMarker,
   shareLinkMatches,
   sheetSecret,
@@ -201,7 +203,7 @@ export class SubscriptionCheckoutService {
     // $0 packages and invite-code grants never create Stripe objects. A
     // recurring package priced $0 is free too (claimable through
     // /v1/packages/:id/claim-free, which keys on amount_cents = 0).
-    if (pkg.amount_cents === 0 && (!isRecurringPackage(pkg) || pkg.billing_type === 'recurring')) {
+    if (isFreePackage(pkg)) {
       throw packageIsFree();
     }
     if (!isRecurringPackage(pkg)) {
@@ -430,8 +432,9 @@ export class SubscriptionCheckoutService {
         // pending_setup_intent = null once it succeeded.
         const setup = await readTrialSetup(this.stripe, row.stripe_client_secret, sub);
         if (trialCardSaved(setup)) {
-          await this.attachTrialCardQuietly(sub.id, setup.payment_method, row.id);
-          return 'card_saved';
+          // MOVEBILL2: a moved client's attempt never starts; the app says it closed.
+          const attached = await this.attachTrialCardQuietly(row, sub.id, setup.payment_method);
+          return attached ? 'card_saved' : 'ended';
         }
         if (setup?.status === 'processing') return 'processing';
         if (setup?.status === 'canceled') return 'ended';
@@ -477,7 +480,9 @@ export class SubscriptionCheckoutService {
     }
     const pkg = await this.prisma.coachPackage.findUnique({ where: { id: row.package_id } });
     if (!row.cancel_at_period_end) return planView(row, pkg);
-    if (row.status === 'canceled' || !row.entitlement_active) {
+    // MOVEBILL: a move ended this renewal (MOVE-BILLING); the plan is never
+    // offered as keepable (planView can_resume), and a direct call is refused.
+    if (row.status === 'canceled' || !row.entitlement_active || row.moved_away_at) {
       throw new ConflictException({
         code: 'PLAN_ALREADY_ENDED',
         error: 'PLAN_ALREADY_ENDED',
@@ -562,15 +567,7 @@ export class SubscriptionCheckoutService {
       // 2. An open attempt for the same package (any key, B-679-1: any age;
       //    an unresolved attempt is never replaced by elapsed time) -> reuse it.
       const open = await tx.clientPurchase.findFirst({
-        where: {
-          client_user_id: args.clientId,
-          package_id: args.pkg.id,
-          billing_type: 'recurring',
-          entitlement_active: false,
-          trial_started_at: null,
-          status: { in: [...OPEN_ATTEMPT_STATUSES] },
-          idempotency_key: { startsWith: `sub-${args.clientId}-` },
-        },
+        where: openAttemptWhere(args.clientId, args.pkg.id),
         orderBy: { created_at: 'desc' },
       });
       if (open) return { kind: 'reuse', purchase: open };
@@ -945,6 +942,19 @@ export class SubscriptionCheckoutService {
     }
     if (claimed || !cur.stripe_subscription_id) return this.mintSubscription(cur, pkg, true);
 
+    // FIX998B — one reuse rule with the quote: a trial attempt past the window is
+    // retired as R1-6 does for a new key (never once a card was saved); the app
+    // then starts afresh with a new key. Unconfirmed: replayed as before.
+    if (cur.trial_days != null && cur.created_at.getTime() <= resumeWindowStart().getTime()) {
+      let end: 'kept' | 'card_saved' | 'retired' = 'kept';
+      try {
+        end = await this.retireOneStaleTrial(cur, cur.stripe_subscription_id);
+      } catch (err) {
+        this.logger.warn(`stale trial attempt kept purchase=${cur.id} error=${errorLabel(err)}`);
+      }
+      if (end === 'card_saved') throw alreadyActive(cur);
+      if (end === 'retired') throw attemptExpired('timed_out');
+    }
     if (cur.stripe_client_secret) {
       // C-654-3 — the secret may be spent: the card was saved or the first
       // invoice paid a moment ago, before the webhook. Never hand it back.
@@ -1081,7 +1091,7 @@ export class SubscriptionCheckoutService {
         throw stripeFailure(err);
       }
       if (trialCardSaved(setup)) {
-        await this.attachTrialCardQuietly(sub.id, setup.payment_method, row.id);
+        await this.attachTrialCardQuietly(row, sub.id, setup.payment_method);
         return true;
       }
       // Sol B-679-10 — no SetupIntent: no sheet was ever stored or handed
@@ -1171,7 +1181,7 @@ export class SubscriptionCheckoutService {
         throw stripeFailure(err);
       }
       if (trialCardSaved(setup)) {
-        await this.attachTrialCardQuietly(sub.id, setup.payment_method, cur.id);
+        await this.attachTrialCardQuietly(cur, sub.id, setup.payment_method);
         throw alreadyActive({ ...cur, status: sub.status });
       }
       // B-679-10 — with no SetupIntent at all, no sheet was ever handed out:
@@ -1370,7 +1380,7 @@ export class SubscriptionCheckoutService {
   ): Promise<ClientPurchase[]> {
     const cardSaved: ClientPurchase[] = [];
     try {
-      const before = new Date(Date.now() - OPEN_ATTEMPT_MAX_AGE_MS);
+      const before = resumeWindowStart();
       // This plan's own open attempt keeps the reuse window (same-plan resume).
       const age = releaseOtherPlans
         ? { OR: [{ created_at: { lte: before } }, { package_id: { not: packageId } }] }
@@ -1483,7 +1493,8 @@ export class SubscriptionCheckoutService {
       if (sub.default_payment_method && !sub.cancel_at_period_end) return 'card_saved';
       const setup = await readTrialSetup(this.stripe, row.stripe_client_secret, sub);
       if (trialCardSaved(setup)) {
-        await attachTrialCard(this.stripe, sub.id, setup.payment_method);
+        // MOVEBILL2: a moved client's attempt is left to end with its trial.
+        if (!(await attachTrialCard(this.stripe, row, sub.id, setup.payment_method))) return 'kept';
         this.logger.log(`billing.trial_card_attached purchase=${row.id} via=retire`);
         return 'card_saved';
       }
@@ -1521,7 +1532,7 @@ export class SubscriptionCheckoutService {
       if (setupIntentIdOf(row.stripe_client_secret)) {
         const setup = await readTrialSetup(this.stripe, row.stripe_client_secret);
         if (trialCardSaved(setup)) {
-          await this.attachTrialCardQuietly(subscriptionId, setup.payment_method, row.id);
+          await this.attachTrialCardQuietly(row, subscriptionId, setup.payment_method);
           return 'settled';
         }
         if (setup?.status === 'processing') return 'settled';
@@ -1562,18 +1573,21 @@ export class SubscriptionCheckoutService {
     }
   }
 
-  /** attachTrialCard that only logs on failure (the webhook path retries). */
+  /**
+   * attachTrialCard that only logs on failure (the webhook path retries).
+   * False only for an attempt a move ended (MOVEBILL2): its card never lifts
+   * the trial end, so that trial never converts into a charge.
+   */
   private async attachTrialCardQuietly(
+    row: ClientPurchase,
     subscriptionId: string,
     paymentMethodId: string,
-    purchaseId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
-      await attachTrialCard(this.stripe, subscriptionId, paymentMethodId);
+      return await attachTrialCard(this.stripe, row, subscriptionId, paymentMethodId);
     } catch (err) {
-      this.logger.warn(
-        `trial card attach deferred purchase=${purchaseId} error=${errorLabel(err)}`,
-      );
+      this.logger.warn(`trial card attach deferred purchase=${row.id} error=${errorLabel(err)}`);
+      return true;
     }
   }
 

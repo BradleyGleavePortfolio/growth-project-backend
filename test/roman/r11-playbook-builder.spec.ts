@@ -166,7 +166,7 @@ describe('R11-P3b-2 playbook builder', () => {
       capability: 'roman.playbook', payer: { kind: 'coach', coachId: H }, model: ROMAN_MODEL_PHASE_1,
     }));
     const [, subject, surface, params] = h.egress.anthropicMessagesCreate.mock.calls[0];
-    expect(subject).toEqual({ kind: 'client_data', clientIds: ['client-aa11'], audience: 'coach', scope: 'memory' });
+    expect(subject).toEqual({ kind: 'client_data', clientIds: ['client-aa11'], audience: 'coach', scope: 'memory', coachId: H });
     expect(surface).toBe('roman.playbook');
     expect(JSON.stringify(params)).not.toMatch(/g-wide|sn-1|client-aa11|Zelda/);
     expect(h.spend.settle).toHaveBeenCalledWith(RESERVATION, 1000, 200, { outcome: 'ok', run_at: NOW.toISOString() });
@@ -297,7 +297,7 @@ describe('R11-P3b-2 playbook builder', () => {
   it('no memory-scope client: coach-own-scope send; a client row without consent stops before spend', async () => {
     const own = harness({ src: sources({ consentedClientIds: [], items: [sources().items[0]], ledger: [sources().ledger[0]] }) });
     expect(await own.svc.buildFor(H, NOW)).toBe('built');
-    expect(own.egress.anthropicMessagesCreate.mock.calls[0][1]).toEqual({ kind: 'no_client_data', reason: 'coach_own_scope' });
+    expect(own.egress.anthropicMessagesCreate.mock.calls[0][1]).toEqual({ kind: 'no_client_data', reason: 'coach_own_scope', coachId: H });
     const unsafe = harness({ src: sources({ consentedClientIds: [] }) });
     expect(await unsafe.svc.buildFor(H, NOW)).toBe('unsafe_ledger');
     expect(unsafe.spend.reserve).not.toHaveBeenCalled();
