@@ -20,7 +20,11 @@ import { PackagesService } from '../packages/packages.service';
 import { paidJoinAllowed } from '../invite-codes/invite-codes.service';
 import { BUYER_VISIBLE_DROP_STATUSES, buyerDropStatus } from '../packages/drop-status';
 import { CheckoutContractGate } from '../contracts/checkout-contract-gate.service';
-import { CLIENT_PURCHASE_SELECT, type ClientPurchaseView } from './client-purchases.select';
+import {
+  CLIENT_PURCHASE_LIST_SELECT,
+  type ClientPurchaseView,
+  toClientPurchaseView,
+} from './client-purchases.select';
 import { purchaseTrialView, type PurchaseTrialView } from '../packages/trials/trial-view';
 import { COACH_PURCHASE_SELECT, type CoachPurchaseView } from './coach-payments.select';
 import { keepMoneyRecordsOnly, type MoneyRecord } from './moved-client-money';
@@ -989,7 +993,9 @@ export class CheckoutService {
     clientUserId: string,
     opts: { cursor?: string; limit?: number } = {},
   ): Promise<{
-    items: Array<ClientPurchaseView & { trial: PurchaseTrialView }>;
+    items: Array<
+      ClientPurchaseView & { first_charge_cents: number | null; trial: PurchaseTrialView }
+    >;
     hasMore: boolean;
   }> {
     const take = Math.min(opts.limit ?? 50, 100);
@@ -998,7 +1004,7 @@ export class CheckoutService {
       orderBy: { created_at: 'desc' },
       take: take + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
-      select: CLIENT_PURCHASE_SELECT,
+      select: CLIENT_PURCHASE_LIST_SELECT,
     });
     const hasMore = rows.length > take;
     const page = hasMore ? rows.slice(0, take) : rows;
@@ -1029,7 +1035,7 @@ export class CheckoutService {
     }
     return {
       items: page.map((row) => ({
-        ...row,
+        ...toClientPurchaseView(row),
         trial: purchaseTrialView(row, now, {
           customerDefaultCard,
           trialConflict: conflicts.has(row.id),
