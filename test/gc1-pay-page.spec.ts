@@ -5,10 +5,13 @@
  * Covers the switch (off = the unmounted-route 404), route-level CSP and
  * headers, the closed 404 states, HTML escaping of coach text, no PII, one
  * token never showing another's package, and the amounts Elements is given
- * (the checkout's own chargeQuote: one-time, renewing, combo, trial interim).
+ * (the checkout's own chargeQuote: one-time, renewing, combo, trial interim),
+ * and the page's own script: a failed attempt never spends the next one.
  */
 import 'reflect-metadata';
 import * as http from 'node:http';
+import { randomUUID } from 'node:crypto';
+import * as vm from 'node:vm';
 import type { AddressInfo } from 'node:net';
 import type { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -240,6 +243,72 @@ describe('GC-1 pay page GET /p/:token', () => {
       expect(res.body).toContain(`<strong>$${(amount / 100).toFixed(2)}</strong>`);
       for (const s of shown) expect(res.body).toContain(s);
       for (const s of hidden) expect(res.body).not.toContain(s);
+    });
+  });
+
+  // The page's own script, run with stand-ins for the DOM, Stripe.js and
+  // fetch. The server treats a failed attempt's idempotency key as spent
+  // (guest-checkout replayExistingIntent: "expired"), so every failed attempt
+  // must make the next tap send a new key; a paid attempt keeps it (a second
+  // tap replays the same checkout and can never charge twice).
+  describe('paying again after a failed attempt', () => {
+    async function boot(answers: { checkout: boolean[]; confirm: boolean[] }) {
+      const html = (await get(`/p/${A}`)).body;
+      const js = [...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)].pop()?.[1] ?? '';
+      const on: Record<string, (e: unknown) => Promise<void>> = {};
+      const nodes: Record<string, Record<string, unknown>> = {};
+      for (const id of ['cfg', 'pay', 'go', 'msg', 'nm', 'em', 'or', 'express']) {
+        nodes[id] = { value: '', textContent: id === 'cfg' ? JSON.stringify(cfgOf(html)) : '', setAttribute() {}, focus() {}, addEventListener: (t: string, h: never) => (on[`${id}:${t}`] = h) };
+      }
+      const store = new Map<string, string>();
+      const keys: string[] = [];
+      const sandbox: Record<string, unknown> = {
+        document: { getElementById: (id: string) => nodes[id] },
+        addEventListener() {},
+        location: { origin: 'https://app.example' },
+        crypto: { randomUUID },
+        sessionStorage: { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) },
+        fetch: async (_url: string, init: { body: string }) => {
+          keys.push(JSON.parse(init.body).idempotency_key);
+          const ok = answers.checkout.shift() ?? true;
+          return { ok, json: async () => (ok ? { client_secret: 'pi_1_secret_1' } : { message: 'This checkout link has expired. Please request a new one.' }) };
+        },
+        Stripe: () => ({
+          elements: () => ({ create: (type: string) => ({ on: (t: string, h: never) => (on[`${type}:${t}`] = h), mount() {} }), submit: async () => ({}) }),
+          confirmPayment: async () => ((answers.confirm.shift() ?? true) ? {} : { error: { message: 'Your card was declined.' } }),
+        }),
+      };
+      sandbox.window = sandbox;
+      vm.runInNewContext(js, sandbox);
+      Object.assign(nodes.nm, { value: 'Ann Buyer' });
+      Object.assign(nodes.em, { value: 'ann@example.com' });
+      const tap = {
+        card: () => on['pay:submit']({ preventDefault() {} }),
+        wallet: () => on['expressCheckout:confirm']({ billingDetails: { name: 'Ann Buyer', email: 'ann@example.com' }, paymentFailed() {} }),
+      };
+      return { tap, keys, msg: () => nodes.msg.textContent };
+    }
+
+    it.each([
+      ['card form', 'the card is declined', 'card', { checkout: [true, true], confirm: [false, true] }, 'Your card was declined.'],
+      ['card form', 'the checkout is refused', 'card', { checkout: [false, true], confirm: [true] }, 'This checkout link has expired. Please request a new one.'],
+      ['wallet', 'the card is declined', 'wallet', { checkout: [true, true], confirm: [false, true] }, 'Your card was declined.'],
+      ['wallet', 'the checkout is refused', 'wallet', { checkout: [false, true], confirm: [true] }, 'This checkout link has expired. Please request a new one.'],
+    ] as const)('%s: when %s, the next tap starts a fresh checkout', async (_label, _why, via, answers, shown) => {
+      const page = await boot({ checkout: [...answers.checkout], confirm: [...answers.confirm] });
+      await page.tap[via]();
+      expect(page.msg()).toBe(shown);
+      await page.tap[via]();
+      expect(page.keys).toHaveLength(2);
+      expect(page.keys[1]).not.toBe(page.keys[0]);
+    });
+
+    it('a paid attempt keeps its key, so a second tap replays it and never charges twice', async () => {
+      const page = await boot({ checkout: [true, true], confirm: [true, true] });
+      await page.tap.card();
+      await page.tap.wallet();
+      expect(page.keys).toHaveLength(2);
+      expect(page.keys[1]).toBe(page.keys[0]);
     });
   });
 });

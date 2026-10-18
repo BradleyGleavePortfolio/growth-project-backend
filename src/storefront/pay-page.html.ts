@@ -167,11 +167,13 @@ button[aria-busy=true]::after{content:"";display:inline-block;width:1em;height:1
 // the wallet buttons (their billing contact carries the buyer's name) and the
 // card form: elements.submit(), POST checkout
 // (idempotency key kept per tab and email), then stripe.confirmPayment.
+// Every failed attempt goes through say(), which drops the key: the server
+// treats a failed attempt's key as spent, and nothing was charged on it.
 const CLIENT_JS = `(function(){
 var c=JSON.parse(document.getElementById('cfg').textContent),$=function(i){return document.getElementById(i)};
-var f=$('pay'),b=$('go'),m=$('msg'),nm=$('nm'),em=$('em');
+var f=$('pay'),b=$('go'),m=$('msg'),nm=$('nm'),em=$('em'),K='tgp-pay:'+c.token;
 function busy(v){b.disabled=v;b.setAttribute('aria-busy',String(v))}
-function say(t){m.textContent=t||c.copy.failed;busy(false)}
+function say(t){m.textContent=t||c.copy.failed;busy(false);try{sessionStorage.removeItem(K)}catch(_){}}
 addEventListener('pageshow',function(e){if(e.persisted)busy(false)});
 if(!window.Stripe){b.disabled=true;m.textContent=c.copy.failed;return}
 var stripe=Stripe(c.pk);
@@ -183,9 +185,9 @@ var x=el.create('expressCheckout',{emailRequired:true,billingAddressRequired:tru
 x.on('ready',function(e){if(e.availablePaymentMethods)$('or').hidden=false;else $('express').hidden=true});
 x.on('loaderror',function(){$('express').hidden=true});
 x.mount('#express');
-function key(e){var k='tgp-pay:'+c.token,h=0,s=null,i;for(i=0;i<e.length;i++)h=(h*31+e.charCodeAt(i))|0;
-try{s=JSON.parse(sessionStorage.getItem(k))}catch(_){}
-if(!s||s.h!==h){s={k:crypto.randomUUID(),h:h};try{sessionStorage.setItem(k,JSON.stringify(s))}catch(_){}}return s.k}
+function key(e){var h=0,s=null,i;for(i=0;i<e.length;i++)h=(h*31+e.charCodeAt(i))|0;
+try{s=JSON.parse(sessionStorage.getItem(K))}catch(_){}
+if(!s||s.h!==h){s={k:crypto.randomUUID(),h:h};try{sessionStorage.setItem(K,JSON.stringify(s))}catch(_){}}return s.k}
 async function pay(name,email){busy(true);m.textContent='';var r=null,d={};
 try{r=await fetch('/api/v1/packages/public/join/'+encodeURIComponent(c.token)+'/checkout'+(c.lp?'?lp='+encodeURIComponent(c.lp):''),
 {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guest_name:name,guest_email:email,idempotency_key:key(email)})});d=await r.json()}catch(_){}
