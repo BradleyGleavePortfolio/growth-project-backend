@@ -597,7 +597,7 @@ The trailing dash is literal — there is no flag character after it because Das
 **Standing prevention rule.** Every shell script that runs inside the Fly image (anything under `scripts/*.sh`, plus any helper sourced by `Dockerfile` or `release_command`) **must**:
 
 1. Be committed with LF line endings. Enforced repo-wide by `.gitattributes` (`*.sh text eol=lf`). A Windows clone that converts on checkout cannot push CRLF back without git rewriting it.
-2. Use `#!/usr/bin/env bash` as the shebang and be invoked through `bash` from `fly.toml`'s `release_command` (currently `bash ./scripts/release.sh`). bash is present in `node:20-slim`, tolerates the occasional stray CR more gracefully, and gives consistent semantics for `set -euo pipefail`-style guards if they are added later.
+2. Use `#!/usr/bin/env bash` as the shebang and be invoked through `bash` from `fly.toml`'s `release_command` (currently `bash ./scripts/release.sh`). bash is present in `node:22-bookworm-slim`, tolerates the occasional stray CR more gracefully, and gives consistent semantics for `set -euo pipefail`-style guards if they are added later.
 3. Be audited locally before any Fly deploy: `git ls-files -z 'scripts/*.sh' | xargs -0 file | grep -i CRLF` should return nothing.
 
 **Repair recipe.** If a CRLF script is already in the tree:
