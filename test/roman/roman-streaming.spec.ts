@@ -958,7 +958,9 @@ describe('Roman — eating-disorder fallback and the returning client (CF-ROMAN-
 // self-harm reply carries safety_actions on the SSE done frame and in the
 // message list, for an app that sends the opt-in header. Every other reply,
 // and every app without the header, keeps today's exact shape. classifySafety
-// is stubbed, so no crisis wording appears here.
+// is stubbed, so no crisis wording appears here. Call 911 (owner "thw call 911
+// 988 buttons - Nevermind, do them!"): each reply leads with the number it
+// names first, and message_coach comes last.
 describe('Roman — safety_actions on the fixed crisis reply (CRISIS-2B)', () => {
   type Cls = 'emergency' | 'self_harm' | 'urgent_symptoms' | 'normal';
   const COACHED = { id: 'user-A', role: 'student', coach_id: 'coach-1' };
@@ -966,8 +968,11 @@ describe('Roman — safety_actions on the fixed crisis reply (CRISIS-2B)', () =>
   // An assistant coach's coach_id is their head coach: still no coach to message.
   const ASSISTANT = { id: 'user-A', role: 'coach', coach_id: 'coach-1' };
   const OPT_IN = { [ROMAN_SAFETY_ACTIONS_HEADER]: '1' };
-  const BOTH = ['call_988', 'text_988'];
-  const ALL = [...BOTH, 'message_coach'];
+  const CALLS = {
+    emergency: ['call_911', 'call_988', 'text_988'],
+    self_harm: ['call_988', 'text_988', 'call_911'],
+  };
+  const coached = (cls: keyof typeof CALLS) => [...CALLS[cls], 'message_coach'];
   let saved: string | undefined;
   beforeEach(() => {
     saved = process.env[FEATURE_ROMAN_CRISIS_ALERT_ENV];
@@ -1013,24 +1018,27 @@ describe('Roman — safety_actions on the fixed crisis reply (CRISIS-2B)', () =>
   }
 
   it.each(['emergency', 'self_harm'] as const)(
-    '%s: a coached client gets call, text and message coach, live and on every later read',
+    '%s: a coached client gets the calls in reply order, then message coach, live and on every later read',
     async (cls) => {
       const { done, reply, mine } = await turn(cls);
       expect(done.text).toBe(`${ROMAN_SAFETY_TEMPLATES[cls]} ${ROMAN_COACH_TOLD_LINE}`);
-      expect(done.safety_actions).toEqual(ALL);
+      expect(done.safety_actions).toEqual(coached(cls));
       expect(reply?.content).toBe(done.text);
-      expect(reply).toMatchObject({ id: done.messageId, safety_actions: ALL });
+      expect(reply).toMatchObject({ id: done.messageId, safety_actions: coached(cls) });
       expect(mine).not.toHaveProperty('safety_actions');
     },
   );
 
-  it('no coach to message: a coachless client and an assistant coach get call and text only', async () => {
-    for (const user of [COACHLESS, ASSISTANT]) {
-      const { done, reply } = await turn('self_harm', user);
-      expect(done.safety_actions).toEqual(BOTH);
-      expect(reply?.safety_actions).toEqual(BOTH);
-    }
-  });
+  it.each(['emergency', 'self_harm'] as const)(
+    '%s, no coach to message: a coachless client and an assistant coach get the calls only',
+    async (cls) => {
+      for (const user of [COACHLESS, ASSISTANT]) {
+        const { done, reply } = await turn(cls, user);
+        expect(done.safety_actions).toEqual(CALLS[cls]);
+        expect(reply?.safety_actions).toEqual(CALLS[cls]);
+      }
+    },
+  );
 
   it('the urgent-symptoms reply and a model reply carry no safety_actions', async () => {
     for (const cls of ['urgent_symptoms', 'normal'] as const) {
@@ -1052,8 +1060,11 @@ describe('Roman — safety_actions on the fixed crisis reply (CRISIS-2B)', () =>
   it('only a Roman turn that starts with the emergency or self-harm reply is marked', () => {
     const { romanSafetyActions } = safetyRouter;
     const roman = (content: string) => ({ role: 'roman', content });
-    expect(romanSafetyActions(roman(ROMAN_SAFETY_TEMPLATES.emergency), false)).toEqual(BOTH);
-    expect(romanSafetyActions(roman(`${ROMAN_SAFETY_TEMPLATES.self_harm} ${ROMAN_COACH_TOLD_LINE}`), true)).toEqual(ALL);
+    const told = (cls: keyof typeof CALLS) => `${ROMAN_SAFETY_TEMPLATES[cls]} ${ROMAN_COACH_TOLD_LINE}`;
+    expect(romanSafetyActions(roman(ROMAN_SAFETY_TEMPLATES.emergency), false)).toEqual(CALLS.emergency);
+    expect(romanSafetyActions(roman(ROMAN_SAFETY_TEMPLATES.self_harm), false)).toEqual(CALLS.self_harm);
+    expect(romanSafetyActions(roman(told('emergency')), true)).toEqual(coached('emergency'));
+    expect(romanSafetyActions(roman(told('self_harm')), true)).toEqual(coached('self_harm'));
     expect(romanSafetyActions({ role: 'user', content: ROMAN_SAFETY_TEMPLATES.self_harm }, true)).toBeNull();
     expect(romanSafetyActions(roman(ROMAN_SAFETY_TEMPLATES.urgent_symptoms), true)).toBeNull();
     expect(romanSafetyActions(roman(romanEatingDisorderFallback(true)), true)).toBeNull();
