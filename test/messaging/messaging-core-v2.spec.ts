@@ -11,6 +11,7 @@
 import { HttpException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { CoachMessage } from '@prisma/client';
+import { z } from 'zod';
 import { PrismaService } from '../../src/prisma.service';
 import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
@@ -823,19 +824,65 @@ describe('unified inbox', () => {
     expect(unread.items.map((i) => i.client_id)).toEqual([CLIENT]);
   });
 
-  it('SHARE-BE: a message that is only a card previews as kind card for coach and client', async () => {
+  // SHARE-BE: the phone's inbox schema today (growth-project-mobile src/api/messagingV2Api.ts,
+  // InboxResponseSchema): objects are not strict, but `kind` is a closed enum and one bad
+  // row fails the whole response, so every newest message must still parse.
+  const phoneInbox = z.object({
+    items: z.array(
+      z.object({
+        thread_id: z.string(),
+        kind: z.literal('coach_client'),
+        coach_id: z.string(),
+        client_id: z.string(),
+        counterpart: z.object({ user_id: z.string(), display_name: z.string() }),
+        last_message: z
+          .object({
+            id: z.string(),
+            sender_id: z.string().nullable(),
+            is_mine: z.boolean(),
+            kind: z.enum(['text', 'voice', 'deleted']),
+            preview: z.string(),
+            created_at: z.string().min(1),
+            edited: z.boolean(),
+          })
+          .nullable(),
+        unread_count: z.number().int().nonnegative(),
+        muted: z.boolean(),
+        muted_until: z.string().min(1).nullable(),
+        pinned: z.boolean(),
+        blocked_by_me: z.boolean(),
+        last_activity_at: z.string().min(1).nullable(),
+      }),
+    ),
+    next_cursor: z.string().nullable(),
+    total_unread: z.number().int().nonnegative(),
+  });
+
+  type Over = Record<string, unknown> & { card_type: string | null };
+  it.each<[string, Over, Record<string, unknown>]>([
+    ['a share card only', { body: null, card_type: 'share' }, { kind: 'text', preview: '', card_type: 'share' }],
+    ['text', { card_type: null }, { kind: 'text', preview: 'Hello coach' }],
+    ['a voice note', { body: null, voice_url: 'v/1.m4a', card_type: null }, { kind: 'voice', preview: '' }],
+    // A tombstone stored before SHARE-BE kept its card row; it still reads as deleted.
+    ['a tombstone', { body: null, deleted_at: at('2026-10-02T09:00:00Z'), card_type: 'workout' }, { kind: 'deleted', preview: '' }],
+  ])('SHARE-BE: newest message is %s: both inboxes parse with the phone schema', async (_label, over, want) => {
     const t = build();
-    const shared = { ...lastRows()[0], body: null, has_card: true };
-    const bare = { ...lastRows()[1], deleted_at: null, has_card: false };
-    t.prisma.$queryRaw.mockResolvedValueOnce([shared, bare]);
+    const { card_type, ...cols } = { ...lastRows()[0], ...over };
+    t.prisma.$queryRaw.mockResolvedValueOnce([{ ...cols, card_type }]);
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce({ ...cols, card: card_type ? { card_type } : null });
     const coach = await t.inbox.inboxForCoach(COACH, {});
-    expect(coach.items.map((i) => [i.client_id, i.last_message?.kind])).toEqual([
-      [OTHER_CLIENT, 'text'],
-      [CLIENT, 'card'],
-    ]);
-    t.prisma.coachMessage.findFirst.mockResolvedValueOnce({ ...shared, card: { id: 'c1' } });
     const client = await t.inbox.inboxForClient(CLIENT);
-    expect(client.items[0].last_message).toMatchObject({ kind: 'card', preview: '' });
+    for (const [out, isMine] of [[coach, false], [client, true]] as const) {
+      expect(phoneInbox.safeParse(out).error).toBeUndefined();
+      expect(out.items[0].last_message).toEqual({
+        id: 'm1',
+        sender_id: CLIENT,
+        is_mine: isMine,
+        created_at: '2026-10-01T09:00:00.000Z',
+        edited: false,
+        ...want,
+      });
+    }
   });
 
   it('client: coachless is a valid empty inbox; coached shows the one coach thread', async () => {
