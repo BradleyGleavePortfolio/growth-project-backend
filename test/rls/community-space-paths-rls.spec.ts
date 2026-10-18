@@ -212,6 +212,7 @@ const sorted = (xs: string[]) => [...xs].sort();
     }
   });
 
+  // X's only row is the removed one of the archived space: archiving removes rows, not people, so X keeps the wins.
   it('the Hall and wins open with a space that is not public; a public member and other tenants get none', async () => {
     for (const k of PEOPLE) {
       expect({ who: k, control: await count(k, 'community_messages', msg[CONTROL[k]]) }).toEqual({ who: k, control: 1 });
