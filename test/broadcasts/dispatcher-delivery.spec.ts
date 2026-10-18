@@ -122,7 +122,7 @@ function harness(opts: {
     },
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
-  const supabase = { broadcastNewMessage: jest.fn(async () => undefined) };
+  const supabase = { pingChat: jest.fn(async () => undefined) };
   const emitter = { emit: jest.fn(async () => undefined) };
   const svc = new BroadcastDispatcherService(
     stub<PrismaService>(prisma),
@@ -226,7 +226,7 @@ describe('BroadcastDispatcherService.deliverOne', () => {
     });
     expect(await h.svc.deliverOne('d1', lateNy)).toBe('lost_lease');
     expect(h.emitter.emit).not.toHaveBeenCalled();
-    expect(h.supabase.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(h.supabase.pingChat).not.toHaveBeenCalled();
   });
 
   it('a canceled broadcast skips its remaining deliveries', async () => {
@@ -258,7 +258,7 @@ describe('BroadcastDispatcherService.deliverOne', () => {
     expect(await h.svc.deliverOne('d1', lateNy)).toBe('skipped_ineligible');
     expect(h.created).toHaveLength(0);
     expect(h.cards).toHaveLength(0);
-    expect(h.supabase.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(h.supabase.pingChat).not.toHaveBeenCalled();
     expect(h.emitter.emit).not.toHaveBeenCalled();
     expect(lastOf(h.settles)).toMatchObject({
       status: 'skipped_ineligible',
@@ -289,7 +289,7 @@ describe('BroadcastDispatcherService.deliverOne', () => {
     expect(await h.svc.deliverOne('d1', lateNy)).toBe('skipped_ineligible');
     expect(h.lockSendAuthority).toHaveBeenCalledWith(h.tx, 'coach-a', 'coach-a', 'client-1');
     expect(h.created).toHaveLength(0);
-    expect(h.supabase.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(h.supabase.pingChat).not.toHaveBeenCalled();
     expect(h.emitter.emit).not.toHaveBeenCalled();
     expect(lastOf(h.settles)).toMatchObject({ failure_code: 'author_not_assigned' });
   });

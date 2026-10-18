@@ -212,7 +212,7 @@ export class WorkoutReminderService {
     const dayStart = dateFromKey(probe.localDate);
     const dayEnd = new Date(dayStart.getTime() + DAY_MS);
     const assignments = await this.prisma.clientWorkoutAssignment.findMany({
-      where: { client_id: clientId, scheduled_for: { gte: dayStart, lt: dayEnd } },
+      where: { client_id: clientId, scheduled_for: { gte: dayStart, lt: dayEnd }, skipped_at: null },
       select: { id: true, completed_at: true },
       orderBy: { scheduled_for: 'asc' },
     });

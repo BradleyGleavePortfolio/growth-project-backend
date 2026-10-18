@@ -11,6 +11,7 @@
 // share this: the `setup_intent.succeeded` webhook (primary), the plan read
 // while the app shows "Confirming your plan", and the checkout paths that
 // would otherwise reuse or retire the attempt.
+import type { ClientPurchase } from '@prisma/client';
 import type {
   StripeConnectApiService,
   StripeSubscriptionCheckoutObject,
@@ -81,18 +82,25 @@ export function trialCardSaved(state: TrialSetupState | null): state is TrialSet
  * B-679-8 (Opus) — the same write lifts the trial's create-time end, so the
  * trial converts at trial end only on this card. Call it only with the card
  * the attempt's own SetupIntent saved, and only before the trial was granted.
+ * MOVEBILL2 (Sol B3) — never for an attempt a move ended (moved_away_at):
+ * lifting the end would turn the trial into a first charge for the coach the
+ * client left. Then nothing is sent to Stripe and the answer is false, so
+ * every caller (webhook, plan read, checkout, retirement) is covered here.
  */
 export async function attachTrialCard(
   stripe: Pick<StripeConnectApiService, 'setSubscriptionDefaultPaymentMethod'>,
+  attempt: Pick<ClientPurchase, 'moved_away_at'>,
   subscriptionId: string,
   paymentMethodId: string,
-): Promise<void> {
+): Promise<boolean> {
+  if (attempt.moved_away_at) return false;
   await stripe.setSubscriptionDefaultPaymentMethod({
     subscriptionId,
     paymentMethodId,
     idempotencyKey: `tgp-trial-card-${subscriptionId}-${paymentMethodId}`,
     liftTrialEnd: true,
   });
+  return true;
 }
 
 /** SetupIntent statuses the native sheet can still complete. */

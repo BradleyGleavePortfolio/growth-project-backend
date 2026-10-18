@@ -281,7 +281,7 @@ describeLive('AiProcessingConsentEvent RLS + append-only (live Postgres, R2a)', 
          ('r2a_coach','coach',NULL),
          ('r2a_owner','owner',NULL),
          ('r2a_client_a','student','r2a_coach'),
-         ('r2a_client_b','student','r2a_coach')`,
+         ('r2a_client_b','student',NULL)`,
     );
     await asPrincipal(SERVICE, {}, async (tx) => {
       await tx.$executeRawUnsafe(insertEvent('r2a_e_a1', 'r2a_client_a', 1, 'grant'));

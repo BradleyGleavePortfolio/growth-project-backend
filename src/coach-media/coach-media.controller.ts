@@ -2,7 +2,7 @@
  * PR-12 — coach-media authoring endpoints.
  *
  * Mirrors the convention of CoachPackageContentsController:
- *   - same guards (JwtAuthGuard, CoachOrOwnerGuard, SubscriptionGuard)
+ *   - same guards (JwtAuthGuard, CoachOrOwnerGuard)
  *   - role-gated to 'coach' / 'owner'
  *   - sub-coach scope via CoachMediaService.resolveEffectiveCoachId
  *   - body validation in the service via zod (not class-validator) so
@@ -37,13 +37,12 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
-import { SubscriptionGuard } from '../billing/subscription.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CoachMediaService } from './coach-media.service';
 
 @ApiTags('coach-media')
 @Controller('v1/coach/media')
-@UseGuards(JwtAuthGuard, CoachOrOwnerGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, CoachOrOwnerGuard)
 export class CoachMediaController {
   constructor(private readonly media: CoachMediaService) {}
 

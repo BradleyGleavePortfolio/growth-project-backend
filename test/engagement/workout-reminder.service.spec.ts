@@ -229,6 +229,14 @@ describe('WorkoutReminderService', () => {
     expect(h.deliveries.rows).toHaveLength(0);
   });
 
+  it('C1V2-C1: a day the client skipped is not a plan day (no reminder)', async () => {
+    const h = harness();
+    await seed(h);
+    h.assignments.rows[1].skipped_at = new Date('2026-10-06T20:00:00Z');
+    expect((await h.svc.runOnce(new Date('2026-10-07T14:00:00Z'))).not_due).toBe(1);
+    expect(h.pushToUser).not.toHaveBeenCalled();
+  });
+
   it('skips the day when a workout session was logged that date', async () => {
     const h = harness();
     await seed(h, 'evening');

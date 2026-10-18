@@ -6,6 +6,7 @@
  * assignProgramToClient and the builder UI treat these rows like any other.
  */
 import { Prisma } from '@prisma/client';
+import { alternativesOf } from '../workout-builder/plan-exercise-fields';
 import type { PlanContent } from './clinic-programs';
 
 export interface ProgramTreeInput {
@@ -81,6 +82,7 @@ export async function writeProgramTree(
         rest_seconds: e.rest_seconds,
         superset_group_id: e.superset_group_id,
         notes: e.notes,
+        alternative_external_ids: alternativesOf(e),
       })),
     });
     const revision = await tx.workoutPlanRevision.create({

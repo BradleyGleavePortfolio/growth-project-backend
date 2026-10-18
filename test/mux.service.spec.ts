@@ -87,38 +87,34 @@ describe('MuxService', () => {
 
   describe('verifyWebhookSignature', () => {
     const secret = 'whsec_mux_test';
+    // The verifier takes the raw request bytes, exactly as Mux sent them.
+    const verify = (svc: MuxService, payload: string, signatureHeader: string | null) =>
+      svc.verifyWebhookSignature({ rawBody: Buffer.from(payload), signatureHeader });
 
     it('returns false when MUX_WEBHOOK_SECRET is unset', () => {
       const svc = new MuxService(makeConfig({}));
-      expect(
-        svc.verifyWebhookSignature({
-          payload: '{}',
-          signatureHeader: signMuxPayload('{}', secret),
-        }),
-      ).toBe(false);
+      expect(verify(svc, '{}', signMuxPayload('{}', secret))).toBe(false);
     });
 
     it('accepts a freshly-signed payload', () => {
       const svc = new MuxService(makeConfig({ MUX_WEBHOOK_SECRET: secret }));
       const payload = JSON.stringify({ type: 'video.asset.ready' });
       const header = signMuxPayload(payload, secret);
-      expect(svc.verifyWebhookSignature({ payload, signatureHeader: header })).toBe(true);
+      expect(verify(svc, payload, header)).toBe(true);
     });
 
     it('rejects a tampered body', () => {
       const svc = new MuxService(makeConfig({ MUX_WEBHOOK_SECRET: secret }));
       const payload = JSON.stringify({ type: 'video.asset.ready' });
       const header = signMuxPayload(payload, secret);
-      expect(
-        svc.verifyWebhookSignature({ payload: payload + 'x', signatureHeader: header }),
-      ).toBe(false);
+      expect(verify(svc, payload + 'x', header)).toBe(false);
     });
 
     it('rejects when the signing secret is different', () => {
       const svc = new MuxService(makeConfig({ MUX_WEBHOOK_SECRET: 'wrong' }));
       const payload = JSON.stringify({ type: 'video.asset.ready' });
       const header = signMuxPayload(payload, secret);
-      expect(svc.verifyWebhookSignature({ payload, signatureHeader: header })).toBe(false);
+      expect(verify(svc, payload, header)).toBe(false);
     });
 
     it('rejects timestamps outside the tolerance window', () => {
@@ -126,21 +122,37 @@ describe('MuxService', () => {
       const payload = JSON.stringify({ type: 'video.asset.ready' });
       const stale = Math.floor(Date.now() / 1000) - 10_000;
       const header = signMuxPayload(payload, secret, stale);
-      expect(svc.verifyWebhookSignature({ payload, signatureHeader: header })).toBe(false);
+      expect(verify(svc, payload, header)).toBe(false);
     });
 
     it('rejects a malformed header', () => {
       const svc = new MuxService(makeConfig({ MUX_WEBHOOK_SECRET: secret }));
-      expect(
-        svc.verifyWebhookSignature({ payload: '{}', signatureHeader: 'not-a-header' }),
-      ).toBe(false);
+      expect(verify(svc, '{}', 'not-a-header')).toBe(false);
     });
 
     it('rejects a missing header', () => {
       const svc = new MuxService(makeConfig({ MUX_WEBHOOK_SECRET: secret }));
-      expect(
-        svc.verifyWebhookSignature({ payload: '{}', signatureHeader: null }),
-      ).toBe(false);
+      expect(verify(svc, '{}', null)).toBe(false);
+    });
+
+    it('rejects when the raw request bytes are missing', () => {
+      const svc = new MuxService(makeConfig({ MUX_WEBHOOK_SECRET: secret }));
+      const signatureHeader = signMuxPayload('{}', secret);
+      expect(svc.verifyWebhookSignature({ rawBody: undefined, signatureHeader })).toBe(false);
+    });
+
+    // SECALERTS-BE (CodeQL js/remote-property-injection): a prototype-named
+    // segment returns false (400), never throws (500), and cannot spoil a
+    // real signature.
+    it.each(['__proto__', 'constructor', 'toString'])('a %s segment is refused, not a crash', (key) => {
+      const svc = new MuxService(makeConfig({ MUX_WEBHOOK_SECRET: secret }));
+      const payload = JSON.stringify({ type: 'video.asset.ready' });
+      const forged = `${key}=x,${signMuxPayload(payload, 'wrong')}`;
+      for (const signatureHeader of [`${key}=x`, forged]) {
+        expect(verify(svc, payload, signatureHeader)).toBe(false);
+      }
+      const genuine = `${key}=x,${signMuxPayload(payload, secret)}`;
+      expect(verify(svc, payload, genuine)).toBe(true);
     });
   });
 });

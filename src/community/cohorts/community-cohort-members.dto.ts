@@ -59,7 +59,8 @@ export class ListMembersQueryDto {
 // email, notify_level) are coach-only — see CohortMembersService.memberView.
 export const CohortMemberSchema = z
   .object({
-    id: z.guid(),
+    // C6-BVIS: the membership row, null for a client a clients or package space lets in with none.
+    id: z.guid().nullable(),
     user_id: z.guid(),
     display_name: z.string(),
     role: z.enum(['student', 'co_coach', 'coach']),
@@ -67,6 +68,15 @@ export const CohortMemberSchema = z
     status: z.enum(['invited', 'active', 'muted', 'removed']).nullable(),
     email: z.string().nullable(),
     joined_at: z.string().datetime().nullable(),
+    // C6-BVIS, coach roster only: why the person is in; a package space adds the purchase.
+    access: z
+      .object({
+        reason: z.enum(['coach', 'team', 'client', 'package', 'member']),
+        package_id: z.string().nullable(),
+        until: z.string().datetime().nullable(),
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 

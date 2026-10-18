@@ -20,6 +20,7 @@
  * at new text.
  */
 import { createHash } from 'node:crypto';
+import { ROMAN_CRISIS_TOLD_SENTENCE } from '../roman/roman.feature';
 
 /**
  * Copy version of the box-2 text. Bump with any change to the text below.
@@ -115,6 +116,74 @@ export const CLIENT_AI_CONSENT_V5_COPY_SHA256 = sha256Hex(
 );
 
 /**
+ * The safety-reply exception (owner 57c, Option 1, 2026-10-12), the same
+ * sentence as the privacy page: a coach sees the one message that prompted an
+ * urgent medical or eating-disorder safety reply.
+ */
+export const CLIENT_AI_CONSENT_SAFETY_EXCEPTION =
+  'One exception: if Roman sends you an urgent medical safety reply or an eating-disorder safety ' +
+  'reply, your coach sees the message that prompted it, so they can check in with you.';
+
+/**
+ * client-ai-v6 / client-ai-v7 (owner 57c): the coached v4 / v5 paragraphs with
+ * the exception added right after the sentence that says the coach does not
+ * see Roman chats (the end of v4; before v5's last sentence). Same box label,
+ * same scopes (v6 'base', v7 'memory'). GET offers them to a client with a
+ * coach who has no live grant; a live v4 / v5 grant keeps reading its own copies.
+ */
+export const CLIENT_AI_CONSENT_V6_VERSION = 'client-ai-v6';
+export const CLIENT_AI_CONSENT_V7_VERSION = 'client-ai-v7';
+
+export const CLIENT_AI_CONSENT_V6_PARAGRAPH =
+  CLIENT_AI_CONSENT_PARAGRAPH + ' ' + CLIENT_AI_CONSENT_SAFETY_EXCEPTION;
+
+const V5_LAST_SENTENCE =
+  'Your conversations with Roman are kept until you delete them or delete your account.';
+export const CLIENT_AI_CONSENT_V7_PARAGRAPH =
+  CLIENT_AI_CONSENT_V5_PARAGRAPH.slice(0, -V5_LAST_SENTENCE.length) +
+  CLIENT_AI_CONSENT_SAFETY_EXCEPTION +
+  ' ' +
+  V5_LAST_SENTENCE;
+
+export const CLIENT_AI_CONSENT_V6_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V6_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V7_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V7_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V6_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V6_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+export const CLIENT_AI_CONSENT_V7_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V7_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+
+/**
+ * client-ai-v8 / client-ai-v9 (CRISIS-APP-COPY, owner op 1, 2026-10-15): the
+ * v6 / v7 paragraphs with the approved crisis sentence right after the
+ * exception sentence, nothing else changed. Same box label, same scopes (v8
+ * 'base', v9 'memory'). GET ?variant=crisis_alert offers them only while
+ * FEATURE_ROMAN_CRISIS_ALERT is on; v4 to v7 keep their text and digests.
+ */
+export const CLIENT_AI_CONSENT_V8_VERSION = 'client-ai-v8';
+export const CLIENT_AI_CONSENT_V9_VERSION = 'client-ai-v9';
+
+export const CLIENT_AI_CONSENT_V8_PARAGRAPH =
+  CLIENT_AI_CONSENT_V6_PARAGRAPH + ' ' + ROMAN_CRISIS_TOLD_SENTENCE;
+export const CLIENT_AI_CONSENT_V9_PARAGRAPH =
+  CLIENT_AI_CONSENT_V5_PARAGRAPH.slice(0, -V5_LAST_SENTENCE.length) +
+  CLIENT_AI_CONSENT_SAFETY_EXCEPTION +
+  ' ' +
+  ROMAN_CRISIS_TOLD_SENTENCE +
+  ' ' +
+  V5_LAST_SENTENCE;
+
+export const CLIENT_AI_CONSENT_V8_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V8_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V9_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V9_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V8_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V8_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+export const CLIENT_AI_CONSENT_V9_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V9_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+
+/**
  * Coach-free copies (owner decision 62, Option 1, 2026-10-12): what a client
  * with no coach sees. The v4 and v5 paragraphs and the box label with every
  * coach sentence or clause removed and no new words. Each gives the same scope
@@ -204,6 +273,22 @@ export const CLIENT_AI_CONSENT_ACCEPTED: Readonly<Record<string, AcceptedClientA
       copy_sha256: CLIENT_AI_CONSENT_V5_COPY_SHA256,
       scope: 'memory' as const,
     }),
+    [CLIENT_AI_CONSENT_V6_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V6_COPY_SHA256,
+      scope: 'base' as const,
+    }),
+    [CLIENT_AI_CONSENT_V7_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V7_COPY_SHA256,
+      scope: 'memory' as const,
+    }),
+    [CLIENT_AI_CONSENT_V8_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V8_COPY_SHA256,
+      scope: 'base' as const,
+    }),
+    [CLIENT_AI_CONSENT_V9_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V9_COPY_SHA256,
+      scope: 'memory' as const,
+    }),
     [CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION]: Object.freeze({
       copy_sha256: CLIENT_AI_CONSENT_V4_COACH_FREE_COPY_SHA256,
       scope: 'base' as const,
@@ -222,10 +307,34 @@ export function acceptedClientAiConsent(version: unknown): AcceptedClientAiConse
     : null;
 }
 
-/** Ledger row actions (CHECK constraint in the migration). */
+/**
+ * COACH-AI-CONSENT (owner ruling "#COACH-AI-CONSENT - op 2", text approved 2026-10-16): a coach's
+ * own grant, its own purpose in this ledger. CAC-1 is the title and sign-up box label, CAC-2 the
+ * paragraph; digest as for the client copies. The app shows CAC-3 and CAC-4.
+ */
+export const COACH_AI_CONSENT_VERSION = 'coach-ai-v1';
+export const COACH_AI_CONSENT_PURPOSE = 'coach_ai_processing';
+/** CAC-1. Exact text. */
+export const COACH_AI_CONSENT_TITLE = 'Turn on Roman';
+/** CAC-2. Exact text. */
+export const COACH_AI_CONSENT_PARAGRAPH =
+  'Roman runs on Anthropic, an outside AI company. ' +
+  'Anything you type to Roman, and your coaching notes, go to Anthropic. ' +
+  "A client's data is never sent unless that client allowed AI.";
+export const COACH_AI_CONSENT_TITLE_SHA256 = sha256Hex(COACH_AI_CONSENT_TITLE);
+export const COACH_AI_CONSENT_PARAGRAPH_SHA256 = sha256Hex(COACH_AI_CONSENT_PARAGRAPH);
+export const COACH_AI_CONSENT_COPY_SHA256 = sha256Hex(
+  COACH_AI_CONSENT_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + COACH_AI_CONSENT_TITLE,
+);
+
+/** Ledger row actions (CHECK in the migrations). 'decline' (20270502004300): a coach's "Not now". */
 export const AI_CONSENT_ACTION_GRANT = 'grant';
 export const AI_CONSENT_ACTION_WITHDRAW = 'withdraw';
-export type AiConsentAction = typeof AI_CONSENT_ACTION_GRANT | typeof AI_CONSENT_ACTION_WITHDRAW;
+export const AI_CONSENT_ACTION_DECLINE = 'decline';
+export type AiConsentAction =
+  | typeof AI_CONSENT_ACTION_GRANT
+  | typeof AI_CONSENT_ACTION_WITHDRAW
+  | typeof AI_CONSENT_ACTION_DECLINE;
 
 /** Structured error codes. */
 export const AI_CONSENT_ERROR_VERSION_MISMATCH = 'CONSENT_VERSION_MISMATCH';

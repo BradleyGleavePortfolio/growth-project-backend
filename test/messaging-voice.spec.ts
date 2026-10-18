@@ -73,7 +73,7 @@ function makeService(): {
     { id: 'client-1', role: 'student', coach_id: 'coach-A' },
   );
   const supabase = {
-    broadcastNewMessage: jest.fn().mockResolvedValue(undefined),
+    pingChat: jest.fn().mockResolvedValue(undefined),
     getClient: jest.fn(),
   } as any;
   const analytics = { capture: jest.fn(), identify: jest.fn() } as any;

@@ -22,7 +22,7 @@ interface PrismaMock {
     findMany: jest.Mock;
   };
   wearableConnection: { updateMany: jest.Mock };
-  wearableInsightCache: { deleteMany: jest.Mock };
+  wearableInsightCache: { updateMany: jest.Mock };
   wearableUserMetricPreference: { findUnique: jest.Mock };
   $transaction: jest.Mock;
 }
@@ -37,7 +37,7 @@ function makePrismaMock(): PrismaMock {
       findMany: jest.fn(),
     },
     wearableConnection: { updateMany: jest.fn() },
-    wearableInsightCache: { deleteMany: jest.fn() },
+    wearableInsightCache: { updateMany: jest.fn() },
     wearableUserMetricPreference: { findUnique: jest.fn() },
     // Default interactive-transaction mock: invoke the callback with the same
     // mock as the `tx` client so the in-transaction delegate calls hit the
@@ -84,7 +84,7 @@ describe('IngestionService', () => {
     prisma.wearableSample.createMany.mockResolvedValue({ count: 0 });
     prisma.wearableSample.deleteMany.mockResolvedValue({ count: 0 });
     prisma.wearableConnection.updateMany.mockResolvedValue({ count: 0 });
-    prisma.wearableInsightCache.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.wearableInsightCache.updateMany.mockResolvedValue({ count: 0 });
     service = new IngestionService(prisma as unknown as PrismaService);
   });
 
@@ -94,7 +94,7 @@ describe('IngestionService', () => {
       expect(result).toEqual({ inserted: 0, skipped: 0 });
       expect(prisma.wearableSample.createMany).not.toHaveBeenCalled();
       expect(prisma.wearableConnection.updateMany).not.toHaveBeenCalled();
-      expect(prisma.wearableInsightCache.deleteMany).not.toHaveBeenCalled();
+      expect(prisma.wearableInsightCache.updateMany).not.toHaveBeenCalled();
     });
 
     it('inserts via a SINGLE createMany (no N+1) with skipDuplicates', async () => {
@@ -197,7 +197,7 @@ describe('IngestionService', () => {
       expect(arg.data.last_synced_at).toBeInstanceOf(Date);
     });
 
-    it('invalidates insight cache with ONE deleteMany per DISTINCT (user, bucket) pair', async () => {
+    it('expires insight cache with ONE updateMany per DISTINCT (user, bucket) pair', async () => {
       prisma.wearableSample.createMany.mockResolvedValue({ count: 4 });
       const batch = [
         // USER_A / SLEEP_RECOVERY  (x2 → collapses to one pair)
@@ -225,9 +225,13 @@ describe('IngestionService', () => {
 
       await service.ingest(batch);
 
-      // 3 distinct (user, bucket) pairs → exactly 3 deleteMany calls.
-      expect(prisma.wearableInsightCache.deleteMany).toHaveBeenCalledTimes(3);
-      const pairs = prisma.wearableInsightCache.deleteMany.mock.calls.map(
+      // 3 distinct (user, bucket) pairs → exactly 3 updateMany calls, each
+      // expiring the rows (ROMANMARK-BE: expired, not deleted).
+      expect(prisma.wearableInsightCache.updateMany).toHaveBeenCalledTimes(3);
+      expect(prisma.wearableInsightCache.updateMany.mock.calls.map((c) => c[0].data)).toEqual(
+        Array(3).fill({ expires_at: expect.any(Date) }),
+      );
+      const pairs = prisma.wearableInsightCache.updateMany.mock.calls.map(
         (c) => `${c[0].where.user_id}::${c[0].where.bucket}`,
       );
       expect(pairs.slice().sort()).toEqual(
@@ -249,14 +253,14 @@ describe('IngestionService', () => {
         order.push('updateMany');
         return { count: 1 };
       });
-      prisma.wearableInsightCache.deleteMany.mockImplementation(async () => {
-        order.push('deleteMany');
+      prisma.wearableInsightCache.updateMany.mockImplementation(async () => {
+        order.push('expireCache');
         return { count: 0 };
       });
 
       await service.ingest([sample()]);
 
-      expect(order).toEqual(['createMany', 'updateMany', 'deleteMany']);
+      expect(order).toEqual(['createMany', 'updateMany', 'expireCache']);
     });
 
     describe('transactional atomicity (P1-#2)', () => {
@@ -292,8 +296,8 @@ describe('IngestionService', () => {
           order.push('updateMany');
           return { count: 1 };
         });
-        prisma.wearableInsightCache.deleteMany.mockImplementation(async () => {
-          order.push('deleteMany');
+        prisma.wearableInsightCache.updateMany.mockImplementation(async () => {
+          order.push('expireCache');
           return { count: 0 };
         });
 
@@ -304,7 +308,7 @@ describe('IngestionService', () => {
           'tx:start',
           'createMany',
           'updateMany',
-          'deleteMany',
+          'expireCache',
           'tx:end',
         ]);
       });
@@ -320,7 +324,7 @@ describe('IngestionService', () => {
 
         await expect(service.ingest([sample()])).rejects.toBe(dbErr);
         // Cache invalidation must never run once the bump throws.
-        expect(prisma.wearableInsightCache.deleteMany).not.toHaveBeenCalled();
+        expect(prisma.wearableInsightCache.updateMany).not.toHaveBeenCalled();
       });
     });
 
@@ -437,7 +441,7 @@ describe('IngestionService', () => {
         );
         expect(prisma.wearableSample.createMany).not.toHaveBeenCalled();
         expect(prisma.wearableConnection.updateMany).not.toHaveBeenCalled();
-        expect(prisma.wearableInsightCache.deleteMany).not.toHaveBeenCalled();
+        expect(prisma.wearableInsightCache.updateMany).not.toHaveBeenCalled();
       });
 
       it('reports the failing batch index in the error message', async () => {

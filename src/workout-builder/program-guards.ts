@@ -42,6 +42,20 @@ export interface GuardedMaster {
 }
 
 /**
+ * PLANPROG: the live days of a program. Every writer stamps a day with its
+ * program's tenant (WorkoutPlan.coach_id = WorkoutProgram.coach_id). A day row
+ * with any other coach_id was added through the row layer by someone outside
+ * the tenant (migration 20270428000000 refuses new ones), so it is never read,
+ * copied or assigned as one of the program's days.
+ */
+export function programDaysWhere(program: {
+  id: string;
+  coach_id: string;
+}): Prisma.WorkoutPlanWhereInput {
+  return { program_id: program.id, coach_id: program.coach_id, archived_at: null };
+}
+
+/**
  * Take the master's row lock (SELECT ... FOR UPDATE) and return the columns
  * the guards need, or null when the row does not exist.
  */

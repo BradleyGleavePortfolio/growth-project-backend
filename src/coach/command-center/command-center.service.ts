@@ -23,7 +23,7 @@ import { Injectable, Logger, NotFoundException, Optional } from '@nestjs/common'
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { AdminPtmService } from '../../admin/ptm/admin-ptm.service';
-import { CoachAlertsService, ROMAN_SAFETY_ALERT_TYPES } from '../coach-alerts.service';
+import { CoachAlertsService, ROMAN_SAFETY_ALERT_TYPES, currentCoachAlerts } from '../coach-alerts.service';
 import { SubCoachScopeService } from '../../sub-coach/sub-coach-scope.service';
 import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../../consent/consent.service';
 import { CHURN_FACTOR_SCOPES, coachVisibleFactors } from './churn-factor-scopes';
@@ -94,7 +94,8 @@ export type ActionQueueAlertType =
   | 'build_week_gate'
   | 'bloodwork_review'
   | 'roman_urgent_reply'
-  | 'roman_eating_disorder_reply';
+  | 'roman_eating_disorder_reply'
+  | 'roman_crisis_reply';
 
 export interface ActionQueueItem {
   alert_id: string;
@@ -107,7 +108,7 @@ export interface ActionQueueItem {
   /**
    * Roman safety alerts only (owner 22a, 57w): the client's message that
    * prompted the reply, in full, and when they sent it. Null once the client
-   * deleted that chat.
+   * deleted that chat, and always null on a crisis alert (ROMAN-CRISIS-ALERT).
    */
   quote?: string | null;
   sent_at?: string | null;
@@ -122,6 +123,9 @@ const SAFETY_CARD_LINE: Partial<Record<string, (name: string) => string>> = {
     `Urgent: Roman sent ${name} a medical safety reply. Check in with them →`,
   roman_eating_disorder_reply: (name) =>
     `Roman sent ${name} an eating-disorder safety reply. Check in with them →`,
+  // ROMAN-CRISIS-ALERT, approved word for word: the first name only.
+  roman_crisis_reply: (name) =>
+    `Roman sent ${name.trim().split(/\s+/)[0] || name} a crisis safety reply. Please check in with them today.`,
 };
 
 export interface ActionQueueResponse {
@@ -154,6 +158,8 @@ function mapAlertType(backendType: string): ActionQueueAlertType {
       return 'roman_urgent_reply';
     case 'roman_eating_disorder_reply':
       return 'roman_eating_disorder_reply';
+    case 'roman_crisis_reply':
+      return 'roman_crisis_reply';
     default:
       // Unknown backend alert types are bucketed as high_churn_risk so
       // the mobile client still renders a row, but log a warning so we
@@ -205,7 +211,7 @@ function safetyAlertsForCurrentCoach(callerId: string): Prisma.CoachAlertWhereIn
       {
         OR: [
           { alert_type: { notIn: [...ROMAN_SAFETY_ALERT_TYPES] } },
-          { client: { coach_id: callerId } },
+          currentCoachAlerts(callerId),
         ],
       },
     ],
@@ -307,17 +313,15 @@ export class CommandCenterService {
     private readonly consent?: ConsentService,
   ) {}
 
-  // CF-SHARE-GATE-128: which of these clients share what (Settings > Privacy >
-  // Coach sharing). The grant belongs to the coach the client joined,
-  // `ownerCoachId`: a head coach reads under their own grant, a sub-coach
-  // under the head coach's, as for alerts and messages. The owner account has
+  // CF-SHARE-GATE-128, #SHARE-SIMPLE: whose logs the signed-in head or sub-coach (`coachId`) may read:
+  // ConsentService's one roster check (the head's id names only alert and message rows). The owner account has
   // no Command Center roster (getAuthorizedClientIds is coach-only), so there
   // is no owner bypass to keep here.
-  private async sharedWith(ownerCoachId: string, clientIds: string[]): Promise<SharedClientIds> {
+  private async sharedWith(coachId: string, clientIds: string[]): Promise<SharedClientIds> {
     if (!this.consent) {
       return { habits: clientIds, workouts: clientIds, allFour: clientIds };
     }
-    const granted = await this.consent.grantedScopesByClient(ownerCoachId, clientIds, COACH_FITNESS_SCOPES);
+    const granted = await this.consent.grantedScopesByClient(coachId, clientIds, COACH_FITNESS_SCOPES);
     const has = (id: string, scope: string) => granted.get(id)?.has(scope) === true;
     return {
       habits: clientIds.filter((id) => has(id, ConsentScope.FITNESS_HABITS_PROGRESS)),
@@ -405,7 +409,7 @@ export class CommandCenterService {
     // CF-SHARE-GATE-128: check-in tiles and streaks read only clients who
     // share Check-ins and habits; the at-risk count only clients who share all
     // four; alerts follow visibleAlertsWhere. Messages are not a switch.
-    const shared = await this.sharedWith(ownerCoachId, clientIds);
+    const shared = await this.sharedWith(coachId, clientIds);
 
     const [
       activeTodayGroups,
@@ -552,10 +556,10 @@ export class CommandCenterService {
     // exactly the clients the caller may see. For a head coach `clientIds`
     // is their full roster, so the board is identical to before — behaviour
     // unchanged.
-    const { clientIds: rosterIds, ownerCoachId } = await this.resolveScope(coachId);
+    const { clientIds: rosterIds } = await this.resolveScope(coachId);
     // CF-SHARE-GATE-128: the churn-risk score and its top factor read all four
     // kinds of logs, so a client appears here only while sharing all four.
-    const { allFour: clientIds } = await this.sharedWith(ownerCoachId, rosterIds);
+    const { allFour: clientIds } = await this.sharedWith(coachId, rosterIds);
     if (clientIds.length === 0) {
       return { items: [], total_at_risk: 0 };
     }
@@ -584,7 +588,7 @@ export class CommandCenterService {
     // churn-intervention.service.ts). Falls back to an activity-based label
     // only when a user has no parseable factors.
     const topFactorMap = await this.loadTopFactors(
-      ownerCoachId,
+      coachId,
       filtered.map((r) => r.user_id),
     );
 
@@ -620,7 +624,7 @@ export class CommandCenterService {
   // CHURN-LABELS-132: only a factor the client shares with this coach, under
   // the same grant as sharedWith (churn-factor-scopes.ts).
   private async loadTopFactors(
-    ownerCoachId: string,
+    coachId: string,
     userIds: string[],
   ): Promise<Map<string, string>> {
     const result = new Map<string, string>();
@@ -645,7 +649,7 @@ export class CommandCenterService {
       select: { user_id: true, factors: true },
     });
     const granted = this.consent
-      ? await this.consent.grantedScopesByClient(ownerCoachId, userIds, CHURN_FACTOR_SCOPES)
+      ? await this.consent.grantedScopesByClient(coachId, userIds, CHURN_FACTOR_SCOPES)
       : null;
     for (const p of predictions) {
       const shared = granted === null ? 'all' : granted.get(p.user_id) ?? new Set<string>();
@@ -684,13 +688,13 @@ export class CommandCenterService {
 
     // SC-2: roster scoped via SubCoachScopeService (head = full roster,
     // sub = assigned clients only).
-    const { clientIds, ownerCoachId, nameMap } = await this.resolveScopeWithNames(coachId);
+    const { clientIds, nameMap } = await this.resolveScopeWithNames(coachId);
     if (clientIds.length === 0) {
       return { items: [], total_active_streaks: 0 };
     }
     // CF-SHARE-GATE-128: check-in streaks only for clients who share Check-ins
     // and habits, workout streaks only for clients who share Workouts.
-    const shared = await this.sharedWith(ownerCoachId, clientIds);
+    const shared = await this.sharedWith(coachId, clientIds);
     const sevenDaysAgo = new Date(Date.now() - 7 * ONE_DAY_MS);
 
     const checkInStreaks = await this.prisma.clientSignal.findMany({
@@ -902,7 +906,7 @@ export class CommandCenterService {
 
     // CF-SHARE-GATE-128: alerts built from a client's logs follow that log's
     // Coach sharing switch (visibleAlertsWhere).
-    const shared = await this.sharedWith(ownerCoachId, clientIds);
+    const shared = await this.sharedWith(coachId, clientIds);
     const baseWhere: Prisma.CoachAlertWhereInput = {
       coach_id: alertCoachIds(coachId, ownerCoachId),
       client_id: { in: clientIds },
@@ -936,7 +940,8 @@ export class CommandCenterService {
    * Owner 57d: one Roman safety alert by id, for the tap of its push or inbox
    * row. The same fields as its queue row, and the same rule: only the
    * client's coach of record reads it. Another coach, an assistant, a former
-   * coach, another alert type or a deleted message is the same 404.
+   * coach, another alert type or a deleted message is the same 404. A crisis
+   * alert has no message to quote.
    */
   async getSafetyAlert(alertId: string, coachId: string): Promise<ActionQueueItem> {
     const { clientIds, ownerCoachId } = await this.resolveScope(coachId);
@@ -951,14 +956,16 @@ export class CommandCenterService {
       include: { client: { select: { name: true } } },
     });
     const quote = alert ? (await this.safetyQuotes([alert])).get(alert.id) : undefined;
-    if (!alert || !quote) throw new NotFoundException('Alert not found');
+    if (!alert || (!quote && alert.alert_type !== 'roman_crisis_reply')) {
+      throw new NotFoundException('Alert not found');
+    }
     return queueItem(alert, quote);
   }
 
   /**
    * The client's own message behind each Roman safety alert in the page, by
    * alert id: only that one message, only while its chat exists (a chat the
-   * client deleted is erased, and so is the quote).
+   * client deleted is erased, and so is the quote). Never for a crisis alert.
    */
   private async safetyQuotes(
     alerts: Array<{ id: string; client_id: string; alert_type: string; payload: Prisma.JsonValue }>,
@@ -966,7 +973,8 @@ export class CommandCenterService {
     const refs = new Map<string, Array<{ alertId: string; clientId: string }>>();
     for (const a of alerts) {
       const p = a.payload as { roman_message_id?: unknown } | null;
-      if (!SAFETY_CARD_LINE[a.alert_type] || typeof p?.roman_message_id !== 'string') continue;
+      if (a.alert_type === 'roman_crisis_reply' || !SAFETY_CARD_LINE[a.alert_type]) continue;
+      if (typeof p?.roman_message_id !== 'string') continue;
       refs.set(p.roman_message_id, [
         ...(refs.get(p.roman_message_id) ?? []),
         { alertId: a.id, clientId: a.client_id },

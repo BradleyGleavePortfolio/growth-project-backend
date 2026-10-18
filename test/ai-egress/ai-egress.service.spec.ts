@@ -69,7 +69,7 @@ describe('AiEgressService.assertMaySend / anthropicMessagesCreate', () => {
     const { client, create } = fakeAnthropic();
     await egress.anthropicMessagesCreate(
       client,
-      clientDataSubject('client-a', 'coach'),
+      clientDataSubject('client-a', 'coach', 'base', 'coach-1'),
       'coach.churn_draft',
       PARAMS,
     );
@@ -84,7 +84,7 @@ describe('AiEgressService.assertMaySend / anthropicMessagesCreate', () => {
     const err = await refusal(
       egress.anthropicMessagesCreate(
         client,
-        clientDataSubject('client-a', 'coach'),
+        clientDataSubject('client-a', 'coach', 'base', 'coach-1'),
         'coach.churn_draft',
         PARAMS,
       ),
@@ -115,7 +115,7 @@ describe('AiEgressService.assertMaySend / anthropicMessagesCreate', () => {
     const err = await refusal(
       egress.anthropicMessagesCreate(
         client,
-        clientDataSubject('client-a', 'coach'),
+        clientDataSubject('client-a', 'coach', 'base', 'coach-1'),
         'coach.brief',
         PARAMS,
       ),
@@ -131,7 +131,7 @@ describe('AiEgressService.assertMaySend / anthropicMessagesCreate', () => {
     await expect(
       egress.anthropicMessagesCreate(
         client,
-        clientDataSubject('client-a', 'coach'),
+        clientDataSubject('client-a', 'coach', 'base', 'coach-1'),
         'coach.brief',
         PARAMS,
       ),
@@ -144,14 +144,14 @@ describe('AiEgressService.assertMaySend / anthropicMessagesCreate', () => {
     const { client, create } = fakeAnthropic();
     await egress.anthropicMessagesCreate(
       client,
-      clientDataSubject(['a', 'b'], 'coach'),
+      clientDataSubject(['a', 'b'], 'coach', 'base', 'coach-1'),
       'gateway',
       PARAMS,
     );
     await expect(
       egress.anthropicMessagesCreate(
         client,
-        clientDataSubject(['a', 'b', 'c'], 'coach'),
+        clientDataSubject(['a', 'b', 'c'], 'coach', 'base', 'coach-1'),
         'gateway',
         PARAMS,
       ),

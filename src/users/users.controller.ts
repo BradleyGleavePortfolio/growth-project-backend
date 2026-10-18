@@ -27,6 +27,7 @@ import { AccountDeletionService } from '../account-deletion/account-deletion.ser
 import type { UserPreferencesDto } from './preferences.dto';
 import { AllowDeletionScheduled } from '../common/decorators/allow-deletion-scheduled.decorator';
 import { UpdatePushTokenDto } from './dto/update-push-token.dto';
+import { AllowBeforeAgeConfirmed } from '../auth/client-age';
 
 @ApiTags('users')
 @ApiBearerAuth('bearer')
@@ -168,6 +169,9 @@ export class UsersController {
   })
   @ApiResponse({ status: 200, description: 'Token updated.' })
   @ApiResponse({ status: 400, description: 'Validation error.' })
+  // FIXAGE2 R5: sign-out clears this phone's push token first, so a client
+  // the age gate refuses can still sign out. The rest of /users stays gated.
+  @AllowBeforeAgeConfirmed()
   @Patch('me/push-token')
   async updatePushToken(
     @Request() req: AuthedRequest,

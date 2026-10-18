@@ -50,8 +50,8 @@ export const WEIGHT_LOSS_MEDICINES =
 /**
  * Operator ruling (B-913-2, R1): for the urgent route only, the client's own
  * injection counts as the medicine ("since my shot I can't keep anything
- * down"): the fixed reply says "Contact your prescribing clinic", which fits
- * any prescribed injection. "My flu shot" is not "my shot".
+ * down"): the fixed reply says "Contact your doctor or prescriber", which
+ * fits any prescribed injection. "My flu shot" is not "my shot".
  */
 const OWN_INJECTION =
   'my (weekly |last |latest )?(shots?|jabs?|injections?|pens?)|the shot|shot day';
@@ -332,14 +332,15 @@ export const ROMAN_SAFETY_TEMPLATES: Record<FixedReplyClass, string> = {
     'If you are in immediate danger, call 911. ' +
     'If you can, let someone you trust know where you are so they can sit with you. ' +
     'You matter, and talking to a person right now is the right next step.',
-  // Owner decision 6 wording, word for word.
+  // Owner C6a (Option 1) wording, word for word.
   urgent_symptoms:
-    'This needs medical attention. Contact your prescribing clinic today. If symptoms are severe, call 911.',
+    'This needs medical attention. Contact your doctor or prescriber today. If symptoms are severe, call 911.',
 };
 
 /**
- * Owner 22a and 57: added to Roman's reply when that reply alerted the
- * client's current coach (urgent_symptoms, or eating_disorder_risk with the
+ * Owner 22a, 57 and #CRISIS-WORDING: added to Roman's reply when that reply
+ * alerted the client's current coach (urgent_symptoms, emergency or self_harm
+ * while FEATURE_ROMAN_CRISIS_ALERT is on, or eating_disorder_risk with the
  * guided reply or the fixed fallback). Word for word.
  */
 export const ROMAN_COACH_TOLD_LINE = "We've let your coach know so they can check in with you.";
@@ -355,14 +356,47 @@ export const ROMAN_COACH_TOLD_LINE = "We've let your coach know so they can chec
  */
 export const ROMAN_SAFETY_ROUTE_REASON: Record<
   FixedReplyClass,
-  'call_911' | 'call_988' | 'contact_clinic'
+  'call_911' | 'call_988' | 'contact_prescriber'
 > = {
   emergency: 'call_911',
   self_harm: 'call_988',
-  urgent_symptoms: 'contact_clinic',
+  urgent_symptoms: 'contact_prescriber',
 };
 
 export const ROMAN_SAFETY_ROUTER_MODEL_ID = 'safety-router';
+
+/** CRISIS-2B: the actions the app offers under a fixed crisis reply; the app keeps this order. */
+export type RomanSafetyAction = 'call_911' | 'call_988' | 'text_988' | 'message_coach';
+
+/**
+ * Owner "thw call 911 988 buttons - Nevermind, do them!" (operator ruling
+ * 6243611810): each fixed reply's actions lead with the number it names first.
+ */
+const ROMAN_SAFETY_ACTIONS = {
+  emergency: ['call_911', 'call_988', 'text_988'],
+  self_harm: ['call_988', 'text_988', 'call_911'],
+} as const satisfies Record<'emergency' | 'self_harm', readonly RomanSafetyAction[]>;
+
+/**
+ * Owner "#CRISIS-2B - all 3 buttons": the actions under Roman's fixed
+ * emergency or self-harm reply. The stored reply is the marker (a Roman turn
+ * that starts with one of those two templates, with or without the told
+ * line), so the live answer and every later read of it agree. Call 911, call
+ * and text 988 for everyone; message_coach last, only while the caller is a
+ * client with a coach now. Null for every other turn, the urgent-symptoms
+ * reply and the eating-disorder replies included.
+ */
+export function romanSafetyActions(
+  turn: { role: string; content: string },
+  hasCoach: boolean,
+): RomanSafetyAction[] | null {
+  const cls = (['emergency', 'self_harm'] as const).find(
+    (c) => turn.role === 'roman' && turn.content.startsWith(ROMAN_SAFETY_TEMPLATES[c]),
+  );
+  if (!cls) return null;
+  const actions: RomanSafetyAction[] = [...ROMAN_SAFETY_ACTIONS[cls]];
+  return hasCoach ? [...actions, 'message_coach'] : actions;
+}
 
 /**
  * CF-ROMAN-COPY-B-128 (owner default 10-07): the fixed reply to an

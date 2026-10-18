@@ -21,6 +21,7 @@ import type { PlaybookSignalsService } from '../../src/roman/playbook/playbook-s
 import {
   PLAYBOOK_SOURCE_LIMITS,
   PlaybookSourceCollector,
+  playbookDigestHolds,
   playbookLedgerDigest,
 } from '../../src/roman/playbook/playbook-sources';
 
@@ -59,7 +60,7 @@ function fakePrisma(tables: Record<string, Row[]>) {
     'coachGuideline',
     'workoutProgram',
     'workoutPlan',
-    'mealPlan',
+    'dailyMealPlan',
     'coachingSession',
     'coachMessage',
     'exerciseCatalogItem',
@@ -119,11 +120,11 @@ function tables(over: Record<string, Row[]> = {}): Record<string, Row[]> {
       { id: 'plan-o', coach_id: O, archived_at: null, is_template: false, program_id: null, name: 'Other Plan', exercises: [] },
     ],
     exerciseCatalogItem: [{ id: 'ex-bench', slug: 'barbell-bench-press', source_ref: null, name: 'Barbell Bench Press' }],
-    mealPlan: [
-      { id: 'mp-wide', coach_id: H, client_id: null, archived_at: null, title: 'High protein base', notes: 'Four meals, carbs around training.' },
-      { id: 'mp-c1', coach_id: H, client_id: C1, archived_at: null, title: 'Cut for Zelda', notes: null },
-      { id: 'mp-c2', coach_id: H, client_id: C2, archived_at: null, title: 'Marcus private plan', notes: 'secret' },
-      { id: 'mp-o', coach_id: O, client_id: null, archived_at: null, title: 'Other meal plan', notes: null },
+    dailyMealPlan: [
+      { id: 'mp-wide', coach_id: H, archived_at: null, name: 'High protein base', notes: 'Four meals, carbs around training.' },
+      // A moved client's frozen copy is archived: never read.
+      { id: 'mp-frozen', coach_id: H, archived_at: daysAgo(1), name: 'Marcus private plan', notes: 'secret' },
+      { id: 'mp-o', coach_id: O, archived_at: null, name: 'Other meal plan', notes: null },
     ],
     coachingSession: [
       { id: 'sn-c1', coach_id: H, client_id: C1, start_at: daysAgo(5), coach_notes_md: 'Zelda said the knee hurts, call 415-555-0101 on 2026-10-01.' },
@@ -144,12 +145,13 @@ function tables(over: Record<string, Row[]> = {}): Record<string, Row[]> {
   };
 }
 
-function collector(t: Record<string, Row[]>, memory: readonly string[] = [C1, C3, OC]) {
+function collector(t: Record<string, Row[]>, memory: readonly string[] = [C1, C3, OC], noAi: readonly string[] = []) {
   const { prisma, calls } = fakePrisma(t);
   const budget = { resolveHeadCoachId: jest.fn(async (id: string) => (id === S ? H : id)) };
   const egress = {
     consentedClients: jest.fn(async (ids: readonly string[], scope: string) =>
       new Set(scope === 'memory' ? ids.filter((id) => memory.includes(id)) : ids)),
+    coachConsented: jest.fn(async (id: string) => !noAi.includes(id)),
   };
   const signals = { compute: jest.fn(async () => SIGNALS) };
   const svc = new PlaybookSourceCollector(
@@ -175,6 +177,17 @@ describe('R11-P3b-1 playbook sources: tenancy', () => {
     expect(JSON.stringify(out.items)).not.toMatch(/Other|Olive/);
   });
 
+  it('COACH-AI-CONSENT: a sub-coach who has not allowed AI is not read; the head still is', async () => {
+    const { svc, calls, egress } = collector(tables(), undefined, [S]);
+    const out = await svc.collect(H, NOW);
+    expect(egress.coachConsented).toHaveBeenCalledWith(S);
+    expect(calls.coachMessage[0].where.sender_id).toEqual({ in: [H] });
+    expect(calls.coachingSession[0].where.coach_id).toEqual({ in: [H] });
+    expect(calls.workoutProgram[0].where.owner_user_id).toEqual({ in: [H] });
+    // tpl-h and m-c3 are the sub-coach's own text.
+    expect(ids(out)).toEqual(['g-c1', 'g-wide', 'm-c1', 'mp-wide', 'plan-h', 'sn-c1']);
+  });
+
   it('folds a sub-coach into its head coach', async () => {
     const { svc, signals } = collector(tables());
     const out = await svc.collect(S, NOW);
@@ -190,12 +203,12 @@ describe('R11-P3b-1 playbook sources: tenancy', () => {
 });
 
 describe('R11-P3b-1 playbook sources: memory-scope consent', () => {
-  it('uses only memory-scope clients for messages, notes and client-bound guidelines or meal plans', async () => {
+  it('uses only memory-scope clients for messages, notes and client-bound guidelines', async () => {
     const { svc, egress } = collector(tables());
     const out = await svc.collect(H, NOW);
     expect(egress.consentedClients).toHaveBeenCalledWith([C1, C2, C3], 'memory');
     expect(out.consentedClientIds).toEqual([C1, C3]);
-    expect(ids(out)).toEqual(['g-c1', 'g-wide', 'm-c1', 'm-c3', 'mp-c1', 'mp-wide', 'plan-h', 'sn-c1', 'tpl-h']);
+    expect(ids(out)).toEqual(['g-c1', 'g-wide', 'm-c1', 'm-c3', 'mp-wide', 'plan-h', 'sn-c1', 'tpl-h']);
     expect(out.items.map((i) => i.text).join('\n')).not.toMatch(/Marcus|secret|private/);
     expect(out.ledger).toContainEqual({ source_kind: 'session_note', source_id: 'sn-c1', client_id: C1 });
     expect(out.ledger).toContainEqual({ source_kind: 'guideline', source_id: 'g-wide' });
@@ -243,9 +256,17 @@ describe('R11-P3b-1 playbook sources: digest and no egress', () => {
     const sorted = out.ledger
       .map((r) => [r.source_kind, r.source_id, r.client_id ?? ''])
       .sort((a, b) => a.join('\u0000').localeCompare(b.join('\u0000')));
-    expect(out.digest).toBe(createHash('sha256').update(JSON.stringify(sorted)).digest('hex'));
-    expect(playbookLedgerDigest([...out.ledger].reverse())).toBe(out.digest);
-    expect(playbookLedgerDigest(out.ledger.slice(1))).not.toBe(out.digest);
+    const sha = createHash('sha256').update(JSON.stringify(sorted)).digest('hex');
+    // PLAYBOOK-WITHDRAW: plus a tag per client eligible at the build (C2 has no memory grant).
+    const tag = (id: string) => createHash('sha256').update(`${H}\u0000${id}`).digest('hex').slice(0, 16);
+    expect(out.digest).toBe(`ledger-v2:${sha}:${[tag(C1), tag(C3)].sort().join(',')}`);
+    expect(playbookLedgerDigest([...out.ledger].reverse(), [C3, C1], H)).toBe(out.digest);
+    expect(playbookLedgerDigest(out.ledger.slice(1), [C1, C3], H)).not.toBe(out.digest);
+    // Holds while every client it names is eligible; a client who joined does not matter.
+    expect(playbookDigestHolds(out.digest, out.ledger, [C2, C1, C3], H)).toBe(true);
+    expect(playbookDigestHolds(out.digest, out.ledger, [C1], H)).toBe(false);
+    expect(playbookDigestHolds(out.digest, out.ledger.slice(1), [C1, C3], H)).toBe(false);
+    expect(playbookDigestHolds(sha, out.ledger, [C1, C3], H)).toBe(false); // the pre-fix format
   });
 
   it('makes no model call and no writes', () => {

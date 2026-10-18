@@ -64,13 +64,6 @@ interface FakeSaved {
   saved_at: Date;
 }
 
-interface FakeMealPlan {
-  client_id: string;
-  archived_at: Date | null;
-  created_at: Date;
-  items: unknown;
-}
-
 type Where = Record<string, unknown>;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -81,7 +74,6 @@ class FakeDb {
   users = new Map<string, FakeUser>();
   recipes: FakeRecipe[] = [];
   saved: FakeSaved[] = [];
-  mealPlans: FakeMealPlan[] = [];
   private seq = 0;
   private clock = Date.UTC(2026, 9, 1, 12, 0, 0);
 
@@ -286,13 +278,6 @@ class FakeDb {
       },
       // CF-ALLERGY-128: nobody in this fixture has saved allergies.
       userProfile: { findUnique: jest.fn(async () => null) },
-      mealPlan: {
-        findMany: jest.fn(async (args: { where: { client_id: string } }) =>
-          this.mealPlans.filter(
-            (p) => p.client_id === args.where.client_id && p.archived_at === null,
-          ),
-        ),
-      },
     };
   }
 }
@@ -716,25 +701,11 @@ describe('recipe photo links', () => {
 // ─── Prep guide uses the same policy ─────────────────────────────────────────
 
 describe('prep guide is tenant-scoped', () => {
-  it("a meal plan cannot surface another tenant's recipe; only visible ones are returned, photo-free", async () => {
-    const { prep, db, u, r } = build();
-    db.mealPlans.push({
-      client_id: 'client-a1',
-      archived_at: null,
-      created_at: new Date(),
-      items: [
-        { recipe_id: r.rBShared.id },
-        { recipe_id: r.rASharedLegacyImage.id },
-        { recipe_id: r.rAPrivate.id },
-      ],
-    });
-    const out = await prep.getWeeklyPrepGuide(u.clientA1, '2026-09-28');
-    expect(out.recipes.map((x) => x.title)).toEqual(['A shared']);
-    expect(out.recipes[0].image_url).toBeNull();
-  });
-
-  it('with no referenced recipe there is no platform-wide fallback', async () => {
+  it("there is no platform-wide fallback and no other tenant's recipe; photo-free", async () => {
     const { prep, u } = build();
+    const a1 = (await prep.getWeeklyPrepGuide(u.clientA1, '2026-09-28')).recipes;
+    expect(a1.map((x) => x.title)).not.toContain('B shared');
+    expect(a1.every((x) => x.image_url === null)).toBe(true);
     expect(
       (await prep.getWeeklyPrepGuide(u.clientB1, '2026-09-28')).recipes.map((x) => x.title),
     ).toEqual(['B shared']);

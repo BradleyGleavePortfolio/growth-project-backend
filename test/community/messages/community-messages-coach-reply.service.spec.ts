@@ -46,7 +46,7 @@ function createdMessage(senderId: string): CommunityMessage {
 }
 
 describe('CommunityMessagesService.send — coach-inbox producer', () => {
-  let access: { findCohort: jest.Mock; canAccessCohort: jest.Mock };
+  let access: { findCohort: jest.Mock; canAccessCohort: jest.Mock; assertCanPost: jest.Mock };
   let repo: {
     createCohortMessage: jest.Mock;
     markCohortClientMessagesReplied: jest.Mock;
@@ -66,6 +66,7 @@ describe('CommunityMessagesService.send — coach-inbox producer', () => {
     access = {
       findCohort: jest.fn(async () => ({ id: COHORT, workspace_id: WORKSPACE })),
       canAccessCohort: jest.fn(async () => true),
+      assertCanPost: jest.fn(async () => undefined),
     };
     repo = {
       createCohortMessage: jest.fn(),

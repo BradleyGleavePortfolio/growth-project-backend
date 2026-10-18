@@ -134,6 +134,10 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // LoggedFoodEntry.food_item_id is ON DELETE RESTRICT, so any entry pointing
   // at one goes first.
   { model: 'LoggedFoodEntry', field: 'food_item.created_by_user_id', action: del },
+  // FOODSAVED: favourites and saved meals (items cascade with their meal). The
+  // data export carries the same rows (food_favorites, saved_meals, saved_meal_items).
+  { model: 'FoodFavorite', field: 'user_id', action: del },
+  { model: 'SavedMeal', field: 'user_id', action: del },
   { model: 'FoodItem', field: 'created_by_user_id', action: del },
   // ExerciseSet and HabitLog hold ON DELETE RESTRICT FKs to their parents
   // (baseline migration), so the children go first (A-608-3).
@@ -148,6 +152,8 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CheckIn', field: 'coach_id', action: detach('coach_id') },
   { model: 'HabitLog', field: 'habit.user_id', action: del },
   { model: 'Habit', field: 'user_id', action: del },
+  // HB1: habits a deleted coach set stay with their client, as the client's own.
+  { model: 'Habit', field: 'assigned_by_coach_id', action: detach('assigned_by_coach_id') },
   { model: 'LessonCompletion', field: 'user_id', action: del },
   { model: 'SavedRecipe', field: 'user_id', action: del },
   { model: 'ListItem', field: 'user_id', action: del },
@@ -243,6 +249,7 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'RomanClientNote', field: 'client_id', action: del },
   { model: 'RomanClientSummary', field: 'client_id', action: del },
   { model: 'RomanMemoryState', field: 'client_id', action: del },
+  { model: 'RomanUsageDaily', field: 'client_id', action: del },
   { model: 'RomanMessage', field: 'user_id', action: del },
   { model: 'RomanSession', field: 'user_id', action: del },
   { model: 'UserAIQuota', field: 'user_id', action: del },

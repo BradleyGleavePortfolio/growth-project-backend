@@ -56,3 +56,26 @@ BEGIN
         CREATE ROLE anon NOLOGIN;
     END IF;
 END $$;
+
+-- 4. realtime schema (C10RT) --------------------------------------------------
+-- Supabase ships realtime.messages and realtime.topic(); migrations write
+-- Realtime authorization policies on that table. Same stub as
+-- scripts/ci/supabase-shim.sql.
+CREATE SCHEMA IF NOT EXISTS realtime;
+CREATE TABLE IF NOT EXISTS realtime.messages (
+    "id" uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    "topic" text NOT NULL,
+    "extension" text NOT NULL,
+    "payload" jsonb,
+    "event" text,
+    "private" boolean DEFAULT false,
+    "updated_at" timestamp NOT NULL DEFAULT now(),
+    "inserted_at" timestamp NOT NULL DEFAULT now()
+);
+ALTER TABLE realtime.messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE realtime.messages FORCE ROW LEVEL SECURITY;
+CREATE OR REPLACE FUNCTION realtime.topic()
+    RETURNS text
+    LANGUAGE sql
+    STABLE
+AS $$ SELECT nullif(current_setting('realtime.topic', true), '')::text $$;

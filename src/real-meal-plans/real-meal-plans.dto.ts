@@ -13,6 +13,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { IsTimeOfDay } from '../common/validators/time-of-day';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -72,6 +73,8 @@ export class DailyPlanSlotInputDto {
   @IsString() @IsIn(SLOT_LABELS as unknown as string[])
   slot_label!: typeof SLOT_LABELS[number];
   @IsOptional() @IsInt() @Min(0) @Max(20) order?: number;
+  // C2-C0: the coach's planned time for the meal, "HH:MM"; absent or null = no time.
+  @IsOptional() @IsTimeOfDay() time_of_day?: string | null;
 }
 
 export class CreateDailyMealPlanDto {

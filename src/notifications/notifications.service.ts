@@ -28,6 +28,7 @@ import { PushAbortedError, PushDeliveryResult } from './push-delivery.types';
 import { VoicePolicyService } from '../roman/voice/voice-policy.service';
 import { EnqueueResult, PushDeliveryService } from './push/push-delivery.service';
 import { PushContext, lockScreenCopy, safetyAlertTap } from './push/lock-screen-copy';
+import { currentCoachInbox } from './current-coach-inbox';
 import { resolveRecipientTimeZone } from './recipient-timezone';
 import { notificationPrefsPrefix, pushAllowedByPreferences } from './push/push-preferences';
 import { RomanCopyPayload } from '../roman/voice/voice-policy.constants';
@@ -630,7 +631,8 @@ export class NotificationsService implements OnModuleInit {
    */
   async listNotifications(userId: string, query: GetNotificationsQueryDto) {
     const limit = Math.min(query.limit ?? 20, 100);
-    const where: Record<string, unknown> = { user_id: userId, ...INBOX_HIDES_PUSH_TWINS };
+    const inbox = await this.inboxWhere(userId);
+    const where: Record<string, unknown> = { ...inbox, ...INBOX_HIDES_PUSH_TWINS };
 
     if (query.filter === 'unread') {
       where.read_at = null;
@@ -660,7 +662,7 @@ export class NotificationsService implements OnModuleInit {
     const nextCursor = hasNextPage ? items[items.length - 1].id : null;
 
     const unreadCount = await this.prisma.notification.count({
-      where: { user_id: userId, read_at: null, ...INBOX_HIDES_PUSH_TWINS },
+      where: { ...inbox, read_at: null, ...INBOX_HIDES_PUSH_TWINS },
     });
 
     // Phase 2: when the panel is empty, attach the Roman empty-state copy +
@@ -698,10 +700,10 @@ export class NotificationsService implements OnModuleInit {
    * does not belong to the requesting user.
    */
   async markRead(notificationId: string, userId: string) {
-    const row = await this.prisma.notification.findUnique({
-      where: { id: notificationId },
+    const row = await this.prisma.notification.findFirst({
+      where: { ...(await this.inboxWhere(userId)), id: notificationId },
     });
-    if (!row || row.user_id !== userId) {
+    if (!row) {
       throw new NotFoundException('Notification not found');
     }
     if (row.read_at) {
@@ -718,7 +720,7 @@ export class NotificationsService implements OnModuleInit {
    */
   async markAllRead(userId: string) {
     const result = await this.prisma.notification.updateMany({
-      where: { user_id: userId, read_at: null },
+      where: { ...(await this.inboxWhere(userId)), read_at: null },
       data: { read_at: new Date() },
     });
     return { updated: result.count };
@@ -730,8 +732,13 @@ export class NotificationsService implements OnModuleInit {
    */
   async getUnreadCount(userId: string): Promise<number> {
     return this.prisma.notification.count({
-      where: { user_id: userId, read_at: null, ...INBOX_HIDES_PUSH_TWINS },
+      where: { ...(await this.inboxWhere(userId)), read_at: null, ...INBOX_HIDES_PUSH_TWINS },
     });
+  }
+
+  /** The user's inbox: a moved client's rows leave the coach they left (current-coach-inbox.ts). */
+  private inboxWhere(userId: string): Promise<Prisma.NotificationWhereInput> {
+    return currentCoachInbox(this.prisma, userId);
   }
 
   // ── Push delivery (Phase 6B baseline, extended Phase 9) ──────────────────

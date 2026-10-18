@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { planStaysInTenantWhere } from '../workout-builder/tenant-clients';
 import { broadcastError } from './broadcast-errors';
 import type { CoachScope } from './broadcast-scope.service';
 
@@ -9,9 +10,7 @@ import type { CoachScope } from './broadcast-scope.service';
  * own library plus a display snapshot captured when it is attached:
  *
  *   workout   -> WorkoutPlan      (tenant or author, not archived)
- *   meal_plan -> MealPlan         (tenant or author, not archived; a plan
- *                                  that belongs to one client can only go
- *                                  to that client, never to a group)
+ *   meal_plan -> DailyMealPlan    (tenant or author, not archived)
  *   booking   -> SessionType      (tenant or author, not archived)
  *   package   -> CoachPackage     (tenant or author, active, not archived)
  *   check_in  -> no reference     (a prompt that opens the client's check-in)
@@ -89,15 +88,8 @@ export function readStoredCard(v: Prisma.JsonValue | null): ResolvedCard | null 
 export class CardsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Resolve and validate a card for `scope`. `audience` is 'group' for
-   * broadcasts and the client id for a 1:1 send.
-   */
-  async resolve(
-    scope: CoachScope,
-    spec: CardSpec,
-    audience: 'group' | { clientId: string },
-  ): Promise<ResolvedCard> {
+  /** Resolve and validate a card for `scope`. */
+  async resolve(scope: CoachScope, spec: CardSpec): Promise<ResolvedCard> {
     const owners = [...new Set([scope.tenantId, scope.actorId])];
     const note = spec.note ?? null;
     const notFound = () => broadcastError('card.ref_not_found', { type: spec.type });
@@ -106,7 +98,12 @@ export class CardsService {
         return { type: 'check_in', ref_id: null, snapshot: { title: 'Check-in', note } };
       case 'workout': {
         const p = await this.prisma.workoutPlan.findFirst({
-          where: { id: spec.ref_id, coach_id: { in: owners }, archived_at: null },
+          where: {
+            id: spec.ref_id,
+            coach_id: { in: owners },
+            archived_at: null,
+            ...planStaysInTenantWhere(scope.tenantId),
+          },
           select: { id: true, name: true, type: true, duration_estimate_minutes: true },
         });
         if (!p) throw notFound();
@@ -122,16 +119,12 @@ export class CardsService {
         };
       }
       case 'meal_plan': {
-        const m = await this.prisma.mealPlan.findFirst({
+        const m = await this.prisma.dailyMealPlan.findFirst({
           where: { id: spec.ref_id, coach_id: { in: owners }, archived_at: null },
-          select: { id: true, title: true, client_id: true },
+          select: { id: true, name: true },
         });
         if (!m) throw notFound();
-        if (m.client_id) {
-          if (audience === 'group') throw broadcastError('card.meal_plan_client_specific');
-          if (m.client_id !== audience.clientId) throw notFound();
-        }
-        return { type: 'meal_plan', ref_id: m.id, snapshot: { title: m.title, note } };
+        return { type: 'meal_plan', ref_id: m.id, snapshot: { title: m.name, note } };
       }
       case 'booking': {
         const s = await this.prisma.sessionType.findFirst({

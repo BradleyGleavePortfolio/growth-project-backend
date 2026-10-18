@@ -132,20 +132,9 @@ export class CoachMediaMuxWebhookController {
     @Headers('mux-signature') signature: string,
   ) {
     // Audit P1-2 fix: HMAC must verify against the EXACT bytes Mux sent,
-    // not a re-serialised JS object. main.ts wires `rawBody: true` so
-    // req.rawBody is a Buffer on every request. If middleware is
-    // misconfigured we fail loudly rather than fall back to JSON.stringify
-    // (that fallback is what would silently reject legit events).
-    const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
-    if (!Buffer.isBuffer(rawBody)) {
-      this.logger.error(
-        'Mux webhook received without rawBody. Verify rawBody:true is wired in main.ts.',
-      );
-      throw new BadRequestException('Mux webhook raw body unavailable');
-    }
-    const raw = rawBody.toString('utf8');
+    // not a re-serialised JS object. MuxService refuses a missing rawBody.
     const ok = this.mux.verifyWebhookSignature({
-      payload: raw,
+      rawBody: (req as Request & { rawBody?: Buffer }).rawBody,
       signatureHeader: signature,
     });
     if (!ok) {

@@ -69,10 +69,11 @@ describe('R11-00 prompt seam', () => {
   // client hashes re-pinned for the roman-client-v4 crisis section (AUDIT-05-125),
   // then for CF-ROMAN-COPY-B-128 (client framing assumes no coach, real tab names).
   // Re-pinned again: the calorie floor no longer yields to a lower coach target.
+  // Re-pinned for C6-SERVER (owner rule C-6): one reworded tone sentence, roman-client-v5.
   const MAIN = {
     client_plain: {
       input: { surface: 'client' as const, voice: v0 },
-      hash: '902662c227a26156a3ee9a77deb0e7fa9c8289d6c4a3dd8cd6c701bb8e8c62de',
+      hash: '8689412117cc976775272e7d36111a648ffdafa1e83f8319f6808776eb2babb4',
     },
     coach_plain: {
       input: {
@@ -90,11 +91,11 @@ describe('R11-00 prompt seam', () => {
         routerHint: 'Hint line.',
         clientData: CLIENT_DATA,
       },
-      hash: '119e3bc5de78835724c1347db8f20e6dcf0a60d864729d2ccb59e71450db780f',
+      hash: '3652015e737dee2dbceae7d4b161887c9f9e03001a1ae592463b2c8bee0bb6c4',
     },
     client_unavailable: {
       input: { surface: 'client' as const, voice: v1, clientDataUnavailable: true },
-      hash: '5219fc945d9478ce85a863b730fae0d02bca59a0efbb3575df6251123662e747',
+      hash: '7c2436d8d6bb8549b2448a6dd839858839e049cbe797d831005690963c9fa3e8',
     },
   };
 
@@ -317,7 +318,7 @@ describe('R11-00 turn seam (RomanService.streamAssistantTurn)', () => {
   ) {
     const db = makePersonaDb();
     const ctx = withContext
-      ? new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource())
+      ? new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource(), egress)
       : null;
     const anthropic = makeAnthropic();
     const svc = new RomanService(

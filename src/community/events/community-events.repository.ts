@@ -103,25 +103,6 @@ export class CommunityEventsRepository {
     });
   }
 
-  /**
-   * The ids of every cohort in the workspace the user is an ACTIVE member of.
-   * Used to bound a member's event list to their own cohorts (the F1 fix).
-   */
-  async activeCohortIds(
-    workspaceId: string,
-    userId: string,
-  ): Promise<string[]> {
-    const rows = await this.prisma.communityMembership.findMany({
-      where: {
-        workspace_id: workspaceId,
-        user_id: userId,
-        status: 'active',
-      },
-      select: { cohort_id: true },
-    });
-    return rows.map((r) => r.cohort_id);
-  }
-
   async update(
     eventId: string,
     data: Prisma.CommunityEventUpdateInput,

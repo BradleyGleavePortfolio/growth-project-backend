@@ -24,6 +24,9 @@ export interface OpenSlotsPayload {
   // ("Book at least 1 day ahead").
   min_notice_minutes: number;
   booking_window_days: number;
+  // C4-NOTICE: how many hours before the start the client's own changes lock,
+  // for the confirm step (C4-S-95).
+  cancel_notice_hours: number;
   slots: { start_at: string; end_at: string }[];
 }
 
@@ -40,6 +43,12 @@ export interface BookingOptions {
   buffer_after_minutes: number;
   /** null = no daily cap. */
   daily_max_sessions: number | null;
+  /**
+   * C4-NOTICE: hours before the start at which a client's own move or cancel
+   * locks (0 = until the start). Coaches and the server's own flows are never
+   * bound by it, and it does not limit new bookings.
+   */
+  cancel_notice_hours: number;
 }
 
 export const BOOKING_OPTION_LIMITS = {
@@ -48,6 +57,7 @@ export const BOOKING_OPTION_LIMITS = {
   buffer_before_minutes: { min: 0, max: 240 },
   buffer_after_minutes: { min: 0, max: 240 },
   daily_max_sessions: { min: 1, max: 50 },
+  cancel_notice_hours: { min: 0, max: 168 },
 } as const;
 
 /** Plain duration for copy: "5 minutes", "2 hours", "1 day", "90 minutes". */
@@ -97,7 +107,14 @@ export const DEFAULT_BOOKING_OPTIONS: Readonly<BookingOptions> = Object.freeze({
   buffer_before_minutes: 0,
   buffer_after_minutes: 0,
   daily_max_sessions: null,
+  // C4-NOTICE: the 24 hour lock older app builds already apply.
+  cancel_notice_hours: 24,
 });
+
+/** C4-NOTICE: the moment a client's own changes lock (start minus the notice, in elapsed hours). */
+export function changeLockedAt(startAt: Date, noticeHours: number): Date {
+  return new Date(startAt.getTime() - noticeHours * 3_600_000);
+}
 
 // At most this many coach-approval requests may wait on one coach per client.
 // Bounds slot holding by unapproved requests.
@@ -150,6 +167,9 @@ export function isLapsedRequest(
 /** end_reason written when a request expires. */
 export const REQUEST_EXPIRED_END_REASON = 'request_expired';
 
+/** end_reason written when a client's move cancels a session (owner HIST-2b). */
+export const CLIENT_MOVED_END_REASON = 'client_moved';
+
 // Stable machine codes for scheduling failures. Every BadRequest/Conflict the
 // booking surface throws carries one of these as `code` (and, for older
 // clients, as `error`) plus a human message.
@@ -184,6 +204,8 @@ export const SchedulingErrorCode = {
   REQUEST_EXPIRED: 'REQUEST_EXPIRED',
   // S-AVAIL-122: a booking-options edit with a value out of range.
   INVALID_BOOKING_OPTIONS: 'INVALID_BOOKING_OPTIONS',
+  // C4-NOTICE: a client's own move or cancel inside the coach's notice.
+  CHANGES_LOCKED: 'CHANGES_LOCKED',
 } as const;
 export type SchedulingErrorCodeValue =
   (typeof SchedulingErrorCode)[keyof typeof SchedulingErrorCode];

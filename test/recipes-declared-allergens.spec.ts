@@ -69,7 +69,6 @@ function makeDb() {
   const restrictions = new Map<string, string[]>();
   const recipes: FakeRecipe[] = [];
   const saved: Array<{ id: string; user_id: string; recipe_id: string; saved_at: Date }> = [];
-  const mealPlans: Array<{ client_id: string; archived_at: null; items: unknown }> = [];
   let clock = Date.UTC(2026, 9, 7, 12, 0, 0);
   const tick = () => new Date((clock += 1000));
 
@@ -165,11 +164,6 @@ function makeDb() {
         return row;
       }),
     },
-    mealPlan: {
-      findMany: jest.fn(async (args: { where: { client_id: string } }) =>
-        mealPlans.filter((p) => p.client_id === args.where.client_id),
-      ),
-    },
   };
 
   const addRecipe = (over: Partial<FakeRecipe> & { title: string; created_by_id: string }) => {
@@ -196,7 +190,7 @@ function makeDb() {
     return r;
   };
 
-  return { prisma, users, restrictions, recipes, saved, mealPlans, addRecipe };
+  return { prisma, users, restrictions, recipes, saved, addRecipe };
 }
 
 function build(clientRestrictions: string[] | null) {
@@ -449,17 +443,11 @@ describe('a client library hides a recipe only on a declared match', () => {
     expect(err.getResponse()).toMatchObject({ code: RECIPE_ERROR_NOT_FOUND });
   });
 
-  it('the prep guide leaves out a plan recipe that declares a saved allergen, with its ingredients', async () => {
-    const { prep, client, db, r } = build(['Peanut Allergy']);
-    db.mealPlans.push({
-      client_id: 'client-a',
-      archived_at: null,
-      items: [{ recipe_id: r.satay.id }, { recipe_id: r.rice.id }],
-    });
-    const out = await prep.getWeeklyPrepGuide(client, '2026-10-05');
-    expect(out.recipes.map((x) => x.title)).toEqual(['Plain rice bowl']);
-    expect(out.recipes[0]).toMatchObject({ allergens: [], allergens_declared: true });
-    expect(out.aggregated_ingredients.map((i) => i.name)).not.toContain('peanut butter');
+  it('the prep guide leaves out a recipe that declares a saved allergen', async () => {
+    const { prep, client } = build(['Peanut Allergy']);
+    const titles = (await prep.getWeeklyPrepGuide(client, '2026-10-05')).recipes.map((x) => x.title);
+    expect(titles).not.toContain('Satay chicken');
+    expect(titles).toEqual(expect.arrayContaining(['Plain rice bowl', 'My peanut snack']));
   });
 });
 

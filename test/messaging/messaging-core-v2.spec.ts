@@ -11,6 +11,7 @@
 import { HttpException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import type { CoachMessage } from '@prisma/client';
+import { z } from 'zod';
 import { PrismaService } from '../../src/prisma.service';
 import { SupabaseService } from '../../src/supabase/supabase.service';
 import { AnalyticsService } from '../../src/analytics/analytics.service';
@@ -33,7 +34,6 @@ import {
   MessagingCoreV2Guard,
 } from '../../src/messaging/messaging-core.feature';
 import { resolveIdempotencyKey } from '../../src/messaging/messaging-idempotency';
-import { broadcastThreadUpdated } from '../../src/messaging/messaging-realtime';
 
 const COACH = '11111111-1111-4111-8111-111111111111';
 const CLIENT = '22222222-2222-4222-8222-222222222222';
@@ -117,6 +117,7 @@ function build(opts: { blocked?: string[]; eitherBlocked?: boolean } = {}) {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       upsert: jest.fn().mockResolvedValue({ id: 'e1', kind: 'object', target: 'x', attempts: 0 }),
     },
+    coachMessageCard: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
     $executeRaw: jest.fn().mockResolvedValue(1),
   };
   const prisma = {
@@ -148,7 +149,7 @@ function build(opts: { blocked?: string[]; eitherBlocked?: boolean } = {}) {
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   const supabase = {
-    broadcastNewMessage: jest.fn().mockResolvedValue(undefined),
+    pingChat: jest.fn().mockResolvedValue(undefined),
     getClient: jest.fn(() => ({
       channel: () => ({
         subscribe: (cb: (s: string) => void) => cb('SUBSCRIBED'),
@@ -238,7 +239,8 @@ describe('FEATURE_MESSAGING_CORE_V2 kill switch', () => {
     const r = row();
     t.prisma.coachMessage.findMany.mockResolvedValue([r]);
     const out = await t.messaging.listThreadForClient(CLIENT, {});
-    expect(t.prisma.coachMessage.findMany.mock.calls[0][0]).not.toHaveProperty('include');
+    // SHARE-BE: the card relation is read with every flag (a share card reads always).
+    expect(t.prisma.coachMessage.findMany.mock.calls[0][0]).not.toHaveProperty('include.reply_to');
     expect(out).toEqual([r]);
   });
 });
@@ -253,7 +255,7 @@ describe('idempotent send (offline queue)', () => {
     const again = await t.messaging.sendAsClient(CLIENT, { body: 'hi', client_message_id: KEY });
     expect(again).toBe(first);
     expect(t.prisma.coachMessage.create).toHaveBeenCalledTimes(1);
-    expect(t.supabase.broadcastNewMessage).toHaveBeenCalledTimes(1);
+    expect(t.supabase.pingChat).toHaveBeenCalledTimes(1);
     expect(t.audit.write).toHaveBeenCalledTimes(1);
     expect(t.analytics.capture).toHaveBeenCalledTimes(1);
   });
@@ -280,7 +282,7 @@ describe('idempotent send (offline queue)', () => {
     );
     const out = await t.messaging.sendAsClient(CLIENT, { body: 'hi', client_message_id: KEY });
     expect(out).toBe(winner);
-    expect(t.supabase.broadcastNewMessage).not.toHaveBeenCalled();
+    expect(t.supabase.pingChat).not.toHaveBeenCalled();
   });
 
   it('legacy sends without a key create exactly the legacy row shape', async () => {
@@ -505,6 +507,8 @@ describe('delete (tombstone)', () => {
         create: expect.objectContaining({ reason: 'author_delete' }),
       }),
     );
+    // SHARE-BE: a tombstone keeps no card (a deleted share card is gone too).
+    expect(t.tx.coachMessageCard.deleteMany).toHaveBeenCalledWith({ where: { message_id: MSG } });
     expect(out.deleted).toBe(true);
     expect(out.body).toBeNull();
     expect(JSON.stringify(t.audit.write.mock.calls[0][0])).not.toMatch(/Original words/);
@@ -627,7 +631,7 @@ describe('mute and inbox pin (private per user)', () => {
     await t.messaging.sendAsClient(CLIENT, 'hi');
     await flush();
     await flush();
-    expect(t.supabase.broadcastNewMessage).toHaveBeenCalledWith(COACH);
+    expect(t.supabase.pingChat).toHaveBeenCalledWith({ coachId: COACH, clientId: CLIENT }, 'new-message');
     expect(t.messageReceived.emit).not.toHaveBeenCalled();
     expect(t.prisma.coachThreadState.findUnique.mock.calls[0][0].where).toEqual({
       CoachThreadState_user_thread_key: { user_id: COACH, coach_id: COACH, client_id: CLIENT },
@@ -686,7 +690,7 @@ describe('read-up-to and live read receipts', () => {
       read_at: null,
       created_at: { lte: cutoff },
     });
-    expect(t.supabase.getClient).toHaveBeenCalled();
+    expect(t.supabase.pingChat).toHaveBeenCalledWith(expect.objectContaining({ coachId: COACH, clientId: CLIENT }), 'thread-updated');
   });
 
   it('a target outside the thread is 404; flag OFF with a target is 503; no target = legacy', async () => {
@@ -707,7 +711,7 @@ describe('read-up-to and live read receipts', () => {
     expect(t.prisma.coachMessage.updateMany.mock.calls[0][0].where).not.toHaveProperty(
       'created_at',
     );
-    expect(t.supabase.getClient).not.toHaveBeenCalled();
+    expect(t.supabase.pingChat).not.toHaveBeenCalled();
   });
 });
 
@@ -820,6 +824,67 @@ describe('unified inbox', () => {
     expect(unread.items.map((i) => i.client_id)).toEqual([CLIENT]);
   });
 
+  // SHARE-BE: the phone's inbox schema today (growth-project-mobile src/api/messagingV2Api.ts,
+  // InboxResponseSchema): objects are not strict, but `kind` is a closed enum and one bad
+  // row fails the whole response, so every newest message must still parse.
+  const phoneInbox = z.object({
+    items: z.array(
+      z.object({
+        thread_id: z.string(),
+        kind: z.literal('coach_client'),
+        coach_id: z.string(),
+        client_id: z.string(),
+        counterpart: z.object({ user_id: z.string(), display_name: z.string() }),
+        last_message: z
+          .object({
+            id: z.string(),
+            sender_id: z.string().nullable(),
+            is_mine: z.boolean(),
+            kind: z.enum(['text', 'voice', 'deleted']),
+            preview: z.string(),
+            created_at: z.string().min(1),
+            edited: z.boolean(),
+          })
+          .nullable(),
+        unread_count: z.number().int().nonnegative(),
+        muted: z.boolean(),
+        muted_until: z.string().min(1).nullable(),
+        pinned: z.boolean(),
+        blocked_by_me: z.boolean(),
+        last_activity_at: z.string().min(1).nullable(),
+      }),
+    ),
+    next_cursor: z.string().nullable(),
+    total_unread: z.number().int().nonnegative(),
+  });
+
+  type Over = Record<string, unknown> & { card_type: string | null };
+  it.each<[string, Over, Record<string, unknown>]>([
+    ['a share card only', { body: null, card_type: 'share' }, { kind: 'text', preview: '', card_type: 'share' }],
+    ['text', { card_type: null }, { kind: 'text', preview: 'Hello coach' }],
+    ['a voice note', { body: null, voice_url: 'v/1.m4a', card_type: null }, { kind: 'voice', preview: '' }],
+    // A tombstone stored before SHARE-BE kept its card row; it still reads as deleted.
+    ['a tombstone', { body: null, deleted_at: at('2026-10-02T09:00:00Z'), card_type: 'workout' }, { kind: 'deleted', preview: '' }],
+  ])('SHARE-BE: newest message is %s: both inboxes parse with the phone schema', async (_label, over, want) => {
+    const t = build();
+    const { card_type, ...cols } = { ...lastRows()[0], ...over };
+    t.prisma.$queryRaw.mockResolvedValueOnce([{ ...cols, card_type }]);
+    t.prisma.coachMessage.findFirst.mockResolvedValueOnce({ ...cols, card: card_type ? { card_type } : null });
+    const coach = await t.inbox.inboxForCoach(COACH, {});
+    const client = await t.inbox.inboxForClient(CLIENT);
+    for (const out of [client, coach]) expect(phoneInbox.safeParse(out).error).toBeUndefined();
+    for (const [out, isMine] of [[coach, false], [client, true]] as const) {
+      expect(out.items[0].last_message).toEqual({
+        id: 'm1',
+        sender_id: CLIENT,
+        is_mine: isMine,
+        created_at: '2026-10-01T09:00:00.000Z',
+        edited: false,
+        ...want,
+      });
+    }
+  });
+
   it('client: coachless is a valid empty inbox; coached shows the one coach thread', async () => {
     const t = build();
     t.prisma.user.findUnique.mockResolvedValueOnce({ coach_id: null });
@@ -841,18 +906,33 @@ describe('unified inbox', () => {
   });
 });
 
-describe('thread-updated ping on the public channel (B-709-1)', () => {
-  it('carries an empty payload: no client id, message id or change kind', async () => {
-    const send = jest.fn().mockResolvedValue('ok');
-    const channel = jest.fn(() => ({
-      subscribe: (cb: (s: string) => void) => cb('SUBSCRIBED'),
-      send,
-    }));
-    const supabase = dep(SupabaseService, {
-      getClient: () => ({ channel, removeChannel: jest.fn().mockResolvedValue('ok') }),
-    });
-    await broadcastThreadUpdated(supabase, COACH);
-    expect(channel).toHaveBeenCalledWith(`messages:${COACH}`);
-    expect(send).toHaveBeenCalledWith({ type: 'broadcast', event: 'thread-updated', payload: {} });
+describe('pingChat: the one sender of message pings (MSGRT)', () => {
+  const realtime = (httpSend: jest.Mock) => {
+    const channel = jest.fn(() => ({ httpSend }));
+    const removeChannel = jest.fn().mockResolvedValue('ok');
+    return { channel, removeChannel, supabase: dep(SupabaseService, { getClient: () => ({ channel, removeChannel }) }) };
+  };
+
+  it('one ping per person in the chat, on their private topic, with an empty payload', async () => {
+    const httpSend = jest.fn().mockResolvedValue({ success: true });
+    const r = realtime(httpSend);
+    await r.supabase.pingChat({ coachId: COACH, clientId: CLIENT }, 'thread-updated');
+    expect(r.channel.mock.calls).toEqual([
+      [`messages:user:${COACH}`, { config: { private: true } }],
+      [`messages:user:${CLIENT}`, { config: { private: true } }],
+    ]);
+    expect(httpSend.mock.calls).toEqual([
+      ['thread-updated', {}, { timeout: 1500 }],
+      ['thread-updated', {}, { timeout: 1500 }],
+    ]);
+    expect(r.removeChannel).toHaveBeenCalledTimes(2);
+  });
+
+  it('never rejects: a refused or failing send is logged and its channel still released', async () => {
+    const httpSend = jest.fn().mockResolvedValueOnce({ success: false, status: 403, error: 'denied' })
+      .mockRejectedValueOnce(new Error('offline'));
+    const r = realtime(httpSend);
+    await expect(r.supabase.pingChat({ coachId: COACH, clientId: CLIENT }, 'new-message')).resolves.toBeUndefined();
+    expect(r.removeChannel).toHaveBeenCalledTimes(2);
   });
 });
