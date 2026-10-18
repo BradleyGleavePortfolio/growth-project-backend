@@ -24,6 +24,9 @@ export class LogService {
     // Resolve them to real FoodItem.id via upsert-on-log so the FK below can't blow up.
     // Another person's custom food resolves as not found (UX-FOOD-PRIV-124).
     const resolvedFoodItemId = await this.foodService.resolveOrImportId(data.food_item_id, userId);
+    const plan_slot_id = data.plan_slot_id
+      ? await this.ownPlanSlot(userId, data.plan_slot_id, new Date(data.date))
+      : null;
     const entryData = {
       user_id: userId,
       date: new Date(data.date),
@@ -37,6 +40,10 @@ export class LogService {
       original_quantity: data.original_quantity,
       original_unit: data.original_unit,
       notes: data.notes,
+      // FOODLINK: set only when sent (and, for the slot, verified); otherwise the column defaults (null,
+      // false) apply, so a write without them is exactly today's.
+      ...(plan_slot_id ? { plan_slot_id } : {}),
+      ...(data.fills_usual_meal ? { fills_usual_meal: true } : {}),
     };
     // Upsert on client_uuid so a flush retry after a mobile crash is idempotent.
     // D2 (AUTHB-03): no key means a plain create. client_uuid is unique across
@@ -61,6 +68,26 @@ export class LogService {
     // M2 — bust AI context cache so next chat sees the new log entry.
     this.aiContext.invalidateForUser(userId);
     return created;
+  }
+
+  /**
+   * FOODLINK: the slot id only if it belongs to a meal plan assigned to this client on this date (the rule of
+   * GET /me/meal-plan/today: starts_on <= date, ends_on null or >= date); otherwise null. Prisma's role
+   * bypasses RLS, so this query is the tenant check. It never returns anything about another person.
+   */
+  private async ownPlanSlot(userId: string, slotId: string, date: Date): Promise<string | null> {
+    const slot = await this.prisma.dailyMealPlanSlot.findFirst({
+      where: {
+        id: slotId,
+        daily_meal_plan: {
+          assignments: {
+            some: { client_id: userId, starts_on: { lte: date }, OR: [{ ends_on: null }, { ends_on: { gte: date } }] },
+          },
+        },
+      },
+      select: { id: true },
+    });
+    return slot?.id ?? null;
   }
 
   async getDaily(userId: string, date: string) {
