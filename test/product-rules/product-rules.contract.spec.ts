@@ -59,11 +59,8 @@ const KNOWN_GAPS: Array<{ id: string; rule: Rule; key: string; reason: string }>
   { id: 'HIST-4b past session', rule: 2, key: 'GET /scheduling/sessions/:id', reason: "the new coach can't open the client's past session; fix: HIST-4b (owner)" },
   { id: 'HIST-4b program days', rule: 2, key: 'GET /workout-plans', reason: "the new coach's plan list leaves out the days of the client's program copy; fix: HIST-4b (owner)" },
   { id: 'CONSENT-2 grant', rule: 3, key: 'POST /me/ai-consent/roman', reason: 'a coachless client is not refused an AI grant; fix: #954 CONSENT-2' },
-  { id: 'GAPS3 ai context', rule: 3, key: 'GET /ai/context', reason: 'a coachless client still reads what the AI knows about them; fix: GAPS3 #970' },
-  { id: 'GAPS3 ai structured', rule: 3, key: 'GET /ai/structured-context', reason: 'the same read, typed; fix: GAPS3 #970' },
-  { id: 'GAPS3 roman context', rule: 3, key: 'GET /roman/context/me', reason: 'a coachless client still reads what Roman is grounded in; fix: GAPS3 #970' },
 ];
-const KNOWN_GAPS_CEILING = 10;
+const KNOWN_GAPS_CEILING = 7;
 const EXEMPT: Array<{ rule: Rule; key: string; reason: string }> = [
   { rule: 1, key: 'GET /consent/check/:client_id/:scope', reason: "it echoes the ids it was asked about and whether the caller's own grant stands, nothing else" },
   { rule: 2, key: 'GET /coach/consultation', reason: "the coach's own set-up; it mints a random invite code for a coach with none, so two reads differ" },
