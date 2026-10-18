@@ -127,3 +127,13 @@ export class LogHabitDto {
   @IsNumber()
   value?: number;
 }
+
+// GET /habits/summary?from&to: calendar days, both included, at most 93 days.
+const YMD = /^\d{4}-\d{2}-\d{2}$/;
+export class HabitSummaryQuery {
+  @Matches(YMD)
+  from!: string;
+
+  @Matches(YMD)
+  to!: string;
+}

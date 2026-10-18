@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { BadRequestException, ForbiddenException, NotFoundException, ValidationPipe } from '@nestjs/common';
 import { HabitsService } from '../src/habits/habits.service';
-import { UpdateHabitDto } from '../src/habits/habits.dto';
+import { HabitSummaryQuery, UpdateHabitDto } from '../src/habits/habits.dto';
 
 // The client's habit routes (HB1). The row rules for coaches are proven live in
 // test/rls/habits-rls.spec.ts.
@@ -29,6 +29,10 @@ describe('HabitsService', () => {
         update: jest.fn(),
         deleteMany: jest.fn(),
       },
+      // The client's zone (recipient-timezone.ts): none known unless a test sets one.
+      notificationPreferences: { findUnique: jest.fn().mockResolvedValue(null) },
+      coachProfile: { findUnique: jest.fn().mockResolvedValue(null) },
+      user: { findUnique: jest.fn().mockResolvedValue({ coach_id: null }) },
     };
     service = new HabitsService(prismaMock as any);
   });
@@ -129,6 +133,72 @@ describe('HabitsService', () => {
     prismaMock.habit.updateMany = jest.fn().mockResolvedValue({ count: 0 });
     await expect(service.deleteHabit('user-1', 'habit-9')).rejects.toBeInstanceOf(NotFoundException);
   });
+
+  // HB3. 05:00 UTC on Thursday Oct 15 is still Wednesday Oct 14, 22:00, in Los Angeles.
+  describe('HB3: runs, counts and the today-or-yesterday rule, in the client\'s calendar', () => {
+    beforeEach(() => jest.useFakeTimers({ now: new Date('2026-10-15T05:00:00Z'), doNotFake: ['nextTick', 'setImmediate'] }));
+    afterEach(() => jest.useRealTimers());
+    const inLosAngeles = () =>
+      prismaMock.notificationPreferences.findUnique.mockResolvedValue({ timezone: 'America/Los_Angeles', timezone_updated_at: new Date() });
+
+    it.each<[string, boolean, string[], string[]]>([
+      ['their own zone', true, ['2026-10-14', '2026-10-13', '2026-10-14T00:00:00.000Z'], ['2026-10-15', '2026-10-12', '2026-09-30']],
+      ['no zone known (a day either side of UTC)', false, ['2026-10-16', '2026-10-13'], ['2026-10-17', '2026-10-12']],
+    ])('POST /habits/:id/log in %s takes only today or yesterday', async (_zone, known, open, closed) => {
+      if (known) inLosAngeles();
+      for (const date of open) await expect(service.logHabit('user-1', 'habit-1', { date })).resolves.toBeDefined();
+      for (const date of closed) {
+        const refused = await service.logHabit('user-1', 'habit-1', { date }).then(() => null, (e: BadRequestException) => e.getResponse());
+        expect(refused).toMatchObject({ code: 'HABIT_DAY_CLOSED' });
+      }
+      expect(prismaMock.habitLog.create).toHaveBeenCalledTimes(open.length);
+    });
+
+    it('a tick with no date is today in the client\'s calendar, not the server\'s', async () => {
+      inLosAngeles();
+      await service.logHabit('user-1', 'habit-1', {});
+      expect(prismaMock.habitLog.create).toHaveBeenCalledWith({ data: expect.objectContaining({ date: new Date('2026-10-14T00:00:00Z') }) });
+    });
+
+    it('POST /habits starts the habit on the client\'s today unless they pick a day', async () => {
+      inLosAngeles();
+      await expect(service.createHabit('user-1', { name: 'Walk' })).resolves.toMatchObject({ starts_on: new Date('2026-10-14') });
+    });
+
+    const daily = { ...own, schedule_days: [], starts_on: new Date('2026-10-01'), logs: [] };
+    const ticks = (...days: string[]) => days.map((d) => ({ habit_id: 'habit-1', date: new Date(d) }));
+
+    it('GET /habits adds the run, the best run and this week to each habit', async () => {
+      inLosAngeles();
+      prismaMock.habit.findMany.mockResolvedValue([daily]);
+      prismaMock.habitLog.findMany.mockResolvedValue(ticks('2026-10-11', '2026-10-12', '2026-10-13'));
+      await expect(service.getHabits('user-1')).resolves.toEqual([
+        { ...daily, run_days: 3, best_run_days: 3, week: { planned: 7, done: 2 } },
+      ]);
+    });
+
+    // Another client's habits and ticks never count: both reads are the caller's live habits only
+    // (the row rules are proven live in test/rls/habits-rls.spec.ts).
+    it('GET /habits/summary reads only the caller\'s live habits and their ticks', async () => {
+      prismaMock.habit.findMany.mockResolvedValue([daily]);
+      prismaMock.habitLog.findMany.mockResolvedValue(ticks('2026-10-13'));
+      const summary = await service.getSummary('user-1', { from: '2026-10-13', to: '2026-10-14' });
+      const live = { user_id: 'user-1', archived_at: null };
+      expect(prismaMock.habit.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: live }));
+      expect(prismaMock.habitLog.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { completed: true, habit: live } }));
+      expect(summary).toMatchObject({
+        days: [{ date: '2026-10-13', planned: 1, done: 1 }, { date: '2026-10-14', planned: 1, done: 0 }],
+        habits: [{ id: 'habit-1', planned: 2, done: 1 }],
+      });
+    });
+
+    it.each<[HabitSummaryQuery]>([[{ from: '2026-10-14', to: '2026-10-13' }], [{ from: '2026-07-01', to: '2026-10-14' }]])(
+      'GET /habits/summary refuses %j (backwards, or over 93 days)', async (query) => {
+        await expect(service.getSummary('user-1', query)).rejects.toBeInstanceOf(BadRequestException);
+        expect(prismaMock.habit.findMany).not.toHaveBeenCalled();
+      },
+    );
+  });
 });
 
 describe('UpdateHabitDto (global ValidationPipe)', () => {
@@ -142,6 +212,12 @@ describe('UpdateHabitDto (global ValidationPipe)', () => {
   ])('refuses %j', async (body) => {
     await expect(run(body)).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it.each<[object]>([[{}], [{ from: '2026-10-12' }], [{ from: '12-10-2026', to: '2026-10-18' }], [{ from: '2026-10-12', to: '2026-10-18', user_id: 'u' }]])(
+    'GET /habits/summary refuses the query %j', async (query) => {
+      await expect(pipe.transform(query, { type: 'query', metatype: HabitSummaryQuery })).rejects.toBeInstanceOf(BadRequestException);
+    },
+  );
 
   it('accepts a reminder change and clearing the reminder time', async () => {
     await expect(run({ reminder_enabled: true, reminder_time: '21:05' })).resolves.toEqual({ reminder_enabled: true, reminder_time: '21:05' });
