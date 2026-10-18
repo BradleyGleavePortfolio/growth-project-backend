@@ -11,8 +11,8 @@ import { memberFirstName } from '../member-display-name';
 import {
   AssignTargetScope,
   CommunityCohortMembersRepository,
-  MemberPageCursor,
   MembershipWithUser,
+  SpacePerson,
 } from './community-cohort-members.repository';
 import {
   AssignMemberDto,
@@ -92,54 +92,35 @@ export class CommunityCohortMembersService {
     return Math.min(n, MAX_PAGE);
   }
 
-  /** Opaque keyset cursor: base64url("<iso>|<id>"). Null/garbage → no cursor. */
-  private decodeCursor(raw: string | undefined): MemberPageCursor | null {
-    if (!raw) return null;
-    try {
-      const decoded = Buffer.from(raw, 'base64url').toString('utf8');
-      const sep = decoded.lastIndexOf('|');
-      if (sep <= 0) return null;
-      const iso = decoded.slice(0, sep);
-      const id = decoded.slice(sep + 1);
-      const createdAt = new Date(iso);
-      if (Number.isNaN(createdAt.getTime()) || !id) return null;
-      return { createdAt, id };
-    } catch {
-      return null;
-    }
+  /** Opaque keyset cursor: base64url(user id), the last person of the page. */
+  private decodeCursor(raw: string | undefined): string {
+    return raw ? Buffer.from(raw, 'base64url').toString('utf8') : '';
   }
 
-  private encodeCursor(row: { created_at: Date; id: string }): string {
-    return Buffer.from(`${row.created_at.toISOString()}|${row.id}`, 'utf8').toString('base64url');
+  private encodeCursor(personId: string): string {
+    return Buffer.from(personId, 'utf8').toString('base64url');
   }
 
-  /** Full coach-facing member view (all fields). */
+  /** A row the routes below return, as a roster person. */
+  private person(m: MembershipWithUser): SpacePerson {
+    return { id: m.user_id, name: m.user.name, email: m.user.email, row: m };
+  }
+
+  /** The coach sees every field; anyone else the first name and role only (client privacy). */
+  private memberView(p: SpacePerson, coachView: boolean, role: CohortMemberView['role']): CohortMemberView {
+    return {
+      id: p.row?.id ?? null,
+      user_id: p.id,
+      display_name: coachView ? p.name : memberFirstName(p.name),
+      role,
+      status: coachView ? (p.row?.status ?? 'active') : null,
+      email: coachView ? p.email : null,
+      joined_at: coachView ? (p.row?.joined_at?.toISOString() ?? null) : null,
+    };
+  }
+
   private coachView(m: MembershipWithUser): CohortMemberView {
-    return {
-      id: m.id,
-      user_id: m.user_id,
-      display_name: m.user.name,
-      role: PRISMA_TO_API_ROLE[m.role],
-      status: m.status,
-      email: m.user.email,
-      joined_at: m.joined_at?.toISOString() ?? null,
-    };
-  }
-
-  /**
-   * Sanitized roster view for a non-coach member (no PII/status). Client
-   * privacy: other members see first names only.
-   */
-  private rosterView(m: MembershipWithUser): CohortMemberView {
-    return {
-      id: m.id,
-      user_id: m.user_id,
-      display_name: memberFirstName(m.user.name),
-      role: PRISMA_TO_API_ROLE[m.role],
-      status: null,
-      email: null,
-      joined_at: null,
-    };
+    return this.memberView(this.person(m), true, PRISMA_TO_API_ROLE[m.role]);
   }
 
   private async resolveCohortOrThrow(cohortId: string): Promise<CommunityCohort> {
@@ -177,45 +158,29 @@ export class CommunityCohortMembersService {
   ): Promise<CohortMemberListResponse> {
     const cohort = await this.resolveCohortOrThrow(cohortId);
     const isCoach = await this.isWorkspaceCoach(cohort.workspace_id, user);
-    if (!isCoach) {
-      // A non-coach may read the roster only if they are an ACTIVE member of
-      // this exact cohort. A foreign cohort id resolves to 404 (non-leak).
-      const membership = await this.access.membershipInCohort(cohort.id, user.id);
-      if (membership?.status !== 'active') {
-        throw new NotFoundException(NOT_FOUND);
-      }
+    // C6-BVIS: a non-coach reads the roster while the rule lets them into the
+    // space, row or not; anyone else gets 404, like a foreign id (non-leak).
+    if (!isCoach && !(await this.access.canAccessCohort(cohort, user))) {
+      throw new NotFoundException(NOT_FOUND);
     }
 
+    const coachId = (await this.access.findWorkspace(cohort.workspace_id))?.coach_id;
+    const roleOf = (p: SpacePerson) =>
+      p.row ? PRISMA_TO_API_ROLE[p.row.role] : p.id === coachId ? 'coach' : 'student';
+    const after = this.decodeCursor(query.cursor);
     const limit = this.parseLimit(query.limit);
-    const roleFilter: CommunityMembershipRole | null =
-      query.role === 'co_coach'
-        ? 'assistant'
-        : query.role === 'student'
-          ? 'student'
-          : query.role === 'coach'
-            ? 'coach'
-            : null;
-
-    const rows = await this.repo.listMembers({
-      cohortId: cohort.id,
-      limit,
-      cursor: this.decodeCursor(query.cursor),
-      roleFilter,
-    });
-    const nextCursor = rows.length === limit ? this.encodeCursor(rows[rows.length - 1]) : null;
+    const page = (await this.repo.people(cohort))
+      .filter((p) => p.id > after && (!query.role || roleOf(p) === query.role))
+      .slice(0, limit);
 
     // Two-way block on the member roster: a member does not see people they
     // blocked or who blocked them. The coach's management view stays complete
     // (the coach administers every membership; moderation and ban act on it).
-    // C6-BVIS: the rows the rule lists (a current client's invitation; never a moved client).
-    const inSpace = await this.access.peopleInSpace(cohort.id, rows, (m) => m.user_id);
-    const visible = isCoach
-      ? inSpace
-      : await this.safety.filterBlocked(user.id, inSpace, (m) => m.user_id);
+    const visible = isCoach ? page : await this.safety.filterBlocked(user.id, page, (p) => p.id);
 
     return CohortMemberListResponseSchema.parse({
-      members: visible.map((m) => (isCoach ? this.coachView(m) : this.rosterView(m))),
-      next_cursor: nextCursor,
+      members: visible.map((p) => this.memberView(p, isCoach, roleOf(p))),
+      next_cursor: page.length === limit ? this.encodeCursor(page[page.length - 1].id) : null,
     });
   }
 

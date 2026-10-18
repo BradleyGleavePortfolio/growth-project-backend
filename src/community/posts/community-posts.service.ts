@@ -236,8 +236,14 @@ export class CommunityPostsService {
       limit,
     });
     const next = rows.length === limit ? rows[rows.length - 1].created_at.toISOString() : null;
+    // C6-BVIS: a post of a space shows only to whoever the rule lets into that space.
+    const open =
+      user.role !== 'owner' && rows.some((p) => p.cohort_id)
+        ? new Set(await this.access.listAccessibleCohortIds(workspaceId, user.id))
+        : null;
+    const inSpace = open ? rows.filter((p) => !p.cohort_id || open.has(p.cohort_id)) : rows;
     // Block filter after the cursor is taken from the unfiltered page.
-    const visible = await this.safety.filterBlocked(user.id, rows, (p) => p.author_id);
+    const visible = await this.safety.filterBlocked(user.id, inSpace, (p) => p.author_id);
     return CommunityPostListResponseSchema.parse({
       posts: await this.postViews(user, visible),
       next_before: next,
@@ -248,9 +254,11 @@ export class CommunityPostsService {
   private async readablePost(user: User, postId: string): Promise<CommunityPost> {
     const post = await this.posts.findById(postId);
     if (!post || post.deleted_at) throw new NotFoundException(POST_NOT_FOUND);
-    if (!(await this.access.canAccessWorkspace(post.workspace_id, user))) {
-      throw new NotFoundException(POST_NOT_FOUND);
-    }
+    // C6-BVIS: a post of a space opens by the rule for that space, its comments with it.
+    const open = post.cohort_id
+      ? await this.access.canAccessCohort({ id: post.cohort_id, workspace_id: post.workspace_id }, user)
+      : await this.access.canAccessWorkspace(post.workspace_id, user);
+    if (!open) throw new NotFoundException(POST_NOT_FOUND);
     return post;
   }
 
@@ -288,7 +296,7 @@ export class CommunityPostsService {
       ...(input.body !== undefined ? { body: input.body } : {}),
     });
     void this.realtime.broadcastCommunityEvent(
-      { workspaceId: updated.workspace_id, cohortId: null },
+      { workspaceId: updated.workspace_id, cohortId: updated.cohort_id ?? null }, // C6-BVIS: a space post pings its space
       COMMUNITY_BROADCAST_EVENTS.postUpdated,
       {
         id: updated.id,
@@ -330,10 +338,10 @@ export class CommunityPostsService {
       postId: post.id,
       body,
     });
-    // v1-4 post-write tail — realtime ping to the post's readers, the Hall
-    // (a comment is a CommunityMessage; the post author refetches via REST).
+    // v1-4 post-write tail — realtime ping to the post's readers: its space, or
+    // the Hall (a comment is a CommunityMessage; the author refetches via REST).
     void this.realtime.broadcastCommunityEvent(
-      { workspaceId: post.workspace_id, cohortId: null },
+      { workspaceId: post.workspace_id, cohortId: post.cohort_id ?? null },
       COMMUNITY_BROADCAST_EVENTS.messageCreated,
       {
         id: created.id,
@@ -341,11 +349,11 @@ export class CommunityPostsService {
         authorId: created.sender_id,
         createdAt: created.created_at.toISOString(),
       },
-      { distinctId: created.sender_id, channelKind: 'workspace' },
+      { distinctId: created.sender_id, channelKind: post.cohort_id ? 'cohort' : 'workspace' },
     );
     // Push the post author (not the commenter) that their post got a reply.
     // Fire-and-forget; gated behind FEATURE_COMMUNITY_PUSH inside the service.
-    if (post.author_id !== user.id && (await this.access.readersOf(post.workspace_id, null, [post.author_id])).length) {
+    if (post.author_id !== user.id && (await this.access.readersOf(post.workspace_id, post.cohort_id ?? null, [post.author_id])).length) {
       void this.communityPush.sendCommunityPush({
         recipientId: post.author_id,
         kind: NotificationKind.COMMUNITY_POST_REPLIED,

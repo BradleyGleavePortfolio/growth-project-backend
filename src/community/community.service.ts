@@ -253,7 +253,7 @@ export class CommunityService {
       ? {
           id: cohort.id,
           name: cohort.name,
-          member_count: await this.repo.cohortMemberCount(cohort.id),
+          member_count: await this.repo.cohortMemberCount(cohort),
         }
       : null;
 
@@ -338,7 +338,7 @@ export class CommunityService {
         is_default: await this.repo.isDefaultCohort(c),
         kind: c.kind,
         posting_policy: c.posting_policy,
-        member_count: await this.repo.cohortMemberCount(c.id),
+        member_count: await this.repo.cohortMemberCount(c),
         my_role: role,
       })),
     );
@@ -378,7 +378,7 @@ export class CommunityService {
       is_default: await this.repo.isDefaultCohort(cohort),
       kind: cohort.kind,
       posting_policy: cohort.posting_policy,
-      member_count: await this.repo.cohortMemberCount(cohort.id),
+      member_count: await this.repo.cohortMemberCount(cohort),
       created_at: cohort.created_at.toISOString(),
       my_membership:
         membership && membership.status === 'active'
