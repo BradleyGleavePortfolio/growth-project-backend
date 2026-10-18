@@ -45,7 +45,7 @@ import {
 } from '../../src/ai/gateway/materialisers/coach-message.materialiser';
 import { CoachWearableMessageMaterializer } from '../../src/ai/gateway/materialisers/coach-wearable-message.materialiser';
 import { AiConsentService } from '../../src/ai-consent/ai-consent.service';
-import { CLIENT_AI_CONSENT_VERSION } from '../../src/ai-consent/ai-consent.constants';
+import { CLIENT_AI_CONSENT_VERSION, COACH_AI_CONSENT_COPY_SHA256, COACH_AI_CONSENT_VERSION } from '../../src/ai-consent/ai-consent.constants';
 import { AiEgressService } from '../../src/ai-egress/ai-egress.service';
 import { AiConsentRequiredException } from '../../src/ai-egress/ai-consent-required.exception';
 import { InsightCacheService } from '../../src/wearables/insights/insight-cache.service';
@@ -215,6 +215,8 @@ const SUGGESTED = 'Your sleep held steady all week. Keep the wind-down routine.'
       });
     }
     await consent.grant(A, { version: CLIENT_AI_CONSENT_VERSION });
+    // COACH-AI-CONSENT: coach K allows AI (a Roman reply draft is K's own request).
+    await consent.decideCoach(K, 'grant', { version: COACH_AI_CONSENT_VERSION, copy_sha256: COACH_AI_CONSENT_COPY_SHA256 });
     await prisma.wearableConnection.create({ data: { id: watch, user_id: A, provider: WearableProvider.OURA } });
     // Roman's stored suggestion for K about A's sleep (the wearable insight panel shows it).
     await cache.set('coach', A, WearableMetricBucket.SLEEP_RECOVERY, {

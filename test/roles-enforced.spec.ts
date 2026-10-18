@@ -118,9 +118,9 @@ const LEGACY_GUARD_ALLOWLIST: Array<{
   { controller: 'V1CoachController', method: 'listClients', reason: 'CoachOrOwnerGuard at class level' },
   { controller: 'V1CoachController', method: 'listThreads', reason: 'CoachOrOwnerGuard at class level' },
   { controller: 'V1CoachController', method: 'getThread', reason: 'CoachOrOwnerGuard at class level' },
-  { controller: 'V1CoachController', method: 'sendMessage', reason: 'CoachOrOwnerGuard + SubscriptionGuard at handler' },
+  { controller: 'V1CoachController', method: 'sendMessage', reason: 'CoachOrOwnerGuard at class level' },
   { controller: 'V1CoachController', method: 'getDraft', reason: 'CoachOrOwnerGuard at class level' },
-  { controller: 'V1CoachController', method: 'saveDraft', reason: 'CoachOrOwnerGuard + SubscriptionGuard at handler' },
+  { controller: 'V1CoachController', method: 'saveDraft', reason: 'CoachOrOwnerGuard at class level' },
 ];
 
 const allowlistSet = new Set(

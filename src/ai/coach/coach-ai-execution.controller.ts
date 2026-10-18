@@ -20,8 +20,6 @@ import type { AuthedRequest } from '../../auth/auth-request';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { CoachGuard } from '../../auth/coach.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { RequiresTier } from '../../billing/requires-tier.decorator';
-import { SubscriptionGuard } from '../../billing/subscription.guard';
 import { AiGatewayService } from '../gateway/ai-gateway.service';
 import {
   ASSIGN_WORKOUT_CAPABILITY,
@@ -137,7 +135,7 @@ export class DraftSendNotificationDto {
  *      ROMAN-HOURLY-SCOPE); other roles keep their existing limits.
  *
  * Every route here is `@Roles('coach', 'owner')` + `JwtAuthGuard` +
- * `CoachGuard` + `SubscriptionGuard` (tier=pro). Owners are listed for
+ * `CoachGuard`. Owners are listed for
  * the same self-documenting parity with the rest of /coach/ai/*; the
  * RolesGuard owner-bypass would admit them anyway. Clients hitting any
  * of these endpoints get 403 from the CoachGuard BEFORE the gateway
@@ -151,8 +149,7 @@ export class DraftSendNotificationDto {
  */
 @ApiTags('coach-ai-execution')
 @Controller('v1/coach/ai/draft')
-@RequiresTier('pro')
-@UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachAIExecutionController {
   private readonly logger = new Logger(CoachAIExecutionController.name);
 

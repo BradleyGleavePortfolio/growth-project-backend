@@ -1,5 +1,5 @@
 /**
- * CustomDomainService — Pro+ custom-domain claim + DNS verification.
+ * CustomDomainService — custom-domain claim + DNS verification.
  *
  * Phase 4 of the landing-pages module. Two responsibilities:
  *
@@ -25,7 +25,6 @@ import {
   BadRequestException,
   ConflictException,
   HttpException,
-  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
@@ -78,12 +77,6 @@ export class CustomDomainService {
           'Domain must be a valid lowercase FQDN with no scheme, path, or port.',
       });
     }
-
-    // Pro+ tier gate. Free coaches get 402 (PaymentRequired) so the UI
-    // can prompt an upgrade rather than mask it as a generic permission
-    // error.  Tier resolves from CoachSubscription; if no row exists the
-    // coach is treated as free.
-    await this.assertProTier(coachId);
 
     // Load the page inside a transaction so the ownership check and the
     // claim write share one snapshot.  The unique-index check still runs
@@ -229,25 +222,6 @@ export class CustomDomainService {
     };
   }
 
-  // ─── Private ──────────────────────────────────────────────────────────────
-
-  private async assertProTier(coachId: string): Promise<void> {
-    const sub = await this.prisma.coachSubscription.findUnique({
-      where: { coach_id: coachId },
-      select: { tier: true },
-    });
-    const tier = sub?.tier ?? 'free';
-    if (tier === 'free') {
-      throw new HttpException(
-        {
-          error: 'pro_tier_required',
-          message: 'Custom domains require a Pro or Enterprise plan.',
-          action: 'OPEN_PLANS',
-        },
-        HttpStatus.PAYMENT_REQUIRED,
-      );
-    }
-  }
 }
 
 /**

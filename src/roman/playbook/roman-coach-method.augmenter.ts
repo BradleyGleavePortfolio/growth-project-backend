@@ -176,7 +176,7 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
     if (!row) return null;
     const entry: CoachMethodVersion = {
       at: now,
-      value: this.build(row.sections, row.red_lines),
+      value: this.build(row.sections, row.red_lines, headCoachId),
       ledger: row.sources,
       digest: row.source_digest,
     };
@@ -223,7 +223,8 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
     return coachId ? this.budget.resolveHeadCoachId(coachId) : null;
   }
 
-  private build(sections: unknown, redLines: unknown): RomanTurnAugment | null {
+  /** COACH-AI-CONSENT: `coachId` rides on the block, so the turn sends it only while that coach allows AI. */
+  private build(sections: unknown, redLines: unknown, coachId: string): RomanTurnAugment | null {
     const checked = validateCoachPlaybook({ sections, red_lines: redLines });
     if (!checked.ok) {
       this.logger.warn(`roman.coach_method_invalid issues=${checked.issues.length}`);
@@ -236,6 +237,7 @@ export class RomanCoachMethodAugmenter implements RomanTurnAugmenter {
       hash: createHash('sha256').update(rendered.block).digest('hex'),
       estimated_tokens: estimateTokens(rendered.block),
       ...(rendered.redLines.length > 0 ? { post_check: { red_lines: rendered.redLines } } : {}),
+      coach_id: coachId,
     };
   }
 }

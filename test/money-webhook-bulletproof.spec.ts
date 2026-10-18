@@ -420,6 +420,8 @@ describe('MONEY-WEBHOOK-124 — Stripe webhooks on the real handlers', () => {
         BadRequestException,
       );
       await expect(call(ctl, payload, '')).rejects.toBeInstanceOf(BadRequestException);
+      // A prototype-named header segment is a 400, not a 500 (SECALERTS-BE).
+      await expect(call(ctl, payload, '__proto__=x,constructor=y')).rejects.toBeInstanceOf(BadRequestException);
       await expect(
         call(ctl, payload, signStripePayload({ payload, secret: 'test-signing-secret-other' })),
       ).rejects.toBeInstanceOf(BadRequestException);

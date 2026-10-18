@@ -32,7 +32,7 @@ import {
 } from '../../src/ai/gateway/materialisers/create-workout-plan.materialiser';
 import type { AnalyticsService } from '../../src/analytics/analytics.service';
 import { AiConsentService } from '../../src/ai-consent/ai-consent.service';
-import { CLIENT_AI_CONSENT_V5_VERSION } from '../../src/ai-consent/ai-consent.constants';
+import { CLIENT_AI_CONSENT_V5_VERSION, COACH_AI_CONSENT_COPY_SHA256, COACH_AI_CONSENT_VERSION } from '../../src/ai-consent/ai-consent.constants';
 import { AiEgressService, AnthropicHandle, type AnthropicMessagesClient } from '../../src/ai-egress/ai-egress.service';
 import { PrismaService } from '../../src/prisma.service';
 import { RomanBackgroundSpendService } from '../../src/roman/background/roman-background-spend';
@@ -247,6 +247,8 @@ const preV2Digest = (rows: Row[]) =>
       a: randomUUID(), c: randomUUID(), x: randomUUID(), y: randomUUID(), z: randomUUID(), w: randomUUID(), v: randomUUID(),
     };
     for (const coach of [p.a, p.c]) await person(coach, 'coach', null);
+    // COACH-AI-CONSENT: coach A allows AI, so the builds send (the head's own grant, read at send).
+    await consent.decideCoach(p.a, 'grant', { version: COACH_AI_CONSENT_VERSION, copy_sha256: COACH_AI_CONSENT_COPY_SHA256 });
     const plan = await prisma.workoutPlan.create({ data: { coach_id: p.a, name: 'Conditioning', type: 'cardio' } });
     await person(p.v, 'student', p.c);
     await consent.grant(p.v, { version: CLIENT_AI_CONSENT_V5_VERSION });
@@ -318,7 +320,7 @@ const preV2Digest = (rows: Row[]) =>
       const eligible = (rebuilt?.eligible ?? []).map((k) => p[k]).sort();
       expect(learnedFrom(after[1])).toEqual(ids);
       expect(send).toHaveBeenCalledTimes(1);
-      expect(send.mock.calls[0][1]).toEqual({ kind: 'client_data', clientIds: eligible, audience: 'coach', scope: 'memory' });
+      expect(send.mock.calls[0][1]).toEqual({ kind: 'client_data', clientIds: eligible, audience: 'coach', scope: 'memory', coachId: p.a });
       expect(signalsFor[1]).toEqual({
         clients: eligible, schedule: eligible.length >= 3 ? eligible.length : null, lifts: liftsFor(rebuilt?.eligible ?? []),
       });

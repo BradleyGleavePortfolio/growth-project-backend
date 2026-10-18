@@ -368,8 +368,7 @@ import { WearablesModule } from './wearables/wearables.module';
     RealMealPlansModule,
     InsightsModule,
     // Team Mode v1 — head-coach -> sub-coach assignments, curated
-    // audit feed, Pro-tier paid staff seats, Enterprise included,
-    // Growth blocked at the controller with a structured upsell.
+    // audit feed, Pro-tier paid staff seats, no plan gate.
     TeamModeModule,
     TeamModule,
     SubCoachesModule,

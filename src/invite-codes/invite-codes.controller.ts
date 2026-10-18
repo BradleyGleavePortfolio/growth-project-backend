@@ -16,7 +16,6 @@ import { THROTTLER_NAMES, THROTTLER_ROUTE_LIMITS } from '../throttler/throttler.
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
-import { SubscriptionGuard } from '../billing/subscription.guard';
 import { Public } from '../common/decorators/public.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CreateInviteCodeDto } from './invite-codes.dto';
@@ -38,7 +37,7 @@ export class InviteCodesController {
 
   // ----- existing legacy InviteCode CRUD (unchanged) -----------------
   @Post('coach/invite-codes')
-  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
+  @UseGuards(JwtAuthGuard, CoachGuard)
   async create(
     @Request() req: AuthedRequest,
     @Body() body: CreateInviteCodeDto,
@@ -81,7 +80,7 @@ export class InviteCodesController {
   // make a malicious coach unable to flood the table; legit coaches
   // rarely need >100 invites per minute.
   @Post('coach/invite-codes/bulk')
-  @UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
+  @UseGuards(JwtAuthGuard, CoachGuard)
   @Throttle({ default: { ttl: 60_000, limit: 5 } })
   @HttpCode(HttpStatus.OK)
   async bulk(
