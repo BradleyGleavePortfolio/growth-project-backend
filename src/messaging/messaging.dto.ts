@@ -4,6 +4,7 @@ import {
   IsIn,
   IsInt,
   IsISO8601,
+  IsObject,
   IsOptional,
   IsString,
   IsUrl,
@@ -87,6 +88,15 @@ export class CreateMessageDto {
   @IsOptional()
   @IsUUID()
   reply_to_id?: string;
+}
+
+// SHARE-BE — the client send also takes one share card, checked field by
+// field in share-card.ts (closed schema, byte cap, error code only). The coach
+// route keeps CreateMessageDto, so a coach `card` is refused as non-whitelisted.
+export class CreateClientMessageDto extends CreateMessageDto {
+  @IsOptional()
+  @IsObject()
+  card?: Record<string, unknown>;
 }
 
 // A3-MSG-CORE — author edit of a message body (inside the edit window).

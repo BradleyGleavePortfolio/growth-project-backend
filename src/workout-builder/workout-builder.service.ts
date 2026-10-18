@@ -55,12 +55,14 @@ import { NotificationKind } from '../notifications/notification-kind';
 import { isMwbTemplatesEnabled } from './mwb-templates.feature';
 import { assertLastDayMayGo, lockProgramMaster, programDaysWhere } from './program-guards';
 import { inTenantWhere, planStaysInTenantWhere, programStaysInTenantWhere } from './tenant-clients';
+import { alternativesOf } from './plan-exercise-fields';
 import {
   AssignProgramDto,
   CloneProgramResultDto,
   CompleteAssignmentDto,
   CreateAssignmentDto,
   CreateWorkoutPlanDto,
+  UpdateAssignmentDto,
   UpdateWorkoutPlanDto,
   UpsertExerciseRowDto,
 } from './workout-builder.dto';
@@ -625,6 +627,7 @@ export class WorkoutBuilderService {
                   rest_seconds: r.rest_seconds ?? null,
                   superset_group_id: r.superset_group_id ?? null,
                   notes: r.notes ?? null,
+                  alternative_external_ids: alternativesOf(r),
                 })),
               });
             }
@@ -676,6 +679,7 @@ export class WorkoutBuilderService {
               client_id: dto.client_id,
               assigned_by_coach_id: coachId,
               scheduled_for: new Date(dto.scheduled_for),
+              scheduled_time: dto.scheduled_time ?? null,
             },
           });
           await this.writeAssignmentSnapshot(tx, assignment.id, planId);
@@ -882,6 +886,7 @@ export class WorkoutBuilderService {
         completion_idempotency_key: dto.idempotency_key,
         started_at: dto.started_at ? new Date(dto.started_at) : null,
         completion_payload: (dto.completion_payload as Prisma.InputJsonValue) ?? Prisma.JsonNull,
+        skipped_at: null,
       },
     });
 
@@ -946,6 +951,47 @@ export class WorkoutBuilderService {
     // conflict so the mobile client can prompt the user rather than
     // silently overwrite earlier session data.
     throw new ConflictException('Assignment already completed');
+  }
+
+  /**
+   * C1V2-C1: PATCH /assignments/:id, one field per call. The client moves
+   * (scheduled_for) or skips (skip) their own day while it is neither completed
+   * nor skipped; a new date runs from two days back (today in every time zone)
+   * to seven days ahead. The client's current coach, or a delegated sub-coach,
+   * writes the day's note to the client (client_note) or, C2-C0, its planned
+   * time (scheduled_time), and reads back only { id, <that field> }: a coach
+   * write never returns the day's logged results, which follow the client's
+   * Workouts sharing switch. Anyone else: 403.
+   */
+  async updateAssignment(userId: string, assignmentId: string, dto: UpdateAssignmentDto, now = new Date()) {
+    const sent = [dto.scheduled_for != null, dto.skip != null, dto.client_note !== undefined, dto.scheduled_time !== undefined].filter(Boolean).length;
+    if (sent !== 1) throw new BadRequestException('Send exactly one of scheduled_for, skip, client_note, scheduled_time');
+    const a = await this.prisma.clientWorkoutAssignment.findUnique({ where: { id: assignmentId }, select: { client_id: true } });
+    if (!a) throw new NotFoundException('Assignment not found');
+    if (dto.client_note !== undefined || dto.scheduled_time !== undefined) {
+      await this.assertCanAccessClient(userId, a.client_id);
+      const where = { id: assignmentId };
+      if (dto.scheduled_time !== undefined) {
+        return this.prisma.clientWorkoutAssignment.update({
+          where, data: { scheduled_time: dto.scheduled_time }, select: { id: true, scheduled_time: true },
+        });
+      }
+      return this.prisma.clientWorkoutAssignment.update({
+        where, data: { client_note: dto.client_note?.trim() || null }, select: { id: true, client_note: true },
+      });
+    }
+    if (a.client_id !== userId) throw new ForbiddenException('Access denied');
+    const at = dto.scheduled_for ? new Date(dto.scheduled_for) : null;
+    const day = 24 * 60 * 60 * 1000;
+    if (at && (at.getTime() < now.getTime() - 2 * day || at.getTime() > now.getTime() + 7 * day)) {
+      throw new BadRequestException('scheduled_for must fall between 2 days ago and 7 days ahead');
+    }
+    const moved = await this.prisma.clientWorkoutAssignment.updateMany({
+      where: { id: assignmentId, client_id: userId, completed_at: null, skipped_at: null },
+      data: at ? { scheduled_for: at } : { skipped_at: now },
+    });
+    if (moved.count !== 1) throw new ConflictException('Assignment already completed or skipped');
+    return this.prisma.clientWorkoutAssignment.findUnique({ where: { id: assignmentId } });
   }
 
   // ─── Guards ───────────────────────────────────────────────────────────────
@@ -1098,6 +1144,7 @@ export class WorkoutBuilderService {
         rest_seconds: e.rest_seconds ?? null,
         superset_group_id: remapGroup(e.superset_group_id ?? null),
         notes: e.notes ?? null,
+        alternative_external_ids: alternativesOf(e),
       }));
       if (rows.length > 0) {
         await tx.workoutPlanExercise.createMany({
@@ -1504,7 +1551,7 @@ export class WorkoutBuilderService {
         }
 
         const created = await this.prisma.$transaction((tx) =>
-          this.fanOutProgramPlans(tx, plans, coachId, dto.client_id, dto.start_date),
+          this.fanOutProgramPlans(tx, plans, coachId, dto.client_id, dto.start_date, dto.scheduled_time),
         );
 
         // One push for the whole program (avoid N notifications).
@@ -1568,13 +1615,14 @@ export class WorkoutBuilderService {
     return this.fanOutProgramPlans(tx, plans, coachId, clientId, startDate);
   }
 
-  /** Shared by assignProgramToClient and writeProgramAssignmentsInTx. */
+  /** Shared by assignProgramToClient and writeProgramAssignmentsInTx; every day gets `scheduledTime` (C2-C0). */
   private async fanOutProgramPlans(
     tx: Prisma.TransactionClient,
     plans: Array<{ id: string; week_index: number | null; day_index: number | null }>,
     coachId: string,
     clientId: string,
     startDateIso: string,
+    scheduledTime: string | null = null,
   ): Promise<Array<{ id: string }>> {
     const startDate = new Date(startDateIso);
     const DAY_MS = 24 * 60 * 60 * 1000;
@@ -1589,6 +1637,7 @@ export class WorkoutBuilderService {
           client_id: clientId,
           assigned_by_coach_id: coachId,
           scheduled_for: scheduledFor,
+          scheduled_time: scheduledTime,
         },
       });
       await this.writeAssignmentSnapshot(tx, assignment.id, plan.id);
@@ -1766,6 +1815,7 @@ export class WorkoutBuilderService {
             rest_seconds: r.rest_seconds ?? null,
             superset_group_id: r.superset_group_id ?? null,
             notes: r.notes ?? null,
+            alternative_external_ids: alternativesOf(r),
           })),
         ),
         plan_meta_json: planMetaJson(plan),
@@ -1796,6 +1846,7 @@ export class WorkoutBuilderService {
       rest_seconds: number | null;
       superset_group_id: string | null;
       notes: string | null;
+      alternative_external_ids?: string[];
     }>,
   ): Prisma.InputJsonValue {
     return rows
@@ -1810,6 +1861,7 @@ export class WorkoutBuilderService {
         rest_seconds: r.rest_seconds ?? null,
         superset_group_id: r.superset_group_id ?? null,
         notes: r.notes ?? null,
+        alternative_external_ids: alternativesOf(r),
       })) as unknown as Prisma.InputJsonValue;
   }
 
@@ -1845,6 +1897,7 @@ export class WorkoutBuilderService {
             rest_seconds: true,
             superset_group_id: true,
             notes: true,
+            alternative_external_ids: true,
           },
         },
       },
@@ -1922,6 +1975,10 @@ export interface AppliedAdjustmentRow {
 export interface RomanAdjustedSet {
   order: number;
   sets: number;
+  /** C1V2-C1: the set count before the coach's first change; null on an older row without it. */
+  sets_before: number | null;
+  /** C1V2-C1: the coach's reason for the client, from the latest change; null when none was given. */
+  client_reason: string | null;
 }
 
 /**
@@ -1931,15 +1988,16 @@ export interface RomanAdjustedSet {
  * Malformed rows are skipped. Empty when nothing was applied.
  */
 export function romanAdjustedSets(rows: readonly AppliedAdjustmentRow[] | undefined): RomanAdjustedSet[] {
-  const byOrder = new Map<number, number>();
+  const byOrder = new Map<number, RomanAdjustedSet>();
   const ordered = [...(rows ?? [])].sort(
     (a, b) => (a.decided_at?.getTime() ?? 0) - (b.decided_at?.getTime() ?? 0),
   );
   for (const row of ordered) {
     const change = row.applied_change;
     if (!change || typeof change !== 'object' || Array.isArray(change)) continue;
-    const exercises = (change as Record<string, unknown>).exercises;
+    const { exercises, client_reason: reason } = change as Record<string, unknown>;
     if (!Array.isArray(exercises)) continue;
+    const client_reason = typeof reason === 'string' && reason.trim() ? reason.trim() : null;
     for (const x of exercises) {
       if (!x || typeof x !== 'object') continue;
       const e = x as Record<string, unknown>;
@@ -1947,10 +2005,11 @@ export function romanAdjustedSets(rows: readonly AppliedAdjustmentRow[] | undefi
       if (typeof order !== 'number' || !Number.isInteger(order)) continue;
       if (typeof after !== 'number' || !Number.isInteger(after) || after < 1) continue;
       if (after === before) continue;
-      byOrder.set(order, after);
+      const sets_before = typeof before === 'number' && Number.isInteger(before) ? before : null;
+      byOrder.set(order, { order, sets: after, sets_before: byOrder.get(order)?.sets_before ?? sets_before, client_reason });
     }
   }
-  return [...byOrder.entries()].sort((a, b) => a[0] - b[0]).map(([order, sets]) => ({ order, sets }));
+  return [...byOrder.values()].filter((r) => r.sets !== r.sets_before).sort((a, b) => a.order - b.order);
 }
 
 /** One exercise row of an assignment snapshot (MWB-1 `exercises_json`). */
@@ -1963,6 +2022,8 @@ export interface AssignmentExerciseRow {
   rest_seconds: number | null;
   superset_group_id: string | null;
   notes: string | null;
+  /** C1V2-C1: the coach's swaps; absent on a row frozen before them. */
+  alternative_external_ids?: string[];
 }
 
 /** Defensive parse of a snapshot's `exercises_json`; malformed rows are skipped. */
@@ -1982,6 +2043,7 @@ export function parseAssignmentRows(json: unknown): AssignmentExerciseRow[] {
       rest_seconds: typeof o.rest_seconds === 'number' ? o.rest_seconds : null,
       superset_group_id: typeof o.superset_group_id === 'string' ? o.superset_group_id : null,
       notes: typeof o.notes === 'string' ? o.notes : null,
+      alternative_external_ids: alternativesOf(o),
     });
   }
   return out.sort((a, b) => a.order - b.order);

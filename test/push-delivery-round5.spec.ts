@@ -65,7 +65,10 @@ function world(prefs: Record<string, unknown> = {}) {
       findFirst: jest.fn(async ({ where }: { where: Record<string, unknown> }) => inbox.find((r) => hit(r, where)) ?? null),
       count: jest.fn(async ({ where }: { where: Record<string, unknown> }) => inbox.filter((r) => hit(r, where)).length),
     },
-    coachingSession: { findUnique: jest.fn(async () => ({ client_id: 'u-1', coach_id: 'coach-1', status: 'scheduled' })) },
+    coachingSession: {
+      findUnique: jest.fn(async () => ({ client_id: 'u-1', coach_id: 'coach-1', status: 'scheduled' })),
+      findMany: jest.fn(async () => []), // a coach's sessions with someone not their client: none
+    },
     scheduledDrop: { updateMany: jest.fn(async () => ({ count: 1 })) },
   };
   const delivery = new Clocked(Object.create(db), client);

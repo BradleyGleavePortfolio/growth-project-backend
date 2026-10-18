@@ -695,11 +695,15 @@ describe('WorkoutBuilderService', () => {
       const result = await service.assignPlan(
         COACH_ID,
         basePlan.id,
-        { client_id: CLIENT_ID, scheduled_for: '2025-02-01T09:00:00Z' },
+        { client_id: CLIENT_ID, scheduled_for: '2025-02-01T09:00:00Z', scheduled_time: '17:30' },
         '77777777-7777-4777-8777-777777777777',
       );
 
       expect((result as { client_id: string }).client_id).toBe(CLIENT_ID);
+      // C2-C0: the coach's planned time lands on the day.
+      expect(prismaMock.clientWorkoutAssignment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ scheduled_time: '17:30' }),
+      });
     });
 
     it('403s when the client belongs to a different coach', async () => {
@@ -756,6 +760,10 @@ describe('WorkoutBuilderService', () => {
 
       // The assignment + snapshot are written in one $transaction.
       expect(prismaMock.$transaction).toHaveBeenCalled();
+      // C2-C0: no time sent, no time stored.
+      expect(prismaMock.clientWorkoutAssignment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ scheduled_time: null }),
+      });
       expect(
         prismaMock.clientWorkoutAssignmentSnapshot.create,
       ).toHaveBeenCalledWith(
@@ -1088,9 +1096,13 @@ describe('WorkoutBuilderService', () => {
       const result = await service.assignProgramToClient(
         COACH_ID,
         'prog-1',
-        { client_id: CLIENT_ID, start_date: '2025-02-03T00:00:00Z' },
+        { client_id: CLIENT_ID, start_date: '2025-02-03T00:00:00Z', scheduled_time: '06:15' },
         'abababab-abab-4aba-8aba-abababababab',
       );
+      // C2-C0: every day of the program gets the coach's one planned time.
+      for (const [arg] of prismaMock.clientWorkoutAssignment.create.mock.calls) {
+        expect(arg.data.scheduled_time).toBe('06:15');
+      }
 
       expect((result as { assignments: unknown[] }).assignments).toHaveLength(2);
       expect(prismaMock.clientWorkoutAssignment.create).toHaveBeenCalledTimes(2);
@@ -1413,8 +1425,8 @@ describe('WorkoutBuilderService', () => {
       });
       const result = await service.getMyAssignment(CLIENT_ID, 'asgn-r');
       expect(result.roman_adjusted_sets).toEqual([
-        { order: 1, sets: 2 },
-        { order: 2, sets: 3 },
+        { order: 1, sets: 2, sets_before: 4, client_reason: null },
+        { order: 2, sets: 3, sets_before: 4, client_reason: null },
       ]);
       expect(result).not.toHaveProperty('adjustment_proposals');
     });
@@ -1464,7 +1476,7 @@ describe('WorkoutBuilderService', () => {
       const page = await service.listMyAssignments(CLIENT_ID);
       const items = page.items as Array<{ id: string; roman_adjusted_sets: unknown }>;
       expect(items.map((i) => [i.id, i.roman_adjusted_sets])).toEqual([
-        ['asgn-1', [{ order: 1, sets: 3 }, { order: 2, sets: 3 }]],
+        ['asgn-1', [{ order: 1, sets: 3, sets_before: 4, client_reason: null }, { order: 2, sets: 3, sets_before: 4, client_reason: null }]],
         ['asgn-2', []],
       ]);
       expect(items[0]).not.toHaveProperty('adjustment_proposals');
@@ -1488,7 +1500,7 @@ describe('WorkoutBuilderService', () => {
             decided_at: new Date('2026-10-06T10:00:00Z'),
           },
         ]),
-      ).toEqual([{ order: 4, sets: 3 }]);
+      ).toEqual([{ order: 4, sets: 3, sets_before: 4, client_reason: null }]);
       expect(romanAdjustedSets(undefined)).toEqual([]);
     });
   });

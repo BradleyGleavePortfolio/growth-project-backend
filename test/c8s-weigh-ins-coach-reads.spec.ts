@@ -17,10 +17,12 @@ import type { AiGatewayService } from '../src/ai/gateway/ai-gateway.service';
 import type { AiApprovalService } from '../src/ai/gateway/ai-approval.service';
 import { WeightService } from '../src/weight/weight.service';
 import type { ClientAIContextService } from '../src/ai/client-ai-context.service';
+import type { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
 
 // C8-S (SoT A2 items 12-15): a coach-facing read returns a client's weight only
-// while that client's Weigh-ins switch is on. One table walks every coach read
-// that can carry a weight or a number built from one. Client J moved from
+// to their current coach; #SHARE-SIMPLE: an old Weigh-ins switch-off no longer
+// hides it. One table walks every coach read that can carry a weight or a
+// number built from one. Client J moved from
 // coach-before to coach-now; coach-before still holds every old grant. J keeps
 // sharing Check-ins and habits, so check-in rows still come and only their
 // weight must go. Each weight is a unique number; the two weight flags count too.
@@ -105,6 +107,7 @@ function world(weighInsShared: boolean) {
     workoutSession: [],
     clientWorkoutAssignment: [],
     message: [],
+    coachAlert: [],
   };
   const model = (name: string) => ({
     findMany: jest.fn(async (a: { where?: Where } = {}) => t[name].filter((r) => matches(r, a.where))),
@@ -118,7 +121,9 @@ function world(weighInsShared: boolean) {
 
 async function routes(weighInsShared: boolean) {
   const prisma = world(weighInsShared);
-  const consent = new ConsentService(stub<PrismaService>(prisma), stub<AuditService>({ write: jest.fn() }));
+  // Who coaches J now (SubCoachScopeService.getAuthorizedClientIds): NOW_COACH only.
+  const coaches = stub<SubCoachScopeService>({ getAuthorizedClientIds: jest.fn(async (id: string) => (id === NOW_COACH ? [J] : [])) });
+  const consent = new ConsentService(stub<PrismaService>(prisma), stub<AuditService>({ write: jest.fn() }), coaches);
   const mod = await Test.createTestingModule({
     providers: [
       CheckInsService,
@@ -164,8 +169,8 @@ describe.each(COACH_READS)('C8-S %s', (_path, read) => {
     expect(seen(await run(read, await routes(true), NOW_COACH))).not.toEqual([]);
   });
 
-  it('Weigh-ins off: no weight anywhere, check-in rows included', async () => {
-    expect(seen(await run(read, await routes(false), NOW_COACH))).toEqual([]);
+  it('an old Weigh-ins switch-off: the current coach still gets the weight (#SHARE-SIMPLE)', async () => {
+    expect(seen(await run(read, await routes(false), NOW_COACH))).not.toEqual([]);
   });
 
   it('a former coach after the move: nothing, though their old grants are still on', async () => {
@@ -175,19 +180,14 @@ describe.each(COACH_READS)('C8-S %s', (_path, read) => {
   });
 });
 
-describe('C8-S Weigh-ins off: the not-shared shape', () => {
-  it('check-in rows stay with weight_kg null; the AI context keeps the rest of the profile', async () => {
+describe('C8-S an old Weigh-ins switch-off (#SHARE-SIMPLE)', () => {
+  it('the current coach still gets weigh-ins and the check-in weight; the timeline says weigh-ins are shared', async () => {
     const r = await routes(false);
-    const row = { id: 'check-in-1', mood: 4, weight_kg: null };
-    expect(await r.coach.getClientTimeline(caller(NOW_COACH), J)).toMatchObject({
-      weights: [],
-      checkIns: [row],
-      events: [{ type: 'check_in', ref: row }],
-      consent: { body_metrics: false, habits_progress: true },
-    });
+    const row = { id: 'check-in-1', mood: 4, weight_kg: 82.4 };
+    const timeline = await r.coach.getClientTimeline(caller(NOW_COACH), J);
+    expect(timeline).toMatchObject({ checkIns: [row], consent: { body_metrics: true, habits_progress: true } });
+    expect((timeline as { weights: unknown[] }).weights).toHaveLength(3);
     expect(await r.checkIns.list(caller(NOW_COACH), J, ASK)).toMatchObject([row]);
-    const ai = await r.ai.invoke(caller(NOW_COACH), { capability: 'client_path_summary', message: 'Hi', subject_user_id: J });
-    expect(ai.reply).toContain('fat_loss');
   });
 });
 

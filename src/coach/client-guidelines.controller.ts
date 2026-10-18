@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
+import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import { CoachService } from './coach.service';
@@ -18,13 +19,16 @@ import { CoachService } from './coach.service';
  *
  * Privacy: req.user.id is the only input (no params, no query). The service
  * reads the one row written for this client by their current coach and
- * returns only its text and dates. Guards match the other client reads
- * (check-ins, meal plans): student role, plus the client package check.
+ * returns only its text and dates, so a past coach's row stays closed.
+ * Guards match the other client reads (check-ins, meal plans): student role,
+ * and open to every client, so the guidelines never lock when a plan lapses
+ * (#LEARN-LOCK op 1; before, no paid package meant 402).
  */
 @ApiTags('coach')
 @Controller('coach')
 @UseGuards(JwtAuthGuard, RolesGuard, ClientEntitlementGuard)
 @Roles('student')
+@OpenToCoachlessClient()
 export class ClientGuidelinesController {
   constructor(private readonly coachService: CoachService) {}
 

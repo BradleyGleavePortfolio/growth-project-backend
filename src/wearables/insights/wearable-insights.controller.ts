@@ -21,6 +21,7 @@ import { PrismaService } from '../../prisma.service';
 import { assertRomanHasCoach } from '../../roman/roman-requires-coach';
 import { AiApprovalService } from '../../ai/gateway/ai-approval.service';
 import { COACH_WEARABLE_MESSAGE_CAPABILITY } from '../../ai/gateway/materialisers/coach-wearable-message.materialiser';
+import { ROMAN_MESSAGE_SOURCE } from '../../ai/gateway/roman-message-draft';
 import { WearableInsightsService } from './wearable-insights.service';
 import {
   CoachInsightResponse,
@@ -74,7 +75,13 @@ const ApproveBodySchema = z
       }),
     action: z.enum(['approve', 'edit', 'reject']),
   })
-  .strict();
+  .strict()
+  .or(z.object({
+    client_id: z.guid({ message: 'client_id must be a UUID' }),
+    bucket: BucketSchema,
+    draft_body: z.literal(''),
+    action: z.literal('dismiss'),
+  }).strict());
 
 // Wire response for the approve endpoint. Discriminated by `status` on the
 // mobile side; the backend only ever emits the `ok` branch (the
@@ -82,11 +89,9 @@ const ApproveBodySchema = z
 const ApproveResponseShape = z.object({
   status: z.literal('ok'),
   draft_id: z.guid(),
-  // Nullable by contract (HK-6a R2, P1-3): a reject never materialises a
-  // message, so there is no materialisation timestamp to report — the field
-  // is null on the reject branch and an ISO string on approve/edit. This
-  // keeps the two concepts (decision time vs. materialisation time) from
-  // being conflated, which the prior `decided_at`-in-the-slot hack did.
+  // Legacy reject returns null. The shipped dismiss caller requires a string
+  // in this slot: its decision time, NOT a message materialisation time.
+  // Stored materialised_at stays null for both non-sending actions.
   materialised_at: z.string().nullable(),
 });
 type ApproveResponseShape = z.infer<typeof ApproveResponseShape>;
@@ -120,7 +125,7 @@ export class WearableInsightsController {
   ): Promise<CoachInsightResponse> {
     const { clientId, bucket } = parseOrThrow(CoachQuerySchema, rawQuery);
     await this.svc.assertCoachOwnsClient(req.user.id, clientId, req.user.role);
-    const payload = await this.svc.generateForCoach(req.user.id, clientId, bucket);
+    const payload = await this.svc.generateForCoach(req.user.id, clientId, bucket, req.user.role);
     // Validate the wire response against the locked union contract (full
     // coach insight OR the strict empty state). Both branches are exact-
     // field; an empty fallback can never leak a contract-violating shape.
@@ -158,7 +163,8 @@ export class WearableInsightsController {
     await this.svc.assertCoachOwnsClient(
       req.user.id,
       body.client_id,
-      req.user.role,
+      // Dismiss is only for this client's current coach, not an admin bypass.
+      body.action === 'dismiss' ? 'coach' : req.user.role,
     );
 
     // Create the human-validated draft. tenant_coach_id is pinned to the
@@ -170,6 +176,21 @@ export class WearableInsightsController {
     // protects LLM-generated drafts. Here the human IS the author, so a null
     // requester keeps that guard inert without weakening any other check
     // (the tenant boundary + coach-owns-client above are the real authz).
+    // ROMANMARK-BE: `approve` sends Roman's stored suggestion for this coach,
+    // client and bucket as stored, marked as Roman's text (the Roman mark).
+    // Its body must equal that suggestion after the same trim the app makes
+    // before it sends `approve`; a real difference, or no stored suggestion,
+    // is refused (400 WEARABLE_SUGGESTION_MISMATCH) before anything is written
+    // or sent. `edit` sends the coach's text, marked when a suggestion is
+    // stored (S-08, romanmark-insight op 1).
+    const suggestion = body.action === 'dismiss'
+      ? null
+      : await this.svc.romanSuggestion(req.user.id, body.client_id, body.bucket);
+    const text = body.action === 'approve' ? suggestion : body.draft_body;
+    if (text === null || text.trim() !== body.draft_body.trim()) {
+      throw new BadRequestException({ error: 'WEARABLE_SUGGESTION_MISMATCH' });
+    }
+    const roman = suggestion !== null && body.action !== 'reject';
     const draft = await this.prisma.aiActionDraft.create({
       data: {
         capability: COACH_WEARABLE_MESSAGE_CAPABILITY,
@@ -180,7 +201,7 @@ export class WearableInsightsController {
         payload: {
           clientId: body.client_id,
           bucket: body.bucket,
-          body: body.draft_body,
+          body: text,
         } as Prisma.InputJsonValue,
         rationale: `Approved from wearable insight (bucket=${body.bucket}, action=${body.action})`,
         redacted_inputs: {} as Prisma.InputJsonValue,
@@ -190,16 +211,17 @@ export class WearableInsightsController {
             bucket: body.bucket,
             action: body.action,
           },
+          ...(roman ? [{ source: ROMAN_MESSAGE_SOURCE, count: 1 }] : []),
         ] satisfies Prisma.InputJsonValue,
         expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       },
     });
 
-    // Dispatch on action. reject -> rejected (no send); approve/edit ->
+    // Dispatch on action. reject/dismiss -> rejected (no send); approve/edit ->
     // approved (materialiser sends). decide() owns the lock, audit, and
     // materialiser dispatch; we let its NotFound/Conflict/Forbidden
     // exceptions propagate untouched (no catch-and-rewrap).
-    const decision = body.action === 'reject' ? 'rejected' : 'approved';
+    const decision = body.action === 'approve' || body.action === 'edit' ? 'approved' : 'rejected';
     const fresh = await this.approvals.decide({
       draftId: draft.id,
       decider: { id: req.user.id, role: req.user.role },
@@ -212,11 +234,11 @@ export class WearableInsightsController {
       userAgent: extractUserAgent(req),
     });
 
-    // Wire timestamp (P1-3): materialised_at is the actual materialisation
-    // time for approve/edit, and null for reject (nothing was materialised).
-    // We report exactly what the draft row carries — no decided_at fallback,
-    // so the field never conflates decision time with materialisation time.
-    const materialisedAt = fresh.materialised_at?.toISOString() ?? null;
+    // Wire-only compatibility for builds 9/10: dismiss parses a string here.
+    // Do not write a materialisation timestamp or send a message for dismissal.
+    const materialisedAt = (body.action === 'dismiss'
+      ? fresh.decided_at
+      : fresh.materialised_at)?.toISOString() ?? null;
 
     // Validate the wire response against the locked contract before returning
     // (defence in depth, same pattern as getCoachInsight).

@@ -111,7 +111,7 @@ function setup(opts: {
     fakeOf(db.prisma),
     opts.egress ?? grantAllEgress(),
     AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>(client)),
-    new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource()),
+    new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource(), grantAllEgress()),
     null,
     fakeOf<CoachAIBudgetService>(budget),
     null,

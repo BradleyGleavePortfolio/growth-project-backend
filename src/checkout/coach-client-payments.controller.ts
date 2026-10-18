@@ -111,3 +111,23 @@ export class CoachClientPaymentsController {
     return this.payments.cancel(req.user, clientId, purchaseId, body.idempotency_key);
   }
 }
+
+// CONTRACT-1: the seller refunds a sale by its id alone (a moved-away client's money record has no
+// client id). Same guards, body and reply as the per-client refund.
+@ApiTags('coach-payments')
+@Controller('v1/coach/purchases')
+@UseGuards(CoachPaymentActionsFeatureGuard, JwtAuthGuard, CoachOrOwnerGuard, NoActiveSubCoachGuard)
+export class CoachSaleRefundController {
+  constructor(private readonly payments: CoachClientPaymentsService) {}
+
+  @Roles('coach', 'owner')
+  @Post(':purchaseId/refund')
+  @HttpCode(200)
+  refund(
+    @Request() req: AuthedRequest,
+    @Param('purchaseId', ParseUUIDPipe) purchaseId: string,
+    @Body() body: CoachRefundDto,
+  ) {
+    return this.payments.refundSale(req.user, purchaseId, body);
+  }
+}

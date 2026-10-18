@@ -11,8 +11,8 @@ import { z } from 'zod';
  *
  *  - workout: a `workout_plan_id`, with optional `week_index` / `day_index`
  *    (program coordinates) and an optional `exercise_id`.
- *  - meal:    a `meal_plan_id`, with an optional `meal_id` (a free-form
- *    reference into the plan's JSON `items` / `days`; not an FK).
+ *  - meal:    a day plan's `meal_plan_id` (MEAL:DAY), with an optional
+ *    `meal_id` (an opaque reference to one of its meals; not an FK).
  *  - package: a `package_id` for billing-context discussion.
  *  - check_in: a `check_in_id` for accountability.
  *
@@ -56,7 +56,7 @@ const dayIndex = z
   .optional();
 
 // WorkoutPlan / CoachPackage ids are stringified UUIDs; CheckIn ids are UUIDs.
-// `meal_id` is a free-form reference into the meal plan's JSON, capped in
+// `meal_id` is an opaque reference to one meal of the day plan, capped in
 // length so it cannot be used to smuggle an oversized payload.
 const MAX_MEAL_ID_LEN = 128;
 

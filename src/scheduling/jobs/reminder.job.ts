@@ -86,6 +86,22 @@ export const REMINDER_CATCHUP_MINUTES = 30;
 export const REMINDER_CATCHUP_BATCH = 200;
 const REMINDABLE_STATUSES: readonly SessionStatus[] = ['scheduled', 'pending_provider'];
 
+// C4MOVED (#1021): the only CoachingSession columns the sweep reads. Every
+// session read here selects exactly these, so a column the job does not use
+// (the moved fields, notes, recap) never reaches it.
+export const REMINDER_SESSION_SELECT = {
+  id: true,
+  coach_id: true,
+  client_id: true,
+  session_type_id: true,
+  status: true,
+  start_at: true,
+  video_url: true,
+  approved_at: true,
+  created_at: true,
+} as const;
+export type ReminderSession = Pick<CoachingSession, keyof typeof REMINDER_SESSION_SELECT>;
+
 // S-SCHED-5 (B-634-7): every value the reminder job writes to
 // NotificationDeliveryLog.status. The database CHECK
 // NotificationDeliveryLog_status_check (migration 20270222000000) must allow
@@ -219,7 +235,7 @@ export class SessionReminderJob {
 
   // Returns the sessions that fall in the [now, now + windowMinutes]
   // band and are still in `scheduled` state.
-  async findDueReminders(windowMinutes = 60): Promise<CoachingSession[]> {
+  async findDueReminders(windowMinutes = 60): Promise<ReminderSession[]> {
     const now = new Date();
     const upper = new Date(now.getTime() + windowMinutes * 60 * 1000);
     return this.prisma.coachingSession.findMany({
@@ -228,6 +244,7 @@ export class SessionReminderJob {
         start_at: { gte: now, lte: upper },
       },
       orderBy: { start_at: 'asc' },
+      select: REMINDER_SESSION_SELECT,
     });
   }
 
@@ -312,7 +329,7 @@ export class SessionReminderJob {
     emit: (
       recipientUserId: string,
       otherPartyDisplayName: string,
-      session: CoachingSession,
+      session: ReminderSession,
       ctx: ReminderRecipientContext,
     ) => Promise<BookingDeliveryOutcome | void | undefined>;
   }): Promise<ReminderSweepResult> {
@@ -328,6 +345,7 @@ export class SessionReminderJob {
         start_at: { gte: lower, lte: upper },
       },
       orderBy: { start_at: 'asc' },
+      select: REMINDER_SESSION_SELECT,
     });
 
     const result: ReminderSweepResult = {
@@ -378,7 +396,7 @@ export class SessionReminderJob {
     result.scanned += missed.sessions.length;
     result.recovery_failed += missed.failed ? 1 : 0;
 
-    const work: Array<{ session: CoachingSession; onlyUsers: Set<string> | null }> = [
+    const work: Array<{ session: ReminderSession; onlyUsers: Set<string> | null }> = [
       ...due.map((session) => ({ session, onlyUsers: null })),
       ...recovery.sessions,
       ...missed.sessions,
@@ -446,11 +464,11 @@ export class SessionReminderJob {
       emit: (
         recipientUserId: string,
         otherPartyDisplayName: string,
-        session: CoachingSession,
+        session: ReminderSession,
         ctx: ReminderRecipientContext,
       ) => Promise<BookingDeliveryOutcome | void | undefined>;
     },
-    session: CoachingSession,
+    session: ReminderSession,
     p: { userId: string; otherUserId: string | null; role: 'client' | 'coach' },
     sessionTypeName: string | null,
     result: ReminderSweepResult,
@@ -533,7 +551,7 @@ export class SessionReminderJob {
     minLeadMs: number;
     dueIds: Set<string>;
   }): Promise<{
-    sessions: Array<{ session: CoachingSession; onlyUsers: Set<string> }>;
+    sessions: Array<{ session: ReminderSession; onlyUsers: Set<string> }>;
     retired: number;
     parked: number;
     failed: boolean;
@@ -566,10 +584,11 @@ export class SessionReminderJob {
     if (rows.length === 0) return empty;
 
     const sessionIds = [...new Set(rows.map((r) => r.session_id).filter(isString))];
-    let sessions: CoachingSession[];
+    let sessions: ReminderSession[];
     try {
       sessions = await this.prisma.coachingSession.findMany({
         where: { id: { in: sessionIds } },
+        select: REMINDER_SESSION_SELECT,
       });
     } catch (err) {
       this.logger.error(
@@ -579,7 +598,7 @@ export class SessionReminderJob {
     }
     const byId = new Map(sessions.map((s) => [s.id, s]));
     const cutoff = args.now.getTime() + args.minLeadMs;
-    const recover = new Map<string, { session: CoachingSession; onlyUsers: Set<string> }>();
+    const recover = new Map<string, { session: ReminderSession; onlyUsers: Set<string> }>();
     let retired = 0;
     let parked = 0;
 
@@ -635,7 +654,7 @@ export class SessionReminderJob {
     minLeadMs: number;
     skipIds: Set<string>;
   }): Promise<{
-    sessions: Array<{ session: CoachingSession; onlyUsers: Set<string> }>;
+    sessions: Array<{ session: ReminderSession; onlyUsers: Set<string> }>;
     failed: boolean;
   }> {
     const from = new Date(
@@ -653,11 +672,11 @@ export class SessionReminderJob {
     // examined on every tick. The interval is 30 minutes of start times, so
     // the walk is finite; each page is an indexed (status, start_at) range.
     const leadMs = args.lowerOffsetMinutes * 60 * 1000;
-    const out: Array<{ session: CoachingSession; onlyUsers: Set<string> }> = [];
+    const out: Array<{ session: ReminderSession; onlyUsers: Set<string> }> = [];
     let cursor: { start_at: Date; id: string } | null = null;
     try {
       for (;;) {
-        const page: CoachingSession[] = await this.prisma.coachingSession.findMany({
+        const page: ReminderSession[] = await this.prisma.coachingSession.findMany({
           where: {
             status: { in: [...REMINDABLE_STATUSES] },
             start_at: { gte: from, lt: args.lower },
@@ -672,6 +691,7 @@ export class SessionReminderJob {
           },
           orderBy: [{ start_at: 'asc' }, { id: 'asc' }],
           take: REMINDER_CATCHUP_BATCH,
+          select: REMINDER_SESSION_SELECT,
         });
         if (page.length === 0) break;
         const last = page[page.length - 1];
@@ -749,7 +769,7 @@ export class SessionReminderJob {
 
   private retireReason(
     row: DeliveryLogRow,
-    session: CoachingSession | undefined,
+    session: ReminderSession | undefined,
     nowMs: number,
     cutoffMs: number,
     lowerMs: number,
@@ -807,7 +827,7 @@ export class SessionReminderJob {
   //  - Any other database error is a real failure: logged, counted, retried
   //    next sweep; never mistaken for a duplicate.
   private async claimDelivery(
-    session: CoachingSession,
+    session: ReminderSession,
     userId: string,
     kind: string,
   ): Promise<ReminderClaim | 'duplicate' | 'error'> {
@@ -952,7 +972,7 @@ export class SessionReminderJob {
     return state;
   }
 
-  private async retireClaim(claim: ReminderClaim, current: CoachingSession | null): Promise<void> {
+  private async retireClaim(claim: ReminderClaim, current: ReminderSession | null): Promise<void> {
     const reason: RetireReason =
       !current || !REMINDABLE_STATUSES.includes(current.status)
         ? 'session_cancelled'
@@ -975,10 +995,13 @@ export class SessionReminderJob {
   // Sol B-647-1 (backend #647): the fence read takes FOR SHARE on the session
   // row inside a transaction, so a reschedule or cancel that is still in
   // flight is waited for, and its committed result is what the fence sees.
-  private readFencedSession(sessionId: string): Promise<CoachingSession | null> {
+  private readFencedSession(sessionId: string): Promise<ReminderSession | null> {
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT 1 FROM "CoachingSession" WHERE "id" = ${sessionId} FOR SHARE`;
-      return tx.coachingSession.findUnique({ where: { id: sessionId } });
+      return tx.coachingSession.findUnique({
+        where: { id: sessionId },
+        select: REMINDER_SESSION_SELECT,
+      });
     });
   }
 

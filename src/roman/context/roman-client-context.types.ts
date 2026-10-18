@@ -318,6 +318,10 @@ export interface RomanClientContextBundle {
   estimated_tokens: number;
   /** Number of Prisma queries the build issued (≤ 16 by contract). */
   query_count: number;
+  /** Coach-side ids (head coach, open sub-coach) whose writes drop this memo entry. Never rendered. */
+  coach_side?: string[];
+  /** COACH-TEXT: coaches who allowed AI at build; re-read on every memo hit. Never rendered. */
+  coach_text?: string[];
 }
 
 /**

@@ -124,4 +124,18 @@ liveDescribe('B-651-5 live: Roman spend admission is atomic per UTC day (Postgre
     );
     expect(used).toBeLessThanOrEqual(0.2);
   });
+
+  it('ROMANCOUNT: room left but not for this turn: three refused retries each give their counted message back', async () => {
+    process.env.ROMAN_DAILY_COST_CAP_USD = '0.1';
+    const [client, other] = CALLERS;
+    await svc.reserveDailySpend(other, boundFor(0.06)); // 0.06 of 0.1 used: the pre-check passes, 0.06 more does not fit
+    for (let i = 0; i < 3; i++) {
+      await svc.assertDailyCapacity(client);
+      const refused = svc.reserveDailySpend(client, boundFor(0.06), ROMAN_MAX_OUTPUT_TOKENS, await svc.assertWithinRateLimit(client));
+      await expect(refused).rejects.toMatchObject({ response: { code: ROMAN_ERROR_CAPACITY_REACHED } });
+    }
+    await svc.reserveDailySpend(client, boundFor(0.03), ROMAN_MAX_OUTPUT_TOKENS, await svc.assertWithinRateLimit(client)); // the next turn fits
+    const row = await prisma.romanUsageDaily.findFirst({ where: { client_id: client.id } });
+    expect(row?.messages).toBe(1); // counted once: 1, not 4 (each refused retry gave its count back)
+  });
 });

@@ -335,6 +335,7 @@ describe('CoachService audit hooks', () => {
       checkIn: { findMany: jest.fn(async () => []) },
       coachClientConsent: { findMany: jest.fn(async () => []) },
       clientWorkoutAssignment: { findMany: jest.fn(async () => []) },
+      coachAlert: { findFirst: jest.fn(async () => null) },
     } as any;
   }
 

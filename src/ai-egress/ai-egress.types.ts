@@ -13,6 +13,8 @@
  *
  * Only `anthropic` is covered by the box-2 consent copy ("processed by
  * Anthropic"). Client data never goes to any other processor.
+ * COACH-AI-CONSENT: `coachId` names the coach a request is made by or for, or whose own text it
+ * carries; their live coach-ai-v1 grant is read before every send, on top of the client checks.
  */
 
 /** External AI processors the server can reach. */
@@ -64,8 +66,23 @@ export type AiDataSubject =
       readonly clientIds: readonly string[];
       readonly audience: AiConsentAudience;
       readonly scope?: AiConsentScope;
+      readonly coachId?: string;
     }
-  | { readonly kind: 'no_client_data'; readonly reason: NoClientDataReason };
+  | {
+      readonly kind: 'no_client_data';
+      readonly reason: NoClientDataReason;
+      readonly coachId?: string;
+    };
+
+/** The reasons whose prompt is a coach's own text or business: they need `coachId`. */
+export const COACH_NO_CLIENT_DATA_REASONS: readonly NoClientDataReason[] = ['coach_own_scope', 'coach_business_metrics'];
+
+/** A coach audience or coach reason must name the coach (`coachId`); without it the send is refused. */
+export function needsCoachGrant(subject: AiDataSubject): boolean {
+  return subject.kind === 'client_data'
+    ? subject.audience === 'coach'
+    : COACH_NO_CLIENT_DATA_REASONS.includes(subject.reason);
+}
 
 /**
  * Build a client-data subject (deduplicated, empty ids dropped). A 'base'
@@ -75,16 +92,21 @@ export function clientDataSubject(
   clientIds: string | readonly string[],
   audience: AiConsentAudience,
   scope: AiConsentScope = 'base',
+  coachId?: string,
 ): AiDataSubject {
   const list = typeof clientIds === 'string' ? [clientIds] : clientIds;
   const unique = [...new Set(list.filter((id) => typeof id === 'string' && id.length > 0))];
-  return scope === 'memory'
-    ? { kind: 'client_data', clientIds: unique, audience, scope }
-    : { kind: 'client_data', clientIds: unique, audience };
+  return {
+    kind: 'client_data',
+    clientIds: unique,
+    audience,
+    ...(scope === 'memory' ? { scope } : {}),
+    ...(coachId ? { coachId } : {}),
+  };
 }
 
-export function noClientDataSubject(reason: NoClientDataReason): AiDataSubject {
-  return { kind: 'no_client_data', reason };
+export function noClientDataSubject(reason: NoClientDataReason, coachId?: string): AiDataSubject {
+  return coachId ? { kind: 'no_client_data', reason, coachId } : { kind: 'no_client_data', reason };
 }
 
 /**

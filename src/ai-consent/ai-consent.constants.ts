@@ -20,6 +20,7 @@
  * at new text.
  */
 import { createHash } from 'node:crypto';
+import { ROMAN_CRISIS_TOLD_SENTENCE } from '../roman/roman.feature';
 
 /**
  * Copy version of the box-2 text. Bump with any change to the text below.
@@ -154,6 +155,35 @@ export const CLIENT_AI_CONSENT_V7_COPY_SHA256 = sha256Hex(
 );
 
 /**
+ * client-ai-v8 / client-ai-v9 (CRISIS-APP-COPY, owner op 1, 2026-10-15): the
+ * v6 / v7 paragraphs with the approved crisis sentence right after the
+ * exception sentence, nothing else changed. Same box label, same scopes (v8
+ * 'base', v9 'memory'). GET ?variant=crisis_alert offers them only while
+ * FEATURE_ROMAN_CRISIS_ALERT is on; v4 to v7 keep their text and digests.
+ */
+export const CLIENT_AI_CONSENT_V8_VERSION = 'client-ai-v8';
+export const CLIENT_AI_CONSENT_V9_VERSION = 'client-ai-v9';
+
+export const CLIENT_AI_CONSENT_V8_PARAGRAPH =
+  CLIENT_AI_CONSENT_V6_PARAGRAPH + ' ' + ROMAN_CRISIS_TOLD_SENTENCE;
+export const CLIENT_AI_CONSENT_V9_PARAGRAPH =
+  CLIENT_AI_CONSENT_V5_PARAGRAPH.slice(0, -V5_LAST_SENTENCE.length) +
+  CLIENT_AI_CONSENT_SAFETY_EXCEPTION +
+  ' ' +
+  ROMAN_CRISIS_TOLD_SENTENCE +
+  ' ' +
+  V5_LAST_SENTENCE;
+
+export const CLIENT_AI_CONSENT_V8_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V8_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V9_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V9_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V8_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V8_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+export const CLIENT_AI_CONSENT_V9_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V9_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+
+/**
  * Coach-free copies (owner decision 62, Option 1, 2026-10-12): what a client
  * with no coach sees. The v4 and v5 paragraphs and the box label with every
  * coach sentence or clause removed and no new words. Each gives the same scope
@@ -251,6 +281,14 @@ export const CLIENT_AI_CONSENT_ACCEPTED: Readonly<Record<string, AcceptedClientA
       copy_sha256: CLIENT_AI_CONSENT_V7_COPY_SHA256,
       scope: 'memory' as const,
     }),
+    [CLIENT_AI_CONSENT_V8_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V8_COPY_SHA256,
+      scope: 'base' as const,
+    }),
+    [CLIENT_AI_CONSENT_V9_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V9_COPY_SHA256,
+      scope: 'memory' as const,
+    }),
     [CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION]: Object.freeze({
       copy_sha256: CLIENT_AI_CONSENT_V4_COACH_FREE_COPY_SHA256,
       scope: 'base' as const,
@@ -269,10 +307,34 @@ export function acceptedClientAiConsent(version: unknown): AcceptedClientAiConse
     : null;
 }
 
-/** Ledger row actions (CHECK constraint in the migration). */
+/**
+ * COACH-AI-CONSENT (owner ruling "#COACH-AI-CONSENT - op 2", text approved 2026-10-16): a coach's
+ * own grant, its own purpose in this ledger. CAC-1 is the title and sign-up box label, CAC-2 the
+ * paragraph; digest as for the client copies. The app shows CAC-3 and CAC-4.
+ */
+export const COACH_AI_CONSENT_VERSION = 'coach-ai-v1';
+export const COACH_AI_CONSENT_PURPOSE = 'coach_ai_processing';
+/** CAC-1. Exact text. */
+export const COACH_AI_CONSENT_TITLE = 'Turn on Roman';
+/** CAC-2. Exact text. */
+export const COACH_AI_CONSENT_PARAGRAPH =
+  'Roman runs on Anthropic, an outside AI company. ' +
+  'Anything you type to Roman, and your coaching notes, go to Anthropic. ' +
+  "A client's data is never sent unless that client allowed AI.";
+export const COACH_AI_CONSENT_TITLE_SHA256 = sha256Hex(COACH_AI_CONSENT_TITLE);
+export const COACH_AI_CONSENT_PARAGRAPH_SHA256 = sha256Hex(COACH_AI_CONSENT_PARAGRAPH);
+export const COACH_AI_CONSENT_COPY_SHA256 = sha256Hex(
+  COACH_AI_CONSENT_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + COACH_AI_CONSENT_TITLE,
+);
+
+/** Ledger row actions (CHECK in the migrations). 'decline' (20270502004300): a coach's "Not now". */
 export const AI_CONSENT_ACTION_GRANT = 'grant';
 export const AI_CONSENT_ACTION_WITHDRAW = 'withdraw';
-export type AiConsentAction = typeof AI_CONSENT_ACTION_GRANT | typeof AI_CONSENT_ACTION_WITHDRAW;
+export const AI_CONSENT_ACTION_DECLINE = 'decline';
+export type AiConsentAction =
+  | typeof AI_CONSENT_ACTION_GRANT
+  | typeof AI_CONSENT_ACTION_WITHDRAW
+  | typeof AI_CONSENT_ACTION_DECLINE;
 
 /** Structured error codes. */
 export const AI_CONSENT_ERROR_VERSION_MISMATCH = 'CONSENT_VERSION_MISMATCH';

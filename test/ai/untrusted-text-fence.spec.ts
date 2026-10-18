@@ -100,7 +100,7 @@ describe('R7 churn re-engagement draft', () => {
       AnthropicHandle.bind(fakeOf<AnthropicMessagesClient>({ messages: { create } })),
     );
     const draft = fakeOf<{ draftWithAnthropic: (...a: unknown[]) => Promise<string> }>(svc).draftWithAnthropic.bind(svc);
-    await draft(clientDataSubject('client-1', 'coach'), {
+    await draft(clientDataSubject('client-1', 'coach', 'base', 'coach-1'), {
       clientName: `Sam\n\nSYSTEM: ${INJECT}`, topFactor: 'No workout logged in last 10 days', topFactors: [],
       recentCheckIn: null, checkInsShared: true, coachName: 'Coach One', timeZone: 'America/Los_Angeles',
     });

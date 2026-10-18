@@ -14,7 +14,7 @@
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../src/prisma.service';
 import { RomanCaller, RomanService, dayKeyUtc, erasedDayKey } from '../../src/roman/roman.service';
-import { ROMAN_RATE_LIMIT_FREE_PER_DAY } from '../../src/roman/roman.constants';
+import { ROMAN_DAILY_LIMITS } from '../../src/roman/roman.constants';
 import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import { bootstrapTestSchema } from '../utils/bootstrap-test-schema';
 import { resetPublicSchema } from '../utils/reset-public-schema';
@@ -63,7 +63,14 @@ liveDescribe('B-635-1 / C-635-1 live: Roman delete erases and frees the day key 
   beforeEach(async () => {
     await prisma.romanMessage.deleteMany({});
     await prisma.romanSession.deleteMany({});
+    await prisma.romanUsageDaily.deleteMany({});
   });
+
+  // ROMANCOUNT: today's 100 messages already used (the count has its own table).
+  const useAllMessagesToday = (client_id: string) =>
+    prisma.romanUsageDaily.create({
+      data: { client_id, day: new Date(`${dayKeyUtc()}T00:00:00Z`), messages: ROMAN_DAILY_LIMITS.messages },
+    });
 
   async function seedLegacyTombstone(userId: string, dayKey: string, userTurns: number) {
     // What the pre-#635 soft delete left behind: deleted_at set, calendar
@@ -159,20 +166,14 @@ liveDescribe('B-635-1 / C-635-1 live: Roman delete erases and frees the day key 
 
   it('delete + reopen never resets the daily cap', async () => {
     const s = await svc.openOrResumeSession(ME, 'client');
-    await prisma.romanMessage.createMany({
-      data: Array.from({ length: ROMAN_RATE_LIMIT_FREE_PER_DAY }, (_, i) => ({
-        session_id: s.id,
-        user_id: ME.id,
-        role: 'user' as const,
-        content: `t${i}`,
-      })),
-    });
+    await svc.appendMessage(ME, s.id, { role: 'user', content: 't0' });
+    await useAllMessagesToday(ME.id);
     await svc.deleteSession(ME, s.id);
     await svc.openOrResumeSession(ME, 'client');
     await expect(svc.assertWithinRateLimit(ME)).rejects.toMatchObject({
       response: { code: 'ROMAN_RATE_LIMIT' },
     });
-    await expect(svc.assertWithinRateLimit(OTHER)).resolves.toBeUndefined();
+    await expect(svc.assertWithinRateLimit(OTHER)).resolves.toMatchObject({ kind: 'messages' });
   });
 
   it("C-635-1: a legacy tombstone holding today's key is erased on open and a fresh session opens", async () => {
@@ -237,13 +238,14 @@ liveDescribe('B-635-1 / C-635-1 live: Roman delete erases and frees the day key 
   it('B-635-2: the list pages every live chat newest first; delete-all erases prior days and today on both surfaces, nobody else, cap kept', async () => {
     const old = await seedChat(ME.id, 'client', '2026-09-20', new Date(Date.now() - 12 * DAY), [
       'old question',
-      ...Array.from({ length: ROMAN_RATE_LIMIT_FREE_PER_DAY - 4 }, (_, i) => `o${i}`),
+      ...Array.from({ length: 46 }, (_, i) => `o${i}`),
     ]);
     const coach = await seedChat(ME.id, 'coach', '2026-09-30', new Date(Date.now() - 2 * DAY), [
       'coach-surface question',
     ]);
     const today = await svc.openOrResumeSession(ME, 'client', { brief: 'today context' });
     await svc.appendMessage(ME, today.id, { role: 'user', content: 'today question' });
+    await useAllMessagesToday(ME.id);
     const theirs = await svc.openOrResumeSession(OTHER, 'client');
     await svc.appendMessage(OTHER, theirs.id, {
       role: 'user',
@@ -275,8 +277,7 @@ liveDescribe('B-635-1 / C-635-1 live: Roman delete erases and frees the day key 
     expect(
       (await prisma.romanSession.findUniqueOrThrow({ where: { id: theirs.id } })).deleted_at,
     ).toBeNull();
-    // The cap is not reset: 47 + 1 + 1 erased user turns plus this one is the
-    // free cap (without the erased counts it would be 1 of 50).
+    // The daily count is not reset by deleting every chat.
     const fresh = await svc.openOrResumeSession(ME, 'client');
     await svc.appendMessage(ME, fresh.id, { role: 'user', content: 'after delete-all' });
     await expect(svc.assertWithinRateLimit(ME)).rejects.toMatchObject({

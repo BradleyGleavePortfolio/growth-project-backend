@@ -471,7 +471,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         coachGuideline: {
           findUnique: jest.fn(async () => ({ content: 'No alcohol on training days.' })),
         },
-        mealPlan: { findFirst: jest.fn(async () => null) },
+        dailyMealPlanAssignment: { findFirst: jest.fn(async () => null) },
         // M1 additions — new models fetched by buildFresh()
         fastingWindow: { findFirst: jest.fn(async () => null) },
         coachingSession: { findFirst: jest.fn(async () => null) },
@@ -543,7 +543,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
           count: jest.fn(async () => 0),
         },
       };
-      const supabase: any = { broadcastNewMessage: jest.fn() };
+      const supabase: any = { pingChat: jest.fn() };
       return {
         svc: new MessagingService(
           prisma,
@@ -565,7 +565,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       const created = await svc.sendAsCoach('coach-1', 'student-1', 'Hey, nice work!');
       expect(created.body).toBe('Hey, nice work!');
       expect(messages).toHaveLength(1);
-      expect(supabase.broadcastNewMessage).toHaveBeenCalledWith('student-1');
+      expect(supabase.pingChat).toHaveBeenCalledWith({ coachId: 'coach-1', clientId: 'student-1' }, 'new-message');
     });
 
     it('coach 404s when targeting a foreign client (no leak)', async () => {
@@ -587,7 +587,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       };
       const svc = new MessagingService(
         prisma,
-        { broadcastNewMessage: jest.fn() } as any,
+        { pingChat: jest.fn() } as any,
         { capture: jest.fn(), identify: jest.fn() } as any,
         { emit: jest.fn() } as any,
         { emit: jest.fn().mockResolvedValue(undefined) } as any,

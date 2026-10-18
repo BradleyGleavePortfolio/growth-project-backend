@@ -171,7 +171,8 @@ describe('CommunityModerationService.report alerts the support inbox', () => {
     db.seed('user', { id: COACH, role: 'coach', coach_id: null });
     const member = stub<User>(db.seed('user', { id: MEMBER, role: 'student', coach_id: COACH }));
     db.seed('communityWorkspace', { id: WS, coach_id: COACH, archived_at: null });
-    db.seed('communityMembership', { workspace_id: WS, cohort_id: null, user_id: MEMBER, status: 'active', role: 'student' });
+    const space = db.seed('communityCohort', { workspace_id: WS, archived_at: null });
+    db.seed('communityMembership', { workspace_id: WS, cohort_id: space.id, user_id: MEMBER, status: 'active', role: 'student' });
     db.seed('communityPost', { id: POST, workspace_id: WS, author_id: COACH });
     const send = jest.fn(sentOk);
     const svc = new CommunityModerationService(

@@ -298,13 +298,13 @@ describe('create', () => {
     const { tools, audit } = build();
     const { code, replayed } = await tools.create(
       coachA,
-      { label: '  Clinic   front desk ' },
+      { label: '  Front   desk ' },
       null,
     );
     expect(replayed).toBe(false);
     expect(code.code).toMatch(/^TGP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{7}$/);
     expect(code).toMatchObject({
-      label: 'Clinic front desk',
+      label: 'Front desk',
       max_uses: null,
       expires_at: null,
       status: 'active',

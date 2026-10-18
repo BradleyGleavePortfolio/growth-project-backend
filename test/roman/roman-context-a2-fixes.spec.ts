@@ -20,6 +20,7 @@ import {
   normalizePath,
 } from '../../src/checkout/dunning-v2/dunning-lockout.guard';
 import { makePersonaDb, FakeSafetyIntakeSource, NOW, P1 } from './fixtures/roman-personas';
+import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
 
 type Row = Record<string, unknown>;
 type Sample = Parameters<typeof summarizeWearables>[1][number];
@@ -38,7 +39,7 @@ const TODAY = '2026-09-30'; // NOW is Wed 2026-09-30 17:30 in Los Angeles.
 
 function setup() {
   const db = makePersonaDb();
-  return { db, svc: new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource()) };
+  return { db, svc: new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource(), grantAllEgress()) };
 }
 
 const night = (provider: string, value: number, recorded: string): Row => ({
@@ -335,7 +336,7 @@ describe('Opus B-665-3 an open delegated sub-coach writes the plan and the threa
       body: 'Swap lunges for step-ups this week',
       created_at: new Date('2026-09-30T20:00:00Z'),
     });
-    return { db, svc: new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource()) };
+    return { db, svc: new RomanClientContextService(db.prisma, new FakeSafetyIntakeSource(), grantAllEgress()) };
   }
 
   it("open delegation: the sub-coach plan, meal plan and message are the client's", async () => {

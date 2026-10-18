@@ -57,8 +57,7 @@ const NOT_FOUND = {
  * Ownership model (from prisma/schema.prisma):
  *  - WorkoutPlan.coach_id  (required) — coach-owned.
  *  - CoachPackage.coach_id (required) — coach-owned.
- *  - MealPlan.coach_id     (nullable, SetNull) — owned when set; a null owner
- *    is unownable and therefore never taggable.
+ *  - DailyMealPlan.coach_id (required) — coach-owned; archived plans never resolve.
  *  - CheckIn → its client's CURRENT coach (User.coach_id), not the coach
  *    stamped on the check-in, so a former coach loses access when the client
  *    moves. A client with no coach is unownable.
@@ -164,7 +163,7 @@ export class PlanContextService {
         return PlanContextSnapshotSchema.parse({
           type: 'meal',
           meal_plan_id: plan.id,
-          title: plan.title,
+          title: plan.name,
           meal_id: query.meal_id ?? null,
         });
       }

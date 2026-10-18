@@ -85,7 +85,8 @@ describe('two-way block: posts, comments, cohort messages and DMs (in-memory Pri
   };
 
   function user(role: string, name: string): User {
-    return stub<User>(db.seed('user', { role, name, deleted_at: null, coach_id: null }));
+    const coachId = role === 'student' ? coach.id : null;
+    return stub<User>(db.seed('user', { role, name, deleted_at: null, coach_id: coachId }));
   }
 
   beforeEach(() => {
@@ -279,22 +280,19 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
   describe('cohort member list (roster)', () => {
     function build(isCoach = false) {
       const member = (userId: string, name: string) => ({
-        id: `${userId.slice(0, 24)}aaaaaaaaaaaa`,
-        user_id: userId,
-        role: 'student',
-        status: 'active',
-        joined_at: new Date('2026-09-01T00:00:00.000Z'),
-        user: { name, email: `${name}@example.test` },
+        id: userId,
+        name,
+        email: `${name}@example.test`,
+        row: { id: `${userId.slice(0, 24)}aaaaaaaaaaaa`, role: 'student', status: 'active', joined_at: new Date('2026-09-01T00:00:00.000Z') },
       });
       const access = {
-        findCohort: async () => ({ id: COHORT, workspace_id: WS }),
-        membershipInCohort: async () => ({ status: 'active' }),
+        findCohort: async () => ({ id: COHORT, workspace_id: WS, visibility: 'members' }),
+        findWorkspace: async () => ({ id: WS, coach_id: COACH }),
+        canAccessCohort: async () => true,
         isWorkspaceCoach: async () => isCoach,
       };
       const repo = {
-        findCohort: async () => ({ id: COHORT, workspace_id: WS }),
-        findCohortById: async () => ({ id: COHORT, workspace_id: WS }),
-        listMembers: async () => [
+        people: async () => [
           member(ALICE, 'Alice'),
           member(BOB, 'Bob'),
           member(CAROL, 'Carol'),
@@ -401,22 +399,21 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
 
   describe('client privacy: first names only to other members', () => {
     it('roster: members see first names, the coach sees the full name', async () => {
-      const row = {
-        id: 'abcdef01-0000-4000-8000-000000000001',
-        user_id: BOB,
-        role: 'student',
-        status: 'active',
-        joined_at: new Date('2026-09-01T00:00:00.000Z'),
-        user: { name: 'Bob Q Member', email: 'bob@example.test' },
+      const person = {
+        id: BOB,
+        name: 'Bob Q Member',
+        email: 'bob@example.test',
+        row: { id: 'abcdef01-0000-4000-8000-000000000001', role: 'student', status: 'active', joined_at: new Date('2026-09-01T00:00:00.000Z') },
       };
       const build = (isCoach: boolean) =>
         new CommunityCohortMembersService(
           stub<CommunityAccessService>({
-            findCohort: async () => ({ id: COHORT, workspace_id: WS }),
-            membershipInCohort: async () => ({ status: 'active' }),
+            findCohort: async () => ({ id: COHORT, workspace_id: WS, visibility: 'members' }),
+            findWorkspace: async () => ({ id: WS, coach_id: COACH }),
+            canAccessCohort: async () => true,
             isWorkspaceCoach: async () => isCoach,
           }),
-          stub<CommunityCohortMembersRepository>({ listMembers: async () => [row] }),
+          stub<CommunityCohortMembersRepository>({ people: async () => [person] }),
           safetyWithBlocks(blocks),
         );
       const forMember = await build(false).list(viewer(ALICE), COHORT, {});
@@ -591,7 +588,7 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
         }),
       };
       const svc = new CommunityReactionsService(
-        stub<CommunityAccessService>({ canAccessWorkspace: async () => true }),
+        stub<CommunityAccessService>({ canAccessWorkspace: async () => true, membershipInWorkspace: async () => ({}) }),
         stub<CommunityReactionsRepository>({
           addReaction: async (a: { userId: string }) => {
             added.push(a.userId);
@@ -631,12 +628,17 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
       },
     );
 
-    it('a DM message can be reacted to only by its two participants', async () => {
+    it('a DM message can be reacted to only by its two participants, while the DM is open', async () => {
       const { svc } = build();
       await expect(svc.react(viewer(CAROL), 'message', DM, '👍')).rejects.toBeInstanceOf(
         NotFoundException,
       );
       await expect(svc.react(viewer(BOB), 'message', DM, '👍')).resolves.toBeDefined();
+      // A block either way closes the DM: ALICE's reaction on her own message would ping BOB.
+      blocks.push([BOB, ALICE]);
+      await expect(svc.react(viewer(ALICE), 'message', DM, '👍')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 

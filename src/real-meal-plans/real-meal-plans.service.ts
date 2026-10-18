@@ -117,15 +117,23 @@ export class RealMealPlansService {
   // ─── DailyMealPlan CRUD ──────────────────────────────────────────────
 
   // Validate that every meal_template_id referenced by `slots` belongs
-  // to this coach. Done in one round-trip to keep big plans cheap.
+  // to this coach and is live. MEALBUILD-BE: on an edit, a meal archived
+  // after it went into this plan may stay ("Day plans that use it keep it
+  // until you swap it"), so a plan with archived meals can still be edited;
+  // an archived meal can't be added. Coach-owned rows only, either way.
   private async validateSlotTemplates(
     coachId: string,
     slots: DailyPlanSlotInputDto[],
+    planId?: string,
   ) {
     if (slots.length === 0) return;
     const ids = Array.from(new Set(slots.map((s) => s.meal_template_id)));
+    const kept = planId
+      ? (await this.prisma.dailyMealPlanSlot.findMany({ where: { daily_meal_plan_id: planId }, select: { meal_template_id: true } }))
+        .map((s) => s.meal_template_id)
+      : [];
     const found = await this.prisma.mealTemplate.findMany({
-      where: { id: { in: ids }, coach_id: coachId, archived_at: null },
+      where: { id: { in: ids }, coach_id: coachId, OR: [{ archived_at: null }, { id: { in: kept } }] },
       select: { id: true },
     });
     const foundSet = new Set(found.map((f) => f.id));
@@ -157,6 +165,7 @@ export class RealMealPlansService {
             // Stable ordering: caller-provided order wins, otherwise
             // index in the input array.
             order: s.order ?? idx,
+            time_of_day: s.time_of_day ?? null,
           })),
         });
       }
@@ -204,7 +213,7 @@ export class RealMealPlansService {
     dto: UpdateDailyMealPlanDto,
   ) {
     await this.assertPlanOwnedBy(coachId, planId);
-    if (dto.slots) await this.validateSlotTemplates(coachId, dto.slots);
+    if (dto.slots) await this.validateSlotTemplates(coachId, dto.slots, planId);
 
     return this.prisma.$transaction(async (tx) => {
       await this.freezeForMovedClients(tx, coachId, [planId]);
@@ -226,6 +235,7 @@ export class RealMealPlansService {
               meal_template_id: s.meal_template_id,
               slot_label: s.slot_label,
               order: s.order ?? idx,
+              time_of_day: s.time_of_day ?? null,
             })),
           });
         }
@@ -309,6 +319,7 @@ export class RealMealPlansService {
             meal_template_id: frozen.get(s.meal_template_id) ?? s.meal_template_id,
             slot_label: s.slot_label,
             order: s.order,
+            time_of_day: s.time_of_day,
           })),
         });
       }

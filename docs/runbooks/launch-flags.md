@@ -150,6 +150,7 @@ COACH_AI_PACK_CANCEL_URL | off | fly secrets unset -a backend-spring-lake-3890 C
 FEATURE_GOOGLE_CALENDAR_SYNC | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_GOOGLE_CALENDAR_SYNC | "FEATURE_GOOGLE_CALENDAR_SYNC": "unset"
 GOOGLE_CALENDAR_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 GOOGLE_CALENDAR_ENABLED | "GOOGLE_CALENDAR_ENABLED": "unset"
 GOOGLE_MEET_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 GOOGLE_MEET_ENABLED | "GOOGLE_MEET_ENABLED": "unset"
+ZOOM_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 ZOOM_ENABLED | "ZOOM_ENABLED": "unset"
 FEATURE_SCOUT_INGEST | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_SCOUT_INGEST | "FEATURE_SCOUT_INGEST": "unset"
 FEATURE_EXTENSION_PAIRING | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_EXTENSION_PAIRING | "FEATURE_EXTENSION_PAIRING": "unset"
 ```

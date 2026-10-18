@@ -20,9 +20,14 @@ import { PackagesService } from '../packages/packages.service';
 import { paidJoinAllowed } from '../invite-codes/invite-codes.service';
 import { BUYER_VISIBLE_DROP_STATUSES, buyerDropStatus } from '../packages/drop-status';
 import { CheckoutContractGate } from '../contracts/checkout-contract-gate.service';
-import { CLIENT_PURCHASE_SELECT, type ClientPurchaseView } from './client-purchases.select';
+import {
+  CLIENT_PURCHASE_LIST_SELECT,
+  type ClientPurchaseView,
+  toClientPurchaseView,
+} from './client-purchases.select';
 import { purchaseTrialView, type PurchaseTrialView } from '../packages/trials/trial-view';
 import { COACH_PURCHASE_SELECT, type CoachPurchaseView } from './coach-payments.select';
+import { keepMoneyRecordsOnly, type MoneyRecord } from './moved-client-money';
 import { ContractRequiredException } from '../contracts/contract-required.exception';
 import type { TrialOffer } from '../packages/trials/trial-usage.service';
 import {
@@ -988,7 +993,9 @@ export class CheckoutService {
     clientUserId: string,
     opts: { cursor?: string; limit?: number } = {},
   ): Promise<{
-    items: Array<ClientPurchaseView & { trial: PurchaseTrialView }>;
+    items: Array<
+      ClientPurchaseView & { first_charge_cents: number | null; trial: PurchaseTrialView }
+    >;
     hasMore: boolean;
   }> {
     const take = Math.min(opts.limit ?? 50, 100);
@@ -997,7 +1004,7 @@ export class CheckoutService {
       orderBy: { created_at: 'desc' },
       take: take + 1,
       ...(opts.cursor ? { cursor: { id: opts.cursor }, skip: 1 } : {}),
-      select: CLIENT_PURCHASE_SELECT,
+      select: CLIENT_PURCHASE_LIST_SELECT,
     });
     const hasMore = rows.length > take;
     const page = hasMore ? rows.slice(0, take) : rows;
@@ -1028,7 +1035,7 @@ export class CheckoutService {
     }
     return {
       items: page.map((row) => ({
-        ...row,
+        ...toClientPurchaseView(row),
         trial: purchaseTrialView(row, now, {
           customerDefaultCard,
           trialConflict: conflicts.has(row.id),
@@ -1141,10 +1148,11 @@ export class CheckoutService {
   //
   // C-641-2 / OR-112-19: GET /v1/coach/purchases is a coach route, so it uses
   // the coach allow-list; the raw row carries the CLIENT's Stripe secrets.
+  // CONTRACT-1: a client who moved away leaves only the money record.
   async listForCoach(
     coachUserId: string,
     opts: { cursor?: string; limit?: number } = {},
-  ): Promise<{ items: CoachPurchaseView[]; hasMore: boolean }> {
+  ): Promise<{ items: Array<CoachPurchaseView | MoneyRecord>; hasMore: boolean }> {
     const take = Math.min(opts.limit ?? 50, 100);
     const rows = await this.prisma.clientPurchase.findMany({
       where: { coach_user_id: coachUserId },
@@ -1154,7 +1162,8 @@ export class CheckoutService {
       select: COACH_PURCHASE_SELECT,
     });
     const hasMore = rows.length > take;
-    return { items: hasMore ? rows.slice(0, take) : rows, hasMore };
+    const items = hasMore ? rows.slice(0, take) : rows;
+    return { items: await keepMoneyRecordsOnly(this.prisma, coachUserId, items), hasMore };
   }
 
   async createBillingPortalSession(

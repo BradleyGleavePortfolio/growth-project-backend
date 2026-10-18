@@ -32,6 +32,9 @@ Every top-level key in the export JSON maps to one Prisma model. The table below
 | `NotificationPreferences` | All | — |
 | `WeightLog` | All | — |
 | `LoggedFoodEntry` | All | — |
+| `FoodFavorite` | All | The user's own favourite foods. |
+| `SavedMeal` | All | The user's own saved meals. |
+| `SavedMealItem` | All | The foods in those meals, in their order. |
 | `WorkoutSession` | All | — |
 | `FastingWindow` | All | — |
 | `WaterLog` | All | — |

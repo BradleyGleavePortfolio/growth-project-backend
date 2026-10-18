@@ -298,25 +298,6 @@ const INVITE_REDEMPTION_EXPORT_SELECT: Record<string, true> = {
 };
 
 /**
- * Roman workout adjustments proposed for the user: the recovery signals they
- * were based on, the change and its outcome. The coach's own dismiss note and
- * the internal rule key are left out.
- */
-const WORKOUT_ADJUSTMENT_EXPORT_SELECT: Record<string, true> = {
-  id: true,
-  coach_id: true,
-  assignment_id: true,
-  status: true,
-  severity: true,
-  signals: true,
-  proposed_change: true,
-  applied_change: true,
-  roman_text: true,
-  decided_at: true,
-  created_at: true,
-};
-
-/**
  * Roman v1.1 memory (R11-M1): the notes Roman keeps about the user (live,
  * expired and superseded), with when each was said and when it expires. The
  * internal slot key and the source message id are left out.
@@ -454,6 +435,9 @@ const ASSIGNED_WORKOUT_EXPORT_SELECT: Record<string, true> = {
   post_notes: true,
   completion_payload: true,
   approved_by_coach_at: true,
+  skipped_at: true,
+  client_note: true,
+  scheduled_time: true,
 };
 
 /** Why an archive must go although no request row owns it (B-608-11). */
@@ -1452,6 +1436,9 @@ export class DataExportService {
       weightLogs,
       loggedEntries,
       customFoods,
+      foodFavorites,
+      savedMeals,
+      savedMealItems,
       workouts,
       fastingWindows,
       waterLogs,
@@ -1484,7 +1471,6 @@ export class DataExportService {
       broadcastDeliveries,
       coachCodeRedemptions,
       inviteRedemptions,
-      workoutAdjustments,
       romanClientNotes,
       romanClientSummaries,
       coachPlaybook,
@@ -1523,6 +1509,15 @@ export class DataExportService {
         'foodItem',
         { created_by_user_id: userId },
         { select: CUSTOM_FOOD_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
+      ),
+      // FOODSAVED: the user's own favourite foods and saved meals, and each
+      // meal's foods in their order (account deletion erases all three).
+      this._streamAll('foodFavorite', { user_id: userId }, { orderBy: CHRONOLOGICAL }),
+      this._streamAll('savedMeal', { user_id: userId }, { orderBy: CHRONOLOGICAL }),
+      this._streamAll(
+        'savedMealItem',
+        { saved_meal: { user_id: userId } },
+        { orderBy: [{ saved_meal_id: 'asc' }, { position: 'asc' }] },
       ),
       this._streamAll('workoutSession', { user_id: userId }),
       this._streamAll('fastingWindow', { user_id: userId }),
@@ -1604,11 +1599,9 @@ export class DataExportService {
           orderBy: [{ redeemed_at: 'asc' }, { id: 'asc' }],
         },
       ),
-      this._streamAll(
-        'workoutAdjustmentProposal',
-        { client_id: userId },
-        { select: WORKOUT_ADJUSTMENT_EXPORT_SELECT, orderBy: CHRONOLOGICAL },
-      ),
+      // Owner C-3: Roman's workout-change proposals (WorkoutAdjustmentProposal)
+      // are coach-side rows and are not exported (approve writes its change into
+      // the assignment itself). Account deletion still erases them.
       // R11-M1: Roman's notes and summaries about the user (their own rows only).
       this._streamAll(
         'romanClientNote',
@@ -1704,6 +1697,9 @@ export class DataExportService {
       weight_logs: weightLogs,
       food_entries: loggedEntries,
       custom_foods: customFoods,
+      food_favorites: foodFavorites,
+      saved_meals: savedMeals,
+      saved_meal_items: savedMealItems,
       workout_sessions: workouts,
       fasting_windows: fastingWindows,
       water_logs: waterLogs,
@@ -1745,7 +1741,6 @@ export class DataExportService {
       broadcasts_received: broadcastDeliveries,
       coach_code_redemptions: coachCodeRedemptions,
       invite_redemptions: inviteRedemptions,
-      workout_adjustments: workoutAdjustments,
       roman_notes: romanClientNotes,
       roman_summaries: romanClientSummaries,
       coach_playbook: coachPlaybook,

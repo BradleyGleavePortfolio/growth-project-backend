@@ -50,10 +50,12 @@ describe('CommunityCohortMembersService', () => {
     findCohort: jest.Mock;
     findWorkspace: jest.Mock;
     isWorkspaceCoach: jest.Mock;
-    membershipInCohort: jest.Mock;
+    canAccessCohort: jest.Mock;
+    peopleInSpace: jest.Mock;
   };
   let repo: {
-    listMembers: jest.Mock;
+    people: jest.Mock;
+    packageAccess: jest.Mock;
     findMembership: jest.Mock;
     findUserByEmail: jest.Mock;
     findUserById: jest.Mock;
@@ -68,10 +70,12 @@ describe('CommunityCohortMembersService', () => {
       findCohort: jest.fn(),
       findWorkspace: jest.fn().mockResolvedValue({ id: WS_A, coach_id: coachA.id }),
       isWorkspaceCoach: jest.fn(),
-      membershipInCohort: jest.fn(),
+      canAccessCohort: jest.fn(),
+      peopleInSpace: jest.fn(async (_cohortId: string, rows: unknown[]) => rows),
     };
     repo = {
-      listMembers: jest.fn(),
+      people: jest.fn(),
+      packageAccess: jest.fn(),
       findMembership: jest.fn(),
       findUserByEmail: jest.fn(),
       findUserById: jest.fn(),
@@ -83,39 +87,55 @@ describe('CommunityCohortMembersService', () => {
   });
 
   describe('list (roster)', () => {
-    it('gives a coach the full member rows including status + email', async () => {
-      access.findCohort.mockResolvedValue({ id: COHORT_A, workspace_id: WS_A });
+    // C6-BVIS: the roster is everyone the rule lets in; a client of a clients space has no row.
+    const jane = { id: 'aaaaaaaa-0000-0000-0000-000000000001', name: 'Jane Client', email: 'jane@example.com', row: membership() };
+    const sam = { id: 'aaaaaaaa-0000-0000-0000-000000000002', name: 'Sam Client', email: 'sam@example.com', row: null };
+    const space = (visibility = 'clients') => ({ id: COHORT_A, workspace_id: WS_A, visibility });
+
+    it('gives a coach every person the rule lets in, row or not', async () => {
+      access.findCohort.mockResolvedValue(space());
       access.isWorkspaceCoach.mockResolvedValue(true);
-      repo.listMembers.mockResolvedValue([membership()]);
+      repo.people.mockResolvedValue([jane, sam]);
 
       const res = await service.list(coachA, COHORT_A, {} as never);
-      expect(res.members).toHaveLength(1);
-      expect(res.members[0].status).toBe('active');
-      expect(res.members[0].email).toBe('jane@example.com');
-      expect(res.members[0].role).toBe('student');
+      expect(res.members.map((m) => [m.id, m.status, m.email, m.role, m.access?.reason])).toEqual([
+        [jane.row.id, 'active', 'jane@example.com', 'student', 'client'],
+        [null, 'active', 'sam@example.com', 'student', 'client'],
+      ]);
     });
 
-    it('sanitizes the roster for a non-coach active member (no PII/status)', async () => {
-      access.findCohort.mockResolvedValue({ id: COHORT_A, workspace_id: WS_A });
+    it('k04: names the package and its end for a client of a package space; the coach is the coach', async () => {
+      const coach = { id: coachA.id, name: 'Coach A', email: 'a@example.com', row: null };
+      access.findCohort.mockResolvedValue(space('package'));
+      access.isWorkspaceCoach.mockResolvedValue(true);
+      repo.people.mockResolvedValue([sam, coach]);
+      repo.packageAccess.mockResolvedValue(new Map([[sam.id, { package_id: 'pkg-1', until: new Date('2026-12-09T00:00:00.000Z') }]]));
+
+      const res = await service.list(coachA, COHORT_A, {});
+      expect(res.members.map((m) => [m.role, m.access])).toEqual([
+        ['student', { reason: 'package', package_id: 'pkg-1', until: '2026-12-09T00:00:00.000Z' }],
+        ['coach', { reason: 'coach', package_id: null, until: null }],
+      ]);
+      expect(repo.packageAccess).toHaveBeenCalledWith(COHORT_A, coachA.id, [sam.id, coachA.id]);
+    });
+
+    it('sanitizes the roster for a non-coach the rule lets in (no PII/status)', async () => {
+      access.findCohort.mockResolvedValue(space());
       access.isWorkspaceCoach.mockResolvedValue(false);
-      access.membershipInCohort.mockResolvedValue({ status: 'active' });
-      repo.listMembers.mockResolvedValue([membership()]);
+      access.canAccessCohort.mockResolvedValue(true);
+      repo.people.mockResolvedValue([jane]);
 
       const res = await service.list(student, COHORT_A, {} as never);
       // client privacy: other members see the first name only
-      expect(res.members[0].display_name).toBe('Jane');
-      expect(res.members[0].status).toBeNull();
-      expect(res.members[0].email).toBeNull();
-      expect(res.members[0].joined_at).toBeNull();
+      expect(res.members[0]).toMatchObject({ display_name: 'Jane', status: null, email: null, joined_at: null, access: null });
     });
 
-    it('404s a non-member reader (non-leak)', async () => {
-      access.findCohort.mockResolvedValue({ id: COHORT_A, workspace_id: WS_A });
+    it('404s a reader the rule keeps out (non-leak)', async () => {
+      access.findCohort.mockResolvedValue(space());
       access.isWorkspaceCoach.mockResolvedValue(false);
-      access.membershipInCohort.mockResolvedValue(null);
-      await expect(service.list(student, COHORT_A, {} as never)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      access.canAccessCohort.mockResolvedValue(false);
+      await expect(service.list(student, COHORT_A, {})).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.people).not.toHaveBeenCalled();
     });
 
     it('404s an unknown cohort', async () => {
@@ -125,20 +145,14 @@ describe('CommunityCohortMembersService', () => {
       );
     });
 
-    it('emits a next_cursor when a full page is returned', async () => {
-      access.findCohort.mockResolvedValue({ id: COHORT_A, workspace_id: WS_A });
+    it('pages by person: a full page gives a cursor that starts after its last person', async () => {
+      access.findCohort.mockResolvedValue(space());
       access.isWorkspaceCoach.mockResolvedValue(true);
-      const page = Array.from({ length: 2 }, (_, i) =>
-        membership({
-          id: `dddddddd-0000-0000-0000-00000000000${i}`,
-          user_id: `eeeeeeee-0000-0000-0000-00000000000${i}`,
-        }),
-      );
-      repo.listMembers.mockResolvedValue(page);
-      const res = await service.list(coachA, COHORT_A, {
-        limit: '2',
-      } as never);
-      expect(res.next_cursor).not.toBeNull();
+      repo.people.mockResolvedValue([jane, sam]);
+      const first = await service.list(coachA, COHORT_A, { limit: '1' });
+      expect(first.members.map((m) => m.user_id)).toEqual([jane.id]);
+      const next = await service.list(coachA, COHORT_A, { limit: '1', cursor: first.next_cursor ?? undefined });
+      expect(next.members.map((m) => m.user_id)).toEqual([sam.id]);
     });
   });
 

@@ -309,9 +309,10 @@ itLive('community v1-3 cohort messages (live DB)', () => {
       // Fire-and-forget tail runs after the response; give the microtask a tick.
       await new Promise((r) => setTimeout(r, 50));
       expect(spy).toHaveBeenCalled();
-      const [channel, event, payload] = spy.mock.calls[0];
+      const [audience, event, payload] = spy.mock.calls[0];
       expect(event).toBe('community.message.created');
-      expect(channel).toMatch(new RegExp(`^community:cohort:${ids.cohortA}:messages:[0-3]$`));
+      // C10RT: the space's readers now, never a shared topic.
+      expect(audience).toEqual({ workspaceId: ids.wsA, cohortId: ids.cohortA });
       // IDs only — the user-authored body must NEVER reach the payload.
       expect(JSON.stringify(payload)).not.toContain('SECRET-LEAK-TOKEN-XYZ');
       expect(JSON.stringify(payload)).not.toMatch(/body|content|text|emoji|reason/i);

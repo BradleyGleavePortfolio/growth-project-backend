@@ -1,7 +1,7 @@
 # Roman safety copy and guardrails (R4)
 
 Source: `src/roman/guardrails/*`. Tests: `test/roman/roman-guardrails.spec.ts`.
-Prompt version: `roman-client-v2`.
+Prompt version: `roman-client-v5`.
 
 Owner ruling 2026-09-30 16:38: the safety copy is warm and composed
 ("butlered"), gives genuinely useful general, non-diagnostic guidance and a

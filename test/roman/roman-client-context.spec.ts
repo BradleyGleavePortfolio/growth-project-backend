@@ -27,6 +27,7 @@ import { RomanContextController } from '../../src/roman/context/roman-context.co
 import { FEATURE_ROMAN_CHAT_ENABLED_ENV } from '../../src/roman/roman.feature';
 import type { RomanClientContext } from '../../src/roman/context/roman-client-context.types';
 import type { AuthedRequest } from '../../src/auth/auth-request';
+import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import {
   makePersonaDb,
   FakeSafetyIntakeSource,
@@ -60,7 +61,7 @@ function asAuthedRequestDouble<T extends object>(mock: T): AuthedRequest {
 function setup() {
   const db = makePersonaDb();
   const intake = new FakeSafetyIntakeSource();
-  const svc = new RomanClientContextService(db.prisma, intake);
+  const svc = new RomanClientContextService(db.prisma, intake, grantAllEgress());
   return { db, intake, svc };
 }
 const student = (id: string) => ({ id, role: 'student' });

@@ -6,7 +6,7 @@ import { GUARDS_METADATA } from '@nestjs/common/constants';
 import type { User } from '@prisma/client';
 import { AuditService } from '../src/audit/audit.service';
 import { ClientBillingService } from '../src/checkout/client-billing.service';
-import { CoachClientPaymentsController } from '../src/checkout/coach-client-payments.controller';
+import { CoachClientPaymentsController, CoachSaleRefundController } from '../src/checkout/coach-client-payments.controller';
 import { CoachClientPaymentsService } from '../src/checkout/coach-client-payments.service';
 import { CoachPaymentActionsFeatureGuard } from '../src/checkout/coach-payment-actions.feature';
 import { RefundDisputeHandlerService } from '../src/checkout/refund-dispute-handler.service';
@@ -69,7 +69,8 @@ function build(rows: Array<ReturnType<typeof plan>>, paused = false) {
   const audit = { write: jest.fn(async () => undefined) };
   const make = <T extends object>(cls: { prototype: T }, value: object): T => Object.assign(Object.create(cls.prototype), value);
   const service = new CoachClientPaymentsService(
-    make(PrismaService, { clientPurchase: { findMany } }),
+    // CONTRACT-1: no client here has moved away from their coach.
+    make(PrismaService, { clientPurchase: { findMany }, user: { findMany: async () => [] } }),
     make(StripeConnectApiService, stripe),
     make(RefundDisputeHandlerService, refunds),
     make(ClientBillingService, billing),
@@ -87,7 +88,7 @@ describe('CF-COACH-PAY-BE-128 coach client payments', () => {
     const w = build([plan(), plan({ id: 'p2', coach_user_id: 'coach-b' })], true);
     const { plans } = await w.service.list(A, CLIENT);
     expect(plans.map((p) => p.purchase_id)).toEqual(['p1']);
-    expect(plans[0].billing).toBe('paused');
+    expect(plans[0]).toMatchObject({ billing: 'paused' });
     expect(plans[0].actions).toEqual({ refund: true, pause: false, resume: true, cancel: true, restart: false });
     expect(plans[0].payments[0]).toEqual(expect.objectContaining({
       charge_id: 'ch_2', amount_cents: 5000, refunded_cents: 1000, refundable_cents: 3500,
@@ -200,6 +201,7 @@ describe('CF-COACH-PAY-BE-128 coach client payments', () => {
     it('the controller mounts the flag guard and blocks active sub-coaches', () => {
       const guards = Reflect.getMetadata(GUARDS_METADATA, CoachClientPaymentsController);
       expect(guards).toEqual(expect.arrayContaining([CoachPaymentActionsFeatureGuard, NoActiveSubCoachGuard]));
+      expect(Reflect.getMetadata(GUARDS_METADATA, CoachSaleRefundController)).toEqual(guards);
     });
   });
 });

@@ -60,8 +60,8 @@ function callClaudeAllAllowed(
     ctx,
     subject:
       ctx.brief_mode === 'head_coach'
-        ? noClientDataSubject('coach_business_metrics')
-        : clientDataSubject(['client-1'], 'coach'),
+        ? noClientDataSubject('coach_business_metrics', 'coach1')
+        : clientDataSubject(['client-1'], 'coach', 'base', 'coach1'),
   };
   return svc.callClaude(ctx, ai);
 }
@@ -1030,6 +1030,18 @@ describe('CoachBriefService moved client — owner 4b', () => {
     expectOwnThreadOnly(prisma, res);
   });
 
+  it('SHARE-BE: an unread share card shows no preview (as the command-center inbox), never the voice label', async () => {
+    const { prisma, svc } = newCoachBrief();
+    const unread = (client_id: string, card: { id: string } | null) =>
+      ({ client_id, client: { name: client_id }, body: null, card, created_at: new Date() });
+    prisma.coachMessage.findMany.mockResolvedValue([unread(OTHER, { id: 'k1' }), unread(MOVED, null)]);
+    await svc.generateBrief(NEW_COACH, 'America/Los_Angeles', '2026-10-12', { force: true });
+    const items: Array<{ type: string; client_id: string; detail: string }> =
+      prisma.coachBrief.update.mock.calls[0][0].data.action_items;
+    expect(items.filter((i) => i.type === 'message_unread').map((i) => [i.client_id, i.detail]))
+      .toEqual([[OTHER, ''], [MOVED, '(voice message)']]);
+  });
+
   it('a brief stored before this fix is written again on the normal read; history shows its day only', async () => {
     const { prisma, svc } = newCoachBrief();
     // No client list (B-939-1), and an item quoting the former coach's thread.
@@ -1051,16 +1063,17 @@ describe('CoachBriefService moved client — owner 4b', () => {
 // A stored brief whose clients are all still this coach's is served as stored (B-939-1), read the
 // normal way (today and history). An item quoting another thread's text is still left out.
 describe('CoachBriefService stored brief with a moved client — owner 4b', () => {
-  const [NEW_COACH, OLD_COACH, MOVED, OTHER, VOICE] = ['coach-new', 'coach-old', 'client-moved', 'client-other', 'client-voice'];
+  const [NEW_COACH, OLD_COACH, MOVED, OTHER, VOICE, SHARE] = ['coach-new', 'coach-old', 'client-moved', 'client-other', 'client-voice', 'client-share'];
   const item = (type: string, client_id: string, detail: string) => ({ type, client_id, client_name: client_id, detail, priority: 1, deep_link: 'tgp://x' });
   const STORED = {
     id: 'b0', coach_id: NEW_COACH, brief_date: '2026-10-12', status: 'generated', brief_mode: 'solo_coach',
     generated_by: 'fallback', narrative: 'Stored narrative.',
-    brief_context: { ...makeBriefContext({ weight_logs_flagged: 1 }), scope_client_ids: [MOVED, OTHER, VOICE] },
+    brief_context: { ...makeBriefContext({ weight_logs_flagged: 1 }), scope_client_ids: [MOVED, OTHER, VOICE, SHARE] },
     action_items: [
       item('message_unread', MOVED, 'FORMER-COACH-TEXT one'),
       item('message_unread', OTHER, 'See you Thursday'),
       item('message_unread', VOICE, '(voice message)'),
+      item('message_unread', SHARE, ''),
       item('weight_flag', MOVED, 'Weight change of 4.6 lbs needs review'),
     ],
     generated_at: new Date('2026-10-12T13:00:00Z'), created_at: new Date('2026-10-12T13:00:00Z'),
@@ -1070,6 +1083,7 @@ describe('CoachBriefService stored brief with a moved client — owner 4b', () =
     { coach_id: OLD_COACH, client_id: MOVED, sender_id: MOVED, body: 'FORMER-COACH-TEXT one' },
     { coach_id: NEW_COACH, client_id: OTHER, sender_id: OTHER, body: 'See you Thursday' },
     { coach_id: NEW_COACH, client_id: VOICE, sender_id: VOICE, body: null },
+    { coach_id: NEW_COACH, client_id: SHARE, sender_id: SHARE, body: null, card: { id: 'k1' } },
   ];
   type Term = { client_id: string; AND: [{ coach_id?: string }, { OR: Array<{ body: { startsWith: string } | null }> }] };
   function service() {
@@ -1077,7 +1091,7 @@ describe('CoachBriefService stored brief with a moved client — owner 4b', () =
     prisma.coachBrief.findUnique.mockResolvedValue(STORED);
     prisma.coachBrief.count.mockResolvedValue(1);
     prisma.coachBrief.findMany.mockResolvedValue([STORED]);
-    prisma.user.findMany.mockResolvedValue([{ id: MOVED }, { id: OTHER }, { id: VOICE }]);
+    prisma.user.findMany.mockResolvedValue([{ id: MOVED }, { id: OTHER }, { id: VOICE }, { id: SHARE }]);
     prisma.coachMessage.findMany.mockImplementation(async ({ where }: { where: { NOT: { sender_id: string }; OR: Term[] } }) =>
       MESSAGES.filter((m) => m.sender_id !== where.NOT.sender_id && where.OR.some((t) =>
         t.client_id === m.client_id && t.AND[0].coach_id === m.coach_id &&
@@ -1091,6 +1105,7 @@ describe('CoachBriefService stored brief with a moved client — owner 4b', () =
     expect(items.map((i) => `${i.type}:${i.client_id}`)).toEqual([
       `message_unread:${OTHER}`,
       `message_unread:${VOICE}`,
+      `message_unread:${SHARE}`,
       `weight_flag:${MOVED}`,
     ]);
     expect(res.summary?.brief_context).toMatchObject({ weight_logs_flagged: 1 });
@@ -2095,7 +2110,7 @@ describe('CoachBriefService — R2b box-2 consent', () => {
   }
   const soloAi = (ids: string[]): BriefAiInput => ({
     ctx: ACTIVE_CTX(),
-    subject: clientDataSubject(ids, 'coach'),
+    subject: clientDataSubject(ids, 'coach', 'base', 'coach1'),
   });
 
   it('grant: the AI narrative is generated', async () => {
@@ -2135,7 +2150,7 @@ describe('CoachBriefService — R2b box-2 consent', () => {
     it('every client allowed: the full context, all ids as subject', async () => {
       const { svc } = build(['c1', 'c2']);
       const out = await args(svc, ['c1', 'c2']);
-      expect(out?.subject).toEqual(clientDataSubject(['c1', 'c2'], 'coach'));
+      expect(out?.subject).toEqual(clientDataSubject(['c1', 'c2'], 'coach', 'base', 'coach1'));
       expect(out?.scope).toBeUndefined();
     });
 
@@ -2162,7 +2177,7 @@ describe('CoachBriefService — R2b box-2 consent', () => {
       svc['aggregateSoloContext'] = aggregate;
       const out = await args(svc, ['c1', 'c2', 'c3']);
       expect(aggregate).toHaveBeenCalledWith('coach1', ['c2'], 'America/Los_Angeles', '2026-05-25', 'solo_coach');
-      expect(out?.subject).toEqual(clientDataSubject(['c2'], 'coach'));
+      expect(out?.subject).toEqual(clientDataSubject(['c2'], 'coach', 'base', 'coach1'));
       expect(out?.scope).toEqual({ consented: 1, roster: 3 });
       expect(buildBriefPrompt(restricted, out?.scope)).toContain('cover only the 1 of 3 clients who allowed AI help');
     });

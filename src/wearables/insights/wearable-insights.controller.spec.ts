@@ -148,6 +148,7 @@ describe('WearableInsightsController', () => {
         COACH,
         CLIENT,
         WearableMetricBucket.SLEEP_RECOVERY,
+        'coach',
       );
       // Coach schema fields present (full-insight branch of the union).
       expect(isEmptyInsight(out)).toBe(false);
@@ -226,7 +227,7 @@ describe('WearableInsightsController', () => {
   describe('approveInsight', () => {
     const MATERIALISED = '2026-01-01T00:00:00.000Z';
 
-    function approveBody(action: 'approve' | 'edit' | 'reject', body: string) {
+    function approveBody(action: 'approve' | 'edit' | 'reject' | 'dismiss', body: string) {
       return {
         client_id: CLIENT,
         bucket: WearableMetricBucket.SLEEP_RECOVERY,
@@ -237,6 +238,7 @@ describe('WearableInsightsController', () => {
 
     it('approve → creates draft, decides approved, returns ok shape', async () => {
       const svc = makeSvc();
+      svc.romanSuggestion.mockResolvedValue('Great recovery week — protect that sleep.');
       const deps = approvalDeps({
         materialised_at: new Date(MATERIALISED),
         decided_at: new Date(MATERIALISED),
@@ -323,6 +325,37 @@ describe('WearableInsightsController', () => {
         draft_id: DRAFT_ID,
         materialised_at: null,
       });
+    });
+
+    it('shipped dismiss → rejects an empty draft and returns the mobile string timestamp', async () => {
+      const svc = makeSvc();
+      const deps = approvalDeps({
+        materialised_at: null,
+        decided_at: new Date(MATERIALISED),
+      });
+      const out = await ctrlWithApprovals(svc, deps).approveInsight(
+        reqFor('coach', COACH), approveBody('dismiss', ''),
+      );
+      expect(svc.assertCoachOwnsClient).toHaveBeenCalledWith(COACH, CLIENT, 'coach');
+      expect(svc.romanSuggestion).not.toHaveBeenCalled();
+      expect(deps.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          tenant_coach_id: COACH,
+          subject_user_id: CLIENT,
+          payload: { clientId: CLIENT, bucket: WearableMetricBucket.SLEEP_RECOVERY, body: '' },
+        }),
+      }));
+      expect(deps.decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'rejected' }));
+      expect(out).toEqual({ status: 'ok', draft_id: DRAFT_ID, materialised_at: MATERIALISED });
+    });
+
+    it.each(['approve', 'edit', 'reject'] as const)('%s still refuses an empty draft', async (action) => {
+      const deps = approvalDeps({});
+      await expect(ctrlWithApprovals(makeSvc(), deps).approveInsight(
+        reqFor('coach', COACH), approveBody(action, ''),
+      )).rejects.toBeInstanceOf(BadRequestException);
+      expect(deps.create).not.toHaveBeenCalled();
+      expect(deps.decide).not.toHaveBeenCalled();
     });
 
     it('rejects a malformed body (missing bucket) with 400 before any write', async () => {
