@@ -135,8 +135,8 @@ function doc(title: string, nonce: string, body: string): string {
 }
 
 // Style C tokens from the app (theme/tokens.ts): bone, surface, ink, muted,
-// forest, textOnAccent, textOnMastheadMuted, border, gold.300, error.
-const CSS = `:root{--bone:#F5EFE4;--surface:#FFFDF8;--ink:#1A1A18;--muted:#6B675F;--forest:#2C4A36;--on:#FBF7F0;--on2:#B8CCBF;--line:#DCD5CC;--gold:#D4B96B;--err:#B91C1C;--serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif}
+// forest, textOnAccent, textOnMastheadMuted, border, gold.300 (error goes to Stripe's colorDanger only).
+const CSS = `:root{--bone:#F5EFE4;--surface:#FFFDF8;--ink:#1A1A18;--muted:#6B675F;--forest:#2C4A36;--on:#FBF7F0;--on2:#B8CCBF;--line:#DCD5CC;--gold:#D4B96B;--serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif}
 *{box-sizing:border-box}body{margin:0;background:var(--bone);color:var(--ink);font:1rem/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;-webkit-text-size-adjust:100%}
 .wrap{max-width:30rem;margin:0 auto;padding:0 1.25rem}.band{background:var(--forest);color:var(--on);padding:1.5rem 0 2.75rem}
 .band::after{content:"";display:block;width:calc(100% - 2.5rem);max-width:27.5rem;margin:1.25rem auto 0;border-top:1px solid var(--gold);opacity:.6}
@@ -144,7 +144,7 @@ const CSS = `:root{--bone:#F5EFE4;--surface:#FFFDF8;--ink:#1A1A18;--muted:#6B675
 .av{flex:none;width:3rem;height:3rem;border-radius:50%;border:1px solid var(--gold);background:var(--surface);color:var(--forest);display:grid;place-items:center;font:italic 1.375rem var(--serif);object-fit:cover}
 .kicker,h2{margin:0;font-size:.6875rem;letter-spacing:.14em;text-transform:uppercase}.kicker{color:var(--on2)}
 h1{margin:.125rem 0 0;font:500 1.625rem/1.2 var(--serif);overflow-wrap:anywhere}.price{margin:.125rem 0 0;font-size:.875rem;color:var(--on2)}
-.sheet{background:var(--bone);border-radius:1.25rem 1.25rem 0 0;margin-top:-1.5rem;padding-top:1.5rem;padding-bottom:2.5rem}
+.sheet{background:var(--bone);border-radius:1.5rem 1.5rem 0 0;margin-top:-1.5rem;padding-top:1.5rem;padding-bottom:2.5rem}
 .quote{margin:0 0 1.5rem}blockquote{margin:0;font:italic 1.0625rem/1.5 var(--serif);white-space:pre-line;overflow-wrap:anywhere}
 figcaption{margin-top:.25rem;font-size:.8125rem;color:var(--muted)}section{margin:0 0 1.5rem}h2{font-weight:600;margin-bottom:.5rem}
 .inc{margin:0;padding:0;list-style:none}.inc li{position:relative;padding:.1875rem 0 .1875rem 1.125rem;overflow-wrap:anywhere}
@@ -156,7 +156,7 @@ figcaption{margin-top:.25rem;font-size:.8125rem;color:var(--muted)}section{margi
 .or{display:flex;align-items:center;gap:.75rem;margin:.5rem 0;color:var(--muted);font-size:.875rem}.or::before,.or::after{content:"";flex:1;border-top:1px solid var(--line)}
 label{font-size:.875rem;margin-top:.5rem}input{font:inherit;min-height:3rem;padding:.75rem;border:1px solid var(--line);border-radius:.75rem;background:#fff;color:var(--ink)}
 input:focus,button:focus-visible{outline:2px solid var(--forest);outline-offset:2px}#card{margin-top:.5rem}
-.msg{margin:.5rem 0 0;color:var(--err)}.msg:empty{display:none}
+.msg{margin:.5rem 0 0}.msg:empty{display:none}
 button{margin-top:1rem;font:inherit;font-weight:600;line-height:1.25;min-height:3.25rem;padding:.75rem 1rem;border:0;border-radius:.75rem;background:var(--forest);color:var(--on);cursor:pointer}
 button:disabled{background:#E0D9CE;color:#524E47;cursor:progress}
 button[aria-busy=true]::after{content:"";display:inline-block;width:1em;height:1em;margin-left:.5em;vertical-align:-.15em;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:s .8s linear infinite}
