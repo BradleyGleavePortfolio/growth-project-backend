@@ -13,13 +13,14 @@ import type { RouteInfo } from '@nestjs/common/interfaces';
  * exclusion changes the behavior the test boots against, not a hand-copied
  * mirror, so the test fails closed.
  *
- * Two route shapes are covered:
+ * Three route shapes are covered:
  *  - the canonical `/p/:coachSlug/:pageSlug[...]` slug routes (R46), and
  *  - the four bare custom-domain apex routes (B3): `GET /`, `GET /checkout`,
  *    `POST /leads`, `POST /view`. These are method-scoped `RouteInfo`
  *    entries so they only strip the prefix for the exact verb the
  *    LandingPagePublicController declares at the controller root, never for
  *    any other controller's routes.
+ *  - GC-1: the guest pay page `GET /p/:token` and GC-2's `GET /p/:token/done`.
  */
 export const LANDING_PUBLIC_PREFIX_EXCLUDE: ReadonlyArray<string | RouteInfo> = [
   // R46 — canonical public coach landing pages, served at the apex.
@@ -34,4 +35,8 @@ export const LANDING_PUBLIC_PREFIX_EXCLUDE: ReadonlyArray<string | RouteInfo> = 
   { path: 'checkout', method: RequestMethod.GET },
   { path: 'leads', method: RequestMethod.POST },
   { path: 'view', method: RequestMethod.POST },
+  // GC-1 — the guest pay page (#GC-DOMAIN app.trygrowthproject.com/p/<code>)
+  // and GC-2's done page, which Stripe returns the buyer to. GET only.
+  { path: 'p/:token', method: RequestMethod.GET },
+  { path: 'p/:token/done', method: RequestMethod.GET },
 ];

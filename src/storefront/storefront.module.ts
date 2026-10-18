@@ -17,6 +17,7 @@ import { GuestCheckoutReconciliationService } from './guest-checkout-reconciliat
 import { GuestCheckoutService } from './guest-checkout.service';
 import { LostWebhookReconcileService } from './lost-webhook-reconcile.service';
 import { StorefrontPublicController } from './storefront-public.controller';
+import { PayPageController } from './pay-page.controller';
 import { StorefrontService } from './storefront.service';
 import { ThankYouService } from './thank-you.service';
 
@@ -55,7 +56,7 @@ import { ThankYouService } from './thank-you.service';
     // price-creation logic the in-app path does — never duplicated.
     CheckoutModule,
   ],
-  controllers: [StorefrontPublicController],
+  controllers: [StorefrontPublicController, PayPageController],
   providers: [
     StorefrontService,
     GuestCheckoutService,

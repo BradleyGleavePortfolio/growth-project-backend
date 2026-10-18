@@ -12,6 +12,8 @@ import { ConnectService } from '../connect/connect.service';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
 import { parseStorefrontBaseUrl } from '../common/env-validation';
 import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
+import { chargeQuote, isRecurringPackage } from '../checkout/checkout.service';
+import { planPriceFor } from '../checkout/subscription-plan';
 import type {
   BillingCycle,
   PublicPackageData,
@@ -91,6 +93,14 @@ export class StorefrontService {
   // deliberately collapse those cases into a single 404 so the storefront
   // can't be probed for valid-but-paused tokens.
   async getPublicPackageByToken(token: string): Promise<PublicPackageData> {
+    return (await this.loadPublicPackage(token)).data;
+  }
+
+  // GC-1 — the same gates and payload, plus the coach's Stripe account for
+  // the pay page: Elements' onBehalfOf must match the intent's on_behalf_of.
+  async loadPublicPackage(
+    token: string,
+  ): Promise<{ data: PublicPackageData; onBehalfOf: string }> {
     // P1-3 / P2-1 — enforce the exact 21-char nanoid alphabet at the
     // service boundary. A malformed token never reaches the DB, which
     // prevents path-traversal-shaped tokens (`../../x`), all-zero
@@ -161,7 +171,7 @@ export class StorefrontService {
     // Audit #3 P1-8 — gate on full readiness, not just charges_enabled.
     // 404 is the public surface; the exact failing axis is logged
     // server-side so ops can debug without an enumeration leak.
-    if (!isConnectAccountReadyForCheckout(connectAccount)) {
+    if (!connectAccount || !isConnectAccountReadyForCheckout(connectAccount)) {
       if (connectAccount) {
         this.logger.warn(
           `Public package gate: connect account not ready (charges=${connectAccount.charges_enabled} payouts=${connectAccount.payouts_enabled} details=${connectAccount.details_submitted} disabled_reason=${connectAccount.disabled_reason ?? 'null'})`,
@@ -195,7 +205,12 @@ export class StorefrontService {
       pkg.interval_count,
     );
 
-    return {
+    // GC-1 — what checkout charges, from the checkout's own rule. No trial
+    // on the web yet (#GC-TRIAL interim): the guest checkout charges today.
+    const quote = chargeQuote(pkg, 0);
+    const plan = isRecurringPackage(pkg) ? planPriceFor(pkg, 0) : null;
+
+    const data: PublicPackageData = {
       package_id: pkg.id,
       package_name: pkg.name,
       description: pkg.description ?? null,
@@ -223,7 +238,19 @@ export class StorefrontService {
       },
       stripe_publishable_key: publishableKey,
       share_link_enabled: pkg.share_link_enabled,
+      due_today_cents: quote.due_today_cents,
+      recurring:
+        plan && quote.first_charge_at
+          ? {
+              amount_cents: plan.amount_cents,
+              interval: plan.interval,
+              interval_count: plan.interval_count,
+              one_time_cents: plan.one_time_cents,
+              next_charge_at: quote.first_charge_at,
+            }
+          : null,
     };
+    return { data, onBehalfOf: connectAccount.stripe_account_id };
   }
 
   private mapBillingCycle(
