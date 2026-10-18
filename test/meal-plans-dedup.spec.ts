@@ -208,6 +208,11 @@ function makePrisma() {
         Object.assign(row, data);
         return { ...row };
       }),
+      updateMany: jest.fn(async ({ where, data }: any) => {
+        const rows = mealTemplates.filter((t) => matches(t, where));
+        for (const row of rows) Object.assign(row, data);
+        return { count: rows.length };
+      }),
     },
     dailyMealPlan: {
       create: jest.fn(async ({ data }: any) => {
@@ -517,6 +522,37 @@ describe('BUG-R2 — legacy meal-plans deduped onto real-meal-plans canonical', 
     expect(await times('client-1')).toEqual(asAssigned);
     await expect(real.updatePlan('coach-B', plan!.id, { slots: [] })).rejects.toThrow('Daily meal plan not found');
     expect(await times('client-2')).toEqual([['breakfast', '08:00'], ['lunch', '12:30']]);
+  });
+
+  it('MEALBUILD-BE: a plan keeps the meals archived after they went into it through every edit; an archived meal is never added; no other coach can use the rule', async () => {
+    const meal = (coachId: string, name: string) => real.createTemplate(coachId, { name, calories_kcal: 400, protein_g: 20, carbs_g: 60, fats_g: 8 });
+    const [oats, rice, eggs] = [await meal('coach-A', 'Oats'), await meal('coach-A', 'Rice'), await meal('coach-A', 'Eggs')];
+    const slot = (t: { id: string }, slot_label: 'breakfast' | 'lunch' | 'snack') => ({ meal_template_id: t.id, slot_label });
+    const plan = await real.createPlan('coach-A', { name: 'Day', slots: [slot(oats, 'breakfast'), slot(rice, 'lunch')] });
+    for (const t of [oats, rice]) await real.archiveTemplate('coach-A', t.id);
+    const day = async () => (await real.getPlan('coach-A', plan!.id))!.slots.map((s) => `${s.slot_label} ${s.meal_template.name}`);
+
+    // Two archived meals: swap one; the other stays and the edit saves.
+    await real.updatePlan('coach-A', plan!.id, { slots: [slot(eggs, 'breakfast'), slot(rice, 'lunch')] });
+    expect(await day()).toEqual(['breakfast Eggs', 'lunch Rice']);
+
+    // Cross-tenant: the archived meal coach-A's plan keeps is not coach-B's to use, and coach-B can't edit coach-A's plan.
+    const other = await real.createPlan('coach-B', { name: 'B day', slots: [] });
+    await expect(real.updatePlan('coach-B', other!.id, { slots: [slot(rice, 'lunch')] })).rejects.toThrow('Meal template(s) not owned by coach');
+    await expect(real.updatePlan('coach-B', plan!.id, { slots: [slot(rice, 'lunch')] })).rejects.toThrow('Daily meal plan not found');
+
+    // A rename and a move keep it; removing it keeps the rest.
+    await real.updatePlan('coach-A', plan!.id, { name: 'Day 2', slots: [slot(eggs, 'breakfast'), slot(rice, 'snack')] });
+    expect(await day()).toEqual(['breakfast Eggs', 'snack Rice']);
+    await real.updatePlan('coach-A', plan!.id, { slots: [slot(eggs, 'breakfast')] });
+    expect(await day()).toEqual(['breakfast Eggs']);
+
+    // An archived meal no longer in this plan, or in a new plan, is refused as before.
+    for (const write of [
+      () => real.updatePlan('coach-A', plan!.id, { slots: [slot(eggs, 'breakfast'), slot(oats, 'lunch')] }),
+      () => real.createPlan('coach-A', { name: 'New', slots: [slot(rice, 'lunch')] }),
+    ]) await expect(write()).rejects.toThrow('Meal template(s) not owned by coach');
+    expect(await day()).toEqual(['breakfast Eggs']);
   });
 
   it('HIST-2 (owner 4): a moved client keeps a plan that starts later, as it was, on both reads', async () => {
