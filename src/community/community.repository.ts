@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import type { CommunityCohort } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
-import { canEnterSpace, rowsWithSpaceAccess } from './community-space-access';
+import { canEnterSpace, readersNow, rowsWithSpaceAccess } from './community-space-access';
 
 /** Name of a coach's auto-created community (B-E2E-1); the seed script reuses it. */
 export const DEFAULT_WORKSPACE_NAME = 'Community';
@@ -136,12 +137,10 @@ export class CommunityRepository {
   }
 
   /** Active-member count for a cohort. */
-  async cohortMemberCount(cohortId: string): Promise<number> {
-    const rows = await this.prisma.communityMembership.findMany({
-      where: { cohort_id: cohortId, status: 'active' },
-      select: { user_id: true },
-    });
-    return (await rowsWithSpaceAccess(this.prisma, rows, (m) => [cohortId, m.user_id] as const)).length;
+  /** C6-BVIS: everyone the rule lets into the space now, the coach included; a client of a
+   * clients or package space counts with no row. */
+  async cohortMemberCount(cohort: Pick<CommunityCohort, 'id' | 'workspace_id'>): Promise<number> {
+    return (await readersNow(this.prisma, cohort.workspace_id, cohort.id)).length;
   }
 
   async findWorkspaceById(workspaceId: string) {

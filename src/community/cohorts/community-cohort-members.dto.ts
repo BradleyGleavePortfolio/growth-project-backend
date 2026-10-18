@@ -59,7 +59,8 @@ export class ListMembersQueryDto {
 // email, notify_level) are coach-only — see CohortMembersService.memberView.
 export const CohortMemberSchema = z
   .object({
-    id: z.guid(),
+    // C6-BVIS: the membership row, null for a client a clients or package space lets in with none.
+    id: z.guid().nullable(),
     user_id: z.guid(),
     display_name: z.string(),
     role: z.enum(['student', 'co_coach', 'coach']),

@@ -152,7 +152,7 @@ const EDIT_OWN = `UPDATE "community_messages" SET "body" = "body"`;
       expect(await access.canAccessCohort(cohort('mem'), user('M'))).toBe(false);
       expect(await access.membershipInWorkspace(ws.X, id.M)).toBeNull();
       expect(await foundation.findActiveMembershipForUser(id.M)).toBeNull(); // /me no longer lands in X's community
-      expect(await foundation.cohortMemberCount(space.mem)).toBe(1);
+      expect(await foundation.cohortMemberCount(cohort('mem'))).toBe(2); // X and I
       const push = await messages.listCohortPushRecipients({ workspaceId: ws.X, cohortId: space.mem, senderId: id.X });
       expect(push.map((r) => r.user_id)).toEqual([id.I]);
       expect(await count('I', 'community_messages', msg.mem)).toBe(1); // the client who stayed keeps everything
