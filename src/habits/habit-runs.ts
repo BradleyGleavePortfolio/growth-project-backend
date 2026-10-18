@@ -25,9 +25,11 @@ const span = (from: number, to: number) => Array.from({ length: Math.max(0, to -
 const atLeastTwo = (n: number) => (n >= 2 ? n : null);
 
 // A habit begins on its start date, or on its first tick if that came earlier
-// (habits made before start dates were stored), else today.
+// (habits made before start dates were stored), else today. Runs and the best
+// week look back two years at most, so a start date typed far back stays cheap.
+const LOOK_BACK_DAYS = 731;
 function firstDay(plan: HabitPlan, done: Set<number>, today: number) {
-  return Math.min(plan.starts_on ? toDay(plan.starts_on) : today, ...done);
+  return Math.max(today - LOOK_BACK_DAYS, Math.min(plan.starts_on ? toDay(plan.starts_on) : today, ...done));
 }
 
 // A daily habit is planned every day, a chosen-days habit on its days. A
