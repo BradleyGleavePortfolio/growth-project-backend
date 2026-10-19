@@ -1083,7 +1083,7 @@ model WorkoutSession {
 }
 
 // TRAIN-BE2: a coach's comment on a client's logged workout, one per coach per workout. Row rules:
-// 20270502005800_workout_comments (the client reads every comment on their workouts; a coach reads only
+// 20270502006300_workout_comments (the client reads every comment on their workouts; a coach reads only
 // their own, while the client is theirs; only the server writes).
 model WorkoutComment {
   id         String         @id @default(uuid())

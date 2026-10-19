@@ -1,4 +1,4 @@
--- Reverse of 20270502005700_exercise_set_external_id. Only for a confirmed
+-- Reverse of 20270502006200_exercise_set_external_id. Only for a confirmed
 -- defect: drops the catalog id on every logged set (history falls back to
 -- matching by name).
 BEGIN;

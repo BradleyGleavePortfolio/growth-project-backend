@@ -1,5 +1,5 @@
 /**
- * TRAIN-BE2 (20270502005700, 20270502005800): the catalog id on a logged set
+ * TRAIN-BE2 (20270502006200, 20270502006300): the catalog id on a logged set
  * (ExerciseSet.exercise_external_id) and a coach's comment on a workout
  * (WorkoutComment) follow the client. Row access runs as the API role
  * `authenticated` (no RLS bypass) on the replayed chain; every 0 comes right
