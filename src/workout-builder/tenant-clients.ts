@@ -54,3 +54,17 @@ export function programStaysInTenantWhere(headCoachId: string): Prisma.WorkoutPr
     ],
   };
 }
+
+/**
+ * Days of these clients' program copies: the copies the rule above follows
+ * (`client_id`, or for older copies the clients assigned to its days). A
+ * move uses it to find the drafts about a moved client's copy.
+ */
+export function copyDaysWhere(clientIds: string[]): Prisma.WorkoutPlanWhereInput {
+  const assigned = { assignments: { some: { client_id: { in: clientIds } } } };
+  return {
+    program: {
+      is: { is_template: false, OR: [{ client_id: { in: clientIds } }, { client_id: null, plans: { some: assigned } }] },
+    },
+  };
+}

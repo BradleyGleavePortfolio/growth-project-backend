@@ -37,6 +37,7 @@ interface MockPrisma {
   // A move deletes the drafts left behind (owner decision 17).
   aIDraft: { deleteMany: jest.Mock };
   aiActionDraft: { deleteMany: jest.Mock };
+  workoutPlan: { findMany: jest.Mock };
   messageDraft: { deleteMany: jest.Mock };
   churnIntervention: { deleteMany: jest.Mock };
   // SUBREVOKE: removal closes the pair's client assignments.
@@ -83,6 +84,7 @@ function buildPrisma(overrides: Partial<MockPrisma> = {}): MockPrisma {
     },
     aIDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
     aiActionDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    workoutPlan: { findMany: jest.fn(async () => []) },
     messageDraft: { deleteMany: jest.fn(async () => ({ count: 0 })) },
     churnIntervention: { deleteMany: jest.fn(async () => ({ count: 0 })) },
     subCoachAssignment: { updateMany: jest.fn(async () => ({ count: 0 })) },
