@@ -42,7 +42,10 @@ import {
 //   - CommunityCoachInboxRepository — the v1-6 tenant-scoped candidate source.
 //     coachedCohortIds() bounds every read to cohorts the requesting coach
 //     actually coaches, so another workspace's messages can never enter the
-//     prompt context (tenant-isolation invariant).
+//     prompt context (tenant-isolation invariant). The same two reads leave a
+//     client who moved away out in the query (C6-MOVED-PRIVILEGED-READS), so a
+//     former coach's triage carries their words and name only from a public
+//     space (C6-AI-TRIAGE, test/rls/community-moved-client-rls.spec.ts).
 //   - TriageCacheService — in-process cache with freshness invalidation
 //     (R69: no new Prisma table).
 //
