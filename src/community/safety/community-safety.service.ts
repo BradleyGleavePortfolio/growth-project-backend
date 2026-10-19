@@ -10,6 +10,7 @@ import { checkCommunityText } from './community-content-filter';
 import { memberFirstName } from '../member-display-name';
 import { SUPPORT_EMAIL } from '../../public-pages/trust-pages.html';
 import { winModerationWorkspaceId } from '../community-wins.policy';
+import { type RowPlace, rowsByAuthorsWhoStay } from '../community-space-access';
 import {
   COMMUNITY_MODERATION_NOTICE_KIND,
   type ModerationNoticeView,
@@ -206,16 +207,20 @@ export class CommunitySafetyService {
   /**
    * Drop rows authored by anyone in a block relation with the viewer, in
    * either direction (the viewer blocked them, or they blocked the viewer).
+   * C6-WINS-MOVE: given the row's place, also drop rows whose author left the
+   * community they were written in (rowsByAuthorsWhoStay).
    */
   async filterBlocked<T>(
     viewerId: string,
     rows: T[],
     authorOf: (row: T) => string | null | undefined,
+    placeOf?: (row: T) => RowPlace,
   ): Promise<T[]> {
     if (rows.length === 0) return rows;
+    const kept = placeOf ? await rowsByAuthorsWhoStay(this.prisma, viewerId, rows, authorOf, placeOf) : rows;
     const hidden = await this.hiddenFromViewer(viewerId);
-    if (hidden.size === 0) return rows;
-    return rows.filter((r) => {
+    if (hidden.size === 0) return kept;
+    return kept.filter((r) => {
       const author = authorOf(r);
       return !author || !hidden.has(author);
     });
@@ -224,15 +229,19 @@ export class CommunitySafetyService {
   /**
    * Single-item reads: 404 (same body as "does not exist") when the viewer
    * and the author are in a block relation either way, so a direct link or
-   * id cannot be used to read around the list filter.
+   * id cannot be used to read around the list filter. C6-WINS-MOVE: given the
+   * row's place, the same 404 when its author left that community.
    */
   async assertVisibleTo(
     viewerId: string,
     authorId: string | null | undefined,
     notFoundBody: object,
+    place?: RowPlace,
   ): Promise<void> {
     if (!authorId || authorId === viewerId) return;
-    if (await this.isBlockedEitherWay(viewerId, authorId)) {
+    const left = async (p: RowPlace) =>
+      (await rowsByAuthorsWhoStay(this.prisma, viewerId, [p], () => authorId, (r) => r)).length === 0;
+    if ((await this.isBlockedEitherWay(viewerId, authorId)) || (place && (await left(place)))) {
       throw new NotFoundException(notFoundBody);
     }
   }

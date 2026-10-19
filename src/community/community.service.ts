@@ -480,9 +480,12 @@ export class CommunityService {
     const viewerRemoved =
       workspaceId !== null &&
       (await removedFromWorkspace(this.prisma, workspaceId, [userId])).has(userId);
+    // C6-WINS-MOVE (history follows the client): the viewer's own wins, whoever
+    // coached them, and the circle's wins by people the coach still coaches
+    // (the RLS teammate rule): a moved client's wins leave the old circle.
     const where =
       workspaceId && coachId && !viewerRemoved
-        ? { coach_id: coachId, hidden_at: null }
+        ? { hidden_at: null, OR: [{ user_id: userId }, { coach_id: coachId, OR: [{ user_id: coachId }, { user: { coach_id: coachId } }] }] }
         : { user_id: userId, hidden_at: null };
 
     const wins = await this.prisma.communityWin.findMany({

@@ -37,6 +37,7 @@ import { resolveVoiceEntitlementRequired } from './community-voice-flag.guard';
 import { VoiceUploadProvider } from './voice-upload.provider';
 import { verifyPublishableVoiceKey } from './voice-storage-key';
 import { CommunitySafetyService } from '../safety/community-safety.service';
+import { placeOf } from '../community-space-access';
 
 const NOT_FOUND = {
   error: 'not_found',
@@ -493,7 +494,7 @@ export class CommunityVoiceService {
   async getOne(user: User, voiceNoteId: string): Promise<VoiceNoteResponse> {
     const row = await this.readableNote(user, voiceNoteId);
     // Two-way block: a direct id read cannot go around the list filter.
-    await this.safety.assertVisibleTo(user.id, row.author_id, NOT_FOUND);
+    await this.safety.assertVisibleTo(user.id, row.author_id, NOT_FOUND, placeOf(row));
     return VoiceNoteResponseSchema.parse({
       voice_note: await this.noteView(row),
     });
@@ -571,6 +572,7 @@ export class CommunityVoiceService {
       user.id,
       page.items,
       (row) => row.author_id,
+      placeOf,
     );
     const voiceNotes = await Promise.all(visibleRows.map((row) => this.noteView(row)));
     return VoiceNoteFeedResponseSchema.parse({
