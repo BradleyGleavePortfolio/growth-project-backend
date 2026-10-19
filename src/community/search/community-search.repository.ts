@@ -98,7 +98,10 @@ export class CommunitySearchRepository {
    * visible_to_roles`), cohort visibility (row.cohort_id IS NULL = workspace
    * hall, visible to any workspace member; else the cohort must be in
    * `accessibleCohortIds`), soft-delete filter, optional kind filter, and a
-   * keyset cursor are pushed DB-side. The match uses websearch_to_tsquery so a
+   * keyset cursor are pushed DB-side. C6-MOVED-SEARCH: so is the moved-client
+   * rule (app.community_author_stays, as the row policies): a client who moved
+   * away is not found in this Hall or its spaces that are not public, and a
+   * page is never cut short by it. The match uses websearch_to_tsquery so a
    * user term can never inject tsquery operators.
    *
    * Ranking: ts_rank desc, then createdAt desc, then id desc (stable cursor).
@@ -199,6 +202,7 @@ export class CommunitySearchRepository {
             AND "softDeletedAt" IS NULL
             AND ${role} = ANY("visibleToRoles")
             AND ${cohortVisibility}
+            AND app.community_author_stays("workspaceId", "cohortId", "authorId"::text)
             AND search_tsv @@ websearch_to_tsquery('english', ${term})
             ${kindFilter}
             ${cohortFilter}
