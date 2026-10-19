@@ -341,6 +341,8 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
         // The coach runs a community workspace, so wins are shared with the
         // coach's circle (community-wins.policy); nobody is removed.
         communityWorkspace: { findFirst: async () => ({ id: WS }) },
+        // No space open to all of the coach's clients: first names (#C6-NAMES-EVERYWHERE).
+        communityCohort: { findMany: async () => [] },
         communityMembership: { findMany: async () => [] },
         communityWorkspaceBan: { findMany: async () => [] },
         communityWin: {

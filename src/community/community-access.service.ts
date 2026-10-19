@@ -7,7 +7,7 @@ import type {
 } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { isBannedFromWorkspace } from './community-ban';
-import { canEnterSpace, rowsWithSpaceAccess } from './community-space-access';
+import { canEnterSpace, fullNamesFor, rowsWithSpaceAccess } from './community-space-access';
 
 /**
  * Shared authorization queries for the v1-3 write surfaces.
@@ -76,6 +76,15 @@ export class CommunityAccessService {
   /** Membership rows listed in the space (rosters, Remove): the rule, a pending invitation counted. */
   async peopleInSpace<T>(cohortId: string, rows: T[], personOf: (row: T) => string): Promise<T[]> {
     return rowsWithSpaceAccess(this.prisma, rows, (r) => [cohortId, personOf(r)] as const, true);
+  }
+
+  /** #C6-NAMES-EVERYWHERE: which of [space or null, person] the viewer sees by full name. */
+  fullNamesFor(
+    viewerId: string,
+    workspaceId: string | null,
+    named: ReadonlyArray<readonly [string | null, string]>,
+  ): ReturnType<typeof fullNamesFor> {
+    return fullNamesFor(this.prisma, viewerId, workspaceId, named);
   }
 
   /** Push recipients: the people who may read a row of the workspace (of its space, if any) now. */
