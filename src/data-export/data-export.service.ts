@@ -1444,6 +1444,8 @@ export class DataExportService {
       waterLogs,
       habits,
       lessonCompletions,
+      courseEnrolments,
+      lessonProgress,
       checkIns,
       savedRecipes,
       listItems,
@@ -1524,6 +1526,14 @@ export class DataExportService {
       this._streamAll('waterLog', { user_id: userId }),
       this._streamAll('habit', { user_id: userId }),
       this._streamAll('lessonCompletion', { user_id: userId }),
+      // PRIVACY-SWEEP (LEARN-BE1 lens N3): the user's course enrolments and lesson
+      // progress. Progress is keyed by (user, lesson), so it has no id to page on;
+      // it holds at most one row per lesson.
+      this._streamAll('courseEnrolment', { user_id: userId }, { orderBy: CHRONOLOGICAL }),
+      this.prisma.lessonProgress.findMany({
+        where: { user_id: userId },
+        orderBy: [{ lesson_id: 'asc' }],
+      }),
       this._streamAll('checkIn', { user_id: userId }),
       this._streamAll('savedRecipe', { user_id: userId }),
       this._streamAll('listItem', { user_id: userId }),
@@ -1705,6 +1715,8 @@ export class DataExportService {
       water_logs: waterLogs,
       habits,
       lesson_completions: lessonCompletions,
+      course_enrolments: courseEnrolments,
+      lesson_progress: lessonProgress,
       check_ins: checkIns,
       saved_recipes: savedRecipes,
       list_items: listItems,

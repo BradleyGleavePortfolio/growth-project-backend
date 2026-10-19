@@ -59,6 +59,8 @@ Every export is a single JSON file. The top-level object has the following keys:
 | `water_logs` | `WaterLog` | All fields. |
 | `habits` | `Habit` | All fields. |
 | `lesson_completions` | `LessonCompletion` | All fields. |
+| `course_enrolments` | `CourseEnrolment` | All fields of the user's own course enrolments (course, start day, how they joined, ended, weeks opened), oldest first. |
+| `lesson_progress` | `LessonProgress` | All fields of the user's own lesson progress (lesson, position and watched seconds, last update), one row per lesson. |
 | `check_ins` | `CheckIn` | All fields. |
 | `saved_recipes` | `SavedRecipe` | All fields. |
 | `list_items` | `ListItem` | All fields. |
