@@ -23,7 +23,7 @@ type Row = Record<string, unknown>;
 
 const TOKEN = 'tok1234567890abcDEFGH';
 const KEY = '550e8400-e29b-41d4-a716-446655440000';
-const DTO = { guest_name: 'Jane Smith', guest_email: 'jane@example.com', idempotency_key: KEY };
+const DTO = { guest_name: 'Jane Smith', guest_phone: '+14155550100', guest_email: 'jane@example.com', idempotency_key: KEY };
 
 const STRIPE_APPROVED = {
   id: 'acct_coach',

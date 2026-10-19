@@ -45,7 +45,7 @@ export { SUPPORT_EMAIL } from './trust-pages.html';
 
 // Last-reviewed date for the help copy. Bump on substantive edits so the
 // freshness signal at the top of each page reflects reality.
-export const HELP_LAST_REVIEWED = '2026-10-07';
+export const HELP_LAST_REVIEWED = '2026-10-19';
 
 // Token defaults align with the staging/production hostnames described in
 // docs/help/_tokens.md. The renderer never invents values that depend on
@@ -634,9 +634,10 @@ function contactContent(): HelpPageContent {
 // /help/delete-account — Google Play account-deletion page.
 //
 // Public, no login. Every fact here comes from code or the published policy:
-//  - Current in-app path (client: profile tab > Settings >
-//    Account > Delete account; coach: Settings tab > Privacy & Data >
-//    Delete my account; DeleteAccountScreen re-auth and "Keep my account").
+//  - Current in-app path (client: You tab > Settings > Account > Delete
+//    account; coach: Settings, from the Settings tab or, with the six coach
+//    tabs (coachTabsV2), the gear on Overview > Privacy and data > Delete my
+//    account; DeleteAccountScreen re-auth and "Keep my account").
 //  - 14-day grace + nightly finalization within a day: backend #608
 //    src/account-deletion/account-deletion.service.ts (graceDays default 14,
 //    FINALIZE_WINDOW_MS one day); admin force-delete has no grace period.
@@ -662,8 +663,8 @@ function deleteAccountContent(): HelpPageContent {
           'You can delete your account yourself in the app. You do not need to email us.',
         ],
         bullets: [
-          'If you are a client: open the profile tab (the person icon in the bottom bar), tap Settings, then under Account tap Delete account.',
-          'If you are a coach: open the Settings tab, then under Privacy & Data tap Delete my account.',
+          'If you are a client: open the You tab (the person icon in the bottom bar), tap Settings, then under Account tap Delete account.',
+          'If you are a coach: open Settings (the Settings tab, or the gear at the top of Overview if your bottom bar has no Settings tab), then under Privacy and data tap Delete my account.',
           'Read what will be deleted and what we keep, type DELETE or your account email, then confirm it is you with your password, Sign in with Apple or Google, whichever you use to sign in.',
           'Your deletion is scheduled straight away and the app shows the date it becomes permanent. Until then you can open the same screen and tap Keep my account to cancel it.',
         ],
@@ -703,7 +704,9 @@ function deleteAccountContent(): HelpPageContent {
           'Health and activity data synced from Apple Health or connected devices, and bloodwork you entered, including uploaded files',
           'Your conversations with Roman, the AI assistant',
           'Your messages, community posts, comments, direct messages, voice notes and reactions',
-          'Coach media, notes and briefs, if you coach',
+          // OPERATOR RULING (agent 160, from #1105 LEARN-FROZEN-MEDIA): a
+          // coach's media that a client's kept lesson plays is kept.
+          'Coach media, notes and briefs, if you coach, except the video or file of each lesson your clients keep (see below)',
           'Your targets, recipes, lists and preferences',
           'Notification settings and push notification tokens',
         ],
@@ -721,7 +724,7 @@ function deleteAccountContent(): HelpPageContent {
           // deletion paragraph and retention list, from shared strings.
           `Closed account: ${CLOSED_ACCOUNT_RECORD_TEXT}, so the payment records and logs that must be kept still point to one closed account. It is kept with no end date.`,
           `While removing your sign-in account at your sign-in provider is still being retried, that provider’s account ID is kept. Once it is removed, the account ID is replaced by ${ONE_WAY_CODE_TEXT}.`,
-          'If you coach: your clients are not deleted. They keep their own data and the plans you assigned them, without your contact details, and are no longer linked to you.',
+          'If you coach: your clients are not deleted. They keep their own data, the plans you assigned them, and the lessons they completed or that are in a course they are enrolled in, including the video or file each of those lessons plays, without your contact details, and are no longer linked to you. Only a client who keeps a lesson can open its video or file.',
           'Backups: database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days.',
           'Security and audit logs: as long as needed to protect the service and meet legal duties.',
           `What Anthropic received: ${ANTHROPIC_RETENTION_TEXT}`,

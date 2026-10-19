@@ -31,24 +31,58 @@ type FakeUser = {
   lesson_completions: Array<{ lesson_id: string }>;
 };
 
-type FakeLesson = { id: string; coach_id: string };
+// coach_deleted: the lesson's coach deleted their account (User.deleted_at).
+type FakeLesson = {
+  id: string;
+  coach_id: string;
+  coach_deleted: boolean;
+  completed_by: string[];
+  goal_tags: string[];
+};
 
+const lesson = (id: string, coach_id: string, completed_by: string[] = [], goal_tags: string[] = []) =>
+  ({ id, coach_id, coach_deleted: coach_id === 'coach-gone', completed_by, goal_tags });
 const LESSONS: FakeLesson[] = [
-  { id: 'lesson-a1', coach_id: 'coach-a' },
-  { id: 'lesson-b1', coach_id: 'coach-b' },
+  lesson('lesson-a1', 'coach-a'),
+  lesson('lesson-b1', 'coach-b', ['client-moved']),
+  lesson('lesson-gone1', 'coach-gone', ['client-kept', 'client-recoached'], ['fat_loss']),
+  lesson('lesson-gone2', 'coach-gone'),
 ];
 
+// The where shapes LessonsService sends; any other key fails the test.
+type LessonWhere = {
+  AND?: LessonWhere[];
+  OR?: LessonWhere[];
+  id?: string | { notIn: string[] };
+  coach_id?: string;
+  module_id?: null;
+  coach?: { deleted_at: { not: null } };
+  completions?: { some: { user_id: string } };
+  goal_tags?: { has: string } | { isEmpty: true };
+};
+const WHERE_KEYS = ['AND', 'OR', 'id', 'coach_id', 'module_id', 'coach', 'completions', 'goal_tags'];
+
+function matches(l: FakeLesson, w: LessonWhere = {}): boolean {
+  const unhandled = Object.keys(w).find((k) => !WHERE_KEYS.includes(k));
+  if (unhandled) throw new Error(`fake prisma: unhandled where key ${unhandled}`);
+  if (w.module_id !== undefined && w.module_id !== null) throw new Error('fake prisma: course lesson');
+  if (w.coach && w.coach.deleted_at.not !== null) throw new Error('fake prisma: coach filter');
+  const id = w.id;
+  const goal = w.goal_tags;
+  return (
+    (w.AND ?? []).every((x) => matches(l, x)) &&
+    (w.OR === undefined || w.OR.some((x) => matches(l, x))) &&
+    (id === undefined || (typeof id === 'string' ? id === l.id : !id.notIn.includes(l.id))) &&
+    (w.coach_id === undefined || w.coach_id === l.coach_id) &&
+    (w.coach === undefined || l.coach_deleted) &&
+    (w.completions === undefined || l.completed_by.includes(w.completions.some.user_id)) &&
+    (goal === undefined ||
+      ('has' in goal ? l.goal_tags.includes(goal.has) : l.goal_tags.length === 0))
+  );
+}
+
 function makeLessonsPrisma(users: FakeUser[]) {
-  type LessonWhere = { id?: string | { notIn: string[] }; coach_id?: string };
-  const idMatches = (id: LessonWhere['id'], lessonId: string) =>
-    id === undefined ||
-    (typeof id === 'string' ? id === lessonId : !id.notIn.includes(lessonId));
-  const byWhere = (where: LessonWhere | undefined) =>
-    LESSONS.filter(
-      (l) =>
-        (where?.coach_id === undefined || l.coach_id === where.coach_id) &&
-        idMatches(where?.id, l.id),
-    );
+  const byWhere = (where: LessonWhere | undefined) => LESSONS.filter((l) => matches(l, where));
   return {
     user: {
       findUnique: jest.fn(
@@ -58,14 +92,19 @@ function makeLessonsPrisma(users: FakeUser[]) {
     },
     lesson: {
       findMany: jest.fn(
-        async ({ where }: { where?: LessonWhere }) => byWhere(where),
+        async ({ where }: { where?: LessonWhere; include?: unknown }) => byWhere(where),
       ),
       findFirst: jest.fn(
         async ({ where }: { where: LessonWhere }) => byWhere(where)[0] ?? null,
       ),
     },
     lessonCompletion: {
-      findFirst: jest.fn(async () => null),
+      findFirst: jest.fn(
+        async ({ where }: { where: { user_id: string; lesson_id: string } }) =>
+          LESSONS.find((l) => l.id === where.lesson_id)?.completed_by.includes(where.user_id)
+            ? { id: `done-${where.lesson_id}`, ...where }
+            : null,
+      ),
       create: jest.fn(
         async ({ data }: { data: { user_id: string; lesson_id: string } }) => ({
           id: 'completion-1',
@@ -84,26 +123,31 @@ async function lessonsServiceWith(users: FakeUser[]) {
   return { service: moduleRef.get(LessonsService), prisma };
 }
 
-const COACHLESS: FakeUser = {
-  id: 'client-coachless',
+const client = (id: string, coach_id: string | null, done: string[] = []): FakeUser => ({
+  id,
   role: 'student',
-  coach_id: null,
+  coach_id,
   profile: { goal_type: null },
-  lesson_completions: [],
-};
-const COACHED: FakeUser = {
-  id: 'client-of-a',
-  role: 'student',
-  coach_id: 'coach-a',
-  profile: { goal_type: null },
-  lesson_completions: [],
-};
+  lesson_completions: done.map((lesson_id) => ({ lesson_id })),
+});
+const COACHLESS = client('client-coachless', null);
+const COACHED = client('client-of-a', 'coach-a');
+/** The kept-lesson branch of the read scope, for `userId`. */
+const kept = (userId: string) => ({
+  module_id: null,
+  coach: { deleted_at: { not: null } },
+  completions: { some: { user_id: userId } },
+});
+const ids = (rows: Array<{ id: string }>) => rows.map((l) => l.id);
 
 describe('B2 — Learn only ever shows the client\'s own coach\'s lessons', () => {
   it('a coachless client gets no lessons, not every coach\'s', async () => {
     const { service, prisma } = await lessonsServiceWith([COACHLESS]);
     await expect(service.getLessons(COACHLESS.id)).resolves.toEqual([]);
-    expect(prisma.lesson.findMany).not.toHaveBeenCalled();
+    // The only read is the kept-lesson scope (LEARN-FROZEN-SINGLE-READS), never unscoped.
+    expect(prisma.lesson.findMany.mock.calls.map(([args]) => args.where)).toEqual([
+      { AND: [kept(COACHLESS.id)] },
+    ]);
   });
 
   it('a coachless client gets no recommended lessons', async () => {
@@ -125,9 +169,11 @@ describe('B2 — Learn only ever shows the client\'s own coach\'s lessons', () =
     expect(list.map((l) => l.id)).toEqual(['lesson-a1']);
     const recommended = await service.getRecommended(COACHED.id);
     expect(recommended.map((l) => l.id)).toEqual(['lesson-a1']);
-    for (const [args] of prisma.lesson.findMany.mock.calls) {
-      expect(args.where?.coach_id).toBe('coach-a');
-    }
+    const [[listArgs], [recommendedArgs]] = prisma.lesson.findMany.mock.calls;
+    expect(listArgs.where).toEqual({
+      AND: [{ OR: [{ coach_id: 'coach-a', module_id: null }, kept(COACHED.id)] }],
+    });
+    expect(recommendedArgs.where?.coach_id).toBe('coach-a');
   });
 
   it('a client cannot mark another coach\'s lesson complete', async () => {
@@ -153,9 +199,80 @@ describe('B2 — Learn only ever shows the client\'s own coach\'s lessons', () =
       lesson_id: 'lesson-a1',
     });
     expect(prisma.lesson.findFirst).toHaveBeenCalledWith({
-      where: { id: 'lesson-a1', coach_id: 'coach-a', module_id: null },
+      where: { id: 'lesson-a1', OR: [{ coach_id: 'coach-a', module_id: null }, kept(COACHED.id)] },
       select: { id: true },
     });
+  });
+});
+
+// LEARN-FROZEN-SINGLE-READS: coach-gone deleted their account. client-kept
+// (now coachless) and client-recoached (now coach-a's) completed lesson-gone1,
+// so they kept it; nobody completed lesson-gone2. client-moved completed
+// lesson-b1 and moved from coach-b (still has an account) to coach-a.
+describe('LEARN-FROZEN-SINGLE-READS — a client reads the single lessons they kept', () => {
+  const KEPT = client('client-kept', null, ['lesson-gone1']);
+  const RECOACHED = client('client-recoached', 'coach-a', ['lesson-gone1']);
+  const MOVED = client('client-moved', 'coach-a', ['lesson-b1']);
+  const COACH_A: FakeUser = { ...client('coach-a', null), role: 'coach' };
+
+  it('a detached client lists exactly the lesson they kept, done, and recommends nothing', async () => {
+    const { service, prisma } = await lessonsServiceWith([KEPT]);
+    expect(ids(await service.getLessons(KEPT.id))).toEqual(['lesson-gone1']);
+    expect(prisma.lesson.findMany.mock.calls[0][0].include).toEqual({
+      completions: { where: { user_id: KEPT.id } },
+    });
+    await expect(service.getRecommended(KEPT.id)).resolves.toEqual([]);
+  });
+
+  it('marking a kept lesson complete returns the completion they have, never a new one', async () => {
+    const { service, prisma } = await lessonsServiceWith([KEPT]);
+    await expect(service.completeLesson(KEPT.id, 'lesson-gone1')).resolves.toEqual({
+      id: 'done-lesson-gone1',
+      user_id: KEPT.id,
+      lesson_id: 'lesson-gone1',
+    });
+    await expect(service.completeLesson(KEPT.id, 'lesson-gone2')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(prisma.lessonCompletion.create).not.toHaveBeenCalled();
+  });
+
+  it('a client with a new coach reads the new coach\'s lessons and the one they kept', async () => {
+    const { service } = await lessonsServiceWith([RECOACHED]);
+    expect(ids(await service.getLessons(RECOACHED.id))).toEqual(['lesson-a1', 'lesson-gone1']);
+    expect(ids(await service.getRecommended(RECOACHED.id))).toEqual(['lesson-a1']);
+  });
+
+  it('the goal filter narrows the scope and never replaces it', async () => {
+    const withGoal = { ...RECOACHED, profile: { goal_type: 'fat_loss' } };
+    const { service, prisma } = await lessonsServiceWith([withGoal]);
+    expect(ids(await service.getLessons(withGoal.id))).toEqual(['lesson-a1', 'lesson-gone1']);
+    expect(prisma.lesson.findMany.mock.calls[0][0].where).toEqual({
+      AND: [{ OR: [{ coach_id: 'coach-a', module_id: null }, kept(withGoal.id)] }],
+      OR: [{ goal_tags: { has: 'fat_loss' } }, { goal_tags: { isEmpty: true } }],
+    });
+  });
+
+  it('nobody else reads or completes a kept lesson', async () => {
+    const { service, prisma } = await lessonsServiceWith([COACHED, COACHLESS, COACH_A]);
+    expect(ids(await service.getLessons(COACHED.id))).toEqual(['lesson-a1']);
+    expect(ids(await service.getLessons(COACHLESS.id))).toEqual([]);
+    expect(ids(await service.getLessons(COACH_A.id))).toEqual(['lesson-a1']);
+    for (const who of [COACHED.id, COACHLESS.id, COACH_A.id]) {
+      await expect(service.completeLesson(who, 'lesson-gone1')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+    }
+    expect(prisma.lessonCompletion.create).not.toHaveBeenCalled();
+  });
+
+  it('a past coach who still has an account stays closed after a move', async () => {
+    const { service, prisma } = await lessonsServiceWith([MOVED]);
+    expect(ids(await service.getLessons(MOVED.id))).toEqual(['lesson-a1']);
+    await expect(service.completeLesson(MOVED.id, 'lesson-b1')).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(prisma.lessonCompletion.create).not.toHaveBeenCalled();
   });
 });
 

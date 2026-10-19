@@ -28,6 +28,14 @@ import {
   CONSULT_CONSENT_V10,
   CONSULT_CONSENT_V10_COACH_FREE,
   CONSULT_CONSENT_V11_COACH_FREE,
+  CONSULT_CONSENT_V11,
+  CONSULT_CONSENT_V12,
+  CONSULT_CONSENT_V13,
+  CONSULT_CONSENT_V14,
+  CONSULT_CONSENT_V12_COACH_FREE,
+  CONSULT_CONSENT_V13_COACH_FREE,
+  CONSULT_CONSENT_V14_COACH_FREE,
+  CONSULT_CONSENT_V15_COACH_FREE,
   consultConsentTextSha256,
   unknownConsultConsentVersions,
 } from './consult-consent-copy';
@@ -57,6 +65,10 @@ export const CONSULTATION_VERSION = 'consult-v1';
  * The default also holds v8-coach-free / v9-coach-free (no coach, with the
  * Roman choice, W-CONSENT / FIX684) and their crisis twins v10-coach-free /
  * v11-coach-free (CRISIS-APP-COPY).
+ * And v11 / v12 / v13 / v14 and v12- / v13- / v14- / v15-coach-free: v7 to v10
+ * and v8- to v11-coach-free with TGP Fitness as the name (W-BRAND-AGREEMENT);
+ * every older version stays accepted (installed builds send them, and records
+ * keep their version).
  *
  * Box 2 (optional AI processing by Anthropic) is NOT part of P0: it is
  * recorded by the AI consent ledger (`POST /me/ai-consent/roman`), is never
@@ -80,6 +92,14 @@ export const DEFAULT_CONSULT_CONSENT_COPY_VERSIONS: readonly string[] = Object.f
   CONSULT_CONSENT_V10,
   CONSULT_CONSENT_V10_COACH_FREE,
   CONSULT_CONSENT_V11_COACH_FREE,
+  CONSULT_CONSENT_V11,
+  CONSULT_CONSENT_V12,
+  CONSULT_CONSENT_V13,
+  CONSULT_CONSENT_V14,
+  CONSULT_CONSENT_V12_COACH_FREE,
+  CONSULT_CONSENT_V13_COACH_FREE,
+  CONSULT_CONSENT_V14_COACH_FREE,
+  CONSULT_CONSENT_V15_COACH_FREE,
 ]);
 
 const warnedConsentVersionLists = new Set<string>();

@@ -27,6 +27,7 @@ const IDEMP_KEY = '550e8400-e29b-41d4-a716-446655440000';
 
 const baseDto = {
   guest_name: 'Jane Smith',
+  guest_phone: '+14155550100',
   guest_email: 'jane@example.com',
   idempotency_key: IDEMP_KEY,
 };

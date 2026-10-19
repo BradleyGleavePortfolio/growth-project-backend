@@ -9,6 +9,8 @@
  *     the app shows the P0 version of its screen family (coached, or no coach with
  *     the Roman choice) whose paragraph 4 + box 2 equal the AI copy the server
  *     offers, so the row reads that copy and finds its P0 twin in that family;
+ *     each again with TGP Fitness as the name (W-BRAND-AGREEMENT: v11 / v12 ->
+ *     v13 / v14, v12-coach-free / v13-coach-free -> v14-coach-free / v15-coach-free);
  *   - the AI agreement, GET /me/ai-consent?variant=crisis_alert (client-ai-v6 /
  *     v7 -> v8 / v9), with no grant and with a live new grant;
  *   - the yes/no the app's Trust Center and Roman chats read
@@ -84,6 +86,11 @@ const NEW_P0: Record<string, string> = {
   'consult-consent-v10': '5f36acf2704699f1e7faa68d7c65b8b8ed1f1988d197774a61914b97f22ff512',
   'consult-consent-v10-coach-free': 'b79c1f039e2832560593390b7b66a91f61b2e7be5eb55ef3509ecd7a100d7c4c',
   'consult-consent-v11-coach-free': '3528b10d50d8e7bb67a3065b86ba2b5cf33f3891b8194be413c78f2519e3257f',
+  // W-BRAND-AGREEMENT: the same with TGP Fitness as the name.
+  'consult-consent-v13': '2f22065286d2284cc70e38921da11fcafa8c11a03887025e8781347592a163d6',
+  'consult-consent-v14': '82f3993ef5ce2262d15afe64a45b8d5ad63ca1fa42cd3e172e597d4fe761ba81',
+  'consult-consent-v14-coach-free': '5cb2ef1651f012bfb7a7c1569d06ecdfd43f1c33d00208d23bdf286353dfbf56',
+  'consult-consent-v15-coach-free': 'b7eb74293aac4d20c6d19ea2b7a97bec035467f8f8897a5d8e393fd7140e6864',
 };
 const NEW_AI: Record<string, string> = {
   'client-ai-v8': 'af4cc4fa55aa72cab8e7c6cdcee881d6ba1f448df048088e47acd5e7d479e0ef',
@@ -98,12 +105,16 @@ const AI_COPIES = new Map<string, ClientAiConsentCopy>(
 );
 const copySha = (c: ClientAiConsentCopy): string => sha(`${c.paragraph.text}\n\n${c.box_label.text}`);
 
-/** The P0 version of this screen family whose paragraph 4 + box 2 is exactly this AI copy (shown next to it). */
-function p0Twin(copy: ClientAiConsentCopy, noCoach: boolean): string {
+/**
+ * The P0 version of this screen family whose paragraph 4 + box 2 is exactly this AI copy (shown next to it),
+ * among the screens that name `name` (W-BRAND-AGREEMENT: each AI copy has one twin per name).
+ */
+function p0Twin(copy: ClientAiConsentCopy, noCoach: boolean, name: string): string {
   const twins = Object.entries(CONSULT_CONSENT_COPIES).filter(
     ([, e]) =>
       e.copy.aiParagraph !== undefined &&
       (e.copy.romanIntro !== undefined) === noCoach &&
+      e.copy.paragraphs[0].startsWith(`${name} provides`) &&
       sha(consultConsentAiSliceText(e.copy)) === copy.sha256,
   );
   expect(twins).toHaveLength(1);
@@ -175,8 +186,8 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
     return controller.get(req('u_live'), 'crisis_alert');
   };
   const ai = (c: ClientAiConsentCopy | null) => ({ version: c?.version ?? 'none', text: c?.paragraph.text ?? null });
-  const p0 = (c: ClientAiConsentCopy | null, noCoach = false) => {
-    const version = p0Twin(c as ClientAiConsentCopy, noCoach);
+  const p0 = (c: ClientAiConsentCopy | null, noCoach = false, name = 'The Growth Project') => {
+    const version = p0Twin(c as ClientAiConsentCopy, noCoach, name);
     return { version, text: consultConsentScreenText(CONSULT_CONSENT_COPIES[version].copy) };
   };
   type Read = () => Promise<{ version: string; text: string | null }>;
@@ -194,6 +205,30 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
       async () => p0((await askedNoCoach()).memory_copy, true),
       'consult-consent-v9-coach-free',
       'consult-consent-v11-coach-free',
+    ],
+    [
+      'consultation box 2, base, TGP Fitness',
+      async () => p0((await asked()).copy, false, 'TGP Fitness'),
+      'consult-consent-v11',
+      'consult-consent-v13',
+    ],
+    [
+      'consultation box 2, memory, TGP Fitness',
+      async () => p0((await asked()).memory_copy, false, 'TGP Fitness'),
+      'consult-consent-v12',
+      'consult-consent-v14',
+    ],
+    [
+      'consultation box 2, no coach, base, TGP Fitness',
+      async () => p0((await askedNoCoach()).copy, true, 'TGP Fitness'),
+      'consult-consent-v12-coach-free',
+      'consult-consent-v14-coach-free',
+    ],
+    [
+      'consultation box 2, no coach, memory, TGP Fitness',
+      async () => p0((await askedNoCoach()).memory_copy, true, 'TGP Fitness'),
+      'consult-consent-v13-coach-free',
+      'consult-consent-v15-coach-free',
     ],
     ['AI agreement, base', async () => ai((await asked()).copy), 'client-ai-v6', 'client-ai-v8'],
     ['AI agreement, memory', async () => ai((await asked()).memory_copy), 'client-ai-v7', 'client-ai-v9'],
@@ -234,6 +269,10 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
       ['consult-consent-v8', 'consult-consent-v10'],
       ['consult-consent-v8-coach-free', 'consult-consent-v10-coach-free'],
       ['consult-consent-v9-coach-free', 'consult-consent-v11-coach-free'],
+      ['consult-consent-v11', 'consult-consent-v13'],
+      ['consult-consent-v12', 'consult-consent-v14'],
+      ['consult-consent-v12-coach-free', 'consult-consent-v14-coach-free'],
+      ['consult-consent-v13-coach-free', 'consult-consent-v15-coach-free'],
     ];
     for (const [off, on] of twins) {
       const text = consultConsentScreenText(CONSULT_CONSENT_COPIES[on].copy);
@@ -265,6 +304,10 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
         'consult-consent-v10',
         'consult-consent-v10-coach-free',
         'consult-consent-v11-coach-free',
+        'consult-consent-v13',
+        'consult-consent-v14',
+        'consult-consent-v14-coach-free',
+        'consult-consent-v15-coach-free',
         'consult-consent-v9',
       ],
     );

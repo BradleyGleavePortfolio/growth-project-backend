@@ -174,8 +174,8 @@ describe('PublicPagesController trust pages', () => {
     expect(html).toContain(SUPPORT_EMAIL);
   });
 
-  it('uses the owner-confirmed support email (Bradleyapple1031@gmail.com)', () => {
-    expect(SUPPORT_EMAIL).toBe('Bradleyapple1031@gmail.com');
+  it('uses the owner-confirmed support email (support@thegrowthproject.site)', () => {
+    expect(SUPPORT_EMAIL).toBe('support@thegrowthproject.site');
   });
 
   it('emits a last-reviewed date in ISO-8601 (YYYY-MM-DD) form', () => {
@@ -759,13 +759,20 @@ describe('consumer health policy link on other public pages', () => {
 });
 
 describe('community and leaderboard disclosure (B-PRIVACY-1, after b#747)', () => {
+  // PRIVACY-COMMUNITY-NAMES (agent 160, #C6-MEMBER-NAMES / #C6-NAMES-EVERYWHERE).
   const community =
-    'Members of the community spaces you join can see your display name and the posts, ' +
+    'Members of the community spaces you join can see your name and the posts, ' +
     'comments, reactions, shared wins and group messages you choose to share in those spaces. ' +
+    'In most spaces, other members see your first name. ' +
+    'If you are in a space open to all of your coach’s clients, your coach’s other clients see ' +
+    'your full name: on that space’s member list, next to your posts and comments there and in ' +
+    'your coach’s main community feed, and next to your shared wins and leaderboard entry. ' +
+    'You can delete your own posts and shared wins, and you can block another member, so that ' +
+    'you no longer see each other’s posts, comments or messages. ' +
     'Messages sent directly to your coach are not group messages.';
   const leaderboard =
     'If you opt in to a leaderboard, other clients assigned to the same coach can see your ' +
-    'display name, rank and participation information, such as workout counts or a ' +
+    'name, rank and participation information, such as workout counts or a ' +
     'habit-consistency score and its change. The habit score uses check-in, workout, meal-log ' +
     'and coach-message activity, not the content of your private messages. You can opt out to ' +
     'hide your leaderboard entry.';

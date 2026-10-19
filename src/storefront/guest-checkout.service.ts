@@ -481,6 +481,8 @@ export class GuestCheckoutService {
           stripe_customer_id: null,
           guest_email: normalisedEmail,
           guest_name: normalisedName,
+          // GC-PHONE: E.164, normalised by GuestCheckoutDto.
+          guest_phone: dto.guest_phone,
           status: 'pending',
           idempotency_key: dto.idempotency_key,
           expires_at: new Date(Date.now() + CHECKOUT_TTL_MS),

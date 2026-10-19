@@ -17,6 +17,7 @@ export const PAY_PAGE_COPY = {
   dueToday: 'Due today',
   orCard: 'Or pay with card',
   name: 'Name',
+  phone: 'Phone',
   email: 'Email',
   footnote:
     'Card details go straight to Stripe, the payment provider. The Growth Project never sees your full card number.',
@@ -105,6 +106,7 @@ ${billing}
 <form id="pay" class="card">
 <div id="express"></div><p class="or" id="or" hidden>${PAY_PAGE_COPY.orCard}</p>
 <label for="nm">${PAY_PAGE_COPY.name}</label><input id="nm" autocomplete="name" required minlength="2" maxlength="120">
+<label for="ph">${PAY_PAGE_COPY.phone}</label><input id="ph" type="tel" inputmode="tel" autocomplete="tel" required maxlength="32">
 <label for="em">${PAY_PAGE_COPY.email}</label><input id="em" type="email" autocomplete="email" required maxlength="254" autocapitalize="off" spellcheck="false">
 <div id="card"></div><p id="msg" class="msg" role="alert"></p>
 <button id="go" type="submit">${t.cta}</button>
@@ -164,14 +166,14 @@ button[aria-busy=true]::after{content:"";display:inline-block;width:1em;height:1
 .foot{margin:1rem .25rem 0;font-size:.8125rem;color:var(--muted);text-align:center}.state{margin:0;font:500 1.375rem/1.35 var(--serif)}[hidden]{display:none!important}`;
 
 // Static browser script: reads only #cfg, never interpolated. Same flow for
-// the wallet buttons (their billing contact carries the buyer's name) and the
-// card form: elements.submit(), POST checkout
+// the wallet buttons (their billing contact carries the buyer's name and
+// phone) and the card form: elements.submit(), POST checkout
 // (idempotency key kept per tab and email), then stripe.confirmPayment.
 // Every failed attempt goes through say(), which drops the key: the server
 // treats a failed attempt's key as spent, and nothing was charged on it.
 const CLIENT_JS = `(function(){
 var c=JSON.parse(document.getElementById('cfg').textContent),$=function(i){return document.getElementById(i)};
-var f=$('pay'),b=$('go'),m=$('msg'),nm=$('nm'),em=$('em'),K='tgp-pay:'+c.token;
+var f=$('pay'),b=$('go'),m=$('msg'),nm=$('nm'),ph=$('ph'),em=$('em'),K='tgp-pay:'+c.token;
 function busy(v){b.disabled=v;b.setAttribute('aria-busy',String(v))}
 function say(t){m.textContent=t||c.copy.failed;busy(false);try{sessionStorage.removeItem(K)}catch(_){}}
 addEventListener('pageshow',function(e){if(e.persisted)busy(false)});
@@ -181,23 +183,23 @@ var el=stripe.elements({mode:c.mode,amount:c.amount,currency:'usd',onBehalfOf:c.
 appearance:{theme:'stripe',variables:{colorPrimary:'#2C4A36',colorText:'#1A1A18',colorTextSecondary:'#6B675F',colorDanger:'#B91C1C',colorBackground:'#ffffff',borderRadius:'12px',fontSizeBase:'16px'},rules:{'.Input':{border:'1px solid #DCD5CC',boxShadow:'none'}}}});
 var pe=el.create('payment',{fields:{billingDetails:{name:'never',email:'never'}},wallets:{applePay:'never',googlePay:'never',link:'never'}});
 pe.on('loaderror',function(){b.disabled=true;m.textContent=c.copy.failed});pe.mount('#card');
-var x=el.create('expressCheckout',{emailRequired:true,billingAddressRequired:true,buttonHeight:48,paymentMethods:{link:'never',paypal:'never',amazonPay:'never'}});
+var x=el.create('expressCheckout',{emailRequired:true,phoneNumberRequired:true,billingAddressRequired:true,buttonHeight:48,paymentMethods:{link:'never',paypal:'never',amazonPay:'never'}});
 x.on('ready',function(e){if(e.availablePaymentMethods)$('or').hidden=false;else $('express').hidden=true});
 x.on('loaderror',function(){$('express').hidden=true});
 x.mount('#express');
 function key(e){var h=0,s=null,i;for(i=0;i<e.length;i++)h=(h*31+e.charCodeAt(i))|0;
 try{s=JSON.parse(sessionStorage.getItem(K))}catch(_){}
 if(!s||s.h!==h){s={k:crypto.randomUUID(),h:h};try{sessionStorage.setItem(K,JSON.stringify(s))}catch(_){}}return s.k}
-async function pay(name,email){busy(true);m.textContent='';var r=null,d={};
+async function pay(name,phone,email){busy(true);m.textContent='';var r=null,d={};
 try{r=await fetch('/api/v1/packages/public/join/'+encodeURIComponent(c.token)+'/checkout'+(c.lp?'?lp='+encodeURIComponent(c.lp):''),
-{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guest_name:name,guest_email:email,idempotency_key:key(email)})});d=await r.json()}catch(_){}
+{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({guest_name:name,guest_phone:phone,guest_email:email,idempotency_key:key(email)})});d=await r.json()}catch(_){}
 if(!r||!r.ok||!d||!d.client_secret){say(r&&!r.ok&&d&&d.message?[].concat(d.message).join(' '):c.copy.failed);return false}
-var res=await stripe.confirmPayment({elements:el,clientSecret:d.client_secret,confirmParams:{return_url:location.origin+'/p/'+encodeURIComponent(c.token)+'/done',payment_method_data:{billing_details:{name:name,email:email}}}});
+var res=await stripe.confirmPayment({elements:el,clientSecret:d.client_secret,confirmParams:{return_url:location.origin+'/p/'+encodeURIComponent(c.token)+'/done',payment_method_data:{billing_details:{name:name,phone:phone,email:email}}}});
 if(res.error){say(res.error.message);return false}return true}
-x.on('confirm',async function(e){var bd=e.billingDetails||{},name=(bd.name||nm.value).trim(),email=(bd.email||em.value).trim();
+x.on('confirm',async function(e){var bd=e.billingDetails||{},name=(bd.name||nm.value).trim(),phone=(bd.phone||ph.value).trim(),email=(bd.email||em.value).trim();
 if(name.length<2){e.paymentFailed({reason:'fail'});say(c.copy.needName);nm.focus();return}
 var s=await el.submit();if(s.error){e.paymentFailed({reason:'fail'});say(s.error.message);return}
-if(!(await pay(name,email)))e.paymentFailed({reason:'fail'})});
+if(!(await pay(name,phone,email)))e.paymentFailed({reason:'fail'})});
 f.addEventListener('submit',async function(ev){ev.preventDefault();busy(true);
-var s=await el.submit();if(s.error){say(s.error.message);return}await pay(nm.value.trim(),em.value.trim())});
+var s=await el.submit();if(s.error){say(s.error.message);return}await pay(nm.value.trim(),ph.value.trim(),em.value.trim())});
 })();`;
