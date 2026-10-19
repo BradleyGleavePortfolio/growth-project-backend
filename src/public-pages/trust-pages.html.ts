@@ -26,11 +26,12 @@
 import { ROMAN_CRISIS_TOLD_SENTENCE, isRomanCrisisAlertEnabled } from '../roman/roman.feature';
 
 // Source of truth for the official support contact (owner ruling
-// 2026-10-01 14:19 PDT: one support email everywhere). Used in every trust,
-// help and download page so a customer or reviewer always has a real human
-// to email. test/support-email.guard.spec.ts fails if any other address is
-// published as a support contact.
-export const SUPPORT_EMAIL = 'Bradleyapple1031@gmail.com';
+// 2026-10-01 14:19 PDT: one support email everywhere; owner ruling
+// #SUPPORT-ADDRESS 2026-10-19: the support mailbox on thegrowthproject.site).
+// Used in every trust, help and download page so a customer or reviewer
+// always has a real human to email. test/support-email.guard.spec.ts fails
+// if any other address is published as a support contact.
+export const SUPPORT_EMAIL = 'support@thegrowthproject.site';
 
 // Last-reviewed date for the policy text. Bump when copy changes.
 // Format ISO-8601 (UTC) so it sorts and renders consistently.

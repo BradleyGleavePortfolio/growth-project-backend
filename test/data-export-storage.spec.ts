@@ -1780,9 +1780,9 @@ describe('GET /v1/me/data-export/download (controller)', () => {
 
   // B-636-2: the page must name the one support address the product uses.
   it('the error page gives the single support address', () => {
-    expect(SUPPORT_EMAIL).toBe('Bradleyapple1031@gmail.com');
+    expect(SUPPORT_EMAIL).toBe('support@thegrowthproject.site');
     const html = renderDownloadErrorPage(null, 'Reference: x', 'req-1');
-    expect(html).toContain('Bradleyapple1031@gmail.com');
+    expect(html).toContain('support@thegrowthproject.site');
     expect(html).not.toContain('Bradley@Bradleytgpcoaching.com');
     expect(html).not.toContain('hello@thegrowthproject.app');
   });

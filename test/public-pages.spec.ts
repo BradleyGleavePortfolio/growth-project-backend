@@ -77,7 +77,7 @@ describe('PublicPagesController', () => {
     expect(res.body).toContain('GP-A1B2C3');
     expect(res.body).toContain('Your invite code');
     // The mailto subject carries the code so a support reply has context.
-    expect(res.body).toContain('mailto:Bradleyapple1031@gmail.com');
+    expect(res.body).toContain('mailto:support@thegrowthproject.site');
     expect(res.body).toMatch(/subject=Invite(%20|\+)GP-A1B2C3/);
   });
 

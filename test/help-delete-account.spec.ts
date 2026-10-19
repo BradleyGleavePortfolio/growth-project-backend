@@ -196,13 +196,13 @@ describe('/help/delete-account content', () => {
 
   it('gives a working email route with a subject line and identity check, never a password', () => {
     // One support address everywhere (owner rule): the deletion route uses it.
-    expect(SUPPORT_EMAIL).toBe('Bradleyapple1031@gmail.com');
+    expect(SUPPORT_EMAIL).toBe('support@thegrowthproject.site');
     expect(DELETION_EMAIL_SUBJECT).toBe('Delete my account');
     expect(text).toContain(
-      'Email Bradleyapple1031@gmail.com with the subject line “Delete my account”.',
+      'Email support@thegrowthproject.site with the subject line “Delete my account”.',
     );
     expect(html).toContain(
-      'href="mailto:Bradleyapple1031@gmail.com?subject=Delete%20my%20account"',
+      'href="mailto:support@thegrowthproject.site?subject=Delete%20my%20account"',
     );
     expect(text).toContain('Send it from the email address you use to sign in to the app.');
     expect(text).toContain(

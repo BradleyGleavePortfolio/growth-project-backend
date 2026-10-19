@@ -174,8 +174,8 @@ describe('PublicPagesController trust pages', () => {
     expect(html).toContain(SUPPORT_EMAIL);
   });
 
-  it('uses the owner-confirmed support email (Bradleyapple1031@gmail.com)', () => {
-    expect(SUPPORT_EMAIL).toBe('Bradleyapple1031@gmail.com');
+  it('uses the owner-confirmed support email (support@thegrowthproject.site)', () => {
+    expect(SUPPORT_EMAIL).toBe('support@thegrowthproject.site');
   });
 
   it('emits a last-reviewed date in ISO-8601 (YYYY-MM-DD) form', () => {

@@ -14,8 +14,12 @@ import { renderTrustPage } from '../src/public-pages/trust-pages.html';
 // email address appears anywhere under src/ (code, HTML templates, READMEs),
 // unless it is a reserved placeholder domain or listed in ALLOWED below with
 // the reason it is not a support contact.
+// #SUPPORT-ADDRESS (owner ruling 2026-10-19): the support mailbox moved to
+// thegrowthproject.site. The previous address is not listed in RETIRED so it
+// is not written anywhere new; the general scan below still fails the build
+// if it (or any other unlisted address) comes back under src/.
 
-const OWNER_SUPPORT_EMAIL = 'Bradleyapple1031@gmail.com';
+const OWNER_SUPPORT_EMAIL = 'support@thegrowthproject.site';
 
 // Addresses that may appear in src/ because they are NOT support contacts.
 // Every entry needs a reason. An entry that no longer appears in src/ fails
