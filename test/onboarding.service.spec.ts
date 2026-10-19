@@ -12,7 +12,10 @@ import { parseFixture } from '../src/onboarding/consultation-programs';
 import type { PrismaService } from '../src/prisma.service';
 import type { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
-import { CONSULT_CONSENT_V3_TEXT_SHA256 } from '../src/onboarding/consult-consent-copy';
+import {
+  CONSULT_CONSENT_V3_TEXT_SHA256,
+  consultConsentTextSha256,
+} from '../src/onboarding/consult-consent-copy';
 import { macroRawFromAnswers, type Answers } from '../src/onboarding/consultation-answers';
 import { computeMacros, resolveMacroInputs } from '../src/macros/macro-calculator';
 import { FLOOR_CASES, FLOOR_CASE_WEIGHT_LBS } from './_fixtures/calorie-floor-cases';
@@ -2438,5 +2441,71 @@ describe('no deficit under 18: the consultation target for a 16-year-old', () =>
     expect((await w.svc.complete('client-1', NOW)).macros.calories).toBe(
       maintenanceOf(answers) + 300,
     );
+  });
+});
+
+describe('W-BRAND-AGREEMENT: the TGP Fitness agreement, and people who already agreed keep their record', () => {
+  const agreedTo = (copy_version: string, text_sha256 = consultConsentTextSha256(copy_version) ?? '') => ({
+    ...CONSENT,
+    copy_version,
+    text_sha256,
+  });
+  const { P0: _p0, ...answers } = COMPLETE;
+  const later = new Date(NOW.getTime() + 60_000);
+  const NEW_VERSIONS = [
+    'consult-consent-v11',
+    'consult-consent-v12',
+    'consult-consent-v13',
+    'consult-consent-v14',
+    'consult-consent-v12-coach-free',
+    'consult-consent-v13-coach-free',
+    'consult-consent-v14-coach-free',
+    'consult-consent-v15-coach-free',
+  ];
+
+  it.each(['consult-consent-v3', 'consult-consent-v7', 'consult-consent-v10'])(
+    'a %s record keeps its version and time through later saves and completion',
+    async (version) => {
+      const w = makeWorld();
+      await w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0: agreedTo(version) } }, NOW);
+      await w.svc.saveConsultation('client-1', { version: 'consult-v1', answers }, later);
+      expect(w.intakes[0]).toMatchObject({ disclaimer_version: version, disclaimer_accepted_at: NOW });
+      expect(answersOf(w.intakes[0]).P0).toEqual(agreedTo(version));
+      expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(true);
+      await w.svc.complete('client-1', later);
+      expect(w.intakes[0]).toMatchObject({ disclaimer_version: version, disclaimer_accepted_at: NOW });
+      // Every revision, including the frozen completed form, holds the version agreed to.
+      expect(w.revisions.map((r) => r.cause)).toContain('complete');
+      for (const r of w.revisions) {
+        expect((r.answers as { P0: { copy_version: string } }).P0.copy_version).toBe(version);
+        expect(r.disclaimer_version).toBe(version);
+      }
+    },
+  );
+
+  it.each(NEW_VERSIONS)('a new %s agreement is stamped with that version, then answers are accepted', async (version) => {
+    const w = makeWorld();
+    await w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0: agreedTo(version) } }, NOW);
+    expect(w.intakes[0]).toMatchObject({ disclaimer_version: version, disclaimer_accepted_at: NOW });
+    await expect(
+      w.svc.saveConsultation('client-1', { version: 'consult-v1', answers }, later),
+    ).resolves.toMatchObject({ revision: 2 });
+    expect(w.intakes[0]).toMatchObject({ disclaimer_version: version, disclaimer_accepted_at: NOW });
+    expect((await w.svc.getOnboarding('client-1')).consent_recorded).toBe(true);
+  });
+
+  it('refuses an unknown version, or a new version with the old screen digest, and stores nothing', async () => {
+    const w = makeWorld();
+    for (const P0 of [
+      agreedTo('consult-consent-v16', consultConsentTextSha256('consult-consent-v11') ?? ''),
+      agreedTo('consult-consent-v11', consultConsentTextSha256('consult-consent-v7') ?? ''),
+      agreedTo('consult-consent-v7', consultConsentTextSha256('consult-consent-v11') ?? ''),
+    ]) {
+      expect(
+        await code(w.svc.saveConsultation('client-1', { version: 'consult-v1', answers: { P0 } }, NOW)),
+      ).toBe('consent_missing');
+    }
+    expect(w.intakes).toHaveLength(0);
+    expect(w.revisions).toHaveLength(0);
   });
 });

@@ -7,7 +7,9 @@
  * (W-CONSENT: the Roman choice under "Before you join a coach"), memory off and
  * on; with no coach also while FEATURE_ROMAN_CRISIS_ALERT is on (the crisis
  * twins, paragraph 4 = client-ai-v8 / v9; the coached crisis screens are rows
- * of consent-crisis-sentence.spec.ts). Each row builds the shown screen from its parts in display order
+ * of consent-crisis-sentence.spec.ts), and each again with TGP Fitness as the name (W-BRAND-AGREEMENT;
+ * the first six stay for builds that still show them). Each row builds the shown screen from its parts
+ * in display order
  * (paragraph 4 and box 2 from the AI consent ledger, the heading and lead word
  * for word) and proves: it hashes to the version's pin (the app pins the same
  * value), the registry holds exactly that text, the verifier accepts the record
@@ -66,6 +68,8 @@ const noCoach = (p4: string): string[] => [
   CLIENT_AI_CONSENT_BOX_LABEL,
   'Nothing is sent until you continue.',
 ];
+/** W34-W38: the same parts with TGP Fitness as the name (paragraph 1, paragraph 3, box 1). */
+const tgp = (parts: string[]): string[] => parts.map((p) => p.replace('The Growth Project', 'TGP Fitness'));
 
 // [screen, P0 version recorded, shown parts in display order, pin (= app pin), AI copy box 2 grants]
 const ROWS: Array<[string, string, string[], string, string]> = [
@@ -111,6 +115,48 @@ const ROWS: Array<[string, string, string[], string, string]> = [
     '3528b10d50d8e7bb67a3065b86ba2b5cf33f3891b8194be413c78f2519e3257f',
     'client-ai-v9',
   ],
+  [
+    'coached, memory off, TGP Fitness',
+    'consult-consent-v11',
+    tgp(coached(CLIENT_AI_CONSENT_V6_PARAGRAPH)),
+    '4b1686a8e835297d0e6bbd91dce988b4b5b9046eb9d70aebbda9e1d36c70f926',
+    'client-ai-v6',
+  ],
+  [
+    'coached, memory on, TGP Fitness',
+    'consult-consent-v12',
+    tgp(coached(CLIENT_AI_CONSENT_V7_PARAGRAPH)),
+    '8989ac25a1d87a5d6c2f355b74e1a260fb3b35231bf571a371440229d4c9f6a9',
+    'client-ai-v7',
+  ],
+  [
+    'no coach, memory off, TGP Fitness',
+    'consult-consent-v12-coach-free',
+    tgp(noCoach(CLIENT_AI_CONSENT_V6_PARAGRAPH)),
+    'a655bb7c794629a25fc27246dace79078a516a8ef45c357751bc2d2271ba0d64',
+    'client-ai-v6',
+  ],
+  [
+    'no coach, memory on, TGP Fitness',
+    'consult-consent-v13-coach-free',
+    tgp(noCoach(CLIENT_AI_CONSENT_V7_PARAGRAPH)),
+    '336fcf0271843d9b9bfca35ce321480aba4925196f935b1e0ac51e260cba468b',
+    'client-ai-v7',
+  ],
+  [
+    'no coach, memory off, crisis switch on, TGP Fitness',
+    'consult-consent-v14-coach-free',
+    tgp(noCoach(CLIENT_AI_CONSENT_V8_PARAGRAPH)),
+    '5cb2ef1651f012bfb7a7c1569d06ecdfd43f1c33d00208d23bdf286353dfbf56',
+    'client-ai-v8',
+  ],
+  [
+    'no coach, memory on, crisis switch on, TGP Fitness',
+    'consult-consent-v15-coach-free',
+    tgp(noCoach(CLIENT_AI_CONSENT_V9_PARAGRAPH)),
+    'b7eb74293aac4d20c6d19ea2b7a97bec035467f8f8897a5d8e393fd7140e6864',
+    'client-ai-v9',
+  ],
 ];
 
 // Every older version, as it was (#CRISIS-OLD-CONSENT op 1: nobody is asked again).
@@ -148,6 +194,10 @@ describe('FIX684: each P0 record rebuilds the screen shown (coached, no coach, e
     expect(withRoman.sort()).toEqual([
       'consult-consent-v10-coach-free',
       'consult-consent-v11-coach-free',
+      'consult-consent-v12-coach-free',
+      'consult-consent-v13-coach-free',
+      'consult-consent-v14-coach-free',
+      'consult-consent-v15-coach-free',
       'consult-consent-v8-coach-free',
       'consult-consent-v9-coach-free',
     ]);
