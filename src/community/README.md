@@ -120,9 +120,11 @@ notes? }` — `target_type` is `post | comment | message | voice_note | win`;
   `message` with the next step (`community.block.self`,
   `community.block.not_found`, `community.block.workspace_coach`,
   `community.dm.blocked_by_you`).
-- Client privacy: other members only ever see first names (roster, block
-  list, workout leaderboard, wins). Full names and emails stay on coach/owner
-  surfaces.
+- Client privacy: other members see first names (roster, block list, workout
+  leaderboard, wins). One exception (#C6-MEMBER-NAMES): the roster of a space
+  open to all of the coach's clients (`visibility: 'clients'`) shows the people
+  in it each other's full names; only people the rule lets in can read it.
+  Emails, membership status and join dates stay on coach/owner surfaces.
 - List pagination cursors are computed from the unfiltered page, so a page may
   hold fewer rows than `limit` when blocked authors are dropped.
 
