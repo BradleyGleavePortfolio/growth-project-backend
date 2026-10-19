@@ -522,7 +522,7 @@ export class AiGatewayService {
           ? await write(this.prisma)
           : await this.prisma.$transaction(async (tx) => {
               await lockClientsForDraftWrite(tx, namedClientIds(req));
-              await this.assertRequesterMayActOn(req);
+              await this.assertRequesterMayActOn(req, tx);
               return write(tx);
             });
       approvalDraftId = draft.id;
@@ -593,26 +593,32 @@ export class AiGatewayService {
    * R2b — the requester must be allowed to act on every client the gateway
    * derived from `subjectUserId` / the proposed payload before any consent
    * state is consulted. Owners: allowed. Coaches: a current client (role
-   * student) on their direct roster (User.coach_id) or in an open
-   * SubCoachAssignment; a coach row's coach_id is never a roster link
-   * (AIBUDGET B1). A client: only itself.
+   * student) on their direct roster (User.coach_id), or in an open
+   * SubCoachAssignment while that client is still on the assignment's head
+   * coach's roster (a coach move leaves the delegation open); a coach row's
+   * coach_id is never a roster link (AIBUDGET B1). A client: only itself.
    * Anything else is the same opaque 404 the /coach/* routes use.
    * `dataClientIds` are excluded: those callers scope them (cohort-bounded).
+   * `db`: the draft write passes its transaction, so the re-check reads on
+   * the connection that holds the client-row locks (owner decision 17).
    */
-  private async assertRequesterMayActOn(req: AiGatewayRequest): Promise<void> {
+  private async assertRequesterMayActOn(
+    req: AiGatewayRequest,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
     const named = namedClientIds(req).filter((id) => id !== req.requester.id);
     if (named.length === 0 || req.requester.role === 'owner') return;
     const notFound = () =>
       new NotFoundException({ code: 'client_not_found', message: 'Client not found.' });
     if (req.requester.role !== 'coach') throw notFound();
-    const direct = await this.prisma.user.findMany({
+    const direct = await db.user.findMany({
       where: { id: { in: named }, role: 'student', coach_id: req.requester.id },
       select: { id: true },
     });
     const allowed = new Set(direct.map((u) => u.id));
     const rest = named.filter((id) => !allowed.has(id));
     if (rest.length > 0) {
-      const delegated = await this.prisma.subCoachAssignment.findMany({
+      const delegated = await db.subCoachAssignment.findMany({
         where: {
           sub_coach_id: req.requester.id,
           client_id: { in: rest },
@@ -621,9 +627,7 @@ export class AiGatewayService {
         },
         select: { client_id: true, head_coach_id: true },
       });
-      // A coach move leaves the delegation open, so it counts only while the
-      // client is still on that head coach's roster.
-      const onRoster = delegated.length === 0 ? [] : await this.prisma.user.findMany({
+      const onRoster = delegated.length === 0 ? [] : await db.user.findMany({
         where: { OR: delegated.map((d) => ({ id: d.client_id, coach_id: d.head_coach_id })) },
         select: { id: true },
       });
