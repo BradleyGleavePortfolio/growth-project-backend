@@ -109,3 +109,19 @@ export async function rowsByAuthorsWhoStay<T>(
   for (const k of kept) gone.delete(ask[k.n][0]);
   return gone.size === 0 ? rows : rows.filter((_, i) => !gone.has(i));
 }
+
+/** C6-MOVED-PRIVILEGED-READS: the same rule for a list bounded by a limit, which must leave rows out in the
+ * query itself (a filter after the limit would drop rows from the page). The [space, author] pairs of these
+ * spaces' posts and chat whose author app.community_author_stays no longer keeps. One round trip; the rule is
+ * asked once per pair. */
+export async function authorsWhoLeft(prisma: PrismaService, spaceIds: string[]): Promise<Array<[string, string]>> {
+  if (spaceIds.length === 0) return [];
+  const rows = await prisma.$queryRaw<{ s: string; a: string }[]>`
+    WITH t AS MATERIALIZED (
+      SELECT "workspace_id" AS "w", "cohort_id" AS "s", "sender_id" AS "a" FROM "community_messages"
+        WHERE "cohort_id" = ANY(${spaceIds}::uuid[]) AND "deleted_at" IS NULL
+      UNION SELECT "workspace_id", "cohort_id", "author_id" FROM "community_posts"
+        WHERE "cohort_id" = ANY(${spaceIds}::uuid[]) AND "deleted_at" IS NULL)
+    SELECT t."s"::text AS "s", t."a" FROM t WHERE NOT app.community_author_stays(t."w", t."s", t."a")`;
+  return rows.map((r) => [r.s, r.a]);
+}
