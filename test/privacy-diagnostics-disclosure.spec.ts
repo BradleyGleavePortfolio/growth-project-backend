@@ -45,7 +45,7 @@ const DOC = readFileSync(
 );
 
 const DIAGNOSTIC_ITEM =
-  'Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID, with an approximate location (country, region, city, postal area, time zone and the rough coordinates of that area) that PostHog, our analytics provider, works out from the IP address of the device that sends them; and crash and performance reports linked to your account ID, with no name or email address attached.';
+  'Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID, with an approximate location (country, region, city, postal area, time zone and the rough coordinates of that area) that PostHog, the analytics provider, works out from the IP address of the device that sends them; and crash and performance reports linked to your account ID, with no name or email address attached.';
 
 function diagnosticItem(): string {
   const match = /<li>(Device, usage and diagnostic data[^<]*)<\/li>/.exec(privacyHtml);

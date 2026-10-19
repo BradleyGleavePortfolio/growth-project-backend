@@ -37,7 +37,7 @@ const health = visibleText(renderTrustPage('consumer-health'));
 const terms = visibleText(renderTrustPage('terms'));
 
 const GEOIP =
-  'product analytics events and screen views linked to your account ID, with an approximate location (country, region, city, postal area, time zone and the rough coordinates of that area) that PostHog, our analytics provider, works out from the IP address of the device that sends them';
+  'product analytics events and screen views linked to your account ID, with an approximate location (country, region, city, postal area, time zone and the rough coordinates of that area) that PostHog, the analytics provider, works out from the IP address of the device that sends them';
 
 const FULL_NAMES =
   'If you are in a space open to all of your coach’s clients, your coach’s other clients see your full name: on that space’s member list, next to your posts and comments there and in your coach’s main community feed, and next to your shared wins and leaderboard entry.';
