@@ -74,3 +74,15 @@ export function grantAllEgress(): AiEgressService {
 export function fakeOf<T extends object>(impl: object): T {
   return impl as T;
 }
+
+/**
+ * Owner decision 17: a draft is saved in a transaction that first locks its
+ * clients' rows (src/coach/moved-client-drafts.ts). The transaction runs on
+ * the fake itself and the lock read returns `locked`.
+ */
+export function withTx<T extends object>(db: T, locked: unknown[] = []): T {
+  return Object.assign(db, {
+    $queryRaw: jest.fn(async () => locked),
+    $transaction: jest.fn(async (fn: (tx: unknown) => unknown) => fn(db)),
+  });
+}

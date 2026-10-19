@@ -33,6 +33,7 @@ import { WorkoutContextService, WorkoutContextV2 } from '../context/workout-cont
 import { applyProgramSafety, toInjuryAreas } from '../gateway/workout-builder/training-substitutions';
 import { ConsentScope, ConsentService } from '../../consent/consent.service';
 import { coachSharingCheck } from '../../consent/coach-sharing-gate';
+import { lockClientsForDraftWrite } from '../../coach/moved-client-drafts';
 
 /** B-872-SOL-H-131-1 — the Coach sharing switches a stored weekly insight can hold logs of. */
 const INSIGHT_SHARING_SCOPES: readonly string[] = [
@@ -228,11 +229,12 @@ export class CoachAIService {
    * Delegates to WorkoutBuilderService.assertCanAccessClient (the single
    * source of truth) but preserves the /coach/* opacity convention: any
    * access failure (Forbidden or missing) surfaces as 404 'Client not found'
-   * rather than leaking whether the client exists.
+   * rather than leaking whether the client exists. `tx`: a draft write's
+   * transaction, so the re-check reads on the connection that holds the lock.
    */
-  private async assertCoachOwnsClient(coachId: string, clientId: string): Promise<void> {
+  private async assertCoachOwnsClient(coachId: string, clientId: string, tx?: Prisma.TransactionClient): Promise<void> {
     try {
-      await this.workouts.assertCanAccessClient(coachId, clientId);
+      await this.workouts.assertCanAccessClient(coachId, clientId, tx);
     } catch {
       throw new NotFoundException('Client not found');
     }
@@ -712,19 +714,24 @@ export class CoachAIService {
     tokensOut: number,
   ) {
     const costCents = AnthropicAdapter.computeCostCents(tokensIn, tokensOut);
-    return this.prisma.aIDraft.create({
-      data: {
-        coachId,
-        clientId,
-        type,
-        inputContext: ctx as unknown as Prisma.InputJsonValue,
-        modelUsed: modelUsed || COACH_AI_MODEL,
-        promptVersion,
-        generatedPayload: payload,
-        tokensIn,
-        tokensOut,
-        costCents,
-      },
+    // Owner decision 17: a draft finished after its client moved is not saved for the old coach.
+    return this.prisma.$transaction(async (tx) => {
+      await lockClientsForDraftWrite(tx, [clientId]);
+      await this.assertCoachOwnsClient(coachId, clientId, tx);
+      return tx.aIDraft.create({
+        data: {
+          coachId,
+          clientId,
+          type,
+          inputContext: ctx as unknown as Prisma.InputJsonValue,
+          modelUsed: modelUsed || COACH_AI_MODEL,
+          promptVersion,
+          generatedPayload: payload,
+          tokensIn,
+          tokensOut,
+          costCents,
+        },
+      });
     });
   }
 

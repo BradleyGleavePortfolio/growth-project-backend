@@ -7,6 +7,9 @@ import type { AuditService } from '../src/audit/audit.service';
 import type { StripeApiService } from '../src/billing/stripe-api.service';
 import { MOVED_CLIENT_PAYLOAD_KEYS, deleteDraftsLeftByMove } from '../src/coach/moved-client-drafts';
 import type { PrismaService } from '../src/prisma.service';
+import type { SubCoachCapacityService } from '../src/sub-coach/sub-coach-capacity.service';
+import type { SubCoachIdempotencyService } from '../src/sub-coach/sub-coach-idempotency.service';
+import { SubCoachReassignService } from '../src/sub-coach/sub-coach-reassign.service';
 import { SubCoachesService } from '../src/sub-coaches/sub-coaches.service';
 import type { TeamModeTierResolverService } from '../src/team-mode/tier-resolver.service';
 import { TeamModeService } from '../src/team-mode/team-mode.service';
@@ -18,6 +21,7 @@ type Where = Record<string, unknown>;
 
 function matches(row: Row, where: Where): boolean {
   return Object.entries(where).every(([key, cond]) => {
+    if (cond === undefined) return true;
     if (key === 'AND') return (cond as Where[]).every((w) => matches(row, w));
     if (key === 'OR') return (cond as Where[]).some((w) => matches(row, w));
     const value = row[key];
@@ -212,5 +216,94 @@ describe('a client move deletes the drafts left behind (owner decision 17)', () 
 
   it('matches every payload key that deciding a draft checks', () => {
     for (const key of MOVED_CLIENT_PAYLOAD_KEYS) expect(payloadClientIds({ [key]: 'client1' })).toEqual(['client1']);
+  });
+});
+
+const left = (before: Record<string, string[]>, gone: string[]) =>
+  Object.fromEntries(Object.entries(before).map(([model, ids]) => [model, ids.filter((id) => !gone.includes(id))]));
+
+describe('a sub-coach handoff deletes the drafts the sub-coach handing on holds (owner decision 17)', () => {
+  // client1 and client2 stay head1's clients, delegated to sub1; sub2 joins the team.
+  function handoff() {
+    const w = world();
+    w.db.user.rows.push({ id: 'sub2', role: 'coach', coach_id: 'head1', name: 'sub2', deleted_at: null });
+    w.db.aIDraft.rows.push(
+      { id: 'sub1-client1-approved', coachId: 'sub1', clientId: 'client1', status: 'APPROVED' },
+      { id: 'sub1-client2-draft', coachId: 'sub1', clientId: 'client2', status: 'DRAFT' },
+    );
+    w.db.aiActionDraft.rows.push(
+      { id: 'sub1-in-head1-client1-pending', tenant_coach_id: 'head1', requester_id: 'sub1', subject_user_id: 'client1', status: 'pending', payload: {} },
+      { id: 'sub1-in-head1-client1-approved', tenant_coach_id: 'head1', requester_id: 'sub1', subject_user_id: 'client1', status: 'approved', payload: {} },
+    );
+    w.db.messageDraft.rows.push({ id: 'sub1-client1-message', coach_id: 'sub1', client_id: 'client1' });
+    w.db.churnIntervention.rows.push(
+      { id: 'sub1-client1-churn-dismissed', coach_id: 'sub1', client_id: 'client1', status: 'dismissed' },
+      { id: 'sub1-client1-churn-sent', coach_id: 'sub1', client_id: 'client1', status: 'sent' },
+    );
+    const delegations = table([
+      { id: 'sca1', head_coach_id: 'head1', sub_coach_id: 'sub1', client_id: 'client1', unassigned_at: null },
+      { id: 'sca2', head_coach_id: 'head1', sub_coach_id: 'sub1', client_id: 'client2', unassigned_at: null },
+    ]);
+    delegations.create = async ({ data }) => {
+      const row = { id: `sca${delegations.rows.length + 1}`, unassigned_at: null, ...data };
+      delegations.rows.push(row);
+      return row;
+    };
+    const prisma: PrismaService = fakeOf<PrismaService>({
+      ...w.db,
+      subCoachAssignment: delegations,
+      auditLog: table([]),
+      // SUBREVOKE's destination seat read: [] = the pair never had a seat.
+      $queryRaw: async () => [],
+      $transaction: async (fn: (tx: unknown) => unknown) => fn(prisma),
+    });
+    const service = new SubCoachReassignService(
+      prisma,
+      fakeOf<SubCoachCapacityService>({ assertSubCoachBelongsTo: async () => undefined }),
+      fakeOf<SubCoachIdempotencyService>({
+        runWithIdempotency: async ({ runMutation }: { runMutation: () => Promise<unknown> }) => ({ response: await runMutation(), replay: false }),
+      }),
+    );
+    const move = (to: string) =>
+      service.reassignClient('head1', 'head1', 'coach', { clientId: 'client1', targetSubCoachId: to, idempotency_key: 'key' });
+    const open = () => delegations.rows.filter((r) => r.unassigned_at === null).map((r) => `${r.client_id}:${r.sub_coach_id}`);
+    return { ...w, move, open };
+  }
+
+  it("deletes only the sub-coach's unapproved and unsent drafts about that client; the head coach and new sub-coach keep theirs", async () => {
+    const h = handoff();
+    const before = h.ids();
+    await h.move('sub2');
+    expect(h.open()).toEqual(['client2:sub1', 'client1:sub2']);
+    expect(h.ids()).toEqual(
+      left(before, ['sub1-client1-draft', 'sub1-in-head1-client1-pending', 'sub1-client1-message', 'sub1-client1-churn-dismissed']),
+    );
+    const afterHandoff = h.ids();
+    await h.move('sub2');
+    expect(h.ids()).toEqual(afterHandoff);
+  });
+
+  it("taking the client back to the head coach deletes the sub-coach's drafts and keeps the head coach's", async () => {
+    const h = handoff();
+    await h.move('sub2');
+    h.db.aIDraft.rows.push({ id: 'sub2-client1-draft', coachId: 'sub2', clientId: 'client1', status: 'DRAFT' });
+    const before = h.ids();
+    await h.move('head1');
+    expect(h.open()).toEqual(['client2:sub1']);
+    expect(h.ids()).toEqual(left(before, ['sub2-client1-draft']));
+  });
+});
+
+describe('a client left with no coach loses every unapproved draft about them (owner decision 17)', () => {
+  it("deletes every holder's unapproved and unsent drafts and keeps approved, sent and no-tenant items", async () => {
+    const w = world();
+    const before = w.ids();
+    await w.prisma.$transaction((tx) => deleteDraftsLeftByMove(tx, ['client3'], null));
+    expect(w.ids()).toEqual(
+      left(before, [
+        'sub1-client3-draft', 'sub1-client3-pending', 'sub1-in-head1-client3-pending', 'head1-client3-pending',
+        'no-requester-head1-client3-pending', 'sub1-client3-message', 'sub1-client3-churn-draft',
+      ]),
+    );
   });
 });
