@@ -39,10 +39,10 @@ export class ResolverSubCoachScope {
     coachId: string,
     clientId: string,
   ): Promise<ResolvedActingCoach> {
-    const allowed = await this.subCoachScope.canAccessClient(
-      coachId,
-      clientId,
-    );
+    const allowed =
+      (await this.subCoachScope.canAccessClient(coachId, clientId)) ||
+      // COACH-GONE-DELIVERY: a deleted coach's paid drop still reaches its buyer, nobody else.
+      (await this.subCoachScope.deliversForGoneCoach?.(coachId, clientId)) === true;
     if (!allowed) {
       throw new SubCoachOutOfScopeError(coachId, clientId);
     }

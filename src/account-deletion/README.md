@@ -20,10 +20,17 @@ period, and a nightly finalization that erases the person's data.
    plans they were assigned (frozen, owned by the tombstone id), and the app
    shows a neutral "your coach is no longer available" state. A sub-coach may
    delete their own account.
-3. **Billing.** Finalization cancels every live Stripe subscription the
-   person pays or is paid for (coach subscription, client purchases on either
-   side, guest checkouts), cancels pending drip drops, and the drip
-   dispatcher refuses drops whose client or coach is deleted. Push tokens are
+3. **Billing.** From the moment a coach confirms deletion his packages are
+   off sale everywhere (`is_active` false, marked `closed_for_deletion_at`),
+   his invite codes and QR stop working, and his clients' plans stop renewing
+   (cancel at period end, marked `renewal_off_for_deletion_at`); a cancel
+   inside the grace period puts back exactly what was marked. Finalization
+   cancels every other live Stripe subscription the person pays or is paid
+   for (coach subscription, client purchases, guest checkouts) and their
+   pending drip drops. A purchase its client still holds (paid, not set to
+   renew) outlives the coach: its delivered content stays, its drops still
+   fire to that client only (not his auto messages), and the dispatcher
+   refuses every other drop whose client or coach is deleted. Push tokens are
    cleared and notification rows deleted, so nothing further is sent.
 4. **Apple.** If `APPLE_SIGNIN_KEY_ID` / `APPLE_SIGNIN_PRIVATE_KEY` are
    missing (true in production until the owner creates the key), deletion

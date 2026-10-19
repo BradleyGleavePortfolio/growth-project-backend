@@ -266,6 +266,22 @@ export class AccountDeletionService {
   // period starts now. A legacy REQUESTED row (old email flow) is confirmed
   // here too, so nobody is stranded waiting for an email that never comes.
 
+  /**
+   * COACH-GONE-DELIVERY: from the moment deletion is confirmed nothing of this coach's is sold
+   * (storefront, in-app list, pay and share links, checkout and in-app purchase all read
+   * is_active); a cancel puts back on sale exactly the packages this took off.
+   */
+  private async setSelling(client: Prisma.TransactionClient, userId: string, closedAt: Date | null) {
+    await client.coachPackage.updateMany(
+      closedAt
+        ? { where: { coach_id: userId, is_active: true }, data: { is_active: false, closed_for_deletion_at: closedAt } }
+        : {
+            where: { coach_id: userId, closed_for_deletion_at: { not: null } },
+            data: { is_active: true, closed_for_deletion_at: null },
+          },
+    );
+  }
+
   async requestDeletion(
     userId: string,
     opts: {
@@ -298,6 +314,7 @@ export class AccountDeletionService {
           deletion_token_expires_at: null,
         },
       });
+      await this.setSelling(client, userId, now);
       const purgeAfter = this.purgeAfterFor(now);
       await this.insertDeletionAudit(client, {
         subjectId: userId,
@@ -435,6 +452,7 @@ export class AccountDeletionService {
           deletion_token_expires_at: null,
         },
       });
+      await this.setSelling(client, user.id, now);
       const after = this.purgeAfterFor(now);
       await this.insertDeletionAudit(client, {
         subjectId: user.id,
@@ -494,6 +512,7 @@ export class AccountDeletionService {
           deletion_token_expires_at: null,
         },
       });
+      await this.setSelling(client, userId, null);
       await this.insertDeletionAudit(client, {
         subjectId: userId,
         event: DeletionAuditEvent.DELETION_CANCELLED,

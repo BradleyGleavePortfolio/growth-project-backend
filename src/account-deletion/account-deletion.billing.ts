@@ -2,6 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { StripeApiError, StripeApiService } from '../billing/stripe-api.service';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
+import { KEPT_PURCHASE } from './account-deletion.manifest';
 
 /**
  * Account-deletion billing stop (B-608-5, operator policy 3).
@@ -56,7 +57,9 @@ export class AccountDeletionBillingService {
     });
     const purchases = await tx.clientPurchase.findMany({
       where: {
-        OR: [{ client_user_id: userId }, { coach_user_id: userId }],
+        // COACH-GONE-DELIVERY: a client's plan that outlives the deleted coach already ends at
+        // period end (since his deletion request); the client keeps the period paid for.
+        OR: [{ client_user_id: userId }, { coach_user_id: userId, NOT: KEPT_PURCHASE }],
         stripe_subscription_id: { not: null },
         status: { not: 'canceled' },
       },
@@ -64,7 +67,8 @@ export class AccountDeletionBillingService {
     });
     const guest = await tx.guestCheckout.findMany({
       where: {
-        OR: [{ created_user_id: userId }, { package: { coach_id: userId } }],
+        // A converted guest checkout is its client's purchase above.
+        OR: [{ created_user_id: userId }, { package: { coach_id: userId }, created_user_id: null }],
         stripe_subscription_id: { not: null },
       },
       select: { stripe_subscription_id: true },

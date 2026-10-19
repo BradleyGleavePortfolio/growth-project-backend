@@ -51,6 +51,8 @@ export interface ErasureEntry {
   where?: Record<string, unknown>;
   match?: 'id' | 'email';
   uuid?: boolean;
+  /** COACH-GONE-DELIVERY: columns naming an asset a kept purchase owes; those rows are not deleted. */
+  owed?: ReadonlyArray<string>;
 }
 
 const del: ErasureOp = { op: 'delete' };
@@ -62,6 +64,20 @@ const FROZEN_PLAN =
   'coach-authored programme content assigned to a surviving client; kept frozen for the client (policy 2), holds no coach contact data';
 const SCOUT_LEDGER =
   'insert-only import-integrity ledger (DB trigger refuses DELETE); holds digests and the coach tombstone id only';
+
+/**
+ * COACH-GONE-DELIVERY: a purchase that outlives its deleted coach. Paid and held, and not a plan
+ * that would renew (that one is canceled at finalization, as before); a plan set to end at period
+ * end (from his deletion request) runs out. Its client keeps what was delivered and still gets
+ * what is due; nobody else does. KEPT_PURCHASE_SQL is the same rule on alias p.
+ */
+export const KEPT_PURCHASE: Prisma.ClientPurchaseWhereInput = {
+  entitlement_active: true,
+  status: { not: 'canceled' },
+  NOT: { billing_type: 'recurring', cancel_at_period_end: false },
+};
+const KEPT_PURCHASE_SQL = Prisma.sql`(p."entitlement_active" AND p."status" <> 'canceled'
+  AND NOT (p."billing_type" = 'recurring' AND NOT p."cancel_at_period_end"))`;
 
 /**
  * A lesson a client keeps when its coach is deleted: someone completed it, or someone is enrolled
@@ -241,7 +257,13 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // exercises, revisions, delivery snapshots and remaining assignments cascade
   // from the program row.
   { model: 'WorkoutProgram', field: 'client_id', action: del, where: { is_template: false } },
-  { model: 'WorkoutPlan', field: 'coach_id', action: del, where: { assignments: { none: {} } } },
+  {
+    model: 'WorkoutPlan',
+    field: 'coach_id',
+    action: del,
+    where: { assignments: { none: {} } },
+    owed: ['id', 'program_id'],
+  },
   { model: 'WorkoutPlan', field: 'coach_id', action: retain(FROZEN_PLAN) },
   { model: 'WorkoutProgram', field: 'coach_id', action: retain(FROZEN_PLAN) },
   { model: 'WorkoutProgram', field: 'owner_user_id', action: retain(FROZEN_PLAN) },
@@ -251,7 +273,7 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'MealPlan', field: 'coach_id', action: detach('coach_id') },
   { model: 'DailyMealPlanAssignment', field: 'client_id', action: del },
   { model: 'DailyMealPlanAssignment', field: 'assigned_by_coach_id', action: retain(FROZEN_PLAN) },
-  { model: 'DailyMealPlan', field: 'coach_id', action: del, where: { assignments: { none: {} } } },
+  { model: 'DailyMealPlan', field: 'coach_id', action: del, where: { assignments: { none: {} } }, owed: ['id'] },
   { model: 'DailyMealPlan', field: 'coach_id', action: retain(FROZEN_PLAN) },
   { model: 'MealTemplate', field: 'coach_id', action: retain(FROZEN_PLAN) },
   { model: 'MacroTarget', field: 'client_id', action: del },
@@ -484,15 +506,6 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
     where: { status: { in: ['pending', 'due', 'dispatching'] } },
   },
   {
-    model: 'ScheduledDrop',
-    field: 'client_purchase.coach_user_id',
-    action: {
-      op: 'update',
-      data: { status: 'canceled', failure_reason: 'account deleted', locked_at: null },
-    },
-    where: { status: { in: ['pending', 'due', 'dispatching'] } },
-  },
-  {
     model: 'ClientPurchase',
     field: 'client_user_id',
     action: {
@@ -505,22 +518,6 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
         stripe_client_secret: null,
         stripe_ephemeral_key: null,
         last_error: null,
-      },
-    },
-    where: { status: { not: 'canceled' } },
-  },
-  {
-    model: 'ClientPurchase',
-    field: 'coach_user_id',
-    action: {
-      op: 'update',
-      data: {
-        entitlement_active: false,
-        status: 'canceled',
-        canceled_at: NOW,
-        cancel_at_period_end: false,
-        stripe_client_secret: null,
-        stripe_ephemeral_key: null,
       },
     },
     where: { status: { not: 'canceled' } },
@@ -609,6 +606,7 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
     field: 'coach_id',
     action: del,
     where: { lessons: { none: KEPT_LESSON } },
+    owed: ['id'],
   },
   { model: 'CoachMediaAsset', field: 'coach_id', action: retain(FROZEN_PLAN) },
 
@@ -969,6 +967,32 @@ export async function executeErasureManifest(
     select: { id: true },
   });
 
+  // COACH-GONE-DELIVERY: the coach's sales that do not outlive him end as before, with their due
+  // drops. A kept purchase's drops still fire for its client, except the coach's auto messages
+  // (what he wrote goes, policy 1); the content they and the delivered ones name stays.
+  const owed = (
+    await tx.$queryRaw<Array<{ client_id?: string; asset_id?: string }>>`
+      SELECT p."client_user_id" AS "client_id", d."asset_id"
+        FROM "ScheduledDrop" d JOIN "ClientPurchase" p ON p."id" = d."client_purchase_id"
+       WHERE p."coach_user_id" = ${ctx.userId} AND ${KEPT_PURCHASE_SQL}
+         AND d."asset_type" <> 'auto_message' AND d."status" NOT IN ('canceled', 'failed', 'skipped')`
+  ).filter((r) => r.client_id && r.asset_id);
+  const owedIds = [...new Set(owed.map((r) => r.asset_id as string))];
+  const coachDrops = await tx.$executeRaw`
+    UPDATE "ScheduledDrop" d
+       SET "status" = 'canceled', "failure_reason" = 'account deleted', "locked_at" = NULL
+      FROM "ClientPurchase" p
+     WHERE p."id" = d."client_purchase_id" AND p."coach_user_id" = ${ctx.userId}
+       AND d."status" IN ('pending', 'due', 'dispatching')
+       AND (d."asset_type" = 'auto_message' OR NOT ${KEPT_PURCHASE_SQL})`;
+  results.push({ model: 'ScheduledDrop', field: 'client_purchase.coach_user_id', op: 'update', count: coachDrops });
+  const coachSales = await tx.$executeRaw`
+    UPDATE "ClientPurchase" p
+       SET "entitlement_active" = false, "status" = 'canceled', "canceled_at" = ${ctx.now},
+           "cancel_at_period_end" = false, "stripe_client_secret" = NULL, "stripe_ephemeral_key" = NULL
+     WHERE p."coach_user_id" = ${ctx.userId} AND p."status" <> 'canceled' AND NOT ${KEPT_PURCHASE_SQL}`;
+  results.push({ model: 'ClientPurchase', field: 'coach_user_id', op: 'update', count: coachSales });
+
   for (const step of RESTRICT_CHILD_PRE_STEPS) {
     const count = await tx.$executeRaw`
       DELETE FROM ${Prisma.raw(`"${step.childTable}"`)}
@@ -986,7 +1010,12 @@ export async function executeErasureManifest(
     if (entry.uuid && !UUID_RE.test(ctx.userId)) continue;
     const matchValue = entry.match === 'email' ? ctx.email : ctx.userId;
     if (!matchValue) continue;
-    const where = { ...whereForPath(entry.field, matchValue), ...(entry.where ?? {}) };
+    const keep = entry.owed && owedIds.length > 0;
+    const where = {
+      ...whereForPath(entry.field, matchValue),
+      ...(entry.where ?? {}),
+      ...(keep ? { NOT: { OR: entry.owed?.map((c) => ({ [c]: { in: owedIds } })) } } : {}),
+    };
     const delegate = delegateFor(tx, entry.model);
     const res =
       action.op === 'delete'
@@ -997,13 +1026,16 @@ export async function executeErasureManifest(
 
   // LEARN-FROZEN-MEDIA: a grant on the coach's media stays only where its
   // client keeps a lesson that still plays it (completed it, or is enrolled in
-  // its course). No lesson plays a deleted media row any more, so every grant
-  // on it goes, as does every other client's grant on a kept one.
+  // its course), or (COACH-GONE-DELIVERY) a kept purchase of that client names
+  // it. No lesson plays a deleted media row any more, so every grant on it
+  // goes, as does every other client's grant on a kept one.
   if (ownedAssets.length > 0) {
     const ids = ownedAssets.map((a) => a.id);
+    const paid = owed.map((r) => `${r.client_id}:${r.asset_id}`);
     const count = await tx.$executeRaw`
       DELETE FROM "ClientAssetGrant" g
        WHERE g."media_asset_id" = ANY(${ids}::text[])
+         AND NOT (g."client_id" || ':' || g."media_asset_id") = ANY(${paid}::text[])
          AND NOT EXISTS (
            SELECT 1 FROM "Lesson" l
             WHERE l."media_asset_id" = g."media_asset_id"
