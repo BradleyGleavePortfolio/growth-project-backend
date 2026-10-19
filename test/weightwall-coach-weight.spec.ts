@@ -23,6 +23,7 @@ import type { AnthropicAdapter } from '../src/ai/adapters/anthropic.adapter';
 import { ClientContextService } from '../src/ai/context/client-context.service';
 import type { MealPlansService } from '../src/meal-plans/meal-plans.service';
 import type { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
+import { withTx } from './ai-egress/ai-egress.fakes';
 
 // WEIGHTWALL (SoT A2 items 12-15): a coach the client keeps Weigh-ins from never sees the client's
 // weight, body fat or any number computed from them, from any source, except the targets the app
@@ -193,7 +194,7 @@ async function routes(o: WorldOpts) {
     },
   });
   const ai = new CoachAIService(
-    db, stub<CoachAIStateService>({ isReady: () => true }), stub<AnthropicAdapter>(anthropic),
+    withTx(stub<PrismaService>({ ...prisma })), stub<CoachAIStateService>({ isReady: () => true }), stub<AnthropicAdapter>(anthropic),
     new ClientContextService(db), stub<MealPlansService>({}), workouts, undefined, undefined, consent,
   );
   return {
