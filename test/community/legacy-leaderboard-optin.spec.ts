@@ -100,6 +100,8 @@ function build(opts: { removed?: string[]; banned?: string[] } = {}): CommunityS
   const banned = opts.banned ?? [];
   const prisma = {
     communityWorkspace: { findFirst: async () => ({ id: 'ws-1' }) },
+    // No space open to all of the coach's clients: first names (#C6-NAMES-EVERYWHERE).
+    communityCohort: { findMany: async () => [] },
     communityMembership: {
       findMany: async (a: { where: { user_id: { in: string[] } } }) =>
         a.where.user_id.in.map((id) => ({

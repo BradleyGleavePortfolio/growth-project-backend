@@ -120,10 +120,12 @@ notes? }` — `target_type` is `post | comment | message | voice_note | win`;
   `message` with the next step (`community.block.self`,
   `community.block.not_found`, `community.block.workspace_coach`,
   `community.dm.blocked_by_you`).
-- Client privacy: other members see first names (roster, block list, workout
-  leaderboard, wins). One exception (#C6-MEMBER-NAMES): the roster of a space
-  open to all of the coach's clients (`visibility: 'clients'`) shows the people
-  in it each other's full names; only people the rule lets in can read it.
+- Client privacy: other members see first names (roster, posts, comments,
+  block list, workout leaderboard, wins). One exception (#C6-MEMBER-NAMES,
+  #C6-NAMES-EVERYWHERE): people in a space open to all of the coach's clients
+  (`visibility: 'clients'`) see each other's full names on its roster, its
+  posts and comments, and the coach's Hall posts, wins and leaderboard
+  (`fullNamesFor`: the rule lets the viewer in, the roster lists the person).
   Emails, membership status and join dates stay on coach/owner surfaces.
 - List pagination cursors are computed from the unfiltered page, so a page may
   hold fewer rows than `limit` when blocked authors are dropped.
@@ -162,7 +164,7 @@ feed (`visibility: 'public'` is stored as `circle`). Content filter before the
 write; Report (`target_type: 'win'`), Block (two-way) and author delete in the
 app; Hide sets `hidden_at`; members removed from the workspace cannot post
 (`403 community.win.removed_member`) and their wins leave the feed. Other
-members appear by first name only.
+members appear by first name, by full name where #C6-NAMES-EVERYWHERE allows.
 
 ### 6. Fix round 2 (#610: Sol BLOCK, AUD-OPUS-2)
 

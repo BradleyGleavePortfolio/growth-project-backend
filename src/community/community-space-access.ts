@@ -1,4 +1,5 @@
 import type { PrismaService } from '../prisma.service';
+import { FULL_NAME_VISIBILITY } from './member-display-name';
 
 /** C6-BVIS: keys (spaceAccessKey) of the [space, person] pairs app.community_can_access passes, one
  * round trip. `listed` also counts a row that is not removed (rosters: a pending invitation). */
@@ -21,6 +22,32 @@ export async function canEnterSpace(prisma: PrismaService, spaceId: string, pers
 }
 
 export const spaceAccessKey = (spaceId: string, personId: string): string => `${spaceId}:${personId}`;
+
+/** #C6-NAMES-EVERYWHERE, the roster's rule (#C6-MEMBER-NAMES) on every surface: the viewer sees a person's
+ * full name only when both are in one space of the workspace open to all of the coach's clients, the
+ * viewer by the rule and the person on its roster. A [space, person] of a space (its posts and comments)
+ * asks that space; null asks the coach-wide surfaces (the Hall, wins, the leaderboard): any such space.
+ * Everyone else keeps a first name. At most three round trips; one when the workspace has no such space. */
+export async function fullNamesFor(
+  prisma: PrismaService,
+  viewerId: string,
+  workspaceId: string | null,
+  named: ReadonlyArray<readonly [string | null, string]>,
+): Promise<(space: string | null, person: string) => boolean> {
+  const spaces = workspaceId && named.length > 0
+    ? await prisma.communityCohort.findMany({
+        where: { workspace_id: workspaceId, visibility: FULL_NAME_VISIBILITY },
+        select: { id: true },
+      })
+    : [];
+  const mine = await spacesOpenTo(prisma, spaces.map((c) => [c.id, viewerId] as const));
+  const shared = spaces.map((c) => c.id).filter((c) => mine.has(spaceAccessKey(c, viewerId)));
+  const within = (space: string | null) => (space ? shared.filter((c) => c === space) : shared);
+  const pairs = named.flatMap(([space, person]) => within(space).map((c) => [c, person] as const));
+  const listed = await spacesOpenTo(prisma, pairs, true);
+  return (space: string | null, person: string) =>
+    within(space).some((c) => listed.has(spaceAccessKey(c, person)));
+}
 
 /** The rows whose [space, person] passes the rule, in their order. */
 export async function rowsWithSpaceAccess<T>(

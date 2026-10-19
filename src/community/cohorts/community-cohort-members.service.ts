@@ -12,7 +12,7 @@ import type {
 } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunitySafetyService } from '../safety/community-safety.service';
-import { memberFirstName, memberFullName } from '../member-display-name';
+import { FULL_NAME_VISIBILITY, memberName } from '../member-display-name';
 import {
   AssignTargetScope,
   CommunityCohortMembersRepository,
@@ -135,7 +135,7 @@ export class CommunityCohortMembersService {
     return {
       id: p.row?.id ?? null,
       user_id: p.id,
-      display_name: coachView ? p.name : (fullName ? memberFullName : memberFirstName)(p.name),
+      display_name: coachView ? p.name : memberName(p.name, fullName),
       role,
       status: coachView ? (p.row?.status ?? 'active') : null,
       email: coachView ? p.email : null,
@@ -215,7 +215,7 @@ export class CommunityCohortMembersService {
 
     // #C6-MEMBER-NAMES: in a space open to all of the coach's clients, the people in it see each
     // other's full names; every other space keeps first names. Only readers the rule lets in get here.
-    const fullNames = cohort.visibility === 'clients';
+    const fullNames = cohort.visibility === FULL_NAME_VISIBILITY;
     return CohortMemberListResponseSchema.parse({
       members: visible.map((p) => this.memberView(p, isCoach, roleOf(p), why(p, roleOf(p)), fullNames)),
       next_cursor: page.length === limit ? this.encodeCursor(page[page.length - 1].id) : null,
