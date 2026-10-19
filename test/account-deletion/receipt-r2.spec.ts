@@ -156,6 +156,7 @@ describe('C-608-7 in the deletion service', () => {
       stub<AppleTokenRevocationService>({}),
       stub<AccountDeletionStorageService>({
         collect: jest.fn().mockResolvedValue([]),
+        withoutRetainedMedia: jest.fn().mockResolvedValue([]),
         purge: jest
           .fn()
           .mockResolvedValue({ removed: 0, byKind: { supabase: 0, mux: 0, local: 0 } }),
