@@ -17,13 +17,13 @@ import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachGuard } from '../auth/coach.guard';
-import { SubscriptionGuard } from '../billing/subscription.guard';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import {
   AssignDailyPlanDto,
   CreateDailyMealPlanDto,
   CreateMealTemplateDto,
+  EndDailyPlanAssignmentDto,
   UpdateDailyMealPlanDto,
   UpdateMealTemplateDto,
 } from './real-meal-plans.dto';
@@ -31,7 +31,7 @@ import { RealMealPlansService } from './real-meal-plans.service';
 
 @ApiTags('real-meal-plans')
 @Controller()
-@UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachMealTemplatesController {
   constructor(private readonly meals: RealMealPlansService) {}
 
@@ -68,7 +68,7 @@ export class CoachMealTemplatesController {
 
 @ApiTags('real-meal-plans')
 @Controller()
-@UseGuards(JwtAuthGuard, CoachGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, CoachGuard)
 export class CoachDailyMealPlansController {
   constructor(private readonly meals: RealMealPlansService) {}
 
@@ -116,6 +116,19 @@ export class CoachDailyMealPlansController {
   @Get('coach/daily-meal-plans/:id/assignments')
   listAssignments(@Req() req: AuthedRequest, @Param('id') id: string) {
     return this.meals.listAssignmentsForCoach(req.user.id, id);
+  }
+
+  // MEALPLAN-END: 204 once the client's last day on the plan is ends_on or earlier.
+  @Post('coach/daily-meal-plans/:id/assignments/:assignmentId/end')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  endAssignment(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('assignmentId') assignmentId: string,
+    @Body() dto: EndDailyPlanAssignmentDto,
+  ) {
+    return this.meals.endAssignment(req.user.id, id, assignmentId, dto);
   }
 }
 

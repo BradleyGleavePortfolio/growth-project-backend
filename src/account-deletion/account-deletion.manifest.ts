@@ -134,6 +134,10 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // LoggedFoodEntry.food_item_id is ON DELETE RESTRICT, so any entry pointing
   // at one goes first.
   { model: 'LoggedFoodEntry', field: 'food_item.created_by_user_id', action: del },
+  // FOODSAVED: favourites and saved meals (items cascade with their meal). The
+  // data export carries the same rows (food_favorites, saved_meals, saved_meal_items).
+  { model: 'FoodFavorite', field: 'user_id', action: del },
+  { model: 'SavedMeal', field: 'user_id', action: del },
   { model: 'FoodItem', field: 'created_by_user_id', action: del },
   // ExerciseSet and HabitLog hold ON DELETE RESTRICT FKs to their parents
   // (baseline migration), so the children go first (A-608-3).
@@ -141,6 +145,8 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // prisma/migrations and fails when a parent is deleted before such a child.
   { model: 'ExerciseSet', field: 'workout.user_id', action: del },
   { model: 'WorkoutSession', field: 'user_id', action: del },
+  // TRAIN-BE2: a coach's workout comments go with the coach; a client's go with their workouts (FK cascade).
+  { model: 'WorkoutComment', field: 'coach_id', action: del },
   { model: 'FastingWindow', field: 'user_id', action: del },
   { model: 'WeightLog', field: 'user_id', action: del },
   { model: 'WaterLog', field: 'user_id', action: del },
@@ -148,7 +154,11 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'CheckIn', field: 'coach_id', action: detach('coach_id') },
   { model: 'HabitLog', field: 'habit.user_id', action: del },
   { model: 'Habit', field: 'user_id', action: del },
+  // HB1: habits a deleted coach set stay with their client, as the client's own.
+  { model: 'Habit', field: 'assigned_by_coach_id', action: detach('assigned_by_coach_id') },
   { model: 'LessonCompletion', field: 'user_id', action: del },
+  { model: 'LessonProgress', field: 'user_id', action: del },
+  { model: 'CourseEnrolment', field: 'user_id', action: del },
   { model: 'SavedRecipe', field: 'user_id', action: del },
   { model: 'ListItem', field: 'user_id', action: del },
   { model: 'BuildWeekEnrollment', field: 'user_id', action: del },
@@ -173,6 +183,17 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // Lessons other people completed stay (frozen content); the rest are removed.
   { model: 'Lesson', field: 'coach_id', action: del, where: { completions: { none: {} } } },
   { model: 'Lesson', field: 'coach_id', action: retain(FROZEN_PLAN) },
+  // LEARN-BE1: a course week or course goes once nothing hangs off it; one a
+  // client is enrolled in stays (frozen content).
+  { model: 'CourseModule', field: 'coach_id', action: del, where: { lessons: { none: {} } } },
+  { model: 'CourseModule', field: 'coach_id', action: retain(FROZEN_PLAN) },
+  {
+    model: 'Course',
+    field: 'coach_id',
+    action: del,
+    where: { modules: { none: {} }, enrolments: { none: {} } },
+  },
+  { model: 'Course', field: 'coach_id', action: retain(FROZEN_PLAN) },
 
   // ── Workout and meal programming
   // Roman approve-to-adjust (#655): a proposal carries the client's recovery
@@ -243,6 +264,7 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'RomanClientNote', field: 'client_id', action: del },
   { model: 'RomanClientSummary', field: 'client_id', action: del },
   { model: 'RomanMemoryState', field: 'client_id', action: del },
+  { model: 'RomanUsageDaily', field: 'client_id', action: del },
   { model: 'RomanMessage', field: 'user_id', action: del },
   { model: 'RomanSession', field: 'user_id', action: del },
   { model: 'UserAIQuota', field: 'user_id', action: del },

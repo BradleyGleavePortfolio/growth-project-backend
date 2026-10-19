@@ -12,6 +12,7 @@ import { Prisma, type ClinicProgramSet } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { computeMacros, resolveMacroInputs, type MacroResult } from '../macros/macro-calculator';
 import { WorkoutBuilderService } from '../workout-builder/workout-builder.service';
+import { programDaysWhere } from '../workout-builder/program-guards';
 import { writeProfileWithTargets, type ClearableProfileField } from '../profile/profile.service';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { buildConsultationView, type ConsultationView } from './consultation-view';
@@ -42,11 +43,12 @@ import {
 } from './program-rules';
 import {
   materialiseClientPlans,
-  type ExerciseRow,
   type Materialisation,
   type PlanContent,
 } from './clinic-programs';
 import { writeProgramTree } from './program-writer';
+import { alternativesOf } from '../workout-builder/plan-exercise-fields';
+import { flaggedClientPayload } from './flagged-join-alert';
 import {
   ONBOARDING_COMPLETION_HOOKS,
   type OnboardingCompletionHook,
@@ -305,10 +307,10 @@ export class OnboardingService {
    * INT-607-1: "head coach of" and "sub-coach on the team of" use main's
    * explicit membership rule (#597 C13 Opus A1, SubCoachScopeService): a coach
    * is on head H's team only when role = 'coach', coach_id = H AND an active
-   * TeamSubCoachAssignment(H, coach) or an open SubCoachAssignment(H, coach)
-   * exists. A bare coach_id is NOT membership: old guest checkouts stamped
-   * coach_id onto coach buyers (phantom sub-coaches), and the phantom "head"
-   * must never read the buyer coach's clients' screening answers.
+   * TeamSubCoachAssignment(H, coach), or for a never-seated pair an open
+   * SubCoachAssignment(H, coach). A bare coach_id is NOT membership: old guest
+   * checkouts stamped coach_id onto coach buyers (phantom sub-coaches), and the
+   * phantom "head" must never read the buyer coach's clients' screening answers.
    */
   async canCoachRead(readerId: string, clientId: string): Promise<boolean> {
     // A607-1: one CURRENT-tenancy predicate, evaluated from live rows on every
@@ -376,7 +378,7 @@ export class OnboardingService {
     clientId: string,
     revision?: number,
     now = new Date(),
-  ): Promise<ConsultationView> {
+  ): Promise<ConsultationView & { client_name: string | null }> {
     if (!(await this.canCoachRead(readerId, clientId)))
       throw new NotFoundException('Consultation not found');
     const intake = await this.prisma.clientOnboardingIntake.findUnique({
@@ -391,7 +393,14 @@ export class OnboardingService {
     const answers: Answers = isRecord(rev.answers)
       ? (JSON.parse(JSON.stringify(rev.answers)) as Answers)
       : {};
-    return buildConsultationView(
+    // The screen's heading. Read here, after the live tenancy check, because
+    // alert rows store no name (owner 4): a reader who lost access gets the
+    // 404 above and never the name.
+    const client = await this.prisma.user.findUnique({
+      where: { id: clientId },
+      select: { name: true },
+    });
+    const view = buildConsultationView(
       {
         version: rev.version,
         revision: rev.revision,
@@ -405,6 +414,7 @@ export class OnboardingService {
       { submitted_at: intake.completed_at, saved_at: rev.created_at },
       now,
     );
+    return { ...view, client_name: client?.name?.trim() || null };
   }
 
   /** Revision list for the coach view (newest first). */
@@ -986,14 +996,14 @@ export class OnboardingService {
           // coach they later join is told then (flagged-join-alert.ts).
           if (flagCoach && coach) {
             // In-app coach item. The body carries no screening details; a
-            // coach opens their client's intake for the answers.
+            // tap opens their client's consultation answers.
             await tx.notification.create({
               data: {
                 user_id: coach.id,
                 kind: 'coach_alert',
                 channel: 'inapp',
                 body: COACH_FLAG_BODY,
-                payload: { type: 'onboarding_screening_review', client_id: clientId },
+                payload: flaggedClientPayload(clientId),
               },
             });
           }
@@ -1201,7 +1211,7 @@ export class OnboardingService {
     }
 
     const masterPlans = await tx.workoutPlan.findMany({
-      where: { program_id: master.id, archived_at: null },
+      where: programDaysWhere(master),
       orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
       include: { exercises: { where: { archived_at: null }, orderBy: { order: 'asc' } } },
     });
@@ -1214,7 +1224,7 @@ export class OnboardingService {
         week_index: p.week_index ?? 0,
         day_index: p.day_index ?? 0,
       },
-      exercises: p.exercises.map((e): ExerciseRow => ({
+      exercises: p.exercises.map((e) => ({
         exercise_external_id: e.exercise_external_id,
         order: e.order,
         sets: e.sets,
@@ -1223,6 +1233,7 @@ export class OnboardingService {
         rest_seconds: e.rest_seconds,
         superset_group_id: e.superset_group_id,
         notes: e.notes,
+        alternative_external_ids: alternativesOf(e),
       })),
     }));
     const plans = materialiseClientPlans(content, sel.program_key, sel, m);

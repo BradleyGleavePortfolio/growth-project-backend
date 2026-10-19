@@ -61,7 +61,7 @@ all of these hold:
 
 - the owner enabled it;
 - pitch copy exists;
-- the featured coach is accepting (owner switch on, active subscription, code valid);
+- the featured coach is accepting (owner switch on, code valid);
 - the client has no coach.
 
 Caps, all editable by the owner:
@@ -90,3 +90,7 @@ A client with no coach gets `403` with `error`/`code` `ROMAN_REQUIRES_COACH` and
 an eating-disorder message on Roman the fixed fallback. Coached clients are unchanged (coach AI
 pool and daily cap). The scripted Roman card above makes no AI call and is unchanged, and so is
 the client's own logging.
+The same 403 answers Roman's context reads (`GET /ai/context`, `GET /ai/structured-context` and
+`GET /roman/context/me`) before anything is read (139-15), and every `/ai/gateway/*` route before
+the paywall or the model. Those three reads answer clients only: a coach or the owner gets
+`403 "Insufficient role"` (`assertRomanClient`).

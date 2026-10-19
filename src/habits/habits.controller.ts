@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards, Request, HttpCode, GoneException } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, UseGuards, Request, HttpCode } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { HabitsService } from './habits.service';
@@ -6,7 +6,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
-import { CreateHabitDto, LogHabitDto } from './habits.dto';
+import { CreateHabitDto, HabitSummaryQuery, LogHabitDto, UpdateHabitDto } from './habits.dto';
 
 @ApiTags('habits')
 @Controller('habits')
@@ -28,6 +28,12 @@ export class HabitsController {
     return this.habitsService.createHabit(req.user.id, body);
   }
 
+  // HB1: the client edits their habit; on one their coach set, only its reminder.
+  @Patch(':id')
+  async updateHabit(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: UpdateHabitDto) {
+    return this.habitsService.updateHabit(req.user.id, id, body);
+  }
+
   @Post(':id/log')
   async logHabit(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: LogHabitDto) {
     return this.habitsService.logHabit(req.user.id, id, body);
@@ -39,17 +45,13 @@ export class HabitsController {
     return this.habitsService.getLogs(req.user.id, d);
   }
 
-  // GET /habits/streaks — REMOVED (doctrine cleanup).
-  // Returns 410 Gone for one mobile release window before being deleted.
-  // TODO: remove route entirely after one mobile release window.
-  @Get('streaks')
-  @HttpCode(410)
-  async getStreaks() {
-    throw new GoneException(
-      'This endpoint has been removed. Habit streaks are no longer part of the product surface.',
-    );
+  // HB3: each day's planned and done, each habit's, and the best week.
+  @Get('summary')
+  async getSummary(@Request() req: AuthedRequest, @Query() query: HabitSummaryQuery) {
+    return this.habitsService.getSummary(req.user.id, query);
   }
 
+  // Archives the habit; its logs stay in the client's history (HB1).
   @Delete(':id')
   @HttpCode(204)
   async deleteHabit(@Request() req: AuthedRequest, @Param('id') id: string) {

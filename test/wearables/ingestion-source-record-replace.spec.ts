@@ -59,7 +59,7 @@ function makeStore() {
   const client = {
     wearableSample,
     wearableConnection: { updateMany: jest.fn(async () => ({ count: 1 })) },
-    wearableInsightCache: { deleteMany: jest.fn(async () => ({ count: 0 })) },
+    wearableInsightCache: { updateMany: jest.fn(async () => ({ count: 0 })) },
     $transaction: jest.fn(),
   };
   client.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) => cb(client));

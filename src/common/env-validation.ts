@@ -133,7 +133,8 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'SUPABASE_SERVICE_ROLE_KEY',
     tier: 'hard',
-    reason: 'Supabase service-role key for server-side admin calls.',
+    reason:
+      'Supabase secret key (sb_secret_…, Project Settings > API Keys) for server-side admin calls. Not the legacy service_role JWT, which stops working when the legacy keys are switched off.',
   },
 
   // --- Feature-tier: warn in prod, never block boot. The corresponding
@@ -950,7 +951,7 @@ export const ENV_RULES: EnvRule[] = [
     default:
       "unset → '' passed to the Supabase auth client (signup / sign-in / password flows fail at request time)",
     reason:
-      'Supabase anon (public) key used by AuthService for user-scoped Supabase auth calls. Not a boot dependency, but every password/OTP auth flow fails without it.',
+      'Supabase publishable key (sb_publishable_…, Project Settings > API Keys) used by AuthService for user-scoped Supabase auth calls. Not the legacy anon JWT, which stops working when the legacy keys are switched off. Not a boot dependency, but every password/OTP auth flow fails without it.',
   },
   {
     name: 'SUPABASE_REDIRECT_URL',
@@ -1440,7 +1441,7 @@ export const ENV_RULES: EnvRule[] = [
     name: 'CONSULT_CONSENT_COPY_VERSIONS',
     tier: 'optional',
     default:
-      "consult-consent-v3,consult-consent-v4 (unset, empty, or no known name -> ['consult-consent-v3', 'consult-consent-v4'])",
+      "consult-consent-v3,consult-consent-v4,consult-consent-v5,consult-consent-v6,consult-consent-v5-coach-free,consult-consent-v6-coach-free,consult-consent-v7,consult-consent-v8,consult-consent-v8-coach-free,consult-consent-v9-coach-free,consult-consent-v7-coach-free,consult-consent-v9,consult-consent-v10,consult-consent-v10-coach-free,consult-consent-v11-coach-free (unset, empty, or no known name -> all fifteen)",
     reason:
       "Comma-separated onboarding P0 (consent box 1) copy versions the intake accepts (#607). A P0 counts only when its copy_version is listed AND its text_sha256 equals that version's pinned full-screen digest (src/onboarding/consult-consent-copy.ts), so only versions whose exact text the server knows can be listed; unknown names are ignored (logged once as a warning by the onboarding module). Leave unset at launch.",
   },
@@ -1945,6 +1946,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'ZOOM_ENABLED',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → stub adapter (only "true" enables)',
     reason: 'Not used in v1 / Zoom scheduling provider is not part of the launch.',
@@ -2318,6 +2321,13 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Roman voice copy v2.',
+  },
+  {
+    name: 'FEATURE_ROMAN_CRISIS_ALERT',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason:
+      'ROMAN-CRISIS-ALERT: the coach alert after Roman sends the 911 or 988 reply (src/roman/roman.feature.ts). Off = no crisis alert, as before. On also adds the approved crisis sentence to the public pages, to client-ai-v8 / v9 (GET /me/ai-consent?variant=crisis_alert) and to the roman_crisis_alert feature flag the app reads. Turn on only after the app that opens it (SAFETYWORDS-M) is on phones and CRISISAPP / CRISISAPP-M are live.',
   },
   {
     name: 'FEATURE_ROMAN_FIRST_PAYMENT',

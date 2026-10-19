@@ -35,6 +35,7 @@ function makePrisma(fixtures: {
     checkIn: {
       findMany: jest.fn().mockResolvedValue(fixtures.checkIns ?? []),
     },
+    coachAlert: { findFirst: jest.fn().mockResolvedValue(null) },
   } as any;
 }
 

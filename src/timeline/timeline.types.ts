@@ -13,7 +13,8 @@
 
 // ─── Lane identifiers ──────────────────────────────────────────────────────────
 
-export type TimelineLane = 'body' | 'win' | 'coach' | 'friction';
+/** No coach lane: coach messages never reach the Timeline (#TIMELINE-COACH op 1). */
+export type TimelineLane = 'body' | 'win' | 'friction';
 
 // ─── Shared base ──────────────────────────────────────────────────────────────
 
@@ -37,9 +38,8 @@ export interface BodyWeightEvent extends TimelineEventBase {
   eventType: 'weight_logged';
   metadata: {
     weightLbs: number;
-    deltaLbs: number | null;
-    /** Number of consecutive days weight was logged up to this point. */
-    streakDays: number;
+    /** C8 trend on this day, in lbs; null before the second day of weigh-ins. */
+    trendLbs: number | null;
   };
 }
 
@@ -91,28 +91,6 @@ export interface WinBuildWeekDay7Event extends TimelineEventBase {
   };
 }
 
-// ─── Coach lane ───────────────────────────────────────────────────────────────
-
-export interface CoachTextNoteEvent extends TimelineEventBase {
-  lane: 'coach';
-  eventType: 'coach_text_note';
-  metadata: {
-    messageId: string;
-    /** Coach display name — not email. */
-    coachName: string;
-  };
-}
-
-export interface CoachVoiceNoteEvent extends TimelineEventBase {
-  lane: 'coach';
-  eventType: 'coach_voice_note';
-  metadata: {
-    messageId: string;
-    coachName: string;
-    durationSec: number;
-  };
-}
-
 // ─── Friction lane ────────────────────────────────────────────────────────────
 
 export interface FrictionMissedDayEvent extends TimelineEventBase {
@@ -144,8 +122,6 @@ export type TimelineEvent =
   | WinStreakEvent
   | WinFinanceMilestoneEvent
   | WinBuildWeekDay7Event
-  | CoachTextNoteEvent
-  | CoachVoiceNoteEvent
   | FrictionMissedDayEvent
   | FrictionRecoveredStreakEvent;
 

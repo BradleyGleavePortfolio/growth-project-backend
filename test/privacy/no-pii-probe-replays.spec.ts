@@ -269,7 +269,7 @@ describe('Opus B-700-1 replay: coach brief log lines never hold the coach name',
       coach_first_name: 'Patricia',
       workouts_completed_today: 1,
     });
-    const ai: BriefAiInput = { ctx, subject: clientDataSubject(['client-1'], 'coach') };
+    const ai: BriefAiInput = { ctx, subject: clientDataSubject(['client-1'], 'coach', 'base', 'coach-1') };
     return svc.callClaude(ctx, ai, coachId);
   }
 

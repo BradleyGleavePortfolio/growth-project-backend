@@ -21,7 +21,7 @@ import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guar
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import {
-  CreateMessageDto,
+  CreateClientMessageDto,
   EditMessageDto,
   InboxPinDto,
   ListThreadQueryDto,
@@ -74,7 +74,7 @@ export class ClientMessagingController {
   @Post()
   async send(
     @Request() req: AuthedRequest,
-    @Body() body: CreateMessageDto,
+    @Body() body: CreateClientMessageDto,
     @Headers('idempotency-key') idemHeader?: string,
   ) {
     const key = resolveIdempotencyKey(idemHeader, body.client_message_id);
@@ -83,6 +83,7 @@ export class ClientMessagingController {
       voice: body.voice,
       ...(key ? { client_message_id: key } : {}),
       ...(body.reply_to_id ? { reply_to_id: body.reply_to_id } : {}),
+      ...(body.card !== undefined ? { card: body.card } : {}),
     });
   }
 

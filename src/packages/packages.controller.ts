@@ -20,7 +20,6 @@ import { ApiTags } from '@nestjs/swagger';
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { CoachOrOwnerGuard } from '../common/guards/coach-or-owner.guard';
-import { SubscriptionGuard } from '../billing/subscription.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { SkipClientEntitlement } from '../common/decorators/skip-client-entitlement.decorator';
 import { PrismaService } from '../prisma.service';
@@ -29,6 +28,7 @@ import { CreatePackageDto, UpdatePackageDto } from './packages.dto';
 import { PackageValidationFilter } from './package-validation.filter';
 import { PackageIdempotencyFilter } from './package-idempotency.filter';
 import { TrialUsageService } from './trials/trial-usage.service';
+import { packageQuote, resumableAttempts } from '../checkout/checkout.service';
 
 // Coach-facing CRUD for offers / packages. Coach owns their catalog and
 // can list / create / update / archive their own rows. OWNER (platform
@@ -44,7 +44,7 @@ import { TrialUsageService } from './trials/trial-usage.service';
 
 @ApiTags('packages')
 @Controller('v1/coach/packages')
-@UseGuards(JwtAuthGuard, CoachOrOwnerGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, CoachOrOwnerGuard)
 // S-FEE round 4 (C-629-2): a body the DTO rejects answers 400 PACKAGE_INVALID
 // with the field and the next action, never a code-less validation array.
 // B-675-1: a 422 IDEMPOTENCY_KEY_REUSED carries the `package_id` the key made.
@@ -259,7 +259,20 @@ export class ClientPackagesController {
     // sheet shows "7-day free trial, then $49 per month" only when the client
     // would really get it (one free trial per client per coach).
     const offers = await this.trials.offersForClient(req.user.id, rows);
-    return { packages: rows.map((row) => ({ ...row, trial_offer: offers.get(row.id) })) };
+    // BILLQUOTE — each package also carries the server's quote for THIS
+    // client (due today, first later charge, trial end), from the same charge
+    // rule the checkout sends to Stripe, so the app never adds money up.
+    // FIX998 — an attempt the checkout would resume keeps its own dates.
+    const now = new Date();
+    const ids = rows.map((row) => row.id);
+    const open = await resumableAttempts(this.prisma, req.user.id, ids, now);
+    return {
+      packages: rows.map((row) => {
+        const offer = offers.get(row.id);
+        const quote = packageQuote(row, offer, now, open.get(row.id));
+        return { ...row, trial_offer: offer, quote };
+      }),
+    };
   }
 
   // Student fetches one of their assigned coach's offers for the purchase
@@ -286,6 +299,9 @@ export class ClientPackagesController {
       });
     }
     const offers = await this.trials.offersForClient(req.user.id, [row]);
-    return { ...row, trial_offer: offers.get(row.id) };
+    const offer = offers.get(row.id);
+    const now = new Date();
+    const open = await resumableAttempts(this.prisma, req.user.id, [row.id], now);
+    return { ...row, trial_offer: offer, quote: packageQuote(row, offer, now, open.get(row.id)) };
   }
 }

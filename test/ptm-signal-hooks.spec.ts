@@ -167,7 +167,7 @@ describe('PTM signal hooks — messaging', () => {
 
   it('emits message_sent with body.length on sendAsClient', async () => {
     const prisma = makePrisma();
-    const supabase = { broadcastNewMessage: jest.fn() } as any;
+    const supabase = { pingChat: jest.fn() } as any;
     const analytics = { capture: jest.fn(), identify: jest.fn() } as any;
     const ptm = { emit: jest.fn() } as any;
     const messageReceived = { emit: jest.fn().mockResolvedValue(undefined) } as any;
@@ -185,7 +185,7 @@ describe('PTM signal hooks — messaging', () => {
 
   it('emits message_received + coach_note_received with userId=clientId on sendAsCoach', async () => {
     const prisma = makePrisma();
-    const supabase = { broadcastNewMessage: jest.fn() } as any;
+    const supabase = { pingChat: jest.fn() } as any;
     const analytics = { capture: jest.fn(), identify: jest.fn() } as any;
     const ptm = { emit: jest.fn() } as any;
     const messageReceived = { emit: jest.fn().mockResolvedValue(undefined) } as any;
@@ -212,7 +212,7 @@ describe('PTM signal hooks — messaging', () => {
 
   it('never passes the message body in metadata (PII)', async () => {
     const prisma = makePrisma();
-    const supabase = { broadcastNewMessage: jest.fn() } as any;
+    const supabase = { pingChat: jest.fn() } as any;
     const analytics = { capture: jest.fn(), identify: jest.fn() } as any;
     const ptm = { emit: jest.fn() } as any;
     const messageReceived = { emit: jest.fn().mockResolvedValue(undefined) } as any;

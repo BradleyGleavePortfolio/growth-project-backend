@@ -5,11 +5,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import {
   AssignDailyPlanDto,
   CreateDailyMealPlanDto,
   CreateMealTemplateDto,
+  EndDailyPlanAssignmentDto,
   UpdateDailyMealPlanDto,
   UpdateMealTemplateDto,
   DailyPlanSlotInputDto,
@@ -80,20 +82,27 @@ export class RealMealPlansService {
     dto: UpdateMealTemplateDto,
   ) {
     await this.assertTemplateOwnedBy(coachId, templateId);
-    return this.prisma.mealTemplate.update({
-      where: { id: templateId },
-      data: {
-        ...(dto.name !== undefined && { name: dto.name }),
-        ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.calories_kcal !== undefined && { calories_kcal: dto.calories_kcal }),
-        ...(dto.protein_g !== undefined && { protein_g: dto.protein_g }),
-        ...(dto.carbs_g !== undefined && { carbs_g: dto.carbs_g }),
-        ...(dto.fats_g !== undefined && { fats_g: dto.fats_g }),
-        ...(dto.fiber_g !== undefined && { fiber_g: dto.fiber_g }),
-        ...(dto.items !== undefined && {
-          items: dto.items as unknown as object,
-        }),
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const used = await tx.dailyMealPlanSlot.findMany({
+        where: { meal_template_id: templateId },
+        select: { daily_meal_plan_id: true },
+      });
+      await this.freezeForMovedClients(tx, coachId, used.map((u) => u.daily_meal_plan_id));
+      return tx.mealTemplate.update({
+        where: { id: templateId },
+        data: {
+          ...(dto.name !== undefined && { name: dto.name }),
+          ...(dto.description !== undefined && { description: dto.description }),
+          ...(dto.calories_kcal !== undefined && { calories_kcal: dto.calories_kcal }),
+          ...(dto.protein_g !== undefined && { protein_g: dto.protein_g }),
+          ...(dto.carbs_g !== undefined && { carbs_g: dto.carbs_g }),
+          ...(dto.fats_g !== undefined && { fats_g: dto.fats_g }),
+          ...(dto.fiber_g !== undefined && { fiber_g: dto.fiber_g }),
+          ...(dto.items !== undefined && {
+            items: dto.items as unknown as object,
+          }),
+        },
+      });
     });
   }
 
@@ -109,15 +118,23 @@ export class RealMealPlansService {
   // ─── DailyMealPlan CRUD ──────────────────────────────────────────────
 
   // Validate that every meal_template_id referenced by `slots` belongs
-  // to this coach. Done in one round-trip to keep big plans cheap.
+  // to this coach and is live. MEALBUILD-BE: on an edit, a meal archived
+  // after it went into this plan may stay ("Day plans that use it keep it
+  // until you swap it"), so a plan with archived meals can still be edited;
+  // an archived meal can't be added. Coach-owned rows only, either way.
   private async validateSlotTemplates(
     coachId: string,
     slots: DailyPlanSlotInputDto[],
+    planId?: string,
   ) {
     if (slots.length === 0) return;
     const ids = Array.from(new Set(slots.map((s) => s.meal_template_id)));
+    const kept = planId
+      ? (await this.prisma.dailyMealPlanSlot.findMany({ where: { daily_meal_plan_id: planId }, select: { meal_template_id: true } }))
+        .map((s) => s.meal_template_id)
+      : [];
     const found = await this.prisma.mealTemplate.findMany({
-      where: { id: { in: ids }, coach_id: coachId, archived_at: null },
+      where: { id: { in: ids }, coach_id: coachId, OR: [{ archived_at: null }, { id: { in: kept } }] },
       select: { id: true },
     });
     const foundSet = new Set(found.map((f) => f.id));
@@ -149,6 +166,7 @@ export class RealMealPlansService {
             // Stable ordering: caller-provided order wins, otherwise
             // index in the input array.
             order: s.order ?? idx,
+            time_of_day: s.time_of_day ?? null,
           })),
         });
       }
@@ -196,9 +214,10 @@ export class RealMealPlansService {
     dto: UpdateDailyMealPlanDto,
   ) {
     await this.assertPlanOwnedBy(coachId, planId);
-    if (dto.slots) await this.validateSlotTemplates(coachId, dto.slots);
+    if (dto.slots) await this.validateSlotTemplates(coachId, dto.slots, planId);
 
     return this.prisma.$transaction(async (tx) => {
+      await this.freezeForMovedClients(tx, coachId, [planId]);
       await tx.dailyMealPlan.update({
         where: { id: planId },
         data: {
@@ -207,17 +226,39 @@ export class RealMealPlansService {
         },
       });
       if (dto.slots) {
-        await tx.dailyMealPlanSlot.deleteMany({
+        // FOODLINK: a slot whose (slot_label, order) is still listed keeps its row (and so the client's food
+        // logs linked to it); only its meal and time change. Unlisted slots are deleted (their links go null),
+        // new ones created. Kept rows keep their key, so the unique (plan, label, order) cannot collide.
+        const next = dto.slots.map((s, idx) => ({
+          meal_template_id: s.meal_template_id,
+          slot_label: s.slot_label,
+          order: s.order ?? idx,
+          time_of_day: s.time_of_day ?? null,
+        }));
+        const key = (s: { slot_label: string; order: number }) => `${s.slot_label}#${s.order}`;
+        const wanted = new Map(next.map((s) => [key(s), s]));
+        const existing = await tx.dailyMealPlanSlot.findMany({
           where: { daily_meal_plan_id: planId },
+          select: { id: true, slot_label: true, order: true, meal_template_id: true, time_of_day: true },
         });
-        if (dto.slots.length > 0) {
+        const gone = existing.filter((e) => !wanted.has(key(e))).map((e) => e.id);
+        if (gone.length > 0) {
+          await tx.dailyMealPlanSlot.deleteMany({ where: { id: { in: gone } } });
+        }
+        for (const e of existing) {
+          const w = wanted.get(key(e));
+          if (w && (w.meal_template_id !== e.meal_template_id || w.time_of_day !== e.time_of_day)) {
+            await tx.dailyMealPlanSlot.update({
+              where: { id: e.id },
+              data: { meal_template_id: w.meal_template_id, time_of_day: w.time_of_day },
+            });
+          }
+        }
+        const kept = new Set(existing.map(key));
+        const fresh = next.filter((s) => !kept.has(key(s)));
+        if (fresh.length > 0) {
           await tx.dailyMealPlanSlot.createMany({
-            data: dto.slots.map((s, idx) => ({
-              daily_meal_plan_id: planId,
-              meal_template_id: s.meal_template_id,
-              slot_label: s.slot_label,
-              order: s.order ?? idx,
-            })),
+            data: fresh.map((s) => ({ daily_meal_plan_id: planId, ...s })),
           });
         }
       }
@@ -240,6 +281,84 @@ export class RealMealPlansService {
     });
     if (result.count === 0) throw new NotFoundException('Daily meal plan not found');
     return { archived: result.count };
+  }
+
+  /**
+   * Owner 4 + 139-13: a client who moved to another coach keeps the plan as it
+   * was, and the former coach's later edits no longer reach them. Before an
+   * edit, the moved clients' assignments of these plans move to a frozen copy
+   * of the plan and its meal templates, with the plan's own date. The copy is
+   * archived, so it is on none of the coach's lists and no coach route opens
+   * it; the client still reads it, on GET /meal-plans too (meal-plans.service.ts).
+   */
+  private async freezeForMovedClients(
+    tx: Prisma.TransactionClient,
+    coachId: string,
+    planIds: string[],
+  ) {
+    if (planIds.length === 0) return;
+    const moved = await tx.dailyMealPlanAssignment.findMany({
+      where: {
+        daily_meal_plan_id: { in: planIds },
+        NOT: { client: { coach_id: coachId, role: 'student' } },
+      },
+      select: { id: true, daily_meal_plan_id: true, client_id: true },
+    });
+    const now = new Date();
+    for (const planId of new Set(moved.map((a) => a.daily_meal_plan_id))) {
+      const plan = await tx.dailyMealPlan.findUnique({
+        where: { id: planId },
+        include: { slots: { include: { meal_template: true } } },
+      });
+      if (!plan) continue;
+      const { coach_id, name, notes, created_at } = plan;
+      const copy = await tx.dailyMealPlan.create({
+        data: { coach_id, name, notes, created_at, archived_at: now },
+      });
+      const frozen = new Map<string, string>();
+      for (const { meal_template: t } of plan.slots) {
+        if (frozen.has(t.id)) continue;
+        const row = await tx.mealTemplate.create({
+          data: {
+            coach_id: t.coach_id,
+            name: t.name,
+            description: t.description,
+            calories_kcal: t.calories_kcal,
+            protein_g: t.protein_g,
+            carbs_g: t.carbs_g,
+            fats_g: t.fats_g,
+            fiber_g: t.fiber_g,
+            ...(t.items !== null && { items: t.items as Prisma.InputJsonValue }),
+            archived_at: now,
+          },
+        });
+        frozen.set(t.id, row.id);
+      }
+      const held = moved.filter((a) => a.daily_meal_plan_id === planId);
+      const clientIds = [...new Set(held.map((a) => a.client_id))];
+      for (const s of plan.slots) {
+        const { id } = await tx.dailyMealPlanSlot.create({
+          data: {
+            daily_meal_plan_id: copy.id,
+            meal_template_id: frozen.get(s.meal_template_id) ?? s.meal_template_id,
+            slot_label: s.slot_label,
+            order: s.order,
+            time_of_day: s.time_of_day,
+          },
+          select: { id: true },
+        });
+        // FOODLINK: the moved clients' meals logged for this slot follow it to the copy, so their plan still
+        // shows them eaten; every other client's links stay on the live slot.
+        await tx.loggedFoodEntry.updateMany({
+          where: { plan_slot_id: s.id, user_id: { in: clientIds } },
+          data: { plan_slot_id: id },
+        });
+      }
+      await tx.dailyMealPlanAssignment.updateMany({
+        where: { id: { in: held.map((a) => a.id) } },
+        data: { daily_meal_plan_id: copy.id },
+      });
+    }
   }
 
   // ─── Assignments ─────────────────────────────────────────────────────
@@ -269,11 +388,38 @@ export class RealMealPlansService {
     });
   }
 
+  // Owner 4: a client who moved to another coach leaves this list at once,
+  // the same client rule as assignPlan (assertClientOfCoach).
   async listAssignmentsForCoach(coachId: string, planId: string) {
     await this.assertPlanOwnedBy(coachId, planId);
     return this.prisma.dailyMealPlanAssignment.findMany({
-      where: { daily_meal_plan_id: planId },
+      where: { daily_meal_plan_id: planId, client: { coach_id: coachId, role: 'student' } },
       orderBy: { starts_on: 'asc' },
+    });
+  }
+
+  // MEALPLAN-END (OWN-1): the coach ends an assignment that listAssignmentsForCoach lists: their live plan,
+  // a client still theirs (owner 4: a moved client's is not theirs to end). ends_on is the client's last
+  // day on it, and ending never extends it. An end before the start leaves no day, so the row goes.
+  async endAssignment(coachId: string, planId: string, assignmentId: string, dto: EndDailyPlanAssignmentDto) {
+    await this.assertPlanOwnedBy(coachId, planId);
+    const where: Prisma.DailyMealPlanAssignmentWhereInput = {
+      id: assignmentId,
+      daily_meal_plan_id: planId,
+      client: { coach_id: coachId, role: 'student' },
+    };
+    if (!(await this.prisma.dailyMealPlanAssignment.findFirst({ where, select: { id: true } }))) {
+      throw new NotFoundException('Assignment not found');
+    }
+    // Each write re-checks its own rule in its WHERE, so two ends at once settle on the earlier day.
+    const endsOn = new Date(dto.ends_on);
+    const removed = await this.prisma.dailyMealPlanAssignment.deleteMany({
+      where: { ...where, starts_on: { gt: endsOn } },
+    });
+    if (removed.count) return;
+    await this.prisma.dailyMealPlanAssignment.updateMany({
+      where: { ...where, OR: [{ ends_on: null }, { ends_on: { gt: endsOn } }] },
+      data: { ends_on: endsOn },
     });
   }
 
@@ -287,6 +433,9 @@ export class RealMealPlansService {
         client_id: clientId,
         starts_on: { lte: today },
         OR: [{ ends_on: null }, { ends_on: { gte: today } }],
+        // MEALPLAN-END (OWN-1): an archive hides a plan from its own coach's client, as GET /meal-plans and
+        // Roman's context do; a moved client keeps an earlier coach's plan, frozen copy included (owner 4).
+        daily_meal_plan: { OR: [{ archived_at: null }, { coach: { students: { none: { id: clientId } } } }] },
       },
       orderBy: { starts_on: 'desc' },
       include: {

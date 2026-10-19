@@ -149,7 +149,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       };
     }
 
-    it('promotes student → coach and creates a unique GP- invite_code', async () => {
+    it('promotes student → coach and creates a unique TGP- invite_code', async () => {
       const { admin, target, profiles } = buildAdmin();
       const result = await admin.promoteUser('owner-1', target.id, 'coach', {
         business_name: 'Jay Fitness',
@@ -157,7 +157,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       });
       expect(result.role).toBe('coach');
       expect(profiles).toHaveLength(1);
-      expect(profiles[0].invite_code).toMatch(/^GP-[A-Z2-9]{6}$/);
+      expect(profiles[0].invite_code).toMatch(/^TGP-[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{7}$/);
       expect(profiles[0].business_name).toBe('Jay Fitness');
       expect(profiles[0].created_by_owner_id).toBe('owner-1');
     });
@@ -208,7 +208,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       expect(policy.invite_code).toEqual({
         min_length: 3,
         max_length: 32,
-        prefix: 'GP-',
+        prefix: 'TGP-',
       });
       // Clinic C13 (Grok C3): the signup-time role picker contract mobile
       // reads on launch. Kill switch SIGNUP_ROLE_CHOICE_ENABLED flips
@@ -257,7 +257,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       });
     });
 
-    it('previewCode hides paused/canceled coaches', async () => {
+    it('TM-P1: previewCode still shows a coach whose old subscription row is paused (no plan lock)', async () => {
       const prisma: any = {
         coachProfile: {
           findUnique: jest.fn(async () => ({
@@ -273,7 +273,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       };
       const inviteCodes = new InviteCodesService(prisma, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       const result = await inviteCodes.previewCode('GP-PAUSED');
-      expect(result).toEqual({ valid: false });
+      expect(result).toMatchObject({ valid: true, coach_id: 'coach-1' });
     });
 
     it('previewCode returns {valid:false} for an unknown code without leaking', async () => {
@@ -369,7 +369,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
 
-    it('refuses to link when the coach is paused', async () => {
+    it('TM-P1: links when the coach\'s old subscription row is paused (no plan lock)', async () => {
       const fake = fakeClientAttach();
       fake._users['student-1'] = {
         id: 'student-1',
@@ -386,7 +386,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       const inviteCodes = new InviteCodesService(fake as any, { capture: jest.fn(), identify: jest.fn() } as any, { send: jest.fn().mockResolvedValue({ status: "logged", providerMessageId: null, idempotencyKey: "stub" }) } as any, { write: jest.fn() } as any);
       await expect(
         inviteCodes.attachUserToCoachByCode('student-1', 'GP-PAUS01'),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).resolves.toMatchObject({ coach_id: 'coach-1' });
     });
   });
 
@@ -471,7 +471,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         coachGuideline: {
           findUnique: jest.fn(async () => ({ content: 'No alcohol on training days.' })),
         },
-        mealPlan: { findFirst: jest.fn(async () => null) },
+        dailyMealPlanAssignment: { findFirst: jest.fn(async () => null) },
         // M1 additions — new models fetched by buildFresh()
         fastingWindow: { findFirst: jest.fn(async () => null) },
         coachingSession: { findFirst: jest.fn(async () => null) },
@@ -543,7 +543,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
           count: jest.fn(async () => 0),
         },
       };
-      const supabase: any = { broadcastNewMessage: jest.fn() };
+      const supabase: any = { pingChat: jest.fn() };
       return {
         svc: new MessagingService(
           prisma,
@@ -565,7 +565,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       const created = await svc.sendAsCoach('coach-1', 'student-1', 'Hey, nice work!');
       expect(created.body).toBe('Hey, nice work!');
       expect(messages).toHaveLength(1);
-      expect(supabase.broadcastNewMessage).toHaveBeenCalledWith('student-1');
+      expect(supabase.pingChat).toHaveBeenCalledWith({ coachId: 'coach-1', clientId: 'student-1' }, 'new-message');
     });
 
     it('coach 404s when targeting a foreign client (no leak)', async () => {
@@ -587,7 +587,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
       };
       const svc = new MessagingService(
         prisma,
-        { broadcastNewMessage: jest.fn() } as any,
+        { pingChat: jest.fn() } as any,
         { capture: jest.fn(), identify: jest.fn() } as any,
         { emit: jest.fn() } as any,
         { emit: jest.fn().mockResolvedValue(undefined) } as any,

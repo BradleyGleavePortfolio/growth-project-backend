@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
-import { isWellFormedInviteCode } from '../invite-codes/invite-codes.service';
+import { inviteCodeLookupCandidates } from '../invite-codes/invite-codes.service';
 import { COACHLESS_ERROR, type CoachlessErrorCode } from './coachless.errors';
 import { publicCoachCardFields } from '../coach/consultation/coach-consultation.vocab';
 
@@ -18,21 +18,15 @@ export type ResolvedCoachCode =
       usedCount: number;
     };
 
-/** Subscription states that let a coach take new clients (mirrors InviteCodesService). */
-export const ACCEPTING_SUBSCRIPTION_STATUSES: ReadonlySet<string> = new Set([
-  'active',
-  'trialing',
-  'grandfathered',
-]);
-
 /**
  * A1-COACHLESS — read-only code lookup shared by the featured-coach config
  * and the redemption route. It never writes and never attaches: the ONE
  * canonical writer stays InviteCodesService.attachUserToCoachByCode.
  *
- * Case: generated codes are upper-case (GP-XXXXXX). The lookup tries the
- * trimmed input exactly first, then its upper-case form, so a client that
- * typed "gp-bradley" resolves to the stored "GP-BRADLEY" while a legacy
+ * Case: generated codes are upper-case (TGP-XXXXXXX, older GP-XXXXXX). The
+ * lookup tries the same typed forms as every other code path
+ * (inviteCodeLookupCandidates: exact, upper-case, dash restored), so
+ * "gp-bradley" and "tgpk7m2qx3" resolve to the stored code while a legacy
  * mixed-case code still resolves exactly.
  */
 @Injectable()
@@ -40,12 +34,11 @@ export class CoachCodeLookupService {
   constructor(private readonly prisma: PrismaService) {}
 
   async resolve(raw: string): Promise<ResolvedCoachCode | null> {
-    const trimmed = typeof raw === 'string' ? raw.trim() : '';
-    if (!isWellFormedInviteCode(trimmed)) return null;
-    const exact = await this.resolveExact(trimmed);
-    if (exact) return exact;
-    const upper = trimmed.toUpperCase();
-    return upper === trimmed ? null : this.resolveExact(upper);
+    for (const code of inviteCodeLookupCandidates(raw)) {
+      const found = await this.resolveExact(code);
+      if (found) return found;
+    }
+    return null;
   }
 
   private async resolveExact(code: string): Promise<ResolvedCoachCode | null> {
@@ -88,7 +81,7 @@ export class CoachCodeLookupService {
   /**
    * Why a NEW redemption of this code would be refused, or null when the code
    * is redeemable as far as the code itself goes. Order: unknown/non-coach ->
-   * revoked -> expired -> exhausted -> coach subscription.
+   * revoked -> expired -> exhausted. No coach plan check (owner TM-P1).
    */
   async refusalFor(
     resolved: ResolvedCoachCode | null,
@@ -102,18 +95,7 @@ export class CoachCodeLookupService {
       if (resolved.maxUses !== null && resolved.usedCount >= resolved.maxUses)
         return COACHLESS_ERROR.CODE_EXHAUSTED;
     }
-    if (!(await this.coachCanAcceptClients(resolved.coachId)))
-      return COACHLESS_ERROR.COACH_NOT_ACCEPTING;
     return null;
-  }
-
-  /** CoachSubscription is authoritative (CoachProfile.subscription_status is a stale mirror). */
-  async coachCanAcceptClients(coachId: string): Promise<boolean> {
-    const sub = await this.prisma.coachSubscription.findUnique({
-      where: { coach_id: coachId },
-      select: { status: true },
-    });
-    return !!sub && ACCEPTING_SUBSCRIPTION_STATUSES.has(sub.status);
   }
 
   /** Public-safe coach card for the attach moment and the banner. */

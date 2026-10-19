@@ -475,6 +475,18 @@ describe('RomanController — POST /roman/sessions/:id/messages (SSE)', () => {
     expect(service.streamAssistantTurn).toHaveBeenCalledTimes(1);
   });
 
+  it('ROMANCOUNT: counted last: a turn refused earlier never counts; a safety reply at the limit is answered', async () => {
+    flagOn();
+    const { ctrl, service, req } = makeController();
+    service.assertCoachPoolOpen.mockRejectedValueOnce(new HttpException({ code: 'X' }, 402));
+    await expect(ctrl.sendMessage(req, makeRes().res, 'sess_1', { content: 'hi' })).rejects.toBeTruthy();
+    service.assertWithinRateLimit.mockRejectedValue(new HttpException({ code: 'ROMAN_RATE_LIMIT' }, 429));
+    service.isSafetyShortCircuit.mockReturnValueOnce(true);
+    await ctrl.sendMessage(req, makeRes().res, 'sess_1', { content: 'hi' });
+    expect(service.assertWithinRateLimit).not.toHaveBeenCalled();
+    expect(service.streamAssistantTurn).toHaveBeenCalledTimes(1);
+  });
+
   it('sets a Retry-After header (RFC 6585) when the rate-limit gate returns 429', async () => {
     flagOn();
     const { ctrl, service, req } = makeController();

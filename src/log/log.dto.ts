@@ -7,6 +7,8 @@ import {
   Min,
   Max,
   MaxLength,
+  IsUUID,
+  IsBoolean,
 } from 'class-validator';
 
 // SECURITY: allow-list DTOs for food-log writes. Previously both endpoints
@@ -64,6 +66,19 @@ export class LogFoodDto {
   @IsString()
   @MaxLength(128)
   client_uuid?: string;
+
+  // FOODLINK: the plan meal (DailyMealPlanSlot.id) this food was logged for, from the Food tab's "Ate it as
+  // planned" or "Something else". Kept only when the slot is in a meal plan assigned to the caller on `date`;
+  // any other id is saved as null, never an error, so an offline entry whose plan changed before it synced
+  // still saves and the answer is the same whether or not another person's slot exists. Not a uuid: 400.
+  @IsOptional()
+  @IsUUID()
+  plan_slot_id?: string;
+
+  // FOODLINK: this food fills a meal of the coachless "Your usual day" (its Repeat or Something else).
+  @IsOptional()
+  @IsBoolean()
+  fills_usual_meal?: boolean;
 }
 
 export class UpdateLogEntryDto {

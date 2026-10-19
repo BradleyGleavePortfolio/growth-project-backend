@@ -25,7 +25,7 @@ export const SIGNUP_DAYS_MAX = 90;
 export class CreateCoachCodeDto {
   @ApiPropertyOptional({
     maxLength: CODE_LABEL_MAX,
-    description: 'Coach-facing name, e.g. "Clinic front desk".',
+    description: 'Coach-facing name, e.g. "Front desk".',
   })
   @IsOptional()
   @IsString()

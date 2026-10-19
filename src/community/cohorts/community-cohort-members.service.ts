@@ -4,15 +4,20 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import type { CommunityCohort, CommunityMembershipRole, User } from '@prisma/client';
+import type {
+  CommunityCohort,
+  CommunityMembershipRole,
+  CommunitySpaceVisibility,
+  User,
+} from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunitySafetyService } from '../safety/community-safety.service';
-import { memberFirstName } from '../member-display-name';
+import { FULL_NAME_VISIBILITY, memberName } from '../member-display-name';
 import {
   AssignTargetScope,
   CommunityCohortMembersRepository,
-  MemberPageCursor,
   MembershipWithUser,
+  SpacePerson,
 } from './community-cohort-members.repository';
 import {
   AssignMemberDto,
@@ -66,6 +71,14 @@ const PRISMA_TO_API_ROLE: Record<CommunityMembershipRole, 'student' | 'co_coach'
   coach: 'coach',
 };
 
+// C6-BVIS: why a client is in a space, by its visibility (k04 "Who has access, and why").
+const ACCESS_REASON: Record<CommunitySpaceVisibility, 'client' | 'package' | 'member'> = {
+  public: 'member',
+  clients: 'client',
+  package: 'package',
+  members: 'member',
+};
+
 /**
  * Cohort membership administration.
  *
@@ -92,54 +105,47 @@ export class CommunityCohortMembersService {
     return Math.min(n, MAX_PAGE);
   }
 
-  /** Opaque keyset cursor: base64url("<iso>|<id>"). Null/garbage → no cursor. */
-  private decodeCursor(raw: string | undefined): MemberPageCursor | null {
-    if (!raw) return null;
-    try {
-      const decoded = Buffer.from(raw, 'base64url').toString('utf8');
-      const sep = decoded.lastIndexOf('|');
-      if (sep <= 0) return null;
-      const iso = decoded.slice(0, sep);
-      const id = decoded.slice(sep + 1);
-      const createdAt = new Date(iso);
-      if (Number.isNaN(createdAt.getTime()) || !id) return null;
-      return { createdAt, id };
-    } catch {
-      return null;
-    }
+  /** Opaque keyset cursor: base64url(user id), the last person of the page. */
+  private decodeCursor(raw: string | undefined): string {
+    return raw ? Buffer.from(raw, 'base64url').toString('utf8') : '';
   }
 
-  private encodeCursor(row: { created_at: Date; id: string }): string {
-    return Buffer.from(`${row.created_at.toISOString()}|${row.id}`, 'utf8').toString('base64url');
+  private encodeCursor(personId: string): string {
+    return Buffer.from(personId, 'utf8').toString('base64url');
   }
 
-  /** Full coach-facing member view (all fields). */
-  private coachView(m: MembershipWithUser): CohortMemberView {
-    return {
-      id: m.id,
-      user_id: m.user_id,
-      display_name: m.user.name,
-      role: PRISMA_TO_API_ROLE[m.role],
-      status: m.status,
-      email: m.user.email,
-      joined_at: m.joined_at?.toISOString() ?? null,
-    };
+  /** A row the routes below return, as a roster person. */
+  private person(m: MembershipWithUser): SpacePerson {
+    return { id: m.user_id, name: m.user.name, email: m.user.email, row: m };
   }
 
   /**
-   * Sanitized roster view for a non-coach member (no PII/status). Client
-   * privacy: other members see first names only.
+   * The coach sees every field and, on the roster, why the person is in
+   * (C6-BVIS; `access` is null where it is not worked out). Anyone else sees
+   * the name and role only (client privacy): the first name, or the full name
+   * where `fullName` says so (#C6-MEMBER-NAMES).
    */
-  private rosterView(m: MembershipWithUser): CohortMemberView {
+  private memberView(
+    p: SpacePerson,
+    coachView: boolean,
+    role: CohortMemberView['role'],
+    access: CohortMemberView['access'] = null,
+    fullName = false,
+  ): CohortMemberView {
     return {
-      id: m.id,
-      user_id: m.user_id,
-      display_name: memberFirstName(m.user.name),
-      role: PRISMA_TO_API_ROLE[m.role],
-      status: null,
-      email: null,
-      joined_at: null,
+      id: p.row?.id ?? null,
+      user_id: p.id,
+      display_name: coachView ? p.name : memberName(p.name, fullName),
+      role,
+      status: coachView ? (p.row?.status ?? 'active') : null,
+      email: coachView ? p.email : null,
+      joined_at: coachView ? (p.row?.joined_at?.toISOString() ?? null) : null,
+      access: coachView ? access : null,
     };
+  }
+
+  private coachView(m: MembershipWithUser): CohortMemberView {
+    return this.memberView(this.person(m), true, PRISMA_TO_API_ROLE[m.role]);
   }
 
   private async resolveCohortOrThrow(cohortId: string): Promise<CommunityCohort> {
@@ -161,7 +167,7 @@ export class CommunityCohortMembersService {
   /**
    * Who a cohort assignment may target. `null` (no restriction) only for the
    * platform owner; every coach is limited to the workspace coach's live
-   * roster plus people already active in the workspace.
+   * roster plus the workspace's team (active co-coach rows; C6-BVIS).
    */
   private async assignScope(workspaceId: string, user: User): Promise<AssignTargetScope | null> {
     if (user.role === 'owner') return null;
@@ -177,43 +183,42 @@ export class CommunityCohortMembersService {
   ): Promise<CohortMemberListResponse> {
     const cohort = await this.resolveCohortOrThrow(cohortId);
     const isCoach = await this.isWorkspaceCoach(cohort.workspace_id, user);
-    if (!isCoach) {
-      // A non-coach may read the roster only if they are an ACTIVE member of
-      // this exact cohort. A foreign cohort id resolves to 404 (non-leak).
-      const membership = await this.access.membershipInCohort(cohort.id, user.id);
-      if (membership?.status !== 'active') {
-        throw new NotFoundException(NOT_FOUND);
-      }
+    // C6-BVIS: a non-coach reads the roster while the rule lets them into the
+    // space, row or not; anyone else gets 404, like a foreign id (non-leak).
+    if (!isCoach && !(await this.access.canAccessCohort(cohort, user))) {
+      throw new NotFoundException(NOT_FOUND);
     }
 
+    const coachId = (await this.access.findWorkspace(cohort.workspace_id))?.coach_id;
+    const roleOf = (p: SpacePerson) =>
+      p.row ? PRISMA_TO_API_ROLE[p.row.role] : p.id === coachId ? 'coach' : 'student';
+    const after = this.decodeCursor(query.cursor);
     const limit = this.parseLimit(query.limit);
-    const roleFilter: CommunityMembershipRole | null =
-      query.role === 'co_coach'
-        ? 'assistant'
-        : query.role === 'student'
-          ? 'student'
-          : query.role === 'coach'
-            ? 'coach'
-            : null;
-
-    const rows = await this.repo.listMembers({
-      cohortId: cohort.id,
-      limit,
-      cursor: this.decodeCursor(query.cursor),
-      roleFilter,
-    });
-    const nextCursor = rows.length === limit ? this.encodeCursor(rows[rows.length - 1]) : null;
+    const page = (await this.repo.people(cohort))
+      .filter((p) => p.id > after && (!query.role || roleOf(p) === query.role))
+      .slice(0, limit);
 
     // Two-way block on the member roster: a member does not see people they
     // blocked or who blocked them. The coach's management view stays complete
     // (the coach administers every membership; moderation and ban act on it).
-    const visible = isCoach
-      ? rows
-      : await this.safety.filterBlocked(user.id, rows, (m) => m.user_id);
+    const visible = isCoach ? page : await this.safety.filterBlocked(user.id, page, (p) => p.id);
+    const bought =
+      isCoach && coachId && cohort.visibility === 'package'
+        ? await this.repo.packageAccess(cohort.id, coachId, page.map((p) => p.id))
+        : new Map<string, { package_id: string; until: Date | null }>();
+    const why = (p: SpacePerson, role: CohortMemberView['role']): CohortMemberView['access'] => {
+      const reason =
+        p.id === coachId ? 'coach' : role !== 'student' ? 'team' : ACCESS_REASON[cohort.visibility];
+      const sale = reason === 'package' ? bought.get(p.id) : undefined;
+      return { reason, package_id: sale?.package_id ?? null, until: sale?.until?.toISOString() ?? null };
+    };
 
+    // #C6-MEMBER-NAMES: in a space open to all of the coach's clients, the people in it see each
+    // other's full names; every other space keeps first names. Only readers the rule lets in get here.
+    const fullNames = cohort.visibility === FULL_NAME_VISIBILITY;
     return CohortMemberListResponseSchema.parse({
-      members: visible.map((m) => (isCoach ? this.coachView(m) : this.rosterView(m))),
-      next_cursor: nextCursor,
+      members: visible.map((p) => this.memberView(p, isCoach, roleOf(p), why(p, roleOf(p)), fullNames)),
+      next_cursor: page.length === limit ? this.encodeCursor(page[page.length - 1].id) : null,
     });
   }
 
@@ -232,7 +237,7 @@ export class CommunityCohortMembersService {
     const prismaRole = API_TO_PRISMA_ROLE[body.role];
 
     // B-AUTHZ-1: the target must already belong to this coach's world (their
-    // live client roster, or an active member of this workspace) before any
+    // live client roster, or the workspace's team; C6-BVIS) before any
     // lookup data is returned or any membership/ban row changes. A foreign or
     // unknown target gets the same coded 404, so the endpoint never confirms
     // that another coach's client exists. The platform owner may override.
@@ -283,6 +288,13 @@ export class CommunityCohortMembersService {
 
     const membership = await this.repo.findMembership(cohort.id, userId);
     if (!membership) throw new NotFoundException(NOT_FOUND);
+    // C6-BVIS: an open row the rule does not list answers like no row, before any name or email.
+    if (
+      membership.status !== 'removed' &&
+      (await this.access.peopleInSpace(cohort.id, [membership], (m) => m.user_id)).length === 0
+    ) {
+      throw new NotFoundException(NOT_FOUND);
+    }
 
     // Never strip the owning coach's own membership (the `coach` role row).
     // Removing it would orphan the cohort. 403 regardless of who asks.

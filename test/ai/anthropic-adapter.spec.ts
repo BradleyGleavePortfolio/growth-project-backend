@@ -24,7 +24,7 @@ import { clientDataSubject } from '../../src/ai-egress/ai-egress.types';
 
 // R2b — every call names its data subject; these cases hold a live grant.
 const GRANTED_CLIENT = {
-  dataSubject: clientDataSubject('u1', 'coach'),
+  dataSubject: clientDataSubject('u1', 'coach', 'base', 'coach-1'),
   surface: 'coach_ai.workout_program' as const,
 };
 

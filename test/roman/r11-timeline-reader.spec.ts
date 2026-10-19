@@ -20,6 +20,7 @@ import {
 } from '../../src/roman/context/roman-coach-scope';
 import { localDayStart } from '../../src/roman/context/roman-client-context.service';
 import { matches } from './fixtures/roman-personas';
+import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
 
 type Row = Record<string, any>;
 const TZ = 'America/Los_Angeles';
@@ -158,6 +159,7 @@ function makeDb() {
   const reader = new RomanTimelineReader(
     // @ts-expect-error partial structural Prisma double: only the delegates the reader issues are stubbed.
     prisma,
+    grantAllEgress(),
   );
   return { reader, users, tables, log };
 }
@@ -171,6 +173,8 @@ const COACH_KINDS: RomanTimelineKind[] = [
   'adjustment',
   'activity',
 ];
+// HIST3 (owner 4b): only the current coach's thread and its message marker.
+const THREAD_KINDS: RomanTimelineKind[] = ['message', 'activity'];
 
 describe('R11-M2 timeline reader — tenancy per kind', () => {
   it('reads every kind for A and none of B (same coach), and every query is scoped to A', async () => {
@@ -233,30 +237,32 @@ describe('R11-M2 timeline reader — tenancy per kind', () => {
     });
   });
 
-  it("drops a former coach's assignments and messages, and the old coach's rows after reassignment", async () => {
+  it("HIST3: a former coach's plan rows follow the client; only the current coach's thread is read", async () => {
     const db = makeDb();
     const before = await db.reader.read(A, { from: FROM, to: TO, now: NOW });
-    expect(ids(before.events)).not.toContain('a-as-old');
-    expect(ids(before.events)).not.toContain('a-m-old');
-    expect(ids(before.events)).toContain('a-as-done'); // open sub-coach delegation of the current coach
-    // Reassign A to a new coach: every coach-1 row drops, A's own logs stay.
+    expect(ids(before.events)).toContain('a-as-old'); // an earlier coach's workout: A's history
+    expect(ids(before.events)).not.toContain('a-m-old'); // an earlier coach's chat: never (4b)
+    expect(ids(before.events)).toContain('a-as-done');
+    // Reassign A to a new coach: coach-1's thread and marker drop; what A was
+    // given (workouts, sessions, adjustments) and A's own logs stay.
     db.users[0].coach = coach('coach-2');
     const after = await db.reader.read(A, { from: FROM, to: TO, now: NOW });
-    for (const k of COACH_KINDS) expect(kindsOf(after.events).has(k)).toBe(false);
-    expect(ids(after.events)).not.toContain('a-as-done');
+    for (const k of THREAD_KINDS) expect(kindsOf(after.events).has(k)).toBe(false);
+    for (const id of ['a-as-done', 'a-as-missed', 'a-as-old', 'a-bk1', 'a-adj1']) {
+      expect(ids(after.events)).toContain(id);
+    }
+    expect(JSON.stringify(after)).not.toContain('NOTES-CANARY');
     for (const k of ['food_day', 'weight', 'water', 'habit', 'check_in', 'wearable_day'] as const) {
       expect(kindsOf(after.events).has(k)).toBe(true);
     }
   });
 
-  it('a soft-deleted coach or a non-student gets no coach-owned rows; a deleted client reads nothing', async () => {
+  it('a soft-deleted coach drops the thread only; a non-student gets no coach-owned rows; a deleted client reads nothing', async () => {
     const db = makeDb();
     db.users[0].coach = coach('coach-1', T('2026-10-01T00:00:00Z'));
-    expect(
-      [...kindsOf((await db.reader.read(A, { from: FROM, to: TO, now: NOW })).events)].some((k) =>
-        COACH_KINDS.includes(k),
-      ),
-    ).toBe(false);
+    const orphan = kindsOf((await db.reader.read(A, { from: FROM, to: TO, now: NOW })).events);
+    expect(THREAD_KINDS.some((k) => orphan.has(k))).toBe(false);
+    expect(orphan.has('workout_missed')).toBe(true);
     db.users[0].coach = coach('coach-1');
     db.users[0].role = 'coach';
     expect(

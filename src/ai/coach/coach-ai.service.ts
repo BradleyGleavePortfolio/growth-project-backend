@@ -275,7 +275,7 @@ export class CoachAIService {
         clientId: input.clientId,
         // R2b — the client's live box-2 grant is required (after the
         // ownership check above, so the refusal is no cross-tenant oracle).
-        dataSubject: clientDataSubject(input.clientId, 'coach'),
+        dataSubject: clientDataSubject(input.clientId, 'coach', 'base', coachId),
         surface: 'coach_ai.workout_program',
         maxTokens: 4096,
       },
@@ -332,7 +332,7 @@ export class CoachAIService {
         clientId: input.clientId,
         // R2b — the client's live box-2 grant is required (after the
         // ownership check above, so the refusal is no cross-tenant oracle).
-        dataSubject: clientDataSubject(input.clientId, 'coach'),
+        dataSubject: clientDataSubject(input.clientId, 'coach', 'base', coachId),
         surface: 'coach_ai.meal_plan',
         maxTokens: 4096,
       },
@@ -385,7 +385,7 @@ export class CoachAIService {
         clientId: input.clientId,
         // R2b — the client's live box-2 grant is required (after the
         // ownership check above, so the refusal is no cross-tenant oracle).
-        dataSubject: clientDataSubject(input.clientId, 'coach'),
+        dataSubject: clientDataSubject(input.clientId, 'coach', 'base', coachId),
         surface: 'coach_ai.insight',
         maxTokens: 1024,
       },

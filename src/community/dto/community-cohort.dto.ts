@@ -3,6 +3,7 @@ import {
   CommunityMemberRoleSchema,
   CommunityNotifyLevelSchema,
 } from './community-me.dto';
+import { POSTING_POLICIES, SPACE_KINDS, SPACE_VISIBILITIES } from '../cohorts/community-cohort.dto';
 
 export const CommunityCohortParamsSchema = z
   .object({
@@ -18,6 +19,9 @@ const CommunityCohortSummarySchema = z
     workspace_id: z.guid(),
     name: z.string(),
     is_default: z.boolean(),
+    kind: z.enum(SPACE_KINDS),
+    posting_policy: z.enum(POSTING_POLICIES),
+    visibility: z.enum(SPACE_VISIBILITIES),
     member_count: z.number().int().nonnegative(),
     my_role: CommunityMemberRoleSchema,
   })
@@ -41,6 +45,10 @@ export const CommunityCohortResponseSchema = z
     workspace_id: z.guid(),
     name: z.string(),
     is_default: z.boolean(),
+    kind: z.enum(SPACE_KINDS),
+    posting_policy: z.enum(POSTING_POLICIES),
+    visibility: z.enum(SPACE_VISIBILITIES),
+    package_ids: z.array(z.string()).nullable(), // C6-ACCESS: the coach's view only; null to a member
     member_count: z.number().int().nonnegative(),
     created_at: z.string().datetime(),
     my_membership: z

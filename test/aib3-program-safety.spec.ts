@@ -130,7 +130,7 @@ describe('B-AIB3-126 — per-client program generator', () => {
   it('box-2 consent gate unchanged: the client is the data subject; no grant -> 403 and no draft', async () => {
     const ok = buildGenerator();
     await ok.svc.generateWorkoutProgram('coach1', { clientId: 'client1', weeks: 1, daysPerWeek: 1 });
-    expect(ok.completeStructured.mock.calls[0][2].dataSubject).toEqual(clientDataSubject('client1', 'coach'));
+    expect(ok.completeStructured.mock.calls[0][2].dataSubject).toEqual(clientDataSubject('client1', 'coach', 'base', 'coach1'));
     const denied = buildGenerator([]);
     const call = denied.svc.generateWorkoutProgram('coach1', { clientId: 'client1', weeks: 1, daysPerWeek: 1 });
     await expect(call).rejects.toBeInstanceOf(AiConsentRequiredException);

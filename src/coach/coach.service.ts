@@ -1,9 +1,13 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuditAction, AuditService } from '../audit/audit.service';
 import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../consent/consent.service';
+import { weightIfShared } from '../consent/coach-sharing-gate';
+import { resolveRecipientTimeZone } from '../notifications/recipient-timezone';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
+import { clientWeek } from './client-week';
+import { ROMAN_SAFETY_ALERT_TYPES } from './coach-alerts.service';
 
 // Concrete payload shapes for the timeline/summary slices below. These
 // derive their structure from the Prisma findMany calls so adding columns
@@ -12,8 +16,11 @@ type LoggedFoodEntryWithFood = Prisma.LoggedFoodEntryGetPayload<{
   include: { food_item: true };
 }>;
 type WorkoutSessionWithExercises = Prisma.WorkoutSessionGetPayload<{
-  include: { exercises: true };
+  include: { exercises: true; comments: { select: { body: true; updated_at: true } } };
 }>;
+// TRAIN-BE2: a workout's comment from the caller only; a new coach never reads a former coach's.
+const ownComment = (coachId: string) =>
+  ({ where: { coach_id: coachId }, select: { body: true, updated_at: true } }) as const;
 type WeightLogRow = Prisma.WeightLogGetPayload<Record<string, never>>;
 type CheckInRow = Prisma.CheckInGetPayload<Record<string, never>>;
 
@@ -306,36 +313,16 @@ export class CoachService {
     });
   }
 
-  // Batch form of loadFitnessConsents for one roster page: one query, the same
-  // rule as ConsentService.coachCanAccess (owner bypass; otherwise a granted
-  // row for this coach, client and scope). No ConsentService (legacy unit
+  // Batch form of loadFitnessConsents for one roster page, by the same rule
+  // (ConsentService.grantedScopesByClient). No ConsentService (legacy unit
   // tests) means every scope is granted, as in loadFitnessConsents.
   private async rosterFitnessConsents(
     coachId: string,
     clientIds: string[],
     callerRole?: string,
   ): Promise<Map<string, Set<string>>> {
-    const fitness = [
-      ConsentScope.FITNESS_WORKOUTS,
-      ConsentScope.FITNESS_FOOD_MACROS,
-      ConsentScope.FITNESS_BODY_METRICS,
-      ConsentScope.FITNESS_HABITS_PROGRESS,
-    ] as string[];
-    if (callerRole === 'owner' || !this.consent) {
-      return new Map(clientIds.map((id) => [id, new Set(fitness)]));
-    }
-    const consentRows = await this.prisma.clientCoachConsent.findMany({
-      where: { coach_id: coachId, client_id: { in: clientIds }, scope: { in: fitness } },
-      select: { client_id: true, scope: true, granted_at: true, revoked_at: true },
-    });
-    const out = new Map<string, Set<string>>();
-    for (const r of consentRows) {
-      if (!ConsentService.rowIsGranted(r)) continue;
-      const set = out.get(r.client_id) ?? new Set<string>();
-      set.add(r.scope);
-      out.set(r.client_id, set);
-    }
-    return out;
+    if (!this.consent) return new Map(clientIds.map((id) => [id, new Set(COACH_FITNESS_SCOPES)]));
+    return this.consent.grantedScopesByClient(coachId, clientIds, COACH_FITNESS_SCOPES, callerRole);
   }
 
   // CF-SHARE-GATE-128: per-switch client ids for the roster-wide dashboards
@@ -490,7 +477,7 @@ export class CoachService {
     // timeline still renders. Owners bypass the check.
     const flags = await this.loadFitnessConsents(coachId, clientId, callerRole);
 
-    const [meals, workouts, weights, checkIns] = await Promise.all([
+    const [meals, workouts, weights, sharedCheckIns] = await Promise.all([
       flags.food
         ? this.prisma.loggedFoodEntry.findMany({
             // Use `date` (the actual eat date the user recorded) for timeline
@@ -511,7 +498,7 @@ export class CoachService {
       flags.workouts
         ? this.prisma.workoutSession.findMany({
             where: { user_id: clientId, created_at: { gte: ninetyDaysAgo } },
-            include: { exercises: true },
+            include: { exercises: true, comments: ownComment(coachId) },
             orderBy: { created_at: 'desc' },
             take: 100,
             ...(opts.workoutsCursor ? { cursor: { id: opts.workoutsCursor }, skip: 1 } : {}),
@@ -534,6 +521,8 @@ export class CoachService {
           })
         : Promise.resolve<CheckInRow[]>([]),
     ]);
+    // C8-S: a check-in's weight follows Weigh-ins, not Check-ins and habits (rows and events alike).
+    const checkIns = sharedCheckIns.map((c) => weightIfShared(c, flags.bodyMetrics));
 
     const events: Array<{ type: string; date: Date; ref: unknown }> = [
       // Use `date` (eat date) not `logged_at` (sync timestamp) for timeline
@@ -557,6 +546,69 @@ export class CoachService {
         body_metrics: flags.bodyMetrics,
         habits_progress: flags.habitsProgress,
       },
+    };
+  }
+
+  /**
+   * K1WEEK: one client's workout assignments this week, for the client file's
+   * This week ring (planning/MOCKUP3/K1, Style C). The summary sends only the
+   * 20 latest, so a delivered program's future days pushed this week out.
+   * The week is Monday to Sunday in the CLIENT's time zone (their phone's,
+   * else their coach's), so the coach's ring is the one the client lives: a
+   * session is missed only once the client's own day is over. Then the
+   * caller's own zone, then Pacific (the coach brief's last resort). Same
+   * gates as the summary: the client must be the caller's now (head coach, or
+   * a sub-coach with an open delegation), else 404, so a former or another
+   * coach reads nothing; the Workouts switch off returns shared: false and no
+   * rows. Every assignment counts, whoever made it: history follows the client.
+   */
+  async getClientWeek(
+    coachId: string,
+    clientId: string,
+    callerRole?: string,
+    auditCtx: AuditContext = {},
+    now: Date = new Date(),
+  ) {
+    const scope = await this.scopeClientsBy(coachId, callerRole);
+    const client = await this.prisma.user.findFirst({
+      where: { AND: [{ id: clientId, role: 'student', deleted_at: null }, scope] },
+      select: { id: true },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    void this.audit.write({
+      action: AuditAction.COACH_VIEWED_CLIENT_DATA,
+      actorId: coachId,
+      actorRole: callerRole ?? 'coach',
+      targetUserId: clientId,
+      targetType: 'user',
+      targetId: clientId,
+      tenantCoachId: coachId,
+      ip: auditCtx.ip ?? null,
+      userAgent: auditCtx.userAgent ?? null,
+      metadata: { view: 'week' },
+    });
+
+    const [zone, { workouts: shared }] = await Promise.all([
+      resolveRecipientTimeZone(this.prisma, clientId),
+      this.loadFitnessConsents(coachId, clientId, callerRole),
+    ]);
+    const week = clientWeek(
+      now,
+      zone ?? (await resolveRecipientTimeZone(this.prisma, coachId)) ?? 'America/Los_Angeles',
+    );
+    const rows = shared
+      ? await this.prisma.clientWorkoutAssignment.findMany({
+          where: { client_id: clientId, scheduled_for: { gte: week.from, lt: week.to } },
+          select: { id: true, scheduled_for: true, completed_at: true, skipped_at: true },
+          orderBy: [{ scheduled_for: 'asc' }, { id: 'asc' }],
+        })
+      : [];
+    return {
+      week_start: week.start,
+      today: week.today,
+      shared,
+      assignments: rows.map((r) => ({ ...r, day: week.dayOf(r.scheduled_for) })),
     };
   }
 
@@ -624,6 +676,40 @@ export class CoachService {
     return { description: row.content, created_at: row.created_at, updated_at: row.updated_at };
   }
 
+  /**
+   * TRAIN-BE2 (Coach's page, plan C2): the caller's own comment on a client's logged workout;
+   * `body` null removes it. The timeline's gates: the client is the caller's now and shares
+   * Workouts, else 404. The client reads it on the exercise detail's Your history.
+   */
+  async setWorkoutComment(
+    coachId: string,
+    clientId: string,
+    workoutId: string,
+    body: string | null,
+    callerRole?: string,
+  ) {
+    const scope = await this.scopeClientsBy(coachId, callerRole);
+    const [workout, flags] = await Promise.all([
+      this.prisma.workoutSession.findFirst({
+        where: { id: workoutId, user: { AND: [{ id: clientId }, scope] } },
+        select: { id: true },
+      }),
+      this.loadFitnessConsents(coachId, clientId, callerRole),
+    ]);
+    if (!workout || !flags.workouts) throw new NotFoundException('Workout not found');
+    const key = { workout_id: workoutId, coach_id: coachId };
+    if (body === null) {
+      await this.prisma.workoutComment.deleteMany({ where: key });
+      return { workout_id: workoutId, body: null };
+    }
+    return this.prisma.workoutComment.upsert({
+      where: { workout_id_coach_id: key },
+      create: { ...key, body },
+      update: { body },
+      select: { workout_id: true, body: true, updated_at: true },
+    });
+  }
+
   async getClientSummary(
     coachId: string,
     clientId: string,
@@ -660,7 +746,7 @@ export class CoachService {
     // Per-scope consent gating, same shape as getClientTimeline.
     const flags = await this.loadFitnessConsents(coachId, clientId, callerRole);
 
-    const [todayEntries, weightLogs, recentWorkouts, recentAssignments] = await Promise.all([
+    const [todayEntries, weightLogs, recentWorkouts, recentAssignments, safetyAlert] = await Promise.all([
       flags.food
         ? this.prisma.loggedFoodEntry.findMany({
             // Filter by `date` (eat date) not `logged_at` (server sync time)
@@ -680,7 +766,7 @@ export class CoachService {
       flags.workouts
         ? this.prisma.workoutSession.findMany({
             where: { user_id: clientId },
-            include: { exercises: true },
+            include: { exercises: true, comments: ownComment(coachId) },
             orderBy: { created_at: 'desc' },
             take: 10,
           })
@@ -695,6 +781,21 @@ export class CoachService {
             take: 20,
           })
         : Promise.resolve([]),
+      // CRISIS-2B: the newest open Roman safety alert, for the client's coach
+      // now only (the alert card's rule: written to this coach, not dismissed).
+      // An assistant coach, an owner or a former coach reads null.
+      client.coach_id === coachId
+        ? this.prisma.coachAlert.findFirst({
+            where: {
+              client_id: clientId,
+              coach_id: coachId,
+              alert_type: { in: [...ROMAN_SAFETY_ALERT_TYPES] },
+              acknowledged_at: null,
+            },
+            orderBy: { created_at: 'desc' },
+            select: { id: true, alert_type: true, created_at: true },
+          })
+        : Promise.resolve(null),
     ]);
 
     let total_calories = 0, total_protein_g = 0, total_carbs_g = 0, total_fat_g = 0;
@@ -728,6 +829,14 @@ export class CoachService {
         body_metrics: flags.bodyMetrics,
         habits_progress: flags.habitsProgress,
       },
+      // Ids and a type only, never the client's words.
+      open_safety_alert: safetyAlert
+        ? {
+            alert_id: safetyAlert.id,
+            alert_type: safetyAlert.alert_type,
+            created_at: safetyAlert.created_at,
+          }
+        : null,
     };
   }
 

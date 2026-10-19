@@ -179,6 +179,8 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'checkout/payment-method/setup-intent',
   'checkout/purchases',
   'checkout/purchases/:purchaseid/drops',
+  'checkout/receipts', // ClientReceiptsController — the client's own receipts (C5RECEIPTS)
+  'checkout/receipts/:receiptid',
   'checkout/sessions',
   'checkout/sessions/:sessionid/confirm',
   'checkout/subscription-intent', // B-RECUR SubscriptionCheckoutController (native subscriptions)
@@ -217,8 +219,8 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
 // @OpenToCoachlessClient() stays reachable while locked, except AI guidance
 // (/ai/*), which stays locked like Roman and every paid value surface. Reviewed
 // one by one: each is the client's own logging (food, with /foods search,
-// barcode and manual entry; water, weight, habits, workouts, fasting),
-// targets, plans, check-ins or insights. A new marked route
+// barcode and manual entry, /me/foods favourites and saved meals; water, weight, habits, workouts, fasting),
+// targets, plans, check-ins, insights, or the coach's guidelines and lessons. A new marked route
 // turns this red on purpose.
 const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'DELETE fasting/:id FastingController',
@@ -234,17 +236,31 @@ const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'GET assignments/:assignmentid AssignmentController',
   'GET assignments/me AssignmentController',
   'GET check-ins ClientCheckInsController',
+  // #LEARN-LOCK op 1: the coach's guidelines and lessons never lock.
+  'GET coach/my-guidelines ClientGuidelinesController',
+  'GET lessons LessonsController',
+  'GET lessons/recommended LessonsController',
+  'POST lessons/:id/complete LessonsController',
   'GET check-ins/:id ClientCheckInsController',
   'GET fasting/history FastingController',
   'GET habits HabitsController',
   'GET habits/logs HabitsController',
-  'GET habits/streaks HabitsController',
+  'GET habits/summary HabitsController',
   'GET insights/holistic HolisticInsightsController',
   'GET log/daily LogController',
   'GET log/weekly LogController',
   'GET me/macros/current ClientMacrosController',
   'GET me/meal-plan ClientMealPlanAliasController',
   'GET me/meal-plan/today ClientMealPlanController',
+  // FOODSAVED: the client's own favourite foods and saved meals (food logging).
+  'GET me/foods/favorites SavedFoodsController',
+  'POST me/foods/favorites SavedFoodsController',
+  'DELETE me/foods/favorites/:fooditemid SavedFoodsController',
+  'GET me/foods/saved-meals SavedFoodsController',
+  'POST me/foods/saved-meals SavedFoodsController',
+  'PATCH me/foods/saved-meals/:id SavedFoodsController',
+  'DELETE me/foods/saved-meals/:id SavedFoodsController',
+  'POST me/foods/saved-meals/:id/log SavedFoodsController',
   'GET meal-plans ClientMealPlansController',
   'GET meal-plans/:id ClientMealPlansController',
   'GET nutrition/water WaterController',
@@ -253,7 +269,10 @@ const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'GET weight/history WeightController',
   'GET workouts WorkoutController',
   'GET workouts/volume WorkoutController',
+  'GET workouts/exercise-history WorkoutController', // TRAIN-BE2: the client's own exercise history
+  'PATCH assignments/:assignmentid AssignmentController', // C1V2-C1: the client moves or skips their own day
   'PATCH assignments/:assignmentid/complete AssignmentController',
+  'PATCH habits/:id HabitsController',
   'PATCH weight/:id WeightController',
   'POST check-ins ClientCheckInsController',
   'POST fasting/end FastingController',

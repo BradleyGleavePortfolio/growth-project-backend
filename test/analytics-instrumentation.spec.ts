@@ -164,7 +164,7 @@ describe('analytics instrumentation — messaging', () => {
         }),
       },
     };
-    const supabase: any = { broadcastNewMessage: jest.fn() };
+    const supabase: any = { pingChat: jest.fn() };
     const ptm: any = { emit: jest.fn() };
     const messageReceived: any = { emit: jest.fn().mockResolvedValue(undefined) };
     const audit: any = { write: jest.fn().mockResolvedValue(undefined) };

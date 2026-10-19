@@ -48,17 +48,17 @@ describe('CommunityCohortMembersRepository.findUserByEmail', () => {
   });
 
   // B-AUTHZ-1: a scoped lookup only resolves the workspace coach's live
-  // clients or people already active in the workspace.
+  // clients or the workspace's team (C6-BVIS: not an active client row).
   const SCOPE = { workspaceId: 'ws-1', coachId: 'coach-1' };
   const SCOPED_FILTER = {
     deleted_at: null,
     OR: [
       { coach_id: 'coach-1' },
-      { community_memberships: { some: { workspace_id: 'ws-1', status: 'active' } } },
+      { community_memberships: { some: { workspace_id: 'ws-1', status: 'active', role: { not: 'student' } } } },
     ],
   };
 
-  it('scopes an email lookup to the coach roster or active workspace members', async () => {
+  it('scopes an email lookup to the coach roster or the workspace team', async () => {
     prisma.user.findFirst.mockResolvedValue(null);
     await repo.findUserByEmail('jane@example.com', SCOPE);
     expect(prisma.user.findFirst).toHaveBeenCalledWith({

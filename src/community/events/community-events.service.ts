@@ -276,7 +276,7 @@ export class CommunityEventsService {
     } else if (isPrivileged) {
       cohortScope = null;
     } else {
-      const accessibleCohortIds = await this.events.activeCohortIds(workspaceId, user.id);
+      const accessibleCohortIds = await this.access.listAccessibleCohortIds(workspaceId, user.id);
       cohortScope = { accessibleCohortIds };
     }
 
@@ -548,8 +548,13 @@ export class CommunityEventsService {
     const membership = event.cohort_id
       ? await this.access.membershipInCohort(event.cohort_id, user.id)
       : await this.access.membershipInWorkspace(event.workspace_id, user.id);
+    // C6-BVIS: a client a clients or package space lets in with no row RSVPs there as a student.
+    const rowless =
+      !!event.cohort_id &&
+      membership === null &&
+      (await this.access.canAccessCohort({ id: event.cohort_id, workspace_id: event.workspace_id }, user));
     const activeStudentMember =
-      membership !== null && membership.status === 'active' && membership.role === 'student';
+      rowless || (membership !== null && membership.status === 'active' && membership.role === 'student');
     if (privilegedRole || owningCoach || !activeStudentMember) {
       throw new ForbiddenException({
         error: 'forbidden',
@@ -587,7 +592,7 @@ export class CommunityEventsService {
   ): void {
     if (fromState === toState) return;
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.event(event.id),
+      { workspaceId: event.workspace_id, cohortId: event.cohort_id },
       COMMUNITY_BROADCAST_EVENTS.eventStateChanged,
       {
         eventId: event.id,
@@ -607,7 +612,7 @@ export class CommunityEventsService {
    */
   private broadcastCreated(event: CommunityEvent): void {
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.event(event.id),
+      { workspaceId: event.workspace_id, cohortId: event.cohort_id },
       COMMUNITY_BROADCAST_EVENTS.eventCreated,
       {
         eventId: event.id,
@@ -626,7 +631,7 @@ export class CommunityEventsService {
    */
   private broadcastRsvpChanged(event: CommunityEvent): void {
     void this.realtime.broadcastCommunityEvent(
-      this.realtime.channels.event(event.id),
+      { workspaceId: event.workspace_id, cohortId: event.cohort_id },
       COMMUNITY_BROADCAST_EVENTS.eventRsvpChanged,
       {
         eventId: event.id,
@@ -721,8 +726,9 @@ export class CommunityEventsService {
     // Two-way block: never page someone about an event created by a person
     // they blocked or who blocked them (they can no longer see the event).
     const hidden = await this.safety.hiddenFromViewer(event.created_by_id);
+    const readers = await this.access.readersOf(event.workspace_id, event.cohort_id, claimed.map((r) => r.user_id));
     for (const r of claimed) {
-      if (hidden.has(r.user_id)) continue;
+      if (hidden.has(r.user_id) || !readers.includes(r.user_id)) continue;
       void this.communityPush.sendCommunityPush({
         recipientId: r.user_id,
         kind: NotificationKind.COMMUNITY_EVENT_STARTING_SOON,

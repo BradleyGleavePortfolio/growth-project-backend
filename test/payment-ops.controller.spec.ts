@@ -150,6 +150,8 @@ function makePrismaStub() {
     teamSubCoachAssignment: {
       findFirst: jest.fn(async () => null),
     },
+    // CONTRACT-1: no client here has moved away from their coach.
+    user: { findMany: jest.fn(async () => []) },
   };
 }
 

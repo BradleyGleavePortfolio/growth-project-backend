@@ -29,6 +29,15 @@ function sign(payload: string): string {
   return `t=${t},v1=${sig}`;
 }
 
+// Mux signs the exact bytes it sends; here those bytes are JSON.stringify(body).
+function deliver(
+  controller: MuxWebhookController,
+  body: Parameters<MuxWebhookController['receive']>[1],
+) {
+  const raw = JSON.stringify(body);
+  return controller.receive({ rawBody: Buffer.from(raw) }, body, sign(raw));
+}
+
 function build() {
   const updateMany = jest.fn(async () => ({ count: 1 }));
   const update = jest.fn(async () => undefined);
@@ -48,7 +57,7 @@ describe('Mux webhook monotonic state machine (P0)', () => {
       type: 'video.asset.errored',
       data: { id: 'asset_x', errors: { type: 'invalid_input' } },
     };
-    await controller.receive(body, sign(JSON.stringify(body)));
+    await deliver(controller, body);
     expect(updateMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({
@@ -70,7 +79,7 @@ describe('Mux webhook monotonic state machine (P0)', () => {
       type: 'video.asset.errored',
       data: { id: 'asset_ready', errors: { messages: ['stale'] } },
     };
-    const res = await controller.receive(body, sign(JSON.stringify(body)));
+    const res = await deliver(controller, body);
     expect(res).toEqual({ received: true });
     // No second update call should clear the playback id.
     expect(updateMany).toHaveBeenCalledTimes(1);
@@ -84,7 +93,7 @@ describe('Mux webhook monotonic state machine (P0)', () => {
       // Second-push shape: no playback_ids.
       data: { id: 'asset_y' },
     };
-    await controller.receive(body, sign(JSON.stringify(body)));
+    await deliver(controller, body);
     expect(updateMany).toHaveBeenCalledTimes(1);
     const call = (updateMany as jest.Mock).mock.calls[0][0];
     expect(call.data).toEqual(
@@ -105,7 +114,7 @@ describe('Mux webhook monotonic state machine (P0)', () => {
       type: 'video.asset.created',
       data: { id: 'asset_z' },
     };
-    await controller.receive(body, sign(JSON.stringify(body)));
+    await deliver(controller, body);
     const call = (updateMany as jest.Mock).mock.calls[0][0];
     expect(call.where.mux_asset_status).toEqual({ in: ['uploading', 'none'] });
   });
@@ -117,10 +126,10 @@ describe('Mux webhook monotonic state machine (P0)', () => {
       type: 'video.asset.ready',
       data: { id: 'asset_d', playback_ids: [{ id: 'pb_d', policy: 'public' as const }] },
     };
-    await controller.receive(body, sign(JSON.stringify(body)));
+    await deliver(controller, body);
     expect(updateMany).toHaveBeenCalledTimes(1);
     // Second delivery — same id, same signature shape, fresh timestamp.
-    const res2 = await controller.receive(body, sign(JSON.stringify(body)));
+    const res2 = await deliver(controller, body);
     expect(res2).toEqual({ received: true, deduped: 'evt_mono_dup_1' });
     expect(updateMany).toHaveBeenCalledTimes(1);
   });

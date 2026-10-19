@@ -3,7 +3,8 @@ import type { CommunityMembership, CommunityWorkspace, User } from '@prisma/clie
 import { PrismaService } from '../prisma.service';
 import { CommunityRepository } from './community.repository';
 import { CommunitySafetyService } from './safety/community-safety.service';
-import { memberFirstName } from './member-display-name';
+import { memberName } from './member-display-name';
+import { fullNamesFor } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
 import {
   WIN_NOT_FOUND,
@@ -237,7 +238,7 @@ export class CommunityService {
       event: eventRow,
       pinnedPost: pinnedRow,
       challenge: challengeRow,
-    } = await this.repo.findTodayContent(workspace.id, new Date());
+    } = await this.repo.findTodayContent(workspace.id, user.id, new Date());
     // Two-way block: Today never surfaces a pinned post, event or challenge
     // authored by someone in a block relation with the caller (the Hall,
     // events and challenges lists hide them too). One block lookup.
@@ -253,7 +254,7 @@ export class CommunityService {
       ? {
           id: cohort.id,
           name: cohort.name,
-          member_count: await this.repo.cohortMemberCount(cohort.id),
+          member_count: await this.repo.cohortMemberCount(cohort),
         }
       : null;
 
@@ -336,7 +337,10 @@ export class CommunityService {
         workspace_id: c.workspace_id,
         name: c.name,
         is_default: await this.repo.isDefaultCohort(c),
-        member_count: await this.repo.cohortMemberCount(c.id),
+        kind: c.kind,
+        posting_policy: c.posting_policy,
+        visibility: c.visibility,
+        member_count: await this.repo.cohortMemberCount(c),
         my_role: role,
       })),
     );
@@ -360,9 +364,9 @@ export class CommunityService {
     }
 
     const workspace = await this.repo.findWorkspaceById(cohort.workspace_id);
-    const isOwner = workspace?.coach_id === user.id;
+    const coachView = role === 'owner' || workspace?.coach_id === user.id;
     const membership = await this.repo.findMembershipInCohort(cohortId, user.id);
-    const canRead = role === 'owner' || isOwner || membership?.status === 'active';
+    const canRead = coachView || (await this.repo.canEnterCohort(cohortId, user.id));
 
     if (!canRead) {
       throw new ForbiddenException(FORBIDDEN_COHORT);
@@ -374,7 +378,11 @@ export class CommunityService {
       workspace_id: cohort.workspace_id,
       name: cohort.name,
       is_default: await this.repo.isDefaultCohort(cohort),
-      member_count: await this.repo.cohortMemberCount(cohort.id),
+      kind: cohort.kind,
+      posting_policy: cohort.posting_policy,
+      visibility: cohort.visibility,
+      package_ids: coachView ? cohort.packages.map((l) => l.package_id) : null, // C6-ACCESS: coach only
+      member_count: await this.repo.cohortMemberCount(cohort),
       created_at: cohort.created_at.toISOString(),
       my_membership:
         membership && membership.status === 'active'
@@ -398,8 +406,9 @@ export class CommunityService {
     // B-AUTHZ-3: a client removed (or banned) from the coach's community no
     // longer sees teammates' rows; they keep their own (same rule as wins).
     let viewerRemoved = false;
+    let workspaceId: string | null = null;
     if (user?.role === 'student') {
-      const workspaceId = await winModerationWorkspaceId(this.prisma, coachId);
+      workspaceId = await winModerationWorkspaceId(this.prisma, coachId);
       viewerRemoved =
         workspaceId !== null &&
         (await removedFromWorkspace(this.prisma, workspaceId, [userId])).has(userId);
@@ -435,11 +444,14 @@ export class CommunityService {
 
     // Two-way block: hide roster rows in a block relation with the caller.
     const visibleStudents = await this.safety.filterBlocked(userId, students, (s) => s.id);
-    // Client privacy: members see first names only; the coach sees full names.
+    // Client privacy: members see first names, full names where #C6-NAMES-EVERYWHERE allows
+    // (fullNamesFor; the coach view has no workspace here, so no query); the coach sees full names.
     const isCoachView = user?.role === 'coach';
+    const named = visibleStudents.map((s) => [null, s.id] as const);
+    const full = await fullNamesFor(this.prisma, userId, workspaceId, named);
     const leaderboard = visibleStudents.map((s) => ({
       user_id: s.id,
-      name: isCoachView ? s.name : memberFirstName(s.name),
+      name: isCoachView ? s.name : memberName(s.name, full(null, s.id)),
       workouts_completed: countByUser.get(s.id) ?? 0,
     }));
 
@@ -452,7 +464,8 @@ export class CommunityService {
    * moderated community workspace, otherwise the caller's own wins only.
    * Never another tenant's wins. Hidden wins, wins by members removed from
    * the workspace, and wins by anyone in a block relation with the caller
-   * (either direction) are dropped. Other members appear by first name only.
+   * (either direction) are dropped. Other members appear by first name, by
+   * full name where #C6-NAMES-EVERYWHERE allows (fullNamesFor).
    */
   async getFeed(userId: string): Promise<CommunityWinView[]> {
     const user = await this.prisma.user.findUnique({
@@ -487,7 +500,9 @@ export class CommunityService {
     }
     // Two-way block: hide wins by anyone in a block relation with the caller.
     visible = await this.safety.filterBlocked(userId, visible, (w) => w.user_id);
-    return visible.map((w) => winView(w, userId));
+    const named = visible.map((w) => [null, w.user_id] as const);
+    const full = await fullNamesFor(this.prisma, userId, workspaceId, named);
+    return visible.map((w) => winView(w, userId, full(null, w.user_id)));
   }
 
   /**
@@ -522,7 +537,8 @@ export class CommunityService {
       },
       select: WIN_SELECT,
     });
-    return winView(win, userId);
+    const full = await fullNamesFor(this.prisma, userId, workspaceId, [[null, userId]]);
+    return winView(win, userId, full(null, userId));
   }
 
   /**
@@ -577,9 +593,9 @@ export interface CommunityWinView {
   createdAt: string;
 }
 
-function winView(w: WinRow, viewerId: string): CommunityWinView {
-  // Client privacy: other members see first names only.
-  const name = memberFirstName(w.user?.name);
+function winView(w: WinRow, viewerId: string, fullName: boolean): CommunityWinView {
+  // Client privacy: first names, full names where #C6-NAMES-EVERYWHERE allows (fullNamesFor).
+  const name = memberName(w.user?.name, fullName);
   const created = w.created_at.toISOString();
   return {
     id: w.id,

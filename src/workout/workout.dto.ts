@@ -7,6 +7,8 @@ import {
   IsArray,
   ValidateNested,
   IsDateString,
+  IsNotEmpty,
+  ValidateIf,
   MaxLength,
   ArrayMaxSize,
   Min,
@@ -67,6 +69,44 @@ export class CreateExerciseSetDto {
   @IsString()
   @MaxLength(500)
   video_url?: string;
+
+  /** TRAIN-BE2: the catalog id the set was logged under (an /exercises id or a seed: id), for exact history. */
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  exercise_external_id?: string;
+}
+
+const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+
+/**
+ * TRAIN-BE2: GET /workouts/exercise-history. The catalog id, the name, or both (sets logged
+ * without an id match by name).
+ */
+export class ExerciseHistoryQueryDto {
+  @ValidateIf((q: ExerciseHistoryQueryDto) => q.name === undefined || q.exercise_id !== undefined)
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  exercise_id?: string;
+
+  @ValidateIf((q: ExerciseHistoryQueryDto) => q.exercise_id === undefined || q.name !== undefined)
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(200)
+  name?: string;
+}
+
+/** TRAIN-BE2: PUT /coach/clients/:id/workouts/:workoutId/comment. */
+export class WorkoutCommentDto {
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(1000)
+  body!: string;
 }
 
 export class CreateWorkoutDto {

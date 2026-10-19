@@ -720,6 +720,21 @@ describe('S-MWB-2 fix round: actor scope, deleted clients, assignee paging', () 
     expect(keys[1]).toBe('bulk:coach-1:master-1:2026-10-12:repeat:same:c1');
   });
 
+  it('C2-C0: the planned time reaches the delivery and is part of the intent; no time keeps the key as it was', async () => {
+    const { prisma, tx } = makePrisma();
+    tx.workoutProgram.findFirst.mockResolvedValue(null);
+    const { svc, delivery } = makeService(prisma);
+    await svc.bulkAssign('coach-1', 'master-1', { client_ids: ['c1'], start_date: '2026-10-05' }, 'same');
+    await svc.bulkAssign('coach-1', 'master-1', { client_ids: ['c1'], start_date: '2026-10-05', scheduled_time: '18:00' }, 'same');
+    const calls = delivery.deliverInTx.mock.calls.map(
+      (c) => fake<[unknown, { deliveryKey: string; scheduledTime: string | null }]>(c)[1],
+    );
+    expect(calls.map((c) => [c.deliveryKey, c.scheduledTime])).toEqual([
+      ['bulk:coach-1:master-1:2026-10-05:once:same:c1', null],
+      ['bulk:coach-1:master-1:2026-10-05:once@18:00:same:c1', '18:00'],
+    ]);
+  });
+
   it('C-640-10 listAssignees: pages over copies (limit + next_cursor) and never lists a deleted account', async () => {
     const { prisma } = makePrisma();
     const copy = (id: string, at: string, client: string) => ({
@@ -752,5 +767,46 @@ describe('S-MWB-2 fix round: actor scope, deleted clients, assignee paging', () 
       prisma.workoutProgram.findMany.mock.calls[1][0],
     );
     expect(second.where.OR).toHaveLength(2);
+  });
+
+  it("HIST-2 (owner 4): a client who moved to another coach leaves the head coach's assignee list and assigned count", async () => {
+    const { prisma } = makePrisma();
+    const { svc } = makeService(prisma);
+    await svc.listAssignees('coach-1', 'master-1');
+    const args = fake<{
+      where: { coach_id: string; plans: { some: { assignments: { some: unknown } } } };
+      select: { plans: { select: { assignments: { where: unknown } } } };
+    }>(prisma.workoutProgram.findMany.mock.calls[0][0]);
+    // The client's coach now must be the head coach or a sub-coach on their team.
+    const scope = {
+      client: {
+        deleted_at: null,
+        OR: [
+          { coach_id: 'coach-1' },
+          {
+            coach: {
+              sub_coach_assignments_as_sub: { some: { head_coach_id: 'coach-1', archived_at: null } },
+            },
+          },
+        ],
+      },
+    };
+    expect(args.where.coach_id).toBe('coach-1');
+    expect(args.where.plans.some.assignments.some).toEqual(scope);
+    expect(args.select.plans.select.assignments.where).toEqual(scope);
+
+    prisma.workoutProgram.findMany.mockResolvedValueOnce([{ ...MASTER }]);
+    await svc.listPrograms('coach-1', {});
+    const sqlCall = prisma.$queryRaw.mock.calls.find((c) =>
+      fake<string[]>(c[0]).join('?').includes('cloned_from_id'),
+    );
+    const fragments = (sqlCall ?? [])
+      .slice(1)
+      .map((v) => fake<{ strings?: string[]; values?: unknown[] }>(v));
+    const tenant = fragments.find((f) => f.strings?.join('?').includes('TeamSubCoachAssignment'));
+    expect(tenant?.strings?.join('?')).toMatch(
+      /u\."coach_id" = \?.*"TeamSubCoachAssignment" t.*t\."sub_coach_id" = u\."coach_id"/s,
+    );
+    expect(tenant?.values).toEqual(['coach-1', 'coach-1']);
   });
 });

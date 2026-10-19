@@ -335,7 +335,10 @@ describe('B-TRIALS — client package reads carry trial_offer for this client', 
     };
     const controller = new ClientPackagesController(
       stub<ConstructorParameters<typeof ClientPackagesController>[0]>(packages),
-      {} as ConstructorParameters<typeof ClientPackagesController>[1],
+      // BILLQUOTE / FIX998 — the quote reads this client's open checkout attempts (none here).
+      stub<ConstructorParameters<typeof ClientPackagesController>[1]>({
+        clientPurchase: { findMany: jest.fn(async () => []) },
+      }),
       trials,
     );
     return controller;

@@ -1,7 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import type { CommunityMembership, CommunityMembershipRole, Prisma, User } from '@prisma/client';
+import type {
+  CommunityCohort,
+  CommunityMembership,
+  CommunityMembershipRole,
+  Prisma,
+  User,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { liftWorkspaceBan } from '../community-ban';
+import { readersNow } from '../community-space-access';
 
 /**
  * Data access for cohort membership administration (list / assign / remove).
@@ -16,15 +23,15 @@ export type MembershipWithUser = CommunityMembership & {
   user: Pick<User, 'id' | 'name' | 'email'>;
 };
 
-export interface MemberPageCursor {
-  createdAt: Date;
-  id: string;
-}
+/** C6-BVIS: one person a space's roster lists, with their row there if they hold one. */
+export type SpacePerson = Pick<User, 'id' | 'name' | 'email'> & {
+  row: Pick<CommunityMembership, 'id' | 'role' | 'status' | 'joined_at'> | null;
+};
 
 /**
  * B-AUTHZ-1: who a coach may add to a cohort. A target qualifies only when it
  * is a live client of the workspace coach (`coach_id` match, not deleted) or
- * already holds an active membership somewhere in the same workspace.
+ * already on the workspace's team (an active co-coach row; C6-BVIS).
  */
 export interface AssignTargetScope {
   workspaceId: string;
@@ -39,7 +46,7 @@ function assignTargetFilter(scope: AssignTargetScope | null): Prisma.UserWhereIn
       { coach_id: scope.coachId },
       {
         community_memberships: {
-          some: { workspace_id: scope.workspaceId, status: 'active' },
+          some: { workspace_id: scope.workspaceId, status: 'active', role: { not: 'student' } },
         },
       },
     ],
@@ -50,45 +57,54 @@ function assignTargetFilter(scope: AssignTargetScope | null): Prisma.UserWhereIn
 export class CommunityCohortMembersRepository {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * Roster page for a cohort, ordered (created_at ASC, id ASC) for a stable
-   * keyset cursor. `roleFilter` narrows to a single Prisma role. Removed rows
-   * are excluded so the roster reflects the live membership. Fetches `limit`
-   * rows; the caller derives next_cursor when a full page comes back.
-   */
-  async listMembers(params: {
-    cohortId: string;
-    limit: number;
-    cursor: MemberPageCursor | null;
-    roleFilter: CommunityMembershipRole | null;
-  }): Promise<MembershipWithUser[]> {
-    const { cohortId, limit, cursor, roleFilter } = params;
-    return this.prisma.communityMembership.findMany({
-      where: {
-        cohort_id: cohortId,
-        status: { not: 'removed' },
-        ...(roleFilter ? { role: roleFilter } : {}),
-        ...(cursor
-          ? {
-              OR: [
-                { created_at: { gt: cursor.createdAt } },
-                {
-                  created_at: cursor.createdAt,
-                  id: { gt: cursor.id },
-                },
-              ],
-            }
-          : {}),
-      },
-      orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
-      take: limit,
-      include: {
-        user: { select: { id: true, name: true, email: true } },
+  /** C6-BVIS: everyone the rule lists in the space (a client of a clients or package space needs no
+   * row), each with their row here if any, by user id for a stable cursor. */
+  async people(cohort: Pick<CommunityCohort, 'id' | 'workspace_id'>): Promise<SpacePerson[]> {
+    const ids = await readersNow(this.prisma, cohort.workspace_id, cohort.id, true);
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: ids } },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        community_memberships: {
+          where: { cohort_id: cohort.id },
+          select: { id: true, role: true, status: true, joined_at: true },
+        },
       },
     });
+    return users
+      .map(({ community_memberships: [row], ...u }) => ({ ...u, row: row ?? null }))
+      .sort((a, b) => (a.id < b.id ? -1 : 1));
   }
 
-  /** A single membership in a cohort (any status) joined to its user, or null. */
+  /** C6-BVIS: why each client is in a package space, the live purchase of a linked package that
+   * runs longest (no end first), as app.community_can_access counts it. */
+  async packageAccess(
+    cohortId: string,
+    coachId: string,
+    ids: string[],
+  ): Promise<Map<string, { package_id: string; until: Date | null }>> {
+    const live = await this.prisma.clientPurchase.findMany({
+      where: {
+        client_user_id: { in: ids },
+        coach_user_id: coachId,
+        entitlement_active: true,
+        OR: [{ access_expires_at: null }, { access_expires_at: { gt: new Date() } }],
+        package: { community_spaces: { some: { cohort_id: cohortId } } },
+      },
+      select: { client_user_id: true, package_id: true, access_expires_at: true },
+    });
+    const best = new Map<string, { package_id: string; until: Date | null }>();
+    for (const p of live) {
+      const had = best.get(p.client_user_id);
+      if (!had || (had.until && (!p.access_expires_at || p.access_expires_at > had.until))) {
+        best.set(p.client_user_id, { package_id: p.package_id, until: p.access_expires_at });
+      }
+    }
+    return best;
+  }
+
   async findMembership(cohortId: string, userId: string): Promise<MembershipWithUser | null> {
     return this.prisma.communityMembership.findUnique({
       where: { cohort_id_user_id: { cohort_id: cohortId, user_id: userId } },

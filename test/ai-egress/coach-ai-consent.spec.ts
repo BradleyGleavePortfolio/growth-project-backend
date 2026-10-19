@@ -83,7 +83,7 @@ describe.each(METHODS)('CoachAIService.%s — R2b', (method, surface) => {
     const { call, completeStructured } = buildCoachAi(['client1']);
     await call(method);
     const opts = completeStructured.mock.calls[0][2];
-    expect(opts.dataSubject).toEqual(clientDataSubject('client1', 'coach'));
+    expect(opts.dataSubject).toEqual(clientDataSubject('client1', 'coach', 'base', 'coach1'));
     expect(opts.surface).toBe(surface);
   });
 

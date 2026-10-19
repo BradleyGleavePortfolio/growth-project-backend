@@ -329,6 +329,7 @@ describe('CreateWorkoutPlanMaterializer', () => {
 
     // A fresh program was created (no target_program_id) with a v0 program revision.
     expect(prisma.store.programs).toHaveLength(1);
+    expect(prisma.store.programs[0]).toMatchObject({ is_template: false, client_id: CLIENT }); // the client's program
     expect(prisma.store.programRevisions).toHaveLength(1);
 
     // Draft marked materialised with the plan id.

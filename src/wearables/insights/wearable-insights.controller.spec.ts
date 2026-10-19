@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { BadRequestException } from '@nestjs/common';
 import { PATH_METADATA, METHOD_METADATA } from '@nestjs/common/constants';
 import { WearableMetricBucket } from '@prisma/client';
+import { ROMAN_REQUIRES_COACH } from '../../roman/roman-requires-coach';
 import { WearableInsightsController } from './wearable-insights.controller';
 import {
   CoachInsight,
@@ -63,8 +64,11 @@ function makeSvc(): WearableInsightsServiceDouble {
   });
 }
 
-function reqFor(role: string, id: string) {
-  return makeAuthedRequest(role, id);
+// A client with a coach unless a test passes null (GAPS3-F1: no coach, no AI insight).
+function reqFor(role: string, id: string, coachId: string | null = COACH) {
+  const req = makeAuthedRequest(role, id);
+  if (role === 'student') req.user.coach_id = coachId;
+  return req;
 }
 
 function approvalDeps(decideResult: Record<string, unknown>): ApprovalDeps {
@@ -144,6 +148,7 @@ describe('WearableInsightsController', () => {
         COACH,
         CLIENT,
         WearableMetricBucket.SLEEP_RECOVERY,
+        'coach',
       );
       // Coach schema fields present (full-insight branch of the union).
       expect(isEmptyInsight(out)).toBe(false);
@@ -222,7 +227,7 @@ describe('WearableInsightsController', () => {
   describe('approveInsight', () => {
     const MATERIALISED = '2026-01-01T00:00:00.000Z';
 
-    function approveBody(action: 'approve' | 'edit' | 'reject', body: string) {
+    function approveBody(action: 'approve' | 'edit' | 'reject' | 'dismiss', body: string) {
       return {
         client_id: CLIENT,
         bucket: WearableMetricBucket.SLEEP_RECOVERY,
@@ -233,6 +238,7 @@ describe('WearableInsightsController', () => {
 
     it('approve → creates draft, decides approved, returns ok shape', async () => {
       const svc = makeSvc();
+      svc.romanSuggestion.mockResolvedValue('Great recovery week — protect that sleep.');
       const deps = approvalDeps({
         materialised_at: new Date(MATERIALISED),
         decided_at: new Date(MATERIALISED),
@@ -319,6 +325,37 @@ describe('WearableInsightsController', () => {
         draft_id: DRAFT_ID,
         materialised_at: null,
       });
+    });
+
+    it('shipped dismiss → rejects an empty draft and returns the mobile string timestamp', async () => {
+      const svc = makeSvc();
+      const deps = approvalDeps({
+        materialised_at: null,
+        decided_at: new Date(MATERIALISED),
+      });
+      const out = await ctrlWithApprovals(svc, deps).approveInsight(
+        reqFor('coach', COACH), approveBody('dismiss', ''),
+      );
+      expect(svc.assertCoachOwnsClient).toHaveBeenCalledWith(COACH, CLIENT, 'coach');
+      expect(svc.romanSuggestion).not.toHaveBeenCalled();
+      expect(deps.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({
+          tenant_coach_id: COACH,
+          subject_user_id: CLIENT,
+          payload: { clientId: CLIENT, bucket: WearableMetricBucket.SLEEP_RECOVERY, body: '' },
+        }),
+      }));
+      expect(deps.decide).toHaveBeenCalledWith(expect.objectContaining({ decision: 'rejected' }));
+      expect(out).toEqual({ status: 'ok', draft_id: DRAFT_ID, materialised_at: MATERIALISED });
+    });
+
+    it.each(['approve', 'edit', 'reject'] as const)('%s still refuses an empty draft', async (action) => {
+      const deps = approvalDeps({});
+      await expect(ctrlWithApprovals(makeSvc(), deps).approveInsight(
+        reqFor('coach', COACH), approveBody(action, ''),
+      )).rejects.toBeInstanceOf(BadRequestException);
+      expect(deps.create).not.toHaveBeenCalled();
+      expect(deps.decide).not.toHaveBeenCalled();
     });
 
     it('rejects a malformed body (missing bucket) with 400 before any write', async () => {
@@ -430,6 +467,17 @@ describe('WearableInsightsController', () => {
       await expect(
         ctrl.getClientInsight(reqFor('student', CLIENT), {}),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('GAPS3-F1: no coach -> 403 ROMAN_REQUIRES_COACH, no insight read or made', async () => {
+      const svc = makeSvc();
+      const ctrl = makeController({ svc });
+      const bucket = WearableMetricBucket.HEALTH_FITNESS;
+      await expect(ctrl.getClientInsight(reqFor('student', CLIENT, null), { bucket })).rejects.toMatchObject({
+        status: 403,
+        response: { code: ROMAN_REQUIRES_COACH },
+      });
+      expect(svc.generateForClient).not.toHaveBeenCalled();
     });
 
     it('never calls the coach generator from the client endpoint', async () => {

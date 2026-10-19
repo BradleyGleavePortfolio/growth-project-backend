@@ -53,8 +53,6 @@ import {
 import type { AuthedRequest } from '../auth/auth-request';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
-import { SubscriptionGuard } from '../billing/subscription.guard';
-import { RequiresTier } from '../billing/requires-tier.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ClientEntitlementGuard } from '../common/guards/client-entitlement.guard';
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
@@ -65,6 +63,7 @@ import {
   CompleteAssignmentDto,
   CreateAssignmentDto,
   CreateWorkoutPlanDto,
+  UpdateAssignmentDto,
   UpdateWorkoutPlanDto,
   UpsertExerciseRowsDto,
 } from './workout-builder.dto';
@@ -247,19 +246,13 @@ export class WorkoutBuilderController {
  * Service re-checks role, ownership/tenant reachability, and client access
  * (sub-coach scope) before any write.
  *
- * Entitlement posture (R31 Gate 8): every route here is a coach-tier WRITE
- * (fork / clone / fan-out assign). They are paid-plan features, so the class
- * mounts SubscriptionGuard + @RequiresTier('pro') — parity with the other
- * coach-tier write controllers (e.g. CoachMediaController, the coach-AI
- * controllers). A coach on the free tier (or with an inactive subscription)
- * is denied with 403 TIER_UPGRADE_REQUIRED in enforce mode; OWNER bypasses.
- * Pinned by test/workout-program-controller-entitlement.spec.ts.
+ * No coach plan gate (owner TM-P1: zero locks). Pinned by
+ * test/workout-program-controller-entitlement.spec.ts.
  */
 @ApiTags('workout-programs')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard, SubscriptionGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('coach', 'owner')
-@RequiresTier('pro')
 @Controller('workout-programs')
 export class WorkoutProgramController {
   constructor(private readonly workoutBuilder: WorkoutBuilderService) {}
@@ -437,5 +430,22 @@ export class AssignmentController {
     @Body() dto: CompleteAssignmentDto,
   ) {
     return this.workoutBuilder.completeAssignment(req.user.id, assignmentId, dto);
+  }
+
+  @Patch(':assignmentId')
+  @ApiOperation({
+    summary:
+      'C1V2-C1: the client moves (scheduled_for) or skips (skip: true) their own open day; ' +
+      "the client's coach writes the day's note (client_note) or planned time (scheduled_time, HH:MM). One field per call.",
+  })
+  @ApiResponse({ status: 200, description: 'Assignment.' })
+  @ApiResponse({ status: 403, description: "Not this assignment's client (move, skip) or coach (note, time)." })
+  @ApiResponse({ status: 409, description: 'Already completed or skipped.' })
+  update(
+    @Req() req: AuthedRequest,
+    @Param('assignmentId', new ParseUUIDPipe()) assignmentId: string,
+    @Body() dto: UpdateAssignmentDto,
+  ) {
+    return this.workoutBuilder.updateAssignment(req.user.id, assignmentId, dto);
   }
 }

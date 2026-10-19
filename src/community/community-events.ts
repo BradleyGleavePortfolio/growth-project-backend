@@ -18,24 +18,18 @@
  *    tenant-scoped REST API. The channel itself is treated as untrusted.
  */
 
-// ─── Realtime channels ─────────────────────────────────────────────────────
+// ─── Realtime topics ───────────────────────────────────────────────────────
 //
-// Convention: `community:<scope>:<id>[:<sub>]`. The `cohort` channel is the
-// only sharded one (cohorts can have hundreds of members) — see
-// communityCohortShard() in community-realtime.service.ts for the hash.
+// C10RT: every ping travels on the PRIVATE topic of one person,
+// `community:user:<User.id>`; there are no shared topics. Realtime lets a
+// signed-in person receive on their own topic only (20270502003300) and the
+// server picks who gets each ping (CommunityRealtimeService).
 export const COMMUNITY_REALTIME_CHANNELS = {
   user: (userId: string): string => `community:user:${userId}`,
-  cohort: (cohortId: string, shard: number): string =>
-    `community:cohort:${cohortId}:messages:${shard}`,
-  workspace: (wsId: string): string => `community:workspace:${wsId}:hall`,
-  event: (eventId: string): string => `community:event:${eventId}`,
-  challenge: (challengeId: string): string =>
-    `community:challenge:${challengeId}`,
-  moderation: (wsId: string): string => `community:moderation:${wsId}`,
 } as const;
 
-/** The six channel-kind keys, for telemetry `channel_kind` tagging. */
-export type CommunityChannelKind = keyof typeof COMMUNITY_REALTIME_CHANNELS;
+/** What a ping is about, for telemetry `channel_kind` tagging. */
+export type CommunityChannelKind = 'user' | 'cohort' | 'workspace' | 'event' | 'challenge' | 'moderation';
 
 // ─── Broadcast event names ─────────────────────────────────────────────────
 //

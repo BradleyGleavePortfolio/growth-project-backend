@@ -10,7 +10,13 @@
  *      Nothing is cached here, so a withdrawal stops the very next request,
  *      including retries and JSON repair passes (each one calls send again);
  *      A subject with scope 'memory' (Roman v1.1) needs a live client-ai-v5
- *      grant for every listed client; a v4 grant covers 'base' only;
+ *      grant for every listed client; a v4 grant covers 'base' only; a
+ *      coach-free grant (owner 62) counts only for a 'client' audience;
+ *      COACH-AI-CONSENT: a subject naming `coachId` also needs that coach's
+ *      live coach-ai-v1 grant, read the same way, first (403
+ *      coach_ai_consent_required); a coach audience or coach reason without
+ *      `coachId`, or a coach subject for any processor but Anthropic, is a
+ *      policy refusal;
  *   3. fails closed: no grant, an older copy, ledger flag off, a ledger read
  *      error, an unexpected throw, a client subject with no ids, or client
  *      data aimed at a processor other than Anthropic all refuse the send;
@@ -37,20 +43,23 @@ import AnthropicSdk from '@anthropic-ai/sdk';
 import type Anthropic from '@anthropic-ai/sdk';
 import OpenAISdk from 'openai';
 import type OpenAI from 'openai';
-import { AI_CONSENT_BATCH_MAX } from '../ai-consent/ai-consent.constants';
+import { AI_CONSENT_BATCH_MAX, COACH_AI_CONSENT_TITLE } from '../ai-consent/ai-consent.constants';
 import { CLIENT_AI_CONSENT_READER, ClientAiConsentReader } from '../ai-consent/ai-consent.reader';
 import {
   AiConsentRequiredException,
   AiEgressPolicyException,
+  CoachAiConsentRequiredException,
   isAiEgressRefusal,
 } from './ai-consent-required.exception';
 import {
+  AiConsentAudience,
   AiConsentScope,
   AiDataSubject,
   AiEgressSurface,
   AiProcessor,
   CONSENTED_AI_PROCESSOR,
   NO_CLIENT_DATA_REASONS,
+  needsCoachGrant,
 } from './ai-egress.types';
 
 export type AnthropicStream = ReturnType<Anthropic['messages']['stream']>;
@@ -202,6 +211,20 @@ export class AiEgressService {
     processor: AiProcessor,
     surface: AiEgressSurface,
   ): Promise<void> {
+    // COACH-AI-CONSENT: the coach's own grant first, on top of every client check below.
+    const coachId = subject.coachId;
+    if (!coachId && needsCoachGrant(subject)) {
+      this.logger.error(`ai_egress.blocked surface=${surface} reason=coach_subject_without_id`);
+      throw new AiEgressPolicyException();
+    }
+    if (coachId && processor !== CONSENTED_AI_PROCESSOR) {
+      this.logger.error(`ai_egress.blocked surface=${surface} reason=coach_processor_not_consented`);
+      throw new AiEgressPolicyException();
+    }
+    if (coachId && !(await this.coachConsented(coachId))) {
+      this.logger.log(`ai_egress.refused surface=${surface} reason=no_coach_grant`);
+      throw new CoachAiConsentRequiredException(COACH_AI_CONSENT_TITLE);
+    }
     if (subject.kind === 'no_client_data') {
       if (!(NO_CLIENT_DATA_REASONS as readonly string[]).includes(subject.reason)) {
         this.logger.error(`ai_egress.blocked surface=${surface} reason=unknown_exemption`);
@@ -221,7 +244,7 @@ export class AiEgressService {
       throw new AiEgressPolicyException();
     }
     const scope = subject.scope === 'memory' ? 'memory' : 'base';
-    const granted = await this.consentedClients(ids, scope);
+    const granted = await this.consentedClients(ids, scope, subject.audience);
     const missing = ids.filter((id) => !granted.has(id)).length;
     if (missing > 0) {
       this.logger.log(
@@ -232,16 +255,45 @@ export class AiEgressService {
   }
 
   /**
+   * COACH-AI-CONSENT: true only while `coachId` holds a live coach-ai-v1 grant, read now (never
+   * cached, so a withdrawal stops the next request). Fails closed: an error, or a reader without
+   * this read, is no grant.
+   */
+  async coachConsented(coachId: string): Promise<boolean> {
+    try {
+      return (await this.consent.hasCoachAiConsent?.(coachId)) === true;
+    } catch {
+      this.logger.warn('ai_egress.coach_consent_read_failed (treated as no grant)');
+      return false;
+    }
+  }
+
+  /**
+   * COACH-TEXT (owner "#COACH-TEXT - op 1"): the subset of `coachIds` for which coachConsented is
+   * true right now (each read now; a read error is no grant). A client's Roman request carries a
+   * coach's own words (guideline, notes, messages) only for the coaches in this set.
+   */
+  async consentedCoaches(
+    coachIds: readonly (string | null | undefined)[],
+  ): Promise<ReadonlySet<string>> {
+    const unique = [...new Set(coachIds.filter((id): id is string => !!id))];
+    const ok = await Promise.all(unique.map((id) => this.coachConsented(id)));
+    return new Set(unique.filter((_, i) => ok[i]));
+  }
+
+  /**
    * The subset of `clientIds` holding a live box-2 grant right now. For call
    * sites that build one prompt from several clients (coach brief, community
    * triage): drop everyone else BEFORE the prompt is built, then send with
    * the kept ids so the grant is re-read at send time. Fails closed: any
    * error yields an empty set. Never cached. `scope` 'memory' keeps only
    * live client-ai-v5 holders (Roman v1.1); the default 'base' is unchanged.
+   * `audience` (default 'coach'): a coach-free grant counts for 'client' only.
    */
   async consentedClients(
     clientIds: readonly string[],
     scope: AiConsentScope = 'base',
+    audience: AiConsentAudience = 'coach',
   ): Promise<ReadonlySet<string>> {
     const unique = [...new Set(clientIds.filter((id) => typeof id === 'string' && id.length > 0))];
     const out = new Set<string>();
@@ -249,10 +301,10 @@ export class AiEgressService {
       for (let i = 0; i < unique.length; i += AI_CONSENT_BATCH_MAX) {
         const chunk = unique.slice(i, i + AI_CONSENT_BATCH_MAX);
         if (chunk.length === 1) {
-          if ((await this.consent.hasClientAiConsent(chunk[0], scope)) === true) out.add(chunk[0]);
+          if ((await this.consent.hasClientAiConsent(chunk[0], scope, audience)) === true) out.add(chunk[0]);
           continue;
         }
-        const granted = await this.consent.clientsWithAiConsent(chunk, scope);
+        const granted = await this.consent.clientsWithAiConsent(chunk, scope, audience);
         for (const id of chunk) if (granted.has(id)) out.add(id);
       }
     } catch {
@@ -265,13 +317,17 @@ export class AiEgressService {
   /**
    * R11-M4: when each of `clientIds` recorded the live client-ai-v5 ('memory') grant they hold now
    * (others absent). Fails closed: an error, or a reader without this read, gives an empty map.
+   * `audience` (default 'coach'): a coach-free grant counts for 'client' only.
    */
-  async memoryGrantTimes(clientIds: readonly string[]): Promise<ReadonlyMap<string, Date>> {
+  async memoryGrantTimes(
+    clientIds: readonly string[],
+    audience: AiConsentAudience = 'coach',
+  ): Promise<ReadonlyMap<string, Date>> {
     const unique = [...new Set(clientIds.filter((id) => typeof id === 'string' && id.length > 0))];
     const out = new Map<string, Date>();
     try {
       for (let i = 0; i < unique.length; i += AI_CONSENT_BATCH_MAX) {
-        const got = await this.consent.memoryGrantTimes?.(unique.slice(i, i + AI_CONSENT_BATCH_MAX));
+        const got = await this.consent.memoryGrantTimes?.(unique.slice(i, i + AI_CONSENT_BATCH_MAX), audience);
         for (const [id, at] of got ?? []) out.set(id, at);
       }
     } catch {

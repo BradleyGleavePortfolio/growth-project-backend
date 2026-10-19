@@ -183,6 +183,11 @@ the user actually typed. Coach views render "6 oz chicken" instead of
 "1.7008x chicken". The canonical math value remains
 `quantity_multiplier`.
 
+`LoggedFoodEntry.plan_slot_id` names the plan meal an entry was logged for
+(kept only for the caller's own plan on that date; ON DELETE SET NULL) and
+`fills_usual_meal` marks a coachless "Your usual day" meal. Both are
+optional on `POST /log/food`, returned by `GET /log/daily`, never editable.
+
 ### Redis cache for searches
 
 `FoodService` caches the merged + scored search result list in Redis
@@ -1671,6 +1676,12 @@ approval). Full shapes: [docs/clinic-onboarding.md](docs/clinic-onboarding.md).
 `/coach/meal-templates` and `/coach/daily-meal-plans`. Client surface
 is `GET /me/meal-plan/today`.
 
+`POST /coach/daily-meal-plans/:id/assignments/:assignmentId/end` with
+`{ ends_on: "YYYY-MM-DD" }` (204) sets the client's last day on the plan.
+It never extends one, and an end before the start removes it. Only the
+plan's coach can end it, for a client who is still theirs. A plan its
+coach archives leaves that coach's clients' `GET /me/meal-plan/today`.
+
 ### Bulk client invite
 
 Two additive routes on `InviteCodesController`:
@@ -2102,7 +2113,7 @@ Triage of open PRs as of 2026-05-12. Pulled from `gh pr list --state open`. See 
 The pre-Connect audit (`/audits/coach_ai_capability_audit.md`) recorded that a coach could not, today, ask the backend to generate a per-client workout program or meal plan. The gateway, redaction, audit, and approval rails were already in place, but no real provider adapter was wired and no `/coach/ai/*` surface existed. v1 plugs that gap with a single Anthropic Claude Sonnet adapter, a per-client context builder, three structured prompts, a `DRAFT → APPROVED|REJECTED` flow, and a per-call cost log so $20/coach/mo budgets are observable.
 
 ### WHEN
-- **On demand** — a coach taps "Generate" in the console for a workout program, meal plan, or weekly insight. Throttled at 5/hour/coach for the workout and meal-plan surfaces, 10/hour/coach for insight.
+- **On demand** — a coach taps "Generate" in the console for a workout program, meal plan, or weekly insight. Throttled at 60/hour/coach on each of the three routes (a safety ceiling; the coach AI credit pool is the real limit).
 - **Weekly digest** (dormant by default) — `WeeklyInsightCron` registered with `@Cron(EVERY_WEEK)`. Set `CRON_COACH_AI_INSIGHT=on` in Fly secrets to enable; otherwise the job exits early on every tick.
 
 ### WHERE — file map
@@ -2144,9 +2155,9 @@ All `/coach/ai/*` routes are guarded by `JwtAuthGuard + CoachGuard` (owner role 
 | Method | Path | Throttle | Body |
 |---|---|---|---|
 | GET | `/coach/ai/status` | — | — |
-| POST | `/coach/ai/workout-program` | 5/hour | `{ clientId, weeks: 1..12, daysPerWeek: 1..7, focus?, notes? }` |
-| POST | `/coach/ai/meal-plan` | 5/hour | `{ clientId, days: 1..14, notes? }` |
-| POST | `/coach/ai/client-insight` | 10/hour | `{ clientId, windowDays?=7 }` |
+| POST | `/coach/ai/workout-program` | 60/hour | `{ clientId, weeks: 1..12, daysPerWeek: 1..7, focus?, notes? }` |
+| POST | `/coach/ai/meal-plan` | 60/hour | `{ clientId, days: 1..14, notes? }` |
+| POST | `/coach/ai/client-insight` | 60/hour | `{ clientId, windowDays?=7 }` |
 | GET | `/coach/ai/drafts/:draftId` | — | — |
 | POST | `/coach/ai/drafts/:draftId/approve` | — | — |
 | POST | `/coach/ai/drafts/:draftId/edit` | — | `{ patch: object }` |

@@ -19,6 +19,8 @@ describe('ConnectionsService', () => {
   let registry: any;
   let oauthState: any;
   let svc: ConnectionsService;
+  /** A6: the pending link the callback held, as the state store keeps it. */
+  let held: string | null;
 
   /** A cloud-OAuth connector double for OURA. */
   function ouraConnector(overrides: Record<string, unknown> = {}) {
@@ -70,9 +72,25 @@ describe('ConnectionsService', () => {
         redirectUri: `${REDIRECT_BASE}/v1/wearables/connections/oauth/callback`,
         pkceVerifier: undefined,
       })),
+      holdPendingLink: jest.fn(async (value: string) => {
+        held = value;
+        return 'ticket-1';
+      }),
+      takePendingLink: jest.fn(async () => {
+        const value = held;
+        held = null;
+        return value;
+      }),
     };
+    held = null;
     svc = new ConnectionsService(prisma, kms, registry, oauthState);
   });
+
+  /** A6: the provider callback, then the starter's signed-in app finishing it. */
+  async function link(on: ConnectionsService = svc, code = 'auth-code-1') {
+    const { ticket } = await on.handleCallback({ code, state: 'state-123' });
+    return on.completeLink(USER, ticket);
+  }
 
   describe('startOauth', () => {
     it('issues state and returns the connector authorization URL', async () => {
@@ -135,10 +153,11 @@ describe('ConnectionsService', () => {
 
   describe('handleCallback', () => {
     it('consumes state, exchanges code, KMS-wraps tokens, and creates the connection', async () => {
-      const res = await svc.handleCallback({ code: 'auth-code-1', state: 'state-123' });
+      const res = await link();
 
       expect(res).toEqual({ success: true, provider: WearableProvider.OURA });
       expect(oauthState.consume).toHaveBeenCalledWith('state-123');
+      expect(oauthState.takePendingLink).toHaveBeenCalledWith('ticket-1');
 
       // Both tokens KMS-wrapped before persistence.
       expect(kms.encrypt).toHaveBeenCalledWith('refresh-XYZ');
@@ -167,7 +186,7 @@ describe('ConnectionsService', () => {
 
     it('UPDATES (not duplicates) an existing connection on re-link', async () => {
       prisma.wearableConnection.findFirst.mockResolvedValue({ id: 'existing-conn' });
-      await svc.handleCallback({ code: 'auth-code-1', state: 'state-123' });
+      await link();
       expect(prisma.wearableConnection.create).not.toHaveBeenCalled();
       const updateArg = prisma.wearableConnection.update.mock.calls[0][0];
       expect(updateArg.where).toEqual({ id: 'existing-conn' });
@@ -186,6 +205,10 @@ describe('ConnectionsService', () => {
       const realSvc = new ConnectionsService(prisma, realKms, registry, oauthState);
       try {
         await realSvc.handleCallback({ code: 'auth-code-1', state: 'state-123' });
+        // A6: the held link carries ciphertext only.
+        expect(held).not.toContain('refresh-XYZ');
+        expect(held).not.toContain('access-ABC');
+        await realSvc.completeLink(USER, 'ticket-1');
         const createData = prisma.wearableConnection.create.mock.calls[0][0].data;
         const serialized = JSON.stringify(createData);
         // The ciphertext must not contain the plaintext refresh/access tokens.
@@ -313,10 +336,62 @@ describe('ConnectionsService', () => {
           })),
         }),
       );
-      await svc.handleCallback({ code: 'c', state: 'state-123' });
+      await link(svc, 'c');
       const createData = prisma.wearableConnection.create.mock.calls[0][0].data;
       expect(createData.encrypted_access_token).toBeNull();
       expect(createData.encrypted_refresh_token).toBe('ENC(r-only)');
+    });
+  });
+
+  describe('completeLink (A6 / AUTHB-05)', () => {
+    it('the callback attaches nothing: it holds the link and returns a ticket', async () => {
+      const res = await svc.handleCallback({ code: 'auth-code-1', state: 'state-123' });
+      expect(res).toEqual({ provider: WearableProvider.OURA, ticket: 'ticket-1' });
+      expect(prisma.wearableConnection.findFirst).not.toHaveBeenCalled();
+      expect(prisma.wearableConnection.create).not.toHaveBeenCalled();
+      expect(prisma.wearableConnection.update).not.toHaveBeenCalled();
+      expect(JSON.parse(held as string)).toMatchObject({
+        userId: USER,
+        encryptedRefresh: 'ENC(refresh-XYZ)',
+        accessTokenExpiresAt: '2026-06-01T00:00:00.000Z',
+      });
+    });
+
+    it('keeps the access token expiry as a date on the connection', async () => {
+      await link();
+      const createData = prisma.wearableConnection.create.mock.calls[0][0].data;
+      expect(createData.access_token_expires_at).toEqual(new Date('2026-06-01T00:00:00Z'));
+    });
+
+    it('refuses a ticket started by someone else and attaches nothing', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        const { ticket } = await svc.handleCallback({ code: 'auth-code-1', state: 'state-123' });
+        await expect(svc.completeLink('someone-else', ticket)).rejects.toThrow(
+          new BadRequestException('Invalid or expired wearable link.'),
+        );
+        expect(prisma.wearableConnection.create).not.toHaveBeenCalled();
+        expect(prisma.wearableConnection.update).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith(
+          'wearables.oauth.link_refused provider=OURA user_id=someone-else',
+        );
+        // The refused ticket is spent: the starter cannot use it afterwards.
+        await expect(svc.completeLink(USER, ticket)).rejects.toBeInstanceOf(BadRequestException);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
+    it('refuses an unknown, expired or corrupt ticket the same way', async () => {
+      oauthState.takePendingLink.mockResolvedValueOnce(null);
+      await expect(svc.completeLink(USER, 'gone')).rejects.toThrow(
+        new BadRequestException('Invalid or expired wearable link.'),
+      );
+      oauthState.takePendingLink.mockResolvedValueOnce('{not json');
+      await expect(svc.completeLink(USER, 'bad')).rejects.toBeInstanceOf(BadRequestException);
+      oauthState.takePendingLink.mockResolvedValueOnce(JSON.stringify({ provider: 'OURA' }));
+      await expect(svc.completeLink(USER, 'odd')).rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.wearableConnection.create).not.toHaveBeenCalled();
     });
   });
 

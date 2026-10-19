@@ -51,6 +51,23 @@ describe('verifyStripeSignature', () => {
     ).toThrow(StripeSignatureError);
   });
 
+  // SECALERTS-BE (CodeQL js/remote-property-injection): anyone can send this
+  // header. A prototype-named segment is refused as a signature failure (400),
+  // never a TypeError (500), and the HMAC alone still decides.
+  it.each(['__proto__', 'constructor', 'toString', 'hasOwnProperty'])(
+    'a %s segment is refused as a signature failure, and cannot spoil a real signature',
+    (key) => {
+      const forged = `${key}=x,${signStripePayload({ payload, secret: 'whsec_attacker' })}`;
+      for (const signatureHeader of [`${key}=x`, forged]) {
+        expect(() => verifyStripeSignature({ payload, signatureHeader, secret })).toThrow(
+          StripeSignatureError,
+        );
+      }
+      const genuine = `${key}=x,${signStripePayload({ payload, secret })}`;
+      expect(() => verifyStripeSignature({ payload, signatureHeader: genuine, secret })).not.toThrow();
+    },
+  );
+
   // Dual-secret rotation support (audit ref: /audits/00_MASTER_REPORT.md line 195).
   it('accepts a signature that matches the OLD secret during rotation', () => {
     const oldSecret = 'whsec_old_111';

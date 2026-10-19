@@ -3,21 +3,22 @@
  *
  * Extracted from RomanClientContextService.build (behaviour identical) so the
  * per-turn context and the Roman v1.1 timeline reader share one rule:
- * - Coach-owned rows come only from the client's CURRENT coach (User.coach_id),
- *   and only while that coach is a live coach account (role coach, not
- *   soft-deleted).
+ * - The coach's own conversation comes only from the client's CURRENT coach
+ *   (User.coach_id), and only while that coach is a live coach account (role
+ *   coach, not soft-deleted).
  * - Both the DB role and the caller role must say "student"; anything else
- *   gets no coach-owned facts.
- * - B-665-3: a delegated sub-coach assigns plans and meal plans and writes in
- *   the head-coach thread as itself (MessagingService pins the thread to the
- *   head coach). Only an open delegation from the current head coach counts.
- *
- * - B31 (agent 133): a coachless student's own plan (the house program clone
- *   CONSULT-ALL-BE-133 writes into the client's own tenant, with
- *   assigned_by_coach_id and MacroTarget.coach_id = the client id) is the
- *   client's plan. `planSide` names the assigner ids whose plan rows are the
- *   client's plan: the coach side for a coached student, the client alone for
- *   a coachless one. It never widens a coached client's read.
+ *   gets no coach-owned facts and no plan history.
+ * - B-665-3: a delegated sub-coach writes in the head-coach thread as itself
+ *   (MessagingService pins the thread to the head coach). Only an open
+ *   delegation from the current head coach counts.
+ * - HIST3 (owner 139-13, history follows the client): what the client was
+ *   given (targets, workout assignments, the daily meal plan, sessions,
+ *   applied workout adjustments) is the client's own history, whoever set it:
+ *   the current coach, an earlier coach or sub-coach, or the client's own
+ *   coachless house plan (B31). `ownHistory` says those rows are read by the
+ *   client id alone. The coach's conversation and private work (thread,
+ *   guideline, coaching style, message activity) still need `coachId`, so an
+ *   earlier coach's chat and notes never reach Roman (owner 4b).
  *
  * Pure: no I/O. The caller reads the user (with `coach`) and the open
  * SubCoachAssignment overlay and passes them in.
@@ -43,8 +44,6 @@ export interface RomanCoachScopeInput<C extends RomanCoachRow> {
   coach: C | null | undefined;
   /** The client's open SubCoachAssignment (unassigned_at null), newest first, or null. */
   overlay: RomanSubCoachOverlay | null | undefined;
-  /** B31: the client's own id; without it a coachless client has no plan side. */
-  userId?: string;
 }
 
 export interface RomanCoachScope<C extends RomanCoachRow> {
@@ -56,8 +55,8 @@ export interface RomanCoachScope<C extends RomanCoachRow> {
   subCoachId: string | null;
   /** Coach-side ids allowed as assigner / sender: [coachId] or [coachId, subCoachId]; [] without a coach. */
   coachSide: string[];
-  /** B31: assigner ids whose plan and targets are the client's: coachSide, or [userId] when coachless; [] otherwise. */
-  planSide: string[];
+  /** HIST3: both roles say student, so the client's own history is read by client id (any coach). */
+  ownHistory: boolean;
 }
 
 export function resolveRomanCoachScope<C extends RomanCoachRow>(
@@ -68,16 +67,10 @@ export function resolveRomanCoachScope<C extends RomanCoachRow>(
     input.coach && input.coach.role === 'coach' && !input.coach.deleted_at ? input.coach : null;
   // Both the DB role and the caller role must say "student" (defence in depth:
   // the service already gates on the caller role; a mismatch gets nothing).
-  const coachId =
-    input.userRole === 'student' && input.callerRole === 'student' && coach ? coach.id : null;
+  const ownHistory = input.userRole === 'student' && input.callerRole === 'student';
+  const coachId = ownHistory && coach ? coach.id : null;
   const overlay = input.overlay;
   const subCoachId = coachId && overlay?.head_coach_id === coachId ? overlay.sub_coach_id : null;
   const coachSide: string[] = coachId ? (subCoachId ? [coachId, subCoachId] : [coachId]) : [];
-  const bothStudent = input.userRole === 'student' && input.callerRole === 'student';
-  const planSide: string[] = coachId
-    ? coachSide
-    : bothStudent && input.userId
-      ? [input.userId]
-      : [];
-  return { coach, coachId, subCoachId, coachSide, planSide };
+  return { coach, coachId, subCoachId, coachSide, ownHistory };
 }

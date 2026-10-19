@@ -1,4 +1,5 @@
 import { ORM_ERROR_NAME, safeDiagnostic } from './orm-diagnostics';
+import { redactStripeSecretValues } from './log-redaction';
 import * as Sentry from '@sentry/node';
 
 /**
@@ -199,6 +200,10 @@ export function buildSentryOptions(
         const value = event.tags?.[key];
         if (typeof value === 'string' && SAFE_CODE_TAG.test(value)) tags[key] = value;
       }
+      // KEYS-READY: exception and message text still pass, minus any Stripe
+      // or Supabase key value that an error message happened to carry.
+      const scrub = (text: string | undefined) =>
+        text === undefined ? undefined : redactStripeSecretValues(text);
       return {
         type: undefined,
         event_id: event.event_id,
@@ -207,9 +212,12 @@ export function buildSentryOptions(
         release: event.release,
         level: event.level,
         platform: event.platform,
-        exception: event.exception,
-        message: event.message,
-        logentry: event.logentry,
+        exception: event.exception && {
+          ...event.exception,
+          values: event.exception.values?.map((item) => ({ ...item, value: scrub(item.value) })),
+        },
+        message: scrub(event.message),
+        logentry: event.logentry && { ...event.logentry, message: scrub(event.logentry.message) },
         tags,
       };
     },

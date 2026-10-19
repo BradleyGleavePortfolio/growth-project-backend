@@ -44,6 +44,7 @@ import {
   isMwbLiveCreateCapability,
   MWB_LIVE_CREATE_CAPABILITIES,
 } from './mwb-live-create.feature';
+import { ROMAN_MESSAGE_CAPABILITIES, ROMAN_MESSAGE_SOURCE } from './roman-message-draft';
 import { AuditService } from '../../audit/audit.service';
 import { CoachAIBudgetService } from '../../ai-credits/coach-ai-budget.service';
 import { CoachAiBudgetExhaustedException } from '../../ai-credits/budget-exhausted.exception';
@@ -216,6 +217,14 @@ export class AiGatewayService {
       });
     }
 
+    // ROMANMARK-BE: a Roman message draft holds only text Roman wrote on the
+    // server (step 4 below), so a sent message never carries the Roman mark
+    // over a caller's own words. A caller-supplied proposed action is refused
+    // before any provider call, budget read or draft.
+    if (ROMAN_MESSAGE_CAPABILITIES.has(req.capability) && req.proposedActionPayload !== undefined) {
+      throw new BadRequestException({ error: 'AI_DRAFT_PAYLOAD_SERVER_WRITTEN', capability: req.capability });
+    }
+
     // B-AIBSUB-126 — Ask AI is not offered to sub-coaches at launch (the
     // status route 404s for them too). Same 404 for every way in (propose,
     // POST /ai/gateway/invoke), before any draft, budget read or provider call.
@@ -371,7 +380,10 @@ export class AiGatewayService {
 
     const responseHash = sha256(response.text);
     // B-AIB2-126 — only the gateway may mark a payload model-authored.
-    const provenance = (req.provenance ?? []).filter((p) => p.source !== WORKOUT_BUILDER_MODEL_DIFF_SOURCE);
+    // ROMANMARK-BE: only the gateway may mark a message draft Roman's text.
+    const provenance = (req.provenance ?? []).filter(
+      (p) => p.source !== WORKOUT_BUILDER_MODEL_DIFF_SOURCE && p.source !== ROMAN_MESSAGE_SOURCE,
+    );
     const redactionSummary = redacted.summary;
 
     // Stream 1 — post-call atomic usage recording. Runs ONLY when the
@@ -435,6 +447,16 @@ export class AiGatewayService {
     if (req.resolveProposedAction) {
       modelPayload = await req.resolveProposedAction(response, { providerFailed: errorMsg !== null });
       if (modelPayload) provenance.push({ source: WORKOUT_BUILDER_MODEL_DIFF_SOURCE, hash: sha256(JSON.stringify(modelPayload)), count: 1 });
+    }
+    // ROMANMARK-BE: a Roman reply draft is the model's own reply to the named
+    // client, written here. No draft when no model ran (the stub's text, a
+    // provider failure) or no client is named; a wearable message draft comes
+    // only from POST /v1/wearables/insights/approve, never from here.
+    if (ROMAN_MESSAGE_CAPABILITIES.has(req.capability)) {
+      const romanWrote =
+        req.capability === COACH_MESSAGE_CAPABILITY && response.enabled && errorMsg === null && !!req.subjectUserId;
+      modelPayload = romanWrote ? { clientId: req.subjectUserId, body: response.text.trim() } : null;
+      if (modelPayload) provenance.push({ source: ROMAN_MESSAGE_SOURCE, hash: sha256(JSON.stringify(modelPayload)), count: 1 });
     }
 
     if (approvalRequired && modelPayload !== null) {
@@ -568,27 +590,12 @@ export class AiGatewayService {
   }
 
   /**
-   * Resolve the head-coach id whose budget this request debits.
-   *
-   * Priority order:
-   *   1. `tenantCoachId` if the caller stamped it (owner-impersonation
-   *      paths and capabilities that explicitly scope to a coach).
-   *   2. The subject's coach_id when the subject is a student (every
-   *      student carries their owning coach as coach_id).
-   *   3. The requester themselves when they are a coach or sub-coach
-   *      (CoachAIBudgetService.resolveHeadCoachId folds sub-coaches into
-   *      their head coach).
-   *
-   * Returns null when none of the above apply — the gateway treats null
-   * as "no budget to charge" and skips metering for the call. The
-   * structured log on the audit row still captures the requester so
-   * out-of-band reconciliation is possible.
-   */
-  /**
    * R2b — the requester must be allowed to act on every client the gateway
    * derived from `subjectUserId` / the proposed payload before any consent
-   * state is consulted. Owners: allowed. Coaches: direct roster
-   * (User.coach_id) or an open SubCoachAssignment. A client: only itself.
+   * state is consulted. Owners: allowed. Coaches: a current client (role
+   * student) on their direct roster (User.coach_id) or in an open
+   * SubCoachAssignment; a coach row's coach_id is never a roster link
+   * (AIBUDGET B1). A client: only itself.
    * Anything else is the same opaque 404 the /coach/* routes use.
    * `dataClientIds` are excluded: those callers scope them (cohort-bounded).
    */
@@ -599,14 +606,19 @@ export class AiGatewayService {
       new NotFoundException({ code: 'client_not_found', message: 'Client not found.' });
     if (req.requester.role !== 'coach') throw notFound();
     const direct = await this.prisma.user.findMany({
-      where: { id: { in: named }, coach_id: req.requester.id },
+      where: { id: { in: named }, role: 'student', coach_id: req.requester.id },
       select: { id: true },
     });
     const allowed = new Set(direct.map((u) => u.id));
     const rest = named.filter((id) => !allowed.has(id));
     if (rest.length > 0) {
       const delegated = await this.prisma.subCoachAssignment.findMany({
-        where: { sub_coach_id: req.requester.id, client_id: { in: rest }, unassigned_at: null },
+        where: {
+          sub_coach_id: req.requester.id,
+          client_id: { in: rest },
+          unassigned_at: null,
+          client: { role: 'student' },
+        },
         select: { client_id: true, head_coach_id: true },
       });
       // A coach move leaves the delegation open, so it counts only while the
@@ -620,6 +632,25 @@ export class AiGatewayService {
     if (named.some((id) => !allowed.has(id))) throw notFound();
   }
 
+  /**
+   * Resolve the pool (a head coach's CoachAIBudget) this request debits.
+   * CoachAIBudgetService.resolveHeadCoachId folds a coach with an active
+   * team seat into their head coach; everyone else keeps their own pool.
+   *
+   * Priority order:
+   *   1. `tenantCoachId` if the caller stamped it (every coach-side caller
+   *      does).
+   *   2. The subject: a client draws on their coach's pool, a coach or owner
+   *      on their own. Only a client's `coach_id` picks a pool. On a coach
+   *      row it is legacy data, an old guest-checkout stamp or a removed
+   *      sub-coach's old head coach, so it never does.
+   *   3. The requester themselves when they are a coach or owner.
+   *
+   * Returns null when none of the above apply — the gateway treats null
+   * as "no budget to charge" and skips metering for the call. The
+   * structured log on the audit row still captures the requester so
+   * out-of-band reconciliation is possible.
+   */
   private async resolveBudgetCoachId(
     req: AiGatewayRequest,
   ): Promise<string | null> {
@@ -628,18 +659,18 @@ export class AiGatewayService {
       return this.budget.resolveHeadCoachId(req.tenantCoachId);
     }
     if (req.subjectUserId) {
-      // Look up the subject to see if they have a coach_id (student path).
+      // Role first: a coach's own coach_id never picks the pool (AIBUDGET).
       const subject = await this.prisma.user
         .findUnique({
           where: { id: req.subjectUserId },
           select: { id: true, role: true, coach_id: true },
         })
         .catch(() => null);
+      if (subject && subject.role !== 'student') {
+        return this.budget.resolveHeadCoachId(subject.id);
+      }
       if (subject?.coach_id) {
         return this.budget.resolveHeadCoachId(subject.coach_id);
-      }
-      if (subject && (subject.role === 'coach' || subject.role === 'owner')) {
-        return this.budget.resolveHeadCoachId(subject.id);
       }
     }
     if (req.requester.role === 'coach' || req.requester.role === 'owner') {
@@ -720,9 +751,11 @@ export function deriveGatewayDataSubject(req: AiGatewayRequest): AiDataSubject {
   const ids = [...new Set([...namedClientIds(req), ...(req.dataClientIds ?? [])])].filter(
     (id) => typeof id === 'string' && id.length > 0,
   );
-  if (ids.length === 0) return noClientDataSubject('coach_own_scope');
-  const audience = req.requester.role === 'coach' || req.requester.role === 'owner' ? 'coach' : 'client';
-  return clientDataSubject(ids, audience);
+  const isStaff = req.requester.role === 'coach' || req.requester.role === 'owner';
+  // COACH-AI-CONSENT: a coach or owner's request also needs their own grant.
+  const coachId = isStaff ? req.requester.id : undefined;
+  if (ids.length === 0) return noClientDataSubject('coach_own_scope', coachId);
+  return clientDataSubject(ids, isStaff ? 'coach' : 'client', 'base', coachId);
 }
 
 // B-AIB2-126 — provenance source of a payload the model wrote via `resolveProposedAction`. Callers cannot set it (stripped above).

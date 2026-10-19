@@ -363,7 +363,7 @@ export class ChurnInterventionService {
     // after the roster check (no cross-tenant oracle) and before the
     // idempotency claim, so a refusal leaves no draft row behind. The grant
     // is read again immediately before the provider request.
-    const dataSubject = clientDataSubject(clientId, 'coach');
+    const dataSubject = clientDataSubject(clientId, 'coach', 'base', coachId);
     await this.egress.assertMaySend(dataSubject, 'anthropic', 'coach.churn_draft');
 
     // Pull PTM context (used both for the prompt and as the row's

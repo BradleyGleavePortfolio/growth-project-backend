@@ -46,6 +46,7 @@ import {
   assertLastDayMayGo,
   assertNotInActiveClinicSet,
   lockProgramMaster,
+  programDaysWhere,
 } from './program-guards';
 import {
   BulkAssignProgramDto,
@@ -55,6 +56,8 @@ import {
   SetProgramDayDto,
   UpdateProgramDto,
 } from './program-library.dto';
+import { inTenantSql, inTenantWhere } from './tenant-clients';
+import { alternativesOf } from './plan-exercise-fields';
 
 /** Advisory-lock namespaces (int4). */
 const LOCK_NS_PROGRAM_GRID = 0x4d574247; // 'MWBG' — serialises grid writes per program
@@ -213,9 +216,10 @@ export class ProgramLibraryService {
 
   /**
    * Clients this actor may see in assignee lists and counts (B-640-2). Head
-   * coaches see their whole tenant (null = no extra filter); a sub-coach sees
-   * only the clients delegated to them through SubCoachAssignment, the same
-   * scope every other coach surface uses.
+   * coaches see the clients still in their tenant (null here; the callers add
+   * inTenantWhere / inTenantSql, so a client who moved to another coach is out
+   * at once, owner 4); a sub-coach sees only the clients delegated to them
+   * through SubCoachAssignment, the same scope every other coach surface uses.
    */
   private async visibleClientIds(actor: ProgramActor): Promise<Set<string> | null> {
     if (actor.authorKind !== 'sub_coach') return null;
@@ -342,11 +346,11 @@ export class ProgramLibraryService {
     const ids = programs.map((p) => p.id);
     const filled = await this.prisma.workoutPlan.groupBy({
       by: ['program_id'],
-      where: { program_id: { in: ids }, archived_at: null },
+      where: { program_id: { in: ids }, coach_id: actor.tenantId, archived_at: null },
       _count: { _all: true },
     });
     const filledBy = new Map(filled.map((f) => [f.program_id ?? '', f._count._all]));
-    const assigned = await this.assignedCounts(ids, await this.visibleClientIds(actor));
+    const assigned = await this.assignedCounts(ids, actor);
     const pkgs = await this.prisma.coachPackageContent.groupBy({
       by: ['asset_id'],
       where: {
@@ -384,15 +388,17 @@ export class ProgramLibraryService {
    */
   private async assignedCounts(
     masterIds: string[],
-    visible: Set<string> | null,
+    actor: ProgramActor,
   ): Promise<Map<string, number>> {
     if (masterIds.length === 0) return new Map();
+    const visible = await this.visibleClientIds(actor);
     if (visible && visible.size === 0) return new Map();
     // Deleted (tombstoned) client accounts never count (B-640-3). A sub-coach
-    // counts only their own delegated clients (B-640-2).
+    // counts only their own delegated clients (B-640-2); a head coach only
+    // clients still in the tenant (owner 4).
     const scope = visible
       ? Prisma.sql`AND a."client_id" IN (${Prisma.join(Array.from(visible))})`
-      : Prisma.empty;
+      : inTenantSql(actor.tenantId);
     const rows = await this.prisma.$queryRaw<Array<{ master_id: string; n: number }>>`
       SELECT p."cloned_from_id" AS master_id, COUNT(DISTINCT a."client_id")::int AS n
       FROM "ClientWorkoutAssignment" a
@@ -420,7 +426,7 @@ export class ProgramLibraryService {
     });
     const [summary] = await this.summarise(actor, [program]);
     const plans = await this.prisma.workoutPlan.findMany({
-      where: { program_id: programId, archived_at: null },
+      where: programDaysWhere(program),
       orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
       select: {
         id: true,
@@ -548,7 +554,7 @@ export class ProgramLibraryService {
           }
           if (dto.weeks !== undefined && dto.weeks < program.weeks) {
             const outside = await tx.workoutPlan.count({
-              where: { program_id: programId, archived_at: null, week_index: { gte: dto.weeks } },
+              where: { ...programDaysWhere(program), week_index: { gte: dto.weeks } },
             });
             if (outside > 0) {
               throw new ConflictException(
@@ -614,7 +620,7 @@ export class ProgramLibraryService {
   ): Promise<void> {
     const program = await tx.workoutProgram.findUniqueOrThrow({ where: { id: programId } });
     const plans = await tx.workoutPlan.findMany({
-      where: { program_id: programId, archived_at: null },
+      where: programDaysWhere(program),
       orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
       select: { id: true, name: true, week_index: true, day_index: true },
     });
@@ -685,7 +691,7 @@ export class ProgramLibraryService {
           const program = await this.loadEditableTx(tx, actor, programId);
           this.assertSlot(program, week, day);
           const taken = await tx.workoutPlan.findFirst({
-            where: { program_id: programId, week_index: week, day_index: day, archived_at: null },
+            where: { ...programDaysWhere(program), week_index: week, day_index: day },
             select: { id: true },
           });
           if (taken) {
@@ -725,6 +731,7 @@ export class ProgramLibraryService {
       rest_seconds: number | null;
       superset_group_id: string | null;
       notes: string | null;
+      alternative_external_ids?: string[];
     }>;
   }> {
     if (dto.source === 'blank') {
@@ -759,6 +766,7 @@ export class ProgramLibraryService {
       src = await tx.workoutPlan.findFirst({
         where: {
           program_id: programId,
+          coach_id: actor.tenantId,
           week_index: dto.from_week_index,
           day_index: dto.from_day_index,
           archived_at: null,
@@ -788,6 +796,7 @@ export class ProgramLibraryService {
         rest_seconds: e.rest_seconds ?? null,
         superset_group_id: e.superset_group_id ?? null,
         notes: e.notes ?? null,
+        alternative_external_ids: alternativesOf(e),
       })),
     };
   }
@@ -866,7 +875,7 @@ export class ProgramLibraryService {
       const program = await this.loadEditableTx(tx, actor, programId);
       this.assertSlot(program, week, day);
       const plan = await tx.workoutPlan.findFirst({
-        where: { program_id: programId, week_index: week, day_index: day, archived_at: null },
+        where: { ...programDaysWhere(program), week_index: week, day_index: day },
         select: { id: true },
       });
       if (!plan) return; // already empty: idempotent
@@ -876,7 +885,7 @@ export class ProgramLibraryService {
       // last day is being removed at the same time.
       await lockProgramMaster(tx, programId);
       const remaining = await tx.workoutPlan.count({
-        where: { program_id: programId, archived_at: null },
+        where: programDaysWhere(program),
       });
       if (remaining <= 1) {
         // B-640-11: a packaged master, or one an active clinic consultation
@@ -921,7 +930,7 @@ export class ProgramLibraryService {
             },
           });
           const plans = await tx.workoutPlan.findMany({
-            where: { program_id: source.id, archived_at: null },
+            where: programDaysWhere(source),
             orderBy: [{ week_index: 'asc' }, { day_index: 'asc' }],
             include: { exercises: { where: { archived_at: null }, orderBy: { order: 'asc' } } },
           });
@@ -940,6 +949,7 @@ export class ProgramLibraryService {
                 rest_seconds: e.rest_seconds ?? null,
                 superset_group_id: e.superset_group_id ?? null,
                 notes: e.notes ?? null,
+                alternative_external_ids: alternativesOf(e),
               })),
             });
           }
@@ -1153,7 +1163,7 @@ export class ProgramLibraryService {
     );
     const cursor = this.decodeCursor(query.cursor);
     const clientScope: Prisma.ClientWorkoutAssignmentWhereInput = {
-      client: { deleted_at: null },
+      client: { deleted_at: null, ...(visible ? {} : inTenantWhere(actor.tenantId)) },
       ...(visible ? { client_id: { in: Array.from(visible) } } : {}),
     };
     const copies = await this.prisma.workoutProgram.findMany({
@@ -1255,7 +1265,7 @@ export class ProgramLibraryService {
       );
     }
     const days = await this.prisma.workoutPlan.count({
-      where: { program_id: programId, archived_at: null },
+      where: programDaysWhere(master),
     });
     if (days === 0) {
       throw new UnprocessableEntityException(
@@ -1276,6 +1286,7 @@ export class ProgramLibraryService {
           startAt,
           dto.allow_repeat === true,
           idempotencyKey,
+          dto.scheduled_time ?? null,
         ),
       );
     }
@@ -1303,6 +1314,7 @@ export class ProgramLibraryService {
     startAt: Date,
     allowRepeat: boolean,
     idempotencyKey: string,
+    scheduledTime: string | null,
   ): Promise<BulkAssignResult> {
     try {
       await this.workoutBuilder.assertCanAccessClient(actor.id, clientId);
@@ -1339,11 +1351,12 @@ export class ProgramLibraryService {
         message: 'This client account no longer exists.',
       };
     }
-    // The key is the whole logical intent (C-640-8): master, start date and the
-    // repeat choice. Reusing one Idempotency-Key for a different program or a
-    // different start date is a NEW intent, never a silent replay of the first
-    // result; it then meets the already-assigned guard below like any request.
-    const intent = `${masterId}:${startAt.toISOString().slice(0, 10)}:${allowRepeat ? 'repeat' : 'once'}`;
+    // The key is the whole logical intent (C-640-8): master, start date, the
+    // repeat choice and (C2-C0) the planned time. Reusing one Idempotency-Key
+    // for a different program, start date or time is a NEW intent, never a
+    // silent replay of the first result; it then meets the already-assigned
+    // guard below like any request. No time keeps the key as it was.
+    const intent = `${masterId}:${startAt.toISOString().slice(0, 10)}:${allowRepeat ? 'repeat' : 'once'}${scheduledTime ? `@${scheduledTime}` : ''}`;
     const deliveryKey = `bulk:${actor.id}:${intent}:${idempotencyKey}:${clientId}`;
     try {
       return await this.prisma.$transaction(
@@ -1383,6 +1396,7 @@ export class ProgramLibraryService {
             startAt,
             deliveryKey,
             source: 'bulk_assign',
+            scheduledTime,
           });
           return {
             client_id: clientId,

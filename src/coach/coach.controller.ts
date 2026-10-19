@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Request, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Request, NotFoundException, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { AuditableRequest, AuthedRequest } from '../auth/auth-request';
 import { CoachService } from './coach.service';
@@ -9,6 +9,7 @@ import { AnalyticsService } from '../analytics/analytics.service';
 import { Events } from '../analytics/events';
 import { AdminPtmService } from '../admin/ptm/admin-ptm.service';
 import { RiskBoardQueryDto } from '../admin/ptm/admin-ptm.dto';
+import { WorkoutCommentDto } from '../workout/workout.dto';
 
 @ApiTags('coach')
 @Controller('coach')
@@ -187,6 +188,36 @@ export class CoachController {
   @Get('clients/:id/summary')
   async getClientSummary(@Request() req: AuthedRequest, @Param('id') clientId: string, @Query('date') date?: string) {
     return this.coachService.getClientSummary(req.user.id, clientId, date, req.user.role, auditContext(req));
+  }
+
+  // TRAIN-BE2: the caller's own comment on a client's logged workout (404 unless the client is theirs now).
+  @Roles('coach', 'owner')
+  @Put('clients/:id/workouts/:workoutId/comment')
+  async putWorkoutComment(
+    @Request() req: AuthedRequest,
+    @Param('id') clientId: string,
+    @Param('workoutId') workoutId: string,
+    @Body() dto: WorkoutCommentDto,
+  ) {
+    return this.coachService.setWorkoutComment(req.user.id, clientId, workoutId, dto.body, req.user.role);
+  }
+
+  @Roles('coach', 'owner')
+  @Delete('clients/:id/workouts/:workoutId/comment')
+  async deleteWorkoutComment(
+    @Request() req: AuthedRequest,
+    @Param('id') clientId: string,
+    @Param('workoutId') workoutId: string,
+  ) {
+    return this.coachService.setWorkoutComment(req.user.id, clientId, workoutId, null, req.user.role);
+  }
+
+  // K1WEEK: this week's workout assignments for the client file's ring, in the
+  // client's own week. 404 unless the client is the caller's now.
+  @Roles('coach', 'owner')
+  @Get('clients/:id/week')
+  async getClientWeek(@Request() req: AuthedRequest, @Param('id') clientId: string) {
+    return this.coachService.getClientWeek(req.user.id, clientId, req.user.role, auditContext(req));
   }
 
   // GET /coach/my-guidelines (the client's own read) lives in

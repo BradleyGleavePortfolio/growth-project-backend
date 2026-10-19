@@ -13,7 +13,7 @@
  *
  * Auth: JwtAuthGuard authenticates every route. Roman is available to ALL
  * signed-in users on ANY tier (free + pro) — so there is no tier gate, only the
- * per-tier RATE limit applied in the service (brief §4). RomanFeatureGuard
+ * client's daily Roman limits (ROMANCOUNT, roman-usage.ts). RomanFeatureGuard
  * returns 404 on every route while the feature flag is OFF. A client with no
  * coach gets 403 ROMAN_REQUIRES_COACH on open and send (owner 10-09 00:0x,
  * roman-requires-coach.ts); reading a transcript stays open.
@@ -21,6 +21,10 @@
  * Streaming: `POST …/messages` returns Server-Sent Events. The user turn is
  * persisted first; the assistant turn is streamed and persisted on completion
  * (or partial-with-interrupted on client disconnect — brief §1.3).
+ *
+ * CRISIS-2B: Roman's fixed emergency or self-harm reply carries
+ * `safety_actions` on the SSE `done` frame and in the message list, for an app
+ * that sends ROMAN_SAFETY_ACTIONS_HEADER.
  */
 
 import {
@@ -44,7 +48,9 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
 import { PrismaService } from '../prisma.service';
 import { RomanFeatureGuard } from './roman-feature.guard';
+import { romanSafetyActions, type RomanSafetyAction } from './guardrails/safety-router';
 import { toRomanSseErrorFrame } from './roman-sse-error';
+import type { RomanUsageDebit } from './roman-usage';
 import {
   assertRomanHasCoach,
   romanRequiresCoach,
@@ -59,6 +65,15 @@ import {
   OpenSessionDto,
   SendMessageDto,
 } from './roman.dto';
+import { KeepRomanContext } from './context/roman-context-invalidation';
+
+/**
+ * CRISIS-2B: an app that reads `safety_actions` sends this header with the
+ * value 1. Builds without it parse Roman's views strictly and refuse an
+ * unknown key, so they get today's exact shape and the crisis reply still
+ * reaches them.
+ */
+export const ROMAN_SAFETY_ACTIONS_HEADER = 'x-roman-safety-actions';
 
 @Controller('roman')
 @UseGuards(JwtAuthGuard, RolesGuard, RomanFeatureGuard)
@@ -97,8 +112,9 @@ export class RomanController {
       cursor: query.cursor,
       limit: query.limit,
     });
+    const marker = this.safetyMarker(req);
     return {
-      messages: page.messages.map((m) => this.toMessageView(m)),
+      messages: page.messages.map((m) => ({ ...this.toMessageView(m), ...marker(m) })),
       nextCursor: page.nextCursor,
     };
   }
@@ -106,6 +122,8 @@ export class RomanController {
   // ─── POST /roman/sessions/:id/messages — submit a turn, stream the reply ───
   @Post('sessions/:id/messages')
   @Roles('student', 'coach', 'owner')
+  // The turn reads the context; it writes nothing the context reads.
+  @KeepRomanContext()
   async sendMessage(
     @Req() req: Request & AuthedRequest,
     @Res() res: Response,
@@ -113,18 +131,19 @@ export class RomanController {
     @Body() dto: SendMessageDto,
   ): Promise<void> {
     const caller = await this.callerOf(req);
-    // An emergency / self-harm message is answered by the deterministic
-    // SafetyRouter template (911 / 988): no model call, no spend, and none of
+    // An emergency / self-harm / urgent-symptoms message is answered by a
+    // deterministic SafetyRouter template: no model call, no spend, and none of
     // the client's data leaves the app. Neither the per-user turn limit, the
     // daily spend cap, nor the box-2 AI gate (which governs sending data to
     // the AI processor, CONSENT_D2_CONTRACT) may stand between the client and
     // that answer. Every other turn keeps all three checks.
-    const crisis = this.roman.isSafetyShortCircuit(dto.content);
+    const crisis = await this.roman.isSafetyShortCircuit(caller, id, dto.content);
     // CF-ROMAN-COPY-B-128 (owner default 10-07): an eating-disorder message
     // that one of the checks below refuses gets the fixed fallback (a pointer
     // to people, no model call) instead of the refusal.
     const edRisk = !crisis && this.roman.isEatingDisorderRisk(dto.content);
     let edFallback = false;
+    let usageDebit: RomanUsageDebit | null = null;
 
     // Owner 10-09 00:0x: a client with no coach gets 403 ROMAN_REQUIRES_COACH
     // first, before the rate limit, the turn is stored or any AI or pool
@@ -133,23 +152,6 @@ export class RomanController {
     if (!crisis && romanRequiresCoach(req.user)) {
       if (!edRisk) throw romanRequiresCoachException();
       edFallback = true;
-    }
-
-    // Rate-limit BEFORE persisting the user turn (so a rejected turn does not
-    // count against the cap). Throws a structured 429 Too Many Requests; we
-    // surface the retry budget as a real Retry-After header (RFC 6585 §4)
-    // before re-throwing so the NestJS filter serialises the body.
-    try {
-      if (!crisis) await this.roman.assertWithinRateLimit(caller);
-    } catch (err) {
-      if (edRisk) edFallback = true;
-      const payload = (
-        err as { getResponse?: () => unknown }
-      ).getResponse?.() as { retryAfterSeconds?: number } | undefined;
-      if (!edFallback && typeof payload?.retryAfterSeconds === 'number') {
-        res.setHeader('Retry-After', String(payload.retryAfterSeconds));
-      }
-      if (!edFallback) throw err;
     }
 
     const session = await this.roman.getOwnedSession(caller, id);
@@ -166,11 +168,20 @@ export class RomanController {
       // B-668-1 — the coach's monthly AI credit pool, before the turn is stored
       // (402 COACH_AI_BUDGET_EXHAUSTED, copy for the caller's audience).
       if (!crisis && !edFallback) await this.roman.assertCoachPoolOpen(caller);
+      // ROMANCOUNT — counted last, so a turn refused above never counts (the spend
+      // admission gives it back). An eating-disorder-risk turn is checked, never counted.
+      if (!crisis && !edFallback) usageDebit = await this.roman.assertWithinRateLimit(caller, edRisk);
     } catch (err) {
-      if (!edRisk) throw err;
+      if (!edRisk) {
+        // 429: the wait as a real Retry-After header (RFC 6585 §4).
+        const retry = (err as { getResponse?: () => { retryAfterSeconds?: unknown } }).getResponse?.();
+        if (typeof retry?.retryAfterSeconds === 'number') res.setHeader('Retry-After', String(retry.retryAfterSeconds));
+        throw err;
+      }
       edFallback = true;
     }
-    await this.roman.appendMessage(caller, session.id, {
+    // The stored turn's id: a safety alert points at this one message.
+    const stored = await this.roman.appendMessage(caller, session.id, {
       role: 'user',
       content: dto.content,
     });
@@ -194,19 +205,26 @@ export class RomanController {
       (res as { flushHeaders: () => void }).flushHeaders();
     }
 
+    const marker = this.safetyMarker(req);
     const abort = new AbortController();
     const onClose = () => abort.abort();
     req.on('close', onClose);
 
     const turn = edFallback
-      ? this.roman.streamEatingDisorderFallback(caller, session)
+      ? this.roman.streamEatingDisorderFallback(caller, session, stored?.id)
       : this.roman.streamAssistantTurn(caller, session, {
           signal: abort.signal,
           userMessage: dto.content,
+          userMessageId: stored?.id,
+          usageDebit,
         });
     try {
       for await (const chunk of turn) {
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        const frame =
+          chunk.type === 'done'
+            ? { ...chunk, ...marker({ role: 'roman', content: chunk.text ?? '' }) }
+            : chunk;
+        res.write(`data: ${JSON.stringify(frame)}\n\n`);
         if (chunk.type === 'done') break;
       }
     } catch (err) {
@@ -239,6 +257,21 @@ export class RomanController {
       // No subscription model row / not a coach — free tier is the safe default.
     }
     return { id: user.id, role: user.role, tier };
+  }
+
+  /**
+   * CRISIS-2B: `{ safety_actions }` for a fixed crisis reply when the app sent
+   * ROMAN_SAFETY_ACTIONS_HEADER, otherwise nothing (the key is left out).
+   * message_coach needs a coach now: `req.user` is the fresh User row
+   * (JwtAuthGuard), and only a client's coach_id is their coach.
+   */
+  private safetyMarker(req: AuthedRequest) {
+    const asked = req.headers?.[ROMAN_SAFETY_ACTIONS_HEADER] === '1';
+    const hasCoach = req.user.role === 'student' && !!req.user.coach_id;
+    return (turn: { role: string; content: string }): { safety_actions?: RomanSafetyAction[] } => {
+      const actions = asked ? romanSafetyActions(turn, hasCoach) : null;
+      return actions ? { safety_actions: actions } : {};
+    };
   }
 
   private toSessionView(session: {

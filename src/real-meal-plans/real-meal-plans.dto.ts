@@ -7,12 +7,14 @@ import {
   IsOptional,
   IsString,
   IsIn,
+  Matches,
   Max,
   MaxLength,
   Min,
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { IsTimeOfDay } from '../common/validators/time-of-day';
 
 const trim = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.trim() : value;
@@ -72,6 +74,8 @@ export class DailyPlanSlotInputDto {
   @IsString() @IsIn(SLOT_LABELS as unknown as string[])
   slot_label!: typeof SLOT_LABELS[number];
   @IsOptional() @IsInt() @Min(0) @Max(20) order?: number;
+  // C2-C0: the coach's planned time for the meal, "HH:MM"; absent or null = no time.
+  @IsOptional() @IsTimeOfDay() time_of_day?: string | null;
 }
 
 export class CreateDailyMealPlanDto {
@@ -101,4 +105,11 @@ export class AssignDailyPlanDto {
   @IsString() client_id!: string;
   @IsISO8601() starts_on!: string;
   @IsOptional() @IsISO8601() ends_on?: string;
+}
+
+/** MEALPLAN-END: the client's last day on the plan. A day before it starts removes it. */
+export class EndDailyPlanAssignmentDto {
+  @IsISO8601({ strict: true })
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'ends_on must be a date in the form YYYY-MM-DD' })
+  ends_on!: string;
 }
