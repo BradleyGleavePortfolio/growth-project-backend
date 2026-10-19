@@ -33,6 +33,8 @@ describe('LEARN-FROZEN-MEDIA: coach media behind a kept lesson', () => {
         field: 'coach_id',
         action: { op: 'delete' },
         where: { lessons: { none: KEPT_LESSON } },
+        // COACH-GONE-DELIVERY: also kept when a held purchase delivered or owes it.
+        owed: ['id'],
       },
       { model: 'CoachMediaAsset', field: 'coach_id', action: { op: 'retain', reason: expect.any(String) } },
     ]);
