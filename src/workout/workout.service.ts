@@ -1,13 +1,23 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { PtmService } from '../ptm/ptm.service';
 import { ClientAIContextService } from '../ai/client-ai-context.service';
+import { summarizeExerciseSet } from '../roman/tools/roman-exercise-history';
 import {
+  ExerciseHistoryQueryDto,
   CreateWorkoutDto,
   CreateRoutineDto,
   UpdateRoutineDto,
   UpdateWorkoutDto,
 } from './workout.dto';
+
+/** TRAIN-BE2: Your history lists at most this many sessions, newest first; Best ever and Since week 1 read them all. */
+const HISTORY_SESSIONS = 100;
+
+type TopSet = { weight_lbs: number; reps: number };
+const heavier = (a: TopSet, b: TopSet | null | undefined) =>
+  !b || a.weight_lbs > b.weight_lbs || (a.weight_lbs === b.weight_lbs && a.reps > b.reps);
 
 @Injectable()
 export class WorkoutService {
@@ -42,6 +52,7 @@ export class WorkoutService {
                 rpe: e.rpe,
                 notes: e.notes,
                 video_url: e.video_url,
+                exercise_external_id: e.exercise_external_id,
               })),
             }
           : undefined,
@@ -111,6 +122,45 @@ export class WorkoutService {
     }));
   }
 
+  /**
+   * TRAIN-BE2 (Coach's page, plan C2): each time the caller logged one exercise, over all their
+   * history, for the exercise detail's Best ever, Since week 1 and Your history. Sets logged under
+   * the catalog id match by id; sets logged without one (before the column, or by an older app)
+   * match by name, case-insensitive. Each session carries every coach comment on its workout, a
+   * former coach's included: history follows the client.
+   */
+  async getExerciseHistory(userId: string, q: ExerciseHistoryQueryDto) {
+    const byName = { exercise_name: { equals: q.name ?? '', mode: 'insensitive' as const } };
+    const legacy = q.name ? [{ exercise_external_id: null, ...byName }] : [];
+    const match: Prisma.ExerciseSetWhereInput = q.exercise_id
+      ? { OR: [{ exercise_external_id: q.exercise_id }, ...legacy] }
+      : byName;
+    const comments = {
+      orderBy: { created_at: 'asc' },
+      select: { body: true, coach: { select: { name: true } } },
+    } as const;
+    const rows = await this.prisma.exerciseSet.findMany({
+      where: { ...match, workout: { user_id: userId } },
+      orderBy: [{ workout: { date: 'asc' } }, { workout: { created_at: 'asc' } }, { id: 'asc' }],
+      select: {
+        exercise_name: true, sets_completed: true, reps_per_set: true, weight_per_set: true, rpe: true,
+        workout: { select: { id: true, date: true, comments } },
+      },
+    });
+    const sessions = rows.map((r) => {
+      const { exercise: _name, ...set } = summarizeExerciseSet(r);
+      const coach_comments = r.workout.comments.map((c) => ({ coach_name: c.coach.name, body: c.body }));
+      return { workout_id: r.workout.id, ...set, coach_comments };
+    });
+    type Session = (typeof sessions)[number];
+    // Oldest first, so a tie keeps the day the best top set was first lifted.
+    let best: Session | null = null;
+    for (const s of sessions) if (s.top_set && heavier(s.top_set, best?.top_set)) best = s;
+    const point = (s: Session | null | undefined) => (s ? { date: s.date, top_set: s.top_set } : null);
+    const first = point(sessions[0]);
+    return { best: point(best), first, sessions: sessions.reverse().slice(0, HISTORY_SESSIONS) };
+  }
+
   // QA P0-W1. The workout instance had no edit/delete surface — a coach
   // or client could log a workout but never correct a mistyped set,
   // remove a duplicate-submission, or fix a wrong weight/reps. Both
@@ -155,6 +205,7 @@ export class WorkoutService {
               rpe: e.rpe,
               notes: e.notes,
               video_url: e.video_url,
+              exercise_external_id: e.exercise_external_id,
             })),
           });
         }
