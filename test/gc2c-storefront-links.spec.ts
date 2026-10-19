@@ -17,8 +17,12 @@ import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { assertEnv, ENV_RULES } from '../src/common/env-validation';
 import { EnvValidationError } from '../src/common/errors/env-validation.error';
+import { PrismaService } from '../src/prisma.service';
 import { ShareLinkService } from '../src/share-link/share-link.service';
 import { LandingPagePublicService } from '../src/landing-pages/landing-pages.public.service';
+import { LandingPageService } from '../src/landing-pages/landing-pages.service';
+import { LeadSyncQueue } from '../src/landing-pages/crm/lead-sync.queue';
+import { LeadRateLimiterService } from '../src/landing-pages/lead-rate-limiter.service';
 import { StorefrontPublicController } from '../src/storefront/storefront-public.controller';
 import { StorefrontService } from '../src/storefront/storefront.service';
 import { GuestCheckoutService } from '../src/storefront/guest-checkout.service';
@@ -36,7 +40,6 @@ import {
 const APP = 'https://app.trygrowthproject.com';
 const TOKEN = 'AbCdEf12gHiJ34kLmNoP_'; // 21 chars — passes SHARE_TOKEN_REGEX
 const JWT = 'gc2c-header.gc2c-claims.gc2c-signature'; // opaque; verifyToken is mocked
-const unset = { get: () => undefined } as unknown as ConfigService;
 
 describe('GC-2c — storefront-links builders', () => {
   it.each([undefined, '', '   ', 'not a url', 'ftp://shop.example.test'])(
@@ -68,50 +71,17 @@ describe('GC-2c — storefront-links builders', () => {
   });
 });
 
-describe('GC-2c — call sites', () => {
-  it('share_url is the pay page /p/<token>', async () => {
-    const prisma = {
-      coachPackage: {
-        findFirst: jest.fn().mockResolvedValue({
-          id: 'pkg-1',
-          share_token: TOKEN,
-          share_link_enabled: true,
-          share_link_generated_at: new Date('2026-01-01T00:00:00Z'),
-        }),
-      },
-    };
-    const svc = new ShareLinkService(prisma as any, unset);
-    expect((await svc.mintOrGet('coach-1', 'pkg-1')).share_url).toBe(`${APP}/p/${TOKEN}`);
-  });
-
-  it('landing-page Buy routes to /p/<token>?lp=<page id>', async () => {
-    const prev = process.env.STOREFRONT_BASE_URL;
-    delete process.env.STOREFRONT_BASE_URL;
-    try {
-      const page = { id: 'page-1', status: 'published', package_ids: ['pkg-1'] };
-      const svc = new LandingPagePublicService(
-        { coachPackage: { findFirst: jest.fn().mockResolvedValue({ id: 'pkg-1', share_token: TOKEN }) } } as any,
-        { findPublishedBySlug: jest.fn().mockResolvedValue(page) } as any,
-        {} as any,
-        {} as any,
-      );
-      expect(await svc.resolveCheckoutUrl('GP-JANE1', 'my-page', 'pkg-1')).toBe(
-        `${APP}/p/${TOKEN}?lp=page-1`,
-      );
-    } finally {
-      if (prev !== undefined) process.env.STOREFRONT_BASE_URL = prev;
-    }
-  });
-
-  it('webview interstitial defaults to the app host', () => {
-    expect(resolveTrustedHost({ headers: {} })).toBe('app.trygrowthproject.com');
-  });
-});
-
-describe('GC-2c — the recovery email link hits a real route', () => {
+describe('GC-2c — call sites, and the recovery email link hits a real route', () => {
   let app: INestApplication;
   let baseUrl: string;
   const verifyToken = jest.fn(async () => ({ share_token: TOKEN, guest_checkout_id: 'gc_1' }));
+  const pkg = {
+    id: 'pkg-1',
+    share_token: TOKEN,
+    share_link_enabled: true,
+    share_link_generated_at: new Date('2026-01-01T00:00:00Z'),
+  };
+  const page = { id: 'page-1', status: 'published', package_ids: ['pkg-1'] };
 
   function get(p: string): Promise<{ status: number; location?: string }> {
     return new Promise((resolve, reject) => {
@@ -128,10 +98,16 @@ describe('GC-2c — the recovery email link hits a real route', () => {
     const moduleRef = await Test.createTestingModule({
       controllers: [StorefrontPublicController],
       providers: [
+        ShareLinkService,
+        LandingPagePublicService,
+        { provide: ConfigService, useValue: { get: () => undefined } }, // STOREFRONT_BASE_URL unset
+        { provide: PrismaService, useValue: { coachPackage: { findFirst: jest.fn(async () => pkg) } } },
+        { provide: LandingPageService, useValue: { findPublishedBySlug: jest.fn(async () => page) } },
+        { provide: LeadSyncQueue, useValue: {} },
+        { provide: LeadRateLimiterService, useValue: {} },
         { provide: StorefrontService, useValue: {} },
         { provide: GuestCheckoutService, useValue: {} },
         { provide: CheckoutRecoveryService, useValue: { verifyToken } },
-        { provide: ConfigService, useValue: unset },
         {
           provide: CheckoutIpRateLimiterService,
           useValue: { checkAndIncrement: jest.fn(async () => ({ allowed: true, count: 1, retryAfterSeconds: 0 })) },
@@ -151,7 +127,27 @@ describe('GC-2c — the recovery email link hits a real route', () => {
     if (app) await app.close();
   });
 
-  it('302s to the pay page with ?resume= and never forwards the JWT', async () => {
+  it('share_url is the pay page /p/<token>', async () => {
+    const res = await app.get(ShareLinkService).mintOrGet('coach-1', 'pkg-1');
+    expect(res.share_url).toBe(`${APP}/p/${TOKEN}`);
+  });
+
+  it('landing-page Buy routes to /p/<token>?lp=<page id>', async () => {
+    const prev = process.env.STOREFRONT_BASE_URL;
+    delete process.env.STOREFRONT_BASE_URL;
+    try {
+      const url = await app.get(LandingPagePublicService).resolveCheckoutUrl('GP-JANE1', 'my-page', 'pkg-1');
+      expect(url).toBe(`${APP}/p/${TOKEN}?lp=page-1`);
+    } finally {
+      if (prev !== undefined) process.env.STOREFRONT_BASE_URL = prev;
+    }
+  });
+
+  it('webview interstitial defaults to the app host', () => {
+    expect(resolveTrustedHost({ headers: {} })).toBe('app.trygrowthproject.com');
+  });
+
+  it('recovery link 302s to the pay page with ?resume= and never forwards the JWT', async () => {
     const res = await get(new URL(resumeUrl(undefined, TOKEN, JWT)).pathname);
     expect(res.status).toBe(302);
     expect(res.location).toBe(`${APP}/p/${TOKEN}?resume=gc_1`);
