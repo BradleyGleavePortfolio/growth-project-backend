@@ -20,6 +20,8 @@ import {
   CommunityMessagesRepository,
 } from '../../src/community/messages/community-messages.repository';
 import { CommunityMessagesService } from '../../src/community/messages/community-messages.service';
+import { CommunityModerationRepository } from '../../src/community/moderation/community-moderation.repository';
+import { CommunityModerationService } from '../../src/community/moderation/community-moderation.service';
 import type { CommunityNotificationsService } from '../../src/community/notifications/community-notifications.service';
 import type { PlanContextService } from '../../src/community/plan-context/plan-context.service';
 import { CommunityPostsRepository } from '../../src/community/posts/community-posts.repository';
@@ -76,14 +78,16 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
   const realtime = stub<CommunityRealtimeService>({ broadcastCommunityEvent: async () => undefined });
   const push = stub<CommunityNotificationsService>({ pushEnabled: () => false });
   const messagesRepo = new CommunityMessagesRepository(db);
-  const posts = new CommunityPostsService(access, new CommunityPostsRepository(db), messagesRepo, realtime, push, safety,
-    new CommunityReactionsRepository(db));
+  const postsRepo = new CommunityPostsRepository(db);
+  const posts = new CommunityPostsService(access, postsRepo, messagesRepo, realtime, push, safety, new CommunityReactionsRepository(db));
   const chat = new CommunityMessagesService(access, messagesRepo, realtime, stub<PlanContextService>({}), safety, push);
   const voice = new CommunityVoiceService(access, new CommunityVoiceRepository(db),
     stub<VoiceUploadProvider>({ createSignedDownload: async () => 'https://voice.test/note' }), realtime,
     stub<AnalyticsService>({ capture: () => undefined }), safety);
   const members = new CommunityCohortMembersService(access, new CommunityCohortMembersRepository(db), safety);
   const community = new CommunityService(db, new CommunityRepository(db), safety);
+  const moderation = new CommunityModerationService(access, new CommunityModerationRepository(db), messagesRepo, postsRepo, realtime,
+    push, db, stub<VoiceUploadProvider>({}));
   const uuids = <K extends string>(list: readonly K[]) => Object.fromEntries(list.map((k) => [k, randomUUID()])) as Record<K, string>;
   const id = uuids([...PEOPLE, ...Object.keys(POSTS), ...Object.keys(COMMENTS), ...Object.keys(CHAT), ...Object.keys(VOICE),
     ...Object.keys(WINS)]);
@@ -139,6 +143,14 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
     ['a voice note by id', (k) => byId(Object.keys(VOICE), (r) => voice.getOne(user(k), id[r])), (k) => inSpace(k, 'cli', VOICE) ?? []],
     ['wins', (k) => read(community.getFeed(id[k]), (r) => r.map((w) => w.id)), winsOf],
     ['the leaderboard', (k) => read(community.getLeaderboard(id[k]), (r) => r.map((e) => e.user_id)), boardOf, true],
+    // A report puts the row in front of the workspace's moderators, so it is a read too.
+    ['report a post by id', (k) => byId(Object.keys(POSTS), (r) => moderation.report(user(k), 'post', id[r], 'spam', undefined)),
+      (k) => keys(POSTS, ([a, p]) => sees(k, a, p))],
+    ['report a chat message by id', (k) => byId(Object.keys(CHAT), (r) => moderation.report(user(k), 'message', id[r], 'spam', undefined)),
+      (k) => inSpace(k, 'cli', CHAT) ?? []],
+    ['report a voice note by id', (k) => byId(Object.keys(VOICE), (r) => moderation.report(user(k), 'voice_note', id[r], 'spam', undefined)),
+      (k) => inSpace(k, 'cli', VOICE) ?? []],
+    ['report a win by id', (k) => byId(Object.keys(WINS), (r) => moderation.report(user(k), 'win', id[r], 'spam', undefined)), winsOf],
   ];
   const CONTROL: Record<Key, string> = { A: 'the Hall of A', B: 'the Hall of B', O: 'the Hall of A', V: 'the Hall of A',
     M: 'the Hall of B', W: 'the Hall of B', N: 'a post by id' };
