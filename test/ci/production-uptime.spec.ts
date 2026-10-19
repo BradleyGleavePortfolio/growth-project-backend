@@ -12,6 +12,7 @@ const ROOT = join(__dirname, '..', '..');
 const WORKFLOW = join(ROOT, '.github', 'workflows', 'production-uptime.yml');
 const SCRIPT = join(ROOT, 'scripts', 'ci', 'production-uptime.sh');
 const BODY_MARKER = 'RESPONSE-BODY-MUST-NOT-BE-PRINTED';
+const BACKEND_BASE_URL = 'https://backend-spring-lake-3890.fly.dev';
 const PUBLIC_PAGE_URL = 'https://app.trygrowthproject.com/privacy';
 const PUBLIC_PAGE_ONLY_FAILURE = '200 200 503 200 200 503';
 
@@ -98,10 +99,12 @@ describe('production uptime script', () => {
 
   it('probes the public page without request credentials', () => {
     const r = run('200 200 200');
-    const publicCall = r.curls.find((call) => call.includes(PUBLIC_PAGE_URL));
     expect(r.status).toBe(0);
-    expect(r.curls).toHaveLength(3);
-    expect(publicCall).toBe(`-s -o /dev/null -w %{http_code} --max-time 20 ${PUBLIC_PAGE_URL}`);
+    expect(r.curls).toEqual([
+      `-s -o /dev/null -w %{http_code} --max-time 20 ${BACKEND_BASE_URL}/health`,
+      `-s -o /dev/null -w %{http_code} --max-time 20 ${BACKEND_BASE_URL}/readyz`,
+      `-s -o /dev/null -w %{http_code} --max-time 20 ${PUBLIC_PAGE_URL}`,
+    ]);
   });
 
   it('one failed round then a pass (a blip): no issue', () => {
@@ -119,7 +122,7 @@ describe('production uptime script', () => {
     expect(r.writes[1]).toContain('Production probes failed in two consecutive rounds, 60 seconds apart.');
     expect(r.writes[1]).toContain('Results: /health 200; /readyz 503; public /privacy 200');
     expect(r.writes[1]).toContain(
-      `Checked: https://backend-spring-lake-3890.fly.dev/health, https://backend-spring-lake-3890.fly.dev/readyz and ${PUBLIC_PAGE_URL}`,
+      `Checked: ${BACKEND_BASE_URL}/health, ${BACKEND_BASE_URL}/readyz and ${PUBLIC_PAGE_URL}`,
     );
     expect(r.writes[1]).toContain('https://github.com/o/r/actions/runs/99');
     expect(r.writes).toHaveLength(2);
@@ -139,7 +142,7 @@ describe('production uptime script', () => {
     );
     expect(r.writes[1]).toContain('Results: /health 200; /readyz 200; public /privacy 503');
     expect(r.writes[1]).toContain(
-      `Checked: https://backend-spring-lake-3890.fly.dev/health, https://backend-spring-lake-3890.fly.dev/readyz and ${PUBLIC_PAGE_URL}`,
+      `Checked: ${BACKEND_BASE_URL}/health, ${BACKEND_BASE_URL}/readyz and ${PUBLIC_PAGE_URL}`,
     );
     expect(r.writes).toHaveLength(2);
   });
