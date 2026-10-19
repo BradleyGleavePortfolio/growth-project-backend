@@ -752,6 +752,12 @@ switches:
     auto_flip_on_in_prod: false
     owner: billing
     description: "R43 — stable per-deploy salt fed into sha256(lower(email) || salt) for GuestCheckoutPiiScrubService. REQUIRED in staging/production: prodHar"
+  - name: GUEST_PAY_PAGE_ENABLED
+    tier: optional
+    prod_default: OFF
+    auto_flip_on_in_prod: false
+    owner: billing
+    description: "GC-1 guest checkout web pay page at GET /p/:token. Unset = off (unmounted-route 404); only 'true' serves it. The owner turns it on."
   - name: HELLOSIGN_API_KEY
     tier: optional
     prod_default: STUB_ALLOWED

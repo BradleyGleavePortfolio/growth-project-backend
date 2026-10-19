@@ -767,6 +767,12 @@ export const ENV_RULES: EnvRule[] = [
     },
   },
   {
+    name: 'GUEST_PAY_PAGE_ENABLED',
+    tier: 'optional',
+    default: 'unset \u2192 off (GET /p/:token answers the unmounted-route 404; only "true" serves the page)',
+    reason: 'GC-1 guest checkout web pay page at /p/:token. Off until the owner turns it on.',
+  },
+  {
     name: 'APPLE_TEAM_ID',
     tier: 'feature',
     reason:

@@ -12,6 +12,18 @@ export interface PublicPackageCoach {
   verified: boolean;
 }
 
+/** GC-1: the renewing part of a package, from the checkout's own rule. */
+export interface PublicPackageRecurring {
+  /** What each renewal charges. */
+  amount_cents: number;
+  interval: 'week' | 'month' | 'year';
+  interval_count: number;
+  /** One-time part charged today with the first period (0 unless combo). */
+  one_time_cents: number;
+  /** ISO date of the first renewal if paid now. */
+  next_charge_at: string;
+}
+
 export interface PublicPackageData {
   package_id: string;
   package_name: string;
@@ -24,6 +36,10 @@ export interface PublicPackageData {
   coach: PublicPackageCoach;
   stripe_publishable_key: string;
   share_link_enabled: boolean;
+  /** GC-1: what checkout charges today (chargeQuote, no trial: #GC-TRIAL interim). */
+  due_today_cents: number;
+  /** GC-1: null for a one-time package. */
+  recurring: PublicPackageRecurring | null;
 }
 
 export interface GuestCheckoutResult {
