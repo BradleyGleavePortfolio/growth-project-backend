@@ -23,6 +23,7 @@ import {
   AssignDailyPlanDto,
   CreateDailyMealPlanDto,
   CreateMealTemplateDto,
+  EndDailyPlanAssignmentDto,
   UpdateDailyMealPlanDto,
   UpdateMealTemplateDto,
 } from './real-meal-plans.dto';
@@ -115,6 +116,19 @@ export class CoachDailyMealPlansController {
   @Get('coach/daily-meal-plans/:id/assignments')
   listAssignments(@Req() req: AuthedRequest, @Param('id') id: string) {
     return this.meals.listAssignmentsForCoach(req.user.id, id);
+  }
+
+  // MEALPLAN-END: 204 once the client's last day on the plan is ends_on or earlier.
+  @Post('coach/daily-meal-plans/:id/assignments/:assignmentId/end')
+  @Throttle({ default: { ttl: 60_000, limit: 30 } })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  endAssignment(
+    @Req() req: AuthedRequest,
+    @Param('id') id: string,
+    @Param('assignmentId') assignmentId: string,
+    @Body() dto: EndDailyPlanAssignmentDto,
+  ) {
+    return this.meals.endAssignment(req.user.id, id, assignmentId, dto);
   }
 }
 

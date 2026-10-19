@@ -71,6 +71,17 @@ function makePrisma() {
         if (!client || !matches(client, v)) return false;
         continue;
       }
+      if (k === 'daily_meal_plan') {
+        const plan = dailyMealPlans.find((p) => p.id === row.daily_meal_plan_id);
+        if (!plan || !matches(plan, v)) return false;
+        continue;
+      }
+      if (k === 'coach') {
+        // The one coach filter used here: DailyMealPlan.coach.students none { id } (the client is not theirs).
+        const { id } = (v as { students: { none: { id: string } } }).students.none;
+        if (users.some((u) => u.id === id && u.coach_id === row.coach_id)) return false;
+        continue;
+      }
       const val = (row as any)[k];
       if (v === null) {
         if (val !== null && val !== undefined) return false;
@@ -260,6 +271,14 @@ function makePrisma() {
         for (const d of data) dailyMealPlanSlots.push({ id: newId('slot'), order: 0, ...d });
         return { count: data.length };
       }),
+      create: jest.fn(async ({ data }: any) => {
+        const row = { id: newId('slot'), order: 0, ...data };
+        dailyMealPlanSlots.push(row);
+        return { ...row };
+      }),
+      update: jest.fn(async ({ where, data }: any) =>
+        Object.assign(dailyMealPlanSlots.find((r) => r.id === where.id), data),
+      ),
       findMany: jest.fn(async ({ where }: any) =>
         dailyMealPlanSlots.filter((r) => matches(r, where)).map((r) => ({ ...r })),
       ),
@@ -270,6 +289,8 @@ function makePrisma() {
         return { count };
       }),
     },
+    // FOODLINK: no food is logged in these specs; the moved-client link follow is in the live suite.
+    loggedFoodEntry: { updateMany: jest.fn(async () => ({ count: 0 })) },
     dailyMealPlanAssignment: {
       create: jest.fn(async ({ data }: any) => {
         const row = {
@@ -287,6 +308,11 @@ function makePrisma() {
       updateMany: jest.fn(async ({ where, data }: any) => {
         const rows = assignments.filter((a) => matches(a, where));
         for (const row of rows) Object.assign(row, data);
+        return { count: rows.length };
+      }),
+      deleteMany: jest.fn(async ({ where }: any) => {
+        const rows = assignments.filter((a) => matches(a, where));
+        for (const row of rows) assignments.splice(assignments.indexOf(row), 1);
         return { count: rows.length };
       }),
       findFirst: jest.fn(async ({ where, orderBy, include }: any) => {
@@ -593,6 +619,57 @@ describe('BUG-R2 — legacy meal-plans deduped onto real-meal-plans canonical', 
     // A plan its coach archives still leaves the legacy read.
     await real.archivePlan('coach-A', plan!.id);
     expect(await legacyRead('client-2')).toEqual([]);
+  });
+
+  const onDay = async (clientId: string, day: string) =>
+    (await real.getTodayForClient(clientId, day)).assignments.map((a) => a.daily_meal_plan.name);
+
+  it("MEALPLAN-END: the coach ends a client's plan; it leaves both reads after its last day, never extends, and an end before its start removes it", async () => {
+    const { plan } = await coachBuildsAndAssigns(real, 'coach-A', 'client-1', TODAY);
+    const [held] = prisma._assignments;
+    const end = (ends_on: string) => real.endAssignment('coach-A', plan!.id, held.id, { ends_on });
+    expect(await legacy.listForClientWithCanonicalFallback('client-1')).toHaveLength(1);
+
+    await end('2026-05-25');
+    expect(await onDay('client-1', '2026-05-25')).toEqual(['Cut Phase — Daily']);
+    expect(await onDay('client-1', '2026-05-26')).toEqual([]);
+    expect(await legacy.listForClientWithCanonicalFallback('client-1')).toEqual([]);
+    await end('2026-06-30');
+    expect(held.ends_on).toEqual(new Date('2026-05-25'));
+
+    const later = await real.assignPlan('coach-A', plan!.id, { client_id: 'client-1', starts_on: '2026-06-01' });
+    await real.endAssignment('coach-A', plan!.id, later.id, { ends_on: '2026-05-31' });
+    expect(prisma._assignments.map((a: { id: string }) => a.id)).toEqual([held.id]);
+  });
+
+  it('MEALPLAN-END: only the plan\u2019s coach ends it, for a client still theirs; another coach, a former coach and another plan change nothing', async () => {
+    const { plan } = await coachBuildsAndAssigns(real, 'coach-A', 'client-1', TODAY);
+    await real.assignPlan('coach-A', plan!.id, { client_id: 'client-2', starts_on: TODAY });
+    const other = await real.createPlan('coach-A', { name: 'Other', slots: [] });
+    const [moved, stays] = prisma._assignments;
+    const end = (coachId: string, planId: string, id: string) => real.endAssignment(coachId, planId, id, { ends_on: '2026-05-19' });
+
+    await expect(end('coach-B', plan!.id, stays.id)).rejects.toThrow('Daily meal plan not found');
+    await expect(end('coach-A', other!.id, stays.id)).rejects.toThrow('Assignment not found');
+    prisma._users.find((u: { id: string }) => u.id === 'client-1').coach_id = 'coach-B';
+    await expect(end('coach-A', plan!.id, moved.id)).rejects.toThrow('Assignment not found');
+    await expect(end('coach-B', plan!.id, moved.id)).rejects.toThrow('Daily meal plan not found');
+    expect(prisma._assignments).toEqual([moved, stays]);
+    expect(await onDay('client-1', TODAY)).toEqual(['Cut Phase — Daily']);
+
+    await end('coach-A', plan!.id, stays.id);
+    expect(prisma._assignments).toEqual([moved]);
+  });
+
+  it("MEALPLAN-END (OWN-1): a plan its coach archives leaves its own client's day; a moved client keeps it; no one ends it", async () => {
+    const { plan } = await coachBuildsAndAssigns(real, 'coach-A', 'client-1', TODAY);
+    await real.assignPlan('coach-A', plan!.id, { client_id: 'client-2', starts_on: TODAY });
+    prisma._users.find((u: { id: string }) => u.id === 'client-1').coach_id = 'coach-B';
+    await real.archivePlan('coach-A', plan!.id);
+    expect(await onDay('client-2', TODAY)).toEqual([]);
+    expect(await onDay('client-1', TODAY)).toEqual(['Cut Phase — Daily']);
+    const stays = prisma._assignments.find((a: { client_id: string }) => a.client_id === 'client-2');
+    await expect(real.endAssignment('coach-A', plan!.id, stays.id, { ends_on: TODAY })).rejects.toThrow('Daily meal plan not found');
   });
 
   it('GET /me/meal-plan alias controller proxies to the canonical system (same shape as /me/meal-plan/today)', async () => {

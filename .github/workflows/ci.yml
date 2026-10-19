@@ -46,7 +46,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -75,8 +75,8 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
         env:
-          # ai-triage module type-check needs >2GB heap (cache + cohort batch types).
-          NODE_OPTIONS: --max-old-space-size=4096
+          # One tsc program (src + test + Prisma client) nears 4GB; the runner has 16GB.
+          NODE_OPTIONS: --max-old-space-size=6144
 
       - name: Build
         run: npm run build
@@ -238,7 +238,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -316,7 +316,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -424,7 +424,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -526,7 +526,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
