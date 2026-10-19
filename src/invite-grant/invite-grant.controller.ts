@@ -48,7 +48,7 @@ function auditContext(req: AuditableRequest): { ip: string | null; userAgent: st
   return { ip: ip || null, userAgent: userAgent || null };
 }
 
-// Clinic launch C01 — API surface for invite-code → package grants.
+// Partner launch C01 — API surface for invite-code → package grants.
 // Mobile/web UI comes later; these three routes are what it will call.
 @ApiTags('entitlement-grants')
 @ApiBearerAuth()

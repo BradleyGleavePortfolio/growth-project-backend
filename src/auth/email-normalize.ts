@@ -1,4 +1,4 @@
-// Clinic launch C13 fix round — one email canonicaliser for the signup paths.
+// Partner launch C13 fix round — one email canonicaliser for the signup paths.
 //
 // `User.email` is a case-sensitive TEXT unique index, while Supabase folds
 // addresses to lowercase. Before this helper, `Jane@Example.com` (stored as

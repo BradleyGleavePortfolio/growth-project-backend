@@ -254,7 +254,7 @@ export class AuthController {
   @Public()
   @Get('signup-policy')
   // C14 — public read hit by every app launch and every /join link; generous
-  // dedicated per-IP bucket (a clinic room behind one NAT). `default` still
+  // dedicated per-IP bucket (a group room behind one NAT). `default` still
   // applies at its anonymous baseline.
   @Throttle({
     [THROTTLER_NAMES.PUBLIC_READS]: { ttl: 60_000, limit: THROTTLER_ROUTE_LIMITS.PUBLIC_READS_PER_MIN },

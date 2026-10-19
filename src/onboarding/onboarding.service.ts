@@ -45,7 +45,7 @@ import {
   materialiseClientPlans,
   type Materialisation,
   type PlanContent,
-} from './clinic-programs';
+} from './consultation-programs';
 import { writeProgramTree } from './program-writer';
 import { alternativesOf } from '../workout-builder/plan-exercise-fields';
 import { flaggedClientPayload } from './flagged-join-alert';
@@ -1087,9 +1087,9 @@ export class OnboardingService {
 
   /**
    * Remove every not-yet-started onboarding assignment for this client that
-   * belongs to a clone of the coach's clinic masters other than `keepProgramId`,
+   * belongs to a clone of the coach's consultation masters other than `keepProgramId`,
    * and archive those clones. Never touches started/completed workouts,
-   * templates, or programs that are not clinic-master clones.
+   * templates, or programs that are not consultation-master clones.
    */
   private async retireOnboardingClones(
     tx: Prisma.TransactionClient,

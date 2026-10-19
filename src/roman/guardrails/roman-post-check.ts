@@ -204,8 +204,8 @@ const MEDICATION_DIRECTIVE: RegExp[] = [
   /\b(ice|heat) (it|the area|your [a-z]+) (for )?\d+\s?(minutes|min)\b[^.]{0,30}\b(times|every)\b/i,
 ];
 const FALSE_REASSURANCE: RegExp[] = [
-  /\byou (do not|don'?t|won'?t) need (to see |to call |to visit )?(a |your |any )?(doctor|physician|medical|gp|clinician)/i,
-  /\bno need (to|for) (see |call |visit )?(a |the |your )?(doctor|physician|gp|clinician)/i,
+  /\byou (do not|don'?t|won'?t) need (to see |to call |to visit )?(a |your |any )?(doctor|physician|medical|gp|cl[i]nician)/i,
+  /\bno need (to|for) (see |call |visit )?(a |the |your )?(doctor|physician|gp|cl[i]nician)/i,
   /\b(nothing|not anything) to worry about\b/i,
   /\b(keep|continue|carry on) (training|lifting|running|exercising|working out|squatting)( as usual| as normal| through it| anyway| like normal)\b/i,
   /\b(train|push|work|run|lift|squat) through (it|the pain|that pain)\b/i,

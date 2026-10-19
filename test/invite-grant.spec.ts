@@ -26,7 +26,7 @@ import { AnalyticsService } from '../src/analytics/analytics.service';
 import { EmailService } from '../src/email/email.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
 
-// Clinic launch C01 — invite-code → package grants, free packages, revoke.
+// Partner launch C01 — invite-code → package grants, free packages, revoke.
 //
 // Grants are ordinary ClientPurchase rows (entitlement_active, amount 0,
 // source set), so the paywall (ClientEntitlementGuard) and
@@ -363,11 +363,11 @@ async function status(p: Promise<unknown>): Promise<number> {
 
 const COACH = 'coach-bradley';
 const OTHER_COACH = 'coach-other';
-const PKG_CLINIC = 'pkg-clinic';
+const PKG_PARTNER = 'pkg-partner';
 const PKG_FREE = 'pkg-free';
 const PKG_PAID = 'pkg-paid';
 const PKG_OTHER = 'pkg-other-coach';
-const CLINIC_CODE = 'GP-CLINIC';
+const PARTNER_CODE = 'GP-GROUPS';
 
 function fixtures() {
   const now = new Date();
@@ -382,7 +382,7 @@ function fixtures() {
     ],
     packages: [
       {
-        id: PKG_CLINIC,
+        id: PKG_PARTNER,
         coach_id: COACH,
         amount_cents: 29900,
         currency: 'usd',
@@ -429,7 +429,7 @@ function fixtures() {
     profiles: [
       {
         user_id: COACH,
-        invite_code: CLINIC_CODE,
+        invite_code: PARTNER_CODE,
         invite_code_package_id: null,
         invite_code_grant_mode: 'none',
       },
@@ -553,22 +553,22 @@ describe('C01 — invite code → package binding', () => {
     const prisma = fixtures();
     const { grants } = await build(prisma);
     const b = await grants.setBinding(coachActor, {
-      code: CLINIC_CODE,
-      package_id: PKG_CLINIC,
+      code: PARTNER_CODE,
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
     expect(b).toMatchObject({
       kind: 'profile',
       coach_id: COACH,
-      package_id: PKG_CLINIC,
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
     expect(prisma._profiles[0]).toMatchObject({
-      invite_code_package_id: PKG_CLINIC,
+      invite_code_package_id: PKG_PARTNER,
       invite_code_grant_mode: 'prepaid',
     });
-    expect(await grants.resolveBinding(CLINIC_CODE)).toMatchObject({
-      package_id: PKG_CLINIC,
+    expect(await grants.resolveBinding(PARTNER_CODE)).toMatchObject({
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
   });
@@ -600,12 +600,12 @@ describe('C01 — invite code → package binding', () => {
     await expect(
       grants.setBinding(
         { id: OTHER_COACH, role: 'coach' },
-        { code: CLINIC_CODE, package_id: PKG_OTHER, grant_mode: 'free' },
+        { code: PARTNER_CODE, package_id: PKG_OTHER, grant_mode: 'free' },
       ),
     ).rejects.toBeInstanceOf(NotFoundException);
     await expect(
       grants.setBinding(coachActor, {
-        code: CLINIC_CODE,
+        code: PARTNER_CODE,
         package_id: PKG_OTHER,
         grant_mode: 'free',
       }),
@@ -613,13 +613,13 @@ describe('C01 — invite code → package binding', () => {
     await expect(
       grants.setBinding(coachActor, {
         code: 'GP-NOPE',
-        package_id: PKG_CLINIC,
+        package_id: PKG_PARTNER,
         grant_mode: 'free',
       }),
     ).rejects.toBeInstanceOf(NotFoundException);
     const b = await grants.setBinding(ownerActor, {
-      code: CLINIC_CODE,
-      package_id: PKG_CLINIC,
+      code: PARTNER_CODE,
+      package_id: PKG_PARTNER,
       grant_mode: 'free',
     });
     expect(b.grant_mode).toBe('free');
@@ -633,8 +633,8 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
     const prisma = fixtures();
     const { grants, inviteCodes, guard, fanoutMock } = await build(prisma);
     await grants.setBinding(coachActor, {
-      code: CLINIC_CODE,
-      package_id: PKG_CLINIC,
+      code: PARTNER_CODE,
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
 
@@ -642,11 +642,11 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
       HttpStatus.PAYMENT_REQUIRED,
     );
 
-    const res = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    const res = await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
     expect(res).toMatchObject({
       role: 'student',
       coach_id: COACH,
-      grant: { status: 'created', package_id: PKG_CLINIC },
+      grant: { status: 'created', package_id: PKG_PARTNER },
     });
     // B-PACKAGE-135: the grant commits WITH the attach (one transaction).
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
@@ -664,18 +664,18 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
     expect(row).toMatchObject({
       client_user_id: 'client-1',
       coach_user_id: COACH,
-      package_id: PKG_CLINIC,
+      package_id: PKG_PARTNER,
       amount_cents: 0,
       status: 'active',
       entitlement_active: true,
       source: GRANT_SOURCE.INVITE_PREPAID,
-      idempotency_key: `grant:${PKG_CLINIC}:client-1`, // one grant per (package, client) regardless of mode
+      idempotency_key: `grant:${PKG_PARTNER}:client-1`, // one grant per (package, client) regardless of mode
     });
     expect(row.stripe_checkout_session_id).toMatch(/^grant_[0-9a-f-]{36}$/);
     expect(row.grant_metadata).toMatchObject({
-      invite_code: CLINIC_CODE,
+      invite_code: PARTNER_CODE,
       code_kind: 'profile',
-      package_id: PKG_CLINIC,
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
     // one_time with duration_periods=12 weeks → expiry ~84 days out
@@ -700,10 +700,10 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
     expect(prisma._purchases[0].source).toBe(GRANT_SOURCE.INVITE_FREE);
     expect(prisma._codes[0].used_count).toBe(1);
 
-    const noGrant = await inviteCodes.attachUserToCoachByCode('client-2', CLINIC_CODE); // unbound permanent code
+    const noGrant = await inviteCodes.attachUserToCoachByCode('client-2', PARTNER_CODE); // unbound permanent code
     expect(noGrant).toMatchObject({
       coach_id: null,
-      join: { status: 'checkout_required', package: { id: PKG_CLINIC, is_free: false } },
+      join: { status: 'checkout_required', package: { id: PKG_PARTNER, is_free: false } },
     });
     expect(noGrant.grant).toBeUndefined();
     expect(prisma._users.get('client-2')?.coach_id).toBeNull();
@@ -717,20 +717,20 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
     const prisma = fixtures();
     const { grants, inviteCodes } = await build(prisma);
     await grants.setBinding(coachActor, {
-      code: CLINIC_CODE,
-      package_id: PKG_CLINIC,
+      code: PARTNER_CODE,
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
-    await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
-    const again = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
-    expect(again.grant).toMatchObject({ status: 'already_active', package_id: PKG_CLINIC });
+    await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
+    const again = await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
+    expect(again.grant).toMatchObject({ status: 'already_active', package_id: PKG_PARTNER });
     expect(prisma._purchases).toHaveLength(1);
     expect(prisma.clientPurchase.upsert).toHaveBeenCalledTimes(2); // ON CONFLICT DO NOTHING on the replay
   });
 
   it('legacy 4-arg InviteCodesService (no grant service) still attaches and reports no grant', async () => {
     const prisma = fixtures();
-    prisma._profiles[0].invite_code_package_id = PKG_CLINIC;
+    prisma._profiles[0].invite_code_package_id = PKG_PARTNER;
     prisma._profiles[0].invite_code_grant_mode = 'prepaid';
     const legacy = new InviteCodesService(
       asPrisma(prisma),
@@ -738,7 +738,7 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
       makeEmail(),
       makeAudit().audit,
     );
-    const res = await legacy.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    const res = await legacy.attachUserToCoachByCode('client-1', PARTNER_CODE);
     expect(res).toEqual({ role: 'student', coach_id: COACH, already_attached: false });
     expect(prisma._purchases).toHaveLength(0);
   });
@@ -747,14 +747,14 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
     const prisma = fixtures();
     const { grants, inviteCodes } = await build(prisma);
     await grants.setBinding(coachActor, {
-      code: CLINIC_CODE,
-      package_id: PKG_CLINIC,
+      code: PARTNER_CODE,
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
     // Package archived after the binding was made.
-    const pkg = await prisma.coachPackage.findUnique({ where: { id: PKG_CLINIC } });
+    const pkg = await prisma.coachPackage.findUnique({ where: { id: PKG_PARTNER } });
     pkg!.archived_at = new Date();
-    const res = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    const res = await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
     // Never attached without a package: the next usable one is the $0 package, granted free.
     expect(res).toMatchObject({
       coach_id: COACH,
@@ -768,12 +768,12 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
     const prisma = fixtures();
     const { grants, inviteCodes, fanoutMock } = await build(prisma);
     await grants.setBinding(coachActor, {
-      code: CLINIC_CODE,
-      package_id: PKG_CLINIC,
+      code: PARTNER_CODE,
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
     fanoutMock.onPurchaseEntitled.mockRejectedValueOnce(new Error('resolver exploded'));
-    await expect(inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE)).rejects.toThrow(
+    await expect(inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE)).rejects.toThrow(
       'resolver exploded',
     );
     expect(prisma._users.get('client-1')?.coach_id).toBeNull();
@@ -784,13 +784,13 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
     const prisma = fixtures();
     const { grants, inviteCodes } = await build(prisma);
     await grants.setBinding(coachActor, {
-      code: CLINIC_CODE,
-      package_id: PKG_CLINIC,
+      code: PARTNER_CODE,
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
     const [a, b] = await Promise.all([
-      inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE),
-      inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE),
+      inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE),
+      inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE),
     ]);
     expect([a.grant?.status, b.grant?.status].sort()).toEqual(['already_active', 'created']);
     expect(prisma._purchases).toHaveLength(1);
@@ -800,17 +800,17 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
     const prisma = fixtures();
     const { grants, inviteCodes, guard } = await build(prisma);
     await grants.setBinding(coachActor, {
-      code: CLINIC_CODE,
-      package_id: PKG_CLINIC,
+      code: PARTNER_CODE,
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
     const existing = prisma._users.get('client-1');
-    if (existing) existing.coach_id = COACH; // already Bradley's client before the clinic
-    const res = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
-    expect(res.grant).toMatchObject({ status: 'created', package_id: PKG_CLINIC });
+    if (existing) existing.coach_id = COACH; // already Bradley's client before the partner code
+    const res = await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
+    expect(res.grant).toMatchObject({ status: 'created', package_id: PKG_PARTNER });
     expect(await status(guard.canActivate(ctxFor(client('client-1'))))).toBe(HttpStatus.OK);
     // …and via the explicit claim endpoint (web /join for signed-in clients): already_active.
-    const again = await grants.claimGrantForCode(client('client-1'), CLINIC_CODE);
+    const again = await grants.claimGrantForCode(client('client-1'), PARTNER_CODE);
     expect(again.status).toBe('already_active');
     expect(prisma._purchases).toHaveLength(1);
   });
@@ -819,18 +819,18 @@ describe('C01 — grant on attach via a bound code; paywall honours it without S
     const prisma = fixtures();
     const { grants, inviteCodes } = await build(prisma);
     await grants.setBinding(coachActor, {
-      code: CLINIC_CODE,
-      package_id: PKG_CLINIC,
+      code: PARTNER_CODE,
+      package_id: PKG_PARTNER,
       grant_mode: 'free',
     });
-    await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
     await grants.revoke(coachActor, { client_user_id: 'client-1' });
     await grants.setBinding(coachActor, {
-      code: CLINIC_CODE,
-      package_id: PKG_CLINIC,
+      code: PARTNER_CODE,
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
-    const res = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    const res = await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
     expect(res.grant?.status).toBe('revoked_not_regranted');
     expect(prisma._purchases).toHaveLength(1);
   });
@@ -850,13 +850,13 @@ describe('C01 — grants respect the package contract / waiver gate like checkou
   it('binding a package that requires a coach agreement → 400 PACKAGE_REQUIRES_CONTRACT', async () => {
     const prisma = fixtures();
     const { grants } = await build(prisma);
-    const pkg = await prisma.coachPackage.findUnique({ where: { id: PKG_CLINIC } });
+    const pkg = await prisma.coachPackage.findUnique({ where: { id: PKG_PARTNER } });
     pkg!.requires_contract = true;
     pkg!.contract_template_id = 'tpl-1';
     const err = await captureHttp(
       grants.setBinding(coachActor, {
-        code: CLINIC_CODE,
-        package_id: PKG_CLINIC,
+        code: PARTNER_CODE,
+        package_id: PKG_PARTNER,
         grant_mode: 'prepaid',
       }),
     );
@@ -894,20 +894,20 @@ describe('C01 — grants respect the package contract / waiver gate like checkou
     const consent = makeConsent(false);
     const { grants, inviteCodes } = await build(prisma, { gate, consent });
     await grants.setBinding(coachActor, {
-      code: CLINIC_CODE,
-      package_id: PKG_CLINIC,
+      code: PARTNER_CODE,
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
-    const res = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    const res = await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
     expect(res).toMatchObject({
       coach_id: COACH,
-      grant: { status: 'pending_consent', package_id: PKG_CLINIC },
+      grant: { status: 'pending_consent', package_id: PKG_PARTNER },
     });
-    expect(await grants.claimGrantForCode(client('client-1'), CLINIC_CODE)).toMatchObject({
+    expect(await grants.claimGrantForCode(client('client-1'), PARTNER_CODE)).toMatchObject({
       status: 'pending_consent',
     });
     consent.agreed = true;
-    expect((await grants.claimGrantForCode(client('client-1'), CLINIC_CODE)).status).toBe(
+    expect((await grants.claimGrantForCode(client('client-1'), PARTNER_CODE)).status).toBe(
       'created',
     );
     expect(prisma._purchases).toHaveLength(1);
@@ -1014,11 +1014,11 @@ describe('C01 — revoke grants (audited, idempotent, never touches Stripe rows)
     const consent = makeConsent(false);
     const built = await build(prisma, { consent });
     await built.grants.setBinding(coachActor, {
-      code: CLINIC_CODE,
-      package_id: PKG_CLINIC,
+      code: PARTNER_CODE,
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
-    await built.inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    await built.inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
     expect(prisma._purchases[0]).toMatchObject({
       status: 'pending_consent',
       entitlement_active: false,
@@ -1048,7 +1048,7 @@ describe('C01 — revoke grants (audited, idempotent, never touches Stripe rows)
     consent.agreed = true;
     expect(await grants.activatePendingGrants('client-1', COACH)).toEqual([]);
     // A claim retry through the same-coach replay is refused too.
-    const replay = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    const replay = await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
     expect(replay.grant).toMatchObject({ status: 'revoked_not_regranted' });
     expect(prisma._purchases).toHaveLength(1);
     expect(prisma._purchases[0]).toMatchObject({ status: 'revoked', entitlement_active: false });
@@ -1112,22 +1112,22 @@ describe('C01 — revoke grants (audited, idempotent, never touches Stripe rows)
     const prisma = fixtures();
     const { grants, inviteCodes, guard, auditMock } = await build(prisma);
     await grants.setBinding(coachActor, {
-      code: CLINIC_CODE,
-      package_id: PKG_CLINIC,
+      code: PARTNER_CODE,
+      package_id: PKG_PARTNER,
       grant_mode: 'prepaid',
     });
-    await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
     expect(await status(guard.canActivate(ctxFor(client('client-1'))))).toBe(200);
 
     const r = await grants.revoke(coachActor, {
       client_user_id: 'client-1',
-      reason: 'left clinic',
+      reason: 'left the group',
     });
     expect(r.revoked).toBe(1);
     expect(prisma._purchases[0]).toMatchObject({ entitlement_active: false, status: 'revoked' });
     expect(prisma._purchases[0].grant_metadata).toMatchObject({
       revoked_by_user_id: COACH,
-      revoke_reason: 'left clinic',
+      revoke_reason: 'left the group',
     });
     expect(auditMock.write).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'entitlement.grant_revoked', targetId: 'cp-1' }),
@@ -1139,7 +1139,7 @@ describe('C01 — revoke grants (audited, idempotent, never touches Stripe rows)
     const again = await grants.revoke(coachActor, { client_user_id: 'client-1' });
     expect(again.revoked).toBe(0);
 
-    const reattach = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    const reattach = await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
     expect(reattach.grant).toMatchObject({ status: 'revoked_not_regranted' });
     expect(prisma._purchases).toHaveLength(1);
     expect(await status(guard.canActivate(ctxFor(client('client-1'))))).toBe(
@@ -1219,9 +1219,9 @@ describe('B-PACKAGE-135 — a client joins a coach only together with one packag
   it('free: a code with no package of its own carries the first usable ($0) package, granted in the attach', async () => {
     const prisma = fixtures();
     const { inviteCodes } = await build(prisma);
-    (await pkgRow(prisma, PKG_CLINIC)).archived_at = new Date();
+    (await pkgRow(prisma, PKG_PARTNER)).archived_at = new Date();
 
-    const res = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    const res = await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
     expect(res).toMatchObject({
       coach_id: COACH,
       already_attached: false,
@@ -1231,7 +1231,7 @@ describe('B-PACKAGE-135 — a client joins a coach only together with one packag
         grant_mode: 'free',
         package: { id: PKG_FREE, amount_cents: 0, is_free: true },
         coach: { id: COACH, first_name: 'Bradley' },
-        code: CLINIC_CODE,
+        code: PARTNER_CODE,
       },
     });
     expect(prisma._users.get('client-1')?.coach_id).toBe(COACH);
@@ -1267,9 +1267,9 @@ describe('B-PACKAGE-135 — a client joins a coach only together with one packag
     const db = asPrisma(prisma);
     const me = { email: 'c1@example.com' };
     expect(await paidJoinAllowed(db, me, { id: PKG_PAID, coach_id: COACH }, 'gp-row001')).toBe(true);
-    expect(await paidJoinAllowed(db, me, { id: PKG_CLINIC, coach_id: COACH }, 'GP-ROW001')).toBe(false);
+    expect(await paidJoinAllowed(db, me, { id: PKG_PARTNER, coach_id: COACH }, 'GP-ROW001')).toBe(false);
     expect(await paidJoinAllowed(db, me, { id: PKG_PAID, coach_id: COACH }, undefined)).toBe(false);
-    expect(await paidJoinAllowed(db, me, { id: PKG_FREE, coach_id: COACH }, CLINIC_CODE)).toBe(false);
+    expect(await paidJoinAllowed(db, me, { id: PKG_FREE, coach_id: COACH }, PARTNER_CODE)).toBe(false);
     expect(await paidJoinAllowed(db, me, { id: PKG_OTHER, coach_id: OTHER_COACH }, 'GP-ROW001')).toBe(
       false,
     );
@@ -1320,10 +1320,10 @@ describe('B-PACKAGE-135 — a client joins a coach only together with one packag
   it('zero packages: one free "Getting started" package is created for the coach, then reused', async () => {
     const prisma = fixtures();
     const { inviteCodes } = await build(prisma);
-    for (const id of [PKG_CLINIC, PKG_FREE, PKG_PAID]) (await pkgRow(prisma, id)).is_active = false;
+    for (const id of [PKG_PARTNER, PKG_FREE, PKG_PAID]) (await pkgRow(prisma, id)).is_active = false;
 
-    const a = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
-    const b = await inviteCodes.attachUserToCoachByCode('client-2', CLINIC_CODE);
+    const a = await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
+    const b = await inviteCodes.attachUserToCoachByCode('client-2', PARTNER_CODE);
     expect(a).toMatchObject({
       coach_id: COACH,
       grant: { status: 'created' },
@@ -1337,9 +1337,9 @@ describe('B-PACKAGE-135 — a client joins a coach only together with one packag
   it('idempotent re-entry: a free join again is already_attached with ONE grant; a paid join again writes nothing', async () => {
     const prisma = fixtures();
     const { inviteCodes } = await build(prisma);
-    (await pkgRow(prisma, PKG_CLINIC)).archived_at = new Date();
-    await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
-    const free = await inviteCodes.attachUserToCoachByCode('client-1', CLINIC_CODE);
+    (await pkgRow(prisma, PKG_PARTNER)).archived_at = new Date();
+    await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
+    const free = await inviteCodes.attachUserToCoachByCode('client-1', PARTNER_CODE);
     expect(free).toMatchObject({
       already_attached: true,
       grant: { status: 'already_active', package_id: PKG_FREE },

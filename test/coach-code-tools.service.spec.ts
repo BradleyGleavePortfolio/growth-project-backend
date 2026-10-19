@@ -43,7 +43,7 @@ function makeDb() {
   const packages: Row[] = [
     {
       id: 'pkg-1',
-      name: 'Clinic 12 weeks',
+      name: 'Partner 12 weeks',
       coach_id: 'coach-a',
       is_active: true,
       archived_at: null,
@@ -352,19 +352,19 @@ describe('create', () => {
 describe('rotate', () => {
   it('grace 0: successor keeps every setting, old code is revoked now, lineage is linked', async () => {
     const { tools, codes, audit } = build();
-    const { code: old } = await tools.create(coachA, { label: 'Clinic', max_uses: 500 }, null);
+    const { code: old } = await tools.create(coachA, { label: 'Partner', max_uses: 500 }, null);
     codes[0].package_id = 'pkg-1';
     codes[0].grant_mode = 'prepaid';
     codes[0].used_count = 41;
     const res = await tools.rotate(coachA, old.id, 0);
     expect(res.code).toMatchObject({
-      label: 'Clinic',
+      label: 'Partner',
       max_uses: 500,
       used_count: 0,
       grant_mode: 'prepaid',
       status: 'active',
     });
-    expect(res.code.package).toEqual({ id: 'pkg-1', name: 'Clinic 12 weeks' });
+    expect(res.code.package).toEqual({ id: 'pkg-1', name: 'Partner 12 weeks' });
     expect(res.code.rotated_from).toEqual({ id: old.id, code: old.code });
     expect(res.previous).toMatchObject({ id: old.id, status: 'revoked' });
     expect(codes.find((c) => c.id === old.id)?.revoked_at).toBeInstanceOf(Date);
@@ -478,7 +478,7 @@ describe('list', () => {
       timezone: null,
       created_at: new Date(),
     });
-    const { code } = await tools.create(coachA, { label: 'Clinic' }, null);
+    const { code } = await tools.create(coachA, { label: 'Partner' }, null);
     await tools.create(coachB, { label: 'Other coach' }, null);
     codes.push({
       ...codes[0],
@@ -518,7 +518,7 @@ describe('signups (daily, coach time zone)', () => {
       id: 'ic-1',
       code: 'GP-CLN234',
       coach_id: 'coach-a',
-      label: 'Clinic',
+      label: 'Partner',
       revoked: false,
       intended_email: null,
     });
@@ -557,13 +557,13 @@ describe('signups (daily, coach time zone)', () => {
       { date: '2026-03-08', count: 2 },
       { date: '2026-03-09', count: 1 },
     ]);
-    const clinic = out.by_code.find((c) => c.code === 'GP-CLN234');
+    const partner = out.by_code.find((c) => c.code === 'GP-CLN234');
     const link = out.by_code.find((c) => c.code === 'GP-LNK234');
-    expect(clinic).toMatchObject({ id: 'ic-1', label: 'Clinic', total: 3 });
-    expect(clinic?.days.map((d) => d.count)).toEqual([1, 1, 1]);
+    expect(partner).toMatchObject({ id: 'ic-1', label: 'Partner', total: 3 });
+    expect(partner?.days.map((d) => d.count)).toEqual([1, 1, 1]);
     expect(link).toMatchObject({ id: COACH_LINK_ID, kind: 'coach_link', total: 1 });
     expect(out.by_package).toEqual([
-      expect.objectContaining({ package_id: 'pkg-1', package_name: 'Clinic 12 weeks', total: 3 }),
+      expect.objectContaining({ package_id: 'pkg-1', package_name: 'Partner 12 weeks', total: 3 }),
       expect.objectContaining({ package_id: null, package_name: null, total: 1 }),
     ]);
     // Sum of every breakdown equals the total row count in the window.

@@ -1,5 +1,5 @@
 /**
- * Kill switches for the two clinic engagement jobs (C05 items 6-7).
+ * Kill switches for the two client engagement jobs (C05 items 6-7).
  *
  * Both jobs ship ON (unset = on), parsed exactly like
  * SIGNUP_ROLE_CHOICE_ENABLED (src/auth/auth.service.ts): the welcome job

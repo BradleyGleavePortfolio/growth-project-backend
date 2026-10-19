@@ -100,7 +100,7 @@ describe('A7 — wrong invite-code guesses are limited per address', () => {
     for (const call of calls) await expect(call(REAL)).rejects.toEqual(limited);
   });
 
-  it('correct codes never count: 500 real previews from one clinic network leave its full miss budget', async () => {
+  it('correct codes never count: 500 real previews from one venue network leave its full miss budget', async () => {
     const { codes } = build();
     const ip = from('192.0.2.50');
     for (let i = 0; i < 500; i++) expect((await codes.previewInvite(REAL, ip)).valid).toBe(true);

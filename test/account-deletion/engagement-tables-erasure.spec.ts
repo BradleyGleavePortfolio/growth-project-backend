@@ -1,5 +1,5 @@
 /**
- * Backend #609 (clinic engagement, migration 20270213000000_clinic_engagement)
+ * Backend #609 (client engagement, migration 20270213000000_clinic_engagement)
  * adds three tables keyed to User with ON DELETE CASCADE:
  *   CoachWelcomeMessageSetting(coach_id, updated_by)
  *   CoachWelcomeMessageJob(client_id, coach_id; rendered_body = client's first name)

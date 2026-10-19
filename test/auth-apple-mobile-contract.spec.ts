@@ -10,7 +10,7 @@ import type { InviteCodesService } from '../src/invite-codes/invite-codes.servic
 import type { LoginThrottleResetService } from '../src/throttler/login-throttle-reset.service';
 import type { AuditableRequest } from '../src/auth/auth-request';
 
-// Clinic launch C02 — Sign in with Apple body contract + signup-policy legacy
+// Carter launch C02 — Sign in with Apple body contract + signup-policy legacy
 // fields.
 //
 // The shipped mobile build (growth-project-mobile main 360fdc7) POSTs the body
@@ -51,9 +51,9 @@ const IDENTITY_TOKEN =
 const MOBILE_FIRST_AUTH_BODY = {
   identity_token: IDENTITY_TOKEN,
   authorization_code: 'c1a2b3c4d5e6f7.0.rrrr.AbCdEfGhIjKlMnOpQrStUv',
-  email: 'jane.clinic@example.com',
-  full_name: { given_name: 'Jane', family_name: 'Clinic' },
-  invite_code: 'GP-CLINIC',
+  email: 'jane.carter@example.com',
+  full_name: { given_name: 'Jane', family_name: 'Carter' },
+  invite_code: 'GP-GROUPS',
 };
 
 /** Literal shape from mobile api.ts appleAuth() on a RETURNING sign-in (JSON drops undefined). */
@@ -68,10 +68,10 @@ describe('C02 — AppleAuthDto accepts the literal mobile body', () => {
     expect(dto.identity_token).toBe(IDENTITY_TOKEN);
     expect(dto.token).toBeUndefined();
     expect(dto.authorization_code).toBe(MOBILE_FIRST_AUTH_BODY.authorization_code);
-    expect(dto.email).toBe('jane.clinic@example.com');
+    expect(dto.email).toBe('jane.carter@example.com');
     // Object full_name is normalised to a plain string before validation.
-    expect(dto.full_name).toBe('Jane Clinic');
-    expect(dto.invite_code).toBe('GP-CLINIC');
+    expect(dto.full_name).toBe('Jane Carter');
+    expect(dto.invite_code).toBe('GP-GROUPS');
     expect(resolveAppleIdentityToken(dto)).toBe(IDENTITY_TOKEN);
   });
 
@@ -86,13 +86,13 @@ describe('C02 — AppleAuthDto accepts the literal mobile body', () => {
   it('keeps the legacy body working (token + string full_name + raw_nonce)', async () => {
     const dto = await validateBody({
       token: IDENTITY_TOKEN,
-      full_name: 'Jane Clinic',
-      invite_code: 'GP-CLINIC',
+      full_name: 'Jane Carter',
+      invite_code: 'GP-GROUPS',
       raw_nonce: 'raw-nonce-0123456789abcdef',
     });
     expect(dto.token).toBe(IDENTITY_TOKEN);
     expect(dto.identity_token).toBeUndefined();
-    expect(dto.full_name).toBe('Jane Clinic');
+    expect(dto.full_name).toBe('Jane Carter');
     expect(dto.raw_nonce).toBe('raw-nonce-0123456789abcdef');
     expect(resolveAppleIdentityToken(dto)).toBe(IDENTITY_TOKEN);
   });
@@ -105,9 +105,9 @@ describe('C02 — AppleAuthDto accepts the literal mobile body', () => {
     expect(givenOnly.full_name).toBe('Jane');
     const familyOnly = await validateBody({
       identity_token: IDENTITY_TOKEN,
-      full_name: { family_name: 'Clinic' },
+      full_name: { family_name: 'Carter' },
     });
-    expect(familyOnly.full_name).toBe('Clinic');
+    expect(familyOnly.full_name).toBe('Carter');
     const empty = await validateBody({ identity_token: IDENTITY_TOKEN, full_name: {}, email: '' });
     expect(empty.full_name).toBeUndefined();
     expect(empty.email).toBeUndefined();
@@ -145,12 +145,12 @@ describe('C02 — AppleAuthDto accepts the literal mobile body', () => {
   });
 
   it('normalizeAppleFullName covers every input shape', () => {
-    expect(normalizeAppleFullName('  Jane Clinic ')).toBe('Jane Clinic');
+    expect(normalizeAppleFullName('  Jane Carter ')).toBe('Jane Carter');
     expect(normalizeAppleFullName('   ')).toBeUndefined();
-    expect(normalizeAppleFullName({ given_name: ' Jane ', family_name: ' Clinic ' })).toBe(
-      'Jane Clinic',
+    expect(normalizeAppleFullName({ given_name: ' Jane ', family_name: ' Carter ' })).toBe(
+      'Jane Carter',
     );
-    expect(normalizeAppleFullName({ given_name: 42, family_name: 'Clinic' })).toBe('Clinic');
+    expect(normalizeAppleFullName({ given_name: 42, family_name: 'Carter' })).toBe('Carter');
     expect(normalizeAppleFullName(['Jane'])).toBeUndefined();
     expect(normalizeAppleFullName(null)).toBeUndefined();
     expect(normalizeAppleFullName(undefined)).toBeUndefined();
@@ -203,8 +203,8 @@ describe('C02 — AuthController.appleAuth hands the resolved token to the servi
     expect(result.access_token).toBe('a');
     expect(appleAuth).toHaveBeenCalledWith(
       IDENTITY_TOKEN,
-      'Jane Clinic',
-      'GP-CLINIC',
+      'Jane Carter',
+      'GP-GROUPS',
       expect.objectContaining({ ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' }),
       undefined,
       undefined,
@@ -231,13 +231,13 @@ describe('C02 — AuthController.appleAuth hands the resolved token to the servi
     const { controller, appleAuth } = buildController();
     const dto = await validateBody({
       token: IDENTITY_TOKEN,
-      full_name: 'Jane Clinic',
+      full_name: 'Jane Carter',
       raw_nonce: 'raw-nonce-0123456789abcdef',
     });
     await controller.appleAuth(dto, req);
     expect(appleAuth).toHaveBeenCalledWith(
       IDENTITY_TOKEN,
-      'Jane Clinic',
+      'Jane Carter',
       undefined,
       expect.objectContaining({ ip: '203.0.113.9', userAgent: 'GrowthProject/1.0 iOS' }),
       'raw-nonce-0123456789abcdef',

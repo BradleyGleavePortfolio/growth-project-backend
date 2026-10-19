@@ -53,7 +53,7 @@ describe('applyGuardrails — no-medicalize block-list', () => {
 
   it('does not false-positive on embedded substrings (word boundary)', () => {
     // The stem rules are word-boundaried (\b), so "treat" inside "retreat"
-    // and "cure" inside "secure" do NOT trip — only standalone clinical
+    // and "cure" inside "secure" do NOT trip — only standalone medical
     // terms are blocked. This pins the boundary behaviour so a future
     // looser regex can't silently start rejecting benign coaching copy.
     expect(applyGuardrails('a great retreat in the mountains').rejected).toBe(false);

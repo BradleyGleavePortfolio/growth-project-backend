@@ -59,7 +59,7 @@ export class AdminService {
     private coachOnboarding?: CoachOnboardingService,
   ) {}
 
-  // Clinic C13 fix round (Grok C6): same uniform sampler as InviteCodesService
+  // Partner C13 fix round (Grok C6): same uniform sampler as InviteCodesService
   // (crypto.randomInt) instead of the biased `byte % alphabet.length`.
   private generateInviteCode(): string {
     return generateInviteCodeCandidate();

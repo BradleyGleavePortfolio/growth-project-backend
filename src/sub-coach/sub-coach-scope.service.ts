@@ -20,7 +20,7 @@ import { PrismaService } from '../prisma.service';
  * a user is a coach pass in their id and we figure out head vs sub from the
  * data.
  *
- * Detection rule (tightened in the clinic C13 fix round, audit Opus A1): a
+ * Detection rule (tightened in the partner C13 fix round, audit Opus A1): a
  * user is a SUB-COACH iff role='coach' AND coach_id is non-null AND the head
  * coach has an EXPLICIT membership relation with them — an active
  * `TeamSubCoachAssignment(head_coach_id = coach_id, sub_coach_id = user)`

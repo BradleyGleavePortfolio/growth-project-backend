@@ -1,4 +1,4 @@
--- Fix round B607-3: live RLS bootstrap for the clinic onboarding intake tables.
+-- Fix round B607-3: live RLS bootstrap for the consultation onboarding intake tables.
 --
 -- Runs in the rls-live-tests job AFTER scripts/ci/rls01-live-bootstrap.sql and
 -- the PR-RLS-01 helper migration (which provide "User", app.current_user_id(),

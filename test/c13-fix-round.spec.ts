@@ -7,7 +7,7 @@ import {
   resolveOAuthCoachSignupPerHour,
 } from '../src/throttler/login-throttle-reset.service';
 
-// Clinic C13 fix round — cross-module regressions requested by the two
+// Partner C13 fix round — cross-module regressions requested by the two
 // independent audits (Opus + Grok) of PR #597. The auth-service paths live in
 // test/auth-signup-role-choice.spec.ts; this file covers the surrounding
 // modules: the OAuth coach-signup throttle, the

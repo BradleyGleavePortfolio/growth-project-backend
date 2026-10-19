@@ -7,7 +7,7 @@ import { ConfidenceLevel } from './insight-output.schema';
 //      performance-coaching tool, not a diagnostic one. The model must
 //      never name a condition, suggest a treatment, or imply a diagnosis.
 //      `applyGuardrails` is the last line of defence after the system
-//      prompt: any output containing a blocked clinical term is REJECTED
+//      prompt: any output containing a blocked medical term is REJECTED
 //      so the caller can fall back to a safe payload rather than ship
 //      medicalizing copy.
 //   2. CONFIDENCE CALIBRATION (UNIFIED_BUILD_PLAN §"Confidence
@@ -22,7 +22,7 @@ import { ConfidenceLevel } from './insight-output.schema';
 // of secrets (audit criteria: "no prompt injection of raw provider
 // strings without redaction").
 
-// Block-list of clinical / medicalizing terms. Stored as a mix of exact
+// Block-list of medical / medicalizing terms. Stored as a mix of exact
 // phrases and wildcard stems (`diagnos*`, `treat*`) so we catch
 // "diagnose", "diagnosis", "diagnostic", "treat", "treatment", "treating",
 // etc. Order does not matter — we test every entry.
@@ -79,7 +79,7 @@ export interface GuardrailResult {
 // Scan `text` for any medicalizing term. On the FIRST match we reject,
 // returning the original text unchanged plus the matched rule label so
 // the caller can log + fall back. We do NOT attempt to silently rewrite
-// the model's clinical claim — a partial scrub could leave a dangerous
+// the model's medical claim — a partial scrub could leave a dangerous
 // half-sentence ("your sleep ___ is severe"). Reject-and-regenerate is
 // the safe posture (audit criteria: guardrails reject medicalizing/
 // overclaiming language).

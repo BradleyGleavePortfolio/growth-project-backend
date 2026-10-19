@@ -399,7 +399,7 @@ export class CheckoutService {
         message: 'Package not available',
       });
     }
-    // Clinic C01 — $0 packages never reach Stripe (Stripe's floor is 50¢ and
+    // Partner C01 — $0 packages never reach Stripe (Stripe's floor is 50¢ and
     // there is nothing to charge). Clients claim them via
     // POST /v1/packages/:id/claim-free instead. Checked before any Stripe call.
     if (pkg.amount_cents === 0) {
@@ -687,7 +687,7 @@ export class CheckoutService {
         message: 'Package not available',
       });
     }
-    // Clinic C01 — $0 packages never reach Stripe (Stripe's floor is 50¢ and
+    // Partner C01 — $0 packages never reach Stripe (Stripe's floor is 50¢ and
     // there is nothing to charge). Clients claim them via
     // POST /v1/packages/:id/claim-free instead. Checked before any Stripe call.
     if (pkg.amount_cents === 0) {

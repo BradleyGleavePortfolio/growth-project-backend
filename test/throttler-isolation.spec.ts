@@ -21,7 +21,7 @@ import { UserThrottlerGuard } from '../src/throttler/user-throttler.guard';
 // throttler's module-level baseline unless the route opts out per name. With
 // ~25 named buckets, an anonymous GET /auth/signup-policy was capped by
 // auth-password-reset (3/h) — 3 requests from one IP, then 429 — which is
-// exactly what a clinic room on shared Wi-Fi would hit.
+// exactly what a group room on shared Wi-Fi would hit.
 //
 // Rule under test: UserThrottlerGuard applies a named throttler ONLY to routes
 // that declare it via @Throttle({ [name]: … }); `default` still applies
@@ -112,7 +112,7 @@ const invitePreview = (ip: string) => () =>
   makeCtx({
     path: '/invite/:code/preview',
     ip,
-    params: { code: 'GP-CLINIC' },
+    params: { code: 'GP-GROUPS' },
     handler: InviteCodesController.prototype.previewInvite,
     cls: InviteCodesController,
   });
@@ -188,10 +188,10 @@ describe('C14 — the shared-Wi-Fi regression', () => {
   });
 });
 
-// ---- 1b. a clinic room signing in with Apple / Google from ONE IP -----------
+// ---- 1b. a group room signing in with Apple / Google from ONE IP -----------
 
 
-describe('C14 — a clinic room on one Wi-Fi can sign in (no reset needed)', () => {
+describe('C14 — a group room on one Wi-Fi can sign in (no reset needed)', () => {
   it('upstream guard (no isolation): /auth/apple from one IP is capped at 3 by unrelated baselines', async () => {
     const guard = await buildGuard('upstream');
     const r = await hammer(guard, apple('192.0.2.1'), 20);

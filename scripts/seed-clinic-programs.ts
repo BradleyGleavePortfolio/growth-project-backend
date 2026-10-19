@@ -2,8 +2,8 @@
 /**
  * scripts/seed-clinic-programs.ts  (C07)
  *
- * Idempotently seeds the clinic partner's three master programs, the
- * clinic-wide community space (all-members cohort + one cohort per program)
+ * Idempotently seeds the partner's three master programs, the
+ * partner-wide community space (all-members cohort + one cohort per program)
  * and the ClinicProgramSet row that POST /me/onboarding/complete reads.
  *
  * Input: seed/clinic-programs.v1.json (override with CLINIC_PROGRAMS_FIXTURE).
@@ -40,7 +40,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { PrismaClient } from '@prisma/client';
-import { parseFixture, type ParsedFixture } from '../src/onboarding/clinic-programs';
+import { parseFixture, type ParsedFixture } from '../src/onboarding/consultation-programs';
 import { writeProgramTree } from '../src/onboarding/program-writer';
 import { DEFAULT_WORKSPACE_NAME } from '../src/community/community.repository';
 
@@ -90,7 +90,7 @@ export type SeedOutcome =
   | { status: 'dry_run'; missing_slugs: string[]; house: boolean }
   | { status: 'seeded'; set_id: string; house: boolean; programs: Record<string, string> };
 
-export async function seedClinicPrograms(
+export async function seedConsultationPrograms(
   prisma: PrismaClient,
   raw: string,
   opts: {
@@ -243,7 +243,7 @@ async function main(): Promise<void> {
   const raw = readFileSync(path, 'utf8');
   const prisma = new PrismaClient();
   try {
-    const out = await seedClinicPrograms(prisma, raw, {
+    const out = await seedConsultationPrograms(prisma, raw, {
       env: process.env,
       coachEmail: process.env.CLINIC_OWNER_COACH_EMAIL,
       coachId: process.env.CLINIC_OWNER_COACH_ID,

@@ -321,7 +321,7 @@ liveDescribe('Autosave/Undo authorization + conflict (live DB)', () => {
         coach_id: OTHER_COACH_ID,
       },
     });
-    // Clinic C13 fix round: SubCoachScopeService requires an explicit
+    // Partner C13 fix round: SubCoachScopeService requires an explicit
     // membership relation (an active Team Mode seat or an open Phase 11
     // delegation) — `role='coach' + coach_id` alone no longer makes a
     // sub-coach. Give the fixture the seat a head coach would have created.
