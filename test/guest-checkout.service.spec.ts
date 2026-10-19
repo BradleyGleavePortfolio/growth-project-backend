@@ -54,6 +54,7 @@ function makePkg(overrides: Record<string, unknown> = {}) {
 
 const baseDto = {
   guest_name: 'Jane Smith',
+  guest_phone: '+14155550100',
   guest_email: 'jane@example.com',
   idempotency_key: IDEMP_KEY,
 };
@@ -376,6 +377,13 @@ describe('GuestCheckoutService', () => {
       // need them.
       expect(call.metadata.guest_email).toBeUndefined();
       expect(call.metadata.guest_name).toBeUndefined();
+      // GC-PHONE — the E.164 phone is stored on the row, never in metadata.
+      expect(call.metadata.guest_phone).toBeUndefined();
+      expect(prisma.guestCheckout.create.mock.calls[0][0].data).toMatchObject({
+        guest_name: 'Jane Smith',
+        guest_phone: '+14155550100',
+        guest_email: 'jane@example.com',
+      });
       // Audit #3 P1-10 — PaymentIntents carry on_behalf_of so the
       // connected coach is the settlement merchant; S-FEE removed the
       // destination (funds move by transfer after the charge).

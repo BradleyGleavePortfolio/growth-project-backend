@@ -534,6 +534,7 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
       data: {
         guest_email: TOMBSTONE_EMAIL,
         guest_name: 'Deleted user',
+        guest_phone: null,
         created_user_id: null,
         scrubbed_at: NOW,
       },
@@ -545,7 +546,12 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
     match: 'email',
     action: {
       op: 'update',
-      data: { guest_email: TOMBSTONE_EMAIL, guest_name: 'Deleted user', scrubbed_at: NOW },
+      data: {
+        guest_email: TOMBSTONE_EMAIL,
+        guest_name: 'Deleted user',
+        guest_phone: null,
+        scrubbed_at: NOW,
+      },
     },
   },
   { model: 'ConnectCustomer', field: 'client_user_id', action: del },

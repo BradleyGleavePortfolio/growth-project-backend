@@ -271,7 +271,7 @@ describe('GC-1 pay page GET /p/:token', () => {
       const js = [...html.matchAll(/<script nonce="[^"]+">([\s\S]*?)<\/script>/g)].pop()?.[1] ?? '';
       const on: Record<string, (e: unknown) => Promise<void>> = {};
       const nodes: Record<string, Record<string, unknown>> = {};
-      for (const id of ['cfg', 'pay', 'go', 'msg', 'nm', 'em', 'or', 'express']) {
+      for (const id of ['cfg', 'pay', 'go', 'msg', 'nm', 'ph', 'em', 'or', 'express']) {
         nodes[id] = { value: '', textContent: id === 'cfg' ? JSON.stringify(cfgOf(html)) : '', setAttribute() {}, focus() {}, addEventListener: (t: string, h: never) => (on[`${id}:${t}`] = h) };
       }
       const store = new Map<string, string>();
@@ -295,6 +295,7 @@ describe('GC-1 pay page GET /p/:token', () => {
       sandbox.window = sandbox;
       vm.runInNewContext(js, sandbox);
       Object.assign(nodes.nm, { value: 'Ann Buyer' });
+      Object.assign(nodes.ph, { value: '415 555 0100' });
       Object.assign(nodes.em, { value: 'ann@example.com' });
       const tap = {
         card: () => on['pay:submit']({ preventDefault() {} }),
