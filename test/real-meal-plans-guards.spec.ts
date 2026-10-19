@@ -56,6 +56,7 @@ const DAILY_PLAN_HANDLERS = [
   'archive',
   'assign',
   'listAssignments',
+  'endAssignment',
 ];
 
 describe('real-meal-plans — coach guard stack hoisted to class level', () => {

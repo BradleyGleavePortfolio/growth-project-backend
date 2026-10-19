@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import type { CommunityMessage, CommunityPost, CommunityResponse, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
-import { memberFirstName } from '../member-display-name';
+import { memberName } from '../member-display-name';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { CommunityNotificationsService } from '../notifications/community-notifications.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
@@ -32,12 +32,12 @@ const POST_NOT_FOUND = {
   code: 'community.post.not_found',
 } as const;
 
-/** Author first name and visible reactions for one post or reply. */
+/** Author name and visible reactions for one post or reply. */
 interface ViewExtras {
   authorName: string;
   reactions: CommunityReactionSummary[];
 }
-type ExtrasFor = (targetId: string, authorId: string) => ViewExtras;
+type ExtrasFor = (targetId: string, authorId: string, spaceId: string | null) => ViewExtras;
 
 /**
  * Lab posts (longer-form, coach-authored) and their comments.
@@ -98,21 +98,28 @@ export class CommunityPostsService {
 
   /**
    * What the app shows with each post or reply (FW-COMM-128 U1/U2): the
-   * author's FIRST name only (owner default 10-07, the same rule as wins), and
-   * the reactions the viewer may see in the reaction endpoints' own shape, so
-   * counts and the viewer's own reaction match before and after a tap. Two
-   * batched reads per page, never one per row.
+   * author's first name (owner default 10-07, the same rule as wins), the full
+   * name where #C6-NAMES-EVERYWHERE allows (fullNamesFor), and the reactions
+   * the viewer may see in the reaction endpoints' own shape, so counts and the
+   * viewer's own reaction match before and after a tap. Batched reads per
+   * page (one workspace), never one per row.
    */
   private async viewExtras(
     viewer: User,
     targetType: 'post' | 'comment',
-    items: Array<{ id: string; authorId: string }>,
+    workspaceId: string | null,
+    items: Array<{ id: string; authorId: string; spaceId: string | null }>,
   ): Promise<ExtrasFor> {
-    const [names, rows] = await Promise.all([
+    const [names, rows, fullName] = await Promise.all([
       this.posts.namesByUserId(items.map((i) => i.authorId)),
       this.reactions.listForTargets(
         targetType,
         items.map((i) => i.id),
+      ),
+      this.access.fullNamesFor(
+        viewer.id,
+        workspaceId,
+        items.map((i) => [i.spaceId, i.authorId] as const),
       ),
     ]);
     // Two-way block: reactions by anyone in a block relation with the viewer
@@ -124,8 +131,8 @@ export class CommunityPostsService {
       if (forTarget) forTarget.push(r);
       else byTarget.set(r.target_id, [r]);
     }
-    return (targetId, authorId) => ({
-      authorName: memberFirstName(names.get(authorId)),
+    return (targetId, authorId, spaceId) => ({
+      authorName: memberName(names.get(authorId), fullName(spaceId, authorId)),
       reactions: summariseReactions(byTarget.get(targetId) ?? [], viewer.id),
     });
   }
@@ -134,9 +141,10 @@ export class CommunityPostsService {
     const extras = await this.viewExtras(
       viewer,
       'post',
-      rows.map((p) => ({ id: p.id, authorId: p.author_id })),
+      rows[0]?.workspace_id ?? null,
+      rows.map((p) => ({ id: p.id, authorId: p.author_id, spaceId: p.cohort_id })),
     );
-    return rows.map((p) => this.postView(p, extras(p.id, p.author_id)));
+    return rows.map((p) => this.postView(p, extras(p.id, p.author_id, p.cohort_id)));
   }
 
   private async postResponse(viewer: User, post: CommunityPost): Promise<CommunityPostResponse> {
@@ -150,9 +158,10 @@ export class CommunityPostsService {
     const extras = await this.viewExtras(
       viewer,
       'comment',
-      rows.map((m) => ({ id: m.id, authorId: m.sender_id })),
+      rows[0]?.workspace_id ?? null,
+      rows.map((m) => ({ id: m.id, authorId: m.sender_id, spaceId: m.cohort_id })),
     );
-    return rows.map((m) => this.commentView(m, extras(m.id, m.sender_id)));
+    return rows.map((m) => this.commentView(m, extras(m.id, m.sender_id, m.cohort_id)));
   }
 
   private parsePage(limit: string | undefined): number {

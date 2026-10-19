@@ -371,7 +371,7 @@ Smoke spec § 3 covers gate enforcement; § 7 covers billing matrix.
 Prerequisites (clean clone of `growth-project-backend`):
 
 ```bash
-node --version    # >= 20.x (matches engines + CI)
+node --version    # 22.x (matches CI and the Docker image)
 npm ci            # exact install from package-lock.json
 ```
 
