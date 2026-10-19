@@ -28,7 +28,7 @@ table local; do not commit filled-in values.
 | `<staging-db-url>` | Supabase session-pooler Postgres URL | `postgres://...pooler.supabase.com:5432/postgres` |
 | `<console-origin>` | Coach console origin allowed by CORS | `https://console-staging.thegrowthproject.app` |
 | `<api-host>` | Public hostname for the Fly app | `api-staging.thegrowthproject.app` |
-| `<owner-emails>` | Comma-separated OWNER emails | `bradley@x.com,dynasia@x.com` |
+| `<owner-emails>` | Comma-separated OWNER emails | `owner1@example.com,owner2@example.com` |
 
 Confirm tooling is present and authenticated:
 

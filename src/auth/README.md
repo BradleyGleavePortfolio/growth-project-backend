@@ -155,7 +155,7 @@ gates pass. Deleted accounts never produce a signal.
 - `POST /auth/signup-with-code`: 100 / hour / IP without a code (`auth-signup`, `AUTH_SIGNUP_PER_HOUR`);
   100 / hour / IP when the body carries a well-formed invite code
   (`auth-signup-with-code`, `AUTH_SIGNUP_WITH_CODE_PER_HOUR`). The higher cap
-  lets a 40+ patient clinic event sign up from one clinic Wi-Fi IP inside an
+  lets a 40+ client group event sign up from one venue Wi-Fi IP inside an
   hour; `previewCode` still rejects an unknown code before any account is
   created. See `src/throttler/README.md`.
 - `POST /auth/validate-invite-code`: 20 / minute / IP. Brute-force on the

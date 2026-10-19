@@ -204,7 +204,7 @@ members appear by first name, by full name where #C6-NAMES-EVERYWHERE allows.
 Reports land in the coach queue and are reviewed within 24 hours, every day
 (the published commitment above). The moderation queue (Coach > Community >
 Reports) is checked at least once every 24 hours, weekends included, from
-clinic go-live; content that breaks the guidelines is removed and repeat
+partner go-live; content that breaks the guidelines is removed and repeat
 offenders are removed from the community; a "Self-harm or suicide" report gets
 same-day contact pointing the member to 911 or 988; if the moderator will be
 unreachable for more than 24 hours, new community posts are paused or a backup

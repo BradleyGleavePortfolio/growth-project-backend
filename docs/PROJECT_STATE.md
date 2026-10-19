@@ -36,7 +36,7 @@ Haptics, micro-animations, thoughtful path design through every screen. The 7 pr
 
 ### Author + signing
 
-- Author for all commits: `Dynasia G <dynasia@trygrowthproject.com>`
+- Author for all commits: `Dynasia G <owner@example.com>`
 - NO `Co-Authored-By` lines (user has explicitly disallowed this).
 
 ---
@@ -236,7 +236,7 @@ Saved to persistent memory this and prior sessions:
 - User does NOT care about Co-Authored-By or squash-merge author signatures (R4 relaxed).
 - User uses worktree discipline (R56) — never `git checkout` switch.
 - User wants R61 (push every 2 minutes during active work).
-- Author for any commit: `Dynasia G <dynasia@trygrowthproject.com>`.
+- Author for any commit: `Dynasia G <owner@example.com>`.
 
 **To add to memory after this session resolves:**
 - The Stillwater Standard exists and is the canonical UX standard above decacorn.

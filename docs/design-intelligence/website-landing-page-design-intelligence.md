@@ -356,7 +356,7 @@ else.\[^5\]\[^22\]
                                                     backgrounds\[\^23\]
 
   **Crisp White**         Purity, minimalism,       Apple, skincare,
-                          clinical premium          medical-luxury
+                          lab-clean premium         medical-luxury
 
   **Forest / Dark Green** Sustainability-premium,   Luxury wellness,
                           heritage, growth          eco-luxury,

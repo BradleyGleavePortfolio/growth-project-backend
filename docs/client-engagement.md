@@ -1,4 +1,4 @@
-# Clinic engagement (C05 items 6 and 7)
+# Client engagement (C05 items 6 and 7)
 
 Two scheduled jobs in `src/engagement/`. Both use the same mechanism as every other scheduled job in this repo: a `@nestjs/schedule` `@Cron` plus a Postgres table that rows are claimed from with a conditional UPDATE ("claim-by-write", see `src/packages/drip-dispatcher.cron.ts`). There is no Redis or Bull queue. All state is in the database, so a restart or redeploy loses nothing.
 
@@ -35,7 +35,7 @@ Exactly one welcome per job is enforced by the database, not by timing (B-609-3)
 - The rendered body is stamped on the row before the send, so a retry sends the same words; `message_id` is also `@unique`.
 - Transient errors are retried after 1, 5, 15 and 60 minutes. After 5 attempts the job is set to `failed`.
 
-**Template.** The template supports two placeholders: `{first_name}` (the client's first name, or "there" if missing) and `{coach_first_name}` (or "your coach" if missing). The code default is generic and names no clinic or coach:
+**Template.** The template supports two placeholders: `{first_name}` (the client's first name, or "there" if missing) and `{coach_first_name}` (or "your coach" if missing). The code default is generic and names no referral partner or coach:
 
 > Hi {first_name}, it's {coach_first_name}. Welcome in. Your plan and targets are ready. Message me here anytime.
 
@@ -125,7 +125,7 @@ Migration `20270213000000_clinic_engagement` is additive and has a `down.sql`. T
 
 No table has a public write policy. `NotificationPreferences` gains `workout_reminder_push` and `workout_reminder_inapp`, both default true.
 
-`test/rls/clinic-engagement-rls.spec.ts` proves these policies on a real Postgres in the `rls-live-tests` CI job: RLS enabled and forced, the exact policy set, who reads which rows, anon denied, and no INSERT, UPDATE or DELETE for any non-service principal.
+`test/rls/client-engagement-rls.spec.ts` proves these policies on a real Postgres in the `rls-live-tests` CI job: RLS enabled and forced, the exact policy set, who reads which rows, anon denied, and no INSERT, UPDATE or DELETE for any non-service principal.
 
 ## Tests
 
