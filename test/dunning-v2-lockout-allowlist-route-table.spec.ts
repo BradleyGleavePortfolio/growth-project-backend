@@ -245,7 +245,7 @@ const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'GET fasting/history FastingController',
   'GET habits HabitsController',
   'GET habits/logs HabitsController',
-  'GET habits/streaks HabitsController',
+  'GET habits/summary HabitsController',
   'GET insights/holistic HolisticInsightsController',
   'GET log/daily LogController',
   'GET log/weekly LogController',
