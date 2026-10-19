@@ -827,6 +827,9 @@ export class AccountDeletionService {
         });
         await deleteDraftsLeftByMove(tx, leftClients.map((c) => c.id), null);
         const rowsChanged = steps.reduce((sum, s) => sum + s.count, 0);
+        // 3b. LEARN-FROZEN-MEDIA: coach media the manifest kept for a client's
+        //     lesson keeps its bytes; the purge takes only what it deleted.
+        const purgeObjects = await this.storage.withoutRetainedMedia(tx, userId, objects);
 
         // 4. Audit: lifecycle rows carry the user id, so they go; one outcome
         //    row with a random subject id stays (B-608-4).
@@ -847,7 +850,7 @@ export class AccountDeletionService {
         //    already-canceled subscription counts as done), so if one throws
         //    (rollback, nightly retry) or the commit itself fails, repeating
         //    them is safe. Past purge_after the deletion cannot be cancelled.
-        const storage = await this.storage.purge(objects);
+        const storage = await this.storage.purge(purgeObjects);
         const billing = await this.billing.cancelAll(subscriptionIds);
 
         await this.insertDeletionAudit(tx, {

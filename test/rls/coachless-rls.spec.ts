@@ -378,7 +378,7 @@ describeLive('A1-COACHLESS tables RLS (live Postgres)', () => {
       try {
         // Denied means zero visible rows OR 42501: anon cannot EXECUTE the
         // app.* helpers the permissive policies call (the same rule as
-        // clinic-engagement-rls.spec.ts). Either way nothing is readable.
+        // client-engagement-rls.spec.ts). Either way nothing is readable.
         for (const t of TABLES) {
           let seen: number | string;
           try {

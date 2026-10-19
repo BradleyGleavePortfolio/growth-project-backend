@@ -44,7 +44,7 @@ import { WorkoutBuilderService } from './workout-builder.service';
 import { ProgramDeliveryService, ProgramEmptyError } from './program-delivery.service';
 import {
   assertLastDayMayGo,
-  assertNotInActiveClinicSet,
+  assertNotInActiveConsultationSet,
   lockProgramMaster,
   programDaysWhere,
 } from './program-guards';
@@ -888,7 +888,7 @@ export class ProgramLibraryService {
         where: programDaysWhere(program),
       });
       if (remaining <= 1) {
-        // B-640-11: a packaged master, or one an active clinic consultation
+        // B-640-11: a packaged master, or one an active consultation
         // set uses, keeps at least one day.
         await assertLastDayMayGo(tx, program);
       }
@@ -995,9 +995,9 @@ export class ProgramLibraryService {
         );
       }
       // B-640-11: onboarding completion matches new clients to the masters of
-      // the coach's active clinic consultation set and refuses an archived
+      // the coach's active consultation set and refuses an archived
       // one, so a set master stays live.
-      await assertNotInActiveClinicSet(tx, program);
+      await assertNotInActiveConsultationSet(tx, program);
       await tx.workoutProgram.updateMany({
         where: { id: programId, owner_user_id: actor.id, archived_at: null },
         data: { archived_at: new Date() },

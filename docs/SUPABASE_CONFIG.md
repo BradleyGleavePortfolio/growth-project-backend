@@ -1,7 +1,7 @@
 # Supabase Project Configuration — Dashboard Settings
 
 **Project:** `rpyfdsgxxltzutgqeouk` (FITNESS TGP primary)
-**Owner of record:** Dynasia G (`dynasia@trygrowthproject.com`)
+**Owner of record:** Dynasia G (`owner@example.com`)
 **Last updated:** 2026-05-25
 
 This file records dashboard-only Supabase configuration that cannot be expressed in a Prisma migration. Each entry lists the setting, the desired state, the verification step, and the operator + date confirmation log.

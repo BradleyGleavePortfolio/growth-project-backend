@@ -60,7 +60,7 @@ const WAVE_FLAGS = [
   'FEATURE_MWB_AUTOSAVE_UNDO',
   'FEATURE_NAMED_REGIMES',
   'FEATURE_DUNNING_V2',
-  // Clinic engagement kill switches (backend #609, B-609-2).
+  // Client engagement kill switches (backend #609, B-609-2).
   'COACH_WELCOME_SCHEDULER_ENABLED',
   'WORKOUT_REMINDERS_ENABLED',
 ];

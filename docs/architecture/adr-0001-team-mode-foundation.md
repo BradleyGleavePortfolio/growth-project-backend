@@ -136,7 +136,7 @@ shipped with it:
 - **Setter** — sales-focused staff. Can view inbound leads and
   prospects, can send messages to leads, **cannot** view or modify
   paying clients' programs.
-- **Ops** — administrative staff. Can manage team-wide non-clinical
+- **Ops** — administrative staff. Can manage team-wide non-medical
   settings (branding, invite codes, billing-portal hand-off) but
   **cannot** view client health/check-in data.
 - **Platform owner** — the existing OWNER role on `User`. The Growth
@@ -189,7 +189,7 @@ enum TeamRole {
   head_coach       // optional; full team access except billing + member-management of owner
   junior_coach     // assigned-clients-only access
   setter           // leads/prospects only
-  ops              // non-clinical team admin only
+  ops              // non-medical team admin only
   client           // a User with role=student attached to this team
 }
 ```

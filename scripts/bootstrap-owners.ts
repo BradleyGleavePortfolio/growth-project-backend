@@ -15,7 +15,7 @@
  * Usage:
  *   npx ts-node scripts/bootstrap-owners.ts
  *
- *   BOOTSTRAP_OWNER_EMAILS="bradley@x.com,dynasia@x.com" \
+ *   BOOTSTRAP_OWNER_EMAILS="owner1@example.com,owner2@example.com" \
  *     npx ts-node scripts/bootstrap-owners.ts
  */
 

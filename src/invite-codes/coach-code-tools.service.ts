@@ -157,7 +157,7 @@ export function codeStatus(row: InviteRow, now: number = Date.now()): CodeStatus
 }
 
 /**
- * Leak signal for the coach ("did my clinic code get posted somewhere?"):
+ * Leak signal for the coach ("did my partner code get posted somewhere?"):
  * today has at least 3 signups AND at least 3x the trailing 7-day daily
  * average (days before today). Deliberately simple and explainable.
  */

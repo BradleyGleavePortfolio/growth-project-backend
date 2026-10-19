@@ -292,7 +292,7 @@ describe('CoachWelcomeService — scheduling', () => {
     expect(h.messages.rows[0].body).toBe('Hello Dana. Morgan here.');
   });
 
-  it('the shipped default template names no clinic and no coach', () => {
+  it('the shipped default template names no referral partner and no coach', () => {
     expect(DEFAULT_WELCOME_TEMPLATE).toBe(
       "Hi {first_name}, it's {coach_first_name}. Welcome in. Your plan and targets are ready. Message me here anytime.",
     );

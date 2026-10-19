@@ -1,16 +1,16 @@
 import type { ExecutionContext } from '@nestjs/common';
 import { isWellFormedInviteCode } from '../invite-codes/invite-codes.service';
 
-// Clinic launch C03 — signup burst allowance for invite-code holders.
+// Partner launch C03 — signup burst allowance for invite-code holders.
 //
 // Problem: POST /auth/signup-with-code shares the `auth-signup` bucket
-// (5/hour per IP). A clinic room of clients on one Wi-Fi / carrier NAT
+// (5/hour per IP). A group room of clients on one Wi-Fi / carrier NAT
 // scanning the same QR code hits that ceiling on the 6th signup.
 //
 // Rule: keep the 5/hour per-IP baseline for CODELESS signups, but route
 // requests that carry a WELL-FORMED invite code through a separate
 // `auth-signup-with-code` bucket with a higher cap (AUTH_SIGNUP_WITH_CODE_PER_HOUR,
-// default 100/hour per IP, sized for a 40+ patient clinic event on one Wi-Fi
+// default 100/hour per IP, sized for a 40+ client group event on one Wi-Fi
 // IP). Both buckets are per-IP and per-route, so a bad actor with a made-up
 // code still gets at most AUTH_SIGNUP_WITH_CODE_PER_HOUR attempts/hour/IP, and the
 // service validates the code in the DB before any account is created

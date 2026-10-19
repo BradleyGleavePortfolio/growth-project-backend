@@ -14,7 +14,7 @@ import {
   assertFixtureRulesMatch,
   FixtureError,
   parseFixture,
-} from '../src/onboarding/clinic-programs';
+} from '../src/onboarding/consultation-programs';
 
 const RAW = readFileSync(join(__dirname, '..', 'seed', 'clinic-programs.v1.json'), 'utf8');
 type FixtureRule = {

@@ -117,7 +117,7 @@ switches:
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: auth
-    description: "Clinic C14 — failed password sign-ins per account per 15 min before a 15-min lock (any IP); only that account's own success clears it. Defaults to 10; clamped to [3, 100]."
+    description: "Partner C14 — failed password sign-ins per account per 15 min before a 15-min lock (any IP); only that account's own success clears it. Defaults to 10; clamped to [3, 100]."
   - name: AUTH_LOGIN_PER_HOUR
     tier: optional
     prod_default: STUB_ALLOWED
@@ -135,7 +135,7 @@ switches:
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: auth
-    description: "Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups use AUTH_SIGNUP_PER_HOUR. Defaults to 100; clamped to [5, 500]."
+    description: "Partner C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups use AUTH_SIGNUP_PER_HOUR. Defaults to 100; clamped to [5, 500]."
   - name: AUTH_LOGIN_PER_MIN
     tier: optional
     prod_default: STUB_ALLOWED
@@ -147,13 +147,13 @@ switches:
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: auth
-    description: "Clinic C14 — per-IP POST /auth/google + /auth/apple exchanges per hour (own bucket, never reset). Defaults to 400; clamped to [20, 20000]."
+    description: "Partner C14 — per-IP POST /auth/google + /auth/apple exchanges per hour (own bucket, never reset). Defaults to 400; clamped to [20, 20000]."
   - name: AUTH_OAUTH_PER_MIN
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: auth
-    description: "Clinic C14 — per-IP POST /auth/google + /auth/apple exchanges per minute (own bucket, never reset). Defaults to 60; clamped to [5, 5000]."
+    description: "Partner C14 — per-IP POST /auth/google + /auth/apple exchanges per minute (own bucket, never reset). Defaults to 60; clamped to [5, 5000]."
   - name: AUTH_PWD_RESET_PER_HOUR
     tier: optional
     prod_default: STUB_ALLOWED
@@ -1009,7 +1009,7 @@ switches:
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: platform
-    description: "Clinic C14 — per-IP requests per minute on public read endpoints (GET /auth/signup-policy, GET /invite/:code/preview) via the dedicated public-reads throttler. Defaults to 240 (a 40-person clinic room behind one NAT); clamped to [10, 5000]."
+    description: "Partner C14 — per-IP requests per minute on public read endpoints (GET /auth/signup-policy, GET /invite/:code/preview) via the dedicated public-reads throttler. Defaults to 240 (a 40-person group room behind one NAT); clamped to [10, 5000]."
   - name: RATELIMIT_ANON_PER_MIN
     tier: optional
     prod_default: STUB_ALLOWED
@@ -1501,13 +1501,13 @@ switches:
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: auth
-    description: "Clinic C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker."
+    description: "Partner C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker."
   - name: AUTH_OAUTH_COACH_SIGNUP_PER_HOUR
     tier: optional
     prod_default: STUB_ALLOWED
     auto_flip_on_in_prod: false
     owner: auth
-    description: "Clinic C13 — per-IP ceiling on brand-new COACH accounts created through /auth/google and /auth/apple per hour (login success never resets it). Client creates are not counted (clinic QR intake). Default 5, clamped to [1, 500]."
+    description: "Partner C13 — per-IP ceiling on brand-new COACH accounts created through /auth/google and /auth/apple per hour (login success never resets it). Client creates are not counted (group QR intake). Default 5, clamped to [1, 500]."
 
   # ── Smart Dunning v2 (S-DUNNING, 2026-10-01): register the existing v2 flag
   # (Lens B P2-1). Read via env[FEATURE_DUNNING_V2_ENV] in

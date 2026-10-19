@@ -1,4 +1,4 @@
--- #609 (C05 items 6-7): table privileges for the clinic engagement live RLS
+-- #609 (C05 items 6-7): table privileges for the client engagement live RLS
 -- suite. Supabase grants table privileges to `authenticated`, `anon` and
 -- `service_role` by default; a vanilla CI Postgres does not, and without them
 -- every query would fail on privileges before RLS is consulted (a false

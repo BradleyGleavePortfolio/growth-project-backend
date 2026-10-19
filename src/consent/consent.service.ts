@@ -36,7 +36,7 @@ export const ConsentScope = {
   // toggle alone does NOT imply AI processing.
   HEALTH_BLOODWORK: 'health.bloodwork',
   HEALTH_BLOODWORK_AI: 'health.bloodwork_ai',
-  // Clinic C01 — the ONE quick in-app "I agree" box shown at onboarding
+  // Partner C01 — the ONE quick in-app "I agree" box shown at onboarding
   // (owner ruling): covers the personal-training waiver AND letting the
   // coach / platform see the client's in-app data. With
   // FEATURE_CONTRACTS_ENABLED on, this record (not an external e-sign

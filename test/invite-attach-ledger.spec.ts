@@ -26,7 +26,7 @@ describe('signup ledger (InviteRedemption) on the canonical attach', () => {
   it('a NEW redemption writes exactly one ledger row with the code, source and bound package', async () => {
     const { db, svc } = await build();
     addUser(db, { id: 'stu' });
-    addRowCode(db, { code: 'GP-CLN234', coach_id: COACH_B, package_id: 'pkg-clinic' });
+    addRowCode(db, { code: 'GP-CLN234', coach_id: COACH_B, package_id: 'pkg-partner' });
     await svc.attachUserToCoachByCode('stu', 'GP-CLN234');
     expect(db.state.inviteRedemption).toEqual([
       expect.objectContaining({
@@ -35,7 +35,7 @@ describe('signup ledger (InviteRedemption) on the canonical attach', () => {
         invite_code_id: 'ic-GP-CLN234',
         code: 'GP-CLN234',
         source: 'invite_code',
-        package_id: 'pkg-clinic',
+        package_id: 'pkg-partner',
       }),
     ]);
   });

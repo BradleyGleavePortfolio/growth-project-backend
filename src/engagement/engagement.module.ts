@@ -7,9 +7,9 @@ import { CoachWelcomeService } from './coach-welcome.service';
 import { WelcomeSettingsController } from './welcome-settings.controller';
 import { WorkoutReminderService } from './workout-reminder.service';
 
-// C05 items 6-7 — clinic engagement: the coach welcome message (13 minutes
+// C05 items 6-7 — client engagement: the coach welcome message (13 minutes
 // after onboarding completes) and workout reminders on plan days. Both are
-// @Cron + Postgres claim-by-write jobs; see docs/clinic-engagement.md.
+// @Cron + Postgres claim-by-write jobs; see docs/client-engagement.md.
 // PrismaService and AuditService are provided globally.
 @Module({
   imports: [AuthModule, MessagingModule, MessagesSafetyModule, NotificationsModule],

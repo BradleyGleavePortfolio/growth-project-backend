@@ -122,14 +122,7 @@ export class AccountDeletionStorageService {
       push({ kind: 'supabase', bucket: voiceBucket, key });
     }
 
-    const media = await tx.coachMediaAsset.findMany({
-      where: { coach_id: userId },
-      select: { storage_key: true, provider: true },
-    });
-    for (const m of media) {
-      if (m.provider === 'mux') push({ kind: 'mux', assetId: m.storage_key });
-      else push({ kind: 'supabase', bucket: this.mediaBucket(), key: m.storage_key });
-    }
+    for (const m of await this.coachMediaObjects(tx, userId)) push(m);
 
     // Classroom media a coach posted (C-608-1). Keys are server-minted
     // (`community-classroom/<workspace>/<post>/...`) in the media bucket.
@@ -200,6 +193,38 @@ export class AccountDeletionStorageService {
       }
     }
     return out;
+  }
+
+  /** The bytes behind each of the user's coach media rows (Supabase object or Mux asset). */
+  private async coachMediaObjects(
+    tx: Prisma.TransactionClient,
+    userId: string,
+  ): Promise<StorageObject[]> {
+    const media = await tx.coachMediaAsset.findMany({
+      where: { coach_id: userId },
+      select: { storage_key: true, provider: true },
+    });
+    return media.map((m): StorageObject =>
+      m.provider === 'mux'
+        ? { kind: 'mux', assetId: m.storage_key }
+        : { kind: 'supabase', bucket: this.mediaBucket(), key: m.storage_key },
+    );
+  }
+
+  /**
+   * LEARN-FROZEN-MEDIA: `objects` without the bytes of the coach media rows the erasure manifest
+   * kept (the video or file of a lesson a client keeps, policy 2). Call it after the manifest in
+   * the same transaction: the purge then removes the bytes of exactly the media rows it deleted.
+   */
+  async withoutRetainedMedia(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    objects: StorageObject[],
+  ): Promise<StorageObject[]> {
+    const kept = new Set(
+      (await this.coachMediaObjects(tx, userId)).map((o) => JSON.stringify(o)),
+    );
+    return objects.filter((o) => !kept.has(JSON.stringify(o)));
   }
 
   private async listPrefix(bucket: string, prefix: string): Promise<string[]> {

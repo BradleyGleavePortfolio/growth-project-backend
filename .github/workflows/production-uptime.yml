@@ -1,12 +1,15 @@
 # O2 (REL-09): every 10 minutes, probe the public /health and /readyz of
-# production and open, refresh or close one GitHub issue labelled
-# production-down (scripts/ci/production-uptime.sh). Schedules run only from
-# the default branch. Uses only the default GITHUB_TOKEN: no secrets, no fly.
+# production plus the public app /privacy page, then open, refresh or close one
+# GitHub issue labelled production-down (scripts/ci/production-uptime.sh).
+# Schedules run only from the default branch. Uses only the default
+# GITHUB_TOKEN: no secrets, no fly.
 name: Production uptime
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    # GitHub delays scheduled runs most around minute 0; keep the 10-minute
+    # cadence but move it to minutes 3, 13, 23, 33, 43 and 53.
+    - cron: '3-59/10 * * * *'
   workflow_dispatch:
 
 permissions:
@@ -27,7 +30,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Probe /health and /readyz; open, refresh or close the production-down issue
+      - name: Probe backend and public app; open, refresh or close the production-down issue
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

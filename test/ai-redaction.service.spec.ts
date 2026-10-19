@@ -5,10 +5,10 @@ describe('AiRedactionService', () => {
 
   it('redacts emails and phones and counts them in the summary', () => {
     const input =
-      'Contact me at brad@example.com or (415) 555-0199 — backup brad+work@gmail.com';
+      'Contact me at brad@example.com or (415) 555-0199 — backup brad+work@example.net';
     const { text, summary } = svc.redact(input);
     expect(text).not.toMatch(/brad@example\.com/);
-    expect(text).not.toMatch(/brad\+work@gmail\.com/);
+    expect(text).not.toMatch(/brad\+work@example\.net/);
     expect(text).not.toMatch(/\d{3}.*\d{3}.*\d{4}/);
     expect(text).toContain('[redacted-email]');
     expect(text).toContain('[redacted-phone]');
