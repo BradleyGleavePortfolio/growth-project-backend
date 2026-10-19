@@ -4,6 +4,7 @@
  * test/rls/coach-gone-delivery-rls.spec.ts.
  */
 import type { Prisma } from '@prisma/client';
+import type { PrismaService } from '../../src/prisma.service';
 import {
   KEPT_PURCHASE,
   executeErasureManifest,
@@ -145,7 +146,7 @@ describe('joins after the deletion request', () => {
 
   it("a leaving coach's invite codes are not found", async () => {
     const findUnique = jest.fn(async () => null);
-    const prisma = stub({ coachProfile: { findUnique: async () => null }, inviteCode: { findUnique } });
+    const prisma = stub<PrismaService>({ coachProfile: { findUnique: async () => null }, inviteCode: { findUnique } });
     expect(await new CoachCodeLookupService(prisma).resolve('gp-coach')).toBeNull();
     expect(await new InviteCodesService(prisma, stub({}), stub({}), stub({})).validate('gp-coach'))
       .toEqual({ valid: false, reason: 'not_found' });

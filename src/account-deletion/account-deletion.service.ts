@@ -272,14 +272,13 @@ export class AccountDeletionService {
    * is_active); a cancel puts back on sale exactly the packages this took off.
    */
   private async setSelling(client: Prisma.TransactionClient, userId: string, closedAt: Date | null) {
-    await client.coachPackage.updateMany(
-      closedAt
-        ? { where: { coach_id: userId, is_active: true }, data: { is_active: false, closed_for_deletion_at: closedAt } }
-        : {
-            where: { coach_id: userId, closed_for_deletion_at: { not: null } },
-            data: { is_active: true, closed_for_deletion_at: null },
-          },
-    );
+    const args: Prisma.CoachPackageUpdateManyArgs = closedAt
+      ? { where: { coach_id: userId, is_active: true }, data: { is_active: false, closed_for_deletion_at: closedAt } }
+      : {
+          where: { coach_id: userId, closed_for_deletion_at: { not: null } },
+          data: { is_active: true, closed_for_deletion_at: null },
+        };
+    await client.coachPackage.updateMany(args);
   }
 
   async requestDeletion(
