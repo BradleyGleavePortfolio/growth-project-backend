@@ -11,6 +11,7 @@ import {
   AssignDailyPlanDto,
   CreateDailyMealPlanDto,
   CreateMealTemplateDto,
+  EndDailyPlanAssignmentDto,
   UpdateDailyMealPlanDto,
   UpdateMealTemplateDto,
   DailyPlanSlotInputDto,
@@ -397,6 +398,31 @@ export class RealMealPlansService {
     });
   }
 
+  // MEALPLAN-END (OWN-1): the coach ends an assignment that listAssignmentsForCoach lists: their live plan,
+  // a client still theirs (owner 4: a moved client's is not theirs to end). ends_on is the client's last
+  // day on it, and ending never extends it. An end before the start leaves no day, so the row goes.
+  async endAssignment(coachId: string, planId: string, assignmentId: string, dto: EndDailyPlanAssignmentDto) {
+    await this.assertPlanOwnedBy(coachId, planId);
+    const where: Prisma.DailyMealPlanAssignmentWhereInput = {
+      id: assignmentId,
+      daily_meal_plan_id: planId,
+      client: { coach_id: coachId, role: 'student' },
+    };
+    if (!(await this.prisma.dailyMealPlanAssignment.findFirst({ where, select: { id: true } }))) {
+      throw new NotFoundException('Assignment not found');
+    }
+    // Each write re-checks its own rule in its WHERE, so two ends at once settle on the earlier day.
+    const endsOn = new Date(dto.ends_on);
+    const removed = await this.prisma.dailyMealPlanAssignment.deleteMany({
+      where: { ...where, starts_on: { gt: endsOn } },
+    });
+    if (removed.count) return;
+    await this.prisma.dailyMealPlanAssignment.updateMany({
+      where: { ...where, OR: [{ ends_on: null }, { ends_on: { gt: endsOn } }] },
+      data: { ends_on: endsOn },
+    });
+  }
+
   // Client-side: list "today's" plan(s). A plan applies on a given date
   // if starts_on <= date and (ends_on is null OR ends_on >= date).
   async getTodayForClient(clientId: string, dateIso?: string) {
@@ -407,6 +433,9 @@ export class RealMealPlansService {
         client_id: clientId,
         starts_on: { lte: today },
         OR: [{ ends_on: null }, { ends_on: { gte: today } }],
+        // MEALPLAN-END (OWN-1): an archive hides a plan from its own coach's client, as GET /meal-plans and
+        // Roman's context do; a moved client keeps an earlier coach's plan, frozen copy included (owner 4).
+        daily_meal_plan: { OR: [{ archived_at: null }, { coach: { students: { none: { id: clientId } } } }] },
       },
       orderBy: { starts_on: 'desc' },
       include: {
