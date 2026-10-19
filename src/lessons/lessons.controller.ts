@@ -10,7 +10,8 @@ import { CreateLessonDto, UpdateLessonDto } from './lessons.dto';
 
 // #LEARN-LOCK op 1: the client's lesson reads never lock (no package guard
 // here; the marker keeps them open through a Day-10 dunning lock too). Every
-// read is scoped to the client's current coach in the service.
+// read is scoped to the client's current coach in the service, plus the single
+// lessons a client completed and kept when that coach deleted their account.
 @ApiTags('lessons')
 @Controller('lessons')
 @UseGuards(JwtAuthGuard, RolesGuard)
