@@ -8,6 +8,7 @@ import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { OpenToCoachlessClient } from '../common/decorators/open-to-coachless-client.decorator';
 import {
+  ExerciseHistoryQueryDto,
   CreateWorkoutDto,
   CreateRoutineDto,
   UpdateRoutineDto,
@@ -31,6 +32,12 @@ export class WorkoutController {
   @Get('workouts')
   async getWorkouts(@Request() req: AuthedRequest, @Query('limit') limit?: string) {
     return this.workoutService.getWorkouts(req.user.id, limit ? parseInt(limit) : 10);
+  }
+
+  // TRAIN-BE2: one exercise over all the caller's workouts (exercise detail, Coach's page).
+  @Get('workouts/exercise-history')
+  async getExerciseHistory(@Request() req: AuthedRequest, @Query() q: ExerciseHistoryQueryDto) {
+    return this.workoutService.getExerciseHistory(req.user.id, q);
   }
 
   @Get('workouts/volume')

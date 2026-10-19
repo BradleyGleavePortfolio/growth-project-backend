@@ -16,8 +16,11 @@ type LoggedFoodEntryWithFood = Prisma.LoggedFoodEntryGetPayload<{
   include: { food_item: true };
 }>;
 type WorkoutSessionWithExercises = Prisma.WorkoutSessionGetPayload<{
-  include: { exercises: true };
+  include: { exercises: true; comments: { select: { body: true; updated_at: true } } };
 }>;
+// TRAIN-BE2: a workout's comment from the caller only; a new coach never reads a former coach's.
+const ownComment = (coachId: string) =>
+  ({ where: { coach_id: coachId }, select: { body: true, updated_at: true } }) as const;
 type WeightLogRow = Prisma.WeightLogGetPayload<Record<string, never>>;
 type CheckInRow = Prisma.CheckInGetPayload<Record<string, never>>;
 
@@ -495,7 +498,7 @@ export class CoachService {
       flags.workouts
         ? this.prisma.workoutSession.findMany({
             where: { user_id: clientId, created_at: { gte: ninetyDaysAgo } },
-            include: { exercises: true },
+            include: { exercises: true, comments: ownComment(coachId) },
             orderBy: { created_at: 'desc' },
             take: 100,
             ...(opts.workoutsCursor ? { cursor: { id: opts.workoutsCursor }, skip: 1 } : {}),
@@ -673,6 +676,40 @@ export class CoachService {
     return { description: row.content, created_at: row.created_at, updated_at: row.updated_at };
   }
 
+  /**
+   * TRAIN-BE2 (Coach's page, plan C2): the caller's own comment on a client's logged workout;
+   * `body` null removes it. The timeline's gates: the client is the caller's now and shares
+   * Workouts, else 404. The client reads it on the exercise detail's Your history.
+   */
+  async setWorkoutComment(
+    coachId: string,
+    clientId: string,
+    workoutId: string,
+    body: string | null,
+    callerRole?: string,
+  ) {
+    const scope = await this.scopeClientsBy(coachId, callerRole);
+    const [workout, flags] = await Promise.all([
+      this.prisma.workoutSession.findFirst({
+        where: { id: workoutId, user: { AND: [{ id: clientId }, scope] } },
+        select: { id: true },
+      }),
+      this.loadFitnessConsents(coachId, clientId, callerRole),
+    ]);
+    if (!workout || !flags.workouts) throw new NotFoundException('Workout not found');
+    const key = { workout_id: workoutId, coach_id: coachId };
+    if (body === null) {
+      await this.prisma.workoutComment.deleteMany({ where: key });
+      return { workout_id: workoutId, body: null };
+    }
+    return this.prisma.workoutComment.upsert({
+      where: { workout_id_coach_id: key },
+      create: { ...key, body },
+      update: { body },
+      select: { workout_id: true, body: true, updated_at: true },
+    });
+  }
+
   async getClientSummary(
     coachId: string,
     clientId: string,
@@ -729,7 +766,7 @@ export class CoachService {
       flags.workouts
         ? this.prisma.workoutSession.findMany({
             where: { user_id: clientId },
-            include: { exercises: true },
+            include: { exercises: true, comments: ownComment(coachId) },
             orderBy: { created_at: 'desc' },
             take: 10,
           })

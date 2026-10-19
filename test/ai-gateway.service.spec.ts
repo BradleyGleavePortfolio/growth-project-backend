@@ -7,12 +7,15 @@ import { deriveGatewayDataSubject } from '../src/ai/gateway/ai-gateway.service';
 import { AiEgressService } from '../src/ai-egress/ai-egress.service';
 import { AiConsentRequiredException } from '../src/ai-egress/ai-consent-required.exception';
 import { clientDataSubject, noClientDataSubject } from '../src/ai-egress/ai-egress.types';
-import { egressWithGrants, grantAllEgress } from './ai-egress/ai-egress.fakes';
+import { egressWithGrants, grantAllEgress, withTx } from './ai-egress/ai-egress.fakes';
 
 function buildPrisma() {
   const created = { audits: [] as any[], drafts: [] as any[] };
-  return {
+  // Each client's current coach.
+  const roster: Record<string, string> = { 'client-1': 'coach-1', 'client-2': 'coach-1', 'client-3': 'head-1' };
+  return withTx({
     created,
+    roster,
     aiRequestAudit: {
       create: jest.fn(async ({ data }: any) => {
         const row = { id: `audit-${created.audits.length + 1}`, ...data };
@@ -28,22 +31,22 @@ function buildPrisma() {
       }),
     },
     // R2b — roster for the gateway's tenancy pre-flight: coach-1 coaches
-    // client-1 and client-2 directly; sub-1 holds client-3 by delegation.
+    // client-1 and client-2 directly; sub-1 holds client-3 by delegation from head-1.
     user: {
       findMany: jest.fn(async ({ where }: any) =>
-        ['client-1', 'client-2']
-          .filter((id) => where.id.in.includes(id) && where.coach_id === 'coach-1')
+        Object.keys(roster)
+          .filter((id) => (where.OR ?? [where]).some((w: any) => (w.id.in ?? [w.id]).includes(id) && w.coach_id === roster[id]))
           .map((id) => ({ id })),
       ),
     },
     subCoachAssignment: {
       findMany: jest.fn(async ({ where }: any) =>
         where.sub_coach_id === 'sub-1' && where.client_id.in.includes('client-3')
-          ? [{ client_id: 'client-3' }]
+          ? [{ client_id: 'client-3', head_coach_id: 'head-1' }]
           : [],
       ),
     },
-  } as any;
+  } as any);
 }
 
 function buildSvc(
@@ -331,6 +334,41 @@ describe('AiGatewayService — R2b box-2 consent', () => {
         proposedActionPayload: { clientId: 'client-2' },
       }),
     ).rejects.toBeInstanceOf(AiConsentRequiredException);
+    expect(complete).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['their coach', 'coach-1', 'client-1'],
+    ['a sub-coach whose delegation stays open', 'sub-1', 'client-3'],
+  ])('a draft that finishes after its client moved is not saved for %s (owner decision 17)', async (_who, coachId, clientId) => {
+    process.env.AI_GATEWAY_REQUIRE_APPROVAL = 'client_chat';
+    const { egress } = egressWithGrants([clientId]);
+    const send = sendingAdapter(egress);
+    const prisma = buildPrisma();
+    let moveDuringCall = false;
+    const complete = jest.fn(async (req: any) => {
+      // The client moves to another coach while the model is answering.
+      if (moveDuringCall) prisma.roster[clientId] = 'coach-9';
+      return send(req);
+    });
+    const { svc } = buildSvc(prisma, egress, complete);
+    const ask = { ...coachAbout(clientId), requester: { id: coachId, role: 'coach' as const } };
+    await expect(svc.invoke(ask)).resolves.toMatchObject({ approvalStatus: 'pending' });
+    expect(prisma.created.drafts).toHaveLength(1);
+    moveDuringCall = true;
+    await expect(svc.invoke(ask)).rejects.toThrow('Client not found');
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(prisma.created.drafts).toHaveLength(1);
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+  });
+
+  it("a delegation left open by the client's move to another coach grants nothing: 404, provider never called", async () => {
+    const { egress } = egressWithGrants(['client-3']);
+    const complete = sendingAdapter(egress);
+    const prisma = buildPrisma();
+    prisma.roster['client-3'] = 'coach-9';
+    const { svc } = buildSvc(prisma, egress, complete);
+    await expect(svc.invoke({ ...coachAbout('client-3'), requester: { id: 'sub-1', role: 'coach' } })).rejects.toThrow('Client not found');
     expect(complete).not.toHaveBeenCalled();
   });
 

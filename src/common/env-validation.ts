@@ -133,7 +133,8 @@ export const ENV_RULES: EnvRule[] = [
   {
     name: 'SUPABASE_SERVICE_ROLE_KEY',
     tier: 'hard',
-    reason: 'Supabase service-role key for server-side admin calls.',
+    reason:
+      'Supabase secret key (sb_secret_…, Project Settings > API Keys) for server-side admin calls. Not the legacy service_role JWT, which stops working when the legacy keys are switched off.',
   },
 
   // --- Feature-tier: warn in prod, never block boot. The corresponding
@@ -956,7 +957,7 @@ export const ENV_RULES: EnvRule[] = [
     default:
       "unset → '' passed to the Supabase auth client (signup / sign-in / password flows fail at request time)",
     reason:
-      'Supabase anon (public) key used by AuthService for user-scoped Supabase auth calls. Not a boot dependency, but every password/OTP auth flow fails without it.',
+      'Supabase publishable key (sb_publishable_…, Project Settings > API Keys) used by AuthService for user-scoped Supabase auth calls. Not the legacy anon JWT, which stops working when the legacy keys are switched off. Not a boot dependency, but every password/OTP auth flow fails without it.',
   },
   {
     name: 'SUPABASE_REDIRECT_URL',

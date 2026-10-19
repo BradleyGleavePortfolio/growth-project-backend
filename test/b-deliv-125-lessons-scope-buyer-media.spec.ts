@@ -153,7 +153,7 @@ describe('B2 — Learn only ever shows the client\'s own coach\'s lessons', () =
       lesson_id: 'lesson-a1',
     });
     expect(prisma.lesson.findFirst).toHaveBeenCalledWith({
-      where: { id: 'lesson-a1', coach_id: 'coach-a' },
+      where: { id: 'lesson-a1', coach_id: 'coach-a', module_id: null },
       select: { id: true },
     });
   });

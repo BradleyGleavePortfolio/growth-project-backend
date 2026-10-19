@@ -61,6 +61,8 @@ const SENSITIVE_VALUE_PATTERNS = [
   /^sk_test_/,     // Stripe test secret key
   /^whsec_/,       // Stripe webhook secret
   /^eyJ/,          // JWT (base64url header)
+  /^sb_secret_/,   // Supabase secret API key
+  /^sb_publishable_/, // Supabase publishable API key
   /^postgresql:\/\//i,
   /^postgres:\/\//i,
   /^mysql:\/\//i,

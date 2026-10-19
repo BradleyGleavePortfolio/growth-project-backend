@@ -1051,9 +1051,12 @@ export class WorkoutBuilderService {
    * if the acting user has no access. When SubCoachScopeService is not
    * injected (legacy unit-test construction) we degrade to the original
    * head-coach-only check so existing behaviour is preserved exactly.
+   * `tx`: a caller's transaction (a draft write's re-check, owner decision
+   * 17); every read then runs on its connection.
    */
-  async assertCanAccessClient(actingUserId: string, clientId: string) {
-    const client = await this.prisma.user.findUnique({
+  async assertCanAccessClient(actingUserId: string, clientId: string, tx?: Prisma.TransactionClient) {
+    const db: Prisma.TransactionClient = tx ?? this.prisma;
+    const client = await db.user.findUnique({
       where: { id: clientId },
       select: { id: true, coach_id: true, deleted_at: true },
     });
@@ -1066,7 +1069,9 @@ export class WorkoutBuilderService {
     // Sub-coach overlay (open SubCoachAssignment). Only consulted when the
     // service is wired with the scope helper.
     if (this.subCoachScope) {
-      const ok = await this.subCoachScope.canAccessClient(actingUserId, clientId);
+      const ok = tx
+        ? await this.subCoachScope.canAccessClient(actingUserId, clientId, tx)
+        : await this.subCoachScope.canAccessClient(actingUserId, clientId);
       if (ok) return;
     }
     throw new ForbiddenException('Client does not belong to this coach');

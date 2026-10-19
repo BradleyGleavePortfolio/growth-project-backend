@@ -6,7 +6,7 @@ import { AiConsentRequiredException } from '../src/ai-egress/ai-consent-required
 import { clientDataSubject, type AiDataSubject, type AiEgressSurface } from '../src/ai-egress/ai-egress.types';
 import type { WorkoutContextService, WorkoutContextV2 } from '../src/ai/context/workout-context.service';
 import { substituteFor, toInjuryAreas } from '../src/ai/gateway/workout-builder/training-substitutions';
-import { egressWithGrants, fakeOf } from './ai-egress/ai-egress.fakes';
+import { egressWithGrants, fakeOf, withTx } from './ai-egress/ai-egress.fakes';
 
 describe('B-AIB3-126 — substitution table', () => {
   it.each<[string[], string, string]>([
@@ -64,7 +64,7 @@ function buildGenerator(granted: string[] = ['client1']) {
   const create = jest.fn(async (_args: { data: { generatedPayload: ReturnType<typeof generated> } }) => ({ id: 'draft-1' }));
   const build = jest.fn(async () => WCTX);
   const svc = new CoachAIService(
-    fakeOf({ aIDraft: { create } }), fakeOf({ isReady: () => true }), fakeOf({ completeStructured }), fakeOf({ build: jest.fn(async () => CTX) }),
+    fakeOf(withTx({ aIDraft: { create } })), fakeOf({ isReady: () => true }), fakeOf({ completeStructured }), fakeOf({ build: jest.fn(async () => CTX) }),
     fakeOf({}), fakeOf({ assertCanAccessClient: jest.fn(async () => undefined) }), undefined, fakeOf<WorkoutContextService>({ build }),
   );
   return { svc, completeStructured, create, build };

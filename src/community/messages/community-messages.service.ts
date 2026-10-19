@@ -23,6 +23,7 @@ import {
   CommunityMessageView,
 } from '../dto/community-message.dto';
 import { CommunitySafetyService } from '../safety/community-safety.service';
+import { placeOf } from '../community-space-access';
 import { CommunityNotificationsService } from '../notifications/community-notifications.service';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { describeFailure } from '../../observability/log-pii';
@@ -266,7 +267,7 @@ export class CommunityMessagesService {
     const next = rows.length === limit ? rows[rows.length - 1].created_at.toISOString() : null;
     // Block filter AFTER the cursor is computed from the unfiltered page, so
     // pagination stays stable and a hidden row never becomes the cursor.
-    const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id);
+    const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id, placeOf);
     return CommunityMessageListResponseSchema.parse({
       messages: visible.map((m) => this.view(m)),
       next_before: next,
@@ -288,7 +289,7 @@ export class CommunityMessagesService {
       throw new NotFoundException(NOT_FOUND);
     }
     // Two-way block: a direct id read cannot go around the list filter.
-    await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND);
+    await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND, placeOf(m));
     return CommunityMessageResponseSchema.parse({ message: this.view(m) });
   }
 

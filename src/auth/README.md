@@ -166,8 +166,8 @@ gates pass. Deleted accounts never produce a signal.
 | Var | Required | Purpose |
 |---|---|---|
 | `SUPABASE_URL` | yes | Source of the JWKS endpoint and admin SDK base URL. Also pinned as the token issuer. |
-| `SUPABASE_ANON_KEY` | yes | Anon key — used for `signInWithPassword`, `signUp`, and `resetPasswordForEmail`. |
-| `SUPABASE_SERVICE_ROLE_KEY` | yes | Admin SDK key — used by the Google handler to call `auth.getUser(token)` and resolve the Supabase user. |
+| `SUPABASE_ANON_KEY` | yes | Supabase publishable key (`sb_publishable_…`, Project Settings > API Keys; not the legacy anon JWT) — used for `signInWithPassword`, `signUp`, and `resetPasswordForEmail`. |
+| `SUPABASE_SERVICE_ROLE_KEY` | yes | Supabase secret key (`sb_secret_…`, Project Settings > API Keys; not the legacy service_role JWT) — admin SDK key, used by the Google handler to call `auth.getUser(token)` and resolve the Supabase user. |
 | `SUPABASE_REDIRECT_URL` | yes | Email-confirm deep link target (e.g. `tgp://verified`). |
 | `COACH_CODE_GATE_ENABLED` | optional | When `true`, `/auth/signup-with-code` requires a coach invite code. `/auth/signup-policy` reflects this via `invite_code_required` (canonical), `coach_code_required` (deprecated alias) and `require_invite_code` (legacy name the shipped mobile build reads) so mobile can hide/show the field. The policy also carries `google_signin_enabled` / `apple_signin_enabled` booleans mirroring `providers`. |
 

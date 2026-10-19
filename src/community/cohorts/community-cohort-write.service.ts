@@ -108,9 +108,9 @@ export class CommunityCohortWriteService {
 
   /**
    * C6-BVIS (#COMMUNITY-ACCESS): the coach picks who a space opens to. A package
-   * space takes one or more of the workspace coach's own packages; any other
-   * takes none. Every miss is the same 400, so another coach's package id is
-   * never confirmed.
+   * space takes one or more of the workspace coach's own live packages (C6-ACCESS:
+   * not archived, not switched off); any other takes none. Every miss is the
+   * same 400, so another coach's package id is never confirmed.
    */
   private async spaceAccess(
     workspaceId: string,

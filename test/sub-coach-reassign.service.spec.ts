@@ -27,6 +27,11 @@ type TxMock = {
   auditLog: { create: jest.Mock };
   // SUBREVOKE: the destination seat, read FOR SHARE. [] = the pair never had a seat.
   $queryRaw: jest.Mock;
+  // A handoff deletes the drafts the sub-coach handing on holds (owner decision 17).
+  aIDraft: { deleteMany: jest.Mock };
+  aiActionDraft: { deleteMany: jest.Mock };
+  messageDraft: { deleteMany: jest.Mock };
+  churnIntervention: { deleteMany: jest.Mock };
 };
 
 function makeTxMock(initialOpen: unknown = null): TxMock {
@@ -40,6 +45,10 @@ function makeTxMock(initialOpen: unknown = null): TxMock {
       create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
     },
     $queryRaw: jest.fn().mockResolvedValue([]),
+    aIDraft: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    aiActionDraft: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    messageDraft: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
+    churnIntervention: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
   };
 }
 
@@ -191,6 +200,9 @@ describe('SubCoachReassignService', () => {
       expect.objectContaining({ where: { id: 'open-1' } }),
     );
     expect(tx.subCoachAssignment.create).toHaveBeenCalled();
+    expect(tx.aIDraft.deleteMany).toHaveBeenCalledWith({
+      where: { clientId: CLIENT_ID, coachId: SUB_COACH_ID, status: { not: 'APPROVED' } },
+    });
     expect(result.previousSubCoachId).toBe(SUB_COACH_ID);
     expect(result.newSubCoachId).toBe(OTHER_SUB_COACH_ID);
   });

@@ -145,6 +145,8 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // prisma/migrations and fails when a parent is deleted before such a child.
   { model: 'ExerciseSet', field: 'workout.user_id', action: del },
   { model: 'WorkoutSession', field: 'user_id', action: del },
+  // TRAIN-BE2: a coach's workout comments go with the coach; a client's go with their workouts (FK cascade).
+  { model: 'WorkoutComment', field: 'coach_id', action: del },
   { model: 'FastingWindow', field: 'user_id', action: del },
   { model: 'WeightLog', field: 'user_id', action: del },
   { model: 'WaterLog', field: 'user_id', action: del },
@@ -155,6 +157,8 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // HB1: habits a deleted coach set stay with their client, as the client's own.
   { model: 'Habit', field: 'assigned_by_coach_id', action: detach('assigned_by_coach_id') },
   { model: 'LessonCompletion', field: 'user_id', action: del },
+  { model: 'LessonProgress', field: 'user_id', action: del },
+  { model: 'CourseEnrolment', field: 'user_id', action: del },
   { model: 'SavedRecipe', field: 'user_id', action: del },
   { model: 'ListItem', field: 'user_id', action: del },
   { model: 'BuildWeekEnrollment', field: 'user_id', action: del },
@@ -176,9 +180,33 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // first (test/account-deletion/recipe-erasure.spec.ts).
   { model: 'SavedRecipe', field: 'recipe.created_by_id', action: del },
   { model: 'Recipe', field: 'created_by_id', action: del },
-  // Lessons other people completed stay (frozen content); the rest are removed.
-  { model: 'Lesson', field: 'coach_id', action: del, where: { completions: { none: {} } } },
+  // Lessons other people completed stay (frozen content); the rest are removed,
+  // except a course lesson while anyone is enrolled in its course (PRIVACY-SWEEP:
+  // the client keeps every week and lesson row and their progress, policy 2).
+  {
+    model: 'Lesson',
+    field: 'coach_id',
+    action: del,
+    where: { completions: { none: {} }, module_id: null },
+  },
+  {
+    model: 'Lesson',
+    field: 'coach_id',
+    action: del,
+    where: { completions: { none: {} }, module: { course: { enrolments: { none: {} } } } },
+  },
   { model: 'Lesson', field: 'coach_id', action: retain(FROZEN_PLAN) },
+  // LEARN-BE1: a course week or course goes once nothing hangs off it; one a
+  // client is enrolled in stays (frozen content).
+  { model: 'CourseModule', field: 'coach_id', action: del, where: { lessons: { none: {} } } },
+  { model: 'CourseModule', field: 'coach_id', action: retain(FROZEN_PLAN) },
+  {
+    model: 'Course',
+    field: 'coach_id',
+    action: del,
+    where: { modules: { none: {} }, enrolments: { none: {} } },
+  },
+  { model: 'Course', field: 'coach_id', action: retain(FROZEN_PLAN) },
 
   // ── Workout and meal programming
   // Roman approve-to-adjust (#655): a proposal carries the client's recovery

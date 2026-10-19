@@ -32,7 +32,7 @@ import { DiagnosticService } from '../../src/diagnostic/diagnostic.service';
 import { AiConsentRequiredException } from '../../src/ai-egress/ai-consent-required.exception';
 import type { AiEgressService } from '../../src/ai-egress/ai-egress.service';
 import { clientDataSubject } from '../../src/ai-egress/ai-egress.types';
-import { egressWithGrants, fakeOf, FakeConsentReader } from './ai-egress.fakes';
+import { egressWithGrants, fakeOf, FakeConsentReader, withTx } from './ai-egress.fakes';
 
 type Method = 'generateWorkoutProgram' | 'generateMealPlan' | 'generateClientInsight';
 const METHODS: Array<[Method, string]> = [
@@ -61,7 +61,7 @@ function buildCoachAi(granted: string[]) {
     }),
   };
   const svc = new CoachAIService(
-    fakeOf(prisma),
+    fakeOf(withTx(prisma)),
     fakeOf({ isReady: () => true }),
     fakeOf({ completeStructured }),
     // No prescribed macros: the meal-plan tolerance check returns early.

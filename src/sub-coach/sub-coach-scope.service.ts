@@ -57,14 +57,15 @@ export class SubCoachScopeService {
     return this.membershipHeadCoachIdFor(userId, u);
   }
 
-  /** Same as above for an already-loaded `{ role, coach_id }` row. */
+  /** Same as above for an already-loaded `{ role, coach_id }` row; `db` as in getAuthorizedClientIds. */
   private async membershipHeadCoachIdFor(
     userId: string,
     u: { role: string; coach_id: string | null } | null,
+    db: Prisma.TransactionClient = this.prisma,
   ): Promise<string | null> {
     if (!u || u.role !== 'coach' || !u.coach_id) return null;
 
-    const teamSeat = await this.prisma.teamSubCoachAssignment.findFirst({
+    const teamSeat = await db.teamSubCoachAssignment.findFirst({
       where: { head_coach_id: u.coach_id, sub_coach_id: userId, archived_at: null },
       select: { id: true },
     });
@@ -75,13 +76,13 @@ export class SubCoachScopeService {
     // leaves their client delegations open, so a seat row found here means
     // removed. An open delegation proves membership only for a sub-coach who
     // never had a seat.
-    const archivedSeat = await this.prisma.teamSubCoachAssignment.findFirst({
+    const archivedSeat = await db.teamSubCoachAssignment.findFirst({
       where: { head_coach_id: u.coach_id, sub_coach_id: userId },
       select: { id: true },
     });
     const delegation = archivedSeat
       ? null
-      : await this.prisma.subCoachAssignment.findFirst({
+      : await db.subCoachAssignment.findFirst({
           where: { head_coach_id: u.coach_id, sub_coach_id: userId, unassigned_at: null },
           select: { id: true },
         });
@@ -151,9 +152,11 @@ export class SubCoachScopeService {
    *   the head coach's.
    *
    * Returns [] if the user has no clients (or isn't a coach at all).
+   * `db`: a caller's transaction (a draft write's re-check, owner decision
+   * 17); every read then runs on its connection.
    */
-  async getAuthorizedClientIds(userId: string): Promise<string[]> {
-    const u = await this.prisma.user.findUnique({
+  async getAuthorizedClientIds(userId: string, db: Prisma.TransactionClient = this.prisma): Promise<string[]> {
+    const u = await db.user.findUnique({
       where: { id: userId },
       select: { role: true, coach_id: true },
     });
@@ -161,16 +164,16 @@ export class SubCoachScopeService {
 
     // Own roster. A sub-coach can be a client's current coach too, when a
     // team move hands the client to them directly.
-    const clients = await this.prisma.user.findMany({
+    const clients = await db.user.findMany({
       where: { coach_id: userId, role: 'student', deleted_at: null },
       select: { id: true },
     });
     const own = clients.map((r) => r.id);
 
-    const headCoachId = await this.membershipHeadCoachIdFor(userId, u);
+    const headCoachId = await this.membershipHeadCoachIdFor(userId, u, db);
     if (headCoachId) {
       // Sub-coach: plus the SubCoachAssignment overlay.
-      const open = await this.prisma.subCoachAssignment.findMany({
+      const open = await db.subCoachAssignment.findMany({
         where: { sub_coach_id: userId, head_coach_id: headCoachId, unassigned_at: null },
         select: { client_id: true },
       });
@@ -179,7 +182,7 @@ export class SubCoachScopeService {
       // Filter out soft-deleted clients / non-students at the DB level.
       // A client who has moved to another coach is out too: a coach move
       // does not close the delegation row, so it alone is not enough.
-      const live = await this.prisma.user.findMany({
+      const live = await db.user.findMany({
         where: { id: { in: ids }, role: 'student', deleted_at: null, coach_id: headCoachId },
         select: { id: true },
       });
@@ -209,8 +212,8 @@ export class SubCoachScopeService {
    * caller is a head coach who owns the client, OR a sub-coach with an
    * open assignment to that client.
    */
-  async canAccessClient(userId: string, clientId: string): Promise<boolean> {
-    const ids = await this.getAuthorizedClientIds(userId);
+  async canAccessClient(userId: string, clientId: string, db: Prisma.TransactionClient = this.prisma): Promise<boolean> {
+    const ids = await this.getAuthorizedClientIds(userId, db);
     return ids.includes(clientId);
   }
 }

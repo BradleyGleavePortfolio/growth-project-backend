@@ -8,18 +8,19 @@ export class LessonsService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * The one coach whose lessons this user may see: a coach sees their own,
-   * a client sees their coach's. A client with no coach (coachless sign-up,
-   * or a coach link that was removed) has no lesson scope at all, so every
-   * read returns nothing and every write is refused. Lessons always belong
-   * to a coach (Lesson.coach_id is required); there is no platform library.
+   * The single lessons this user may see: a coach sees their own, a client
+   * sees their coach's. A client with no coach (coachless sign-up, or a coach
+   * link that was removed) has no lesson scope at all, so every read returns
+   * nothing and every completion is refused. Lessons always belong to a coach
+   * (Lesson.coach_id is required); there is no platform library. Lessons
+   * inside a course week (module_id set) are never in this scope: course
+   * routes reach them by enrolment and open week (LEARN-BE1, p_lesson_select).
    */
-  private lessonCoachIdFor(
+  private singleLessonsOf(
     user: { id: string; role: string; coach_id: string | null } | null,
-  ): string | null {
-    if (!user) return null;
-    if (user.role === 'coach') return user.id;
-    return user.coach_id ?? null;
+  ): Prisma.LessonWhereInput | null {
+    const coach_id = user?.role === 'coach' ? user.id : user?.coach_id;
+    return coach_id ? { coach_id, module_id: null } : null;
   }
 
   async getLessons(userId: string) {
@@ -30,10 +31,10 @@ export class LessonsService {
 
     // B2: before this, a missing coach meant no coach filter, so a coachless
     // client's Learn tab listed every coach's lessons.
-    const coachId = this.lessonCoachIdFor(user);
-    if (!coachId) return [];
+    const scope = this.singleLessonsOf(user);
+    if (!scope) return [];
 
-    const where: Prisma.LessonWhereInput = { coach_id: coachId };
+    const where: Prisma.LessonWhereInput = { ...scope };
 
     // Filter by user's goal type if available
     if (user?.profile?.goal_type) {
@@ -121,10 +122,10 @@ export class LessonsService {
   async completeLesson(userId: string, lessonId: string) {
     // Only a lesson this client can see may be marked complete.
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
-    const coachId = this.lessonCoachIdFor(user);
-    const lesson = coachId
+    const scope = this.singleLessonsOf(user);
+    const lesson = scope
       ? await this.prisma.lesson.findFirst({
-          where: { id: lessonId, coach_id: coachId },
+          where: { id: lessonId, ...scope },
           select: { id: true },
         })
       : null;
@@ -148,15 +149,15 @@ export class LessonsService {
     });
 
     // B2: same coach scope as getLessons; no coach means no lessons.
-    const coachId = this.lessonCoachIdFor(user);
-    if (!user || !coachId) return [];
+    const scope = this.singleLessonsOf(user);
+    if (!user || !scope) return [];
 
     const completedIds = user.lesson_completions.map(c => c.lesson_id);
 
     return this.prisma.lesson.findMany({
       where: {
         id: { notIn: completedIds },
-        coach_id: coachId,
+        ...scope,
       },
       take: 5,
       orderBy: { order_index: 'asc' },

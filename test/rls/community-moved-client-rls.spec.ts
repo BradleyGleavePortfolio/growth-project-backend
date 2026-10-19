@@ -1,0 +1,244 @@
+// C6-WINS-MOVE (agent 159), owner: "history always follows the client; a former coach loses every read of a
+// moved client except their own money records". A client who moves to another coach leaves the former
+// coach's community: the former coach and the former coach's clients read nothing they wrote in its Hall or
+// in its spaces that are not public (posts, comments, chat, voice notes, wins); public spaces stay public;
+// the client keeps their own wins; the new coach's circle never sees the old circle's wins or posts.
+// Live, on the replayed migration chain: the real services with the real CommunitySafetyService; row reads
+// run as role authenticated. A, B coach; O and V are A's clients; M was A's client and is now B's (M keeps
+// an active row in A's cli and a row in A's public space); W is B's client; N has no coach and joined A's
+// public space. Each person's first read is their control read, so every 0 follows a 1.
+import { randomUUID } from 'crypto';
+import { Prisma, PrismaClient, type User } from '@prisma/client';
+import type { AnalyticsService } from '../../src/analytics/analytics.service';
+import { CommunityCohortMembersRepository } from '../../src/community/cohorts/community-cohort-members.repository';
+import { CommunityCohortMembersService } from '../../src/community/cohorts/community-cohort-members.service';
+import { CommunityAccessService } from '../../src/community/community-access.service';
+import { CommunityRepository } from '../../src/community/community.repository';
+import { CommunityService } from '../../src/community/community.service';
+import {
+  COMMENT_CONTEXT_TYPE,
+  CommunityMessagesRepository,
+} from '../../src/community/messages/community-messages.repository';
+import { CommunityMessagesService } from '../../src/community/messages/community-messages.service';
+import { CommunityModerationRepository } from '../../src/community/moderation/community-moderation.repository';
+import { CommunityModerationService } from '../../src/community/moderation/community-moderation.service';
+import type { CommunityNotificationsService } from '../../src/community/notifications/community-notifications.service';
+import type { PlanContextService } from '../../src/community/plan-context/plan-context.service';
+import { CommunityPostsRepository } from '../../src/community/posts/community-posts.repository';
+import { CommunityPostsService } from '../../src/community/posts/community-posts.service';
+import { CommunityReactionsRepository } from '../../src/community/reactions/community-reactions.repository';
+import type { CommunityRealtimeService } from '../../src/community/realtime/community-realtime.service';
+import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
+import { CommunityVoiceRepository } from '../../src/community/voice/community-voice.repository';
+import { CommunityVoiceService } from '../../src/community/voice/community-voice.service';
+import type { VoiceUploadProvider } from '../../src/community/voice/voice-upload.provider';
+import type { PrismaService } from '../../src/prisma.service';
+import { stub } from '../utils/trial-fakes';
+import { liveTestDatabaseUrl } from '../utils/live-test-db';
+
+const DB_URL = liveTestDatabaseUrl();
+if (!DB_URL && process.env.CI === 'true') {
+  throw new Error('community-moved-client-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.');
+}
+
+type Key = 'A' | 'B' | 'O' | 'V' | 'M' | 'W' | 'N';
+type Coach = 'A' | 'B';
+type Space = 'cli' | 'pub' | 'bcli';
+type Place = Space | 'hallA' | 'hallB';
+const PEOPLE: Key[] = ['A', 'B', 'O', 'V', 'M', 'W', 'N']; // coaches first: clients reference them
+const COACH: Record<Key, Coach | null> = { A: null, B: null, O: 'A', V: 'A', M: 'B', W: 'B', N: null };
+const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
+const SPACES: Space[] = ['cli', 'pub', 'bcli'];
+const VISIBILITY: Record<Space, string> = { cli: 'clients', pub: 'public', bcli: 'clients' };
+const ROWS: Record<Space, Key[]> = { cli: ['V', 'M'], pub: ['V', 'M', 'N'], bcli: [] }; // M's cli row is left from before
+// The one rule (app.community_can_access): who opens each place. M is out of A's cli and Hall, row or not.
+const OPENS: Record<Place, Key[]> = { hallA: ['A', 'O', 'V'], cli: ['A', 'O', 'V'], pub: ['A', 'V', 'M', 'N'],
+  hallB: ['B', 'M', 'W'], bcli: ['B', 'M', 'W'] };
+const COMMUNITY: Record<Place, Coach> = { hallA: 'A', cli: 'A', pub: 'A', hallB: 'B', bcli: 'B' };
+const POSTS: Record<string, [Key, Place]> = { hA: ['A', 'hallA'], hO: ['O', 'hallA'], hM: ['M', 'hallA'], sO: ['O', 'cli'],
+  sM: ['M', 'cli'], pM: ['M', 'pub'], pN: ['N', 'pub'], hB: ['B', 'hallB'] };
+const COMMENTS: Record<string, Key> = { cO: 'O', cM: 'M' }; // on sO
+const CHAT: Record<string, Key> = { mO: 'O', mM: 'M' }; // in cli
+const VOICE: Record<string, Key> = { vO: 'O', vM: 'M' }; // in cli
+const WINS: Record<string, [Key, Coach]> = { wO: ['O', 'A'], wM: ['M', 'A'], wM2: ['M', 'B'], wW: ['W', 'B'] }; // [author, coach_id]
+// The fix: an author stays in a place unless they are a client the place's coach no longer coaches, outside a
+// public space. A person always reads their own row.
+const stays = (a: Key, p: Place) => p === 'pub' || ROLE(a) === 'coach' || COACH[a] === COMMUNITY[p];
+const sees = (k: Key, a: Key, p: Place) => OPENS[p].includes(k) && (a === k || stays(a, p));
+const keys = <T>(rows: Record<string, T>, keep: (r: T) => boolean) => Object.keys(rows).filter((r) => keep(rows[r])).sort();
+const circleOf = (k: Key): Key | null => (ROLE(k) === 'coach' ? k : COACH[k]);
+const winsOf = (k: Key) => keys(WINS, ([a, c]) => a === k || (c === circleOf(k) && (a === c || COACH[a] === c)));
+const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH[p] === COACH[k]).sort();
+
+(DB_URL ? describe : describe.skip)('C6-WINS-MOVE: a moved client leaves the former coach\'s community', () => {
+  const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
+  const db = stub<PrismaService>(prisma);
+  const access = new CommunityAccessService(db);
+  const safety = new CommunitySafetyService(db);
+  const realtime = stub<CommunityRealtimeService>({ broadcastCommunityEvent: async () => undefined });
+  const push = stub<CommunityNotificationsService>({ pushEnabled: () => false });
+  const messagesRepo = new CommunityMessagesRepository(db);
+  const postsRepo = new CommunityPostsRepository(db);
+  const posts = new CommunityPostsService(access, postsRepo, messagesRepo, realtime, push, safety, new CommunityReactionsRepository(db));
+  const chat = new CommunityMessagesService(access, messagesRepo, realtime, stub<PlanContextService>({}), safety, push);
+  const voice = new CommunityVoiceService(access, new CommunityVoiceRepository(db),
+    stub<VoiceUploadProvider>({ createSignedDownload: async () => 'https://voice.test/note' }), realtime,
+    stub<AnalyticsService>({ capture: () => undefined }), safety);
+  const members = new CommunityCohortMembersService(access, new CommunityCohortMembersRepository(db), safety);
+  const community = new CommunityService(db, new CommunityRepository(db), safety);
+  const moderation = new CommunityModerationService(access, new CommunityModerationRepository(db), messagesRepo, postsRepo, realtime,
+    push, db, stub<VoiceUploadProvider>({}));
+  const uuids = <K extends string>(list: readonly K[]) => Object.fromEntries(list.map((k) => [k, randomUUID()])) as Record<K, string>;
+  const id = uuids([...PEOPLE, ...Object.keys(POSTS), ...Object.keys(COMMENTS), ...Object.keys(CHAT), ...Object.keys(VOICE),
+    ...Object.keys(WINS)]);
+  const KEY = Object.fromEntries(Object.entries(id).map(([k, v]) => [v, k]));
+  const sub = uuids(PEOPLE);
+  const ws = uuids(['A', 'B'] as const);
+  const space = uuids(SPACES);
+  const run = randomUUID().slice(0, 8);
+  const user = (k: Key) => stub<User>({ id: id[k], role: ROLE(k), coach_id: COACH[k] ? id[COACH[k] as Coach] : null });
+  const where = (p: Place) => (p === 'hallA' || p === 'hallB' ? null : space[p]);
+  const wsOf = (p: Place) => ws[COMMUNITY[p]];
+
+  const as = <T>(k: Key, query: (tx: Prisma.TransactionClient) => Promise<T>) =>
+    prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
+      await tx.$executeRawUnsafe(`SELECT set_config('request.jwt.claims', $1, true)`, JSON.stringify({ sub: sub[k], role: 'authenticated' }));
+      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, id[k]);
+      await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, ROLE(k));
+      return query(tx);
+    });
+  // "id" is uuid on the three community tables and text on CommunityWin, so compare as text.
+  const count = (k: Key, table: string, row: string) =>
+    as(k, (tx) => tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS "n" FROM "${table}" WHERE "id"::text = $1`, id[row]))
+      .then((r) => r[0].n);
+  // The keys a read hands the person, sorted; null when it answers 404.
+  const read = async <T>(p: Promise<T>, ids: (r: T) => string[]): Promise<string[] | null> => {
+    try {
+      return ids(await p).map((v) => String(KEY[v])).sort();
+    } catch (e) {
+      if ((e as { status?: number }).status === 404) return null;
+      throw e;
+    }
+  };
+  const byId = async (list: string[], one: (row: string) => Promise<unknown>) => {
+    const got: string[] = [];
+    for (const row of list) if ((await read(one(row), () => [])) !== null) got.push(row);
+    return got.sort();
+  };
+  const inSpace = (k: Key, p: Place, rows: Record<string, Key>) => (OPENS[p].includes(k) ? keys(rows, (a) => sees(k, a, p)) : null);
+  const postsIn = (c: Coach) => Object.fromEntries(Object.entries(POSTS).filter(([, [, p]]) => COMMUNITY[p] === c));
+
+  // Every read of what a person wrote in a community (the PR body's rule list), as [path, read, want, clients only].
+  type Read = [string, (k: Key) => Promise<string[] | null>, (k: Key) => string[] | null, boolean?];
+  const READS: Read[] = [
+    ...(['A', 'B'] as const).map((c): Read => [`the Hall of ${c}`,
+      (k) => read(posts.list(user(k), ws[c], {}), (r) => r.posts.map((p) => p.id)),
+      (k) => (OPENS[c === 'A' ? 'hallA' : 'hallB'].includes(k) ? keys(postsIn(c), ([a, p]) => sees(k, a, p)) : null)]),
+    ['a post by id', (k) => byId(Object.keys(POSTS), (r) => posts.getOne(user(k), id[r])), (k) => keys(POSTS, ([a, p]) => sees(k, a, p))],
+    ['the comments on sO', (k) => read(posts.listComments(user(k), id.sO), (r) => r.comments.map((c) => c.id)), (k) => inSpace(k, 'cli', COMMENTS)],
+    ['the chat of cli', (k) => read(chat.list(user(k), space.cli, {}), (r) => r.messages.map((m) => m.id)), (k) => inSpace(k, 'cli', CHAT)],
+    ['a chat message by id', (k) => byId(Object.keys(CHAT), (r) => chat.getOne(user(k), id[r])), (k) => inSpace(k, 'cli', CHAT) ?? []],
+    ['the voice notes of cli', (k) => read(voice.list(user(k), ws.A, { cohort_id: space.cli }), (r) => r.voice_notes.map((v) => v.id)),
+      (k) => inSpace(k, 'cli', VOICE)],
+    ['a voice note by id', (k) => byId(Object.keys(VOICE), (r) => voice.getOne(user(k), id[r])), (k) => inSpace(k, 'cli', VOICE) ?? []],
+    ['wins', (k) => read(community.getFeed(id[k]), (r) => r.map((w) => w.id)), winsOf],
+    ['the leaderboard', (k) => read(community.getLeaderboard(id[k]), (r) => r.map((e) => e.user_id)), boardOf, true],
+    // A report puts the row in front of the workspace's moderators, so it is a read too.
+    ['report a post by id', (k) => byId(Object.keys(POSTS), (r) => moderation.report(user(k), 'post', id[r], 'spam', undefined)),
+      (k) => keys(POSTS, ([a, p]) => sees(k, a, p))],
+    ['report a chat message by id', (k) => byId(Object.keys(CHAT), (r) => moderation.report(user(k), 'message', id[r], 'spam', undefined)),
+      (k) => inSpace(k, 'cli', CHAT) ?? []],
+    ['report a voice note by id', (k) => byId(Object.keys(VOICE), (r) => moderation.report(user(k), 'voice_note', id[r], 'spam', undefined)),
+      (k) => inSpace(k, 'cli', VOICE) ?? []],
+    ['report a win by id', (k) => byId(Object.keys(WINS), (r) => moderation.report(user(k), 'win', id[r], 'spam', undefined)), winsOf],
+  ];
+  const CONTROL: Record<Key, string> = { A: 'the Hall of A', B: 'the Hall of B', O: 'the Hall of A', V: 'the Hall of A',
+    M: 'the Hall of B', W: 'the Hall of B', N: 'a post by id' };
+
+  beforeAll(async () => {
+    for (const k of PEOPLE) {
+      await prisma.$executeRaw`INSERT INTO "User" ("id", "supabase_id", "email", "name", "role", "coach_id", "show_on_leaderboard")
+        VALUES (${id[k]}, ${sub[k]}, ${`moved-${id[k]}`}, 'RLS person', ${ROLE(k)}::"Role", ${COACH[k] ? id[COACH[k] as Coach] : null}, true)`;
+    }
+    for (const c of ['A', 'B'] as const) {
+      await prisma.$executeRaw`INSERT INTO "community_workspaces" ("id", "coach_id", "name", "slug", "updated_at")
+        VALUES (${ws[c]}::uuid, ${id[c]}, 'RLS workspace', ${`moved-${run}-${c}`}, now())`;
+    }
+    for (const s of SPACES) {
+      await prisma.$executeRawUnsafe(`INSERT INTO "community_cohorts" ("id", "workspace_id", "name", "visibility", "status", "updated_at")
+        VALUES ($1::uuid, $2::uuid, $3, $4::"CommunitySpaceVisibility", 'active', now())`, space[s], wsOf(s), `RLS ${s}`, VISIBILITY[s]);
+      for (const k of ROWS[s]) {
+        await prisma.$executeRawUnsafe(`INSERT INTO "community_memberships" ("id", "workspace_id", "cohort_id", "user_id", "role", "status", "updated_at")
+          VALUES ($1::uuid, $2::uuid, $3::uuid, $4, 'student', 'active', now())`, randomUUID(), wsOf(s), space[s], id[k]);
+      }
+    }
+    for (const [key, [a, p]] of Object.entries(POSTS)) {
+      await prisma.communityPost.create({ data: { id: id[key], workspace_id: wsOf(p), cohort_id: where(p), author_id: id[a],
+        scope: where(p) ? 'cohort' : 'hall', title: 'RLS post' } });
+    }
+    for (const [key, a] of Object.entries(COMMENTS)) {
+      await prisma.communityMessage.create({ data: { id: id[key], workspace_id: ws.A, cohort_id: space.cli, scope: 'cohort',
+        sender_id: id[a], body: 'RLS comment', plan_context_type: COMMENT_CONTEXT_TYPE, plan_context_id: id.sO } });
+    }
+    for (const [key, a] of Object.entries(CHAT)) {
+      await prisma.communityMessage.create({ data: { id: id[key], workspace_id: ws.A, cohort_id: space.cli, scope: 'cohort',
+        sender_id: id[a], body: 'RLS chat' } });
+    }
+    for (const [key, a] of Object.entries(VOICE)) {
+      await prisma.communityVoiceNote.create({ data: { id: id[key], workspace_id: ws.A, cohort_id: space.cli, author_id: id[a],
+        storage_key: `${id[a]}/1700000000000-0123456789abcdef.m4a`, duration_ms: 5000, bytes: BigInt(1000), mime_type: 'audio/mp4' } });
+    }
+    for (const [key, [a, c]] of Object.entries(WINS)) {
+      await prisma.communityWin.create({ data: { id: id[key], user_id: id[a], coach_id: id[c], title: 'RLS win', description: 'RLS win' } });
+    }
+  });
+  afterAll(() => prisma.$disconnect());
+
+  it('runs as a role that does not bypass row security, on tables that force it', async () => {
+    expect(await as('V', (tx) => tx.$queryRaw<{ b: boolean }[]>`
+      SELECT "rolbypassrls" AS "b" FROM pg_roles WHERE "rolname" = current_user`)).toEqual([{ b: false }]);
+    const tables = ['CommunityWin', 'community_messages', 'community_posts', 'community_voice_notes'];
+    const forced = await prisma.$queryRaw<{ t: string }[]>`SELECT c."relname" AS "t" FROM pg_class c JOIN pg_namespace n ON n."oid" = c."relnamespace"
+      WHERE n."nspname" = 'public' AND c."relname" = ANY(${tables}) AND c."relrowsecurity" AND c."relforcerowsecurity"`;
+    expect(forced.map((r) => r.t).sort()).toEqual([...tables].sort());
+  });
+
+  it('every read of what a person wrote follows the client (control read first)', async () => {
+    for (const k of PEOPLE) {
+      const mine = READS.filter(([, , , clientsOnly]) => !clientsOnly || ROLE(k) === 'student');
+      const order = [...mine.filter(([path]) => path === CONTROL[k]), ...mine.filter(([path]) => path !== CONTROL[k])];
+      const first = await order[0][1](k);
+      expect({ who: k, control: order[0][0], got: (first ?? []).length > 0 }).toEqual({ who: k, control: CONTROL[k], got: true });
+      const seen: Record<string, string[] | null> = { [order[0][0]]: first };
+      for (const [path, take] of order.slice(1)) seen[path] = await take(k);
+      expect({ who: k, seen }).toEqual({ who: k, seen: Object.fromEntries(order.map(([path, , want]) => [path, want(k)])) });
+    }
+  });
+
+  it('the former coach\'s roster of cli leaves the moved client out', async () => {
+    const roster = await read(members.list(user('A'), space.cli, {}), (r) => r.members.map((m) => m.user_id));
+    expect({ O: roster?.includes('O'), V: roster?.includes('V'), M: roster?.includes('M') }).toEqual({ O: true, V: true, M: false });
+  });
+
+  // The row layer: [viewer, table, row, rows read]; each viewer's first read is a 1.
+  const ROW_READS: Array<[Key, Array<[string, string, 0 | 1]>]> = [
+    ...(['A', 'V'] as const).map((k): [Key, Array<[string, string, 0 | 1]>] => [k, [
+      ['community_posts', 'hO', 1], ['community_posts', 'hM', 0], ['community_posts', 'sM', 0], ['community_posts', 'pM', 1],
+      ['community_messages', 'cO', 1], ['community_messages', 'cM', 0], ['community_messages', 'mO', 1], ['community_messages', 'mM', 0],
+      ['community_voice_notes', 'vO', 1], ['community_voice_notes', 'vM', 0], ['CommunityWin', 'wO', 1], ['CommunityWin', 'wM', 0]]]),
+    ['B', [['community_posts', 'hB', 1], ['community_posts', 'hA', 0], ['community_posts', 'hO', 0], ['community_posts', 'sO', 0],
+      ['community_messages', 'mO', 0], ['community_voice_notes', 'vO', 0]]],
+    ['W', [['CommunityWin', 'wW', 1], ['CommunityWin', 'wM', 0], ['community_posts', 'hM', 0], ['community_posts', 'hO', 0]]],
+    ['M', [['CommunityWin', 'wM', 1], ['CommunityWin', 'wM2', 1]]],
+  ];
+
+  it('the row layer agrees: the former coach and circle read 0 of the moved client, the new coach 0 of the old community', async () => {
+    for (const [k, rows] of ROW_READS) {
+      expect(rows[0][2]).toBe(1);
+      const seen: string[] = [];
+      for (const [table, row] of rows) seen.push(`${table} ${row} ${await count(k, table, row)}`);
+      expect({ who: k, seen }).toEqual({ who: k, seen: rows.map(([table, row, n]) => `${table} ${row} ${n}`) });
+    }
+  });
+});
