@@ -1479,6 +1479,7 @@ export class DataExportService {
       wearableConnections,
       wearableSamples,
       exerciseSets,
+      workoutComments,
       habitLogs,
       bloodworkPanels,
       bloodworkResults,
@@ -1643,6 +1644,8 @@ export class DataExportService {
       ),
       // P2 (DATA-07): health records reached only through the user's own rows.
       this._streamAll('exerciseSet', { workout: { user_id: userId } }),
+      // TRAIN-BE2: every coach comment on the user's workouts.
+      this._streamAll('workoutComment', { workout: { user_id: userId } }, { orderBy: CHRONOLOGICAL }),
       this._streamAll(
         'habitLog',
         { habit: { user_id: userId } },
@@ -1759,6 +1762,7 @@ export class DataExportService {
       wearable_connections: wearableConnections,
       wearable_samples: wearableSamples,
       exercise_sets: exerciseSets,
+      workout_comments: workoutComments,
       habit_logs: habitLogs,
       bloodwork_panels: bloodworkPanels,
       bloodwork_results: bloodworkResults,
