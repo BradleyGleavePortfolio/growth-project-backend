@@ -26,15 +26,16 @@
 import { ROMAN_CRISIS_TOLD_SENTENCE, isRomanCrisisAlertEnabled } from '../roman/roman.feature';
 
 // Source of truth for the official support contact (owner ruling
-// 2026-10-01 14:19 PDT: one support email everywhere). Used in every trust,
-// help and download page so a customer or reviewer always has a real human
-// to email. test/support-email.guard.spec.ts fails if any other address is
-// published as a support contact.
-export const SUPPORT_EMAIL = 'Bradleyapple1031@gmail.com';
+// 2026-10-01 14:19 PDT: one support email everywhere; owner ruling
+// #SUPPORT-ADDRESS 2026-10-19: the support mailbox on thegrowthproject.site).
+// Used in every trust, help and download page so a customer or reviewer
+// always has a real human to email. test/support-email.guard.spec.ts fails
+// if any other address is published as a support contact.
+export const SUPPORT_EMAIL = 'support@thegrowthproject.site';
 
 // Last-reviewed date for the policy text. Bump when copy changes.
 // Format ISO-8601 (UTC) so it sorts and renders consistently.
-export const POLICY_LAST_REVIEWED = '2026-10-15';
+export const POLICY_LAST_REVIEWED = '2026-10-19';
 
 // #CRISIS-WORDING / #CRISIS-PRIVACY-PLACES (owner op 1): follows every Roman
 // safety-reply exception sentence on these pages, only while Roman's crisis
@@ -47,10 +48,18 @@ function crisisToldText(): string {
 // "Who can see your data" and /consumer-health-privacy "Categories we share".
 // Leaderboard rows are opt-in (show_on_leaderboard, default off) on both the
 // legacy /community/leaderboard and /me/leaderboard reads.
+// Names (#C6-MEMBER-NAMES, #C6-NAMES-EVERYWHERE; src/community/
+// member-display-name.ts and fullNamesFor): other members see a first name,
+// except that a person on the roster of a space open to all of a coach's
+// clients (FULL_NAME_VISIBILITY) is shown by full name on its member list,
+// its posts and comments, and the coach's Hall posts, wins and leaderboard.
+// What a client can do is only what the mobile app offers today: delete their
+// own posts and wins (SafetyMenu onDelete) and block a member (two-way); the
+// app has no name editing and no way to leave such a space.
 export const COMMUNITY_VISIBILITY_TEXT =
-  'Members of the community spaces you join can see your display name and the posts, comments, reactions, shared wins and group messages you choose to share in those spaces. Messages sent directly to your coach are not group messages.';
+  'Members of the community spaces you join can see your name and the posts, comments, reactions, shared wins and group messages you choose to share in those spaces. In most spaces, other members see your first name. If you are in a space open to all of your coach’s clients, your coach’s other clients see your full name: on that space’s member list, next to your posts and comments there and in your coach’s main community feed, and next to your shared wins and leaderboard entry. You can delete your own posts and shared wins, and you can block another member, so that you no longer see each other’s posts, comments or messages. Messages sent directly to your coach are not group messages.';
 export const LEADERBOARD_VISIBILITY_TEXT =
-  'If you opt in to a leaderboard, other clients assigned to the same coach can see your display name, rank and participation information, such as workout counts or a habit-consistency score and its change. The habit score uses check-in, workout, meal-log and coach-message activity, not the content of your private messages. You can opt out to hide your leaderboard entry.';
+  'If you opt in to a leaderboard, other clients assigned to the same coach can see your name, rank and participation information, such as workout counts or a habit-consistency score and its change. The habit score uses check-in, workout, meal-log and coach-message activity, not the content of your private messages. You can opt out to hide your leaderboard entry.';
 
 // Apple Guideline 1.2: word for word the sentence the in-app Community terms
 // sheet shows before first Community use (mobile CommunityTermsGate).
@@ -221,7 +230,7 @@ function privacyContent(): TrustPageContent {
           'Roman’s notes and summaries — short notes Roman keeps about your training, preferences and circumstances, from your Roman chats and from everything you log or connect in the app, as part of the Roman permission (see “Roman and AI” below).',
           'Payments — card details are entered into Stripe’s checkout and are collected by Stripe. We receive and store payment status, amounts, currency, the package or subscription purchased, refunds, invoices, billing email, and your card brand, last four digits and expiry month. For coaches we also store Stripe payout status and amounts, the bank name and last four digits of the payout account, and AI-credit balances and spending. We never receive or store full card or bank account numbers.',
           'Support — conversations in in-app support chat (provided by Crisp) together with your name, email, role, plan and account workspace, and emails you send us.',
-          'Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID; and crash and performance reports linked to your account ID, with no name or email address attached.',
+          'Device, usage and diagnostic data — IP address, browser or device type, app version, request times and security logs; product analytics events and screen views linked to your account ID, with an approximate location (country, region, city, postal area, time zone and the rough coordinates of that area) that PostHog, the analytics provider, works out from the IP address of the device that sends them; and crash and performance reports linked to your account ID, with no name or email address attached.',
           'Food searches — the words you search for when logging food.',
         ],
       },
@@ -340,13 +349,16 @@ function privacyContent(): TrustPageContent {
           // Owner-approved paragraph (O-611-1). Only the Sign in with Apple
           // sentence changed in FIX ROUND 8 (operator ruling on RG-1); the
           // shared constants render the approved words byte for byte.
-          'You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. ' +
+          'You can delete your account in the app: Settings, then Delete account (coaches: Delete my account). You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. ' +
             `${SIGN_IN_WITH_APPLE_DELETION_TEXT} ` +
             'We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and ' +
             `${CLOSED_ACCOUNT_RECORD_TEXT}, so the records we must keep still point to one closed account. ` +
             'While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. ' +
             'While asking our service providers to delete their copies is still being retried, we also keep the email address and Stripe customer reference they need. ' +
             `Once it is removed, we keep only ${ONE_WAY_CODE_TEXT}.`,
+          // OPERATOR RULING (agent 160, from #1105 LEARN-FROZEN-MEDIA; #1096
+          // kept lessons): what a coach's deletion leaves with their clients.
+          'If you coach, deleting your account does not delete your clients: they keep their own data, the plans you assigned them, and the lessons they completed or that are in a course they are enrolled in, including the video or file each of those lessons plays. Only a client who keeps a lesson can open its video or file.',
           `You can also ask us to delete your account, or only some of your health data, by emailing ${SUPPORT_EMAIL}. We tell our service providers about deletion requests so they delete their copies too. At Stripe, we delete your customer record and saved cards; Stripe keeps the payment records the law requires.`,
         ],
         links: [
@@ -614,7 +626,7 @@ function termsContent(): TrustPageContent {
       {
         heading: 'Termination',
         paragraphs: [
-          'You can stop using the service at any time and delete your account in the app (Settings, then Delete account) or by email. We can suspend or terminate accounts for violations of these terms or to protect the service and its users.',
+          'You can stop using the service at any time and delete your account in the app (Settings, then Delete account; coaches: Delete my account) or by email. We can suspend or terminate accounts for violations of these terms or to protect the service and its users.',
         ],
       },
       {

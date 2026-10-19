@@ -4,8 +4,12 @@
 // is linked from the Privacy Policy, /help and the shared footer, and states
 // only facts taken from code or the published policies:
 //  - current in-app path and confirmation steps:
-//    (src/screens/client/SettingsScreen.tsx "Account" > "Delete account";
-//    src/screens/coach/settings/DangerZone.tsx "Privacy & Data" >
+//    (client: the "You" tab, src/navigation/ClientNavigator.tsx MoreTab, >
+//    "Settings" > src/screens/client/SettingsScreen.tsx "Account" > "Delete
+//    account"; coach: Settings, the "Settings" tab or, with the six coach
+//    tabs (coachTabsV2), the Overview gear in
+//    src/screens/coach/command-center/CommandCenterScreen.tsx >
+//    src/screens/coach/settings/DangerZone.tsx "Privacy and data" >
 //    "Delete my account"; src/screens/settings/DeleteAccountScreen.tsx
 //    "Type DELETE or <email>", password / Apple / Google re-auth,
 //    "Keep my account", PERMANENTLY_DELETED, KEPT_RECORDS, BILLING_NOTE);
@@ -174,12 +178,16 @@ describe('/help/delete-account content', () => {
 
   it('gives the current role-specific Settings section and deletion button', () => {
     expect(text).toContain(
-      'If you are a client: open the profile tab (the person icon in the bottom bar), tap Settings, then under Account tap Delete account.',
+      'If you are a client: open the You tab (the person icon in the bottom bar), tap Settings, then under Account tap Delete account.',
     );
     expect(text).not.toContain('under Data & Privacy tap Delete my account');
+    // PRIVACY-DELETE-NAV (agent 160): the coach section is "Privacy and data",
+    // and with the six coach tabs Settings opens from the gear on Overview.
     expect(text).toContain(
-      'If you are a coach: open the Settings tab, then under Privacy & Data tap Delete my account.',
+      'If you are a coach: open Settings (the Settings tab, or the gear at the top of Overview if your bottom bar has no Settings tab), then under Privacy and data tap Delete my account.',
     );
+    expect(text).not.toContain('open the profile tab');
+    expect(text).not.toContain('under Privacy & Data tap');
     expect(text).toContain(
       'type DELETE or your account email, then confirm it is you with your password, Sign in with Apple or Google',
     );
@@ -188,13 +196,13 @@ describe('/help/delete-account content', () => {
 
   it('gives a working email route with a subject line and identity check, never a password', () => {
     // One support address everywhere (owner rule): the deletion route uses it.
-    expect(SUPPORT_EMAIL).toBe('Bradleyapple1031@gmail.com');
+    expect(SUPPORT_EMAIL).toBe('support@thegrowthproject.site');
     expect(DELETION_EMAIL_SUBJECT).toBe('Delete my account');
     expect(text).toContain(
-      'Email Bradleyapple1031@gmail.com with the subject line “Delete my account”.',
+      'Email support@thegrowthproject.site with the subject line “Delete my account”.',
     );
     expect(html).toContain(
-      'href="mailto:Bradleyapple1031@gmail.com?subject=Delete%20my%20account"',
+      'href="mailto:support@thegrowthproject.site?subject=Delete%20my%20account"',
     );
     expect(text).toContain('Send it from the email address you use to sign in to the app.');
     expect(text).toContain(
@@ -214,7 +222,7 @@ describe('/help/delete-account content', () => {
       'Health and activity data synced from Apple Health or connected devices, and bloodwork you entered, including uploaded files',
       'Your conversations with Roman, the AI assistant',
       'Your messages, community posts, comments, direct messages, voice notes and reactions',
-      'Coach media, notes and briefs, if you coach',
+      'Coach media, notes and briefs, if you coach, except the video or file of each lesson your clients keep (see below)',
       'Your targets, recipes, lists and preferences',
       'Notification settings and push notification tokens',
     ]) {
@@ -233,6 +241,10 @@ describe('/help/delete-account content', () => {
       'One deletion record with a random reference, the date and the result. It holds no name, email or account details.',
     );
     expect(text).toContain('If you coach: your clients are not deleted.');
+    // OPERATOR RULING (agent 160, #1105 LEARN-FROZEN-MEDIA): kept lessons keep their media.
+    expect(text).toContain(
+      'They keep their own data, the plans you assigned them, and the lessons they completed or that are in a course they are enrolled in, including the video or file each of those lessons plays, without your contact details, and are no longer linked to you. Only a client who keeps a lesson can open its video or file.',
+    );
     expect(text).toContain(
       'database backups and copies are never kept more than six months after a confirmed deletion request',
     );
