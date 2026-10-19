@@ -63,6 +63,15 @@ const FROZEN_PLAN =
 const SCOUT_LEDGER =
   'insert-only import-integrity ledger (DB trigger refuses DELETE); holds digests and the coach tombstone id only';
 
+/**
+ * A lesson a client keeps when its coach is deleted: someone completed it, or someone is enrolled
+ * in its course. The exact complement of the two Lesson delete entries below, which run first, so
+ * when the coach media entries run every lesson left with the coach's id matches this.
+ */
+const KEPT_LESSON = {
+  OR: [{ completions: { some: {} } }, { module: { course: { enrolments: { some: {} } } } }],
+};
+
 export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   // ── Coach/client relationship (policy 2: clients are detached, not deleted)
   { model: 'User', field: 'coach_id', action: detach('coach_id') },
@@ -590,9 +599,18 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'PartialRefundDecision', field: 'decided_by_coach_user_id', action: retain(FINANCE) },
   { model: 'CoachCreditPackPurchase', field: 'coach_user_id', action: retain(FINANCE) },
 
-  // ── Coach media (bytes removed by AccountDeletionStorageService first)
+  // ── Coach media (bytes removed by AccountDeletionStorageService after the manifest)
   { model: 'ClientAssetGrant', field: 'client_id', action: del },
-  { model: 'CoachMediaAsset', field: 'coach_id', action: del },
+  // LEARN-FROZEN-MEDIA: the video or file of a lesson a client keeps stays with it, bytes too
+  // (AccountDeletionStorageService.withoutRetainedMedia); the rest of the coach's media goes.
+  // Grants on the coach's media are settled after this loop (executeErasureManifest).
+  {
+    model: 'CoachMediaAsset',
+    field: 'coach_id',
+    action: del,
+    where: { lessons: { none: KEPT_LESSON } },
+  },
+  { model: 'CoachMediaAsset', field: 'coach_id', action: retain(FROZEN_PLAN) },
 
   // ── Community
   {
@@ -944,23 +962,12 @@ export async function executeErasureManifest(
 ): Promise<ErasureStepResult[]> {
   const results: ErasureStepResult[] = [];
   // Grants on a deleted coach's media (ClientAssetGrant.media_asset_id has no
-  // FK, so it cannot be filtered through a relation). Runs before the manifest
-  // deletes the CoachMediaAsset rows.
+  // FK, so it cannot be filtered through a relation). The ids are read before
+  // the manifest deletes the CoachMediaAsset rows; the grants go after it.
   const ownedAssets = await tx.coachMediaAsset.findMany({
     where: { coach_id: ctx.userId },
     select: { id: true },
   });
-  if (ownedAssets.length > 0) {
-    const grants = await tx.clientAssetGrant.deleteMany({
-      where: { media_asset_id: { in: ownedAssets.map((a) => a.id) } },
-    });
-    results.push({
-      model: 'ClientAssetGrant',
-      field: 'media_asset_id',
-      op: 'delete',
-      count: grants.count,
-    });
-  }
 
   for (const step of RESTRICT_CHILD_PRE_STEPS) {
     const count = await tx.$executeRaw`
@@ -986,6 +993,27 @@ export async function executeErasureManifest(
         ? await delegate.deleteMany({ where })
         : await delegate.updateMany({ where, data: resolveData(action.data, ctx) });
     results.push({ model: entry.model, field: entry.field, op: action.op, count: res.count });
+  }
+
+  // LEARN-FROZEN-MEDIA: a grant on the coach's media stays only where its
+  // client keeps a lesson that still plays it (completed it, or is enrolled in
+  // its course). No lesson plays a deleted media row any more, so every grant
+  // on it goes, as does every other client's grant on a kept one.
+  if (ownedAssets.length > 0) {
+    const ids = ownedAssets.map((a) => a.id);
+    const count = await tx.$executeRaw`
+      DELETE FROM "ClientAssetGrant" g
+       WHERE g."media_asset_id" = ANY(${ids}::text[])
+         AND NOT EXISTS (
+           SELECT 1 FROM "Lesson" l
+            WHERE l."media_asset_id" = g."media_asset_id"
+              AND (EXISTS (SELECT 1 FROM "LessonCompletion" c
+                            WHERE c."lesson_id" = l."id" AND c."user_id" = g."client_id")
+                OR EXISTS (SELECT 1 FROM "CourseModule" m
+                             JOIN "CourseEnrolment" e ON e."course_id" = m."course_id"
+                            WHERE m."id" = l."module_id" AND e."user_id" = g."client_id")))
+    `;
+    results.push({ model: 'ClientAssetGrant', field: 'media_asset_id', op: 'delete', count });
   }
 
   // Coach briefs are AI summaries that embed client data. Briefs of any coach

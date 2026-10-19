@@ -77,6 +77,7 @@ function build(opts: { confirmedDaysAgo?: number | null; role?: string } = {}) {
     collect: jest
       .fn()
       .mockResolvedValue([{ kind: 'supabase', bucket: 'voice-notes', key: `${UID}/a.m4a` }]),
+    withoutRetainedMedia: jest.fn(async (_tx: unknown, _id: string, objects: unknown[]) => objects),
     purge: jest.fn().mockResolvedValue({ removed: 1, byKind: { supabase: 1, mux: 0, local: 0 } }),
   };
   const billing = {
