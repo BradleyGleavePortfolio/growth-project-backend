@@ -40,6 +40,7 @@ export class PiiSaltMissingError extends Error {
 //     per deploy and surfaced via env) without exposing the plaintext.
 //   * Replace guest_name with 'REDACTED' — a fixed sentinel because
 //     names have no useful searchable form once hashed.
+//   * Clear guest_phone (GC-PHONE) — nothing reconciles on it.
 //   * Stamp scrubbed_at so the next run skips this row.
 
 const SCRUB_BATCH_SIZE = 200;
@@ -113,6 +114,7 @@ export class GuestCheckoutPiiScrubService {
           data: {
             guest_email: hashedEmail,
             guest_name: REDACTED_NAME,
+            guest_phone: null,
             scrubbed_at: now,
           },
         });

@@ -9,6 +9,27 @@ import {
 } from 'class-validator';
 import { Transform } from 'class-transformer';
 
+/** E.164: a +, then 7-15 digits, the first not 0. */
+export const E164 = /^\+[1-9]\d{6,14}$/;
+
+/**
+ * GC-PHONE: the buyer's phone as typed or as a wallet sends it, in E.164.
+ * Digits, spaces, dots, dashes and brackets, with an optional leading +;
+ * 7-15 digits. No + means a US number (+1); 11 digits starting with 1 already
+ * carry it. Anything else is null (the DTO then refuses the raw value).
+ */
+export function toE164(raw: unknown): string | null {
+  if (typeof raw !== 'string' || !/^\s*\+?[\d\s().-]+$/.test(raw)) return null;
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 7 || digits.length > 15) return null;
+  const out = raw.trim().startsWith('+')
+    ? `+${digits}`
+    : digits.length === 11 && digits.startsWith('1')
+      ? `+${digits}`
+      : `+1${digits}`;
+  return E164.test(out) ? out : null;
+}
+
 // R43 Storefront Phase 1 — POST /v1/packages/public/join/:token/checkout
 // body. `idempotency_key` is the storefront-generated UUID v4 that the
 // server uses to dedup retries via the GuestCheckout.idempotency_key
@@ -19,6 +40,12 @@ export class GuestCheckoutDto {
   @MaxLength(120, { message: 'Name must be at most 120 characters.' })
   @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   guest_name!: string;
+
+  // GC-PHONE: required; stored as GuestCheckout.guest_phone in E.164.
+  // Matches alone refuses a missing or non-string value (one message, not two).
+  @Transform(({ value }) => toE164(value) ?? value)
+  @Matches(E164, { message: 'Please enter a valid phone number.' })
+  guest_phone!: string;
 
   @IsEmail({}, { message: 'Please enter a valid email address.' })
   @MaxLength(254)

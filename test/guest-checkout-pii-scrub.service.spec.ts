@@ -50,7 +50,7 @@ describe('GuestCheckoutPiiScrubService', () => {
     expect(where.created_user_id).toBeUndefined();
   });
 
-  it('hashes guest_email with sha256 + salt and redacts guest_name', async () => {
+  it('hashes guest_email with sha256 + salt, redacts guest_name and clears guest_phone', async () => {
     prisma.guestCheckout.findMany
       .mockResolvedValueOnce([
         { id: 'gc-old', guest_email: 'Jane@Example.com' },
@@ -60,6 +60,7 @@ describe('GuestCheckoutPiiScrubService', () => {
     const update = prisma.guestCheckout.updateMany.mock.calls[0][0];
     expect(update.where).toEqual({ id: 'gc-old', scrubbed_at: null });
     expect(update.data.guest_name).toBe('REDACTED');
+    expect(update.data).toHaveProperty('guest_phone', null);
     expect(update.data.guest_email).toMatch(/^sha256:[a-f0-9]{64}$/);
     // Hash should be stable: lower(email) || salt.
     const expected =

@@ -4294,6 +4294,10 @@ model GuestCheckout {
 
   guest_email String
   guest_name  String
+  /// GC-PHONE (20270502006800): the buyer's phone from the pay page, E.164
+  /// (CHECK in the migration). Null on rows from before it. Cleared by the
+  /// 13-month PII scrub and by account deletion.
+  guest_phone String?
 
   /// State machine — enforced by a CHECK constraint at the DB layer:
   ///   pending                    → paid                          (Stripe webhook)
