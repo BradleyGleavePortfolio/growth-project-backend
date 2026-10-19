@@ -10,16 +10,11 @@ import type { ConnectAccount } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { ConnectService } from '../connect/connect.service';
 import { StripeConnectApiService } from '../connect/stripe-connect-api.service';
-import { parseStorefrontBaseUrl } from '../common/env-validation';
 import { SHARE_TOKEN_REGEX } from '../share-link/share-link.service';
 import type {
   BillingCycle,
   PublicPackageData,
 } from './storefront.types';
-
-// Dev/test fallback used when STOREFRONT_BASE_URL is unset. Production
-// must set the env var explicitly (enforced in prodHardenedFeatureVars).
-const STOREFRONT_BASE_URL_DEV_FALLBACK = 'https://joingrowthproject.com';
 
 // Re-export so other modules in the storefront surface (e.g. checkout
 // service, public controller) can refer to a single canonical regex.
@@ -235,17 +230,5 @@ export class StorefrontService {
     if (interval === 'year') return 'annual';
     if (interval === 'month' && intervalCount === 3) return 'quarterly';
     return 'monthly';
-  }
-
-  // Test seam: ConfigService access for the storefront base URL is exposed
-  // here so other services in the module (welcome email) read a single
-  // canonical value rather than re-querying process.env. Returns the
-  // canonical (no trailing slash) form so callers can concat paths safely.
-  getStorefrontBaseUrl(): string {
-    const raw = this.config.get<string>('STOREFRONT_BASE_URL');
-    const parsed = parseStorefrontBaseUrl(
-      raw && raw.trim().length > 0 ? raw : STOREFRONT_BASE_URL_DEV_FALLBACK,
-    );
-    return parsed.ok ? parsed.canonical : STOREFRONT_BASE_URL_DEV_FALLBACK;
   }
 }

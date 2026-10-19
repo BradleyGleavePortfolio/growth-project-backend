@@ -1,5 +1,6 @@
 import { Injectable, NestMiddleware, Logger } from '@nestjs/common';
 import type { Request, Response, NextFunction } from 'express';
+import { STOREFRONT_DEV_FALLBACK } from './storefront-links';
 
 // r48 #9 — webview UA interstitial.
 //
@@ -60,7 +61,7 @@ const ALLOWED_INTERSTITIAL_HOSTS: ReadonlySet<string> = new Set([
   'app.trygrowthproject.com',
 ]);
 
-const DEFAULT_INTERSTITIAL_HOST = 'joingrowthproject.com';
+const DEFAULT_INTERSTITIAL_HOST = new URL(STOREFRONT_DEV_FALLBACK).host;
 
 // Normalise + validate one candidate host value (header form). Strips
 // any `:port` suffix and lower-cases (DNS is case-insensitive). Returns

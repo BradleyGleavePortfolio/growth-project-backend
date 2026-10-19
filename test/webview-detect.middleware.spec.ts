@@ -86,7 +86,7 @@ describe('resolveTrustedHost (A279-P2-1)', () => {
     const host = resolveTrustedHost({
       headers: { host: 'evil.example' },
     });
-    expect(host).toBe('joingrowthproject.com');
+    expect(host).toBe('app.trygrowthproject.com');
   });
 
   it('rejects malicious values on BOTH headers and falls through to default', () => {
@@ -96,7 +96,7 @@ describe('resolveTrustedHost (A279-P2-1)', () => {
         host: 'also-attacker.tld',
       },
     });
-    expect(host).toBe('joingrowthproject.com');
+    expect(host).toBe('app.trygrowthproject.com');
   });
 
   it('comma-separated X-Forwarded-Host uses the FIRST value only', () => {
@@ -135,12 +135,12 @@ describe('resolveTrustedHost (A279-P2-1)', () => {
   });
 
   it('handles empty / missing headers by returning the default', () => {
-    expect(resolveTrustedHost({ headers: {} })).toBe('joingrowthproject.com');
+    expect(resolveTrustedHost({ headers: {} })).toBe('app.trygrowthproject.com');
     expect(
       resolveTrustedHost({
         headers: { 'x-forwarded-host': '', host: '' },
       }),
-    ).toBe('joingrowthproject.com');
+    ).toBe('app.trygrowthproject.com');
   });
 
   it('treats an array-form X-Forwarded-Host (some proxies parse) like the string form', () => {
@@ -150,7 +150,7 @@ describe('resolveTrustedHost (A279-P2-1)', () => {
     const host = resolveTrustedHost({
       headers: { 'x-forwarded-host': ['evil.com', 'joingrowthproject.com'] },
     });
-    expect(host).toBe('joingrowthproject.com'); // falls through to default
+    expect(host).toBe('app.trygrowthproject.com'); // falls through to default
   });
 
   it('whitespace-only header is treated as missing', () => {
@@ -158,7 +158,7 @@ describe('resolveTrustedHost (A279-P2-1)', () => {
       resolveTrustedHost({
         headers: { 'x-forwarded-host': '   ', host: '   ' },
       }),
-    ).toBe('joingrowthproject.com');
+    ).toBe('app.trygrowthproject.com');
   });
 
   it('rejects subdomain-prefix typosquats (`joingrowthproject.com.evil.com`)', () => {
@@ -168,7 +168,7 @@ describe('resolveTrustedHost (A279-P2-1)', () => {
       resolveTrustedHost({
         headers: { 'x-forwarded-host': 'joingrowthproject.com.evil.com' },
       }),
-    ).toBe('joingrowthproject.com');
+    ).toBe('app.trygrowthproject.com');
   });
 });
 
@@ -217,7 +217,7 @@ describe('WebviewDetectMiddleware host-rendering (A279-P2-1)', () => {
     const res = fakeRes();
     mw.use(req, res, jest.fn());
     expect(res.statusCode).toBe(200);
-    expect(res.body).toContain('joingrowthproject.com');
+    expect(res.body).toContain('app.trygrowthproject.com');
     expect(res.body).not.toContain('attacker.example');
   });
 

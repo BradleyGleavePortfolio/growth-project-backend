@@ -75,7 +75,7 @@ const COACH_SLUG = 'GP-JANE1';
 const PAGE_SLUG = 'my-page';
 const RENDERED_HTML = '<!doctype html><html>verified page</html>';
 const CHECKOUT_URL =
-  'https://app.trygrowthproject.com/v1/packages/public/join/tok_abc?lp=page-1';
+  'https://app.trygrowthproject.com/p/tok_abc?lp=page-1';
 
 function makeService(overrides: Record<string, jest.Mock> = {}) {
   return {

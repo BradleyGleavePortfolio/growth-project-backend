@@ -39,6 +39,7 @@ import {
   RATE_LIMIT_SCOPES,
 } from './checkout-rate-limiter.service';
 import { CheckoutCookieService } from './checkout-cookie.service';
+import { payPageUrl } from './storefront-links';
 
 // P1-3 / P2-1 — controller-level token shape check. A malformed token is
 // rejected as 404 before the service or Prisma sees it, so brute-force
@@ -489,18 +490,13 @@ export class StorefrontPublicController {
       );
     }
     const claims = await this.recovery.verifyToken(token, jwt);
-    const base = (
-      this.config.get<string>('STOREFRONT_BASE_URL') ??
-      'https://joingrowthproject.com'
-    ).replace(/\/+$/, '');
-    // SSR layer accepts ?resume=<guest_checkout_id> on the join page
-    // to re-attach the abandoned checkout. The destination URL
+    // The pay page accepts ?resume=<guest_checkout_id>. The destination URL
     // intentionally does NOT carry the JWT in any query param — the
     // share_token and guest_checkout_id are the only values forwarded
     // (audit A276-P1-3).
-    const url = `${base}/p/${encodeURIComponent(
-      claims.share_token,
-    )}?resume=${encodeURIComponent(claims.guest_checkout_id)}`;
+    const url = payPageUrl(this.config.get<string>('STOREFRONT_BASE_URL'), claims.share_token, {
+      resume: claims.guest_checkout_id,
+    });
     // A276-P1-3 (controller half) — prevent Referer leakage of the
     // 15-min recovery JWT to the storefront origin.
     res.setHeader('Referrer-Policy', 'no-referrer');

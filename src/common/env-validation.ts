@@ -759,7 +759,7 @@ export const ENV_RULES: EnvRule[] = [
     name: 'STOREFRONT_BASE_URL',
     tier: 'feature',
     reason:
-      'R43 — base URL of the Next.js storefront (e.g. https://joingrowthproject.com). Used to build share_url responses for POST /v1/coach/packages/:id/share-link and the success/cancel redirects on guest checkout. Defaults to https://joingrowthproject.com in dev only; production must set explicitly (enforced in prodHardenedFeatureVars below).',
+      'R43 / GC-2c — public origin of every storefront link (e.g. https://app.trygrowthproject.com), built in src/storefront/storefront-links.ts: share_url (/p/<token>) from POST /v1/coach/packages/:id/share-link, the landing-page Buy redirect (/p/<token>?lp=), the recovery email link (/api/v1/packages/public/join/:token/checkout/resume/:jwt) and its redirect back to the pay page. Also auto-added to CORS. Defaults to https://app.trygrowthproject.com in dev only; production must set explicitly (enforced in prodHardenedFeatureVars below).',
     validate: (v) => {
       const parsed = parseStorefrontBaseUrl(v);
       if (!parsed.ok) return parsed.message;
@@ -2688,8 +2688,8 @@ export function isProdLike(nodeEnv: string | undefined): boolean {
 
 // Centralised parser for STOREFRONT_BASE_URL. Single source of truth shared
 // by env-validation (boot-time warn/throw), src/main.ts (CORS auto-include),
-// share-link service (share_url construction), and storefront service
-// (success/cancel redirects). Returns the canonical form (no trailing
+// and src/storefront/storefront-links.ts (every public storefront link).
+// Returns the canonical form (no trailing
 // slash) and the bare origin string browsers send in the `Origin` header.
 //
 // Requires an absolute http(s) URL with a non-empty host. Anything else is
