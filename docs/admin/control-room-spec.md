@@ -279,7 +279,7 @@ not present today:
 The empty state lists the four most recent administrative actions
 ("recent activity" mini-feed) so a fresh page never feels dead.
 
-## 7. Person profile (the "patient chart")
+## 7. Person profile (the "client chart")
 
 Opens from any row click on Coaches, Clients, or universal search.
 Single screen, dense, scrolls vertically. Layout (top → bottom):
