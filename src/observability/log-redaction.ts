@@ -90,11 +90,13 @@ function isSecretSuffixKey(keyLower: string): boolean {
 
 // B-SECRETS-3: Stripe credential VALUES, wherever they appear in a string
 // (PaymentIntent / SetupIntent client secrets, ephemeral keys, secret and
-// restricted API keys, webhook signing secrets).
+// restricted API keys, webhook signing secrets). KEYS-READY: plus Supabase
+// secret and publishable API keys, with no word boundary so a key glued to
+// other text (e.g. a URL-encoded `apikey%3Dsb_...`) is still caught.
 const STRIPE_SECRET_VALUE =
-  /\b(?:(?:pi|seti)_[A-Za-z0-9]+_secret_[A-Za-z0-9]+|ek_(?:live|test)_[A-Za-z0-9]+|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+)/g;
+  /\b(?:(?:pi|seti)_[A-Za-z0-9]+_secret_[A-Za-z0-9]+|ek_(?:live|test)_[A-Za-z0-9]+|(?:sk|rk)_(?:live|test)_[A-Za-z0-9]+|whsec_[A-Za-z0-9]+)|sb_(?:secret|publishable)_[A-Za-z0-9_-]+/g;
 
-/** Replace every Stripe credential value in a string with [REDACTED]. */
+/** Replace every Stripe or Supabase credential value in a string with [REDACTED]. */
 export function redactStripeSecretValues(text: string): string {
   return text.replace(STRIPE_SECRET_VALUE, '[REDACTED]');
 }

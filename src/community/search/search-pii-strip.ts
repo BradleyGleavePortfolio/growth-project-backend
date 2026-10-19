@@ -22,6 +22,9 @@ const EMAIL_RE = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 // E.164-ish + common separators. Requires >= 7 digits to avoid eating prices.
 const PHONE_RE =
   /(?:(?:\+\d{1,3}[\s.-]?)?(?:\(\d{1,4}\)[\s.-]?)?\d{2,4}[\s.-]?\d{2,4}[\s.-]?\d{2,4})/g;
+// Supabase secret / publishable API keys. Runs before PHONE_RE so a digit run
+// inside a key cannot split it and leave part of the key behind.
+const SUPABASE_KEY_RE = /sb_(?:secret|publishable)_[A-Za-z0-9_-]+/g;
 // JWT-shaped tokens (three base64url segments).
 const JWT_RE = /\beyJ[a-zA-Z0-9_-]{6,}\.[a-zA-Z0-9_-]{6,}\.[a-zA-Z0-9_-]{6,}\b/g;
 // UUID-shaped tokens.
@@ -38,6 +41,7 @@ export function stripPiiForSearch(input: string): string {
   if (!input) return '';
   let s = input;
   s = s.replace(EMAIL_RE, REDACTED);
+  s = s.replace(SUPABASE_KEY_RE, REDACTED);
   s = s.replace(JWT_RE, REDACTED);
   s = s.replace(UUID_RE, REDACTED);
   s = s.replace(PHONE_RE, (m) => {
