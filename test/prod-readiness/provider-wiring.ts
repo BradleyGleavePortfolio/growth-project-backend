@@ -199,137 +199,6 @@ export interface ProviderReport {
  * length checks already applied in `classifyVars`.
  */
 /**
- * Decode one base64url JWT segment to a UTF-8 string and `JSON.parse` it,
- * returning the parsed object or `undefined` on any failure (invalid base64url,
- * invalid UTF-8, or non-object JSON). OFFLINE only — never calls out to Supabase
- * and never verifies the signature. `Buffer.from(seg, 'base64url')` is Node 16+.
- */
-function decodeJwtJsonSegment(seg: string): Record<string, unknown> | undefined {
-  let json: string;
-  try {
-    json = Buffer.from(seg, 'base64url').toString('utf8');
-  } catch {
-    return undefined;
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    return undefined;
-  }
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return undefined;
-  return parsed as Record<string, unknown>;
-}
-
-/**
- * Defensive cap on a single JWT segment's character length before we attempt a
- * base64url decode. Real Supabase headers/payloads are well under 1 KB; an
- * attacker-supplied env value could otherwise feed a multi-megabyte segment
- * into `Buffer.from` + `JSON.parse`. Anything longer than this is rejected
- * outright as malformed/oversized (H4.D R4 F001).
- */
-const MAX_JWT_SEGMENT_CHARS = 8192;
-
-/**
- * Allowlist of plausible Supabase signing algorithms (H4.D R4 F001). Supabase's
- * canonical service-role token is signed `HS256`, but `RS256`/`ES256` (and the
- * wider HMAC/RSA/ECDSA families) appear in some self-hosted or rotated
- * deployments, so the allowlist is defensive without being brittle. Crucially
- * it EXCLUDES `"none"` (an unsigned token any env-file editor could forge) and
- * any unknown/garbage value. Comparison is case-insensitive — `"none"`,
- * `"NONE"`, and `"None"` are all rejected; the canonical casing of the listed
- * algs is upper-case, so we upper-case the candidate before membership test.
- */
-const ALLOWED_JWT_ALGS: ReadonlySet<string> = new Set([
-  'HS256',
-  'HS384',
-  'HS512',
-  'RS256',
-  'RS384',
-  'RS512',
-  'ES256',
-  'ES384',
-]);
-
-/**
- * OFFLINE structural validator for a Supabase service-role JWT. A bare regex on
- * the `eyJ….….…` segment shape lets malformed values through (`eyJbad.abc.def`
- * decodes to broken JSON yet matches the old regex). We instead require:
- *   1. exactly three dot-separated segments, each within `MAX_JWT_SEGMENT_CHARS`;
- *   2. header decodes to valid JSON with a string `alg` claim that is on the
- *      `ALLOWED_JWT_ALGS` allowlist (NOT `"none"` in any casing, NOT unknown/
- *      garbage) and, if a `typ` claim is present, it equals `"JWT"` — real
- *      Supabase tokens set `typ: "JWT"`, but we stay lenient when it is omitted;
- *   3. payload decodes to valid JSON whose `role` claim is EXACTLY the string
- *      `"service_role"`. This is a HARD GATE.
- *
- * Algorithm awareness (step 2 `alg` allowlist) is the H4.D R4 F001 fix. The
- * prior revision accepted ANY non-empty string `alg`, so a token with
- * `header.alg = "none"` (or a garbage alg) plus `payload.role = "service_role"`
- * classified WIRED. Since this validator advertises "looks like a real
- * service_role JWT" as the wired signal, accepting an unsigned/forgeable token
- * lets anyone who can edit the env file fabricate a "looks-real" key with no
- * signing material — defeating the heuristic and the R30 secret-hygiene /
- * R108 provider-wiring surface it guards. The header is now validated BEFORE
- * the payload role gate.
- *
- * The role gate is deliberate (H4.D R3 F001). An earlier revision also accepted
- * a token merely because it carried a non-empty `iss` or `ref` claim. That was
- * too permissive: virtually every well-formed JWT (including a Supabase `anon`
- * token, whose payload also carries `iss`/`ref`) has an `iss`, so the OR-on-iss/
- * ref let non-service-role tokens validate as service-role keys. The `iss`/`ref`
- * claims remain useful *corroborating* evidence, but they are NOT sufficient on
- * their own and never substitute for the role check. A token with the wrong
- * role (e.g. `role: "anon"`) or no role at all is rejected even if it carries a
- * project `ref` and an `iss`.
- *
- * The signature segment is only required to be present and non-empty — it is
- * never verified offline. Any failure returns `false`, so the value is bucketed
- * as a placeholder (→ STUB) rather than wired.
- */
-export function isPlausibleSupabaseServiceRoleJwt(v: unknown): boolean {
-  // Fail-closed type guard (R31): the TS signature is compile-time only, and this
-  // function is part of the public module surface with a documented "any failure
-  // returns false" contract. A JS caller or a future refactor passing a non-string
-  // (null/undefined/number/object) must return false, never throw on `.split`.
-  // No explicit length === 0 clause is needed here: the downstream
-  // segments.length !== 3 check already rejects empty/short strings.
-  if (typeof v !== 'string') return false;
-  const segments = v.split('.');
-  if (segments.length !== 3) return false;
-  const [headerSeg, payloadSeg, signatureSeg] = segments;
-  if (signatureSeg.length === 0) return false;
-
-  // Defensive size cap (R4 F001): reject oversized segments before decoding so a
-  // malicious env value cannot force a huge base64url decode / JSON.parse.
-  if (
-    headerSeg.length > MAX_JWT_SEGMENT_CHARS ||
-    payloadSeg.length > MAX_JWT_SEGMENT_CHARS ||
-    signatureSeg.length > MAX_JWT_SEGMENT_CHARS
-  ) {
-    return false;
-  }
-
-  // Validate the HEADER first (R4 F001), before the payload role gate.
-  const header = decodeJwtJsonSegment(headerSeg);
-  if (header === undefined) return false;
-  if (typeof header.alg !== 'string' || header.alg.length === 0) return false;
-  // Reject `alg=none` (any casing) and any value not on the allowlist. The
-  // allowlist members are upper-case, so upper-case the candidate to compare
-  // case-insensitively while still rejecting `"none"`/`"NONE"`/`"None"`.
-  if (!ALLOWED_JWT_ALGS.has(header.alg.toUpperCase())) return false;
-  // If a `typ` claim is present it must be exactly "JWT"; absent is tolerated.
-  if (header.typ !== undefined && header.typ !== 'JWT') return false;
-
-  const payload = decodeJwtJsonSegment(payloadSeg);
-  if (payload === undefined) return false;
-
-  // HARD GATE (R30/R31/R40): the role claim MUST be exactly "service_role".
-  // `iss`/`ref` are corroborating evidence only and never accepted alone.
-  return payload.role === 'service_role';
-}
-
-/**
  * Loose syntactic shape check for credential-file path env values. Rejects
  * empty/whitespace strings and inputs containing characters that never appear
  * in well-formed paths (newlines, tabs, etc.). NOTE: this is a non-authoritative
@@ -350,12 +219,10 @@ export const KEY_SHAPE_VALIDATORS: Readonly<Record<string, (v: string) => boolea
   STRIPE_SECRET_KEY: (v) => /^sk_(live|test)_[A-Za-z0-9]{24,}$/.test(v),
   // Stripe webhook signing secret: `whsec_` + ≥20 chars of body.
   STRIPE_WEBHOOK_SECRET: (v) => /^whsec_[A-Za-z0-9]{20,}$/.test(v),
-  // Supabase service-role key is a JWT. A regex on the segment shape is NOT
-  // sufficient — strings like `eyJbad.abc.def` match `eyJ…\.…\.…` yet are not
-  // valid base64url-encoded JSON. We decode and parse the header + payload
-  // OFFLINE (no signature verification, no network) and require plausible
-  // service-role claims. See `isPlausibleSupabaseServiceRoleJwt`.
-  SUPABASE_SERVICE_ROLE_KEY: (v) => isPlausibleSupabaseServiceRoleJwt(v),
+  // Supabase secret API key: `sb_secret_` + body, the shape the Fly env sync
+  // requires (scripts/fly-env/fly-env-manifest.js). KEYS-READY: a legacy
+  // service_role JWT is not wired; it stops working when the legacy keys go off.
+  SUPABASE_SERVICE_ROLE_KEY: (v) => /^sb_secret_[\w-]+$/.test(v),
   // OpenAI API key: `sk-` prefix + ≥20 chars of body (covers `sk-proj-…` too).
   OPENAI_API_KEY: (v) => /^sk-[A-Za-z0-9_-]{20,}$/.test(v),
   // AWS IAM role ARN (IRSA path): `arn:aws[partition]:iam::<12-digit acct>:role/<name>`.
