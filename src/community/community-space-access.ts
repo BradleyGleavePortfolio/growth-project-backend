@@ -80,3 +80,32 @@ export async function readersNow(
                ELSE app.community_can_access(${spaceId}::uuid, p."id", ${listed}::boolean) END`;
   return rows.map((r) => r.id);
 }
+
+/** C6-WINS-MOVE: where a row was written, for app.community_author_stays: its workspace and its space
+ * (null: the Hall, a DM). */
+export type RowPlace = readonly [workspaceId: string, spaceId: string | null];
+/** The place of a post, message or voice note row. */
+export const placeOf = (row: { workspace_id: string; cohort_id: string | null }): RowPlace => [row.workspace_id, row.cohort_id];
+
+/** C6-WINS-MOVE (owner: history follows the client): a client who moves to another coach, or to none,
+ * leaves the former coach's community, so what they wrote in its Hall and in its spaces that are not public
+ * no longer reads there. The row policies ask the same function. The viewer keeps their own rows. One
+ * round trip. */
+export async function rowsByAuthorsWhoStay<T>(
+  prisma: PrismaService,
+  viewerId: string,
+  rows: T[],
+  author: (row: T) => string | null | undefined,
+  place: (row: T) => RowPlace,
+): Promise<T[]> {
+  const ask = rows.map((r, i) => [i, place(r), author(r)] as const).filter(([, , a]) => a && a !== viewerId);
+  if (ask.length === 0) return rows;
+  const kept = await prisma.$queryRaw<{ n: number }[]>`
+    SELECT (t."n" - 1)::int AS "n"
+    FROM unnest(${ask.map(([, p]) => p[0])}::uuid[], ${ask.map(([, p]) => p[1] ?? '')}::text[],
+                ${ask.map(([, , a]) => a as string)}::text[]) WITH ORDINALITY AS t("w", "s", "a", "n")
+    WHERE app.community_author_stays(t."w", NULLIF(t."s", '')::uuid, t."a")`;
+  const gone = new Set(ask.map(([i]) => i));
+  for (const k of kept) gone.delete(ask[k.n][0]);
+  return gone.size === 0 ? rows : rows.filter((_, i) => !gone.has(i));
+}

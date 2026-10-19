@@ -23,6 +23,7 @@ import {
   CommunityPostView,
 } from '../dto/community-post.dto';
 import { CommunitySafetyService } from '../safety/community-safety.service';
+import { placeOf } from '../community-space-access';
 
 const DEFAULT_PAGE = 30;
 const MAX_PAGE = 100;
@@ -251,8 +252,8 @@ export class CommunityPostsService {
         ? new Set(await this.access.listAccessibleCohortIds(workspaceId, user.id))
         : null;
     const inSpace = open ? rows.filter((p) => !p.cohort_id || open.has(p.cohort_id)) : rows;
-    // Block filter after the cursor is taken from the unfiltered page.
-    const visible = await this.safety.filterBlocked(user.id, inSpace, (p) => p.author_id);
+    // Block filter after the cursor is taken from the unfiltered page. C6-WINS-MOVE: and a client who left.
+    const visible = await this.safety.filterBlocked(user.id, inSpace, (p) => p.author_id, placeOf);
     return CommunityPostListResponseSchema.parse({
       posts: await this.postViews(user, visible),
       next_before: next,
@@ -278,7 +279,7 @@ export class CommunityPostsService {
    */
   private async visiblePost(user: User, postId: string): Promise<CommunityPost> {
     const post = await this.readablePost(user, postId);
-    await this.safety.assertVisibleTo(user.id, post.author_id, POST_NOT_FOUND);
+    await this.safety.assertVisibleTo(user.id, post.author_id, POST_NOT_FOUND, placeOf(post));
     return post;
   }
 
@@ -379,7 +380,7 @@ export class CommunityPostsService {
   async listComments(user: User, postId: string): Promise<CommunityCommentListResponse> {
     const post = await this.visiblePost(user, postId);
     const rows = await this.messages.listComments(post.id);
-    const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id);
+    const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id, placeOf);
     return CommunityCommentListResponseSchema.parse({
       comments: await this.commentViews(user, visible),
     });

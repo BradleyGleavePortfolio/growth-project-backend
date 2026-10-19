@@ -158,6 +158,19 @@ export class InMemoryPrisma {
   }
 
   async $queryRaw(strings: TemplateStringsArray, ...values: unknown[]): Promise<Row[]> {
+    if (strings.join('').includes('app.community_author_stays')) {
+      // C6-WINS-MOVE: app.community_author_stays over [workspace, space ('' = none), author] arrays.
+      const [ws, spaces, authors] = values as [string[], string[], string[]];
+      return authors.flatMap((a, n) => {
+        const w = this.table('communityWorkspace').find((r) => r.id === ws[n]);
+        const u = this.table('user').find((r) => r.id === a);
+        const left = !!w && !!u && u.role === 'student' && (u.coach_id ?? null) !== (w.coach_id ?? null) &&
+          !this.table('communityCohort').some((c) => c.id === spaces[n] && c.visibility === 'public') &&
+          !this.table('communityMembership').some((m) => m.workspace_id === w.id && m.user_id === a &&
+            m.role !== 'student' && m.status !== 'removed');
+        return left ? [] : [{ n }];
+      });
+    }
     if (!strings.join('').includes('app.community_can_access')) throw new Error('InMemoryPrisma: unsupported $queryRaw');
     const [spaces, people, listed] = values as [string[], string[], boolean | undefined];
     return spaces.flatMap((c, i) => {

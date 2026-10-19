@@ -27,6 +27,7 @@ import { VoiceUploadProvider } from '../voice/voice-upload.provider';
 import { ReportAlertService } from '../../report-alerts/report-alert.service';
 import { WIN_NOT_FOUND, winModerationWorkspaceId } from '../community-wins.policy';
 import { recordWorkspaceBan } from '../community-ban';
+import { placeOf, rowsByAuthorsWhoStay } from '../community-space-access';
 import {
   storeModerationNotice,
   type ModerationNoticeResult,
@@ -259,7 +260,7 @@ export class CommunityModerationService {
       const open = post.cohort_id
         ? await this.access.canAccessCohort({ id: post.cohort_id, workspace_id: post.workspace_id }, user)
         : await this.access.canAccessWorkspace(post.workspace_id, user);
-      if (!open) throw new NotFoundException(NOT_FOUND);
+      if (!open || !(await this.authorStays(user, post, post.author_id))) throw new NotFoundException(NOT_FOUND);
       return {
         workspaceId: post.workspace_id,
         targetType: 'post',
@@ -284,6 +285,7 @@ export class CommunityModerationService {
     // A DM can be reported only by one of its two participants, so a third
     // member cannot pull someone else's DM into the coach's queue by id.
     assertDmParticipantIfDm(msg, user.id, NOT_FOUND);
+    if (!(await this.authorStays(user, msg, msg.sender_id))) throw new NotFoundException(NOT_FOUND);
     return {
       workspaceId: msg.workspace_id,
       targetType: 'message',
@@ -330,7 +332,13 @@ export class CommunityModerationService {
         throw new NotFoundException(NOT_FOUND);
       }
     }
+    if (!(await this.authorStays(user, note, note.author_id))) throw new NotFoundException(NOT_FOUND);
     return { workspaceId: note.workspace_id, targetType: 'voice_note', targetId: note.id };
+  }
+
+  /** C6-WINS-MOVE: a client who left the community is not reported into it (the reader no longer sees them). */
+  private async authorStays(user: User, row: { workspace_id: string; cohort_id: string | null }, author: string): Promise<boolean> {
+    return (await rowsByAuthorsWhoStay(this.prisma, user.id, [row], () => author, placeOf)).length > 0;
   }
 
   /**
@@ -341,13 +349,16 @@ export class CommunityModerationService {
   private async resolveWinTarget(user: User, targetId: string): Promise<ResolvedReportTarget> {
     const win = await this.prisma.communityWin.findUnique({
       where: { id: targetId },
-      select: { id: true, user_id: true, coach_id: true, hidden_at: true },
+      select: { id: true, user_id: true, coach_id: true, hidden_at: true, user: { select: { role: true, coach_id: true } } },
     });
     if (!win || win.hidden_at) throw new NotFoundException(WIN_NOT_FOUND);
+    // C6-WINS-MOVE: the circle reads only wins by people its coach still coaches (the feed and RLS rule).
+    const authorCoach = win.user?.role === 'coach' ? win.user_id : (win.user?.coach_id ?? null);
     const sameCircle =
       user.role === 'owner' ||
       win.user_id === user.id ||
       (win.coach_id !== null &&
+        authorCoach === win.coach_id &&
         (win.coach_id === user.id || (user.role === 'student' && user.coach_id === win.coach_id)));
     if (!sameCircle) throw new NotFoundException(WIN_NOT_FOUND);
     const workspaceId = await winModerationWorkspaceId(this.prisma, win.coach_id);

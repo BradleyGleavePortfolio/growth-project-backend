@@ -701,6 +701,16 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
         soft_deleted_at: null,
       };
     }
+    // C6-WINS-MOVE: what app.community_author_stays reads. Alice, Bob and Carol are the coach's clients.
+    let world: InMemoryPrisma;
+    const set = (table: string, id: string, patch: Record<string, unknown>) =>
+      Object.assign(world.table(table).find((r) => r.id === id) ?? {}, patch);
+    beforeEach(() => {
+      world = new InMemoryPrisma();
+      world.seed('communityWorkspace', { id: WS, coach_id: COACH });
+      world.seed('communityCohort', { id: COHORT, workspace_id: WS, visibility: 'clients' });
+      for (const id of [ALICE, BOB, CAROL]) world.seed('user', { id, role: 'student', coach_id: COACH });
+    });
     function build() {
       const notes = [note(NOTE_A, ALICE), note(NOTE_B, BOB)];
       const access = {
@@ -723,7 +733,7 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
         stub<VoiceUploadProvider>(upload),
         stub<CommunityRealtimeService>({}),
         stub<AnalyticsService>({ capture: () => undefined }),
-        safetyWithBlocks(blocks),
+        safetyWithBlocks(blocks, world),
       );
     }
 
@@ -744,6 +754,25 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
         await expect(svc.getOne(viewer(BOB), NOTE_A)).resolves.toBeDefined();
       },
     );
+
+    // The filter never drops the viewer's own rows; a public space keeps everyone's.
+    it('Bob moves to another coach: the former coach and circle lose his note, list and by id', async () => {
+      const svc = build();
+      const list = async (id: string, role?: string) =>
+        (await svc.list(viewer(id, role), WS, { limit: 20 })).voice_notes.map((n) => n.id);
+      expect(await list(CAROL)).toEqual([NOTE_A, NOTE_B]); // control read
+      set('user', BOB, { coach_id: '77777777-7777-4777-8777-777777777777' });
+      expect(await list(CAROL)).toEqual([NOTE_A]);
+      expect(await list(ALICE)).toEqual([NOTE_A]);
+      expect(await list(COACH, 'coach')).toEqual([NOTE_A]);
+      await expect(svc.getOne(viewer(CAROL), NOTE_B)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.getOne(viewer(COACH, 'coach'), NOTE_B)).rejects.toBeInstanceOf(NotFoundException);
+      expect(await list(BOB)).toEqual([NOTE_A, NOTE_B]);
+      await expect(svc.getOne(viewer(BOB), NOTE_B)).resolves.toBeDefined();
+      set('communityCohort', COHORT, { visibility: 'public' });
+      expect(await list(CAROL)).toEqual([NOTE_A, NOTE_B]);
+      await expect(svc.getOne(viewer(CAROL), NOTE_B)).resolves.toBeDefined();
+    });
   });
 });
 
