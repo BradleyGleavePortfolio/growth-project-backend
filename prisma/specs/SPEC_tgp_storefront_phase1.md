@@ -11,7 +11,7 @@ this document in the same PR.
 ## 1. Goals
 
 Phase 1 of the TGP Storefront lets a coach share a single short URL that
-opens a branded checkout page on `joingrowthproject.com`. A new client
+opens a branded checkout page on `app.trygrowthproject.com`. A new client
 can pay with card, receive an account-activation email, and arrive in
 the mobile app with their package already entitled — without ever
 seeing an "external" provider or being asked to set a password before
@@ -30,7 +30,7 @@ Body: empty.
 ```json
 {
   "share_token": "<21-char nanoid-alphabet token>",
-  "share_url": "https://joingrowthproject.com/join/<token>",
+  "share_url": "https://app.trygrowthproject.com/p/<token>",
   "share_link_enabled": true,
   "share_link_generated_at": "2026-05-25T07:00:00.000Z"
 }

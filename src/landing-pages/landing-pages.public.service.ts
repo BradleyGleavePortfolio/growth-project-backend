@@ -7,6 +7,7 @@ import type { ViewEventDto } from './dto/view-event.dto';
 import type { LeadSubmitDto } from './dto/lead-submit.dto';
 import { LeadSyncQueue } from './crm/lead-sync.queue';
 import { LeadRateLimiterService } from './lead-rate-limiter.service';
+import { payPageUrl } from '../storefront/storefront-links';
 
 @Injectable()
 export class LandingPagePublicService {
@@ -125,19 +126,13 @@ export class LandingPagePublicService {
 
     if (!pkg) return null;
 
-    // If the package has a share token, route to the public storefront.
-    // Otherwise, route to the package detail page (future).
-    const storefrontBase =
-      process.env.STOREFRONT_BASE_URL ||
-      process.env.PUBLIC_APP_BASE_URL ||
-      'https://app.trygrowthproject.com';
-
+    // If the package has a share token, route to the guest pay page.
     if (pkg.share_token) {
       // R47 / Audit #6 P0-5 — propagate landing page id through to the
       // storefront so the GuestCheckout row records WHICH page sourced
       // the conversion. Without this, $/visitor analytics is structurally
       // broken (revenue rollup joins on GuestCheckout.landing_page_id).
-      return `${storefrontBase}/v1/packages/public/join/${pkg.share_token}?lp=${encodeURIComponent(page.id)}`;
+      return payPageUrl(process.env.STOREFRONT_BASE_URL, pkg.share_token, { lp: page.id });
     }
 
     // Fallback: no share token yet → return null to signal 404

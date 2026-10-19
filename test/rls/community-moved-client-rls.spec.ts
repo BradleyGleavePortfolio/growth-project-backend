@@ -9,7 +9,11 @@
 // public space. Each person's first read is their control read, so every 0 follows a 1.
 import { randomUUID } from 'crypto';
 import { Prisma, PrismaClient, type User } from '@prisma/client';
+import type { AiGatewayRequest, AiGatewayService } from '../../src/ai/gateway/ai-gateway.service';
 import type { AnalyticsService } from '../../src/analytics/analytics.service';
+import { AiTriageService } from '../../src/community/ai-triage/ai-triage.service';
+import { TriageCacheService } from '../../src/community/ai-triage/triage-cache.service';
+import { TRIAGE_CATEGORIES } from '../../src/community/ai-triage/triage-output.schema';
 import { CommunityCohortMembersRepository } from '../../src/community/cohorts/community-cohort-members.repository';
 import { CommunityCohortMembersService } from '../../src/community/cohorts/community-cohort-members.service';
 import { CommunityAccessService } from '../../src/community/community-access.service';
@@ -35,6 +39,7 @@ import { CommunityVoiceRepository } from '../../src/community/voice/community-vo
 import { CommunityVoiceService } from '../../src/community/voice/community-voice.service';
 import type { VoiceUploadProvider } from '../../src/community/voice/voice-upload.provider';
 import type { PrismaService } from '../../src/prisma.service';
+import { grantAllEgress } from '../ai-egress/ai-egress.fakes';
 import { stub } from '../utils/trial-fakes';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
 
@@ -161,7 +166,7 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
   beforeAll(async () => {
     for (const k of PEOPLE) {
       await prisma.$executeRaw`INSERT INTO "User" ("id", "supabase_id", "email", "name", "role", "coach_id", "show_on_leaderboard")
-        VALUES (${id[k]}, ${sub[k]}, ${`moved-${id[k]}`}, 'RLS person', ${ROLE(k)}::"Role", ${COACH[k] ? id[COACH[k] as Coach] : null}, true)`;
+        VALUES (${id[k]}, ${sub[k]}, ${`moved-${id[k]}`}, ${`RLS person ${k}`}, ${ROLE(k)}::"Role", ${COACH[k] ? id[COACH[k] as Coach] : null}, true)`;
     }
     for (const c of ['A', 'B'] as const) {
       await prisma.$executeRaw`INSERT INTO "community_workspaces" ("id", "coach_id", "name", "slug", "updated_at")
@@ -177,15 +182,15 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
     }
     for (const [key, [a, p]] of Object.entries(POSTS)) {
       await prisma.communityPost.create({ data: { id: id[key], workspace_id: wsOf(p), cohort_id: where(p), author_id: id[a],
-        scope: where(p) ? 'cohort' : 'hall', title: 'RLS post' } });
+        scope: where(p) ? 'cohort' : 'hall', title: `RLS post ${key}` } });
     }
     for (const [key, a] of Object.entries(COMMENTS)) {
       await prisma.communityMessage.create({ data: { id: id[key], workspace_id: ws.A, cohort_id: space.cli, scope: 'cohort',
-        sender_id: id[a], body: 'RLS comment', plan_context_type: COMMENT_CONTEXT_TYPE, plan_context_id: id.sO } });
+        sender_id: id[a], body: `RLS comment ${key}`, plan_context_type: COMMENT_CONTEXT_TYPE, plan_context_id: id.sO } });
     }
     for (const [key, a] of Object.entries(CHAT)) {
       await prisma.communityMessage.create({ data: { id: id[key], workspace_id: ws.A, cohort_id: space.cli, scope: 'cohort',
-        sender_id: id[a], body: 'RLS chat' } });
+        sender_id: id[a], body: `RLS chat ${key}` } });
     }
     for (const [key, a] of Object.entries(VOICE)) {
       await prisma.communityVoiceNote.create({ data: { id: id[key], workspace_id: ws.A, cohort_id: space.cli, author_id: id[a],
@@ -238,6 +243,60 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
       return [...chatRows, ...postRows].map((r) => String(KEY[r.id])).sort();
     });
     expect(seen).toEqual(['mO', 'sO']);
+  });
+
+  // C6-AI-TRIAGE: the former coach's AI triage takes its candidates from the inbox's two reads, so the moved
+  // client's words and name reach neither the prompt, the consent list nor the answer. The fake model names every
+  // seeded row (an id the reads did not hand over is dropped). Comments and Hall posts are never candidates.
+  const kind = (r: string) => (r in POSTS ? 'post' : r in CHAT ? 'chat' : 'comment');
+  const triageOf = (reads: PrismaService, repo = new CommunityCoachInboxRepository(reads)) => {
+    const sent: AiGatewayRequest[] = [];
+    const rows = [...Object.keys(POSTS), ...Object.keys(COMMENTS), ...Object.keys(CHAT)];
+    const items = rows.map((r) => ({ source_item_id: id[r], source_kind: kind(r) === 'post' ? 'post' : 'message',
+      category: 'general', summary: ' ' }));
+    const reply = JSON.stringify({ buckets: TRIAGE_CATEGORIES.map((category) => ({ category, items: category === 'general' ? items : [] })) });
+    const gateway = stub<AiGatewayService>({ invoke: async (req: AiGatewayRequest) => {
+      sent.push(req);
+      return { reply, model: 'fake' };
+    } });
+    const triage = new AiTriageService(gateway, repo, new CommunityAccessService(reads), new TriageCacheService(), grantAllEgress());
+    return async () => {
+      const answer = await triage.generateForCoach(user('A'));
+      const prompt = sent[sent.length - 1]?.userMessage ?? '';
+      return { calls: sent.length, sent: rows.filter((r) => prompt.includes(id[r])).sort(),
+        words: rows.filter((r) => prompt.includes(`RLS ${kind(r)} ${r}`)).sort(),
+        clients: (sent[sent.length - 1]?.dataClientIds ?? []).map((v) => String(KEY[v])).sort(),
+        answer: answer.source_item_ids.map((v) => String(KEY[v])).sort(),
+        nameOfM: [prompt, JSON.stringify(answer.buckets)].map((t) => t.split('RLS person M').length - 1) };
+    };
+  };
+
+  it('the former coach\'s AI triage: the moved client is in it before the move, out after it, never from the cache', async () => {
+    const triage = triageOf(db);
+    const coachOfM = (coach: string | null) => prisma.user.update({ where: { id: id.M }, data: { coach_id: coach } });
+    const before = ['mM', 'mO', 'pM', 'pN', 'sM', 'sO'];
+    const after = ['mO', 'pM', 'pN', 'sO']; // M's post in the public space stays, as in the inbox
+    const want = (calls: number, ids: string[], m: number) => ({ calls, sent: ids, words: ids, clients: ['M', 'N', 'O'],
+      answer: ids, nameOfM: [m, m] });
+    try {
+      await coachOfM(id.A); // control: before the move M is A's client, so M's chat and post in cli are in (1 each)
+      expect(await triage()).toEqual(want(1, before, 3));
+      await coachOfM(null); // M leaves A for no coach: a fresh prompt without M's cli rows (0)
+      expect(await triage()).toEqual(want(2, after, 1));
+    } finally {
+      await coachOfM(id.B); // the world's state: M is B's client
+    }
+    expect(await triage()).toEqual(want(2, after, 1)); // the same four items: the cache answers, still without M's cli rows
+  });
+
+  it('the AI triage reads under forced row security agree: the former coach reads 1 of O, then 0 of M', async () => {
+    // cli only: as authenticated a coach reads only current clients' User rows (20270502000000); the server
+    // connects as service_role, so the public space's authors are proven on the app connection above.
+    const got = await as('A', (tx) => {
+      const reads = stub<PrismaService>(tx);
+      return triageOf(reads, Object.assign(new CommunityCoachInboxRepository(reads), { coachedCohortIds: async () => [space.cli] }))();
+    });
+    expect(got).toEqual({ calls: 1, sent: ['mO', 'sO'], words: ['mO', 'sO'], clients: ['O'], answer: ['mO', 'sO'], nameOfM: [0, 0] });
   });
 
   it('the former coach\'s roster of cli leaves the moved client out', async () => {

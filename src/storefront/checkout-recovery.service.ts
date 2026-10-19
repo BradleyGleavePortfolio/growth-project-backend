@@ -15,6 +15,7 @@ import { EmailService } from '../email/email.service';
 import { EmailTemplateKey } from '../email/email.types';
 import { describeFailure } from '../observability/log-pii';
 import { MIN_CHECKOUT_RECOVERY_SECRET_LENGTH } from '../common/env-validation';
+import { resumeUrl } from './storefront-links';
 
 // r48 #5 — magic-link recovery for abandoned checkouts.
 //
@@ -241,10 +242,7 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
     }
 
     const jwt = await this.mintJwt(shareToken, email, checkout.id);
-    const storefrontBase = this.resolveStorefrontBase();
-    const link = `${storefrontBase}/v1/packages/public/join/${encodeURIComponent(
-      shareToken,
-    )}/checkout/resume/${encodeURIComponent(jwt)}`;
+    const link = resumeUrl(this.config.get<string>('STOREFRONT_BASE_URL'), shareToken, jwt);
 
     // Idempotency key includes the checkout id + minute bucket so
     // honest retries within the same minute collapse, but a brand-new
@@ -610,14 +608,6 @@ export class CheckoutRecoveryService implements OnModuleInit, OnModuleDestroy {
       });
     }
     return new TextEncoder().encode(secret);
-  }
-
-  private resolveStorefrontBase(): string {
-    const raw =
-      this.config.get<string>('STOREFRONT_BASE_URL') ??
-      process.env.STOREFRONT_BASE_URL ??
-      'https://joingrowthproject.com';
-    return raw.replace(/\/+$/, '');
   }
 
   private formatAmount(row: { package_snapshot: unknown }): string {

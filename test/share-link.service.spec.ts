@@ -101,7 +101,7 @@ describe('ShareLinkService', () => {
     const result = await service.mintOrGet(COACH_ID, PKG_ID);
     expect(result.share_token).toBe(existingToken);
     expect(result.share_url).toBe(
-      `https://storefront.example.com/join/${existingToken}`,
+      `https://storefront.example.com/p/${existingToken}`,
     );
     expect(result.share_link_enabled).toBe(true);
     expect(result.share_link_generated_at).toEqual(generatedAt);
@@ -115,7 +115,7 @@ describe('ShareLinkService', () => {
     expect(result.share_token).toHaveLength(SHARE_TOKEN_LENGTH);
     expect(SHARE_TOKEN_REGEX.test(result.share_token)).toBe(true);
     expect(result.share_url).toBe(
-      `https://storefront.example.com/join/${result.share_token}`,
+      `https://storefront.example.com/p/${result.share_token}`,
     );
     expect(prismaUpdateMany).toHaveBeenCalledTimes(1);
     // Critical: updateMany WHERE must include share_token: null so two
