@@ -7,7 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma.service';
-import { parseStorefrontBaseUrl } from '../common/env-validation';
+import { payPageUrl } from '../storefront/storefront-links';
 
 // P1-3 — share-link tokens are now 21 characters drawn from the standard
 // nanoid alphabet (A-Z, a-z, 0-9, '_', '-'). 21 × log2(64) ≈ 126 bits of
@@ -24,12 +24,6 @@ export const SHARE_TOKEN_LENGTH = 21;
 // reaches Prisma.
 export const SHARE_TOKEN_REGEX = /^[A-Za-z0-9_-]{21}$/;
 const MAX_COLLISION_ATTEMPTS = 5;
-
-// Dev/test fallback used when STOREFRONT_BASE_URL is unset. Production
-// must set the env var explicitly (enforced in prodHardenedFeatureVars
-// inside env-validation.ts). The fallback is the canonical
-// joingrowthproject.com domain; no other domain is permitted.
-const STOREFRONT_BASE_URL_DEV_FALLBACK = 'https://joingrowthproject.com';
 
 // Audit #5 P2-6 — defense-in-depth: a future Node bug (or a misbehaving
 // container with /dev/urandom misconfigured) could return all-zero or
@@ -238,14 +232,9 @@ export class ShareLinkService {
     enabled: boolean,
     generatedAt: Date,
   ): ShareLinkResult {
-    const raw = this.config.get<string>('STOREFRONT_BASE_URL');
-    const parsed = parseStorefrontBaseUrl(
-      raw && raw.trim().length > 0 ? raw : STOREFRONT_BASE_URL_DEV_FALLBACK,
-    );
-    const base = parsed.ok ? parsed.canonical : STOREFRONT_BASE_URL_DEV_FALLBACK;
     return {
       share_token: token,
-      share_url: `${base}/join/${token}`,
+      share_url: payPageUrl(this.config.get<string>('STOREFRONT_BASE_URL'), token),
       share_link_enabled: enabled,
       share_link_generated_at: generatedAt,
     };

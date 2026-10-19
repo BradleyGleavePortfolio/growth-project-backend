@@ -1099,7 +1099,7 @@ switches:
     prod_default: ON
     auto_flip_on_in_prod: false
     owner: platform
-    description: "R43 — base URL of the Next.js storefront (e.g. https://joingrowthproject.com). Used to build share_url responses for POST /v1/coach/packages"
+    description: "R43 / GC-2c — public origin of every storefront link (e.g. https://app.trygrowthproject.com): share_url, landing-page Buy, recovery email link."
   - name: STRIPE_API_TIMEOUT_MS
     tier: optional
     prod_default: STUB_ALLOWED

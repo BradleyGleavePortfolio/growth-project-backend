@@ -264,7 +264,7 @@ describe('LandingPagePublicService', () => {
       const { svc } = makePublicSvc(page, 'tok_abc123def456ghi78');
 
       const url = await svc.resolveCheckoutUrl('GP-JANE1', 'my-page', 'pkg-1');
-      expect(url).toContain('packages/public/join/tok_abc123def456ghi78');
+      expect(url).toContain('/p/tok_abc123def456ghi78?lp=');
     });
 
     it('returns null when tier is not in page.package_ids', async () => {
