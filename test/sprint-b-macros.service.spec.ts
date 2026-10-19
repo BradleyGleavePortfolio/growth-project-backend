@@ -45,7 +45,7 @@ describe('MacrosService.computePreset', () => {
     expect(bulk.calories_kcal).toBeGreaterThan(cut.calories_kcal);
   });
 
-  // C06: the preset now uses the single calculator, whose clinical-safety
+  // C06: the preset now uses the single calculator, whose medical-safety
   // floor is 1,200 kcal (female) / 1,500 kcal (male, prefer not to say).
   it('respects the 1,200 kcal female floor', () => {
     const out = service.computePreset({

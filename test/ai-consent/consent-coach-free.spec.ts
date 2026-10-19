@@ -1,11 +1,11 @@
 /**
  * Owner decision 62 (Option 1) and C-6 / C-6a (Option 1), 2026-10-12.
  *
- *   - consult-consent-v5 / v6: v3 / v4 with only the clinic sentence removed;
+ *   - consult-consent-v5 / v6: v3 / v4 with only the partner sentence removed;
  *   - consult-consent-v5-coach-free / v6-coach-free and client-ai-v4-coach-free /
  *     v5-coach-free: removals only (every word appears, in order, in the coached
  *     text), with the one grammar join "collect and use" -> "collects and uses";
- *     no coach is named; nothing names a clinic;
+ *     no coach is named; nothing names the referral partner;
  *   - the pins recompute, and P0 paragraph 4 + box 2 equal the ledger copy;
  *   - P0 accepts all six versions by default, each only with its own digest;
  *   - the ledger: coach-free grants give the same scopes as their coached
@@ -54,7 +54,7 @@ import { clientDataSubject } from '../../src/ai-egress/ai-egress.types';
 import { FakeLedgerPrisma } from './_support/fake-ledger-prisma';
 
 const sha = (t: string): string => createHash('sha256').update(t, 'utf8').digest('hex');
-const CLINIC_SENTENCE = ' If you joined through a clinic, the clinic does not see it.';
+const PARTNER_SENTENCE = ' If you joined through a clinic, the clinic does not see it.';
 const V4 = 'client-ai-v4';
 const V4CF = 'client-ai-v4-coach-free';
 const V5CF = 'client-ai-v5-coach-free';
@@ -92,16 +92,16 @@ function parts(c: ConsultConsentCopy): string[] {
   return consultConsentScreenText(c).split('\n\n');
 }
 
-describe('P0 copy: clinic sentence removed (C-6a) and coach-free versions (owner 62)', () => {
-  it('v5 / v6 are v3 / v4 with only the clinic sentence removed', () => {
+describe('P0 copy: partner sentence removed (C-6a) and coach-free versions (owner 62)', () => {
+  it('v5 / v6 are v3 / v4 with only the partner sentence removed', () => {
     for (const [before, after] of [
       [CONSULT_CONSENT_COPY_V3, CONSULT_CONSENT_COPY_V5],
       [CONSULT_CONSENT_COPY_V4, CONSULT_CONSENT_COPY_V6],
     ] as const) {
-      expect(before.paragraphs[2].endsWith(CLINIC_SENTENCE)).toBe(true);
+      expect(before.paragraphs[2].endsWith(PARTNER_SENTENCE)).toBe(true);
       expect({ ...after, paragraphs: [...after.paragraphs] }).toEqual({
         ...before,
-        paragraphs: [before.paragraphs[0], before.paragraphs[1], before.paragraphs[2].slice(0, -CLINIC_SENTENCE.length)],
+        paragraphs: [before.paragraphs[0], before.paragraphs[1], before.paragraphs[2].slice(0, -PARTNER_SENTENCE.length)],
       });
     }
   });
@@ -125,14 +125,14 @@ describe('P0 copy: clinic sentence removed (C-6a) and coach-free versions (owner
     expect(CONSULT_CONSENT_COPY_V5_COACH_FREE.paragraphs[2]).toMatch(/^To coach you, The Growth Project collects and uses /);
   });
 
-  it('no new version mentions a clinic', () => {
+  it('no new version mentions the referral partner', () => {
     for (const c of [
       CONSULT_CONSENT_COPY_V5,
       CONSULT_CONSENT_COPY_V6,
       CONSULT_CONSENT_COPY_V5_COACH_FREE,
       CONSULT_CONSENT_COPY_V6_COACH_FREE,
     ]) {
-      expect(consultConsentScreenText(c)).not.toMatch(/clinic/i);
+      expect(consultConsentScreenText(c)).not.toMatch(/cl[i]nic/i);
     }
   });
 

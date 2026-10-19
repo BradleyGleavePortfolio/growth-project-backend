@@ -140,7 +140,7 @@ describe('ApplicantTrackingService.getApplicantDetail — redaction + opaque 404
           last_name: 'Okoro',
           // A malicious/leaky headline carrying contact PII — must never cross
           // the hirer boundary (B-P0-1). headline is not in the allow-list.
-          headline: 'Reach me at sam.okoro@gmail.com / 555-0100',
+          headline: 'Reach me at sam.okoro@example.com / 555-0100',
           specialties: ['Mobility'],
           years_experience: 4,
         })),
@@ -149,7 +149,7 @@ describe('ApplicantTrackingService.getApplicantDetail — redaction + opaque 404
     const service = new ApplicantTrackingService(prisma, makeIdempotency({}));
     const detail = await service.getApplicantDetail('hirer-1', 'app-1');
     expect(Object.keys(detail)).not.toContain('headline');
-    expect(JSON.stringify(detail)).not.toContain('sam.okoro@gmail.com');
+    expect(JSON.stringify(detail)).not.toContain('sam.okoro@example.com');
     expect(JSON.stringify(detail)).not.toContain('555-0100');
   });
 

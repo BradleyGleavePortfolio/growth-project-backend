@@ -122,7 +122,7 @@ describe('WorkoutBuilderService.assertCanAccessClient: deleted accounts (B-640-3
 });
 
 describe('WorkoutBuilderService.archivePlan: packaged programs keep a day (C-640-5)', () => {
-  function build(others: number, inPackage: number, clinicPrograms: unknown[] = []) {
+  function build(others: number, inPackage: number, setPrograms: unknown[] = []) {
     const tx = {
       $executeRaw: jest.fn(async () => 1),
       $queryRaw: jest.fn(async () => [
@@ -134,7 +134,7 @@ describe('WorkoutBuilderService.archivePlan: packaged programs keep a day (C-640
       },
       coachPackageContent: { count: jest.fn(async () => inPackage) },
       clinicProgramSet: {
-        findMany: jest.fn(async () => clinicPrograms.map((programs) => ({ programs }))),
+        findMany: jest.fn(async () => setPrograms.map((programs) => ({ programs }))),
       },
     };
     const prisma = {
@@ -165,7 +165,7 @@ describe('WorkoutBuilderService.archivePlan: packaged programs keep a day (C-640
     expect(lockSql).toMatch(/pg_advisory_xact_lock/);
   });
 
-  it('S-MWB-3 B-640-11: refuses the last day of a master an active clinic consultation set uses', async () => {
+  it('S-MWB-3 B-640-11: refuses the last day of a master an active consultation set uses', async () => {
     const { svc, tx, prisma } = build(0, 0, [{ strength: { program_id: 'master-1' } }]);
     await expect(svc.archivePlan('coach-1', 'plan-day')).rejects.toMatchObject({
       status: 409,

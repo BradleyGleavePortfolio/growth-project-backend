@@ -37,9 +37,9 @@ enum Role {
 // Phase 1A: subscription state for a coach's $300/mo seat. Stored as
 // strings on CoachProfile so the column reads naturally in raw SQL and
 // admin tooling without a Prisma-only enum mapping.
-// Clinic launch C01 — what an invite code grants on successful attach when it
+// Partner launch C01 — what an invite code grants on successful attach when it
 // is bound to a coach package. `prepaid` = the client paid the coach outside
-// the app (clinic intake); `free` = a genuinely free offer. Both create a $0
+// the app (partner intake); `free` = a genuinely free offer. Both create a $0
 // ClientPurchase grant row (source 'invite_grant:<mode>').
 enum InviteGrantMode {
   none
@@ -548,7 +548,7 @@ model User {
   // src/roman/roman.feature.ts. RLS scopes every row to userId at the DB
   // layer (migration 20261216000000_add_roman_chat).
   roman_sessions RomanSession[] @relation("RomanSessionUser")
-  // C05/C07 clinic onboarding (additive virtual back-relations).
+  // C05/C07 consultation onboarding (additive virtual back-relations).
   onboarding_intake           ClientOnboardingIntake?          @relation("OnboardingIntakeClient")
   onboarding_intake_revisions ClientOnboardingIntakeRevision[] @relation("OnboardingIntakeRevisionClient")
   clinic_program_sets         ClinicProgramSet[]               @relation("ClinicProgramSetCoach")
@@ -844,7 +844,7 @@ model InviteCode {
   package             CoachPackage?      @relation("InviteCodePackage", fields: [package_id], references: [id], onDelete: SetNull)
   grant_mode          InviteGrantMode    @default(none)
   // A2 coach code tools (20270302000000). `label` is the coach's own name
-  // for the code ("Clinic front desk"). `revoked_at` stamps when `revoked`
+  // for the code ("Partner front desk"). `revoked_at` stamps when `revoked`
   // flipped. A rotation links the successor to the code it replaced through
   // `rotated_from_id` (unique: one successor per code, which also makes a
   // retried rotate idempotent). `idempotency_key` makes a retried create
@@ -3097,7 +3097,7 @@ model MacroTarget {
   @@index([coach_id, created_at])
 }
 
-// ─── C05/C07: clinic consultation intake + program set (additive) ─────────
+// ─── C05/C07: consultation intake + program set (additive) ─────────
 // One row per client. Holds the full versioned consultation answer set,
 // including the P1-P7 readiness screening. RLS: the client owns the row; the
 // client's CURRENT coach may read it (app.is_current_coach_of); Roman reads it
@@ -3172,7 +3172,7 @@ model ClientOnboardingIntakeRevision {
 }
 
 // One row per (coach, fixture version): the seeded master programs and the
-// community spaces for the clinic, written only by scripts/seed-clinic-programs.ts.
+// community spaces for the partner, written only by scripts/seed-clinic-programs.ts.
 // Read server-side by onboarding complete. RLS: the owning coach may read;
 // no client or public writes.
 model ClinicProgramSet {
@@ -3656,7 +3656,7 @@ model TeamAuditEvent {
 //   draft         — client is still editing; not visible to coach
 //   submitted     — client finalized; appears in coach review queue
 //   needs_info    — coach asked for clarification; back to client
-//   reviewed      — coach has read it (no clinical opinion)
+//   reviewed      — coach has read it (no medical opinion)
 //   flagged       — coach flagged for follow-up
 //   hidden        — coach hid from active surface
 //

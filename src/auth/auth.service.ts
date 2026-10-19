@@ -62,7 +62,7 @@ function selfServiceBecomeCoachEnabled(): boolean {
   return (process.env.ALLOW_SELF_SERVICE_BECOME_COACH ?? '').toLowerCase() === 'true';
 }
 
-// Clinic launch C13 (owner direction 2026-09-30, supersedes the "no
+// Partner launch C13 (owner direction 2026-09-30, supersedes the "no
 // self-promotion" clause of R-ONBOARDING-ROLE-GATE-1 for SIGNUP TIME ONLY):
 // a brand-new account may be created directly as a coach. This is not a
 // runtime escalation — there is no existing account, no roster, no data —
@@ -249,7 +249,7 @@ export class AuthService {
     });
   }
 
-  // Clinic launch C03 — one attach path for signup-with-code / Google / Apple.
+  // Partner launch C03 — one attach path for signup-with-code / Google / Apple.
   // The auth call itself never fails because of the attach (the user IS
   // signed in and can retry via /auth/attach-invite-code), but the outcome is
   // no longer swallowed: callers get `invite_attached` plus a safe reason
@@ -985,7 +985,7 @@ export class AuthService {
       invite_code_required: gateEnabled,
       coach_code_required: gateEnabled,
       providers,
-      // Clinic launch C02 — legacy field names the shipped mobile build reads
+      // Partner launch C02 — legacy field names the shipped mobile build reads
       // (CreateAccountScreen / RoleSelectionScreen): `require_invite_code`
       // mirrors invite_code_required; `google_signin_enabled` mirrors
       // providers.includes('google'). `apple_signin_enabled` is additive for
@@ -1104,7 +1104,7 @@ export class AuthService {
       } else {
         // C13: brand-new row — the only branch where intended_role applies.
         // Grok B5: a new COACH consumes a per-IP slot that login success
-        // never resets (client creates are not counted — clinic QR intake).
+        // never resets (client creates are not counted — group QR intake).
         if (intendedRole === 'coach') {
           await this.loginThrottle?.consumeOAuthCoachSignupSlot(ctx.throttleIp ?? ctx.ip);
         }

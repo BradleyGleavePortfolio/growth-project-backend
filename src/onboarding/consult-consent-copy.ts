@@ -29,7 +29,7 @@
  * next to v3: the 10-07 app build keeps sending v3, a later app sends v4.
  *
  * consult-consent-v5 / v6 (owner C-6 and C-6a Option 1, 2026-10-12): v3 / v4
- * with only paragraph 3's last sentence (the clinic sentence) removed. Shown
+ * with only paragraph 3's last sentence (the partner sentence) removed. Shown
  * to a client with a coach.
  *
  * consult-consent-v5-coach-free / v6-coach-free (owner decision 62, Option 1,
@@ -126,7 +126,7 @@ export const CONSULT_CONSENT_COPY_V4: ConsultConsentCopy = {
     "Roman, the assistant in this app, is powered by Anthropic, a third-party AI provider. If you allow it, your information is sent to Anthropic so Roman can answer your questions and your coach can use AI drafts about your training. Roman may keep notes and summaries about your training, preferences and circumstances to personalise his replies. Deleting a chat removes its messages but not these notes; deleting your account removes them. Roman may also learn your coach's methods, including from your coach's private session notes, and information about your training may help with that without identifying you. Roman never quotes those notes or shows you another client's information. Your coach never sees your conversations with Roman or his notes about you. Your conversations with Roman are kept until you delete them or delete your account.",
 };
 
-/** consult-consent-v5: v3 without the clinic sentence (owner C-6a). */
+/** consult-consent-v5: v3 without the partner sentence (owner C-6a). */
 export const CONSULT_CONSENT_COPY_V5: ConsultConsentCopy = {
   ...CONSULT_CONSENT_COPY_V3,
   paragraphs: [
@@ -136,7 +136,7 @@ export const CONSULT_CONSENT_COPY_V5: ConsultConsentCopy = {
   ],
 };
 
-/** consult-consent-v6: v4 without the clinic sentence (owner C-6a). */
+/** consult-consent-v6: v4 without the partner sentence (owner C-6a). */
 export const CONSULT_CONSENT_COPY_V6: ConsultConsentCopy = {
   ...CONSULT_CONSENT_COPY_V5,
   aiParagraph: CONSULT_CONSENT_COPY_V4.aiParagraph,

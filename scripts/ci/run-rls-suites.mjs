@@ -45,7 +45,7 @@ const SCOPED = { db: 'rls_scoped' };
 const SELF = { db: 'rls_empty', env: { RLS_AUTHED_ROLE: 'authenticated' } };
 const EMPTY = { db: 'rls_empty' };
 const SETUP = JSON.parse(process.env.RLS_SUITE_SETUP_OVERRIDE || 'null') || {
-  ...Object.fromEntries(['ai-processing-consent-ledger-rls', 'clinic-engagement-rls', 'coachless-rls',
+  ...Object.fromEntries(['ai-processing-consent-ledger-rls', 'client-engagement-rls', 'coachless-rls',
     'cwa-coach-manage-client-tenancy-rls', 'data-export-storage-bucket-rls', 'food-item-custom-privacy-rls',
     'helper-functions', 'onboarding-intake-rls'].map((n) => [`test/rls/${n}.spec.ts`, SCOPED])),
   ...Object.fromEntries(['rls/roman-rls', 'rls-b5-contracts-policies', 'rls-helper-search-path',

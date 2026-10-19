@@ -136,7 +136,7 @@ describe('AuditService append-only contract', () => {
     const publicMethods = Object.getOwnPropertyNames(Object.getPrototypeOf(svc)).filter(
       (m) => m !== 'constructor' && !m.startsWith('_'),
     );
-    // write + list are the only public methods, plus the clinic C13
+    // write + list are the only public methods, plus the partner C13
     // transactional `writeTx` (an INSERT through a caller-supplied tx client
     // that throws instead of swallowing — still append-only).
     const ALLOWED = ['write', 'writeTx', 'list'];

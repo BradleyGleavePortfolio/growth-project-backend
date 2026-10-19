@@ -10,7 +10,7 @@ import { load as parseYaml } from 'js-yaml';
 import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
 import * as ts from 'typescript';
-import { parseFixture } from '../../src/onboarding/clinic-programs';
+import { parseFixture } from '../../src/onboarding/consultation-programs';
 import { assertSeedAllowed } from '../../scripts/seed-clinic-programs';
 
 const ROOT = join(__dirname, '..', '..');

@@ -5,7 +5,7 @@
  * strict validator; unknown keys are rejected so the intake record never
  * stores free-form junk. `null` in a PUT means "clear this answer".
  *
- * Exact value shapes are documented in docs/clinic-onboarding.md.
+ * Exact value shapes are documented in docs/consultation-onboarding.md.
  */
 import { ageInYears, LBS_PER_KG } from '../macros/macro-calculator';
 import { MIN_CLIENT_AGE } from '../auth/client-age';
@@ -45,7 +45,7 @@ export const CONSULTATION_VERSION = 'consult-v1';
  * version and that version's pinned text digest (`isCurrentConsentAnswer`).
  *
  * Default: v3 and v4 (no live client ever recorded v2; v4 carries the
- * client-ai-v5 paragraph 4 for Roman v1.1), plus v5 / v6 (no clinic sentence,
+ * client-ai-v5 paragraph 4 for Roman v1.1), plus v5 / v6 (no partner sentence,
  * owner C-6a) and their coach-free versions for clients with no coach (owner
  * 62), v7 / v8 (the safety-reply exception, owner 57c) and v7-coach-free
  * (no Roman choice, owner 62y2), and v9 / v10 (v7 / v8 + the crisis sentence,

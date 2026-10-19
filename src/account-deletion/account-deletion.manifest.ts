@@ -797,10 +797,10 @@ export const OPTIONAL_USER_TABLES: ReadonlyArray<{
 }> = [
   { table: 'ClientOnboardingIntakeRevision', column: 'client_id' },
   { table: 'ClientOnboardingIntake', column: 'client_id' },
-  // The clinic program set a coach seeded (#607, stacked under #609).
+  // The consultation program set a coach seeded (#607, stacked under #609).
   { table: 'ClinicProgramSet', column: 'coach_id' },
   { table: 'AiProcessingConsent', column: 'user_id' },
-  // Backend #609 (clinic engagement, migration 20270213000000), not merged
+  // Backend #609 (client engagement, migration 20270213000000), not merged
   // when #608 was written. Its FKs to User are ON DELETE CASCADE, which never
   // fires because the User row is tombstoned, so they are erased here. Each
   // step runs only when the table exists, so #608 works with or without #609.

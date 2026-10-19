@@ -1,7 +1,7 @@
--- #609 (C05 items 6-7): live RLS bootstrap for the clinic engagement tables.
+-- #609 (C05 items 6-7): live RLS bootstrap for the client engagement tables.
 --
 -- Runs in the rls-live-tests job AFTER scripts/ci/rls01-live-bootstrap.sql,
--- the PR-RLS-01 helper migration and the clinic onboarding intake steps
+-- the PR-RLS-01 helper migration and the consultation onboarding intake steps
 -- (which provide "User" with deleted_at, app.current_user_id(),
 -- app.current_user_role() and app.is_owner()). Like the other live
 -- bootstraps it materialises only what the engagement migration needs,
