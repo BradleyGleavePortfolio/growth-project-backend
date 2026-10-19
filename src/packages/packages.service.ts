@@ -1024,7 +1024,7 @@ export class PackagesService {
       input.recurring_interval != null ||
       input.recurring_interval_count != null;
     // S-FEE (owner ruling 2026-09-30) — a package is either FREE (exactly 0,
-    // one-time, no recurring companion; clinic C01: checkout refuses it with
+    // one-time, no recurring companion; partner C01: checkout refuses it with
     // PACKAGE_IS_FREE and clients claim it via POST /v1/packages/:id/claim-free)
     // or PAID at PAID_PACKAGE_MIN_CENTS or more. The floor keeps the coach's net meaningful after the card fee and
     // the TGP 2%. On update the floor applies only when the price changes, so

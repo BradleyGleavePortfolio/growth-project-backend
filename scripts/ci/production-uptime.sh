@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # O2 (REL-09): tell the owner when production is down or failing.
 # Run by .github/workflows/production-uptime.yml every 10 minutes. Probes the
-# public /health and /readyz of the URL the fly-deploy.yml smoke test uses.
+# public /health and /readyz of the URL the fly-deploy.yml smoke test uses and
+# the public app /privacy page.
 # Two failed rounds in a row (RETRY_DELAY seconds apart) open one issue
 # labelled production-down, assigned to the repo owner so GitHub emails them,
 # or refresh the open one (an edit sends no email). A passing round closes it
@@ -10,11 +11,12 @@
 set -euo pipefail
 
 BASE_URL="${BASE_URL:-https://backend-spring-lake-3890.fly.dev}"
+PUBLIC_PAGE_URL="https://app.trygrowthproject.com/privacy"
 RETRY_DELAY="${RETRY_DELAY:-60}"
 LABEL=production-down
 RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-# Sets RESULTS to "/health <code>; /readyz <code>"; fails unless both are 200.
+# Sets RESULTS to each probe's status code; fails unless all three are 200.
 probe_round() {
   local path code failed=0
   RESULTS=""
@@ -23,6 +25,9 @@ probe_round() {
     RESULTS="${RESULTS:+${RESULTS}; }${path} ${code:-000}"
     [ "$code" = "200" ] || failed=1
   done
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$PUBLIC_PAGE_URL") || true
+  RESULTS="${RESULTS}; public /privacy ${code:-000}"
+  [ "$code" = "200" ] || failed=1
   echo "$(date -u +%FT%TZ) ${RESULTS}"
   return "$failed"
 }
@@ -36,11 +41,11 @@ if probe_round || { sleep "$RETRY_DELAY"; probe_round; }; then
   exit 0
 fi
 
-body="The production server failed two health checks in a row, ${RETRY_DELAY} seconds apart.
+body="Production probes failed in two consecutive rounds, ${RETRY_DELAY} seconds apart.
 
 - Last failed check: $(date -u +%FT%TZ)
 - Results: ${RESULTS}
-- Checked: ${BASE_URL}/health and ${BASE_URL}/readyz
+- Checked: ${BASE_URL}/health, ${BASE_URL}/readyz and ${PUBLIC_PAGE_URL}
 - Run: ${RUN_URL}
 
 Codes: 000 means no answer within 20 seconds. 503 on /readyz means the server is up but cannot reach the database. Any other code means the server answered with an error.

@@ -665,7 +665,7 @@ export const ENV_RULES: EnvRule[] = [
     name: 'PUBLIC_READS_PER_MIN',
     tier: 'optional',
     default: '240 per IP per minute (unset, empty or unparseable fall back to 240; clamped to [10, 5000])',
-    reason: 'Clinic C14 — per-IP requests per minute on public read endpoints (GET /auth/signup-policy, GET /invite/:code/preview) via the dedicated public-reads throttler. Defaults to 240 (a 40-person clinic room behind one NAT); clamped to [10, 5000].',
+    reason: 'Partner C14 — per-IP requests per minute on public read endpoints (GET /auth/signup-policy, GET /invite/:code/preview) via the dedicated public-reads throttler. Defaults to 240 (a 40-person group room behind one NAT); clamped to [10, 5000].',
   },
   {
     name: 'RATELIMIT_ANON_PER_MIN',
@@ -686,25 +686,25 @@ export const ENV_RULES: EnvRule[] = [
     name: 'AUTH_OAUTH_PER_MIN',
     tier: 'optional',
     default: '60 per IP per minute (unset, empty or unparseable fall back to 60; clamped to [5, 5000])',
-    reason: 'Clinic C14 — per-IP POST /auth/google and /auth/apple token exchanges per minute (own bucket, never reset). Defaults to 60 (a 40-person room on one Wi-Fi); clamped to [5, 5000].',
+    reason: 'Partner C14 — per-IP POST /auth/google and /auth/apple token exchanges per minute (own bucket, never reset). Defaults to 60 (a 40-person room on one Wi-Fi); clamped to [5, 5000].',
   },
   {
     name: 'AUTH_OAUTH_PER_HOUR',
     tier: 'optional',
     default: '400 per IP per hour (unset, empty or unparseable fall back to 400; clamped to [20, 20000])',
-    reason: 'Clinic C14 — per-IP POST /auth/google and /auth/apple token exchanges per hour (own bucket, never reset). Defaults to 400; clamped to [20, 20000].',
+    reason: 'Partner C14 — per-IP POST /auth/google and /auth/apple token exchanges per hour (own bucket, never reset). Defaults to 400; clamped to [20, 20000].',
   },
   {
     name: 'AUTH_LOGIN_ACCOUNT_FAILURES',
     tier: 'optional',
     default: '10 failed sign-ins per account per 15 minutes (unset, unparseable or below 3 fall back to 10; capped at 100)',
-    reason: 'Clinic C14 — failed password sign-ins allowed per account per 15 minutes before that account is locked for 15 minutes (any IP). Only that account’s own successful sign-in clears it. Defaults to 10; values below 3 fall back to 10; capped at 100.',
+    reason: 'Partner C14 — failed password sign-ins allowed per account per 15 minutes before that account is locked for 15 minutes (any IP). Only that account’s own successful sign-in clears it. Defaults to 10; values below 3 fall back to 10; capped at 100.',
   },
   {
     name: 'AUTH_OAUTH_COACH_SIGNUP_PER_HOUR',
     tier: 'optional',
     default: '5 per IP per hour (unset, unparseable or < 1 fall back; clamped to 500)',
-    reason: 'Clinic C13 — per-IP ceiling on brand-new COACH accounts created through /auth/google and /auth/apple per hour (login success never resets it). Client creates are not counted (clinic QR intake). Default 5, clamped to [1, 500].',
+    reason: 'Partner C13 — per-IP ceiling on brand-new COACH accounts created through /auth/google and /auth/apple per hour (login success never resets it). Client creates are not counted (group QR intake). Default 5, clamped to [1, 500].',
   },
   {
     name: 'SIGNUP_ROLE_CHOICE_ENABLED',
@@ -712,7 +712,7 @@ export const ENV_RULES: EnvRule[] = [
     unsetIs: 'on',
     tier: 'optional',
     default: "on (unset = on; only 'false', '0' or 'off' turn it off)",
-    reason: "Clinic C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker.",
+    reason: "Partner C13 kill switch — signup-time client/coach role choice. Default ON (unset = on). Set 'false' to make every signup a client: intended_role is still accepted (no 400 for any app build) but ignored, and /auth/signup-policy reports role_choice=false so mobile hides the picker.",
   },
   {
     name: 'AUTH_SIGNUP_PER_HOUR',
@@ -724,7 +724,7 @@ export const ENV_RULES: EnvRule[] = [
     name: 'AUTH_SIGNUP_WITH_CODE_PER_HOUR',
     tier: 'optional',
     default: '100 per IP per hour (unset, empty or unparseable fall back to 100; clamped to [5, 500])',
-    reason: 'Clinic C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups use AUTH_SIGNUP_PER_HOUR. Defaults to 100 (a 40+ patient clinic event on one Wi-Fi IP inside an hour, with retries); clamped to [5, 500].',
+    reason: 'Partner C03 — per-IP POST /auth/signup-with-code attempts per hour when the body carries a well-formed invite code (QR intake bursts behind one NAT). Codeless signups use AUTH_SIGNUP_PER_HOUR. Defaults to 100 (a 40+ client group event on one Wi-Fi IP inside an hour, with retries); clamped to [5, 500].',
   },
   {
     name: 'AUTH_PWD_RESET_PER_HOUR',
@@ -1245,7 +1245,7 @@ export const ENV_RULES: EnvRule[] = [
     launch: 'switch',
     default: "on (unset = on; only 'false', '0' or 'off' turn it off)",
     reason:
-      "Clinic C05 item 6 kill switch for the coach welcome-message cron (src/engagement/engagement.flags.ts, read by coach-welcome.service.ts every minute). Ships on; it sends nothing until the owner enables a coach's welcome setting at C04 (CoachWelcomeMessageSetting.enabled, default false). Emergency kill: set 'false' (unsetting turns it back on); scheduling and sending stop without a deploy, the erasure sweep keeps running.",
+      "Partner C05 item 6 kill switch for the coach welcome-message cron (src/engagement/engagement.flags.ts, read by coach-welcome.service.ts every minute). Ships on; it sends nothing until the owner enables a coach's welcome setting at C04 (CoachWelcomeMessageSetting.enabled, default false). Emergency kill: set 'false' (unsetting turns it back on); scheduling and sending stop without a deploy, the erasure sweep keeps running.",
   },
   {
     name: 'WORKOUT_REMINDERS_ENABLED',
@@ -1255,7 +1255,7 @@ export const ENV_RULES: EnvRule[] = [
     launch: 'switch',
     default: "on (unset = on; only 'false', '0' or 'off' turn it off)",
     reason:
-      "Clinic C05 item 7 kill switch for the workout-reminder cron (src/engagement/engagement.flags.ts, read by workout-reminder.service.ts every 5 minutes, fixed schedule). Ships on: reminders are launch scope from the client's first-session day; clients opt out in Settings > Notifications. Emergency kill: set 'false' (unsetting turns it back on); every workout reminder stops without a deploy, the erasure sweep keeps running.",
+      "Partner C05 item 7 kill switch for the workout-reminder cron (src/engagement/engagement.flags.ts, read by workout-reminder.service.ts every 5 minutes, fixed schedule). Ships on: reminders are launch scope from the client's first-session day; clients opt out in Settings > Notifications. Emergency kill: set 'false' (unsetting turns it back on); every workout reminder stops without a deploy, the erasure sweep keeps running.",
   },
   {
     name: 'DELETION_FINALIZE_CRON',

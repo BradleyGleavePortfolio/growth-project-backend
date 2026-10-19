@@ -13,7 +13,7 @@ See:
 - Coach gating: `ConsentService.coachCanAccess` (used by `CoachService`)
 - Operator runbook: [`docs/audit-and-gdpr.md`](../../docs/audit-and-gdpr.md)
 
-## `onboarding.agreement` (clinic C01)
+## `onboarding.agreement` (partner C01)
 
 The one quick in-app "I agree" box shown at onboarding (owner ruling): covers the
 personal-training waiver and letting the coach / platform see the client's

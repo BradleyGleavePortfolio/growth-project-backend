@@ -248,7 +248,7 @@ describe('AuthService signup_ref persistence', () => {
     prismaMock = {
       user: {
         findUnique: jest.fn().mockResolvedValue(null),
-        // Clinic C13: register's duplicate check is case-insensitive (findFirst).
+        // Partner C13: register's duplicate check is case-insensitive (findFirst).
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({
           id: 'u-new',

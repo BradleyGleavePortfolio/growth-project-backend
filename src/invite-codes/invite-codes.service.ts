@@ -89,7 +89,7 @@ export function generateInviteCodeCandidate(): string {
   return out;
 }
 
-// Clinic C13 fix round — shared with AuthService.selectRole and the C03 attach
+// Partner C13 fix round — shared with AuthService.selectRole and the C03 attach
 // error table: INVITE_ATTACH_ERROR.COACH_CANNOT_REDEEM is this constant and the
 // attach path throws coachCannotRedeemBody(), so select-role and attach return
 // the same `{ code, message }` (ErrorEnvelope shape) and mobile can branch
@@ -152,7 +152,7 @@ export function inviteCodeLookupCandidates(raw: unknown): string[] {
   return out;
 }
 
-// Clinic launch C03 — machine-readable reasons for a failed invite attach.
+// Partner launch C03 — machine-readable reasons for a failed invite attach.
 // Every exception thrown by attachUserToCoachByCode carries one of these in
 // its response body (`{ code, message }`, the ErrorEnvelope convention) so the
 // auth flows can surface `invite_attach_error` to mobile instead of silently
@@ -423,7 +423,7 @@ export class InviteCodesService {
     private analytics: AnalyticsService,
     private email: EmailService,
     private audit: AuditService,
-    // Clinic C01 — optional so existing 4-arg constructions (tests, scripts)
+    // Partner C01 — optional so existing 4-arg constructions (tests, scripts)
     // keep working; when absent, codes never grant packages.
     @Optional() private readonly grants?: InviteGrantService,
     // JOINQUOTE — the paid join's quote; absent (legacy wiring) = no quote.
@@ -982,14 +982,14 @@ export class InviteCodesService {
   // from the post-OAuth screen. Atomic + idempotent — also used by the
   // `signup-with-code` flow once the user record exists.
   //
-  // Clinic C13 fix round (audits: Opus B1 / Grok A2): a coach-like account
+  // Partner C13 fix round (audits: Opus B1 / Grok A2): a coach-like account
   // (coach, sub_coach, owner) is REFUSED with a structured code instead of
   // being silently rewritten to `role:'student'`. Redeeming a code used to
   // demote a head coach, orphan their roster (User.coach_id of every client
   // still pointed at them) and leave their CoachSubscription + invite code
   // live. The role is fixed at account creation (R-ROLE-CHOICE-1); a change
   // is an OWNER action, never a side effect of typing a code.
-  // Clinic launch C03 — contract:
+  // Partner launch C03 — contract:
   //   * every failure carries a machine-readable `code` (INVITE_ATTACH_ERROR);
   //   * a student already attached to the SAME coach gets an idempotent
   //     success (`already_attached: true`, no seat consumed, no re-write);
@@ -1187,7 +1187,7 @@ export class InviteCodesService {
       throw err;
     }
 
-    // Clinic C01 — legacy wiring: a bound code grants its package AFTER the
+    // Partner C01 — legacy wiring: a bound code grants its package AFTER the
     // attach committed. With a plan the grant committed with the attach.
     let grant: AttachGrant | null;
     if (plan) {

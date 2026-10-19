@@ -25,7 +25,7 @@ import {
 } from '../src/invite-codes/invite-codes.service';
 import { normalizeEmail } from '../src/auth/email-normalize';
 
-// Clinic launch C13 — signup-time client/coach role choice (+ fix round for
+// Partner launch C13 — signup-time client/coach role choice (+ fix round for
 // the two independent T4 audits, Opus + Grok).
 //
 // Owner direction (2026-09-30): anyone who downloads the app can self-select

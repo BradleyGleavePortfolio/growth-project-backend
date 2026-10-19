@@ -1,7 +1,7 @@
 /**
  * Coach welcome message template (C05 item 6).
  *
- * The code ships ONE generic default. It names no clinic, no partner and no
+ * The code ships ONE generic default. It names no practice, no partner and no
  * coach. A coach's real template is runtime data: the operator writes it to
  * CoachWelcomeMessageSetting.template at bootstrap (owner endpoint or
  * scripts/set-coach-welcome-message.ts). It must never be committed.

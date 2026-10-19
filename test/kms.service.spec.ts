@@ -36,7 +36,7 @@ describe('KmsService', () => {
 
     it('round-trips unicode safely', () => {
       const svc = build();
-      const pt = 'Notes: élevé — patient a noté "ça va".  Triglycérides légèrement hauts.';
+      const pt = 'Notes: élevé — client a noté "ça va".  Triglycérides légèrement hauts.';
       expect(svc.decrypt(svc.encrypt(pt))).toBe(pt);
     });
 

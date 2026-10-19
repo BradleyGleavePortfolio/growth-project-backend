@@ -1,6 +1,6 @@
-# Invite grants — clinic launch C01
+# Invite grants — partner launch C01
 
-Clinic clients pay Bradley outside the app. They must pass the paywall without Stripe, in a way that is auditable, revocable and general enough for any coach.
+Partner clients pay Bradley outside the app. They must pass the paywall without Stripe, in a way that is auditable, revocable and general enough for any coach.
 
 ## Model
 
@@ -8,7 +8,7 @@ Clinic clients pay Bradley outside the app. They must pass the paywall without S
   `none` (default, attach only) · `free` · `prepaid` (client paid outside the app).
   Two kinds of code can carry a binding: a per-row `InviteCode` (`package_id`, `grant_mode`)
   and the coach's **permanent link code** on `CoachProfile` (`invite_code_package_id`, `invite_code_grant_mode`).
-  The QR code for a clinic is simply `/join/<code>` of a bound code.
+  The QR code for a partner is simply `/join/<code>` of a bound code.
 - **Grant.** After a successful attach through a bound code has **committed** — a new redemption *or* a same-coach
   idempotent replay, never after a refusal (a client of another coach gets `409 already_attached_to_different_coach`
   and nothing else) — `InviteCodesService.attachUserToCoachByCode` calls `InviteGrantService.grantForAttachedCode`
@@ -71,9 +71,9 @@ Clinic clients pay Bradley outside the app. They must pass the paywall without S
 | `POST /v1/invite-codes/:code/claim-grant` | student (already attached to the code's coach) | claim the grant a bound code carries (web `/join` for signed-in clients, retry after signing); idempotent |
 | `POST /v1/entitlements/grants/revoke` `{ client_user_id, package_id?, reason? }` | coach (own roster), owner | revoke grants — **active and pending** (`pending_consent`) rights, each by a conditional write to the final `revoked` tombstone, so consent recovery / a claim retry can never activate a withdrawn right (B-595-1); audited `entitlement.grant_revoked`; idempotent |
 
-## Clinic setup (ops)
+## Partner setup (ops)
 
-1. Bradley creates the clinic package (any price; the price is informational for prepaid) and publishes it.
+1. Bradley creates the partner package (any price; the price is informational for prepaid) and publishes it.
 2. `PUT /v1/invite-codes/<Bradley's permanent code>/package-binding { package_id, grant_mode: 'prepaid' }`.
 3. Print the QR for `https://<web>/join/<code>`. Every client who joins through it is attached, then entitled and
    delivered (programs/drips + coach alert) immediately after; existing clients scanning it are entitled too.

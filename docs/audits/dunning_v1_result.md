@@ -44,7 +44,7 @@ https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/281
 
 * `npx tsc --noEmit` — exit 0
 * `npx jest --runInBand` — 249/249 suites, 2892 passed, 16 skipped, 5 todo, 0 failed
-* Commit author: `Dynasia G <dynasia@trygrowthproject.com>` on branch `feat/dunning-v1-rewrite`
+* Commit author: `Dynasia G <owner@example.com>` on branch `feat/dunning-v1-rewrite`
 
 ---
 
@@ -109,7 +109,7 @@ Day 7 (`payment-final-notice.hbs`) rewritten as "A second heads-up about your pa
 * `npx tsc --noEmit` — exit 0, clean
 * `npx jest --runInBand` — **249/249 suites, 2900 passed, 16 skipped, 5 todo, 0 failed**
 * Branch: `feat/dunning-v1-rewrite`, head `0a044da0`
-* Commit author on both: `Dynasia G <dynasia@trygrowthproject.com>` — no `Co-Authored-By` trailers
+* Commit author on both: `Dynasia G <owner@example.com>` — no `Co-Authored-By` trailers
 
 ## Skipped / out of scope
 

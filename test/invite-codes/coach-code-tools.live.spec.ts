@@ -151,22 +151,22 @@ itLive('A2 coach code tools on the real migration (live DB)', () => {
     await prisma.$disconnect();
   });
 
-  let clinicId = '';
-  let clinicCode = '';
+  let partnerId = '';
+  let partnerCode = '';
 
   it('every new attach writes exactly one ledger row; counts equal the database', async () => {
-    const { code } = await tools.create(A, { label: 'Clinic' }, `a2-live-${tag}`);
-    clinicId = code.id;
-    clinicCode = code.code;
-    await invites.attachUserToCoachByCode(id.s1, clinicCode);
-    await invites.attachUserToCoachByCode(id.s2, clinicCode);
+    const { code } = await tools.create(A, { label: 'Partner' }, `a2-live-${tag}`);
+    partnerId = code.id;
+    partnerCode = code.code;
+    await invites.attachUserToCoachByCode(id.s1, partnerCode);
+    await invites.attachUserToCoachByCode(id.s2, partnerCode);
     await invites.attachUserToCoachByCode(id.s3, linkCode);
-    await invites.attachUserToCoachByCode(id.s1, clinicCode); // replay: no row
+    await invites.attachUserToCoachByCode(id.s1, partnerCode); // replay: no row
 
     const db = await prisma.$queryRaw<Array<{ code: string; n: bigint }>>`
       SELECT code, count(*)::bigint AS n FROM "InviteRedemption" WHERE coach_id = ${id.coachA} GROUP BY code`;
     const fromDb = Object.fromEntries(db.map((r) => [r.code, Number(r.n)]));
-    expect(fromDb).toEqual({ [clinicCode]: 2, [linkCode]: 1 });
+    expect(fromDb).toEqual({ [partnerCode]: 2, [linkCode]: 1 });
 
     const out = await tools.signups(id.coachA, 7);
     expect(out.timezone).toBe('America/New_York');
@@ -176,36 +176,36 @@ itLive('A2 coach code tools on the real migration (live DB)', () => {
     );
     expect(byCode).toEqual(fromDb);
     const list = await tools.list(id.coachA);
-    expect(list.codes.find((c) => c.id === clinicId)).toMatchObject({
+    expect(list.codes.find((c) => c.id === partnerId)).toMatchObject({
       signups_total: 2,
       used_count: 2,
     });
   });
 
   it('rotation keeps every attached client on the coach; the old code answers code_revoked', async () => {
-    const rotated = await tools.rotate(A, clinicId, 0);
+    const rotated = await tools.rotate(A, partnerId, 0);
     expect(rotated.previous?.status).toBe('revoked');
     const coaches = await prisma.user.findMany({
       where: { id: { in: [id.s1, id.s2, id.s3] } },
       select: { coach_id: true },
     });
     expect(coaches.every((u) => u.coach_id === id.coachA)).toBe(true);
-    expect(await attachErr(id.late, clinicCode)).toBe('code_revoked');
-    expect(await attachErr(id.s1, clinicCode)).toBeNull(); // replay by an attached client stays a success
+    expect(await attachErr(id.late, partnerCode)).toBe('code_revoked');
+    expect(await attachErr(id.s1, partnerCode)).toBeNull(); // replay by an attached client stays a success
 
     await tools.revoke(A, rotated.code.id);
     expect(await attachErr(id.late, rotated.code.code)).toBe('code_revoked');
   });
 
   it("another coach cannot rotate or revoke this coach's code", async () => {
-    await expect(tools.rotate(B, clinicId, 0)).rejects.toMatchObject({
+    await expect(tools.rotate(B, partnerId, 0)).rejects.toMatchObject({
       response: { code: 'code_not_found' },
     });
-    await expect(tools.revoke(B, clinicId)).rejects.toMatchObject({
+    await expect(tools.revoke(B, partnerId)).rejects.toMatchObject({
       response: { code: 'code_not_found' },
     });
     const { codes } = await tools.list(id.coachB);
-    expect(codes.map((c) => c.code)).not.toContain(clinicCode);
+    expect(codes.map((c) => c.code)).not.toContain(partnerCode);
   });
 
   it('ledger RLS: the coach sees own rows; another coach, the client and anon see none', async () => {

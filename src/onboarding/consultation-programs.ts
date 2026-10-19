@@ -1,5 +1,5 @@
 /**
- * C07 — clinic program fixture validation and client-clone materialisation.
+ * C07 — consultation program fixture validation and client-clone materialisation.
  * Pure: no Prisma, no Nest.
  *
  * Contract (fixture backend_model.assignment): select a logical master, then

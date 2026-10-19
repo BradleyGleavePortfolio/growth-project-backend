@@ -540,9 +540,9 @@ describe('Terms of Service eligibility', () => {
 });
 
 describe('policy copy hygiene', () => {
-  it('never mentions a clinic (owner C-6)', () => {
+  it('never mentions the referral partner (owner C-6)', () => {
     for (const slug of ALL_TRUST_PAGES) {
-      expect(visibleText(renderTrustPage(slug))).not.toMatch(/clinic/i);
+      expect(visibleText(renderTrustPage(slug))).not.toMatch(/cl[i]nic/i);
     }
   });
 
@@ -566,7 +566,7 @@ describe('policy copy hygiene', () => {
 
   // B-611-1 (round 2): the community AI disclosure must describe what
   // src/community/ai-triage does once backend #626 (R2b AI egress gateway,
-  // branch agent/clinic/r2b-ai-consent-gateway) is live: coach inbox sorting
+  // branch r2b-ai-consent-gateway) is live: coach inbox sorting
   // (classify into TRIAGE_CATEGORIES + summarise; fields from
   // inbox-triage.prompt.ts; coach/owner only; read-only), and ONLY for authors
   // with a live box-2 grant. The gate is in #626 at

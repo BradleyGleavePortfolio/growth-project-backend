@@ -15,6 +15,8 @@ import { CommunityCohortMembersService } from '../../src/community/cohorts/commu
 import { CommunityAccessService } from '../../src/community/community-access.service';
 import { CommunityRepository } from '../../src/community/community.repository';
 import { CommunityService } from '../../src/community/community.service';
+import { CommunityCoachInboxRepository } from '../../src/community/inbox/community-coach-inbox.repository';
+import { CommunityCoachInboxService } from '../../src/community/inbox/community-coach-inbox.service';
 import {
   COMMENT_CONTEXT_TYPE,
   CommunityMessagesRepository,
@@ -214,6 +216,28 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
       for (const [path, take] of order.slice(1)) seen[path] = await take(k);
       expect({ who: k, seen }).toEqual({ who: k, seen: Object.fromEntries(order.map(([path, , want]) => [path, want(k)])) });
     }
+  });
+
+  // C6-MOVED-PRIVILEGED-READS: the coach inbox (and the AI triage, which reads through the same repository)
+  // leaves the moved client out in the query. Control first: O's chat and post in cli (1 each).
+  it('the former coach\'s inbox leaves the moved client out of cli; the public space stays', async () => {
+    const inbox = new CommunityCoachInboxService(access, new CommunityCoachInboxRepository(db));
+    const got = await read(inbox.list(user('A'), {}), (r) => r.items.map((i) => i.id));
+    expect({ mO: got?.includes('mO'), sO: got?.includes('sO') }).toEqual({ mO: true, sO: true });
+    expect(got).toEqual(['mO', 'pM', 'pN', 'sO']); // mM and sM: 0; M's post in the public space stays
+    const page = new CommunityCoachInboxRepository(db);
+    const one = await page.unansweredMessages({ cohortIds: [space.cli], limit: 1, after: null });
+    expect(one.map((m) => KEY[m.id])).toEqual(['mO']); // a page of 1 is O's, whichever row is older
+  });
+
+  it('the inbox reads under forced row security agree: the former coach reads 1 of O, then 0 of M', async () => {
+    const seen = await as('A', async (tx) => {
+      const repo = new CommunityCoachInboxRepository(stub<PrismaService>(tx));
+      const chatRows = await repo.unansweredMessages({ cohortIds: [space.cli], limit: 50, after: null });
+      const postRows = await repo.unansweredPosts({ cohortIds: [space.cli], limit: 50, after: null });
+      return [...chatRows, ...postRows].map((r) => String(KEY[r.id])).sort();
+    });
+    expect(seen).toEqual(['mO', 'sO']);
   });
 
   it('the former coach\'s roster of cli leaves the moved client out', async () => {

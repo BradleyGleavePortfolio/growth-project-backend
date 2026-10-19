@@ -184,7 +184,7 @@ describe('RegimesService', () => {
         }),
       );
     });
-    it('S-MWB-3 B-640-11: refuses a regime an active clinic consultation set uses', async () => {
+    it('S-MWB-3 B-640-11: refuses a regime an active consultation set uses', async () => {
       const updateMany = jest.fn(async () => ({ count: 1 }));
       const findFirst = jest.fn().mockResolvedValueOnce({
         id: 'reg-1',

@@ -210,7 +210,7 @@ describe('E2E SaaS smoke — owner -> coach -> client -> AI -> messaging -> bill
         max_length: 32,
         prefix: 'TGP-',
       });
-      // Clinic C13 (Grok C3): the signup-time role picker contract mobile
+      // Partner C13 (Grok C3): the signup-time role picker contract mobile
       // reads on launch. Kill switch SIGNUP_ROLE_CHOICE_ENABLED flips
       // `role_choice`; the field name / values are fixed.
       expect(policy.role_choice).toBe(true);

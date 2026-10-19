@@ -352,7 +352,7 @@ jobs:
       - name: Template rls_scoped (scoped bootstrap + the migrations it exercises, verbatim)
         # Shim, then the RLS-01 tables + dependency helper, the PR-RLS-01
         # migration (five hardened helpers) and the head-cap trigger binding a
-        # fresh database lacks; then the onboarding intake and clinic engagement
+        # fresh database lacks; then the onboarding intake and client engagement
         # migrations VERBATIM, each with its minimal bootstrap before and the
         # Supabase-default table grants after, so RLS (not a missing GRANT)
         # decides.
@@ -367,9 +367,9 @@ jobs:
             -f prisma/migrations/20270212000000_clinic_onboarding_intake/migration.sql \
             -f prisma/migrations/20270416000001_sub_coach_removed_seat/migration.sql \
             -f scripts/ci/onboarding-intake-live-grants.sql \
-            -f scripts/ci/clinic-engagement-live-bootstrap.sql \
+            -f scripts/ci/client-engagement-live-bootstrap.sql \
             -f prisma/migrations/20270213000000_clinic_engagement/migration.sql \
-            -f scripts/ci/clinic-engagement-live-grants.sql
+            -f scripts/ci/client-engagement-live-grants.sql
 
       - name: Pending and operator-only lists may only shrink (compared with the base commit)
         env:

@@ -4,7 +4,7 @@
  *
  * Two things depend on a master staying live and non-empty:
  *   - a live package that delivers it (`CoachPackageContent`), and
- *   - an active clinic consultation set (`ClinicProgramSet`, #607): onboarding
+ *   - an active consultation set (`ClinicProgramSet`, #607): onboarding
  *     completion matches each new client to one of the set's masters and
  *     refuses an archived one (`clinic_not_configured`), so archiving or
  *     emptying a set master would stop every new client of that coach from
@@ -13,7 +13,7 @@
  * Serialisation: every path that archives a master, empties it, or attaches it
  * to a package takes the master's row lock (`lockProgramMaster`) before it
  * reads the guards, so a package attach and a last-day removal can never both
- * pass on the same master. Clinic sets need no lock of their own: a set is
+ * pass on the same master. Consultation sets need no lock of their own: a set is
  * only ever published (scripts/seed-clinic-programs.ts) together with brand
  * new masters inside the same transaction, so a set can never start pointing
  * at a master that already exists.
@@ -21,13 +21,13 @@
 import { ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-export const PROGRAM_IN_CLINIC_SET = 'program_in_clinic_set';
-export const PROGRAM_IN_CLINIC_SET_NEEDS_A_DAY = 'program_in_clinic_set_needs_a_day';
+export const PROGRAM_IN_CONSULTATION_SET = 'program_in_clinic_set';
+export const PROGRAM_IN_CONSULTATION_SET_NEEDS_A_DAY = 'program_in_clinic_set_needs_a_day';
 export const PROGRAM_IN_PACKAGE_NEEDS_A_DAY = 'program_in_package_needs_a_day';
 
-export const CLINIC_SET_ARCHIVE_MESSAGE =
+export const CONSULTATION_SET_ARCHIVE_MESSAGE =
   'Your consultation matches new clients to this program, so it stays in your library. To retire it, contact support to change the programs your consultation uses.';
-export const CLINIC_SET_LAST_DAY_MESSAGE =
+export const CONSULTATION_SET_LAST_DAY_MESSAGE =
   'This is the last workout in a program your consultation gives new clients. Add another day first. To retire the program, contact support to change the programs your consultation uses.';
 export const PACKAGE_LAST_DAY_MESSAGE =
   'This is the last workout in a program that a package delivers. Add another day first, or remove the program from the package.';
@@ -71,7 +71,7 @@ export async function lockProgramMaster(
 }
 
 /** Every program_id named in a ClinicProgramSet.programs JSON value. */
-export function programIdsInClinicSet(programs: unknown): string[] {
+export function programIdsInConsultationSet(programs: unknown): string[] {
   if (!programs || typeof programs !== 'object' || Array.isArray(programs)) return [];
   const ids: string[] = [];
   for (const entry of Object.values(programs as Record<string, unknown>)) {
@@ -84,11 +84,11 @@ export function programIdsInClinicSet(programs: unknown): string[] {
 }
 
 /**
- * True when an ACTIVE clinic set of the master's coach (owner or tenant head)
+ * True when an ACTIVE consultation set of the master's coach (owner or tenant head)
  * references this master. Onboarding reads only the attached coach's active
  * set, so those are the sets that can be broken.
  */
-export async function isProgramInActiveClinicSet(
+export async function isProgramInActiveConsultationSet(
   db: Pick<Prisma.TransactionClient, 'clinicProgramSet'>,
   master: GuardedMaster,
 ): Promise<boolean> {
@@ -100,25 +100,25 @@ export async function isProgramInActiveClinicSet(
     where: { coach_id: { in: coachIds }, active: true },
     select: { programs: true },
   });
-  return sets.some((s) => programIdsInClinicSet(s.programs).includes(master.id));
+  return sets.some((s) => programIdsInConsultationSet(s.programs).includes(master.id));
 }
 
-/** Refuse to archive a master an active clinic set uses (typed 409). */
-export async function assertNotInActiveClinicSet(
+/** Refuse to archive a master an active consultation set uses (typed 409). */
+export async function assertNotInActiveConsultationSet(
   db: Pick<Prisma.TransactionClient, 'clinicProgramSet'>,
   master: GuardedMaster,
 ): Promise<void> {
-  if (await isProgramInActiveClinicSet(db, master)) {
+  if (await isProgramInActiveConsultationSet(db, master)) {
     throw new ConflictException({
-      code: PROGRAM_IN_CLINIC_SET,
-      message: CLINIC_SET_ARCHIVE_MESSAGE,
+      code: PROGRAM_IN_CONSULTATION_SET,
+      message: CONSULTATION_SET_ARCHIVE_MESSAGE,
     });
   }
 }
 
 /**
  * Refuse to remove the last live day of a master that a live package delivers
- * or an active clinic set uses. Call only when the removal WOULD leave the
+ * or an active consultation set uses. Call only when the removal WOULD leave the
  * master with no live day, under the master's row lock.
  */
 export async function assertLastDayMayGo(db: Db, master: GuardedMaster): Promise<void> {
@@ -136,10 +136,10 @@ export async function assertLastDayMayGo(db: Db, master: GuardedMaster): Promise
       message: PACKAGE_LAST_DAY_MESSAGE,
     });
   }
-  if (await isProgramInActiveClinicSet(db, master)) {
+  if (await isProgramInActiveConsultationSet(db, master)) {
     throw new ConflictException({
-      code: PROGRAM_IN_CLINIC_SET_NEEDS_A_DAY,
-      message: CLINIC_SET_LAST_DAY_MESSAGE,
+      code: PROGRAM_IN_CONSULTATION_SET_NEEDS_A_DAY,
+      message: CONSULTATION_SET_LAST_DAY_MESSAGE,
     });
   }
 }

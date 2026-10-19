@@ -374,7 +374,7 @@ animations during wallet creation --- the highest-anxiety moment in the
 crypto user journey. Creating a wallet means accepting responsibility
 for assets that can be lost permanently if the private key is lost. This
 is genuinely high-stakes. Phantom\'s design response: make the creation
-moment feel light, guided, and celebratory rather than clinical and
+moment feel light, guided, and celebratory rather than sterile and
 warning-filled. The animations do not minimize the stakes --- they
 modulate the user\'s emotional state during a moment of peak anxiety,
 making completion feel achievable rather than terrifying.\[\^22\]

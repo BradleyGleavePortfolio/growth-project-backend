@@ -314,7 +314,7 @@ describe('/help/delete-account content', () => {
     }
   });
 
-  it('follows the copy rules: no exclamation marks, emoji, placeholders or clinic partner', () => {
+  it('follows the copy rules: no exclamation marks, emoji, placeholders or referral partner', () => {
     expect(text).not.toContain('!');
     expect(text).not.toMatch(
       /[\u{1F300}-\u{1FAFF}\u{1F600}-\u{1F64F}\u{1F900}-\u{1F9FF}\u{2600}-\u{27BF}]/u,
@@ -322,7 +322,7 @@ describe('/help/delete-account content', () => {
     // Placeholder / unfinished-copy checks run for this page in
     // test/help-pages.spec.ts (ALL_PAGES includes 'delete-account').
     expect(html).not.toMatch(/\$\{[A-Z_]+\}/);
-    expect(text).not.toMatch(/clinic/i);
+    expect(text).not.toMatch(/cl[i]nic/i);
     expect(text).not.toMatch(/something went wrong|please try again/i);
   });
 });

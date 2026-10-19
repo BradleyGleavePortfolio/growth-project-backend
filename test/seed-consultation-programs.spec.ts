@@ -1,13 +1,13 @@
-// C07 — clinic program seed loader: production guard, idempotency, catalog check.
+// C07 — consultation program seed loader: production guard, idempotency, catalog check.
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { PrismaClient } from '@prisma/client';
 import {
   assertSeedAllowed,
   isProductionTarget,
-  seedClinicPrograms,
+  seedConsultationPrograms,
 } from '../scripts/seed-clinic-programs';
-import { parseFixture } from '../src/onboarding/clinic-programs';
+import { parseFixture } from '../src/onboarding/consultation-programs';
 
 const RAW = readFileSync(join(__dirname, '..', 'seed', 'clinic-programs.v1.json'), 'utf8');
 const fx = parseFixture(RAW);
@@ -166,16 +166,16 @@ describe('production guard', () => {
   it('the seed itself refuses production before touching the database', async () => {
     const w = fakeDb();
     await expect(
-      seedClinicPrograms(asClient(w.db), RAW, { ...base, env: { NODE_ENV: 'production' } }),
+      seedConsultationPrograms(asClient(w.db), RAW, { ...base, env: { NODE_ENV: 'production' } }),
     ).rejects.toThrow(/Refusing/);
     expect(w.db.user.findUnique).not.toHaveBeenCalled();
   });
 });
 
-describe('seedClinicPrograms', () => {
+describe('seedConsultationPrograms', () => {
   it('seeds three 4-week masters, one space with four cohorts, and the program set', async () => {
     const w = fakeDb();
-    const out = await seedClinicPrograms(asClient(w.db), RAW, { ...base, env: {} });
+    const out = await seedConsultationPrograms(asClient(w.db), RAW, { ...base, env: {} });
     expect(out.status).toBe('seeded');
     expect(w.programs).toHaveLength(3);
     w.programs.forEach((p) =>
@@ -205,29 +205,29 @@ describe('seedClinicPrograms', () => {
 
   it('is idempotent: a second run is a no-op', async () => {
     const w = fakeDb();
-    await seedClinicPrograms(asClient(w.db), RAW, { ...base, env: {} });
-    const again = await seedClinicPrograms(asClient(w.db), RAW, { ...base, env: {} });
+    await seedConsultationPrograms(asClient(w.db), RAW, { ...base, env: {} });
+    const again = await seedConsultationPrograms(asClient(w.db), RAW, { ...base, env: {} });
     expect(again.status).toBe('already_seeded');
     expect(w.programs).toHaveLength(3);
   });
 
   it('refuses a changed fixture under the same version', async () => {
     const w = fakeDb();
-    await seedClinicPrograms(asClient(w.db), RAW, { ...base, env: {} });
+    await seedConsultationPrograms(asClient(w.db), RAW, { ...base, env: {} });
     const changed = JSON.parse(RAW);
     changed.programs[0].data.description = 'edited';
     await expect(
-      seedClinicPrograms(asClient(w.db), JSON.stringify(changed), { ...base, env: {} }),
+      seedConsultationPrograms(asClient(w.db), JSON.stringify(changed), { ...base, env: {} }),
     ).rejects.toThrow(/different fixture hash/);
   });
 
   it('aborts before writing when a catalog slug is missing; dry run reports it', async () => {
     const w = fakeDb({ missingSlug: 'cat-cow' });
-    await expect(seedClinicPrograms(asClient(w.db), RAW, { ...base, env: {} })).rejects.toThrow(
+    await expect(seedConsultationPrograms(asClient(w.db), RAW, { ...base, env: {} })).rejects.toThrow(
       /cat-cow/,
     );
     expect(w.programs).toHaveLength(0);
-    const dry = await seedClinicPrograms(asClient(w.db), RAW, { ...base, env: {}, dryRun: true });
+    const dry = await seedConsultationPrograms(asClient(w.db), RAW, { ...base, env: {}, dryRun: true });
     expect(dry).toEqual({ status: 'dry_run', missing_slugs: ['cat-cow'], house: false });
   });
 });
@@ -236,7 +236,7 @@ describe('--house (CONSULT-ALL-BE-133, owner decision 28)', () => {
   it('marks the new set as the house set and clears the flag on any other set', async () => {
     const w = fakeDb();
     w.sets.push({ id: 'old-house', coach_id: 'coach-9', is_house: true, active: true });
-    const out = await seedClinicPrograms(asClient(w.db), RAW, { ...base, env: {}, house: true });
+    const out = await seedConsultationPrograms(asClient(w.db), RAW, { ...base, env: {}, house: true });
     expect(out).toMatchObject({ status: 'seeded', house: true });
     expect(w.sets.find((r) => r.coach_id === 'coach-1')).toMatchObject({ is_house: true });
     // The other coach's set stays active as that coach's own set.
@@ -248,8 +248,8 @@ describe('--house (CONSULT-ALL-BE-133, owner decision 28)', () => {
 
   it('on an already seeded set it only marks it; a dry run writes nothing', async () => {
     const w = fakeDb();
-    await seedClinicPrograms(asClient(w.db), RAW, { ...base, env: {} });
-    const dry = await seedClinicPrograms(asClient(w.db), RAW, {
+    await seedConsultationPrograms(asClient(w.db), RAW, { ...base, env: {} });
+    const dry = await seedConsultationPrograms(asClient(w.db), RAW, {
       ...base,
       env: {},
       house: true,
@@ -257,7 +257,7 @@ describe('--house (CONSULT-ALL-BE-133, owner decision 28)', () => {
     });
     expect(dry).toEqual({ status: 'dry_run', missing_slugs: [], house: true });
     expect(w.sets[0].is_house).toBe(false);
-    const out = await seedClinicPrograms(asClient(w.db), RAW, { ...base, env: {}, house: true });
+    const out = await seedConsultationPrograms(asClient(w.db), RAW, { ...base, env: {}, house: true });
     expect(out).toMatchObject({ status: 'already_seeded', house: true });
     expect(w.sets).toHaveLength(1);
     expect(w.sets[0].is_house).toBe(true);
@@ -267,7 +267,7 @@ describe('--house (CONSULT-ALL-BE-133, owner decision 28)', () => {
   it('the production guard still applies with --house', async () => {
     const w = fakeDb();
     await expect(
-      seedClinicPrograms(asClient(w.db), RAW, {
+      seedConsultationPrograms(asClient(w.db), RAW, {
         ...base,
         env: { NODE_ENV: 'production' },
         house: true,

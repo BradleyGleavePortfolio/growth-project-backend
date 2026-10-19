@@ -13,7 +13,7 @@ Scope tight to v1 spec (R52). `app.module.ts` untouched — providers live in th
 https://github.com/BradleyGleavePortfolio/growth-project-backend/pull/282
 
 Title: `feat(notifications): Nudge v1 — 4 triggers, frequency cap, quiet hours, opt-out`
-Author: `Dynasia G <dynasia@trygrowthproject.com>`
+Author: `Dynasia G <owner@example.com>`
 Branch: `feat/nudge-v1-wiring` → `main`
 
 ## Sample Copy (from `src/notifications/nudges/copy.ts`)
@@ -80,7 +80,7 @@ Added 5 engine tests: deferred row re-runs through gates and delivers when windo
 
 **P3 items intentionally skipped** (per scope discipline / R52): `SUPPRESSED_QUIET_HOURS` unused enum, no metrics counters, subject trailing-comma when `first_name` is missing, UTC-only detector windows for other detectors, no reaper for stuck `reprocessing` rows, missing `orderBy` on deferred `findMany`.
 
-### Commits (Dynasia G <dynasia@trygrowthproject.com>, no Co-Authored-By)
+### Commits (Dynasia G <owner@example.com>, no Co-Authored-By)
 
 ```
 2240ef95  fix(notifications): P2-1 + P2-2 + P2-3 — N+1 elimination, DST-correct streak detector, subscription-state gate

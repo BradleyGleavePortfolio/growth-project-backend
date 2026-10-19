@@ -20,7 +20,7 @@ import { CoachSharingNoticeProperty } from '../consent/coach-sharing-notice';
 // is stripped/rejected — preventing mass-assignment on role/coach_id.
 // See audit C3/C4.
 
-// Clinic launch C13 (owner direction 2026-09-30): anyone who downloads the app
+// Partner launch C13 (owner direction 2026-09-30): anyone who downloads the app
 // may self-select client vs coach WHEN CREATING the account. `intended_role`
 // is honoured only by the code path that inserts a brand-new User row
 // (/auth/register, and /auth/google + /auth/apple on first contact). It is
@@ -119,7 +119,7 @@ export class GoogleAuthDto {
   coach_sharing_notice?: string;
 }
 
-// Clinic launch C02 — the mobile Sign in with Apple body (growth-project-mobile
+// Partner launch C02 — the mobile Sign in with Apple body (growth-project-mobile
 // src/utils/appleAuth.ts + src/services/api.ts appleAuth) is:
 //   { identity_token, authorization_code?, email?, full_name?: {given_name, family_name}, invite_code? }
 // while older clients send { token, full_name?: string, invite_code?, raw_nonce? }.

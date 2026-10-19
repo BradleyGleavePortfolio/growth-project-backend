@@ -69,7 +69,7 @@ export const AuditAction = {
   // was missed.
   NOTIFICATION_PREF_CHANGE: 'notification.pref_change',
 
-  // --- Entitlement grants (clinic C01) — $0 ClientPurchase rows created
+  // --- Entitlement grants (partner C01) — $0 ClientPurchase rows created
   // by InviteGrantService (invite-code package bindings, free packages).
   ENTITLEMENT_GRANTED: 'entitlement.granted',
   ENTITLEMENT_GRANT_REVOKED: 'entitlement.grant_revoked',
@@ -229,7 +229,7 @@ export class AuditService {
 
   /**
    * Transactional, THROWING variant for elevations that must not exist
-   * without their audit row (clinic C13: signup-time coach provisioning).
+   * without their audit row (partner C13: signup-time coach provisioning).
    * Runs on the caller's `tx` so a failed audit insert rolls the whole
    * transaction back instead of being logged and forgotten. Deliberately
    * ignores the AUDIT_LOGGING_ENABLED kill switch — that switch exists for
