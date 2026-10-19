@@ -108,8 +108,9 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
       await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, ROLE(k));
       return query(tx);
     });
+  // "id" is uuid on the three community tables and text on CommunityWin, so compare as text.
   const count = (k: Key, table: string, row: string) =>
-    as(k, (tx) => tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS "n" FROM "${table}" WHERE "id" = $1::uuid`, id[row]))
+    as(k, (tx) => tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS "n" FROM "${table}" WHERE "id"::text = $1`, id[row]))
       .then((r) => r[0].n);
   // The keys a read hands the person, sorted; null when it answers 404.
   const read = async <T>(p: Promise<T>, ids: (r: T) => string[]): Promise<string[] | null> => {
