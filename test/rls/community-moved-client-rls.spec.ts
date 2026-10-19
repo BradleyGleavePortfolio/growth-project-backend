@@ -35,6 +35,8 @@ import { CommunityPostsService } from '../../src/community/posts/community-posts
 import { CommunityReactionsRepository } from '../../src/community/reactions/community-reactions.repository';
 import type { CommunityRealtimeService } from '../../src/community/realtime/community-realtime.service';
 import { CommunitySafetyService } from '../../src/community/safety/community-safety.service';
+import { CommunitySearchRepository } from '../../src/community/search/community-search.repository';
+import { CommunitySearchService } from '../../src/community/search/community-search.service';
 import { CommunityVoiceRepository } from '../../src/community/voice/community-voice.repository';
 import { CommunityVoiceService } from '../../src/community/voice/community-voice.service';
 import type { VoiceUploadProvider } from '../../src/community/voice/voice-upload.provider';
@@ -68,6 +70,8 @@ const COMMENTS: Record<string, Key> = { cO: 'O', cM: 'M' }; // on sO
 const CHAT: Record<string, Key> = { mO: 'O', mM: 'M' }; // in cli
 const VOICE: Record<string, Key> = { vO: 'O', vM: 'M' }; // in cli
 const WINS: Record<string, [Key, Coach]> = { wO: ['O', 'A'], wM: ['M', 'A'], wM2: ['M', 'B'], wW: ['W', 'B'] }; // [author, coach_id]
+const FINDS: Record<string, [Key, Place]> = { fO: ['O', 'hallA'], fM: ['M', 'hallA'], fOc: ['O', 'cli'], fMc: ['M', 'cli'],
+  fMp: ['M', 'pub'], fMb: ['M', 'hallB'], fWb: ['W', 'bcli'] }; // search index rows, [author, place]
 // The fix: an author stays in a place unless they are a client the place's coach no longer coaches, outside a
 // public space. A person always reads their own row.
 const stays = (a: Key, p: Place) => p === 'pub' || ROLE(a) === 'coach' || COACH[a] === COMMUNITY[p];
@@ -97,7 +101,7 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
     push, db, stub<VoiceUploadProvider>({}));
   const uuids = <K extends string>(list: readonly K[]) => Object.fromEntries(list.map((k) => [k, randomUUID()])) as Record<K, string>;
   const id = uuids([...PEOPLE, ...Object.keys(POSTS), ...Object.keys(COMMENTS), ...Object.keys(CHAT), ...Object.keys(VOICE),
-    ...Object.keys(WINS)]);
+    ...Object.keys(WINS), ...Object.keys(FINDS)]);
   const KEY = Object.fromEntries(Object.entries(id).map(([k, v]) => [v, k]));
   const sub = uuids(PEOPLE);
   const ws = uuids(['A', 'B'] as const);
@@ -115,7 +119,7 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
       await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, ROLE(k));
       return query(tx);
     });
-  // "id" is uuid on the three community tables and text on CommunityWin, so compare as text.
+  // "id" is uuid on the three community tables and text on CommunityWin and the search index, so compare as text.
   const count = (k: Key, table: string, row: string) =>
     as(k, (tx) => tx.$queryRawUnsafe<{ n: number }[]>(`SELECT count(*)::int AS "n" FROM "${table}" WHERE "id"::text = $1`, id[row]))
       .then((r) => r[0].n);
@@ -199,13 +203,17 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
     for (const [key, [a, c]] of Object.entries(WINS)) {
       await prisma.communityWin.create({ data: { id: id[key], user_id: id[a], coach_id: id[c], title: 'RLS win', description: 'RLS win' } });
     }
+    for (const [key, [a, p]] of Object.entries(FINDS)) {
+      await prisma.communitySearchEntry.create({ data: { id: id[key], workspaceId: wsOf(p), cohortId: where(p), kind: 'post',
+        targetId: id[key], authorId: id[a], excerpt: `kettlebell ${key}`, visibleToRoles: ['coach', 'assistant', 'student'] } });
+    }
   });
   afterAll(() => prisma.$disconnect());
 
   it('runs as a role that does not bypass row security, on tables that force it', async () => {
     expect(await as('V', (tx) => tx.$queryRaw<{ b: boolean }[]>`
       SELECT "rolbypassrls" AS "b" FROM pg_roles WHERE "rolname" = current_user`)).toEqual([{ b: false }]);
-    const tables = ['CommunityWin', 'community_messages', 'community_posts', 'community_voice_notes'];
+    const tables = ['CommunityWin', 'community_messages', 'community_posts', 'community_search_entries', 'community_voice_notes'];
     const forced = await prisma.$queryRaw<{ t: string }[]>`SELECT c."relname" AS "t" FROM pg_class c JOIN pg_namespace n ON n."oid" = c."relnamespace"
       WHERE n."nspname" = 'public' AND c."relname" = ANY(${tables}) AND c."relrowsecurity" AND c."relforcerowsecurity"`;
     expect(forced.map((r) => r.t).sort()).toEqual([...tables].sort());
@@ -304,16 +312,44 @@ const boardOf = (k: Key) => [...PEOPLE].filter((p) => COACH[k] !== null && COACH
     expect({ O: roster?.includes('O'), V: roster?.includes('V'), M: roster?.includes('M') }).toEqual({ O: true, V: true, M: false });
   });
 
+  // C6-MOVED-SEARCH: community search asks the same rule in its query. Control first: while M is A's client,
+  // A, O and V find M's Hall and cli rows (1 each); after the move they do not (0), the public space stays,
+  // and M's new community finds M. Everyone else is answered 404.
+  it('community search follows the client: found before the move, not by the old circle after it, found by the new', async () => {
+    const search = new CommunitySearchService(new CommunitySearchRepository(db), access,
+      stub<AnalyticsService>({ capture: () => undefined }), safety);
+    const find = (k: Key, c: Coach) => read(search.search(user(k), ws[c], { q: 'kettlebell' }), (r) => r.results.map((f) => f.targetId));
+    const inWs = (c: Coach, keep: (a: Key, p: Place) => boolean) => keys(FINDS, ([a, p]) => COMMUNITY[p] === c && keep(a, p));
+    try {
+      await prisma.user.update({ where: { id: id.M }, data: { coach_id: id.A } });
+      for (const k of ['A', 'O', 'V'] as const) {
+        expect({ k, got: await find(k, 'A') }).toEqual({ k, got: inWs('A', (_a, p) => OPENS[p].includes(k)) });
+      }
+    } finally {
+      await prisma.user.update({ where: { id: id.M }, data: { coach_id: id.B } });
+    }
+    for (const k of PEOPLE) {
+      for (const c of ['A', 'B'] as const) {
+        const want = OPENS[c === 'A' ? 'hallA' : 'hallB'].includes(k) ? inWs(c, (a, p) => sees(k, a, p)) : null;
+        expect({ k, c, got: await find(k, c) }).toEqual({ k, c, got: want });
+      }
+    }
+  });
+
   // The row layer: [viewer, table, row, rows read]; each viewer's first read is a 1.
   const ROW_READS: Array<[Key, Array<[string, string, 0 | 1]>]> = [
     ...(['A', 'V'] as const).map((k): [Key, Array<[string, string, 0 | 1]>] => [k, [
       ['community_posts', 'hO', 1], ['community_posts', 'hM', 0], ['community_posts', 'sM', 0], ['community_posts', 'pM', 1],
       ['community_messages', 'cO', 1], ['community_messages', 'cM', 0], ['community_messages', 'mO', 1], ['community_messages', 'mM', 0],
-      ['community_voice_notes', 'vO', 1], ['community_voice_notes', 'vM', 0], ['CommunityWin', 'wO', 1], ['CommunityWin', 'wM', 0]]]),
+      ['community_voice_notes', 'vO', 1], ['community_voice_notes', 'vM', 0], ['CommunityWin', 'wO', 1], ['CommunityWin', 'wM', 0],
+      ['community_search_entries', 'fO', 1], ['community_search_entries', 'fM', 0], ['community_search_entries', 'fMc', 0],
+      ['community_search_entries', 'fMp', 1]]]),
     ['B', [['community_posts', 'hB', 1], ['community_posts', 'hA', 0], ['community_posts', 'hO', 0], ['community_posts', 'sO', 0],
-      ['community_messages', 'mO', 0], ['community_voice_notes', 'vO', 0]]],
-    ['W', [['CommunityWin', 'wW', 1], ['CommunityWin', 'wM', 0], ['community_posts', 'hM', 0], ['community_posts', 'hO', 0]]],
-    ['M', [['CommunityWin', 'wM', 1], ['CommunityWin', 'wM2', 1]]],
+      ['community_messages', 'mO', 0], ['community_voice_notes', 'vO', 0], ['community_search_entries', 'fMb', 1],
+      ['community_search_entries', 'fO', 0]]],
+    ['W', [['CommunityWin', 'wW', 1], ['CommunityWin', 'wM', 0], ['community_posts', 'hM', 0], ['community_posts', 'hO', 0],
+      ['community_search_entries', 'fMb', 1]]],
+    ['M', [['CommunityWin', 'wM', 1], ['CommunityWin', 'wM2', 1], ['community_search_entries', 'fMb', 1]]],
   ];
 
   it('the row layer agrees: the former coach and circle read 0 of the moved client, the new coach 0 of the old community', async () => {
