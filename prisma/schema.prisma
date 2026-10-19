@@ -214,6 +214,7 @@ model User {
   food_favorites                 FoodFavorite[]
   saved_meals                    SavedMeal[]
   workouts                       WorkoutSession[]
+  workout_comments               WorkoutComment[]
   fasting_windows                FastingWindow[]
   weight_logs                    WeightLog[]
   notification_prefs             NotificationPreferences?
@@ -1074,10 +1075,28 @@ model WorkoutSession {
   intensity        Intensity     @default(moderate)
   notes            String?
   exercises        ExerciseSet[]
+  comments         WorkoutComment[]
   created_at       DateTime      @default(now())
 
   // Hot path: coach alerts, community leaderboard, workout history all filter by (user_id, date).
   @@index([user_id, date])
+}
+
+// TRAIN-BE2: a coach's comment on a client's logged workout, one per coach per workout. Row rules:
+// 20270502006300_workout_comments (the client reads every comment on their workouts; a coach reads only
+// their own, while the client is theirs; only the server writes).
+model WorkoutComment {
+  id         String         @id @default(uuid())
+  workout_id String
+  workout    WorkoutSession @relation(fields: [workout_id], references: [id], onDelete: Cascade)
+  coach_id   String
+  coach      User           @relation(fields: [coach_id], references: [id], onDelete: Cascade)
+  body       String
+  created_at DateTime       @default(now())
+  updated_at DateTime       @updatedAt
+
+  @@unique([workout_id, coach_id])
+  @@index([coach_id])
 }
 
 model ExerciseSet {
@@ -1085,6 +1104,8 @@ model ExerciseSet {
   workout_id     String
   workout        WorkoutSession @relation(fields: [workout_id], references: [id])
   exercise_name  String
+  // TRAIN-BE2: the catalog id the app logged the set under (as WorkoutPlanExercise.exercise_external_id), for exact history.
+  exercise_external_id String?
   muscle_group   MuscleGroup
   sets_completed Int
   reps_per_set   Int[]
