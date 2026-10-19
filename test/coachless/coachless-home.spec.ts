@@ -81,11 +81,6 @@ describe('GET /coachless/home', () => {
       (db: any) => (db.state.featuredCoachConfig[0].accepting_clients = false),
     ],
     [
-      'coach subscription canceled',
-      (db: any) =>
-        (db.state.coachSubscription.find((s: any) => s.coach_id === COACH_B).status = 'canceled'),
-    ],
-    [
       'code belongs to another coach',
       (db: any) => (db.state.featuredCoachConfig[0].code = 'GP-AAAAAA'),
     ],
@@ -113,6 +108,13 @@ describe('GET /coachless/home', () => {
       expect(r.featured_coach).toBeNull();
     },
   );
+
+  it('TM-P1: the offer stays on when the featured coach\'s old subscription row is canceled', async () => {
+    const { home, db, featured } = await withOffer();
+    db.state.coachSubscription.find((s) => s.coach_id === COACH_B)!.status = 'canceled';
+    featured.invalidate();
+    expect((await home.home(STUDENT)).banner).toMatchObject({ code: 'GP-BBBBBB' });
+  });
 
   it('a package of another coach is never offered as the featured package', async () => {
     const { home } = await withOffer({ package_id: PKG_A });

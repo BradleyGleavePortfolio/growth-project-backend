@@ -12,7 +12,7 @@ import type {
 } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunitySafetyService } from '../safety/community-safety.service';
-import { memberFirstName } from '../member-display-name';
+import { FULL_NAME_VISIBILITY, memberName } from '../member-display-name';
 import {
   AssignTargetScope,
   CommunityCohortMembersRepository,
@@ -122,18 +122,20 @@ export class CommunityCohortMembersService {
   /**
    * The coach sees every field and, on the roster, why the person is in
    * (C6-BVIS; `access` is null where it is not worked out). Anyone else sees
-   * the first name and role only (client privacy).
+   * the name and role only (client privacy): the first name, or the full name
+   * where `fullName` says so (#C6-MEMBER-NAMES).
    */
   private memberView(
     p: SpacePerson,
     coachView: boolean,
     role: CohortMemberView['role'],
     access: CohortMemberView['access'] = null,
+    fullName = false,
   ): CohortMemberView {
     return {
       id: p.row?.id ?? null,
       user_id: p.id,
-      display_name: coachView ? p.name : memberFirstName(p.name),
+      display_name: coachView ? p.name : memberName(p.name, fullName),
       role,
       status: coachView ? (p.row?.status ?? 'active') : null,
       email: coachView ? p.email : null,
@@ -211,8 +213,11 @@ export class CommunityCohortMembersService {
       return { reason, package_id: sale?.package_id ?? null, until: sale?.until?.toISOString() ?? null };
     };
 
+    // #C6-MEMBER-NAMES: in a space open to all of the coach's clients, the people in it see each
+    // other's full names; every other space keeps first names. Only readers the rule lets in get here.
+    const fullNames = cohort.visibility === FULL_NAME_VISIBILITY;
     return CohortMemberListResponseSchema.parse({
-      members: visible.map((p) => this.memberView(p, isCoach, roleOf(p), why(p, roleOf(p)))),
+      members: visible.map((p) => this.memberView(p, isCoach, roleOf(p), why(p, roleOf(p)), fullNames)),
       next_cursor: page.length === limit ? this.encodeCursor(page[page.length - 1].id) : null,
     });
   }

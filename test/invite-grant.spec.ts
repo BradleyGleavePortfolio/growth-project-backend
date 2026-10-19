@@ -1305,6 +1305,18 @@ describe('B-PACKAGE-135 — a client joins a coach only together with one packag
     ).toBe(false);
   });
 
+  it('TM-P1: a paid join is allowed whatever the coach\'s old subscription row says (missing or canceled)', async () => {
+    const prisma = fixtures();
+    bindRow(prisma, PKG_PAID);
+    for (const sub of [null, { status: 'canceled' }]) {
+      prisma.coachSubscription.findUnique.mockResolvedValue(sub);
+      expect(
+        await paidJoinAllowed(asPrisma(prisma), { email: 'c1@example.com' }, { id: PKG_PAID, coach_id: COACH }, 'GP-ROW001'),
+      ).toBe(true);
+    }
+    expect(prisma.coachSubscription.findUnique).not.toHaveBeenCalled();
+  });
+
   it('zero packages: one free "Getting started" package is created for the coach, then reused', async () => {
     const prisma = fixtures();
     const { inviteCodes } = await build(prisma);

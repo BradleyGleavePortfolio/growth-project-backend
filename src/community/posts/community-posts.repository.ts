@@ -60,7 +60,8 @@ export class CommunityPostsRepository {
 
   /**
    * Stored names of the given users, keyed by id. The service reduces each to
-   * a first name before anything leaves the API (member privacy).
+   * a first name, or a full name where fullNamesFor allows, before anything
+   * leaves the API (member privacy).
    */
   async namesByUserId(userIds: string[]): Promise<Map<string, string>> {
     const ids = [...new Set(userIds)];

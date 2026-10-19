@@ -119,15 +119,20 @@ describe('CommunityCohortMembersService', () => {
       expect(repo.packageAccess).toHaveBeenCalledWith(COHORT_A, coachA.id, [sam.id, coachA.id]);
     });
 
-    it('sanitizes the roster for a non-coach the rule lets in (no PII/status)', async () => {
-      access.findCohort.mockResolvedValue(space());
+    // #C6-MEMBER-NAMES: full names in a space open to all of the coach's clients; first names elsewhere.
+    it.each([
+      ['clients', 'Jane Client'],
+      ['package', 'Jane'],
+      ['members', 'Jane'],
+      ['public', 'Jane'],
+    ])('sanitizes the roster for a non-coach the rule lets in (no PII/status): %s space -> %s', async (visibility, name) => {
+      access.findCohort.mockResolvedValue(space(visibility));
       access.isWorkspaceCoach.mockResolvedValue(false);
       access.canAccessCohort.mockResolvedValue(true);
       repo.people.mockResolvedValue([jane]);
 
       const res = await service.list(student, COHORT_A, {} as never);
-      // client privacy: other members see the first name only
-      expect(res.members[0]).toMatchObject({ display_name: 'Jane', status: null, email: null, joined_at: null, access: null });
+      expect(res.members[0]).toMatchObject({ display_name: name, status: null, email: null, joined_at: null, access: null });
     });
 
     it('404s a reader the rule keeps out (non-leak)', async () => {
