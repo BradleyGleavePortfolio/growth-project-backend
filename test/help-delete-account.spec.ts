@@ -222,7 +222,7 @@ describe('/help/delete-account content', () => {
       'Health and activity data synced from Apple Health or connected devices, and bloodwork you entered, including uploaded files',
       'Your conversations with Roman, the AI assistant',
       'Your messages, community posts, comments, direct messages, voice notes and reactions',
-      'Coach media, notes and briefs, if you coach',
+      'Coach media, notes and briefs, if you coach, except the video or file of each lesson your clients keep (see below)',
       'Your targets, recipes, lists and preferences',
       'Notification settings and push notification tokens',
     ]) {
@@ -241,6 +241,10 @@ describe('/help/delete-account content', () => {
       'One deletion record with a random reference, the date and the result. It holds no name, email or account details.',
     );
     expect(text).toContain('If you coach: your clients are not deleted.');
+    // OPERATOR RULING (agent 160, #1105 LEARN-FROZEN-MEDIA): kept lessons keep their media.
+    expect(text).toContain(
+      'They keep their own data, the plans you assigned them, and the lessons they completed or that are in a course they are enrolled in, including the video or file each of those lessons plays, without your contact details, and are no longer linked to you. Only a client who keeps a lesson can open its video or file.',
+    );
     expect(text).toContain(
       'database backups and copies are never kept more than six months after a confirmed deletion request',
     );

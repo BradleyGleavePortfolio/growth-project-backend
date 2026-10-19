@@ -79,6 +79,13 @@ describe('PRIVACY-PAGES (agent 160)', () => {
     );
   });
 
+  it('OPERATOR RULING (#1105 LEARN-FROZEN-MEDIA): /privacy says what a coach deletion leaves with clients', () => {
+    const deletion = privacy.slice(privacy.indexOf('Deleting your account'));
+    expect(deletion).toContain(
+      'If you coach, deleting your account does not delete your clients: they keep their own data, the plans you assigned them, and the lessons they completed or that are in a course they are enrolled in, including the video or file each of those lessons plays. Only a client who keeps a lesson can open its video or file.',
+    );
+  });
+
   it('bumps the last-reviewed date for the changed copy', () => {
     expect(POLICY_LAST_REVIEWED >= '2026-10-19').toBe(true);
   });

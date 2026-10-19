@@ -355,6 +355,9 @@ function privacyContent(): TrustPageContent {
             'While removing your sign-in account at your sign-in provider is still being retried, we also keep that provider’s account ID. ' +
             'While asking our service providers to delete their copies is still being retried, we also keep the email address and Stripe customer reference they need. ' +
             `Once it is removed, we keep only ${ONE_WAY_CODE_TEXT}.`,
+          // OPERATOR RULING (agent 160, from #1105 LEARN-FROZEN-MEDIA; #1096
+          // kept lessons): what a coach's deletion leaves with their clients.
+          'If you coach, deleting your account does not delete your clients: they keep their own data, the plans you assigned them, and the lessons they completed or that are in a course they are enrolled in, including the video or file each of those lessons plays. Only a client who keeps a lesson can open its video or file.',
           `You can also ask us to delete your account, or only some of your health data, by emailing ${SUPPORT_EMAIL}. We tell our service providers about deletion requests so they delete their copies too. At Stripe, we delete your customer record and saved cards; Stripe keeps the payment records the law requires.`,
         ],
         links: [

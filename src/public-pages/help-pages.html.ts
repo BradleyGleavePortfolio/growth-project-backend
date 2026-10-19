@@ -704,7 +704,9 @@ function deleteAccountContent(): HelpPageContent {
           'Health and activity data synced from Apple Health or connected devices, and bloodwork you entered, including uploaded files',
           'Your conversations with Roman, the AI assistant',
           'Your messages, community posts, comments, direct messages, voice notes and reactions',
-          'Coach media, notes and briefs, if you coach',
+          // OPERATOR RULING (agent 160, from #1105 LEARN-FROZEN-MEDIA): a
+          // coach's media that a client's kept lesson plays is kept.
+          'Coach media, notes and briefs, if you coach, except the video or file of each lesson your clients keep (see below)',
           'Your targets, recipes, lists and preferences',
           'Notification settings and push notification tokens',
         ],
@@ -722,7 +724,7 @@ function deleteAccountContent(): HelpPageContent {
           // deletion paragraph and retention list, from shared strings.
           `Closed account: ${CLOSED_ACCOUNT_RECORD_TEXT}, so the payment records and logs that must be kept still point to one closed account. It is kept with no end date.`,
           `While removing your sign-in account at your sign-in provider is still being retried, that provider’s account ID is kept. Once it is removed, the account ID is replaced by ${ONE_WAY_CODE_TEXT}.`,
-          'If you coach: your clients are not deleted. They keep their own data and the plans you assigned them, without your contact details, and are no longer linked to you.',
+          'If you coach: your clients are not deleted. They keep their own data, the plans you assigned them, and the lessons they completed or that are in a course they are enrolled in, including the video or file each of those lessons plays, without your contact details, and are no longer linked to you. Only a client who keeps a lesson can open its video or file.',
           'Backups: database backups and copies are never kept more than six months after a confirmed deletion request. Copies of the database made before an update to the service are deleted 30 days after the update is verified, and never kept beyond 90 days.',
           'Security and audit logs: as long as needed to protect the service and meet legal duties.',
           `What Anthropic received: ${ANTHROPIC_RETENTION_TEXT}`,
