@@ -244,6 +244,20 @@ describe('GC-1 pay page GET /p/:token', () => {
       for (const s of shown) expect(res.body).toContain(s);
       for (const s of hidden) expect(res.body).not.toContain(s);
     });
+
+    // #GC-CANCEL-WORDS op 1: the amount in the renewal line is each package's own
+    // server-computed recurring price and period (never a literal, never due today).
+    it('the renewal line carries each package\'s own recurring price and period', async () => {
+      const C = 'tokCCCCCCCCCCCCCCCCCC';
+      const line = (each: string) =>
+        `Renews automatically at ${each} until you cancel. Cancel anytime in the TGP Fitness app, under Your plans; you keep the plan until the end of the period you paid for.`;
+      rows[B] = pkg(B, { billing_type: 'one_time', interval: null, amount_cents: 10000, recurring_amount_cents: 8900, recurring_interval: 'week', recurring_interval_count: 2 });
+      rows[C] = pkg(C, { amount_cents: 120000, interval: 'year' });
+      const terms = async (t: string) => /<p class="terms">(.*?)<\/p>/.exec((await get(`/p/${t}`)).body)?.[1];
+      expect(await terms(A)).toBe(line('$149.00 a month'));
+      expect(await terms(B)).toBe(line('$89.00 every 2 weeks'));
+      expect(await terms(C)).toBe(line('$1,200.00 a year'));
+    });
   });
 
   // The page's own script, run with stand-ins for the DOM, Stripe.js and

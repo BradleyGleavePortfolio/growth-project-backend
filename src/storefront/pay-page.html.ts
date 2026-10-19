@@ -63,7 +63,7 @@ export function payPageTerms(p: PublicPackageData) {
         r.one_time_cents > 0
           ? `You pay ${due} today: ${usd(r.one_time_cents)} once plus your first ${first} at ${usd(r.amount_cents)}.`
           : `You pay ${due} today for your first ${first}.`,
-      renewal: `Renews automatically at ${each} until you cancel. Cancel anytime in Your plans; you keep the plan until the end of the period you paid for.`,
+      renewal: `Renews automatically at ${each} until you cancel. Cancel anytime in the TGP Fitness app, under Your plans; you keep the plan until the end of the period you paid for.`,
     },
   };
 }
