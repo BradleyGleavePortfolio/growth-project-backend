@@ -141,9 +141,11 @@ export class CommunityCohortWriteRepository {
    * members. Messages and posts are intentionally left intact (still readable);
    * only membership status changes. Sets archived_at + status='archived'.
    */
-  /** How many of `ids` are packages of this coach. */
+  /** How many of `ids` are live packages of this coach (C6-ACCESS: not archived, not switched off). */
   async coachPackageCount(coachId: string, ids: string[]): Promise<number> {
-    return this.prisma.coachPackage.count({ where: { coach_id: coachId, id: { in: ids } } });
+    return this.prisma.coachPackage.count({
+      where: { coach_id: coachId, id: { in: ids }, is_active: true, archived_at: null },
+    });
   }
 
   async archive(cohortId: string): Promise<CohortWithPackages> {
