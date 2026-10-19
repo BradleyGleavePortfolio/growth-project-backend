@@ -106,7 +106,7 @@ type Download = Record<string, Array<Record<string, unknown>>>;
     expect(learn(await download(B))).toEqual(kept);
   });
 
-  it('erasing the coach keeps a course a client is enrolled in whole, with their progress; the rest goes', async () => {
+  it('erasing the coach keeps every week and lesson of a course a client is in, and their progress; the rest goes', async () => {
     const ids = (rows: Array<{ id: string }>) => set(...rows.map((r) => r.id));
     const content = async () => ({
       courses: ids(await prisma.course.findMany({ where: { coach_id: K }, select: { id: true } })),

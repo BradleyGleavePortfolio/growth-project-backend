@@ -182,7 +182,7 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'Recipe', field: 'created_by_id', action: del },
   // Lessons other people completed stay (frozen content); the rest are removed,
   // except a course lesson while anyone is enrolled in its course (PRIVACY-SWEEP:
-  // the client keeps the whole course and their progress on it, policy 2).
+  // the client keeps every week and lesson row and their progress, policy 2).
   {
     model: 'Lesson',
     field: 'coach_id',
