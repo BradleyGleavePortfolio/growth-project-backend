@@ -45,7 +45,7 @@ export { SUPPORT_EMAIL } from './trust-pages.html';
 
 // Last-reviewed date for the help copy. Bump on substantive edits so the
 // freshness signal at the top of each page reflects reality.
-export const HELP_LAST_REVIEWED = '2026-10-07';
+export const HELP_LAST_REVIEWED = '2026-10-19';
 
 // Token defaults align with the staging/production hostnames described in
 // docs/help/_tokens.md. The renderer never invents values that depend on
@@ -634,9 +634,10 @@ function contactContent(): HelpPageContent {
 // /help/delete-account — Google Play account-deletion page.
 //
 // Public, no login. Every fact here comes from code or the published policy:
-//  - Current in-app path (client: profile tab > Settings >
-//    Account > Delete account; coach: Settings tab > Privacy & Data >
-//    Delete my account; DeleteAccountScreen re-auth and "Keep my account").
+//  - Current in-app path (client: You tab > Settings > Account > Delete
+//    account; coach: Settings, from the Settings tab or, with the six coach
+//    tabs (coachTabsV2), the gear on Overview > Privacy and data > Delete my
+//    account; DeleteAccountScreen re-auth and "Keep my account").
 //  - 14-day grace + nightly finalization within a day: backend #608
 //    src/account-deletion/account-deletion.service.ts (graceDays default 14,
 //    FINALIZE_WINDOW_MS one day); admin force-delete has no grace period.
@@ -662,8 +663,8 @@ function deleteAccountContent(): HelpPageContent {
           'You can delete your account yourself in the app. You do not need to email us.',
         ],
         bullets: [
-          'If you are a client: open the profile tab (the person icon in the bottom bar), tap Settings, then under Account tap Delete account.',
-          'If you are a coach: open the Settings tab, then under Privacy & Data tap Delete my account.',
+          'If you are a client: open the You tab (the person icon in the bottom bar), tap Settings, then under Account tap Delete account.',
+          'If you are a coach: open Settings (the Settings tab, or the gear at the top of Overview if your bottom bar has no Settings tab), then under Privacy and data tap Delete my account.',
           'Read what will be deleted and what we keep, type DELETE or your account email, then confirm it is you with your password, Sign in with Apple or Google, whichever you use to sign in.',
           'Your deletion is scheduled straight away and the app shows the date it becomes permanent. Until then you can open the same screen and tap Keep my account to cancel it.',
         ],

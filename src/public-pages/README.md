@@ -18,8 +18,9 @@ public host `app.trygrowthproject.com`. Two clusters live here:
 - **Account deletion page** — `/help/delete-account` (rendered by
   `help-pages.html.ts`, public, no login). The web URL filed in Google
   Play's data-deletion section: app and developer name, the in-app path
-  (client: Profile → Settings → Account → Delete account; coach: Settings →
-  Privacy & Data → Delete my account), the email route for people without the app, what is
+  (client: You → Settings → Account → Delete account; coach: Settings, from
+  the Settings tab or the gear on Overview → Privacy and data → Delete my
+  account), the email route for people without the app, what is
   deleted and kept, and the timings. Linked from the Privacy Policy, the
   `/help` nav and overview, and the shared policy footer. Ships with
   backend #608 / mobile #313; pinned by `test/help-delete-account.spec.ts`.

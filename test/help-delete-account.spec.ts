@@ -4,8 +4,12 @@
 // is linked from the Privacy Policy, /help and the shared footer, and states
 // only facts taken from code or the published policies:
 //  - current in-app path and confirmation steps:
-//    (src/screens/client/SettingsScreen.tsx "Account" > "Delete account";
-//    src/screens/coach/settings/DangerZone.tsx "Privacy & Data" >
+//    (client: the "You" tab, src/navigation/ClientNavigator.tsx MoreTab, >
+//    "Settings" > src/screens/client/SettingsScreen.tsx "Account" > "Delete
+//    account"; coach: Settings, the "Settings" tab or, with the six coach
+//    tabs (coachTabsV2), the Overview gear in
+//    src/screens/coach/command-center/CommandCenterScreen.tsx >
+//    src/screens/coach/settings/DangerZone.tsx "Privacy and data" >
 //    "Delete my account"; src/screens/settings/DeleteAccountScreen.tsx
 //    "Type DELETE or <email>", password / Apple / Google re-auth,
 //    "Keep my account", PERMANENTLY_DELETED, KEPT_RECORDS, BILLING_NOTE);
@@ -174,12 +178,16 @@ describe('/help/delete-account content', () => {
 
   it('gives the current role-specific Settings section and deletion button', () => {
     expect(text).toContain(
-      'If you are a client: open the profile tab (the person icon in the bottom bar), tap Settings, then under Account tap Delete account.',
+      'If you are a client: open the You tab (the person icon in the bottom bar), tap Settings, then under Account tap Delete account.',
     );
     expect(text).not.toContain('under Data & Privacy tap Delete my account');
+    // PRIVACY-DELETE-NAV (agent 160): the coach section is "Privacy and data",
+    // and with the six coach tabs Settings opens from the gear on Overview.
     expect(text).toContain(
-      'If you are a coach: open the Settings tab, then under Privacy & Data tap Delete my account.',
+      'If you are a coach: open Settings (the Settings tab, or the gear at the top of Overview if your bottom bar has no Settings tab), then under Privacy and data tap Delete my account.',
     );
+    expect(text).not.toContain('open the profile tab');
+    expect(text).not.toContain('under Privacy & Data tap');
     expect(text).toContain(
       'type DELETE or your account email, then confirm it is you with your password, Sign in with Apple or Google',
     );

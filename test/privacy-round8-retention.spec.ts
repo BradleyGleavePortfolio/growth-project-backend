@@ -230,7 +230,7 @@ describe('#611 C-611-13..16 and the Sign in with Apple ruling', () => {
 
   it('the rest of the approved deletion paragraph is unchanged apart from decision 24 provider retry retention', () => {
     expect(privacyDeletion).toContain(
-      'You can delete your account in the app: Settings, then Delete account. You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. ' +
+      'You can delete your account in the app: Settings, then Delete account (coaches: Delete my account). You confirm with your password or Sign in with Apple, and deletion is scheduled straight away with a 14-day grace period during which you can cancel. After that, your profile, consultation answers, logs, connected health data, Roman conversations, notifications and community memberships are permanently deleted, and the content of your community posts and messages is removed. ' +
         APPLE_TODAY +
         ' We keep only what we must: the payment records the law requires; security and audit logs; one deletion record with a random reference, the date and the result; and ' +
         CLOSED_ACCOUNT +
