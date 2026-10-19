@@ -22,6 +22,7 @@ describe('HabitDays.runs: planned days in a row, shown from 2 up, the best kept'
     ['chosen days: off days are never missed', MWF, ['2026-10-05', '2026-10-07', '2026-10-09', '2026-10-12'], 4, 4],
     ['chosen days: a tick on an off day is not needed and not counted', MWF, ['2026-10-09', '2026-10-10', '2026-10-12'], 2, 2],
     ['a start typed years back still counts (two years looked back at most)', { starts_on: new Date('0001-01-01') }, oct(10, 13), 4, 4],
+    ['a tick before the start moves the start back to it', { starts_on: new Date('2026-10-12') }, oct(10, 13), 4, 4],
     ['times a week has no days in a row', { schedule_kind: 'times_per_week', times_per_week: 3 }, oct(5, 14), null, null],
   ])('%s', (_name, over, days, run, best) => {
     expect(habit(over, days).runs()).toEqual({ run_days: run, best_run_days: best });

@@ -141,19 +141,18 @@ describe('HabitsService', () => {
     const inLosAngeles = () =>
       prismaMock.notificationPreferences.findUnique.mockResolvedValue({ timezone: 'America/Los_Angeles', timezone_updated_at: new Date() });
 
-    // #WORDING-HB3: any day from the habit's start (Oct 3) up to the client's today; a refusal is a code, no words.
-    it.each<[string, boolean, string[], [string, string][]]>([
-      ['their own zone', true, ['2026-10-14', '2026-10-13', '2026-10-05', '2026-10-03', '2026-10-14T00:00:00.000Z'],
-        [['2026-10-15', 'HABIT_FUTURE_DAY'], ['2026-11-02', 'HABIT_FUTURE_DAY'], ['2026-10-02', 'HABIT_BEFORE_START']]],
-      ['no zone known (a day of slack around UTC)', false, ['2026-10-16', '2026-10-15', '2026-10-02'],
-        [['2026-10-17', 'HABIT_FUTURE_DAY'], ['2026-10-01', 'HABIT_BEFORE_START']]],
-    ])('POST /habits/:id/log in %s takes any day from the start to today, never a future day', async (_zone, known, open, closed) => {
+    // #WORDING-HB3: any day up to the client's today, even before the habit's start (Oct 3), which then moves back;
+    // a future day is refused with a code and no words.
+    it.each<[string, boolean, string[], string[]]>([
+      ['their own zone', true, ['2026-10-14', '2026-10-13', '2026-10-05', '2026-10-01', '2026-10-14T00:00:00.000Z'], ['2026-10-15', '2026-11-02']],
+      ['no zone known (a day of slack around UTC)', false, ['2026-10-16', '2026-10-15', '2026-10-01'], ['2026-10-17']],
+    ])('POST /habits/:id/log in %s takes any day up to today, never a future day', async (_zone, known, open, closed) => {
       if (known) inLosAngeles();
       prismaMock.habit.findFirst.mockResolvedValue({ ...own, starts_on: new Date('2026-10-03') });
       for (const date of open) await expect(service.logHabit('user-1', 'habit-1', { date })).resolves.toBeDefined();
-      for (const [date, code] of closed) {
+      for (const date of closed) {
         const refused = await service.logHabit('user-1', 'habit-1', { date }).then(() => null, (e: BadRequestException) => e.getResponse());
-        expect(refused).toEqual({ code });
+        expect(refused).toEqual({ code: 'HABIT_FUTURE_DAY' });
       }
       expect(prismaMock.habitLog.create).toHaveBeenCalledTimes(open.length);
     });

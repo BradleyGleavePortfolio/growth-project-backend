@@ -76,15 +76,16 @@ export class HabitsService {
     // SECURITY: verify the habit belongs to the requesting user before writing a log
     // (audit C7 — IDOR: any authenticated user could log completions against any
     // other user's habit by guessing/obtaining the habit UUID).
-    const habit = await this.ownHabit(userId, habitId);
+    await this.ownHabit(userId, habitId);
 
-    // HB3 (#WORDING-HB3): a tick is for any day from the habit's start up to the
-    // client's today in their own calendar (a day of slack while their zone is
-    // unknown). A refusal carries a code only; the app shows its own words.
+    // HB3 (#WORDING-HB3): a tick is for any day up to the client's today in their
+    // own calendar (a day of slack while their zone is unknown). A tick before the
+    // habit's start moves the start back, as a first tick always has (main's list
+    // shows a habit before its start). A future day is refused with a code only;
+    // the app shows its own words.
     const { today, slack } = await this.clientToday(userId);
     const day = data.date ? dayFromYmd(data.date.slice(0, 10)) : today;
     if (day > today + slack) throw new BadRequestException({ code: 'HABIT_FUTURE_DAY' });
-    if (habit.starts_on && day < toDay(habit.starts_on) - slack) throw new BadRequestException({ code: 'HABIT_BEFORE_START' });
     const targetDate = new Date(`${ymd(day)}T00:00:00Z`);
 
     const existing = await this.prisma.habitLog.findFirst({
