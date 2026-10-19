@@ -70,6 +70,15 @@
  * 2026-10-15): v8-coach-free / v9-coach-free with v9 / v10's paragraph 4, so
  * the crisis sentence follows the exception (client-ai-v8 / v9 copy sha256).
  * Shown only while ?variant=crisis_alert offers client-ai-v8 / v9.
+ *
+ * consult-consent-v11 / v12 / v13 / v14 and v12- / v13- / v14- / v15-coach-free
+ * (W-BRAND-AGREEMENT, owner op 1, 2026-10-19): v7 / v8 / v9 / v10 and
+ * v8- / v9- / v10- / v11-coach-free with "The Growth Project" replaced by
+ * "TGP Fitness" in paragraph 1, paragraph 3 and box 1 (W34-W38, word for word
+ * as approved). Nothing else changes: paragraph 4 + box 2 are each
+ * predecessor's (the same ledger copy sha256). The predecessors, and v3 to v6,
+ * stay accepted and unchanged: installed builds send them (today's App Store
+ * build sends v3), and every record keeps the version it was given.
  */
 import { createHash } from 'node:crypto';
 import { ROMAN_CRISIS_TOLD_SENTENCE } from '../roman/roman.feature';
@@ -233,6 +242,46 @@ export const CONSULT_CONSENT_V10_COACH_FREE_TEXT_SHA256 =
 export const CONSULT_CONSENT_V11_COACH_FREE_TEXT_SHA256 =
   '3528b10d50d8e7bb67a3065b86ba2b5cf33f3891b8194be413c78f2519e3257f';
 
+/** W-BRAND-AGREEMENT: each screen the app shows today, with TGP Fitness as the name (W34-W38). */
+export const CONSULT_CONSENT_V11 = 'consult-consent-v11';
+export const CONSULT_CONSENT_V12 = 'consult-consent-v12';
+export const CONSULT_CONSENT_V13 = 'consult-consent-v13';
+export const CONSULT_CONSENT_V14 = 'consult-consent-v14';
+export const CONSULT_CONSENT_V12_COACH_FREE = 'consult-consent-v12-coach-free';
+export const CONSULT_CONSENT_V13_COACH_FREE = 'consult-consent-v13-coach-free';
+export const CONSULT_CONSENT_V14_COACH_FREE = 'consult-consent-v14-coach-free';
+export const CONSULT_CONSENT_V15_COACH_FREE = 'consult-consent-v15-coach-free';
+const withTgpFitness = (copy: ConsultConsentCopy): ConsultConsentCopy => ({
+  ...copy,
+  paragraphs: copy.paragraphs.map((p) => p.split('The Growth Project').join('TGP Fitness')),
+  box1Label: copy.box1Label.split('The Growth Project').join('TGP Fitness'),
+});
+export const CONSULT_CONSENT_COPY_V11 = withTgpFitness(CONSULT_CONSENT_COPY_V7);
+export const CONSULT_CONSENT_COPY_V12 = withTgpFitness(CONSULT_CONSENT_COPY_V8);
+export const CONSULT_CONSENT_COPY_V13 = withTgpFitness(CONSULT_CONSENT_COPY_V9);
+export const CONSULT_CONSENT_COPY_V14 = withTgpFitness(CONSULT_CONSENT_COPY_V10);
+export const CONSULT_CONSENT_COPY_V12_COACH_FREE = withTgpFitness(CONSULT_CONSENT_COPY_V8_COACH_FREE);
+export const CONSULT_CONSENT_COPY_V13_COACH_FREE = withTgpFitness(CONSULT_CONSENT_COPY_V9_COACH_FREE);
+export const CONSULT_CONSENT_COPY_V14_COACH_FREE = withTgpFitness(CONSULT_CONSENT_COPY_V10_COACH_FREE);
+export const CONSULT_CONSENT_COPY_V15_COACH_FREE = withTgpFitness(CONSULT_CONSENT_COPY_V11_COACH_FREE);
+/** Their pins: screen text (aiSlice = the predecessor's, unchanged). The app pins the same values. */
+export const CONSULT_CONSENT_V11_TEXT_SHA256 =
+  '4b1686a8e835297d0e6bbd91dce988b4b5b9046eb9d70aebbda9e1d36c70f926';
+export const CONSULT_CONSENT_V12_TEXT_SHA256 =
+  '8989ac25a1d87a5d6c2f355b74e1a260fb3b35231bf571a371440229d4c9f6a9';
+export const CONSULT_CONSENT_V13_TEXT_SHA256 =
+  '2f22065286d2284cc70e38921da11fcafa8c11a03887025e8781347592a163d6';
+export const CONSULT_CONSENT_V14_TEXT_SHA256 =
+  '82f3993ef5ce2262d15afe64a45b8d5ad63ca1fa42cd3e172e597d4fe761ba81';
+export const CONSULT_CONSENT_V12_COACH_FREE_TEXT_SHA256 =
+  'a655bb7c794629a25fc27246dace79078a516a8ef45c357751bc2d2271ba0d64';
+export const CONSULT_CONSENT_V13_COACH_FREE_TEXT_SHA256 =
+  '336fcf0271843d9b9bfca35ce321480aba4925196f935b1e0ac51e260cba468b';
+export const CONSULT_CONSENT_V14_COACH_FREE_TEXT_SHA256 =
+  '5cb2ef1651f012bfb7a7c1569d06ecdfd43f1c33d00208d23bdf286353dfbf56';
+export const CONSULT_CONSENT_V15_COACH_FREE_TEXT_SHA256 =
+  'b7eb74293aac4d20c6d19ea2b7a97bec035467f8f8897a5d8e393fd7140e6864';
+
 /** Separator between displayed parts in every digest input. */
 export const CONSULT_CONSENT_SEPARATOR = '\n\n';
 
@@ -377,6 +426,38 @@ export const CONSULT_CONSENT_COPIES: Readonly<
   [CONSULT_CONSENT_V11_COACH_FREE]: {
     copy: CONSULT_CONSENT_COPY_V11_COACH_FREE,
     text_sha256: CONSULT_CONSENT_V11_COACH_FREE_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V11]: {
+    copy: CONSULT_CONSENT_COPY_V11,
+    text_sha256: CONSULT_CONSENT_V11_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V12]: {
+    copy: CONSULT_CONSENT_COPY_V12,
+    text_sha256: CONSULT_CONSENT_V12_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V13]: {
+    copy: CONSULT_CONSENT_COPY_V13,
+    text_sha256: CONSULT_CONSENT_V13_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V14]: {
+    copy: CONSULT_CONSENT_COPY_V14,
+    text_sha256: CONSULT_CONSENT_V14_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V12_COACH_FREE]: {
+    copy: CONSULT_CONSENT_COPY_V12_COACH_FREE,
+    text_sha256: CONSULT_CONSENT_V12_COACH_FREE_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V13_COACH_FREE]: {
+    copy: CONSULT_CONSENT_COPY_V13_COACH_FREE,
+    text_sha256: CONSULT_CONSENT_V13_COACH_FREE_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V14_COACH_FREE]: {
+    copy: CONSULT_CONSENT_COPY_V14_COACH_FREE,
+    text_sha256: CONSULT_CONSENT_V14_COACH_FREE_TEXT_SHA256,
+  },
+  [CONSULT_CONSENT_V15_COACH_FREE]: {
+    copy: CONSULT_CONSENT_COPY_V15_COACH_FREE,
+    text_sha256: CONSULT_CONSENT_V15_COACH_FREE_TEXT_SHA256,
   },
 });
 

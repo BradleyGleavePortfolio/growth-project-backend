@@ -172,6 +172,15 @@ describe('P0 copy: partner sentence removed (C-6a) and coach-free versions (owne
       // Their crisis twins with no coach (test/ai-consent/consent-crisis-sentence.spec.ts).
       'consult-consent-v10-coach-free',
       'consult-consent-v11-coach-free',
+      // W-BRAND-AGREEMENT: TGP Fitness as the name (test/onboarding-consent-brand.spec.ts).
+      'consult-consent-v11',
+      'consult-consent-v12',
+      'consult-consent-v13',
+      'consult-consent-v14',
+      'consult-consent-v12-coach-free',
+      'consult-consent-v13-coach-free',
+      'consult-consent-v14-coach-free',
+      'consult-consent-v15-coach-free',
     ]);
     const p0 = (copy_version: string, text_sha256: string) => ({
       agreed: true,
