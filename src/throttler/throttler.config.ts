@@ -62,7 +62,7 @@ export const THROTTLER_NAMES = {
   /** Per-hour cap on signup attempts per IP. */
   AUTH_SIGNUP: 'auth-signup',
   /** C03 — per-hour cap on signup attempts per IP that carry a well-formed
-   *  invite code (clinic QR bursts behind one NAT). Replaces auth-signup for
+   *  invite code (group QR bursts behind one NAT). Replaces auth-signup for
    *  those requests only; see signup-code-burst.ts. */
   AUTH_SIGNUP_WITH_CODE: 'auth-signup-with-code',
   /** Per-minute cap on POST /auth/recent-auth-token (sensitive re-auth) per user/IP. */
@@ -158,7 +158,7 @@ function readIntEnv(name: string, defaultVal: number, min: number, max: number):
 const RATELIMIT_AUTHED_PER_MIN  = readIntEnv('RATELIMIT_AUTHED_PER_MIN', 300, 1, 10_000);
 const RATELIMIT_ANON_PER_MIN    = readIntEnv('RATELIMIT_ANON_PER_MIN',   100, 1, 10_000);
 // C14 — public read endpoints (signup-policy, invite preview): 240/min/IP by
-// default, clamped to [10, 5000]. Sized for a 40-person clinic room behind
+// default, clamped to [10, 5000]. Sized for a 40-person group room behind
 // one NAT launching the app at once (signup-policy + invite preview per
 // launch, plus retries); 120 was too close (#604 Opus C3). The `default`
 // throttler (300/min per route per IP) still sits above it.
@@ -184,8 +184,8 @@ const AUTH_PWD_RESET_PER_HOUR   = readIntEnv('AUTH_PWD_RESET_PER_HOUR', 3, 1, 1_
 const AUTH_SIGNUP_PER_HOUR = readIntEnv('AUTH_SIGNUP_PER_HOUR', 100, 5, 500);
 const AUTH_CONFIRMATION_RESEND_PER_HOUR = 100;
 // C03 — signup-with-code burst cap for requests carrying a well-formed invite
-// code. 100/hour/IP by default, clamped to [5, 500]. Sized for a clinic event:
-// 40+ patients sign up from the clinic Wi-Fi (one public IP) inside the same
+// code. 100/hour/IP by default, clamped to [5, 500]. Sized for a group event:
+// 40+ clients sign up from the venue Wi-Fi (one public IP) inside the same
 // hour, and retries / mistyped passwords draw from the same bucket, so the
 // default leaves ~2.5x headroom over a 40-person room. Abuse stays bounded:
 // codeless signups keep their own bounded auth-signup budget, and every request

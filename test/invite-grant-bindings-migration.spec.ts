@@ -1,5 +1,5 @@
 /**
- * Clinic C01: placement of prisma/migrations/20270205000000_invite_grant_bindings.
+ * Partner C01: placement of prisma/migrations/20270205000000_invite_grant_bindings.
  *
  * The migration was written as 20270125000000_invite_grant_bindings, which
  * shared its timestamp with #625's 20270125000000_restore_schema_declared_objects

@@ -63,7 +63,7 @@ function buildPrisma(initial: Partial<FakeRows> = {}): any {
           return true;
         });
       }),
-      // Clinic C13 fix round: SubCoachScopeService now requires an explicit
+      // Partner C13 fix round: SubCoachScopeService now requires an explicit
       // membership relation (team seat OR an open Phase 11 delegation from
       // the head coach) before treating a `coach_id`-bearing coach as a
       // sub-coach. The fixture rows carry head_coach_id for that lookup.

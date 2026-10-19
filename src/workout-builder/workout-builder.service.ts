@@ -494,7 +494,7 @@ export class WorkoutBuilderService {
           // S-MWB-2 C-640-5: a program day archived through the legacy plan
           // route takes the same grid lock as the library clear-day route and
           // obeys the same rule, so a master a package delivers (or an active
-          // clinic consultation set uses, B-640-11) never empties.
+          // consultation set uses, B-640-11) never empties.
           await this.prisma.$transaction(async (tx) => {
             await tx.$executeRaw`SELECT pg_advisory_xact_lock(${LOCK_NS_PROGRAM_GRID}::int4, hashtext(${programId}))`;
             await this.assertPackagedProgramKeepsADay(tx, programId, planId);
@@ -524,7 +524,7 @@ export class WorkoutBuilderService {
 
   /**
    * Refuse to archive the last live day of a program that a live package
-   * delivers or an active clinic consultation set uses (typed 409, same codes
+   * delivers or an active consultation set uses (typed 409, same codes
    * and copy as the library clear-day route). Takes the master's row lock
    * first (C-640-5), the lock "Add to package" re-counts days under.
    */

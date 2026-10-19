@@ -1,4 +1,4 @@
-# Clinic consultation onboarding (C05 / C07 backend)
+# Consultation onboarding (C05 / C07 backend)
 
 Personal training only. Nothing here is medical advice or a medical
 assessment; the readiness screening (P1-P7) only routes a client to the
@@ -44,7 +44,7 @@ invalid_answers`.
 hold: `copy_version` is an accepted version (default `consult-consent-v3` and
 `consult-consent-v4`, the versions the server knows; v4 is the same screen with
 paragraph 4 = the ledger's `client-ai-v5` paragraph; `consult-consent-v5` / `v6`
-are v3 / v4 without the clinic sentence, and `consult-consent-v5-coach-free` /
+are v3 / v4 without the partner sentence, and `consult-consent-v5-coach-free` /
 `v6-coach-free` are those for a client with no coach, owner 62), AND `text_sha256` is the sha256 (UTF-8,
 lowercase hex) of that version's exact screen text. The text lives in
 `src/onboarding/consult-consent-copy.ts`: title, paragraphs 1-3, box 1 label,
@@ -271,7 +271,7 @@ Effects, in order:
    safety answer added meanwhile can never complete against an older,
    higher-intensity program; as defence in depth every other not-started
    onboarding clone for the client is unassigned and archived.
-3. Spaces: memberships in the coach's clinic-wide cohort and the program's
+3. Spaces: memberships in the coach's partner-wide cohort and the program's
    cohort, `joined_at` = completion time (kept on re-join) so the coach can
    split members by signup date.
 4. Coach flag: when any P1-P7 is yes, an injury is reported, or the rule

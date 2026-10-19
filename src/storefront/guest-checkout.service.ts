@@ -1535,7 +1535,7 @@ export class GuestCheckoutService {
           // Owner 61a: this attach is a join; a flagged consultation tells this coach once.
           await alertCoachOfFlaggedJoinTx(tx, dbUser.id, checkout.package.coach_id);
         } else if (dbUser.coach_id == null) {
-          // Clinic C13 fix round (Opus A1): the buyer is a coach / owner /
+          // Partner C13 fix round (Opus A1): the buyer is a coach / owner /
           // sub-coach buying another coach's package. Record the purchase
           // but NEVER write coach_id — `role='coach' AND coach_id=X` is
           // the sub-coach detection rule, so re-parenting here silently

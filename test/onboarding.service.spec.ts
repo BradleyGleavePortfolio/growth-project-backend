@@ -8,7 +8,7 @@ import { join } from 'path';
 import { ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { isLockConflict, OnboardingService } from '../src/onboarding/onboarding.service';
-import { parseFixture } from '../src/onboarding/clinic-programs';
+import { parseFixture } from '../src/onboarding/consultation-programs';
 import type { PrismaService } from '../src/prisma.service';
 import type { WorkoutBuilderService } from '../src/workout-builder/workout-builder.service';
 import { SubCoachScopeService } from '../src/sub-coach/sub-coach-scope.service';
@@ -1622,8 +1622,8 @@ describe('B607-2: completion effects are fenced; lease expiry cannot duplicate t
   });
 });
 
-/** Give `coachId` its own clinic program set (masters, plans, cohorts). */
-function addClinicFor(w: ReturnType<typeof makeWorld>, coachId: string) {
+/** Give `coachId` its own consultation program set (masters, plans, cohorts). */
+function addConsultationSetFor(w: ReturnType<typeof makeWorld>, coachId: string) {
   const entries: Record<string, { program_id: string; cohort_id: string; name: string }> = {};
   for (const [key, masterId] of Object.entries(w.masterIds)) {
     const master = w.programs.find((p) => p.id === masterId)!;
@@ -1705,9 +1705,9 @@ describe('A607-3: finalisation never writes for a former coach', () => {
     expectNothingWritten(w, hook.onCompleted);
   });
 
-  it('client moved to a head B that has a clinic set -> completion runs entirely under B', async () => {
+  it('client moved to a head B that has a consultation set -> completion runs entirely under B', async () => {
     const w = makeWorld();
-    addClinicFor(w, 'other-coach');
+    addConsultationSetFor(w, 'other-coach');
     await w.consentThenSave(
       'client-1',
       { version: 'consult-v1', answers: { ...COMPLETE, P1: 'yes' } },
@@ -1762,7 +1762,7 @@ describe('A607-3: finalisation never writes for a former coach', () => {
 
   it('an attachment that keeps changing gives up with completion_in_progress after bounded attempts', async () => {
     const w = makeWorld();
-    addClinicFor(w, 'other-coach');
+    addConsultationSetFor(w, 'other-coach');
     await w.consentThenSave('client-1', { version: 'consult-v1', answers: COMPLETE }, NOW);
     let flips = 0;
     const flip = () => {
@@ -1987,7 +1987,7 @@ describe('D2 consent: box 1 only gates completion; box 2 is never required (#607
 });
 
 describe('S-REVENUE-124 B-REV-1: GET /me/onboarding says whether the consultation can finish', () => {
-  it('true for a client whose coach has an active clinic program set', async () => {
+  it('true for a client whose coach has an active consultation program set', async () => {
     const w = makeWorld();
     expect((await w.svc.getOnboarding('client-1')).consultation_available).toBe(true);
   });

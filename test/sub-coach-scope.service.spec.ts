@@ -198,7 +198,7 @@ describe('SubCoachScopeService', () => {
     expect(ids).toEqual([]);
   });
 
-  // Clinic C13 fix round (audit Opus A1): a coach row that merely carries a
+  // Partner C13 fix round (audit Opus A1): a coach row that merely carries a
   // coach_id — e.g. a self-serve coach who bought another coach's storefront
   // package before the guest-checkout guard existed — is NOT a sub-coach.
   // Without a membership row the caller must never be promoted to the head

@@ -280,10 +280,10 @@ describe('ProgramLibraryService edits', () => {
 
   it('archiveProgram: refused while a live package delivers it, naming the package', async () => {
     const { prisma, tx } = makePrisma();
-    tx.coachPackageContent.findMany.mockResolvedValueOnce([{ package: { name: 'Clinic intro' } }]);
+    tx.coachPackageContent.findMany.mockResolvedValueOnce([{ package: { name: 'Partner intro' } }]);
     const { svc } = makeService(prisma);
     await expect(svc.archiveProgram('coach-1', 'master-1')).rejects.toMatchObject({
-      response: { code: 'program_in_package', message: expect.stringContaining('Clinic intro') },
+      response: { code: 'program_in_package', message: expect.stringContaining('Partner intro') },
     });
     expect(tx.workoutProgram.updateMany).not.toHaveBeenCalled();
     expect(prisma.workoutProgram.updateMany).not.toHaveBeenCalled();
@@ -313,8 +313,8 @@ describe('ProgramLibraryService edits', () => {
   });
 });
 
-describe('S-MWB-3 B-640-11: clinic consultation masters stay live and keep a day', () => {
-  const CLINIC_SET = {
+describe('S-MWB-3 B-640-11: consultation masters stay live and keep a day', () => {
+  const CONSULTATION_SET = {
     programs: {
       strength_foundations: {
         program_id: 'master-1',
@@ -327,7 +327,7 @@ describe('S-MWB-3 B-640-11: clinic consultation masters stay live and keep a day
 
   it('archiveProgram: refused with program_in_clinic_set while an active consultation set uses the master', async () => {
     const { prisma, tx } = makePrisma();
-    tx.clinicProgramSet.findMany.mockResolvedValueOnce([CLINIC_SET]);
+    tx.clinicProgramSet.findMany.mockResolvedValueOnce([CONSULTATION_SET]);
     const { svc } = makeService(prisma);
     await expect(svc.archiveProgram('coach-1', 'master-1')).rejects.toMatchObject({
       status: 409,
@@ -351,7 +351,7 @@ describe('S-MWB-3 B-640-11: clinic consultation masters stay live and keep a day
       return [{ id: 'master-1', coach_id: 'coach-1', owner_user_id: 'coach-1' }];
     });
     tx.clinicProgramSet.findMany.mockImplementationOnce(async () => {
-      order.push('clinic_sets');
+      order.push('consultation_sets');
       return [{ programs: { other: { program_id: 'master-9' } } }];
     });
     tx.workoutProgram.updateMany.mockImplementationOnce(async () => {
@@ -360,7 +360,7 @@ describe('S-MWB-3 B-640-11: clinic consultation masters stay live and keep a day
     });
     const { svc } = makeService(prisma);
     await svc.archiveProgram('coach-1', 'master-1');
-    expect(order).toEqual(['lock', 'clinic_sets', 'archive']);
+    expect(order).toEqual(['lock', 'consultation_sets', 'archive']);
   });
 
   it('archiveProgram: an inactive (superseded) set does not block, and a malformed programs value is ignored', async () => {
@@ -380,7 +380,7 @@ describe('S-MWB-3 B-640-11: clinic consultation masters stay live and keep a day
     tx.workoutPlan.findFirst.mockResolvedValueOnce({ id: 'plan-1' });
     tx.workoutPlan.count.mockResolvedValueOnce(1);
     tx.coachPackageContent.count.mockResolvedValueOnce(0);
-    tx.clinicProgramSet.findMany.mockResolvedValueOnce([CLINIC_SET]);
+    tx.clinicProgramSet.findMany.mockResolvedValueOnce([CONSULTATION_SET]);
     const { svc } = makeService(prisma);
     await expect(svc.clearDay('coach-1', 'master-1', 0, 0)).rejects.toMatchObject({
       status: 409,
@@ -393,7 +393,7 @@ describe('S-MWB-3 B-640-11: clinic consultation masters stay live and keep a day
     const { prisma, tx } = makePrisma();
     tx.workoutPlan.findFirst.mockResolvedValueOnce({ id: 'plan-1' });
     tx.workoutPlan.count.mockResolvedValueOnce(3);
-    tx.clinicProgramSet.findMany.mockResolvedValue([CLINIC_SET]);
+    tx.clinicProgramSet.findMany.mockResolvedValue([CONSULTATION_SET]);
     const { svc } = makeService(prisma);
     await svc.clearDay('coach-1', 'master-1', 0, 0);
     expect(tx.workoutPlan.update).toHaveBeenCalledWith({

@@ -13,11 +13,11 @@ import { blockedCheckFor, resetFor, strictIncrementFor } from './throttler.confi
 import { describeFailure } from '../observability/log-pii';
 import { ipRateLimitBucket } from './ip-bucket';
 
-// Clinic C13 fix round (Grok B5) — per-IP ceiling on brand-new COACH accounts
+// Partner C13 fix round (Grok B5) — per-IP ceiling on brand-new COACH accounts
 // minted through /auth/google and /auth/apple. Those routes carry login
 // throttles that a successful exchange used to reset, so coach minting was
 // unbounded per IP. Default matches /auth/register's AUTH_SIGNUP (5/hour).
-// Clamped to [1, 500]. Client creates are NOT counted here on purpose: clinic
+// Clamped to [1, 500]. Client creates are NOT counted here on purpose: partner
 // QR intake (C03) signs many clients up behind one NAT.
 export const AUTH_OAUTH_COACH_SIGNUP_PER_HOUR_DEFAULT = 5;
 export function resolveOAuthCoachSignupPerHour(): number {

@@ -7,7 +7,7 @@
  */
 import { Prisma } from '@prisma/client';
 import { alternativesOf } from '../workout-builder/plan-exercise-fields';
-import type { PlanContent } from './clinic-programs';
+import type { PlanContent } from './consultation-programs';
 
 export interface ProgramTreeInput {
   tenantCoachId: string;

@@ -130,7 +130,9 @@ Admin: any state ──POST /admin/users/:id/delete──► DELETED
    "Deleted user", phone, coach link, push token, leaderboard name, signup
    ref and payout method cleared, `deleted_at` set.
 3. Run the erasure manifest (`account-deletion.manifest.ts`), including the
-   RESTRICT-child pre-steps.
+   RESTRICT-child pre-steps. Coach media a kept lesson plays stays, with the
+   grants of the clients who keep that lesson, and its bytes are taken off
+   the step 1 list (`withoutRetainedMedia`).
 4. Delete the person's `deletion_audit` rows.
 5. Only now, with every DB statement done, remove the objects and cancel the
    subscriptions (A-608-3). A constraint or data error therefore never leaves
@@ -206,9 +208,9 @@ PartialRefundDecision, CoachCreditPackPurchase, CoachAIBudget,
 MarketplaceConnectEvent), coach content a surviving client was assigned
 (WorkoutPlan, WorkoutProgram and revisions, DailyMealPlan, MealTemplate,
 coach MacroTarget, completed Lessons, a course a client is enrolled in with all
-its weeks and lessons, contract envelopes and templates on the coach side,
-deactivated CoachPackage), and the Scout insert-only import ledgers (digests
-only; a DB trigger refuses DELETE).
+its weeks and lessons, the coach media these lessons play, contract envelopes
+and templates on the coach side, deactivated CoachPackage), and the Scout
+insert-only import ledgers (digests only; a DB trigger refuses DELETE).
 
 Recipes the user created are always deleted, together with every bookmark of
 them (anyone's), because #630 hides a deleted creator's recipes from everyone

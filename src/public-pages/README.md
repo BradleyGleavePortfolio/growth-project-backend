@@ -172,7 +172,7 @@ public pages until it is built and audited.
   until the client deletes them or the account (owner OR-110-1: no
   time-based purge), client delete. The consumer health "Consent" section is
   the approved text byte for byte (pinned in `test/trust-pages.spec.ts`).
-- Never mention a clinic (owner C-6). The closing line of "Who can see your data"
+- Never mention the referral partner (owner C-6). The closing line of "Who can see your data"
   and the first bullet of "Who we do not share with" say, exactly: "Whoever referred
   you to The Growth Project never sees your account or your data." (owner C-6a).
 - What a deletion keeps is written once in `trust-pages.html.ts`
@@ -202,8 +202,8 @@ public pages until it is built and audited.
 
 Editorial guard rails (see `test/trust-pages.spec.ts`):
 
-- The official support contact (`Bradleyapple1031@gmail.com`,
-  exported as `SUPPORT_EMAIL`) appears on every page so a reviewer or
+- The official support contact (exported as `SUPPORT_EMAIL` from
+  `trust-pages.html.ts`) appears on every page so a reviewer or
   customer always has a real human to email.
 - The Security page describes practical controls and explicitly states
   we do **not** currently hold SOC 2 / ISO 27001 / HIPAA

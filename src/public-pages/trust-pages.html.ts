@@ -173,7 +173,7 @@ interface TrustPageContent {
 //    stay behind a default-off flag are described with "if enabled".
 //  - Name every vendor that receives personal data, and only vendors that the
 //    code actually calls.
-//  - Never mention a clinic (owner C-6).
+//  - Never mention the referral partner (owner C-6).
 // ---------------------------------------------------------------------------
 function privacyContent(): TrustPageContent {
   return {

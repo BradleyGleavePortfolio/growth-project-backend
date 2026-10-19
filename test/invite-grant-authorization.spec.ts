@@ -1,4 +1,4 @@
-// Clinic C01 fix round — grant semantics on persisted state.
+// Partner C01 fix round — grant semantics on persisted state.
 //   Sol SOL-C01-A1 / Opus C01-B1: grants run only after a successful attach
 //     (new redemption or same-coach replay); a different-coach code never
 //     re-parents and never grants.

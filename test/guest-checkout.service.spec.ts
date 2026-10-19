@@ -785,7 +785,7 @@ describe('GuestCheckoutService', () => {
       ).resolves.toBeUndefined();
     });
 
-    // Clinic C13 fix round — audit Opus A1. Since C13 anyone can self-serve a
+    // Partner C13 fix round — audit Opus A1. Since C13 anyone can self-serve a
     // `role='coach', coach_id=null` account. Guest checkout used to stamp
     // `coach_id = package.coach_id` on ANY existing buyer without a coach,
     // which made a coach buyer a phantom sub-coach of the seller (the

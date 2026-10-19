@@ -5,6 +5,7 @@ import type {
   User,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import { authorsWhoLeft } from '../community-space-access';
 
 /**
  * Data access for the coach inbox aggregator.
@@ -14,6 +15,11 @@ import { PrismaService } from '../../prisma.service';
  * coaches (resolved here from workspace ownership + coach/assistant
  * memberships). Postgres RLS remains as defence-in-depth. No method here trusts
  * a request-supplied id for authorization.
+ *
+ * C6-MOVED-PRIVILEGED-READS (owner: history follows the client): a client who
+ * moved to another coach left these cohorts, so their rows are left out IN the
+ * query (authorsWhoLeft asks app.community_author_stays, the rule the row
+ * policies use). Each stream is limit-bounded, so a later filter would drop rows.
  */
 export type MessageWithSender = CommunityMessage & {
   sender: Pick<User, 'id' | 'name' | 'role'>;
@@ -68,8 +74,10 @@ export class CommunityCoachInboxRepository {
   }): Promise<MessageWithSender[]> {
     const { cohortIds, limit, after } = params;
     if (cohortIds.length === 0) return [];
+    const left = await authorsWhoLeft(this.prisma, cohortIds);
     return this.prisma.communityMessage.findMany({
       where: {
+        ...(left.length > 0 ? { NOT: left.map(([s, a]) => ({ cohort_id: s, sender_id: a })) } : {}),
         cohort_id: { in: cohortIds },
         scope: 'cohort',
         deleted_at: null,
@@ -107,8 +115,10 @@ export class CommunityCoachInboxRepository {
   }): Promise<PostWithAuthor[]> {
     const { cohortIds, limit, after } = params;
     if (cohortIds.length === 0) return [];
+    const left = await authorsWhoLeft(this.prisma, cohortIds);
     const candidates = await this.prisma.communityPost.findMany({
       where: {
+        ...(left.length > 0 ? { NOT: left.map(([s, a]) => ({ cohort_id: s, author_id: a })) } : {}),
         cohort_id: { in: cohortIds },
         scope: 'cohort',
         deleted_at: null,

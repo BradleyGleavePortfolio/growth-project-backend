@@ -18,7 +18,7 @@ import { isContractsEnabled } from '../contracts/contracts.feature';
 import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
 
-// Clinic launch C01 — invite-code → package grants and free packages.
+// Partner launch C01 — invite-code → package grants and free packages.
 //
 // A coach binds an invite code (a per-row InviteCode OR the permanent coach
 // link code on CoachProfile) to one of their packages with a grant_mode:
@@ -208,7 +208,7 @@ export class InviteGrantService implements OnModuleInit {
    *     unchanged (such packages cannot be bound to a code anyway).
    *   - otherwise (every comp / free code grant): the in-app onboarding
    *     agreement for this coach is the waiver (owner ruling). The external
-   *     platform e-sign waiver is NOT consulted, so clinic clients are never
+   *     platform e-sign waiver is NOT consulted, so partner clients are never
    *     parked behind an outside signing step.
    * Consent is still enforced: without the record the grant is created
    * PENDING (entitlement inactive) and activates on consent.

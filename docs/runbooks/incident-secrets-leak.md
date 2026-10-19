@@ -113,8 +113,8 @@ flyctl secrets set FINANCE_SERVICE_TOKEN="$(openssl rand -hex 32)" -a backend-sp
 After revoking, confirm the app redeployed successfully:
 
 ```sh
-# Should return { "status": "ok" }
-curl https://api.trygrowthproject.com/api/health
+# Should return JSON with "ok": true, plus process uptime and timestamp.
+curl -fsS https://backend-spring-lake-3890.fly.dev/health
 ```
 
 If the health check fails, check Fly logs:

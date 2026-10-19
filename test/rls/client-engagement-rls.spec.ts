@@ -1,10 +1,10 @@
 /**
- * #609 (C05 items 6-7) — live RLS for the clinic engagement tables.
+ * #609 (C05 items 6-7) — live RLS for the client engagement tables.
  *
  * Runs in the rls-live-tests CI job against a real Postgres 15 with
  * prisma/migrations/20270213000000_clinic_engagement/migration.sql applied
  * VERBATIM (see .github/workflows/ci.yml and
- * scripts/ci/clinic-engagement-live-*.sql). Every RLS assertion executes as
+ * scripts/ci/client-engagement-live-*.sql). Every RLS assertion executes as
  * the non-bypass `authenticated` (or `anon`) role with the app.* GUCs the
  * RlsContextInterceptor sets in production; fixtures are written by the
  * privileged connection, exactly as the schedulers (service_role) write them.
@@ -47,7 +47,7 @@ import { liveTestDatabaseUrl } from '../utils/live-test-db';
 const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') {
   throw new Error(
-    '[#609] clinic-engagement-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.',
+    '[#609] client-engagement-rls: CI=true but no TEST_DATABASE_URL; refusing to skip.',
   );
 }
 
@@ -115,7 +115,7 @@ const UPDATE_SQL: Record<Table, string> = {
   WorkoutReminderDelivery: `UPDATE "WorkoutReminderDelivery" SET status = 'sent'`,
 };
 
-(DB_URL ? describe : describe.skip)('clinic engagement RLS (live DB, #609)', () => {
+(DB_URL ? describe : describe.skip)('client engagement RLS (live DB, #609)', () => {
   let prisma: PrismaClient;
 
   /** Run `fn` as a DB role with the production RLS GUCs for `reader`. */

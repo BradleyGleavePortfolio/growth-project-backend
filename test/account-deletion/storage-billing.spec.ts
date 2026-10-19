@@ -95,6 +95,39 @@ describe('AccountDeletionStorageService', () => {
     expect(h.list).toHaveBeenCalledWith(UID, expect.objectContaining({ offset: 0 }));
   });
 
+  it('LEARN-FROZEN-MEDIA: the purge keeps the bytes of the coach media rows the manifest kept, and only those', async () => {
+    const h = storageHarness();
+    const media = {
+      kept: { storage_key: 'coach/kept.mp4', provider: 'supabase' },
+      gone: { storage_key: 'coach/gone.mp4', provider: 'supabase' },
+      keptMux: { storage_key: 'mux-kept', provider: 'mux' },
+      goneMux: { storage_key: 'mux-gone', provider: 'mux' },
+    };
+    const before = tx({
+      communityVoiceNote: [{ storage_key: `${UID}/note.m4a` }],
+      coachMediaAsset: Object.values(media),
+    });
+    const objects = await h.service.collect(before, UID);
+    expect(objects).toHaveLength(5);
+    // After the manifest, only the rows a kept lesson plays are left.
+    const after = tx({ coachMediaAsset: [media.kept, media.keptMux] });
+    const purge = await h.service.withoutRetainedMedia(after, UID, objects);
+    expect(after.coachMediaAsset.findMany).toHaveBeenCalledWith({
+      where: { coach_id: UID },
+      select: { storage_key: true, provider: true },
+    });
+    expect(purge).toEqual([
+      { kind: 'supabase', bucket: 'voice-notes', key: `${UID}/note.m4a` },
+      { kind: 'supabase', bucket: 'coach-media', key: 'coach/gone.mp4' },
+      { kind: 'mux', assetId: 'mux-gone' },
+    ]);
+    await h.service.purge(purge);
+    expect(h.remove.mock.calls.flat(2)).toEqual([`${UID}/note.m4a`, 'coach/gone.mp4']);
+    expect(h.mux.deleteAsset.mock.calls).toEqual([['mux-gone']]);
+    // Nothing kept: the purge list is unchanged.
+    await expect(h.service.withoutRetainedMedia(tx({}), UID, objects)).resolves.toEqual(objects);
+  });
+
   it('Opus probe P2 inverted (B-608-8): never schedules a client-supplied ref outside bloodwork/<own id>/', async () => {
     const h = storageHarness();
     const objects = await h.service.collect(

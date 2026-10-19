@@ -10,7 +10,7 @@ export class CreatePackageDto {
   @MaxLength(1000)
   description?: string;
 
-  // Clinic C01 / S-FEE (B-629-1) — exactly 0 = a FREE package (one-time, no
+  // Partner C01 / S-FEE (B-629-1) — exactly 0 = a FREE package (one-time, no
   // recurring price; claimed via POST /v1/packages/:id/claim-free, never sent
   // to Stripe). The DTO only checks the shape (a whole, non-negative number of
   // cents); PackagesService owns the price rules so every refusal carries a
@@ -105,7 +105,7 @@ export class UpdatePackageDto {
   @MaxLength(1000)
   description?: string;
 
-  // Clinic C01 / S-FEE — exactly 0 = free (see CreatePackageDto). Shape only;
+  // Partner C01 / S-FEE — exactly 0 = free (see CreatePackageDto). Shape only;
   // PackagesService.update applies the price rules and the pricing lock.
   @IsOptional()
   @IsInt({

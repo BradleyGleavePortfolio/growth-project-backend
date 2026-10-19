@@ -186,7 +186,7 @@ describe('PackagesService', () => {
     });
 
     it('C01 — allows exactly 0 (free package, one_time, no Stripe) but not 0 for recurring or a combo', async () => {
-      const free = await svc.create('c1', { name: 'Clinic comp', amount_cents: 0 });
+      const free = await svc.create('c1', { name: 'Partner comp', amount_cents: 0 });
       expect(free.amount_cents).toBe(0);
       expect(free.stripe_price_id ?? null).toBeNull();
       await expect(

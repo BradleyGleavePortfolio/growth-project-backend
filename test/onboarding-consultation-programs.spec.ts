@@ -9,7 +9,7 @@ import {
   materialiseClientPlans,
   parseFixture,
   type PlanContent,
-} from '../src/onboarding/clinic-programs';
+} from '../src/onboarding/consultation-programs';
 import type { ProgramKey } from '../src/onboarding/program-rules';
 
 const RAW = readFileSync(join(__dirname, '..', 'seed', 'clinic-programs.v1.json'), 'utf8');

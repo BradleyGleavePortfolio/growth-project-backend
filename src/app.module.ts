@@ -235,7 +235,7 @@ import { WearablesModule } from './wearables/wearables.module';
     InviteCodesModule,
     // A1-COACHLESS — coachless Home, featured-coach config, coach-code redemption.
     CoachlessModule,
-    // Clinic C01 — invite-code → package grants, free-package claims, revoke.
+    // Partner C01 — invite-code → package grants, free-package claims, revoke.
     InviteGrantModule,
     MessagingModule,
     BroadcastsModule,

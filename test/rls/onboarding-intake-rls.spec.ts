@@ -1,5 +1,5 @@
 /**
- * Fix round B607-3 — live RLS for the clinic onboarding intake tables, and
+ * Fix round B607-3 — live RLS for the consultation onboarding intake tables, and
  * API/RLS audience parity for the coach consultation read.
  *
  * Runs in the rls-live-tests CI job against a real Postgres 15 with the
@@ -124,7 +124,7 @@ const ROLE_OF: Record<string, string> = Object.fromEntries(USERS.map(([id, r]) =
 
 type Table = 'ClientOnboardingIntake' | 'ClientOnboardingIntakeRevision';
 
-(dbAvailable ? describe : describe.skip)('clinic onboarding intake RLS (live DB)', () => {
+(dbAvailable ? describe : describe.skip)('consultation onboarding intake RLS (live DB)', () => {
   let prisma: PrismaClient;
   let svc: OnboardingService;
   let scope: SubCoachScopeService;
