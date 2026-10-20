@@ -2175,6 +2175,8 @@ describe('CoachBriefService — R2b box-2 consent', () => {
         unreadThreads: [],
         flaggedWeightLogs: [],
         missingCheckinClients: [],
+        reviewCheckIns: [],
+        joinedClients: [],
       }));
       svc['aggregateSoloContext'] = aggregate;
       const out = await args(svc, ['c1', 'c2', 'c3']);

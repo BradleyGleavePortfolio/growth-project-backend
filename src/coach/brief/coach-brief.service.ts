@@ -1179,7 +1179,7 @@ export class CoachBriefService {
     const reviewCheckIns = reviewRaw.map((r) => ({
       id: r.id,
       client_id: r.user_id,
-      client_name: r.user?.name ?? 'Client',
+      client_name: r.user.name,
     }));
     // Joined = the later of the consultation finish and the latest code join.
     const joinedClients = joinedRaw.flatMap((u) => {
