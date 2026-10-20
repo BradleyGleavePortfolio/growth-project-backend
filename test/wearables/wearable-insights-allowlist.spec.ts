@@ -5,7 +5,8 @@
  * faked, and proves the client's live box-2 grant still decides first:
  * - two-capability value (manifest today): the provider is never called;
  * - new value, no grant: 403 ai_consent_required, the provider is never called;
- * - new value, grant: the provider is called once per route.
+ * - new value, grant: the provider is called once per route;
+ * - a connected watch: no raw heart-rate reading reaches either prompt (Sol B2).
  */
 import { WearableMetricBucket } from '@prisma/client';
 import { ENV_RULES } from '../../src/common/env-validation';
@@ -44,7 +45,15 @@ const COACH_JSON = {
   source_metrics: ['SLEEP_TOTAL_MIN'],
 };
 
-function build(capabilities: string, granted: string[]) {
+type Sample = { metric: string; value: number; unit: string; start_at: Date; end_at: Date };
+type SampleWhere = { metric?: { notIn?: string[] } };
+
+function build(
+  capabilities: string,
+  granted: string[],
+  bucket: WearableMetricBucket = BUCKET,
+  samples: Sample[] = [],
+) {
   process.env.AI_GATEWAY_CAPABILITIES = capabilities;
   // A schema-valid answer for each audience, so the service makes no repair call.
   const complete = jest.fn(async (req: { capability: string }) => ({
@@ -61,7 +70,12 @@ function build(capabilities: string, granted: string[]) {
     fakeOf({ name: 'anthropic', complete }),
   );
   const prisma = {
-    wearableSample: { findMany: jest.fn().mockResolvedValue([]) },
+    // Applies the service's metric filter, so a real watch's rows are filtered as Postgres would.
+    wearableSample: {
+      findMany: jest.fn(async ({ where }: { where: SampleWhere }) =>
+        samples.filter((r) => !(where.metric?.notIn ?? []).includes(r.metric)),
+      ),
+    },
     user: {
       findUnique: jest.fn().mockResolvedValue({ name: 'Alex Carter', profile: null }),
       findFirst: jest.fn().mockResolvedValue({ id: CLIENT }),
@@ -88,8 +102,9 @@ function build(capabilities: string, granted: string[]) {
   const coach = fakeOf<AuthedRequest>({ user: { id: COACH, role: 'coach' } });
   return {
     complete,
-    clientRoute: () => ctrl.getClientInsight(client, { bucket: BUCKET }),
-    coachRoute: () => ctrl.getCoachInsight(coach, { clientId: CLIENT, bucket: BUCKET }),
+    findMany: prisma.wearableSample.findMany,
+    clientRoute: () => ctrl.getClientInsight(client, { bucket }),
+    coachRoute: () => ctrl.getCoachInsight(coach, { clientId: CLIENT, bucket }),
   };
 }
 
@@ -150,5 +165,34 @@ describe('WEAR-AI: wearable insight allow-list value, box-2 grant first', () => 
     expect(t.complete).toHaveBeenLastCalledWith(
       expect.objectContaining({ capability: 'wearable_insight.coach' }),
     );
+  });
+
+  // Sol B2 on b#1117: the public pages say Roman never reads the raw heart-rate readings.
+  it('a connected watch: neither prompt carries a raw heart-rate reading; daily figures stay', async () => {
+    const at = (h: number) => new Date(Date.now() - h * 3_600_000);
+    const row = (metric: string, value: number, unit: string, h: number): Sample => ({
+      metric, value, unit, start_at: at(h), end_at: at(h - 0.01),
+    });
+    const t = build(WITH_INSIGHTS, [CLIENT], WearableMetricBucket.HEALTH_FITNESS, [
+      row('HEART_RATE_BPM', 187, 'bpm', 30),
+      row('HEART_RATE_BPM', 193, 'bpm', 2),
+      row('RESTING_HEART_RATE_BPM', 58, 'bpm', 20),
+      row('STEPS', 8421, 'count', 20),
+    ]);
+    await t.clientRoute().catch(() => undefined);
+    await t.coachRoute().catch(() => undefined);
+    expect(t.findMany).toHaveBeenCalledTimes(2);
+    for (const [args] of t.findMany.mock.calls) {
+      expect((args as { where: SampleWhere }).where.metric?.notIn).toContain('HEART_RATE_BPM');
+    }
+    const caps = t.complete.mock.calls.map(([req]) => req.capability);
+    expect(caps).toEqual(expect.arrayContaining(['wearable_insight.client', 'wearable_insight.coach']));
+    for (const [req] of t.complete.mock.calls) {
+      const sent = JSON.stringify(req);
+      expect(sent).not.toMatch(/(?<!RESTING_)HEART_RATE_BPM/);
+      expect(sent).not.toMatch(/=(187|190|193)bpm/);
+      expect(sent).toContain('RESTING_HEART_RATE_BPM');
+      expect(sent).toContain('STEPS');
+    }
   });
 });
