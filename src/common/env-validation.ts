@@ -996,12 +996,14 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'AI_GATEWAY_CAPABILITIES',
-    values: ['draft.create_workout_plan,draft.edit_workout_plan'],
+    // WEAR-AI (owner 161-1 op 1): the second value adds the two wearable insight
+    // capabilities. Both routes check the client's live box-2 grant first.
+    values: ['draft.create_workout_plan,draft.edit_workout_plan', 'draft.create_workout_plan,draft.edit_workout_plan,wearable_insight.client,wearable_insight.coach'],
     unsetIs: 'off',
     tier: 'optional',
     default: "unset → no capability allowed ('*' allows all)",
     reason:
-      "Comma-separated capability allow-list for the AI gateway. Never '*': it would send every gateway capability to the provider.",
+      "Comma-separated capability allow-list for the AI gateway: the two workout capabilities, or those two plus the two wearable insight capabilities (the client's live box-2 grant is checked first). Never '*': it would send every gateway capability to the provider.",
   },
   {
     name: 'AI_GATEWAY_REQUIRE_APPROVAL',

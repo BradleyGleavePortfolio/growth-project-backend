@@ -872,3 +872,26 @@ describe('the crisis sentence follows every Roman safety-reply exception (#CRISI
     expect(count(html, TOLD)).toBe(on ? PLACES.filter(([p]) => p === page).length : 0);
   });
 });
+
+describe('the wearable AI notes sentence (owner 161-1 op 1, WEAR-AI-03 / WEAR-AI-04)', () => {
+  const SENTENCE =
+    'If you allow AI help, Roman also writes short notes about your health and sleep data on your Health pages, and your coach can ask for an AI note about it.';
+  const section = (page: TrustPage, heading: string) => {
+    const html = renderTrustPage(page);
+    const start = html.indexOf(`<h2>${heading}</h2>`);
+    expect(start).toBeGreaterThan(0);
+    return html.slice(start, html.indexOf('</section>', start));
+  };
+
+  it.each<[TrustPage, string]>([
+    ['privacy', 'Roman and AI'],
+    ['consumer-health', 'Categories we share'],
+  ])('%s "%s" carries it once, word for word', (page, heading) => {
+    expect(visibleText(section(page, heading)).split(SENTENCE)).toHaveLength(2);
+  });
+
+  it('those are the only two places on the public pages', () => {
+    const all = ALL_TRUST_PAGES.map((p) => visibleText(renderTrustPage(p))).join(' ');
+    expect(all.split(SENTENCE)).toHaveLength(3);
+  });
+});

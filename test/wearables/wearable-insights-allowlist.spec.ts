@@ -1,0 +1,136 @@
+/**
+ * WEAR-AI (owner 161-1 op 1): the second AI_GATEWAY_CAPABILITIES value lets the
+ * two wearable insight capabilities reach the provider. This runs the real
+ * insight routes, service, gateway and allow-list config with only the provider
+ * faked, and proves the client's live box-2 grant still decides first:
+ * - two-capability value (manifest today): the provider is never called;
+ * - new value, no grant: 403 ai_consent_required, the provider is never called;
+ * - new value, grant: the provider is called once.
+ */
+import { WearableMetricBucket } from '@prisma/client';
+import { ENV_RULES } from '../../src/common/env-validation';
+import { AiGatewayService } from '../../src/ai/gateway/ai-gateway.service';
+import { AiGatewayConfig } from '../../src/ai/gateway/ai-gateway.config';
+import { AiRedactionService } from '../../src/ai/gateway/ai-redaction.service';
+import { AiProviderRegistry } from '../../src/ai/gateway/providers/provider-registry';
+import { StubProviderAdapter } from '../../src/ai/gateway/providers/stub-provider.adapter';
+import { AiConsentRequiredException } from '../../src/ai-egress/ai-consent-required.exception';
+import { WearableInsightsController } from '../../src/wearables/insights/wearable-insights.controller';
+import { WearableInsightsService } from '../../src/wearables/insights/wearable-insights.service';
+import type { AuthedRequest } from '../../src/auth/auth-request';
+import { egressWithGrants, fakeOf } from '../ai-egress/ai-egress.fakes';
+
+const COACH = '11111111-1111-4111-8111-111111111111';
+const CLIENT = '22222222-2222-4222-8222-222222222222';
+const BUCKET = WearableMetricBucket.SLEEP_RECOVERY;
+const VALUES = ENV_RULES.find((r) => r.name === 'AI_GATEWAY_CAPABILITIES')?.values ?? [];
+const WORKOUT_ONLY = VALUES[0] ?? '';
+const WITH_INSIGHTS = VALUES.find((v) => v.includes('wearable_insight.client')) ?? '';
+
+function build(capabilities: string, granted: string[]) {
+  process.env.AI_GATEWAY_CAPABILITIES = capabilities;
+  const complete = jest.fn(async () => ({
+    text: '{}',
+    enabled: true,
+    provider: 'anthropic',
+    model: 'claude-sonnet-4-5',
+    promptTokenEstimate: 10,
+    responseTokenEstimate: 5,
+    meta: {},
+  }));
+  const registry = new AiProviderRegistry(
+    new StubProviderAdapter(),
+    fakeOf({ name: 'anthropic', complete }),
+  );
+  const prisma = {
+    wearableSample: { findMany: jest.fn().mockResolvedValue([]) },
+    user: {
+      findUnique: jest.fn().mockResolvedValue({ name: 'Alex Carter', profile: null }),
+      findFirst: jest.fn().mockResolvedValue({ id: CLIENT }),
+      findMany: jest.fn().mockResolvedValue([{ id: CLIENT }]),
+    },
+    aiRequestAudit: { create: jest.fn(async ({ data }: { data: object }) => ({ id: 'a', ...data })) },
+  };
+  const { egress } = egressWithGrants(granted);
+  const gateway = new AiGatewayService(
+    fakeOf(prisma),
+    new AiGatewayConfig(),
+    new AiRedactionService(),
+    registry,
+    egress,
+  );
+  const cache = {
+    get: jest.fn().mockResolvedValue(null),
+    getEvenIfStale: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue(undefined),
+  };
+  const svc = new WearableInsightsService(fakeOf(prisma), gateway, fakeOf(cache), egress);
+  const ctrl = new WearableInsightsController(svc, fakeOf({}), fakeOf(prisma));
+  const client = fakeOf<AuthedRequest>({ user: { id: CLIENT, role: 'student', coach_id: COACH } });
+  const coach = fakeOf<AuthedRequest>({ user: { id: COACH, role: 'coach' } });
+  return {
+    complete,
+    clientRoute: () => ctrl.getClientInsight(client, { bucket: BUCKET }),
+    coachRoute: () => ctrl.getCoachInsight(coach, { clientId: CLIENT, bucket: BUCKET }),
+  };
+}
+
+describe('WEAR-AI: wearable insight allow-list value, box-2 grant first', () => {
+  const ORIGINAL_ENV = process.env;
+  beforeEach(() => {
+    process.env = { ...ORIGINAL_ENV };
+    process.env.AI_GATEWAY_ENABLED = 'true';
+    process.env.AI_GATEWAY_PROVIDER = 'anthropic';
+    process.env.ANTHROPIC_API_KEY = 'test-only-not-a-key';
+    delete process.env.AI_GATEWAY_REQUIRE_APPROVAL;
+  });
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it('ENV_RULES holds exactly the two values, and only the second names the insight capabilities', () => {
+    expect(VALUES).toEqual([
+      'draft.create_workout_plan,draft.edit_workout_plan',
+      'draft.create_workout_plan,draft.edit_workout_plan,wearable_insight.client,wearable_insight.coach',
+    ]);
+    expect(WORKOUT_ONLY).not.toContain('wearable_insight');
+  });
+
+  it('two-capability value (today): granted client still gets the empty insight; the provider is never called', async () => {
+    const t = build(WORKOUT_ONLY, [CLIENT]);
+    await expect(t.clientRoute()).resolves.toMatchObject({ is_empty: true });
+    await expect(t.coachRoute()).resolves.toMatchObject({ is_empty: true });
+    expect(t.complete).not.toHaveBeenCalled();
+  });
+
+  it('new value, no box-2 grant: client route answers 403 ai_consent_required; the provider is never called', async () => {
+    const t = build(WITH_INSIGHTS, []);
+    const err = await t.clientRoute().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AiConsentRequiredException);
+    expect((err as AiConsentRequiredException).getStatus()).toBe(403);
+    expect((err as AiConsentRequiredException).getResponse()).toMatchObject({
+      code: 'ai_consent_required',
+    });
+    expect(t.complete).not.toHaveBeenCalled();
+  });
+
+  it('new value, no client grant: coach route answers 403; the provider is never called', async () => {
+    const t = build(WITH_INSIGHTS, []);
+    await expect(t.coachRoute()).rejects.toBeInstanceOf(AiConsentRequiredException);
+    expect(t.complete).not.toHaveBeenCalled();
+  });
+
+  it('new value, grant: each route calls the provider once with its own capability', async () => {
+    const t = build(WITH_INSIGHTS, [CLIENT]);
+    await t.clientRoute();
+    expect(t.complete).toHaveBeenCalledTimes(1);
+    expect(t.complete).toHaveBeenLastCalledWith(
+      expect.objectContaining({ capability: 'wearable_insight.client' }),
+    );
+    await t.coachRoute();
+    expect(t.complete).toHaveBeenCalledTimes(2);
+    expect(t.complete).toHaveBeenLastCalledWith(
+      expect.objectContaining({ capability: 'wearable_insight.coach' }),
+    );
+  });
+});
