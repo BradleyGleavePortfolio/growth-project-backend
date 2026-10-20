@@ -111,7 +111,7 @@ class Rollback extends Error {
     expect(await view(L)).toEqual({ courses: [LC], weeks: [LW], lessons: [LX], ...none });
   });
 
-  it('GET /lessons and /lessons/recommended list only single lessons; a course lesson is not completed there', async () => {
+  it('GET /lessons and /lessons/recommended list only single lessons; a client not in the course cannot complete its lesson there', async () => {
     const service = new LessonsService(prisma);
     const ids = (rows: Array<{ id: string }>) => set(...rows.map((r) => r.id));
     for (const who of [K, A, B]) {
