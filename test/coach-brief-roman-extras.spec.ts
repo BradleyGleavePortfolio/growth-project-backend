@@ -51,6 +51,10 @@ async function brief(coachId: string, clients: Client[], checkIns: Row[] = []) {
       .filter((r, i, all) => !distinct?.includes('user_id') || all.findIndex((x) => x.user_id === r.user_id) === i);
     return rows.map((r) => ({ id: r.id, user_id: r.user_id, user: { name: `Name ${r.user_id}` } }));
   });
+  // No flagged weigh-ins (the default answers every raw read with one count row).
+  prisma.$queryRaw.mockImplementation(async (sql: { strings: string[] }) =>
+    sql.strings.join('').includes('"WeightLog"') ? [] : [{ count: 0n, total: 0n }],
+  );
   prisma.coachBrief.updateMany.mockResolvedValue({ count: 1 });
   prisma.coachBrief.update.mockImplementation(async ({ data }: { data: object }) => ({
     id: 'b1', coach_id: coachId, brief_date: '2026-10-20', created_at: new Date(), ...data,
