@@ -5,7 +5,7 @@
  * faked, and proves the client's live box-2 grant still decides first:
  * - two-capability value (manifest today): the provider is never called;
  * - new value, no grant: 403 ai_consent_required, the provider is never called;
- * - new value, grant: each route reaches the provider with its own capability.
+ * - new value, grant: the provider is called once per route.
  */
 import { WearableMetricBucket } from '@prisma/client';
 import { ENV_RULES } from '../../src/common/env-validation';
@@ -27,10 +27,27 @@ const VALUES = ENV_RULES.find((r) => r.name === 'AI_GATEWAY_CAPABILITIES')?.valu
 const WORKOUT_ONLY = VALUES[0] ?? '';
 const WITH_INSIGHTS = VALUES.find((v) => v.includes('wearable_insight.client')) ?? '';
 
+const CLIENT_JSON = {
+  observation: 'Your sleep has been a bit short this week.',
+  norm_comparison: 'Your 6h average is below your usual 7h.',
+  intervention: 'Aim to be in bed 30 minutes earlier tonight.',
+  confidence_level: 'fairly_sure',
+  source_metrics: ['SLEEP_TOTAL_MIN'],
+};
+const COACH_JSON = {
+  observation: 'Sleep was shorter on five of the last seven nights.',
+  hypothesis: 'Later bedtimes on training days.',
+  suggested_action: 'Keep tonight light and protect sleep.',
+  suggested_message_draft: 'Your sleep has been short this week. Lets keep tonight light.',
+  confidence_level: 'fairly_sure',
+  source_metrics: ['SLEEP_TOTAL_MIN'],
+};
+
 function build(capabilities: string, granted: string[]) {
   process.env.AI_GATEWAY_CAPABILITIES = capabilities;
-  const complete = jest.fn(async () => ({
-    text: '{}',
+  // A schema-valid answer for each audience, so the service makes no repair call.
+  const complete = jest.fn(async (req: { capability: string }) => ({
+    text: JSON.stringify(req.capability === 'wearable_insight.coach' ? COACH_JSON : CLIENT_JSON),
     enabled: true,
     provider: 'anthropic',
     model: 'claude-sonnet-4-5',
@@ -120,21 +137,17 @@ describe('WEAR-AI: wearable insight allow-list value, box-2 grant first', () => 
     expect(t.complete).not.toHaveBeenCalled();
   });
 
-  it('new value, grant: each route reaches the provider, with its own capability only', async () => {
-    // The fake answers '{}', which fails the insight schema, so the service
-    // makes its one repair retry: two calls per route, never more.
+  it('new value, grant: each route calls the provider once with its own capability', async () => {
     const t = build(WITH_INSIGHTS, [CLIENT]);
-    const capsOf = (from: number) =>
-      t.complete.mock.calls.slice(from).map((c) => (c as unknown as [{ capability: string }])[0].capability);
-    await t.clientRoute();
-    const clientCalls = capsOf(0);
-    expect(clientCalls.length).toBeGreaterThanOrEqual(1);
-    expect(clientCalls.length).toBeLessThanOrEqual(2);
-    expect(new Set(clientCalls)).toEqual(new Set(['wearable_insight.client']));
-    await t.coachRoute();
-    const coachCalls = capsOf(clientCalls.length);
-    expect(coachCalls.length).toBeGreaterThanOrEqual(1);
-    expect(coachCalls.length).toBeLessThanOrEqual(2);
-    expect(new Set(coachCalls)).toEqual(new Set(['wearable_insight.coach']));
+    await expect(t.clientRoute()).resolves.toMatchObject({ observation: CLIENT_JSON.observation });
+    expect(t.complete).toHaveBeenCalledTimes(1);
+    expect(t.complete).toHaveBeenLastCalledWith(
+      expect.objectContaining({ capability: 'wearable_insight.client' }),
+    );
+    await expect(t.coachRoute()).resolves.toMatchObject({ observation: COACH_JSON.observation });
+    expect(t.complete).toHaveBeenCalledTimes(2);
+    expect(t.complete).toHaveBeenLastCalledWith(
+      expect.objectContaining({ capability: 'wearable_insight.coach' }),
+    );
   });
 });
