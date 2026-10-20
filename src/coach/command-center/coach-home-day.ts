@@ -89,9 +89,11 @@ export interface HomeDayScope {
 
 type WinFact = WinCommon & HomeWinFacts;
 
-/** A local day N days before `day` (both YYYY-MM-DD). */
+/** A logged day (@db.Date) as Prisma takes it. */
+const asDate = (day: string) => new Date(`${day}T00:00:00Z`);
+/** The day N days before `day` (both YYYY-MM-DD). */
 const daysBefore = (day: string, n: number) =>
-  new Date(Date.parse(`${day}T00:00:00Z`) - n * 86_400_000).toISOString().slice(0, 10);
+  new Date(asDate(day).getTime() - n * 86_400_000).toISOString().slice(0, 10);
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 function draftFor(win: WinFact): HomeWinDraft {
@@ -240,6 +242,103 @@ async function goalWins(
   }));
 }
 
+type Rings = CoachHomeDay['rings'];
+
+/** Today's check-ins of clients who share them, and how many are reviewed. */
+async function checkInRing(
+  prisma: PrismaService,
+  ids: string[],
+  today: string,
+  dayFrom: Date,
+  now: Date,
+): Promise<Rings['check_ins']> {
+  if (ids.length === 0) return { reviewed: 0, submitted: 0 };
+  const groups = await prisma.checkIn.groupBy({
+    by: ['reviewed_by_coach'],
+    // Submitted in the coach's today. The day bound (a client's date is
+    // within two days of the coach's) keeps it on CheckIn(user_id, date).
+    where: {
+      user_id: { in: ids },
+      date: { gte: asDate(daysBefore(today, 2)), lte: asDate(daysBefore(today, -2)) },
+      logged_at: { gte: dayFrom, lte: now },
+    },
+    _count: { _all: true },
+  });
+  let reviewed = 0;
+  let submitted = 0;
+  for (const g of groups) {
+    submitted += g._count._all;
+    if (g.reviewed_by_coach) reviewed += g._count._all;
+  }
+  return { reviewed, submitted };
+}
+
+/** Replies and Reach-outs: today's client messages, the coach side's answers, and nudges. */
+async function contactRings(
+  prisma: PrismaService,
+  scope: HomeDayScope,
+  dayFrom: Date,
+  now: Date,
+): Promise<Pick<Rings, 'replies' | 'reach_outs'>> {
+  const { clientIds, ownerCoachId, needsYou } = scope;
+  const goal = Math.min(REACH_OUT_GOAL_MAX, needsYou.length);
+  if (clientIds.length === 0) return { replies: { answered: 0, received: 0 }, reach_outs: { contacted: 0, goal } };
+  const today = { gte: dayFrom, lte: now };
+  const [received, replies, nudges] = await Promise.all([
+    // Messages a client sent in their thread with this coach today. A client
+    // only ever sends in their own thread, so sender_id IN roster is "sent by
+    // the client" (as the overview's unread count reads it).
+    prisma.coachMessage.findMany({
+      where: {
+        coach_id: ownerCoachId,
+        client_id: { in: clientIds },
+        sender_id: { in: clientIds },
+        deleted_at: null,
+        created_at: today,
+      },
+      select: { client_id: true, created_at: true },
+    }),
+    // The coach side's latest message today per thread (the head, a sub-coach,
+    // or an approved Roman draft, which is sent as the coach), broadcast
+    // copies excluded: one message to many clients answers no one.
+    prisma.coachMessage.findMany({
+      where: {
+        coach_id: ownerCoachId,
+        client_id: { in: clientIds },
+        sender_id: { notIn: clientIds },
+        deleted_at: null,
+        broadcast_delivery: { is: null },
+        created_at: today,
+      },
+      orderBy: [{ client_id: 'asc' }, { created_at: 'desc' }],
+      distinct: ['client_id'],
+      select: { client_id: true, created_at: true },
+    }),
+    goal === 0
+      ? Promise.resolve([])
+      : prisma.coachNudge.findMany({
+          where: {
+            coach_id: { in: [...new Set([scope.coachId, ownerCoachId])] },
+            client_id: { in: needsYou },
+            created_at: today,
+          },
+          distinct: ['client_id'],
+          select: { client_id: true },
+        }),
+  ]);
+  const lastReply = new Map<string, number>();
+  for (const r of replies) if (r.client_id) lastReply.set(r.client_id, r.created_at.getTime());
+  const answered = received.filter(
+    (m) => m.client_id !== null && (lastReply.get(m.client_id) ?? 0) > m.created_at.getTime(),
+  ).length;
+  const nudged = new Set(nudges.map((n) => n.client_id));
+  const contacted = needsYou.filter((id) => lastReply.has(id) || nudged.has(id)).length;
+  return {
+    replies: { answered, received: received.length },
+    reach_outs: { contacted: Math.min(contacted, goal), goal },
+  };
+}
+
 export async function loadHomeDay(
   prisma: PrismaService,
   scope: HomeDayScope,
@@ -247,75 +346,13 @@ export async function loadHomeDay(
   now: Date,
 ): Promise<CoachHomeDay> {
   const week = clientWeek(now, timeZone);
-  const dayFrom = week.todayFrom;
-  const { clientIds, ownerCoachId } = scope;
-  const goal = Math.min(REACH_OUT_GOAL_MAX, scope.needsYou.length);
-  const empty = clientIds.length === 0;
-
-  const [checkIns, clientMessages, coachReplies, nudges, streaks, bests, goals] = await Promise.all([
-    scope.habits.length === 0
-      ? []
-      : prisma.checkIn.groupBy({
-          by: ['reviewed_by_coach'],
-          where: { user_id: { in: scope.habits }, logged_at: { gte: dayFrom, lte: now } },
-          _count: { _all: true },
-        }),
-    // Received: messages a client sent in their thread with this coach today.
-    // A client only ever sends in their own thread, so sender_id IN roster is
-    // "sent by the client" (as the overview's unread count reads it).
-    empty
-      ? []
-      : prisma.coachMessage.findMany({
-          where: {
-            coach_id: ownerCoachId,
-            client_id: { in: clientIds },
-            sender_id: { in: clientIds },
-            deleted_at: null,
-            created_at: { gte: dayFrom, lte: now },
-          },
-          select: { client_id: true, created_at: true },
-        }),
-    // The coach side's latest message today per thread (the head, a sub-coach,
-    // or an approved Roman draft, which is sent as the coach), broadcast
-    // copies excluded: one message to many clients answers no one.
-    empty
-      ? []
-      : prisma.coachMessage.findMany({
-          where: {
-            coach_id: ownerCoachId,
-            client_id: { in: clientIds },
-            sender_id: { notIn: clientIds },
-            deleted_at: null,
-            broadcast_delivery: { is: null },
-            created_at: { gte: dayFrom, lte: now },
-          },
-          orderBy: [{ client_id: 'asc' }, { created_at: 'desc' }],
-          distinct: ['client_id'],
-          select: { client_id: true, created_at: true },
-        }),
-    goal === 0
-      ? []
-      : prisma.coachNudge.findMany({
-          where: {
-            coach_id: { in: [...new Set([scope.coachId, ownerCoachId])] },
-            client_id: { in: scope.needsYou },
-            created_at: { gte: dayFrom, lte: now },
-          },
-          distinct: ['client_id'],
-          select: { client_id: true },
-        }),
+  const [checkIns, contact, streaks, bests, goals] = await Promise.all([
+    checkInRing(prisma, scope.habits, week.today, week.todayFrom, now),
+    contactRings(prisma, scope, week.todayFrom, now),
     streakWins(prisma, scope.habits, week.from, now),
     liftingWins(prisma, scope.workouts, week.start, week.today),
     goalWins(prisma, scope.weighIns, week.start, week.today),
   ]);
-
-  const lastReply = new Map<string, number>();
-  for (const r of coachReplies) if (r.client_id) lastReply.set(r.client_id, r.created_at.getTime());
-  const answered = clientMessages.filter(
-    (m) => m.client_id !== null && (lastReply.get(m.client_id) ?? 0) > m.created_at.getTime(),
-  ).length;
-  const nudged = new Set(nudges.map((n) => n.client_id));
-  const contacted = scope.needsYou.filter((id) => lastReply.has(id) || nudged.has(id)).length;
 
   const facts = [...streaks, ...bests, ...goals].sort((a, b) =>
     a.at === b.at ? (a.id < b.id ? -1 : 1) : a.at < b.at ? 1 : -1,
@@ -332,19 +369,11 @@ export async function loadHomeDay(
   const items = newest.map(
     (w): HomeWin => ({ ...w, client_name: names.get(w.client_id) ?? '', draft: draftFor(w) }),
   );
-
-  const count = (reviewed: boolean) =>
-    checkIns.find((g) => g.reviewed_by_coach === reviewed)?._count._all ?? 0;
-  const reviewed = count(true);
   return {
     date: week.today,
     week_start: week.start,
     time_zone: timeZone,
     wins: { count: facts.length, items },
-    rings: {
-      check_ins: { reviewed, submitted: reviewed + count(false) },
-      replies: { answered, received: clientMessages.length },
-      reach_outs: { contacted: Math.min(contacted, goal), goal },
-    },
+    rings: { check_ins: checkIns, ...contact },
   };
 }

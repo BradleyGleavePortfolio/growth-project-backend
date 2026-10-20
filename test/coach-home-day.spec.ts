@@ -65,7 +65,13 @@ describe("HOME-BE: the coach Home's day", () => {
     expect([out.date, out.week_start, out.time_zone]).toEqual(['2026-10-14', '2026-10-12', 'America/Los_Angeles']);
 
     expect(db.checkIn.groupBy.mock.calls[0]).toEqual([
-      expect.objectContaining({ where: { user_id: { in: ['c1', 'c2'] }, logged_at: { gte: TODAY_FROM, lte: NOW } } }),
+      expect.objectContaining({
+        where: {
+          user_id: { in: ['c1', 'c2'] },
+          date: { gte: new Date('2026-10-12T00:00:00Z'), lte: new Date('2026-10-16T00:00:00Z') },
+          logged_at: { gte: TODAY_FROM, lte: NOW },
+        },
+      }),
     ]);
     const [received, replies] = db.coachMessage.findMany.mock.calls.map(([a]) => a.where);
     expect(received).toEqual({
