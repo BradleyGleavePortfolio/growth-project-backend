@@ -38,6 +38,7 @@ import {
   recordVoiceErasures,
   type VoiceErasureRow,
 } from '../voice/voice-erasure';
+import { hideVoiceChatMessage } from '../voice/community-voice.repository';
 import {
   CommunityModerationItemListResponse,
   CommunityModerationItemListResponseSchema,
@@ -274,6 +275,9 @@ export class CommunityModerationService {
     // message OR comment — both are CommunityMessage rows.
     const msg = await this.messagesRepo.findById(targetId);
     if (!msg || msg.deleted_at) throw new NotFoundException(NOT_FOUND);
+    // VOICE-BE: a space voice message shares its voice note's id; reporting it
+    // reports the voice note, so Hide also erases the recording.
+    if (msg.kind === 'voice') return this.resolveVoiceNoteTarget(user, msg.id);
     if (msg.cohort_id) {
       const cohort = await this.access.findCohort(msg.cohort_id);
       if (!cohort || !(await this.access.canAccessCohort(cohort, user))) {
@@ -917,6 +921,7 @@ export class CommunityModerationService {
     }
     if (targetType === 'message') {
       const msg = await this.messagesRepo.findById(targetId, tx);
+      if (msg?.kind === 'voice') return this.hideTarget(tx, 'voice_note', msg.id);
       if (msg && !msg.deleted_at) {
         await this.messagesRepo.softDelete({ id: msg.id, created_at: msg.created_at }, tx);
       }
@@ -945,6 +950,7 @@ export class CommunityModerationService {
         where: { kind: 'voice_note_transcript', targetId, softDeletedAt: null },
         data: { softDeletedAt: at },
       });
+      await hideVoiceChatMessage(tx, targetId, at);
       return work;
     }
     if (targetType === 'win') {

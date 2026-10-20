@@ -725,6 +725,13 @@ describe('two-way block: member list, leaderboard, wins, Today, search and voice
       const repo = {
         findById: async (id: string) => notes.find((n) => n.id === id) ?? null,
         list: async () => ({ items: notes, nextCursor: null }),
+        viewExtras: async () => ({
+          coachId: COACH,
+          names: new Map<string, string | null>(),
+          fullName: () => false,
+          heardAt: new Map<string, Date>(),
+          chat: new Map<string, { parent_message_id: string | null }>(),
+        }),
       };
       const upload = { createSignedDownload: async () => 'https://signed.download/get' };
       return new CommunityVoiceService(
@@ -872,6 +879,7 @@ const EXEMPT: Record<string, string> = {
   'PlanContextController.resolve': 'resolves a plan reference id, no member-authored content',
   'CommunitySafetyController.info': 'static safety copy',
   'CommunitySafetyController.list': "the caller's own block list",
+  'CommunityVoiceController.consent': "the caller's own voice consent flag (no member content)",
   'CommunitySafetyController.notices':
     "the caller's own moderation notices (fixed server copy, no other member's content)",
   'CommunityController.getMe': "the caller's own membership and flags",
