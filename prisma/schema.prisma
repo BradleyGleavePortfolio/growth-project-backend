@@ -174,8 +174,9 @@ model User {
   coach_id                  String?
   coach                     User?              @relation("CoachToStudents", fields: [coach_id], references: [id])
   // When this client joined their current coach. Written only by the
-  // "User_coach_joined_at" trigger (20270502007500): set when coach_id goes
-  // from null to a coach, kept on a team move, cleared with coach_id.
+  // "User_coach_joined_at" trigger (20270502007500): set whenever coach_id
+  // changes to a coach (attach or move), kept while it is unchanged, cleared
+  // with coach_id.
   coach_joined_at           DateTime?
   students                  User[]             @relation("CoachToStudents")
   // Stage-3 cross-pillar federation. Only meaningful when `role = coach`

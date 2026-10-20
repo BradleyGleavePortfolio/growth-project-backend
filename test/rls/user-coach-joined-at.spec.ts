@@ -4,7 +4,10 @@
  * so the brief's "Joined today" row sees a paid invite, a guest checkout and
  * a code join alike. The server writes below are the same statements those
  * paths send: a new account created with its coach (guest checkout), a
- * coachless account attached later (code, QR, paid fan-out, guest conversion).
+ * coachless account attached later (code, QR, paid fan-out, guest conversion),
+ * and a move to another coach (one client, or the bulk move of a removed
+ * sub-coach's clients to the head coach). FIX-1118-R2 (Sol B2): a move starts
+ * a new join time, so the new coach's brief shows "Joined today".
  *
  * Runs in the rls-live-tests job on a superuser copy of rls_replay. Row layer:
  * role authenticated (no bypass) with the backend's app GUCs. Every 0 or
@@ -42,12 +45,12 @@ const statements = (file: string) => {
   return out.filter((s) => s && !/^(BEGIN|COMMIT)$/i.test(s));
 };
 
-type Key = 'K' | 'L' | 'A' | 'B';
-const ROLE: Record<Key, string> = { K: 'coach', L: 'coach', A: 'student', B: 'student' };
+type Key = 'K' | 'L' | 'A' | 'B' | 'C' | 'D' | 'E';
+const ROLE: Record<Key, string> = { K: 'coach', L: 'coach', A: 'student', B: 'student', C: 'student', D: 'student', E: 'student' };
 
 (DB_URL ? describe : describe.skip)('"User".coach_joined_at: set by the database on every attach to a coach', () => {
   const prisma = new PrismaClient({ datasources: { db: { url: DB_URL } } });
-  const keys: Key[] = ['K', 'L', 'A', 'B'];
+  const keys: Key[] = ['K', 'L', 'A', 'B', 'C', 'D', 'E'];
   const id = Object.fromEntries(keys.map((k) => [k, randomUUID()])) as Record<Key, string>;
   const sub = Object.fromEntries(keys.map((k) => [k, randomUUID()])) as Record<Key, string>;
 
@@ -110,12 +113,19 @@ const ROLE: Record<Key, string> = { K: 'coach', L: 'coach', A: 'student', B: 'st
     near(await joinedAt('B'));
   });
 
-  it('a team move between coaches keeps the first join time; a same-coach write (renewal) keeps it', async () => {
+  it('a move to another coach starts a new join time (the join to the current coach)', async () => {
     await backdate('B');
     expect(await joinedAt('B')).toEqual(OLD); // control: the backdate landed
     await setCoach('B', 'L');
+    near(await joinedAt('B'));
+  });
+
+  it('while the coach is unchanged the time is kept: a same-coach write (renewal), with or without a time', async () => {
+    await backdate('B');
     expect(await joinedAt('B')).toEqual(OLD);
     await setCoach('B', 'L');
+    expect(await joinedAt('B')).toEqual(OLD);
+    await prisma.$executeRaw`UPDATE "User" SET "coach_id" = ${id.L}, "coach_joined_at" = now() WHERE "id" = ${id.B}`;
     expect(await joinedAt('B')).toEqual(OLD);
   });
 
@@ -141,6 +151,45 @@ const ROLE: Record<Key, string> = { K: 'coach', L: 'coach', A: 'student', B: 'st
     expect(await joinedAt('B')).toBeNull();
     await setCoach('B', 'K');
     near(await joinedAt('B'));
+  });
+
+  it("a bulk move (a removed sub-coach's clients to the head coach) stamps each moved client, only them", async () => {
+    for (const k of ['C', 'D', 'E'] as Key[]) {
+      await insert(k, 'L');
+      await backdate(k);
+      expect(await joinedAt(k)).toEqual(OLD); // control
+    }
+    // The statement tx.user.updateMany({ where: { id: { in } }, data: { coach_id } })
+    // sends in team-mode.service.ts and sub-coach-invite.service.ts.
+    expect(await prisma.$executeRaw`
+      UPDATE "User" SET "coach_id" = ${id.K} WHERE "id" IN (${id.C}, ${id.D})`).toBe(2);
+    near(await joinedAt('C'));
+    near(await joinedAt('D'));
+    expect(await joinedAt('E')).toEqual(OLD); // not moved
+  });
+
+  it('the new coach\'s "Joined today" read finds a moved client whose consultation finished long ago', async () => {
+    await prisma.$executeRaw`
+      INSERT INTO "ClientOnboardingIntake" ("id", "client_id", "version", "answers", "completed_at", "updated_at")
+      VALUES (${randomUUID()}, ${id.C}, 'consult-v1', '{}'::jsonb, '2026-01-01 00:00:00', now())`;
+    // The where of the brief's client_joined read (aggregateSoloContext).
+    const joinedFor = (coach: Key) => {
+      const dayAgo = new Date(Date.now() - 24 * 3_600_000);
+      return prisma.user.findMany({
+        where: {
+          id: { in: [id.C, id.E] },
+          coach_id: id[coach],
+          onboarding_intake: { is: { completed_at: { not: null } } },
+          OR: [
+            { onboarding_intake: { is: { completed_at: { gte: dayAgo } } } },
+            { coach_joined_at: { gte: dayAgo } },
+          ],
+        },
+        select: { id: true },
+      }).then((r) => r.map((u) => u.id));
+    };
+    expect(await joinedFor('K')).toEqual([id.C]); // the new coach
+    expect(await joinedFor('L')).toEqual([]); // the former coach
   });
 
   it('down.sql removes the trigger, function and column; migration.sql puts them back', async () => {

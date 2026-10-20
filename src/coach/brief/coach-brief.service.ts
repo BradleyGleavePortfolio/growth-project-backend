@@ -1132,7 +1132,8 @@ export class CoachBriefService {
         : [],
       // R2: clients still linked to this coach, consultation finished, who
       // joined in the last 24 h: the consultation finish or the join to this
-      // coach (User.coach_joined_at, set by the database on every attach) is
+      // coach (User.coach_joined_at, set by the database on every attach or
+      // move to this coach) is
       // inside the window.
       own
         ? this.prisma.user.findMany({

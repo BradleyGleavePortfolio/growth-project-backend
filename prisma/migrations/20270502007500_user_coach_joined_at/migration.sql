@@ -5,11 +5,13 @@
 --
 -- The time is written by a trigger, not by each caller, so every path that
 -- attaches a client to a coach sets it, today's and any added later:
---   * coach_id goes from null to a coach (INSERT or UPDATE): now, in UTC.
---   * coach_id moves from one coach to another (a team-internal move): kept.
---     That is not a new client joining the business.
 --   * coach_id goes to null (account deletion): cleared.
--- A renewal of an existing client does not touch coach_id, so it is not a join.
+--   * INSERT with a coach, or coach_id changes (null to a coach, or one coach
+--     to another, e.g. a sub-coach's clients moved to the head coach): now,
+--     in UTC. The time is when the client joined their CURRENT coach.
+--   * coach_id unchanged (a renewal, a same-coach write, or a direct write of
+--     coach_joined_at): kept.
+-- FIX-1118-R2 (Sol B2): a move from coach A to coach B used to keep A's time.
 --
 -- Additive and nullable: existing clients keep null (joined before this
 -- column; the brief also counts a consultation finished in the last 24 h).
@@ -29,7 +31,7 @@ AS $$
 BEGIN
   IF NEW."coach_id" IS NULL THEN
     NEW."coach_joined_at" := NULL;
-  ELSIF TG_OP = 'INSERT' OR OLD."coach_id" IS NULL THEN
+  ELSIF TG_OP = 'INSERT' OR OLD."coach_id" IS DISTINCT FROM NEW."coach_id" THEN
     NEW."coach_joined_at" := now() AT TIME ZONE 'UTC';
   ELSE
     NEW."coach_joined_at" := OLD."coach_joined_at";

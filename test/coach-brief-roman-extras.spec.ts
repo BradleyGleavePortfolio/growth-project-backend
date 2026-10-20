@@ -122,6 +122,16 @@ describe('coach brief: client_joined (R2)', () => {
     expect(current.of('client_joined').map((r) => r.client_id)).toEqual(['m1']);
     expect(current.of('checkin_review')).toEqual([]);
   });
+
+  // FIX-1118-R2 (Sol B2): a move to this coach stamps a new join time (the
+  // trigger), so a moved client with an old consultation is "Joined today".
+  it('a client moved to this coach today, consultation 40 days ago, is "Joined today" for the new coach only', async () => {
+    const moved: Client = { id: 'm2', coach_id: 'B', done: ago(24 * 40), joinedAt: new Date() };
+    const current = await brief('B', [moved]);
+    expect(current.of('client_joined')).toMatchObject([{ client_id: 'm2', detail: 'Joined today' }]);
+    const former = await brief('A', [moved, linked('a1', 'A')]);
+    expect(former.of('client_joined')).toEqual([]);
+  });
 });
 
 // Sol B2: every way a client attaches to a coach writes User.coach_joined_at
