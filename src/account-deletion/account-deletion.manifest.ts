@@ -68,8 +68,8 @@ const SCOUT_LEDGER =
 /**
  * COACH-GONE-DELIVERY: a purchase that outlives its deleted coach. Paid and held, and not a plan
  * that would renew (that one is canceled at finalization, as before); a plan set to end at period
- * end (from his deletion request) runs out. Its client keeps what was delivered and still gets
- * what is due; nobody else does. KEPT_PURCHASE_SQL is the same rule on alias p.
+ * end (from his deletion request) runs out. Its client still gets what is due; nobody else does
+ * (what any purchase of his delivered stays, kept or not). KEPT_PURCHASE_SQL is the same rule on alias p.
  */
 export const KEPT_PURCHASE: Prisma.ClientPurchaseWhereInput = {
   entitlement_active: true,
@@ -1033,9 +1033,9 @@ export async function executeErasureManifest(
 
   // LEARN-FROZEN-MEDIA: a grant on the coach's media stays only where its
   // client keeps a lesson that still plays it (completed it, or is enrolled in
-  // its course), or (COACH-GONE-DELIVERY) a kept purchase of that client names
-  // it. No lesson plays a deleted media row any more, so every grant on it
-  // goes, as does every other client's grant on a kept one.
+  // its course), or (COACH-GONE-DELIVERY) a purchase of that client delivered
+  // it or a kept one still names it. No lesson plays a deleted media row any
+  // more, so every grant on it goes, as does every other client's grant on a kept one.
   if (ownedAssets.length > 0) {
     const ids = ownedAssets.map((a) => a.id);
     const paid = owed.map((r) => `${r.client_id}:${r.asset_id}`);
