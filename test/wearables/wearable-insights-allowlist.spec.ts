@@ -179,8 +179,8 @@ describe('WEAR-AI: wearable insight allow-list value, box-2 grant first', () => 
       row('RESTING_HEART_RATE_BPM', 58, 'bpm', 20),
       row('STEPS', 8421, 'count', 20),
     ]);
-    await t.clientRoute().catch(() => undefined);
-    await t.coachRoute().catch(() => undefined);
+    await t.clientRoute().catch((e: unknown) => e);
+    await t.coachRoute().catch((e: unknown) => e);
     expect(t.findMany).toHaveBeenCalledTimes(2);
     for (const [args] of t.findMany.mock.calls) {
       expect((args as { where: SampleWhere }).where.metric?.notIn).toContain('HEART_RATE_BPM');
