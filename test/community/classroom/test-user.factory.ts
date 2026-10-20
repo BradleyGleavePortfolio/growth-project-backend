@@ -22,6 +22,7 @@ export function makeUser(args: { id: string; role: Role; overrides?: Partial<Use
     phone: null,
     role: args.role,
     coach_id: null,
+    coach_joined_at: null,
     coach_practice_type: null,
     created_at: EPOCH,
     archived_at: null,

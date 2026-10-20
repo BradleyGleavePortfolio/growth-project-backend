@@ -30,6 +30,7 @@ function userRow(archivedAt: Date | null) {
     phone: '+15550100001',
     role: 'student',
     coach_id: 'coach-A',
+    coach_joined_at: null,
     coach_practice_type: null,
     created_at: new Date('2026-09-01T00:00:00Z'),
     archived_at: archivedAt,

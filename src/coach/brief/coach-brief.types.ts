@@ -44,6 +44,11 @@ export interface BriefContext {
 
   unread_messages: number;
 
+  // ROMAN-EXTRAS: how many checkin_review and client_joined rows the brief
+  // lists (counts only; the rows never reach the AI).
+  checkins_to_review?: number;
+  joined_last_24h?: number;
+
   coach_name: string;
   coach_first_name: string;
   roster_size: number;

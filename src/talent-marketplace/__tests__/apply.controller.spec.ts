@@ -37,6 +37,7 @@ const BASE_USER = {
   phone: null,
   role: 'student',
   coach_id: null,
+  coach_joined_at: null,
   coach_practice_type: null,
   created_at: new Date('2026-06-18T00:00:00.000Z'),
   archived_at: null,

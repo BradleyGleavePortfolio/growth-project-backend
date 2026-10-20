@@ -309,7 +309,8 @@ function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
   const actionCount =
     ctx.weight_logs_flagged +
     ctx.unread_messages +
-    (ctx.missed_checkin > 0 ? 1 : 0);
+    (ctx.missed_checkin > 0 ? 1 : 0) +
+    newRowCount(ctx);
 
   const handoffHint =
     actionCount === 0
@@ -330,6 +331,8 @@ function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
     `Workouts completed today: ${ctx.workouts_completed_today}`,
     `Unread messages: ${ctx.unread_messages}`,
     `Weight log flags (large delta): ${ctx.weight_logs_flagged}`,
+    `Check-ins waiting for the coach's review (last 24 h): ${ctx.checkins_to_review ?? 0}`,
+    `Clients who joined in the last 24 h: ${ctx.joined_last_24h ?? 0}`,
     ...(ctx.not_shared ? [`Not shared with the coach, so left out of the counts above: check-ins from ${ctx.not_shared.check_ins}, weigh-ins from ${ctx.not_shared.weigh_ins}, workouts from ${ctx.not_shared.workouts} of the ${ctx.roster_size} clients. Do not state roster-wide totals for these.`] : []),
     ``,
     `--- PAYMENTS / TGP HANDLING ---`,
@@ -408,8 +411,8 @@ export function buildFallbackNarrative(
 
   // Trim to 5 and pad to 3 just in case — the contract requires 3–5.
   while (sentences.length > 5) sentences.pop();
-  while (sentences.length < 3) {
-    sentences.push('The full details are below.');
+  while (sentences.length < 3 && !sentences.includes(FULL_DETAILS)) {
+    sentences.push(FULL_DETAILS);
   }
 
   let narrative = sentences.join(' ');
@@ -426,6 +429,13 @@ export function buildFallbackNarrative(
     narrative = narrative.slice(0, BRIEF_MAX_NARRATIVE_CHARS);
   }
   return narrative;
+}
+
+const FULL_DETAILS = 'The full details are below.';
+
+// ROMAN-EXTRAS: the checkin_review + client_joined rows this brief lists.
+function newRowCount(ctx: BriefContext): number {
+  return (ctx.checkins_to_review ?? 0) + (ctx.joined_last_24h ?? 0);
 }
 
 // COACH-AI-GATE-130: how many roster clients share check-ins with the coach.
@@ -490,8 +500,10 @@ function buildSoloOrSubCoachFallbackSentences(ctx: BriefContext): string[] {
     fragments.push(
       `${ctx.weight_logs_flagged} weight ${plural(ctx.weight_logs_flagged, 'change', 'changes')} to review`,
     );
+  // ROMAN-EXTRAS B1: check-in reviews and new clients are rows below, so the
+  // all-clear would be false; point at the rows with the existing line.
   if (fragments.length === 0) {
-    sentences.push('Nothing else needs your attention right now.');
+    sentences.push(newRowCount(ctx) > 0 ? FULL_DETAILS : 'Nothing else needs your attention right now.');
   } else {
     sentences.push(`Waiting below: ${fragments.join(', ')}.`);
   }
@@ -1103,6 +1115,7 @@ export class CoachBriefService {
       }),
       // R1: check-ins from the last 24 h not reviewed yet, logged with this
       // coach, from clients still theirs who share check-ins (checkInIds).
+      // One row per client (the newest), even when the window spans two days.
       own
         ? this.prisma.checkIn.findMany({
             where: {
@@ -1113,12 +1126,14 @@ export class CoachBriefService {
             },
             select: { id: true, user_id: true, user: { select: { name: true } } },
             orderBy: { logged_at: 'desc' },
+            distinct: ['user_id'],
             take: 50,
           })
         : [],
       // R2: clients still linked to this coach, consultation finished, who
-      // joined in the last 24 h: the finish or the code join to this coach is
-      // inside the window (a paid join writes no code row, so the finish counts).
+      // joined in the last 24 h: the consultation finish or the join to this
+      // coach (User.coach_joined_at, set by the database on every attach) is
+      // inside the window.
       own
         ? this.prisma.user.findMany({
             where: {
@@ -1127,23 +1142,14 @@ export class CoachBriefService {
               onboarding_intake: { is: { completed_at: { not: null } } },
               OR: [
                 { onboarding_intake: { is: { completed_at: { gte: dayAgo } } } },
-                {
-                  invite_redemptions_as_client: {
-                    some: { coach_id: coachId, redeemed_at: { gte: dayAgo } },
-                  },
-                },
+                { coach_joined_at: { gte: dayAgo } },
               ],
             },
             select: {
               id: true,
               name: true,
+              coach_joined_at: true,
               onboarding_intake: { select: { completed_at: true } },
-              invite_redemptions_as_client: {
-                where: { coach_id: coachId },
-                orderBy: { redeemed_at: 'desc' },
-                take: 1,
-                select: { redeemed_at: true },
-              },
             },
             take: 20,
           })
@@ -1181,9 +1187,9 @@ export class CoachBriefService {
       client_id: r.user_id,
       client_name: r.user.name,
     }));
-    // Joined = the later of the consultation finish and the latest code join.
+    // Joined = the later of the consultation finish and the join to this coach.
     const joinedClients = joinedRaw.flatMap((u) => {
-      const at = [u.onboarding_intake?.completed_at, u.invite_redemptions_as_client?.[0]?.redeemed_at]
+      const at = [u.onboarding_intake?.completed_at, u.coach_joined_at]
         .filter((d): d is Date => d instanceof Date)
         .sort((a, b) => b.getTime() - a.getTime())[0];
       if (!at) return [];
@@ -1206,6 +1212,8 @@ export class CoachBriefService {
       dunning_in_progress: dunningInProgress,
       weight_logs_flagged: flaggedWeightLogs.length,
       unread_messages: unreadThreads.length,
+      checkins_to_review: reviewCheckIns.length,
+      joined_last_24h: joinedClients.length,
       coach_name: coachName,
       coach_first_name: coachFirstName,
       roster_size: clientIds.length,
@@ -1590,12 +1598,16 @@ export class CoachBriefService {
         };
       }
     } else {
-      // Completed workouts are worth narrating, so they keep the AI brief.
+      // Completed workouts are worth narrating, so they keep the AI brief, and
+      // so does a new client (as new_clients_last_24h does for a head coach).
+      // Check-in reviews do not: on this all-checked-in day they always exist,
+      // and the fallback already points at their rows (ROMAN-EXTRAS B1).
       const actionCount =
         ctx.workouts_completed_today +
         (ctx.missed_checkin > 0 ? 1 : 0) +
         ctx.weight_logs_flagged +
-        ctx.unread_messages;
+        ctx.unread_messages +
+        (ctx.joined_last_24h ?? 0);
 
       if (actionCount === 0 && ctx.checked_in_today > 0) {
         return {
