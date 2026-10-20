@@ -78,7 +78,7 @@ describe('ClientPathChangeMaterializer (the apply handlers)', () => {
   it('a session that moved or finished since is refused and the claim is released for Edit or Decline', async () => {
     const { m, draft, writes } = materialiser({ moved: 0 });
     await expect(m.materialize(draft(move))).rejects.toMatchObject({ status: 409, response: { code: 'COPILOT_PLAN_CHANGED' } });
-    expect(writes.at(-1)).toEqual(['draft', { materialised_at: null }]);
+    expect(writes[writes.length - 1]).toEqual(['draft', { materialised_at: null }]);
   });
   it('set_calorie_target writes a coach target through MacrosService: protein kept, carbs and fats scaled', async () => {
     const { m, draft, macros } = materialiser();
@@ -89,7 +89,7 @@ describe('ClientPathChangeMaterializer (the apply handlers)', () => {
     const floor = materialiser();
     floor.macros.createForClient.mockRejectedValueOnce(new BadRequestException('floor'));
     await expect(floor.m.materialize(floor.draft(kcal))).rejects.toBeInstanceOf(BadRequestException);
-    expect(floor.writes.at(-1)).toEqual(['draft', { materialised_at: null }]);
+    expect(floor.writes[floor.writes.length - 1]).toEqual(['draft', { materialised_at: null }]);
     const changed = materialiser({ current: { id: 'other', calories_kcal: 2300, protein_g: 160, carbs_g: 240, fats_g: 75 } });
     await expect(changed.m.materialize(changed.draft(kcal))).rejects.toMatchObject({ status: 409 });
   });
@@ -152,7 +152,7 @@ describe('GET /ai/gateway/drafts?order=oldest (the paged queue)', () => {
       user: { findMany: jest.fn(async (a: { where: { coach_id?: string } }) => (a.where.coach_id ? [{ id: CLIENT }] : [{ id: CLIENT }])) },
       aiActionDraft: {
         count: jest.fn(async () => total),
-        findMany: jest.fn(async () => rows.map((r) => ({ ...r, payload: {}, created_at: new Date(0) }))),
+        findMany: jest.fn(async (_a: { where: object; orderBy: object; take: number }) => rows.map((r) => ({ ...r, payload: {}, created_at: new Date(0) }))),
         findFirst: jest.fn(async (a: { where: { id: string } }) => (a.where.id === 'p2' ? { id: 'p2', created_at: new Date(0) } : null)),
       },
     };
@@ -162,7 +162,7 @@ describe('GET /ai/gateway/drafts?order=oldest (the paged queue)', () => {
     const { svc, prisma } = queue([{ id: 'p1', subject_user_id: CLIENT }, { id: 'p2', subject_user_id: CLIENT }, { id: 'p3', subject_user_id: CLIENT }], 12);
     const page = await svc.pageQueue({ tenantCoachId: COACH, limit: 2 });
     expect(page).toMatchObject({ total: 12, next_cursor: 'p2', items: [{ id: 'p1' }, { id: 'p2' }] });
-    const args = prisma.aiActionDraft.findMany.mock.calls[0][0] as { where: object; orderBy: object; take: number };
+    const args = prisma.aiActionDraft.findMany.mock.calls[0][0];
     expect(args).toMatchObject({ orderBy: [{ created_at: 'asc' }, { id: 'asc' }], take: 3 });
     expect(args.where).toEqual({ status: 'pending', tenant_coach_id: COACH, OR: [{ subject_user_id: null }, { subject_user_id: { in: [COACH, CLIENT] } }] });
     expect(prisma.aiActionDraft.count).toHaveBeenCalledWith({ where: args.where });
