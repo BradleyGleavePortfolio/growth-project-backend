@@ -1113,6 +1113,9 @@ model ExerciseSet {
   rpe            Float?
   notes          String?
   video_url      String?
+
+  // HOME-BE: the coach Home's lifting-best read joins sets by session.
+  @@index([workout_id])
 }
 
 model WorkoutRoutine {

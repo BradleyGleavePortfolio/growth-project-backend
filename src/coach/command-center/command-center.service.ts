@@ -27,6 +27,8 @@ import { CoachAlertsService, ROMAN_SAFETY_ALERT_TYPES, currentCoachAlerts } from
 import { SubCoachScopeService } from '../../sub-coach/sub-coach-scope.service';
 import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../../consent/consent.service';
 import { CHURN_FACTOR_SCOPES, coachVisibleFactors } from './churn-factor-scopes';
+import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
+import { type CoachHomeDay, loadHomeDay } from './coach-home-day';
 import type { CoachRiskBoardRow } from '../../admin/ptm/admin-ptm.service';
 import type { PtmRiskBucket } from '../../ptm/ptm.types';
 
@@ -41,6 +43,8 @@ export interface CommandCenterOverview {
   win_streak_count: number;
   unread_messages: number;
   pending_actions: number;
+  /** HOME-BE: only with ?include=home (see coach-home-day.ts). */
+  home?: CoachHomeDay;
 }
 
 export interface AtRiskEntry {
@@ -178,6 +182,7 @@ function buildThreadId(id1: string, id2: string): string {
 interface SharedClientIds {
   habits: string[]; // "Check-ins and habits": check-in counts and streaks
   workouts: string[]; // "Workouts": workout streaks
+  weighIns: string[]; // "Body metrics" (HOME-BE): weigh-ins and goal weight
   allFour: string[]; // all four: the churn-risk score reads all four kinds of logs
 }
 
@@ -319,13 +324,14 @@ export class CommandCenterService {
   // is no owner bypass to keep here.
   private async sharedWith(coachId: string, clientIds: string[]): Promise<SharedClientIds> {
     if (!this.consent) {
-      return { habits: clientIds, workouts: clientIds, allFour: clientIds };
+      return { habits: clientIds, workouts: clientIds, weighIns: clientIds, allFour: clientIds };
     }
     const granted = await this.consent.grantedScopesByClient(coachId, clientIds, COACH_FITNESS_SCOPES);
     const has = (id: string, scope: string) => granted.get(id)?.has(scope) === true;
     return {
       habits: clientIds.filter((id) => has(id, ConsentScope.FITNESS_HABITS_PROGRESS)),
       workouts: clientIds.filter((id) => has(id, ConsentScope.FITNESS_WORKOUTS)),
+      weighIns: clientIds.filter((id) => has(id, ConsentScope.FITNESS_BODY_METRICS)),
       allFour: clientIds.filter((id) => COACH_FITNESS_SCOPES.every((s) => has(id, s))),
     };
   }
@@ -381,7 +387,16 @@ export class CommandCenterService {
   }
 
   // ── /overview ────────────────────────────────────────────────────────
-  async getOverview(coachId: string): Promise<CommandCenterOverview> {
+  // HOME-BE: `home` adds the coach Home's day (coach-home-day.ts); `now` is
+  // for tests. Without it the response and its queries are unchanged.
+  async getOverview(
+    coachId: string,
+    opts: { home?: boolean; now?: Date } = {},
+  ): Promise<CommandCenterOverview> {
+    const at = opts.now ?? new Date();
+    const zone = opts.home
+      ? resolveRecipientTimeZone(this.prisma, coachId).then((z) => z ?? 'America/Los_Angeles')
+      : undefined;
     const now = Date.now();
     const sevenDaysAgo = new Date(now - 7 * ONE_DAY_MS);
     const oneDayAgo = new Date(now - ONE_DAY_MS);
@@ -394,6 +409,7 @@ export class CommandCenterService {
     const rosterSize = clientIds.length;
 
     if (rosterSize === 0) {
+      const none = { habits: [], workouts: [], weighIns: [], needsYou: [] };
       return {
         roster_size: 0,
         active_today: 0,
@@ -403,6 +419,9 @@ export class CommandCenterService {
         win_streak_count: 0,
         unread_messages: 0,
         pending_actions: 0,
+        ...(zone
+          ? { home: await loadHomeDay(this.prisma, { coachId, ownerCoachId, clientIds, ...none }, await zone, at) }
+          : {}),
       };
     }
 
@@ -494,7 +513,7 @@ export class CommandCenterService {
     ]);
 
     // At-risk count: fetch latest prediction per user, count those with risk > 0.3
-    let atRiskCount = 0;
+    let atRiskIds: string[] = [];
     const orPairs = latestPredictionGroups
       .filter((g) => g._max.computed_at != null)
       .map((g) => ({
@@ -504,9 +523,9 @@ export class CommandCenterService {
     if (orPairs.length > 0) {
       const latestPredictions = await this.prisma.ptmPrediction.findMany({
         where: { OR: orPairs },
-        select: { risk_score: true },
+        select: { user_id: true, risk_score: true },
       });
-      atRiskCount = latestPredictions.filter((p) => p.risk_score > 0.3).length;
+      atRiskIds = latestPredictions.filter((p) => p.risk_score > 0.3).map((p) => p.user_id);
     }
 
     // CC-5: check_in_rate_7day is an adherence FREQUENCY, not binary
@@ -532,10 +551,21 @@ export class CommandCenterService {
       active_today: activeTodayGroups.length,
       check_in_rate_7day: Math.round(checkInRate * 100) / 100,
       open_alerts: openAlerts,
-      at_risk_count: atRiskCount,
+      at_risk_count: atRiskIds.length,
       win_streak_count: winStreakGroups.length,
       unread_messages: unreadMessages,
       pending_actions: pendingActions,
+      // Needs you is the at-risk set above (the phone's Needs-you list).
+      ...(zone
+        ? {
+            home: await loadHomeDay(
+              this.prisma,
+              { coachId, ownerCoachId, clientIds, ...shared, needsYou: [...new Set(atRiskIds)] },
+              await zone,
+              at,
+            ),
+          }
+        : {}),
     };
   }
 

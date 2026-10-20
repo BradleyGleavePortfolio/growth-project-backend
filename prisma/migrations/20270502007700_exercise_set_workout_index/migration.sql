@@ -1,0 +1,24 @@
+-- HOME-BE: index on "ExerciseSet"."workout_id".
+--
+-- WHY: the coach Home's lifting-best read (GET /coach/command-center/overview
+-- ?include=home) joins a client's WorkoutSession rows to their ExerciseSet
+-- rows by workout_id. ExerciseSet has a foreign key on workout_id but no
+-- index, so every such join, and every set read or delete by session in
+-- WorkoutService, scans every user's sets.
+--
+-- WHY CONCURRENTLY: ExerciseSet is written on every logged workout. A plain
+-- CREATE INDEX blocks those writes while it builds; CONCURRENTLY takes only a
+-- SHARE UPDATE EXCLUSIVE lock. It cannot run in a transaction block, and
+-- Prisma 6.19 does not wrap a migration file in one (as in
+-- 20270502005400_food_entry_plan_slot_index_concurrent), so this file holds
+-- only this statement.
+--
+-- RE-RUN: IF NOT EXISTS makes it idempotent. After a failed build, drop any
+-- INVALID leftover (SELECT indexrelid::regclass FROM pg_index WHERE NOT
+-- indisvalid) with DROP INDEX CONCURRENTLY before re-running.
+--
+-- NAME: Prisma's generated name for @@index([workout_id]) on ExerciseSet, so
+-- `prisma migrate diff` stays drift-free.
+-- ROLLBACK: down.sql.
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "ExerciseSet_workout_id_idx" ON "ExerciseSet"("workout_id");
