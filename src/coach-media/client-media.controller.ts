@@ -11,8 +11,9 @@
  *   (the drop's `asset_id`).
  *
  * Access is decided entirely by CoachMediaService.getBuyerSignedUrl: the
- * caller must hold a live (not revoked) grant for that asset, the asset
- * must not be archived, and the grant's purchase must belong to the coach
+ * caller must hold a live (not revoked) grant for that asset, an archived
+ * asset opens only on a grant from before the archive (its file was kept:
+ * #COACH-GONE-FILES), and the grant's purchase must belong to the coach
  * who owns the asset. Every refusal is the same 404 so an asset id cannot
  * be probed. The URL uses the default signed TTL; the caller cannot pick a
  * longer one.
