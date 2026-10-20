@@ -32,6 +32,11 @@ export class ClientCoursesController {
   @Put('lessons/:id/position')
   @HttpCode(204)
   async savePosition(@Request() req: AuthedRequest, @Param('id') id: string, @Body() body: LessonPositionDto): Promise<void> {
-    await this.courses.savePosition(req.user.id, id, body.position_sec);
+    await this.courses.savePosition(req.user.id, id, body.position_seconds);
+  }
+
+  @Get('lessons/:id/video')
+  video(@Request() req: AuthedRequest, @Param('id') id: string) {
+    return this.courses.video(req.user.id, id);
   }
 }

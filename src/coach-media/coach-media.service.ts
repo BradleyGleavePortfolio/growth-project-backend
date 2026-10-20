@@ -425,6 +425,23 @@ export class CoachMediaService {
     return this.mintSignedUrl(row, options);
   }
 
+  /**
+   * LEARN-BE2: a course lesson's uploaded video, for its enrolled client.
+   * ClientCoursesService.video has already checked the caller's own enrolment,
+   * the published course and the open week. Same signer and lifetime as
+   * getBuyerSignedUrl; null (the route answers 404, no reason) for an archived,
+   * unready or non-video asset, or one that is not the lesson coach's.
+   */
+  async signLessonVideo(
+    mediaAssetId: string,
+    coachId: string,
+  ): Promise<{ url: string; expires_in_seconds: number } | null> {
+    const row = await this.prisma.coachMediaAsset.findUnique({ where: { id: mediaAssetId } });
+    if (!row || row.archived_at || row.coach_id !== coachId || row.kind !== 'video') return null;
+    if (row.status !== STATUS_READY || !row.mux_playback_id) return null;
+    return this.mintSignedUrl(row);
+  }
+
   // ── PATCH (metadata only) ──────────────────────────────────────────────
 
   async patch(

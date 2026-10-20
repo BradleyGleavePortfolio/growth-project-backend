@@ -1,22 +1,16 @@
-import { CourseOpenInput, OpenWeekInput, courseOpen } from '../src/courses/course-open.feature';
+import { CourseOpenInput, courseOpen } from '../src/courses/course-open.feature';
 
-const lessons = (...done: boolean[]) => done.map((d, i) => ({ id: `l${i}`, done: d }));
-const week = (id: string, position: number, opensAfterDays: number, ...done: boolean[]): OpenWeekInput => ({
-  id,
-  position,
-  opensAfterDays,
-  lessons: lessons(...done),
-});
-
+const week = (id: string, position: number, opensAfterDays: number) => ({ id, position, opensAfterDays });
 const base: CourseOpenInput = {
-  startsOn: '2026-10-05',
+  startsOn: '2026-10-05', // a Monday
   endedOn: null,
   today: '2026-10-12',
   releaseMode: 'dates',
-  weeks: [week('w1', 1, 0, true, true), week('w2', 2, 7, true, false), week('w3', 3, 14, false)],
+  weeks: [week('w1', 1, 0), week('w2', 2, 7), week('w3', 3, 14)],
 };
 const run = (over: Partial<CourseOpenInput>) => courseOpen({ ...base, ...over });
-const openIds = (r: ReturnType<typeof courseOpen>) => r.weeks.filter((w) => w.open).map((w) => w.id);
+const openIds = (r: ReturnType<typeof courseOpen>) => r.filter((w) => w.open).map((w) => w.id);
+const dates = (r: ReturnType<typeof courseOpen>) => r.map((w) => [w.id, w.opensOn, w.finishBy]);
 
 describe('courseOpen (LEARN-BE2)', () => {
   it('opens a week on its day, not the day before', () => {
@@ -24,62 +18,61 @@ describe('courseOpen (LEARN-BE2)', () => {
     expect(openIds(run({ today: '2026-10-12' }))).toEqual(['w1', 'w2']);
   });
 
-  it('opens nothing before the start day and names the first unlock', () => {
-    const r = run({ today: '2026-10-04' });
-    expect(openIds(r)).toEqual([]);
-    expect(r.currentWeekId).toBeNull();
-    expect(r.nextUnlockOn).toBe('2026-10-05');
+  it('opens nothing before the start day', () => {
+    expect(openIds(run({ today: '2026-10-04' }))).toEqual([]);
   });
 
-  it('reports the next unlock, the current week and the lesson counts', () => {
-    const r = run({});
-    expect(r.nextUnlockOn).toBe('2026-10-19');
-    expect(r.currentWeekId).toBe('w2');
-    expect(r.weeks.map((w) => [w.number, w.opensOn, w.done, w.total])).toEqual([
-      [1, '2026-10-05', 2, 2],
-      [2, '2026-10-12', 1, 2],
-      [3, '2026-10-19', 0, 1],
+  it('Monday start: each week is finished by the Sunday that closes its 7 days, the last week too', () => {
+    expect(dates(run({}))).toEqual([
+      ['w1', '2026-10-05', '2026-10-11'],
+      ['w2', '2026-10-12', '2026-10-18'],
+      ['w3', '2026-10-19', '2026-10-25'],
     ]);
-    expect([r.done, r.total]).toEqual([3, 5]);
   });
 
-  it('keeps the current week on the last open week when every open lesson is done', () => {
-    const r = run({ weeks: [week('w1', 1, 0, true), week('w2', 2, 7, true), week('w3', 3, 14, false)] });
-    expect(r.currentWeekId).toBe('w2');
+  it('mid-week start: each week is finished by the Sunday inside its 7 days', () => {
+    expect(dates(run({ startsOn: '2026-10-07', today: '2026-10-07' }))).toEqual([
+      ['w1', '2026-10-07', '2026-10-11'],
+      ['w2', '2026-10-14', '2026-10-18'],
+      ['w3', '2026-10-21', '2026-10-25'],
+    ]);
+    // A Sunday start: week 1 is finished by its first day.
+    expect(run({ startsOn: '2026-10-11' }).map((w) => w.finishBy)).toEqual(['2026-10-11', '2026-10-18', '2026-10-25']);
   });
 
-  it('opens every week at once, ignoring opens_after_days, and has no next unlock', () => {
+  it('a week that opens later than its 7-day slot is finished by the Sunday after it opens', () => {
+    expect(dates(run({ weeks: [week('w1', 1, 0), week('w2', 2, 16)] }))[1]).toEqual(['w2', '2026-10-21', '2026-10-25']);
+  });
+
+  it('finish-by never locks an open week: a week stays open after its Sunday', () => {
+    const r = run({ today: '2026-11-30' });
+    expect(openIds(r)).toEqual(['w1', 'w2', 'w3']);
+    expect(r[0].finishBy).toBe('2026-10-11');
+  });
+
+  it('opens every week at once, ignoring opens_after_days, still pacing finish-by a week apart', () => {
     const r = run({ releaseMode: 'all_at_once', today: '2026-10-05' });
     expect(openIds(r)).toEqual(['w1', 'w2', 'w3']);
-    expect(r.nextUnlockOn).toBeNull();
-    expect(r.weeks.every((w) => w.opensOn === '2026-10-05')).toBe(true);
+    expect(dates(r)).toEqual([
+      ['w1', '2026-10-05', '2026-10-11'],
+      ['w2', '2026-10-05', '2026-10-18'],
+      ['w3', '2026-10-05', '2026-10-25'],
+    ]);
   });
 
   it('opens every week when the coach opened all, even before the start day', () => {
-    const r = run({ releaseMode: 'open_all', today: '2026-10-01' });
-    expect(openIds(r)).toEqual(['w1', 'w2', 'w3']);
-    expect(r.nextUnlockOn).toBeNull();
+    expect(openIds(run({ releaseMode: 'open_all', today: '2026-10-01' }))).toEqual(['w1', 'w2', 'w3']);
   });
 
-  it('stops opening weeks on the day the enrolment ended', () => {
-    const r = run({ endedOn: '2026-10-10', today: '2026-11-30' });
-    expect(openIds(r)).toEqual(['w1']);
-    expect(r.nextUnlockOn).toBeNull();
-    expect(r.currentWeekId).toBe('w1');
+  it('stops opening weeks on the day the enrolment ended, keeping what had opened', () => {
+    expect(openIds(run({ endedOn: '2026-10-10', today: '2026-11-30' }))).toEqual(['w1']);
   });
 
-  it('still names an unlock that falls on or before an end day not yet reached', () => {
-    const r = run({ endedOn: '2026-10-20', today: '2026-10-12' });
-    expect(r.nextUnlockOn).toBe('2026-10-19');
-  });
-
-  it('numbers weeks by position, whatever order they arrive in', () => {
-    const r = run({ weeks: [week('w3', 3, 14, false), week('w1', 1, 0, true), week('w2', 2, 7, true)] });
-    expect(r.weeks.map((w) => [w.id, w.number])).toEqual([['w1', 1], ['w2', 2], ['w3', 3]]);
+  it('orders weeks by position, whatever order they arrive in', () => {
+    expect(run({ weeks: [week('w3', 3, 14), week('w1', 1, 0), week('w2', 2, 7)] }).map((w) => w.id)).toEqual(['w1', 'w2', 'w3']);
   });
 
   it('handles a course with no weeks', () => {
-    const r = run({ weeks: [] });
-    expect(r).toEqual({ weeks: [], nextUnlockOn: null, currentWeekId: null, done: 0, total: 0 });
+    expect(run({ weeks: [] })).toEqual([]);
   });
 });

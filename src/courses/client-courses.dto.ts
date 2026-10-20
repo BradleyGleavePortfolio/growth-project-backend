@@ -5,5 +5,5 @@ export class LessonPositionDto {
   @IsInt()
   @Min(0)
   @Max(86400)
-  position_sec!: number;
+  position_seconds!: number;
 }

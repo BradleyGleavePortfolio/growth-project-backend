@@ -245,6 +245,7 @@ const EXPECTED_BASIC_FUNCTIONS_WHILE_LOCKED: readonly string[] = [
   'GET client/courses ClientCoursesController',
   'GET client/courses/:id ClientCoursesController',
   'PUT client/lessons/:id/position ClientCoursesController',
+  'GET client/lessons/:id/video ClientCoursesController',
   'GET check-ins/:id ClientCheckInsController',
   'GET fasting/history FastingController',
   'GET habits HabitsController',

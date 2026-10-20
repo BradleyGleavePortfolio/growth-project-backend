@@ -894,3 +894,32 @@ describe('CoachMediaService — static helpers', () => {
     expect(CoachMediaService.canAdvanceFromPreTerminal('errored')).toBe(false);
   });
 });
+
+describe('CoachMediaService.signLessonVideo (LEARN-BE2 course lesson video)', () => {
+  const video = (over: Partial<Row> = {}) =>
+    defaultRow({ id: 'v1', coach_id: 'coach-1', kind: 'video', provider: 'mux', status: STATUS_READY, mux_playback_id: 'pb-xyz', ...over });
+
+  it('signs a ready video of the lesson coach with the same signer as the client media route', async () => {
+    const { svc } = makeService({ rows: [video()] });
+    expect(await svc.signLessonVideo('v1', 'coach-1')).toMatchObject({
+      url: 'https://stream.mux.com/pb-xyz.m3u8?token=stub-signed-jwt',
+      expires_in_seconds: expect.any(Number),
+    });
+  });
+
+  it.each([
+    ['another coach\'s asset', video(), 'coach-2'],
+    ['an archived asset', video({ archived_at: new Date() }), 'coach-1'],
+    ['a PDF', video({ kind: 'pdf' }), 'coach-1'],
+    ['a video still processing', video({ status: 'processing' }), 'coach-1'],
+  ])('answers null (the route says 404) for %s', async (_name, row, coachId) => {
+    const { svc, mux } = makeService({ rows: [row] });
+    expect(await svc.signLessonVideo('v1', coachId)).toBeNull();
+    expect(mux.mintPlaybackUrl).not.toHaveBeenCalled();
+  });
+
+  it('answers null for a missing asset', async () => {
+    const { svc } = makeService();
+    expect(await svc.signLessonVideo('nope', 'coach-1')).toBeNull();
+  });
+});
