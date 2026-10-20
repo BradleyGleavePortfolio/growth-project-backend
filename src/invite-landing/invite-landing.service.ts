@@ -59,6 +59,8 @@ export class InviteLandingService {
       ? `<img class="logo" src="${escapeAttr(params.logo_url)}" alt="" />`
       : '';
     const codeDisplay = escapeHtml(params.code);
+    // Kept on one line in the sentence: at large text sizes it would break after "TGP-".
+    const codeInLead = `<span class="nowrap">${codeDisplay}</span>`;
     const appStore = escapeAttr(params.app_store_url);
     const playStore = escapeAttr(params.play_store_url);
     const openApp = escapeAttr(params.deep_link_url);
@@ -67,7 +69,7 @@ export class InviteLandingService {
     if (params.platform === 'ios') {
       actions = `
     <a class="primary" href="${appStore}" rel="noopener">Get the app on the App Store</a>
-    <p class="lead">After installing, open this invite link again, or enter code ${codeDisplay} when you create your account.</p>
+    <p class="lead">After installing, open this invite link again, or enter code ${codeInLead} when you create your account.</p>
     <div class="alt">
       <a href="${openApp}">Already have the app? Open it</a>
     </div>`;
@@ -79,13 +81,13 @@ export class InviteLandingService {
       );
       actions = `
     <a class="primary" href="${escapeHtml(intentUrl)}">Open in The Growth Project</a>
-    <p class="lead">Without the app, this opens Google Play. After installing, open this invite link again, or enter code ${codeDisplay} when you create your account.</p>
+    <p class="lead">Without the app, this opens Google Play. After installing, open this invite link again, or enter code ${codeInLead} when you create your account.</p>
     <div class="stores">
       <a href="${playStore}" rel="noopener">Google Play</a>
     </div>`;
     } else {
       actions = `
-    <p class="lead">Open this invite on your phone to join. Install The Growth Project, then enter code ${codeDisplay} when you create your account.</p>
+    <p class="lead">Open this invite on your phone to join. Install The Growth Project, then enter code ${codeInLead} when you create your account.</p>
     <div class="stores">
       <a href="${appStore}" rel="noopener">App Store</a>
       <a href="${playStore}" rel="noopener">Google Play</a>
@@ -266,24 +268,25 @@ function baseDocument(opts: {
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body { background: var(--paper); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; line-height: 1.5; min-height: 100vh; display: grid; place-items: center; padding: 32px 20px; }
-  .card { width: 100%; max-width: 420px; background: #FFFFFF; border: 1px solid var(--line); border-radius: 18px; padding: 40px 28px; text-align: center; }
+  .card { width: 100%; max-width: 420px; background: #FFFFFF; border: 1px solid var(--line); border-radius: 16px; padding: 40px 28px; text-align: center; }
   .kicker { margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.14em; font-size: 11px; color: var(--muted); }
   h1 { margin: 0 0 6px; font-family: "Playfair Display", "Iowan Old Style", Georgia, "Times New Roman", serif; font-weight: 500; font-size: 28px; line-height: 1.2; }
   .biz { margin: 0 0 20px; color: var(--muted); font-size: 15px; }
   .lead { margin: 8px 0 24px; color: var(--muted); font-size: 15px; }
+  .nowrap { white-space: nowrap; }
   .code { margin: 24px 0; }
   .code-label { margin: 0 0 4px; text-transform: uppercase; color: var(--muted); font-size: 10px; letter-spacing: 0.18em; }
   .code-value { margin: 0; font-size: 26px; font-weight: 500; line-height: 1.25; letter-spacing: 0.04em; overflow-wrap: anywhere; -webkit-user-select: all; user-select: all; }
-  .copy { margin-top: 12px; min-height: 44px; min-width: 128px; padding: 10px 20px; background: #FFFFFF; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; transition: border-color 0.2s ease; }
+  .copy { margin-top: 12px; min-height: 44px; min-width: 128px; padding: 10px 20px; background: #FFFFFF; color: var(--ink); border: 1px solid var(--line); border-radius: 12px; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; transition: border-color 0.2s ease; }
   .copy.done { border-color: var(--ink); }
   .logo { max-width: 56px; max-height: 56px; margin: 0 auto 16px; display: block; border-radius: 12px; }
   a { color: var(--ink); }
-  .primary { display: inline-block; margin-top: 8px; padding: 14px 22px; background: var(--accent); color: #FFFFFF; border-radius: 999px; text-decoration: none; font-weight: 500; font-size: 15px; }
+  .primary { display: inline-block; margin-top: 8px; padding: 14px 22px; background: var(--accent); color: #FFFFFF; border-radius: 12px; text-decoration: none; font-weight: 500; font-size: 15px; }
   .alt { margin-top: 22px; font-size: 13px; color: var(--muted); }
   .alt a { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
   .alt .dot { margin: 0 8px; }
   .stores { margin-top: 18px; display: flex; gap: 12px; justify-content: center; font-size: 12px; color: var(--muted); }
-  .stores a { color: var(--muted); text-decoration: none; border: 1px solid var(--line); padding: 8px 14px; border-radius: 999px; }
+  .stores a { color: var(--muted); text-decoration: none; border: 1px solid var(--line); padding: 8px 14px; border-radius: 12px; }
 </style>
 </head>
 <body class="${opts.bodyClass}">

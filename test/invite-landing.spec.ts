@@ -285,7 +285,9 @@ describe('InviteLandingService.renderValid', () => {
     const html = svc.renderValid({ ...base, platform: 'ios' });
     expect(html).toMatch(/class="primary" href="https:\/\/apps\.apple\.com\/app\/x"/);
     expect(html).toContain('href="tgp://join/GP-X1Y2Z3"');
-    expect(html).toContain('enter code GP-X1Y2Z3 when you create your account');
+    expect(html).toContain(
+      'enter code <span class="nowrap">GP-X1Y2Z3</span> when you create your account',
+    );
   });
 
   it('Android: the main button opens the app through an intent link that falls back to Google Play', () => {
@@ -303,6 +305,52 @@ describe('InviteLandingService.renderValid', () => {
     expect(html).toContain('Open this invite on your phone to join.');
     expect(html).toContain('apps.apple.com');
     expect(html).toContain('play.google.com');
+  });
+});
+
+describe('invite page design rules (buttons 12, cards 16)', () => {
+  // Owner rule: buttons radius 12, cards 16. One button style on the page,
+  // for /join/:code and /invite/:code alike (both use renderValid).
+  const svc = new InviteLandingService(cast({ previewCode: jest.fn() }));
+  const base = {
+    code: 'TGP-K7M2QX3',
+    coach_name: 'A',
+    business_name: null,
+    accent_color: null,
+    logo_url: null,
+    deep_link_url: 'tgp://join/TGP-K7M2QX3',
+    app_store_url: 'https://apps.apple.com/app/x',
+    play_store_url: 'https://play.google.com/store/apps/details?id=x',
+    android_package: 'com.growthproject.app',
+    nonce: 'n',
+  };
+  const radiusOf = (html: string, selector: string): string | undefined => {
+    const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\n  ${esc} \\{[^}]*border-radius: ([^;]+);`).exec(html)?.[1];
+  };
+  const pages = [
+    ...(['ios', 'android', 'other'] as const).map((platform) =>
+      svc.renderValid({ ...base, platform }),
+    ),
+    svc.renderInvalid({ web_signup_url: 'https://app.example/signup', nonce: 'n' }),
+  ];
+
+  it('every button is radius 12, the card is 16, and nothing is a pill', () => {
+    for (const html of pages) {
+      expect(radiusOf(html, '.copy')).toBe('12px');
+      expect(radiusOf(html, '.primary')).toBe('12px');
+      expect(radiusOf(html, '.stores a')).toBe('12px');
+      expect(radiusOf(html, '.card')).toBe('16px');
+      expect(html).not.toContain('999px');
+    }
+  });
+
+  it('the code in the sentence never breaks across lines', () => {
+    for (const html of pages.slice(0, 3)) {
+      expect(html).toContain('.nowrap { white-space: nowrap; }');
+      expect(html).toContain('enter code <span class="nowrap">TGP-K7M2QX3</span> when');
+      expect(html).not.toMatch(/ style=/);
+    }
   });
 });
 
@@ -403,7 +451,9 @@ describe('INVITE-COPY-CODE: Copy code on the invite page', () => {
     });
     expect(html).not.toContain('<b>');
     expect(html).toContain('id="invite-code">&lt;b&gt;&quot;x&#39;&amp;&lt;/b&gt;</p>');
-    expect(html).toContain('enter code &lt;b&gt;&quot;x&#39;&amp;&lt;/b&gt; when');
+    expect(html).toContain(
+      'enter code <span class="nowrap">&lt;b&gt;&quot;x&#39;&amp;&lt;/b&gt;</span> when',
+    );
   });
 
   describe('the shipped copy script', () => {
