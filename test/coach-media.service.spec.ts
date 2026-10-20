@@ -84,6 +84,10 @@ function makePrismaStub(initialRows: Row[] = []) {
   const drops: Array<{
     id: string;
     client_purchase: { coach_user_id: string };
+    asset_id?: string;
+    status?: string;
+    failure_reason?: string;
+    created_at?: Date;
   }> = [];
 
   const stub: {
@@ -104,7 +108,7 @@ function makePrismaStub(initialRows: Row[] = []) {
     };
     coachPackageContent: { count: jest.Mock };
     muxProcessedEvent: { create: jest.Mock; update: jest.Mock };
-    scheduledDrop: { findUnique: jest.Mock };
+    scheduledDrop: { findUnique: jest.Mock; count: jest.Mock };
     $queryRaw: jest.Mock;
     $transaction: jest.Mock;
   } = {
@@ -195,6 +199,19 @@ function makePrismaStub(initialRows: Row[] = []) {
         const d = drops.find((x) => x.id === where.id);
         return d ?? null;
       }),
+      // softDelete's unshipped-drop count: evaluates the asset id and each OR branch it is given.
+      count: jest.fn(
+        async ({ where }: { where: { asset_id: string; OR: Array<{ status: string | { in: string[] }; failure_reason?: string }> } }) =>
+          drops.filter(
+            (d) =>
+              d.asset_id === where.asset_id &&
+              where.OR.some(
+                (o) =>
+                  (typeof o.status === 'string' ? d.status === o.status : o.status.in.includes(d.status ?? '')) &&
+                  (o.failure_reason === undefined || o.failure_reason === d.failure_reason),
+              ),
+          ).length,
+      ),
     },
     // The softDelete code path runs prisma.$queryRaw FOR UPDATE on the
     // asset row; in tests we just acknowledge it (no Postgres locking in
@@ -775,6 +792,50 @@ describe('CoachMediaService — buyer signed-URL gate (ClientAssetGrant)', () =>
         expect(await refusal(svc.getBuyerSignedUrl(who, 'a1'))).toEqual(unknownShape('a1'));
       }
       expect(storage.createSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    // MEDIA-ARCHIVE-DRIP: a drip file archived before the buyer's drop fires still reaches them.
+    it("a buyer whose drop has not fired yet keeps the file: the archive keeps it and the drop's later grant opens it", async () => {
+      const { svc, prisma, storage } = makeService({
+        rows: [defaultRow({ id: 'a1', coach_id: 'coach-1', kind: 'pdf', status: STATUS_READY })],
+      });
+      prisma._drops.push({ id: 'drop-owed', asset_id: 'a1', status: 'pending', created_at: new Date(Date.now() - DAY), client_purchase: { coach_user_id: 'coach-1' } });
+      const archived = await svc.softDelete('coach-1', 'a1');
+      expect(archived.object_deleted).toBe(false);
+      expect(storage.deleteObject).not.toHaveBeenCalled();
+      const after = (ms: number) => new Date(archived.archived_at.getTime() + ms);
+      // The drop fires after the archive and mints the grant then (MediaAssetResolver).
+      prisma._grants.push({ client_id: 'buyer-owed', media_asset_id: 'a1', revoked_at: null, granted_at: after(60_000), granted_via_drop_id: 'drop-owed' });
+      expect(await svc.getBuyerSignedUrl('buyer-owed', 'a1')).toMatchObject({ kind: 'pdf', url: expect.stringContaining('supabase.test/download/') });
+      // A drop written after the archive (a later buyer) and another coach's drop never open it.
+      prisma._drops.push(
+        { id: 'drop-late', asset_id: 'a1', status: 'delivered', created_at: after(1000), client_purchase: { coach_user_id: 'coach-1' } },
+        { id: 'drop-other', asset_id: 'a1', status: 'delivered', created_at: new Date(Date.now() - DAY), client_purchase: { coach_user_id: 'coach-2' } },
+      );
+      prisma._grants.push(
+        { client_id: 'buyer-late', media_asset_id: 'a1', revoked_at: null, granted_at: after(2000), granted_via_drop_id: 'drop-late' },
+        { client_id: 'buyer-other', media_asset_id: 'a1', revoked_at: null, granted_at: after(2000), granted_via_drop_id: 'drop-other' },
+      );
+      for (const who of ['buyer-late', 'buyer-other']) {
+        expect(await refusal(svc.getBuyerSignedUrl(who, 'a1'))).toEqual(unknownShape('a1'));
+      }
+    });
+
+    it.each<[string, string | undefined, boolean]>([
+      ['pending', undefined, false],
+      ['due', undefined, false],
+      ['dispatching', undefined, false],
+      ['canceled', 'canceled:payment_failed', false],
+      ['canceled', 'canceled:refund', true],
+      ['failed', undefined, true],
+      ['skipped', undefined, true],
+    ])('a drop %s (%s) keeps the archived PDF: deleted=%s', async (status, failure_reason, deleted) => {
+      const { svc, prisma, storage } = makeService({
+        rows: [defaultRow({ id: 'a1', coach_id: 'coach-1', kind: 'pdf', status: STATUS_READY })],
+      });
+      prisma._drops.push({ id: 'd1', asset_id: 'a1', status, failure_reason, client_purchase: { coach_user_id: 'coach-1' } });
+      expect((await svc.softDelete('coach-1', 'a1')).object_deleted).toBe(deleted);
+      expect(storage.deleteObject).toHaveBeenCalledTimes(deleted ? 1 : 0);
     });
 
     it('keeps the ready check for an archived asset', async () => {

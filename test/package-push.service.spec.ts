@@ -55,6 +55,7 @@ function makePrismaStub() {
     if (cond === null) return rowVal === null || rowVal === undefined;
     if (typeof cond === 'object' && cond !== null) {
       if ('in' in cond) return (cond.in as any[]).includes(rowVal);
+      if ('notIn' in cond) return !cond.notIn.includes(rowVal);
       if ('not' in cond) return rowVal !== cond.not;
       if ('lte' in cond) return rowVal != null && rowVal <= cond.lte;
       if ('gte' in cond) return rowVal != null && rowVal >= cond.gte;
@@ -306,6 +307,7 @@ function seedPurchase(
     client_user_id?: string;
     coach_user_id?: string;
     entitlement_active?: boolean;
+    status?: string;
   },
 ) {
   prisma._purchases.push({
@@ -314,7 +316,7 @@ function seedPurchase(
     client_user_id: p.client_user_id ?? `client-${p.id}`,
     coach_user_id: p.coach_user_id ?? 'coach-1',
     entitlement_active: p.entitlement_active ?? true,
-    status: 'active',
+    status: p.status ?? 'active',
     created_at: new Date('2026-01-01T00:00:00Z'),
   });
 }
@@ -471,6 +473,37 @@ describe('PackagePushService', () => {
       );
       expect(res.scheduled).toBe(1);
     });
+
+    // MEDIA-ARCHIVE-DRIP (#162-2 op 1): a refund stops what is not yet delivered, so no
+    // audience seeds a new drop on a refunded or lost-dispute purchase.
+    it.each(['all', 'cohort'] as const)(
+      '%s → skips refunded and lost-dispute purchases',
+      async (audience) => {
+        seedPurchase(prisma, {
+          id: 'p-refunded',
+          package_id: 'pkg-1',
+          entitlement_active: false,
+          status: 'refunded',
+        });
+        seedPurchase(prisma, {
+          id: 'p-dispute',
+          package_id: 'pkg-1',
+          entitlement_active: false,
+          status: 'chargeback_lost',
+        });
+        const res = await svc.pushContentToExistingBuyers('coach-1', 'pkg-1', 'content-1', {
+          audience,
+          cohortPurchaseIds: audience === 'cohort' ? ['p1', 'p-refunded', 'p-dispute'] : undefined,
+          fireAt: FUTURE,
+          mode: 'push_existing',
+          notify: true,
+        });
+        expect(res.scheduled).toBe(audience === 'all' ? 3 : 1);
+        const seeded = prisma._drops.map((d: any) => d.client_purchase_id);
+        expect(seeded).not.toContain('p-refunded');
+        expect(seeded).not.toContain('p-dispute');
+      },
+    );
   });
 
   // ── cohort cross-tenant rejection (IDOR re-filter by package_id) ─────
