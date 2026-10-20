@@ -181,6 +181,11 @@ describe('P0 copy: partner sentence removed (C-6a) and coach-free versions (owne
       'consult-consent-v13-coach-free',
       'consult-consent-v14-coach-free',
       'consult-consent-v15-coach-free',
+      // Owner #162-6: the Health-notes sentence (test/ai-consent/consent-health-notes.spec.ts).
+      'consult-consent-v15',
+      'consult-consent-v16',
+      'consult-consent-v16-coach-free',
+      'consult-consent-v17-coach-free',
     ]);
     const p0 = (copy_version: string, text_sha256: string) => ({
       agreed: true,

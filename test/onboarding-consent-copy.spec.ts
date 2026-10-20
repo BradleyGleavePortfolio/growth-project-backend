@@ -118,7 +118,7 @@ describe('accepted versions and the P0 truth rule', () => {
     text_sha256: MOBILE_CONSENT_COPY_SHA256,
   };
 
-  it('acceptedConsentVersions: default v3 to v14 + coach-free v5 to v15; the override keeps only versions with known text', () => {
+  it('acceptedConsentVersions: default v3 to v16 + coach-free v5 to v17; the override keeps only versions with known text', () => {
     const defaults = [
       'consult-consent-v3',
       'consult-consent-v4',
@@ -143,6 +143,10 @@ describe('accepted versions and the P0 truth rule', () => {
       'consult-consent-v13-coach-free',
       'consult-consent-v14-coach-free',
       'consult-consent-v15-coach-free',
+      'consult-consent-v15',
+      'consult-consent-v16',
+      'consult-consent-v16-coach-free',
+      'consult-consent-v17-coach-free',
     ];
     expect(acceptedConsentVersions({})).toEqual(defaults);
     expect(acceptedConsentVersions({ CONSULT_CONSENT_COPY_VERSIONS: '' })).toEqual(defaults);
