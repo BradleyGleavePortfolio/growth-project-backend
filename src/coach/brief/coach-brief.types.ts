@@ -92,6 +92,10 @@ export interface BriefContextHeadCoach {
 // S-BRIEF-124: no 'workout_approval' (nothing in the app approves a workout).
 export type ActionItemType =
   | 'checkin_missing'
+  // ROMAN-EXTRAS (spec 2b R1, R2): a check-in waiting for this coach's review,
+  // and a client who joined this coach in the last 24 h (owner #161-3).
+  | 'checkin_review'
+  | 'client_joined'
   | 'payment_due'
   | 'weight_flag'
   | 'message_unread'
@@ -113,6 +117,8 @@ export interface ActionItem {
   detail: string;
   priority: 1 | 2 | 3;
   deep_link: string;
+  check_in_id?: string; // checkin_review only
+  joined_at?: string; // client_joined only, ISO 8601
 }
 
 // P1-3: head-coach mode emits business-only action items. No client_id,

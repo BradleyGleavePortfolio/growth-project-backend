@@ -234,7 +234,10 @@ describe('B-939-1 stored briefs after a client moves (owner decision 4)', () => 
     prisma.coachBrief.findMany.mockImplementation(async () => [row]);
     prisma.coachBrief.count.mockResolvedValue(1);
     prisma.coachMessage.findMany.mockResolvedValue([]);
-    prisma.checkIn.findMany.mockResolvedValue([{ user_id: 'moved' }]);
+    // Today's check-in, already reviewed (the review read finds none).
+    prisma.checkIn.findMany.mockImplementation(async ({ where }: { where: { reviewed_by_coach?: boolean } }) =>
+      where.reviewed_by_coach === false ? [] : [{ user_id: 'moved' }],
+    );
     prisma.clientWorkoutAssignment.count.mockResolvedValue(1);
     prisma.$queryRaw.mockImplementation(async (sql: { strings: string[] }) =>
       sql.strings.join('').includes('"WeightLog"') ? [] : [{ count: 0n }],

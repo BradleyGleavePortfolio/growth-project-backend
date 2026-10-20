@@ -986,8 +986,10 @@ describe('CoachBriefService moved client — owner 4b', () => {
     prisma.coachBrief.update.mockImplementation(async ({ data }) => ({
       id: 'b1', coach_id: NEW_COACH, brief_date: '2026-10-12', created_at: new Date(), ...data,
     }));
-    // The moved client's own logs: a check-in today and a 4.6 lb weigh-in change.
-    prisma.checkIn.findMany.mockResolvedValue([{ user_id: MOVED }]);
+    // The moved client's own logs: a check-in today (reviewed) and a 4.6 lb weigh-in change.
+    prisma.checkIn.findMany.mockImplementation(async ({ where }: { where: { reviewed_by_coach?: boolean } }) =>
+      where.reviewed_by_coach === false ? [] : [{ user_id: MOVED }],
+    );
     prisma.$queryRaw.mockImplementation(async (sql: Prisma.Sql) =>
       sql.strings.join('').includes('"WeightLog"')
         ? [{ user_id: MOVED, user_name: 'Moved Client', delta_lbs: 4.6 }]
