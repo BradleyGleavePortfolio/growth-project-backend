@@ -74,6 +74,7 @@ function makePrismaStub(initialRows: Row[] = []) {
     media_asset_id: string;
     revoked_at: Date | null;
     granted_via_drop_id?: string | null;
+    granted_at?: Date;
   }> = [];
   const contents: Array<{
     asset_id: string;
@@ -702,24 +703,85 @@ describe('CoachMediaService — buyer signed-URL gate (ClientAssetGrant)', () =>
     expect(out.url).toContain('supabase.test/download/');
   });
 
-  it('refuses access to an archived asset even with a grant', async () => {
-    const { svc } = setup({
-      asset: defaultRow({
-        id: 'a1',
-        coach_id: 'coach-1',
-        kind: 'pdf',
-        status: STATUS_READY,
-        archived_at: new Date(),
-      }),
-      grant: {
-        client_id: 'buyer-1',
-        media_asset_id: 'a1',
-        revoked_at: null,
-      },
+  // MEDIA-ARCHIVE-BUYER (#COACH-GONE-FILES: clients keep what they paid
+  // for). Archived through the real softDelete, so "object kept" and
+  // "object deleted" are the archive's own outcomes, not hand-set flags.
+  describe('after the coach archives the asset', () => {
+    const DAY = 86_400_000;
+    const unknownShape = (id: string) => ({
+      error: 'ASSET_NOT_FOUND',
+      message: `No media asset with id ${id}`,
     });
-    await expect(svc.getBuyerSignedUrl('buyer-1', 'a1')).rejects.toThrow(
-      NotFoundException,
-    );
+    const refusal = (p: Promise<unknown>) =>
+      p.then(
+        () => 'opened',
+        (e: unknown) => (e instanceof NotFoundException ? e.getResponse() : e),
+      );
+    function sold(row: Partial<Row> = {}) {
+      const tools = makeService({
+        rows: [defaultRow({ id: 'a1', coach_id: 'coach-1', kind: 'pdf', status: STATUS_READY, ...row })],
+      });
+      const paid = new Date(Date.now() - DAY);
+      tools.prisma._grants.push(
+        { client_id: 'buyer-1', media_asset_id: 'a1', revoked_at: null, granted_at: paid, granted_via_drop_id: 'drop-1' },
+        { client_id: 'buyer-revoked', media_asset_id: 'a1', revoked_at: paid, granted_at: paid },
+        // Cross-tenant: a grant whose purchase was sold by coach-2.
+        { client_id: 'buyer-coach-2', media_asset_id: 'a1', revoked_at: null, granted_at: paid, granted_via_drop_id: 'drop-2' },
+      );
+      tools.prisma._drops.push(
+        { id: 'drop-1', client_purchase: { coach_user_id: 'coach-1' } },
+        { id: 'drop-2', client_purchase: { coach_user_id: 'coach-2' } },
+      );
+      return tools;
+    }
+
+    it('a buyer with an active grant still opens the PDF; the archive kept the object', async () => {
+      const { svc, storage } = sold();
+      expect((await svc.softDelete('coach-1', 'a1')).object_deleted).toBe(false);
+      expect(storage.deleteObject).not.toHaveBeenCalled();
+      expect(await svc.getBuyerSignedUrl('buyer-1', 'a1')).toMatchObject({
+        kind: 'pdf',
+        url: expect.stringContaining('supabase.test/download/'),
+      });
+    });
+
+    it('a buyer with an active grant still plays an archived video', async () => {
+      const { svc } = sold({ kind: 'video', provider: 'mux', mux_playback_id: 'pb-1' });
+      await svc.softDelete('coach-1', 'a1');
+      expect(await svc.getBuyerSignedUrl('buyer-1', 'a1')).toMatchObject({
+        kind: 'video',
+        url: 'https://stream.mux.com/pb-1.m3u8?token=stub-signed-jwt',
+      });
+    });
+
+    it('revoked grant, no grant, another coach\'s buyer and another coach all get the unknown-id 404', async () => {
+      const { svc } = sold();
+      await svc.softDelete('coach-1', 'a1');
+      expect(await refusal(svc.getBuyerSignedUrl('buyer-1', 'no-such-id'))).toEqual(unknownShape('no-such-id'));
+      for (const who of ['buyer-revoked', 'no-grant', 'buyer-coach-2', 'coach-2']) {
+        expect(await refusal(svc.getBuyerSignedUrl(who, 'a1'))).toEqual(unknownShape('a1'));
+      }
+    });
+
+    it('object deleted by the archive: a revoked grant and a grant minted after it get the same 404, nothing is signed', async () => {
+      const { svc, prisma, storage } = makeService({
+        rows: [defaultRow({ id: 'a1', coach_id: 'coach-1', kind: 'pdf', status: STATUS_READY })],
+      });
+      prisma._grants.push({ client_id: 'buyer-revoked', media_asset_id: 'a1', revoked_at: new Date(Date.now() - DAY), granted_at: new Date(Date.now() - 2 * DAY) });
+      const archived = await svc.softDelete('coach-1', 'a1');
+      expect(archived.object_deleted).toBe(true);
+      prisma._grants.push({ client_id: 'buyer-late', media_asset_id: 'a1', revoked_at: null, granted_at: new Date(archived.archived_at.getTime() + 1000) });
+      for (const who of ['buyer-revoked', 'buyer-late']) {
+        expect(await refusal(svc.getBuyerSignedUrl(who, 'a1'))).toEqual(unknownShape('a1'));
+      }
+      expect(storage.createSignedDownloadUrl).not.toHaveBeenCalled();
+    });
+
+    it('keeps the ready check for an archived asset', async () => {
+      const { svc } = sold({ status: STATUS_PROCESSING });
+      await svc.softDelete('coach-1', 'a1');
+      await expect(svc.getBuyerSignedUrl('buyer-1', 'a1')).rejects.toThrow(ConflictException);
+    });
   });
 
   it('refuses access to a not-ready asset even with a grant', async () => {
@@ -813,11 +875,8 @@ describe('CoachMediaService — soft-delete safety', () => {
     expect(out.object_deleted).toBe(false);
     expect(storage.deleteObject).not.toHaveBeenCalled();
     expect(prisma._rows[0].archived_at).toBeInstanceOf(Date);
-    // buyer can still get a signed URL after archive — but only because the
-    // storage object is still there AND the row isn't gone (we only set
-    // archived_at; the row still exists). Buyer-side path filters archived;
-    // the explicit test for "buyer still works after archive" lives in a
-    // dedicated assertion below.
+    // The buyer still opens it after the archive: see "after the coach
+    // archives the asset" in the buyer signed-URL gate block.
   });
 
   it('blocks delete when an active CoachPackageContent still references the asset (409 ASSET_REFERENCED)', async () => {

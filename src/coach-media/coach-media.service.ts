@@ -359,7 +359,15 @@ export class CoachMediaService {
   /**
    * Issue a signed download URL for a granted buyer. The caller is the
    * buyer's user id — we look up an active ClientAssetGrant for that user
-   * + asset; if none, refuse with 403. Asset MUST be `ready`.
+   * + asset; if none, refuse with 404. Asset MUST be `ready`.
+   *
+   * MEDIA-ARCHIVE-BUYER (#COACH-GONE-FILES): an archived asset still opens
+   * for a buyer whose active grant is older than the archive. softDelete
+   * removes the stored object only when no unrevoked grant exists, a grant
+   * is never un-revoked, and MediaAssetResolver mints none on an archived
+   * row, so such a grant proves the object was kept. Any other archived
+   * case (no grant, a revoked one, one minted after the archive) is the
+   * same 404 as an unknown id.
    *
    * This is what the buyer-side delivery endpoint will call (mobile
    * download/playback request); kept on CoachMediaService so all signed-
@@ -371,8 +379,8 @@ export class CoachMediaService {
     options?: SignedDownloadOptions,
   ): Promise<{ url: string; expires_in_seconds: number; kind: 'pdf' | 'video' }>
   {
-    // Audit P2-1 fix: collapse "row not found", "archived row", "no
-    // active grant", and "tenant mismatch" into a SINGLE 404 with the
+    // Audit P2-1 fix: collapse "row not found", "archived without a kept
+    // object", "no active grant", and "tenant mismatch" into a SINGLE 404 with the
     // same shape. An attacker probing media_asset_id values must not
     // be able to distinguish "this id exists" from "this id doesn't"
     // (existence leak). Asset ids are uuid so enumeration is not
@@ -386,7 +394,7 @@ export class CoachMediaService {
     const row = await this.prisma.coachMediaAsset.findUnique({
       where: { id: mediaAssetId },
     });
-    if (!row || row.archived_at) {
+    if (!row) {
       throw notFound();
     }
     const grant = await this.prisma.clientAssetGrant.findUnique({
@@ -397,7 +405,11 @@ export class CoachMediaService {
         },
       },
     });
-    if (!grant || grant.revoked_at) {
+    if (
+      !grant ||
+      grant.revoked_at ||
+      (row.archived_at && grant.granted_at > row.archived_at)
+    ) {
       throw notFound();
     }
     // Audit P2-4 fix: tenant double-check at URL-ISSUANCE time. The
