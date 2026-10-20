@@ -52,7 +52,8 @@ export interface ErasureEntry {
   where?: Record<string, unknown>;
   match?: 'id' | 'email';
   uuid?: boolean;
-  /** COACH-GONE-DELIVERY: columns naming an asset a kept purchase owes; those rows are not deleted. */
+  /** COACH-GONE-DELIVERY: columns naming an asset a kept purchase owes; those rows are not deleted.
+   *  `id`, or a nullable reference (matched null-safe). */
   owed?: ReadonlyArray<string>;
 }
 
@@ -988,6 +989,9 @@ export async function executeErasureManifest(
          AND d."asset_type" <> 'auto_message' AND d."status" NOT IN ('canceled', 'failed', 'skipped')`
   ).filter((r) => r.client_id && r.asset_id);
   const owedIds = [...new Set(owed.map((r) => r.asset_id as string))];
+  // Null-safe NOT: a null reference (a standalone workout's program_id) would make
+  // NOT (false OR NULL) unknown and keep a row nothing is owed for; `id` is never null.
+  const owedKey = (c: string) => (c === 'id' ? { in: owedIds } : { in: owedIds, not: null });
   const coachDrops = await tx.$executeRaw`
     UPDATE "ScheduledDrop" d
        SET "status" = 'canceled', "failure_reason" = 'account deleted', "locked_at" = NULL
@@ -1024,9 +1028,7 @@ export async function executeErasureManifest(
     const where = {
       ...whereForPath(entry.field, matchValue),
       ...(entry.where ?? {}),
-      // `not: null` keeps the NOT null-safe: a null key (a standalone workout's program_id) would make
-      // NOT (false OR NULL) unknown and keep a row nothing is owed for.
-      ...(keep ? { NOT: { OR: entry.owed?.map((c) => ({ [c]: { in: owedIds, not: null } })) } } : {}),
+      ...(keep ? { NOT: { OR: entry.owed?.map((c) => ({ [c]: owedKey(c) })) } } : {}),
     };
     const delegate = delegateFor(tx, entry.model);
     const res =
