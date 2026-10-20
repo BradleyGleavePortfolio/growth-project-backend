@@ -200,7 +200,7 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(await seen(L)).toEqual([0, 0, 0, 0, 0]);
   });
 
-  it('A moves to L: K and the sub-coach read nothing of A; L reads A\'s wins but not K\'s thread', async () => {
+  it('A moves to L: K and the sub-coach read nothing of A; L reads A\'s wins on L\'s week but not K\'s thread', async () => {
     await moveA(L);
     const k = await home(K);
     expect(k.wins).toEqual({ count: 0, items: [] });
@@ -211,10 +211,12 @@ if (!DB_URL && process.env.CI === 'true') {
     });
     const sub = await home(S);
     expect([sub.wins.count, sub.rings.replies.received, sub.rings.reach_outs.goal]).toEqual([0, 0, 0]);
+    // A's 14-day milestone at Monday 02:59 in New York is in L's week (it was last week for K).
     const l = await home(L);
-    expect(l.wins.count).toBe(4);
+    expect(l.wins.count).toBe(5);
     expect(await winIds(L)).toEqual([
-      `lifting_best:${row.bench}`, `checkin_streak:${row.streak}`, `goal_weight:${row.weighIn}`, `checkin_streak:${row.streakC}`,
+      `lifting_best:${row.bench}`, `checkin_streak:${row.streak}`, `goal_weight:${row.weighIn}`,
+      `checkin_streak:${row.streakC}`, `checkin_streak:${row.streakLastWeek}`,
     ]);
     expect(l.rings.replies).toEqual({ answered: 0, received: 1 });
     expect(l.rings.reach_outs).toEqual({ contacted: 0, goal: 2 });
