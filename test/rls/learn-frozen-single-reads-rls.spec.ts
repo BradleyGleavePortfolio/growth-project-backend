@@ -9,10 +9,14 @@
  * tombstone fields and the erasure manifest's steps for these tables, on one transaction. Lesson
  * reads run as the non-bypass `authenticated` role; the file opens through the real
  * CoachMediaService.getBuyerSignedUrl and the lesson routes run the real LessonsService (the
- * server's read paths). Every 0 or refusal follows a read of the same row that returned 1. The
- * tests run in order. Gate: TEST_DATABASE_URL; no URL -> skip, except under CI=true (hard
- * failure).
+ * server's read paths). LESSON-LOCK (20270502007200): a completion mark is that entitlement, so
+ * under its down.sql M points their own mark at G and reads G; after its migration.sql no
+ * signed-in user rewrites a mark (or makes one on G) and nobody reads anything new. Every 0 or
+ * refusal follows a read of the same row that returned 1. The tests run in order. Gate:
+ * TEST_DATABASE_URL; no URL -> skip, except under CI=true (hard failure).
  */
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { randomUUID } from 'crypto';
 import { NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
@@ -33,6 +37,12 @@ if (!DB_URL && process.env.CI === 'true') {
 function stub<T>(value: unknown): T {
   return value as T;
 }
+
+const LOCK = join(__dirname, '..', '..', 'prisma', 'migrations', '20270502007200_lesson_completion_lock');
+// A migration file's statements; BEGIN/COMMIT become the one transaction of `apply`.
+const statements = (file: string) =>
+  readFileSync(join(LOCK, file), 'utf8').replace(/^--.*$/gm, '').split(/;\s*$/m)
+    .map((s) => s.trim()).filter((s) => s && !/^(BEGIN|COMMIT)$/i.test(s));
 
 (DB_URL ? describe : describe.skip)('LEARN-FROZEN-SINGLE-READS: kept single lessons stay readable', () => {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
@@ -99,6 +109,18 @@ function stub<T>(value: unknown): T {
     });
   /** How many rows of lesson `lesson` the signed-in `who` reads. */
   const reads = (who: string, lesson: string) => as(who, (tx) => tx.lesson.count({ where: { id: lesson } }));
+  /** How many rows of completion mark `mark` the signed-in `who` reads. */
+  const readsMark = (who: string, mark: string) => as(who, (tx) => tx.lessonCompletion.count({ where: { id: mark } }));
+  /** The signed-in `who` points mark `mark` at lesson `lesson` for user `user`; rows written. */
+  const rewrite = (who: string, mark: string, lesson: string, user: string) =>
+    as(who, (tx) => tx.$executeRawUnsafe(
+      'UPDATE "LessonCompletion" SET "lesson_id" = $2, "user_id" = $3 WHERE "id" = $1', mark, lesson, user));
+  const markOf = async (user: string, lesson: string) =>
+    (await prisma.lessonCompletion.findFirstOrThrow({ where: { user_id: user, lesson_id: lesson } })).id;
+  const apply = (file: string) =>
+    prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      for (const s of statements(file)) await tx.$executeRawUnsafe(s);
+    });
 
   it('runs as a role that does not bypass row security', async () => {
     expect(await as(B, (tx) => tx.$queryRaw<{ bypass: boolean }[]>`
@@ -172,5 +194,58 @@ function stub<T>(value: unknown): T {
     await expect(service.completeLesson(M, LG)).rejects.toBeInstanceOf(NotFoundException);
     for (const who of [Z, L]) await expect(service.completeLesson(who, G)).rejects.toBeInstanceOf(NotFoundException);
     expect(await prisma.lessonCompletion.count({ where: { lesson_id: G } })).toBe(1);
+  });
+
+  it('LESSON-LOCK, under down.sql (the rule before): M points their own LG mark at G and reads G', async () => {
+    const mMark = await markOf(M, LG);
+    await apply('down.sql');
+    expect(await readsMark(M, mMark)).toBe(1);
+    expect(await reads(B, G)).toBe(1);
+    expect(await reads(M, G)).toBe(0);
+    expect(await rewrite(M, mMark, G, M)).toBe(1);
+    expect(await reads(M, G)).toBe(1); // the hole: M never completed G
+    await prisma.lessonCompletion.update({ where: { id: mMark }, data: { lesson_id: LG } });
+    expect(await reads(M, G)).toBe(0);
+    await apply('migration.sql');
+  });
+
+  it('LESSON-LOCK: a client completes a lesson; nobody signed in rewrites a mark or makes one to reach G', async () => {
+    // The normal completion (POST /lessons/:id/complete) still works.
+    await expect(service.completeLesson(Z, LG)).resolves.toMatchObject({ lesson_id: LG, user_id: Z });
+    const [zMark, mMark, bMark] = [await markOf(Z, LG), await markOf(M, LG), await markOf(B, G)];
+    // [who, mark, new user_id, who reads the mark first]
+    const attempts: Array<[string, string, string, string]> = [
+      [Z, zMark, Z, Z], // a client, their own mark
+      [M, mMark, M, M], // a past client, their own mark
+      [L, zMark, L, L], // the current coach takes their client's mark
+      [Z, bMark, Z, B], // another client's mark on G
+    ];
+    for (const [who, mark, user, reader] of attempts) {
+      expect(await reads(B, G)).toBe(1);
+      expect(await readsMark(reader, mark)).toBe(1);
+      await expect(rewrite(who, mark, G, user)).rejects.toThrow(/permission denied/);
+      expect(await reads(who, G)).toBe(0);
+    }
+    await expect(as(Z, (tx) => tx.$executeRawUnsafe(
+      'INSERT INTO "LessonCompletion" ("id", "lesson_id", "user_id") VALUES ($1, $2, $3)', randomUUID(), G, Z)))
+      .rejects.toThrow(/row-level security/);
+    expect(await reads(Z, G)).toBe(0);
+    // Every mark is as it was; the server lists, completes and refuses as before.
+    const marks = await prisma.lessonCompletion.findMany({ where: { id: { in: [zMark, mMark, bMark] } } });
+    expect(marks.map((c) => `${c.user_id}:${c.lesson_id}`).sort()).toEqual([`${B}:${G}`, `${M}:${LG}`, `${Z}:${LG}`].sort());
+    expect(ids(await service.getLessons(Z))).toEqual([LG]);
+    await expect(service.getLessons(M)).resolves.toEqual([]);
+    await expect(service.completeLesson(Z, G)).rejects.toBeInstanceOf(NotFoundException);
+    expect(ids(await service.getLessons(B))).toEqual([G]);
+    expect(await reads(B, G)).toBe(1);
+    // Only the server's policy can update a mark, and neither API role holds UPDATE.
+    expect(await prisma.$queryRaw<{ roles: string }[]>`
+      SELECT "roles"::text AS "roles" FROM pg_policies
+      WHERE "schemaname" = 'public' AND "tablename" = 'LessonCompletion' AND "cmd" IN ('UPDATE', 'ALL')`)
+      .toEqual([{ roles: '{service_role}' }]);
+    expect(await prisma.$queryRaw<{ a: boolean; u: boolean }[]>`
+      SELECT has_any_column_privilege('anon', 'public."LessonCompletion"', 'UPDATE') AS "a",
+             has_any_column_privilege('authenticated', 'public."LessonCompletion"', 'UPDATE') AS "u"`)
+      .toEqual([{ a: false, u: false }]);
   });
 });
