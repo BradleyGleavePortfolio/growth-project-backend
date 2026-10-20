@@ -312,6 +312,19 @@ export const CONSULT_CONSENT_V16_COACH_FREE_TEXT_SHA256 =
   '839832214a19353323a18f8e64443bba6db7172f3982c413a65281a72a441c54';
 export const CONSULT_CONSENT_V17_COACH_FREE_TEXT_SHA256 =
   '4030570aae763dd4b4ca578b0472298070e8ce0eea60cc18a123d952fc767ba1';
+/**
+ * Owner #162-6, Roman memory off: v11 / v13 with the same sentence in the same place (aiSlice =
+ * ledger client-ai-v12 / v13 copy sha256). Coached only: a client with no coach gets no Health
+ * notes, so the coach-free screens get no memory-off twin.
+ */
+export const CONSULT_CONSENT_V17 = 'consult-consent-v17';
+export const CONSULT_CONSENT_V18 = 'consult-consent-v18';
+export const CONSULT_CONSENT_COPY_V17 = withHealthNotes(CONSULT_CONSENT_COPY_V11);
+export const CONSULT_CONSENT_COPY_V18 = withHealthNotes(CONSULT_CONSENT_COPY_V13);
+export const CONSULT_CONSENT_V17_TEXT_SHA256 =
+  'ea511e82574f9ec446105028cf3547b66a5916523bd2329f60e4d9f5ce996b99';
+export const CONSULT_CONSENT_V18_TEXT_SHA256 =
+  '9ce19233f793ba3d4f82a5240481b4810da0a2f5dadf5b9c7a98936a14794e72';
 
 /** Separator between displayed parts in every digest input. */
 export const CONSULT_CONSENT_SEPARATOR = '\n\n';
@@ -500,6 +513,8 @@ export const CONSULT_CONSENT_COPIES: Readonly<
     copy: CONSULT_CONSENT_COPY_V17_COACH_FREE,
     text_sha256: CONSULT_CONSENT_V17_COACH_FREE_TEXT_SHA256,
   },
+  [CONSULT_CONSENT_V17]: { copy: CONSULT_CONSENT_COPY_V17, text_sha256: CONSULT_CONSENT_V17_TEXT_SHA256 },
+  [CONSULT_CONSENT_V18]: { copy: CONSULT_CONSENT_COPY_V18, text_sha256: CONSULT_CONSENT_V18_TEXT_SHA256 },
 });
 
 /** The pinned full-text sha256 of a known version, or null. */

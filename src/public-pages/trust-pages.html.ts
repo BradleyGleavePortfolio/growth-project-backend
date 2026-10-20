@@ -51,7 +51,7 @@ function crisisToldText(): string {
 // WEAR-AI (owner 161-1 op 1, wording WEAR-AI-03 / WEAR-AI-04 approved): the
 // Health and Sleep insight notes, in /privacy "Roman and AI" and
 // /consumer-health-privacy "Categories we share". The first box-2 agreement
-// names it too (owner #162-6: client-ai-v10 / v11).
+// names it too (owner #162-6: client-ai-v10 to v13).
 export const WEARABLE_AI_NOTES_TEXT = ROMAN_HEALTH_NOTES_SENTENCE;
 
 // Who sees community and leaderboard data (B-PRIVACY-1). Shared by /privacy

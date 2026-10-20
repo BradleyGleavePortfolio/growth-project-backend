@@ -210,6 +210,24 @@ export const CLIENT_AI_CONSENT_V11_COPY_SHA256 = sha256Hex(
 );
 
 /**
+ * client-ai-v12 / client-ai-v13 (owner #162-6, Roman memory off): the v6 / v8 paragraphs with the
+ * same sentence in the same place, nothing else changed. Same box label, scope 'base', read exactly
+ * like v6 / v8. GET ?variant=health_notes offers them as the base copy (the memory-off agreement).
+ */
+export const CLIENT_AI_CONSENT_V12_VERSION = 'client-ai-v12';
+export const CLIENT_AI_CONSENT_V13_VERSION = 'client-ai-v13';
+export const CLIENT_AI_CONSENT_V12_PARAGRAPH = withHealthNotes(CLIENT_AI_CONSENT_V6_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V13_PARAGRAPH = withHealthNotes(CLIENT_AI_CONSENT_V8_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V12_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V12_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V13_PARAGRAPH_SHA256 = sha256Hex(CLIENT_AI_CONSENT_V13_PARAGRAPH);
+export const CLIENT_AI_CONSENT_V12_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V12_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+export const CLIENT_AI_CONSENT_V13_COPY_SHA256 = sha256Hex(
+  CLIENT_AI_CONSENT_V13_PARAGRAPH + CLIENT_AI_CONSENT_COPY_SEPARATOR + CLIENT_AI_CONSENT_BOX_LABEL,
+);
+
+/**
  * Coach-free copies (owner decision 62, Option 1, 2026-10-12): what a client
  * with no coach sees. The v4 and v5 paragraphs and the box label with every
  * coach sentence or clause removed and no new words. Each gives the same scope
@@ -322,6 +340,14 @@ export const CLIENT_AI_CONSENT_ACCEPTED: Readonly<Record<string, AcceptedClientA
     [CLIENT_AI_CONSENT_V11_VERSION]: Object.freeze({
       copy_sha256: CLIENT_AI_CONSENT_V11_COPY_SHA256,
       scope: 'memory' as const,
+    }),
+    [CLIENT_AI_CONSENT_V12_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V12_COPY_SHA256,
+      scope: 'base' as const,
+    }),
+    [CLIENT_AI_CONSENT_V13_VERSION]: Object.freeze({
+      copy_sha256: CLIENT_AI_CONSENT_V13_COPY_SHA256,
+      scope: 'base' as const,
     }),
     [CLIENT_AI_CONSENT_V4_COACH_FREE_VERSION]: Object.freeze({
       copy_sha256: CLIENT_AI_CONSENT_V4_COACH_FREE_COPY_SHA256,

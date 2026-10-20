@@ -40,6 +40,8 @@ import {
   CONSULT_CONSENT_V16,
   CONSULT_CONSENT_V16_COACH_FREE,
   CONSULT_CONSENT_V17_COACH_FREE,
+  CONSULT_CONSENT_V17,
+  CONSULT_CONSENT_V18,
   consultConsentTextSha256,
   unknownConsultConsentVersions,
 } from './consult-consent-copy';
@@ -73,6 +75,8 @@ export const CONSULTATION_VERSION = 'consult-v1';
  * and v8- to v11-coach-free with TGP Fitness as the name (W-BRAND-AGREEMENT);
  * every older version stays accepted (installed builds send them, and records
  * keep their version).
+ * And the Health-notes screens (owner #162-6): v15 / v16 and v16- / v17-coach-free
+ * (memory on), v17 / v18 (memory off, coached only).
  *
  * Box 2 (optional AI processing by Anthropic) is NOT part of P0: it is
  * recorded by the AI consent ledger (`POST /me/ai-consent/roman`), is never
@@ -108,6 +112,8 @@ export const DEFAULT_CONSULT_CONSENT_COPY_VERSIONS: readonly string[] = Object.f
   CONSULT_CONSENT_V16,
   CONSULT_CONSENT_V16_COACH_FREE,
   CONSULT_CONSENT_V17_COACH_FREE,
+  CONSULT_CONSENT_V17,
+  CONSULT_CONSENT_V18,
 ]);
 
 const warnedConsentVersionLists = new Set<string>();

@@ -111,12 +111,12 @@ describe('W-BRAND-AGREEMENT: the agreement names TGP Fitness (W34-W38)', () => {
   });
 
   it('accepts the new versions by default, after every older version', () => {
-    // The last four are the Health-notes versions (owner #162-6, consent-health-notes.spec.ts).
+    // The last six are the Health-notes versions (owner #162-6, consent-health-notes.spec.ts).
     const accepted = acceptedConsentVersions({});
-    expect(accepted.slice(-12, -4)).toEqual(SUCCESSORS.map(([v]) => v));
-    expect(accepted.slice(0, -12)).toEqual(
+    expect(accepted.slice(-14, -6)).toEqual(SUCCESSORS.map(([v]) => v));
+    expect(accepted.slice(0, -14)).toEqual(
       Object.keys(CONSULT_CONSENT_COPIES)
-        .slice(0, -4)
+        .slice(0, -6)
         .filter((v) => !SUCCESSORS.some(([n]) => n === v)),
     );
   });

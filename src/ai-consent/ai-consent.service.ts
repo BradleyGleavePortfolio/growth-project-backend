@@ -137,6 +137,14 @@ import {
   CLIENT_AI_CONSENT_V11_PARAGRAPH,
   CLIENT_AI_CONSENT_V11_PARAGRAPH_SHA256,
   CLIENT_AI_CONSENT_V11_VERSION,
+  CLIENT_AI_CONSENT_V12_COPY_SHA256,
+  CLIENT_AI_CONSENT_V12_PARAGRAPH,
+  CLIENT_AI_CONSENT_V12_PARAGRAPH_SHA256,
+  CLIENT_AI_CONSENT_V12_VERSION,
+  CLIENT_AI_CONSENT_V13_COPY_SHA256,
+  CLIENT_AI_CONSENT_V13_PARAGRAPH,
+  CLIENT_AI_CONSENT_V13_PARAGRAPH_SHA256,
+  CLIENT_AI_CONSENT_V13_VERSION,
   CLIENT_AI_CONSENT_VERSION,
   COACH_AI_CONSENT_COPY_SHA256,
   COACH_AI_CONSENT_PARAGRAPH,
@@ -340,7 +348,7 @@ export function coversScope(
  * 'crisis' client-ai-v8 / v9 (v6 / v7 + the crisis sentence; GET
  * ?variant=crisis_alert while FEATURE_ROMAN_CRISIS_ALERT is on), 'coach_free'
  * (owner 62), 'health' / 'health_crisis' (owner #162-6, GET ?variant=health_notes): the
- * memory copy is client-ai-v10 / v11, the base copy stays v6 / v8.
+ * Health-notes copies, memory client-ai-v10 / v11 and base (memory off) client-ai-v12 / v13.
  */
 export type ClientAiCopyFamily =
   | 'pre57c'
@@ -355,8 +363,12 @@ const withHealthNotes = (family: ClientAiCopyFamily): ClientAiCopyFamily =>
 
 function familyOfVersion(version: unknown): ClientAiCopyFamily {
   if (isCoachFreeClientAiVersion(version)) return 'coach_free';
-  if (version === CLIENT_AI_CONSENT_V10_VERSION) return 'health';
-  if (version === CLIENT_AI_CONSENT_V11_VERSION) return 'health_crisis';
+  if (version === CLIENT_AI_CONSENT_V10_VERSION || version === CLIENT_AI_CONSENT_V12_VERSION) {
+    return 'health';
+  }
+  if (version === CLIENT_AI_CONSENT_V11_VERSION || version === CLIENT_AI_CONSENT_V13_VERSION) {
+    return 'health_crisis';
+  }
   if (version === CLIENT_AI_CONSENT_V8_VERSION || version === CLIENT_AI_CONSENT_V9_VERSION) {
     return 'crisis';
   }
@@ -365,10 +377,49 @@ function familyOfVersion(version: unknown): ClientAiCopyFamily {
     : 'pre57c';
 }
 
+/** client-ai-v10 / v11 (memory) and v12 / v13 (base): the Health-notes copies (owner #162-6). */
+function healthNotesCopy(crisis: boolean, memory: boolean): ClientAiConsentCopy {
+  const rows = [
+    [
+      CLIENT_AI_CONSENT_V10_VERSION,
+      CLIENT_AI_CONSENT_V10_PARAGRAPH,
+      CLIENT_AI_CONSENT_V10_PARAGRAPH_SHA256,
+      CLIENT_AI_CONSENT_V10_COPY_SHA256,
+    ],
+    [
+      CLIENT_AI_CONSENT_V11_VERSION,
+      CLIENT_AI_CONSENT_V11_PARAGRAPH,
+      CLIENT_AI_CONSENT_V11_PARAGRAPH_SHA256,
+      CLIENT_AI_CONSENT_V11_COPY_SHA256,
+    ],
+    [
+      CLIENT_AI_CONSENT_V12_VERSION,
+      CLIENT_AI_CONSENT_V12_PARAGRAPH,
+      CLIENT_AI_CONSENT_V12_PARAGRAPH_SHA256,
+      CLIENT_AI_CONSENT_V12_COPY_SHA256,
+    ],
+    [
+      CLIENT_AI_CONSENT_V13_VERSION,
+      CLIENT_AI_CONSENT_V13_PARAGRAPH,
+      CLIENT_AI_CONSENT_V13_PARAGRAPH_SHA256,
+      CLIENT_AI_CONSENT_V13_COPY_SHA256,
+    ],
+  ] as const;
+  const [version, text, textSha, sha] = rows[(memory ? 0 : 2) + (crisis ? 1 : 0)];
+  return {
+    version,
+    processor: CLIENT_AI_CONSENT_PROCESSOR,
+    paragraph: { text, sha256: textSha },
+    box_label: { text: CLIENT_AI_CONSENT_BOX_LABEL, sha256: CLIENT_AI_CONSENT_BOX_LABEL_SHA256 },
+    sha256: sha,
+  };
+}
+
 /** The base ('base' scope) copy of `family`. */
 export function clientAiConsentCopy(family: ClientAiCopyFamily = 'pre57c'): ClientAiConsentCopy {
-  if (family === 'health') return clientAiConsentCopy('coached');
-  if (family === 'health_crisis') return clientAiConsentCopy('crisis');
+  if (family === 'health' || family === 'health_crisis') {
+    return healthNotesCopy(family === 'health_crisis', false);
+  }
   if (family === 'crisis') {
     return {
       version: CLIENT_AI_CONSENT_V8_VERSION,
@@ -420,17 +471,7 @@ export function clientAiConsentCopy(family: ClientAiCopyFamily = 'pre57c'): Clie
 /** The memory-scope copy of `family`. */
 export function clientAiConsentV5Copy(family: ClientAiCopyFamily = 'pre57c'): ClientAiConsentCopy {
   if (family === 'health' || family === 'health_crisis') {
-    const v10 = family === 'health';
-    return {
-      version: v10 ? CLIENT_AI_CONSENT_V10_VERSION : CLIENT_AI_CONSENT_V11_VERSION,
-      processor: CLIENT_AI_CONSENT_PROCESSOR,
-      paragraph: {
-        text: v10 ? CLIENT_AI_CONSENT_V10_PARAGRAPH : CLIENT_AI_CONSENT_V11_PARAGRAPH,
-        sha256: v10 ? CLIENT_AI_CONSENT_V10_PARAGRAPH_SHA256 : CLIENT_AI_CONSENT_V11_PARAGRAPH_SHA256,
-      },
-      box_label: { text: CLIENT_AI_CONSENT_BOX_LABEL, sha256: CLIENT_AI_CONSENT_BOX_LABEL_SHA256 },
-      sha256: v10 ? CLIENT_AI_CONSENT_V10_COPY_SHA256 : CLIENT_AI_CONSENT_V11_COPY_SHA256,
-    };
+    return healthNotesCopy(family === 'health_crisis', true);
   }
   if (family === 'crisis') {
     return {
@@ -564,9 +605,10 @@ export class AiConsentService implements ClientAiConsentReader {
    * `askCrisis` (?variant=crisis_alert, CRISIS-APP-COPY): as `askSafety`, with
    * client-ai-v8 / v9 while FEATURE_ROMAN_CRISIS_ALERT is on. While it is off every
    * 'crisis' read (asked or on file) gives the v6 / v7 copies instead.
-   * `askHealth` (?variant=health_notes, owner #162-6): as `askCrisis`, and the memory offer is
-   * client-ai-v10 / v11, which name the Health-page notes. A live v4 to v9 grant still reads its
-   * own copies (no re-ask); a live v10 / v11 grant reads its own.
+   * `askHealth` (?variant=health_notes, owner #162-6): as `askCrisis`, with the copies that name
+   * the Health-page notes: memory offer client-ai-v10 / v11, base copy (the memory-off agreement)
+   * client-ai-v12 / v13. A live v4 to v9 grant still reads its own copies (no re-ask); a live
+   * v10 to v13 grant reads its own family.
    */
   private toStatus(
     row: AiConsentLatestRow | null,

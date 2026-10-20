@@ -245,7 +245,14 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
       'consult-consent-v16-coach-free',
       'consult-consent-v17-coach-free',
     ],
+    [
+      'consultation box 2, base (memory off), Health notes, TGP Fitness',
+      async () => p0((await health()).copy, false, 'TGP Fitness'),
+      'consult-consent-v17',
+      'consult-consent-v18',
+    ],
     ['AI agreement, memory, Health notes', async () => ai((await health()).memory_copy), 'client-ai-v10', 'client-ai-v11'],
+    ['AI agreement, base (memory off), Health notes', async () => ai((await health()).copy), 'client-ai-v12', 'client-ai-v13'],
     ['AI agreement, base', async () => ai((await asked()).copy), 'client-ai-v6', 'client-ai-v8'],
     ['AI agreement, memory', async () => ai((await asked()).memory_copy), 'client-ai-v7', 'client-ai-v9'],
     ['AI agreement, live client-ai-v8 grant', async () => ai((await liveGrant('client-ai-v8')).copy), 'client-ai-v6', 'client-ai-v8'],
@@ -316,6 +323,7 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
     expect(texts.filter(([, t]) => t.includes(TOLD)).map(([v]) => v).sort()).toEqual(
       [
         'client-ai-v11',
+        'client-ai-v13',
         'client-ai-v8',
         'client-ai-v9',
         'consult-consent-v10',
@@ -327,6 +335,7 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
         'consult-consent-v15-coach-free',
         'consult-consent-v16',
         'consult-consent-v17-coach-free',
+        'consult-consent-v18',
         'consult-consent-v9',
       ],
     );

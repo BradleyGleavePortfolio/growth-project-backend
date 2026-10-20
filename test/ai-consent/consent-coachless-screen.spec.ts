@@ -26,6 +26,8 @@ import {
   CLIENT_AI_CONSENT_V9_PARAGRAPH,
   CLIENT_AI_CONSENT_V10_PARAGRAPH,
   CLIENT_AI_CONSENT_V11_PARAGRAPH,
+  CLIENT_AI_CONSENT_V12_PARAGRAPH,
+  CLIENT_AI_CONSENT_V13_PARAGRAPH,
 } from '../../src/ai-consent/ai-consent.constants';
 import {
   CONSULT_CONSENT_COPIES,
@@ -187,6 +189,21 @@ const ROWS: Array<[string, string, string[], string, string]> = [
     tgp(noCoach(CLIENT_AI_CONSENT_V11_PARAGRAPH)),
     '4030570aae763dd4b4ca578b0472298070e8ce0eea60cc18a123d952fc767ba1',
     'client-ai-v11',
+  ],
+  // Memory off (coached only: a client with no coach gets no Health notes).
+  [
+    'coached, memory off, Health notes, TGP Fitness',
+    'consult-consent-v17',
+    tgp(coached(CLIENT_AI_CONSENT_V12_PARAGRAPH)),
+    'ea511e82574f9ec446105028cf3547b66a5916523bd2329f60e4d9f5ce996b99',
+    'client-ai-v12',
+  ],
+  [
+    'coached, memory off, crisis switch on, Health notes, TGP Fitness',
+    'consult-consent-v18',
+    tgp(coached(CLIENT_AI_CONSENT_V13_PARAGRAPH)),
+    '9ce19233f793ba3d4f82a5240481b4810da0a2f5dadf5b9c7a98936a14794e72',
+    'client-ai-v13',
   ],
 ];
 
