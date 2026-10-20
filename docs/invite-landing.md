@@ -64,8 +64,9 @@ depend on the visitor's platform (User-Agent; the response sets
 3. **Anything else** → "Open this invite on your phone to join." with both
    store links.
 
-Every layout shows the code and says to open the invite link again after
-installing, or to enter the code when creating the account. There is no
+Every layout shows the code in large type with a "Copy code" button and says
+to open the invite link again after installing, or to enter the code when
+creating the account (the app's sign-up form has "Paste code"). There is no
 "Continue on web" link: there is no web signup, and `/signup` asks the
 visitor to open the invite on a phone.
 
@@ -95,6 +96,9 @@ redeploy.
   inject CSS via this field. `branding_logo_url` is filtered to
   `http://`, `https://`, `tgp:`, or relative-`/` only — no `javascript:`
   or `data:` URLs reach the rendered HTML.
+- **CSP**: both pages send a route-level `Content-Security-Policy` with
+  `default-src 'none'` and a per-response nonce for the one inline style and
+  the one inline script (Copy code); images from `'self'` and `https:` only.
 - **No private data**: `coach_name` and `business_name` are the only
   identifying fields ever rendered. Email, phone, client roster, billing
   state, and Stripe identifiers stay server-side.

@@ -85,6 +85,7 @@ function packagesDb() {
   const db = {
     rows,
     coachPackage,
+    user: { count: async () => 0 }, // no leaving coach here (COACH-GONE-DELIVERY selling guard)
     // Active recurring subscribers the pricing lock counts.
     activeSubscribers: 0,
     clientPurchase: { count: async () => db.activeSubscribers },

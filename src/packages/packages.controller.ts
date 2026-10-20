@@ -110,7 +110,7 @@ export class CoachPackagesController {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @Res({ passthrough: true }) res: { setHeader(name: string, value: string): void },
   ) {
-    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
+    const coachId = await this.packages.resolveSellingCoachId(req.user.id);
     const { pkg, replayed } = await this.packages.createIdempotent(coachId, {
       name: body.name,
       description: body.description,
@@ -138,7 +138,10 @@ export class CoachPackagesController {
     @Param('id') id: string,
     @Body() body: UpdatePackageDto,
   ) {
-    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
+    const coachId =
+      body.is_active === true
+        ? await this.packages.resolveSellingCoachId(req.user.id)
+        : await this.packages.resolveEffectiveCoachId(req.user.id);
     return this.packages.update(coachId, id, {
       name: body.name,
       description: body.description,
@@ -164,7 +167,7 @@ export class CoachPackagesController {
   @Post(':id/publish')
   @HttpCode(HttpStatus.OK)
   async publish(@Request() req: AuthedRequest, @Param('id') id: string) {
-    const coachId = await this.packages.resolveEffectiveCoachId(req.user.id);
+    const coachId = await this.packages.resolveSellingCoachId(req.user.id);
     return this.packages.publish(coachId, id);
   }
 

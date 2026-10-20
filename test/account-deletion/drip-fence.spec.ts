@@ -11,7 +11,7 @@ function stub<T>(value: unknown): T {
 }
 
 describe('DripDispatcherCron deleted-account fence', () => {
-  it('only selects drops whose client and coach are both live accounts', async () => {
+  it('only selects drops to a live client, from a live coach or a purchase the client still holds', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const cron = new DripDispatcherCron(
       stub<PrismaService>({ scheduledDrop: { findMany } }),
@@ -21,7 +21,7 @@ describe('DripDispatcherCron deleted-account fence', () => {
     expect(findMany).toHaveBeenCalledTimes(1);
     expect(findMany.mock.calls[0][0].where.client_purchase).toEqual({
       client: { deleted_at: null },
-      coach: { deleted_at: null },
+      OR: [{ coach: { deleted_at: null } }, { entitlement_active: true }],
     });
   });
 });

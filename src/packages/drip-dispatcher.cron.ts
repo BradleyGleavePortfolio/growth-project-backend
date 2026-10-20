@@ -217,11 +217,12 @@ export class DripDispatcherCron {
       materialised_ref: null,
       fire_at: { lte: now, not: null },
       attempt_count: { lt: MAX_ATTEMPTS },
-      // Account deletion (backend #608 B-608-5): never deliver to, or on
-      // behalf of, a deleted account even if a drop escaped cancellation.
+      // Account deletion (backend #608 B-608-5): never deliver to a deleted
+      // account even if a drop escaped cancellation. COACH-GONE-DELIVERY: a
+      // deleted coach's drop still fires, on a purchase its client still holds.
       client_purchase: {
         client: { deleted_at: null },
-        coach: { deleted_at: null },
+        OR: [{ coach: { deleted_at: null } }, { entitlement_active: true }],
       },
       OR: [
         {

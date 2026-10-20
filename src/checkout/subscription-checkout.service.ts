@@ -69,10 +69,12 @@ import {
   isIdempotencyMismatch,
   isResourceMissing,
   intentResult,
+  keepBarred,
   openAttemptWhere,
   packageTrialDays,
   planPriceFor,
   planView,
+  PLAN_COACH,
   reservedMarker,
   resumeWindowStart,
   retryMarker,
@@ -380,10 +382,12 @@ export class SubscriptionCheckoutService {
           { status: { in: ['past_due', 'unpaid'] } },
         ],
       },
+      include: PLAN_COACH,
       orderBy: { created_at: 'desc' },
     });
     const ended = await this.prisma.clientPurchase.findMany({
       where: { ...base, status: 'canceled', entitlement_active: false, trial_started_at: null },
+      include: PLAN_COACH,
       orderBy: { created_at: 'desc' },
       take: 50,
     });
@@ -397,6 +401,7 @@ export class SubscriptionCheckoutService {
   async getPlan(clientUserId: string, purchaseId: string): Promise<ClientPlanView> {
     const row = await this.prisma.clientPurchase.findFirst({
       where: { id: purchaseId, client_user_id: clientUserId },
+      include: PLAN_COACH,
     });
     if (!row || row.billing_type !== 'recurring' || !row.stripe_subscription_id) {
       throw planNotFound();
@@ -474,15 +479,17 @@ export class SubscriptionCheckoutService {
     this.assertReady();
     const row = await this.prisma.clientPurchase.findFirst({
       where: { id: purchaseId, client_user_id: clientUserId },
+      include: PLAN_COACH,
     });
     if (!row || row.billing_type !== 'recurring' || !row.stripe_subscription_id) {
       throw planNotFound();
     }
     const pkg = await this.prisma.coachPackage.findUnique({ where: { id: row.package_id } });
     if (!row.cancel_at_period_end) return planView(row, pkg);
-    // MOVEBILL: a move ended this renewal (MOVE-BILLING); the plan is never
-    // offered as keepable (planView can_resume), and a direct call is refused.
-    if (row.status === 'canceled' || !row.entitlement_active || row.moved_away_at) {
+    // MOVEBILL + COACH-GONE-DELIVERY: a renewal a move or the coach's deletion
+    // ended is never offered as keepable (planView can_resume, keepBarred), and
+    // a direct call is refused.
+    if (row.status === 'canceled' || !row.entitlement_active || keepBarred(row)) {
       throw new ConflictException({
         code: 'PLAN_ALREADY_ENDED',
         error: 'PLAN_ALREADY_ENDED',
