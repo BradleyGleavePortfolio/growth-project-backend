@@ -72,7 +72,7 @@ function setup(enrolments: ReturnType<typeof enrol>[], marks: [string, string][]
   const holds = (e: ReturnType<typeof enrol>, id: string) => e.course.modules.some((m) => m.lessons.some((l) => l.id === id));
   const db = {
     // app.client_today: the client's own day, from the database.
-    $queryRaw: jest.fn(async () => [{ today: '2026-10-12' }]),
+    $queryRaw: jest.fn(async (..._args: unknown[]) => [{ today: '2026-10-12' }]),
     courseEnrolment: {
       findMany: jest.fn(async ({ where }: EnrolmentQuery) => enrolments.filter((e) => e.user_id === where.user_id && published(e))),
       findFirst: jest.fn(
