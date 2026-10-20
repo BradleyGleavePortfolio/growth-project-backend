@@ -347,7 +347,7 @@ export class AiApprovalService {
       toMaterialise = { ...draft, payload: appliedPayload };
     }
     if (input.editedPayload !== undefined) {
-      appliedPayload = editPathChange(draft.payload, input.editedPayload) as unknown as Prisma.JsonObject;
+      appliedPayload = { ...editPathChange(draft.payload, input.editedPayload) };
       toMaterialise = { ...draft, payload: appliedPayload };
     }
 

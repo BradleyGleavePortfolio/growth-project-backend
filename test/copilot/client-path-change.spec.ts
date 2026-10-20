@@ -1,6 +1,7 @@
 // COPILOT-BE — the client_path_change kind: payload rules, the coach's Edit and note, the apply handlers (consent and
 // roster re-checked; Roman never applies), and the paged queue (oldest first, with the total).
 import { BadRequestException } from '@nestjs/common';
+import type { AiActionDraft } from '@prisma/client';
 import { AiApprovalService } from '../../src/ai/gateway/ai-approval.service';
 import {
   ClientPathChangeMaterializer, CLIENT_PATH_CHANGE, editPathChange, parsePathChange, pathChangeNote,
@@ -59,9 +60,9 @@ function materialiser(over: { coachOf?: string; requester?: string; granted?: bo
   const macros = { getCurrentForClient: jest.fn(async () => current), createForClient: jest.fn(async () => ({ id: 'target-new' })) };
   const { egress } = egressWithGrants(over.granted === false ? [] : [CLIENT]);
   const m = new ClientPathChangeMaterializer(fakeOf<PrismaService>(prisma), egress, fakeOf<MacrosService>(macros));
-  const draft = (payload: object) => ({
+  const draft = (payload: object) => fakeOf<AiActionDraft>({
     id: 'd1', capability: CLIENT_PATH_CHANGE, status: 'pending', requester_id: over.requester ?? CLIENT, subject_user_id: CLIENT, tenant_coach_id: COACH, payload,
-  }) as never;
+  });
   return { m, draft, writes, prisma, macros };
 }
 

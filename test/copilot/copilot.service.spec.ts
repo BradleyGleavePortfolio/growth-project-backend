@@ -15,7 +15,7 @@ const row = (status: string) => ({
 function build(opts: { status?: string | null; granted?: boolean } = {}) {
   const prisma = {
     aiActionDraft: {
-      updateMany: jest.fn(async () => ({ count: opts.status === 'suggested' ? 0 : 1 })),
+      updateMany: jest.fn(async (_a: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({ count: opts.status === 'suggested' ? 0 : 1 })),
       findFirst: jest.fn(async () => (opts.status === null ? null : row(opts.status ?? 'pending'))),
       findMany: jest.fn(async () => [row('approved')]),
       count: jest.fn(async () => 4),
@@ -30,7 +30,7 @@ describe('POST /client/copilot/suggestions/:id/send', () => {
   it('hands the client\'s own unsent suggestion to their coach now, and counts nothing', async () => {
     const { svc, prisma } = build();
     await expect(svc.send(CLIENT, 'd1')).resolves.toMatchObject({ id: 'd1', status: 'pending', reason: 'Thursday is your busiest day.' });
-    const [args] = prisma.aiActionDraft.updateMany.mock.calls[0] as unknown as [{ where: Record<string, unknown>; data: Record<string, unknown> }];
+    const [args] = prisma.aiActionDraft.updateMany.mock.calls[0];
     expect(args.where).toMatchObject({ id: 'd1', capability: 'client_path_change', requester_id: 'client-a', subject_user_id: 'client-a', status: 'suggested' });
     expect(args.data).toMatchObject({ status: 'pending', tenant_coach_id: 'coach-k' });
     expect(prisma.romanUsageDaily.upsert).not.toHaveBeenCalled();
