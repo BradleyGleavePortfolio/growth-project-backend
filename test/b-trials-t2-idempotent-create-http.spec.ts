@@ -60,6 +60,7 @@ function makeDb() {
     a.route_key === b.route_key &&
     a.idempotency_key === b.idempotency_key;
   const db = {
+    user: { count: async () => 0 }, // no leaving coach here (COACH-GONE-DELIVERY selling guard)
     packages: () => packages,
     ledger: () => ledger,
     coachPackage: {

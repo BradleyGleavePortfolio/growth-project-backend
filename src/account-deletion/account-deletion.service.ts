@@ -269,7 +269,8 @@ export class AccountDeletionService {
   /**
    * COACH-GONE-DELIVERY: from the moment deletion is confirmed nothing of this coach's is sold
    * (storefront, in-app list, pay and share links, checkout and in-app purchase all read
-   * is_active); a cancel puts back on sale exactly the packages this took off.
+   * is_active; package create, publish and reactivate and every checkout also read the coach,
+   * packages/coach-selling.ts); a cancel puts back on sale exactly the packages this took off.
    */
   private async setSelling(client: Prisma.TransactionClient, userId: string, closedAt: Date | null) {
     const args: Prisma.CoachPackageUpdateManyArgs = closedAt

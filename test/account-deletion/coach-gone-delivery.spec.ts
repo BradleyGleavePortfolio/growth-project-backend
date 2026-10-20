@@ -52,10 +52,10 @@ describe('erasure of a coach whose clients still hold purchases', () => {
     await executeErasureManifest(tx, ctx);
     const owed = ['plan-1', 'video-1'];
     expect(whereOf(calls, 'workoutPlan.deleteMany').NOT).toEqual({
-      OR: [{ id: { in: owed } }, { program_id: { in: owed } }],
+      OR: [{ id: { in: owed, not: null } }, { program_id: { in: owed, not: null } }],
     });
-    expect(whereOf(calls, 'dailyMealPlan.deleteMany').NOT).toEqual({ OR: [{ id: { in: owed } }] });
-    expect(whereOf(calls, 'coachMediaAsset.deleteMany').NOT).toEqual({ OR: [{ id: { in: owed } }] });
+    expect(whereOf(calls, 'dailyMealPlan.deleteMany').NOT).toEqual({ OR: [{ id: { in: owed, not: null } }] });
+    expect(whereOf(calls, 'coachMediaAsset.deleteMany').NOT).toEqual({ OR: [{ id: { in: owed, not: null } }] });
     const grants = calls.find((c) => c.op.startsWith('raw:DELETE FROM "ClientAssetGrant"'));
     expect(grants?.op).toContain(`AND NOT (g."client_id" || ':' || g."media_asset_id") = ANY(?::text[])`);
     expect((grants?.args as unknown[])[1]).toEqual(['sam:plan-1', 'sam:video-1']);
