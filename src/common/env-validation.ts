@@ -2252,6 +2252,14 @@ export const ENV_RULES: EnvRule[] = [
       'Kill switch for Roman approve-to-adjust: deterministic recovery suggestions on the coach side (GET/POST /coach/adjustments). Off = every route 404s.',
   },
   {
+    name: 'FEATURE_CLIENT_PATH_COPILOT',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason: 'Kill switch for Path Copilot, the client side (GET /client/copilot, POST /client/copilot/suggestions/:id/send). Off = both 404.',
+  },
+  {
     name: 'FEATURE_NAMED_REGIMES',
     values: ['true', 'false'],
     unsetIs: 'off',

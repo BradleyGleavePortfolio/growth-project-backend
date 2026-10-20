@@ -21,6 +21,7 @@ import { emptyPlanSnapshot, snapshotFromRevisionJson } from './materialisers/__s
 import { WeekLimits, subsetLimitBreach } from './workout-builder/subset-bounds';
 import { loadWeekOtherSetsByMuscle, weeklySetsCap } from './workout-builder/week-limits';
 import { planStaysInTenantWhere } from '../../workout-builder/tenant-clients';
+import { CLIENT_PATH_CHANGE, editPathChange, pathChangeNote } from './materialisers/client-path-change.materialiser';
 
 // Human-approval workflow for consequential AI outputs. AiActionDraft
 // rows land here as `pending`; an authorized human (coach for own-tenant
@@ -90,6 +91,8 @@ export interface DecideInput {
   // B-AIB2-126 — apply only these changes (`c<i>` = diff index i) of an AI
   // workout-builder draft. Omitted = apply every change.
   acceptedChangeIds?: string[];
+  // COPILOT-BE: the coach's Edit of a client_path_change draft (its one editable field), applied on approval.
+  editedPayload?: unknown;
   ip?: string | null;
   userAgent?: string | null;
 }
@@ -132,12 +135,42 @@ export class AiApprovalService {
       orderBy: { created_at: 'desc' },
       take: limit,
     });
+    return scope.tenantCoachId ? this.keepOnRoster(scope.tenantCoachId, drafts) : drafts;
+  }
+
+  /**
+   * COPILOT-BE: the coach's paged queue of pending drafts, oldest first, with the total still waiting. Same scope as
+   * listPending (his tenant, his current clients); `after` is the id of the last draft of the previous page.
+   */
+  async pageQueue(scope: { tenantCoachId?: string; limit: number; after?: string }) {
     const coachId = scope.tenantCoachId;
-    if (!coachId) return drafts;
+    const where: Prisma.AiActionDraftWhereInput = { status: 'pending' };
+    if (coachId) {
+      const roster = await this.prisma.user.findMany({ where: { coach_id: coachId }, select: { id: true } });
+      where.tenant_coach_id = coachId;
+      where.OR = [{ subject_user_id: null }, { subject_user_id: { in: [coachId, ...roster.map((u) => u.id)] } }];
+    }
+    const anchor = scope.after
+      ? await this.prisma.aiActionDraft.findFirst({ where: { id: scope.after, ...(coachId ? { tenant_coach_id: coachId } : {}) }, select: { id: true, created_at: true } })
+      : null;
+    if (scope.after && !anchor) throw new BadRequestException({ code: 'INVALID_CURSOR', message: 'Reload the list.' });
+    const page = anchor
+      ? { AND: [where, { OR: [{ created_at: { gt: anchor.created_at } }, { created_at: anchor.created_at, id: { gt: anchor.id } }] }] }
+      : where;
+    const [total, rows] = await Promise.all([
+      this.prisma.aiActionDraft.count({ where }),
+      this.prisma.aiActionDraft.findMany({ where: page, orderBy: [{ created_at: 'asc' }, { id: 'asc' }], take: scope.limit + 1 }),
+    ]);
+    const items = rows.slice(0, scope.limit);
+    const next_cursor = rows.length > scope.limit ? items[items.length - 1].id : null;
+    return { items: coachId ? await this.keepOnRoster(coachId, items) : items, total, next_cursor };
+  }
+
+  private async keepOnRoster<T extends { subject_user_id: string | null; payload: Prisma.JsonValue }>(coachId: string, drafts: T[]) {
     // The tenant was stamped when the draft was made; a client who has since
     // moved to another coach takes their drafts with them (same rule as decide),
     // whether the draft names them as its subject or in its payload.
-    const clientsOf = (d: (typeof drafts)[number]) =>
+    const clientsOf = (d: T) =>
       [d.subject_user_id ?? [], payloadClientIds(d.payload)].flat().filter((id) => id !== coachId);
     const roster = await this.prisma.user.findMany({
       where: { id: { in: [...new Set(drafts.flatMap(clientsOf))] }, coach_id: coachId },
@@ -274,6 +307,11 @@ export class AiApprovalService {
     }
 
     const status = input.decision;
+    // COPILOT-BE (CP-NOTE): a client's Copilot change carries at most one short line, which the client sees.
+    const note = draft.capability === CLIENT_PATH_CHANGE ? pathChangeNote(input.note) : input.note ?? null;
+    if (input.editedPayload !== undefined && (draft.capability !== CLIENT_PATH_CHANGE || status !== 'approved')) {
+      throw new BadRequestException({ code: 'PAYLOAD_EDIT_UNSUPPORTED', message: 'This draft cannot be edited.' });
+    }
 
     // B-AIB2-126 — subset approval: materialise only the accepted ops (the
     // materialiser re-validates and dry-runs them against the current head).
@@ -306,6 +344,10 @@ export class AiApprovalService {
         }
       }
       appliedPayload = { ...(payload as Prisma.JsonObject), diff: subset };
+      toMaterialise = { ...draft, payload: appliedPayload };
+    }
+    if (input.editedPayload !== undefined) {
+      appliedPayload = editPathChange(draft.payload, input.editedPayload) as unknown as Prisma.JsonObject;
       toMaterialise = { ...draft, payload: appliedPayload };
     }
 
@@ -469,7 +511,7 @@ export class AiApprovalService {
           status,
           decided_by_id: input.decider.id,
           decided_at: new Date(),
-          decision_note: input.note ?? null,
+          decision_note: note,
           ...(appliedPayload !== undefined ? { payload: appliedPayload } : {}),
         },
       });
@@ -526,7 +568,7 @@ export class AiApprovalService {
       metadata: {
         capability: draft.capability,
         requester_id: draft.requester_id,
-        note: input.note ?? null,
+        note,
         materialised_ref: materialisationRef,
       },
     });
