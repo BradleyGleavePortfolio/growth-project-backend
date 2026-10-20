@@ -30,6 +30,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { CommunityModule } from './community/community.module';
 import { LessonsModule } from './lessons/lessons.module';
+import { CoursesModule } from './courses/courses.module';
 import { WaterModule } from './water/water.module';
 import { SupabaseModule } from './supabase/supabase.module';
 import { PrismaModule } from './prisma/prisma.module';
@@ -230,6 +231,7 @@ import { WearablesModule } from './wearables/wearables.module';
     NotificationsModule,
     CommunityModule,
     LessonsModule,
+    CoursesModule,
     WaterModule,
     HealthModule,
     InviteCodesModule,
