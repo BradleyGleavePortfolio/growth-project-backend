@@ -33,6 +33,8 @@ describe('LEARN-FROZEN-MEDIA: coach media behind a kept lesson', () => {
         field: 'coach_id',
         action: { op: 'delete' },
         where: { lessons: { none: KEPT_LESSON } },
+        // COACH-GONE-DELIVERY: also kept when a held purchase delivered or owes it.
+        owed: ['id'],
       },
       { model: 'CoachMediaAsset', field: 'coach_id', action: { op: 'retain', reason: expect.any(String) } },
     ]);
@@ -96,7 +98,7 @@ describe('LEARN-FROZEN-MEDIA: coach media behind a kept lesson', () => {
     expect(grants).toBeGreaterThan(order.findIndex((s) => s.op === 'coachMediaAsset.deleteMany'));
     expect(grants).toBeGreaterThan(order.findIndex((s) => s.op === 'lesson.deleteMany'));
     const sql = order[grants].op;
-    expect(order[grants].values).toEqual([['m-1', 'm-2']]);
+    expect(order[grants].values).toEqual([['m-1', 'm-2'], []]);
     // A grant stays only for a client who completed a lesson playing it or is enrolled in its course.
     expect(sql).toContain('AND NOT EXISTS ( SELECT 1 FROM "Lesson" l WHERE l."media_asset_id" = g."media_asset_id"');
     expect(sql).toContain('c."lesson_id" = l."id" AND c."user_id" = g."client_id"');

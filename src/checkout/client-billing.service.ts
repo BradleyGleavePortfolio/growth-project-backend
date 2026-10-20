@@ -1483,6 +1483,13 @@ export class ClientBillingService {
           'This plan is not a subscription, so there is nothing to cancel. Message your coach if you want to change it.',
       });
     }
+    // COACH-GONE-DELIVERY (Sol B1): the client's own cancel wins; his coach staying never resumes it.
+    if (purchase.renewal_off_for_deletion_at) {
+      await this.prisma.clientPurchase.update({
+        where: { id: purchase.id },
+        data: { renewal_off_for_deletion_at: null },
+      });
+    }
     const pending = await this.openCancelOperation(purchase.id);
     if (purchase.status === 'canceled') {
       return {
@@ -2025,6 +2032,71 @@ export class ClientBillingService {
       }
     }
     return { ended, failed };
+  }
+
+  /**
+   * COACH-GONE-DELIVERY: from the moment a coach confirms his account deletion his clients'
+   * plans stop renewing, the same renewal-off as a client's own cancel (option A: access to the
+   * end of the paid period, no refund, nothing sent); a plan in dunning is left to dunning. If he
+   * cancels the deletion inside the grace period, exactly those plans renew again, never one the
+   * client cancelled himself (cancelPlan clears the mark) or a move ended. Never throws:
+   * a failed row is tried again on the next run.
+   */
+  async syncPlansOfLeavingCoaches(): Promise<{ ended: number; resumed: number; failed: number }> {
+    const out = { ended: 0, resumed: 0, failed: 0 };
+    const leaving = await this.prisma.clientPurchase.findMany({
+      where: {
+        coach: { deletion_confirmed_at: { not: null }, deleted_at: null },
+        moved_away_at: null,
+        billing_type: 'recurring',
+        stripe_subscription_id: { not: null },
+        status: { in: ['active', 'trialing'] },
+        cancel_at_period_end: false,
+      },
+      include: { dunning: true },
+      take: 100,
+    });
+    const back = await this.prisma.clientPurchase.findMany({
+      where: {
+        renewal_off_for_deletion_at: { not: null },
+        moved_away_at: null,
+        coach: { deletion_confirmed_at: null, deleted_at: null },
+      },
+      take: 100,
+    });
+    for (const row of leaving.filter((p) => !isDelinquent(p))) {
+      try {
+        await this.cancelAtPeriodEnd(row);
+        await this.prisma.clientPurchase.update({
+          where: { id: row.id },
+          data: { renewal_off_for_deletion_at: new Date() },
+        });
+        out.ended += 1;
+      } catch (err) {
+        out.failed += 1;
+        this.logger.warn(`leaving coach: renewal off failed purchase=${row.id}: ${dunningErrorCode(err)}`);
+      }
+    }
+    for (const row of back) {
+      try {
+        const live = row.status !== 'canceled' && row.cancel_at_period_end;
+        if (live) {
+          await this.stripe.resumeSubscription({
+            subscriptionId: row.stripe_subscription_id as string,
+            idempotencyKey: `tgp-resume-${row.stripe_subscription_id}-${row.renewal_off_for_deletion_at?.getTime()}`,
+          });
+        }
+        await this.prisma.clientPurchase.update({
+          where: { id: row.id },
+          data: { renewal_off_for_deletion_at: null, ...(live ? { cancel_at_period_end: false } : {}) },
+        });
+        out.resumed += 1;
+      } catch (err) {
+        out.failed += 1;
+        this.logger.warn(`leaving coach: renewal back on failed purchase=${row.id}: ${dunningErrorCode(err)}`);
+      }
+    }
+    return out;
   }
 
   /**

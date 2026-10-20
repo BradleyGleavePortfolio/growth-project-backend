@@ -39,6 +39,7 @@ import { PurchaseFanoutService } from '../packages/purchase-fanout.service';
 import { alertCoachOfFlaggedJoinTx } from '../onboarding/flagged-join-alert';
 import { type GuestCheckoutStatus } from './guest-checkout-status';
 import { EmailSenderConfigError, resolveEmailSender } from '../email/email-sender';
+import { SELLING_COACH } from '../packages/coach-selling';
 
 // S-FEE — guest storefront charges are separate charges and transfers, like
 // every other checkout path. The PaymentIntent / Subscription carries NO
@@ -249,7 +250,7 @@ export class GuestCheckoutService {
     landingPageId?: string,
   ): Promise<GuestCheckoutResult> {
     const pkg = await this.prisma.coachPackage.findUnique({
-      where: { share_token: token },
+      where: { share_token: token, coach: SELLING_COACH },
       include: {
         coach: { include: { connect_account: true } },
       },

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
+import { KEPT_PURCHASE } from '../account-deletion/account-deletion.manifest';
 
 /**
  * SubCoachScopeService
@@ -215,5 +216,27 @@ export class SubCoachScopeService {
   async canAccessClient(userId: string, clientId: string, db: Prisma.TransactionClient = this.prisma): Promise<boolean> {
     const ids = await this.getAuthorizedClientIds(userId, db);
     return ids.includes(clientId);
+  }
+
+  /**
+   * COACH-GONE-DELIVERY: a deleted coach still delivers what a client paid for, to that client
+   * only: a purchase from this coach the client still holds (KEPT_PURCHASE). Only the drip path
+   * asks, as a deleted account cannot sign in.
+   */
+  async deliversForGoneCoach(
+    coachId: string,
+    clientId: string,
+    db: Prisma.TransactionClient = this.prisma,
+  ): Promise<boolean> {
+    const held = await db.clientPurchase.count({
+      where: {
+        coach_user_id: coachId,
+        client_user_id: clientId,
+        coach: { deleted_at: { not: null } },
+        client: { deleted_at: null },
+        ...KEPT_PURCHASE,
+      },
+    });
+    return held > 0;
   }
 }

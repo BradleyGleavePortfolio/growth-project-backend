@@ -519,7 +519,12 @@ describe('plan read model + keep-my-plan', () => {
     expect(kept.can_cancel).toBe(true);
   });
 
-  it('MOVEBILL: a renewal a move ended keeps its paid period, but Keep plan is not offered and is refused', async () => {
+  it.each([
+    ['a move ended', { moved_away_at: new Date() }],
+    ["the coach's deletion ended", { renewal_off_for_deletion_at: new Date() }],
+    ['of a coach who is leaving', { coach: { deletion_confirmed_at: new Date(), deleted_at: null } }],
+    ['of a coach who is gone', { coach: { deletion_confirmed_at: null, deleted_at: new Date() } }],
+  ])('MOVEBILL + COACH-GONE-DELIVERY: a renewal %s keeps its paid period, but Keep plan is not offered and is refused', async (_why, mark) => {
     const { svc, stripe, prisma } = setup();
     const out = await svc.createSubscriptionIntent(CLIENT, { package_id: PKG, idempotency_key: KEY1 });
     const end = new Date(Date.now() + 20 * 86400_000);
@@ -528,7 +533,7 @@ describe('plan read model + keep-my-plan', () => {
       entitlement_active: true,
       current_period_end: end,
       cancel_at_period_end: true,
-      moved_away_at: new Date(),
+      ...mark,
     });
     expect(await svc.getPlan(CLIENT, out.purchase_id)).toEqual(
       expect.objectContaining({ state: 'active', access_ends_at: end.toISOString(), can_resume: false }),

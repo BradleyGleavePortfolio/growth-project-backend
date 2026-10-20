@@ -135,7 +135,7 @@ const INPUT = {
 
 function service(db: ReturnType<typeof makeDb>) {
   // Structural doubles (only the delegates create() touches).
-  const prisma: any = db.root;
+  const prisma: any = Object.assign(db.root, { user: { count: async () => 0 } }); // no leaving coach (COACH-GONE-DELIVERY)
   const subCoachScope: any = {
     getHeadCoachIdForSubCoach: jest.fn(async (id: string) => (id === 'sub-1' ? 'coach-1' : null)),
   };

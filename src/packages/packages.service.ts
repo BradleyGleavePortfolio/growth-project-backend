@@ -15,6 +15,7 @@ import { COACH_PURCHASE_SELECT } from '../checkout/coach-payments.select';
 import { movedAwayClientIds } from '../checkout/moved-client-money';
 import { SubCoachScopeService } from '../sub-coach/sub-coach-scope.service';
 import { assertValidTrial, TRIAL_DAYS_NONE } from './trials/trial-rules';
+import { SELLING_COACH, assertCoachSelling } from './coach-selling';
 import {
   monthlyEquivalent,
   MRR_SUBSCRIPTION_STATUSES,
@@ -823,8 +824,10 @@ export class PackagesService {
     });
   }
 
+  /** The buy-side read (package detail, in-app checkout, payment and subscription intents): a
+   *  leaving or gone coach's package reads as not available. */
   async getById(packageId: string): Promise<CoachPackage | null> {
-    return this.prisma.coachPackage.findUnique({ where: { id: packageId } });
+    return this.prisma.coachPackage.findUnique({ where: { id: packageId, coach: SELLING_COACH } });
   }
 
   // PR-6 — owner-detail read. IDOR-guarded via requireOwnedPackage;
@@ -930,6 +933,14 @@ export class PackagesService {
   async resolveEffectiveCoachId(callerUserId: string): Promise<string> {
     const headCoachId = await this.subCoachScope.getHeadCoachIdForSubCoach(callerUserId);
     return headCoachId ?? callerUserId;
+  }
+
+  /** COACH-GONE-DELIVERY: create, publish and reactivate go through here; refused while the
+   *  catalog's coach is leaving or gone. */
+  async resolveSellingCoachId(callerUserId: string): Promise<string> {
+    const coachId = await this.resolveEffectiveCoachId(callerUserId);
+    await assertCoachSelling(this.prisma, coachId);
+    return coachId;
   }
 
   async requireOwnedPackage(coachUserId: string, packageId: string): Promise<CoachPackage> {
