@@ -273,7 +273,7 @@ function baseDocument(opts: {
   .lead { margin: 8px 0 24px; color: var(--muted); font-size: 15px; }
   .code { margin: 24px 0; }
   .code-label { margin: 0 0 4px; text-transform: uppercase; color: var(--muted); font-size: 10px; letter-spacing: 0.18em; }
-  .code-value { margin: 0; font-size: 28px; font-weight: 500; line-height: 1.25; letter-spacing: 0.06em; overflow-wrap: anywhere; -webkit-user-select: all; user-select: all; }
+  .code-value { margin: 0; font-size: 26px; font-weight: 500; line-height: 1.25; letter-spacing: 0.04em; overflow-wrap: anywhere; -webkit-user-select: all; user-select: all; }
   .copy { margin-top: 12px; min-height: 44px; min-width: 128px; padding: 10px 20px; background: #FFFFFF; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; transition: border-color 0.2s ease; }
   .copy.done { border-color: var(--ink); }
   .logo { max-width: 56px; max-height: 56px; margin: 0 auto 16px; display: block; border-radius: 12px; }
