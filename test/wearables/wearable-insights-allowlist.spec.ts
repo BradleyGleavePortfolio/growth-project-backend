@@ -31,6 +31,7 @@ const CLIENT_JSON = {
   observation: 'Your sleep has been a bit short this week.',
   norm_comparison: 'Your 6h average is below your usual 7h.',
   intervention: 'Aim to be in bed 30 minutes earlier tonight.',
+  optional_cta: null,
   confidence_level: 'fairly_sure',
   source_metrics: ['SLEEP_TOTAL_MIN'],
 };
