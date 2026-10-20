@@ -49,6 +49,7 @@ export class InviteLandingService {
     play_store_url: string;
     android_package: string;
     platform: LandingPlatform;
+    nonce: string;
   }): string {
     const accent = sanitizeColor(params.accent_color) || '#1F1B16';
     const businessLine = params.business_name
@@ -95,15 +96,21 @@ export class InviteLandingService {
       title: `Coach invite — ${escapeHtml(params.coach_name)}`,
       accent,
       bodyClass: 'state-valid',
+      nonce: params.nonce,
       body: `
   <main class="card">
     ${logo}
     <p class="kicker">You've been invited to</p>
     <h1>${escapeHtml(params.coach_name)}'s coaching</h1>
     ${businessLine}
-    <p class="code"><span>code</span> ${codeDisplay}</p>
+    <div class="code">
+      <p class="code-label">code</p>
+      <p class="code-value" id="invite-code">${codeDisplay}</p>
+      <button type="button" class="copy" id="copy-code" data-done="Copied" aria-live="polite" hidden>Copy code</button>
+    </div>
 ${actions}
   </main>
+  <script nonce="${params.nonce}">${COPY_CODE_JS}</script>
       `,
     });
   }
@@ -113,11 +120,12 @@ ${actions}
   // confirm the code's existence to a caller who has produced an unusable
   // value (defends against trivial enumeration that bypasses the JSON
   // throttler by going through the HTML route).
-  renderInvalid(params: { web_signup_url: string }): string {
+  renderInvalid(params: { web_signup_url: string; nonce: string }): string {
     return baseDocument({
       title: 'Invite unavailable',
       accent: '#1F1B16',
       bodyClass: 'state-invalid',
+      nonce: params.nonce,
       body: `
   <main class="card">
     <p class="kicker">Invite link</p>
@@ -136,6 +144,47 @@ ${actions}
 }
 
 // ---- helpers ---------------------------------------------------------------
+
+// INVITE-COPY-CODE: someone without the app copies the code here, installs,
+// and taps "Paste code" in the app. The button stays hidden until this runs
+// (no dead button without JavaScript). Clipboard API first; where it is
+// missing or refused (older in-app browsers), select the code and try
+// execCommand('copy'); if that fails too, the code stays selected for a
+// manual copy. Static text: it reads the code from the page, never from a
+// template value, and runs only under the per-response CSP nonce.
+const COPY_CODE_JS = `(function () {
+  var btn = document.getElementById('copy-code');
+  var code = document.getElementById('invite-code');
+  if (!btn || !code) return;
+  var label = btn.textContent;
+  var timer;
+  function copied() {
+    btn.textContent = btn.getAttribute('data-done');
+    btn.className = 'copy done';
+    clearTimeout(timer);
+    timer = setTimeout(function () {
+      btn.textContent = label;
+      btn.className = 'copy';
+    }, 2000);
+  }
+  function selectAndCopy() {
+    var range = document.createRange();
+    range.selectNodeContents(code);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    try { if (document.execCommand('copy')) copied(); } catch (e) {}
+  }
+  btn.hidden = false;
+  btn.addEventListener('click', function () {
+    var text = code.textContent.trim();
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(copied, selectAndCopy);
+    } else {
+      selectAndCopy();
+    }
+  });
+})();`;
 
 export type LandingPlatform = 'ios' | 'android' | 'other';
 
@@ -198,6 +247,7 @@ function baseDocument(opts: {
   title: string;
   accent: string;
   bodyClass: string;
+  nonce: string;
   body: string;
 }): string {
   // CSS palette mirrors quiet-luxury direction: warm off-white background,
@@ -211,7 +261,7 @@ function baseDocument(opts: {
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <meta name="robots" content="noindex,nofollow" />
 <title>${escapeHtml(opts.title)}</title>
-<style>
+<style nonce="${opts.nonce}">
   :root { --accent: ${opts.accent}; --ink: #1F1B16; --paper: #FAF7F2; --muted: #6B6259; --line: #E7E1D6; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -221,8 +271,11 @@ function baseDocument(opts: {
   h1 { margin: 0 0 6px; font-family: "Playfair Display", "Iowan Old Style", Georgia, "Times New Roman", serif; font-weight: 500; font-size: 28px; line-height: 1.2; }
   .biz { margin: 0 0 20px; color: var(--muted); font-size: 15px; }
   .lead { margin: 8px 0 24px; color: var(--muted); font-size: 15px; }
-  .code { margin: 24px auto; display: inline-flex; align-items: baseline; gap: 8px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px; font-size: 13px; letter-spacing: 0.08em; }
-  .code span { text-transform: uppercase; color: var(--muted); font-size: 10px; letter-spacing: 0.18em; }
+  .code { margin: 24px 0; }
+  .code-label { margin: 0 0 4px; text-transform: uppercase; color: var(--muted); font-size: 10px; letter-spacing: 0.18em; }
+  .code-value { margin: 0; font-size: 28px; font-weight: 500; line-height: 1.25; letter-spacing: 0.06em; overflow-wrap: anywhere; -webkit-user-select: all; user-select: all; }
+  .copy { margin-top: 12px; min-height: 44px; min-width: 128px; padding: 10px 20px; background: #FFFFFF; color: var(--ink); border: 1px solid var(--line); border-radius: 999px; font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; transition: border-color 0.2s ease; }
+  .copy.done { border-color: var(--ink); }
   .logo { max-width: 56px; max-height: 56px; margin: 0 auto 16px; display: block; border-radius: 12px; }
   a { color: var(--ink); }
   .primary { display: inline-block; margin-top: 8px; padding: 14px 22px; background: var(--accent); color: #FFFFFF; border-radius: 999px; text-decoration: none; font-weight: 500; font-size: 15px; }

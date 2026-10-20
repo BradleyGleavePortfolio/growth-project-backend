@@ -2,6 +2,7 @@ import { Controller, Get, Headers, HttpStatus, Param, Req, Res } from '@nestjs/c
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
+import { randomBytes } from 'crypto';
 import { Public } from '../common/decorators/public.decorator';
 import { InviteLandingService, landingPlatformFromUserAgent } from './invite-landing.service';
 import { LoginThrottleResetService, extractIp } from '../throttler/login-throttle-reset.service';
@@ -100,6 +101,7 @@ export class InviteLandingController {
       'https://play.google.com/store/apps/details?id=com.growthproject.app';
     const androidPackage =
       (process.env.ANDROID_PACKAGE_NAME ?? '').trim() || 'com.growthproject.app';
+    const nonce = landingNonce();
 
     const html = this.landing.renderValid({
       code,
@@ -112,6 +114,7 @@ export class InviteLandingController {
       play_store_url: playStore,
       android_package: androidPackage,
       platform: landingPlatformFromUserAgent(userAgent),
+      nonce,
     });
 
     // No-cache: the underlying CoachProfile (paused / canceled / branding)
@@ -121,6 +124,7 @@ export class InviteLandingController {
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     res.setHeader('Vary', 'User-Agent');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Security-Policy', landingCsp(nonce));
     res.status(HttpStatus.OK).send(html);
   }
 
@@ -129,9 +133,11 @@ export class InviteLandingController {
       process.env.PUBLIC_WEB_SIGNUP_URL ||
       process.env.PUBLIC_INVITE_BASE_URL ||
       'https://app.trygrowthproject.com/join';
-    const html = this.landing.renderInvalid({ web_signup_url: webSignup });
+    const nonce = landingNonce();
+    const html = this.landing.renderInvalid({ web_signup_url: webSignup, nonce });
     res.setHeader('Cache-Control', 'no-store, max-age=0');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Security-Policy', landingCsp(nonce));
     // 404 is the right shape for "this resource is not currently available
     // to you" — it covers not-found, revoked, expired, and paused/canceled
     // coaches without leaking which of those it was.
@@ -146,4 +152,23 @@ function publicOrigin(base: string): string {
   } catch {
     return 'https://app.trygrowthproject.com';
   }
+}
+
+// Route-level CSP (helmet's global CSP is off; same shape as the pay page):
+// the one inline script (Copy code) and the inline style run only with this
+// response's nonce, nothing loads from elsewhere except https logo images.
+function landingNonce(): string {
+  return randomBytes(16).toString('base64');
+}
+
+export function landingCsp(nonce: string): string {
+  return [
+    "default-src 'none'",
+    `script-src 'nonce-${nonce}'`,
+    `style-src 'nonce-${nonce}'`,
+    "img-src 'self' https:",
+    "base-uri 'none'",
+    "form-action 'none'",
+    "frame-ancestors 'none'",
+  ].join('; ');
 }

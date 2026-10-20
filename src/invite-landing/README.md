@@ -55,6 +55,12 @@ served by `InviteCodesController` — the JSON contract is unchanged.
    - Other devices: both store links and "open this invite on your phone".
    - The shared universal link is never re-offered as a button (a
      same-domain tap only reloads this page).
+   - Every layout shows the code in large type with a "Copy code" button,
+     so a visitor who installs from the store can paste it on first open
+     (the app's "Paste code"). The button is hidden until the page's one
+     inline script runs; it copies through `navigator.clipboard`, else
+     selects the code and tries `execCommand('copy')`, else leaves the
+     code selected. It says "Copied" for 2 s.
 4. On `{ valid: false }`, `renderInvalid` produces a 404 page with the
    same visual language but no coach data.
 
@@ -73,6 +79,12 @@ served by `InviteCodesController` — the JSON contract is unchanged.
 - The error page deliberately collapses not-found / revoked / expired
   / paused / canceled into one shape and one 404. Confirming "this
   code existed once" to a stranger is a small but real privacy leak.
+- Route-level `Content-Security-Policy` on both pages (helmet's global
+  CSP is off): `default-src 'none'`, script and style only with the
+  per-response nonce (`randomBytes(16)`), images from `'self'` and
+  `https:` only, `base-uri`/`form-action`/`frame-ancestors` `'none'`.
+  The copy script is a static string; it reads the code from the page.
+  The invalid page has no script and never shows a code.
 - `Cache-Control: no-store, max-age=0` on every response.
   CoachProfile state (paused, canceled, branding) can change at any
   moment and a stale cached page must not point a brand-new client at
@@ -113,7 +125,7 @@ renders without further configuration.
 
 | File | Covers |
 |---|---|
-| `test/invite-landing.spec.ts` | Routing, valid render, invalid 404, escaping, accent-color sanitization, no-store header |
+| `test/invite-landing.spec.ts` | Routing, valid render, invalid 404, escaping, accent-color sanitization, no-store header, Copy code (valid page only, escaped code, CSP nonce, the shipped script's copy, fallback and reset) |
 
 ## Operational notes
 
