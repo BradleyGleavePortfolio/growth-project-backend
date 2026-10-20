@@ -717,7 +717,7 @@ export class InviteCodesService {
   // the right HTTP shape (public endpoint returns {valid:false}; signup wants 400).
   async validate(code: string): Promise<ValidationResult> {
     const record = await this.prisma.inviteCode.findUnique({
-      where: { code },
+      where: { code, coach: { deletion_confirmed_at: null } },
       include: { coach: { select: { id: true, name: true, role: true } } },
     });
     if (!record) return { valid: false, reason: 'not_found' };
@@ -1312,10 +1312,13 @@ export class InviteCodesService {
    * new redemption). Permanent coach code first, then per-row InviteCode.
    */
   private async resolveAttachTarget(code: string): Promise<AttachTarget | null> {
+    // COACH-GONE-DELIVERY: a coach who confirmed his account deletion takes no new joins; his
+    // codes and QR answer like an unknown code (invite_code_invalid).
     const profile = await this.prisma.coachProfile.findUnique({
       where: { invite_code: code },
-      include: { user: { select: { id: true, role: true } } },
+      include: { user: { select: { id: true, role: true, deletion_confirmed_at: true } } },
     });
+    if (profile?.user?.deletion_confirmed_at) return null;
     if (profile?.user) {
       return {
         kind: 'profile',
@@ -1327,7 +1330,7 @@ export class InviteCodesService {
       };
     }
     const row = await this.prisma.inviteCode.findUnique({
-      where: { code },
+      where: { code, coach: { deletion_confirmed_at: null } },
       select: { id: true, coach_id: true, code: true, package_id: true, grant_mode: true },
     });
     if (row) {
