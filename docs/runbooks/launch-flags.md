@@ -137,6 +137,7 @@ FEATURE_NAMED_REGIMES | off | fly secrets unset -a backend-spring-lake-3890 FEAT
 FEATURE_DUNNING_V2 | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_DUNNING_V2 | "FEATURE_DUNNING_V2": "unset"
 FEATURE_COACH_CODE_TOOLS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_CODE_TOOLS | "FEATURE_COACH_CODE_TOOLS": "unset"
 FEATURE_COACH_BROADCASTS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_BROADCASTS | "FEATURE_COACH_BROADCASTS": "unset"
+FEATURE_COACH_PAYMENT_ACTIONS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_PAYMENT_ACTIONS | "FEATURE_COACH_PAYMENT_ACTIONS": "unset"
 FEATURE_ROMAN_CHAT_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_CHAT_ENABLED | "FEATURE_ROMAN_CHAT_ENABLED": "unset"
 FEATURE_ROMAN_ADJUST_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_ADJUST_ENABLED | "FEATURE_ROMAN_ADJUST_ENABLED": "unset"
 FEATURE_ROMAN_MEMORY | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_MEMORY | "FEATURE_ROMAN_MEMORY": "unset"
