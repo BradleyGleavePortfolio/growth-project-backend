@@ -1,15 +1,16 @@
 /**
  * COACH-GONE-DELIVERY: a client keeps what he paid for when his coach deletes his account, live on
  * the replayed migration chain. Coach K sells package PK; his client S bought it (one-time PS) and
- * holds a monthly plan PR; K's client N bought nothing. Coach L and his client Z are the other
- * tenant. PS delivered workout WP (assignment WA) and video V; meal plan MP is still due by drop
- * MD. N was also given V by hand. The real AccountDeletionService request and cancel run, the real
- * CheckoutService answers the in-app purchase, the real ClientBillingService sweep turns renewal
- * off and on, the erasure manifest's steps for these tables run as the finalizer does, and the real
- * DripDispatcherCron delivers MD through the real meal-plan resolver. Reads run as the non-bypass
- * `authenticated` role; media reads go through CoachMediaService.getBuyerSignedUrl, the only read
- * path of that server-only table. Every 0 or refusal follows a read that returned 1. The tests run
- * in order. Gate: TEST_DATABASE_URL; no URL -> skip, except under CI=true (hard failure).
+ * holds a monthly plan PR, which delivered video V2; K's client N bought nothing. Coach L and his
+ * client Z are the other tenant. PS delivered workout WP (assignment WA) and video V; meal plan MP
+ * is still due by drop MD. N was also given V by hand. The real AccountDeletionService request and
+ * cancel run, the real CheckoutService answers the in-app purchase, the real ClientBillingService
+ * sweep turns renewal off and on and takes S's own cancel, the real SubscriptionCheckoutService
+ * answers Keep plan, the erasure manifest's steps for these tables run as the finalizer does, and
+ * the real DripDispatcherCron delivers MD through the real meal-plan resolver. Reads run as the
+ * non-bypass `authenticated` role; media reads go through CoachMediaService.getBuyerSignedUrl, the
+ * only read path of that server-only table. Every 0 or refusal follows a read that returned 1. The
+ * tests run in order. Gate: TEST_DATABASE_URL; no URL -> skip, except under CI=true (hard failure).
  */
 import { randomUUID } from 'crypto';
 import { NotFoundException } from '@nestjs/common';
@@ -20,6 +21,7 @@ import { AccountDeletionService } from '../../src/account-deletion/account-delet
 import { ERASURE_MANIFEST, executeErasureManifest } from '../../src/account-deletion/account-deletion.manifest';
 import { CheckoutService } from '../../src/checkout/checkout.service';
 import { ClientBillingService } from '../../src/checkout/client-billing.service';
+import { SubscriptionCheckoutService } from '../../src/checkout/subscription-checkout.service';
 import { DripDispatcherCron } from '../../src/packages/drip-dispatcher.cron';
 import { AssignableAssetResolverRegistry } from '../../src/packages/asset-resolvers/assignable-asset-resolver.registry';
 import { MealPlanAssetResolver } from '../../src/packages/asset-resolvers/meal-plan.resolver';
@@ -41,7 +43,7 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
 (DB_URL ? describe : describe.skip)('COACH-GONE-DELIVERY: paid content outlives the coach', () => {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
   const run = randomUUID().slice(0, 8);
-  const [K, L, S, N, Z, PK, PL, PS, PR, WP, V, MP, MD] = ['K', 'L', 'S', 'N', 'Z', 'PK', 'PL', 'PS', 'PR', 'WP', 'V', 'MP', 'MD']
+  const [K, L, S, N, Z, PK, PL, PS, PR, WP, V, V2, MP, MD] = ['K', 'L', 'S', 'N', 'Z', 'PK', 'PL', 'PS', 'PR', 'WP', 'V', 'V2', 'MP', 'MD']
     .map((tag) => `${tag}-${run}`);
   const coaches = new Set([K, L]);
   const deletion = new AccountDeletionService(
@@ -69,6 +71,7 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     resumeSubscription: jest.fn(async (_args: { subscriptionId: string }) => ({})),
   };
   const billing = new ClientBillingService(prisma, stub<ConstructorParameters<typeof ClientBillingService>[1]>(stripe));
+  const plans = new SubscriptionCheckoutService(prisma, stub<never>(stripe), stub<never>({}), stub<never>({ ready: true }), stub<never>({}), stub<never>({}));
   const meal = new MealPlanAssetResolver(prisma, new ResolverSubCoachScope(new SubCoachScopeService(prisma)));
   const cron = stub<{
     claim(id: string, prior: 'pending', now: Date): Promise<ScheduledDrop | null>;
@@ -90,8 +93,8 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
       () => 'created',
       (e: unknown) => String((e as { response?: { error?: string } }).response?.error ?? e),
     );
-  const open = (who: string) =>
-    media.getBuyerSignedUrl(who, V).then(
+  const open = (who: string, id = V) =>
+    media.getBuyerSignedUrl(who, id).then(
       (r) => r.url,
       (e: unknown) => {
         if (e instanceof NotFoundException) return 'refused';
@@ -136,16 +139,21 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     const wa = await prisma.clientWorkoutAssignment.create({
       data: { workout_plan_id: WP, client_id: S, assigned_by_coach_id: K, scheduled_for: new Date() },
     });
-    await prisma.coachMediaAsset.create({
-      data: { id: V, coach_id: K, kind: 'video', title: 'Media', status: 'ready', provider: 'mux', storage_key: `mux-${V}`, mux_playback_id: `play-${V}` },
+    for (const id of [V, V2]) {
+      await prisma.coachMediaAsset.create({
+        data: { id, coach_id: K, kind: 'video', title: 'Media', status: 'ready', provider: 'mux', storage_key: `mux-${id}`, mux_playback_id: `play-${id}` },
+      });
+    }
+    await prisma.clientAssetGrant.createMany({
+      data: [{ client_id: S, media_asset_id: V }, { client_id: N, media_asset_id: V }, { client_id: S, media_asset_id: V2 }],
     });
-    await prisma.clientAssetGrant.createMany({ data: [S, N].map((client_id) => ({ client_id, media_asset_id: V })) });
     await prisma.dailyMealPlan.create({ data: { id: MP, coach_id: K, name: 'Meals' } });
     const drop = { client_purchase_id: PS, cadence_kind: 'offset_days', cadence_payload: {}, alert_dispatched_at: new Date() };
     await prisma.scheduledDrop.createMany({
       data: [
         { ...drop, content_id: WP, asset_type: 'workout_plan', asset_id: WP, status: 'delivered', materialised_ref: wa.id },
         { ...drop, content_id: V, asset_type: 'video', asset_id: V, status: 'delivered', materialised_ref: V },
+        { ...drop, client_purchase_id: PR, content_id: V2, asset_type: 'video', asset_id: V2, status: 'delivered', materialised_ref: V2 },
         { ...drop, id: MD, content_id: MP, asset_type: 'meal_plan', asset_id: MP, status: 'pending', fire_at: new Date(Date.now() + 864e5) },
       ],
     });
@@ -178,9 +186,27 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     expect(await plan()).toEqual(expect.objectContaining({ cancel_at_period_end: false, renewal_off_for_deletion_at: null }));
   });
 
-  it('after the purge S reads what he was delivered; N, another coach and the public read none of it', async () => {
+  it("S's own cancel of a plan the deletion is ending wins: Keep plan is refused, and the coach staying never resumes it", async () => {
     await deletion.requestDeletion(K);
     await billing.syncPlansOfLeavingCoaches();
+    expect((await plan()).renewal_off_for_deletion_at).not.toBeNull();
+    expect((await billing.cancelPlan(S, PR)).message).toMatch(/you will not be charged again/);
+    expect((await plan()).renewal_off_for_deletion_at).toBeNull();
+    expect((await plans.getPlan(S, PR)).can_resume).toBe(false);
+    const kept = await plans.resumePlan(S, PR, run).catch((e: { response?: { code?: string } }) => e.response?.code);
+    expect(kept).toBe('PLAN_ALREADY_ENDED');
+    await deletion.cancelDeletion(K);
+    stripe.resumeSubscription.mockClear();
+    await billing.syncPlansOfLeavingCoaches();
+    expect(stripe.resumeSubscription).not.toHaveBeenCalled();
+    expect(await plan()).toEqual(expect.objectContaining({ cancel_at_period_end: true, renewal_off_for_deletion_at: null }));
+  });
+
+  it('after the purge S reads what he was delivered, his ended monthly plan included; N, another coach and the public read none of it', async () => {
+    await deletion.requestDeletion(K);
+    await billing.syncPlansOfLeavingCoaches();
+    // PR runs out inside the grace.
+    await prisma.clientPurchase.update({ where: { id: PR }, data: { status: 'canceled', entitlement_active: false } });
     expect(await open(N)).toBe(`mux:play-${V}`);
     const steps = ERASURE_MANIFEST.filter((e) => ['User', 'WorkoutPlan', 'ClientWorkoutAssignment', 'DailyMealPlan',
       'DailyMealPlanAssignment', 'CoachMediaAsset', 'ClientAssetGrant', 'ScheduledDrop', 'ClientPurchase', 'CoachPackage'].includes(e.model));
@@ -195,7 +221,8 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
       expect(await reads(who, 'WorkoutPlan', 'id', WP)).toBe(0);
     }
     expect(await open(S)).toBe(`mux:play-${V}`);
-    for (const who of [N, L, Z]) expect(await open(who)).toBe('refused');
+    expect(await open(S, V2)).toBe(`mux:play-${V2}`);
+    for (const who of [N, L, Z]) expect([await open(who), await open(who, V2)]).toEqual(['refused', 'refused']);
     expect(await buy(S, PK)).toBe('PACKAGE_NOT_FOUND');
   });
 

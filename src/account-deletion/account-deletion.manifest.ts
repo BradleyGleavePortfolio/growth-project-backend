@@ -975,12 +975,13 @@ export async function executeErasureManifest(
 
   // COACH-GONE-DELIVERY: the coach's sales that do not outlive him end as before, with their due
   // drops. A kept purchase's drops still fire for its client, except the coach's auto messages
-  // (what he wrote goes, policy 1); the content they and the delivered ones name stays.
+  // (what he wrote goes, policy 1); the content they name stays. What any purchase of his already
+  // delivered stays with its client too (a monthly plan that ran out in the grace included).
   const owed = (
     await tx.$queryRaw<Array<{ client_id?: string; asset_id?: string }>>`
       SELECT p."client_user_id" AS "client_id", d."asset_id"
         FROM "ScheduledDrop" d JOIN "ClientPurchase" p ON p."id" = d."client_purchase_id"
-       WHERE p."coach_user_id" = ${ctx.userId} AND ${KEPT_PURCHASE_SQL}
+       WHERE p."coach_user_id" = ${ctx.userId} AND (d."status" = 'delivered' OR ${KEPT_PURCHASE_SQL})
          AND d."asset_type" <> 'auto_message' AND d."status" NOT IN ('canceled', 'failed', 'skipped')`
   ).filter((r) => r.client_id && r.asset_id);
   const owedIds = [...new Set(owed.map((r) => r.asset_id as string))];

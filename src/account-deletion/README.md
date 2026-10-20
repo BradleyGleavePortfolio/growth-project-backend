@@ -23,13 +23,15 @@ period, and a nightly finalization that erases the person's data.
 3. **Billing.** From the moment a coach confirms deletion his packages are
    off sale everywhere (`is_active` false, marked `closed_for_deletion_at`),
    his invite codes and QR stop working, and his clients' plans stop renewing
-   (cancel at period end, marked `renewal_off_for_deletion_at`); a cancel
-   inside the grace period puts back exactly what was marked. Finalization
-   cancels every other live Stripe subscription the person pays or is paid
-   for (coach subscription, client purchases, guest checkouts) and their
-   pending drip drops. A purchase its client still holds (paid, not set to
-   renew) outlives the coach: its delivered content stays, its drops still
-   fire to that client only (not his auto messages), and the dispatcher
+   (cancel at period end, marked `renewal_off_for_deletion_at`; Keep plan is
+   refused); a cancel inside the grace period puts back exactly what was
+   marked, never a plan the client cancelled himself or a move ended.
+   Finalization cancels every other live Stripe subscription the person pays
+   or is paid for (coach subscription, client purchases, guest checkouts) and
+   their pending drip drops. What any purchase already delivered stays with
+   its client. A purchase its client still holds (paid, not set to renew)
+   outlives the coach: its drops still fire to that client only (not his
+   auto messages), and the dispatcher
    refuses every other drop whose client or coach is deleted. Push tokens are
    cleared and notification rows deleted, so nothing further is sent.
 4. **Apple.** If `APPLE_SIGNIN_KEY_ID` / `APPLE_SIGNIN_PRIVATE_KEY` are
