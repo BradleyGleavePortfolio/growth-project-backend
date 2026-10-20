@@ -98,6 +98,8 @@ function makeLessonsPrisma(users: FakeUser[]) {
         async ({ where }: { where: LessonWhere }) => byWhere(where)[0] ?? null,
       ),
     },
+    // LEARN-BE2: completeLesson's course fallback; no one here is in a course.
+    courseEnrolment: { findFirst: jest.fn(async () => null) },
     lessonCompletion: {
       findFirst: jest.fn(
         async ({ where }: { where: { user_id: string; lesson_id: string } }) =>
