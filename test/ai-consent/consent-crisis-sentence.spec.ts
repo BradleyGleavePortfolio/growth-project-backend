@@ -97,7 +97,7 @@ const NEW_AI: Record<string, string> = {
   'client-ai-v9': '16074f18ce0e985e35ba7cfb3f12233cd993159585a35759c4580a730ed3c9dd',
 };
 
-const FAMILIES: ClientAiCopyFamily[] = ['pre57c', 'coached', 'crisis', 'coach_free'];
+const FAMILIES: ClientAiCopyFamily[] = ['pre57c', 'coached', 'crisis', 'coach_free', 'health', 'health_crisis'];
 const AI_COPIES = new Map<string, ClientAiConsentCopy>(
   FAMILIES.flatMap((f) => [clientAiConsentCopy(f), clientAiConsentV5Copy(f)]).map(
     (c): [string, ClientAiConsentCopy] => [c.version, c],
@@ -181,6 +181,9 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
 
   const asked = async () => controller.get(req('u_new'), 'crisis_alert');
   const askedNoCoach = async () => controller.get(req('u_no_coach', null), 'crisis_alert');
+  // Owner #162-6 (?variant=health_notes): the same crisis rule, with the Health-notes memory copies.
+  const health = async () => controller.get(req('u_new'), 'health_notes');
+  const healthNoCoach = async () => controller.get(req('u_no_coach', null), 'health_notes');
   const liveGrant = async (version: string) => {
     await service.grant('u_live', { version, copy_sha256: CLIENT_AI_CONSENT_ACCEPTED[version].copy_sha256 });
     return controller.get(req('u_live'), 'crisis_alert');
@@ -230,6 +233,19 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
       'consult-consent-v13-coach-free',
       'consult-consent-v15-coach-free',
     ],
+    [
+      'consultation box 2, memory, Health notes, TGP Fitness',
+      async () => p0((await health()).memory_copy, false, 'TGP Fitness'),
+      'consult-consent-v15',
+      'consult-consent-v16',
+    ],
+    [
+      'consultation box 2, no coach, memory, Health notes, TGP Fitness',
+      async () => p0((await healthNoCoach()).memory_copy, true, 'TGP Fitness'),
+      'consult-consent-v16-coach-free',
+      'consult-consent-v17-coach-free',
+    ],
+    ['AI agreement, memory, Health notes', async () => ai((await health()).memory_copy), 'client-ai-v10', 'client-ai-v11'],
     ['AI agreement, base', async () => ai((await asked()).copy), 'client-ai-v6', 'client-ai-v8'],
     ['AI agreement, memory', async () => ai((await asked()).memory_copy), 'client-ai-v7', 'client-ai-v9'],
     ['AI agreement, live client-ai-v8 grant', async () => ai((await liveGrant('client-ai-v8')).copy), 'client-ai-v6', 'client-ai-v8'],
@@ -299,6 +315,7 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
     expect(texts.filter(([, t]) => t.includes(EXCEPTION)).map(([v]) => v).sort()).toEqual([...new Set(rowVersions)].sort());
     expect(texts.filter(([, t]) => t.includes(TOLD)).map(([v]) => v).sort()).toEqual(
       [
+        'client-ai-v11',
         'client-ai-v8',
         'client-ai-v9',
         'consult-consent-v10',
@@ -308,6 +325,8 @@ describe('the crisis sentence follows the safety-reply exception in the app cons
         'consult-consent-v14',
         'consult-consent-v14-coach-free',
         'consult-consent-v15-coach-free',
+        'consult-consent-v16',
+        'consult-consent-v17-coach-free',
         'consult-consent-v9',
       ],
     );

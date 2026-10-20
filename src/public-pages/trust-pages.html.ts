@@ -23,7 +23,11 @@
 // Mounted outside the /api prefix in main.ts so they resolve as bare
 // paths under app.trygrowthproject.com.
 
-import { ROMAN_CRISIS_TOLD_SENTENCE, isRomanCrisisAlertEnabled } from '../roman/roman.feature';
+import {
+  ROMAN_CRISIS_TOLD_SENTENCE,
+  ROMAN_HEALTH_NOTES_SENTENCE,
+  isRomanCrisisAlertEnabled,
+} from '../roman/roman.feature';
 
 // Source of truth for the official support contact (owner ruling
 // 2026-10-01 14:19 PDT: one support email everywhere; owner ruling
@@ -46,9 +50,9 @@ function crisisToldText(): string {
 
 // WEAR-AI (owner 161-1 op 1, wording WEAR-AI-03 / WEAR-AI-04 approved): the
 // Health and Sleep insight notes, in /privacy "Roman and AI" and
-// /consumer-health-privacy "Categories we share". No consent version change.
-export const WEARABLE_AI_NOTES_TEXT =
-  'If you allow AI help, Roman also writes short notes about your health and sleep data on your Health pages, and your coach can ask for an AI note about it.';
+// /consumer-health-privacy "Categories we share". The first box-2 agreement
+// names it too (owner #162-6: client-ai-v10 / v11).
+export const WEARABLE_AI_NOTES_TEXT = ROMAN_HEALTH_NOTES_SENTENCE;
 
 // Who sees community and leaderboard data (B-PRIVACY-1). Shared by /privacy
 // "Who can see your data" and /consumer-health-privacy "Categories we share".
@@ -492,7 +496,7 @@ function consumerHealthContent(): TrustPageContent {
             crisisToldText(),
           COMMUNITY_VISIBILITY_TEXT,
           LEADERBOARD_VISIBILITY_TEXT,
-          'Service providers that process data on our behalf: Supabase (database, sign-in and file storage) and Fly.io (hosting) receive all categories; Anthropic receives the categories listed in your AI agreement to generate Roman’s replies and your coach’s AI drafts; if you keep Roman’s memory on and the feature is on, your coach’s messages to you, their private session notes about you, the guidelines and meal plans written for you and figures from your plan combined with those of at least two other clients, with names and contact details removed, so Roman can learn your coach’s methods; and, if turned on, up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you ticked the optional AI box); Sentry (error monitoring) and PostHog (product analytics) may receive health details that appear in an error report or app event; Crisp (support chat) receives what you choose to tell support; Resend (email) and Expo (push notifications) receive the content of the emails and notifications we send you; Mux (video hosting and playback) receives the videos coaches upload.',
+          'Service providers that process data on our behalf: Supabase (database, sign-in and file storage) and Fly.io (hosting) receive all categories; Anthropic receives the categories listed in your AI agreement to generate Roman’s replies, his short notes on your Health pages and your coach’s AI drafts and AI notes; if you keep Roman’s memory on and the feature is on, your coach’s messages to you, their private session notes about you, the guidelines and meal plans written for you and figures from your plan combined with those of at least two other clients, with names and contact details removed, so Roman can learn your coach’s methods; and, if turned on, up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you ticked the optional AI box); Sentry (error monitoring) and PostHog (product analytics) may receive health details that appear in an error report or app event; Crisp (support chat) receives what you choose to tell support; Resend (email) and Expo (push notifications) receive the content of the emails and notifications we send you; Mux (video hosting and playback) receives the videos coaches upload.',
           'Authorities, when the law requires it or to protect someone’s safety.',
         ],
         closing: [

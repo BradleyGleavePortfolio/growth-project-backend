@@ -65,3 +65,12 @@ export function isRomanCrisisAlertEnabled(env: NodeJS.ProcessEnv = process.env):
  */
 export const ROMAN_CRISIS_TOLD_SENTENCE =
   'If Roman sends you a crisis safety reply, your coach is told that it happened, but not what you wrote, so they can check in with you.';
+
+/**
+ * WEAR-AI-03 (owner 161-1 op 1, "wording approved"), word for word: the Health
+ * and Sleep insight notes. The public pages state it, and (owner #162-6) the
+ * first box-2 agreement names it: client-ai-v10 / v11 and consult-consent-v15,
+ * v16, v16-coach-free and v17-coach-free.
+ */
+export const ROMAN_HEALTH_NOTES_SENTENCE =
+  'If you allow AI help, Roman also writes short notes about your health and sleep data on your Health pages, and your coach can ask for an AI note about it.';

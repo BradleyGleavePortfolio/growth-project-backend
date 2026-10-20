@@ -162,6 +162,8 @@ describe('client-ai-v5 memory scope (R11-C1)', () => {
         'client-ai-v7',
         'client-ai-v8',
         'client-ai-v9',
+        'client-ai-v10',
+        'client-ai-v11',
         `${V4}-coach-free`,
         `${V5}-coach-free`,
       ]);

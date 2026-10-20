@@ -129,6 +129,14 @@ import {
   CLIENT_AI_CONSENT_V9_PARAGRAPH,
   CLIENT_AI_CONSENT_V9_PARAGRAPH_SHA256,
   CLIENT_AI_CONSENT_V9_VERSION,
+  CLIENT_AI_CONSENT_V10_COPY_SHA256,
+  CLIENT_AI_CONSENT_V10_PARAGRAPH,
+  CLIENT_AI_CONSENT_V10_PARAGRAPH_SHA256,
+  CLIENT_AI_CONSENT_V10_VERSION,
+  CLIENT_AI_CONSENT_V11_COPY_SHA256,
+  CLIENT_AI_CONSENT_V11_PARAGRAPH,
+  CLIENT_AI_CONSENT_V11_PARAGRAPH_SHA256,
+  CLIENT_AI_CONSENT_V11_VERSION,
   CLIENT_AI_CONSENT_VERSION,
   COACH_AI_CONSENT_COPY_SHA256,
   COACH_AI_CONSENT_PARAGRAPH,
@@ -285,6 +293,8 @@ export interface ClientAiConsentAsk {
   hasCoach?: boolean;
   safetyException?: boolean;
   crisisAlert?: boolean;
+  /** ?variant=health_notes (owner #162-6): crisisAlert, with the Health-notes memory copies. */
+  healthNotes?: boolean;
 }
 
 export interface AiConsentRequestMeta {
@@ -329,12 +339,24 @@ export function coversScope(
  * v7 (owner 57c, the safety-reply exception; GET ?variant=safety_exception),
  * 'crisis' client-ai-v8 / v9 (v6 / v7 + the crisis sentence; GET
  * ?variant=crisis_alert while FEATURE_ROMAN_CRISIS_ALERT is on), 'coach_free'
- * (owner 62).
+ * (owner 62), 'health' / 'health_crisis' (owner #162-6, GET ?variant=health_notes): the
+ * memory copy is client-ai-v10 / v11, the base copy stays v6 / v8.
  */
-export type ClientAiCopyFamily = 'pre57c' | 'coached' | 'crisis' | 'coach_free';
+export type ClientAiCopyFamily =
+  | 'pre57c'
+  | 'coached'
+  | 'crisis'
+  | 'coach_free'
+  | 'health'
+  | 'health_crisis';
+
+const withHealthNotes = (family: ClientAiCopyFamily): ClientAiCopyFamily =>
+  family === 'crisis' ? 'health_crisis' : family === 'coached' ? 'health' : family;
 
 function familyOfVersion(version: unknown): ClientAiCopyFamily {
   if (isCoachFreeClientAiVersion(version)) return 'coach_free';
+  if (version === CLIENT_AI_CONSENT_V10_VERSION) return 'health';
+  if (version === CLIENT_AI_CONSENT_V11_VERSION) return 'health_crisis';
   if (version === CLIENT_AI_CONSENT_V8_VERSION || version === CLIENT_AI_CONSENT_V9_VERSION) {
     return 'crisis';
   }
@@ -345,6 +367,8 @@ function familyOfVersion(version: unknown): ClientAiCopyFamily {
 
 /** The base ('base' scope) copy of `family`. */
 export function clientAiConsentCopy(family: ClientAiCopyFamily = 'pre57c'): ClientAiConsentCopy {
+  if (family === 'health') return clientAiConsentCopy('coached');
+  if (family === 'health_crisis') return clientAiConsentCopy('crisis');
   if (family === 'crisis') {
     return {
       version: CLIENT_AI_CONSENT_V8_VERSION,
@@ -395,6 +419,19 @@ export function clientAiConsentCopy(family: ClientAiCopyFamily = 'pre57c'): Clie
 
 /** The memory-scope copy of `family`. */
 export function clientAiConsentV5Copy(family: ClientAiCopyFamily = 'pre57c'): ClientAiConsentCopy {
+  if (family === 'health' || family === 'health_crisis') {
+    const v10 = family === 'health';
+    return {
+      version: v10 ? CLIENT_AI_CONSENT_V10_VERSION : CLIENT_AI_CONSENT_V11_VERSION,
+      processor: CLIENT_AI_CONSENT_PROCESSOR,
+      paragraph: {
+        text: v10 ? CLIENT_AI_CONSENT_V10_PARAGRAPH : CLIENT_AI_CONSENT_V11_PARAGRAPH,
+        sha256: v10 ? CLIENT_AI_CONSENT_V10_PARAGRAPH_SHA256 : CLIENT_AI_CONSENT_V11_PARAGRAPH_SHA256,
+      },
+      box_label: { text: CLIENT_AI_CONSENT_BOX_LABEL, sha256: CLIENT_AI_CONSENT_BOX_LABEL_SHA256 },
+      sha256: v10 ? CLIENT_AI_CONSENT_V10_COPY_SHA256 : CLIENT_AI_CONSENT_V11_COPY_SHA256,
+    };
+  }
   if (family === 'crisis') {
     return {
       version: CLIENT_AI_CONSENT_V9_VERSION,
@@ -527,6 +564,9 @@ export class AiConsentService implements ClientAiConsentReader {
    * `askCrisis` (?variant=crisis_alert, CRISIS-APP-COPY): as `askSafety`, with
    * client-ai-v8 / v9 while FEATURE_ROMAN_CRISIS_ALERT is on. While it is off every
    * 'crisis' read (asked or on file) gives the v6 / v7 copies instead.
+   * `askHealth` (?variant=health_notes, owner #162-6): as `askCrisis`, and the memory offer is
+   * client-ai-v10 / v11, which name the Health-page notes. A live v4 to v9 grant still reads its
+   * own copies (no re-ask); a live v10 / v11 grant reads its own.
    */
   private toStatus(
     row: AiConsentLatestRow | null,
@@ -534,6 +574,7 @@ export class AiConsentService implements ClientAiConsentReader {
     hasCoach = false,
     askSafety = false,
     askCrisis = false,
+    askHealth = false,
   ): ClientAiConsentStatus {
     const onFile = familyOfVersion(row?.consent_version);
     const scope = hasCoach && onFile === 'coach_free' ? null : grantScope(row);
@@ -544,12 +585,15 @@ export class AiConsentService implements ClientAiConsentReader {
       : !hasCoach && (askCoachFree ?? onFile === 'coach_free');
     // A live grant, and a POST / DELETE with no ?variant=, read the copies on file; else the ask.
     const onFileRead = granted || askCoachFree === undefined;
-    const crisis = onFileRead ? onFile === 'crisis' : askCrisis;
-    const coached = onFileRead ? onFile === 'coached' : askSafety || askCrisis;
+    const healthOnFile = onFile === 'health' || onFile === 'health_crisis';
+    const crisis = onFileRead ? onFile === 'crisis' || onFile === 'health_crisis' : askCrisis;
+    const coached = onFileRead ? onFile === 'coached' || healthOnFile : askSafety || askCrisis;
     let family: ClientAiCopyFamily = coachFree ? 'coach_free' : coached ? 'coached' : 'pre57c';
     if (!coachFree && crisis) family = isRomanCrisisAlertEnabled() ? 'crisis' : 'coached';
+    if (!coachFree && (onFileRead ? healthOnFile : askHealth)) family = withHealthNotes(family);
     // A new agreement (memory on, Allow) is offered in the copies the app shows (CONSENTV7).
-    const asked = askCrisis && isRomanCrisisAlertEnabled() ? 'crisis' : 'coached';
+    const crisisAsked = askCrisis && isRomanCrisisAlertEnabled() ? 'crisis' : 'coached';
+    const asked = askHealth ? withHealthNotes(crisisAsked) : crisisAsked;
     const offer: ClientAiCopyFamily = !coachFree && (askSafety || askCrisis) ? asked : family;
     const copy = scope === 'memory' ? clientAiConsentV5Copy(family) : clientAiConsentCopy(family);
     const isGrant = row?.action === AI_CONSENT_ACTION_GRANT;
@@ -588,6 +632,7 @@ export class AiConsentService implements ClientAiConsentReader {
       ask.hasCoach === true,
       ask.safetyException === true,
       ask.crisisAlert === true,
+      ask.healthNotes === true,
     );
   }
 
