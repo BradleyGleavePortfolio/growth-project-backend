@@ -13,8 +13,10 @@
 -- CoachProfile zone; UTC aliases and names Postgres does not know are skipped;
 -- UTC when nothing is usable. app.course_module_open uses it, and the server
 -- asks the database for the same function's answer (ClientCoursesService), so
--- the routes and the row rule always agree. Only the open day changes: the
--- enrolment, published and open-all rules are as before. Row security on the
+-- the routes and the row rule always agree. The day an enrolment ended is
+-- read in the same calendar (ended_at is stored as UTC, so it is taken AT TIME
+-- ZONE 'UTC' first), never the UTC date. Only the open and end days change:
+-- the enrolment, published and open-all rules are as before. Row security on the
 -- course tables stays enabled and forced; no policy text changes.
 -- Reverse: down.sql. Live proof: test/rls/course-release-day-rls.spec.ts.
 
@@ -79,11 +81,11 @@ AS $$
       AND (
         e."opened_all_at" IS NOT NULL
         OR e."starts_on" + CASE WHEN c."week_rule" = 'all_at_once' THEN 0 ELSE m."opens_after_days" END
-           <= LEAST(app.client_today(e."user_id"), e."ended_at"::date)
+           <= LEAST(app.client_today(e."user_id"), app.client_today(e."user_id", e."ended_at" AT TIME ZONE 'UTC'))
       )
   )
 $$;
 COMMENT ON FUNCTION app.course_module_open(text) IS
-  'LEARN-BE1 (20270502006000), day from LEARN-BE2 (20270502007400): true when the signed-in client is enrolled in this week''s published course and the week is open on the client''s own day (app.client_today). False for a missing week or no user. Called by p_lesson_select_enrolled.';
+  'LEARN-BE1 (20270502006000), day from LEARN-BE2 (20270502007400): true when the signed-in client is enrolled in this week''s published course and the week is open on the client''s own day (app.client_today), up to the client''s own day the enrolment ended. False for a missing week or no user. Called by p_lesson_select_enrolled.';
 
 COMMIT;

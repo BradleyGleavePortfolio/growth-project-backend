@@ -4,9 +4,9 @@ import { PrismaService } from '../prisma.service';
 import { CoachMediaService } from '../coach-media/coach-media.service';
 import { ReleaseMode, WeekOpen, courseOpen } from './course-open.feature';
 
-// What the open rule needs, and nothing a locked week must not show: a lesson's
-// title, kind and video length only. Notes, bodies and links come in a second
-// read, for open weeks.
+// What the open rule needs, and nothing a locked week must not show: each week's
+// note, and a lesson's title, kind and video length. Lesson descriptions, pages
+// and links come in a second read, for open weeks only (Opus N1).
 const ENROLMENT = {
   starts_on: true,
   ended_at: true,
@@ -49,18 +49,20 @@ const mine = (userId: string): Prisma.CourseEnrolmentWhereInput => ({ user_id: u
 /**
  * The client's own calendar day, from the database: app.client_today
  * (20270502007400) is the same day app.course_module_open opens weeks on, so
- * these routes and the row rule always agree (Sol B1).
+ * these routes and the row rule always agree (Sol B1). With `at`, the client's
+ * day at that instant: the day an enrolment ended, in the same calendar as
+ * today, never the UTC date (round 3, Sol B2).
  */
-async function clientToday(prisma: PrismaService, userId: string): Promise<string> {
-  const [row] = await prisma.$queryRaw<{ today: string }[]>`SELECT to_char(app.client_today(${userId}), 'YYYY-MM-DD') AS today`;
+async function clientDay(prisma: PrismaService, userId: string, at: Date | null = null): Promise<string> {
+  const [row] = await prisma.$queryRaw<{ today: string }[]>`SELECT to_char(app.client_today(${userId}, COALESCE(${at?.toISOString() ?? null}::timestamptz, now())), 'YYYY-MM-DD') AS today`;
   return row.today;
 }
 
-function weeksOf(row: Enrolment, today: string): WeekOpen[] {
+async function weeksOf(prisma: PrismaService, userId: string, row: Enrolment, today: string): Promise<WeekOpen[]> {
   const releaseMode: ReleaseMode = row.opened_all_at ? 'open_all' : row.course.week_rule === 'all_at_once' ? 'all_at_once' : 'dates';
   return courseOpen({
     startsOn: day(row.starts_on),
-    endedOn: row.ended_at ? day(row.ended_at) : null,
+    endedOn: row.ended_at ? await clientDay(prisma, userId, row.ended_at) : null,
     today,
     releaseMode,
     weeks: row.course.modules.map((m) => ({ id: m.id, position: m.position, opensAfterDays: m.opens_after_days })),
@@ -79,7 +81,7 @@ export async function openCourseLesson(prisma: PrismaService, userId: string, le
   });
   const week = row?.course.modules.find((m) => m.lessons.some((l) => l.id === lessonId));
   if (!row || !week) return false;
-  return weeksOf(row, await clientToday(prisma, userId)).some((w) => w.id === week.id && w.open);
+  return (await weeksOf(prisma, userId, row, await clientDay(prisma, userId))).some((w) => w.id === week.id && w.open);
 }
 
 /**
@@ -142,8 +144,8 @@ export class ClientCoursesService {
   }
 
   private async shape(userId: string, rows: Enrolment[], withBody: boolean) {
-    const today = await clientToday(this.prisma, userId);
-    const weeks = rows.map((row) => weeksOf(row, today));
+    const today = await clientDay(this.prisma, userId);
+    const weeks = await Promise.all(rows.map((row) => weeksOf(this.prisma, userId, row, today)));
     const all = rows.flatMap((r) => r.course.modules.flatMap((m) => m.lessons.map((l) => l.id)));
     const openIds = rows.flatMap((r, i) => r.course.modules.filter((m) => weeks[i].find((w) => w.id === m.id)?.open).flatMap((m) => m.lessons.map((l) => l.id)));
     const [marks, content, progress] = await Promise.all([

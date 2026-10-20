@@ -30,18 +30,19 @@ describe('courseOpen (LEARN-BE2)', () => {
     ]);
   });
 
-  it('mid-week start: each week is finished by the Sunday inside its 7 days', () => {
+  it('mid-week start: each week is finished on the 7th day counted from its start, never sooner (round 3, Opus B1)', () => {
     expect(dates(run({ startsOn: '2026-10-07', today: '2026-10-07' }))).toEqual([
-      ['w1', '2026-10-07', '2026-10-11'],
-      ['w2', '2026-10-14', '2026-10-18'],
-      ['w3', '2026-10-21', '2026-10-25'],
+      ['w1', '2026-10-07', '2026-10-13'],
+      ['w2', '2026-10-14', '2026-10-20'],
+      ['w3', '2026-10-21', '2026-10-27'],
     ]);
-    // A Sunday start: week 1 is finished by its first day.
-    expect(run({ startsOn: '2026-10-11' }).map((w) => w.finishBy)).toEqual(['2026-10-11', '2026-10-18', '2026-10-25']);
+    // Saturday and Sunday starts get a full first week, not one or two days.
+    expect(run({ startsOn: '2026-10-10' }).map((w) => w.finishBy)).toEqual(['2026-10-16', '2026-10-23', '2026-10-30']);
+    expect(run({ startsOn: '2026-10-11' }).map((w) => w.finishBy)).toEqual(['2026-10-17', '2026-10-24', '2026-10-31']);
   });
 
-  it('a week that opens later than its 7-day slot is finished by the Sunday after it opens', () => {
-    expect(dates(run({ weeks: [week('w1', 1, 0), week('w2', 2, 16)] }))[1]).toEqual(['w2', '2026-10-21', '2026-10-25']);
+  it('a week that opens later than its 7-day slot is finished 7 days after it opens', () => {
+    expect(dates(run({ weeks: [week('w1', 1, 0), week('w2', 2, 16)] }))[1]).toEqual(['w2', '2026-10-21', '2026-10-27']);
   });
 
   it('finish-by never locks an open week: a week stays open after its Sunday', () => {

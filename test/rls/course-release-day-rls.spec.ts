@@ -6,7 +6,9 @@
  * day 8. Client T lives in Asia/Tokyo (ahead of UTC), client P in America/Los_Angeles (behind);
  * each started C seven of their own days ago, so W2 opens on their today and W3 on their
  * tomorrow. Client A (K's, not enrolled) is refused everything. Reads run as the non-bypass
- * `authenticated` role, and every 0 follows a read that returned 1. Gate: TEST_DATABASE_URL;
+ * `authenticated` role, and every 0 follows a read that returned 1. Round 3 (Sol B2): TE (Tokyo)
+ * and PE (Los Angeles) started the same day but their enrolment ended on a day whose UTC date
+ * differs from their own date: the end day is theirs, never the UTC date. Gate: TEST_DATABASE_URL;
  * no URL -> skip, except under CI=true (hard failure).
  */
 import { randomUUID } from 'crypto';
@@ -28,9 +30,9 @@ if (!DB_URL && process.env.CI === 'true') {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
   const run = randomUUID().slice(0, 8);
   const id = (tag: string) => `${tag}-${run}`;
-  const [K, T, P, A, U, Z, N, V, C, W1, W2, W3, X1, X2, X3] =
-    ['K', 'T', 'P', 'A', 'U', 'Z', 'N', 'V', 'C', 'W1', 'W2', 'W3', 'X1', 'X2', 'X3'].map(id);
-  const zoneOf: Record<string, string> = { [T]: 'Asia/Tokyo', [P]: 'America/Los_Angeles' };
+  const [K, T, P, A, U, Z, N, V, C, W1, W2, W3, X1, X2, X3, TE, PE] =
+    ['K', 'T', 'P', 'A', 'U', 'Z', 'N', 'V', 'C', 'W1', 'W2', 'W3', 'X1', 'X2', 'X3', 'TE', 'PE'].map(id);
+  const zoneOf: Record<string, string> = { [T]: 'Asia/Tokyo', [P]: 'America/Los_Angeles', [TE]: 'Asia/Tokyo', [PE]: 'America/Los_Angeles' };
   const daysAgo = (ymd: string, n: number) => new Date(Date.parse(`${ymd}T00:00:00Z`) - n * 86_400_000);
   // @ts-expect-error partial CoachMediaService double: these lessons hold a link, not an upload
   const media: CoachMediaService = { signLessonVideo: async () => null };
@@ -38,12 +40,12 @@ if (!DB_URL && process.env.CI === 'true') {
   const lessons = new LessonsService(prisma);
 
   beforeAll(async () => {
-    const people = [[K, null], [T, K], [P, K], [A, K], [U, K], [Z, K], [N, null], [V, null]] as const;
+    const people = [[K, null], [T, K], [P, K], [A, K], [U, K], [Z, K], [N, null], [V, null], [TE, K], [PE, K]] as const;
     for (const [uid, coach_id] of people) {
       await prisma.user.create({ data: { id: uid, supabase_id: uid, email: `day-${uid}`, name: 'Live person', role: uid === K ? 'coach' : 'student', coach_id } });
     }
     await prisma.coachProfile.create({ data: { user_id: K, invite_code: id('code'), timezone: 'America/New_York' } });
-    const zones = [[T, 'Asia/Tokyo', true], [P, 'America/Los_Angeles', true], [U, 'UTC', true], [Z, 'Not/AZone', true], [V, 'Asia/Tokyo', false]] as const;
+    const zones = [[T, 'Asia/Tokyo', true], [P, 'America/Los_Angeles', true], [U, 'UTC', true], [Z, 'Not/AZone', true], [V, 'Asia/Tokyo', false], [TE, 'Asia/Tokyo', true], [PE, 'America/Los_Angeles', true]] as const;
     for (const [user_id, timezone, supplied] of zones) {
       await prisma.notificationPreferences.create({ data: { user_id, timezone, timezone_updated_at: supplied ? new Date() : null } });
     }
@@ -57,6 +59,14 @@ if (!DB_URL && process.env.CI === 'true') {
     for (const user_id of [T, P]) {
       const starts_on = daysAgo(localDate(new Date(), zoneOf[user_id]), 7);
       await prisma.courseEnrolment.create({ data: { id: id(`E${user_id}`), course_id: C, user_id, starts_on, source: 'direct' } });
+    }
+    // TE's plan ended at 01:00 on their own today (the UTC date is yesterday); PE's at 22:00 PST /
+    // 23:00 PDT on their own yesterday (the UTC date is today). W2 opens on their today.
+    const tokyoToday = localDate(new Date(), 'Asia/Tokyo');
+    const laYesterday = daysAgo(localDate(new Date(), 'America/Los_Angeles'), 1).toISOString().slice(0, 10);
+    for (const [user_id, ended_at] of [[TE, new Date(`${tokyoToday}T01:00:00+09:00`)], [PE, new Date(`${laYesterday}T22:00:00-08:00`)]] as const) {
+      const starts_on = daysAgo(localDate(new Date(), zoneOf[user_id]), 7);
+      await prisma.courseEnrolment.create({ data: { id: id(`E${user_id}`), course_id: C, user_id, starts_on, ended_at, source: 'direct' } });
     }
   });
   afterAll(() => prisma.$disconnect());
@@ -115,5 +125,21 @@ if (!DB_URL && process.env.CI === 'true') {
     await expect(courses.savePosition(T, X3, 42)).rejects.toBeInstanceOf(NotFoundException);
     const saved = await prisma.lessonProgress.findMany({ where: { lesson_id: { endsWith: run } }, select: { user_id: true, lesson_id: true, position_seconds: true } });
     expect(saved).toEqual([{ user_id: T, lesson_id: X2, position_seconds: 42 }]);
+  });
+
+  it('an ended enrolment ends on the client\'s own day, in the row rule and the routes alike (round 3, Sol B2)', async () => {
+    // Tokyo: ended on their today (UTC yesterday), so W2, opened today, stays open.
+    expect(await lessonsAs(TE)).toEqual([X1, X2].sort());
+    expect((await courses.detail(TE, C)).modules.map((m) => m.open)).toEqual([true, true, false]);
+    await expect(courses.video(TE, X2)).resolves.toEqual({ url: `https://cdn.example/${X2}.mp4`, expires_at: null });
+    await expect(lessons.completeLesson(TE, X2)).resolves.toMatchObject({ user_id: TE, lesson_id: X2 });
+    // Los Angeles: ended on their yesterday (UTC today), so W2 never opens.
+    expect(await lessonsAs(PE)).toEqual([X1]);
+    expect((await courses.detail(PE, C)).modules.map((m) => m.open)).toEqual([true, false, false]);
+    await expect(courses.video(PE, X2)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(courses.savePosition(PE, X2, 42)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(lessons.completeLesson(PE, X2)).rejects.toBeInstanceOf(NotFoundException);
+    const marks = await prisma.lessonCompletion.findMany({ where: { user_id: PE }, select: { lesson_id: true } });
+    expect(marks).toEqual([]);
   });
 });

@@ -182,7 +182,35 @@ describe('ClientCoursesService (LEARN-BE2)', () => {
     const detail = await service.detail('A', 'c1');
     expect(detail.modules.map((m) => m.open)).toEqual([true, false, false]);
     expect(db.$queryRaw).toHaveBeenCalledTimes(1);
-    expect(db.$queryRaw.mock.calls[0]).toEqual([expect.arrayContaining([expect.stringContaining('app.client_today(')]), 'A']);
+    expect(db.$queryRaw.mock.calls[0]).toEqual([expect.arrayContaining([expect.stringContaining('app.client_today(')]), 'A', null]);
+  });
+
+  describe('the day an enrolment ended is the client\'s own day, not the UTC date (round 3, Sol B2)', () => {
+    // The fake database answers app.client_today(user, at): today for no instant,
+    // and the client's local day for the ended_at instant it is given.
+    const ended = (endedAt: string, localEndDay: string) => {
+      const t = setup([enrol('A', C1, { ended_at: new Date(endedAt) })]);
+      t.db.$queryRaw.mockImplementation(async (...args: unknown[]) => [{ today: args[2] === endedAt ? localEndDay : '2026-11-30' }]);
+      return t;
+    };
+
+    it('Tokyo: a plan that lapsed at 01:00 on Oct 12 local (Oct 11 UTC) keeps week 2, opened that day', async () => {
+      const { service, db } = ended('2026-10-11T16:00:00.000Z', '2026-10-12');
+      expect((await service.detail('A', 'c1')).modules.map((m) => m.open)).toEqual([true, true, false]);
+      expect(db.$queryRaw.mock.calls.map((c) => c[2])).toEqual([null, '2026-10-11T16:00:00.000Z']);
+      await service.savePosition('A', 'l2', 30);
+      expect(await service.video('A', 'l2')).toMatchObject({ url: 'https://stream.example/signed' });
+    });
+
+    it('Los Angeles: a plan that lapsed at 20:00 on Oct 11 local (Oct 12 UTC) never opens week 2', async () => {
+      const { service, db, lessons } = ended('2026-10-12T03:00:00.000Z', '2026-10-11');
+      expect((await service.detail('A', 'c1')).modules.map((m) => m.open)).toEqual([true, false, false]);
+      await expect(service.savePosition('A', 'l2', 30)).rejects.toBeInstanceOf(NotFoundException);
+      await expect(service.video('A', 'l2')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(lessons.completeLesson('A', 'l2')).rejects.toBeInstanceOf(NotFoundException);
+      expect(db.lessonProgress.upsert).not.toHaveBeenCalled();
+      expect(db.lessonCompletion.create).not.toHaveBeenCalled();
+    });
   });
 
   it('shows each client only their own course', async () => {

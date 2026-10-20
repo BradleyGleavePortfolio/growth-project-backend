@@ -8,12 +8,13 @@ import { dayFromYmd, ymd } from '../habits/habit-runs';
  * week is open once its day has come, start day + opens_after_days (0 when
  * every week opens at once), counted up to today or the day the enrolment
  * ended, whichever is first; a coach's open-all opens every week. Days are
- * YYYY-MM-DD strings in the client's own calendar.
+ * YYYY-MM-DD strings in the client's own calendar, the end day too (Sol B2).
  *
- * finishBy (#LEARN-COURSE-STYLE "A · Weeks"): the Sunday inside the week's
- * 7-day window. Week n's window starts on the client's start day + 7(n-1), or
- * on the day the week opens if that is later. Advisory only: it never locks an
- * open week again.
+ * finishBy (#LEARN-COURSE-STYLE "A · Weeks"): the last of the week's 7 days,
+ * counted from the start (window + 6). Week n's window starts on the client's
+ * start day + 7(n-1), or on the day the week opens if that is later, so a
+ * Monday start finishes on the Sunday and every start gets a full 7 days
+ * (b#1114 round 3, Opus B1). Advisory only: it never locks an open week again.
  */
 export type ReleaseMode = 'dates' | 'all_at_once' | 'open_all';
 
@@ -42,8 +43,6 @@ export function courseOpen(input: CourseOpenInput): WeekOpen[] {
     .map((week, index) => {
       const day = start + (input.releaseMode === 'dates' ? week.opensAfterDays : 0);
       const window = Math.max(day, start + 7 * index);
-      // Day 0 (1970-01-01) was a Thursday, so (d + 4) % 7 is 0 on a Sunday.
-      const sunday = window + ((7 - ((window + 4) % 7)) % 7);
-      return { id: week.id, open: input.releaseMode === 'open_all' || day <= reach, opensOn: ymd(day), finishBy: ymd(sunday) };
+      return { id: week.id, open: input.releaseMode === 'open_all' || day <= reach, opensOn: ymd(day), finishBy: ymd(window + 6) };
     });
 }
