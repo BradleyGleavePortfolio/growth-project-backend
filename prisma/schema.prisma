@@ -4251,6 +4251,9 @@ model CoachPackage {
   // trial on Stripe). One trial per client per coach: PackageTrialUsage.
   trial_days Int @default(0)
 
+  /// COACH-GONE-DELIVERY: taken off sale when the coach confirmed his account deletion; a cancel puts back exactly these
+  closed_for_deletion_at DateTime?
+
   @@index([coach_id, is_active])
   @@index([coach_id, archived_at])
   @@index([coach_id, published_at])
@@ -4588,6 +4591,8 @@ model ClientPurchase {
   // failed-payment notices stop, and ltv-metrics drops it from active
   // clients and MRR from this date.
   moved_away_at    DateTime?
+  /// COACH-GONE-DELIVERY: renewal turned off because the coach confirmed his account deletion; cleared when it comes back on
+  renewal_off_for_deletion_at DateTime?
 
   @@index([client_user_id, status])
   @@index([coach_user_id, status])

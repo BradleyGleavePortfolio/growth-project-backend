@@ -1,5 +1,9 @@
-import { InviteLandingController } from '../src/invite-landing/invite-landing.controller';
+import {
+  InviteLandingController,
+  landingCsp,
+} from '../src/invite-landing/invite-landing.controller';
 import { LoginThrottleResetService } from '../src/throttler/login-throttle-reset.service';
+import { cast } from './engagement/_fake-db';
 import {
   InviteLandingService,
   buildAndroidIntentUrl,
@@ -242,7 +246,10 @@ describe('InviteLandingController', () => {
       await controller.joinHtml('GP-OK1234', res1);
       const res2 = makeRes();
       await controller.inviteHtml('GP-OK1234', res2);
-      expect(res2.body).toBe(res1.body);
+      // Identical apart from the per-response CSP nonce.
+      const unNonce = (html: string) => html.replace(/nonce="[^"]+"/g, 'nonce=""');
+      expect(unNonce(res2.body)).toBe(unNonce(res1.body));
+      expect(nonceOf(res2.body)).not.toBe(nonceOf(res1.body));
     });
   });
 });
@@ -262,6 +269,7 @@ describe('InviteLandingService.renderValid', () => {
     app_store_url: 'https://apps.apple.com/app/x',
     play_store_url: 'https://play.google.com/store/apps/details?id=x',
     android_package: 'com.growthproject.app',
+    nonce: 'test-nonce',
   };
 
   it('never offers the shared link itself as a button (same-domain tap only reloads the page)', () => {
@@ -277,7 +285,9 @@ describe('InviteLandingService.renderValid', () => {
     const html = svc.renderValid({ ...base, platform: 'ios' });
     expect(html).toMatch(/class="primary" href="https:\/\/apps\.apple\.com\/app\/x"/);
     expect(html).toContain('href="tgp://join/GP-X1Y2Z3"');
-    expect(html).toContain('enter code GP-X1Y2Z3 when you create your account');
+    expect(html).toContain(
+      'enter code <span class="nowrap">GP-X1Y2Z3</span> when you create your account',
+    );
   });
 
   it('Android: the main button opens the app through an intent link that falls back to Google Play', () => {
@@ -295,6 +305,52 @@ describe('InviteLandingService.renderValid', () => {
     expect(html).toContain('Open this invite on your phone to join.');
     expect(html).toContain('apps.apple.com');
     expect(html).toContain('play.google.com');
+  });
+});
+
+describe('invite page design rules (buttons 12, cards 16)', () => {
+  // Owner rule: buttons radius 12, cards 16. One button style on the page,
+  // for /join/:code and /invite/:code alike (both use renderValid).
+  const svc = new InviteLandingService(cast({ previewCode: jest.fn() }));
+  const base = {
+    code: 'TGP-K7M2QX3',
+    coach_name: 'A',
+    business_name: null,
+    accent_color: null,
+    logo_url: null,
+    deep_link_url: 'tgp://join/TGP-K7M2QX3',
+    app_store_url: 'https://apps.apple.com/app/x',
+    play_store_url: 'https://play.google.com/store/apps/details?id=x',
+    android_package: 'com.growthproject.app',
+    nonce: 'n',
+  };
+  const radiusOf = (html: string, selector: string): string | undefined => {
+    const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\n  ${esc} \\{[^}]*border-radius: ([^;]+);`).exec(html)?.[1];
+  };
+  const pages = [
+    ...(['ios', 'android', 'other'] as const).map((platform) =>
+      svc.renderValid({ ...base, platform }),
+    ),
+    svc.renderInvalid({ web_signup_url: 'https://app.example/signup', nonce: 'n' }),
+  ];
+
+  it('every button is radius 12, the card is 16, and nothing is a pill', () => {
+    for (const html of pages) {
+      expect(radiusOf(html, '.copy')).toBe('12px');
+      expect(radiusOf(html, '.primary')).toBe('12px');
+      expect(radiusOf(html, '.stores a')).toBe('12px');
+      expect(radiusOf(html, '.card')).toBe('16px');
+      expect(html).not.toContain('999px');
+    }
+  });
+
+  it('the code in the sentence never breaks across lines', () => {
+    for (const html of pages.slice(0, 3)) {
+      expect(html).toContain('.nowrap { white-space: nowrap; }');
+      expect(html).toContain('enter code <span class="nowrap">TGP-K7M2QX3</span> when');
+      expect(html).not.toMatch(/ style=/);
+    }
   });
 });
 
@@ -320,5 +376,152 @@ describe('landing helpers', () => {
     expect(buildAndroidIntentUrl('GP-1', 'x;S.evil=1', 'https://play.example/x')).toContain(
       'package=com.growthproject.app;',
     );
+  });
+});
+
+// INVITE-COPY-CODE: the valid page carries the code across the install.
+const nonceOf = (html: string) => /<style nonce="([^"]+)">/.exec(html)?.[1];
+const VALID = {
+  valid: true,
+  coach_id: 'c1',
+  coach_name: 'Eve',
+  business_name: null,
+  branding: { accent_color: null, logo_url: null },
+};
+
+describe('INVITE-COPY-CODE: Copy code on the invite page', () => {
+  const inviteCodesMock = { previewCode: jest.fn() };
+  const controller = new InviteLandingController(
+    new InviteLandingService(cast(inviteCodesMock)),
+    new LoginThrottleResetService(undefined),
+  );
+
+  const UAS = [
+    undefined,
+    'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X)',
+    'Mozilla/5.0 (Linux; Android 14)',
+  ];
+
+  it('the valid page shows the code large with a Copy code button, nonce-only CSP', async () => {
+    inviteCodesMock.previewCode.mockResolvedValue(VALID);
+    for (const ua of UAS) {
+      const res = makeRes();
+      await controller.joinHtml('TGP-K7M2QX3', res, ua);
+      const nonce = nonceOf(res.body);
+      expect(nonce).toMatch(/^[A-Za-z0-9+/]{22}==$/);
+      expect(res.body).toContain('<p class="code-value" id="invite-code">TGP-K7M2QX3</p>');
+      // Hidden until the script runs, so it is never a dead button.
+      expect(res.body).toContain(
+        '<button type="button" class="copy" id="copy-code" data-done="Copied" ' +
+          'aria-live="polite" hidden>Copy code</button>',
+      );
+      expect(res.body).toContain(`<script nonce="${nonce}">`);
+      expect(res.headers['Content-Security-Policy']).toBe(landingCsp(String(nonce)));
+      expect(res.headers['Content-Security-Policy']).toContain(`script-src 'nonce-${nonce}'`);
+      expect(res.headers['Content-Security-Policy']).not.toContain('unsafe-inline');
+      expect(res.body.match(/<script/g)).toHaveLength(1);
+    }
+  });
+
+  it('the invalid page never shows a code, a Copy code button or a script', async () => {
+    inviteCodesMock.previewCode.mockResolvedValue({ valid: false });
+    const res = makeRes();
+    await controller.joinHtml('TGP-NOPE234', res);
+    expect(res.statusCode).toBe(404);
+    expect(res.body).not.toContain('TGP-NOPE234');
+    expect(res.body).not.toContain('Copy code');
+    expect(res.body).not.toContain('invite-code');
+    expect(res.body).not.toContain('<script');
+    expect(res.headers['Content-Security-Policy']).toBe(landingCsp(String(nonceOf(res.body))));
+  });
+
+  it('HTML-escapes the code wherever it is shown', () => {
+    const html = new InviteLandingService(cast(inviteCodesMock)).renderValid({
+      code: '<b>"x\'&</b>',
+      coach_name: 'A',
+      business_name: null,
+      accent_color: null,
+      logo_url: null,
+      deep_link_url: 'tgp://join/x',
+      app_store_url: 'https://apps.apple.com/app/x',
+      play_store_url: 'https://play.google.com/store/apps/details?id=x',
+      android_package: 'com.growthproject.app',
+      platform: 'ios',
+      nonce: 'n',
+    });
+    expect(html).not.toContain('<b>');
+    expect(html).toContain('id="invite-code">&lt;b&gt;&quot;x&#39;&amp;&lt;/b&gt;</p>');
+    expect(html).toContain(
+      'enter code <span class="nowrap">&lt;b&gt;&quot;x&#39;&amp;&lt;/b&gt;</span> when',
+    );
+  });
+
+  describe('the shipped copy script', () => {
+    afterEach(() => jest.useRealTimers());
+
+    async function page(clipboard: { writeText: jest.Mock } | undefined, execResult: boolean) {
+      inviteCodesMock.previewCode.mockResolvedValue(VALID);
+      const res = makeRes();
+      await controller.joinHtml('TGP-K7M2QX3', res);
+      const js = String(/<script nonce="[^"]+">([\s\S]*?)<\/script>/.exec(res.body)?.[1]);
+      jest.useFakeTimers(); // the script's 2 s reset timer
+      let onClick = () => {};
+      const button = {
+        hidden: true,
+        className: 'copy',
+        textContent: 'Copy code',
+        getAttribute: (name: string) => (name === 'data-done' ? 'Copied' : null),
+        addEventListener: (_type: string, fn: () => void) => {
+          onClick = fn;
+        },
+      };
+      const selection = { removeAllRanges: jest.fn(), addRange: jest.fn() };
+      const execCommand = jest.fn(() => execResult);
+      const doc = {
+        getElementById: (id: string) => {
+          if (id === 'copy-code') return button;
+          return id === 'invite-code' ? { textContent: ' TGP-K7M2QX3 ' } : null;
+        },
+        createRange: () => ({ selectNodeContents: jest.fn() }),
+        execCommand,
+      };
+      const win = { getSelection: () => selection };
+      new Function('document', 'navigator', 'window', js)(doc, { clipboard }, win);
+      const tap = async () => {
+        onClick();
+        await Promise.resolve();
+        await Promise.resolve();
+      };
+      return { button, selection, execCommand, tap };
+    }
+
+    it('shows the button, copies the bare code, says Copied, then resets after 2 s', async () => {
+      const writeText = jest.fn(() => Promise.resolve());
+      const p = await page({ writeText }, true);
+      expect(p.button.hidden).toBe(false);
+      await p.tap();
+      expect(writeText).toHaveBeenCalledWith('TGP-K7M2QX3');
+      expect(p.execCommand).not.toHaveBeenCalled();
+      expect(p.button.textContent).toBe('Copied');
+      expect(p.button.className).toBe('copy done');
+      jest.advanceTimersByTime(2000);
+      expect(p.button.textContent).toBe('Copy code');
+      expect(p.button.className).toBe('copy');
+    });
+
+    it('a refused clipboard falls back to selecting the code and execCommand copy', async () => {
+      const p = await page({ writeText: jest.fn(() => Promise.reject(new Error('denied'))) }, true);
+      await p.tap();
+      expect(p.selection.addRange).toHaveBeenCalledTimes(1);
+      expect(p.execCommand).toHaveBeenCalledWith('copy');
+      expect(p.button.textContent).toBe('Copied');
+    });
+
+    it('no clipboard, no execCommand: the code stays selected, no Copied', async () => {
+      const p = await page(undefined, false);
+      await p.tap();
+      expect(p.selection.addRange).toHaveBeenCalledTimes(1);
+      expect(p.button.textContent).toBe('Copy code');
+    });
   });
 });

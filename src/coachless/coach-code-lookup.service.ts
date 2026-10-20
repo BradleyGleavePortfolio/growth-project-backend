@@ -44,8 +44,10 @@ export class CoachCodeLookupService {
   private async resolveExact(code: string): Promise<ResolvedCoachCode | null> {
     const profile = await this.prisma.coachProfile.findUnique({
       where: { invite_code: code },
-      select: { user: { select: { id: true, role: true } } },
+      select: { user: { select: { id: true, role: true, deletion_confirmed_at: true } } },
     });
+    // COACH-GONE-DELIVERY: a coach who confirmed his account deletion takes no new joins.
+    if (profile?.user?.deletion_confirmed_at) return null;
     if (profile?.user) {
       return {
         kind: 'profile',
@@ -55,7 +57,7 @@ export class CoachCodeLookupService {
       };
     }
     const row = await this.prisma.inviteCode.findUnique({
-      where: { code },
+      where: { code, coach: { deletion_confirmed_at: null } },
       select: {
         coach_id: true,
         revoked: true,

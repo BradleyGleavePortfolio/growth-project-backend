@@ -67,6 +67,11 @@ export class ClientBillingReconciler {
       if (out.ended + out.failed > 0) {
         this.logger.log(JSON.stringify({ event: 'client_billing.moved_plans_completed', ...out }));
       }
+      // COACH-GONE-DELIVERY: renewal off while the plan's coach is leaving, back on if he stays.
+      const gone = await this.billing.syncPlansOfLeavingCoaches();
+      if (gone.ended + gone.resumed + gone.failed > 0) {
+        this.logger.log(JSON.stringify({ event: 'client_billing.leaving_coach_plans_completed', ...gone }));
+      }
     } catch (err: unknown) {
       this.logger.error(`moved plans: fatal error: ${dunningErrorCode(err)}`);
     } finally {

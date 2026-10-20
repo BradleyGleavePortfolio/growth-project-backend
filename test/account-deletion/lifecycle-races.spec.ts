@@ -184,6 +184,33 @@ describe('request (POST /me/delete-account)', () => {
   });
 });
 
+describe('COACH-GONE-DELIVERY: selling follows the deletion', () => {
+  const sale = (ctx: ReturnType<typeof build>) =>
+    ctx.db.committedCalls.filter((c) => c.model === 'coachPackage' && c.method === 'updateMany').map((c) => c.args);
+
+  it('confirming takes every live package off sale in the same transaction', async () => {
+    const ctx = build({ role: 'coach' });
+    await ctx.service.requestDeletion(UID);
+    expect(sale(ctx)).toEqual([
+      {
+        where: { coach_id: UID, is_active: true },
+        data: { is_active: false, closed_for_deletion_at: ctx.user().deletion_confirmed_at },
+      },
+    ]);
+  });
+
+  it('cancelling puts back on sale exactly the packages it took off', async () => {
+    const ctx = build({ confirmedDaysAgo: 2, role: 'coach' });
+    await ctx.service.cancelDeletion(UID);
+    expect(sale(ctx)).toEqual([
+      {
+        where: { coach_id: UID, closed_for_deletion_at: { not: null } },
+        data: { is_active: true, closed_for_deletion_at: null },
+      },
+    ]);
+  });
+});
+
 describe('cancel', () => {
   it('cancels inside the grace window and records the event in the same transaction', async () => {
     const ctx = build({ confirmedDaysAgo: 2 });

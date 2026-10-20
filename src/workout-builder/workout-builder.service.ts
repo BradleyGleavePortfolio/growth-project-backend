@@ -1073,6 +1073,8 @@ export class WorkoutBuilderService {
         ? await this.subCoachScope.canAccessClient(actingUserId, clientId, tx)
         : await this.subCoachScope.canAccessClient(actingUserId, clientId);
       if (ok) return;
+      // COACH-GONE-DELIVERY: a deleted coach's paid workout drop still reaches its buyer.
+      if ((await this.subCoachScope.deliversForGoneCoach?.(actingUserId, clientId, db)) === true) return;
     }
     throw new ForbiddenException('Client does not belong to this coach');
   }

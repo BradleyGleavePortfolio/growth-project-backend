@@ -375,7 +375,24 @@ export function sheetSecret(
   return null;
 }
 
-export function planView(row: ClientPurchase, pkg: CoachPackage | null): ClientPlanView {
+/** COACH-GONE-DELIVERY: the plan's coach, as far as Keep plan needs him (include on plan reads). */
+export const PLAN_COACH = {
+  coach: { select: { deletion_confirmed_at: true, deleted_at: true } },
+} as const;
+type PlanRow = ClientPurchase & {
+  coach?: { deletion_confirmed_at: Date | null; deleted_at: Date | null } | null;
+};
+
+/**
+ * MOVEBILL + COACH-GONE-DELIVERY: a renewal a move or the coach's deletion ended, or any plan of
+ * a coach who is leaving or gone, is never kept (Keep plan would charge for a coach who is gone).
+ */
+export function keepBarred(row: PlanRow): boolean {
+  const coach = row.coach;
+  return !!(row.moved_away_at || row.renewal_off_for_deletion_at || coach?.deletion_confirmed_at || coach?.deleted_at);
+}
+
+export function planView(row: PlanRow, pkg: CoachPackage | null): ClientPlanView {
   const status = row.status;
   const ended = status === 'canceled' || status === 'incomplete_expired' || status === 'expired';
   let state: PlanState;
@@ -428,8 +445,7 @@ export function planView(row: ClientPurchase, pkg: CoachPackage | null): ClientP
     trial_days: row.trial_days ?? null,
     trial_ends_at: state === 'trialing' ? iso(periodEnd) : null,
     can_cancel: live && !row.cancel_at_period_end,
-    // MOVEBILL: renewal a move ended (MOVE-BILLING) cannot be kept.
-    can_resume: live && row.cancel_at_period_end && !row.moved_away_at,
+    can_resume: live && row.cancel_at_period_end && !keepBarred(row),
     can_resubscribe: ended,
     last_payment_error:
       state === 'payment_failed' || state === 'past_due'
