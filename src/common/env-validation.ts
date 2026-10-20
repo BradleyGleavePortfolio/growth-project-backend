@@ -2034,6 +2034,8 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_COACH_PAYMENT_ACTIONS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason:
