@@ -21,7 +21,6 @@ import {
   loadPlanRenewal,
   planEndedAt,
   planRenewalBlock,
-  planRenewalHouseCoach,
   PlanRenewalView,
 } from './plan-renewal.state';
 
@@ -131,7 +130,6 @@ export class PlanRenewalService {
     const deliverAt = quietHoursFor({ kind: NotificationKind.PLAN_RENEWAL, timeZone: tz, now }).deliverAt;
     const send = day === step && planRenewalDay(row.ended_at, deliverAt, tz) === step;
     const last = step === PLAN_RENEWAL_LAST_DAY;
-    const house = await planRenewalHouseCoach(this.prisma, row.coach_user_id);
     return this.prisma.$transaction(async (tx): Promise<'idle' | 'pushed'> => {
       const won = await tx.planRenewal.updateMany({
         where: { id: row.id, status: 'active', pushed_step: { lt: step } },
@@ -144,14 +142,8 @@ export class PlanRenewalService {
           kind: NotificationKind.PLAN_RENEWAL,
           body: 'Your plan has ended.',
           deep_link: 'tgp://home',
+          // No buttons (OPERATOR RULING v3 6328335815): the tap opens Home and its renewal pop-up.
           dedupe_key: `plan_renewal:${row.id}:${step}`,
-          // The Day 7 buttons (contract on b#1127): the phone registers both categories with the labels.
-          data: {
-            step: String(step),
-            ...(last ? { categoryId: house ? 'PLAN_RENEWAL' : 'PLAN_RENEWAL_COACH' } : {}),
-            coach_id: row.coach_user_id,
-            ...(house ? { house_coach_id: house.id } : {}),
-          },
         },
         tx,
       );
