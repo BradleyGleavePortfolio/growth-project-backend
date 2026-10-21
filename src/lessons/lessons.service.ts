@@ -2,6 +2,7 @@ import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/commo
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma.service';
 import { CreateLessonDto, UpdateLessonDto } from './lessons.dto';
+import { openCourseLesson } from '../courses/client-courses.service';
 
 @Injectable()
 export class LessonsService {
@@ -15,7 +16,8 @@ export class LessonsService {
    * below), so a coachless sign-up gets nothing. Lessons always belong to a coach
    * (Lesson.coach_id is required); there is no platform library. Lessons
    * inside a course week (module_id set) are never in this scope: course
-   * routes reach them by enrolment and open week (LEARN-BE1, p_lesson_select).
+   * routes reach them by enrolment and open week (LEARN-BE1, p_lesson_select;
+   * completeLesson falls back to openCourseLesson).
    */
   private singleLessonsOf(
     user: { id: string; role: string; coach_id: string | null } | null,
@@ -153,7 +155,11 @@ export class LessonsService {
           select: { id: true },
         })
       : null;
-    if (!lesson) throw new NotFoundException('Lesson not found');
+    // LEARN-BE2: a course lesson only in an open week of the caller's own
+    // published course (the course routes' check, same day as the row rule).
+    if (!lesson && !(await openCourseLesson(this.prisma, userId, lessonId))) {
+      throw new NotFoundException('Lesson not found');
+    }
 
     const existing = await this.prisma.lessonCompletion.findFirst({
       where: { user_id: userId, lesson_id: lessonId },
