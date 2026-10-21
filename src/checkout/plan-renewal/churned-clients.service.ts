@@ -8,8 +8,7 @@ import { clientWeek } from '../../coach/client-week';
 import type { HomeWinDraft } from '../../coach/command-center/coach-home-day';
 import { firstNameOf } from '../../engagement/welcome-template';
 import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
-import { planEndedAt } from './plan-renewal.service';
-import { endedPlanWhere, planRenewalBlock } from './plan-renewal.state';
+import { endedPlanWhere, latestPlanEnd, planEndedAt, planRenewalBlock } from './plan-renewal.state';
 
 /** CHURN-BE: a client is listed while their plan's end is at most this many days old (operator default, owner-tunable). */
 export const CHURNED_CLIENTS_WINDOW_DAYS = 30;
@@ -58,9 +57,10 @@ const notFound = () =>
  * CHURN-BE: the coach's churned clients and Roman's win-back draft (FEATURE_PLAN_RENEWAL).
  *
  * A client is churned when their latest plan with this coach ended normally in
- * the window and planRenewalBlock (the renewal sequence's one rule) still lets
- * a renewal run: not moved, archived, revoked, deleted or deleting, no active
- * plan with the coach, no refund or dispute, no open failed payment.
+ * the window, by the renewal sweep's own rule (plan-renewal.state.ts:
+ * endedPlanWhere, planEndedAt, planRenewalBlock, latestPlanEnd): not moved,
+ * archived, revoked, deleted or deleting, no active plan with the coach, no
+ * refund or dispute, no unrecovered failed payment.
  */
 @Injectable()
 export class ChurnedClientsService {
@@ -188,20 +188,23 @@ export class ChurnedClientsService {
         ...endedPlanWhere(since, now),
       },
       select: {
-        id: true, client_user_id: true, coach_user_id: true, billing_type: true,
-        access_expires_at: true, canceled_at: true, current_period_end: true, package: { select: { name: true } },
+        client_user_id: true, billing_type: true, access_expires_at: true, canceled_at: true,
+        current_period_end: true, cancel_at_period_end: true, package: { select: { name: true } },
       },
     });
     const latest = new Map<string, Churned>();
     for (const p of purchases) {
-      const endedAt = planEndedAt(p, now);
+      const endedAt = planEndedAt(p);
       if (!endedAt || endedAt <= since || endedAt > now) continue;
       const seen = latest.get(p.client_user_id);
       if (!seen || endedAt > seen.endedAt) latest.set(p.client_user_id, { clientId: p.client_user_id, endedAt, packageName: p.package.name });
     }
+    // The sweep's order (plan-renewal.service openEnded): not blocked, and the latest end over every plan with the coach.
     const out: Churned[] = [];
     for (const row of latest.values()) {
-      if (!(await planRenewalBlock(this.prisma, row.clientId, coachId, now))) out.push(row);
+      if (await planRenewalBlock(this.prisma, row.clientId, coachId, now)) continue;
+      const end = await latestPlanEnd(this.prisma, row.clientId, coachId);
+      if (!end || end <= row.endedAt) out.push(row);
     }
     return out.sort((a, b) => b.endedAt.getTime() - a.endedAt.getTime() || (a.clientId < b.clientId ? -1 : 1));
   }

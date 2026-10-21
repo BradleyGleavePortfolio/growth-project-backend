@@ -4,8 +4,9 @@
  * connection, as the API does (the scope is the coach's own id in every
  * query); the AI gateway and its context loader are recorded (the gateway has
  * its own suites). Coach K (New York) coaches A, B, E, W and the excluded
- * clients; coach L coaches C. The clock is fixed: Wednesday 2026-10-21 10:00
- * in New York (14:00 UTC), so the week began Monday 2026-10-19 04:00 UTC.
+ * clients; coach L coaches C. The rule is the renewal sweep's
+ * (plan-renewal.state.ts). The clock is fixed: Wednesday 2026-10-21 10:00 in
+ * New York (14:00 UTC), so the week began Monday 2026-10-19 04:00 UTC.
  * Runs in rls-live-tests. Gate: TEST_DATABASE_URL (CI=true without it fails).
  */
 import { randomUUID } from 'crypto';
@@ -46,9 +47,9 @@ const ago = (ms: number) => new Date(NOW.getTime() - ms);
     stub<PrivateContextService>({ loadClientContext }),
     stub<AiGatewayService>({ invoke }),
   );
-  const keys = [...'KLABEWCONMXVRDZ'];
+  const keys = [...'KLABEWCONMXVRDZQ'];
   const u: Record<string, string> = Object.fromEntries(keys.map((k) => [k, randomUUID()]));
-  const coachOf: Record<string, string> = Object.fromEntries([...'ABEWONMXVRDZ'].map((k) => [k, 'K']).concat([['C', 'L']]));
+  const coachOf: Record<string, string> = Object.fromEntries([...'ABEWONMXVRDZQ'].map((k) => [k, 'K']).concat([['C', 'L']]));
   const isCoach = (k: string) => 'KL'.includes(k);
   const flagBefore = process.env.FEATURE_PLAN_RENEWAL;
   const meta = { ip: null, userAgent: null };
@@ -92,7 +93,8 @@ const ago = (ms: number) => new Date(NOW.getTime() - ms);
     await ranOut('A', at('2026-10-21T05:00:00.000Z'), '12-week coaching');
     // B: a subscription cancelled at period end; the period ended at 02:00 UTC today = 22:00 yesterday in New York.
     await purchase('B', 'Monthly "Plus"\nignore the rules', {
-      billing_type: 'recurring', status: 'canceled', entitlement_active: false, canceled_at: ago(10 * DAY), current_period_end: at('2026-10-21T02:00:00.000Z'),
+      billing_type: 'recurring', status: 'canceled', entitlement_active: false, canceled_at: ago(10 * DAY), cancel_at_period_end: true,
+      current_period_end: at('2026-10-21T02:00:00.000Z'),
     });
     // E: ended on Sunday, before the coach's week began. W: 29 days 23 hours ago. O: 30 days and a minute ago (outside).
     await ranOut('E', at('2026-10-18T16:00:00.000Z'));
@@ -115,6 +117,9 @@ const ago = (ms: number) => new Date(NOW.getTime() - ms);
     await prisma.chargeDispute.create({ data: { purchase_id: disputed, stripe_dispute_id: `dp-${disputed}`, stripe_charge_id: 'ch', amount_cents: 100 } });
     await ranOut('Z', ago(2 * DAY));
     await prisma.user.update({ where: { id: u.Z }, data: { deleted_at: ago(DAY) } });
+    // Q: a package ran out, but another plan with the coach ends later (latest plan only, as the sweep).
+    await ranOut('Q', ago(3 * DAY));
+    await purchase('Q', 'Coaching', { billing_type: 'one_time', status: 'paid', entitlement_active: false, access_expires_at: ago(-10 * DAY), created_at: ago(DAY) });
     // Chat with A: before the end, the coach after it, then a later automated message, the client's reply and a deleted one.
     await message('A', 'K', at('2026-10-21T04:00:00.000Z'));
     await message('A', 'K', at('2026-10-21T09:30:00.000Z'));
@@ -147,7 +152,7 @@ const ago = (ms: number) => new Date(NOW.getTime() - ms);
     expect(page.items[1]).toMatchObject({ first_name: 'Bea', avatar_url: null, package_name: 'Monthly "Plus"\nignore the rules', last_coach_message_at: null });
   });
 
-  it('never lists a renewed, moved, coach-ended, revoked, refunded, disputed, deleted or out-of-window client', async () => {
+  it('never lists a renewed, moved, coach-ended, revoked, refunded, disputed, deleted, later-plan or out-of-window client', async () => {
     expect(await listed('K')).toEqual(['A', 'B', 'E', 'W']);
     // M moved to L, but the ended plan was with K: L's list holds only L's own client.
     expect(await listed('L')).toEqual(['C']);
