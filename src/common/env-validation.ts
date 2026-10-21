@@ -2056,14 +2056,14 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason:
-      'RENEWAL-BE plan-renewal sequence (Day 0 and Day 1 pop-ups, one Day 7 app notification after a plan ends normally; src/checkout/plan-renewal). Off: no sequence opens or sends, the renewal route is 404 and GET /v1/checkout/entitlement carries no renewal block.',
+      'RENEWAL-BE plan-renewal sequence (Day 0, Day 1 and Day 7: an app notification and an in-app pop-up each, plus a Home renew banner, after a plan ends normally; src/checkout/plan-renewal). Off: no sequence opens or sends, the renewal route is 404 and GET /v1/checkout/entitlement carries no renewal block.',
   },
   {
     name: 'HOUSE_COACH_USER_ID',
     tier: 'optional',
     default: "unset → the renewal 'Join TGP's Top Rated Coach' choice is never offered",
     reason:
-      "RENEWAL-BE (owner #RENEWAL-PUSH): the user id of TGP's house coach, the second choice on the renewal pop-ups and the Day 7 app notification. The owner sets it when the house coach account exists. An id that is not a live coach account offers nothing.",
+      "RENEWAL-BE (owner #RENEWAL-PUSH): the user id of TGP's house coach, the second choice on the renewal pop-ups, the Home banner and the Day 7 app notification. The owner sets it when the house coach account exists. An id that is not a live coach account offers nothing.",
   },
   {
     name: 'FEATURE_COACH_BROADCASTS',

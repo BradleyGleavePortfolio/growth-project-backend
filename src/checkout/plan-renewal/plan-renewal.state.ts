@@ -1,7 +1,13 @@
 import type { ClientPurchase, PlanRenewal, Prisma, PrismaClient } from '@prisma/client';
 import { firstNameOf } from '../../engagement/welcome-template';
 import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
-import { houseCoachUserId, isPlanRenewalEnabled, PLAN_RENEWAL_POPUP_DAYS, planRenewalDay } from './plan-renewal.cadence';
+import {
+  houseCoachUserId,
+  isPlanRenewalEnabled,
+  PLAN_RENEWAL_BANNER_DAYS,
+  PLAN_RENEWAL_STEP_DAYS,
+  planRenewalDay,
+} from './plan-renewal.cadence';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -16,6 +22,8 @@ export interface PlanRenewalView {
   ended_at: string | null;
   popup_due: boolean;
   popup_step: number | null;
+  /** Home's "Renew now" banner (local days 0 to 29 while the state is ended). */
+  banner_due: boolean;
   coach: PlanRenewalPerson | null;
   house_coach: PlanRenewalPerson | null;
 }
@@ -25,6 +33,7 @@ export const NO_RENEWAL: PlanRenewalView = {
   ended_at: null,
   popup_due: false,
   popup_step: null,
+  banner_due: false,
   coach: null,
   house_coach: null,
 };
@@ -91,7 +100,7 @@ export type PlanRenewalBlock =
 
 /**
  * Why a renewal sequence for this client and coach must not run (or must stop
- * at once), or null when it may. One rule for opening, the Day 7 push, the
+ * at once), or null when it may. One rule for opening, each step's push, the
  * push worker's send-time check and the entitlement answer.
  */
 export async function planRenewalBlock(
@@ -179,12 +188,13 @@ export async function loadPlanRenewal(
   });
   if (!row) return none;
   const day = planRenewalDay(row.ended_at, now, await resolveRecipientTimeZone(db, userId));
-  const popup = PLAN_RENEWAL_POPUP_DAYS.includes(day) && row.popup_acked_step < day ? day : null;
+  const popup = PLAN_RENEWAL_STEP_DAYS.includes(day) && row.popup_acked_step < day ? day : null;
   const view: PlanRenewalView = {
     state: 'ended',
     ended_at: row.ended_at.toISOString(),
     popup_due: popup !== null,
     popup_step: popup,
+    banner_due: day >= 0 && day < PLAN_RENEWAL_BANNER_DAYS,
     coach,
     house_coach: await planRenewalHouseCoach(db, coachId),
   };

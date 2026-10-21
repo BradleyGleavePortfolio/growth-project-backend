@@ -9,7 +9,7 @@ import type { CommunityMessage, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
-import { CommunityMessagesRepository } from './community-messages.repository';
+import { type ChatVoiceNote, CommunityMessagesRepository } from './community-messages.repository';
 import { PlanContextService, planTagsEnabled } from '../plan-context/plan-context.service';
 import { acksEnabled } from '../ack/ack.feature';
 import { buildSlaSnapshot } from '../ack/sla';
@@ -61,7 +61,7 @@ export class CommunityMessagesService {
     private readonly communityPush: CommunityNotificationsService,
   ) {}
 
-  private view(m: CommunityMessage): CommunityMessageView {
+  private view(m: CommunityMessage, voice?: Map<string, ChatVoiceNote>): CommunityMessageView {
     return {
       id: m.id,
       cohort_id: m.cohort_id,
@@ -78,7 +78,15 @@ export class CommunityMessagesService {
       // key) so the v1-6/v2-1 response shape is preserved byte-for-byte
       // (kill-switch / back-compat invariant).
       ...(acksEnabled() ? { ack: this.viewAck(m) } : {}),
+      parent_message_id: m.parent_message_id ?? null,
+      voice_note: (!m.deleted_at && voice?.get(m.id)) || null,
     };
+  }
+
+  /** VOICE-BE: the voice notes behind this page's live voice messages (one read; none for text). */
+  private async voiceOf(user: User, rows: CommunityMessage[]): Promise<Map<string, ChatVoiceNote>> {
+    const ids = rows.filter((m) => m.kind === 'voice' && !m.deleted_at).map((m) => m.id);
+    return ids.length > 0 ? this.repo.voiceNotesFor(ids, user.id) : new Map();
   }
 
   /**
@@ -268,8 +276,9 @@ export class CommunityMessagesService {
     // Block filter AFTER the cursor is computed from the unfiltered page, so
     // pagination stays stable and a hidden row never becomes the cursor.
     const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id, placeOf);
+    const voice = await this.voiceOf(user, visible);
     return CommunityMessageListResponseSchema.parse({
-      messages: visible.map((m) => this.view(m)),
+      messages: visible.map((m) => this.view(m, voice)),
       next_before: next,
     });
   }
@@ -290,7 +299,7 @@ export class CommunityMessagesService {
     }
     // Two-way block: a direct id read cannot go around the list filter.
     await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND, placeOf(m));
-    return CommunityMessageResponseSchema.parse({ message: this.view(m) });
+    return CommunityMessageResponseSchema.parse({ message: this.view(m, await this.voiceOf(user, [m])) });
   }
 
   async edit(user: User, messageId: string, body: string): Promise<CommunityMessageResponse> {
@@ -302,7 +311,8 @@ export class CommunityMessagesService {
       m.scope !== 'cohort' ||
       !m.cohort_id ||
       m.deleted_at ||
-      m.plan_context_type !== null
+      m.plan_context_type !== null ||
+      m.kind === 'voice'
     ) {
       throw new NotFoundException(NOT_FOUND);
     }
@@ -341,8 +351,10 @@ export class CommunityMessagesService {
   async remove(user: User, messageId: string): Promise<CommunityMessageResponse> {
     const m = await this.repo.findById(messageId);
     // See getOne: any non-null plan_context_type row is a sub-surface row and
-    // is not deletable through the cohort chat message endpoint.
-    if (!m || m.scope !== 'cohort' || !m.cohort_id || m.plan_context_type !== null) {
+    // is not deletable through the cohort chat message endpoint. VOICE-BE: nor
+    // is a voice message, and it is not editable either: DELETE
+    // /community/voice-notes/:id (same id) also erases the recording.
+    if (!m || m.scope !== 'cohort' || !m.cohort_id || m.plan_context_type !== null || m.kind === 'voice') {
       throw new NotFoundException(NOT_FOUND);
     }
     const cohort = await this.access.findCohort(m.cohort_id);

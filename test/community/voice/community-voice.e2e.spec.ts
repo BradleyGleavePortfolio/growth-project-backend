@@ -106,16 +106,23 @@ function hasGuard(
   });
 }
 
-// The two write routes that mint a signed URL / durably insert a row. DELETE is
+// The write routes that mint a signed URL / durably insert a row, plus the
+// VOICE-BE heard marker and consent routes (behind the voice flag). DELETE is
 // deliberately NOT in this set: a retract stays available when authoring is off.
-const GATED_WRITE_HANDLERS = new Set(['issueUploadUrl', 'create']);
+const GATED_WRITE_HANDLERS = new Set([
+  'issueUploadUrl',
+  'create',
+  'markHeard',
+  'consent',
+  'markConsentSeen',
+]);
 
 describe('CommunityVoiceController guard metadata', () => {
   const routes = reflectRoutes();
 
   it('reflection sees the known route set (guards against vacuous pass)', () => {
-    // issueUploadUrl + create + list + getOne + remove.
-    expect(routes.length).toBeGreaterThanOrEqual(5);
+    // issueUploadUrl + create + list + getOne + remove + heard + consent x2.
+    expect(routes.length).toBeGreaterThanOrEqual(8);
   });
 
   it('includes the upload-url + create write routes', () => {
@@ -128,10 +135,13 @@ describe('CommunityVoiceController guard metadata', () => {
   const gatedWrites = routes.filter((r) => GATED_WRITE_HANDLERS.has(r.handler));
   const ungated = routes.filter((r) => !GATED_WRITE_HANDLERS.has(r.handler));
 
-  it('has exactly the two gated write routes', () => {
+  it('has exactly the gated routes', () => {
     expect(gatedWrites.map((r) => r.handler).sort()).toEqual([
+      'consent',
       'create',
       'issueUploadUrl',
+      'markConsentSeen',
+      'markHeard',
     ]);
   });
 

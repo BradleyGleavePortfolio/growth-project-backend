@@ -1,9 +1,9 @@
 /**
- * RENEWAL-BE: the plan-renewal cadence (owner #RENEWAL-PUSH: Day 0 and Day 1
- * pop-ups, one Day 7 app notification, local days), the plan-end rule, the
+ * RENEWAL-BE: the plan-renewal cadence (owner #RENEWAL-PUSH, OPERATOR RULING
+ * 6327651587: Day 0, 1 and 7, local days), the plan-end rule, the
  * push wiring (kind, lock-screen line, button category, the client's switch)
  * and the flag gate. The database behaviour (who gets a sequence, the latest
- * plan only, the Day 7 push once, the stop rules, row security) is
+ * plan only, each step's push once, the stop rules, row security) is
  * test/rls/plan-renewal-rls.spec.ts.
  */
 import { NotFoundException } from '@nestjs/common';
@@ -14,8 +14,9 @@ import type { CheckoutService } from '../src/checkout/checkout.service';
 import {
   houseCoachUserId,
   isPlanRenewalEnabled,
-  PLAN_RENEWAL_POPUP_DAYS,
-  PLAN_RENEWAL_PUSH_DAY,
+  PLAN_RENEWAL_BANNER_DAYS,
+  PLAN_RENEWAL_LAST_DAY,
+  PLAN_RENEWAL_STEP_DAYS,
   planRenewalDay,
 } from '../src/checkout/plan-renewal/plan-renewal.cadence';
 import { PlanRenewalAckDto, PlanRenewalController } from '../src/checkout/plan-renewal/plan-renewal.controller';
@@ -45,8 +46,8 @@ const withFlag = async (value: string | undefined, fn: () => Promise<void> | voi
 };
 
 describe('RENEWAL-BE cadence (owner #RENEWAL-PUSH)', () => {
-  it('pop-ups on Day 0 and Day 1, the one app notification on Day 7', () => {
-    expect([PLAN_RENEWAL_POPUP_DAYS, PLAN_RENEWAL_PUSH_DAY]).toEqual([[0, 1], 7]);
+  it('Day 0, Day 1 and Day 7: a notification and a pop-up each, the buttons on Day 7; the Home banner for 30 days', () => {
+    expect([PLAN_RENEWAL_STEP_DAYS, PLAN_RENEWAL_LAST_DAY, PLAN_RENEWAL_BANNER_DAYS]).toEqual([[0, 1, 7], 7, 30]);
   });
 
   it('days are the client\'s local calendar days: Day 0 is the day the plan ends there', () => {
@@ -96,7 +97,7 @@ describe('RENEWAL-BE plan-end rule (LS B2: never read off the clock)', () => {
   });
 });
 
-describe('RENEWAL-BE app notification (Day 7)', () => {
+describe('RENEWAL-BE app notifications', () => {
   it('kind plan_renewal: fixed lock-screen line (no names), tap opens Home, which opens the renewal page', () => {
     expect(NotificationKind.PLAN_RENEWAL).toBe('plan_renewal');
     expect(lockScreenCopy(NotificationKind.PLAN_RENEWAL, 'Sam Coach wrote something private', null)).toEqual({

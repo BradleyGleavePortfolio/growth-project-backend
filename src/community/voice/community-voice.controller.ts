@@ -133,4 +133,39 @@ export class CommunityVoiceController {
   ) {
     return this.voice.delete(req.user, voiceNoteId);
   }
+
+  // ── Heard marker + consent (VOICE-BE; master + voice flag, like the writes) ──
+
+  @Post('voice-notes/:voiceNoteId/heard')
+  @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard, CommunityVoiceEnabledGuard)
+  @Roles('student', 'coach', 'owner')
+  @HttpCode(200)
+  @Throttle({
+    default: { ttl: 60_000, limit: THROTTLER_ROUTE_LIMITS.COMMUNITY_REACTIONS_PER_MIN },
+  })
+  async markHeard(
+    @Request() req: AuthedRequest,
+    @Param('voiceNoteId', new ParseUUIDPipe({ version: '4' }))
+    voiceNoteId: string,
+  ) {
+    return this.voice.markHeard(req.user, voiceNoteId);
+  }
+
+  @Get('voice-consent')
+  @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard, CommunityVoiceEnabledGuard)
+  @Roles('student', 'coach', 'owner')
+  async consent(@Request() req: AuthedRequest) {
+    return this.voice.consent(req.user);
+  }
+
+  @Post('voice-consent')
+  @UseGuards(JwtAuthGuard, RolesGuard, CommunityFeatureFlagGuard, CommunityVoiceEnabledGuard)
+  @Roles('student', 'coach', 'owner')
+  @HttpCode(200)
+  @Throttle({
+    default: { ttl: 60_000, limit: THROTTLER_ROUTE_LIMITS.COMMUNITY_REACTIONS_PER_MIN },
+  })
+  async markConsentSeen(@Request() req: AuthedRequest) {
+    return this.voice.markConsentSeen(req.user);
+  }
 }
