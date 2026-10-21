@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import type { User } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { AiGatewayService } from '../../ai/gateway/ai-gateway.service';
 import { PrivateContextService } from '../../ai/gateway/private-context.service';
@@ -48,7 +49,7 @@ interface Churned {
   packageName: string;
 }
 
-type Caller = { id: string; role: string; coach_id?: string | null };
+type Caller = Pick<User, 'id' | 'role' | 'coach_id'>;
 
 const notFound = () =>
   new NotFoundException({ code: 'CHURNED_CLIENT_NOT_FOUND', error: 'CHURNED_CLIENT_NOT_FOUND', message: 'This client is not on your churned list.' });
@@ -142,7 +143,7 @@ export class ChurnedClientsService {
     const days = (await this.coachWeek(caller.id, now)).daysSince(row.endedAt);
     const request = winBackDraft(row, days);
     const ctx = await this.context.loadClientContext(
-      { id: caller.id, role: caller.role, coach_id: caller.coach_id ?? null },
+      { id: caller.id, role: caller.role, coach_id: caller.coach_id },
       clientId,
       { capability: request.capability },
     );

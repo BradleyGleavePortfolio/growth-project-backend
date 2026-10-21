@@ -10,6 +10,7 @@
  */
 import { randomUUID } from 'crypto';
 import { NotFoundException } from '@nestjs/common';
+import { Role } from '@prisma/client';
 import { PrismaService } from '../../src/prisma.service';
 import { ChurnedClientsService, CHURNED_CLIENTS_WINDOW_DAYS } from '../../src/checkout/plan-renewal/churned-clients.service';
 import { ChurnedClientsController } from '../../src/checkout/plan-renewal/churned-clients.controller';
@@ -51,7 +52,7 @@ const ago = (ms: number) => new Date(NOW.getTime() - ms);
   const isCoach = (k: string) => 'KL'.includes(k);
   const flagBefore = process.env.FEATURE_PLAN_RENEWAL;
   const meta = { ip: null, userAgent: null };
-  const coach = (k: string) => ({ id: u[k], role: 'coach', coach_id: null });
+  const coach = (k: string) => ({ id: u[k], role: Role.coach, coach_id: null });
   const list = (k: string, cursor?: string, take?: string) => service.list(u[k], cursor, take, NOW);
   const listed = async (k: string) => (await list(k)).items.map((r) => keys.find((x) => u[x] === r.client_id));
   const draftStatus = (k: string, client: string) =>
