@@ -6,7 +6,9 @@
 //  - author name and coach flag, waveform peaks round trip, reply link to a chat message;
 //  - the heard marker is per listener (own rows only; never on a note the person cannot read);
 //  - the consent flag is the person's own row;
-//  - only the author deletes (a member gets 403; the chat message goes too); other tenants get 404.
+//  - only the author deletes (a member gets 403; the chat message goes too); other tenants get 404;
+//  - FIX-1122-R1: in A's coach-only Announcements a client may reply by voice (read access + a live parent in
+//    that space), never start one; a section takes neither, in the server and at the row layer.
 import { randomUUID } from 'crypto';
 import { Prisma, PrismaClient, type User } from '@prisma/client';
 import type { AnalyticsService } from '../../src/analytics/analytics.service';
@@ -58,8 +60,11 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
   const id = ids(PEOPLE);
   const sub = ids(PEOPLE);
   const ws = ids(['A', 'B'] as const);
-  const space = ids(['mem', 'bmem'] as const);
+  const space = ids(['mem', 'bmem', 'ann', 'sec'] as const);
   const textId = randomUUID(); // A's text message in mem: the reply parent
+  const parentOf = ids(['mem', 'ann', 'sec'] as const); // A's text message in each of A's spaces (mem's is textId)
+  parentOf.mem = textId;
+  const parentAt: Record<string, Date> = {};
   const run = randomUUID().slice(0, 8);
   const user = (k: Key) => stub<User>({ id: id[k], role: ROLE(k), coach_id: COACH[k] ? id[COACH[k] as 'A' | 'B'] : null });
   const note = (k: Key, cohortId: string, extra: Record<string, unknown> = {}) => ({
@@ -107,8 +112,15 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
           VALUES ($1::uuid, $2::uuid, $3::uuid, $4, 'student', 'active', now())`, randomUUID(), ws[c], space[s], id[k]);
       }
     }
-    await prisma.communityMessage.create({ data: { id: textId, workspace_id: ws.A, cohort_id: space.mem, scope: 'cohort',
-      sender_id: id.A, body: 'RLS text' } });
+    // A's coach-only Announcements and a section, both open to A's clients (the C6-B1 defaults).
+    await prisma.$executeRaw`INSERT INTO "community_cohorts" ("id", "workspace_id", "name", "kind", "posting_policy", "visibility", "updated_at")
+      VALUES (${space.ann}::uuid, ${ws.A}::uuid, 'RLS ann', 'announcement', 'coach', 'clients', now()),
+             (${space.sec}::uuid, ${ws.A}::uuid, 'RLS sec', 'section', 'all', 'clients', now())`;
+    for (const s of ['mem', 'ann', 'sec'] as const) {
+      const m = await prisma.communityMessage.create({ data: { id: parentOf[s], workspace_id: ws.A, cohort_id: space[s],
+        scope: 'cohort', sender_id: id.A, body: 'RLS text' } });
+      parentAt[s] = m.created_at;
+    }
   });
   afterAll(() => prisma.$disconnect());
 
@@ -150,6 +162,31 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
 
   it('a reply only links to a chat message of its own space (other tenant: 404, nothing written)', async () => {
     expect(await status(voice.create(user('X'), ws.B, note('X', space.bmem, { parent_message_id: textId })))).toBe(404);
+    expect(await prisma.communityVoiceNote.count({ where: { author_id: id.X } })).toBe(0);
+  });
+
+  // FIX-1122-R1 (Sol B1): [case, who, space, parent's space, server answer, row-layer insert as authenticated].
+  const DENIED = '42501';
+  const VOICE_ROW = `INSERT INTO "community_messages" ("id", "workspace_id", "cohort_id", "scope", "kind", "sender_id",
+    "parent_message_id", "parent_message_at", "updated_at") VALUES ($1::uuid, $2::uuid, $3::uuid, 'cohort', 'voice', $4, $5::uuid, $6::timestamptz, now())`;
+  const voiceRow = (k: Key, s: 'ann' | 'sec', p: 'mem' | 'ann' | 'sec' | null) =>
+    as(k, (tx) => tx.$executeRawUnsafe(VOICE_ROW, randomUUID(), ws.A, space[s], id[k], p && parentOf[p], p && parentAt[p]))
+      .catch((e: { code?: string; meta?: { code?: string } }) => String(e.code === 'P2010' ? e.meta?.code : e.code));
+  it.each<[string, Key, 'ann' | 'sec', 'mem' | 'ann' | 'sec' | null, number, number | string]>([
+    ['a client voice reply in Announcements is sent', 'O', 'ann', 'ann', 200, 1],
+    ['a client top-level voice note in Announcements is refused', 'O', 'ann', null, 403, DENIED],
+    ['a client reply whose parent is in another space is refused', 'O', 'ann', 'mem', 404, DENIED],
+    ['another tenant replying in Announcements is refused', 'X', 'ann', 'ann', 404, DENIED],
+    ['a client reply in a section is refused', 'O', 'sec', 'sec', 403, DENIED],
+  ])('%s', async (_case, k, s, p, server, row) => {
+    const before = await prisma.communityVoiceNote.count({ where: { author_id: id[k] } });
+    const extra = p ? { parent_message_id: parentOf[p] } : {};
+    expect(await status(voice.create(user(k), ws.A, note(k, space[s], extra)))).toBe(server);
+    expect(await prisma.communityVoiceNote.count({ where: { author_id: id[k] } })).toBe(before + (server === 200 ? 1 : 0));
+    expect(await voiceRow(k, s, p)).toBe(row);
+  });
+  it('a reply in another tenant\'s space never links to this tenant\'s message (404, nothing written)', async () => {
+    expect(await status(voice.create(user('X'), ws.B, note('X', space.bmem, { parent_message_id: parentOf.ann })))).toBe(404);
     expect(await prisma.communityVoiceNote.count({ where: { author_id: id.X } })).toBe(0);
   });
 

@@ -285,6 +285,7 @@ export class CommunityVoiceService {
     user: User,
     cohortId: string | undefined,
     conversationId: string | undefined,
+    reply: boolean,
   ): Promise<{ cohortId: string | null; conversationId: string | null }> {
     if (cohortId && conversationId) {
       throw new BadRequestException({
@@ -307,7 +308,10 @@ export class CommunityVoiceService {
       if (!(await this.access.canAccessCohort(cohort, user))) {
         throw new NotFoundException(NOT_FOUND);
       }
-      await this.access.assertCanPost(cohort, user);
+      // FIX-1122-R1: a reply (its parent is checked next by replyParent, 404
+      // unless live and in this space) needs only access, as a text reply does;
+      // a top-level note needs the start permission; a section takes neither.
+      if (!reply || cohort.kind === 'section') await this.access.assertCanPost(cohort, user);
       return { cohortId: cohort.id, conversationId: null };
     }
     // Workspace-hall note — any member of the workspace may post.
@@ -419,6 +423,7 @@ export class CommunityVoiceService {
       user,
       dto.cohort_id,
       dto.conversation_id,
+      Boolean(dto.parent_message_id), // the same test replyParent uses
     );
     const parent = await this.replyParent(user, scope.cohortId, dto.parent_message_id);
 

@@ -17,6 +17,7 @@
  */
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { CommunityVoiceNote, User } from '@prisma/client';
+import { CommunityAccessService } from '../../community-access.service';
 import { CommunityVoiceService } from '../community-voice.service';
 import { mintVoiceKey } from '../voice-storage-key';
 import type { IssueVoiceUploadDto } from '../community-voice.dto';
@@ -516,6 +517,30 @@ describe('CommunityVoiceService', () => {
       ).rejects.toBeInstanceOf(NotFoundException);
       expect(repo.findChatMessage).not.toHaveBeenCalled();
       expect(repo.createVoiceNote).not.toHaveBeenCalled();
+    });
+
+    // FIX-1122-R1 (Sol B1): a reply needs access and a live parent in the space, not the start permission.
+    const ELSEWHERE = '12121212-1212-4212-8212-121212121212';
+    it.each([
+      ['a client voice reply in Announcements is sent', 'announcement', 'coach', chatMessage(), 'sent'],
+      ['a client top-level voice note in Announcements is refused', 'announcement', 'coach', null, 'community.space.read_only'],
+      ['a reply whose parent is in another space is 404', 'announcement', 'coach', chatMessage({ cohort_id: ELSEWHERE }), 'community.message.not_found'],
+      ['a reply whose parent is in another tenant is 404', 'announcement', 'coach', chatMessage({ workspace_id: ELSEWHERE, cohort_id: ELSEWHERE }), 'community.message.not_found'],
+      ['a reply in a section is refused', 'section', 'all', chatMessage(), 'community.space.read_only'],
+    ])('%s', async (_case, kind, posting_policy, parent, outcome) => {
+      access.findCohort.mockResolvedValue({ id: COHORT_A, workspace_id: WS_A, kind, posting_policy });
+      access.assertCanPost.mockImplementation((c: unknown, u: unknown) =>
+        // @ts-expect-error the real start rule, run over the mocked isWorkspaceCoach (false for a member)
+        CommunityAccessService.prototype.assertCanPost.call(access, c, u),
+      );
+      repo.findChatMessage.mockResolvedValue(parent);
+      const dto = parent ? { ...VALID_CREATE, parent_message_id: PARENT_ID } : VALID_CREATE;
+      const got = await service.create(member, WS_A, dto).then(
+        () => 'sent',
+        (e: { getResponse: () => { code: string } }) => e.getResponse().code,
+      );
+      expect(got).toBe(outcome);
+      expect(repo.createVoiceNote).toHaveBeenCalledTimes(outcome === 'sent' ? 1 : 0);
     });
 
     it('a coach note marks the space answered; a member note does not', async () => {
