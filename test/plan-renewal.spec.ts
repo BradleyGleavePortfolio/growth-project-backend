@@ -29,9 +29,10 @@ import { quietHoursFor } from '../src/notifications/push/push-quiet-hours';
 import { notificationPrefsPrefix, pushAllowedByPreferences } from '../src/notifications/push/push-preferences';
 import { pushTapData } from '../src/notifications/notifications.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
+import { stub } from './utils/trial-fakes';
 
 const day = (n: number) => n * PLAN_RENEWAL_DAY_MS;
-const req = (id: string) => ({ user: { id, role: 'student' } }) as unknown as AuthedRequest;
+const req = (id: string) => stub<AuthedRequest>({ user: { id, role: 'student' } });
 const withFlag = async (value: string | undefined, fn: () => Promise<void> | void) => {
   const before = process.env.FEATURE_PLAN_RENEWAL;
   if (value === undefined) delete process.env.FEATURE_PLAN_RENEWAL;
@@ -130,12 +131,12 @@ describe('RENEWAL-BE routes and the flag', () => {
     coachSettings: jest.fn(async () => ({ messages_enabled: true })),
     setCoachSettings: jest.fn(async (_id: string, on: boolean) => ({ messages_enabled: on })),
   };
-  const routes = new PlanRenewalController(service as unknown as PlanRenewalService);
+  const routes = new PlanRenewalController(stub<PlanRenewalService>(service));
   const checkout = {
     hasActiveEntitlement: jest.fn(async () => false),
     planRenewal: jest.fn(async () => ({ ...NO_RENEWAL, state: 'revoked', coach: { id: 'k', first_name: 'Sam' } })),
   };
-  const entitlement = new CheckoutController(checkout as unknown as CheckoutService);
+  const entitlement = new CheckoutController(stub<CheckoutService>(checkout));
   beforeEach(() => jest.clearAllMocks());
 
   it('flag off: every renewal route is 404 PLAN_RENEWAL_OFF and the entitlement answer is exactly as before', async () => {

@@ -17,6 +17,7 @@ import { PLAN_RENEWAL_DAY_MS } from '../../src/checkout/plan-renewal/plan-renewa
 import type { NotificationsService } from '../../src/notifications/notifications.service';
 import type { MessagingService } from '../../src/messaging/messaging.service';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
+import { stub } from '../utils/trial-fakes';
 
 const DB_URL = liveTestDatabaseUrl();
 if (!DB_URL && process.env.CI === 'true') {
@@ -43,8 +44,7 @@ const DAY = PLAN_RENEWAL_DAY_MS;
       return { id: `msg-${payload.client_message_id}` };
     }),
   };
-  const service = new PlanRenewalService(prisma, notifications as unknown as NotificationsService,
-    messaging as unknown as MessagingService);
+  const service = new PlanRenewalService(prisma, stub<NotificationsService>(notifications), stub<MessagingService>(messaging));
   const keys = [...'KLAMBCEFRDVXZOP'];
   const u: Record<string, string> = Object.fromEntries(keys.map((k) => [k, randomUUID()]));
   const supa: Record<string, string> = Object.fromEntries(keys.map((k) => [k, randomUUID()]));
