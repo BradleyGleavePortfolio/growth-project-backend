@@ -140,6 +140,7 @@ FEATURE_COACH_BROADCASTS | off | fly secrets unset -a backend-spring-lake-3890 F
 FEATURE_COACH_PAYMENT_ACTIONS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_COACH_PAYMENT_ACTIONS | "FEATURE_COACH_PAYMENT_ACTIONS": "unset"
 FEATURE_ROMAN_CHAT_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_CHAT_ENABLED | "FEATURE_ROMAN_CHAT_ENABLED": "unset"
 FEATURE_ROMAN_ADJUST_ENABLED | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_ADJUST_ENABLED | "FEATURE_ROMAN_ADJUST_ENABLED": "unset"
+FEATURE_CLIENT_PATH_COPILOT | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_CLIENT_PATH_COPILOT | "FEATURE_CLIENT_PATH_COPILOT": "unset"
 FEATURE_ROMAN_MEMORY | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_MEMORY | "FEATURE_ROMAN_MEMORY": "unset"
 FEATURE_ROMAN_PLAYBOOK | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_PLAYBOOK | "FEATURE_ROMAN_PLAYBOOK": "unset"
 FEATURE_ROMAN_TOOLS | off | fly secrets unset -a backend-spring-lake-3890 FEATURE_ROMAN_TOOLS | "FEATURE_ROMAN_TOOLS": "unset"

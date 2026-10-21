@@ -4,6 +4,7 @@ import { MessagingModule } from '../../messaging/messaging.module';
 import { NotificationsModule } from '../../notifications/notifications.module';
 // AIB-NAMES-127 — the workout builder reads catalog names for rows outside the seed library (cached ExerciseDB read).
 import { ExerciseLibraryModule } from '../../exercise-library/exercise-library.module';
+import { MacrosModule } from '../../macros/macros.module';
 import { AiGatewayController } from './ai-gateway.controller';
 // AIB-4 — server-driven "Ask AI" visibility for the workout builder.
 import { WorkoutBuilderStatusController } from './workout-builder/workout-builder-status.controller';
@@ -41,6 +42,7 @@ import { SendNotificationMaterializer } from './materialisers/send-notification.
 // re-registered here.
 import { CreateWorkoutPlanMaterializer } from './materialisers/create-workout-plan.materialiser';
 import { EditWorkoutPlanMaterializer } from './materialisers/edit-workout-plan.materialiser';
+import { ClientPathChangeMaterializer } from './materialisers/client-path-change.materialiser';
 import { WorkoutBuilderAiController } from './workout-builder/workout-builder-ai.controller';
 import { WorkoutBuilderAiService } from './workout-builder/workout-builder-ai.service';
 
@@ -62,7 +64,7 @@ import { WorkoutBuilderAiService } from './workout-builder/workout-builder-ai.se
   // new materialisers (assign_workout, assign_meal_plan dispatch pushes
   // through it). send_notification writes Notification rows directly via
   // Prisma so it does NOT need the service, but the others do.
-  imports: [AuthModule, MessagingModule, NotificationsModule, ExerciseLibraryModule],
+  imports: [AuthModule, MessagingModule, NotificationsModule, ExerciseLibraryModule, MacrosModule],
   controllers: [AiGatewayController, WorkoutBuilderStatusController, WorkoutBuilderAiController],
   providers: [
     AiGatewayConfig,
@@ -97,6 +99,7 @@ import { WorkoutBuilderAiService } from './workout-builder/workout-builder-ai.se
     // MWB-5 — additive registrations only; existing materialisers untouched.
     CreateWorkoutPlanMaterializer,
     EditWorkoutPlanMaterializer,
+    ClientPathChangeMaterializer,
     {
       provide: CAPABILITY_MATERIALIZERS,
       useFactory: (
@@ -107,6 +110,7 @@ import { WorkoutBuilderAiService } from './workout-builder/workout-builder-ai.se
         sendNotification: SendNotificationMaterializer,
         createWorkoutPlan: CreateWorkoutPlanMaterializer,
         editWorkoutPlan: EditWorkoutPlanMaterializer,
+        clientPathChange: ClientPathChangeMaterializer,
       ) => [
         coachMessage,
         coachWearableMessage,
@@ -115,6 +119,7 @@ import { WorkoutBuilderAiService } from './workout-builder/workout-builder-ai.se
         sendNotification,
         createWorkoutPlan,
         editWorkoutPlan,
+        clientPathChange,
       ],
       inject: [
         CoachMessageMaterializer,
@@ -124,6 +129,7 @@ import { WorkoutBuilderAiService } from './workout-builder/workout-builder-ai.se
         SendNotificationMaterializer,
         CreateWorkoutPlanMaterializer,
         EditWorkoutPlanMaterializer,
+        ClientPathChangeMaterializer,
       ],
     },
     CapabilityMaterializerRegistry,

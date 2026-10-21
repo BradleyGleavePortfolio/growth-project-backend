@@ -67,6 +67,7 @@ import { DunningLockoutGuard } from './checkout/dunning-v2/dunning-lockout.guard
 import { PayoutsV2Module } from './payouts-v2/payouts-v2.module';
 import { RomanModule } from './roman/roman.module';
 import { RomanAdjustModule } from './roman-adjust/roman-adjust.module';
+import { CopilotModule } from './copilot/copilot.module';
 import { AiConsentModule } from './ai-consent/ai-consent.module';
 import { AiEgressModule } from './ai-egress/ai-egress.module';
 import { PtmModule } from './ptm/ptm.module';
@@ -314,6 +315,8 @@ import { WearablesModule } from './wearables/wearables.module';
     RomanModule,
     // Roman approve-to-adjust (kill switch FEATURE_ROMAN_ADJUST_ENABLED, default off).
     RomanAdjustModule,
+    // Path Copilot, the client's side (kill switch FEATURE_CLIENT_PATH_COPILOT, default off).
+    CopilotModule,
     // R2a — AI processing consent ledger (box 2 of the D2 consent screen).
     // Mounted always; /me/ai-consent returns 503 AI_CONSENT_UNAVAILABLE while
     // FEATURE_AI_CONSENT_LEDGER_ENABLED is OFF (default). See src/ai-consent/.
