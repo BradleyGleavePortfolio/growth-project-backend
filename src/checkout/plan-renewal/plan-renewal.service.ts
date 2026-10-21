@@ -24,6 +24,7 @@ import {
   PLAN_RENEWAL_OPEN_WINDOW_MS,
   PLAN_RENEWAL_STEPS,
   PLAN_RENEWAL_SWEEP_CRON,
+  planRenewalPopupStepAt,
   planRenewalStepFor,
 } from './plan-renewal.cadence';
 import { loadPlanRenewal, planRenewalBlock, PlanRenewalView } from './plan-renewal.state';
@@ -147,7 +148,7 @@ export class PlanRenewalService {
           step_index: due,
           step_claimed_at: now,
           ...(due === PLAN_RENEWAL_LAST_STEP ? { status: 'done' } : {}),
-          ...(step.popup ? { popup_step: due } : {}),
+          popup_step: planRenewalPopupStepAt(due),
           ...(step.message
             ? { message_step: due, message_key: randomUUID(), message_status: 'pending', message_attempts: 0, message_next_at: now, message_id: null }
             : {}),
