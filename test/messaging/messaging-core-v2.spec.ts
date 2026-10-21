@@ -69,6 +69,7 @@ function row(over: Partial<Row> = {}): Row {
     read_at: null,
     ai_draft_id: null,
     welcome_job_id: null,
+    automated_by: null,
     client_message_id: null,
     reply_to_id: null,
     edited_at: null,

@@ -6,7 +6,8 @@ const isoDay = (n: number) => new Date(n * 86_400_000).toISOString().slice(0, 10
  * K1WEEK: the Monday-to-Sunday week that holds `now` in the IANA zone `tz`:
  * its first and current local days (YYYY-MM-DD), the instants it runs between
  * ([from, to), local midnight to local midnight, so a DST week is 167 or 169
- * hours), and the local day of any instant.
+ * hours), and the local day of any instant. HOME-BE: `todayFrom` is the
+ * instant the current local day began (local midnight).
  */
 export function clientWeek(now: Date, tz: string) {
   const dayNumber = (at: Date) => {
@@ -24,6 +25,7 @@ export function clientWeek(now: Date, tz: string) {
     today: isoDay(today),
     from: midnight(monday),
     to: midnight(monday + 7),
+    todayFrom: midnight(today),
     dayOf: (at: Date) => isoDay(dayNumber(at)),
   };
 }
