@@ -222,7 +222,7 @@ describe('/help/delete-account content', () => {
       'Health and activity data synced from Apple Health or connected devices, and bloodwork you entered, including uploaded files',
       'Your conversations with Roman, the AI assistant',
       'Your messages, community posts, comments, direct messages, voice notes and reactions',
-      'Coach media, notes and briefs, if you coach, except the video or file of each lesson your clients keep (see below)',
+      'Coach media, notes and briefs, if you coach, except lessons and paid content your clients keep',
       'Your targets, recipes, lists and preferences',
       'Notification settings and push notification tokens',
     ]) {
