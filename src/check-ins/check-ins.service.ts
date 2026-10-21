@@ -14,10 +14,14 @@ const MAX_LIMIT = 365;
 // `from` is supplied. Value mirrors the 30-day window used by getClientSummary.
 const COACH_DEFAULT_WINDOW_DAYS = 30;
 
-// PTM streak window — how many recent check-in rows we read after the upsert
-// to compute the consecutive-day streak. 60 covers ~2 months of perfect
-// adherence and is plenty for the heuristic engine.
-const PTM_STREAK_LOOKBACK = 60;
+// Streak window — how many recent check-in dates we read to count the
+// consecutive-day streak (the client's streak and the PTM signals). A year, so
+// the days the client sees stay true past the 30-day milestone and the
+// timeline's 60- and 90-day wins can fire (60 rows capped every streak at 60).
+const PTM_STREAK_LOOKBACK = 366;
+// ROMAN-EXTRAS R3 (owner #161-2 op 1): the Roman streak card's tiers.
+const STREAK_MILESTONES = [3, 7, 30] as const;
+export type CheckInStreak = { days: number; milestone: (typeof STREAK_MILESTONES)[number] | null };
 // PTM miss threshold — emit checkin_miss only when the latest check-in is at
 // least this many calendar days behind today. Below the threshold the gap is
 // noise.
@@ -152,15 +156,45 @@ export class CheckInsService {
       update: updateData,
     });
 
-    await this.emitPtmAfterUpsert(clientId, coachId, day);
+    // One read serves the streak in the reply and the PTM signals below.
+    const recent = await this.recentCheckInDates(clientId);
+    if (recent) this.emitPtmAfterUpsert(clientId, coachId, recent);
     // M2 — bust AI context cache so next chat sees the new check-in.
     this.aiContext?.invalidateForUser(clientId);
 
-    return row;
+    return { ...row, streak: recent && this.streakOn(recent, day) };
   }
 
-  // PTM signal emission. Fire-and-forget: read the recent check-in dates,
-  // compute consecutive-day streak ending on `day`, and emit checkin_streak.
+  // The newest check-in dates (up to `upTo` when given), newest first. Null
+  // when the read fails: the check-in itself is already saved, so a failure
+  // here must not bubble.
+  private async recentCheckInDates(clientId: string, upTo?: Date): Promise<Date[] | null> {
+    try {
+      const rows = await this.prisma.checkIn.findMany({
+        where: { user_id: clientId, ...(upTo ? { date: { lte: upTo } } : {}) },
+        orderBy: { date: 'desc' },
+        take: PTM_STREAK_LOOKBACK,
+        select: { date: true },
+      });
+      return rows.map((r) => r.date);
+    } catch {
+      return null;
+    }
+  }
+
+  // ROMAN-EXTRAS R3: the run of consecutive check-in days ending on `day`, the
+  // client's own calendar day as the app sent it (so the server's clock and
+  // time zone never move it). The milestone is set only on the day the run
+  // reaches exactly 3, 7 or 30.
+  private streakOn(dates: Date[], day: Date): CheckInStreak {
+    const upTo = dates.filter((d) => this.midnightUtc(d).getTime() <= day.getTime());
+    const endsOnDay = upTo[0] && this.midnightUtc(upTo[0]).getTime() === day.getTime();
+    const days = endsOnDay ? this.computeStreak(upTo) : 0;
+    return { days, milestone: STREAK_MILESTONES.find((m) => m === days) ?? null };
+  }
+
+  // PTM signal emission. Fire-and-forget: from the recent check-in dates,
+  // compute consecutive-day streak, and emit checkin_streak.
   // If the gap from the most recent prior check-in to today exceeds the miss
   // threshold, emit checkin_miss with the gap length.
   //
@@ -170,23 +204,17 @@ export class CheckInsService {
   //   * streak_dropped     — fired when priorStreak ≥ 7 and newStreak = 0
   //
   // Failures here MUST NOT bubble — the upsert has already succeeded.
-  private async emitPtmAfterUpsert(
+  private emitPtmAfterUpsert(
     clientId: string,
     coachId: string | null,
-    day: Date,
-  ): Promise<void> {
+    recent: Date[],
+  ): void {
     try {
-      const recent = await this.prisma.checkIn.findMany({
-        where: { user_id: clientId },
-        orderBy: { date: 'desc' },
-        take: PTM_STREAK_LOOKBACK,
-        select: { date: true },
-      });
-      const streak = this.computeStreak(recent.map((r) => r.date));
+      const streak = this.computeStreak(recent);
       this.ptm.emit(clientId, 'checkin_streak', streak);
 
       const today = this.midnightUtc(new Date());
-      const latest = recent[0]?.date;
+      const latest = recent[0];
       if (latest) {
         const gap = Math.floor(
           (today.getTime() - this.midnightUtc(latest).getTime()) / ONE_DAY_MS,
@@ -203,20 +231,15 @@ export class CheckInsService {
 
       // Phase 6B — streak_dropped alert emitter.
       if (this.coachAlerts && coachId) {
-        const priorStreak = this.computeStreak(
-          recent.slice(1).map((r) => r.date),
-        );
+        const priorStreak = this.computeStreak(recent.slice(1));
         if (priorStreak >= STREAK_DROP_PRIOR_MIN && streak === 0) {
           void this.maybeFireStreakDroppedAlert(clientId, coachId, priorStreak);
         }
       }
     } catch {
-      // Swallow — PtmService.emit is already fire-and-forget. This catch
-      // protects against the prior findMany failing.
+      // Swallow — PtmService.emit is already fire-and-forget; the upsert has
+      // already succeeded.
     }
-    // Acknowledge `day` is consumed by callers' tests via the upsert path; it
-    // is not used directly here because the streak is anchored to today.
-    void day;
   }
 
   /**
@@ -301,7 +324,7 @@ export class CheckInsService {
     const from = query.from ? this.parseDay(query.from) : undefined;
     const to = query.to ? this.parseDay(query.to) : undefined;
 
-    return this.prisma.checkIn.findMany({
+    const rows = await this.prisma.checkIn.findMany({
       where: {
         user_id: clientId,
         ...(from || to
@@ -316,6 +339,12 @@ export class CheckInsService {
       orderBy: { date: 'desc' },
       take: limit,
     });
+    // ROMAN-EXTRAS R3: a one-day read (from = to, how the app asks for today's
+    // row) carries the streak on that day's row.
+    const [dayRow] = rows;
+    if (!dayRow || !from || from.getTime() !== to?.getTime()) return rows;
+    const recent = await this.recentCheckInDates(clientId, from);
+    return [{ ...dayRow, streak: recent && this.streakOn(recent, from) }];
   }
 
   // Single check-in by id. 404 if not theirs — foreign-ownership returns the

@@ -263,6 +263,48 @@ describe('CheckInsService', () => {
     });
   });
 
+  // ROMAN-EXTRAS R3 (owner #161-2 op 1): the streak the Roman card counts.
+  describe('streak', () => {
+    const day = (n: number) => new Date(Date.UTC(2026, 8, n)).toISOString().slice(0, 10); // 2026-09-n
+    afterEach(() => jest.useRealTimers());
+
+    it('POST counts the run ending on the saved day; the milestone is set only on days 3, 7 and 30', async () => {
+      const seen: Array<[number, number | null]> = [];
+      for (let n = 1; n <= 31; n++) {
+        const { streak } = await svc.upsertForClient('client-1', { date: day(n) });
+        seen.push([streak!.days, streak!.milestone]);
+      }
+      expect(seen.map(([d]) => d)).toEqual(Array.from({ length: 31 }, (_, i) => i + 1));
+      expect(seen.filter(([, m]) => m !== null)).toEqual([[3, 3], [7, 7], [30, 30]]);
+      expect(prisma.checkIn.findMany).toHaveBeenCalledTimes(31); // one read per POST
+    });
+
+    it('a same-day re-save keeps the run; a gap starts it again', async () => {
+      for (const n of [1, 2, 3]) await svc.upsertForClient('client-1', { date: day(n) });
+      expect((await svc.upsertForClient('client-1', { date: day(3), mood: 5 })).streak).toEqual({ days: 3, milestone: 3 });
+      expect((await svc.upsertForClient('client-1', { date: day(5) })).streak).toEqual({ days: 1, milestone: null });
+    });
+
+    it("counts the client's own calendar day across the UTC boundary, on POST and on the GET today row", async () => {
+      // 21:30 on Oct 20 in Los Angeles is already Oct 21 in UTC.
+      jest.useFakeTimers({ now: new Date('2026-10-21T04:30:00Z'), doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+      for (const d of ['2026-10-18', '2026-10-19']) await svc.upsertForClient('client-1', { date: d });
+      const post = await svc.upsertForClient('client-1', { date: '2026-10-20' });
+      expect(post.streak).toEqual({ days: 3, milestone: 3 });
+      const [today] = await svc.listForClient('client-1', { from: '2026-10-20', to: '2026-10-20', limit: 1 });
+      expect(today).toMatchObject({ date: new Date('2026-10-20T00:00:00Z'), streak: { days: 3, milestone: 3 } });
+      const [past] = await svc.listForClient('client-1', { from: '2026-10-19', to: '2026-10-19' });
+      expect(past).toMatchObject({ streak: { days: 2, milestone: null } });
+      const range = await svc.listForClient('client-1', { from: '2026-10-18', to: '2026-10-20' });
+      expect(range.some((r) => 'streak' in r)).toBe(false);
+
+      // 01:00 on Oct 22 in Auckland is still Oct 21 in UTC.
+      jest.setSystemTime(new Date('2026-10-21T12:00:00Z'));
+      for (const d of ['2026-10-20', '2026-10-21']) await svc.upsertForClient('client-2', { date: d });
+      expect((await svc.upsertForClient('client-2', { date: '2026-10-22' })).streak).toEqual({ days: 3, milestone: 3 });
+    });
+  });
+
   describe('coach reads', () => {
     // listForClientByCoach defaults to a 30-day lookback when `from` is absent.
     // Use a date inside that window (today) so the test does not silently
