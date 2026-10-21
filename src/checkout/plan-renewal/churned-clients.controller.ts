@@ -1,4 +1,4 @@
-import { Controller, Get, Param, ParseUUIDPipe, Post, Query, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { AuthedRequest } from '../../auth/auth-request';
@@ -9,8 +9,8 @@ import { assertOn } from './plan-renewal.controller';
 
 /**
  * CHURN-BE: the coach's churned clients and Roman's win-back draft. Coach
- * only, scoped to the caller's own clients (another coach's client is a 404
- * like any client not on the list); 404 PLAN_RENEWAL_OFF, before any read,
+ * only, scoped to the caller's own clients (another coach's client, or any id
+ * not on the list, is the same 404); 404 PLAN_RENEWAL_OFF, before any read,
  * while FEATURE_PLAN_RENEWAL is off.
  */
 @ApiTags('coach')
@@ -30,7 +30,7 @@ export class ChurnedClientsController {
   @Post(':clientId/draft')
   @Roles('coach')
   @Throttle({ default: { ttl: 3_600_000, limit: 60 } })
-  draft(@Request() req: AuthedRequest, @Param('clientId', ParseUUIDPipe) clientId: string) {
+  draft(@Request() req: AuthedRequest, @Param('clientId') clientId: string) {
     assertOn();
     const forwarded = req.headers?.['x-forwarded-for'];
     const ua = req.headers?.['user-agent'];
