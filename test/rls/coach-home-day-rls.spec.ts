@@ -223,4 +223,65 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(await seen(K)).toEqual([0, 0, 0, 0, 0]);
     expect(await seen(L)).toEqual([1, 1, 1, 1, 1]);
   });
+
+  describe('fix round 1: unattended messages, goal weight once, lift identity (coach M, client D)', () => {
+    const [M, D] = [randomUUID(), randomUUID()];
+    const ids: Record<string, string> = {};
+    beforeAll(async () => {
+      await prisma.user.create({ data: { id: M, supabase_id: M, email: `homeday-${M}`, name: 'Live M', role: 'coach' } });
+      await prisma.user.create({ data: { id: D, supabase_id: D, email: `homeday-${D}`, name: 'Live D', role: 'student', coach_id: M } });
+      await prisma.coachProfile.create({ data: { user_id: M, invite_code: `hd-${M}`, timezone: 'America/Los_Angeles' } });
+      await prisma.ptmPrediction.create({ data: { user_id: D, risk_score: 0.8, success_score: 0.2, prediction_basis: 'heuristic_v1',
+        computed_at: t('2026-10-14T12:00:00Z') } });
+      // D writes twice today; only the coach welcome and a package auto message follow.
+      for (const [sender_id, at, extra] of [
+        [D, '2026-10-14T15:00:00Z', {}], [M, '2026-10-14T15:13:00Z', { automated_by: 'coach_welcome', welcome_job_id: randomUUID() }],
+        [D, '2026-10-14T16:00:00Z', {}], [M, '2026-10-14T17:00:00Z', { automated_by: 'package_message' }],
+      ] as const) {
+        await prisma.coachMessage.create({ data: { coach_id: M, client_id: D, sender_id, body: 'Live message', created_at: t(at), ...extra } });
+      }
+      // Goal 180: reached last Tuesday (179.5), back above, crosses again this week (179.8), back above.
+      await prisma.userProfile.create({ data: { user_id: D, target_weight_lbs: 180 } });
+      for (const [date, weight_lbs] of [['2026-10-01', 182], ['2026-10-06', 179.5], ['2026-10-09', 181], ['2026-10-13', 179.8], ['2026-10-14', 180.6]] as const) {
+        const w = await prisma.weightLog.create({ data: { user_id: D, date: day(date), weight_lbs, logged_at: t(`${date}T14:00:00Z`) } });
+        ids[date] = w.id;
+      }
+      // Lifts. Bench, catalog id ex-bench: 225 x 5 logged with no id as "Bench Press", 185 x 5 under the id as
+      // "Bench press", 205 x 5 this week under the id: not a best. Row: the same label under two ids; id B's
+      // 100 x 5 this week beats id B's 90 x 5, never id A's 300 x 5.
+      const lift = (date: string, sets: Array<[string, string | null, number]>) =>
+        prisma.workoutSession.create({
+          data: {
+            user_id: D, date: day(date), workout_name: 'Live lift', workout_type: 'strength', created_at: t(`${date}T18:00:00Z`),
+            exercises: { create: sets.map(([exercise_name, exercise_external_id, w]) => ({ exercise_name, exercise_external_id,
+              muscle_group: 'chest' as const, sets_completed: 1, weight_per_set: [w], reps_per_set: [5] })) },
+          },
+          include: { exercises: true },
+        });
+      await lift('2026-09-30', [['Bench Press', null, 225], ['Row', 'ex-row-a', 300]]);
+      await lift('2026-10-05', [['Bench press', 'ex-bench', 185], ['Row', 'ex-row-b', 90]]);
+      const week = await lift('2026-10-13', [['Bench press', 'ex-bench', 205], ['Row', 'ex-row-b', 100]]);
+      ids.row = week.exercises.find((e) => e.exercise_external_id === 'ex-row-b')?.id ?? '';
+    });
+
+    it('a welcome or a package message answers no one and reaches no one; a message the coach sends does', async () => {
+      expect((await home(M)).rings).toEqual(expect.objectContaining({
+        replies: { answered: 0, received: 2 }, reach_outs: { contacted: 0, goal: 1 },
+      }));
+      await prisma.coachMessage.create({ data: { coach_id: M, client_id: D, sender_id: M, body: 'Live message',
+        created_at: t('2026-10-14T18:00:00Z') } });
+      expect((await home(M)).rings).toEqual(expect.objectContaining({
+        replies: { answered: 2, received: 2 }, reach_outs: { contacted: 1, goal: 1 },
+      }));
+    });
+
+    it('goal weight is a win once: last week, not again this week; a lift is the same lift as workout history', async () => {
+      const lastWeek = await service.getOverview(M, { home: true, now: t('2026-10-07T20:00:00Z') });
+      expect(lastWeek.home?.wins.items.filter((w) => w.kind === 'goal_weight').map((w) => w.id))
+        .toEqual([`goal_weight:${ids['2026-10-06']}`]);
+      const now = await home(M);
+      expect(now.wins.items.map((w) => w.id)).toEqual([`lifting_best:${ids.row}`]);
+      expect(now.wins.items[0]).toEqual(expect.objectContaining({ exercise: 'Row', weight_lbs: 100, reps: 5 }));
+    });
+  });
 });

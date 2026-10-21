@@ -68,14 +68,14 @@ describe('MessagingService.sendAsCoach — welcome idempotency key + lease fence
         COACH,
         CLIENT,
         { body: 'Welcome in.' },
-        { welcome: { jobId: 'job-1', lease: 'lease-job-1' } },
+        { welcome: { jobId: 'job-1', lease: 'lease-job-1' }, automatedBy: 'coach_welcome' },
       );
     const first = await send();
     const once = h.fanOut();
     const second = await send();
     expect(second.id).toBe(first.id);
     expect(h.messages.rows).toHaveLength(1);
-    expect(h.messages.rows[0]).toMatchObject({ welcome_job_id: 'job-1', sender_id: COACH });
+    expect(h.messages.rows[0]).toMatchObject({ welcome_job_id: 'job-1', sender_id: COACH, automated_by: 'coach_welcome' });
     expect(h.fanOut()).toEqual(once);
     expect(once).toEqual({ pings: 1, audits: 1, analytics: 1, ptm: 2, aiBusts: 1 });
   });
@@ -103,7 +103,14 @@ describe('MessagingService.sendAsCoach — welcome idempotency key + lease fence
     await h.svc.sendAsCoach(COACH, CLIENT, { body: 'Same words.' });
     expect(h.messages.rows).toHaveLength(2);
     expect(h.messages.rows.every((r) => r.welcome_job_id === undefined)).toBe(true);
+    expect(h.messages.rows.every((r) => r.automated_by === undefined)).toBe(true);
     expect(h.fanOut().pings).toBe(2);
+  });
+
+  it('HOME-BE: a package auto message is marked automated on the ordinary insert', async () => {
+    const h = harness();
+    await h.svc.sendAsCoach(COACH, CLIENT, { body: 'Week 2 is open.' }, { automatedBy: 'package_message' });
+    expect(h.messages.rows[0]).toMatchObject({ automated_by: 'package_message', sender_id: COACH });
   });
 
   it('a unique violation on some other key is not swallowed', async () => {

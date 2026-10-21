@@ -402,7 +402,7 @@ export class CoachWelcomeService {
         job.coach_id,
         job.client_id,
         { body },
-        { welcome: { jobId: job.id, lease } },
+        { welcome: { jobId: job.id, lease }, automatedBy: 'coach_welcome' },
       );
       return this.markSent(job, lease, created.id, now);
     } catch (err) {

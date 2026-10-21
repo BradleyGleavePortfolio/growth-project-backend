@@ -80,7 +80,7 @@ describe("HOME-BE: the coach Home's day", () => {
     });
     expect(replies).toEqual({
       coach_id: 'head-1', client_id: { in: ['c1', 'c2', 'c3'] }, sender_id: { notIn: ['c1', 'c2', 'c3'] },
-      deleted_at: null, broadcast_delivery: { is: null }, created_at: { gte: TODAY_FROM, lte: NOW },
+      deleted_at: null, broadcast_delivery: { is: null }, automated_by: null, created_at: { gte: TODAY_FROM, lte: NOW },
     });
     expect(db.coachNudge.findMany.mock.calls[0][0]).toEqual(expect.objectContaining({
       where: { coach_id: { in: ['sub-1', 'head-1'] }, client_id: { in: ['c1'] }, created_at: { gte: TODAY_FROM, lte: NOW } },
@@ -93,7 +93,7 @@ describe("HOME-BE: the coach Home's day", () => {
     }));
     const [lifts, goals] = db.$queryRaw.mock.calls;
     expect(lifts.slice(1)).toEqual([['c1', 'c3'], '2026-10-12', '2026-10-14', '2025-10-13', '2026-10-12']);
-    expect(goals.slice(1)).toEqual([['c2'], '2026-10-12', '2026-10-14']);
+    expect(goals.slice(1)).toEqual([['c2'], '2026-10-12', '2026-10-14', '2025-10-13']);
   });
 
   it('a client message is answered when the coach side wrote after it today; received counts them all', async () => {

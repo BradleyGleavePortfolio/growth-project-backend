@@ -513,6 +513,7 @@ export class CommandCenterService {
     ]);
 
     // At-risk count: fetch latest prediction per user, count those with risk > 0.3
+    let atRiskCount = 0;
     let atRiskIds: string[] = [];
     const orPairs = latestPredictionGroups
       .filter((g) => g._max.computed_at != null)
@@ -521,11 +522,16 @@ export class CommandCenterService {
         computed_at: g._max.computed_at as Date,
       }));
     if (orPairs.length > 0) {
-      const latestPredictions = await this.prisma.ptmPrediction.findMany({
-        where: { OR: orPairs },
-        select: { user_id: true, risk_score: true },
-      });
-      atRiskIds = latestPredictions.filter((p) => p.risk_score > 0.3).map((p) => p.user_id);
+      const where = { OR: orPairs };
+      if (zone) {
+        // HOME-BE: Needs you needs the ids; the default read below is unchanged.
+        const latest = await this.prisma.ptmPrediction.findMany({ where, select: { user_id: true, risk_score: true } });
+        atRiskIds = latest.filter((p) => p.risk_score > 0.3).map((p) => p.user_id);
+        atRiskCount = atRiskIds.length;
+      } else {
+        const latestPredictions = await this.prisma.ptmPrediction.findMany({ where, select: { risk_score: true } });
+        atRiskCount = latestPredictions.filter((p) => p.risk_score > 0.3).length;
+      }
     }
 
     // CC-5: check_in_rate_7day is an adherence FREQUENCY, not binary
@@ -551,7 +557,7 @@ export class CommandCenterService {
       active_today: activeTodayGroups.length,
       check_in_rate_7day: Math.round(checkInRate * 100) / 100,
       open_alerts: openAlerts,
-      at_risk_count: atRiskIds.length,
+      at_risk_count: atRiskCount,
       win_streak_count: winStreakGroups.length,
       unread_messages: unreadMessages,
       pending_actions: pendingActions,

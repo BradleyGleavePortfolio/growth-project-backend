@@ -144,8 +144,12 @@ async function streakWins(prisma: PrismaService, ids: string[], from: Date, now:
 /**
  * New lifting bests this week, one per client and lift: the week's top set (the
  * heaviest weight with reps, more reps breaking a tie, as the phone's progress
- * screen ranks it) beats the client's top set of the same lift name in the
+ * screen ranks it) beats the client's top set of the same lift in the
  * LIFT_HISTORY_WEEKS before this week. A lift with no earlier set is not a best.
+ * The same lift is workout history's (WorkoutService.getExerciseHistory): sets
+ * logged under a catalog id match that id, plus that lift's sets logged with no
+ * id by name, case-insensitive; a set with no id matches by name. Two different
+ * catalog ids never merge because their labels match.
  * One pass over this week's sets, one over the history of only the clients and
  * lifts trained this week (WorkoutSession(user_id, date), ExerciseSet(workout_id)).
  */
@@ -161,20 +165,26 @@ async function liftingWins(
     Array<{ id: string; user_id: string; exercise_name: string; w: number; r: number; at: Date }>
   >`
     WITH week AS (
-      SELECT DISTINCT ON (ws."user_id", es."exercise_name")
-             es."id", ws."user_id", es."exercise_name", t.w, t.r, ws."created_at" AS at
+      SELECT DISTINCT ON (ws."user_id", g.lift)
+             es."id", ws."user_id", es."exercise_name", es."exercise_external_id" AS xid,
+             lower(es."exercise_name") AS lname, t.w, t.r, ws."created_at" AS at
         FROM "WorkoutSession" ws
         JOIN "ExerciseSet" es ON es."workout_id" = ws."id"
+        CROSS JOIN LATERAL (
+          SELECT COALESCE('id:' || es."exercise_external_id", 'name:' || lower(es."exercise_name")) AS lift
+        ) g
         CROSS JOIN LATERAL (
           SELECT u.w, u.r FROM unnest(es."weight_per_set", es."reps_per_set") AS u(w, r)
            WHERE u.w > 0 AND u.r > 0 ORDER BY u.w DESC, u.r DESC LIMIT 1
         ) t
        WHERE ws."user_id" = ANY(${ids}::text[])
          AND ws."date" >= ${weekStart}::date AND ws."date" <= ${today}::date
-       ORDER BY ws."user_id", es."exercise_name", t.w DESC, t.r DESC, ws."created_at" ASC, es."id" ASC
+       ORDER BY ws."user_id", g.lift, t.w DESC, t.r DESC, ws."created_at" ASC, es."id" ASC
     ),
-    before AS (
-      SELECT DISTINCT ON (ws."user_id", es."exercise_name") ws."user_id", es."exercise_name", t.w, t.r
+    -- The earlier top set per (client, catalog id or none, lower-cased name).
+    hist AS MATERIALIZED (
+      SELECT DISTINCT ON (ws."user_id", es."exercise_external_id", lower(es."exercise_name"))
+             ws."user_id", es."exercise_external_id" AS xid, lower(es."exercise_name") AS lname, t.w, t.r
         FROM "WorkoutSession" ws
         JOIN "ExerciseSet" es ON es."workout_id" = ws."id"
         CROSS JOIN LATERAL (
@@ -182,13 +192,20 @@ async function liftingWins(
            WHERE u.w > 0 AND u.r > 0 ORDER BY u.w DESC, u.r DESC LIMIT 1
         ) t
        WHERE ws."user_id" IN (SELECT "user_id" FROM week)
-         AND es."exercise_name" IN (SELECT "exercise_name" FROM week)
+         AND (es."exercise_external_id" IN (SELECT xid FROM week)
+              OR lower(es."exercise_name") IN (SELECT lname FROM week))
          AND ws."date" >= ${historyFrom}::date AND ws."date" < ${weekStart}::date
-       ORDER BY ws."user_id", es."exercise_name", t.w DESC, t.r DESC
+       ORDER BY ws."user_id", es."exercise_external_id", lower(es."exercise_name"), t.w DESC, t.r DESC
     )
     SELECT k."id", k."user_id", k."exercise_name", k.w, k.r, k.at
       FROM week k
-      JOIN before b ON b."user_id" = k."user_id" AND b."exercise_name" = k."exercise_name"
+      CROSS JOIN LATERAL (
+        SELECT h.w, h.r FROM hist h
+         WHERE h."user_id" = k."user_id"
+           AND CASE WHEN k.xid IS NULL THEN h.lname = k.lname
+                    ELSE h.xid = k.xid OR (h.xid IS NULL AND h.lname = k.lname) END
+         ORDER BY h.w DESC, h.r DESC LIMIT 1
+      ) b
      WHERE k.w > b.w OR (k.w = b.w AND k.r > b.r)`;
   return rows.map((r) => ({
     id: `lifting_best:${r.id}`,
@@ -205,7 +222,9 @@ async function liftingWins(
  * Goal weight reached this week: the client's first weigh-in this week that
  * meets or crosses UserProfile.target_weight_lbs from their weigh-in before it
  * (from either side, so losing and gaining goals both count). A client with no
- * earlier weigh-in, or already at the goal, has no win.
+ * earlier weigh-in, or already at the goal, has no win. A client reaches it
+ * once: no win when any weigh-in in the LIFT_HISTORY_WEEKS before was already
+ * at or past the goal, so scale swings around it do not repeat the win.
  */
 async function goalWins(
   prisma: PrismaService,
@@ -214,6 +233,7 @@ async function goalWins(
   today: string,
 ): Promise<WinFact[]> {
   if (ids.length === 0) return [];
+  const historyFrom = daysBefore(weekStart, LIFT_HISTORY_WEEKS * 7);
   const rows = await prisma.$queryRaw<
     Array<{ id: string; user_id: string; weight_lbs: number; goal: number; logged_at: Date }>
   >`
@@ -231,6 +251,14 @@ async function goalWins(
        AND p."target_weight_lbs" IS NOT NULL
        AND prev."weight_lbs" <> p."target_weight_lbs"
        AND (w."weight_lbs" - p."target_weight_lbs") * (prev."weight_lbs" - p."target_weight_lbs") <= 0
+       -- Reached once: no earlier weigh-in in the window was already at or past the goal.
+       AND NOT EXISTS (
+         SELECT 1 FROM "WeightLog" e2
+          WHERE e2."user_id" = w."user_id"
+            AND e2."date" >= ${historyFrom}::date
+            AND (e2."date", e2."logged_at", e2."id") < (w."date", w."logged_at", w."id")
+            AND (e2."weight_lbs" - p."target_weight_lbs") * (prev."weight_lbs" - p."target_weight_lbs") <= 0
+       )
      ORDER BY w."user_id", w."date", w."logged_at", w."id"`;
   return rows.map((r) => ({
     id: `goal_weight:${r.id}`,
@@ -298,9 +326,11 @@ async function contactRings(
       },
       select: { client_id: true, created_at: true },
     }),
-    // The coach side's latest message today per thread (the head, a sub-coach,
-    // or an approved Roman draft, which is sent as the coach), broadcast
-    // copies excluded: one message to many clients answers no one.
+    // The coach side's latest message today per thread that a person sent (the
+    // head, a sub-coach, or an approved Roman draft, which is sent as the
+    // coach). Filtered before the latest is chosen: broadcast copies (one
+    // message to many clients answers no one) and automated messages (the
+    // coach welcome, package auto messages: CoachMessage.automated_by).
     prisma.coachMessage.findMany({
       where: {
         coach_id: ownerCoachId,
@@ -308,6 +338,7 @@ async function contactRings(
         sender_id: { notIn: clientIds },
         deleted_at: null,
         broadcast_delivery: { is: null },
+        automated_by: null,
         created_at: today,
       },
       orderBy: [{ client_id: 'asc' }, { created_at: 'desc' }],
