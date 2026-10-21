@@ -96,11 +96,17 @@ export class CommandCenterController {
     description:
       'Returns roster size, active-today count, 7d check-in rate, open alert ' +
       'count, at-risk count, win-streak count, and unread message count. ' +
-      'Always scoped to the calling coach.',
+      'Always scoped to the calling coach. With include=home it also returns ' +
+      "`home`: this week's client wins and today's Check-ins, Replies and " +
+      "Reach-outs counts, on the coach's own date (HOME-BE).",
   })
   async getOverview(
     @Request() req: AuthedRequest,
+    @Query('include') include?: string,
   ): Promise<CommandCenterOverview> {
+    if (typeof include === 'string' && include.split(',').includes('home')) {
+      return this.commandCenter.getOverview(req.user.id, { home: true });
+    }
     return this.commandCenter.getOverview(req.user.id);
   }
 
