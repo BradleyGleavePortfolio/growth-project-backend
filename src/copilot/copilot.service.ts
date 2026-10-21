@@ -2,7 +2,7 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import type { AiActionDraft } from '@prisma/client';
 import { AiConsentRequiredException } from '../ai-egress/ai-consent-required.exception';
 import { AiEgressService } from '../ai-egress/ai-egress.service';
-import { CLIENT_PATH_CHANGE, PATH_CHANGE_PENDING_MS } from '../ai/gateway/materialisers/client-path-change.materialiser';
+import { CLIENT_PATH_CHANGE, PATH_CHANGE_PENDING_MS, pathChangeLapsed } from '../ai/gateway/materialisers/client-path-change.materialiser';
 import { PrismaService } from '../prisma.service';
 import { assertRomanClient } from '../roman/roman-requires-coach';
 
@@ -22,7 +22,8 @@ export interface CopilotSuggestionView {
 
 const view = (d: AiActionDraft): CopilotSuggestionView => ({
   id: d.id,
-  status: d.status,
+  // #CP-LAPSE: a sent suggestion the coach did not decide within PATH_CHANGE_PENDING_MS reads as expired.
+  status: pathChangeLapsed(d) ? 'expired' : d.status,
   change: d.payload,
   reason: d.rationale,
   note: d.decision_note,

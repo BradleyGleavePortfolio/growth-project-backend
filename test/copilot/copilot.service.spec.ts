@@ -7,17 +7,18 @@ import { ROMAN_REQUIRES_COACH } from '../../src/roman/roman-requires-coach';
 import { egressWithGrants, fakeOf } from '../ai-egress/ai-egress.fakes';
 
 const CLIENT = { id: 'client-a', role: 'student', coach_id: 'coach-k' };
-const row = (status: string) => ({
-  id: 'd1', status, payload: { kind: 'move_session' }, rationale: 'Thursday is your busiest day.', decision_note: null,
-  created_at: new Date('2026-10-20T16:41:00Z'), decided_at: null,
+const DAY = 86_400_000;
+const row = (status: string, sentDaysAgo = 0.1) => ({
+  id: 'd1', capability: 'client_path_change', status, payload: { kind: 'move_session' }, rationale: 'Thursday is your busiest day.',
+  decision_note: null, created_at: new Date(Date.now() - sentDaysAgo * DAY), decided_at: null,
 });
 
-function build(opts: { status?: string | null; granted?: boolean } = {}) {
+function build(opts: { status?: string | null; granted?: boolean; recent?: Array<ReturnType<typeof row>> } = {}) {
   const prisma = {
     aiActionDraft: {
       updateMany: jest.fn(async (_a: { where: Record<string, unknown>; data: Record<string, unknown> }) => ({ count: opts.status === 'suggested' ? 0 : 1 })),
       findFirst: jest.fn(async () => (opts.status === null ? null : row(opts.status ?? 'pending'))),
-      findMany: jest.fn(async () => [row('approved')]),
+      findMany: jest.fn(async () => opts.recent ?? [row('approved')]),
       count: jest.fn(async () => 4),
     },
     romanUsageDaily: { upsert: jest.fn() },
@@ -60,6 +61,11 @@ describe('GET /client/copilot', () => {
     const where = { capability: 'client_path_change', requester_id: 'client-a', subject_user_id: 'client-a', status: { in: ['pending', 'approved', 'rejected', 'expired'] } };
     expect(prisma.aiActionDraft.findMany).toHaveBeenCalledWith({ where, orderBy: [{ created_at: 'desc' }, { id: 'desc' }], take: 3 });
     expect(prisma.aiActionDraft.count).toHaveBeenCalledWith({ where });
+  });
+  it('#CP-LAPSE: a sent suggestion the coach left for 7 days reads as expired; a fresh one is still pending', async () => {
+    const { svc } = build({ recent: [row('pending', 0.5), row('pending', 7.01), row('approved', 9)] });
+    const { suggestions } = await svc.recent('client-a');
+    expect(suggestions.map((s) => s.status)).toEqual(['pending', 'expired', 'approved']);
   });
 });
 

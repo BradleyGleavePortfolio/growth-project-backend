@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -21,7 +22,9 @@ import { emptyPlanSnapshot, snapshotFromRevisionJson } from './materialisers/__s
 import { WeekLimits, subsetLimitBreach } from './workout-builder/subset-bounds';
 import { loadWeekOtherSetsByMuscle, weeklySetsCap } from './workout-builder/week-limits';
 import { planStaysInTenantWhere } from '../../workout-builder/tenant-clients';
-import { CLIENT_PATH_CHANGE, editPathChange, pathChangeNote } from './materialisers/client-path-change.materialiser';
+import {
+  CLIENT_PATH_CHANGE, ClientPathChangeMaterializer, notLapsedWhere, pathChangeLapsed, pathChangeNote,
+} from './materialisers/client-path-change.materialiser';
 
 // Human-approval workflow for consequential AI outputs. AiActionDraft
 // rows land here as `pending`; an authorized human (coach for own-tenant
@@ -144,7 +147,8 @@ export class AiApprovalService {
    */
   async pageQueue(scope: { tenantCoachId?: string; limit: number; after?: string }) {
     const coachId = scope.tenantCoachId;
-    const where: Prisma.AiActionDraftWhereInput = { status: 'pending' };
+    // #CP-LAPSE: a Copilot change past its wait is gone from the queue and from the total.
+    const where: Prisma.AiActionDraftWhereInput = { status: 'pending', AND: [notLapsedWhere()] };
     if (coachId) {
       const roster = await this.prisma.user.findMany({ where: { coach_id: coachId }, select: { id: true } });
       where.tenant_coach_id = coachId;
@@ -239,11 +243,23 @@ export class AiApprovalService {
     return otherHumans === 0;
   }
 
+  /** The decider is the coach of the draft's tenant and the client is on his roster now. */
+  private async isCurrentCoach(draft: { tenant_coach_id: string | null; subject_user_id: string | null }, decider: { id: string; role: string }) {
+    if (decider.role !== 'coach' || draft.tenant_coach_id !== decider.id || !draft.subject_user_id) return false;
+    const subject = await this.prisma.user.findUnique({ where: { id: draft.subject_user_id }, select: { coach_id: true } });
+    return subject?.coach_id === decider.id;
+  }
+
   async decide(input: DecideInput) {
     const draft = await this.prisma.aiActionDraft.findUnique({
       where: { id: input.draftId },
     });
     if (!draft) throw new NotFoundException('AI draft not found');
+    // COPILOT-BE: a client's Copilot change is invisible to every coach but the client's current one: 404, as for an
+    // unknown id (the roster checks below still run).
+    if (draft.capability === CLIENT_PATH_CHANGE && input.decider.role !== 'owner' && !(await this.isCurrentCoach(draft, input.decider))) {
+      throw new NotFoundException('AI draft not found');
+    }
     if (draft.status !== 'pending') {
       // Idempotency: a second approve/reject must not silently overwrite
       // the first decision. Surface a 403 so callers can refresh state.
@@ -306,6 +322,12 @@ export class AiApprovalService {
       throw new ForbiddenException('A draft cannot be decided by its requester');
     }
 
+    // #CP-LAPSE: a Copilot change the coach did not decide in time expires (the client sees "expired"); nothing applies.
+    if (pathChangeLapsed(draft)) {
+      await this.prisma.aiActionDraft.updateMany({ where: { id: draft.id, status: 'pending', materialised_at: null }, data: { status: 'expired' } });
+      throw new ConflictException({ code: 'COPILOT_SUGGESTION_EXPIRED', message: 'This suggestion has expired.' });
+    }
+
     const status = input.decision;
     // COPILOT-BE (CP-NOTE): a client's Copilot change carries at most one short line, which the client sees.
     const note = draft.capability === CLIENT_PATH_CHANGE ? pathChangeNote(input.note) : input.note ?? null;
@@ -347,7 +369,12 @@ export class AiApprovalService {
       toMaterialise = { ...draft, payload: appliedPayload };
     }
     if (input.editedPayload !== undefined) {
-      appliedPayload = { ...editPathChange(draft.payload, input.editedPayload) };
+      // The coach's Edit: his one field on a baseline refreshed to the live plan, re-checked (owner, consent, bounds).
+      const editor = this.materialisers?.resolve(draft.capability);
+      if (!(editor instanceof ClientPathChangeMaterializer)) {
+        throw new BadRequestException({ code: 'PAYLOAD_EDIT_UNSUPPORTED', message: 'This draft cannot be edited.' });
+      }
+      appliedPayload = { ...(await editor.edit(draft, input.editedPayload)) };
       toMaterialise = { ...draft, payload: appliedPayload };
     }
 
@@ -389,7 +416,10 @@ export class AiApprovalService {
           // accepted; the decide-gate below distinguishes them at the
           // ref level, not via a coarse confirmed-or-not flag.
         } catch (err) {
-          if (err instanceof ConflictException) {
+          // COPILOT-BE: a Copilot change's expected refusals (consent off 403, not his client 404, bad change and the
+          // calorie floor / hold 400s, plan changed 409) reach the phone as they are; nothing was applied.
+          const refusal = draft.capability === CLIENT_PATH_CHANGE && err instanceof HttpException && err.getStatus() < 500;
+          if (err instanceof ConflictException || refusal) {
             // Don't audit-log the race state as a materialisation failure
             // — it's a benign concurrency outcome and the winner will
             // record the success. Re-throw so the caller sees a 409.
