@@ -362,12 +362,14 @@ export class CoachMediaService {
    * + asset; if none, refuse with 404. Asset MUST be `ready`.
    *
    * MEDIA-ARCHIVE-BUYER (#COACH-GONE-FILES): an archived asset still opens
-   * for a buyer whose active grant is older than the archive. softDelete
-   * removes the stored object only when no unrevoked grant exists, a grant
-   * is never un-revoked, and MediaAssetResolver mints none on an archived
-   * row, so such a grant proves the object was kept. Any other archived
-   * case (no grant, a revoked one, one minted after the archive) is the
-   * same 404 as an unknown id.
+   * for a buyer whose active grant is older than the archive.
+   * MEDIA-ARCHIVE-DRIP: or whose grant was minted by a drop written before
+   * the archive. softDelete removes the stored object only when no
+   * unrevoked grant and no unshipped drop exists, a grant is never
+   * un-revoked, and MediaAssetResolver mints on an archived row only for a
+   * drop written before the archive, so either age proves the object was
+   * kept. Any other archived case (no grant, a revoked one, one minted
+   * after the archive by a later drop) is the same 404 as an unknown id.
    *
    * This is what the buyer-side delivery endpoint will call (mobile
    * download/playback request); kept on CoachMediaService so all signed-
@@ -405,11 +407,7 @@ export class CoachMediaService {
         },
       },
     });
-    if (
-      !grant ||
-      grant.revoked_at ||
-      (row.archived_at && grant.granted_at > row.archived_at)
-    ) {
+    if (!grant || grant.revoked_at) {
       throw notFound();
     }
     // Audit P2-4 fix: tenant double-check at URL-ISSUANCE time. The
@@ -421,18 +419,24 @@ export class CoachMediaService {
     // and assert client_purchase.coach_user_id === asset.coach_id.
     // MediaAssetResolver already enforces tenant on grant CREATION; this
     // is defence-in-depth on the read path.
-    if (grant.granted_via_drop_id) {
-      const drop = await this.prisma.scheduledDrop.findUnique({
-        where: { id: grant.granted_via_drop_id },
-        select: { client_purchase: { select: { coach_user_id: true } } },
-      });
-      const purchaseCoachId = drop?.client_purchase?.coach_user_id ?? null;
-      if (purchaseCoachId && purchaseCoachId !== row.coach_id) {
-        this.logger.warn(
-          `Tenant mismatch on buyer signed-URL: grant ${grant.id} purchase.coach=${purchaseCoachId} asset.coach=${row.coach_id}`,
-        );
-        throw notFound();
-      }
+    const drop = grant.granted_via_drop_id
+      ? await this.prisma.scheduledDrop.findUnique({
+          where: { id: grant.granted_via_drop_id },
+          select: { created_at: true, client_purchase: { select: { coach_user_id: true } } },
+        })
+      : null;
+    const purchaseCoachId = drop?.client_purchase?.coach_user_id ?? null;
+    if (purchaseCoachId && purchaseCoachId !== row.coach_id) {
+      this.logger.warn(
+        `Tenant mismatch on buyer signed-URL: grant ${grant.id} purchase.coach=${purchaseCoachId} asset.coach=${row.coach_id}`,
+      );
+      throw notFound();
+    }
+    // An archived row opens only when the buyer was owed it before the archive: the drop that
+    // minted the grant (written before the grant) or else the grant itself is older than it.
+    const owedSince = drop?.created_at ?? grant.granted_at;
+    if (row.archived_at && owedSince > row.archived_at) {
+      throw notFound();
     }
     return this.mintSignedUrl(row, options);
   }
@@ -482,12 +486,13 @@ export class CoachMediaService {
    * Soft-delete (archive) a CoachMediaAsset.
    *
    * Safety rule (mirrors PR-8's snapshot-at-purchase principle):
-   *   - If ANY ClientAssetGrant references this asset, the underlying
+   *   - If ANY ClientAssetGrant, or any buyer drop not shipped yet
+   *     (MEDIA-ARCHIVE-DRIP), references this asset, the underlying
    *     storage object STAYS in place (so buyer downloads keep working)
    *     and only the row is archived. Buyer SignedUrl gating still
    *     allows the buyer to download via their grant.
-   *   - If NO grants exist AND no package contents reference it, we
-   *     archive the row AND delete the underlying object.
+   *   - If NO grants or unshipped drops exist AND no package contents
+   *     reference it, we archive the row AND delete the underlying object.
    *   - If contents reference it but no grants, we BLOCK the delete and
    *     instruct the coach to detach it first (a coach removing a row
    *     from their library while it's wired into a published package
@@ -558,12 +563,12 @@ export class CoachMediaService {
       if (fresh.archived_at) {
         return {
           fresh,
-          grantCount: 0,
+          keepers: 0,
           contentCount: 0,
           alreadyArchived: true as const,
         };
       }
-      const [grantCount, contentCount, lessonCount] = await Promise.all([
+      const [grantCount, contentCount, lessonCount, owedDrops] = await Promise.all([
         tx.clientAssetGrant.count({
           where: { media_asset_id: mediaAssetId, revoked_at: null },
         }),
@@ -578,6 +583,19 @@ export class CoachMediaService {
         // (ClientCoursesService.video), so it blocks archive like package content.
         tx.lesson.count({
           where: { media_asset_id: mediaAssetId, module_id: { not: null } },
+        }),
+        // MEDIA-ARCHIVE-DRIP: a buyer's drop that has not shipped yet (waiting, in flight, or held
+        // by a payment failure that restoreAfterPaymentRecovered may put back) keeps the file too;
+        // MediaAssetResolver serves the archived row to a drop written before the archive.
+        tx.scheduledDrop.count({
+          where: {
+            asset_id: mediaAssetId,
+            asset_type: { in: ['pdf', 'video'] },
+            OR: [
+              { status: { in: ['pending', 'due', 'dispatching'] } },
+              { status: 'canceled', failure_reason: 'canceled:payment_failed' },
+            ],
+          },
         }),
       ]);
       if (contentCount > 0 || lessonCount > 0) {
@@ -595,7 +613,7 @@ export class CoachMediaService {
       });
       return {
         fresh: archived,
-        grantCount,
+        keepers: grantCount + owedDrops,
         contentCount,
         alreadyArchived: false as const,
       };
@@ -610,7 +628,7 @@ export class CoachMediaService {
     }
 
     let objectDeleted = false;
-    if (result.grantCount === 0 && row.kind === 'pdf') {
+    if (result.keepers === 0 && row.kind === 'pdf') {
       // Only PDFs go through StorageProvider.delete; videos live in Mux.
       // For Mux we leave the asset in Mux on archive (the playback id is
       // already on the row and a granted buyer may still hold a URL); a
