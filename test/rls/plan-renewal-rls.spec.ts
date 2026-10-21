@@ -156,6 +156,8 @@ const DAY = PLAN_RENEWAL_DAY_MS;
     expect([pushKeys('A'), pushKeys('B'), pushKeys('C')]).toEqual([
       [`plan_renewal:${(await row('A'))!.id}:0`], [`plan_renewal:${(await row('B'))!.id}:0`], [`plan_renewal:${(await row('C'))!.id}:0`]]);
     expect(pushes.find((p) => p.user_id === u.A)).toMatchObject({ kind: 'plan_renewal', deep_link: 'tgp://home' });
+    // Never urgent, so quiet hours always apply (test/plan-renewal.spec.ts).
+    expect(notifications.sendPush.mock.calls.some(([p]) => 'urgent' in p)).toBe(false);
     expect(messagesTo('A')).toEqual([
       'Hi Ann, your plan with me has ended. If you want to keep going, you can pick a new plan in the app. Message me here with any questions.']);
     // Coach L turned renewal messages off: C gets the pop-up and the push, no message.

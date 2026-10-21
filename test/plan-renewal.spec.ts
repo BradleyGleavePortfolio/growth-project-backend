@@ -25,6 +25,7 @@ import { planEndedAt, type PlanRenewalService } from '../src/checkout/plan-renew
 import { NO_RENEWAL } from '../src/checkout/plan-renewal/plan-renewal.state';
 import { NotificationKind } from '../src/notifications/notification-kind';
 import { lockScreenCopy } from '../src/notifications/push/lock-screen-copy';
+import { quietHoursFor } from '../src/notifications/push/push-quiet-hours';
 import { notificationPrefsPrefix, pushAllowedByPreferences } from '../src/notifications/push/push-preferences';
 import { pushTapData } from '../src/notifications/notifications.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
@@ -102,6 +103,14 @@ describe('RENEWAL-BE app notification', () => {
       actionScreen: 'NotificationCenter',
       deepLink: 'tgp://home',
     });
+  });
+
+  it('quiet hours: a renewal push due at 23:00 New York waits for 08:00 there; it is never urgent', () => {
+    const late = new Date('2026-10-22T03:00:00Z'); // 23:00 EDT
+    expect(quietHoursFor({ kind: NotificationKind.PLAN_RENEWAL, timeZone: 'America/New_York', now: late })).toEqual({
+      deliverAt: new Date('2026-10-22T12:00:00Z'), deferred: true, reason: 'quiet_hours',
+    });
+    expect(quietHoursFor({ kind: NotificationKind.PLAN_RENEWAL, timeZone: 'Asia/Tokyo', now: late }).deferred).toBe(false);
   });
 
   it('the client\'s "plan renewal reminders" switch (default on) and the global mute both stop it', () => {
