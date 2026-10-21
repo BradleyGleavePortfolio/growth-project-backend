@@ -18,7 +18,8 @@ export class PlanRenewalSettingsDto {
   messages_enabled!: boolean;
 }
 
-function assertOn(): void {
+/** Every FEATURE_PLAN_RENEWAL route answers this while the flag is off (CHURN-BE's routes too). */
+export function assertOn(): void {
   if (!isPlanRenewalEnabled()) {
     throw new NotFoundException({ code: 'PLAN_RENEWAL_OFF', error: 'PLAN_RENEWAL_OFF', message: 'Plan renewal is not available.' });
   }

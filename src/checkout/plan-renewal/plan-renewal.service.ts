@@ -27,7 +27,7 @@ import {
   planRenewalPopupStepAt,
   planRenewalStepFor,
 } from './plan-renewal.cadence';
-import { loadPlanRenewal, planRenewalBlock, PlanRenewalView } from './plan-renewal.state';
+import { endedPlanWhere, loadPlanRenewal, planRenewalBlock, PlanRenewalView } from './plan-renewal.state';
 
 const BATCH = 500;
 /** A claimed coach message is retried after this if its worker died mid-send. */
@@ -101,13 +101,7 @@ export class PlanRenewalService {
   private async openEnded(now: Date): Promise<number> {
     const since = new Date(now.getTime() - PLAN_RENEWAL_OPEN_WINDOW_MS);
     const ended = await this.prisma.clientPurchase.findMany({
-      where: {
-        plan_renewal: { is: null },
-        OR: [
-          { billing_type: 'one_time', status: { in: ['paid', 'active'] }, entitlement_active: true, access_expires_at: { gt: since, lte: now } },
-          { billing_type: 'recurring', status: 'canceled', OR: [{ canceled_at: { gt: since } }, { current_period_end: { gt: since } }] },
-        ],
-      },
+      where: { plan_renewal: { is: null }, ...endedPlanWhere(since, now) },
       select: { id: true, client_user_id: true, coach_user_id: true, billing_type: true, access_expires_at: true, canceled_at: true, current_period_end: true },
       take: BATCH,
     });

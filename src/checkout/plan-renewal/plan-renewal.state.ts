@@ -42,9 +42,22 @@ export type PlanRenewalBlock =
   | 'failed_payment';
 
 /**
+ * The purchases whose plan may have ended normally after `since`: the sweep's
+ * and the coach's churned list's one candidate rule (planEndedAt says when it
+ * ended; planRenewalBlock says whether it still counts).
+ */
+export const endedPlanWhere = (since: Date, now: Date): Prisma.ClientPurchaseWhereInput => ({
+  OR: [
+    { billing_type: 'one_time', status: { in: ['paid', 'active'] }, entitlement_active: true, access_expires_at: { gt: since, lte: now } },
+    { billing_type: 'recurring', status: 'canceled', OR: [{ canceled_at: { gt: since } }, { current_period_end: { gt: since } }] },
+  ],
+});
+
+/**
  * Why a renewal sequence for this client and coach must not run (or must stop
  * at once), or null when it may. One rule for opening, every step, every coach
- * message, the push worker's send-time check and the entitlement answer.
+ * message, the push worker's send-time check, the entitlement answer and the
+ * coach's churned list (CHURN-BE).
  */
 export async function planRenewalBlock(
   db: Db,
