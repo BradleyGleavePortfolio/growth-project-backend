@@ -262,7 +262,7 @@ describe('C-6: no barred word in any server-side text a model or person reads', 
     }], true)).toEqual([]);
   });
 
-  it.each<ClientAiCopyFamily>(['pre57c', 'coached', 'crisis', 'coach_free'])(
+  it.each<ClientAiCopyFamily>(['pre57c', 'coached', 'crisis', 'coach_free', 'health', 'health_crisis'])(
     'every server-offered AI consent scope renders without the word: %s',
     (family) => {
       for (const render of [clientAiConsentCopy, clientAiConsentV5Copy]) {

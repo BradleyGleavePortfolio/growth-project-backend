@@ -309,7 +309,8 @@ function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
   const actionCount =
     ctx.weight_logs_flagged +
     ctx.unread_messages +
-    (ctx.missed_checkin > 0 ? 1 : 0);
+    (ctx.missed_checkin > 0 ? 1 : 0) +
+    newRowCount(ctx);
 
   const handoffHint =
     actionCount === 0
@@ -330,6 +331,8 @@ function buildSoloOrSubCoachPrompt(ctx: BriefContext): string {
     `Workouts completed today: ${ctx.workouts_completed_today}`,
     `Unread messages: ${ctx.unread_messages}`,
     `Weight log flags (large delta): ${ctx.weight_logs_flagged}`,
+    `Check-ins waiting for the coach's review (last 24 h): ${ctx.checkins_to_review ?? 0}`,
+    `Clients who joined in the last 24 h: ${ctx.joined_last_24h ?? 0}`,
     ...(ctx.not_shared ? [`Not shared with the coach, so left out of the counts above: check-ins from ${ctx.not_shared.check_ins}, weigh-ins from ${ctx.not_shared.weigh_ins}, workouts from ${ctx.not_shared.workouts} of the ${ctx.roster_size} clients. Do not state roster-wide totals for these.`] : []),
     ``,
     `--- PAYMENTS / TGP HANDLING ---`,
@@ -408,8 +411,8 @@ export function buildFallbackNarrative(
 
   // Trim to 5 and pad to 3 just in case — the contract requires 3–5.
   while (sentences.length > 5) sentences.pop();
-  while (sentences.length < 3) {
-    sentences.push('The full details are below.');
+  while (sentences.length < 3 && !sentences.includes(FULL_DETAILS)) {
+    sentences.push(FULL_DETAILS);
   }
 
   let narrative = sentences.join(' ');
@@ -426,6 +429,13 @@ export function buildFallbackNarrative(
     narrative = narrative.slice(0, BRIEF_MAX_NARRATIVE_CHARS);
   }
   return narrative;
+}
+
+const FULL_DETAILS = 'The full details are below.';
+
+// ROMAN-EXTRAS: the checkin_review + client_joined rows this brief lists.
+function newRowCount(ctx: BriefContext): number {
+  return (ctx.checkins_to_review ?? 0) + (ctx.joined_last_24h ?? 0);
 }
 
 // COACH-AI-GATE-130: how many roster clients share check-ins with the coach.
@@ -490,8 +500,10 @@ function buildSoloOrSubCoachFallbackSentences(ctx: BriefContext): string[] {
     fragments.push(
       `${ctx.weight_logs_flagged} weight ${plural(ctx.weight_logs_flagged, 'change', 'changes')} to review`,
     );
+  // ROMAN-EXTRAS B1: check-in reviews and new clients are rows below, so the
+  // all-clear would be false; point at the rows with the existing line.
   if (fragments.length === 0) {
-    sentences.push('Nothing else needs your attention right now.');
+    sentences.push(newRowCount(ctx) > 0 ? FULL_DETAILS : 'Nothing else needs your attention right now.');
   } else {
     sentences.push(`Waiting below: ${fragments.join(', ')}.`);
   }
@@ -638,6 +650,10 @@ export function normalizeClaudeOutput(raw: string): string {
   return text.trim();
 }
 
+// ROMAN-EXTRAS R1 / R2 rows, read by aggregateSoloContext.
+type ReviewCheckIn = { id: string; client_id: string; client_name: string };
+type JoinedClient = { client_id: string; client_name: string; joined_at: Date; joined_today: boolean };
+
 // Deterministic — NOT AI-generated. Sorted ascending by priority.
 // S-BRIEF-124 (B-398-1): no workout-approval item. Nothing in the app
 // approves a workout, so the brief never asks for it.
@@ -653,6 +669,8 @@ export function buildActionItems(args: {
     delta_lbs: number;
   }>;
   missingCheckinClients: Array<{ id: string; name: string }>;
+  reviewCheckIns?: ReviewCheckIn[];
+  joinedClients?: JoinedClient[];
 }): ActionItem[] {
   const items: ActionItem[] = [];
 
@@ -686,6 +704,30 @@ export function buildActionItems(args: {
       detail: 'Has not checked in today',
       priority: 3,
       deep_link: `tgp://client/${c.id}`,
+    });
+  }
+
+  for (const c of args.reviewCheckIns ?? []) {
+    items.push({
+      type: 'checkin_review',
+      client_id: c.client_id,
+      client_name: c.client_name,
+      check_in_id: c.id,
+      detail: 'Check-in needs review',
+      priority: 2,
+      deep_link: `tgp://client/${c.client_id}`,
+    });
+  }
+
+  for (const j of args.joinedClients ?? []) {
+    items.push({
+      type: 'client_joined',
+      client_id: j.client_id,
+      client_name: j.client_name,
+      joined_at: j.joined_at.toISOString(),
+      detail: j.joined_today ? 'Joined today' : 'Joined yesterday',
+      priority: 1,
+      deep_link: `tgp://messages/${j.client_id}`,
     });
   }
 
@@ -888,11 +930,17 @@ export class CoachBriefService {
       delta_lbs: number;
     }>;
     missingCheckinClients: Array<{ id: string; name: string }>;
+    reviewCheckIns: ReviewCheckIn[];
+    joinedClients: JoinedClient[];
   }> {
     const briefDateStart = startOfDayInTz(briefDate, timezone);
     const briefDateEnd = endOfDayInTz(briefDate, timezone);
     const briefDateOnly = new Date(`${briefDate}T00:00:00.000Z`); // CheckIn.date is a Postgres DATE, no tz
     const sevenDaysOut = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    // ROMAN-EXTRAS: both new items are this coach's own (the coach the client
+    // joined and checks in with). A sub-coach's clients are the head coach's.
+    const own = briefMode !== 'sub_coach';
 
     // Coach metadata — needed first because Claude prompts use the name.
     const coachRow = await this.prisma.user.findUnique({
@@ -924,6 +972,8 @@ export class CoachBriefService {
         unreadThreads: [],
         flaggedWeightLogs: [],
         missingCheckinClients: [],
+        reviewCheckIns: [],
+        joinedClients: [],
       };
     }
 
@@ -946,6 +996,8 @@ export class CoachBriefService {
       flaggedWeightRaw,
       unreadMessagesRaw,
       missingCheckinRaw,
+      reviewRaw,
+      joinedRaw,
     ] = await Promise.all([
       this.prisma.checkIn.findMany({
         where: { user_id: { in: checkInIds }, date: briefDateOnly },
@@ -1061,6 +1113,48 @@ export class CoachBriefService {
         select: { id: true, name: true },
         take: 50,
       }),
+      // R1: check-ins from the last 24 h not reviewed yet, logged with this
+      // coach, from clients still theirs who share check-ins (checkInIds).
+      // One row per client (the newest), even when the window spans two days.
+      own
+        ? this.prisma.checkIn.findMany({
+            where: {
+              user_id: { in: checkInIds },
+              coach_id: coachId,
+              reviewed_by_coach: false,
+              logged_at: { gte: dayAgo },
+            },
+            select: { id: true, user_id: true, user: { select: { name: true } } },
+            orderBy: { logged_at: 'desc' },
+            distinct: ['user_id'],
+            take: 50,
+          })
+        : [],
+      // R2: clients still linked to this coach, consultation finished, who
+      // joined in the last 24 h: the consultation finish or the join to this
+      // coach (User.coach_joined_at, set by the database on every attach or
+      // move to this coach) is
+      // inside the window.
+      own
+        ? this.prisma.user.findMany({
+            where: {
+              id: { in: clientIds },
+              coach_id: coachId,
+              onboarding_intake: { is: { completed_at: { not: null } } },
+              OR: [
+                { onboarding_intake: { is: { completed_at: { gte: dayAgo } } } },
+                { coach_joined_at: { gte: dayAgo } },
+              ],
+            },
+            select: {
+              id: true,
+              name: true,
+              coach_joined_at: true,
+              onboarding_intake: { select: { completed_at: true } },
+            },
+            take: 20,
+          })
+        : [],
     ]);
 
     const checkedInCount = checkedInToday.length;
@@ -1089,6 +1183,21 @@ export class CoachBriefService {
       delta_lbs: r.delta_lbs,
     }));
 
+    const reviewCheckIns = reviewRaw.map((r) => ({
+      id: r.id,
+      client_id: r.user_id,
+      client_name: r.user.name,
+    }));
+    // Joined = the later of the consultation finish and the join to this coach.
+    const joinedClients = joinedRaw.flatMap((u) => {
+      const at = [u.onboarding_intake?.completed_at, u.coach_joined_at]
+        .filter((d): d is Date => d instanceof Date)
+        .sort((a, b) => b.getTime() - a.getTime())[0];
+      if (!at) return [];
+      const joined_today = bucketDateLocal(at, timezone) === briefDate;
+      return [{ client_id: u.id, client_name: u.name, joined_at: at, joined_today }];
+    });
+
     const dunningInProgress = Number(dunningInProgressRaw[0]?.count ?? 0);
 
     const context: BriefContext = {
@@ -1104,6 +1213,8 @@ export class CoachBriefService {
       dunning_in_progress: dunningInProgress,
       weight_logs_flagged: flaggedWeightLogs.length,
       unread_messages: unreadThreads.length,
+      checkins_to_review: reviewCheckIns.length,
+      joined_last_24h: joinedClients.length,
       coach_name: coachName,
       coach_first_name: coachFirstName,
       roster_size: clientIds.length,
@@ -1117,6 +1228,8 @@ export class CoachBriefService {
       unreadThreads,
       flaggedWeightLogs,
       missingCheckinClients: missingCheckinRaw,
+      reviewCheckIns,
+      joinedClients,
     };
   }
 
@@ -1486,12 +1599,16 @@ export class CoachBriefService {
         };
       }
     } else {
-      // Completed workouts are worth narrating, so they keep the AI brief.
+      // Completed workouts are worth narrating, so they keep the AI brief, and
+      // so does a new client (as new_clients_last_24h does for a head coach).
+      // Check-in reviews do not: on this all-checked-in day they always exist,
+      // and the fallback already points at their rows (ROMAN-EXTRAS B1).
       const actionCount =
         ctx.workouts_completed_today +
         (ctx.missed_checkin > 0 ? 1 : 0) +
         ctx.weight_logs_flagged +
-        ctx.unread_messages;
+        ctx.unread_messages +
+        (ctx.joined_last_24h ?? 0);
 
       if (actionCount === 0 && ctx.checked_in_today > 0) {
         return {
@@ -1879,11 +1996,7 @@ export class CoachBriefService {
           agg.context.brief_mode = 'sub_coach';
         }
         context = agg.context;
-        actionItems = buildActionItems({
-          unreadThreads: agg.unreadThreads,
-          flaggedWeightLogs: agg.flaggedWeightLogs,
-          missingCheckinClients: agg.missingCheckinClients,
-        });
+        actionItems = buildActionItems(agg);
         aiInput = await this.buildSoloAiInput(
           coachId,
           clientIds,

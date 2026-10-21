@@ -118,6 +118,10 @@ Accepted grants (`CLIENT_AI_CONSENT_ACCEPTED`; version AND its exact sha256):
 | `client-ai-v7` | `memory` | as `client-ai-v5` (owner 57c: v5 text + the safety-reply exception sentence) |
 | `client-ai-v8` | `base` | as `client-ai-v4` (CRISIS-APP-COPY: v6 text + the approved crisis sentence right after the exception; combined sha256 `af4cc4fa55aa72cab8e7c6cdcee881d6ba1f448df048088e47acd5e7d479e0ef`) |
 | `client-ai-v9` | `memory` | as `client-ai-v5` (CRISIS-APP-COPY: v7 text + the approved crisis sentence right after the exception; combined sha256 `16074f18ce0e985e35ba7cfb3f12233cd993159585a35759c4580a730ed3c9dd`) |
+| `client-ai-v10` | `memory` | as `client-ai-v5` (owner #162-6: v7 text + the approved WEAR-AI-03 Health-notes sentence right after the purpose sentence; combined sha256 `61ea52ec78fed32eae4df3ac74e696677cd78fcba0ab96266bbffae1f4e0be04`) |
+| `client-ai-v11` | `memory` | as `client-ai-v5` (owner #162-6: v9 text + the same sentence; combined sha256 `fe3d8e294d1fc0d4868fb20969fdb9528c4f19a13a94a0339da87efc384b7b28`) |
+| `client-ai-v12` | `base` | as `client-ai-v4` (owner #162-6, memory off: v6 text + the same sentence in the same place; combined sha256 `8f29d9a5185e3fbe01c1e4b3de445d1057b5cbe1c44e10568c81a805e8b9aac0`) |
+| `client-ai-v13` | `base` | as `client-ai-v4` (owner #162-6, memory off: v8 text + the same sentence; combined sha256 `495b3c623df2b09c74c7163388a8e56abfc90469896537d7a785bd4fc4fd434d`) |
 
 - Safety-reply exception (owner 57c, 2026-10-12): `GET /api/me/ai-consent?variant=safety_exception`
   (the app sends it from the CONSENT-2 build on) offers `client-ai-v6` as `copy` and
@@ -138,6 +142,14 @@ Accepted grants (`CLIENT_AI_CONSENT_ACCEPTED`; version AND its exact sha256):
   `upgrade` / `memory_copy` while the switch is on (`client-ai-v7` while it is off). The P0 twins are
   `consult-consent-v9` / `v10` (paragraph 4 + box 2 = the v8 / v9 copy). `GET /api/me/feature-flags`
   carries `roman_crisis_alert` (the same switch) for the app's Trust Center and Roman chats lines.
+- Health notes (owner #162-6, "EVERYTHING should be covered in the inital acceptance of roman"):
+  `GET /api/me/ai-consent?variant=health_notes` reads as `crisis_alert`, but `upgrade` / `memory_copy`
+  is `client-ai-v10` (`client-ai-v11` while `FEATURE_ROMAN_CRISIS_ALERT` is on), which name Roman's
+  Health-page notes and the coach's AI note; `copy` (the memory-off agreement) is `client-ai-v12` /
+  `v13`, the v6 / v8 text with the same sentence. A live v4 to v9 grant keeps reading its own copies
+  and is never asked again; withdrawal is unchanged. P0 twins: memory on `consult-consent-v15` / `v16`,
+  `consult-consent-v16-coach-free` / `v17-coach-free`; memory off `consult-consent-v17` / `v18`
+  (coached only: a client with no coach gets no Health notes).
 - Asked once, before a coach (owner W-CONSENT): `POST /api/me/ai-consent/roman` from a client with no
   coach is recorded exactly like a coached grant. Roman and every AI route stay `403 ROMAN_REQUIRES_COACH`
   until a coach is linked; then that grant applies with no new ask. `GET` and `DELETE` stay open.
@@ -181,7 +193,7 @@ Request (JSON; only these fields):
 
 | Field | Required | Rule |
 |---|---|---|
-| `version` | yes | string, `client-ai-v4`, `client-ai-v5`, `client-ai-v6`, `client-ai-v7`, `client-ai-v8`, `client-ai-v9`, `client-ai-v4-coach-free` or `client-ai-v5-coach-free` |
+| `version` | yes | string, `client-ai-v4`, `client-ai-v5`, `client-ai-v6`, `client-ai-v7`, `client-ai-v8`, `client-ai-v9`, `client-ai-v10`, `client-ai-v11`, `client-ai-v12`, `client-ai-v13`, `client-ai-v4-coach-free` or `client-ai-v5-coach-free` |
 | `copy_sha256` | no | 64 hex chars; when sent must equal that version's combined sha256 (case-insensitive) |
 | `platform` | no | `ios`, `android` or `web` |
 | `app_version` | no | max 32 chars, `[0-9A-Za-z.+-]` |
