@@ -301,7 +301,8 @@ export function wireSoloDefaults(
   prisma.teamSubCoachAssignment.count.mockResolvedValue(0);
   prisma.user.findMany
     .mockResolvedValueOnce(args.clientIds.map((id) => ({ id })))
-    .mockResolvedValueOnce([]); // missing check-in clients
+    .mockResolvedValueOnce([]) // missing check-in clients
+    .mockResolvedValueOnce([]); // clients who joined in the last 24 h
   prisma.user.findUnique.mockResolvedValue({
     name: args.coachName ?? 'Sarah Johnson',
   });
