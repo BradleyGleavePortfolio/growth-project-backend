@@ -101,12 +101,12 @@ async function brief(n: number, opts: { busy?: string; busyLines?: number } = {}
   await svc.generateBrief(COACH, TZ, bucketDateLocal(new Date(), TZ), { force: true });
   const data = prisma.coachBrief.update.mock.calls[0][0].data;
   const items: ActionItem[] = data.action_items;
-  const reads = Object.values(prisma as Record<string, unknown>).reduce<number>((sum, model) => {
-    if (typeof model === 'function' && 'mock' in model) return sum + (model as jest.Mock).mock.calls.length;
+  // Every call to every mocked delegate method (and $queryRaw).
+  const calls = (fn: unknown): number => (jest.isMockFunction(fn) ? fn.mock.calls.length : 0);
+  const reads = Object.values(prisma).reduce<number>((sum, model: unknown) => {
+    if (jest.isMockFunction(model)) return sum + calls(model);
     if (!model || typeof model !== 'object') return sum;
-    return sum + Object.values(model).reduce<number>(
-      (s, fn) => s + (typeof fn === 'function' && 'mock' in fn ? (fn as jest.Mock).mock.calls.length : 0), 0,
-    );
+    return sum + Object.values(model).reduce<number>((s, fn: unknown) => s + calls(fn), 0);
   }, 0);
   return { prisma, items, ctx: data.brief_context, reads, of: (t: string) => items.filter((i) => i.type === t) };
 }
