@@ -45,6 +45,14 @@ const SB_PUBLISHABLE = 'sb_publishable_leakcanary-Ef56_Gh78';
 const NOT_SB_SECRET = 'not-an-sb-secret-key';
 const NOT_SB_PUBLISHABLE = 'not-an-sb-publishable-key';
 
+/** Roman server switches (ALL-ON-REGISTER): managed and held unset until the ALL-ON flip. */
+const ROMAN_SWITCHES = [
+  'FEATURE_ROMAN_COACH_REVIEWED_AT',
+  'FEATURE_ROMAN_FIRST_PAYMENT',
+  'FEATURE_ROMAN_THREE_ARC_COUNTS',
+  'FEATURE_ROMAN_COPY_V2',
+];
+
 /** Wave A / Wave B inventory this lane must manage (B-FLAGS-2 brief). */
 const WAVE_FLAGS = [
   'FEATURE_AI_CONSENT_LEDGER_ENABLED',
@@ -65,6 +73,7 @@ const WAVE_FLAGS = [
   // Client engagement kill switches (backend #609, B-609-2).
   'COACH_WELCOME_SCHEDULER_ENABLED',
   'WORKOUT_REMINDERS_ENABLED',
+  ...ROMAN_SWITCHES,
 ];
 
 function edit(
@@ -169,6 +178,33 @@ describe('emergency kill per flag (B-637-2): defaults-on switches are killed by 
         else process.env[name] = saved;
       }
     }
+  });
+
+  it('Roman switches: declared unset, killed by an unset, every reader on only for "true"', () => {
+    for (const n of ROMAN_SWITCHES) {
+      const kill = kills.find((k) => k.name === n)?.action;
+      expect([n, base().flags[n], kill]).toEqual([n, 'unset', 'unset']);
+    }
+    type Reader = (env: NodeJS.ProcessEnv) => boolean;
+    /* eslint-disable @typescript-eslint/no-require-imports */
+    const readers: Record<string, Reader> = {
+      FEATURE_ROMAN_COACH_REVIEWED_AT: require('../../src/roman/coach-reviewed.feature')
+        .isCoachReviewedAtEnabled,
+      FEATURE_ROMAN_THREE_ARC_COUNTS: require('../../src/coach/home/three-arc-counts.feature')
+        .isThreeArcCountsEnabled,
+      FEATURE_ROMAN_COPY_V2: require('../../src/roman/voice/voice-policy.feature').isRomanCopyV2Enabled,
+    };
+    /* eslint-enable @typescript-eslint/no-require-imports */
+    for (const [n, read] of Object.entries(readers)) {
+      const seen = [read({}), read({ [n]: 'false' }), read({ [n]: 'true' })];
+      expect([n, ...seen]).toEqual([n, false, false, true]);
+    }
+    // The Stripe webhook reads FEATURE_ROMAN_FIRST_PAYMENT inline: each read is on only for "true".
+    const webhookFile = join(ROOT, 'src/checkout/checkout-webhook-handler.service.ts');
+    const reads = readFileSync(webhookFile, 'utf8').match(/process\.env\.FEATURE_ROMAN_FIRST_PAYMENT.*/g);
+    expect(reads?.length).toBeGreaterThan(0);
+    for (const r of reads ?? [])
+      expect(r).toBe("process.env.FEATURE_ROMAN_FIRST_PAYMENT !== 'true') return;");
   });
 
   it('defaults-on kills are a set of the off value; defaults-off kills are an unset', () => {

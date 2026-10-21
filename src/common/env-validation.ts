@@ -2322,12 +2322,16 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_ROMAN_COACH_REVIEWED_AT',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Roman coach-reviewed timestamp surface.',
   },
   {
     name: 'FEATURE_ROMAN_COPY_V2',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Roman voice copy v2.',
@@ -2341,12 +2345,16 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_ROMAN_FIRST_PAYMENT',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Roman first-payment moment on checkout webhook.',
   },
   {
     name: 'FEATURE_ROMAN_THREE_ARC_COUNTS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Coach home three-arc counts.',
