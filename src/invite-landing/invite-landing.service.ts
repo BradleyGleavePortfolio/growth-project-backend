@@ -282,11 +282,11 @@ function baseDocument(opts: {
   .logo { max-width: 56px; max-height: 56px; margin: 0 auto 16px; display: block; border-radius: 12px; }
   a { color: var(--ink); }
   .primary { display: inline-block; margin-top: 8px; padding: 14px 22px; background: var(--accent); color: #FFFFFF; border-radius: 12px; text-decoration: none; font-weight: 500; font-size: 15px; }
-  .alt { margin-top: 22px; font-size: 13px; color: var(--muted); }
-  .alt a { color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+  .alt { margin-top: 12px; font-size: 13px; color: var(--muted); }
+  .alt a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
   .alt .dot { margin: 0 8px; }
-  .stores { margin-top: 18px; display: flex; gap: 12px; justify-content: center; font-size: 12px; color: var(--muted); }
-  .stores a { color: var(--muted); text-decoration: none; border: 1px solid var(--line); padding: 8px 14px; border-radius: 12px; }
+  .stores { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; font-size: 12px; color: var(--muted); }
+  .stores a { display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; color: var(--muted); text-decoration: none; border: 1px solid var(--line); padding: 0 16px; border-radius: 12px; }
 </style>
 </head>
 <body class="${opts.bodyClass}">

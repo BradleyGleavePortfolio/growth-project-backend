@@ -272,4 +272,36 @@ describe('PublicPagesController help pages', () => {
     );
     expect(html).not.toMatch(/web-only/i);
   });
+
+  // PUBLIC-WEB (op164): the delete-account page lists what is deleted with
+  // the same words as the app's delete screen, so the two never disagree.
+  it('delete-account page mirrors the app row for coach media', () => {
+    const html = renderHelpPage('delete-account');
+    expect(html).toContain(
+      'Coach media, notes and briefs, if you coach, except lessons and paid content your clients keep',
+    );
+    expect(html).not.toContain('except the video or file of each lesson your clients keep');
+  });
+
+  // PUBLIC-WEB (op164): every link on a help page is at least 44 px tall
+  // (header wordmark, tab links, section links, footer), and tab links are
+  // at least 44 px wide.
+  it('every help-page link is a 44 px target', () => {
+    const html = renderHelpPage('index');
+    const rule = (sel: string) => {
+      const start = html.indexOf('\n  ' + sel + ' {');
+      expect(start).toBeGreaterThan(-1);
+      return html.slice(start, html.indexOf('}', start));
+    };
+    const selectors = [
+      'header.brand .wordmark',
+      'nav.help-nav .nav-link',
+      'section p.links a',
+      'footer.brand-footer a',
+    ];
+    for (const sel of selectors) {
+      expect(rule(sel)).toContain('min-height: 44px');
+    }
+    expect(rule('nav.help-nav .nav-link')).toContain('min-width: 44px');
+  });
 });

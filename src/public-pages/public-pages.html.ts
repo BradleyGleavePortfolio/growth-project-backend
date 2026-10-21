@@ -322,14 +322,14 @@ function baseDocument(p: PageContent): string {
   p { font-size: 17px; line-height: 1.55; margin: 0 0 28px 0; color: #3A332B; }
   p.code-label { margin: 0 0 6px 0; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #8A7F6E; }
   p.code { margin: 0 0 28px 0; font-family: "SF Mono", "Menlo", ui-monospace, monospace; font-size: 17px; color: #1F1B16; user-select: all; }
-  a.cta { display: inline-block; padding: 14px 22px; border-radius: 999px; background: #1F1B16; color: #FBF8F3; text-decoration: none; font-weight: 500; font-size: 15px; }
+  a.cta { display: inline-block; padding: 14px 22px; border-radius: 12px; background: #1F1B16; color: #FBF8F3; text-decoration: none; font-weight: 500; font-size: 15px; }
   a.cta:hover { background: #3A332B; }
-  button.cta { display: inline-block; padding: 14px 22px; border: 0; border-radius: 999px; background: #1F1B16; color: #FBF8F3; font: inherit; font-weight: 500; font-size: 15px; cursor: pointer; }
+  button.cta { display: inline-block; padding: 14px 22px; border: 0; border-radius: 12px; background: #1F1B16; color: #FBF8F3; font: inherit; font-weight: 500; font-size: 15px; cursor: pointer; }
   ul.links { list-style: none; padding: 0; margin: 28px 0 0 0; }
-  ul.links li { margin: 0 0 10px 0; font-size: 15px; }
-  ul.links a { color: #3A332B; }
+  ul.links li { margin: 0; font-size: 15px; }
+  ul.links a { display: inline-flex; align-items: center; min-height: 44px; color: #3A332B; }
   footer { margin-top: 40px; font-size: 13px; color: #8A7F6E; }
-  footer a { color: #8A7F6E; text-decoration: underline; }
+  footer a { display: inline-flex; align-items: center; min-height: 44px; color: #8A7F6E; text-decoration: underline; }
 </style>
 </head>
 <body>

@@ -145,7 +145,7 @@ function baseDocument(opts: { title: string; body: string }): string {
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body { background: var(--paper); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; line-height: 1.5; min-height: 100vh; display: grid; place-items: center; padding: 32px 20px; }
-  .card { width: 100%; max-width: 520px; background: #FFFFFF; border: 1px solid var(--line); border-radius: 18px; padding: 36px 28px; }
+  .card { width: 100%; max-width: 520px; background: #FFFFFF; border: 1px solid var(--line); border-radius: 16px; padding: 36px 28px; }
   .kicker { margin: 0 0 6px; text-transform: uppercase; letter-spacing: 0.14em; font-size: 11px; color: var(--muted); }
   h1 { margin: 0 0 16px; font-family: "Playfair Display", "Iowan Old Style", Georgia, "Times New Roman", serif; font-weight: 500; font-size: 26px; line-height: 1.2; }
   h2 { margin: 24px 0 8px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); font-weight: 600; }

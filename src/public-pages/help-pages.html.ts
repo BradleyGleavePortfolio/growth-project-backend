@@ -705,8 +705,10 @@ function deleteAccountContent(): HelpPageContent {
           'Your conversations with Roman, the AI assistant',
           'Your messages, community posts, comments, direct messages, voice notes and reactions',
           // OPERATOR RULING (agent 160, from #1105 LEARN-FROZEN-MEDIA): a
-          // coach's media that a client's kept lesson plays is kept.
-          'Coach media, notes and briefs, if you coach, except the video or file of each lesson your clients keep (see below)',
+          // coach's media that a client's kept lesson plays is kept; b#1110:
+          // so is what a client paid for. Same words as the app's delete
+          // screen (mobile DeleteAccountScreen PERMANENTLY_DELETED).
+          'Coach media, notes and briefs, if you coach, except lessons and paid content your clients keep',
           'Your targets, recipes, lists and preferences',
           'Notification settings and push notification tokens',
         ],
@@ -805,9 +807,9 @@ function baseDocument(active: HelpPage, c: HelpPageContent): string {
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; min-height: 100vh; padding: 32px 20px 64px; }
   main { max-width: 760px; width: 100%; margin: 0 auto; text-align: left; }
   header.brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; gap: 16px; flex-wrap: wrap; }
-  header.brand .wordmark { font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 18px; letter-spacing: 0.02em; color: #1F1B16; text-decoration: none; }
-  nav.help-nav { display: flex; gap: 16px; flex-wrap: wrap; }
-  nav.help-nav .nav-link { color: #8A7F6E; text-decoration: none; font-size: 14px; }
+  header.brand .wordmark { display: inline-flex; align-items: center; min-height: 44px; font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 18px; letter-spacing: 0.02em; color: #1F1B16; text-decoration: none; }
+  nav.help-nav { display: flex; gap: 0 16px; flex-wrap: wrap; }
+  nav.help-nav .nav-link { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; color: #8A7F6E; text-decoration: none; font-size: 14px; }
   nav.help-nav .nav-link.active { color: #1F1B16; }
   nav.help-nav .nav-link:hover { color: #1F1B16; }
   h1 { font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 40px; line-height: 1.1; letter-spacing: -0.01em; margin: 0 0 8px 0; }
@@ -819,13 +821,13 @@ function baseDocument(active: HelpPage, c: HelpPageContent): string {
   section p { font-size: 16px; line-height: 1.6; margin: 0 0 12px 0; color: #3A332B; }
   section ul { margin: 0 0 12px 0; padding: 0 0 0 20px; }
   section li { font-size: 16px; line-height: 1.6; margin: 0 0 6px 0; color: #3A332B; }
-  section p.links a { color: #1F1B16; text-decoration: underline; }
+  section p.links a { display: inline-flex; align-items: center; min-height: 44px; color: #1F1B16; text-decoration: underline; }
   table.intake { border-collapse: collapse; width: 100%; margin: 0 0 12px 0; font-size: 14px; }
   table.intake th, table.intake td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #E8E1D4; vertical-align: top; color: #3A332B; }
   table.intake th { font-weight: 600; color: #1F1B16; background: #F4EFE6; }
   p.footnote { margin: 40px 0 0 0; font-size: 13px; line-height: 1.55; color: #8A7F6E; font-style: italic; }
   footer.brand-footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid #E8E1D4; font-size: 13px; color: #8A7F6E; display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-between; }
-  footer.brand-footer a { color: #8A7F6E; text-decoration: underline; }
+  footer.brand-footer a { display: inline-flex; align-items: center; min-height: 44px; color: #8A7F6E; text-decoration: underline; }
 </style>
 </head>
 <body>

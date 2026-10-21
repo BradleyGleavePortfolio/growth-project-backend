@@ -191,4 +191,17 @@ describe('public page copy accuracy (F10)', () => {
     expect(res.body).toMatch(/subject=Invite(%20|\+)GP-A1B2C3/);
     expect(res.body).not.toMatch(/\bwe will\b|Email us|help you finish setup/i);
   });
+
+  // PUBLIC-WEB (op164): buttons use the 12 px button radius (no pills) and
+  // every link is at least 44 px tall.
+  it('public page buttons use 12 px corners and links are 44 px targets', () => {
+    const res = makeRes();
+    controller.openApp(res);
+    const html: string = res.body;
+    expect(html).not.toContain('999px');
+    expect(html).toMatch(/\n  a\.cta \{[^}]*border-radius: 12px;/);
+    expect(html).toMatch(/\n  button\.cta \{[^}]*border-radius: 12px;/);
+    expect(html).toMatch(/\n  ul\.links a \{[^}]*min-height: 44px;/);
+    expect(html).toMatch(/\n  footer a \{[^}]*min-height: 44px;/);
+  });
 });

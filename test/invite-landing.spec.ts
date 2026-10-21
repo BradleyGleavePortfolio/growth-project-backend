@@ -345,6 +345,21 @@ describe('invite page design rules (buttons 12, cards 16)', () => {
     }
   });
 
+  // PUBLIC-WEB (op164): the small links under the main button ("Already have
+  // the app? Open it", "Continue without a code") and the store chips are at
+  // least 44 px tall, like every other tap target.
+  it('every link and store chip is at least 44 px tall', () => {
+    const ruleOf = (html: string, selector: string): string | undefined => {
+      const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`\\n  ${esc} \\{([^}]*)\\}`).exec(html)?.[1];
+    };
+    for (const html of pages) {
+      expect(ruleOf(html, '.alt a')).toContain('min-height: 44px');
+      expect(ruleOf(html, '.stores a')).toContain('min-height: 44px');
+      expect(ruleOf(html, '.copy')).toContain('min-height: 44px');
+    }
+  });
+
   it('the code in the sentence never breaks across lines', () => {
     for (const html of pages.slice(0, 3)) {
       expect(html).toContain('.nowrap { white-space: nowrap; }');
