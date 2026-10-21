@@ -87,7 +87,9 @@ export class ChurnedClientsService {
       this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, profile: { select: { avatar_url: true } } } }),
       // As the coach Home counts a reach-out: a person on the coach side sent it
       // (not a broadcast copy, not an automated message), and it is not deleted.
-      this.prisma.coachMessage.findMany({
+      // One row per client (GROUP BY, MAX), never every message since the end.
+      this.prisma.coachMessage.groupBy({
+        by: ['client_id'],
         where: {
           coach_id: coachId,
           client_id: { in: ids },
@@ -97,13 +99,11 @@ export class ChurnedClientsService {
           automated_by: null,
           OR: page.map((r) => ({ client_id: r.clientId, created_at: { gt: r.endedAt } })),
         },
-        orderBy: [{ client_id: 'asc' }, { created_at: 'desc' }],
-        distinct: ['client_id'],
-        select: { client_id: true, created_at: true },
+        _max: { created_at: true },
       }),
     ]);
     const user = new Map(users.map((x) => [x.id, x]));
-    const last = new Map(messages.map((m) => [m.client_id ?? '', m.created_at]));
+    const last = new Map(messages.map((m) => [m.client_id ?? '', m._max.created_at]));
     const items = page.map((r): ChurnedClientRow => {
       const who = user.get(r.clientId);
       const ended_on = week.dayOf(r.endedAt);
