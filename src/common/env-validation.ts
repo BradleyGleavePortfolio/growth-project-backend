@@ -2050,6 +2050,15 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Dunning v2 flag.',
   },
   {
+    name: 'FEATURE_PLAN_RENEWAL',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'RENEWAL-BE plan-renewal sequence (Day 0, 1, 3, 7 after a plan ends normally; src/checkout/plan-renewal). Off: no sequence opens or sends, the renewal routes are 404 and GET /v1/checkout/entitlement carries no renewal block.',
+  },
+  {
     name: 'FEATURE_COACH_BROADCASTS',
     values: ['true', 'false'],
     unsetIs: 'off',

@@ -63,6 +63,7 @@ import { AssignableAssetResolversModule } from './packages/asset-resolvers/asset
 import { CheckoutModule } from './checkout/checkout.module';
 import { ContractsModule } from './contracts/contracts.module';
 import { DunningV2Module } from './checkout/dunning-v2/dunning-v2.module';
+import { PlanRenewalModule } from './checkout/plan-renewal/plan-renewal.module';
 import { DunningLockoutGuard } from './checkout/dunning-v2/dunning-lockout.guard';
 import { PayoutsV2Module } from './payouts-v2/payouts-v2.module';
 import { RomanModule } from './roman/roman.module';
@@ -300,6 +301,8 @@ import { WearablesModule } from './wearables/wearables.module';
     // inside) CheckoutModule so v1 dunning wiring is untouched; every v2
     // service / guard / cron self-checks the flag and no-ops while it is off.
     DunningV2Module,
+    // RENEWAL-BE: the plan-renewal sequence; FEATURE_PLAN_RENEWAL (default OFF).
+    PlanRenewalModule,
     // Bank-Account Payouts v2 (spec §2). Parallel payout-method layer; every
     // surface no-ops while FEATURE_BANK_PAYOUTS_V2 is OFF (default). Safe to
     // mount ahead of the operator flip. Mirrors DunningV2Module posture.

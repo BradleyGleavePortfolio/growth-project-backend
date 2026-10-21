@@ -68,6 +68,8 @@ export function notificationPrefsPrefix(kind: string): string {
   // columns (same reasoning as FIRST_PAYMENT): a dedicated prefix keeps it
   // off the 'digest' false defaults so the notice is always written and sent.
   if (kind.startsWith('trial_ending')) return 'trial_ending';
+  // RENEWAL-BE: the client's "plan renewal reminders" switch (plan_renewal_push, default on).
+  if (kind === 'plan_renewal') return 'plan_renewal';
   if (kind.startsWith('fasting')) return 'fasting';
   if (kind.includes('digest')) return 'digest';
   return 'digest'; // safe default — falls back to digest prefs

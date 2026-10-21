@@ -22,6 +22,7 @@ import { SkipClientEntitlement } from '../common/decorators/skip-client-entitlem
 import { StripeConnectApiError } from '../connect/stripe-connect-api.service';
 import { THROTTLER_NAMES, THROTTLER_ROUTE_LIMITS } from '../throttler/throttler.config';
 import { CheckoutService } from './checkout.service';
+import { isPlanRenewalEnabled } from './plan-renewal/plan-renewal.cadence';
 import { INVITE_CODE_PATTERN } from '../invite-codes/invite-codes.service';
 
 // Allowed URL schemes for redirect URLs. We only accept our own deep-link
@@ -187,7 +188,10 @@ export class CheckoutController {
     // Compatibility: mobile EntitlementProvider reads `result.active`; legacy
     // callers read `result.entitlement_active`. Return both during the
     // transition window so neither side breaks.
-    return { active, entitlement_active: active };
+    // RENEWAL-BE: with FEATURE_PLAN_RENEWAL on, the caller's renewal state with
+    // their current coach (none | ended | revoked, popup_due). Off: no key.
+    const renewal = isPlanRenewalEnabled() ? await this.checkout.planRenewal(req.user.id, coachUserId) : undefined;
+    return { active, entitlement_active: active, ...(renewal ? { renewal } : {}) };
   }
 
   // Returns the requesting user's saved payment method summary (last4 +
