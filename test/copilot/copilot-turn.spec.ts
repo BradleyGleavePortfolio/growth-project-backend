@@ -183,8 +183,8 @@ describe('CopilotService week block and past questions', () => {
   const QUESTIONS = [{ id: 'q-2', content: 'Can I move Thursday?' }, { id: 'q-1', content: 'Why did my calories change this week?' }];
   function service() {
     const prisma = {
-      user: { findUnique: jest.fn(async () => ({ coach_joined_at: new Date(NOW.getTime() - 15 * 86_400_000), coach: { name: 'Alex Morgan' }, notification_prefs: { timezone: 'America/Los_Angeles' } })) },
-      macroTarget: { findMany: jest.fn(async () => [{ calories_kcal: 2150, effective_from: new Date('2026-10-19T07:00:00Z') }, { calories_kcal: 2300 }]) },
+      user: { findUnique: jest.fn(async () => ({ coach_id: 'coach-k', coach_joined_at: new Date(NOW.getTime() - 15 * 86_400_000), coach: { name: 'Alex Morgan' }, notification_prefs: { timezone: 'America/Los_Angeles' } })) },
+      macroTarget: { findMany: jest.fn(async () => [{ id: T1, coach_id: 'coach-k', calories_kcal: 2150, effective_from: new Date('2026-10-19T07:00:00Z'), notes: 'Slow week.' }, { calories_kcal: 2300 }]) },
       clientWorkoutAssignment: { findMany: jest.fn(async () => [{ completed_at: NOW }, { completed_at: null }, { completed_at: null }, { completed_at: null }]) },
       checkIn: { findFirst: jest.fn(async () => ({ date: new Date('2026-10-18T00:00:00Z') })) },
       romanMessage: {
@@ -202,7 +202,7 @@ describe('CopilotService week block and past questions', () => {
     await expect(svc.week('client-a', NOW)).resolves.toEqual({
       number: 3,
       coach_first_name: 'Alex',
-      target: { kcal: 2150, from: new Date('2026-10-19T07:00:00Z'), previous_kcal: 2300 },
+      target: { kcal: 2150, from: new Date('2026-10-19T07:00:00Z'), set_by: 'Alex', note: 'Slow week.', previous_kcal: 2300 },
       workouts: { done: 1, total: 4 },
       last_check_in: '2026-10-18',
     });

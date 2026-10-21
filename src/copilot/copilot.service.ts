@@ -73,13 +73,13 @@ export class CopilotService {
    * started, and the one before it), this local week's workouts done of planned, and the last check-in day.
    */
   async week(clientId: string, now = new Date()) {
-    const select = { coach_joined_at: true, coach: { select: { name: true } }, notification_prefs: { select: { timezone: true } } };
+    const select = { coach_id: true, coach_joined_at: true, coach: { select: { name: true } }, notification_prefs: { select: { timezone: true } } };
     const user = await this.prisma.user.findUnique({ where: { id: clientId }, select });
     const clock = localClock(now, user?.notification_prefs?.timezone ?? 'America/Los_Angeles');
     const monday = addDays(clock.local_date, -((new Date(`${clock.local_date}T00:00:00Z`).getUTCDay() + 6) % 7));
     const [targets, sessions, checkIn] = await Promise.all([
       // The same row MacrosService.getCurrentForClient reads, and the one before it.
-      this.prisma.macroTarget.findMany({ where: { client_id: clientId, archived_at: null, effective_from: { lte: now } }, orderBy: { effective_from: 'desc' }, take: 2, select: { calories_kcal: true, effective_from: true } }),
+      this.prisma.macroTarget.findMany({ where: { client_id: clientId, archived_at: null, effective_from: { lte: now } }, orderBy: { effective_from: 'desc' }, take: 2, select: { id: true, coach_id: true, calories_kcal: true, effective_from: true, notes: true } }),
       this.prisma.clientWorkoutAssignment.findMany({
         where: { client_id: clientId, scheduled_for: { gte: localDayStart(monday, clock.timezone), lt: localDayStart(addDays(monday, 7), clock.timezone) } },
         select: { completed_at: true },
@@ -87,10 +87,15 @@ export class CopilotService {
       this.prisma.checkIn.findFirst({ where: { user_id: clientId }, orderBy: { date: 'desc' }, select: { date: true } }),
     ]);
     const [current, previous] = targets;
+    const coach = user?.coach?.name.trim().split(/\s+/)[0] || null;
+    // set_by: the coach's first name when the current coach set it; null for a target from onboarding or the profile ('auto-').
+    const setBy = current && current.coach_id === user?.coach_id && !current.id.startsWith('auto-') ? coach : null;
     return {
       number: user?.coach_joined_at ? Math.floor((now.getTime() - user.coach_joined_at.getTime()) / WEEK_MS) + 1 : null,
-      coach_first_name: user?.coach?.name.trim().split(/\s+/)[0] || null,
-      target: current ? { kcal: current.calories_kcal, from: current.effective_from, previous_kcal: previous?.calories_kcal ?? null } : null,
+      coach_first_name: coach,
+      target: current
+        ? { kcal: current.calories_kcal, from: current.effective_from, set_by: setBy, note: current.notes, previous_kcal: previous?.calories_kcal ?? null }
+        : null,
       workouts: { done: sessions.filter((s) => s.completed_at).length, total: sessions.length },
       last_check_in: checkIn ? checkIn.date.toISOString().slice(0, 10) : null,
     };
