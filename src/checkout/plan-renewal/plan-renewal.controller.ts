@@ -13,6 +13,13 @@ export class PlanRenewalAckDto {
   step!: number;
 }
 
+/** Every FEATURE_PLAN_RENEWAL route answers this while the flag is off (CHURN-BE's routes too). */
+export function assertOn(): void {
+  if (!isPlanRenewalEnabled()) {
+    throw new NotFoundException({ code: 'PLAN_RENEWAL_OFF', error: 'PLAN_RENEWAL_OFF', message: 'Plan renewal is not available.' });
+  }
+}
+
 /**
  * RENEWAL-BE route (CONTRACT comment on b#1127): 404 PLAN_RENEWAL_OFF while
  * FEATURE_PLAN_RENEWAL is off; the client acknowledges only their own pop-up.
@@ -28,9 +35,7 @@ export class PlanRenewalController {
   @Roles('student')
   @SkipClientEntitlement()
   ack(@Request() req: AuthedRequest, @Body() body: PlanRenewalAckDto) {
-    if (!isPlanRenewalEnabled()) {
-      throw new NotFoundException({ code: 'PLAN_RENEWAL_OFF', error: 'PLAN_RENEWAL_OFF', message: 'Plan renewal is not available.' });
-    }
+    assertOn();
     return this.renewal.ackPopup(req.user.id, body.step);
   }
 }

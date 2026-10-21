@@ -15,6 +15,7 @@ import {
   planRenewalDay,
 } from './plan-renewal.cadence';
 import {
+  endedPlanWhere,
   latestPlanEnd,
   loadPlanRenewal,
   planEndedAt,
@@ -82,17 +83,7 @@ export class PlanRenewalService {
   private async openEnded(now: Date): Promise<number> {
     const since = new Date(now.getTime() - PLAN_RENEWAL_OPEN_WINDOW_MS);
     const ended = await this.prisma.clientPurchase.findMany({
-      where: {
-        plan_renewal: { is: null },
-        OR: [
-          { billing_type: 'one_time', status: { in: ['paid', 'active'] }, entitlement_active: true, access_expires_at: { gt: since, lte: now } },
-          {
-            billing_type: 'recurring',
-            status: 'canceled',
-            OR: [{ cancel_at_period_end: true, current_period_end: { gt: since, lte: now } }, { canceled_at: { gt: since } }],
-          },
-        ],
-      },
+      where: { plan_renewal: { is: null }, ...endedPlanWhere(since, now) },
       select: {
         id: true, client_user_id: true, coach_user_id: true, billing_type: true, access_expires_at: true,
         canceled_at: true, current_period_end: true, cancel_at_period_end: true,

@@ -64,6 +64,22 @@ export function planEndedAt(p: PlanEndFields): Date | null {
   return p.cancel_at_period_end && p.current_period_end ? p.current_period_end : p.canceled_at;
 }
 
+/**
+ * The purchases whose plan may have ended normally in (since, now]: the
+ * sweep's and CHURN-BE's one candidate rule (planEndedAt says when it ended;
+ * planRenewalBlock says whether it still counts).
+ */
+export const endedPlanWhere = (since: Date, now: Date): Prisma.ClientPurchaseWhereInput => ({
+  OR: [
+    { billing_type: 'one_time', status: { in: ['paid', 'active'] }, entitlement_active: true, access_expires_at: { gt: since, lte: now } },
+    {
+      billing_type: 'recurring',
+      status: 'canceled',
+      OR: [{ cancel_at_period_end: true, current_period_end: { gt: since, lte: now } }, { canceled_at: { gt: since } }],
+    },
+  ],
+});
+
 export type PlanRenewalBlock =
   | 'account'
   | 'moved'
