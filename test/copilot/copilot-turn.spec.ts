@@ -26,7 +26,7 @@ const ctx = {
 
 function build(opts: { coach?: string | null; granted?: Set<string> } = {}) {
   const prisma = {
-    user: { findUnique: jest.fn(async () => ({ coach_id: opts.coach === undefined ? 'coach-k' : opts.coach, weight_unit: 'kg' })) },
+    user: { findUnique: jest.fn(async () => ({ coach_id: opts.coach === undefined ? 'coach-k' : opts.coach, profile: { weight_unit: 'kg' } })) },
     macroTarget: {
       findMany: jest.fn(async () => [
         { id: T1, coach_id: 'coach-k', calories_kcal: 2150, effective_from: new Date('2026-10-19T07:00:00Z') },
@@ -141,8 +141,10 @@ describe('the client’s own suggestion rows', () => {
 
   it('stores the suggestion unsent, with no tenant coach, expiring with the pending window', async () => {
     const { svc, prisma } = build();
-    const view = await svc.saveSuggestion('d-1', 'client-a', 's-1', change, NOW);
-    const expires_at = new Date(NOW.getTime() + 7 * 24 * 60 * 60 * 1000);
+    // The view reads the real clock, so the save uses it too: the row stays unexpired.
+    const now = new Date();
+    const view = await svc.saveSuggestion('d-1', 'client-a', 's-1', change, now);
+    const expires_at = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
     const row = { id: 'd-1', capability: 'client_path_change', status: 'suggested', requester_id: 'client-a', subject_user_id: 'client-a', tenant_coach_id: null };
     expect(prisma.aiActionDraft.create).toHaveBeenCalledWith({ data: expect.objectContaining({ ...row, rationale: 'Weight is flat.', provenance: { roman_session_id: 's-1' }, expires_at }) });
     expect(view).toMatchObject({ id: 'd-1', status: 'suggested', sent_at: null, reason: 'Weight is flat.' });
@@ -167,7 +169,7 @@ describe('the client’s own suggestion rows', () => {
     prisma.aiActionDraft.findMany.mockResolvedValueOnce([
       { id: 'd-1', status: 'approved', payload: {}, rationale: 'r', decision_note: null, created_at: NOW, decided_at: NOW, expires_at: NOW, capability: 'client_path_change' },
     ]);
-    const stored = { question_id: 'q', sources: FACTS.sources, suggestion_id: 'd-1' };
+    const stored = { question_id: 'q', sources: FACTS.sources, suggestion_id: 'd-1' } as unknown as Prisma.JsonValue;
     const views = await svc.views('client-a', [{ id: 'm-1', copilot: stored }, { id: 'm-2', copilot: null }]);
     expect(prisma.aiActionDraft.findMany).toHaveBeenCalledWith({ where: { id: { in: ['d-1'] }, capability: 'client_path_change', requester_id: 'client-a', subject_user_id: 'client-a' } });
     expect([...views.keys()]).toEqual(['m-1']);
@@ -194,7 +196,7 @@ describe('CopilotService week block and past questions', () => {
       },
       aiActionDraft: { findMany: jest.fn(async () => [{ id: 'd-1', status: 'rejected', expires_at: null, created_at: NOW }]) },
     };
-    return { prisma, svc: new CopilotService(prisma as never) };
+    return { prisma, svc: new CopilotService(prisma as never, {} as never) };
   }
 
   it('the week block: week n with the coach, the target and the one before, this local week’s workouts, the last check-in', async () => {

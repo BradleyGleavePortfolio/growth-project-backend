@@ -128,7 +128,7 @@ export class CopilotTurnService {
   /** The numbered facts of one Copilot turn, from the same context the prompt and the post-check read. */
   async facts(clientId: string, ctx: RomanClientContext, now = new Date()): Promise<CopilotFacts> {
     const tz = localClock(now, ctx.identity.timezone).timezone;
-    const user = await this.prisma.user.findUnique({ where: { id: clientId }, select: { coach_id: true, weight_unit: true } });
+    const user = await this.prisma.user.findUnique({ where: { id: clientId }, select: { coach_id: true, profile: { select: { weight_unit: true } } } });
     const granted = user?.coach_id
       ? (await this.consent.grantedScopesByClient(user.coach_id, [clientId], Object.values(SHARED))).get(clientId)
       : undefined;
@@ -159,7 +159,7 @@ export class CopilotTurnService {
       rows.push({ kind: 'plan', id: current.id, date: localDateOf(tz)(current.effective_from), label, detail: previous ? `Was ${num(previous.calories_kcal)} kcal` : null });
     }
     const points = [...ctx.weight_trend.points].sort((x, y) => y.date.localeCompare(x.date));
-    const kg = user?.weight_unit === 'kg';
+    const kg = user?.profile?.weight_unit === 'kg';
     const weight = (p: { date: string; weight_lbs: number }) =>
       `${(kg ? p.weight_lbs / LB_PER_KG : p.weight_lbs).toFixed(1)} ${kg ? 'kg' : 'lbs'} on ${dayLabel(p.date, tz)}`;
     if (shares('check_in') && points[0]) {

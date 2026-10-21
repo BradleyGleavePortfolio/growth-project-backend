@@ -126,7 +126,6 @@ import { ROMAN_TURN_AUGMENTER_TIMEOUT_MS } from './roman.constants';
 import { ROMAN_TOOL_LIMITS, ROMAN_TOOLBOX, type RomanToolbox } from './tools/roman-tool.types';
 import { isRomanToolsEnabled } from './tools/roman-tools.feature';
 import { RomanToolLoop, withToolFacts } from './tools/roman-tool-loop';
-import { randomUUID } from 'node:crypto';
 import {
   CopilotTurnService,
   copilotChange,

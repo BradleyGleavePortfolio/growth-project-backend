@@ -33,7 +33,7 @@ function world() {
 async function turn(w: ReturnType<typeof makeWorld>, opts: { copilot?: boolean }) {
   const chunks: Array<Record<string, unknown>> = [];
   const userMessage = 'Thursday is busy this week. Can I do Lower body B on Friday?';
-  for await (const c of w.roman.streamAssistantTurn(student(P1), clientSession(P1), { userMessage, userMessageId: 'q-1', ...opts })) chunks.push(c as Record<string, unknown>);
+  for await (const c of w.roman.streamAssistantTurn(student(P1), clientSession(P1), { userMessage, userMessageId: 'q-1', ...opts })) chunks.push(c as unknown as Record<string, unknown>);
   const done = chunks.find((c) => c.type === 'done') as Record<string, unknown> & { text: string; messageId: string };
   return { done, persisted: w.db.raw.romanMessages.find((m) => m.id === done.messageId) as Record<string, unknown> };
 }
