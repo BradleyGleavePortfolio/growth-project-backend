@@ -672,6 +672,9 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
       },
     },
   },
+  // VOICE-BE: this person's heard markers and voice consent row.
+  { model: 'CommunityVoiceNoteListen', field: 'user_id', action: del },
+  { model: 'CommunityVoiceConsent', field: 'user_id', action: del },
   { model: 'CommunityVoiceNote', field: 'author_id', action: del },
   { model: 'CommunityResponse', field: 'user_id', action: del },
   { model: 'CommunityEventRsvp', field: 'user_id', action: del },

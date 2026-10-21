@@ -82,6 +82,9 @@ export class CommunityCoachInboxRepository {
         scope: 'cohort',
         deleted_at: null,
         plan_context_type: null,
+        // VOICE-BE: a voice note's chat message is not an inbox row (as before
+        // this release, when voice notes had no chat message); owner decision.
+        kind: { not: 'voice' },
         coach_replied_at: null,
         sender: { role: { notIn: ['coach', 'owner'] } },
         ...(after

@@ -91,6 +91,19 @@ export const CommunityMessageSchema = z
     // when FEATURE_COMMUNITY_ACKS is off; .optional() (not .nullable()) so the
     // key is simply absent in the flag-off shape.
     ack: MessageAckEnvelopeSchema.optional(),
+    // VOICE-BE: the thread's first message this one replies to, or null; and on a
+    // live kind 'voice' message its voice note (same id; the playable URL is
+    // GET /community/voice-notes/:id), else null.
+    parent_message_id: z.guid().nullable(),
+    voice_note: z
+      .object({
+        id: z.guid(),
+        duration_ms: z.number().int(),
+        waveform_peaks: z.array(z.number()).nullable(),
+        heard_at: z.string().datetime().nullable(),
+      })
+      .strict()
+      .nullable(),
   })
   .strict();
 
