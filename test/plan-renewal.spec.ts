@@ -1,8 +1,10 @@
 /**
- * RENEWAL-BE: the plan-renewal cadence, the end-date rule, the push wiring
- * (kind, lock-screen line, the client's switch) and the flag gate on every
- * route. The database behaviour (who gets a sequence, each step once per
- * channel, the stop rules, row security) is test/rls/plan-renewal-rls.spec.ts.
+ * RENEWAL-BE: the plan-renewal cadence (owner #RENEWAL-PUSH: Day 0 and Day 1
+ * pop-ups, one Day 7 app notification, local days), the plan-end rule, the
+ * push wiring (kind, lock-screen line, button category, the client's switch)
+ * and the flag gate. The database behaviour (who gets a sequence, the latest
+ * plan only, the Day 7 push once, the stop rules, row security) is
+ * test/rls/plan-renewal-rls.spec.ts.
  */
 import { NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
@@ -10,28 +12,25 @@ import { validate } from 'class-validator';
 import { CheckoutController } from '../src/checkout/checkout.controller';
 import type { CheckoutService } from '../src/checkout/checkout.service';
 import {
+  houseCoachUserId,
   isPlanRenewalEnabled,
-  PLAN_RENEWAL_DAY_MS,
-  PLAN_RENEWAL_STEPS,
-  planRenewalPopupStepAt,
-  planRenewalStepFor,
+  PLAN_RENEWAL_POPUP_DAYS,
+  PLAN_RENEWAL_PUSH_DAY,
+  planRenewalDay,
 } from '../src/checkout/plan-renewal/plan-renewal.cadence';
-import {
-  PlanRenewalAckDto,
-  PlanRenewalController,
-  PlanRenewalSettingsDto,
-} from '../src/checkout/plan-renewal/plan-renewal.controller';
-import { planEndedAt, type PlanRenewalService } from '../src/checkout/plan-renewal/plan-renewal.service';
-import { NO_RENEWAL } from '../src/checkout/plan-renewal/plan-renewal.state';
+import { PlanRenewalAckDto, PlanRenewalController } from '../src/checkout/plan-renewal/plan-renewal.controller';
+import type { PlanRenewalService } from '../src/checkout/plan-renewal/plan-renewal.service';
+import { NO_RENEWAL, planEndedAt } from '../src/checkout/plan-renewal/plan-renewal.state';
+import { ENV_RULES } from '../src/common/env-validation';
 import { NotificationKind } from '../src/notifications/notification-kind';
 import { lockScreenCopy } from '../src/notifications/push/lock-screen-copy';
+import { pushCategoryFor } from '../src/notifications/push/push-channels';
 import { quietHoursFor } from '../src/notifications/push/push-quiet-hours';
 import { notificationPrefsPrefix, pushAllowedByPreferences } from '../src/notifications/push/push-preferences';
 import { pushTapData } from '../src/notifications/notifications.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
 import { stub } from './utils/trial-fakes';
 
-const day = (n: number) => n * PLAN_RENEWAL_DAY_MS;
 const req = (id: string) => stub<AuthedRequest>({ user: { id, role: 'student' } });
 const withFlag = async (value: string | undefined, fn: () => Promise<void> | void) => {
   const before = process.env.FEATURE_PLAN_RENEWAL;
@@ -45,56 +44,60 @@ const withFlag = async (value: string | undefined, fn: () => Promise<void> | voi
   }
 };
 
-describe('RENEWAL-BE cadence', () => {
-  it('is Day 0, 1, 3, 7: pop-ups on 0, 3, 7, a coach message on 0 and 7, an app notification every step', () => {
-    expect(PLAN_RENEWAL_STEPS.map((s) => [s.day, s.popup, s.push, s.message])).toEqual([
-      [0, true, true, true],
-      [1, false, true, false],
-      [3, true, true, false],
-      [7, true, true, true],
-    ]);
+describe('RENEWAL-BE cadence (owner #RENEWAL-PUSH)', () => {
+  it('pop-ups on Day 0 and Day 1, the one app notification on Day 7', () => {
+    expect([PLAN_RENEWAL_POPUP_DAYS, PLAN_RENEWAL_PUSH_DAY]).toEqual([[0, 1], 7]);
   });
 
-  it('the latest due step for the time since the plan ended; nothing before Day 0 and nothing new after Day 7', () => {
-    expect(planRenewalStepFor(-1)).toBe(-1);
-    expect([0, day(1) - 1, day(1), day(3) - 1, day(3), day(7) - 1, day(7), day(30)].map(planRenewalStepFor))
-      .toEqual([0, 0, 1, 1, 2, 2, 3, 3]);
+  it('days are the client\'s local calendar days: Day 0 is the day the plan ends there', () => {
+    const ended = new Date('2026-10-21T06:30:00Z'); // 23:30 on Oct 20 in Los Angeles, 15:30 on Oct 21 in Tokyo
+    const la = 'America/Los_Angeles';
+    expect(planRenewalDay(ended, new Date('2026-10-21T06:45:00Z'), la)).toBe(0);
+    expect(planRenewalDay(ended, new Date('2026-10-21T07:05:00Z'), la)).toBe(1); // 00:05 Oct 21 there: Day 1
+    expect(planRenewalDay(ended, new Date('2026-10-28T07:05:00Z'), la)).toBe(8);
+    expect(planRenewalDay(ended, new Date('2026-10-27T08:00:00Z'), la)).toBe(7);
+    expect(planRenewalDay(ended, new Date('2026-10-21T14:00:00Z'), 'Asia/Tokyo')).toBe(0); // 23:00 Oct 21 there
+    // No usable zone known: UTC days.
+    expect(planRenewalDay(ended, new Date('2026-10-21T23:59:00Z'), null)).toBe(0);
+    expect(planRenewalDay(ended, new Date('2026-10-22T00:01:00Z'), null)).toBe(1);
   });
 
-  it('the pop-up due at a step is the latest pop-up step at or before it (Day 1 keeps Day 0)', () => {
-    expect([-1, 0, 1, 2, 3].map(planRenewalPopupStepAt)).toEqual([-1, 0, 0, 2, 3]);
-  });
-
-  it('the flag is on only for "true"', () => {
+  it('the flag is on only for "true"; HOUSE_COACH_USER_ID unset or blank offers no house coach', () => {
     expect(['true', 'TRUE', 'false', '1', ''].map((v) => isPlanRenewalEnabled({ FEATURE_PLAN_RENEWAL: v })))
       .toEqual([true, true, false, false, false]);
     expect(isPlanRenewalEnabled({})).toBe(false);
+    const id = '6f1c2b3a-0d4e-4f5a-8b6c-7d8e9f0a1b2c';
+    expect([houseCoachUserId({}), houseCoachUserId({ HOUSE_COACH_USER_ID: '  ' }), houseCoachUserId({ HOUSE_COACH_USER_ID: id })])
+      .toEqual([null, null, id]);
+    const rule = ENV_RULES.find((r) => r.name === 'HOUSE_COACH_USER_ID');
+    // An inventory rule adds no validator (no boot change); an id that is not a live coach offers nothing.
+    expect([rule?.tier, rule?.values, rule?.validate]).toEqual(['optional', undefined, undefined]);
   });
 });
 
-describe('RENEWAL-BE end date', () => {
-  const now = new Date('2026-10-21T12:00:00Z');
+describe('RENEWAL-BE plan-end rule (LS B2: never read off the clock)', () => {
   const at = (iso: string | null) => (iso ? new Date(iso) : null);
-  const p = (billing_type: string, access: string | null, canceled: string | null, periodEnd: string | null) => ({
-    id: 'p', client_user_id: 'c', coach_user_id: 'k', billing_type,
-    access_expires_at: at(access), canceled_at: at(canceled), current_period_end: at(periodEnd),
+  const p = (billing_type: string, access: string | null, canceled: string | null, periodEnd: string | null, atPeriodEnd = false) => ({
+    billing_type, access_expires_at: at(access), canceled_at: at(canceled), current_period_end: at(periodEnd),
+    cancel_at_period_end: atPeriodEnd,
   });
 
   it('a package ends on its last day; a subscription cancelled at period end ends at the period end', () => {
-    expect(planEndedAt(p('one_time', '2026-10-20T09:00:00Z', null, null), now)).toEqual(at('2026-10-20T09:00:00Z'));
-    expect(planEndedAt(p('recurring', null, '2026-10-01T10:00:00Z', '2026-10-19T10:00:00Z'), now))
+    expect(planEndedAt(p('one_time', '2026-10-20T09:00:00Z', null, null))).toEqual(at('2026-10-20T09:00:00Z'));
+    expect(planEndedAt(p('recurring', null, '2026-10-01T10:00:00Z', '2026-10-19T10:00:00Z', true)))
       .toEqual(at('2026-10-19T10:00:00Z'));
   });
 
-  it('a subscription cancelled at once ends when it was cancelled, even with a period end still ahead', () => {
-    expect(planEndedAt(p('recurring', null, '2026-10-20T08:00:00Z', '2026-11-05T08:00:00Z'), now))
-      .toEqual(at('2026-10-20T08:00:00Z'));
-    expect(planEndedAt(p('recurring', null, null, null), now)).toBeNull();
+  it('a subscription cancelled at once keeps the cancel as its end, whatever its old period end was', () => {
+    // Cancelled at once on Oct 1 with an unused period to Oct 20: the end is Oct 1, before and after Oct 20.
+    expect(planEndedAt(p('recurring', null, '2026-10-01T08:00:00Z', '2026-10-20T08:00:00Z'))).toEqual(at('2026-10-01T08:00:00Z'));
+    expect(planEndedAt(p('recurring', null, '2026-10-20T08:00:00Z', '2026-11-05T08:00:00Z'))).toEqual(at('2026-10-20T08:00:00Z'));
+    expect(planEndedAt(p('recurring', null, null, '2026-11-05T08:00:00Z'))).toBeNull(); // still running
   });
 });
 
-describe('RENEWAL-BE app notification', () => {
-  it('kind plan_renewal: fixed lock-screen line (no names), opens Home through the deep link', () => {
+describe('RENEWAL-BE app notification (Day 7)', () => {
+  it('kind plan_renewal: fixed lock-screen line (no names), tap opens Home, which opens the renewal page', () => {
     expect(NotificationKind.PLAN_RENEWAL).toBe('plan_renewal');
     expect(lockScreenCopy(NotificationKind.PLAN_RENEWAL, 'Sam Coach wrote something private', null)).toEqual({
       title: 'Your plan',
@@ -104,6 +107,14 @@ describe('RENEWAL-BE app notification', () => {
       actionScreen: 'NotificationCenter',
       deepLink: 'tgp://home',
     });
+  });
+
+  it('the two buttons: the push names its category; no other kind does', () => {
+    expect(pushCategoryFor(NotificationKind.PLAN_RENEWAL, { categoryId: 'PLAN_RENEWAL', coach_id: 'k' }))
+      .toEqual({ categoryId: 'PLAN_RENEWAL' });
+    expect(pushCategoryFor(NotificationKind.PLAN_RENEWAL, { categoryId: 'PLAN_RENEWAL_COACH' })).toEqual({ categoryId: 'PLAN_RENEWAL_COACH' });
+    expect(pushCategoryFor(NotificationKind.PLAN_RENEWAL, {})).toEqual({});
+    expect(pushCategoryFor(NotificationKind.MESSAGE_RECEIVED, { categoryId: 'PLAN_RENEWAL' })).toEqual({});
   });
 
   it('quiet hours: a renewal push due at 23:00 New York waits for 08:00 there; it is never urgent', () => {
@@ -125,62 +136,44 @@ describe('RENEWAL-BE app notification', () => {
   });
 });
 
-describe('RENEWAL-BE routes and the flag', () => {
-  const service = {
-    ackPopup: jest.fn(async () => ({ renewal: NO_RENEWAL })),
-    coachSettings: jest.fn(async () => ({ messages_enabled: true })),
-    setCoachSettings: jest.fn(async (_id: string, on: boolean) => ({ messages_enabled: on })),
-  };
+describe('RENEWAL-BE route and the flag', () => {
+  const service = { ackPopup: jest.fn(async () => ({ renewal: NO_RENEWAL })) };
   const routes = new PlanRenewalController(stub<PlanRenewalService>(service));
-  const checkout = {
-    hasActiveEntitlement: jest.fn(async () => false),
-    planRenewal: jest.fn(async () => ({ ...NO_RENEWAL, state: 'revoked', coach: { id: 'k', first_name: 'Sam' } })),
-  };
+  const revoked = { ...NO_RENEWAL, state: 'revoked', coach: { id: 'k', first_name: 'Sam' } };
+  const checkout = { hasActiveEntitlement: jest.fn(async () => false), planRenewal: jest.fn(async () => revoked) };
   const entitlement = new CheckoutController(stub<CheckoutService>(checkout));
   beforeEach(() => jest.clearAllMocks());
 
-  it('flag off: every renewal route is 404 PLAN_RENEWAL_OFF and the entitlement answer is exactly as before', async () => {
+  it('flag off: the ack is 404 PLAN_RENEWAL_OFF and the entitlement answer is exactly as before', async () => {
     await withFlag(undefined, async () => {
-      for (const call of [() => routes.ack(req('c'), { step: 0 }), () => routes.settings(req('k')),
-        () => routes.setSettings(req('k'), { messages_enabled: false })]) {
-        let thrown: unknown;
-        try {
-          await call();
-        } catch (e) {
-          thrown = e;
-        }
-        expect(thrown).toBeInstanceOf(NotFoundException);
-        expect((thrown as NotFoundException).getResponse()).toMatchObject({ code: 'PLAN_RENEWAL_OFF' });
+      let thrown: unknown;
+      try {
+        await routes.ack(req('c'), { step: 0 });
+      } catch (e) {
+        thrown = e;
       }
+      expect(thrown).toBeInstanceOf(NotFoundException);
+      expect((thrown as NotFoundException).getResponse()).toMatchObject({ code: 'PLAN_RENEWAL_OFF' });
       expect(await entitlement.checkEntitlement(req('c'))).toEqual({ active: false, entitlement_active: false });
-      expect(service.ackPopup).not.toHaveBeenCalled();
-      expect(service.setCoachSettings).not.toHaveBeenCalled();
-      expect(checkout.planRenewal).not.toHaveBeenCalled();
+      expect([service.ackPopup, checkout.planRenewal].map((f) => f.mock.calls.length)).toEqual([0, 0]);
     });
   });
 
-  it('flag on: the routes reach the service with the caller\'s own id; the entitlement answer adds the renewal block', async () => {
+  it('flag on: the ack reaches the service with the caller\'s own id; the entitlement answer adds the renewal block', async () => {
     await withFlag('true', async () => {
-      await routes.ack(req('c'), { step: 3 });
-      expect(service.ackPopup).toHaveBeenCalledWith('c', 3);
-      expect(await routes.setSettings(req('k'), { messages_enabled: false })).toEqual({ messages_enabled: false });
-      expect(service.setCoachSettings).toHaveBeenCalledWith('k', false);
+      await routes.ack(req('c'), { step: 1 });
+      expect(service.ackPopup).toHaveBeenCalledWith('c', 1);
       expect(await entitlement.checkEntitlement(req('c'), undefined, 'k')).toEqual({
         active: false,
         entitlement_active: false,
-        renewal: { ...NO_RENEWAL, state: 'revoked', coach: { id: 'k', first_name: 'Sam' } },
+        renewal: revoked,
       });
       expect(checkout.planRenewal).toHaveBeenCalledWith('c', 'k');
     });
   });
 
-  it('request shapes: the ack step is an integer; the coach switch is a boolean', async () => {
-    const errors = async (cls: new () => object, plain: object) =>
-      (await validate(plainToInstance(cls, plain))).map((e) => e.property);
-    expect(await errors(PlanRenewalAckDto, { step: 3 })).toEqual([]);
-    expect(await errors(PlanRenewalAckDto, { step: '3' })).toEqual(['step']);
-    expect(await errors(PlanRenewalAckDto, {})).toEqual(['step']);
-    expect(await errors(PlanRenewalSettingsDto, { messages_enabled: false })).toEqual([]);
-    expect(await errors(PlanRenewalSettingsDto, { messages_enabled: 'no' })).toEqual(['messages_enabled']);
+  it('request shape: the ack step is an integer', async () => {
+    const errors = async (plain: object) => (await validate(plainToInstance(PlanRenewalAckDto, plain))).map((e) => e.property);
+    expect([await errors({ step: 1 }), await errors({ step: '1' }), await errors({})]).toEqual([[], ['step'], ['step']]);
   });
 });

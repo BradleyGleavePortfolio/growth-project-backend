@@ -3229,8 +3229,6 @@ model CoachWelcomeMessageSetting {
   coach      User      @relation("CoachWelcomeSettingCoach", fields: [coach_id], references: [id], onDelete: Cascade)
   enabled    Boolean   @default(false)
   template   String?
-  // RENEWAL-BE: the coach's switch for the plan-renewal chat messages (default ON; server-written).
-  renewal_messages_enabled Boolean @default(true)
   // Set every time enabled flips false -> true. Only onboarding completions
   // at or after this instant are scheduled (no retroactive welcome burst).
   enabled_at DateTime?
@@ -5168,37 +5166,25 @@ model PayoutAdjustmentNotice {
 //   resolved: a subsequent invoice.paid cleared the window
 //   abandoned: max_attempts reached or grace_period_ends_at elapsed —
 //              the purchase will be canceled by the next sweeper run.
-/// RENEWAL-BE: one plan-renewal sequence, opened when a client's plan with
-/// their coach ended normally (never a failed payment: dunning v2 owns those).
-/// Server-written only (service role); RLS lets the client read their own
-/// row and the coach read it only while still that client's coach.
+/// RENEWAL-BE: one plan-renewal sequence, opened when a client's latest plan
+/// with their coach ended normally (never a failed payment: dunning v2 owns
+/// those). Server-written only (service role); RLS lets the client read their
+/// own row and the coach read it only while still that client's coach.
 model PlanRenewal {
-  id                String         @id @default(uuid())
-  purchase_id       String         @unique
-  purchase          ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
-  client_user_id    String
-  coach_user_id     String
-  ended_at          DateTime
-  status            String         @default("active") // active | done | stopped
-  stop_reason       String?
-  step_index        Int            @default(-1) // last claimed step of PLAN_RENEWAL_STEPS
-  step_claimed_at   DateTime?
-  popup_step        Int            @default(-1) // latest claimed step that shows a pop-up
-  popup_acked_step  Int            @default(-1)
-  // The one coach message owed (Day 0 or Day 7). message_key is the
-  // CoachMessage.client_message_id, so a retry can never send it twice.
-  message_step      Int?
-  message_key       String?
-  message_status    String? // pending | sent | skipped | dead
-  message_attempts  Int            @default(0)
-  message_next_at   DateTime?
-  message_id        String?
-  created_at        DateTime       @default(now())
-  updated_at        DateTime       @updatedAt
+  id               String         @id @default(uuid())
+  purchase_id      String         @unique
+  purchase         ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  client_user_id   String
+  coach_user_id    String
+  ended_at         DateTime
+  status           String         @default("active") // active | done (Day 7 push claimed) | stopped
+  stop_reason      String?
+  popup_acked_step Int            @default(-1) // the latest pop-up day (0 or 1) the client acknowledged
+  created_at       DateTime       @default(now())
+  updated_at       DateTime       @updatedAt
 
   @@index([client_user_id, coach_user_id])
   @@index([status])
-  @@index([message_status, message_next_at])
 }
 
 model DunningState {

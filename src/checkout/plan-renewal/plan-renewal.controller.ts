@@ -1,6 +1,6 @@
-import { Body, Controller, Get, HttpCode, NotFoundException, Post, Put, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, NotFoundException, Post, Request, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { IsBoolean, IsInt } from 'class-validator';
+import { IsInt } from 'class-validator';
 import type { AuthedRequest } from '../../auth/auth-request';
 import { JwtAuthGuard } from '../../auth/auth.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -13,11 +13,6 @@ export class PlanRenewalAckDto {
   step!: number;
 }
 
-export class PlanRenewalSettingsDto {
-  @IsBoolean()
-  messages_enabled!: boolean;
-}
-
 /** Every FEATURE_PLAN_RENEWAL route answers this while the flag is off (CHURN-BE's routes too). */
 export function assertOn(): void {
   if (!isPlanRenewalEnabled()) {
@@ -26,10 +21,8 @@ export function assertOn(): void {
 }
 
 /**
- * RENEWAL-BE routes (contract: ops164/work/RENEWAL-BE-contract.md). Every route
- * is 404 PLAN_RENEWAL_OFF while FEATURE_PLAN_RENEWAL is off, and scoped to the
- * caller's own id: the client acknowledges only their own pop-up, the coach
- * reads and writes only their own switch.
+ * RENEWAL-BE route (CONTRACT comment on b#1127): 404 PLAN_RENEWAL_OFF while
+ * FEATURE_PLAN_RENEWAL is off; the client acknowledges only their own pop-up.
  */
 @ApiTags('checkout')
 @Controller()
@@ -44,19 +37,5 @@ export class PlanRenewalController {
   ack(@Request() req: AuthedRequest, @Body() body: PlanRenewalAckDto) {
     assertOn();
     return this.renewal.ackPopup(req.user.id, body.step);
-  }
-
-  @Get('v1/coach/plan-renewal/settings')
-  @Roles('coach')
-  settings(@Request() req: AuthedRequest) {
-    assertOn();
-    return this.renewal.coachSettings(req.user.id);
-  }
-
-  @Put('v1/coach/plan-renewal/settings')
-  @Roles('coach')
-  setSettings(@Request() req: AuthedRequest, @Body() body: PlanRenewalSettingsDto) {
-    assertOn();
-    return this.renewal.setCoachSettings(req.user.id, body.messages_enabled);
   }
 }

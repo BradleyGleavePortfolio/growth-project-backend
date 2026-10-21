@@ -2056,7 +2056,14 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason:
-      'RENEWAL-BE plan-renewal sequence (Day 0, 1, 3, 7 after a plan ends normally; src/checkout/plan-renewal). Off: no sequence opens or sends, the renewal routes are 404 and GET /v1/checkout/entitlement carries no renewal block.',
+      'RENEWAL-BE plan-renewal sequence (Day 0 and Day 1 pop-ups, one Day 7 app notification after a plan ends normally; src/checkout/plan-renewal). Off: no sequence opens or sends, the renewal route is 404 and GET /v1/checkout/entitlement carries no renewal block.',
+  },
+  {
+    name: 'HOUSE_COACH_USER_ID',
+    tier: 'optional',
+    default: "unset → the renewal 'Join TGP's Top Rated Coach' choice is never offered",
+    reason:
+      "RENEWAL-BE (owner #RENEWAL-PUSH): the user id of TGP's house coach, the second choice on the renewal pop-ups and the Day 7 app notification. The owner sets it when the house coach account exists. An id that is not a live coach account offers nothing.",
   },
   {
     name: 'FEATURE_COACH_BROADCASTS',
@@ -2261,6 +2268,14 @@ export const ENV_RULES: EnvRule[] = [
       'Kill switch for Roman approve-to-adjust: deterministic recovery suggestions on the coach side (GET/POST /coach/adjustments). Off = every route 404s.',
   },
   {
+    name: 'FEATURE_CLIENT_PATH_COPILOT',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only explicit true)',
+    reason: 'Kill switch for Path Copilot, the client side (GET /client/copilot, POST /client/copilot/suggestions/:id/send). Off = both 404.',
+  },
+  {
     name: 'FEATURE_NAMED_REGIMES',
     values: ['true', 'false'],
     unsetIs: 'off',
@@ -2329,12 +2344,16 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_ROMAN_COACH_REVIEWED_AT',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Roman coach-reviewed timestamp surface.',
   },
   {
     name: 'FEATURE_ROMAN_COPY_V2',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Roman voice copy v2.',
@@ -2348,12 +2367,16 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_ROMAN_FIRST_PAYMENT',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason: 'Roman first-payment moment on checkout webhook.',
   },
   {
     name: 'FEATURE_ROMAN_THREE_ARC_COUNTS',
+    values: ['true', 'false'],
+    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only explicit true)',
     reason: 'Coach home three-arc counts.',

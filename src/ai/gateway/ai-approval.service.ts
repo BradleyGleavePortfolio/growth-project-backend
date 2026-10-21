@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -21,6 +22,9 @@ import { emptyPlanSnapshot, snapshotFromRevisionJson } from './materialisers/__s
 import { WeekLimits, subsetLimitBreach } from './workout-builder/subset-bounds';
 import { loadWeekOtherSetsByMuscle, weeklySetsCap } from './workout-builder/week-limits';
 import { planStaysInTenantWhere } from '../../workout-builder/tenant-clients';
+import {
+  CLIENT_PATH_CHANGE, ClientPathChangeMaterializer, notLapsedWhere, pathChangeLapsed, pathChangeNote,
+} from './materialisers/client-path-change.materialiser';
 
 // Human-approval workflow for consequential AI outputs. AiActionDraft
 // rows land here as `pending`; an authorized human (coach for own-tenant
@@ -90,6 +94,8 @@ export interface DecideInput {
   // B-AIB2-126 — apply only these changes (`c<i>` = diff index i) of an AI
   // workout-builder draft. Omitted = apply every change.
   acceptedChangeIds?: string[];
+  // COPILOT-BE: the coach's Edit of a client_path_change draft (its one editable field), applied on approval.
+  editedPayload?: unknown;
   ip?: string | null;
   userAgent?: string | null;
 }
@@ -132,12 +138,43 @@ export class AiApprovalService {
       orderBy: { created_at: 'desc' },
       take: limit,
     });
+    return scope.tenantCoachId ? this.keepOnRoster(scope.tenantCoachId, drafts) : drafts;
+  }
+
+  /**
+   * COPILOT-BE: the coach's paged queue of pending drafts, oldest first, with the total still waiting. Same scope as
+   * listPending (his tenant, his current clients); `after` is the id of the last draft of the previous page.
+   */
+  async pageQueue(scope: { tenantCoachId?: string; limit: number; after?: string }) {
     const coachId = scope.tenantCoachId;
-    if (!coachId) return drafts;
+    // #CP-LAPSE: a Copilot change past its wait is gone from the queue and from the total.
+    const where: Prisma.AiActionDraftWhereInput = { status: 'pending', AND: [notLapsedWhere()] };
+    if (coachId) {
+      const roster = await this.prisma.user.findMany({ where: { coach_id: coachId }, select: { id: true } });
+      where.tenant_coach_id = coachId;
+      where.OR = [{ subject_user_id: null }, { subject_user_id: { in: [coachId, ...roster.map((u) => u.id)] } }];
+    }
+    const anchor = scope.after
+      ? await this.prisma.aiActionDraft.findFirst({ where: { id: scope.after, ...(coachId ? { tenant_coach_id: coachId } : {}) }, select: { id: true, created_at: true } })
+      : null;
+    if (scope.after && !anchor) throw new BadRequestException({ code: 'INVALID_CURSOR', message: 'Reload the list.' });
+    const page = anchor
+      ? { AND: [where, { OR: [{ created_at: { gt: anchor.created_at } }, { created_at: anchor.created_at, id: { gt: anchor.id } }] }] }
+      : where;
+    const [total, rows] = await Promise.all([
+      this.prisma.aiActionDraft.count({ where }),
+      this.prisma.aiActionDraft.findMany({ where: page, orderBy: [{ created_at: 'asc' }, { id: 'asc' }], take: scope.limit + 1 }),
+    ]);
+    const items = rows.slice(0, scope.limit);
+    const next_cursor = rows.length > scope.limit ? items[items.length - 1].id : null;
+    return { items: coachId ? await this.keepOnRoster(coachId, items) : items, total, next_cursor };
+  }
+
+  private async keepOnRoster<T extends { subject_user_id: string | null; payload: Prisma.JsonValue }>(coachId: string, drafts: T[]) {
     // The tenant was stamped when the draft was made; a client who has since
     // moved to another coach takes their drafts with them (same rule as decide),
     // whether the draft names them as its subject or in its payload.
-    const clientsOf = (d: (typeof drafts)[number]) =>
+    const clientsOf = (d: T) =>
       [d.subject_user_id ?? [], payloadClientIds(d.payload)].flat().filter((id) => id !== coachId);
     const roster = await this.prisma.user.findMany({
       where: { id: { in: [...new Set(drafts.flatMap(clientsOf))] }, coach_id: coachId },
@@ -206,11 +243,23 @@ export class AiApprovalService {
     return otherHumans === 0;
   }
 
+  /** The decider is the coach of the draft's tenant and the client is on his roster now. */
+  private async isCurrentCoach(draft: { tenant_coach_id: string | null; subject_user_id: string | null }, decider: { id: string; role: string }) {
+    if (decider.role !== 'coach' || draft.tenant_coach_id !== decider.id || !draft.subject_user_id) return false;
+    const subject = await this.prisma.user.findUnique({ where: { id: draft.subject_user_id }, select: { coach_id: true } });
+    return subject?.coach_id === decider.id;
+  }
+
   async decide(input: DecideInput) {
     const draft = await this.prisma.aiActionDraft.findUnique({
       where: { id: input.draftId },
     });
     if (!draft) throw new NotFoundException('AI draft not found');
+    // COPILOT-BE: a client's Copilot change is invisible to every coach but the client's current one: 404, as for an
+    // unknown id (the roster checks below still run).
+    if (draft.capability === CLIENT_PATH_CHANGE && input.decider.role !== 'owner' && !(await this.isCurrentCoach(draft, input.decider))) {
+      throw new NotFoundException('AI draft not found');
+    }
     if (draft.status !== 'pending') {
       // Idempotency: a second approve/reject must not silently overwrite
       // the first decision. Surface a 403 so callers can refresh state.
@@ -273,7 +322,18 @@ export class AiApprovalService {
       throw new ForbiddenException('A draft cannot be decided by its requester');
     }
 
+    // #CP-LAPSE: a Copilot change the coach did not decide in time expires (the client sees "expired"); nothing applies.
+    if (pathChangeLapsed(draft)) {
+      await this.prisma.aiActionDraft.updateMany({ where: { id: draft.id, status: 'pending', materialised_at: null }, data: { status: 'expired' } });
+      throw new ConflictException({ code: 'COPILOT_SUGGESTION_EXPIRED', message: 'This suggestion has expired.' });
+    }
+
     const status = input.decision;
+    // COPILOT-BE (CP-NOTE): a client's Copilot change carries at most one short line, which the client sees.
+    const note = draft.capability === CLIENT_PATH_CHANGE ? pathChangeNote(input.note) : input.note ?? null;
+    if (input.editedPayload !== undefined && (draft.capability !== CLIENT_PATH_CHANGE || status !== 'approved')) {
+      throw new BadRequestException({ code: 'PAYLOAD_EDIT_UNSUPPORTED', message: 'This draft cannot be edited.' });
+    }
 
     // B-AIB2-126 — subset approval: materialise only the accepted ops (the
     // materialiser re-validates and dry-runs them against the current head).
@@ -306,6 +366,15 @@ export class AiApprovalService {
         }
       }
       appliedPayload = { ...(payload as Prisma.JsonObject), diff: subset };
+      toMaterialise = { ...draft, payload: appliedPayload };
+    }
+    if (input.editedPayload !== undefined) {
+      // The coach's Edit: his one field on a baseline refreshed to the live plan, re-checked (owner, consent, bounds).
+      const editor = this.materialisers?.resolve(draft.capability);
+      if (!(editor instanceof ClientPathChangeMaterializer)) {
+        throw new BadRequestException({ code: 'PAYLOAD_EDIT_UNSUPPORTED', message: 'This draft cannot be edited.' });
+      }
+      appliedPayload = { ...(await editor.edit(draft, input.editedPayload)) };
       toMaterialise = { ...draft, payload: appliedPayload };
     }
 
@@ -347,7 +416,10 @@ export class AiApprovalService {
           // accepted; the decide-gate below distinguishes them at the
           // ref level, not via a coarse confirmed-or-not flag.
         } catch (err) {
-          if (err instanceof ConflictException) {
+          // COPILOT-BE: a Copilot change's expected refusals (consent off 403, not his client 404, bad change and the
+          // calorie floor / hold 400s, plan changed 409) reach the phone as they are; nothing was applied.
+          const refusal = draft.capability === CLIENT_PATH_CHANGE && err instanceof HttpException && err.getStatus() < 500;
+          if (err instanceof ConflictException || refusal) {
             // Don't audit-log the race state as a materialisation failure
             // — it's a benign concurrency outcome and the winner will
             // record the success. Re-throw so the caller sees a 409.
@@ -469,7 +541,7 @@ export class AiApprovalService {
           status,
           decided_by_id: input.decider.id,
           decided_at: new Date(),
-          decision_note: input.note ?? null,
+          decision_note: note,
           ...(appliedPayload !== undefined ? { payload: appliedPayload } : {}),
         },
       });
@@ -526,7 +598,7 @@ export class AiApprovalService {
       metadata: {
         capability: draft.capability,
         requester_id: draft.requester_id,
-        note: input.note ?? null,
+        note,
         materialised_ref: materialisationRef,
       },
     });

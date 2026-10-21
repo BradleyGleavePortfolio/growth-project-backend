@@ -1,60 +1,43 @@
-import { randomUUID } from 'crypto';
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import type { ClientPurchase, PlanRenewal, Prisma } from '@prisma/client';
+import type { PlanRenewal } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { NotificationKind } from '../../notifications/notification-kind';
-import { MessagingService } from '../../messaging/messaging.service';
-import { renderWelcomeMessage } from '../../engagement/welcome-template';
+import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
 import { dunningErrorCode } from '../dunning-v2/dunning-v2.safe-error';
 import {
   isPlanRenewalEnabled,
-  PLAN_RENEWAL_LAST_STEP,
-  PLAN_RENEWAL_MESSAGE_BACKOFF_MS,
-  PLAN_RENEWAL_MESSAGES,
-  PLAN_RENEWAL_MIN_STEP_GAP_MS,
   PLAN_RENEWAL_OPEN_WINDOW_MS,
-  PLAN_RENEWAL_STEPS,
+  PLAN_RENEWAL_POPUP_DAYS,
+  PLAN_RENEWAL_PUSH_DAY,
   PLAN_RENEWAL_SWEEP_CRON,
-  planRenewalPopupStepAt,
-  planRenewalStepFor,
+  planRenewalDay,
 } from './plan-renewal.cadence';
-import { endedPlanWhere, loadPlanRenewal, planRenewalBlock, PlanRenewalView } from './plan-renewal.state';
+import {
+  endedPlanWhere,
+  latestPlanEnd,
+  loadPlanRenewal,
+  planEndedAt,
+  planRenewalBlock,
+  planRenewalHouseCoach,
+  PlanRenewalView,
+} from './plan-renewal.state';
 
 const BATCH = 500;
-/** A claimed coach message is retried after this if its worker died mid-send. */
-const MESSAGE_LEASE_MS = 5 * 60_000;
-
-type Ended = Pick<ClientPurchase, 'id' | 'client_user_id' | 'coach_user_id' | 'billing_type' | 'access_expires_at' | 'canceled_at' | 'current_period_end'>;
-
-/** When the plan ended: a package's last day, or a subscription's end (period end, or the cancel itself). */
-export function planEndedAt(p: Ended, now: Date): Date | null {
-  if (p.billing_type !== 'recurring') return p.access_expires_at;
-  const periodEnd = p.current_period_end && p.current_period_end <= now ? p.current_period_end : null;
-  if (!p.canceled_at) return periodEnd;
-  return periodEnd && periodEnd > p.canceled_at ? periodEnd : p.canceled_at;
-}
 
 const refusal = (code: string, message: string) => ({ code, error: code, message });
 
 /**
  * RENEWAL-BE: the plan-renewal sequence (cadence: plan-renewal.cadence.ts).
  *
- * Exactly once per step and channel, by the database: the step claim is a CAS
- * on step_index; the push is enqueued inside the claim's transaction with the
- * dedupe key plan_renewal:<id>:<step> (the outbox's unique key); the coach
- * message carries the claim's message_key as CoachMessage.client_message_id
- * (unique per sender), so a retry or a second machine replays the one row.
- * Every channel re-checks planRenewalBlock right before it goes out (the
- * push worker through planRenewalPushStillDue).
+ * The Day 0 and Day 1 pop-ups are read, not sent: GET /v1/checkout/entitlement
+ * works them out from the client's local day and their acknowledgements. The
+ * one app notification (Day 7) is sent exactly once, by the database: the
+ * claim is a CAS on status (active -> done) and the push is enqueued inside
+ * that transaction with the dedupe key plan_renewal:<id> (the outbox's unique
+ * key). planRenewalBlock is re-checked right before it goes out (the push
+ * worker through planRenewalPushStillDue).
  */
 @Injectable()
 export class PlanRenewalService {
@@ -64,7 +47,6 @@ export class PlanRenewalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
-    private readonly messaging: MessagingService,
   ) {}
 
   @Cron(PLAN_RENEWAL_SWEEP_CRON, { name: 'plan-renewal-sweep', timeZone: 'UTC' })
@@ -80,49 +62,55 @@ export class PlanRenewalService {
     }
   }
 
-  /** Open sequences for plans that just ended, claim due steps, send owed coach messages. */
+  /** Open sequences for plans that just ended; stop blocked ones; send the Day 7 app notification. */
   async runSweep(now = new Date()) {
-    const out = { opened: 0, claimed: 0, stopped: 0, messages: 0 };
+    const out = { opened: 0, pushed: 0, stopped: 0 };
     if (!isPlanRenewalEnabled()) return out;
     out.opened = await this.openEnded(now);
-    const active = await this.prisma.planRenewal.findMany({ where: { status: 'active' }, take: BATCH });
+    const active = await this.prisma.planRenewal.findMany({ where: { status: 'active' }, orderBy: { ended_at: 'asc' }, take: BATCH });
     for (const row of active) {
       const result = await this.advance(row, now);
       if (result !== 'idle') out[result] += 1;
     }
-    const owed = await this.prisma.planRenewal.findMany({
-      where: { message_status: 'pending', message_next_at: { lte: now } },
-      take: BATCH,
-    });
-    for (const row of owed) if ((await this.sendMessage(row, now)) === 'sent') out.messages += 1;
     return out;
   }
 
+  /**
+   * One sequence per plan end, for the client's LATEST plan with the coach
+   * only (LS B1): a purchase another plan with the coach outlasted never
+   * opens, and opening a newer one stops any older sequence still running.
+   */
   private async openEnded(now: Date): Promise<number> {
     const since = new Date(now.getTime() - PLAN_RENEWAL_OPEN_WINDOW_MS);
     const ended = await this.prisma.clientPurchase.findMany({
       where: { plan_renewal: { is: null }, ...endedPlanWhere(since, now) },
-      select: { id: true, client_user_id: true, coach_user_id: true, billing_type: true, access_expires_at: true, canceled_at: true, current_period_end: true },
+      select: {
+        id: true, client_user_id: true, coach_user_id: true, billing_type: true, access_expires_at: true,
+        canceled_at: true, current_period_end: true, cancel_at_period_end: true,
+      },
+      orderBy: { created_at: 'desc' },
       take: BATCH,
     });
     let opened = 0;
     for (const p of ended) {
-      const endedAt = planEndedAt(p, now);
+      const endedAt = planEndedAt(p);
       if (!endedAt || endedAt <= since || endedAt > now) continue;
       const pair = { client_user_id: p.client_user_id, coach_user_id: p.coach_user_id };
-      if (await this.prisma.planRenewal.count({ where: { ...pair, status: 'active' } })) continue;
       if (await planRenewalBlock(this.prisma, p.client_user_id, p.coach_user_id, now)) continue;
-      const made = await this.prisma.planRenewal.createMany({
-        data: [{ purchase_id: p.id, ...pair, ended_at: endedAt }],
-        skipDuplicates: true,
-      });
+      const latest = await latestPlanEnd(this.prisma, p.client_user_id, p.coach_user_id);
+      if (latest && latest > endedAt) continue;
+      if (await this.prisma.planRenewal.count({ where: { ...pair, ended_at: { gte: endedAt } } })) continue;
+      const [, made] = await this.prisma.$transaction([
+        this.prisma.planRenewal.updateMany({ where: { ...pair, status: 'active' }, data: { status: 'stopped', stop_reason: 'superseded' } }),
+        this.prisma.planRenewal.createMany({ data: [{ purchase_id: p.id, ...pair, ended_at: endedAt }], skipDuplicates: true }),
+      ]);
       opened += made.count;
     }
     return opened;
   }
 
-  /** Stop, wait, or claim the latest due step (one per 24 hours) and enqueue its push in the same transaction. */
-  private async advance(row: PlanRenewal, now: Date): Promise<'idle' | 'claimed' | 'stopped'> {
+  /** Stop the sequence, or from the client's local Day 7 claim it and enqueue the one app notification in the same transaction. */
+  private async advance(row: PlanRenewal, now: Date): Promise<'idle' | 'pushed' | 'stopped'> {
     const block = await planRenewalBlock(this.prisma, row.client_user_id, row.coach_user_id, now);
     if (block) {
       await this.prisma.planRenewal.updateMany({
@@ -131,118 +119,47 @@ export class PlanRenewalService {
       });
       return 'stopped';
     }
-    const due = planRenewalStepFor(now.getTime() - row.ended_at.getTime());
-    if (due <= row.step_index) return 'idle';
-    if (row.step_claimed_at && now.getTime() - row.step_claimed_at.getTime() < PLAN_RENEWAL_MIN_STEP_GAP_MS) return 'idle';
-    const step = PLAN_RENEWAL_STEPS[due];
-    return this.prisma.$transaction(async (tx): Promise<'idle' | 'claimed'> => {
-      const won = await tx.planRenewal.updateMany({
-        where: { id: row.id, status: 'active', step_index: row.step_index },
-        data: {
-          step_index: due,
-          step_claimed_at: now,
-          ...(due === PLAN_RENEWAL_LAST_STEP ? { status: 'done' } : {}),
-          popup_step: planRenewalPopupStepAt(due),
-          ...(step.message
-            ? { message_step: due, message_key: randomUUID(), message_status: 'pending', message_attempts: 0, message_next_at: now, message_id: null }
-            : {}),
-        },
-      });
-      if (won.count !== 1) return 'idle';
-      if (step.push) {
-        await this.notifications.sendPush(
-          {
-            user_id: row.client_user_id,
-            kind: NotificationKind.PLAN_RENEWAL,
-            body: 'Your plan has ended.',
-            deep_link: 'tgp://home',
-            dedupe_key: `plan_renewal:${row.id}:${due}`,
+    const day = planRenewalDay(row.ended_at, now, await resolveRecipientTimeZone(this.prisma, row.client_user_id));
+    if (day < PLAN_RENEWAL_PUSH_DAY) return 'idle';
+    const house = await planRenewalHouseCoach(this.prisma, row.coach_user_id);
+    return this.prisma.$transaction(async (tx): Promise<'idle' | 'pushed'> => {
+      const won = await tx.planRenewal.updateMany({ where: { id: row.id, status: 'active' }, data: { status: 'done' } });
+      // A Day 7 the sweep never saw (flag off, server down) is skipped, never sent late.
+      if (won.count !== 1 || day > PLAN_RENEWAL_PUSH_DAY) return 'idle';
+      await this.notifications.sendPush(
+        {
+          user_id: row.client_user_id,
+          kind: NotificationKind.PLAN_RENEWAL,
+          body: 'Your plan has ended.',
+          deep_link: 'tgp://home',
+          dedupe_key: `plan_renewal:${row.id}`,
+          // The two buttons (contract on b#1127): the phone registers both categories with the labels.
+          data: {
+            categoryId: house ? 'PLAN_RENEWAL' : 'PLAN_RENEWAL_COACH',
+            coach_id: row.coach_user_id,
+            ...(house ? { house_coach_id: house.id } : {}),
           },
-          tx,
-        );
-      }
-      return 'claimed';
-    });
-  }
-
-  /** Send the owed coach message once (lease + fenced writes; the message key makes a replay a no-op). */
-  private async sendMessage(row: PlanRenewal, now: Date): Promise<'sent' | 'skipped' | 'retry' | 'lost'> {
-    if (!row.message_key || row.message_step == null) return 'lost';
-    const held = { id: row.id, message_status: 'pending', message_key: row.message_key };
-    const claim = await this.prisma.planRenewal.updateMany({
-      where: { ...held, message_attempts: row.message_attempts, message_next_at: { lte: now } },
-      data: { message_attempts: row.message_attempts + 1, message_next_at: new Date(now.getTime() + MESSAGE_LEASE_MS) },
-    });
-    if (claim.count !== 1) return 'lost';
-    // Fenced: a worker whose lease was taken over loses every later write.
-    const settle = (data: Prisma.PlanRenewalUpdateManyMutationInput) =>
-      this.prisma.planRenewal.updateMany({ where: { ...held, message_attempts: row.message_attempts + 1 }, data });
-    const setting = await this.prisma.coachWelcomeMessageSetting.findUnique({
-      where: { coach_id: row.coach_user_id },
-      select: { renewal_messages_enabled: true },
-    });
-    const off = setting?.renewal_messages_enabled === false;
-    if (row.status === 'stopped' || off || (await planRenewalBlock(this.prisma, row.client_user_id, row.coach_user_id, now))) {
-      await settle({ message_status: 'skipped', message_next_at: null });
-      return 'skipped';
-    }
-    try {
-      const client = await this.prisma.user.findUnique({ where: { id: row.client_user_id }, select: { name: true } });
-      const body = renderWelcomeMessage(PLAN_RENEWAL_MESSAGES[row.message_step], { clientName: client?.name, coachName: null });
-      const sent = await this.messaging.sendAsCoach(
-        row.coach_user_id,
-        row.client_user_id,
-        { body, client_message_id: row.message_key },
-        { automatedBy: 'plan_renewal' }, // HOME-BE: an unattended send, never counted as a reply
+        },
+        tx,
       );
-      await settle({ message_status: 'sent', message_id: sent.id, message_next_at: null });
-      return 'sent';
-    } catch (err: unknown) {
-      if (err instanceof ForbiddenException || err instanceof NotFoundException) {
-        await settle({ message_status: 'skipped', message_next_at: null });
-        return 'skipped';
-      }
-      const wait = PLAN_RENEWAL_MESSAGE_BACKOFF_MS[row.message_attempts];
-      await settle(wait ? { message_next_at: new Date(now.getTime() + wait) } : { message_status: 'dead', message_next_at: null });
-      this.logger.warn(`plan renewal message ${row.id} attempt ${row.message_attempts + 1} failed: ${dunningErrorCode(err)}`);
-      return 'retry';
-    }
+      return 'pushed';
+    });
   }
 
-  /** POST /v1/checkout/renewal/popup-ack: the client saw the pop-up for `day` (0, 3 or 7). */
-  async ackPopup(userId: string, day: number): Promise<{ renewal: PlanRenewalView }> {
-    const idx = PLAN_RENEWAL_STEPS.findIndex((s) => s.popup && s.day === day);
-    if (idx < 0) {
-      throw new BadRequestException(refusal('PLAN_RENEWAL_STEP_INVALID', 'The pop-up step must be 0, 3 or 7.'));
+  /** POST /v1/checkout/renewal/popup-ack: the client saw the pop-up for local `day` (0 or 1). */
+  async ackPopup(userId: string, day: number, now = new Date()): Promise<{ renewal: PlanRenewalView }> {
+    if (!PLAN_RENEWAL_POPUP_DAYS.includes(day)) {
+      throw new BadRequestException(refusal('PLAN_RENEWAL_STEP_INVALID', 'The pop-up step must be 0 or 1.'));
     }
-    const { row } = await loadPlanRenewal(this.prisma, userId);
-    if (!row) throw new NotFoundException(refusal('PLAN_RENEWAL_NOT_FOUND', 'There is no plan renewal running for this account.'));
-    if (idx > row.popup_step) {
+    const current = await loadPlanRenewal(this.prisma, userId, undefined, now);
+    if (!current.row) throw new NotFoundException(refusal('PLAN_RENEWAL_NOT_FOUND', 'There is no plan renewal running for this account.'));
+    if (day > current.day) {
       throw new ConflictException(refusal('PLAN_RENEWAL_STEP_NOT_REACHED', 'That pop-up is not due yet.'));
     }
     await this.prisma.planRenewal.updateMany({
-      where: { id: row.id, popup_acked_step: { lt: idx } },
-      data: { popup_acked_step: idx },
+      where: { id: current.row.id, popup_acked_step: { lt: day } },
+      data: { popup_acked_step: day },
     });
-    return { renewal: (await loadPlanRenewal(this.prisma, userId)).view };
-  }
-
-  /** The coach's renewal-message switch (default on; stored beside the welcome setting). */
-  async coachSettings(coachId: string): Promise<{ messages_enabled: boolean }> {
-    const row = await this.prisma.coachWelcomeMessageSetting.findUnique({
-      where: { coach_id: coachId },
-      select: { renewal_messages_enabled: true },
-    });
-    return { messages_enabled: row?.renewal_messages_enabled ?? true };
-  }
-
-  async setCoachSettings(coachId: string, enabled: boolean): Promise<{ messages_enabled: boolean }> {
-    const row = await this.prisma.coachWelcomeMessageSetting.upsert({
-      where: { coach_id: coachId },
-      create: { coach_id: coachId, renewal_messages_enabled: enabled },
-      update: { renewal_messages_enabled: enabled },
-      select: { renewal_messages_enabled: true },
-    });
-    return { messages_enabled: row.renewal_messages_enabled };
+    return { renewal: (await loadPlanRenewal(this.prisma, userId, undefined, now)).view };
   }
 }
