@@ -53,11 +53,13 @@ async function brief(n: number, opts: { busy?: string; busyLines?: number } = {}
       return rows.slice(0, take);
     }
     if (!where.onboarding_intake) return mine.map((id) => ({ id })); // the roster
-    // Joined in the last 24 h; the database gives no order, so the mock shuffles.
-    const rows = mine.map((id) => ({
+    // Joined in the last 24 h. With no orderBy the database's order is any
+    // order, so the mock shuffles unless the read sorts by coach_joined_at.
+    const rows = shuffle(mine.map((id) => ({
       id, name: nameOf(id), coach_joined_at: minsAgo(age(id) + 1), onboarding_intake: { completed_at: minsAgo(60 * 24 * 40) },
-    }));
-    return shuffle(rows).slice(0, take);
+    })));
+    if (orderBy?.coach_joined_at?.sort === 'desc') rows.sort((a, b) => +b.coach_joined_at - +a.coach_joined_at);
+    return rows.slice(0, take);
   });
   prisma.checkIn.findMany.mockImplementation(async ({ where, distinct, take }: { where: Where; distinct?: string[]; take?: number }) => {
     if (where.reviewed_by_coach !== false) return []; // nobody checked in today

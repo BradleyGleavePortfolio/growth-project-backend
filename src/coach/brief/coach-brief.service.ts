@@ -1181,6 +1181,8 @@ export class CoachBriefService {
               coach_joined_at: true,
               onboarding_intake: { select: { completed_at: true } },
             },
+            // The newest joins first, so the cap drops the oldest.
+            orderBy: { coach_joined_at: { sort: 'desc', nulls: 'last' } },
             take: BRIEF_ROWS_PER_KIND,
           })
         : [],
