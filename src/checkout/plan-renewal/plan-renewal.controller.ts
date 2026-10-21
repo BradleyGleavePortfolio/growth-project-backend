@@ -25,7 +25,7 @@ function assertOn(): void {
 }
 
 /**
- * RENEWAL-BE routes (contract: ops164/work/RENEWAL-CONTRACT.md). Every route
+ * RENEWAL-BE routes (contract: ops164/work/RENEWAL-BE-contract.md). Every route
  * is 404 PLAN_RENEWAL_OFF while FEATURE_PLAN_RENEWAL is off, and scoped to the
  * caller's own id: the client acknowledges only their own pop-up, the coach
  * reads and writes only their own switch.

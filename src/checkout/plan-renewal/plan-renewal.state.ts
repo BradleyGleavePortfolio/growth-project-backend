@@ -4,7 +4,7 @@ import { isPlanRenewalEnabled, PLAN_RENEWAL_STEPS } from './plan-renewal.cadence
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
-/** The `renewal` block of GET /v1/checkout/entitlement (contract: ops164/work/RENEWAL-CONTRACT.md). */
+/** The `renewal` block of GET /v1/checkout/entitlement (contract: ops164/work/RENEWAL-BE-contract.md). */
 export interface PlanRenewalView {
   state: 'none' | 'ended' | 'revoked';
   ended_at: string | null;
@@ -23,9 +23,11 @@ export const NO_RENEWAL: PlanRenewalView = {
   coach: null,
 };
 
-/** Checkout attempts that never became a plan. */
+/** Checkout attempts that never became a plan (plus a one-off card declined at checkout, below). */
 const NEVER_A_PLAN = ['pending', 'expired', 'incomplete_expired'];
 const FAILED_PAYMENT = ['payment_failed', 'past_due', 'unpaid'];
+const declinedAtCheckout = (p: { status: string; billing_type: string }) =>
+  p.status === 'payment_failed' && p.billing_type !== 'recurring';
 const MONEY_REVERSED = ['refunded', 'disputed', 'chargeback_lost'];
 /** invite-grant.service GRANT_REVOKED_STATUS (not imported: the push worker loads this file). */
 const REVOKED = 'revoked';
@@ -51,7 +53,7 @@ export async function planRenewalBlock(
   now: Date,
 ): Promise<PlanRenewalBlock | null> {
   const pair = { client_user_id: clientUserId, coach_user_id: coachUserId };
-  const [client, plans, reversed, dunning] = await Promise.all([
+  const [client, rows, reversed, dunning] = await Promise.all([
     db.user.findUnique({
       where: { id: clientUserId },
       select: { role: true, coach_id: true, archived_at: true, deleted_at: true, deletion_scheduled_at: true },
@@ -59,7 +61,7 @@ export async function planRenewalBlock(
     db.clientPurchase.findMany({
       where: { ...pair, status: { notIn: NEVER_A_PLAN } },
       orderBy: { created_at: 'desc' },
-      select: { status: true, entitlement_active: true, access_expires_at: true },
+      select: { status: true, billing_type: true, entitlement_active: true, access_expires_at: true },
     }),
     db.clientPurchase.count({
       where: { ...pair, OR: [{ status: { in: MONEY_REVERSED } }, { refunds: { some: {} } }, { disputes: { some: {} } }] },
@@ -68,6 +70,7 @@ export async function planRenewalBlock(
       where: { purchase: pair, OR: [{ status: { not: 'resolved' } }, { locked_out_at: { not: null } }] },
     }),
   ]);
+  const plans = rows.filter((p) => !declinedAtCheckout(p));
   if (!client || client.role !== 'student' || client.deleted_at || client.deletion_scheduled_at) return 'account';
   if (client.coach_id !== coachUserId) return 'moved';
   if (client.archived_at) return 'archived';

@@ -99,6 +99,8 @@ const DAY = PLAN_RENEWAL_DAY_MS;
         VALUES (${u[k]}, ${supa[k]}, ${`renew-${u[k]}@example.test`}, ${names[k] ?? `Person ${k}`},
           ${isCoach(k) ? 'coach' : 'student'}::"Role", ${coachOf[k] ? u[coachOf[k]] : null})`;
     }
+    // A once had a card declined at checkout (a one-off attempt, never a plan): it does not count as a failed payment.
+    await purchase('A', { billing_type: 'one_time', status: 'payment_failed', entitlement_active: false, created_at: at(-40 * DAY) });
     await packageRanOut('A', HOUR);
     // B: a subscription cancelled weeks ago at period end; the period ended two hours ago.
     await purchase('B', { billing_type: 'recurring', status: 'canceled', entitlement_active: false,
