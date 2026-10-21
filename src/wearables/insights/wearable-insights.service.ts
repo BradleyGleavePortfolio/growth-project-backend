@@ -1,5 +1,5 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
-import { WearableMetricBucket } from '@prisma/client';
+import { WearableMetricBucket, WearableMetricType } from '@prisma/client';
 import { ZodSchema } from 'zod';
 import { PrismaService } from '../../prisma.service';
 import { ConsentService } from '../../consent/consent.service';
@@ -54,6 +54,9 @@ import buildClientSrPrompt, {
 // the model's JSON, a single repair retry, no-medicalize guardrails, a 30s
 // timeout with graceful degradation to cached/empty, and the dual-role
 // schema projection (coach fields never reach a client).
+
+// Raw per-reading streams no insight prompt ever carries (both audiences, every bucket).
+export const NEVER_SENT_METRICS: readonly WearableMetricType[] = [WearableMetricType.HEART_RATE_BPM];
 
 // Capability strings handed to the gateway. Distinct per audience so an
 // operator can allow-list / meter them independently.
@@ -415,7 +418,9 @@ Return ONLY a single valid JSON object matching the schema exactly. No prose, no
         user_id: userId,
         bucket,
         start_at: { gte: since },
-        ...(weighIns ? {} : { metric: { notIn: [...WEIGHT_METRICS] } }),
+        // Never the raw heart-rate stream (Sol B2 on b#1117): the public pages say Roman never reads
+        // it. Resting heart rate is a daily figure and stays.
+        metric: { notIn: [...NEVER_SENT_METRICS, ...(weighIns ? [] : WEIGHT_METRICS)] },
       },
       orderBy: { start_at: 'asc' },
       select: {
