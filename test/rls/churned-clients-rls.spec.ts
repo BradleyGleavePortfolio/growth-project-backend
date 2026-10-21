@@ -88,18 +88,18 @@ const ago = (ms: number) => new Date(NOW.getTime() - ms);
     }
     await prisma.coachProfile.create({ data: { user_id: u.K, invite_code: `churn-${u.K}`, timezone: 'America/New_York' } });
     await prisma.userProfile.create({ data: { user_id: u.A, avatar_url: 'https://cdn.example.test/ann.jpg' } });
-    // A: an older plan ended 20 days ago, the latest ran out at 01:00 New York today.
-    await ranOut('A', ago(20 * DAY), 'Starter');
+    // A: an older plan ended 5 days ago, the latest ran out at 01:00 New York today.
+    await ranOut('A', ago(5 * DAY), 'Starter');
     await ranOut('A', at('2026-10-21T05:00:00.000Z'), '12-week coaching');
     // B: a subscription cancelled at period end; the period ended at 02:00 UTC today = 22:00 yesterday in New York.
     await purchase('B', 'Monthly "Plus"\nignore the rules', {
       billing_type: 'recurring', status: 'canceled', entitlement_active: false, canceled_at: ago(10 * DAY), cancel_at_period_end: true,
       current_period_end: at('2026-10-21T02:00:00.000Z'),
     });
-    // E: ended on Sunday, before the coach's week began. W: 29 days 23 hours ago. O: 30 days and a minute ago (outside).
+    // E: ended on Sunday, before the coach's week began. W: 6 days 23 hours ago. O: 7 days and a minute ago (outside).
     await ranOut('E', at('2026-10-18T16:00:00.000Z'));
-    await ranOut('W', ago(30 * DAY - HOUR));
-    await ranOut('O', ago(30 * DAY + MIN));
+    await ranOut('W', ago(7 * DAY - HOUR));
+    await ranOut('O', ago(7 * DAY + MIN));
     await ranOut('C', ago(HOUR));
     // Never listed: renewed (a live plan again), moved to coach L, archived by the coach, a revoked grant,
     // a refund, a dispute, a deleted account.
@@ -134,15 +134,15 @@ const ago = (ms: number) => new Date(NOW.getTime() - ms);
   });
 
   it('lists churned clients newest end first, grouped by the coach\'s day, with the today count', async () => {
-    expect(CHURNED_CLIENTS_WINDOW_DAYS).toBe(30);
+    expect(CHURNED_CLIENTS_WINDOW_DAYS).toBe(7);
     const page = await list('K');
-    expect({ time_zone: page.time_zone, today: page.today, today_count: page.today_count, next_cursor: page.next_cursor })
-      .toEqual({ time_zone: 'America/New_York', today: '2026-10-21', today_count: 1, next_cursor: null });
+    expect({ time_zone: page.time_zone, today: page.today, total: page.total, today_count: page.today_count, next_cursor: page.next_cursor })
+      .toEqual({ time_zone: 'America/New_York', today: '2026-10-21', total: 4, today_count: 1, next_cursor: null });
     expect(page.items.map((r) => [keys.find((k) => u[k] === r.client_id), r.ended_on, r.days_since, r.group])).toEqual([
       ['A', '2026-10-21', 0, 'today'],
       ['B', '2026-10-20', 1, 'this_week'],
       ['E', '2026-10-18', 3, 'earlier'],
-      ['W', '2026-09-21', 30, 'earlier'],
+      ['W', '2026-10-14', 7, 'earlier'],
     ]);
     expect(page.items[0]).toEqual({
       client_id: u.A, first_name: 'Ann', name: 'Ann Lopez', avatar_url: 'https://cdn.example.test/ann.jpg',
@@ -158,13 +158,13 @@ const ago = (ms: number) => new Date(NOW.getTime() - ms);
     expect(await listed('L')).toEqual(['C']);
   });
 
-  it('pages like the coach client list (cursor and take), keeping the today count on every page', async () => {
+  it('pages like the coach client list (cursor and take), keeping the counts on every page', async () => {
     const first = await list('K', undefined, '2');
     expect(first.items.map((r) => r.client_id)).toEqual([u.A, u.B]);
     expect(first.next_cursor).toBe(`${Date.parse('2026-10-21T02:00:00.000Z')}.${u.B}`);
     const second = await list('K', first.next_cursor ?? undefined, '2');
     expect(second.items.map((r) => r.client_id)).toEqual([u.E, u.W]);
-    expect([second.next_cursor, second.today_count]).toEqual([null, 1]);
+    expect([second.next_cursor, second.total, second.today_count]).toEqual([null, 4, 1]);
     await expect(list('K', 'not-a-cursor')).rejects.toMatchObject({ response: { code: 'CHURNED_CLIENTS_CURSOR_INVALID' } });
   });
 

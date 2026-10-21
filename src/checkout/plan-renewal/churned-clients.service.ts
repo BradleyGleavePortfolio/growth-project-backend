@@ -10,8 +10,12 @@ import { firstNameOf } from '../../engagement/welcome-template';
 import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
 import { endedPlanWhere, latestPlanEnd, planEndedAt, planRenewalBlock } from './plan-renewal.state';
 
-/** CHURN-BE: a client is listed while their plan's end is at most this many days old (operator default, owner-tunable). */
-export const CHURNED_CLIENTS_WINDOW_DAYS = 30;
+/**
+ * CHURN-BE: a client is listed while their plan's end is at most this many days
+ * old. Owner 10-21 (OPERATOR RULING v3 6328335815, point 5): "track last week
+ * worth of churn" ("Plan ended last 7 days, {N}").
+ */
+export const CHURNED_CLIENTS_WINDOW_DAYS = 7;
 const DAY_MS = 86_400_000;
 
 export interface ChurnedClientRow {
@@ -36,6 +40,8 @@ export interface ChurnedClientsPage {
   time_zone: string;
   /** The coach's today (YYYY-MM-DD). */
   today: string;
+  /** Rows across every page (the {N} of "Plan ended last 7 days, {N}"). */
+  total: number;
   /** Rows in the `today` group across every page. */
   today_count: number;
   items: ChurnedClientRow[];
@@ -124,6 +130,7 @@ export class ChurnedClientsService {
     return {
       time_zone: week.tz,
       today: week.today,
+      total: all.length,
       today_count: all.filter((r) => week.dayOf(r.endedAt) === week.today).length,
       items,
       next_cursor: tail && start + take < all.length ? `${tail.endedAt.getTime()}.${tail.clientId}` : null,
