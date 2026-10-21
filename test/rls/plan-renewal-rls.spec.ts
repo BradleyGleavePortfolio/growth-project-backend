@@ -99,14 +99,15 @@ const DAY = PLAN_RENEWAL_DAY_MS;
     // A once had a card declined at checkout (a one-off attempt, never a plan): it does not count as a failed payment.
     await purchase('A', { billing_type: 'one_time', status: 'payment_failed', entitlement_active: false, created_at: at(-40 * DAY) });
     await packageRanOut('A', HOUR);
-    // B: a subscription cancelled weeks ago at period end; the period ended two hours ago.
+    // B: a free trial cancelled at period end (counts as ended, ruling 6325498308); the trial ended two hours ago.
     await purchase('B', { billing_type: 'recurring', status: 'canceled', entitlement_active: false, cancel_at_period_end: true,
-      canceled_at: at(-20 * DAY), current_period_end: at(-2 * HOUR) });
+      trial_days: 14, trial_started_at: at(-14 * DAY), trial_ends_at: at(-2 * HOUR), canceled_at: at(-5 * DAY), current_period_end: at(-2 * HOUR) });
     await packageRanOut('C', HOUR);
     await packageRanOut('Q', HOUR);
     // E: first seen on its local Day 8 (it ended 7 days 23 hours ago, at 13:00 UTC): its Day 7 is gone.
     await packageRanOut('E', 7 * DAY + 23 * HOUR);
-    // LO B1: G's card was declined once and the cycle recovered (resolved_at kept when the cancel relabelled it).
+    // G: cancelled at period end (the period ended an hour ago). LO B1: a card decline months ago was recovered
+    // (resolved_at kept when the cancel relabelled the cycle abandoned).
     const g = await purchase('G', { billing_type: 'recurring', status: 'canceled', entitlement_active: false, cancel_at_period_end: true,
       canceled_at: at(-10 * DAY), current_period_end: at(-HOUR) });
     await prisma.dunningState.create({ data: { purchase_id: g, status: 'abandoned', resolved_at: at(-60 * DAY) } });
