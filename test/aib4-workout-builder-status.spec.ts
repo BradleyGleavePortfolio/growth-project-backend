@@ -152,7 +152,11 @@ describe('AIB-4 manifest entries', () => {
     };
     for (const n of NAMES) expect([n, m.flags[n], typeof m.gates[n], n in m.excluded]).toEqual([n, FLIPPED[n], 'string', false]);
     expect(fem.validateManifest(m, rules)).toEqual([]);
-    expect(rules.get('AI_GATEWAY_CAPABILITIES')?.values).toEqual([TWO_CAPS]);
+    // WEAR-AI (owner 161-1 op 1): exactly two allowed values; the manifest keeps the first until ALL-ON.
+    expect(rules.get('AI_GATEWAY_CAPABILITIES')?.values).toEqual([
+      TWO_CAPS,
+      `${TWO_CAPS},wearable_insight.client,wearable_insight.coach`,
+    ]);
   });
 
   it("FLIP values validate; '*' and REQUIRE_APPROVAL=false are rejected; the live flag alone fails its precondition", () => {

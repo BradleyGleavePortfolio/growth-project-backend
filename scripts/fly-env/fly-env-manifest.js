@@ -99,12 +99,21 @@ const PRECONDITIONS = [
       const missing = [
         m.flags.AI_GATEWAY_ENABLED !== 'true' && 'AI_GATEWAY_ENABLED "true"',
         m.flags.AI_GATEWAY_PROVIDER !== 'anthropic' && 'AI_GATEWAY_PROVIDER "anthropic"',
-        m.flags.AI_GATEWAY_CAPABILITIES === 'unset' && 'AI_GATEWAY_CAPABILITIES (the two workout capabilities)',
+        m.flags.AI_GATEWAY_CAPABILITIES === 'unset' && 'AI_GATEWAY_CAPABILITIES (a value with the two workout capabilities)',
       ].filter(Boolean);
       return missing.length
         ? `FEATURE_MWB_AI_LIVE_CREATE is declared "true" but ${missing.join(', ')} ${missing.length === 1 ? 'is' : 'are'} not declared, so the builder would stay in the not-configured state. Fix: declare ${missing.join(', ')} in the same PR, or keep FEATURE_MWB_AI_LIVE_CREATE "unset".`
         : null;
     },
+  },
+  {
+    // WEAR-AI: without the ledger every client reads as no box-2 grant, so every insight panel says AI help is off.
+    id: 'wearable-insight-needs-consent-ledger',
+    names: ['AI_GATEWAY_CAPABILITIES', 'FEATURE_AI_CONSENT_LEDGER_ENABLED'],
+    check: (m) =>
+      String(m.flags.AI_GATEWAY_CAPABILITIES).includes('wearable_insight.') && m.flags.FEATURE_AI_CONSENT_LEDGER_ENABLED !== 'true'
+        ? 'AI_GATEWAY_CAPABILITIES allows the wearable insight capabilities but FEATURE_AI_CONSENT_LEDGER_ENABLED is not declared "true", so no client\'s AI grant can be read and every insight panel shows AI help is off. Fix: declare FEATURE_AI_CONSENT_LEDGER_ENABLED "true" in the same PR, or use the two-capability value.'
+        : null,
   },
   {
     id: 'community-subflag-needs-api',

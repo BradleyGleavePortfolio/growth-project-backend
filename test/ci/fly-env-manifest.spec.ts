@@ -37,6 +37,8 @@ const baseline = (): FlyEnvManifest => {
     ),
   };
 };
+const WEAR_AI_CAPS =
+  'draft.create_workout_plan,draft.edit_workout_plan,wearable_insight.client,wearable_insight.coach';
 const VALUE = 'leakcanary-value-7d6c5b4a39213f2e';
 const SB_SECRET = 'sb_secret_leakcanary-Ab12_Cd34';
 const SB_PUBLISHABLE = 'sb_publishable_leakcanary-Ef56_Gh78';
@@ -366,6 +368,13 @@ describe('manifest parsing is strict', () => {
 describe('validation errors are specific and carry a Fix', () => {
   const errs = (m: FlyEnvManifest) => fem.validateManifest(m, rules);
   it.each<[string, (m: FlyEnvManifest) => FlyEnvManifest, RegExp]>([
+    ...['*', 'wearable_insight.client,wearable_insight.coach', `${WEAR_AI_CAPS},community_ai_triage`].map(
+      (v): [string, (m: FlyEnvManifest) => FlyEnvManifest, RegExp] => [
+        `the AI allow-list outside its two values: ${v}`,
+        (m) => edit(m, { flags: { AI_GATEWAY_CAPABILITIES: v } }),
+        /flags\.AI_GATEWAY_CAPABILITIES is ".*Fix: /,
+      ],
+    ),
     [
       'an unregistered flag',
       (m) => ({
@@ -506,6 +515,25 @@ describe('validation errors are specific and carry a Fix', () => {
       },
       { GOOGLE_CLIENT_IDS: 'github-secret' },
       null,
+    ],
+    // WEAR-AI (owner 161-1 op 1): the second allow-list value adds the two wearable insight capabilities.
+    [
+      'the wearable insight allow-list with the consent ledger on, workout builder live',
+      {
+        FEATURE_AI_CONSENT_LEDGER_ENABLED: 'true',
+        FEATURE_MWB_AI_LIVE_CREATE: 'true',
+        AI_GATEWAY_ENABLED: 'true',
+        AI_GATEWAY_PROVIDER: 'anthropic',
+        AI_GATEWAY_CAPABILITIES: WEAR_AI_CAPS,
+      },
+      {},
+      null,
+    ],
+    [
+      'the wearable insight allow-list without the consent ledger',
+      { AI_GATEWAY_CAPABILITIES: WEAR_AI_CAPS },
+      {},
+      'wearable-insight-needs-consent-ledger',
     ],
   ])('precondition: %s', (_label, flags, secrets, id) => {
     const e = errs(edit(baseline(), { flags, secrets }));
