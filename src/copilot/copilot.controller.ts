@@ -1,4 +1,4 @@
-import { CanActivate, Controller, Get, HttpCode, Injectable, NotFoundException, Param, ParseUUIDPipe, Post, Request, UseGuards } from '@nestjs/common';
+import { CanActivate, Controller, Get, HttpCode, Injectable, NotFoundException, Param, ParseUUIDPipe, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/auth.guard';
 import type { AuthedRequest } from '../auth/auth-request';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -28,6 +28,12 @@ export class CopilotController {
   @Get()
   recent(@Request() req: AuthedRequest) {
     return this.copilot.recent(req.user.id);
+  }
+
+  /** COPILOT-BE2: past questions (CP-A-44/45), newest first, 20 a page; `cursor` is the last item's message_id. */
+  @Get('questions')
+  questions(@Request() req: AuthedRequest, @Query('cursor', new ParseUUIDPipe({ optional: true })) cursor?: string) {
+    return this.copilot.questions(req.user.id, cursor);
   }
 
   @Post('suggestions/:id/send')

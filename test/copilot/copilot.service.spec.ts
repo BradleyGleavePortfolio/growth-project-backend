@@ -22,6 +22,11 @@ function build(opts: { status?: string | null; granted?: boolean; recent?: Array
       count: jest.fn(async () => 4),
     },
     romanUsageDaily: { upsert: jest.fn() },
+    // COPILOT-BE2: the week block GET /client/copilot also returns (copilot-turn.spec.ts tests it).
+    user: { findUnique: jest.fn(async () => null) },
+    macroTarget: { findMany: jest.fn(async () => []) },
+    clientWorkoutAssignment: { findMany: jest.fn(async () => []) },
+    checkIn: { findFirst: jest.fn(async () => null) },
   };
   const { egress } = egressWithGrants(opts.granted === false ? [] : [CLIENT.id]);
   return { svc: new CopilotService(fakeOf<PrismaService>(prisma), egress), prisma };

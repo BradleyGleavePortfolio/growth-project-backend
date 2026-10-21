@@ -34,6 +34,8 @@ import {
   Header,
   HttpCode,
   HttpStatus,
+  Inject,
+  Optional,
   Param,
   Post,
   Query,
@@ -66,6 +68,8 @@ import {
   SendMessageDto,
 } from './roman.dto';
 import { KeepRomanContext } from './context/roman-context-invalidation';
+import { CopilotTurnService, ROMAN_COPILOT_HEADER } from '../copilot/copilot-turn';
+import { isCopilotEnabled } from '../copilot/copilot.controller';
 
 /**
  * CRISIS-2B: an app that reads `safety_actions` sends this header with the
@@ -81,6 +85,7 @@ export class RomanController {
   constructor(
     private readonly roman: RomanService,
     private readonly prisma: PrismaService,
+    @Optional() @Inject(CopilotTurnService) private readonly copilot: CopilotTurnService | null = null,
   ) {}
 
   // ─── POST /roman/sessions — open or resume ─────────────────────────────────
@@ -113,8 +118,14 @@ export class RomanController {
       limit: query.limit,
     });
     const marker = this.safetyMarker(req);
+    // COPILOT-BE2: each Copilot reply's facts and suggestion, only for an app that sent ROMAN_COPILOT_HEADER.
+    const copilot = this.copilotAsked(req, caller) && this.copilot ? await this.copilot.views(caller.id, page.messages) : null;
     return {
-      messages: page.messages.map((m) => ({ ...this.toMessageView(m), ...marker(m) })),
+      messages: page.messages.map((m) => ({
+        ...this.toMessageView(m),
+        ...marker(m),
+        ...(copilot?.has(m.id) ? { copilot: copilot.get(m.id) } : {}),
+      })),
       nextCursor: page.nextCursor,
     };
   }
@@ -217,6 +228,7 @@ export class RomanController {
           userMessage: dto.content,
           userMessageId: stored?.id,
           usageDebit,
+          copilot: this.copilotAsked(req, caller) && session.surface === 'client',
         });
     try {
       for await (const chunk of turn) {
@@ -239,6 +251,11 @@ export class RomanController {
   }
 
   // ─── helpers ───────────────────────────────────────────────────────────────
+
+  /** COPILOT-BE2: a client's app asked for Copilot (header '1') while FEATURE_CLIENT_PATH_COPILOT is on. */
+  private copilotAsked(req: AuthedRequest, caller: RomanCaller): boolean {
+    return caller.role === 'student' && isCopilotEnabled() && req.headers?.[ROMAN_COPILOT_HEADER] === '1';
+  }
 
   /**
    * Build the RomanCaller from the authenticated user. Resolves the coach
