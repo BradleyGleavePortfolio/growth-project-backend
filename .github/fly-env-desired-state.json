@@ -190,6 +190,7 @@
   },
   "excluded": {
     "FEATURE_COMMUNITY_API_ALLOWLIST": "A list of user ids, not a closed-choice switch; not needed at launch because FEATURE_COMMUNITY_API opens community for everyone.",
+    "HOUSE_COACH_USER_ID": "RENEWAL-BE (b#1127): a user id, not a closed-choice switch. Unset on Fly today (the house coach choice is never offered); the owner sets it when the house coach account exists.",
     "FEATURE_BANK_PAYOUTS_V2": "Ledger: money paths wait for S-FEE.",
     "FEATURE_STRIPE_TREASURY_PAYOUTS": "Ledger: money paths wait for S-FEE.",
     "DIAGNOSTIC_AI_ENABLED": "Present on Fly with a value this lane cannot read; ledger: stays off until R2b. Adopt into flags only after an in-machine read confirms its value.",

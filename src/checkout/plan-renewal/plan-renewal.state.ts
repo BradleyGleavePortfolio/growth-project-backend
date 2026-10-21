@@ -1,26 +1,32 @@
-import type { PlanRenewal, Prisma, PrismaClient } from '@prisma/client';
+import type { ClientPurchase, PlanRenewal, Prisma, PrismaClient } from '@prisma/client';
 import { firstNameOf } from '../../engagement/welcome-template';
-import { isPlanRenewalEnabled, PLAN_RENEWAL_STEPS } from './plan-renewal.cadence';
+import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
+import { houseCoachUserId, isPlanRenewalEnabled, PLAN_RENEWAL_POPUP_DAYS, planRenewalDay } from './plan-renewal.cadence';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
-/** The `renewal` block of GET /v1/checkout/entitlement (contract: ops164/work/RENEWAL-BE-contract.md). */
+export interface PlanRenewalPerson {
+  id: string;
+  first_name: string | null;
+}
+
+/** The `renewal` block of GET /v1/checkout/entitlement (CONTRACT comment on b#1127). */
 export interface PlanRenewalView {
   state: 'none' | 'ended' | 'revoked';
   ended_at: string | null;
-  step: number | null;
   popup_due: boolean;
   popup_step: number | null;
-  coach: { id: string; first_name: string | null } | null;
+  coach: PlanRenewalPerson | null;
+  house_coach: PlanRenewalPerson | null;
 }
 
 export const NO_RENEWAL: PlanRenewalView = {
   state: 'none',
   ended_at: null,
-  step: null,
   popup_due: false,
   popup_step: null,
   coach: null,
+  house_coach: null,
 };
 
 /** Checkout attempts that never became a plan (plus a one-off card declined at checkout, below). */
@@ -31,6 +37,32 @@ const declinedAtCheckout = (p: { status: string; billing_type: string }) =>
 const MONEY_REVERSED = ['refunded', 'disputed', 'chargeback_lost'];
 /** invite-grant.service GRANT_REVOKED_STATUS (not imported: the push worker loads this file). */
 const REVOKED = 'revoked';
+
+export type PlanEndFields = Pick<
+  ClientPurchase,
+  'billing_type' | 'access_expires_at' | 'canceled_at' | 'current_period_end' | 'cancel_at_period_end'
+>;
+const PLAN_END_SELECT = {
+  status: true,
+  billing_type: true,
+  entitlement_active: true,
+  access_expires_at: true,
+  canceled_at: true,
+  current_period_end: true,
+  cancel_at_period_end: true,
+} as const;
+
+/**
+ * The plan-end rule (one rule for the sweep, the entitlement answer and
+ * CHURN-BE). A package ends on its last day. A subscription cancelled at
+ * period end ends at that period end; one cancelled at once ends when it was
+ * cancelled, before and after its old period end passes (never read off the
+ * clock). Null for a subscription still running.
+ */
+export function planEndedAt(p: PlanEndFields): Date | null {
+  if (p.billing_type !== 'recurring') return p.access_expires_at;
+  return p.cancel_at_period_end && p.current_period_end ? p.current_period_end : p.canceled_at;
+}
 
 export type PlanRenewalBlock =
   | 'account'
@@ -43,8 +75,8 @@ export type PlanRenewalBlock =
 
 /**
  * Why a renewal sequence for this client and coach must not run (or must stop
- * at once), or null when it may. One rule for opening, every step, every coach
- * message, the push worker's send-time check and the entitlement answer.
+ * at once), or null when it may. One rule for opening, the Day 7 push, the
+ * push worker's send-time check and the entitlement answer.
  */
 export async function planRenewalBlock(
   db: Db,
@@ -53,24 +85,19 @@ export async function planRenewalBlock(
   now: Date,
 ): Promise<PlanRenewalBlock | null> {
   const pair = { client_user_id: clientUserId, coach_user_id: coachUserId };
-  const [client, rows, reversed, dunning] = await Promise.all([
+  const [client, plans, reversed, dunning] = await Promise.all([
     db.user.findUnique({
       where: { id: clientUserId },
       select: { role: true, coach_id: true, archived_at: true, deleted_at: true, deletion_scheduled_at: true },
     }),
-    db.clientPurchase.findMany({
-      where: { ...pair, status: { notIn: NEVER_A_PLAN } },
-      orderBy: { created_at: 'desc' },
-      select: { status: true, billing_type: true, entitlement_active: true, access_expires_at: true },
-    }),
+    pairPlans(db, clientUserId, coachUserId),
     db.clientPurchase.count({
       where: { ...pair, OR: [{ status: { in: MONEY_REVERSED } }, { refunds: { some: {} } }, { disputes: { some: {} } }] },
     }),
-    db.dunningState.count({
-      where: { purchase: pair, OR: [{ status: { not: 'resolved' } }, { locked_out_at: { not: null } }] },
-    }),
+    // A cycle that was never recovered (LO B1): a recovered one keeps resolved_at when a later normal
+    // end relabels it abandoned, and every reopen clears resolved_at.
+    db.dunningState.count({ where: { purchase: pair, resolved_at: null } }),
   ]);
-  const plans = rows.filter((p) => !declinedAtCheckout(p));
   if (!client || client.role !== 'student' || client.deleted_at || client.deletion_scheduled_at) return 'account';
   if (client.coach_id !== coachUserId) return 'moved';
   if (client.archived_at) return 'archived';
@@ -83,14 +110,45 @@ export async function planRenewalBlock(
   return null;
 }
 
-/** The renewal block for the signed-in user and their CURRENT coach, plus the running row behind "ended". */
+/** Every plan between the client and the coach, newest first. */
+async function pairPlans(db: Db, clientUserId: string, coachUserId: string) {
+  const rows = await db.clientPurchase.findMany({
+    where: { client_user_id: clientUserId, coach_user_id: coachUserId, status: { notIn: NEVER_A_PLAN } },
+    orderBy: { created_at: 'desc' },
+    select: PLAN_END_SELECT,
+  });
+  return rows.filter((p) => !declinedAtCheckout(p));
+}
+
+/** The latest end over every plan between the client and the coach (LS B1: only that one opens a sequence). */
+export async function latestPlanEnd(db: Db, clientUserId: string, coachUserId: string): Promise<Date | null> {
+  let latest: Date | null = null;
+  for (const p of await pairPlans(db, clientUserId, coachUserId)) {
+    const end = planEndedAt(p);
+    if (end && (!latest || end > latest)) latest = end;
+  }
+  return latest;
+}
+
+/** TGP's house coach (HOUSE_COACH_USER_ID), never offered to that coach's own client or when unset or not a coach. */
+export async function planRenewalHouseCoach(db: Db, coachUserId: string): Promise<PlanRenewalPerson | null> {
+  const id = houseCoachUserId();
+  if (!id || id === coachUserId) return null;
+  const house = await db.user.findFirst({
+    where: { id, role: { in: ['coach', 'owner'] }, deleted_at: null },
+    select: { name: true },
+  });
+  return house ? { id, first_name: firstNameOf(house.name) } : null;
+}
+
+/** The renewal block for the signed-in user and their CURRENT coach, the row behind "ended" and its local day. */
 export async function loadPlanRenewal(
   db: Db,
   userId: string,
   coachUserId?: string,
   now = new Date(),
-): Promise<{ view: PlanRenewalView; row: PlanRenewal | null }> {
-  const none = { view: NO_RENEWAL, row: null };
+): Promise<{ view: PlanRenewalView; row: PlanRenewal | null; day: number }> {
+  const none = { view: NO_RENEWAL, row: null, day: -1 };
   const me = await db.user.findUnique({ where: { id: userId }, select: { role: true, coach_id: true } });
   const coachId = me?.role === 'student' ? me.coach_id : null;
   if (!coachId || (coachUserId && coachUserId !== coachId)) return none;
@@ -98,26 +156,27 @@ export async function loadPlanRenewal(
   if (block && block !== 'revoked') return none;
   const coachRow = await db.user.findUnique({ where: { id: coachId }, select: { name: true } });
   const coach = { id: coachId, first_name: firstNameOf(coachRow?.name) };
-  if (block === 'revoked') return { view: { ...NO_RENEWAL, state: 'revoked', coach }, row: null };
+  if (block === 'revoked') return { ...none, view: { ...NO_RENEWAL, state: 'revoked', coach } };
   const row = await db.planRenewal.findFirst({
-    where: { client_user_id: userId, coach_user_id: coachId, status: { in: ['active', 'done'] }, step_index: { gte: 0 } },
+    where: { client_user_id: userId, coach_user_id: coachId, status: { in: ['active', 'done'] } },
     orderBy: { ended_at: 'desc' },
   });
   if (!row) return none;
-  const due = row.popup_step > row.popup_acked_step;
+  const day = planRenewalDay(row.ended_at, now, await resolveRecipientTimeZone(db, userId));
+  const popup = PLAN_RENEWAL_POPUP_DAYS.includes(day) && row.popup_acked_step < day ? day : null;
   const view: PlanRenewalView = {
     state: 'ended',
     ended_at: row.ended_at.toISOString(),
-    step: PLAN_RENEWAL_STEPS[row.step_index].day,
-    popup_due: due,
-    popup_step: due ? PLAN_RENEWAL_STEPS[row.popup_step].day : null,
+    popup_due: popup !== null,
+    popup_step: popup,
     coach,
+    house_coach: await planRenewalHouseCoach(db, coachId),
   };
-  return { view, row };
+  return { view, row, day };
 }
 
-export const readPlanRenewal = async (db: Db, userId: string, coachUserId?: string): Promise<PlanRenewalView> =>
-  (await loadPlanRenewal(db, userId, coachUserId)).view;
+export const readPlanRenewal = async (db: Db, userId: string, coachUserId?: string, now?: Date): Promise<PlanRenewalView> =>
+  (await loadPlanRenewal(db, userId, coachUserId, now)).view;
 
 /** Push worker send-time check: a renewal push goes out only while the sequence still runs. */
 export async function planRenewalPushStillDue(db: Db, userId: string): Promise<boolean> {
