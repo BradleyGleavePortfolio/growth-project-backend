@@ -49,7 +49,7 @@ async function brief(coachId: string, clients: Client[], checkIns: Row[] = []) {
       .filter((r) => !r.reviewed && r.logged_at >= where.logged_at.gte)
       .sort((a, b) => +b.logged_at - +a.logged_at) // orderBy logged_at desc
       .filter((r, i, all) => !distinct?.includes('user_id') || all.findIndex((x) => x.user_id === r.user_id) === i);
-    return rows.map((r) => ({ id: r.id, user_id: r.user_id, user: { name: `Name ${r.user_id}` } }));
+    return rows.map((r) => ({ id: r.id, user_id: r.user_id, logged_at: r.logged_at, user: { name: `Name ${r.user_id}` } }));
   });
   // No flagged weigh-ins (the default answers every raw read with one count row).
   prisma.$queryRaw.mockImplementation(async (sql: { strings: string[] }) =>
@@ -79,6 +79,7 @@ describe('coach brief: checkin_review (R1)', () => {
     expect(of('checkin_review')).toEqual([{
       type: 'checkin_review', client_id: 'a1', client_name: 'Name a1', check_in_id: 'ci-a1-2',
       detail: 'Check-in needs review', priority: 2, deep_link: 'tgp://client/a1',
+      occurred_at: expect.any(String), // ROMAN-EXTRAS-BE2: the check-in's logged_at
     }]);
   });
 
