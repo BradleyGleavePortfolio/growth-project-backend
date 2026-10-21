@@ -83,7 +83,21 @@ export class MediaAssetResolver implements AssignableAssetResolver {
         status: true,
       },
     });
-    if (!asset || asset.archived_at) {
+    // MEDIA-ARCHIVE-DRIP: an archived row still materialises for this buyer's own drop when the
+    // drop was written before the archive (softDelete counted it as owed and kept the file). A
+    // drop written after the archive, or no drop at all, is refused: nobody who bought later gets it.
+    const owedBeforeArchive =
+      asset?.archived_at && input.scheduledDropId
+        ? await db.scheduledDrop.count({
+            where: {
+              id: input.scheduledDropId,
+              asset_id: asset.id,
+              created_at: { lte: asset.archived_at },
+              client_purchase: { client_user_id: input.clientId },
+            },
+          })
+        : 0;
+    if (!asset || (asset.archived_at && owedBeforeArchive === 0)) {
       throw new MediaAssetNotFoundError(input.assetId);
     }
     if (asset.coach_id !== acting.tenantCoachId) {

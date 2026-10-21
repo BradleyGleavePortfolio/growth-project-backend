@@ -121,10 +121,13 @@ export class AutoMessageAssetResolver implements AssignableAssetResolver {
       // stamp the marker with the message id.
     }
 
+    // HOME-BE: an unattended send (CoachMessage.automated_by), on every path
+    // that reaches this resolver: inline at purchase and the drip dispatcher.
     const sent = await this.messaging.sendAsCoach(
       acting.actingCoachId,
       input.clientId,
       { body },
+      { automatedBy: 'package_message' },
     );
     if (!sent?.id) {
       this.logger.error(

@@ -348,6 +348,9 @@ describe('CommandCenterService.getOverview', () => {
     expect(out.at_risk_count).toBe(2); // u1 (0.7) and u3 (0.4) > 0.3
     expect(out.win_streak_count).toBe(1); // u2 checkin_streak >= 3
     expect(out.unread_messages).toBe(2);
+    // HOME-BE: without include=home the latest-risk read keeps its projection and no home block is added.
+    expect(prisma.ptmPrediction.findMany.mock.calls[0][0].select).toEqual({ risk_score: true });
+    expect(out.home).toBeUndefined();
   });
 });
 
