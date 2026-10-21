@@ -441,6 +441,25 @@ export class CoachMediaService {
     return this.mintSignedUrl(row, options);
   }
 
+  /**
+   * LEARN-BE2: a course lesson's uploaded video, for its enrolled client.
+   * ClientCoursesService.video has already checked the caller's own enrolment,
+   * the published course and the open week. Same signer and lifetime as
+   * getBuyerSignedUrl; null (the route answers 404, no reason) for an unready
+   * or non-video asset, or one that is not the lesson coach's. An archived
+   * video still plays: archive never removes a Mux video, and an opened week
+   * stays open (#LEARN-LOCK op 1), as for a buyer with a grant.
+   */
+  async signLessonVideo(
+    mediaAssetId: string,
+    coachId: string,
+  ): Promise<{ url: string; expires_in_seconds: number } | null> {
+    const row = await this.prisma.coachMediaAsset.findUnique({ where: { id: mediaAssetId } });
+    if (!row || row.coach_id !== coachId || row.kind !== 'video') return null;
+    if (row.status !== STATUS_READY || !row.mux_playback_id) return null;
+    return this.mintSignedUrl(row);
+  }
+
   // ── PATCH (metadata only) ──────────────────────────────────────────────
 
   async patch(
@@ -549,7 +568,7 @@ export class CoachMediaService {
           alreadyArchived: true as const,
         };
       }
-      const [grantCount, contentCount, owedDrops] = await Promise.all([
+      const [grantCount, contentCount, lessonCount, owedDrops] = await Promise.all([
         tx.clientAssetGrant.count({
           where: { media_asset_id: mediaAssetId, revoked_at: null },
         }),
@@ -559,6 +578,11 @@ export class CoachMediaService {
             asset_type: { in: ['pdf', 'video'] },
             removed_at: null,
           },
+        }),
+        // LEARN-BE2: a course lesson plays its library video with no grant
+        // (ClientCoursesService.video), so it blocks archive like package content.
+        tx.lesson.count({
+          where: { media_asset_id: mediaAssetId, module_id: { not: null } },
         }),
         // MEDIA-ARCHIVE-DRIP: a buyer's drop that has not shipped yet (waiting, in flight, or held
         // by a payment failure that restoreAfterPaymentRecovered may put back) keeps the file too;
@@ -574,12 +598,13 @@ export class CoachMediaService {
           },
         }),
       ]);
-      if (contentCount > 0) {
+      if (contentCount > 0 || lessonCount > 0) {
         throw new ConflictException({
           error: 'ASSET_REFERENCED',
-          message: `Asset is still attached to ${contentCount} package content row(s); detach before archiving`,
+          message: `Asset is still attached to ${contentCount} package content row(s) and ${lessonCount} course lesson(s); detach before archiving`,
           grant_count: grantCount,
           content_count: contentCount,
+          lesson_count: lessonCount,
         });
       }
       const archived = await tx.coachMediaAsset.update({
@@ -608,7 +633,8 @@ export class CoachMediaService {
       // For Mux we leave the asset in Mux on archive (the playback id is
       // already on the row and a granted buyer may still hold a URL); a
       // future GC sweep can clean Mux assets whose CoachMediaAsset row
-      // has been archived and has zero grants. Out of scope for PR-12.
+      // has been archived and has zero grants and zero course lessons
+      // (signLessonVideo plays archived videos). Out of scope for PR-12.
       try {
         objectDeleted = await this.storage.deleteObject(row.storage_key);
       } catch (err) {

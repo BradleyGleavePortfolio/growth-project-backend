@@ -90,11 +90,14 @@ function makePrismaStub(initialRows: Row[] = []) {
     created_at?: Date;
   }> = [];
 
+  const lessons: Array<{ media_asset_id: string; module_id: string | null }> = [];
+
   const stub: {
     _rows: Row[];
     _grants: typeof grants;
     _contents: typeof contents;
     _drops: typeof drops;
+    _lessons: typeof lessons;
     coachMediaAsset: {
       create: jest.Mock;
       findUnique: jest.Mock;
@@ -107,6 +110,7 @@ function makePrismaStub(initialRows: Row[] = []) {
       findUnique: jest.Mock;
     };
     coachPackageContent: { count: jest.Mock };
+    lesson: { count: jest.Mock };
     muxProcessedEvent: { create: jest.Mock; update: jest.Mock };
     scheduledDrop: { findUnique: jest.Mock; count: jest.Mock };
     $queryRaw: jest.Mock;
@@ -116,6 +120,7 @@ function makePrismaStub(initialRows: Row[] = []) {
     _grants: grants,
     _contents: contents,
     _drops: drops,
+    _lessons: lessons,
     coachMediaAsset: {
       create: jest.fn(async ({ data }: { data: Partial<Row> }) => {
         const r = defaultRow({
@@ -189,6 +194,11 @@ function makePrismaStub(initialRows: Row[] = []) {
             c.removed_at === null,
         ).length;
       }),
+    },
+    lesson: {
+      count: jest.fn(async ({ where }: { where: { media_asset_id: string; module_id: { not: null } } }) =>
+        lessons.filter((l) => l.media_asset_id === where.media_asset_id && l.module_id !== null).length,
+      ),
     },
     muxProcessedEvent: {
       create: jest.fn(),
@@ -954,6 +964,53 @@ describe('CoachMediaService — soft-delete safety', () => {
     );
   });
 
+  it('blocks archive while a course lesson plays the video (409 ASSET_REFERENCED), and the lesson keeps playing (LEARN-BE2)', async () => {
+    const { svc, prisma, mux } = makeService({
+      rows: [defaultRow({ id: 'v1', coach_id: 'coach-1', kind: 'video', provider: 'mux', status: STATUS_READY, mux_playback_id: 'pb-xyz' })],
+    });
+    prisma._lessons.push({ media_asset_id: 'v1', module_id: 'week-1' });
+    await expect(svc.softDelete('coach-1', 'v1')).rejects.toMatchObject({ response: { error: 'ASSET_REFERENCED', lesson_count: 1 } });
+    expect(prisma._rows[0].archived_at).toBeNull();
+    expect(await svc.signLessonVideo('v1', 'coach-1')).toMatchObject({ url: expect.stringContaining('pb-xyz') });
+    expect(mux.mintPlaybackUrl).toHaveBeenCalledTimes(1);
+  });
+
+  // FIX-1121-R1: both archive guards together (b#1114 lesson count + MEDIA-ARCHIVE-DRIP owed drops).
+  it('a course lesson and an owed drop on the same video: the lesson 409 wins; once out of the course, the archive keeps it for the drop', async () => {
+    const { svc, prisma, storage } = makeService({
+      rows: [defaultRow({ id: 'v1', coach_id: 'coach-1', kind: 'video', provider: 'mux', status: STATUS_READY, mux_playback_id: 'pb-xyz' })],
+    });
+    prisma._lessons.push({ media_asset_id: 'v1', module_id: 'week-1' });
+    prisma._drops.push({ id: 'd-owed', asset_id: 'v1', status: 'pending', client_purchase: { coach_user_id: 'coach-1' } });
+    await expect(svc.softDelete('coach-1', 'v1')).rejects.toMatchObject({
+      response: { error: 'ASSET_REFERENCED', content_count: 0, lesson_count: 1, grant_count: 0 },
+    });
+    expect(prisma._rows[0].archived_at).toBeNull();
+    prisma._lessons.length = 0; // the coach takes the video out of the course
+    const out = await svc.softDelete('coach-1', 'v1');
+    expect(out.object_deleted).toBe(false);
+    expect(prisma._rows[0].archived_at).toBeInstanceOf(Date);
+    expect(prisma.scheduledDrop.count).toHaveBeenCalled();
+    expect(storage.deleteObject).not.toHaveBeenCalled();
+  });
+
+  it('no course lesson and no owed drop (only a delivered one): the PDF archives and its object is deleted', async () => {
+    const { svc, prisma, storage } = makeService({
+      rows: [defaultRow({ id: 'a1', coach_id: 'coach-1', kind: 'pdf', status: STATUS_READY })],
+    });
+    prisma._drops.push({ id: 'd-done', asset_id: 'a1', status: 'delivered', client_purchase: { coach_user_id: 'coach-1' } });
+    const out = await svc.softDelete('coach-1', 'a1');
+    expect(out.object_deleted).toBe(true);
+    expect(storage.deleteObject).toHaveBeenCalledTimes(1);
+    expect(prisma._rows[0].archived_at).toBeInstanceOf(Date);
+  });
+
+  it('a single lesson outside any course does not block archive', async () => {
+    const { svc, prisma } = makeService({ rows: [defaultRow({ id: 'a1', coach_id: 'coach-1' })] });
+    prisma._lessons.push({ media_asset_id: 'a1', module_id: null });
+    await expect(svc.softDelete('coach-1', 'a1')).resolves.toMatchObject({ id: 'a1' });
+  });
+
   it('soft-delete is idempotent — re-archiving an archived row no-ops', async () => {
     const archivedAt = new Date('2026-04-01');
     const { svc, storage } = makeService({
@@ -1012,5 +1069,39 @@ describe('CoachMediaService — static helpers', () => {
     );
     expect(CoachMediaService.canAdvanceFromPreTerminal('ready')).toBe(false);
     expect(CoachMediaService.canAdvanceFromPreTerminal('errored')).toBe(false);
+  });
+});
+
+describe('CoachMediaService.signLessonVideo (LEARN-BE2 course lesson video)', () => {
+  const video = (over: Partial<Row> = {}) =>
+    defaultRow({ id: 'v1', coach_id: 'coach-1', kind: 'video', provider: 'mux', status: STATUS_READY, mux_playback_id: 'pb-xyz', ...over });
+
+  it('signs a ready video of the lesson coach with the same signer as the client media route', async () => {
+    const { svc } = makeService({ rows: [video()] });
+    expect(await svc.signLessonVideo('v1', 'coach-1')).toMatchObject({
+      url: 'https://stream.mux.com/pb-xyz.m3u8?token=stub-signed-jwt',
+      expires_in_seconds: expect.any(Number),
+    });
+  });
+
+  it('still signs an archived video: archive keeps the Mux video and an opened week stays open (round 3, Sol B1)', async () => {
+    const { svc } = makeService({ rows: [video({ archived_at: new Date() })] });
+    expect(await svc.signLessonVideo('v1', 'coach-1')).toMatchObject({ url: 'https://stream.mux.com/pb-xyz.m3u8?token=stub-signed-jwt' });
+  });
+
+  it.each([
+    ['another coach\'s asset', video(), 'coach-2'],
+    ['an archived asset of another coach', video({ archived_at: new Date() }), 'coach-2'],
+    ['a PDF', video({ kind: 'pdf' }), 'coach-1'],
+    ['a video still processing', video({ status: 'processing' }), 'coach-1'],
+  ])('answers null (the route says 404) for %s', async (_name, row, coachId) => {
+    const { svc, mux } = makeService({ rows: [row] });
+    expect(await svc.signLessonVideo('v1', coachId)).toBeNull();
+    expect(mux.mintPlaybackUrl).not.toHaveBeenCalled();
+  });
+
+  it('answers null for a missing asset', async () => {
+    const { svc } = makeService();
+    expect(await svc.signLessonVideo('nope', 'coach-1')).toBeNull();
   });
 });
