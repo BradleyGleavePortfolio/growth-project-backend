@@ -130,8 +130,14 @@ export class AiGatewayController {
     @Query('limit') limit?: string,
     @Query('clientId') clientId?: string,
     @Query('status') status?: string,
+    @Query('order') order?: string,
+    @Query('after') after?: string,
   ) {
     const limitNum = limit ? Math.max(1, Math.min(parseInt(limit, 10) || 50, 200)) : 50;
+    // COPILOT-BE: `order=oldest` is the paged queue ({ items, total, next_cursor }); without it the list stays an array.
+    if (order === 'oldest') {
+      return this.approvals.pageQueue({ tenantCoachId: req.user.role === 'coach' ? req.user.id : undefined, limit: limitNum, after });
+    }
     return this.approvals.listPending({
       tenantCoachId: req.user.role === 'coach' ? req.user.id : undefined,
       limit: limitNum,
@@ -146,7 +152,7 @@ export class AiGatewayController {
   async decide(
     @Request() req: AuthedRequest,
     @Param('id') id: string,
-    @Body() body: { decision: 'approved' | 'rejected'; note?: string; accepted_change_ids?: unknown },
+    @Body() body: { decision: 'approved' | 'rejected'; note?: string; accepted_change_ids?: unknown; payload?: unknown },
   ) {
     const decision = body.decision === 'rejected' ? 'rejected' : 'approved';
     // B-AIB2-126 — optional subset of an AI workout-builder draft (`c<i>` ids).
@@ -166,6 +172,7 @@ export class AiGatewayController {
       decision,
       note: body.note,
       acceptedChangeIds: ids as string[] | undefined,
+      editedPayload: body.payload,
       ip: extractIp(req),
       userAgent: extractUserAgent(req),
     });

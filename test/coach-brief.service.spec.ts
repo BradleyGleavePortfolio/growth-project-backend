@@ -1430,16 +1430,19 @@ describe('buildActionItems (solo / sub-coach)', () => {
     expect(items.map((i) => i.type)).not.toContain('workout_approval');
   });
 
-  it('caps missing check-in items at 5', () => {
+  // ROMAN-EXTRAS-BE2: was 5, so a coach saw 5 of 40 missing check-ins.
+  it('caps missing check-in items at 100, not 5', () => {
     const items = buildActionItems({
       unreadThreads: [],
       flaggedWeightLogs: [],
-      missingCheckinClients: Array.from({ length: 10 }, (_, i) => ({
+      missingCheckinClients: Array.from({ length: 150 }, (_, i) => ({
         id: `c${i}`,
         name: `Client ${i}`,
       })),
     });
-    expect(items.filter((i) => i.type === 'checkin_missing')).toHaveLength(5);
+    const missing = items.filter((i) => i.type === 'checkin_missing');
+    expect(missing).toHaveLength(100);
+    expect(missing[0].client_id).toBe('c0');
   });
 });
 
