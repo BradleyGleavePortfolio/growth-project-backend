@@ -70,8 +70,8 @@ describe('RENEWAL-BE cadence (owner #RENEWAL-PUSH)', () => {
     expect([houseCoachUserId({}), houseCoachUserId({ HOUSE_COACH_USER_ID: '  ' }), houseCoachUserId({ HOUSE_COACH_USER_ID: id })])
       .toEqual([null, null, id]);
     const rule = ENV_RULES.find((r) => r.name === 'HOUSE_COACH_USER_ID');
-    expect([rule?.tier, rule?.values, rule?.validate?.(id), rule?.validate?.('coach-sam')])
-      .toEqual(['optional', undefined, null, 'HOUSE_COACH_USER_ID must be a user id (uuid).']);
+    // An inventory rule adds no validator (no boot change); an id that is not a live coach offers nothing.
+    expect([rule?.tier, rule?.values, rule?.validate]).toEqual(['optional', undefined, undefined]);
   });
 });
 

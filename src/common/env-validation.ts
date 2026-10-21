@@ -2063,11 +2063,7 @@ export const ENV_RULES: EnvRule[] = [
     tier: 'optional',
     default: "unset → the renewal 'Join TGP's Top Rated Coach' choice is never offered",
     reason:
-      "RENEWAL-BE (owner #RENEWAL-PUSH): the user id of TGP's house coach, the second choice on the renewal pop-ups and the Day 7 app notification. The owner sets it when the house coach account exists.",
-    validate: (v) =>
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v.trim())
-        ? null
-        : 'HOUSE_COACH_USER_ID must be a user id (uuid).',
+      "RENEWAL-BE (owner #RENEWAL-PUSH): the user id of TGP's house coach, the second choice on the renewal pop-ups and the Day 7 app notification. The owner sets it when the house coach account exists. An id that is not a live coach account offers nothing.",
   },
   {
     name: 'FEATURE_COACH_BROADCASTS',

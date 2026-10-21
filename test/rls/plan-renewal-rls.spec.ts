@@ -128,9 +128,9 @@ const DAY = PLAN_RENEWAL_DAY_MS;
     await prisma.chargeRefund.create({ data: { purchase_id: refunded, stripe_refund_id: `re-${refunded}`, stripe_charge_id: 'ch', amount_cents: 100 } });
     const disputed = await packageRanOut('D', HOUR);
     await prisma.chargeDispute.create({ data: { purchase_id: disputed, stripe_dispute_id: `dp-${disputed}`, stripe_charge_id: 'ch', amount_cents: 100 } });
-    await packageRanOut('V', 2 * DAY);
+    await packageRanOut('V', 2 * DAY, { created_at: at(-20 * DAY) });
     // The coach revoked V's newer grant.
-    await purchase('V', { billing_type: 'one_time', status: 'revoked', entitlement_active: false, created_at: at(1000) });
+    await purchase('V', { billing_type: 'one_time', status: 'revoked', entitlement_active: false, created_at: at(-DAY) });
     await packageRanOut('X', HOUR);
     await prisma.user.update({ where: { id: u.X }, data: { archived_at: at(-HOUR) } });
     await packageRanOut('Z', HOUR);
