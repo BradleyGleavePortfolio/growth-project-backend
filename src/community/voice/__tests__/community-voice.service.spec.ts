@@ -17,6 +17,7 @@
  */
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { CommunityVoiceNote, User } from '@prisma/client';
+import { CommunityAccessService } from '../../community-access.service';
 import { CommunityVoiceService } from '../community-voice.service';
 import { mintVoiceKey } from '../voice-storage-key';
 import type { IssueVoiceUploadDto } from '../community-voice.dto';
@@ -41,6 +42,11 @@ type RepoMock = {
   list: jest.Mock;
   recordErasure: jest.Mock;
   attemptErasure: jest.Mock;
+  viewExtras: jest.Mock;
+  findChatMessage: jest.Mock;
+  markHeard: jest.Mock;
+  consentSeenAt: jest.Mock;
+  markConsentSeen: jest.Mock;
 };
 type UploadMock = {
   createSignedUpload: jest.Mock;
@@ -88,6 +94,37 @@ function note(over: Partial<CommunityVoiceNote> = {}): CommunityVoiceNote {
   return { ...base, ...over };
 }
 
+const HEARD_AT = new Date('2026-03-02T00:00:00.000Z');
+const PARENT_ID = '99999999-9999-4999-8999-999999999999';
+const ROOT_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+function extras(over: Record<string, unknown> = {}) {
+  return {
+    coachId: COACH_A_ID,
+    names: new Map<string, string | null>([[MEMBER_ID, 'Sam Rivers'], [COACH_A_ID, 'Coach Kim']]),
+    fullName: () => false,
+    heardAt: new Map<string, Date>(),
+    chat: new Map<string, { parent_message_id: string | null }>(),
+    ...over,
+  };
+}
+
+function chatMessage(over: Record<string, unknown> = {}) {
+  return {
+    id: PARENT_ID,
+    created_at: new Date('2026-02-28T00:00:00.000Z'),
+    scope: 'cohort',
+    workspace_id: WS_A,
+    cohort_id: COHORT_A,
+    sender_id: COACH_A_ID,
+    deleted_at: null,
+    plan_context_type: null,
+    parent_message_id: null,
+    parent_message_at: null,
+    ...over,
+  };
+}
+
 const VALID_CREATE = {
   storage_key: `${MEMBER_ID}/1700000000-abc.m4a`,
   cohort_id: COHORT_A,
@@ -133,6 +170,11 @@ describe('CommunityVoiceService', () => {
         keys.map((k, i) => ({ id: `erasure-${i}`, kind: 'object', target: k, attempts: 0 })),
       ),
       attemptErasure: jest.fn().mockResolvedValue({ completed: 1, pending: 0 }),
+      viewExtras: jest.fn().mockResolvedValue(extras()),
+      findChatMessage: jest.fn().mockResolvedValue(chatMessage()),
+      markHeard: jest.fn().mockResolvedValue(HEARD_AT),
+      consentSeenAt: jest.fn().mockResolvedValue(null),
+      markConsentSeen: jest.fn().mockResolvedValue(HEARD_AT),
     };
     upload = {
       createSignedUpload: jest.fn().mockResolvedValue({
@@ -386,6 +428,162 @@ describe('CommunityVoiceService', () => {
     it('404s an already-deleted note', async () => {
       repo.findById.mockResolvedValue(note({ soft_deleted_at: new Date() }));
       await expect(service.delete(member, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  // ── VOICE-BE: names, coach flag, waveform, heard, consent, reply link ─────────
+
+  describe('studio fields (VOICE-BE)', () => {
+    it('names the author (first name in a non-client space) and flags the coach', async () => {
+      let res = await service.getOne(member, NOTE_A);
+      expect(res.voice_note).toMatchObject({ author_name: 'Sam', author_is_coach: false });
+      repo.findById.mockResolvedValue(note({ author_id: COACH_A_ID }));
+      res = await service.getOne(member, NOTE_A);
+      expect(res.voice_note).toMatchObject({ author_name: 'Coach', author_is_coach: true });
+      repo.viewExtras.mockResolvedValue(extras({ fullName: () => true }));
+      res = await service.getOne(member, NOTE_A);
+      expect(res.voice_note.author_name).toBe('Coach Kim');
+      expect(repo.viewExtras).toHaveBeenCalledWith(MEMBER_ID, [expect.objectContaining({ id: NOTE_A })]);
+    });
+
+    it('stores the waveform peaks one byte each and returns them on read', async () => {
+      await service.create(member, WS_A, { ...VALID_CREATE, waveform_peaks: [0, 0.5, 1] });
+      const seed = repo.createVoiceNote.mock.calls[0][0];
+      expect(Array.from(seed.waveformPeaks as Uint8Array)).toEqual([0, 128, 255]);
+      repo.findById.mockResolvedValue(note({ waveform_peaks: Uint8Array.from([0, 128, 255]) }));
+      const res = await service.getOne(member, NOTE_A);
+      expect(res.voice_note.waveform_peaks).toEqual([0, 0.502, 1]);
+      expect(res.voice_note.has_waveform).toBe(true);
+    });
+
+    it('a note without peaks reads null (has_waveform false)', async () => {
+      await service.create(member, WS_A, VALID_CREATE);
+      expect(repo.createVoiceNote.mock.calls[0][0].waveformPeaks).toBeNull();
+      const res = await service.getOne(member, NOTE_A);
+      expect(res.voice_note).toMatchObject({ waveform_peaks: null, has_waveform: false });
+    });
+
+    it('returns the listener\'s own heard time and the chat message link', async () => {
+      repo.viewExtras.mockResolvedValue(
+        extras({
+          heardAt: new Map([[NOTE_A, HEARD_AT]]),
+          chat: new Map([[NOTE_A, { parent_message_id: ROOT_ID }]]),
+        }),
+      );
+      const res = await service.getOne(member, NOTE_A);
+      expect(res.voice_note).toMatchObject({
+        heard_at: HEARD_AT.toISOString(),
+        message_id: NOTE_A,
+        parent_message_id: ROOT_ID,
+      });
+    });
+
+    it('a reply links to its chat message; a reply to a reply joins the first message', async () => {
+      await service.create(member, WS_A, { ...VALID_CREATE, parent_message_id: PARENT_ID });
+      expect(repo.createVoiceNote.mock.calls[0][0].parent).toEqual({
+        id: PARENT_ID,
+        at: new Date('2026-02-28T00:00:00.000Z'),
+      });
+      const rootAt = new Date('2026-02-27T00:00:00.000Z');
+      repo.findChatMessage.mockResolvedValue(
+        chatMessage({ parent_message_id: ROOT_ID, parent_message_at: rootAt }),
+      );
+      await service.create(member, WS_A, { ...VALID_CREATE, parent_message_id: PARENT_ID });
+      expect(repo.createVoiceNote.mock.calls[1][0].parent).toEqual({ id: ROOT_ID, at: rootAt });
+    });
+
+    it.each([
+      ['missing', null],
+      ['in another space', chatMessage({ cohort_id: '12121212-1212-4212-8212-121212121212' })],
+      ['deleted', chatMessage({ deleted_at: new Date() })],
+      ['a plan-tag sub-surface row', chatMessage({ plan_context_type: 'workout' })],
+      ['a DM row', chatMessage({ scope: 'dm', cohort_id: null })],
+    ])('404s a reply whose parent is %s, before any row is written', async (_label, parent) => {
+      repo.findChatMessage.mockResolvedValue(parent);
+      const err = await service
+        .create(member, WS_A, { ...VALID_CREATE, parent_message_id: PARENT_ID })
+        .catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(NotFoundException);
+      expect((err as NotFoundException).getResponse()).toEqual({
+        error: 'not_found',
+        code: 'community.message.not_found',
+      });
+      expect(repo.createVoiceNote).not.toHaveBeenCalled();
+    });
+
+    it('a Hall note cannot be a reply (no chat there)', async () => {
+      await expect(
+        service.create(member, WS_A, { ...VALID_CREATE, cohort_id: undefined, parent_message_id: PARENT_ID }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.findChatMessage).not.toHaveBeenCalled();
+      expect(repo.createVoiceNote).not.toHaveBeenCalled();
+    });
+
+    // FIX-1122-R1 (Sol B1): a reply needs access and a live parent in the space, not the start permission.
+    const ELSEWHERE = '12121212-1212-4212-8212-121212121212';
+    it.each([
+      ['a client voice reply in Announcements is sent', 'announcement', 'coach', chatMessage(), 'sent'],
+      ['a client top-level voice note in Announcements is refused', 'announcement', 'coach', null, 'community.space.read_only'],
+      ['a reply whose parent is in another space is 404', 'announcement', 'coach', chatMessage({ cohort_id: ELSEWHERE }), 'community.message.not_found'],
+      ['a reply whose parent is in another tenant is 404', 'announcement', 'coach', chatMessage({ workspace_id: ELSEWHERE, cohort_id: ELSEWHERE }), 'community.message.not_found'],
+      ['a reply in a section is refused', 'section', 'all', chatMessage(), 'community.space.read_only'],
+    ])('%s', async (_case, kind, posting_policy, parent, outcome) => {
+      access.findCohort.mockResolvedValue({ id: COHORT_A, workspace_id: WS_A, kind, posting_policy });
+      access.assertCanPost.mockImplementation((c: unknown, u: unknown) =>
+        // @ts-expect-error the real start rule, run over the mocked isWorkspaceCoach (false for a member)
+        CommunityAccessService.prototype.assertCanPost.call(access, c, u),
+      );
+      repo.findChatMessage.mockResolvedValue(parent);
+      const dto = parent ? { ...VALID_CREATE, parent_message_id: PARENT_ID } : VALID_CREATE;
+      const got = await service.create(member, WS_A, dto).then(
+        () => 'sent',
+        (e: { getResponse: () => { code: string } }) => e.getResponse().code,
+      );
+      expect(got).toBe(outcome);
+      expect(repo.createVoiceNote).toHaveBeenCalledTimes(outcome === 'sent' ? 1 : 0);
+    });
+
+    it('a coach note marks the space answered; a member note does not', async () => {
+      await service.create(member, WS_A, VALID_CREATE);
+      expect(repo.createVoiceNote.mock.calls[0][0].answersClients).toBe(false);
+      await service.create(coachA, WS_A, { ...VALID_CREATE, storage_key: mintVoiceKey(COACH_A_ID, 'm4a') });
+      expect(repo.createVoiceNote.mock.calls[1][0].answersClients).toBe(true);
+    });
+
+    it('pings the space chat (messageCreated) with the note id', async () => {
+      await service.create(member, WS_A, VALID_CREATE);
+      await new Promise((r) => setImmediate(r));
+      expect(realtime.broadcastCommunityEvent).toHaveBeenCalledWith(
+        { workspaceId: WS_A, cohortId: COHORT_A },
+        'community.message.created',
+        expect.objectContaining({ id: NOTE_A, cohortId: COHORT_A, authorId: MEMBER_ID }),
+        expect.anything(),
+      );
+    });
+
+    it('marks a readable note heard for the caller only', async () => {
+      const res = await service.markHeard(member, NOTE_A);
+      expect(res).toEqual({ voice_note_id: NOTE_A, heard_at: HEARD_AT.toISOString() });
+      expect(repo.markHeard).toHaveBeenCalledWith(NOTE_A, MEMBER_ID);
+    });
+
+    it('404s heard on a note the caller cannot read, writing nothing', async () => {
+      access.canAccessCohort.mockResolvedValue(false);
+      await expect(service.markHeard(stranger, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+      repo.findById.mockResolvedValue(note({ soft_deleted_at: new Date() }));
+      await expect(service.markHeard(member, NOTE_A)).rejects.toBeInstanceOf(NotFoundException);
+      expect(repo.markHeard).not.toHaveBeenCalled();
+    });
+
+    it('consent is unseen until marked, then seen with its first time', async () => {
+      await expect(service.consent(member)).resolves.toEqual({ seen: false, seen_at: null });
+      await expect(service.markConsentSeen(member)).resolves.toEqual({
+        seen: true,
+        seen_at: HEARD_AT.toISOString(),
+      });
+      expect(repo.markConsentSeen).toHaveBeenCalledWith(MEMBER_ID);
+      repo.consentSeenAt.mockResolvedValue(HEARD_AT);
+      await expect(service.consent(member)).resolves.toEqual({ seen: true, seen_at: HEARD_AT.toISOString() });
     });
   });
 

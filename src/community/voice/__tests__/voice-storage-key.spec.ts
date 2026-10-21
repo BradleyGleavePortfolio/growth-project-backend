@@ -130,6 +130,13 @@ function makeService(provider: VoiceUploadProvider) {
       created.push(row);
       return row;
     }),
+    viewExtras: jest.fn().mockResolvedValue({
+      coachId: null,
+      names: new Map(),
+      fullName: () => false,
+      heardAt: new Map(),
+      chat: new Map(),
+    }),
   };
   const realtime = {
     cohortShard: () => 0,

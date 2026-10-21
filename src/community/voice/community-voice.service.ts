@@ -23,6 +23,12 @@ import {
   MAX_VOICE_BYTES,
   MAX_VOICE_DURATION_MS,
   VOICE_NOTE_MIME_ALLOWLIST,
+  bytesToPeaks,
+  peaksToBytes,
+  type VoiceConsentResponse,
+  VoiceConsentResponseSchema,
+  type VoiceHeardResponse,
+  VoiceHeardResponseSchema,
   type VoiceNoteFeedResponse,
   VoiceNoteFeedResponseSchema,
   type VoiceNoteMimeType,
@@ -32,7 +38,12 @@ import {
   type VoiceUploadTarget,
   VoiceUploadTargetSchema,
 } from './community-voice.dto';
-import { CommunityVoiceRepository, type VoiceNoteSeed } from './community-voice.repository';
+import {
+  CommunityVoiceRepository,
+  type VoiceNoteSeed,
+  type VoiceViewExtras,
+} from './community-voice.repository';
+import { memberName } from '../member-display-name';
 import { resolveVoiceEntitlementRequired } from './community-voice-flag.guard';
 import { VoiceUploadProvider } from './voice-upload.provider';
 import { verifyPublishableVoiceKey } from './voice-storage-key';
@@ -45,6 +56,9 @@ const NOT_FOUND = {
   message:
     'This voice note could not be found. It may have been deleted or removed. Refresh and try again.',
 } as const;
+
+/** VOICE-BE: the reply's chat message is not in that space (the chat's own code-only 404). */
+const PARENT_NOT_FOUND = { error: 'not_found', code: 'community.message.not_found' } as const;
 
 /**
  * Voice notes in direct messages are not offered: a DM thread is keyed by the
@@ -271,6 +285,7 @@ export class CommunityVoiceService {
     user: User,
     cohortId: string | undefined,
     conversationId: string | undefined,
+    reply: boolean,
   ): Promise<{ cohortId: string | null; conversationId: string | null }> {
     if (cohortId && conversationId) {
       throw new BadRequestException({
@@ -293,7 +308,10 @@ export class CommunityVoiceService {
       if (!(await this.access.canAccessCohort(cohort, user))) {
         throw new NotFoundException(NOT_FOUND);
       }
-      await this.access.assertCanPost(cohort, user);
+      // FIX-1122-R1: a reply (its parent is checked next by replyParent, 404
+      // unless live and in this space) needs only access, as a text reply does;
+      // a top-level note needs the start permission; a section takes neither.
+      if (!reply || cohort.kind === 'section') await this.access.assertCanPost(cohort, user);
       return { cohortId: cohort.id, conversationId: null };
     }
     // Workspace-hall note — any member of the workspace may post.
@@ -305,9 +323,17 @@ export class CommunityVoiceService {
 
   // ── Views ──────────────────────────────────────────────────────────────────
 
-  private async noteView(row: CommunityVoiceNote): Promise<VoiceNoteView> {
+  /** One workspace's notes as `viewerId` sees them (VOICE-BE extras in one batch). */
+  private async noteViews(viewerId: string, rows: CommunityVoiceNote[]): Promise<VoiceNoteView[]> {
+    if (rows.length === 0) return [];
+    const extras = await this.repo.viewExtras(viewerId, rows);
+    return Promise.all(rows.map((row) => this.noteView(row, extras)));
+  }
+
+  private async noteView(row: CommunityVoiceNote, x: VoiceViewExtras): Promise<VoiceNoteView> {
     // A-610-1: signed only for a canonical key inside the AUTHOR's folder.
     const url = await this.upload.createSignedDownload(row.storage_key, undefined, row.author_id);
+    const chat = x.chat.get(row.id);
     return {
       id: row.id,
       workspace_id: row.workspace_id,
@@ -320,6 +346,12 @@ export class CommunityVoiceService {
       mime_type: row.mime_type,
       has_waveform: row.waveform_peaks !== null,
       created_at: row.created_at.toISOString(),
+      author_name: memberName(x.names.get(row.author_id), x.fullName(row.cohort_id, row.author_id)),
+      author_is_coach: row.author_id === x.coachId,
+      waveform_peaks: bytesToPeaks(row.waveform_peaks),
+      heard_at: x.heardAt.get(row.id)?.toISOString() ?? null,
+      message_id: chat ? row.id : null,
+      parent_message_id: chat?.parent_message_id ?? null,
     };
   }
 
@@ -391,7 +423,9 @@ export class CommunityVoiceService {
       user,
       dto.cohort_id,
       dto.conversation_id,
+      Boolean(dto.parent_message_id), // the same test replyParent uses
     );
+    const parent = await this.replyParent(user, scope.cohortId, dto.parent_message_id);
 
     // A-610-1 bucket binding: only a key the server minted for THIS caller
     // (valid issuance MAC, canonical shape, recent) is accepted, checked after
@@ -437,7 +471,9 @@ export class CommunityVoiceService {
       durationMs: dto.duration_ms,
       bytes: storedBytes,
       mimeType: dto.mime_type,
-      waveformPeaks: null,
+      waveformPeaks: peaksToBytes(dto.waveform_peaks),
+      parent,
+      answersClients: user.role === 'coach' || user.role === 'owner',
     };
     const row = await this.repo.createVoiceNote(seed);
 
@@ -461,14 +497,36 @@ export class CommunityVoiceService {
     });
 
     return VoiceNoteResponseSchema.parse({
-      voice_note: await this.noteView(row),
+      voice_note: (await this.noteViews(user.id, [row]))[0],
     });
   }
 
   /**
+   * VOICE-BE reply link: the chat message a space note answers must be a live,
+   * plain chat message in the same space whose author the caller can see; a
+   * reply to a reply joins the first message's thread (one level, Slack-like).
+   * Anything else, a Hall note included, is the message 404 (no new words).
+   */
+  private async replyParent(
+    user: User,
+    cohortId: string | null,
+    parentId: string | undefined,
+  ): Promise<{ id: string; at: Date } | null> {
+    if (!parentId) return null;
+    const m = cohortId ? await this.repo.findChatMessage(parentId) : null;
+    if (!m || m.scope !== 'cohort' || m.cohort_id !== cohortId || m.deleted_at || m.plan_context_type !== null) {
+      throw new NotFoundException(PARENT_NOT_FOUND);
+    }
+    await this.safety.assertVisibleTo(user.id, m.sender_id, PARENT_NOT_FOUND, placeOf(m));
+    return m.parent_message_id && m.parent_message_at
+      ? { id: m.parent_message_id, at: m.parent_message_at }
+      : { id: m.id, at: m.created_at };
+  }
+
+  /**
    * Fire an ID-only ping to everyone who may read the space of a cohort voice note.
-   * Reuses the v1-4 postCreated broadcast contract (PostCreatedPayload) so we
-   * do not widen the closed broadcast payload union (out of this lane's OWNS).
+   * VOICE-BE: the note is now a chat message in that space (same id), so it is
+   * the chat's messageCreated ping, exactly as a text message sends it.
    * DM notes are not broadcast on a community channel (the messaging realtime
    * path owns DM fanout).
    */
@@ -478,10 +536,10 @@ export class CommunityVoiceService {
     if (!cohortId) return; // workspace-hall notes ride the REST poll floor.
     await this.realtime.broadcastCommunityEvent(
       { workspaceId: row.workspace_id, cohortId },
-      COMMUNITY_BROADCAST_EVENTS.postCreated,
+      COMMUNITY_BROADCAST_EVENTS.messageCreated,
       {
         id: row.id,
-        workspaceId: row.workspace_id,
+        cohortId,
         authorId: row.author_id,
         createdAt: row.created_at.toISOString(),
       },
@@ -496,7 +554,7 @@ export class CommunityVoiceService {
     // Two-way block: a direct id read cannot go around the list filter.
     await this.safety.assertVisibleTo(user.id, row.author_id, NOT_FOUND, placeOf(row));
     return VoiceNoteResponseSchema.parse({
-      voice_note: await this.noteView(row),
+      voice_note: (await this.noteViews(user.id, [row]))[0],
     });
   }
 
@@ -574,11 +632,37 @@ export class CommunityVoiceService {
       (row) => row.author_id,
       placeOf,
     );
-    const voiceNotes = await Promise.all(visibleRows.map((row) => this.noteView(row)));
+    const voiceNotes = await this.noteViews(user.id, visibleRows);
     return VoiceNoteFeedResponseSchema.parse({
       voice_notes: voiceNotes,
       next_cursor: page.nextCursor,
     });
+  }
+
+  // ── Heard marker and consent (VOICE-BE) ─────────────────────────────────────
+
+  /**
+   * The phone heard this note to the end: mark it heard for THIS listener only
+   * (the first time is kept). Same read rule as getOne, so a note the caller
+   * cannot read is the same 404; the table's RLS check repeats the rule.
+   */
+  async markHeard(user: User, voiceNoteId: string): Promise<VoiceHeardResponse> {
+    const row = await this.readableNote(user, voiceNoteId);
+    await this.safety.assertVisibleTo(user.id, row.author_id, NOT_FOUND, placeOf(row));
+    const heardAt = await this.repo.markHeard(row.id, user.id);
+    return VoiceHeardResponseSchema.parse({ voice_note_id: row.id, heard_at: heardAt.toISOString() });
+  }
+
+  /** Whether this person has seen the voice consent card (it is shown once). */
+  async consent(user: User): Promise<VoiceConsentResponse> {
+    const seenAt = await this.repo.consentSeenAt(user.id);
+    return VoiceConsentResponseSchema.parse({ seen: seenAt !== null, seen_at: seenAt?.toISOString() ?? null });
+  }
+
+  /** Record that the consent card was shown (idempotent; the first time is kept). */
+  async markConsentSeen(user: User): Promise<VoiceConsentResponse> {
+    const seenAt = await this.repo.markConsentSeen(user.id);
+    return VoiceConsentResponseSchema.parse({ seen: true, seen_at: seenAt.toISOString() });
   }
 
   /**
