@@ -4,13 +4,14 @@ import type { PlanRenewal } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { NotificationKind } from '../../notifications/notification-kind';
+import { quietHoursFor } from '../../notifications/push/push-quiet-hours';
 import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
 import { dunningErrorCode } from '../dunning-v2/dunning-v2.safe-error';
 import {
   isPlanRenewalEnabled,
   PLAN_RENEWAL_OPEN_WINDOW_MS,
-  PLAN_RENEWAL_POPUP_DAYS,
-  PLAN_RENEWAL_PUSH_DAY,
+  PLAN_RENEWAL_LAST_DAY,
+  PLAN_RENEWAL_STEP_DAYS,
   PLAN_RENEWAL_SWEEP_CRON,
   planRenewalDay,
 } from './plan-renewal.cadence';
@@ -31,13 +32,15 @@ const refusal = (code: string, message: string) => ({ code, error: code, message
 /**
  * RENEWAL-BE: the plan-renewal sequence (cadence: plan-renewal.cadence.ts).
  *
- * The Day 0 and Day 1 pop-ups are read, not sent: GET /v1/checkout/entitlement
- * works them out from the client's local day and their acknowledgements. The
- * one app notification (Day 7) is sent exactly once, by the database: the
- * claim is a CAS on status (active -> done) and the push is enqueued inside
- * that transaction with the dedupe key plan_renewal:<id> (the outbox's unique
- * key). planRenewalBlock is re-checked right before it goes out (the push
- * worker through planRenewalPushStillDue).
+ * The pop-ups (and Home's banner) are read, not sent: GET /v1/checkout/entitlement
+ * works them out from the client's local day and their acknowledgements. Each
+ * step's app notification (Day 0, 1, 7) goes out at most once, by the
+ * database: the claim is a CAS on pushed_step (and status active -> done on
+ * Day 7) and the push is enqueued inside that transaction with the dedupe key
+ * plan_renewal:<id>:<day> (the outbox's unique key). A step whose notification
+ * could only land on a later local day (quiet hours) is claimed and skipped,
+ * so two steps never arrive together. planRenewalBlock is re-checked right
+ * before it goes out (the push worker through planRenewalPushStillDue).
  */
 @Injectable()
 export class PlanRenewalService {
@@ -62,7 +65,7 @@ export class PlanRenewalService {
     }
   }
 
-  /** Open sequences for plans that just ended; stop blocked ones; send the Day 7 app notification. */
+  /** Open sequences for plans that just ended; stop blocked ones; send each step's app notification. */
   async runSweep(now = new Date()) {
     const out = { opened: 0, pushed: 0, stopped: 0 };
     if (!isPlanRenewalEnabled()) return out;
@@ -109,7 +112,7 @@ export class PlanRenewalService {
     return opened;
   }
 
-  /** Stop the sequence, or from the client's local Day 7 claim it and enqueue the one app notification in the same transaction. */
+  /** Stop the sequence, or claim today's step and enqueue its app notification in the same transaction. */
   private async advance(row: PlanRenewal, now: Date): Promise<'idle' | 'pushed' | 'stopped'> {
     const block = await planRenewalBlock(this.prisma, row.client_user_id, row.coach_user_id, now);
     if (block) {
@@ -119,23 +122,33 @@ export class PlanRenewalService {
       });
       return 'stopped';
     }
-    const day = planRenewalDay(row.ended_at, now, await resolveRecipientTimeZone(this.prisma, row.client_user_id));
-    if (day < PLAN_RENEWAL_PUSH_DAY) return 'idle';
+    const tz = await resolveRecipientTimeZone(this.prisma, row.client_user_id);
+    const day = planRenewalDay(row.ended_at, now, tz);
+    const step = PLAN_RENEWAL_STEP_DAYS.filter((d) => d <= day).pop();
+    if (step === undefined || step <= row.pushed_step) return 'idle';
+    // A step the sweep never saw on its day (flag off, server down), or whose notification quiet hours would hold
+    // past its day, is skipped, never sent late or together with the next one.
+    const deliverAt = quietHoursFor({ kind: NotificationKind.PLAN_RENEWAL, timeZone: tz, now }).deliverAt;
+    const send = day === step && planRenewalDay(row.ended_at, deliverAt, tz) === step;
+    const last = step === PLAN_RENEWAL_LAST_DAY;
     const house = await planRenewalHouseCoach(this.prisma, row.coach_user_id);
     return this.prisma.$transaction(async (tx): Promise<'idle' | 'pushed'> => {
-      const won = await tx.planRenewal.updateMany({ where: { id: row.id, status: 'active' }, data: { status: 'done' } });
-      // A Day 7 the sweep never saw (flag off, server down) is skipped, never sent late.
-      if (won.count !== 1 || day > PLAN_RENEWAL_PUSH_DAY) return 'idle';
+      const won = await tx.planRenewal.updateMany({
+        where: { id: row.id, status: 'active', pushed_step: { lt: step } },
+        data: { pushed_step: step, ...(last ? { status: 'done' } : {}) },
+      });
+      if (won.count !== 1 || !send) return 'idle';
       await this.notifications.sendPush(
         {
           user_id: row.client_user_id,
           kind: NotificationKind.PLAN_RENEWAL,
           body: 'Your plan has ended.',
           deep_link: 'tgp://home',
-          dedupe_key: `plan_renewal:${row.id}`,
-          // The two buttons (contract on b#1127): the phone registers both categories with the labels.
+          dedupe_key: `plan_renewal:${row.id}:${step}`,
+          // The Day 7 buttons (contract on b#1127): the phone registers both categories with the labels.
           data: {
-            categoryId: house ? 'PLAN_RENEWAL' : 'PLAN_RENEWAL_COACH',
+            step: String(step),
+            ...(last ? { categoryId: house ? 'PLAN_RENEWAL' : 'PLAN_RENEWAL_COACH' } : {}),
             coach_id: row.coach_user_id,
             ...(house ? { house_coach_id: house.id } : {}),
           },
@@ -146,10 +159,10 @@ export class PlanRenewalService {
     });
   }
 
-  /** POST /v1/checkout/renewal/popup-ack: the client saw the pop-up for local `day` (0 or 1). */
+  /** POST /v1/checkout/renewal/popup-ack: the client saw the pop-up for local `day` (0, 1 or 7). */
   async ackPopup(userId: string, day: number, now = new Date()): Promise<{ renewal: PlanRenewalView }> {
-    if (!PLAN_RENEWAL_POPUP_DAYS.includes(day)) {
-      throw new BadRequestException(refusal('PLAN_RENEWAL_STEP_INVALID', 'The pop-up step must be 0 or 1.'));
+    if (!PLAN_RENEWAL_STEP_DAYS.includes(day)) {
+      throw new BadRequestException(refusal('PLAN_RENEWAL_STEP_INVALID', 'The pop-up step must be 0, 1 or 7.'));
     }
     const current = await loadPlanRenewal(this.prisma, userId, undefined, now);
     if (!current.row) throw new NotFoundException(refusal('PLAN_RENEWAL_NOT_FOUND', 'There is no plan renewal running for this account.'));

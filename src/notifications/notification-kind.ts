@@ -146,7 +146,7 @@ export const NotificationKind = {
   // global mute still applies). Payload: { purchase_id, package_id,
   // trial_ends_at, amount_cents, currency, will_charge }.
   TRIAL_ENDING: 'trial_ending',
-  // RENEWAL-BE: the client's plan with their coach ended normally (Day 0, 1, 3
+  // RENEWAL-BE: the client's plan with their coach ended normally (Day 0, 1
   // and 7 of the renewal sequence). Push only, no inbox row; it opens Home.
   // Prefs: plan_renewal_push (default on).
   PLAN_RENEWAL: 'plan_renewal',

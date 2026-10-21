@@ -1,6 +1,6 @@
--- RENEWAL-BE: the plan-renewal sequence (owner #RENEWAL-PUSH: Day 0 and Day 1
--- pop-ups, one Day 7 app notification) a client gets after their latest plan
--- with their coach ended normally. Additive: one table, two read policies,
+-- RENEWAL-BE: the plan-renewal sequence (owner #RENEWAL-PUSH, OPERATOR RULING
+-- 6327651587: Day 0, Day 1 and Day 7 each an app notification and an in-app
+-- pop-up) a client gets after their latest plan with their coach ended normally. Additive: one table, two read policies,
 -- one defaulted column, no data change.
 --
 -- Row rules (RLS enabled and forced; anon has no table access):
@@ -26,6 +26,7 @@ CREATE TABLE "PlanRenewal" (
     "status" TEXT NOT NULL DEFAULT 'active',
     "stop_reason" TEXT,
     "popup_acked_step" INTEGER NOT NULL DEFAULT -1,
+    "pushed_step" INTEGER NOT NULL DEFAULT -1,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" TIMESTAMP(3) NOT NULL,
 

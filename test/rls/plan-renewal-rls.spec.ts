@@ -1,12 +1,13 @@
 /**
  * RENEWAL-BE (20270502008100): the plan-renewal sequence on real Postgres
- * (owner #RENEWAL-PUSH: Day 0 and Day 1 pop-ups, one Day 7 app notification
- * with two buttons, the client's local days). The real PlanRenewalService
+ * (owner #RENEWAL-PUSH, OPERATOR RULING 6327651587: Day 0, Day 1 and Day 7
+ * each an app notification and a pop-up, the Day 7 one with two buttons, a
+ * Home banner, the client's local days). The real PlanRenewalService
  * sweep runs on the superuser connection, as the API does; the push enqueue
  * is recorded (the outbox has its own suites). Row access runs as the API
  * role `authenticated` (no RLS bypass) on the replayed chain; every 0 comes
  * right after a 1 for the same caller on a row of the same kind.
- * Coach K coaches A, B, E, G, I, W, Y and the excluded clients; coach L
+ * Coach K coaches A, B, E, G, I, J, W, Y and the excluded clients; coach L
  * coaches C; H is TGP's house coach (HOUSE_COACH_USER_ID) and coaches Q.
  * Runs in rls-live-tests. Gate: TEST_DATABASE_URL (CI=true without it fails).
  */
@@ -34,20 +35,24 @@ const DAY = PLAN_RENEWAL_DAY_MS;
   const pushes: Push[] = [];
   const notifications = { sendPush: jest.fn(async (input: Push) => { pushes.push(input); return null; }) };
   const service = new PlanRenewalService(prisma, stub<NotificationsService>(notifications));
-  const keys = [...'KLHABCEFGIRDVXZOPQWY'];
+  const keys = [...'KLHABCEFGIJRDVXZOPQWY'];
   const u: Record<string, string> = Object.fromEntries(keys.map((k) => [k, randomUUID()]));
   const supa: Record<string, string> = Object.fromEntries(keys.map((k) => [k, randomUUID()]));
   const coachOf: Record<string, string> = Object.fromEntries(
-    [...'ABEFGIRDVXZOPWY'].map((k) => [k, 'K']).concat([['C', 'L'], ['Q', 'H']]),
+    [...'ABEFGIJRDVXZOPWY'].map((k) => [k, 'K']).concat([['C', 'L'], ['Q', 'H']]),
   );
   const isCoach = (k: string) => 'KLH'.includes(k);
-  // Noon UTC today: 07:00-08:00 in New York (A's zone), so every offset below lands on a known local day.
+  // Noon UTC today: 07:00-08:00 in New York (A's zone) and 21:00 in Tokyo (J's, inside quiet hours 21:00-08:00).
+  // Every offset below lands on a known local day.
   const T0 = Math.floor(Date.now() / DAY) * DAY + 12 * HOUR;
   const at = (ms: number) => new Date(T0 + ms);
   const sweep = (ms: number) => service.runSweep(at(ms));
   const env = { flag: process.env.FEATURE_PLAN_RENEWAL, house: process.env.HOUSE_COACH_USER_ID };
 
   const pushesTo = (who: string) => pushes.filter((p) => p.user_id === u[who]);
+  /** Who got the notification for step `day`, sorted. */
+  const stepPushes = (day: number) =>
+    pushes.filter((p) => p.dedupe_key?.endsWith(`:${day}`)).map((p) => keys.find((k) => u[k] === p.user_id)).sort();
   const rows = (who: string) => prisma.planRenewal.findMany({ where: { client_user_id: u[who] } });
   const row = async (who: string) => (await rows(who))[0];
   const view = (who: string, ms = 0, coach?: string) => readPlanRenewal(prisma, u[who], coach ? u[coach] : undefined, at(ms));
@@ -92,10 +97,10 @@ const DAY = PLAN_RENEWAL_DAY_MS;
         VALUES (${u[k]}, ${supa[k]}, ${`renew-${u[k]}@example.test`}, ${names[k] ?? `Person ${k}`},
           ${isCoach(k) ? 'coach' : 'student'}::"Role", ${coachOf[k] ? u[coachOf[k]] : null})`;
     }
-    // A lives in New York (the zone the phone supplied); everyone else's zone is unknown (UTC days).
-    await prisma.notificationPreferences.create({
-      data: { user_id: u.A, timezone: 'America/New_York', timezone_updated_at: at(-30 * DAY) },
-    });
+    // A lives in New York and J in Tokyo (the zones the phones supplied); everyone else's zone is unknown (UTC days).
+    for (const [who, timezone] of [['A', 'America/New_York'], ['J', 'Asia/Tokyo']] as const) {
+      await prisma.notificationPreferences.create({ data: { user_id: u[who], timezone, timezone_updated_at: at(-30 * DAY) } });
+    }
     // A once had a card declined at checkout (a one-off attempt, never a plan): it does not count as a failed payment.
     await purchase('A', { billing_type: 'one_time', status: 'payment_failed', entitlement_active: false, created_at: at(-40 * DAY) });
     await packageRanOut('A', HOUR);
@@ -104,6 +109,7 @@ const DAY = PLAN_RENEWAL_DAY_MS;
       trial_days: 14, trial_started_at: at(-14 * DAY), trial_ends_at: at(-2 * HOUR), canceled_at: at(-5 * DAY), current_period_end: at(-2 * HOUR) });
     await packageRanOut('C', HOUR);
     await packageRanOut('Q', HOUR);
+    await packageRanOut('J', HOUR);
     // E: first seen on its local Day 8 (it ended 7 days 23 hours ago, at 13:00 UTC): its Day 7 is gone.
     await packageRanOut('E', 7 * DAY + 23 * HOUR);
     // G: cancelled at period end (the period ended an hour ago). LO B1: a card decline months ago was recovered
@@ -162,21 +168,26 @@ const DAY = PLAN_RENEWAL_DAY_MS;
     process.env.FEATURE_PLAN_RENEWAL = 'true';
   });
 
-  it('Day 0: plans that ended normally open a sequence and show the pop-up; no app notification', async () => {
+  it('Day 0: plans that ended normally open a sequence, send the Day 0 notification and show the pop-up and banner', async () => {
     await sweep(0);
     const opened = await prisma.planRenewal.findMany({ where: { client_user_id: { in: Object.values(u) } }, select: { client_user_id: true } });
-    expect(opened.map((r) => keys.find((k) => u[k] === r.client_user_id)).sort()).toEqual(['A', 'B', 'C', 'E', 'G', 'Q', 'W', 'Y']);
-    expect(pushes).toEqual([]);
+    expect(opened.map((r) => keys.find((k) => u[k] === r.client_user_id)).sort()).toEqual(['A', 'B', 'C', 'E', 'G', 'J', 'Q', 'W', 'Y']);
+    expect(stepPushes(0)).toEqual(['A', 'B', 'C', 'G', 'Q', 'W', 'Y']);
+    const a = await row('A');
+    expect(pushesTo('A')).toEqual([{ user_id: u.A, kind: 'plan_renewal', body: 'Your plan has ended.', deep_link: 'tgp://home',
+      dedupe_key: `plan_renewal:${a.id}:0`, data: { step: '0', coach_id: u.K, house_coach_id: u.H } }]);
+    // J's Day 0 is first seen at 21:00 in Tokyo: quiet hours would hold it to Day 1, so it is skipped, not sent with Day 1.
+    expect([(await row('J')).pushed_step, pushesTo('J')]).toEqual([0, []]);
     const house = { id: u.H, first_name: 'Hal' };
     expect(await view('A')).toEqual({ state: 'ended', ended_at: at(-HOUR).toISOString(), popup_due: true, popup_step: 0,
-      coach: { id: u.K, first_name: 'Kim' }, house_coach: house });
+      banner_due: true, coach: { id: u.K, first_name: 'Kim' }, house_coach: house });
     // The house coach is never offered to the house coach's own client.
     expect(await view('Q')).toMatchObject({ state: 'ended', popup_step: 0, coach: { id: u.H }, house_coach: null });
     expect((await view('C')).house_coach).toEqual(house);
     // LO B1: a recovered card decline never blocks; LS B2: an immediate cancel keeps its own (old) end.
     expect([(await view('G')).popup_due, (await view('I')).state]).toEqual([true, 'none']);
-    // E is on its local Day 8: no pop-up.
-    expect(await view('E')).toMatchObject({ state: 'ended', popup_due: false, popup_step: null });
+    // E is on its local Day 8: no pop-up and no notification (Day 7 is gone); the banner still shows.
+    expect(await view('E')).toMatchObject({ state: 'ended', popup_due: false, popup_step: null, banner_due: true });
     for (const who of 'FRDXZOPI') expect([who, await view(who)]).toEqual([who, expect.objectContaining({ state: 'none' })]);
     expect(await view('V')).toEqual({ ...(await view('F')), state: 'revoked', coach: { id: u.K, first_name: expect.any(String) } });
     // Asking about another coach than the current one says nothing.
@@ -190,48 +201,55 @@ const DAY = PLAN_RENEWAL_DAY_MS;
     }
     await sweep(HOUR);
     await sweep(2 * HOUR);
-    expect([(await rows('W')).length, (await rows('Y')).length, pushes.length]).toEqual([1, 1, 0]);
+    expect([(await rows('W')).length, (await rows('Y')).length, pushesTo('W').length, pushesTo('Y').length]).toEqual([1, 1, 1, 1]);
   });
 
   it('the pop-up ack: only a reached pop-up day, idempotent, and only the caller\'s own row', async () => {
     await expect(service.ackPopup(u.A, 3, at(0))).rejects.toMatchObject({ response: { code: 'PLAN_RENEWAL_STEP_INVALID' } });
-    await expect(service.ackPopup(u.A, 1, at(0))).rejects.toMatchObject({ response: { code: 'PLAN_RENEWAL_STEP_NOT_REACHED' } });
+    for (const step of [1, 7]) {
+      await expect(service.ackPopup(u.A, step, at(0))).rejects.toMatchObject({ response: { code: 'PLAN_RENEWAL_STEP_NOT_REACHED' } });
+    }
     await expect(service.ackPopup(u.F, 0, at(0))).rejects.toMatchObject({ response: { code: 'PLAN_RENEWAL_NOT_FOUND' } });
     expect((await service.ackPopup(u.A, 0, at(0))).renewal).toMatchObject({ state: 'ended', popup_due: false, popup_step: null });
     expect((await service.ackPopup(u.A, 0, at(0))).renewal).toMatchObject({ popup_due: false });
     expect((await view('B')).popup_due).toBe(true);
   });
 
-  it('Day 1 shows its own pop-up; days the client skipped are not stacked; nothing is sent before Day 7', async () => {
+  it('Day 1: its own notification and pop-up; days the client skipped are not stacked; nothing between Day 1 and Day 7', async () => {
     expect(await view('A', DAY)).toMatchObject({ popup_due: true, popup_step: 1 });
     expect((await service.ackPopup(u.A, 1, at(DAY))).renewal).toMatchObject({ popup_due: false });
-    // B never opened the app on Day 0 or Day 1: on Day 2 there is no pop-up to catch up on.
-    expect(await view('B', 2 * DAY)).toMatchObject({ state: 'ended', popup_due: false, popup_step: null });
+    // B never opened the app on Day 0 or Day 1: on Day 2 there is no pop-up to catch up on; the banner stays.
+    expect(await view('B', 2 * DAY)).toMatchObject({ state: 'ended', popup_due: false, popup_step: null, banner_due: true });
     // B buys again from coach K: the sequence stops at once, and a push still queued would not be sent.
     expect(await planRenewalPushStillDue(prisma, u.B)).toBe(true);
     await purchase('B', { billing_type: 'recurring', status: 'active', entitlement_active: true, access_expires_at: at(40 * DAY) });
     expect([(await view('B', DAY)).state, await planRenewalPushStillDue(prisma, u.B)]).toEqual(['none', false]);
-    for (const ms of [DAY, 3 * DAY, 6 * DAY + 11 * HOUR]) await sweep(ms);
-    expect(pushes).toEqual([]);
+    // 02:00 UTC on Day 1 is 11:00 in Tokyo (J) and still Day 0 in New York (A, already sent).
+    for (const ms of [DAY - 10 * HOUR, DAY, DAY + HOUR, 3 * DAY, 6 * DAY]) await sweep(ms);
+    expect(stepPushes(1)).toEqual(['A', 'C', 'G', 'J', 'Q', 'W', 'Y']);
+    expect(stepPushes(7)).toEqual([]);
     expect([(await row('B')).status, (await row('B')).stop_reason]).toEqual(['stopped', 'active_plan']);
   });
 
-  it('Day 7: one app notification per sequence with its two buttons, once; Day 8 never sends late', async () => {
-    await sweep(7 * DAY);
-    await sweep(7 * DAY);
-    await sweep(7 * DAY + HOUR);
-    await sweep(8 * DAY);
-    await sweep(30 * DAY);
-    expect(pushes.map((p) => keys.find((k) => u[k] === p.user_id)).sort()).toEqual(['A', 'C', 'G', 'Q', 'W', 'Y']);
+  it('Day 7: the last notification, with its two buttons, once per sequence; nothing after it, nothing late', async () => {
+    for (const ms of [7 * DAY - 10 * HOUR, 7 * DAY, 7 * DAY, 7 * DAY + HOUR, 8 * DAY, 30 * DAY]) await sweep(ms);
+    expect(stepPushes(7)).toEqual(['A', 'C', 'G', 'J', 'Q', 'W', 'Y']);
+    // One notification per step day, never more: Day 0, 1 and 7 (J's Day 0 was skipped; B stopped after Day 0).
+    expect(['A', 'B', 'E', 'J'].map((who) => pushesTo(who).length)).toEqual([3, 1, 0, 2]);
     const a = await row('A');
-    expect(pushesTo('A')).toEqual([{ user_id: u.A, kind: 'plan_renewal', body: 'Your plan has ended.', deep_link: 'tgp://home',
-      dedupe_key: `plan_renewal:${a.id}`, data: { categoryId: 'PLAN_RENEWAL', coach_id: u.K, house_coach_id: u.H } }]);
-    expect(pushesTo('Q')[0].data).toEqual({ categoryId: 'PLAN_RENEWAL_COACH', coach_id: u.H });
+    expect(pushesTo('A')[2]).toEqual({ user_id: u.A, kind: 'plan_renewal', body: 'Your plan has ended.', deep_link: 'tgp://home',
+      dedupe_key: `plan_renewal:${a.id}:7`, data: { step: '7', categoryId: 'PLAN_RENEWAL', coach_id: u.K, house_coach_id: u.H } });
+    expect(pushesTo('Q')[2].data).toEqual({ step: '7', categoryId: 'PLAN_RENEWAL_COACH', coach_id: u.H });
+    // The Day 7 pop-up, then the banner alone until Day 29.
+    expect(await view('A', 7 * DAY)).toMatchObject({ popup_due: true, popup_step: 7, banner_due: true });
+    expect((await service.ackPopup(u.A, 7, at(7 * DAY))).renewal).toMatchObject({ popup_due: false, banner_due: true });
+    expect([(await view('A', 29 * DAY)).banner_due, (await view('A', 30 * DAY)).banner_due]).toEqual([true, false]);
     // Never urgent, so quiet hours always apply (test/plan-renewal.spec.ts).
     expect(notifications.sendPush.mock.calls.some(([p]) => 'urgent' in p)).toBe(false);
-    expect([a.status, (await row('E')).status, pushesTo('E'), pushesTo('B')]).toEqual(['done', 'done', [], []]);
+    expect([a.status, (await row('E')).status]).toEqual(['done', 'done']);
     // After Day 7 the renewal page still reads the ended state; no pop-up.
     expect(await view('A', 8 * DAY)).toMatchObject({ state: 'ended', popup_due: false, house_coach: { id: u.H } });
+    expect([(await row('J')).pushed_step, (await row('J')).status]).toEqual([7, 'done']);
   });
 
   it('row security: a client reads only their own sequence; a coach only while still that client\'s coach', async () => {
@@ -248,7 +266,7 @@ const DAY = PLAN_RENEWAL_DAY_MS;
         `DELETE FROM "PlanRenewal" WHERE "id" = $1 OR "client_user_id" = $2`,
       ]) expect(await api(who, sql, id, u[who])).not.toBe(1);
     }
-    expect((await row('A')).popup_acked_step).toBe(1); // the Day 1 ack, unchanged
+    expect((await row('A')).popup_acked_step).toBe(7); // the Day 7 ack, unchanged
   });
 
   it('after A moves from coach K to coach L: K reads A\'s sequence no more, L never reads it, and it stops', async () => {

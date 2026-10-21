@@ -6,11 +6,13 @@ import { localDayNumber } from '../../notifications/local-time';
  * or was cancelled). Failed payments never enter it: Smart Dunning v2 owns
  * them.
  *
- * Owner #RENEWAL-PUSH (10-21): Day 0 and Day 1 are in-app pop-ups, Day 7 is
- * the one app notification (two buttons: the coach's packages, or TGP's house
- * coach). Days are the client's local calendar days; Day 0 is the day the plan
- * ends. A pop-up shows on the first app open of its day; a day the client
- * never opens the app is skipped, not stacked.
+ * Owner #RENEWAL-PUSH (10-21, corrected ~15:05; OPERATOR RULING 6327651587):
+ * Day 0, Day 1 and Day 7 are each an app notification AND an in-app pop-up;
+ * the Day 7 notification has two buttons (the coach's packages, or TGP's house
+ * coach). Home shows a "Renew now" banner from Day 0, for at most 30 days.
+ * Days are the client's local calendar days; Day 0 is the day the plan ends.
+ * A step day that is missed (no app open, a notification that could only land
+ * on a later day) is skipped, not stacked.
  *
  * FEATURE_PLAN_RENEWAL (default OFF; only "true" turns it on): off means no
  * sequence opens, nothing is sent, and the entitlement answer carries no
@@ -24,9 +26,12 @@ export function isPlanRenewalEnabled(env: NodeJS.ProcessEnv = process.env): bool
 
 export const PLAN_RENEWAL_DAY_MS = 24 * 60 * 60 * 1000;
 
-/** The pop-up days; the one app notification goes out on PLAN_RENEWAL_PUSH_DAY. */
-export const PLAN_RENEWAL_POPUP_DAYS: readonly number[] = [0, 1];
-export const PLAN_RENEWAL_PUSH_DAY = 7;
+/** The step days: each is one app notification and one in-app pop-up on that local day. */
+export const PLAN_RENEWAL_STEP_DAYS: readonly number[] = [0, 1, 7];
+/** The last step; its app notification carries the two buttons. */
+export const PLAN_RENEWAL_LAST_DAY = 7;
+/** Home's "Renew now" banner shows on local days 0 to 29 (operator reading of the owner's banner, 6327651587). */
+export const PLAN_RENEWAL_BANNER_DAYS = 30;
 
 /** A plan that ended longer ago than this never opens a sequence (Day 7 + one day to send it). */
 export const PLAN_RENEWAL_OPEN_WINDOW_MS = 8 * PLAN_RENEWAL_DAY_MS;

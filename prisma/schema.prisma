@@ -5179,9 +5179,10 @@ model PlanRenewal {
   client_user_id   String
   coach_user_id    String
   ended_at         DateTime
-  status           String         @default("active") // active | done (Day 7 push claimed) | stopped
+  status           String         @default("active") // active | done (Day 7 claimed) | stopped
   stop_reason      String?
-  popup_acked_step Int            @default(-1) // the latest pop-up day (0 or 1) the client acknowledged
+  popup_acked_step Int            @default(-1) // the latest pop-up day (0, 1 or 7) the client acknowledged
+  pushed_step      Int            @default(-1) // the latest step day whose app notification was claimed (sent or skipped)
   created_at       DateTime       @default(now())
   updated_at       DateTime       @updatedAt
 
