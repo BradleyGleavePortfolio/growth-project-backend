@@ -13,7 +13,7 @@ import {
   deadlineSignal,
 } from './expo-push-client';
 import { PushContext, SAFETY_ALERT_PUSH_BODY, lockScreenCopy } from './lock-screen-copy';
-import { androidChannelFor, pushCategoryFor } from './push-channels';
+import { androidChannelFor } from './push-channels';
 import { quietHoursFor } from './push-quiet-hours';
 import { pushAllowedByPreferences } from './push-preferences';
 import { usableTimeZone } from '../local-time';
@@ -599,16 +599,14 @@ export class PushDeliveryService {
         context ? { ...context, timeZone: timeZone ?? context.timeZone } : null,
         sendAt,
       );
-      const data = asData(row.data);
       const message: ExpoPushMessage = {
         to,
         title: copy.title,
         body: copy.body,
-        data: { ...data, kind: row.kind },
+        data: { ...asData(row.data), kind: row.kind },
         sound: 'default',
         channelId: androidChannelFor(row.kind),
         priority: 'high',
-        ...pushCategoryFor(row.kind, data),
       };
 
       let ticket: ExpoPushTicket | undefined;

@@ -41,8 +41,3 @@ export function androidChannelFor(kind: string): AndroidPushChannel {
   }
   return ANDROID_PUSH_CHANNELS.SYSTEM;
 }
-
-/** RENEWAL-BE: the button category a push names; only the Day 7 renewal push has one (the phone registers it). */
-export function pushCategoryFor(kind: string, data: Record<string, unknown>): { categoryId?: string } {
-  return kind === NotificationKind.PLAN_RENEWAL && typeof data.categoryId === 'string' ? { categoryId: data.categoryId } : {};
-}

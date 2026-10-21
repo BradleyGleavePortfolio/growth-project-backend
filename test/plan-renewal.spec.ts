@@ -1,7 +1,7 @@
 /**
  * RENEWAL-BE: the plan-renewal cadence (owner #RENEWAL-PUSH, OPERATOR RULING
  * 6327651587: Day 0, 1 and 7, local days), the plan-end rule, the
- * push wiring (kind, lock-screen line, button category, the client's switch)
+ * push wiring (kind, lock-screen line, no buttons, the client's switch)
  * and the flag gate. The database behaviour (who gets a sequence, the latest
  * plan only, each step's push once, the stop rules, row security) is
  * test/rls/plan-renewal-rls.spec.ts.
@@ -25,7 +25,6 @@ import { NO_RENEWAL, planEndedAt } from '../src/checkout/plan-renewal/plan-renew
 import { ENV_RULES } from '../src/common/env-validation';
 import { NotificationKind } from '../src/notifications/notification-kind';
 import { lockScreenCopy } from '../src/notifications/push/lock-screen-copy';
-import { pushCategoryFor } from '../src/notifications/push/push-channels';
 import { quietHoursFor } from '../src/notifications/push/push-quiet-hours';
 import { notificationPrefsPrefix, pushAllowedByPreferences } from '../src/notifications/push/push-preferences';
 import { pushTapData } from '../src/notifications/notifications.service';
@@ -46,7 +45,7 @@ const withFlag = async (value: string | undefined, fn: () => Promise<void> | voi
 };
 
 describe('RENEWAL-BE cadence (owner #RENEWAL-PUSH)', () => {
-  it('Day 0, Day 1 and Day 7: a notification and a pop-up each, the buttons on Day 7; the Home banner for 30 days', () => {
+  it('Day 0, Day 1 and Day 7: a notification and a pop-up each; the Home banner for 30 days', () => {
     expect([PLAN_RENEWAL_STEP_DAYS, PLAN_RENEWAL_LAST_DAY, PLAN_RENEWAL_BANNER_DAYS]).toEqual([[0, 1, 7], 7, 30]);
   });
 
@@ -108,14 +107,6 @@ describe('RENEWAL-BE app notifications', () => {
       actionScreen: 'NotificationCenter',
       deepLink: 'tgp://home',
     });
-  });
-
-  it('the two buttons: the push names its category; no other kind does', () => {
-    expect(pushCategoryFor(NotificationKind.PLAN_RENEWAL, { categoryId: 'PLAN_RENEWAL', coach_id: 'k' }))
-      .toEqual({ categoryId: 'PLAN_RENEWAL' });
-    expect(pushCategoryFor(NotificationKind.PLAN_RENEWAL, { categoryId: 'PLAN_RENEWAL_COACH' })).toEqual({ categoryId: 'PLAN_RENEWAL_COACH' });
-    expect(pushCategoryFor(NotificationKind.PLAN_RENEWAL, {})).toEqual({});
-    expect(pushCategoryFor(NotificationKind.MESSAGE_RECEIVED, { categoryId: 'PLAN_RENEWAL' })).toEqual({});
   });
 
   it('quiet hours: a renewal push due at 23:00 New York waits for 08:00 there; it is never urgent', () => {

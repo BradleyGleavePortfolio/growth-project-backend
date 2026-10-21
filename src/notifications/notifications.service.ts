@@ -575,8 +575,6 @@ export class NotificationsService implements OnModuleInit {
       context?: PushContext | null;
       dedupe_key?: string | null;
       urgent?: boolean;
-      /** Extra tap data (RENEWAL-BE: the Day 7 push's buttons; `categoryId` becomes the push category). */
-      data?: Record<string, string>;
     },
     tx?: Prisma.TransactionClient,
   ): Promise<EnqueueResult | null> {
@@ -596,7 +594,6 @@ export class NotificationsService implements OnModuleInit {
           title: copy.title,
           body: copy.body,
           data: {
-            ...input.data,
             ...pushTapData(
               input.kind,
               input.deep_link,

@@ -7,9 +7,10 @@ import { localDayNumber } from '../../notifications/local-time';
  * them.
  *
  * Owner #RENEWAL-PUSH (10-21, corrected ~15:05; OPERATOR RULING 6327651587):
- * Day 0, Day 1 and Day 7 are each an app notification AND an in-app pop-up;
- * the Day 7 notification has two buttons (the coach's packages, or TGP's house
- * coach). Home shows a "Renew now" banner from Day 0, for at most 30 days.
+ * Day 0, Day 1 and Day 7 are each an app notification AND an in-app pop-up
+ * (the notifications carry no buttons, OPERATOR RULING v3 6328335815: a tap
+ * opens Home and its pop-up with the two choices, the client's coach or TGP's
+ * house coach). Home shows a "Renew now" banner from Day 0, for at most 30 days.
  * Days are the client's local calendar days; Day 0 is the day the plan ends.
  * A step day that is missed (no app open, a notification that could only land
  * on a later day) is skipped, not stacked.
@@ -28,7 +29,7 @@ export const PLAN_RENEWAL_DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The step days: each is one app notification and one in-app pop-up on that local day. */
 export const PLAN_RENEWAL_STEP_DAYS: readonly number[] = [0, 1, 7];
-/** The last step; its app notification carries the two buttons. */
+/** The last step; after it only the banner remains. */
 export const PLAN_RENEWAL_LAST_DAY = 7;
 /** Home's "Renew now" banner shows on local days 0 to 29 (operator reading of the owner's banner, 6327651587). */
 export const PLAN_RENEWAL_BANNER_DAYS = 30;

@@ -1,7 +1,7 @@
 /**
  * RENEWAL-BE (20270502008100): the plan-renewal sequence on real Postgres
- * (owner #RENEWAL-PUSH, OPERATOR RULING 6327651587: Day 0, Day 1 and Day 7
- * each an app notification and a pop-up, the Day 7 one with two buttons, a
+ * (owner #RENEWAL-PUSH, OPERATOR RULINGS 6327651587 and 6328335815: Day 0,
+ * Day 1 and Day 7 each an app notification without buttons and a pop-up, a
  * Home banner, the client's local days). The real PlanRenewalService
  * sweep runs on the superuser connection, as the API does; the push enqueue
  * is recorded (the outbox has its own suites). Row access runs as the API
@@ -31,7 +31,7 @@ const DAY = PLAN_RENEWAL_DAY_MS;
 
 (DB_URL ? describe : describe.skip)('RENEWAL-BE: plan renewal sequence', () => {
   const prisma = new PrismaService({ datasources: { db: { url: DB_URL } } });
-  type Push = { user_id: string; kind: string; deep_link?: string; dedupe_key?: string | null; data?: Record<string, string> };
+  type Push = { user_id: string; kind: string; deep_link?: string; dedupe_key?: string | null };
   const pushes: Push[] = [];
   const notifications = { sendPush: jest.fn(async (input: Push) => { pushes.push(input); return null; }) };
   const service = new PlanRenewalService(prisma, stub<NotificationsService>(notifications));
@@ -174,8 +174,9 @@ const DAY = PLAN_RENEWAL_DAY_MS;
     expect(opened.map((r) => keys.find((k) => u[k] === r.client_user_id)).sort()).toEqual(['A', 'B', 'C', 'E', 'G', 'J', 'Q', 'W', 'Y']);
     expect(stepPushes(0)).toEqual(['A', 'B', 'C', 'G', 'Q', 'W', 'Y']);
     const a = await row('A');
+    // No buttons and nothing but the tap target: the phone reads the renewal block when it opens.
     expect(pushesTo('A')).toEqual([{ user_id: u.A, kind: 'plan_renewal', body: 'Your plan has ended.', deep_link: 'tgp://home',
-      dedupe_key: `plan_renewal:${a.id}:0`, data: { step: '0', coach_id: u.K, house_coach_id: u.H } }]);
+      dedupe_key: `plan_renewal:${a.id}:0` }]);
     // J's Day 0 is first seen at 21:00 in Tokyo: quiet hours would hold it to Day 1, so it is skipped, not sent with Day 1.
     expect([(await row('J')).pushed_step, pushesTo('J')]).toEqual([0, []]);
     const house = { id: u.H, first_name: 'Hal' };
@@ -231,15 +232,14 @@ const DAY = PLAN_RENEWAL_DAY_MS;
     expect([(await row('B')).status, (await row('B')).stop_reason]).toEqual(['stopped', 'active_plan']);
   });
 
-  it('Day 7: the last notification, with its two buttons, once per sequence; nothing after it, nothing late', async () => {
+  it('Day 7: the last notification, once per sequence; nothing after it, nothing late', async () => {
     for (const ms of [7 * DAY - 10 * HOUR, 7 * DAY, 7 * DAY, 7 * DAY + HOUR, 8 * DAY, 30 * DAY]) await sweep(ms);
     expect(stepPushes(7)).toEqual(['A', 'C', 'G', 'J', 'Q', 'W', 'Y']);
     // One notification per step day, never more: Day 0, 1 and 7 (J's Day 0 was skipped; B stopped after Day 0).
     expect(['A', 'B', 'E', 'J'].map((who) => pushesTo(who).length)).toEqual([3, 1, 0, 2]);
     const a = await row('A');
     expect(pushesTo('A')[2]).toEqual({ user_id: u.A, kind: 'plan_renewal', body: 'Your plan has ended.', deep_link: 'tgp://home',
-      dedupe_key: `plan_renewal:${a.id}:7`, data: { step: '7', categoryId: 'PLAN_RENEWAL', coach_id: u.K, house_coach_id: u.H } });
-    expect(pushesTo('Q')[2].data).toEqual({ step: '7', categoryId: 'PLAN_RENEWAL_COACH', coach_id: u.H });
+      dedupe_key: `plan_renewal:${a.id}:7` });
     // The Day 7 pop-up, then the banner alone until Day 29.
     expect(await view('A', 7 * DAY)).toMatchObject({ popup_due: true, popup_step: 7, banner_due: true });
     expect((await service.ackPopup(u.A, 7, at(7 * DAY))).renewal).toMatchObject({ popup_due: false, banner_due: true });
