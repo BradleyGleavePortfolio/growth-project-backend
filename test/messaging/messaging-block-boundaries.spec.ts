@@ -34,7 +34,7 @@ function row(over: Partial<CoachMessage> = {}): CoachMessage {
     body: 'A blocked sub-coach message', created_at: new Date(),
     voice_url: null, voice_duration_sec: null, voice_size_bytes: null,
     voice_content_type: null, read_at: null, ai_draft_id: null,
-    welcome_job_id: null, client_message_id: null, reply_to_id: null,
+    welcome_job_id: null, automated_by: null, client_message_id: null, reply_to_id: null,
     edited_at: null, deleted_at: null, deleted_by_id: null,
     pinned_at: null, pinned_by_id: null, ...over,
   };

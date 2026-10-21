@@ -1118,6 +1118,9 @@ model ExerciseSet {
   rpe            Float?
   notes          String?
   video_url      String?
+
+  // HOME-BE: the coach Home's lifting-best read joins sets by session.
+  @@index([workout_id])
 }
 
 model WorkoutRoutine {
@@ -1611,6 +1614,12 @@ model CoachMessage {
   // MessagingService.sendAsCoach returns the existing row with no side effects.
   // NULL for every other message.
   welcome_job_id String? @unique
+  // HOME-BE: set only by sendAsCoach's internal `automatedBy` option, on a
+  // message no person sent at that moment: 'coach_welcome' (the welcome
+  // scheduler) or 'package_message' (a package's auto message, at purchase or
+  // on a scheduled drop). The coach Home's Replies and Reach-outs skip these.
+  // NULL for every message a person sent (by hand, an approved Roman draft).
+  automated_by String?
 
   // A4 — rich card attached to this message (workout, meal plan, booking,
   // package, check-in) and, for broadcast copies, the delivery that wrote it.

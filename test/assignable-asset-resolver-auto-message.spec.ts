@@ -64,6 +64,7 @@ describe('AutoMessageAssetResolver', () => {
     expect(call[0]).toBe('sub-1'); // acting (sub-)coach id, NOT 'head-1'
     expect(call[1]).toBe('c1');
     expect(call[2]).toEqual({ body: 'Welcome aboard!' });
+    expect(call[3]).toEqual({ automatedBy: 'package_message' }); // HOME-BE: an unattended send
   });
 
   it('head-coach path: passes the head coach id unchanged (resolve() returns actingCoachId === coachId)', async () => {
