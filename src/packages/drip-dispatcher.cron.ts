@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma.service';
 import { AssignableAssetResolverRegistry } from './asset-resolvers/assignable-asset-resolver.registry';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationKind } from '../notifications/notification-kind';
+import { REFUND_STOPS } from './drop-status';
 
 // PR-10 — DripDispatcherCron.
 //
@@ -327,23 +328,25 @@ export class DripDispatcherCron {
         client_user_id: true,
         coach_user_id: true,
         package_id: true,
+        status: true,
       },
     });
-    if (!purchase) {
-      // Defensive — Cascade should never let this happen, but if it
-      // does we don't want to spin forever. Flip the drop to canceled
-      // and move on.
+    // No purchase: defensive (Cascade should never let this happen); never spin forever.
+    // MEDIA-ARCHIVE-DRIP (#162-2 op 1): a refunded or lost-dispute purchase keeps what it already
+    // got and ships nothing more. Its refund cancels the waiting drops in the same transaction;
+    // this stops one that still reaches dispatch (a stale claim reclaimed after the refund, or a
+    // refund writer that only flips the purchase).
+    const stop = !purchase
+      ? 'parent ClientPurchase row missing'
+      : REFUND_STOPS[purchase.status];
+    if (!purchase || stop) {
       await this.prisma.scheduledDrop.updateMany({
         where: { id: drop.id, status: 'dispatching' },
-        data: {
-          status: 'canceled',
-          failure_reason: 'parent ClientPurchase row missing',
-          locked_at: null,
-        },
+        data: { status: 'canceled', failure_reason: stop, locked_at: null },
       });
-      this.logger.error(
-        `drip-dispatcher: drop=${drop.id} has no ClientPurchase row — canceled`,
-      );
+      const line = `drip-dispatcher: drop=${drop.id} ${stop} — canceled`;
+      if (purchase) this.logger.log(line);
+      else this.logger.error(line);
       return 'noop';
     }
 

@@ -10,6 +10,16 @@ export const SHIPPED_STATUSES = ['fired', 'delivered'] as const;
 export type ShippedStatus = (typeof SHIPPED_STATUSES)[number];
 
 /**
+ * MEDIA-ARCHIVE-DRIP (#162-2 op 1): purchase statuses that are sent nothing more (what shipped
+ * stays), each with the cancel reason the refund paths write
+ * (PurchaseFanoutService.cancelPendingForPurchase 'refund' / 'dispute').
+ */
+export const REFUND_STOPS: Readonly<Record<string, string | undefined>> = {
+  refunded: 'canceled:refund',
+  chargeback_lost: 'canceled:dispute',
+};
+
+/**
  * Statuses a buyer sees (S-MWB-3 B-640-12). 'dispatching' is a due drop the
  * dispatcher is delivering right now. failed / canceled / skipped never leave
  * the database (they route to the coach alert instead).
