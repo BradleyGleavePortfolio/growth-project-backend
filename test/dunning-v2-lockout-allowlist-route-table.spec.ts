@@ -181,6 +181,7 @@ const EXPECTED_REACHABLE_WHILE_LOCKED: readonly string[] = [
   'checkout/purchases/:purchaseid/drops',
   'checkout/receipts', // ClientReceiptsController — the client's own receipts (C5RECEIPTS)
   'checkout/receipts/:receiptid',
+  'checkout/renewal/popup-ack', // RENEWAL-BE PlanRenewalController — the client acks their own renewal pop-up (no money, no data out)
   'checkout/sessions',
   'checkout/sessions/:sessionid/confirm',
   'checkout/subscription-intent', // B-RECUR SubscriptionCheckoutController (native subscriptions)

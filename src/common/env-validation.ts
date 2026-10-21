@@ -2053,8 +2053,6 @@ export const ENV_RULES: EnvRule[] = [
   },
   {
     name: 'FEATURE_PLAN_RENEWAL',
-    values: ['true', 'false'],
-    unsetIs: 'off',
     tier: 'optional',
     default: 'unset → off (only "true")',
     reason:

@@ -195,7 +195,12 @@ export class PlanRenewalService {
     try {
       const client = await this.prisma.user.findUnique({ where: { id: row.client_user_id }, select: { name: true } });
       const body = renderWelcomeMessage(PLAN_RENEWAL_MESSAGES[row.message_step], { clientName: client?.name, coachName: null });
-      const sent = await this.messaging.sendAsCoach(row.coach_user_id, row.client_user_id, { body, client_message_id: row.message_key });
+      const sent = await this.messaging.sendAsCoach(
+        row.coach_user_id,
+        row.client_user_id,
+        { body, client_message_id: row.message_key },
+        { automatedBy: 'plan_renewal' }, // HOME-BE: an unattended send, never counted as a reply
+      );
       await settle({ message_status: 'sent', message_id: sent.id, message_next_at: null });
       return 'sent';
     } catch (err: unknown) {

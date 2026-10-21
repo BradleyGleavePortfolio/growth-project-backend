@@ -762,11 +762,12 @@ export class MessagingService {
     // stored as CoachMessage.ai_draft_id (the mark both thread routes return)
     // only through romanMark (ROMANMARK-BE). `automatedBy` (HOME-BE) marks a
     // message no person sent at that moment (CoachMessage.automated_by): the
-    // welcome scheduler and the package auto-message resolver pass it.
+    // welcome scheduler, the package auto-message resolver and the plan
+    // renewal sequence (RENEWAL-BE) pass it.
     options: {
       welcome?: { jobId: string; lease: string };
       aiDraftId?: string;
-      automatedBy?: 'coach_welcome' | 'package_message';
+      automatedBy?: 'coach_welcome' | 'package_message' | 'plan_renewal';
     } = {},
   ) {
     // Back-compat: existing test fixtures and pre-Phase-6C call sites pass

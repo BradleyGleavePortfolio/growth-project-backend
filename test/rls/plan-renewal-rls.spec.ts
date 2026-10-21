@@ -162,6 +162,8 @@ const DAY = PLAN_RENEWAL_DAY_MS;
     expect(notifications.sendPush.mock.calls.some(([p]) => 'urgent' in p)).toBe(false);
     expect(messagesTo('A')).toEqual([
       'Hi Ann, your plan with me has ended. If you want to keep going, you can pick a new plan in the app. Message me here with any questions.']);
+    // Marked unattended (CoachMessage.automated_by), so HOME-BE never counts it as a reply.
+    expect(messaging.sendAsCoach).toHaveBeenCalledWith(u.K, u.A, expect.any(Object), { automatedBy: 'plan_renewal' });
     // Coach L turned renewal messages off: C gets the pop-up and the push, no message.
     expect([messagesTo('C'), (await row('C'))!.message_status]).toEqual([[], 'skipped']);
     expect(await view('A')).toEqual({ state: 'ended', ended_at: at(-HOUR).toISOString(), step: 0, popup_due: true,
