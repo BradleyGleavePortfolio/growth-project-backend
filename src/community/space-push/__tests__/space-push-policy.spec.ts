@@ -75,7 +75,7 @@ describe('SC-PUSH service', () => {
   const realtime = { onSpaceMessageStored: jest.fn() };
   const sendPush = jest.fn().mockResolvedValue(null);
   const prisma = {
-    communityMessage: { findUnique: jest.fn(), count: jest.fn() },
+    communityMessage: { findFirst: jest.fn(), count: jest.fn() },
     communityCohort: { findUnique: jest.fn(), findUniqueOrThrow: jest.fn() },
     communityWorkspace: { findUnique: jest.fn() },
     userBlock: { findMany: jest.fn() },
@@ -87,7 +87,7 @@ describe('SC-PUSH service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     process.env.FEATURE_COMMUNITY_SPACE_PUSH = 'true';
-    prisma.communityMessage.findUnique.mockResolvedValue({ id: 'm1', workspace_id: 'w', cohort_id: 'c1', sender_id: S, parent_message_id: null, high_alert: false, deleted_at: null });
+    prisma.communityMessage.findFirst.mockResolvedValue({ id: 'm1', workspace_id: 'w', cohort_id: 'c1', sender_id: S, parent_message_id: null, high_alert: false, deleted_at: null });
     prisma.communityCohort.findUnique.mockResolvedValue({ name: 'Team' });
     prisma.communityCohort.findUniqueOrThrow.mockResolvedValue({ posting_policy: 'coach' }); // default All
     // readersNow, then one unread count per reader on All
@@ -117,7 +117,7 @@ describe('SC-PUSH service', () => {
   it('switch off: nothing', async () => {
     process.env.FEATURE_COMMUNITY_SPACE_PUSH = 'false';
     await svc.messageStored('m1');
-    expect(prisma.communityMessage.findUnique).not.toHaveBeenCalled();
+    expect(prisma.communityMessage.findFirst).not.toHaveBeenCalled();
     expect(sendPush).not.toHaveBeenCalled();
   });
 

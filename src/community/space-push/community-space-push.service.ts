@@ -57,13 +57,13 @@ export class CommunitySpacePushService implements OnModuleInit {
   }
 
   async markHighAlert(messageId: string): Promise<void> {
-    await this.prisma.communityMessage.update({ where: { id: messageId }, data: { high_alert: true } });
+    await this.prisma.communityMessage.updateMany({ where: { id: messageId }, data: { high_alert: true } });
   }
 
   async messageStored(messageId: string): Promise<void> {
     if (!spacePushOn()) return;
     try {
-      const m = await this.prisma.communityMessage.findUnique({
+      const m = await this.prisma.communityMessage.findFirst({
         where: { id: messageId },
         select: { id: true, workspace_id: true, cohort_id: true, sender_id: true, parent_message_id: true, high_alert: true, deleted_at: true },
       });
@@ -71,7 +71,7 @@ export class CommunitySpacePushService implements OnModuleInit {
       const [cohort, parent] = await Promise.all([
         this.prisma.communityCohort.findUnique({ where: { id: m.cohort_id }, select: { name: true } }),
         m.parent_message_id
-          ? this.prisma.communityMessage.findUnique({ where: { id: m.parent_message_id }, select: { sender_id: true } })
+          ? this.prisma.communityMessage.findFirst({ where: { id: m.parent_message_id }, select: { sender_id: true } })
           : null,
       ]);
       if (!cohort) return;
