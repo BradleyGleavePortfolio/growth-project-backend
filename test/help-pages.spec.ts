@@ -272,4 +272,70 @@ describe('PublicPagesController help pages', () => {
     );
     expect(html).not.toMatch(/web-only/i);
   });
+
+  // PUBLIC-WEB (op164): the delete-account page lists what is deleted with
+  // the same words as the app's delete screen, so the two never disagree.
+  it('delete-account page mirrors the app row for coach media', () => {
+    const html = renderHelpPage('delete-account');
+    expect(html).toContain(
+      'Coach media, notes and briefs, if you coach, except lessons and paid content your clients keep',
+    );
+    expect(html).not.toContain('except the video or file of each lesson your clients keep');
+  });
+
+  // PUBLIC-WEB (op164): every link on a help page is at least 44 px tall
+  // (header wordmark, tab links, section links, footer), and tab links are
+  // at least 44 px wide.
+  it('every help-page link is a 44 px target', () => {
+    const html = renderHelpPage('index');
+    const rule = (sel: string) => {
+      const start = html.indexOf('\n  ' + sel + ' {');
+      expect(start).toBeGreaterThan(-1);
+      return html.slice(start, html.indexOf('}', start));
+    };
+    const selectors = [
+      'header.brand .wordmark',
+      'nav.help-nav .nav-link',
+      'section p.links a',
+      'footer.brand-footer a',
+    ];
+    for (const sel of selectors) {
+      expect(rule(sel)).toContain('min-height: 44px');
+    }
+    expect(rule('nav.help-nav .nav-link')).toContain('min-width: 44px');
+  });
+
+  // FIX-1126-R1 (LS1126-B1, C2): on a phone the contact table becomes one
+  // labelled block per field, long URLs wrap instead of widening the page, and
+  // tab labels sit 8 px inside their targets with the row pulled out to the edge.
+  // test/help-pages.geometry.spec.ts checks the real layout in a browser.
+  it('contact table stacks on a phone; long words wrap; tab row lines up', () => {
+    const html = renderHelpPage('contact');
+    expect(html).toContain('@media (max-width: 600px)');
+    expect(html).toContain('table.intake td[data-label]::before { content: attr(data-label);');
+    for (const label of ['Type', 'Required', 'Notes']) {
+      expect(html).toContain(`<td role="cell" data-label="${label}">`);
+    }
+    // break-word, not anywhere: words in the wide contact table stay whole (FIX-1126-R2 B1).
+    expect(html).toMatch(/\n  main \{[^}]*overflow-wrap: break-word;/);
+    expect(html).not.toContain('overflow-wrap: anywhere');
+    expect(html).toMatch(/\n  nav\.help-nav \{[^}]*margin: 0 -8px;/);
+    expect(html).toMatch(/\n  nav\.help-nav \.nav-link \{[^}]*padding: 0 8px;/);
+  });
+
+  // FIX-1126-R2 (Sol B1): the 12 px phone labels meet WCAG AA 4.5:1 on the page paper.
+  it('contact phone labels Type / Required / Notes meet AA contrast', () => {
+    const html = renderHelpPage('contact');
+    const label = /table\.intake td\[data-label\]::before \{[^}]*color: (#[0-9A-F]{6});/.exec(html)?.[1];
+    expect(label).toBe('#3A332B');
+    const lum = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => {
+        const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (lum('#FBF8F3') + 0.05) / (lum(label as string) + 0.05);
+    expect(ratio).toBeGreaterThanOrEqual(4.5);
+  });
 });
