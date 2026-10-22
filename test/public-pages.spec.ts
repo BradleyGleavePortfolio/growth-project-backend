@@ -1,5 +1,6 @@
 import { PublicPagesController } from '../src/public-pages/public-pages.controller';
-import { sanitizeInviteCode } from '../src/public-pages/public-pages.html';
+import { renderSignupPage, sanitizeInviteCode } from '../src/public-pages/public-pages.html';
+import { contrastOnPaper } from './_fixtures/css-contrast';
 
 function makeRes() {
   const headers: Record<string, string> = {};
@@ -203,5 +204,16 @@ describe('public page copy accuracy (F10)', () => {
     expect(html).toMatch(/\n  button\.cta \{[^}]*border-radius: 12px;/);
     expect(html).toMatch(/\n  ul\.links a \{[^}]*min-height: 44px;/);
     expect(html).toMatch(/\n  footer a \{[^}]*min-height: 44px;/);
+  });
+});
+
+// MUTED-TEXT (owner #166-9 op 1): the small grey text meets WCAG AA 4.5:1 on the page paper.
+describe('public pages small grey text contrast', () => {
+  it('invite code label and footer meet AA contrast', () => {
+    const html = renderSignupPage('GP-A1B2C3');
+    const ratios = contrastOnPaper(html, ['p.code-label', 'footer', 'footer a']);
+    for (const [sel, ratio] of Object.entries(ratios)) {
+      expect([sel, ratio, ratio >= 4.5]).toEqual([sel, ratio, true]);
+    }
   });
 });

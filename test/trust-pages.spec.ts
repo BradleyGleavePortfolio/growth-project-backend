@@ -17,6 +17,7 @@ import { TRIAGE_CATEGORIES } from '../src/community/ai-triage/triage-output.sche
 import buildInboxTriagePrompt from '../src/community/ai-triage/prompts/inbox-triage.prompt';
 import { renderDownloadPage, renderSignupPage } from '../src/public-pages/public-pages.html';
 import { FEATURE_ROMAN_CRISIS_ALERT_ENV } from '../src/roman/roman.feature';
+import { contrastOnPaper } from './_fixtures/css-contrast';
 
 const ALL_TRUST_PAGES: TrustPage[] = ['privacy', 'consumer-health', 'terms', 'security', 'status'];
 
@@ -893,5 +894,21 @@ describe('the wearable AI notes sentence (owner 161-1 op 1, WEAR-AI-03 / WEAR-AI
   it('those are the only two places on the public pages', () => {
     const all = ALL_TRUST_PAGES.map((p) => visibleText(renderTrustPage(p))).join(' ');
     expect(all.split(SENTENCE)).toHaveLength(3);
+  });
+});
+
+// MUTED-TEXT (owner #166-9 op 1): the small grey text meets WCAG AA 4.5:1 on the page paper.
+describe('trust pages small grey text contrast', () => {
+  it('nav links, reviewed date, footnote and footer meet AA contrast', () => {
+    const ratios = contrastOnPaper(renderTrustPage('privacy'), [
+      'nav.trust-nav .nav-link',
+      'p.reviewed',
+      'p.footnote',
+      'footer.brand-footer',
+      'footer.brand-footer a',
+    ]);
+    for (const [sel, ratio] of Object.entries(ratios)) {
+      expect([sel, ratio, ratio >= 4.5]).toEqual([sel, ratio, true]);
+    }
   });
 });
