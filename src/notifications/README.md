@@ -15,7 +15,7 @@ The notifications module is the single place all communication with users and co
 | `checkin_submitted`       | on     | off  | off   | Coach                                                                   |
 | `build_week_day_unlocked` | on     | on   | on    | Client                                                                  |
 | `coach_alert`             | on     | on   | off   | Coach                                                                   |
-| `coach_client_moved`      | on     | off  | off   | Coach (the coach a client left for TGP's house coach; SWITCH-TELL-BE)   |
+| `coach_client_moved`      | on     | off  | off   | Coach (the coach a client left for TGP's house coach; SWITCH-TELL-BE; muted coach: row kept for Money, `inbox_hidden`) |
 | `client_digest`           | off    | off  | on    | Client                                                                  |
 | `coach_digest`            | off    | off  | on    | Coach                                                                   |
 | `workout_reminder`        | on     | on   | n/a   | Client (C05 item 7; `workout_reminder_push` / `workout_reminder_inapp`) |

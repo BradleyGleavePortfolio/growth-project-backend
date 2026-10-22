@@ -32,6 +32,7 @@ import { SchedulingSessionLifecycleService } from '../../src/scheduling/scheduli
 import type { NotificationsService } from '../../src/notifications/notifications.service';
 import { currentCoachInbox } from '../../src/notifications/current-coach-inbox';
 import { CoachMoneyService } from '../../src/coach-money/coach-money.service';
+import { NotificationsService as InboxService } from '../../src/notifications/notifications.service';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
 import { stub } from '../utils/trial-fakes';
 
@@ -273,6 +274,11 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     // It is in K's inbox (the current-coach rule keeps this link-free row about a client who left).
     const inbox = await prisma.notification.findMany({ where: await currentCoachInbox(prisma, u.K), select: { id: true } });
     expect(inbox.map((n) => n.id)).toContain(told[0].id);
+    // K has not muted notifications: the row is visible in the real list and badge (the control for the muted case below).
+    const inboxes = new InboxService(prisma);
+    expect(told[0].inbox_hidden).toBe(false);
+    expect((await inboxes.listNotifications(u.K, {})).items.map((n) => n.id)).toContain(told[0].id);
+    expect(await inboxes.getUnreadCount(u.K)).toBeGreaterThanOrEqual(1);
     // The Money line: K's charge to A keeps name, date and amount, no link, and is dated by the move;
     // O (still K's client) has no line.
     const money = new CoachMoneyService(prisma);
@@ -289,5 +295,59 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     await expect(billing.handleEvent(paid)).resolves.toMatchObject({ processed: false, alreadyProcessed: true });
     expect(await prisma.$transaction((tx) => moveToHouseCoachTx(tx, u.A, u.H))).toBeNull();
     expect(await tellings()).toHaveLength(1);
+  });
+
+  it('a former coach who muted all notifications sees no alert, no badge and no push, and Money keeps the moved date', async () => {
+    // FX-1132 (LS-SWITCH B1): M muted "Mute all notifications"; M's client B's plan ran out an hour ago.
+    const M = randomUUID();
+    const B = randomUUID();
+    for (const [id, name, role, coach] of [[M, 'Mia Coach', 'coach', null], [B, 'Bea Client', 'student', M]] as const) {
+      await prisma.$executeRaw`INSERT INTO "User" ("id", "supabase_id", "email", "name", "role", "coach_id")
+        VALUES (${id}, ${randomUUID()}, ${`house-${id}@example.test`}, ${name}, ${role}::"Role", ${coach})`;
+    }
+    await prisma.notificationPreferences.create({ data: { user_id: M, muted: true } });
+    const old = randomUUID();
+    const own = randomUUID();
+    await prisma.coachPackage.create({ data: { id: old, coach_id: M, name: 'Coaching', amount_cents: 15000 } });
+    await prisma.clientPurchase.create({
+      data: {
+        id: own, client_user_id: B, coach_user_id: M, package_id: old, amount_cents: 15000,
+        stripe_checkout_session_id: `cs-house-${own}`, idempotency_key: `idem-house-${own}`, billing_type: 'one_time',
+        status: 'paid', entitlement_active: true, access_expires_at: new Date(Date.now() - HOUR),
+      },
+    });
+    await renewal.runSweep(new Date());
+    const inboxes = new InboxService(prisma);
+    const badgeBefore = await inboxes.getUnreadCount(M);
+
+    expect(await prisma.$transaction((tx) => moveToHouseCoachTx(tx, B, u.H))).not.toBeNull();
+    expect(await prisma.user.findUniqueOrThrow({ where: { id: B } })).toMatchObject({ coach_id: u.H });
+    // The row exists only as Money's date record: hidden from M's list and badge, never pushed.
+    const tellings = () => prisma.notification.findMany({ where: { kind: 'coach_client_moved', user_id: { in: [M, u.H] } } });
+    const told = await tellings();
+    expect(told).toEqual([
+      expect.objectContaining({
+        user_id: M, channel: 'inapp', deep_link: null, inbox_hidden: true, body: 'Bea Client has moved to another coach.', payload: { client_id: B },
+      }),
+    ]);
+    const visible = async () => (await inboxes.listNotifications(M, {})).items.filter((n) => n.kind === 'coach_client_moved');
+    expect(await visible()).toEqual([]);
+    expect(await inboxes.getUnreadCount(M)).toBe(badgeBefore);
+    expect((await inboxes.listNotifications(M, {})).unreadCount).toBe(badgeBefore);
+    expect(await prisma.notification.count({ where: { user_id: M, channel: 'push' } })).toBe(0);
+    // Money list and detail still carry the moved date, the same row's created_at as an unmuted coach gets.
+    const money = new CoachMoneyService(prisma);
+    const movedAt = told[0].created_at.toISOString();
+    expect((await money.listCharges(M, { status: 'all' })).charges.find((c) => c.id === own)).toMatchObject({
+      client: { id: '', name: 'Bea Client' }, moved_away_at: movedAt,
+    });
+    expect((await money.getChargeBreakdown(M, own)).charge).toMatchObject({ moved_away_at: movedAt });
+    // A second move call moves nothing and writes nothing.
+    expect(await prisma.$transaction((tx) => moveToHouseCoachTx(tx, B, u.H))).toBeNull();
+    expect(await tellings()).toHaveLength(1);
+    // Un-muting later does not resurface it: a muted alert was never delivered.
+    await prisma.notificationPreferences.update({ where: { user_id: M }, data: { muted: false } });
+    expect(await visible()).toEqual([]);
+    expect(await inboxes.getUnreadCount(M)).toBe(badgeBefore);
   });
 });
