@@ -20,14 +20,15 @@ import {
   planRenewalDay,
 } from '../src/checkout/plan-renewal/plan-renewal.cadence';
 import { PlanRenewalAckDto, PlanRenewalController } from '../src/checkout/plan-renewal/plan-renewal.controller';
-import type { PlanRenewalService } from '../src/checkout/plan-renewal/plan-renewal.service';
+import { PlanRenewalService } from '../src/checkout/plan-renewal/plan-renewal.service';
 import { NO_RENEWAL, planEndedAt } from '../src/checkout/plan-renewal/plan-renewal.state';
 import { ENV_RULES } from '../src/common/env-validation';
 import { NotificationKind } from '../src/notifications/notification-kind';
 import { lockScreenCopy } from '../src/notifications/push/lock-screen-copy';
 import { quietHoursFor } from '../src/notifications/push/push-quiet-hours';
 import { notificationPrefsPrefix, pushAllowedByPreferences } from '../src/notifications/push/push-preferences';
-import { pushTapData } from '../src/notifications/notifications.service';
+import { pushTapData, type NotificationsService } from '../src/notifications/notifications.service';
+import type { PrismaService } from '../src/prisma.service';
 import type { AuthedRequest } from '../src/auth/auth-request';
 import { stub } from './utils/trial-fakes';
 
@@ -167,5 +168,39 @@ describe('RENEWAL-BE route and the flag', () => {
   it('request shape: the ack step is an integer', async () => {
     const errors = async (plain: object) => (await validate(plainToInstance(PlanRenewalAckDto, plain))).map((e) => e.property);
     expect([await errors({ step: 1 }), await errors({ step: '1' }), await errors({})]).toEqual([[], ['step'], ['step']]);
+  });
+});
+
+describe('RENEWAL-BE opening a sequence on two machines at once (round 2 C1)', () => {
+  it('a sweep that read before another machine opened the same end never stops that new row; older ends still stop', async () => {
+    const now = new Date('2026-10-21T15:00:00Z');
+    const end = new Date('2026-10-21T14:00:00Z');
+    const pair = { client_user_id: 'c', coach_user_id: 'k' };
+    const plan = { id: 'p2', ...pair, billing_type: 'one_time', status: 'paid', entitlement_active: true, access_expires_at: end,
+      canceled_at: null, current_period_end: null, cancel_at_period_end: false };
+    // Machine A already opened p2's row; this machine's count ran before A committed (it saw none).
+    const rows = [
+      { id: 'old', purchase_id: 'p1', ...pair, status: 'active', ended_at: new Date('2026-10-14T14:00:00Z') },
+      { id: 'a', purchase_id: 'p2', ...pair, status: 'active', ended_at: end },
+    ];
+    const prisma = {
+      user: { findUnique: async () => ({ role: 'student', coach_id: 'k', archived_at: null, deleted_at: null, deletion_scheduled_at: null }) },
+      clientPurchase: { findMany: async () => [plan], count: async () => 0 },
+      dunningState: { count: async () => 0 },
+      planRenewal: {
+        count: async () => 0,
+        updateMany: async ({ where, data }: { where: { status: string; ended_at?: { lt: Date } }; data: object }) => {
+          const hit = rows.filter((r) => r.status === where.status && (!where.ended_at || r.ended_at < where.ended_at.lt));
+          hit.forEach((r) => Object.assign(r, data));
+          return { count: hit.length };
+        },
+        createMany: async ({ data }: { data: { purchase_id: string }[] }) =>
+          ({ count: data.filter((d) => !rows.some((r) => r.purchase_id === d.purchase_id)).length }),
+      },
+      $transaction: (ops: Promise<unknown>[]) => Promise.all(ops),
+    };
+    const service = new PlanRenewalService(stub<PrismaService>(prisma), stub<NotificationsService>({}));
+    expect(await service['openEnded'](now)).toBe(0);
+    expect(rows.map((r) => [r.id, r.status])).toEqual([['old', 'stopped'], ['a', 'active']]);
   });
 });
