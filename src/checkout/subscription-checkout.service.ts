@@ -23,6 +23,7 @@ import { PrismaService } from '../prisma.service';
 import { paidJoinAllowed } from '../invite-codes/invite-codes.service';
 import { CheckoutService, isFreePackage, isRecurringPackage } from './checkout.service';
 import { errorLabel } from './error-label';
+import { houseJoinFrom } from './plan-renewal/house-join';
 import {
   CreateFailed,
   type Fenced,
@@ -186,8 +187,9 @@ export class SubscriptionCheckoutService {
       throw packageUnavailable();
     }
     // B-PACKAGE-135 — a coachless client may buy only their join code's paid package.
+    // HOUSE-JOIN-BE — a coached client, their coach's or (house door) the house coach's.
     const ownCoachPackage = client.coach_id
-      ? pkg.coach_id === client.coach_id
+      ? pkg.coach_id === client.coach_id || !!(await houseJoinFrom(this.prisma, client.id, pkg.coach_id))
       : await paidJoinAllowed(this.prisma, client, pkg, input.join_code);
     if (!ownCoachPackage) {
       // R1-10 — the in-app paths (payment-intent and this route) sell only

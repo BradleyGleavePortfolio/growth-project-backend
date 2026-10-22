@@ -29,6 +29,7 @@ import { purchaseTrialView, type PurchaseTrialView } from '../packages/trials/tr
 import { COACH_PURCHASE_SELECT, type CoachPurchaseView } from './coach-payments.select';
 import { keepMoneyRecordsOnly, type MoneyRecord } from './moved-client-money';
 import { readPlanRenewal, type PlanRenewalView } from './plan-renewal/plan-renewal.state';
+import { houseJoinFrom } from './plan-renewal/house-join';
 import { ContractRequiredException } from '../contracts/contract-required.exception';
 import type { TrialOffer } from '../packages/trials/trial-usage.service';
 import {
@@ -422,9 +423,13 @@ export class CheckoutService {
     }
 
     // Hard-block IDOR (P0 — Audit #2): only a client already assigned to
-    // the package-selling coach may buy. Returns non-leaking 404 so we
+    // the package-selling coach may buy, or one buying through the house
+    // coach door (HOUSE-JOIN-BE). Returns non-leaking 404 so we
     // never confirm that the package exists on another coach.
-    if (!client.coach_id || client.coach_id !== pkg.coach_id) {
+    if (
+      !client.coach_id ||
+      (client.coach_id !== pkg.coach_id && !(await houseJoinFrom(this.prisma, client.id, pkg.coach_id)))
+    ) {
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
         message: 'Package not available',
@@ -698,9 +703,14 @@ export class CheckoutService {
       });
     }
 
-    // Hard-block cross-coach purchase (P0 IDOR fix). Returns 404 — never
+    // Hard-block cross-coach purchase (P0 IDOR fix), except the house coach
+    // door (HOUSE-JOIN-BE). Returns 404 — never
     // confirm to the client that the package exists on another coach.
-    if (client.coach_id && pkg.coach_id !== client.coach_id) {
+    if (
+      client.coach_id &&
+      pkg.coach_id !== client.coach_id &&
+      !(await houseJoinFrom(this.prisma, client.id, pkg.coach_id))
+    ) {
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
         message: 'Package not available',
