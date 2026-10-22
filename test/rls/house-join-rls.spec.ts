@@ -221,6 +221,8 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     expect(await answer(list('Q', 'H'))).toBe('PACKAGE_NOT_FOUND');
     expect(await prisma.$transaction((tx) => moveToHouseCoachTx(tx, u.Q, u.H))).toBeNull();
     expect(await prisma.user.findUniqueOrThrow({ where: { id: u.Q } })).toMatchObject({ coach_id: u.H });
+    // SWITCH-TELL-BE: none of the 404 paths, and no move that did not happen, tells any coach.
+    expect(await prisma.notification.count({ where: { kind: 'coach_client_moved', user_id: { in: Object.values(u) } } })).toBe(0);
   });
 
   it('checkout, then payment, then the move: the house coach gets the client, the old coach loses them', async () => {
@@ -235,6 +237,8 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     // Checkout alone moves nothing: A is still K's client.
     expect(await prisma.user.findUniqueOrThrow({ where: { id: u.A } })).toMatchObject({ coach_id: u.K });
     expect([await reads('K', 'A'), await reads('H', 'Q'), await reads('H', 'A')]).toEqual([1, 1, 0]);
+    // ... and tells no coach.
+    expect(await prisma.notification.count({ where: { kind: 'coach_client_moved', user_id: { in: Object.values(u) } } })).toBe(0);
 
     const paid = { id: `evt_house_${u.A}`, type: 'payment_intent.succeeded', data: { object: { id: PI, latest_charge: `ch_house_${u.A}` } } };
     await expect(billing.handleEvent(paid)).resolves.toMatchObject({ processed: true });
@@ -281,7 +285,8 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     );
     expect((await money.getChargeBreakdown(u.K, own.id)).charge).toMatchObject({ moved_away_at: movedAt });
     expect(JSON.stringify(charges)).not.toMatch(new RegExp(`${u.H}|Hal`));
-    // A replayed activation moves nothing and tells nobody again.
+    // A repeated webhook and a second move call move nothing and tell nobody again.
+    await expect(billing.handleEvent(paid)).resolves.toMatchObject({ processed: false, alreadyProcessed: true });
     expect(await prisma.$transaction((tx) => moveToHouseCoachTx(tx, u.A, u.H))).toBeNull();
     expect(await tellings()).toHaveLength(1);
   });
