@@ -1,6 +1,10 @@
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsIn,
   IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -47,6 +51,17 @@ export type VoiceNoteMimeType = (typeof VOICE_NOTE_MIME_ALLOWLIST)[number];
  * in sync with the readonly tuple above by deriving from it directly — no cast.
  */
 export const VOICE_NOTE_MIME_VALUES: string[] = [...VOICE_NOTE_MIME_ALLOWLIST];
+
+/**
+ * VOICE-BE: waveform peaks are the phone's loudness bars, each 0..1, at most
+ * 64 (the phone's own MAX_PEAKS). Stored one byte per bar (0..255) in
+ * community_voice_notes.waveform_peaks and returned as 0..1 to 3 places.
+ */
+export const MAX_WAVEFORM_PEAKS = 64;
+export const peaksToBytes = (peaks: number[] | undefined): Uint8Array<ArrayBuffer> | null =>
+  peaks?.length ? Uint8Array.from(peaks, (p) => Math.round(p * 255)) : null;
+export const bytesToPeaks = (bytes: Uint8Array | null | undefined): number[] | null =>
+  bytes?.length ? Array.from(bytes, (b) => Math.round((b / 255) * 1000) / 1000) : null;
 
 /** Defensive page size for the voice-note list read (Failure #28 unbounded). */
 export const VOICE_PAGE_DEFAULT_LIMIT = 20;
@@ -126,6 +141,22 @@ export class CreateVoiceNoteDto {
 
   @IsIn(VOICE_NOTE_MIME_VALUES)
   mime_type!: VoiceNoteMimeType;
+
+  // VOICE-BE: the bars the phone drew while recording (bounded, each 0..1).
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_WAVEFORM_PEAKS)
+  @IsNumber({ allowNaN: false, allowInfinity: false }, { each: true })
+  @Min(0, { each: true })
+  @Max(1, { each: true })
+  waveform_peaks?: number[];
+
+  // VOICE-BE: a reply. The chat message (text or voice) in the same space this
+  // note answers; a reply to a reply joins the first message's thread.
+  @IsOptional()
+  @IsUUID('4')
+  parent_message_id?: string;
 }
 
 /** Query DTO for the list read — clamps the page size server-side. */
@@ -177,9 +208,27 @@ export const VoiceNoteViewSchema = z
     mime_type: z.string(),
     has_waveform: z.boolean(),
     created_at: z.string(),
+    // VOICE-BE: the name the viewer may see (#C6-NAMES-EVERYWHERE), whether
+    // the author is the workspace coach, the bars, when this viewer heard it,
+    // and the note's chat message (same id; null for a Hall note) and thread.
+    author_name: z.string(),
+    author_is_coach: z.boolean(),
+    waveform_peaks: z.array(z.number()).nullable(),
+    heard_at: z.string().nullable(),
+    message_id: z.string().nullable(),
+    parent_message_id: z.string().nullable(),
   })
   .strict();
 export type VoiceNoteView = z.infer<typeof VoiceNoteViewSchema>;
+
+export const VoiceHeardResponseSchema = z
+  .object({ voice_note_id: z.string(), heard_at: z.string() })
+  .strict();
+export type VoiceHeardResponse = z.infer<typeof VoiceHeardResponseSchema>;
+export const VoiceConsentResponseSchema = z
+  .object({ seen: z.boolean(), seen_at: z.string().nullable() })
+  .strict();
+export type VoiceConsentResponse = z.infer<typeof VoiceConsentResponseSchema>;
 
 export const VoiceNoteResponseSchema = z.object({ voice_note: VoiceNoteViewSchema }).strict();
 export type VoiceNoteResponse = z.infer<typeof VoiceNoteResponseSchema>;

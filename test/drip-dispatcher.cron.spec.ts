@@ -1280,4 +1280,42 @@ describe('DripDispatcherCron', () => {
     expect(state.drops[0].status).toBe('canceled');
     expect(materialise).not.toHaveBeenCalled();
   });
+
+  // MEDIA-ARCHIVE-DRIP (#162-2 op 1): a refunded purchase keeps what it got; nothing more ships.
+  const asPrisma = (mock: unknown) => mock as ConstructorParameters<typeof DripDispatcherCron>[0];
+  it.each([
+    ['refunded', 'canceled:refund'],
+    ['chargeback_lost', 'canceled:dispute'],
+  ])('a %s purchase: a drop that still reaches dispatch is canceled (%s), nothing is materialised', async (status, reason) => {
+    const crashedAt = new Date(NOW.getTime() - __dripDispatcherConsts.STALE_CLAIM_MS - 60_000);
+    const state: MockPrismaState = {
+      // A claim stranded before the refund and a waiting drop the refund writer did not cancel.
+      drops: [
+        makeDrop({ status: 'dispatching', locked_at: crashedAt }),
+        makeDrop({ id: 'drop-2', content_id: 'content-2' }),
+      ],
+      purchases: [makePurchase({ status })],
+    };
+    const materialise = jest.fn();
+    const notifications = makeNotifications();
+    const cron = new DripDispatcherCron(asPrisma(makeMockPrisma(state)), makeRegistry(materialise), notifications);
+
+    const stats = await cron.runOnce(NOW);
+
+    expect(stats).toEqual({ claimed: 2, delivered: 0, retried: 0, failed_permanently: 0 });
+    expect(state.drops.map((d) => [d.status, d.failure_reason, d.locked_at])).toEqual([
+      ['canceled', reason, null],
+      ['canceled', reason, null],
+    ]);
+    expect(materialise).not.toHaveBeenCalled();
+    expect(notifications.sendPush).not.toHaveBeenCalled();
+  });
+
+  it('a paid purchase still ships (the refund stop reads the purchase status only)', async () => {
+    const state: MockPrismaState = { drops: [makeDrop()], purchases: [makePurchase({ status: 'paid' })] };
+    const materialise = jest.fn().mockResolvedValue({ materialisedRef: 'grant-1' });
+    const cron = new DripDispatcherCron(asPrisma(makeMockPrisma(state)), makeRegistry(materialise), makeNotifications());
+    expect((await cron.runOnce(NOW)).delivered).toBe(1);
+    expect(state.drops[0].status).toBe('delivered');
+  });
 });

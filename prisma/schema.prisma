@@ -535,6 +535,8 @@ model User {
   community_moderation_actions       CommunityModerationAction[]       @relation("community_moderator")
   community_classroom_posts_authored CommunityClassroomPost[]          @relation("CommunityClassroomPostCoach")
   community_voice_notes_authored     CommunityVoiceNote[]              @relation("CommunityVoiceNoteAuthor")
+  community_voice_note_listens       CommunityVoiceNoteListen[]
+  community_voice_consent            CommunityVoiceConsent?
   community_workspace_bans           CommunityWorkspaceBan[]           @relation("CommunityWorkspaceBanUser")
   // A4 broadcasts, saved replies and client tags (additive back-relations;
   // migration 20270304000000_a4_broadcasts_cards_saved_replies).
@@ -1118,6 +1120,9 @@ model ExerciseSet {
   rpe            Float?
   notes          String?
   video_url      String?
+
+  // HOME-BE: the coach Home's lifting-best read joins sets by session.
+  @@index([workout_id])
 }
 
 model WorkoutRoutine {
@@ -1611,6 +1616,12 @@ model CoachMessage {
   // MessagingService.sendAsCoach returns the existing row with no side effects.
   // NULL for every other message.
   welcome_job_id String? @unique
+  // HOME-BE: set only by sendAsCoach's internal `automatedBy` option, on a
+  // message no person sent at that moment: 'coach_welcome' (the welcome
+  // scheduler) or 'package_message' (a package's auto message, at purchase or
+  // on a scheduled drop). The coach Home's Replies and Reach-outs skip these.
+  // NULL for every message a person sent (by hand, an approved Roman draft).
+  automated_by String?
 
   // A4 — rich card attached to this message (workout, meal plan, booking,
   // package, check-in) and, for broadcast copies, the delivery that wrote it.
@@ -7289,6 +7300,7 @@ model CommunityVoiceNote {
   workspace CommunityWorkspace @relation(fields: [workspace_id], references: [id], onDelete: Cascade)
   cohort    CommunityCohort?   @relation(fields: [cohort_id], references: [id], onDelete: Cascade)
   author    User               @relation("CommunityVoiceNoteAuthor", fields: [author_id], references: [id], onDelete: Restrict)
+  listens   CommunityVoiceNoteListen[]
 
   // Cohort/channel feed: most-recent-first within a workspace+cohort.
   @@index([workspace_id, cohort_id, created_at])
@@ -7297,6 +7309,33 @@ model CommunityVoiceNote {
   // An author's recent voice notes.
   @@index([author_id, created_at])
   @@map("community_voice_notes")
+}
+
+// VOICE-BE (agent 163, migration 20270502007900): the heard marker, one row per
+// listener per voice note (New -> Played on the phone). RLS: a person reads and
+// writes only their own rows, and writes only on a voice note they can read.
+model CommunityVoiceNoteListen {
+  voice_note_id String   @db.Uuid
+  user_id       String
+  heard_at      DateTime @default(now()) @db.Timestamptz(6)
+
+  voice_note CommunityVoiceNote @relation(fields: [voice_note_id], references: [id], onDelete: Cascade)
+  user       User               @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@id([voice_note_id, user_id])
+  @@index([user_id])
+  @@map("community_voice_note_listens")
+}
+
+// VOICE-BE (agent 163): the voice consent card is shown once per person; this
+// row says it has been seen. RLS: a person reads and writes only their own row.
+model CommunityVoiceConsent {
+  user_id String   @id
+  seen_at DateTime @default(now()) @db.Timestamptz(6)
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("community_voice_consents")
 }
 
 // B-610-2: durable community ban, one row per (workspace, member). A ban from

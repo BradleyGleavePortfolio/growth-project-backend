@@ -111,6 +111,10 @@ const BRIEF_SCOPE_KEY = 'scope_client_ids';
 // WeightLog stores `weight_lbs`; 2.0 kg ≈ 4.4 lbs is the flag threshold.
 const WEIGHT_FLAG_THRESHOLD_LBS = 4.4;
 
+// ROMAN-EXTRAS-BE2: at most this many rows of one kind, so a 100-client
+// coach gets every row and the brief_context numbers are true.
+export const BRIEF_ROWS_PER_KIND = 100;
+
 // Dollar amounts as the coach would read them: "$49.99", "$1,200".
 // Whole-dollar rounding showed a $49.99 payment as "$50".
 export function formatUsd(cents: number): string {
@@ -651,10 +655,16 @@ export function normalizeClaudeOutput(raw: string): string {
 }
 
 // ROMAN-EXTRAS R1 / R2 rows, read by aggregateSoloContext.
-type ReviewCheckIn = { id: string; client_id: string; client_name: string };
+// occurred_at: when the row's event happened (ROMAN-EXTRAS-BE2).
+type ReviewCheckIn = { id: string; client_id: string; client_name: string; occurred_at?: Date };
 type JoinedClient = { client_id: string; client_name: string; joined_at: Date; joined_today: boolean };
 
-// Deterministic — NOT AI-generated. Sorted ascending by priority.
+const cap = <T>(rows: T[] | undefined): T[] => (rows ?? []).slice(0, BRIEF_ROWS_PER_KIND);
+const occurredAt = (d: Date | null | undefined) => (d instanceof Date ? { occurred_at: d.toISOString() } : {});
+
+// Deterministic — NOT AI-generated. Sorted ascending by priority, then
+// type, then newest first (occurred_at; rows without one keep their order).
+// At most BRIEF_ROWS_PER_KIND rows of each kind.
 // S-BRIEF-124 (B-398-1): no workout-approval item. Nothing in the app
 // approves a workout, so the brief never asks for it.
 export function buildActionItems(args: {
@@ -662,11 +672,13 @@ export function buildActionItems(args: {
     client_id: string;
     client_name: string;
     message_preview: string;
+    occurred_at?: Date;
   }>;
   flaggedWeightLogs: Array<{
     client_id: string;
     client_name: string;
     delta_lbs: number;
+    occurred_at?: Date;
   }>;
   missingCheckinClients: Array<{ id: string; name: string }>;
   reviewCheckIns?: ReviewCheckIn[];
@@ -674,7 +686,7 @@ export function buildActionItems(args: {
 }): ActionItem[] {
   const items: ActionItem[] = [];
 
-  for (const t of args.unreadThreads) {
+  for (const t of cap(args.unreadThreads)) {
     items.push({
       type: 'message_unread',
       client_id: t.client_id,
@@ -682,10 +694,11 @@ export function buildActionItems(args: {
       detail: t.message_preview.slice(0, 80),
       priority: 1,
       deep_link: `tgp://messages/${t.client_id}`,
+      ...occurredAt(t.occurred_at),
     });
   }
 
-  for (const w of args.flaggedWeightLogs) {
+  for (const w of cap(args.flaggedWeightLogs)) {
     items.push({
       type: 'weight_flag',
       client_id: w.client_id,
@@ -693,10 +706,12 @@ export function buildActionItems(args: {
       detail: `Weight change of ${Math.abs(w.delta_lbs).toFixed(1)} lbs needs review`,
       priority: 2,
       deep_link: `tgp://client/${w.client_id}/weight`,
+      ...occurredAt(w.occurred_at),
     });
   }
 
-  for (const c of args.missingCheckinClients.slice(0, 5)) {
+  // No event time: the client has not checked in. Kept in name order.
+  for (const c of cap(args.missingCheckinClients)) {
     items.push({
       type: 'checkin_missing',
       client_id: c.id,
@@ -707,7 +722,7 @@ export function buildActionItems(args: {
     });
   }
 
-  for (const c of args.reviewCheckIns ?? []) {
+  for (const c of cap(args.reviewCheckIns)) {
     items.push({
       type: 'checkin_review',
       client_id: c.client_id,
@@ -716,10 +731,11 @@ export function buildActionItems(args: {
       detail: 'Check-in needs review',
       priority: 2,
       deep_link: `tgp://client/${c.client_id}`,
+      ...occurredAt(c.occurred_at),
     });
   }
 
-  for (const j of args.joinedClients ?? []) {
+  for (const j of cap(args.joinedClients)) {
     items.push({
       type: 'client_joined',
       client_id: j.client_id,
@@ -728,11 +744,16 @@ export function buildActionItems(args: {
       detail: j.joined_today ? 'Joined today' : 'Joined yesterday',
       priority: 1,
       deep_link: `tgp://messages/${j.client_id}`,
+      ...occurredAt(j.joined_at),
     });
   }
 
+  // ISO 8601 UTC strings sort by time as text.
   return items.sort(
-    (a, b) => a.priority - b.priority || a.type.localeCompare(b.type),
+    (a, b) =>
+      a.priority - b.priority ||
+      a.type.localeCompare(b.type) ||
+      (b.occurred_at ?? '').localeCompare(a.occurred_at ?? ''),
   );
 }
 
@@ -1048,13 +1069,14 @@ export class CoachBriefService {
         `,
       ),
       this.prisma.$queryRaw<
-        Array<{ user_id: string; user_name: string; delta_lbs: number }>
+        Array<{ user_id: string; user_name: string; delta_lbs: number; logged_at: Date }>
       >(
         Prisma.sql`
           WITH ranked AS (
             SELECT
               "user_id",
               "weight_lbs",
+              "logged_at",
               ROW_NUMBER() OVER (PARTITION BY "user_id" ORDER BY "logged_at" DESC) AS rn
             FROM "WeightLog"
             WHERE "user_id" = ANY(${weighInIds}::text[])
@@ -1062,12 +1084,15 @@ export class CoachBriefService {
           SELECT
             r1."user_id"      AS user_id,
             u."name"          AS user_name,
-            (r1."weight_lbs" - r2."weight_lbs")::float AS delta_lbs
+            (r1."weight_lbs" - r2."weight_lbs")::float AS delta_lbs,
+            r1."logged_at"    AS logged_at
           FROM ranked r1
           JOIN ranked r2 ON r2."user_id" = r1."user_id" AND r2.rn = 2
           JOIN "User" u ON u."id" = r1."user_id"
           WHERE r1.rn = 1
             AND ABS(r1."weight_lbs" - r2."weight_lbs") >= ${WEIGHT_FLAG_THRESHOLD_LBS}
+          ORDER BY r1."logged_at" DESC
+          LIMIT ${BRIEF_ROWS_PER_KIND}
         `,
       ),
       // P1-5: messaging threads are stored under the HEAD coach's
@@ -1102,8 +1127,11 @@ export class CoachBriefService {
           created_at: true,
         },
         orderBy: { created_at: 'desc' },
-        // dedupe by client below
-        take: 100,
+        // ROMAN-EXTRAS-BE2: the newest unread line of each thread, so one busy
+        // client never pushes other clients' threads past the cap (one per
+        // client is picked below).
+        distinct: ['client_id', 'coach_id'],
+        take: BRIEF_ROWS_PER_KIND,
       }),
       this.prisma.user.findMany({
         where: {
@@ -1111,7 +1139,8 @@ export class CoachBriefService {
           check_ins: { none: { date: briefDateOnly } },
         },
         select: { id: true, name: true },
-        take: 50,
+        orderBy: { name: 'asc' },
+        take: BRIEF_ROWS_PER_KIND,
       }),
       // R1: check-ins from the last 24 h not reviewed yet, logged with this
       // coach, from clients still theirs who share check-ins (checkInIds).
@@ -1124,10 +1153,10 @@ export class CoachBriefService {
               reviewed_by_coach: false,
               logged_at: { gte: dayAgo },
             },
-            select: { id: true, user_id: true, user: { select: { name: true } } },
+            select: { id: true, user_id: true, logged_at: true, user: { select: { name: true } } },
             orderBy: { logged_at: 'desc' },
             distinct: ['user_id'],
-            take: 50,
+            take: BRIEF_ROWS_PER_KIND,
           })
         : [],
       // R2: clients still linked to this coach, consultation finished, who
@@ -1152,7 +1181,9 @@ export class CoachBriefService {
               coach_joined_at: true,
               onboarding_intake: { select: { completed_at: true } },
             },
-            take: 20,
+            // The newest joins first, so the cap drops the oldest.
+            orderBy: { coach_joined_at: { sort: 'desc', nulls: 'last' } },
+            take: BRIEF_ROWS_PER_KIND,
           })
         : [],
     ]);
@@ -1163,7 +1194,7 @@ export class CoachBriefService {
     // most-recent inbound body)
     const threadByClient = new Map<
       string,
-      { client_id: string; client_name: string; message_preview: string }
+      { client_id: string; client_name: string; message_preview: string; occurred_at: Date }
     >();
     for (const m of unreadMessagesRaw) {
       if (!m.client_id || threadByClient.has(m.client_id)) continue;
@@ -1173,6 +1204,7 @@ export class CoachBriefService {
         client_id: m.client_id,
         client_name: m.client?.name ?? 'Client',
         message_preview: briefPreview(m),
+        occurred_at: m.created_at,
       });
     }
     const unreadThreads = Array.from(threadByClient.values());
@@ -1181,12 +1213,14 @@ export class CoachBriefService {
       client_id: r.user_id,
       client_name: r.user_name,
       delta_lbs: r.delta_lbs,
+      occurred_at: r.logged_at,
     }));
 
     const reviewCheckIns = reviewRaw.map((r) => ({
       id: r.id,
       client_id: r.user_id,
       client_name: r.user.name,
+      occurred_at: r.logged_at,
     }));
     // Joined = the later of the consultation finish and the join to this coach.
     const joinedClients = joinedRaw.flatMap((u) => {

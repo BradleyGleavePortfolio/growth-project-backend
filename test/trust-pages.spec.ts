@@ -511,7 +511,7 @@ describe('Roman learns a coach\u2019s method: privacy, health-data policy and te
       'to provide Roman and your coach’s AI drafts after you agree, to help Roman learn your coach’s methods without identifying you if you keep Roman’s memory on and the feature is on, to keep the service safe and secure,',
     );
     expect(health).toContain(
-      'to generate Roman’s replies and your coach’s AI drafts; if you keep Roman’s memory on and the feature is on, your coach’s messages to you, their private session notes about you, the guidelines and meal plans written for you and figures from your plan combined with those of at least two other clients, with names and contact details removed, so Roman can learn your coach’s methods; and, if turned on, up to 240 characters',
+      'to generate Roman’s replies, his short notes on your Health pages and your coach’s AI drafts and AI notes; if you keep Roman’s memory on and the feature is on, your coach’s messages to you, their private session notes about you, the guidelines and meal plans written for you and figures from your plan combined with those of at least two other clients, with names and contact details removed, so Roman can learn your coach’s methods; and, if turned on, up to 240 characters',
     );
   });
 
@@ -870,5 +870,28 @@ describe('the crisis sentence follows every Roman safety-reply exception (#CRISI
     expect(section.split(placed)).toHaveLength(2);
     expect(count(section, TOLD)).toBe(on ? 1 : 0);
     expect(count(html, TOLD)).toBe(on ? PLACES.filter(([p]) => p === page).length : 0);
+  });
+});
+
+describe('the wearable AI notes sentence (owner 161-1 op 1, WEAR-AI-03 / WEAR-AI-04)', () => {
+  const SENTENCE =
+    'If you allow AI help, Roman also writes short notes about your health and sleep data on your Health pages, and your coach can ask for an AI note about it.';
+  const section = (page: TrustPage, heading: string) => {
+    const html = renderTrustPage(page);
+    const start = html.indexOf(`<h2>${heading}</h2>`);
+    expect(start).toBeGreaterThan(0);
+    return html.slice(start, html.indexOf('</section>', start));
+  };
+
+  it.each<[TrustPage, string]>([
+    ['privacy', 'Roman and AI'],
+    ['consumer-health', 'Categories we share'],
+  ])('%s "%s" carries it once, word for word', (page, heading) => {
+    expect(visibleText(section(page, heading)).split(SENTENCE)).toHaveLength(2);
+  });
+
+  it('those are the only two places on the public pages', () => {
+    const all = ALL_TRUST_PAGES.map((p) => visibleText(renderTrustPage(p))).join(' ');
+    expect(all.split(SENTENCE)).toHaveLength(3);
   });
 });
