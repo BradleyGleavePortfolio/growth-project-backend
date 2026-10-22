@@ -102,8 +102,12 @@ export class PlanRenewalService {
       const latest = await latestPlanEnd(this.prisma, p.client_user_id, p.coach_user_id);
       if (latest && latest > endedAt) continue;
       if (await this.prisma.planRenewal.count({ where: { ...pair, ended_at: { gte: endedAt } } })) continue;
+      // Only older ends are superseded: a second machine never stops the row another one just opened (round 2 C1).
       const [, made] = await this.prisma.$transaction([
-        this.prisma.planRenewal.updateMany({ where: { ...pair, status: 'active' }, data: { status: 'stopped', stop_reason: 'superseded' } }),
+        this.prisma.planRenewal.updateMany({
+          where: { ...pair, status: 'active', ended_at: { lt: endedAt } },
+          data: { status: 'stopped', stop_reason: 'superseded' },
+        }),
         this.prisma.planRenewal.createMany({ data: [{ purchase_id: p.id, ...pair, ended_at: endedAt }], skipDuplicates: true }),
       ]);
       opened += made.count;

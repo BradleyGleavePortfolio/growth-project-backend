@@ -145,11 +145,15 @@ async function pairPlans(db: Db, clientUserId: string, coachUserId: string) {
   return rows.filter((p) => !declinedAtCheckout(p));
 }
 
-/** The latest end over every plan between the client and the coach (LS B1: only that one opens a sequence). */
+/**
+ * The latest end over every plan between the client and the coach (LS B1: only that one opens a sequence).
+ * A revoked grant's unused expiry is not an end (round 2 B1); a client whose latest grant was revoked is
+ * stopped by planRenewalBlock ('revoked').
+ */
 export async function latestPlanEnd(db: Db, clientUserId: string, coachUserId: string): Promise<Date | null> {
   let latest: Date | null = null;
   for (const p of await pairPlans(db, clientUserId, coachUserId)) {
-    const end = planEndedAt(p);
+    const end = p.status === REVOKED ? null : planEndedAt(p);
     if (end && (!latest || end > latest)) latest = end;
   }
   return latest;
