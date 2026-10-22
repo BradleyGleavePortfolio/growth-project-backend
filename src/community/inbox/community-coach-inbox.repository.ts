@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type {
   CommunityMessage,
   CommunityPost,
+  Prisma,
   User,
 } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
@@ -71,10 +72,15 @@ export class CommunityCoachInboxRepository {
     cohortIds: string[];
     limit: number;
     after: { createdAt: Date; id: string } | null;
+    /** VOICE-INBOX: the coach reading the inbox; adds the space voice notes they can hear (see voiceRule). */
+    voiceFor?: string;
   }): Promise<MessageWithSender[]> {
-    const { cohortIds, limit, after } = params;
+    const { cohortIds, limit, after, voiceFor } = params;
     if (cohortIds.length === 0) return [];
-    const left = await authorsWhoLeft(this.prisma, cohortIds);
+    const [left, voice] = await Promise.all([
+      authorsWhoLeft(this.prisma, cohortIds),
+      voiceFor ? this.voiceRule(voiceFor, cohortIds) : { kind: { not: 'voice' as const } },
+    ]);
     return this.prisma.communityMessage.findMany({
       where: {
         ...(left.length > 0 ? { NOT: left.map(([s, a]) => ({ cohort_id: s, sender_id: a })) } : {}),
@@ -82,9 +88,7 @@ export class CommunityCoachInboxRepository {
         scope: 'cohort',
         deleted_at: null,
         plan_context_type: null,
-        // VOICE-BE: a voice note's chat message is not an inbox row (as before
-        // this release, when voice notes had no chat message); owner decision.
-        kind: { not: 'voice' },
+        AND: [voice],
         coach_replied_at: null,
         sender: { role: { notIn: ['coach', 'owner'] } },
         ...(after
@@ -100,6 +104,38 @@ export class CommunityCoachInboxRepository {
       take: limit,
       include: { sender: { select: { id: true, name: true, role: true } } },
     });
+  }
+
+  /**
+   * VOICE-INBOX (owner "#167-4 VOICE-INBOX - op 1"): a client's space voice note is an inbox row through its chat
+   * message (kind voice, same id and time as the note, hidden with it on every delete, report hide and account
+   * deletion), so every typed rule above applies to it unchanged. A note is a row only when the coach can hear it:
+   * nobody in a block either way with the coach (the note's own read answers 404) and no active workspace ban on its
+   * author. Without a coach (the AI triage) voice notes stay out: they carry no words to read.
+   */
+  private async voiceRule(coachId: string, cohortIds: string[]): Promise<Prisma.CommunityMessageWhereInput> {
+    const [blocks, spaces] = await Promise.all([
+      this.prisma.userBlock.findMany({
+        where: { OR: [{ blocker_id: coachId }, { blocked_id: coachId }] },
+        select: { blocker_id: true, blocked_id: true },
+      }),
+      this.prisma.communityCohort.findMany({ where: { id: { in: cohortIds } }, select: { workspace_id: true } }),
+    ]);
+    const bans = await this.prisma.communityWorkspaceBan.findMany({
+      where: { workspace_id: { in: [...new Set(spaces.map((c) => c.workspace_id))] }, lifted_at: null },
+      select: { workspace_id: true, user_id: true },
+    });
+    const blocked = blocks.map((b) => (b.blocker_id === coachId ? b.blocked_id : b.blocker_id));
+    return {
+      OR: [
+        { kind: { not: 'voice' } },
+        {
+          kind: 'voice',
+          sender_id: { notIn: blocked },
+          ...(bans.length > 0 ? { NOT: bans.map((b) => ({ workspace_id: b.workspace_id, sender_id: b.user_id })) } : {}),
+        },
+      ],
+    };
   }
 
   /**

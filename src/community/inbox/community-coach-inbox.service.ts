@@ -103,9 +103,11 @@ export class CommunityCoachInboxService {
         cohort_name: cohortName,
         author_user_id: m.sender_id,
         author_display_name: m.sender.name,
-        preview: this.preview(m.body),
+        preview: m.kind === 'voice' ? 'Voice note' : this.preview(m.body),
         created_at: m.created_at.toISOString(),
         item_url_path: `/community/cohorts/${m.cohort_id}/messages/${m.id}`,
+        kind: m.kind === 'voice' ? 'voice' : 'text',
+        ...(m.kind === 'voice' ? { voice: { note_id: m.id, duration_ms: m.voice_duration_ms ?? 0 } } : {}),
         // v2-2: attach the per-thread ack summary ONLY when
         // FEATURE_COMMUNITY_ACKS is on. Omitted when off so the v1-6 inbox
         // shape is preserved (back-compat / kill-switch invariant).
@@ -149,6 +151,7 @@ export class CommunityCoachInboxService {
         preview: this.preview(previewSource),
         created_at: p.created_at.toISOString(),
         item_url_path: `/community/cohorts/${p.cohort_id}/posts/${p.id}`,
+        kind: 'text',
       },
     };
   }
@@ -188,7 +191,7 @@ export class CommunityCoachInboxService {
     // stream is itself keyset-filtered by `after`, the union of the two
     // `limit`-bounded streams always contains the global first `limit` items.
     const [messages, posts] = await Promise.all([
-      this.repo.unansweredMessages({ cohortIds, limit, after: cursor }),
+      this.repo.unansweredMessages({ cohortIds, limit, after: cursor, voiceFor: user.id }),
       this.repo.unansweredPosts({ cohortIds, limit, after: cursor }),
     ]);
 

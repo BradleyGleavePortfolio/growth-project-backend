@@ -178,6 +178,29 @@ describe('CommunityCoachInboxService', () => {
     expect(res.items[0].preview.length).toBe(200);
   });
 
+  // VOICE-INBOX (owner #167-4 op 1): a client's space voice note is a row in the same message stream.
+  it('asks the repository for the voice notes the calling coach can hear', async () => {
+    repo.coachedCohortIds.mockResolvedValue([COHORT_1]);
+    await service.list(coach, {} as never);
+    expect(repo.unansweredMessages).toHaveBeenCalledWith(expect.objectContaining({ voiceFor: coach.id }));
+  });
+
+  it('renders a voice note as a "Voice note" row with its length and note id; a typed row says text', async () => {
+    repo.coachedCohortIds.mockResolvedValue([COHORT_1, COHORT_2]);
+    const voice = msg({ id: 'aaaaaaaa-0000-0000-0000-000000000009', kind: 'voice', body: null, voice_duration_ms: 42_000 });
+    repo.unansweredMessages.mockResolvedValue([msg(), voice]);
+    repo.unansweredPosts.mockResolvedValue([post()]);
+    const res = await service.list(coach, {} as never);
+    expect(res.items.map((i) => [i.type, i.kind, i.preview])).toEqual([
+      ['message', 'text', 'help please'],
+      ['message', 'voice', 'Voice note'],
+      ['post', 'text', 'progress post'],
+    ]);
+    expect(res.items[1].voice).toEqual({ note_id: 'aaaaaaaa-0000-0000-0000-000000000009', duration_ms: 42_000 });
+    expect(res.items[0]).not.toHaveProperty('voice');
+    expect(res.items[2]).not.toHaveProperty('voice');
+  });
+
   it('collapses whitespace and trims the preview', async () => {
     repo.coachedCohortIds.mockResolvedValue([COHORT_1]);
     repo.unansweredMessages.mockResolvedValue([
