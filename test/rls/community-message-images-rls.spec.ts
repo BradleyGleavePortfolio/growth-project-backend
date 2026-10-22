@@ -73,7 +73,7 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
       ),
     ).catch((e: { code?: string; meta?: { code?: string } }) => String(e.code === 'P2010' ? e.meta?.code : e.code));
   const objects = (k: Key | 'anon', bucket: string) =>
-    count(k, `SELECT count(*)::int AS "n" FROM storage.objects WHERE bucket_id = $1`, bucket);
+    count(k, `SELECT count(*)::int AS "n" FROM storage.objects WHERE bucket_id = $1 AND name = $2`, bucket, bucket === 'avatars' ? 'a.png' : `${id.O}/p.jpg`);
   const putObject = (k: Key, bucket: string) =>
     as(k, (tx) => tx.$executeRawUnsafe(`INSERT INTO storage.objects (bucket_id, name) VALUES ($1, $2)`, bucket, `${id[k]}/${randomUUID()}.jpg`))
       .catch((e: { code?: string; meta?: { code?: string } }) => String(e.code === 'P2010' ? e.meta?.code : e.code));

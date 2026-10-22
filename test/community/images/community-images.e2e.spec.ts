@@ -139,6 +139,7 @@ function world(opts: { banned?: string[]; access?: (cohortId: string) => boolean
     communityWorkspace: { findUnique: async () => ({ coach_id: 'coach-1' }) },
     user: { findMany: async () => [] },
     communityMembership: { findMany: async () => [] },
+    communityCohort: { findMany: async () => [] },
     $queryRaw: async () => [],
   };
   const canAccess = opts.access ?? ((id: string) => id === SPACE);
