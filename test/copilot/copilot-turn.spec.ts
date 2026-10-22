@@ -95,14 +95,14 @@ describe('CopilotTurnService.facts (CP-A-17)', () => {
   });
 
   it('CAC-NAME: a session title reaches the prompt only when its assigner allows AI, a former coach too; a failed read is no grant', async () => {
-    const own = { ...SESSION, id: 'a-own', assigned_by_coach_id: 'client-a', workout_plan: { name: 'My run' } };
-    const old = { ...SESSION, id: 'a-old', assigned_by_coach_id: 'coach-old', snapshot: { plan_name: 'Old coach block' } };
+    const own = { ...SESSION, id: '33333333-3333-4333-8333-333333333333', assigned_by_coach_id: 'client-a', workout_plan: { name: 'My run' } };
+    const old = { ...SESSION, id: '44444444-4444-4444-8444-444444444444', assigned_by_coach_id: 'coach-old', snapshot: { plan_name: 'Old coach block' } };
     const { svc, reader } = build({ sessions: [SESSION, old, own] });
     reader.coachesWithout.add('coach-old');
     const f = await svc.facts('client-a', ctx, NOW);
     expect(f.sessions.map((s) => s.workout)).toEqual(['Lower body B', 'Workout', 'My run']);
     expect(copilotSection(f)).not.toContain('Old coach block');
-    expect(copilotChange({ kind: 'move_session', session: 'S2', to: '2026-10-23', reason: 'r' }, f, NOW)?.change).toMatchObject({ assignment_id: 'a-old', workout: 'Workout' });
+    expect(copilotChange({ kind: 'move_session', session: 'S2', to: '2026-10-23', reason: 'r' }, f, NOW)?.change).toMatchObject({ assignment_id: old.id, workout: 'Workout' });
     reader.hasCoachAiConsent = async () => {
       throw new Error('db down');
     };
