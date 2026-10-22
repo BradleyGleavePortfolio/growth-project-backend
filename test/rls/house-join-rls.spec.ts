@@ -30,6 +30,8 @@ import { SubCoachScopeService } from '../../src/sub-coach/sub-coach-scope.servic
 import { TrialUsageService } from '../../src/packages/trials/trial-usage.service';
 import { SchedulingSessionLifecycleService } from '../../src/scheduling/scheduling-session-lifecycle.service';
 import type { NotificationsService } from '../../src/notifications/notifications.service';
+import { currentCoachInbox } from '../../src/notifications/current-coach-inbox';
+import { CoachMoneyService } from '../../src/coach-money/coach-money.service';
 import { liveTestDatabaseUrl } from '../utils/live-test-db';
 import { stub } from '../utils/trial-fakes';
 
@@ -251,5 +253,36 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     expect([await readsRenewal('K', 'O'), await readsRenewal('K', 'A')]).toEqual([1, 0]);
     // The door is shut behind them.
     expect(await answer(list('A', 'H'))).toBe('PACKAGE_NOT_FOUND');
+
+    // SWITCH-TELL-BE: K, the coach A left, gets one in-app notification that names only A. No push,
+    // no link, and the house coach is never named or linked.
+    const tellings = () =>
+      prisma.notification.findMany({ where: { kind: 'coach_client_moved', user_id: { in: Object.values(u) } } });
+    const told = await tellings();
+    expect(told).toEqual([
+      expect.objectContaining({
+        user_id: u.K, channel: 'inapp', deep_link: null, body: 'Ann Client has moved to another coach.', payload: { client_id: u.A },
+      }),
+    ]);
+    expect(JSON.stringify(told)).not.toMatch(new RegExp(`${u.H}|Hal|House`));
+    expect(await prisma.notification.count({ where: { user_id: u.K, channel: 'push' } })).toBe(0);
+    // It is in K's inbox (the current-coach rule keeps this link-free row about a client who left).
+    const inbox = await prisma.notification.findMany({ where: await currentCoachInbox(prisma, u.K), select: { id: true } });
+    expect(inbox.map((n) => n.id)).toContain(told[0].id);
+    // The Money line: K's charge to A keeps name, date and amount, no link, and is dated by the move;
+    // O (still K's client) has no line.
+    const money = new CoachMoneyService(prisma);
+    const own = await prisma.clientPurchase.findFirstOrThrow({ where: { client_user_id: u.A, coach_user_id: u.K } });
+    const charges = (await money.listCharges(u.K, { status: 'all' })).charges;
+    const movedAt = told[0].created_at.toISOString();
+    expect(charges.find((c) => c.id === own.id)).toMatchObject({ client: { id: '', name: 'Ann Client' }, moved_away_at: movedAt });
+    expect(charges.filter((c) => c.id !== own.id).map((c) => c.moved_away_at)).toEqual(
+      charges.filter((c) => c.id !== own.id).map(() => null),
+    );
+    expect((await money.getChargeBreakdown(u.K, own.id)).charge).toMatchObject({ moved_away_at: movedAt });
+    expect(JSON.stringify(charges)).not.toMatch(new RegExp(`${u.H}|Hal`));
+    // A replayed activation moves nothing and tells nobody again.
+    expect(await prisma.$transaction((tx) => moveToHouseCoachTx(tx, u.A, u.H))).toBeNull();
+    expect(await tellings()).toHaveLength(1);
   });
 });

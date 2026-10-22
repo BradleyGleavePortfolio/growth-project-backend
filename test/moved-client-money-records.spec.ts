@@ -85,7 +85,7 @@ function world(seller = OLD) {
   const models = [
     'user', 'subCoachAssignment', 'coachPackage', 'clientPurchase', 'dunningState',
     'chargeDispute', 'chargeRefund', 'splitLedgerEntry', 'connectTransfer', 'connectAccount',
-    'partialRefundDecision',
+    'partialRefundDecision', 'notification',
   ];
   const prisma = Object.fromEntries(models.map((m) => [m, read(db, m)]));
   const refunds = {
@@ -171,6 +171,8 @@ function expectMoneyRecordsOnly(r: Reads, before: Reads) {
     amount_cents: 4900, currency: 'usd', created_at: at(1).toISOString(),
     billing_type: 'recurring', billing_interval: null, billing_interval_count: null,
     state: before.charges[0].state, refunded_cents: 0, charged_back_cents: 0,
+    // SWITCH-TELL-BE: only a move to the house coach tells the coach (and dates the line).
+    moved_away_at: null,
   };
   expect(r.charges).toEqual([kept]);
   expect(r.charge).toEqual({ ...before.charge, charge: kept });
