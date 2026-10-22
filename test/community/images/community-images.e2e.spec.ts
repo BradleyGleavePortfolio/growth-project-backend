@@ -88,9 +88,11 @@ function world(opts: { banned?: string[]; access?: (cohortId: string) => boolean
     $transaction: async <T>(fn: (tx: unknown) => Promise<T>) => fn(prisma),
     communityMessage: {
       create: async ({ data }: { data: Record<string, unknown> }) => {
+        const at = new Date(Date.UTC(2026, 9, 1, 0, messages.length));
         const m = stub<CommunityMessage>({
           id: `eeeeeeee-0000-4000-8000-00000000000${messages.length + 1}`,
-          created_at: new Date(Date.UTC(2026, 9, 1, 0, messages.length)),
+          created_at: at,
+          updated_at: at,
           deleted_at: null,
           plan_context_type: null,
           ...data,
@@ -267,7 +269,7 @@ describe('POST messages kind image (SC-BE3)', () => {
     await w.service.send(me, SPACE, 'mine', undefined, undefined, { key, width: 1, height: 1 });
     w.messages.push(stub<CommunityMessage>({ ...w.messages[0], id: 'eeeeeeee-0000-4000-8000-0000000000b1', sender_id: BANNED }));
     const listed = await w.service.list(me, SPACE, {});
-    expect(listed.messages.map((m) => m.sender_id)).toEqual([ME]);
+    expect(listed.messages.map((m) => m.sender_user_id)).toEqual([ME]);
     await expect(w.service.getOne(me, 'eeeeeeee-0000-4000-8000-0000000000b1')).rejects.toBeInstanceOf(NotFoundException);
   });
 
