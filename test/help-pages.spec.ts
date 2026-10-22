@@ -304,4 +304,20 @@ describe('PublicPagesController help pages', () => {
     }
     expect(rule('nav.help-nav .nav-link')).toContain('min-width: 44px');
   });
+
+  // FIX-1126-R1 (LS1126-B1, C2): on a phone the contact table becomes one
+  // labelled block per field, long URLs wrap instead of widening the page, and
+  // tab labels sit 8 px inside their targets with the row pulled out to the edge.
+  // test/help-pages.geometry.spec.ts checks the real layout in a browser.
+  it('contact table stacks on a phone; long words wrap; tab row lines up', () => {
+    const html = renderHelpPage('contact');
+    expect(html).toContain('@media (max-width: 600px)');
+    expect(html).toContain('table.intake td[data-label]::before { content: attr(data-label);');
+    for (const label of ['Type', 'Required', 'Notes']) {
+      expect(html).toContain(`<td role="cell" data-label="${label}">`);
+    }
+    expect(html).toMatch(/\n  main \{[^}]*overflow-wrap: anywhere;/);
+    expect(html).toMatch(/\n  nav\.help-nav \{[^}]*margin: 0 -8px;/);
+    expect(html).toMatch(/\n  nav\.help-nav \.nav-link \{[^}]*padding: 0 8px;/);
+  });
 });

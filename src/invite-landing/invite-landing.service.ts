@@ -283,7 +283,7 @@ function baseDocument(opts: {
   a { color: var(--ink); }
   .primary { display: inline-block; margin-top: 8px; padding: 14px 22px; background: var(--accent); color: #FFFFFF; border-radius: 12px; text-decoration: none; font-weight: 500; font-size: 15px; }
   .alt { margin-top: 12px; font-size: 13px; color: var(--muted); }
-  .alt a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
+  .alt a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 8px; white-space: nowrap; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; }
   .alt .dot { margin: 0 8px; }
   .stores { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; font-size: 12px; color: var(--muted); }
   .stores a { display: inline-flex; align-items: center; min-height: 44px; white-space: nowrap; color: var(--muted); text-decoration: none; border: 1px solid var(--line); padding: 0 16px; border-radius: 12px; }

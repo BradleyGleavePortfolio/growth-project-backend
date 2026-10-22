@@ -952,6 +952,8 @@ describe('ConnectOnboardingReturnController', () => {
     expect(r1.headers.location).toBe('tgp://connect/onboarding/return');
     expect(r1.headers['cache-control']).toBe('no-store');
     expect(r1.body).toContain('Open The Growth Project');
+    // FIX-1126-R1 (C3): the button uses the app's 12 px button radius.
+    expect(r1.body).toContain('border-radius:12px');
     expect(r1.body.replace('<!doctype html>', '')).not.toMatch(/!/);
     const r2 = fakeRes();
     c.onboardingRefresh(r2);

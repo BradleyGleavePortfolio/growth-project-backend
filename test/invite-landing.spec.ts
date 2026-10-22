@@ -355,6 +355,8 @@ describe('invite page design rules (buttons 12, cards 16)', () => {
     };
     for (const html of pages) {
       expect(ruleOf(html, '.alt a')).toContain('min-height: 44px');
+      // FIX-1126-R1 (C1): "Open it" stays on one line at 360 px and 130% text.
+      expect(ruleOf(html, '.alt a')).toContain('white-space: nowrap');
       expect(ruleOf(html, '.stores a')).toContain('min-height: 44px');
       expect(ruleOf(html, '.copy')).toContain('min-height: 44px');
     }
