@@ -47,6 +47,8 @@ function pkgRow(id: string, over: Record<string, unknown> = {}): CoachPackage {
 const PAID = pkgRow('house-monthly');
 const TRIAL = pkgRow('house-trial', { trial_days: 7 });
 const ONE_TIME = pkgRow('house-one-time', { billing_type: 'one_time', interval: null });
+/** Any other coach's package: the cross-coach 404 the trial package must match. */
+const OTHER = pkgRow('other-coach', { coach_id: '55555555-5555-4555-8555-555555555555' });
 
 describe('HOUSE-SERVER — no free trials through the house door (#166-6)', () => {
   const env = { ...process.env };
@@ -97,10 +99,15 @@ describe('HOUSE-SERVER — no free trials through the house door (#166-6)', () =
   });
 
   it('the detail of a free-trial house package is the cross-coach 404; a paid one opens', async () => {
-    const controller = build([PAID, TRIAL]);
-    await expect(controller.detail(req, TRIAL.id)).rejects.toMatchObject({
-      response: { code: 'PACKAGE_NOT_FOUND' },
-    });
+    const controller = build([PAID, TRIAL, OTHER]);
+    const refusal = (id: string) =>
+      controller.detail(req, id).then(
+        () => 'opened',
+        (e: { getStatus(): number; getResponse(): unknown }) => [e.getStatus(), e.getResponse()],
+      );
+    const crossCoach = await refusal(OTHER.id);
+    expect(crossCoach).toEqual([404, { error: 'PACKAGE_NOT_FOUND', message: 'Package not available' }]);
+    expect(await refusal(TRIAL.id)).toEqual(crossCoach);
     await expect(controller.detail(req, PAID.id)).resolves.toMatchObject({ id: PAID.id });
   });
 
