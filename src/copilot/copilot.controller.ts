@@ -27,13 +27,13 @@ export class CopilotController {
 
   @Get()
   recent(@Request() req: AuthedRequest) {
-    return this.copilot.recent(req.user.id);
+    return this.copilot.recent(req.user);
   }
 
   /** COPILOT-BE2: past questions (CP-A-44/45), newest first, 20 a page; `cursor` is the last item's message_id. */
   @Get('questions')
   questions(@Request() req: AuthedRequest, @Query('cursor', new ParseUUIDPipe({ optional: true })) cursor?: string) {
-    return this.copilot.questions(req.user.id, cursor);
+    return this.copilot.questions(req.user, cursor);
   }
 
   @Post('suggestions/:id/send')

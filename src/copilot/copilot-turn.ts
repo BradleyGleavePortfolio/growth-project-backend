@@ -1,11 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
+import { z } from 'zod';
 import { PrismaService } from '../prisma.service';
+import { AiEgressService } from '../ai-egress/ai-egress.service';
 import { ConsentScope, ConsentService } from '../consent/consent.service';
 import type { RomanClientContext } from '../roman/context/roman-client-context.types';
-import { localClock, localDateOf } from '../roman/context/roman-client-context.service';
+import { coachLabel, localClock, localDateOf } from '../roman/context/roman-client-context.service';
 import { CLIENT_PATH_CHANGE, MOVE_WINDOW, PATH_CHANGE_PENDING_MS, parsePathChange, type PathChange } from '../ai/gateway/materialisers/client-path-change.materialiser';
-import { suggestionView, type CopilotSuggestionView } from './copilot.service';
+import { coachSetTarget, suggestionView, type CopilotSuggestionView } from './copilot.service';
 
 /**
  * COPILOT-BE2: a Path Copilot turn is an ordinary Roman turn (coach, consent, caps, pool, safety router and post-check all
@@ -15,9 +17,12 @@ import { suggestionView, type CopilotSuggestionView } from './copilot.service';
  */
 export const ROMAN_COPILOT_HEADER = 'x-roman-copilot';
 
-export type CopilotSourceKind = 'plan' | 'check_in' | 'food_log' | 'workout_log';
 /** One numbered fact (CP-A-17). The server writes `label` and `detail`; the model only cites `n`. */
-export interface CopilotSource { n: number; kind: CopilotSourceKind; id: string | null; date: string; label: string; detail: string | null }
+const sourceSchema = z.object({
+  n: z.int(), kind: z.enum(['plan', 'check_in', 'food_log', 'workout_log']), id: z.string().nullable(), date: z.string(), label: z.string(), detail: z.string().nullable(),
+});
+export type CopilotSource = z.infer<typeof sourceSchema>;
+export type CopilotSourceKind = CopilotSource['kind'];
 export interface CopilotFacts {
   sources: CopilotSource[];
   /** Open sessions inside the move window, referred to as S1, S2 ... */
@@ -28,8 +33,12 @@ export interface CopilotFacts {
 }
 /** `copilot` on the done frame and on a message view: the facts the reply cites and its suggestion, if any. */
 export interface CopilotReply { sources: CopilotSource[]; suggestion: CopilotSuggestionView | null }
-/** What the reply row stores (RomanMessage.copilot). */
-export interface StoredCopilot { question_id: string | null; sources: CopilotSource[]; suggestion_id: string | null }
+/** What the reply row stores (RomanMessage.copilot), read back through the same shape (anything else reads as no facts). */
+const storedSchema = z.object({ question_id: z.string().nullable(), sources: z.array(sourceSchema), suggestion_id: z.string().nullable() });
+export type StoredCopilot = z.infer<typeof storedSchema>;
+export const storedCopilotOf = (v: Prisma.JsonValue | null | undefined): StoredCopilot | null => storedSchema.safeParse(v).data ?? null;
+/** A Copilot reply's text without its [n] markers: what an app without ROMAN_COPILOT_HEADER and Roman's own history read. */
+export const withoutCites = (text: string) => text.replace(/ ?\[\d+\]/g, '');
 
 /** The coach-sharing scope of each kind (#SHARE-SIMPLE): a kind the client's coach may not read is never a fact. */
 const SHARED = { check_in: ConsentScope.FITNESS_BODY_METRICS, food_log: ConsentScope.FITNESS_FOOD_MACROS, workout_log: ConsentScope.FITNESS_WORKOUTS } as const;
@@ -123,7 +132,11 @@ export function copilotChange(asked: unknown, f: CopilotFacts, now = new Date())
 export class CopilotTurnService {
   private readonly logger = new Logger(CopilotTurnService.name);
 
-  constructor(private readonly prisma: PrismaService, private readonly consent: ConsentService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly consent: ConsentService,
+    private readonly egress: AiEgressService,
+  ) {}
 
   /** The numbered facts of one Copilot turn, from the same context the prompt and the post-check read. */
   async facts(clientId: string, ctx: RomanClientContext, now = new Date()): Promise<CopilotFacts> {
@@ -146,15 +159,19 @@ export class CopilotTurnService {
             where: { client_id: clientId, completed_at: null, skipped_at: null, scheduled_for: { gte: new Date(now.getTime() - MOVE_WINDOW.backMs), lte: new Date(now.getTime() + MOVE_WINDOW.aheadMs) } },
             orderBy: { scheduled_for: 'asc' },
             take: 8,
-            select: { id: true, scheduled_for: true, snapshot: { select: { plan_name: true } }, workout_plan: { select: { name: true } } },
+            select: { id: true, scheduled_for: true, assigned_by_coach_id: true, snapshot: { select: { plan_name: true } }, workout_plan: { select: { name: true } } },
           })
         : [],
     ]);
+    // CAC-NAME: a plan title is its assigner's (a former coach's too), generic until that coach allows AI; read now, fail closed.
+    const allowed = await this.egress.consentedCoaches(moves.map((m) => m.assigned_by_coach_id).filter((id) => id !== clientId));
+    const titleOf = (m: (typeof moves)[number]) =>
+      coachLabel(m.assigned_by_coach_id === clientId || allowed.has(m.assigned_by_coach_id), m.snapshot?.plan_name ?? m.workout_plan.name, 80, 'Workout');
     const rows: Array<Omit<CopilotSource, 'n'>> = [];
     const [current, previous] = targets;
     if (current) {
       // CAC-NAME: the coach is named only where the context names them (that coach allows AI).
-      const by = current.coach_id === user?.coach_id && ctx.coach.coach_first_name ? `, set by ${ctx.coach.coach_first_name}` : '';
+      const by = coachSetTarget(current, user?.coach_id) && ctx.coach.coach_first_name ? `, set by ${ctx.coach.coach_first_name}` : '';
       const label = `Target ${num(current.calories_kcal)} kcal from ${dayLabel(current.effective_from, tz)}${by}`;
       rows.push({ kind: 'plan', id: current.id, date: localDateOf(tz)(current.effective_from), label, detail: previous ? `Was ${num(previous.calories_kcal)} kcal` : null });
     }
@@ -176,7 +193,7 @@ export class CopilotTurnService {
     }
     return {
       sources: rows.map((r, i) => ({ n: i + 1, ...r })),
-      sessions: moves.map((m) => ({ assignment_id: m.id, workout: (m.snapshot?.plan_name ?? m.workout_plan.name).slice(0, 80), at: m.scheduled_for })),
+      sessions: moves.map((m) => ({ assignment_id: m.id, workout: titleOf(m), at: m.scheduled_for })),
       target: current ? { id: current.id, kcal: current.calories_kcal } : null,
       floor: ctx.macro_method.floor_kcal ?? 1500,
       tz,
@@ -189,7 +206,7 @@ export class CopilotTurnService {
       const row = await this.prisma.aiActionDraft.create({
         data: {
           id, capability: CLIENT_PATH_CHANGE, status: 'suggested', requester_id: clientId, subject_user_id: clientId, tenant_coach_id: null,
-          payload: s.change as unknown as Prisma.InputJsonValue, rationale: s.reason, provenance: { roman_session_id: sessionId },
+          payload: s.change, rationale: s.reason, provenance: { roman_session_id: sessionId },
           expires_at: new Date(now.getTime() + PATH_CHANGE_PENDING_MS),
         },
       });
@@ -209,7 +226,10 @@ export class CopilotTurnService {
 
   /** `copilot` for each Copilot reply on a message page, with its suggestion's status now. */
   async views(clientId: string, messages: Array<{ id: string; copilot?: Prisma.JsonValue | null }>): Promise<Map<string, CopilotReply>> {
-    const stored = messages.flatMap((m) => (m.copilot && typeof m.copilot === 'object' ? [[m.id, m.copilot as unknown as StoredCopilot] as const] : []));
+    const stored = messages.flatMap((m) => {
+      const c = storedCopilotOf(m.copilot);
+      return c ? [[m.id, c] as const] : [];
+    });
     const ids = stored.map(([, c]) => c.suggestion_id).filter((x): x is string => !!x);
     const drafts = ids.length
       ? await this.prisma.aiActionDraft.findMany({ where: { id: { in: ids }, capability: CLIENT_PATH_CHANGE, requester_id: clientId, subject_user_id: clientId } })
@@ -217,7 +237,7 @@ export class CopilotTurnService {
     return new Map(
       stored.map(([id, c]): [string, CopilotReply] => {
         const d = drafts.find((x) => x.id === c.suggestion_id);
-        return [id, { sources: c.sources ?? [], suggestion: d ? suggestionView(d) : null }];
+        return [id, { sources: c.sources, suggestion: d ? suggestionView(d) : null }];
       }),
     );
   }

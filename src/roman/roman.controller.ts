@@ -68,7 +68,7 @@ import {
   SendMessageDto,
 } from './roman.dto';
 import { KeepRomanContext } from './context/roman-context-invalidation';
-import { CopilotTurnService, ROMAN_COPILOT_HEADER } from '../copilot/copilot-turn';
+import { CopilotTurnService, ROMAN_COPILOT_HEADER, withoutCites } from '../copilot/copilot-turn';
 import { isCopilotEnabled } from '../copilot/copilot.controller';
 
 /**
@@ -118,13 +118,14 @@ export class RomanController {
       limit: query.limit,
     });
     const marker = this.safetyMarker(req);
-    // COPILOT-BE2: each Copilot reply's facts and suggestion, only for an app that sent ROMAN_COPILOT_HEADER.
+    // COPILOT-BE2: each Copilot reply's facts and suggestion, only for an app that sent ROMAN_COPILOT_HEADER;
+    // any other app reads that reply without its [n] markers, as plain text.
     const copilot = this.copilotAsked(req, caller) && this.copilot ? await this.copilot.views(caller.id, page.messages) : null;
     return {
       messages: page.messages.map((m) => ({
         ...this.toMessageView(m),
         ...marker(m),
-        ...(copilot?.has(m.id) ? { copilot: copilot.get(m.id) } : {}),
+        ...(copilot?.has(m.id) ? { copilot: copilot.get(m.id) } : m.copilot ? { content: withoutCites(m.content) } : {}),
       })),
       nextCursor: page.nextCursor,
     };
@@ -252,9 +253,9 @@ export class RomanController {
 
   // ─── helpers ───────────────────────────────────────────────────────────────
 
-  /** COPILOT-BE2: a client's app asked for Copilot (header '1') while FEATURE_CLIENT_PATH_COPILOT is on. */
+  /** COPILOT-BE2: a client with a coach (as on every Copilot route) asked for Copilot (header '1') while FEATURE_CLIENT_PATH_COPILOT is on. */
   private copilotAsked(req: AuthedRequest, caller: RomanCaller): boolean {
-    return caller.role === 'student' && isCopilotEnabled() && req.headers?.[ROMAN_COPILOT_HEADER] === '1';
+    return caller.role === 'student' && !!req.user.coach_id && isCopilotEnabled() && req.headers?.[ROMAN_COPILOT_HEADER] === '1';
   }
 
   /**

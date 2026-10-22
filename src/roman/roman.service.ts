@@ -131,6 +131,7 @@ import {
   copilotChange,
   copilotSection,
   splitCopilotReply,
+  withoutCites,
   type CopilotReply,
   type StoredCopilot,
 } from '../copilot/copilot-turn';
@@ -839,7 +840,7 @@ export class RomanService {
           model_id: data.modelId ?? null,
           interrupted: data.interrupted ?? false,
           parent_message_id: data.parentMessageId ?? null,
-          ...(data.copilot ? { copilot: data.copilot as unknown as Prisma.InputJsonValue } : {}),
+          ...(data.copilot ? { copilot: data.copilot } : {}),
         },
       });
     });
@@ -907,7 +908,8 @@ export class RomanService {
       .reverse()
       .map((m) => ({
         role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
-        content: m.content,
+        // COPILOT-BE2: an earlier Copilot reply's [n] point at that turn's facts, not this one's.
+        content: m.copilot ? withoutCites(m.content) : m.content,
       }));
   }
 

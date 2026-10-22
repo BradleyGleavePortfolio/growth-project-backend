@@ -5,9 +5,14 @@ import {
   copilotSection,
   splitCopilotReply,
   type CopilotFacts,
+  type StoredCopilot,
 } from '../../src/copilot/copilot-turn';
 import { CopilotService } from '../../src/copilot/copilot.service';
-import { ConsentScope } from '../../src/consent/consent.service';
+import { ConsentScope, type ConsentService } from '../../src/consent/consent.service';
+import type { PrismaService } from '../../src/prisma.service';
+import type { RomanClientContext } from '../../src/roman/context/roman-client-context.types';
+import { ROMAN_REQUIRES_COACH } from '../../src/roman/roman-requires-coach';
+import { egressWithGrants, fakeOf } from '../ai-egress/ai-egress.fakes';
 
 // COPILOT-BE2: the numbered facts, the prompt section, the suggestion line and the client's own reads.
 const NOW = new Date('2026-10-21T17:00:00Z'); // Wed 21 Oct, 10:00 in Los Angeles
@@ -15,26 +20,30 @@ const T1 = '11111111-1111-4111-8111-111111111111';
 const A1 = '22222222-2222-4222-8222-222222222222';
 const ALL = new Set([ConsentScope.FITNESS_BODY_METRICS, ConsentScope.FITNESS_FOOD_MACROS, ConsentScope.FITNESS_WORKOUTS]);
 
-const ctx = {
+const CLIENT = { id: 'client-a', role: 'student', coach_id: 'coach-k' };
+const ctx = fakeOf<RomanClientContext>({
   identity: { timezone: 'America/Los_Angeles', local_date: '2026-10-21' },
   coach: { coach_first_name: 'Alex' },
   weight_trend: { points: [{ date: '2026-10-04', weight_lbs: 157.9 }, { date: '2026-10-18', weight_lbs: 157.4 }] },
   last_7_days: { days_logged: 6, avg_kcal_on_logged_days: 2260 },
   plan: { adherence_14d: { completed: 7, scheduled: 8 } },
   macro_method: { floor_kcal: 1500 },
-} as never;
+});
 
-function build(opts: { coach?: string | null; granted?: Set<string> } = {}) {
+type Assignment = { id: string; scheduled_for: Date; assigned_by_coach_id: string; snapshot: { plan_name: string } | null; workout_plan: { name: string } };
+const SESSION: Assignment = { id: A1, scheduled_for: new Date('2026-10-22T16:00:00Z'), assigned_by_coach_id: 'coach-k', snapshot: null, workout_plan: { name: 'Lower body B' } };
+
+function build(opts: { coach?: string | null; granted?: Set<string>; targetId?: string; sessions?: Assignment[] } = {}) {
   const prisma = {
     user: { findUnique: jest.fn(async () => ({ coach_id: opts.coach === undefined ? 'coach-k' : opts.coach, profile: { weight_unit: 'kg' } })) },
     macroTarget: {
       findMany: jest.fn(async () => [
-        { id: T1, coach_id: 'coach-k', calories_kcal: 2150, effective_from: new Date('2026-10-19T07:00:00Z') },
+        { id: opts.targetId ?? T1, coach_id: 'coach-k', calories_kcal: 2150, effective_from: new Date('2026-10-19T07:00:00Z') },
         { id: 'old', coach_id: 'coach-k', calories_kcal: 2300, effective_from: new Date('2026-09-28T07:00:00Z') },
       ]),
     },
     clientWorkoutAssignment: {
-      findMany: jest.fn(async () => [{ id: A1, scheduled_for: new Date('2026-10-22T16:00:00Z'), snapshot: null, workout_plan: { name: 'Lower body B' } }]),
+      findMany: jest.fn(async () => opts.sessions ?? [SESSION]),
     },
     aiActionDraft: {
       create: jest.fn(async ({ data }: { data: Record<string, unknown> }) => ({ ...data, decision_note: null, decided_at: null, created_at: NOW })),
@@ -43,7 +52,8 @@ function build(opts: { coach?: string | null; granted?: Set<string> } = {}) {
     },
   };
   const consent = { grantedScopesByClient: jest.fn(async () => new Map([['client-a', opts.granted ?? ALL]])) };
-  return { prisma, consent, svc: new CopilotTurnService(prisma as never, consent as never) };
+  const { egress, reader } = egressWithGrants();
+  return { prisma, consent, reader, svc: new CopilotTurnService(fakeOf<PrismaService>(prisma), fakeOf<ConsentService>(consent), egress) };
 }
 
 describe('CopilotTurnService.facts (CP-A-17)', () => {
@@ -76,6 +86,27 @@ describe('CopilotTurnService.facts (CP-A-17)', () => {
     expect(consent.grantedScopesByClient).not.toHaveBeenCalled();
     expect(f.sources.map((s) => s.kind)).toEqual(['plan']);
     expect(f.sources[0].label).toBe('Target 2,150 kcal from Mon 19 Oct');
+  });
+
+  it('an onboarding or profile target (auto-) is never "set by" the coach, though the coach id is on it', async () => {
+    const { svc } = build({ targetId: `auto-${T1}` });
+    const f = await svc.facts('client-a', ctx, NOW);
+    expect(f.sources[0].label).toBe('Target 2,150 kcal from Mon 19 Oct');
+  });
+
+  it('CAC-NAME: a session title reaches the prompt only when its assigner allows AI, a former coach too; a failed read is no grant', async () => {
+    const own = { ...SESSION, id: 'a-own', assigned_by_coach_id: 'client-a', workout_plan: { name: 'My run' } };
+    const old = { ...SESSION, id: 'a-old', assigned_by_coach_id: 'coach-old', snapshot: { plan_name: 'Old coach block' } };
+    const { svc, reader } = build({ sessions: [SESSION, old, own] });
+    reader.coachesWithout.add('coach-old');
+    const f = await svc.facts('client-a', ctx, NOW);
+    expect(f.sessions.map((s) => s.workout)).toEqual(['Lower body B', 'Workout', 'My run']);
+    expect(copilotSection(f)).not.toContain('Old coach block');
+    expect(copilotChange({ kind: 'move_session', session: 'S2', to: '2026-10-23', reason: 'r' }, f, NOW)?.change).toMatchObject({ assignment_id: 'a-old', workout: 'Workout' });
+    reader.hasCoachAiConsent = async () => {
+      throw new Error('db down');
+    };
+    expect((await svc.facts('client-a', ctx, NOW)).sessions.map((s) => s.workout)).toEqual(['Workout', 'Workout', 'My run']);
   });
 });
 
@@ -158,7 +189,7 @@ describe('the client’s own suggestion rows', () => {
 
   it('deleting a chat deletes only that chat’s unsent suggestions', async () => {
     const { svc, prisma } = build();
-    await svc.forgetUnsent(prisma as never, 'client-a', 's-1');
+    await svc.forgetUnsent(fakeOf<Prisma.TransactionClient>(prisma), 'client-a', 's-1');
     expect(prisma.aiActionDraft.deleteMany).toHaveBeenCalledWith({
       where: { capability: 'client_path_change', status: 'suggested', requester_id: 'client-a', provenance: { path: ['roman_session_id'], equals: 's-1' } },
     });
@@ -169,8 +200,8 @@ describe('the client’s own suggestion rows', () => {
     prisma.aiActionDraft.findMany.mockResolvedValueOnce([
       { id: 'd-1', status: 'approved', payload: {}, rationale: 'r', decision_note: null, created_at: NOW, decided_at: NOW, expires_at: NOW, capability: 'client_path_change' },
     ]);
-    const stored = { question_id: 'q', sources: FACTS.sources, suggestion_id: 'd-1' } as unknown as Prisma.JsonValue;
-    const views = await svc.views('client-a', [{ id: 'm-1', copilot: stored }, { id: 'm-2', copilot: null }]);
+    const stored: StoredCopilot = { question_id: 'q', sources: FACTS.sources, suggestion_id: 'd-1' };
+    const views = await svc.views('client-a', [{ id: 'm-1', copilot: stored }, { id: 'm-2', copilot: null }, { id: 'm-3', copilot: { sources: 'x' } }]);
     expect(prisma.aiActionDraft.findMany).toHaveBeenCalledWith({ where: { id: { in: ['d-1'] }, capability: 'client_path_change', requester_id: 'client-a', subject_user_id: 'client-a' } });
     expect([...views.keys()]).toEqual(['m-1']);
     expect(views.get('m-1')).toMatchObject({ sources: FACTS.sources, suggestion: { id: 'd-1', status: 'approved' } });
@@ -183,10 +214,10 @@ describe('CopilotService week block and past questions', () => {
     { id: 'm-1', session_id: 's-1', created_at: NOW, copilot: { question_id: 'q-1', sources: [], suggestion_id: null } },
   ];
   const QUESTIONS = [{ id: 'q-2', content: 'Can I move Thursday?' }, { id: 'q-1', content: 'Why did my calories change this week?' }];
-  function service() {
+  function service(targetId = T1) {
     const prisma = {
       user: { findUnique: jest.fn(async () => ({ coach_id: 'coach-k', coach_joined_at: new Date(NOW.getTime() - 15 * 86_400_000), coach: { name: 'Alex Morgan' }, notification_prefs: { timezone: 'America/Los_Angeles' } })) },
-      macroTarget: { findMany: jest.fn(async () => [{ id: T1, coach_id: 'coach-k', calories_kcal: 2150, effective_from: new Date('2026-10-19T07:00:00Z'), notes: 'Slow week.' }, { calories_kcal: 2300 }]) },
+      macroTarget: { findMany: jest.fn(async () => [{ id: targetId, coach_id: 'coach-k', calories_kcal: 2150, effective_from: new Date('2026-10-19T07:00:00Z'), notes: 'Slow week.' }, { calories_kcal: 2300 }]) },
       clientWorkoutAssignment: { findMany: jest.fn(async () => [{ completed_at: NOW }, { completed_at: null }, { completed_at: null }, { completed_at: null }]) },
       checkIn: { findFirst: jest.fn(async () => ({ date: new Date('2026-10-18T00:00:00Z') })) },
       romanMessage: {
@@ -196,7 +227,7 @@ describe('CopilotService week block and past questions', () => {
       },
       aiActionDraft: { findMany: jest.fn(async () => [{ id: 'd-1', status: 'rejected', expires_at: null, created_at: NOW }]) },
     };
-    return { prisma, svc: new CopilotService(prisma as never, {} as never) };
+    return { prisma, svc: new CopilotService(fakeOf<PrismaService>(prisma), egressWithGrants().egress) };
   }
 
   it('the week block: week n with the coach, the target and the one before, this local week’s workouts, the last check-in', async () => {
@@ -217,9 +248,24 @@ describe('CopilotService week block and past questions', () => {
     expect(prisma.checkIn.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { user_id: 'client-a' } }));
   });
 
+  it('an onboarding or profile target (auto-) has no set_by and no note, though the coach id is on it', async () => {
+    const { target } = await service(`auto-${T1}`).svc.week('client-a', NOW);
+    expect(target).toMatchObject({ kcal: 2150, set_by: null, note: null });
+  });
+
+  it('a client with no coach is refused on every Copilot read, as on the turn', async () => {
+    const { svc, prisma } = service();
+    const coachless = { ...CLIENT, coach_id: null };
+    const refused = { status: 403, response: { code: ROMAN_REQUIRES_COACH } };
+    await expect(svc.recent(coachless)).rejects.toMatchObject(refused);
+    await expect(svc.questions(coachless)).rejects.toMatchObject(refused);
+    expect(prisma.user.findUnique).not.toHaveBeenCalled();
+    expect(prisma.romanMessage.findMany).not.toHaveBeenCalled();
+  });
+
   it('past questions: only the caller’s Copilot replies, their questions and outcomes, with the total and the first ask', async () => {
     const { svc, prisma } = service();
-    const out = await svc.questions('client-a');
+    const out = await svc.questions(CLIENT);
     const mine = { user_id: 'client-a', role: 'roman', copilot: { not: Prisma.DbNull }, session: { deleted_at: null } };
     expect(prisma.romanMessage.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: mine, take: 21 }));
     expect(prisma.romanMessage.count).toHaveBeenCalledWith({ where: mine });

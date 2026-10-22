@@ -6,7 +6,7 @@ import { CLIENT_PATH_CHANGE, PATH_CHANGE_PENDING_MS, pathChangeLapsed } from '..
 import { PrismaService } from '../prisma.service';
 import { assertRomanClient } from '../roman/roman-requires-coach';
 import { addDays, localClock, localDayStart } from '../roman/context/roman-client-context.service';
-import type { StoredCopilot } from './copilot-turn';
+import { storedCopilotOf, type StoredCopilot } from './copilot-turn';
 
 /** Sent states the client sees as status lines; `suggested` (not sent yet) never reaches the coach or this list. */
 const SENT = ['pending', 'approved', 'rejected', 'expired'];
@@ -25,6 +25,12 @@ export interface CopilotSuggestionView {
   sent_at: Date | null;
   decided_at: Date | null;
 }
+
+/** A client may use Copilot only as an ordinary Roman client with a coach (the turn's own rule, assertRomanClient). */
+type CopilotClient = { id: string; role: string; coach_id: string | null };
+/** CP set_by: the client's current coach set this target; never a target from onboarding or the profile ('auto-'). */
+export const coachSetTarget = (t: { id: string; coach_id: string | null }, coachId: string | null | undefined) =>
+  !!coachId && t.coach_id === coachId && !t.id.startsWith('auto-');
 
 const unsentLapsed = (d: AiActionDraft, now = new Date()) =>
   d.status === 'suggested' && !!d.expires_at && d.expires_at.getTime() <= now.getTime();
@@ -59,7 +65,9 @@ export class CopilotService {
   }
 
   /** Newest first, the last three sent, and how many the client has sent in all. */
-  async recent(clientId: string) {
+  async recent(client: CopilotClient) {
+    assertRomanClient(client);
+    const clientId = client.id;
     const where = { ...this.mine(clientId), status: { in: SENT } };
     const [rows, total] = await Promise.all([
       this.prisma.aiActionDraft.findMany({ where, orderBy: [{ created_at: 'desc' }, { id: 'desc' }], take: COPILOT_RECENT }),
@@ -88,13 +96,13 @@ export class CopilotService {
     ]);
     const [current, previous] = targets;
     const coach = user?.coach?.name.trim().split(/\s+/)[0] || null;
-    // set_by: the coach's first name when the current coach set it; null for a target from onboarding or the profile ('auto-').
-    const setBy = current && current.coach_id === user?.coach_id && !current.id.startsWith('auto-') ? coach : null;
+    // set_by: the coach's first name when the current coach set it. An 'auto-' target's note is system text, not a coach note.
+    const setBy = current && coachSetTarget(current, user?.coach_id) ? coach : null;
     return {
       number: user?.coach_joined_at ? Math.floor((now.getTime() - user.coach_joined_at.getTime()) / WEEK_MS) + 1 : null,
       coach_first_name: coach,
       target: current
-        ? { kcal: current.calories_kcal, from: current.effective_from, set_by: setBy, note: current.notes, previous_kcal: previous?.calories_kcal ?? null }
+        ? { kcal: current.calories_kcal, from: current.effective_from, set_by: setBy, note: current.id.startsWith('auto-') ? null : current.notes, previous_kcal: previous?.calories_kcal ?? null }
         : null,
       workouts: { done: sessions.filter((s) => s.completed_at).length, total: sessions.length },
       last_check_in: checkIn ? checkIn.date.toISOString().slice(0, 10) : null,
@@ -102,23 +110,25 @@ export class CopilotService {
   }
 
   /** COPILOT-BE2: the client's past Copilot questions, newest first, COPILOT_PAGE a page, with the total and the first one's time. */
-  async questions(clientId: string, cursor?: string) {
+  async questions(client: CopilotClient, cursor?: string) {
+    assertRomanClient(client);
+    const clientId = client.id;
     const where: Prisma.RomanMessageWhereInput = { user_id: clientId, role: 'roman', copilot: { not: Prisma.DbNull }, session: { deleted_at: null } };
     const [rows, total, first] = await Promise.all([
       this.prisma.romanMessage.findMany({ where, orderBy: [{ created_at: 'desc' }, { id: 'desc' }], take: COPILOT_PAGE + 1, ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}), select: { id: true, session_id: true, created_at: true, copilot: true } }),
       this.prisma.romanMessage.count({ where }),
       this.prisma.romanMessage.findFirst({ where, orderBy: { created_at: 'asc' }, select: { created_at: true } }),
     ]);
-    const page = rows.slice(0, COPILOT_PAGE).map((r) => ({ ...r, c: r.copilot as unknown as StoredCopilot }));
-    const ids = (pick: (c: StoredCopilot) => string | null) => page.map((r) => pick(r.c)).filter((x): x is string => !!x);
+    const page = rows.slice(0, COPILOT_PAGE).map((r) => ({ ...r, c: storedCopilotOf(r.copilot) }));
+    const ids = (pick: (c: StoredCopilot) => string | null) => page.map((r) => (r.c ? pick(r.c) : null)).filter((x): x is string => !!x);
     const [asked, drafts] = await Promise.all([
       this.prisma.romanMessage.findMany({ where: { user_id: clientId, id: { in: ids((c) => c.question_id) } }, select: { id: true, content: true } }),
       this.prisma.aiActionDraft.findMany({ where: { ...this.mine(clientId), id: { in: ids((c) => c.suggestion_id) } } }),
     ]);
     return {
       items: page.map((r) => {
-        const d = drafts.find((x) => x.id === r.c.suggestion_id);
-        const question = asked.find((q) => q.id === r.c.question_id)?.content ?? null;
+        const d = drafts.find((x) => x.id === r.c?.suggestion_id);
+        const question = asked.find((q) => q.id === r.c?.question_id)?.content ?? null;
         return { question, asked_at: r.created_at, session_id: r.session_id, message_id: r.id, outcome: d ? suggestionView(d).status : null };
       }),
       total,
@@ -128,7 +138,7 @@ export class CopilotService {
   }
 
   /** Send to the coach: `suggested` -> `pending`, stamped with the client's coach now. A repeat Send answers the same row. */
-  async send(client: { id: string; role: string; coach_id: string | null }, id: string): Promise<CopilotSuggestionView> {
+  async send(client: CopilotClient, id: string): Promise<CopilotSuggestionView> {
     assertRomanClient(client);
     if (!(await this.egress.consentedClients([client.id])).has(client.id)) throw new AiConsentRequiredException('client');
     const now = new Date();
