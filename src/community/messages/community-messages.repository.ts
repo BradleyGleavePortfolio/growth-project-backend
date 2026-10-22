@@ -5,6 +5,25 @@ import { PrismaService } from '../../prisma.service';
 import type { PlanContextTag } from '../plan-context/plan-context.dto';
 import { bannedAmong } from '../community-ban';
 import { rowsWithSpaceAccess } from '../community-space-access';
+import { bytesToPeaks } from '../voice/community-voice.dto';
+
+/** A space's client messages still waiting on a coach reply (the coach inbox message arm). */
+export const openClientMessagesOf = (cohortId: string): Prisma.CommunityMessageWhereInput => ({
+  cohort_id: cohortId,
+  scope: 'cohort',
+  deleted_at: null,
+  plan_context_type: null,
+  coach_replied_at: null,
+  sender: { role: { notIn: ['coach', 'owner'] } },
+});
+
+/** VOICE-BE: what a voice chat message shows before play (the URL comes from the voice route). */
+export interface ChatVoiceNote {
+  id: string;
+  duration_ms: number;
+  waveform_peaks: number[] | null;
+  heard_at: string | null;
+}
 
 /**
  * Data access for cohort messages and post-comments.
@@ -98,17 +117,29 @@ export class CommunityMessagesRepository {
     repliedAt: Date;
   }): Promise<number> {
     const { count } = await this.prisma.communityMessage.updateMany({
-      where: {
-        cohort_id: params.cohortId,
-        scope: 'cohort',
-        deleted_at: null,
-        plan_context_type: null,
-        coach_replied_at: null,
-        sender: { role: { notIn: ['coach', 'owner'] } },
-      },
+      where: openClientMessagesOf(params.cohortId),
       data: { coach_replied_at: params.repliedAt },
     });
     return count;
+  }
+
+  /** VOICE-BE: the live voice notes behind these voice chat messages (same ids), for one viewer. */
+  async voiceNotesFor(ids: string[], viewerId: string): Promise<Map<string, ChatVoiceNote>> {
+    if (ids.length === 0) return new Map();
+    const [notes, heard] = await Promise.all([
+      this.prisma.communityVoiceNote.findMany({
+        where: { id: { in: ids }, soft_deleted_at: null },
+        select: { id: true, duration_ms: true, waveform_peaks: true },
+      }),
+      this.prisma.communityVoiceNoteListen.findMany({ where: { user_id: viewerId, voice_note_id: { in: ids } } }),
+    ]);
+    const heardAt = new Map(heard.map((h) => [h.voice_note_id, h.heard_at.toISOString()]));
+    return new Map(notes.map((n) => [n.id, {
+      id: n.id,
+      duration_ms: n.duration_ms,
+      waveform_peaks: bytesToPeaks(n.waveform_peaks),
+      heard_at: heardAt.get(n.id) ?? null,
+    }]));
   }
 
   /**

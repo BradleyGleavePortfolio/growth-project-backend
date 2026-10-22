@@ -23,7 +23,11 @@
 // Mounted outside the /api prefix in main.ts so they resolve as bare
 // paths under app.trygrowthproject.com.
 
-import { ROMAN_CRISIS_TOLD_SENTENCE, isRomanCrisisAlertEnabled } from '../roman/roman.feature';
+import {
+  ROMAN_CRISIS_TOLD_SENTENCE,
+  ROMAN_HEALTH_NOTES_SENTENCE,
+  isRomanCrisisAlertEnabled,
+} from '../roman/roman.feature';
 
 // Source of truth for the official support contact (owner ruling
 // 2026-10-01 14:19 PDT: one support email everywhere; owner ruling
@@ -35,7 +39,7 @@ export const SUPPORT_EMAIL = 'support@thegrowthproject.site';
 
 // Last-reviewed date for the policy text. Bump when copy changes.
 // Format ISO-8601 (UTC) so it sorts and renders consistently.
-export const POLICY_LAST_REVIEWED = '2026-10-19';
+export const POLICY_LAST_REVIEWED = '2026-10-20';
 
 // #CRISIS-WORDING / #CRISIS-PRIVACY-PLACES (owner op 1): follows every Roman
 // safety-reply exception sentence on these pages, only while Roman's crisis
@@ -43,6 +47,12 @@ export const POLICY_LAST_REVIEWED = '2026-10-19';
 function crisisToldText(): string {
   return isRomanCrisisAlertEnabled() ? ` ${ROMAN_CRISIS_TOLD_SENTENCE}` : '';
 }
+
+// WEAR-AI (owner 161-1 op 1, wording WEAR-AI-03 / WEAR-AI-04 approved): the
+// Health and Sleep insight notes, in /privacy "Roman and AI" and
+// /consumer-health-privacy "Categories we share". The first box-2 agreement
+// names it too (owner #162-6: client-ai-v10 to v13).
+export const WEARABLE_AI_NOTES_TEXT = ROMAN_HEALTH_NOTES_SENTENCE;
 
 // Who sees community and leaderboard data (B-PRIVACY-1). Shared by /privacy
 // "Who can see your data" and /consumer-health-privacy "Categories we share".
@@ -286,7 +296,8 @@ function privacyContent(): TrustPageContent {
         heading: 'Roman and AI',
         paragraphs: [
           'Roman is an AI assistant powered by Anthropic. At the start of the consultation the app shows two separate boxes on one screen. The first, which you need to tick to continue, covers the personal-training waiver and lets TGP and your coach collect and use your information to coach you. The second is optional and starts unticked: it lets Roman and your coach’s AI drafts use your information, names Anthropic as the AI provider and lists the data it receives. If you leave it unticked, nothing about you is sent to Anthropic, and your plan, your coach, the community and Roman’s guided tour work as usual.',
-          'When you use Roman, we send Anthropic your message, the earlier turns of that conversation, and context drawn from your own account: your profile, consultation and readiness answers, food, water and habit logs, workouts and workout history, check-ins, bookings, wearable, health and sleep data, messages with your coach and the community posts you write. When your coach asks for an AI draft about you, the same kinds of data are sent. Roman may also read, and send to Anthropic, your fasting logs, your earlier Roman conversations that you have not deleted and daily summaries of your connected health data, including sleep stages, bedtime and wake time, body weight and body fat, and blood pressure. Roman never reads the raw heart-rate readings your device records. With Roman’s memory off, only your own data is used — never another client’s, and never your coach’s private notes about you.',
+          'When you use Roman, we send Anthropic your message, the earlier turns of that conversation, and context drawn from your own account: your profile, consultation and readiness answers, food, water and habit logs, workouts and workout history, check-ins, bookings, wearable, health and sleep data, messages with your coach and the community posts you write. When your coach asks for an AI draft about you, the same kinds of data are sent. Roman may also read, and send to Anthropic, your fasting logs, your earlier Roman conversations that you have not deleted and daily summaries of your connected health data, including sleep stages, bedtime and wake time, body weight and body fat, and blood pressure. Roman never reads the raw heart-rate readings your device records. With Roman’s memory off, only your own data is used — never another client’s, and never your coach’s private notes about you. ' +
+            WEARABLE_AI_NOTES_TEXT,
           'Roman’s memory is part of the Roman permission you give in the consultation, and it is on unless you turn it off. Roman keeps notes and summaries about your training, preferences and circumstances, from your Roman chats and from everything you log or connect in the app, to personalise his replies. Roman may also learn your coach’s methods, including from your coach’s private session notes, and information about your training may help with that without identifying you. Roman never quotes those notes or shows you another client’s information. Your coach never sees your conversations with Roman or his notes about you. One exception: if Roman sends you an urgent medical safety reply or an eating-disorder safety reply, your coach sees the message that prompted it, so they can check in with you.' +
             crisisToldText() +
             ' You can turn Roman’s memory off at any time in Settings > Privacy > Roman and AI; Roman then stops using his notes until you turn it back on. Turning memory off, withdrawing the AI agreement or deleting a chat does not delete the notes: they are kept with your account and deleted when you delete your account.',
@@ -485,11 +496,12 @@ function consumerHealthContent(): TrustPageContent {
             crisisToldText(),
           COMMUNITY_VISIBILITY_TEXT,
           LEADERBOARD_VISIBILITY_TEXT,
-          'Service providers that process data on our behalf: Supabase (database, sign-in and file storage) and Fly.io (hosting) receive all categories; Anthropic receives the categories listed in your AI agreement to generate Roman’s replies and your coach’s AI drafts; if you keep Roman’s memory on and the feature is on, your coach’s messages to you, their private session notes about you, the guidelines and meal plans written for you and figures from your plan combined with those of at least two other clients, with names and contact details removed, so Roman can learn your coach’s methods; and, if turned on, up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you ticked the optional AI box); Sentry (error monitoring) and PostHog (product analytics) may receive health details that appear in an error report or app event; Crisp (support chat) receives what you choose to tell support; Resend (email) and Expo (push notifications) receive the content of the emails and notifications we send you; Mux (video hosting and playback) receives the videos coaches upload.',
+          'Service providers that process data on our behalf: Supabase (database, sign-in and file storage) and Fly.io (hosting) receive all categories; Anthropic receives the categories listed in your AI agreement to generate Roman’s replies, his short notes on your Health pages and your coach’s AI drafts and AI notes; if you keep Roman’s memory on and the feature is on, your coach’s messages to you, their private session notes about you, the guidelines and meal plans written for you and figures from your plan combined with those of at least two other clients, with names and contact details removed, so Roman can learn your coach’s methods; and, if turned on, up to 240 characters of each community post or message your coach has not yet answered, with your name, the cohort name and its age, so it can sort and summarise them for your coach (only if you ticked the optional AI box); Sentry (error monitoring) and PostHog (product analytics) may receive health details that appear in an error report or app event; Crisp (support chat) receives what you choose to tell support; Resend (email) and Expo (push notifications) receive the content of the emails and notifications we send you; Mux (video hosting and playback) receives the videos coaches upload.',
           'Authorities, when the law requires it or to protect someone’s safety.',
         ],
         closing: [
           'After you tick the optional AI box, Roman may read, and send to Anthropic, your fasting logs, your earlier Roman conversations that you have not deleted, the community posts you wrote and daily summaries of your connected health data, including sleep stages, bedtime and wake time, body weight and body fat, and blood pressure. Roman never reads the raw heart-rate readings your device records.',
+          WEARABLE_AI_NOTES_TEXT,
         ],
       },
       {

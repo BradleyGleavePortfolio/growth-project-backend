@@ -7,6 +7,8 @@
  *          ?variant=safety_exception -> the coached client-ai-v6 / v7 copies (owner 57c)
  *          ?variant=crisis_alert -> client-ai-v8 / v9 (v6 / v7 + the crisis sentence) while
  *                                   FEATURE_ROMAN_CRISIS_ALERT is on, v6 / v7 while it is off
+ *          ?variant=health_notes -> as crisis_alert, but every copy names the Health-page
+ *                                   notes (owner #162-6): memory client-ai-v10 / v11, base v12 / v13
  *   POST   /me/ai-consent/roman  {version, copy_sha256?, platform?, app_version?, locale?}
  *                                -> grant (idempotent); 409 CONSENT_VERSION_MISMATCH; a client
  *                                   with no coach is recorded the same way (W-CONSENT)
@@ -90,7 +92,8 @@ function askOf(req: AuthedRequest, variant: unknown): ClientAiConsentAsk {
     hasCoach,
     coachFree: variant === 'coach_free',
     safetyException: variant === 'safety_exception',
-    crisisAlert: variant === 'crisis_alert',
+    crisisAlert: variant === 'crisis_alert' || variant === 'health_notes',
+    healthNotes: variant === 'health_notes',
   };
 }
 

@@ -760,8 +760,14 @@ export class MessagingService {
     // fan-out. `aiDraftId` (ROMANMARK) is the approved Roman draft this message
     // began as, passed only by the two Roman message materialisers. It is
     // stored as CoachMessage.ai_draft_id (the mark both thread routes return)
-    // only through romanMark (ROMANMARK-BE).
-    options: { welcome?: { jobId: string; lease: string }; aiDraftId?: string } = {},
+    // only through romanMark (ROMANMARK-BE). `automatedBy` (HOME-BE) marks a
+    // message no person sent at that moment (CoachMessage.automated_by): the
+    // welcome scheduler and the package auto-message resolver pass it.
+    options: {
+      welcome?: { jobId: string; lease: string };
+      aiDraftId?: string;
+      automatedBy?: 'coach_welcome' | 'package_message';
+    } = {},
   ) {
     // Back-compat: existing test fixtures and pre-Phase-6C call sites pass
     // a bare string. Normalize to the payload shape so the new code only
@@ -801,6 +807,7 @@ export class MessagingService {
       voice_size_bytes: voice?.size_bytes ?? null,
       voice_content_type: voice?.content_type ?? null,
       ...(aiDraftId ? { ai_draft_id: aiDraftId } : {}),
+      ...(options.automatedBy ? { automated_by: options.automatedBy } : {}),
     };
     // Main merge (B-609-3 + A3-MSG-CORE): a welcome-job send (internal only,
     // never carries client_message_id or reply_to_id) keeps the lease-fenced

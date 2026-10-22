@@ -132,7 +132,12 @@ describe('F-DP4-3 coach brief after a client moves (owner decision 4)', () => {
     const { svc } = wire();
     const agg = await svc['aggregateSoloContext']('H', ['kept'], 'America/Los_Angeles', '2026-10-11', 'solo_coach');
     expect(agg.unreadThreads).toEqual([
-      { client_id: 'kept', client_name: 'Kai Kept', message_preview: 'Can we move my session' },
+      {
+        client_id: 'kept',
+        client_name: 'Kai Kept',
+        message_preview: 'Can we move my session',
+        occurred_at: expect.any(Date),
+      },
     ]);
   });
 

@@ -124,6 +124,11 @@ export interface ActionItem {
   deep_link: string;
   check_in_id?: string; // checkin_review only
   joined_at?: string; // client_joined only, ISO 8601
+  // ROMAN-EXTRAS-BE2: when the row's event happened, ISO 8601 (UTC): the
+  // newest unread message, the flagged weigh-in, the check-in waiting for
+  // review, or the join. checkin_missing has none: no check-in exists, so
+  // those rows stay in name order. Within one type, rows are newest first.
+  occurred_at?: string;
 }
 
 // P1-3: head-coach mode emits business-only action items. No client_id,

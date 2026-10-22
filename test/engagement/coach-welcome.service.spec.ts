@@ -196,7 +196,7 @@ describe('CoachWelcomeService — scheduling', () => {
       {
         body: "Hi Dana, it's Morgan. Welcome in. Your plan and targets are ready. Message me here anytime.",
       },
-      { welcome: { jobId: h.jobs.rows[0].id, lease: expect.any(String) } },
+      { welcome: { jobId: h.jobs.rows[0].id, lease: expect.any(String) }, automatedBy: 'coach_welcome' },
     );
     expect(h.messages.rows).toHaveLength(1);
     expect(h.jobs.rows[0]).toMatchObject({ status: 'sent', message_id: h.messages.rows[0].id });

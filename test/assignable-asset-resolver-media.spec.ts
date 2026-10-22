@@ -25,6 +25,8 @@ interface PrismaStubOpts {
   grantCreateResult?: { id: string };
   grantCreateError?: unknown;
   existingGrant?: { id: string } | null;
+  /** ScheduledDrop.count answer: the drop is this buyer's and older than the archive. */
+  owedDrop?: number;
 }
 
 function makePrismaStub(opts: PrismaStubOpts) {
@@ -45,6 +47,7 @@ function makePrismaStub(opts: PrismaStubOpts) {
       create,
       findUnique,
     },
+    scheduledDrop: { count: jest.fn(async () => opts.owedDrop ?? 0) },
     // The resolver takes a SELECT ... FOR UPDATE row lock when inside a
     // transaction (audit P2-3 fix). In unit tests we just acknowledge
     // the call (no real Postgres lock).
@@ -140,21 +143,58 @@ describe('MediaAssetResolver (pdf + video)', () => {
     expect(stub.clientAssetGrant.create).not.toHaveBeenCalled();
   });
 
-  it('throws MediaAssetNotFoundError when the asset is archived (soft-deleted)', async () => {
-    const stub = makePrismaStub({
-      asset: { id: 'asset-1', coach_id: 'coach-1', archived_at: new Date() },
+  // Archived (soft-deleted) rows. MEDIA-ARCHIVE-DRIP: the drop that softDelete counted as owed
+  // still delivers the archived file; nothing else does.
+  describe('archived row and the drop being dispatched', () => {
+    const archivedAt = new Date('2026-10-20T12:00:00Z');
+    const input = {
+      clientId: 'c1',
+      coachId: 'coach-1',
+      assetId: 'asset-1',
+      scheduledDropId: 'drop-1',
+    };
+    const make = (owedDrop: number, coachId = 'coach-1') => {
+      const stub = makePrismaStub({
+        asset: { id: 'asset-1', coach_id: coachId, archived_at: archivedAt },
+        owedDrop,
+      });
+      const resolver = new MediaAssetResolver(
+        stub as unknown as ConstructorParameters<typeof MediaAssetResolver>[0],
+        makeScope(true),
+      );
+      return { stub, resolver };
+    };
+
+    it("mints the grant for this buyer's drop written before the archive", async () => {
+      const { stub, resolver } = make(1);
+      await expect(resolver.materialise(input)).resolves.toEqual({ materialisedRef: 'grant-new' });
+      expect(stub.scheduledDrop.count).toHaveBeenCalledWith({
+        where: {
+          id: 'drop-1',
+          asset_id: 'asset-1',
+          created_at: { lte: archivedAt },
+          client_purchase: { client_user_id: 'c1' },
+        },
+      });
     });
-    const resolver = new MediaAssetResolver(
-      stub as unknown as ConstructorParameters<typeof MediaAssetResolver>[0],
-      makeScope(true),
-    );
-    await expect(
-      resolver.materialise({
-        clientId: 'c1',
-        coachId: 'coach-1',
-        assetId: 'asset-1',
-      }),
-    ).rejects.toThrow(MediaAssetNotFoundError);
+
+    it('throws MediaAssetNotFoundError with no drop to deliver', async () => {
+      const { stub, resolver } = make(1);
+      await expect(resolver.materialise({ ...input, scheduledDropId: undefined })).rejects.toThrow(MediaAssetNotFoundError);
+      expect(stub.scheduledDrop.count).not.toHaveBeenCalled();
+    });
+
+    it('refuses a drop written after the archive (a later buyer), or another buyer\'s drop', async () => {
+      const { stub, resolver } = make(0);
+      await expect(resolver.materialise(input)).rejects.toThrow(MediaAssetNotFoundError);
+      expect(stub.clientAssetGrant.create).not.toHaveBeenCalled();
+    });
+
+    it("refuses another coach's archived file even for an owed drop", async () => {
+      const { stub, resolver } = make(1, 'other-coach');
+      await expect(resolver.materialise(input)).rejects.toThrow(MediaAssetNotFoundError);
+      expect(stub.clientAssetGrant.create).not.toHaveBeenCalled();
+    });
   });
 
   it('refuses cross-tenant access: asset.coach_id !== acting.tenantCoachId → MediaAssetNotFoundError', async () => {

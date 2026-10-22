@@ -13,7 +13,7 @@ import { NotificationKind } from '../notifications/notification-kind';
 import { PrismaService } from '../prisma.service';
 import { PackagesService } from './packages.service';
 import type { PushAudience, PushMode } from './package-contents.dto';
-import { SHIPPED_STATUSES } from './drop-status';
+import { REFUND_STOPS, SHIPPED_STATUSES } from './drop-status';
 
 // PR-17 B2 — package PUSH / BACKFILL service (decision-set in
 // PR17_EXPANSION_PLAN.md §2.2). Pushes ONE authored CoachPackageContent
@@ -595,7 +595,11 @@ export class PackagePushService {
     audience: PushAudience,
     cohortPurchaseIds?: string[],
   ) {
-    const where: Prisma.ClientPurchaseWhereInput = { package_id: packageId };
+    // MEDIA-ARCHIVE-DRIP (#162-2 op 1): a refunded or lost-dispute purchase is sent nothing new.
+    const where: Prisma.ClientPurchaseWhereInput = {
+      package_id: packageId,
+      status: { notIn: Object.keys(REFUND_STOPS) },
+    };
     if (audience === 'active') {
       where.entitlement_active = true;
     } else if (audience === 'cohort') {

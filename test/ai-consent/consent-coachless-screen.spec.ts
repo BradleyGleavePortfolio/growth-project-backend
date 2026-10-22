@@ -24,6 +24,10 @@ import {
   CLIENT_AI_CONSENT_V7_PARAGRAPH,
   CLIENT_AI_CONSENT_V8_PARAGRAPH,
   CLIENT_AI_CONSENT_V9_PARAGRAPH,
+  CLIENT_AI_CONSENT_V10_PARAGRAPH,
+  CLIENT_AI_CONSENT_V11_PARAGRAPH,
+  CLIENT_AI_CONSENT_V12_PARAGRAPH,
+  CLIENT_AI_CONSENT_V13_PARAGRAPH,
 } from '../../src/ai-consent/ai-consent.constants';
 import {
   CONSULT_CONSENT_COPIES,
@@ -157,6 +161,50 @@ const ROWS: Array<[string, string, string[], string, string]> = [
     'b7eb74293aac4d20c6d19ea2b7a97bec035467f8f8897a5d8e393fd7140e6864',
     'client-ai-v9',
   ],
+  // Owner #162-6: paragraph 4 names the Health-page notes (?variant=health_notes, memory on).
+  [
+    'coached, memory on, Health notes, TGP Fitness',
+    'consult-consent-v15',
+    tgp(coached(CLIENT_AI_CONSENT_V10_PARAGRAPH)),
+    '2472c790626ed1ca2d6d7aaa87a39cf3dc0b51371bf94d6ad1679106f34cf0c3',
+    'client-ai-v10',
+  ],
+  [
+    'coached, memory on, crisis switch on, Health notes, TGP Fitness',
+    'consult-consent-v16',
+    tgp(coached(CLIENT_AI_CONSENT_V11_PARAGRAPH)),
+    '6c03faf6263e93a90f67eb56e748611a29c6cab7fc2af044f3922f61aff16d0c',
+    'client-ai-v11',
+  ],
+  [
+    'no coach, memory on, Health notes, TGP Fitness',
+    'consult-consent-v16-coach-free',
+    tgp(noCoach(CLIENT_AI_CONSENT_V10_PARAGRAPH)),
+    '839832214a19353323a18f8e64443bba6db7172f3982c413a65281a72a441c54',
+    'client-ai-v10',
+  ],
+  [
+    'no coach, memory on, crisis switch on, Health notes, TGP Fitness',
+    'consult-consent-v17-coach-free',
+    tgp(noCoach(CLIENT_AI_CONSENT_V11_PARAGRAPH)),
+    '4030570aae763dd4b4ca578b0472298070e8ce0eea60cc18a123d952fc767ba1',
+    'client-ai-v11',
+  ],
+  // Memory off (coached only: a client with no coach gets no Health notes).
+  [
+    'coached, memory off, Health notes, TGP Fitness',
+    'consult-consent-v17',
+    tgp(coached(CLIENT_AI_CONSENT_V12_PARAGRAPH)),
+    'ea511e82574f9ec446105028cf3547b66a5916523bd2329f60e4d9f5ce996b99',
+    'client-ai-v12',
+  ],
+  [
+    'coached, memory off, crisis switch on, Health notes, TGP Fitness',
+    'consult-consent-v18',
+    tgp(coached(CLIENT_AI_CONSENT_V13_PARAGRAPH)),
+    '9ce19233f793ba3d4f82a5240481b4810da0a2f5dadf5b9c7a98936a14794e72',
+    'client-ai-v13',
+  ],
 ];
 
 // Every older version, as it was (#CRISIS-OLD-CONSENT op 1: nobody is asked again).
@@ -198,6 +246,8 @@ describe('FIX684: each P0 record rebuilds the screen shown (coached, no coach, e
       'consult-consent-v13-coach-free',
       'consult-consent-v14-coach-free',
       'consult-consent-v15-coach-free',
+      'consult-consent-v16-coach-free',
+      'consult-consent-v17-coach-free',
       'consult-consent-v8-coach-free',
       'consult-consent-v9-coach-free',
     ]);
