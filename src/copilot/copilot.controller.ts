@@ -3,6 +3,7 @@ import { JwtAuthGuard } from '../auth/auth.guard';
 import type { AuthedRequest } from '../auth/auth-request';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../auth/roles.guard';
+import { IsOptional, IsString, MaxLength } from 'class-validator';
 import { CopilotService } from './copilot.service';
 
 /** Server kill switch for Path Copilot (mirrors the app's EXPO_PUBLIC_FF_CLIENT_PATH_COPILOT). Unset = off = 404. */
@@ -19,6 +20,14 @@ export class CopilotFeatureGuard implements CanActivate {
   }
 }
 
+/** `cursor` is the last item's message_id: a RomanMessage id (cuid), so a string, capped like ListMessagesQueryDto's. */
+export class CopilotQuestionsQueryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  cursor?: string;
+}
+
 @Controller('client/copilot')
 @UseGuards(CopilotFeatureGuard, JwtAuthGuard, RolesGuard)
 @Roles('student')
@@ -32,8 +41,8 @@ export class CopilotController {
 
   /** COPILOT-BE2: past questions (CP-A-44/45), newest first, 20 a page; `cursor` is the last item's message_id. */
   @Get('questions')
-  questions(@Request() req: AuthedRequest, @Query('cursor', new ParseUUIDPipe({ optional: true })) cursor?: string) {
-    return this.copilot.questions(req.user, cursor);
+  questions(@Request() req: AuthedRequest, @Query() query: CopilotQuestionsQueryDto) {
+    return this.copilot.questions(req.user, query.cursor);
   }
 
   @Post('suggestions/:id/send')

@@ -1,4 +1,6 @@
+import { BadRequestException, ParseUUIDPipe, ValidationPipe } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import type { AuthedRequest } from '../../src/auth/auth-request';
 import {
   CopilotTurnService,
   copilotChange,
@@ -7,6 +9,7 @@ import {
   type CopilotFacts,
   type StoredCopilot,
 } from '../../src/copilot/copilot-turn';
+import { CopilotController, CopilotQuestionsQueryDto } from '../../src/copilot/copilot.controller';
 import { CopilotService } from '../../src/copilot/copilot.service';
 import { ConsentScope, type ConsentService } from '../../src/consent/consent.service';
 import type { PrismaService } from '../../src/prisma.service';
@@ -280,5 +283,55 @@ describe('CopilotService week block and past questions', () => {
       since: new Date('2025-10-02T17:00:00Z'),
       next_cursor: null,
     });
+  });
+});
+
+describe('GET /client/copilot/questions paging: the cursor is the cuid message id the server returned', () => {
+  // The app's global pipe (src/main.ts), so the query DTO is checked as it is in production.
+  const pipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+  const parse = (value: object) => pipe.transform(value, { type: 'query', metatype: CopilotQuestionsQueryDto });
+  // 25 Copilot replies, newest first. RomanMessage.id is @default(cuid()), so the ids look like Prisma's: 25 characters, "c" first.
+  const REPLIES = Array.from({ length: 25 }, (_, i) => ({
+    id: `cm2kx7q4z${String(25 - i).padStart(4, '0')}j8f3w9d2b5t8`,
+    session_id: 's-1',
+    created_at: new Date(NOW.getTime() - i * 60_000),
+    copilot: { question_id: `q-${i}`, sources: [], suggestion_id: null },
+  }));
+  type Page = { where: { role?: string }; take?: number; skip?: number; cursor?: { id: string } };
+  function controller() {
+    const prisma = {
+      romanMessage: {
+        findMany: jest.fn(async (a: Page) => {
+          if (a.where.role !== 'roman') return [];
+          const at = a.cursor ? REPLIES.findIndex((r) => r.id === a.cursor?.id) + (a.skip ?? 0) : 0;
+          return REPLIES.slice(at, at + (a.take ?? REPLIES.length));
+        }),
+        count: jest.fn(async () => REPLIES.length),
+        findFirst: jest.fn(async () => ({ created_at: REPLIES[REPLIES.length - 1].created_at })),
+      },
+      aiActionDraft: { findMany: jest.fn(async () => []) },
+    };
+    const svc = new CopilotService(fakeOf<PrismaService>(prisma), egressWithGrants().egress);
+    return { prisma, ctl: new CopilotController(svc), req: fakeOf<AuthedRequest>({ user: CLIENT }) };
+  }
+
+  it('page 1 hands out a cuid next_cursor; sent back as ?cursor= it passes the pipe and returns page 2', async () => {
+    const { ctl, req, prisma } = controller();
+    const one = await ctl.questions(req, await parse({}));
+    expect(one.items.map((i) => i.message_id)).toEqual(REPLIES.slice(0, 20).map((r) => r.id));
+    expect(one.next_cursor).toBe(REPLIES[19].id);
+    // The old ParseUUIDPipe refused exactly this value (400 on every "Show older questions").
+    await expect(new ParseUUIDPipe().transform(String(one.next_cursor), { type: 'query' })).rejects.toBeInstanceOf(BadRequestException);
+
+    const two = await ctl.questions(req, await parse({ cursor: one.next_cursor }));
+    expect(prisma.romanMessage.findMany).toHaveBeenCalledWith(expect.objectContaining({ cursor: { id: REPLIES[19].id }, skip: 1, take: 21 }));
+    expect(two.items.map((i) => i.message_id)).toEqual(REPLIES.slice(20).map((r) => r.id));
+    expect(two.next_cursor).toBeNull();
+    expect(two.total).toBe(25);
+  });
+
+  it('the cursor is a string of at most 64 characters: 64 passes, 65 is a 400', async () => {
+    await expect(parse({ cursor: 'c'.repeat(64) })).resolves.toMatchObject({ cursor: 'c'.repeat(64) });
+    await expect(parse({ cursor: 'c'.repeat(65) })).rejects.toBeInstanceOf(BadRequestException);
   });
 });
