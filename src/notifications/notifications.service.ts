@@ -204,6 +204,7 @@ export class NotificationsService implements OnModuleInit {
         // C05 item 7 — workout reminders default ON (schema default).
         workout_reminder_push: true,
         workout_reminder_inapp: true,
+        plan_renewal_push: true, // RENEWAL-BE (schema default)
         // PR-15A — COACH_NEW_PURCHASE defaults match the migration:
         // selling coach gets push + in-app on every new entitlement,
         // email off (no transactional channel today).
@@ -309,6 +310,7 @@ export class NotificationsService implements OnModuleInit {
       // C05 item 7 — workout reminders (Settings > Notifications toggle).
       workout_reminder_push: data.workout_reminder_push,
       workout_reminder_inapp: data.workout_reminder_inapp,
+      plan_renewal_push: data.plan_renewal_push, // RENEWAL-BE
     };
 
     // B-NOTIF-4: an explicit zone in a preferences PATCH is validated and

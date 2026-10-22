@@ -2052,6 +2052,20 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Dunning v2 flag.',
   },
   {
+    name: 'FEATURE_PLAN_RENEWAL',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason:
+      'RENEWAL-BE plan-renewal sequence (Day 0, Day 1 and Day 7: an app notification and an in-app pop-up each, plus a Home renew banner, after a plan ends normally; src/checkout/plan-renewal). Off: no sequence opens or sends, the renewal route is 404 and GET /v1/checkout/entitlement carries no renewal block.',
+  },
+  {
+    name: 'HOUSE_COACH_USER_ID',
+    tier: 'optional',
+    default: "unset → the renewal 'Join TGP's Top Rated Coach' choice is never offered",
+    reason:
+      "RENEWAL-BE (owner #RENEWAL-PUSH): the user id of TGP's house coach, the second choice on the renewal pop-ups and the Home banner. The owner sets it when the house coach account exists. An id that is not a live coach account offers nothing.",
+  },
+  {
     name: 'FEATURE_COACH_BROADCASTS',
     values: ['true', 'false'],
     unsetIs: 'off',

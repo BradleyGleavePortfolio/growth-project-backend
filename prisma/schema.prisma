@@ -1240,6 +1240,8 @@ model NotificationPreferences {
   // time on plan days). Default ON; Settings > Notifications toggles both.
   workout_reminder_push    Boolean @default(true)
   workout_reminder_inapp   Boolean @default(true)
+  // RENEWAL-BE: "plan renewal reminders" (default ON). Off stops the renewal app notifications.
+  plan_renewal_push        Boolean @default(true)
   // PR-15A — COACH_NEW_PURCHASE (selling coach learns of a new buyer at
   // entitlement). Default ON for push + in-app per decision #9 mirror —
   // a coach who is SELLING packages wants to know. email default OFF
@@ -4542,6 +4544,8 @@ model ClientPurchase {
   reconciliation         ReconciliationSnapshot?
   // F2 — partial-refund coach decisions keyed off this purchase.
   partialRefundDecisions PartialRefundDecision[]
+  // RENEWAL-BE: the renewal sequence this purchase's normal end opened (at most one).
+  plan_renewal           PlanRenewal?
 
   /// PR-14 — landing page attribution. GuestCheckout already captures the
   /// referring landing page (R47); convertGuestToUser now copies the id
@@ -5164,6 +5168,28 @@ model PayoutAdjustmentNotice {
 //   resolved: a subsequent invoice.paid cleared the window
 //   abandoned: max_attempts reached or grace_period_ends_at elapsed —
 //              the purchase will be canceled by the next sweeper run.
+/// RENEWAL-BE: one plan-renewal sequence, opened when a client's latest plan
+/// with their coach ended normally (never a failed payment: dunning v2 owns
+/// those). Server-written only (service role); RLS lets the client read their
+/// own row and the coach read it only while still that client's coach.
+model PlanRenewal {
+  id               String         @id @default(uuid())
+  purchase_id      String         @unique
+  purchase         ClientPurchase @relation(fields: [purchase_id], references: [id], onDelete: Cascade)
+  client_user_id   String
+  coach_user_id    String
+  ended_at         DateTime
+  status           String         @default("active") // active | done (Day 7 claimed) | stopped
+  stop_reason      String?
+  popup_acked_step Int            @default(-1) // the latest pop-up day (0, 1 or 7) the client acknowledged
+  pushed_step      Int            @default(-1) // the latest step day whose app notification was claimed (sent or skipped)
+  created_at       DateTime       @default(now())
+  updated_at       DateTime       @updatedAt
+
+  @@index([client_user_id, coach_user_id])
+  @@index([status])
+}
+
 model DunningState {
   id                       String         @id @default(uuid())
   purchase_id              String         @unique

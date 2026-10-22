@@ -280,6 +280,11 @@ export class UpdateNotificationPreferencesDto {
   @IsOptional()
   @IsBoolean()
   workout_reminder_inapp?: boolean;
+
+  // RENEWAL-BE: "plan renewal reminders" (default on).
+  @IsOptional()
+  @IsBoolean()
+  plan_renewal_push?: boolean;
 }
 
 // ── Notification center query params ────────────────────────────────────────
