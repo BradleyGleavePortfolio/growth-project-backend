@@ -24,6 +24,7 @@ import { CommunityModerationRepository } from './community-moderation.repository
 import { PrismaService } from '../../prisma.service';
 import { assertDmParticipantIfDm } from '../safety/community-safety.service';
 import { VoiceUploadProvider } from '../voice/voice-upload.provider';
+import { CommunityImageStore } from '../images/community-image-store';
 import { ReportAlertService } from '../../report-alerts/report-alert.service';
 import { WIN_NOT_FOUND, winModerationWorkspaceId } from '../community-wins.policy';
 import { recordWorkspaceBan } from '../community-ban';
@@ -206,6 +207,8 @@ export class CommunityModerationService {
     // B-REPORTALERT-125: provided by CommunityModule; optional so unit
     // harnesses that build the service by hand keep working.
     @Optional() private readonly reportAlerts?: ReportAlertService,
+    // SC-BE3: a hidden photo's object is erased through the voice path.
+    @Optional() private readonly images?: CommunityImageStore,
   ) {}
 
   private itemView(a: CommunityModerationAction): CommunityModerationItemView {
@@ -520,7 +523,7 @@ export class CommunityModerationService {
       try {
         const outcome = await attemptVoiceErasures(
           this.prisma,
-          this.voiceStorage,
+          { voice: this.voiceStorage, images: this.images },
           erasures,
           this.logger,
         );
@@ -922,10 +925,13 @@ export class CommunityModerationService {
     if (targetType === 'message') {
       const msg = await this.messagesRepo.findById(targetId, tx);
       if (msg?.kind === 'voice') return this.hideTarget(tx, 'voice_note', msg.id);
+      // SC-BE3: a photo's object erasure is recorded before the soft delete.
+      const image = msg?.kind === 'image' ? await tx.communityMessageImage.findUnique({ where: { message_id: msg.id } }) : null;
+      const work = image ? await recordVoiceErasures(tx, [{ kind: 'image_object', target: image.storage_key }], 'moderation') : [];
       if (msg && !msg.deleted_at) {
         await this.messagesRepo.softDelete({ id: msg.id, created_at: msg.created_at }, tx);
       }
-      return [];
+      return work;
     }
     if (targetType === 'voice_note') {
       // Same soft delete as the author's own delete: every read path

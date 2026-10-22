@@ -2211,6 +2211,14 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Community search.',
   },
   {
+    name: 'FEATURE_COMMUNITY_IMAGES',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'Photos in the space chat (SC-BE3).',
+  },
+  {
     name: 'FEATURE_COMMUNITY_VOICE_NOTES',
     values: ['true', 'false'],
     unsetIs: 'off',

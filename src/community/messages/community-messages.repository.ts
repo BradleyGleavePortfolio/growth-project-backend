@@ -1,11 +1,19 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, type Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import type { CommunityMessage } from '@prisma/client';
+import type { CommunityMessage, CommunityMessageImage } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import type { PlanContextTag } from '../plan-context/plan-context.dto';
 import { bannedAmong } from '../community-ban';
 import { fullNamesFor, rowsWithSpaceAccess } from '../community-space-access';
 import { bytesToPeaks } from '../voice/community-voice.dto';
+import {
+  attemptVoiceErasures,
+  recordVoiceErasures,
+  type VoiceErasureOutcome,
+  type VoiceErasureReason,
+  type VoiceErasureRow,
+  type VoiceErasureStorage,
+} from '../voice/voice-erasure';
 
 /** A space's client messages still waiting on a coach reply (the coach inbox message arm). */
 export const openClientMessagesOf = (cohortId: string): Prisma.CommunityMessageWhereInput => ({
@@ -279,6 +287,84 @@ export class CommunityMessagesRepository {
       },
       orderBy: { created_at: 'asc' },
     });
+  }
+
+  // ── SC-BE3: photos in the space chat ───────────────────────────────────────
+
+  /** A kind 'image' message (caption in `body`) and its photo row, in one transaction. */
+  async createImageMessage(params: {
+    workspaceId: string;
+    cohortId: string;
+    senderId: string;
+    body: string;
+    parent?: { id: string; at: Date } | null;
+    image: { key: string; width: number; height: number; sizeBytes: number };
+  }): Promise<CommunityMessage> {
+    return this.prisma.$transaction(async (tx) => {
+      const m = await tx.communityMessage.create({
+        data: {
+          workspace_id: params.workspaceId,
+          cohort_id: params.cohortId,
+          scope: 'cohort',
+          kind: 'image',
+          sender_id: params.senderId,
+          body: params.body,
+          visibility: 'active',
+          parent_message_id: params.parent?.id ?? null,
+          parent_message_at: params.parent?.at ?? null,
+          plan_context_payload: Prisma.JsonNull,
+        },
+      });
+      await tx.communityMessageImage.create({
+        data: {
+          message_id: m.id,
+          cohort_id: params.cohortId,
+          author_id: params.senderId,
+          storage_key: params.image.key,
+          width: params.image.width,
+          height: params.image.height,
+          size_bytes: params.image.sizeBytes,
+          mime: 'image/jpeg',
+        },
+      });
+      return m;
+    });
+  }
+
+  /** The photo rows behind these image messages. */
+  async imagesFor(ids: string[]): Promise<CommunityMessageImage[]> {
+    if (ids.length === 0) return [];
+    return this.prisma.communityMessageImage.findMany({ where: { message_id: { in: ids } } });
+  }
+
+  /** Senders among `ids` banned in the workspace (their photos are hidden). */
+  async bannedSenders(workspaceId: string, ids: string[]): Promise<Set<string>> {
+    return bannedAmong(this.prisma, workspaceId, [...new Set(ids)]);
+  }
+
+  /**
+   * Delete an image message: record the object's erasure (B-610-5 order), then
+   * soft-delete the message, in one transaction. The caller tries the erasure
+   * after commit; an unverified row stays open for the voice erasure cron.
+   */
+  async softDeleteImage(
+    message: Pick<CommunityMessage, 'id' | 'created_at'>,
+    reason: VoiceErasureReason,
+  ): Promise<{ deleted: CommunityMessage; work: VoiceErasureRow[] }> {
+    return this.prisma.$transaction(async (tx) => {
+      const image = await tx.communityMessageImage.findUnique({ where: { message_id: message.id } });
+      const work = image ? await recordVoiceErasures(tx, [{ kind: 'image_object', target: image.storage_key }], reason) : [];
+      return { deleted: await this.softDelete(message, tx), work };
+    });
+  }
+
+  /** Try the recorded image erasure now; an unverified row stays open for the voice erasure cron. */
+  async attemptImageErasure(
+    images: VoiceErasureStorage | undefined,
+    rows: VoiceErasureRow[],
+    logger?: Pick<Logger, 'warn' | 'error'>,
+  ): Promise<VoiceErasureOutcome> {
+    return attemptVoiceErasures(this.prisma, { images }, rows, logger);
   }
 }
 

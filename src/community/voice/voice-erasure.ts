@@ -1,9 +1,10 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
 import { isSignableVoiceKey, voiceOwnerFolder } from './voice-storage-key';
 import { VoiceUploadProvider } from './voice-upload.provider';
+import { CommunityImageStore } from '../images/community-image-store';
 
 /**
  * Durable voice-recording erasure (B-610-5, fix round 5).
@@ -36,7 +37,10 @@ import { VoiceUploadProvider } from './voice-upload.provider';
  * and is never sent to storage; its row is completed with that reason.
  */
 
-export type VoiceErasureKind = 'object' | 'owner_folder';
+// SC-BE3: 'image_object' (one photo) and 'image_folder' (a person's photo
+// folder, account erasure) are space chat photos, erased from their own bucket
+// (CommunityImageStore) through this same durable work table.
+export type VoiceErasureKind = 'object' | 'owner_folder' | 'image_object' | 'image_folder';
 export type VoiceErasureReason = 'author_delete' | 'moderation' | 'account_deletion';
 
 export interface VoiceErasureTarget {
@@ -58,7 +62,19 @@ export interface VoiceErasureStorage {
   removeOwnerFolder(ownerId: string): Promise<{ removed: number; failed: boolean }>;
   /** true = verified empty, false = files remain, null = could not check. */
   ownerFolderEmpty(ownerId: string): Promise<boolean | null>;
+  /** SC-BE3: the store's own canonical key rule (the voice rule when absent). */
+  isStoreKey?(key: string): boolean;
 }
+
+/** SC-BE3: the voice store and, for the image kinds, the photo store. */
+export interface VoiceErasureStores {
+  voice?: VoiceErasureStorage;
+  images?: VoiceErasureStorage;
+}
+
+const KINDS: readonly string[] = ['object', 'owner_folder', 'image_object', 'image_folder'];
+const isImageKind = (k: string): boolean => k === 'image_object' || k === 'image_folder';
+const asKind = (k: string): VoiceErasureKind => (KINDS.includes(k) ? (k as VoiceErasureKind) : 'object');
 
 type ErasureDb = Pick<Prisma.TransactionClient, 'communityVoiceErasure'>;
 
@@ -114,7 +130,7 @@ export async function recordVoiceErasures(
     });
     rows.push({
       id: row.id,
-      kind: row.kind === 'owner_folder' ? 'owner_folder' : 'object',
+      kind: asKind(row.kind),
       target: row.target,
       attempts: row.attempts,
     });
@@ -126,8 +142,11 @@ async function verifyOne(
   storage: VoiceErasureStorage,
   row: VoiceErasureRow,
 ): Promise<{ done: true; note: string | null } | { done: false; error: string }> {
-  if (row.kind === 'object') {
-    if (!isSignableVoiceKey(storage.bucket(), row.target)) {
+  if (row.kind === 'object' || row.kind === 'image_object') {
+    const canonical = storage.isStoreKey
+      ? storage.isStoreKey(row.target)
+      : isSignableVoiceKey(storage.bucket(), row.target);
+    if (!canonical) {
       return { done: true, note: 'non_canonical_key: never signable, not sent to storage' };
     }
     const removal = await storage.removeObjects([row.target]);
@@ -153,17 +172,19 @@ async function verifyOne(
  */
 export async function attemptVoiceErasures(
   db: ErasureDb,
-  storage: VoiceErasureStorage,
+  storage: VoiceErasureStorage | VoiceErasureStores,
   rows: VoiceErasureRow[],
   logger?: Pick<Logger, 'warn' | 'error'>,
   now: () => Date = () => new Date(),
 ): Promise<VoiceErasureOutcome> {
   let completed = 0;
   let pending = 0;
+  const stores: VoiceErasureStores = 'removeObjects' in storage ? { voice: storage } : storage;
   for (const row of rows) {
     let result: Awaited<ReturnType<typeof verifyOne>>;
+    const store = isImageKind(row.kind) ? stores.images : stores.voice;
     try {
-      result = await verifyOne(storage, row);
+      result = store ? await verifyOne(store, row) : { done: false, error: 'store_not_wired' };
     } catch (err) {
       result = { done: false, error: `storage_error: ${(err as Error).message}`.slice(0, 500) };
     }
@@ -209,6 +230,8 @@ export class VoiceErasureService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storage: VoiceUploadProvider,
+    // SC-BE3: photo rows share this table; optional for hand-built harnesses.
+    @Optional() private readonly images?: CommunityImageStore,
   ) {}
 
   @Cron('*/10 * * * *')
@@ -228,13 +251,18 @@ export class VoiceErasureService {
       if (lease.count !== 1) continue;
       claimed.push({
         id: row.id,
-        kind: row.kind === 'owner_folder' ? 'owner_folder' : 'object',
+        kind: asKind(row.kind),
         target: row.target,
         attempts: row.attempts,
       });
     }
     if (claimed.length === 0) return { completed: 0, pending: 0 };
-    const outcome = await attemptVoiceErasures(this.prisma, this.storage, claimed, this.logger);
+    const outcome = await attemptVoiceErasures(
+      this.prisma,
+      { voice: this.storage, images: this.images },
+      claimed,
+      this.logger,
+    );
     this.logger.log(
       `voice erasure retry: completed=${outcome.completed} pending=${outcome.pending}`,
     );
