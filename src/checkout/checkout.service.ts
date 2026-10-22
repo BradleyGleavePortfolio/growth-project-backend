@@ -29,7 +29,7 @@ import { purchaseTrialView, type PurchaseTrialView } from '../packages/trials/tr
 import { COACH_PURCHASE_SELECT, type CoachPurchaseView } from './coach-payments.select';
 import { keepMoneyRecordsOnly, type MoneyRecord } from './moved-client-money';
 import { readPlanRenewal, type PlanRenewalView } from './plan-renewal/plan-renewal.state';
-import { houseJoinFrom } from './plan-renewal/house-join';
+import { houseJoinToBuy } from './plan-renewal/house-join';
 import { ContractRequiredException } from '../contracts/contract-required.exception';
 import type { TrialOffer } from '../packages/trials/trial-usage.service';
 import {
@@ -428,7 +428,7 @@ export class CheckoutService {
     // never confirm that the package exists on another coach.
     if (
       !client.coach_id ||
-      (client.coach_id !== pkg.coach_id && !(await houseJoinFrom(this.prisma, client.id, pkg.coach_id)))
+      (client.coach_id !== pkg.coach_id && !(await houseJoinToBuy(this.prisma, client.id, pkg)))
     ) {
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',
@@ -709,7 +709,7 @@ export class CheckoutService {
     if (
       client.coach_id &&
       pkg.coach_id !== client.coach_id &&
-      !(await houseJoinFrom(this.prisma, client.id, pkg.coach_id))
+      !(await houseJoinToBuy(this.prisma, client.id, pkg))
     ) {
       throw new NotFoundException({
         error: 'PACKAGE_NOT_FOUND',

@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { CoachPackage, Prisma, PrismaClient } from '@prisma/client';
 import { deleteDraftsLeftByMove } from '../../coach/moved-client-drafts';
 import type {
   MoveCancelledSession,
@@ -6,6 +6,7 @@ import type {
 } from '../../scheduling/scheduling-session-lifecycle.service';
 import { houseCoachUserId, isPlanRenewalEnabled } from './plan-renewal.cadence';
 import { readPlanRenewal } from './plan-renewal.state';
+import { packageTrialDays } from '../subscription-plan';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -17,9 +18,9 @@ type Db = PrismaClient | Prisma.TransactionClient;
  * 29) and offers TGP's house coach (HOUSE_COACH_USER_ID: a live coach account,
  * never the client's own coach), and only for that house coach's packages.
  * One rule for the package list and every checkout path. At payment the
- * move drops only the window (anyDay): a free trial bought inside it may take
- * its first payment after day 29. Returns the coach the client would leave,
- * or null (closed).
+ * move drops only the window (anyDay): a payment started inside it may be
+ * confirmed after day 29. Returns the coach the client would leave, or null
+ * (closed).
  */
 export async function houseJoinFrom(
   db: Db,
@@ -32,6 +33,25 @@ export async function houseJoinFrom(
   const view = await readPlanRenewal(db, clientUserId, undefined, now);
   const open = view.state === 'ended' && (anyDay || view.banner_due) && view.house_coach?.id === packageCoachId;
   return open ? (view.coach?.id ?? null) : null;
+}
+
+/** #166-6 HOUSE-TRIALS ("offer no free trials from the house in v1"). */
+export const freeTrialPackage = (pkg: CoachPackage): boolean => packageTrialDays(pkg) > 0;
+
+/**
+ * The door for one package, used by the package detail and all three checkout
+ * paths (the list filters its rows with freeTrialPackage): a house package
+ * that offers a free trial is not part of the door, so it gets the same 404
+ * as any other cross-coach package. The door sells only packages that take
+ * payment at checkout, and a door purchase never starts a trial.
+ */
+export async function houseJoinToBuy(
+  db: Db,
+  clientUserId: string,
+  pkg: CoachPackage,
+): Promise<string | null> {
+  if (freeTrialPackage(pkg)) return null;
+  return await houseJoinFrom(db, clientUserId, pkg.coach_id);
 }
 
 /**

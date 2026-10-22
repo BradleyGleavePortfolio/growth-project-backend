@@ -29,7 +29,11 @@ import { PackageValidationFilter } from './package-validation.filter';
 import { PackageIdempotencyFilter } from './package-idempotency.filter';
 import { TrialUsageService } from './trials/trial-usage.service';
 import { isFreePackage, packageQuote, resumableAttempts } from '../checkout/checkout.service';
-import { houseJoinFrom } from '../checkout/plan-renewal/house-join';
+import {
+  freeTrialPackage,
+  houseJoinFrom,
+  houseJoinToBuy,
+} from '../checkout/plan-renewal/house-join';
 
 const packageUnavailable = () =>
   new NotFoundException({ error: 'PACKAGE_NOT_FOUND', message: 'Package not available' });
@@ -252,9 +256,10 @@ export class ClientPackagesController {
   // student has no coach yet — mobile renders a "no offers" state. Owner kept
   // for support; coaches do not consume this surface.
   // HOUSE-JOIN-BE — ?coach_id=<renewal.house_coach.id> lists TGP's house
-  // coach's packages that charge (the door is a purchase) while the house
-  // door is open for this client; otherwise (also for the house coach's own
-  // clients, who use the plain list) the purchase's non-leaking 404.
+  // coach's packages that charge at checkout (the door is a purchase; no $0
+  // and no free trial, #166-6) while the house door is open for this client;
+  // otherwise (also for the house coach's own clients, who use the plain
+  // list) the purchase's non-leaking 404.
   @Roles('student', 'owner')
   @Get('packages')
   @SkipClientEntitlement()
@@ -269,7 +274,9 @@ export class ClientPackagesController {
       return { packages: [] };
     }
     const listed = await this.packages.listPublicForCoach(coachId);
-    const rows = houseCoachId ? listed.filter((row) => !isFreePackage(row)) : listed;
+    const rows = houseCoachId
+      ? listed.filter((row) => !isFreePackage(row) && !freeTrialPackage(row))
+      : listed;
     // B-TRIALS — each package carries trial_offer for THIS client, so the
     // sheet shows "7-day free trial, then $49 per month" only when the client
     // would really get it (one free trial per client per coach).
@@ -293,8 +300,8 @@ export class ClientPackagesController {
   // Student fetches one of their assigned coach's offers for the purchase
   // sheet. The handler re-validates coach_id match + is_active + !archived +
   // published_at before returning. Owner kept for support; coaches do not
-  // consume this. HOUSE-JOIN-BE: a house coach package that charges, while
-  // the house door is open for this client.
+  // consume this. HOUSE-JOIN-BE: a house coach package that charges at
+  // checkout (no free trial), while the house door is open for this client.
   @Roles('student', 'owner')
   @Get('packages/:id')
   @SkipClientEntitlement()
@@ -308,7 +315,7 @@ export class ClientPackagesController {
       // PR-6 — DRAFT packages must not appear on the buy-side.
       !row.published_at ||
       (row.coach_id !== coachId &&
-        (isFreePackage(row) || !(await houseJoinFrom(this.prisma, req.user.id, row.coach_id))))
+        (isFreePackage(row) || !(await houseJoinToBuy(this.prisma, req.user.id, row))))
     ) {
       throw packageUnavailable();
     }
