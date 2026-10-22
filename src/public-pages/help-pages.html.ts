@@ -805,7 +805,7 @@ function baseDocument(active: HelpPage, c: HelpPageContent): string {
   :root { color-scheme: light; }
   html, body { margin: 0; padding: 0; background: #FBF8F3; color: #1F1B16; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; min-height: 100vh; padding: 32px 20px 64px; }
-  main { max-width: 760px; width: 100%; margin: 0 auto; text-align: left; overflow-wrap: anywhere; }
+  main { max-width: 760px; width: 100%; margin: 0 auto; text-align: left; overflow-wrap: break-word; }
   header.brand { display: flex; align-items: center; justify-content: space-between; margin-bottom: 40px; gap: 16px; flex-wrap: wrap; }
   header.brand .wordmark { display: inline-flex; align-items: center; min-height: 44px; font-family: "Iowan Old Style", Georgia, serif; font-weight: 500; font-size: 18px; letter-spacing: 0.02em; color: #1F1B16; text-decoration: none; }
   nav.help-nav { display: flex; flex-wrap: wrap; margin: 0 -8px; }
@@ -832,7 +832,7 @@ function baseDocument(active: HelpPage, c: HelpPageContent): string {
     table.intake td { padding: 2px 0; border: 0; }
     table.intake td:first-child { font-weight: 600; color: #1F1B16; }
     table.intake td[data-label] { display: grid; grid-template-columns: 84px minmax(0, 1fr); align-items: baseline; }
-    table.intake td[data-label]::before { content: attr(data-label); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #8A7F6E; }
+    table.intake td[data-label]::before { content: attr(data-label); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #3A332B; }
   }
   p.footnote { margin: 40px 0 0 0; font-size: 13px; line-height: 1.55; color: #8A7F6E; font-style: italic; }
   footer.brand-footer { margin-top: 48px; padding-top: 24px; border-top: 1px solid #E8E1D4; font-size: 13px; color: #8A7F6E; display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-between; }

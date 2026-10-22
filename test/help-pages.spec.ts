@@ -316,8 +316,26 @@ describe('PublicPagesController help pages', () => {
     for (const label of ['Type', 'Required', 'Notes']) {
       expect(html).toContain(`<td role="cell" data-label="${label}">`);
     }
-    expect(html).toMatch(/\n  main \{[^}]*overflow-wrap: anywhere;/);
+    // break-word, not anywhere: words in the wide contact table stay whole (FIX-1126-R2 B1).
+    expect(html).toMatch(/\n  main \{[^}]*overflow-wrap: break-word;/);
+    expect(html).not.toContain('overflow-wrap: anywhere');
     expect(html).toMatch(/\n  nav\.help-nav \{[^}]*margin: 0 -8px;/);
     expect(html).toMatch(/\n  nav\.help-nav \.nav-link \{[^}]*padding: 0 8px;/);
+  });
+
+  // FIX-1126-R2 (Sol B1): the 12 px phone labels meet WCAG AA 4.5:1 on the page paper.
+  it('contact phone labels Type / Required / Notes meet AA contrast', () => {
+    const html = renderHelpPage('contact');
+    const label = /table\.intake td\[data-label\]::before \{[^}]*color: (#[0-9A-F]{6});/.exec(html)?.[1];
+    expect(label).toBe('#3A332B');
+    const lum = (hex: string) => {
+      const [r, g, b] = [1, 3, 5].map((i) => {
+        const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+        return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (lum('#FBF8F3') + 0.05) / (lum(label as string) + 0.05);
+    expect(ratio).toBeGreaterThanOrEqual(4.5);
   });
 });
