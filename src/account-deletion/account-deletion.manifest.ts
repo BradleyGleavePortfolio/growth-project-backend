@@ -366,6 +366,9 @@ export const ERASURE_MANIFEST: ReadonlyArray<ErasureEntry> = [
   { model: 'PushOutbox', field: 'user_id', action: del },
   { model: 'NudgeLog', field: 'user_id', action: del },
   { model: 'PaymentReminder', field: 'recipient_user_id', action: del },
+  // RENEWAL-BE: plan-renewal sequence state (pop-up acks, the push claims); erased with either person.
+  { model: 'PlanRenewal', field: 'client_user_id', action: del },
+  { model: 'PlanRenewal', field: 'coach_user_id', action: del },
   { model: 'EmailSendLog', field: 'recipient_email', action: del, match: 'email' },
 
   // ── Coach workspace, briefs, landing pages, CRM, calendar credentials

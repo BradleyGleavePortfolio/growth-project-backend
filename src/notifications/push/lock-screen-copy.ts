@@ -109,6 +109,11 @@ const TEMPLATES: Record<string, LockScreenCopy> = {
     title: 'New purchase',
     body: `A client bought a package. ${OPEN}`,
   },
+  // RENEWAL-BE: one line for every renewal step; no coach name on the lock screen.
+  [NotificationKind.PLAN_RENEWAL]: {
+    title: 'Your plan',
+    body: 'Your plan has ended. Open the app to see your options.',
+  },
 };
 
 // Owner 22a, 57 and ROMAN-CRISIS-ALERT: the lock-screen line of the Roman

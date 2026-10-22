@@ -28,6 +28,7 @@ import {
 import { purchaseTrialView, type PurchaseTrialView } from '../packages/trials/trial-view';
 import { COACH_PURCHASE_SELECT, type CoachPurchaseView } from './coach-payments.select';
 import { keepMoneyRecordsOnly, type MoneyRecord } from './moved-client-money';
+import { readPlanRenewal, type PlanRenewalView } from './plan-renewal/plan-renewal.state';
 import { ContractRequiredException } from '../contracts/contract-required.exception';
 import type { TrialOffer } from '../packages/trials/trial-usage.service';
 import {
@@ -1247,6 +1248,11 @@ export class CheckoutService {
       status: stripeStatus,
       package_name: pkgWithRelation.package?.name ?? null,
     };
+  }
+
+  /** RENEWAL-BE: the `renewal` block of GET /v1/checkout/entitlement (plan-renewal.state.ts). */
+  planRenewal(userId: string, coachUserId?: string): Promise<PlanRenewalView> {
+    return readPlanRenewal(this.prisma, userId, coachUserId);
   }
 
   // Entitlement check: does this client currently have an active purchase

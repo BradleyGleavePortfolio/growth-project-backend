@@ -65,7 +65,7 @@ export function formatClock(d: Date, tz: string): string {
 }
 
 /** Calendar date of `d` in `tz` as a UTC-midnight day number. */
-function localDayNumber(d: Date, tz: string): number {
+export function localDayNumber(d: Date, tz: string): number {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: tz,
     year: 'numeric',
