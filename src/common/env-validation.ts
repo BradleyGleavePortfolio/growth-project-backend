@@ -2235,6 +2235,14 @@ export const ENV_RULES: EnvRule[] = [
     reason: 'Community wearable prompts.',
   },
   {
+    name: 'FEATURE_COMMUNITY_SPACE_PUSH',
+    values: ['true', 'false'],
+    unsetIs: 'off',
+    tier: 'optional',
+    default: 'unset → off (only "true")',
+    reason: 'SC-PUSH: space chat push (collapsing unread notification, reply and High alert priority).',
+  },
+  {
     name: 'FEATURE_MWB_AI_LIVE_CREATE',
     values: ['true', 'false'],
     unsetIs: 'off',

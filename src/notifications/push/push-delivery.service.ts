@@ -20,6 +20,7 @@ import { usableTimeZone } from '../local-time';
 import { resolveRecipientTimeZone } from '../recipient-timezone';
 import { pushStillCurrent } from '../current-coach-inbox';
 import { planRenewalPushStillDue } from '../../checkout/plan-renewal/plan-renewal.state';
+import { asSpacePushContext, spacePushExpoFields } from '../../community/space-push/space-push-policy';
 
 // Device delivery for inbox notifications (C-643-2), through a durable
 // outbox (B-NOTIF-5: B-648-1, B-648-6, C-648-4 / OR-113-5, C-648-5).
@@ -184,6 +185,8 @@ function asContext(v: Prisma.JsonValue | null): PushContext | null {
     Object.prototype.hasOwnProperty.call(SAFETY_ALERT_PUSH_BODY, o.safetyAlert)
       ? { safetyAlert: o.safetyAlert }
       : {}),
+    // SC-PUSH: a space chat push keeps its count, kind and space.
+    ...asSpacePushContext(o.spacePush),
   };
 }
 
@@ -607,6 +610,8 @@ export class PushDeliveryService {
         sound: 'default',
         channelId: androidChannelFor(row.kind),
         priority: 'high',
+        // SC-PUSH: the space's unread notification collapses and later updates are quiet.
+        ...spacePushExpoFields(context?.spacePush),
       };
 
       let ticket: ExpoPushTicket | undefined;

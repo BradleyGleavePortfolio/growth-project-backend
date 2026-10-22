@@ -1,11 +1,4 @@
-import {
-  IsObject,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-  MinLength,
-} from 'class-validator';
+import { IsBoolean, IsObject, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { z } from 'zod';
 import { PlanContextTagSchema } from '../plan-context/plan-context.dto';
@@ -37,6 +30,11 @@ export class CreateMessageDto {
   @IsOptional()
   @IsUUID('4')
   parent_message_id?: string;
+
+  // SC-PUSH: a coach's High alert (the coach of the space only, 3 a day).
+  @IsOptional()
+  @IsBoolean()
+  high_alert?: boolean;
 }
 
 /** PATCH /community/messages/:messageId — edit own message (5-min window). */
