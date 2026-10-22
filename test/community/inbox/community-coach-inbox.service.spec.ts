@@ -9,6 +9,7 @@
 import { ForbiddenException } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { CommunityCoachInboxService } from '../../../src/community/inbox/community-coach-inbox.service';
+import { CoachInboxQueryDto } from '../../../src/community/inbox/community-coach-inbox.dto';
 import type {
   MessageWithSender,
   PostWithAuthor,
@@ -181,7 +182,7 @@ describe('CommunityCoachInboxService', () => {
   // VOICE-INBOX (owner #167-4 op 1): a client's space voice note is a row in the same message stream.
   it('asks the repository for the voice notes the calling coach can hear', async () => {
     repo.coachedCohortIds.mockResolvedValue([COHORT_1]);
-    await service.list(coach, {} as never);
+    await service.list(coach, new CoachInboxQueryDto());
     expect(repo.unansweredMessages).toHaveBeenCalledWith(expect.objectContaining({ voiceFor: coach.id }));
   });
 
@@ -190,7 +191,7 @@ describe('CommunityCoachInboxService', () => {
     const voice = msg({ id: 'aaaaaaaa-0000-0000-0000-000000000009', kind: 'voice', body: null, voice_duration_ms: 42_000 });
     repo.unansweredMessages.mockResolvedValue([msg(), voice]);
     repo.unansweredPosts.mockResolvedValue([post()]);
-    const res = await service.list(coach, {} as never);
+    const res = await service.list(coach, new CoachInboxQueryDto());
     expect(res.items.map((i) => [i.type, i.kind, i.preview])).toEqual([
       ['message', 'text', 'help please'],
       ['message', 'voice', 'Voice note'],
