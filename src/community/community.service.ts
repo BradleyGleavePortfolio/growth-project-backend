@@ -6,7 +6,7 @@ import { CommunitySafetyService } from './safety/community-safety.service';
 import { memberName } from './member-display-name';
 import { fullNamesFor } from './community-space-access';
 import { isBannedFromWorkspace } from './community-ban';
-import { spaceChatOn, spaceUnreadCounts } from './space-reads/community-space-reads.service';
+import { spaceUnreadCounts } from './space-reads/community-space-reads.service';
 import {
   WIN_NOT_FOUND,
   WIN_POSTING_REMOVED,
@@ -331,8 +331,8 @@ export class CommunityService {
       userId: user.id,
       role: this.scopingRole(user),
     });
-    // SC-BE2: each space's unread badge, only with the space chat switch on.
-    const unread = spaceChatOn() ? await spaceUnreadCounts(this.prisma, user.id, cohorts.map((c) => c.id)) : null;
+    // SC-BE2: each space's unread badge (one round trip for the list).
+    const unread = await spaceUnreadCounts(this.prisma, user.id, cohorts.map((c) => c.id));
 
     const summaries = await Promise.all(
       cohorts.map(async (c) => ({
@@ -345,7 +345,7 @@ export class CommunityService {
         visibility: c.visibility,
         member_count: await this.repo.cohortMemberCount(c),
         my_role: role,
-        ...(unread ? { unread_count: unread.get(c.id) ?? 0 } : {}),
+        unread_count: unread.get(c.id) ?? 0,
       })),
     );
 

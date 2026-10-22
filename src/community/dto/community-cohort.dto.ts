@@ -24,7 +24,7 @@ const CommunityCohortSummarySchema = z
     visibility: z.enum(SPACE_VISIBILITIES),
     member_count: z.number().int().nonnegative(),
     my_role: CommunityMemberRoleSchema,
-    unread_count: z.number().int().min(0).max(99).optional(), // SC-BE2: only with FEATURE_COMMUNITY_SPACE_CHAT on
+    unread_count: z.number().int().min(0).max(99).optional(), // SC-BE2: on GET /community/cohorts rows; 99 = 99+
   })
   .strict();
 

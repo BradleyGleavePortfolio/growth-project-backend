@@ -64,7 +64,6 @@ const DENIED = '42501';
     .catch((e: { code?: string; meta?: { code?: string } }) => String(e.code === 'P2010' ? e.meta?.code : e.code));
 
   beforeAll(async () => {
-    process.env.FEATURE_COMMUNITY_SPACE_CHAT = 'true';
     for (const k of PEOPLE) {
       await prisma.$executeRaw`INSERT INTO "User" ("id", "supabase_id", "email", "name", "role", "coach_id")
         VALUES (${id[k]}, ${sub[k]}, ${`reads-${id[k]}`}, ${`Reads ${k}`}, ${ROLE(k)}::"Role", ${COACH[k] ? id[COACH[k] as 'A' | 'B'] : null})`;
@@ -84,7 +83,6 @@ const DENIED = '42501';
     }
   });
   afterAll(async () => {
-    delete process.env.FEATURE_COMMUNITY_SPACE_CHAT;
     await prisma.$disconnect();
   });
 
@@ -139,17 +137,30 @@ const DENIED = '42501';
     expect((await community.getCohorts(user('X'))).cohorts.map((c) => c.id)).not.toContain(space.mem);
   });
 
-  it('unread_count stops at 99; with the switch off the list has none and the routes answer 404', async () => {
+  it('unread_count stops at 99', async () => {
     await prisma.communityMessage.createMany({ data: Array.from({ length: 101 }, (_, i) => ({ workspace_id: ws.A,
       cohort_id: space.big, scope: 'cohort', sender_id: id.A, body: `n${i}`, created_at: new Date(t0 + 1000 * ++tick) })) });
     expect(await unread('N', 'big')).toBe(99);
-    process.env.FEATURE_COMMUNITY_SPACE_CHAT = 'false';
-    try {
-      expect(await unread('N', 'big')).toBeUndefined();
-      expect(await status(routes.getRead(req('O'), space.mem))).toBe(404);
-    } finally {
-      process.env.FEATURE_COMMUNITY_SPACE_CHAT = 'true';
-    }
+  });
+
+  it('notifications: defaults by space, a chosen mode, a silence that ends, and the same access rule', async () => {
+    const at = (k: Key, s: Space) => routes.getNotify(req(k), space[s]);
+    expect(await at('N', 'ann')).toEqual({ mode: 'all', default_mode: 'all', effective_mode: 'all', silenced_until: null });
+    expect(await at('O', 'mem')).toEqual({ mode: 'mute_low', default_mode: 'mute_low', effective_mode: 'mute_low', silenced_until: null });
+    expect((await routes.setMode(req('O'), space.mem, { mode: 'all' })).effective_mode).toBe('all');
+    const quiet = await routes.silence(req('O'), space.mem, { hours: 8 });
+    expect([quiet.mode, quiet.effective_mode]).toEqual(['all', 'mute_all']);
+    expect(Date.parse(quiet.silenced_until ?? '') - Date.now()).toBeGreaterThan(7.9 * 3_600_000);
+    await prisma.communitySpaceRead.update({ where: { user_id_cohort_id: { user_id: id.O, cohort_id: space.mem } },
+      data: { silenced_until: new Date(Date.now() - 1000) } });
+    expect(await at('O', 'mem')).toMatchObject({ mode: 'all', effective_mode: 'all', silenced_until: null }); // ended
+    await routes.silence(req('O'), space.mem, { hours: 1 });
+    expect((await routes.unsilence(req('O'), space.mem)).effective_mode).toBe('all');
+    expect((await routes.getRead(req('O'), space.mem)).last_read_message_id).not.toBeNull(); // the read line stays
+    expect(await at('V', 'mem')).toMatchObject({ mode: 'mute_low' }); // O's choice is O's alone
+    expect(await status(at('N', 'mem'))).toBe(403);
+    expect(await status(routes.setMode(req('X'), space.mem, { mode: 'mute_all' }))).toBe(403);
+    expect(await status(routes.silence(req('B'), space.mem, { hours: 24 }))).toBe(403);
   });
 
   it('row security: own rows only; a row only for a space the writer can read now', async () => {
