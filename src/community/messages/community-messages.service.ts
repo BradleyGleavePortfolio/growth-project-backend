@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import type { CommunityMessage, User } from '@prisma/client';
+import type { CommunityCohort, CommunityMessage, User } from '@prisma/client';
 import { CommunityAccessService } from '../community-access.service';
 import { CommunityRealtimeService } from '../realtime/community-realtime.service';
 import { COMMUNITY_BROADCAST_EVENTS } from '../community-events';
@@ -24,6 +24,7 @@ import {
 } from '../dto/community-message.dto';
 import { CommunitySafetyService } from '../safety/community-safety.service';
 import { placeOf } from '../community-space-access';
+import { memberName } from '../member-display-name';
 import { CommunityNotificationsService } from '../notifications/community-notifications.service';
 import { NotificationKind } from '../../notifications/notification-kind';
 import { describeFailure } from '../../observability/log-pii';
@@ -36,6 +37,15 @@ const NOT_FOUND = {
   error: 'not_found',
   code: 'community.message.not_found',
 } as const;
+
+/** SC-BE1: how much of the answered message a reply quotes. */
+const QUOTE_CHARS = 120;
+
+/** SC-BE1: a quote of a message the viewer may no longer see says only that. */
+const GONE = { gone: true, kind: null, sender_name: null, snippet: null, voice_duration_ms: null } as const;
+
+/** SC-BE1: the sender and reply quote a space chat read adds to one row. */
+type ChatOf = (m: CommunityMessage) => Pick<CommunityMessageView, 'sender' | 'parent'>;
 
 /**
  * Cohort-channel messages (group chat within a cohort).
@@ -61,7 +71,11 @@ export class CommunityMessagesService {
     private readonly communityPush: CommunityNotificationsService,
   ) {}
 
-  private view(m: CommunityMessage, voice?: Map<string, ChatVoiceNote>): CommunityMessageView {
+  private view(
+    m: CommunityMessage,
+    voice?: Map<string, ChatVoiceNote>,
+    chat?: ChatOf,
+  ): CommunityMessageView {
     return {
       id: m.id,
       cohort_id: m.cohort_id,
@@ -80,7 +94,73 @@ export class CommunityMessagesService {
       ...(acksEnabled() ? { ack: this.viewAck(m) } : {}),
       parent_message_id: m.parent_message_id ?? null,
       voice_note: (!m.deleted_at && voice?.get(m.id)) || null,
+      ...(chat ? chat(m) : {}),
     };
+  }
+
+  /**
+   * SC-BE1: who sent each row and what each reply answers, as this viewer may
+   * see them, in one batch per page. Names follow the voice note rule
+   * (#C6-NAMES-EVERYWHERE: full names in a space open to all of a coach's
+   * clients, first names elsewhere). A parent that is deleted or removed, whose
+   * author is blocked either way, or whose author left reads `gone` and nothing
+   * else: no words, name or length.
+   */
+  private async chatOf(user: User, cohort: CommunityCohort, rows: CommunityMessage[]): Promise<ChatOf> {
+    const x = await this.repo.chatExtras(user.id, cohort.workspace_id, cohort.id, rows);
+    const live = x.parents.filter((p) => !p.deleted_at && p.plan_context_type === null);
+    const parents = new Map(
+      (await this.safety.filterBlocked(user.id, live, (p) => p.sender_id, placeOf)).map((p) => [p.id, p]),
+    );
+    const name = (m: CommunityMessage) =>
+      memberName(x.people.get(m.sender_id)?.name, x.fullName(m.cohort_id, m.sender_id));
+    return (m) => {
+      const p = m.parent_message_id ? parents.get(m.parent_message_id) : undefined;
+      const voice = p?.kind === 'voice';
+      return {
+        sender: {
+          id: m.sender_id,
+          name: name(m),
+          avatar_url: x.people.get(m.sender_id)?.profile?.avatar_url ?? null,
+          is_coach: m.sender_id === x.coachId,
+        },
+        parent: !m.parent_message_id
+          ? null
+          : p
+            ? {
+                id: p.id,
+                gone: false,
+                kind: p.kind,
+                sender_name: name(p),
+                snippet: voice ? null : Array.from(p.body ?? '').slice(0, QUOTE_CHARS).join(''),
+                voice_duration_ms: voice ? p.voice_duration_ms : null,
+              }
+            : { id: m.parent_message_id, ...GONE },
+      };
+    };
+  }
+
+  /**
+   * SC-BE1: a text reply obeys the voice reply rule line for line (VOICE-BE,
+   * community-voice.service.ts replyParent): the parent is a live plain chat
+   * message in the same space whose author the caller can see; a reply to a
+   * reply joins the first message's thread (one level). Anything else is the
+   * message 404 (no new words).
+   */
+  private async replyParent(
+    user: User,
+    cohortId: string,
+    parentId: string | undefined,
+  ): Promise<{ id: string; at: Date } | null> {
+    if (!parentId) return null;
+    const m = await this.repo.findById(parentId);
+    if (!m || m.scope !== 'cohort' || m.cohort_id !== cohortId || m.deleted_at || m.plan_context_type !== null) {
+      throw new NotFoundException(NOT_FOUND);
+    }
+    await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND, placeOf(m));
+    return m.parent_message_id && m.parent_message_at
+      ? { id: m.parent_message_id, at: m.parent_message_at }
+      : { id: m.id, at: m.created_at };
   }
 
   /** VOICE-BE: the voice notes behind this page's live voice messages (one read; none for text). */
@@ -166,6 +246,7 @@ export class CommunityMessagesService {
     cohortId: string,
     body: string,
     planContextRaw?: unknown,
+    parentId?: string,
   ): Promise<CommunityMessageResponse> {
     const cohort = await this.access.findCohort(cohortId);
     // Treat a missing cohort and an unauthorised cohort identically (404).
@@ -173,7 +254,9 @@ export class CommunityMessagesService {
       throw new NotFoundException(NOT_FOUND);
     }
     // C6-B1: a section takes no messages; a coach-only space only the coach's.
-    await this.access.assertCanPost(cohort, user);
+    // SC-BE1 (the voice rule, FIX-1122-R1): a reply needs only access there.
+    if (!parentId || cohort.kind === 'section') await this.access.assertCanPost(cohort, user);
+    const parent = await this.replyParent(user, cohort.id, parentId);
     // Apple 1.2: objectionable-content filter before anything is written.
     this.safety.assertAllowed(body);
     // v2-1: validate + authorize any attached plan-context tag BEFORE the write
@@ -185,6 +268,7 @@ export class CommunityMessagesService {
       senderId: user.id,
       body,
       planContext,
+      parent,
     });
     // v1-6 coach-inbox producer: a coach/owner message into the cohort answers
     // the cohort's outstanding client messages, so stamp coach_replied_at on
@@ -276,9 +360,12 @@ export class CommunityMessagesService {
     // Block filter AFTER the cursor is computed from the unfiltered page, so
     // pagination stays stable and a hidden row never becomes the cursor.
     const visible = await this.safety.filterBlocked(user.id, rows, (m) => m.sender_id, placeOf);
-    const voice = await this.voiceOf(user, visible);
+    const [voice, chat] = await Promise.all([
+      this.voiceOf(user, visible),
+      this.chatOf(user, cohort, visible),
+    ]);
     return CommunityMessageListResponseSchema.parse({
-      messages: visible.map((m) => this.view(m, voice)),
+      messages: visible.map((m) => this.view(m, voice, chat)),
       next_before: next,
     });
   }
@@ -299,7 +386,8 @@ export class CommunityMessagesService {
     }
     // Two-way block: a direct id read cannot go around the list filter.
     await this.safety.assertVisibleTo(user.id, m.sender_id, NOT_FOUND, placeOf(m));
-    return CommunityMessageResponseSchema.parse({ message: this.view(m, await this.voiceOf(user, [m])) });
+    const [voice, chat] = await Promise.all([this.voiceOf(user, [m]), this.chatOf(user, cohort, [m])]);
+    return CommunityMessageResponseSchema.parse({ message: this.view(m, voice, chat) });
   }
 
   async edit(user: User, messageId: string, body: string): Promise<CommunityMessageResponse> {

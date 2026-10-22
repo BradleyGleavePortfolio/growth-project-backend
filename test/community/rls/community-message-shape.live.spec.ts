@@ -103,6 +103,26 @@ itLive('community_messages scope-shape CHECK (live DB, B-610-7)', () => {
     await insert({ scope: 'dm', cohort: false, dmKey: `dm:${tag}`, type: null, contextId: false });
   });
 
+  it('SC-BE1: stores a plain text reply naming the first message of its thread', async () => {
+    const root = await prisma.communityMessage.create({
+      data: { workspace_id: wsId, cohort_id: cohortId, scope: 'cohort', sender_id: coachId, body: 'root' },
+    });
+    const reply = await prisma.communityMessage.create({
+      data: {
+        workspace_id: wsId,
+        cohort_id: cohortId,
+        scope: 'cohort',
+        kind: 'text',
+        sender_id: coachId,
+        body: 'reply',
+        parent_message_id: root.id,
+        parent_message_at: root.created_at,
+      },
+    });
+    expect(reply).toMatchObject({ kind: 'text', plan_context_type: null, parent_message_id: root.id });
+    expect(reply.parent_message_at?.getTime()).toBe(root.created_at.getTime());
+  });
+
   it('refuses the cohort-less untagged row the NULL discriminator used to admit', async () => {
     await expectRefused({ scope: 'cohort', cohort: false, dmKey: null, type: null, contextId: true });
   });
