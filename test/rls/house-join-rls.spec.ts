@@ -49,7 +49,7 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
   const supa: Record<string, string> = Object.fromEntries(keys.map((k) => [k, randomUUID()]));
   const coachOf: Record<string, string> = { A: 'K', O: 'K', E: 'K', Q: 'H' };
   const isCoach = (k: string) => 'KLH'.includes(k);
-  const pkg = { PH: randomUUID(), PHR: randomUUID(), PH0: randomUUID(), PL: randomUUID() };
+  const pkg = { PH: randomUUID(), PHR: randomUUID(), PHT: randomUUID(), PH0: randomUUID(), PL: randomUUID() };
   const PI = `pi_house_${u.A}`;
   const env = { flag: process.env.FEATURE_PLAN_RENEWAL, house: process.env.HOUSE_COACH_USER_ID };
 
@@ -167,6 +167,8 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
       data: [
         { id: pkg.PH, coach_id: u.H, name: 'House coaching', amount_cents: 20000, published_at: published },
         { id: pkg.PHR, coach_id: u.H, name: 'House monthly', amount_cents: 9900, billing_type: 'recurring', interval: 'month', published_at: published },
+        // #166-6 HOUSE-TRIALS: a house package with a free trial is not part of the door.
+        { id: pkg.PHT, coach_id: u.H, name: 'House trial', amount_cents: 9900, billing_type: 'recurring', interval: 'month', trial_days: 7, published_at: published },
         { id: pkg.PH0, coach_id: u.H, name: 'House starter', amount_cents: 0, published_at: published },
         { id: pkg.PL, coach_id: u.L, name: 'Lee coaching', amount_cents: 20000, published_at: published },
       ],
@@ -193,7 +195,7 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     expect(await view('O')).toMatchObject({ state: 'ended', banner_due: false });
   });
 
-  it('while the door is open every way to buy gets past it, and the list shows the house packages that charge', async () => {
+  it('while the door is open every way to buy gets past it, and the list shows the house packages that charge at checkout', async () => {
     // Each answer is the next check after the door (H's payouts are not connected yet), never the 404.
     expect(await everyBuy('A', pkg.PH, pkg.PHR, 'H')).toEqual([
       'COACH_NOT_CONNECTED', 'RECURRING_REQUIRES_SUBSCRIPTION', 'ONE_TIME_REQUIRES_PAYMENT_INTENT', 'past the door', 'past the door',
@@ -207,6 +209,11 @@ const quiet = new Proxy({}, { get: (_t, p) => (p === 'then' ? undefined : async 
     expect(await withEnv('FEATURE_PLAN_RENEWAL', 'false', () => everyBuy('A', pkg.PH, pkg.PHR, 'H'))).toEqual(closed);
     expect(await withEnv('HOUSE_COACH_USER_ID', undefined, () => everyBuy('A', pkg.PH, pkg.PHR, 'H'))).toEqual(closed);
     expect(await everyBuy('O', pkg.PH, pkg.PHR, 'H')).toEqual(closed);
+    // #166-6 HOUSE-TRIALS: the house's free-trial package, while the door is open: the list leaves it
+    // out (above) and the detail and all three checkout paths are the same 404; no purchase is written.
+    const [hosted, sheet, plan, , detail] = await everyBuy('A', pkg.PHT, pkg.PHT, 'H');
+    expect([hosted, sheet, plan, detail]).toEqual(Array(4).fill('PACKAGE_NOT_FOUND'));
+    expect(await prisma.clientPurchase.count({ where: { package_id: pkg.PHT } })).toBe(0);
     // The house coach's own client: no house offer, no door, and a payment never moves them.
     expect(await view('Q')).toMatchObject({ state: 'ended', house_coach: null });
     expect(await answer(list('Q', 'H'))).toBe('PACKAGE_NOT_FOUND');
