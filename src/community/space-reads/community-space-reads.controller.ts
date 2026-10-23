@@ -1,7 +1,7 @@
 /**
  * SC-BE2: the space chat's read line and the person's notification setting for a space. Gated by the
- * community API switch (CommunityFeatureFlagGuard). Access is the messages routes' check: 404 for an unknown
- * space, 403 for one the caller cannot read now (another coach's, a members-only space they are not in, a ban).
+ * community API switch (CommunityFeatureFlagGuard). Access is the messages routes' check; a space the caller
+ * cannot read now (another coach's, a members-only space they are not in, a ban) answers 404 like an unknown one.
  */
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Put, Request, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';

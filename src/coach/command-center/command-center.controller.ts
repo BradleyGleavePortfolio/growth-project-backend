@@ -98,7 +98,8 @@ export class CommandCenterController {
       'count, at-risk count, win-streak count, and unread message count. ' +
       'Always scoped to the calling coach. With include=home it also returns ' +
       "`home`: this week's client wins and today's Check-ins, Replies and " +
-      "Reach-outs counts, on the coach's own date (HOME-BE).",
+      "Reach-outs counts, on the coach's own date (HOME-BE), with the ids of " +
+      'the Needs-you clients reached today (REACHED-TODAY).',
   })
   async getOverview(
     @Request() req: AuthedRequest,

@@ -1,4 +1,4 @@
--- 20270502008400_community_space_reads (SC-BE2, agent 168): the space chat's read line, unread count,
+-- 20270502009100_community_space_reads (SC-BE2, agent 168): the space chat's read line, unread count,
 -- per-space notification mode and the coach's high-alert mark.
 --
 -- community_space_reads holds one row per (person, space): where they stopped reading, their notification
@@ -44,6 +44,6 @@ CREATE POLICY "community_space_reads_own" ON "community_space_reads" FOR ALL TO 
   USING ("user_id" = app.current_user_id())
   WITH CHECK ("user_id" = app.current_user_id() AND app.community_can_access("cohort_id", "user_id"));
 COMMENT ON POLICY "community_space_reads_own" ON "community_space_reads" IS
-  '20270502008400: a person reads only their own read rows, and writes one only for a space they can read now.';
+  '20270502009100: a person reads only their own read rows, and writes one only for a space they can read now.';
 
 COMMIT;

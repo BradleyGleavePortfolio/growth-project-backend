@@ -1,4 +1,4 @@
--- Down for 20270502008400_community_space_reads (SC-BE2). Drops the read rows (read lines, notification
+-- Down for 20270502009100_community_space_reads (SC-BE2). Drops the read rows (read lines, notification
 -- modes and silences go back to the defaults) and the high-alert mark on messages.
 
 BEGIN;

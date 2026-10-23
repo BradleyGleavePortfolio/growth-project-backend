@@ -8030,6 +8030,9 @@ model RomanMessage {
   // never sets it but the column ships now so branching is additive later.
   parent_message_id String?
 
+  // COPILOT-BE2: on a Path Copilot reply only, { question_id, sources, suggestion_id }; null on every other turn.
+  copilot Json?
+
   created_at DateTime @default(now())
 
   session RomanSession   @relation(fields: [session_id], references: [id], onDelete: Cascade)
@@ -9201,7 +9204,7 @@ model RomanUsageDaily {
   @@map("roman_usage_daily")
 }
 
-/// SC-BE2 (20270502008400): one row per (person, space): the read line, the notification mode (null = the
+/// SC-BE2 (20270502009100): one row per (person, space): the read line, the notification mode (null = the
 /// space's default) and an optional silence end. RLS forced: own rows, written only for a space the person can read.
 model CommunitySpaceRead {
   user_id              String
