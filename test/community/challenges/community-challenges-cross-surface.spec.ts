@@ -157,7 +157,7 @@ describe('v3-1 cross-surface containment (Finding 1)', () => {
     };
     it('counts only plan_context_type: null cohort messages', async () => {
       const count = jest.fn<Promise<number>, [CountArg]>(async () => 3);
-      const prisma = { communityMessage: { count } };
+      const prisma = { communityMessage: { count }, $queryRaw: async () => [] }; // #168-4: no hidden authors
       const repository = new CommunityRepository(prisma as never);
 
       await repository.countUnreadCohortMessages({

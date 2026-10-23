@@ -1,4 +1,4 @@
--- 20270502008500_community_message_images (SC-BE3, agent 168): photos in the
+-- 20270502009200_community_message_images (SC-BE3, agent 168; FX-1139 agent 170): photos in the
 -- space chat (#167-7 IMAGES op 1). Reverse: down.sql.
 --
 -- 1. CommunityMessageKind gains 'image'. ADD VALUE runs on its own, before the
@@ -11,7 +11,7 @@
 --    service-role connection deletes rows (account erasure) and anon has no
 --    rights. Live proof: test/rls/community-message-images-rls.spec.ts.
 -- 3. community_messages_space_takes_insert counts an image message with a
---    parent as a reply, exactly as text and voice (20270502008300 text, with
+--    parent as a reply, exactly as text and voice (20270502009000 text, with
 --    'image' added).
 -- 4. Private bucket community-images (JPEG only, 10 MB), by the guarded insert
 --    of 20270221000000, and a RESTRICTIVE fence so no API role reads or writes
@@ -51,7 +51,7 @@ CREATE POLICY "community_message_images_read" ON "community_message_images" FOR 
 CREATE POLICY "community_message_images_insert_own" ON "community_message_images" FOR INSERT TO public
   WITH CHECK ("author_id" = app.current_user_id() AND app.community_can_access("cohort_id", app.current_user_id()));
 COMMENT ON TABLE "community_message_images" IS
-  '20270502008500: the photo behind a kind image space chat message; the object is at storage_key in the private community-images bucket.';
+  '20270502009200: the photo behind a kind image space chat message; the object is at storage_key in the private community-images bucket.';
 
 ALTER POLICY "community_messages_space_takes_insert" ON "community_messages"
   WITH CHECK (
@@ -62,7 +62,7 @@ ALTER POLICY "community_messages_space_takes_insert" ON "community_messages"
              AND app.community_voice_reply("cohort_id", "parent_message_id", "parent_message_at")))
   );
 COMMENT ON POLICY "community_messages_space_takes_insert" ON "community_messages" IS
-  '20270502008500: restrictive. A space message is inserted only when app.community_can_post lets the sender start it (or reply, for a comment, a challenge opt-in, or a text, voice or image message whose parent is a live plain message of the same space). DMs and Hall rows pass.';
+  '20270502009200: restrictive. A space message is inserted only when app.community_can_post lets the sender start it (or reply, for a comment, a challenge opt-in, or a text, voice or image message answering a thread app.community_voice_reply accepts). DMs and Hall rows pass.';
 
 DO $community_images_bucket$
 BEGIN

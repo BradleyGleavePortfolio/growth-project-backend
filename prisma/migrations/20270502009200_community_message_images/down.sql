@@ -1,6 +1,6 @@
--- Down for 20270502008500_community_message_images (SC-BE3). The bucket and its
+-- Down for 20270502009200_community_message_images (SC-BE3). The bucket and its
 -- fence go only while the bucket holds no object; the photo table goes; the
--- insert policy goes back to its 20270502008300 text. The enum value 'image'
+-- insert policy goes back to its 20270502009000 text. The enum value 'image'
 -- stays: Postgres cannot drop an enum value, and an older server never writes
 -- it (kind 'image' rows, if any, should be soft-deleted before this runs).
 
@@ -32,7 +32,7 @@ ALTER POLICY "community_messages_space_takes_insert" ON "community_messages"
              AND app.community_voice_reply("cohort_id", "parent_message_id", "parent_message_at")))
   );
 COMMENT ON POLICY "community_messages_space_takes_insert" ON "community_messages" IS
-  '20270502008300: restrictive. A space message is inserted only when app.community_can_post lets the sender start it (or reply, for a comment, a challenge opt-in, or a text or voice message whose parent is a live plain message of the same space). DMs and Hall rows pass.';
+  '20270502009000: restrictive. A space message is inserted only when app.community_can_post lets the sender start it (or reply, for a comment, a challenge opt-in, or a text or voice message answering a thread app.community_voice_reply accepts). DMs and Hall rows pass.';
 
 DROP TABLE IF EXISTS "community_message_images";
 

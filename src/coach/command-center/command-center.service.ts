@@ -29,6 +29,7 @@ import { COACH_FITNESS_SCOPES, ConsentScope, ConsentService } from '../../consen
 import { CHURN_FACTOR_SCOPES, coachVisibleFactors } from './churn-factor-scopes';
 import { resolveRecipientTimeZone } from '../../notifications/recipient-timezone';
 import { type CoachHomeDay, loadHomeDay } from './coach-home-day';
+import { inBlockWith } from '../../messaging/block-pair';
 import type { CoachRiskBoardRow } from '../../admin/ptm/admin-ptm.service';
 import type { PtmRiskBucket } from '../../ptm/ptm.types';
 
@@ -595,7 +596,11 @@ export class CommandCenterService {
     const { clientIds: rosterIds } = await this.resolveScope(coachId);
     // CF-SHARE-GATE-128: the churn-risk score and its top factor read all four
     // kinds of logs, so a client appears here only while sharing all four.
-    const { allFour: clientIds } = await this.sharedWith(coachId, rosterIds);
+    const { allFour } = await this.sharedWith(coachId, rosterIds);
+    // #168-4: the Needs-you list offers Message and Ask Roman, so a client in
+    // a block with the coach (either way) is left out.
+    const blocked = await inBlockWith(this.prisma, coachId, allFour);
+    const clientIds = blocked.size ? allFour.filter((id) => !blocked.has(id)) : allFour;
     if (clientIds.length === 0) {
       return { items: [], total_at_risk: 0 };
     }

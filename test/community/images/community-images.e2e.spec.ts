@@ -29,6 +29,7 @@ import type { PrismaService } from '../../../src/prisma.service';
 import type { SupabaseService } from '../../../src/supabase/supabase.service';
 import type { AuthedRequest } from '../../../src/auth/auth-request';
 import { safetyWithBlocks } from '../safety/safety-test-helpers';
+import { InMemoryPrisma } from '../safety/in-memory-prisma';
 
 function stub<T>(v: unknown): T {
   return v as T;
@@ -37,10 +38,12 @@ function stub<T>(v: unknown): T {
 const WS = '22222222-2222-4222-8222-222222222222';
 const OTHER_WS = '22222222-2222-4222-8222-333333333333';
 const SPACE = '11111111-1111-4111-8111-111111111111';
+const SPACE_2 = '11111111-1111-4111-8111-222222222222';
 const FOREIGN_SPACE = '11111111-1111-4111-8111-999999999999';
 const ME = 'aaaaaaaa-0000-4000-8000-000000000001';
 const MATE = 'aaaaaaaa-0000-4000-8000-000000000002';
 const BANNED = 'aaaaaaaa-0000-4000-8000-000000000003';
+const BLOCKED = 'aaaaaaaa-0000-4000-8000-000000000004';
 const MB = 1024 * 1024;
 const HOUR = 3600 * 1000;
 /** A signed upload link's token, as Supabase mints it: a JWT whose exp is 2 hours out. */
@@ -50,6 +53,7 @@ const LINK_TOKEN = `h.${Buffer.from(JSON.stringify({ exp: LINK_EXP_MS / 1000 }))
 const me = stub<User>({ id: ME, role: 'client' });
 const cohorts: Record<string, { id: string; workspace_id: string; kind: string }> = {
   [SPACE]: { id: SPACE, workspace_id: WS, kind: 'group' },
+  [SPACE_2]: { id: SPACE_2, workspace_id: WS, kind: 'group' },
   [FOREIGN_SPACE]: { id: FOREIGN_SPACE, workspace_id: OTHER_WS, kind: 'group' },
 };
 
@@ -94,7 +98,7 @@ function fakeStorage(objects: Map<string, Obj>) {
   return { store: new CommunityImageStore(stub<SupabaseService>({ getClient: () => client })), removed };
 }
 
-function world(opts: { banned?: string[]; access?: (cohortId: string) => boolean } = {}) {
+function world(opts: { banned?: string[]; blocks?: Array<[string, string]>; access?: (cohortId: string) => boolean } = {}) {
   const messages: CommunityMessage[] = [];
   const images: Array<Record<string, unknown>> = [];
   const erasures: Array<Record<string, unknown>> = [];
@@ -122,7 +126,8 @@ function world(opts: { banned?: string[]; access?: (cohortId: string) => boolean
         messages.push(m);
         return m;
       },
-      findMany: async () => [...messages].filter((m) => !m.deleted_at).reverse(),
+      findMany: async ({ where }: { where?: { cohort_id?: string } } = {}) =>
+        [...messages].filter((m) => !m.deleted_at && (!where?.cohort_id || m.cohort_id === where.cohort_id)).reverse(),
       findUnique: async ({ where }: { where: { id: string } }) => messages.find((m) => m.id === where.id) ?? null,
       findFirst: async ({ where }: { where: { id: string } }) => messages.find((m) => m.id === where.id) ?? null,
       update: async ({ where, data }: { where: { id_created_at: { id: string } }; data: Record<string, unknown> }) => {
@@ -140,10 +145,6 @@ function world(opts: { banned?: string[]; access?: (cohortId: string) => boolean
       findMany: async ({ where }: { where: { message_id: { in: string[] } } }) =>
         images.filter((i) => where.message_id.in.includes(String(i.message_id))),
       findUnique: async ({ where }: { where: { message_id: string } }) => images.find((i) => i.message_id === where.message_id) ?? null,
-    },
-    communityWorkspaceBan: {
-      findMany: async ({ where }: { where: { user_id: { in: string[] } } }) =>
-        (opts.banned ?? []).filter((u) => where.user_id.in.includes(u)).map((user_id) => ({ user_id })),
     },
     communityVoiceErasure: {
       findMany: async ({ where }: { where: { next_attempt_at: { lte: Date } } }) =>
@@ -165,7 +166,10 @@ function world(opts: { banned?: string[]; access?: (cohortId: string) => boolean
     communityCohort: { findMany: async () => [] },
     $queryRaw: async () => [],
   };
-  const canAccess = opts.access ?? ((id: string) => id === SPACE);
+  const canAccess = opts.access ?? ((id: string) => id === SPACE || id === SPACE_2);
+  // #170-1: the real safety filter; a ban is on the person, for the coach's whole community (every space).
+  const people = new InMemoryPrisma();
+  for (const user_id of opts.banned ?? []) people.seed('communityWorkspaceBan', { workspace_id: WS, user_id, lifted_at: null });
   const access = stub<CommunityAccessService>({
     findCohort: async (id: string) => cohorts[id] ?? null,
     canAccessCohort: async (c: { id: string }) => canAccess(c.id),
@@ -180,7 +184,7 @@ function world(opts: { banned?: string[]; access?: (cohortId: string) => boolean
     repo,
     stub<CommunityRealtimeService>({ channels: { cohort: () => 'c' }, cohortShard: () => 0, broadcastCommunityEvent: async () => undefined }),
     stub<PlanContextService>({ validate: async () => null }),
-    safetyWithBlocks([]),
+    safetyWithBlocks(opts.blocks ?? [], people),
     stub<CommunityNotificationsService>({ pushEnabled: () => false }),
     store,
   );
@@ -301,14 +305,44 @@ describe('POST messages kind image (SC-BE3)', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it('hides a photo from an author banned in the workspace', async () => {
+  it('hides the photos of a person banned from the community in every space, for everyone, and a quote of one reads gone (#170-1)', async () => {
     const w = world({ banned: [BANNED] });
     const key = await uploaded(w);
     await w.service.send(me, SPACE, 'mine', undefined, undefined, { key, width: 1, height: 1 });
-    w.messages.push(stub<CommunityMessage>({ ...w.messages[0], id: 'eeeeeeee-0000-4000-8000-0000000000b1', sender_id: BANNED }));
+    const theirs = (id: string, cohort_id: string) =>
+      w.messages.push(stub<CommunityMessage>({ ...w.messages[0], id, cohort_id, sender_id: BANNED }));
+    theirs('eeeeeeee-0000-4000-8000-0000000000b1', SPACE);
+    theirs('eeeeeeee-0000-4000-8000-0000000000b2', SPACE_2);
+    w.messages.push(stub<CommunityMessage>({ ...w.messages[0], id: 'eeeeeeee-0000-4000-8000-0000000000b3', kind: 'text', parent_message_id: 'eeeeeeee-0000-4000-8000-0000000000b1' }));
     const listed = await w.service.list(me, SPACE, {});
-    expect(listed.messages.map((m) => m.sender_user_id)).toEqual([ME]);
-    await expect(w.service.getOne(me, 'eeeeeeee-0000-4000-8000-0000000000b1')).rejects.toBeInstanceOf(NotFoundException);
+    expect(listed.messages.map((m) => m.id)).toEqual(['eeeeeeee-0000-4000-8000-0000000000b3', w.messages[0].id]);
+    expect(listed.messages[0].parent).toEqual(expect.objectContaining({ id: 'eeeeeeee-0000-4000-8000-0000000000b1', gone: true, kind: null }));
+    expect((await w.service.list(me, SPACE_2, {})).messages).toEqual([]);
+    for (const id of ['eeeeeeee-0000-4000-8000-0000000000b1', 'eeeeeeee-0000-4000-8000-0000000000b2']) {
+      await expect(w.service.getOne(me, id)).rejects.toBeInstanceOf(NotFoundException);
+    }
+  });
+
+  it('hides a photo between two people in a block, either way (#170-1)', async () => {
+    for (const blocks of [[[ME, BLOCKED]], [[BLOCKED, ME]]] as Array<Array<[string, string]>>) {
+      const w = world({ blocks });
+      const key = await uploaded(w);
+      await w.service.send(me, SPACE, 'mine', undefined, undefined, { key, width: 1, height: 1 });
+      w.messages.push(stub<CommunityMessage>({ ...w.messages[0], id: 'eeeeeeee-0000-4000-8000-0000000000c1', sender_id: BLOCKED }));
+      expect((await w.service.list(me, SPACE, {})).messages.map((m) => m.sender_user_id)).toEqual([ME]);
+      await expect(w.service.getOne(me, 'eeeeeeee-0000-4000-8000-0000000000c1')).rejects.toBeInstanceOf(NotFoundException);
+    }
+  });
+
+  it('a caption edit answers the live photo, as get-one does (FX-1139 C-2)', async () => {
+    const w = world();
+    const key = await uploaded(w);
+    const sent = await w.service.send(me, SPACE, 'old', undefined, undefined, { key, width: 4, height: 3 });
+    w.messages[0].created_at = new Date(); // inside the edit window
+    const edited = await w.service.edit(me, sent.message.id, 'new');
+    expect(edited.message.body).toBe('new');
+    expect(edited.message.image).toEqual({ url: expect.stringContaining(sentImageKey(key)), width: 4, height: 3, expires_at: expect.any(String) });
+    expect((await w.service.getOne(me, sent.message.id)).message.image).toEqual({ ...edited.message.image, expires_at: expect.any(String) });
   });
 
   it('delete erases the sent copy and the upload, and verifies both are gone', async () => {

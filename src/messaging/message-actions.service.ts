@@ -68,8 +68,8 @@ export class MessageActionsService {
     // A message authored by someone the caller blocked is not addressable by
     // the caller (it is filtered out of their thread read).
     if (row.sender_id && row.sender_id !== thread.actorId) {
-      const blocked = await this.messaging.blockedIdsFor(thread.actorId);
-      if (blocked.includes(row.sender_id)) {
+      const blocked = await this.messaging.hiddenIdsFor(thread.actorId); // #168-4: either way
+      if (blocked.has(row.sender_id)) {
         throw messagingError(HttpStatus.NOT_FOUND, MESSAGING_ERRORS.MESSAGE_NOT_FOUND);
       }
     }
@@ -337,10 +337,10 @@ export class MessageActionsService {
       orderBy: [{ pinned_at: 'desc' }, { id: 'desc' }],
       take: MAX_PINS_PER_THREAD,
     });
-    const blocked = new Set(await this.messaging.blockedIdsFor(thread.actorId));
-    const visible = rows.filter(
-      (r) => !(r.sender_id && r.sender_id !== thread.actorId && blocked.has(r.sender_id)),
-    );
+    const blocked = await this.messaging.hiddenIdsFor(thread.actorId); // #168-4: either way
+    const visible = blocked.has(thread.otherPartyId)
+      ? [] // a block either way closes the whole thread
+      : rows.filter((r) => !(r.sender_id && r.sender_id !== thread.actorId && blocked.has(r.sender_id)));
     return { items: visible.map((r) => this.messaging.serializeMessage(r, blocked)) };
   }
 

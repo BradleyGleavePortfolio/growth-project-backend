@@ -8,12 +8,14 @@
  * Fictional people, fresh ids per run: coaches K (Los Angeles) and L (New
  * York); S, K's sub-coach with a seat and a delegation for A; clients A and B
  * of K, and C of L. A moves from K to L. The clock: Wednesday 2026-10-14
- * 13:00 in Los Angeles (20:00 UTC).
+ * 13:00 in Los Angeles (20:00 UTC). REACHED-TODAY adds coach N (New York) and
+ * the Needs-you clients N reached on N's own date.
  *
  * Runs in the rls-live-tests job on a superuser copy of rls_replay.
  * Gate: TEST_DATABASE_URL. No URL -> skip, except under CI=true (hard failure).
  */
 import { randomUUID } from 'crypto';
+import type { Prisma } from '@prisma/client';
 import type { AdminPtmService } from '../../src/admin/ptm/admin-ptm.service';
 import type { AuditService } from '../../src/audit/audit.service';
 import type { CoachAlertsService } from '../../src/coach/coach-alerts.service';
@@ -52,21 +54,24 @@ if (!DB_URL && process.env.CI === 'true') {
     return out.home;
   };
   const winIds = async (coach: string) => (await home(coach)).wins.items.map((w) => w.id);
-  /** Rows of A's wins `who` reads as the signed-in API role: 1 each, or 0 each. */
-  const seen = (who: string) =>
+  /** `read` as the signed-in API role for coach `who`. */
+  const asCoach = <T>(who: string, read: (tx: Prisma.TransactionClient) => Promise<T>) =>
     prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe('SET LOCAL ROLE authenticated');
       await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_id', $1, true)`, who);
       await tx.$executeRawUnsafe(`SELECT set_config('app.current_user_role', $1, true)`, 'coach');
       await tx.$executeRawUnsafe(`SELECT set_config('request.jwt.claims', $1, true)`, JSON.stringify({ sub: who }));
-      return [
-        await tx.clientSignal.count({ where: { id: row.streak } }),
-        await tx.workoutSession.count({ where: { id: row.session } }),
-        await tx.exerciseSet.count({ where: { id: row.bench } }),
-        await tx.weightLog.count({ where: { id: row.weighIn } }),
-        await tx.userProfile.count({ where: { user_id: A } }),
-      ];
+      return read(tx);
     });
+  /** Rows of A's wins `who` reads as the signed-in API role: 1 each, or 0 each. */
+  const seen = (who: string) =>
+    asCoach(who, async (tx) => [
+      await tx.clientSignal.count({ where: { id: row.streak } }),
+      await tx.workoutSession.count({ where: { id: row.session } }),
+      await tx.exerciseSet.count({ where: { id: row.bench } }),
+      await tx.weightLog.count({ where: { id: row.weighIn } }),
+      await tx.userProfile.count({ where: { user_id: A } }),
+    ]);
   const moveA = (to: string) => prisma.user.update({ where: { id: A }, data: { coach_id: to } });
 
   beforeAll(async () => {
@@ -175,7 +180,7 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(out.rings).toEqual({
       check_ins: { reviewed: 1, submitted: 2 },
       replies: { answered: 1, received: 2 },
-      reach_outs: { contacted: 1, goal: 2 },
+      reach_outs: { contacted: 1, goal: 2, contacted_ids: [A] },
     });
     expect((await service.getOverview(K, { now: NOW })).home).toBeUndefined();
   });
@@ -186,7 +191,7 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(sub.rings).toEqual({
       check_ins: { reviewed: 1, submitted: 1 },
       replies: { answered: 1, received: 2 },
-      reach_outs: { contacted: 1, goal: 1 },
+      reach_outs: { contacted: 1, goal: 1, contacted_ids: [A] },
     });
     const l = await home(L);
     expect([l.date, l.time_zone]).toEqual(['2026-10-14', 'America/New_York']);
@@ -194,7 +199,7 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(l.rings).toEqual({
       check_ins: { reviewed: 0, submitted: 0 },
       replies: { answered: 0, received: 1 },
-      reach_outs: { contacted: 0, goal: 1 },
+      reach_outs: { contacted: 0, goal: 1, contacted_ids: [] },
     });
     expect(await seen(K)).toEqual([1, 1, 1, 1, 1]);
     expect(await seen(L)).toEqual([0, 0, 0, 0, 0]);
@@ -207,7 +212,7 @@ if (!DB_URL && process.env.CI === 'true') {
     expect(k.rings).toEqual({
       check_ins: { reviewed: 0, submitted: 1 },
       replies: { answered: 0, received: 0 },
-      reach_outs: { contacted: 0, goal: 1 },
+      reach_outs: { contacted: 0, goal: 1, contacted_ids: [] },
     });
     const sub = await home(S);
     expect([sub.wins.count, sub.rings.replies.received, sub.rings.reach_outs.goal]).toEqual([0, 0, 0]);
@@ -219,7 +224,7 @@ if (!DB_URL && process.env.CI === 'true') {
       `checkin_streak:${row.streakC}`, `checkin_streak:${row.streakLastWeek}`,
     ]);
     expect(l.rings.replies).toEqual({ answered: 0, received: 1 });
-    expect(l.rings.reach_outs).toEqual({ contacted: 0, goal: 2 });
+    expect(l.rings.reach_outs).toEqual({ contacted: 0, goal: 2, contacted_ids: [] });
     expect(await seen(K)).toEqual([0, 0, 0, 0, 0]);
     expect(await seen(L)).toEqual([1, 1, 1, 1, 1]);
   });
@@ -266,12 +271,12 @@ if (!DB_URL && process.env.CI === 'true') {
 
     it('a welcome or a package message answers no one and reaches no one; a message the coach sends does', async () => {
       expect((await home(M)).rings).toEqual(expect.objectContaining({
-        replies: { answered: 0, received: 2 }, reach_outs: { contacted: 0, goal: 1 },
+        replies: { answered: 0, received: 2 }, reach_outs: { contacted: 0, goal: 1, contacted_ids: [] },
       }));
       await prisma.coachMessage.create({ data: { coach_id: M, client_id: D, sender_id: M, body: 'Live message',
         created_at: t('2026-10-14T18:00:00Z') } });
       expect((await home(M)).rings).toEqual(expect.objectContaining({
-        replies: { answered: 2, received: 2 }, reach_outs: { contacted: 1, goal: 1 },
+        replies: { answered: 2, received: 2 }, reach_outs: { contacted: 1, goal: 1, contacted_ids: [D] },
       }));
     });
 
@@ -282,6 +287,67 @@ if (!DB_URL && process.env.CI === 'true') {
       const now = await home(M);
       expect(now.wins.items.map((w) => w.id)).toEqual([`lifting_best:${ids.row}`]);
       expect(now.wins.items[0]).toEqual(expect.objectContaining({ exercise: 'Row', weight_lbs: 100, reps: 5 }));
+    });
+  });
+
+  describe("REACHED-TODAY: who coach N (New York) reached on N's own today; P is another coach", () => {
+    // 20:00 UTC is 16:00 in New York, whose 2026-10-14 began at 04:00 UTC.
+    const [N, P, E, F, G, H, Q] = Array.from({ length: 7 }, () => randomUUID());
+    const ids: Record<string, string> = {};
+    const reached = async (coach: string) => {
+      const r = (await home(coach)).rings.reach_outs;
+      return { ...r, contacted_ids: [...r.contacted_ids].sort() };
+    };
+    const sorted = (...xs: string[]) => [...xs].sort();
+    /** N's voice note to F, N's nudge to G and N's message to H, as the signed-in API role. */
+    const rows = (who: string) =>
+      asCoach(who, async (tx) => [
+        await tx.coachMessage.count({ where: { id: ids.voice } }),
+        await tx.coachNudge.count({ where: { id: ids.nudge } }),
+        await tx.coachMessage.count({ where: { id: ids.draft } }),
+      ]);
+    beforeAll(async () => {
+      for (const [id, role, coach_id] of [
+        [N, 'coach', null], [P, 'coach', null],
+        [E, 'student', N], [F, 'student', N], [G, 'student', N], [H, 'student', N], [Q, 'student', P],
+      ] as const) {
+        await prisma.user.create({ data: { id, supabase_id: id, email: `homeday-${id}`, name: `Live ${id.slice(0, 4)}`, role, coach_id } });
+      }
+      await prisma.coachProfile.create({ data: { user_id: N, invite_code: `hd-${N}`, timezone: 'America/New_York' } });
+      await prisma.coachProfile.create({ data: { user_id: P, invite_code: `hd-${P}`, timezone: 'America/Los_Angeles' } });
+      for (const user_id of [E, F, G, H, Q]) {
+        await prisma.ptmPrediction.create({ data: { user_id, risk_score: 0.8, success_score: 0.2, prediction_basis: 'heuristic_v1',
+          computed_at: t('2026-10-14T12:00:00Z') } });
+      }
+      const send = (coach_id: string, client_id: string, at: string, extra = {}) =>
+        prisma.coachMessage.create({ data: { coach_id, client_id, sender_id: coach_id, created_at: t(at), ...extra } });
+      // E: 23:59 last night in New York (already the 14th in UTC), then only a package auto message today.
+      await send(N, E, '2026-10-14T03:59:00Z', { body: 'Live message' });
+      await send(N, E, '2026-10-14T15:00:00Z', { body: 'Live package', automated_by: 'package_message' });
+      // F: a voice note at 00:01 in New York. G: a nudge. H: an approved Roman draft. Q: P's text.
+      ids.voice = (await send(N, F, '2026-10-14T04:01:00Z', {
+        voice_url: 'live/voice.m4a', voice_duration_sec: 4, voice_size_bytes: 4000, voice_content_type: 'audio/mp4',
+      })).id;
+      ids.nudge = (await prisma.coachNudge.create({ data: { coach_id: N, client_id: G, title: 'Live nudge', body: 'Live nudge',
+        created_at: t('2026-10-14T13:00:00Z') } })).id;
+      ids.draft = (await send(N, H, '2026-10-14T14:00:00Z', { body: 'Live draft', ai_draft_id: randomUUID() })).id;
+      await send(P, Q, '2026-10-14T16:00:00Z', { body: 'Live message' });
+    });
+
+    it("N's today starts at New York midnight: a voice note, a nudge and a Roman draft count; last night and automated do not", async () => {
+      expect(await reached(N)).toEqual({ contacted: 3, goal: 4, contacted_ids: sorted(F, G, H) });
+      expect(await reached(P)).toEqual({ contacted: 1, goal: 1, contacted_ids: [Q] });
+      // The rows behind it: N reads them, P reads none (a control of 1 before each 0).
+      expect(await rows(N)).toEqual([1, 1, 1]);
+      expect(await rows(P)).toEqual([0, 0, 0]);
+    });
+
+    it('H moves to P: N no longer lists H, and P never lists what N sent', async () => {
+      await prisma.user.update({ where: { id: H }, data: { coach_id: P } });
+      expect(await reached(N)).toEqual({ contacted: 2, goal: 3, contacted_ids: sorted(F, G) });
+      expect(await reached(P)).toEqual({ contacted: 1, goal: 2, contacted_ids: [Q] });
+      expect(await rows(N)).toEqual([1, 1, 0]);
+      expect(await rows(P)).toEqual([0, 0, 0]);
     });
   });
 });

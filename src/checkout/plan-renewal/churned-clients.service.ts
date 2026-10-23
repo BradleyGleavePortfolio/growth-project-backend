@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import type { User } from '@prisma/client';
 import { PrismaService } from '../../prisma.service';
+import { inBlockWith } from '../../messaging/block-pair';
 import { AiGatewayService } from '../../ai/gateway/ai-gateway.service';
 import { PrivateContextService } from '../../ai/gateway/private-context.service';
 import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
@@ -206,9 +207,12 @@ export class ChurnedClientsService {
       const seen = latest.get(p.client_user_id);
       if (!seen || endedAt > seen.endedAt) latest.set(p.client_user_id, { clientId: p.client_user_id, endedAt, packageName: p.package.name });
     }
+    // #168-4: a client in a person-to-person block with the coach (either way) is never offered Message or Ask Roman.
+    const blocked = await inBlockWith(this.prisma, coachId, [...latest.keys()]);
     // The sweep's order (plan-renewal.service openEnded): not blocked, and the latest end over every plan with the coach.
     const out: Churned[] = [];
     for (const row of latest.values()) {
+      if (blocked.has(row.clientId)) continue;
       if (await planRenewalBlock(this.prisma, row.clientId, coachId, now)) continue;
       const end = await latestPlanEnd(this.prisma, row.clientId, coachId);
       if (!end || end <= row.endedAt) out.push(row);

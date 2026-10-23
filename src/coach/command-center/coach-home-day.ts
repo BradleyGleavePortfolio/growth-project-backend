@@ -7,7 +7,8 @@
  *            reached. `count` is exact; `items` holds the newest 50.
  *   rings    today's counts: check-ins reviewed / submitted, client messages
  *            answered / received, and Needs-you clients contacted out of up
- *            to 5.
+ *            to 5, with the ids of every Needs-you client contacted today
+ *            (REACHED-TODAY: the phone marks those Reach-outs rows).
  *
  * The week (Monday to Sunday) and the day are the coach's own, in the coach's
  * zone. Every read is scoped by the caller's roster now and the sharing gate
@@ -18,11 +19,13 @@
  *
  * Queries (all bounded by the roster and indexed): check-ins 1, client
  * messages today 1, coach replies today 1, nudges today 1, streak signals 1,
- * lifting bests 1, goal weights 1, client names 1 (only when there are wins).
+ * lifting bests 1, goal weights 1, client names 1 (only when there are wins),
+ * blocks 1 (#168-4: a client in a block with the coach gets no reach-out or win draft).
  */
 import type { PrismaService } from '../../prisma.service';
 import { sanitizePromptInput } from '../../ai/utils/sanitize-prompt-input';
 import { clientWeek } from '../client-week';
+import { inBlockWith } from '../../messaging/block-pair';
 
 /** The newest wins returned; `count` still counts every win this week. */
 export const HOME_WINS_MAX = 50;
@@ -66,7 +69,8 @@ export interface CoachHomeDay {
   rings: {
     check_ins: { reviewed: number; submitted: number };
     replies: { answered: number; received: number };
-    reach_outs: { contacted: number; goal: number };
+    /** `contacted_ids`: every Needs-you client reached today (all of them; `contacted` stops at `goal`). */
+    reach_outs: { contacted: number; goal: number; contacted_ids: string[] };
   };
 }
 
@@ -310,7 +314,9 @@ async function contactRings(
 ): Promise<Pick<Rings, 'replies' | 'reach_outs'>> {
   const { clientIds, ownerCoachId, needsYou } = scope;
   const goal = Math.min(REACH_OUT_GOAL_MAX, needsYou.length);
-  if (clientIds.length === 0) return { replies: { answered: 0, received: 0 }, reach_outs: { contacted: 0, goal } };
+  if (clientIds.length === 0) {
+    return { replies: { answered: 0, received: 0 }, reach_outs: { contacted: 0, goal, contacted_ids: [] } };
+  }
   const today = { gte: dayFrom, lte: now };
   const [received, replies, nudges] = await Promise.all([
     // Messages a client sent in their thread with this coach today. A client
@@ -362,11 +368,15 @@ async function contactRings(
   const answered = received.filter(
     (m) => m.client_id !== null && (lastReply.get(m.client_id) ?? 0) > m.created_at.getTime(),
   ).length;
+  // Reached today: a coach-side message a person sent in the client's thread
+  // (text, voice note, or an approved Roman draft; not a broadcast copy, an
+  // automated message or a deleted one), or a nudge from this coach or the
+  // head coach, in the coach's today.
   const nudged = new Set(nudges.map((n) => n.client_id));
-  const contacted = needsYou.filter((id) => lastReply.has(id) || nudged.has(id)).length;
+  const contacted = needsYou.filter((id) => lastReply.has(id) || nudged.has(id));
   return {
     replies: { answered, received: received.length },
-    reach_outs: { contacted: Math.min(contacted, goal), goal },
+    reach_outs: { contacted: Math.min(contacted.length, goal), goal, contacted_ids: contacted },
   };
 }
 
@@ -377,15 +387,18 @@ export async function loadHomeDay(
   now: Date,
 ): Promise<CoachHomeDay> {
   const week = clientWeek(now, timeZone);
+  // #168-4: no reach-out or Roman win draft across a block (either way).
+  const blocked = await inBlockWith(prisma, scope.coachId, scope.clientIds);
+  const needsYou = scope.needsYou.filter((id) => !blocked.has(id));
   const [checkIns, contact, streaks, bests, goals] = await Promise.all([
     checkInRing(prisma, scope.habits, week.today, week.todayFrom, now),
-    contactRings(prisma, scope, week.todayFrom, now),
+    contactRings(prisma, { ...scope, needsYou }, week.todayFrom, now),
     streakWins(prisma, scope.habits, week.from, now),
     liftingWins(prisma, scope.workouts, week.start, week.today),
     goalWins(prisma, scope.weighIns, week.start, week.today),
   ]);
 
-  const facts = [...streaks, ...bests, ...goals].sort((a, b) =>
+  const facts = [...streaks, ...bests, ...goals].filter((w) => !blocked.has(w.client_id)).sort((a, b) =>
     a.at === b.at ? (a.id < b.id ? -1 : 1) : a.at < b.at ? 1 : -1,
   );
   const newest = facts.slice(0, HOME_WINS_MAX);
