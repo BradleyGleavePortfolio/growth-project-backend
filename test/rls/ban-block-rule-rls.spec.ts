@@ -102,6 +102,17 @@ const ROLE = (k: Key) => (k === 'A' || k === 'B' ? 'coach' : 'student');
     await ban(new Date());
   });
 
+  it('the banned person cannot read or type in that space; their coaching 1:1 thread is untouched; unban restores', async () => {
+    const status = (p: Promise<unknown>) => p.then(() => 'ok', (e: { status?: number }) => e.status);
+    expect(await status(chat.list(user('X'), space.cli, {}))).toBe('ok');
+    await ban(null);
+    expect(await status(chat.list(user('X'), space.cli, {}))).toBe(404);
+    expect(await status(chat.send(user('X'), space.cli, 'still here'))).toBe(404);
+    expect(await inBlockWith(db, id.A, [id.X])).toEqual(new Set()); // a ban is not a block: the coaching chat stays open
+    await ban(new Date());
+    expect(await status(chat.list(user('X'), space.cli, {}))).toBe('ok');
+  });
+
   it('a block either way hides the other person\'s rows (coach inbox included) and unblock restores them', async () => {
     expect(await inBlockWith(db, id.A, [id.V, id.X])).toEqual(new Set());
     await prisma.userBlock.create({ data: { blocker_id: id.X, blocked_id: id.V } }); // X blocked V

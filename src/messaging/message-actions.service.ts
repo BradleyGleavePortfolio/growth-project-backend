@@ -338,8 +338,7 @@ export class MessageActionsService {
       take: MAX_PINS_PER_THREAD,
     });
     const blocked = await this.messaging.hiddenIdsFor(thread.actorId); // #168-4: either way
-    const other = thread.actorId === thread.clientId ? thread.coachId : thread.clientId;
-    const visible = blocked.has(other)
+    const visible = blocked.has(thread.otherPartyId)
       ? [] // a block either way closes the whole thread
       : rows.filter((r) => !(r.sender_id && r.sender_id !== thread.actorId && blocked.has(r.sender_id)));
     return { items: visible.map((r) => this.messaging.serializeMessage(r, blocked)) };
