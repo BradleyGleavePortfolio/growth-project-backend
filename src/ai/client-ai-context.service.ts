@@ -91,9 +91,8 @@ export class ClientAIContextService {
   // Public API. Reads cached context if fresh, else rebuilds from DB.
   // Caching is per-user and short — invalidation by TTL only. We do not
   // try to listen for log inserts; staleness is bounded to TTL.
-  // #168-4 (FR-1141): a block or unblock either way since the entry was built
-  // (on any machine) rebuilds it at once, so cached coach-thread words never
-  // outlive a block and come back as soon as it is lifted. One indexed read.
+  // #168-4 (FR-1141): a block or unblock either way since the entry was built (any
+  // machine) rebuilds it at once: cached coach-thread words never outlive a block.
   async build(userId: string): Promise<ClientAIContext> {
     const blocks = (await everyoneInBlockWith(this.prisma, userId)).sort().join(',');
     const cached = this.cache.get(userId);

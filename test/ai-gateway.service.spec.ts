@@ -204,39 +204,26 @@ describe('AiGatewayService', () => {
   });
 
   it('FR-1141 (Sol B1): an Ask AI notification across a block stops before the budget, the provider, the debit and the draft', async () => {
-    Object.assign(process.env, {
-      AI_GATEWAY_ENABLED: 'true', AI_GATEWAY_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-ant-test',
-      AI_GATEWAY_CAPABILITIES: 'draft.send_notification', AI_GATEWAY_REQUIRE_APPROVAL: 'draft.send_notification',
-    });
+    const n = 'draft.send_notification';
+    Object.assign(process.env, { AI_GATEWAY_ENABLED: 'true', AI_GATEWAY_PROVIDER: 'anthropic', ANTHROPIC_API_KEY: 'sk-ant-test', AI_GATEWAY_CAPABILITIES: n, AI_GATEWAY_REQUIRE_APPROVAL: n });
     const clientId = '22222222-2222-2222-2222-222222222222';
     const prisma = buildPrisma();
     prisma.roster[clientId] = 'coach-1';
-    const budget = {
-      resolveHeadCoachId: jest.fn(async (id: string) => id),
-      canCharge: jest.fn(async () => ({ allowed: true, budget: { actual_used_cents: 0, total_actual_available_cents: 4000 } })),
-      recordUsage: jest.fn(async () => ({ recorded: true })),
-    };
+    const budget = { resolveHeadCoachId: jest.fn(async (id: string) => id), recordUsage: jest.fn(async () => ({ recorded: true })),
+      canCharge: jest.fn(async () => ({ allowed: true, budget: { actual_used_cents: 0, total_actual_available_cents: 4000 } })) };
     const complete = jest.fn(async () => ({ text: 'ok', enabled: true, provider: 'anthropic', model: 'm', promptTokenEstimate: 10, responseTokenEstimate: 5, meta: {} }));
     const registry = new AiProviderRegistry(new StubProviderAdapter(), fakeOf({ name: 'anthropic', complete }));
     const svc = new AiGatewayService(prisma, new AiGatewayConfig(), new AiRedactionService(), registry, grantAllEgress(), fakeOf(budget));
-    const ask = {
-      capability: 'draft.send_notification', requester: { id: 'coach-1', role: 'coach' as const }, subjectUserId: clientId,
-      tenantCoachId: 'coach-1', userMessage: 'Draft a check-in nudge.', systemPrompt: 'context',
-      proposedActionPayload: { clientId, kind: 'check_in', body: 'How is the week?' },
-    };
+    const ask = { capability: n, requester: { id: 'coach-1', role: 'coach' as const }, subjectUserId: clientId, tenantCoachId: 'coach-1',
+      userMessage: 'Draft a check-in nudge.', systemPrompt: 'context', proposedActionPayload: { clientId, kind: 'check_in', body: 'How is the week?' } };
     for (const block of [{ blocker_id: 'coach-1', blocked_id: clientId }, { blocker_id: clientId, blocked_id: 'coach-1' }]) {
       prisma.created.blocks.splice(0, 1, block);
       await expect(svc.invoke(ask)).rejects.toMatchObject({ status: 403, response: { code: 'messaging.blocked' } });
     }
-    expect(budget.canCharge).not.toHaveBeenCalled();
-    expect(complete).not.toHaveBeenCalled();
-    expect(budget.recordUsage).not.toHaveBeenCalled();
-    expect(prisma.aiActionDraft.create).not.toHaveBeenCalled();
+    for (const spy of [budget.canCharge, complete, budget.recordUsage, prisma.aiActionDraft.create]) expect(spy).not.toHaveBeenCalled();
     prisma.created.blocks.splice(0); // unblock: admitted, drafted by the model and debited again
     await expect(svc.invoke(ask)).resolves.toMatchObject({ approvalRequired: true });
-    expect(complete).toHaveBeenCalledTimes(1);
-    expect(budget.recordUsage).toHaveBeenCalledTimes(1);
-    expect(prisma.aiActionDraft.create).toHaveBeenCalledTimes(1);
+    for (const spy of [complete, budget.recordUsage, prisma.aiActionDraft.create]) expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a draft invocation with a malformed payload BEFORE persisting the draft row (PR AI-3 PRODUCT-1)', async () => {
