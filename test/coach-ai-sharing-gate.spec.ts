@@ -225,7 +225,7 @@ describe('Stored weekly insight after a client turns a switch off (B-872-SOL-H-1
     return { svc, blocks, setRevokedAt: (at: Date | null) => { revokedAt = at; } };
   }
 
-  it('FR-1141 (Sol B4): a block either way after the insight hides its words on read, edit and reject; unblock shows them', async () => {
+  it('FR-1141 (Sol B4): a block either way after the insight hides its words on read and edit; unblock shows them', async () => {
     const at = new Date('2026-10-06T08:00:00Z');
     for (const [blocker_id, blocked_id] of [[COACH, SHARES], [SHARES, COACH]]) {
       const { svc, blocks } = insightFlow();
