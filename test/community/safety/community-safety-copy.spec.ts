@@ -1,6 +1,7 @@
 /**
  * Pins the owner-approved community safety copy (approved 2026-10-01 09:07
- * PDT): the seven community guidelines, the 24-hour moderation commitment and
+ * PDT; the commitment's block sentence approved 2026-10-23 10:57 PDT,
+ * A6.0-170): the seven community guidelines, the 24-hour moderation commitment and
  * the safety contact email served by GET /community/safety. Any change to
  * these strings needs a new owner approval, so this spec compares them
  * byte for byte.
@@ -31,7 +32,7 @@ const APPROVED_24H_SENTENCE =
 const APPROVED_COMMITMENT =
   `${APPROVED_24H_SENTENCE} Content that breaks these guidelines is removed, and people who ` +
   'break them repeatedly lose access. If you block someone, they can no longer see your posts ' +
-  'or message you, and they are not told.';
+  'or message you. In a direct message they see that you blocked them; nobody else is told.';
 
 // OR-109-1: the safety contact is the repo's one SUPPORT_EMAIL constant
 // (backend #631 sets it to the owner's support inbox, ruling 10-01 14:19).

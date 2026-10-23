@@ -120,10 +120,12 @@ export const COMMUNITY_GUIDELINES: readonly string[] = [
 
 /**
  * Public 24-hour moderation commitment (owner-approved 2026-10-01 09:07 PDT,
- * launch copy section 4). Pinned by community-safety-copy.spec.ts.
+ * launch copy section 4; block sentence owner-approved 2026-10-23 10:57 PDT,
+ * A6.0-170, 137-2 row RC-BLOCK on b#1145). Pinned by
+ * community-safety-copy.spec.ts.
  */
 export const COMMUNITY_RESPONSE_COMMITMENT =
-  'Reports are reviewed within 24 hours, every day, by your coach and The Growth Project team. Content that breaks these guidelines is removed, and people who break them repeatedly lose access. If you block someone, they can no longer see your posts or message you, and they are not told.';
+  'Reports are reviewed within 24 hours, every day, by your coach and The Growth Project team. Content that breaks these guidelines is removed, and people who break them repeatedly lose access. If you block someone, they can no longer see your posts or message you. In a direct message they see that you blocked them; nobody else is told.';
 
 /**
  * A DM row (dm_key set) is only addressable by its two participants. Used by
@@ -163,8 +165,8 @@ export function assertDmParticipantIfDm(
  * community.dm.blocked_by_them, while the thread leaves both DM lists (owner
  * 10-23 "Dissapear"). Coach/owner moderation surfaces (queue, flagged list,
  * coach inbox, AI triage, the coach roster view) stay complete so reports can
- * be actioned. COMMUNITY_RESPONSE_COMMITMENT still ends "and they are not
- * told": its new sentence waits for the owner (137-2, b#1145).
+ * be actioned. COMMUNITY_RESPONSE_COMMITMENT says the same (owner-approved
+ * 2026-10-23 10:57 PDT).
  */
 @Injectable()
 export class CommunitySafetyService {

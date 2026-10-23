@@ -1,7 +1,8 @@
 /**
  * Two-way blocking on every community read surface (operator ruling
- * 2026-10-01; owner-approved copy "If you block someone, they can no longer
- * see your posts or message you, and they are not told").
+ * 2026-10-01; owner-approved copy, 2026-10-23 10:57 PDT: "If you block
+ * someone, they can no longer see your posts or message you. In a direct
+ * message they see that you blocked them; nobody else is told").
  *
  * For each surface: the blocker does not see the blocked user's content, the
  * blocked user does not see the blocker's content, and unblocking restores
