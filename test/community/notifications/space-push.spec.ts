@@ -1,7 +1,12 @@
-import { NotificationKind } from '../../../notifications/notification-kind';
-import { lockScreenCopy } from '../../../notifications/push/lock-screen-copy';
-import { quietHoursFor } from '../../../notifications/push/push-quiet-hours';
-import { CommunitySpacePushService } from '../community-space-push.service';
+/**
+ * SC-PUSH (b#1138): space chat push policy, lock-screen copy and the push service. Lives under test/ because
+ * jest.config.js roots do not include src/community/space-push (FX-1138 moved it here so CI runs it).
+ */
+import 'reflect-metadata';
+import { NotificationKind } from '../../../src/notifications/notification-kind';
+import { lockScreenCopy } from '../../../src/notifications/push/lock-screen-copy';
+import { quietHoursFor } from '../../../src/notifications/push/push-quiet-hours';
+import { CommunitySpacePushService } from '../../../src/community/space-push/community-space-push.service';
 import {
   HIGH_ALERT_DAILY_LIMIT,
   asSpacePushContext,
@@ -11,7 +16,7 @@ import {
   spacePushExpoFields,
   spacePushOn,
   type SpacePushReader,
-} from '../space-push-policy';
+} from '../../../src/community/space-push/space-push-policy';
 
 const S = 'sender';
 const r = (userId: string, effectiveMode: SpacePushReader['effectiveMode'], unread = 1): SpacePushReader => ({ userId, effectiveMode, unread });
